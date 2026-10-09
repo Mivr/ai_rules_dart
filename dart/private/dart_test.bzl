@@ -20,14 +20,13 @@ load(
     "collect_transitive_resources",
     "collect_transitive_srcs",
     "create_test_executable",
-    "gen_kernel_native_assets_action",
+    "dart_kernel_action",
     "generate_native_assets_yaml",
     "generate_package_config",
     "resolve_code_assets",
     "runfiles_path",
     "target_dart_abi",
 )
-load("//dart/private:dart_compile.bzl", "dart_compile_action")
 load("//dart/private:dart_test_runner.bzl", "DartTestRunnerInfo")
 load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "executable_package")
 load("//dart/private:source_set.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS", "colocate_executable")
@@ -98,10 +97,11 @@ def _dart_test_impl(ctx):
         [dep[DartCodeAssetInfo] for dep in ctx.attr.code_assets],
     )
 
+    # The code-asset mapping is embedded in the kernel, with `relative` paths
+    # resolved against the dill at run time — the same as `dart_binary`. The
+    # `.so` libraries ship in runfiles.
+    native_assets_yaml = None
     if resolved_assets:
-        # Embed the code-asset mapping in the kernel (`gen_kernel --native-assets`),
-        # with `relative` paths resolved against the dill at runtime — the same
-        # build-time path `dart_binary` uses. The `.so` libraries ship in runfiles.
         abi = target_dart_abi(ctx)
         entries, runtime_libs = code_asset_entries(
             ctx.label,
@@ -113,30 +113,20 @@ def _dart_test_impl(ctx):
             output = native_assets_yaml,
             content = generate_native_assets_yaml(abi, entries),
         )
-        gen_kernel_native_assets_action(
-            ctx = ctx,
-            dart_sdk_info = dart_sdk_info,
-            main = main_input,
-            transitive_srcs = depset(compile_srcs),
-            package_config = package_config,
-            native_assets_yaml = native_assets_yaml,
-            output_dill = dill,
-            main_path = main_arg,
-            defines = defines,
-        )
-    else:
-        dart_compile_action(
-            ctx = ctx,
-            dart_bin = dart_sdk_info.dart,
-            sdk_files = dart_sdk_info.tool_files,
-            main = main_input,
-            srcs = compile_srcs,
-            package_config = package_config,
-            output = dill,
-            compile_mode = "kernel",
-            main_path = main_arg,
-            defines = defines,
-        )
+
+    # What `dart compile kernel` produces, including `dart.vm.product` true.
+    dart_kernel_action(
+        ctx = ctx,
+        dart_sdk_info = dart_sdk_info,
+        main = main_input,
+        transitive_srcs = depset(compile_srcs),
+        package_config = package_config,
+        output_dill = dill,
+        product = True,
+        main_path = main_arg,
+        defines = defines,
+        native_assets_yaml = native_assets_yaml,
+    )
 
     # Thin launcher: run the self-contained dill with asserts enabled. The dill
     # carries all sources/imports, so runfiles need only the VM and (for code

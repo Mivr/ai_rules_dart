@@ -10,13 +10,13 @@ load(
     "collect_transitive_code_assets",
     "collect_transitive_resources",
     "collect_transitive_srcs",
-    "gen_kernel_native_assets_action",
+    "dart_kernel_action",
     "generate_native_assets_yaml",
     "generate_package_config",
     "resolve_code_assets",
     "target_dart_abi",
 )
-load("//dart/private:dart_compile.bzl", "dart_compile_action", "recorded_uses_kind")
+load("//dart/private:dart_compile.bzl", "dart_compile_action", "front_end_flags", "recorded_uses_kind")
 load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "executable_package")
 load("//dart/private:source_set.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS", "colocate_executable")
 
@@ -97,28 +97,26 @@ def _dart_binary_impl(ctx):
         binary_output_basename(ctx.label.name, compile_mode, is_windows),
     )
 
-    # By default compile the source main directly. With native code assets,
-    # first run gen_kernel with the asset mapping embedded (its `relative`
-    # paths resolve against the final executable at runtime), then compile the
-    # resulting kernel — `dart compile` accepts a `.dill` input and the
-    # metadata flows through into the snapshot.
-    compile_main = main_input
-    compile_main_arg = main_arg
-    compile_srcs = all_srcs
-    compile_package_config = package_config
-    compile_defines = merge_dart_defines(ctx)
+    # Two steps for every mode: the front end produces a kernel, read through a
+    # filesystem rooted at the exec root so the output does not depend on where
+    # the action ran (see `dart_kernel_action`), and `dart compile` turns it
+    # into the requested output. A `kernel` is the first step's output itself.
+    defines = merge_dart_defines(ctx)
+    fe_flags, compile_flags = front_end_flags(ctx.attr.dart_compile_flags)
     code_asset_libs = []
 
     # Assets reach a binary two ways: propagated from any package in `deps`
     # that owns one (the upstream semantics — depending on a package gets you
     # its assets), or named outright. The explicit attr stays valid for
-    # hand-written cases; it is simply no longer the only mechanism.
+    # hand-written cases; it is simply no longer the only mechanism. The
+    # mapping is embedded in the kernel, its `relative` paths resolved against
+    # the final executable at run time.
     resolved_assets = resolve_code_assets(
         ctx.label,
         collect_transitive_code_assets(ctx.attr.deps) if ctx.attr.code_assets_from_deps else [],
         [dep[DartCodeAssetInfo] for dep in ctx.attr.code_assets],
     )
-
+    native_assets_yaml = None
     if resolved_assets:
         abi = target_dart_abi(ctx)
         entries, code_asset_libs = code_asset_entries(
@@ -131,26 +129,22 @@ def _dart_binary_impl(ctx):
             output = native_assets_yaml,
             content = generate_native_assets_yaml(abi, entries),
         )
-        dill = ctx.actions.declare_file(ctx.label.name + ".na.dill")
-        gen_kernel_native_assets_action(
-            ctx = ctx,
-            dart_sdk_info = dart_sdk_info,
-            main = main_input,
-            transitive_srcs = depset(all_srcs),
-            package_config = package_config,
-            native_assets_yaml = native_assets_yaml,
-            output_dill = dill,
-            main_path = main_arg,
-            defines = compile_defines,
-        )
-        compile_main = dill
-        compile_main_arg = None
-        compile_srcs = []
-        compile_package_config = None
 
-        # gen_kernel ran the front end, so the defines are already resolved
-        # into `dill`. Repeating them here would be a silent no-op.
-        compile_defines = []
+    kernel = output if compile_mode == "kernel" else ctx.actions.declare_file(ctx.label.name + ".app.dill")
+    dart_kernel_action(
+        ctx = ctx,
+        dart_sdk_info = dart_sdk_info,
+        main = main_input,
+        transitive_srcs = depset(all_srcs),
+        package_config = package_config,
+        output_dill = kernel,
+        product = compile_mode != "jit-snapshot",
+        main_path = main_arg,
+        defines = defines,
+        # A `kernel` has no second step, so every flag belongs to the first.
+        flags = fe_flags + compile_flags if compile_mode == "kernel" else fe_flags,
+        native_assets_yaml = native_assets_yaml,
+    )
 
     # The compiler records the uses of `@RecordUse` definitions only when it
     # tree-shakes, so the other modes get the file it writes when there is
@@ -167,23 +161,19 @@ def _dart_binary_impl(ctx):
             ctx.actions.write(output = recorded_uses, content = "{}")
         recorded_uses_info = [DartRecordedUsesInfo(file = recorded_uses, kind = kind)]
 
-    # Run dart compile
-    dart_compile_action(
-        ctx = ctx,
-        dart_bin = dart_sdk_info.dart,
-        sdk_files = dart_sdk_info.tool_files,
-        main = compile_main,
-        main_path = compile_main_arg,
-        srcs = compile_srcs,
-        package_config = compile_package_config,
-        output = output,
-        compile_mode = compile_mode,
-        target_os = dart_sdk_info.target_os,
-        target_arch = dart_sdk_info.target_arch,
-        extra_flags = ctx.attr.dart_compile_flags,
-        defines = compile_defines,
-        recorded_uses = compile_recorded_uses,
-    )
+    if compile_mode != "kernel":
+        dart_compile_action(
+            ctx = ctx,
+            dart_bin = dart_sdk_info.dart,
+            sdk_files = dart_sdk_info.tool_files,
+            kernel = kernel,
+            output = output,
+            compile_mode = compile_mode,
+            target_os = dart_sdk_info.target_os,
+            target_arch = dart_sdk_info.target_arch,
+            extra_flags = compile_flags,
+            recorded_uses = compile_recorded_uses,
+        )
 
     # Resources ride the runfiles, not the compile. A dep's `lib/**` non-Dart
     # files are part of the package at run time under pub, and the compiled
@@ -270,7 +260,7 @@ The `dart compile` mode. Determines the output format:
             values = ["exe", "aot-snapshot", "kernel", "jit-snapshot"],
         ),
         "dart_compile_flags": attr.string_list(
-            doc = "Extra flags passed to `dart compile` after compilation-mode defaults. Flags appear last so they can override defaults (e.g., `--extra-gen-snapshot-options=--optimization_level=3`).",
+            doc = "Extra flags passed to `dart compile` after compilation-mode defaults. Flags appear last so they can override defaults (e.g., `--extra-gen-snapshot-options=--optimization_level=3`). Front-end flags (`--enable-experiment`, `-D`/`--define`) go to the front-end step that precedes `dart compile`; in the `kernel` mode, which is that step alone, every flag does, and only those the front end (`gen_kernel`) accepts work.",
         ),
         "defines": attr.string_list(
             doc = "Dart environment declarations (`key=value`). Each entry becomes a `-Dkey=value` flag.",

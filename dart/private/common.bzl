@@ -1038,14 +1038,17 @@ def find_sdk_kernel_tools(dart_sdk_info):
     """Locates the gen_kernel toolchain files within the SDK tree.
 
     Returns a struct with the `dartaotruntime` executable, the
-    `gen_kernel_aot.dart.snapshot`, and `vm_platform_strong.dill` Files,
-    found by exact path under the SDK root within `dart_sdk_info.tool_files`.
+    `gen_kernel_aot.dart.snapshot`, and the two VM platform dills `dart
+    compile` chooses between (`vm_platform_product.dill` for a product
+    runtime, `vm_platform.dill` for the JIT VM), found by exact path under the
+    SDK root within `dart_sdk_info.tool_files`.
 
     Args:
       dart_sdk_info: The `DartSdkInfo` from the toolchain.
 
     Returns:
-      `struct(dartaotruntime, gen_kernel_snapshot, platform_dill)` of Files.
+      `struct(dartaotruntime, gen_kernel_snapshot, platform_dill,
+      platform_product_dill)` of Files.
     """
     sdk_root = sdk_path_from_dart(dart_sdk_info.dart)
     wanted = {
@@ -1054,11 +1057,12 @@ def find_sdk_kernel_tools(dart_sdk_info):
             sdk_root + "/bin/dartaotruntime.exe",
         ],
         "gen_kernel_snapshot": [sdk_root + "/bin/snapshots/gen_kernel_aot.dart.snapshot"],
-        "platform_dill": [sdk_root + "/lib/_internal/vm_platform_strong.dill"],
+        "platform_dill": [sdk_root + "/lib/_internal/vm_platform.dill"],
+        "platform_product_dill": [sdk_root + "/lib/_internal/vm_platform_product.dill"],
     }
     found = {}
 
-    # Analysis-time path probe for 3 files; a legitimate one-time flatten.
+    # Analysis-time path probe for 4 files; a legitimate one-time flatten.
     for f in dart_sdk_info.tool_files.to_list():
         for key, paths in wanted.items():
             if f.path in paths:
@@ -1067,13 +1071,14 @@ def find_sdk_kernel_tools(dart_sdk_info):
         if key not in found:
             fail(("find_sdk_kernel_tools: could not locate %s under SDK root " +
                   "%r (Dart %s). The SDK layout may have changed across " +
-                  "versions; native code-asset support needs the AOT " +
-                  "gen_kernel snapshot.") %
+                  "versions; every VM compile runs the AOT gen_kernel " +
+                  "snapshot.") %
                  (key, sdk_root, dart_sdk_info.version))
     return struct(
         dartaotruntime = found["dartaotruntime"],
         gen_kernel_snapshot = found["gen_kernel_snapshot"],
         platform_dill = found["platform_dill"],
+        platform_product_dill = found["platform_product_dill"],
     )
 
 # Code-asset link mode -> the Dart VM path type it maps to
@@ -1269,69 +1274,102 @@ def generate_native_assets_yaml(abi, asset_entries):
         assets = assets,
     )
 
-def gen_kernel_native_assets_action(
+# The URI scheme every VM compile reads its sources through, rooted at the exec
+# root. See `dart_kernel_action`.
+KERNEL_FILESYSTEM_SCHEME = "org-dartlang-root"
+
+def kernel_uri(path):
+    """The `KERNEL_FILESYSTEM_SCHEME` URI of an exec-root-relative path."""
+    return KERNEL_FILESYSTEM_SCHEME + ":///" + path
+
+def dart_kernel_action(
         ctx,
         dart_sdk_info,
         main,
         transitive_srcs,
         package_config,
-        native_assets_yaml,
         output_dill,
+        product,
         main_path = None,
-        defines = []):
-    """Runs `gen_kernel --native-assets=<yaml>` to produce a kernel `.dill`.
+        defines = [],
+        flags = [],
+        native_assets_yaml = None):
+    """Runs the Dart front end (`gen_kernel`) to produce a kernel `.dill`.
 
-    Invokes `dartaotruntime gen_kernel_aot.dart.snapshot --platform <dill>
-    --packages <pc> --native-assets <yaml> -o <output> <main>`, embedding the
-    code-asset mapping as `vm:ffi:native-assets` metadata. The `.so` files are
-    NOT inputs — gen_kernel only embeds the yaml text; the libraries are a
-    runtime (runfiles) dependency.
+    Every VM compile goes through here first, and `dart compile` then turns the
+    kernel into a snapshot or executable. The front end names each library that
+    is not in a package by its URI, and the compiled program keeps those URIs:
+    in stack traces, and in the private-name suffixes derived from them, which
+    reach every part of the output. `dart compile` given a source path names
+    the entrypoint `file:///<absolute path>`, so the bytes depended on where
+    the action ran — the sandbox directory, the output base. Here the sources
+    are read through `KERNEL_FILESYSTEM_SCHEME`, rooted at the exec root, so the
+    entrypoint is `org-dartlang-root:///<exec path>` wherever it was built, and
+    its relative imports resolve within that root exactly as they do on disk.
+
+    The other flags are the ones `dart compile` itself passes to the front end
+    (`generateKernelHelper` in `pkg/dart2native`): the platform dill and
+    `dart.vm.product` that match the runtime the kernel is for, and the
+    sanitizer defines, which are false in a released SDK. They are constants the
+    front end folds, so they have to be right here; the step after sees only the
+    folded result.
 
     Args:
       ctx: The rule context.
       dart_sdk_info: The `DartSdkInfo` from the toolchain.
-      main: The main `.dart` File.
+      main: The File holding the entrypoint, added to the inputs.
       transitive_srcs: Depset of transitive source Files.
-      package_config: The build-time `package_config.json` File (or None).
-      native_assets_yaml: The generated native_assets.yaml File.
+      package_config: The build-time `package_config.json` File, or None.
       output_dill: The output `.dill` File to produce.
-      main_path: Optional path string to compile instead of `main.path` (e.g. a
-        path inside an assembled `main` directory).
+      product: Whether the kernel is for a product runtime: an AOT snapshot or
+        executable, or a `dart compile kernel` file. False for the JIT VM that
+        builds a `jit-snapshot`.
+      main_path: Optional exec-root-relative path to compile instead of
+        `main.path` (e.g. a path inside an assembled `main` directory).
       defines: Environment declarations; each entry becomes a `-D` flag. This
         action runs the front end, so it is the only stage where they can still
-        reach constant evaluation — `dart compile` on the resulting `.dill`
-        would accept them and silently do nothing.
+        reach constant evaluation.
+      flags: Further front-end flags, e.g. `--enable-experiment=...`.
+      native_assets_yaml: Optional `native_assets.yaml` File, embedded as the
+        `vm:ffi:native-assets` mapping. The libraries it names are a run-time
+        (runfiles) dependency, not inputs.
     """
     tools = find_sdk_kernel_tools(dart_sdk_info)
 
     args = ctx.actions.args()
     args.add(tools.gen_kernel_snapshot)
-    args.add("--platform", tools.platform_dill)
+    args.add("--platform", tools.platform_product_dill if product else tools.platform_dill)
+    args.add("-Ddart.vm.product=" + ("true" if product else "false"))
+    args.add_all(["-Ddart.vm.asan=false", "-Ddart.vm.msan=false", "-Ddart.vm.tsan=false"])
+    args.add("--filesystem-scheme", KERNEL_FILESYSTEM_SCHEME)
+    args.add("--filesystem-root", ".")
     if package_config != None:
-        args.add("--packages", package_config)
-    args.add("--native-assets", native_assets_yaml)
+        args.add("--packages", kernel_uri(package_config.path))
+    if native_assets_yaml != None:
+        args.add("--native-assets", native_assets_yaml)
     for d in defines:
         args.add("-D" + d)
+    args.add_all(flags)
     args.add("-o", output_dill)
-    args.add(main_path if main_path != None else main)
+    args.add(kernel_uri(main_path if main_path != None else main.path))
 
-    direct = [main, native_assets_yaml]
+    direct = [main]
     if package_config != None:
         direct.append(package_config)
+    if native_assets_yaml != None:
+        direct.append(native_assets_yaml)
     transitive = [dart_sdk_info.tool_files]
     if transitive_srcs != None:
         transitive.append(transitive_srcs)
-
-    env = writable_home_env(dart_sdk_info.dart, output_dill)
 
     ctx.actions.run(
         executable = tools.dartaotruntime,
         arguments = [args],
         inputs = depset(direct = direct, transitive = transitive),
         outputs = [output_dill],
-        mnemonic = "DartGenKernelNativeAssets",
-        progress_message = "Compiling Dart kernel with native assets %s" % ctx.label,
-        env = env,
+        mnemonic = "DartKernel",
+        progress_message = "Compiling Dart kernel %s" % ctx.label,
+        env = writable_home_env(dart_sdk_info.dart, output_dill),
     )
 
 def asset_path_for(file, lib_root):

@@ -1,0 +1,34 @@
+load("//dart:defs.bzl", "dart_binary", "dart_code_asset", "dart_test")
+
+# Two exes from one entrypoint, differing only in whether a code asset adds a
+# mapping to the kernel step. Run by the test below.
+
+dart_binary(
+    name = "probe",
+    srcs = ["lib/where.dart"],
+    main = "bin/probe.dart",
+)
+
+dart_code_asset(
+    name = "asset",
+    asset_id = "package:kernel_uri_fixture/src/ffi/kernel_uri_fixture.g.dart",
+    shared_library = "//dart/tests/cc_fixture:empty_shared",
+)
+
+dart_binary(
+    name = "probe_with_asset",
+    srcs = ["lib/where.dart"],
+    code_assets = [":asset"],
+    main = "bin/probe.dart",
+)
+
+dart_test(
+    name = "kernel_uri_test",
+    size = "small",
+    data = [
+        ":probe",
+        ":probe_with_asset",
+    ],
+    main = "kernel_uri_test.dart",
+    deps = ["//dart/runfiles"],
+)
