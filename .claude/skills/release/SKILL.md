@@ -338,6 +338,14 @@ invalid GitHub user ID for aran` (aran's id is `5295`). Cause: `publish-to-bcr`
    upload, and the CDN served 404 for ~48 more minutes. The 0.6.3 delay above may have
    the same cause. Run the clean-module check only once the PR has merged.
 
+   **One success is one CDN edge, not the CDN.** On 0.7.3 a clean module resolved two
+   minutes after the merge, while for the next ~15+ minutes other requests (and other
+   sessions' workspaces) still got the 404 some of the time — edges that had cached it
+   from an early probe. Before telling downstreams to pin, require several consecutive
+   200s for a plain `curl -sI .../<version>/MODULE.bazel` (the URL Bazel fetches, so
+   what an edge actually serves), and warn them a stale 404 may linger for up to an
+   hour.
+
 6. **Verify pub.dev**: the `dart/runfiles` package published at `${TARGET#v}`.
 
 Proceed to the cascade only once a clean module resolves `${TARGET#v}`.
