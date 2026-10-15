@@ -335,7 +335,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: j178/prek-action@v3.0.0
+      - uses: j178/prek-action@v3.0.1
         with:
           # Keep in step with prek in multitool.lock.json
           prek-version: 0.5.5
