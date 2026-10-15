@@ -264,7 +264,7 @@
         "usagesDigest": "WbFXPSYHvy1Kvwu3yVBRFAOueWxLxo/IuZ2OinSJSB4=",
         "recordedInputs": [
           "REPO_MAPPING:rules_dart+,yaml.bzl yaml.bzl+",
-          "FILE:@@rules_dart+//dart/ext/pubspec.lock f1b399ba69e8be2bd90290b13e6a0030361ae1ea7c16d8f5c962175dba81099b"
+          "FILE:@@rules_dart+//dart/ext/pubspec.lock ae866f3a1d4ebad9a74f9b9efab33c74dfbf904ae0d69dfe94192029d4955188"
         ],
         "generatedRepoSpecs": {
           "very_good_analysis": {
@@ -280,8 +280,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "_fe_analyzer_shared",
-              "version": "103.0.0",
-              "sha256": "1b0e6a07425a3e460666e88bf1c949ccc7bb0116ad562ce94a1eca60fe820725",
+              "version": "109.0.0",
+              "sha256": "48e48f73a431eb269eec66d243a63a07ed90ef9417a74047a3b98d52338626ad",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -375,7 +375,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -385,8 +386,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "analyzer",
-              "version": "13.3.0",
-              "sha256": "61c04d0c1bfed555c681ea079519933f071a5a026578ff73c4ff0df2d3462e5e",
+              "version": "14.5.0",
+              "sha256": "6d377901d198536b648172974d9d4f277910502cad92193466869cac0ff34990",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -480,7 +481,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -585,7 +587,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -690,7 +693,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -795,7 +799,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -900,7 +905,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -1005,7 +1011,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -1015,8 +1022,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "build",
-              "version": "4.0.10",
-              "sha256": "b94f5da9ed3d081fd4ecc426c260998b5f4f4eb2f6d89b7e5472edef0b2b2a1b",
+              "version": "4.0.11",
+              "sha256": "8a5c5761af8e31748bba3c82f68925ace40f3225c3eea25be9beb57eca7cd7a8",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -1110,7 +1117,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -1120,8 +1128,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "build_config",
-              "version": "1.3.2",
-              "sha256": "94eaf6708fe64408c632ef2689ca3777b112f9421306ccf4f8c84d7c5c9f83f8",
+              "version": "1.4.0",
+              "sha256": "4703a785fbc3c266c5c7518589d0863f6a05078ee33f7ca5aa4b87a56f1cedd2",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -1215,7 +1223,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -1225,8 +1234,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "built_collection",
-              "version": "5.1.1",
-              "sha256": "376e3dd27b51ea877c28d525560790aee2e6fbb5f20e2f85d5081027d94e2100",
+              "version": "5.1.2",
+              "sha256": "44922ecebd8e3d0cef743dadd3b54df4e87e2a4c52a29465a1872aa9e192caa8",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -1320,7 +1329,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -1330,8 +1340,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "built_value",
-              "version": "8.12.7",
-              "sha256": "31b24be6615ec7fcf70b3aa5a7469fe35826485e639a16dd7eb83ba30e4cc6a8",
+              "version": "8.13.0",
+              "sha256": "f87ea98192116f7093cb214551ce1929caae0681fdba282b3d8b4462adee7bb7",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -1425,7 +1435,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -1435,8 +1446,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "built_value_generator",
-              "version": "8.12.7",
-              "sha256": "66091f1d4c07ed76b25a2834c49766b7baafb8843d5a1cfc1308059f898bf056",
+              "version": "8.13.0",
+              "sha256": "68af3b1a6829c760f1c039c4302be60f35a65af5f93a9cfed5d65f681eca3757",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -1530,7 +1541,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -1635,7 +1647,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -1740,7 +1753,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -1845,7 +1859,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -1855,8 +1870,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "cli_util",
-              "version": "0.5.2",
-              "sha256": "71e43f1976c3eae2d9468a5b4d6600bf8cae61508b87f27fa1799228935d48ab",
+              "version": "0.6.0",
+              "sha256": "89b8801ba49f8b593fbf2d3e59efd0f566c46cd4ba6837ae2610c72b52a0f899",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -1950,7 +1965,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -2055,7 +2071,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -2065,8 +2082,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "code_assets",
-              "version": "2.0.0",
-              "sha256": "cfd4f5f575a49c5f10ca856e9846073f1e6c3ee94912377eea5f6cefc5272941",
+              "version": "2.1.0",
+              "sha256": "828110d598123b5ea96c00c9f3c72105bf79f8ee36c20a39b26209ade421ec57",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -2160,7 +2177,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -2170,8 +2188,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "code_builder",
-              "version": "4.12.0",
-              "sha256": "aa5932e94c6c39c2f9ec4e5e06dfdd11a9430a61f6c41b6ba75b28ce0c481baf",
+              "version": "4.13.0",
+              "sha256": "811709c1badd02fc054039a13f66e0db1961865f9a314175f68c3eaeebec786f",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -2265,7 +2283,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -2370,7 +2389,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -2475,7 +2495,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -2485,8 +2506,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "copy_with_extension",
-              "version": "17.1.0",
-              "sha256": "e4fcee1392f7413aa252e408474cf4b3a70ee88cc378600c81f66a422f19814d",
+              "version": "18.0.0",
+              "sha256": "9a832fe40e5a5fcbe58e094d2c857ac6b185f34ec200241051daebe48b1b0403",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -2580,7 +2601,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -2590,8 +2612,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "copy_with_extension_gen",
-              "version": "17.1.0",
-              "sha256": "6647c550552ca08fe03a2d482c40df771f975d2cb76e099a5a8841df7d6613f1",
+              "version": "18.0.0",
+              "sha256": "4475dfeaa67d41760e7f8b690cbbbbc0d71efb34797997478ae869c0933a5fe1",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -2685,7 +2707,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -2695,8 +2718,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "coverage",
-              "version": "1.15.1",
-              "sha256": "956a3de0725ca232ad353565a8290d3357592bf4250f6f298a185e2d949c5d3d",
+              "version": "1.16.0",
+              "sha256": "ff89e37c19355194e279d26dafe8e4bece46c9ea63a30be4dc68214f5bc290d3",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -2790,7 +2813,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -2895,7 +2919,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -2905,8 +2930,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "dart_style",
-              "version": "3.1.13",
-              "sha256": "82ade9fc4273f29ed673e33166944465225b4f7fc5d4aaef48605cc751c18fc1",
+              "version": "3.1.14",
+              "sha256": "a0e4f65339b31eb6a9e6a12e14b4682a48d46fbc54a82f4a702396fbdbac63a7",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -3000,7 +3025,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -3105,7 +3131,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -3115,8 +3142,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "drift",
-              "version": "2.34.3",
-              "sha256": "3a3f1f6f905037d7426e4c445854139fd6a3d592135f7c96d7931682b73d16f4",
+              "version": "2.35.2",
+              "sha256": "ef9598e1785c18db37209e8554fc79aff94632209d384ec98984b9e3184af0f7",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -3210,7 +3237,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -3220,8 +3248,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "drift_dev",
-              "version": "2.34.5",
-              "sha256": "735aad3c34215805c66bd518c8812fa4f83b5534b2c13c4092c970c04a7e9983",
+              "version": "2.35.1",
+              "sha256": "e0d16aaa21f3408cbe2dd4bfc56c36cea43e53a537e6613b91380c0924b3bd30",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -3315,7 +3343,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -3420,7 +3449,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -3525,7 +3555,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -3630,7 +3661,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -3640,8 +3672,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "freezed",
-              "version": "4.0.1",
-              "sha256": "541a82723c84298f3ca46a6c2186935aa21ad529ad1f1423d67af18040494f51",
+              "version": "4.0.2",
+              "sha256": "3af98c92d7d4dd182ea1393193e69a840fcbaee1f66f1158bd20504e5f3f6f4f",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -3735,7 +3767,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -3840,7 +3873,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -3850,8 +3884,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "frontend_server_client",
-              "version": "4.0.0",
-              "sha256": "f64a0333a82f30b0cca061bc3d143813a486dc086b574bfb233b7c1372427694",
+              "version": "4.1.0",
+              "sha256": "404dbf9bce29beafbe9dcb19219447b6f7d49900cd42b8d3b7af102b24508e25",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -3945,7 +3979,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -4050,7 +4085,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -4155,7 +4191,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -4165,8 +4202,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "go_router_builder",
-              "version": "4.4.1",
-              "sha256": "111dcd4c7eb579722d1db02e6f7b5b78a950bf2dbdabf212cf02ed16ec891efe",
+              "version": "4.5.0",
+              "sha256": "fbadb18697941b5efaa90c6295e81335e59b97bde83d675b4251e91eac1d4882",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -4260,7 +4297,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -4365,7 +4403,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -4470,7 +4509,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -4575,7 +4615,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -4680,7 +4721,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -4785,7 +4827,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -4890,7 +4933,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -4900,8 +4944,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "logger",
-              "version": "2.7.0",
-              "sha256": "25aee487596a6257655a1e091ec2ae66bc30e7af663592cc3a27e6591e05035c",
+              "version": "2.8.0",
+              "sha256": "2a0dc097e7b01d942475bdd552356db2d0f768b05540bd4b2b53f1840f2239a7",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -4995,7 +5039,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -5100,7 +5145,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -5205,7 +5251,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -5310,7 +5357,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -5415,7 +5463,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -5520,7 +5569,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -5530,8 +5580,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "native_toolchain_c",
-              "version": "0.19.4",
-              "sha256": "9d233b6f2d9c52e1a2b5fbe70451d2c10ac674d3bb419d0ec8de14989d437c26",
+              "version": "0.19.5",
+              "sha256": "90eaad8059ebc2004a63810a4696ea9acdb02473e47ed3b6b3bafb100ac77e31",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -5625,7 +5675,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -5730,7 +5781,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -5740,8 +5792,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "package_config",
-              "version": "2.2.0",
-              "sha256": "f096c55ebb7deb7e384101542bfba8c52696c1b56fca2eb62827989ef2353bbc",
+              "version": "3.0.0",
+              "sha256": "ffcf4cf3d6c0b74ac43708d9f56625506e8a68aa935abe9d267a7330f320eb5d",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -5835,7 +5887,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -5940,7 +5993,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -5950,8 +6004,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "platform",
-              "version": "3.1.6",
-              "sha256": "5d6b1b0036a5f331ebc77c850ebc8506cbc1e9416c27e59b439f917a902a4984",
+              "version": "3.2.0",
+              "sha256": "a36d119c13416516a7b5913fbe8af8531e11633d784c550b2125f76c758524ec",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -6045,7 +6099,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -6150,7 +6205,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -6255,7 +6311,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -6265,8 +6322,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "protobuf",
-              "version": "6.0.0",
-              "sha256": "75ec242d22e950bdcc79ee38dd520ce4ee0bc491d7fadc4ea47694604d22bf06",
+              "version": "6.1.0",
+              "sha256": "13b6717366aa7ec3792dd62c19c7d33a785708224365f2db23c5ca01f1c1a0f2",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -6360,7 +6417,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -6465,7 +6523,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -6570,7 +6629,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -6675,7 +6735,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -6780,7 +6841,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -6885,7 +6947,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -6990,7 +7053,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -7095,7 +7159,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -7200,7 +7265,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -7210,8 +7276,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "source_gen",
-              "version": "4.2.4",
-              "sha256": "a603f1fb984a7391ae5978d1b92bfaaa08b350dca5c825256f925818f7943bf5",
+              "version": "4.3.1",
+              "sha256": "833ea7d15b5be79949d3d6c077da0267a0bd93c16897b36a771395a91e63086e",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -7305,7 +7371,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -7410,7 +7477,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -7515,7 +7583,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -7620,7 +7689,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -7725,7 +7795,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -7735,8 +7806,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "sqlite3",
-              "version": "3.5.2",
-              "sha256": "4c7fe79840389aaeaf05fd093f795b631b5a98e2bd28d54e555c100f4a9c7a1c",
+              "version": "3.7.1",
+              "sha256": "144132790ec1947fad9f3ddceffd0af2ab80a1f0d1e81a4d094ee6707ec3df0b",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -7830,7 +7901,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [
                 "@rules_dart//dart/ext/sqlite3:code_asset"
@@ -7937,7 +8009,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -8042,7 +8115,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -8147,7 +8221,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -8252,7 +8327,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -8357,7 +8433,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -8462,7 +8539,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -8567,7 +8645,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -8672,7 +8751,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -8682,8 +8762,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "test",
-              "version": "1.31.2",
-              "sha256": "0d5ba5602ec3baa28c8ce365e1efc5575969c765f45c554a3e167dc7945b9c30",
+              "version": "1.33.0",
+              "sha256": "44b2fccf4407bcdb5e105c064c5d6b5e2a640c87761f8b03cdce8cf532d98cfa",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -8777,7 +8857,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -8787,8 +8868,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "test_api",
-              "version": "0.7.13",
-              "sha256": "475610b2aa23c19687cce2961e44b0cc57cafe220f67c2b80201231b2a07fbe7",
+              "version": "0.7.15",
+              "sha256": "47481c58bb92d0b1d218f0510ff5647e768f8e1256d07077a151fb520923b51d",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -8882,7 +8963,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -8892,8 +8974,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "test_core",
-              "version": "0.6.19",
-              "sha256": "a39c204a4fc7a7ccb04a2b985e359fda3cc37e45e0b8ac61c3fb1a05aa832132",
+              "version": "0.6.21",
+              "sha256": "9dec4c178bd61493e1cd2060ffe701fcb61c43da2493e99590fb1b0cc82eb4af",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -8987,7 +9069,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -9092,7 +9175,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -9102,8 +9186,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "vm_service",
-              "version": "15.3.0",
-              "sha256": "5f37239c4851efcef929cea7824e76df7f2f0970aef85d66bbc430afa40e72f0",
+              "version": "15.4.0",
+              "sha256": "89b11d62e1040ee681af3b4f1c97a803ecbf010c6e8b9c5896ee5b08c3bf7b78",
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
@@ -9197,7 +9281,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -9302,7 +9387,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -9407,7 +9493,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -9512,7 +9599,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -9617,7 +9705,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -9722,7 +9811,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -9827,7 +9917,114 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
+              ],
+              "code_assets": [],
+              "ignore_hook": false
+            }
+          },
+          "dart_pub__yaml_edit": {
+            "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "yaml_edit",
+              "version": "2.2.4",
+              "sha256": "07c9e63ba42519745182b88ca12264a7ba2484d8239958778dfe4d44fe760488",
+              "base_url": "https://pub.dev",
+              "hub_name": "dart_pub",
+              "lock_packages": [
+                "_fe_analyzer_shared",
+                "analyzer",
+                "analyzer_buffer",
+                "args",
+                "async",
+                "bazel_worker",
+                "boolean_selector",
+                "build",
+                "build_config",
+                "built_collection",
+                "built_value",
+                "built_value_generator",
+                "charcode",
+                "checked_yaml",
+                "cli_config",
+                "cli_util",
+                "clock",
+                "code_assets",
+                "code_builder",
+                "collection",
+                "convert",
+                "copy_with_extension",
+                "copy_with_extension_gen",
+                "coverage",
+                "crypto",
+                "dart_style",
+                "data_assets",
+                "drift",
+                "drift_dev",
+                "ffi",
+                "file",
+                "fixnum",
+                "freezed",
+                "freezed_annotation",
+                "frontend_server_client",
+                "get_it",
+                "glob",
+                "go_router_builder",
+                "hooks",
+                "http_multi_server",
+                "http_parser",
+                "io",
+                "json_annotation",
+                "json_serializable",
+                "logger",
+                "logging",
+                "matcher",
+                "meta",
+                "mime",
+                "mockito",
+                "native_toolchain_c",
+                "node_preamble",
+                "package_config",
+                "path",
+                "platform",
+                "pool",
+                "process",
+                "protobuf",
+                "pub_semver",
+                "pubspec_parse",
+                "recase",
+                "record_use",
+                "shelf",
+                "shelf_packages_handler",
+                "shelf_static",
+                "shelf_web_socket",
+                "source_gen",
+                "source_helper",
+                "source_map_stack_trace",
+                "source_maps",
+                "source_span",
+                "sqlite3",
+                "sqlparser",
+                "stack_trace",
+                "stacked_generator",
+                "stacked_shared",
+                "stream_channel",
+                "stream_transform",
+                "string_scanner",
+                "term_glyph",
+                "test",
+                "test_api",
+                "test_core",
+                "typed_data",
+                "vm_service",
+                "watcher",
+                "web",
+                "web_socket",
+                "web_socket_channel",
+                "webkit_inspection_protocol",
+                "yaml",
+                "yaml_edit"
               ],
               "code_assets": [],
               "ignore_hook": false
@@ -9929,7 +10126,8 @@
                 "web_socket",
                 "web_socket_channel",
                 "webkit_inspection_protocol",
-                "yaml"
+                "yaml",
+                "yaml_edit"
               ]
             }
           }

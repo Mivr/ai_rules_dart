@@ -30,7 +30,7 @@ inputs, declared outputs, and no side-effects outside `bazel-out`.
 dart/ext/
 ├── lib/
 │   ├── builder_shim.dart      Generic shim runner: arg parser, AssetReader,
-│   │                          AssetWriter, Resolver (analyzer 10.x),
+│   │                          AssetWriter, Resolver (analyzer),
 │   │                          BuildStep, package_config synthesis.
 │   └── worker_entry.dart      AsyncWorkerLoop subclass; constructs a fresh
 │                              AnalysisContext per request. `shimMain`

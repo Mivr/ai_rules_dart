@@ -293,18 +293,18 @@ Each in-repo Dart package is publishable to pub.dev. Maintenance includes:
   lock is `ext_pub_deps`, shared with every workspace that runs codegen, and
   the pub extension fails the build when a package resolves to two versions
   across locks. The graph rides the newest analyzer line every builder
-  accepts: today that is analyzer 13.x — `drift_dev` caps `analyzer` <14 and
-  `package_config` <3, so those majors wait on drift. `e2e/codegen`,
-  `e2e/dart_test_pkg`, and rules_dart_proto's `dart_proto` pin
-  `analyzer`/`package_config` in their pubspecs to hold their locks on the
-  same line. To bump:
+  accepts: today that is analyzer 14.x, while `build` stays on 4.x because
+  every generator except `source_gen` caps it below 5. `e2e/codegen`,
+  `e2e/dart_test_pkg`, and rules_dart_proto's `dart_proto` set floors on
+  `analyzer`/`package_config` in their pubspecs to keep their locks no older
+  than this one. To bump:
   `FLUTTER_ROOT=<flutter sdk> bazel run @rules_dart//dart -- pub upgrade` in
   `dart/ext/` (it needs a Flutter-flavored pub on the pinned SDK —
   `go_router_builder` declares a Flutter environment constraint), then
   `dart pub upgrade` in each pinned workspace, refresh the touched
   `MODULE.bazel.lock`s, and verify with `//dart/ext/...`,
-  `e2e/codegen`, and a consuming app. The freezed 3.2→4.0 / analyzer 10→13
-  bump needed no shim changes — every shim compiled and analyzed clean
+  `e2e/codegen`, and a consuming app. The analyzer 10→13 and 13→14 bumps
+  needed no shim changes — every shim compiled and analyzed clean
   unchanged — so expect builder majors to be cheap unless a builder
   entrypoint signature changes.
 
