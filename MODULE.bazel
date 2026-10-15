@@ -28,7 +28,7 @@ bazel_dep(name = "yaml.bzl", version = "0.1.2")
 # The Go SDK and toolchain are only fetched if a target in //gazelle/... is
 # actually built; they are not downloaded for normal Dart-only usage.
 bazel_dep(name = "gazelle", version = "0.54.0", repo_name = "bazel_gazelle")
-bazel_dep(name = "rules_go", version = "0.63.0", repo_name = "io_bazel_rules_go")
+bazel_dep(name = "rules_go", version = "0.64.2", repo_name = "io_bazel_rules_go")
 
 # Native code-asset support under //dart/ext/<package> (e.g. //dart/ext/sqlite3)
 # builds a cc_shared_library, so its BUILD loads @rules_cc and wraps a BCR
@@ -36,7 +36,7 @@ bazel_dep(name = "rules_go", version = "0.63.0", repo_name = "io_bazel_rules_go"
 # `//dart/ext/sqlite3:code_asset` target is usable from downstream modules.
 # The native libraries are only built if a target referencing them is built;
 # they are not fetched for normal Dart-only usage.
-bazel_dep(name = "rules_cc", version = "0.2.25")
+bazel_dep(name = "rules_cc", version = "0.2.26")
 bazel_dep(name = "sqlite3", version = "3.53.4")
 
 # Sources for //dart/ext/webcrypto: the pub archive itself, for its C glue and
@@ -54,7 +54,7 @@ http_archive(
 # On macOS, rules_cc leaves C++ to apple_support's toolchain. 2.9.0 builds that
 # toolchain's helper tools for macOS 11, the oldest Xcode 27's libc++ accepts
 # without a warning. Dev-only: the C++ toolchain is the consuming module's call.
-bazel_dep(name = "apple_support", version = "2.9.0", dev_dependency = True)
+bazel_dep(name = "apple_support", version = "2.10.1", dev_dependency = True)
 
 # Used by `dart_library`/`dart_source_set` to assemble generated + hand-written
 # sources into one directory (copy_to_directory). Regular (not dev) dep so
@@ -64,7 +64,7 @@ bazel_dep(name = "bazel_lib", version = "3.7.2")
 bazel_dep(name = "rules_multitool", version = "1.11.1", dev_dependency = True)
 bazel_dep(name = "rules_shell", version = "0.8.0", dev_dependency = True)
 bazel_dep(name = "bazel_skylib_gazelle_plugin", version = "1.9.2", dev_dependency = True)
-bazel_dep(name = "buildifier_prebuilt", version = "10.0.1", dev_dependency = True)
+bazel_dep(name = "buildifier_prebuilt", version = "10.1.0", dev_dependency = True)
 bazel_dep(name = "bazelrc-preset.bzl", version = "1.9.2", dev_dependency = True)
 
 dart = use_extension("//dart:extensions.bzl", "dart")

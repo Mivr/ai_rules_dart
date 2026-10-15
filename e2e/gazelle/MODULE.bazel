@@ -7,7 +7,7 @@ bazel_dep(name = "gazelle", version = "0.54.0")
 # Building the Go binaries here goes through the C++ toolchain, which on macOS
 # is apple_support's. 2.9.0 builds that toolchain's helper tools for macOS 11,
 # the oldest Xcode 27's libc++ accepts without a warning.
-bazel_dep(name = "apple_support", version = "2.9.0")
+bazel_dep(name = "apple_support", version = "2.10.1")
 
 local_path_override(
     module_name = "rules_dart",
