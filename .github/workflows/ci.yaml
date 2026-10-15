@@ -338,7 +338,7 @@ jobs:
       - uses: j178/prek-action@v3.0.0
         with:
           # Keep in step with prek in multitool.lock.json
-          prek-version: 0.5.3
+          prek-version: 0.5.5
   # For branch protection settings, this job provides a "stable" name that can be used to gate PR merges
   # on "all matrix jobs were successful".
   conclusion:
