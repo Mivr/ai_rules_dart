@@ -253,7 +253,20 @@ be green against local WIP rules_dart before pushing.
    For the downstream cascades, substitute the module name and its version.
 2. **Mark ready for review** (triggers auto-approval):
    `gh pr ready <number> --repo bazelbuild/bazel-central-registry`.
-3. **Poll until merged**: `gh pr view <number> --repo bazelbuild/bazel-central-registry
+3. **Ask the bot to review once presubmit is green.** The scheduled `review_prs` job
+   that approves and merges runs every 3–5 hours in practice, so don't wait for it.
+   When `gh pr checks <number> --repo bazelbuild/bazel-central-registry` shows
+   `buildkite/bcr-presubmit` passed, comment exactly (nothing else in the body):
+   ```sh
+   gh pr comment <number> --repo bazelbuild/bazel-central-registry --body "@bazel-io review"
+   ```
+   The bot reacts 👀, then 🚀 if it merged; otherwise it replies with the reason (still a
+   draft, checks pending or failing, missing maintainer approval, or a sensitive
+   `metadata.json` change — see below). Fix the cause and comment again; it is safe to
+   repeat. The command is `handle_comment` in
+   `bazelbuild/continuous-integration/actions/bcr-pr-reviewer`, at whatever ref BCR's
+   `.github/workflows/handle_comment.yml` pins.
+4. **Poll until merged**: `gh pr view <number> --repo bazelbuild/bazel-central-registry
 --json state,mergedAt` on an interval. If the bot/maintainer requests changes or a
    presubmit fails, surface it to the user.
 
@@ -301,7 +314,7 @@ invalid GitHub user ID for aran` (aran's id is `5295`). Cause: `publish-to-bcr`
      Note the bot does **not** retract its comment once posted; a cleaned-up diff still
      waits on a maintainer, so it is worth getting the ordering right _before_ tagging.
 
-4. **Poll until BCR serves it — and "merged" is not "served".** The only acceptable
+5. **Poll until BCR serves it — and "merged" is not "served".** The only acceptable
    proof is that a clean module actually resolves it:
 
    ```sh
@@ -325,7 +338,7 @@ invalid GitHub user ID for aran` (aran's id is `5295`). Cause: `publish-to-bcr`
    upload, and the CDN served 404 for ~48 more minutes. The 0.6.3 delay above may have
    the same cause. Run the clean-module check only once the PR has merged.
 
-5. **Verify pub.dev**: the `dart/runfiles` package published at `${TARGET#v}`.
+6. **Verify pub.dev**: the `dart/runfiles` package published at `${TARGET#v}`.
 
 Proceed to the cascade only once a clean module resolves `${TARGET#v}`.
 
@@ -401,7 +414,7 @@ not permitted with --lockfile_mode=error`;
 6. Tag the **same** `$TARGET`, signed:
    `git tag -s -m "rules_dart_proto $TARGET" $TARGET origin/main && git push origin $TARGET`.
 7. Watch `release.yaml`, then repeat **Phase 6** for the rules_dart_proto BCR PR (find →
-   `gh pr ready` → poll merged → poll served). rules_dart_proto does **not** publish to pub.dev.
+   `gh pr ready` → `@bazel-io review` once presubmit is green → poll merged → poll served). rules_dart_proto does **not** publish to pub.dev.
 
 ---
 
