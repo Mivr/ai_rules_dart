@@ -4,9 +4,12 @@
 ///
 /// 1. Finds every directory containing a MODULE.bazel (excluding references/)
 ///    and runs `bazel mod tidy --lockfile_mode=refresh` in each, followed by
-///    `bazel build --nobuild --lockfile_mode=update //...` to capture any
-///    transitive module extension entries that `mod tidy` misses. This keeps
-///    MODULE.bazel formatting canonical and lock files complete.
+///    `bazel mod deps --lockfile_mode=update`, which evaluates every module
+///    extension in the graph. `mod tidy` evaluates only the root module's
+///    extensions, and a build evaluates only those its targets reach, so
+///    neither alone records a dependency's extension (rules_dart's own
+///    `ext_pub_deps`, say) in a workspace whose targets never use it. This
+///    keeps MODULE.bazel formatting canonical and lock files complete.
 ///
 /// 2. Finds every directory containing a pubspec.yaml (excluding references/,
 ///    dev/testdata/, and e2e/) and runs `dart pub get` with the pinned SDK
@@ -42,27 +45,31 @@ Future<void> main() async {
       workingDirectory: ws,
     );
 
-    if (tidy.exitCode != 0) {
+    final expectedError = _expectedFailures[rel];
+    bool failedAsExpected(ProcessResult r) =>
+        expectedError != null && '${r.stderr}'.contains(expectedError);
+
+    if (tidy.exitCode != 0 && !failedAsExpected(tidy)) {
       stdout.writeln('FAILED at mod tidy (exit ${tidy.exitCode})');
       stderr.writeln(tidy.stderr);
       failed++;
       continue;
     }
 
-    // Step 2: bazel build --nobuild --lockfile_mode=update //...
-    // Captures transitive module extension entries that mod tidy misses.
-    final build = await Process.run(
+    // Step 2: bazel mod deps --lockfile_mode=update
+    // Evaluates every extension in the graph, not just the root module's.
+    final deps = await Process.run(
       'bazel',
-      ['build', '--nobuild', '--lockfile_mode=update', '//...'],
+      ['mod', 'deps', '--lockfile_mode=update'],
       workingDirectory: ws,
     );
 
-    if (build.exitCode == 0) {
+    if (deps.exitCode == 0 || failedAsExpected(deps)) {
       stdout.writeln('ok');
       passed++;
     } else {
-      stdout.writeln('FAILED at build (exit ${build.exitCode})');
-      stderr.writeln(build.stderr);
+      stdout.writeln('FAILED at mod deps (exit ${deps.exitCode})');
+      stderr.writeln(deps.stderr);
       failed++;
     }
   }
@@ -146,13 +153,18 @@ String _findRepoRoot() {
   return Directory.current.path;
 }
 
+/// Workspaces whose pub extension fails on purpose, with the error each must
+/// fail with. Bazel still records every other extension before failing, so
+/// the rest of their lock is refreshed like any other workspace's.
+const _expectedFailures = {
+  // Two lockfiles declare conflicting versions of the same package. The
+  // `expected-failure` CI job asserts the resulting error message.
+  'e2e/pub_lock_conflict': 'conflicting versions across lock files',
+};
+
 /// Workspaces that resolve only in a non-standalone context and cannot be
 /// refreshed on their own.
 const _skipWorkspaces = {
-  // Intentionally broken: two lockfiles declare conflicting versions of the
-  // same package. The `expected-failure` CI job asserts the resulting error
-  // message; `bazel mod tidy` hits the same error here.
-  'e2e/pub_lock_conflict',
   // Nested submodule consumed only from the parent `pub_lock_cross_module`
   // workspace. Its MODULE.bazel declares `bazel_dep(rules_dart, 0.0.0)` with
   // no local_path_override, so standalone resolution can't find rules_dart.

@@ -174,16 +174,16 @@ load to) anything in `dart/pub/extensions.bzl`'s closure invalidates the lock of
 - `e2e/analyze_composition`
 - `e2e/link_hook`
 
-Two workspaces are deliberately skipped by the tool (`_skipWorkspaces` in
-`tool/refresh_locks.dart`) because they don't resolve standalone:
-`e2e/pub_lock_conflict` (intentionally conflicting lock files) and
-`e2e/pub_lock_cross_module`'s `module_b` and `module_c` (consumed only from
-their parent). Their locks still get updated as a side effect of building those
-workspaces.
+`e2e/pub_lock_cross_module`'s `module_b` and `module_c` are skipped by the
+tool (`_skipWorkspaces` in `tool/refresh_locks.dart`): they are consumed only
+from their parent and don't resolve standalone. `e2e/pub_lock_conflict` fails
+on purpose (intentionally conflicting lock files); the tool accepts that one
+failure (`_expectedFailures`) and still refreshes the rest of its lock.
 
 **Procedure**: Run `dart run tool/refresh_locks.dart`. This both refreshes
 Bazel lock files (pulling fresh registry data, keeping MODULE.bazel
-formatting canonical) and runs `dart pub get` in the in-repo Dart packages
+formatting canonical, and evaluating every module extension in the graph,
+not only those the workspace's targets reach) and runs `dart pub get` in the in-repo Dart packages
 (`dart/ext/`, `dart/private/tools/`, `dart/runfiles/`) to refresh their
 `pubspec.lock` files. Pub runs on the pinned SDK
 (`bazel run @rules_dart//dart`), since a package's SDK floor can be ahead of

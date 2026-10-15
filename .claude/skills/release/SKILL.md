@@ -360,12 +360,13 @@ not permitted with --lockfile_mode=error`;
 
    ```sh
    bazel mod tidy --lockfile_mode=refresh              # restores the registry hash
-   bazel build --nobuild --lockfile_mode=update //...  # records the rest of the extensions
+   bazel mod deps --lockfile_mode=update               # records every other extension
    ```
 
-   `mod tidy` evaluates only the extensions it needs, so on its own it writes a lock
-   missing entries for extensions the build reaches, which `--lockfile_mode=error`
-   rejects with `The module extension '@@...' does not exist in the lockfile`.
+   `mod tidy` evaluates only the root module's extensions, and a build only those its
+   targets reach, so either alone writes a lock missing entries that
+   `--lockfile_mode=error` rejects with `The module extension '@@...' does not exist in
+   the lockfile`. `mod deps` evaluates every extension in the graph.
 
    **Verify while `.bazelrc.user` is still parked** — restoring it first makes the root
    check fail every time, and the failure looks like a bad lock rather than a bad
