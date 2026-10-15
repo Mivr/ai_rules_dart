@@ -389,7 +389,7 @@ void main() {
     });
 
     test('routes each emitted asset to the matching declared output', () async {
-      // Mirrors injectable_config_builder shape: one input → two outputs
+      // Mirrors a multi-output builder shape: one input → two outputs
       // (.config.dart + .module.dart). Each declared Bazel output must end
       // up with the bytes of the matching emission.
       final input = File(p.join(tmp.path, 'app.dart'))
@@ -1061,11 +1061,7 @@ void main() {
     );
   });
 
-  group('emptyOutput hook', () {
-    // Regression guard for injectable/shim_metadata.dart: when a source
-    // carries no annotations the Builder emits nothing, but stage-2
-    // config still needs valid JSON in the declared output — the hook
-    // supplies `[]` so jsonDecode downstream sees an empty array.
+  group('unemitted outputs', () {
     late Directory tmp;
     setUp(() async {
       tmp = await Directory.systemTemp.createTemp('empty_output_');
@@ -1074,40 +1070,25 @@ void main() {
       if (await tmp.exists()) await tmp.delete(recursive: true);
     });
 
-    test('hook fills declared outputs the Builder left unemitted', () async {
-      final input = File(p.join(tmp.path, 'src.dart'))
-        ..writeAsStringSync('class Foo {}');
-      final output = File(p.join(tmp.path, 'src.g.dart'));
+    test(
+      'declared outputs the Builder left unemitted are written empty',
+      () async {
+        final input = File(p.join(tmp.path, 'src.dart'))
+          ..writeAsStringSync('class Foo {}');
+        final output = File(p.join(tmp.path, 'src.g.dart'));
 
-      await runShimWithArgs(
-        _shimArgs(
-          inputPath: input.path,
-          inputAssetPath: 'lib/src.dart',
-          outputPath: output.path,
-        ),
-        (_) => _NoopBuilder(),
-        emptyOutput: (inputId, ext) => utf8.encode('[]'),
-      );
+        await runShimWithArgs(
+          _shimArgs(
+            inputPath: input.path,
+            inputAssetPath: 'lib/src.dart',
+            outputPath: output.path,
+          ),
+          (_) => _NoopBuilder(),
+        );
 
-      expect(output.readAsStringSync(), '[]');
-    });
-
-    test('default (no hook) writes empty bytes', () async {
-      final input = File(p.join(tmp.path, 'src.dart'))
-        ..writeAsStringSync('class Foo {}');
-      final output = File(p.join(tmp.path, 'src.g.dart'));
-
-      await runShimWithArgs(
-        _shimArgs(
-          inputPath: input.path,
-          inputAssetPath: 'lib/src.dart',
-          outputPath: output.path,
-        ),
-        (_) => _NoopBuilder(),
-      );
-
-      expect(output.readAsStringSync(), isEmpty);
-    });
+        expect(output.readAsStringSync(), isEmpty);
+      },
+    );
   });
 
   group('fetchResource across pipeline stages', () {

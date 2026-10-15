@@ -264,7 +264,7 @@ dart_codegen = rule(
             doc = "One or more suffixes appended to the input stem to " +
                   "derive output file paths. E.g. `['.g.dart']` for a " +
                   "SharedPart combining output; `['.config.dart', " +
-                  "'.module.dart']` for injectable's config stage, which " +
+                  "'.module.dart']` for a builder that " +
                   "emits both per input. At least one suffix is required.",
             mandatory = True,
         ),

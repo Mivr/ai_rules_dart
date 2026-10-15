@@ -24,14 +24,8 @@ import 'builder_shim.dart';
 /// Runs the shim as a persistent worker. Diagnostics are captured via Zone
 /// so they land in `WorkResponse.output` rather than corrupting the
 /// stdout/stderr proto streams Bazel reads.
-Future<void> runShimAsWorker(
-  Object factoryOrFactories, {
-  EmptyOutputHook? emptyOutput,
-}) async {
-  final loop = ShimWorkerLoop(
-    factoryOrFactories: factoryOrFactories,
-    emptyOutput: emptyOutput,
-  );
+Future<void> runShimAsWorker(Object factoryOrFactories) async {
+  final loop = ShimWorkerLoop(factoryOrFactories: factoryOrFactories);
   await loop.run();
 }
 
@@ -39,10 +33,9 @@ Future<void> runShimAsWorker(
 /// and drive [performRequest] directly with a crafted [WorkRequest] — the
 /// stdin/stdout framing is [AsyncWorkerLoop]'s responsibility, not ours.
 class ShimWorkerLoop extends AsyncWorkerLoop {
-  ShimWorkerLoop({required this.factoryOrFactories, this.emptyOutput});
+  ShimWorkerLoop({required this.factoryOrFactories});
 
   final Object factoryOrFactories;
-  final EmptyOutputHook? emptyOutput;
 
   @override
   Future<WorkResponse> performRequest(WorkRequest request) async {
@@ -77,7 +70,6 @@ class ShimWorkerLoop extends AsyncWorkerLoop {
           await runShim(
             request.arguments,
             factoryOrFactories,
-            emptyOutput: emptyOutput,
             stagingRoot: stagingRoot,
             writeDiagnostic: sink,
           );
@@ -110,20 +102,12 @@ class ShimWorkerLoop extends AsyncWorkerLoop {
 /// entry (when the rule declares `use_param_file`); we expand it inline.
 /// In worker mode Bazel expands the flagfile itself before putting args
 /// into `WorkRequest.arguments`, so no expansion is needed there.
-Future<void> shimMain(
-  List<String> args,
-  Object factoryOrFactories, {
-  EmptyOutputHook? emptyOutput,
-}) async {
+Future<void> shimMain(List<String> args, Object factoryOrFactories) async {
   if (args.contains('--persistent_worker')) {
-    await runShimAsWorker(factoryOrFactories, emptyOutput: emptyOutput);
+    await runShimAsWorker(factoryOrFactories);
     return;
   }
-  await runShim(
-    expandFlagFiles(args),
-    factoryOrFactories,
-    emptyOutput: emptyOutput,
-  );
+  await runShim(expandFlagFiles(args), factoryOrFactories);
 }
 
 /// Expand any `@<path>` argument by reading the file and splitting on

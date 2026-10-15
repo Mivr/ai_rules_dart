@@ -33,12 +33,6 @@ var baselineGeneratedExtensions = func() []string {
 	return out
 }()
 
-// injectableInitAnnotation is the marker annotation identifying the file
-// that drives the injectable config stage. Scanning for it at the
-// directory level lets Gazelle emit a single `injectable_library` macro
-// covering every annotated file in the directory.
-const injectableInitAnnotation = "InjectableInit"
-
 // GenerateRules generates Dart BUILD rules for a directory: the Dart targets,
 // then the analysis options targets (analysis_options.go).
 func (d *dartLang) GenerateRules(args language.GenerateArgs) language.GenerateResult {
@@ -87,7 +81,6 @@ func (d *dartLang) generateDartRules(args language.GenerateArgs) language.Genera
 	// registered annotation participates in codegen emission; everything
 	// else falls through to the plain dart_library path below.
 	annotatedFiles := map[string][]string{}
-	injectableInitFiles := []string{}
 	for _, f := range libFiles {
 		annPath := filepath.Join(args.Dir, f.Path)
 		anns, err := ParseDartCodegenTriggers(annPath)
@@ -112,44 +105,13 @@ func (d *dartLang) generateDartRules(args language.GenerateArgs) language.Genera
 		if len(registered) > 0 {
 			annotatedFiles[f.Path] = registered
 		}
-		for _, a := range anns {
-			if a == injectableInitAnnotation {
-				injectableInitFiles = append(injectableInitFiles, f.Path)
-				break
-			}
-		}
 	}
 
 	var gen []*rule.Rule
 	var imports []interface{}
 
-	// Handle the injectable aggregate case specially: one macro call per
-	// directory, not per file. This stays closest to build_runner's
-	// auto_apply behavior (all files with injectable-family annotations
-	// run through the metadata stage; the single @InjectableInit file
-	// drives the config stage).
-	injectableConsumed := map[string]bool{}
-	if len(injectableInitFiles) > 0 {
-		if len(injectableInitFiles) > 1 {
-			log.Printf("dart: %s: more than one @InjectableInit file "+
-				"found (%v); emitting injectable_library for the first only",
-				args.Rel, injectableInitFiles)
-		}
-		initSrc := injectableInitFiles[0]
-		rule := buildInjectableMacro(args, libFiles, initSrc)
-		gen = append(gen, rule)
-		imports = append(imports, collectImports(libFiles))
-		for _, f := range libFiles {
-			injectableConsumed[f.Path] = true
-		}
-	}
-
-	// Emit codegen per annotated source that wasn't consumed by the
-	// injectable aggregate above.
+	// Emit codegen per annotated source.
 	for _, f := range libFiles {
-		if injectableConsumed[f.Path] {
-			continue
-		}
 		anns, ok := annotatedFiles[f.Path]
 		if !ok {
 			continue
@@ -172,12 +134,10 @@ func (d *dartLang) generateDartRules(args language.GenerateArgs) language.Genera
 		}
 
 		// Fast-path macro emission: exactly one annotation, exactly one
-		// matching non-aggregate builder, and that builder has a `Macro`.
-		// This produces a single `<builder>_library(...)` call. Aggregate
-		// builders (`@InjectableInit`) are always handled out-of-band
-		// above, so they don't hit this path.
+		// matching builder, and that builder has a `Macro`. This produces a
+		// single `<builder>_library(...)` call.
 		if len(anns) == 1 && len(flatBuilders) == 1 &&
-			flatBuilders[0].Macro != "" && !flatBuilders[0].Aggregate {
+			flatBuilders[0].Macro != "" {
 			macroRule := buildMacroRule(args, f, flatBuilders[0])
 			if macroRule != nil {
 				gen = append(gen, macroRule)
@@ -204,9 +164,6 @@ func (d *dartLang) generateDartRules(args language.GenerateArgs) language.Genera
 	// Plain dart_library for unannotated lib/ sources (the common case).
 	plain := []DartFileInfo{}
 	for _, f := range libFiles {
-		if injectableConsumed[f.Path] {
-			continue
-		}
 		if _, ok := annotatedFiles[f.Path]; !ok {
 			plain = append(plain, f)
 		}
@@ -408,19 +365,6 @@ func emitCodegenStages(
 				}
 			}
 			r.SetAttr("parts", parts)
-		} else if stage.Builder.Aggregate {
-			// Aggregate stages come from the directory-level injectable
-			// emission path; a per-file Aggregate in the DAG is unusual
-			// but supported — one declared Bazel output per suffix.
-			outputs := make([]string, 0, len(stage.OutputExts))
-			stem := strings.TrimSuffix(f.Path, ".dart")
-			for _, ext := range stage.OutputExts {
-				outputs = append(outputs, stem+ext)
-			}
-			r = rule.NewRule("dart_aggregate_codegen", name)
-			r.SetAttr("srcs", []string{f.Path})
-			r.SetAttr("generator_bin", stage.Builder.ShimLabel)
-			r.SetAttr("outputs", outputs)
 		} else {
 			r = rule.NewRule("dart_codegen", name)
 			r.SetAttr("src", f.Path)
@@ -505,27 +449,6 @@ func buildMacroRule(
 	if info.Config != "" {
 		r.SetAttr("config", info.Config)
 	}
-	return r
-}
-
-// buildInjectableMacro emits the single `injectable_library(...)` call
-// covering every file in the directory. `srcs` is the full set of
-// non-generated lib/ files so the metadata stage processes every potential
-// `@injectable`/`@singleton`/`@module` site; `init_src` is the detected
-// `@InjectableInit` file.
-func buildInjectableMacro(
-	args language.GenerateArgs,
-	libFiles []DartFileInfo,
-	initSrc string,
-) *rule.Rule {
-	name := libraryName(args.Rel, args.Dir, args.Config)
-	r := rule.NewRule("injectable_library", name)
-	srcs := fileNames(libFiles)
-	sort.Strings(srcs)
-	r.SetAttr("srcs", srcs)
-	r.SetAttr("init_src", initSrc)
-	r.SetAttr("visibility", []string{"//visibility:public"})
-	setPackageIdentity(r, args, name)
 	return r
 }
 

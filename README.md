@@ -213,7 +213,7 @@ repository in CI reports an `analysis_options.yaml` nobody listed.
 
 `dart_codegen` runs a generator on each source file individually.
 `dart_aggregate_codegen` runs a generator over all sources at once (for
-generators like auto_route or injectable that need a whole-package view).
+generators like auto_route that need a whole-package view).
 
 ```starlark
 load("@rules_dart//dart:defs.bzl", "dart_codegen", "dart_aggregate_codegen")
@@ -267,7 +267,7 @@ speak. The model files a generator reads need nothing special — they belong to
 the `dart_library` targets in `deps`, which are analyzable already.
 
 For first-party builders (`json_serializable`, `freezed`, `built_value`,
-`mockito`, `go_router`, `copy_with_extension_gen`, `injectable`, `stacked`,
+`mockito`, `go_router`, `copy_with_extension_gen`, `stacked`,
 `drift`), each ships a convenience macro (`json_serializable_library`,
 `freezed_library`, …) under `dart/ext/<builder>/defs.bzl`. Gazelle discovers
 the matching annotations in sources and emits the macro automatically. See

@@ -53,7 +53,7 @@ class ShimArgs {
   /// Declared Bazel output paths (one per builder-produced extension).
   /// The shim routes each builder-emitted asset to the matching declared
   /// path by suffix; any declared path with no emitted asset is written
-  /// via the per-shim [EmptyOutputHook] fallback.
+  /// empty.
   final List<String> outputPaths;
   final String packageName;
 
@@ -257,13 +257,6 @@ class ShimArgs {
   }
 }
 
-/// Signature of a per-shim callback that returns the bytes to write for
-/// a declared Bazel output when the Builder emitted nothing (e.g. the
-/// source carried no matching annotations). The default is an empty file;
-/// injectable's metadata shim returns `[]` (the empty-array JSON).
-typedef EmptyOutputHook =
-    FutureOr<List<int>> Function(AssetId inputId, String outputExtension);
-
 /// Type alias for a `package:build` Builder factory — a function that
 /// constructs a Builder given its BuilderOptions.
 typedef BuilderFactory = Builder Function(BuilderOptions options);
@@ -291,7 +284,6 @@ typedef BuilderFactory = Builder Function(BuilderOptions options);
 Future<void> runShim(
   List<String> argv,
   Object factoryOrFactories, {
-  EmptyOutputHook? emptyOutput,
   Directory? stagingRoot,
   AnalysisContextBuilder? buildAnalysisContext,
   DiagnosticSink? writeDiagnostic,
@@ -320,7 +312,6 @@ Future<void> runShim(
         absArgs,
         _normaliseFactories(factoryOrFactories),
         stagingDir,
-        emptyOutput: emptyOutput,
         buildAnalysisContext: buildAnalysisContext,
         writeDiagnostic: sink,
       );
@@ -384,11 +375,7 @@ Future<void> prepareSourceGenCwd({
 
 /// Same as [runShim] but takes pre-parsed [args] and propagates errors as
 /// exceptions. Intended for unit tests.
-Future<void> runShimWithArgs(
-  ShimArgs args,
-  Object factoryOrFactories, {
-  EmptyOutputHook? emptyOutput,
-}) async {
+Future<void> runShimWithArgs(ShimArgs args, Object factoryOrFactories) async {
   // Relative paths in `args` are resolved against the process CWD. We
   // chdir into the staging dir below for source_gen's benefit, so resolve
   // everything up-front here; after chdir, any still-relative path would
@@ -407,7 +394,6 @@ Future<void> runShimWithArgs(
       absArgs,
       _normaliseFactories(factoryOrFactories),
       stagingDir,
-      emptyOutput: emptyOutput,
     );
   } finally {
     Directory.current = originalCwd;
@@ -485,7 +471,6 @@ Future<void> _runWithStaging(
   ShimArgs args,
   List<Builder Function(BuilderOptions)> builderFactories,
   Directory stagingDir, {
-  EmptyOutputHook? emptyOutput,
   AnalysisContextBuilder? buildAnalysisContext,
   DiagnosticSink writeDiagnostic = _stderrSink,
 }) async {
@@ -677,7 +662,7 @@ Future<void> _runWithStaging(
 
   // Route each builder-emitted asset to the declared Bazel output file
   // whose basename matches the same `input_stem + <extension>` pattern.
-  // Multi-output builders (e.g. injectable_config_builder emitting both
+  // Multi-output builders (e.g. a builder emitting both
   // `.config.dart` and `.module.dart`) declare one `--output` per extension
   // and the shim writes each emitted asset to the correct declared path.
   // For multi-stage pipelines we only care about the last (primary)
@@ -692,20 +677,12 @@ Future<void> _runWithStaging(
   final claimed = <AssetId>{};
   for (final outPath in absOutputPaths) {
     final match = _matchEmittedAssetFor(outPath, inputId, emitted, claimed);
-    late final List<int> bytes;
-    if (match != null) {
-      claimed.add(match);
-      bytes = emitted[match]!;
-    } else {
-      // No matching emission — provide the empty-output sentinel (builder
-      // saw no relevant annotations). Bazel still requires the declared
-      // file to exist.
-      final outExt = _outputExtensionFor(inputId, outPath);
-      bytes = emptyOutput != null
-          ? await emptyOutput(inputId, outExt)
-          : const <int>[];
-    }
-    await File(outPath).writeAsBytes(bytes);
+    // No matching emission (the builder saw no relevant annotations):
+    // write an empty file, since Bazel still requires the declared output.
+    if (match != null) claimed.add(match);
+    await File(
+      outPath,
+    ).writeAsBytes(match != null ? emitted[match]! : const <int>[]);
   }
 }
 
@@ -720,8 +697,8 @@ Future<void> _runWithStaging(
 /// 2. Basename match: the emitted AssetId's basename equals the declared
 ///    file's basename (handles builders that rewrite the stem entirely).
 ///
-/// Returns `null` when no unclaimed candidate matches (caller writes the
-/// [EmptyOutputHook] sentinel).
+/// Returns `null` when no unclaimed candidate matches (caller writes an
+/// empty file).
 AssetId? _matchEmittedAssetFor(
   String declaredPath,
   AssetId inputId,
@@ -746,20 +723,6 @@ AssetId? _matchEmittedAssetFor(
     if (p.basename(id.path) == declaredBasename) return id;
   }
   return null;
-}
-
-/// Returns the extension of [outputPath] relative to [inputId]'s stem —
-/// e.g. `user.dart` input + `user.g.dart` output → `.g.dart`. Used to
-/// pick the right empty-output sentinel.
-String _outputExtensionFor(AssetId inputId, String outputPath) {
-  final outName = p.basename(outputPath);
-  final inStem = p.basenameWithoutExtension(inputId.path);
-  if (outName.startsWith('$inStem.')) {
-    return outName.substring(inStem.length);
-  }
-  // Fall back: whatever's after the last dot.
-  final dot = outName.indexOf('.');
-  return dot < 0 ? '' : outName.substring(dot);
 }
 
 /// Builds allowedOutputs AssetIds from the rule-declared `--output` paths.

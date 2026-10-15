@@ -48,10 +48,6 @@ type builderInfo struct {
 	// that needs the combining-shim stage to merge into a final `.g.dart`.
 	SharedPart bool
 
-	// Aggregate means the builder is a PackageBuilder; emits one
-	// dart_aggregate_codegen target rather than a per-file dart_codegen.
-	Aggregate bool
-
 	// RuntimeDep is the runtime dart_library label to add to the consumer's
 	// `dart_library.deps` (set via `dart_builder_runtime_dep` directive).
 	RuntimeDep string
@@ -211,18 +207,6 @@ func defaultBuilders() []*builderInfo {
 			Consumes:   []string{".dart"},
 			SharedPart: true,
 			RuntimeDep: "@pub_deps//:go_router",
-		},
-		{
-			Annotation: "InjectableInit",
-			ShimLabel:  "@rules_dart//dart/ext/injectable:shim_config",
-			Macro:      "@rules_dart//dart/ext/injectable:defs.bzl%injectable_library",
-			// injectable_config_builder emits both `.config.dart` and
-			// `.module.dart` per init source. Both are declared so
-			// Gazelle can filter generated sources consistently.
-			Produces:   []string{".config.dart", ".module.dart"},
-			Consumes:   []string{".dart"},
-			Aggregate:  true,
-			RuntimeDep: "@pub_deps//:injectable",
 		},
 		{
 			Annotation: "DriftDatabase",

@@ -4,7 +4,7 @@
 
 Run the `package:build` `Builder` ecosystem (`json_serializable`,
 `freezed`, `built_value`, `mockito`, `go_router`, `copy_with_extension_gen`,
-`injectable`, `stacked`, `drift`) under Bazel without `build_runner`.
+`stacked`, `drift`) under Bazel without `build_runner`.
 Users write Dart with `@JsonSerializable`, `@freezed`, `@DriftDatabase`,
 `@StackedApp`, etc., and Bazel produces the generated code as regular
 build outputs.
@@ -44,7 +44,6 @@ dart/ext/
 ├── mockito/
 ├── go_router/
 ├── copy_with_extension_gen/
-├── injectable/                Two-stage: shim_metadata + shim_config.
 ├── stacked/                   Six independent LibraryBuilders.
 ├── drift/                     Four-stage: prep + discover/analyzer/driftBuilder.
 └── tools/
@@ -69,8 +68,7 @@ All shim CLIs share this contract (`dart/ext/lib/builder_shim.dart:ShimArgs.pars
                                          package (preserves lib/src/...).
 --output <path>                          Declared output file. Repeatable — one
                                          per declared Bazel output (for multi-
-                                         output builders like injectable's
-                                         config stage, which emits both
+                                         output builders that emit both
                                          `.config.dart` and `.module.dart`).
 --package <name>                         Owning Dart package name (required).
 --root-language-version <major.minor>    Consumer's language version (required).
@@ -114,7 +112,7 @@ the shim verbatim as `--config`:
   before any Builder runs.
 - The decoded map is passed unmodified as `BuilderOptions(config)` to
   **every** stage's builder factory in the target's pipeline; multi-stage
-  shims (drift's sub-builders, injectable's metadata + config stages) all
+  shims (drift's sub-builders) all
   see the same options.
 - Keys and values are builder-defined — the same names the builder accepts
   under `options:` in `build.yaml`. rules_dart does not read `build.yaml`
@@ -261,10 +259,6 @@ codegen chain:
 - **Fan-out annotation** (e.g. `@StackedApp` drives five sub-builders)
   → emit one `dart_codegen` primitive per sub-builder, plus a wrapping
   `dart_library` with every generated output in `srcs`.
-- **Directory-level aggregate** (`@InjectableInit`) → emit a single
-  `injectable_library(...)` macro for the whole directory; `srcs`
-  covers every file so the metadata stage sees them all, `init_src`
-  points at the `@InjectableInit` file.
 - **Generated files** (`.g.dart`, `.freezed.dart`, `.mocks.dart`,
   `.config.dart`, `.module.dart`, any registered `produces=` extension)
   are excluded from `dart_library` srcs — see `filterOutGeneratedFiles`
@@ -413,7 +407,6 @@ configuration.
 | `mockito`                                        | `e2e/ext_exemplar/mockito/`           | `@GenerateMocks` (cross-file), `@GenerateNiceMocks`, `MockSpec(as:)`, `OnMissingStub.returnDefault`                                                                    |
 | `go_router_builder`                              | `e2e/ext_exemplar/go_router/`         | `@TypedGoRoute` + nested routes + path params (structural test via local pure-Dart `go_router` stub)                                                                   |
 | `copy_with_extension_gen`                        | `e2e/ext_exemplar/copy_with/`         | `@CopyWith()`, per-field shortcuts, `copyWithNull`, `@CopyWithField(immutable:)`                                                                                       |
-| `injectable` / `injectable_generator`            | `e2e/ext_exemplar/injectable/`        | Macro + primitive pipelines, `@injectable`, `@singleton`, `@lazySingleton`, `@module`, `@Named`, `@Environment`                                                        |
 | `drift` / `drift_dev`                            | `e2e/ext_exemplar/drift/`             | `@DriftDatabase(include: {'…drift'})`, Dart-only tables with FK, `@DriftAccessor` DAO, `TypeConverter`, multi-table joins via both Dart DSL and `.drift` named queries |
 | `stacked` / `stacked_generator` (6 sub-builders) | `e2e/ext_exemplar/stacked/`           | `@StackedApp` → locator (behavioral) + router/dialog/bottomsheet/logger (structural); `@FormView` → form (structural)                                                  |
 

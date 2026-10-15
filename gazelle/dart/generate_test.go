@@ -102,7 +102,7 @@ func TestDefaultBuildersIncludesShipped(t *testing.T) {
 	}
 	for _, want := range []string{
 		"JsonSerializable", "freezed", "Freezed", "CopyWith",
-		"GenerateMocks", "TypedGoRoute", "InjectableInit",
+		"GenerateMocks", "TypedGoRoute",
 		"DriftDatabase", "StackedApp", "FormView", "SerializersFor",
 	} {
 		if r.lookup(want) == nil {

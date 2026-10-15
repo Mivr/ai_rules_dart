@@ -2,9 +2,7 @@
 
 Unlike per-file `dart_codegen`, `dart_aggregate_codegen` takes ALL sources
 in a Dart package and produces one or more aggregate outputs. Used by
-builders like `injectable_generator`'s config stage (DI container +
-optional modules) and any `PackageBuilder` that needs a whole-package
-view of metadata.
+any `PackageBuilder` that needs a whole-package view of metadata.
 
 The generator (`generator` binary or `generator_script`) receives:
 
@@ -13,7 +11,7 @@ The generator (`generator` binary or `generator_script`) receives:
   - `--input-asset-extra <exec>|<asset>` (repeatable): one per additional
     source in `srcs`. Exposed to the Builder as primary asset inputs.
   - `--output <path>` (repeatable): one per `outputs` entry. Multi-output
-    aggregates (e.g. injectable config emitting both `.config.dart` and
+    aggregates (e.g. a builder emitting both `.config.dart` and
     `.module.dart`) declare all paths here.
   - `--dep <exec>|<asset>` (repeatable): one per auto-staged sibling.
   - `--part <path>` (repeatable): each `parts` entry.
@@ -30,9 +28,9 @@ Usage:
     dart_aggregate_codegen(
         name = "di_config",
         srcs = [":metadata_shards"] + SAME_PACKAGE_SOURCES,
-        generator_bin = "@rules_dart//dart/ext/injectable:shim_config",
+        generator_bin = "//tools:my_aggregate_shim",
         outputs = ["lib/main.config.dart", "lib/main.module.dart"],
-        deps = ["@pub_deps//:injectable"],
+        deps = ["@pub_deps//:my_annotations"],
         package_name = "my_app",
     )
 
@@ -174,7 +172,7 @@ dart_aggregate_codegen = rule(
                   "`--input-asset-extra` and staged so the Builder's " +
                   "`findAssets` / `readAsString` see them. Typically a " +
                   "mix of `.dart` source files and generated data shards " +
-                  "(e.g. `.injectable.json` for the injectable aggregate).",
+                  "(e.g. `.metadata.json` shards from a per-file stage).",
             allow_files = True,
             mandatory = True,
         ),
@@ -201,7 +199,7 @@ dart_aggregate_codegen = rule(
         "outputs": attr.string_list(
             doc = "Output file paths (package-relative). One entry per " +
                   "builder-produced extension — e.g. `['lib/app.config.dart', " +
-                  "'lib/app.module.dart']` for injectable's config stage.",
+                  "'lib/app.module.dart']` for a builder emitting both.",
             mandatory = True,
         ),
         "package_name": attr.string(

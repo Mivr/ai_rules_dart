@@ -112,10 +112,6 @@ func macroLoadInfos() []rule.LoadInfo {
 			Symbols: []string{"copy_with_library"},
 		},
 		{
-			Name:    "@rules_dart//dart/ext/injectable:defs.bzl",
-			Symbols: []string{"injectable_library"},
-		},
-		{
 			Name:    "@rules_dart//dart/ext/drift:defs.bzl",
 			Symbols: []string{"drift_library"},
 		},
