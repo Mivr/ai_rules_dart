@@ -9,3 +9,19 @@ dart_test(
     main = "cwd_test.dart",
     deps = ["@ext_pub_deps//:test"],
 )
+
+# `env` reaches the test, with location functions expanded against `data`.
+dart_test(
+    name = "env_test",
+    size = "small",
+    data = ["data.txt"],
+    env = {
+        "DATA_RLOCATIONPATH": "$(rlocationpath data.txt)",
+        "PLAIN": "as written",
+    },
+    main = "env_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)

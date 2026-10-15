@@ -69,7 +69,7 @@ def runfiles_path(f, workspace_name):
         return f.short_path[3:]
     return workspace_name + "/" + f.short_path
 
-def create_test_executable(ctx, tool, env):
+def create_test_executable(ctx, tool, env, env_inherit = []):
     """Create a test executable by symlinking a pre-compiled tool binary.
 
     Handles .exe extension on Windows. Returns the executable file and a
@@ -79,6 +79,8 @@ def create_test_executable(ctx, tool, env):
         ctx: The rule context.
         tool: The pre-compiled tool target (from a cfg="exec" attr).
         env: Dict of environment variable names to values for RunEnvironmentInfo.
+        env_inherit: Names of variables passed through from the environment
+            the test is started in.
 
     Returns:
         Tuple of (executable File, RunEnvironmentInfo provider, tool runfiles).
@@ -95,7 +97,7 @@ def create_test_executable(ctx, tool, env):
         is_executable = True,
     )
 
-    env_info = testing.TestEnvironment(env)
+    env_info = RunEnvironmentInfo(environment = env, inherited_environment = env_inherit)
     tool_runfiles = tool[DefaultInfo].default_runfiles
 
     return executable, env_info, tool_runfiles

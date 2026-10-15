@@ -143,10 +143,15 @@ def _dart_test_impl(ctx):
         env["RULES_DART_TEST_MAIN"] = runfiles_path(ctx.file.main, workspace_name)
         env["RULES_DART_TEST_PATH"] = _test_path(ctx)
         runner_files = [runner, ctx.file.main]
+    for key, value in ctx.attr.env.items():
+        if key.startswith("RULES_DART_"):
+            fail("%s: `env` cannot set %s; rules_dart uses the RULES_DART_ prefix to drive the test" % (ctx.label, key))
+        env[key] = ctx.expand_location(value, ctx.attr.data)
     executable, env_info, tool_runfiles = create_test_executable(
         ctx,
         ctx.attr._tool,
         env = env,
+        env_inherit = ctx.attr.env_inherit,
     )
 
     # A dep's `lib/**` non-Dart files are part of the package at run time under
@@ -300,6 +305,14 @@ with the code-asset mapping embedded (`gen_kernel --native-assets`), and the lib
 runfiles so the Dart VM resolves them — no `dart:ffi` ceremony in the test source. Each entry \
 must provide `DartCodeAssetInfo` (see the `dart_code_asset` rule).""",
             providers = [DartCodeAssetInfo],
+        ),
+        "env": attr.string_dict(
+            doc = """Environment variables set when the test runs. Values expand \
+`$(rlocationpath ...)` and the other location functions for labels in `data`, so a test can be \
+told where a runfile is (resolve it with `Runfiles.rlocation()`).""",
+        ),
+        "env_inherit": attr.string_list(
+            doc = "Names of environment variables passed through from the environment `bazel test` runs in.",
         ),
         "_tool": attr.label(
             default = "//dart/private/tools:test_runner",
