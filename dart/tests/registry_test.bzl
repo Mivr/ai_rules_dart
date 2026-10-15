@@ -32,6 +32,15 @@ def _prerelease_in_range_test_impl(ctx):
     asserts.equals(env, ["@rules_dart//dart/ext/sqlite3:code_asset"], curated_code_assets("sqlite3", "2.0.0"))
     return unittest.end(env)
 
+def _single_version_entry_test_impl(ctx):
+    # `//dart/ext/webcrypto` compiles the 0.6.1 archive, whose symbol table the
+    # Dart side indexes by position: neighbouring versions get nothing.
+    env = unittest.begin(ctx)
+    asserts.equals(env, ["@rules_dart//dart/ext/webcrypto:code_asset"], curated_code_assets("webcrypto", "0.6.1"))
+    asserts.equals(env, [], curated_code_assets("webcrypto", "0.6.0"))
+    asserts.equals(env, [], curated_code_assets("webcrypto", "0.6.2"))
+    return unittest.end(env)
+
 def _curated_packages_test_impl(ctx):
     # Sorted order is part of the contract: rules_flutter renders this list
     # into its own "packages with a replacement" diagnostic, and an unstable
@@ -63,6 +72,7 @@ _t2_test = unittest.make(_unknown_package_test_impl)
 _t3_test = unittest.make(_prerelease_in_range_test_impl)
 _t4_test = unittest.make(_curated_packages_test_impl)
 _t5_test = unittest.make(_labels_resolve_from_foreign_repo_test_impl)
+_t6_test = unittest.make(_single_version_entry_test_impl)
 
 def registry_test_suite(name):
     """Declares the curated-registry unit tests.
@@ -70,4 +80,4 @@ def registry_test_suite(name):
     Args:
       name: Name of the generated `test_suite`.
     """
-    small_unittest_suite(name, _t0_test, _t1_test, _t2_test, _t3_test, _t4_test, _t5_test)
+    small_unittest_suite(name, _t0_test, _t1_test, _t2_test, _t3_test, _t4_test, _t5_test, _t6_test)

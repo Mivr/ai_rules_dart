@@ -109,6 +109,9 @@ file at runtime — keep file lists current as the repo evolves.
 **Files**:
 
 - `MODULE.bazel` — `bazel_dep()` version strings
+- `MODULE.bazel` — the `webcrypto_pub_archive` `http_archive` (not on BCR): a
+  new `package:webcrypto` release means a new url and sha256, and moving the
+  `webcrypto` bound in `dart/ext/registry.bzl` to that exact version
 - E2e workspaces that duplicate deps:
   - `e2e/smoke/MODULE.bazel` — `bazel_skylib`, `rules_shell`
   - `e2e/codegen/MODULE.bazel` — `bazel_skylib`

@@ -40,6 +40,15 @@ _ENTRIES = {
             labels = ["@rules_dart//dart/ext/sqlite3:code_asset"],
         ),
     ],
+    # The native library is built from the 0.6.1 archive itself, and its symbol
+    # table must match the Dart side index for index: one version only.
+    "webcrypto": [
+        struct(
+            min_version = "0.6.1",
+            max_version = "0.6.2",
+            labels = ["@rules_dart//dart/ext/webcrypto:code_asset"],
+        ),
+    ],
 }
 
 def curated_code_assets(package_name, version):

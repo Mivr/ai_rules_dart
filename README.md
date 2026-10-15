@@ -584,7 +584,7 @@ The [`e2e/`](e2e/) directory contains complete working examples:
 | [`pub_lock_conflict`](e2e/pub_lock_conflict/)         | Version conflict detection across lock files                                             |
 | [`pub_lock_cross_module`](e2e/pub_lock_cross_module/) | `pub.from_lock()` across Bazel module boundaries                                         |
 | [`codegen`](e2e/codegen/)                             | `dart_codegen`/`dart_aggregate_codegen` over parts, re-exports and source sets           |
-| [`ext_exemplar`](e2e/ext_exemplar/)                   | One package per bundled `dart/ext` builder, plus native `code_assets` via sqlite3        |
+| [`ext_exemplar`](e2e/ext_exemplar/)                   | One package per bundled `dart/ext` builder, plus native `code_assets`, sqlite3/webcrypto |
 | [`dual_build`](e2e/dual_build/)                       | Collision detection between Bazel-generated and `build_runner`-generated sources         |
 | [`link_hook`](e2e/link_hook/)                         | `record_use` and a package's `hook/link.dart` emitting a data asset via `dart_link_hook` |
 

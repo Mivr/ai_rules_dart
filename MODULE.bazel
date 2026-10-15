@@ -39,6 +39,18 @@ bazel_dep(name = "rules_go", version = "0.63.0", repo_name = "io_bazel_rules_go"
 bazel_dep(name = "rules_cc", version = "0.2.25")
 bazel_dep(name = "sqlite3", version = "3.53.4")
 
+# Sources for //dart/ext/webcrypto: the pub archive itself, for its C glue and
+# the BoringSSL revision it vendors and generated its Dart bindings against.
+# Fetched only when that code asset is built.
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "webcrypto_pub_archive",
+    build_file = "//dart/ext/webcrypto:webcrypto.BUILD",
+    sha256 = "9885ed99a846191542dd6ca820c83a098117df56be57453832233a3fef68f3f2",
+    urls = ["https://pub.dev/api/archives/webcrypto-0.6.1.tar.gz"],
+)
+
 # On macOS, rules_cc leaves C++ to apple_support's toolchain. 2.9.0 builds that
 # toolchain's helper tools for macOS 11, the oldest Xcode 27's libc++ accepts
 # without a warning. Dev-only: the C++ toolchain is the consuming module's call.
