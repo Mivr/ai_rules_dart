@@ -65,10 +65,20 @@ def _dart_web_compile(ctx, compile_mode):
                 collect_transitive_resources(ctx.attr.deps).to_list())
     staged = stage_dart_project(ctx, packages, all_srcs)
 
+    # `dart compile wasm` writes more than the module: the `.mjs` loader that
+    # instantiates it, the `.support.js` feature check a page runs first, and
+    # a source map unless told not to. Undeclared, Bazel discards them and the
+    # `.wasm` cannot be run.
+    output_groups = {}
     if compile_mode == "js":
         output = ctx.actions.declare_file(ctx.label.name + ".js")
     else:
         output = ctx.actions.declare_file(ctx.label.name + ".wasm")
+        output_groups["mjs"] = ctx.actions.declare_file(ctx.label.name + ".mjs")
+        output_groups["support_js"] = ctx.actions.declare_file(ctx.label.name + ".support.js")
+        if "--no-source-maps" not in ctx.attr.dart_compile_flags:
+            output_groups["source_map"] = ctx.actions.declare_file(ctx.label.name + ".wasm.map")
+    outputs = [output] + output_groups.values()
 
     args = ctx.actions.args()
     args.add("compile")
@@ -92,7 +102,7 @@ def _dart_web_compile(ctx, compile_mode):
             direct = staged.inputs,
             transitive = [dart_sdk_info.tool_files],
         ),
-        outputs = [output],
+        outputs = outputs,
         mnemonic = "DartCompileWeb",
         progress_message = "Compiling Dart %s %s" % (compile_mode, ctx.label),
         env = env,
@@ -100,8 +110,9 @@ def _dart_web_compile(ctx, compile_mode):
 
     return [
         DefaultInfo(
-            files = depset([output]),
+            files = depset(outputs),
         ),
+        OutputGroupInfo(**{k: depset([v]) for k, v in output_groups.items()}),
         # See `dart_binary`: a web entrypoint is as analyzable as a VM one, and
         # as invalid a `deps` entry.
         own.analyzable,
@@ -146,5 +157,8 @@ dart_wasm_binary = rule(
     implementation = _dart_wasm_binary_impl,
     attrs = _WEB_BINARY_ATTRS,
     toolchains = ["//dart:toolchain_type"] + COPY_TO_DIRECTORY_TOOLCHAINS,
-    doc = "Compiles a Dart web application to WebAssembly via `dart compile wasm`. Requires a browser with WasmGC support.",
+    doc = "Compiles a Dart web application to WebAssembly via `dart compile wasm`. Requires a browser with WasmGC support.\n\n" +
+          "Outputs `<name>.wasm`, the `<name>.mjs` loader that instantiates it, `<name>.support.js`, and " +
+          "`<name>.wasm.map` unless `dart_compile_flags` has `--no-source-maps`. Each file but the module is " +
+          "also an output group (`mjs`, `support_js`, `source_map`), so a `filegroup` can pick one out.",
 )
