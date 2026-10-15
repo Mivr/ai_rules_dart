@@ -3,6 +3,7 @@ load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_option
 exports_files([
     "lock_a.lock",
     "lock_b.lock",
+    "lock_newer.lock",
 ])
 
 # lock_b has path 1.9.0 with on_version_conflict = "upgrade", so it
@@ -14,6 +15,14 @@ dart_binary(
         "@deps_a//:path",
         "@deps_b//:collection",
     ],
+)
+
+# lock_newer has get_it 9.3.0, newer than rules_dart's own tool lock, so this
+# builds only if rules_dart's lock yields to the root module's.
+dart_binary(
+    name = "newer_than_rules_dart",
+    main = "newer_than_rules_dart.dart",
+    deps = ["@deps_newer//:get_it"],
 )
 
 # The ruleset is a dep of the options file, not of `app`: a lint ruleset is not

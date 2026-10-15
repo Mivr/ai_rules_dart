@@ -291,10 +291,13 @@ Each in-repo Dart package is publishable to pub.dev. Maintenance includes:
 
   `dart/ext/` moves as a deliberate chore, not with the routine sweep. Its
   lock is `ext_pub_deps`, shared with every workspace that runs codegen, and
-  the pub extension fails the build when a package resolves to two versions
-  across locks. The graph rides the newest analyzer line every builder
-  accepts: today that is analyzer 14.x, while `build` stays on 4.x because
-  every generator except `source_gen` caps it below 5. `e2e/codegen`,
+  there is one version per package across all locks. `ext_pub_deps` sets
+  `on_version_conflict = "upgrade"`, so a consumer's newer version wins over
+  ours, but a consumer lock _older_ than ours for a shared package still
+  fails the build unless that consumer sets it too. The graph rides the
+  newest analyzer line every builder accepts: today that is analyzer 14.x,
+  while `build` stays on 4.x because every generator except `source_gen`
+  caps it below 5. `e2e/codegen`,
   `e2e/dart_test_pkg`, and rules_dart_proto's `dart_proto` set floors on
   `analyzer`/`package_config` in their pubspecs to keep their locks no older
   than this one. To bump:

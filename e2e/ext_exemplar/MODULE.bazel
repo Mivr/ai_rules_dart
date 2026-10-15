@@ -37,9 +37,8 @@ pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
 pub.from_lock(
     name = "pub_deps",
     lock = "//:pubspec.lock",
-    # rules_dart's ext_pub_deps pins analyzer 10.x / _fe_analyzer_shared 96.x;
-    # our user-visible deps resolve to older versions. Multi-version
-    # resolution isn't supported across modules, so accept the upgrade.
+    # This lock shares packages with rules_dart's own tool lock, which can be
+    # newer for some of them; there is one version per package, so take its.
     on_version_conflict = "upgrade",
 )
 
