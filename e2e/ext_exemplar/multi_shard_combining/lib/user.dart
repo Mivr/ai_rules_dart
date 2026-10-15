@@ -8,10 +8,10 @@ part 'user.g.dart';
 @CopyWith()
 class User {
   /// Creates a user.
-  User({required this.id, required this.name});
+  new({required this.id, required this.name});
 
   /// Deserializes a [User] from [json].
-  factory User.fromJson(Map<String, dynamic> json) => _$UserFromJson(json);
+  factory fromJson(Map<String, dynamic> json) => _$UserFromJson(json);
 
   /// The user's unique id.
   final int id;

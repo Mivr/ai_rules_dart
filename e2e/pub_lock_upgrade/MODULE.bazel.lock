@@ -261,7 +261,7 @@
     "@@rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
         "bzlTransitiveDigest": "vWv+vK3TkahBKIFUvsYo0CqXwEZIlAGmg1Agce6t2mk=",
-        "usagesDigest": "ysJwRSVnmqTzlycnWtsX5UVpM4XPjnAffa0a5pwzabU=",
+        "usagesDigest": "bx1I733iff+3SQEa9PKpqA/UULnasAJP8qS6FSDT42c=",
         "recordedInputs": [
           "REPO_MAPPING:rules_dart+,yaml.bzl yaml.bzl+",
           "FILE:@@//lock_a.lock 9ac542f735a2464e7832518796fd06830e0425972257d8dc91ca0cdd0fddd03c",
@@ -274,8 +274,8 @@
             "repoRuleId": "@@rules_dart+//dart/pub/private:pub_repository.bzl%pub_package",
             "attributes": {
               "package_name": "very_good_analysis",
-              "version": "10.3.0",
-              "sha256": "481af67ab5877af20325251dc215a4ebac7666a1c8cf09198ffd457bc612b33d",
+              "version": "11.0.0",
+              "sha256": "0bd5eb8d6be76aa0d71e70cbdae6cac8f784f761170568e3c2214a6948c7f6d3",
               "deps": []
             }
           },

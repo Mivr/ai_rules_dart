@@ -24,10 +24,7 @@ void main() {
       expect(generated, contains('GENERATED CODE - DO NOT MODIFY'));
       expect(
         generated,
-        anyOf(
-          contains('StackedDialogGenerator'),
-          contains('DialogsGenerator'),
-        ),
+        anyOf(contains('StackedDialogGenerator'), contains('DialogsGenerator')),
       );
       expect(
         generated,

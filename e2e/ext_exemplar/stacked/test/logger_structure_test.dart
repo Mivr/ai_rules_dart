@@ -26,10 +26,7 @@ void main() {
     expect(generated, contains('GENERATED CODE - DO NOT MODIFY'));
     expect(
       generated,
-      anyOf(
-        contains('StackedLoggerGenerator'),
-        contains('LoggerGenerator'),
-      ),
+      anyOf(contains('StackedLoggerGenerator'), contains('LoggerGenerator')),
     );
     expect(generated, contains("import 'package:logger/logger.dart'"));
   });

@@ -29,10 +29,8 @@ void main() {
     });
 
     test('.maybeWhen falls back to orElse for unhandled variants', () {
-      String describe(NetworkResult<int> r) => r.maybeWhen(
-        success: (data) => 'ok:$data',
-        orElse: () => 'other',
-      );
+      String describe(NetworkResult<int> r) =>
+          r.maybeWhen(success: (data) => 'ok:$data', orElse: () => 'other');
 
       expect(describe(const NetworkResult.success(7)), 'ok:7');
       expect(describe(const NetworkResult<int>.loading()), 'other');

@@ -32,7 +32,7 @@ const _elf32 = 1;
 const _elf64 = 2;
 
 class _Expectation {
-  const _Expectation(this.elfClass, this.machine, this.label);
+  const new(this.elfClass, this.machine, this.label);
 
   final int elfClass;
   final int machine;

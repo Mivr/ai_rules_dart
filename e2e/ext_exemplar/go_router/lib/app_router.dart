@@ -16,9 +16,7 @@ part 'app_router.g.dart';
 
 @TypedGoRoute<HomeRoute>(
   path: '/',
-  routes: [
-    TypedGoRoute<DetailsRoute>(path: 'details/:id'),
-  ],
+  routes: [TypedGoRoute<DetailsRoute>(path: 'details/:id')],
 )
 class HomeRoute extends GoRouteData with $HomeRoute {
   const HomeRoute();

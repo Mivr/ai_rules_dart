@@ -8,7 +8,7 @@
 /// Annotation marking a type-safe route. Applied to subclasses of
 /// [GoRouteData].
 class TypedGoRoute<T extends GoRouteData> {
-  const TypedGoRoute({
+  const new({
     required this.path,
     this.name,
     this.caseSensitive = true,
@@ -23,16 +23,12 @@ class TypedGoRoute<T extends GoRouteData> {
 
 /// Base class for classes annotated with [TypedGoRoute].
 abstract class GoRouteData {
-  const GoRouteData();
+  const new();
 }
 
 /// Annotation marking a type-safe relative route.
 class TypedRelativeGoRoute<T extends RelativeGoRouteData> {
-  const TypedRelativeGoRoute({
-    required this.path,
-    this.name,
-    this.caseSensitive = true,
-  });
+  const new({required this.path, this.name, this.caseSensitive = true});
 
   final String path;
   final String? name;
@@ -41,26 +37,24 @@ class TypedRelativeGoRoute<T extends RelativeGoRouteData> {
 
 /// Base class for classes annotated with [TypedRelativeGoRoute].
 abstract class RelativeGoRouteData {
-  const RelativeGoRouteData();
+  const new();
 }
 
 /// Annotation marking a type-safe shell route.
 class TypedShellRoute<T extends ShellRouteData> {
-  const TypedShellRoute({
-    this.routes = const <TypedGoRoute<GoRouteData>>[],
-  });
+  const new({this.routes = const <TypedGoRoute<GoRouteData>>[]});
 
   final List<TypedGoRoute<GoRouteData>> routes;
 }
 
 /// Base class for classes annotated with [TypedShellRoute].
 abstract class ShellRouteData {
-  const ShellRouteData();
+  const new();
 }
 
 /// Annotation marking a type-safe stateful shell route.
 class TypedStatefulShellRoute<T extends StatefulShellRouteData> {
-  const TypedStatefulShellRoute({
+  const new({
     this.branches = const <TypedStatefulShellBranch<StatefulShellBranchData>>[],
   });
 
@@ -69,19 +63,17 @@ class TypedStatefulShellRoute<T extends StatefulShellRouteData> {
 
 /// Base class for classes annotated with [TypedStatefulShellRoute].
 abstract class StatefulShellRouteData {
-  const StatefulShellRouteData();
+  const new();
 }
 
 /// Branch of a stateful shell route.
 class TypedStatefulShellBranch<T extends StatefulShellBranchData> {
-  const TypedStatefulShellBranch({
-    this.routes = const <TypedGoRoute<GoRouteData>>[],
-  });
+  const new({this.routes = const <TypedGoRoute<GoRouteData>>[]});
 
   final List<TypedGoRoute<GoRouteData>> routes;
 }
 
 /// Base class for branches of stateful shell routes.
 abstract class StatefulShellBranchData {
-  const StatefulShellBranchData();
+  const new();
 }

@@ -15,12 +15,6 @@ load(
     "dart_test",
 )
 
-# `Api` carries an inline `one_member_abstracts` ignore rather than this package
-# opting out of analysis. The lint wants a one-method abstract class turned into
-# a top-level function, and a function is not something `@GenerateMocks` can
-# mock — so the advice would delete the fixture. Suppressing it at the one
-# declaration keeps everything else here analyzed, including `api_test.dart`,
-# which is where the actual test logic lives.
 dart_library(
     name = "api",
     package_name = "mockito_fixture",

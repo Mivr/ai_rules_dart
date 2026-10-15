@@ -11,7 +11,7 @@ import 'package:meta/meta.dart' show RecordUse;
 @RecordUse()
 final class Glyph {
   /// Creates the glyph called [name].
-  const Glyph(this.name);
+  const new(this.name);
 
   /// The glyph's name in the icon set.
   final String name;

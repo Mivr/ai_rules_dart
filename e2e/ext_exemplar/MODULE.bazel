@@ -47,7 +47,7 @@ pub.from_lock(
 # it in the lock would make it a runtime dep of every `pub_deps` consumer.
 pub.package(
     name = "very_good_analysis",
-    sha256 = "481af67ab5877af20325251dc215a4ebac7666a1c8cf09198ffd457bc612b33d",
-    version = "10.3.0",
+    sha256 = "0bd5eb8d6be76aa0d71e70cbdae6cac8f784f761170568e3c2214a6948c7f6d3",
+    version = "11.0.0",
 )
 use_repo(pub, "pub_deps", "very_good_analysis")

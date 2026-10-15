@@ -29,12 +29,8 @@ import 'package:stacked_shared/stacked_shared.dart';
     LazySingleton<GreetingService>(classType: GreetingService),
     LazySingleton<CounterService>(classType: CounterService),
   ],
-  dialogs: [
-    StackedDialog(classType: InfoDialog),
-  ],
-  bottomsheets: [
-    StackedBottomsheet(classType: ConfirmSheet),
-  ],
+  dialogs: [StackedDialog(classType: InfoDialog)],
+  bottomsheets: [StackedBottomsheet(classType: ConfirmSheet)],
   logger: StackedLogger(logHelperName: 'getFixtureLogger'),
 )
 /// The @StackedApp anchor class; only the annotation matters.

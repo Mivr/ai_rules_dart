@@ -18,10 +18,7 @@ import 'nice_mock_test.mocks.dart';
 //      runtime and guarded here.
 @GenerateNiceMocks([
   MockSpec<Clock>(),
-  MockSpec<Clock>(
-    as: #NamedClock,
-    onMissingStub: OnMissingStub.returnDefault,
-  ),
+  MockSpec<Clock>(as: #NamedClock, onMissingStub: OnMissingStub.returnDefault),
 ])
 void main() {
   group('@GenerateNiceMocks — default MockSpec<Clock>', () {
