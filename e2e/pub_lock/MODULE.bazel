@@ -12,7 +12,9 @@ use_repo(dart, "dart_toolchains")
 
 register_toolchains("@dart_toolchains//:all")
 
-pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
+# Dev-only: a module whose pub packages serve only its own builds and tests
+# keeps them out of its consumers' resolution.
+pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub", dev_dependency = True)
 pub.from_lock(
     name = "pub_deps",
     lock = "//:pubspec.lock",

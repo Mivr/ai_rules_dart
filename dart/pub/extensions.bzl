@@ -78,10 +78,17 @@ def _pub_impl(ctx):
 
     # Handle individual package declarations — these take priority
     explicit = {}
+
+    # Repos the root module names, mapped to whether every naming is a
+    # `dev_dependency = True` usage: Bazel checks the root's `use_repo` calls
+    # against that split, and fails a dev-only root that reports non-dev repos.
+    root_repos = {}
     for mod in ctx.modules:
         for pkg in mod.tags.package:
             if pkg.name not in explicit:
                 explicit[pkg.name] = pkg
+            if mod.is_root:
+                root_repos[pkg.name] = root_repos.get(pkg.name, True) and ctx.is_dev_dependency(pkg)
 
     for name, pkg in explicit.items():
         pub_package(
@@ -106,13 +113,11 @@ def _pub_impl(ctx):
     # package being undeclared, naming neither the duplicate nor the two locks.
     hub_packages = {}
 
-    root_hub_names = {}
     for mod in ctx.modules:
-        is_root = (mod == ctx.modules[0])
         for lock_tag in mod.tags.from_lock:
             hub_name = lock_tag.name
-            if is_root:
-                root_hub_names[hub_name] = True
+            if mod.is_root:
+                root_repos[hub_name] = root_repos.get(hub_name, True) and ctx.is_dev_dependency(lock_tag)
             lock_content = ctx.read(lock_tag.lock)
             lock_pkgs = parse_pubspec_lock(lock_content)
 
@@ -240,7 +245,6 @@ def _pub_impl(ctx):
         )
 
     # Create per-from_lock hub repos
-    all_hub_names = []
     for hub_name, packages in hub_packages.items():
         pub_lock_hub(
             name = hub_name,
@@ -248,11 +252,10 @@ def _pub_impl(ctx):
             spoke_prefix = _SPOKE_PREFIX,
             packages = sorted(packages),
         )
-        all_hub_names.append(hub_name)
 
     return ctx.extension_metadata(
-        root_module_direct_deps = list(explicit.keys()) + list(root_hub_names.keys()),
-        root_module_direct_dev_deps = [],
+        root_module_direct_deps = [name for name, dev in root_repos.items() if not dev],
+        root_module_direct_dev_deps = [name for name, dev in root_repos.items() if dev],
     )
 
 pub = module_extension(
