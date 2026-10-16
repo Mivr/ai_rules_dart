@@ -918,8 +918,10 @@ class _DillOutlineStripper {
     _procOffset();
     final flags = _readUInt30();
     _out.writeUInt30(flags);
-    final isConst = (flags & 2) != 0; // Field.FlagConst = 1 << 1
-    final keepInit = isConst || isMixin;
+    final isFinal = (flags & 1) != 0;
+    final isConst = (flags & 2) != 0;
+    final isStatic = (flags & 4) != 0;
+    final keepInit = isConst || isMixin || (isFinal && !isStatic);
     _procName();
     final scopeSize = _readUInt30();
     _out.writeUInt30(keepInit ? scopeSize : 0);
@@ -979,12 +981,14 @@ class _DillOutlineStripper {
     _procOffset();
     _out.writeByte(_readByte()); // kind
     _out.writeByte(_readByte()); // stubKind
-    _out.writeUInt30(_readUInt30()); // flags
+    final flags = _readUInt30(); // flags
+    _out.writeUInt30(flags);
+    final isConst = (flags & 8) != 0; // Procedure.FlagConst
     _procName();
     _procExpressionList();
     _procCanonRef();
     _procOptionDartType();
-    _procFunctionNode(endOffset, keepBody: keepBody);
+    _procFunctionNode(endOffset, keepBody: keepBody || isConst);
   }
 
   void _procFunctionNode(int outerEndOffset, {required bool keepBody}) {
