@@ -42,11 +42,11 @@ _TOOLCHAIN = "//dart:exec_tools_toolchain_type"
 #
 # Where the value comes from: the analyzer's `ExperimentStatus.currentVersion`,
 # which is `_currentVersion` in `lib/src/dart/analysis/experiments.g.dart` of the
-# pinned analyzer (13.3.0: `'3.13.0'`). When the pin in `dart/ext/pubspec.lock`
+# pinned analyzer (14.5.0: `'3.14.0'`). When the pin in `dart/ext/pubspec.lock`
 # moves, read the new value there and update this constant. Re-vendor
 # `//third_party/dart_linter` from the same release at the same time, as its
 # README says. Lowering the value turns summary mode off for the SDKs above it.
-ANALYZER_MAX_LANGUAGE_VERSION = "3.13"
+ANALYZER_MAX_LANGUAGE_VERSION = "3.14"
 
 def _major_minor(version):
     """Returns `(major, minor)` of an SDK version such as `3.13.5`, or None.
@@ -207,10 +207,11 @@ def _analyzer_sdk_summary_impl(ctx):
     args.add("--sdk", sdk_root_path(dart_sdk_info))
     args.add("--out", summary)
     ctx.actions.run(
-        executable = ctx.executable._tool,
-        arguments = [args],
+        executable = dart_sdk_info.dart,
+        arguments = [ctx.executable._tool.path, args],
         inputs = depset(
-            transitive = [dart_sdk_info.analyze_files],
+            direct = [ctx.executable._tool, dart_sdk_info.dart],
+            transitive = [dart_sdk_info.analyze_files, dart_sdk_info.runtime_files],
         ),
         outputs = [summary],
         mnemonic = "DartAnalyzerSdkSummary",
@@ -360,11 +361,11 @@ def _dart_analyzer_summary_impl(target, ctx):
         args.add("--embedder-yaml", embedder_yaml)
         args.add("--out", embedder_sdk)
         ctx.actions.run(
-            executable = ctx.executable._tool,
-            arguments = [args],
+            executable = dart_sdk_info.dart,
+            arguments = [ctx.executable._tool.path, args],
             inputs = depset(
-                direct = files,
-                transitive = [dart_sdk_info.analyze_files, info.transitive_srcs, info.transitive_resources],
+                direct = [ctx.executable._tool, dart_sdk_info.dart] + files,
+                transitive = [dart_sdk_info.analyze_files, dart_sdk_info.runtime_files, info.transitive_srcs, info.transitive_resources],
             ),
             outputs = [embedder_sdk],
             mnemonic = "DartAnalyzerSdkSummary",
@@ -475,11 +476,11 @@ def _dart_analyzer_summary_impl(target, ctx):
         args.add("--uri", _package_uri(info, f))
     args.add_all(dependencies, before_each = "--summary")
     ctx.actions.run(
-        executable = ctx.executable._tool,
-        arguments = [args],
+        executable = dart_sdk_info.dart,
+        arguments = [ctx.executable._tool.path, args],
         inputs = depset(
-            direct = [config, sdk_summary] + srcs + staged,
-            transitive = [dart_sdk_info.analyze_files, dependencies],
+            direct = [ctx.executable._tool, dart_sdk_info.dart, config, sdk_summary] + srcs + staged,
+            transitive = [dart_sdk_info.analyze_files, dart_sdk_info.runtime_files, dependencies],
         ),
         outputs = [summary],
         mnemonic = "DartAnalyzerSummary",

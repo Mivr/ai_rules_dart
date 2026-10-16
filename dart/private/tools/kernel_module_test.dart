@@ -802,20 +802,12 @@ void main() {
       reason: 'mutable instance field initializer should be stripped',
     );
     expect(
-      _containsSubsequence(stripped, [
-        Tag.PositiveIntLiteral,
-        0,
-        88,
-      ]),
+      _containsSubsequence(stripped, [Tag.PositiveIntLiteral, 0, 88]),
       isTrue,
       reason: 'const procedure body (e.g. extension type const constructor) must be preserved',
     );
     expect(
-      _containsSubsequence(stripped, [
-        Tag.PositiveIntLiteral,
-        0,
-        66,
-      ]),
+      _containsSubsequence(stripped, [Tag.PositiveIntLiteral, 0, 66]),
       isFalse,
       reason: 'non-const procedure body should be stripped',
     );
