@@ -345,7 +345,9 @@ invalid GitHub user ID for aran` (aran's id is `5295`). Cause: `publish-to-bcr`
    alike. Three quick 200s in a row passed while the flapping continued. Before telling
    downstreams to pin, require about ten consecutive 200s spread over a few minutes
    (~15s apart) for a plain `curl -sI .../<version>/MODULE.bazel` (the URL Bazel
-   fetches), and warn them a stale 404 may linger for up to an hour.
+   fetches), and warn them a stale 404 may linger for up to an hour. Budget for it: on
+   the 0.7.3 train both rules_dart and rules_dart_proto flapped for about an hour after
+   their PRs merged.
 
 6. **Verify pub.dev**: the `dart/runfiles` package published at `${TARGET#v}`.
 
