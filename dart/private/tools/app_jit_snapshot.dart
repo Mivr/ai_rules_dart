@@ -39,8 +39,13 @@
 // between builds, whatever this tool does.
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 void main(List<String> argv) {
+  if (argv.isNotEmpty && argv.first == '--aot') {
+    _runAot(argv.sublist(1));
+    return;
+  }
   String? dart;
   String? dartvm;
   String? sdkVersion;
@@ -167,12 +172,6 @@ void _installCopy(String source, String target) {
   }
   final tmp = File('$target.$pid.${Random().nextInt(1 << 31)}.tmp');
   src.copySync(tmp.path);
-  final chmod = Process.runSync('chmod', ['+x', tmp.path]);
-  if (chmod.exitCode != 0) {
-    tmp.deleteSync();
-    stderr.write(chmod.stderr as String);
-    exit(chmod.exitCode);
-  }
   tmp.renameSync(target);
 }
 
@@ -279,7 +278,9 @@ int _trainInScratch({
 /// Copies every file under [from] to the same relative place under [to].
 void _copyTree(String from, String to) {
   final source = Directory(from);
-  for (final entity in source.listSync(recursive: true)) {
+  final entities = source.listSync(recursive: true)
+    ..sort((a, b) => a.path.compareTo(b.path));
+  for (final entity in entities) {
     if (entity is File) {
       final relative = entity.path.substring(source.path.length + 1);
       _copyFile(entity.path, '$to/$relative');
@@ -292,4 +293,195 @@ void _copyFile(String from, String to) {
   final parent = File(to).parent;
   parent.createSync(recursive: true);
   File(from).copySync(to);
+}
+
+/// Compiles a pre-built kernel `.dill` to an AOT snapshot (`--mode=aot-snapshot`)
+/// or self-contained AOT executable (`--mode=exe`) without invoking `dartdev`.
+///
+/// `dart compile exe` runs through `dartdev`, which walks ancestor directories
+/// up to `/` probing `pubspec.yaml` and `.dart_tool/package_config.json` (for
+/// native-asset hook discovery) and spawns `/usr/bin/chmod` via `PATH`. Driving
+/// `gen_snapshot --deterministic` directly and appending the ELF snapshot onto
+/// a copy of `dartaotruntime` (which already carries `0755` permissions) keeps
+/// the compile strictly hermetic inside the action sandbox.
+void _runAot(List<String> argv) {
+  String? dart;
+  String? mode;
+  String? recordedUses;
+  String? outputPath;
+  String? dillPath;
+  var enableAsserts = false;
+  final extraGenSnapshotOptions = <String>[];
+
+  for (var i = 0; i < argv.length; i++) {
+    final arg = argv[i];
+    if (arg == '--enable-asserts') {
+      enableAsserts = true;
+    } else if (arg == '--verbosity=error') {
+      // Ignored: gen_snapshot is silent on success.
+    } else if (arg.startsWith('--dart=')) {
+      dart = arg.substring('--dart='.length);
+    } else if (arg.startsWith('--mode=')) {
+      mode = arg.substring('--mode='.length);
+    } else if (arg.startsWith('--recorded-uses=')) {
+      recordedUses = arg.substring('--recorded-uses='.length);
+    } else if (arg.startsWith('--extra-gen-snapshot-options=')) {
+      final opts = arg.substring('--extra-gen-snapshot-options='.length);
+      for (final opt in opts.split(',')) {
+        if (opt.isNotEmpty) extraGenSnapshotOptions.add(opt);
+      }
+    } else if (arg == '-o') {
+      outputPath = argv[++i];
+    } else if (arg.startsWith('-o=')) {
+      outputPath = arg.substring('-o='.length);
+    } else if (!arg.startsWith('-')) {
+      dillPath = arg;
+    } else {
+      stderr.writeln('app_jit_snapshot --aot: unknown argument $arg');
+      exit(64);
+    }
+  }
+
+  if (dart == null || mode == null || outputPath == null || dillPath == null) {
+    stderr.writeln(
+      'app_jit_snapshot --aot: --dart, --mode, -o, and input dill are required',
+    );
+    exit(64);
+  }
+
+  final sdkBin = File(dart).parent.path;
+  final dartaotruntime = '$sdkBin/dartaotruntime';
+  final genSnapshot = '$sdkBin/utils/gen_snapshot';
+
+  // On non-ELF hosts (e.g. macOS Mach-O executables), `dart compile exe` wraps
+  // the snapshot in a signed Mach-O segment; delegate to `dart compile` there.
+  if (mode == 'exe' && !_isElfFile(File(dartaotruntime))) {
+    final compileArgs = <String>[
+      'compile',
+      mode,
+      '--verbosity=error',
+      if (enableAsserts) '--enable-asserts',
+      if (recordedUses != null) '--recorded-uses=$recordedUses',
+      for (final opt in extraGenSnapshotOptions)
+        '--extra-gen-snapshot-options=$opt',
+      '-o',
+      outputPath,
+      dillPath,
+    ];
+    final res = Process.runSync(dart, compileArgs);
+    if (res.exitCode != 0) {
+      stdout.write(res.stdout as String);
+      stderr.write(res.stderr as String);
+      exit(res.exitCode);
+    }
+    return;
+  }
+
+  final tmpDir = Directory.systemTemp.createTempSync('dart_aot_');
+  try {
+    var activeDill = dillPath;
+    if (recordedUses != null) {
+      final productPlatform =
+          '$sdkBin/../lib/_internal/vm_platform_product.dill';
+      final strongPlatform = '$sdkBin/../lib/_internal/vm_platform_strong.dill';
+      final platformDill = File(productPlatform).existsSync()
+          ? productPlatform
+          : strongPlatform;
+      final recordedDill = '${tmpDir.path}/recorded.dill';
+      final gkRes = Process.runSync(dartaotruntime, [
+        '$sdkBin/snapshots/gen_kernel_aot.dart.snapshot',
+        '--platform=$platformDill',
+        '--aot',
+        '--tfa',
+        '--no-embed-sources',
+        '--from-dill=$dillPath',
+        '--recorded-usages-file=$recordedUses',
+        '-o',
+        recordedDill,
+        dillPath,
+      ]);
+      if (gkRes.exitCode != 0) {
+        stdout.write(gkRes.stdout as String);
+        stderr.write(gkRes.stderr as String);
+        exit(gkRes.exitCode);
+      }
+      activeDill = recordedDill;
+    }
+
+    final elfPath = mode == 'aot-snapshot'
+        ? outputPath
+        : '${tmpDir.path}/snapshot.elf';
+    final gsRes = Process.runSync(genSnapshot, [
+      '--deterministic',
+      '--snapshot_kind=app-aot-elf',
+      '--elf=$elfPath',
+      if (enableAsserts) '--enable_asserts',
+      ...extraGenSnapshotOptions,
+      activeDill,
+    ]);
+    if (gsRes.exitCode != 0) {
+      stdout.write(gsRes.stdout as String);
+      stderr.write(gsRes.stderr as String);
+      exit(gsRes.exitCode);
+    }
+
+    if (mode == 'exe') {
+      _writeAppAotElfExe(
+        dartaotruntime: File(dartaotruntime),
+        snapshotElf: File(elfPath),
+        output: File(outputPath),
+      );
+    }
+  } finally {
+    tmpDir.deleteSync(recursive: true);
+  }
+}
+
+bool _isElfFile(File file) {
+  if (!file.existsSync()) return false;
+  final raf = file.openSync();
+  try {
+    final magic = raf.readSync(4);
+    return magic.length == 4 &&
+        magic[0] == 0x7f &&
+        magic[1] == 0x45 &&
+        magic[2] == 0x4c &&
+        magic[3] == 0x46;
+  } finally {
+    raf.closeSync();
+  }
+}
+
+void _writeAppAotElfExe({
+  required File dartaotruntime,
+  required File snapshotElf,
+  required File output,
+}) {
+  const pageSize = 65536;
+  output.parent.createSync(recursive: true);
+  dartaotruntime.copySync(output.path);
+  final runtimeLen = output.lengthSync();
+  final padLen = (pageSize - (runtimeLen % pageSize)) % pageSize;
+  final offset = runtimeLen + padLen;
+
+  final raf = output.openSync(mode: FileMode.writeOnlyAppend);
+  try {
+    if (padLen > 0) {
+      raf.writeFromSync(Uint8List(padLen));
+    }
+    raf.writeFromSync(snapshotElf.readAsBytesSync());
+    final trailer = ByteData(16)
+      ..setUint64(0, offset, Endian.little)
+      ..setUint8(8, 0xdc)
+      ..setUint8(9, 0xdc)
+      ..setUint8(10, 0xf6)
+      ..setUint8(11, 0xf6)
+      ..setUint8(12, 0x00)
+      ..setUint8(13, 0x00)
+      ..setUint8(14, 0x00)
+      ..setUint8(15, 0x00);
+    raf.writeFromSync(trailer.buffer.asUint8List());
+  } finally {
+    raf.closeSync();
+  }
 }

@@ -417,6 +417,40 @@ def dart_compile_action(
         )
         return
 
+    if compile_mode in ("exe", "aot-snapshot") and jit_tool != None and compile_main_path == None and not target_os and not target_arch and not dart_bin.basename.endswith(".exe"):
+        pkg_cfg = package_config
+        if pkg_cfg == None:
+            pkg_cfg = ctx.actions.declare_file(output.basename + ".aot_package_config.json")
+            ctx.actions.write(output = pkg_cfg, content = "{\"configVersion\": 2, \"packages\": []}\n")
+        args = ctx.actions.args()
+        args.add(pkg_cfg, format = "--packages=%s")
+        args.add(jit_tool)
+        args.add("--aot")
+        args.add(dart_bin, format = "--dart=%s")
+        args.add(compile_mode, format = "--mode=%s")
+        args.add_all(compile_quiet_flags(compile_mode))
+        args.add_all(mode_flags)
+        outputs = [output]
+        if compile_recorded_uses != None:
+            args.add(compile_recorded_uses, format = "--recorded-uses=%s")
+            outputs.append(compile_recorded_uses)
+        args.add_all(backend_flags)
+        args.add("-o", output)
+        args.add(compile_main)
+        ctx.actions.run(
+            executable = dart_bin,
+            arguments = [args],
+            inputs = depset(
+                direct = [jit_tool, pkg_cfg, compile_main] + compile_srcs,
+                transitive = [sdk_files],
+            ),
+            outputs = outputs,
+            mnemonic = "DartCompile",
+            progress_message = "Compiling Dart %s %s" % (compile_mode, ctx.label),
+            env = writable_home_env(dart_bin, output),
+        )
+        return
+
     args = ctx.actions.args()
     args.add("compile")
     args.add(compile_mode)
