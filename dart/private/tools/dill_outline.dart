@@ -1,9 +1,33 @@
 // Strips a compiled Dart Kernel (`.dill`) component to a deterministic outline
 // component in-memory for modular `--input-summary` compilation.
+//
+// Outline soundness: any class that can be used as a mixin keeps its member
+// bodies and field initializers in the outline, because the VM mixin
+// transformation clones them into downstream mixin applications. That covers
+// `mixin` declarations, `mixin class` declarations, and every `class` in a
+// library whose language version is below 3.0.
+//
+// Format guard: reads the 32-bit kernel format version from the header and
+// accepts only [supportedKernelFormatVersions] (format version 138, used by
+// Dart 3.13.x). On any other version, logs a diagnostic to `stderr` and falls
+// back to returning the unstripped input `.dill` bytes unchanged, never
+// emitting a malformed `.dill`.
 
+import 'dart:io' show stderr;
 import 'dart:typed_data';
 
+/// The Dart Kernel binary format versions (`Tag.BinaryFormatVersion`) that
+/// [stripDillToOutline] and `stripSourceCodeFromDill` were written and tested
+/// for (format version 138, Dart SDK 3.13.x).
+///
+/// On any other format version, both strippers write a diagnostic to `stderr`
+/// and fall back to returning the unstripped input `.dill` bytes unchanged.
+const Set<int> supportedKernelFormatVersions = {Tag.BinaryFormatVersion};
+
 class Tag {
+  static const int ComponentFile = 0x90ABCDEF;
+  static const int BinaryFormatVersion = 138;
+
   static const int Nothing = 0;
   static const int Something = 1;
 
@@ -205,28 +229,92 @@ class ConstantTag {
   static const int RecordConstant = 17;
 }
 
-Uint8List stripDillToOutline(Uint8List bytes) {
+int _readUint32Be(Uint8List bytes, int offset) {
+  return ((bytes[offset] << 24) |
+          (bytes[offset + 1] << 16) |
+          (bytes[offset + 2] << 8) |
+          bytes[offset + 3]) >>>
+      0;
+}
+
+/// Strips a compiled Dart Kernel (`.dill`) component to a deterministic
+/// outline component in-memory for modular `--input-summary` compilation.
+///
+/// Reads the 32-bit kernel format version at byte offset 4 of each
+/// component's header and accepts only [supportedKernelFormatVersions]
+/// (version 138, Dart 3.13.x). On any other format version (or an invalid
+/// header), writes a diagnostic to [errSink] (defaulting to [stderr]) and
+/// falls back to returning [bytes] unstripped, never emitting a malformed
+/// `.dill`.
+Uint8List stripDillToOutline(Uint8List bytes, {StringSink? errSink}) {
+  final sink = errSink ?? stderr;
+  if (bytes.length < 18) {
+    sink.writeln(
+      'dill_outline: input too short for kernel header (${bytes.length} bytes); '
+      'falling back to unstripped dill.',
+    );
+    return bytes;
+  }
+  final magic = _readUint32Be(bytes, 0);
+  if (magic != Tag.ComponentFile) {
+    sink.writeln(
+      'dill_outline: invalid kernel magic 0x${magic.toRadixString(16)} '
+      '(expected 0x${Tag.ComponentFile.toRadixString(16)}); '
+      'falling back to unstripped dill.',
+    );
+    return bytes;
+  }
+  final formatVersion = _readUint32Be(bytes, 4);
+  if (!supportedKernelFormatVersions.contains(formatVersion)) {
+    sink.writeln(
+      'dill_outline: unsupported kernel format version $formatVersion '
+      '(supported: ${supportedKernelFormatVersions.join(', ')}); '
+      'falling back to unstripped dill.',
+    );
+    return bytes;
+  }
   final len = bytes.length;
-  final lastCompSize =
-      (bytes[len - 4] << 24) |
-      (bytes[len - 3] << 16) |
-      (bytes[len - 2] << 8) |
-      bytes[len - 1];
+  final lastCompSize = _readUint32Be(bytes, len - 4);
   if (lastCompSize == len) {
     return _DillOutlineStripper(bytes).strip();
   }
   final slices = <Uint8List>[];
   int end = len;
   while (end > 0) {
-    final compSize =
-        (bytes[end - 4] << 24) |
-        (bytes[end - 3] << 16) |
-        (bytes[end - 2] << 8) |
-        bytes[end - 1];
-    if (compSize <= 0 || compSize > end) {
-      throw StateError("Invalid sub-component size $compSize at end=$end");
+    if (end < 18) {
+      sink.writeln(
+        'dill_outline: invalid sub-component end offset $end; '
+        'falling back to unstripped dill.',
+      );
+      return bytes;
     }
-    slices.add(Uint8List.sublistView(bytes, end - compSize, end));
+    final compSize = _readUint32Be(bytes, end - 4);
+    if (compSize < 18 || compSize > end) {
+      sink.writeln(
+        'dill_outline: invalid sub-component size $compSize at end=$end; '
+        'falling back to unstripped dill.',
+      );
+      return bytes;
+    }
+    final slice = Uint8List.sublistView(bytes, end - compSize, end);
+    final sliceMagic = _readUint32Be(slice, 0);
+    if (sliceMagic != Tag.ComponentFile) {
+      sink.writeln(
+        'dill_outline: invalid sub-component kernel magic 0x${sliceMagic.toRadixString(16)}; '
+        'falling back to unstripped dill.',
+      );
+      return bytes;
+    }
+    final sliceVersion = _readUint32Be(slice, 4);
+    if (!supportedKernelFormatVersions.contains(sliceVersion)) {
+      sink.writeln(
+        'dill_outline: unsupported kernel format version $sliceVersion '
+        '(supported: ${supportedKernelFormatVersions.join(', ')}); '
+        'falling back to unstripped dill.',
+      );
+      return bytes;
+    }
+    slices.add(slice);
     end -= compSize;
   }
   final out = BytesBuilder(copy: false);
@@ -692,8 +780,10 @@ class _DillOutlineStripper {
     }
 
     _out.writeByte(_readByte()); // flags
-    _out.writeUInt30(_readUInt30()); // major
+    final major = _readUInt30();
+    _out.writeUInt30(major); // major
     _out.writeUInt30(_readUInt30()); // minor
+    final isLegacyLibrary = major < 3;
     _procCanonRef(); // canonicalName
     _procStringRef(); // name
     _procUriRef(); // fileUri
@@ -752,7 +842,7 @@ class _DillOutlineStripper {
     for (int i = 0; i < clsCount; i++) {
       _pos = inClassOffsets[i];
       outClassOffsets[i] = _out.length;
-      _procClass(inClassOffsets[i + 1]);
+      _procClass(inClassOffsets[i + 1], isLegacyLibrary: isLegacyLibrary);
     }
     _pos = inClassOffsets[clsCount];
     outClassOffsets[clsCount] = _out.length;
@@ -852,7 +942,7 @@ class _DillOutlineStripper {
     _out.writeUInt32(pCount);
   }
 
-  void _procClass(int endOffset) {
+  void _procClass(int endOffset, {required bool isLegacyLibrary}) {
     final savedPos = _pos;
     _pos = endOffset - 4;
     final procCount = _readUInt32();
@@ -871,7 +961,10 @@ class _DillOutlineStripper {
     _procOffset();
     final flags = _readUInt30();
     _out.writeUInt30(flags);
-    final isMixin = (flags & ((1 << 4) | (1 << 8))) != 0;
+    // Any class that can be used as a mixin must keep its member bodies and
+    // field initializers: `mixin` (1 << 4), `mixin class` (1 << 8), and every
+    // class in a library whose language version is below 3.0.
+    final isMixin = isLegacyLibrary || (flags & ((1 << 4) | (1 << 8))) != 0;
     _procStringRef();
     _procExpressionList();
     _procTypeParameterList();

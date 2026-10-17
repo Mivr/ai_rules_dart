@@ -171,8 +171,7 @@ dart_binary(
     visibility = ["//visibility:public"],
 )
 
-# The planner's unit tests. They drive `compileModule` with a recording compiler, so
-# they need no `kernel_worker`, and they run the same planner the tool runs.
+# The planner's and outline stripper's unit tests.
 dart_test(
     name = "kernel_module_test",
     size = "small",
@@ -181,6 +180,7 @@ dart_test(
         "kernel_link.dart",
         "kernel_module.dart",
     ],
+    data = ["//dart"],
     main = "kernel_module_test.dart",
     deps = ["@ext_pub_deps//:test"],
 )

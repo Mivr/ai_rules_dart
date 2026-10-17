@@ -33,6 +33,16 @@
 // component compiles against only the kernels it reaches, passed as `--input-summary`,
 // and a kernel is written after every kernel it imports.
 //
+// When `--output-outline` is given, each compiled component is also stripped to a
+// deterministic outline `.dill` (`stripDillToOutline`) in the `.koutline` directory
+// for downstream `--input-summary` compiles, while the `.kmod` directory keeps the
+// full component with embedded source text stripped (`stripSourceCodeFromDill`). Any
+// class that can be used as a mixin (`mixin`, `mixin class`, and every class in a
+// library whose language version is below 3.0) keeps its member bodies and field
+// initializers in `.koutline`. Both strippers check the 32-bit kernel format version
+// in the header (accepting version 138, Dart 3.13.x) and log a diagnostic to `stderr`
+// while falling back to the unstripped `.dill` bytes on any other version.
+//
 // A dependent module names its dependencies' directories with `--input-kmod`. It reads
 // their indexes, and each component compiles against the kernels it reaches through
 // them.
@@ -2053,13 +2063,30 @@ Uint8List _encodeResponse(int exitCode, String output, int requestId) {
 /// `.dill` bytes). The VM uses `lineStarts` (not `sourceCode`) for stack traces and
 /// `SourceReport` coverage, and downstream `--input-linked` compiles read only
 /// library outlines.
-Uint8List stripSourceCodeFromDill(Uint8List data) =>
-    _stripSourceCodeFromDill(data);
+///
+/// Format guard: reads the 32-bit kernel format version at byte offset 4 of the
+/// header and accepts only [supportedKernelFormatVersions] (version 138, Dart
+/// 3.13.x). On any other format version, writes a diagnostic to [errSink]
+/// (defaulting to [stderr]) and falls back to returning [data] unstripped,
+/// never emitting a malformed `.dill`.
+Uint8List stripSourceCodeFromDill(Uint8List data, {StringSink? errSink}) =>
+    _stripSourceCodeFromDill(data, errSink: errSink);
 
-Uint8List _stripSourceCodeFromDill(Uint8List data) {
-  if (data.length < 48) return data;
+Uint8List _stripSourceCodeFromDill(Uint8List data, {StringSink? errSink}) {
+  final sink = errSink ?? stderr;
+  if (data.length < 8) return data;
   final bd = ByteData.sublistView(data);
-  if (bd.getUint32(0) != 0x90abcdef) return data;
+  if (bd.getUint32(0) != Tag.ComponentFile) return data;
+  final version = bd.getUint32(4);
+  if (!supportedKernelFormatVersions.contains(version)) {
+    sink.writeln(
+      'kernel_module: unsupported kernel format version $version '
+      '(supported: $supportedKernelFormatVersions); '
+      'falling back to unstripped dill.',
+    );
+    return data;
+  }
+  if (data.length < 48) return data;
   final size = bd.getUint32(data.length - 4);
   if (size != data.length) return data;
   final libCount = bd.getUint32(data.length - 8);

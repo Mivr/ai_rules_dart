@@ -5,10 +5,18 @@ executable's own kernel. With 30 tests, `package:test` is compiled 30 times, and
 one-line edit in a leaf library recompiles every test that reaches it.
 
 Modular compilation splits the work along `dart_library` boundaries. Each library
-compiles its own sources into a module: a directory of one kernel per component of
-its sources, and an index that lists them. An executable compiles only its entry
-module, and links the kernels it reaches through the indexes, in dependency order,
-which the VM runs as one program. A kernel nothing reaches is never linked.
+compiles its own sources into a module: a `.kmod` directory of one kernel per
+component of its sources (with embedded source text stripped), a `.koutline`
+directory of deterministic outline kernels for downstream `--input-summary`
+compiles, and an index that lists them. Any class that can be used as a mixin
+(`mixin`, `mixin class`, and every class in a library whose language version is
+below 3.0) keeps its member bodies and field initializers in `.koutline`. Both
+binary strippers check the 32-bit kernel format version in the header (accepting
+version 138, Dart 3.13.x) and log a diagnostic to `stderr` while falling back to
+the unstripped `.dill` bytes on any other version. An executable compiles only
+its entry module, and links the `.kmod` kernels it reaches through the indexes,
+in dependency order, which the VM runs as one program. A kernel nothing reaches
+is never linked.
 
 A module's package config names every package by a multi-root URI,
 `org-dartlang-bazel:///<path>`. The compiler resolves that against the source tree

@@ -9,10 +9,16 @@ import 'dart:typed_data';
 
 import 'package:test/test.dart';
 
-import 'dill_outline.dart' show Tag, stripDillToOutline;
+import 'dill_outline.dart'
+    show Tag, stripDillToOutline, supportedKernelFormatVersions;
 import 'kernel_link.dart' show KernelLinkCache, linkOne;
 import 'kernel_module.dart'
-    show ModuleCompiler, ModuleOutcome, compileModule, scanDirectives;
+    show
+        ModuleCompiler,
+        ModuleOutcome,
+        compileModule,
+        scanDirectives,
+        stripSourceCodeFromDill;
 
 const _prefix = 'org-dartlang-bazel:///';
 
@@ -164,7 +170,10 @@ Future<_Result> _compile(
   );
 }
 
-Uint8List _buildMinimalFieldDill() {
+Uint8List _buildMinimalFieldDill({
+  int formatVersion = Tag.BinaryFormatVersion,
+  int languageMajor = 3,
+}) {
   final out = BytesBuilder();
   void u30(int v) {
     assert(v >= 0 && v < 0x80);
@@ -179,8 +188,8 @@ Uint8List _buildMinimalFieldDill() {
   }
 
   // 18-byte header + problemsAsJson (UInt30(0))
-  u32(0x90abcdef);
-  u32(120);
+  u32(Tag.ComponentFile);
+  u32(formatVersion);
   for (var i = 0; i < 10; i++) {
     out.addByte(0);
   }
@@ -188,7 +197,7 @@ Uint8List _buildMinimalFieldDill() {
 
   final libStart = out.length;
   out.addByte(0); // flags
-  u30(3); // major
+  u30(languageMajor); // major
   u30(0); // minor
   u30(1); // canonicalName
   u30(1); // name
@@ -1020,5 +1029,293 @@ void main() {
     } finally {
       Directory.current = prevCwd;
     }
+  });
+
+  test('stripDillToOutline preserves member bodies and field initializers for legacy-class mixins compiled by kernel_worker', () async {
+    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final exeSuffix = Platform.isWindows ? '.exe' : '';
+    final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
+    final kernelWorker =
+        '${sdkDir.path}/bin/snapshots/kernel_worker_aot.dart.snapshot';
+    final platformDill = '${sdkDir.path}/lib/_internal/vm_platform_strong.dill';
+    expect(File(dartaotruntime).existsSync(), isTrue);
+    expect(File(kernelWorker).existsSync(), isTrue);
+    expect(File(platformDill).existsSync(), isTrue);
+
+    _write(
+      'real_packages.json',
+      jsonEncode({
+        'configVersion': 2,
+        'packages': [
+          {
+            'name': 'legacy',
+            'rootUri': '${_prefix}legacy',
+            'packageUri': 'lib/',
+            'languageVersion': '2.19',
+          },
+          {
+            'name': 'modern',
+            'rootUri': '${_prefix}modern',
+            'packageUri': 'lib/',
+            'languageVersion': '3.0',
+          },
+          {
+            'name': 'app',
+            'rootUri': '${_prefix}app',
+            'packageUri': 'lib/',
+            'languageVersion': '3.0',
+          },
+        ],
+      }),
+    );
+
+    Future<Uint8List> compileWithKernelWorker(
+      String outName,
+      List<String> sources, {
+      List<String> inputSummaries = const [],
+    }) async {
+      final outPath = '${_root.path}/$outName';
+      final res = await Process.run(dartaotruntime, [
+        kernelWorker,
+        '--target',
+        'vm',
+        '--dart-sdk-summary',
+        platformDill,
+        '--packages-file',
+        '${_root.path}/real_packages.json',
+        '--multi-root',
+        _root.path,
+        '--multi-root-scheme',
+        'org-dartlang-bazel',
+        '--no-summary-only',
+        '--exclude-non-sources',
+        for (final s in inputSummaries) ...['--input-summary', s],
+        for (final s in sources) ...['--source', s],
+        '--output',
+        outPath,
+      ]);
+      expect(
+        res.exitCode,
+        0,
+        reason: 'kernel_worker failed: ${res.stdout}\n${res.stderr}',
+      );
+      return File(outPath).readAsBytesSync();
+    }
+
+    // 1. Pre-3.0 library with a plain `class` (no `mixin` or `mixin class` modifier).
+    _write(
+      'legacy/lib/legacy.dart',
+      'class LegacyMixin {\n'
+          "  final String tag = 'legacy-tag-v1';\n"
+          '  int count = 10;\n'
+          "  String get label => '\$tag:\$count';\n"
+          '  set bump(int delta) {\n'
+          '    count += delta;\n'
+          '  }\n'
+          "  String describe(String who) => 'legacy-body-v1:\$who[\$label]';\n"
+          '}\n'
+          'class ChainedLegacy = Object with LegacyMixin;\n',
+    );
+    final legacyDillV1 = await compileWithKernelWorker('legacy_v1.dill', [
+      'package:legacy/legacy.dart',
+    ]);
+
+    final err1 = StringBuffer();
+    final legacyOutlineV1 = stripDillToOutline(legacyDillV1, errSink: err1);
+    expect(err1.toString(), isEmpty);
+
+    // Member bodies and mutable/final field initializers must survive in the outline.
+    expect(
+      _containsSubsequence(legacyOutlineV1, utf8.encode('legacy-body-v1:')),
+      isTrue,
+      reason: 'method body of a pre-3.0 class must survive in .koutline',
+    );
+    expect(
+      _containsSubsequence(legacyOutlineV1, utf8.encode('legacy-tag-v1')),
+      isTrue,
+      reason: 'field initializer of a pre-3.0 class must survive in .koutline',
+    );
+
+    // 2. Body edit in the pre-3.0 class must change the outline bytes so dependents rebuild.
+    _write(
+      'legacy/lib/legacy.dart',
+      'class LegacyMixin {\n'
+          "  final String tag = 'legacy-tag-v1';\n"
+          '  int count = 25;\n'
+          "  String get label => '\$tag:\$count';\n"
+          '  set bump(int delta) {\n'
+          '    count += delta * 2;\n'
+          '  }\n'
+          "  String describe(String who) => 'legacy-body-v2:\$who[\$label]';\n"
+          '}\n'
+          'class ChainedLegacy = Object with LegacyMixin;\n',
+    );
+    final legacyDillV2 = await compileWithKernelWorker('legacy_v2.dill', [
+      'package:legacy/legacy.dart',
+    ]);
+    final legacyOutlineV2 = stripDillToOutline(legacyDillV2);
+    expect(
+      legacyOutlineV2,
+      isNot(equals(legacyOutlineV1)),
+      reason: 'editing a member body or field initializer in a pre-3.0 class must change .koutline bytes',
+    );
+
+    // 3. Modern (Dart 3.0) library: plain class bodies are stripped, mixin / mixin class bodies survive.
+    _write(
+      'modern/lib/modern.dart',
+      'class PlainModern {\n'
+          '  int m = 777;\n'
+          "  String plainBody() => 'plain-modern-secret-body';\n"
+          '}\n'
+          'mixin ModernMixin {\n'
+          "  String mixinBody() => 'modern-mixin-kept-body';\n"
+          '}\n'
+          'mixin class ModernMixinClass {\n'
+          "  String mixinClassBody() => 'modern-mixin-class-kept-body';\n"
+          '}\n',
+    );
+    final modernDill = await compileWithKernelWorker('modern.dill', [
+      'package:modern/modern.dart',
+    ]);
+    final modernOutline = stripDillToOutline(modernDill);
+    expect(
+      _containsSubsequence(
+        modernOutline,
+        utf8.encode('plain-modern-secret-body'),
+      ),
+      isFalse,
+      reason: 'plain class in a Dart 3 library is not a mixin and its body must be stripped',
+    );
+    expect(
+      _containsSubsequence(
+        modernOutline,
+        utf8.encode('modern-mixin-kept-body'),
+      ),
+      isTrue,
+      reason: 'mixin declaration body must survive in .koutline',
+    );
+    expect(
+      _containsSubsequence(
+        modernOutline,
+        utf8.encode('modern-mixin-class-kept-body'),
+      ),
+      isTrue,
+      reason: 'mixin class declaration body must survive in .koutline',
+    );
+
+    // Also verify unknown format version fallback on a real kernel_worker dill.
+    final futureModernDill = Uint8List.fromList(modernDill);
+    ByteData.sublistView(futureModernDill).setUint32(4, 999);
+    final futureOutlineErr = StringBuffer();
+    expect(
+      stripDillToOutline(futureModernDill, errSink: futureOutlineErr),
+      equals(futureModernDill),
+    );
+    expect(
+      futureOutlineErr.toString(),
+      contains('unsupported kernel format version 999'),
+    );
+    final futureSrcErr = StringBuffer();
+    expect(
+      stripSourceCodeFromDill(futureModernDill, errSink: futureSrcErr),
+      equals(futureModernDill),
+    );
+    expect(
+      futureSrcErr.toString(),
+      contains('unsupported kernel format version 999'),
+    );
+
+    // 4. Compile a Dart 3 consumer against the stripped legacy outline and run on the VM.
+    final outlinePath = '${_root.path}/legacy_v1.koutline.dill';
+    File(outlinePath).writeAsBytesSync(legacyOutlineV1);
+    _write(
+      'app/bin/main.dart',
+      "import 'package:legacy/legacy.dart';\n"
+          'class Thing with LegacyMixin {}\n'
+          'class SubChained extends ChainedLegacy {}\n'
+          'void main() {\n'
+          '  final t = Thing()..bump = 5;\n'
+          "  print(t.describe('thing'));\n"
+          '  final s = SubChained()..bump = 2;\n'
+          "  print(s.describe('chained'));\n"
+          '}\n',
+    );
+    final appDill = await compileWithKernelWorker(
+      'app.dill',
+      ['${_prefix}app/bin/main.dart'],
+      inputSummaries: [outlinePath],
+    );
+    final legacyKmodBytes = stripSourceCodeFromDill(legacyDillV1);
+    final linkedPath = '${_root.path}/app_linked.dill';
+    final linkedBytes = BytesBuilder(copy: false)
+      ..add(legacyKmodBytes)
+      ..add(appDill);
+    File(linkedPath).writeAsBytesSync(linkedBytes.takeBytes());
+
+    final runRes = await Process.run(Platform.resolvedExecutable, [linkedPath]);
+    expect(
+      runRes.exitCode,
+      0,
+      reason: 'VM run failed: ${runRes.stdout}\n${runRes.stderr}',
+    );
+    expect(
+      (runRes.stdout as String).replaceAll('\r\n', '\n'),
+      'legacy-body-v1:thing[legacy-tag-v1:15]\n'
+      'legacy-body-v1:chained[legacy-tag-v1:12]\n',
+    );
+  });
+
+  test('stripDillToOutline and stripSourceCodeFromDill reject unknown format versions with a diagnostic and return unstripped bytes', () {
+    expect(supportedKernelFormatVersions, {138});
+    for (final badVersion in [0, 120, 137, 139, 999]) {
+      final dill = _buildMinimalFieldDill(formatVersion: badVersion);
+      final snapshot = Uint8List.fromList(dill);
+
+      final outlineErr = StringBuffer();
+      final outlineResult = stripDillToOutline(dill, errSink: outlineErr);
+      expect(
+        outlineResult,
+        equals(snapshot),
+        reason:
+            'stripDillToOutline must return unstripped bytes for version $badVersion',
+      );
+      expect(
+        outlineErr.toString(),
+        allOf(
+          contains('unsupported kernel format version $badVersion'),
+          contains('falling back to unstripped dill'),
+        ),
+      );
+
+      final srcErr = StringBuffer();
+      final srcResult = stripSourceCodeFromDill(dill, errSink: srcErr);
+      expect(
+        srcResult,
+        equals(snapshot),
+        reason:
+            'stripSourceCodeFromDill must return unstripped bytes for version $badVersion',
+      );
+      expect(
+        srcErr.toString(),
+        allOf(
+          contains('unsupported kernel format version $badVersion'),
+          contains('falling back to unstripped dill'),
+        ),
+      );
+    }
+
+    // Multi-component dill where the second component has an unknown format version:
+    // stripDillToOutline must fall back to the full unstripped input bytes.
+    final validPart = _buildMinimalFieldDill();
+    final invalidPart = _buildMinimalFieldDill(formatVersion: 999);
+    final combined = Uint8List.fromList([...validPart, ...invalidPart]);
+    final combinedSnapshot = Uint8List.fromList(combined);
+    final multiErr = StringBuffer();
+    final multiResult = stripDillToOutline(combined, errSink: multiErr);
+    expect(multiResult, equals(combinedSnapshot));
+    expect(
+      multiErr.toString(),
+      contains('unsupported kernel format version 999'),
+    );
   });
 }

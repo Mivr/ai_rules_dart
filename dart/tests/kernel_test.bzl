@@ -840,5 +840,6 @@ def kernel_test_suite(name):
             ":" + name + "_non_modular_binary_test",
             ":" + name + "_comma_defines_fallback_binary_test",
             ":" + name + "_unseeded_base_kmods_intersection_test",
+            "//dart/tests/legacy_mixin_fixture:legacy_mixin_test",
         ],
     )
