@@ -1,4 +1,5 @@
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_setting")
 load(":dart_analyze_aspect.bzl", "dart_analysis_config")
 load(":dart_analyzer_summary.bzl", "analyzer_sdk_summary")
 
@@ -20,6 +21,27 @@ analyzer_sdk_summary(
 config_setting(
     name = "analyzer_summaries_on",
     flag_values = {"//dart:analyzer_summaries": "true"},
+)
+
+config_setting(
+    name = "allow_analysis_failures",
+    values = {"allow_analysis_failures": "true"},
+)
+
+bool_setting(
+    name = "modular_kernel_off",
+    build_setting_default = False,
+    tags = ["manual"],
+)
+
+alias(
+    name = "aspect_modular_kernel",
+    actual = select({
+        ":allow_analysis_failures": ":modular_kernel_off",
+        "//conditions:default": "//dart:modular_kernel",
+    }),
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
 )
 
 alias(

@@ -1207,7 +1207,7 @@ def library_kernel_info(
 def _dart_kernel_module_aspect_impl(target, ctx):
     if DartKernelInfo in target:
         return []
-    if DartInfo not in target:
+    if DartInfo not in target or ctx.attr.compile_mode != "kernel" or not ctx.attr.modular_kernel:
         return [no_kernel_module()]
     library = getattr(ctx.rule.attr, "library", None)
     if library != None and DartKernelInfo in library:
@@ -1246,7 +1246,22 @@ def _dart_kernel_module_aspect_impl(target, ctx):
 dart_kernel_module_aspect = aspect(
     implementation = _dart_kernel_module_aspect_impl,
     attr_aspects = ["deps", "library"],
-    attrs = KERNEL_MODULE_ATTRS | EXTRA_DART_DEFINES_ATTR,
+    attrs = KERNEL_MODULE_ATTRS | EXTRA_DART_DEFINES_ATTR | {
+        "_modular_kernel": attr.label(
+            doc = "The `//dart:modular_kernel` build setting, disabled when `--allow_analysis_failures` is active.",
+            default = Label("//dart/private:aspect_modular_kernel"),
+            providers = [BuildSettingInfo],
+        ),
+        "compile_mode": attr.string(
+            doc = "The originating executable's `compile_mode` (`kernel` for `dart_test`).",
+            default = "kernel",
+            values = ["exe", "aot-snapshot", "kernel", "jit-snapshot"],
+        ),
+        "modular_kernel": attr.bool(
+            doc = "Whether the originating executable compiles modularly against dependency `.kmod` outputs.",
+            default = True,
+        ),
+    },
     toolchains = MODULAR_KERNEL_TOOLCHAINS,
     doc = "Compiles each `dart_library` in a modular executable's or test's closure to a `.kmod` directory.",
 )

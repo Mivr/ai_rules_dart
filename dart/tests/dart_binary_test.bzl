@@ -1,8 +1,37 @@
-"""Unit tests for dart_binary.bzl helpers."""
+"""Unit tests for dart_binary.bzl helpers and rule kinds."""
 
-load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
+load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
+load("//dart:defs.bzl", "dart_binary", "dart_test")
 load("//dart/private:dart_binary.bzl", "binary_output_basename")
 load("//dart/private:dart_compile.bzl", "compile_quiet_flags")
+
+_RuleKindInfo = provider(
+    doc = "Records `ctx.rule.kind` for `target_under_test`.",
+    fields = {"kind": "str: The Bazel rule kind name (`ctx.rule.kind`)."},
+)
+
+def _rule_kind_aspect_impl(_target, ctx):
+    return [_RuleKindInfo(kind = ctx.rule.kind)]
+
+_rule_kind_aspect = aspect(
+    implementation = _rule_kind_aspect_impl,
+)
+
+def _rule_kind_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
+    asserts.equals(env, "rule", type(dart_binary), "dart_binary in //dart:defs.bzl is a rule")
+    asserts.equals(env, "rule", type(dart_test), "dart_test in //dart:defs.bzl is a rule")
+    asserts.equals(env, ctx.attr.expected_kind, target[_RuleKindInfo].kind)
+    return analysistest.end(env)
+
+_rule_kind_test = analysistest.make(
+    _rule_kind_test_impl,
+    attrs = {
+        "expected_kind": attr.string(mandatory = True),
+    },
+    extra_target_under_test_aspects = [_rule_kind_aspect],
+)
 
 def _exe_gets_dot_exe_on_windows_test_impl(ctx):
     # Regression: a dart_binary's native executable must be named `<name>.exe`
@@ -56,6 +85,30 @@ def dart_binary_test_suite(name):
     _exe_other_test(name = "dart_binary_exe_other_test", size = "small")
     _snapshot_test(name = "dart_binary_snapshot_test", size = "small")
     _quiet_test(name = "dart_binary_quiet_test", size = "small")
+    _rule_kind_test(
+        name = "dart_binary_exe_rule_kind_test",
+        size = "small",
+        expected_kind = "dart_binary",
+        target_under_test = "//dart/private/tools:noop",
+    )
+    _rule_kind_test(
+        name = "dart_binary_modular_kernel_rule_kind_test",
+        size = "small",
+        expected_kind = "dart_binary",
+        target_under_test = "//dart/tests/legacy_mixin_fixture:app_modular",
+    )
+    _rule_kind_test(
+        name = "dart_binary_whole_kernel_rule_kind_test",
+        size = "small",
+        expected_kind = "dart_binary",
+        target_under_test = "//dart/tests/legacy_mixin_fixture:app_whole",
+    )
+    _rule_kind_test(
+        name = "dart_test_rule_kind_test",
+        size = "small",
+        expected_kind = "dart_test",
+        target_under_test = "//dart/tests/legacy_mixin_fixture:legacy_mixin_test",
+    )
     native.test_suite(
         name = name,
         tests = [
@@ -63,5 +116,9 @@ def dart_binary_test_suite(name):
             ":dart_binary_exe_other_test",
             ":dart_binary_snapshot_test",
             ":dart_binary_quiet_test",
+            ":dart_binary_exe_rule_kind_test",
+            ":dart_binary_modular_kernel_rule_kind_test",
+            ":dart_binary_whole_kernel_rule_kind_test",
+            ":dart_test_rule_kind_test",
         ],
     )

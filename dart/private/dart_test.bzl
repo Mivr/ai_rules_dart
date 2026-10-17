@@ -417,41 +417,43 @@ def _write_bootstrap(ctx, main_path):
     )
     return bootstrap
 
-def _test_kernel_attrs(modular = True):
-    return dict({
-        "main": attr.label(
-            doc = "The Dart test file to run. Must contain a top-level `main()` function.",
-            mandatory = True,
-            allow_single_file = [".dart"],
-        ),
-        "srcs": attr.label_list(
-            doc = "Additional Dart source files that are part of this test's package but not reachable via `deps`.",
-            allow_files = [".dart"],
-        ),
-        "deps": attr.label_list(
-            doc = "`dart_library` targets this test depends on.",
-            providers = [DartInfo],
-            aspects = [dart_kernel_module_aspect] if modular else [],
-        ),
-        "defines": attr.string_list(
-            doc = """Dart environment declarations (`key=value`). Each entry becomes a `-Dkey=value` \
+# The attributes that define a test's kernel, shared by `dart_test` and
+# `dart_test_kernel` so the two compile the same way.
+_TEST_KERNEL_ATTRS = dict({
+    "main": attr.label(
+        doc = "The Dart test file to run. Must contain a top-level `main()` function.",
+        mandatory = True,
+        allow_single_file = [".dart"],
+    ),
+    "srcs": attr.label_list(
+        doc = "Additional Dart source files that are part of this test's package but not reachable via `deps`.",
+        allow_files = [".dart"],
+    ),
+    "deps": attr.label_list(
+        doc = "`dart_library` targets this test depends on.",
+        providers = [DartInfo],
+        aspects = [dart_kernel_module_aspect],
+    ),
+    "defines": attr.string_list(
+        doc = """Dart environment declarations (`key=value`). Each entry becomes a `-Dkey=value` \
 flag on the build-time compile, so `String.fromEnvironment` resolves to it. Set these here rather \
 than at run time: the test's `main` is compiled to a kernel during the build, and environment \
 declarations are resolved by the front end at that point — the VM cannot supply them later.""",
-        ),
-        "code_assets": attr.label_list(
-            doc = """Native code assets (e.g. `//dart/ext/sqlite3:code_asset`) the test's \
+    ),
+    "code_assets": attr.label_list(
+        doc = """Native code assets (e.g. `//dart/ext/sqlite3:code_asset`) the test's \
 `@Native` FFI bindings resolve against. When set, the test's `main` is compiled to a kernel \
 with the code-asset mapping embedded (`gen_kernel --native-assets`), and the libraries ship in \
 runfiles so the Dart VM resolves them — no `dart:ffi` ceremony in the test source. Each entry \
 must provide `DartCodeAssetInfo` (see the `dart_code_asset` rule).""",
-            providers = [DartCodeAssetInfo],
-        ),
-    }, **dict(WINDOWS_CONSTRAINT_ATTR, **dict(DART_ABI_CONSTRAINT_ATTRS, **dict(EXTRA_DART_DEFINES_ATTR, **dict(MODULAR_KERNEL_ATTRS, **EXECUTABLE_PACKAGE_ATTRS)))))
+        providers = [DartCodeAssetInfo],
+    ),
+}, **dict(WINDOWS_CONSTRAINT_ATTR, **dict(DART_ABI_CONSTRAINT_ATTRS, **dict(EXTRA_DART_DEFINES_ATTR, **dict(MODULAR_KERNEL_ATTRS, **EXECUTABLE_PACKAGE_ATTRS)))))
 
-def _dart_test_attrs(modular = True):
-    return dict(
-        _test_kernel_attrs(modular = modular),
+dart_test = rule(
+    implementation = _dart_test_impl,
+    attrs = dict(
+        _TEST_KERNEL_ATTRS,
         data = attr.label_list(
             doc = "Additional files needed at runtime. These are added to runfiles so they can be resolved via `Runfiles.rlocation()`.",
             allow_files = True,
@@ -469,39 +471,20 @@ told where a runfile is (resolve it with `Runfiles.rlocation()`).""",
             executable = True,
             cfg = "exec",
         ),
-    )
-
-_DART_TEST_DOC = (
-    "Compiles a Dart test to a kernel at build time and runs it with " +
-    "asserts enabled. A test with `package:test` in `deps` runs under " +
-    "that package's runner, so `--test_filter`, `shard_count` and " +
-    "per-case results work and Bazel's `timeout` is the only time limit."
-)
-
-_dart_manual_test = rule(
-    implementation = _dart_test_impl,
-    attrs = _dart_test_attrs(modular = False),
+    ),
     test = True,
     toolchains = ["//dart:toolchain_type"] + MODULAR_KERNEL_TOOLCHAINS,
-    doc = _DART_TEST_DOC,
+    doc = (
+        "Compiles a Dart test to a kernel at build time and runs it with " +
+        "asserts enabled. A test with `package:test` in `deps` runs under " +
+        "that package's runner, so `--test_filter`, `shard_count` and " +
+        "per-case results work and Bazel's `timeout` is the only time limit."
+    ),
 )
-
-_dart_modular_test = rule(
-    implementation = _dart_test_impl,
-    attrs = _dart_test_attrs(modular = True),
-    test = True,
-    toolchains = ["//dart:toolchain_type"] + MODULAR_KERNEL_TOOLCHAINS,
-    doc = _DART_TEST_DOC,
-)
-
-def dart_test(**kwargs):
-    """Compiles a Dart test to a kernel at build time and runs it with asserts enabled."""
-    rule_fn = _dart_manual_test if "manual" in (kwargs.get("tags") or []) else _dart_modular_test
-    rule_fn(**kwargs)
 
 dart_test_kernel = rule(
     implementation = _dart_test_kernel_impl,
-    attrs = _test_kernel_attrs(modular = True),
+    attrs = _TEST_KERNEL_ATTRS,
     toolchains = ["//dart:toolchain_type"] + MODULAR_KERNEL_TOOLCHAINS,
     doc = (
         "Compiles a test to the kernel that `dart_test` runs under the " +
