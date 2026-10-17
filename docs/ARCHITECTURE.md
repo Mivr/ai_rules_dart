@@ -134,6 +134,10 @@ This split is why codegen resolves even under a target platform rules_dart regis
 
 > Migration note: modules that register via the `@dart_toolchains//:all` glob get both types automatically. A module that instead hand-registers _specific_ dart toolchains must also register the `*_exec_tools_toolchain` targets, or codegen will fail to resolve.
 
+### Hermetic C/C++ Toolchain (Dev-Only)
+
+For its own in-repo C/C++ targets (`dart/tests/cc_fixture`, `dart/ext/sqlite3`, `dart/ext/webcrypto`), `MODULE.bazel` registers `hermetic_cc_toolchain` (a SHA-256-pinned Zig C/C++ toolchain) with `dev_dependency = True` for Linux targets only (`@zig_sdk//toolchain:linux_amd64_gnu.2.28` and `@zig_sdk//toolchain:linux_arm64_gnu.2.28`). Because the dependency and toolchain registrations are `dev_dependency = True`, they never leak into downstream consumers of `rules_dart`. Scoping registration to Linux targets keeps macOS, iOS, Android, and Windows targets on their own platform toolchains while allowing Linux analysis, builds, and minimal remote execution environments to compile C/C++ hermetically without consulting `local_config_cc` or requiring a host C compiler.
+
 ---
 
 ## Compilation Modes
