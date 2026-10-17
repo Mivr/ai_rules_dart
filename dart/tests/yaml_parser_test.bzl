@@ -1,7 +1,8 @@
 """Unit tests for yaml_parser.bzl."""
 
-load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
-load("//dart/pub:pub_lock_package.bzl", "pub_lock_package_sha256_error")
+load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
+load("//dart:providers.bzl", "DartInfo")
+load("//dart/pub:pub_lock_package.bzl", "pub_lock_package_sha256_error", "trim_gzip_trailing_nulls")
 load("//dart/pub:yaml_parser.bzl", "lock_package_error", "parse_pubspec_deps", "parse_pubspec_lock", "parse_pubspec_sdk_constraint")
 
 # buildifier: disable=bzl-visibility
@@ -229,6 +230,52 @@ packages:
     )
     return unittest.end(env)
 
+def _trim_gzip_trailing_nulls_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # `nested@1.0.0` gzip trailer: CRC32 48cd5f2d + ISIZE 00ce0000 (52,736 bytes).
+    nested_stream = "\037\213\010\000body\110\315\137\055\000\316\000\000"
+    asserts.equals(env, nested_stream, trim_gzip_trailing_nulls(nested_stream))
+    asserts.equals(
+        env,
+        nested_stream,
+        trim_gzip_trailing_nulls(nested_stream + ("\0" * 868)),
+    )
+
+    # Uncompressed tar size >= 64 KiB (ISIZE = 0x00010400 -> 1 trailing NUL in trailer).
+    medium_stream = "\037\213\010\000body\001\002\003\004\000\004\001\000"
+    asserts.equals(env, medium_stream, trim_gzip_trailing_nulls(medium_stream))
+    asserts.equals(
+        env,
+        medium_stream,
+        trim_gzip_trailing_nulls(medium_stream + ("\0" * 512)),
+    )
+
+    # Uncompressed tar size an exact multiple of 64 KiB (ISIZE = 0x00010000).
+    aligned_stream = "\037\213\010\000" + ("x" * 1024) + "\253\267\114\106\000\000\001\000"
+    asserts.equals(
+        env,
+        aligned_stream,
+        trim_gzip_trailing_nulls(aligned_stream + ("\0" * 512)),
+    )
+    return unittest.end(env)
+
+def _pub_lock_package_extracted_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
+    info = target[DartInfo]
+    srcs = [f.short_path for f in info.transitive_srcs.to_list()]
+    asserts.true(
+        env,
+        any([p.endswith("/lib/collection.dart") for p in srcs]),
+        "pub_lock_package extracts lib/collection.dart from real pub archive: %s" % srcs,
+    )
+    pkgs = {p.package_name: p for p in info.transitive_packages.to_list()}
+    asserts.true(env, "collection" in pkgs, "collection package record is present")
+    return analysistest.end(env)
+
+_pub_lock_package_extracted_test = analysistest.make(_pub_lock_package_extracted_test_impl)
+
 _t0_test = unittest.make(_parse_lock_packages_test_impl)
 _t1_test = unittest.make(_parse_lock_hosted_test_impl)
 _t2_test = unittest.make(_parse_lock_sdk_test_impl)
@@ -241,10 +288,16 @@ _t8_test = unittest.make(_parse_pubspec_deps_flow_test_impl)
 _t9_test = unittest.make(_parse_pubspec_sdk_numeric_test_impl)
 _t10_test = unittest.make(_lock_package_missing_sha256_test_impl)
 _t11_test = unittest.make(_lock_package_missing_resolved_ref_test_impl)
+_t12_test = unittest.make(_trim_gzip_trailing_nulls_test_impl)
 
 def yaml_parser_test_suite(name):
+    _pub_lock_package_extracted_test(
+        name = name + "_pub_lock_package_extracted_test",
+        target_under_test = "@ext_pub_deps//:collection",
+        size = "small",
+    )
     small_unittest_suite(
-        name,
+        name + "_unit",
         _t0_test,
         _t1_test,
         _t2_test,
@@ -257,4 +310,12 @@ def yaml_parser_test_suite(name):
         _t9_test,
         _t10_test,
         _t11_test,
+        _t12_test,
+    )
+    native.test_suite(
+        name = name,
+        tests = [
+            ":" + name + "_unit",
+            ":" + name + "_pub_lock_package_extracted_test",
+        ],
     )
