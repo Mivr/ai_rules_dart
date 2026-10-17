@@ -205,7 +205,8 @@ def _kernel_action(
         defines,
         recorded_uses,
         extra_flags,
-        native_assets_yaml = None):
+        native_assets_yaml = None,
+        embed_sources = True):
     """Runs `gen_kernel` over a source entrypoint, with stable URIs.
 
     `dart compile` reads its package config and entrypoint as file paths and
@@ -232,6 +233,8 @@ def _kernel_action(
         extra_flags: Flags for `gen_kernel` itself, appended last.
         native_assets_yaml: Optional `native_assets.yaml` File, embedded as the
             `vm:ffi:native-assets` mapping.
+        embed_sources: Whether non-AOT kernels embed source text. The generated
+            `package:test` runner entrypoint passes `False`.
     """
     tools = find_sdk_kernel_tools(dart_sdk_info)
     platform = tools.product_platform_dill if aot else tools.platform_dill
@@ -244,7 +247,7 @@ def _kernel_action(
         args.add("--no-embed-sources")
         if target_os:
             args.add("--target-os", target_os)
-    elif ctx.label.name == "test_runner":
+    elif not embed_sources:
         args.add("--no-embed-sources")
     if native_assets_yaml != None:
         args.add("--native-assets", native_assets_yaml)
@@ -293,7 +296,8 @@ def dart_compile_action(
         main_path = None,
         recorded_uses = None,
         jit_tool = None,
-        native_assets_yaml = None):
+        native_assets_yaml = None,
+        embed_sources = True):
     """Creates the actions that compile a Dart entrypoint in `compile_mode`.
 
     A source entrypoint (one with a `package_config`) is first compiled to a
@@ -330,6 +334,8 @@ def dart_compile_action(
             with it when given, so the snapshot is reproducible. Without it, and on
             a Windows host (which has no fixed-length scratch directory), the mode
             uses `dart compile jit-snapshot`.
+        native_assets_yaml: Optional `native_assets.yaml` File.
+        embed_sources: Whether non-AOT kernels embed source text.
     """
     stage_err = defines_stage_error(defines, package_config)
     if stage_err != None:
@@ -373,6 +379,7 @@ def dart_compile_action(
                 recorded_uses = None,
                 extra_flags = extra_flags,
                 native_assets_yaml = native_assets_yaml,
+                embed_sources = embed_sources,
             )
             return
 
@@ -395,6 +402,7 @@ def dart_compile_action(
             recorded_uses = None,
             extra_flags = front_end_flags,
             native_assets_yaml = native_assets_yaml,
+            embed_sources = embed_sources,
         )
         compile_main = kernel
         compile_main_path = None

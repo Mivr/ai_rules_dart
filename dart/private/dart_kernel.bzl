@@ -60,13 +60,13 @@ EXEC_TOOLS_TOOLCHAIN = Label("//dart:exec_tools_toolchain_type")
 
 DartKernelInfo = _DartKernelInfo
 
-def _kernel_module_for_mode(name, compile_mode, modular_kernel):
-    if compile_mode == "kernel" and modular_kernel and name not in ("kernel_module", "kernel_link"):
+def _kernel_module_for_mode(compile_mode, modular_kernel):
+    if compile_mode == "kernel" and modular_kernel:
         return Label("//dart/private/tools:kernel_module")
     return None
 
-def _kernel_link_for_mode(name, compile_mode, modular_kernel):
-    if compile_mode == "kernel" and modular_kernel and name not in ("kernel_module", "kernel_link"):
+def _kernel_link_for_mode(compile_mode, modular_kernel):
+    if compile_mode == "kernel" and modular_kernel:
         return Label("//dart/private/tools:kernel_link")
     return None
 

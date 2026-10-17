@@ -70,6 +70,11 @@ DartTestKernelInfo = provider(
     },
 )
 
+DartTestRunnerMainInfo = provider(
+    doc = "Marks the generated `package:test` runner entrypoint (`dart_test_runner_main`) so `dart_binary` omits embedded sources from its whole-program kernel.",
+    fields = {},
+)
+
 # The runner's entrypoint is `package:test`'s own `bin/test.dart`, which does
 # nothing but re-export this library. `bin/` is not part of a pub spoke, which
 # stages `lib/` only, so the one line is written here instead.
@@ -81,7 +86,10 @@ export 'package:test/src/executable.dart';
 def _dart_test_runner_main_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + ".dart")
     ctx.actions.write(output = out, content = _RUNNER_MAIN)
-    return [DefaultInfo(files = depset([out]))]
+    return [
+        DefaultInfo(files = depset([out])),
+        DartTestRunnerMainInfo(),
+    ]
 
 dart_test_runner_main = rule(
     implementation = _dart_test_runner_main_impl,

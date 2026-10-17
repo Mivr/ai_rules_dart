@@ -25,6 +25,7 @@ load(
     "modular_executable_kernel",
     "modular_executable_tools",
 )
+load("//dart/private:dart_test_runner.bzl", "DartTestRunnerMainInfo")
 load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "executable_package")
 load("//dart/private:source_set.bzl", "executable_inputs")
 
@@ -180,6 +181,7 @@ def _dart_binary_impl(ctx):
             recorded_uses = compile_recorded_uses,
             jit_tool = ctx.file._jit_tool,
             native_assets_yaml = native_assets_yaml,
+            embed_sources = DartTestRunnerMainInfo not in ctx.attr.main,
         )
 
     # Resources ride the runfiles, not the compile. A dep's `lib/**` non-Dart

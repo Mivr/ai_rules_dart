@@ -30,6 +30,7 @@ load(
     "stable_entry_path",
     "stable_path",
 )
+load("//dart/private:dart_test_runner.bzl", "dart_test_runner_main")
 load(":small_suite.bzl", "small_unittest_suite")
 
 def _pkg(package_name, lib_root, language_version = ""):
@@ -745,6 +746,38 @@ _unseeded_base_kmods_intersection_test = analysistest.make(
     _unseeded_base_kmods_intersection_test_impl,
 )
 
+def _user_test_runner_embeds_sources_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    actions = analysistest.target_actions(env)
+    kernel_actions = [a for a in actions if a.mnemonic == "DartKernel"]
+    asserts.equals(env, 1, len(kernel_actions), "user binary named test_runner runs one DartKernel action")
+    asserts.false(
+        env,
+        "--no-embed-sources" in kernel_actions[0].argv,
+        "user dart_binary named test_runner retains embedded sources",
+    )
+    return analysistest.end(env)
+
+_user_test_runner_embeds_sources_test = analysistest.make(
+    _user_test_runner_embeds_sources_test_impl,
+)
+
+def _generated_test_runner_omits_sources_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    actions = analysistest.target_actions(env)
+    kernel_actions = [a for a in actions if a.mnemonic == "DartKernel"]
+    asserts.equals(env, 1, len(kernel_actions), "generated test runner binary runs one DartKernel action")
+    asserts.true(
+        env,
+        "--no-embed-sources" in kernel_actions[0].argv,
+        "dart_binary with dart_test_runner_main passes --no-embed-sources",
+    )
+    return analysistest.end(env)
+
+_generated_test_runner_omits_sources_test = analysistest.make(
+    _generated_test_runner_omits_sources_test_impl,
+)
+
 _root_path_test = unittest.make(_root_path_test_impl)
 _multi_root_uri_test = unittest.make(_multi_root_uri_test_impl)
 _multi_root_uri_custom_scheme_test = unittest.make(_multi_root_uri_custom_scheme_test_impl)
@@ -807,6 +840,60 @@ def kernel_test_suite(name):
         target_under_test = ":" + name + "_modular_binary_fixture",
         size = "small",
     )
+    dart_binary(
+        name = "test_runner",
+        compile_mode = "kernel",
+        modular_kernel = False,
+        main = ":" + name + "_binary_main",
+        deps = ["//dart/tests/shape_fixture:shape_fixture_lib"],
+        tags = ["manual"],
+    )
+    _user_test_runner_embeds_sources_test(
+        name = name + "_user_test_runner_embeds_sources_test",
+        target_under_test = ":test_runner",
+        size = "small",
+    )
+    dart_test_runner_main(
+        name = name + "_generated_runner_main",
+        tags = ["manual"],
+    )
+    dart_binary(
+        name = name + "_generated_runner_binary",
+        compile_mode = "kernel",
+        modular_kernel = False,
+        main = ":" + name + "_generated_runner_main",
+        deps = ["//dart/tests/shape_fixture:shape_fixture_lib"],
+        tags = ["manual"],
+    )
+    _generated_test_runner_omits_sources_test(
+        name = name + "_generated_test_runner_omits_sources_test",
+        target_under_test = ":" + name + "_generated_runner_binary",
+        size = "small",
+    )
+    dart_binary(
+        name = "kernel_module",
+        compile_mode = "kernel",
+        main = ":" + name + "_binary_main",
+        deps = ["//dart/tests/shape_fixture:shape_fixture_lib"],
+        tags = ["manual"],
+    )
+    _modular_kernel_binary_test(
+        name = name + "_user_kernel_module_modular_test",
+        target_under_test = ":kernel_module",
+        size = "small",
+    )
+    dart_binary(
+        name = "kernel_link",
+        compile_mode = "kernel",
+        main = ":" + name + "_binary_main",
+        deps = ["//dart/tests/shape_fixture:shape_fixture_lib"],
+        tags = ["manual"],
+    )
+    _modular_kernel_binary_test(
+        name = name + "_user_kernel_link_modular_test",
+        target_under_test = ":kernel_link",
+        size = "small",
+    )
     _unseeded_base_kmods_fixture(
         name = name + "_unseeded_base_kmods_fixture",
         tags = ["manual"],
@@ -839,6 +926,10 @@ def kernel_test_suite(name):
             ":" + name + "_modular_binary_test",
             ":" + name + "_non_modular_binary_test",
             ":" + name + "_comma_defines_fallback_binary_test",
+            ":" + name + "_user_test_runner_embeds_sources_test",
+            ":" + name + "_generated_test_runner_omits_sources_test",
+            ":" + name + "_user_kernel_module_modular_test",
+            ":" + name + "_user_kernel_link_modular_test",
             ":" + name + "_unseeded_base_kmods_intersection_test",
             "//dart/tests/legacy_mixin_fixture:legacy_mixin_test",
         ],
