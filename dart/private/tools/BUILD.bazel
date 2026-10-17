@@ -197,3 +197,19 @@ dart_test(
         "@ext_pub_deps//:test",
     ],
 )
+
+dart_test(
+    name = "app_jit_snapshot_test",
+    size = "small",
+    srcs = ["app_jit_snapshot.dart"],
+    main = "app_jit_snapshot_test.dart",
+    deps = ["@ext_pub_deps//:test"],
+)
+
+dart_test(
+    name = "fix_runner_test",
+    size = "small",
+    srcs = ["fix_runner.dart"],
+    main = "fix_runner_test.dart",
+    deps = ["@ext_pub_deps//:test"],
+)

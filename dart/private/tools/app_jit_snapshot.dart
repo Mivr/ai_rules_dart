@@ -37,6 +37,8 @@
 // A program whose own training run is not deterministic (it reads the clock,
 // random numbers, or files outside the build) yields a snapshot that differs
 // between builds, whatever this tool does.
+import 'dart:convert';
+import 'dart:ffi' as ffi;
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
@@ -158,10 +160,10 @@ String _stableVm({
 
 /// Makes [target] an executable copy of [source], unless it is one already.
 ///
-/// The copy is written under a name unique to this process, then renamed over
-/// [target]. A rename replaces the file in one step, so a reader sees the old
-/// file or the new one, never a partial copy, and a process that is running
-/// the old file keeps it.
+/// The copy is written under a name unique to this process, marked `0755`, then
+/// renamed over [target]. A rename replaces the file in one step, so a reader
+/// sees the old file or the new one, never a partial copy, and a process that
+/// is running the old file keeps it.
 void _installCopy(String source, String target) {
   final src = File(source);
   final dst = File(target);
@@ -171,7 +173,8 @@ void _installCopy(String source, String target) {
     return;
   }
   final tmp = File('$target.$pid.${Random().nextInt(1 << 31)}.tmp');
-  src.copySync(tmp.path);
+  tmp.writeAsBytesSync(src.readAsBytesSync());
+  chmodFile(tmp.path, 0x1ed);
   tmp.renameSync(target);
 }
 
@@ -267,7 +270,8 @@ int _trainInScratch({
     }
     final written = File('${scratch.path}/snapshot.jit');
     if (written.existsSync()) {
-      written.copySync(out.path);
+      out.parent.createSync(recursive: true);
+      out.writeAsBytesSync(written.readAsBytesSync());
     }
     return 0;
   } finally {
@@ -288,11 +292,14 @@ void _copyTree(String from, String to) {
   }
 }
 
-/// Copies [from] to [to], creating the parent directories of [to].
+/// Copies [from] to [to] by content, creating the parent directories of [to].
+///
+/// Writes bytes rather than `File.copySync` so read-only input modes from a
+/// sandbox or remote executor are not carried onto the scratch copy.
 void _copyFile(String from, String to) {
-  final parent = File(to).parent;
-  parent.createSync(recursive: true);
-  File(from).copySync(to);
+  final dest = File(to);
+  dest.parent.createSync(recursive: true);
+  dest.writeAsBytesSync(File(from).readAsBytesSync());
 }
 
 /// Compiles a pre-built kernel `.dill` to an AOT snapshot (`--mode=aot-snapshot`)
@@ -301,9 +308,10 @@ void _copyFile(String from, String to) {
 /// `dart compile exe` runs through `dartdev`, which walks ancestor directories
 /// up to `/` probing `pubspec.yaml` and `.dart_tool/package_config.json` (for
 /// native-asset hook discovery) and spawns `/usr/bin/chmod` via `PATH`. Driving
-/// `gen_snapshot --deterministic` directly and appending the ELF snapshot onto
-/// a copy of `dartaotruntime` (which already carries `0755` permissions) keeps
-/// the compile strictly hermetic inside the action sandbox.
+/// `gen_snapshot --deterministic` directly and writing a fresh executable from
+/// `dartaotruntime` plus the ELF snapshot (marking it `0755` via libc `chmod`)
+/// keeps the compile strictly hermetic inside the action sandbox, even when
+/// inputs are staged read-only and no shell or coreutils exist.
 void _runAot(List<String> argv) {
   String? dart;
   String? mode;
@@ -426,7 +434,7 @@ void _runAot(List<String> argv) {
     }
 
     if (mode == 'exe') {
-      _writeAppAotElfExe(
+      writeAppAotElfExe(
         dartaotruntime: File(dartaotruntime),
         snapshotElf: File(elfPath),
         output: File(outputPath),
@@ -452,20 +460,33 @@ bool _isElfFile(File file) {
   }
 }
 
-void _writeAppAotElfExe({
+/// Writes a self-contained AOT ELF executable to [output] by concatenating
+/// [dartaotruntime], zero padding up to a 64 KiB page boundary, [snapshotElf],
+/// and the 16-byte app-JIT/AOT trailer, then marks [output] executable (`0755`).
+///
+/// Does not use `File.copySync`: under remote execution and read-only sandboxes,
+/// [dartaotruntime] has mode `0555` (or `0444`), and `copySync` copies that
+/// read-only mode onto [output], causing a subsequent open for append to fail
+/// with `EACCES`. Writing a fresh file and setting `0755` via `libc`'s `chmod`
+/// avoids both copying read-only permissions and spawning `/bin/chmod`.
+void writeAppAotElfExe({
   required File dartaotruntime,
   required File snapshotElf,
   required File output,
 }) {
   const pageSize = 65536;
   output.parent.createSync(recursive: true);
-  dartaotruntime.copySync(output.path);
-  final runtimeLen = output.lengthSync();
+  if (output.existsSync()) {
+    output.deleteSync();
+  }
+  final runtimeBytes = dartaotruntime.readAsBytesSync();
+  final runtimeLen = runtimeBytes.length;
   final padLen = (pageSize - (runtimeLen % pageSize)) % pageSize;
   final offset = runtimeLen + padLen;
 
-  final raf = output.openSync(mode: FileMode.writeOnlyAppend);
+  final raf = output.openSync(mode: FileMode.writeOnly);
   try {
+    raf.writeFromSync(runtimeBytes);
     if (padLen > 0) {
       raf.writeFromSync(Uint8List(padLen));
     }
@@ -483,5 +504,38 @@ void _writeAppAotElfExe({
     raf.writeFromSync(trailer.buffer.asUint8List());
   } finally {
     raf.closeSync();
+  }
+  chmodFile(output.path, 0x1ed);
+}
+
+typedef _MallocNative = ffi.Pointer<ffi.Uint8> Function(ffi.Size);
+typedef _MallocDart = ffi.Pointer<ffi.Uint8> Function(int);
+typedef _FreeNative = ffi.Void Function(ffi.Pointer<ffi.Uint8>);
+typedef _FreeDart = void Function(ffi.Pointer<ffi.Uint8>);
+typedef _ChmodNative = ffi.Int Function(ffi.Pointer<ffi.Uint8>, ffi.Uint32);
+typedef _ChmodDart = int Function(ffi.Pointer<ffi.Uint8>, int);
+
+/// Sets POSIX permission bits [mode] on [path] via libc's `chmod(2)`.
+void chmodFile(String path, int mode) {
+  if (Platform.isWindows) return;
+  final lib = ffi.DynamicLibrary.process();
+  final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
+  final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
+  final chmod = lib.lookupFunction<_ChmodNative, _ChmodDart>('chmod');
+  final bytes = utf8.encode(path);
+  final ptr = malloc(bytes.length + 1);
+  if (ptr == ffi.nullptr) {
+    throw FileSystemException('malloc failed for chmod', path);
+  }
+  try {
+    ptr.asTypedList(bytes.length + 1)
+      ..setAll(0, bytes)
+      ..[bytes.length] = 0;
+    final rc = chmod(ptr, mode);
+    if (rc != 0) {
+      throw FileSystemException('chmod failed (rc=$rc)', path);
+    }
+  } finally {
+    free(ptr);
   }
 }

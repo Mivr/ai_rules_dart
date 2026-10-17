@@ -139,7 +139,8 @@ Future<void> copyTree(Request request) async {
   Future<void> worker() async {
     while (next < copies.length) {
       final copy = copies[next++];
-      await File(copy.src).copy(copy.dst);
+      final bytes = await File(copy.src).readAsBytes();
+      await File(copy.dst).writeAsBytes(bytes);
     }
   }
 
