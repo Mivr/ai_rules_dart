@@ -109,18 +109,24 @@ def _dart_sqlcodegen_impl(ctx):
         arguments = [ctx.executable.generator_bin.path, args]
         direct.append(ctx.executable.generator_bin)
         transitive.append(toolchain.dart_sdk_info.runtime_files)
+        action_tools = depset(
+            direct = [ctx.executable.generator_bin, toolchain.dart_sdk_info.dart],
+            transitive = [toolchain.dart_sdk_info.runtime_files],
+        )
     else:
         executable = ctx.executable.generator_bin
         arguments = [args]
+        action_tools = depset(direct = [ctx.executable.generator_bin, toolchain.dart_sdk_info.dart])
 
     ctx.actions.run(
         executable = executable,
         arguments = arguments,
         inputs = depset(direct = direct, transitive = transitive),
+        tools = action_tools,
         outputs = outputs,
         mnemonic = "DartSqlCodegen",
         progress_message = "DartSqlCodegen %s" % ctx.label,
-        execution_requirements = {
+        execution_requirements = {} if "manual" in getattr(ctx.attr, "tags", []) else {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
             "worker-key-mnemonic": "DartSqlCodegen",

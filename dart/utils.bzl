@@ -36,6 +36,7 @@ load(
     _KERNEL_MODULE_ATTRS = "KERNEL_MODULE_ATTRS",
     _MODULAR_KERNEL_ATTRS = "MODULAR_KERNEL_ATTRS",
     _MODULAR_KERNEL_TOOLCHAINS = "MODULAR_KERNEL_TOOLCHAINS",
+    _dart_kernel_module_aspect = "dart_kernel_module_aspect",
     _dep_kernels_or_none = "dep_kernels_or_none",
     _duplicated_source = "duplicated_source",
     _entry_source_uri = "entry_source_uri",
@@ -145,6 +146,7 @@ DartKernelInfo = _DartKernelInfo
 KERNEL_MODULE_ATTRS = _KERNEL_MODULE_ATTRS
 MODULAR_KERNEL_ATTRS = _MODULAR_KERNEL_ATTRS
 MODULAR_KERNEL_TOOLCHAINS = _MODULAR_KERNEL_TOOLCHAINS
+dart_kernel_module_aspect = _dart_kernel_module_aspect
 find_kernel_module_tools = _find_kernel_module_tools
 kernel_tools_for = _kernel_tools_for
 dep_kernels_or_none = _dep_kernels_or_none

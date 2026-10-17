@@ -131,19 +131,25 @@ def _dart_aggregate_codegen_impl(ctx):
             arguments = [ctx.executable.generator_bin.path, args]
             direct_inputs = direct_inputs + [ctx.executable.generator_bin]
             bin_transitive = transitive + [dart_sdk_info.runtime_files]
+            action_tools = depset(
+                direct = [ctx.executable.generator_bin, dart_sdk_info.dart],
+                transitive = [dart_sdk_info.runtime_files],
+            )
         else:
             executable = ctx.executable.generator_bin
             arguments = [args]
             bin_transitive = transitive
+            action_tools = depset(direct = [ctx.executable.generator_bin, dart_sdk_info.dart])
 
         ctx.actions.run(
             executable = executable,
             arguments = arguments,
             inputs = depset(direct = direct_inputs, transitive = bin_transitive),
+            tools = action_tools,
             outputs = outputs,
             mnemonic = "DartAggregateCodegen",
             progress_message = "DartAggregateCodegen %s" % ctx.label,
-            execution_requirements = {
+            execution_requirements = {} if "manual" in getattr(ctx.attr, "tags", []) else {
                 "supports-workers": "1",
                 "requires-worker-protocol": "proto",
                 "worker-key-mnemonic": "DartAggregateCodegen",

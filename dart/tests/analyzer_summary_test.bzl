@@ -81,7 +81,13 @@ def _analysis_mode_test_impl(ctx):
         target[DartAnalysisModeInfo].summaries,
         "%s: whether `dart_analyze` read dependency summaries" % target.label,
     )
-    return analysistest.end(env)
+    groups = target[OutputGroupInfo] if OutputGroupInfo in target else None
+    checks = depset(transitive = [
+        getattr(groups, g)
+        for g in ["dart_analyze", "dart_format"]
+        if groups != None and hasattr(groups, g)
+    ])
+    return analysistest.end(env) + [OutputGroupInfo(_validation = checks, dart_analyze = checks)]
 
 def _analysis_mode_test(flag):
     """Returns an analysis test whose `//dart:analyzer_summaries` is `flag`, or the default for None."""

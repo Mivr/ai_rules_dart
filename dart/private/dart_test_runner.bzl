@@ -44,7 +44,7 @@ kernel runs instead, as before. Use it for a snapshot that misbehaves.
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartInfo")
 load("//dart/private:common.bzl", "sdk_dartvm", "writable_home_env")
-load("//dart/private:dart_kernel.bzl", "DartKernelInfo")
+load("//dart/private:dart_kernel.bzl", "DartKernelInfo", "dart_kernel_module_aspect")
 
 DartTestRunnerInfo = provider(
     doc = "The `package:test` runner built from a `package:test` library.",
@@ -136,6 +136,7 @@ dart_test_package = rule(
             doc = "The `package:test` `dart_library`.",
             mandatory = True,
             providers = [DartInfo],
+            aspects = [dart_kernel_module_aspect],
         ),
         "runner": attr.label(
             doc = "A kernel-mode `dart_binary` built from `library`.",

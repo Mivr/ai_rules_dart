@@ -593,7 +593,12 @@ def _modular_kernel_binary_test_impl(ctx):
 
     compile_actions = [a for a in actions if a.mnemonic == "DartCompile"]
     asserts.equals(env, 0, len(compile_actions), "modular kernel binary registers no whole-program DartCompile action")
-    return analysistest.end(env)
+    return analysistest.end(env) + [
+        OutputGroupInfo(
+            _validation = target[DefaultInfo].files,
+            dart_analyze = target[DefaultInfo].files,
+        ),
+    ]
 
 _modular_kernel_binary_test = analysistest.make(_modular_kernel_binary_test_impl)
 

@@ -264,10 +264,15 @@ def _dart_codegen_impl(ctx):
             arguments = [ctx.executable.generator_bin.path, args]
             direct_inputs.append(ctx.executable.generator_bin)
             bin_sdk_files = script_sdk_files
+            action_tools = depset(
+                direct = [ctx.executable.generator_bin, dart],
+                transitive = [toolchain.dart_sdk_info.runtime_files],
+            )
         else:
             executable = ctx.executable.generator_bin
             arguments = [args]
             bin_sdk_files = sdk_files
+            action_tools = depset(direct = [ctx.executable.generator_bin, dart])
 
         ctx.actions.run(
             executable = executable,
@@ -276,10 +281,11 @@ def _dart_codegen_impl(ctx):
                 direct = direct_inputs,
                 transitive = _transitive(library_dep_srcs) + [bin_sdk_files],
             ),
+            tools = action_tools,
             outputs = outputs,
             mnemonic = "DartCodegen",
             progress_message = "DartCodegen %s" % ctx.label,
-            execution_requirements = {
+            execution_requirements = {} if "manual" in getattr(ctx.attr, "tags", []) else {
                 "supports-workers": "1",
                 "requires-worker-protocol": "proto",
                 # The worker key includes the shim binary path; using the

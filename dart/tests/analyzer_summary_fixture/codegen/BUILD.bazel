@@ -1,5 +1,5 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
-load("//dart:defs.bzl", "dart_binary", "dart_codegen")
+load("//dart:defs.bzl", "dart_binary", "dart_codegen", "dart_test")
 load(
     "//dart/tests:codegen_summary_test.bzl",
     "no_summaries_codegen_inputs_test",
@@ -37,6 +37,38 @@ dart_codegen(
     language_version = "3.11",
     output_suffixes = [".g.dart"],
     deps = ["//dart/tests/analyzer_summary_fixture/codegen/dep"],
+)
+
+# A kernel-compiled (`compile_mode = "kernel"`) worker generator: `dart_codegen`
+# runs `executable = dart` with `kernel_gen.dill` and declares both in `tools =`
+# so Bazel's persistent worker key hashes the `.dill` content.
+dart_binary(
+    name = "kernel_gen",
+    compile_mode = "kernel",
+    main = "plain_gen.dart",
+    deps = ["@ext_pub_deps//:bazel_worker"],
+)
+
+dart_codegen(
+    name = "kernel_codegen",
+    package_name = "codegen_fixture",
+    src = "lib/kernel_model.dart",
+    generator_bin = ":kernel_gen",
+    language_version = "3.11",
+    output_suffixes = [".g.dart"],
+    deps = ["//dart/tests/analyzer_summary_fixture/codegen/dep"],
+)
+
+dart_test(
+    name = "kernel_codegen_test",
+    size = "small",
+    args = ["$(rlocationpath :kernel_codegen)"],
+    data = [":kernel_codegen"],
+    main = "kernel_codegen_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
 )
 
 # Built on the shim, but its closure holds a Flutter embedder, so no summary

@@ -21,6 +21,7 @@ load(
     "BINARY_MODULAR_KERNEL_ATTRS",
     "DartKernelInfo",
     "MODULAR_KERNEL_TOOLCHAINS",
+    "dart_kernel_module_aspect",
     "entry_sources",
     "modular_executable_kernel",
     "modular_executable_tools",
@@ -213,9 +214,8 @@ def _dart_binary_impl(ctx):
         own.analyzable,
     ] + recorded_uses_info
 
-dart_binary = rule(
-    implementation = _dart_binary_impl,
-    attrs = dict({
+def _dart_binary_attrs(modular = False):
+    return dict({
         "main": attr.label(
             doc = "The Dart entrypoint file containing a top-level `main()` function.",
             mandatory = True,
@@ -228,6 +228,7 @@ dart_binary = rule(
         "deps": attr.label_list(
             doc = "`dart_library` targets this binary depends on.",
             providers = [DartInfo],
+            aspects = [dart_kernel_module_aspect] if modular else [],
         ),
         "data": attr.label_list(
             doc = "Additional files needed at runtime. These are added to runfiles so they can be found via the runfiles tree when using `bazel run`.",
@@ -293,8 +294,34 @@ In the `exe` and `aot-snapshot` modes the compiler records them as it tree-shake
 `kernel` and `jit-snapshot` modes do not tree-shake, so nothing is recorded and the file is \
 the empty JSON object `{}` (`kind = "empty"`).""",
         ),
-    }, **dict(DART_ABI_CONSTRAINT_ATTRS, **dict(EXTRA_DART_DEFINES_ATTR, **dict(EXECUTABLE_PACKAGE_ATTRS, **BINARY_MODULAR_KERNEL_ATTRS)))),
+    }, **dict(DART_ABI_CONSTRAINT_ATTRS, **dict(EXTRA_DART_DEFINES_ATTR, **dict(EXECUTABLE_PACKAGE_ATTRS, **BINARY_MODULAR_KERNEL_ATTRS))))
+
+_dart_binary = rule(
+    implementation = _dart_binary_impl,
+    attrs = _dart_binary_attrs(modular = False),
     executable = True,
     toolchains = ["//dart:toolchain_type"] + MODULAR_KERNEL_TOOLCHAINS,
     doc = "Compiles a Dart application using `dart compile`.",
 )
+
+_dart_binary_modular = rule(
+    implementation = _dart_binary_impl,
+    attrs = _dart_binary_attrs(modular = True),
+    executable = True,
+    toolchains = ["//dart:toolchain_type"] + MODULAR_KERNEL_TOOLCHAINS,
+    doc = "Compiles a Dart application using `dart compile`.",
+)
+
+def dart_binary(compile_mode = "exe", modular_kernel = True, **kwargs):
+    """Compiles a Dart application using `dart compile`."""
+    rule_fn = (
+        _dart_binary_modular
+        if (compile_mode == "kernel" and modular_kernel)
+        else _dart_binary
+    )
+    rule_fn(
+        compile_mode = compile_mode,
+        modular_kernel = modular_kernel,
+        **kwargs
+    )
+

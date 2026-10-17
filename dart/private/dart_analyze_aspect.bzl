@@ -282,6 +282,7 @@ def _analyze(ctx, name, staged, sdk_inputs):
         executable = dart_sdk_info.dart,
         arguments = [ctx.executable._analyze_tool.path, args],
         inputs = depset(direct = [ctx.executable._analyze_tool] + staged.inputs, transitive = [sdk_inputs]),
+        tools = depset(direct = [ctx.executable._analyze_tool, dart_sdk_info.dart], transitive = [dart_sdk_info.runtime_files]),
         outputs = [stamp],
         mnemonic = "DartAnalyze",
         progress_message = "Analyzing Dart sources of %{label}",
@@ -308,14 +309,16 @@ def _analyze_summaries(ctx, name, staged, summaries, sdk_summary, sdk_inputs):
     args.add("--fatal-infos")
     args.add("--sdk-summary", sdk_summary)
     args.add_all(summaries, before_each = "--summary")
+    tags = getattr(ctx.rule.attr, "tags", [])
     ctx.actions.run(
         executable = dart_sdk_info.dart,
         arguments = [ctx.executable._summary_tool.path, args],
         inputs = depset(direct = [ctx.executable._summary_tool, sdk_summary] + staged.inputs, transitive = [summaries, sdk_inputs]),
+        tools = depset(direct = [ctx.executable._summary_tool, dart_sdk_info.dart], transitive = [dart_sdk_info.runtime_files]),
         outputs = [stamp],
         mnemonic = "DartAnalyze",
         progress_message = "Analyzing Dart sources of %{label} against summaries",
-        execution_requirements = {
+        execution_requirements = {} if "manual" in tags else {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
         },
@@ -457,19 +460,32 @@ def _format(ctx, name, staged, sdk_inputs, own_paths, language_version):
     # Always explicit — `latest` is what the formatter would have inferred with
     # nothing to go on, said out loud so no staged config can answer instead.
     args.add("--language-version", language_version or "latest")
+    tags = getattr(ctx.rule.attr, "tags", [])
     ctx.actions.run(
         executable = dart_sdk_info.dart,
         arguments = [ctx.executable._format_tool.path, args],
         inputs = depset(direct = [ctx.executable._format_tool, manifest] + staged.inputs, transitive = [sdk_inputs]),
+        tools = depset(direct = [ctx.executable._format_tool, dart_sdk_info.dart], transitive = [dart_sdk_info.runtime_files]),
         outputs = [stamp],
         mnemonic = "DartFormat",
         progress_message = "Checking Dart formatting of %{label}",
-        execution_requirements = {
+        execution_requirements = {} if "manual" in tags else {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
         },
     )
     return stamp
+
+def _closure_summary_outputs(target, ctx):
+    sets = []
+    if DartAnalyzerSummaryInfo in target:
+        sets.append(target[DartAnalyzerSummaryInfo].transitive_summaries)
+        sets.append(target[DartAnalyzerSummaryInfo].embedder_sdk_summaries)
+    for d in closure_attrs(ctx):
+        if DartAnalyzerSummaryInfo in d:
+            sets.append(d[DartAnalyzerSummaryInfo].transitive_summaries)
+            sets.append(d[DartAnalyzerSummaryInfo].embedder_sdk_summaries)
+    return depset(transitive = sets)
 
 def _dart_analyze_aspect_impl(target, ctx):
     # Checked here, not with `required_providers`: that matches only rules that
@@ -479,6 +495,8 @@ def _dart_analyze_aspect_impl(target, ctx):
         return []
     if ctx.label.repo_name:
         return []
+
+    default_outputs = _closure_summary_outputs(target, ctx)
 
     # A target's own files are its `DefaultInfo` Dart files — a library's
     # sources, which for a `flutter_library` are its package's `lib/` — plus an
@@ -501,7 +519,7 @@ def _dart_analyze_aspect_impl(target, ctx):
         if f.is_source and not f.short_path.startswith("../"):
             own[f.path] = f
     if not own:
-        return []
+        return [OutputGroupInfo(default = default_outputs)]
     own_paths = sorted([f.short_path for f in own.values()])
 
     name = ctx.label.name + ".dart_analyze"
@@ -626,6 +644,7 @@ def _dart_analyze_aspect_impl(target, ctx):
         executable = dart_sdk_info.dart,
         arguments = [ctx.executable._fix_tool.path, fix_args],
         inputs = depset(direct = [ctx.executable._fix_tool, eligible] + staged.inputs, transitive = [sdk_inputs]),
+        tools = depset(direct = [ctx.executable._fix_tool, dart_sdk_info.dart], transitive = [dart_sdk_info.runtime_files]),
         outputs = [fixes, manifest, scratch],
         mnemonic = "DartFix",
         progress_message = "Computing Dart fixes for %{label}",
@@ -634,6 +653,7 @@ def _dart_analyze_aspect_impl(target, ctx):
 
     return [
         OutputGroupInfo(
+            default = default_outputs,
             dart_fix_fixes = depset([fixes]),
             dart_fix_manifest = depset([manifest]),
             **groups

@@ -42,7 +42,8 @@ def _codegen_inputs_test_impl(ctx):
         _has_input(actions, ".dart_analyzer_summary.sum"),
         "%s: whether the codegen action takes a dependency summary" % target.label,
     )
-    return analysistest.end(env)
+    files = target[DefaultInfo].files
+    return analysistest.end(env) + [OutputGroupInfo(_validation = files, dart_analyze = files)]
 
 def _codegen_inputs_test(flag):
     """Returns a codegen-inputs test whose `//dart:analyzer_summaries` is `flag`, or the default for None."""

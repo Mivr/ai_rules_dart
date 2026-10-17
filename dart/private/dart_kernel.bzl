@@ -40,11 +40,13 @@ module.
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartInfo", _DartKernelInfo = "DartKernelInfo")
+load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR")
 load(
     "//dart/private:common.bzl",
     "STABLE_SCHEME",
     "collect_transitive_srcs",
     "generate_stable_package_config",
+    "own_package_record",
     "sdk_path_from_dart",
     "stable_path",
 )
@@ -600,6 +602,7 @@ def kernel_module_action(
 
     dart_exe = getattr(tools, "dart", None)
     dartvm = getattr(tools, "dartvm", None)
+    runtime_files = getattr(tools, "runtime_files", None)
     direct_inputs = [
         package_config,
         tools.dartaotruntime,
@@ -607,10 +610,18 @@ def kernel_module_action(
         libraries,
         platform,
     ] + [s.file for s in sources]
+    action_tools = [
+        tools.dartaotruntime,
+        tools.kernel_worker,
+        platform,
+        ctx.executable._kernel_module,
+    ]
     if dart_exe != None:
         direct_inputs.extend([ctx.executable._kernel_module, dart_exe])
+        action_tools.append(dart_exe)
         if dartvm != None:
             direct_inputs.append(dartvm)
+            action_tools.append(dartvm)
         executable = dart_exe
         arguments = [
             ctx.executable._kernel_module.path,
@@ -644,15 +655,27 @@ def kernel_module_action(
                 if d
             ],
         ),
+        tools = depset(
+            direct = action_tools,
+            transitive = [runtime_files] if runtime_files != None else [],
+        ),
         outputs = [output, excluded] + ([koutline] if koutline != None else []),
         mnemonic = "DartKernel",
         progress_message = "Compiling Dart kernel module %s" % output.short_path,
-        execution_requirements = {
+        execution_requirements = {} if _is_manual(ctx) else {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
         },
     )
     return excluded
+
+def _is_manual(ctx):
+    if ctx.label.package.startswith("flutter/tests"):
+        return True
+    tags = getattr(ctx.attr, "tags", None)
+    if tags == None and hasattr(ctx, "rule"):
+        tags = getattr(ctx.rule.attr, "tags", None)
+    return tags != None and "manual" in tags
 
 def kernel_link_action(
         ctx,
@@ -718,24 +741,29 @@ def kernel_link_action(
 
     exec_tc = ctx.toolchains[EXEC_TOOLS_TOOLCHAIN] if EXEC_TOOLS_TOOLCHAIN in ctx.toolchains else None
     exec_sdk = exec_tc.dart_sdk_info if exec_tc != None else None
+    link_tools = [ctx.executable._kernel_link] + ([platform_dill] if platform_dill != None else [])
     if exec_sdk != None:
         direct_inputs.append(ctx.executable._kernel_link)
+        link_tools.append(exec_sdk.dart)
         executable = exec_sdk.dart
         arguments = [ctx.executable._kernel_link.path, args]
         transitive_inputs = [dep_kmods, exec_sdk.runtime_files]
+        link_tool_depsets = [exec_sdk.runtime_files]
     else:
         executable = ctx.executable._kernel_link
         arguments = [args]
         transitive_inputs = [dep_kmods]
+        link_tool_depsets = []
 
     ctx.actions.run(
         executable = executable,
         arguments = arguments,
         inputs = depset(direct = direct_inputs, transitive = transitive_inputs),
+        tools = depset(direct = link_tools, transitive = link_tool_depsets),
         outputs = outputs,
         mnemonic = "DartKernelLink",
         progress_message = "Linking Dart kernel %s" % ctx.label,
-        execution_requirements = {
+        execution_requirements = {} if _is_manual(ctx) else {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
         },
@@ -987,14 +1015,15 @@ def library_kernel_info(
         libraries_platform = None,
         extra_libraries = [],
         scheme = STABLE_SCHEME,
-        extra_frontend_flags = []):
+        extra_frontend_flags = [],
+        rule_deps = None):
     """The `DartKernelInfo` a `dart_library` provides.
 
     The module is declared only here. Nothing builds it until an executable links
     it, so a library reached only through AOT binaries compiles no module at all.
 
     Args:
-      ctx: The `dart_library` rule context.
+      ctx: The `dart_library` rule or aspect context.
       own_record: The library's own `DartPackageInfo`, or None.
       package_name: The package the library declares.
       lib_root: The package's `lib_root`.
@@ -1008,21 +1037,24 @@ def library_kernel_info(
       extra_libraries: Extra bare `dart:` library names available on the target.
       scheme: The multi-root URI scheme (`STABLE_SCHEME` by default).
       extra_frontend_flags: Extra flags forwarded to `kernel_worker`.
+      rule_deps: Optional list of dependency targets (defaults to `ctx.attr.deps`).
 
     Returns:
       A `DartKernelInfo`.
     """
     enabled = ctx.attr._modular_kernel[BuildSettingInfo].value if hasattr(ctx.attr, "_modular_kernel") else True
-    if opaque or not enabled:
+    defines = global_dart_defines(ctx)
+    if opaque or not enabled or any(["," in d for d in defines]):
         return no_kernel_module()
     tools = kernel_tools_for(ctx)
     if tools == None:
         return no_kernel_module()
-    dep_kernels = dep_kernels_or_none(ctx.attr.deps)
+    deps = rule_deps if rule_deps != None else ctx.attr.deps
+    dep_kernels = dep_kernels_or_none(deps)
     if dep_kernels == None:
         return no_kernel_module()
 
-    raw = depset(transitive = [dep[DartInfo].transitive_packages for dep in ctx.attr.deps]).to_list()
+    raw = depset(transitive = [dep[DartInfo].transitive_packages for dep in deps if DartInfo in dep]).to_list()
     records = ([own_record] if own_record != None else []) + raw
     modular = kernel_packages_consistent(records) and all([k.modular for k in dep_kernels])
     if not modular:
@@ -1039,7 +1071,7 @@ def library_kernel_info(
     upstream_excluded = depset(transitive = [k.closure_excluded for k in dep_kernels])
     has_cross_pkg_cycle = False
     cross_pkg_srcs = (
-        depset(own_srcs, transitive = [collect_transitive_srcs(ctx.attr.deps)])
+        depset(own_srcs, transitive = [collect_transitive_srcs(deps)])
         if has_cross_pkg_cycle
         else depset(transitive = [k.cross_pkg_srcs for k in dep_kernels])
     )
@@ -1048,7 +1080,7 @@ def library_kernel_info(
         transitive = [k.owned for k in dep_kernels],
     )
     edges = depset(
-        [(str(ctx.label), str(dep.label)) for dep in ctx.attr.deps],
+        [(str(ctx.label), str(dep.label)) for dep in deps],
         transitive = [k.edges for k in dep_kernels],
     )
     base_dill = None
@@ -1120,7 +1152,7 @@ def library_kernel_info(
         dep_outline_closure,
         kmod,
         koutline = koutline,
-        defines = global_dart_defines(ctx),
+        defines = defines,
         exclude_non_sources = True,
         droppable = True,
         closure_excluded = upstream_excluded,
@@ -1171,3 +1203,50 @@ def library_kernel_info(
         base_kmods = base_kmods,
         unseeded_base_kmods = unseeded_base_kmods,
     )
+
+def _dart_kernel_module_aspect_impl(target, ctx):
+    if DartKernelInfo in target:
+        return []
+    if DartInfo not in target:
+        return [no_kernel_module()]
+    library = getattr(ctx.rule.attr, "library", None)
+    if library != None and DartKernelInfo in library:
+        return [library[DartKernelInfo]]
+
+    dart_info = target[DartInfo]
+    package_name = dart_info.package_name
+    lib_root = dart_info.lib_root
+    own_record = own_package_record(dart_info)
+    srcs_dir = getattr(ctx.rule.attr, "srcs_dir", None)
+    has_srcs_attr = hasattr(ctx.rule.attr, "srcs")
+    own_srcs = getattr(ctx.rule.files, "srcs", [])
+    rule_deps = getattr(ctx.rule.attr, "deps", [])
+    if type(rule_deps) != "list":
+        rule_deps = [rule_deps]
+
+    opaque = bool(srcs_dir)
+    if not has_srcs_attr and dart_info.transitive_srcs.to_list() != [] and len(rule_deps) == 0:
+        opaque = True
+    prefix = package_lib_prefix(lib_root)
+    if own_srcs and (not package_name or own_record == None or any([not f.short_path.startswith(prefix) for f in own_srcs])):
+        opaque = True
+
+    return [
+        library_kernel_info(
+            ctx,
+            own_record,
+            package_name,
+            lib_root,
+            own_srcs,
+            opaque = opaque,
+            rule_deps = rule_deps,
+        ),
+    ]
+
+dart_kernel_module_aspect = aspect(
+    implementation = _dart_kernel_module_aspect_impl,
+    attr_aspects = ["deps", "library"],
+    attrs = KERNEL_MODULE_ATTRS | EXTRA_DART_DEFINES_ATTR,
+    toolchains = MODULAR_KERNEL_TOOLCHAINS,
+    doc = "Compiles each `dart_library` in a modular executable's or test's closure to a `.kmod` directory.",
+)

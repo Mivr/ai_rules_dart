@@ -213,6 +213,10 @@ def _analyzer_sdk_summary_impl(ctx):
             direct = [ctx.executable._tool, dart_sdk_info.dart],
             transitive = [dart_sdk_info.analyze_files, dart_sdk_info.runtime_files],
         ),
+        tools = depset(
+            direct = [ctx.executable._tool, dart_sdk_info.dart],
+            transitive = [dart_sdk_info.runtime_files],
+        ),
         outputs = [summary],
         mnemonic = "DartAnalyzerSdkSummary",
         progress_message = "Summarizing the Dart SDK for analysis",
@@ -367,6 +371,10 @@ def _dart_analyzer_summary_impl(target, ctx):
                 direct = [ctx.executable._tool, dart_sdk_info.dart] + files,
                 transitive = [dart_sdk_info.analyze_files, dart_sdk_info.runtime_files, info.transitive_srcs, info.transitive_resources],
             ),
+            tools = depset(
+                direct = [ctx.executable._tool, dart_sdk_info.dart],
+                transitive = [dart_sdk_info.runtime_files],
+            ),
             outputs = [embedder_sdk],
             mnemonic = "DartAnalyzerSdkSummary",
             progress_message = "Summarizing Dart embedder SDK %{label}",
@@ -475,6 +483,7 @@ def _dart_analyzer_summary_impl(target, ctx):
         args.add("--source", link)
         args.add("--uri", _package_uri(info, f))
     args.add_all(dependencies, before_each = "--summary")
+    tags = getattr(ctx.rule.attr, "tags", [])
     ctx.actions.run(
         executable = dart_sdk_info.dart,
         arguments = [ctx.executable._tool.path, args],
@@ -482,10 +491,14 @@ def _dart_analyzer_summary_impl(target, ctx):
             direct = [ctx.executable._tool, dart_sdk_info.dart, config, sdk_summary] + srcs + staged,
             transitive = [dart_sdk_info.analyze_files, dart_sdk_info.runtime_files, dependencies],
         ),
+        tools = depset(
+            direct = [ctx.executable._tool, dart_sdk_info.dart],
+            transitive = [dart_sdk_info.runtime_files],
+        ),
         outputs = [summary],
         mnemonic = "DartAnalyzerSummary",
         progress_message = "Summarizing Dart library %{label}",
-        execution_requirements = {
+        execution_requirements = {} if "manual" in tags else {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
         },
