@@ -50,7 +50,7 @@ Future<void> main(List<String> rawArgs) async {
     await _runPersistentWorker();
     return;
   }
-  final code = await _runSingleRequest(args, outSink: stdout, errSink: stderr);
+  final code = await runFormatRequest(args, outSink: stdout, errSink: stderr);
   if (code != 0) exit(code);
 }
 
@@ -62,11 +62,7 @@ Future<void> _runPersistentWorker() async {
     var code = 1;
     try {
       final expanded = _expandParamFiles(request.arguments);
-      code = await _runSingleRequest(
-        expanded,
-        outSink: output,
-        errSink: output,
-      );
+      code = await runFormatRequest(expanded, outSink: output, errSink: output);
     } on Object catch (e, st) {
       output
         ..writeln('format_runner: unhandled exception: $e')
@@ -84,12 +80,159 @@ Future<void> _runPersistentWorker() async {
   }
 }
 
-Future<int> _runSingleRequest(
+/// The SDK `<major>.<minor>` series whose `dart format` rules match the
+/// vendored `package:dart_style`, and the minimum patch within that series.
+/// Mirrors `FORMATTER_SDK_SERIES` and `FORMATTER_MIN_SDK_PATCH` in
+/// `dart/private/dart_analyze_aspect.bzl`.
+const formatterSdkSeries = (3, 13);
+const formatterMinSdkPatch = 4;
+const formatterMinLanguageVersion = (2, 12);
+const formatterMax2xMinor = 19;
+
+final class FormatMode {
+  const FormatMode({
+    required this.inProcess,
+    required this.languageVersion,
+    required this.parsedLanguageVersion,
+    required this.sdkLanguageVersion,
+  });
+
+  final bool inProcess;
+  final String languageVersion;
+  final Version? parsedLanguageVersion;
+  final Version? sdkLanguageVersion;
+}
+
+(int, int, int)? _parseSdkVersion(String version) {
+  final core = version.split('-').first.split('+').first.split('.');
+  if (core.length < 2) return null;
+  final major = int.tryParse(core[0]);
+  final minor = int.tryParse(core[1]);
+  if (major == null || minor == null || major < 0 || minor < 0) return null;
+  var patch = 0;
+  if (core.length >= 3) {
+    final parsedPatch = int.tryParse(core[2]);
+    if (parsedPatch == null || parsedPatch < 0) return null;
+    patch = parsedPatch;
+  }
+  return (major, minor, patch);
+}
+
+(int, int)? _parseMajorMinor(String version) {
+  final parts = version.split('.');
+  if (parts.length != 2) return null;
+  final major = int.tryParse(parts[0]);
+  final minor = int.tryParse(parts[1]);
+  if (major == null || minor == null || major < 0 || minor < 0) return null;
+  return (major, minor);
+}
+
+/// Decides which formatter and language version `format_runner` uses.
+///
+/// Mirrors `resolve_format_mode` in `dart/private/dart_analyze_aspect.bzl`.
+FormatMode resolveFormatMode(String sdkVersion, String languageVersion) {
+  final sdk = _parseSdkVersion(sdkVersion);
+  if (sdk == null) {
+    return FormatMode(
+      inProcess: false,
+      languageVersion: languageVersion.isEmpty ? 'latest' : languageVersion,
+      parsedLanguageVersion: null,
+      sdkLanguageVersion: null,
+    );
+  }
+  final (sdkMajor, sdkMinor, sdkPatch) = sdk;
+  final sdkLv = Version(sdkMajor, sdkMinor, 0);
+  final (int, int) lv;
+  final String effectiveLv;
+  if (languageVersion.isEmpty || languageVersion == 'latest') {
+    lv = (sdkMajor, sdkMinor);
+    effectiveLv = '$sdkMajor.$sdkMinor';
+  } else {
+    final parsed = _parseMajorMinor(languageVersion);
+    if (parsed == null) {
+      return FormatMode(
+        inProcess: false,
+        languageVersion: languageVersion,
+        parsedLanguageVersion: null,
+        sdkLanguageVersion: sdkLv,
+      );
+    }
+    lv = parsed;
+    effectiveLv = '${lv.$1}.${lv.$2}';
+  }
+
+  final parsedLv = Version(lv.$1, lv.$2, 0);
+  final minLv = Version(
+    formatterMinLanguageVersion.$1,
+    formatterMinLanguageVersion.$2,
+    0,
+  );
+  final sdkMatches =
+      (sdkMajor, sdkMinor) == formatterSdkSeries &&
+      sdkPatch >= formatterMinSdkPatch;
+  final lvValid2x =
+      lv.$1 == 2 &&
+      lv.$2 >= formatterMinLanguageVersion.$2 &&
+      lv.$2 <= formatterMax2xMinor;
+  final lvValid3x = lv.$1 == 3 && lv.$2 >= 0 && lv.$2 <= formatterSdkSeries.$2;
+  final lvSupported =
+      (lvValid2x || lvValid3x) && parsedLv >= minLv && parsedLv <= sdkLv;
+  final inProcess = sdkMatches && lvSupported;
+  return FormatMode(
+    inProcess: inProcess,
+    languageVersion: effectiveLv,
+    parsedLanguageVersion: inProcess ? parsedLv : null,
+    sdkLanguageVersion: sdkLv,
+  );
+}
+
+String _resolveSdkVersion(String? sdkVersionArg, String? dartPath) {
+  if (sdkVersionArg != null && sdkVersionArg.isNotEmpty) {
+    return sdkVersionArg;
+  }
+  if (dartPath != null && dartPath.isNotEmpty) {
+    final versionFile = File(
+      p.join(File(dartPath).parent.parent.path, 'version'),
+    );
+    if (versionFile.existsSync()) {
+      return versionFile.readAsStringSync().trim();
+    }
+  }
+  return Platform.version.split(' ').first;
+}
+
+final _langOverridePattern = RegExp(
+  r'^(\s*//\s*@dart\s*=\s*)([0-9]+)\.([0-9]+)',
+  multiLine: true,
+);
+
+String? _probeForSdkOverride(String text, Version? sdkLanguageVersion) {
+  if (sdkLanguageVersion == null) return null;
+  final match = _langOverridePattern.firstMatch(text);
+  if (match == null) return null;
+  final majorStr = match[2]!;
+  final minorStr = match[3]!;
+  final major = int.tryParse(majorStr);
+  final minor = int.tryParse(minorStr);
+  if (major == null || minor == null) return null;
+  final overrideLv = Version(major, minor, 0);
+  if (overrideLv <= sdkLanguageVersion) return null;
+  final highMajor = '9' * majorStr.length;
+  final highMinor = '9' * minorStr.length;
+  return text.replaceRange(
+    match.start,
+    match.end,
+    '${match[1]!}$highMajor.$highMinor',
+  );
+}
+
+Future<int> runFormatRequest(
   List<String> args, {
   required StringSink outSink,
   required StringSink errSink,
 }) async {
   String? dart;
+  String? sdkVersion;
   String? project;
   String? manifest;
   String? stamp;
@@ -100,6 +243,8 @@ Future<int> _runSingleRequest(
     switch (arg) {
       case '--dart':
         dart = args[++i];
+      case '--sdk-version':
+        sdkVersion = args[++i];
       case '--project':
         project = args[++i];
       case '--manifest':
@@ -132,21 +277,24 @@ Future<int> _runSingleRequest(
       .map((l) => _join(project!, l))
       .toList();
 
-  final parsedVersion = _parseLanguageVersion(languageVersion);
-  if (parsedVersion == null) {
+  final resolvedSdkVersion = _resolveSdkVersion(sdkVersion, dart);
+  final mode = resolveFormatMode(resolvedSdkVersion, languageVersion);
+  final parsedVersion = mode.parsedLanguageVersion;
+  if (!mode.inProcess || parsedVersion == null) {
     if (dart != null) {
       return _runSubprocessFallback(
         dart: dart,
         project: project,
         files: files,
-        languageVersion: languageVersion,
+        languageVersion: mode.languageVersion,
         stamp: stamp,
         outSink: outSink,
         errSink: errSink,
       );
     }
     errSink.writeln(
-      'format_runner: unsupported --language-version "$languageVersion"',
+      'format_runner: unsupported --language-version "$languageVersion" '
+      'for SDK "$resolvedSdkVersion"',
     );
     return 64;
   }
@@ -162,7 +310,14 @@ Future<int> _runSingleRequest(
   );
   final directoryConfigs = <String, PackageConfig?>{};
   final directoryOptions =
-      <String, ({int? pageWidth, TrailingCommas? trailingCommas})>{};
+      <
+        String,
+        ({
+          int? pageWidth,
+          TrailingCommas? trailingCommas,
+          List<String> experimentFlags,
+        })
+      >{};
   final failedReadPaths = <String>{};
 
   Future<PackageConfig?> findDirPackageConfig(File file) async {
@@ -201,13 +356,19 @@ Future<int> _runSingleRequest(
     }
   }
 
-  Future<({int? pageWidth, TrailingCommas? trailingCommas})> findOptions(
-    File file,
-  ) async {
+  Future<
+    ({
+      int? pageWidth,
+      TrailingCommas? trailingCommas,
+      List<String> experimentFlags,
+    })
+  >
+  findOptions(File file) async {
     final dir = file.parent.path;
     if (directoryOptions[dir] case final cached?) return cached;
     int? pageWidth;
     TrailingCommas? trailingCommas;
+    var experimentFlags = <String>[];
     try {
       final optionsFile = await findAnalysisOptions(
         fileSystem,
@@ -215,6 +376,31 @@ Future<int> _runSingleRequest(
         reportFailedRead: reportFailedRead,
         resolvePackageUri: (uri) => resolvePackageUri(file, uri),
       );
+      if (optionsFile['analyzer'] case Map<Object?, Object?> analyzer) {
+        if (analyzer case {'enable-experiment': final experiment?}) {
+          switch (experiment) {
+            case final String flag:
+              experimentFlags = [flag];
+            case final List<Object?> flags:
+              for (final flag in flags) {
+                switch (flag) {
+                  case final String flag:
+                    experimentFlags.add(flag);
+                  default:
+                    errBuf.writeln(
+                      'Warning: "enable-experiment" option list should contain '
+                      'only strings, but contained "$flag".',
+                    );
+                }
+              }
+            default:
+              errBuf.writeln(
+                'Warning: "enable-experiment" option should be a string or '
+                'list of strings, but was "$experiment".',
+              );
+          }
+        }
+      }
       if (optionsFile['formatter'] case Map<Object?, Object?> formatter) {
         if (formatter case {'page_width': int width}) {
           pageWidth = width;
@@ -242,6 +428,7 @@ Future<int> _runSingleRequest(
     return directoryOptions[dir] = (
       pageWidth: pageWidth,
       trailingCommas: trailingCommas,
+      experimentFlags: experimentFlags,
     );
   }
 
@@ -261,9 +448,15 @@ Future<int> _runSingleRequest(
       languageVersion: parsedVersion,
       pageWidth: opts.pageWidth ?? DartFormatter.defaultPageWidth,
       trailingCommas: opts.trailingCommas,
+      experimentFlags: opts.experimentFlags,
     );
     try {
-      final source = SourceCode(file.readAsStringSync(), uri: file.path);
+      final text = file.readAsStringSync();
+      final probe = _probeForSdkOverride(text, mode.sdkLanguageVersion);
+      if (probe != null) {
+        formatter.formatSource(SourceCode(probe, uri: file.path));
+      }
+      final source = SourceCode(text, uri: file.path);
       final output = formatter.formatSource(source);
       final changed = source.text != output.text;
       if (changed) {
@@ -325,20 +518,6 @@ $stack''');
   return 0;
 }
 
-Version? _parseLanguageVersion(String version) {
-  if (version == 'latest') {
-    return DartFormatter.latestLanguageVersion;
-  }
-  final match = RegExp(r'^([0-9]+)\.([0-9]+)$').firstMatch(version);
-  if (match == null) return null;
-  final parsed = Version(int.parse(match[1]!), int.parse(match[2]!), 0);
-  if (parsed > DartFormatter.latestLanguageVersion ||
-      parsed < Version(2, 12, 0)) {
-    return null;
-  }
-  return parsed;
-}
-
 int _runSubprocessFallback({
   required String dart,
   required String project,
@@ -348,6 +527,10 @@ int _runSubprocessFallback({
   required StringSink outSink,
   required StringSink errSink,
 }) {
+  final homeDir = File(stamp).parent.path;
+  final env = dart.endsWith('.exe')
+      ? <String, String>{'USERPROFILE': homeDir, 'LOCALAPPDATA': homeDir}
+      : <String, String>{'HOME': Platform.environment['HOME'] ?? '/tmp'};
   var failed = false;
   for (final chunk in _chunks(files)) {
     final result = Process.runSync(
@@ -359,6 +542,7 @@ int _runSubprocessFallback({
         '--language-version=$languageVersion',
         ...chunk,
       ],
+      environment: env,
       stdoutEncoding: systemEncoding,
       stderrEncoding: systemEncoding,
     );

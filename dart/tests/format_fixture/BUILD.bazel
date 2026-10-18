@@ -3,7 +3,9 @@ load(
     "//dart/tests:analyze_test.bzl",
     "analyzed_test",
     "aspect_applies_test",
+    "format_action_test",
     "formatted_test",
+    "resolve_format_mode_test",
 )
 
 # The `dart_analyze` aspect's format check, under the root `//:analysis_config`,
@@ -112,3 +114,40 @@ aspect_applies_test(
     expect_formatted = False,
     target_under_test = "@ext_pub_deps//:meta",
 )
+
+resolve_format_mode_test(
+    name = "resolve_format_mode_test",
+    size = "small",
+)
+
+format_action_test(
+    name = "in_process_format_action_test",
+    size = "small",
+    expect_compile_files = False,
+    expected_language_version = "3.13",
+    target_under_test = ":mixed",
+)
+
+format_action_test(
+    name = "short_style_format_action_test",
+    size = "small",
+    expect_compile_files = False,
+    expected_language_version = "3.6",
+    target_under_test = "//dart/tests/format_fixture/short",
+)
+
+dart_library(
+    name = "cli_fallback_probe",
+    srcs = ["lib/narrow.dart"],
+    language_version = "2.11",
+    tags = ["manual"],
+)
+
+format_action_test(
+    name = "cli_fallback_format_action_test",
+    size = "small",
+    expect_compile_files = True,
+    expected_language_version = "2.11",
+    target_under_test = ":cli_fallback_probe",
+)
+

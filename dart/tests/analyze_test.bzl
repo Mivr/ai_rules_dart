@@ -13,10 +13,10 @@ entrypoint belongs to no package's `lib/`, so it reaches the aspect through
 provider carrying it is still not something `deps` will accept.
 """
 
-load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
+load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load("//dart:providers.bzl", "DartAnalyzableInfo", "DartInfo")
 load("//dart/private:common.bzl", "WINDOWS_CONSTRAINT_ATTR", "noop_test_executable")
-load("//dart/private:dart_analyze_aspect.bzl", "DartFixOutputsInfo", "dart_analyze")
+load("//dart/private:dart_analyze_aspect.bzl", "DartAnalysisModeInfo", "DartFixOutputsInfo", "dart_analyze", "resolve_format_mode")
 
 # The fixture's entrypoint and its dependency, by the suffix of their
 # `short_path`. Named here rather than passed in: these tests exist for one
@@ -178,3 +178,88 @@ binary_not_a_dep_test = analysistest.make(
     _binary_not_a_dep_test_impl,
     expect_failure = True,
 )
+
+def _resolve_format_mode_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    m_latest = resolve_format_mode("3.13.5", "latest")
+    asserts.true(env, m_latest.in_process)
+    asserts.equals(env, "3.13", m_latest.language_version)
+
+    m_empty = resolve_format_mode("3.13.4", "")
+    asserts.true(env, m_empty.in_process)
+    asserts.equals(env, "3.13", m_empty.language_version)
+
+    m_short = resolve_format_mode("3.13.5", "3.6")
+    asserts.true(env, m_short.in_process)
+    asserts.equals(env, "3.6", m_short.language_version)
+
+    m_min = resolve_format_mode("3.13.4", "2.12")
+    asserts.true(env, m_min.in_process)
+    asserts.equals(env, "2.12", m_min.language_version)
+
+    m_max_2x = resolve_format_mode("3.13.5", "2.19")
+    asserts.true(env, m_max_2x.in_process)
+    asserts.equals(env, "2.19", m_max_2x.language_version)
+
+    m_bad_2x = resolve_format_mode("3.13.5", "2.20")
+    asserts.false(env, m_bad_2x.in_process)
+    asserts.equals(env, "2.20", m_bad_2x.language_version)
+
+    m_pre_null = resolve_format_mode("3.13.5", "2.11")
+    asserts.false(env, m_pre_null.in_process)
+    asserts.equals(env, "2.11", m_pre_null.language_version)
+
+    m_future_lv = resolve_format_mode("3.13.5", "3.14")
+    asserts.false(env, m_future_lv.in_process)
+    asserts.equals(env, "3.14", m_future_lv.language_version)
+
+    m_old_patch = resolve_format_mode("3.13.3", "latest")
+    asserts.false(env, m_old_patch.in_process)
+    asserts.equals(env, "3.13", m_old_patch.language_version)
+
+    m_sdk_311 = resolve_format_mode("3.11.0", "latest")
+    asserts.false(env, m_sdk_311.in_process)
+    asserts.equals(env, "3.11", m_sdk_311.language_version)
+
+    m_sdk_314 = resolve_format_mode("3.14.0-100.0.dev", "latest")
+    asserts.false(env, m_sdk_314.in_process)
+    asserts.equals(env, "3.14", m_sdk_314.language_version)
+
+    return unittest.end(env)
+
+resolve_format_mode_test = unittest.make(_resolve_format_mode_test_impl)
+
+def _format_action_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
+    checks = target[DartAnalysisModeInfo].format_checks
+    asserts.equals(env, 1, len(checks), "expected one DartFormat check")
+    if checks:
+        check = checks[0]
+        asserts.true(
+            env,
+            "HOME" in check.env or ("USERPROFILE" in check.env and "LOCALAPPDATA" in check.env),
+            "DartFormat must set writable_home_env, got: %s" % check.env,
+        )
+        asserts.equals(env, ctx.attr.expected_language_version, check.mode.language_version)
+        asserts.equals(env, not ctx.attr.expect_compile_files, check.mode.in_process)
+        input_basenames = [f.basename for f in check.sdk_inputs.to_list()]
+        has_compile = "gen_kernel_aot.dart.snapshot" in input_basenames
+        asserts.equals(
+            env,
+            ctx.attr.expect_compile_files,
+            has_compile,
+            "DartFormat compile_files presence mismatch: %s" % input_basenames,
+        )
+    return analysistest.end(env)
+
+format_action_test = analysistest.make(
+    _format_action_test_impl,
+    attrs = {
+        "expected_language_version": attr.string(mandatory = True),
+        "expect_compile_files": attr.bool(mandatory = True),
+    },
+    extra_target_under_test_aspects = [dart_analyze],
+)
+

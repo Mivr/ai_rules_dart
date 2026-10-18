@@ -213,3 +213,29 @@ dart_test(
     main = "fix_runner_test.dart",
     deps = ["@ext_pub_deps//:test"],
 )
+
+dart_test(
+    name = "format_runner_test",
+    size = "small",
+    srcs = ["format_runner.dart"],
+    args = [
+        "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
+        "$(rlocationpath @dart_toolchains//sdk/3.13.4:dart)",
+    ],
+    data = [
+        "@dart_toolchains//sdk/3.13.4:compile_files",
+        "@dart_toolchains//sdk/3.13.4:dart",
+        "@dart_toolchains//sdk/3.13.5:compile_files",
+        "@dart_toolchains//sdk/3.13.5:dart",
+    ],
+    main = "format_runner_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:dart_style",
+        "@ext_pub_deps//:package_config",
+        "@ext_pub_deps//:path",
+        "@ext_pub_deps//:pub_semver",
+        "@ext_pub_deps//:test",
+    ],
+)
+

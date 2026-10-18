@@ -103,6 +103,7 @@ DartAnalysisModeInfo = provider(
     doc = "How the `dart_analyze` aspect checked one target: against its dependencies' summaries, or from their source.",
     fields = {
         "summaries": "bool: True when the analysis read dependency summaries. False when it analyzed the staged closure from source, or did not analyze the target.",
+        "format_checks": "list[struct]: Each `DartFormat` check's resolved `mode`, `sdk_inputs`, and `env`.",
     },
 )
 
@@ -430,7 +431,87 @@ def _format_language_versions(info, own_paths):
         groups.setdefault(version, []).append(path)
     return groups
 
-def _format(ctx, name, staged, sdk_inputs, own_paths, language_version):
+# The SDK `<major>.<minor>` series whose `dart format` rules match the
+# vendored `package:dart_style` in `dart/ext/pubspec.lock`, and the minimum
+# patch within that series. When the toolchain's SDK is outside this series or
+# the target's language version is outside `FORMATTER_MIN_LANGUAGE_VERSION` ..
+# `<sdk_major>.<sdk_minor>`, `DartFormat` declares `compile_files` and
+# `format_runner` invokes the SDK's own `dart format` CLI.
+FORMATTER_SDK_SERIES = (3, 13)
+FORMATTER_MIN_SDK_PATCH = 4
+FORMATTER_MIN_LANGUAGE_VERSION = (2, 12)
+FORMATTER_MAX_2X_MINOR = 19
+
+def _parse_sdk_version(version):
+    """Returns `(major, minor, patch)` of an SDK version string, or None."""
+    core = version.split("-")[0].split("+")[0].split(".")
+    if len(core) < 2 or not core[0].isdigit() or not core[1].isdigit():
+        return None
+    patch = 0
+    if len(core) >= 3:
+        if not core[2].isdigit():
+            return None
+        patch = int(core[2])
+    return (int(core[0]), int(core[1]), patch)
+
+def _parse_language_version(version):
+    """Returns `(major, minor)` of a `major.minor` language version, or None."""
+    parts = version.split(".")
+    if len(parts) != 2 or not parts[0].isdigit() or not parts[1].isdigit():
+        return None
+    return (int(parts[0]), int(parts[1]))
+
+def resolve_format_mode(sdk_version, language_version):
+    """Decides which formatter and language version `DartFormat` uses.
+
+    Mirrors `resolveFormatMode` in `dart/private/tools/format_runner.dart` so
+    the Starlark action gate (whether `compile_files` is declared in `inputs`)
+    and `format_runner` (whether formatting runs in-process with the vendored
+    `package:dart_style` or shells out to the SDK's `dart format`) always make
+    the same choice.
+
+    When `language_version` is empty or `"latest"`, the effective language
+    version is the toolchain SDK's own `<major>.<minor>`, never the vendored
+    `package:dart_style`'s `latestLanguageVersion`.
+
+    Args:
+      sdk_version: The toolchain's `DartSdkInfo.version` (e.g. `"3.13.5"`).
+      language_version: The target's package language version (`""`, `"latest"`,
+        or `"<major>.<minor>"`).
+
+    Returns:
+      `struct(in_process = bool, language_version = str)`.
+    """
+    sdk = _parse_sdk_version(sdk_version)
+    if sdk == None:
+        return struct(
+            in_process = False,
+            language_version = language_version if language_version else "latest",
+        )
+    sdk_major, sdk_minor, sdk_patch = sdk
+    sdk_lv = (sdk_major, sdk_minor)
+    if not language_version or language_version == "latest":
+        lv = sdk_lv
+        effective_lv = "%d.%d" % (sdk_major, sdk_minor)
+    else:
+        lv = _parse_language_version(language_version)
+        if lv == None:
+            return struct(
+                in_process = False,
+                language_version = language_version,
+            )
+        effective_lv = "%d.%d" % (lv[0], lv[1])
+
+    sdk_matches = (sdk_major, sdk_minor) == FORMATTER_SDK_SERIES and sdk_patch >= FORMATTER_MIN_SDK_PATCH
+    lv_valid_2x = lv[0] == 2 and FORMATTER_MIN_LANGUAGE_VERSION[1] <= lv[1] and lv[1] <= FORMATTER_MAX_2X_MINOR
+    lv_valid_3x = lv[0] == 3 and 0 <= lv[1] and lv[1] <= FORMATTER_SDK_SERIES[1]
+    lv_supported = (lv_valid_2x or lv_valid_3x) and FORMATTER_MIN_LANGUAGE_VERSION <= lv and lv <= sdk_lv
+    return struct(
+        in_process = sdk_matches and lv_supported,
+        language_version = effective_lv,
+    )
+
+def _format(ctx, name, staged, own_paths, language_version):
     """Declares the `dart format` check; returns the stamp it writes on success.
 
     Files are named individually rather than by handing the formatter the
@@ -444,14 +525,20 @@ def _format(ctx, name, staged, sdk_inputs, own_paths, language_version):
     as the analyzer needs, would make every edit to one of them re-run this
     check on every target above it, with nothing it reads changed.
 
-    `sdk_inputs` is the compile subset of the SDK, not the whole of it: the
-    formatter opens only the files `dart compile` does, and every input is
-    symlinked into the sandbox and, remotely, hashed and uploaded.
+    When `resolve_format_mode` selects in-process formatting, only
+    `runtime_files` are declared in `sdk_inputs`; when falling back to the
+    SDK's `dart format` CLI, `compile_files` are included as well.
     """
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
     mismatch = kernel_sdk_mismatch_error(ctx.label, "_format_tool", ctx.attr._format_tool, dart_sdk_info.version)
     if mismatch != None:
         fail(mismatch)
+    mode = resolve_format_mode(dart_sdk_info.version, language_version)
+    sdk_inputs = (
+        depset(direct = [dart_sdk_info.dart], transitive = [dart_sdk_info.runtime_files])
+        if mode.in_process
+        else depset(direct = [dart_sdk_info.dart], transitive = [dart_sdk_info.compile_files, dart_sdk_info.runtime_files])
+    )
     manifest = ctx.actions.declare_file(name + ".format_manifest")
     ctx.actions.write(
         output = manifest,
@@ -462,14 +549,17 @@ def _format(ctx, name, staged, sdk_inputs, own_paths, language_version):
     args.use_param_file("@%s", use_always = True)
     args.set_param_file_format("multiline")
     args.add("--dart", dart_sdk_info.dart)
+    args.add("--sdk-version", dart_sdk_info.version)
     args.add("--project", staged.proj_path)
     args.add("--manifest", manifest)
     args.add("--stamp", stamp)
 
-    # Always explicit — `latest` is what the formatter would have inferred with
-    # nothing to go on, said out loud so no staged config can answer instead.
-    args.add("--language-version", language_version or "latest")
+    # Always explicit — `resolve_format_mode` resolves `""`/`"latest"` to the
+    # toolchain SDK's `<major>.<minor>`, said out loud so neither the vendored
+    # formatter's `latestLanguageVersion` nor a staged config can answer instead.
+    args.add("--language-version", mode.language_version)
     tags = getattr(ctx.rule.attr, "tags", [])
+    env = writable_home_env(dart_sdk_info.dart, stamp)
     ctx.actions.run(
         executable = dart_sdk_info.dart,
         arguments = [ctx.executable._format_tool.path, args],
@@ -478,12 +568,18 @@ def _format(ctx, name, staged, sdk_inputs, own_paths, language_version):
         outputs = [stamp],
         mnemonic = "DartFormat",
         progress_message = "Checking Dart formatting of %{label}",
+        env = env,
         execution_requirements = {} if "manual" in tags else {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
         },
     )
-    return stamp
+    return struct(
+        stamp = stamp,
+        mode = mode,
+        sdk_inputs = sdk_inputs,
+        env = env,
+    )
 
 def _closure_summary_outputs(target, ctx):
     sets = []
@@ -553,16 +649,6 @@ def _dart_analyze_aspect_impl(target, ctx):
     # `analyzer_summary`, `fix_runner`).
     sdk_inputs = depset(direct = [dart_sdk_info.dart], transitive = [dart_sdk_info.analyze_files, dart_sdk_info.runtime_files])
 
-    # The formatter reads no more of the SDK than the compiler does, so it takes
-    # the compile subset when falling back to the SDK's `dart format` CLI. When
-    # the embedded `package:dart_style` supports `sdk_version`, `format_runner`
-    # formats in-process and needs only `runtime_files` to run `format_runner.dill`.
-    format_sdk_inputs = (
-        depset(direct = [dart_sdk_info.dart], transitive = [dart_sdk_info.runtime_files])
-        if analyzer_summaries_supported(sdk_version)
-        else depset(direct = [dart_sdk_info.dart], transitive = [dart_sdk_info.compile_files, dart_sdk_info.runtime_files])
-    )
-
     tags = getattr(ctx.rule.attr, "tags", [])
     groups = {}
     summary_mode = False
@@ -606,6 +692,7 @@ def _dart_analyze_aspect_impl(target, ctx):
             )])
         else:
             groups["dart_analyze"] = depset([_analyze(ctx, name, staged, sdk_inputs)])
+    format_checks = []
     if NO_FORMAT_TAG not in tags:
         by_version = _format_language_versions(info, own_paths)
         format_staged = stage_config_project(
@@ -618,17 +705,17 @@ def _dart_analyze_aspect_impl(target, ctx):
             sdk_version,
             copy_external = False,
         )
-        groups["dart_format"] = depset([
+        format_checks = [
             _format(
                 ctx,
                 name if len(by_version) == 1 else "%s.%s" % (name, version or "latest"),
                 format_staged,
-                format_sdk_inputs,
                 paths,
                 version,
             )
             for version, paths in sorted(by_version.items())
-        ])
+        ]
+        groups["dart_format"] = depset([c.stamp for c in format_checks])
 
     # Write-back is limited to the target's own hand-written files, decided
     # from Bazel's record of what each file is rather than from its name:
@@ -671,7 +758,10 @@ def _dart_analyze_aspect_impl(target, ctx):
             **groups
         ),
         DartFixOutputsInfo(fixes = fixes, manifest = manifest),
-        DartAnalysisModeInfo(summaries = summary_mode),
+        DartAnalysisModeInfo(
+            summaries = summary_mode,
+            format_checks = format_checks,
+        ),
     ]
 
 dart_analyze = aspect(
