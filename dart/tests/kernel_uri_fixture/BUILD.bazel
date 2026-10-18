@@ -22,11 +22,37 @@ dart_binary(
     main = "bin/probe.dart",
 )
 
+dart_binary(
+    name = "probe_kernel",
+    srcs = ["lib/where.dart"],
+    compile_mode = "kernel",
+    main = "bin/probe.dart",
+)
+
+dart_binary(
+    name = "probe_kernel_whole",
+    srcs = ["lib/where.dart"],
+    compile_mode = "kernel",
+    main = "bin/probe.dart",
+    modular_kernel = False,
+)
+
+dart_binary(
+    name = "probe_kernel_with_asset",
+    srcs = ["lib/where.dart"],
+    code_assets = [":asset"],
+    compile_mode = "kernel",
+    main = "bin/probe.dart",
+)
+
 dart_test(
     name = "kernel_uri_test",
     size = "small",
     data = [
         ":probe",
+        ":probe_kernel",
+        ":probe_kernel_whole",
+        ":probe_kernel_with_asset",
         ":probe_with_asset",
     ],
     main = "kernel_uri_test.dart",

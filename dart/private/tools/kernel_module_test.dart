@@ -20,7 +20,7 @@ import 'kernel_module.dart'
         scanDirectives,
         stripSourceCodeFromDill;
 
-const _prefix = 'org-dartlang-bazel:///';
+const _prefix = 'org-dartlang-root:///';
 
 /// The test's files: sources, module directories and sidecars, and the configs.
 late Directory _root;
@@ -1554,7 +1554,7 @@ void main() {
         '--multi-root',
         _root.path,
         '--multi-root-scheme',
-        'org-dartlang-bazel',
+        'org-dartlang-root',
         '--no-summary-only',
         '--exclude-non-sources',
         for (final s in inputSummaries) ...['--input-summary', s],
@@ -1827,7 +1827,7 @@ void main() {
         '--multi-root',
         _root.path,
         '--multi-root-scheme',
-        'org-dartlang-bazel',
+        'org-dartlang-root',
         '-DCOMMA_VAL=a,b',
         '--no-summary-only',
         '--exclude-non-sources',
@@ -1862,7 +1862,7 @@ void main() {
         '--multi-root',
         _root.path,
         '--multi-root-scheme',
-        'org-dartlang-bazel',
+        'org-dartlang-root',
         '-DCOMMA_VAL=a,b',
         '--no-summary-only',
         '--exclude-non-sources',
@@ -1899,6 +1899,298 @@ void main() {
     expect(runRes.exitCode, 0, reason: '${runRes.stdout}\n${runRes.stderr}');
     expect((runRes.stdout as String).trim(), 'a,b|a,b');
   });
+
+  test('whole-program and modular kernel compiles are byte-identical across clean builds and checkout paths', () async {
+    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final exeSuffix = Platform.isWindows ? '.exe' : '';
+    final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
+    final genKernel =
+        '${sdkDir.path}/bin/snapshots/gen_kernel_aot.dart.snapshot';
+    final kernelWorker =
+        '${sdkDir.path}/bin/snapshots/kernel_worker_aot.dart.snapshot';
+    final platformDill = '${sdkDir.path}/lib/_internal/vm_platform_strong.dill';
+    final productPlatformDill =
+        '${sdkDir.path}/lib/_internal/vm_platform_product.dill';
+    final librariesJson = '${sdkDir.path}/lib/libraries.json';
+
+    Future<
+      ({
+        Uint8List wholeDill,
+        Uint8List modularDill,
+        Uint8List koutline,
+        String wholeOut,
+        String modularOut,
+      })
+    >
+    buildInCheckout(String relCheckout) async {
+      final dir = Directory('${_root.path}/$relCheckout')
+        ..createSync(recursive: true);
+      void writeCheckout(String rel, String content) {
+        final f = File('${dir.path}/$rel');
+        f.parent.createSync(recursive: true);
+        f.writeAsStringSync(content);
+      }
+
+      writeCheckout(
+        'package_config.json',
+        '{\n'
+            '  "configVersion": 2,\n'
+            '  "packages": [\n'
+            '    {"name": "pkg", "rootUri": "org-dartlang-root:///pkg", "packageUri": "lib/", "languageVersion": "3.0"}\n'
+            '  ]\n'
+            '}\n',
+      );
+      writeCheckout(
+        'pkg/lib/where.dart',
+        "part 'gen.dart';\n"
+            'const bool libProduct = bool.fromEnvironment(\'dart.vm.product\');\n'
+            'String libFrame() => StackTrace.current.toString().split(\'\\n\')[0];\n'
+            'String callerFrame() => StackTrace.current.toString().split(\'\\n\')[1];\n',
+      );
+      writeCheckout(
+        'bazel-out/k8-fastbuild/bin/pkg/lib/gen.dart',
+        "part of 'where.dart';\n"
+            "String generatedGreeting() => 'gen:\$libProduct';\n",
+      );
+      writeCheckout(
+        'app/lib/helper.dart',
+        'String helperFrame() => StackTrace.current.toString().split(\'\\n\')[0];\n',
+      );
+      writeCheckout(
+        'app/bin/probe.dart',
+        "import 'dart:io';\n"
+            "import 'package:pkg/where.dart';\n"
+            "import '../lib/helper.dart';\n"
+            'void main() {\n'
+            "  print('product=\${const bool.fromEnvironment('dart.vm.product')}');\n"
+            "  print('gen=\${generatedGreeting()}');\n"
+            "  print('scriptIsDill=\${Platform.script.scheme == 'file' && Platform.script.path.endsWith('.dill')}');\n"
+            "  print('caller=\${callerFrame()}');\n"
+            "  print('lib=\${libFrame()}');\n"
+            "  print('helper=\${helperFrame()}');\n"
+            '}\n',
+      );
+
+      final wholePath =
+          '${dir.path}/bazel-out/k8-fastbuild/bin/probe_whole.dill';
+      File(wholePath).parent.createSync(recursive: true);
+      final genRes = await Process.run(dartaotruntime, [
+        genKernel,
+        '--platform',
+        productPlatformDill,
+        '--packages',
+        'package_config.json',
+        '--filesystem-scheme',
+        'org-dartlang-root',
+        '--filesystem-root',
+        'bazel-out/k8-fastbuild/bin',
+        '--filesystem-root',
+        '.',
+        '-Ddart.vm.product=true',
+        '-Ddart.vm.asan=false',
+        '-Ddart.vm.msan=false',
+        '-Ddart.vm.tsan=false',
+        '-o',
+        'bazel-out/k8-fastbuild/bin/probe_whole.dill',
+        'org-dartlang-root:///app/bin/probe.dart',
+      ], workingDirectory: dir.path);
+      expect(
+        genRes.exitCode,
+        0,
+        reason: 'gen_kernel failed: ${genRes.stdout}\n${genRes.stderr}',
+      );
+
+      final compiler = _CwdOneShotCompiler(
+        dartaotruntime,
+        kernelWorker,
+        dir.path,
+      );
+      final libKmod = 'bazel-out/k8-fastbuild/bin/pkg.kmod';
+      final libKoutline = 'bazel-out/k8-fastbuild/bin/pkg.koutline';
+      final libExcluded = 'bazel-out/k8-fastbuild/bin/pkg.vm_excluded.txt';
+      final libLog = StringBuffer();
+      final prevCurrent = Directory.current;
+      Directory.current = dir;
+      try {
+        final libCode = await compileModule(
+          [
+            '--target',
+            'vm',
+            '--dart-sdk-summary',
+            platformDill,
+            '--packages-file',
+            'package_config.json',
+            '--libraries-json',
+            librariesJson,
+            '--multi-root',
+            'bazel-out/k8-fastbuild/bin',
+            '--multi-root',
+            '.',
+            '--multi-root-scheme',
+            'org-dartlang-root',
+            '-Ddart.vm.product=true',
+            '-Ddart.vm.asan=false',
+            '-Ddart.vm.msan=false',
+            '-Ddart.vm.tsan=false',
+            '--no-summary-only',
+            '--exclude-non-sources',
+            '--source',
+            'package:pkg/where.dart',
+            '--source',
+            'package:pkg/gen.dart',
+            '--output',
+            libKmod,
+            '--output-outline',
+            libKoutline,
+            '--excluded-output',
+            libExcluded,
+          ],
+          compiler,
+          libLog,
+          const [],
+        );
+        expect(libCode, 0, reason: libLog.toString());
+
+        final entryKmod = 'bazel-out/k8-fastbuild/bin/entry.kmod';
+        final entryExcluded =
+            'bazel-out/k8-fastbuild/bin/entry.vm_excluded.txt';
+        final entryLog = StringBuffer();
+        final entryCode = await compileModule(
+          [
+            '--target',
+            'vm',
+            '--dart-sdk-summary',
+            platformDill,
+            '--packages-file',
+            'package_config.json',
+            '--libraries-json',
+            librariesJson,
+            '--multi-root',
+            'bazel-out/k8-fastbuild/bin',
+            '--multi-root',
+            '.',
+            '--multi-root-scheme',
+            'org-dartlang-root',
+            '-Ddart.vm.product=true',
+            '-Ddart.vm.asan=false',
+            '-Ddart.vm.msan=false',
+            '-Ddart.vm.tsan=false',
+            '--no-summary-only',
+            '--exclude-non-sources',
+            '--input-kmod',
+            libKoutline,
+            '--source',
+            'org-dartlang-root:///app/bin/probe.dart',
+            '--source',
+            'org-dartlang-root:///app/lib/helper.dart',
+            '--output',
+            entryKmod,
+            '--excluded-output',
+            entryExcluded,
+            '--no-drop',
+          ],
+          compiler,
+          entryLog,
+          const [],
+        );
+        expect(entryCode, 0, reason: entryLog.toString());
+
+        final modularPath = 'bazel-out/k8-fastbuild/bin/probe_modular.dill';
+        final linkErr = StringBuffer();
+        expect(
+          linkOne(
+            [modularPath, entryKmod, libKmod],
+            cache: KernelLinkCache(),
+            inputs: null,
+            errSink: linkErr,
+          ),
+          0,
+          reason: linkErr.toString(),
+        );
+      } finally {
+        Directory.current = prevCurrent;
+      }
+
+      final modularPath =
+          '${dir.path}/bazel-out/k8-fastbuild/bin/probe_modular.dill';
+      final wholeRun = await Process.run(Platform.resolvedExecutable, [
+        wholePath,
+      ]);
+      expect(wholeRun.exitCode, 0, reason: '${wholeRun.stderr}');
+      final modularRun = await Process.run(Platform.resolvedExecutable, [
+        modularPath,
+      ]);
+      expect(modularRun.exitCode, 0, reason: '${modularRun.stderr}');
+
+      return (
+        wholeDill: File(wholePath).readAsBytesSync(),
+        modularDill: File(modularPath).readAsBytesSync(),
+        koutline: File(
+          '${dir.path}/bazel-out/k8-fastbuild/bin/pkg.koutline/0.dill',
+        ).readAsBytesSync(),
+        wholeOut: (wholeRun.stdout as String).replaceAll('\r\n', '\n'),
+        modularOut: (modularRun.stdout as String).replaceAll('\r\n', '\n'),
+      );
+    }
+
+    final buildA1 = await buildInCheckout('checkout_a');
+    Directory('${_root.path}/checkout_a').deleteSync(recursive: true);
+    final buildA2 = await buildInCheckout('checkout_a');
+    final buildB = await buildInCheckout('deep/nested/path/checkout_b');
+
+    expect(
+      buildA1.wholeDill,
+      equals(buildA2.wholeDill),
+      reason: 'whole-program kernel must be byte-identical across clean builds',
+    );
+    expect(
+      buildA1.wholeDill,
+      equals(buildB.wholeDill),
+      reason:
+          'whole-program kernel must be byte-identical across checkout paths',
+    );
+    expect(
+      buildA1.modularDill,
+      equals(buildA2.modularDill),
+      reason: 'modular kernel must be byte-identical across clean builds',
+    );
+    expect(
+      buildA1.modularDill,
+      equals(buildB.modularDill),
+      reason: 'modular kernel must be byte-identical across checkout paths',
+    );
+    expect(
+      buildA1.koutline,
+      equals(buildB.koutline),
+      reason: '.koutline must be byte-identical across checkout paths',
+    );
+    expect(
+      _containsSubsequence(buildA1.wholeDill, utf8.encode('checkout_a')),
+      isFalse,
+    );
+    expect(
+      _containsSubsequence(buildA1.modularDill, utf8.encode('checkout_a')),
+      isFalse,
+    );
+    expect(
+      buildA1.wholeOut,
+      equals(buildA1.modularOut),
+      reason: 'modular and whole-program kernels must print identical output',
+    );
+    expect(buildA1.wholeOut, equals(buildB.wholeOut));
+    expect(buildA1.modularOut, contains('product=true\n'));
+    expect(buildA1.modularOut, contains('gen=gen:true\n'));
+    expect(buildA1.modularOut, contains('scriptIsDill=true\n'));
+    expect(
+      buildA1.modularOut,
+      contains('(org-dartlang-root:///app/bin/probe.dart:'),
+    );
+    expect(buildA1.modularOut, contains('(package:pkg/where.dart:'));
+    expect(
+      buildA1.modularOut,
+      contains('(org-dartlang-root:///app/lib/helper.dart:'),
+    );
+  });
 }
 
 class _RealOneShotCompiler implements ModuleCompiler {
@@ -1910,6 +2202,26 @@ class _RealOneShotCompiler implements ModuleCompiler {
   @override
   Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
     final res = await Process.run(_dartaotruntime, [_kernelWorker, ...args]);
+    return ModuleOutcome(res.exitCode, '${res.stdout}${res.stderr}');
+  }
+
+  @override
+  Future<void> close() async {}
+}
+
+class _CwdOneShotCompiler implements ModuleCompiler {
+  _CwdOneShotCompiler(this._dartaotruntime, this._kernelWorker, this._cwd);
+
+  final String _dartaotruntime;
+  final String _kernelWorker;
+  final String _cwd;
+
+  @override
+  Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
+    final res = await Process.run(_dartaotruntime, [
+      _kernelWorker,
+      ...args,
+    ], workingDirectory: _cwd);
     return ModuleOutcome(res.exitCode, '${res.stdout}${res.stderr}');
   }
 

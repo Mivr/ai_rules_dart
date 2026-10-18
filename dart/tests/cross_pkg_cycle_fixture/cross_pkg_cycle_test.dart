@@ -65,7 +65,7 @@ void main(List<String> args) {
         f.writeAsStringSync(text);
       }
 
-      const prefix = 'org-dartlang-bazel:///';
+      const prefix = 'org-dartlang-root:///';
       write(
         'package_config.json',
         jsonEncode({
@@ -130,7 +130,7 @@ void main(List<String> args) {
           '--multi-root',
           tmp.path,
           '--multi-root-scheme',
-          'org-dartlang-bazel',
+          'org-dartlang-root',
           '--no-summary-only',
           '--exclude-non-sources',
           for (final dir in inputKmods) ...['--input-kmod', dir],

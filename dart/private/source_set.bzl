@@ -3,7 +3,7 @@
 A package whose files are split between the source tree and `bazel-out` (because
 a `dart_codegen` writes generated members, or several `dart_library` targets
 contribute to one package) keeps its one `lib_root`. Compiles name every package
-as `org-dartlang-bazel:///<lib_root>`, and the compiler resolves that through a
+as `org-dartlang-root:///<lib_root>`, and the compiler resolves that through a
 multi-root file system: the source tree and the bin directory both serve the
 `<lib_root>/...` paths, and each file is found where it sits (`gen_kernel_args`
 in `common.bzl`). So `dart_binary` and `dart_test` compile in place and copy
@@ -311,7 +311,7 @@ def executable_inputs(packages, dep_srcs, main, own_srcs, own_package = None):
     """Gathers what an executable's compile reads. Nothing is copied.
 
     Every package keeps its `lib_root`, whether its files sit in the source tree,
-    in `bazel-out`, or both: the compile names it `org-dartlang-bazel:///<lib_root>`
+    in `bazel-out`, or both: the compile names it `org-dartlang-root:///<lib_root>`
     and the multi-root file system finds each file where it is (see the module
     docstring). The entrypoint and the executable's own sources are compiled where
     they sit too, so a generated sibling of `main` resolves beside it.

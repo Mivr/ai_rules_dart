@@ -37,24 +37,24 @@ def _web_compile_is_hermetic_test_impl(ctx):
 
     asserts.true(
         env,
-        "--multi-root-scheme=org-dartlang-bazel" in argv or
-        "-E--multi-root-scheme=org-dartlang-bazel" in argv,
-        "web compile must configure the org-dartlang-bazel multi-root scheme: %s" % argv,
+        "--multi-root-scheme=org-dartlang-root" in argv or
+        "-E--multi-root-scheme=org-dartlang-root" in argv,
+        "web compile must configure the org-dartlang-root multi-root scheme: %s" % argv,
     )
     asserts.true(
         env,
         "--multi-root=." in argv or "-E--multi-root=." in argv,
-        "web compile must root org-dartlang-bazel at the exec root: %s" % argv,
+        "web compile must root org-dartlang-root at the exec root: %s" % argv,
     )
     asserts.true(
         env,
-        any([a.startswith("--packages=org-dartlang-bazel:///") for a in argv]),
-        "web compile must address package_config via org-dartlang-bazel: %s" % argv,
+        any([a.startswith("--packages=org-dartlang-root:///") for a in argv]),
+        "web compile must address package_config via org-dartlang-root: %s" % argv,
     )
     asserts.true(
         env,
-        argv[-1].startswith("org-dartlang-bazel:///"),
-        "web compile entrypoint must use org-dartlang-bazel scheme, got: %s" % argv[-1],
+        argv[-1].startswith("org-dartlang-root:///"),
+        "web compile entrypoint must use org-dartlang-root scheme, got: %s" % argv[-1],
     )
 
     config_content = None

@@ -760,7 +760,12 @@ def generate_package_config(packages, all_srcs, config_file, roots = {}):
 # The URI scheme every compile resolves its inputs through. The frontend maps it
 # with `--filesystem-root` (see `gen_kernel_args`), so a file's URI is its
 # repository-relative path and never the absolute sandbox path it was read from.
-STABLE_SCHEME = "org-dartlang-bazel"
+STABLE_SCHEME = "org-dartlang-root"
+KERNEL_FILESYSTEM_SCHEME = STABLE_SCHEME
+
+def kernel_uri(path):
+    """The `KERNEL_FILESYSTEM_SCHEME` URI of an exec-root-relative path."""
+    return KERNEL_FILESYSTEM_SCHEME + ":///" + path
 
 def stable_path(path):
     """Returns the path a stable URI names, for a `short_path` or an exec path.

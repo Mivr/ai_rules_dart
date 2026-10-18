@@ -3,7 +3,7 @@
 Compiles a Dart application to JavaScript or WebAssembly for use in a browser.
 The rules stage the project layout hermetically from declared artifacts (see
 `project_staging.bzl`) and invoke the compiler directly under the
-`org-dartlang-bazel` multi-root scheme — no shell, no mktemp, and no host
+`org-dartlang-root` multi-root scheme — no shell, no mktemp, and no host
 `file:` paths in emitted source maps.
 """
 
@@ -98,7 +98,7 @@ def _dart_web_compile(ctx, compile_mode):
 
     # The entrypoint and package_config are addressed through `STABLE_SCHEME`
     # rooted at the exec root, so relative `rootUri`s in the staged
-    # `package_config.json` resolve under `org-dartlang-bazel:///` rather than
+    # `package_config.json` resolve under `org-dartlang-root:///` rather than
     # leaking the sandbox's `file:///` working directory into `.wasm.map`.
     args.add("%s:///%s/%s" % (STABLE_SCHEME, staged.src_tree.path, ctx.file.main.short_path))
 

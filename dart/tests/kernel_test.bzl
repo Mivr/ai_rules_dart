@@ -56,25 +56,25 @@ def _multi_root_uri_test_impl(ctx):
     env = unittest.begin(ctx)
     asserts.equals(
         env,
-        "org-dartlang-bazel:///pkg/a",
+        "org-dartlang-root:///pkg/a",
         multi_root_uri("pkg/a"),
         "a main-repo package root",
     )
     asserts.equals(
         env,
-        "org-dartlang-bazel:///",
+        "org-dartlang-root:///",
         multi_root_uri(""),
         "the root package is the bare scheme root",
     )
     asserts.equals(
         env,
-        "org-dartlang-bazel:///external/repo",
+        "org-dartlang-root:///external/repo",
         multi_root_uri("../repo"),
         "an external package root",
     )
     asserts.equals(
         env,
-        "org-dartlang-bazel:///external/repo/sub",
+        "org-dartlang-root:///external/repo/sub",
         multi_root_uri("../repo/sub"),
         "an external sub-package root",
     )
@@ -82,7 +82,7 @@ def _multi_root_uri_test_impl(ctx):
 
 def _multi_root_uri_custom_scheme_test_impl(ctx):
     env = unittest.begin(ctx)
-    asserts.equals(env, "org-dartlang-bazel", STABLE_SCHEME)
+    asserts.equals(env, "org-dartlang-root", STABLE_SCHEME)
     asserts.equals(
         env,
         "org-dartlang-app:///pkg/a",
@@ -107,19 +107,19 @@ def _entry_source_uri_test_impl(ctx):
     env = unittest.begin(ctx)
     asserts.equals(
         env,
-        "org-dartlang-bazel:///pkg/test/x_test.dart",
+        "org-dartlang-root:///pkg/test/x_test.dart",
         entry_source_uri("pkg/test/x_test.dart"),
         "a test in the main repo",
     )
     asserts.equals(
         env,
-        "org-dartlang-bazel:///pkg/x.vm_test.dart",
+        "org-dartlang-root:///pkg/x.vm_test.dart",
         entry_source_uri("pkg/x.vm_test.dart"),
         "a generated bootstrap, which sits beside the test in the output tree",
     )
     asserts.equals(
         env,
-        "org-dartlang-bazel:///external/repo/test/x_test.dart",
+        "org-dartlang-root:///external/repo/test/x_test.dart",
         entry_source_uri("../repo/test/x_test.dart"),
         "a test from an external repo",
     )
@@ -186,9 +186,9 @@ def _package_config_test_impl(ctx):
         "{\n" +
         '  "configVersion": 2,\n' +
         '  "packages": [\n' +
-        '    {"name": "a", "rootUri": "org-dartlang-bazel:///pkg/a", "packageUri": "lib/", "languageVersion": "3.9"},\n' +
-        '    {"name": "root", "rootUri": "org-dartlang-bazel:///", "packageUri": "lib/"},\n' +
-        '    {"name": "ext", "rootUri": "org-dartlang-bazel:///external/repo/sub", "packageUri": "lib/"}\n' +
+        '    {"name": "a", "rootUri": "org-dartlang-root:///pkg/a", "packageUri": "lib/", "languageVersion": "3.9"},\n' +
+        '    {"name": "root", "rootUri": "org-dartlang-root:///", "packageUri": "lib/"},\n' +
+        '    {"name": "ext", "rootUri": "org-dartlang-root:///external/repo/sub", "packageUri": "lib/"}\n' +
         "  ]\n" +
         "}\n"
     )
@@ -583,6 +583,16 @@ def _modular_kernel_binary_test_impl(ctx):
         target.label.name + ".entry.kmod" in kernel_out_basenames,
         "DartKernel action produces <name>.entry.kmod",
     )
+    asserts.true(
+        env,
+        "-Ddart.vm.product=true" in kernel_actions[0].argv,
+        "modular DartKernel entry action passes -Ddart.vm.product=true",
+    )
+    asserts.true(
+        env,
+        "org-dartlang-root" in kernel_actions[0].argv,
+        "modular DartKernel entry action uses org-dartlang-root scheme",
+    )
 
     link_actions = [a for a in actions if a.mnemonic == "DartKernelLink"]
     asserts.equals(env, 1, len(link_actions), "modular kernel binary registers one DartKernelLink action")
@@ -619,6 +629,16 @@ def _non_modular_kernel_binary_test_impl(ctx):
         [target.label.name + ".dill"],
         kernel_out_basenames,
         "whole-program DartKernel produces <name>.dill directly without .entry.kmod",
+    )
+    asserts.true(
+        env,
+        "-Ddart.vm.product=true" in kernel_actions[0].argv,
+        "whole-program DartKernel action passes -Ddart.vm.product=true",
+    )
+    asserts.true(
+        env,
+        "org-dartlang-root" in kernel_actions[0].argv,
+        "whole-program DartKernel action uses org-dartlang-root scheme",
     )
     return analysistest.end(env)
 
@@ -713,7 +733,7 @@ def _unseeded_base_kmods_fixture_impl(ctx):
     modular_executable_kernel(
         ctx = ctx,
         tools = tools,
-        sources = [struct(uri = "org-dartlang-bazel:///pkg/test/main_test.dart", file = src_file)],
+        sources = [struct(uri = "org-dartlang-root:///pkg/test/main_test.dart", file = src_file)],
         packages = [_pkg("pkg", "pkg", "3.9")],
         dep_kernels = [dep_a, dep_b],
         output = out_dill,

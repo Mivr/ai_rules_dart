@@ -207,7 +207,8 @@ def _kernel_action(
         extra_flags,
         jit_tool = None,
         native_assets_yaml = None,
-        embed_sources = True):
+        embed_sources = True,
+        product = None):
     """Runs `gen_kernel` over a source entrypoint, with stable URIs.
 
     `dart compile` reads its package config and entrypoint as file paths and
@@ -238,11 +239,16 @@ def _kernel_action(
             `vm:ffi:native-assets` mapping.
         embed_sources: Whether non-AOT kernels embed source text. The generated
             `package:test` runner entrypoint passes `False`.
+        product: Whether the kernel is for a product runtime: an AOT snapshot or
+            executable, or a `dart compile kernel` file. False for the JIT VM
+            that builds a `jit-snapshot`. Defaults to `True`.
     """
+    if product == None:
+        product = True
     tools = find_sdk_kernel_tools(dart_sdk_info)
-    platform = tools.product_platform_dill if aot else tools.platform_dill
+    platform = tools.product_platform_dill if product else tools.platform_dill
     args = gen_kernel_args(ctx, tools, platform, package_config)
-    args.add("-Ddart.vm.product=" + ("true" if aot else "false"))
+    args.add("-Ddart.vm.product=" + ("true" if product else "false"))
     args.add_all(["-Ddart.vm.asan=false", "-Ddart.vm.msan=false", "-Ddart.vm.tsan=false"])
     if aot:
         args.add("--aot")
@@ -386,7 +392,7 @@ def dart_compile_action(
     # pre-built kernel has no front end to receive them.
     front_end_flags = []
     backend_flags = extra_flags
-    if package_config != None and compile_mode != "kernel":
+    if package_config != None:
         split = split_compile_flags(extra_flags)
         if split.error != None:
             fail(split.error)
@@ -412,10 +418,11 @@ def dart_compile_action(
                 enable_asserts = False,
                 defines = defines,
                 recorded_uses = None,
-                extra_flags = extra_flags,
+                extra_flags = front_end_flags + backend_flags,
                 jit_tool = jit_tool,
                 native_assets_yaml = native_assets_yaml,
                 embed_sources = embed_sources,
+                product = True,
             )
             return
 
@@ -440,6 +447,7 @@ def dart_compile_action(
             jit_tool = jit_tool,
             native_assets_yaml = native_assets_yaml,
             embed_sources = embed_sources,
+            product = compile_mode != "jit-snapshot",
         )
         compile_main = kernel
         compile_main_path = None

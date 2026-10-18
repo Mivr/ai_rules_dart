@@ -288,7 +288,7 @@ def _write_modular_bootstrap(ctx):
     """Writes the modular entrypoint: the runner's bootstrap, importing the test by URI.
 
     The monolithic bootstrap imports the test by a path relative to itself. A
-    modular entry module names every source by its `org-dartlang-bazel` URI, so
+    modular entry module names every source by its `org-dartlang-root` URI, so
     the import names the test the same way, and the test's own relative imports
     resolve from that URI.
 

@@ -103,7 +103,7 @@ const _packagesFlag = '--packages-file';
 const _multiRootFlag = '--multi-root';
 const _multiRootSchemeFlag = '--multi-root-scheme';
 
-const _defaultMultiRootPrefix = 'org-dartlang-bazel:///';
+const _defaultMultiRootPrefix = 'org-dartlang-root:///';
 
 /// `<path>:<line>:<col>: Error: <message>`, one per located diagnostic.
 final _errorLine = RegExp(r'^(.+?):(\d+):(\d+): Error: (.*)$', multiLine: true);

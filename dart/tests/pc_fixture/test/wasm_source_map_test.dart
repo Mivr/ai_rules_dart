@@ -21,14 +21,14 @@ void main(List<String> args) {
     if (src.startsWith('/') || src.startsWith('file:')) {
       throw StateError('source map entry is an absolute path: $src');
     }
-    if (src.startsWith('org-dartlang-bazel:///') &&
+    if (src.startsWith('org-dartlang-root:///') &&
         src.endsWith('/dart/tests/pc_fixture/bin/main.dart')) {
       sawMain = true;
     }
   }
   if (!sawMain) {
     throw StateError(
-      'expected org-dartlang-bazel:/// entry for bin/main.dart in $sources',
+      'expected org-dartlang-root:/// entry for bin/main.dart in $sources',
     );
   }
 }

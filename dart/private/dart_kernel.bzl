@@ -19,7 +19,7 @@ in dependency order, which the VM runs as one program. A kernel nothing reaches
 is never linked.
 
 A module's package config names every package by a multi-root URI,
-`org-dartlang-bazel:///<path>`. The compiler resolves that against the source tree
+`org-dartlang-root:///<path>`. The compiler resolves that against the source tree
 and the output tree alike, so a package split between the two (a `dart_codegen`
 part) is read where it lies and never copied.
 
@@ -53,7 +53,7 @@ load(
 )
 load("//dart/private:dart_info.bzl", "package_lib_prefix")
 
-# The `org-dartlang-bazel` scheme `--multi-root` maps onto the exec root (`.`) and
+# The `org-dartlang-root` scheme `--multi-root` maps onto the exec root (`.`) and
 # the output directory (`ctx.bin_dir`). Its URIs are the exec-root-relative paths
 # a `File.short_path` already gives, so no path is copied or rewritten to make a
 # generated file reachable.
@@ -141,7 +141,7 @@ def multi_root_uri(short_path, scheme = STABLE_SCHEME):
         scheme: The multi-root URI scheme (`STABLE_SCHEME` by default).
 
     Returns:
-        The URI string, e.g. `org-dartlang-bazel:///pkg/a`.
+        The URI string, e.g. `org-dartlang-root:///pkg/a`.
     """
     return scheme + ":///" + stable_path(short_path)
 
@@ -680,6 +680,13 @@ def kernel_module_action(
     args.add("--multi-root", ctx.bin_dir.path)
     args.add("--multi-root", ".")
     args.add("--multi-root-scheme", scheme)
+    if target == "vm":
+        args.add_all([
+            "-Ddart.vm.product=true",
+            "-Ddart.vm.asan=false",
+            "-Ddart.vm.msan=false",
+            "-Ddart.vm.tsan=false",
+        ])
     args.add_all(defines, format_each = "-D%s")
     args.add_all(extra_frontend_flags)
 

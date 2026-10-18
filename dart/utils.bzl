@@ -11,6 +11,7 @@ load(
 )
 load(
     "//dart/private:common.bzl",
+    _KERNEL_FILESYSTEM_SCHEME = "KERNEL_FILESYSTEM_SCHEME",
     _STABLE_SCHEME = "STABLE_SCHEME",
     _collect_packages = "collect_packages",
     _collect_transitive_resources = "collect_transitive_resources",
@@ -20,6 +21,7 @@ load(
     _generate_package_config = "generate_package_config",
     _generate_package_config_content = "generate_package_config_content",
     _generate_stable_package_config = "generate_stable_package_config",
+    _kernel_uri = "kernel_uri",
     _runfiles_path = "runfiles_path",
     _stable_entry_path = "stable_entry_path",
     _stable_path = "stable_path",
@@ -138,6 +140,8 @@ derive_package_name = _derive_package_name
 
 # Stable multi-root URI helpers (`<scheme>:///<short_path>`).
 STABLE_SCHEME = _STABLE_SCHEME
+KERNEL_FILESYSTEM_SCHEME = _KERNEL_FILESYSTEM_SCHEME
+kernel_uri = _kernel_uri
 stable_path = _stable_path
 stable_entry_path = _stable_entry_path
 generate_stable_package_config = _generate_stable_package_config
