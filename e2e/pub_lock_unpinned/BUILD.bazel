@@ -1,11 +1,30 @@
-load("@rules_dart//dart:defs.bzl", "dart_binary")
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_test")
+load(":unpinned_lock_contract.bzl", "check_unpinned_lock_contract")
 
 exports_files(["pubspec.lock"])
 
-# This workspace should FAIL to build because pubspec.lock lists a hosted
-# package ("collection") without a sha256 checksum.
+# Verifies at package load time that `lock_package_error` and
+# `pub_lock_package_sha256_error` reject a hosted lock entry without `sha256`.
+check_unpinned_lock_contract()
+
+# This workspace should FAIL to build at module resolution because pubspec.lock
+# lists a hosted package ("collection" 1.18.0) without a sha256 checksum:
+#
+#   if bazel build //:app 2>/dev/null; then
+#     echo "ERROR: build should have failed with a missing sha256 error"
+#     exit 1
+#   fi
+#   bazel build //:app 2>&1 | grep -q 'pub package "collection" 1.18.0 in @@//:pubspec.lock has no sha256'
+#   bazel build //:app 2>&1 | grep -q 'pub_lock_package "collection" (1.18.0) requires a non-empty sha256.'
 dart_binary(
     name = "app",
+    main = "main.dart",
+    deps = ["@deps//:collection"],
+)
+
+dart_test(
+    name = "unpinned_lock_test",
+    size = "small",
     main = "main.dart",
     deps = ["@deps//:collection"],
 )

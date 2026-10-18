@@ -12,8 +12,11 @@ use_repo(dart, "dart_toolchains")
 
 register_toolchains("@dart_toolchains//:all")
 
-# pubspec.lock has a hosted package entry without sha256, so this should fail
-# during module extension evaluation with a missing-sha256 error.
+# pubspec.lock has a hosted package entry ("collection" 1.18.0) without sha256,
+# so evaluating `pub` must fail with `lock_package_error`
+# ('pub package "collection" 1.18.0 in @@//:pubspec.lock has no sha256. ...')
+# and `pub_lock_package_sha256_error`
+# ('pub_lock_package "collection" (1.18.0) requires a non-empty sha256.').
 pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
 pub.from_lock(
     name = "deps",

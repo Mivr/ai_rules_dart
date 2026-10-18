@@ -1,11 +1,21 @@
-load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_binary")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_binary", "dart_test")
 load(":registry_contract.bzl", "check_registry_contract")
+load(":unpinned_lock_contract.bzl", "check_unpinned_lock_contract")
 
 exports_files(["pubspec.lock"])
 
 # Asserts rules_dart's curated-registry resolver is loadable and usable from
 # another module, the way rules_flutter consumes it.
 check_registry_contract()
+
+# Verifies that a lock entry without `sha256` fails with `lock_package_error`
+# and `pub_lock_package_sha256_error`.
+dart_test(
+    name = "unpinned_lock_test",
+    size = "small",
+    defines = check_unpinned_lock_contract(),
+    main = "unpinned_lock_test.dart",
+)
 
 # `file` imports `path`, and `path` is declared with pub.package() above: both
 # reach this binary through the one hub, so `file` must see the explicit repo.
