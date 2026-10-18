@@ -49,6 +49,29 @@ const _failed = 1;
 
 bool _lintRulesRegistered = false;
 
+/// Number of [AnalysisContextCollectionImpl] instances disposed across
+/// `summarize` and `analyze` requests in this process.
+int disposedContextCollectionsCount = 0;
+
+/// Optional hook invoked after each [AnalysisContextCollectionImpl] is disposed
+/// (used by tests to verify driver / context release).
+void Function(AnalysisContextCollectionImpl collection)?
+onContextCollectionDisposed;
+
+Future<void> _disposeCollection(
+  AnalysisContextCollectionImpl collection,
+) async {
+  try {
+    await collection.dispose();
+  } catch (_) {
+    // Swallow tear-down exceptions from any older analyzer internals after
+    // scheduling driver disposal.
+  } finally {
+    disposedContextCollectionsCount++;
+    onContextCollectionDisposed?.call(collection);
+  }
+}
+
 /// Registers the vendored lint rules once per process.
 void _ensureLintRulesRegistered() {
   if (!_lintRulesRegistered) {
@@ -77,7 +100,20 @@ Future<void> main(List<String> rawArgs) async {
 Future<void> _runPersistentWorker() async {
   _ensureLintRulesRegistered();
   final disableCache = Platform.environment['ANALYZER_SUMMARY_NO_CACHE'] == '1';
-  final summaryCache = SummaryByteCache();
+  final envTotalMb = int.tryParse(
+    Platform.environment['ANALYZER_SUMMARY_CACHE_MB'] ?? '',
+  );
+  final envInstances = int.tryParse(
+    Platform.environment['ANALYZER_SUMMARY_WORKER_INSTANCES'] ?? '',
+  );
+  final summaryCache = SummaryByteCache(
+    totalBudgetBytes: envTotalMb != null && envTotalMb > 0
+        ? envTotalMb * 1024 * 1024
+        : SummaryByteCache.defaultTotalBudgetBytes,
+    workerInstances: envInstances != null && envInstances > 0
+        ? envInstances
+        : SummaryByteCache.defaultWorkerInstances,
+  );
 
   await for (final bytes in _Frames(stdin)) {
     final request = _WorkRequest.read(bytes);
@@ -315,13 +351,15 @@ Future<int> _summarize(
     packageConfigFile: packagesPath,
     librarySummaryPaths: summaryPaths,
   );
-  final driver = collection.contexts.single.driver;
-  final bytes = await driver.buildPackageBundle(
-    uriList: [for (final u in libraryUris) Uri.parse(u)],
-  );
-  // Do NOT call `collection.dispose()`. On analyzer 13.3.0, `dispose` after a
-  // summary build threw "Expected to link dart:core and dart:async first".
-  // Letting `collection` go out of scope allows GC to reclaim it cleanly.
+  final Uint8List bytes;
+  try {
+    final driver = collection.contexts.single.driver;
+    bytes = await driver.buildPackageBundle(
+      uriList: [for (final u in libraryUris) Uri.parse(u)],
+    );
+  } finally {
+    await _disposeCollection(collection);
+  }
   File(args.single('out')).writeAsBytesSync(bytes);
   return 0;
 }
@@ -388,103 +426,107 @@ Future<int> _analyze(
     packageConfigFile: packagesPath,
     librarySummaryPaths: summaryPaths,
   );
-  final context = collection.contexts.single;
-  final driver = context.driver;
+  try {
+    final context = collection.contexts.single;
+    final driver = context.driver;
 
-  final analyzed = _analyzedPaths(
-    project,
-    context,
-    allowedSrcPaths: allowedSrcPaths,
-  );
-  final analyzedSet = analyzed.toSet();
-  final expectedDartFiles = <String>{
-    for (final s in explicitSources)
-      if (s.endsWith('.dart')) s,
-    if (allowedSrcPaths != null)
-      for (final s in allowedSrcPaths)
+    final analyzed = _analyzedPaths(
+      project,
+      context,
+      allowedSrcPaths: allowedSrcPaths,
+    );
+    final analyzedSet = analyzed.toSet();
+    final expectedDartFiles = <String>{
+      for (final s in explicitSources)
         if (s.endsWith('.dart')) s,
-  };
-  for (final expected in explicitSources) {
-    if (allowedSrcPaths != null &&
-        p.isWithin(srcRoot, expected) &&
-        !allowedSrcPaths.contains(expected)) {
+      if (allowedSrcPaths != null)
+        for (final s in allowedSrcPaths)
+          if (s.endsWith('.dart')) s,
+    };
+    for (final expected in explicitSources) {
+      if (allowedSrcPaths != null &&
+          p.isWithin(srcRoot, expected) &&
+          !allowedSrcPaths.contains(expected)) {
+        errSink.writeln(
+          'analyzer_summary: source not listed in src_manifest.txt: $expected',
+        );
+        return _failed;
+      }
+    }
+    for (final expected in expectedDartFiles) {
+      if (!FileSystemEntity.isFileSync(expected)) {
+        errSink.writeln(
+          'analyzer_summary: expected source does not exist: $expected',
+        );
+        return _failed;
+      }
+      if (context.contextRoot.isAnalyzed(expected) &&
+          !analyzedSet.contains(expected)) {
+        errSink.writeln(
+          'analyzer_summary: expected source was not analyzed: $expected',
+        );
+        return _failed;
+      }
+    }
+    if (!analyzed.any((path) => path.endsWith('.dart'))) {
       errSink.writeln(
-        'analyzer_summary: source not listed in src_manifest.txt: $expected',
+        'analyzer_summary: no Dart files were analyzed in $project',
       );
       return _failed;
     }
-  }
-  for (final expected in expectedDartFiles) {
-    if (!FileSystemEntity.isFileSync(expected)) {
-      errSink.writeln(
-        'analyzer_summary: expected source does not exist: $expected',
-      );
-      return _failed;
-    }
-    if (context.contextRoot.isAnalyzed(expected) &&
-        !analyzedSet.contains(expected)) {
-      errSink.writeln(
-        'analyzer_summary: expected source was not analyzed: $expected',
-      );
-      return _failed;
-    }
-  }
-  if (!analyzed.any((path) => path.endsWith('.dart'))) {
-    errSink.writeln(
-      'analyzer_summary: no Dart files were analyzed in $project',
-    );
-    return _failed;
-  }
 
-  final findings = <_Finding>[];
-  for (final path in analyzed) {
-    final options = context.getAnalysisOptionsForFile(
-      boundedProvider.getFile(path),
-    );
-    if (p.basename(path) == _optionsBasename) {
-      findings.addAll(
-        _optionsFindings(project, driver, path, options, boundedProvider),
+    final findings = <_Finding>[];
+    for (final path in analyzed) {
+      final options = context.getAnalysisOptionsForFile(
+        boundedProvider.getFile(path),
       );
-      continue;
+      if (p.basename(path) == _optionsBasename) {
+        findings.addAll(
+          _optionsFindings(project, driver, path, options, boundedProvider),
+        );
+        continue;
+      }
+      final result = await driver.getErrors(path);
+      if (result is! ErrorsResult) {
+        errSink.writeln('analyzer_summary: cannot analyze $path');
+        return _failed;
+      }
+      for (final d in result.diagnostics) {
+        findings.add(_finding(project, path, result.lineInfo, options, d));
+      }
     }
-    final result = await driver.getErrors(path);
-    if (result is! ErrorsResult) {
-      errSink.writeln('analyzer_summary: cannot analyze $path');
+
+    // Printed as `dart analyze` prints them: most severe first, then by file
+    // and position.
+    findings.sort();
+    final shown = [
+      for (final f in findings)
+        if (f.level != null) f,
+    ];
+    if (shown.isNotEmpty) {
+      outSink.writeln();
+      for (final f in shown) {
+        outSink.writeln(f.text);
+      }
+      outSink.writeln();
+      outSink.writeln(
+        shown.length == 1 ? '1 issue found.' : '${shown.length} issues found.',
+      );
+    }
+
+    final failing =
+        shown.any(
+          (f) => f.level == Severity.error || f.level == Severity.warning,
+        ) ||
+        (fatalInfos && shown.any((f) => f.level == Severity.info));
+    if (failing) {
       return _failed;
     }
-    for (final d in result.diagnostics) {
-      findings.add(_finding(project, path, result.lineInfo, options, d));
-    }
+    File(stamp).writeAsStringSync('analyzed\n');
+    return 0;
+  } finally {
+    await _disposeCollection(collection);
   }
-
-  // Printed as `dart analyze` prints them: most severe first, then by file
-  // and position.
-  findings.sort();
-  final shown = [
-    for (final f in findings)
-      if (f.level != null) f,
-  ];
-  if (shown.isNotEmpty) {
-    outSink.writeln();
-    for (final f in shown) {
-      outSink.writeln(f.text);
-    }
-    outSink.writeln();
-    outSink.writeln(
-      shown.length == 1 ? '1 issue found.' : '${shown.length} issues found.',
-    );
-  }
-
-  final failing =
-      shown.any(
-        (f) => f.level == Severity.error || f.level == Severity.warning,
-      ) ||
-      (fatalInfos && shown.any((f) => f.level == Severity.info));
-  if (failing) {
-    return _failed;
-  }
-  File(stamp).writeAsStringSync('analyzed\n');
-  return 0;
 }
 
 void _pruneUnlistedUnder(String dirPath, Set<String> allowedPaths) {
@@ -1142,23 +1184,60 @@ final class _CachedSumEntry {
 
 /// Caches `.sum` bundle bytes (`Uint8List`) across worker requests, keyed by
 /// normalized absolute path and validated via `WorkRequest.inputs` digests (or
-/// exact byte content verification when no digest is provided).
+/// reading fresh bytes from disk when no digest is provided).
+///
+/// The 256 MB total summary cache budget is scaled across the worker pool
+/// (`defaultWorkerInstances = 4` -> 64 MB per worker instance by default), and
+/// all stored byte arrays and digests are unpinned from `WorkRequest` buffers.
 ///
 /// Never caches `.dart`, `.yaml`, or `.json` files: those always go directly to
 /// `PhysicalResourceProvider.INSTANCE`.
 final class SummaryByteCache {
-  static const int _maxCacheBytes = 256 * 1024 * 1024;
+  SummaryByteCache({
+    int? maxCacheBytes,
+    this.totalBudgetBytes = defaultTotalBudgetBytes,
+    int workerInstances = defaultWorkerInstances,
+  }) : workerInstances = workerInstances < 1 ? 1 : workerInstances,
+       maxCacheBytes =
+           maxCacheBytes ??
+           (totalBudgetBytes ~/ (workerInstances < 1 ? 1 : workerInstances));
+
+  /// Total summary byte-cache budget across all concurrent worker instances
+  /// for the `DartAnalyzerSummary` mnemonic (256 MB).
+  static const int defaultTotalBudgetBytes = 256 * 1024 * 1024;
+
+  /// Default Bazel persistent-worker pool size (`--worker_max_instances=4`).
+  static const int defaultWorkerInstances = 4;
+
+  /// Per-worker-process summary byte-cache limit (64 MB when 4 worker
+  /// instances share the 256 MB total budget).
+  static const int defaultMaxCacheBytes =
+      defaultTotalBudgetBytes ~/ defaultWorkerInstances;
+
+  final int totalBudgetBytes;
+  final int workerInstances;
+  final int maxCacheBytes;
 
   // LinkedHashMap preserves insertion order for simple LRU eviction.
   final Map<String, _CachedSumEntry> _entries = <String, _CachedSumEntry>{};
   final Map<String, Uint8List> _currentInputDigests = <String, Uint8List>{};
   int _totalBytes = 0;
 
+  int get totalBytes => _totalBytes;
+  int get entryCount => _entries.length;
+
+  static Uint8List _unpin(Uint8List bytes) =>
+      bytes.buffer.lengthInBytes == bytes.lengthInBytes
+      ? bytes
+      : Uint8List.fromList(bytes);
+
   void beginRequest(Map<String, Uint8List> requestInputs) {
     _currentInputDigests.clear();
     for (final entry in requestInputs.entries) {
       if (entry.key.endsWith('.sum') && entry.value.isNotEmpty) {
-        _currentInputDigests[p.normalize(p.absolute(entry.key))] = entry.value;
+        _currentInputDigests[p.normalize(p.absolute(entry.key))] = _unpin(
+          entry.value,
+        );
       }
     }
   }
@@ -1182,27 +1261,20 @@ final class SummaryByteCache {
       _totalBytes -= existing.bytes.length;
     }
 
-    final bytes = delegate.readAsBytesSync();
-    if (existing != null && _bytesEqual(bytes, existing.bytes)) {
-      final reused = _CachedSumEntry(
-        bytes: existing.bytes,
-        digest: hasReqDigest ? reqDigest : existing.digest,
+    final bytes = _unpin(delegate.readAsBytesSync());
+    if (bytes.length <= maxCacheBytes) {
+      while (_totalBytes + bytes.length > maxCacheBytes &&
+          _entries.isNotEmpty) {
+        final oldestKey = _entries.keys.first;
+        final removed = _entries.remove(oldestKey)!;
+        _totalBytes -= removed.bytes.length;
+      }
+      _entries[path] = _CachedSumEntry(
+        bytes: bytes,
+        digest: hasReqDigest ? _unpin(reqDigest) : null,
       );
-      _entries[path] = reused;
-      _totalBytes += existing.bytes.length;
-      return existing.bytes;
+      _totalBytes += bytes.length;
     }
-
-    while (_totalBytes + bytes.length > _maxCacheBytes && _entries.isNotEmpty) {
-      final oldestKey = _entries.keys.first;
-      final removed = _entries.remove(oldestKey)!;
-      _totalBytes -= removed.bytes.length;
-    }
-    _entries[path] = _CachedSumEntry(
-      bytes: bytes,
-      digest: hasReqDigest ? reqDigest : null,
-    );
-    _totalBytes += bytes.length;
     return bytes;
   }
 
@@ -1324,6 +1396,11 @@ final class _CachedSummaryFile implements fs.File {
 // Bazel worker protocol (`blaze.worker.WorkRequest` / `WorkResponse`)
 // ---------------------------------------------------------------------------
 
+/// Decodes the `inputs` map from a raw `WorkRequest` protobuf payload,
+/// copying each digest out of [bytes] so the request buffer is not pinned.
+Map<String, Uint8List> decodeAnalyzerWorkRequestInputs(Uint8List bytes) =>
+    _WorkRequest.read(bytes).inputs;
+
 final class _WorkRequest {
   const _WorkRequest({
     required this.arguments,
@@ -1353,7 +1430,7 @@ final class _WorkRequest {
               case 1:
                 path = nested.string();
               case 2:
-                digest = nested.bytes();
+                digest = Uint8List.fromList(nested.bytes());
               default:
                 nested.skip(inputTag & 7);
             }
@@ -1454,8 +1531,14 @@ final class _Frames extends Stream<Uint8List> {
             shift += 7;
           }
           if (buf.length < pos + len) return;
-          controller.add(Uint8List.sublistView(buf, pos, pos + len));
-          buf = Uint8List.sublistView(buf, pos + len);
+          final frame = Uint8List.fromList(
+            Uint8List.sublistView(buf, pos, pos + len),
+          );
+          final nextStart = pos + len;
+          buf = nextStart == buf.length
+              ? Uint8List(0)
+              : Uint8List.fromList(Uint8List.sublistView(buf, nextStart));
+          controller.add(frame);
         }
       },
       onError: controller.addError,

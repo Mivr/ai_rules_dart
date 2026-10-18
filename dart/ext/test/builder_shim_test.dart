@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:analyzer/dart/analysis/analysis_context.dart';
 import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:bazel_worker/bazel_worker.dart';
@@ -1498,7 +1499,92 @@ void main() {
         );
       },
     );
+
+    test(
+      'places sdkSummaryPath before summaryPaths and disposes AnalysisContextCollection when summaries are present',
+      () async {
+        final input = File(p.join(tmp.path, 'a.dart'))
+          ..writeAsStringSync('class Foo {}');
+        final out = p.join(tmp.path, 'a.g.dart');
+        final sdkSum = File(p.join(tmp.path, 'sdk.sum'))..writeAsBytesSync([]);
+        final pkgSum = File(p.join(tmp.path, 'pkg.sum'))..writeAsBytesSync([]);
+
+        List<String>? observedSummaries;
+        var disposeCalled = false;
+
+        await runShim(
+          [
+            '--input',
+            input.path,
+            '--input-asset',
+            'lib/a.dart',
+            '--output',
+            out,
+            '--package',
+            'p',
+            '--root-language-version',
+            '3.11',
+            '--summary',
+            pkgSum.path,
+            '--sdk-summary',
+            sdkSum.path,
+          ],
+          (_) => _FixedOutputBuilder('// generated'),
+          buildAnalysisContext:
+              ({
+                required List<String> includedPaths,
+                required String? sdkPath,
+                required List<String> librarySummaryPaths,
+              }) async {
+                observedSummaries = librarySummaryPaths;
+                final inner = AnalysisContextCollection(
+                  includedPaths: includedPaths,
+                  sdkPath: sdkPath,
+                );
+                return _DisposeTrackingCollection(
+                  inner,
+                  onDispose: () => disposeCalled = true,
+                );
+              },
+        );
+
+        expect(
+          observedSummaries,
+          [
+            p.normalize(sdkSum.absolute.path),
+            p.normalize(pkgSum.absolute.path),
+          ],
+          reason:
+              'sdkSummaryPath must precede package summaryPaths so dart:core and dart:async link first',
+        );
+        expect(
+          disposeCalled,
+          isTrue,
+          reason:
+              'AnalysisContextCollection.dispose() must run even when librarySummaryPaths is non-empty',
+        );
+      },
+    );
   });
+}
+
+class _DisposeTrackingCollection implements AnalysisContextCollection {
+  _DisposeTrackingCollection(this._inner, {required this.onDispose});
+
+  final AnalysisContextCollection _inner;
+  final void Function() onDispose;
+
+  @override
+  List<AnalysisContext> get contexts => _inner.contexts;
+
+  @override
+  AnalysisContext contextFor(String path) => _inner.contextFor(path);
+
+  @override
+  Future<void> dispose() async {
+    onDispose();
+    await _inner.dispose();
+  }
 }
 
 /// A Builder declared to produce `.g.dart` outputs but that emits nothing.

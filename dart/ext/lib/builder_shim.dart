@@ -643,8 +643,8 @@ Future<void> _runWithStaging(
   // drift pub-cache context). Forcing one context canonicalises them.
   final contextBuilder = buildAnalysisContext ?? _defaultBuildAnalysisContext;
   final librarySummaryPaths = [
-    ...args.summaryPaths,
     if (args.sdkSummaryPath != null) args.sdkSummaryPath!,
+    ...args.summaryPaths,
   ];
   final collection = await contextBuilder(
     includedPaths: [stagingPath],
@@ -745,18 +745,11 @@ Future<void> _runWithStaging(
     // Release analyzer drivers, file-watching handles, and thread-pool
     // workers. Without this, a long-running worker accumulates drivers
     // across every request until it exhausts file descriptors.
-    //
-    // Not with summaries: on analyzer 13.3 a dispose of a driver whose
-    // libraries came from summaries throws "Expected to link dart:core and
-    // dart:async first" inside the analyzer's scheduler. That error is not
-    // caught here, and it ends the worker's isolate.
-    if (librarySummaryPaths.isEmpty) {
-      try {
-        await collection.dispose();
-      } catch (_) {
-        // Older analyzer releases don't expose dispose; swallow so we don't
-        // regress workers on versions that lack it.
-      }
+    try {
+      await collection.dispose();
+    } catch (_) {
+      // Older analyzer releases don't expose dispose; swallow so we don't
+      // regress workers on versions that lack it.
     }
   }
 

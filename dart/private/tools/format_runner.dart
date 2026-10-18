@@ -707,7 +707,7 @@ final class _WorkRequest {
               case 1:
                 path = nested.string();
               case 2:
-                digest = nested.bytes();
+                digest = Uint8List.fromList(nested.bytes());
               default:
                 nested.skip(inputTag & 7);
             }
@@ -808,8 +808,13 @@ final class _Frames extends Stream<Uint8List> {
             shift += 7;
           }
           if (buf.length < pos + len) return;
-          controller.add(Uint8List.sublistView(buf, pos, pos + len));
-          buf = Uint8List.sublistView(buf, pos + len);
+          controller.add(
+            Uint8List.fromList(Uint8List.sublistView(buf, pos, pos + len)),
+          );
+          final rem = buf.length - (pos + len);
+          buf = rem == 0
+              ? Uint8List(0)
+              : Uint8List.fromList(Uint8List.sublistView(buf, pos + len));
         }
       },
       onError: controller.addError,

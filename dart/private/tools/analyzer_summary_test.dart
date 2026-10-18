@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -10,7 +11,11 @@ import 'analyzer_summary.dart'
     show
         BoundedResourceProvider,
         SummaryByteCache,
-        SummaryCachingResourceProvider;
+        SummaryCachingResourceProvider,
+        decodeAnalyzerWorkRequestInputs,
+        disposedContextCollectionsCount,
+        onContextCollectionDisposed,
+        runSingleRequest;
 
 /// Recording wrapper around [PhysicalResourceProvider.INSTANCE] to verify that
 /// blocked ancestor probes never reach the underlying filesystem.
@@ -358,5 +363,257 @@ void main() {
         1,
       ]);
     });
+
+    test('scales 256 MB total budget across worker instances, enforces strict byte bounds, and unpins WorkRequest buffers', () {
+      // 1. Default budget scales 256 MB across 4 persistent worker instances = 64 MB per instance.
+      final defaultCache = SummaryByteCache();
+      expect(SummaryByteCache.defaultTotalBudgetBytes, 256 * 1024 * 1024);
+      expect(SummaryByteCache.defaultWorkerInstances, 4);
+      expect(defaultCache.maxCacheBytes, 64 * 1024 * 1024);
+
+      final customScaled = SummaryByteCache(
+        totalBudgetBytes: 256 * 1024 * 1024,
+        workerInstances: 8,
+      );
+      expect(customScaled.maxCacheBytes, 32 * 1024 * 1024);
+
+      // 2. Verify decodeAnalyzerWorkRequestInputs and SummaryByteCache unpin slices
+      // from a larger WorkRequest buffer.
+      final rawReq = _encodeWorkRequestForTest(
+        arguments: ['summarize'],
+        inputs: {
+          'dep.sum': Uint8List.fromList([1, 2, 3, 4]),
+        },
+      );
+      final bigFrame = Uint8List(64 * 1024)
+        ..setRange(100, 100 + rawReq.length, rawReq);
+      final slice = Uint8List.sublistView(bigFrame, 100, 100 + rawReq.length);
+      expect(slice.buffer.lengthInBytes, 64 * 1024);
+
+      final decodedInputs = decodeAnalyzerWorkRequestInputs(slice);
+      expect(
+        decodedInputs['dep.sum']!.buffer.lengthInBytes,
+        decodedInputs['dep.sum']!.lengthInBytes,
+        reason: 'decoded digest must not pin the 64 KB WorkRequest buffer',
+      );
+
+      // 3. Enforce strict byte bounds and LRU eviction.
+      final boundedCache = SummaryByteCache(maxCacheBytes: 100);
+      final provider = SummaryCachingResourceProvider(
+        PhysicalResourceProvider.INSTANCE,
+        boundedCache,
+      );
+
+      final s1 = File(p.join(tempDir.path, 's1.sum'))
+        ..writeAsBytesSync(List<int>.filled(40, 1));
+      final s2 = File(p.join(tempDir.path, 's2.sum'))
+        ..writeAsBytesSync(List<int>.filled(40, 2));
+      final s3 = File(p.join(tempDir.path, 's3.sum'))
+        ..writeAsBytesSync(List<int>.filled(40, 3));
+      final oversized = File(p.join(tempDir.path, 'oversized.sum'))
+        ..writeAsBytesSync(List<int>.filled(120, 9));
+
+      boundedCache.beginRequest({
+        s1.path: Uint8List.fromList([1]),
+        s2.path: Uint8List.fromList([2]),
+        s3.path: Uint8List.fromList([3]),
+        oversized.path: Uint8List.fromList([9]),
+      });
+
+      // Oversized entry (> maxCacheBytes = 100) is returned to caller without
+      // inserting into the cache or evicting existing entries.
+      expect(provider.getFile(s1.path).readAsBytesSync().length, 40);
+      expect(provider.getFile(s2.path).readAsBytesSync().length, 40);
+      expect(boundedCache.totalBytes, 80);
+      expect(boundedCache.entryCount, 2);
+
+      expect(provider.getFile(oversized.path).readAsBytesSync().length, 120);
+      expect(boundedCache.totalBytes, 80);
+      expect(boundedCache.entryCount, 2);
+
+      // Touch s1 so s2 becomes oldest, then read s3 (40 B): s2 is evicted so totalBytes stays 80 <= 100.
+      expect(provider.getFile(s1.path).readAsBytesSync().first, 1);
+      expect(provider.getFile(s3.path).readAsBytesSync().first, 3);
+      expect(boundedCache.totalBytes, 80);
+      expect(boundedCache.entryCount, 2);
+    });
   });
+
+  group('AnalysisContextCollectionImpl disposal', () {
+    test('disposes AnalysisContextCollectionImpl across sequential summarize and analyze worker requests when contexts change', () async {
+      final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+      final sdkSummary = File(p.join(tempDir.path, 'sdk.sum'));
+      final outSink = StringBuffer();
+      final errSink = StringBuffer();
+
+      expect(
+        await runSingleRequest(
+          ['sdk', '--sdk', sdkDir.path, '--out', sdkSummary.path],
+          outSink: outSink,
+          errSink: errSink,
+          resourceProvider: PhysicalResourceProvider.INSTANCE,
+        ),
+        0,
+        reason: errSink.toString(),
+      );
+
+      final disposedRoots = <List<String>>[];
+      final prevHook = onContextCollectionDisposed;
+      final beforeCount = disposedContextCollectionsCount;
+      onContextCollectionDisposed = (collection) {
+        disposedRoots.add([
+          for (final ctx in collection.contexts) ctx.contextRoot.root.path,
+        ]);
+      };
+      try {
+        // 1. Summarize pkg_a
+        final pkgADir = Directory(p.join(tempDir.path, 'pkg_a'))
+          ..createSync(recursive: true);
+        final srcA = File(p.join(pkgADir.path, 'lib', 'a.dart'))
+          ..parent.createSync(recursive: true)
+          ..writeAsStringSync('class A {\n  final int value = 1;\n}\n');
+        final pkgConfigA = File(p.join(pkgADir.path, 'package_config.json'))
+          ..writeAsStringSync(
+            jsonEncode({
+              'configVersion': 2,
+              'packages': [
+                {
+                  'name': 'pkg_a',
+                  'rootUri': p.toUri(pkgADir.path).toString(),
+                  'packageUri': 'lib/',
+                  'languageVersion': '3.0',
+                },
+              ],
+            }),
+          );
+        final sumA = File(p.join(tempDir.path, 'pkg_a.sum'));
+
+        expect(
+          await runSingleRequest(
+            [
+              'summarize',
+              '--sdk',
+              sdkDir.path,
+              '--sdk-summary',
+              sdkSummary.path,
+              '--packages',
+              pkgConfigA.path,
+              '--source',
+              srcA.path,
+              '--uri',
+              'package:pkg_a/a.dart',
+              '--out',
+              sumA.path,
+            ],
+            outSink: outSink,
+            errSink: errSink,
+            resourceProvider: PhysicalResourceProvider.INSTANCE,
+          ),
+          0,
+          reason: errSink.toString(),
+        );
+        expect(disposedContextCollectionsCount, beforeCount + 1);
+
+        // 2. Analyze pkg_b (different context root, linking against pkg_a.sum)
+        final pkgBDir = Directory(p.join(tempDir.path, 'pkg_b'))
+          ..createSync(recursive: true);
+        final srcB = File(p.join(pkgBDir.path, 'lib', 'b.dart'))
+          ..parent.createSync(recursive: true)
+          ..writeAsStringSync(
+            "import 'package:pkg_a/a.dart';\nint useA(A a) => a.value;\n",
+          );
+        File(p.join(pkgBDir.path, '.dart_tool', 'package_config.json'))
+          ..parent.createSync(recursive: true)
+          ..writeAsStringSync(
+            jsonEncode({
+              'configVersion': 2,
+              'packages': [
+                {
+                  'name': 'pkg_a',
+                  'rootUri': p.toUri(pkgADir.path).toString(),
+                  'packageUri': 'lib/',
+                  'languageVersion': '3.0',
+                },
+                {
+                  'name': 'pkg_b',
+                  'rootUri': p.toUri(pkgBDir.path).toString(),
+                  'packageUri': 'lib/',
+                  'languageVersion': '3.0',
+                },
+              ],
+            }),
+          );
+
+        expect(
+          await runSingleRequest(
+            [
+              'analyze',
+              '--sdk',
+              sdkDir.path,
+              '--sdk-summary',
+              sdkSummary.path,
+              '--summary',
+              sumA.path,
+              '--project',
+              pkgBDir.path,
+              '--source',
+              srcB.path,
+              '--stamp',
+              p.join(tempDir.path, 'pkg_b.analyzed'),
+            ],
+            outSink: outSink,
+            errSink: errSink,
+            resourceProvider: PhysicalResourceProvider.INSTANCE,
+          ),
+          0,
+          reason: '${outSink.toString()}\n${errSink.toString()}',
+        );
+        expect(disposedContextCollectionsCount, beforeCount + 2);
+        expect(disposedRoots.length, 2);
+      } finally {
+        onContextCollectionDisposed = prevHook;
+      }
+    });
+  });
+}
+
+Uint8List _encodeVarintForTest(int value) {
+  final out = BytesBuilder();
+  var v = value;
+  while (v >= 0x80) {
+    out.addByte((v & 0x7f) | 0x80);
+    v >>= 7;
+  }
+  out.addByte(v);
+  return out.toBytes();
+}
+
+Uint8List _encodeWorkRequestForTest({
+  required List<String> arguments,
+  required Map<String, Uint8List> inputs,
+}) {
+  final out = BytesBuilder();
+  for (final arg in arguments) {
+    final argBytes = utf8.encode(arg);
+    out.add(_encodeVarintForTest((1 << 3) | 2));
+    out.add(_encodeVarintForTest(argBytes.length));
+    out.add(argBytes);
+  }
+  for (final entry in inputs.entries) {
+    final inputBuf = BytesBuilder();
+    final pathBytes = utf8.encode(entry.key);
+    inputBuf.add(_encodeVarintForTest((1 << 3) | 2));
+    inputBuf.add(_encodeVarintForTest(pathBytes.length));
+    inputBuf.add(pathBytes);
+    if (entry.value.isNotEmpty) {
+      inputBuf.add(_encodeVarintForTest((2 << 3) | 2));
+      inputBuf.add(_encodeVarintForTest(entry.value.length));
+      inputBuf.add(entry.value);
+    }
+    final inputBytes = inputBuf.toBytes();
+    out.add(_encodeVarintForTest((2 << 3) | 2));
+    out.add(_encodeVarintForTest(inputBytes.length));
+    out.add(inputBytes);
+  }
+  return out.toBytes();
 }
