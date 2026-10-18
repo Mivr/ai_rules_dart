@@ -13,6 +13,7 @@ load(
     "generate_native_assets_yaml",
     "generate_stable_package_config",
     "resolve_code_assets",
+    "runfiles_path",
     "target_dart_abi",
 )
 load("//dart/private:dart_compile.bzl", "dart_compile_action", "recorded_uses_kind")
@@ -30,6 +31,11 @@ load(
 load("//dart/private:dart_test_runner.bzl", "DartTestRunnerMainInfo")
 load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "executable_package")
 load("//dart/private:source_set.bzl", "executable_inputs")
+
+def _kernel_launcher_for_mode(compile_mode, launcher):
+    if compile_mode == "kernel" and launcher:
+        return Label("//dart/private/tools:kernel_launcher")
+    return None
 
 def binary_output_basename(name, compile_mode, is_windows):
     """Returns a `dart_binary`'s output filename with the platform exe extension.
@@ -196,6 +202,58 @@ def _dart_binary_impl(ctx):
             embed_sources = DartTestRunnerMainInfo not in ctx.attr.main,
         )
 
+    if compile_mode == "kernel" and ctx.attr.launcher:
+        launcher_exe = ctx.actions.declare_file(
+            ctx.label.name + (".exe" if is_windows else ""),
+        )
+        ctx.actions.symlink(
+            output = launcher_exe,
+            target_file = ctx.executable._kernel_launcher,
+            is_executable = True,
+        )
+        config_file = ctx.actions.declare_file(
+            ctx.label.name + ".kernel_launcher.json",
+        )
+        ctx.actions.write(
+            output = config_file,
+            content = json.encode({
+                "dart": runfiles_path(dart_sdk_info.dart, ctx.workspace_name),
+                "dill": runfiles_path(output, ctx.workspace_name),
+                "dart_exec": dart_sdk_info.dart.path,
+                "dill_exec": output.path,
+            }),
+        )
+        runfiles = ctx.runfiles(
+            files = ctx.files.data + code_asset_libs + [output, config_file, dart_sdk_info.dart],
+            transitive_files = depset(
+                transitive = [
+                    collect_transitive_resources(ctx.attr.deps),
+                    dart_sdk_info.runtime_files,
+                ],
+            ),
+        ).merge_all(
+            [dep[DefaultInfo].default_runfiles for dep in ctx.attr.data] +
+            [ctx.attr._kernel_launcher[DefaultInfo].default_runfiles],
+        )
+        return [
+            DefaultInfo(
+                files = depset([launcher_exe]),
+                executable = launcher_exe,
+                runfiles = runfiles,
+            ),
+            RunEnvironmentInfo(
+                environment = {
+                    "RULES_DART_KERNEL_CONFIG": runfiles_path(config_file, ctx.workspace_name),
+                },
+            ),
+            DartCompileInfo(
+                executable = output,
+                compile_mode = compile_mode,
+                sdk_version = dart_sdk_info.version,
+            ),
+            own.analyzable,
+        ] + recorded_uses_info
+
     # Resources ride the runfiles, not the compile. A dep's `lib/**` non-Dart
     # files are part of the package at run time under pub, and the compiled
     # binary is the one place that cannot recover them: `Isolate.resolvePackageUri`
@@ -296,6 +354,19 @@ Every other flag goes to `dart compile`. In the `kernel` mode, setting `dart_com
         "_jit_tool": attr.label(
             default = "//dart/private/tools:app_jit_snapshot.dart",
             allow_single_file = True,
+        ),
+        "launcher": attr.bool(
+            default = False,
+            doc = """Whether `compile_mode = "kernel"` also emits a native launcher executable as \
+`DefaultInfo.executable` so the target can be invoked directly with `bazel run` or `ctx.executable`, \
+while `DartCompileInfo.executable` continues to carry the compiled `.dill` kernel for \
+persistent-worker rules (`dart_codegen`, `dart_aggregate_codegen`, `dart_sqlcodegen`).""",
+        ),
+        "_kernel_launcher": attr.label(
+            default = _kernel_launcher_for_mode,
+            executable = True,
+            cfg = "target",
+            doc = "The native launcher binary symlinked as `DefaultInfo.executable` when `compile_mode = \"kernel\"` and `launcher = True`.",
         ),
         "defines": attr.string_list(
             doc = "Dart environment declarations (`key=value`). Each entry becomes a `-Dkey=value` flag.",

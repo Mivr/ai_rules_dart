@@ -85,92 +85,100 @@ class ShimArgs {
 
   final LanguageVersion rootLanguageVersion;
 
+  static ArgParser _buildParser() => ArgParser()
+    ..addFlag(
+      'help',
+      abbr: 'h',
+      negatable: false,
+      help: 'Print this usage information.',
+    )
+    ..addOption('input', help: 'Input file exec-root path.', mandatory: true)
+    ..addMultiOption(
+      'output',
+      help:
+          'Declared output file path (repeatable). Each builder-'
+          'produced asset is routed to the declared output whose '
+          'basename shares the input stem + matching suffix. At least '
+          'one `--output` is required.',
+    )
+    ..addOption(
+      'input-asset',
+      help:
+          'Asset path for the input within its package, relative to the '
+          "package root (e.g. `lib/src/models/user.dart`). Preserves "
+          "subdirectory structure that `p.basename(--input)` would drop. "
+          "Required.",
+      mandatory: true,
+    )
+    ..addOption(
+      'package',
+      help:
+          'Owning Dart package name (matches consumer pubspec `name:`). '
+          'Required — the shim builds AssetIds from this.',
+      mandatory: true,
+    )
+    ..addMultiOption(
+      'dep',
+      help:
+          'Additional source file visible to the Resolver. '
+          'Format: `<exec_path>|<asset_path>` (asset path is the path '
+          'within the owning package, e.g. `lib/base.dart`). Repeatable.',
+    )
+    ..addMultiOption(
+      'input-asset-extra',
+      help:
+          'Extra aggregate inputs beyond the primary `--input`. Same '
+          '`<exec>|<asset>` form as `--dep`, but these are exposed to '
+          'the Builder as primary asset inputs (used by aggregate / '
+          'PackageBuilder-style shims). Repeatable.',
+    )
+    ..addOption(
+      'config',
+      help: 'Builder options as JSON. Defaults to "{}".',
+      defaultsTo: '{}',
+    )
+    ..addOption(
+      'package-config',
+      help:
+          'Path to package_config.json for third-party import resolution. '
+          "Defaults to the running process's package_config.",
+      defaultsTo: '',
+    )
+    ..addOption(
+      'root-language-version',
+      help:
+          'Dart language version (in `<major>.<minor>` form) for the '
+          'root package, propagated from the consuming dart_library. '
+          'Required — no default.',
+      mandatory: true,
+    )
+    ..addOption(
+      'sdk-path',
+      help:
+          'Path to the Dart SDK installation root (the directory '
+          'containing `lib/_internal/libraries.dart`). Required when '
+          "the shim runs as an AOT-compiled binary so the analyzer's "
+          "context collection can locate the SDK's libraries. The "
+          "rules_dart codegen rules pass this from the toolchain.",
+      defaultsTo: '',
+    )
+    ..addMultiOption(
+      'summary',
+      help:
+          'Analyzer summary (`.sum`) of a library outside the input\'s '
+          'package. Repeatable. The analysis context resolves those '
+          'libraries from the summary instead of their source.',
+    )
+    ..addOption(
+      'sdk-summary',
+      help:
+          'Analyzer summary of the Dart SDK\'s own libraries. Read with '
+          'each `--summary`, since a dependency summary refers to them.',
+      defaultsTo: '',
+    );
+
   factory ShimArgs.parse(List<String> argv) {
-    final parser = ArgParser()
-      ..addOption('input', help: 'Input file exec-root path.', mandatory: true)
-      ..addMultiOption(
-        'output',
-        help:
-            'Declared output file path (repeatable). Each builder-'
-            'produced asset is routed to the declared output whose '
-            'basename shares the input stem + matching suffix. At least '
-            'one `--output` is required.',
-      )
-      ..addOption(
-        'input-asset',
-        help:
-            'Asset path for the input within its package, relative to the '
-            "package root (e.g. `lib/src/models/user.dart`). Preserves "
-            "subdirectory structure that `p.basename(--input)` would drop. "
-            "Required.",
-        mandatory: true,
-      )
-      ..addOption(
-        'package',
-        help:
-            'Owning Dart package name (matches consumer pubspec `name:`). '
-            'Required — the shim builds AssetIds from this.',
-        mandatory: true,
-      )
-      ..addMultiOption(
-        'dep',
-        help:
-            'Additional source file visible to the Resolver. '
-            'Format: `<exec_path>|<asset_path>` (asset path is the path '
-            'within the owning package, e.g. `lib/base.dart`). Repeatable.',
-      )
-      ..addMultiOption(
-        'input-asset-extra',
-        help:
-            'Extra aggregate inputs beyond the primary `--input`. Same '
-            '`<exec>|<asset>` form as `--dep`, but these are exposed to '
-            'the Builder as primary asset inputs (used by aggregate / '
-            'PackageBuilder-style shims). Repeatable.',
-      )
-      ..addOption(
-        'config',
-        help: 'Builder options as JSON. Defaults to "{}".',
-        defaultsTo: '{}',
-      )
-      ..addOption(
-        'package-config',
-        help:
-            'Path to package_config.json for third-party import resolution. '
-            "Defaults to the running process's package_config.",
-        defaultsTo: '',
-      )
-      ..addOption(
-        'root-language-version',
-        help:
-            'Dart language version (in `<major>.<minor>` form) for the '
-            'root package, propagated from the consuming dart_library. '
-            'Required — no default.',
-        mandatory: true,
-      )
-      ..addOption(
-        'sdk-path',
-        help:
-            'Path to the Dart SDK installation root (the directory '
-            'containing `lib/_internal/libraries.dart`). Required when '
-            "the shim runs as an AOT-compiled binary so the analyzer's "
-            "context collection can locate the SDK's libraries. The "
-            "rules_dart codegen rules pass this from the toolchain.",
-        defaultsTo: '',
-      )
-      ..addMultiOption(
-        'summary',
-        help:
-            'Analyzer summary (`.sum`) of a library outside the input\'s '
-            'package. Repeatable. The analysis context resolves those '
-            'libraries from the summary instead of their source.',
-      )
-      ..addOption(
-        'sdk-summary',
-        help:
-            'Analyzer summary of the Dart SDK\'s own libraries. Read with '
-            'each `--summary`, since a dependency summary refers to them.',
-        defaultsTo: '',
-      );
+    final parser = _buildParser();
 
     final ArgResults parsed;
     try {
@@ -322,6 +330,16 @@ Future<void> runShim(
   DiagnosticSink? writeDiagnostic,
 }) async {
   final sink = writeDiagnostic ?? _stderrSink;
+  try {
+    final parser = ShimArgs._buildParser();
+    final parsed = parser.parse(argv);
+    if (parsed['help'] as bool) {
+      sink(parser.usage);
+      return;
+    }
+  } on ArgParserException {
+    // Fall through to ShimArgs.parse to report FormatException with usage.
+  }
   final ShimArgs args;
   try {
     args = ShimArgs.parse(argv);

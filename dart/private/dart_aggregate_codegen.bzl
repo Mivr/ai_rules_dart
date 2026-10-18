@@ -137,12 +137,13 @@ def _dart_aggregate_codegen_impl(ctx):
             ctx.attr.generator_bin[DartCompileInfo].compile_mode == "kernel"
         )
         if is_kernel_bin:
+            kernel_bin = ctx.attr.generator_bin[DartCompileInfo].executable
             executable = dart_sdk_info.dart
-            arguments = [ctx.executable.generator_bin.path, args]
-            direct_inputs = direct_inputs + [ctx.executable.generator_bin]
+            arguments = [kernel_bin.path, args]
+            direct_inputs = direct_inputs + [kernel_bin]
             bin_transitive = transitive + [dart_sdk_info.runtime_files]
             action_tools = depset(
-                direct = [ctx.executable.generator_bin, dart_sdk_info.dart],
+                direct = [kernel_bin, dart_sdk_info.dart],
                 transitive = [dart_sdk_info.runtime_files],
             )
         else:

@@ -104,6 +104,33 @@ def _aot_modes_compile_quietly_test_impl(ctx):
     asserts.equals(env, [], compile_quiet_flags("jit-snapshot"))
     return unittest.end(env)
 
+def _kernel_launcher_binary_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
+    default_exe = target[DefaultInfo].files_to_run.executable
+    compile_info = target[DartCompileInfo]
+    asserts.false(
+        env,
+        default_exe.basename.endswith(".dill"),
+        "DefaultInfo.executable is the native launcher, not the .dill kernel",
+    )
+    asserts.equals(
+        env,
+        "shim.dill",
+        compile_info.executable.basename,
+        "DartCompileInfo.executable remains the .dill kernel for worker actions",
+    )
+    asserts.equals(env, "kernel", compile_info.compile_mode)
+    asserts.true(
+        env,
+        RunEnvironmentInfo in target and
+        target[RunEnvironmentInfo].environment.get("RULES_DART_KERNEL_CONFIG", "").endswith("/shim.kernel_launcher.json"),
+        "RunEnvironmentInfo sets RULES_DART_KERNEL_CONFIG",
+    )
+    return analysistest.end(env)
+
+_kernel_launcher_binary_test = analysistest.make(_kernel_launcher_binary_test_impl)
+
 _exe_windows_test = unittest.make(_exe_gets_dot_exe_on_windows_test_impl)
 _exe_other_test = unittest.make(_exe_bare_off_windows_test_impl)
 _snapshot_test = unittest.make(_snapshot_modes_fixed_extensions_test_impl)
@@ -160,6 +187,11 @@ def dart_binary_test_suite(name):
         size = "small",
         target_under_test = ":mismatched_kernel_codegen_fixture",
     )
+    _kernel_launcher_binary_test(
+        name = "dart_binary_kernel_launcher_test",
+        size = "small",
+        target_under_test = "//dart/ext/json_serializable:shim",
+    )
     native.test_suite(
         name = name,
         tests = [
@@ -172,5 +204,6 @@ def dart_binary_test_suite(name):
             ":dart_binary_whole_kernel_rule_kind_test",
             ":dart_test_rule_kind_test",
             ":dart_codegen_kernel_sdk_mismatch_test",
+            ":dart_binary_kernel_launcher_test",
         ],
     )

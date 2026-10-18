@@ -11,6 +11,7 @@ dart_binary(
     srcs = ["shim_prep.dart"],
     code_assets_from_deps = False,
     compile_mode = "kernel",
+    launcher = True,
     main = "shim_prep.dart",
     visibility = ["//visibility:public"],
     deps = [
@@ -24,6 +25,7 @@ dart_binary(
     srcs = ["shim_discover.dart"],
     code_assets_from_deps = False,
     compile_mode = "kernel",
+    launcher = True,
     main = "shim_discover.dart",
     visibility = ["//visibility:public"],
     deps = [
@@ -37,6 +39,7 @@ dart_binary(
     srcs = ["shim_analyzer.dart"],
     code_assets_from_deps = False,
     compile_mode = "kernel",
+    launcher = True,
     main = "shim_analyzer.dart",
     visibility = ["//visibility:public"],
     deps = [
@@ -50,6 +53,7 @@ dart_binary(
     srcs = ["shim_drift.dart"],
     code_assets_from_deps = False,
     compile_mode = "kernel",
+    launcher = True,
     main = "shim_drift.dart",
     visibility = ["//visibility:public"],
     deps = [

@@ -69,6 +69,14 @@ dart_binary(
     deps = ["//dart/runfiles"],
 )
 
+dart_binary(
+    name = "kernel_launcher",
+    compile_mode = "exe",
+    main = "kernel_launcher.dart",
+    visibility = ["//visibility:public"],
+    deps = ["//dart/runfiles"],
+)
+
 # What `test_runner_test` runs through the launcher in place of a real test.
 dart_binary(
     name = "test_runner_fixture",

@@ -114,12 +114,13 @@ def _dart_sqlcodegen_impl(ctx):
         ctx.attr.generator_bin[DartCompileInfo].compile_mode == "kernel"
     )
     if is_kernel_bin:
+        kernel_bin = ctx.attr.generator_bin[DartCompileInfo].executable
         executable = toolchain.dart_sdk_info.dart
-        arguments = [ctx.executable.generator_bin.path, args]
-        direct.append(ctx.executable.generator_bin)
+        arguments = [kernel_bin.path, args]
+        direct.append(kernel_bin)
         transitive.append(toolchain.dart_sdk_info.runtime_files)
         action_tools = depset(
-            direct = [ctx.executable.generator_bin, toolchain.dart_sdk_info.dart],
+            direct = [kernel_bin, toolchain.dart_sdk_info.dart],
             transitive = [toolchain.dart_sdk_info.runtime_files],
         )
     else:

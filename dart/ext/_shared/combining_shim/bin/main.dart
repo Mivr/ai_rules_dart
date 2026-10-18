@@ -81,6 +81,12 @@ Future<void> _runOnce(
 ]) async {
   final sink = diagnostic ?? stderr.writeln;
   final parser = ArgParser()
+    ..addFlag(
+      'help',
+      abbr: 'h',
+      negatable: false,
+      help: 'Print this usage information.',
+    )
     ..addOption('input', mandatory: true)
     ..addOption('output', mandatory: true)
     ..addMultiOption('part')
@@ -101,6 +107,11 @@ Future<void> _runOnce(
   } on ArgParserException catch (e) {
     sink('Invalid args: ${e.message}\n${parser.usage}');
     exitCode = 2;
+    return;
+  }
+
+  if (args['help'] as bool) {
+    sink(parser.usage);
     return;
   }
 
