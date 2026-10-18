@@ -322,6 +322,118 @@ def _depends_on(reaches, label, target):
         frontier = following
     return False
 
+def package_of_source(short_path, packages):
+    """The `package_name` of the deepest `DartPackageInfo` whose `lib/` contains `short_path`, or None.
+
+    Args:
+      short_path: The source file's `File.short_path`.
+      packages: `DartPackageInfo` records.
+
+    Returns:
+      The matching `package_name` string, or None.
+    """
+    best_name = None
+    best_len = -1
+    for pkg in packages:
+        prefix = package_lib_prefix(pkg.lib_root)
+        if short_path.startswith(prefix) and len(prefix) > best_len:
+            best_name = pkg.package_name
+            best_len = len(prefix)
+    return best_name
+
+def _cyclic_source_paths(own_package, dep_packages, owned, edges, packages, is_executable = False):
+    """The `short_path`s of sources in split or cyclic packages and targets depending on them."""
+    pkg_of_label = {}
+    labels_of_pkg = {}
+    paths_of_label = {}
+    for label, path in owned:
+        paths_of_label.setdefault(label, []).append(path)
+        pkg = package_of_source(path, packages)
+        if pkg != None:
+            pkg_of_label[label] = pkg
+            labels_of_pkg.setdefault(pkg, {})[label] = True
+    reaches = {}
+    for label, dep in edges:
+        reaches.setdefault(label, {})[dep] = True
+    split_pkgs = {
+        pkg: True
+        for pkg, labels in labels_of_pkg.items()
+        if len(labels) > 1
+    }
+    if not is_executable and bool(own_package) and any([p.package_name == own_package for p in dep_packages]):
+        split_pkgs[own_package] = True
+    if is_executable and bool(own_package):
+        own_pkg_labels = [label for label, pkg in pkg_of_label.items() if pkg == own_package]
+        for label, pkg in pkg_of_label.items():
+            if pkg != own_package and any([_depends_on(reaches, label, m) for m in own_pkg_labels]):
+                split_pkgs[own_package] = True
+                break
+    if not split_pkgs:
+        return {}
+    seed_labels = [label for label, pkg in pkg_of_label.items() if pkg in split_pkgs]
+    active_labels = {
+        label: True
+        for label in paths_of_label
+        if label in seed_labels or any([_depends_on(reaches, label, s) for s in seed_labels])
+    }
+    return {
+        path: True
+        for label in active_labels
+        for path in paths_of_label.get(label, [])
+    }
+
+def has_cross_pkg_cycle(
+        own_package,
+        dep_packages,
+        owned = [],
+        edges = [],
+        packages = [],
+        non_standalone = False,
+        is_executable = False):
+    """Whether a library or executable participates in a cross-target package split or cycle.
+
+    A Dart package split across multiple `dart_library` targets (such as a cycle
+    between `package:a` and `package:b` broken into `a_base <- b <- a_top`, or two
+    sibling libraries sharing `package_name = "a"`), or a library tagged
+    `no-dart-analyze` because its sources are not standalone, can cause a file in
+    one target to import a `package:` URI owned by another target that is not in its
+    own module closure. `kernel_module` excludes those files at module compile time
+    so the entry module compiles them from source together with the rest of the
+    closure. When this returns True, the participating sources are carried in
+    `DartKernelInfo.cross_pkg_srcs` so the entry module action declares them as
+    inputs.
+
+    Args:
+      own_package: The target's own `package_name` (empty when it contributes no
+        package).
+      dep_packages: The `DartPackageInfo` records of the target's dependencies.
+      owned: Optional `(label, short_path)` pairs of library sources in the closure.
+      edges: Optional `(label, dep_label)` dependency edges in the closure.
+      packages: Optional deduplicated `DartPackageInfo` records (including the
+        target's own record). Defaults to `dep_packages`.
+      non_standalone: True when the target carries the `no-dart-analyze` tag.
+      is_executable: True when evaluating an executable rather than a library.
+
+    Returns:
+      True when the closure has a cross-target package split or cycle (or is tagged
+      `no-dart-analyze`).
+    """
+    if non_standalone:
+        return True
+    if not is_executable and bool(own_package) and any([p.package_name == own_package for p in dep_packages]):
+        return True
+    if not owned and len({p.package_name: True for p in dep_packages}) < len(dep_packages):
+        return True
+    pkgs = packages if packages else dep_packages
+    return len(_cyclic_source_paths(own_package, dep_packages, owned, edges, pkgs, is_executable = is_executable)) > 0
+
+def _has_no_analyze_tag(ctx):
+    for holder in [getattr(ctx, "rule", None), ctx]:
+        if holder != None and hasattr(holder, "attr") and hasattr(holder.attr, "tags"):
+            if "no-dart-analyze" in holder.attr.tags:
+                return True
+    return False
+
 def modular_kernel_eligible(
         enabled,
         kernel_mode,
@@ -600,6 +712,8 @@ def kernel_module_action(
         args.add("--no-drop")
     if closure_excluded:
         args.add_all(closure_excluded, before_each = "--closure-excluded")
+    if extra_inputs:
+        args.add_all(extra_inputs, before_each = "--input-source")
 
     dart_exe = getattr(tools, "dart", None)
     dartvm = getattr(tools, "dartvm", None)
@@ -926,7 +1040,26 @@ def modular_executable_kernel(
         order = "postorder",
         transitive = [k.transitive_koutlines for k in dep_kernels],
     )
+    exec_owned = depset(transitive = [k.owned for k in dep_kernels]).to_list()
+    exec_edges = depset(transitive = [k.edges for k in dep_kernels]).to_list()
+    own_pkg = packages[0].package_name if (packages and len(sources) > 1) else ""
+    cyclic_paths = _cyclic_source_paths(
+        own_pkg,
+        packages,
+        exec_owned,
+        exec_edges,
+        packages,
+        is_executable = True,
+    )
+    extra_cross_pkg = []
+    if cyclic_paths and hasattr(ctx.attr, "deps"):
+        extra_cross_pkg = [
+            f
+            for f in collect_transitive_srcs(ctx.attr.deps).to_list()
+            if f.short_path in cyclic_paths
+        ]
     cross_pkg_srcs = depset(
+        extra_cross_pkg,
         transitive = [k.cross_pkg_srcs for k in dep_kernels],
     )
     entry = ctx.actions.declare_directory(ctx.label.name + ".entry.kmod")
@@ -1090,12 +1223,6 @@ def library_kernel_info(
         transitive = [k.transitive_koutlines for k in dep_kernels],
     )
     upstream_excluded = depset(transitive = [k.closure_excluded for k in dep_kernels])
-    has_cross_pkg_cycle = False
-    cross_pkg_srcs = (
-        depset(own_srcs, transitive = [collect_transitive_srcs(deps)])
-        if has_cross_pkg_cycle
-        else depset(transitive = [k.cross_pkg_srcs for k in dep_kernels])
-    )
     owned = depset(
         [(str(ctx.label), f.short_path) for f in own_srcs],
         transitive = [k.owned for k in dep_kernels],
@@ -1104,6 +1231,59 @@ def library_kernel_info(
         [(str(ctx.label), str(dep.label)) for dep in deps],
         transitive = [k.edges for k in dep_kernels],
     )
+    pkgs = first_per_package(records)
+    non_standalone = _has_no_analyze_tag(ctx)
+    same_pkg_dep = bool(own_record != None and any([r.package_name == package_name for r in raw]))
+    seen_direct_pkgs = {}
+    dup_direct_pkg = False
+    for dep in deps:
+        if DartInfo in dep and dep[DartInfo].package_name:
+            dp = dep[DartInfo].package_name
+            if dp in seen_direct_pkgs:
+                dup_direct_pkg = True
+            seen_direct_pkgs[dp] = True
+    has_upstream_cross_pkg = any([bool(k.cross_pkg_srcs.to_list()) for k in dep_kernels])
+    need_graph = same_pkg_dep or dup_direct_pkg
+    owned_list = owned.to_list() if need_graph else []
+    edges_list = edges.to_list() if need_graph else []
+    has_cross_pkg_cycle_val = has_cross_pkg_cycle(
+        package_name if own_record != None else "",
+        raw,
+        owned = owned_list,
+        edges = edges_list,
+        packages = pkgs,
+        non_standalone = non_standalone,
+    )
+    if has_cross_pkg_cycle_val:
+        if need_graph:
+            cyclic_paths = _cyclic_source_paths(
+                package_name if own_record != None else "",
+                raw,
+                owned_list,
+                edges_list,
+                pkgs,
+            )
+            dep_cyclic_srcs = [
+                f
+                for f in collect_transitive_srcs(deps).to_list()
+                if f.short_path in cyclic_paths
+            ]
+            cross_pkg_srcs = depset(
+                own_srcs + dep_cyclic_srcs,
+                transitive = [k.cross_pkg_srcs for k in dep_kernels],
+            )
+        else:
+            cross_pkg_srcs = depset(
+                own_srcs,
+                transitive = [k.cross_pkg_srcs for k in dep_kernels],
+            )
+    elif has_upstream_cross_pkg:
+        cross_pkg_srcs = depset(
+            own_srcs,
+            transitive = [k.cross_pkg_srcs for k in dep_kernels],
+        )
+    else:
+        cross_pkg_srcs = depset(transitive = [k.cross_pkg_srcs for k in dep_kernels])
     base_dill = None
     base_keys = None
     base_kmods = depset()

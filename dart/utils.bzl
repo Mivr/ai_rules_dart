@@ -44,6 +44,7 @@ load(
     _find_kernel_module_tools = "find_kernel_module_tools",
     _first_per_package = "first_per_package",
     _global_dart_defines = "global_dart_defines",
+    _has_cross_pkg_cycle = "has_cross_pkg_cycle",
     _kernel_link_action = "kernel_link_action",
     _kernel_module_action = "kernel_module_action",
     _kernel_package_config = "kernel_package_config",
@@ -56,6 +57,7 @@ load(
     _modular_kernel_eligible = "modular_kernel_eligible",
     _multi_root_uri = "multi_root_uri",
     _no_kernel_module = "no_kernel_module",
+    _package_of_source = "package_of_source",
 )
 load(
     "//dart/private:dart_library.bzl",
@@ -165,6 +167,8 @@ kernel_package_config = _kernel_package_config
 kernel_packages_consistent = _kernel_packages_consistent
 first_per_package = _first_per_package
 duplicated_source = _duplicated_source
+has_cross_pkg_cycle = _has_cross_pkg_cycle
+package_of_source = _package_of_source
 global_dart_defines = _global_dart_defines
 
 # Directory assembly: copy a package whose hand-written and generated files

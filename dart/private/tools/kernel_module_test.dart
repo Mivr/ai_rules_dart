@@ -56,12 +56,13 @@ class _Scc {
 
 /// The outcome of one planned compile.
 class _Result {
-  _Result(this.code, this.calls, this.sidecar, this.index);
+  _Result(this.code, this.calls, this.sidecar, this.index, [this.log = '']);
 
   final int code;
   final List<List<String>> calls;
   final String sidecar;
   final Map<String, dynamic> index;
+  final String log;
 
   /// The excluded sources, by URI, with the reason each is excluded.
   Map<String, String> get excluded => {
@@ -119,6 +120,7 @@ String _sidecar(String name, Map<String, String> excluded) {
 Future<_Result> _compile(
   String name,
   List<String> sources, {
+  List<String> inputSources = const [],
   List<String> inputKmods = const [],
   List<String> closureExcluded = const [],
   bool noDrop = false,
@@ -127,12 +129,14 @@ Future<_Result> _compile(
   String? librariesPlatform,
   List<String> extraLibraries = const [],
   String? packagesFile,
+  List<Uint8List> inputs = const [],
 }) async {
   final output = '${_root.path}/out/$name';
   final excludedPath = '$output.vm_excluded.txt';
   final prefix = scheme == null ? _prefix : '$scheme:///';
   final args = <String>[
     for (final source in sources) ...['--source', '$prefix$source'],
+    for (final inputSource in inputSources) ...['--input-source', inputSource],
     '--output',
     output,
     if (outputOutline != null) ...['--output-outline', outputOutline],
@@ -157,7 +161,8 @@ Future<_Result> _compile(
     for (final sidecar in closureExcluded) ...['--closure-excluded', sidecar],
   ];
   final recorder = _Recorder();
-  final code = await compileModule(args, recorder, StringBuffer(), const []);
+  final log = StringBuffer();
+  final code = await compileModule(args, recorder, log, inputs);
   final written = code == 0
       ? jsonDecode(File('$output/index.json').readAsStringSync())
             as Map<String, dynamic>
@@ -167,6 +172,7 @@ Future<_Result> _compile(
     recorder.calls,
     code == 0 ? File(excludedPath).readAsStringSync() : '',
     written,
+    log.toString(),
   );
 }
 
@@ -615,6 +621,7 @@ void main() {
     final entry = await _compile(
       'entry',
       ['pkg/test/main_test.dart'],
+      inputSources: ['pkg/lib/web.dart'],
       inputKmods: [excludes, defines],
       closureExcluded: [sidecar],
       noDrop: true,
@@ -632,6 +639,148 @@ void main() {
     expect(
       _valuesAfter(entry.calls.single, '--input-summary'),
       contains('$defines/0.dill'),
+    );
+    expect(
+      entry.calls.single,
+      isNot(contains('--input-source')),
+      reason: '--input-source is consumed by kernel_module and not forwarded',
+    );
+  });
+
+  test('an entry fails clearly without reading disk when a reached excluded source is not a declared input', () async {
+    // Both files exist on disk under _root, but neither is passed via --input-source.
+    // If _Files.read read undeclared files from disk, scanning web.dart would also
+    // discover transitive_secret.dart.
+    _write(
+      'pkg/lib/web.dart',
+      "import 'package:pkg/transitive_secret.dart';\nclass Web {}\n",
+    );
+    _write('pkg/lib/transitive_secret.dart', 'class Secret {}\n');
+    _write('pkg/test/main_test.dart', "import 'package:pkg/web.dart';\n");
+    final excludes = _module('excludes', []);
+    final sidecar = _sidecar('excludes', {
+      'pkg/lib/web.dart': 'dart:html is not a VM library',
+      'pkg/lib/transitive_secret.dart': 'dart:html is not a VM library',
+    });
+    final entry = await _compile(
+      'entry_undeclared',
+      ['pkg/test/main_test.dart'],
+      inputKmods: [excludes],
+      closureExcluded: [sidecar],
+      noDrop: true,
+    );
+    expect(entry.code, 1);
+    expect(entry.calls, isEmpty, reason: 'compiler must not run');
+    expect(
+      entry.log,
+      contains(
+        'kernel_module: cannot compile ${_uri('pkg/lib/web.dart')} '
+        '(pkg/lib/web.dart): source is not a declared input.',
+      ),
+    );
+    expect(
+      entry.log,
+      isNot(contains('transitive_secret.dart')),
+      reason: 'undeclared file pkg/lib/web.dart must not be read from disk',
+    );
+  });
+
+  test('WorkRequest.inputs restricts which declared sources may be read and compiled', () async {
+    Uint8List encodeInput(String path) {
+      final pathBytes = utf8.encode(path);
+      return Uint8List.fromList([0x0a, pathBytes.length, ...pathBytes]);
+    }
+
+    _write('pkg/lib/web.dart', 'class Web {}\n');
+    _write('pkg/test/main_test.dart', "import 'package:pkg/web.dart';\n");
+    final excludes = _module('excludes', []);
+    final sidecar = _sidecar('excludes', {
+      'pkg/lib/web.dart': 'dart:html is not a VM library',
+    });
+
+    // Declared on the command line via --input-source, but absent from WorkRequest.inputs.
+    final missingFromWorkerInputs = await _compile(
+      'worker_missing',
+      ['pkg/test/main_test.dart'],
+      inputSources: ['pkg/lib/web.dart'],
+      inputKmods: [excludes],
+      closureExcluded: [sidecar],
+      noDrop: true,
+      inputs: [encodeInput('${_root.path}/pkg/test/main_test.dart')],
+    );
+    expect(missingFromWorkerInputs.code, 1);
+    expect(missingFromWorkerInputs.calls, isEmpty);
+    expect(
+      missingFromWorkerInputs.log,
+      contains('pkg/lib/web.dart): source is not a declared input.'),
+    );
+
+    // Present in both --input-source and WorkRequest.inputs.
+    final declaredInWorkerInputs = await _compile(
+      'worker_ok',
+      ['pkg/test/main_test.dart'],
+      inputSources: ['pkg/lib/web.dart'],
+      inputKmods: [excludes],
+      closureExcluded: [sidecar],
+      noDrop: true,
+      inputs: [
+        encodeInput('${_root.path}/pkg/test/main_test.dart'),
+        encodeInput('${_root.path}/pkg/lib/web.dart'),
+      ],
+    );
+    expect(declaredInWorkerInputs.code, 0);
+    expect(
+      declaredInWorkerInputs.sourcesPerCall.single,
+      containsAll([_uri('pkg/test/main_test.dart'), 'package:pkg/web.dart']),
+    );
+  });
+
+  test('--output-outline stages excluded sources so downstream entry modules compile them hermetically', () async {
+    // pkg/lib/cyclic.dart imports package:dep/b.dart, which is not in pkg_m's inputKmods
+    // (as in a cross-package cycle or split package).
+    _write(
+      'pkg/lib/cyclic.dart',
+      "import 'package:dep/b.dart';\nint a() => 1;\n",
+    );
+    _write('dep/lib/b.dart', 'int b() => 2;\n');
+    final pkgOutline = '${_root.path}/out/pkg_m.koutline';
+    final pkgRes = await _compile('pkg_m', [
+      'pkg/lib/cyclic.dart',
+    ], outputOutline: pkgOutline);
+    expect(pkgRes.code, 0);
+    expect(pkgRes.excluded, {
+      _uri('pkg/lib/cyclic.dart'):
+          'imports package:dep/b.dart, which is not in this module closure',
+    });
+    expect(
+      File('$pkgOutline/sources/pkg/lib/cyclic.dart').existsSync(),
+      isTrue,
+    );
+
+    final depMod = _module('dep_m', [
+      _Scc('0.dill', ['dep/lib/b.dart'], []),
+    ]);
+
+    // Remove the original pkg/lib/cyclic.dart from the workspace root to prove the
+    // entry module reads it from the declared pkgOutline directory instead of the source tree.
+    File('${_root.path}/pkg/lib/cyclic.dart').deleteSync();
+    _write('pkg/test/main_test.dart', "import 'package:pkg/cyclic.dart';\n");
+
+    final entry = await _compile(
+      'entry_from_staged',
+      ['pkg/test/main_test.dart'],
+      inputKmods: [pkgOutline, depMod],
+      closureExcluded: ['${_root.path}/out/pkg_m.vm_excluded.txt'],
+      noDrop: true,
+    );
+    expect(entry.code, 0, reason: entry.log);
+    expect(
+      entry.sourcesPerCall.single,
+      containsAll([_uri('pkg/test/main_test.dart'), 'package:pkg/cyclic.dart']),
+    );
+    expect(
+      _valuesAfter(entry.calls.single, '--multi-root'),
+      contains('$pkgOutline/sources'),
     );
   });
 

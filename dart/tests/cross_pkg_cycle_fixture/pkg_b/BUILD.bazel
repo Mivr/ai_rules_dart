@@ -1,0 +1,10 @@
+load("//dart:defs.bzl", "dart_library")
+
+dart_library(
+    name = "pkg_b",
+    srcs = ["lib/b.dart"],
+    package_name = "pkg_b",
+    tags = ["no-dart-analyze"],
+    visibility = ["//dart/tests:__subpackages__"],
+    deps = ["//dart/tests/cross_pkg_cycle_fixture/pkg_a:a_base"],
+)

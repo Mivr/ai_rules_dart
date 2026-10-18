@@ -92,6 +92,7 @@ const _librariesJsonFlag = '--libraries-json';
 const _librariesPlatformFlag = '--libraries-platform';
 const _extraLibraryFlag = '--extra-library';
 const _inputKmodFlag = '--input-kmod';
+const _inputSourceFlag = '--input-source';
 const _outputOutlineFlag = '--output-outline';
 
 /// The file in each module directory that lists its kernels.
@@ -225,6 +226,7 @@ Future<int> compileModule(
 ) async {
   final base = <String>[];
   final sources = <String>[];
+  final inputSources = <String>[];
   final multiRoots = <String>[];
   final closureExcluded = <String>[];
   final inputKmods = <String>[];
@@ -241,6 +243,8 @@ Future<int> compileModule(
     final arg = rawArgs[i];
     if (arg == '--source') {
       sources.add(rawArgs[++i]);
+    } else if (arg == _inputSourceFlag) {
+      inputSources.add(rawArgs[++i]);
     } else if (arg == '--output') {
       output = rawArgs[++i];
     } else if (arg == _outputOutlineFlag) {
@@ -283,7 +287,6 @@ Future<int> compileModule(
     );
     return 64;
   }
-  final files = _Files(multiRoots.isEmpty ? const ['.'] : multiRoots);
   final roots = await _packageRoots(packagesFile, multiRootPrefix);
   final closure = await _readExcluded(closureExcluded, roots, multiRootPrefix);
   final vm = vmLibraries(
@@ -294,9 +297,33 @@ Future<int> compileModule(
   );
   // Every kernel the closure indexes, by the key of each library it defines.
   final graph = <String, _Node>{};
+  final stagedSources = <String, String>{};
   for (final dir in inputKmods) {
-    if (!await _readIndex(dir, graph, log)) return 1;
+    if (!await _readIndex(dir, graph, log, stagedSources: stagedSources)) {
+      return 1;
+    }
   }
+  final declaredKeys = <String>{};
+  for (final raw in [...sources, ...inputSources]) {
+    final key = _keyOfUri(raw, roots, multiRootPrefix);
+    if (key != null) declaredKeys.add(key);
+    for (final spelling in _inputSpellings(raw)) {
+      declaredKeys.add(spelling);
+    }
+  }
+  final workerInputPaths = inputs.isEmpty
+      ? null
+      : <String>{
+          for (final raw in inputs)
+            for (final spelling in _inputSpellings(_decodeInputPath(raw)))
+              spelling,
+        };
+  final files = _Files(
+    multiRoots.isEmpty ? const ['.'] : multiRoots,
+    declaredKeys: declaredKeys,
+    stagedRoots: stagedSources,
+    workerInputPaths: workerInputPaths,
+  );
   await Directory(output).create(recursive: true);
   if (outputOutline != null) {
     await Directory(outputOutline).create(recursive: true);
@@ -324,9 +351,38 @@ Future<int> compileModule(
       vm,
       multiRootPrefix,
     );
+    if (entry.undeclared.isNotEmpty) {
+      for (final missing in entry.undeclared) {
+        log.writeln(
+          'kernel_module: cannot compile $missing: '
+          'source is not a declared input.',
+        );
+      }
+      return 1;
+    }
+    final extraMultiRoots = <String>[];
+    final seenStagedRoots = <String>{};
+    final stagedInputs = <Uint8List>[];
+    for (final key in entry.keys) {
+      if (!files.isDeclaredInRoots(key)) {
+        final stagedRoot = stagedSources[key];
+        if (stagedRoot != null) {
+          if (seenStagedRoots.add(stagedRoot)) {
+            extraMultiRoots.add(stagedRoot);
+          }
+          if (inputs.isNotEmpty) {
+            final stagedPath = '$stagedRoot/$key';
+            stagedInputs.add(
+              _encodeInput(stagedPath, await _digestOf(stagedPath)),
+            );
+          }
+        }
+      }
+    }
     const dill = 'entry.dill';
     final outcome = await compiler.run([
       ...base,
+      for (final root in extraMultiRoots) ...[_multiRootFlag, root],
       for (final d in neededDills(entry.imports, graph)) ...[
         '--input-summary',
         d,
@@ -334,7 +390,7 @@ Future<int> compileModule(
       for (final source in entry.uris) ...['--source', source],
       '--output',
       '$output/$dill',
-    ], inputs);
+    ], stagedInputs.isEmpty ? inputs : [...inputs, ...stagedInputs]);
     if (outcome.exitCode != 0) {
       log.write(outcome.output);
       return 1;
@@ -360,10 +416,17 @@ Future<int> compileModule(
   for (final uri in own) {
     final key = _keyOfUri(uri, roots, multiRootPrefix);
     if (key == null) continue;
+    if (!files.isDeclared(key)) {
+      log.writeln(
+        'kernel_module: cannot compile $uri ($key): '
+        'source is not a declared input.',
+      );
+      return 1;
+    }
     keys[uri] = key;
     plan.addOwn(key, uri);
   }
-  await _planImports(plan, keys, inherited, roots, files, vm, log);
+  await _planImports(plan, keys, inherited, graph, roots, files, vm, log);
 
   var remaining = [
     for (final uri in own)
@@ -438,7 +501,19 @@ Future<int> compileModule(
   }
   await _writeIndex(output, sccs);
   if (outputOutline != null) {
-    await _writeIndex(outputOutline, sccs);
+    final excludedKeys = <String>[];
+    for (final uri in own) {
+      final key = keys[uri];
+      if (key == null || !plan.isExcluded(key)) continue;
+      final text = await files.read(key);
+      if (text == null) continue;
+      final staged = File('$outputOutline/sources/$key');
+      await staged.parent.create(recursive: true);
+      await staged.writeAsString(text);
+      excludedKeys.add(key);
+    }
+    excludedKeys.sort();
+    await _writeIndex(outputOutline, sccs, excluded: excludedKeys);
   }
 
   // Written even when nothing is excluded: the sidecar is a declared output. Its
@@ -602,8 +677,9 @@ List<String> neededDills(Iterable<String> roots, Map<String, _Node> graph) {
 Future<bool> _readIndex(
   String dir,
   Map<String, _Node> graph,
-  StringBuffer log,
-) async {
+  StringBuffer log, {
+  Map<String, String>? stagedSources,
+}) async {
   final file = File('$dir/$_indexName');
   if (!await file.exists()) {
     log.writeln('kernel_module: $dir has no $_indexName.');
@@ -619,16 +695,26 @@ Future<bool> _readIndex(
       graph.putIfAbsent(key, () => node);
     }
   }
+  if (stagedSources != null && json['excluded'] is List) {
+    for (final key in (json['excluded'] as List).cast<String>()) {
+      stagedSources.putIfAbsent(key, () => '$dir/sources');
+    }
+  }
   return true;
 }
 
-Future<void> _writeIndex(String dir, List<_Scc> sccs) async {
+Future<void> _writeIndex(
+  String dir,
+  List<_Scc> sccs, {
+  List<String> excluded = const [],
+}) async {
   final json = const JsonEncoder.withIndent('  ').convert({
     'version': 1,
     'sccs': [
       for (final scc in sccs)
         {'dill': scc.dill, 'defines': scc.keys, 'imports': scc.imports},
     ],
+    if (excluded.isNotEmpty) 'excluded': excluded,
   });
   await File('$dir/$_indexName').writeAsString('$json\n');
 }
@@ -697,6 +783,7 @@ Future<void> _planImports(
   _Plan plan,
   Map<String, String> keys,
   Map<String, String> inherited,
+  Map<String, _Node> graph,
   Map<String, _PackageRoot> roots,
   _Files files,
   Set<String> vm,
@@ -748,6 +835,11 @@ Future<void> _planImports(
         }
       } else if (inherited.containsKey(target)) {
         direct.putIfAbsent(key, () => 'imports ${ref.uri}, which is excluded');
+      } else if (!graph.containsKey(target)) {
+        direct.putIfAbsent(
+          key,
+          () => 'imports ${ref.uri}, which is not in this module closure',
+        );
       }
     }
   }
@@ -768,7 +860,7 @@ bool _definedBy(
 
 /// What the entry module compiles, and what it imports.
 class _EntrySources {
-  _EntrySources(this.uris, this.imports);
+  _EntrySources(this.uris, this.imports, this.keys, this.undeclared);
 
   /// The URIs the entry compiles: its own sources, and each excluded file it reaches.
   final List<String> uris;
@@ -776,6 +868,12 @@ class _EntrySources {
   /// The keys of every library the entry's sources import, sorted. The entry links
   /// against the kernels these reach.
   final List<String> imports;
+
+  /// The keys of all sources in [uris].
+  final List<String> keys;
+
+  /// Any source reached by the entry module that is not a declared input.
+  final List<String> undeclared;
 }
 
 /// The sources the entry module compiles: its own, and each excluded file it reaches.
@@ -803,6 +901,7 @@ Future<_EntrySources> _entrySources(
   final seen = <String>{};
   final queue = Queue<String>();
   final edges = <_EntryEdge>[];
+  final undeclared = <String>[];
   for (final uri in sources) {
     final key = _keyOfUri(uri, roots, multiRootPrefix);
     if (key == null) {
@@ -814,8 +913,16 @@ Future<_EntrySources> _entrySources(
   }
   while (queue.isNotEmpty) {
     final key = queue.removeFirst();
+    if (!files.isDeclared(key)) {
+      undeclared.add('${ownUris[key] ?? key} ($key)');
+      continue;
+    }
     final text = await files.read(key);
-    final scan = text == null ? null : scanDirectives(text, vm);
+    if (text == null) {
+      undeclared.add('${ownUris[key] ?? key} ($key)');
+      continue;
+    }
+    final scan = scanDirectives(text, vm);
     if (scan == null) continue;
     for (final ref in scan.refs) {
       if (ref.uri.startsWith('dart:')) continue;
@@ -824,7 +931,8 @@ Future<_EntrySources> _entrySources(
       edges.add(_EntryEdge(key, ref.uri, target));
       imports.add(target);
       if (!seen.add(target)) continue;
-      final uri = closure[target];
+      final uri =
+          closure[target] ?? (ref.isPart ? '$multiRootPrefix$target' : null);
       if (uri == null) continue;
       ownUris.putIfAbsent(target, () => uri);
       queue.add(target);
@@ -894,7 +1002,12 @@ Future<_EntrySources> _entrySources(
       if (rawUri != pkgUri) out.add(rawUri);
     }
   });
-  return _EntrySources(out, imports.toList()..sort());
+  return _EntrySources(
+    out,
+    imports.toList()..sort(),
+    ownUris.keys.toList(),
+    undeclared,
+  );
 }
 
 /// The `package:` URI of the file with `key`, when a package names it under its
@@ -993,6 +1106,15 @@ Iterable<String> _spellings(String uri, String key) sync* {
   yield uri;
 }
 
+/// Normalized path spellings for an input path or `--input-source` flag value.
+Iterable<String> _inputSpellings(String? raw) sync* {
+  if (raw == null || raw.isEmpty) return;
+  final norm = _normalize(raw);
+  if (norm.isNotEmpty) yield norm;
+  final stripped = _normalize(raw.replaceFirst(_bazelOutPrefix, ''));
+  if (stripped.isNotEmpty && stripped != norm) yield stripped;
+}
+
 /// The path after `multiRootPrefix`, or null for any other URI.
 String? _stripPrefix(
   String uri, [
@@ -1057,21 +1179,69 @@ String _normalize(String path) {
 }
 
 /// Reads the files of a module's sources from the multi-root directories.
+///
+/// Only files declared via `--source`, `--input-source`, or a dependency
+/// `.koutline`'s staged excluded sources (and present in `WorkRequest.inputs`
+/// when running as a persistent worker) may be read.
 class _Files {
-  _Files(this._roots);
+  _Files(
+    this._roots, {
+    required Set<String> declaredKeys,
+    Map<String, String> stagedRoots = const {},
+    Set<String>? workerInputPaths,
+  }) : _declaredKeys = declaredKeys,
+       _stagedRoots = stagedRoots,
+       _workerInputPaths = workerInputPaths;
 
   final List<String> _roots;
+  final Set<String> _declaredKeys;
+  final Map<String, String> _stagedRoots;
+  final Set<String>? _workerInputPaths;
   final Map<String, String?> _cache = {};
 
-  /// The text of the file with `key`, or null when no root has it.
+  /// Whether `key` is declared via `--source` or `--input-source` (and present
+  /// in `WorkRequest.inputs` when active).
+  bool isDeclaredInRoots(String key) {
+    if (!_declaredKeys.contains(key)) return false;
+    final workerPaths = _workerInputPaths;
+    if (workerPaths == null) return true;
+    if (workerPaths.contains(key)) return true;
+    for (final root in _roots) {
+      final candidate = _normalize(root == '.' ? key : '$root/$key');
+      if (workerPaths.contains(candidate)) return true;
+    }
+    return false;
+  }
+
+  /// Whether `key` is a declared input of this action.
+  bool isDeclared(String key) =>
+      isDeclaredInRoots(key) || _stagedRoots.containsKey(key);
+
+  /// The text of the file with `key`, or null when it is not a declared input
+  /// or no root has it.
   Future<String?> read(String key) async {
+    if (!isDeclared(key)) return null;
     if (_cache.containsKey(key)) return _cache[key];
     String? text;
-    for (final root in _roots) {
-      final file = File(root == '.' ? key : '$root/$key');
-      if (await file.exists()) {
-        text = utf8.decode(await file.readAsBytes(), allowMalformed: true);
-        break;
+    if (isDeclaredInRoots(key)) {
+      for (final root in _roots) {
+        final file = File(root == '.' ? key : '$root/$key');
+        if (await file.exists()) {
+          text = utf8.decode(await file.readAsBytes(), allowMalformed: true);
+          break;
+        }
+      }
+    }
+    if (text == null) {
+      final stagedRoot = _stagedRoots[key];
+      if (stagedRoot != null) {
+        final stagedFile = File('$stagedRoot/$key');
+        if (await stagedFile.exists()) {
+          text = utf8.decode(
+            await stagedFile.readAsBytes(),
+            allowMalformed: true,
+          );
+        }
       }
     }
     return _cache[key] = text;
@@ -1965,6 +2135,23 @@ Uint8List _frame(Uint8List message) {
   out.add(_varintBytes(message.length));
   out.add(message);
   return out.toBytes();
+}
+
+/// Decodes the `path` (field 1) of a protobuf `Input` message.
+String? _decodeInputPath(Uint8List bytes) {
+  final reader = _Reader(bytes);
+  String? path;
+  while (!reader.done) {
+    final key = reader.varint();
+    final field = key >> 3;
+    final wire = key & 7;
+    if (field == 1 && wire == 2) {
+      path = utf8.decode(reader.bytes(), allowMalformed: true);
+    } else {
+      reader.skip(wire);
+    }
+  }
+  return path;
 }
 
 /// `WorkRequest`: `arguments` = 1, `inputs` = 2 (each an `Input` message, kept as

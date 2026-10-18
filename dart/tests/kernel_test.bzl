@@ -18,6 +18,7 @@ load(
     "entry_sources",
     "first_per_package",
     "generate_stable_package_config",
+    "has_cross_pkg_cycle",
     "kernel_link_action",
     "kernel_module_action",
     "kernel_package_config",
@@ -27,6 +28,7 @@ load(
     "modular_kernel_eligible",
     "multi_root_uri",
     "no_kernel_module",
+    "package_of_source",
     "stable_entry_path",
     "stable_path",
 )
@@ -783,6 +785,154 @@ _generated_test_runner_omits_sources_test = analysistest.make(
     _generated_test_runner_omits_sources_test_impl,
 )
 
+def _has_cross_pkg_cycle_test_impl(ctx):
+    env = unittest.begin(ctx)
+    pkgs = [
+        _pkg("a", "pkg/a"),
+        _pkg("b", "pkg/b"),
+        _pkg("leaf", "pkg/leaf"),
+    ]
+    asserts.equals(
+        env,
+        "a",
+        package_of_source("pkg/a/lib/src/x.dart", pkgs),
+        "package_of_source matches package lib/ prefix",
+    )
+    asserts.equals(
+        env,
+        None,
+        package_of_source("other/lib/x.dart", pkgs),
+        "package_of_source returns None when no package matches",
+    )
+    asserts.false(
+        env,
+        has_cross_pkg_cycle(
+            "a",
+            [_pkg("b", "pkg/b"), _pkg("leaf", "pkg/leaf")],
+            owned = [
+                ("//pkg/a:a", "pkg/a/lib/a.dart"),
+                ("//pkg/b:b", "pkg/b/lib/b.dart"),
+                ("//pkg/leaf:leaf", "pkg/leaf/lib/leaf.dart"),
+            ],
+            edges = [
+                ("//pkg/a:a", "//pkg/b:b"),
+                ("//pkg/b:b", "//pkg/leaf:leaf"),
+            ],
+            packages = pkgs,
+        ),
+        "a linear chain of distinct packages has no cross-package cycle",
+    )
+    asserts.true(
+        env,
+        has_cross_pkg_cycle(
+            "a",
+            [_pkg("a", "pkg/a"), _pkg("b", "pkg/b")],
+            owned = [
+                ("//pkg/a:a_base", "pkg/a/lib/a_base.dart"),
+                ("//pkg/b:b", "pkg/b/lib/b.dart"),
+                ("//pkg/a:a_top", "pkg/a/lib/a_top.dart"),
+            ],
+            edges = [
+                ("//pkg/b:b", "//pkg/a:a_base"),
+                ("//pkg/a:a_top", "//pkg/b:b"),
+                ("//pkg/a:a_top", "//pkg/a:a_base"),
+            ],
+            packages = pkgs,
+        ),
+        "a package split across a_base <- b <- a_top has a cross-package cycle",
+    )
+    asserts.true(
+        env,
+        has_cross_pkg_cycle(
+            "c",
+            [_pkg("a", "pkg/a"), _pkg("c", "pkg/c")],
+            owned = [
+                ("//pkg/a:sib1", "pkg/a/lib/s1.dart"),
+                ("//pkg/a:sib2", "pkg/a/lib/s2.dart"),
+                ("//pkg/c:c", "pkg/c/lib/c.dart"),
+            ],
+            edges = [
+                ("//pkg/c:c", "//pkg/a:sib1"),
+                ("//pkg/c:c", "//pkg/a:sib2"),
+            ],
+            packages = [_pkg("a", "pkg/a"), _pkg("c", "pkg/c")],
+        ),
+        "two sibling targets sharing one package name in the closure trigger cross-package handling",
+    )
+    asserts.true(
+        env,
+        has_cross_pkg_cycle(
+            "b",
+            [_pkg("a", "pkg/a")],
+            non_standalone = True,
+        ),
+        "a target with no-dart-analyze (non_standalone) triggers cross-package handling",
+    )
+    asserts.false(
+        env,
+        has_cross_pkg_cycle(
+            "a",
+            [_pkg("a", "pkg/a")],
+            owned = [("//pkg/a:a", "pkg/a/lib/a.dart")],
+            edges = [],
+            packages = [_pkg("a", "pkg/a")],
+            is_executable = True,
+        ),
+        "an executable in package a depending on a single library in package a is not a cycle",
+    )
+    asserts.true(
+        env,
+        has_cross_pkg_cycle(
+            "a",
+            [_pkg("a", "pkg/a"), _pkg("b", "pkg/b")],
+            owned = [
+                ("//pkg/a:a_base", "pkg/a/lib/a_base.dart"),
+                ("//pkg/b:b", "pkg/b/lib/b.dart"),
+            ],
+            edges = [("//pkg/b:b", "//pkg/a:a_base")],
+            packages = pkgs,
+            is_executable = True,
+        ),
+        "an executable with own_package a whose dependency b depends on a_base closes a cycle",
+    )
+    return unittest.end(env)
+
+def _cross_pkg_cycle_inputs_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    actions = analysistest.target_actions(env)
+    kernel_actions = [a for a in actions if a.mnemonic == "DartKernel"]
+    asserts.equals(env, 1, len(kernel_actions), "registers one DartKernel entry action")
+    entry_action = kernel_actions[0]
+    input_short_paths = [f.short_path for f in entry_action.inputs.to_list()]
+    asserts.true(
+        env,
+        "dart/tests/cross_pkg_cycle_fixture/pkg_a/lib/a_base.dart" in input_short_paths,
+        "a_base.dart is a declared input of the entry module action",
+    )
+    asserts.true(
+        env,
+        "dart/tests/cross_pkg_cycle_fixture/pkg_b/lib/b.dart" in input_short_paths,
+        "b.dart is a declared input of the entry module action",
+    )
+    asserts.true(
+        env,
+        "dart/tests/cross_pkg_cycle_fixture/pkg_a/lib/a_top.dart" in input_short_paths,
+        "a_top.dart is a declared input of the entry module action",
+    )
+    asserts.false(
+        env,
+        "dart/tests/cross_pkg_cycle_fixture/pkg_leaf/lib/leaf.dart" in input_short_paths,
+        "non-cyclic leaf.dart is not an input of the entry module action",
+    )
+    asserts.true(
+        env,
+        "--input-source" in entry_action.argv,
+        "--input-source is passed to kernel_module for cross_pkg_srcs",
+    )
+    return analysistest.end(env)
+
+_cross_pkg_cycle_inputs_test = analysistest.make(_cross_pkg_cycle_inputs_test_impl)
+
 _root_path_test = unittest.make(_root_path_test_impl)
 _multi_root_uri_test = unittest.make(_multi_root_uri_test_impl)
 _multi_root_uri_custom_scheme_test = unittest.make(_multi_root_uri_custom_scheme_test_impl)
@@ -795,6 +945,7 @@ _packages_consistent_test = unittest.make(_packages_consistent_test_impl)
 _first_per_package_test = unittest.make(_first_per_package_test_impl)
 _duplicated_source_test = unittest.make(_duplicated_source_test_impl)
 _eligible_test = unittest.make(_eligible_test_impl)
+_has_cross_pkg_cycle_test = unittest.make(_has_cross_pkg_cycle_test_impl)
 
 def kernel_test_suite(name):
     """Declares the modular kernel unit tests as one suite.
@@ -908,6 +1059,11 @@ def kernel_test_suite(name):
         target_under_test = ":" + name + "_unseeded_base_kmods_fixture",
         size = "small",
     )
+    _cross_pkg_cycle_inputs_test(
+        name = name + "_cross_pkg_cycle_inputs_test",
+        target_under_test = "//dart/tests/cross_pkg_cycle_fixture:app_modular",
+        size = "small",
+    )
     small_unittest_suite(
         name + "_unit",
         _root_path_test,
@@ -922,6 +1078,7 @@ def kernel_test_suite(name):
         _first_per_package_test,
         _duplicated_source_test,
         _eligible_test,
+        _has_cross_pkg_cycle_test,
     )
     native.test_suite(
         name = name,
@@ -936,6 +1093,8 @@ def kernel_test_suite(name):
             ":" + name + "_user_kernel_module_modular_test",
             ":" + name + "_user_kernel_link_modular_test",
             ":" + name + "_unseeded_base_kmods_intersection_test",
+            ":" + name + "_cross_pkg_cycle_inputs_test",
+            "//dart/tests/cross_pkg_cycle_fixture:cross_pkg_cycle_test",
             "//dart/tests/legacy_mixin_fixture:legacy_mixin_test",
         ],
     )

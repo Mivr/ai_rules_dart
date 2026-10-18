@@ -1,0 +1,49 @@
+load("//dart:defs.bzl", "dart_binary", "dart_test")
+
+dart_binary(
+    name = "app_modular",
+    compile_mode = "kernel",
+    main = "main.dart",
+    visibility = ["//dart/tests:__subpackages__"],
+    deps = [
+        "//dart/tests/cross_pkg_cycle_fixture/pkg_a:a_top",
+        "//dart/tests/cross_pkg_cycle_fixture/pkg_b",
+    ],
+)
+
+dart_binary(
+    name = "app_whole",
+    compile_mode = "kernel",
+    main = "main.dart",
+    modular_kernel = False,
+    visibility = ["//dart/tests:__subpackages__"],
+    deps = [
+        "//dart/tests/cross_pkg_cycle_fixture/pkg_a:a_top",
+        "//dart/tests/cross_pkg_cycle_fixture/pkg_b",
+    ],
+)
+
+dart_test(
+    name = "cross_pkg_cycle_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :app_modular)",
+        "$(rlocationpath :app_whole)",
+        "$(rlocationpath //dart/private/tools:kernel_module)",
+        "$(rlocationpath //dart/private/tools:kernel_link)",
+    ],
+    data = [
+        ":app_modular",
+        ":app_whole",
+        "//dart/private/tools:kernel_link",
+        "//dart/private/tools:kernel_module",
+    ],
+    main = "cross_pkg_cycle_test.dart",
+    visibility = ["//dart/tests:__subpackages__"],
+    deps = [
+        "//dart/runfiles",
+        "//dart/tests/cross_pkg_cycle_fixture/pkg_a:a_top",
+        "//dart/tests/cross_pkg_cycle_fixture/pkg_b",
+        "@ext_pub_deps//:test",
+    ],
+)

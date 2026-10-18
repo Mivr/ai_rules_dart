@@ -1,0 +1,8 @@
+load("//dart:defs.bzl", "dart_library")
+
+dart_library(
+    name = "pkg_leaf",
+    srcs = ["lib/leaf.dart"],
+    package_name = "pkg_leaf",
+    visibility = ["//dart/tests:__subpackages__"],
+)
