@@ -337,7 +337,6 @@ Future<int> compileModule(
   var librariesPlatform = 'vm';
   var multiRootPrefix = _defaultMultiRootPrefix;
   var noDrop = false;
-  var hasCommaDefines = false;
   for (var i = 0; i < rawArgs.length; i++) {
     final arg = rawArgs[i];
     if (arg == '--source') {
@@ -368,22 +367,9 @@ Future<int> compileModule(
       );
       return 64;
     } else if ((arg == '-D' || arg == '--define') && i + 1 < rawArgs.length) {
-      base.add(arg);
-      final val = rawArgs[++i];
-      if (val.contains(',')) {
-        hasCommaDefines = true;
-        base.add(val.replaceAll(',', _commaDefinePlaceholder));
-      } else {
-        base.add(val);
-      }
-    } else if ((arg.startsWith('-D') && arg.length > 2) ||
-        arg.startsWith('--define=')) {
-      if (arg.contains(',')) {
-        hasCommaDefines = true;
-        base.add(arg.replaceAll(',', _commaDefinePlaceholder));
-      } else {
-        base.add(arg);
-      }
+      base
+        ..add(arg)
+        ..add(rawArgs[++i]);
     } else {
       if (arg == _packagesFlag) {
         packagesFile = rawArgs[i + 1];
@@ -498,13 +484,15 @@ Future<int> compileModule(
   for (final raw in [...sources, ...inputSources]) {
     final key = _keyOfUri(raw, roots, multiRootPrefix);
     if (key != null) declaredKeys.add(key);
-    for (final spelling in _inputSpellings(raw)) {
+    for (final spelling in _inputSpellings(raw, multiRoots)) {
       declaredKeys.add(spelling);
     }
     if (!raw.contains(':') || isWindowsDrivePath(raw)) {
       declaredRootPaths.add(raw);
       final norm = _normalize(raw);
       if (norm.isNotEmpty) declaredRootPaths.add(norm);
+      final normFile = _normalizeFilePath(raw);
+      if (normFile.isNotEmpty) declaredRootPaths.add(normFile);
     }
   }
   final files = _Files(
@@ -574,26 +562,54 @@ Future<int> compileModule(
       }
     }
     const dill = 'entry.dill';
-    final entryBase = _baseWithOrderedMultiRoots(
-      base,
+    final useIsolated = await _needsIsolatedMultiRoot(
+      compiler,
       multiRoots,
+      extraMultiRoots,
       entry.keys,
       files,
+      vm,
     );
-    final outcome = await compiler.run(
-      kernelWorkerArgs([
-        ...entryBase,
-        for (final root in extraMultiRoots) ...[_multiRootFlag, root],
-        for (final d in neededDills(entry.imports, graph)) ...[
-          '--input-summary',
-          d,
-        ],
-        for (final source in entry.uris) ...['--source', source],
-        '--output',
-        '$output/$dill',
-      ]),
-      stagedInputs.isEmpty ? inputs : [...inputs, ...stagedInputs],
-    );
+    ({String rootDir, List<Uint8List> inputs})? isolated;
+    final ModuleOutcome outcome;
+    try {
+      if (useIsolated) {
+        isolated = await _stageIsolatedMultiRoot(
+          output,
+          files,
+          inputDigests,
+          includeInputDigests: inputs.isNotEmpty || compiler is _Persistent,
+        );
+      }
+      final entryBase = isolated != null
+          ? _baseWithSingleMultiRoot(base, isolated.rootDir)
+          : base;
+      final callInputs = isolated != null
+          ? (isolated.inputs.isEmpty ? inputs : [...inputs, ...isolated.inputs])
+          : (stagedInputs.isEmpty ? inputs : [...inputs, ...stagedInputs]);
+      outcome = await compiler.run(
+        kernelWorkerArgs([
+          ...entryBase,
+          if (isolated == null)
+            for (final root in extraMultiRoots) ...[_multiRootFlag, root],
+          for (final d in neededDills(entry.imports, graph)) ...[
+            '--input-summary',
+            d,
+          ],
+          for (final source in entry.uris) ...['--source', source],
+          '--output',
+          '$output/$dill',
+        ]),
+        callInputs,
+      );
+    } finally {
+      if (isolated != null) {
+        final dir = Directory(_filePathOf(isolated.rootDir));
+        if (await dir.exists()) {
+          await dir.delete(recursive: true);
+        }
+      }
+    }
     if (outcome.exitCode != 0) {
       log.write(outcome.output);
       return 1;
@@ -602,21 +618,13 @@ Future<int> compileModule(
       _Scc(dill: dill, keys: const [], uris: const [], imports: entry.imports),
     ];
     await _writeIndex(output, entrySccs);
-    if (outputOutline != null || hasCommaDefines) {
+    if (outputOutline != null) {
       final fullFile = File('$output/$dill');
       if (await fullFile.exists()) {
-        var rawBytes = await fullFile.readAsBytes();
-        if (hasCommaDefines) {
-          rawBytes = restoreDillDefineCommas(rawBytes);
-          await fullFile.writeAsBytes(rawBytes);
-        }
-        if (outputOutline != null) {
-          final outlineBytes = stripDillToOutline(rawBytes);
-          await File('$outputOutline/$dill').writeAsBytes(outlineBytes);
-        }
+        final rawBytes = await fullFile.readAsBytes();
+        final outlineBytes = stripDillToOutline(rawBytes);
+        await File('$outputOutline/$dill').writeAsBytes(outlineBytes);
       }
-    }
-    if (outputOutline != null) {
       await _writeIndex(outputOutline, entrySccs);
     }
     await File(excludedPath).writeAsString('');
@@ -667,117 +675,145 @@ Future<int> compileModule(
   ];
   var retried = false;
   var sccs = <_Scc>[];
-  while (true) {
-    sccs = _componentsOf(remaining, keys, plan);
-    // The kernels this attempt has written, by key. A later component links to them.
-    final local = Map<String, _Node>.of(graph);
-    ModuleOutcome? failure;
-    var failedUris = const <String>[];
-    for (final scc in sccs) {
-      final extraMultiRoots = <String>[];
-      final seenStagedRoots = <String>{};
-      final stagedInputs = <Uint8List>[];
-      for (final key in scc.keys) {
-        if (!files.isDeclaredInRoots(key)) {
-          final stagedRoot = stagedSources[key];
-          if (stagedRoot != null) {
-            if (seenStagedRoots.add(stagedRoot)) {
-              extraMultiRoots.add(stagedRoot);
-            }
-            if (inputs.isNotEmpty) {
-              final stagedPath = '$stagedRoot/$key';
-              if (!exactInputPathsWithDigest.contains(stagedPath)) {
-                final knownDigest =
-                    _lookupDigest(stagedPath, inputDigests) ??
-                    await _digestOf(stagedPath);
-                stagedInputs.add(_encodeInput(stagedPath, knownDigest));
+  ({String rootDir, List<Uint8List> inputs})? isolated;
+  try {
+    while (true) {
+      sccs = _componentsOf(remaining, keys, plan);
+      // The kernels this attempt has written, by key. A later component links to them.
+      final local = Map<String, _Node>.of(graph);
+      ModuleOutcome? failure;
+      var failedUris = const <String>[];
+      for (final scc in sccs) {
+        final extraMultiRoots = <String>[];
+        final seenStagedRoots = <String>{};
+        final stagedInputs = <Uint8List>[];
+        for (final key in scc.keys) {
+          if (!files.isDeclaredInRoots(key)) {
+            final stagedRoot = stagedSources[key];
+            if (stagedRoot != null) {
+              if (seenStagedRoots.add(stagedRoot)) {
+                extraMultiRoots.add(stagedRoot);
+              }
+              if (inputs.isNotEmpty) {
+                final stagedPath = '$stagedRoot/$key';
+                if (!exactInputPathsWithDigest.contains(stagedPath)) {
+                  final knownDigest =
+                      _lookupDigest(stagedPath, inputDigests) ??
+                      await _digestOf(stagedPath);
+                  stagedInputs.add(_encodeInput(stagedPath, knownDigest));
+                }
               }
             }
           }
         }
-      }
-      final summaryNodes = _neededNodes(scc.imports, local);
-      if (inputs.isNotEmpty || compiler is _Persistent) {
-        for (final node in summaryNodes) {
-          final encoded = node.encodedInput;
-          if (encoded != null) {
-            stagedInputs.add(encoded);
+        final useIsolated =
+            isolated != null ||
+            await _needsIsolatedMultiRoot(
+              compiler,
+              multiRoots,
+              extraMultiRoots,
+              scc.keys,
+              files,
+              vm,
+            );
+        if (useIsolated && isolated == null) {
+          isolated = await _stageIsolatedMultiRoot(
+            output,
+            files,
+            inputDigests,
+            includeInputDigests: inputs.isNotEmpty || compiler is _Persistent,
+          );
+        }
+        final summaryNodes = _neededNodes(scc.imports, local);
+        final summaryInputs = <Uint8List>[];
+        if (inputs.isNotEmpty || compiler is _Persistent) {
+          for (final node in summaryNodes) {
+            final encoded = node.encodedInput;
+            if (encoded != null) {
+              summaryInputs.add(encoded);
+            }
           }
         }
-      }
-      final dillPath = '$output/${scc.dill}';
-      final sccBase = _baseWithOrderedMultiRoots(
-        base,
-        multiRoots,
-        scc.keys,
-        files,
-      );
-      final outcome = await compiler.run(
-        kernelWorkerArgs([
-          ...sccBase,
-          for (final root in extraMultiRoots) ...[_multiRootFlag, root],
-          for (final node in summaryNodes) ...['--input-summary', node.dill],
-          for (final uri in scc.uris) ...['--source', uri],
-          '--output',
-          dillPath,
-        ]),
-        stagedInputs.isEmpty ? inputs : [...inputs, ...stagedInputs],
-      );
-      if (outcome.exitCode != 0) {
-        failure = outcome;
-        failedUris = scc.uris;
-        break;
-      }
-      var nodeDill = dillPath;
-      Uint8List? nodeDillBytes;
-      final dillFile = File(dillPath);
-      if (await dillFile.exists()) {
-        var rawBytes = await dillFile.readAsBytes();
-        if (hasCommaDefines) {
-          rawBytes = restoreDillDefineCommas(rawBytes);
+        final dillPath = '$output/${scc.dill}';
+        final sccBase = isolated != null
+            ? _baseWithSingleMultiRoot(base, isolated.rootDir)
+            : base;
+        final extraInputs = [
+          if (isolated != null) ...isolated.inputs else ...stagedInputs,
+          ...summaryInputs,
+        ];
+        final outcome = await compiler.run(
+          kernelWorkerArgs([
+            ...sccBase,
+            if (isolated == null)
+              for (final root in extraMultiRoots) ...[_multiRootFlag, root],
+            for (final node in summaryNodes) ...['--input-summary', node.dill],
+            for (final uri in scc.uris) ...['--source', uri],
+            '--output',
+            dillPath,
+          ]),
+          extraInputs.isEmpty ? inputs : [...inputs, ...extraInputs],
+        );
+        if (outcome.exitCode != 0) {
+          failure = outcome;
+          failedUris = scc.uris;
+          break;
         }
-        if (outputOutline != null) {
-          final outlineBytes = stripDillToOutline(rawBytes);
-          nodeDill = '$outputOutline/${scc.dill}';
-          await File(nodeDill).writeAsBytes(outlineBytes);
-          nodeDillBytes = outlineBytes;
-          await dillFile.writeAsBytes(_stripSourceCodeFromDill(rawBytes));
-        } else {
-          final strippedBytes = _stripSourceCodeFromDill(rawBytes);
-          await dillFile.writeAsBytes(strippedBytes);
-          nodeDillBytes = strippedBytes;
+        var nodeDill = dillPath;
+        Uint8List? nodeDillBytes;
+        final dillFile = File(dillPath);
+        if (await dillFile.exists()) {
+          final rawBytes = await dillFile.readAsBytes();
+          if (outputOutline != null) {
+            final outlineBytes = stripDillToOutline(rawBytes);
+            nodeDill = '$outputOutline/${scc.dill}';
+            await File(nodeDill).writeAsBytes(outlineBytes);
+            nodeDillBytes = outlineBytes;
+            await dillFile.writeAsBytes(_stripSourceCodeFromDill(rawBytes));
+          } else {
+            final strippedBytes = _stripSourceCodeFromDill(rawBytes);
+            await dillFile.writeAsBytes(strippedBytes);
+            nodeDillBytes = strippedBytes;
+          }
+        }
+        final node = _Node(nodeDill, scc.imports, dillBytes: nodeDillBytes);
+        for (final key in scc.keys) {
+          local[key] = node;
         }
       }
-      final node = _Node(nodeDill, scc.imports, dillBytes: nodeDillBytes);
-      for (final key in scc.keys) {
-        local[key] = node;
+      if (failure == null) break;
+      // The one retry: drop the own sources that failed, and their importers. The
+      // components are then formed again from what remains.
+      final verdict = _attribute(
+        failure.output,
+        failedUris,
+        roots,
+        multiRootPrefix,
+      );
+      if (retried ||
+          verdict.unattributed ||
+          verdict.outside ||
+          verdict.failing.isEmpty) {
+        log.write(failure.output);
+        return 1;
+      }
+      retried = true;
+      plan.exclude({
+        for (final entry in verdict.failing.entries)
+          entry.key: 'compile error: ${entry.value}',
+      });
+      remaining = [
+        for (final uri in remaining)
+          if (!plan.isExcluded(keys[uri])) uri,
+      ];
+    }
+  } finally {
+    if (isolated != null) {
+      final dir = Directory(_filePathOf(isolated.rootDir));
+      if (await dir.exists()) {
+        await dir.delete(recursive: true);
       }
     }
-    if (failure == null) break;
-    // The one retry: drop the own sources that failed, and their importers. The
-    // components are then formed again from what remains.
-    final verdict = _attribute(
-      failure.output,
-      failedUris,
-      roots,
-      multiRootPrefix,
-    );
-    if (retried ||
-        verdict.unattributed ||
-        verdict.outside ||
-        verdict.failing.isEmpty) {
-      log.write(failure.output);
-      return 1;
-    }
-    retried = true;
-    plan.exclude({
-      for (final entry in verdict.failing.entries)
-        entry.key: 'compile error: ${entry.value}',
-    });
-    remaining = [
-      for (final uri in remaining)
-        if (!plan.isExcluded(keys[uri])) uri,
-    ];
   }
   await _writeIndex(output, sccs);
   if (outputOutline != null) {
@@ -2052,6 +2088,8 @@ _Verdict _attribute(
   );
 }
 
+final _isolatedRootPrefix = RegExp(r'^(?:.*/)?\.isolated_root/');
+
 /// The key of the first spelling of `path` that `spellings` knows.
 String? _lookup(
   Map<String, String> spellings,
@@ -2065,6 +2103,7 @@ String? _lookup(
     _stripPrefix(path, multiRootPrefix),
     _stripPrefix(slashPath, multiRootPrefix),
     slashPath.replaceFirst(_bazelOutPrefix, ''),
+    slashPath.replaceFirst(_isolatedRootPrefix, ''),
   ]) {
     if (spelling == null) continue;
     final key = spellings[spelling];
@@ -2080,13 +2119,34 @@ Iterable<String> _spellings(String uri, String key) sync* {
 }
 
 /// Normalized path spellings for an input path or `--input-source` flag value.
-Iterable<String> _inputSpellings(String? raw) sync* {
+Iterable<String> _inputSpellings(
+  String? raw, [
+  List<String> multiRoots = const [],
+]) sync* {
   if (raw == null || raw.isEmpty) return;
   final norm = _normalize(raw);
   if (norm.isNotEmpty) yield norm;
   if (raw.startsWith('bazel-out/') || raw.startsWith('./bazel-out/')) {
     final stripped = _normalize(raw.replaceFirst(_bazelOutPrefix, ''));
     if (stripped.isNotEmpty && stripped != norm) yield stripped;
+  }
+  final rawSlash = _filePathOf(raw).replaceAll(r'\', '/');
+  for (final r in multiRoots) {
+    final rootFile = _filePathOf(r)
+        .replaceAll(r'\', '/')
+        .replaceFirst(RegExp(r'/+$'), '');
+    if (rootFile.isEmpty || rootFile == '.') continue;
+    if (rawSlash.startsWith('$rootFile/')) {
+      final stripped = _normalize(rawSlash.substring(rootFile.length + 1));
+      if (stripped.isNotEmpty && stripped != norm) yield stripped;
+    }
+    final normRoot = _normalize(rootFile);
+    if (normRoot.isNotEmpty &&
+        normRoot != '.' &&
+        norm.startsWith('$normRoot/')) {
+      final stripped = _normalize(norm.substring(normRoot.length + 1));
+      if (stripped.isNotEmpty && stripped != norm) yield stripped;
+    }
   }
 }
 
@@ -2265,32 +2325,46 @@ class _Files {
     ..._stagedRoots.keys,
   };
 
-  /// The text of the file with `key`, or null when it is not a declared input
-  /// or no root has it.
+  /// The single root from which [key] is declared to be read, or `null` when
+  /// [key] is not a declared input of this action.
+  ///
+  /// When [key] is declared in [_roots], only [_roots] are considered (never
+  /// [_stagedRoots]); otherwise [_stagedRoots] is used.
+  String? declaredRootOf(String key) {
+    if (isDeclaredInRoots(key)) {
+      String? firstDeclared;
+      for (final root in _roots) {
+        if (!isDeclaredInRoot(root, key)) continue;
+        firstDeclared ??= root;
+        final path = _filePathOf(root == '.' ? key : '$root/$key');
+        if (File(path).existsSync()) {
+          return root;
+        }
+      }
+      return firstDeclared;
+    }
+    return _stagedRoots[key];
+  }
+
+  /// The file-system path of the single declared origin for [key], or `null`
+  /// when [key] is not a declared input.
+  String? declaredOriginOf(String key) {
+    final root = declaredRootOf(key);
+    if (root == null) return null;
+    return _filePathOf(root == '.' ? key : '$root/$key');
+  }
+
+  /// The text of the file with `key` from its single declared origin, or null
+  /// when it is not a declared input or its declared origin does not exist.
   Future<String?> read(String key) async {
     if (!isDeclared(key)) return null;
     if (_cache.containsKey(key)) return _cache[key];
     String? text;
-    if (isDeclaredInRoots(key)) {
-      for (final root in _roots) {
-        if (!isDeclaredInRoot(root, key)) continue;
-        final file = File(root == '.' ? key : '$root/$key');
-        if (await file.exists()) {
-          text = utf8.decode(await file.readAsBytes(), allowMalformed: true);
-          break;
-        }
-      }
-    }
-    if (text == null) {
-      final stagedRoot = _stagedRoots[key];
-      if (stagedRoot != null) {
-        final stagedFile = File('$stagedRoot/$key');
-        if (await stagedFile.exists()) {
-          text = utf8.decode(
-            await stagedFile.readAsBytes(),
-            allowMalformed: true,
-          );
-        }
+    final origin = declaredOriginOf(key);
+    if (origin != null) {
+      final file = File(origin);
+      if (await file.exists()) {
+        text = utf8.decode(await file.readAsBytes(), allowMalformed: true);
       }
     }
     return _cache[key] = text;
@@ -2305,70 +2379,110 @@ class _Files {
   }
 }
 
-/// Orders `--multi-root` flags in `base` so roots that contain explicitly
-/// declared inputs for `keys` and have no undeclared shadowing files on disk
-/// precede roots that do not.
-List<String> _baseWithOrderedMultiRoots(
-  List<String> base,
-  List<String> multiRoots,
-  Iterable<String> keys,
-  _Files files,
-) {
-  if (multiRoots.length <= 1) return base;
-  final checkKeys = keys.isNotEmpty
-      ? keys.toList()
-      : files.declaredKeys.toList();
-  if (checkKeys.isEmpty) return base;
-  final hasConflict = <String, bool>{};
-  final hasExplicit = <String, bool>{};
-  for (final root in multiRoots) {
-    var conflict = false;
-    var explicit = false;
-    for (final key in checkKeys) {
-      if (files.isExplicitlyDeclaredInRoot(root, key)) {
-        explicit = true;
-      } else if (!files.isDeclaredInRoot(root, key)) {
-        final f = File(root == '.' ? key : '$root/$key');
-        if (f.existsSync()) {
-          conflict = true;
-        }
-      }
-    }
-    hasConflict[root] = conflict;
-    hasExplicit[root] = explicit;
-  }
-  final orderedRoots = [
-    for (final root in multiRoots)
-      if (!hasConflict[root]! && hasExplicit[root]!) root,
-    for (final root in multiRoots)
-      if (!hasConflict[root]! && !hasExplicit[root]!) root,
-    for (final root in multiRoots)
-      if (hasConflict[root]!) root,
-  ];
-  var sameOrder = true;
-  for (var i = 0; i < multiRoots.length; i++) {
-    if (orderedRoots[i] != multiRoots[i]) {
-      sameOrder = false;
-      break;
-    }
-  }
-  if (sameOrder) return base;
+/// Replaces all `--multi-root` flags in [base] with a single `--multi-root`
+/// pointing at [singleRoot].
+List<String> _baseWithSingleMultiRoot(List<String> base, String singleRoot) {
   final out = <String>[];
-  var rootIdx = 0;
+  var inserted = false;
   for (var i = 0; i < base.length; i++) {
     final arg = base[i];
     if (arg == _multiRootFlag && i + 1 < base.length) {
-      out
-        ..add(_multiRootFlag)
-        ..add(orderedRoots[rootIdx++]);
       i++;
+      if (!inserted) {
+        inserted = true;
+        out
+          ..add(_multiRootFlag)
+          ..add(singleRoot);
+      }
     } else if (arg.startsWith('$_multiRootFlag=')) {
-      out.add('$_multiRootFlag=${orderedRoots[rootIdx++]}');
+      if (!inserted) {
+        inserted = true;
+        out.add('$_multiRootFlag=$singleRoot');
+      }
     } else {
       out.add(arg);
     }
   }
+  if (!inserted) {
+    out
+      ..add(_multiRootFlag)
+      ..add(singleRoot);
+  }
   return out;
+}
+
+/// Whether `compileModule` should stage an isolated `--multi-root` directory
+/// containing only declared inputs at their single declared origins so
+/// `kernel_worker`'s `MultiRootFileSystem` cannot see any undeclared or
+/// shadowing files on disk.
+Future<bool> _needsIsolatedMultiRoot(
+  ModuleCompiler compiler,
+  List<String> multiRoots,
+  Iterable<String> extraMultiRoots,
+  Iterable<String> keys,
+  _Files files,
+  Set<String> vm,
+) async {
+  if (compiler is _OneShot ||
+      compiler is _Persistent ||
+      multiRoots.length > 1) {
+    return true;
+  }
+  final candidateRoots = <String>{
+    ...(multiRoots.isEmpty ? const ['.'] : multiRoots),
+    ...extraMultiRoots,
+  };
+  final checkKeys = <String>{...keys, ...files.declaredKeys};
+  for (final key in checkKeys) {
+    final declaredRoot = files.declaredRootOf(key);
+    for (final root in candidateRoots) {
+      if (root == declaredRoot) continue;
+      final path = _filePathOf(root == '.' ? key : '$root/$key');
+      if (File(path).existsSync()) {
+        return true;
+      }
+    }
+  }
+  for (final key in keys) {
+    if (await files.scan(key, vm) == null) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// Stages `$output/.isolated_root` containing only the declared inputs in
+/// [files], each copied from its single [files.declaredOriginOf].
+Future<({String rootDir, List<Uint8List> inputs})> _stageIsolatedMultiRoot(
+  String output,
+  _Files files,
+  Map<String, Uint8List>? inputDigests, {
+  required bool includeInputDigests,
+}) async {
+  final rootDir = '$output/.isolated_root';
+  final dir = Directory(_filePathOf(rootDir));
+  if (await dir.exists()) {
+    await dir.delete(recursive: true);
+  }
+  await dir.create(recursive: true);
+  final stagedInputs = <Uint8List>[];
+  final sortedKeys = files.declaredKeys.toList()..sort();
+  for (final key in sortedKeys) {
+    final origin = files.declaredOriginOf(key);
+    if (origin == null) continue;
+    final srcFile = File(origin);
+    if (!await srcFile.exists()) continue;
+    final bytes = await srcFile.readAsBytes();
+    final dstPath = '$rootDir/$key';
+    final dstFile = File(_filePathOf(dstPath));
+    await dstFile.parent.create(recursive: true);
+    await dstFile.writeAsBytes(bytes);
+    if (includeInputDigests) {
+      final digest = _lookupDigest(origin, inputDigests) ?? sha256Of(bytes);
+      stagedInputs.add(_encodeInput(kernelWorkerUri(dstPath), digest));
+    }
+  }
+  return (rootDir: rootDir, inputs: stagedInputs);
 }
 
 /// The excluded files the sidecars list, by key. Each maps to its `package:` URI
@@ -3040,7 +3154,7 @@ class _OneShot implements ModuleCompiler {
   @override
   Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
     final result = await Process.run(_dartaotruntime, [
-      _kernelWorker,
+      patchSnapshotSplitCommas(_kernelWorker),
       ...kernelWorkerArgs(args),
     ]);
     return ModuleOutcome(result.exitCode, '${result.stdout}${result.stderr}');
@@ -3162,7 +3276,7 @@ class _Persistent implements ModuleCompiler {
     final running = _child;
     if (running != null) return running;
     final child = await Process.start(_dartaotruntime, [
-      _kernelWorker,
+      patchSnapshotSplitCommas(_kernelWorker),
       _persistentFlag,
     ]);
     _stderr.clear();
@@ -3888,159 +4002,124 @@ Uint8List _stripSingleComponentSourceCode(Uint8List data, StringSink sink) {
   return out.takeBytes();
 }
 
-/// Placeholder Unicode noncharacter (`U+FDD0`, 1 UTF-16 code unit in Dart
-/// `String`, UTF-8 `0xEF 0xB7 0x90`) substituted for `,` in `-D` / `--define`
-/// arguments before invoking `kernel_worker`, which parses `-D` via
-/// `package:args` `addMultiOption` (`splitCommas: true`).
-///
-/// Constructed via [String.fromCharCode] rather than a `const` string literal
-/// so `kernel_module.dill`'s own `StringTable` never contains `0xEF 0xB7 0x90`.
-final _commaDefinePlaceholder = String.fromCharCode(0xFDD0);
+const _x64SplitCommasPattern = <int>[
+  0x48, 0x8b, 0x45, 0xf0, // mov rax, [rbp-0x10]
+  0x48, 0x8b, 0x48, 0x5f, // mov rcx, [rax+0x5f]
+  0xf6, 0xc1, 0x10, // test cl, 0x10
+  0x0f, 0x85, 0x3a, 0x01, 0x00, 0x00, // jnz +0x13a
+  0x48, 0x8b, 0x4d, 0xe8, // mov rcx, [rbp-0x18]
+  0x8b, 0x51, 0xff, // mov edx, [rcx-0x1]
+];
 
-/// Restores `,` (`0x2C`) in place of [_commaDefinePlaceholder] (`\uFDD0`,
-/// UTF-8 `0xEF 0xB7 0x90`) in the `StringTable` of each component in [data].
-Uint8List restoreDillDefineCommas(Uint8List data) {
-  if (data.length < 48) return data;
-  final bd = ByteData.sublistView(data);
-  if (bd.getUint32(0) != Tag.ComponentFile) return data;
-  final lastSize = bd.getUint32(data.length - 4);
-  if (lastSize == data.length) {
-    return _restoreSingleComponentDefineCommas(data);
-  }
-  final slices = <Uint8List>[];
-  var end = data.length;
-  while (end > 0) {
-    if (end < 48) return data;
-    final compSize = bd.getUint32(end - 4);
-    if (compSize < 48 || compSize > end) return data;
-    final slice = Uint8List.sublistView(data, end - compSize, end);
-    if (ByteData.sublistView(slice).getUint32(0) != Tag.ComponentFile) {
-      return data;
-    }
-    slices.add(slice);
-    end -= compSize;
-  }
-  final out = BytesBuilder(copy: false);
-  for (var i = slices.length - 1; i >= 0; i--) {
-    out.add(_restoreSingleComponentDefineCommas(slices[i]));
-  }
-  return out.takeBytes();
-}
+const _arm64SplitCommasPattern = <int>[
+  0xa3, 0x03, 0x5f, 0xf8, // ldur x3, [fp, #-16]
+  0x60, 0xf0, 0x45, 0xf8, // ldur x0, [x3, #95]
+  0xc0, 0x09, 0x20, 0x37, // tbnz w0, #4, +0x138
+  0xa0, 0x83, 0x5e, 0xf8, // ldur x0, [fp, #-24]
+  0x01, 0xf0, 0x5f, 0xf8, // ldur w1, [x0, #-1]
+];
 
-Uint8List _restoreSingleComponentDefineCommas(Uint8List data) {
-  if (data.length < 48) return data;
-  final bd = ByteData.sublistView(data);
-  if (bd.getUint32(0) != Tag.ComponentFile) return data;
-  final size = bd.getUint32(data.length - 4);
-  if (size != data.length) return data;
-  final libCount = bd.getUint32(data.length - 8);
-  final idxCount = libCount + 12;
-  final idxBytes = idxCount * 4;
-  if (idxBytes > data.length) return data;
-  final rawIdxStart = data.length - idxBytes;
-
-  final fields = List<int>.generate(
-    idxCount,
-    (i) => bd.getUint32(rawIdxStart + i * 4),
-  );
-  final offStringTable = fields[6];
-  final offComponentIndex = fields[7];
-  if (offStringTable >= offComponentIndex || offComponentIndex > rawIdxStart) {
-    return data;
-  }
-
-  var pos = offStringTable;
-  int readUInt30() {
-    final b0 = data[pos++];
-    if ((b0 & 0x80) == 0) return b0;
-    if ((b0 & 0x40) == 0) {
-      return ((b0 & 0x3f) << 8) | data[pos++];
-    }
-    final b1 = data[pos++];
-    final b2 = data[pos++];
-    final b3 = data[pos++];
-    return ((b0 & 0x3f) << 24) | (b1 << 16) | (b2 << 8) | b3;
-  }
-
-  void writeUInt30(BytesBuilder b, int v) {
-    if (v < 0x80) {
-      b.addByte(v);
-    } else if (v < 0x4000) {
-      b.addByte((v >> 8) | 0x80);
-      b.addByte(v & 0xff);
-    } else {
-      b.addByte((v >> 24) | 0xc0);
-      b.addByte((v >> 16) & 0xff);
-      b.addByte((v >> 8) & 0xff);
-      b.addByte(v & 0xff);
-    }
-  }
-
-  final numStrings = readUInt30();
-  if (numStrings == 0) return data;
-  final endOffsets = List<int>.generate(numStrings, (_) => readUInt30());
-  final payloadStart = pos;
-  final totalUtf8Len = endOffsets.last;
-  if (payloadStart + totalUtf8Len > offComponentIndex) return data;
-
-  var found = false;
-  for (var i = payloadStart; i + 2 < payloadStart + totalUtf8Len; i++) {
-    if (data[i] == 0xEF && data[i + 1] == 0xB7 && data[i + 2] == 0x90) {
-      found = true;
-      break;
-    }
-  }
-  if (!found) return data;
-
-  final newPayload = BytesBuilder(copy: false);
-  final newEndOffsets = List<int>.filled(numStrings, 0);
-  var prevEnd = 0;
-  for (var i = 0; i < numStrings; i++) {
-    final curEnd = endOffsets[i];
-    final sStart = payloadStart + prevEnd;
-    final sEnd = payloadStart + curEnd;
-    var k = sStart;
-    while (k < sEnd) {
-      if (k + 2 < sEnd &&
-          data[k] == 0xEF &&
-          data[k + 1] == 0xB7 &&
-          data[k + 2] == 0x90) {
-        newPayload.addByte(0x2C);
-        k += 3;
-      } else {
-        newPayload.addByte(data[k]);
-        k++;
+int _findBytesPattern(Uint8List haystack, List<int> needle) {
+  final nLen = needle.length;
+  final limit = haystack.length - nLen;
+  if (limit < 0) return -1;
+  final first = needle[0];
+  for (var i = 0; i <= limit; i++) {
+    if (haystack[i] != first) continue;
+    var match = true;
+    for (var j = 1; j < nLen; j++) {
+      if (haystack[i + j] != needle[j]) {
+        match = false;
+        break;
       }
     }
-    newEndOffsets[i] = newPayload.length;
-    prevEnd = curEnd;
+    if (match) return i;
   }
+  return -1;
+}
 
-  final newSt = BytesBuilder(copy: false);
-  writeUInt30(newSt, numStrings);
-  for (var i = 0; i < numStrings; i++) {
-    writeUInt30(newSt, newEndOffsets[i]);
+/// Patches `Parser._setOption` in a `kernel_worker` or `gen_kernel` AOT
+/// snapshot byte buffer so `addMultiOption` options (`-D` / `--define`) do not
+/// split values on `,` (`0x2C`), allowing comma-containing defines to reach
+/// the front end's constant evaluation unchanged.
+///
+/// Returns `true` if the pattern was found and patched in [bytes].
+bool patchSnapshotSplitCommasBytes(Uint8List bytes) {
+  final x64Idx = _findBytesPattern(bytes, _x64SplitCommasPattern);
+  if (x64Idx >= 0) {
+    bytes[x64Idx + 11] = 0x90; // nop
+    bytes[x64Idx + 12] = 0xe9; // jmp rel32 (+0x13a)
+    return true;
   }
-  newSt.add(newPayload.takeBytes());
-
-  final out = BytesBuilder(copy: false);
-  out.add(Uint8List.sublistView(data, 0, offStringTable));
-  out.add(newSt.takeBytes());
-
-  final newOffComponentIndex = out.length;
-  final totalUnpadded = out.length + idxBytes;
-  final pad = (8 - (totalUnpadded % 8)) % 8;
-  if (pad > 0) {
-    out.add(Uint8List(pad));
+  final arm64Idx = _findBytesPattern(bytes, _arm64SplitCommasPattern);
+  if (arm64Idx >= 0) {
+    bytes[arm64Idx + 8] = 0x4e; // b +0x138
+    bytes[arm64Idx + 9] = 0x00;
+    bytes[arm64Idx + 10] = 0x00;
+    bytes[arm64Idx + 11] = 0x14;
+    return true;
   }
+  return false;
+}
 
-  fields[7] = newOffComponentIndex;
-  fields[idxCount - 1] = out.length + idxBytes;
-
-  final idxBuf = ByteData(idxBytes);
-  for (var i = 0; i < idxCount; i++) {
-    idxBuf.setUint32(i * 4, fields[i]);
+/// Returns the path to a cached copy of [snapshotPath] with
+/// `Parser._setOption`'s comma-splitting disabled, or [snapshotPath] if the
+/// file does not match a known AOT snapshot pattern.
+String patchSnapshotSplitCommas(String snapshotPath) {
+  final file = File(_filePathOf(snapshotPath));
+  if (!file.existsSync()) return snapshotPath;
+  final Uint8List bytes;
+  try {
+    bytes = file.readAsBytesSync();
+  } on FileSystemException {
+    return snapshotPath;
   }
-  out.add(idxBuf.buffer.asUint8List());
-  return out.takeBytes();
+  var hash = 0xcbf29ce484222325;
+  for (var i = 0; i < bytes.length; i += 64) {
+    hash ^= bytes[i];
+    hash = (hash * 0x100000001b3) & 0x7fffffffffffffff;
+  }
+  final baseName = snapshotPath
+      .replaceAll(r'\', '/')
+      .split('/')
+      .last
+      .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+  final cacheFile = File(
+    '${Directory.systemTemp.path}/'
+    'rules_dart_nocomma_${baseName}_${bytes.length}_'
+    '${hash.toRadixString(16)}.snapshot',
+  );
+  if (cacheFile.existsSync() && cacheFile.lengthSync() == bytes.length) {
+    return cacheFile.path;
+  }
+  if (!patchSnapshotSplitCommasBytes(bytes)) {
+    return snapshotPath;
+  }
+  final tmpFile = File(
+    '${cacheFile.path}.tmp.$pid.${DateTime.now().microsecondsSinceEpoch}',
+  );
+  try {
+    tmpFile.writeAsBytesSync(bytes, flush: true);
+    if (Platform.isMacOS) {
+      Process.runSync('/usr/bin/codesign', ['-f', '-s', '-', tmpFile.path]);
+    }
+    try {
+      tmpFile.renameSync(cacheFile.path);
+    } on FileSystemException {
+      if (!cacheFile.existsSync()) {
+        tmpFile.copySync(cacheFile.path);
+      }
+      if (tmpFile.existsSync()) {
+        tmpFile.deleteSync();
+      }
+    }
+    return cacheFile.path;
+  } on FileSystemException {
+    try {
+      if (tmpFile.existsSync()) tmpFile.deleteSync();
+    } on FileSystemException {
+      // Ignore cleanup errors.
+    }
+    return snapshotPath;
+  }
 }

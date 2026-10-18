@@ -266,4 +266,89 @@ void main() {
     expect(aotRecFail.exitCode, isNot(0));
     expect(aotRecFail.stderr as String, contains('aot_assert_triggered'));
   });
+
+  test('--gen-kernel preserves comma-containing defines during constant evaluation and isolates --filesystem-root to declared inputs', () {
+    final dartBin = Platform.resolvedExecutable;
+    final sdkDir = File(dartBin).parent.parent.path;
+    final exeSuffix = Platform.isWindows ? '.exe' : '';
+    final dartaotruntime = '$sdkDir/bin/dartaotruntime$exeSuffix';
+    final genKernel = '$sdkDir/bin/snapshots/gen_kernel_aot.dart.snapshot';
+    final platformDill = '$sdkDir/lib/_internal/vm_platform_product.dill';
+    final ws = Directory('${tmp.path}/gen_kernel_ws')
+      ..createSync(recursive: true);
+
+    File('${ws.path}/package_config.json').writeAsStringSync(
+      '{"configVersion": 2, "packages": ['
+      '{"name": "pkg", "rootUri": "org-dartlang-root:///pkg", "packageUri": "lib/"}'
+      ']}\n',
+    );
+    // Untracked workspace shadow of generated file:
+    File('${ws.path}/pkg/lib/gen.dart')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync("const genOrigin = 'untracked-dot-shadow';\n");
+    // Declared generated file in bazel-out:
+    File('${ws.path}/bazel-out/k8-fastbuild/bin/pkg/lib/gen.dart')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync("const genOrigin = 'declared-bazel-out';\n");
+    // Declared source file in .:
+    File('${ws.path}/pkg/lib/hand.dart')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync("const handOrigin = 'declared-dot';\n");
+    // Stale generated shadow in bazel-out:
+    File('${ws.path}/bazel-out/k8-fastbuild/bin/pkg/lib/hand.dart')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync("const handOrigin = 'stale-bazel-out-shadow';\n");
+    File('${ws.path}/app/bin/main.dart')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync(
+        "import 'package:pkg/gen.dart';\n"
+        "import 'package:pkg/hand.dart';\n"
+        "void main() {\n"
+        "  const val = String.fromEnvironment('COMMA_DEFINE');\n"
+        "  const eq = val == 'a,b';\n"
+        "  print('\$val|\$eq|\$genOrigin|\$handOrigin');\n"
+        "}\n",
+      );
+    final sourcesFile = File('${ws.path}/sources.params')
+      ..writeAsStringSync(
+        'app/bin/main.dart\n'
+        'bazel-out/k8-fastbuild/bin/pkg/lib/gen.dart\n'
+        'pkg/lib/hand.dart\n',
+      );
+    final outDill = File('${ws.path}/bazel-out/k8-fastbuild/bin/out.dill');
+    final prevCwd = Directory.current;
+    Directory.current = ws;
+    try {
+      snapshot.main([
+        '--gen-kernel',
+        dartaotruntime,
+        '--input-sources-file=${sourcesFile.path}',
+        genKernel,
+        '--platform',
+        platformDill,
+        '--packages',
+        'package_config.json',
+        '--filesystem-scheme',
+        'org-dartlang-root',
+        '--filesystem-root',
+        '.',
+        '--filesystem-root',
+        'bazel-out/k8-fastbuild/bin',
+        '-Ddart.vm.product=true',
+        '-DCOMMA_DEFINE=a,b',
+        '-o',
+        'bazel-out/k8-fastbuild/bin/out.dill',
+        'org-dartlang-root:///app/bin/main.dart',
+      ]);
+    } finally {
+      Directory.current = prevCwd;
+    }
+    expect(outDill.existsSync(), isTrue);
+    final runRes = Process.runSync(dartBin, [outDill.path]);
+    expect(runRes.exitCode, 0, reason: '${runRes.stderr}');
+    expect(
+      (runRes.stdout as String).trim(),
+      'a,b|true|declared-bazel-out|declared-dot',
+    );
+  });
 }

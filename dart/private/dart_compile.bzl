@@ -278,11 +278,7 @@ def _kernel_action(
     if native_assets_yaml != None:
         direct.append(native_assets_yaml)
 
-    has_comma_defines = any(["," in d for d in defines]) or any([
-        "," in f and (f.startswith("-D") or f.startswith("--define") or (i > 0 and extra_flags[i - 1] in ("-D", "--define")))
-        for i, f in enumerate(extra_flags)
-    ])
-    if has_comma_defines and jit_tool != None:
+    if jit_tool != None:
         dartvm = sdk_dartvm(dart_sdk_info)
         wrapper_args = ctx.actions.args()
         if dartvm == None:
@@ -290,6 +286,10 @@ def _kernel_action(
         wrapper_args.add(jit_tool)
         wrapper_args.add("--gen-kernel")
         wrapper_args.add(tools.dartaotruntime)
+        input_srcs_args = ctx.actions.args()
+        input_srcs_args.use_param_file("--input-sources-file=%s", use_always = True)
+        input_srcs_args.set_param_file_format("multiline")
+        input_srcs_args.add_all(depset([main] + srcs))
         direct.append(jit_tool)
         if dartvm != None:
             direct.append(dartvm)
@@ -297,7 +297,7 @@ def _kernel_action(
             direct.append(dart_sdk_info.dart)
         ctx.actions.run(
             executable = dartvm if dartvm != None else dart_sdk_info.dart,
-            arguments = [wrapper_args, args],
+            arguments = [wrapper_args, input_srcs_args, args],
             inputs = depset(
                 direct = direct,
                 transitive = [dart_sdk_info.compile_files],

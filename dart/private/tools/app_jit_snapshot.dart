@@ -641,14 +641,170 @@ void chmodFile(String path, int mode) {
   }
 }
 
-/// Placeholder Unicode noncharacter (`U+FDD0`, 1 UTF-16 code unit in Dart
-/// `String`, UTF-8 `0xEF 0xB7 0x90`) substituted for `,` in `-D` / `--define`
-/// arguments before invoking `gen_kernel`, which parses `-D` via
-/// `package:args` `addMultiOption` (`splitCommas: true`).
-final commaDefinePlaceholder = String.fromCharCode(0xFDD0);
+const _x64SplitCommasPattern = <int>[
+  0x48, 0x8b, 0x45, 0xf0, // mov rax, [rbp-0x10]
+  0x48, 0x8b, 0x48, 0x5f, // mov rcx, [rax+0x5f]
+  0xf6, 0xc1, 0x10, // test cl, 0x10
+  0x0f, 0x85, 0x3a, 0x01, 0x00, 0x00, // jnz +0x13a
+  0x48, 0x8b, 0x4d, 0xe8, // mov rcx, [rbp-0x18]
+  0x8b, 0x51, 0xff, // mov edx, [rcx-0x1]
+];
 
-/// Runs `gen_kernel` via `dartaotruntime` while preserving comma-containing
-/// `-D` / `--define` values in the output `.dill`.
+const _arm64SplitCommasPattern = <int>[
+  0xa3, 0x03, 0x5f, 0xf8, // ldur x3, [fp, #-16]
+  0x60, 0xf0, 0x45, 0xf8, // ldur x0, [x3, #95]
+  0xc0, 0x09, 0x20, 0x37, // tbnz w0, #4, +0x138
+  0xa0, 0x83, 0x5e, 0xf8, // ldur x0, [fp, #-24]
+  0x01, 0xf0, 0x5f, 0xf8, // ldur w1, [x0, #-1]
+];
+
+int _findBytesPattern(Uint8List haystack, List<int> needle) {
+  final nLen = needle.length;
+  final limit = haystack.length - nLen;
+  if (limit < 0) return -1;
+  final first = needle[0];
+  for (var i = 0; i <= limit; i++) {
+    if (haystack[i] != first) continue;
+    var match = true;
+    for (var j = 1; j < nLen; j++) {
+      if (haystack[i + j] != needle[j]) {
+        match = false;
+        break;
+      }
+    }
+    if (match) return i;
+  }
+  return -1;
+}
+
+/// Patches `Parser._setOption` in a `kernel_worker` or `gen_kernel` AOT
+/// snapshot byte buffer so `addMultiOption` options (`-D` / `--define`) do not
+/// split values on `,` (`0x2C`), allowing comma-containing defines to reach
+/// the front end's constant evaluation unchanged.
+///
+/// Returns `true` if the pattern was found and patched in [bytes].
+bool patchSnapshotSplitCommasBytes(Uint8List bytes) {
+  final x64Idx = _findBytesPattern(bytes, _x64SplitCommasPattern);
+  if (x64Idx >= 0) {
+    bytes[x64Idx + 11] = 0x90; // nop
+    bytes[x64Idx + 12] = 0xe9; // jmp rel32 (+0x13a)
+    return true;
+  }
+  final arm64Idx = _findBytesPattern(bytes, _arm64SplitCommasPattern);
+  if (arm64Idx >= 0) {
+    bytes[arm64Idx + 8] = 0x4e; // b +0x138
+    bytes[arm64Idx + 9] = 0x00;
+    bytes[arm64Idx + 10] = 0x00;
+    bytes[arm64Idx + 11] = 0x14;
+    return true;
+  }
+  return false;
+}
+
+/// Returns the path to a cached copy of [snapshotPath] with
+/// `Parser._setOption`'s comma-splitting disabled, or [snapshotPath] if the
+/// file does not match a known AOT snapshot pattern.
+String patchSnapshotSplitCommas(String snapshotPath) {
+  final file = File(snapshotPath);
+  if (!file.existsSync()) return snapshotPath;
+  final Uint8List bytes;
+  try {
+    bytes = file.readAsBytesSync();
+  } on FileSystemException {
+    return snapshotPath;
+  }
+  var hash = 0xcbf29ce484222325;
+  for (var i = 0; i < bytes.length; i += 64) {
+    hash ^= bytes[i];
+    hash = (hash * 0x100000001b3) & 0x7fffffffffffffff;
+  }
+  final baseName = snapshotPath
+      .replaceAll(r'\', '/')
+      .split('/')
+      .last
+      .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+  final cacheFile = File(
+    '${Directory.systemTemp.path}/'
+    'rules_dart_nocomma_${baseName}_${bytes.length}_'
+    '${hash.toRadixString(16)}.snapshot',
+  );
+  if (cacheFile.existsSync() && cacheFile.lengthSync() == bytes.length) {
+    return cacheFile.path;
+  }
+  if (!patchSnapshotSplitCommasBytes(bytes)) {
+    return snapshotPath;
+  }
+  final tmpFile = File(
+    '${cacheFile.path}.tmp.$pid.${DateTime.now().microsecondsSinceEpoch}',
+  );
+  try {
+    tmpFile.writeAsBytesSync(bytes, flush: true);
+    if (Platform.isMacOS) {
+      Process.runSync('/usr/bin/codesign', ['-f', '-s', '-', tmpFile.path]);
+    }
+    try {
+      tmpFile.renameSync(cacheFile.path);
+    } on FileSystemException {
+      if (!cacheFile.existsSync()) {
+        tmpFile.copySync(cacheFile.path);
+      }
+      if (tmpFile.existsSync()) {
+        tmpFile.deleteSync();
+      }
+    }
+    return cacheFile.path;
+  } on FileSystemException {
+    try {
+      if (tmpFile.existsSync()) tmpFile.deleteSync();
+    } on FileSystemException {
+      // Ignore cleanup errors.
+    }
+    return snapshotPath;
+  }
+}
+
+void _copyEntitySync(String srcPath, String dstPath) {
+  final type = FileSystemEntity.typeSync(srcPath);
+  if (type == FileSystemEntityType.file) {
+    final dst = File(dstPath);
+    if (dst.existsSync()) return;
+    dst.parent.createSync(recursive: true);
+    dst.writeAsBytesSync(File(srcPath).readAsBytesSync());
+  } else if (type == FileSystemEntityType.directory) {
+    for (final entity in Directory(srcPath).listSync(recursive: true)) {
+      if (entity is File) {
+        final rel = entity.path
+            .substring(srcPath.length)
+            .replaceAll(r'\', '/')
+            .replaceFirst(RegExp(r'^/+'), '');
+        final childDst = File('$dstPath/$rel');
+        if (childDst.existsSync()) continue;
+        childDst.parent.createSync(recursive: true);
+        childDst.writeAsBytesSync(entity.readAsBytesSync());
+      }
+    }
+  }
+}
+
+String _stripFsRootPrefix(String path, List<String> fsRoots) {
+  final slashPath = path.replaceAll(r'\', '/');
+  var bestRootLen = -1;
+  String? bestRel;
+  for (final rawRoot in fsRoots) {
+    final root = rawRoot.replaceAll(r'\', '/').replaceFirst(RegExp(r'/+$'), '');
+    if (root.isEmpty || root == '.') continue;
+    final prefix = '$root/';
+    if (slashPath.startsWith(prefix) && root.length > bestRootLen) {
+      bestRootLen = root.length;
+      bestRel = slashPath.substring(prefix.length);
+    }
+  }
+  return bestRel ?? slashPath.replaceFirst(RegExp(r'^(?:\./)+'), '');
+}
+
+/// Runs `gen_kernel` via `dartaotruntime` with comma-splitting disabled on
+/// `-D` / `--define` options and an isolated `--filesystem-root` containing
+/// only declared input sources.
 void _runGenKernel(List<String> argv) {
   if (argv.length < 2) {
     stderr.writeln(
@@ -657,39 +813,96 @@ void _runGenKernel(List<String> argv) {
     exit(64);
   }
   final dartaotruntime = argv.first;
-  final sanitized = <String>[];
+  final rawGenArgs = <String>[];
+  final declaredInputSources = <String>[];
+  final fsRoots = <String>[];
   String? outputPath;
-  var hasCommaDefines = false;
   for (var i = 1; i < argv.length; i++) {
     final arg = argv[i];
-    if ((arg == '-D' || arg == '--define') && i + 1 < argv.length) {
-      sanitized.add(arg);
-      final val = argv[++i];
-      if (val.contains(',')) {
-        hasCommaDefines = true;
-        sanitized.add(val.replaceAll(',', commaDefinePlaceholder));
-      } else {
-        sanitized.add(val);
-      }
-    } else if ((arg.startsWith('-D') && arg.length > 2) ||
-        arg.startsWith('--define=')) {
-      if (arg.contains(',')) {
-        hasCommaDefines = true;
-        sanitized.add(arg.replaceAll(',', commaDefinePlaceholder));
-      } else {
-        sanitized.add(arg);
-      }
-    } else {
-      if ((arg == '-o' || arg == '--output') && i + 1 < argv.length) {
-        outputPath = argv[i + 1];
-      } else if (arg.startsWith('-o=')) {
-        outputPath = arg.substring('-o='.length);
-      } else if (arg.startsWith('--output=')) {
-        outputPath = arg.substring('--output='.length);
-      }
-      sanitized.add(arg);
+    if (arg == '--input-source' && i + 1 < argv.length) {
+      declaredInputSources.add(argv[++i]);
+      continue;
     }
+    if (arg.startsWith('--input-source=')) {
+      declaredInputSources.add(arg.substring('--input-source='.length));
+      continue;
+    }
+    if (arg == '--input-sources-file' && i + 1 < argv.length) {
+      final file = File(argv[++i]);
+      if (file.existsSync()) {
+        for (final line in file.readAsLinesSync()) {
+          if (line.isNotEmpty) declaredInputSources.add(line);
+        }
+      }
+      continue;
+    }
+    if (arg.startsWith('--input-sources-file=')) {
+      final file = File(arg.substring('--input-sources-file='.length));
+      if (file.existsSync()) {
+        for (final line in file.readAsLinesSync()) {
+          if (line.isNotEmpty) declaredInputSources.add(line);
+        }
+      }
+      continue;
+    }
+    if (arg == '--filesystem-root' && i + 1 < argv.length) {
+      fsRoots.add(argv[i + 1]);
+    } else if (arg.startsWith('--filesystem-root=')) {
+      fsRoots.add(arg.substring('--filesystem-root='.length));
+    } else if ((arg == '-o' || arg == '--output') && i + 1 < argv.length) {
+      outputPath = argv[i + 1];
+    } else if (arg.startsWith('-o=')) {
+      outputPath = arg.substring('-o='.length);
+    } else if (arg.startsWith('--output=')) {
+      outputPath = arg.substring('--output='.length);
+    }
+    rawGenArgs.add(arg);
   }
+
+  if (rawGenArgs.isNotEmpty) {
+    rawGenArgs[0] = patchSnapshotSplitCommas(rawGenArgs[0]);
+  }
+
+  Directory? isolatedRootDir;
+  final forwarded = <String>[];
+  if (declaredInputSources.isNotEmpty && fsRoots.isNotEmpty) {
+    final baseDir = outputPath != null
+        ? File(outputPath).parent
+        : Directory.systemTemp;
+    baseDir.createSync(recursive: true);
+    isolatedRootDir = baseDir.createTempSync('.gen_kernel_root.');
+    final seenKeys = <String>{};
+    for (final srcPath in declaredInputSources) {
+      final key = _stripFsRootPrefix(srcPath, fsRoots);
+      if (key.isEmpty || !seenKeys.add(key)) continue;
+      _copyEntitySync(srcPath, '${isolatedRootDir.path}/$key');
+    }
+    var insertedRoot = false;
+    for (var i = 0; i < rawGenArgs.length; i++) {
+      final arg = rawGenArgs[i];
+      if (arg == '--filesystem-root' && i + 1 < rawGenArgs.length) {
+        i++;
+        if (!insertedRoot) {
+          insertedRoot = true;
+          forwarded
+            ..add('--filesystem-root')
+            ..add(isolatedRootDir.path);
+        }
+        continue;
+      }
+      if (arg.startsWith('--filesystem-root=')) {
+        if (!insertedRoot) {
+          insertedRoot = true;
+          forwarded.add('--filesystem-root=${isolatedRootDir.path}');
+        }
+        continue;
+      }
+      forwarded.add(arg);
+    }
+  } else {
+    forwarded.addAll(rawGenArgs);
+  }
+
   final tempHome = Directory.systemTemp.createTempSync(
     'rules_dart_gen_kernel_home.',
   );
@@ -697,7 +910,7 @@ void _runGenKernel(List<String> argv) {
   try {
     res = Process.runSync(
       dartaotruntime,
-      sanitized,
+      forwarded,
       environment: {
         'HOME': tempHome.path,
         'USERPROFILE': tempHome.path,
@@ -706,6 +919,13 @@ void _runGenKernel(List<String> argv) {
       },
     );
   } finally {
+    if (isolatedRootDir != null && isolatedRootDir.existsSync()) {
+      try {
+        isolatedRootDir.deleteSync(recursive: true);
+      } on FileSystemException {
+        // Ignore cleanup errors.
+      }
+    }
     if (tempHome.existsSync()) {
       try {
         tempHome.deleteSync(recursive: true);
@@ -723,161 +943,4 @@ void _runGenKernel(List<String> argv) {
   if (res.exitCode != 0) {
     exit(res.exitCode);
   }
-  if (hasCommaDefines && outputPath != null) {
-    final outFile = File(outputPath);
-    if (outFile.existsSync()) {
-      final restored = restoreDillDefineCommas(outFile.readAsBytesSync());
-      outFile.writeAsBytesSync(restored);
-    }
-  }
-}
-
-/// Restores `,` (`0x2C`) in place of [commaDefinePlaceholder] (`\uFDD0`,
-/// UTF-8 `0xEF 0xB7 0x90`) in the `StringTable` of each component in [data].
-Uint8List restoreDillDefineCommas(Uint8List data) {
-  const componentFileMagic = 0x90ABCDEF;
-  if (data.length < 48) return data;
-  final bd = ByteData.sublistView(data);
-  if (bd.getUint32(0) != componentFileMagic) return data;
-  final lastSize = bd.getUint32(data.length - 4);
-  if (lastSize == data.length) {
-    return _restoreSingleComponentDefineCommas(data);
-  }
-  final slices = <Uint8List>[];
-  var end = data.length;
-  while (end > 0) {
-    if (end < 48) return data;
-    final compSize = bd.getUint32(end - 4);
-    if (compSize < 48 || compSize > end) return data;
-    final slice = Uint8List.sublistView(data, end - compSize, end);
-    if (ByteData.sublistView(slice).getUint32(0) != componentFileMagic) {
-      return data;
-    }
-    slices.add(slice);
-    end -= compSize;
-  }
-  final out = BytesBuilder(copy: false);
-  for (var i = slices.length - 1; i >= 0; i--) {
-    out.add(_restoreSingleComponentDefineCommas(slices[i]));
-  }
-  return out.takeBytes();
-}
-
-Uint8List _restoreSingleComponentDefineCommas(Uint8List data) {
-  const componentFileMagic = 0x90ABCDEF;
-  if (data.length < 48) return data;
-  final bd = ByteData.sublistView(data);
-  if (bd.getUint32(0) != componentFileMagic) return data;
-  final size = bd.getUint32(data.length - 4);
-  if (size != data.length) return data;
-  final libCount = bd.getUint32(data.length - 8);
-  final idxCount = libCount + 12;
-  final idxBytes = idxCount * 4;
-  if (idxBytes > data.length) return data;
-  final rawIdxStart = data.length - idxBytes;
-
-  final fields = List<int>.generate(
-    idxCount,
-    (i) => bd.getUint32(rawIdxStart + i * 4),
-  );
-  final offStringTable = fields[6];
-  final offComponentIndex = fields[7];
-  if (offStringTable >= offComponentIndex || offComponentIndex > rawIdxStart) {
-    return data;
-  }
-
-  var pos = offStringTable;
-  int readUInt30() {
-    final b0 = data[pos++];
-    if ((b0 & 0x80) == 0) return b0;
-    if ((b0 & 0x40) == 0) {
-      return ((b0 & 0x3f) << 8) | data[pos++];
-    }
-    final b1 = data[pos++];
-    final b2 = data[pos++];
-    final b3 = data[pos++];
-    return ((b0 & 0x3f) << 24) | (b1 << 16) | (b2 << 8) | b3;
-  }
-
-  void writeUInt30(BytesBuilder b, int v) {
-    if (v < 0x80) {
-      b.addByte(v);
-    } else if (v < 0x4000) {
-      b.addByte((v >> 8) | 0x80);
-      b.addByte(v & 0xff);
-    } else {
-      b.addByte((v >> 24) | 0xc0);
-      b.addByte((v >> 16) & 0xff);
-      b.addByte((v >> 8) & 0xff);
-      b.addByte(v & 0xff);
-    }
-  }
-
-  final numStrings = readUInt30();
-  if (numStrings == 0) return data;
-  final endOffsets = List<int>.generate(numStrings, (_) => readUInt30());
-  final payloadStart = pos;
-  final totalUtf8Len = endOffsets.last;
-  if (payloadStart + totalUtf8Len > offComponentIndex) return data;
-
-  var found = false;
-  for (var i = payloadStart; i + 2 < payloadStart + totalUtf8Len; i++) {
-    if (data[i] == 0xEF && data[i + 1] == 0xB7 && data[i + 2] == 0x90) {
-      found = true;
-      break;
-    }
-  }
-  if (!found) return data;
-
-  final newPayload = BytesBuilder(copy: false);
-  final newEndOffsets = List<int>.filled(numStrings, 0);
-  var prevEnd = 0;
-  for (var i = 0; i < numStrings; i++) {
-    final curEnd = endOffsets[i];
-    final sStart = payloadStart + prevEnd;
-    final sEnd = payloadStart + curEnd;
-    var k = sStart;
-    while (k < sEnd) {
-      if (k + 2 < sEnd &&
-          data[k] == 0xEF &&
-          data[k + 1] == 0xB7 &&
-          data[k + 2] == 0x90) {
-        newPayload.addByte(0x2C);
-        k += 3;
-      } else {
-        newPayload.addByte(data[k]);
-        k++;
-      }
-    }
-    newEndOffsets[i] = newPayload.length;
-    prevEnd = curEnd;
-  }
-
-  final newSt = BytesBuilder(copy: false);
-  writeUInt30(newSt, numStrings);
-  for (var i = 0; i < numStrings; i++) {
-    writeUInt30(newSt, newEndOffsets[i]);
-  }
-  newSt.add(newPayload.takeBytes());
-
-  final out = BytesBuilder(copy: false);
-  out.add(Uint8List.sublistView(data, 0, offStringTable));
-  out.add(newSt.takeBytes());
-
-  final newOffComponentIndex = out.length;
-  final totalUnpadded = out.length + idxBytes;
-  final pad = (8 - (totalUnpadded % 8)) % 8;
-  if (pad > 0) {
-    out.add(Uint8List(pad));
-  }
-
-  fields[7] = newOffComponentIndex;
-  fields[idxCount - 1] = out.length + idxBytes;
-
-  final idxBuf = ByteData(idxBytes);
-  for (var i = 0; i < idxCount; i++) {
-    idxBuf.setUint32(i * 4, fields[i]);
-  }
-  out.add(idxBuf.buffer.asUint8List());
-  return out.takeBytes();
 }

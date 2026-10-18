@@ -710,6 +710,7 @@ def kernel_module_action(
     args.add_all(dep_kmods, before_each = "--input-kmod", expand_directories = False)
     for s in sources:
         args.add("--source", s.uri)
+        args.add("--input-source", s.file)
     args.add("--output", output.path)
     if koutline != None:
         args.add("--output-outline", koutline.path)

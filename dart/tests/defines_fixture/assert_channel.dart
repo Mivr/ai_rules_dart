@@ -12,10 +12,15 @@ void main() {
     throw StateError('expected CHANNEL=runtime, got "$channel"');
   }
   const commaVal = String.fromEnvironment('COMMA_VAL', defaultValue: 'UNSET');
-  if (commaVal != 'a,b') {
-    throw StateError('expected COMMA_VAL=a,b, got "$commaVal"');
+  const commaEq = commaVal == 'a,b';
+  if (!commaEq || commaVal != 'a,b') {
+    throw StateError(
+      'expected COMMA_VAL=a,b (commaEq=$commaEq), got "$commaVal"',
+    );
   }
-  if (libCommaVal != 'a,b') {
-    throw StateError('expected libCommaVal=a,b, got "$libCommaVal"');
+  if (!libCommaEq || libCommaVal != 'a,b') {
+    throw StateError(
+      'expected libCommaVal=a,b (libCommaEq=$libCommaEq), got "$libCommaVal"',
+    );
   }
 }

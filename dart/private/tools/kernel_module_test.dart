@@ -25,6 +25,7 @@ import 'kernel_module.dart'
         isWindowsDrivePath,
         kernelWorkerArgs,
         kernelWorkerUri,
+        patchSnapshotSplitCommas,
         scanDirectives,
         sha256Of,
         stripSourceCodeFromDill,
@@ -1884,14 +1885,18 @@ void main(List<String> args) {
 
     _write(
       'pkg/lib/a.dart',
-      "const libVal = String.fromEnvironment('COMMA_VAL');\n",
+      "const libVal = String.fromEnvironment('COMMA_VAL');\n"
+          "const libEq = libVal == 'a,b';\n"
+          "const libSwitched = libVal == 'a,b' ? 'matched-lib' : 'missed-lib';\n",
     );
     _write(
       'pkg/bin/main.dart',
       "import 'package:pkg/a.dart';\n"
           "void main() {\n"
           "  const mainVal = String.fromEnvironment('COMMA_VAL');\n"
-          "  print('\$libVal|\$mainVal');\n"
+          "  const mainEq = mainVal == 'a,b';\n"
+          "  const mainSwitched = mainVal == 'a,b' ? 'matched-main' : 'missed-main';\n"
+          "  print('\$libVal|\$libEq|\$libSwitched|\$mainVal|\$mainEq|\$mainSwitched');\n"
           "}\n",
     );
 
@@ -1983,7 +1988,10 @@ void main(List<String> args) {
 
     final runRes = await Process.run(Platform.resolvedExecutable, [linkedPath]);
     expect(runRes.exitCode, 0, reason: '${runRes.stdout}\n${runRes.stderr}');
-    expect((runRes.stdout as String).trim(), 'a,b|a,b');
+    expect(
+      (runRes.stdout as String).trim(),
+      'a,b|true|matched-lib|a,b|true|matched-main',
+    );
   });
 
   test('whole-program and modular kernel compiles are byte-identical across clean builds and checkout paths', () async {
@@ -3673,6 +3681,15 @@ void main(List<String> args) {
     // an untracked stale file exists in the workspace at `./pkg/lib/gen.dart`
     // (importing `dart:html`). `_Files.read` and `compileModule` must skip `.` and
     // compile the declared generated file from `bazel-out/k8-fastbuild/bin`.
+    // Scenario 2: Simultaneous cross-root shadowing in both worker (`WorkRequest.inputs`)
+    // and local (`inputs: const []`, `--input-source` only) strategies:
+    // - `bazel-out/k8-fastbuild/bin/pkg/lib/gen.dart` is declared in `bazel-out`, while
+    //   an untracked valid-Dart file `./pkg/lib/gen.dart` exists in `.`.
+    // - `./pkg/lib/hand.dart` is declared in `.`, while a stale generated file
+    //   `bazel-out/k8-fastbuild/bin/pkg/lib/hand.dart` exists in `bazel-out`.
+    // No ordering of `--multi-root .` and `--multi-root bazel-out/k8-fastbuild/bin`
+    // could satisfy both at once; isolated multi-root staging must pick the exact
+    // declared origin for each file.
     final genWs = Directory('${_root.path}/gen_vs_untracked')
       ..createSync(recursive: true);
     File('${genWs.path}/package_config.json').writeAsStringSync(
@@ -3690,10 +3707,16 @@ void main(List<String> args) {
     );
     File('${genWs.path}/pkg/lib/gen.dart')
       ..parent.createSync(recursive: true)
-      ..writeAsStringSync("import 'dart:html';\nString genVal() => 'bad';\n");
+      ..writeAsStringSync("String genVal() => 'untracked-dot-shadow';\n");
     File('${genWs.path}/bazel-out/k8-fastbuild/bin/pkg/lib/gen.dart')
       ..parent.createSync(recursive: true)
       ..writeAsStringSync("String genVal() => 'declared-generated-v2';\n");
+    File('${genWs.path}/pkg/lib/hand.dart')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync("String handVal() => 'declared-hand-v2';\n");
+    File('${genWs.path}/bazel-out/k8-fastbuild/bin/pkg/lib/hand.dart')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync("String handVal() => 'stale-bazel-out-shadow';\n");
 
     final genCompiler = _CwdOneShotCompiler(
       dartaotruntime,
@@ -3703,55 +3726,83 @@ void main(List<String> args) {
     final prevCwd = Directory.current;
     Directory.current = genWs;
     try {
-      final genLog = StringBuffer();
-      final genCode = await compileModule(
-        [
-          '--target',
-          'vm',
-          '--dart-sdk-summary',
-          platformDill,
-          '--packages-file',
-          'package_config.json',
-          '--libraries-json',
-          librariesJson,
-          '--multi-root',
-          '.',
-          '--multi-root',
-          'bazel-out/k8-fastbuild/bin',
-          '--multi-root-scheme',
-          'org-dartlang-root',
-          '--no-summary-only',
-          '--exclude-non-sources',
-          '--source',
-          'package:pkg/gen.dart',
-          '--input-source',
-          'bazel-out/k8-fastbuild/bin/pkg/lib/gen.dart',
-          '--output',
-          'bazel-out/k8-fastbuild/bin/gen.kmod',
-          '--excluded-output',
-          'bazel-out/k8-fastbuild/bin/gen.vm_excluded.txt',
-        ],
-        genCompiler,
-        genLog,
-        [
-          _encodeInputForTest(
+      for (final passInputs in [true, false]) {
+        final outDir =
+            'bazel-out/k8-fastbuild/bin/gen_${passInputs ? "worker" : "local"}.kmod';
+        final exclOut =
+            'bazel-out/k8-fastbuild/bin/gen_${passInputs ? "worker" : "local"}.vm_excluded.txt';
+        final genLog = StringBuffer();
+        final genCode = await compileModule(
+          [
+            '--target',
+            'vm',
+            '--dart-sdk-summary',
+            platformDill,
+            '--packages-file',
+            'package_config.json',
+            '--libraries-json',
+            librariesJson,
+            '--multi-root',
+            '.',
+            '--multi-root',
+            'bazel-out/k8-fastbuild/bin',
+            '--multi-root-scheme',
+            'org-dartlang-root',
+            '--no-summary-only',
+            '--exclude-non-sources',
+            '--source',
+            'package:pkg/gen.dart',
+            '--input-source',
             'bazel-out/k8-fastbuild/bin/pkg/lib/gen.dart',
-            Uint8List.fromList([9]),
-          ),
-        ],
-      );
-      expect(genCode, 0, reason: genLog.toString());
-      final genIdx = jsonDecode(
-        File('bazel-out/k8-fastbuild/bin/gen.kmod/index.json')
-            .readAsStringSync(),
-      ) as Map<String, dynamic>;
-      expect((genIdx['sccs'] as List), hasLength(1));
-      final dillBytes = File('bazel-out/k8-fastbuild/bin/gen.kmod/0.dill')
-          .readAsBytesSync();
-      expect(
-        _containsSubsequence(dillBytes, utf8.encode('declared-generated-v2')),
-        isTrue,
-      );
+            '--source',
+            'package:pkg/hand.dart',
+            '--input-source',
+            'pkg/lib/hand.dart',
+            '--output',
+            outDir,
+            '--excluded-output',
+            exclOut,
+          ],
+          genCompiler,
+          genLog,
+          passInputs
+              ? [
+                  _encodeInputForTest(
+                    'bazel-out/k8-fastbuild/bin/pkg/lib/gen.dart',
+                    Uint8List.fromList([9]),
+                  ),
+                  _encodeInputForTest(
+                    'pkg/lib/hand.dart',
+                    Uint8List.fromList([10]),
+                  ),
+                ]
+              : const [],
+        );
+        expect(genCode, 0, reason: genLog.toString());
+        final genIdx = jsonDecode(
+          File('$outDir/index.json').readAsStringSync(),
+        ) as Map<String, dynamic>;
+        expect((genIdx['sccs'] as List), hasLength(2));
+        final dill0 = File('$outDir/0.dill').readAsBytesSync();
+        final dill1 = File('$outDir/1.dill').readAsBytesSync();
+        final combined = Uint8List.fromList([...dill0, ...dill1]);
+        expect(
+          _containsSubsequence(combined, utf8.encode('declared-generated-v2')),
+          isTrue,
+        );
+        expect(
+          _containsSubsequence(combined, utf8.encode('declared-hand-v2')),
+          isTrue,
+        );
+        expect(
+          _containsSubsequence(combined, utf8.encode('untracked-dot-shadow')),
+          isFalse,
+        );
+        expect(
+          _containsSubsequence(combined, utf8.encode('stale-bazel-out-shadow')),
+          isFalse,
+        );
+      }
     } finally {
       Directory.current = prevCwd;
     }
@@ -4107,7 +4158,10 @@ class _RealOneShotCompiler implements ModuleCompiler {
 
   @override
   Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
-    final res = await Process.run(_dartaotruntime, [_kernelWorker, ...args]);
+    final res = await Process.run(_dartaotruntime, [
+      patchSnapshotSplitCommas(_kernelWorker),
+      ...args,
+    ]);
     return ModuleOutcome(res.exitCode, '${res.stdout}${res.stderr}');
   }
 
@@ -4125,7 +4179,7 @@ class _CwdOneShotCompiler implements ModuleCompiler {
   @override
   Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
     final res = await Process.run(_dartaotruntime, [
-      _kernelWorker,
+      patchSnapshotSplitCommas(_kernelWorker),
       ...args,
     ], workingDirectory: _cwd);
     return ModuleOutcome(res.exitCode, '${res.stdout}${res.stderr}');
