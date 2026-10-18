@@ -1,15 +1,24 @@
-load("//dart:defs.bzl", "dart_binary", "dart_code_asset", "dart_test")
-load("//dart/tests:defines_test.bzl", "staged_defines_test")
+load("//dart:defs.bzl", "dart_binary", "dart_code_asset", "dart_library", "dart_test")
+load("//dart/tests:defines_test.bzl", "staged_defines_test", "with_extra_dart_defines")
 
 # Two `dart_binary` targets differing only in whether they carry a code asset,
 # which adds a mapping to the kernel step. Both declare `defines`, and one a
 # front-end flag through `dart_compile_flags`, so the tests below assert only
 # on where they land.
 
+dart_library(
+    name = "comma_lib",
+    srcs = ["lib/comma_lib.dart"],
+    package_name = "defines_fixture",
+)
+
 dart_binary(
     name = "plain",
     dart_compile_flags = ["-DFLAG=fe"],
-    defines = ["CHANNEL=direct"],
+    defines = [
+        "CHANNEL=direct",
+        "COMMA_VAL=a,b",
+    ],
     main = "main.dart",
 )
 
@@ -18,6 +27,7 @@ staged_defines_test(
     size = "small",
     expected_flags = [
         "-DCHANNEL=direct",
+        "-DCOMMA_VAL=a,b",
         "-DFLAG=fe",
     ],
     target_under_test = ":plain",
@@ -32,14 +42,20 @@ dart_code_asset(
 dart_binary(
     name = "staged",
     code_assets = [":asset"],
-    defines = ["CHANNEL=staged"],
+    defines = [
+        "CHANNEL=staged",
+        "COMMA_VAL=a,b",
+    ],
     main = "main.dart",
 )
 
 staged_defines_test(
     name = "staged_defines_test",
     size = "small",
-    expected_flags = ["-DCHANNEL=staged"],
+    expected_flags = [
+        "-DCHANNEL=staged",
+        "-DCOMMA_VAL=a,b",
+    ],
     target_under_test = ":staged",
 )
 
@@ -50,14 +66,51 @@ staged_defines_test(
 dart_test(
     name = "test_defines_test",
     size = "small",
-    defines = ["CHANNEL=runtime"],
+    defines = [
+        "CHANNEL=runtime",
+        "COMMA_VAL=a,b",
+    ],
     main = "assert_channel.dart",
+    visibility = ["//dart/tests:__pkg__"],
+    deps = [":comma_lib"],
 )
 
 dart_test(
     name = "test_defines_with_code_asset_test",
     size = "small",
     code_assets = [":asset"],
-    defines = ["CHANNEL=runtime"],
+    defines = [
+        "CHANNEL=runtime",
+        "COMMA_VAL=a,b",
+    ],
     main = "assert_channel.dart",
+    deps = [":comma_lib"],
+)
+
+dart_binary(
+    name = "modular_comma_defines_kernel",
+    compile_mode = "kernel",
+    main = "assert_channel.dart",
+    modular_kernel = True,
+    tags = ["manual"],
+    deps = [":comma_lib"],
+)
+
+with_extra_dart_defines(
+    name = "modular_comma_defines_dill",
+    extra_dart_defines = [
+        "CHANNEL=runtime",
+        "COMMA_VAL=a,b",
+    ],
+    target = ":modular_comma_defines_kernel",
+)
+
+dart_test(
+    name = "modular_comma_defines_test",
+    size = "small",
+    data = [":modular_comma_defines_dill"],
+    env = {"DILL_PATH": "$(rlocationpath :modular_comma_defines_dill)"},
+    main = "run_dill_test.dart",
+    visibility = ["//dart/tests:__pkg__"],
+    deps = ["//dart/runfiles"],
 )

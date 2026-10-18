@@ -443,8 +443,7 @@ def modular_kernel_eligible(
         has_own_defines,
         has_compile_flags,
         has_duplicate_source,
-        same_sdk,
-        has_comma_defines = False):
+        same_sdk):
     """Whether one executable compiles modularly, given every fact that decides it.
 
     Each `False` is a reason the executable falls back to whole-program compilation,
@@ -478,7 +477,6 @@ def modular_kernel_eligible(
         packages_consistent and
         not has_code_assets and
         not has_own_defines and
-        not has_comma_defines and
         not has_compile_flags and
         not has_duplicate_source and
         same_sdk
@@ -682,7 +680,7 @@ def kernel_module_action(
     args.add("--multi-root", ctx.bin_dir.path)
     args.add("--multi-root", ".")
     args.add("--multi-root-scheme", scheme)
-    args.add_all([d for d in defines if "," not in d], format_each = "-D%s")
+    args.add_all(defines, format_each = "-D%s")
     args.add_all(extra_frontend_flags)
 
     # The VM target does not support `--summary-only`: it prints an error and
@@ -975,7 +973,6 @@ def modular_executable_tools(
     edges = depset(transitive = [k.edges for k in kernels or []]).to_list()
     duplicate = duplicated_source([f.short_path for f in own_files], owned, edges)
 
-    has_comma_defines = any(["," in d for d in global_dart_defines(ctx)])
     eligible = modular_kernel_eligible(
         enabled = enabled,
         kernel_mode = kernel_mode,
@@ -986,7 +983,6 @@ def modular_executable_tools(
         has_compile_flags = len(compile_flags) > 0,
         has_duplicate_source = duplicate != None,
         same_sdk = tools.version == target_sdk.version,
-        has_comma_defines = has_comma_defines,
     )
     return tools if eligible else None
 
@@ -1198,7 +1194,7 @@ def library_kernel_info(
     """
     enabled = ctx.attr._modular_kernel[BuildSettingInfo].value if hasattr(ctx.attr, "_modular_kernel") else True
     defines = global_dart_defines(ctx)
-    if opaque or not enabled or any(["," in d for d in defines]):
+    if opaque or not enabled:
         return no_kernel_module()
     tools = kernel_tools_for(ctx)
     if tools == None:

@@ -48,6 +48,10 @@ void main(List<String> argv) {
     _runAot(argv.sublist(1));
     return;
   }
+  if (argv.isNotEmpty && argv.first == '--gen-kernel') {
+    _runGenKernel(argv.sublist(1));
+    return;
+  }
   String? dart;
   String? dartvm;
   String? sdkVersion;
@@ -538,4 +542,222 @@ void chmodFile(String path, int mode) {
   } finally {
     free(ptr);
   }
+}
+
+/// Placeholder Unicode noncharacter (`U+FDD0`, 1 UTF-16 code unit in Dart
+/// `String`, UTF-8 `0xEF 0xB7 0x90`) substituted for `,` in `-D` / `--define`
+/// arguments before invoking `gen_kernel`, which parses `-D` via
+/// `package:args` `addMultiOption` (`splitCommas: true`).
+final commaDefinePlaceholder = String.fromCharCode(0xFDD0);
+
+/// Runs `gen_kernel` via `dartaotruntime` while preserving comma-containing
+/// `-D` / `--define` values in the output `.dill`.
+void _runGenKernel(List<String> argv) {
+  if (argv.length < 2) {
+    stderr.writeln(
+      'app_jit_snapshot --gen-kernel: expected <dartaotruntime> <gen_kernel_args...>',
+    );
+    exit(64);
+  }
+  final dartaotruntime = argv.first;
+  final sanitized = <String>[];
+  String? outputPath;
+  var hasCommaDefines = false;
+  for (var i = 1; i < argv.length; i++) {
+    final arg = argv[i];
+    if ((arg == '-D' || arg == '--define') && i + 1 < argv.length) {
+      sanitized.add(arg);
+      final val = argv[++i];
+      if (val.contains(',')) {
+        hasCommaDefines = true;
+        sanitized.add(val.replaceAll(',', commaDefinePlaceholder));
+      } else {
+        sanitized.add(val);
+      }
+    } else if ((arg.startsWith('-D') && arg.length > 2) ||
+        arg.startsWith('--define=')) {
+      if (arg.contains(',')) {
+        hasCommaDefines = true;
+        sanitized.add(arg.replaceAll(',', commaDefinePlaceholder));
+      } else {
+        sanitized.add(arg);
+      }
+    } else {
+      if ((arg == '-o' || arg == '--output') && i + 1 < argv.length) {
+        outputPath = argv[i + 1];
+      } else if (arg.startsWith('-o=')) {
+        outputPath = arg.substring('-o='.length);
+      } else if (arg.startsWith('--output=')) {
+        outputPath = arg.substring('--output='.length);
+      }
+      sanitized.add(arg);
+    }
+  }
+  final res = Process.runSync(dartaotruntime, sanitized);
+  if ((res.stdout as String).isNotEmpty) {
+    stdout.write(res.stdout as String);
+  }
+  if ((res.stderr as String).isNotEmpty) {
+    stderr.write(res.stderr as String);
+  }
+  if (res.exitCode != 0) {
+    exit(res.exitCode);
+  }
+  if (hasCommaDefines && outputPath != null) {
+    final outFile = File(outputPath);
+    if (outFile.existsSync()) {
+      final restored = restoreDillDefineCommas(outFile.readAsBytesSync());
+      outFile.writeAsBytesSync(restored);
+    }
+  }
+}
+
+/// Restores `,` (`0x2C`) in place of [commaDefinePlaceholder] (`\uFDD0`,
+/// UTF-8 `0xEF 0xB7 0x90`) in the `StringTable` of each component in [data].
+Uint8List restoreDillDefineCommas(Uint8List data) {
+  const componentFileMagic = 0x90ABCDEF;
+  if (data.length < 48) return data;
+  final bd = ByteData.sublistView(data);
+  if (bd.getUint32(0) != componentFileMagic) return data;
+  final lastSize = bd.getUint32(data.length - 4);
+  if (lastSize == data.length) {
+    return _restoreSingleComponentDefineCommas(data);
+  }
+  final slices = <Uint8List>[];
+  var end = data.length;
+  while (end > 0) {
+    if (end < 48) return data;
+    final compSize = bd.getUint32(end - 4);
+    if (compSize < 48 || compSize > end) return data;
+    final slice = Uint8List.sublistView(data, end - compSize, end);
+    if (ByteData.sublistView(slice).getUint32(0) != componentFileMagic) {
+      return data;
+    }
+    slices.add(slice);
+    end -= compSize;
+  }
+  final out = BytesBuilder(copy: false);
+  for (var i = slices.length - 1; i >= 0; i--) {
+    out.add(_restoreSingleComponentDefineCommas(slices[i]));
+  }
+  return out.takeBytes();
+}
+
+Uint8List _restoreSingleComponentDefineCommas(Uint8List data) {
+  const componentFileMagic = 0x90ABCDEF;
+  if (data.length < 48) return data;
+  final bd = ByteData.sublistView(data);
+  if (bd.getUint32(0) != componentFileMagic) return data;
+  final size = bd.getUint32(data.length - 4);
+  if (size != data.length) return data;
+  final libCount = bd.getUint32(data.length - 8);
+  final idxCount = libCount + 12;
+  final idxBytes = idxCount * 4;
+  if (idxBytes > data.length) return data;
+  final rawIdxStart = data.length - idxBytes;
+
+  final fields = List<int>.generate(
+    idxCount,
+    (i) => bd.getUint32(rawIdxStart + i * 4),
+  );
+  final offStringTable = fields[6];
+  final offComponentIndex = fields[7];
+  if (offStringTable >= offComponentIndex || offComponentIndex > rawIdxStart) {
+    return data;
+  }
+
+  var pos = offStringTable;
+  int readUInt30() {
+    final b0 = data[pos++];
+    if ((b0 & 0x80) == 0) return b0;
+    if ((b0 & 0x40) == 0) {
+      return ((b0 & 0x3f) << 8) | data[pos++];
+    }
+    final b1 = data[pos++];
+    final b2 = data[pos++];
+    final b3 = data[pos++];
+    return ((b0 & 0x3f) << 24) | (b1 << 16) | (b2 << 8) | b3;
+  }
+
+  void writeUInt30(BytesBuilder b, int v) {
+    if (v < 0x80) {
+      b.addByte(v);
+    } else if (v < 0x4000) {
+      b.addByte((v >> 8) | 0x80);
+      b.addByte(v & 0xff);
+    } else {
+      b.addByte((v >> 24) | 0xc0);
+      b.addByte((v >> 16) & 0xff);
+      b.addByte((v >> 8) & 0xff);
+      b.addByte(v & 0xff);
+    }
+  }
+
+  final numStrings = readUInt30();
+  if (numStrings == 0) return data;
+  final endOffsets = List<int>.generate(numStrings, (_) => readUInt30());
+  final payloadStart = pos;
+  final totalUtf8Len = endOffsets.last;
+  if (payloadStart + totalUtf8Len > offComponentIndex) return data;
+
+  var found = false;
+  for (var i = payloadStart; i + 2 < payloadStart + totalUtf8Len; i++) {
+    if (data[i] == 0xEF && data[i + 1] == 0xB7 && data[i + 2] == 0x90) {
+      found = true;
+      break;
+    }
+  }
+  if (!found) return data;
+
+  final newPayload = BytesBuilder(copy: false);
+  final newEndOffsets = List<int>.filled(numStrings, 0);
+  var prevEnd = 0;
+  for (var i = 0; i < numStrings; i++) {
+    final curEnd = endOffsets[i];
+    final sStart = payloadStart + prevEnd;
+    final sEnd = payloadStart + curEnd;
+    var k = sStart;
+    while (k < sEnd) {
+      if (k + 2 < sEnd &&
+          data[k] == 0xEF &&
+          data[k + 1] == 0xB7 &&
+          data[k + 2] == 0x90) {
+        newPayload.addByte(0x2C);
+        k += 3;
+      } else {
+        newPayload.addByte(data[k]);
+        k++;
+      }
+    }
+    newEndOffsets[i] = newPayload.length;
+    prevEnd = curEnd;
+  }
+
+  final newSt = BytesBuilder(copy: false);
+  writeUInt30(newSt, numStrings);
+  for (var i = 0; i < numStrings; i++) {
+    writeUInt30(newSt, newEndOffsets[i]);
+  }
+  newSt.add(newPayload.takeBytes());
+
+  final out = BytesBuilder(copy: false);
+  out.add(Uint8List.sublistView(data, 0, offStringTable));
+  out.add(newSt.takeBytes());
+
+  final newOffComponentIndex = out.length;
+  final totalUnpadded = out.length + idxBytes;
+  final pad = (8 - (totalUnpadded % 8)) % 8;
+  if (pad > 0) {
+    out.add(Uint8List(pad));
+  }
+
+  fields[7] = newOffComponentIndex;
+  fields[idxCount - 1] = out.length + idxBytes;
+
+  final idxBuf = ByteData(idxBytes);
+  for (var i = 0; i < idxCount; i++) {
+    idxBuf.setUint32(i * 4, fields[i]);
+  }
+  out.add(idxBuf.buffer.asUint8List());
+  return out.takeBytes();
 }

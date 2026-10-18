@@ -356,7 +356,6 @@ def _eligible_test_impl(ctx):
         "the closure has a package at two roots": {"packages_consistent": False},
         "code assets are embedded": {"has_code_assets": True},
         "the test sets its own `defines`": {"has_own_defines": True},
-        "extra_dart_defines contains a comma": {"has_comma_defines": True},
         "dart_compile_flags are set": {"has_compile_flags": True},
         "a source is compiled twice": {"has_duplicate_source": True},
         "the exec and target SDKs differ": {"same_sdk": False},
@@ -513,10 +512,10 @@ def _kernel_module_action_custom_params_test_impl(ctx):
         "-DFLUTTER_WEB=false" in argv,
         "non-comma define is forwarded to kernel_module",
     )
-    asserts.false(
+    asserts.true(
         env,
         "-DCOMMA_VAL=a,b" in argv,
-        "comma-containing define is filtered from kernel_module action args",
+        "comma-containing define is forwarded to kernel_module",
     )
 
     input_basenames = [f.basename for f in kernel_action.inputs.to_list()]
@@ -624,8 +623,22 @@ def _non_modular_kernel_binary_test_impl(ctx):
 
 _non_modular_kernel_binary_test = analysistest.make(_non_modular_kernel_binary_test_impl)
 
-_comma_defines_fallback_binary_test = analysistest.make(
-    _non_modular_kernel_binary_test_impl,
+def _comma_defines_modular_binary_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    actions = analysistest.target_actions(env)
+    kernel_actions = [a for a in actions if a.mnemonic == "DartKernel"]
+    asserts.equals(env, 1, len(kernel_actions), "modular kernel binary with comma defines registers one DartKernel entry action")
+    asserts.true(
+        env,
+        "-DCOMMA_FLAG=a,b" in kernel_actions[0].argv,
+        "comma-containing define is passed to modular DartKernel action",
+    )
+    link_actions = [a for a in actions if a.mnemonic == "DartKernelLink"]
+    asserts.equals(env, 1, len(link_actions), "modular kernel binary with comma defines registers one DartKernelLink action")
+    return analysistest.end(env)
+
+_comma_defines_modular_binary_test = analysistest.make(
+    _comma_defines_modular_binary_test_impl,
     config_settings = {
         str(Label("//dart:extra_dart_defines")): ["COMMA_FLAG=a,b"],
     },
@@ -991,8 +1004,8 @@ def kernel_test_suite(name):
         target_under_test = ":" + name + "_non_modular_binary_fixture",
         size = "small",
     )
-    _comma_defines_fallback_binary_test(
-        name = name + "_comma_defines_fallback_binary_test",
+    _comma_defines_modular_binary_test(
+        name = name + "_comma_defines_modular_binary_test",
         target_under_test = ":" + name + "_modular_binary_fixture",
         size = "small",
     )
@@ -1087,7 +1100,7 @@ def kernel_test_suite(name):
             ":" + name + "_custom_module_action_test",
             ":" + name + "_modular_binary_test",
             ":" + name + "_non_modular_binary_test",
-            ":" + name + "_comma_defines_fallback_binary_test",
+            ":" + name + "_comma_defines_modular_binary_test",
             ":" + name + "_user_test_runner_embeds_sources_test",
             ":" + name + "_generated_test_runner_omits_sources_test",
             ":" + name + "_user_kernel_module_modular_test",
@@ -1096,5 +1109,7 @@ def kernel_test_suite(name):
             ":" + name + "_cross_pkg_cycle_inputs_test",
             "//dart/tests/cross_pkg_cycle_fixture:cross_pkg_cycle_test",
             "//dart/tests/legacy_mixin_fixture:legacy_mixin_test",
+            "//dart/tests/defines_fixture:test_defines_test",
+            "//dart/tests/defines_fixture:modular_comma_defines_test",
         ],
     )

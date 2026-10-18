@@ -558,7 +558,7 @@ def sdk_dartvm(dart_sdk_info):
       The `dartvm` File, or None for an SDK layout without one.
     """
     for f in dart_sdk_info.compile_files.to_list():
-        if f.basename == "dartvm":
+        if f.basename in ("dartvm", "dartvm.exe"):
             return f
     return None
 

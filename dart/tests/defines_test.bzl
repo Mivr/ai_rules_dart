@@ -59,6 +59,37 @@ staged_defines_test = analysistest.make(
     attrs = {"expected_flags": attr.string_list()},
 )
 
+def _extra_dart_defines_transition_impl(settings, attr):
+    _ = settings
+    return {"//dart:extra_dart_defines": attr.extra_dart_defines}
+
+_extra_dart_defines_transition = transition(
+    implementation = _extra_dart_defines_transition_impl,
+    inputs = [],
+    outputs = ["//dart:extra_dart_defines"],
+)
+
+def _with_extra_dart_defines_impl(ctx):
+    target = ctx.attr.target[0]
+    src = target[DefaultInfo].files.to_list()[0]
+    out = ctx.actions.declare_file(ctx.label.name + ".dill")
+    ctx.actions.symlink(output = out, target_file = src)
+    return [DefaultInfo(files = depset([out]))]
+
+with_extra_dart_defines = rule(
+    implementation = _with_extra_dart_defines_impl,
+    attrs = {
+        "target": attr.label(
+            mandatory = True,
+            cfg = _extra_dart_defines_transition,
+        ),
+        "extra_dart_defines": attr.string_list(mandatory = True),
+        "_allowlist_function_transition": attr.label(
+            default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
+        ),
+    },
+)
+
 # --- defines_stage_error ---
 
 def _sound_when_compiling_source_test_impl(ctx):

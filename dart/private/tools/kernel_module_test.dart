@@ -1467,4 +1467,133 @@ void main() {
       contains('unsupported kernel format version 999'),
     );
   });
+
+  test('compileModule preserves comma-containing defines across modular kernel_worker compiles', () async {
+    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final exeSuffix = Platform.isWindows ? '.exe' : '';
+    final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
+    final kernelWorker =
+        '${sdkDir.path}/bin/snapshots/kernel_worker_aot.dart.snapshot';
+    final platformDill = '${sdkDir.path}/lib/_internal/vm_platform_strong.dill';
+    final librariesJson = '${sdkDir.path}/lib/libraries.json';
+
+    _write(
+      'pkg/lib/a.dart',
+      "const libVal = String.fromEnvironment('COMMA_VAL');\n",
+    );
+    _write(
+      'pkg/bin/main.dart',
+      "import 'package:pkg/a.dart';\n"
+          "void main() {\n"
+          "  const mainVal = String.fromEnvironment('COMMA_VAL');\n"
+          "  print('\$libVal|\$mainVal');\n"
+          "}\n",
+    );
+
+    final realCompiler = _RealOneShotCompiler(dartaotruntime, kernelWorker);
+    final libOut = '${_root.path}/out/lib_m.kmod';
+    final libOutline = '${_root.path}/out/lib_m.koutline';
+    final libExcluded = '$libOut.vm_excluded.txt';
+    final libLog = StringBuffer();
+    final libCode = await compileModule(
+      [
+        '--target',
+        'vm',
+        '--dart-sdk-summary',
+        platformDill,
+        '--packages-file',
+        '${_root.path}/package_config.json',
+        '--libraries-json',
+        librariesJson,
+        '--multi-root',
+        _root.path,
+        '--multi-root-scheme',
+        'org-dartlang-bazel',
+        '-DCOMMA_VAL=a,b',
+        '--no-summary-only',
+        '--exclude-non-sources',
+        '--source',
+        'package:pkg/a.dart',
+        '--output',
+        libOut,
+        '--output-outline',
+        libOutline,
+        '--excluded-output',
+        libExcluded,
+      ],
+      realCompiler,
+      libLog,
+      const [],
+    );
+    expect(libCode, 0, reason: libLog.toString());
+
+    final entryOut = '${_root.path}/out/entry.kmod';
+    final entryExcluded = '$entryOut.vm_excluded.txt';
+    final entryLog = StringBuffer();
+    final entryCode = await compileModule(
+      [
+        '--target',
+        'vm',
+        '--dart-sdk-summary',
+        platformDill,
+        '--packages-file',
+        '${_root.path}/package_config.json',
+        '--libraries-json',
+        librariesJson,
+        '--multi-root',
+        _root.path,
+        '--multi-root-scheme',
+        'org-dartlang-bazel',
+        '-DCOMMA_VAL=a,b',
+        '--no-summary-only',
+        '--exclude-non-sources',
+        '--input-kmod',
+        libOutline,
+        '--source',
+        '${_prefix}pkg/bin/main.dart',
+        '--output',
+        entryOut,
+        '--excluded-output',
+        entryExcluded,
+        '--no-drop',
+      ],
+      realCompiler,
+      entryLog,
+      const [],
+    );
+    expect(entryCode, 0, reason: entryLog.toString());
+
+    final linkedPath = '${_root.path}/out/linked.dill';
+    final linkErr = StringBuffer();
+    expect(
+      linkOne(
+        [linkedPath, entryOut, libOut],
+        cache: KernelLinkCache(),
+        inputs: null,
+        errSink: linkErr,
+      ),
+      0,
+      reason: linkErr.toString(),
+    );
+
+    final runRes = await Process.run(Platform.resolvedExecutable, [linkedPath]);
+    expect(runRes.exitCode, 0, reason: '${runRes.stdout}\n${runRes.stderr}');
+    expect((runRes.stdout as String).trim(), 'a,b|a,b');
+  });
+}
+
+class _RealOneShotCompiler implements ModuleCompiler {
+  _RealOneShotCompiler(this._dartaotruntime, this._kernelWorker);
+
+  final String _dartaotruntime;
+  final String _kernelWorker;
+
+  @override
+  Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
+    final res = await Process.run(_dartaotruntime, [_kernelWorker, ...args]);
+    return ModuleOutcome(res.exitCode, '${res.stdout}${res.stderr}');
+  }
+
+  @override
+  Future<void> close() async {}
 }

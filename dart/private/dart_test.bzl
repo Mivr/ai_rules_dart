@@ -225,6 +225,7 @@ def _compile_test_kernel(ctx, own, bootstrap, use_base_dill = False):
         compile_mode = "kernel",
         main_path = main_arg,
         defines = defines,
+        jit_tool = ctx.file._jit_tool,
         native_assets_yaml = native_assets_yaml,
     )
     return struct(dill = dill, base_dill = None, runtime_libs = runtime_libs)
@@ -456,6 +457,10 @@ with the code-asset mapping embedded (`gen_kernel --native-assets`), and the lib
 runfiles so the Dart VM resolves them — no `dart:ffi` ceremony in the test source. Each entry \
 must provide `DartCodeAssetInfo` (see the `dart_code_asset` rule).""",
         providers = [DartCodeAssetInfo],
+    ),
+    "_jit_tool": attr.label(
+        default = "//dart/private/tools:app_jit_snapshot.dart",
+        allow_single_file = True,
     ),
 }, **dict(WINDOWS_CONSTRAINT_ATTR, **dict(DART_ABI_CONSTRAINT_ATTRS, **dict(EXTRA_DART_DEFINES_ATTR, **dict(MODULAR_KERNEL_ATTRS, **EXECUTABLE_PACKAGE_ATTRS)))))
 

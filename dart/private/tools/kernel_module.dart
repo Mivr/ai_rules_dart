@@ -239,6 +239,7 @@ Future<int> compileModule(
   var librariesPlatform = 'vm';
   var multiRootPrefix = _defaultMultiRootPrefix;
   var noDrop = false;
+  var hasCommaDefines = false;
   for (var i = 0; i < rawArgs.length; i++) {
     final arg = rawArgs[i];
     if (arg == '--source') {
@@ -268,6 +269,23 @@ Future<int> compileModule(
         'kernel_module: --input-linked is not accepted; pass $_inputKmodFlag.',
       );
       return 64;
+    } else if ((arg == '-D' || arg == '--define') && i + 1 < rawArgs.length) {
+      base.add(arg);
+      final val = rawArgs[++i];
+      if (val.contains(',')) {
+        hasCommaDefines = true;
+        base.add(val.replaceAll(',', _commaDefinePlaceholder));
+      } else {
+        base.add(val);
+      }
+    } else if ((arg.startsWith('-D') && arg.length > 2) ||
+        arg.startsWith('--define=')) {
+      if (arg.contains(',')) {
+        hasCommaDefines = true;
+        base.add(arg.replaceAll(',', _commaDefinePlaceholder));
+      } else {
+        base.add(arg);
+      }
     } else {
       if (arg == _packagesFlag) packagesFile = rawArgs[i + 1];
       if (arg == _multiRootFlag) multiRoots.add(rawArgs[i + 1]);
@@ -399,12 +417,20 @@ Future<int> compileModule(
       _Scc(dill: dill, keys: const [], uris: const [], imports: entry.imports),
     ];
     await _writeIndex(output, entrySccs);
-    if (outputOutline != null) {
+    if (outputOutline != null || hasCommaDefines) {
       final fullFile = File('$output/$dill');
       if (await fullFile.exists()) {
-        final outlineBytes = stripDillToOutline(await fullFile.readAsBytes());
-        await File('$outputOutline/$dill').writeAsBytes(outlineBytes);
+        final rawBytes = await fullFile.readAsBytes();
+        if (outputOutline != null) {
+          final outlineBytes = stripDillToOutline(rawBytes);
+          await File('$outputOutline/$dill').writeAsBytes(outlineBytes);
+        }
+        if (hasCommaDefines) {
+          await fullFile.writeAsBytes(restoreDillDefineCommas(rawBytes));
+        }
       }
+    }
+    if (outputOutline != null) {
       await _writeIndex(outputOutline, entrySccs);
     }
     await File(excludedPath).writeAsString('');
@@ -498,6 +524,15 @@ Future<int> compileModule(
       for (final uri in remaining)
         if (!plan.isExcluded(keys[uri])) uri,
     ];
+  }
+  if (hasCommaDefines) {
+    for (final scc in sccs) {
+      final dillFile = File('$output/${scc.dill}');
+      if (await dillFile.exists()) {
+        final bytes = await dillFile.readAsBytes();
+        await dillFile.writeAsBytes(restoreDillDefineCommas(bytes));
+      }
+    }
   }
   await _writeIndex(output, sccs);
   if (outputOutline != null) {
@@ -2373,6 +2408,163 @@ Uint8List _stripSourceCodeFromDill(Uint8List data, {StringSink? errSink}) {
   for (var i = 1; i <= 6; i++) {
     fields[i] += delta;
   }
+  fields[7] = newOffComponentIndex;
+  fields[idxCount - 1] = out.length + idxBytes;
+
+  final idxBuf = ByteData(idxBytes);
+  for (var i = 0; i < idxCount; i++) {
+    idxBuf.setUint32(i * 4, fields[i]);
+  }
+  out.add(idxBuf.buffer.asUint8List());
+  return out.takeBytes();
+}
+
+/// Placeholder Unicode noncharacter (`U+FDD0`, 1 UTF-16 code unit in Dart
+/// `String`, UTF-8 `0xEF 0xB7 0x90`) substituted for `,` in `-D` / `--define`
+/// arguments before invoking `kernel_worker`, which parses `-D` via
+/// `package:args` `addMultiOption` (`splitCommas: true`).
+///
+/// Constructed via [String.fromCharCode] rather than a `const` string literal
+/// so `kernel_module.dill`'s own `StringTable` never contains `0xEF 0xB7 0x90`.
+final _commaDefinePlaceholder = String.fromCharCode(0xFDD0);
+
+/// Restores `,` (`0x2C`) in place of [_commaDefinePlaceholder] (`\uFDD0`,
+/// UTF-8 `0xEF 0xB7 0x90`) in the `StringTable` of each component in [data].
+Uint8List restoreDillDefineCommas(Uint8List data) {
+  if (data.length < 48) return data;
+  final bd = ByteData.sublistView(data);
+  if (bd.getUint32(0) != Tag.ComponentFile) return data;
+  final lastSize = bd.getUint32(data.length - 4);
+  if (lastSize == data.length) {
+    return _restoreSingleComponentDefineCommas(data);
+  }
+  final slices = <Uint8List>[];
+  var end = data.length;
+  while (end > 0) {
+    if (end < 48) return data;
+    final compSize = bd.getUint32(end - 4);
+    if (compSize < 48 || compSize > end) return data;
+    final slice = Uint8List.sublistView(data, end - compSize, end);
+    if (ByteData.sublistView(slice).getUint32(0) != Tag.ComponentFile) {
+      return data;
+    }
+    slices.add(slice);
+    end -= compSize;
+  }
+  final out = BytesBuilder(copy: false);
+  for (var i = slices.length - 1; i >= 0; i--) {
+    out.add(_restoreSingleComponentDefineCommas(slices[i]));
+  }
+  return out.takeBytes();
+}
+
+Uint8List _restoreSingleComponentDefineCommas(Uint8List data) {
+  if (data.length < 48) return data;
+  final bd = ByteData.sublistView(data);
+  if (bd.getUint32(0) != Tag.ComponentFile) return data;
+  final size = bd.getUint32(data.length - 4);
+  if (size != data.length) return data;
+  final libCount = bd.getUint32(data.length - 8);
+  final idxCount = libCount + 12;
+  final idxBytes = idxCount * 4;
+  if (idxBytes > data.length) return data;
+  final rawIdxStart = data.length - idxBytes;
+
+  final fields = List<int>.generate(
+    idxCount,
+    (i) => bd.getUint32(rawIdxStart + i * 4),
+  );
+  final offStringTable = fields[6];
+  final offComponentIndex = fields[7];
+  if (offStringTable >= offComponentIndex || offComponentIndex > rawIdxStart) {
+    return data;
+  }
+
+  var pos = offStringTable;
+  int readUInt30() {
+    final b0 = data[pos++];
+    if ((b0 & 0x80) == 0) return b0;
+    if ((b0 & 0x40) == 0) {
+      return ((b0 & 0x3f) << 8) | data[pos++];
+    }
+    final b1 = data[pos++];
+    final b2 = data[pos++];
+    final b3 = data[pos++];
+    return ((b0 & 0x3f) << 24) | (b1 << 16) | (b2 << 8) | b3;
+  }
+
+  void writeUInt30(BytesBuilder b, int v) {
+    if (v < 0x80) {
+      b.addByte(v);
+    } else if (v < 0x4000) {
+      b.addByte((v >> 8) | 0x80);
+      b.addByte(v & 0xff);
+    } else {
+      b.addByte((v >> 24) | 0xc0);
+      b.addByte((v >> 16) & 0xff);
+      b.addByte((v >> 8) & 0xff);
+      b.addByte(v & 0xff);
+    }
+  }
+
+  final numStrings = readUInt30();
+  if (numStrings == 0) return data;
+  final endOffsets = List<int>.generate(numStrings, (_) => readUInt30());
+  final payloadStart = pos;
+  final totalUtf8Len = endOffsets.last;
+  if (payloadStart + totalUtf8Len > offComponentIndex) return data;
+
+  var found = false;
+  for (var i = payloadStart; i + 2 < payloadStart + totalUtf8Len; i++) {
+    if (data[i] == 0xEF && data[i + 1] == 0xB7 && data[i + 2] == 0x90) {
+      found = true;
+      break;
+    }
+  }
+  if (!found) return data;
+
+  final newPayload = BytesBuilder(copy: false);
+  final newEndOffsets = List<int>.filled(numStrings, 0);
+  var prevEnd = 0;
+  for (var i = 0; i < numStrings; i++) {
+    final curEnd = endOffsets[i];
+    final sStart = payloadStart + prevEnd;
+    final sEnd = payloadStart + curEnd;
+    var k = sStart;
+    while (k < sEnd) {
+      if (k + 2 < sEnd &&
+          data[k] == 0xEF &&
+          data[k + 1] == 0xB7 &&
+          data[k + 2] == 0x90) {
+        newPayload.addByte(0x2C);
+        k += 3;
+      } else {
+        newPayload.addByte(data[k]);
+        k++;
+      }
+    }
+    newEndOffsets[i] = newPayload.length;
+    prevEnd = curEnd;
+  }
+
+  final newSt = BytesBuilder(copy: false);
+  writeUInt30(newSt, numStrings);
+  for (var i = 0; i < numStrings; i++) {
+    writeUInt30(newSt, newEndOffsets[i]);
+  }
+  newSt.add(newPayload.takeBytes());
+
+  final out = BytesBuilder(copy: false);
+  out.add(Uint8List.sublistView(data, 0, offStringTable));
+  out.add(newSt.takeBytes());
+
+  final newOffComponentIndex = out.length;
+  final totalUnpadded = out.length + idxBytes;
+  final pad = (8 - (totalUnpadded % 8)) % 8;
+  if (pad > 0) {
+    out.add(Uint8List(pad));
+  }
+
   fields[7] = newOffComponentIndex;
   fields[idxCount - 1] = out.length + idxBytes;
 

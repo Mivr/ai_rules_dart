@@ -113,4 +113,42 @@ void main() {
     }
     expect(output.lengthSync(), 65536 + 3 + 16);
   });
+
+  test('--gen-kernel preserves comma-containing defines in compiled dill', () {
+    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final exeSuffix = Platform.isWindows ? '.exe' : '';
+    final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
+    final genKernel =
+        '${sdkDir.path}/bin/snapshots/gen_kernel_aot.dart.snapshot';
+    final platformDill = '${sdkDir.path}/lib/_internal/vm_platform_strong.dill';
+
+    final pkgConfig = File('${tmp.path}/package_config.json')
+      ..writeAsStringSync('{"configVersion": 2, "packages": []}\n');
+    final mainDart = File('${tmp.path}/main.dart')
+      ..writeAsStringSync(
+        'void main() {\n'
+        "  print(const String.fromEnvironment('COMMA_VAL', defaultValue: 'UNSET'));\n"
+        '}\n',
+      );
+    final outDill = File('${tmp.path}/out.dill');
+
+    snapshot.main([
+      '--gen-kernel',
+      dartaotruntime,
+      genKernel,
+      '--platform',
+      platformDill,
+      '--packages',
+      pkgConfig.path,
+      '-DCOMMA_VAL=a,b',
+      '-o',
+      outDill.path,
+      mainDart.path,
+    ]);
+
+    expect(outDill.existsSync(), isTrue);
+    final runRes = Process.runSync(Platform.resolvedExecutable, [outDill.path]);
+    expect(runRes.exitCode, 0, reason: '${runRes.stdout}\n${runRes.stderr}');
+    expect((runRes.stdout as String).trim(), 'a,b');
+  });
 }

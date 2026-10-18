@@ -205,6 +205,7 @@ def _kernel_action(
         defines,
         recorded_uses,
         extra_flags,
+        jit_tool = None,
         native_assets_yaml = None,
         embed_sources = True):
     """Runs `gen_kernel` over a source entrypoint, with stable URIs.
@@ -231,6 +232,8 @@ def _kernel_action(
         defines: Environment declarations; each becomes a `-D` flag.
         recorded_uses: Optional File for the recorded `@RecordUse` uses.
         extra_flags: Flags for `gen_kernel` itself, appended last.
+        jit_tool: Optional `app_jit_snapshot.dart` File, used to preserve
+            comma-containing `-D` defines across `gen_kernel`.
         native_assets_yaml: Optional `native_assets.yaml` File, embedded as the
             `vm:ffi:native-assets` mapping.
         embed_sources: Whether non-AOT kernels embed source text. The generated
@@ -268,6 +271,38 @@ def _kernel_action(
     direct = [main, package_config] + srcs
     if native_assets_yaml != None:
         direct.append(native_assets_yaml)
+
+    has_comma_defines = any(["," in d for d in defines]) or any([
+        "," in f and (f.startswith("-D") or f.startswith("--define") or (i > 0 and extra_flags[i - 1] in ("-D", "--define")))
+        for i, f in enumerate(extra_flags)
+    ])
+    if has_comma_defines and jit_tool != None:
+        dartvm = sdk_dartvm(dart_sdk_info)
+        wrapper_args = ctx.actions.args()
+        if dartvm == None:
+            wrapper_args.add(package_config, format = "--packages=%s")
+        wrapper_args.add(jit_tool)
+        wrapper_args.add("--gen-kernel")
+        wrapper_args.add(tools.dartaotruntime)
+        direct.append(jit_tool)
+        if dartvm != None:
+            direct.append(dartvm)
+        else:
+            direct.append(dart_sdk_info.dart)
+        ctx.actions.run(
+            executable = dartvm if dartvm != None else dart_sdk_info.dart,
+            arguments = [wrapper_args, args],
+            inputs = depset(
+                direct = direct,
+                transitive = [dart_sdk_info.compile_files],
+            ),
+            outputs = outputs,
+            mnemonic = "DartKernel",
+            progress_message = "Compiling Dart kernel %s" % ctx.label,
+            env = writable_home_env(dart_sdk_info.dart, output),
+        )
+        return
+
     ctx.actions.run(
         executable = tools.dartaotruntime,
         arguments = [args],
@@ -378,6 +413,7 @@ def dart_compile_action(
                 defines = defines,
                 recorded_uses = None,
                 extra_flags = extra_flags,
+                jit_tool = jit_tool,
                 native_assets_yaml = native_assets_yaml,
                 embed_sources = embed_sources,
             )
@@ -401,6 +437,7 @@ def dart_compile_action(
             defines = defines,
             recorded_uses = None,
             extra_flags = front_end_flags,
+            jit_tool = jit_tool,
             native_assets_yaml = native_assets_yaml,
             embed_sources = embed_sources,
         )
