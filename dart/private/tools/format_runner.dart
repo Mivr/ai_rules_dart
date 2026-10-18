@@ -48,7 +48,7 @@ Future<void> main(List<String> rawArgs) async {
   final args = _expandParamFiles(rawArgs);
   if (args.contains('--persistent_worker')) {
     await _runPersistentWorker();
-    return;
+    exit(0);
   }
   final code = await runFormatRequest(args, outSink: stdout, errSink: stderr);
   if (code != 0) exit(code);

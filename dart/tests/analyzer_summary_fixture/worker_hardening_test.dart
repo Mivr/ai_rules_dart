@@ -197,7 +197,10 @@ void main(List<String> args) {
       analyzerSummaryDill,
       '--persistent_worker',
     ], workingDirectory: tmp.path);
-    addTearDown(proc.kill);
+    addTearDown(() async {
+      proc.kill();
+      await proc.exitCode;
+    });
     final responses = StreamIterator(_frameStream(proc.stdout));
 
     Future<({int exitCode, String output})> send(
@@ -320,6 +323,7 @@ void main(List<String> args) {
 
     await responses.cancel();
     await proc.stdin.close();
+    await proc.exitCode;
   });
 
   test('format_runner does not escape <project>/src into execroot analysis_options.yaml', () async {
@@ -354,7 +358,10 @@ void main(List<String> args) {
       formatRunnerDill,
       '--persistent_worker',
     ], workingDirectory: execroot.path);
-    addTearDown(proc.kill);
+    addTearDown(() async {
+      proc.kill();
+      await proc.exitCode;
+    });
     final responses = StreamIterator(_frameStream(proc.stdout));
 
     proc.stdin.add(
@@ -386,6 +393,7 @@ void main(List<String> args) {
 
     await responses.cancel();
     await proc.stdin.close();
+    await proc.exitCode;
   });
 
   test('never prunes symlinks without a manifest and fails on empty manifest or unanalyzed source', () {
@@ -655,7 +663,10 @@ void main(List<String> args) {
       analyzerSummaryDill,
       '--persistent_worker',
     ], workingDirectory: localDir.path);
-    addTearDown(proc.kill);
+    addTearDown(() async {
+      proc.kill();
+      await proc.exitCode;
+    });
     final responses = StreamIterator(_frameStream(proc.stdout));
     proc.stdin.add(
       _encodeWorkRequest(
@@ -684,6 +695,7 @@ void main(List<String> args) {
     expect(workerRes.exitCode, 0, reason: workerRes.output);
     await responses.cancel();
     await proc.stdin.close();
+    await proc.exitCode;
 
     final localBytes = File('${localDir.path}/local.sum').readAsBytesSync();
     final sandboxBytes = File('${sandboxDir.path}/sandbox.sum')
@@ -975,7 +987,10 @@ void main(List<String> args) {
       analyzerSummaryDill,
       '--persistent_worker',
     ], workingDirectory: realDir.path);
-    addTearDown(proc.kill);
+    addTearDown(() async {
+      proc.kill();
+      await proc.exitCode;
+    });
     final responses = StreamIterator(_frameStream(proc.stdout));
     proc.stdin.add(
       _encodeWorkRequest(
@@ -1078,6 +1093,7 @@ void main(List<String> args) {
     final workerTRes = _decodeWorkResponse(responses.current);
     await responses.cancel();
     await proc.stdin.close();
+    await proc.exitCode;
 
     expect(localTRes.exitCode, isNonZero);
     expect(sandboxTRes.exitCode, isNonZero);

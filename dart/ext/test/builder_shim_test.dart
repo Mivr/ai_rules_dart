@@ -1428,7 +1428,12 @@ void main() {
             final sourceGenAssetPath = libUri.scheme == 'file'
                 ? p.posix.joinAll(
                     p.split(
-                      p.join(cachedRootPackageName!, p.relative(libUri.path)),
+                      p.join(
+                        cachedRootPackageName!,
+                        p.relative(
+                          libUri.toFilePath(windows: Platform.isWindows),
+                        ),
+                      ),
                     ),
                   )
                 : '${assetId.package}/${assetId.path}';
@@ -2035,6 +2040,29 @@ void main() {
           );
           expect(oneShotRelPath, p.join('pkg_c', 'test', 'a_test.dart'));
         }, getSystemTempDirectory: () => Directory(symlinkTmp.path));
+      },
+    );
+
+    test(
+      'Windows file:// URI converts via toFilePath(windows: true) to relative asset path without drive-letter traversal',
+      () {
+        final winContext = p.Context(
+          style: p.Style.windows,
+          current:
+              r'C:\Users\runneradmin\AppData\Local\Temp\builder_shim_work_1\pkg_a',
+        );
+        final winLibUri = Uri.file(
+          r'C:\Users\runneradmin\AppData\Local\Temp\builder_shim_work_1\pkg_a\test\a_test.dart',
+          windows: true,
+        );
+        final relFromFilePath = winContext.relative(
+          winLibUri.toFilePath(windows: true),
+        );
+        final assetPath = p.posix.joinAll(
+          winContext.split(winContext.join('pkg_a', relFromFilePath)),
+        );
+        expect(relFromFilePath, r'test\a_test.dart');
+        expect(assetPath, 'pkg_a/test/a_test.dart');
       },
     );
   });

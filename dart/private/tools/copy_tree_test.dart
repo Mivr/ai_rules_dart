@@ -389,7 +389,10 @@ void main() {
       await run(
         params(
           roots: [r'a\*'],
-          files: [text('a*/x.dart', 'x'), text('abc/y.dart', 'y')],
+          files: [
+            src('a_star/x.dart', 'x'.codeUnits, workspacePath: 'a*/x.dart'),
+            text('abc/y.dart', 'y'),
+          ],
         ),
       );
       expect(copied(), {'x.dart': 'x', 'abc/y.dart': 'y'});
