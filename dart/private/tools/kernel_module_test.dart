@@ -22,6 +22,9 @@ import 'kernel_module.dart'
         compileModule,
         decodeKernelModuleWorkRequestInputs,
         ensureSummaryDigests,
+        isWindowsDrivePath,
+        kernelWorkerArgs,
+        kernelWorkerUri,
         scanDirectives,
         sha256Of,
         stripSourceCodeFromDill,
@@ -896,7 +899,7 @@ void main(List<String> args) {
       [_uri('pkg/lib/top.dart')],
     ]);
     expect(_valuesAfter(result.calls.single, '--input-summary'), [
-      '$dep/0.dill',
+      kernelWorkerUri('$dep/0.dill'),
     ], reason: 'top links the kernel that defines shared');
   });
 
@@ -966,7 +969,7 @@ void main(List<String> args) {
       ['pkg/lib/top.dart'],
     ]);
     expect(_valuesAfter(result.calls.single, '--input-summary'), [
-      '$defines/0.dill',
+      kernelWorkerUri('$defines/0.dill'),
     ]);
   });
 
@@ -1005,7 +1008,7 @@ void main(List<String> args) {
     );
     expect(
       _valuesAfter(entry.calls.single, '--input-summary'),
-      contains('$defines/0.dill'),
+      contains(kernelWorkerUri('$defines/0.dill')),
     );
     expect(
       entry.calls.single,
@@ -1147,7 +1150,7 @@ void main(List<String> args) {
     );
     expect(
       _valuesAfter(entry.calls.single, '--multi-root'),
-      contains('$pkgOutline/sources'),
+      contains(kernelWorkerUri('$pkgOutline/sources')),
     );
   });
 
@@ -1626,22 +1629,24 @@ void main(List<String> args) {
       final outPath = '${_root.path}/$outName';
       final res = await Process.run(dartaotruntime, [
         kernelWorker,
-        '--target',
-        'vm',
-        '--dart-sdk-summary',
-        platformDill,
-        '--packages-file',
-        '${_root.path}/real_packages.json',
-        '--multi-root',
-        _root.path,
-        '--multi-root-scheme',
-        'org-dartlang-root',
-        '--no-summary-only',
-        '--exclude-non-sources',
-        for (final s in inputSummaries) ...['--input-summary', s],
-        for (final s in sources) ...['--source', s],
-        '--output',
-        outPath,
+        ...kernelWorkerArgs([
+          '--target',
+          'vm',
+          '--dart-sdk-summary',
+          platformDill,
+          '--packages-file',
+          '${_root.path}/real_packages.json',
+          '--multi-root',
+          _root.path,
+          '--multi-root-scheme',
+          'org-dartlang-root',
+          '--no-summary-only',
+          '--exclude-non-sources',
+          for (final s in inputSummaries) ...['--input-summary', s],
+          for (final s in sources) ...['--source', s],
+          '--output',
+          outPath,
+        ]),
       ]);
       expect(
         res.exitCode,
@@ -3079,7 +3084,7 @@ void main(List<String> args) {
 
     // When dep_cache.koutline maps `dep/lib/one.dart` to `0.dill`, `consumer.dart`
     // links against `dep_cache.koutline/0.dill`.
-    expect(await runWithCache(), ['${depDir.path}/0.dill']);
+    expect(await runWithCache(), [kernelWorkerUri('${depDir.path}/0.dill')]);
     expect(cache.totalBytes, lessThanOrEqualTo(512));
     expect(cache.indexEntryCount, 1);
 
@@ -3092,7 +3097,7 @@ void main(List<String> args) {
 
     expect(
       await runWithCache(),
-      ['${depDir.path}/1.dill'],
+      [kernelWorkerUri('${depDir.path}/1.dill')],
       reason: 'KernelModuleCache must detect same-(size, mtime) index.json mutation when digest is absent',
     );
   });
@@ -3750,6 +3755,138 @@ void main(List<String> args) {
     } finally {
       Directory.current = prevCwd;
     }
+  });
+
+  test('kernelWorkerUri, kernelWorkerArgs, ensureSummaryDigests, and compileModule convert Windows drive-letter paths to file:/// URIs without breaking --output or relative paths', () async {
+    expect(isWindowsDrivePath('d:/_bazel/external/vm.dill'), isTrue);
+    expect(isWindowsDrivePath(r'C:\Users\runneradmin\AppData\Temp'), isTrue);
+    expect(isWindowsDrivePath('C:'), isTrue);
+    expect(isWindowsDrivePath('package:pkg/a.dart'), isFalse);
+    expect(isWindowsDrivePath('org-dartlang-root:///pkg/lib/a.dart'), isFalse);
+    expect(isWindowsDrivePath('file:///d:/_bazel/external/vm.dill'), isFalse);
+    expect(isWindowsDrivePath('/tmp/ws/vm.dill'), isFalse);
+    expect(isWindowsDrivePath('bazel-out/x64_windows-fastbuild/bin'), isFalse);
+
+    const winSdkSummary =
+        'd:/_bazel/external/+dart+dart_windows-x64/lib/_internal/vm_platform_strong.dill';
+    const winTempRoot =
+        r'C:\Users\runneradmin\AppData\Local\Temp\kernel_module_test_123';
+    const winPackages =
+        r'C:\Users\runneradmin\AppData\Local\Temp\kernel_module_test_123/real_packages.json';
+    const winSummary =
+        r'C:\Users\runneradmin\AppData\Local\Temp\kernel_module_test_123\dep.koutline/0.dill';
+    const winOut = r'C:\Users\runneradmin\out\0.dill';
+
+    expect(
+      kernelWorkerUri(winSdkSummary),
+      'file:///d:/_bazel/external/+dart+dart_windows-x64/lib/_internal/vm_platform_strong.dill',
+    );
+    expect(
+      kernelWorkerUri(winTempRoot),
+      'file:///C:/Users/runneradmin/AppData/Local/Temp/kernel_module_test_123',
+    );
+    // Idempotent when already a file:/// URI.
+    expect(
+      kernelWorkerUri(kernelWorkerUri(winSdkSummary)),
+      kernelWorkerUri(winSdkSummary),
+    );
+    // Relative and POSIX paths and package:/multi-root URIs are untouched.
+    expect(kernelWorkerUri('package_config.json'), 'package_config.json');
+    expect(kernelWorkerUri('/tmp/ws/0.dill'), '/tmp/ws/0.dill');
+    expect(kernelWorkerUri('package:pkg/a.dart'), 'package:pkg/a.dart');
+
+    final rewritten = kernelWorkerArgs([
+      '--target',
+      'vm',
+      '--dart-sdk-summary',
+      winSdkSummary,
+      '--packages-file=$winPackages',
+      '--multi-root',
+      winTempRoot,
+      '--multi-root=.',
+      '--input-summary',
+      winSummary,
+      '--redirect',
+      '$winSummary|$winSdkSummary',
+      '--source',
+      'package:pkg/a.dart',
+      '--output',
+      winOut,
+    ]);
+    expect(rewritten, [
+      '--target',
+      'vm',
+      '--dart-sdk-summary',
+      'file:///d:/_bazel/external/+dart+dart_windows-x64/lib/_internal/vm_platform_strong.dill',
+      '--packages-file=file:///C:/Users/runneradmin/AppData/Local/Temp/kernel_module_test_123/real_packages.json',
+      '--multi-root',
+      'file:///C:/Users/runneradmin/AppData/Local/Temp/kernel_module_test_123',
+      '--multi-root=.',
+      '--input-summary',
+      'file:///C:/Users/runneradmin/AppData/Local/Temp/kernel_module_test_123/dep.koutline/0.dill',
+      '--redirect',
+      'file:///C:/Users/runneradmin/AppData/Local/Temp/kernel_module_test_123/dep.koutline/0.dill|file:///d:/_bazel/external/+dart+dart_windows-x64/lib/_internal/vm_platform_strong.dill',
+      '--source',
+      'package:pkg/a.dart',
+      '--output',
+      winOut,
+    ]);
+
+    // Verify ensureSummaryDigests matches a Windows drive-letter input path (with
+    // backslashes or forward slashes) to a file:/// --input-summary argument without
+    // touching disk, and emits the file:/// path in WorkRequest.inputs so
+    // kernel_worker's `inputDigests[toUri(input.path)]` lookup succeeds.
+    final winSentinel = Uint8List.fromList([0xde, 0xad, 0xbe, 0xef]);
+    final winInputs = await ensureSummaryDigests(
+      ['--input-summary', kernelWorkerUri(winSummary)],
+      [_encodeInputForTest(winSummary, winSentinel)],
+    );
+    final decodedWinInputs = {
+      for (final raw in winInputs)
+        _decodeInputForTest(raw).path: _decodeInputForTest(raw).digest,
+    };
+    expect(
+      decodedWinInputs['file:///C:/Users/runneradmin/AppData/Local/Temp/kernel_module_test_123/dep.koutline/0.dill'],
+      equals(winSentinel),
+    );
+
+    // Verify compileModule rewrites Windows drive-letter flags passed to the
+    // compiler while keeping --output as a file path.
+    _write('pkg/lib/win_smoke.dart', 'int winSmoke() => 1;\n');
+    final rec = _Recorder();
+    final log = StringBuffer();
+    final code = await compileModule(
+      [
+        '--target',
+        'vm',
+        '--dart-sdk-summary',
+        winSdkSummary,
+        '--packages-file',
+        '${_root.path}/package_config.json',
+        '--libraries-json',
+        '${_root.path}/libraries.json',
+        '--multi-root',
+        _root.path,
+        '--multi-root-scheme',
+        'org-dartlang-root',
+        '--source',
+        _uri('pkg/lib/win_smoke.dart'),
+        '--output',
+        '${_root.path}/out/win_smoke.kmod',
+        '--excluded-output',
+        '${_root.path}/out/win_smoke.vm_excluded.txt',
+      ],
+      rec,
+      log,
+      const [],
+    );
+    expect(code, 0, reason: log.toString());
+    expect(_valuesAfter(rec.calls.single, '--dart-sdk-summary'), [
+      'file:///d:/_bazel/external/+dart+dart_windows-x64/lib/_internal/vm_platform_strong.dill',
+    ]);
+    expect(_valuesAfter(rec.calls.single, '--output'), [
+      '${_root.path}/out/win_smoke.kmod/0.dill',
+    ]);
   });
 }
 

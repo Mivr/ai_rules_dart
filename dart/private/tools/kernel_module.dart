@@ -111,6 +111,100 @@ final _errorLine = RegExp(r'^(.+?):(\d+):(\d+): Error: (.*)$', multiLine: true);
 /// The `bazel-out/<config>/bin/` prefix a diagnostic may give a generated file.
 final _bazelOutPrefix = RegExp(r'^(?:\./)?bazel-out/[^/]+/bin/');
 
+const _kernelWorkerUriFlags = <String>{
+  '--dart-sdk-summary',
+  '--packages-file',
+  '--libraries-file',
+  '--multi-root',
+  '--input-summary',
+  '--input-linked',
+  '--source',
+  '--native-assets',
+};
+
+bool _isAsciiAlpha(int c) =>
+    (c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a);
+
+/// True when [s] starts with a Windows drive letter (`C:/...`, `d:\...`, `C:`).
+bool isWindowsDrivePath(String s) =>
+    s.length >= 2 &&
+    _isAsciiAlpha(s.codeUnitAt(0)) &&
+    s.codeUnitAt(1) == 0x3a &&
+    (s.length == 2 || s.codeUnitAt(2) == 0x2f || s.codeUnitAt(2) == 0x5c);
+
+/// Converts a Windows drive-letter or UNC file path to a `file://` URI string
+/// for `kernel_worker` (`package:frontend_server/compute_kernel.dart`).
+///
+/// `kernel_worker` resolves URI-bearing flags via
+/// `Uri.base.resolve(s.replaceAll(r'\', '/'))`. For an absolute Windows path
+/// such as `d:/_bazel/...` or `C:\Users\...`, `Uri.base.resolve` treats the
+/// drive letter as a URI scheme (`scheme: 'd'`), which `StandardFileSystem`
+/// rejects (`StandardFileSystem only supports file:* and data:* URIs`).
+String kernelWorkerUri(String pathOrUri) {
+  if (isWindowsDrivePath(pathOrUri) || pathOrUri.startsWith(r'\\')) {
+    return Uri.file(pathOrUri, windows: true).toString();
+  }
+  return pathOrUri;
+}
+
+String _filePathOf(String pathOrUri) {
+  if (pathOrUri.startsWith('file:///')) {
+    final rest = pathOrUri.substring('file:///'.length);
+    if (isWindowsDrivePath(rest)) return rest;
+  }
+  if (pathOrUri.startsWith('file://')) {
+    return Uri.parse(pathOrUri).toFilePath(windows: true);
+  }
+  return pathOrUri;
+}
+
+String _rewriteRedirectUri(String value) {
+  final sep = value.indexOf('|');
+  if (sep < 0) return kernelWorkerUri(value);
+  return '${kernelWorkerUri(value.substring(0, sep))}|'
+      '${kernelWorkerUri(value.substring(sep + 1))}';
+}
+
+/// Rewrites Windows drive-letter and UNC paths in `kernel_worker` URI-bearing
+/// flags to `file:///` URIs while leaving `--output` and other file-system
+/// path flags unchanged.
+List<String> kernelWorkerArgs(List<String> args) {
+  final out = <String>[];
+  for (var i = 0; i < args.length; i++) {
+    final arg = args[i];
+    if (_kernelWorkerUriFlags.contains(arg) && i + 1 < args.length) {
+      out
+        ..add(arg)
+        ..add(kernelWorkerUri(args[++i]));
+      continue;
+    }
+    if (arg == '--redirect' && i + 1 < args.length) {
+      out
+        ..add(arg)
+        ..add(_rewriteRedirectUri(args[++i]));
+      continue;
+    }
+    if (arg.startsWith('--redirect=')) {
+      final raw = arg.substring('--redirect='.length);
+      out.add('--redirect=${_rewriteRedirectUri(raw)}');
+      continue;
+    }
+    var matchedEq = false;
+    for (final flag in _kernelWorkerUriFlags) {
+      final prefix = '$flag=';
+      if (arg.startsWith(prefix)) {
+        out.add('$flag=${kernelWorkerUri(arg.substring(prefix.length))}');
+        matchedEq = true;
+        break;
+      }
+    }
+    if (!matchedEq) {
+      out.add(arg);
+    }
+  }
+  return out;
+}
+
 Future<void> main(List<String> argv) async {
   var persistent = false;
   String? kernelWorker;
@@ -407,7 +501,7 @@ Future<int> compileModule(
     for (final spelling in _inputSpellings(raw)) {
       declaredKeys.add(spelling);
     }
-    if (!raw.contains(':')) {
+    if (!raw.contains(':') || isWindowsDrivePath(raw)) {
       declaredRootPaths.add(raw);
       final norm = _normalize(raw);
       if (norm.isNotEmpty) declaredRootPaths.add(norm);
@@ -486,17 +580,20 @@ Future<int> compileModule(
       entry.keys,
       files,
     );
-    final outcome = await compiler.run([
-      ...entryBase,
-      for (final root in extraMultiRoots) ...[_multiRootFlag, root],
-      for (final d in neededDills(entry.imports, graph)) ...[
-        '--input-summary',
-        d,
-      ],
-      for (final source in entry.uris) ...['--source', source],
-      '--output',
-      '$output/$dill',
-    ], stagedInputs.isEmpty ? inputs : [...inputs, ...stagedInputs]);
+    final outcome = await compiler.run(
+      kernelWorkerArgs([
+        ...entryBase,
+        for (final root in extraMultiRoots) ...[_multiRootFlag, root],
+        for (final d in neededDills(entry.imports, graph)) ...[
+          '--input-summary',
+          d,
+        ],
+        for (final source in entry.uris) ...['--source', source],
+        '--output',
+        '$output/$dill',
+      ]),
+      stagedInputs.isEmpty ? inputs : [...inputs, ...stagedInputs],
+    );
     if (outcome.exitCode != 0) {
       log.write(outcome.output);
       return 1;
@@ -615,14 +712,17 @@ Future<int> compileModule(
         scc.keys,
         files,
       );
-      final outcome = await compiler.run([
-        ...sccBase,
-        for (final root in extraMultiRoots) ...[_multiRootFlag, root],
-        for (final node in summaryNodes) ...['--input-summary', node.dill],
-        for (final uri in scc.uris) ...['--source', uri],
-        '--output',
-        dillPath,
-      ], stagedInputs.isEmpty ? inputs : [...inputs, ...stagedInputs]);
+      final outcome = await compiler.run(
+        kernelWorkerArgs([
+          ...sccBase,
+          for (final root in extraMultiRoots) ...[_multiRootFlag, root],
+          for (final node in summaryNodes) ...['--input-summary', node.dill],
+          for (final uri in scc.uris) ...['--source', uri],
+          '--output',
+          dillPath,
+        ]),
+        stagedInputs.isEmpty ? inputs : [...inputs, ...stagedInputs],
+      );
       if (outcome.exitCode != 0) {
         failure = outcome;
         failedUris = scc.uris;
@@ -800,11 +900,16 @@ class _ModuleCacheEntry<T> {
 bool _isNormalizedRelative(String path) {
   final len = path.length;
   if (len == 0) return false;
-  if (path.codeUnitAt(0) == 0x2f || path.codeUnitAt(len - 1) == 0x2f) {
+  if (isWindowsDrivePath(path)) return false;
+  if (path.codeUnitAt(0) == 0x2f ||
+      path.codeUnitAt(0) == 0x5c ||
+      path.codeUnitAt(len - 1) == 0x2f ||
+      path.codeUnitAt(len - 1) == 0x5c) {
     return false;
   }
   var segStart = 0;
   for (var i = 0; i <= len; i++) {
+    if (i < len && path.codeUnitAt(i) == 0x5c) return false;
     if (i == len || path.codeUnitAt(i) == 0x2f) {
       final segLen = i - segStart;
       if (segLen == 0) return false;
@@ -823,8 +928,15 @@ bool _isNormalizedRelative(String path) {
 String _normalizeFilePath(String path) {
   if (_isNormalizedRelative(path)) return path;
   if (path.isEmpty) return '.';
-  final isAbs = path.startsWith('/');
-  final parts = path.split('/');
+  final slashPath = path.contains(r'\') ? path.replaceAll(r'\', '/') : path;
+  String? drivePrefix;
+  var rest = slashPath;
+  if (isWindowsDrivePath(slashPath)) {
+    drivePrefix = '${slashPath.substring(0, 2)}/';
+    rest = slashPath.substring(2);
+  }
+  final isAbs = drivePrefix != null || rest.startsWith('/');
+  final parts = rest.split('/');
   final stack = <String>[];
   for (final part in parts) {
     if (part.isEmpty || part == '.') continue;
@@ -838,8 +950,9 @@ String _normalizeFilePath(String path) {
       stack.add(part);
     }
   }
-  if (stack.isEmpty) return isAbs ? '/' : '.';
+  if (stack.isEmpty) return drivePrefix ?? (isAbs ? '/' : '.');
   final joined = stack.join('/');
+  if (drivePrefix != null) return '$drivePrefix$joined';
   return isAbs ? '/$joined' : joined;
 }
 
@@ -1945,10 +2058,13 @@ String? _lookup(
   String path,
   String multiRootPrefix,
 ) {
+  final slashPath = path.contains(r'\') ? path.replaceAll(r'\', '/') : path;
   for (final spelling in [
     path,
+    slashPath,
     _stripPrefix(path, multiRootPrefix),
-    path.replaceFirst(_bazelOutPrefix, ''),
+    _stripPrefix(slashPath, multiRootPrefix),
+    slashPath.replaceFirst(_bazelOutPrefix, ''),
   ]) {
     if (spelling == null) continue;
     final key = spellings[spelling];
@@ -2023,8 +2139,9 @@ String? _resolveUri(
 /// `path` without empty and `.` segments, with each `..` applied.
 String _normalize(String path) {
   if (_isNormalizedRelative(path)) return path;
+  final slashPath = path.contains(r'\') ? path.replaceAll(r'\', '/') : path;
   final parts = <String>[];
-  for (final part in path.split('/')) {
+  for (final part in slashPath.split('/')) {
     if (part.isEmpty || part == '.') continue;
     if (part == '..') {
       if (parts.isNotEmpty) parts.removeLast();
@@ -2057,23 +2174,35 @@ class _Files {
   final Set<String> _declaredRootPaths;
   final Map<String, String> _stagedRoots;
   final Set<String>? _workerInputPaths;
-  final String _cwd = Directory.current.path;
+  final String _cwd = Directory.current.path.replaceAll(r'\', '/');
   final Map<String, String?> _cache = {};
   final Map<String, ScanResult?> _scanCache = {};
 
   bool _matchesPathSet(Set<String> pathSet, String root, String key) {
-    final raw = root == '.' ? key : '$root/$key';
+    final rootFile = _filePathOf(root);
+    final normRoot = rootFile.contains(r'\')
+        ? rootFile.replaceAll(r'\', '/')
+        : rootFile;
+    final raw = normRoot == '.' ? key : '$normRoot/$key';
     if (pathSet.contains(raw)) return true;
     final norm = _normalize(raw);
     if (pathSet.contains(norm)) return true;
-    if (raw.startsWith('/')) {
+    if (raw.startsWith('/') || isWindowsDrivePath(raw)) {
       if (raw.startsWith('$_cwd/')) {
         final rel = _normalize(raw.substring(_cwd.length + 1));
         if (pathSet.contains(rel)) return true;
       }
+      final normFile = _normalizeFilePath(raw);
+      if (pathSet.contains(normFile)) return true;
+      if (normFile.startsWith('$_cwd/')) {
+        final rel = _normalize(normFile.substring(_cwd.length + 1));
+        if (pathSet.contains(rel)) return true;
+      }
     } else {
       final abs = '$_cwd/$norm';
-      if (pathSet.contains(abs) || pathSet.contains(_normalize(abs))) {
+      if (pathSet.contains(abs) ||
+          pathSet.contains(_normalize(abs)) ||
+          pathSet.contains(_normalizeFilePath(abs))) {
         return true;
       }
     }
@@ -2845,7 +2974,8 @@ Future<Map<String, _PackageRoot>> _packageRoots(
   String packagesFile,
   String multiRootPrefix,
 ) async {
-  final config = jsonDecode(await File(packagesFile).readAsString()) as Map;
+  final config =
+      jsonDecode(await File(_filePathOf(packagesFile)).readAsString()) as Map;
   final roots = <String, _PackageRoot>{};
   for (final entry in (config['packages'] as List).cast<Map>()) {
     var root = entry['rootUri'] as String;
@@ -2909,7 +3039,10 @@ class _OneShot implements ModuleCompiler {
 
   @override
   Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
-    final result = await Process.run(_dartaotruntime, [_kernelWorker, ...args]);
+    final result = await Process.run(_dartaotruntime, [
+      _kernelWorker,
+      ...kernelWorkerArgs(args),
+    ]);
     return ModuleOutcome(result.exitCode, '${result.stdout}${result.stderr}');
   }
 
@@ -2957,10 +3090,11 @@ class _Persistent implements ModuleCompiler {
   Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
     // Digested before the child is written to, so a file that cannot be read fails the
     // request with its reason, not as a child that died.
-    final withDigests = await _withDigests(args, inputs);
-    final first = await _attempt(args, withDigests);
+    final workerArgs = kernelWorkerArgs(args);
+    final withDigests = await _withDigests(workerArgs, inputs);
+    final first = await _attempt(workerArgs, withDigests);
     if (!first.lost) return first.outcome;
-    final second = await _attempt(args, withDigests);
+    final second = await _attempt(workerArgs, withDigests);
     if (second.lost) {
       return ModuleOutcome(
         second.outcome.exitCode,
@@ -3081,7 +3215,7 @@ const _requestTimeoutFlag = '--request-timeout-seconds=';
 
 /// The SHA-256 digest of the file at `path`.
 Future<Uint8List> _digestOf(String path) async =>
-    sha256Of(await File(path).readAsBytes());
+    sha256Of(await File(_filePathOf(path)).readAsBytes());
 
 /// The SHA-256 digest of `message`, as 32 bytes.
 Uint8List sha256Of(Uint8List message) {
@@ -3247,7 +3381,8 @@ Future<List<Uint8List>> _withDigests(
   for (var i = 0; i + 1 < args.length; i++) {
     final arg = args[i];
     if (arg != '--input-summary' && arg != '--input-linked') continue;
-    if (!exactWithDigest.contains(args[i + 1])) {
+    final targetPath = kernelWorkerUri(args[i + 1]);
+    if (!exactWithDigest.contains(targetPath)) {
       allPresent = false;
       break;
     }
@@ -3261,33 +3396,51 @@ Future<List<Uint8List>> _withDigests(
     if (decoded.path.isEmpty) continue;
     if (decoded.digest.isNotEmpty) {
       byPath[decoded.path] = decoded.digest;
-      final norm = _normalizeFilePath(decoded.path);
+      final fileSpelling = _filePathOf(decoded.path);
+      byPath.putIfAbsent(fileSpelling, () => decoded.digest);
+      byPath.putIfAbsent(kernelWorkerUri(fileSpelling), () => decoded.digest);
+      final norm = _normalizeFilePath(fileSpelling);
       byPath.putIfAbsent(norm, () => decoded.digest);
-      final relNorm = _normalize(decoded.path);
-      if (relNorm.isNotEmpty) {
+      byPath.putIfAbsent(kernelWorkerUri(norm), () => decoded.digest);
+      final relNorm = _normalize(fileSpelling);
+      if (relNorm.isNotEmpty &&
+          !isWindowsDrivePath(fileSpelling) &&
+          !fileSpelling.startsWith('/')) {
         byPath.putIfAbsent(relNorm, () => decoded.digest);
         byPath.putIfAbsent('./$relNorm', () => decoded.digest);
       }
     } else {
       (emptyDigestIndices[decoded.path] ??= <int>[]).add(idx);
+      final uriSpelling = kernelWorkerUri(decoded.path);
+      if (uriSpelling != decoded.path) {
+        (emptyDigestIndices[uriSpelling] ??= <int>[]).add(idx);
+      }
     }
   }
   List<Uint8List>? out;
   for (var i = 0; i + 1 < args.length; i++) {
     if (args[i] != '--input-summary' && args[i] != '--input-linked') continue;
-    final path = args[i + 1];
-    if (!exactWithDigest.add(path)) continue;
-    final digest = _lookupDigest(path, byPath) ?? await _digestOf(path);
-    byPath[path] = digest;
+    final rawPath = args[i + 1];
+    final targetPath = kernelWorkerUri(rawPath);
+    final filePath = _filePathOf(rawPath);
+    if (!exactWithDigest.add(targetPath)) continue;
+    final digest =
+        _lookupDigest(targetPath, byPath) ??
+        _lookupDigest(filePath, byPath) ??
+        await _digestOf(filePath);
+    byPath[targetPath] = digest;
+    byPath[filePath] = digest;
     out ??= [...inputs];
-    final replaceIndices = emptyDigestIndices.remove(path);
+    final replaceIndices =
+        emptyDigestIndices.remove(targetPath) ??
+        emptyDigestIndices.remove(filePath);
     if (replaceIndices != null && replaceIndices.isNotEmpty) {
-      final encoded = _encodeInput(path, digest);
+      final encoded = _encodeInput(targetPath, digest);
       for (final idx in replaceIndices) {
         out[idx] = encoded;
       }
     } else {
-      out.add(_encodeInput(path, digest));
+      out.add(_encodeInput(targetPath, digest));
     }
   }
   return out ?? inputs;

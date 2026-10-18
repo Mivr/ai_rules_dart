@@ -276,17 +276,14 @@ void repointPackageConfig(String project, String scratch) {
   final scratchAnchor = Uri.directory(
     Directory('$scratch/.dart_tool').absolute.path,
   );
-  final projectRoot = Uri.directory(Directory(project).absolute.path)
-      .toString();
+  final projectRootUri = Uri.directory(Directory(project).absolute.path);
   var rewrote = false;
   for (final package in decoded['packages'] as List) {
     if (package is! Map) continue;
     final root = package['rootUri'];
     if (root is! String) continue;
-    final parsed = Uri.tryParse(root);
-    if (parsed == null || (parsed.hasScheme && !parsed.isScheme('file'))) {
-      continue;
-    }
+    final parsed = _parseRootUri(root);
+    if (parsed == null) continue;
     final resolved = anchor.resolveUri(parsed);
     // A URI that stays inside the project resolves against the copied tree at
     // the same relative path under scratch. Pointing it at the original instead
@@ -294,7 +291,7 @@ void repointPackageConfig(String project, String scratch) {
     // fixer analyzes and the `package:` URI it imports itself by — and the
     // analyzer reports type errors between them, which costs the fixes that
     // depend on resolution.
-    final base = resolved.toString().startsWith(projectRoot)
+    final base = _isWithinDirUri(resolved, projectRootUri)
         ? anchor
         : scratchAnchor;
     final rel = _relativeUri(base, resolved);
@@ -310,6 +307,51 @@ void repointPackageConfig(String project, String scratch) {
   }
 }
 
+bool _isWindowsDriveSegment(String s) =>
+    s.length >= 2 &&
+    ((s.codeUnitAt(0) >= 0x41 && s.codeUnitAt(0) <= 0x5a) ||
+        (s.codeUnitAt(0) >= 0x61 && s.codeUnitAt(0) <= 0x7a)) &&
+    s.codeUnitAt(1) == 0x3a &&
+    (s.length == 2 || s.codeUnitAt(2) == 0x2f || s.codeUnitAt(2) == 0x5c);
+
+Uri? _parseRootUri(String root) {
+  if (_isWindowsDriveSegment(root) || root.startsWith(r'\\')) {
+    return Uri.file(root, windows: true);
+  }
+  final normalized = root.contains(r'\') ? root.replaceAll(r'\', '/') : root;
+  final parsed = Uri.tryParse(normalized);
+  if (parsed == null || (parsed.hasScheme && !parsed.isScheme('file'))) {
+    return null;
+  }
+  return parsed;
+}
+
+bool _sameSegment(String a, String b, {required bool isFirst}) {
+  if (a == b) return true;
+  if (isFirst && _isWindowsDriveSegment(a) && _isWindowsDriveSegment(b)) {
+    return a.toLowerCase() == b.toLowerCase();
+  }
+  return false;
+}
+
+bool _isWithinDirUri(Uri candidate, Uri dirUri) {
+  final candidateStr = candidate.toString();
+  final dirStr = dirUri.toString();
+  if (candidateStr.startsWith(dirStr)) return true;
+  final candidateParts = candidate.path
+      .split('/')
+      .where((s) => s.isNotEmpty)
+      .toList();
+  final dirParts = dirUri.path.split('/').where((s) => s.isNotEmpty).toList();
+  if (candidateParts.length < dirParts.length) return false;
+  for (var i = 0; i < dirParts.length; i++) {
+    if (!_sameSegment(candidateParts[i], dirParts[i], isFirst: i == 0)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /// Returns a relative URI path from directory [fromDir] to [toUri].
 String _relativeUri(Uri fromDir, Uri toUri) {
   final fromParts = fromDir.path.split('/').where((s) => s.isNotEmpty).toList();
@@ -317,8 +359,15 @@ String _relativeUri(Uri fromDir, Uri toUri) {
   var common = 0;
   while (common < fromParts.length &&
       common < toParts.length &&
-      fromParts[common] == toParts[common]) {
+      _sameSegment(fromParts[common], toParts[common], isFirst: common == 0)) {
     common++;
+  }
+  if (common == 0 &&
+      fromParts.isNotEmpty &&
+      toParts.isNotEmpty &&
+      _isWindowsDriveSegment(fromParts.first) &&
+      _isWindowsDriveSegment(toParts.first)) {
+    return toUri.toString();
   }
   final parts = [
     ...List.filled(fromParts.length - common, '..'),

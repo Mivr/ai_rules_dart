@@ -84,4 +84,42 @@ void main() {
       );
     }
   });
+
+  test('repointPackageConfig handles Windows backslash relative paths and drive-letter rootUris', () {
+    final project = Directory('${tmp.path}/pkg/demo.proj')
+      ..createSync(recursive: true);
+    final scratch = Directory('${tmp.path}/deep/nested/scratch')
+      ..createSync(recursive: true);
+    final configFile = File('${scratch.path}/.dart_tool/package_config.json')
+      ..createSync(recursive: true)
+      ..writeAsStringSync(
+        '${const JsonEncoder.withIndent('  ').convert({
+          'configVersion': 2,
+          'packages': [
+            {'name': 'sub_backslash', 'rootUri': r'..\pkgs\sub', 'packageUri': 'lib/'},
+            {'name': 'ext_backslash', 'rootUri': r'..\..\demo.extpkgs\foo', 'packageUri': 'lib/'},
+            {'name': 'win_drive_slash', 'rootUri': 'd:/_bazel/external/rules_dart++pub+bar', 'packageUri': 'lib/'},
+            {'name': 'win_drive_backslash', 'rootUri': r'C:\Users\runneradmin\_bazel\external\baz', 'packageUri': 'lib/'},
+          ],
+        })}\n',
+      );
+
+    fix_runner.repointPackageConfig(project.path, scratch.path);
+
+    final decoded =
+        jsonDecode(configFile.readAsStringSync()) as Map<String, Object?>;
+    final packages = {
+      for (final p in (decoded['packages'] as List).cast<Map>())
+        p['name'] as String: p['rootUri'] as String,
+    };
+
+    expect(packages['sub_backslash'], '../pkgs/sub');
+    expect(packages['ext_backslash'], '../../../../pkg/demo.extpkgs/foo');
+    expect(
+      packages['win_drive_slash'],
+      isNot(equals('d:/_bazel/external/rules_dart++pub+bar')),
+    );
+    expect(packages['win_drive_slash'], isNot(contains(r'\')));
+    expect(packages['win_drive_backslash'], isNot(contains(r'\')));
+  });
 }

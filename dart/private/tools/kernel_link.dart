@@ -62,12 +62,23 @@ class _CachedEntry<T> {
   int tick;
 }
 
+bool _isAsciiAlpha(int c) =>
+    (c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a);
+
+bool _isWindowsDrivePath(String s) =>
+    s.length >= 2 &&
+    _isAsciiAlpha(s.codeUnitAt(0)) &&
+    s.codeUnitAt(1) == 0x3a &&
+    (s.length == 2 || s.codeUnitAt(2) == 0x2f || s.codeUnitAt(2) == 0x5c);
+
 bool _isNormalizedRelative(String path) {
   final len = path.length;
   if (len == 0) return false;
+  if (_isWindowsDrivePath(path)) return false;
   var segStart = 0;
   for (var i = 0; i <= len; i++) {
     final c = i < len ? path.codeUnitAt(i) : 0x2f;
+    if (c == 0x5c) return false;
     if (c == 0x2f) {
       final segLen = i - segStart;
       if (segLen == 0) return false;
@@ -86,8 +97,15 @@ bool _isNormalizedRelative(String path) {
 String _normalizePath(String path) {
   if (_isNormalizedRelative(path)) return path;
   if (path.isEmpty) return '.';
-  final isAbs = path.startsWith('/');
-  final parts = path.split('/');
+  final slashPath = path.contains(r'\') ? path.replaceAll(r'\', '/') : path;
+  String? drivePrefix;
+  var rest = slashPath;
+  if (_isWindowsDrivePath(slashPath)) {
+    drivePrefix = '${slashPath.substring(0, 2)}/';
+    rest = slashPath.substring(2);
+  }
+  final isAbs = drivePrefix != null || rest.startsWith('/');
+  final parts = rest.split('/');
   final stack = <String>[];
   for (final part in parts) {
     if (part.isEmpty || part == '.') continue;
@@ -101,8 +119,9 @@ String _normalizePath(String path) {
       stack.add(part);
     }
   }
-  if (stack.isEmpty) return isAbs ? '/' : '.';
+  if (stack.isEmpty) return drivePrefix ?? (isAbs ? '/' : '.');
   final joined = stack.join('/');
+  if (drivePrefix != null) return '$drivePrefix$joined';
   return isAbs ? '/$joined' : joined;
 }
 
