@@ -1,5 +1,13 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
-load("//dart:defs.bzl", "dart_binary", "dart_codegen", "dart_test")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load(
+    "//dart:defs.bzl",
+    "dart_aggregate_codegen",
+    "dart_binary",
+    "dart_codegen",
+    "dart_sqlcodegen",
+    "dart_test",
+)
 load(
     "//dart/tests:codegen_summary_test.bzl",
     "no_summaries_codegen_inputs_test",
@@ -139,4 +147,97 @@ no_summaries_codegen_inputs_test(
 build_test(
     name = "plain_codegen_builds_test",
     targets = [":plain_codegen"],
+)
+
+# Action-generated `pubspec.yaml` and `analysis_options.yaml` in `bazel-out/`
+# have read-only mode bits (`0555`), reproducing remote-execution / read-only
+# checkout inputs even when the local workspace is writable.
+write_file(
+    name = "gen_pubspec",
+    out = "pubspec.yaml",
+    content = [
+        "name: codegen_fixture",
+        "version: 4.5.6",
+        "environment:",
+        "  sdk: ^3.0.0",
+        "",
+    ],
+)
+
+write_file(
+    name = "gen_analysis_options",
+    out = "analysis_options.yaml",
+    content = [
+        "# custom analysis_options from bazel-out",
+        "",
+    ],
+)
+
+dart_binary(
+    name = "root_config_echo_shim",
+    compile_mode = "kernel",
+    main = "root_config_echo_shim.dart",
+    deps = [
+        "//dart/ext:builder_shim",
+        "@ext_pub_deps//:build",
+    ],
+)
+
+dart_codegen(
+    name = "readonly_root_config_codegen",
+    package_name = "codegen_fixture",
+    src = "lib/readonly_model.dart",
+    asset_deps = [
+        ":gen_analysis_options",
+        ":gen_pubspec",
+    ],
+    generator_bin = ":root_config_echo_shim",
+    language_version = "3.11",
+    output_suffixes = [".g.dart"],
+)
+
+dart_aggregate_codegen(
+    name = "readonly_root_config_aggregate_codegen",
+    package_name = "codegen_fixture",
+    srcs = [
+        "lib/readonly_model.dart",
+        ":gen_analysis_options",
+        ":gen_pubspec",
+    ],
+    generator_bin = ":root_config_echo_shim",
+    language_version = "3.11",
+    outputs = ["lib/readonly_model.agg.dart"],
+)
+
+dart_sqlcodegen(
+    name = "readonly_root_config_sqlcodegen",
+    package_name = "codegen_fixture",
+    src = "lib/readonly_query.drift",
+    asset_deps = [
+        ":gen_analysis_options",
+        ":gen_pubspec",
+    ],
+    generator_bin = ":root_config_echo_shim",
+    language_version = "3.11",
+    output_suffixes = [".drift.dart"],
+)
+
+dart_test(
+    name = "readonly_root_config_codegen_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :readonly_root_config_codegen)",
+        "$(rlocationpath :readonly_root_config_aggregate_codegen)",
+        "$(rlocationpath :readonly_root_config_sqlcodegen)",
+    ],
+    data = [
+        ":readonly_root_config_aggregate_codegen",
+        ":readonly_root_config_codegen",
+        ":readonly_root_config_sqlcodegen",
+    ],
+    main = "readonly_root_config_codegen_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
 )

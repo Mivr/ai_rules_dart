@@ -10,6 +10,7 @@ import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:analyzer/src/dart/analysis/analysis_context_collection.dart';
 import 'package:bazel_worker/bazel_worker.dart';
 import 'package:build/build.dart';
+import 'package:glob/glob.dart';
 import 'package:package_config/package_config.dart';
 import 'package:path/path.dart' as p;
 import 'package:rules_dart_ext/builder_shim.dart';
@@ -1683,6 +1684,203 @@ void main() {
         }
       },
     );
+  });
+
+  group('read-only inputs and staged root config files', () {
+    late Directory tmp;
+
+    setUp(() async {
+      tmp = await Directory.systemTemp.createTemp('shim_readonly_');
+    });
+
+    tearDown(() async {
+      if (!Platform.isWindows && await tmp.exists()) {
+        await Process.run('chmod', ['-R', 'u+w', tmp.path]);
+      }
+      if (await tmp.exists()) await tmp.delete(recursive: true);
+    });
+
+    void makeReadOnly(File file) {
+      if (Platform.isWindows) {
+        final res = Process.runSync('attrib', ['+R', file.path]);
+        expect(res.exitCode, 0, reason: '${res.stderr}');
+      } else {
+        final res = Process.runSync('chmod', ['0444', file.path]);
+        expect(res.exitCode, 0, reason: '${res.stderr}');
+      }
+    }
+
+    test(
+      'read-only pubspec.yaml and analysis_options.yaml in --dep do not fail '
+      'and preserve caller contents (matching writable inputs)',
+      () async {
+        const pubspecContent =
+            'name: fixture\nversion: 2.3.4\ncustom_meta: hello\n'
+            'environment:\n  sdk: ^3.0.0\n';
+        const optionsContent =
+            '# custom options\nlinter:\n  rules:\n    - camel_case_types\n';
+
+        Future<Map<String, String>> runVariant({required bool readOnly}) async {
+          final sub = await Directory(
+            p.join(tmp.path, readOnly ? 'ro' : 'rw'),
+          ).create();
+          final input = File(p.join(sub.path, 'src.dart'))
+            ..writeAsStringSync('class Foo {}\n');
+          final pubspec = File(p.join(sub.path, 'pubspec.yaml'))
+            ..writeAsStringSync(pubspecContent);
+          final options = File(p.join(sub.path, 'analysis_options.yaml'))
+            ..writeAsStringSync(optionsContent);
+          if (readOnly) {
+            makeReadOnly(input);
+            makeReadOnly(pubspec);
+            makeReadOnly(options);
+          }
+          final output = File(p.join(sub.path, 'src.g.dart'));
+
+          String? observedPubspec;
+          String? observedOptions;
+          List<String>? foundYamlPaths;
+
+          await runShimWithArgs(
+            _shimArgs(
+              inputPath: input.path,
+              inputAssetPath: 'lib/src.dart',
+              outputPath: output.path,
+              depPaths: [
+                (exec: pubspec.path, asset: 'pubspec.yaml'),
+                (exec: options.path, asset: 'analysis_options.yaml'),
+              ],
+            ),
+            (_) => _CapturingBuilder((step) async {
+              observedPubspec = await step.readAsString(
+                AssetId('fixture', 'pubspec.yaml'),
+              );
+              observedOptions = await step.readAsString(
+                AssetId('fixture', 'analysis_options.yaml'),
+              );
+              foundYamlPaths =
+                  (await step.findAssets(Glob('*.yaml')).toList())
+                      .map((id) => id.path)
+                      .toList()
+                    ..sort();
+              await step.writeAsString(
+                step.inputId.changeExtension('.g.dart'),
+                '// pubspec=${observedPubspec!.trim()}\n'
+                '// options=${observedOptions!.trim()}\n',
+              );
+            }),
+          );
+
+          return {
+            'pubspec': observedPubspec!,
+            'options': observedOptions!,
+            'found': foundYamlPaths!.join(','),
+            'output': output.readAsStringSync(),
+          };
+        }
+
+        final roResult = await runVariant(readOnly: true);
+        final rwResult = await runVariant(readOnly: false);
+
+        expect(roResult['pubspec'], pubspecContent);
+        expect(roResult['options'], optionsContent);
+        expect(roResult['found'], 'analysis_options.yaml,pubspec.yaml');
+        expect(
+          roResult,
+          equals(rwResult),
+          reason:
+              'read-only (remote/sandbox) and writable (local) inputs must '
+              'produce identical Builder observations and outputs',
+        );
+      },
+    );
+
+    test('read-only primary --input and --input-asset-extra at root yaml paths '
+        'succeed in worker mode and do not leak across requests', () async {
+      const customPubspec =
+          'name: pkg_agg\nversion: 9.9.9\nenvironment:\n  sdk: ^3.0.0\n';
+      const customOptions = '# aggregate options\n';
+
+      final input = File(p.join(tmp.path, 'pubspec.yaml'))
+        ..writeAsStringSync(customPubspec);
+      final extraOptions = File(p.join(tmp.path, 'analysis_options.yaml'))
+        ..writeAsStringSync(customOptions);
+      final extraDart = File(p.join(tmp.path, 'a.dart'))
+        ..writeAsStringSync('class A {}\n');
+      makeReadOnly(input);
+      makeReadOnly(extraOptions);
+      makeReadOnly(extraDart);
+
+      final out1 = File(p.join(tmp.path, 'out1.g.dart'));
+      final observed = <String, Map<String, String>>{};
+
+      final loop = ShimWorkerLoop(
+        factoryOrFactories: (_) => _CapturingBuilder((step) async {
+          final pkg = step.inputId.package;
+          final pubspec = await step.readAsString(AssetId(pkg, 'pubspec.yaml'));
+          final options = await step.readAsString(
+            AssetId(pkg, 'analysis_options.yaml'),
+          );
+          observed[pkg] = {'pubspec': pubspec, 'options': options};
+          await step.writeAsString(step.allowedOutputs.first, '// ok:$pkg\n');
+        }),
+      );
+
+      final resp1 = await loop.performRequest(
+        WorkRequest(
+          arguments: [
+            '--input',
+            input.path,
+            '--input-asset',
+            'pubspec.yaml',
+            '--input-asset-extra',
+            '${extraOptions.path}|analysis_options.yaml',
+            '--input-asset-extra',
+            '${extraDart.path}|lib/a.dart',
+            '--output',
+            out1.path,
+            '--package',
+            'pkg_agg',
+            '--root-language-version',
+            '3.11',
+          ],
+        ),
+      );
+      expect(resp1.exitCode, 0, reason: resp1.output);
+      expect(observed['pkg_agg']!['pubspec'], customPubspec);
+      expect(observed['pkg_agg']!['options'], customOptions);
+      expect(out1.readAsStringSync(), '// ok:pkg_agg\n');
+
+      // Follow-up request in the same worker without staged root yamls
+      // must still get the synthesized fallback stubs.
+      final input2 = File(p.join(tmp.path, 'b.dart'))
+        ..writeAsStringSync('class B {}\n');
+      makeReadOnly(input2);
+      final out2 = File(p.join(tmp.path, 'b.g.dart'));
+
+      final resp2 = await loop.performRequest(
+        WorkRequest(
+          arguments: [
+            '--input',
+            input2.path,
+            '--input-asset',
+            'lib/b.dart',
+            '--output',
+            out2.path,
+            '--package',
+            'pkg_plain',
+            '--root-language-version',
+            '3.11',
+          ],
+        ),
+      );
+      expect(resp2.exitCode, 0, reason: resp2.output);
+      expect(observed['pkg_plain']!['pubspec'], contains('name: pkg_plain'));
+      expect(
+        observed['pkg_plain']!['options'],
+        contains('bounds analysis_options.yaml discovery'),
+      );
+    });
   });
 }
 

@@ -582,23 +582,26 @@ Future<void> _runWithStaging(
   // may surface a file both as a source and as its bazel-out copy. Staging the
   // same asset twice races to one dest: a harmless overwrite on POSIX, but a
   // hard error on Windows (`File.copy` won't overwrite). The input asset wins.
-  final execByAsset = <String, String>{args.inputAssetPath: absInputExec};
+  final normalizedInputAsset = p.posix.normalize(args.inputAssetPath);
+  final execByAsset = <String, String>{normalizedInputAsset: absInputExec};
   for (final dep in args.depPaths) {
-    execByAsset.putIfAbsent(dep.asset, () => dep.exec);
+    execByAsset.putIfAbsent(p.posix.normalize(dep.asset), () => dep.exec);
   }
 
   // Same-package deps land in the synthetic root; cross-package deps need
-  // a PackageConfig entry (currently unsupported).
+  // a PackageConfig entry (currently unsupported). Write bytes rather than
+  // calling `File.copy` so read-only mode bits (`0444`/`0555`) from remote
+  // execution, sandboxes, or `bazel-out` are not carried onto staged files.
   final assetIdToPath = <AssetId, String>{};
   await Future.wait(
     execByAsset.entries.map((entry) async {
       final dest = stagedPath(p.context, stagingPath, entry.key);
       await Directory(p.dirname(dest)).create(recursive: true);
-      await File(entry.value).copy(dest);
+      await File(dest).writeAsBytes(await File(entry.value).readAsBytes());
       assetIdToPath[AssetId(args.packageName, entry.key)] = dest;
     }),
   );
-  final inputId = AssetId(args.packageName, args.inputAssetPath);
+  final inputId = AssetId(args.packageName, normalizedInputAsset);
 
   // Build a PackageConfig that maps the synthetic root package to the
   // staging dir, and merges in every package from the upstream config so
@@ -608,26 +611,35 @@ Future<void> _runWithStaging(
   // Write `.dart_tool/package_config.json` so the AnalysisContextCollection
   // picks it up via Dart's standard package-resolution lookup.
   final dartTool = Directory(p.join(stagingPath, '.dart_tool'));
-  await dartTool.create();
+  await dartTool.create(recursive: true);
   final pcFile = File(p.join(dartTool.path, 'package_config.json'));
   await pcFile.writeAsString(_serializePackageConfig(packageConfig));
 
   // Write a minimal pubspec.yaml so the analyzer recognises the staging
-  // dir as a Dart package root.
-  await File(
-    p.join(stagingPath, 'pubspec.yaml'),
-  ).writeAsString('name: ${args.packageName}\nenvironment:\n  sdk: ^3.0.0\n');
+  // dir as a Dart package root, unless the caller already staged one.
+  final pubspecFile = File(p.join(stagingPath, 'pubspec.yaml'));
+  if (!await pubspecFile.exists()) {
+    await pubspecFile.writeAsString(
+      'name: ${args.packageName}\nenvironment:\n  sdk: ^3.0.0\n',
+    );
+  }
 
-  // Bound the analyzer's options discovery at the staging root. It finds
+  // Bound the analyzer's options discovery at the staging root unless the
+  // caller already staged an `analysis_options.yaml` there. It finds
   // `analysis_options.yaml` by walking up from the files it analyses, and this
   // directory lives under the system temp dir — so without a file of its own,
   // whichever stray options file happens to sit in a temp ancestor would
   // silently configure codegen, differently on different machines. An empty
   // options file is equivalent to no file at all when nothing above interferes,
   // so this changes nothing except the ancestor read.
-  await File(
+  final analysisOptionsFile = File(
     p.join(stagingPath, 'analysis_options.yaml'),
-  ).writeAsString('# rules_dart: bounds analysis_options.yaml discovery\n');
+  );
+  if (!await analysisOptionsFile.exists()) {
+    await analysisOptionsFile.writeAsString(
+      '# rules_dart: bounds analysis_options.yaml discovery\n',
+    );
+  }
 
   // Include ONLY the staging dir. Cross-package imports (`package:drift/...`,
   // `package:json_annotation/...`, …) are resolved through the

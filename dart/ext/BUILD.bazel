@@ -31,7 +31,10 @@ dart_library(
         "lib/worker_entry.dart",
     ],
     language_version = "3.11",
-    visibility = ["//dart/ext:__subpackages__"],
+    visibility = [
+        "//dart/ext:__subpackages__",
+        "//dart/tests:__subpackages__",
+    ],
     deps = [
         "@ext_pub_deps//:analyzer",
         "@ext_pub_deps//:args",
@@ -53,6 +56,7 @@ dart_test(
         ":builder_shim",
         "@ext_pub_deps//:analyzer",
         "@ext_pub_deps//:build",
+        "@ext_pub_deps//:glob",
         "@ext_pub_deps//:path",
         "@ext_pub_deps//:test",
     ],
