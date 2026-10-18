@@ -47,11 +47,19 @@ class _Kernel {
 }
 
 class _CachedEntry<T> {
-  _CachedEntry(this.value, this.digest, this.rawBytes);
+  _CachedEntry({
+    required this.value,
+    required this.inputDigest,
+    required this.contentSha256,
+    required this.byteSize,
+    required this.tick,
+  });
 
   final T value;
-  final Uint8List? digest;
-  final Uint8List rawBytes;
+  final Uint8List? inputDigest;
+  final Uint8List? contentSha256;
+  final int byteSize;
+  int tick;
 }
 
 String _normalizePath(String path) {
@@ -76,14 +84,70 @@ String _normalizePath(String path) {
   return isAbs ? '/$joined' : joined;
 }
 
+/// Caches parsed `index.json` manifests, `--base-keys` sets, and `.dill` bytes
+/// across persistent-worker requests within a single byte budget.
+///
+/// Bazel 9.3.0 expands tree artifacts (`declare_directory`, such as `.kmod` and
+/// `.koutline`) in `WorkRequest.inputs` into individual file entries, each with
+/// its own SHA-256 digest, and never sends an entry for the tree-artifact
+/// directory itself. Cache lookups therefore match exact or normalized file
+/// paths in `WorkRequest.inputs` and fall back to reading from disk when no
+/// per-file digest is present.
 class KernelLinkCache {
+  KernelLinkCache({
+    this.maxCacheBytes = defaultMaxCacheBytes,
+    int? maxIndexCacheBytes,
+    int? maxBaseKeysCacheBytes,
+    int? maxSingleDillBytes,
+  }) : maxIndexCacheBytes =
+           maxIndexCacheBytes ??
+           (maxCacheBytes < defaultMaxIndexCacheBytes
+               ? maxCacheBytes
+               : defaultMaxIndexCacheBytes),
+       maxBaseKeysCacheBytes =
+           maxBaseKeysCacheBytes ??
+           (maxCacheBytes < defaultMaxBaseKeysCacheBytes
+               ? maxCacheBytes
+               : defaultMaxBaseKeysCacheBytes),
+       maxSingleDillBytes =
+           maxSingleDillBytes ??
+           (maxCacheBytes < defaultMaxSingleDillBytes
+               ? maxCacheBytes
+               : defaultMaxSingleDillBytes);
+
+  static const int defaultMaxCacheBytes = 128 * 1024 * 1024;
+  static const int defaultMaxIndexCacheBytes = 8 * 1024 * 1024;
+  static const int defaultMaxBaseKeysCacheBytes = 8 * 1024 * 1024;
+  static const int defaultMaxSingleDillBytes = 16 * 1024 * 1024;
+
+  final int maxCacheBytes;
+  final int maxIndexCacheBytes;
+  final int maxBaseKeysCacheBytes;
+  final int maxSingleDillBytes;
+
   final _indexCache = <String, _CachedEntry<List<_Kernel>>>{};
   final _baseKeysCache = <String, _CachedEntry<Set<String>>>{};
   final _dillCache = <String, _CachedEntry<Uint8List>>{};
+  int _indexBytesTotal = 0;
+  int _baseKeysBytesTotal = 0;
   int _dillBytesTotal = 0;
-  static const int _maxDillCacheBytes = 128 * 1024 * 1024;
-  static const int _maxIndexEntries = 4096;
-  static const int _maxBaseKeysEntries = 256;
+  int _clock = 0;
+
+  int get indexBytes => _indexBytesTotal;
+  int get baseKeysBytes => _baseKeysBytesTotal;
+  int get dillBytes => _dillBytesTotal;
+  int get totalBytes =>
+      _indexBytesTotal + _baseKeysBytesTotal + _dillBytesTotal;
+
+  int get indexEntryCount => _indexCache.length;
+  int get baseKeysEntryCount => _baseKeysCache.length;
+  int get dillEntryCount => _dillCache.length;
+
+  /// Returns an unpinned copy of [bytes] when it views a larger [ByteBuffer].
+  static Uint8List _unpin(Uint8List bytes) =>
+      bytes.buffer.lengthInBytes == bytes.lengthInBytes
+      ? bytes
+      : Uint8List.fromList(bytes);
 
   static bool _sameBytes(Uint8List a, Uint8List b) {
     if (a.length != b.length) return false;
@@ -93,10 +157,8 @@ class KernelLinkCache {
     return true;
   }
 
-  static Uint8List? _lookupExactOrNormalized(
-    String path,
-    Map<String, Uint8List> inputs,
-  ) {
+  static Uint8List? _lookupDigest(String path, Map<String, Uint8List>? inputs) {
+    if (inputs == null) return null;
     final direct = inputs[path];
     if (direct != null && direct.isNotEmpty) return direct;
     final norm = _normalizePath(path);
@@ -111,41 +173,99 @@ class KernelLinkCache {
     return null;
   }
 
-  static Uint8List? _lookupDigest(String path, Map<String, Uint8List>? inputs) {
-    if (inputs == null) return null;
-    final direct = _lookupExactOrNormalized(path, inputs);
-    if (direct != null) return direct;
-    final norm = _normalizePath(path);
-    final slash = norm.lastIndexOf('/');
-    if (slash > 0) {
-      final parent = _lookupExactOrNormalized(norm.substring(0, slash), inputs);
-      if (parent != null) return parent;
+  void _evictForTotalBudget(int incomingBytes) {
+    while (totalBytes + incomingBytes > maxCacheBytes) {
+      String? oldestIndexKey;
+      int? oldestIndexTick;
+      if (_indexCache.isNotEmpty) {
+        final first = _indexCache.entries.first;
+        oldestIndexKey = first.key;
+        oldestIndexTick = first.value.tick;
+      }
+
+      String? oldestBaseKey;
+      int? oldestBaseTick;
+      if (_baseKeysCache.isNotEmpty) {
+        final first = _baseKeysCache.entries.first;
+        oldestBaseKey = first.key;
+        oldestBaseTick = first.value.tick;
+      }
+
+      String? oldestDillKey;
+      int? oldestDillTick;
+      if (_dillCache.isNotEmpty) {
+        final first = _dillCache.entries.first;
+        oldestDillKey = first.key;
+        oldestDillTick = first.value.tick;
+      }
+
+      if (oldestIndexTick == null &&
+          oldestBaseTick == null &&
+          oldestDillTick == null) {
+        break;
+      }
+
+      // Evict the globally least-recently-used entry across all three maps.
+      var minTick = oldestDillTick ?? oldestIndexTick ?? oldestBaseTick!;
+      if (oldestIndexTick != null && oldestIndexTick < minTick) {
+        minTick = oldestIndexTick;
+      }
+      if (oldestBaseTick != null && oldestBaseTick < minTick) {
+        minTick = oldestBaseTick;
+      }
+
+      if (oldestDillTick != null && oldestDillTick == minTick) {
+        final removed = _dillCache.remove(oldestDillKey!)!;
+        _dillBytesTotal -= removed.byteSize;
+      } else if (oldestIndexTick != null && oldestIndexTick == minTick) {
+        final removed = _indexCache.remove(oldestIndexKey!)!;
+        _indexBytesTotal -= removed.byteSize;
+      } else if (oldestBaseTick != null) {
+        final removed = _baseKeysCache.remove(oldestBaseKey!)!;
+        _baseKeysBytesTotal -= removed.byteSize;
+      }
     }
-    return null;
   }
 
   List<_Kernel> kernelsOf(String dir, Map<String, Uint8List>? inputs) {
+    final normDir = _normalizePath(dir);
     final indexPath = '$dir/index.json';
     final digest = _lookupDigest(indexPath, inputs);
-    final cached = _indexCache.remove(dir);
-    if (cached != null &&
-        digest != null &&
-        digest.isNotEmpty &&
-        cached.digest != null &&
-        cached.digest!.isNotEmpty &&
-        _sameBytes(digest, cached.digest!)) {
-      _indexCache[dir] = cached;
-      return cached.value;
+    final hasDigest = digest != null && digest.isNotEmpty;
+    final cached = _indexCache.remove(normDir);
+    if (cached != null) {
+      if (hasDigest &&
+          cached.inputDigest != null &&
+          _sameBytes(digest, cached.inputDigest!)) {
+        cached.tick = ++_clock;
+        _indexCache[normDir] = cached;
+        return cached.value;
+      }
+      _indexBytesTotal -= cached.byteSize;
     }
+
     final bytes = File(indexPath).readAsBytesSync();
-    if (cached != null && _sameBytes(bytes, cached.rawBytes)) {
-      _indexCache[dir] = _CachedEntry(
-        cached.value,
-        (digest != null && digest.isNotEmpty) ? digest : cached.digest,
-        cached.rawBytes,
-      );
+    final entryBytes = bytes.length;
+    final contentSha256 = hasDigest ? null : _sha256Of(bytes);
+    if (!hasDigest &&
+        cached != null &&
+        cached.byteSize == entryBytes &&
+        cached.contentSha256 != null &&
+        _sameBytes(contentSha256!, cached.contentSha256!)) {
+      if (entryBytes <= maxIndexCacheBytes && entryBytes <= maxCacheBytes) {
+        while (_indexBytesTotal + entryBytes > maxIndexCacheBytes &&
+            _indexCache.isNotEmpty) {
+          final removed = _indexCache.remove(_indexCache.keys.first)!;
+          _indexBytesTotal -= removed.byteSize;
+        }
+        _evictForTotalBudget(entryBytes);
+        cached.tick = ++_clock;
+        _indexCache[normDir] = cached;
+        _indexBytesTotal += entryBytes;
+      }
       return cached.value;
     }
+
     final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
     final kernels = [
       for (final scc in (json['sccs'] as List).cast<Map<String, dynamic>>())
@@ -156,99 +276,198 @@ class KernelLinkCache {
           (scc['imports'] as List).cast<String>(),
         ),
     ];
-    while (_indexCache.length >= _maxIndexEntries && _indexCache.isNotEmpty) {
-      _indexCache.remove(_indexCache.keys.first);
+    if (entryBytes <= maxIndexCacheBytes && entryBytes <= maxCacheBytes) {
+      while (_indexBytesTotal + entryBytes > maxIndexCacheBytes &&
+          _indexCache.isNotEmpty) {
+        final removed = _indexCache.remove(_indexCache.keys.first)!;
+        _indexBytesTotal -= removed.byteSize;
+      }
+      _evictForTotalBudget(entryBytes);
+      _indexCache[normDir] = _CachedEntry(
+        value: kernels,
+        inputDigest: hasDigest ? _unpin(digest) : null,
+        contentSha256: contentSha256,
+        byteSize: entryBytes,
+        tick: ++_clock,
+      );
+      _indexBytesTotal += entryBytes;
     }
-    _indexCache[dir] = _CachedEntry(
-      kernels,
-      (digest != null && digest.isNotEmpty) ? digest : null,
-      bytes,
-    );
     return kernels;
   }
 
   Set<String> baseKeysOf(String path, Map<String, Uint8List>? inputs) {
     final key = _normalizePath(path);
     final digest = _lookupDigest(path, inputs);
+    final hasDigest = digest != null && digest.isNotEmpty;
     final cached = _baseKeysCache.remove(key);
-    if (cached != null &&
-        digest != null &&
-        digest.isNotEmpty &&
-        cached.digest != null &&
-        cached.digest!.isNotEmpty &&
-        _sameBytes(digest, cached.digest!)) {
-      _baseKeysCache[key] = cached;
-      return cached.value;
+    if (cached != null) {
+      if (hasDigest &&
+          cached.inputDigest != null &&
+          _sameBytes(digest, cached.inputDigest!)) {
+        cached.tick = ++_clock;
+        _baseKeysCache[key] = cached;
+        return cached.value;
+      }
+      _baseKeysBytesTotal -= cached.byteSize;
     }
+
     final bytes = File(path).readAsBytesSync();
-    if (cached != null && _sameBytes(bytes, cached.rawBytes)) {
-      _baseKeysCache[key] = _CachedEntry(
-        cached.value,
-        (digest != null && digest.isNotEmpty) ? digest : cached.digest,
-        cached.rawBytes,
-      );
+    final entryBytes = bytes.length;
+    final contentSha256 = hasDigest ? null : _sha256Of(bytes);
+    if (!hasDigest &&
+        cached != null &&
+        cached.byteSize == entryBytes &&
+        cached.contentSha256 != null &&
+        _sameBytes(contentSha256!, cached.contentSha256!)) {
+      if (entryBytes <= maxBaseKeysCacheBytes && entryBytes <= maxCacheBytes) {
+        while (_baseKeysBytesTotal + entryBytes > maxBaseKeysCacheBytes &&
+            _baseKeysCache.isNotEmpty) {
+          final removed = _baseKeysCache.remove(_baseKeysCache.keys.first)!;
+          _baseKeysBytesTotal -= removed.byteSize;
+        }
+        _evictForTotalBudget(entryBytes);
+        cached.tick = ++_clock;
+        _baseKeysCache[key] = cached;
+        _baseKeysBytesTotal += entryBytes;
+      }
       return cached.value;
     }
+
     final keys = <String>{};
     for (final line in const LineSplitter().convert(utf8.decode(bytes))) {
       final trimmed = line.trim();
       if (trimmed.isNotEmpty) keys.add(trimmed);
     }
-    while (_baseKeysCache.length >= _maxBaseKeysEntries &&
-        _baseKeysCache.isNotEmpty) {
-      _baseKeysCache.remove(_baseKeysCache.keys.first);
+    if (entryBytes <= maxBaseKeysCacheBytes && entryBytes <= maxCacheBytes) {
+      while (_baseKeysBytesTotal + entryBytes > maxBaseKeysCacheBytes &&
+          _baseKeysCache.isNotEmpty) {
+        final removed = _baseKeysCache.remove(_baseKeysCache.keys.first)!;
+        _baseKeysBytesTotal -= removed.byteSize;
+      }
+      _evictForTotalBudget(entryBytes);
+      _baseKeysCache[key] = _CachedEntry(
+        value: keys,
+        inputDigest: hasDigest ? _unpin(digest) : null,
+        contentSha256: contentSha256,
+        byteSize: entryBytes,
+        tick: ++_clock,
+      );
+      _baseKeysBytesTotal += entryBytes;
     }
-    _baseKeysCache[key] = _CachedEntry(
-      keys,
-      (digest != null && digest.isNotEmpty) ? digest : null,
-      bytes,
-    );
     return keys;
   }
 
   Uint8List dillBytesOf(String path, Map<String, Uint8List>? inputs) {
     final key = _normalizePath(path);
     final digest = _lookupDigest(path, inputs);
+    final hasDigest = digest != null && digest.isNotEmpty;
     final cached = _dillCache.remove(key);
     if (cached != null) {
-      if (digest != null &&
-          digest.isNotEmpty &&
-          cached.digest != null &&
-          cached.digest!.isNotEmpty &&
-          _sameBytes(digest, cached.digest!)) {
+      if (hasDigest &&
+          cached.inputDigest != null &&
+          _sameBytes(digest, cached.inputDigest!)) {
+        cached.tick = ++_clock;
         _dillCache[key] = cached;
         return cached.value;
       }
-      _dillBytesTotal -= cached.value.length;
+      _dillBytesTotal -= cached.byteSize;
     }
-    final bytes = File(path).readAsBytesSync();
-    if (cached != null && _sameBytes(bytes, cached.value)) {
-      final reused = _CachedEntry(
-        cached.value,
-        (digest != null && digest.isNotEmpty) ? digest : cached.digest,
-        cached.value,
-      );
-      _dillCache[key] = reused;
-      _dillBytesTotal += cached.value.length;
-      return cached.value;
-    }
-    if (bytes.length <= 16 * 1024 * 1024) {
-      while (_dillBytesTotal + bytes.length > _maxDillCacheBytes &&
+
+    final bytes = _unpin(File(path).readAsBytesSync());
+    final entryBytes = bytes.length;
+    if (entryBytes <= maxSingleDillBytes && entryBytes <= maxCacheBytes) {
+      while (_dillBytesTotal + entryBytes > maxCacheBytes &&
           _dillCache.isNotEmpty) {
         final oldestKey = _dillCache.keys.first;
         final removed = _dillCache.remove(oldestKey)!;
-        _dillBytesTotal -= removed.value.length;
+        _dillBytesTotal -= removed.byteSize;
       }
+      _evictForTotalBudget(entryBytes);
       _dillCache[key] = _CachedEntry(
-        bytes,
-        (digest != null && digest.isNotEmpty) ? digest : null,
-        bytes,
+        value: bytes,
+        inputDigest: hasDigest ? _unpin(digest) : null,
+        contentSha256: null,
+        byteSize: entryBytes,
+        tick: ++_clock,
       );
-      _dillBytesTotal += bytes.length;
+      _dillBytesTotal += entryBytes;
     }
     return bytes;
   }
 }
+
+Uint8List _sha256Of(Uint8List message) {
+  final h = [
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, //
+    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+  ];
+  final paddedLength = ((message.length + 9 + 63) ~/ 64) * 64;
+  final padded = Uint8List(paddedLength)..setRange(0, message.length, message);
+  padded[message.length] = 0x80;
+  final bits = message.length * 8;
+  final view = ByteData.sublistView(padded);
+  view.setUint32(paddedLength - 8, bits ~/ 0x100000000);
+  view.setUint32(paddedLength - 4, bits & 0xffffffff);
+
+  final w = List<int>.filled(64, 0);
+  for (var block = 0; block < paddedLength; block += 64) {
+    for (var i = 0; i < 16; i++) {
+      w[i] = view.getUint32(block + i * 4);
+    }
+    for (var i = 16; i < 64; i++) {
+      final s0 = _rotr(w[i - 15], 7) ^ _rotr(w[i - 15], 18) ^ (w[i - 15] >> 3);
+      final s1 = _rotr(w[i - 2], 17) ^ _rotr(w[i - 2], 19) ^ (w[i - 2] >> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) & 0xffffffff;
+    }
+    var a = h[0], b = h[1], c = h[2], d = h[3];
+    var e = h[4], f = h[5], g = h[6], hh = h[7];
+    for (var i = 0; i < 64; i++) {
+      final s1 = _rotr(e, 6) ^ _rotr(e, 11) ^ _rotr(e, 25);
+      final ch = (e & f) ^ ((~e) & g);
+      final t1 = (hh + s1 + ch + _sha256K[i] + w[i]) & 0xffffffff;
+      final s0 = _rotr(a, 2) ^ _rotr(a, 13) ^ _rotr(a, 22);
+      final maj = (a & b) ^ (a & c) ^ (b & c);
+      final t2 = (s0 + maj) & 0xffffffff;
+      hh = g;
+      g = f;
+      f = e;
+      e = (d + t1) & 0xffffffff;
+      d = c;
+      c = b;
+      b = a;
+      a = (t1 + t2) & 0xffffffff;
+    }
+    h[0] = (h[0] + a) & 0xffffffff;
+    h[1] = (h[1] + b) & 0xffffffff;
+    h[2] = (h[2] + c) & 0xffffffff;
+    h[3] = (h[3] + d) & 0xffffffff;
+    h[4] = (h[4] + e) & 0xffffffff;
+    h[5] = (h[5] + f) & 0xffffffff;
+    h[6] = (h[6] + g) & 0xffffffff;
+    h[7] = (h[7] + hh) & 0xffffffff;
+  }
+  final out = ByteData(32);
+  for (var i = 0; i < 8; i++) {
+    out.setUint32(i * 4, h[i]);
+  }
+  return out.buffer.asUint8List();
+}
+
+int _rotr(int x, int n) => ((x >> n) | (x << (32 - n))) & 0xffffffff;
+
+const _sha256K = <int>[
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, //
+  0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+  0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
+  0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
+  0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+  0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+  0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
+  0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+  0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+];
 
 List<String> _expandParamFiles(List<String> args) {
   final out = <String>[];
@@ -460,6 +679,11 @@ int linkOne(
   return 0;
 }
 
+/// Decodes the `inputs` map from a raw `WorkRequest` protobuf payload,
+/// copying each digest out of [bytes] so the request buffer is not pinned.
+Map<String, Uint8List> decodeKernelLinkWorkRequestInputs(Uint8List bytes) =>
+    _WorkRequest.read(bytes).inputs;
+
 final class _WorkRequest {
   _WorkRequest({
     required this.arguments,
@@ -489,7 +713,7 @@ final class _WorkRequest {
               case 1:
                 path = nested.string();
               case 2:
-                digest = nested.bytes();
+                digest = Uint8List.fromList(nested.bytes());
               default:
                 nested.skip(inputTag & 7);
             }
@@ -590,8 +814,14 @@ final class _Frames extends Stream<Uint8List> {
             shift += 7;
           }
           if (buf.length < pos + len) return;
-          controller.add(Uint8List.sublistView(buf, pos, pos + len));
-          buf = Uint8List.sublistView(buf, pos + len);
+          final frame = Uint8List.fromList(
+            Uint8List.sublistView(buf, pos, pos + len),
+          );
+          final nextStart = pos + len;
+          buf = nextStart == buf.length
+              ? Uint8List(0)
+              : Uint8List.fromList(Uint8List.sublistView(buf, nextStart));
+          controller.add(frame);
         }
       },
       onError: controller.addError,

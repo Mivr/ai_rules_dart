@@ -12,13 +12,18 @@ import 'package:test/test.dart';
 
 import 'dill_outline.dart'
     show Tag, stripDillToOutline, supportedKernelFormatVersions;
-import 'kernel_link.dart' show KernelLinkCache, linkOne;
+import 'kernel_link.dart'
+    show KernelLinkCache, decodeKernelLinkWorkRequestInputs, linkOne;
 import 'kernel_module.dart'
     show
+        KernelModuleCache,
         ModuleCompiler,
         ModuleOutcome,
         compileModule,
+        decodeKernelModuleWorkRequestInputs,
+        ensureSummaryDigests,
         scanDirectives,
+        sha256Of,
         stripSourceCodeFromDill;
 
 const _prefix = 'org-dartlang-root:///';
@@ -2645,6 +2650,553 @@ void main(List<String> args) {
     }
     expect(seenSdkVersions, containsAll(['3.13.5', '3.13.4']));
   });
+
+  test('KernelLinkCache enforces byte bounds across all maps, evicts globally by LRU, and unpins WorkRequest buffers', () {
+    // Encode a WorkRequest protobuf payload inside a larger 64 KB buffer so
+    // any sublistView slice would pin the 64 KB buffer unless copied.
+    final rawReq = _encodeWorkRequestForTest(
+      arguments: ['out.dill', 'mod_a'],
+      inputs: {
+        'mod_a/0.dill': Uint8List.fromList([1, 2, 3, 4]),
+        'mod_a/index.json': Uint8List.fromList([5, 6, 7, 8]),
+      },
+    );
+    final oversizedFrame = Uint8List(64 * 1024);
+    oversizedFrame.setRange(128, 128 + rawReq.length, rawReq);
+    final viewSlice = Uint8List.sublistView(
+      oversizedFrame,
+      128,
+      128 + rawReq.length,
+    );
+    expect(viewSlice.buffer.lengthInBytes, 64 * 1024);
+
+    final decodedInputs = decodeKernelLinkWorkRequestInputs(viewSlice);
+    for (final digest in decodedInputs.values) {
+      expect(
+        digest.buffer.lengthInBytes,
+        digest.lengthInBytes,
+        reason:
+            'decoded WorkRequest digest must not pin the 64 KB frame buffer',
+      );
+    }
+
+    // Verify KernelLinkCache byte bounds and global LRU eviction across
+    // _indexCache, _baseKeysCache, and _dillCache.
+    final cache = KernelLinkCache(
+      maxCacheBytes: 180,
+      maxIndexCacheBytes: 150,
+      maxBaseKeysCacheBytes: 60,
+      maxSingleDillBytes: 80,
+    );
+
+    final mod1 = Directory('${_root.path}/m1')..createSync(recursive: true);
+    final mod2 = Directory('${_root.path}/m2')..createSync(recursive: true);
+    final indexJson = jsonEncode({
+      'version': 1,
+      'sccs': [
+        {
+          'dill': '0.dill',
+          'defines': ['pkg/lib/a.dart'],
+          'imports': <String>[],
+        },
+      ],
+    });
+    File('${mod1.path}/index.json').writeAsStringSync(indexJson);
+    File('${mod2.path}/index.json').writeAsStringSync(indexJson);
+
+    // Oversized dill (> maxSingleDillBytes = 80) is returned but not cached.
+    final bigDill = File('${mod1.path}/big.dill')
+      ..writeAsBytesSync(List<int>.filled(100, 7));
+    final bigBytes = cache.dillBytesOf(bigDill.path, {
+      bigDill.path: Uint8List.fromList([9, 9]),
+    });
+    expect(bigBytes.length, 100);
+    expect(cache.dillBytes, 0);
+    expect(cache.dillEntryCount, 0);
+
+    // Oversized baseKeys (> maxBaseKeysCacheBytes = 60) is returned but not cached.
+    final bigBase = File('${_root.path}/big.keys')
+      ..writeAsStringSync(
+        '${List<String>.filled(20, 'pkg/lib/x.dart').join('\n')}\n',
+      );
+    expect(bigBase.lengthSync(), greaterThan(60));
+    expect(cache.baseKeysOf(bigBase.path, null), {'pkg/lib/x.dart'});
+    expect(cache.baseKeysBytes, 0);
+    expect(cache.baseKeysEntryCount, 0);
+
+    // Populate dill1 (50 B), base1 (30 B), index1 (~75 B) => total ~155 B <= 180 B.
+    final dill1 = File('${mod1.path}/0.dill')
+      ..writeAsBytesSync(List<int>.filled(50, 1));
+    final base1 = File('${_root.path}/b1.keys')
+      ..writeAsStringSync('${'a' * 29}\n');
+    final d1Digest = Uint8List.fromList([1]);
+    final b1Digest = Uint8List.fromList([2]);
+    final idx1Digest = Uint8List.fromList([3]);
+
+    cache.dillBytesOf(dill1.path, {dill1.path: d1Digest});
+    cache.baseKeysOf(base1.path, {base1.path: b1Digest});
+    cache.kernelsOf(mod1.path, {'${mod1.path}/index.json': idx1Digest});
+    expect(cache.dillEntryCount, 1);
+    expect(cache.baseKeysEntryCount, 1);
+    expect(cache.indexEntryCount, 1);
+    expect(cache.totalBytes, lessThanOrEqualTo(180));
+
+    // Touch dill1 so base1 becomes the globally oldest entry, then insert dill2 (50 B).
+    // Total would be 50 + 30 + ~75 + 50 > 180, so base1 (and then index1 if needed)
+    // is evicted to stay within maxCacheBytes (180).
+    cache.dillBytesOf(dill1.path, {dill1.path: d1Digest});
+    final dill2 = File('${mod2.path}/0.dill')
+      ..writeAsBytesSync(List<int>.filled(50, 2));
+    cache.dillBytesOf(dill2.path, {
+      dill2.path: Uint8List.fromList([4]),
+    });
+    expect(cache.totalBytes, lessThanOrEqualTo(180));
+    expect(
+      cache.baseKeysEntryCount,
+      0,
+      reason: 'oldest global entry (base1) must be evicted first',
+    );
+    expect(
+      cache.dillEntryCount,
+      2,
+      reason: 'recently touched dill1 and new dill2 must remain',
+    );
+  });
+
+  test('KernelLinkCache uses per-file tree-artifact digests and ignores parent-directory digests', () {
+    // Bazel 9.3.0 expands tree artifacts (.kmod / .koutline) in WorkRequest.inputs
+    // into individual file entries (<dir>/0.dill, <dir>/index.json) and never
+    // sends an Input entry for <dir>. Verify that passing a parent-directory
+    // entry never causes a false cache hit when constituent files change.
+    final cache = KernelLinkCache();
+    final modDir = Directory('${_root.path}/tree_mod')
+      ..createSync(recursive: true);
+    final dillFile = File('${modDir.path}/0.dill')..writeAsBytesSync([1, 2, 3]);
+    final parentDigest = Uint8List.fromList([0xaa, 0xbb, 0xcc]);
+    final fileDigest1 = Uint8List.fromList([0x11, 0x22]);
+    final fileDigest2 = Uint8List.fromList([0x33, 0x44]);
+
+    // 1. With only a parent directory entry in inputs, no per-file digest exists,
+    // so modifying 0.dill on disk is always observed.
+    expect(cache.dillBytesOf(dillFile.path, {modDir.path: parentDigest}), [
+      1,
+      2,
+      3,
+    ]);
+    dillFile.writeAsBytesSync([4, 5, 6]);
+    expect(
+      cache.dillBytesOf(dillFile.path, {modDir.path: parentDigest}),
+      [4, 5, 6],
+      reason:
+          'parent directory digest must not cause a stale cache hit for 0.dill',
+    );
+
+    // 2. With a per-file entry in inputs (Bazel 9.3.0 tree-artifact expansion),
+    // matching digest hits the cache without reading disk, and changing digest
+    // invalidates the cache.
+    expect(cache.dillBytesOf(dillFile.path, {dillFile.path: fileDigest1}), [
+      4,
+      5,
+      6,
+    ]);
+    dillFile.writeAsBytesSync([7, 8, 9]);
+    expect(cache.dillBytesOf(dillFile.path, {dillFile.path: fileDigest1}), [
+      4,
+      5,
+      6,
+    ], reason: 'matching per-file digest must hit cache without reading disk');
+    expect(
+      cache.dillBytesOf(dillFile.path, {dillFile.path: fileDigest2}),
+      [7, 8, 9],
+      reason:
+          'changed per-file digest must invalidate cache and read new bytes',
+    );
+  });
+
+  test('ensureSummaryDigests and compileModule reuse Bazel 9.3.0 per-file tree-artifact digests without re-hashing from disk and hash intra-module SCCs in memory', () async {
+    // 1. Verify ensureSummaryDigests reuses existing digests (exact and normalized)
+    // without touching disk, and replaces empty-digest entries when hashing fallback runs.
+    final summaryFile = File('${_root.path}/dep.koutline/0.dill')
+      ..parent.createSync(recursive: true)
+      ..writeAsBytesSync([10, 20, 30, 40]);
+    final sentinelDigest = Uint8List.fromList(
+      utf8.encode('sentinel-bazel-digest-0123456789'),
+    );
+
+    // Even if the file on disk is deleted, ensureSummaryDigests succeeds when
+    // the digest is already present in inputs (under normalized path).
+    final prevCwd = Directory.current;
+    Directory.current = _root;
+    try {
+      summaryFile.deleteSync();
+      final resultInputs = await ensureSummaryDigests(
+        ['--input-summary', './dep.koutline/0.dill'],
+        [_encodeInputForTest('dep.koutline/0.dill', sentinelDigest)],
+      );
+      final decoded = [
+        for (final raw in resultInputs) _decodeInputForTest(raw),
+      ];
+      expect(
+        decoded.where((e) => e.path == './dep.koutline/0.dill').single.digest,
+        equals(sentinelDigest),
+        reason: 'normalized path must reuse existing WorkRequest.inputs digest without reading disk',
+      );
+
+      // When an input entry has an empty digest, ensureSummaryDigests hashes from disk
+      // and replaces the empty-digest entry in-place rather than leaving a duplicate.
+      summaryFile.writeAsBytesSync([10, 20, 30, 40]);
+      final expectedSha = sha256Of(Uint8List.fromList([10, 20, 30, 40]));
+      final replacedInputs = await ensureSummaryDigests(
+        ['--input-summary', 'dep.koutline/0.dill'],
+        [_encodeInputForTest('dep.koutline/0.dill', Uint8List(0))],
+      );
+      expect(replacedInputs.length, 1);
+      expect(
+        _decodeInputForTest(replacedInputs.single).digest,
+        equals(expectedSha),
+      );
+    } finally {
+      Directory.current = prevCwd;
+    }
+
+    // 2. Verify compileModule reuses WorkRequest.inputs digest for staged tree-artifact
+    // sources (<koutline>/sources/<key>) without re-hashing from disk, and computes
+    // intra-module SCC outline digests in memory.
+    _write(
+      'pkg/lib/part_child.dart',
+      "part of 'part_parent.dart';\nconst int y = 1;\n",
+    );
+    _write('pkg/lib/scc_a.dart', 'class SccA {}\n');
+    _write(
+      'pkg/lib/scc_b.dart',
+      "import 'scc_a.dart';\nimport 'part_parent.dart';\nclass SccB extends SccA {}\n",
+    );
+
+    // Stage `part_parent.dart` ONLY in a dependency `.koutline/sources/` tree artifact.
+    final depKoutline = Directory('${_root.path}/dep_parent.koutline');
+    final stagedFile =
+        File('${depKoutline.path}/sources/pkg/lib/part_parent.dart')
+          ..parent.createSync(recursive: true)
+          ..writeAsStringSync("part 'part_child.dart';\nint x() => y;\n");
+    File('${depKoutline.path}/index.json').writeAsStringSync(
+      jsonEncode({
+        'version': 1,
+        'sccs': <Object>[],
+        'excluded': ['pkg/lib/part_parent.dart'],
+      }),
+    );
+
+    final stagedSentinelDigest = Uint8List.fromList(
+      utf8.encode('staged-tree-artifact-digest-1234'),
+    );
+    final inputRecorder = _InputRecordingCompiler();
+    final cache = KernelModuleCache();
+    final outDir = '${_root.path}/out/multi_scc.kmod';
+    final outlineDir = '${_root.path}/out/multi_scc.koutline';
+    final excludedPath = '$outDir.vm_excluded.txt';
+    final log = StringBuffer();
+
+    final prevCwd2 = Directory.current;
+    Directory.current = _root;
+    try {
+      final code = await compileModule(
+        [
+          '--source',
+          _uri('pkg/lib/part_child.dart'),
+          '--source',
+          _uri('pkg/lib/scc_a.dart'),
+          '--source',
+          _uri('pkg/lib/scc_b.dart'),
+          '--input-source',
+          'pkg/lib/part_parent.dart',
+          '--input-kmod',
+          'dep_parent.koutline',
+          '--output',
+          outDir,
+          '--output-outline',
+          outlineDir,
+          '--excluded-output',
+          excludedPath,
+          '--packages-file',
+          '${_root.path}/package_config.json',
+          '--libraries-json',
+          '${_root.path}/libraries.json',
+          '--multi-root',
+          _root.path,
+          '--target',
+          'vm',
+        ],
+        inputRecorder,
+        log,
+        [
+          // Pass under `./`-prefixed normalized path so compileModule looks up
+          // `dep_parent.koutline/sources/pkg/lib/part_parent.dart` in inputDigests.
+          _encodeInputForTest(
+            './dep_parent.koutline/sources/pkg/lib/part_parent.dart',
+            stagedSentinelDigest,
+          ),
+          _encodeInputForTest(
+            '${_root.path}/pkg/lib/part_child.dart',
+            Uint8List.fromList([1]),
+          ),
+          _encodeInputForTest(
+            '${_root.path}/pkg/lib/scc_a.dart',
+            Uint8List.fromList([2]),
+          ),
+          _encodeInputForTest(
+            '${_root.path}/pkg/lib/scc_b.dart',
+            Uint8List.fromList([3]),
+          ),
+        ],
+        cache: cache,
+      );
+      expect(code, 0, reason: log.toString());
+    } finally {
+      Directory.current = prevCwd2;
+    }
+    expect(stagedFile.existsSync(), isTrue);
+    expect(inputRecorder.calls.length, 3);
+
+    // Call 0 compiles `part_parent.dart` + `part_child.dart` (`0.dill`), Call 1 compiles `scc_a.dart` (`1.dill`),
+    // Call 2 compiles `scc_b.dart` (`2.dill`) against `--input-summary` of `0.dill` and `1.dill`.
+    final call0Inputs = {
+      for (final raw in inputRecorder.callInputs[0])
+        _decodeInputForTest(raw).path: _decodeInputForTest(raw).digest,
+    };
+    expect(
+      call0Inputs['dep_parent.koutline/sources/pkg/lib/part_parent.dart'],
+      equals(stagedSentinelDigest),
+      reason: 'staged tree-artifact source must reuse its WorkRequest.inputs digest without re-hashing',
+    );
+
+    final call2Inputs = {
+      for (final raw in inputRecorder.callInputs[2])
+        _decodeInputForTest(raw).path: _decodeInputForTest(raw).digest,
+    };
+    final expectedOutline0Sha = sha256Of(
+      File('$outlineDir/0.dill').readAsBytesSync(),
+    );
+    final expectedOutline1Sha = sha256Of(
+      File('$outlineDir/1.dill').readAsBytesSync(),
+    );
+    expect(
+      call2Inputs['$outlineDir/0.dill'],
+      equals(expectedOutline0Sha),
+      reason: 'intra-module SCC 0 outline digest must be passed in memory to dependent SCC 2',
+    );
+    expect(
+      call2Inputs['$outlineDir/1.dill'],
+      equals(expectedOutline1Sha),
+      reason: 'intra-module SCC 1 outline digest must be passed in memory to dependent SCC 2',
+    );
+  });
+
+  test('KernelModuleCache enforces byte bounds, detects same-(size, mtime) mutations when digests are absent, and unpins WorkRequest inputs', () async {
+    // Verify decodeKernelModuleWorkRequestInputs unpins slices from a larger frame buffer.
+    final rawReq = _encodeWorkRequestForTest(
+      arguments: ['--output', 'out'],
+      inputs: {
+        'dep.koutline/index.json': Uint8List.fromList([1, 2, 3, 4]),
+      },
+    );
+    final bigBuf = Uint8List(32 * 1024)
+      ..setRange(64, 64 + rawReq.length, rawReq);
+    final view = Uint8List.sublistView(bigBuf, 64, 64 + rawReq.length);
+    final decodedList = decodeKernelModuleWorkRequestInputs(view);
+    expect(decodedList, hasLength(1));
+    expect(
+      decodedList.single.buffer.lengthInBytes,
+      decodedList.single.lengthInBytes,
+      reason: 'decodeKernelModuleWorkRequestInputs must unpin Input slices from the frame buffer',
+    );
+
+    // Verify KernelModuleCache detects in-place mutations with identical size and mtime
+    // when digests are absent, and respects maxCacheBytes.
+    final cache = KernelModuleCache(maxCacheBytes: 512);
+    final depDir = Directory('${_root.path}/dep_cache.koutline')
+      ..createSync(recursive: true);
+    final indexFile = File('${depDir.path}/index.json');
+    final fixedTime = DateTime.fromMillisecondsSinceEpoch(1700000000000);
+
+    final idxV1 = jsonEncode({
+      'version': 1,
+      'sccs': [
+        {
+          'dill': '0.dill',
+          'defines': ['dep/lib/one.dart'],
+          'imports': <String>[],
+        },
+      ],
+    });
+    final idxV2 = jsonEncode({
+      'version': 1,
+      'sccs': [
+        {
+          'dill': '1.dill',
+          'defines': ['dep/lib/one.dart'],
+          'imports': <String>[],
+        },
+      ],
+    });
+    expect(idxV1.length, idxV2.length);
+    indexFile.writeAsStringSync(idxV1);
+    indexFile.setLastModifiedSync(fixedTime);
+
+    _write('dep/lib/one.dart', 'class One {}\n');
+    _write('pkg/lib/consumer.dart', "import 'package:dep/one.dart';\n");
+
+    Future<List<String>> runWithCache() async {
+      final rec = _Recorder();
+      final log = StringBuffer();
+      final code = await compileModule(
+        [
+          '--source',
+          _uri('pkg/lib/consumer.dart'),
+          '--input-kmod',
+          depDir.path,
+          '--output',
+          '${_root.path}/out/consumer.kmod',
+          '--excluded-output',
+          '${_root.path}/out/consumer.vm_excluded.txt',
+          '--packages-file',
+          '${_root.path}/package_config.json',
+          '--libraries-json',
+          '${_root.path}/libraries.json',
+          '--multi-root',
+          _root.path,
+          '--target',
+          'vm',
+        ],
+        rec,
+        log,
+        const [],
+        cache: cache,
+      );
+      expect(code, 0, reason: log.toString());
+      return _valuesAfter(rec.calls.single, '--input-summary');
+    }
+
+    // When dep_cache.koutline maps `dep/lib/one.dart` to `0.dill`, `consumer.dart`
+    // links against `dep_cache.koutline/0.dill`.
+    expect(await runWithCache(), ['${depDir.path}/0.dill']);
+    expect(cache.totalBytes, lessThanOrEqualTo(512));
+    expect(cache.indexEntryCount, 1);
+
+    // Mutate index.json in-place with identical size and mtime so `dep/lib/one.dart`
+    // maps to `1.dill`.
+    indexFile.writeAsStringSync(idxV2);
+    indexFile.setLastModifiedSync(fixedTime);
+    expect(indexFile.statSync().size, idxV1.length);
+    expect(indexFile.statSync().modified, fixedTime);
+
+    expect(
+      await runWithCache(),
+      ['${depDir.path}/1.dill'],
+      reason: 'KernelModuleCache must detect same-(size, mtime) index.json mutation when digest is absent',
+    );
+  });
+}
+
+class _InputRecordingCompiler implements ModuleCompiler {
+  final List<List<String>> calls = [];
+  final List<List<Uint8List>> callInputs = [];
+
+  @override
+  Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
+    calls.add(args);
+    callInputs.add([for (final i in inputs) Uint8List.fromList(i)]);
+    final outIdx = args.indexOf('--output');
+    if (outIdx != -1 && outIdx + 1 < args.length) {
+      final outPath = args[outIdx + 1];
+      File(outPath)
+        ..parent.createSync(recursive: true)
+        ..writeAsBytesSync(_buildMinimalFieldDill());
+    }
+    return const ModuleOutcome(0, '');
+  }
+
+  @override
+  Future<void> close() async {}
+}
+
+Uint8List _encodeVarintForTest(int value) {
+  final out = BytesBuilder();
+  var v = value;
+  while (v >= 0x80) {
+    out.addByte((v & 0x7f) | 0x80);
+    v >>= 7;
+  }
+  out.addByte(v);
+  return out.toBytes();
+}
+
+Uint8List _encodeInputForTest(String path, Uint8List digest) {
+  final out = BytesBuilder();
+  final pathBytes = utf8.encode(path);
+  out.add(_encodeVarintForTest((1 << 3) | 2));
+  out.add(_encodeVarintForTest(pathBytes.length));
+  out.add(pathBytes);
+  if (digest.isNotEmpty) {
+    out.add(_encodeVarintForTest((2 << 3) | 2));
+    out.add(_encodeVarintForTest(digest.length));
+    out.add(digest);
+  }
+  return out.toBytes();
+}
+
+({String path, Uint8List digest}) _decodeInputForTest(Uint8List bytes) {
+  var pos = 0;
+  int readVarint() {
+    var result = 0;
+    var shift = 0;
+    while (true) {
+      final b = bytes[pos++];
+      result |= (b & 0x7f) << shift;
+      if ((b & 0x80) == 0) return result;
+      shift += 7;
+    }
+  }
+
+  var path = '';
+  var digest = Uint8List(0);
+  while (pos < bytes.length) {
+    final tag = readVarint();
+    final field = tag >> 3;
+    final wire = tag & 7;
+    if (wire == 2) {
+      final len = readVarint();
+      final slice = Uint8List.sublistView(bytes, pos, pos + len);
+      pos += len;
+      if (field == 1) {
+        path = utf8.decode(slice);
+      } else if (field == 2) {
+        digest = Uint8List.fromList(slice);
+      }
+    } else if (wire == 0) {
+      readVarint();
+    }
+  }
+  return (path: path, digest: digest);
+}
+
+Uint8List _encodeWorkRequestForTest({
+  required List<String> arguments,
+  required Map<String, Uint8List> inputs,
+}) {
+  final out = BytesBuilder();
+  for (final arg in arguments) {
+    final argBytes = utf8.encode(arg);
+    out.add(_encodeVarintForTest((1 << 3) | 2));
+    out.add(_encodeVarintForTest(argBytes.length));
+    out.add(argBytes);
+  }
+  for (final entry in inputs.entries) {
+    final inputMsg = _encodeInputForTest(entry.key, entry.value);
+    out.add(_encodeVarintForTest((2 << 3) | 2));
+    out.add(_encodeVarintForTest(inputMsg.length));
+    out.add(inputMsg);
+  }
+  return out.toBytes();
 }
 
 Uint8List _buildMinimalDillWithSourceAndMetadata({required int srcLen}) {

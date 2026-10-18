@@ -175,6 +175,7 @@ Future<void> _serve(
   Duration? requestTimeout,
 ) async {
   final requests = _Frames(stdin);
+  final cache = KernelModuleCache();
   final compiler = _Persistent(
     dartaotruntime,
     kernelWorker,
@@ -198,6 +199,7 @@ Future<void> _serve(
           compiler,
           log,
           request.inputs,
+          cache: cache,
         );
       } catch (error, stack) {
         log.writeln('kernel_module: $error\n$stack');
@@ -223,8 +225,9 @@ Future<int> compileModule(
   List<String> rawArgs,
   ModuleCompiler compiler,
   StringBuffer log,
-  List<Uint8List> inputs,
-) async {
+  List<Uint8List> inputs, {
+  KernelModuleCache? cache,
+}) async {
   final base = <String>[];
   final sources = <String>[];
   final inputSources = <String>[];
@@ -315,11 +318,46 @@ Future<int> compileModule(
     );
     return 64;
   }
+
+  final Set<String>? workerInputPaths;
+  final Map<String, Uint8List>? inputDigests;
+  final exactInputPathsWithDigest = <String>{};
+  if (inputs.isEmpty) {
+    workerInputPaths = null;
+    inputDigests = null;
+  } else {
+    final paths = <String>{};
+    final digests = <String, Uint8List>{};
+    for (final raw in inputs) {
+      final decoded = _decodeInput(raw);
+      if (decoded.path.isEmpty) continue;
+      for (final spelling in _inputSpellings(decoded.path)) {
+        paths.add(spelling);
+      }
+      if (decoded.digest.isNotEmpty) {
+        exactInputPathsWithDigest.add(decoded.path);
+        digests[decoded.path] = decoded.digest;
+        final norm = _normalizeFilePath(decoded.path);
+        digests.putIfAbsent(norm, () => decoded.digest);
+        final relNorm = _normalize(decoded.path);
+        if (relNorm.isNotEmpty) {
+          digests.putIfAbsent(relNorm, () => decoded.digest);
+          digests.putIfAbsent('./$relNorm', () => decoded.digest);
+        }
+      }
+    }
+    workerInputPaths = paths;
+    inputDigests = digests;
+  }
+
   final roots = await _packageRoots(packagesFile, multiRootPrefix);
   final closure = await _readExcluded(closureExcluded, roots, multiRootPrefix);
+  final librariesMap = cache != null
+      ? await cache.librariesJsonOf(librariesJson, inputDigests)
+      : jsonDecode(await File(librariesJson).readAsString())
+            as Map<String, dynamic>;
   final vm = vmLibraries(
-    jsonDecode(await File(librariesJson).readAsString())
-        as Map<String, dynamic>,
+    librariesMap,
     platform: librariesPlatform,
     extraLibraries: extraLibraries,
   );
@@ -327,7 +365,14 @@ Future<int> compileModule(
   final graph = <String, _Node>{};
   final stagedSources = <String, String>{};
   for (final dir in inputKmods) {
-    if (!await _readIndex(dir, graph, log, stagedSources: stagedSources)) {
+    if (!await _readIndex(
+      dir,
+      graph,
+      log,
+      stagedSources: stagedSources,
+      cache: cache,
+      inputDigests: inputDigests,
+    )) {
       return 1;
     }
   }
@@ -339,13 +384,6 @@ Future<int> compileModule(
       declaredKeys.add(spelling);
     }
   }
-  final workerInputPaths = inputs.isEmpty
-      ? null
-      : <String>{
-          for (final raw in inputs)
-            for (final spelling in _inputSpellings(_decodeInputPath(raw)))
-              spelling,
-        };
   final files = _Files(
     multiRoots.isEmpty ? const ['.'] : multiRoots,
     declaredKeys: declaredKeys,
@@ -400,9 +438,12 @@ Future<int> compileModule(
           }
           if (inputs.isNotEmpty) {
             final stagedPath = '$stagedRoot/$key';
-            stagedInputs.add(
-              _encodeInput(stagedPath, await _digestOf(stagedPath)),
-            );
+            if (!exactInputPathsWithDigest.contains(stagedPath)) {
+              final knownDigest =
+                  _lookupDigest(stagedPath, inputDigests) ??
+                  await _digestOf(stagedPath);
+              stagedInputs.add(_encodeInput(stagedPath, knownDigest));
+            }
           }
         }
       }
@@ -511,10 +552,22 @@ Future<int> compileModule(
             }
             if (inputs.isNotEmpty) {
               final stagedPath = '$stagedRoot/$key';
-              stagedInputs.add(
-                _encodeInput(stagedPath, await _digestOf(stagedPath)),
-              );
+              if (!exactInputPathsWithDigest.contains(stagedPath)) {
+                final knownDigest =
+                    _lookupDigest(stagedPath, inputDigests) ??
+                    await _digestOf(stagedPath);
+                stagedInputs.add(_encodeInput(stagedPath, knownDigest));
+              }
             }
+          }
+        }
+      }
+      final summaryNodes = _neededNodes(scc.imports, local);
+      if (inputs.isNotEmpty || compiler is _Persistent) {
+        for (final node in summaryNodes) {
+          final encoded = node.encodedInput;
+          if (encoded != null) {
+            stagedInputs.add(encoded);
           }
         }
       }
@@ -522,10 +575,7 @@ Future<int> compileModule(
       final outcome = await compiler.run([
         ...base,
         for (final root in extraMultiRoots) ...[_multiRootFlag, root],
-        for (final d in neededDills(scc.imports, local)) ...[
-          '--input-summary',
-          d,
-        ],
+        for (final node in summaryNodes) ...['--input-summary', node.dill],
         for (final uri in scc.uris) ...['--source', uri],
         '--output',
         dillPath,
@@ -536,6 +586,7 @@ Future<int> compileModule(
         break;
       }
       var nodeDill = dillPath;
+      Uint8List? nodeDillBytes;
       final dillFile = File(dillPath);
       if (await dillFile.exists()) {
         var rawBytes = await dillFile.readAsBytes();
@@ -546,10 +597,15 @@ Future<int> compileModule(
           final outlineBytes = stripDillToOutline(rawBytes);
           nodeDill = '$outputOutline/${scc.dill}';
           await File(nodeDill).writeAsBytes(outlineBytes);
+          nodeDillBytes = outlineBytes;
+          await dillFile.writeAsBytes(_stripSourceCodeFromDill(rawBytes));
+        } else {
+          final strippedBytes = _stripSourceCodeFromDill(rawBytes);
+          await dillFile.writeAsBytes(strippedBytes);
+          nodeDillBytes = strippedBytes;
         }
-        await dillFile.writeAsBytes(_stripSourceCodeFromDill(rawBytes));
       }
-      final node = _Node(nodeDill, scc.imports);
+      final node = _Node(nodeDill, scc.imports, dillBytes: nodeDillBytes);
       for (final key in scc.keys) {
         local[key] = node;
       }
@@ -642,10 +698,289 @@ class _Scc {
 
 /// A kernel an index names: its file, and the keys it imports.
 class _Node {
-  _Node(this.dill, this.imports);
+  _Node(this.dill, this.imports, {Uint8List? dillBytes})
+    : _dillBytes = dillBytes;
 
   final String dill;
   final List<String> imports;
+  Uint8List? _dillBytes;
+  Uint8List? _encodedInput;
+
+  /// Encoded protobuf `Input` message for an intra-module SCC kernel written
+  /// during this compile, computed lazily in memory without re-reading disk.
+  Uint8List? get encodedInput {
+    final cached = _encodedInput;
+    if (cached != null) return cached;
+    final bytes = _dillBytes;
+    if (bytes == null) return null;
+    _dillBytes = null;
+    return _encodedInput = _encodeInput(dill, sha256Of(bytes));
+  }
+}
+
+class _IndexedScc {
+  const _IndexedScc({
+    required this.dill,
+    required this.defines,
+    required this.imports,
+  });
+
+  final String dill;
+  final List<String> defines;
+  final List<String> imports;
+}
+
+class _ParsedIndex {
+  const _ParsedIndex({required this.sccs, required this.excluded});
+
+  final List<_IndexedScc> sccs;
+  final List<String> excluded;
+}
+
+class _ModuleCacheEntry<T> {
+  _ModuleCacheEntry({
+    required this.value,
+    required this.inputDigest,
+    required this.contentSha256,
+    required this.byteSize,
+    required this.tick,
+  });
+
+  final T value;
+  final Uint8List? inputDigest;
+  final Uint8List? contentSha256;
+  final int byteSize;
+  int tick;
+}
+
+String _normalizeFilePath(String path) {
+  if (path.isEmpty) return '.';
+  final isAbs = path.startsWith('/');
+  final parts = path.split('/');
+  final stack = <String>[];
+  for (final part in parts) {
+    if (part.isEmpty || part == '.') continue;
+    if (part == '..') {
+      if (stack.isNotEmpty && stack.last != '..') {
+        stack.removeLast();
+      } else if (!isAbs) {
+        stack.add('..');
+      }
+    } else {
+      stack.add(part);
+    }
+  }
+  if (stack.isEmpty) return isAbs ? '/' : '.';
+  final joined = stack.join('/');
+  return isAbs ? '/$joined' : joined;
+}
+
+Uint8List? _lookupDigest(String path, Map<String, Uint8List>? inputDigests) {
+  if (inputDigests == null) return null;
+  final direct = inputDigests[path];
+  if (direct != null && direct.isNotEmpty) return direct;
+  final normFile = _normalizeFilePath(path);
+  if (normFile != path) {
+    final hit = inputDigests[normFile];
+    if (hit != null && hit.isNotEmpty) return hit;
+  }
+  final relNorm = _normalize(path);
+  if (relNorm.isNotEmpty) {
+    final relHit = inputDigests[relNorm];
+    if (relHit != null && relHit.isNotEmpty) return relHit;
+    if (!relNorm.startsWith('/')) {
+      final dotHit = inputDigests['./$relNorm'];
+      if (dotHit != null && dotHit.isNotEmpty) return dotHit;
+    }
+  }
+  return null;
+}
+
+/// Byte-bounded cache of parsed `index.json` manifests and SDK `libraries.json`
+/// across persistent-worker requests.
+///
+/// Validates entries against the file's digest in `WorkRequest.inputs` (which
+/// Bazel 9.3.0 populates for all constituent files of `.kmod` / `.koutline`
+/// tree artifacts), falling back to reading from disk and checking `sha256Of`
+/// when no digest is present in `WorkRequest.inputs`.
+class KernelModuleCache {
+  KernelModuleCache({this.maxCacheBytes = defaultMaxCacheBytes});
+
+  static const int defaultMaxCacheBytes = 32 * 1024 * 1024;
+
+  final int maxCacheBytes;
+  final _indexCache = <String, _ModuleCacheEntry<_ParsedIndex>>{};
+  final _librariesCache = <String, _ModuleCacheEntry<Map<String, dynamic>>>{};
+  int _indexBytesTotal = 0;
+  int _librariesBytesTotal = 0;
+  int _clock = 0;
+
+  int get indexBytes => _indexBytesTotal;
+  int get librariesBytes => _librariesBytesTotal;
+  int get totalBytes => _indexBytesTotal + _librariesBytesTotal;
+  int get indexEntryCount => _indexCache.length;
+  int get librariesEntryCount => _librariesCache.length;
+
+  static Uint8List _unpin(Uint8List bytes) =>
+      bytes.buffer.lengthInBytes == bytes.lengthInBytes
+      ? bytes
+      : Uint8List.fromList(bytes);
+
+  static bool _sameBytes(Uint8List a, Uint8List b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  void _evictForBudget(int incomingBytes) {
+    while (totalBytes + incomingBytes > maxCacheBytes) {
+      String? oldestIndexKey;
+      int? oldestIndexTick;
+      if (_indexCache.isNotEmpty) {
+        final first = _indexCache.entries.first;
+        oldestIndexKey = first.key;
+        oldestIndexTick = first.value.tick;
+      }
+
+      String? oldestLibKey;
+      int? oldestLibTick;
+      if (_librariesCache.isNotEmpty) {
+        final first = _librariesCache.entries.first;
+        oldestLibKey = first.key;
+        oldestLibTick = first.value.tick;
+      }
+
+      if (oldestIndexTick == null && oldestLibTick == null) break;
+
+      if (oldestIndexTick != null &&
+          (oldestLibTick == null || oldestIndexTick <= oldestLibTick)) {
+        final removed = _indexCache.remove(oldestIndexKey!)!;
+        _indexBytesTotal -= removed.byteSize;
+      } else if (oldestLibTick != null) {
+        final removed = _librariesCache.remove(oldestLibKey!)!;
+        _librariesBytesTotal -= removed.byteSize;
+      }
+    }
+  }
+
+  Future<Map<String, dynamic>> librariesJsonOf(
+    String path,
+    Map<String, Uint8List>? inputDigests,
+  ) async {
+    final key = _normalizeFilePath(path);
+    final digest = _lookupDigest(path, inputDigests);
+    final hasDigest = digest != null && digest.isNotEmpty;
+    final cached = _librariesCache.remove(key);
+    if (cached != null) {
+      if (hasDigest &&
+          cached.inputDigest != null &&
+          _sameBytes(digest, cached.inputDigest!)) {
+        cached.tick = ++_clock;
+        _librariesCache[key] = cached;
+        return cached.value;
+      }
+      _librariesBytesTotal -= cached.byteSize;
+    }
+
+    final bytes = await File(path).readAsBytes();
+    final entryBytes = bytes.length;
+    final contentSha256 = hasDigest ? null : sha256Of(bytes);
+    if (!hasDigest &&
+        cached != null &&
+        cached.byteSize == entryBytes &&
+        cached.contentSha256 != null &&
+        _sameBytes(contentSha256!, cached.contentSha256!)) {
+      if (entryBytes <= maxCacheBytes) {
+        _evictForBudget(entryBytes);
+        cached.tick = ++_clock;
+        _librariesCache[key] = cached;
+        _librariesBytesTotal += entryBytes;
+      }
+      return cached.value;
+    }
+
+    final parsed = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+    if (entryBytes <= maxCacheBytes) {
+      _evictForBudget(entryBytes);
+      _librariesCache[key] = _ModuleCacheEntry(
+        value: parsed,
+        inputDigest: hasDigest ? _unpin(digest) : null,
+        contentSha256: contentSha256,
+        byteSize: entryBytes,
+        tick: ++_clock,
+      );
+      _librariesBytesTotal += entryBytes;
+    }
+    return parsed;
+  }
+
+  Future<_ParsedIndex?> _indexOf(
+    String dir,
+    Map<String, Uint8List>? inputDigests,
+  ) async {
+    final indexPath = '$dir/$_indexName';
+    final key = _normalizeFilePath(indexPath);
+    final digest = _lookupDigest(indexPath, inputDigests);
+    final hasDigest = digest != null && digest.isNotEmpty;
+    final cached = _indexCache.remove(key);
+    if (cached != null) {
+      if (hasDigest &&
+          cached.inputDigest != null &&
+          _sameBytes(digest, cached.inputDigest!)) {
+        cached.tick = ++_clock;
+        _indexCache[key] = cached;
+        return cached.value;
+      }
+      _indexBytesTotal -= cached.byteSize;
+    }
+
+    final file = File(indexPath);
+    if (!await file.exists()) return null;
+    final bytes = await file.readAsBytes();
+    final entryBytes = bytes.length;
+    final contentSha256 = hasDigest ? null : sha256Of(bytes);
+    if (!hasDigest &&
+        cached != null &&
+        cached.byteSize == entryBytes &&
+        cached.contentSha256 != null &&
+        _sameBytes(contentSha256!, cached.contentSha256!)) {
+      if (entryBytes <= maxCacheBytes) {
+        _evictForBudget(entryBytes);
+        cached.tick = ++_clock;
+        _indexCache[key] = cached;
+        _indexBytesTotal += entryBytes;
+      }
+      return cached.value;
+    }
+
+    final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+    final sccs = [
+      for (final scc in (json['sccs'] as List).cast<Map<String, dynamic>>())
+        _IndexedScc(
+          dill: scc['dill'] as String,
+          defines: (scc['defines'] as List).cast<String>(),
+          imports: (scc['imports'] as List).cast<String>(),
+        ),
+    ];
+    final excluded = json['excluded'] is List
+        ? (json['excluded'] as List).cast<String>()
+        : const <String>[];
+    final parsed = _ParsedIndex(sccs: sccs, excluded: excluded);
+    if (entryBytes <= maxCacheBytes) {
+      _evictForBudget(entryBytes);
+      _indexCache[key] = _ModuleCacheEntry(
+        value: parsed,
+        inputDigest: hasDigest ? _unpin(digest) : null,
+        contentSha256: contentSha256,
+        byteSize: entryBytes,
+        tick: ++_clock,
+      );
+      _indexBytesTotal += entryBytes;
+    }
+    return parsed;
+  }
 }
 
 /// The components of the remaining own sources, dependencies first. Each is one
@@ -739,8 +1074,12 @@ List<List<String>> stronglyConnected(
 /// The kernels a dependency module needs to compile against: every kernel reached from
 /// `roots` through the imports of the kernels they name. Sorted, so the arguments of
 /// a compile do not change from one build to the next.
-List<String> neededDills(Iterable<String> roots, Map<String, _Node> graph) {
-  final dills = <String>{};
+List<String> neededDills(Iterable<String> roots, Map<String, _Node> graph) => [
+  for (final node in _neededNodes(roots, graph)) node.dill,
+];
+
+List<_Node> _neededNodes(Iterable<String> roots, Map<String, _Node> graph) {
+  final byDill = <String, _Node>{};
   final visited = <String>{};
   final queue = Queue<String>.of(roots);
   while (queue.isNotEmpty) {
@@ -748,9 +1087,13 @@ List<String> neededDills(Iterable<String> roots, Map<String, _Node> graph) {
     if (!visited.add(key)) continue;
     final node = graph[key];
     if (node == null) continue;
-    if (dills.add(node.dill)) queue.addAll(node.imports);
+    if (!byDill.containsKey(node.dill)) {
+      byDill[node.dill] = node;
+      queue.addAll(node.imports);
+    }
   }
-  return dills.toList()..sort();
+  final sortedDills = byDill.keys.toList()..sort();
+  return [for (final dill in sortedDills) byDill[dill]!];
 }
 
 /// Adds the kernels that the module directory `dir` indexes to `graph`, by each key
@@ -760,7 +1103,28 @@ Future<bool> _readIndex(
   Map<String, _Node> graph,
   StringBuffer log, {
   Map<String, String>? stagedSources,
+  KernelModuleCache? cache,
+  Map<String, Uint8List>? inputDigests,
 }) async {
+  if (cache != null) {
+    final parsed = await cache._indexOf(dir, inputDigests);
+    if (parsed == null) {
+      log.writeln('kernel_module: $dir has no $_indexName.');
+      return false;
+    }
+    for (final scc in parsed.sccs) {
+      final node = _Node('$dir/${scc.dill}', scc.imports);
+      for (final key in scc.defines) {
+        graph.putIfAbsent(key, () => node);
+      }
+    }
+    if (stagedSources != null && parsed.excluded.isNotEmpty) {
+      for (final key in parsed.excluded) {
+        stagedSources.putIfAbsent(key, () => '$dir/sources');
+      }
+    }
+    return true;
+  }
   final file = File('$dir/$_indexName');
   if (!await file.exists()) {
     log.writeln('kernel_module: $dir has no $_indexName.');
@@ -2246,11 +2610,16 @@ class _Attempt {
 const _requestTimeoutFlag = '--request-timeout-seconds=';
 
 // ---------------------------------------------------------------------------
-// Digests. Bazel declares a tree artifact's files as one directory, so it does not
-// send their digests in the request, and `kernel_worker` fails a request that reads a
-// file it was not sent a digest for. The tool digests such a file itself, with the
-// same SHA-256 that Bazel uses for a file, and keeps the digest while the file's size
-// and modification time hold: a kernel is hashed once, when it is written.
+// Digests. Bazel 9.3.0 expands tree artifacts (`declare_directory`, such as
+// `.kmod` and `.koutline` directories) in `WorkRequest.inputs` into individual
+// `Input` entries with SHA-256 digests for every constituent file (`<dir>/0.dill`,
+// `<dir>/index.json`, `<dir>/sources/<key>`). Those digests are forwarded
+// directly to `kernel_worker` without re-hashing from disk.
+//
+// Only files that lack a non-empty digest in `WorkRequest.inputs` — such as
+// intra-module SCC kernels produced earlier in the same `compileModule` run
+// (which are hashed once in memory when needed) or files in synthetic test
+// requests that omit `WorkRequest.inputs` digests — are hashed with `sha256Of`.
 
 /// The SHA-256 digest of the file at `path`.
 Future<Uint8List> _digestOf(String path) async =>
@@ -2339,32 +2708,81 @@ Uint8List _encodeInput(String path, Uint8List digest) {
   return writer.toBytes();
 }
 
-/// The `path` of an `Input` message, read without decoding its digest.
-String _inputPath(Uint8List bytes) {
+/// Decodes the `path` (field 1) and `digest` (field 2) of a protobuf `Input`
+/// message, copying `digest` out of `bytes` so the message buffer is not pinned.
+({String path, Uint8List digest}) _decodeInput(Uint8List bytes) {
   final reader = _Reader(bytes);
+  var path = '';
+  var digest = Uint8List(0);
   while (!reader.done) {
     final key = reader.varint();
-    if (key >> 3 == 1 && key & 7 == 2) return utf8.decode(reader.bytes());
-    reader.skip(key & 7);
+    final field = key >> 3;
+    final wire = key & 7;
+    if (field == 1 && wire == 2) {
+      path = utf8.decode(reader.bytes(), allowMalformed: true);
+    } else if (field == 2 && wire == 2) {
+      digest = Uint8List.fromList(reader.bytes());
+    } else {
+      reader.skip(wire);
+    }
   }
-  return '';
+  return (path: path, digest: digest);
 }
 
+/// Public wrapper around [_withDigests] for unit tests.
+Future<List<Uint8List>> ensureSummaryDigests(
+  List<String> args,
+  List<Uint8List> inputs,
+) => _withDigests(args, inputs);
+
 /// The request's `inputs`, with a digest added for each `--input-summary` or
-/// `--input-linked` file that Bazel did not declare on its own.
+/// `--input-linked` file that does not already carry a non-empty digest in
+/// `inputs`. If `inputs` already has a non-empty digest under a normalized
+/// spelling of the path (such as `./<path>` vs `<path>`), that digest is reused
+/// without reading or hashing the file from disk.
 Future<List<Uint8List>> _withDigests(
   List<String> args,
   List<Uint8List> inputs,
 ) async {
-  final declared = {for (final input in inputs) _inputPath(input)};
-  final out = [...inputs];
+  final exactWithDigest = <String>{};
+  final emptyDigestIndices = <String, List<int>>{};
+  final byPath = <String, Uint8List>{};
+  for (var idx = 0; idx < inputs.length; idx++) {
+    final decoded = _decodeInput(inputs[idx]);
+    if (decoded.path.isEmpty) continue;
+    if (decoded.digest.isNotEmpty) {
+      exactWithDigest.add(decoded.path);
+      byPath[decoded.path] = decoded.digest;
+      final norm = _normalizeFilePath(decoded.path);
+      byPath.putIfAbsent(norm, () => decoded.digest);
+      final relNorm = _normalize(decoded.path);
+      if (relNorm.isNotEmpty) {
+        byPath.putIfAbsent(relNorm, () => decoded.digest);
+        byPath.putIfAbsent('./$relNorm', () => decoded.digest);
+      }
+    } else {
+      (emptyDigestIndices[decoded.path] ??= <int>[]).add(idx);
+    }
+  }
+  List<Uint8List>? out;
   for (var i = 0; i + 1 < args.length; i++) {
     if (args[i] != '--input-summary' && args[i] != '--input-linked') continue;
     final path = args[i + 1];
-    if (!declared.add(path)) continue;
-    out.add(_encodeInput(path, await _digestOf(path)));
+    if (!exactWithDigest.add(path)) continue;
+    final digest = _lookupDigest(path, byPath) ?? await _digestOf(path);
+    byPath[path] = digest;
+    out ??= [...inputs];
+    final replaceIndices = emptyDigestIndices.remove(path);
+    if (replaceIndices != null && replaceIndices.isNotEmpty) {
+      final encoded = _encodeInput(path, digest);
+      for (final idx in replaceIndices) {
+        out[idx] = encoded;
+      }
+    } else {
+      out.add(_encodeInput(path, digest));
+    }
   }
-  return out;
+  return out ?? inputs;
 }
 
 // ---------------------------------------------------------------------------
@@ -2414,6 +2832,10 @@ class _Frames {
       final byte = await _byte();
       if (byte == null) return null;
       out[i] = byte;
+    }
+    if (_offset >= _chunk.length) {
+      _chunk = Uint8List(0);
+      _offset = 0;
     }
     return out;
   }
@@ -2505,25 +2927,14 @@ Uint8List _frame(Uint8List message) {
   return out.toBytes();
 }
 
-/// Decodes the `path` (field 1) of a protobuf `Input` message.
-String? _decodeInputPath(Uint8List bytes) {
-  final reader = _Reader(bytes);
-  String? path;
-  while (!reader.done) {
-    final key = reader.varint();
-    final field = key >> 3;
-    final wire = key & 7;
-    if (field == 1 && wire == 2) {
-      path = utf8.decode(reader.bytes(), allowMalformed: true);
-    } else {
-      reader.skip(wire);
-    }
-  }
-  return path;
-}
+/// Decodes the `inputs` list from a raw `WorkRequest` protobuf payload,
+/// copying each `Input` entry out of [bytes] so the request buffer is not pinned.
+List<Uint8List> decodeKernelModuleWorkRequestInputs(Uint8List bytes) =>
+    _WorkRequest.decode(bytes).inputs;
 
 /// `WorkRequest`: `arguments` = 1, `inputs` = 2 (each an `Input` message, kept as
-/// raw bytes so it is forwarded unchanged), `request_id` = 3.
+/// an unpinned copy of its bytes so it is forwarded unchanged without pinning
+/// the request buffer), `request_id` = 3.
 class _WorkRequest {
   _WorkRequest(this.arguments, this.inputs, this.requestId);
 
@@ -2539,7 +2950,7 @@ class _WorkRequest {
       if (field == 1 && wire == 2) {
         arguments.add(utf8.decode(reader.bytes()));
       } else if (field == 2 && wire == 2) {
-        inputs.add(reader.bytes());
+        inputs.add(Uint8List.fromList(reader.bytes()));
       } else if (field == 3 && wire == 0) {
         requestId = reader.varint();
       } else {
