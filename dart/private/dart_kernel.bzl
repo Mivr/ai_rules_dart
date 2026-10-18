@@ -793,20 +793,12 @@ def kernel_module_action(
         outputs = [output, excluded] + ([koutline] if koutline != None else []),
         mnemonic = "DartKernel",
         progress_message = "Compiling Dart kernel module %s" % output.short_path,
-        execution_requirements = {} if _is_manual(ctx) else {
+        execution_requirements = {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
         },
     )
     return excluded
-
-def _is_manual(ctx):
-    if ctx.label.package.startswith("flutter/tests"):
-        return True
-    tags = getattr(ctx.attr, "tags", None)
-    if tags == None and hasattr(ctx, "rule"):
-        tags = getattr(ctx.rule.attr, "tags", None)
-    return tags != None and "manual" in tags
 
 def kernel_link_action(
         ctx,
@@ -902,7 +894,7 @@ def kernel_link_action(
         outputs = outputs,
         mnemonic = "DartKernelLink",
         progress_message = "Linking Dart kernel %s" % ctx.label,
-        execution_requirements = {} if _is_manual(ctx) else {
+        execution_requirements = {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
         },

@@ -313,7 +313,7 @@ def _dart_codegen_impl(ctx):
             outputs = outputs,
             mnemonic = "DartCodegen",
             progress_message = "DartCodegen %s" % ctx.label,
-            execution_requirements = {} if "manual" in getattr(ctx.attr, "tags", []) else {
+            execution_requirements = {
                 "supports-workers": "1",
                 "requires-worker-protocol": "proto",
                 # The worker key includes the shim binary path; using the

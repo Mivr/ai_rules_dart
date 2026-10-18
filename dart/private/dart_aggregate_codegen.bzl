@@ -159,7 +159,7 @@ def _dart_aggregate_codegen_impl(ctx):
             outputs = outputs,
             mnemonic = "DartAggregateCodegen",
             progress_message = "DartAggregateCodegen %s" % ctx.label,
-            execution_requirements = {} if "manual" in getattr(ctx.attr, "tags", []) else {
+            execution_requirements = {
                 "supports-workers": "1",
                 "requires-worker-protocol": "proto",
                 "worker-key-mnemonic": "DartAggregateCodegen",

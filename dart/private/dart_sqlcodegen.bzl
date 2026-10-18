@@ -135,7 +135,7 @@ def _dart_sqlcodegen_impl(ctx):
         outputs = outputs,
         mnemonic = "DartSqlCodegen",
         progress_message = "DartSqlCodegen %s" % ctx.label,
-        execution_requirements = {} if "manual" in getattr(ctx.attr, "tags", []) else {
+        execution_requirements = {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
             "worker-key-mnemonic": "DartSqlCodegen",

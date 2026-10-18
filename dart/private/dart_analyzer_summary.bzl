@@ -567,7 +567,6 @@ def _dart_analyzer_summary_impl(target, ctx):
     if uncovered_staged:
         args.add_all(uncovered_staged, before_each = "--dep-source")
     args.add_all(summary_inputs, before_each = "--summary")
-    tags = getattr(ctx.rule.attr, "tags", [])
     ctx.actions.run(
         executable = dart_sdk_info.dart,
         arguments = [ctx.executable._tool.path, args],
@@ -582,7 +581,7 @@ def _dart_analyzer_summary_impl(target, ctx):
         outputs = [summary],
         mnemonic = "DartAnalyzerSummary",
         progress_message = "Summarizing Dart library %{label}",
-        execution_requirements = {} if "manual" in tags else {
+        execution_requirements = {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
         },

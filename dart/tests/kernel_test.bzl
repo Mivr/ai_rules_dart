@@ -991,6 +991,83 @@ _part_sources_inputs_test = analysistest.make(
     extra_target_under_test_aspects = [dart_kernel_module_aspect],
 )
 
+def _worker_execution_requirements_test_impl(ctx):
+    env = unittest.begin(ctx)
+    runs = []
+
+    def _declare_file(name):
+        return struct(basename = name, path = "out/" + name, short_path = name)
+
+    def _args():
+        return struct(
+            use_param_file = lambda *_a, **_kw: None,
+            set_param_file_format = lambda *_a, **_kw: None,
+            add = lambda *_a, **_kw: None,
+            add_all = lambda *_a, **_kw: None,
+        )
+
+    fake_actions = struct(
+        declare_file = _declare_file,
+        write = lambda **_kw: None,
+        args = _args,
+        run = lambda **kw: runs.append(kw),
+    )
+    fake_ctx = struct(
+        label = struct(name = "manual_target", package = "flutter/tests/foo"),
+        attr = struct(tags = ["manual"], _kernel_module = None, _kernel_link = None),
+        rule = struct(attr = struct(tags = ["manual"])),
+        bin_dir = struct(path = "bazel-out/k8-fastbuild/bin"),
+        executable = struct(
+            _kernel_module = _declare_file("kernel_module.dill"),
+            _kernel_link = _declare_file("kernel_link.dill"),
+        ),
+        toolchains = {},
+        actions = fake_actions,
+    )
+    fake_tools = struct(
+        dartaotruntime = _declare_file("dartaotruntime"),
+        kernel_worker = _declare_file("kernel_worker.snapshot"),
+        platform_dill = _declare_file("vm_platform_strong.dill"),
+        libraries_json = _declare_file("libraries.json"),
+        version = "3.11.0",
+    )
+    kmod = _declare_file("manual_target.kmod")
+    kernel_module_action(
+        ctx = fake_ctx,
+        tools = fake_tools,
+        sources = [struct(uri = "package:a/a.dart", file = _declare_file("a.dart"))],
+        packages = [_pkg("a", "pkg/a", "3.9")],
+        dep_kmods = depset(),
+        output = kmod,
+        defines = [],
+        exclude_non_sources = False,
+        droppable = False,
+    )
+    kernel_link_action(
+        ctx = fake_ctx,
+        dep_kmods = depset(),
+        entry = kmod,
+        output = _declare_file("manual_target.dill"),
+    )
+    asserts.equals(env, 2, len(runs), "registers DartKernel and DartKernelLink actions")
+    expected_reqs = {
+        "supports-workers": "1",
+        "requires-worker-protocol": "proto",
+    }
+    asserts.equals(
+        env,
+        expected_reqs,
+        runs[0]["execution_requirements"],
+        "DartKernel sets worker execution_requirements even for manual target in flutter/tests",
+    )
+    asserts.equals(
+        env,
+        expected_reqs,
+        runs[1]["execution_requirements"],
+        "DartKernelLink sets worker execution_requirements even for manual target in flutter/tests",
+    )
+    return unittest.end(env)
+
 _root_path_test = unittest.make(_root_path_test_impl)
 _multi_root_uri_test = unittest.make(_multi_root_uri_test_impl)
 _multi_root_uri_custom_scheme_test = unittest.make(_multi_root_uri_custom_scheme_test_impl)
@@ -1004,6 +1081,7 @@ _first_per_package_test = unittest.make(_first_per_package_test_impl)
 _duplicated_source_test = unittest.make(_duplicated_source_test_impl)
 _eligible_test = unittest.make(_eligible_test_impl)
 _has_cross_pkg_cycle_test = unittest.make(_has_cross_pkg_cycle_test_impl)
+_worker_execution_requirements_test = unittest.make(_worker_execution_requirements_test_impl)
 
 def kernel_test_suite(name):
     """Declares the modular kernel unit tests as one suite.
@@ -1142,6 +1220,7 @@ def kernel_test_suite(name):
         _duplicated_source_test,
         _eligible_test,
         _has_cross_pkg_cycle_test,
+        _worker_execution_requirements_test,
     )
     native.test_suite(
         name = name,

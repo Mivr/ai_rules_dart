@@ -318,7 +318,6 @@ def _analyze_summaries(ctx, name, staged, summaries, sdk_summary, sdk_inputs, ow
     args.add("--sdk-summary", sdk_summary)
     args.add_all(own_paths, format_each = "src/%s", before_each = "--source")
     args.add_all(summaries, before_each = "--summary")
-    tags = getattr(ctx.rule.attr, "tags", [])
     ctx.actions.run(
         executable = dart_sdk_info.dart,
         arguments = [ctx.executable._summary_tool.path, args],
@@ -327,7 +326,7 @@ def _analyze_summaries(ctx, name, staged, summaries, sdk_summary, sdk_inputs, ow
         outputs = [stamp],
         mnemonic = "DartAnalyze",
         progress_message = "Analyzing Dart sources of %{label} against summaries",
-        execution_requirements = {} if "manual" in tags else {
+        execution_requirements = {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
         },
@@ -560,7 +559,6 @@ def _format(ctx, name, staged, own_paths, language_version):
     # toolchain SDK's `<major>.<minor>`, said out loud so neither the vendored
     # formatter's `latestLanguageVersion` nor a staged config can answer instead.
     args.add("--language-version", mode.language_version)
-    tags = getattr(ctx.rule.attr, "tags", [])
     env = writable_home_env(dart_sdk_info.dart, stamp)
     ctx.actions.run(
         executable = dart_sdk_info.dart,
@@ -571,7 +569,7 @@ def _format(ctx, name, staged, own_paths, language_version):
         mnemonic = "DartFormat",
         progress_message = "Checking Dart formatting of %{label}",
         env = env,
-        execution_requirements = {} if "manual" in tags else {
+        execution_requirements = {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
         },
