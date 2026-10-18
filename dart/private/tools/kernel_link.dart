@@ -62,7 +62,29 @@ class _CachedEntry<T> {
   int tick;
 }
 
+bool _isNormalizedRelative(String path) {
+  final len = path.length;
+  if (len == 0) return false;
+  var segStart = 0;
+  for (var i = 0; i <= len; i++) {
+    final c = i < len ? path.codeUnitAt(i) : 0x2f;
+    if (c == 0x2f) {
+      final segLen = i - segStart;
+      if (segLen == 0) return false;
+      if (segLen == 1 && path.codeUnitAt(segStart) == 0x2e) return false;
+      if (segLen == 2 &&
+          path.codeUnitAt(segStart) == 0x2e &&
+          path.codeUnitAt(segStart + 1) == 0x2e) {
+        return false;
+      }
+      segStart = i + 1;
+    }
+  }
+  return true;
+}
+
 String _normalizePath(String path) {
+  if (_isNormalizedRelative(path)) return path;
   if (path.isEmpty) return '.';
   final isAbs = path.startsWith('/');
   final parts = path.split('/');
@@ -273,7 +295,7 @@ class KernelLinkCache {
           '$dir/${scc['dill']}',
           '$dir:${scc['dill']}',
           (scc['defines'] as List).cast<String>(),
-          (scc['imports'] as List).cast<String>(),
+          (scc['imports'] as List).cast<String>()..sort(),
         ),
     ];
     if (entryBytes <= maxIndexCacheBytes && entryBytes <= maxCacheBytes) {
@@ -584,7 +606,7 @@ int linkOne(
   var missingModule = false;
   void visit(_Kernel kernel) {
     if (baseKeys.contains(kernel.key) || !visited.add(kernel)) return;
-    for (final key in ([...kernel.imports]..sort())) {
+    for (final key in kernel.imports) {
       if (baseKeys.contains(key)) continue;
       final dependency = owner[key];
       if (dependency != null) {
@@ -600,7 +622,7 @@ int linkOne(
   }
 
   if (entry != null) {
-    for (final key in ([...entry.imports]..sort())) {
+    for (final key in entry.imports) {
       if (baseKeys.contains(key)) continue;
       final dependency = owner[key];
       if (dependency != null) {
@@ -682,7 +704,9 @@ int linkOne(
 /// Decodes the `inputs` map from a raw `WorkRequest` protobuf payload,
 /// copying each digest out of [bytes] so the request buffer is not pinned.
 Map<String, Uint8List> decodeKernelLinkWorkRequestInputs(Uint8List bytes) =>
-    _WorkRequest.read(bytes).inputs;
+    _WorkRequest.read(bytes, copyDigests: true).inputs;
+
+final Uint8List _emptyBytes = Uint8List(0);
 
 final class _WorkRequest {
   _WorkRequest({
@@ -692,7 +716,7 @@ final class _WorkRequest {
     required this.cancel,
   });
 
-  factory _WorkRequest.read(Uint8List bytes) {
+  factory _WorkRequest.read(Uint8List bytes, {bool copyDigests = false}) {
     final arguments = <String>[];
     final inputs = <String, Uint8List>{};
     var requestId = 0;
@@ -706,14 +730,15 @@ final class _WorkRequest {
         case 2:
           final nested = r.submessage();
           var path = '';
-          var digest = Uint8List(0);
+          var digest = _emptyBytes;
           while (!nested.isDone) {
             final inputTag = nested.varint();
             switch (inputTag >> 3) {
               case 1:
                 path = nested.string();
               case 2:
-                digest = Uint8List.fromList(nested.bytes());
+                final raw = nested.bytes();
+                digest = copyDigests ? Uint8List.fromList(raw) : raw;
               default:
                 nested.skip(inputTag & 7);
             }
@@ -888,7 +913,7 @@ final class _Reader {
 }
 
 final class _Writer {
-  final _buf = BytesBuilder(copy: false);
+  final _buf = BytesBuilder();
 
   void varint(int value) {
     var v = value;

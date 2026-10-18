@@ -329,20 +329,35 @@ Future<int> compileModule(
     final paths = <String>{};
     final digests = <String, Uint8List>{};
     for (final raw in inputs) {
-      final decoded = _decodeInput(raw);
-      if (decoded.path.isEmpty) continue;
-      for (final spelling in _inputSpellings(decoded.path)) {
-        paths.add(spelling);
-      }
-      if (decoded.digest.isNotEmpty) {
-        exactInputPathsWithDigest.add(decoded.path);
-        digests[decoded.path] = decoded.digest;
-        final norm = _normalizeFilePath(decoded.path);
-        digests.putIfAbsent(norm, () => decoded.digest);
-        final relNorm = _normalize(decoded.path);
-        if (relNorm.isNotEmpty) {
-          digests.putIfAbsent(relNorm, () => decoded.digest);
-          digests.putIfAbsent('./$relNorm', () => decoded.digest);
+      final decoded = _decodeInputView(raw);
+      final rawPath = decoded.path;
+      if (rawPath.isEmpty) continue;
+      if (_isNormalizedRelative(rawPath)) {
+        paths.add(rawPath);
+        if (rawPath.startsWith('bazel-out/') && rawPath.endsWith('.dart')) {
+          final stripped = rawPath.replaceFirst(_bazelOutPrefix, '');
+          if (stripped.isNotEmpty && stripped != rawPath) {
+            paths.add(stripped);
+          }
+        }
+        if (decoded.digest.isNotEmpty) {
+          exactInputPathsWithDigest.add(rawPath);
+          digests[rawPath] = decoded.digest;
+        }
+      } else {
+        for (final spelling in _inputSpellings(rawPath)) {
+          paths.add(spelling);
+        }
+        if (decoded.digest.isNotEmpty) {
+          exactInputPathsWithDigest.add(rawPath);
+          digests[rawPath] = decoded.digest;
+          final norm = _normalizeFilePath(rawPath);
+          digests.putIfAbsent(norm, () => decoded.digest);
+          final relNorm = _normalize(rawPath);
+          if (relNorm.isNotEmpty) {
+            digests.putIfAbsent(relNorm, () => decoded.digest);
+            digests.putIfAbsent('./$relNorm', () => decoded.digest);
+          }
         }
       }
     }
@@ -351,16 +366,31 @@ Future<int> compileModule(
   }
 
   final roots = await _packageRoots(packagesFile, multiRootPrefix);
-  final closure = await _readExcluded(closureExcluded, roots, multiRootPrefix);
-  final librariesMap = cache != null
-      ? await cache.librariesJsonOf(librariesJson, inputDigests)
-      : jsonDecode(await File(librariesJson).readAsString())
-            as Map<String, dynamic>;
-  final vm = vmLibraries(
-    librariesMap,
-    platform: librariesPlatform,
-    extraLibraries: extraLibraries,
+  final closure = await _readExcluded(
+    closureExcluded,
+    roots,
+    multiRootPrefix,
+    cache: cache,
+    inputDigests: inputDigests,
   );
+  final Set<String> vm;
+  if (cache != null && extraLibraries.isEmpty) {
+    vm = await cache.vmLibrariesOf(
+      librariesJson,
+      inputDigests,
+      platform: librariesPlatform,
+    );
+  } else {
+    final librariesMap = cache != null
+        ? await cache.librariesJsonOf(librariesJson, inputDigests)
+        : jsonDecode(await File(librariesJson).readAsString())
+              as Map<String, dynamic>;
+    vm = vmLibraries(
+      librariesMap,
+      platform: librariesPlatform,
+      extraLibraries: extraLibraries,
+    );
+  }
   // Every kernel the closure indexes, by the key of each library it defines.
   final graph = <String, _Node>{};
   final stagedSources = <String, String>{};
@@ -751,9 +781,34 @@ class _ModuleCacheEntry<T> {
   final Uint8List? contentSha256;
   final int byteSize;
   int tick;
+  Map<String, Set<String>>? vmByPlatform;
+}
+
+bool _isNormalizedRelative(String path) {
+  final len = path.length;
+  if (len == 0) return false;
+  if (path.codeUnitAt(0) == 0x2f || path.codeUnitAt(len - 1) == 0x2f) {
+    return false;
+  }
+  var segStart = 0;
+  for (var i = 0; i <= len; i++) {
+    if (i == len || path.codeUnitAt(i) == 0x2f) {
+      final segLen = i - segStart;
+      if (segLen == 0) return false;
+      if (segLen == 1 && path.codeUnitAt(segStart) == 0x2e) return false;
+      if (segLen == 2 &&
+          path.codeUnitAt(segStart) == 0x2e &&
+          path.codeUnitAt(segStart + 1) == 0x2e) {
+        return false;
+      }
+      segStart = i + 1;
+    }
+  }
+  return true;
 }
 
 String _normalizeFilePath(String path) {
+  if (_isNormalizedRelative(path)) return path;
   if (path.isEmpty) return '.';
   final isAbs = path.startsWith('/');
   final parts = path.split('/');
@@ -779,6 +834,11 @@ Uint8List? _lookupDigest(String path, Map<String, Uint8List>? inputDigests) {
   if (inputDigests == null) return null;
   final direct = inputDigests[path];
   if (direct != null && direct.isNotEmpty) return direct;
+  if (_isNormalizedRelative(path)) {
+    final dotHit = inputDigests['./$path'];
+    if (dotHit != null && dotHit.isNotEmpty) return dotHit;
+    return null;
+  }
   final normFile = _normalizeFilePath(path);
   if (normFile != path) {
     final hit = inputDigests[normFile];
@@ -796,8 +856,8 @@ Uint8List? _lookupDigest(String path, Map<String, Uint8List>? inputDigests) {
   return null;
 }
 
-/// Byte-bounded cache of parsed `index.json` manifests and SDK `libraries.json`
-/// across persistent-worker requests.
+/// Byte-bounded cache of parsed `index.json` manifests, `.vm_excluded.txt`
+/// sidecars, and SDK `libraries.json` across persistent-worker requests.
 ///
 /// Validates entries against the file's digest in `WorkRequest.inputs` (which
 /// Bazel 9.3.0 populates for all constituent files of `.kmod` / `.koutline`
@@ -811,15 +871,20 @@ class KernelModuleCache {
   final int maxCacheBytes;
   final _indexCache = <String, _ModuleCacheEntry<_ParsedIndex>>{};
   final _librariesCache = <String, _ModuleCacheEntry<Map<String, dynamic>>>{};
+  final _excludedCache = <String, _ModuleCacheEntry<List<String>>>{};
   int _indexBytesTotal = 0;
   int _librariesBytesTotal = 0;
+  int _excludedBytesTotal = 0;
   int _clock = 0;
 
   int get indexBytes => _indexBytesTotal;
   int get librariesBytes => _librariesBytesTotal;
-  int get totalBytes => _indexBytesTotal + _librariesBytesTotal;
+  int get excludedBytes => _excludedBytesTotal;
+  int get totalBytes =>
+      _indexBytesTotal + _librariesBytesTotal + _excludedBytesTotal;
   int get indexEntryCount => _indexCache.length;
   int get librariesEntryCount => _librariesCache.length;
+  int get excludedEntryCount => _excludedCache.length;
 
   static Uint8List _unpin(Uint8List bytes) =>
       bytes.buffer.lengthInBytes == bytes.lengthInBytes
@@ -852,12 +917,34 @@ class KernelModuleCache {
         oldestLibTick = first.value.tick;
       }
 
-      if (oldestIndexTick == null && oldestLibTick == null) break;
+      String? oldestExclKey;
+      int? oldestExclTick;
+      if (_excludedCache.isNotEmpty) {
+        final first = _excludedCache.entries.first;
+        oldestExclKey = first.key;
+        oldestExclTick = first.value.tick;
+      }
 
-      if (oldestIndexTick != null &&
-          (oldestLibTick == null || oldestIndexTick <= oldestLibTick)) {
+      if (oldestIndexTick == null &&
+          oldestLibTick == null &&
+          oldestExclTick == null) {
+        break;
+      }
+
+      var minTick = oldestIndexTick ?? oldestLibTick ?? oldestExclTick!;
+      if (oldestLibTick != null && oldestLibTick < minTick) {
+        minTick = oldestLibTick;
+      }
+      if (oldestExclTick != null && oldestExclTick < minTick) {
+        minTick = oldestExclTick;
+      }
+
+      if (oldestIndexTick != null && oldestIndexTick == minTick) {
         final removed = _indexCache.remove(oldestIndexKey!)!;
         _indexBytesTotal -= removed.byteSize;
+      } else if (oldestExclTick != null && oldestExclTick == minTick) {
+        final removed = _excludedCache.remove(oldestExclKey!)!;
+        _excludedBytesTotal -= removed.byteSize;
       } else if (oldestLibTick != null) {
         final removed = _librariesCache.remove(oldestLibKey!)!;
         _librariesBytesTotal -= removed.byteSize;
@@ -865,7 +952,7 @@ class KernelModuleCache {
     }
   }
 
-  Future<Map<String, dynamic>> librariesJsonOf(
+  Future<_ModuleCacheEntry<Map<String, dynamic>>> _librariesEntryOf(
     String path,
     Map<String, Uint8List>? inputDigests,
   ) async {
@@ -879,7 +966,7 @@ class KernelModuleCache {
           _sameBytes(digest, cached.inputDigest!)) {
         cached.tick = ++_clock;
         _librariesCache[key] = cached;
-        return cached.value;
+        return cached;
       }
       _librariesBytesTotal -= cached.byteSize;
     }
@@ -898,22 +985,96 @@ class KernelModuleCache {
         _librariesCache[key] = cached;
         _librariesBytesTotal += entryBytes;
       }
-      return cached.value;
+      return cached;
     }
 
     final parsed = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+    final entry = _ModuleCacheEntry(
+      value: parsed,
+      inputDigest: hasDigest ? _unpin(digest) : null,
+      contentSha256: contentSha256,
+      byteSize: entryBytes,
+      tick: ++_clock,
+    );
     if (entryBytes <= maxCacheBytes) {
       _evictForBudget(entryBytes);
-      _librariesCache[key] = _ModuleCacheEntry(
-        value: parsed,
+      _librariesCache[key] = entry;
+      _librariesBytesTotal += entryBytes;
+    }
+    return entry;
+  }
+
+  Future<Map<String, dynamic>> librariesJsonOf(
+    String path,
+    Map<String, Uint8List>? inputDigests,
+  ) async => (await _librariesEntryOf(path, inputDigests)).value;
+
+  Future<Set<String>> vmLibrariesOf(
+    String path,
+    Map<String, Uint8List>? inputDigests, {
+    required String platform,
+  }) async {
+    final entry = await _librariesEntryOf(path, inputDigests);
+    final map = entry.vmByPlatform ??= <String, Set<String>>{};
+    return map[platform] ??= vmLibraries(entry.value, platform: platform);
+  }
+
+  Future<List<String>> excludedLinesOf(
+    String path,
+    Map<String, Uint8List>? inputDigests,
+  ) async {
+    final key = _normalizeFilePath(path);
+    final digest = _lookupDigest(path, inputDigests);
+    final hasDigest = digest != null && digest.isNotEmpty;
+    final cached = _excludedCache.remove(key);
+    if (cached != null) {
+      if (hasDigest &&
+          cached.inputDigest != null &&
+          _sameBytes(digest, cached.inputDigest!)) {
+        cached.tick = ++_clock;
+        _excludedCache[key] = cached;
+        return cached.value;
+      }
+      _excludedBytesTotal -= cached.byteSize;
+    }
+
+    final bytes = await File(path).readAsBytes();
+    final entryBytes = bytes.length;
+    final contentSha256 = hasDigest ? null : sha256Of(bytes);
+    if (!hasDigest &&
+        cached != null &&
+        cached.byteSize == entryBytes &&
+        cached.contentSha256 != null &&
+        _sameBytes(contentSha256!, cached.contentSha256!)) {
+      if (entryBytes <= maxCacheBytes) {
+        _evictForBudget(entryBytes);
+        cached.tick = ++_clock;
+        _excludedCache[key] = cached;
+        _excludedBytesTotal += entryBytes;
+      }
+      return cached.value;
+    }
+
+    final text = utf8.decode(bytes);
+    final uris = <String>[];
+    for (final line in const LineSplitter().convert(text)) {
+      if (line.isEmpty || line.codeUnitAt(0) == 0x23) continue;
+      final tab = line.indexOf('\t');
+      uris.add(tab < 0 ? line : line.substring(0, tab));
+    }
+    final stored = uris.isEmpty ? const <String>[] : uris;
+    if (entryBytes <= maxCacheBytes) {
+      _evictForBudget(entryBytes);
+      _excludedCache[key] = _ModuleCacheEntry(
+        value: stored,
         inputDigest: hasDigest ? _unpin(digest) : null,
         contentSha256: contentSha256,
         byteSize: entryBytes,
         tick: ++_clock,
       );
-      _librariesBytesTotal += entryBytes;
+      _excludedBytesTotal += entryBytes;
     }
-    return parsed;
+    return stored;
   }
 
   Future<_ParsedIndex?> _indexOf(
@@ -1237,8 +1398,7 @@ Future<void> _adoptDeclaredPartPeers(
 ) async {
   var hasPartDirective = false;
   for (final key in <String>{...keys.values, ...inherited.keys}) {
-    final text = await files.read(key);
-    final scan = text == null ? null : scanDirectives(text, vm);
+    final scan = await files.scan(key, vm);
     if (scan == null) continue;
     if (scan.partOfLibrary != null ||
         scan.refs.any((r) => r.isPart || r.isPartOf)) {
@@ -1256,8 +1416,7 @@ Future<void> _adoptDeclaredPartPeers(
   final scans = <String, ScanResult>{};
   final libraryByName = <String, String>{};
   for (final key in candidates) {
-    final text = await files.read(key);
-    final scan = text == null ? null : scanDirectives(text, vm);
+    final scan = await files.scan(key, vm);
     if (scan == null) continue;
     scans[key] = scan;
     if (scan.libraryName != null) {
@@ -1380,8 +1539,7 @@ Future<void> _planImports(
   final libraryKeyByName = <String, String>{};
   final declaredPartsOf = <String, Set<String>>{};
   for (final key in keys.values) {
-    final text = await files.read(key);
-    final scan = text == null ? null : scanDirectives(text, vm);
+    final scan = await files.scan(key, vm);
     if (scan == null) {
       // Not readable here, or not a directive prologue the scanner can follow. The
       // compiler decides, and a failure in it is attributed or fails the action.
@@ -1556,8 +1714,7 @@ Future<_EntrySources> _entrySources(
         ...closure.keys,
         ...files.declaredKeys,
       }) {
-        final text = await files.read(candidate);
-        final scan = text == null ? null : scanDirectives(text, vm);
+        final scan = await files.scan(candidate, vm);
         if (scan?.libraryName != null) {
           map.putIfAbsent(scan!.libraryName!, () => candidate);
         }
@@ -1587,7 +1744,7 @@ Future<_EntrySources> _entrySources(
       undeclared.add('${ownUris[key] ?? key} ($key)');
       continue;
     }
-    final scan = scanDirectives(text, vm);
+    final scan = await files.scan(key, vm);
     if (scan == null) continue;
     if (scan.partOfLibrary != null) {
       final target = await findLibraryByName(scan.partOfLibrary!);
@@ -1797,8 +1954,10 @@ Iterable<String> _inputSpellings(String? raw) sync* {
   if (raw == null || raw.isEmpty) return;
   final norm = _normalize(raw);
   if (norm.isNotEmpty) yield norm;
-  final stripped = _normalize(raw.replaceFirst(_bazelOutPrefix, ''));
-  if (stripped.isNotEmpty && stripped != norm) yield stripped;
+  if (raw.startsWith('bazel-out/') || raw.startsWith('./bazel-out/')) {
+    final stripped = _normalize(raw.replaceFirst(_bazelOutPrefix, ''));
+    if (stripped.isNotEmpty && stripped != norm) yield stripped;
+  }
 }
 
 /// The path after `multiRootPrefix`, or null for any other URI.
@@ -1849,6 +2008,7 @@ String? _resolveUri(
 
 /// `path` without empty and `.` segments, with each `..` applied.
 String _normalize(String path) {
+  if (_isNormalizedRelative(path)) return path;
   final parts = <String>[];
   for (final part in path.split('/')) {
     if (part.isEmpty || part == '.') continue;
@@ -1881,6 +2041,7 @@ class _Files {
   final Map<String, String> _stagedRoots;
   final Set<String>? _workerInputPaths;
   final Map<String, String?> _cache = {};
+  final Map<String, ScanResult?> _scanCache = {};
 
   /// Whether `key` is declared via `--source` or `--input-source` (and present
   /// in `WorkRequest.inputs` when active).
@@ -1936,6 +2097,14 @@ class _Files {
     }
     return _cache[key] = text;
   }
+
+  /// Cached directive scan of `key`.
+  Future<ScanResult?> scan(String key, Set<String> vm) async {
+    if (_scanCache.containsKey(key)) return _scanCache[key];
+    final text = await read(key);
+    final result = text == null ? null : scanDirectives(text, vm);
+    return _scanCache[key] = result;
+  }
 }
 
 /// The excluded files the sidecars list, by key. Each maps to its `package:` URI
@@ -1943,13 +2112,24 @@ class _Files {
 Future<Map<String, String>> _readExcluded(
   List<String> paths,
   Map<String, _PackageRoot> roots,
-  String multiRootPrefix,
-) async {
+  String multiRootPrefix, {
+  KernelModuleCache? cache,
+  Map<String, Uint8List>? inputDigests,
+}) async {
   final out = <String, String>{};
   for (final path in paths) {
-    for (final line in await File(path).readAsLines()) {
-      if (line.isEmpty || line.startsWith('#')) continue;
-      final uri = line.split('\t').first;
+    final Iterable<String> uris;
+    if (cache != null) {
+      uris = await cache.excludedLinesOf(path, inputDigests);
+    } else {
+      final list = <String>[];
+      for (final line in await File(path).readAsLines()) {
+        if (line.isEmpty || line.startsWith('#')) continue;
+        list.add(line.split('\t').first);
+      }
+      uris = list;
+    }
+    for (final uri in uris) {
       final key = _keyOfUri(uri, roots, multiRootPrefix);
       if (key == null) continue;
       final known = out[key];
@@ -2729,6 +2909,29 @@ Uint8List _encodeInput(String path, Uint8List digest) {
   return (path: path, digest: digest);
 }
 
+/// Decodes `path` and a view of `digest` from a single `Input` message without
+/// allocating a new `Uint8List` copy for the digest.
+({String path, Uint8List digest}) _decodeInputView(Uint8List bytes) {
+  final reader = _Reader(bytes);
+  var path = '';
+  var digest = _emptyBytes;
+  while (!reader.done) {
+    final key = reader.varint();
+    final field = key >> 3;
+    final wire = key & 7;
+    if (field == 1 && wire == 2) {
+      path = utf8.decode(reader.bytes(), allowMalformed: true);
+    } else if (field == 2 && wire == 2) {
+      digest = reader.bytes();
+    } else {
+      reader.skip(wire);
+    }
+  }
+  return (path: path, digest: digest);
+}
+
+final Uint8List _emptyBytes = Uint8List(0);
+
 /// Public wrapper around [_withDigests] for unit tests.
 Future<List<Uint8List>> ensureSummaryDigests(
   List<String> args,
@@ -2744,14 +2947,41 @@ Future<List<Uint8List>> _withDigests(
   List<String> args,
   List<Uint8List> inputs,
 ) async {
+  var hasSummaryArg = false;
+  for (var i = 0; i + 1 < args.length; i++) {
+    final arg = args[i];
+    if (arg == '--input-summary' || arg == '--input-linked') {
+      hasSummaryArg = true;
+      break;
+    }
+  }
+  if (!hasSummaryArg) return inputs;
+
   final exactWithDigest = <String>{};
+  for (var idx = 0; idx < inputs.length; idx++) {
+    final decoded = _decodeInputView(inputs[idx]);
+    if (decoded.path.isNotEmpty && decoded.digest.isNotEmpty) {
+      exactWithDigest.add(decoded.path);
+    }
+  }
+
+  var allPresent = true;
+  for (var i = 0; i + 1 < args.length; i++) {
+    final arg = args[i];
+    if (arg != '--input-summary' && arg != '--input-linked') continue;
+    if (!exactWithDigest.contains(args[i + 1])) {
+      allPresent = false;
+      break;
+    }
+  }
+  if (allPresent) return inputs;
+
   final emptyDigestIndices = <String, List<int>>{};
   final byPath = <String, Uint8List>{};
   for (var idx = 0; idx < inputs.length; idx++) {
     final decoded = _decodeInput(inputs[idx]);
     if (decoded.path.isEmpty) continue;
     if (decoded.digest.isNotEmpty) {
-      exactWithDigest.add(decoded.path);
       byPath[decoded.path] = decoded.digest;
       final norm = _normalizeFilePath(decoded.path);
       byPath.putIfAbsent(norm, () => decoded.digest);
@@ -2794,29 +3024,26 @@ class _Frames {
   _Frames(Stream<List<int>> source) : _iterator = StreamIterator(source);
 
   final StreamIterator<List<int>> _iterator;
-  Uint8List _chunk = Uint8List(0);
+  Uint8List _chunk = _emptyBytes;
   int _offset = 0;
 
   Future<bool> _fill() async {
-    if (!await _iterator.moveNext()) return false;
-    _chunk = Uint8List.fromList(_iterator.current);
-    _offset = 0;
-    return true;
-  }
-
-  Future<int?> _byte() async {
-    while (_offset >= _chunk.length) {
-      if (!await _fill()) return null;
+    while (true) {
+      if (!await _iterator.moveNext()) return false;
+      final current = _iterator.current;
+      if (current.isEmpty) continue;
+      _chunk = current is Uint8List ? current : Uint8List.fromList(current);
+      _offset = 0;
+      return true;
     }
-    return _chunk[_offset++];
   }
 
   Future<int?> _varint() async {
     var result = 0;
     var shift = 0;
     while (true) {
-      final byte = await _byte();
-      if (byte == null) return null;
+      if (_offset >= _chunk.length && !await _fill()) return null;
+      final byte = _chunk[_offset++];
       result |= (byte & 0x7f) << shift;
       if (byte < 0x80) return result;
       shift += 7;
@@ -2828,13 +3055,18 @@ class _Frames {
     final length = await _varint();
     if (length == null) return null;
     final out = Uint8List(length);
-    for (var i = 0; i < length; i++) {
-      final byte = await _byte();
-      if (byte == null) return null;
-      out[i] = byte;
+    var written = 0;
+    while (written < length) {
+      if (_offset >= _chunk.length && !await _fill()) return null;
+      final available = _chunk.length - _offset;
+      final need = length - written;
+      final count = available < need ? available : need;
+      out.setRange(written, written + count, _chunk, _offset);
+      _offset += count;
+      written += count;
     }
     if (_offset >= _chunk.length) {
-      _chunk = Uint8List(0);
+      _chunk = _emptyBytes;
       _offset = 0;
     }
     return out;
@@ -2890,8 +3122,8 @@ class _Writer {
 
   void varintField(int field, int value) {
     if (value == 0) return;
-    _out.add(_varintBytes(field << 3));
-    _out.add(_varintBytes(value));
+    _addVarint(_out, field << 3);
+    _addVarint(_out, value);
   }
 
   void stringField(int field, String value) {
@@ -2901,28 +3133,26 @@ class _Writer {
 
   /// A length-delimited field: a string, or an embedded message.
   void messageField(int field, List<int> bytes) {
-    _out.add(_varintBytes((field << 3) | 2));
-    _out.add(_varintBytes(bytes.length));
+    _addVarint(_out, (field << 3) | 2);
+    _addVarint(_out, bytes.length);
     _out.add(bytes);
   }
 
   Uint8List toBytes() => _out.toBytes();
 }
 
-Uint8List _varintBytes(int value) {
-  final out = BytesBuilder();
+void _addVarint(BytesBuilder out, int value) {
   var rest = value;
   while (rest >= 0x80) {
     out.addByte((rest & 0x7f) | 0x80);
     rest >>= 7;
   }
   out.addByte(rest);
-  return out.toBytes();
 }
 
 Uint8List _frame(Uint8List message) {
   final out = BytesBuilder();
-  out.add(_varintBytes(message.length));
+  _addVarint(out, message.length);
   out.add(message);
   return out.toBytes();
 }
