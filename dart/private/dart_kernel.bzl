@@ -680,8 +680,8 @@ def kernel_module_action(
     if libraries_platform:
         args.add("--libraries-platform", libraries_platform)
     args.add_all(extra_libraries, before_each = "--extra-library")
-    args.add("--multi-root", ctx.bin_dir.path)
     args.add("--multi-root", ".")
+    args.add("--multi-root", ctx.bin_dir.path)
     args.add("--multi-root-scheme", scheme)
     if target == "vm":
         args.add_all([

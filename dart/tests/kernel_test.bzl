@@ -498,6 +498,10 @@ def _kernel_module_action_custom_params_test_impl(ctx):
         "--multi-root-scheme" in argv and "org-dartlang-app" in argv,
         "--multi-root-scheme org-dartlang-app passed",
     )
+    multi_roots = [argv[i + 1] for i in range(len(argv) - 1) if argv[i] == "--multi-root"]
+    asserts.equals(env, 2, len(multi_roots), "two --multi-root flags passed")
+    asserts.equals(env, ".", multi_roots[0], "first --multi-root is '.' so stale generated files do not shadow source files")
+    asserts.true(env, multi_roots[1].endswith("/bin"), "second --multi-root is ctx.bin_dir.path")
     asserts.true(
         env,
         "--track-widget-creation" in argv,
@@ -593,6 +597,11 @@ def _modular_kernel_binary_test_impl(ctx):
         "org-dartlang-root" in kernel_actions[0].argv,
         "modular DartKernel entry action uses org-dartlang-root scheme",
     )
+    mod_argv = kernel_actions[0].argv
+    mod_roots = [mod_argv[i + 1] for i in range(len(mod_argv) - 1) if mod_argv[i] == "--multi-root"]
+    asserts.equals(env, 2, len(mod_roots), "modular DartKernel entry action passes two --multi-root flags")
+    asserts.equals(env, ".", mod_roots[0], "modular DartKernel entry action passes '.' before bin_dir")
+    asserts.true(env, mod_roots[1].endswith("/bin"), "modular DartKernel entry action passes bin_dir second")
 
     link_actions = [a for a in actions if a.mnemonic == "DartKernelLink"]
     asserts.equals(env, 1, len(link_actions), "modular kernel binary registers one DartKernelLink action")
@@ -640,6 +649,11 @@ def _non_modular_kernel_binary_test_impl(ctx):
         "org-dartlang-root" in kernel_actions[0].argv,
         "whole-program DartKernel action uses org-dartlang-root scheme",
     )
+    whole_argv = kernel_actions[0].argv
+    fs_roots = [whole_argv[i + 1] for i in range(len(whole_argv) - 1) if whole_argv[i] == "--filesystem-root"]
+    asserts.equals(env, 2, len(fs_roots), "whole-program DartKernel action passes two --filesystem-root flags")
+    asserts.equals(env, ".", fs_roots[0], "whole-program DartKernel action passes '.' before bin_dir")
+    asserts.true(env, fs_roots[1].endswith("/bin"), "whole-program DartKernel action passes bin_dir second")
     return analysistest.end(env)
 
 _non_modular_kernel_binary_test = analysistest.make(_non_modular_kernel_binary_test_impl)

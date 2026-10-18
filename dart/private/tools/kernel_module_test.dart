@@ -24,7 +24,8 @@ import 'kernel_module.dart'
         ensureSummaryDigests,
         scanDirectives,
         sha256Of,
-        stripSourceCodeFromDill;
+        stripSourceCodeFromDill,
+        vmLibraries;
 
 const _prefix = 'org-dartlang-root:///';
 
@@ -2063,9 +2064,9 @@ void main(List<String> args) {
         '--filesystem-scheme',
         'org-dartlang-root',
         '--filesystem-root',
-        'bazel-out/k8-fastbuild/bin',
-        '--filesystem-root',
         '.',
+        '--filesystem-root',
+        'bazel-out/k8-fastbuild/bin',
         '-Ddart.vm.product=true',
         '-Ddart.vm.asan=false',
         '-Ddart.vm.msan=false',
@@ -2103,9 +2104,9 @@ void main(List<String> args) {
             '--libraries-json',
             librariesJson,
             '--multi-root',
-            'bazel-out/k8-fastbuild/bin',
-            '--multi-root',
             '.',
+            '--multi-root',
+            'bazel-out/k8-fastbuild/bin',
             '--multi-root-scheme',
             'org-dartlang-root',
             '-Ddart.vm.product=true',
@@ -2146,9 +2147,9 @@ void main(List<String> args) {
             '--libraries-json',
             librariesJson,
             '--multi-root',
-            'bazel-out/k8-fastbuild/bin',
-            '--multi-root',
             '.',
+            '--multi-root',
+            'bazel-out/k8-fastbuild/bin',
             '--multi-root-scheme',
             'org-dartlang-root',
             '-Ddart.vm.product=true',
@@ -3094,6 +3095,661 @@ void main(List<String> args) {
       ['${depDir.path}/1.dill'],
       reason: 'KernelModuleCache must detect same-(size, mtime) index.json mutation when digest is absent',
     );
+  });
+
+  test('scanDirectives, vmLibraries, and compileModule handle interpolated annotations, CFE configurable import conditions, and undeclared sources identically across worker, local, and sandboxed strategies', () async {
+    // 1. Unit checks for vmLibraries filtering of internal `_*` and unsupported libraries.
+    final libs = vmLibraries({
+      'vm': {
+        'libraries': {
+          'core': {'uri': 'core/core.dart'},
+          'io': {'uri': 'io/io.dart'},
+          '_internal': {'uri': '_internal/vm/lib/internal_patch.dart'},
+          '_http': {'uri': '_http/http.dart'},
+          'wasm': {'uri': 'wasm/wasm.dart', 'supported': false},
+        },
+        'include': [
+          {'target': 'vm_common'},
+        ],
+      },
+      'vm_common': {
+        'libraries': {
+          'async': {'uri': 'async/async.dart'},
+          '_vm': {'uri': '_vm/vm.dart'},
+        },
+      },
+    });
+    expect(libs, equals({'core', 'io', 'async'}));
+
+    // 2. Unit checks for scanDirectives with `${...}` string interpolations in annotations,
+    // comments/raw-strings/maps inside interpolations, escapes, and CFE configurable imports.
+    final complexPrologue =
+        '@Deprecated("\${")"}")\n'
+        '@Deprecated("\${"nested \${")"} end"}")\n'
+        '@Deprecated("\${r\')\'}" "\${r"}"}")\n'
+        '@Deprecated("\${/* ) " } /* inner ) */ */ \')\'}")\n'
+        '@Deprecated("\${// ) " }\n\')\'}")\n'
+        '@Deprecated("\${({\'k\': \')\'})[\'k\']}")\n'
+        'library my.annotated.lib;\n'
+        '@Deprecated("""\n\${")"}\n""")\n'
+        "import 'package:pkg/a.dart';\n"
+        "import 'package:pkg/default_missing_false.dart' if (dart.library.html == 'false') 'package:pkg/wrong_branch.dart';\n"
+        "import 'package:pkg/default_missing_empty.dart' if (dart.library.html == '') 'package:pkg/wrong_empty.dart';\n"
+        "import 'package:pkg/default_internal.dart' if (dart.library._internal) 'package:pkg/wrong_internal.dart';\n"
+        "import 'package:pkg/default_io_false.dart' if (dart.library.io == 'false') 'package:pkg/wrong_io_false.dart';\n"
+        "import 'package:pkg/default_io_true.dart' if (dart.library.io == 't' 'rue') 'package:pkg/io_branch.dart';\n"
+        "import 'package:pkg/default_io_esc.dart' if (dart.library.io == 'tr\\x75e') 'package:pkg/io_esc_branch.dart';\n"
+        "import 'package:pkg/default_io_triple.dart' if (dart.library.io == '''\ntrue''') 'package:pkg/io_triple_branch.dart';\n"
+        "import 'package:pkg/default_env_empty.dart' if (CUSTOM_ENV == '') 'package:pkg/env_empty_branch.dart';\n"
+        "import 'package:pkg/default_env_false.dart' if (CUSTOM_ENV == 'false') 'package:pkg/wrong_env_false.dart';\n"
+        "export 'package:pkg/exp\\x2edart';\n"
+        "part 'part\\u002edart';\n"
+        '@deprecated\n'
+        'part() => 1;\n';
+    final scanned = scanDirectives(complexPrologue, libs);
+    expect(scanned, isNotNull);
+    expect(scanned!.libraryName, 'my.annotated.lib');
+    expect(scanned.refs.map((r) => '${r.kind}:${r.uri}').toList(), [
+      'import:package:pkg/a.dart',
+      'import:package:pkg/default_missing_false.dart',
+      'import:package:pkg/default_missing_empty.dart',
+      'import:package:pkg/default_internal.dart',
+      'import:package:pkg/default_io_false.dart',
+      'import:package:pkg/io_branch.dart',
+      'import:package:pkg/io_esc_branch.dart',
+      'import:package:pkg/io_triple_branch.dart',
+      'import:package:pkg/env_empty_branch.dart',
+      'import:package:pkg/default_env_false.dart',
+      'export:package:pkg/exp.dart',
+      'part:part.dart',
+    ]);
+
+    // 3. Verify contextual keywords (`import`, `export`, `library`, `part`) as top-level
+    // declaration names after annotations end the prologue cleanly without throwing.
+    for (final decl in [
+      '@deprecated\nimport() => 1;\n',
+      '@deprecated\nexport() => 1;\n',
+      '@deprecated\nlibrary() => 1;\n',
+      '@deprecated\npart() => 1;\n',
+    ]) {
+      final res = scanDirectives("import 'a.dart';\n$decl", libs);
+      expect(res, isNotNull, reason: 'failed on:\n$decl');
+      expect(res!.refs.map((r) => r.uri).toList(), ['a.dart']);
+    }
+
+    // 4. End-to-end verification with real kernel_worker across worker, local, and sandboxed
+    // setups when an undeclared file exists on disk in the workspace.
+    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final exeSuffix = Platform.isWindows ? '.exe' : '';
+    final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
+    final kernelWorker =
+        '${sdkDir.path}/bin/snapshots/kernel_worker_aot.dart.snapshot';
+    final platformDill = '${sdkDir.path}/lib/_internal/vm_platform_strong.dill';
+    final librariesJson = '${sdkDir.path}/lib/libraries.json';
+
+    // 4a. Library module with `@Deprecated("${")"}")` before an undeclared import or part,
+    // or a configurable import whose default is undeclared and whose `== 'false'` branch
+    // is declared: planner must exclude all of them without letting kernel_worker read
+    // undeclared files from disk.
+    _write(
+      'pkg/lib/undeclared_secret.dart',
+      'THIS IS NOT VALID DART AND MUST NEVER BE READ;\n',
+    );
+    _write(
+      'pkg/lib/annot_bad.dart',
+      '@Deprecated("\${")"}")\n'
+          "import 'package:pkg/undeclared_secret.dart';\n"
+          'int bad() => 1;\n',
+    );
+    _write(
+      'pkg/lib/annot_bad_part.dart',
+      '@Deprecated("\${")"}")\n'
+          "part 'undeclared_secret.dart';\n"
+          'int badPart() => 1;\n',
+    );
+    _write(
+      'pkg/lib/cond_bad_default.dart',
+      "import 'package:pkg/undeclared_secret.dart' "
+          "if (dart.library.html == 'false') 'package:pkg/declared_ok.dart';\n"
+          'int badCond() => 1;\n',
+    );
+    _write(
+      'pkg/lib/declared_ok.dart',
+      'const String greeting = "declared-ok";\n',
+    );
+    _write(
+      'pkg/lib/cond_ok.dart',
+      '@Deprecated("\${")"}")\n'
+          "import 'package:pkg/declared_ok.dart' "
+          "if (dart.library.html == 'false') 'package:pkg/undeclared_secret.dart' "
+          "if (dart.library._internal) 'package:pkg/undeclared_secret.dart';\n"
+          'String msg() => greeting;\n',
+    );
+
+    final libRes = await _compile('annot_lib', [
+      'pkg/lib/annot_bad.dart',
+      'pkg/lib/annot_bad_part.dart',
+      'pkg/lib/cond_bad_default.dart',
+      'pkg/lib/declared_ok.dart',
+      'pkg/lib/cond_ok.dart',
+    ]);
+    expect(libRes.code, 0, reason: libRes.log);
+    expect(libRes.excluded, {
+      _uri('pkg/lib/annot_bad.dart'): 'imports package:pkg/undeclared_secret.dart, which is not in this module closure',
+      _uri('pkg/lib/annot_bad_part.dart'):
+          'its part undeclared_secret.dart is not an input of this module',
+      _uri('pkg/lib/cond_bad_default.dart'): 'imports package:pkg/undeclared_secret.dart, which is not in this module closure',
+    });
+    expect(libRes.defines, [
+      ['pkg/lib/declared_ok.dart'],
+      ['pkg/lib/cond_ok.dart'],
+    ]);
+
+    // 4b. Entry module (`--no-drop`) that imports an undeclared file after `@Deprecated("${")"}")`:
+    // must fail hermetically in worker, local, and sandboxed modes without invoking kernel_worker.
+    _write(
+      'pkg/bin/bad_entry.dart',
+      '@Deprecated("\${")"}")\n'
+          "import 'package:pkg/undeclared_secret.dart';\n"
+          'void main() {}\n',
+    );
+    final badEntryLocal = await _compile('bad_entry_local', [
+      'pkg/bin/bad_entry.dart',
+    ], noDrop: true);
+    expect(badEntryLocal.code, 1);
+    expect(badEntryLocal.calls, isEmpty);
+    expect(
+      badEntryLocal.log,
+      contains(
+        'pkg/lib/undeclared_secret.dart): source is not a declared input.',
+      ),
+    );
+
+    // 4c. Real kernel_worker compile across worker, local (with undeclared_secret.dart on disk),
+    // and sandboxed (without undeclared_secret.dart on disk) strategies must produce
+    // byte-identical outputs.
+    Future<({Uint8List kmodDill, Uint8List koutlineDill})> buildCondStrategy(
+      String mode, {
+      required bool includeUndeclaredOnDisk,
+      required bool useWorkerInputs,
+    }) async {
+      final ws = Directory('${_root.path}/strategy_$mode')
+        ..createSync(recursive: true);
+      void writeWs(String rel, String content) {
+        File('${ws.path}/$rel')
+          ..parent.createSync(recursive: true)
+          ..writeAsStringSync(content);
+      }
+
+      writeWs(
+        'package_config.json',
+        jsonEncode({
+          'configVersion': 2,
+          'packages': [
+            {
+              'name': 'pkg',
+              'rootUri': 'org-dartlang-root:///pkg',
+              'packageUri': 'lib/',
+              'languageVersion': '3.0',
+            },
+          ],
+        }),
+      );
+      writeWs(
+        'pkg/lib/declared_ok.dart',
+        'const String greeting = "declared-ok";\n',
+      );
+      writeWs(
+        'pkg/lib/cond_ok.dart',
+        '@Deprecated("\${")"}")\n'
+            "import 'package:pkg/declared_ok.dart' "
+            "if (dart.library.html == 'false') 'package:pkg/undeclared_secret.dart' "
+            "if (dart.library._internal) 'package:pkg/undeclared_secret.dart';\n"
+            'String msg() => greeting;\n',
+      );
+      if (includeUndeclaredOnDisk) {
+        writeWs(
+          'pkg/lib/undeclared_secret.dart',
+          'THIS IS INVALID DART AND UNDECLARED;\n',
+        );
+      }
+
+      final compiler = _CwdOneShotCompiler(
+        dartaotruntime,
+        kernelWorker,
+        ws.path,
+      );
+      final kmod = 'out/pkg.kmod';
+      final koutline = 'out/pkg.koutline';
+      final excluded = 'out/pkg.vm_excluded.txt';
+      final log = StringBuffer();
+      final workerInputs = useWorkerInputs
+          ? [
+              _encodeInputForTest(
+                'pkg/lib/declared_ok.dart',
+                Uint8List.fromList([1]),
+              ),
+              _encodeInputForTest(
+                'pkg/lib/cond_ok.dart',
+                Uint8List.fromList([2]),
+              ),
+            ]
+          : const <Uint8List>[];
+
+      final prevCwd = Directory.current;
+      Directory.current = ws;
+      try {
+        final code = await compileModule(
+          [
+            '--target',
+            'vm',
+            '--dart-sdk-summary',
+            platformDill,
+            '--packages-file',
+            'package_config.json',
+            '--libraries-json',
+            librariesJson,
+            '--multi-root',
+            '.',
+            '--multi-root-scheme',
+            'org-dartlang-root',
+            '--no-summary-only',
+            '--exclude-non-sources',
+            '--source',
+            'package:pkg/declared_ok.dart',
+            '--source',
+            'package:pkg/cond_ok.dart',
+            '--output',
+            kmod,
+            '--output-outline',
+            koutline,
+            '--excluded-output',
+            excluded,
+          ],
+          compiler,
+          log,
+          workerInputs,
+        );
+        expect(code, 0, reason: '$mode failed: $log');
+      } finally {
+        Directory.current = prevCwd;
+      }
+      return (
+        kmodDill: File('${ws.path}/$kmod/1.dill').readAsBytesSync(),
+        koutlineDill: File('${ws.path}/$koutline/1.dill').readAsBytesSync(),
+      );
+    }
+
+    final workerOut = await buildCondStrategy(
+      'worker',
+      includeUndeclaredOnDisk: true,
+      useWorkerInputs: true,
+    );
+    final localOut = await buildCondStrategy(
+      'local',
+      includeUndeclaredOnDisk: true,
+      useWorkerInputs: false,
+    );
+    final sandboxedOut = await buildCondStrategy(
+      'sandboxed',
+      includeUndeclaredOnDisk: false,
+      useWorkerInputs: false,
+    );
+    expect(workerOut.kmodDill, equals(sandboxedOut.kmodDill));
+    expect(localOut.kmodDill, equals(sandboxedOut.kmodDill));
+    expect(workerOut.koutlineDill, equals(sandboxedOut.koutlineDill));
+    expect(localOut.koutlineDill, equals(sandboxedOut.koutlineDill));
+  });
+
+  test('multi-root resolution and _Files.read never let stale bazel-out files shadow declared source files or untracked workspace files shadow declared generated files', () async {
+    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final exeSuffix = Platform.isWindows ? '.exe' : '';
+    final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
+    final kernelWorker =
+        '${sdkDir.path}/bin/snapshots/kernel_worker_aot.dart.snapshot';
+    final genKernel =
+        '${sdkDir.path}/bin/snapshots/gen_kernel_aot.dart.snapshot';
+    final platformDill = '${sdkDir.path}/lib/_internal/vm_platform_strong.dill';
+    final productPlatformDill =
+        '${sdkDir.path}/lib/_internal/vm_platform_product.dill';
+    final librariesJson = '${sdkDir.path}/lib/libraries.json';
+
+    // Scenario 1: Declared source file in `.` (`pkg/lib/config.dart`) with a stale
+    // generated output on disk at `bazel-out/k8-fastbuild/bin/pkg/lib/config.dart`.
+    // The stale file in `bazel-out` imports `dart:html` and returns `"stale-gen-v1"`,
+    // so if `_Files.read`, `kernel_worker`, or `gen_kernel` ever read it, the library
+    // would be falsely excluded or print `"stale-gen-v1"`.
+    Future<({Uint8List wholeDill, Uint8List modularDill, String output})>
+    runSourceVsStaleBuild(
+      String label, {
+      required bool hasStaleBazelOutFile,
+      required bool reverseMultiRootOrder,
+      required bool passWorkerInputs,
+    }) async {
+      final ws = Directory('${_root.path}/stale_test_$label')
+        ..createSync(recursive: true);
+      void writeWs(String rel, String content) {
+        File('${ws.path}/$rel')
+          ..parent.createSync(recursive: true)
+          ..writeAsStringSync(content);
+      }
+
+      writeWs(
+        'package_config.json',
+        jsonEncode({
+          'configVersion': 2,
+          'packages': [
+            {
+              'name': 'pkg',
+              'rootUri': 'org-dartlang-root:///pkg',
+              'packageUri': 'lib/',
+              'languageVersion': '3.0',
+            },
+          ],
+        }),
+      );
+      writeWs(
+        'pkg/lib/config.dart',
+        'String currentMode() => "declared-source-v2";\n',
+      );
+      writeWs(
+        'app/bin/main.dart',
+        "import 'package:pkg/config.dart';\n"
+            'void main() {\n'
+            '  print(currentMode());\n'
+            '}\n',
+      );
+      if (hasStaleBazelOutFile) {
+        writeWs(
+          'bazel-out/k8-fastbuild/bin/pkg/lib/config.dart',
+          "import 'dart:html';\n"
+              'String currentMode() => "stale-bazel-out-v1";\n',
+        );
+      }
+
+      final wholePath = '${ws.path}/bazel-out/k8-fastbuild/bin/whole.dill';
+      File(wholePath).parent.createSync(recursive: true);
+      final genRes = await Process.run(dartaotruntime, [
+        genKernel,
+        '--platform',
+        productPlatformDill,
+        '--packages',
+        'package_config.json',
+        '--filesystem-scheme',
+        'org-dartlang-root',
+        '--filesystem-root',
+        '.',
+        '--filesystem-root',
+        'bazel-out/k8-fastbuild/bin',
+        '-Ddart.vm.product=true',
+        '-Ddart.vm.asan=false',
+        '-Ddart.vm.msan=false',
+        '-Ddart.vm.tsan=false',
+        '-o',
+        'bazel-out/k8-fastbuild/bin/whole.dill',
+        'org-dartlang-root:///app/bin/main.dart',
+      ], workingDirectory: ws.path);
+      expect(
+        genRes.exitCode,
+        0,
+        reason:
+            'gen_kernel ($label) failed: ${genRes.stdout}\n${genRes.stderr}',
+      );
+
+      final compiler = _CwdOneShotCompiler(
+        dartaotruntime,
+        kernelWorker,
+        ws.path,
+      );
+      final libKmod = 'bazel-out/k8-fastbuild/bin/pkg.kmod';
+      final libKoutline = 'bazel-out/k8-fastbuild/bin/pkg.koutline';
+      final libExcluded = 'bazel-out/k8-fastbuild/bin/pkg.vm_excluded.txt';
+      final rootsArgs = reverseMultiRootOrder
+          ? ['--multi-root', 'bazel-out/k8-fastbuild/bin', '--multi-root', '.']
+          : ['--multi-root', '.', '--multi-root', 'bazel-out/k8-fastbuild/bin'];
+      final libInputs = passWorkerInputs
+          ? [
+              _encodeInputForTest(
+                'pkg/lib/config.dart',
+                Uint8List.fromList([1]),
+              ),
+            ]
+          : const <Uint8List>[];
+      final entryInputs = passWorkerInputs
+          ? [
+              _encodeInputForTest('app/bin/main.dart', Uint8List.fromList([2])),
+            ]
+          : const <Uint8List>[];
+
+      final prevCwd = Directory.current;
+      Directory.current = ws;
+      try {
+        final libLog = StringBuffer();
+        final libCode = await compileModule(
+          [
+            '--target',
+            'vm',
+            '--dart-sdk-summary',
+            platformDill,
+            '--packages-file',
+            'package_config.json',
+            '--libraries-json',
+            librariesJson,
+            ...rootsArgs,
+            '--multi-root-scheme',
+            'org-dartlang-root',
+            '-Ddart.vm.product=true',
+            '-Ddart.vm.asan=false',
+            '-Ddart.vm.msan=false',
+            '-Ddart.vm.tsan=false',
+            '--no-summary-only',
+            '--exclude-non-sources',
+            '--source',
+            'package:pkg/config.dart',
+            '--output',
+            libKmod,
+            '--output-outline',
+            libKoutline,
+            '--excluded-output',
+            libExcluded,
+          ],
+          compiler,
+          libLog,
+          libInputs,
+        );
+        expect(libCode, 0, reason: '$label lib failed: $libLog');
+
+        final entryKmod = 'bazel-out/k8-fastbuild/bin/entry.kmod';
+        final entryExcluded =
+            'bazel-out/k8-fastbuild/bin/entry.vm_excluded.txt';
+        final entryLog = StringBuffer();
+        final entryCode = await compileModule(
+          [
+            '--target',
+            'vm',
+            '--dart-sdk-summary',
+            platformDill,
+            '--packages-file',
+            'package_config.json',
+            '--libraries-json',
+            librariesJson,
+            ...rootsArgs,
+            '--multi-root-scheme',
+            'org-dartlang-root',
+            '-Ddart.vm.product=true',
+            '-Ddart.vm.asan=false',
+            '-Ddart.vm.msan=false',
+            '-Ddart.vm.tsan=false',
+            '--no-summary-only',
+            '--exclude-non-sources',
+            '--input-kmod',
+            libKoutline,
+            '--source',
+            'org-dartlang-root:///app/bin/main.dart',
+            '--output',
+            entryKmod,
+            '--excluded-output',
+            entryExcluded,
+            '--no-drop',
+          ],
+          compiler,
+          entryLog,
+          entryInputs,
+        );
+        expect(entryCode, 0, reason: '$label entry failed: $entryLog');
+
+        final modularPath = 'bazel-out/k8-fastbuild/bin/modular.dill';
+        final linkErr = StringBuffer();
+        expect(
+          linkOne(
+            [modularPath, entryKmod, libKmod],
+            cache: KernelLinkCache(),
+            inputs: null,
+            errSink: linkErr,
+          ),
+          0,
+          reason: linkErr.toString(),
+        );
+      } finally {
+        Directory.current = prevCwd;
+      }
+
+      final modularPath = '${ws.path}/bazel-out/k8-fastbuild/bin/modular.dill';
+      final runRes = await Process.run(Platform.resolvedExecutable, [
+        modularPath,
+      ]);
+      expect(runRes.exitCode, 0, reason: '${runRes.stderr}');
+      return (
+        wholeDill: File(wholePath).readAsBytesSync(),
+        modularDill: File(modularPath).readAsBytesSync(),
+        output: (runRes.stdout as String).trim(),
+      );
+    }
+
+    final cleanBuild = await runSourceVsStaleBuild(
+      'clean',
+      hasStaleBazelOutFile: false,
+      reverseMultiRootOrder: false,
+      passWorkerInputs: false,
+    );
+    final incrementalLocal = await runSourceVsStaleBuild(
+      'incremental_local',
+      hasStaleBazelOutFile: true,
+      reverseMultiRootOrder: false,
+      passWorkerInputs: false,
+    );
+    final incrementalWorker = await runSourceVsStaleBuild(
+      'incremental_worker',
+      hasStaleBazelOutFile: true,
+      reverseMultiRootOrder: false,
+      passWorkerInputs: true,
+    );
+    final incrementalWorkerReversedRoots = await runSourceVsStaleBuild(
+      'incremental_worker_reversed_roots',
+      hasStaleBazelOutFile: true,
+      reverseMultiRootOrder: true,
+      passWorkerInputs: true,
+    );
+
+    expect(cleanBuild.output, 'declared-source-v2');
+    expect(incrementalLocal.output, 'declared-source-v2');
+    expect(incrementalWorker.output, 'declared-source-v2');
+    expect(incrementalWorkerReversedRoots.output, 'declared-source-v2');
+    expect(incrementalLocal.wholeDill, equals(cleanBuild.wholeDill));
+    expect(incrementalLocal.modularDill, equals(cleanBuild.modularDill));
+    expect(incrementalWorker.modularDill, equals(cleanBuild.modularDill));
+    expect(
+      incrementalWorkerReversedRoots.modularDill,
+      equals(cleanBuild.modularDill),
+    );
+
+    // Scenario 2: Reverse case — `bazel-out/k8-fastbuild/bin/pkg/lib/gen.dart` is a
+    // declared generated input in `WorkRequest.inputs` (and `--input-source`), while
+    // an untracked stale file exists in the workspace at `./pkg/lib/gen.dart`
+    // (importing `dart:html`). `_Files.read` and `compileModule` must skip `.` and
+    // compile the declared generated file from `bazel-out/k8-fastbuild/bin`.
+    final genWs = Directory('${_root.path}/gen_vs_untracked')
+      ..createSync(recursive: true);
+    File('${genWs.path}/package_config.json').writeAsStringSync(
+      jsonEncode({
+        'configVersion': 2,
+        'packages': [
+          {
+            'name': 'pkg',
+            'rootUri': 'org-dartlang-root:///pkg',
+            'packageUri': 'lib/',
+            'languageVersion': '3.0',
+          },
+        ],
+      }),
+    );
+    File('${genWs.path}/pkg/lib/gen.dart')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync("import 'dart:html';\nString genVal() => 'bad';\n");
+    File('${genWs.path}/bazel-out/k8-fastbuild/bin/pkg/lib/gen.dart')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync("String genVal() => 'declared-generated-v2';\n");
+
+    final genCompiler = _CwdOneShotCompiler(
+      dartaotruntime,
+      kernelWorker,
+      genWs.path,
+    );
+    final prevCwd = Directory.current;
+    Directory.current = genWs;
+    try {
+      final genLog = StringBuffer();
+      final genCode = await compileModule(
+        [
+          '--target',
+          'vm',
+          '--dart-sdk-summary',
+          platformDill,
+          '--packages-file',
+          'package_config.json',
+          '--libraries-json',
+          librariesJson,
+          '--multi-root',
+          '.',
+          '--multi-root',
+          'bazel-out/k8-fastbuild/bin',
+          '--multi-root-scheme',
+          'org-dartlang-root',
+          '--no-summary-only',
+          '--exclude-non-sources',
+          '--source',
+          'package:pkg/gen.dart',
+          '--input-source',
+          'bazel-out/k8-fastbuild/bin/pkg/lib/gen.dart',
+          '--output',
+          'bazel-out/k8-fastbuild/bin/gen.kmod',
+          '--excluded-output',
+          'bazel-out/k8-fastbuild/bin/gen.vm_excluded.txt',
+        ],
+        genCompiler,
+        genLog,
+        [
+          _encodeInputForTest(
+            'bazel-out/k8-fastbuild/bin/pkg/lib/gen.dart',
+            Uint8List.fromList([9]),
+          ),
+        ],
+      );
+      expect(genCode, 0, reason: genLog.toString());
+      final genIdx = jsonDecode(
+        File('bazel-out/k8-fastbuild/bin/gen.kmod/index.json')
+            .readAsStringSync(),
+      ) as Map<String, dynamic>;
+      expect((genIdx['sccs'] as List), hasLength(1));
+      final dillBytes = File('bazel-out/k8-fastbuild/bin/gen.kmod/0.dill')
+          .readAsBytesSync();
+      expect(
+        _containsSubsequence(dillBytes, utf8.encode('declared-generated-v2')),
+        isTrue,
+      );
+    } finally {
+      Directory.current = prevCwd;
+    }
   });
 }
 

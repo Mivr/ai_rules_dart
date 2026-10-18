@@ -864,10 +864,10 @@ def gen_kernel_args(ctx, tools, platform, package_config, scheme = STABLE_SCHEME
     """Starts the argument list of a `gen_kernel` run whose URIs are stable.
 
     The two `--filesystem-root`s are relative to the action's working directory,
-    the exec root. The first serves the outputs of the bin root and the second
-    source files, so a generated file shadows any stale checked-in copy at the
-    same relative path. The caller appends the mode flags, `-o`, and the
-    entrypoint as `<scheme>:///<stable_entry_path>`.
+    the exec root. The first serves source files and the second the outputs of
+    the bin root, so a stale generated file in `bazel-out` cannot shadow a
+    declared source file at the same relative path. The caller appends the mode
+    flags, `-o`, and the entrypoint as `<scheme>:///<stable_entry_path>`.
 
     Args:
         ctx: The rule context, for its bin directory.
@@ -887,8 +887,8 @@ def gen_kernel_args(ctx, tools, platform, package_config, scheme = STABLE_SCHEME
     if package_config != None:
         args.add("--packages", package_config)
     args.add("--filesystem-scheme", scheme)
-    args.add("--filesystem-root", ctx.bin_dir.path)
     args.add("--filesystem-root", ".")
+    args.add("--filesystem-root", ctx.bin_dir.path)
     return args
 
 def _exec_root_of(f):
@@ -1488,7 +1488,6 @@ def generate_native_assets_yaml(abi, asset_entries):
         abi = abi,
         assets = assets,
     )
-
 
 def asset_path_for(file, lib_root):
     """Computes the in-package asset path for a File.

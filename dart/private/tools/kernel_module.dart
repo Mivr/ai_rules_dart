@@ -334,29 +334,22 @@ Future<int> compileModule(
       if (rawPath.isEmpty) continue;
       if (_isNormalizedRelative(rawPath)) {
         paths.add(rawPath);
-        if (rawPath.startsWith('bazel-out/') && rawPath.endsWith('.dart')) {
-          final stripped = rawPath.replaceFirst(_bazelOutPrefix, '');
-          if (stripped.isNotEmpty && stripped != rawPath) {
-            paths.add(stripped);
-          }
-        }
         if (decoded.digest.isNotEmpty) {
           exactInputPathsWithDigest.add(rawPath);
           digests[rawPath] = decoded.digest;
         }
       } else {
-        for (final spelling in _inputSpellings(rawPath)) {
-          paths.add(spelling);
-        }
+        paths.add(rawPath);
+        final norm = _normalize(rawPath);
+        if (norm.isNotEmpty) paths.add(norm);
         if (decoded.digest.isNotEmpty) {
           exactInputPathsWithDigest.add(rawPath);
           digests[rawPath] = decoded.digest;
-          final norm = _normalizeFilePath(rawPath);
-          digests.putIfAbsent(norm, () => decoded.digest);
-          final relNorm = _normalize(rawPath);
-          if (relNorm.isNotEmpty) {
-            digests.putIfAbsent(relNorm, () => decoded.digest);
-            digests.putIfAbsent('./$relNorm', () => decoded.digest);
+          final normFile = _normalizeFilePath(rawPath);
+          digests.putIfAbsent(normFile, () => decoded.digest);
+          if (norm.isNotEmpty) {
+            digests.putIfAbsent(norm, () => decoded.digest);
+            digests.putIfAbsent('./$norm', () => decoded.digest);
           }
         }
       }
@@ -407,16 +400,23 @@ Future<int> compileModule(
     }
   }
   final declaredKeys = <String>{};
+  final declaredRootPaths = <String>{};
   for (final raw in [...sources, ...inputSources]) {
     final key = _keyOfUri(raw, roots, multiRootPrefix);
     if (key != null) declaredKeys.add(key);
     for (final spelling in _inputSpellings(raw)) {
       declaredKeys.add(spelling);
     }
+    if (!raw.contains(':')) {
+      declaredRootPaths.add(raw);
+      final norm = _normalize(raw);
+      if (norm.isNotEmpty) declaredRootPaths.add(norm);
+    }
   }
   final files = _Files(
     multiRoots.isEmpty ? const ['.'] : multiRoots,
     declaredKeys: declaredKeys,
+    declaredRootPaths: declaredRootPaths,
     stagedRoots: stagedSources,
     workerInputPaths: workerInputPaths,
   );
@@ -442,6 +442,7 @@ Future<int> compileModule(
     final entry = await _entrySources(
       sources,
       inherited,
+      graph,
       roots,
       files,
       vm,
@@ -479,8 +480,14 @@ Future<int> compileModule(
       }
     }
     const dill = 'entry.dill';
+    final entryBase = _baseWithOrderedMultiRoots(
+      base,
+      multiRoots,
+      entry.keys,
+      files,
+    );
     final outcome = await compiler.run([
-      ...base,
+      ...entryBase,
       for (final root in extraMultiRoots) ...[_multiRootFlag, root],
       for (final d in neededDills(entry.imports, graph)) ...[
         '--input-summary',
@@ -602,8 +609,14 @@ Future<int> compileModule(
         }
       }
       final dillPath = '$output/${scc.dill}';
+      final sccBase = _baseWithOrderedMultiRoots(
+        base,
+        multiRoots,
+        scc.keys,
+        files,
+      );
       final outcome = await compiler.run([
-        ...base,
+        ...sccBase,
         for (final root in extraMultiRoots) ...[_multiRootFlag, root],
         for (final node in summaryNodes) ...['--input-summary', node.dill],
         for (final uri in scc.uris) ...['--source', uri],
@@ -1694,6 +1707,7 @@ class _EntryEdge {
 Future<_EntrySources> _entrySources(
   List<String> sources,
   Map<String, String> closure,
+  Map<String, _Node> graph,
   Map<String, _PackageRoot> roots,
   _Files files,
   Set<String> vm,
@@ -1773,7 +1787,7 @@ Future<_EntrySources> _entrySources(
       if (!seen.add(target)) continue;
       final uri =
           closure[target] ??
-          ((ref.isPart || ref.isPartOf)
+          ((!graph.containsKey(target) || ref.isPart || ref.isPartOf)
               ? _packageUriOf(target, '$multiRootPrefix$target', roots)
               : null);
       if (uri == null) continue;
@@ -2030,29 +2044,83 @@ class _Files {
   _Files(
     this._roots, {
     required Set<String> declaredKeys,
+    Set<String> declaredRootPaths = const {},
     Map<String, String> stagedRoots = const {},
     Set<String>? workerInputPaths,
   }) : _declaredKeys = declaredKeys,
+       _declaredRootPaths = declaredRootPaths,
        _stagedRoots = stagedRoots,
        _workerInputPaths = workerInputPaths;
 
   final List<String> _roots;
   final Set<String> _declaredKeys;
+  final Set<String> _declaredRootPaths;
   final Map<String, String> _stagedRoots;
   final Set<String>? _workerInputPaths;
+  final String _cwd = Directory.current.path;
   final Map<String, String?> _cache = {};
   final Map<String, ScanResult?> _scanCache = {};
+
+  bool _matchesPathSet(Set<String> pathSet, String root, String key) {
+    final raw = root == '.' ? key : '$root/$key';
+    if (pathSet.contains(raw)) return true;
+    final norm = _normalize(raw);
+    if (pathSet.contains(norm)) return true;
+    if (raw.startsWith('/')) {
+      if (raw.startsWith('$_cwd/')) {
+        final rel = _normalize(raw.substring(_cwd.length + 1));
+        if (pathSet.contains(rel)) return true;
+      }
+    } else {
+      final abs = '$_cwd/$norm';
+      if (pathSet.contains(abs) || pathSet.contains(_normalize(abs))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Whether `(root, key)` was explicitly named in `WorkRequest.inputs` or
+  /// `--input-source`.
+  bool isExplicitlyDeclaredInRoot(String root, String key) {
+    final workerPaths = _workerInputPaths;
+    if (workerPaths != null) {
+      return _matchesPathSet(workerPaths, root, key);
+    }
+    if (_declaredRootPaths.isNotEmpty) {
+      return _matchesPathSet(_declaredRootPaths, root, key);
+    }
+    return false;
+  }
+
+  /// Whether `key` may be read from `root`.
+  bool isDeclaredInRoot(String root, String key) {
+    if (!_declaredKeys.contains(key)) return false;
+    final workerPaths = _workerInputPaths;
+    if (workerPaths != null) {
+      return _matchesPathSet(workerPaths, root, key);
+    }
+    if (_declaredRootPaths.isNotEmpty) {
+      var anyRootDeclared = false;
+      for (final candidateRoot in _roots) {
+        if (_matchesPathSet(_declaredRootPaths, candidateRoot, key)) {
+          anyRootDeclared = true;
+          break;
+        }
+      }
+      if (anyRootDeclared) {
+        return _matchesPathSet(_declaredRootPaths, root, key);
+      }
+    }
+    return true;
+  }
 
   /// Whether `key` is declared via `--source` or `--input-source` (and present
   /// in `WorkRequest.inputs` when active).
   bool isDeclaredInRoots(String key) {
     if (!_declaredKeys.contains(key)) return false;
-    final workerPaths = _workerInputPaths;
-    if (workerPaths == null) return true;
-    if (workerPaths.contains(key)) return true;
     for (final root in _roots) {
-      final candidate = _normalize(root == '.' ? key : '$root/$key');
-      if (workerPaths.contains(candidate)) return true;
+      if (isDeclaredInRoot(root, key)) return true;
     }
     return false;
   }
@@ -2076,6 +2144,7 @@ class _Files {
     String? text;
     if (isDeclaredInRoots(key)) {
       for (final root in _roots) {
+        if (!isDeclaredInRoot(root, key)) continue;
         final file = File(root == '.' ? key : '$root/$key');
         if (await file.exists()) {
           text = utf8.decode(await file.readAsBytes(), allowMalformed: true);
@@ -2105,6 +2174,72 @@ class _Files {
     final result = text == null ? null : scanDirectives(text, vm);
     return _scanCache[key] = result;
   }
+}
+
+/// Orders `--multi-root` flags in `base` so roots that contain explicitly
+/// declared inputs for `keys` and have no undeclared shadowing files on disk
+/// precede roots that do not.
+List<String> _baseWithOrderedMultiRoots(
+  List<String> base,
+  List<String> multiRoots,
+  Iterable<String> keys,
+  _Files files,
+) {
+  if (multiRoots.length <= 1) return base;
+  final checkKeys = keys.isNotEmpty
+      ? keys.toList()
+      : files.declaredKeys.toList();
+  if (checkKeys.isEmpty) return base;
+  final hasConflict = <String, bool>{};
+  final hasExplicit = <String, bool>{};
+  for (final root in multiRoots) {
+    var conflict = false;
+    var explicit = false;
+    for (final key in checkKeys) {
+      if (files.isExplicitlyDeclaredInRoot(root, key)) {
+        explicit = true;
+      } else if (!files.isDeclaredInRoot(root, key)) {
+        final f = File(root == '.' ? key : '$root/$key');
+        if (f.existsSync()) {
+          conflict = true;
+        }
+      }
+    }
+    hasConflict[root] = conflict;
+    hasExplicit[root] = explicit;
+  }
+  final orderedRoots = [
+    for (final root in multiRoots)
+      if (!hasConflict[root]! && hasExplicit[root]!) root,
+    for (final root in multiRoots)
+      if (!hasConflict[root]! && !hasExplicit[root]!) root,
+    for (final root in multiRoots)
+      if (hasConflict[root]!) root,
+  ];
+  var sameOrder = true;
+  for (var i = 0; i < multiRoots.length; i++) {
+    if (orderedRoots[i] != multiRoots[i]) {
+      sameOrder = false;
+      break;
+    }
+  }
+  if (sameOrder) return base;
+  final out = <String>[];
+  var rootIdx = 0;
+  for (var i = 0; i < base.length; i++) {
+    final arg = base[i];
+    if (arg == _multiRootFlag && i + 1 < base.length) {
+      out
+        ..add(_multiRootFlag)
+        ..add(orderedRoots[rootIdx++]);
+      i++;
+    } else if (arg.startsWith('$_multiRootFlag=')) {
+      out.add('$_multiRootFlag=${orderedRoots[rootIdx++]}');
+    } else {
+      out.add(arg);
+    }
+  }
+  return out;
 }
 
 /// The excluded files the sidecars list, by key. Each maps to its `package:` URI
@@ -2158,12 +2293,15 @@ Set<String> vmLibraries(
     if (entry is! Map) return;
     final libraries = entry['libraries'];
     if (libraries is Map) {
-      for (final name in libraries.keys) {
+      libraries.forEach((name, spec) {
+        if (spec is Map && spec['supported'] == false) return;
         final text = name.toString();
-        names.add(
-          text.startsWith('dart:') ? text.substring('dart:'.length) : text,
-        );
-      }
+        final bare = text.startsWith('dart:')
+            ? text.substring('dart:'.length)
+            : text;
+        if (bare.startsWith('_')) return;
+        names.add(bare);
+      });
     }
     final includes = entry['include'];
     if (includes is List) {
@@ -2238,10 +2376,11 @@ const _punctKind = 2;
 const _otherKind = 3;
 
 class _Token {
-  const _Token(this.kind, this.text);
+  const _Token(this.kind, this.text, {this.raw = false});
 
   final int kind;
   final String text;
+  final bool raw;
 }
 
 bool _isDigit(int c) => c >= 0x30 && c <= 0x39;
@@ -2254,6 +2393,14 @@ bool _isIdentStart(int c) =>
     c >= 0x80;
 
 bool _isIdentChar(int c) => _isIdentStart(c) || _isDigit(c);
+
+int _skipLine(String src, int start) {
+  var at = start;
+  while (at < src.length && src[at] != '\n' && src[at] != '\r') {
+    at++;
+  }
+  return at;
+}
 
 /// The index just past the block comment that starts at `start`. Dart block
 /// comments nest.
@@ -2272,7 +2419,62 @@ int _skipBlockComment(String src, int start) {
       at++;
     }
   }
-  return src.length;
+  throw const _Unparsable();
+}
+
+String _unescape(String s) {
+  if (!s.contains('\\')) return s;
+  final out = StringBuffer();
+  var i = 0;
+  while (i < s.length) {
+    final ch = s[i++];
+    if (ch != '\\') {
+      out.write(ch);
+      continue;
+    }
+    if (i >= s.length) throw const _Unparsable();
+    final esc = s[i++];
+    switch (esc) {
+      case 'n':
+        out.write('\n');
+      case 'r':
+        out.write('\r');
+      case 'f':
+        out.write('\f');
+      case 'b':
+        out.write('\b');
+      case 't':
+        out.write('\t');
+      case 'v':
+        out.write('\v');
+      case 'x':
+        if (i + 2 > s.length) throw const _Unparsable();
+        final code = int.tryParse(s.substring(i, i + 2), radix: 16);
+        if (code == null) throw const _Unparsable();
+        out.writeCharCode(code);
+        i += 2;
+      case 'u':
+        if (i < s.length && s[i] == '{') {
+          final close = s.indexOf('}', i + 1);
+          if (close < 0) throw const _Unparsable();
+          final code = int.tryParse(s.substring(i + 1, close), radix: 16);
+          if (code == null || code < 0 || code > 0x10FFFF) {
+            throw const _Unparsable();
+          }
+          out.writeCharCode(code);
+          i = close + 1;
+        } else {
+          if (i + 4 > s.length) throw const _Unparsable();
+          final code = int.tryParse(s.substring(i, i + 4), radix: 16);
+          if (code == null) throw const _Unparsable();
+          out.writeCharCode(code);
+          i += 4;
+        }
+      default:
+        out.write(esc);
+    }
+  }
+  return out.toString();
 }
 
 /// Reads the tokens of a Dart source one at a time, so a scan that stops at the end
@@ -2298,8 +2500,7 @@ class _Lexer {
     if (_at == 0) {
       if (src.startsWith('\uFEFF')) _at++;
       if (src.startsWith('#!', _at)) {
-        final end = src.indexOf('\n', _at);
-        _at = end < 0 ? n : end;
+        _at = _skipLine(src, _at + 2);
       }
     }
     while (_at < n) {
@@ -2309,8 +2510,7 @@ class _Lexer {
         continue;
       }
       if (ch == '/' && _at + 1 < n && src[_at + 1] == '/') {
-        final end = src.indexOf('\n', _at);
-        _at = end < 0 ? n : end;
+        _at = _skipLine(src, _at + 2);
         continue;
       }
       if (ch == '/' && _at + 1 < n && src[_at + 1] == '*') {
@@ -2346,24 +2546,100 @@ class _Lexer {
   /// The string literal at `_at`, with its quotes removed and its escapes kept.
   _Token _string({required bool raw}) {
     final src = _src;
-    final n = src.length;
     final quote = src[_at];
     final triple = src.startsWith(quote * 3, _at);
     final delim = triple ? quote * 3 : quote;
-    final start = _at + delim.length;
-    var at = start;
+    var contentStart = _at + delim.length;
+    final endQuote = _skipString(_at, raw: raw);
+    final contentEnd = endQuote - delim.length;
+    if (triple && contentStart < contentEnd) {
+      if (src.startsWith('\r\n', contentStart)) {
+        contentStart += 2;
+      } else if (src[contentStart] == '\n' || src[contentStart] == '\r') {
+        contentStart += 1;
+      }
+    }
+    _at = endQuote;
+    return _Token(
+      _stringKind,
+      src.substring(contentStart, contentEnd),
+      raw: raw,
+    );
+  }
+
+  /// The index just past the string literal that starts at `quoteAt`.
+  int _skipString(int quoteAt, {required bool raw}) {
+    final src = _src;
+    final n = src.length;
+    final quote = src[quoteAt];
+    final triple = src.startsWith(quote * 3, quoteAt);
+    final delim = triple ? quote * 3 : quote;
+    var at = quoteAt + delim.length;
     while (true) {
       if (at >= n) throw const _Unparsable();
       if (!raw && src[at] == '\\') {
+        if (at + 1 >= n) throw const _Unparsable();
         at += 2;
         continue;
       }
-      if (src.startsWith(delim, at)) break;
-      if (!triple && src[at] == '\n') throw const _Unparsable();
+      if (!raw && src.startsWith(r'${', at)) {
+        at = _skipInterpolation(at + 2);
+        continue;
+      }
+      if (src.startsWith(delim, at)) {
+        return at + delim.length;
+      }
+      if (!triple && (src[at] == '\n' || src[at] == '\r')) {
+        throw const _Unparsable();
+      }
       at++;
     }
-    _at = at + delim.length;
-    return _Token(_stringKind, src.substring(start, at));
+  }
+
+  /// The index just past the `}` that closes a `${...}` string interpolation
+  /// whose body starts at `start`.
+  int _skipInterpolation(int start) {
+    final src = _src;
+    final n = src.length;
+    var at = start;
+    var depth = 1;
+    while (at < n) {
+      final ch = src[at];
+      if (ch == '/' && at + 1 < n && src[at + 1] == '/') {
+        at = _skipLine(src, at + 2);
+        continue;
+      }
+      if (ch == '/' && at + 1 < n && src[at + 1] == '*') {
+        at = _skipBlockComment(src, at);
+        continue;
+      }
+      final code = ch.codeUnitAt(0);
+      if (_isIdentStart(code) || _isDigit(code)) {
+        final wordStart = at;
+        while (at < n && _isIdentChar(src.codeUnitAt(at))) {
+          at++;
+        }
+        if (at - wordStart == 1 &&
+            src[wordStart] == 'r' &&
+            at < n &&
+            (src[at] == "'" || src[at] == '"')) {
+          at = _skipString(at, raw: true);
+        }
+        continue;
+      }
+      if (ch == "'" || ch == '"') {
+        at = _skipString(at, raw: false);
+        continue;
+      }
+      if (ch == '{') {
+        depth++;
+      } else if (ch == '}') {
+        depth--;
+        if (depth == 0) return at + 1;
+      }
+      at++;
+    }
+    throw const _Unparsable();
   }
 }
 
@@ -2429,11 +2705,12 @@ class _Prologue {
   String _string() {
     final token = _take();
     if (token.kind != _stringKind) throw const _Unparsable();
-    var value = token.text;
+    final out = StringBuffer(token.raw ? token.text : _unescape(token.text));
     while (_peek()?.kind == _stringKind) {
-      value += _take().text;
+      final next = _take();
+      out.write(next.raw ? next.text : _unescape(next.text));
     }
-    return value;
+    return out.toString();
   }
 
   /// `@name`, `@name.name`, `@name<...>(...)`, or `@name<...>.name(...)`.
@@ -2467,35 +2744,30 @@ class _Prologue {
   }
 
   /// The `if (...)` test of a configurable import, after its `(`, through its `)`.
-  /// True when it holds for the VM. Only `dart.library.X`, with no operator or with
-  /// `== 'true'`, can hold, and `== 'false'` negates it. Any other name is false.
+  /// True when it holds for the VM. In CFE's configurable-import environment,
+  /// available SDK libraries are mapped to `'true'` and all other names are
+  /// unspecified (matching only `== ''`).
   bool _condition() {
-    final name = StringBuffer();
+    final text = _dottedIdent();
     String? value;
-    while (!_punct(')')) {
-      final token = _take();
-      if (token.kind == _identKind ||
-          (token.kind == _punctKind && token.text == '.')) {
-        name.write(token.text);
-      } else if (token.kind == _stringKind) {
-        value = token.text;
-      } else if (!(token.kind == _punctKind && token.text == '=')) {
-        throw const _Unparsable();
-      }
+    if (_punct('=')) {
+      _lexer.take();
+      _expect('=');
+      value = _string();
     }
-    _lexer.take();
+    _expect(')');
     const prefix = 'dart.library.';
-    final text = name.toString();
-    if (!text.startsWith(prefix)) return false;
-    final present = _vm.contains(text.substring(prefix.length));
-    if (value == null || value == 'true') return present;
-    return value == 'false' ? !present : false;
+    if (text.startsWith(prefix)) {
+      final present = _vm.contains(text.substring(prefix.length));
+      if (!present) return false;
+      return value == null || value == 'true';
+    }
+    return value == '';
   }
 
-  /// `import` or `export`: the URI, then any `if` alternatives, then the rest of the
-  /// directive, which names nothing to read.
+  /// `import` or `export` after its keyword: the URI, then any `if`
+  /// alternatives, then the rest of the directive, which names nothing to read.
   ScanRef _uriDirective(String kind) {
-    _lexer.take();
     final declared = _string();
     var chosen = declared;
     var picked = false;
@@ -2529,11 +2801,15 @@ class _Prologue {
         _lexer.take();
         if (_punct(';')) {
           _lexer.take();
-        } else {
+        } else if (_peek()?.kind == _identKind) {
           libraryName ??= _dottedIdent();
           _expect(';');
+        } else {
+          break;
         }
       } else if (token.text == 'import' || token.text == 'export') {
+        _lexer.take();
+        if (_peek()?.kind != _stringKind) break;
         refs.add(_uriDirective(token.text));
       } else if (token.text == 'part') {
         _lexer.take();
@@ -2545,9 +2821,11 @@ class _Prologue {
             partOfLibrary ??= _dottedIdent();
           }
           _expect(';');
-        } else {
+        } else if (_peek()?.kind == _stringKind) {
           refs.add(ScanRef('part', _string()));
           _expect(';');
+        } else {
+          break;
         }
       } else {
         break;
