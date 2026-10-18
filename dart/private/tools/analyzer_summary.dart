@@ -243,8 +243,13 @@ Future<int> _sdk(
 }
 
 /// Infers the staged summary root directory from `--source` and `--uri` pairs.
-String _inferSummarizeRoot(List<String> normSources, List<String> uris) {
-  var root = p.dirname(normSources.first);
+String inferSummarizeRoot(
+  List<String> normSources,
+  List<String> uris, {
+  p.Context? pathContext,
+}) {
+  final ctx = pathContext ?? p.context;
+  var root = ctx.dirname(normSources.first);
   final firstUri = Uri.tryParse(uris.first);
   if (firstUri != null &&
       firstUri.scheme == 'package' &&
@@ -252,21 +257,55 @@ String _inferSummarizeRoot(List<String> normSources, List<String> uris) {
     final relSegments = firstUri.pathSegments.length - 1;
     var candidate = normSources.first;
     for (var i = 0; i < relSegments; i++) {
-      final parent = p.dirname(candidate);
+      final parent = ctx.dirname(candidate);
       if (parent == candidate) break;
       candidate = parent;
     }
     root = candidate;
   }
   for (final src in normSources) {
-    final srcDir = p.dirname(src);
-    while (!p.equals(root, srcDir) && !p.isWithin(root, srcDir)) {
-      final parent = p.dirname(root);
+    final srcDir = ctx.dirname(src);
+    while (!ctx.equals(root, srcDir) && !ctx.isWithin(root, srcDir)) {
+      final parent = ctx.dirname(root);
       if (parent == root) break;
       root = parent;
     }
   }
   return root;
+}
+
+String? _reanchorThroughSymlink(String rootDir, String targetPath) {
+  final String resolvedRoot;
+  try {
+    resolvedRoot = p.normalize(Directory(rootDir).resolveSymbolicLinksSync());
+  } on FileSystemException {
+    return null;
+  }
+  if (p.equals(resolvedRoot, targetPath)) {
+    return rootDir;
+  }
+  if (p.isWithin(resolvedRoot, targetPath)) {
+    return p.normalize(
+      p.join(rootDir, p.relative(targetPath, from: resolvedRoot)),
+    );
+  }
+  var cur = p.dirname(targetPath);
+  while (true) {
+    try {
+      final resolvedCur = p.normalize(
+        Directory(cur).resolveSymbolicLinksSync(),
+      );
+      if (p.equals(resolvedCur, resolvedRoot)) {
+        return p.normalize(p.join(rootDir, p.relative(targetPath, from: cur)));
+      }
+    } on FileSystemException {
+      // Keep walking up until an existing ancestor is found or root is reached.
+    }
+    final parent = p.dirname(cur);
+    if (parent == cur) break;
+    cur = parent;
+  }
+  return null;
 }
 
 /// Writes the summary of one package's libraries.
@@ -288,8 +327,18 @@ Future<int> _summarize(
       'summarize needs a --source for each --uri, and at least one of each',
     );
   }
+  final packagesPath = p.normalize(p.absolute(args.single('packages')));
+  final packagesDir = p.dirname(packagesPath);
+  String normUnderPackagesDir(String raw) {
+    final abs = p.normalize(p.absolute(raw));
+    if (p.equals(packagesDir, abs) || p.isWithin(packagesDir, abs)) {
+      return abs;
+    }
+    return _reanchorThroughSymlink(packagesDir, abs) ?? abs;
+  }
+
   final normSources = <String>[
-    for (final s in sources) p.normalize(p.absolute(s)),
+    for (final s in sources) normUnderPackagesDir(s),
   ];
   final libraryUris = <String>[
     for (var i = 0; i < normSources.length; i++)
@@ -297,14 +346,17 @@ Future<int> _summarize(
   ];
   final sdkPath = p.normalize(p.absolute(args.single('sdk')));
   final sdkSummaryPath = p.normalize(p.absolute(args.single('sdk-summary')));
-  final packagesPath = p.normalize(p.absolute(args.single('packages')));
   final summaryPaths = <String>[
     for (final s in args.all('summary')) p.normalize(p.absolute(s)),
   ];
   final normDepSources = <String>{
-    for (final s in args.all('dep-source')) p.normalize(p.absolute(s)),
+    for (final s in args.all('dep-source')) normUnderPackagesDir(s),
   };
-  final sourceRoot = _inferSummarizeRoot(normSources, uris);
+  final sourceRoot = inferSummarizeRoot(
+    normSources,
+    uris,
+    pathContext: resourceProvider.pathContext,
+  );
   final normSourceSet = normSources.toSet();
   for (final src in normSources) {
     if (!FileSystemEntity.isFileSync(src)) {
@@ -330,7 +382,7 @@ Future<int> _summarize(
   final boundedProvider = BoundedResourceProvider(
     resourceProvider,
     primaryRoot: sourceRoot,
-    boundaryRoots: {sourceRoot, p.dirname(packagesPath), sdkPath},
+    boundaryRoots: {sourceRoot, packagesDir, sdkPath},
     allowedFiles: {
       packagesPath,
       sdkSummaryPath,
@@ -374,12 +426,34 @@ bool _isPart(String path) {
   return unit.directives.any((d) => d is PartOfDirective);
 }
 
-String _resolveProjectSource(String project, String raw) {
-  final normAbs = p.normalize(p.absolute(raw));
-  if (p.equals(project, normAbs) || p.isWithin(project, normAbs)) {
+/// Resolves a `--source` argument against [project], normalizing separators
+/// and re-anchoring symlinked ancestor prefixes to [project].
+String resolveProjectSource(
+  String project,
+  String raw, {
+  p.Context? pathContext,
+}) {
+  final ctx = pathContext ?? p.context;
+  final normProject = ctx.normalize(ctx.absolute(project));
+  final normAbs = ctx.normalize(ctx.absolute(raw));
+  if (ctx.equals(normProject, normAbs) || ctx.isWithin(normProject, normAbs)) {
     return normAbs;
   }
-  return p.normalize(p.join(project, raw));
+  if (!ctx.isAbsolute(raw)) {
+    final joined = ctx.normalize(ctx.join(normProject, raw));
+    if (pathContext != null ||
+        FileSystemEntity.typeSync(joined, followLinks: false) !=
+            FileSystemEntityType.notFound) {
+      return joined;
+    }
+  }
+  if (pathContext == null) {
+    final reanchored = _reanchorThroughSymlink(normProject, normAbs);
+    if (reanchored != null) {
+      return reanchored;
+    }
+  }
+  return ctx.normalize(ctx.join(normProject, raw));
 }
 
 /// Checks a staged project's own files, and writes the stamp if they pass.
@@ -394,7 +468,7 @@ Future<int> _analyze(
   final stamp = args.single('stamp');
   final fatalInfos = args.flag('fatal-infos');
   final explicitSources = <String>[
-    for (final s in args.all('source')) _resolveProjectSource(project, s),
+    for (final s in args.all('source')) resolveProjectSource(project, s),
   ];
   final allowedSrcPaths = _pruneOrphanedStagedFiles(project);
   final sdkPath = p.normalize(p.absolute(args.single('sdk')));
@@ -460,8 +534,9 @@ Future<int> _analyze(
         );
         return _failed;
       }
-      if (context.contextRoot.isAnalyzed(expected) &&
-          !analyzedSet.contains(expected)) {
+      if (!p.isWithin(project, expected) ||
+          (context.contextRoot.isAnalyzed(expected) &&
+              !analyzedSet.contains(expected))) {
         errSink.writeln(
           'analyzer_summary: expected source was not analyzed: $expected',
         );
@@ -488,7 +563,9 @@ Future<int> _analyze(
       }
       final result = await driver.getErrors(path);
       if (result is! ErrorsResult) {
-        errSink.writeln('analyzer_summary: cannot analyze $path');
+        errSink.writeln(
+          'analyzer_summary: cannot analyze $path (${result.runtimeType})',
+        );
         return _failed;
       }
       for (final d in result.diagnostics) {
@@ -722,10 +799,10 @@ String _display(String project, String path) {
 String _unstage(String text, String project) {
   final absolute = p.absolute(project).replaceAll(r'\', '/');
   return text
+      .replaceAll(r'\', '/')
       .replaceAll('$absolute/src/', '')
       .replaceAll('$absolute/src', '.')
-      .replaceAll(absolute, '.')
-      .replaceAll(r'\', '/');
+      .replaceAll(absolute, '.');
 }
 
 /// A diagnostic ready to print, ordered most severe first.
@@ -852,27 +929,38 @@ final class BoundedResourceProvider implements fs.ResourceProvider {
     Set<String> extraRestrictedRoots = const {},
     Set<String>? allowedUnderRestrictedRoot,
     this.blockAnalysisOptions = false,
-  }) : primaryRoot = p.normalize(p.absolute(primaryRoot)),
+  }) : primaryRoot = _norm(_delegate.pathContext, primaryRoot),
        boundaryRoots = {
-         p.normalize(p.absolute(primaryRoot)),
-         for (final r in boundaryRoots) p.normalize(p.absolute(r)),
+         _norm(_delegate.pathContext, primaryRoot),
+         for (final r in boundaryRoots) _norm(_delegate.pathContext, r),
        },
        allowedFiles = {
-         for (final f in allowedFiles) p.normalize(p.absolute(f)),
+         for (final f in allowedFiles) _norm(_delegate.pathContext, f),
        },
        restrictedRoot = restrictedRoot == null
            ? null
-           : p.normalize(p.absolute(restrictedRoot)),
+           : _norm(_delegate.pathContext, restrictedRoot),
        restrictedRoots = {
-         if (restrictedRoot != null) p.normalize(p.absolute(restrictedRoot)),
-         for (final r in extraRestrictedRoots) p.normalize(p.absolute(r)),
+         if (restrictedRoot != null)
+           _norm(_delegate.pathContext, restrictedRoot),
+         for (final r in extraRestrictedRoots) _norm(_delegate.pathContext, r),
        },
-       allowedUnderRestrictedRoot = _computeAllowedRestrictedPaths({
-         if (restrictedRoot != null) p.normalize(p.absolute(restrictedRoot)),
-         for (final r in extraRestrictedRoots) p.normalize(p.absolute(r)),
-       }, allowedUnderRestrictedRoot);
+       allowedUnderRestrictedRoot = _computeAllowedRestrictedPaths(
+         _delegate.pathContext,
+         {
+           if (restrictedRoot != null)
+             _norm(_delegate.pathContext, restrictedRoot),
+           for (final r in extraRestrictedRoots)
+             _norm(_delegate.pathContext, r),
+         },
+         allowedUnderRestrictedRoot,
+       );
+
+  static String _norm(p.Context ctx, String path) =>
+      ctx.normalize(ctx.absolute(path));
 
   static Set<String>? _computeAllowedRestrictedPaths(
+    p.Context ctx,
     Set<String> restrictedRoots,
     Set<String>? allowedUnderRestrictedRoot,
   ) {
@@ -881,14 +969,14 @@ final class BoundedResourceProvider implements fs.ResourceProvider {
     }
     final result = <String>{...restrictedRoots};
     for (final raw in allowedUnderRestrictedRoot) {
-      var cur = p.normalize(p.absolute(raw));
+      var cur = _norm(ctx, raw);
       while (true) {
         result.add(cur);
         if (restrictedRoots.contains(cur) ||
-            !restrictedRoots.any((r) => p.isWithin(r, cur))) {
+            !restrictedRoots.any((r) => ctx.isWithin(r, cur))) {
           break;
         }
-        final parent = p.dirname(cur);
+        final parent = ctx.dirname(cur);
         if (parent == cur) break;
         cur = parent;
       }
@@ -927,47 +1015,60 @@ final class BoundedResourceProvider implements fs.ResourceProvider {
     'MODULE.bazel',
   };
 
+  String _resolveToPrimaryRoot(String rawPath) {
+    final ctx = pathContext;
+    final norm = _norm(ctx, rawPath);
+    if (ctx.style != p.context.style ||
+        ctx.equals(primaryRoot, norm) ||
+        ctx.isWithin(primaryRoot, norm)) {
+      return norm;
+    }
+    return _reanchorThroughSymlink(primaryRoot, norm) ?? norm;
+  }
+
   bool isBoundaryFolder(String normPath) =>
-      boundaryRoots.contains(normPath) || p.isWithin(normPath, primaryRoot);
+      boundaryRoots.contains(normPath) ||
+      pathContext.isWithin(normPath, primaryRoot);
 
   bool isBlockedPath(String rawPath) {
-    final normPath = p.normalize(p.absolute(rawPath));
+    final ctx = pathContext;
+    final normPath = _resolveToPrimaryRoot(rawPath);
     if (restrictedRoots.isNotEmpty &&
         allowedUnderRestrictedRoot != null &&
-        restrictedRoots.any((r) => p.isWithin(r, normPath)) &&
+        restrictedRoots.any((r) => ctx.isWithin(r, normPath)) &&
         !allowedUnderRestrictedRoot!.contains(normPath)) {
       return true;
     }
     if (allowedFiles.contains(normPath)) {
       return false;
     }
-    final base = p.basename(normPath);
+    final base = ctx.basename(normPath);
     if (blockAnalysisOptions &&
         (base == _optionsBasename ||
             base == '.analysis_options' ||
             base == 'pubspec.yaml')) {
       return true;
     }
-    if (!p.equals(normPath, primaryRoot) &&
-        !p.isWithin(primaryRoot, normPath)) {
+    if (!ctx.equals(normPath, primaryRoot) &&
+        !ctx.isWithin(primaryRoot, normPath)) {
       if (_alwaysBlockedWorkspaceBasenames.contains(base)) {
         return true;
       }
-      final parentDir = p.dirname(normPath);
-      if (p.isWithin(parentDir, primaryRoot) ||
+      final parentDir = ctx.dirname(normPath);
+      if (ctx.isWithin(parentDir, primaryRoot) ||
           boundaryRoots.contains(parentDir)) {
         if (_ancestorProbeBasenames.contains(base)) {
           return true;
         }
         // Also block `<ancestor>/.dart_tool/package_config.json`.
-        if (p.basename(parentDir) == '.dart_tool' &&
-            (p.isWithin(p.dirname(parentDir), primaryRoot) ||
-                boundaryRoots.contains(p.dirname(parentDir)))) {
+        if (ctx.basename(parentDir) == '.dart_tool' &&
+            (ctx.isWithin(ctx.dirname(parentDir), primaryRoot) ||
+                boundaryRoots.contains(ctx.dirname(parentDir)))) {
           return true;
         }
-      } else if (p.basename(parentDir) == '.dart_tool') {
-        final grandParent = p.dirname(parentDir);
-        if (p.isWithin(grandParent, primaryRoot) ||
+      } else if (ctx.basename(parentDir) == '.dart_tool') {
+        final grandParent = ctx.dirname(parentDir);
+        if (ctx.isWithin(grandParent, primaryRoot) ||
             boundaryRoots.contains(grandParent)) {
           return true;
         }
@@ -980,22 +1081,24 @@ final class BoundedResourceProvider implements fs.ResourceProvider {
   p.Context get pathContext => _delegate.pathContext;
 
   @override
-  fs.File getFile(String path) => _BoundedFile(this, _delegate.getFile(path));
+  fs.File getFile(String path) =>
+      _BoundedFile(this, _delegate.getFile(_resolveToPrimaryRoot(path)));
 
   @override
   fs.Folder getFolder(String path) =>
-      _BoundedFolder(this, _delegate.getFolder(path));
+      _BoundedFolder(this, _delegate.getFolder(_resolveToPrimaryRoot(path)));
 
   @override
-  fs.Link getLink(String path) => _delegate.getLink(path);
+  fs.Link getLink(String path) =>
+      _delegate.getLink(_resolveToPrimaryRoot(path));
 
   @override
   fs.Resource getResource(String path) {
-    final normPath = p.normalize(p.absolute(path));
+    final normPath = _resolveToPrimaryRoot(path);
     if (isBlockedPath(normPath)) {
       return _BoundedFile(this, _delegate.getFile(normPath));
     }
-    final res = _delegate.getResource(path);
+    final res = _delegate.getResource(normPath);
     if (res is fs.Folder) {
       return _BoundedFolder(this, res);
     }
@@ -1016,7 +1119,8 @@ final class _BoundedFolder implements fs.Folder {
   final BoundedResourceProvider _provider;
   final fs.Folder _delegate;
 
-  String get _normPath => p.normalize(p.absolute(_delegate.path));
+  String get _normPath =>
+      BoundedResourceProvider._norm(_provider.pathContext, _delegate.path);
 
   @override
   bool get isRoot => _provider.isBoundaryFolder(_normPath) || _delegate.isRoot;
@@ -1041,10 +1145,15 @@ final class _BoundedFolder implements fs.Folder {
   String get shortName => _delegate.shortName;
 
   @override
-  String canonicalizePath(String path) => _delegate.canonicalizePath(path);
+  String canonicalizePath(String relPath) => _provider.pathContext.normalize(
+    _provider.pathContext.join(path, relPath),
+  );
 
   @override
-  bool contains(String path) => _delegate.contains(path);
+  bool contains(String oPath) => _provider.pathContext.isWithin(
+    path,
+    _provider.pathContext.normalize(oPath),
+  );
 
   @override
   fs.Folder copyTo(fs.Folder parentFolder) =>
@@ -1058,7 +1167,7 @@ final class _BoundedFolder implements fs.Folder {
 
   @override
   fs.Resource getChild(String relPath) =>
-      _provider.getResource(_provider.pathContext.join(path, relPath));
+      _provider.getResource(canonicalizePath(relPath));
 
   @override
   fs.File getChildAssumingFile(String relPath) => getFile(relPath);
@@ -1068,11 +1177,11 @@ final class _BoundedFolder implements fs.Folder {
 
   @override
   fs.File getFile(String relPath) =>
-      _provider.getFile(_provider.pathContext.join(path, relPath));
+      _provider.getFile(canonicalizePath(relPath));
 
   @override
   fs.Folder getFolder(String relPath) =>
-      _provider.getFolder(_provider.pathContext.join(path, relPath));
+      _provider.getFolder(canonicalizePath(relPath));
 
   @override
   List<fs.Resource> getChildren() {
@@ -1090,7 +1199,10 @@ final class _BoundedFolder implements fs.Folder {
   }
 
   @override
-  bool isOrContains(String path) => _delegate.isOrContains(path);
+  bool isOrContains(String oPath) {
+    final norm = _provider.pathContext.normalize(oPath);
+    return path == norm || _provider.pathContext.isWithin(path, norm);
+  }
 
   @override
   fs.Resource resolveSymbolicLinksSync() {

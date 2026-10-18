@@ -3,7 +3,10 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:analyzer/file_system/file_system.dart' as fs;
+import 'package:analyzer/file_system/memory_file_system.dart';
 import 'package:analyzer/file_system/physical_file_system.dart';
+import 'package:analyzer/src/source/package_map_resolver.dart'
+    show PackageMapUriResolver;
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -14,19 +17,23 @@ import 'analyzer_summary.dart'
         SummaryCachingResourceProvider,
         decodeAnalyzerWorkRequestInputs,
         disposedContextCollectionsCount,
+        inferSummarizeRoot,
         onContextCollectionDisposed,
+        resolveProjectSource,
         runSingleRequest;
 
 /// Recording wrapper around [PhysicalResourceProvider.INSTANCE] to verify that
 /// blocked ancestor probes never reach the underlying filesystem.
 final class _RecordingResourceProvider implements fs.ResourceProvider {
-  _RecordingResourceProvider(this._delegate);
+  _RecordingResourceProvider(this._delegate, {p.Context? pathContext})
+    : _pathContext = pathContext;
 
   final fs.ResourceProvider _delegate;
+  final p.Context? _pathContext;
   final List<String> checkedPaths = <String>[];
 
   @override
-  p.Context get pathContext => _delegate.pathContext;
+  p.Context get pathContext => _pathContext ?? _delegate.pathContext;
 
   @override
   fs.File getFile(String path) => _RecordingFile(this, _delegate.getFile(path));
@@ -59,7 +66,11 @@ final class _RecordingFolder implements fs.Folder {
 
   @override
   bool get exists {
-    _provider.checkedPaths.add(p.normalize(p.absolute(_delegate.path)));
+    _provider.checkedPaths.add(
+      _provider.pathContext.normalize(
+        _provider.pathContext.absolute(_delegate.path),
+      ),
+    );
     return _delegate.exists;
   }
 
@@ -79,7 +90,9 @@ final class _RecordingFolder implements fs.Folder {
   String get shortName => _delegate.shortName;
 
   @override
-  String canonicalizePath(String path) => _delegate.canonicalizePath(path);
+  String canonicalizePath(String relPath) => _provider.pathContext.normalize(
+    _provider.pathContext.join(path, relPath),
+  );
 
   @override
   bool contains(String path) => _delegate.contains(path);
@@ -96,7 +109,7 @@ final class _RecordingFolder implements fs.Folder {
 
   @override
   fs.Resource getChild(String relPath) =>
-      _provider.getResource(_provider.pathContext.join(path, relPath));
+      _provider.getResource(canonicalizePath(relPath));
 
   @override
   fs.File getChildAssumingFile(String relPath) => getFile(relPath);
@@ -106,11 +119,11 @@ final class _RecordingFolder implements fs.Folder {
 
   @override
   fs.File getFile(String relPath) =>
-      _provider.getFile(_provider.pathContext.join(path, relPath));
+      _provider.getFile(canonicalizePath(relPath));
 
   @override
   fs.Folder getFolder(String relPath) =>
-      _provider.getFolder(_provider.pathContext.join(path, relPath));
+      _provider.getFolder(canonicalizePath(relPath));
 
   @override
   List<fs.Resource> getChildren() => _delegate.getChildren();
@@ -313,6 +326,105 @@ void main() {
           p.normalize(p.absolute(c.path)),
       ];
       expect(childrenPaths, [p.normalize(p.absolute(srcFile.path))]);
+    });
+
+    test('canonicalizes slash-separated relative paths under p.windows so PackageMapUriResolver matches nested lib/ sources', () {
+      final winCtx = p.Context(
+        style: p.Style.windows,
+        current: r'D:\_bazel\execroot\_main',
+      );
+      final memory = MemoryResourceProvider(context: winCtx);
+
+      // Reproduce the three Windows nested-lib failure shapes:
+      // 1. //dart/tests/analyze_aspect_fixture/nested:nested -> lib/loud/loud.dart
+      // 2. e2e/dart_test_pkg //:sib_b -> lib/sib/b.dart
+      // 3. e2e/ext_exemplar //go_router/_go_router_stub:go_router_stub -> lib/src/route_data.dart
+      final cases = <({String pkg, String stageRel, String libSubpath})>[
+        (
+          pkg: 'nested',
+          stageRel: 'bazel-out/x64_windows-fastbuild/bin/dart/tests/analyze_aspect_fixture/nested/_nested.analyze',
+          libSubpath: 'loud/loud.dart',
+        ),
+        (
+          pkg: 'dart_test_pkg',
+          stageRel: 'bazel-out/x64_windows-fastbuild/bin/_sib_b.analyze',
+          libSubpath: 'sib/b.dart',
+        ),
+        (
+          pkg: 'go_router_stub',
+          stageRel: 'bazel-out/x64_windows-fastbuild/bin/go_router/_go_router_stub/_go_router_stub.analyze',
+          libSubpath: 'src/route_data.dart',
+        ),
+      ];
+
+      for (final c in cases) {
+        final projectDir = winCtx.normalize(winCtx.absolute(c.stageRel));
+        final srcArg = '${c.stageRel}/src/lib/${c.libSubpath}';
+        final resolvedSource = resolveProjectSource(
+          projectDir,
+          srcArg,
+          pathContext: winCtx,
+        );
+        final resolvedRelSource = resolveProjectSource(
+          projectDir,
+          'src/lib/${c.libSubpath}',
+          pathContext: winCtx,
+        );
+        expect(resolvedRelSource, resolvedSource);
+        expect(
+          resolvedSource,
+          isNot(contains('/')),
+          reason: 'resolved Windows source path must use only backslashes',
+        );
+
+        memory.newFile(resolvedSource, 'class C {}\n');
+
+        final libDir = winCtx.join(projectDir, 'src', 'lib');
+        final summarizeRoot = inferSummarizeRoot(
+          [resolvedSource],
+          ['package:${c.pkg}/${c.libSubpath}'],
+          pathContext: winCtx,
+        );
+        expect(summarizeRoot, libDir);
+
+        final bounded = BoundedResourceProvider(
+          memory,
+          primaryRoot: projectDir,
+          boundaryRoots: {projectDir},
+          allowedFiles: {resolvedSource},
+          restrictedRoot: libDir,
+          allowedUnderRestrictedRoot: {resolvedSource},
+          blockAnalysisOptions: false,
+        );
+
+        final libFolder = bounded.getFolder(libDir);
+        // PackageMapUriResolver joins URI segments with '/' and passes the
+        // slash-separated subpath (e.g. 'loud/loud.dart') to getFile().
+        final viaGetFile = libFolder.getFile(c.libSubpath);
+        final viaGetChild = libFolder.getChild(c.libSubpath);
+        final parentRel = c.libSubpath.split('/').first;
+        final viaGetFolder = libFolder.getFolder('$parentRel/nested_dir');
+
+        expect(viaGetFile.path, resolvedSource);
+        expect(viaGetFile.exists, isTrue);
+        expect(viaGetChild.path, resolvedSource);
+        expect(viaGetFolder.path, isNot(contains('/')));
+
+        final resolver = PackageMapUriResolver(bounded, {c.pkg: libFolder});
+        final pkgUri = Uri.parse('package:${c.pkg}/${c.libSubpath}');
+        final resolvedUriSource = resolver.resolveAbsolute(pkgUri);
+        expect(resolvedUriSource, isNotNull);
+        expect(
+          resolvedUriSource!.fullName,
+          resolvedSource,
+          reason: 'PackageMapUriResolver source fullName must match resolvedSource so driver.getErrors does not return NotPathOfUriResult',
+        );
+        expect(
+          resolver.pathToUri(resolvedSource),
+          pkgUri,
+          reason: 'pathToUri round-trip must recover the package: URI',
+        );
+      }
     });
   });
 
@@ -618,6 +730,148 @@ void main() {
       } finally {
         onContextCollectionDisposed = prevHook;
       }
+    });
+
+    test('handles symlinked staging roots for nested lib/ sources and fails closed with result type on NotPathOfUriResult', () async {
+      final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+      final realBase = Directory(p.join(tempDir.path, 'real_execroot'))
+        ..createSync(recursive: true);
+      final symlinkBase = Link(p.join(tempDir.path, 'symlink_execroot'))
+        ..createSync(realBase.path);
+
+      final sdkSummary = File(p.join(symlinkBase.path, 'sdk.sum'));
+      final outSink = StringBuffer();
+      final errSink = StringBuffer();
+
+      expect(
+        await runSingleRequest(
+          ['sdk', '--sdk', sdkDir.path, '--out', sdkSummary.path],
+          outSink: outSink,
+          errSink: errSink,
+          resourceProvider: PhysicalResourceProvider.INSTANCE,
+        ),
+        0,
+        reason: errSink.toString(),
+      );
+
+      // Build a staged nested package through the symlinked execroot path.
+      final realLibFile = File(
+        p.join(realBase.path, 'workspace', 'lib', 'loud', 'loud.dart'),
+      )..parent.createSync(recursive: true);
+      realLibFile.writeAsStringSync('int loudValue() => 42;\n');
+
+      final stageAnalyze = Directory(
+        p.join(symlinkBase.path, 'bazel-out', '_nested.analyze'),
+      );
+      final stagedLibFile = Link(
+        p.join(stageAnalyze.path, 'src', 'lib', 'loud', 'loud.dart'),
+      )..parent.createSync(recursive: true);
+      stagedLibFile.createSync(realLibFile.path);
+
+      File(p.join(stageAnalyze.path, '.dart_tool', 'package_config.json'))
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync(
+          jsonEncode({
+            'configVersion': 2,
+            'packages': [
+              {
+                'name': 'nested',
+                'rootUri': '../src',
+                'packageUri': 'lib/',
+                'languageVersion': '3.0',
+              },
+            ],
+          }),
+        );
+
+      final nestedSummary = File(p.join(symlinkBase.path, 'nested.sum'));
+      expect(
+        await runSingleRequest(
+          [
+            'summarize',
+            '--sdk',
+            sdkDir.path,
+            '--sdk-summary',
+            sdkSummary.path,
+            '--packages',
+            p.join(stageAnalyze.path, '.dart_tool', 'package_config.json'),
+            '--source',
+            stagedLibFile.path,
+            '--uri',
+            'package:nested/loud/loud.dart',
+            '--out',
+            nestedSummary.path,
+          ],
+          outSink: outSink,
+          errSink: errSink,
+          resourceProvider: PhysicalResourceProvider.INSTANCE,
+        ),
+        0,
+        reason: errSink.toString(),
+      );
+
+      // Analyze the staged nested package cleanly through the symlinked root.
+      final cleanStamp = File(p.join(symlinkBase.path, 'nested.analyzed'));
+      outSink.clear();
+      errSink.clear();
+      expect(
+        await runSingleRequest(
+          [
+            'analyze',
+            '--sdk',
+            sdkDir.path,
+            '--sdk-summary',
+            sdkSummary.path,
+            '--project',
+            stageAnalyze.path,
+            '--source',
+            stagedLibFile.path,
+            '--stamp',
+            cleanStamp.path,
+          ],
+          outSink: outSink,
+          errSink: errSink,
+          resourceProvider: PhysicalResourceProvider.INSTANCE,
+        ),
+        0,
+        reason: '${outSink.toString()}\n${errSink.toString()}',
+      );
+      expect(cleanStamp.existsSync(), isTrue);
+
+      // Now pass nested.sum as an input `--summary` while ALSO analyzing the
+      // same package's `src/lib/loud/loud.dart`: InSummaryUriResolver claims
+      // `package:nested/loud/loud.dart`, causing `driver.getErrors` to return
+      // `NotPathOfUriResult`. Verify `analyze` fails closed and includes the
+      // result runtimeType in the error message.
+      final failStamp = File(p.join(symlinkBase.path, 'nested_fail.analyzed'));
+      outSink.clear();
+      errSink.clear();
+      expect(
+        await runSingleRequest(
+          [
+            'analyze',
+            '--sdk',
+            sdkDir.path,
+            '--sdk-summary',
+            sdkSummary.path,
+            '--summary',
+            nestedSummary.path,
+            '--project',
+            stageAnalyze.path,
+            '--source',
+            stagedLibFile.path,
+            '--stamp',
+            failStamp.path,
+          ],
+          outSink: outSink,
+          errSink: errSink,
+          resourceProvider: PhysicalResourceProvider.INSTANCE,
+        ),
+        1,
+      );
+      expect(failStamp.existsSync(), isFalse);
+      expect(errSink.toString(), contains('analyzer_summary: cannot analyze '));
+      expect(errSink.toString(), contains('(NotPathOfUriResult)'));
     });
   });
 }
