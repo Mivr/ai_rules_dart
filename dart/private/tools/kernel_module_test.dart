@@ -661,7 +661,7 @@ void main() {
             '--multi-root',
             ws.path,
             '--multi-root-scheme',
-            'org-dartlang-bazel',
+            'org-dartlang-root',
             '--target',
             'vm',
             '--no-summary-only',
