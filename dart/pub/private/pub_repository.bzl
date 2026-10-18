@@ -66,7 +66,8 @@ pub_package = repository_rule(
             mandatory = True,
         ),
         "sha256": attr.string(
-            doc = "SHA256 hash of the package archive for integrity verification. Optional.",
+            doc = "SHA256 hash of the package archive for integrity verification.",
+            mandatory = True,
         ),
         "deps": attr.string_list(
             doc = "Repository names of pub packages this package depends on.",

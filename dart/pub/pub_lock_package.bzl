@@ -165,8 +165,8 @@ pub_lock_package = repository_rule(
             mandatory = True,
         ),
         "sha256": attr.string(
-            doc = "SHA256 hash of the package archive.",
-            default = "",
+            doc = "SHA256 hash of the package archive for integrity verification.",
+            mandatory = True,
         ),
         "base_url": attr.string(
             doc = "Base URL for the pub repository.",

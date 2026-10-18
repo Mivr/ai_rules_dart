@@ -1,0 +1,22 @@
+module(name = "pub_lock_unpinned_e2e")
+
+bazel_dep(name = "rules_dart", version = "0.0.0")
+local_path_override(
+    module_name = "rules_dart",
+    path = "../..",
+)
+
+dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
+dart.toolchain(dart_version = "3.13.5")
+use_repo(dart, "dart_toolchains")
+
+register_toolchains("@dart_toolchains//:all")
+
+# pubspec.lock has a hosted package entry without sha256, so this should fail
+# during module extension evaluation with a missing-sha256 error.
+pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
+pub.from_lock(
+    name = "deps",
+    lock = "//:pubspec.lock",
+)
+use_repo(pub, "deps")

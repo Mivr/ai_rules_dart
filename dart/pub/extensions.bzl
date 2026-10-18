@@ -2,7 +2,7 @@
 
 load("//dart/ext:registry.bzl", "curated_code_assets")
 load("//dart/pub:pub_lock_hub.bzl", "pub_lock_hub")
-load("//dart/pub:pub_lock_package.bzl", "pub_lock_package")
+load("//dart/pub:pub_lock_package.bzl", "pub_lock_package", "pub_lock_package_sha256_error")
 load("//dart/pub:yaml_parser.bzl", "lock_package_error", "parse_pubspec_lock")
 load("//dart/pub/private:pub_repository.bzl", "pub_package", "pub_package_sha256_error")
 load("//dart/pub/private:version.bzl", "semver_gt")
@@ -135,6 +135,9 @@ def _pub_impl(ctx):
             for name, info in lock_pkgs.items():
                 err = lock_package_error(name, info, lock_tag.lock)
                 if err:
+                    if info.get("source") == "hosted":
+                        sha_err = pub_lock_package_sha256_error(name, info.get("version", ""), "")
+                        fail("%s (%s)" % (err, sha_err))
                     fail(err)
 
                 source = info.get("source", "unknown")
@@ -243,6 +246,9 @@ def _pub_impl(ctx):
     all_package_names = sorted(resolved.keys())
     explicit_package_names = sorted(explicit.keys())
     for name, pkg in resolved.items():
+        err = pub_lock_package_sha256_error(name, pkg.version, pkg.sha256)
+        if err:
+            fail(err)
         pub_lock_package(
             name = _SPOKE_PREFIX + "__" + name,
             package_name = name,

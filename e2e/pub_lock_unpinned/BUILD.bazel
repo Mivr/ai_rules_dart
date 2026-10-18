@@ -1,0 +1,11 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary")
+
+exports_files(["pubspec.lock"])
+
+# This workspace should FAIL to build because pubspec.lock lists a hosted
+# package ("collection") without a sha256 checksum.
+dart_binary(
+    name = "app",
+    main = "main.dart",
+    deps = ["@deps//:collection"],
+)
