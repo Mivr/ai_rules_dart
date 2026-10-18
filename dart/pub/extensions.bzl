@@ -66,41 +66,75 @@ _from_lock = tag_class(
     },
 )
 
-def _pub_impl(ctx):
-    # Packages the user has declared hook-irrelevant, unioned across every
-    # from_lock call — a package is one repo regardless of how many locks
-    # mention it, so the flag cannot be per-lock.
-    ignore_hooks = {}
-    for mod in ctx.modules:
-        for lock_tag in mod.tags.from_lock:
-            for pkg_name in lock_tag.ignore_hooks:
-                ignore_hooks[pkg_name] = True
+def resolve_pub_packages(package_tags, lock_tags):
+    """Validates and resolves `pub.package` and `pub.from_lock` declarations.
 
-    # Handle individual package declarations — these take priority
+    Every `pub.package` and hosted `pub.from_lock` entry must carry a
+    64-lowercase-hex-digit `sha256` after trimming, even when later superseded
+    by version resolution or an explicit `pub.package()`. Conflicting `sha256`
+    values for the same package version across lock files or between
+    `pub.package()` and a lock file are rejected.
+
+    Args:
+        package_tags: List of structs with `(name, version, sha256, deps)`.
+        lock_tags: List of structs with `(name, lock, packages, on_version_conflict)`.
+
+    Returns:
+        `struct(error, explicit, resolved, hub_packages, warnings)` where `error`
+        is an error string when any declaration is unpinned, malformed, or
+        conflicting, or `None` when resolution succeeds.
+    """
     explicit = {}
-
-    # Repos the root module names, mapped to whether every naming is a
-    # `dev_dependency = True` usage: Bazel checks the root's `use_repo` calls
-    # against that split, and fails a dev-only root that reports non-dev repos.
-    root_repos = {}
-    for mod in ctx.modules:
-        for pkg in mod.tags.package:
-            if pkg.name not in explicit:
-                explicit[pkg.name] = pkg
-            if mod.is_root:
-                root_repos[pkg.name] = root_repos.get(pkg.name, True) and ctx.is_dev_dependency(pkg)
-
-    for name, pkg in explicit.items():
-        err = pub_package_sha256_error(name, pkg.version, pkg.sha256)
+    for pkg in package_tags:
+        err = pub_package_sha256_error(pkg.name, pkg.version, pkg.sha256)
         if err:
-            fail(err)
-        pub_package(
-            name = name,
-            package_name = name,
-            version = pkg.version,
-            sha256 = pkg.sha256,
-            deps = pkg.deps,
-        )
+            return struct(error = err, explicit = {}, resolved = {}, hub_packages = {}, warnings = [])
+        sha256 = pkg.sha256.strip()
+        if pkg.name in explicit:
+            existing = explicit[pkg.name]
+            if existing.version != pkg.version:
+                return struct(
+                    error = (
+                        "Package \"%s\" has conflicting versions across pub.package() declarations:\n" % pkg.name +
+                        "  - %s (sha256: %s)\n" % (existing.version, existing.sha256) +
+                        "  - %s (sha256: %s)" % (pkg.version, sha256)
+                    ),
+                    explicit = {},
+                    resolved = {},
+                    hub_packages = {},
+                    warnings = [],
+                )
+            if existing.sha256 != sha256:
+                return struct(
+                    error = (
+                        "Package \"%s\" (%s) has conflicting sha256 checksums across pub.package() declarations:\n" % (pkg.name, pkg.version) +
+                        "  - %s\n" % existing.sha256 +
+                        "  - %s" % sha256
+                    ),
+                    explicit = {},
+                    resolved = {},
+                    hub_packages = {},
+                    warnings = [],
+                )
+            if sorted(existing.deps) != sorted(pkg.deps):
+                return struct(
+                    error = (
+                        "Package \"%s\" (%s) has conflicting deps across pub.package() declarations:\n" % (pkg.name, pkg.version) +
+                        "  - %s\n" % existing.deps +
+                        "  - %s" % pkg.deps
+                    ),
+                    explicit = {},
+                    resolved = {},
+                    hub_packages = {},
+                    warnings = [],
+                )
+        else:
+            explicit[pkg.name] = struct(
+                name = pkg.name,
+                version = pkg.version,
+                sha256 = sha256,
+                deps = pkg.deps,
+            )
 
     # Collect all packages from all lock files into a unified registry.
     # registry[pkg_name] = {url, entries: [{version, sha256, hub_name, lock_label, on_version_conflict}]}
@@ -115,93 +149,150 @@ def _pub_impl(ctx):
     # generated BUILD file fail to load, which Bazel reports as the *next*
     # package being undeclared, naming neither the duplicate nor the two locks.
     hub_packages = {}
+    warnings = []
 
-    for mod in ctx.modules:
-        for lock_tag in mod.tags.from_lock:
-            hub_name = lock_tag.name
-            if mod.is_root:
-                root_repos[hub_name] = root_repos.get(hub_name, True) and ctx.is_dev_dependency(lock_tag)
-            lock_content = ctx.read(lock_tag.lock)
-            lock_pkgs = parse_pubspec_lock(lock_content)
+    for lock_tag in lock_tags:
+        hub_name = lock_tag.name
+        lock_pkgs = lock_tag.packages
 
-            hub_packages.setdefault(hub_name, {})
+        hub_packages.setdefault(hub_name, {})
 
-            # Only hosted packages can be fetched from a pub registry. Collect
-            # every non-hosted package and report once per lock file — Flutter
-            # locks routinely list many sdk-source packages, so a per-package
-            # print would drown the useful signal.
-            skipped_by_source = {}
+        # Only hosted packages can be fetched from a pub registry. Collect
+        # every non-hosted package and report once per lock file — Flutter
+        # locks routinely list many sdk-source packages, so a per-package
+        # print would drown the useful signal.
+        skipped_by_source = {}
 
-            for name, info in lock_pkgs.items():
-                err = lock_package_error(name, info, lock_tag.lock)
-                if err:
-                    if info.get("source") == "hosted":
-                        sha_err = pub_lock_package_sha256_error(name, info.get("version", ""), "")
-                        fail("%s (%s)" % (err, sha_err))
-                    fail(err)
-
-                source = info.get("source", "unknown")
-                if source != "hosted":
-                    skipped_by_source.setdefault(source, []).append(name)
-                    continue
-
-                # The hub aliases every package its lock names, explicit or not:
-                # an explicit package stands in for the name everywhere, so a
-                # hub that lists it points at the explicit repo, not a spoke.
-                hub_packages[hub_name][name] = True
-
-                if name in explicit:
-                    continue  # pub.package() wins: no version to reconcile, no spoke
-
-                desc = info.get("description", {})
-                url = desc.get("url", "https://pub.dev")
-                entry = struct(
-                    version = info.get("version", ""),
-                    sha256 = desc["sha256"],
-                    hub_name = hub_name,
-                    lock_label = str(lock_tag.lock),
-                    on_version_conflict = lock_tag.on_version_conflict,
+        for name, info in lock_pkgs.items():
+            err = lock_package_error(name, info, lock_tag.lock)
+            if err:
+                if info.get("source") == "hosted":
+                    sha_err = pub_lock_package_sha256_error(
+                        name,
+                        info.get("version", ""),
+                        info.get("description", {}).get("sha256", ""),
+                    )
+                    return struct(
+                        error = "%s (%s)" % (err, sha_err),
+                        explicit = {},
+                        resolved = {},
+                        hub_packages = {},
+                        warnings = [],
+                    )
+                return struct(
+                    error = err,
+                    explicit = {},
+                    resolved = {},
+                    hub_packages = {},
+                    warnings = [],
                 )
 
-                if name not in registry:
-                    registry[name] = struct(url = url, entries = [entry])
-                else:
-                    existing = registry[name]
-                    if existing.url != url:
-                        fail(
+            source = info.get("source", "unknown")
+            if source != "hosted":
+                skipped_by_source.setdefault(source, []).append(name)
+                continue
+
+            # The hub aliases every package its lock names, explicit or not:
+            # an explicit package stands in for the name everywhere, so a
+            # hub that lists it points at the explicit repo, not a spoke.
+            hub_packages[hub_name][name] = True
+
+            desc = info.get("description", {})
+            url = desc.get("url", "https://pub.dev")
+            version = info.get("version", "")
+            sha256 = desc["sha256"].strip()
+
+            if name in explicit:
+                exp = explicit[name]
+                if exp.version == version and exp.sha256 != sha256:
+                    return struct(
+                        error = (
+                            "Package \"%s\" (%s) has conflicting sha256 checksums between pub.package() and %s:\n" % (name, version, lock_tag.lock) +
+                            "  - %s (from pub.package)\n" % exp.sha256 +
+                            "  - %s (from \"%s\", %s)" % (sha256, hub_name, lock_tag.lock)
+                        ),
+                        explicit = {},
+                        resolved = {},
+                        hub_packages = {},
+                        warnings = [],
+                    )
+
+            entry = struct(
+                version = version,
+                sha256 = sha256,
+                hub_name = hub_name,
+                lock_label = str(lock_tag.lock),
+                on_version_conflict = lock_tag.on_version_conflict,
+            )
+
+            if name not in registry:
+                registry[name] = struct(url = url, entries = [entry])
+            else:
+                existing = registry[name]
+                if existing.url != url:
+                    return struct(
+                        error = (
                             "Package \"%s\" has conflicting registry URLs:\n" % name +
                             "  - %s (from \"%s\")\n" % (existing.url, existing.entries[0].hub_name) +
-                            "  - %s (from \"%s\")\n" % (url, hub_name),
-                        )
-                    registry[name] = struct(url = existing.url, entries = existing.entries + [entry])
+                            "  - %s (from \"%s\")\n" % (url, hub_name)
+                        ),
+                        explicit = {},
+                        resolved = {},
+                        hub_packages = {},
+                        warnings = [],
+                    )
+                registry[name] = struct(url = existing.url, entries = existing.entries + [entry])
 
-            if skipped_by_source:
-                details = []
-                for source in sorted(skipped_by_source.keys()):
-                    if source == "sdk":
-                        remedy = "provided by the Dart/Flutter SDK, not fetched by pub"
-                    else:
-                        remedy = "declare via pub.package() or a local dart_library"
-                    details.append("  - %s (%s): %s" % (
-                        source,
-                        remedy,
-                        ", ".join(sorted(skipped_by_source[source])),
-                    ))
+        if skipped_by_source:
+            details = []
+            for source in sorted(skipped_by_source.keys()):
+                if source == "sdk":
+                    remedy = "provided by the Dart/Flutter SDK, not fetched by pub"
+                else:
+                    remedy = "declare via pub.package() or a local dart_library"
+                details.append("  - %s (%s): %s" % (
+                    source,
+                    remedy,
+                    ", ".join(sorted(skipped_by_source[source])),
+                ))
 
-                # buildifier: disable=print
-                print(
-                    ("pub.from_lock(%s): %s lists non-hosted packages; no repository " +
-                     "is created for them, so `package:` imports of these packages " +
-                     "will fail to resolve unless they are provided another way:\n%s") % (
-                        hub_name,
-                        lock_tag.lock,
-                        "\n".join(details),
-                    ),
-                )
+            warnings.append(
+                ("pub.from_lock(%s): %s lists non-hosted packages; no repository " +
+                 "is created for them, so `package:` imports of these packages " +
+                 "will fail to resolve unless they are provided another way:\n%s") % (
+                    hub_name,
+                    lock_tag.lock,
+                    "\n".join(details),
+                ),
+            )
 
     # Resolve each package to a single version
     resolved = {}  # pkg_name -> {version, sha256, url}
     for name, pkg in registry.items():
+        # Conflicting sha256 values for the same package version across locks
+        # are an error, even when that version is later superseded by a higher
+        # version or by an explicit pub.package().
+        by_version = {}
+        for e in pkg.entries:
+            if e.version not in by_version:
+                by_version[e.version] = e
+            elif by_version[e.version].sha256 != e.sha256:
+                first = by_version[e.version]
+                return struct(
+                    error = (
+                        "Package \"%s\" (%s) has conflicting sha256 checksums across lock files:\n" % (name, e.version) +
+                        "  - %s (from \"%s\", %s)\n" % (first.sha256, first.hub_name, first.lock_label) +
+                        "  - %s (from \"%s\", %s)" % (e.sha256, e.hub_name, e.lock_label)
+                    ),
+                    explicit = {},
+                    resolved = {},
+                    hub_packages = {},
+                    warnings = [],
+                )
+
+        if name in explicit:
+            continue  # pub.package() wins: no version to reconcile, no spoke
+
         if len(pkg.entries) == 1:
             e = pkg.entries[0]
             resolved[name] = struct(version = e.version, sha256 = e.sha256, url = pkg.url)
@@ -216,31 +307,103 @@ def _pub_impl(ctx):
         # Check that all lower-version entries allow upgrading
         for e in pkg.entries:
             if e.version != best.version and e.on_version_conflict == "error":
-                fail(
-                    "Package \"%s\" has conflicting versions across lock files:\n" % name +
-                    "".join([
-                        "  - %s (from \"%s\", %s)\n" % (entry.version, entry.hub_name, entry.lock_label)
-                        for entry in pkg.entries
-                    ]) +
-                    "\nThe pubspec.lock files pinned different versions of a shared transitive\n" +
-                    "package. `dart pub get` preserves existing locked versions, so it won't\n" +
-                    "bring them back into sync. To resolve:\n" +
-                    "\n" +
-                    "  1. (Preferred) Run `dart pub upgrade` in the workspace with the lower\n" +
-                    "     version. This re-resolves transitive packages within their constraints,\n" +
-                    "     pulling the shared dependency forward to match.\n" +
-                    "\n" +
-                    "  2. If constraints prevent the upgrade, set on_version_conflict = \"upgrade\"\n" +
-                    "     on the from_lock() call with the lower version, allowing it to accept\n" +
-                    "     the higher.\n" +
-                    "\n" +
-                    "  3. Or pin centrally with an explicit declaration:\n" +
-                    "       pub.package(name = \"%s\", version = \"%s\", sha256 = \"%s\", deps = [...])\n" % (name, best.version, best.sha256) +
-                    "       # You may need to manually add deps for this package.\n" +
-                    "\nrules_dart does not support multiple versions of a package, even across lock files.",
+                return struct(
+                    error = (
+                        "Package \"%s\" has conflicting versions across lock files:\n" % name +
+                        "".join([
+                            "  - %s (from \"%s\", %s)\n" % (entry.version, entry.hub_name, entry.lock_label)
+                            for entry in pkg.entries
+                        ]) +
+                        "\nThe pubspec.lock files pinned different versions of a shared transitive\n" +
+                        "package. `dart pub get` preserves existing locked versions, so it won't\n" +
+                        "bring them back into sync. To resolve:\n" +
+                        "\n" +
+                        "  1. (Preferred) Run `dart pub upgrade` in the workspace with the lower\n" +
+                        "     version. This re-resolves transitive packages within their constraints,\n" +
+                        "     pulling the shared dependency forward to match.\n" +
+                        "\n" +
+                        "  2. If constraints prevent the upgrade, set on_version_conflict = \"upgrade\"\n" +
+                        "     on the from_lock() call with the lower version, allowing it to accept\n" +
+                        "     the higher.\n" +
+                        "\n" +
+                        "  3. Or pin centrally with an explicit declaration:\n" +
+                        "       pub.package(name = \"%s\", version = \"%s\", sha256 = \"%s\", deps = [...])\n" % (name, best.version, best.sha256) +
+                        "       # You may need to manually add deps for this package.\n" +
+                        "\nrules_dart does not support multiple versions of a package, even across lock files."
+                    ),
+                    explicit = {},
+                    resolved = {},
+                    hub_packages = {},
+                    warnings = [],
                 )
 
         resolved[name] = struct(version = best.version, sha256 = best.sha256, url = pkg.url)
+
+    return struct(
+        error = None,
+        explicit = explicit,
+        resolved = resolved,
+        hub_packages = hub_packages,
+        warnings = warnings,
+    )
+
+def _pub_impl(ctx):
+    # Packages the user has declared hook-irrelevant, unioned across every
+    # from_lock call — a package is one repo regardless of how many locks
+    # mention it, so the flag cannot be per-lock.
+    ignore_hooks = {}
+
+    # Repos the root module names, mapped to whether every naming is a
+    # `dev_dependency = True` usage: Bazel checks the root's `use_repo` calls
+    # against that split, and fails a dev-only root that reports non-dev repos.
+    root_repos = {}
+
+    package_tags = []
+    lock_tags = []
+    for mod in ctx.modules:
+        for pkg in mod.tags.package:
+            package_tags.append(struct(
+                name = pkg.name,
+                version = pkg.version,
+                sha256 = pkg.sha256,
+                deps = pkg.deps,
+            ))
+            if mod.is_root:
+                root_repos[pkg.name] = root_repos.get(pkg.name, True) and ctx.is_dev_dependency(pkg)
+
+        for lock_tag in mod.tags.from_lock:
+            for pkg_name in lock_tag.ignore_hooks:
+                ignore_hooks[pkg_name] = True
+            if mod.is_root:
+                root_repos[lock_tag.name] = root_repos.get(lock_tag.name, True) and ctx.is_dev_dependency(lock_tag)
+            lock_content = ctx.read(lock_tag.lock)
+            lock_tags.append(struct(
+                name = lock_tag.name,
+                lock = lock_tag.lock,
+                packages = parse_pubspec_lock(lock_content),
+                on_version_conflict = lock_tag.on_version_conflict,
+            ))
+
+    resolution = resolve_pub_packages(package_tags, lock_tags)
+    if resolution.error:
+        fail(resolution.error)
+
+    for warning in resolution.warnings:
+        # buildifier: disable=print
+        print(warning)
+
+    explicit = resolution.explicit
+    resolved = resolution.resolved
+    hub_packages = resolution.hub_packages
+
+    for name, pkg in explicit.items():
+        pub_package(
+            name = name,
+            package_name = name,
+            version = pkg.version,
+            sha256 = pkg.sha256,
+            deps = pkg.deps,
+        )
 
     # Create shared spoke repos
     all_package_names = sorted(resolved.keys())

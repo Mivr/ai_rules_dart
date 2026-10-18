@@ -1,15 +1,32 @@
 """Repository rule for downloading a single pub.dev package."""
 
-load("//dart/pub:yaml_parser.bzl", "parse_pubspec_sdk_constraint")
+load("//dart/pub:yaml_parser.bzl", "is_valid_sha256", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", "make_dart_library_build_content")
 load("//dart/pub/private:language_version.bzl", "derive_language_version")
 
 def pub_package_sha256_error(package_name, version, sha256):
-    """Returns an error string when `sha256` is empty, or None."""
-    if not sha256:
+    """Validates `sha256` for a `pub_package` target.
+
+    Args:
+        package_name: The pub.dev package name.
+        version: The package version string.
+        sha256: Candidate SHA-256 checksum string.
+
+    Returns:
+        An error string when `sha256` is empty or not 64 lowercase hex digits,
+        or None when valid.
+    """
+    trimmed = str(sha256).strip() if sha256 != None else ""
+    if not trimmed:
         return 'pub_package "%s" (%s) requires a non-empty sha256.' % (
             package_name,
             version,
+        )
+    if not is_valid_sha256(trimmed):
+        return 'pub_package "%s" (%s) has invalid sha256 %r: expected 64 lowercase hex digits.' % (
+            package_name,
+            version,
+            sha256,
         )
     return None
 
@@ -29,7 +46,7 @@ def _pub_package_impl(ctx):
 
     ctx.download_and_extract(
         url = url,
-        sha256 = ctx.attr.sha256,
+        sha256 = ctx.attr.sha256.strip(),
         type = "tar.gz",
     )
 

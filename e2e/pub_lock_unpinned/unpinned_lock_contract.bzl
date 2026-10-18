@@ -1,5 +1,6 @@
 """Red-path contract check for unpinned hosted entries in pubspec.lock."""
 
+load("@rules_dart//dart/pub:extensions.bzl", "resolve_pub_packages")
 load("@rules_dart//dart/pub:pub_lock_package.bzl", "pub_lock_package_sha256_error")
 load("@rules_dart//dart/pub:yaml_parser.bzl", "lock_package_error", "parse_pubspec_lock")
 
@@ -21,6 +22,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.0.0"
+  whitespace_sha:
+    dependency: "direct main"
+    description:
+      name: whitespace_sha
+      sha256: "   "
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.9.0"
+  malformed_sha:
+    dependency: "direct main"
+    description:
+      name: malformed_sha
+      sha256: "not-hex"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.9.0"
 sdks:
   dart: ">=3.11.0 <4.0.0"
 """
@@ -35,7 +52,7 @@ EXPECTED_PUB_LOCK_PACKAGE_SHA256_ERROR = (
 )
 
 def check_unpinned_lock_contract():
-    """Fails at load time if unpinned hosted lock entries do not produce the expected sha256 errors."""
+    """Fails at load time if unpinned, whitespace, malformed, or conflicting hosted lock entries do not produce the expected sha256 errors."""
     parsed = parse_pubspec_lock(_UNPINNED_LOCK)
     lock_err = lock_package_error("collection", parsed["collection"], "//:pubspec.lock")
     if lock_err != EXPECTED_LOCK_PACKAGE_ERROR:
@@ -49,6 +66,22 @@ def check_unpinned_lock_contract():
     if empty_err != expected_empty:
         fail("Expected lock_package_error %r, got %r" % (expected_empty, empty_err))
 
+    ws_err = lock_package_error("whitespace_sha", parsed["whitespace_sha"], "//:pubspec.lock")
+    expected_ws = (
+        'pub package "whitespace_sha" 1.9.0 in //:pubspec.lock has no sha256. ' +
+        "Run `dart pub get` (Dart 2.19 or newer records one) and commit the lock."
+    )
+    if ws_err != expected_ws:
+        fail("Expected lock_package_error %r, got %r" % (expected_ws, ws_err))
+
+    malformed_err = lock_package_error("malformed_sha", parsed["malformed_sha"], "//:pubspec.lock")
+    expected_malformed = (
+        'pub package "malformed_sha" 1.9.0 in //:pubspec.lock has invalid sha256 "not-hex": ' +
+        "expected 64 lowercase hex digits."
+    )
+    if malformed_err != expected_malformed:
+        fail("Expected lock_package_error %r, got %r" % (expected_malformed, malformed_err))
+
     sha_err = pub_lock_package_sha256_error(
         "collection",
         parsed["collection"].get("version", ""),
@@ -61,3 +94,33 @@ def check_unpinned_lock_contract():
                 sha_err,
             ),
         )
+
+    lock_a = parse_pubspec_lock("""\
+packages:
+  path:
+    description:
+      name: path
+      sha256: "75cca69d1490965be98c73ceaea117e8a04dd21217b37b292c9ddbec0d955bc5"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.9.1"
+""")
+    lock_b = parse_pubspec_lock("""\
+packages:
+  path:
+    description:
+      name: path
+      sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.9.1"
+""")
+    conflict = resolve_pub_packages(
+        [],
+        [
+            struct(name = "a", lock = "//:a.lock", packages = lock_a, on_version_conflict = "upgrade"),
+            struct(name = "b", lock = "//:b.lock", packages = lock_b, on_version_conflict = "upgrade"),
+        ],
+    )
+    if not conflict.error or "conflicting sha256 checksums across lock files" not in conflict.error:
+        fail("Expected conflicting sha256 error across locks, got %r" % conflict.error)

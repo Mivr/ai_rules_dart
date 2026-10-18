@@ -9,7 +9,7 @@ the `flutter pub get` analog) reuse this helper to emit the same
 `dart_library` shape for non-plugin packages without duplicating the format.
 """
 
-load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
+load("//dart/pub:yaml_parser.bzl", "is_valid_sha256", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_library_build_content = "make_dart_library_build_content")
 load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
 
@@ -20,11 +20,28 @@ derive_language_version = _derive_language_version
 make_dart_library_build_content = _make_dart_library_build_content
 
 def pub_lock_package_sha256_error(package_name, version, sha256):
-    """Returns an error string when `sha256` is empty, or None."""
-    if not sha256:
+    """Validates `sha256` for a `pub_lock_package` target.
+
+    Args:
+        package_name: The pub.dev package name.
+        version: The package version string.
+        sha256: Candidate SHA-256 checksum string.
+
+    Returns:
+        An error string when `sha256` is empty or not 64 lowercase hex digits,
+        or None when valid.
+    """
+    trimmed = str(sha256).strip() if sha256 != None else ""
+    if not trimmed:
         return 'pub_lock_package "%s" (%s) requires a non-empty sha256.' % (
             package_name,
             version,
+        )
+    if not is_valid_sha256(trimmed):
+        return 'pub_lock_package "%s" (%s) has invalid sha256 %r: expected 64 lowercase hex digits.' % (
+            package_name,
+            version,
+            sha256,
         )
     return None
 
@@ -94,7 +111,7 @@ def _pub_lock_package_impl(ctx):
     ctx.download(
         url = url,
         output = "_archive.tar.gz",
-        sha256 = ctx.attr.sha256,
+        sha256 = ctx.attr.sha256.strip(),
     )
     raw_archive = ctx.read("_archive.tar.gz", watch = "no")
     trimmed_archive = trim_gzip_trailing_nulls(raw_archive)

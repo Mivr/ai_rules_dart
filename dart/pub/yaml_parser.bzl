@@ -52,11 +52,49 @@ def parse_pubspec_lock(content):
         result[name] = entry
     return result
 
+_HEX_LOWER = {
+    "0": True,
+    "1": True,
+    "2": True,
+    "3": True,
+    "4": True,
+    "5": True,
+    "6": True,
+    "7": True,
+    "8": True,
+    "9": True,
+    "a": True,
+    "b": True,
+    "c": True,
+    "d": True,
+    "e": True,
+    "f": True,
+}
+
+def is_valid_sha256(sha256):
+    """Returns True when `sha256` is 64 lowercase hex digits after trimming.
+
+    Args:
+        sha256: Candidate SHA-256 string.
+
+    Returns:
+        True when `sha256` trims to 64 lowercase hex characters, else False.
+    """
+    if type(sha256) != "string":
+        return False
+    trimmed = sha256.strip()
+    if len(trimmed) != 64:
+        return False
+    for ch in trimmed.elems():
+        if ch not in _HEX_LOWER:
+            return False
+    return True
+
 def lock_package_error(name, info, lock_file):
     """Validates that a parsed `pubspec.lock` package entry is pinned.
 
-    Hosted packages must carry a non-empty `sha256`, and git packages must
-    carry a non-empty `resolved-ref`.
+    Hosted packages must carry a 64-lowercase-hex-digit `sha256` after
+    trimming, and git packages must carry a non-empty `resolved-ref`.
 
     Args:
         name: Package name from `pubspec.lock`.
@@ -64,19 +102,28 @@ def lock_package_error(name, info, lock_file):
         lock_file: Label or string identifying the lock file for diagnostics.
 
     Returns:
-        An error string when the entry is unpinned, or None when valid.
+        An error string when the entry is unpinned or malformed, or None when valid.
     """
     source = info.get("source", "unknown")
     version = info.get("version", "")
     desc = info.get("description", {})
     if source == "hosted":
-        if not desc.get("sha256", ""):
+        raw_sha256 = desc.get("sha256", "")
+        sha256 = str(raw_sha256).strip() if raw_sha256 != None else ""
+        if not sha256:
             return (
                 'pub package "%s" %s in %s has no sha256. ' +
                 "Run `dart pub get` (Dart 2.19 or newer records one) and commit the lock."
             ) % (name, version, lock_file)
+        if not is_valid_sha256(sha256):
+            return (
+                'pub package "%s" %s in %s has invalid sha256 %r: ' +
+                "expected 64 lowercase hex digits."
+            ) % (name, version, lock_file, raw_sha256)
     elif source == "git":
-        if not desc.get("resolved-ref", ""):
+        raw_ref = desc.get("resolved-ref", "")
+        resolved_ref = str(raw_ref).strip() if raw_ref != None else ""
+        if not resolved_ref:
             return (
                 'pub package "%s" %s in %s has no resolved-ref. ' +
                 "Run `dart pub get` and commit the lock."
