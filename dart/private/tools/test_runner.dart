@@ -46,9 +46,15 @@ Future<void> main(List<String> args) async {
     exit(await _runDirectly(dart, dill, args));
   }
   final baseDillKey = env['RULES_DART_BASE_DILL'];
-  final baseDill = (baseDillKey == null || baseDillKey.isEmpty)
-      ? null
-      : r.rlocation(baseDillKey);
+  String? baseDill;
+  if (baseDillKey != null && baseDillKey.isNotEmpty) {
+    try {
+      baseDill = r.rlocation(baseDillKey);
+    } on StateError catch (e) {
+      stderr.writeln('dart_test: base dill not found ($baseDillKey): $e');
+      exit(1);
+    }
+  }
   exit(
     await _runUnderRunner(
       dart: dart,
@@ -125,11 +131,15 @@ Future<int> _runUnderRunner({
     stderr.writeln('dart_test: $dill is not laid out for $testPath');
     return 1;
   }
+  if (baseDill != null && !File(baseDill).existsSync()) {
+    stderr.writeln('dart_test: base dill not found: $baseDill');
+    return 1;
+  }
   var precompiled = dill.substring(0, dill.length - suffix.length);
   final tmp = Directory(env['TEST_TMPDIR'] ?? Directory.systemTemp.path)
       .createTempSync('dart_test.');
   File? combinedDill;
-  if (baseDill != null && File(baseDill).existsSync()) {
+  if (baseDill != null) {
     final combinedPath = _join(
       tmp.path,
       'precompiled/$testPath.vm_test.vm.app.dill',

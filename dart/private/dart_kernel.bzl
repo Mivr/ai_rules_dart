@@ -1093,7 +1093,6 @@ def modular_executable_kernel(
     base_dill = None
     base_keys = None
     base_kmods = depset()
-    unseeded_candidates = None
     if use_base_dill:
         for k in dep_kernels:
             kd = getattr(k, "base_dill", None)
@@ -1103,30 +1102,10 @@ def modular_executable_kernel(
                     base_dill = kd
                     base_keys = kk
                     base_kmods = getattr(k, "base_kmods", depset())
-                if kd == base_dill:
-                    k_unseeded = getattr(k, "unseeded_base_kmods", depset()).to_list()
-                    if unseeded_candidates == None:
-                        unseeded_candidates = {f.path: f for f in k_unseeded}
-                    else:
-                        keep = {f.path: True for f in k_unseeded}
-                        unseeded_candidates = {
-                            p: f
-                            for p, f in unseeded_candidates.items()
-                            if p in keep
-                        }
-    unseeded_base_kmods = depset(unseeded_candidates.values() if unseeded_candidates != None else [])
+                    break
     link_dep_closure = dep_closure
     if base_dill != None and base_keys != None:
-        user_kmod_paths = {
-            f.path: True
-            for k in dep_kernels
-            if getattr(k, "base_dill", None) == None
-            for f in k.transitive_kmods.to_list()
-        }
         pruned_paths = {f.path: True for f in base_kmods.to_list()}
-        for f in unseeded_base_kmods.to_list():
-            if f.path not in user_kmod_paths:
-                pruned_paths[f.path] = True
         if pruned_paths:
             link_dep_closure = depset(
                 [f for f in dep_closure.to_list() if f.path not in pruned_paths],

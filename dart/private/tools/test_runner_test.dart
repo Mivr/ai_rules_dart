@@ -91,4 +91,38 @@ void main(List<String> args) {
       contains('--test_filter needs a test written with package:test'),
     );
   });
+
+  test('fails with a clear error when RULES_DART_BASE_DILL cannot be resolved or does not exist', () async {
+    final tmp = await Directory.systemTemp.createTemp('test_runner_base_dill_');
+    addTearDown(() => tmp.deleteSync(recursive: true));
+
+    const ws = '_main';
+    const testPath = 'pkg/my_test.dart';
+    final wsDir = Directory('${tmp.path}/$ws/pkg')..createSync(recursive: true);
+    File('${wsDir.path}/my_test.dart').writeAsStringSync('void main() {}\n');
+    File('${wsDir.path}/my_test.dart.vm_test.vm.app.dill')
+        .writeAsBytesSync(const [1, 2, 3, 4]);
+    File('${wsDir.path}/runner.dill').writeAsBytesSync(const [5, 6, 7, 8]);
+
+    final process = await Process.start(
+      launcher,
+      const [],
+      environment: {
+        'RUNFILES_DIR': tmp.path,
+        'RUNFILES_MANIFEST_FILE': '',
+        ' TEST_WORKSPACE': ws,
+        'TEST_WORKSPACE': ws,
+        'RULES_DART_DART': Platform.resolvedExecutable,
+        'RULES_DART_DILL': '$ws/pkg/my_test.dart.vm_test.vm.app.dill',
+        'RULES_DART_TEST_RUNNER': '$ws/pkg/runner.dill',
+        'RULES_DART_TEST_MAIN': '$ws/$testPath',
+        'RULES_DART_TEST_PATH': testPath,
+        'RULES_DART_BASE_DILL': '$ws/pkg/missing.base.dill',
+      },
+    );
+    final err = await process.stderr.transform(utf8.decoder).join();
+    await process.stdout.drain<void>();
+    expect(await process.exitCode, 1);
+    expect(err, contains('dart_test: base dill not found'));
+  });
 }

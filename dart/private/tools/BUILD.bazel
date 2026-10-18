@@ -180,9 +180,22 @@ dart_test(
         "kernel_link.dart",
         "kernel_module.dart",
     ],
-    data = ["//dart"],
+    args = [
+        "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
+        "$(rlocationpath @dart_toolchains//sdk/3.13.4:dart)",
+    ],
+    data = [
+        "//dart",
+        "@dart_toolchains//sdk/3.13.4:compile_files",
+        "@dart_toolchains//sdk/3.13.4:dart",
+        "@dart_toolchains//sdk/3.13.5:compile_files",
+        "@dart_toolchains//sdk/3.13.5:dart",
+    ],
     main = "kernel_module_test.dart",
-    deps = ["@ext_pub_deps//:test"],
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
 )
 
 dart_test(

@@ -771,10 +771,10 @@ def _unseeded_base_kmods_intersection_test_impl(ctx):
         any([b.endswith("_crypto.kmod") for b in link_input_basenames]),
         "crypto.kmod used by second base_dill helper is retained in DartKernelLink inputs",
     )
-    asserts.false(
+    asserts.true(
         env,
         any([b.endswith("_shelf.kmod") for b in link_input_basenames]),
-        "shelf.kmod unseeded in all dependencies is pruned from DartKernelLink inputs",
+        "shelf.kmod not seeded into base_dill is retained in DartKernelLink inputs",
     )
     asserts.false(
         env,
