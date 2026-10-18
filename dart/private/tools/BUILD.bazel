@@ -252,4 +252,3 @@ dart_test(
         "@ext_pub_deps//:test",
     ],
 )
-

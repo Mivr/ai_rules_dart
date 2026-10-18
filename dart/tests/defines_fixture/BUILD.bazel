@@ -15,8 +15,8 @@ load(
 
 dart_library(
     name = "comma_lib",
-    srcs = ["lib/comma_lib.dart"],
     package_name = "defines_fixture",
+    srcs = ["lib/comma_lib.dart"],
 )
 
 dart_binary(
