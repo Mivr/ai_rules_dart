@@ -149,8 +149,8 @@ dart_binary(
     ],
 )
 
-# Concatenates module kernels into a modular `dart_test`'s kernel. See the file's
-# header.
+# Concatenates module kernels into a modular `dart_test`'s or
+# `dart_binary(compile_mode = "kernel")`'s kernel. See the file's header.
 dart_binary(
     name = "kernel_link",
     compile_mode = "kernel",

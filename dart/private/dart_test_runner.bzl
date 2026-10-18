@@ -72,7 +72,7 @@ DartTestKernelInfo = provider(
 )
 
 DartTestRunnerMainInfo = provider(
-    doc = "Marks the generated `package:test` runner entrypoint (`dart_test_runner_main`) so `dart_binary` omits embedded sources from its whole-program kernel.",
+    doc = "Marks the generated `package:test` runner entrypoint (`dart_test_runner_main`). The runner `dart_binary(compile_mode = \"kernel\")` compiles modularly by default (stripping source text from `.kmod` modules), and omits embedded sources if it falls back to a whole-program kernel.",
     fields = {},
 )
 

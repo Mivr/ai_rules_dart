@@ -1,10 +1,13 @@
-"""Modular kernel compilation for `dart_library` and `dart_test`.
+"""Modular kernel compilation for `dart_library`, `dart_binary(compile_mode = "kernel")`, and `dart_test`.
 
 Whole-program compilation puts every package in an executable's closure into that
 executable's own kernel. With 30 tests, `package:test` is compiled 30 times, and a
 one-line edit in a leaf library recompiles every test that reaches it.
 
-Modular compilation splits the work along `dart_library` boundaries. Each library
+Modular compilation is on by default (`//dart:modular_kernel = True`, and
+`dart_binary.modular_kernel = True`) for every `dart_test` and
+`dart_binary(compile_mode = "kernel")` (including `package:test`'s `test_runner`),
+and splits the work along `dart_library` boundaries. Each library
 compiles its own sources into a module: a `.kmod` directory of one kernel per
 component of its sources (with embedded source text stripped), a `.koutline`
 directory of deterministic outline kernels for downstream `--input-summary`
@@ -82,7 +85,7 @@ def _kernel_link_for_mode(compile_mode, modular_kernel):
 # `dart_library` and no cycle is possible.
 KERNEL_MODULE_ATTRS = {
     "_modular_kernel": attr.label(
-        doc = "The `//dart:modular_kernel` build setting. When off, executables compile whole-program as before.",
+        doc = "The `//dart:modular_kernel` build setting (`True` by default). When off, kernel-mode executables compile whole-program as before.",
         default = Label("//dart:modular_kernel"),
         providers = [BuildSettingInfo],
     ),
@@ -105,7 +108,7 @@ MODULAR_KERNEL_ATTRS = dict(KERNEL_MODULE_ATTRS)
 BINARY_MODULAR_KERNEL_ATTRS = {
     "modular_kernel": attr.bool(
         default = True,
-        doc = "Whether `compile_mode = \"kernel\"` compiles modularly against dependency `.kmod` outputs when eligible.",
+        doc = "Whether `compile_mode = \"kernel\"` compiles modularly against dependency `.kmod` outputs when eligible. Enabled (`True`) by default (including for `package:test`'s `test_runner`); set `modular_kernel = False` or `--@rules_dart//dart:modular_kernel=false` for whole-program compilation.",
     ),
     "_modular_kernel": KERNEL_MODULE_ATTRS["_modular_kernel"],
     "_kernel_module": attr.label(

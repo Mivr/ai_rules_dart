@@ -275,7 +275,7 @@ The `dart compile` mode. Determines the output format:
 
 - `exe` (default): Self-contained native machine code. No Dart SDK needed at runtime. Best for deployment.
 - `aot-snapshot`: AOT-compiled snapshot. Requires `dartaotruntime` to execute. Smaller than `exe`.
-- `kernel`: Dart kernel binary (`.dill`). Requires `dart` to execute. Fastest compilation, useful for development.
+- `kernel`: Dart kernel binary (`.dill`). Requires `dart` to execute. Fastest compilation, useful for development. Compiles modularly by default (`modular_kernel = True` and `//dart:modular_kernel = True`) against dependency `.kmod`/`.koutline` modules when eligible, or whole-program via `gen_kernel` when `modular_kernel = False` or when target `defines`, `dart_compile_flags`, or `code_assets` are set.
 - `jit-snapshot`: JIT snapshot with trained profile data. Requires `dart` to execute. Fastest startup after warmup. The program is trained once, with no arguments, in a fixed-length scratch directory. The snapshot is reproducible only if that training run is deterministic: a program that reads the clock, random numbers, or files outside the build gives a different snapshot each build. The training runs from a copy of the SDK's `dart` at a fixed path per SDK version, so the snapshot does not depend on where the SDK is installed.
 """,
             default = "exe",
@@ -291,7 +291,7 @@ Each flag goes to the stage that consumes it. A source entrypoint is first compi
 - `-D<KEY=VALUE>`, `--define=<KEY=VALUE>`, or `-D <KEY=VALUE>`, `--define <KEY=VALUE>`
 - `--enable-asserts`
 
-Every other flag goes to `dart compile`. In the `kernel` mode all flags go to `gen_kernel`, which is that mode's compile. For a pre-built kernel, all flags go to `dart compile`. The `jit-snapshot` mode takes no `dart compile` flags, so any other flag there is an error.""",
+Every other flag goes to `dart compile`. In the `kernel` mode, setting `dart_compile_flags` opts out of modular kernel compilation and passes all flags to `gen_kernel`. For a pre-built kernel, all flags go to `dart compile`. The `jit-snapshot` mode takes no `dart compile` flags, so any other flag there is an error.""",
         ),
         "_jit_tool": attr.label(
             default = "//dart/private/tools:app_jit_snapshot.dart",
