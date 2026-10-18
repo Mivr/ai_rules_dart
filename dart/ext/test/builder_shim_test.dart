@@ -1881,6 +1881,162 @@ void main() {
         contains('bounds analysis_options.yaml discovery'),
       );
     });
+
+    test(
+      'symlinked systemTemp, sandboxDir, and stagingRoot resolve to canonical paths so p.relative(libUri.path) has no ../ segments',
+      () async {
+        final realTmp = await Directory(
+          p.join(tmp.path, 'real_private_var_folders'),
+        ).create(recursive: true);
+        final symlinkTmp = Link(p.join(tmp.path, 'symlink_var_folders'))
+          ..createSync(realTmp.path);
+        final savedCwd = Directory.current;
+        addTearDown(() {
+          Directory.current = savedCwd;
+        });
+
+        await IOOverrides.runZoned(() async {
+          // 1. prepareSourceGenCwd under symlinked Directory.systemTemp
+          final prepBase = await Directory.systemTemp.createTemp('prep_');
+          final prepared = await prepareSourceGenCwd(
+            baseDir: prepBase,
+            packageName: 'pkg_prep',
+          );
+          expect(
+            p.relative(prepared.path),
+            'pkg_prep',
+            reason:
+                'prepareSourceGenCwd must align returned Directory.path with canonical Directory.current.path',
+          );
+          expect(
+            p.normalize(prepared.path),
+            p.join(p.normalize(Directory.current.path), 'pkg_prep'),
+          );
+          Directory.current = savedCwd;
+
+          // 2. ShimWorkerLoop with symlinked Directory.systemTemp and symlinked sandboxDir
+          final recorded = <String, Map<String, Object?>>{};
+          String? cachedRootPackageName;
+          final loop = ShimWorkerLoop(
+            factoryOrFactories: (_) => _CapturingBuilder((step) async {
+              final lib = await step.resolver.libraryFor(step.inputId);
+              final libUri = lib.firstFragment.source.uri;
+              final cls = lib.classes.first;
+              final assetId = await step.resolver.assetIdForElement(cls);
+              if (cachedRootPackageName == null) {
+                final pubspecText = File('pubspec.yaml').readAsStringSync();
+                final match = RegExp(
+                  r'^name:\s*"?([^"\n]*)"?',
+                  multiLine: true,
+                ).firstMatch(pubspecText);
+                cachedRootPackageName = match?.group(1) ?? '';
+              }
+              final relPath = p.relative(
+                libUri.toFilePath(windows: Platform.isWindows),
+              );
+              final sourceGenAssetPath = libUri.scheme == 'file'
+                  ? p.posix.joinAll(
+                      p.split(p.join(cachedRootPackageName!, relPath)),
+                    )
+                  : '${assetId.package}/${assetId.path}';
+              recorded[step.inputId.package] = {
+                'relPath': relPath,
+                'sourceGenAssetPath': sourceGenAssetPath,
+                'assetId': assetId.toString(),
+              };
+            }),
+          );
+
+          final testA = File(p.join(tmp.path, 'sym_a_test.dart'))
+            ..writeAsStringSync('class SymMockA {}\n');
+          final outA = File(p.join(tmp.path, 'sym_a_test.mocks.dart'));
+          final respA = await loop.performRequest(
+            WorkRequest(
+              arguments: [
+                '--input',
+                testA.path,
+                '--input-asset',
+                'test/a_test.dart',
+                '--output',
+                outA.path,
+                '--package',
+                'pkg_a',
+                '--root-language-version',
+                '3.11',
+              ],
+            ),
+          );
+          expect(respA.exitCode, 0, reason: respA.output);
+
+          final symlinkSandbox = Link(p.join(tmp.path, 'symlink_sandbox'))
+            ..createSync(realTmp.path);
+          final testB = File(p.join(tmp.path, 'sym_b_test.dart'))
+            ..writeAsStringSync('class SymMockB {}\n');
+          final outB = File(p.join(tmp.path, 'sym_b_test.mocks.dart'));
+          final respB = await loop.performRequest(
+            WorkRequest(
+              sandboxDir: symlinkSandbox.path,
+              arguments: [
+                '--input',
+                testB.path,
+                '--input-asset',
+                'test/b_test.dart',
+                '--output',
+                outB.path,
+                '--package',
+                'pkg_b',
+                '--root-language-version',
+                '3.11',
+              ],
+            ),
+          );
+          expect(respB.exitCode, 0, reason: respB.output);
+
+          expect(recorded['pkg_a'], {
+            'relPath': p.join('pkg_a', 'test', 'a_test.dart'),
+            'sourceGenAssetPath': 'pkg_a/test/a_test.dart',
+            'assetId': 'pkg_a|test/a_test.dart',
+          });
+          expect(recorded['pkg_b'], {
+            'relPath': p.join('pkg_b', 'test', 'b_test.dart'),
+            'sourceGenAssetPath': 'pkg_b/test/b_test.dart',
+            'assetId': 'pkg_b|test/b_test.dart',
+          });
+
+          // 3. One-shot runShimWithArgs with a symlinked stagingRoot
+          final realOneShotDir = await Directory(
+            p.join(realTmp.path, 'oneshot_real'),
+          ).create(recursive: true);
+          final symlinkOneShotDir = Link(p.join(tmp.path, 'oneshot_symlink'))
+            ..createSync(realOneShotDir.path);
+          String? oneShotRelPath;
+          final outC = File(p.join(tmp.path, 'sym_c_test.g.dart'));
+          await runShimWithArgs(
+            _shimArgs(
+              inputPath: testA.path,
+              inputAssetPath: 'test/a_test.dart',
+              outputPath: outC.path,
+              packageName: 'pkg_c',
+            ),
+            (_) => _CapturingBuilder((step) async {
+              final lib = await step.resolver.libraryFor(step.inputId);
+              final libUri = lib.firstFragment.source.uri;
+              oneShotRelPath = p.relative(
+                libUri.toFilePath(windows: Platform.isWindows),
+              );
+              await step.writeAsString(
+                outC.path.endsWith('.g.dart')
+                    ? step.inputId.changeExtension('.g.dart')
+                    : step.allowedOutputs.first,
+                '// ok\n',
+              );
+            }),
+            stagingRoot: Directory(symlinkOneShotDir.path),
+          );
+          expect(oneShotRelPath, p.join('pkg_c', 'test', 'a_test.dart'));
+        }, getSystemTempDirectory: () => Directory(symlinkTmp.path));
+      },
+    );
   });
 }
 

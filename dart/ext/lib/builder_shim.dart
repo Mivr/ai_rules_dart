@@ -425,29 +425,32 @@ Future<Directory> prepareSourceGenCwd({
   required String packageName,
 }) async {
   await baseDir.create(recursive: true);
+  final canonicalBasePath = p.normalize(await baseDir.resolveSymbolicLinks());
+  final canonicalBaseDir = Directory(canonicalBasePath);
   await File(
-    p.join(baseDir.absolute.path, 'pubspec.yaml'),
+    p.join(canonicalBasePath, 'pubspec.yaml'),
   ).writeAsString('name: ""\nenvironment:\n  sdk: ^3.0.0\n');
-  await File(
-    p.join(baseDir.absolute.path, 'stacked.json'),
-  ).writeAsString('{}\n');
-  final packageStagingDir = Directory(
-    p.join(baseDir.absolute.path, packageName),
-  );
+  await File(p.join(canonicalBasePath, 'stacked.json')).writeAsString('{}\n');
+  Directory.current = canonicalBaseDir;
+  final currentPath = p.normalize(Directory.current.path);
+  final packageStagingDir = Directory(p.join(currentPath, packageName));
   await packageStagingDir.create(recursive: true);
-  Directory.current = baseDir;
   return packageStagingDir;
 }
 
 /// Same as [runShim] but takes pre-parsed [args] and propagates errors as
 /// exceptions. Intended for unit tests.
-Future<void> runShimWithArgs(ShimArgs args, Object factoryOrFactories) async {
+Future<void> runShimWithArgs(
+  ShimArgs args,
+  Object factoryOrFactories, {
+  Directory? stagingRoot,
+}) async {
   // Relative paths in `args` are resolved against the process CWD. We
   // chdir into the staging dir below for source_gen's benefit, so resolve
   // everything up-front here; after chdir, any still-relative path would
   // resolve against the staging dir and break.
   final absArgs = _absoluteArgs(args);
-  final stagingDir = await Directory.systemTemp.createTemp(
+  final stagingDir = await (stagingRoot ?? Directory.systemTemp).createTemp(
     'shim_${args.packageName}_',
   );
   final originalCwd = Directory.current;
@@ -571,8 +574,12 @@ Future<void> _runWithStaging(
   DiagnosticSink writeDiagnostic = _stderrSink,
 }) async {
   // Paths in [args] are pre-absolutised by _absoluteArgs so the chdir below
-  // doesn't invalidate them.
-  final stagingPath = stagingDir.absolute.path;
+  // doesn't invalidate them. Resolve symbolic links (and Windows 8.3 short
+  // names) on [stagingDir] so staged paths, package_config.json, library URIs,
+  // and `Directory.current` all share one canonical spelling.
+  await stagingDir.create(recursive: true);
+  final stagingPath = p.normalize(await stagingDir.resolveSymbolicLinks());
+  final canonicalStagingDir = Directory(stagingPath);
   final absOutputPaths = args.outputPaths;
   final absInputExec = args.inputPath;
 
@@ -606,7 +613,7 @@ Future<void> _runWithStaging(
   // Build a PackageConfig that maps the synthetic root package to the
   // staging dir, and merges in every package from the upstream config so
   // third-party `package:` imports resolve.
-  final packageConfig = await _buildPackageConfig(args, stagingDir);
+  final packageConfig = await _buildPackageConfig(args, canonicalStagingDir);
 
   // Write `.dart_tool/package_config.json` so the AnalysisContextCollection
   // picks it up via Dart's standard package-resolution lookup.
@@ -1456,7 +1463,8 @@ final class _StagingBoundedResourceProvider implements fs.ResourceProvider {
     this._delegate, {
     required Iterable<String> boundaryRoots,
   }) : _boundaryRoots = {
-         for (final r in boundaryRoots) p.normalize(p.absolute(r)),
+         for (final r in boundaryRoots)
+           _delegate.pathContext.normalize(_delegate.pathContext.absolute(r)),
        };
 
   final fs.ResourceProvider _delegate;
@@ -1465,7 +1473,7 @@ final class _StagingBoundedResourceProvider implements fs.ResourceProvider {
   bool isBoundary(String normPath) {
     if (_boundaryRoots.contains(normPath)) return true;
     for (final root in _boundaryRoots) {
-      if (p.isWithin(normPath, root)) return true;
+      if (_delegate.pathContext.isWithin(normPath, root)) return true;
     }
     return false;
   }
@@ -1503,7 +1511,9 @@ final class _StagingBoundedFolder implements fs.Folder {
   final _StagingBoundedResourceProvider _provider;
   final fs.Folder _delegate;
 
-  String get _normPath => p.normalize(p.absolute(_delegate.path));
+  String get _normPath => _provider.pathContext.normalize(
+    _provider.pathContext.absolute(_delegate.path),
+  );
 
   @override
   bool get isRoot => _provider.isBoundary(_normPath) || _delegate.isRoot;
@@ -1525,7 +1535,9 @@ final class _StagingBoundedFolder implements fs.Folder {
   String get shortName => _delegate.shortName;
 
   @override
-  String canonicalizePath(String path) => _delegate.canonicalizePath(path);
+  String canonicalizePath(String relPath) => _provider.pathContext.normalize(
+    _provider.pathContext.join(path, relPath),
+  );
 
   @override
   bool contains(String path) => _delegate.contains(path);
@@ -1542,7 +1554,7 @@ final class _StagingBoundedFolder implements fs.Folder {
 
   @override
   fs.Resource getChild(String relPath) =>
-      _provider.getResource(_provider.pathContext.join(path, relPath));
+      _provider.getResource(canonicalizePath(relPath));
 
   @override
   fs.File getChildAssumingFile(String relPath) => getFile(relPath);
@@ -1552,11 +1564,11 @@ final class _StagingBoundedFolder implements fs.Folder {
 
   @override
   fs.File getFile(String relPath) =>
-      _provider.getFile(_provider.pathContext.join(path, relPath));
+      _provider.getFile(canonicalizePath(relPath));
 
   @override
   fs.Folder getFolder(String relPath) =>
-      _provider.getFolder(_provider.pathContext.join(path, relPath));
+      _provider.getFolder(canonicalizePath(relPath));
 
   @override
   List<fs.Resource> getChildren() => [
