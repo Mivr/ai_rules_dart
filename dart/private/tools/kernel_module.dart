@@ -288,10 +288,19 @@ Future<int> compileModule(
         base.add(arg);
       }
     } else {
-      if (arg == _packagesFlag) packagesFile = rawArgs[i + 1];
-      if (arg == _multiRootFlag) multiRoots.add(rawArgs[i + 1]);
-      if (arg == _multiRootSchemeFlag) {
+      if (arg == _packagesFlag) {
+        packagesFile = rawArgs[i + 1];
+      } else if (arg.startsWith('$_packagesFlag=')) {
+        packagesFile = arg.substring(_packagesFlag.length + 1);
+      } else if (arg == _multiRootFlag) {
+        multiRoots.add(rawArgs[i + 1]);
+      } else if (arg.startsWith('$_multiRootFlag=')) {
+        multiRoots.add(arg.substring(_multiRootFlag.length + 1));
+      } else if (arg == _multiRootSchemeFlag) {
         multiRootPrefix = '${rawArgs[i + 1]}:///';
+      } else if (arg.startsWith('$_multiRootSchemeFlag=')) {
+        multiRootPrefix =
+            '${arg.substring(_multiRootSchemeFlag.length + 1)}:///';
       }
       base.add(arg);
     }
@@ -421,13 +430,14 @@ Future<int> compileModule(
     if (outputOutline != null || hasCommaDefines) {
       final fullFile = File('$output/$dill');
       if (await fullFile.exists()) {
-        final rawBytes = await fullFile.readAsBytes();
+        var rawBytes = await fullFile.readAsBytes();
+        if (hasCommaDefines) {
+          rawBytes = restoreDillDefineCommas(rawBytes);
+          await fullFile.writeAsBytes(rawBytes);
+        }
         if (outputOutline != null) {
           final outlineBytes = stripDillToOutline(rawBytes);
           await File('$outputOutline/$dill').writeAsBytes(outlineBytes);
-        }
-        if (hasCommaDefines) {
-          await fullFile.writeAsBytes(restoreDillDefineCommas(rawBytes));
         }
       }
     }
@@ -528,7 +538,10 @@ Future<int> compileModule(
       var nodeDill = dillPath;
       final dillFile = File(dillPath);
       if (await dillFile.exists()) {
-        final rawBytes = await dillFile.readAsBytes();
+        var rawBytes = await dillFile.readAsBytes();
+        if (hasCommaDefines) {
+          rawBytes = restoreDillDefineCommas(rawBytes);
+        }
         if (outputOutline != null) {
           final outlineBytes = stripDillToOutline(rawBytes);
           nodeDill = '$outputOutline/${scc.dill}';
@@ -566,15 +579,6 @@ Future<int> compileModule(
       for (final uri in remaining)
         if (!plan.isExcluded(keys[uri])) uri,
     ];
-  }
-  if (hasCommaDefines) {
-    for (final scc in sccs) {
-      final dillFile = File('$output/${scc.dill}');
-      if (await dillFile.exists()) {
-        final bytes = await dillFile.readAsBytes();
-        await dillFile.writeAsBytes(restoreDillDefineCommas(bytes));
-      }
-    }
   }
   await _writeIndex(output, sccs);
   if (outputOutline != null) {
@@ -1004,9 +1008,9 @@ Future<void> _planImports(
   Map<String, _PackageRoot> roots,
   _Files files,
   Set<String> vm,
-  StringBuffer log, [
-  String multiRootPrefix = _defaultMultiRootPrefix,
-]) async {
+  StringBuffer log,
+  String multiRootPrefix,
+) async {
   final direct = <String, String>{};
   final scans = <String, ScanResult>{};
   final libraryKeyByName = <String, String>{};
@@ -1067,6 +1071,11 @@ Future<void> _planImports(
           direct.putIfAbsent(
             key,
             () => 'its library ${ref.uri} is not an input of this module',
+          );
+        } else if (ref.isPart) {
+          direct.putIfAbsent(
+            key,
+            () => 'its part ${ref.uri} is not an input of this module',
           );
         } else if (ref.uri.startsWith('package:')) {
           direct.putIfAbsent(
@@ -1429,10 +1438,7 @@ Iterable<String> _inputSpellings(String? raw) sync* {
 }
 
 /// The path after `multiRootPrefix`, or null for any other URI.
-String? _stripPrefix(
-  String uri, [
-  String multiRootPrefix = _defaultMultiRootPrefix,
-]) {
+String? _stripPrefix(String uri, String multiRootPrefix) {
   if (uri.startsWith(multiRootPrefix)) {
     return uri.substring(multiRootPrefix.length);
   }
@@ -1444,9 +1450,9 @@ String? _stripPrefix(
 /// a `dart:` library or a `package:` whose package it does not list.
 String? _keyOfUri(
   String uri,
-  Map<String, _PackageRoot> roots, [
-  String multiRootPrefix = _defaultMultiRootPrefix,
-]) {
+  Map<String, _PackageRoot> roots,
+  String multiRootPrefix,
+) {
   final stripped = _stripPrefix(uri, multiRootPrefix);
   if (stripped != null) return _normalize(stripped);
   if (!uri.startsWith('package:')) return null;
@@ -1465,9 +1471,9 @@ String? _keyOfUri(
 String? _resolveUri(
   String uri,
   String fromKey,
-  Map<String, _PackageRoot> roots, [
-  String multiRootPrefix = _defaultMultiRootPrefix,
-]) {
+  Map<String, _PackageRoot> roots,
+  String multiRootPrefix,
+) {
   if (uri.startsWith('package:') || uri.startsWith(multiRootPrefix)) {
     return _keyOfUri(uri, roots, multiRootPrefix);
   }
@@ -2636,8 +2642,42 @@ Uint8List _stripSourceCodeFromDill(Uint8List data, {StringSink? errSink}) {
     return data;
   }
   if (data.length < 48) return data;
-  final size = bd.getUint32(data.length - 4);
-  if (size != data.length) return data;
+  final lastSize = bd.getUint32(data.length - 4);
+  if (lastSize == data.length) {
+    return _stripSingleComponentSourceCode(data, sink);
+  }
+  final ranges = <(int, int)>[];
+  var end = data.length;
+  while (end >= 48) {
+    final compSize = bd.getUint32(end - 4);
+    if (compSize < 48 || compSize > end) return data;
+    final start = end - compSize;
+    if (bd.getUint32(start) != Tag.ComponentFile) return data;
+    final compVersion = bd.getUint32(start + 4);
+    if (!supportedKernelFormatVersions.contains(compVersion)) {
+      sink.writeln(
+        'kernel_module: unsupported kernel format version $compVersion '
+        '(supported: $supportedKernelFormatVersions); '
+        'falling back to unstripped dill.',
+      );
+      return data;
+    }
+    ranges.add((start, end));
+    end = start;
+  }
+  if (end != 0 || ranges.isEmpty) return data;
+  final out = BytesBuilder(copy: false);
+  for (var i = ranges.length - 1; i >= 0; i--) {
+    final (s, e) = ranges[i];
+    out.add(
+      _stripSingleComponentSourceCode(Uint8List.sublistView(data, s, e), sink),
+    );
+  }
+  return out.takeBytes();
+}
+
+Uint8List _stripSingleComponentSourceCode(Uint8List data, StringSink sink) {
+  final bd = ByteData.sublistView(data);
   final libCount = bd.getUint32(data.length - 8);
   final idxCount = libCount + 12;
   final idxBytes = idxCount * 4;
@@ -2650,9 +2690,17 @@ Uint8List _stripSourceCodeFromDill(Uint8List data, {StringSink? errSink}) {
   );
   final offSourceTable = fields[0];
   final offConstantTable = fields[1];
+  final offLinkTable = fields[3];
+  final offMetadataPayloads = fields[4];
+  final offMetadataMappings = fields[5];
+  final offStringTable = fields[6];
   final offComponentIndex = fields[7];
   if (offSourceTable + 4 > offConstantTable ||
-      offConstantTable > offComponentIndex ||
+      offConstantTable > offLinkTable ||
+      offLinkTable > offMetadataPayloads ||
+      offMetadataPayloads > offMetadataMappings ||
+      offMetadataMappings > offStringTable ||
+      offStringTable > offComponentIndex ||
       offComponentIndex > rawIdxStart) {
     return data;
   }
@@ -2720,10 +2768,29 @@ Uint8List _stripSourceCodeFromDill(Uint8List data, {StringSink? errSink}) {
   final delta = newStBytes.length - oldStLen;
   if (delta == 0) return data;
 
+  pos = offLinkTable;
+  final canonCount = readUInt30();
+  for (var i = 0; i < canonCount; i++) {
+    readUInt30();
+    readUInt30();
+  }
+  final linkTableEnd = pos <= offMetadataPayloads ? pos : offMetadataPayloads;
+
   final out = BytesBuilder(copy: false);
   out.add(Uint8List.sublistView(data, 0, offSourceTable));
   out.add(newStBytes);
-  out.add(Uint8List.sublistView(data, offConstantTable, offComponentIndex));
+  out.add(Uint8List.sublistView(data, offConstantTable, linkTableEnd));
+
+  // Kernel requires binaryOffsetForMetadataPayloads (fields[4]) to be 8-byte
+  // aligned (ComponentFile.metadataPayloadsAlignment = 8).
+  final metaPad = (8 - (out.length % 8)) % 8;
+  if (metaPad > 0) {
+    out.add(Uint8List(metaPad));
+  }
+  final newOffMetadataPayloads = out.length;
+  final metaDelta = newOffMetadataPayloads - offMetadataPayloads;
+
+  out.add(Uint8List.sublistView(data, offMetadataPayloads, offComponentIndex));
 
   final newOffComponentIndex = out.length;
   final totalUnpadded = out.length + idxBytes;
@@ -2732,8 +2799,11 @@ Uint8List _stripSourceCodeFromDill(Uint8List data, {StringSink? errSink}) {
     out.add(Uint8List(pad));
   }
 
-  for (var i = 1; i <= 6; i++) {
+  for (var i = 1; i <= 3; i++) {
     fields[i] += delta;
+  }
+  for (var i = 4; i <= 6; i++) {
+    fields[i] += metaDelta;
   }
   fields[7] = newOffComponentIndex;
   fields[idxCount - 1] = out.length + idxBytes;

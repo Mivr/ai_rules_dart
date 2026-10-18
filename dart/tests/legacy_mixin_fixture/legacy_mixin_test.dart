@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:legacy_mixin_fixture_legacy/legacy.dart';
 import 'package:legacy_mixin_fixture_mid/mid.dart';
 import 'package:runfiles/runfiles.dart';
@@ -38,12 +40,19 @@ void main(List<String> args) {
     expect(modularOut, equals(wholeOut));
     expect(
       modularOut,
-      'direct[hello world (legacy:15)]\n'
-      'mid[hello chain (legacy:12)]\n',
+      startsWith(
+        'direct[hello world (legacy:15)]\n'
+        'mid[hello chain (legacy:12)]\n'
+        'Bad state: legacy boom (legacy:15)|',
+      ),
+    );
+    expect(
+      modularOut,
+      contains('package:legacy_mixin_fixture_legacy/legacy.dart:16:5'),
     );
   });
 
-  test('modular dart_test directly mixing in legacy classes preserves field initializers and member bodies', () {
+  test('modular dart_test directly mixing in legacy classes preserves field initializers, member bodies and stack traces', () {
     final d = _Direct()
       ..bump = 7
       ..prefix = 'test';
@@ -54,5 +63,28 @@ void main(List<String> args) {
 
     final c = _SubChained()..bump = 3;
     expect(c.decorate(c.greet('sub')), 'mid[hello sub (legacy:13)]');
+
+    StackTrace? trace;
+    try {
+      d.failInLegacy();
+    } on StateError catch (_, st) {
+      trace = st;
+    }
+    expect(trace, isNotNull);
+    expect(
+      trace.toString(),
+      contains('package:legacy_mixin_fixture_legacy/legacy.dart:16:5'),
+    );
   });
+
+  test(
+    'modular dart_test links unseeded transitive dependencies of package:test '
+    'such as package:crypto',
+    () {
+      expect(
+        sha1.convert(utf8.encode('rules_dart')).toString(),
+        'df6a4102edc2fcea2402779a434e6db2f358cf01',
+      );
+    },
+  );
 }

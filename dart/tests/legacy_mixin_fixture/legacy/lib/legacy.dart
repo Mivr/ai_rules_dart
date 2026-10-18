@@ -11,4 +11,8 @@ class LegacyMixin {
   }
 
   String greet(String who) => 'hello $who ($label)';
+
+  void failInLegacy() {
+    throw StateError('legacy boom ($label)');
+  }
 }

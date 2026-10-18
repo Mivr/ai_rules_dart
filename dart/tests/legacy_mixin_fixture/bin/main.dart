@@ -13,4 +13,15 @@ void main() {
 
   final chained = SubChained()..bump = 2;
   print(chained.decorate(chained.greet('chain')));
+
+  try {
+    direct.failInLegacy();
+  } catch (e, st) {
+    final frame = st
+        .toString()
+        .split('\n')
+        .firstWhere((l) => l.contains('failInLegacy'))
+        .trim();
+    print('$e|$frame');
+  }
 }

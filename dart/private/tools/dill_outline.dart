@@ -403,6 +403,7 @@ class _DillOutlineStripper {
   late final Int32List _inCanonParent;
   late final Int32List _inCanonString;
   late final List<Uint8List> _inUriStrings;
+  late final List<Uint8List> _inLineStartsBytes;
   late final List<Uint8List> _inImportUriStrings;
   late final Int32List _inConstOffsets;
 
@@ -416,11 +417,15 @@ class _DillOutlineStripper {
   late final Int32List _uriRemap;
   final List<int> _outUris = <int>[];
   final List<bool> _sourcesUsedInLibrary = <bool>[false];
+  final List<bool> _uriNeedsLineStarts = <bool>[];
 
   late final Int32List _constRemap;
   final List<int> _outConsts = <int>[];
 
   final Map<int, int> _varOffsetMap = <int, int>{};
+
+  bool _keepOffsets = false;
+  bool _indexingConstants = false;
 
   _DillOutlineStripper(this._in);
 
@@ -483,7 +488,11 @@ class _DillOutlineStripper {
       _out.writeUInt30(uriBytes.length);
       _out.writeBytes(uriBytes);
       _out.writeUInt30(0); // empty source bytes
-      _out.writeUInt30(0); // 0 lineStarts
+      if (i < _uriNeedsLineStarts.length && _uriNeedsLineStarts[i]) {
+        _out.writeBytes(_inLineStartsBytes[oldUriIdx]);
+      } else {
+        _out.writeUInt30(0); // 0 lineStarts
+      }
       final importUriBytes = _inImportUriStrings[oldUriIdx];
       _out.writeUInt30(importUriBytes.length);
       _out.writeBytes(importUriBytes);
@@ -636,6 +645,7 @@ class _DillOutlineStripper {
     _pos = _inSourceTableOffset;
     final uriCount = _readUInt32();
     _inUriStrings = List<Uint8List>.filled(uriCount, Uint8List(0));
+    _inLineStartsBytes = List<Uint8List>.filled(uriCount, Uint8List(0));
     _inImportUriStrings = List<Uint8List>.filled(uriCount, Uint8List(0));
     for (int i = 0; i < uriCount; i++) {
       final uriLen = _readUInt30();
@@ -643,10 +653,12 @@ class _DillOutlineStripper {
       _pos += uriLen;
       final srcLen = _readUInt30();
       _pos += srcLen;
+      final lsStart = _pos;
       final lineCount = _readUInt30();
       for (int j = 0; j < lineCount; j++) {
         _readUInt30();
       }
+      _inLineStartsBytes[i] = Uint8List.sublistView(_in, lsStart, _pos);
       final impLen = _readUInt30();
       _inImportUriStrings[i] = Uint8List.sublistView(_in, _pos, _pos + impLen);
       _pos += impLen;
@@ -694,7 +706,7 @@ class _DillOutlineStripper {
   }
 
   int _remapUri(int oldUriIdx) {
-    if (!_emitting) return 0;
+    if (!_emitting && !_indexingConstants) return 0;
     int newIdx = _uriRemap[oldUriIdx];
     if (newIdx == -1) {
       newIdx = _outUris.length;
@@ -704,18 +716,30 @@ class _DillOutlineStripper {
     while (_sourcesUsedInLibrary.length <= newIdx) {
       _sourcesUsedInLibrary.add(false);
     }
+    while (_uriNeedsLineStarts.length <= newIdx) {
+      _uriNeedsLineStarts.add(false);
+    }
     _sourcesUsedInLibrary[newIdx] = true;
+    if (_emitting && _keepOffsets) {
+      _uriNeedsLineStarts[newIdx] = true;
+    }
     return newIdx;
   }
 
   int _remapConst(int oldConstIdx) {
-    if (!_emitting) return 0;
+    if (!_emitting && !_indexingConstants) return 0;
     final existing = _constRemap[oldConstIdx];
     if (existing != -1) return existing;
     final savedPos = _pos;
+    final prevEmit = _emitting;
+    final prevIdx = _indexingConstants;
+    _emitting = false;
+    _indexingConstants = true;
     _pos = _inConstantTableOffset + _inConstOffsets[oldConstIdx];
     _visitConstantChildrenForIndexing();
     _pos = savedPos;
+    _emitting = prevEmit;
+    _indexingConstants = prevIdx;
     final newIdx = _outConsts.length;
     _constRemap[oldConstIdx] = newIdx;
     _outConsts.add(oldConstIdx);
@@ -735,8 +759,8 @@ class _DillOutlineStripper {
   }
 
   void _procOffset() {
-    _readUInt30();
-    _out.writeUInt30(0);
+    final off = _readUInt30();
+    _out.writeUInt30(_keepOffsets ? off : 0);
   }
 
   void _procName() {
@@ -903,7 +927,7 @@ class _DillOutlineStripper {
     final fieldCount = _readUInt30();
     _out.writeUInt30(fieldCount);
     for (int i = 0; i < fieldCount; i++) {
-      _procField(isMixin: false);
+      _procField(isMixin: false, hasConstConstructor: false);
     }
 
     final pCount = _readUInt30();
@@ -953,6 +977,26 @@ class _DillOutlineStripper {
     }
     _pos = savedPos;
 
+    final prevEmit = _emitting;
+    _emitting = false;
+    _readByte(); // Tag.Class
+    _procCanonRef();
+    _procUriRef();
+    _procOffset();
+    _procOffset();
+    _procOffset();
+    final peekFlags = _readUInt30();
+    _pos = savedPos;
+    _emitting = prevEmit;
+
+    // Any class that can be used as a mixin must keep its member bodies,
+    // field initializers, and source offsets: `mixin` (1 << 4),
+    // `mixin class` (1 << 8), and every class in a library whose language
+    // version is below 3.0.
+    final isMixin = isLegacyLibrary || (peekFlags & ((1 << 4) | (1 << 8))) != 0;
+    final prevKeepOffsets = _keepOffsets;
+    _keepOffsets = isMixin;
+
     _out.writeByte(_readByte()); // Tag.Class
     _procCanonRef();
     _procUriRef();
@@ -961,10 +1005,6 @@ class _DillOutlineStripper {
     _procOffset();
     final flags = _readUInt30();
     _out.writeUInt30(flags);
-    // Any class that can be used as a mixin must keep its member bodies and
-    // field initializers: `mixin` (1 << 4), `mixin class` (1 << 8), and every
-    // class in a library whose language version is below 3.0.
-    final isMixin = isLegacyLibrary || (flags & ((1 << 4) | (1 << 8))) != 0;
     _procStringRef();
     _procExpressionList();
     _procTypeParameterList();
@@ -974,8 +1014,40 @@ class _DillOutlineStripper {
 
     final fieldCount = _readUInt30();
     _out.writeUInt30(fieldCount);
+    bool hasConstConstructor = false;
+    if (!isMixin && fieldCount > 0) {
+      final savedFieldPos = _pos;
+      final prev = _emitting;
+      _emitting = false;
+      for (int i = 0; i < fieldCount; i++) {
+        _procField(isMixin: false, hasConstConstructor: false);
+      }
+      final peekCtorCount = _readUInt30();
+      for (int i = 0; i < peekCtorCount; i++) {
+        _readByte(); // Tag.Constructor
+        _procCanonRef();
+        _procUriRef();
+        _procOffset();
+        _procOffset();
+        _procOffset();
+        final ctorFlags = _readByte();
+        if ((ctorFlags & 1) != 0) {
+          hasConstConstructor = true;
+          break;
+        }
+        _procName();
+        _procExpressionList();
+        _procFunctionNode(-1, keepBody: false);
+        final initCount = _readUInt30();
+        for (int j = 0; j < initCount; j++) {
+          _procInitializer();
+        }
+      }
+      _pos = savedFieldPos;
+      _emitting = prev;
+    }
     for (int i = 0; i < fieldCount; i++) {
-      _procField(isMixin: isMixin);
+      _procField(isMixin: isMixin, hasConstConstructor: hasConstConstructor);
     }
 
     final ctorCount = _readUInt30();
@@ -999,9 +1071,10 @@ class _DillOutlineStripper {
       _out.writeUInt32(outProcOffsets[i]);
     }
     _out.writeUInt32(pCount);
+    _keepOffsets = prevKeepOffsets;
   }
 
-  void _procField({required bool isMixin}) {
+  void _procField({required bool isMixin, required bool hasConstConstructor}) {
     _out.writeByte(_readByte()); // Tag.Field
     _procCanonRef();
     _procCanonRef();
@@ -1014,7 +1087,8 @@ class _DillOutlineStripper {
     final isFinal = (flags & 1) != 0;
     final isConst = (flags & 2) != 0;
     final isStatic = (flags & 4) != 0;
-    final keepInit = isConst || isMixin || (isFinal && !isStatic);
+    final keepInit =
+        isConst || isMixin || (hasConstConstructor && isFinal && !isStatic);
     _procName();
     final scopeSize = _readUInt30();
     _out.writeUInt30(keepInit ? scopeSize : 0);
@@ -2069,8 +2143,9 @@ class _DillOutlineStripper {
       case ConstantTag.ConstructorTearOffConstant:
       case ConstantTag.TypeLiteralConstant:
       case ConstantTag.RedirectingFactoryTearOffConstant:
-      case ConstantTag.UnevaluatedConstant:
         break;
+      case ConstantTag.UnevaluatedConstant:
+        _procExpression();
       case ConstantTag.MapConstant:
         final prev = _emitting;
         _emitting = false;

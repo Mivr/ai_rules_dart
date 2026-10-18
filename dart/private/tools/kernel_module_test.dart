@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
 
 import 'dill_outline.dart'
@@ -21,6 +22,8 @@ import 'kernel_module.dart'
         stripSourceCodeFromDill;
 
 const _prefix = 'org-dartlang-root:///';
+
+late List<String> _sdkDartPaths;
 
 /// The test's files: sources, module directories and sidecars, and the configs.
 late Directory _root;
@@ -195,6 +198,7 @@ Future<_Result> _compile(
 Uint8List _buildMinimalFieldDill({
   int formatVersion = Tag.BinaryFormatVersion,
   int languageMajor = 3,
+  bool hasConstConstructor = true,
 }) {
   final out = BytesBuilder();
   void u30(int v) {
@@ -269,7 +273,39 @@ Uint8List _buildMinimalFieldDill({
     u30(val);
     out.addByte(Tag.Nothing); // option scope
   }
-  u30(0); // ctorCount = 0
+  if (hasConstConstructor) {
+    u30(1); // ctorCount = 1
+    out.addByte(Tag.Constructor);
+    u30(1); // canonicalName
+    u30(0); // fileUri
+    u30(0);
+    u30(0);
+    u30(0); // 3 offsets
+    out.addByte(1); // flags = 1 (isConst)
+    u30(1); // name ("f")
+    u30(0); // annotations
+    out.addByte(Tag.FunctionNode);
+    u30(0);
+    u30(0); // 2 offsets
+    out.addByte(0); // asyncMarker
+    out.addByte(0); // dartAsyncMarker
+    u30(0); // scopeSize
+    u30(0); // typeParameters
+    out.addByte(Tag.Nothing); // thisVariable
+    u30(0); // totalParameterCount
+    u30(0); // requiredParameterCount
+    u30(0); // posCount
+    u30(0); // namedCount
+    out.addByte(Tag.DynamicType); // returnType
+    out.addByte(Tag.Nothing); // futureValueType
+    out.addByte(0); // rftTag
+    out.addByte(Tag.Nothing); // body Option<Statement>
+    out.addByte(Tag.Nothing); // option scope
+    out.addByte(Tag.Nothing); // option captured contexts
+    u30(0); // initCount
+  } else {
+    u30(0); // ctorCount = 0
+  }
   u30(0); // pCount = 0
   final clsProcEnd = out.length;
   u32(clsProcEnd);
@@ -401,7 +437,13 @@ bool _containsSubsequence(Uint8List haystack, List<int> needle) {
   return false;
 }
 
-void main() {
+void main(List<String> args) {
+  if (args.isNotEmpty) {
+    final r = Runfiles.create();
+    _sdkDartPaths = [for (final a in args) r.rlocation(a)];
+  } else {
+    _sdkDartPaths = [Platform.resolvedExecutable];
+  }
   setUp(() {
     _root = Directory.systemTemp.createTempSync('kernel_module_test_');
     _write(
@@ -1115,46 +1157,66 @@ void main() {
     },
   );
 
-  test(
-    'a custom --multi-root-scheme resolves package roots, sources and sidecars',
-    () async {
-      const appPrefix = 'org-dartlang-app:///';
-      _write(
-        'app_package_config.json',
-        jsonEncode({
-          'configVersion': 2,
-          'packages': [
-            for (final name in ['pkg', 'dep'])
-              {
-                'name': name,
-                'rootUri': '$appPrefix$name',
-                'packageUri': 'lib/',
-              },
-          ],
-        }),
-      );
-      _write('pkg/lib/a.dart', "import 'package:pkg/b.dart';\nclass A {}\n");
-      _write('pkg/lib/b.dart', "import 'dart:async';\nclass B {}\n");
-      _write('pkg/lib/web.dart', "import 'dart:html';\nclass Web {}\n");
-      final result = await _compile(
-        'app_m',
-        ['pkg/lib/a.dart', 'pkg/lib/b.dart', 'pkg/lib/web.dart'],
-        scheme: 'org-dartlang-app',
-        packagesFile: '${_root.path}/app_package_config.json',
-      );
-      expect(result.code, 0);
-      expect(result.defines, [
-        ['pkg/lib/b.dart'],
-        ['pkg/lib/a.dart'],
-      ]);
-      expect(result.excluded, {
-        '${appPrefix}pkg/lib/web.dart': 'dart:html is not a VM library',
-      });
-      expect(_valuesAfter(result.calls.first, '--multi-root-scheme'), [
-        'org-dartlang-app',
-      ]);
-    },
-  );
+  test('a custom --multi-root-scheme resolves package roots, direct custom-scheme imports, parts and sidecars', () async {
+    const appPrefix = 'org-dartlang-app:///';
+    _write(
+      'app_package_config.json',
+      jsonEncode({
+        'configVersion': 2,
+        'packages': [
+          for (final name in ['pkg', 'dep'])
+            {'name': name, 'rootUri': '$appPrefix$name', 'packageUri': 'lib/'},
+        ],
+      }),
+    );
+    _write(
+      'pkg/lib/a.dart',
+      "import '${appPrefix}pkg/lib/b.dart';\n"
+          "part '${appPrefix}pkg/lib/p.dart';\n"
+          'class A {}\n',
+    );
+    _write(
+      'pkg/lib/p.dart',
+      "part of '${appPrefix}pkg/lib/a.dart';\nclass P {}\n",
+    );
+    _write('pkg/lib/b.dart', "import 'dart:async';\nclass B {}\n");
+    _write('pkg/lib/web.dart', "import 'dart:html';\nclass Web {}\n");
+    _write(
+      'pkg/lib/uses_web.dart',
+      "import '${appPrefix}pkg/lib/web.dart';\nclass UsesWeb {}\n",
+    );
+    _write(
+      'pkg/lib/bad_part.dart',
+      "part 'other-scheme:///missing.dart';\nclass BadPart {}\n",
+    );
+    final result = await _compile(
+      'app_m',
+      [
+        'pkg/lib/a.dart',
+        'pkg/lib/p.dart',
+        'pkg/lib/b.dart',
+        'pkg/lib/web.dart',
+        'pkg/lib/uses_web.dart',
+        'pkg/lib/bad_part.dart',
+      ],
+      scheme: 'org-dartlang-app',
+      packagesFile: '${_root.path}/app_package_config.json',
+    );
+    expect(result.code, 0);
+    expect(result.defines, [
+      ['pkg/lib/b.dart'],
+      ['pkg/lib/a.dart', 'pkg/lib/p.dart'],
+    ]);
+    expect(result.excluded, {
+      '${appPrefix}pkg/lib/web.dart': 'dart:html is not a VM library',
+      '${appPrefix}pkg/lib/uses_web.dart':
+          'imports ${appPrefix}pkg/lib/web.dart, which is excluded',
+      '${appPrefix}pkg/lib/bad_part.dart': 'its part other-scheme:///missing.dart is not an input of this module',
+    });
+    expect(_valuesAfter(result.calls.first, '--multi-root-scheme'), [
+      'org-dartlang-app',
+    ]);
+  });
 
   test('--extra-library makes dart:ui available for imports and conditional imports', () async {
     _write('pkg/lib/widget.dart', "import 'dart:ui';\nclass W {}\n");
@@ -1246,21 +1308,21 @@ void main() {
     expect(outlineIndex, result.index);
   });
 
-  test('stripDillToOutline preserves final instance field initializers and strips static final and mutable field initializers', () {
-    final raw = _buildMinimalFieldDill();
-    final stripped = stripDillToOutline(raw);
+  test('stripDillToOutline preserves final instance field initializers only when the class has a const constructor or is a mixin', () {
+    final rawWithConst = _buildMinimalFieldDill(hasConstConstructor: true);
+    final strippedWithConst = stripDillToOutline(rawWithConst);
     expect(
-      _containsSubsequence(stripped, [
+      _containsSubsequence(strippedWithConst, [
         Tag.Something,
         Tag.PositiveIntLiteral,
         0,
         42,
       ]),
       isTrue,
-      reason: 'non-static final instance field initializer must be preserved for const constructor evaluation',
+      reason: 'non-static final instance field initializer must be preserved when class has a const constructor',
     );
     expect(
-      _containsSubsequence(stripped, [
+      _containsSubsequence(strippedWithConst, [
         Tag.Something,
         Tag.PositiveIntLiteral,
         0,
@@ -1270,7 +1332,7 @@ void main() {
       reason: 'static final field initializer should be stripped',
     );
     expect(
-      _containsSubsequence(stripped, [
+      _containsSubsequence(strippedWithConst, [
         Tag.Something,
         Tag.PositiveIntLiteral,
         0,
@@ -1280,14 +1342,27 @@ void main() {
       reason: 'mutable instance field initializer should be stripped',
     );
     expect(
-      _containsSubsequence(stripped, [Tag.PositiveIntLiteral, 0, 88]),
+      _containsSubsequence(strippedWithConst, [Tag.PositiveIntLiteral, 0, 88]),
       isTrue,
       reason: 'const procedure body (e.g. extension type const constructor) must be preserved',
     );
     expect(
-      _containsSubsequence(stripped, [Tag.PositiveIntLiteral, 0, 66]),
+      _containsSubsequence(strippedWithConst, [Tag.PositiveIntLiteral, 0, 66]),
       isFalse,
       reason: 'non-const procedure body should be stripped',
+    );
+
+    final rawWithoutConst = _buildMinimalFieldDill(hasConstConstructor: false);
+    final strippedWithoutConst = stripDillToOutline(rawWithoutConst);
+    expect(
+      _containsSubsequence(strippedWithoutConst, [
+        Tag.Something,
+        Tag.PositiveIntLiteral,
+        0,
+        42,
+      ]),
+      isFalse,
+      reason: 'final instance field initializer must be stripped when class has no const constructor and is not a mixin',
     );
   });
 
@@ -2191,6 +2266,492 @@ void main() {
       contains('(org-dartlang-root:///app/lib/helper.dart:'),
     );
   });
+
+  test('stripSourceCodeFromDill preserves 8-byte alignment of binaryOffsetForMetadataPayloads across all source size deltas', () {
+    for (var srcLen = 1; srcLen <= 16; srcLen++) {
+      final dill = _buildMinimalDillWithSourceAndMetadata(srcLen: srcLen);
+      final stripped = stripSourceCodeFromDill(dill);
+      expect(stripped.length % 8, 0, reason: 'srcLen=$srcLen');
+      final bd = ByteData.sublistView(stripped);
+      expect(bd.getUint32(stripped.length - 4), stripped.length);
+      final libCount = bd.getUint32(stripped.length - 8);
+      final idxCount = libCount + 12;
+      final rawIdxStart = stripped.length - idxCount * 4;
+      final offMetadataPayloads = bd.getUint32(rawIdxStart + 4 * 4);
+      final offMetadataMappings = bd.getUint32(rawIdxStart + 5 * 4);
+      final offStringTable = bd.getUint32(rawIdxStart + 6 * 4);
+      expect(
+        offMetadataPayloads % 8,
+        0,
+        reason:
+            'binaryOffsetForMetadataPayloads ($offMetadataPayloads) must be 8-byte aligned for srcLen=$srcLen',
+      );
+      expect(
+        Uint8List.sublistView(
+          stripped,
+          offMetadataPayloads,
+          offMetadataMappings,
+        ),
+        equals([0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe]),
+        reason: 'metadata payloads must be preserved intact for srcLen=$srcLen',
+      );
+      expect(
+        Uint8List.sublistView(stripped, offMetadataMappings, offStringTable),
+        equals([0x11, 0x22, 0x33, 0x44, 0x00, 0x00, 0x00, 0x01]),
+        reason: 'metadata mappings must be preserved intact for srcLen=$srcLen',
+      );
+    }
+  });
+
+  test('modular outline preserves mixin stack trace offsets, UnevaluatedConstant children, and non-const final field edit cutoff across supported SDKs', () async {
+    expect(_sdkDartPaths.length, greaterThanOrEqualTo(2));
+    final seenSdkVersions = <String>{};
+    final exeSuffix = Platform.isWindows ? '.exe' : '';
+
+    for (final dartBin in _sdkDartPaths) {
+      final sdkDir = File(dartBin).parent.parent;
+      final sdkVersion = File('${sdkDir.path}/version')
+          .readAsStringSync()
+          .trim();
+      seenSdkVersions.add(sdkVersion);
+      final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
+      final kernelWorker =
+          '${sdkDir.path}/bin/snapshots/kernel_worker_aot.dart.snapshot';
+      final platformDill =
+          '${sdkDir.path}/lib/_internal/vm_platform_strong.dill';
+      final librariesJson = '${sdkDir.path}/lib/libraries.json';
+
+      _write(
+        'multi_sdk_packages.json',
+        jsonEncode({
+          'configVersion': 2,
+          'packages': [
+            {
+              'name': 'pkg',
+              'rootUri': '${_prefix}pkg',
+              'packageUri': 'lib/',
+              'languageVersion': '3.0',
+            },
+            {
+              'name': 'legacy',
+              'rootUri': '${_prefix}legacy',
+              'packageUri': 'lib/',
+              'languageVersion': '2.19',
+            },
+            {
+              'name': 'app',
+              'rootUri': '${_prefix}app',
+              'packageUri': 'lib/',
+              'languageVersion': '3.0',
+            },
+          ],
+        }),
+      );
+
+      // 1. Library with:
+      //    - @Meta(String.fromEnvironment(...), [10, 20]) producing an UnevaluatedConstant
+      //      whose child constants ([10, 20], 'ENV_TAG', 'def,val') only appear inside the
+      //      UnevaluatedConstant expression.
+      //    - NonConstBox: final instance field initializer (must be stripped from .koutline).
+      //    - ConstBox: final instance field initializer with const constructor (must be kept).
+      //    - ThrowingMixin: mixin method on line 24 that throws so stack trace line/column is checked.
+      String libSource({required int nonConstInit, required int constInit}) =>
+          'class Meta {\n'
+          '  final String tag;\n'
+          '  final List<int> nums;\n'
+          '  const Meta(this.tag, this.nums);\n'
+          '}\n'
+          '\n'
+          "@Meta(String.fromEnvironment('ENV_TAG', defaultValue: 'def,val'), [10, 20])\n"
+          'class Annotated {\n'
+          '  const Annotated();\n'
+          '}\n'
+          '\n'
+          'class NonConstBox {\n'
+          '  final int secret = $nonConstInit;\n'
+          '  NonConstBox();\n'
+          '}\n'
+          '\n'
+          'class ConstBox {\n'
+          '  final int val = $constInit;\n'
+          '  const ConstBox();\n'
+          '}\n'
+          '\n'
+          'mixin ThrowingMixin {\n'
+          '  int failHere(int x) {\n'
+          '    if (x > 0) {\n'
+          "      throw StateError('mixin-boom-\$x');\n"
+          '    }\n'
+          '    return x;\n'
+          '  }\n'
+          '}\n';
+
+      _write('pkg/lib/a.dart', libSource(nonConstInit: 111, constInit: 222));
+      _write(
+        'legacy/lib/legacy_throw.dart',
+        '// @dart=2.19\n'
+            'class LegacyThrowingMixin {\n'
+            '  int legacyFail(int y) {\n'
+            '    if (y > 0) {\n'
+            "      throw StateError('legacy-boom-\$y');\n"
+            '    }\n'
+            '    return y;\n'
+            '  }\n'
+            '}\n',
+      );
+      _write(
+        'app/bin/main.dart',
+        "import 'package:pkg/a.dart';\n"
+            "import 'package:legacy/legacy_throw.dart';\n"
+            '\n'
+            'class MixedIn with ThrowingMixin, LegacyThrowingMixin {}\n'
+            '\n'
+            'String firstFrame(Object st, String pattern) {\n'
+            '  for (final line in st.toString().split(\'\\n\')) {\n'
+            '    if (line.contains(pattern)) return line.trim();\n'
+            '  }\n'
+            "  return 'missing';\n"
+            '}\n'
+            '\n'
+            'void main() {\n'
+            '  const box = ConstBox();\n'
+            '  final nonConst = NonConstBox();\n'
+            '  const envVal = String.fromEnvironment(\'ENV_TAG\', defaultValue: \'def,val\');\n'
+            '  final m = MixedIn();\n'
+            '  String frame1 = \'\';\n'
+            '  try {\n'
+            '    m.failHere(7);\n'
+            '  } catch (e, st) {\n'
+            "    frame1 = '\$e|' + firstFrame(st, 'failHere');\n"
+            '  }\n'
+            '  String frame2 = \'\';\n'
+            '  try {\n'
+            '    m.legacyFail(9);\n'
+            '  } catch (e, st) {\n'
+            "    frame2 = '\$e|' + firstFrame(st, 'legacyFail');\n"
+            '  }\n'
+            "  print('\${box.val}|\${nonConst.secret}|\$envVal|\$frame1|\$frame2');\n"
+            '}\n',
+      );
+
+      final realCompiler = _RealOneShotCompiler(dartaotruntime, kernelWorker);
+
+      Future<(Uint8List, Uint8List)> compilePkgModule(String tag) async {
+        final kmod = '${_root.path}/out/${sdkVersion}_$tag.kmod';
+        final koutline = '${_root.path}/out/${sdkVersion}_$tag.koutline';
+        final log = StringBuffer();
+        final code = await compileModule(
+          [
+            '--target',
+            'vm',
+            '--dart-sdk-summary',
+            platformDill,
+            '--packages-file=${_root.path}/multi_sdk_packages.json',
+            '--libraries-json',
+            librariesJson,
+            '--multi-root=${_root.path}',
+            '--multi-root-scheme=org-dartlang-root',
+            '-DENV_TAG=custom,val',
+            '--no-summary-only',
+            '--exclude-non-sources',
+            '--source',
+            'package:pkg/a.dart',
+            '--output',
+            kmod,
+            '--output-outline',
+            koutline,
+            '--excluded-output',
+            '$kmod.vm_excluded.txt',
+          ],
+          realCompiler,
+          log,
+          const [],
+        );
+        expect(code, 0, reason: 'SDK $sdkVersion ($tag): $log');
+        return (
+          File('$kmod/0.dill').readAsBytesSync(),
+          File('$koutline/0.dill').readAsBytesSync(),
+        );
+      }
+
+      final (_, outlineV1) = await compilePkgModule('v1');
+
+      // Editing NonConstBox.secret (111 -> 999) must NOT change .koutline bytes!
+      _write('pkg/lib/a.dart', libSource(nonConstInit: 999, constInit: 222));
+      final (_, outlineV2) = await compilePkgModule('v2');
+      expect(
+        outlineV2,
+        equals(outlineV1),
+        reason:
+            'SDK $sdkVersion: editing final instance field initializer in class without const constructor must not change .koutline',
+      );
+
+      // Editing ConstBox.val (222 -> 333) MUST change .koutline bytes!
+      _write('pkg/lib/a.dart', libSource(nonConstInit: 999, constInit: 333));
+      final (_, outlineV3) = await compilePkgModule('v3');
+      expect(
+        outlineV3,
+        isNot(equals(outlineV2)),
+        reason:
+            'SDK $sdkVersion: editing final instance field initializer in class with const constructor must change .koutline',
+      );
+
+      // Compile legacy module and entry module modularly, link, and compare with whole-program.
+      final legacyKmod = '${_root.path}/out/${sdkVersion}_legacy.kmod';
+      final legacyKoutline = '${_root.path}/out/${sdkVersion}_legacy.koutline';
+      final legacyLog = StringBuffer();
+      expect(
+        await compileModule(
+          [
+            '--target',
+            'vm',
+            '--dart-sdk-summary',
+            platformDill,
+            '--packages-file=${_root.path}/multi_sdk_packages.json',
+            '--libraries-json',
+            librariesJson,
+            '--multi-root=${_root.path}',
+            '--multi-root-scheme=org-dartlang-root',
+            '-DENV_TAG=custom,val',
+            '--no-summary-only',
+            '--exclude-non-sources',
+            '--source',
+            'package:legacy/legacy_throw.dart',
+            '--output',
+            legacyKmod,
+            '--output-outline',
+            legacyKoutline,
+            '--excluded-output',
+            '$legacyKmod.vm_excluded.txt',
+          ],
+          realCompiler,
+          legacyLog,
+          const [],
+        ),
+        0,
+        reason: legacyLog.toString(),
+      );
+
+      final pkgKmod = '${_root.path}/out/${sdkVersion}_v3.kmod';
+      final pkgKoutline = '${_root.path}/out/${sdkVersion}_v3.koutline';
+      final entryKmod = '${_root.path}/out/${sdkVersion}_entry.kmod';
+      final entryLog = StringBuffer();
+      expect(
+        await compileModule(
+          [
+            '--target',
+            'vm',
+            '--dart-sdk-summary',
+            platformDill,
+            '--packages-file=${_root.path}/multi_sdk_packages.json',
+            '--libraries-json',
+            librariesJson,
+            '--multi-root=${_root.path}',
+            '--multi-root-scheme=org-dartlang-root',
+            '-DENV_TAG=custom,val',
+            '--no-summary-only',
+            '--exclude-non-sources',
+            '--input-kmod',
+            pkgKoutline,
+            '--input-kmod',
+            legacyKoutline,
+            '--source',
+            '${_prefix}app/bin/main.dart',
+            '--output',
+            entryKmod,
+            '--excluded-output',
+            '$entryKmod.vm_excluded.txt',
+            '--no-drop',
+          ],
+          realCompiler,
+          entryLog,
+          const [],
+        ),
+        0,
+        reason: entryLog.toString(),
+      );
+
+      final modularLinked = '${_root.path}/out/${sdkVersion}_modular.dill';
+      final linkErr = StringBuffer();
+      expect(
+        linkOne(
+          [modularLinked, entryKmod, pkgKmod, legacyKmod],
+          cache: KernelLinkCache(),
+          inputs: null,
+          errSink: linkErr,
+        ),
+        0,
+        reason: linkErr.toString(),
+      );
+
+      // Whole-program compile with the same SDK.
+      final wholeEntryKmod = '${_root.path}/out/${sdkVersion}_whole_entry.kmod';
+      final wholeEntryLog = StringBuffer();
+      expect(
+        await compileModule(
+          [
+            '--target',
+            'vm',
+            '--dart-sdk-summary',
+            platformDill,
+            '--packages-file=${_root.path}/multi_sdk_packages.json',
+            '--libraries-json',
+            librariesJson,
+            '--multi-root=${_root.path}',
+            '--multi-root-scheme=org-dartlang-root',
+            '-DENV_TAG=custom,val',
+            '--no-summary-only',
+            '--source',
+            '${_prefix}app/bin/main.dart',
+            '--source',
+            'package:pkg/a.dart',
+            '--source',
+            'package:legacy/legacy_throw.dart',
+            '--output',
+            wholeEntryKmod,
+            '--excluded-output',
+            '$wholeEntryKmod.vm_excluded.txt',
+            '--no-drop',
+          ],
+          realCompiler,
+          wholeEntryLog,
+          const [],
+        ),
+        0,
+        reason: wholeEntryLog.toString(),
+      );
+
+      final modRun = await Process.run(dartBin, [modularLinked]);
+      final wholeRun = await Process.run(dartBin, [
+        '$wholeEntryKmod/entry.dill',
+      ]);
+      expect(modRun.exitCode, 0, reason: '${modRun.stdout}\n${modRun.stderr}');
+      expect(
+        wholeRun.exitCode,
+        0,
+        reason: '${wholeRun.stdout}\n${wholeRun.stderr}',
+      );
+      final modOut = (modRun.stdout as String).trim();
+      final wholeOut = (wholeRun.stdout as String).trim();
+      expect(
+        modOut,
+        wholeOut,
+        reason:
+            'SDK $sdkVersion: modular output ($modOut) must match whole-program output ($wholeOut)',
+      );
+      expect(modOut, contains('333|999|custom,val|'));
+      expect(modOut, contains('package:pkg/a.dart:25:7'));
+      expect(modOut, contains('package:legacy/legacy_throw.dart:5:7'));
+    }
+    expect(seenSdkVersions, containsAll(['3.13.5', '3.13.4']));
+  });
+}
+
+Uint8List _buildMinimalDillWithSourceAndMetadata({required int srcLen}) {
+  final out = BytesBuilder();
+  void u30(int v) {
+    assert(v >= 0 && v < 0x80);
+    out.addByte(v);
+  }
+
+  void u32(int v) {
+    out.addByte((v >> 24) & 0xff);
+    out.addByte((v >> 16) & 0xff);
+    out.addByte((v >> 8) & 0xff);
+    out.addByte(v & 0xff);
+  }
+
+  u32(Tag.ComponentFile);
+  u32(Tag.BinaryFormatVersion);
+  for (var i = 0; i < 10; i++) {
+    out.addByte(0);
+  }
+  u30(0);
+
+  final libStart = out.length;
+  out.addByte(0); // flags
+  u30(3); // major
+  u30(0); // minor
+  u30(1); // canonicalName
+  u30(1); // name
+  u30(0); // fileUri
+  u30(0); // problemsAsJson
+  u30(0); // annotations
+  u30(0); // depCount
+  u30(0); // expCount
+  u30(0); // partCount
+  u30(0); // tdCount
+  u30(0); // clsCount
+  u30(0); // extCount
+  u30(0); // extTypeCount
+  u30(0); // fieldCount
+  u30(0); // pCount
+  final sourceRefsOffset = out.length;
+  u30(0); // usedCount
+  u32(sourceRefsOffset);
+  u32(libStart + 13); // clsOffsets[0]
+  u32(0); // classCount
+  u32(sourceRefsOffset); // procOffsets[0]
+  u32(0); // procCount
+  final libEnd = out.length;
+
+  final sourceTableOffset = libEnd;
+  u32(1); // numSources = 1
+  final uriEntry0 = out.length;
+  u30(5); // uriLen = 5 ("a.dart" prefix)
+  out.add([97, 46, 100, 97, 114]);
+  u30(srcLen);
+  out.add(List<int>.filled(srcLen, 0x61));
+  u30(2); // lineCount = 2
+  u30(0);
+  u30(1);
+  u30(5); // importUri len = 5
+  out.add([97, 46, 100, 97, 114]);
+  u30(0); // constantCoverageConstructors
+  u32(uriEntry0);
+
+  final constantTableOffset = out.length;
+  u30(0);
+  final constantTableIndexOffset = out.length;
+  u32(0);
+
+  final linkTableOffset = out.length;
+  u30(1); // canonCount = 1
+  u30(0);
+  u30(1);
+
+  final metaPad = (8 - (out.length % 8)) % 8;
+  if (metaPad > 0) out.add(Uint8List(metaPad));
+  final metadataPayloadsOffset = out.length;
+  out.add([0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe]);
+  final metadataMappingsOffset = out.length;
+  out.add([0x11, 0x22, 0x33, 0x44, 0x00, 0x00, 0x00, 0x01]);
+
+  final stringTableOffset = out.length;
+  u30(2);
+  u30(0);
+  u30(1);
+  out.addByte(102); // "f"
+
+  final componentIndexOffset = out.length;
+  const idxBytes = 13 * 4;
+  final pad = (8 - ((out.length + idxBytes) % 8)) % 8;
+  if (pad > 0) out.add(Uint8List(pad));
+
+  u32(sourceTableOffset);
+  u32(constantTableOffset);
+  u32(constantTableIndexOffset);
+  u32(linkTableOffset);
+  u32(metadataPayloadsOffset);
+  u32(metadataMappingsOffset);
+  u32(stringTableOffset);
+  u32(componentIndexOffset);
+  u32(0); // mainMethodReference
+  u32(libStart);
+  u32(libEnd);
+  u32(1); // libraryCount = 1
+  u32(out.length + 4);
+  return out.toBytes();
 }
 
 class _RealOneShotCompiler implements ModuleCompiler {

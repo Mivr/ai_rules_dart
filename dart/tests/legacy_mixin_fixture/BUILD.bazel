@@ -43,3 +43,26 @@ dart_test(
         "@ext_pub_deps//:test",
     ],
 )
+
+dart_test(
+    name = "legacy_mixin_whole_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :app_modular)",
+        "$(rlocationpath :app_whole)",
+    ],
+    data = [
+        ":app_modular",
+        ":app_whole",
+    ],
+    # Target-level `defines` forces `dart_test` onto the whole-program kernel path.
+    defines = ["WHOLE_PROGRAM=1"],
+    main = "legacy_mixin_test.dart",
+    visibility = ["//dart/tests:__subpackages__"],
+    deps = [
+        "//dart/runfiles",
+        "//dart/tests/legacy_mixin_fixture/legacy",
+        "//dart/tests/legacy_mixin_fixture/mid",
+        "@ext_pub_deps//:test",
+    ],
+)
