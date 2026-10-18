@@ -1490,7 +1490,7 @@ void main() {
         expect(respB.exitCode, 0, reason: respB.output);
 
         expect(recorded['pkg_a'], {
-          'uriScheme': 'file',
+          'uriScheme': 'asset',
           'assetId': 'pkg_a|test/a_test.dart',
           'isLibrary': true,
           'sourceGenAssetPath': 'pkg_a/test/a_test.dart',
@@ -1498,14 +1498,14 @@ void main() {
         expect(
           recorded['pkg_b'],
           {
-            'uriScheme': 'file',
+            'uriScheme': 'asset',
             'assetId': 'pkg_b|test/b_test.dart',
             'isLibrary': true,
             'sourceGenAssetPath': 'pkg_b/test/b_test.dart',
           },
           reason:
-              'second package in persistent worker must not inherit pkg_a '
-              'in source_gen file-to-asset URL normalization',
+              'second package in persistent worker must resolve to pkg_b '
+              'asset URI without inheriting pkg_a',
         );
       },
     );
@@ -1937,7 +1937,9 @@ void main() {
                 cachedRootPackageName = match?.group(1) ?? '';
               }
               final relPath = p.relative(
-                libUri.toFilePath(windows: Platform.isWindows),
+                libUri.scheme == 'file'
+                    ? libUri.toFilePath(windows: Platform.isWindows)
+                    : lib.firstFragment.source.fullName,
               );
               final sourceGenAssetPath = libUri.scheme == 'file'
                   ? p.posix.joinAll(
@@ -2027,7 +2029,9 @@ void main() {
               final lib = await step.resolver.libraryFor(step.inputId);
               final libUri = lib.firstFragment.source.uri;
               oneShotRelPath = p.relative(
-                libUri.toFilePath(windows: Platform.isWindows),
+                libUri.scheme == 'file'
+                    ? libUri.toFilePath(windows: Platform.isWindows)
+                    : lib.firstFragment.source.fullName,
               );
               await step.writeAsString(
                 outC.path.endsWith('.g.dart')
@@ -2040,6 +2044,131 @@ void main() {
           );
           expect(oneShotRelPath, p.join('pkg_c', 'test', 'a_test.dart'));
         }, getSystemTempDirectory: () => Directory(symlinkTmp.path));
+      },
+    );
+
+    test(
+      'non-lib assets (bin/, web/, test/, tool/) and their relative imports resolve to asset:/package: URIs without leaking staging paths',
+      () async {
+        final binApp = File(p.join(tmp.path, 'app.dart'))
+          ..writeAsStringSync(
+            "import 'sub/helper.dart';\n"
+            "import '../lib/shared.dart';\n"
+            'class App { Helper? h; Shared? s; }\n',
+          );
+        final binHelper = File(p.join(tmp.path, 'helper.dart'))
+          ..writeAsStringSync('class Helper {}\n');
+        final libShared = File(p.join(tmp.path, 'shared.dart'))
+          ..writeAsStringSync('class Shared {}\n');
+        final webMain = File(p.join(tmp.path, 'main.dart'))
+          ..writeAsStringSync('class WebEntry {}\n');
+        final out = File(p.join(tmp.path, 'app.locator.dart'));
+
+        Uri? inputLibUri;
+        Uri? inputSourceUri;
+        final libraryUris = <String>[];
+        final elementAssets = <String, String>{};
+        final stackedResolvedImports = <String, String>{};
+
+        await runShimWithArgs(
+          _shimArgs(
+            inputPath: binApp.path,
+            inputAssetPath: 'bin/app.dart',
+            outputPath: out.path,
+            packageName: 'app_pkg',
+            depPaths: [
+              (exec: binHelper.path, asset: 'bin/sub/helper.dart'),
+              (exec: libShared.path, asset: 'lib/shared.dart'),
+              (exec: webMain.path, asset: 'web/main.dart'),
+            ],
+          ),
+          (_) => _CapturingBuilder((step) async {
+            final lib = await step.resolver.libraryFor(step.inputId);
+            inputLibUri = lib.uri;
+            inputSourceUri = lib.firstFragment.source.uri;
+            final libs = await step.resolver.libraries.toList();
+            for (final l in libs) {
+              libraryUris.add(l.uri.toString());
+              for (final cls in l.classes) {
+                final id = await step.resolver.assetIdForElement(cls);
+                elementAssets[cls.name!] = id.toString();
+              }
+            }
+
+            // Replicate stacked_generator's ImportResolver over `libs` and
+            // `targetFilePath = inputSourceUri.path` to verify that generated
+            // imports for classes in `bin/`, `bin/sub/`, and `lib/` never
+            // fall back to `file:///<TMPDIR>/shim_...`.
+            final targetFilePath = inputSourceUri!.path;
+            String? resolveStackedImport(Element element) {
+              final elementUri =
+                  element.firstFragment.libraryFragment?.source.uri;
+              if (elementUri == null) return null;
+              for (final l in libs) {
+                if (l.exportNamespace.definedNames2.values.contains(element)) {
+                  final pkgUri = l.firstFragment.source.uri;
+                  final pkg = pkgUri.pathSegments.first;
+                  if (targetFilePath.startsWith(RegExp('^$pkg/'))) {
+                    return p.posix
+                        .relative(elementUri.path, from: targetFilePath)
+                        .replaceFirst('../', '');
+                  }
+                  return elementUri.toString();
+                }
+              }
+              return null;
+            }
+
+            final appCls = lib.classes.single;
+            stackedResolvedImports['App'] = resolveStackedImport(appCls)!;
+            for (final field in appCls.fields) {
+              final fieldCls = field.type.element!;
+              stackedResolvedImports[fieldCls.name!] = resolveStackedImport(
+                fieldCls,
+              )!;
+            }
+
+            final buf = StringBuffer();
+            for (final imp in stackedResolvedImports.values) {
+              buf.writeln("import '$imp';");
+            }
+            await step.writeAsString(
+              step.allowedOutputs.single,
+              buf.toString(),
+            );
+          }),
+        );
+
+        expect(inputLibUri, Uri.parse('asset:app_pkg/bin/app.dart'));
+        expect(inputSourceUri, Uri.parse('asset:app_pkg/bin/app.dart'));
+        expect(
+          libraryUris,
+          containsAll([
+            'asset:app_pkg/bin/app.dart',
+            'asset:app_pkg/bin/sub/helper.dart',
+            'package:app_pkg/shared.dart',
+            'asset:app_pkg/web/main.dart',
+          ]),
+        );
+        expect(
+          libraryUris.where(
+            (u) => u.startsWith('file:') || u.contains('shim_'),
+          ),
+          isEmpty,
+          reason: 'no library URI may expose file:// or staging directory',
+        );
+        expect(elementAssets, {
+          'App': 'app_pkg|bin/app.dart',
+          'Helper': 'app_pkg|bin/sub/helper.dart',
+          'Shared': 'app_pkg|lib/shared.dart',
+          'WebEntry': 'app_pkg|web/main.dart',
+        });
+        expect(stackedResolvedImports['App'], '.');
+        expect(stackedResolvedImports['Helper'], 'sub/helper.dart');
+        final generated = out.readAsStringSync();
+        expect(generated, isNot(contains('file:')));
+        expect(generated, isNot(contains('shim_')));
+        expect(generated, isNot(contains(tmp.path)));
       },
     );
 

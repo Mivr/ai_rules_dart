@@ -25,8 +25,22 @@ import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/file_system/file_system.dart' as fs;
 import 'package:analyzer/file_system/physical_file_system.dart';
+import 'package:analyzer/source/file_source.dart';
+import 'package:analyzer/source/source.dart';
+// ignore: implementation_imports
+import 'package:analyzer/src/context/source.dart';
 // ignore: implementation_imports
 import 'package:analyzer/src/dart/analysis/analysis_context_collection.dart';
+// ignore: implementation_imports
+import 'package:analyzer/src/dart/analysis/driver_based_analysis_context.dart';
+// ignore: implementation_imports
+import 'package:analyzer/src/generated/source.dart';
+// ignore: implementation_imports
+import 'package:analyzer/src/source/package_map_resolver.dart';
+// ignore: implementation_imports
+import 'package:analyzer/src/utilities/uri_cache.dart';
+// ignore: implementation_imports
+import 'package:analyzer/src/workspace/pub.dart';
 import 'package:args/args.dart';
 import 'package:build/build.dart';
 import 'package:crypto/crypto.dart';
@@ -1175,7 +1189,9 @@ class _ShimAnalyzerResolver implements Resolver {
     this._collection,
     this._assetIdToPath,
     this._packageConfig,
-  );
+  ) {
+    _installAssetUriResolver(_collection, _packageConfig, _assetIdToPath);
+  }
 
   final AnalysisContextCollection _collection;
   final Map<AssetId, String> _assetIdToPath;
@@ -1216,12 +1232,8 @@ class _ShimAnalyzerResolver implements Resolver {
     if (parsed is! ParsedUnitResult || parsed.isPart) {
       return false;
     }
-    if (id.path.startsWith('lib/')) {
-      final libResult = await session.getLibraryByUri(id.uri.toString());
-      return libResult is LibraryElementResult;
-    }
-    final result = await session.getResolvedLibrary(path);
-    return result is ResolvedLibraryResult;
+    final libResult = await session.getLibraryByUri(id.uri.toString());
+    return libResult is LibraryElementResult;
   }
 
   @override
@@ -1238,30 +1250,15 @@ class _ShimAnalyzerResolver implements Resolver {
     if (parsed is! ParsedUnitResult || parsed.isPart) {
       throw NonLibraryAssetException(id);
     }
-    // For files under `lib/`, resolve by the canonical package: URI so the
-    // returned LibraryElement is the same instance the analyzer hands to
-    // import chains. File-path resolution produces a separate element model
-    // with `file://` URIs, which breaks source_gen's `TypeChecker.fromUrl`
-    // comparisons (e.g. drift's `KnownDriftTypes` loads the helper library
-    // by URI; its `Table` element's URI must match the `Table` reached via
-    // user code's `import 'package:drift/drift.dart'`).
-    //
-    // For files outside `lib/` (tests, bin/, web/), there's no package: URI,
-    // so fall back to resolved-library-by-path. These files are only reached
-    // as the build input — nothing imports them via `package:` — so the URI
-    // canonicalisation concern doesn't apply.
-    if (id.path.startsWith('lib/')) {
-      final libResult = await session.getLibraryByUri(id.uri.toString());
-      if (libResult is! LibraryElementResult) {
-        throw NonLibraryAssetException(id);
-      }
-      return libResult.element;
-    }
-    final result = await session.getResolvedLibrary(path);
-    if (result is! ResolvedLibraryResult) {
+    // Resolve every asset by its canonical `package:` (`lib/`) or `asset:`
+    // (non-`lib/`) URI via [_ShimAssetUriResolver] so the returned
+    // LibraryElement and its fragments carry package/asset URIs rather than
+    // physical `file://` staging paths, matching `build_runner`.
+    final libResult = await session.getLibraryByUri(id.uri.toString());
+    if (libResult is! LibraryElementResult) {
       throw NonLibraryAssetException(id);
     }
-    return result.element;
+    return libResult.element;
   }
 
   @override
@@ -1377,6 +1374,15 @@ class _ShimAnalyzerResolver implements Resolver {
       final relPath = p.posix.joinAll(['lib', ...segments.skip(1)]);
       return AssetId(pkg, relPath);
     }
+    if (uri.scheme == 'asset') {
+      final segments = uri.pathSegments;
+      if (segments.length < 2) {
+        throw UnresolvableAssetException(uri.toString());
+      }
+      final pkg = segments.first;
+      final relPath = p.posix.joinAll(segments.skip(1));
+      return AssetId(pkg, relPath);
+    }
     if (uri.scheme == 'file') {
       // Reverse-map a `file://` URI back to an AssetId by locating the owning
       // package in the PackageConfig. This fires when a builder calls
@@ -1451,6 +1457,130 @@ class _ShimAnalyzerResolver implements Resolver {
       return null;
     }
     return parsedLib.getFragmentDeclaration(fragment)?.node;
+  }
+}
+
+void _installAssetUriResolver(
+  AnalysisContextCollection collection,
+  PackageConfig packageConfig,
+  Map<AssetId, String> assetIdToPath,
+) {
+  for (final context in collection.contexts) {
+    if (context is! DriverBasedAnalysisContext) continue;
+    final sourceFactory = context.driver.sourceFactory;
+    if (sourceFactory is! SourceFactoryImpl) continue;
+    final resolvers = sourceFactory.resolvers;
+    if (resolvers.any((r) => r is _ShimAssetUriResolver)) continue;
+    final resolver = _ShimAssetUriResolver(
+      context.resourceProvider,
+      packageConfig,
+      assetIdToPath,
+    );
+    final pkgIdx = resolvers.indexWhere(
+      (r) => r is PackageConfigPackageUriResolver || r is PackageMapUriResolver,
+    );
+    if (pkgIdx >= 0) {
+      resolvers.insert(pkgIdx + 1, resolver);
+    } else {
+      resolvers.insert(0, resolver);
+    }
+  }
+}
+
+/// Resolves `asset:<pkg>/<path>` URIs and maps non-`lib/` package files back
+/// to their canonical `asset:` URI, matching `build_resolvers`'s
+/// `AssetUriResolver`. Placed immediately after `packageUriResolver` in the
+/// driver's `SourceFactory` so `lib/` files continue to canonicalize to
+/// `package:<pkg>/<rel>` while files outside `lib/` (`bin/`, `web/`, `test/`,
+/// `tool/`, etc.) canonicalize to `asset:<pkg>/<path>` instead of falling
+/// through to `file:///<TMPDIR>/shim_<pkg>_<RANDOM>/...`.
+final class _ShimAssetUriResolver extends UriResolver {
+  _ShimAssetUriResolver(
+    this.resourceProvider,
+    this._packageConfig,
+    this._assetIdToPath,
+  ) : _packageRoots = {
+        for (final pkg in _packageConfig.packages)
+          pkg.name: resourceProvider.getFolder(
+            resourceProvider.pathContext.normalize(
+              resourceProvider.pathContext.fromUri(pkg.root),
+            ),
+          ),
+      };
+
+  final fs.ResourceProvider resourceProvider;
+  final PackageConfig _packageConfig;
+  final Map<AssetId, String> _assetIdToPath;
+  final Map<String, fs.Folder> _packageRoots;
+
+  @override
+  Uri? pathToUri(String path) {
+    final pathContext = resourceProvider.pathContext;
+    Uri? bestUri;
+    var bestLength = -1;
+    for (final entry in _packageRoots.entries) {
+      final pkgName = entry.key;
+      final pkgFolderPath = entry.value.path;
+      if (path.length >= pkgFolderPath.length + pathContext.separator.length &&
+          path.startsWith(pkgFolderPath) &&
+          path.startsWith(pathContext.separator, pkgFolderPath.length)) {
+        if (pkgFolderPath.length > bestLength) {
+          final relPath = path.substring(
+            pkgFolderPath.length + pathContext.separator.length,
+          );
+          final relPathComponents = pathContext.split(relPath);
+          final candidate = Uri(
+            scheme: 'asset',
+            pathSegments: [pkgName, ...relPathComponents],
+          );
+          bestUri = uriCache.parse(candidate.toString());
+          bestLength = pkgFolderPath.length;
+        }
+      }
+    }
+    return bestUri;
+  }
+
+  @override
+  Source? resolveAbsolute(Uri uri) {
+    if (!uri.isScheme('asset')) {
+      return null;
+    }
+    final pathSegments = uri.pathSegments;
+    if (pathSegments.length < 2) {
+      return null;
+    }
+    final pkgName = pathSegments.first;
+    final relSegments = pathSegments.skip(1).toList();
+    if (relSegments.any((s) => s.isEmpty || s == '.' || s == '..')) {
+      return null;
+    }
+    final relPosixPath = p.posix.joinAll(relSegments);
+    final pathContext = resourceProvider.pathContext;
+    String? filePath;
+    try {
+      filePath = _assetIdToPath[AssetId(pkgName, relPosixPath)];
+    } on ArgumentError {
+      return null;
+    }
+    if (filePath == null) {
+      final pkg = _packageConfig[pkgName];
+      if (pkg == null) {
+        return null;
+      }
+      if (relPosixPath.startsWith('lib/')) {
+        final rel = relPosixPath.substring(4);
+        filePath = pathContext.normalize(
+          pathContext.fromUri(pkg.packageUriRoot.resolve(rel)),
+        );
+      } else {
+        filePath = pathContext.normalize(
+          pathContext.fromUri(pkg.root.resolve(relPosixPath)),
+        );
+      }
+    }
+    final file = resourceProvider.getFile(filePath);
+    return FileSource(file, uri);
   }
 }
 
