@@ -237,6 +237,28 @@ def _main_placement_without_own_test_impl(ctx):
     asserts.equals(env, [f_pkg0], placement.src_files)
     return unittest.end(env)
 
+def _all_packages_named_no_undeclared_external_test_impl(ctx):
+    env = unittest.begin(ctx)
+    packages = [
+        _dpkg("app", "packages/app"),
+        _dpkg("summarized_ext", "../summarized_ext"),
+    ]
+    config_dir = "bazel-out/k8-fastbuild/bin/pkg/demo.proj/.dart_tool"
+    content = staged_package_config_content(
+        packages,
+        {"summarized_ext": True},
+        "demo",
+        ext_roots = {},
+        config_dir = config_dir,
+    )
+    asserts.true(
+        env,
+        '{"name": "summarized_ext", "rootUri": "../../demo.extpkgs/summarized_ext", "packageUri": "lib/"}' in content,
+        content,
+    )
+    asserts.false(env, "external/summarized_ext" in content, content)
+    return unittest.end(env)
+
 _t0_test = unittest.make(_sdk_from_language_version_test_impl)
 _t1_test = unittest.make(_sdk_default_test_impl)
 _t2_test = unittest.make(_sdk_toolchain_version_test_impl)
@@ -246,6 +268,7 @@ _t5_test = unittest.make(_mixed_package_test_impl)
 _t6_test = unittest.make(_main_package_placement_test_impl)
 _t7_test = unittest.make(_main_mixed_package_test_impl)
 _t8_test = unittest.make(_main_placement_without_own_test_impl)
+_t9_test = unittest.make(_all_packages_named_no_undeclared_external_test_impl)
 
 def project_staging_test_suite(name):
-    small_unittest_suite(name, _t0_test, _t1_test, _t2_test, _t3_test, _t4_test, _t5_test, _t6_test, _t7_test, _t8_test)
+    small_unittest_suite(name, _t0_test, _t1_test, _t2_test, _t3_test, _t4_test, _t5_test, _t6_test, _t7_test, _t8_test, _t9_test)

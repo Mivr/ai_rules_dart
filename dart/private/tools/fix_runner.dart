@@ -57,8 +57,14 @@ void main(List<String> args) {
   }
 
   final writeBack = _readEligible(eligible);
+  final allowedSrcPaths = pruneOrphanedStagedFiles(project);
 
-  _copyTree(project, scratch);
+  _copyTree(
+    project,
+    scratch,
+    projectRoot: project,
+    allowedSrcPaths: allowedSrcPaths,
+  );
   repointPackageConfig(project, scratch);
 
   final result = Process.runSync(dart, ['fix', '--apply', scratch]);
@@ -93,6 +99,34 @@ void main(List<String> args) {
   );
 }
 
+/// Removes any orphaned symlinks or unlisted files under `<project>/src/` when
+/// `.dart_tool/src_manifest.txt` is present, and returns the set of allowed
+/// `src/<rel>` paths relative to [project] (or `null` when no manifest is
+/// present). Never prunes without a manifest.
+Set<String>? pruneOrphanedStagedFiles(String project) {
+  final srcDir = Directory('$project/src');
+  if (!srcDir.existsSync()) return null;
+  final manifestFile = File('$project/.dart_tool/src_manifest.txt');
+  if (!manifestFile.existsSync()) return null;
+
+  final allowed = <String>{
+    for (final line in manifestFile.readAsLinesSync())
+      if (line.trim().isNotEmpty) 'src/${_relative('', line.trim())}',
+  };
+  for (final entity in srcDir.listSync(recursive: true, followLinks: false)) {
+    if (entity is Directory) continue;
+    final rel = _relative(project, entity.path);
+    if (!allowed.contains(rel)) {
+      try {
+        entity.deleteSync();
+      } on FileSystemException {
+        // Ignore if read-only or already removed.
+      }
+    }
+  }
+  return allowed;
+}
+
 /// Reads the rule's `<staged-relative>\t<workspace-relative>` write-back list.
 Map<String, String> _readEligible(String path) {
   final file = File(path);
@@ -114,13 +148,29 @@ Map<String, String> _readEligible(String path) {
 }
 
 /// Copies the tree at [from] to [to], resolving symlinks to their contents.
-void _copyTree(String from, String to) {
+void _copyTree(
+  String from,
+  String to, {
+  required String projectRoot,
+  Set<String>? allowedSrcPaths,
+}) {
   Directory(to).createSync(recursive: true);
   for (final entity in Directory(from).listSync(followLinks: false)) {
     final name = _relative(from, entity.path);
+    final relToProject = _relative(projectRoot, entity.path);
     if (FileSystemEntity.isDirectorySync(entity.path)) {
-      _copyTree(entity.path, '$to/$name');
+      _copyTree(
+        entity.path,
+        '$to/$name',
+        projectRoot: projectRoot,
+        allowedSrcPaths: allowedSrcPaths,
+      );
     } else if (FileSystemEntity.isFileSync(entity.path)) {
+      if (allowedSrcPaths != null &&
+          relToProject.startsWith('src/') &&
+          !allowedSrcPaths.contains(relToProject)) {
+        continue;
+      }
       _copyFile(entity.path, '$to/$name');
     }
   }

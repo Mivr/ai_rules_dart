@@ -283,17 +283,31 @@ void main() {
       expect(bounded.getFile(projectOptions.path).exists, isTrue);
 
       // In summarize mode (`blockAnalysisOptions: true`), even an
-      // analysis_options.yaml inside primaryRoot is blocked.
+      // analysis_options.yaml or pubspec.yaml inside primaryRoot is blocked.
+      final projectPubspec = File(p.join(project.path, 'pubspec.yaml'))
+        ..writeAsStringSync('name: project_pkg\n');
+      final unlistedFile = File(p.join(srcDir.path, 'unlisted.dart'))
+        ..writeAsStringSync('int unlisted = 2;\n');
       final summarizeBounded = BoundedResourceProvider(
         recorder,
         primaryRoot: project.path,
         boundaryRoots: {project.path},
         allowedFiles: {srcFile.path},
+        restrictedRoot: srcDir.path,
+        allowedUnderRestrictedRoot: {srcFile.path},
         blockAnalysisOptions: true,
       );
       recorder.checkedPaths.clear();
       expect(summarizeBounded.getFile(projectOptions.path).exists, isFalse);
+      expect(summarizeBounded.getFile(projectPubspec.path).exists, isFalse);
+      expect(summarizeBounded.getFile(unlistedFile.path).exists, isFalse);
       expect(recorder.checkedPaths, isEmpty);
+      expect(summarizeBounded.getFile(srcFile.path).exists, isTrue);
+      final childrenPaths = [
+        for (final c in summarizeBounded.getFolder(srcDir.path).getChildren())
+          p.normalize(p.absolute(c.path)),
+      ];
+      expect(childrenPaths, [p.normalize(p.absolute(srcFile.path))]);
     });
   });
 

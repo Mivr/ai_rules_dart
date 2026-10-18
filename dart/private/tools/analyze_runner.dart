@@ -10,6 +10,7 @@ void main(List<String> args) {
   String? project;
   String? stamp;
   var fatalInfos = false;
+  final sources = <String>[];
   for (var i = 0; i < args.length; i++) {
     switch (args[i]) {
       case '--dart':
@@ -18,6 +19,8 @@ void main(List<String> args) {
         project = args[++i];
       case '--stamp':
         stamp = args[++i];
+      case '--source':
+        sources.add(args[++i]);
       case '--fatal-infos':
         fatalInfos = true;
       default:
@@ -30,6 +33,27 @@ void main(List<String> args) {
       'analyze_runner: --dart, --project, and --stamp are required',
     );
     exit(64);
+  }
+
+  final allowed = pruneOrphanedStagedFiles(project);
+  for (final s in sources) {
+    final norm = _normRel(s);
+    if (allowed != null &&
+        norm.startsWith('src/') &&
+        !allowed.contains(norm.substring(4))) {
+      stderr.writeln(
+        'analyze_runner: source not listed in src_manifest.txt: $s',
+      );
+      exit(1);
+    }
+    if (!FileSystemEntity.isFileSync('$project/$norm')) {
+      stderr.writeln('analyze_runner: expected source missing: $s');
+      exit(1);
+    }
+  }
+  if (!_hasAnalyzableDartFile(project, allowed)) {
+    stderr.writeln('analyze_runner: no Dart files to analyze in $project');
+    exit(1);
   }
 
   final result = Process.runSync(dart, [
@@ -46,6 +70,70 @@ void main(List<String> args) {
   }
   File(stamp).writeAsStringSync('analyzed\n');
 }
+
+/// Removes any orphaned symlinks or unlisted files under `<project>/src/` when
+/// `.dart_tool/src_manifest.txt` is present, and returns the set of `/`
+/// relative paths under `src/` (or `null` when no manifest is present).
+/// Never prunes without a manifest.
+Set<String>? pruneOrphanedStagedFiles(String project) {
+  final srcDir = Directory('$project/src');
+  if (!srcDir.existsSync()) return null;
+  final manifestFile = File('$project/.dart_tool/src_manifest.txt');
+  if (!manifestFile.existsSync()) return null;
+
+  final allowed = <String>{
+    for (final line in manifestFile.readAsLinesSync())
+      if (line.trim().isNotEmpty) _normRel(line.trim()),
+  };
+  final rootPath = srcDir.path;
+  for (final entity in srcDir.listSync(recursive: true, followLinks: false)) {
+    if (entity is Directory) continue;
+    final rel = _relative(rootPath, entity.path);
+    if (!allowed.contains(rel)) {
+      try {
+        entity.deleteSync();
+      } on FileSystemException {
+        // Ignore if read-only or already removed.
+      }
+    }
+  }
+  return allowed;
+}
+
+bool _hasAnalyzableDartFile(String project, Set<String>? allowed) {
+  if (allowed != null) {
+    for (final rel in allowed) {
+      if (rel.endsWith('.dart') &&
+          FileSystemEntity.isFileSync('$project/src/$rel')) {
+        return true;
+      }
+    }
+    return false;
+  }
+  final srcDir = Directory('$project/src');
+  final searchRoot = srcDir.existsSync() ? srcDir : Directory(project);
+  for (final entity in searchRoot.listSync(recursive: true)) {
+    if (entity.path.endsWith('.dart') &&
+        FileSystemEntity.isFileSync(entity.path)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+String _normRel(String raw) {
+  var rel = raw.replaceAll(r'\', '/');
+  while (rel.startsWith('./')) {
+    rel = rel.substring(2);
+  }
+  while (rel.startsWith('/')) {
+    rel = rel.substring(1);
+  }
+  return rel;
+}
+
+String _relative(String root, String path) =>
+    _normRel(path.substring(root.length));
 
 /// Rewrites staged paths in the analyzer's output to the workspace paths they
 /// were copied from, so a diagnostic names a file the user can open.

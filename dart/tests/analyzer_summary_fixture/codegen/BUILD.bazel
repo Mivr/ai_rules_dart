@@ -115,6 +115,25 @@ no_summaries_codegen_inputs_test(
     target_under_test = ":flutter_codegen",
 )
 
+# Built on the shim, but its closure holds an uncovered `srcs_dir` library
+# (`opaque_dep`), so no summary flags go to it.
+dart_codegen(
+    name = "opaque_codegen",
+    package_name = "codegen_opaque",
+    src = "lib/opaque_model.dart",
+    generator_bin = "//dart/ext/json_serializable:shim",
+    language_version = "3.11",
+    output_suffixes = [".g.dart"],
+    deps = ["//dart/tests/analyzer_summary_fixture:user"],
+)
+
+no_summaries_codegen_inputs_test(
+    name = "opaque_codegen_summaries_test",
+    size = "small",
+    expect_summaries = False,
+    target_under_test = ":opaque_codegen",
+)
+
 # The runtime check of the user generator: it rejects the summary flags, so this
 # build passes only if `dart_codegen` passes it none.
 build_test(

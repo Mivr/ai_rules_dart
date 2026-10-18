@@ -266,6 +266,17 @@ Future<int> _summarize(
     for (final s in args.all('summary')) p.normalize(p.absolute(s)),
   ];
   final sourceRoot = _inferSummarizeRoot(normSources, uris);
+  final normSourceSet = normSources.toSet();
+  for (final src in normSources) {
+    if (!FileSystemEntity.isFileSync(src)) {
+      errSink.writeln('analyzer_summary: missing source $src');
+      return _failed;
+    }
+  }
+  final libRoot = p.normalize(p.join(sourceRoot, 'lib'));
+  if (p.basename(sourceRoot).endsWith('.summary_root')) {
+    _pruneUnlistedUnder(libRoot, normSourceSet);
+  }
   final boundedProvider = BoundedResourceProvider(
     resourceProvider,
     primaryRoot: sourceRoot,
@@ -276,6 +287,8 @@ Future<int> _summarize(
       ...summaryPaths,
       ...normSources,
     },
+    restrictedRoot: libRoot,
+    allowedUnderRestrictedRoot: normSourceSet,
     blockAnalysisOptions: true,
   );
   final collection = AnalysisContextCollectionImpl(
@@ -307,6 +320,14 @@ bool _isPart(String path) {
   return unit.directives.any((d) => d is PartOfDirective);
 }
 
+String _resolveProjectSource(String project, String raw) {
+  final normAbs = p.normalize(p.absolute(raw));
+  if (p.equals(project, normAbs) || p.isWithin(project, normAbs)) {
+    return normAbs;
+  }
+  return p.normalize(p.join(project, raw));
+}
+
 /// Checks a staged project's own files, and writes the stamp if they pass.
 Future<int> _analyze(
   _Args args, {
@@ -318,16 +339,17 @@ Future<int> _analyze(
   final project = p.normalize(p.absolute(args.single('project')));
   final stamp = args.single('stamp');
   final fatalInfos = args.flag('fatal-infos');
-  final allowedSrcPaths = _pruneOrphanedStagedFiles(
-    project,
-    requestInputPaths: requestInputPaths,
-  );
+  final explicitSources = <String>[
+    for (final s in args.all('source')) _resolveProjectSource(project, s),
+  ];
+  final allowedSrcPaths = _pruneOrphanedStagedFiles(project);
   final sdkPath = p.normalize(p.absolute(args.single('sdk')));
   final sdkSummaryPath = p.normalize(p.absolute(args.single('sdk-summary')));
   final packagesPath = p.normalize(p.join(project, _packageConfig));
   final summaryPaths = <String>[
     for (final s in args.all('summary')) p.normalize(p.absolute(s)),
   ];
+  final srcRoot = p.normalize(p.join(project, 'src'));
   final boundedProvider = BoundedResourceProvider(
     resourceProvider,
     primaryRoot: project,
@@ -337,8 +359,9 @@ Future<int> _analyze(
       sdkSummaryPath,
       ...summaryPaths,
       if (allowedSrcPaths != null) ...allowedSrcPaths,
-      if (requestInputPaths != null) ...requestInputPaths,
     },
+    restrictedRoot: allowedSrcPaths != null ? srcRoot : null,
+    allowedUnderRestrictedRoot: allowedSrcPaths,
     blockAnalysisOptions: false,
   );
   final collection = AnalysisContextCollectionImpl(
@@ -352,13 +375,53 @@ Future<int> _analyze(
   final context = collection.contexts.single;
   final driver = context.driver;
 
-  final findings = <_Finding>[];
-  for (final path in _analyzedPaths(
+  final analyzed = _analyzedPaths(
     project,
     context,
     allowedSrcPaths: allowedSrcPaths,
-    requestInputPaths: requestInputPaths,
-  )) {
+  );
+  final analyzedSet = analyzed.toSet();
+  final expectedDartFiles = <String>{
+    for (final s in explicitSources)
+      if (s.endsWith('.dart')) s,
+    if (allowedSrcPaths != null)
+      for (final s in allowedSrcPaths)
+        if (s.endsWith('.dart')) s,
+  };
+  for (final expected in explicitSources) {
+    if (allowedSrcPaths != null &&
+        p.isWithin(srcRoot, expected) &&
+        !allowedSrcPaths.contains(expected)) {
+      errSink.writeln(
+        'analyzer_summary: source not listed in src_manifest.txt: $expected',
+      );
+      return _failed;
+    }
+  }
+  for (final expected in expectedDartFiles) {
+    if (!FileSystemEntity.isFileSync(expected)) {
+      errSink.writeln(
+        'analyzer_summary: expected source does not exist: $expected',
+      );
+      return _failed;
+    }
+    if (context.contextRoot.isAnalyzed(expected) &&
+        !analyzedSet.contains(expected)) {
+      errSink.writeln(
+        'analyzer_summary: expected source was not analyzed: $expected',
+      );
+      return _failed;
+    }
+  }
+  if (!analyzed.any((path) => path.endsWith('.dart'))) {
+    errSink.writeln(
+      'analyzer_summary: no Dart files were analyzed in $project',
+    );
+    return _failed;
+  }
+
+  final findings = <_Finding>[];
+  for (final path in analyzed) {
     final options = context.getAnalysisOptionsForFile(
       boundedProvider.getFile(path),
     );
@@ -408,47 +471,40 @@ Future<int> _analyze(
   return 0;
 }
 
+void _pruneUnlistedUnder(String dirPath, Set<String> allowedPaths) {
+  final dir = Directory(dirPath);
+  if (!dir.existsSync()) return;
+  for (final entity in dir.listSync(recursive: true, followLinks: false)) {
+    if (entity is Directory) continue;
+    final normPath = p.normalize(entity.absolute.path);
+    if (!allowedPaths.contains(normPath)) {
+      try {
+        entity.deleteSync();
+      } on FileSystemException {
+        // Ignore if read-only or already removed.
+      }
+    }
+  }
+}
+
 /// Removes any orphaned symlinks or unlisted files under `<project>/src/` left
-/// behind in the shared execroot by previous incremental builds, and returns
-/// the set of normalized absolute paths allowed under `<project>/src/` (or
-/// `null` when no manifest is present).
-Set<String>? _pruneOrphanedStagedFiles(
-  String project, {
-  Set<String>? requestInputPaths,
-}) {
+/// behind in the shared execroot by previous incremental builds when
+/// `.dart_tool/src_manifest.txt` is present, and returns the set of normalized
+/// absolute paths allowed under `<project>/src/` (or `null` when no manifest is
+/// present). Never prunes without a manifest.
+Set<String>? _pruneOrphanedStagedFiles(String project) {
   final srcDir = Directory(p.join(project, 'src'));
   if (!srcDir.existsSync()) return null;
 
   final manifestFile = File(p.join(project, '.dart_tool', 'src_manifest.txt'));
-  Set<String>? allowedPaths;
-  if (manifestFile.existsSync()) {
-    allowedPaths = <String>{
-      for (final line in manifestFile.readAsLinesSync())
-        if (line.isNotEmpty) p.normalize(p.join(srcDir.path, line)),
-    };
-  }
+  if (!manifestFile.existsSync()) return null;
 
-  for (final entity in srcDir.listSync(recursive: true, followLinks: false)) {
-    if (entity is Directory) continue;
-    final normPath = p.normalize(entity.absolute.path);
-    if (allowedPaths != null) {
-      if (!allowedPaths.contains(normPath)) {
-        try {
-          entity.deleteSync();
-        } on FileSystemException {
-          // Ignore if read-only or already removed.
-        }
-      }
-    } else if (entity is Link) {
-      if (requestInputPaths == null || !requestInputPaths.contains(normPath)) {
-        try {
-          entity.deleteSync();
-        } on FileSystemException {
-          // Ignore if read-only or already removed.
-        }
-      }
-    }
-  }
+  final allowedPaths = <String>{
+    for (final line in manifestFile.readAsLinesSync())
+      if (line.trim().isNotEmpty)
+        p.normalize(p.absolute(p.join(srcDir.path, line.trim()))),
+  };
+  _pruneUnlistedUnder(srcDir.path, allowedPaths);
   return allowedPaths;
 }
 
@@ -459,7 +515,6 @@ List<String> _analyzedPaths(
   String project,
   AnalysisContext context, {
   Set<String>? allowedSrcPaths,
-  Set<String>? requestInputPaths,
 }) {
   final srcDir = p.normalize(p.join(project, 'src'));
   final paths = <String>[];
@@ -471,12 +526,8 @@ List<String> _analyzedPaths(
     final name = p.basename(path);
     if (!name.endsWith('.dart') && name != _optionsBasename) continue;
     if (p.isWithin(srcDir, path)) {
-      if (allowedSrcPaths != null) {
-        if (!allowedSrcPaths.contains(path)) continue;
-      } else if (FileSystemEntity.isLinkSync(path)) {
-        if (requestInputPaths == null || !requestInputPaths.contains(path)) {
-          continue;
-        }
+      if (allowedSrcPaths != null && !allowedSrcPaths.contains(path)) {
+        continue;
       }
     }
     if (!context.contextRoot.isAnalyzed(path)) continue;
@@ -694,6 +745,8 @@ final class BoundedResourceProvider implements fs.ResourceProvider {
     required String primaryRoot,
     Set<String> boundaryRoots = const {},
     Set<String> allowedFiles = const {},
+    String? restrictedRoot,
+    Set<String>? allowedUnderRestrictedRoot,
     this.blockAnalysisOptions = false,
   }) : primaryRoot = p.normalize(p.absolute(primaryRoot)),
        boundaryRoots = {
@@ -702,12 +755,43 @@ final class BoundedResourceProvider implements fs.ResourceProvider {
        },
        allowedFiles = {
          for (final f in allowedFiles) p.normalize(p.absolute(f)),
-       };
+       },
+       restrictedRoot = restrictedRoot == null
+           ? null
+           : p.normalize(p.absolute(restrictedRoot)),
+       allowedUnderRestrictedRoot = _computeAllowedRestrictedPaths(
+         restrictedRoot,
+         allowedUnderRestrictedRoot,
+       );
+
+  static Set<String>? _computeAllowedRestrictedPaths(
+    String? restrictedRoot,
+    Set<String>? allowedUnderRestrictedRoot,
+  ) {
+    if (restrictedRoot == null || allowedUnderRestrictedRoot == null) {
+      return null;
+    }
+    final normRoot = p.normalize(p.absolute(restrictedRoot));
+    final result = <String>{normRoot};
+    for (final raw in allowedUnderRestrictedRoot) {
+      var cur = p.normalize(p.absolute(raw));
+      while (true) {
+        result.add(cur);
+        if (p.equals(cur, normRoot) || !p.isWithin(normRoot, cur)) break;
+        final parent = p.dirname(cur);
+        if (parent == cur) break;
+        cur = parent;
+      }
+    }
+    return result;
+  }
 
   final fs.ResourceProvider _delegate;
   final String primaryRoot;
   final Set<String> boundaryRoots;
   final Set<String> allowedFiles;
+  final String? restrictedRoot;
+  final Set<String>? allowedUnderRestrictedRoot;
   final bool blockAnalysisOptions;
 
   static const Set<String> _alwaysBlockedWorkspaceBasenames = {
@@ -737,12 +821,20 @@ final class BoundedResourceProvider implements fs.ResourceProvider {
 
   bool isBlockedPath(String rawPath) {
     final normPath = p.normalize(p.absolute(rawPath));
+    if (restrictedRoot != null &&
+        allowedUnderRestrictedRoot != null &&
+        p.isWithin(restrictedRoot!, normPath) &&
+        !allowedUnderRestrictedRoot!.contains(normPath)) {
+      return true;
+    }
     if (allowedFiles.contains(normPath)) {
       return false;
     }
     final base = p.basename(normPath);
     if (blockAnalysisOptions &&
-        (base == _optionsBasename || base == '.analysis_options')) {
+        (base == _optionsBasename ||
+            base == '.analysis_options' ||
+            base == 'pubspec.yaml')) {
       return true;
     }
     if (!p.equals(normPath, primaryRoot) &&

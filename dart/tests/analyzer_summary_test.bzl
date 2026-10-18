@@ -55,14 +55,16 @@ summary_packages_test = analysistest.make(
 def _summary_file_test_impl(ctx):
     env = analysistest.begin(ctx)
     target = analysistest.target_under_test(env)
-    has_summary = target[DartAnalyzerSummaryInfo].summary != None
+    summary = target[DartAnalyzerSummaryInfo].summary
+    has_summary = summary != None
     asserts.equals(
         env,
         ctx.attr.expect_summary,
         has_summary,
         "%s: whether the target builds a summary of its own" % target.label,
     )
-    return analysistest.end(env)
+    checks = depset([summary] if summary != None else [])
+    return analysistest.end(env) + [OutputGroupInfo(_validation = checks, dart_analyze = checks)]
 
 # Whether a target builds a summary of its own.
 summary_file_test = analysistest.make(

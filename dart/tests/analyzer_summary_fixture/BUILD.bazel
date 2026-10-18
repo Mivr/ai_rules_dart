@@ -21,6 +21,7 @@ dart_library(
     package_name = "opaque_dep",
     language_version = "3.11",
     srcs_dir = ":opaque_srcs",
+    visibility = ["//dart/tests/analyzer_summary_fixture:__subpackages__"],
 )
 
 # A dependent of the opaque library, with sources of its own.
@@ -29,6 +30,7 @@ dart_library(
     package_name = "summary_user",
     srcs = ["lib/user.dart"],
     language_version = "3.11",
+    visibility = ["//dart/tests/analyzer_summary_fixture:__subpackages__"],
     deps = [":opaque"],
 )
 
@@ -75,6 +77,13 @@ summary_packages_test(
     size = "small",
     expect_covered = ["summary_user"],
     expect_uncovered = ["opaque_dep"],
+    target_under_test = ":user",
+)
+
+summary_file_test(
+    name = "user_summary_file_test",
+    size = "small",
+    expect_summary = True,
     target_under_test = ":user",
 )
 
@@ -203,10 +212,14 @@ dart_test(
         "$(rlocationpath //dart/private/tools:format_runner)",
         "$(rlocationpath //dart/private/tools:analyzer_summary)",
         "$(rlocationpath //dart/private:analyzer_sdk_summary)",
+        "$(rlocationpath //dart/private/tools:analyze_runner)",
+        "$(rlocationpath //dart/private/tools:fix_runner)",
     ],
     data = [
         "//dart/private:analyzer_sdk_summary",
+        "//dart/private/tools:analyze_runner",
         "//dart/private/tools:analyzer_summary",
+        "//dart/private/tools:fix_runner",
         "//dart/private/tools:format_runner",
     ],
     main = "worker_hardening_test.dart",

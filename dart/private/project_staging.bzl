@@ -601,7 +601,6 @@ def stage_dart_project(
             if pkg.package_name in ext_staged:
                 continue
             ext_staged[pkg.package_name] = True
-            ext_roots[pkg.package_name] = "external/" + pkg.lib_root[len("../"):]
 
     for pkg_name, files in ext_files_by_pkg.items():
         if pkg_name in copied:

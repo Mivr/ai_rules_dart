@@ -269,13 +269,31 @@ Future<int> runFormatRequest(
     return 64;
   }
 
-  _pruneOrphanedStagedFiles(project);
+  final allowedSrcPaths = _pruneOrphanedStagedFiles(project);
 
   final files = File(manifest)
       .readAsLinesSync()
-      .where((l) => l.isNotEmpty)
-      .map((l) => _join(project!, l))
+      .where((l) => l.trim().isNotEmpty)
+      .map((l) => _join(project!, l.trim()))
       .toList();
+  if (files.isEmpty) {
+    errSink.writeln('format_runner: no files listed in manifest $manifest');
+    return 1;
+  }
+  final projectRoot = p.normalize(p.absolute(project));
+  final srcRoot = p.normalize(p.join(projectRoot, 'src'));
+  if (allowedSrcPaths != null) {
+    for (final file in files) {
+      final normFile = p.normalize(p.absolute(file));
+      if (p.isWithin(srcRoot, normFile) &&
+          !allowedSrcPaths.contains(normFile)) {
+        errSink.writeln(
+          'format_runner: file not listed in src_manifest.txt: $file',
+        );
+        return 1;
+      }
+    }
+  }
 
   final resolvedSdkVersion = _resolveSdkVersion(sdkVersion, dart);
   final mode = resolveFormatMode(resolvedSdkVersion, languageVersion);
@@ -301,8 +319,6 @@ Future<int> runFormatRequest(
 
   final outBuf = StringBuffer();
   final errBuf = StringBuffer();
-  final projectRoot = p.normalize(p.absolute(project));
-  final srcRoot = p.normalize(p.join(projectRoot, 'src'));
   final fileSystem = _BoundedFileSystem(
     IOFileSystem(),
     srcRoot: srcRoot,
@@ -565,14 +581,15 @@ int _runSubprocessFallback({
   return 0;
 }
 
-void _pruneOrphanedStagedFiles(String project) {
+Set<String>? _pruneOrphanedStagedFiles(String project) {
   final srcDir = Directory(p.join(project, 'src'));
-  if (!srcDir.existsSync()) return;
+  if (!srcDir.existsSync()) return null;
   final manifestFile = File(p.join(project, '.dart_tool', 'src_manifest.txt'));
-  if (!manifestFile.existsSync()) return;
+  if (!manifestFile.existsSync()) return null;
   final allowedPaths = <String>{
     for (final line in manifestFile.readAsLinesSync())
-      if (line.isNotEmpty) p.normalize(p.absolute(p.join(srcDir.path, line))),
+      if (line.trim().isNotEmpty)
+        p.normalize(p.absolute(p.join(srcDir.path, line.trim()))),
   };
   for (final entity in srcDir.listSync(recursive: true, followLinks: false)) {
     if (entity is Directory) continue;
@@ -585,6 +602,7 @@ void _pruneOrphanedStagedFiles(String project) {
       }
     }
   }
+  return allowedPaths;
 }
 
 /// Wraps [IOFileSystem] so upward directory walks for `analysis_options.yaml`

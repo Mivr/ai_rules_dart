@@ -74,10 +74,12 @@ load(
 )
 load(
     ":dart_analyzer_summary.bzl",
+    "CONFLICT_PREFIX",
     "DartAnalyzerSummaryInfo",
     "analyzer_summaries_supported",
     "dart_analyzer_summary",
     "embedder_in_closure",
+    "package_key",
 )
 
 # The shim library every `dart/ext` shim binary is built on. A generator whose
@@ -122,7 +124,9 @@ def analyzer_summary_inputs(ctx, package_name):
         so it accepts the flags. A user's own generator never sees them;
       - no dependency's closure holds a Flutter embedder, whose `dart:ui` a
         summary cannot resolve. Such a closure is analyzed from source, as it
-        was before the flag existed.
+        was before the flag existed;
+      - every dependency package outside `package_name` is covered by a summary
+        (not an uncovered `srcs_dir` or a split package).
 
     Args:
       ctx: The `dart_codegen` rule context.
@@ -139,9 +143,23 @@ def analyzer_summary_inputs(ctx, package_name):
         return [], None
     if not is_builder_shim_generator(ctx.attr.generator_bin):
         return [], None
+    covered = {}
     for d in ctx.attr.deps:
         if DartInfo in d and embedder_in_closure(d[DartInfo]):
             return [], None
+        if DartAnalyzerSummaryInfo in d:
+            for key in d[DartAnalyzerSummaryInfo].packages.to_list():
+                if key.startswith(CONFLICT_PREFIX):
+                    return [], None
+                covered[key] = True
+    for d in ctx.attr.deps:
+        if DartInfo not in d:
+            continue
+        for pkg in d[DartInfo].transitive_packages.to_list():
+            if pkg.package_name == package_name:
+                continue
+            if package_key(pkg) not in covered:
+                return [], None
     packaged = depset(transitive = [
         d[DartAnalyzerSummaryInfo].packaged_summaries
         for d in ctx.attr.deps

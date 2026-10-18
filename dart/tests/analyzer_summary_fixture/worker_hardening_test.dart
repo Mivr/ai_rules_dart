@@ -123,6 +123,8 @@ void main(List<String> args) {
   final formatRunnerDill = r.rlocation(args[0]);
   final analyzerSummaryDill = r.rlocation(args[1]);
   final sdkSummaryPath = r.rlocation(args[2]);
+  final analyzeRunnerDill = r.rlocation(args[3]);
+  final fixRunnerDill = r.rlocation(args[4]);
   final sdkRoot = File(Platform.resolvedExecutable).parent.parent.path;
 
   late Directory tmp;
@@ -383,5 +385,475 @@ void main(List<String> args) {
 
     await responses.cancel();
     await proc.stdin.close();
+  });
+
+  test('never prunes symlinks without a manifest and fails on empty manifest or unanalyzed source', () {
+    final projDir = Directory('${tmp.path}/no_manifest_proj');
+    Directory('${projDir.path}/src/lib').createSync(recursive: true);
+    Directory('${projDir.path}/.dart_tool').createSync(recursive: true);
+    File('${projDir.path}/pubspec.yaml')
+        .writeAsStringSync('name: pkg_a\nenvironment:\n  sdk: ^3.7.0\n');
+    File('${projDir.path}/.dart_tool/package_config.json').writeAsStringSync(
+      jsonEncode({
+        'configVersion': 2,
+        'packages': [
+          {
+            'name': 'pkg_a',
+            'rootUri': '../src',
+            'packageUri': 'lib/',
+            'languageVersion': '3.7',
+          },
+        ],
+      }),
+    );
+
+    // Stage a symlinked source file WITHOUT `.dart_tool/src_manifest.txt`.
+    final realSrc = File('${tmp.path}/real_a.dart')
+      ..writeAsStringSync("int bad = 'not_an_int';\n");
+    final symlinkSrc = Link('${projDir.path}/src/lib/a.dart')
+      ..createSync(realSrc.path);
+
+    // Without a manifest, `analyzer_summary analyze` must NOT prune the symlink
+    // and must analyze it (catching the type error).
+    var res = Process.runSync(Platform.resolvedExecutable, [
+      analyzerSummaryDill,
+      'analyze',
+      '--sdk',
+      sdkRoot,
+      '--project',
+      projDir.path,
+      '--stamp',
+      '${tmp.path}/no_manifest.stamp',
+      '--sdk-summary',
+      sdkSummaryPath,
+    ], workingDirectory: tmp.path);
+    expect(res.exitCode, 1);
+    expect(
+      FileSystemEntity.typeSync(symlinkSrc.path, followLinks: false),
+      FileSystemEntityType.link,
+    );
+    expect(File('${tmp.path}/no_manifest.stamp').existsSync(), isFalse);
+
+    // Fix the symlinked file; without a manifest, analysis succeeds and keeps the symlink.
+    realSrc.writeAsStringSync('int ok = 42;\n');
+    res = Process.runSync(Platform.resolvedExecutable, [
+      analyzerSummaryDill,
+      'analyze',
+      '--sdk',
+      sdkRoot,
+      '--project',
+      projDir.path,
+      '--stamp',
+      '${tmp.path}/no_manifest_ok.stamp',
+      '--sdk-summary',
+      sdkSummaryPath,
+    ], workingDirectory: tmp.path);
+    expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
+    expect(
+      FileSystemEntity.typeSync(symlinkSrc.path, followLinks: false),
+      FileSystemEntityType.link,
+    );
+    expect(File('${tmp.path}/no_manifest_ok.stamp').existsSync(), isTrue);
+
+    // An `--source` that is missing or not analyzed must fail the action.
+    res = Process.runSync(Platform.resolvedExecutable, [
+      analyzerSummaryDill,
+      'analyze',
+      '--sdk',
+      sdkRoot,
+      '--project',
+      projDir.path,
+      '--stamp',
+      '${tmp.path}/missing_source.stamp',
+      '--sdk-summary',
+      sdkSummaryPath,
+      '--source',
+      'src/lib/nonexistent.dart',
+    ], workingDirectory: tmp.path);
+    expect(res.exitCode, 1);
+    expect(File('${tmp.path}/missing_source.stamp').existsSync(), isFalse);
+
+    // Write an empty `src_manifest.txt`: a zero-file analysis of a target must
+    // fail (never write a green stamp) in both `analyzer_summary` and `analyze_runner`.
+    File('${projDir.path}/.dart_tool/src_manifest.txt').writeAsStringSync('');
+    res = Process.runSync(Platform.resolvedExecutable, [
+      analyzerSummaryDill,
+      'analyze',
+      '--sdk',
+      sdkRoot,
+      '--project',
+      projDir.path,
+      '--stamp',
+      '${tmp.path}/empty_manifest_summary.stamp',
+      '--sdk-summary',
+      sdkSummaryPath,
+    ], workingDirectory: tmp.path);
+    expect(res.exitCode, 1);
+    expect(
+      File('${tmp.path}/empty_manifest_summary.stamp').existsSync(),
+      isFalse,
+    );
+
+    res = Process.runSync(Platform.resolvedExecutable, [
+      analyzeRunnerDill,
+      '--dart',
+      Platform.resolvedExecutable,
+      '--project',
+      projDir.path,
+      '--stamp',
+      '${tmp.path}/empty_manifest_runner.stamp',
+    ], workingDirectory: tmp.path);
+    expect(res.exitCode, 1);
+    expect(
+      File('${tmp.path}/empty_manifest_runner.stamp').existsSync(),
+      isFalse,
+    );
+  });
+
+  test('summarize outputs are byte-identical across local, sandboxed, and worker execution', () async {
+    // First build a dependency summary (`dep_base.sum`) used by all three strategies.
+    Directory('${tmp.path}/dep_base/lib').createSync(recursive: true);
+    File('${tmp.path}/dep_base/lib/base.dart')
+        .writeAsStringSync('class Base { int id() => 1; }\n');
+    File('${tmp.path}/dep_base_packages.json').writeAsStringSync(
+      jsonEncode({
+        'configVersion': 2,
+        'packages': [
+          {
+            'name': 'dep_base',
+            'rootUri': 'dep_base',
+            'packageUri': 'lib/',
+            'languageVersion': '3.7',
+          },
+        ],
+      }),
+    );
+    final baseSum = '${tmp.path}/dep_base.sum';
+    final baseRes = Process.runSync(Platform.resolvedExecutable, [
+      analyzerSummaryDill,
+      'summarize',
+      '--sdk',
+      sdkRoot,
+      '--packages',
+      'dep_base_packages.json',
+      '--out',
+      baseSum,
+      '--sdk-summary',
+      sdkSummaryPath,
+      '--source',
+      'dep_base/lib/base.dart',
+      '--uri',
+      'package:dep_base/base.dart',
+    ], workingDirectory: tmp.path);
+    expect(baseRes.exitCode, 0, reason: '${baseRes.stdout}\n${baseRes.stderr}');
+
+    const targetSource =
+        "import 'package:dep_base/base.dart';\nclass Sub extends Base {}\n";
+
+    // 1. Local (unsandboxed) directory: contains ambient `pubspec.yaml`,
+    // `analysis_options.yaml`, an unlisted sibling `.dart` file in `lib/`, and
+    // the dependency's real directory with its own `pubspec.yaml`.
+    final localDir = Directory('${tmp.path}/local_execroot')
+      ..createSync(recursive: true);
+    Directory('${localDir.path}/pkg/lib').createSync(recursive: true);
+    File('${localDir.path}/pkg/lib/sub.dart').writeAsStringSync(targetSource);
+    File('${localDir.path}/pkg/lib/unlisted_ambient.dart')
+        .writeAsStringSync('int ambientExtra = 99;\n');
+    File('${localDir.path}/pkg/pubspec.yaml').writeAsStringSync(
+      'name: pkg\nversion: 9.9.9\nenvironment:\n  sdk: ^3.7.0\n',
+    );
+    File('${localDir.path}/pkg/analysis_options.yaml').writeAsStringSync(
+      'analyzer:\n  strong-mode:\n    implicit-casts: false\n',
+    );
+    Directory('${localDir.path}/dep_base/lib').createSync(recursive: true);
+    File('${localDir.path}/dep_base/pubspec.yaml')
+        .writeAsStringSync('name: dep_base\nversion: 1.0.0\n');
+    File('${localDir.path}/packages.json').writeAsStringSync(
+      jsonEncode({
+        'configVersion': 2,
+        'packages': [
+          {
+            'name': 'dep_base',
+            'rootUri': '_deps/dep_base',
+            'packageUri': 'lib/',
+            'languageVersion': '3.7',
+          },
+          {
+            'name': 'pkg',
+            'rootUri': 'pkg',
+            'packageUri': 'lib/',
+            'languageVersion': '3.7',
+          },
+        ],
+      }),
+    );
+
+    final localRes = Process.runSync(Platform.resolvedExecutable, [
+      analyzerSummaryDill,
+      'summarize',
+      '--sdk',
+      sdkRoot,
+      '--packages',
+      'packages.json',
+      '--out',
+      'local.sum',
+      '--sdk-summary',
+      sdkSummaryPath,
+      '--summary',
+      baseSum,
+      '--source',
+      'pkg/lib/sub.dart',
+      '--uri',
+      'package:pkg/sub.dart',
+    ], workingDirectory: localDir.path);
+    expect(
+      localRes.exitCode,
+      0,
+      reason: '${localRes.stdout}\n${localRes.stderr}',
+    );
+
+    // 2. Sandboxed directory: contains ONLY the declared inputs (`pkg/lib/sub.dart`
+    // and `packages.json`), with no ambient `pubspec.yaml`, `analysis_options.yaml`,
+    // or unlisted sibling files.
+    final sandboxDir = Directory('${tmp.path}/sandbox_execroot')
+      ..createSync(recursive: true);
+    Directory('${sandboxDir.path}/pkg/lib').createSync(recursive: true);
+    File('${sandboxDir.path}/pkg/lib/sub.dart').writeAsStringSync(targetSource);
+    File('${sandboxDir.path}/packages.json').writeAsStringSync(
+      File('${localDir.path}/packages.json').readAsStringSync(),
+    );
+
+    final sandboxRes = Process.runSync(Platform.resolvedExecutable, [
+      analyzerSummaryDill,
+      'summarize',
+      '--sdk',
+      sdkRoot,
+      '--packages',
+      'packages.json',
+      '--out',
+      'sandbox.sum',
+      '--sdk-summary',
+      sdkSummaryPath,
+      '--summary',
+      baseSum,
+      '--source',
+      'pkg/lib/sub.dart',
+      '--uri',
+      'package:pkg/sub.dart',
+    ], workingDirectory: sandboxDir.path);
+    expect(
+      sandboxRes.exitCode,
+      0,
+      reason: '${sandboxRes.stdout}\n${sandboxRes.stderr}',
+    );
+
+    // 3. Persistent worker execution in the dirty local directory.
+    File('${localDir.path}/pkg/lib/unlisted_ambient.dart')
+        .writeAsStringSync('int ambientExtra = 99;\n');
+    final proc = await Process.start(Platform.resolvedExecutable, [
+      analyzerSummaryDill,
+      '--persistent_worker',
+    ], workingDirectory: localDir.path);
+    addTearDown(proc.kill);
+    final responses = StreamIterator(_frameStream(proc.stdout));
+    proc.stdin.add(
+      _encodeWorkRequest(
+        arguments: [
+          'summarize',
+          '--sdk',
+          sdkRoot,
+          '--packages',
+          'packages.json',
+          '--out',
+          'worker.sum',
+          '--sdk-summary',
+          sdkSummaryPath,
+          '--summary',
+          baseSum,
+          '--source',
+          'pkg/lib/sub.dart',
+          '--uri',
+          'package:pkg/sub.dart',
+        ],
+      ),
+    );
+    await proc.stdin.flush();
+    expect(await responses.moveNext(), isTrue);
+    final workerRes = _decodeWorkResponse(responses.current);
+    expect(workerRes.exitCode, 0, reason: workerRes.output);
+    await responses.cancel();
+    await proc.stdin.close();
+
+    final localBytes = File('${localDir.path}/local.sum').readAsBytesSync();
+    final sandboxBytes = File('${sandboxDir.path}/sandbox.sum')
+        .readAsBytesSync();
+    final workerBytes = File('${localDir.path}/worker.sum').readAsBytesSync();
+
+    expect(localBytes, isNotEmpty);
+    expect(localBytes, equals(sandboxBytes));
+    expect(workerBytes, equals(sandboxBytes));
+  });
+
+  test('deleting a source file makes it invisible under local strategy across all runners', () {
+    final projDir = Directory('${tmp.path}/local_proj');
+    Directory('${projDir.path}/src/lib').createSync(recursive: true);
+    Directory('${projDir.path}/.dart_tool').createSync(recursive: true);
+    File('${projDir.path}/pubspec.yaml')
+        .writeAsStringSync('name: local_pkg\nenvironment:\n  sdk: ^3.7.0\n');
+    File('${projDir.path}/.dart_tool/package_config.json').writeAsStringSync(
+      jsonEncode({
+        'configVersion': 2,
+        'packages': [
+          {
+            'name': 'local_pkg',
+            'rootUri': '../src',
+            'packageUri': 'lib/',
+            'languageVersion': '3.7',
+          },
+        ],
+      }),
+    );
+
+    final keepSrc = File('${projDir.path}/src/lib/keep.dart')
+      ..writeAsStringSync('int validValue() => 1;\n');
+    final deletedReal = File('${tmp.path}/deleted_real.dart')
+      ..writeAsStringSync("int broken = 'compile_error';\n");
+
+    void plantStaleDeletedFile() {
+      final link = Link('${projDir.path}/src/lib/deleted.dart');
+      if (FileSystemEntity.typeSync(link.path, followLinks: false) !=
+          FileSystemEntityType.notFound) {
+        link.deleteSync();
+      }
+      link.createSync(deletedReal.path);
+    }
+
+    // While `deleted.dart` is still in `src_manifest.txt`, analysis sees it and fails.
+    plantStaleDeletedFile();
+    File('${projDir.path}/.dart_tool/src_manifest.txt')
+        .writeAsStringSync('lib/keep.dart\nlib/deleted.dart\n');
+    var res = Process.runSync(Platform.resolvedExecutable, [
+      analyzeRunnerDill,
+      '--dart',
+      Platform.resolvedExecutable,
+      '--project',
+      projDir.path,
+      '--stamp',
+      '${tmp.path}/before_delete.stamp',
+      '--source',
+      'src/lib/keep.dart',
+      '--source',
+      'src/lib/deleted.dart',
+    ], workingDirectory: tmp.path);
+    expect(res.exitCode, isNonZero);
+
+    // Delete `lib/deleted.dart` from `srcs` (updating `src_manifest.txt`),
+    // while the stale symlink remains in `src/lib/deleted.dart` under local strategy.
+    File('${projDir.path}/.dart_tool/src_manifest.txt')
+        .writeAsStringSync('lib/keep.dart\n');
+
+    // 1. `analyze_runner` (source-mode analysis under local strategy)
+    plantStaleDeletedFile();
+    res = Process.runSync(Platform.resolvedExecutable, [
+      analyzeRunnerDill,
+      '--dart',
+      Platform.resolvedExecutable,
+      '--project',
+      projDir.path,
+      '--stamp',
+      '${tmp.path}/after_delete_runner.stamp',
+      '--source',
+      'src/lib/keep.dart',
+    ], workingDirectory: tmp.path);
+    expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
+    expect(
+      FileSystemEntity.typeSync(
+        '${projDir.path}/src/lib/deleted.dart',
+        followLinks: false,
+      ),
+      FileSystemEntityType.notFound,
+    );
+
+    // 2. `analyzer_summary analyze` (summary-mode analysis under local strategy)
+    plantStaleDeletedFile();
+    res = Process.runSync(Platform.resolvedExecutable, [
+      analyzerSummaryDill,
+      'analyze',
+      '--sdk',
+      sdkRoot,
+      '--project',
+      projDir.path,
+      '--stamp',
+      '${tmp.path}/after_delete_summary.stamp',
+      '--sdk-summary',
+      sdkSummaryPath,
+      '--source',
+      'src/lib/keep.dart',
+    ], workingDirectory: tmp.path);
+    expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
+    expect(
+      FileSystemEntity.typeSync(
+        '${projDir.path}/src/lib/deleted.dart',
+        followLinks: false,
+      ),
+      FileSystemEntityType.notFound,
+    );
+
+    // 3. `format_runner` under local strategy
+    plantStaleDeletedFile();
+    final formatManifest = File('${tmp.path}/format_manifest.txt')
+      ..writeAsStringSync('src/lib/keep.dart\n');
+    res = Process.runSync(Platform.resolvedExecutable, [
+      formatRunnerDill,
+      '--project',
+      projDir.path,
+      '--manifest',
+      formatManifest.path,
+      '--stamp',
+      '${tmp.path}/after_delete_format.stamp',
+      '--language-version',
+      'latest',
+    ], workingDirectory: tmp.path);
+    expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
+    expect(
+      FileSystemEntity.typeSync(
+        '${projDir.path}/src/lib/deleted.dart',
+        followLinks: false,
+      ),
+      FileSystemEntityType.notFound,
+    );
+
+    // 4. `fix_runner` under local strategy
+    plantStaleDeletedFile();
+    final eligibleFile = File('${tmp.path}/eligible.txt')
+      ..writeAsStringSync('lib/keep.dart\tpkg/lib/keep.dart\n');
+    res = Process.runSync(Platform.resolvedExecutable, [
+      fixRunnerDill,
+      '--dart',
+      Platform.resolvedExecutable,
+      '--project',
+      projDir.path,
+      '--scratch',
+      '${tmp.path}/fix_scratch',
+      '--fixes',
+      '${tmp.path}/fixes_out',
+      '--manifest',
+      '${tmp.path}/fixes_manifest.json',
+      '--eligible',
+      eligibleFile.path,
+    ], workingDirectory: tmp.path);
+    expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
+    expect(keepSrc.existsSync(), isTrue);
+    expect(
+      FileSystemEntity.typeSync(
+        '${projDir.path}/src/lib/deleted.dart',
+        followLinks: false,
+      ),
+      FileSystemEntityType.notFound,
+    );
+    expect(
+      File('${tmp.path}/fix_scratch/src/lib/deleted.dart').existsSync(),
+      isFalse,
+    );
   });
 }

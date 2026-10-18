@@ -270,7 +270,7 @@ def stage_config_project(ctx, config, packages, files, own, name, sdk_version, c
     staged.proj_files[_OPTIONS_BASENAME] = options_file
     return staged
 
-def _analyze(ctx, name, staged, sdk_inputs):
+def _analyze(ctx, name, staged, sdk_inputs, own_paths):
     """Declares the `dart analyze` action; returns the stamp it writes on success."""
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
     mismatch = kernel_sdk_mismatch_error(ctx.label, "_analyze_tool", ctx.attr._analyze_tool, dart_sdk_info.version)
@@ -282,6 +282,7 @@ def _analyze(ctx, name, staged, sdk_inputs):
     args.add("--project", staged.proj_path)
     args.add("--stamp", stamp)
     args.add("--fatal-infos")
+    args.add_all(own_paths, format_each = "src/%s", before_each = "--source")
     ctx.actions.run(
         executable = dart_sdk_info.dart,
         arguments = [ctx.executable._analyze_tool.path, args],
@@ -294,7 +295,7 @@ def _analyze(ctx, name, staged, sdk_inputs):
     )
     return stamp
 
-def _analyze_summaries(ctx, name, staged, summaries, sdk_summary, sdk_inputs):
+def _analyze_summaries(ctx, name, staged, summaries, sdk_summary, sdk_inputs, own_paths):
     """Declares the summary-mode `dart analyze`; returns the stamp it writes on success.
 
     `staged` holds the target's own files and the options alone, and
@@ -315,6 +316,7 @@ def _analyze_summaries(ctx, name, staged, summaries, sdk_summary, sdk_inputs):
     args.add("--stamp", stamp)
     args.add("--fatal-infos")
     args.add("--sdk-summary", sdk_summary)
+    args.add_all(own_paths, format_each = "src/%s", before_each = "--source")
     args.add_all(summaries, before_each = "--summary")
     tags = getattr(ctx.rule.attr, "tags", [])
     ctx.actions.run(
@@ -630,15 +632,21 @@ def _dart_analyze_aspect_impl(target, ctx):
     name = ctx.label.name + ".dart_analyze"
     config = ctx.attr._config[DartAnalysisConfigInfo]
     sdk_version = ctx.toolchains[_TOOLCHAIN].dart_sdk_info.version
+    all_pkgs = info.transitive_packages.to_list()
+    all_closure_srcs = info.transitive_srcs.to_list() + info.transitive_resources.to_list() + entry + own.values()
+    has_non_own_closure_srcs = any([f.path not in own for f in all_closure_srcs])
+    has_non_own_pkgs = any([p.package_name != info.package_name for p in all_pkgs])
+    is_leaf_own_only = not has_non_own_closure_srcs and not has_non_own_pkgs
     staged = stage_config_project(
         ctx,
         config,
-        info.transitive_packages.to_list(),
-        info.transitive_srcs.to_list() + info.transitive_resources.to_list() + entry + own.values(),
+        all_pkgs,
+        all_closure_srcs,
         own.values(),
         name,
         sdk_version,
         copy_external = False,
+        all_packages_named = is_leaf_own_only,
     )
 
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
@@ -652,6 +660,8 @@ def _dart_analyze_aspect_impl(target, ctx):
     tags = getattr(ctx.rule.attr, "tags", [])
     groups = {}
     summary_mode = False
+    summary_staged = None
+    generated = []
     if NO_ANALYZE_TAG not in tags:
         # The SDK check is the analyzing toolchain's own: the same one the
         # summary aspect and the codegen rules read.
@@ -670,17 +680,20 @@ def _dart_analyze_aspect_impl(target, ctx):
                 for f in target[DefaultInfo].files.to_list()
                 if f.extension == "dart" and not f.is_source and not f.short_path.startswith("../") and f.path not in own
             ]
-            summary_staged = stage_config_project(
-                ctx,
-                config,
-                info.transitive_packages.to_list(),
-                own.values() + generated,
-                own.values(),
-                name + ".summary",
-                sdk_version,
-                copy_external = False,
-                all_packages_named = True,
-            )
+            if is_leaf_own_only and not generated:
+                summary_staged = staged
+            else:
+                summary_staged = stage_config_project(
+                    ctx,
+                    config,
+                    all_pkgs,
+                    own.values() + generated,
+                    own.values(),
+                    name + ".summary",
+                    sdk_version,
+                    copy_external = False,
+                    all_packages_named = True,
+                )
             sdk_summary = _embedder_sdk_summary(ctx) or ctx.file._sdk_summary
             groups["dart_analyze"] = depset([_analyze_summaries(
                 ctx,
@@ -689,22 +702,28 @@ def _dart_analyze_aspect_impl(target, ctx):
                 _dependency_summaries(ctx),
                 sdk_summary,
                 sdk_inputs,
+                own_paths,
             )])
         else:
-            groups["dart_analyze"] = depset([_analyze(ctx, name, staged, sdk_inputs)])
+            groups["dart_analyze"] = depset([_analyze(ctx, name, staged, sdk_inputs, own_paths)])
     format_checks = []
     if NO_FORMAT_TAG not in tags:
         by_version = _format_language_versions(info, own_paths)
-        format_staged = stage_config_project(
-            ctx,
-            config,
-            [],
-            own.values(),
-            own.values(),
-            name + ".format",
-            sdk_version,
-            copy_external = False,
-        )
+        if summary_staged != None and not generated:
+            format_staged = summary_staged
+        elif is_leaf_own_only:
+            format_staged = staged
+        else:
+            format_staged = stage_config_project(
+                ctx,
+                config,
+                [],
+                own.values(),
+                own.values(),
+                name + ".format",
+                sdk_version,
+                copy_external = False,
+            )
         format_checks = [
             _format(
                 ctx,
