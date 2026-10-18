@@ -38,9 +38,8 @@ def _prefixed_flag_value(argv, prefix):
     return None
 
 def _assert_private_home_env(env, action):
-    """Asserts that `action.env` sets a private per-action `.home` path, never a shared directory."""
+    """Asserts that `action.env` clears HOME/USERPROFILE/LOCALAPPDATA and never points to a shared directory."""
     output = action.outputs.to_list()[0]
-    expected_home = output.path + ".home"
     home_keys = [k for k in ("HOME", "USERPROFILE", "LOCALAPPDATA") if k in action.env]
     asserts.true(
         env,
@@ -51,13 +50,13 @@ def _assert_private_home_env(env, action):
         val = action.env[key]
         asserts.equals(
             env,
-            expected_home,
+            "",
             val,
-            "%s must be private to the action output (%s), got %s" % (key, expected_home, val),
+            "%s must be empty in action.env (populated at runtime in system temp), got %s" % (key, val),
         )
         asserts.false(
             env,
-            val == "/tmp" or val.startswith("/tmp/") or val.startswith("/var/tmp") or val == output.dirname,
+            val == "/tmp" or val.startswith("/tmp/") or val.startswith("/var/tmp") or val.startswith("~") or val == output.dirname,
             "%s must not point to a shared directory: %s" % (key, val),
         )
 

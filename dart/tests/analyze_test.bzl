@@ -230,6 +230,22 @@ def _resolve_format_mode_test_impl(ctx):
 
 resolve_format_mode_test = unittest.make(_resolve_format_mode_test_impl)
 
+def _assert_no_shared_home_env(env, action_env, output_file):
+    home_keys = [k for k in ("HOME", "USERPROFILE", "LOCALAPPDATA") if k in action_env]
+    asserts.true(
+        env,
+        len(home_keys) > 0,
+        "SDK action must set writable_home_env, got: %s" % action_env,
+    )
+    for key in home_keys:
+        val = action_env[key]
+        asserts.equals(env, "", val, "%s must have no per-action value in env: %s" % (key, val))
+        asserts.false(
+            env,
+            val == "/tmp" or val.startswith("/tmp/") or val.startswith("/var/tmp") or val.startswith("~") or val == output_file.dirname or output_file.path in val,
+            "%s must not point to a shared host path or per-action output: %s" % (key, val),
+        )
+
 def _format_action_test_impl(ctx):
     env = analysistest.begin(ctx)
     target = analysistest.target_under_test(env)
@@ -237,11 +253,7 @@ def _format_action_test_impl(ctx):
     asserts.equals(env, 1, len(checks), "expected one DartFormat check")
     if checks:
         check = checks[0]
-        asserts.true(
-            env,
-            "HOME" in check.env or ("USERPROFILE" in check.env and "LOCALAPPDATA" in check.env),
-            "DartFormat must set writable_home_env, got: %s" % check.env,
-        )
+        _assert_no_shared_home_env(env, check.env, check.stamp)
         asserts.equals(env, ctx.attr.expected_language_version, check.mode.language_version)
         asserts.equals(env, not ctx.attr.expect_compile_files, check.mode.in_process)
         input_basenames = [f.basename for f in check.sdk_inputs.to_list()]
@@ -259,6 +271,46 @@ format_action_test = analysistest.make(
     attrs = {
         "expected_language_version": attr.string(mandatory = True),
         "expect_compile_files": attr.bool(mandatory = True),
+    },
+    extra_target_under_test_aspects = [dart_analyze],
+)
+
+def _worker_action_env_shared_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    target_a = analysistest.target_under_test(env)
+    target_b = ctx.attr.peer_target
+    checks_a = target_a[DartAnalysisModeInfo].format_checks
+    checks_b = target_b[DartAnalysisModeInfo].format_checks
+    asserts.equals(env, 1, len(checks_a), "expected one DartFormat check on target_under_test")
+    asserts.equals(env, 1, len(checks_b), "expected one DartFormat check on peer_target")
+    if checks_a and checks_b:
+        check_a = checks_a[0]
+        check_b = checks_b[0]
+        asserts.false(
+            env,
+            check_a.stamp.path == check_b.stamp.path,
+            "the two targets must produce distinct DartFormat outputs",
+        )
+        asserts.equals(
+            env,
+            check_a.env,
+            check_b.env,
+            "worker-capable DartFormat actions of the same configuration must have identical env so workers are reused",
+        )
+        _assert_no_shared_home_env(env, check_a.env, check_a.stamp)
+        _assert_no_shared_home_env(env, check_b.env, check_b.stamp)
+    for action in analysistest.target_actions(env):
+        if action.mnemonic in ("DartFormat", "DartAnalyze", "DartFix"):
+            _assert_no_shared_home_env(env, action.env, action.outputs.to_list()[0])
+    return analysistest.end(env)
+
+worker_action_env_shared_test = analysistest.make(
+    _worker_action_env_shared_test_impl,
+    attrs = {
+        "peer_target": attr.label(
+            mandatory = True,
+            aspects = [dart_analyze],
+        ),
     },
     extra_target_under_test_aspects = [dart_analyze],
 )

@@ -47,11 +47,23 @@ Future<void> main(List<String> arguments) async {
     final inputFile = File('${scratch.path}/input.json')
       ..writeAsStringSync(jsonEncode(input.json));
 
-    final hook = await Process.run(File(args.option('dart')!).absolute.path, [
-      '--packages=${File(args.option('packages')!).absolute.path}',
-      File(args.option('hook')!).absolute.path,
-      '--config=${inputFile.path}',
-    ], workingDirectory: input.packageRoot.toFilePath());
+    final homeDir = Directory('${scratch.path}/home')
+      ..createSync(recursive: true);
+    final hook = await Process.run(
+      File(args.option('dart')!).absolute.path,
+      [
+        '--packages=${File(args.option('packages')!).absolute.path}',
+        File(args.option('hook')!).absolute.path,
+        '--config=${inputFile.path}',
+      ],
+      workingDirectory: input.packageRoot.toFilePath(),
+      environment: {
+        'HOME': homeDir.path,
+        'USERPROFILE': homeDir.path,
+        'LOCALAPPDATA': homeDir.path,
+        'APPDATA': homeDir.path,
+      },
+    );
     final hookLog = [
       if ('${hook.stderr}'.trim().isNotEmpty) '${hook.stderr}'.trim(),
       if ('${hook.stdout}'.trim().isNotEmpty) '${hook.stdout}'.trim(),

@@ -543,10 +543,15 @@ int _runSubprocessFallback({
   required StringSink outSink,
   required StringSink errSink,
 }) {
-  final homeDir = '$stamp.home';
-  final env = dart.endsWith('.exe')
-      ? <String, String>{'USERPROFILE': homeDir, 'LOCALAPPDATA': homeDir}
-      : <String, String>{'HOME': homeDir};
+  final tempHome = Directory.systemTemp.createTempSync(
+    'rules_dart_format_home.',
+  );
+  final env = <String, String>{
+    'HOME': tempHome.path,
+    'USERPROFILE': tempHome.path,
+    'LOCALAPPDATA': tempHome.path,
+    'APPDATA': tempHome.path,
+  };
   var failed = false;
   try {
     for (final chunk in _chunks(files)) {
@@ -578,10 +583,9 @@ int _runSubprocessFallback({
       }
     }
   } finally {
-    final dir = Directory(homeDir);
-    if (dir.existsSync()) {
+    if (tempHome.existsSync()) {
       try {
-        dir.deleteSync(recursive: true);
+        tempHome.deleteSync(recursive: true);
       } on FileSystemException {
         // Ignore cleanup errors.
       }

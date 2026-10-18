@@ -153,20 +153,13 @@ int runWebCompileRequest(
     }
   }
 
-  Map<String, String>? env;
-  String? fallbackHomeDir;
-  if (outputPath != null &&
-      !Platform.environment.containsKey('HOME') &&
-      !Platform.environment.containsKey('USERPROFILE')) {
-    fallbackHomeDir = '$outputPath.home';
-    env = dart.endsWith('.exe')
-        ? {'USERPROFILE': fallbackHomeDir, 'LOCALAPPDATA': fallbackHomeDir}
-        : {'HOME': fallbackHomeDir};
-  }
-  final activeHome =
-      fallbackHomeDir ??
-      Platform.environment['HOME'] ??
-      Platform.environment['USERPROFILE'];
+  final tempHome = Directory.systemTemp.createTempSync('rules_dart_web_home.');
+  final env = <String, String>{
+    'HOME': tempHome.path,
+    'USERPROFILE': tempHome.path,
+    'LOCALAPPDATA': tempHome.path,
+    'APPDATA': tempHome.path,
+  };
 
   final ProcessResult result;
   try {
@@ -177,14 +170,11 @@ int runWebCompileRequest(
       environment: env,
     );
   } finally {
-    if (activeHome != null && activeHome.endsWith('.home')) {
-      final dir = Directory(activeHome);
-      if (dir.existsSync()) {
-        try {
-          dir.deleteSync(recursive: true);
-        } on FileSystemException {
-          // Ignore cleanup errors.
-        }
+    if (tempHome.existsSync()) {
+      try {
+        tempHome.deleteSync(recursive: true);
+      } on FileSystemException {
+        // Ignore cleanup errors.
       }
     }
   }

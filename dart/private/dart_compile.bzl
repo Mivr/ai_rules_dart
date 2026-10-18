@@ -511,7 +511,7 @@ def dart_compile_action(
     cross_gen_snapshot = getattr(dart_sdk_info, "cross_gen_snapshot", None) if is_cross else None
     cross_dartaotruntime = getattr(dart_sdk_info, "cross_dartaotruntime", None) if is_cross else None
 
-    if compile_mode in ("exe", "aot-snapshot") and jit_tool != None and compile_main_path == None and (is_cross or not dart_bin.basename.endswith(".exe")):
+    if compile_mode in ("exe", "aot-snapshot", "jit-snapshot") and jit_tool != None and compile_main_path == None:
         pkg_cfg = package_config
         if pkg_cfg == None:
             pkg_cfg = ctx.actions.declare_file(output.basename + ".aot_package_config.json")

@@ -562,26 +562,30 @@ def sdk_dartvm(dart_sdk_info):
             return f
     return None
 
-def writable_home_env(dart, beside):
-    """The environment an SDK build action needs to have a private writable home.
+def writable_home_env(dart, beside = None):
+    """The environment an SDK build action sets so it never uses a shared home.
 
     The `dart` CLI and analysis server write state under the user's home
-    directory (`.dart-tool`, `.dart`, `.dartServer`). Pointing actions at a
-    shared `/tmp` on POSIX or `beside.dirname` on Windows shares that state
-    across concurrent actions. Naming `<beside.path>.home` inside `bazel-out`
-    gives each action its own directory beside its declared output on every OS.
+    directory (`.dart-tool`, `.dart`, `.dartServer`). Clearing `HOME` (and
+    `USERPROFILE` / `LOCALAPPDATA` on Windows) in the action environment
+    prevents any process from falling back to a shared host or package
+    directory (`~`, `/tmp`, `beside.dirname`), while keeping `env` identical
+    across every action of a mnemonic and configuration so persistent workers
+    share a single worker key. Each runner creates its own private directory
+    under the system temp directory at run time for the SDK subprocesses it
+    spawns and removes it on exit.
 
     Args:
       dart: The SDK's `dart` File, whose basename identifies the platform.
-      beside: An output File of the action.
+      beside: Unused; retained for caller compatibility.
 
     Returns:
       A dict for `ctx.actions.run(env = ...)`.
     """
-    home = beside.path + ".home"
+    _ = beside
     if dart.basename.endswith(".exe"):
-        return {"USERPROFILE": home, "LOCALAPPDATA": home}
-    return {"HOME": home}
+        return {"USERPROFILE": "", "LOCALAPPDATA": ""}
+    return {"HOME": ""}
 
 def relative_path(from_dir, to_dir):
     """Compute the relative path from one directory to another.

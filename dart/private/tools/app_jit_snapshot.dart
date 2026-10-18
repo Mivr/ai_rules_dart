@@ -409,15 +409,18 @@ void _runAot(List<String> argv) {
   final genSnapshot =
       customGenSnapshot ?? '$sdkBin/utils/gen_snapshot$hostExeExt';
 
-  // On non-ELF targets (e.g. native macOS Mach-O executables), `dart compile exe`
-  // wraps the snapshot in a signed Mach-O segment; delegate to `dart compile`
-  // there. Cross-compilation targets are always ELF and never delegate to
-  // `dartdev`.
-  if (!isCross && mode == 'exe' && !_isElfFile(File(targetDartaotruntime))) {
+  // On non-ELF targets (e.g. native macOS Mach-O executables or Windows) or
+  // jit-snapshot fallback on Windows, delegate to `dart compile` with a fresh
+  // temporary HOME directory. Cross-compilation targets are always ELF and
+  // never delegate to `dartdev`.
+  if (!isCross &&
+      (mode == 'jit-snapshot' ||
+          dart.endsWith('.exe') ||
+          (mode == 'exe' && !_isElfFile(File(targetDartaotruntime))))) {
     final compileArgs = <String>[
       'compile',
       mode,
-      '--verbosity=error',
+      if (mode == 'exe' || mode == 'aot-snapshot') '--verbosity=error',
       if (enableAsserts) '--enable-asserts',
       if (recordedUses != null) '--recorded-uses=$recordedUses',
       for (final opt in extraGenSnapshotOptions)
@@ -426,20 +429,27 @@ void _runAot(List<String> argv) {
       outputPath,
       dillPath,
     ];
-    final activeHome =
-        Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+    final tempHome = Directory.systemTemp.createTempSync(
+      'rules_dart_compile_home.',
+    );
     final ProcessResult res;
     try {
-      res = Process.runSync(dart, compileArgs);
+      res = Process.runSync(
+        dart,
+        compileArgs,
+        environment: {
+          'HOME': tempHome.path,
+          'USERPROFILE': tempHome.path,
+          'LOCALAPPDATA': tempHome.path,
+          'APPDATA': tempHome.path,
+        },
+      );
     } finally {
-      if (activeHome != null && activeHome.endsWith('.home')) {
-        final dir = Directory(activeHome);
-        if (dir.existsSync()) {
-          try {
-            dir.deleteSync(recursive: true);
-          } on FileSystemException {
-            // Ignore cleanup errors.
-          }
+      if (tempHome.existsSync()) {
+        try {
+          tempHome.deleteSync(recursive: true);
+        } on FileSystemException {
+          // Ignore cleanup errors.
         }
       }
     }
@@ -451,11 +461,15 @@ void _runAot(List<String> argv) {
     return;
   }
 
-  final tmpDir = Directory('$outputPath.aot_tmp');
-  if (tmpDir.existsSync()) {
-    tmpDir.deleteSync(recursive: true);
-  }
-  tmpDir.createSync(recursive: true);
+  final tmpDir = Directory.systemTemp.createTempSync('rules_dart_aot.');
+  final homeDir = Directory('${tmpDir.path}/home')..createSync(recursive: true);
+  final homeEnv = <String, String>{
+    'HOME': homeDir.path,
+    'USERPROFILE': homeDir.path,
+    'LOCALAPPDATA': homeDir.path,
+    'APPDATA': homeDir.path,
+  };
+  var failureExitCode = 0;
   try {
     var activeDill = dillPath;
     if (recordedUses != null) {
@@ -483,11 +497,12 @@ void _runAot(List<String> argv) {
         '-o',
         recordedDill,
         dillPath,
-      ]);
+      ], environment: homeEnv);
       if (gkRes.exitCode != 0) {
         stdout.write(gkRes.stdout as String);
         stderr.write(gkRes.stderr as String);
-        exit(gkRes.exitCode);
+        failureExitCode = gkRes.exitCode;
+        return;
       }
       activeDill = recordedDill;
     }
@@ -502,11 +517,12 @@ void _runAot(List<String> argv) {
       if (enableAsserts) '--enable_asserts',
       ...extraGenSnapshotOptions,
       activeDill,
-    ]);
+    ], environment: homeEnv);
     if (gsRes.exitCode != 0) {
       stdout.write(gsRes.stdout as String);
       stderr.write(gsRes.stderr as String);
-      exit(gsRes.exitCode);
+      failureExitCode = gsRes.exitCode;
+      return;
     }
 
     if (mode == 'exe') {
@@ -518,8 +534,15 @@ void _runAot(List<String> argv) {
     }
   } finally {
     if (tmpDir.existsSync()) {
-      tmpDir.deleteSync(recursive: true);
+      try {
+        tmpDir.deleteSync(recursive: true);
+      } on FileSystemException {
+        // Ignore cleanup errors.
+      }
     }
+  }
+  if (failureExitCode != 0) {
+    exit(failureExitCode);
   }
 }
 
@@ -667,7 +690,30 @@ void _runGenKernel(List<String> argv) {
       sanitized.add(arg);
     }
   }
-  final res = Process.runSync(dartaotruntime, sanitized);
+  final tempHome = Directory.systemTemp.createTempSync(
+    'rules_dart_gen_kernel_home.',
+  );
+  final ProcessResult res;
+  try {
+    res = Process.runSync(
+      dartaotruntime,
+      sanitized,
+      environment: {
+        'HOME': tempHome.path,
+        'USERPROFILE': tempHome.path,
+        'LOCALAPPDATA': tempHome.path,
+        'APPDATA': tempHome.path,
+      },
+    );
+  } finally {
+    if (tempHome.existsSync()) {
+      try {
+        tempHome.deleteSync(recursive: true);
+      } on FileSystemException {
+        // Ignore cleanup errors.
+      }
+    }
+  }
   if ((res.stdout as String).isNotEmpty) {
     stdout.write(res.stdout as String);
   }

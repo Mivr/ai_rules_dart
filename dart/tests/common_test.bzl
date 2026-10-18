@@ -562,9 +562,8 @@ def _writable_home_env_posix_test_impl(ctx):
     out_b = struct(path = "bazel-out/k8-fastbuild/bin/pkg/app_b", dirname = "bazel-out/k8-fastbuild/bin/pkg")
     env_a = writable_home_env(dart, out_a)
     env_b = writable_home_env(dart, out_b)
-    asserts.equals(env, {"HOME": "bazel-out/k8-fastbuild/bin/pkg/app_a.home"}, env_a)
-    asserts.equals(env, {"HOME": "bazel-out/k8-fastbuild/bin/pkg/app_b.home"}, env_b)
-    asserts.false(env, env_a["HOME"] == env_b["HOME"], "sibling actions must not share HOME")
+    asserts.equals(env, {"HOME": ""}, env_a)
+    asserts.equals(env, env_a, env_b, "actions must have identical env so persistent workers are reused")
     asserts.false(env, env_a["HOME"] == "/tmp", "HOME must not be /tmp")
     asserts.false(env, env_a["HOME"] == out_a.dirname, "HOME must not be the shared package dirname")
     return unittest.end(env)
@@ -572,10 +571,14 @@ def _writable_home_env_posix_test_impl(ctx):
 def _writable_home_env_windows_test_impl(ctx):
     env = unittest.begin(ctx)
     dart = struct(basename = "dart.exe")
-    out = struct(path = "bazel-out/x64_windows-fastbuild/bin/pkg/app.exe", dirname = "bazel-out/x64_windows-fastbuild/bin/pkg")
-    home_env = writable_home_env(dart, out)
-    expected = "bazel-out/x64_windows-fastbuild/bin/pkg/app.exe.home"
-    asserts.equals(env, {"LOCALAPPDATA": expected, "USERPROFILE": expected}, home_env)
+    out_a = struct(path = "bazel-out/x64_windows-fastbuild/bin/pkg/app_a.exe", dirname = "bazel-out/x64_windows-fastbuild/bin/pkg")
+    out_b = struct(path = "bazel-out/x64_windows-fastbuild/bin/pkg/app_b.exe", dirname = "bazel-out/x64_windows-fastbuild/bin/pkg")
+    env_a = writable_home_env(dart, out_a)
+    env_b = writable_home_env(dart, out_b)
+    asserts.equals(env, {"LOCALAPPDATA": "", "USERPROFILE": ""}, env_a)
+    asserts.equals(env, env_a, env_b, "Windows actions must have identical env so persistent workers are reused")
+    asserts.false(env, env_a["USERPROFILE"] == out_a.dirname, "USERPROFILE must not be the shared package dirname")
+    asserts.false(env, env_a["LOCALAPPDATA"] == out_a.dirname, "LOCALAPPDATA must not be the shared package dirname")
     return unittest.end(env)
 
 def _cross_target_error_test_impl(ctx):

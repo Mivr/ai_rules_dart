@@ -6,6 +6,7 @@ load(
     "format_action_test",
     "formatted_test",
     "resolve_format_mode_test",
+    "worker_action_env_shared_test",
 )
 
 # The `dart_analyze` aspect's format check, under the root `//:analysis_config`,
@@ -149,4 +150,11 @@ format_action_test(
     expect_compile_files = True,
     expected_language_version = "2.11",
     target_under_test = ":cli_fallback_probe",
+)
+
+worker_action_env_shared_test(
+    name = "worker_action_env_shared_test",
+    size = "small",
+    peer_target = "//dart/tests/format_fixture/short",
+    target_under_test = ":mixed",
 )
