@@ -480,6 +480,7 @@ def stage_dart_project(
           referenced in place (which the config names directly).
       )
     """
+    _ = (own, options_files)
     name = name or ctx.label.name
 
     ext_pkgs = [p for p in packages if p.lib_root.startswith("../")]
@@ -493,12 +494,12 @@ def stage_dart_project(
             if owner != None:
                 ext_files_by_pkg.setdefault(owner, []).append(f)
 
-    main_place = main_package_placement(
-        packages,
-        all_srcs,
-        own = own if not copy_external else None,
-        options_files = options_files,
-    )
+    src_files = [
+        f
+        for f in all_srcs
+        if not _is_external_file(f)
+    ]
+    main_roots = {}
 
     package_config = ctx.actions.declare_file(name + ".proj/.dart_tool/package_config.json")
     config_dir = package_config.dirname
@@ -509,12 +510,12 @@ def stage_dart_project(
     all_roots = dict(main_package_roots(packages))
     sorted_all_roots = sorted(all_roots.keys(), key = lambda r: len(r), reverse = True)
     active_roots = {}
-    for f in main_place.src_files:
+    for f in src_files:
         owner_root = _owning_package_root(f.short_path, sorted_all_roots)
         if owner_root != None:
             active_roots[owner_root] = all_roots[owner_root]
 
-    existing_short_paths = {f.short_path: True for f in main_place.src_files}
+    existing_short_paths = {f.short_path: True for f in src_files}
     active_stubs = []
     stub_paths = []
     for lib_root, package_name in sorted(active_roots.items()):
@@ -523,7 +524,7 @@ def stage_dart_project(
             active_stubs.append((lib_root, package_name, rel_path))
             stub_paths.append("src/" + rel_path)
 
-    has_dir_inputs = any([getattr(f, "is_directory", False) for f in main_place.src_files])
+    has_dir_inputs = any([getattr(f, "is_directory", False) for f in src_files])
 
     if not copy_external and not has_dir_inputs:
         staged_links = []
@@ -537,7 +538,7 @@ def stage_dart_project(
             staged_links.append(stub)
             occupied[rel_path] = True
 
-        for f in main_place.src_files:
+        for f in src_files:
             if f.short_path in occupied:
                 continue
             occupied[f.short_path] = True
@@ -556,7 +557,7 @@ def stage_dart_project(
             path = proj_path + "/src",
             dirname = proj_path,
         )
-        inputs = staged_links + main_place.src_files + main_place.in_place_files
+        inputs = staged_links + src_files
     else:
         stub_files = []
         replace_prefixes = {}
@@ -575,24 +576,16 @@ def stage_dart_project(
         src_tree = assemble_source_dir(
             ctx,
             name + ".proj/src",
-            main_place.src_files + stub_files,
+            src_files + stub_files,
             # Keep workspace-relative paths: each package's lib_root must be a
             # real directory under src/ for the rootUris above to hold.
             root_paths = [],
             replace_prefixes = replace_prefixes,
         )
-        inputs = [src_tree] + main_place.in_place_files
+        inputs = [src_tree]
 
     ext_staged = {pkg_name: True for pkg_name in ext_files_by_pkg}
-
-    # Referenced in place where possible; copied otherwise (see the helper).
-    if copy_external:
-        ext_roots = {}
-        copied = list(ext_files_by_pkg.keys())
-    else:
-        placement = external_package_placement(ext_pkgs, ext_files_by_pkg)
-        ext_roots = placement.roots
-        copied = placement.copied
+    ext_roots = {}
 
     if all_packages_named:
         if copy_external:
@@ -603,16 +596,27 @@ def stage_dart_project(
             ext_staged[pkg.package_name] = True
 
     for pkg_name, files in ext_files_by_pkg.items():
-        if pkg_name in copied:
+        mangled = mangle_package_dir(pkg_name)
+        if copy_external or any([getattr(f, "is_directory", False) for f in files]):
             tree = assemble_source_dir(
                 ctx,
-                "{}.extpkgs/{}".format(name, mangle_package_dir(pkg_name)),
+                "{}.extpkgs/{}".format(name, mangled),
                 files,
                 root_paths = [],
                 include_external_repositories = ["*"],
             )
             inputs.append(tree)
         else:
+            ext_occupied = {}
+            for f in files:
+                short = f.short_path
+                workspace_path = short[short.find("/", 3) + 1:] if short.startswith("../") else short
+                if workspace_path in ext_occupied:
+                    continue
+                ext_occupied[workspace_path] = True
+                link = ctx.actions.declare_file("{}.extpkgs/{}/{}".format(name, mangled, workspace_path))
+                ctx.actions.symlink(output = link, target_file = f)
+                inputs.append(link)
             inputs.extend(files)
 
     ctx.actions.write(
@@ -623,7 +627,7 @@ def stage_dart_project(
             name,
             ext_roots = ext_roots,
             config_dir = config_dir,
-            main_roots = main_place.main_roots,
+            main_roots = main_roots,
         ),
     )
     inputs.append(package_config)
@@ -640,7 +644,7 @@ def stage_dart_project(
         src_tree = src_tree,
         package_config = package_config,
         proj_files = proj_files,
-        src_files = main_place.src_files,
+        src_files = src_files,
         stub_paths = stub_paths,
         inputs = inputs,
     )

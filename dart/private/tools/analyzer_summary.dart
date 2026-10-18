@@ -265,6 +265,9 @@ Future<int> _summarize(
   final summaryPaths = <String>[
     for (final s in args.all('summary')) p.normalize(p.absolute(s)),
   ];
+  final normDepSources = <String>{
+    for (final s in args.all('dep-source')) p.normalize(p.absolute(s)),
+  };
   final sourceRoot = _inferSummarizeRoot(normSources, uris);
   final normSourceSet = normSources.toSet();
   for (final src in normSources) {
@@ -274,8 +277,19 @@ Future<int> _summarize(
     }
   }
   final libRoot = p.normalize(p.join(sourceRoot, 'lib'));
+  final depsDir = p.normalize(p.join(sourceRoot, '_deps'));
+  final depLibRoots = <String>{
+    for (final s in normDepSources)
+      if (p.isWithin(depsDir, s))
+        p.normalize(
+          p.join(depsDir, p.split(p.relative(s, from: depsDir)).first, 'lib'),
+        ),
+  };
   if (p.basename(sourceRoot).endsWith('.summary_root')) {
     _pruneUnlistedUnder(libRoot, normSourceSet);
+    for (final depLibRoot in depLibRoots) {
+      _pruneUnlistedUnder(depLibRoot, normDepSources);
+    }
   }
   final boundedProvider = BoundedResourceProvider(
     resourceProvider,
@@ -286,9 +300,11 @@ Future<int> _summarize(
       sdkSummaryPath,
       ...summaryPaths,
       ...normSources,
+      ...normDepSources,
     },
     restrictedRoot: libRoot,
-    allowedUnderRestrictedRoot: normSourceSet,
+    extraRestrictedRoots: depLibRoots,
+    allowedUnderRestrictedRoot: {...normSourceSet, ...normDepSources},
     blockAnalysisOptions: true,
   );
   final collection = AnalysisContextCollectionImpl(
@@ -746,6 +762,7 @@ final class BoundedResourceProvider implements fs.ResourceProvider {
     Set<String> boundaryRoots = const {},
     Set<String> allowedFiles = const {},
     String? restrictedRoot,
+    Set<String> extraRestrictedRoots = const {},
     Set<String>? allowedUnderRestrictedRoot,
     this.blockAnalysisOptions = false,
   }) : primaryRoot = p.normalize(p.absolute(primaryRoot)),
@@ -759,25 +776,31 @@ final class BoundedResourceProvider implements fs.ResourceProvider {
        restrictedRoot = restrictedRoot == null
            ? null
            : p.normalize(p.absolute(restrictedRoot)),
-       allowedUnderRestrictedRoot = _computeAllowedRestrictedPaths(
-         restrictedRoot,
-         allowedUnderRestrictedRoot,
-       );
+       restrictedRoots = {
+         if (restrictedRoot != null) p.normalize(p.absolute(restrictedRoot)),
+         for (final r in extraRestrictedRoots) p.normalize(p.absolute(r)),
+       },
+       allowedUnderRestrictedRoot = _computeAllowedRestrictedPaths({
+         if (restrictedRoot != null) p.normalize(p.absolute(restrictedRoot)),
+         for (final r in extraRestrictedRoots) p.normalize(p.absolute(r)),
+       }, allowedUnderRestrictedRoot);
 
   static Set<String>? _computeAllowedRestrictedPaths(
-    String? restrictedRoot,
+    Set<String> restrictedRoots,
     Set<String>? allowedUnderRestrictedRoot,
   ) {
-    if (restrictedRoot == null || allowedUnderRestrictedRoot == null) {
+    if (restrictedRoots.isEmpty || allowedUnderRestrictedRoot == null) {
       return null;
     }
-    final normRoot = p.normalize(p.absolute(restrictedRoot));
-    final result = <String>{normRoot};
+    final result = <String>{...restrictedRoots};
     for (final raw in allowedUnderRestrictedRoot) {
       var cur = p.normalize(p.absolute(raw));
       while (true) {
         result.add(cur);
-        if (p.equals(cur, normRoot) || !p.isWithin(normRoot, cur)) break;
+        if (restrictedRoots.contains(cur) ||
+            !restrictedRoots.any((r) => p.isWithin(r, cur))) {
+          break;
+        }
         final parent = p.dirname(cur);
         if (parent == cur) break;
         cur = parent;
@@ -791,6 +814,7 @@ final class BoundedResourceProvider implements fs.ResourceProvider {
   final Set<String> boundaryRoots;
   final Set<String> allowedFiles;
   final String? restrictedRoot;
+  final Set<String> restrictedRoots;
   final Set<String>? allowedUnderRestrictedRoot;
   final bool blockAnalysisOptions;
 
@@ -821,9 +845,9 @@ final class BoundedResourceProvider implements fs.ResourceProvider {
 
   bool isBlockedPath(String rawPath) {
     final normPath = p.normalize(p.absolute(rawPath));
-    if (restrictedRoot != null &&
+    if (restrictedRoots.isNotEmpty &&
         allowedUnderRestrictedRoot != null &&
-        p.isWithin(restrictedRoot!, normPath) &&
+        restrictedRoots.any((r) => p.isWithin(r, normPath)) &&
         !allowedUnderRestrictedRoot!.contains(normPath)) {
       return true;
     }

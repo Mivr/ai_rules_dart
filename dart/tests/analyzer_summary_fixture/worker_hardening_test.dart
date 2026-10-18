@@ -856,4 +856,245 @@ void main(List<String> args) {
       isFalse,
     );
   });
+
+  test('uncovered dependency importing undeclared hidden.dart fails identically across local, sandboxed, and worker strategies', () async {
+    // Layout:
+    // - package P has a dart_library L (`lib/l.dart`) whose srcs import
+    //   `package:P/src/hidden.dart` (and re-export it);
+    // - `lib/src/hidden.dart` exists on disk in the real source tree of P,
+    //   but is in NO target's `srcs`;
+    // - the analysis of L, and of a target T depending on L, takes the
+    //   from-source path (staged under `src/` with `.dart_tool/src_manifest.txt`
+    //   and `rootUri: "../src/P"`).
+    final realDir = Directory('${tmp.path}/real_tree');
+    Directory('${realDir.path}/P/lib/src').createSync(recursive: true);
+    Directory('${realDir.path}/Q/lib').createSync(recursive: true);
+    File('${realDir.path}/P/pubspec.yaml')
+        .writeAsStringSync('name: P\nenvironment:\n  sdk: ^3.7.0\n');
+    final realL = File('${realDir.path}/P/lib/l.dart')
+      ..writeAsStringSync(
+        "import 'package:P/src/hidden.dart';\n"
+        "export 'package:P/src/hidden.dart';\n"
+        'int fromL() => hiddenVal;\n',
+      );
+    final realHidden = File('${realDir.path}/P/lib/src/hidden.dart')
+      ..writeAsStringSync('const int hiddenVal = 7;\n');
+    final realT = File('${realDir.path}/Q/lib/t.dart')
+      ..writeAsStringSync(
+        "import 'package:P/l.dart';\n"
+        'int fromT() => fromL() + hiddenVal;\n',
+      );
+
+    void stageFromSourceProject(Directory projDir, {required bool includeT}) {
+      Directory('${projDir.path}/.dart_tool').createSync(recursive: true);
+      Directory('${projDir.path}/src/P/lib/src').createSync(recursive: true);
+      File(
+        '${projDir.path}/pubspec.yaml',
+      ).writeAsStringSync('name: analyze_stub\nenvironment:\n  sdk: ^3.7.0\n');
+      File('${projDir.path}/src/P/pubspec.yaml')
+          .writeAsStringSync('name: P\nenvironment:\n  sdk: ^3.7.0\n');
+      Link('${projDir.path}/src/P/lib/l.dart').createSync(realL.path);
+
+      final packages = <Map<String, String>>[
+        {
+          'name': 'P',
+          'rootUri': '../src/P',
+          'packageUri': 'lib/',
+          'languageVersion': '3.7',
+        },
+      ];
+      final manifestLines = <String>['P/pubspec.yaml', 'P/lib/l.dart'];
+      if (includeT) {
+        Directory('${projDir.path}/src/Q/lib').createSync(recursive: true);
+        File('${projDir.path}/src/Q/pubspec.yaml').writeAsStringSync(
+          'name: Q\nenvironment:\n  sdk: ^3.7.0\n'
+          'dependencies:\n  P: any\n',
+        );
+        Link('${projDir.path}/src/Q/lib/t.dart').createSync(realT.path);
+        packages.add({
+          'name': 'Q',
+          'rootUri': '../src/Q',
+          'packageUri': 'lib/',
+          'languageVersion': '3.7',
+        });
+        manifestLines.addAll(['Q/pubspec.yaml', 'Q/lib/t.dart']);
+      }
+      File('${projDir.path}/.dart_tool/package_config.json').writeAsStringSync(
+        jsonEncode({'configVersion': 2, 'packages': packages}),
+      );
+      File('${projDir.path}/.dart_tool/src_manifest.txt')
+          .writeAsStringSync('${manifestLines.join('\n')}\n');
+    }
+
+    // 1. Analyze L itself across local (with real source tree + stale symlink),
+    // sandboxed (only declared inputs), and worker strategy.
+    final localLProj = Directory('${realDir.path}/local_L.proj');
+    stageFromSourceProject(localLProj, includeT: false);
+    // Even if a prior unsandboxed build left a symlink to hidden.dart,
+    // `src_manifest.txt` pruning removes it before analysis.
+    Link('${localLProj.path}/src/P/lib/src/hidden.dart')
+        .createSync(realHidden.path);
+
+    final localLStamp = File('${tmp.path}/local_L.analyzed');
+    final localLRes = Process.runSync(Platform.resolvedExecutable, [
+      analyzeRunnerDill,
+      '--dart',
+      Platform.resolvedExecutable,
+      '--project',
+      localLProj.path,
+      '--stamp',
+      localLStamp.path,
+      '--fatal-infos',
+      '--source',
+      'src/P/lib/l.dart',
+    ], workingDirectory: realDir.path);
+
+    final sandboxLProj = Directory('${tmp.path}/sandbox_L/L.proj');
+    stageFromSourceProject(sandboxLProj, includeT: false);
+    final sandboxLStamp = File('${tmp.path}/sandbox_L.analyzed');
+    final sandboxLRes = Process.runSync(Platform.resolvedExecutable, [
+      analyzeRunnerDill,
+      '--dart',
+      Platform.resolvedExecutable,
+      '--project',
+      sandboxLProj.path,
+      '--stamp',
+      sandboxLStamp.path,
+      '--fatal-infos',
+      '--source',
+      'src/P/lib/l.dart',
+    ], workingDirectory: tmp.path);
+
+    final workerLProj = Directory('${realDir.path}/worker_L.proj');
+    stageFromSourceProject(workerLProj, includeT: false);
+    Link('${workerLProj.path}/src/P/lib/src/hidden.dart')
+        .createSync(realHidden.path);
+    final workerLStamp = File('${tmp.path}/worker_L.analyzed');
+    final proc = await Process.start(Platform.resolvedExecutable, [
+      analyzerSummaryDill,
+      '--persistent_worker',
+    ], workingDirectory: realDir.path);
+    addTearDown(proc.kill);
+    final responses = StreamIterator(_frameStream(proc.stdout));
+    proc.stdin.add(
+      _encodeWorkRequest(
+        arguments: [
+          'analyze',
+          '--sdk',
+          sdkRoot,
+          '--project',
+          workerLProj.path,
+          '--stamp',
+          workerLStamp.path,
+          '--fatal-infos',
+          '--sdk-summary',
+          sdkSummaryPath,
+          '--source',
+          'src/P/lib/l.dart',
+        ],
+      ),
+    );
+    await proc.stdin.flush();
+    expect(await responses.moveNext(), isTrue);
+    final workerLRes = _decodeWorkResponse(responses.current);
+
+    expect(localLRes.exitCode, isNonZero);
+    expect(sandboxLRes.exitCode, isNonZero);
+    expect(workerLRes.exitCode, isNonZero);
+    expect(localLStamp.existsSync(), isFalse);
+    expect(sandboxLStamp.existsSync(), isFalse);
+    expect(workerLStamp.existsSync(), isFalse);
+    expect(
+      '${localLRes.stdout}\n${localLRes.stderr}',
+      contains("Target of URI doesn't exist: 'package:P/src/hidden.dart'"),
+    );
+    expect(
+      '${sandboxLRes.stdout}\n${sandboxLRes.stderr}',
+      contains("Target of URI doesn't exist: 'package:P/src/hidden.dart'"),
+    );
+    expect(
+      workerLRes.output,
+      contains("Target of URI doesn't exist: 'package:P/src/hidden.dart'"),
+    );
+
+    // 2. Analyze target T depending on uncovered L across local, sandboxed,
+    // and worker strategies.
+    final localTProj = Directory('${realDir.path}/local_T.proj');
+    stageFromSourceProject(localTProj, includeT: true);
+    final localTStamp = File('${tmp.path}/local_T.analyzed');
+    final localTRes = Process.runSync(Platform.resolvedExecutable, [
+      analyzeRunnerDill,
+      '--dart',
+      Platform.resolvedExecutable,
+      '--project',
+      localTProj.path,
+      '--stamp',
+      localTStamp.path,
+      '--fatal-infos',
+      '--source',
+      'src/Q/lib/t.dart',
+    ], workingDirectory: realDir.path);
+
+    final sandboxTProj = Directory('${tmp.path}/sandbox_T/T.proj');
+    stageFromSourceProject(sandboxTProj, includeT: true);
+    final sandboxTStamp = File('${tmp.path}/sandbox_T.analyzed');
+    final sandboxTRes = Process.runSync(Platform.resolvedExecutable, [
+      analyzeRunnerDill,
+      '--dart',
+      Platform.resolvedExecutable,
+      '--project',
+      sandboxTProj.path,
+      '--stamp',
+      sandboxTStamp.path,
+      '--fatal-infos',
+      '--source',
+      'src/Q/lib/t.dart',
+    ], workingDirectory: tmp.path);
+
+    final workerTProj = Directory('${realDir.path}/worker_T.proj');
+    stageFromSourceProject(workerTProj, includeT: true);
+    final workerTStamp = File('${tmp.path}/worker_T.analyzed');
+    proc.stdin.add(
+      _encodeWorkRequest(
+        arguments: [
+          'analyze',
+          '--sdk',
+          sdkRoot,
+          '--project',
+          workerTProj.path,
+          '--stamp',
+          workerTStamp.path,
+          '--fatal-infos',
+          '--sdk-summary',
+          sdkSummaryPath,
+          '--source',
+          'src/Q/lib/t.dart',
+        ],
+      ),
+    );
+    await proc.stdin.flush();
+    expect(await responses.moveNext(), isTrue);
+    final workerTRes = _decodeWorkResponse(responses.current);
+    await responses.cancel();
+    await proc.stdin.close();
+
+    expect(localTRes.exitCode, isNonZero);
+    expect(sandboxTRes.exitCode, isNonZero);
+    expect(workerTRes.exitCode, isNonZero);
+    expect(localTStamp.existsSync(), isFalse);
+    expect(sandboxTStamp.existsSync(), isFalse);
+    expect(workerTStamp.existsSync(), isFalse);
+    expect(
+      '${localTRes.stdout}\n${localTRes.stderr}',
+      contains("Target of URI doesn't exist: 'package:P/src/hidden.dart'"),
+    );
+    expect(
+      '${sandboxTRes.stdout}\n${sandboxTRes.stderr}',
+      contains("Target of URI doesn't exist: 'package:P/src/hidden.dart'"),
+    );
+    expect(
+      workerTRes.output,
+      contains("Target of URI doesn't exist: 'package:P/src/hidden.dart'"),
+    );
+  });
 }

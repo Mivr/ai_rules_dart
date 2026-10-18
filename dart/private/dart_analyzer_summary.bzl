@@ -29,9 +29,9 @@ unsafe: a toolchain SDK newer than the pinned analyzer supports
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartInfo")
-load("//dart/private:common.bzl", "generate_package_config", "kernel_sdk_mismatch_error", "package_exec_root")
+load("//dart/private:common.bzl", "generate_package_config", "kernel_sdk_mismatch_error")
 load("//dart/private:project_staging.bzl", "mangle_package_dir")
-load("//dart/private:source_set.bzl", "needs_source_assembly", "package_for_index", "package_index")
+load("//dart/private:source_set.bzl", "package_for_index", "package_index")
 
 # Summaries are built on the build machine, with the exec tools SDK, the type
 # the codegen rules and `dart_analyze` use for the same reason.
@@ -466,27 +466,23 @@ def _dart_analyzer_summary_impl(target, ctx):
     summary = ctx.actions.declare_file(name + ".sum")
     config = ctx.actions.declare_file(name + ".package_config.json")
 
-    # Stage the package's own libraries under `.summary_root` only when they mix
-    # source-tree and generated files (or sit at the root package `""`). A pure
-    # source-tree package already lives in one directory.
+    # Always stage the package's own libraries under `.summary_root` so
+    # `package_config.json` never points at the real source tree where
+    # undeclared files might exist on disk.
     prefix = (info.lib_root + "/lib/") if info.lib_root else "lib/"
     stage_root = config.dirname + "/" + name + ".summary_root"
     staged = []
-    if needs_source_assembly(srcs) or not info.lib_root:
-        for f in srcs:
-            link = ctx.actions.declare_file(name + ".summary_root/lib/" + f.short_path[len(prefix):])
-            ctx.actions.symlink(output = link, target_file = f)
-            staged.append(link)
-        own_root = stage_root
-    else:
-        staged = srcs
-        own_root = package_exec_root(srcs[0], info.lib_root)
+    for f in srcs:
+        link = ctx.actions.declare_file(name + ".summary_root/lib/" + f.short_path[len(prefix):])
+        ctx.actions.symlink(output = link, target_file = f)
+        staged.append(link)
+    own_root = stage_root
 
     # Covered dependency packages come from their `.sum` files, so their `rootUri`
     # must not point at undeclared real execroot directories where unsandboxed
     # workers could probe `pubspec.yaml` or `.dart` files. Uncovered dependency
     # packages (e.g. `srcs_dir` or split packages) have no summary, so their
-    # files must be declared inputs and their roots resolvable in the sandbox.
+    # declared files are staged under `.summary_root/_deps/` as well.
     all_pkgs = info.transitive_packages.to_list()
     roots = {info.package_name: own_root}
     uncovered_pkgs = {}
@@ -502,8 +498,8 @@ def _dart_analyzer_summary_impl(target, ctx):
             if (CONFLICT_PREFIX + pkey) in inherited:
                 conflicted_names[pkg.package_name] = True
 
-    uncovered_config_files = []
     uncovered_inputs = []
+    uncovered_staged = []
     if uncovered_pkgs:
         others = [f for f in info.transitive_srcs.to_list() if not f.short_path.startswith(prefix)]
         pkg_index = package_index(all_pkgs)
@@ -514,14 +510,17 @@ def _dart_analyzer_summary_impl(target, ctx):
                 by_pkg.setdefault(owner, []).append(f)
         for pkg_name, pkg in uncovered_pkgs.items():
             pfiles = by_pkg.get(pkg_name, [])
+            dep_mangled = mangle_package_dir(pkg_name)
             if not pfiles:
-                roots[pkg_name] = stage_root + "/_deps/" + mangle_package_dir(pkg_name)
+                roots[pkg_name] = stage_root + "/_deps/" + dep_mangled
             elif len(pfiles) == 1 and pfiles[0].is_directory:
-                uncovered_config_files.extend(pfiles)
+                dir_link = ctx.actions.declare_directory(name + ".summary_root/_deps/" + dep_mangled)
+                ctx.actions.symlink(output = dir_link, target_file = pfiles[0])
+                uncovered_inputs.append(dir_link)
                 uncovered_inputs.extend(pfiles)
-            elif needs_source_assembly(pfiles) or not pkg.lib_root:
+                roots[pkg_name] = stage_root + "/_deps/" + dep_mangled
+            else:
                 dep_prefix = (pkg.lib_root + "/lib/") if pkg.lib_root else "lib/"
-                dep_mangled = mangle_package_dir(pkg_name)
                 for f in pfiles:
                     if f.is_directory or not f.short_path.startswith(dep_prefix):
                         continue
@@ -529,17 +528,15 @@ def _dart_analyzer_summary_impl(target, ctx):
                     link = ctx.actions.declare_file(name + ".summary_root/_deps/" + dep_mangled + "/lib/" + rel)
                     ctx.actions.symlink(output = link, target_file = f)
                     uncovered_inputs.append(link)
+                    uncovered_staged.append(link)
                 uncovered_inputs.extend(pfiles)
                 roots[pkg_name] = stage_root + "/_deps/" + dep_mangled
-            else:
-                uncovered_config_files.extend(pfiles)
-                uncovered_inputs.extend(pfiles)
 
     ctx.actions.write(
         output = config,
         content = generate_package_config(
             all_pkgs,
-            uncovered_config_files,
+            [],
             config,
             roots = roots,
         ),
@@ -567,13 +564,15 @@ def _dart_analyzer_summary_impl(target, ctx):
     for f, link in zip(srcs, staged):
         args.add("--source", link)
         args.add("--uri", _package_uri(info, f))
+    if uncovered_staged:
+        args.add_all(uncovered_staged, before_each = "--dep-source")
     args.add_all(summary_inputs, before_each = "--summary")
     tags = getattr(ctx.rule.attr, "tags", [])
     ctx.actions.run(
         executable = dart_sdk_info.dart,
         arguments = [ctx.executable._tool.path, args],
         inputs = depset(
-            direct = [ctx.executable._tool, dart_sdk_info.dart, config, sdk_summary] + srcs + (staged if staged != srcs else []) + uncovered_inputs,
+            direct = [ctx.executable._tool, dart_sdk_info.dart, config, sdk_summary] + srcs + staged + uncovered_inputs,
             transitive = [dart_sdk_info.analyze_files, dart_sdk_info.runtime_files, summary_inputs],
         ),
         tools = depset(

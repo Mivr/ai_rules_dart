@@ -1140,16 +1140,53 @@ def synth_package_config(ctx, library_deps):
         ctx.label.name + ".package_config.json",
     )
 
-    # generate_package_config needs a list of File (not a depset) because
-    # it performs per-file path matching. Materialising here is bounded
-    # by the dep graph size for this one target, not by the action count.
+    stage_name = ctx.label.name + ".pkg_roots"
+    stage_root = package_config.dirname + "/" + stage_name
+    pkg_index = package_index(packages)
+    by_pkg = {}
+    for f in transitive_srcs.to_list():
+        owner = package_for_index(f.short_path, pkg_index)
+        if owner != None:
+            by_pkg.setdefault(owner, []).append(f)
+
+    roots = {}
+    staged = []
+    for pkg in packages:
+        pkg_name = pkg.package_name
+        if not pkg_name or pkg_name in roots:
+            continue
+        dep_mangled = pkg_name.replace("_", "__").replace("/", "_s")
+        pfiles = by_pkg.get(pkg_name, [])
+        if not pfiles:
+            roots[pkg_name] = stage_root + "/" + dep_mangled
+        elif len(pfiles) == 1 and pfiles[0].is_directory:
+            dir_link = ctx.actions.declare_directory(stage_name + "/" + dep_mangled)
+            ctx.actions.symlink(output = dir_link, target_file = pfiles[0])
+            staged.append(dir_link)
+            roots[pkg_name] = stage_root + "/" + dep_mangled
+        else:
+            dep_prefix = (pkg.lib_root + "/lib/") if pkg.lib_root else "lib/"
+            occupied = {}
+            for f in pfiles:
+                if f.is_directory or not f.short_path.startswith(dep_prefix):
+                    continue
+                rel = f.short_path[len(dep_prefix):]
+                if rel in occupied:
+                    continue
+                occupied[rel] = True
+                link = ctx.actions.declare_file(stage_name + "/" + dep_mangled + "/lib/" + rel)
+                ctx.actions.symlink(output = link, target_file = f)
+                staged.append(link)
+            roots[pkg_name] = stage_root + "/" + dep_mangled
+
     content = generate_package_config(
         packages,
-        transitive_srcs.to_list(),
+        [],
         package_config,
+        roots = roots,
     )
     ctx.actions.write(output = package_config, content = content)
-    return package_config, transitive_srcs
+    return package_config, depset(staged, transitive = [transitive_srcs])
 
 # --- Native code-asset (gen_kernel --native-assets) helpers ---
 #

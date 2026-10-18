@@ -42,6 +42,20 @@ def _codegen_inputs_test_impl(ctx):
         _has_input(actions, ".dart_analyzer_summary.sum"),
         "%s: whether the codegen action takes a dependency summary" % target.label,
     )
+    for action in actions:
+        if action.mnemonic != "FileWrite":
+            continue
+        out = action.outputs.to_list()[0]
+        if not out.basename.endswith(".package_config.json"):
+            continue
+        for raw_line in action.content.splitlines():
+            line = raw_line.strip()
+            if '"rootUri":' in line:
+                asserts.true(
+                    env,
+                    ".pkg_roots/" in line,
+                    "%s: synth_package_config rootUri must resolve inside .pkg_roots, got: %s" % (target.label, line),
+                )
     files = target[DefaultInfo].files
     return analysistest.end(env) + [OutputGroupInfo(_validation = files, dart_analyze = files)]
 
