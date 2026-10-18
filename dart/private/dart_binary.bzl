@@ -383,4 +383,3 @@ the empty JSON object `{}` (`kind = "empty"`).""",
     toolchains = ["//dart:toolchain_type"] + MODULAR_KERNEL_TOOLCHAINS,
     doc = "Compiles a Dart application using `dart compile`.",
 )
-

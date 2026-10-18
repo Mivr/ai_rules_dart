@@ -536,9 +536,7 @@ def _format(ctx, name, staged, own_paths, language_version):
         fail(mismatch)
     mode = resolve_format_mode(dart_sdk_info.version, language_version)
     sdk_inputs = (
-        depset(direct = [dart_sdk_info.dart], transitive = [dart_sdk_info.runtime_files])
-        if mode.in_process
-        else depset(direct = [dart_sdk_info.dart], transitive = [dart_sdk_info.compile_files, dart_sdk_info.runtime_files])
+        depset(direct = [dart_sdk_info.dart], transitive = [dart_sdk_info.runtime_files]) if mode.in_process else depset(direct = [dart_sdk_info.dart], transitive = [dart_sdk_info.compile_files, dart_sdk_info.runtime_files])
     )
     manifest = ctx.actions.declare_file(name + ".format_manifest")
     ctx.actions.write(

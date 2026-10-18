@@ -543,9 +543,7 @@ def _dart_analyzer_summary_impl(target, ctx):
     )
 
     summary_inputs = (
-        depset([s for (pname, s) in packaged.to_list() if pname not in conflicted_names])
-        if conflicted_names
-        else dependencies
+        depset([s for (pname, s) in packaged.to_list() if pname not in conflicted_names]) if conflicted_names else dependencies
     )
 
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
