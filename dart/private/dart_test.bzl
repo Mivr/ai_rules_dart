@@ -69,9 +69,7 @@ def _dart_test_impl(ctx):
         env["RULES_DART_TEST_MAIN"] = runfiles_path(ctx.file.main, workspace_name)
         env["RULES_DART_TEST_PATH"] = _test_path(ctx)
         env["RULES_DART_BASE_DILL"] = (
-            runfiles_path(kernel.base_dill, workspace_name)
-            if kernel.base_dill != None
-            else ""
+            runfiles_path(kernel.base_dill, workspace_name) if kernel.base_dill != None else ""
         )
         runner_files = [runner, ctx.file.main] + (
             [kernel.base_dill] if kernel.base_dill != None else []
@@ -131,10 +129,14 @@ def _compile_test_kernel(ctx, own, bootstrap, use_base_dill = False):
         the compiled entrypoint is the bootstrap that hands `main` to it. The
         kernel is then declared where the runner's `--precompiled` layout
         expects it.
+      use_base_dill: Whether to link `dill` in modular mode as a delta against a
+        shared `base_dill` provided by `deps` (e.g. `package:test`), returning
+        that `base_dill` in the result struct.
 
     Returns:
-      `struct(dill, runtime_libs)`: the kernel `.dill` File, and the code-asset
-      libraries that ship in runfiles beside it.
+      `struct(dill, base_dill, runtime_libs)`: the kernel `.dill` File, the
+      shared `base_dill` File (or `None`), and the code-asset libraries that
+      ship in runfiles beside it.
     """
     toolchain = ctx.toolchains["//dart:toolchain_type"]
     dart_sdk_info = toolchain.dart_sdk_info

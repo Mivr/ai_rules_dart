@@ -223,22 +223,26 @@ void main() {
 
   group('BoundedResourceProvider', () {
     test('stops upward folder walks at primaryRoot and blocks ancestor probes without statting disk', () {
-      final and1 = Directory(p.join(tempDir.path, 'and1'))..createSync();
-      final and2 = Directory(p.join(and1.path, 'and2'))..createSync();
-      final project = Directory(p.join(and2.path, 'project'))..createSync();
+      final ancestor1 = Directory(p.join(tempDir.path, 'ancestor1'))
+        ..createSync();
+      final ancestor2 = Directory(p.join(ancestor1.path, 'ancestor2'))
+        ..createSync();
+      final project = Directory(p.join(ancestor2.path, 'project'))
+        ..createSync();
       final srcDir = Directory(p.join(project.path, 'src', 'lib'))
         ..createSync(recursive: true);
 
       // Plant poison config/workspace files in ancestor directories.
-      final poisonOptions = File(p.join(and2.path, 'analysis_options.yaml'))
-        ..writeAsStringSync('analyzer:\n  exclude:\n    - "**"\n');
-      final poisonPubspec = File(p.join(and1.path, 'pubspec.yaml'))
+      final poisonOptions = File(
+        p.join(ancestor2.path, 'analysis_options.yaml'),
+      )..writeAsStringSync('analyzer:\n  exclude:\n    - "**"\n');
+      final poisonPubspec = File(p.join(ancestor1.path, 'pubspec.yaml'))
         ..writeAsStringSync('name: poison_pkg\n');
-      final poisonWorkspace = File(p.join(and1.path, 'WORKSPACE'))
+      final poisonWorkspace = File(p.join(ancestor1.path, 'WORKSPACE'))
         ..writeAsStringSync('');
-      final poisonBuildGn = File(p.join(and2.path, 'BUILD.gn'))
+      final poisonBuildGn = File(p.join(ancestor2.path, 'BUILD.gn'))
         ..writeAsStringSync('');
-      final poisonDartTool = Directory(p.join(and2.path, '.dart_tool'))
+      final poisonDartTool = Directory(p.join(ancestor2.path, '.dart_tool'))
         ..createSync();
       final poisonPkgConfig = File(
         p.join(poisonDartTool.path, 'package_config.json'),
@@ -275,11 +279,11 @@ void main() {
       ]);
       expect(
         visitedFolders,
-        isNot(contains(p.normalize(p.absolute(and2.path)))),
+        isNot(contains(p.normalize(p.absolute(ancestor2.path)))),
       );
       expect(
         visitedFolders,
-        isNot(contains(p.normalize(p.absolute(and1.path)))),
+        isNot(contains(p.normalize(p.absolute(ancestor1.path)))),
       );
 
       // Directly probing poison ancestor files returns false in memory and

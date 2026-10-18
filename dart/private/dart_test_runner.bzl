@@ -116,9 +116,7 @@ def _dart_test_package_impl(ctx):
     library = ctx.attr.library
     runner = _runner_kernel(ctx, ctx.attr.runner)
     sdk_version = (
-        getattr(ctx.attr.runner[DartCompileInfo], "sdk_version", "")
-        if DartCompileInfo in ctx.attr.runner
-        else ""
+        getattr(ctx.attr.runner[DartCompileInfo], "sdk_version", "") if DartCompileInfo in ctx.attr.runner else ""
     )
     if ctx.attr.snapshot != None:
         snapshot = ctx.attr.snapshot[DartTestRunnerSnapshotInfo].snapshot

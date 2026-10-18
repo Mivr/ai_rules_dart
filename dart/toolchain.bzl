@@ -174,6 +174,12 @@ _ANALYZE_FILE_PATTERNS = [
     "revision",
 ]
 
+# Public macro exported by `//dart:toolchain.bzl` and `//dart:repositories.bzl`
+# that declares the fixed suite of SDK filegroups (`sdk_root`, `compile_files`,
+# `runtime_files`, `analyze_files`) and `dart_toolchain` targets; its positional
+# `(version, dart, ...)` signature is public API and cannot add a leading `name`
+# parameter without an API break.
+# buildifier: disable=unnamed-macro
 def declare_dart_sdk_toolchains(
         version,
         dart,

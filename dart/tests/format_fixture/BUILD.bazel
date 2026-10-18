@@ -150,4 +150,3 @@ format_action_test(
     expected_language_version = "2.11",
     target_under_test = ":cli_fallback_probe",
 )
-

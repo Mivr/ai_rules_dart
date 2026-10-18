@@ -2,16 +2,16 @@ load("//dart:defs.bzl", "dart_library")
 
 dart_library(
     name = "a_base",
-    srcs = ["lib/a_base.dart"],
     package_name = "pkg_a",
+    srcs = ["lib/a_base.dart"],
     visibility = ["//dart/tests:__subpackages__"],
     deps = ["//dart/tests/cross_pkg_cycle_fixture/pkg_leaf"],
 )
 
 dart_library(
     name = "a_top",
-    srcs = ["lib/a_top.dart"],
     package_name = "pkg_a",
+    srcs = ["lib/a_top.dart"],
     visibility = ["//dart/tests:__subpackages__"],
     deps = [
         ":a_base",

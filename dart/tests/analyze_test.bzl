@@ -262,4 +262,3 @@ format_action_test = analysistest.make(
     },
     extra_target_under_test_aspects = [dart_analyze],
 )
-

@@ -2,9 +2,9 @@ load("//dart:defs.bzl", "dart_library")
 
 dart_library(
     name = "mid",
+    package_name = "legacy_mixin_fixture_mid",
     srcs = ["lib/mid.dart"],
     language_version = "2.19",
-    package_name = "legacy_mixin_fixture_mid",
     visibility = ["//dart/tests:__subpackages__"],
     deps = ["//dart/tests/legacy_mixin_fixture/legacy"],
 )
