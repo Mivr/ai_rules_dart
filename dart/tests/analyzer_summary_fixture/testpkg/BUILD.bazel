@@ -1,4 +1,13 @@
-load("//dart:defs.bzl", "dart_analysis_test", "dart_library", "dart_test")
+load(
+    "//dart:defs.bzl",
+    "dart_analysis_test",
+    "dart_binary",
+    "dart_js_binary",
+    "dart_library",
+    "dart_test",
+    "dart_wasm_binary",
+)
+load("//dart/tests:analyze_test.bzl", "analyzed_test")
 load(
     "//dart/tests:analyzer_summary_test.bzl",
     "default_mode_test",
@@ -99,4 +108,226 @@ dart_analysis_test(
     name = "testpkg_gen_lib_analysis_test",
     size = "small",
     targets = [":testpkg_gen_lib_test"],
+)
+
+# The same generated `lib/` source on a test that omits `package_name` (relying
+# on `:testpkg_lib` to declare the package). It must also detect the staged
+# `lib/` file and fall back to source analysis so summary and non-summary modes
+# agree.
+dart_test(
+    name = "testpkg_no_pkg_gen_lib_test",
+    size = "small",
+    srcs = [":gen_extra_lib"],
+    main = "test/testpkg_gen_lib_test.dart",
+    deps = [":testpkg_lib"],
+)
+
+default_mode_test(
+    name = "testpkg_no_pkg_gen_lib_mode_test",
+    size = "small",
+    expect_summaries = False,
+    target_under_test = ":testpkg_no_pkg_gen_lib_test",
+)
+
+summaries_off_mode_test(
+    name = "testpkg_no_pkg_gen_lib_off_mode_test",
+    size = "small",
+    expect_summaries = False,
+    target_under_test = ":testpkg_no_pkg_gen_lib_test",
+)
+
+dart_analysis_test(
+    name = "testpkg_no_pkg_gen_lib_analysis_test",
+    size = "small",
+    targets = [":testpkg_no_pkg_gen_lib_test"],
+)
+
+# Executables that omit `package_name` and list `lib/testpkg.dart` in `srcs`
+# alongside a relative `../lib/testpkg.dart` import. Staging `lib/testpkg.dart`
+# alongside `:testpkg_lib`'s summary would collide with the summary's
+# `package:testpkg_fixture/testpkg.dart` URI (`NotPathOfUriResult`), so summary
+# mode must fall back to source analysis and agree with non-summary mode.
+dart_test(
+    name = "testpkg_no_pkg_rel_lib_srcs_test",
+    size = "small",
+    srcs = [
+        "lib/testpkg.dart",
+        "test/testpkg_rel_test.dart",
+    ],
+    main = "test/testpkg_rel_test.dart",
+    deps = [":testpkg_lib"],
+)
+
+default_mode_test(
+    name = "testpkg_no_pkg_rel_lib_srcs_mode_test",
+    size = "small",
+    expect_summaries = False,
+    target_under_test = ":testpkg_no_pkg_rel_lib_srcs_test",
+)
+
+summaries_off_mode_test(
+    name = "testpkg_no_pkg_rel_lib_srcs_off_mode_test",
+    size = "small",
+    expect_summaries = False,
+    target_under_test = ":testpkg_no_pkg_rel_lib_srcs_test",
+)
+
+dart_analysis_test(
+    name = "testpkg_no_pkg_rel_lib_srcs_analysis_test",
+    size = "small",
+    targets = [":testpkg_no_pkg_rel_lib_srcs_test"],
+)
+
+dart_binary(
+    name = "testpkg_no_pkg_bin_with_lib_srcs",
+    srcs = [
+        "lib/testpkg.dart",
+        "test/testpkg_rel_test.dart",
+    ],
+    main = "test/testpkg_rel_test.dart",
+    deps = [":testpkg_lib"],
+)
+
+default_mode_test(
+    name = "testpkg_no_pkg_bin_with_lib_srcs_mode_test",
+    size = "small",
+    expect_summaries = False,
+    target_under_test = ":testpkg_no_pkg_bin_with_lib_srcs",
+)
+
+summaries_off_mode_test(
+    name = "testpkg_no_pkg_bin_with_lib_srcs_off_mode_test",
+    size = "small",
+    expect_summaries = False,
+    target_under_test = ":testpkg_no_pkg_bin_with_lib_srcs",
+)
+
+analyzed_test(
+    name = "testpkg_no_pkg_bin_with_lib_srcs_analyzed_test",
+    size = "small",
+    target = ":testpkg_no_pkg_bin_with_lib_srcs",
+)
+
+dart_js_binary(
+    name = "testpkg_no_pkg_web_bin_with_lib_srcs",
+    srcs = [
+        "lib/testpkg.dart",
+        "test/testpkg_rel_test.dart",
+    ],
+    main = "test/testpkg_rel_test.dart",
+    deps = [":testpkg_lib"],
+)
+
+default_mode_test(
+    name = "testpkg_no_pkg_web_bin_with_lib_srcs_mode_test",
+    size = "small",
+    expect_summaries = False,
+    target_under_test = ":testpkg_no_pkg_web_bin_with_lib_srcs",
+)
+
+summaries_off_mode_test(
+    name = "testpkg_no_pkg_web_bin_with_lib_srcs_off_mode_test",
+    size = "small",
+    expect_summaries = False,
+    target_under_test = ":testpkg_no_pkg_web_bin_with_lib_srcs",
+)
+
+analyzed_test(
+    name = "testpkg_no_pkg_web_bin_with_lib_srcs_analyzed_test",
+    size = "small",
+    target = ":testpkg_no_pkg_web_bin_with_lib_srcs",
+)
+
+dart_wasm_binary(
+    name = "testpkg_no_pkg_wasm_bin_with_lib_srcs",
+    srcs = [
+        "lib/testpkg.dart",
+        "test/testpkg_rel_test.dart",
+    ],
+    main = "test/testpkg_rel_test.dart",
+    deps = [":testpkg_lib"],
+)
+
+default_mode_test(
+    name = "testpkg_no_pkg_wasm_bin_with_lib_srcs_mode_test",
+    size = "small",
+    expect_summaries = False,
+    target_under_test = ":testpkg_no_pkg_wasm_bin_with_lib_srcs",
+)
+
+summaries_off_mode_test(
+    name = "testpkg_no_pkg_wasm_bin_with_lib_srcs_off_mode_test",
+    size = "small",
+    expect_summaries = False,
+    target_under_test = ":testpkg_no_pkg_wasm_bin_with_lib_srcs",
+)
+
+analyzed_test(
+    name = "testpkg_no_pkg_wasm_bin_with_lib_srcs_analyzed_test",
+    size = "small",
+    target = ":testpkg_no_pkg_wasm_bin_with_lib_srcs",
+)
+
+# Tests (both without and with `package_name`) that do NOT stage `lib/` files
+# in `srcs` and import `../lib/testpkg.dart` relatively. They stay in summary
+# mode (`expect_summaries = True`) and resolve `../lib/testpkg.dart` from
+# `:testpkg_lib`'s summary. Tagged `manual` because modular kernel compilation
+# requires `lib/testpkg.dart` in `srcs` for relative `../lib/` imports at
+# runtime; `dart_analysis_test` and the mode tests exercise their analysis.
+dart_test(
+    name = "testpkg_no_pkg_rel_import_test",
+    size = "small",
+    main = "test/testpkg_rel_test.dart",
+    tags = ["manual"],
+    deps = [":testpkg_lib"],
+)
+
+default_mode_test(
+    name = "testpkg_no_pkg_rel_import_mode_test",
+    size = "small",
+    expect_summaries = True,
+    target_under_test = ":testpkg_no_pkg_rel_import_test",
+)
+
+summaries_off_mode_test(
+    name = "testpkg_no_pkg_rel_import_off_mode_test",
+    size = "small",
+    expect_summaries = False,
+    target_under_test = ":testpkg_no_pkg_rel_import_test",
+)
+
+dart_analysis_test(
+    name = "testpkg_no_pkg_rel_import_analysis_test",
+    size = "small",
+    targets = [":testpkg_no_pkg_rel_import_test"],
+)
+
+dart_test(
+    name = "testpkg_rel_import_test",
+    package_name = "testpkg_fixture",
+    size = "small",
+    language_version = "3.11",
+    main = "test/testpkg_rel_test.dart",
+    tags = ["manual"],
+    deps = [":testpkg_lib"],
+)
+
+default_mode_test(
+    name = "testpkg_rel_import_mode_test",
+    size = "small",
+    expect_summaries = True,
+    target_under_test = ":testpkg_rel_import_test",
+)
+
+summaries_off_mode_test(
+    name = "testpkg_rel_import_off_mode_test",
+    size = "small",
+    expect_summaries = False,
+    target_under_test = ":testpkg_rel_import_test",
+)
+
+dart_analysis_test(
+    name = "testpkg_rel_import_analysis_test",
+    size = "small",
+    targets = [":testpkg_rel_import_test"],
 )

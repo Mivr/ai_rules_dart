@@ -28,12 +28,20 @@ import 'package:analyzer/file_system/file_system.dart' as fs;
 import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:analyzer/source/error_processor.dart';
 import 'package:analyzer/source/line_info.dart';
+import 'package:analyzer/source/source.dart';
 // ignore: implementation_imports
 import 'package:analyzer/src/analysis_options/analysis_options_parser.dart';
+// ignore: implementation_imports
+import 'package:analyzer/src/context/source.dart' show SourceFactoryImpl;
 // ignore: implementation_imports
 import 'package:analyzer/src/dart/analysis/analysis_context_collection.dart';
 // ignore: implementation_imports
 import 'package:analyzer/src/dart/analysis/driver.dart';
+// ignore: implementation_imports
+import 'package:analyzer/src/generated/source.dart' show UriResolver;
+// ignore: implementation_imports
+import 'package:analyzer/src/summary/package_bundle_reader.dart'
+    show InSummaryUriResolver;
 // ignore: implementation_imports
 import 'package:linter/src/rules.dart';
 import 'package:path/path.dart' as p;
@@ -403,6 +411,7 @@ Future<int> _summarize(
     packageConfigFile: packagesPath,
     librarySummaryPaths: summaryPaths,
   );
+  _installFileAwareSummaryResolver(collection, boundedProvider.pathContext);
   final Uint8List bytes;
   try {
     final driver = collection.contexts.single.driver;
@@ -414,6 +423,72 @@ Future<int> _summarize(
   }
   File(args.single('out')).writeAsBytesSync(bytes);
   return 0;
+}
+
+/// Replaces each context's [InSummaryUriResolver] with
+/// [_FileAwareInSummaryUriResolver] so `file:` URIs resulting from relative
+/// imports into a summarized package's `lib/` directory (such as
+/// `import '../lib/foo.dart';` from `test/` or `bin/`) resolve to the
+/// summary's `package:` library instead of looking for an unstaged file on
+/// disk.
+void _installFileAwareSummaryResolver(
+  AnalysisContextCollectionImpl collection,
+  p.Context pathContext,
+) {
+  for (final context in collection.contexts) {
+    final sourceFactory = context.driver.sourceFactory;
+    if (sourceFactory is SourceFactoryImpl) {
+      final packageUriResolver =
+          context.contextRoot.workspace.packageUriResolver;
+      final resolvers = sourceFactory.resolvers;
+      for (var i = 0; i < resolvers.length; i++) {
+        final resolver = resolvers[i];
+        if (resolver is InSummaryUriResolver) {
+          resolvers[i] = _FileAwareInSummaryUriResolver(
+            resolver,
+            packageUriResolver,
+            pathContext,
+          );
+        }
+      }
+    }
+  }
+}
+
+final class _FileAwareInSummaryUriResolver extends UriResolver {
+  _FileAwareInSummaryUriResolver(
+    this._inSummaryResolver,
+    this._packageUriResolver,
+    this._pathContext,
+  );
+
+  final InSummaryUriResolver _inSummaryResolver;
+  final UriResolver _packageUriResolver;
+  final p.Context _pathContext;
+
+  @override
+  Uri? pathToUri(String path) => _inSummaryResolver.pathToUri(path);
+
+  @override
+  Source? resolveAbsolute(Uri uri) {
+    final direct = _inSummaryResolver.resolveAbsolute(uri);
+    if (direct != null) {
+      return direct;
+    }
+    if (uri.isScheme('file')) {
+      final String filePath;
+      try {
+        filePath = _pathContext.normalize(_pathContext.fromUri(uri));
+      } on ArgumentError {
+        return null;
+      }
+      final packageUri = _packageUriResolver.pathToUri(filePath);
+      if (packageUri != null) {
+        return _inSummaryResolver.resolveAbsolute(packageUri);
+      }
+    }
+    return null;
+  }
 }
 
 /// Whether the Dart file at [path] is a `part` of a library, rather than one.
@@ -500,6 +575,7 @@ Future<int> _analyze(
     packageConfigFile: packagesPath,
     librarySummaryPaths: summaryPaths,
   );
+  _installFileAwareSummaryResolver(collection, boundedProvider.pathContext);
   try {
     final context = collection.contexts.single;
     final driver = context.driver;

@@ -283,12 +283,15 @@ def _own_sources(info, files):
     return [f for f in files if f.extension == "dart" and f.short_path.startswith(prefix)]
 
 def own_lib_sources(info, files):
-    """Returns the `.dart` files among `files` that are `info`'s package's own `lib/` files.
+    """Returns the `.dart` files among `files` that are in a package's `lib/`.
 
     Public form of `_own_sources`, for the `dart_analyze` aspect: a target whose
     own package is covered by a dependency conflicts with it only when it stages
-    `lib/` files of its own. A test or executable under `test/` or `bin/` does
-    not, and it resolves its `package:` imports from the dependency's summary.
+    `lib/` files of its own. When `info` names its own package, checks that
+    package's `lib/`; when `info` has no package of its own (an executable
+    without `package_name`), checks the in-repo packages in its closure. A test
+    or executable under `test/` or `bin/` stages none, and resolves its imports
+    from the dependency's summary.
 
     Args:
       info: The target's `DartInfo`, or the closure of an executable.
@@ -297,7 +300,20 @@ def own_lib_sources(info, files):
     Returns:
       A list of the `lib/` library files.
     """
-    return _own_sources(info, files)
+    if info.package_name:
+        return _own_sources(info, files)
+    prefixes = [
+        (pkg.lib_root + "/lib/") if pkg.lib_root else "lib/"
+        for pkg in info.transitive_packages.to_list()
+        if pkg.package_name and not pkg.lib_root.startswith("../")
+    ]
+    if not prefixes:
+        return []
+    return [
+        f
+        for f in files
+        if f.extension == "dart" and any([f.short_path.startswith(p) for p in prefixes])
+    ]
 
 def _has_own_sources(files):
     """Returns whether `files` hold Dart sources, or a directory of them (`srcs_dir`).

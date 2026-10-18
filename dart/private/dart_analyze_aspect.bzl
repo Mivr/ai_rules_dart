@@ -342,7 +342,7 @@ def _embedder_sdk_summary(ctx):
     ]).to_list()
     return summaries[0] if len(summaries) == 1 else None
 
-def _summaries_ready(ctx, info, has_own_lib):
+def _summaries_ready(ctx, info, has_own_lib, staged_files = []):
     """Whether the target can be analyzed from summaries.
 
     That is so when every package in its closure, but its own, has a summary,
@@ -356,6 +356,7 @@ def _summaries_ready(ctx, info, has_own_lib):
       ctx: The aspect context.
       info: The target's `DartInfo` closure.
       has_own_lib: Whether the target stages `lib/` files of its own package.
+      staged_files: The target's own and generated files staged in summary mode.
 
     Returns:
       True when the closure can be analyzed from summaries.
@@ -363,22 +364,37 @@ def _summaries_ready(ctx, info, has_own_lib):
     if unbacked_embedder_in_closure(info, _embedder_sdk_summary(ctx)):
         return False
     covered = {}
+    covered_names = {}
+    covered_lib_prefixes = {}
     for d in closure_attrs(ctx):
         if DartAnalyzerSummaryInfo in d:
             for key in d[DartAnalyzerSummaryInfo].packages.to_list():
+                if key.startswith(CONFLICT_PREFIX):
+                    return False
                 covered[key] = True
+                pkg_name, _, pkg_root = key.partition("|")
+                if pkg_name:
+                    covered_names[pkg_name] = True
+                if not pkg_root.startswith("../"):
+                    prefix = (pkg_root + "/lib/") if pkg_root else "lib/"
+                    covered_lib_prefixes[prefix] = True
     own = package_key(info)
 
     # A package split across targets is analyzed from source when the target
-    # stages `lib/` files of its own: a dependency's summary defines libraries
-    # those files define too (see `dart_analyzer_summary`). A test or an
-    # executable under `test/` or `bin/` stages none, and resolves `package:`
-    # imports of its own package from the dependency's summary.
-    if own in covered and has_own_lib:
+    # stages `lib/` files of a covered package: a dependency's summary defines
+    # libraries those files define or share a package with (see
+    # `dart_analyzer_summary`), and an executable without `package_name` has an
+    # empty `own` key even when its `srcs` stage `lib/` files of a dependency's
+    # package. A test or executable that stages only `test/` or `bin/` files
+    # conflicts with no summary.
+    if (own in covered or (info.package_name and info.package_name in covered_names)) and has_own_lib:
         return False
-    for key in covered.keys():
-        if key.startswith(CONFLICT_PREFIX):
-            return False
+    if covered_lib_prefixes:
+        for f in staged_files:
+            if f.extension == "dart" or f.is_directory:
+                for prefix in covered_lib_prefixes.keys():
+                    if f.short_path.startswith(prefix):
+                        return False
     for pkg in info.transitive_packages.to_list():
         key = package_key(pkg)
         if key != own and key not in covered:
@@ -666,8 +682,9 @@ def _dart_analyze_aspect_impl(target, ctx):
     if NO_ANALYZE_TAG not in tags:
         # The SDK check is the analyzing toolchain's own: the same one the
         # summary aspect and the codegen rules read.
-        has_own_lib = bool(own_lib_sources(info, own.values() + generated))
-        summary_mode = ctx.attr._summaries[BuildSettingInfo].value and analyzer_summaries_supported(sdk_version) and _summaries_ready(ctx, info, has_own_lib)
+        summary_files = own.values() + generated
+        has_own_lib = bool(own_lib_sources(info, summary_files))
+        summary_mode = ctx.attr._summaries[BuildSettingInfo].value and analyzer_summaries_supported(sdk_version) and _summaries_ready(ctx, info, has_own_lib, summary_files)
         if summary_mode:
             # Only the target's own files are staged: its dependencies come from
             # their summaries, so no closure is read and no closure edit reaches
@@ -683,7 +700,7 @@ def _dart_analyze_aspect_impl(target, ctx):
                     ctx,
                     config,
                     all_pkgs,
-                    own.values() + generated,
+                    summary_files,
                     own.values(),
                     name + ".summary",
                     sdk_version,

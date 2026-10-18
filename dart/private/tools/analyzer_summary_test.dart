@@ -876,6 +876,102 @@ void main() {
       expect(failStamp.existsSync(), isFalse);
       expect(errSink.toString(), contains('analyzer_summary: cannot analyze '));
       expect(errSink.toString(), contains('(NotPathOfUriResult)'));
+
+      // Verify a staged test/executable project without `src/lib/` on disk
+      // resolves relative `../lib/...` imports and exports against the
+      // dependency summary (`nested.sum`), and still reports `uri_does_not_exist`
+      // for a nonexistent relative `../lib/...` target.
+      final stageTestAnalyze = Directory(
+        p.join(symlinkBase.path, 'bazel-out', '_nested_test.analyze'),
+      );
+      File(p.join(stageTestAnalyze.path, '.dart_tool', 'package_config.json'))
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync(
+          jsonEncode({
+            'configVersion': 2,
+            'packages': [
+              {
+                'name': 'nested',
+                'rootUri': '../src',
+                'packageUri': 'lib/',
+                'languageVersion': '3.0',
+              },
+            ],
+          }),
+        );
+      final stagedTestFile = File(
+        p.join(stageTestAnalyze.path, 'src', 'test', 'loud_test.dart'),
+      )..parent.createSync(recursive: true);
+      stagedTestFile.writeAsStringSync('''
+import '../lib/loud/loud.dart';
+export '../lib/loud/loud.dart';
+
+int checkLoud() => loudValue();
+''');
+      final relImportStamp = File(
+        p.join(symlinkBase.path, 'nested_rel_import.analyzed'),
+      );
+      outSink.clear();
+      errSink.clear();
+      expect(
+        await runSingleRequest(
+          [
+            'analyze',
+            '--sdk',
+            sdkDir.path,
+            '--sdk-summary',
+            sdkSummary.path,
+            '--summary',
+            nestedSummary.path,
+            '--project',
+            stageTestAnalyze.path,
+            '--source',
+            stagedTestFile.path,
+            '--stamp',
+            relImportStamp.path,
+          ],
+          outSink: outSink,
+          errSink: errSink,
+          resourceProvider: PhysicalResourceProvider.INSTANCE,
+        ),
+        0,
+        reason: '${outSink.toString()}\n${errSink.toString()}',
+      );
+      expect(relImportStamp.existsSync(), isTrue);
+
+      // A relative import into `../lib/` for a file absent from the summary
+      // must still fail with `uri_does_not_exist`.
+      stagedTestFile.writeAsStringSync("import '../lib/loud/missing.dart';\n");
+      final missingRelStamp = File(
+        p.join(symlinkBase.path, 'nested_missing_rel.analyzed'),
+      );
+      outSink.clear();
+      errSink.clear();
+      expect(
+        await runSingleRequest(
+          [
+            'analyze',
+            '--sdk',
+            sdkDir.path,
+            '--sdk-summary',
+            sdkSummary.path,
+            '--summary',
+            nestedSummary.path,
+            '--project',
+            stageTestAnalyze.path,
+            '--source',
+            stagedTestFile.path,
+            '--stamp',
+            missingRelStamp.path,
+          ],
+          outSink: outSink,
+          errSink: errSink,
+          resourceProvider: PhysicalResourceProvider.INSTANCE,
+        ),
+        1,
+      );
+      expect(missingRelStamp.existsSync(), isFalse);
+      expect(outSink.toString(), contains('uri_does_not_exist'));
     });
   });
 }
