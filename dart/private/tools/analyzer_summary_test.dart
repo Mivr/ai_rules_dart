@@ -439,8 +439,8 @@ void main() {
     });
   });
 
-  group('AnalysisContextCollectionImpl disposal', () {
-    test('disposes AnalysisContextCollectionImpl across sequential summarize and analyze worker requests when contexts change', () async {
+  group('AnalysisContextCollectionImpl disposal and worker cache eviction', () {
+    test('drives several summarize and analyze requests through the same worker cache instance, exercising eviction and context disposal', () async {
       final sdkDir = File(Platform.resolvedExecutable).parent.parent;
       final sdkSummary = File(p.join(tempDir.path, 'sdk.sum'));
       final outSink = StringBuffer();
@@ -457,6 +457,7 @@ void main() {
         reason: errSink.toString(),
       );
 
+      final sdkSumBytes = sdkSummary.lengthSync();
       final disposedRoots = <List<String>>[];
       final prevHook = onContextCollectionDisposed;
       final beforeCount = disposedContextCollectionsCount;
@@ -466,110 +467,154 @@ void main() {
         ]);
       };
       try {
-        // 1. Summarize pkg_a
-        final pkgADir = Directory(p.join(tempDir.path, 'pkg_a'))
-          ..createSync(recursive: true);
-        final srcA = File(p.join(pkgADir.path, 'lib', 'a.dart'))
-          ..parent.createSync(recursive: true)
-          ..writeAsStringSync('class A {\n  final int value = 1;\n}\n');
-        final pkgConfigA = File(p.join(pkgADir.path, 'package_config.json'))
-          ..writeAsStringSync(
-            jsonEncode({
-              'configVersion': 2,
-              'packages': [
-                {
-                  'name': 'pkg_a',
-                  'rootUri': p.toUri(pkgADir.path).toString(),
-                  'packageUri': 'lib/',
-                  'languageVersion': '3.0',
-                },
+        // Summarize three packages (pkg_0, pkg_1, pkg_2), then analyze pkg_app
+        // against all three summaries through the same SummaryByteCache and
+        // SummaryCachingResourceProvider instance.
+        final pkgDirs = <Directory>[];
+        final sumFiles = <File>[];
+        for (var i = 0; i < 3; i++) {
+          final pkgDir = Directory(p.join(tempDir.path, 'pkg_$i'))
+            ..createSync(recursive: true);
+          pkgDirs.add(pkgDir);
+          final src = File(p.join(pkgDir.path, 'lib', 'p$i.dart'))
+            ..parent.createSync(recursive: true)
+            ..writeAsStringSync('class P$i {\n  final int value$i = $i;\n}\n');
+          final pkgConfig = File(p.join(pkgDir.path, 'package_config.json'))
+            ..writeAsStringSync(
+              jsonEncode({
+                'configVersion': 2,
+                'packages': [
+                  {
+                    'name': 'pkg_$i',
+                    'rootUri': p.toUri(pkgDir.path).toString(),
+                    'packageUri': 'lib/',
+                    'languageVersion': '3.0',
+                  },
+                ],
+              }),
+            );
+          final sumFile = File(p.join(tempDir.path, 'pkg_$i.sum'));
+          sumFiles.add(sumFile);
+
+          expect(
+            await runSingleRequest(
+              [
+                'summarize',
+                '--sdk',
+                sdkDir.path,
+                '--sdk-summary',
+                sdkSummary.path,
+                '--packages',
+                pkgConfig.path,
+                '--source',
+                src.path,
+                '--uri',
+                'package:pkg_$i/p$i.dart',
+                '--out',
+                sumFile.path,
               ],
-            }),
+              outSink: outSink,
+              errSink: errSink,
+              resourceProvider: PhysicalResourceProvider.INSTANCE,
+            ),
+            0,
+            reason: errSink.toString(),
           );
-        final sumA = File(p.join(tempDir.path, 'pkg_a.sum'));
+          await pumpEventQueue();
+        }
+        expect(disposedContextCollectionsCount, beforeCount + 3);
 
-        expect(
-          await runSingleRequest(
-            [
-              'summarize',
-              '--sdk',
-              sdkDir.path,
-              '--sdk-summary',
-              sdkSummary.path,
-              '--packages',
-              pkgConfigA.path,
-              '--source',
-              srcA.path,
-              '--uri',
-              'package:pkg_a/a.dart',
-              '--out',
-              sumA.path,
-            ],
-            outSink: outSink,
-            errSink: errSink,
-            resourceProvider: PhysicalResourceProvider.INSTANCE,
-          ),
-          0,
-          reason: errSink.toString(),
+        // Size the shared worker cache so it fits sdk.sum plus at most ONE
+        // package summary at a time, forcing LRU eviction as requests read
+        // pkg_0.sum, pkg_1.sum, and pkg_2.sum.
+        final maxPkgSumBytes = [for (final f in sumFiles) f.lengthSync()]
+            .reduce((a, b) => a > b ? a : b);
+        final minPkgSumBytes = [for (final f in sumFiles) f.lengthSync()]
+            .reduce((a, b) => a < b ? a : b);
+        final cacheBudget =
+            sdkSumBytes + maxPkgSumBytes + (minPkgSumBytes ~/ 2);
+        final workerCache = SummaryByteCache(maxCacheBytes: cacheBudget);
+        final workerProvider = SummaryCachingResourceProvider(
+          PhysicalResourceProvider.INSTANCE,
+          workerCache,
         );
-        expect(disposedContextCollectionsCount, beforeCount + 1);
 
-        // 2. Analyze pkg_b (different context root, linking against pkg_a.sum)
-        final pkgBDir = Directory(p.join(tempDir.path, 'pkg_b'))
-          ..createSync(recursive: true);
-        final srcB = File(p.join(pkgBDir.path, 'lib', 'b.dart'))
-          ..parent.createSync(recursive: true)
-          ..writeAsStringSync(
-            "import 'package:pkg_a/a.dart';\nint useA(A a) => a.value;\n",
-          );
-        File(p.join(pkgBDir.path, '.dart_tool', 'package_config.json'))
-          ..parent.createSync(recursive: true)
-          ..writeAsStringSync(
-            jsonEncode({
-              'configVersion': 2,
-              'packages': [
-                {
-                  'name': 'pkg_a',
-                  'rootUri': p.toUri(pkgADir.path).toString(),
-                  'packageUri': 'lib/',
-                  'languageVersion': '3.0',
-                },
-                {
-                  'name': 'pkg_b',
-                  'rootUri': p.toUri(pkgBDir.path).toString(),
-                  'packageUri': 'lib/',
-                  'languageVersion': '3.0',
-                },
+        // Drive two sequential analyze requests through the same workerProvider.
+        for (var reqIdx = 0; reqIdx < 2; reqIdx++) {
+          final appDir = Directory(p.join(tempDir.path, 'pkg_app_$reqIdx'))
+            ..createSync(recursive: true);
+          final srcApp = File(p.join(appDir.path, 'lib', 'app.dart'))
+            ..parent.createSync(recursive: true)
+            ..writeAsStringSync(
+              "import 'package:pkg_0/p0.dart';\n"
+              "import 'package:pkg_1/p1.dart';\n"
+              "import 'package:pkg_2/p2.dart';\n"
+              'int sumAll(P0 a, P1 b, P2 c) => a.value0 + b.value1 + c.value2;\n',
+            );
+          File(p.join(appDir.path, '.dart_tool', 'package_config.json'))
+            ..parent.createSync(recursive: true)
+            ..writeAsStringSync(
+              jsonEncode({
+                'configVersion': 2,
+                'packages': [
+                  for (var i = 0; i < 3; i++)
+                    {
+                      'name': 'pkg_$i',
+                      'rootUri': p.toUri(pkgDirs[i].path).toString(),
+                      'packageUri': 'lib/',
+                      'languageVersion': '3.0',
+                    },
+                  {
+                    'name': 'pkg_app_$reqIdx',
+                    'rootUri': p.toUri(appDir.path).toString(),
+                    'packageUri': 'lib/',
+                    'languageVersion': '3.0',
+                  },
+                ],
+              }),
+            );
+
+          workerCache.beginRequest({
+            sdkSummary.path: Uint8List.fromList([10]),
+            for (var i = 0; i < 3; i++)
+              sumFiles[i].path: Uint8List.fromList([20 + i]),
+          });
+          expect(
+            await runSingleRequest(
+              [
+                'analyze',
+                '--sdk',
+                sdkDir.path,
+                '--sdk-summary',
+                sdkSummary.path,
+                for (final sum in sumFiles) ...['--summary', sum.path],
+                '--project',
+                appDir.path,
+                '--source',
+                srcApp.path,
+                '--stamp',
+                p.join(tempDir.path, 'pkg_app_$reqIdx.analyzed'),
               ],
-            }),
+              outSink: outSink,
+              errSink: errSink,
+              resourceProvider: workerProvider,
+            ),
+            0,
+            reason: '${outSink.toString()}\n${errSink.toString()}',
           );
+          await pumpEventQueue();
+          expect(
+            workerCache.totalBytes,
+            lessThanOrEqualTo(cacheBudget),
+            reason: 'SummaryByteCache must stay within maxCacheBytes after eviction',
+          );
+          // 4 summaries were read (sdk.sum + 3 pkg summaries), but budget only
+          // fits at most 2 of them at once.
+          expect(workerCache.entryCount, lessThanOrEqualTo(2));
+        }
 
-        expect(
-          await runSingleRequest(
-            [
-              'analyze',
-              '--sdk',
-              sdkDir.path,
-              '--sdk-summary',
-              sdkSummary.path,
-              '--summary',
-              sumA.path,
-              '--project',
-              pkgBDir.path,
-              '--source',
-              srcB.path,
-              '--stamp',
-              p.join(tempDir.path, 'pkg_b.analyzed'),
-            ],
-            outSink: outSink,
-            errSink: errSink,
-            resourceProvider: PhysicalResourceProvider.INSTANCE,
-          ),
-          0,
-          reason: '${outSink.toString()}\n${errSink.toString()}',
-        );
-        expect(disposedContextCollectionsCount, beforeCount + 2);
-        expect(disposedRoots.length, 2);
+        expect(disposedContextCollectionsCount, beforeCount + 5);
+        expect(disposedRoots.length, 5);
       } finally {
         onContextCollectionDisposed = prevHook;
       }

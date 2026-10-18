@@ -529,22 +529,25 @@ typedef AnalysisContextBuilder =
     Future<AnalysisContextCollection> Function({
       required List<String> includedPaths,
       required String? sdkPath,
+      String? sdkSummaryPath,
       required List<String> librarySummaryPaths,
     });
 
-/// With no [librarySummaryPaths] this is the public constructor, as it always
-/// was. With any, the analyzer resolves those libraries from their summaries;
-/// the `Impl` constructor is the only one that takes them.
+/// With no [sdkSummaryPath] or [librarySummaryPaths] this is the public
+/// constructor, as it always was. With summaries, the analyzer resolves the SDK
+/// and dependency libraries from their summary bundles; the `Impl` constructor
+/// is the only one that takes them.
 Future<AnalysisContextCollection> _defaultBuildAnalysisContext({
   required List<String> includedPaths,
   required String? sdkPath,
+  String? sdkSummaryPath,
   required List<String> librarySummaryPaths,
 }) async {
   final boundedProvider = _StagingBoundedResourceProvider(
     PhysicalResourceProvider.INSTANCE,
     boundaryRoots: includedPaths,
   );
-  if (librarySummaryPaths.isEmpty) {
+  if (sdkSummaryPath == null && librarySummaryPaths.isEmpty) {
     return AnalysisContextCollection(
       resourceProvider: boundedProvider,
       includedPaths: includedPaths,
@@ -555,6 +558,7 @@ Future<AnalysisContextCollection> _defaultBuildAnalysisContext({
     resourceProvider: boundedProvider,
     includedPaths: includedPaths,
     sdkPath: sdkPath,
+    sdkSummaryPath: sdkSummaryPath,
     librarySummaryPaths: librarySummaryPaths,
   );
 }
@@ -642,14 +646,11 @@ Future<void> _runWithStaging(
   // element drift loaded via `backend.readDart(drift2Uri)` (from the
   // drift pub-cache context). Forcing one context canonicalises them.
   final contextBuilder = buildAnalysisContext ?? _defaultBuildAnalysisContext;
-  final librarySummaryPaths = [
-    if (args.sdkSummaryPath != null) args.sdkSummaryPath!,
-    ...args.summaryPaths,
-  ];
   final collection = await contextBuilder(
     includedPaths: [stagingPath],
     sdkPath: args.sdkPath != null ? p.absolute(args.sdkPath!) : null,
-    librarySummaryPaths: librarySummaryPaths,
+    sdkSummaryPath: args.sdkSummaryPath,
+    librarySummaryPaths: args.summaryPaths,
   );
 
   // CWD must contain a valid pubspec before any Builder runs; the shim

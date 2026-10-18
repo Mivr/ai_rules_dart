@@ -5,6 +5,9 @@ import 'dart:io';
 import 'package:analyzer/dart/analysis/analysis_context.dart';
 import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
 import 'package:analyzer/dart/element/element.dart';
+import 'package:analyzer/dart/sdk/build_sdk_summary.dart';
+import 'package:analyzer/file_system/physical_file_system.dart';
+import 'package:analyzer/src/dart/analysis/analysis_context_collection.dart';
 import 'package:bazel_worker/bazel_worker.dart';
 import 'package:build/build.dart';
 import 'package:package_config/package_config.dart';
@@ -798,6 +801,7 @@ void main() {
             ({
               required List<String> includedPaths,
               required String? sdkPath,
+              String? sdkSummaryPath,
               required List<String> librarySummaryPaths,
             }) async {
               // Checked here rather than after the run: the staging dir is deleted
@@ -1501,7 +1505,7 @@ void main() {
     );
 
     test(
-      'places sdkSummaryPath before summaryPaths and disposes AnalysisContextCollection when summaries are present',
+      'passes sdkSummaryPath separately from librarySummaryPaths and disposes AnalysisContextCollection',
       () async {
         final input = File(p.join(tmp.path, 'a.dart'))
           ..writeAsStringSync('class Foo {}');
@@ -1509,6 +1513,7 @@ void main() {
         final sdkSum = File(p.join(tmp.path, 'sdk.sum'))..writeAsBytesSync([]);
         final pkgSum = File(p.join(tmp.path, 'pkg.sum'))..writeAsBytesSync([]);
 
+        String? observedSdkSummary;
         List<String>? observedSummaries;
         var disposeCalled = false;
 
@@ -1534,8 +1539,10 @@ void main() {
               ({
                 required List<String> includedPaths,
                 required String? sdkPath,
+                String? sdkSummaryPath,
                 required List<String> librarySummaryPaths,
               }) async {
+                observedSdkSummary = sdkSummaryPath;
                 observedSummaries = librarySummaryPaths;
                 final inner = AnalysisContextCollection(
                   includedPaths: includedPaths,
@@ -1549,20 +1556,131 @@ void main() {
         );
 
         expect(
-          observedSummaries,
-          [
-            p.normalize(sdkSum.absolute.path),
-            p.normalize(pkgSum.absolute.path),
-          ],
+          observedSdkSummary,
+          p.normalize(sdkSum.absolute.path),
           reason:
-              'sdkSummaryPath must precede package summaryPaths so dart:core and dart:async link first',
+              'sdkSummaryPath must be forwarded so AnalysisContextCollectionImpl creates a SummaryBasedDartSdk',
         );
+        expect(observedSummaries, [p.normalize(pkgSum.absolute.path)]);
         expect(
           disposeCalled,
           isTrue,
           reason:
               'AnalysisContextCollection.dispose() must run even when librarySummaryPaths is non-empty',
         );
+      },
+    );
+
+    test(
+      'drives several codegen requests with real sdk and library summaries through the same ShimWorkerLoop instance and disposes contexts cleanly',
+      () async {
+        final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+        final sdkSummaryFile = File(p.join(tmp.path, 'sdk.sum'));
+        final sdkSummaryBytes = await buildSdkSummary(
+          resourceProvider: PhysicalResourceProvider.INSTANCE,
+          sdkPath: sdkDir.path,
+        );
+        sdkSummaryFile.writeAsBytesSync(sdkSummaryBytes);
+
+        // Build three distinct dependency package summaries (dep_0, dep_1, dep_2).
+        final depSummaryFiles = <File>[];
+        final depPackages = <Directory>[];
+        for (var i = 0; i < 3; i++) {
+          final depName = 'dep_$i';
+          final depPkg = _writeForeignPackage(
+            root: tmp,
+            name: depName,
+            libBody: 'class Base$i {\n  int get tag$i => $i;\n}\n',
+          );
+          depPackages.add(depPkg);
+          final depConfig = _writePackageConfig(
+            root: depPkg,
+            packages: [depPkg],
+          );
+          final depSrc = p.normalize(
+            p.absolute(p.join(depPkg.path, 'lib', '$depName.dart')),
+          );
+          final depCollection = AnalysisContextCollectionImpl(
+            resourceProvider: PhysicalResourceProvider.INSTANCE,
+            includedPaths: [depSrc],
+            sdkPath: sdkDir.path,
+            sdkSummaryPath: sdkSummaryFile.path,
+            packageConfigFile: depConfig,
+            librarySummaryPaths: const [],
+          );
+          try {
+            final driver = depCollection.contexts.single.driver;
+            final bundleBytes = await driver.buildPackageBundle(
+              uriList: [Uri.parse('package:$depName/$depName.dart')],
+            );
+            final sumFile = File(p.join(tmp.path, '$depName.sum'))
+              ..writeAsBytesSync(bundleBytes);
+            depSummaryFiles.add(sumFile);
+          } finally {
+            await depCollection.dispose();
+          }
+          // Delete the source file after summarizing so codegen MUST resolve
+          // `package:dep_i/dep_i.dart` from its `.sum` bundle rather than disk.
+          File(depSrc).deleteSync();
+        }
+
+        final sharedPkgConfig = _writePackageConfig(
+          root: tmp,
+          packages: depPackages,
+        );
+
+        final loop = ShimWorkerLoop(
+          factoryOrFactories: (_) => _CapturingBuilder((step) async {
+            final lib = await step.resolver.libraryFor(step.inputId);
+            final cls = lib.classes.single;
+            final superName = cls.supertype?.element.name ?? 'none';
+            await step.writeAsString(
+              step.inputId.changeExtension('.g.dart'),
+              '// class=${cls.name} extends=$superName\n',
+            );
+          }),
+        );
+
+        for (var reqIdx = 0; reqIdx < 4; reqIdx++) {
+          final depIdx = reqIdx % 3;
+          final input = File(p.join(tmp.path, 'model_$reqIdx.dart'))
+            ..writeAsStringSync(
+              "import 'package:dep_$depIdx/dep_$depIdx.dart';\n"
+              'class Model$reqIdx extends Base$depIdx {}\n',
+            );
+          final output = File(p.join(tmp.path, 'model_$reqIdx.g.dart'));
+          final resp = await loop.performRequest(
+            WorkRequest(
+              arguments: [
+                '--input',
+                input.path,
+                '--input-asset',
+                'lib/model_$reqIdx.dart',
+                '--output',
+                output.path,
+                '--package',
+                'codegen_pkg_$reqIdx',
+                '--package-config',
+                sharedPkgConfig,
+                '--root-language-version',
+                '3.11',
+                '--sdk-path',
+                sdkDir.path,
+                '--sdk-summary',
+                sdkSummaryFile.path,
+                for (final sum in depSummaryFiles) ...['--summary', sum.path],
+              ],
+            ),
+          );
+          // Pump the event queue so AnalysisDriverScheduler._run executes
+          // _maybeDispose() before the next request starts.
+          await pumpEventQueue();
+          expect(resp.exitCode, 0, reason: resp.output);
+          expect(
+            output.readAsStringSync(),
+            '// class=Model$reqIdx extends=Base$depIdx\n',
+          );
+        }
       },
     );
   });
