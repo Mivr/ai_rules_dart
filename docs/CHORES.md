@@ -11,7 +11,7 @@ file at runtime — keep file lists current as the repo evolves.
 
 **Files**:
 
-- `dart/private/versions.bzl` — add new version entry to `TOOL_VERSIONS`
+- `dart/private/versions.bzl` — add new version entry to `TOOL_VERSIONS`, `CROSS_GEN_SNAPSHOT_VERSIONS`, and `CROSS_DARTAOTRUNTIME_VERSIONS`
 - `MODULE.bazel` — `dart.toolchain(dart_version = "...")`
 - `e2e/hello_world/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
 - `e2e/library_deps/MODULE.bazel` — `dart.toolchain(dart_version = "...")`
@@ -40,8 +40,8 @@ file at runtime — keep file lists current as the repo evolves.
 
 **Procedure**:
 
-1. Run `dart run tool/fetch_sdk_hashes.dart {version}` to get SHA-256 hashes
-2. Add the new version entry to `dart/private/versions.bzl`
+1. Run `dart run tool/fetch_sdk_hashes.dart {version}` and `bazel run //dart/private/tools:update_cross_sdk_versions -- {version}` to get SHA-256 hashes
+2. Add the new version entries to `dart/private/versions.bzl`
 3. Update `dart_version` in all MODULE.bazel files listed above
 4. Update version references in `README.md`
 5. Update `dart/tests/versions_test.bzl` (asserted version key)

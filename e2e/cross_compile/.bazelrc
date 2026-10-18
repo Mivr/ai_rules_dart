@@ -4,5 +4,6 @@ test --aspects=@rules_dart//dart:analyze.bzl%dart_analyze
 test --output_groups=+dart_analyze
 test --output_groups=+dart_format
 common --@rules_dart//dart:analysis_config=//:analysis_config
+common --nosandbox_default_allow_network
 
 try-import %workspace%/.bazelrc.user

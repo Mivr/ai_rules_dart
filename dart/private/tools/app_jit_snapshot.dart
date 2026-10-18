@@ -322,6 +322,10 @@ void _runAot(List<String> argv) {
   String? recordedUses;
   String? outputPath;
   String? dillPath;
+  String? customGenSnapshot;
+  String? customDartaotruntime;
+  String? targetOs;
+  String? targetArch;
   var enableAsserts = false;
   final extraGenSnapshotOptions = <String>[];
 
@@ -337,6 +341,22 @@ void _runAot(List<String> argv) {
       mode = arg.substring('--mode='.length);
     } else if (arg.startsWith('--recorded-uses=')) {
       recordedUses = arg.substring('--recorded-uses='.length);
+    } else if (arg.startsWith('--gen-snapshot=')) {
+      customGenSnapshot = arg.substring('--gen-snapshot='.length);
+    } else if (arg == '--gen-snapshot') {
+      customGenSnapshot = argv[++i];
+    } else if (arg.startsWith('--dartaotruntime=')) {
+      customDartaotruntime = arg.substring('--dartaotruntime='.length);
+    } else if (arg == '--dartaotruntime') {
+      customDartaotruntime = argv[++i];
+    } else if (arg.startsWith('--target-os=')) {
+      targetOs = arg.substring('--target-os='.length);
+    } else if (arg == '--target-os') {
+      targetOs = argv[++i];
+    } else if (arg.startsWith('--target-arch=')) {
+      targetArch = arg.substring('--target-arch='.length);
+    } else if (arg == '--target-arch') {
+      targetArch = argv[++i];
     } else if (arg.startsWith('--extra-gen-snapshot-options=')) {
       final opts = arg.substring('--extra-gen-snapshot-options='.length);
       for (final opt in opts.split(',')) {
@@ -361,13 +381,39 @@ void _runAot(List<String> argv) {
     exit(64);
   }
 
-  final sdkBin = File(dart).parent.path;
-  final dartaotruntime = '$sdkBin/dartaotruntime';
-  final genSnapshot = '$sdkBin/utils/gen_snapshot';
+  final isCross =
+      (targetOs != null && targetOs.isNotEmpty) ||
+      (targetArch != null && targetArch.isNotEmpty);
+  if (isCross) {
+    if (customGenSnapshot == null || customGenSnapshot.isEmpty) {
+      stderr.writeln(
+        'app_jit_snapshot --aot: cross-compilation to $targetOs-$targetArch '
+        'requires --gen-snapshot',
+      );
+      exit(64);
+    }
+    if (mode == 'exe' &&
+        (customDartaotruntime == null || customDartaotruntime.isEmpty)) {
+      stderr.writeln(
+        'app_jit_snapshot --aot: cross-compiling exe to $targetOs-$targetArch '
+        'requires --dartaotruntime',
+      );
+      exit(64);
+    }
+  }
 
-  // On non-ELF hosts (e.g. macOS Mach-O executables), `dart compile exe` wraps
-  // the snapshot in a signed Mach-O segment; delegate to `dart compile` there.
-  if (mode == 'exe' && !_isElfFile(File(dartaotruntime))) {
+  final sdkBin = File(dart).parent.path;
+  final hostExeExt = dart.endsWith('.exe') ? '.exe' : '';
+  final hostDartaotruntime = '$sdkBin/dartaotruntime$hostExeExt';
+  final targetDartaotruntime = customDartaotruntime ?? hostDartaotruntime;
+  final genSnapshot =
+      customGenSnapshot ?? '$sdkBin/utils/gen_snapshot$hostExeExt';
+
+  // On non-ELF targets (e.g. native macOS Mach-O executables), `dart compile exe`
+  // wraps the snapshot in a signed Mach-O segment; delegate to `dart compile`
+  // there. Cross-compilation targets are always ELF and never delegate to
+  // `dartdev`.
+  if (!isCross && mode == 'exe' && !_isElfFile(File(targetDartaotruntime))) {
     final compileArgs = <String>[
       'compile',
       mode,
@@ -380,7 +426,23 @@ void _runAot(List<String> argv) {
       outputPath,
       dillPath,
     ];
-    final res = Process.runSync(dart, compileArgs);
+    final activeHome =
+        Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+    final ProcessResult res;
+    try {
+      res = Process.runSync(dart, compileArgs);
+    } finally {
+      if (activeHome != null && activeHome.endsWith('.home')) {
+        final dir = Directory(activeHome);
+        if (dir.existsSync()) {
+          try {
+            dir.deleteSync(recursive: true);
+          } on FileSystemException {
+            // Ignore cleanup errors.
+          }
+        }
+      }
+    }
     if (res.exitCode != 0) {
       stdout.write(res.stdout as String);
       stderr.write(res.stderr as String);
@@ -389,7 +451,11 @@ void _runAot(List<String> argv) {
     return;
   }
 
-  final tmpDir = Directory.systemTemp.createTempSync('dart_aot_');
+  final tmpDir = Directory('$outputPath.aot_tmp');
+  if (tmpDir.existsSync()) {
+    tmpDir.deleteSync(recursive: true);
+  }
+  tmpDir.createSync(recursive: true);
   try {
     var activeDill = dillPath;
     if (recordedUses != null) {
@@ -400,7 +466,7 @@ void _runAot(List<String> argv) {
           ? productPlatform
           : strongPlatform;
       final recordedDill = '${tmpDir.path}/recorded.dill';
-      final gkRes = Process.runSync(dartaotruntime, [
+      final gkRes = Process.runSync(hostDartaotruntime, [
         '$sdkBin/snapshots/gen_kernel_aot.dart.snapshot',
         '--platform=$platformDill',
         '--aot',
@@ -410,6 +476,7 @@ void _runAot(List<String> argv) {
         '-Ddart.vm.asan=false',
         '-Ddart.vm.msan=false',
         '-Ddart.vm.tsan=false',
+        if (targetOs != null && targetOs.isNotEmpty) '--target-os=$targetOs',
         if (enableAsserts) '--enable-asserts',
         '--from-dill=$dillPath',
         '--recorded-usages-file=$recordedUses',
@@ -444,13 +511,15 @@ void _runAot(List<String> argv) {
 
     if (mode == 'exe') {
       writeAppAotElfExe(
-        dartaotruntime: File(dartaotruntime),
+        dartaotruntime: File(targetDartaotruntime),
         snapshotElf: File(elfPath),
         output: File(outputPath),
       );
     }
   } finally {
-    tmpDir.deleteSync(recursive: true);
+    if (tmpDir.existsSync()) {
+      tmpDir.deleteSync(recursive: true);
+    }
   }
 }
 

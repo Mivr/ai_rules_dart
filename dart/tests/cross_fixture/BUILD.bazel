@@ -70,6 +70,21 @@ riscv64_flags_test(
     target_under_test = ":app_with_asserts",
 )
 
+dart_binary(
+    name = "app_aot",
+    compile_mode = "aot-snapshot",
+    main = "main.dart",
+    tags = ["manual"],
+)
+
+riscv64_flags_test(
+    name = "riscv64_aot_flags_test",
+    size = "small",
+    expected_target_arch = "riscv64",
+    expected_target_os = "linux",
+    target_under_test = ":app_aot",
+)
+
 # A `dynamic_loading_system` asset names a library already present on the target
 # and takes no `shared_library`, so nothing here needs a cc toolchain for
 # riscv64/armv7 — which is what lets these tests reach `target_dart_abi`

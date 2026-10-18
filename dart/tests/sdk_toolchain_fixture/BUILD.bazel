@@ -1,11 +1,13 @@
 """Synthetic Dart SDK layout under `dart-sdk/` for `declare_dart_sdk_toolchains` tests."""
 
 load("//dart:repositories.bzl", "declare_dart_sdk_toolchains")
+load("//dart:toolchain.bzl", "dart_toolchain")
 load(
     "//dart/tests:toolchains_test.bzl",
     "sdk_toolchain_macro_alias_test",
     "sdk_toolchain_macro_cross_test",
     "sdk_toolchain_macro_native_test",
+    "sdk_toolchain_unsupported_cross_target_test",
 )
 
 declare_dart_sdk_toolchains(
@@ -34,4 +36,21 @@ sdk_toolchain_macro_alias_test(
     name = "sdk_toolchain_macro_alias_test",
     size = "small",
     target_under_test = ":sdk_root",
+)
+
+dart_toolchain(
+    name = "dart_toolchain_unsupported_cross_fixture",
+    dart = "dart-sdk/bin/dart",
+    sdk_root = ":dart_sdk_files",
+    tags = ["manual"],
+    target_arch = "arm64",
+    target_os = "macos",
+    version = "3.11.0",
+)
+
+sdk_toolchain_unsupported_cross_target_test(
+    name = "sdk_toolchain_unsupported_cross_target_test",
+    size = "small",
+    expected_error = "Unsupported cross-compilation target (macos, arm64)",
+    target_under_test = ":dart_toolchain_unsupported_cross_fixture",
 )

@@ -13,7 +13,9 @@ load(
     "kernel_sdk_mismatch_error",
     "relative_path",
     "resolve_package_roots",
+    "writable_home_env",
 )
+load("//dart/private:dart_compile.bzl", "cross_target_error")
 load(":small_suite.bzl", "small_unittest_suite")
 
 # --- generate_package_config_content tests (prefix-based) ---
@@ -553,6 +555,44 @@ def _kernel_sdk_mismatch_different_version_reports_error_test_impl(ctx):
     asserts.true(env, "3.13.5" in err)
     return unittest.end(env)
 
+def _writable_home_env_posix_test_impl(ctx):
+    env = unittest.begin(ctx)
+    dart = struct(basename = "dart")
+    out_a = struct(path = "bazel-out/k8-fastbuild/bin/pkg/app_a", dirname = "bazel-out/k8-fastbuild/bin/pkg")
+    out_b = struct(path = "bazel-out/k8-fastbuild/bin/pkg/app_b", dirname = "bazel-out/k8-fastbuild/bin/pkg")
+    env_a = writable_home_env(dart, out_a)
+    env_b = writable_home_env(dart, out_b)
+    asserts.equals(env, {"HOME": "bazel-out/k8-fastbuild/bin/pkg/app_a.home"}, env_a)
+    asserts.equals(env, {"HOME": "bazel-out/k8-fastbuild/bin/pkg/app_b.home"}, env_b)
+    asserts.false(env, env_a["HOME"] == env_b["HOME"], "sibling actions must not share HOME")
+    asserts.false(env, env_a["HOME"] == "/tmp", "HOME must not be /tmp")
+    asserts.false(env, env_a["HOME"] == out_a.dirname, "HOME must not be the shared package dirname")
+    return unittest.end(env)
+
+def _writable_home_env_windows_test_impl(ctx):
+    env = unittest.begin(ctx)
+    dart = struct(basename = "dart.exe")
+    out = struct(path = "bazel-out/x64_windows-fastbuild/bin/pkg/app.exe", dirname = "bazel-out/x64_windows-fastbuild/bin/pkg")
+    home_env = writable_home_env(dart, out)
+    expected = "bazel-out/x64_windows-fastbuild/bin/pkg/app.exe.home"
+    asserts.equals(env, {"LOCALAPPDATA": expected, "USERPROFILE": expected}, home_env)
+    return unittest.end(env)
+
+def _cross_target_error_test_impl(ctx):
+    env = unittest.begin(ctx)
+    asserts.equals(env, None, cross_target_error("", ""))
+    asserts.equals(env, None, cross_target_error("linux", "x64"))
+    asserts.equals(env, None, cross_target_error("linux", "arm64"))
+    asserts.equals(env, None, cross_target_error("linux", "riscv64"))
+    asserts.equals(env, None, cross_target_error("linux", "arm"))
+
+    partial_err = cross_target_error("linux", "")
+    asserts.true(env, partial_err != None and "both be set or both be empty" in partial_err)
+
+    unsupported_err = cross_target_error("macos", "arm64")
+    asserts.true(env, unsupported_err != None and "unsupported cross-compilation target (macos, arm64)" in unsupported_err)
+    return unittest.end(env)
+
 _t0_test = unittest.make(_empty_packages_test_impl)
 _t1_test = unittest.make(_single_package_test_impl)
 _t2_test = unittest.make(_multiple_packages_test_impl)
@@ -590,6 +630,9 @@ _t36_test = unittest.make(_resolve_nested_package_wins_test_impl)
 _t37_test = unittest.make(_kernel_sdk_mismatch_matching_version_ok_test_impl)
 _t38_test = unittest.make(_kernel_sdk_mismatch_exe_mode_ignores_version_test_impl)
 _t39_test = unittest.make(_kernel_sdk_mismatch_different_version_reports_error_test_impl)
+_t40_test = unittest.make(_writable_home_env_posix_test_impl)
+_t41_test = unittest.make(_writable_home_env_windows_test_impl)
+_t42_test = unittest.make(_cross_target_error_test_impl)
 
 def common_test_suite(name):
     small_unittest_suite(
@@ -631,4 +674,7 @@ def common_test_suite(name):
         _t37_test,
         _t38_test,
         _t39_test,
+        _t40_test,
+        _t41_test,
+        _t42_test,
     )

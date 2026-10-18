@@ -322,6 +322,35 @@ def _kernel_action(
         env = writable_home_env(dart_sdk_info.dart, output),
     )
 
+_SUPPORTED_CROSS_TARGET_PAIRS = {
+    ("linux", "x64"): True,
+    ("linux", "arm64"): True,
+    ("linux", "riscv64"): True,
+    ("linux", "arm"): True,
+}
+
+def cross_target_error(target_os, target_arch):
+    """Returns an error string if `(target_os, target_arch)` is an invalid cross-compile target.
+
+    Args:
+        target_os: Target OS string (or `""` for native).
+        target_arch: Target architecture string (or `""` for native).
+
+    Returns:
+        An error message string, or `None` when native or a supported cross target.
+    """
+    if bool(target_os) != bool(target_arch):
+        return "dart_compile_action: target_os and target_arch must both be set or both be empty (got target_os=%r, target_arch=%r)" % (
+            target_os,
+            target_arch,
+        )
+    if target_os and (target_os, target_arch) not in _SUPPORTED_CROSS_TARGET_PAIRS:
+        return "dart_compile_action: unsupported cross-compilation target (%s, %s); supported targets are linux/{x64,arm64,riscv64,arm}" % (
+            target_os,
+            target_arch,
+        )
+    return None
+
 def dart_compile_action(
         ctx,
         dart_sdk_info,
@@ -378,6 +407,9 @@ def dart_compile_action(
         native_assets_yaml: Optional `native_assets.yaml` File.
         embed_sources: Whether non-AOT kernels embed source text.
     """
+    cross_err = cross_target_error(target_os, target_arch)
+    if cross_err != None:
+        fail(cross_err)
     stage_err = defines_stage_error(defines, package_config)
     if stage_err != None:
         fail(stage_err)
@@ -475,7 +507,11 @@ def dart_compile_action(
         )
         return
 
-    if compile_mode in ("exe", "aot-snapshot") and jit_tool != None and compile_main_path == None and not target_os and not target_arch and not dart_bin.basename.endswith(".exe"):
+    is_cross = bool(target_os) or bool(target_arch)
+    cross_gen_snapshot = getattr(dart_sdk_info, "cross_gen_snapshot", None) if is_cross else None
+    cross_dartaotruntime = getattr(dart_sdk_info, "cross_dartaotruntime", None) if is_cross else None
+
+    if compile_mode in ("exe", "aot-snapshot") and jit_tool != None and compile_main_path == None and (is_cross or not dart_bin.basename.endswith(".exe")):
         pkg_cfg = package_config
         if pkg_cfg == None:
             pkg_cfg = ctx.actions.declare_file(output.basename + ".aot_package_config.json")
@@ -486,6 +522,14 @@ def dart_compile_action(
         args.add("--aot")
         args.add(dart_bin, format = "--dart=%s")
         args.add(compile_mode, format = "--mode=%s")
+        if target_os:
+            args.add("--target-os", target_os)
+        if target_arch:
+            args.add("--target-arch", target_arch)
+        if cross_gen_snapshot != None:
+            args.add(cross_gen_snapshot, format = "--gen-snapshot=%s")
+        if cross_dartaotruntime != None:
+            args.add(cross_dartaotruntime, format = "--dartaotruntime=%s")
         args.add_all(compile_quiet_flags(compile_mode))
         args.add_all(mode_flags)
         if enable_asserts and "--enable-asserts" not in mode_flags and "--enable-asserts" not in backend_flags:
@@ -497,11 +541,16 @@ def dart_compile_action(
         args.add_all(backend_flags)
         args.add("-o", output)
         args.add(compile_main)
+        direct_inputs = [jit_tool, pkg_cfg, compile_main] + compile_srcs
+        if cross_gen_snapshot != None:
+            direct_inputs.append(cross_gen_snapshot)
+        if cross_dartaotruntime != None:
+            direct_inputs.append(cross_dartaotruntime)
         ctx.actions.run(
             executable = dart_bin,
             arguments = [args],
             inputs = depset(
-                direct = [jit_tool, pkg_cfg, compile_main] + compile_srcs,
+                direct = direct_inputs,
                 transitive = [sdk_files],
             ),
             outputs = outputs,
@@ -540,11 +589,17 @@ def dart_compile_action(
 
     env = writable_home_env(dart_bin, output)
 
+    direct_inputs = [compile_main] + compile_srcs
+    if cross_gen_snapshot != None and compile_mode in ("exe", "aot-snapshot"):
+        direct_inputs.append(cross_gen_snapshot)
+    if cross_dartaotruntime != None and compile_mode in ("exe", "aot-snapshot"):
+        direct_inputs.append(cross_dartaotruntime)
+
     ctx.actions.run(
         executable = dart_bin,
         arguments = [args],
         inputs = depset(
-            direct = [compile_main] + compile_srcs,
+            direct = direct_inputs,
             transitive = [sdk_files],
         ),
         outputs = outputs,

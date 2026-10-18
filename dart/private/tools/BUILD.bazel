@@ -277,3 +277,23 @@ dart_test(
     main = "web_compile_runner_test.dart",
     deps = ["@ext_pub_deps//:test"],
 )
+
+dart_binary(
+    name = "update_cross_sdk_versions",
+    code_assets_from_deps = False,
+    compile_mode = "exe",
+    main = "update_cross_sdk_versions.dart",
+    visibility = ["//visibility:public"],
+    deps = ["@ext_pub_deps//:crypto"],
+)
+
+dart_test(
+    name = "update_cross_sdk_versions_test",
+    size = "small",
+    srcs = ["update_cross_sdk_versions.dart"],
+    main = "update_cross_sdk_versions_test.dart",
+    deps = [
+        "@ext_pub_deps//:crypto",
+        "@ext_pub_deps//:test",
+    ],
+)
