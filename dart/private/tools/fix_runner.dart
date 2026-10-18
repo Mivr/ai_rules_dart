@@ -59,6 +59,12 @@ void main(List<String> args) {
   final writeBack = _readEligible(eligible);
   final allowedSrcPaths = pruneOrphanedStagedFiles(project);
 
+  final scratchDir = Directory(scratch);
+  if (scratchDir.existsSync()) {
+    for (final child in scratchDir.listSync(followLinks: false)) {
+      child.deleteSync(recursive: true);
+    }
+  }
   _copyTree(
     project,
     scratch,
@@ -78,7 +84,13 @@ void main(List<String> args) {
   }
 
   // Declared outputs must exist even when nothing was fixed.
-  Directory(fixes).createSync(recursive: true);
+  final fixesDir = Directory(fixes);
+  if (fixesDir.existsSync()) {
+    for (final child in fixesDir.listSync(followLinks: false)) {
+      child.deleteSync(recursive: true);
+    }
+  }
+  fixesDir.createSync(recursive: true);
 
   final fixed = <Map<String, String>>[];
   writeBack.forEach((staged, workspace) {
@@ -100,18 +112,26 @@ void main(List<String> args) {
 }
 
 /// Removes any orphaned symlinks or unlisted files under `<project>/src/` when
-/// `.dart_tool/src_manifest.txt` is present, and returns the set of allowed
+/// `.dart_tool/src_manifest.txt` is present, and under sibling `<name>.extpkgs/`
+/// when `.dart_tool/extpkgs_manifest.txt` is present. Returns the set of allowed
 /// `src/<rel>` paths relative to [project] (or `null` when no manifest is
 /// present). Never prunes without a manifest.
 Set<String>? pruneOrphanedStagedFiles(String project) {
+  _pruneExtpkgs(project);
+
   final srcDir = Directory('$project/src');
   if (!srcDir.existsSync()) return null;
   final manifestFile = File('$project/.dart_tool/src_manifest.txt');
   if (!manifestFile.existsSync()) return null;
 
-  final allowed = <String>{
+  final lines = [
     for (final line in manifestFile.readAsLinesSync())
-      if (line.trim().isNotEmpty) 'src/${_relative('', line.trim())}',
+      if (line.trim().isNotEmpty) line.trim(),
+  ];
+  if (lines.contains('*')) return null;
+
+  final allowed = <String>{
+    for (final line in lines) 'src/${_relative('', line)}',
   };
   for (final entity in srcDir.listSync(recursive: true, followLinks: false)) {
     if (entity is Directory) continue;
@@ -125,6 +145,46 @@ Set<String>? pruneOrphanedStagedFiles(String project) {
     }
   }
   return allowed;
+}
+
+void _pruneExtpkgs(String project) {
+  var normProject = project;
+  while (normProject.length > 1 &&
+      (normProject.endsWith('/') || normProject.endsWith(r'\'))) {
+    normProject = normProject.substring(0, normProject.length - 1);
+  }
+  if (!normProject.endsWith('.proj')) return;
+  final extDir = Directory(
+    '${normProject.substring(0, normProject.length - '.proj'.length)}.extpkgs',
+  );
+  if (!extDir.existsSync()) return;
+  final extManifest = File('$normProject/.dart_tool/extpkgs_manifest.txt');
+  if (!extManifest.existsSync()) return;
+
+  final allowedFiles = <String>{};
+  final allowedDirPrefixes = <String>[];
+  for (final raw in extManifest.readAsLinesSync()) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) continue;
+    if (trimmed.endsWith('/')) {
+      allowedDirPrefixes.add(_relative('', trimmed));
+    } else {
+      allowedFiles.add(_relative('', trimmed));
+    }
+  }
+  final rootPath = extDir.path;
+  for (final entity in extDir.listSync(recursive: true, followLinks: false)) {
+    if (entity is Directory) continue;
+    final rel = _relative(rootPath, entity.path);
+    final inAllowedDir = allowedDirPrefixes.any(rel.startsWith);
+    if (!inAllowedDir && !allowedFiles.contains(rel)) {
+      try {
+        entity.deleteSync();
+      } on FileSystemException {
+        // Ignore if read-only or already removed.
+      }
+    }
+  }
 }
 
 /// Reads the rule's `<staged-relative>\t<workspace-relative>` write-back list.

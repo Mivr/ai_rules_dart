@@ -52,6 +52,7 @@ def _dart_web_compile(ctx, compile_mode):
     """
     toolchain = ctx.toolchains["//dart:toolchain_type"]
     dart_sdk_info = toolchain.dart_sdk_info
+    copy_tc = ctx.toolchains[COPY_TO_DIRECTORY_TOOLCHAINS[0]]
 
     own = executable_package(ctx, [ctx.file.main] + ctx.files.srcs)
     packages = own.packages
@@ -81,6 +82,9 @@ def _dart_web_compile(ctx, compile_mode):
     outputs = [output] + output_groups.values()
 
     args = ctx.actions.args()
+    args.add(ctx.executable._web_compile_tool.path)
+    args.add("--dart=" + dart_sdk_info.dart.path)
+    args.add("--project=" + staged.proj_path)
     args.add("compile")
     args.add(compile_mode)
     args.add_all(_get_web_compilation_mode_flags(ctx, compile_mode))
@@ -105,11 +109,15 @@ def _dart_web_compile(ctx, compile_mode):
     env = writable_home_env(dart_sdk_info.dart, output)
 
     ctx.actions.run(
-        executable = dart_sdk_info.dart,
+        executable = copy_tc.dart,
         arguments = [args],
         inputs = depset(
-            direct = staged.inputs,
-            transitive = [dart_sdk_info.tool_files],
+            direct = [ctx.executable._web_compile_tool, dart_sdk_info.dart] + staged.inputs,
+            transitive = [dart_sdk_info.tool_files, copy_tc.runtime_files],
+        ),
+        tools = depset(
+            direct = [ctx.executable._web_compile_tool, copy_tc.dart, dart_sdk_info.dart],
+            transitive = [copy_tc.runtime_files],
         ),
         outputs = outputs,
         mnemonic = "DartCompileWeb",
@@ -152,6 +160,11 @@ _WEB_BINARY_ATTRS = {
     ),
     "defines": attr.string_list(
         doc = "Dart environment declarations (`key=value`). Each entry becomes a `-Dkey=value` flag.",
+    ),
+    "_web_compile_tool": attr.label(
+        default = "//dart/private/tools:web_compile_runner",
+        executable = True,
+        cfg = "exec",
     ),
 } | EXTRA_DART_DEFINES_ATTR | EXECUTABLE_PACKAGE_ATTRS
 

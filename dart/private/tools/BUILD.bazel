@@ -260,3 +260,20 @@ dart_test(
         "@ext_pub_deps//:test",
     ],
 )
+
+dart_binary(
+    name = "web_compile_runner",
+    compile_mode = "kernel",
+    main = "web_compile_runner.dart",
+    modular_kernel = False,
+    visibility = ["//visibility:public"],
+)
+
+dart_test(
+    name = "web_compile_runner_test",
+    size = "small",
+    srcs = ["web_compile_runner.dart"],
+    data = ["//dart"],
+    main = "web_compile_runner_test.dart",
+    deps = ["@ext_pub_deps//:test"],
+)

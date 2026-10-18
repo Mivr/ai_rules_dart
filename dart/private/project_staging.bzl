@@ -583,6 +583,13 @@ def stage_dart_project(
             replace_prefixes = replace_prefixes,
         )
         inputs = [src_tree]
+        if not copy_external:
+            src_manifest = ctx.actions.declare_file(name + ".proj/.dart_tool/src_manifest.txt")
+            ctx.actions.write(
+                output = src_manifest,
+                content = "*\n",
+            )
+            inputs.append(src_manifest)
 
     ext_staged = {pkg_name: True for pkg_name in ext_files_by_pkg}
     ext_roots = {}
@@ -595,6 +602,7 @@ def stage_dart_project(
                 continue
             ext_staged[pkg.package_name] = True
 
+    ext_manifest_entries = []
     for pkg_name, files in ext_files_by_pkg.items():
         mangled = mangle_package_dir(pkg_name)
         if copy_external or any([getattr(f, "is_directory", False) for f in files]):
@@ -606,6 +614,7 @@ def stage_dart_project(
                 include_external_repositories = ["*"],
             )
             inputs.append(tree)
+            ext_manifest_entries.append(mangled + "/")
         else:
             ext_occupied = {}
             for f in files:
@@ -614,10 +623,20 @@ def stage_dart_project(
                 if workspace_path in ext_occupied:
                     continue
                 ext_occupied[workspace_path] = True
-                link = ctx.actions.declare_file("{}.extpkgs/{}/{}".format(name, mangled, workspace_path))
+                rel = "{}/{}".format(mangled, workspace_path)
+                ext_manifest_entries.append(rel)
+                link = ctx.actions.declare_file("{}.extpkgs/{}".format(name, rel))
                 ctx.actions.symlink(output = link, target_file = f)
                 inputs.append(link)
             inputs.extend(files)
+
+    if not copy_external:
+        extpkgs_manifest = ctx.actions.declare_file(name + ".proj/.dart_tool/extpkgs_manifest.txt")
+        ctx.actions.write(
+            output = extpkgs_manifest,
+            content = "".join([p + "\n" for p in sorted(ext_manifest_entries)]),
+        )
+        inputs.append(extpkgs_manifest)
 
     ctx.actions.write(
         output = package_config,

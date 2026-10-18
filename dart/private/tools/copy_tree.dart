@@ -179,11 +179,23 @@ List<PlannedCopy> planCopies(Request request) {
       );
     }
     planned[out] = file;
-    final dir = _dir(out);
+    copies.add(PlannedCopy(file.path, out));
+  }
+  final dstDir = Directory(request.dst);
+  if (dstDir.existsSync()) {
+    for (final child in dstDir.listSync(followLinks: false)) {
+      try {
+        child.deleteSync(recursive: true);
+      } on FileSystemException {
+        // Ignore if read-only or already removed.
+      }
+    }
+  }
+  for (final copy in copies) {
+    final dir = _dir(copy.dst);
     if (madeDirs.add(dir)) {
       Directory(dir).createSync(recursive: true);
     }
-    copies.add(PlannedCopy(file.path, out));
   }
   return copies;
 }

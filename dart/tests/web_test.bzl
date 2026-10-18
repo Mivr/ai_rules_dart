@@ -56,6 +56,28 @@ def _web_compile_is_hermetic_test_impl(ctx):
         argv[-1].startswith("org-dartlang-root:///"),
         "web compile entrypoint must use org-dartlang-root scheme, got: %s" % argv[-1],
     )
+    asserts.true(
+        env,
+        any([a.endswith("web_compile_runner.dill") for a in argv]),
+        "web compile must run through web_compile_runner.dill: %s" % argv,
+    )
+    asserts.true(
+        env,
+        any([a.startswith("--project=") and a.endswith(".proj") for a in argv]),
+        "web compile must pass --project=<name>.proj: %s" % argv,
+    )
+
+    input_basenames = {f.basename: True for f in compile_action.inputs.to_list()}
+    asserts.true(
+        env,
+        "src_manifest.txt" in input_basenames,
+        "web compile inputs must include src_manifest.txt: %s" % input_basenames.keys(),
+    )
+    asserts.true(
+        env,
+        "extpkgs_manifest.txt" in input_basenames,
+        "web compile inputs must include extpkgs_manifest.txt: %s" % input_basenames.keys(),
+    )
 
     config_content = None
     for action in analysistest.target_actions(env):

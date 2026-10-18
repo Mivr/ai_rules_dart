@@ -125,6 +125,7 @@ void main(List<String> args) {
   final sdkSummaryPath = r.rlocation(args[2]);
   final analyzeRunnerDill = r.rlocation(args[3]);
   final fixRunnerDill = r.rlocation(args[4]);
+  final webCompileRunnerDill = r.rlocation(args[5]);
   final sdkRoot = File(Platform.resolvedExecutable).parent.parent.path;
 
   late Directory tmp;
@@ -1095,6 +1096,93 @@ void main(List<String> args) {
     expect(
       workerTRes.output,
       contains("Target of URI doesn't exist: 'package:P/src/hidden.dart'"),
+    );
+  });
+
+  test('web_compile_runner prunes orphaned symlinks in <name>.proj/src and <name>.extpkgs across incremental local builds', () {
+    expect(webCompileRunnerDill, endsWith('.dill'));
+    expect(File(webCompileRunnerDill).existsSync(), isTrue);
+
+    final realDir = Directory('${tmp.path}/web_real')
+      ..createSync(recursive: true);
+    final realMain = File('${realDir.path}/main.dart')
+      ..writeAsStringSync(
+        "import 'package:web_pkg/helper.dart';\n"
+        "import 'package:ext_dep/ext.dart';\n"
+        "void main() => print('\$msg \$extNum');\n",
+      );
+    final realHelper = File('${realDir.path}/helper.dart')
+      ..writeAsStringSync("const String msg = 'ok';\n");
+    final realExt = File('${realDir.path}/ext.dart')
+      ..writeAsStringSync("const int extNum = 7;\n");
+
+    final projDir = Directory('${tmp.path}/web_app.proj');
+    final extDir = Directory('${tmp.path}/web_app.extpkgs');
+    Directory('${projDir.path}/src/web_pkg/lib').createSync(recursive: true);
+    Directory('${projDir.path}/.dart_tool').createSync(recursive: true);
+    Directory('${extDir.path}/ext_dep/lib').createSync(recursive: true);
+
+    File('${projDir.path}/src/web_pkg/pubspec.yaml')
+        .writeAsStringSync('name: web_pkg\nenvironment:\n  sdk: ^3.7.0\n');
+    Link('${projDir.path}/src/web_pkg/main.dart').createSync(realMain.path);
+    Link('${projDir.path}/src/web_pkg/lib/helper.dart')
+        .createSync(realHelper.path);
+    Link('${extDir.path}/ext_dep/lib/ext.dart').createSync(realExt.path);
+
+    File('${projDir.path}/.dart_tool/package_config.json').writeAsStringSync(
+      jsonEncode({
+        'configVersion': 2,
+        'packages': [
+          {
+            'name': 'web_pkg',
+            'rootUri': '../src/web_pkg',
+            'packageUri': 'lib/',
+            'languageVersion': '3.7',
+          },
+          {
+            'name': 'ext_dep',
+            'rootUri': '../../web_app.extpkgs/ext_dep',
+            'packageUri': 'lib/',
+            'languageVersion': '3.7',
+          },
+        ],
+      }),
+    );
+
+    // Remove helper.dart from src_manifest.txt while leaving its symlink in
+    // web_app.proj/src/web_pkg/lib/helper.dart (simulating --spawn_strategy=local).
+    File('${projDir.path}/.dart_tool/src_manifest.txt')
+        .writeAsStringSync('web_pkg/pubspec.yaml\nweb_pkg/main.dart\n');
+    File('${projDir.path}/.dart_tool/extpkgs_manifest.txt')
+        .writeAsStringSync('ext_dep/lib/ext.dart\n');
+
+    final outJs = File('${tmp.path}/web_app.js');
+    final res = Process.runSync(
+      Platform.resolvedExecutable,
+      [
+        webCompileRunnerDill,
+        '--dart=${Platform.resolvedExecutable}',
+        '--project=web_app.proj',
+        'compile',
+        'js',
+        '--multi-root-scheme=org-dartlang-root',
+        '--multi-root=.',
+        '--packages=org-dartlang-root:///web_app.proj/.dart_tool/package_config.json',
+        '-o',
+        outJs.path,
+        'org-dartlang-root:///web_app.proj/src/web_pkg/main.dart',
+      ],
+      workingDirectory: tmp.path,
+      environment: {'HOME': tmp.path, 'USERPROFILE': tmp.path},
+    );
+    expect(res.exitCode, isNonZero);
+    expect(outJs.existsSync(), isFalse);
+    expect(
+      FileSystemEntity.typeSync(
+        '${projDir.path}/src/web_pkg/lib/helper.dart',
+        followLinks: false,
+      ),
+      FileSystemEntityType.notFound,
     );
   });
 }

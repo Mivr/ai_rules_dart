@@ -214,6 +214,7 @@ dart_test(
         "$(rlocationpath //dart/private:analyzer_sdk_summary)",
         "$(rlocationpath //dart/private/tools:analyze_runner)",
         "$(rlocationpath //dart/private/tools:fix_runner)",
+        "$(rlocationpath //dart/private/tools:web_compile_runner)",
     ],
     data = [
         "//dart/private:analyzer_sdk_summary",
@@ -221,6 +222,7 @@ dart_test(
         "//dart/private/tools:analyzer_summary",
         "//dart/private/tools:fix_runner",
         "//dart/private/tools:format_runner",
+        "//dart/private/tools:web_compile_runner",
     ],
     main = "worker_hardening_test.dart",
     deps = [

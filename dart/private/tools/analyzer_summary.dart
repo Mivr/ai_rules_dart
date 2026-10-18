@@ -547,23 +547,68 @@ void _pruneUnlistedUnder(String dirPath, Set<String> allowedPaths) {
 
 /// Removes any orphaned symlinks or unlisted files under `<project>/src/` left
 /// behind in the shared execroot by previous incremental builds when
-/// `.dart_tool/src_manifest.txt` is present, and returns the set of normalized
-/// absolute paths allowed under `<project>/src/` (or `null` when no manifest is
-/// present). Never prunes without a manifest.
+/// `.dart_tool/src_manifest.txt` is present, and under sibling `<name>.extpkgs/`
+/// when `.dart_tool/extpkgs_manifest.txt` is present. Returns the set of
+/// normalized absolute paths allowed under `<project>/src/` (or `null` when no
+/// manifest is present). Never prunes without a manifest.
 Set<String>? _pruneOrphanedStagedFiles(String project) {
+  _pruneExtpkgs(project);
+
   final srcDir = Directory(p.join(project, 'src'));
   if (!srcDir.existsSync()) return null;
 
   final manifestFile = File(p.join(project, '.dart_tool', 'src_manifest.txt'));
   if (!manifestFile.existsSync()) return null;
 
-  final allowedPaths = <String>{
+  final lines = [
     for (final line in manifestFile.readAsLinesSync())
-      if (line.trim().isNotEmpty)
-        p.normalize(p.absolute(p.join(srcDir.path, line.trim()))),
+      if (line.trim().isNotEmpty) line.trim(),
+  ];
+  if (lines.contains('*')) return null;
+
+  final allowedPaths = <String>{
+    for (final line in lines)
+      p.normalize(p.absolute(p.join(srcDir.path, line))),
   };
   _pruneUnlistedUnder(srcDir.path, allowedPaths);
   return allowedPaths;
+}
+
+void _pruneExtpkgs(String project) {
+  final normProject = p.normalize(p.absolute(project));
+  if (!normProject.endsWith('.proj')) return;
+  final extDir = Directory(
+    '${normProject.substring(0, normProject.length - '.proj'.length)}.extpkgs',
+  );
+  if (!extDir.existsSync()) return;
+  final extManifest = File(
+    p.join(normProject, '.dart_tool', 'extpkgs_manifest.txt'),
+  );
+  if (!extManifest.existsSync()) return;
+
+  final allowedFiles = <String>{};
+  final allowedDirs = <String>[];
+  for (final raw in extManifest.readAsLinesSync()) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) continue;
+    if (trimmed.endsWith('/')) {
+      allowedDirs.add(p.normalize(p.absolute(p.join(extDir.path, trimmed))));
+    } else {
+      allowedFiles.add(p.normalize(p.absolute(p.join(extDir.path, trimmed))));
+    }
+  }
+  for (final entity in extDir.listSync(recursive: true, followLinks: false)) {
+    if (entity is Directory) continue;
+    final normPath = p.normalize(entity.absolute.path);
+    final inAllowedDir = allowedDirs.any((dir) => p.isWithin(dir, normPath));
+    if (!inAllowedDir && !allowedFiles.contains(normPath)) {
+      try {
+        entity.deleteSync();
+      } on FileSystemException {
+        // Ignore if read-only or already removed.
+      }
+    }
+  }
 }
 
 /// Every Dart file and options file under the project that the analyzer
