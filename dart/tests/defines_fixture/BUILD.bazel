@@ -1,5 +1,12 @@
 load("//dart:defs.bzl", "dart_binary", "dart_code_asset", "dart_library", "dart_test")
-load("//dart/tests:defines_test.bzl", "staged_defines_test", "with_extra_dart_defines")
+load(
+    "//dart/tests:defines_test.bzl",
+    "both_stages_asserts_test",
+    "dbg_both_stages_asserts_test",
+    "staged_defines_test",
+    "with_dbg_compilation_mode",
+    "with_extra_dart_defines",
+)
 
 # Two `dart_binary` targets differing only in whether they carry a code asset,
 # which adds a mapping to the kernel step. Both declare `defines`, and one a
@@ -111,6 +118,125 @@ dart_test(
     data = [":modular_comma_defines_dill"],
     env = {"DILL_PATH": "$(rlocationpath :modular_comma_defines_dill)"},
     main = "run_dill_test.dart",
+    visibility = ["//dart/tests:__pkg__"],
+    deps = ["//dart/runfiles"],
+)
+
+# `--enable-asserts` must reach both `DartKernel` and `DartCompile` in `exe`
+# and `aot-snapshot` modes, with and without `record_use = True`, and under
+# `--compilation_mode=dbg`.
+
+dart_binary(
+    name = "exe_with_asserts",
+    compile_mode = "exe",
+    dart_compile_flags = ["--enable-asserts"],
+    main = "assert_enabled_main.dart",
+)
+
+both_stages_asserts_test(
+    name = "exe_asserts_both_stages_test",
+    size = "small",
+    target_under_test = ":exe_with_asserts",
+)
+
+dbg_both_stages_asserts_test(
+    name = "exe_asserts_dbg_no_duplicate_test",
+    size = "small",
+    target_under_test = ":exe_with_asserts",
+)
+
+dart_binary(
+    name = "aot_with_asserts",
+    compile_mode = "aot-snapshot",
+    dart_compile_flags = ["--enable-asserts"],
+    main = "assert_enabled_main.dart",
+    tags = ["manual"],
+)
+
+both_stages_asserts_test(
+    name = "aot_asserts_both_stages_test",
+    size = "small",
+    target_under_test = ":aot_with_asserts",
+)
+
+dart_binary(
+    name = "exe_record_use_with_asserts",
+    compile_mode = "exe",
+    dart_compile_flags = ["--enable-asserts"],
+    main = "assert_enabled_main.dart",
+    record_use = True,
+    tags = ["manual"],
+)
+
+both_stages_asserts_test(
+    name = "exe_record_use_asserts_both_stages_test",
+    size = "small",
+    target_under_test = ":exe_record_use_with_asserts",
+)
+
+dart_binary(
+    name = "aot_record_use_with_asserts",
+    compile_mode = "aot-snapshot",
+    dart_compile_flags = ["--enable-asserts"],
+    main = "assert_enabled_main.dart",
+    record_use = True,
+    tags = ["manual"],
+)
+
+dart_binary(
+    name = "exe_record_use_plain",
+    compile_mode = "exe",
+    main = "assert_enabled_main.dart",
+    record_use = True,
+    tags = ["manual"],
+)
+
+dbg_both_stages_asserts_test(
+    name = "exe_record_use_dbg_both_stages_test",
+    size = "small",
+    target_under_test = ":exe_record_use_plain",
+)
+
+with_dbg_compilation_mode(
+    name = "exe_record_use_dbg",
+    tags = ["manual"],
+    target = ":exe_record_use_plain",
+)
+
+dart_binary(
+    name = "aot_record_use_plain",
+    compile_mode = "aot-snapshot",
+    main = "assert_enabled_main.dart",
+    record_use = True,
+    tags = ["manual"],
+)
+
+with_dbg_compilation_mode(
+    name = "aot_record_use_dbg",
+    tags = ["manual"],
+    target = ":aot_record_use_plain",
+)
+
+dart_test(
+    name = "aot_asserts_test",
+    size = "small",
+    data = [
+        ":aot_record_use_dbg",
+        ":aot_record_use_with_asserts",
+        ":aot_with_asserts",
+        ":exe_record_use_dbg",
+        ":exe_record_use_with_asserts",
+        ":exe_with_asserts",
+    ],
+    env = {
+        "AOT_ASSERTS_PATH": "$(rlocationpath :aot_with_asserts)",
+        "AOT_RECORD_USE_ASSERTS_PATH": "$(rlocationpath :aot_record_use_with_asserts)",
+        "AOT_RECORD_USE_DBG_PATH": "$(rlocationpath :aot_record_use_dbg)",
+        "EXE_ASSERTS_PATH": "$(rlocationpath :exe_with_asserts)",
+        "EXE_RECORD_USE_ASSERTS_PATH": "$(rlocationpath :exe_record_use_with_asserts)",
+        "EXE_RECORD_USE_DBG_PATH": "$(rlocationpath :exe_record_use_dbg)",
+    },
+    main = "aot_asserts_test.dart",
     visibility = ["//dart/tests:__pkg__"],
     deps = ["//dart/runfiles"],
 )

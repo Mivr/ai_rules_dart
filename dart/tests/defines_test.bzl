@@ -59,6 +59,75 @@ staged_defines_test = analysistest.make(
     attrs = {"expected_flags": attr.string_list()},
 )
 
+def _both_stages_asserts_test_impl(ctx):
+    # Unlike `-D` defines (front-end only), `--enable-asserts` must reach both
+    # `gen_kernel` (so TFA retains AssertStatement nodes) and `DartCompile` (so
+    # `gen_snapshot` and any `--recorded-uses` kernel pass emit assertion code).
+    env = analysistest.begin(ctx)
+    kernel = _argv_for(env, _KERNEL)
+    dart_compile = _argv_for(env, _DART_COMPILE)
+    if kernel == None or dart_compile == None:
+        asserts.true(
+            env,
+            False,
+            "expected both a %s and a %s action, saw %s" %
+            (_KERNEL, _DART_COMPILE, _mnemonics(env)),
+        )
+        return analysistest.end(env)
+    asserts.equals(
+        env,
+        1,
+        len([a for a in kernel if a == "--enable-asserts"]),
+        "expected --enable-asserts once on DartKernel: %s" % kernel,
+    )
+    asserts.equals(
+        env,
+        1,
+        len([a for a in dart_compile if a == "--enable-asserts"]),
+        "expected --enable-asserts once on DartCompile: %s" % dart_compile,
+    )
+    return analysistest.end(env)
+
+both_stages_asserts_test = analysistest.make(_both_stages_asserts_test_impl)
+
+dbg_both_stages_asserts_test = analysistest.make(
+    _both_stages_asserts_test_impl,
+    config_settings = {
+        "//command_line_option:compilation_mode": "dbg",
+    },
+)
+
+def _dbg_compilation_mode_transition_impl(settings, attr):
+    _ = settings, attr
+    return {"//command_line_option:compilation_mode": "dbg"}
+
+_dbg_compilation_mode_transition = transition(
+    implementation = _dbg_compilation_mode_transition_impl,
+    inputs = [],
+    outputs = ["//command_line_option:compilation_mode"],
+)
+
+def _with_dbg_compilation_mode_impl(ctx):
+    target = ctx.attr.target[0]
+    src = target[DefaultInfo].files.to_list()[0]
+    ext = ("." + src.extension) if src.extension else ""
+    out = ctx.actions.declare_file(ctx.label.name + ext)
+    ctx.actions.symlink(output = out, target_file = src, is_executable = True)
+    return [DefaultInfo(files = depset([out]))]
+
+with_dbg_compilation_mode = rule(
+    implementation = _with_dbg_compilation_mode_impl,
+    attrs = {
+        "target": attr.label(
+            mandatory = True,
+            cfg = _dbg_compilation_mode_transition,
+        ),
+        "_allowlist_function_transition": attr.label(
+            default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
+        ),
+    },
+)
+
 def _extra_dart_defines_transition_impl(settings, attr):
     _ = settings
     return {"//dart:extra_dart_defines": attr.extra_dart_defines}

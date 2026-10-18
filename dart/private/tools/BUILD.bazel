@@ -215,6 +215,7 @@ dart_test(
     name = "app_jit_snapshot_test",
     size = "small",
     srcs = ["app_jit_snapshot.dart"],
+    data = ["//dart"],
     main = "app_jit_snapshot_test.dart",
     deps = ["@ext_pub_deps//:test"],
 )

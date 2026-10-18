@@ -49,6 +49,12 @@ def _cross_flags_test_impl(ctx):
         _flag_value(argv, "--target-arch"),
         "--target-arch",
     )
+    for flag in ctx.attr.expected_flags:
+        asserts.true(
+            env,
+            flag in argv,
+            "%s missing from %s argv: %s" % (flag, _DART_COMPILE, argv),
+        )
     return analysistest.end(env)
 
 # `analysistest.make` hands `config_settings` to a skylib-defined rule, which
@@ -64,6 +70,7 @@ def _make_cross_flags_test(platform_name):
         attrs = {
             "expected_target_os": attr.string(),
             "expected_target_arch": attr.string(),
+            "expected_flags": attr.string_list(),
         },
         config_settings = {
             "//command_line_option:platforms": [_platform_label(platform_name)],

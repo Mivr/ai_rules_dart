@@ -399,6 +399,13 @@ def dart_compile_action(
         front_end_flags = split.front_end
         backend_flags = split.backend
 
+    mode_flags = get_compilation_mode_flags(ctx, compile_mode)
+    enable_asserts = (
+        "--enable-asserts" in mode_flags or
+        "--enable-asserts" in front_end_flags or
+        "--enable-asserts" in backend_flags
+    )
+
     compile_main = main
     compile_main_path = main_path
     compile_srcs = srcs
@@ -440,7 +447,7 @@ def dart_compile_action(
             main_path = main_path,
             aot = aot,
             target_os = target_os,
-            enable_asserts = aot and ctx.var["COMPILATION_MODE"] == "dbg",
+            enable_asserts = "--enable-asserts" in mode_flags and "--enable-asserts" not in front_end_flags,
             defines = defines,
             recorded_uses = None,
             extra_flags = front_end_flags,
@@ -453,8 +460,6 @@ def dart_compile_action(
         compile_main_path = None
         compile_srcs = []
 
-    mode_flags = get_compilation_mode_flags(ctx, compile_mode)
-
     # The app-JIT snapshot is trained by the fixed-scratch tool when it has one,
     # and on a POSIX host, which has the fixed-length `/tmp` the tool needs.
     if compile_mode == "jit-snapshot" and jit_tool != None and compile_main_path == None and not dart_bin.basename.endswith(".exe"):
@@ -466,7 +471,7 @@ def dart_compile_action(
             jit_tool = jit_tool,
             main = compile_main,
             output = output,
-            enable_asserts = "--enable-asserts" in mode_flags or "--enable-asserts" in front_end_flags,
+            enable_asserts = enable_asserts,
         )
         return
 
@@ -483,6 +488,8 @@ def dart_compile_action(
         args.add(compile_mode, format = "--mode=%s")
         args.add_all(compile_quiet_flags(compile_mode))
         args.add_all(mode_flags)
+        if enable_asserts and "--enable-asserts" not in mode_flags and "--enable-asserts" not in backend_flags:
+            args.add("--enable-asserts")
         outputs = [output]
         if compile_recorded_uses != None:
             args.add(compile_recorded_uses, format = "--recorded-uses=%s")
@@ -517,6 +524,8 @@ def dart_compile_action(
 
     # Compilation mode defaults
     args.add_all(mode_flags)
+    if enable_asserts and "--enable-asserts" not in mode_flags and "--enable-asserts" not in backend_flags:
+        args.add("--enable-asserts")
 
     outputs = [output]
     if compile_recorded_uses != None:
