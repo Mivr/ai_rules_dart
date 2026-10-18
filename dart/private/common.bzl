@@ -563,21 +563,25 @@ def sdk_dartvm(dart_sdk_info):
     return None
 
 def writable_home_env(dart, beside):
-    """The environment an SDK build action needs to have a writable home.
+    """The environment an SDK build action needs to have a private writable home.
 
-    Windows `dart.exe` takes a POSIX `/tmp` literally and crashes, so it is
-    pointed at a directory that exists on the platform running it instead.
+    The `dart` CLI and analysis server write state under the user's home
+    directory (`.dart-tool`, `.dart`, `.dartServer`). Pointing actions at a
+    shared `/tmp` on POSIX or `beside.dirname` on Windows shares that state
+    across concurrent actions. Naming `<beside.path>.home` inside `bazel-out`
+    gives each action its own directory beside its declared output on every OS.
 
     Args:
       dart: The SDK's `dart` File, whose basename identifies the platform.
-      beside: A File whose directory serves as the Windows home.
+      beside: An output File of the action.
 
     Returns:
       A dict for `ctx.actions.run(env = ...)`.
     """
+    home = beside.path + ".home"
     if dart.basename.endswith(".exe"):
-        return {"USERPROFILE": beside.dirname, "LOCALAPPDATA": beside.dirname}
-    return {"HOME": "/tmp"}
+        return {"USERPROFILE": home, "LOCALAPPDATA": home}
+    return {"HOME": home}
 
 def relative_path(from_dir, to_dir):
     """Compute the relative path from one directory to another.

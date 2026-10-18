@@ -543,37 +543,48 @@ int _runSubprocessFallback({
   required StringSink outSink,
   required StringSink errSink,
 }) {
-  final homeDir = File(stamp).parent.path;
+  final homeDir = '$stamp.home';
   final env = dart.endsWith('.exe')
       ? <String, String>{'USERPROFILE': homeDir, 'LOCALAPPDATA': homeDir}
-      : <String, String>{'HOME': Platform.environment['HOME'] ?? '/tmp'};
+      : <String, String>{'HOME': homeDir};
   var failed = false;
-  for (final chunk in _chunks(files)) {
-    final result = Process.runSync(
-      dart,
-      [
-        'format',
-        '--output=none',
-        '--set-exit-if-changed',
-        '--language-version=$languageVersion',
-        ...chunk,
-      ],
-      environment: env,
-      stdoutEncoding: systemEncoding,
-      stderrEncoding: systemEncoding,
-    );
-    errSink.write(_unstage(result.stderr as String, project));
-    if (result.exitCode != 0) {
-      outSink.write(_unstage(result.stdout as String, project));
-      failed = true;
-    }
-    if (_warned(result.stderr as String)) {
-      errSink.writeln(
-        'format_runner: `dart format` warned while reading analysis options, '
-        'so the check would have run at stock defaults rather than the '
-        'configured ones. Fix the options file named above.',
+  try {
+    for (final chunk in _chunks(files)) {
+      final result = Process.runSync(
+        dart,
+        [
+          'format',
+          '--output=none',
+          '--set-exit-if-changed',
+          '--language-version=$languageVersion',
+          ...chunk,
+        ],
+        environment: env,
+        stdoutEncoding: systemEncoding,
+        stderrEncoding: systemEncoding,
       );
-      failed = true;
+      errSink.write(_unstage(result.stderr as String, project));
+      if (result.exitCode != 0) {
+        outSink.write(_unstage(result.stdout as String, project));
+        failed = true;
+      }
+      if (_warned(result.stderr as String)) {
+        errSink.writeln(
+          'format_runner: `dart format` warned while reading analysis options, '
+          'so the check would have run at stock defaults rather than the '
+          'configured ones. Fix the options file named above.',
+        );
+        failed = true;
+      }
+    }
+  } finally {
+    final dir = Directory(homeDir);
+    if (dir.existsSync()) {
+      try {
+        dir.deleteSync(recursive: true);
+      } on FileSystemException {
+        // Ignore cleanup errors.
+      }
     }
   }
   if (failed) return 1;

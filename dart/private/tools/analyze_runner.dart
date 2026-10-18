@@ -56,11 +56,32 @@ void main(List<String> args) {
     exit(1);
   }
 
-  final result = Process.runSync(dart, [
-    'analyze',
-    if (fatalInfos) '--fatal-infos',
-    project,
-  ]);
+  final activeHome =
+      Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+  void cleanHome() {
+    if (activeHome != null && activeHome.endsWith('.home')) {
+      final dir = Directory(activeHome);
+      if (dir.existsSync()) {
+        try {
+          dir.deleteSync(recursive: true);
+        } on FileSystemException {
+          // Ignore cleanup errors.
+        }
+      }
+    }
+  }
+
+  cleanHome();
+  final ProcessResult result;
+  try {
+    result = Process.runSync(dart, [
+      'analyze',
+      if (fatalInfos) '--fatal-infos',
+      project,
+    ]);
+  } finally {
+    cleanHome();
+  }
   // Bazel echoes any action output, so a clean run stays silent rather than
   // printing the analyzer's "No issues found!" on every build.
   stderr.write(unstage(result.stderr as String, project));

@@ -73,7 +73,28 @@ void main(List<String> args) {
   );
   repointPackageConfig(project, scratch);
 
-  final result = Process.runSync(dart, ['fix', '--apply', scratch]);
+  final activeHome =
+      Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+  void cleanHome() {
+    if (activeHome != null && activeHome.endsWith('.home')) {
+      final dir = Directory(activeHome);
+      if (dir.existsSync()) {
+        try {
+          dir.deleteSync(recursive: true);
+        } on FileSystemException {
+          // Ignore cleanup errors.
+        }
+      }
+    }
+  }
+
+  cleanHome();
+  final ProcessResult result;
+  try {
+    result = Process.runSync(dart, ['fix', '--apply', scratch]);
+  } finally {
+    cleanHome();
+  }
   // Bazel echoes any action output, and this action runs whenever fixes are
   // asked for: its progress chatter is printed only when it fails. What it
   // changed is in the manifest.
