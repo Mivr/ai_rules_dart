@@ -13,6 +13,7 @@ load("//dart:providers.bzl", "DartKernelInfo")
 load(
     "//dart:utils.bzl",
     "STABLE_SCHEME",
+    "dart_kernel_module_aspect",
     "duplicated_source",
     "entry_source_uri",
     "entry_sources",
@@ -946,6 +947,30 @@ def _cross_pkg_cycle_inputs_test_impl(ctx):
 
 _cross_pkg_cycle_inputs_test = analysistest.make(_cross_pkg_cycle_inputs_test_impl)
 
+def _part_sources_inputs_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
+    info = target[DartKernelInfo]
+    asserts.true(env, info.modular, "part_lib builds a modular kernel")
+    asserts.true(env, info.kmod != None, "part_lib declares a .kmod directory")
+    cross_short_paths = [f.short_path for f in info.cross_pkg_srcs.to_list()]
+    asserts.true(
+        env,
+        "dart/tests/part_sources_fixture/same_pkg/lib/parent.dart" in cross_short_paths,
+        "parent.dart from dependency target in the same package is in part_lib's cross_pkg_srcs",
+    )
+    asserts.true(
+        env,
+        "dart/tests/part_sources_fixture/same_pkg/lib/uri_part.dart" in cross_short_paths,
+        "uri_part.dart is in part_lib's cross_pkg_srcs",
+    )
+    return analysistest.end(env)
+
+_part_sources_inputs_test = analysistest.make(
+    _part_sources_inputs_test_impl,
+    extra_target_under_test_aspects = [dart_kernel_module_aspect],
+)
+
 _root_path_test = unittest.make(_root_path_test_impl)
 _multi_root_uri_test = unittest.make(_multi_root_uri_test_impl)
 _multi_root_uri_custom_scheme_test = unittest.make(_multi_root_uri_custom_scheme_test_impl)
@@ -1077,6 +1102,11 @@ def kernel_test_suite(name):
         target_under_test = "//dart/tests/cross_pkg_cycle_fixture:app_modular",
         size = "small",
     )
+    _part_sources_inputs_test(
+        name = name + "_part_sources_inputs_test",
+        target_under_test = "//dart/tests/part_sources_fixture/same_pkg:part_lib",
+        size = "small",
+    )
     small_unittest_suite(
         name + "_unit",
         _root_path_test,
@@ -1107,9 +1137,11 @@ def kernel_test_suite(name):
             ":" + name + "_user_kernel_link_modular_test",
             ":" + name + "_unseeded_base_kmods_intersection_test",
             ":" + name + "_cross_pkg_cycle_inputs_test",
+            ":" + name + "_part_sources_inputs_test",
             "//dart/tests/cross_pkg_cycle_fixture:cross_pkg_cycle_test",
             "//dart/tests/legacy_mixin_fixture:legacy_mixin_test",
             "//dart/tests/defines_fixture:test_defines_test",
             "//dart/tests/defines_fixture:modular_comma_defines_test",
+            "//dart/tests/part_sources_fixture:part_sources_test",
         ],
     )

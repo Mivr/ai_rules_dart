@@ -9,8 +9,9 @@
 //    (`dart:html`, `dart:js_interop`, ...) is excluded.
 //  * A file that imports or exports a `package:` URI whose package is not in the
 //    module's package config is excluded, since the module cannot resolve it.
-//  * A file with a `part` directive whose part is not one of the module's own
-//    sources is excluded, since the library cannot compile without its part.
+//  * A file with a `part` directive whose part is not one of the module's
+//    inputs, or a `part of` file whose library is not one of the module's
+//    inputs, is excluded, since a library and its parts cannot compile apart.
 //  * A file that imports or exports an excluded file is excluded. A `part` shares
 //    its library's verdict.
 //  * A conditional import takes its first `dart.library.X` alternative for a VM
@@ -452,7 +453,28 @@ Future<int> compileModule(
     keys[uri] = key;
     plan.addOwn(key, uri);
   }
-  await _planImports(plan, keys, inherited, graph, roots, files, vm, log);
+  await _adoptDeclaredPartPeers(
+    own,
+    keys,
+    plan,
+    inherited,
+    graph,
+    roots,
+    files,
+    vm,
+    multiRootPrefix,
+  );
+  await _planImports(
+    plan,
+    keys,
+    inherited,
+    graph,
+    roots,
+    files,
+    vm,
+    log,
+    multiRootPrefix,
+  );
 
   var remaining = [
     for (final uri in own)
@@ -467,9 +489,29 @@ Future<int> compileModule(
     ModuleOutcome? failure;
     var failedUris = const <String>[];
     for (final scc in sccs) {
+      final extraMultiRoots = <String>[];
+      final seenStagedRoots = <String>{};
+      final stagedInputs = <Uint8List>[];
+      for (final key in scc.keys) {
+        if (!files.isDeclaredInRoots(key)) {
+          final stagedRoot = stagedSources[key];
+          if (stagedRoot != null) {
+            if (seenStagedRoots.add(stagedRoot)) {
+              extraMultiRoots.add(stagedRoot);
+            }
+            if (inputs.isNotEmpty) {
+              final stagedPath = '$stagedRoot/$key';
+              stagedInputs.add(
+                _encodeInput(stagedPath, await _digestOf(stagedPath)),
+              );
+            }
+          }
+        }
+      }
       final dillPath = '$output/${scc.dill}';
       final outcome = await compiler.run([
         ...base,
+        for (final root in extraMultiRoots) ...[_multiRootFlag, root],
         for (final d in neededDills(scc.imports, local)) ...[
           '--input-summary',
           d,
@@ -477,7 +519,7 @@ Future<int> compileModule(
         for (final uri in scc.uris) ...['--source', uri],
         '--output',
         dillPath,
-      ], inputs);
+      ], stagedInputs.isEmpty ? inputs : [...inputs, ...stagedInputs]);
       if (outcome.exitCode != 0) {
         failure = outcome;
         failedUris = scc.uris;
@@ -774,7 +816,8 @@ class _Plan {
 
   /// Records that `importer` imports or exports `imported`, an own source.
   void addImporter({required String imported, required String importer}) {
-    (_importers[imported] ??= []).add(importer);
+    final list = _importers[imported] ??= [];
+    if (!list.contains(importer)) list.add(importer);
   }
 
   /// Records that `importer` imports or exports `target`, whether or not it is own.
@@ -810,10 +853,149 @@ class _Plan {
   }
 }
 
+/// Adopts declared non-graph peer files (`--input-source` or staged `.koutline`
+/// sources) that complete a `part` / `part of` library unit with this module's
+/// own or inherited excluded sources.
+Future<void> _adoptDeclaredPartPeers(
+  List<String> own,
+  Map<String, String> keys,
+  _Plan plan,
+  Map<String, String> inherited,
+  Map<String, _Node> graph,
+  Map<String, _PackageRoot> roots,
+  _Files files,
+  Set<String> vm,
+  String multiRootPrefix,
+) async {
+  var hasPartDirective = false;
+  for (final key in <String>{...keys.values, ...inherited.keys}) {
+    final text = await files.read(key);
+    final scan = text == null ? null : scanDirectives(text, vm);
+    if (scan == null) continue;
+    if (scan.partOfLibrary != null ||
+        scan.refs.any((r) => r.isPart || r.isPartOf)) {
+      hasPartDirective = true;
+      break;
+    }
+  }
+  if (!hasPartDirective) return;
+
+  final candidates = <String>{
+    ...keys.values,
+    for (final key in files.declaredKeys)
+      if (!graph.containsKey(key)) key,
+  };
+  final scans = <String, ScanResult>{};
+  final libraryByName = <String, String>{};
+  for (final key in candidates) {
+    final text = await files.read(key);
+    final scan = text == null ? null : scanDirectives(text, vm);
+    if (scan == null) continue;
+    scans[key] = scan;
+    if (scan.libraryName != null) {
+      libraryByName.putIfAbsent(scan.libraryName!, () => key);
+    }
+  }
+
+  final partsOf = <String, List<String?>>{};
+  final hasPartOf = <String>{};
+  final parentOf = <String, String?>{};
+  scans.forEach((key, scan) {
+    if (scan.partOfLibrary != null) {
+      hasPartOf.add(key);
+      parentOf[key] = libraryByName[scan.partOfLibrary!];
+    }
+    for (final ref in scan.refs) {
+      if (ref.uri.startsWith('dart:')) continue;
+      final target = _resolveUri(ref.uri, key, roots, multiRootPrefix);
+      if (ref.isPart) {
+        (partsOf[key] ??= []).add(target);
+      } else if (ref.isPartOf) {
+        hasPartOf.add(key);
+        parentOf[key] = target;
+      }
+    }
+  });
+
+  final resolvedPartsOf = <String, Set<String>>{
+    for (final entry in partsOf.entries)
+      entry.key: {for (final target in entry.value) ?target},
+  };
+  final sortedRoots = scans.keys.toList()..sort();
+  for (final root in sortedRoots) {
+    if (hasPartOf.contains(root)) continue;
+    final directParts = partsOf[root];
+    if (directParts == null || directParts.isEmpty) continue;
+    final unit = <String>[root];
+    final seen = <String>{root};
+    final queue = Queue<String>()..add(root);
+    var complete = true;
+    while (queue.isNotEmpty && complete) {
+      final current = queue.removeFirst();
+      for (final partKey in partsOf[current] ?? const <String?>[]) {
+        if (partKey == null ||
+            !scans.containsKey(partKey) ||
+            !hasPartOf.contains(partKey)) {
+          complete = false;
+          break;
+        }
+        final parent = parentOf[partKey];
+        if (parent == null ||
+            !seen.contains(parent) ||
+            !_reachesViaPart(parent, partKey, resolvedPartsOf)) {
+          complete = false;
+          break;
+        }
+        if (seen.add(partKey)) {
+          unit.add(partKey);
+          queue.add(partKey);
+        }
+      }
+    }
+    if (!complete ||
+        !unit.any((m) => plan.isOwn(m) || inherited.containsKey(m))) {
+      continue;
+    }
+    for (final member in unit) {
+      if (plan.isOwn(member)) continue;
+      final uri = _packageUriOf(
+        member,
+        inherited[member] ?? '$multiRootPrefix$member',
+        roots,
+      );
+      own.add(uri);
+      keys[uri] = member;
+      plan.addOwn(member, uri);
+      inherited.remove(member);
+    }
+  }
+}
+
+/// Whether `parent` reaches `partKey` through one or more `part` directives in
+/// `declaredPartsOf`.
+bool _reachesViaPart(
+  String parent,
+  String partKey,
+  Map<String, Set<String>> declaredPartsOf,
+) {
+  final visited = <String>{parent};
+  final queue = Queue<String>()..add(parent);
+  while (queue.isNotEmpty) {
+    final current = queue.removeFirst();
+    final parts = declaredPartsOf[current];
+    if (parts == null) continue;
+    if (parts.contains(partKey)) return true;
+    for (final next in parts) {
+      if (visited.add(next)) queue.add(next);
+    }
+  }
+  return false;
+}
+
 /// Records each own source's imports in `plan`, and excludes the sources a VM
 /// cannot compile: those that import a `dart:` library the VM lacks, a `package:` that
-/// the module's config does not name, a part that is not an own source, or a file that
-/// `inherited` lists as excluded.
+/// the module's config does not name, a part or parent library that is not an own
+/// source, or a file that `inherited` lists as excluded.
 Future<void> _planImports(
   _Plan plan,
   Map<String, String> keys,
@@ -822,9 +1004,13 @@ Future<void> _planImports(
   Map<String, _PackageRoot> roots,
   _Files files,
   Set<String> vm,
-  StringBuffer log,
-) async {
+  StringBuffer log, [
+  String multiRootPrefix = _defaultMultiRootPrefix,
+]) async {
   final direct = <String, String>{};
+  final scans = <String, ScanResult>{};
+  final libraryKeyByName = <String, String>{};
+  final declaredPartsOf = <String, Set<String>>{};
   for (final key in keys.values) {
     final text = await files.read(key);
     final scan = text == null ? null : scanDirectives(text, vm);
@@ -834,6 +1020,38 @@ Future<void> _planImports(
       log.writeln('kernel_module: could not read the directives of $key.');
       continue;
     }
+    scans[key] = scan;
+    if (scan.libraryName != null) {
+      libraryKeyByName.putIfAbsent(scan.libraryName!, () => key);
+    }
+    for (final ref in scan.refs) {
+      if (!ref.isPart || ref.uri.startsWith('dart:')) continue;
+      final target = _resolveUri(ref.uri, key, roots, multiRootPrefix);
+      if (target != null) {
+        (declaredPartsOf[key] ??= {}).add(target);
+      }
+    }
+  }
+  for (final entry in scans.entries) {
+    final key = entry.key;
+    final scan = entry.value;
+    if (scan.partOfLibrary != null) {
+      final libName = scan.partOfLibrary!;
+      final parent = libraryKeyByName[libName];
+      if (parent == null ||
+          !plan.isOwn(parent) ||
+          !_reachesViaPart(parent, key, declaredPartsOf)) {
+        direct.putIfAbsent(
+          key,
+          () => 'its library $libName is not an input of this module',
+        );
+      } else {
+        plan.addImport(importer: key, target: parent);
+        plan.addImporter(imported: parent, importer: key);
+        plan.addImporter(imported: key, importer: parent);
+        plan.addImport(importer: parent, target: key);
+      }
+    }
     for (final ref in scan.refs) {
       if (ref.uri.startsWith('dart:')) {
         if (!vm.contains(ref.uri.substring('dart:'.length))) {
@@ -841,16 +1059,36 @@ Future<void> _planImports(
         }
         continue;
       }
-      final target = _resolveUri(ref.uri, key, roots);
+      final target = _resolveUri(ref.uri, key, roots, multiRootPrefix);
       if (target == null) {
         // A `package:` the module's config does not name. Other schemes are not Dart
         // sources this module can read, and resolve to null without a rule of their own.
-        if (ref.uri.startsWith('package:')) {
+        if (ref.isPartOf) {
+          direct.putIfAbsent(
+            key,
+            () => 'its library ${ref.uri} is not an input of this module',
+          );
+        } else if (ref.uri.startsWith('package:')) {
           direct.putIfAbsent(
             key,
             () => '${ref.uri} names a package this module does not have',
           );
         }
+        continue;
+      }
+      if (ref.isPartOf) {
+        if (!plan.isOwn(target) ||
+            !_reachesViaPart(target, key, declaredPartsOf)) {
+          direct.putIfAbsent(
+            key,
+            () => 'its library ${ref.uri} is not an input of this module',
+          );
+          continue;
+        }
+        plan.addImport(importer: key, target: target);
+        plan.addImporter(imported: target, importer: key);
+        plan.addImporter(imported: key, importer: target);
+        plan.addImport(importer: target, target: key);
         continue;
       }
       plan.addImport(importer: key, target: target);
@@ -937,6 +1175,25 @@ Future<_EntrySources> _entrySources(
   final queue = Queue<String>();
   final edges = <_EntryEdge>[];
   final undeclared = <String>[];
+  Map<String, String>? declaredLibraryByName;
+  Future<String?> findLibraryByName(String name) async {
+    if (declaredLibraryByName == null) {
+      final map = <String, String>{};
+      for (final candidate in <String>{
+        ...closure.keys,
+        ...files.declaredKeys,
+      }) {
+        final text = await files.read(candidate);
+        final scan = text == null ? null : scanDirectives(text, vm);
+        if (scan?.libraryName != null) {
+          map.putIfAbsent(scan!.libraryName!, () => candidate);
+        }
+      }
+      declaredLibraryByName = map;
+    }
+    return declaredLibraryByName![name];
+  }
+
   for (final uri in sources) {
     final key = _keyOfUri(uri, roots, multiRootPrefix);
     if (key == null) {
@@ -959,6 +1216,24 @@ Future<_EntrySources> _entrySources(
     }
     final scan = scanDirectives(text, vm);
     if (scan == null) continue;
+    if (scan.partOfLibrary != null) {
+      final target = await findLibraryByName(scan.partOfLibrary!);
+      if (target == null) {
+        undeclared.add(
+          '${ownUris[key] ?? key} (part of ${scan.partOfLibrary!})',
+        );
+      } else {
+        final uri =
+            closure[target] ??
+            _packageUriOf(target, '$multiRootPrefix$target', roots);
+        edges.add(_EntryEdge(key, uri, target));
+        imports.add(target);
+        if (seen.add(target)) {
+          ownUris.putIfAbsent(target, () => uri);
+          queue.add(target);
+        }
+      }
+    }
     for (final ref in scan.refs) {
       if (ref.uri.startsWith('dart:')) continue;
       final target = _resolveUri(ref.uri, key, roots, multiRootPrefix);
@@ -967,7 +1242,10 @@ Future<_EntrySources> _entrySources(
       imports.add(target);
       if (!seen.add(target)) continue;
       final uri =
-          closure[target] ?? (ref.isPart ? '$multiRootPrefix$target' : null);
+          closure[target] ??
+          ((ref.isPart || ref.isPartOf)
+              ? _packageUriOf(target, '$multiRootPrefix$target', roots)
+              : null);
       if (uri == null) continue;
       ownUris.putIfAbsent(target, () => uri);
       queue.add(target);
@@ -1252,6 +1530,13 @@ class _Files {
   bool isDeclared(String key) =>
       isDeclaredInRoots(key) || _stagedRoots.containsKey(key);
 
+  /// All keys declared as inputs of this action.
+  Set<String> get declaredKeys => {
+    for (final key in _declaredKeys)
+      if (isDeclaredInRoots(key)) key,
+    ..._stagedRoots.keys,
+  };
+
   /// The text of the file with `key`, or null when it is not a declared input
   /// or no root has it.
   Future<String?> read(String key) async {
@@ -1358,20 +1643,29 @@ Set<String> vmLibraries(
 class ScanRef {
   const ScanRef(this.kind, this.uri);
 
-  /// `import`, `export` or `part`.
+  /// `import`, `export`, `part` or `part of`.
   final String kind;
 
   /// The URI. A configurable import gives the alternative it takes for the VM.
   final String uri;
 
   bool get isPart => kind == 'part';
+
+  bool get isPartOf => kind == 'part of';
 }
 
-/// The URI-bearing directives of a source's prologue.
+/// The directives of a source's prologue.
 class ScanResult {
-  const ScanResult(this.refs);
+  const ScanResult(this.refs, {this.libraryName, this.partOfLibrary});
 
   final List<ScanRef> refs;
+
+  /// The name from `library <name>;`, when declared.
+  final String? libraryName;
+
+  /// The library name from `part of <name>;`, when a part names its library by
+  /// identifier rather than URI.
+  final String? partOfLibrary;
 }
 
 /// The directives in the prologue of a Dart source, or null when the prologue has a
@@ -1565,6 +1859,22 @@ class _Prologue {
     if (_take().kind != _identKind) throw const _Unparsable();
   }
 
+  /// A dotted identifier such as `foo` or `foo.bar.baz`.
+  String _dottedIdent() {
+    final first = _take();
+    if (first.kind != _identKind) throw const _Unparsable();
+    final out = StringBuffer(first.text);
+    while (_punct('.')) {
+      _lexer.take();
+      final next = _take();
+      if (next.kind != _identKind) throw const _Unparsable();
+      out
+        ..write('.')
+        ..write(next.text);
+    }
+    return out.toString();
+  }
+
   /// Adjacent string literals are one URI.
   String _string() {
     final token = _take();
@@ -1655,6 +1965,8 @@ class _Prologue {
 
   ScanResult parse() {
     final refs = <ScanRef>[];
+    String? libraryName;
+    String? partOfLibrary;
     while (true) {
       final token = _peek();
       if (token == null) break;
@@ -1665,13 +1977,24 @@ class _Prologue {
       if (token.kind != _identKind) break;
       if (token.text == 'library') {
         _lexer.take();
-        _skipPast(';');
+        if (_punct(';')) {
+          _lexer.take();
+        } else {
+          libraryName ??= _dottedIdent();
+          _expect(';');
+        }
       } else if (token.text == 'import' || token.text == 'export') {
         refs.add(_uriDirective(token.text));
       } else if (token.text == 'part') {
         _lexer.take();
         if (_ident('of')) {
-          _skipPast(';');
+          _lexer.take();
+          if (_peek()?.kind == _stringKind) {
+            refs.add(ScanRef('part of', _string()));
+          } else {
+            partOfLibrary ??= _dottedIdent();
+          }
+          _expect(';');
         } else {
           refs.add(ScanRef('part', _string()));
           _expect(';');
@@ -1680,7 +2003,11 @@ class _Prologue {
         break;
       }
     }
-    return ScanResult(refs);
+    return ScanResult(
+      refs,
+      libraryName: libraryName,
+      partOfLibrary: partOfLibrary,
+    );
   }
 }
 

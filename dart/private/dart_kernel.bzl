@@ -1038,14 +1038,15 @@ def modular_executable_kernel(
     )
     exec_owned = depset(transitive = [k.owned for k in dep_kernels]).to_list()
     exec_edges = depset(transitive = [k.edges for k in dep_kernels]).to_list()
-    own_pkg = packages[0].package_name if (packages and len(sources) > 1) else ""
+    own_has_lib = bool(packages and any([package_of_source(s.file.short_path, packages[:1]) != None for s in sources]))
+    own_pkg = packages[0].package_name if (packages and (len(sources) > 1 or own_has_lib)) else ""
     cyclic_paths = _cyclic_source_paths(
         own_pkg,
         packages,
         exec_owned,
         exec_edges,
         packages,
-        is_executable = True,
+        is_executable = not own_has_lib,
     )
     extra_cross_pkg = []
     if cyclic_paths and hasattr(ctx.attr, "deps"):
@@ -1229,17 +1230,8 @@ def library_kernel_info(
     )
     pkgs = first_per_package(records)
     non_standalone = _has_no_analyze_tag(ctx)
-    same_pkg_dep = bool(own_record != None and any([r.package_name == package_name for r in raw]))
-    seen_direct_pkgs = {}
-    dup_direct_pkg = False
-    for dep in deps:
-        if DartInfo in dep and dep[DartInfo].package_name:
-            dp = dep[DartInfo].package_name
-            if dp in seen_direct_pkgs:
-                dup_direct_pkg = True
-            seen_direct_pkgs[dp] = True
     has_upstream_cross_pkg = any([bool(k.cross_pkg_srcs.to_list()) for k in dep_kernels])
-    need_graph = same_pkg_dep or dup_direct_pkg
+    need_graph = len(pkgs) < len(records)
     owned_list = owned.to_list() if need_graph else []
     edges_list = edges.to_list() if need_graph else []
     has_cross_pkg_cycle_val = has_cross_pkg_cycle(
@@ -1250,6 +1242,7 @@ def library_kernel_info(
         packages = pkgs,
         non_standalone = non_standalone,
     )
+    dep_cross_pkg_srcs = None
     if has_cross_pkg_cycle_val:
         if need_graph:
             cyclic_paths = _cyclic_source_paths(
@@ -1264,16 +1257,26 @@ def library_kernel_info(
                 for f in collect_transitive_srcs(deps).to_list()
                 if f.short_path in cyclic_paths
             ]
+            dep_cross_pkg_srcs = depset(
+                dep_cyclic_srcs,
+                transitive = [k.cross_pkg_srcs for k in dep_kernels],
+            )
             cross_pkg_srcs = depset(
                 own_srcs + dep_cyclic_srcs,
                 transitive = [k.cross_pkg_srcs for k in dep_kernels],
             )
         else:
+            dep_cross_pkg_srcs = depset(
+                transitive = [k.cross_pkg_srcs for k in dep_kernels],
+            )
             cross_pkg_srcs = depset(
                 own_srcs,
                 transitive = [k.cross_pkg_srcs for k in dep_kernels],
             )
     elif has_upstream_cross_pkg:
+        dep_cross_pkg_srcs = depset(
+            transitive = [k.cross_pkg_srcs for k in dep_kernels],
+        )
         cross_pkg_srcs = depset(
             own_srcs,
             transitive = [k.cross_pkg_srcs for k in dep_kernels],
@@ -1345,13 +1348,14 @@ def library_kernel_info(
         ctx,
         tools,
         sources,
-        first_per_package(records),
+        pkgs,
         dep_outline_closure,
         kmod,
         koutline = koutline,
         defines = defines,
         exclude_non_sources = True,
         droppable = True,
+        extra_inputs = dep_cross_pkg_srcs,
         closure_excluded = upstream_excluded,
         target = target,
         platform_dill = platform_dill,

@@ -1,0 +1,52 @@
+load("//dart:defs.bzl", "dart_library")
+
+dart_library(
+    name = "parent_lib",
+    srcs = ["lib/parent.dart"],
+    package_name = "same_pkg",
+    tags = ["no-dart-analyze"],
+    visibility = ["//dart/tests:__subpackages__"],
+)
+
+dart_library(
+    name = "part_lib",
+    srcs = [
+        "lib/named_part.dart",
+        "lib/uri_part.dart",
+    ],
+    package_name = "same_pkg",
+    visibility = ["//dart/tests:__subpackages__"],
+    deps = [":parent_lib"],
+)
+
+dart_library(
+    name = "rev_part_lib",
+    srcs = ["lib/rev_part.dart"],
+    package_name = "same_pkg",
+    tags = ["no-dart-analyze"],
+    visibility = ["//dart/tests:__subpackages__"],
+)
+
+dart_library(
+    name = "rev_parent_lib",
+    srcs = ["lib/rev_parent.dart"],
+    package_name = "same_pkg",
+    visibility = ["//dart/tests:__subpackages__"],
+    deps = [":rev_part_lib"],
+)
+
+dart_library(
+    name = "sib_parent_lib",
+    srcs = ["lib/sib_parent.dart"],
+    package_name = "same_pkg",
+    tags = ["no-dart-analyze"],
+    visibility = ["//dart/tests:__subpackages__"],
+)
+
+dart_library(
+    name = "sib_part_lib",
+    srcs = ["lib/sib_part.dart"],
+    package_name = "same_pkg",
+    tags = ["no-dart-analyze"],
+    visibility = ["//dart/tests:__subpackages__"],
+)

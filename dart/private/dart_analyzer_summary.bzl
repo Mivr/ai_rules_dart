@@ -411,6 +411,22 @@ def _dart_analyzer_summary_impl(target, ctx):
         if DartAnalyzerSummaryInfo in d
         for k in d[DartAnalyzerSummaryInfo].packages.to_list()
     }
+    sibling_conflicts = []
+    seen_pkg_files = {}
+    for d in deps:
+        if DartAnalyzerSummaryInfo not in d:
+            continue
+        d_by_pkg = {}
+        for entry in d[DartAnalyzerSummaryInfo].own_files.to_list():
+            pkg_k, _, _ = entry.rpartition("|")
+            if pkg_k:
+                d_by_pkg.setdefault(pkg_k, {})[entry] = True
+        for pkg_k, file_map in d_by_pkg.items():
+            if pkg_k in seen_pkg_files:
+                if seen_pkg_files[pkg_k] != file_map and (CONFLICT_PREFIX + pkg_k) not in sibling_conflicts:
+                    sibling_conflicts.append(CONFLICT_PREFIX + pkg_k)
+            else:
+                seen_pkg_files[pkg_k] = file_map
     split = False
     redundant = False
     if srcs and key in inherited:
@@ -426,14 +442,15 @@ def _dart_analyzer_summary_impl(target, ctx):
         }
         split = any([k not in defined for k in lib_keys])
         redundant = not split
-    own = [key] if (not embedder and not split and not redundant and (srcs or not _has_own_sources(files))) else []
+    own = [key] if (not embedder and not split and not sibling_conflicts and not redundant and (srcs or not _has_own_sources(files))) else []
     if split:
         own = [CONFLICT_PREFIX + key]
+    own = own + sibling_conflicts
     packages = depset(
         own,
         transitive = [d[DartAnalyzerSummaryInfo].packages for d in deps if DartAnalyzerSummaryInfo in d],
     )
-    if not srcs or embedder or split or redundant:
+    if not srcs or embedder or split or sibling_conflicts or redundant:
         return [DartAnalyzerSummaryInfo(
             summary = None,
             transitive_summaries = dependencies,

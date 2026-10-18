@@ -39,6 +39,22 @@ class _Recorder implements ModuleCompiler {
   Future<void> close() async {}
 }
 
+class _ProcessModuleCompiler implements ModuleCompiler {
+  _ProcessModuleCompiler(this.dartaotruntime, this.kernelWorker);
+
+  final String dartaotruntime;
+  final String kernelWorker;
+
+  @override
+  Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
+    final res = await Process.run(dartaotruntime, [kernelWorker, ...args]);
+    return ModuleOutcome(res.exitCode, '${res.stdout}${res.stderr}');
+  }
+
+  @override
+  Future<void> close() async {}
+}
+
 /// The values that follow each `flag` in `args`, in order.
 List<String> _valuesAfter(List<String> args, String flag) => [
   for (var i = 0; i + 1 < args.length; i++)
@@ -511,6 +527,309 @@ void main() {
       ]);
     },
   );
+
+  test('a part whose parent library is not a declared input is excluded without reading the parent from disk', () async {
+    // `role.dart` exists on disk under `_root`, but is NOT passed as `--source` or
+    // `--input-source`. The module must exclude `role.g.dart` and `by_name.g.dart`
+    // without invoking the compiler or reading `role.dart` from disk.
+    _write(
+      'pkg/lib/role.dart',
+      "library my.role;\npart 'role.g.dart';\npart 'by_name.g.dart';\n",
+    );
+    _write('pkg/lib/role.g.dart', "part of 'role.dart';\nconst kRole = 1;\n");
+    _write('pkg/lib/by_name.g.dart', 'part of my.role;\nconst kByName = 2;\n');
+    _write('pkg/lib/plain.dart', 'class Plain {}\n');
+    final result = await _compile('m', [
+      'pkg/lib/role.g.dart',
+      'pkg/lib/by_name.g.dart',
+      'pkg/lib/plain.dart',
+    ]);
+    expect(result.code, 0);
+    expect(result.excluded, {
+      _uri('pkg/lib/role.g.dart'):
+          'its library role.dart is not an input of this module',
+      _uri('pkg/lib/by_name.g.dart'):
+          'its library my.role is not an input of this module',
+    });
+    expect(result.defines, [
+      ['pkg/lib/plain.dart'],
+    ]);
+    expect(result.sourcesPerCall, [
+      [_uri('pkg/lib/plain.dart')],
+    ], reason: 'excluded parts must not be passed to the compiler');
+  });
+
+  test('a split library and part compile together when the peer is a declared inputSource', () async {
+    _write(
+      'pkg/lib/parent.dart',
+      "library my.parent;\npart 'uri_part.dart';\npart 'named_part.dart';\nint f() => a + b;\n",
+    );
+    _write('pkg/lib/uri_part.dart', "part of 'parent.dart';\nconst a = 1;\n");
+    _write('pkg/lib/named_part.dart', 'part of my.parent;\nconst b = 2;\n');
+
+    // Dependent owns the parts; parent is a declared `--input-source` and listed
+    // in closureExcluded from the dependency target.
+    final depParent = _module('dep_parent', []);
+    final sidecarParent = _sidecar('dep_parent', {
+      'pkg/lib/parent.dart':
+          'its part uri_part.dart is not an input of this module',
+    });
+    final fromParts = await _compile(
+      'from_parts',
+      ['pkg/lib/uri_part.dart', 'pkg/lib/named_part.dart'],
+      inputSources: ['pkg/lib/parent.dart'],
+      inputKmods: [depParent],
+      closureExcluded: [sidecarParent],
+    );
+    expect(fromParts.code, 0);
+    expect(fromParts.excluded, isEmpty);
+    expect(fromParts.defines, [
+      [
+        'pkg/lib/named_part.dart',
+        'pkg/lib/parent.dart',
+        'pkg/lib/uri_part.dart',
+      ],
+    ]);
+
+    // Reverse: dependent owns the parent; parts are declared `--input-source`s.
+    final depParts = _module('dep_parts', []);
+    final sidecarParts = _sidecar('dep_parts', {
+      'pkg/lib/uri_part.dart':
+          'its library parent.dart is not an input of this module',
+      'pkg/lib/named_part.dart':
+          'its library my.parent is not an input of this module',
+    });
+    final fromParent = await _compile(
+      'from_parent',
+      ['pkg/lib/parent.dart'],
+      inputSources: ['pkg/lib/uri_part.dart', 'pkg/lib/named_part.dart'],
+      inputKmods: [depParts],
+      closureExcluded: [sidecarParts],
+    );
+    expect(fromParent.code, 0);
+    expect(fromParent.excluded, isEmpty);
+    expect(fromParent.defines, [
+      [
+        'pkg/lib/named_part.dart',
+        'pkg/lib/parent.dart',
+        'pkg/lib/uri_part.dart',
+      ],
+    ]);
+  });
+
+  test('split part/part of modules produce byte-identical outputs sandboxed vs unsandboxed and rebuild when the parent edits', () async {
+    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final exeSuffix = Platform.isWindows ? '.exe' : '';
+    final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
+    final kernelWorker =
+        '${sdkDir.path}/bin/snapshots/kernel_worker_aot.dart.snapshot';
+    final platformDill = '${sdkDir.path}/lib/_internal/vm_platform_strong.dill';
+    final librariesJson = '${sdkDir.path}/lib/libraries.json';
+
+    final realCompiler = _ProcessModuleCompiler(dartaotruntime, kernelWorker);
+
+    Future<void> runModule(
+      Directory ws, {
+      required String outRel,
+      required String outlineRel,
+      required String excludedRel,
+      required List<String> sources,
+      List<String> inputSources = const [],
+      List<String> inputKmods = const [],
+      List<String> closureExcluded = const [],
+    }) async {
+      final log = StringBuffer();
+      final prevCwd = Directory.current;
+      Directory.current = ws;
+      try {
+        final code = await compileModule(
+          [
+            for (final s in sources) ...['--source', '$_prefix$s'],
+            for (final s in inputSources) ...['--input-source', s],
+            '--output',
+            outRel,
+            '--output-outline',
+            outlineRel,
+            '--excluded-output',
+            excludedRel,
+            '--packages-file',
+            'package_config.json',
+            '--libraries-json',
+            librariesJson,
+            '--dart-sdk-summary',
+            platformDill,
+            '--multi-root',
+            ws.path,
+            '--multi-root-scheme',
+            'org-dartlang-bazel',
+            '--target',
+            'vm',
+            '--no-summary-only',
+            '--exclude-non-sources',
+            for (final k in inputKmods) ...['--input-kmod', k],
+            for (final c in closureExcluded) ...['--closure-excluded', c],
+          ],
+          realCompiler,
+          log,
+          const <Uint8List>[],
+        );
+        expect(code, 0, reason: 'compileModule failed: $log');
+      } finally {
+        Directory.current = prevCwd;
+      }
+    }
+
+    void writeWorkspaceConfig(Directory ws) {
+      File('${ws.path}/package_config.json').writeAsStringSync(
+        jsonEncode({
+          'configVersion': 2,
+          'packages': [
+            {
+              'name': 'pkg',
+              'rootUri': '${_prefix}pkg',
+              'packageUri': 'lib/',
+              'languageVersion': '3.0',
+            },
+          ],
+        }),
+      );
+    }
+
+    const parentV1 =
+        "library my.parent;\npart 'part_a.dart';\nint parentFn() => partValue + 10;\n";
+    const parentV2 =
+        "library my.parent;\npart 'part_a.dart';\nint parentFn() => partValue + 99;\n";
+    const partSrc = "part of 'parent.dart';\nconst int partValue = 32;\n";
+
+    // 1. Unsandboxed workspace: both parent.dart and part_a.dart exist on disk during both actions.
+    final unsandboxed = Directory('${_root.path}/unsandboxed')
+      ..createSync(recursive: true);
+    writeWorkspaceConfig(unsandboxed);
+    File('${unsandboxed.path}/pkg/lib/parent.dart')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync(parentV1);
+    File('${unsandboxed.path}/pkg/lib/part_a.dart').writeAsStringSync(partSrc);
+
+    await runModule(
+      unsandboxed,
+      outRel: 'out/parent.kmod',
+      outlineRel: 'out/parent.koutline',
+      excludedRel: 'out/parent.vm_excluded.txt',
+      sources: ['pkg/lib/parent.dart'],
+    );
+    await runModule(
+      unsandboxed,
+      outRel: 'out/part.kmod',
+      outlineRel: 'out/part.koutline',
+      excludedRel: 'out/part.vm_excluded.txt',
+      sources: ['pkg/lib/part_a.dart'],
+      inputSources: ['pkg/lib/parent.dart'],
+      inputKmods: ['out/parent.koutline'],
+      closureExcluded: ['out/parent.vm_excluded.txt'],
+    );
+
+    // 2. Sandboxed workspaces: each action only has its declared inputs materialized on disk.
+    final sandboxParent = Directory('${_root.path}/sandbox_parent')
+      ..createSync(recursive: true);
+    writeWorkspaceConfig(sandboxParent);
+    File('${sandboxParent.path}/pkg/lib/parent.dart')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync(parentV1);
+    await runModule(
+      sandboxParent,
+      outRel: 'out/parent.kmod',
+      outlineRel: 'out/parent.koutline',
+      excludedRel: 'out/parent.vm_excluded.txt',
+      sources: ['pkg/lib/parent.dart'],
+    );
+
+    final sandboxPart = Directory('${_root.path}/sandbox_part')
+      ..createSync(recursive: true);
+    writeWorkspaceConfig(sandboxPart);
+    File('${sandboxPart.path}/pkg/lib/part_a.dart')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync(partSrc);
+    File('${sandboxPart.path}/pkg/lib/parent.dart').writeAsStringSync(parentV1);
+    // Copy only the declared artifacts from sandboxParent (parent.koutline and parent.vm_excluded.txt).
+    Directory('${sandboxPart.path}/out/parent.koutline/sources/pkg/lib')
+        .createSync(recursive: true);
+    File('${sandboxParent.path}/out/parent.koutline/index.json')
+        .copySync('${sandboxPart.path}/out/parent.koutline/index.json');
+    File(
+      '${sandboxParent.path}/out/parent.koutline/sources/pkg/lib/parent.dart',
+    ).copySync(
+      '${sandboxPart.path}/out/parent.koutline/sources/pkg/lib/parent.dart',
+    );
+    File('${sandboxParent.path}/out/parent.vm_excluded.txt')
+        .copySync('${sandboxPart.path}/out/parent.vm_excluded.txt');
+    await runModule(
+      sandboxPart,
+      outRel: 'out/part.kmod',
+      outlineRel: 'out/part.koutline',
+      excludedRel: 'out/part.vm_excluded.txt',
+      sources: ['pkg/lib/part_a.dart'],
+      inputSources: ['pkg/lib/parent.dart'],
+      inputKmods: ['out/parent.koutline'],
+      closureExcluded: ['out/parent.vm_excluded.txt'],
+    );
+
+    // Verify sandboxed and unsandboxed outputs are byte-identical.
+    expect(
+      File('${sandboxParent.path}/out/parent.kmod/index.json')
+          .readAsBytesSync(),
+      equals(
+        File('${unsandboxed.path}/out/parent.kmod/index.json')
+            .readAsBytesSync(),
+      ),
+    );
+    expect(
+      File('${sandboxParent.path}/out/parent.vm_excluded.txt')
+          .readAsBytesSync(),
+      equals(
+        File('${unsandboxed.path}/out/parent.vm_excluded.txt')
+            .readAsBytesSync(),
+      ),
+    );
+    final partKmodV1 = File('${sandboxPart.path}/out/part.kmod/0.dill')
+        .readAsBytesSync();
+    expect(
+      partKmodV1,
+      equals(
+        File('${unsandboxed.path}/out/part.kmod/0.dill').readAsBytesSync(),
+      ),
+      reason: 'sandboxed and unsandboxed .kmod outputs must be byte-identical',
+    );
+    expect(
+      File('${sandboxPart.path}/out/part.koutline/0.dill').readAsBytesSync(),
+      equals(
+        File('${unsandboxed.path}/out/part.koutline/0.dill').readAsBytesSync(),
+      ),
+      reason:
+          'sandboxed and unsandboxed .koutline outputs must be byte-identical',
+    );
+
+    // 3. Editing the parent library changes the rebuilt output of the part module.
+    File('${sandboxPart.path}/pkg/lib/parent.dart').writeAsStringSync(parentV2);
+    File('${sandboxPart.path}/out/parent.koutline/sources/pkg/lib/parent.dart')
+        .writeAsStringSync(parentV2);
+    await runModule(
+      sandboxPart,
+      outRel: 'out/part_v2.kmod',
+      outlineRel: 'out/part_v2.koutline',
+      excludedRel: 'out/part_v2.vm_excluded.txt',
+      sources: ['pkg/lib/part_a.dart'],
+      inputSources: ['pkg/lib/parent.dart'],
+      inputKmods: ['out/parent.koutline'],
+      closureExcluded: ['out/parent.vm_excluded.txt'],
+    );
+    final partKmodV2 = File('${sandboxPart.path}/out/part_v2.kmod/0.dill')
+        .readAsBytesSync();
+    expect(
+      partKmodV2,
+      isNot(equals(partKmodV1)),
+      reason: 'editing the parent library must change the rebuilt output',
+    );
+  });
 
   test('a source a dependency module defines is not compiled again', () async {
     _write('pkg/lib/shared.dart', 'class Shared {}\n');
