@@ -135,10 +135,15 @@ void main(List<String> args) {
         final result = <String, Uint8List>{};
         if (!dir.existsSync()) return result;
         final entities =
-            dir.listSync(recursive: true).whereType<File>().toList()
-              ..sort((a, b) => a.path.compareTo(b.path));
+            dir.listSync(recursive: true).whereType<File>().toList()..sort(
+              (a, b) => a.path
+                  .replaceAll(r'\', '/')
+                  .compareTo(b.path.replaceAll(r'\', '/')),
+            );
         for (final file in entities) {
-          final rel = file.path.substring(dir.path.length + 1);
+          final rel = file.path
+              .substring(dir.path.length + 1)
+              .replaceAll(r'\', '/');
           result[rel] = file.readAsBytesSync();
         }
         return result;
