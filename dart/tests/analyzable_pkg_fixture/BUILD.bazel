@@ -1,6 +1,11 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
-load("//dart:defs.bzl", "dart_fix")
+load("//dart:defs.bzl", "dart_binary", "dart_fix", "dart_js_binary", "dart_test")
 load("//dart/tests:analyze_test.bzl", "analyzed_test")
+load(
+    "//dart/tests:analyzer_summary_test.bzl",
+    "default_mode_test",
+    "summaries_off_mode_test",
+)
 load("//dart/tests:dart_info_test.bzl", "wrapper_executable")
 
 # The shape a downstream `flutter_test` has, under a real `dart analyze` run.
@@ -40,4 +45,110 @@ build_test(
     name = "fix_exec_test",
     size = "small",
     targets = [":fix_exec"],
+)
+
+# A generated `lib/` file on an executable that states a package arrives via
+# `DartAnalyzableInfo.package_srcs` (absent from `DefaultInfo.files`), and must
+# be staged in summary mode just as in non-summary mode.
+genrule(
+    name = "gen_label",
+    outs = ["lib/label.g.dart"],
+    cmd = "echo \"String generatedLabel() => 'generated';\" > $@",
+)
+
+dart_binary(
+    name = "gen_pkg_bin",
+    package_name = "analyzable_pkg",
+    srcs = [
+        "lib/model.dart",
+        "lib/view.dart",
+        ":gen_label",
+    ],
+    language_version = "3.11",
+    main = "gen_main.dart",
+)
+
+analyzed_test(
+    name = "analyze_gen_pkg_bin",
+    size = "small",
+    target = ":gen_pkg_bin",
+)
+
+default_mode_test(
+    name = "gen_pkg_bin_default_mode_test",
+    size = "small",
+    expect_summaries = True,
+    target_under_test = ":gen_pkg_bin",
+)
+
+summaries_off_mode_test(
+    name = "gen_pkg_bin_summaries_off_mode_test",
+    size = "small",
+    expect_summaries = False,
+    target_under_test = ":gen_pkg_bin",
+)
+
+dart_test(
+    name = "gen_pkg_test",
+    package_name = "analyzable_pkg",
+    size = "small",
+    srcs = [
+        "lib/model.dart",
+        "lib/view.dart",
+        ":gen_label",
+    ],
+    language_version = "3.11",
+    main = "gen_main.dart",
+)
+
+analyzed_test(
+    name = "analyze_gen_pkg_test",
+    size = "small",
+    target = ":gen_pkg_test",
+)
+
+default_mode_test(
+    name = "gen_pkg_test_default_mode_test",
+    size = "small",
+    expect_summaries = True,
+    target_under_test = ":gen_pkg_test",
+)
+
+summaries_off_mode_test(
+    name = "gen_pkg_test_summaries_off_mode_test",
+    size = "small",
+    expect_summaries = False,
+    target_under_test = ":gen_pkg_test",
+)
+
+dart_js_binary(
+    name = "gen_pkg_web_bin",
+    package_name = "analyzable_pkg",
+    srcs = [
+        "lib/model.dart",
+        "lib/view.dart",
+        ":gen_label",
+    ],
+    language_version = "3.11",
+    main = "gen_main.dart",
+)
+
+analyzed_test(
+    name = "analyze_gen_pkg_web_bin",
+    size = "small",
+    target = ":gen_pkg_web_bin",
+)
+
+default_mode_test(
+    name = "gen_pkg_web_bin_default_mode_test",
+    size = "small",
+    expect_summaries = True,
+    target_under_test = ":gen_pkg_web_bin",
+)
+
+summaries_off_mode_test(
+    name = "gen_pkg_web_bin_summaries_off_mode_test",
+    size = "small",
+    expect_summaries = False,
+    target_under_test = ":gen_pkg_web_bin",
 )

@@ -1,5 +1,9 @@
 load("//dart:defs.bzl", "dart_analysis_test", "dart_library", "dart_test")
-load("//dart/tests:analyzer_summary_test.bzl", "default_mode_test")
+load(
+    "//dart/tests:analyzer_summary_test.bzl",
+    "default_mode_test",
+    "summaries_off_mode_test",
+)
 
 # A test in the same package as its library, and so covered by the library's
 # summary. It stages none of the package's `lib/` files, so its analysis is in
@@ -54,4 +58,45 @@ dart_analysis_test(
     name = "testpkg_test_analysis_test",
     size = "small",
     targets = [":testpkg_test"],
+)
+
+# A test that adds a generated `lib/` file of its own to the package its
+# dependency already summarizes (`has_own_lib`). Even with no hand-written
+# `lib/` source on the test, the generated `lib/` file splits the package, so
+# the test falls back to source analysis rather than reading a summary that
+# lacks the generated library.
+genrule(
+    name = "gen_extra_lib",
+    outs = ["lib/extra.g.dart"],
+    cmd = "echo \"String extraValue() => 'extra';\" > $@",
+)
+
+dart_test(
+    name = "testpkg_gen_lib_test",
+    package_name = "testpkg_fixture",
+    size = "small",
+    srcs = [":gen_extra_lib"],
+    language_version = "3.11",
+    main = "test/testpkg_gen_lib_test.dart",
+    deps = [":testpkg_lib"],
+)
+
+default_mode_test(
+    name = "testpkg_gen_lib_mode_test",
+    size = "small",
+    expect_summaries = False,
+    target_under_test = ":testpkg_gen_lib_test",
+)
+
+summaries_off_mode_test(
+    name = "testpkg_gen_lib_off_mode_test",
+    size = "small",
+    expect_summaries = False,
+    target_under_test = ":testpkg_gen_lib_test",
+)
+
+dart_analysis_test(
+    name = "testpkg_gen_lib_analysis_test",
+    size = "small",
+    targets = [":testpkg_gen_lib_test"],
 )

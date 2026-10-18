@@ -1,10 +1,15 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
-load("//dart:defs.bzl", "dart_binary", "dart_fix", "dart_js_binary", "dart_library")
+load("//dart:defs.bzl", "dart_binary", "dart_fix", "dart_js_binary", "dart_library", "dart_test")
 load(
     "//dart/tests:analyze_test.bzl",
     "analyzable_provider_test",
     "analyzed_test",
     "binary_not_a_dep_test",
+)
+load(
+    "//dart/tests:analyzer_summary_test.bzl",
+    "default_mode_test",
+    "summaries_off_mode_test",
 )
 
 # A binary whose `main` sits beside `lib/`, importing a library inside it: the
@@ -73,4 +78,95 @@ analyzed_test(
     name = "analyze_web_bin",
     size = "small",
     target = ":web_bin",
+)
+
+# A generated `.dart` source in an executable's `srcs` arrives through
+# `DartAnalyzableInfo.srcs` (`DefaultInfo.files` holds only the compiled
+# output), and must be staged in summary mode just as in non-summary mode.
+genrule(
+    name = "gen_greeting",
+    outs = ["gen_greeting.g.dart"],
+    cmd = "echo \"String generatedGreeting() => 'generated';\" > $@",
+)
+
+dart_binary(
+    name = "gen_bin",
+    srcs = [":gen_greeting"],
+    main = "gen_main.dart",
+    deps = [":dep"],
+)
+
+analyzed_test(
+    name = "analyze_gen_bin",
+    size = "small",
+    target = ":gen_bin",
+)
+
+default_mode_test(
+    name = "gen_bin_default_mode_test",
+    size = "small",
+    expect_summaries = True,
+    target_under_test = ":gen_bin",
+)
+
+summaries_off_mode_test(
+    name = "gen_bin_summaries_off_mode_test",
+    size = "small",
+    expect_summaries = False,
+    target_under_test = ":gen_bin",
+)
+
+dart_test(
+    name = "gen_test",
+    size = "small",
+    srcs = [":gen_greeting"],
+    main = "gen_main.dart",
+    deps = [":dep"],
+)
+
+analyzed_test(
+    name = "analyze_gen_test",
+    size = "small",
+    target = ":gen_test",
+)
+
+default_mode_test(
+    name = "gen_test_default_mode_test",
+    size = "small",
+    expect_summaries = True,
+    target_under_test = ":gen_test",
+)
+
+summaries_off_mode_test(
+    name = "gen_test_summaries_off_mode_test",
+    size = "small",
+    expect_summaries = False,
+    target_under_test = ":gen_test",
+)
+
+dart_js_binary(
+    name = "gen_web_bin",
+    srcs = [":gen_greeting"],
+    main = "gen_main.dart",
+    deps = [":dep"],
+)
+
+analyzed_test(
+    name = "analyze_gen_web_bin",
+    size = "small",
+    target = ":gen_web_bin",
+)
+
+default_mode_test(
+    name = "gen_web_bin_default_mode_test",
+    size = "small",
+    expect_summaries = True,
+    target_under_test = ":gen_web_bin",
+)
+
+summaries_off_mode_test(
+    name = "gen_web_bin_summaries_off_mode_test",
+    size = "small",
+    expect_summaries = False,
+    target_under_test = ":gen_web_bin",
 )

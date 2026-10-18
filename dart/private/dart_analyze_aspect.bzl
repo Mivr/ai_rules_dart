@@ -618,18 +618,24 @@ def _dart_analyze_aspect_impl(target, ctx):
         entry = []
         package_srcs = []
     own = {}
-    for f in [f for f in target[DefaultInfo].files.to_list() if f.extension == "dart"] + entry + package_srcs:
-        if f.is_source and not f.short_path.startswith("../"):
+    generated_by_path = {}
+    for f in [f for f in target[DefaultInfo].files.to_list() + entry + package_srcs if f.extension == "dart"]:
+        if f.short_path.startswith("../"):
+            continue
+        if f.is_source:
             own[f.path] = f
+        else:
+            generated_by_path[f.path] = f
     if not own:
         return [OutputGroupInfo(default = default_outputs)]
     own_paths = sorted([f.short_path for f in own.values()])
+    generated = generated_by_path.values()
 
     name = ctx.label.name + ".dart_analyze"
     config = ctx.attr._config[DartAnalysisConfigInfo]
     sdk_version = ctx.toolchains[_TOOLCHAIN].dart_sdk_info.version
     all_pkgs = info.transitive_packages.to_list()
-    all_closure_srcs = info.transitive_srcs.to_list() + info.transitive_resources.to_list() + entry + own.values()
+    all_closure_srcs = info.transitive_srcs.to_list() + info.transitive_resources.to_list() + entry + own.values() + generated
     has_non_own_closure_srcs = any([f.path not in own for f in all_closure_srcs])
     has_non_own_pkgs = any([p.package_name != info.package_name for p in all_pkgs])
     is_leaf_own_only = not has_non_own_closure_srcs and not has_non_own_pkgs
@@ -657,11 +663,10 @@ def _dart_analyze_aspect_impl(target, ctx):
     groups = {}
     summary_mode = False
     summary_staged = None
-    generated = []
     if NO_ANALYZE_TAG not in tags:
         # The SDK check is the analyzing toolchain's own: the same one the
         # summary aspect and the codegen rules read.
-        has_own_lib = bool(own_lib_sources(info, own.values()))
+        has_own_lib = bool(own_lib_sources(info, own.values() + generated))
         summary_mode = ctx.attr._summaries[BuildSettingInfo].value and analyzer_summaries_supported(sdk_version) and _summaries_ready(ctx, info, has_own_lib)
         if summary_mode:
             # Only the target's own files are staged: its dependencies come from
@@ -671,11 +676,6 @@ def _dart_analyze_aspect_impl(target, ctx):
             # its imports against, but are excluded from analysis, as the
             # default path excludes them. A generated source is in the closure
             # there, but in no dependency's summary.
-            generated = [
-                f
-                for f in target[DefaultInfo].files.to_list()
-                if f.extension == "dart" and not f.is_source and not f.short_path.startswith("../") and f.path not in own
-            ]
             if is_leaf_own_only and not generated:
                 summary_staged = staged
             else:
