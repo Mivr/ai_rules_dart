@@ -1,7 +1,8 @@
 """Unit tests for dart_binary.bzl helpers and rule kinds."""
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
-load("//dart:defs.bzl", "dart_binary", "dart_test")
+load("//dart:defs.bzl", "dart_binary", "dart_codegen", "dart_test")
+load("//dart:providers.bzl", "DartCompileInfo")
 load("//dart/private:dart_binary.bzl", "binary_output_basename")
 load("//dart/private:dart_compile.bzl", "compile_quiet_flags")
 
@@ -23,6 +24,12 @@ def _rule_kind_test_impl(ctx):
     asserts.equals(env, "rule", type(dart_binary), "dart_binary in //dart:defs.bzl is a rule")
     asserts.equals(env, "rule", type(dart_test), "dart_test in //dart:defs.bzl is a rule")
     asserts.equals(env, ctx.attr.expected_kind, target[_RuleKindInfo].kind)
+    if DartCompileInfo in target:
+        asserts.true(
+            env,
+            bool(target[DartCompileInfo].sdk_version),
+            "DartCompileInfo.sdk_version must be populated",
+        )
     return analysistest.end(env)
 
 _rule_kind_test = analysistest.make(
@@ -31,6 +38,33 @@ _rule_kind_test = analysistest.make(
         "expected_kind": attr.string(mandatory = True),
     },
     extra_target_under_test_aspects = [_rule_kind_aspect],
+)
+
+def _mismatched_kernel_tool_impl(ctx):
+    dill = ctx.actions.declare_file(ctx.label.name + ".dill")
+    ctx.actions.write(output = dill, content = "", is_executable = True)
+    return [
+        DefaultInfo(files = depset([dill]), executable = dill),
+        DartCompileInfo(
+            executable = dill,
+            compile_mode = "kernel",
+            sdk_version = "0.0.0-mismatched",
+        ),
+    ]
+
+_mismatched_kernel_tool = rule(
+    implementation = _mismatched_kernel_tool_impl,
+    executable = True,
+)
+
+def _kernel_sdk_mismatch_failure_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    asserts.expect_failure(env, "was compiled to a Dart kernel (.dill) by Dart SDK 0.0.0-mismatched")
+    return analysistest.end(env)
+
+_kernel_sdk_mismatch_failure_test = analysistest.make(
+    _kernel_sdk_mismatch_failure_test_impl,
+    expect_failure = True,
 )
 
 def _exe_gets_dot_exe_on_windows_test_impl(ctx):
@@ -109,6 +143,23 @@ def dart_binary_test_suite(name):
         expected_kind = "dart_test",
         target_under_test = "//dart/tests/legacy_mixin_fixture:legacy_mixin_test",
     )
+    _mismatched_kernel_tool(
+        name = "mismatched_kernel_tool_fixture",
+        tags = ["manual"],
+    )
+    dart_codegen(
+        name = "mismatched_kernel_codegen_fixture",
+        src = "//dart/private/tools:noop.dart",
+        generator_bin = ":mismatched_kernel_tool_fixture",
+        output_suffixes = [".g.dart"],
+        package_name = "mismatched_fixture",
+        tags = ["manual"],
+    )
+    _kernel_sdk_mismatch_failure_test(
+        name = "dart_codegen_kernel_sdk_mismatch_test",
+        size = "small",
+        target_under_test = ":mismatched_kernel_codegen_fixture",
+    )
     native.test_suite(
         name = name,
         tests = [
@@ -120,5 +171,6 @@ def dart_binary_test_suite(name):
             ":dart_binary_modular_kernel_rule_kind_test",
             ":dart_binary_whole_kernel_rule_kind_test",
             ":dart_test_rule_kind_test",
+            ":dart_codegen_kernel_sdk_mismatch_test",
         ],
     )

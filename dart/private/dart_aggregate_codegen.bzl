@@ -51,6 +51,7 @@ load(
     "add_shim_contract_args",
     "asset_path_for",
     "dart_lib_root_for_package",
+    "kernel_sdk_mismatch_error",
     "resolve_package_identity",
     "same_package_library_dep_files",
     "synth_package_config",
@@ -71,6 +72,15 @@ def _dart_aggregate_codegen_impl(ctx):
         fail("%s: `outputs` must contain at least one path." % ctx.label)
     if not ctx.files.srcs:
         fail("%s: `srcs` cannot be empty." % ctx.label)
+    if ctx.executable.generator_bin:
+        mismatch = kernel_sdk_mismatch_error(
+            ctx.label,
+            "generator_bin",
+            ctx.attr.generator_bin,
+            dart_sdk_info.version,
+        )
+        if mismatch != None:
+            fail(mismatch)
 
     outputs = [ctx.actions.declare_file(path) for path in ctx.attr.outputs]
     synth_pc, transitive_srcs = synth_package_config(ctx, ctx.attr.deps)

@@ -1,0 +1,120 @@
+load(
+    "@rules_dart//dart:defs.bzl",
+    "dart_analysis_config",
+    "dart_analysis_options",
+    "dart_analysis_test",
+    "dart_binary",
+    "dart_codegen",
+    "dart_format",
+    "dart_library",
+    "dart_source_set",
+    "dart_test",
+)
+
+exports_files([
+    "pubspec.lock",
+    "tools/part_gen.dart",
+])
+
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    visibility = ["//visibility:public"],
+    deps = ["@very_good_analysis"],
+)
+
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
+
+# Analyzed handle for the script generator.
+dart_binary(
+    name = "part_gen_bin",
+    main = "tools/part_gen.dart",
+)
+
+# 1. Codegen + `copy_tree` (`dart_source_set` -> `dart_library(srcs_dir = ...)`).
+dart_codegen(
+    name = "message_part",
+    package_name = "sdk_coupling_staged",
+    src = "lib/message.dart",
+    generator = "tools/part_gen.dart",
+    language_version = "3.11",
+    output_suffixes = [".g.dart"],
+)
+
+dart_source_set(
+    name = "message_srcs",
+    srcs = [
+        "lib/message.dart",
+        ":message_part",
+    ],
+)
+
+dart_library(
+    name = "message_lib",
+    package_name = "sdk_coupling_staged",
+    language_version = "3.11",
+    srcs_dir = ":message_srcs",
+)
+
+# 2. Kernel-mode `generator_bin` shims (`json_serializable:shim` + `combining_shim:bin`).
+dart_codegen(
+    name = "user_json_part",
+    package_name = "sdk_coupling_e2e",
+    src = "lib/user.dart",
+    generator_bin = "@rules_dart//dart/ext/json_serializable:shim",
+    language_version = "3.11",
+    output_suffixes = [".json_serializable.g.part"],
+    deps = ["@pub_deps//:json_annotation"],
+)
+
+dart_codegen(
+    name = "user_combined",
+    package_name = "sdk_coupling_e2e",
+    src = "lib/user.dart",
+    generator_bin = "@rules_dart//dart/ext/_shared/combining_shim:bin",
+    language_version = "3.11",
+    output_suffixes = [".g.dart"],
+    parts = [":user_json_part"],
+)
+
+dart_library(
+    name = "user_lib",
+    package_name = "sdk_coupling_e2e",
+    srcs = [
+        "lib/user.dart",
+        ":user_combined",
+    ],
+    language_version = "3.11",
+    deps = ["@pub_deps//:json_annotation"],
+)
+
+# 3. Explicit `dart_analysis_test` and `dart_format` targets alongside the
+# `.bazelrc`-enabled `dart_analyze` aspect (`+dart_analyze,+dart_format`).
+dart_analysis_test(
+    name = "analysis_test",
+    size = "small",
+    targets = [
+        ":part_gen_bin",
+        ":user_lib",
+    ],
+)
+
+dart_format(
+    name = "format",
+)
+
+# 4. Target test running on `target_dart` (3.13.4) while all build tools ran on
+# `exec_dart` (3.13.5).
+dart_test(
+    name = "sdk_coupling_test",
+    size = "small",
+    main = "test/sdk_coupling_test.dart",
+    deps = [
+        ":message_lib",
+        ":user_lib",
+        "@pub_deps//:test",
+    ],
+)

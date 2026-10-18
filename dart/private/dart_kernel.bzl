@@ -46,6 +46,7 @@ load(
     "STABLE_SCHEME",
     "collect_transitive_srcs",
     "generate_stable_package_config",
+    "kernel_sdk_mismatch_error",
     "own_package_record",
     "sdk_path_from_dart",
     "stable_path",
@@ -617,6 +618,14 @@ def kernel_module_action(
         ctx.executable._kernel_module,
     ]
     if dart_exe != None:
+        mismatch = kernel_sdk_mismatch_error(
+            ctx.label,
+            "_kernel_module",
+            getattr(ctx.attr, "_kernel_module", None),
+            getattr(tools, "version", ""),
+        )
+        if mismatch != None:
+            fail(mismatch)
         direct_inputs.extend([ctx.executable._kernel_module, dart_exe])
         action_tools.append(dart_exe)
         if dartvm != None:
@@ -743,6 +752,14 @@ def kernel_link_action(
     exec_sdk = exec_tc.dart_sdk_info if exec_tc != None else None
     link_tools = [ctx.executable._kernel_link] + ([platform_dill] if platform_dill != None else [])
     if exec_sdk != None:
+        mismatch = kernel_sdk_mismatch_error(
+            ctx.label,
+            "_kernel_link",
+            getattr(ctx.attr, "_kernel_link", None),
+            exec_sdk.version,
+        )
+        if mismatch != None:
+            fail(mismatch)
         direct_inputs.append(ctx.executable._kernel_link)
         link_tools.append(exec_sdk.dart)
         executable = exec_sdk.dart
@@ -801,7 +818,8 @@ def modular_executable_tools(
         kernel_mode,
         resolved_assets,
         own_defines,
-        compile_flags):
+        compile_flags,
+        target_sdk = None):
     """Decides whether an executable compiles modularly, and with which tools.
 
     Reads the flag and gathers each fact `modular_kernel_eligible` takes. The
@@ -817,6 +835,8 @@ def modular_executable_tools(
       own_defines: The executable's own `defines` attribute. The
         `//dart:extra_dart_defines` flag is not among them: every module takes it.
       compile_flags: The executable's `dart_compile_flags`.
+      target_sdk: Optional `DartSdkInfo` that will execute the output kernel;
+        defaults to `ctx.toolchains["//dart:toolchain_type"].dart_sdk_info`.
 
     Returns:
       The struct from `find_kernel_module_tools`, or None.
@@ -827,7 +847,8 @@ def modular_executable_tools(
     tools = kernel_tools_for(ctx)
     if tools == None:
         return None
-    target_sdk = ctx.toolchains[_TOOLCHAIN_TYPE].dart_sdk_info
+    if target_sdk == None:
+        target_sdk = ctx.toolchains[_TOOLCHAIN_TYPE].dart_sdk_info
 
     kernels = dep_kernels_or_none(ctx.attr.deps)
     dep_modular = kernels != None and all([k.modular for k in kernels])

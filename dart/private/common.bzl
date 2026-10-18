@@ -1,6 +1,6 @@
 """Shared utilities for Dart rules."""
 
-load("//dart:providers.bzl", "CODE_ASSET_LINK_MODES", "DartInfo", "DartPackageMetadataInfo")
+load("//dart:providers.bzl", "CODE_ASSET_LINK_MODES", "DartCompileInfo", "DartInfo", "DartPackageMetadataInfo")
 load("//dart/private:dart_info.bzl", "derived_package_info", "package_lib_prefix")
 load("//dart/private:source_set.bzl", "needs_source_assembly", "package_for_index", "package_index")
 
@@ -1652,3 +1652,42 @@ def add_shim_contract_args(
         extra_inputs.append(synth_pc)
     args.add("--sdk-path", sdk_path_from_dart(sdk_dart))
     return extra_inputs
+
+def kernel_sdk_mismatch_error(label, attr_name, tool_target, expected_sdk_version):
+    """Checks that a kernel-compiled tool target matches the executing Dart SDK version.
+
+    A Dart kernel (`.dill`) file embeds the compiling SDK's binary format and
+    platform summary hash, so it can only be executed by the exact Dart SDK
+    version that compiled it. When `tool_target` carries `DartCompileInfo` with
+    `compile_mode == "kernel"` and a recorded `sdk_version` that differs from
+    `expected_sdk_version`, returns an analysis-time error message rather than
+    letting the build fail at execution time with a VM SDK-hash or kernel-format
+    crash.
+
+    Args:
+        label: The label of the consuming target or aspect context.
+        attr_name: The attribute name through which `tool_target` was resolved.
+        tool_target: The tool `Target` (or `None`).
+        expected_sdk_version: The `DartSdkInfo.version` of the SDK that will
+            execute the tool.
+
+    Returns:
+        An error message string when a kernel tool's `sdk_version` disagrees
+        with `expected_sdk_version`, or `None` when compatible.
+    """
+    if tool_target == None or DartCompileInfo not in tool_target:
+        return None
+    info = tool_target[DartCompileInfo]
+    if info.compile_mode != "kernel":
+        return None
+    compiled_version = getattr(info, "sdk_version", "")
+    if not compiled_version or not expected_sdk_version:
+        return None
+    if compiled_version != expected_sdk_version:
+        return (
+            "%s: `%s` target %s was compiled to a Dart kernel (.dill) by Dart SDK %s, " +
+            "but will be executed by Dart SDK %s. A kernel binary can only run on the " +
+            "exact Dart SDK version that compiled it; ensure the tool is built in the " +
+            "same toolchain configuration that executes it, or use `compile_mode = \"exe\"`."
+        ) % (label, attr_name, getattr(tool_target, "label", tool_target), compiled_version, expected_sdk_version)
+    return None

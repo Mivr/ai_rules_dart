@@ -30,6 +30,7 @@ load(
     "add_shim_contract_args",
     "asset_path_for",
     "dart_lib_root_for_package",
+    "kernel_sdk_mismatch_error",
     "resolve_package_identity",
     "same_package_library_dep_files",
     "synth_package_config",
@@ -43,6 +44,14 @@ def _dart_sqlcodegen_impl(ctx):
     if not ctx.attr.output_suffixes:
         fail("%s: `output_suffixes` must contain at least one suffix." %
              ctx.label)
+    mismatch = kernel_sdk_mismatch_error(
+        ctx.label,
+        "generator_bin",
+        ctx.attr.generator_bin,
+        toolchain.dart_sdk_info.version,
+    )
+    if mismatch != None:
+        fail(mismatch)
 
     src = ctx.file.src
     synth_pc, lib_dep_srcs = synth_package_config(ctx, ctx.attr.deps)

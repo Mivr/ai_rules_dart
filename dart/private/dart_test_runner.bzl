@@ -42,14 +42,15 @@ kernel runs instead, as before. Use it for a snapshot that misbehaves.
 """
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
-load("//dart:providers.bzl", "DartInfo")
-load("//dart/private:common.bzl", "sdk_dartvm", "writable_home_env")
+load("//dart:providers.bzl", "DartCompileInfo", "DartInfo")
+load("//dart/private:common.bzl", "kernel_sdk_mismatch_error", "sdk_dartvm", "writable_home_env")
 load("//dart/private:dart_kernel.bzl", "DartKernelInfo", "dart_kernel_module_aspect")
 
 DartTestRunnerInfo = provider(
     doc = "The `package:test` runner built from a `package:test` library.",
     fields = {
         "runner": "File: the runner the launcher runs — its kernel (`.dill`), or the app-JIT snapshot of it where one was built.",
+        "sdk_version": "str: The Dart SDK version that compiled `runner` when it is a kernel, or empty.",
     },
 )
 
@@ -114,10 +115,16 @@ def _runner_kernel(ctx, runner):
 def _dart_test_package_impl(ctx):
     library = ctx.attr.library
     runner = _runner_kernel(ctx, ctx.attr.runner)
+    sdk_version = (
+        getattr(ctx.attr.runner[DartCompileInfo], "sdk_version", "")
+        if DartCompileInfo in ctx.attr.runner
+        else ""
+    )
     if ctx.attr.snapshot != None:
         snapshot = ctx.attr.snapshot[DartTestRunnerSnapshotInfo].snapshot
         if snapshot != None:
             runner = snapshot
+            sdk_version = ""
 
     # Forwarded beside `DartInfo`, because this target stands in for the library
     # in every `deps`. Without it, each test that depends on `package:test` would
@@ -126,7 +133,7 @@ def _dart_test_package_impl(ctx):
     return [
         library[DefaultInfo],
         library[DartInfo],
-        DartTestRunnerInfo(runner = runner),
+        DartTestRunnerInfo(runner = runner, sdk_version = sdk_version),
     ] + forwarded
 
 dart_test_package = rule(
@@ -171,6 +178,10 @@ def _dart_test_runner_snapshot_impl(ctx):
             DefaultInfo(),
             DartTestRunnerSnapshotInfo(snapshot = None),
         ]
+
+    mismatch = kernel_sdk_mismatch_error(ctx.label, "runner", ctx.attr.runner, exec_sdk.version)
+    if mismatch != None:
+        fail(mismatch)
 
     runner = _runner_kernel(ctx, ctx.attr.runner)
     training = ctx.attr.training[DartTestKernelInfo]

@@ -1,6 +1,7 @@
 """Unit tests for common.bzl utilities."""
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
+load("//dart:providers.bzl", "DartCompileInfo")
 load(
     "//dart/private:common.bzl",
     "asset_path_for",
@@ -9,6 +10,7 @@ load(
     "generate_dev_package_config",
     "generate_package_config",
     "generate_package_config_content",
+    "kernel_sdk_mismatch_error",
     "relative_path",
     "resolve_package_roots",
 )
@@ -502,6 +504,55 @@ def _apf_generated_deeper_build_test_impl(ctx):
     asserts.equals(env, "lib/model.g.dart", asset_path_for(gen, "pkg"))
     return unittest.end(env)
 
+def _kernel_sdk_mismatch_matching_version_ok_test_impl(ctx):
+    env = unittest.begin(ctx)
+    tool = {
+        DartCompileInfo: DartCompileInfo(
+            executable = _fake_src("tool.dill"),
+            compile_mode = "kernel",
+            sdk_version = "3.13.5",
+        ),
+    }
+    asserts.equals(
+        env,
+        None,
+        kernel_sdk_mismatch_error("//pkg:gen", "generator_bin", tool, "3.13.5"),
+    )
+    return unittest.end(env)
+
+def _kernel_sdk_mismatch_exe_mode_ignores_version_test_impl(ctx):
+    env = unittest.begin(ctx)
+    tool = {
+        DartCompileInfo: DartCompileInfo(
+            executable = _fake_src("tool"),
+            compile_mode = "exe",
+            sdk_version = "3.13.4",
+        ),
+    }
+    asserts.equals(
+        env,
+        None,
+        kernel_sdk_mismatch_error("//pkg:gen", "generator_bin", tool, "3.13.5"),
+    )
+    return unittest.end(env)
+
+def _kernel_sdk_mismatch_different_version_reports_error_test_impl(ctx):
+    env = unittest.begin(ctx)
+    tool = {
+        DartCompileInfo: DartCompileInfo(
+            executable = _fake_src("tool.dill"),
+            compile_mode = "kernel",
+            sdk_version = "3.13.4",
+        ),
+    }
+    err = kernel_sdk_mismatch_error("//pkg:gen", "generator_bin", tool, "3.13.5")
+    asserts.true(env, err != None, "Expected mismatch error for kernel compiled by 3.13.4 run on 3.13.5")
+    asserts.true(env, "//pkg:gen" in err)
+    asserts.true(env, "generator_bin" in err)
+    asserts.true(env, "3.13.4" in err)
+    asserts.true(env, "3.13.5" in err)
+    return unittest.end(env)
+
 _t0_test = unittest.make(_empty_packages_test_impl)
 _t1_test = unittest.make(_single_package_test_impl)
 _t2_test = unittest.make(_multiple_packages_test_impl)
@@ -536,6 +587,9 @@ _t33_test = unittest.make(_hooks_offender_test_impl)
 _t34_test = unittest.make(_resolve_ignores_colocated_sibling_dir_test_impl)
 _t35_test = unittest.make(_resolve_ignores_generated_non_lib_file_test_impl)
 _t36_test = unittest.make(_resolve_nested_package_wins_test_impl)
+_t37_test = unittest.make(_kernel_sdk_mismatch_matching_version_ok_test_impl)
+_t38_test = unittest.make(_kernel_sdk_mismatch_exe_mode_ignores_version_test_impl)
+_t39_test = unittest.make(_kernel_sdk_mismatch_different_version_reports_error_test_impl)
 
 def common_test_suite(name):
     small_unittest_suite(
@@ -574,4 +628,7 @@ def common_test_suite(name):
         _t34_test,
         _t35_test,
         _t36_test,
+        _t37_test,
+        _t38_test,
+        _t39_test,
     )

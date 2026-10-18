@@ -20,6 +20,7 @@ load(
     "//dart/private:dart_kernel.bzl",
     "BINARY_MODULAR_KERNEL_ATTRS",
     "DartKernelInfo",
+    "EXEC_TOOLS_TOOLCHAIN",
     "MODULAR_KERNEL_TOOLCHAINS",
     "dart_kernel_module_aspect",
     "entry_sources",
@@ -60,8 +61,17 @@ def binary_output_basename(name, compile_mode, is_windows):
     fail("Unknown compile_mode: %s" % compile_mode)
 
 def _dart_binary_impl(ctx):
-    toolchain = ctx.toolchains["//dart:toolchain_type"]
-    dart_sdk_info = toolchain.dart_sdk_info
+    # A `dart_binary` evaluated in the execution configuration (`cfg = "exec"`)
+    # is a build-time tool — a codegen shim, analyzer/format runner, link-hook
+    # runner, or kernel compiler — and will be executed by the host's
+    # `//dart:exec_tools_toolchain_type` VM. Compile it with that same SDK so a
+    # kernel tool's `.dill` format and SDK hash always match the VM that runs it.
+    exec_tc = ctx.toolchains[EXEC_TOOLS_TOOLCHAIN] if EXEC_TOOLS_TOOLCHAIN in ctx.toolchains else None
+    if ctx.configuration.is_tool_configuration() and exec_tc != None and exec_tc.dart_sdk_info != None:
+        dart_sdk_info = exec_tc.dart_sdk_info
+    else:
+        toolchain = ctx.toolchains["//dart:toolchain_type"]
+        dart_sdk_info = toolchain.dart_sdk_info
 
     own_files = [ctx.file.main] + ctx.files.srcs
     own = executable_package(ctx, own_files)
@@ -116,6 +126,7 @@ def _dart_binary_impl(ctx):
         resolved_assets = resolved_assets,
         own_defines = ctx.attr.defines,
         compile_flags = ctx.attr.dart_compile_flags,
+        target_sdk = dart_sdk_info,
     )
     if kernel_tools != None:
         modular_executable_kernel(
@@ -207,6 +218,7 @@ def _dart_binary_impl(ctx):
         DartCompileInfo(
             executable = output,
             compile_mode = compile_mode,
+            sdk_version = dart_sdk_info.version,
         ),
         # What makes the `dart_analyze` aspect and `dart_fix` reach this entrypoint
         # without making this target a legal `deps` entry. Staging goes by

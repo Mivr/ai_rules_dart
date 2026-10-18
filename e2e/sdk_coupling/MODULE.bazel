@@ -1,0 +1,47 @@
+module(name = "sdk_coupling_e2e")
+
+bazel_dep(name = "rules_dart", version = "0.0.0")
+local_path_override(
+    module_name = "rules_dart",
+    path = "../..",
+)
+
+# Register two different Dart SDK versions:
+# - `exec_dart` (3.13.5) for `//dart:exec_tools_toolchain_type`
+# - `target_dart` (3.13.4) for `//dart:toolchain_type`
+# Every internal kernel tool (`copy_tree`, codegen shims, `analyzer_summary`,
+# `analyze_runner`, `format_runner`, `fix_runner`, `kernel_module`, `kernel_link`)
+# must compile with `exec_dart` so it matches the VM that executes it, while
+# target binaries and tests compile and run with `target_dart`.
+dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
+dart.toolchain(
+    name = "exec_dart",
+    dart_version = "3.13.5",
+)
+dart.toolchain(
+    name = "target_dart",
+    dart_version = "3.13.4",
+)
+use_repo(dart, "exec_dart_toolchains", "target_dart_toolchains")
+
+register_toolchains(
+    "@exec_dart_toolchains//:linux-x64_exec_tools_toolchain",
+    "@exec_dart_toolchains//:linux-arm64_exec_tools_toolchain",
+    "@exec_dart_toolchains//:macos-x64_exec_tools_toolchain",
+    "@exec_dart_toolchains//:macos-arm64_exec_tools_toolchain",
+    "@exec_dart_toolchains//:windows-x64_exec_tools_toolchain",
+    "@target_dart_toolchains//:all",
+)
+
+pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
+pub.from_lock(
+    name = "pub_deps",
+    lock = "//:pubspec.lock",
+    on_version_conflict = "upgrade",
+)
+pub.package(
+    name = "very_good_analysis",
+    sha256 = "0bd5eb8d6be76aa0d71e70cbdae6cac8f784f761170568e3c2214a6948c7f6d3",
+    version = "11.0.0",
+)
+use_repo(pub, "pub_deps", "very_good_analysis")

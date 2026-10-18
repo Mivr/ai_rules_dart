@@ -110,6 +110,7 @@ bzl_library(
     name = "copy_toolchain",
     srcs = ["copy_toolchain.bzl"],
     visibility = ["//dart:__subpackages__"],
+    deps = [":common"],
 )
 
 bzl_library(
@@ -329,6 +330,7 @@ bzl_library(
     srcs = ["dart_codegen.bzl"],
     visibility = ["//dart:__subpackages__"],
     deps = [
+        ":common",
         ":dart_analyzer_summary",
         "//dart:providers",
         "@bazel_skylib//rules:common_settings",
@@ -339,7 +341,10 @@ bzl_library(
     name = "dart_aggregate_codegen",
     srcs = ["dart_aggregate_codegen.bzl"],
     visibility = ["//dart:__subpackages__"],
-    deps = ["//dart:providers"],
+    deps = [
+        ":common",
+        "//dart:providers",
+    ],
 )
 
 dart_analysis_config(

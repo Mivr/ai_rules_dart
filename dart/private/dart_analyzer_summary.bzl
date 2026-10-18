@@ -29,7 +29,7 @@ unsafe: a toolchain SDK newer than the pinned analyzer supports
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartInfo")
-load("//dart/private:common.bzl", "generate_package_config")
+load("//dart/private:common.bzl", "generate_package_config", "kernel_sdk_mismatch_error")
 
 # Summaries are built on the build machine, with the exec tools SDK, the type
 # the codegen rules and `dart_analyze` use for the same reason.
@@ -201,6 +201,9 @@ def sdk_root_path(dart_sdk_info):
 
 def _analyzer_sdk_summary_impl(ctx):
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
+    mismatch = kernel_sdk_mismatch_error(ctx.label, "_tool", ctx.attr._tool, dart_sdk_info.version)
+    if mismatch != None:
+        fail(mismatch)
     summary = ctx.actions.declare_file(ctx.label.name + ".sum")
     args = ctx.actions.args()
     args.add("sdk")
@@ -358,6 +361,9 @@ def _dart_analyzer_summary_impl(target, ctx):
     embedder_yaml = _own_embedder_yaml(info, files)
     if embedder_yaml != None:
         dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
+        mismatch = kernel_sdk_mismatch_error(ctx.label, "_tool", ctx.attr._tool, dart_sdk_info.version)
+        if mismatch != None:
+            fail(mismatch)
         embedder_sdk = ctx.actions.declare_file(ctx.label.name + ".embedder_sdk.sum")
         args = ctx.actions.args()
         args.add("sdk")
@@ -470,6 +476,9 @@ def _dart_analyzer_summary_impl(target, ctx):
     )
 
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
+    mismatch = kernel_sdk_mismatch_error(ctx.label, "_tool", ctx.attr._tool, dart_sdk_info.version)
+    if mismatch != None:
+        fail(mismatch)
     sdk_summary = embedder_sdk_summary or ctx.file._sdk_summary
     args = ctx.actions.args()
     args.use_param_file("@%s", use_always = True)

@@ -69,7 +69,7 @@ vendored in `//third_party/dart_linter`, so they can drift from `dart analyze`
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartAnalysisOptionsInfo", "DartAnalyzableInfo", "DartInfo")
-load("//dart/private:common.bzl", "merge_package_records", "own_package_record", "writable_home_env")
+load("//dart/private:common.bzl", "kernel_sdk_mismatch_error", "merge_package_records", "own_package_record", "writable_home_env")
 load("//dart/private:dart_analyzer_summary.bzl", "CONFLICT_PREFIX", "DartAnalyzerSummaryInfo", "analyzer_summaries_supported", "closure_attrs", "dart_analyzer_summary", "own_lib_sources", "package_key", "sdk_root_path", "unbacked_embedder_in_closure")
 load("//dart/private:project_staging.bzl", "pubspec_stub", "stage_dart_project")
 load("//dart/private:source_set.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS")
@@ -272,6 +272,9 @@ def stage_config_project(ctx, config, packages, files, own, name, sdk_version, c
 def _analyze(ctx, name, staged, sdk_inputs):
     """Declares the `dart analyze` action; returns the stamp it writes on success."""
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
+    mismatch = kernel_sdk_mismatch_error(ctx.label, "_analyze_tool", ctx.attr._analyze_tool, dart_sdk_info.version)
+    if mismatch != None:
+        fail(mismatch)
     stamp = ctx.actions.declare_file(name + ".analyzed")
     args = ctx.actions.args()
     args.add("--dart", dart_sdk_info.dart)
@@ -298,6 +301,9 @@ def _analyze_summaries(ctx, name, staged, summaries, sdk_summary, sdk_inputs):
     of the closure's source the `dart analyze` action reads.
     """
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
+    mismatch = kernel_sdk_mismatch_error(ctx.label, "_summary_tool", ctx.attr._summary_tool, dart_sdk_info.version)
+    if mismatch != None:
+        fail(mismatch)
     stamp = ctx.actions.declare_file(name + ".analyzed")
     args = ctx.actions.args()
     args.use_param_file("@%s", use_always = True)
@@ -443,6 +449,9 @@ def _format(ctx, name, staged, sdk_inputs, own_paths, language_version):
     symlinked into the sandbox and, remotely, hashed and uploaded.
     """
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
+    mismatch = kernel_sdk_mismatch_error(ctx.label, "_format_tool", ctx.attr._format_tool, dart_sdk_info.version)
+    if mismatch != None:
+        fail(mismatch)
     manifest = ctx.actions.declare_file(name + ".format_manifest")
     ctx.actions.write(
         output = manifest,
@@ -625,6 +634,9 @@ def _dart_analyze_aspect_impl(target, ctx):
     # from Bazel's record of what each file is rather than from its name:
     # `dart fix`'s built-in generated-file skip matches `*.g.dart` and nothing
     # else, so a `.freezed.dart` part would otherwise be rewritten.
+    fix_mismatch = kernel_sdk_mismatch_error(ctx.label, "_fix_tool", ctx.attr._fix_tool, dart_sdk_info.version)
+    if fix_mismatch != None:
+        fail(fix_mismatch)
     eligible = ctx.actions.declare_file(name + ".eligible")
     ctx.actions.write(
         output = eligible,

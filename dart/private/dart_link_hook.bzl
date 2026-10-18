@@ -24,6 +24,7 @@ load(
     "collect_transitive_resources",
     "collect_transitive_srcs",
     "generate_package_config",
+    "kernel_sdk_mismatch_error",
     "package_link_hook",
     "writable_home_env",
 )
@@ -132,6 +133,15 @@ def dart_link_hook_actions(ctx, runner, sdk, recorded_uses, deps, data_asset_ids
       put in an `_validation` output group, so every hook runs whenever the
       target builds even if it emits no asset).
     """
+    mismatch = kernel_sdk_mismatch_error(
+        ctx.label,
+        "_link_hook_runner",
+        getattr(ctx.attr, "_link_hook_runner", None),
+        sdk.version,
+    )
+    if mismatch != None:
+        fail(mismatch)
+
     declared, err = parse_data_asset_ids(ctx.label, data_asset_ids)
     if err != None:
         fail(err)

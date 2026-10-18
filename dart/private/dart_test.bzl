@@ -50,7 +50,7 @@ def _dart_test_impl(ctx):
     # The build-time compile resolves each package, and the test's own `main`
     # with any generated sibling sources (e.g. a `.mocks.dart`), where they sit.
     own = executable_package(ctx, [ctx.file.main] + ctx.files.srcs)
-    runner = _test_runner(ctx, own.packages)
+    runner = _test_runner(ctx, own.packages, dart_sdk_info)
     kernel = _compile_test_kernel(ctx, own, bootstrap = runner != None, use_base_dill = runner != None)
     dill = kernel.dill
 
@@ -325,7 +325,7 @@ def _dart_test_kernel_impl(ctx):
         ),
     ]
 
-def _test_runner(ctx, packages):
+def _test_runner(ctx, packages, dart_sdk_info):
     """The `package:test` runner for this test, or `None` to run it directly.
 
     The runner is found on the direct dependency that provides `package:test`
@@ -337,13 +337,22 @@ def _test_runner(ctx, packages):
     Args:
       ctx: The rule context.
       packages: The test's `DartPackageInfo` closure.
+      dart_sdk_info: The `DartSdkInfo` that will execute the test and runner.
 
     Returns:
       The runner `.dill` File, or `None`.
     """
     for dep in ctx.attr.deps:
         if DartTestRunnerInfo in dep:
-            return dep[DartTestRunnerInfo].runner
+            info = dep[DartTestRunnerInfo]
+            runner_sdk = getattr(info, "sdk_version", "")
+            if runner_sdk and dart_sdk_info.version and runner_sdk != dart_sdk_info.version:
+                fail((
+                    "%s: `deps` target %s carries a test runner kernel (.dill) compiled by " +
+                    "Dart SDK %s, but will be executed by Dart SDK %s. A kernel binary can " +
+                    "only run on the exact Dart SDK version that compiled it."
+                ) % (ctx.label, dep.label, runner_sdk, dart_sdk_info.version))
+            return info.runner
     for pkg in packages:
         if pkg.package_name == "test":
             fail(("%s: depends on `package:test` without listing it in " +

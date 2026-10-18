@@ -128,6 +128,7 @@ DartCompileInfo = provider(
     fields = {
         "executable": "File: The compiled output file.",
         "compile_mode": "str: The compilation mode used (`exe`, `aot-snapshot`, `kernel`, or `jit-snapshot`).",
+        "sdk_version": "str: The version of the Dart SDK (`DartSdkInfo.version`) that compiled `executable`.",
     },
 )
 
