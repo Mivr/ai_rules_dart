@@ -98,7 +98,7 @@ void main(List<String> args) {
         final kmod = '${outDir.path}/$name.kmod';
         final koutline = '${outDir.path}/$name.koutline';
         final excluded = '${outDir.path}/$name.vm_excluded.txt';
-        return Process.run(Platform.resolvedExecutable, [
+        return Process.run(dartaotruntime, [
           kernelModuleBin,
           '--dartaotruntime',
           dartaotruntime,

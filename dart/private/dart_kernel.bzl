@@ -42,7 +42,7 @@ module.
 """
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
-load("//dart:providers.bzl", "DartInfo", _DartKernelInfo = "DartKernelInfo")
+load("//dart:providers.bzl", "DartCompileInfo", "DartInfo", _DartKernelInfo = "DartKernelInfo")
 load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR")
 load(
     "//dart/private:common.bzl",
@@ -767,7 +767,27 @@ def kernel_module_action(
         platform,
         ctx.executable._kernel_module,
     ]
-    if dart_exe != None:
+    tool_target = getattr(ctx.attr, "_kernel_module", None)
+    tool_compile_mode = (
+        tool_target[DartCompileInfo].compile_mode if tool_target != None and DartCompileInfo in tool_target else "kernel"
+    )
+    if tool_compile_mode == "aot-snapshot":
+        # The tool is an AOT snapshot: `dart` refuses to run `.aot` files, so
+        # `dartaotruntime` executes it directly. This also drops the `dart` and
+        # `dartvm` inputs: the snapshot needs only the runtime. The
+        # SDK-mismatch check below is kernel-only; an AOT snapshot built by a
+        # foreign SDK fails loudly at execution time instead.
+        direct_inputs.append(ctx.executable._kernel_module)
+        executable = tools.dartaotruntime
+        arguments = [
+            ctx.executable._kernel_module.path,
+            "--kernel-worker",
+            tools.kernel_worker.path,
+            "--dartaotruntime",
+            tools.dartaotruntime.path,
+            args,
+        ]
+    elif dart_exe != None:
         mismatch = kernel_sdk_mismatch_error(
             ctx.label,
             "_kernel_module",
