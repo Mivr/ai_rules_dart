@@ -48,6 +48,7 @@ jobs:
           - "e2e/codegen"
           - "e2e/pub_deps"
           - "e2e/pub_lock"
+          - "e2e/pub_lock_git"
           - "e2e/web_app"
           - "e2e/gazelle"
           - "e2e/cross_compile"
