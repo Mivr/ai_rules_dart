@@ -16,6 +16,11 @@
 //    its library's verdict.
 //  * A conditional import takes its first `dart.library.X` alternative for a VM
 //    library X, and its default URI otherwise.
+//  * A directive URI resolves exactly as the front end resolves it: escapes decode
+//    once (either hex case), `\` is a separator, and `..` in a relative URI never
+//    leaves the importer's package directory (while a `package:` escape fails), so
+//    a percent-encoded spelling that reads an undeclared file excludes its library
+//    instead of compiling the shadow.
 //  * The VM libraries are those of the `vm` platform in the SDK's `libraries.json`,
 //    following its `include`s.
 //  * A source that a dependency module already defines is not compiled again. The
@@ -53,6 +58,12 @@
 // fails the action with the compiler's output. The one exception is a safety net: an
 // error that can be blamed on an own source drops that source and its importers, and
 // the module compiles once more. Any other error fails at once.
+//
+// An unstaged compile then proves it read only declared or pinned inputs: every
+// workspace file its `.dill` records must be declared, or defined by a dependency
+// module of the closure, or the compile is redone with an
+// isolated `--multi-root` holding symlinks to exactly the declared origins, where
+// the missed read fails instead of escaping the sandbox.
 //
 // An executable's entry module compiles from source every file it reaches that the
 // closure excludes and no module defines, so the compiler reports the genuine VM error
@@ -580,21 +591,7 @@ Future<int> compileModule(
     );
     ({String rootDir, List<Uint8List> inputs, Map<String, Uint8List> covered})?
     isolated;
-    final ModuleOutcome outcome;
-    try {
-      if (useIsolated) {
-        // The front end sees a single `--multi-root` holding symlinks to exactly
-        // the declared origins, so untracked workspace files and stale generated
-        // outputs can never shadow a declared source, and references to
-        // undeclared files fail instead of reading the workspace.
-        isolated = await _stageIsolatedMultiRoot(
-          output,
-          files,
-          inputDigests,
-          includeInputDigests: inputs.isNotEmpty || compiler is _Persistent,
-          createLink: createLink,
-        );
-      }
+    Future<ModuleOutcome> runEntry() async {
       final staged = isolated;
       final entryBase = staged != null
           ? _baseWithSingleMultiRoot(base, staged.rootDir)
@@ -609,7 +606,7 @@ Future<int> compileModule(
                     ..._uncoveredInputs(inputs, staged.covered),
                   ])
           : (stagedInputs.isEmpty ? inputs : [...inputs, ...stagedInputs]);
-      outcome = await compiler.run(
+      return compiler.run(
         kernelWorkerArgs([
           // Staged-source roots come first so the pinned dependency copies
           // win over any workspace shadow, exactly as the probe validates.
@@ -626,6 +623,47 @@ Future<int> compileModule(
         ]),
         callInputs,
       );
+    }
+
+    final ModuleOutcome outcome;
+    try {
+      if (useIsolated) {
+        // The front end sees a single `--multi-root` holding symlinks to exactly
+        // the declared origins, so untracked workspace files and stale generated
+        // outputs can never shadow a declared source, and references to
+        // undeclared files fail instead of reading the workspace.
+        isolated = await _stageIsolatedMultiRoot(
+          output,
+          files,
+          inputDigests,
+          includeInputDigests: inputs.isNotEmpty || compiler is _Persistent,
+          createLink: createLink,
+        );
+      }
+      var first = await runEntry();
+      if (first.exitCode == 0 &&
+          isolated == null &&
+          !await _unstagedReadsAreDeclared(
+            '$output/$dill',
+            files,
+            graph,
+            multiRoots,
+            multiRootPrefix,
+            log,
+          )) {
+        // The plan missed a file the front end read (a directive spelling the
+        // planner resolves differently): redo the compile where only declared
+        // inputs exist, so the read fails instead of escaping the sandbox.
+        isolated = await _stageIsolatedMultiRoot(
+          output,
+          files,
+          inputDigests,
+          includeInputDigests: inputs.isNotEmpty || compiler is _Persistent,
+          createLink: createLink,
+        );
+        first = await runEntry();
+      }
+      outcome = first;
     } finally {
       if (isolated != null) {
         final dir = Directory(_filePathOf(isolated.rootDir));
@@ -762,42 +800,72 @@ Future<int> compileModule(
             createLink: createLink,
           );
         }
-        final staged = isolated;
-        final summaryNodes = _neededNodes(scc.imports, local);
-        final summaryInputs = <Uint8List>[];
-        if (inputs.isNotEmpty || compiler is _Persistent) {
-          for (final node in summaryNodes) {
-            final encoded = node.encodedInput;
-            if (encoded != null) {
-              summaryInputs.add(encoded);
+        final dillPath = '$output/${scc.dill}';
+        Future<ModuleOutcome> runOnce() async {
+          final staged = isolated;
+          final summaryNodes = _neededNodes(scc.imports, local);
+          final summaryInputs = <Uint8List>[];
+          if (inputs.isNotEmpty || compiler is _Persistent) {
+            for (final node in summaryNodes) {
+              final encoded = node.encodedInput;
+              if (encoded != null) {
+                summaryInputs.add(encoded);
+              }
             }
           }
+          final sccBase = staged != null
+              ? _baseWithSingleMultiRoot(base, staged.rootDir)
+              : _baseWithOrderedMultiRoots(base, multiRoots, scc.keys, files);
+          final extraInputs = [
+            if (staged != null) ...staged.inputs else ...stagedInputs,
+            ...summaryInputs,
+            if (staged != null) ..._uncoveredInputs(inputs, staged.covered),
+          ];
+          return compiler.run(
+            kernelWorkerArgs([
+              // Staged-source roots come first so the pinned dependency copies
+              // win over any workspace shadow, exactly as the probe validates.
+              if (staged == null)
+                for (final root in extraMultiRoots) ...[_multiRootFlag, root],
+              ...sccBase,
+              for (final node in summaryNodes) ...[
+                '--input-summary',
+                node.dill,
+              ],
+              for (final uri in scc.uris) ...['--source', uri],
+              '--output',
+              dillPath,
+            ]),
+            staged != null
+                ? (extraInputs.isEmpty ? inputs : extraInputs)
+                : (extraInputs.isEmpty ? inputs : [...inputs, ...extraInputs]),
+          );
         }
-        final dillPath = '$output/${scc.dill}';
-        final sccBase = staged != null
-            ? _baseWithSingleMultiRoot(base, staged.rootDir)
-            : _baseWithOrderedMultiRoots(base, multiRoots, scc.keys, files);
-        final extraInputs = [
-          if (staged != null) ...staged.inputs else ...stagedInputs,
-          ...summaryInputs,
-          if (staged != null) ..._uncoveredInputs(inputs, staged.covered),
-        ];
-        final outcome = await compiler.run(
-          kernelWorkerArgs([
-            // Staged-source roots come first so the pinned dependency copies
-            // win over any workspace shadow, exactly as the probe validates.
-            if (staged == null)
-              for (final root in extraMultiRoots) ...[_multiRootFlag, root],
-            ...sccBase,
-            for (final node in summaryNodes) ...['--input-summary', node.dill],
-            for (final uri in scc.uris) ...['--source', uri],
-            '--output',
-            dillPath,
-          ]),
-          staged != null
-              ? (extraInputs.isEmpty ? inputs : extraInputs)
-              : (extraInputs.isEmpty ? inputs : [...inputs, ...extraInputs]),
-        );
+
+        var outcome = await runOnce();
+        if (outcome.exitCode == 0 &&
+            isolated == null &&
+            !await _unstagedReadsAreDeclared(
+              dillPath,
+              files,
+              local,
+              multiRoots,
+              multiRootPrefix,
+              log,
+            )) {
+          // The plan missed a file the front end read (a directive spelling
+          // the planner resolves differently): redo the compile where only
+          // declared inputs exist, so the read fails instead of escaping the
+          // sandbox. Later components inherit the isolated root.
+          isolated = await _stageIsolatedMultiRoot(
+            output,
+            files,
+            inputDigests,
+            includeInputDigests: inputs.isNotEmpty || compiler is _Persistent,
+            createLink: createLink,
+          );
+          outcome = await runOnce();
+        }
         if (outcome.exitCode != 0) {
           failure = outcome;
           failedUris = scc.uris;
@@ -2222,6 +2290,13 @@ String? _stripPrefix(String uri, String multiRootPrefix) {
 /// The key of a source or a library: the path it has under the multi-root
 /// directories, without the scheme. Null for a URI this module cannot name, such as
 /// a `dart:` library or a `package:` whose package it does not list.
+///
+/// The key is the literal spelling: `--source` URIs name action inputs, and the
+/// spelling the rule passes is the input's path. (The front end percent-decodes
+/// flag URIs when it reads them, so a `--source` URI with an escape reads the
+/// decoded file; the read-set verification in [_unstagedReadsAreDeclared]
+/// catches that divergence and recompiles isolated, where the read fails
+/// instead of reaching an undeclared file.)
 String? _keyOfUri(
   String uri,
   Map<String, _PackageRoot> roots,
@@ -2240,6 +2315,138 @@ String? _keyOfUri(
   );
 }
 
+/// Decodes one raw URI path segment the way the front end does (RFC 3986): each
+/// valid `%XX` escape becomes its byte (bytes together decode as UTF-8, either
+/// hex case), while anything else — including a lone `%` — stays literal.
+/// Decoding happens once: a `%` produced by decoding is never decoded again.
+String _decodeUriSegment(String segment) {
+  if (!segment.contains('%')) return segment;
+  final out = StringBuffer();
+  final bytes = <int>[];
+  void flush() {
+    if (bytes.isEmpty) return;
+    out.write(utf8.decode(bytes, allowMalformed: true));
+    bytes.clear();
+  }
+
+  for (var i = 0; i < segment.length; i++) {
+    final c = segment.codeUnitAt(i);
+    if (c == 0x25 && i + 2 < segment.length) {
+      final hex = int.tryParse(segment.substring(i + 1, i + 3), radix: 16);
+      if (hex != null && hex >= 0 && hex <= 0xff) {
+        bytes.add(hex);
+        i += 2;
+        continue;
+      }
+    }
+    flush();
+    out.writeCharCode(c);
+  }
+  flush();
+  return out.toString();
+}
+
+/// The segments of the longest [packageDirs] directory holding `fromKey`, or
+/// the empty list when no package holds it (an unpackaged file).
+List<String> _packageDirOf(String fromKey, Map<String, String> packageDirs) {
+  var best = const <String>[];
+  for (final dir in packageDirs.values) {
+    if (dir.isEmpty) continue;
+    if (fromKey == dir || fromKey.startsWith('$dir/')) {
+      final segs = dir.split('/');
+      if (segs.length > best.length) best = segs;
+    }
+  }
+  return best;
+}
+
+/// Applies the segments of a directive path onto [base]: empty and `.` segments
+/// are dropped, each `..` pops while deeper than [floor], and a decoded `/`
+/// (`%2F`) names no file, since no file can be read through it. Above [floor],
+/// `..` either fails ([failAboveFloor], for `package:` URIs, where the front
+/// end reports leaving the package) or is dropped (relative and absolute URIs,
+/// which the front end clamps to the package directory or the multi-root).
+String? _resolveDirectivePath(
+  String path,
+  List<String> base,
+  int floor,
+  bool failAboveFloor,
+) {
+  final stack = base.toList();
+  for (final raw in path.split('/')) {
+    if (raw.isEmpty) continue;
+    final seg = _decodeUriSegment(raw);
+    if (seg.isEmpty || seg == '.') continue;
+    if (seg == '..') {
+      if (stack.length > floor) {
+        stack.removeLast();
+      } else if (failAboveFloor) {
+        return null;
+      }
+      continue;
+    }
+    if (seg.contains('/')) return null;
+    stack.add(seg);
+  }
+  return stack.join('/');
+}
+
+/// The key a directive URI (`import`, `export`, `part`, `part of`) in the file
+/// named `fromKey` refers to: the key of the file the front end reads.
+///
+/// `packageDirs` maps each package name to its directory key (`pkg/lib`).
+/// [multiRootPrefix] is the scheme the absolute URIs of multi-root files start
+/// with (`org-dartlang-root:///`). Null when the URI names no workspace file:
+/// an unknown package or scheme, an escape above a `package:` directory, a
+/// query, a fragment, an authority, or a decoded `/`.
+///
+/// The resolution mirrors the front end exactly: `\` is a separator everywhere,
+/// escapes decode once (either hex case), `/`-absolute URIs resolve against the
+/// importer's package directory (unpackaged files against the multi-root), and
+/// relative URIs against the importer's directory, clamped so `..` never leaves
+/// the package directory.
+String? resolveDirectiveUri(
+  String uri,
+  String fromKey,
+  Map<String, String> packageDirs, {
+  String multiRootPrefix = _defaultMultiRootPrefix,
+}) {
+  final text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
+  final absolute = _stripPrefix(text, multiRootPrefix);
+  if (absolute != null) {
+    return _resolveDirectivePath(absolute, const [], 0, false);
+  }
+  if (text.startsWith('package:')) {
+    final rest = text.substring('package:'.length);
+    if (rest.contains('?') || rest.contains('#')) return null;
+    final slash = rest.indexOf('/');
+    if (slash <= 0) return null;
+    final dir = packageDirs[rest.substring(0, slash)];
+    if (dir == null) return null;
+    final base = dir.isEmpty ? const <String>[] : dir.split('/');
+    return _resolveDirectivePath(
+      rest.substring(slash + 1),
+      base,
+      base.length,
+      true,
+    );
+  }
+  if (text.contains(':')) return null;
+  if (text.contains('?') || text.contains('#') || text.startsWith('//')) {
+    return null;
+  }
+  if (text.startsWith('/')) {
+    final base = _packageDirOf(fromKey, packageDirs);
+    return _resolveDirectivePath(text, base, base.length, false);
+  }
+  final slash = fromKey.lastIndexOf('/');
+  final base = slash < 0
+      ? const <String>[]
+      : fromKey.substring(0, slash).split('/');
+  final floor = _packageDirOf(fromKey, packageDirs).length;
+  return _resolveDirectivePath(text, base, floor, false);
+}
+
 /// The key a URI in a file named `fromKey` refers to, or null when the URI is not
 /// one this module can name.
 String? _resolveUri(
@@ -2248,13 +2455,19 @@ String? _resolveUri(
   Map<String, _PackageRoot> roots,
   String multiRootPrefix,
 ) {
-  if (uri.startsWith('package:') || uri.startsWith(multiRootPrefix)) {
-    return _keyOfUri(uri, roots, multiRootPrefix);
-  }
-  if (uri.contains(':')) return null;
-  final slash = fromKey.lastIndexOf('/');
-  final dir = slash < 0 ? '' : fromKey.substring(0, slash + 1);
-  return _normalize('$dir$uri');
+  final packageDirs = <String, String>{
+    for (final entry in roots.entries)
+      entry.key: (entry.value.path + entry.value.packageUri).replaceFirst(
+        RegExp(r'/+$'),
+        '',
+      ),
+  };
+  return resolveDirectiveUri(
+    uri,
+    fromKey,
+    packageDirs,
+    multiRootPrefix: multiRootPrefix,
+  );
 }
 
 /// `path` without empty and `.` segments, with each `..` applied.
@@ -4356,6 +4569,225 @@ Uint8List _stripSingleComponentSourceCode(Uint8List data, StringSink sink) {
   }
   out.add(idxBuf.buffer.asUint8List());
   return out.takeBytes();
+}
+
+/// The byte ranges of the kernel components in [data] (a single component, or
+/// concatenated ones), or null when [data] is structurally not a kernel file.
+/// Mirrors the splitting in [_stripSourceCodeFromDill].
+List<(int, int)>? _componentRanges(Uint8List data) {
+  if (data.length < 48) return null;
+  final bd = ByteData.sublistView(data);
+  if (bd.getUint32(0) != Tag.ComponentFile) return null;
+  final lastSize = bd.getUint32(data.length - 4);
+  if (lastSize == data.length) return [(0, data.length)];
+  final ranges = <(int, int)>[];
+  var end = data.length;
+  while (end >= 48) {
+    final compSize = bd.getUint32(end - 4);
+    if (compSize < 48 || compSize > end) return null;
+    final start = end - compSize;
+    if (bd.getUint32(start) != Tag.ComponentFile) return null;
+    ranges.add((start, end));
+    end = start;
+  }
+  if (end != 0 || ranges.isEmpty) return null;
+  return ranges.reversed.toList();
+}
+
+/// Adds the `fileUri` of every source in the one kernel component [part] to
+/// [uris]. Returns false (leaving [uris] short) when [part] is not a supported
+/// component: every offset and length is bounds-checked against its source
+/// table, so malformed bytes fail instead of misreading.
+bool _collectComponentSourceUris(Uint8List part, List<String> uris) {
+  if (part.length < 12) return false;
+  final bd = ByteData.sublistView(part);
+  if (bd.getUint32(0) != Tag.ComponentFile) return false;
+  if (!supportedKernelFormatVersions.contains(bd.getUint32(4))) return false;
+  final libCount = bd.getUint32(part.length - 8);
+  final idxBytes = (libCount + 12) * 4;
+  if (idxBytes > part.length) return false;
+  final rawIdxStart = part.length - idxBytes;
+  int u32(int offset) => bd.getUint32(offset);
+  final offSourceTable = u32(rawIdxStart);
+  final offConstantTable = u32(rawIdxStart + 4);
+  if (offSourceTable + 4 > offConstantTable || offConstantTable > rawIdxStart) {
+    return false;
+  }
+  var pos = offSourceTable + 4;
+  int? readU30() {
+    if (pos >= offConstantTable) return null;
+    final b0 = part[pos++];
+    if ((b0 & 0x80) == 0) return b0;
+    if ((b0 & 0x40) == 0) {
+      if (pos >= offConstantTable) return null;
+      return ((b0 & 0x3f) << 8) | part[pos++];
+    }
+    if (pos + 3 > offConstantTable) return null;
+    final value =
+        ((b0 & 0x3f) << 24) |
+        (part[pos] << 16) |
+        (part[pos + 1] << 8) |
+        part[pos + 2];
+    pos += 3;
+    return value;
+  }
+
+  bool skipBytes(int n) {
+    if (n < 0 || pos + n > offConstantTable) return false;
+    pos += n;
+    return true;
+  }
+
+  final numSources = u32(offSourceTable);
+  for (var i = 0; i < numSources; i++) {
+    // 1. uri: UInt30 byteLength + UTF-8 bytes.
+    final uriLen = readU30();
+    if (uriLen == null || uriLen < 0 || pos + uriLen > offConstantTable) {
+      return false;
+    }
+    String uri;
+    try {
+      uri = utf8.decode(part.sublist(pos, pos + uriLen));
+    } catch (_) {
+      return false;
+    }
+    pos += uriLen;
+    uris.add(uri);
+    // 2. sourceCode: UInt30 byteLength + UTF-8 bytes.
+    final srcLen = readU30();
+    if (srcLen == null || !skipBytes(srcLen)) return false;
+    // 3. lineStarts: UInt30 count + count * UInt30 delta.
+    final lineCount = readU30();
+    if (lineCount == null) return false;
+    for (var j = 0; j < lineCount; j++) {
+      if (readU30() == null) return false;
+    }
+    // 4. importUri: UInt30 byteLength + UTF-8 bytes.
+    final impLen = readU30();
+    if (impLen == null || !skipBytes(impLen)) return false;
+    // 5. constantCoverageConstructors: UInt30 count + count * UInt30.
+    final covCount = readU30();
+    if (covCount == null) return false;
+    for (var j = 0; j < covCount; j++) {
+      if (readU30() == null) return false;
+    }
+  }
+  return true;
+}
+
+/// The `fileUri` of every source recorded in the kernel component(s) in [data]
+/// — the files the compile actually read — or null when [data] is not a
+/// supported kernel file.
+List<String>? dillSourceUris(Uint8List data) {
+  final ranges = _componentRanges(data);
+  if (ranges == null) return null;
+  final uris = <String>[];
+  for (final (start, end) in ranges) {
+    if (!_collectComponentSourceUris(
+      Uint8List.sublistView(data, start, end),
+      uris,
+    )) {
+      return null;
+    }
+  }
+  return uris;
+}
+
+/// The declared-input key the `.dill` source-table URI [uri] names, or null when
+/// it names no workspace file (`dart:`, `data:`, the SDK, an untranslatable
+/// URI, or the empty entry, which names no file at all). The empty string
+/// marks a file no root names — outside every root, or an unknown scheme —
+/// which is never a declared input, so such reads fail closed.
+///
+/// Recorded multi-root URIs decode once, undoing the encoding the recording
+/// adds: a literal `%` in a file name round-trips through `%25`. Recorded
+/// `file:` URIs are already file paths and decode no further.
+String? _keyOfDillSourceUri(
+  String uri,
+  List<String> multiRoots,
+  String multiRootPrefix,
+) {
+  // An empty source-table entry names no file, so there is no read to verify.
+  if (uri.isEmpty) return null;
+  final stripped = _stripPrefix(uri, multiRootPrefix);
+  if (stripped != null) {
+    return stripped.contains('%')
+        ? stripped.split('/').map(_decodeUriSegment).join('/')
+        : stripped;
+  }
+  if (uri.startsWith('dart:') ||
+      uri.startsWith('data:') ||
+      uri.startsWith('org-dartlang-sdk:') ||
+      uri.startsWith('org-dartlang-untranslatable-uri:')) {
+    return null;
+  }
+  if (uri.startsWith('file:')) {
+    String path;
+    try {
+      path = Uri.parse(uri).toFilePath();
+    } catch (_) {
+      return '';
+    }
+    final normPath = path.contains(r'\') ? path.replaceAll(r'\', '/') : path;
+    final cwd = Directory.current.path.replaceAll(r'\', '/');
+    for (final root in multiRoots) {
+      var rootFile = root.contains(r'\') ? root.replaceAll(r'\', '/') : root;
+      rootFile = rootFile.replaceFirst(RegExp(r'/+$'), '');
+      final candidates = rootFile.isEmpty || rootFile == '.'
+          ? [cwd]
+          : rootFile.startsWith('/') || isWindowsDrivePath(rootFile)
+          ? [rootFile]
+          : ['$cwd/$rootFile', rootFile];
+      for (final base in candidates) {
+        if (normPath == base || normPath.startsWith('$base/')) {
+          return normPath == base ? '' : normPath.substring(base.length + 1);
+        }
+      }
+    }
+    return '';
+  }
+  return '';
+}
+
+/// Whether the `.dill` an unstaged compile wrote read only declared or pinned
+/// inputs: every workspace file its source table names is either one of
+/// [files]' declared inputs, or defined by a dependency module of the closure
+/// ([graph] holds the keys every module of the closure defines). Dependency
+/// sources are pinned inputs the front end links against — it embeds one when,
+/// for example, a compiled library applies its mixin — so they cannot smuggle
+/// an undeclared workspace file in. A missing output (a recording test
+/// compiler, which writes none) passes; an unreadable table fails closed, so
+/// the compile is redone isolated.
+Future<bool> _unstagedReadsAreDeclared(
+  String dillPath,
+  _Files files,
+  Map<String, _Node> graph,
+  List<String> multiRoots,
+  String multiRootPrefix,
+  StringBuffer log,
+) async {
+  final dillFile = File(dillPath);
+  if (!await dillFile.exists()) return true;
+  final uris = dillSourceUris(await dillFile.readAsBytes());
+  if (uris == null) {
+    log.writeln(
+      'kernel_module: cannot read the sources of $dillPath; '
+      'recompiling with an isolated multi-root.',
+    );
+    return false;
+  }
+  for (final uri in uris) {
+    final key = _keyOfDillSourceUri(uri, multiRoots, multiRootPrefix);
+    if (key == null) continue;
+    if (!files.isDeclared(key) && !graph.containsKey(key)) {
+      log.writeln(
+        'kernel_module: $dillPath reads $uri, which is not a declared input; '
+        'recompiling with an isolated multi-root.',
+      );
+      return false;
+    }
+  }
+  return true;
 }
 
 const _x64SplitCommasPattern = <int>[

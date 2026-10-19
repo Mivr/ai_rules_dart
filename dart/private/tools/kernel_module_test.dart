@@ -21,11 +21,13 @@ import 'kernel_module.dart'
         ModuleOutcome,
         compileModule,
         decodeKernelModuleWorkRequestInputs,
+        dillSourceUris,
         ensureSummaryDigests,
         isWindowsDrivePath,
         kernelWorkerArgs,
         kernelWorkerUri,
         patchSnapshotSplitCommas,
+        resolveDirectiveUri,
         scanDirectives,
         sha256Of,
         stripSourceCodeFromDill,
@@ -62,6 +64,26 @@ class _ProcessModuleCompiler implements ModuleCompiler {
   Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
     final res = await Process.run(dartaotruntime, [kernelWorker, ...args]);
     return ModuleOutcome(res.exitCode, '${res.stdout}${res.stderr}');
+  }
+
+  @override
+  Future<void> close() async {}
+}
+
+/// A compiler that writes [dillBytes] to each request's `--output` and succeeds,
+/// so the read-set verification has a dill to check.
+class _DillWritingCompiler implements ModuleCompiler {
+  _DillWritingCompiler(this.dillBytes);
+
+  final Uint8List Function() dillBytes;
+  final List<List<String>> calls = [];
+
+  @override
+  Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
+    calls.add(args);
+    final outIdx = args.indexOf('--output');
+    await File(args[outIdx + 1]).writeAsBytes(dillBytes());
+    return const ModuleOutcome(0, '');
   }
 
   @override
@@ -159,6 +181,7 @@ Future<_Result> _compile(
   List<String> extraLibraries = const [],
   String? packagesFile,
   List<Uint8List> inputs = const [],
+  ModuleCompiler? compiler,
 }) async {
   final output = '${_root.path}/out/$name';
   final excludedPath = '$output.vm_excluded.txt';
@@ -191,14 +214,17 @@ Future<_Result> _compile(
   ];
   final recorder = _Recorder();
   final log = StringBuffer();
-  final code = await compileModule(args, recorder, log, inputs);
+  final code = await compileModule(args, compiler ?? recorder, log, inputs);
   final written = code == 0
       ? jsonDecode(File('$output/index.json').readAsStringSync())
             as Map<String, dynamic>
       : <String, dynamic>{'sccs': <dynamic>[]};
+  final calls = compiler is _DillWritingCompiler
+      ? compiler.calls
+      : recorder.calls;
   return _Result(
     code,
-    recorder.calls,
+    calls,
     code == 0 ? File(excludedPath).readAsStringSync() : '',
     written,
     log.toString(),
@@ -429,6 +455,67 @@ Uint8List _buildMinimalFieldDill({
   u32(libStart);
   u32(libEnd);
   u32(1); // libraryCount = 1
+  u32(out.length + 4);
+  return out.toBytes();
+}
+
+/// A structurally valid kernel component whose source table holds exactly [uris]
+/// (with empty source code, line starts, import URIs and coverage), for
+/// read-set verification tests. The bytes between the header and the source
+/// table are filler: the verifier reads only the source table and the trailer
+/// index.
+Uint8List _buildDillWithUris(
+  List<String> uris, {
+  int formatVersion = Tag.BinaryFormatVersion,
+}) {
+  final out = BytesBuilder();
+  void u30(int v) {
+    if (v < 0x80) {
+      out.addByte(v);
+    } else if (v < 0x4000) {
+      out.addByte(0x80 | (v >> 8));
+      out.addByte(v & 0xff);
+    } else {
+      out.addByte(0xc0 | ((v >> 24) & 0x3f));
+      out.addByte((v >> 16) & 0xff);
+      out.addByte((v >> 8) & 0xff);
+      out.addByte(v & 0xff);
+    }
+  }
+
+  void u32(int v) {
+    out.addByte((v >> 24) & 0xff);
+    out.addByte((v >> 16) & 0xff);
+    out.addByte((v >> 8) & 0xff);
+    out.addByte(v & 0xff);
+  }
+
+  void str(String s) {
+    final bytes = utf8.encode(s);
+    u30(bytes.length);
+    out.add(bytes);
+  }
+
+  u32(Tag.ComponentFile);
+  u32(formatVersion);
+  out.add(List.filled(64, 0));
+  final sourceTableOffset = out.length;
+  u32(uris.length);
+  for (final uri in uris) {
+    str(uri);
+    str('');
+    u30(0);
+    str('');
+    u30(0);
+  }
+  final constantTableOffset = out.length;
+  u30(0);
+  u32(sourceTableOffset);
+  u32(constantTableOffset);
+  for (var i = 0; i < 8; i++) {
+    u32(constantTableOffset);
+  }
+  u32(0); // libraryCount = 0
   u32(out.length + 4);
   return out.toBytes();
 }
@@ -668,6 +755,437 @@ void main(List<String> args) {
       ],
     ]);
   });
+
+  group('directive URI resolution matches the front end', () {
+    const dirs = {'pkg': 'pkg/lib', 'dep': 'dep/lib'};
+
+    test('percent escapes decode once, in either hex case', () {
+      expect(
+        resolveDirectiveUri('pie%63e.dart', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/piece.dart',
+      );
+      expect(
+        resolveDirectiveUri('PIE%43E.DART', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/PIECE.DART',
+      );
+      expect(
+        resolveDirectiveUri('%41%42.dart', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/AB.dart',
+      );
+      expect(
+        resolveDirectiveUri('%2563.dart', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/%63.dart',
+        reason: 'decoding happens once',
+      );
+      expect(
+        resolveDirectiveUri('lone%b.dart', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/lone%b.dart',
+        reason: 'a lone % stays literal',
+      );
+      expect(
+        resolveDirectiveUri('a%2.dart', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/a%2.dart',
+        reason: 'a truncated escape stays literal',
+      );
+      expect(
+        resolveDirectiveUri('th%C3%A9.dart', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/thé.dart',
+      );
+    });
+
+    test('a decoded slash names no file', () {
+      expect(
+        resolveDirectiveUri('sub%2Fb.dart', 'pkg/lib/a.dart', dirs),
+        isNull,
+        reason: '%2F crashes the front end file layer',
+      );
+      expect(
+        resolveDirectiveUri('sub%2F..%2Fb.dart', 'pkg/lib/a.dart', dirs),
+        isNull,
+      );
+    });
+
+    test('dot segments resolve against the package directory', () {
+      expect(resolveDirectiveUri('%2E', 'pkg/lib/a.dart', dirs), 'pkg/lib');
+      expect(
+        resolveDirectiveUri('sub/%2E%2E', 'pkg/lib/a.dart', dirs),
+        'pkg/lib',
+      );
+      expect(
+        resolveDirectiveUri('.%2E/x.dart', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/x.dart',
+      );
+      expect(
+        resolveDirectiveUri('%2e%2e/x.dart', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/x.dart',
+      );
+      expect(
+        resolveDirectiveUri('./b.dart', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/b.dart',
+      );
+      expect(
+        resolveDirectiveUri('a//b.dart', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/a/b.dart',
+      );
+    });
+
+    test('relative dot-dot never leaves the package directory', () {
+      expect(
+        resolveDirectiveUri('../x.dart', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/x.dart',
+      );
+      expect(
+        resolveDirectiveUri('sub/../../x.dart', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/x.dart',
+      );
+      expect(
+        resolveDirectiveUri('../../x.dart', 'pkg/lib/sub/a.dart', dirs),
+        'pkg/lib/x.dart',
+      );
+      expect(
+        resolveDirectiveUri('../x.dart', 'main.dart', dirs),
+        'x.dart',
+        reason: 'unpackaged files clamp at the multi-root',
+      );
+      expect(resolveDirectiveUri('sub/../b.dart', 'main.dart', dirs), 'b.dart');
+    });
+
+    test('absolute paths resolve against the package directory', () {
+      expect(
+        resolveDirectiveUri('/sub/b.dart', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/sub/b.dart',
+      );
+      expect(
+        resolveDirectiveUri('/../x.dart', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/x.dart',
+      );
+      expect(
+        resolveDirectiveUri('/pkg/lib/b.dart', 'pkg/lib/sub/a.dart', dirs),
+        'pkg/lib/pkg/lib/b.dart',
+        reason: 'absolute paths concatenate onto the package directory',
+      );
+      expect(resolveDirectiveUri('/x.dart', 'main.dart', dirs), 'x.dart');
+    });
+
+    test('package URIs decode and fail when leaving the package', () {
+      expect(
+        resolveDirectiveUri(
+          'package:pkg/sub/../x.dart',
+          'pkg/lib/a.dart',
+          dirs,
+        ),
+        'pkg/lib/x.dart',
+      );
+      expect(
+        resolveDirectiveUri(
+          'package:pkg/sub/../../x.dart',
+          'pkg/lib/a.dart',
+          dirs,
+        ),
+        isNull,
+      );
+      expect(
+        resolveDirectiveUri(
+          'package:pkg/sub%63/x.dart',
+          'pkg/lib/a.dart',
+          dirs,
+        ),
+        'pkg/lib/subc/x.dart',
+      );
+      expect(
+        resolveDirectiveUri('package:pkg/b.dart?x=1', 'pkg/lib/a.dart', dirs),
+        isNull,
+      );
+      expect(
+        resolveDirectiveUri('package:pkg/b.dart#frag', 'pkg/lib/a.dart', dirs),
+        isNull,
+      );
+      expect(
+        resolveDirectiveUri('package:other/b.dart', 'pkg/lib/a.dart', dirs),
+        isNull,
+      );
+      expect(
+        resolveDirectiveUri('package:pkg', 'pkg/lib/a.dart', dirs),
+        isNull,
+      );
+    });
+
+    test('absolute multi-root URIs decode with the multi-root as floor', () {
+      expect(
+        resolveDirectiveUri(
+          'org-dartlang-root:///pkg/lib/../x.dart',
+          'pkg/lib/a.dart',
+          dirs,
+        ),
+        'pkg/x.dart',
+      );
+      expect(
+        resolveDirectiveUri(
+          'org-dartlang-root:///../x.dart',
+          'pkg/lib/a.dart',
+          dirs,
+        ),
+        'x.dart',
+      );
+    });
+
+    test('backslashes separate, everywhere', () {
+      expect(
+        // ignore: avoid_escaping_inner_quotes
+        resolveDirectiveUri('sub\\b.dart', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/sub/b.dart',
+      );
+      expect(
+        resolveDirectiveUri('package:pkg/sub\\b.dart', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/sub/b.dart',
+      );
+      expect(
+        resolveDirectiveUri(
+          'org-dartlang-root:///pkg/lib/sub\\b.dart',
+          'pkg/lib/a.dart',
+          dirs,
+        ),
+        'pkg/lib/sub/b.dart',
+      );
+      expect(
+        resolveDirectiveUri('sub%5Cb.dart', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/sub\\b.dart',
+        reason: 'a decoded backslash is a literal file character',
+      );
+    });
+
+    test('queries, fragments, authorities and schemes name no file', () {
+      expect(resolveDirectiveUri('b.dart?x=1', 'pkg/lib/a.dart', dirs), isNull);
+      expect(
+        resolveDirectiveUri('b.dart#frag', 'pkg/lib/a.dart', dirs),
+        isNull,
+      );
+      expect(
+        resolveDirectiveUri('//auth/x.dart', 'pkg/lib/a.dart', dirs),
+        isNull,
+      );
+      expect(resolveDirectiveUri('C:/x.dart', 'pkg/lib/a.dart', dirs), isNull);
+      expect(resolveDirectiveUri('a:b.dart', 'pkg/lib/a.dart', dirs), isNull);
+      expect(resolveDirectiveUri('dart:core', 'pkg/lib/a.dart', dirs), isNull);
+      expect(resolveDirectiveUri('', 'pkg/lib/a.dart', dirs), 'pkg/lib');
+      expect(resolveDirectiveUri('b.dart', 'main.dart', dirs), 'b.dart');
+    });
+  });
+
+  group('dill source URIs', () {
+    test('reads every source table of single and concatenated components', () {
+      final one = _buildDillWithUris([
+        'org-dartlang-root:///pkg/lib/a.dart',
+        'org-dartlang-sdk:///sdk/lib/core/core.dart',
+      ]);
+      expect(dillSourceUris(one), [
+        'org-dartlang-root:///pkg/lib/a.dart',
+        'org-dartlang-sdk:///sdk/lib/core/core.dart',
+      ]);
+      final two = Uint8List.fromList([
+        ..._buildDillWithUris(['a']),
+        ..._buildDillWithUris(['b', 'c']),
+      ]);
+      expect(dillSourceUris(two), ['a', 'b', 'c']);
+    });
+
+    test('fails closed on malformed bytes', () {
+      expect(dillSourceUris(Uint8List(0)), isNull);
+      expect(dillSourceUris(Uint8List.fromList([1, 2, 3])), isNull);
+      final good = _buildDillWithUris(['a']);
+      final badMagic = Uint8List.fromList(good)..[0] = 0;
+      expect(dillSourceUris(badMagic), isNull);
+      expect(
+        dillSourceUris(_buildDillWithUris(['a'], formatVersion: 1)),
+        isNull,
+      );
+      expect(dillSourceUris(good.sublist(0, 10)), isNull, reason: 'truncated');
+      // A source count the table cannot hold.
+      final badCount = Uint8List.fromList(good);
+      badCount[72] = 0x10;
+      badCount[73] = 0x27;
+      expect(dillSourceUris(badCount), isNull);
+    });
+  });
+
+  test('a percent-encoded part that decodes to an undeclared shadow excludes the library', () async {
+    _write(
+      'pkg/lib/a.dart',
+      "library a;\npart 'pie%63e.dart';\nint f() => 1;\n",
+    );
+    _write('pkg/lib/pie%63e.dart', 'part of a;\nint g() => 2;\n');
+    _write('pkg/lib/piece.dart', 'part of a;\nint h() => 3;\n');
+    final result = await _compile('m_pct_shadow', [
+      'pkg/lib/a.dart',
+      'pkg/lib/pie%63e.dart',
+    ]);
+    expect(result.code, 0);
+    expect(result.excluded, {
+      _uri('pkg/lib/a.dart'):
+          'its part pie%63e.dart is not an input of this module',
+      _uri('pkg/lib/pie%63e.dart'):
+          'its library a is not an input of this module',
+    });
+    expect(result.calls, isEmpty, reason: 'nothing left to compile');
+  });
+
+  test(
+    'a percent-encoded part that decodes to a declared file compiles',
+    () async {
+      _write(
+        'pkg/lib/a.dart',
+        "library a;\npart 'pie%63e.dart';\nint f() => g();\n",
+      );
+      _write('pkg/lib/piece.dart', 'part of a;\nint g() => 2;\n');
+      final result = await _compile('m_pct_declared', [
+        'pkg/lib/a.dart',
+        'pkg/lib/piece.dart',
+      ]);
+      expect(result.code, 0);
+      expect(result.excluded, isEmpty);
+      expect(result.defines, [
+        ['pkg/lib/a.dart', 'pkg/lib/piece.dart'],
+      ]);
+      expect(result.sourcesPerCall, [
+        [_uri('pkg/lib/a.dart'), _uri('pkg/lib/piece.dart')],
+      ]);
+    },
+  );
+
+  test('a percent-encoded import that decodes outside the closure excludes its importer', () async {
+    _write('pkg/lib/a.dart', "import 'pie%63e.dart';\nint f() => 1;\n");
+    _write('pkg/lib/piece.dart', 'int s() => 2;\n');
+    final result = await _compile('m_pct_import', ['pkg/lib/a.dart']);
+    expect(result.code, 0);
+    expect(result.excluded, {
+      _uri('pkg/lib/a.dart'):
+          'imports pie%63e.dart, which is not in this module closure',
+    });
+    expect(result.calls, isEmpty);
+  });
+
+  test(
+    'a package import that escapes its package excludes its importer',
+    () async {
+      _write(
+        'pkg/lib/a.dart',
+        "import 'package:pkg/../../x.dart';\nint f() => 1;\n",
+      );
+      final result = await _compile('m_pkg_escape', ['pkg/lib/a.dart']);
+      expect(result.code, 0);
+      expect(result.excluded, {
+        _uri(
+          'pkg/lib/a.dart',
+        ): 'package:pkg/../../x.dart names a package this module does not have',
+      });
+      expect(result.calls, isEmpty);
+    },
+  );
+
+  test('a backslash part resolves as a separator', () async {
+    _write(
+      'pkg/lib/a.dart',
+      // ignore: avoid_escaping_inner_quotes
+      "library a;\npart 'sub\\\\b.dart';\nint f() => g();\n",
+    );
+    _write('pkg/lib/sub/b.dart', 'part of a;\nint g() => 2;\n');
+    final result = await _compile('m_backslash', [
+      'pkg/lib/a.dart',
+      'pkg/lib/sub/b.dart',
+    ]);
+    expect(result.code, 0);
+    expect(result.excluded, isEmpty);
+    expect(result.defines, [
+      ['pkg/lib/a.dart', 'pkg/lib/sub/b.dart'],
+    ]);
+  });
+
+  test(
+    'an entry that reaches a percent-decoded shadow fails without compiling it',
+    () async {
+      _write(
+        'pkg/lib/a.dart',
+        "library a;\npart 'pie%63e.dart';\nint f() => 1;\n",
+      );
+      _write('pkg/lib/pie%63e.dart', 'part of a;\nint g() => 2;\n');
+      _write('pkg/lib/piece.dart', 'part of a;\nint h() => 3;\n');
+      final entry = await _compile('entry_pct_shadow', [
+        'pkg/lib/a.dart',
+        'pkg/lib/pie%63e.dart',
+      ], noDrop: true);
+      expect(entry.code, 1);
+      expect(entry.calls, isEmpty, reason: 'compiler must not run');
+      expect(
+        entry.log,
+        contains(
+          'kernel_module: cannot compile package:pkg/piece.dart '
+          '(pkg/lib/piece.dart): source is not a declared input.',
+        ),
+      );
+    },
+  );
+
+  test(
+    'an unstaged compile that reads an undeclared file is redone isolated',
+    () async {
+      _write('pkg/lib/a.dart', 'class A {}\n');
+      final compiler = _DillWritingCompiler(
+        () => _buildDillWithUris([
+          _uri('pkg/lib/a.dart'),
+          _uri('pkg/lib/piece.dart'),
+        ]),
+      );
+      final result = await _compile(
+        'm_fallback',
+        ['pkg/lib/a.dart'],
+        // Worker inputs keep the marker-URI spellings from forcing isolated
+        // staging, so the first compile runs unstaged as in a real build.
+        inputs: [
+          _encodeInputForTest(
+            '${_root.path}/pkg/lib/a.dart',
+            Uint8List.fromList([7]),
+          ),
+        ],
+        compiler: compiler,
+      );
+      expect(result.code, 0);
+      expect(result.calls.length, 2, reason: 'unstaged, then isolated');
+      expect(_valuesAfter(result.calls[0], '--multi-root'), [_root.path]);
+      final isolatedRoots = _valuesAfter(result.calls[1], '--multi-root');
+      expect(isolatedRoots.length, 1);
+      expect(isolatedRoots.single, contains('.isolated_root'));
+      expect(result.log, contains('which is not a declared input'));
+      expect(
+        Directory('${_root.path}/out/m_fallback/.isolated_root').existsSync(),
+        isFalse,
+        reason: 'the isolated root is cleaned up',
+      );
+    },
+  );
+
+  test(
+    'an unstaged compile that reads only declared files runs once',
+    () async {
+      _write('pkg/lib/a.dart', 'class A {}\n');
+      final compiler = _DillWritingCompiler(
+        () => _buildDillWithUris([_uri('pkg/lib/a.dart')]),
+      );
+      final result = await _compile(
+        'm_no_fallback',
+        ['pkg/lib/a.dart'],
+        inputs: [
+          _encodeInputForTest(
+            '${_root.path}/pkg/lib/a.dart',
+            Uint8List.fromList([7]),
+          ),
+        ],
+        compiler: compiler,
+      );
+      expect(result.code, 0);
+      expect(result.calls.length, 1);
+      expect(result.log, isNot(contains('isolated multi-root')));
+    },
+  );
 
   test('split part/part of modules produce byte-identical outputs sandboxed vs unsandboxed and rebuild when the parent edits', () async {
     final sdkDir = File(Platform.resolvedExecutable).parent.parent;
