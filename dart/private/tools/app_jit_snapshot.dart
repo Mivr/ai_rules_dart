@@ -155,11 +155,22 @@ String _stableVm({
   required String? dartvm,
   required String sdkVersion,
 }) {
-  final bin = Directory('/tmp/rules_dart_vm-$sdkVersion/bin');
+  final exeExt = dart.endsWith('.exe') ? '.exe' : '';
+  final root = Platform.isWindows ? Directory.systemTemp.path : '/tmp';
+  final bin = Directory('$root/rules_dart_vm-$sdkVersion/bin');
   bin.createSync(recursive: true);
-  _installCopy(dart, '${bin.path}/dart');
-  if (dartvm != null) _installCopy(dartvm, '${bin.path}/dartvm');
-  return '${bin.path}/dart';
+  _installCopy(dart, '${bin.path}/dart$exeExt');
+  final effectiveDartvm = dartvm ?? _adjacentDartvm(dart, exeExt);
+  if (effectiveDartvm != null) {
+    final vmExt = effectiveDartvm.endsWith('.exe') ? '.exe' : '';
+    _installCopy(effectiveDartvm, '${bin.path}/dartvm$vmExt');
+  }
+  return '${bin.path}/dart$exeExt';
+}
+
+String? _adjacentDartvm(String dart, String exeExt) {
+  final candidate = File('${File(dart).parent.path}/dartvm$exeExt');
+  return candidate.existsSync() ? candidate.path : null;
 }
 
 /// Makes [target] an executable copy of [source], unless it is one already.
@@ -179,7 +190,16 @@ void _installCopy(String source, String target) {
   final tmp = File('$target.$pid.${Random().nextInt(1 << 31)}.tmp');
   tmp.writeAsBytesSync(src.readAsBytesSync());
   chmodFile(tmp.path, 0x1ed);
-  tmp.renameSync(target);
+  try {
+    tmp.renameSync(target);
+  } on FileSystemException {
+    if (!dst.existsSync()) rethrow;
+    try {
+      tmp.deleteSync();
+    } on FileSystemException {
+      // Ignore cleanup errors.
+    }
+  }
 }
 
 bool _sameBytes(File a, File b) {
@@ -190,6 +210,156 @@ bool _sameBytes(File a, File b) {
     if (x[i] != y[i]) return false;
   }
   return true;
+}
+
+const _isolatedHomeEnvKeys = <String>{
+  'HOME',
+  'USERPROFILE',
+  'LOCALAPPDATA',
+  'APPDATA',
+  'PUB_CACHE',
+  'TEMP',
+  'TMP',
+  'TMPDIR',
+  'XDG_CONFIG_HOME',
+  'XDG_CACHE_HOME',
+};
+
+String? _lookupEnvCaseInsensitive(Map<String, String> env, String name) {
+  final direct = env[name];
+  if (direct != null && direct.isNotEmpty && !direct.contains('\x00')) {
+    return direct;
+  }
+  final upper = name.toUpperCase();
+  for (final entry in env.entries) {
+    if (entry.key.toUpperCase() == upper &&
+        entry.value.isNotEmpty &&
+        !entry.value.contains('\x00')) {
+      return entry.value;
+    }
+  }
+  return null;
+}
+
+/// Builds a sanitized child-process environment isolated to [homeDir].
+///
+/// On Windows ([isWindows]), keeps the minimal system variables Windows needs
+/// to start a process (`SystemRoot`, `WINDIR`, `SystemDrive`, `COMSPEC`,
+/// `PATHEXT`, `PATH`, `NUMBER_OF_PROCESSORS`, `PROCESSOR_ARCHITECTURE`) from
+/// [parentEnv] (falling back to `C:\Windows` for `SystemRoot` when absent),
+/// and points the home, cache, and temporary directory variables
+/// (`USERPROFILE`, `LOCALAPPDATA`, `APPDATA`, `HOME`, `PUB_CACHE`, `TEMP`,
+/// `TMP`, `TMPDIR`) at [homeDir]. Any entry with an empty name or `=` in the
+/// name is omitted.
+Map<String, String> buildChildEnvironment({
+  required String homeDir,
+  Map<String, String>? parentEnv,
+  Map<String, String> overrides = const {},
+  bool? isWindows,
+  bool includeParent = true,
+}) {
+  final source = parentEnv ?? Platform.environment;
+  final win = isWindows ?? Platform.isWindows;
+  final result = <String, String>{};
+
+  bool isValidEntry(String key, String value) =>
+      key.isNotEmpty &&
+      !key.contains('=') &&
+      !key.contains('\x00') &&
+      !value.contains('\x00');
+
+  void setEnv(String key, String value) {
+    if (!isValidEntry(key, value)) return;
+    if (win) {
+      final upper = key.toUpperCase();
+      result.removeWhere(
+        (existingKey, _) => existingKey.toUpperCase() == upper,
+      );
+    }
+    result[key] = value;
+  }
+
+  if (win) {
+    final systemRoot =
+        _lookupEnvCaseInsensitive(source, 'SystemRoot') ??
+        _lookupEnvCaseInsensitive(source, 'WINDIR') ??
+        r'C:\Windows';
+    final systemDrive =
+        _lookupEnvCaseInsensitive(source, 'SystemDrive') ??
+        (systemRoot.length >= 2 && systemRoot[1] == ':'
+            ? systemRoot.substring(0, 2)
+            : 'C:');
+    setEnv('SystemRoot', systemRoot);
+    setEnv('WINDIR', _lookupEnvCaseInsensitive(source, 'WINDIR') ?? systemRoot);
+    setEnv('SystemDrive', systemDrive);
+    setEnv(
+      'COMSPEC',
+      _lookupEnvCaseInsensitive(source, 'COMSPEC') ??
+          '$systemRoot\\System32\\cmd.exe',
+    );
+    setEnv(
+      'PATHEXT',
+      _lookupEnvCaseInsensitive(source, 'PATHEXT') ?? '.COM;.EXE;.BAT;.CMD',
+    );
+    final parentPath = _lookupEnvCaseInsensitive(source, 'PATH');
+    setEnv(
+      'PATH',
+      (includeParent && parentPath != null)
+          ? parentPath
+          : '$systemRoot\\System32;$systemRoot',
+    );
+    for (final optionalKey in const [
+      'NUMBER_OF_PROCESSORS',
+      'PROCESSOR_ARCHITECTURE',
+    ]) {
+      final val = _lookupEnvCaseInsensitive(source, optionalKey);
+      if (val != null) {
+        setEnv(optionalKey, val);
+      }
+    }
+    for (final homeKey in const [
+      'USERPROFILE',
+      'LOCALAPPDATA',
+      'APPDATA',
+      'HOME',
+      'PUB_CACHE',
+      'TEMP',
+      'TMP',
+      'TMPDIR',
+    ]) {
+      setEnv(homeKey, homeDir);
+    }
+    for (final entry in overrides.entries) {
+      setEnv(entry.key, entry.value);
+    }
+    if ((_lookupEnvCaseInsensitive(result, 'SystemRoot') ?? '').isEmpty) {
+      setEnv('SystemRoot', systemRoot);
+    }
+    return result;
+  }
+
+  if (includeParent) {
+    for (final entry in source.entries) {
+      if (_isolatedHomeEnvKeys.contains(entry.key.toUpperCase())) continue;
+      setEnv(entry.key, entry.value);
+    }
+    for (final homeKey in const [
+      'HOME',
+      'USERPROFILE',
+      'LOCALAPPDATA',
+      'APPDATA',
+      'PUB_CACHE',
+    ]) {
+      setEnv(homeKey, homeDir);
+    }
+  } else {
+    setEnv('HOME', homeDir);
+    setEnv('TMPDIR', homeDir);
+  }
+  for (final entry in overrides.entries) {
+    setEnv(entry.key, entry.value);
+  }
+  return result;
 }
 
 /// A `KEY=VALUE` (or `DEST=SOURCE`) option value. Splits at the first `=`.
@@ -223,7 +393,10 @@ int _trainInScratch({
   // A private directory per run, so concurrent snapshot actions that share a
   // `/tmp` (no sandbox, or a shared one) cannot collide. The random suffix is
   // fixed-length, so the absolute path has the same length on every run.
-  final scratch = Directory('/tmp').createTempSync('rules_dart_snapshot.');
+  final scratchRoot = Platform.isWindows
+      ? Directory.systemTemp
+      : Directory('/tmp');
+  final scratch = scratchRoot.createTempSync('rules_dart_snapshot.');
   try {
     // Every input is copied to its relative place, so the run needs only
     // relative paths.
@@ -236,6 +409,14 @@ int _trainInScratch({
     File('${scratch.path}/.dart_tool/package_config.json')
       ..parent.createSync(recursive: true)
       ..writeAsStringSync('{"configVersion": 2, "packages": []}\n');
+
+    final childEnv = buildChildEnvironment(
+      homeDir: Platform.isWindows ? scratch.path : '.',
+      parentEnv: Platform.environment,
+      overrides: env,
+      isWindows: Platform.isWindows,
+      includeParent: false,
+    );
 
     // The training run keeps the VM flags that make the snapshot repeat, and
     // none that name a host path. The scratch directory is the working
@@ -266,7 +447,7 @@ int _trainInScratch({
         ...dartArgs,
       ],
       workingDirectory: scratch.path,
-      environment: env,
+      environment: childEnv,
       includeParentEnvironment: false,
     );
 
@@ -283,7 +464,13 @@ int _trainInScratch({
     }
     return 0;
   } finally {
-    scratch.deleteSync(recursive: true);
+    if (scratch.existsSync()) {
+      try {
+        scratch.deleteSync(recursive: true);
+      } on FileSystemException {
+        // Ignore cleanup errors.
+      }
+    }
   }
 }
 
@@ -436,17 +623,18 @@ void _runAot(List<String> argv) {
     final tempHome = Directory.systemTemp.createTempSync(
       'rules_dart_compile_home.',
     );
+    final childEnv = buildChildEnvironment(
+      homeDir: tempHome.path,
+      parentEnv: Platform.environment,
+      isWindows: Platform.isWindows,
+    );
     final ProcessResult res;
     try {
       res = Process.runSync(
         dart,
         compileArgs,
-        environment: {
-          'HOME': tempHome.path,
-          'USERPROFILE': tempHome.path,
-          'LOCALAPPDATA': tempHome.path,
-          'APPDATA': tempHome.path,
-        },
+        environment: childEnv,
+        includeParentEnvironment: false,
       );
     } finally {
       if (tempHome.existsSync()) {
@@ -467,12 +655,11 @@ void _runAot(List<String> argv) {
 
   final tmpDir = Directory.systemTemp.createTempSync('rules_dart_aot.');
   final homeDir = Directory('${tmpDir.path}/home')..createSync(recursive: true);
-  final homeEnv = <String, String>{
-    'HOME': homeDir.path,
-    'USERPROFILE': homeDir.path,
-    'LOCALAPPDATA': homeDir.path,
-    'APPDATA': homeDir.path,
-  };
+  final homeEnv = buildChildEnvironment(
+    homeDir: homeDir.path,
+    parentEnv: Platform.environment,
+    isWindows: Platform.isWindows,
+  );
   var failureExitCode = 0;
   try {
     var activeDill = dillPath;
@@ -484,24 +671,29 @@ void _runAot(List<String> argv) {
           ? productPlatform
           : strongPlatform;
       final recordedDill = '${tmpDir.path}/recorded.dill';
-      final gkRes = Process.runSync(hostDartaotruntime, [
-        '$sdkBin/snapshots/gen_kernel_aot.dart.snapshot',
-        '--platform=$platformDill',
-        '--aot',
-        '--tfa',
-        '--no-embed-sources',
-        '-Ddart.vm.product=true',
-        '-Ddart.vm.asan=false',
-        '-Ddart.vm.msan=false',
-        '-Ddart.vm.tsan=false',
-        if (targetOs != null && targetOs.isNotEmpty) '--target-os=$targetOs',
-        if (enableAsserts) '--enable-asserts',
-        '--from-dill=$dillPath',
-        '--recorded-usages-file=$recordedUses',
-        '-o',
-        recordedDill,
-        dillPath,
-      ], environment: homeEnv);
+      final gkRes = Process.runSync(
+        hostDartaotruntime,
+        [
+          '$sdkBin/snapshots/gen_kernel_aot.dart.snapshot',
+          '--platform=$platformDill',
+          '--aot',
+          '--tfa',
+          '--no-embed-sources',
+          '-Ddart.vm.product=true',
+          '-Ddart.vm.asan=false',
+          '-Ddart.vm.msan=false',
+          '-Ddart.vm.tsan=false',
+          if (targetOs != null && targetOs.isNotEmpty) '--target-os=$targetOs',
+          if (enableAsserts) '--enable-asserts',
+          '--from-dill=$dillPath',
+          '--recorded-usages-file=$recordedUses',
+          '-o',
+          recordedDill,
+          dillPath,
+        ],
+        environment: homeEnv,
+        includeParentEnvironment: false,
+      );
       if (gkRes.exitCode != 0) {
         stdout.write(gkRes.stdout as String);
         stderr.write(gkRes.stderr as String);
@@ -514,14 +706,19 @@ void _runAot(List<String> argv) {
     final elfPath = mode == 'aot-snapshot'
         ? outputPath
         : '${tmpDir.path}/snapshot.elf';
-    final gsRes = Process.runSync(genSnapshot, [
-      '--deterministic',
-      '--snapshot_kind=app-aot-elf',
-      '--elf=$elfPath',
-      if (enableAsserts) '--enable_asserts',
-      ...extraGenSnapshotOptions,
-      activeDill,
-    ], environment: homeEnv);
+    final gsRes = Process.runSync(
+      genSnapshot,
+      [
+        '--deterministic',
+        '--snapshot_kind=app-aot-elf',
+        '--elf=$elfPath',
+        if (enableAsserts) '--enable_asserts',
+        ...extraGenSnapshotOptions,
+        activeDill,
+      ],
+      environment: homeEnv,
+      includeParentEnvironment: false,
+    );
     if (gsRes.exitCode != 0) {
       stdout.write(gsRes.stdout as String);
       stderr.write(gsRes.stderr as String);
@@ -910,17 +1107,18 @@ void _runGenKernel(List<String> argv) {
   final tempHome = Directory.systemTemp.createTempSync(
     'rules_dart_gen_kernel_home.',
   );
+  final childEnv = buildChildEnvironment(
+    homeDir: tempHome.path,
+    parentEnv: Platform.environment,
+    isWindows: Platform.isWindows,
+  );
   final ProcessResult res;
   try {
     res = Process.runSync(
       dartaotruntime,
       forwarded,
-      environment: {
-        'HOME': tempHome.path,
-        'USERPROFILE': tempHome.path,
-        'LOCALAPPDATA': tempHome.path,
-        'APPDATA': tempHome.path,
-      },
+      environment: childEnv,
+      includeParentEnvironment: false,
     );
   } finally {
     if (isolatedRootDir != null && isolatedRootDir.existsSync()) {

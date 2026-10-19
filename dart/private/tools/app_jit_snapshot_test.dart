@@ -370,9 +370,81 @@ void main() {
       '--dart=$dartBin',
       '--sdk-version=3.13.5',
       '--snapshot=${outJit.path}',
+      '--copy=train.dart=${trainScript.path}',
       '--',
-      trainScript.path,
+      'train.dart',
     ]);
     expect(outJit.existsSync(), isTrue);
+  });
+
+  test('buildChildEnvironment on Windows preserves SystemRoot and valid names while isolating home and cache directories', () {
+    const privateHome = r'C:\b\tmp\private_home';
+    final env = snapshot.buildChildEnvironment(
+      homeDir: privateHome,
+      parentEnv: const {
+        'SYSTEMROOT': r'D:\Windows',
+        'ComSpec': r'D:\Windows\System32\cmd.exe',
+        'PATHEXT': '.COM;.EXE;.BAT;.CMD',
+        'Path': r'D:\Windows\System32;C:\HostTools\bin',
+        'USERPROFILE': r'C:\Users\host',
+        'LOCALAPPDATA': r'C:\Users\host\AppData\Local',
+        'APPDATA': r'C:\Users\host\AppData\Roaming',
+        'HOME': r'C:\Users\host',
+        'PUB_CACHE': r'C:\Users\host\Pub\Cache',
+        'TEMP': r'C:\Users\host\Temp',
+        'TMP': r'C:\Users\host\Temp',
+        'HOST_SECRET': 'leaked',
+        '': 'empty-key',
+        '=C:': r'C:\Users\host',
+        'BAD=NAME': 'value',
+      },
+      overrides: const {
+        'DART_TEST_CONFIG': 'none/DartTest.yaml',
+        '': 'ignored',
+        'INVALID=KEY': 'ignored',
+      },
+      isWindows: true,
+    );
+
+    expect(env['SystemRoot'], r'D:\Windows');
+    expect(env['WINDIR'], r'D:\Windows');
+    expect(env['SystemDrive'], 'D:');
+    expect(env['COMSPEC'], r'D:\Windows\System32\cmd.exe');
+    expect(env['PATHEXT'], '.COM;.EXE;.BAT;.CMD');
+    expect(env['USERPROFILE'], privateHome);
+    expect(env['LOCALAPPDATA'], privateHome);
+    expect(env['APPDATA'], privateHome);
+    expect(env['HOME'], privateHome);
+    expect(env['PUB_CACHE'], privateHome);
+    expect(env['TEMP'], privateHome);
+    expect(env['TMP'], privateHome);
+    expect(env['TMPDIR'], privateHome);
+    expect(env['DART_TEST_CONFIG'], 'none/DartTest.yaml');
+    expect(env.containsKey('HOST_SECRET'), isFalse);
+
+    for (final key in env.keys) {
+      expect(key, isNotEmpty);
+      expect(key.contains('='), isFalse, reason: 'invalid key $key');
+      expect(key.contains('\x00'), isFalse, reason: 'null byte in key $key');
+    }
+
+    final fallbackEnv = snapshot.buildChildEnvironment(
+      homeDir: privateHome,
+      parentEnv: const {},
+      isWindows: true,
+      includeParent: false,
+    );
+    expect(fallbackEnv['SystemRoot'], r'C:\Windows');
+    expect(fallbackEnv['USERPROFILE'], privateHome);
+    expect(fallbackEnv['LOCALAPPDATA'], privateHome);
+    expect(fallbackEnv['APPDATA'], privateHome);
+    expect(fallbackEnv['HOME'], privateHome);
+    expect(fallbackEnv['PUB_CACHE'], privateHome);
+    expect(fallbackEnv['TEMP'], privateHome);
+    expect(fallbackEnv['TMP'], privateHome);
+    for (final key in fallbackEnv.keys) {
+      expect(key, isNotEmpty);
+      expect(key.contains('='), isFalse, reason: 'invalid key $key');
+    }
   });
 }
