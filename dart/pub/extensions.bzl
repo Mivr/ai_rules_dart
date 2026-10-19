@@ -121,6 +121,7 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
         contents[name] = ctx.read(pubspec) if ctx.path(pubspec).exists else ""
     for name in sorted(git_pkgs.keys()):
         pkg = git_pkgs[name]
+
         # Absolute paths: `git -C <dir> archive -o <file>` resolves `-o`
         # against the `-C` directory rather than the working directory.
         clone_dir = str(ctx.path("{dir}/{name}_clone".format(dir = scope_dir, name = name)))
