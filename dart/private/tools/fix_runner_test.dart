@@ -138,9 +138,42 @@ void main() {
     final violations = findDisallowedStagedDirectives([
       project.path,
     ], tool: 'fix_runner');
+    // Staged-source keys use `/` separators on every platform; the listing
+    // spells them with `\` on Windows.
+    final mainDisplay = main.path.replaceAll(r'\', '/');
     expect(violations, [
-      "fix_runner: ${main.path} import 'file://localhost/secret.dart' "
+      "fix_runner: $mainDisplay import 'file://localhost/secret.dart' "
           'is not a declared input.',
     ]);
   });
+
+  test(
+    'staged sources behind symlinks are scanned',
+    skip: Platform.isWindows
+        ? 'creating symlinks needs Developer Mode or elevation'
+        : false,
+    () {
+      final project = Directory('${tmp.path}/demo.proj')
+        ..createSync(recursive: true);
+      Directory('${project.path}/src/pkg').createSync(recursive: true);
+      Directory('${tmp.path}/real').createSync(recursive: true);
+      File('${tmp.path}/real/evil.dart').writeAsStringSync(
+        "import 'file:///proc/self/cwd/pkg/lib/secret.dart';\n"
+        'const evil = 1;\n',
+      );
+      File('${tmp.path}/real/ok.dart').writeAsStringSync('const ok = 1;\n');
+      Link('${project.path}/src/pkg/evil.dart')
+          .createSync('${tmp.path}/real/evil.dart');
+      Link('${project.path}/src/pkg/ok.dart')
+          .createSync('${tmp.path}/real/ok.dart');
+      final violations = findDisallowedStagedDirectives([
+        project.path,
+      ], tool: 'fix_runner');
+      expect(violations, [
+        "fix_runner: ${project.path.replaceAll(r'\', '/')}/src/pkg/evil.dart "
+            "import 'file:///proc/self/cwd/pkg/lib/secret.dart' "
+            'is not a declared input.',
+      ]);
+    },
+  );
 }

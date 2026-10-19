@@ -776,15 +776,28 @@ List<String> findDisallowedDirectives(
 /// directories that do not exist and files that vanish or do not decode: the
 /// compiler reports those itself. Synchronous for the sync build-action
 /// runners, which validate their staged sources before invoking the compiler.
+///
+/// Staged trees hold symlinks (`ctx.actions.symlink`), which list as `Link`,
+/// not `File`: links to `.dart` files are read through the link, so a `file:`
+/// import staged as a symlink is still refused. Keys use `/` separators on
+/// every platform, so diagnostics read the same on Windows and POSIX.
 Map<String, String> readStagedDartSources(Iterable<String> roots) {
   final contents = <String, String>{};
   for (final root in roots) {
     final dir = Directory(root);
     if (!dir.existsSync()) continue;
     for (final entity in dir.listSync(recursive: true, followLinks: false)) {
-      if (entity is! File || !entity.path.endsWith('.dart')) continue;
+      final isDart = entity.path.endsWith('.dart');
+      if (entity is File) {
+        if (!isDart) continue;
+      } else if (entity is Link) {
+        if (!isDart) continue;
+      } else {
+        continue;
+      }
+      final key = entity.path.replaceAll(r'\', '/');
       try {
-        contents[entity.path] = entity.readAsStringSync();
+        contents[key] = File(entity.path).readAsStringSync();
       } on FileSystemException {
         // Gone between listing and reading; the compiler reports it.
       } on FormatException {
