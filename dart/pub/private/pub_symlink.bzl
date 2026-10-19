@@ -197,6 +197,7 @@ def walk_symlink_entries(lister, dir_abs_str, root_abs_str, out):
       root_abs_str: Canonical package-root path string.
       out: List receiving `struct(abs, rel)` link entries.
     """
+
     # Iterative: Starlark forbids recursive calls (and has no `while`, so
     # the loop carries an absurdly high bound and fails closed past it —
     # a package with more directories than that is a zip bomb, not a
@@ -227,7 +228,7 @@ def _list_package_symlinks(ctx, root_real_str):
     """
     out = []
     walk_symlink_entries(lambda dir_abs_str: _readdir_snapshot(ctx, dir_abs_str), root_real_str, root_real_str, out)
-    return sorted(out, key = lambda l: l.rel)
+    return sorted(out, key = lambda link: link.rel)
 
 def _materialise_failure(link_abs_str, reason):
     """Builds the fetch-failure diagnostic for an uncopyable link."""
@@ -332,6 +333,7 @@ def check_package_symlinks(ctx, package_name, root = ""):
     root_abs = ctx.path(root if root else ".")
     if not root_abs.exists or not root_abs.is_dir:
         return
+
     # Walk from the resolved root so every comparison below uses one
     # canonical spelling (macOS `/tmp` is `/private/tmp`, and Windows has
     # its own aliases): otherwise each file's `realpath` mismatches its

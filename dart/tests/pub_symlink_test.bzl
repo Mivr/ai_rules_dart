@@ -6,11 +6,11 @@ load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load(
     "//dart/pub/private:pub_symlink.bzl",
     "is_absolute_symlink_target",
+    "package_relpath",
     "pub_symlink_error",
+    "realpath_escapes_root",
     "symlink_escapes_package",
-    package_relpath = "package_relpath",
-    realpath_escapes_root = "realpath_escapes_root",
-    walk_symlink_entries = "walk_symlink_entries",
+    "walk_symlink_entries",
 )
 load(":small_suite.bzl", "small_unittest_suite")
 
@@ -89,7 +89,7 @@ def _fake_entry(abs, exists = True, is_dir = False, real = None):
 def _walk_rels(fs, root):
     out = []
     walk_symlink_entries(lambda d: fs.get(d, []), root, root, out)
-    return sorted([l.rel for l in out])
+    return sorted([link.rel for link in out])
 
 def _walk_test_impl(ctx):
     env = unittest.begin(ctx)
