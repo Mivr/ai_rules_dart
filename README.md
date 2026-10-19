@@ -170,14 +170,21 @@ dart_binary(
 )
 ```
 
-> **Note**: `pub.from_lock()` only resolves **hosted** packages (i.e. packages
-> from a pub registry such as pub.dev). Packages with `git`, `path`, or `sdk`
-> sources in the lock file are skipped: no repository is created for them, so
-> `package:` imports of those packages fail to resolve unless they are provided
-> another way. `sdk` packages (e.g. Flutter's) come from the SDK itself, not
-> pub. For `git` or `path` dependencies, declare them with `pub.package()` or
-> as local `dart_library` targets. Each `from_lock()` prints one summary of
-> everything it skipped, grouped by source.
+> **Note**: `pub.from_lock()` resolves **hosted** packages (i.e. packages
+> from a pub registry such as pub.dev) and **git** packages. Packages with
+> `path`, `sdk`, or any other source in the lock file are skipped: no
+> repository is created for them, so `package:` imports of those packages fail
+> to resolve unless they are provided another way. `sdk` packages (e.g.
+> Flutter's) come from the SDK itself, not pub. For `path` dependencies,
+> declare them with `pub.package()` or as local `dart_library` targets. Each
+> `from_lock()` prints one summary of everything it skipped, grouped by
+> source.
+>
+> A `git` package is pinned by its lock file's `resolved-ref`, the full
+> 40-hex commit SHA it is checked out at — the commit SHA is the pin, rather
+> than a `sha256` as for hosted packages. When the lock records a `path` for
+> the package, only that subdirectory of the repository is fetched. A package
+> whose symlinks escape its root fails the fetch.
 
 Set `isolated = True` on a `pub.from_lock()` to keep that hub out of the shared
 registry: its spokes are namespaced `<hub>__<pkg>`, it pins the versions in its
