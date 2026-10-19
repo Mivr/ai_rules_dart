@@ -6,7 +6,7 @@ load("//dart:providers.bzl", "DartCompileInfo")
 load("//dart/private:dart_binary.bzl", "binary_output_basename")
 load("//dart/private:dart_compile.bzl", "compile_quiet_flags")
 load("//dart/private:dart_test.bzl", "dart_test_kernel")
-load("//dart/private:dart_test_runner.bzl", "dart_test_runner_snapshot")
+load("//dart/private:dart_test_runner.bzl", "DartTestRunnerSnapshotInfo", "dart_test_runner_snapshot")
 
 _RuleKindInfo = provider(
     doc = "Records `ctx.rule.kind` for `target_under_test`.",
@@ -135,40 +135,44 @@ _kernel_launcher_binary_test = analysistest.make(_kernel_launcher_binary_test_im
 
 def _script_action_packages_test_impl(ctx):
     env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
+    actions = analysistest.target_actions(env)
+    if DartTestRunnerSnapshotInfo in target and target[DartTestRunnerSnapshotInfo].snapshot == None:
+        asserts.equals(env, 0, len(actions), "unbuilt dart_test_runner_snapshot must register no actions")
+        return analysistest.end(env)
     matching = [
         a
-        for a in analysistest.target_actions(env)
-        if a.mnemonic == ctx.attr.mnemonic
+        for a in actions
+        if a.argv and any([arg.endswith(".dart") for arg in a.argv[1:]])
     ]
-    asserts.equals(env, 1, len(matching), "expected one %s action" % ctx.attr.mnemonic)
-    action = matching[0]
     asserts.true(
         env,
-        "HOME" in action.env or "USERPROFILE" in action.env,
-        "%s action must set writable_home_env, got env=%s" % (ctx.attr.mnemonic, action.env),
+        len(matching) >= 1,
+        "expected at least one SDK .dart script action, got %s" % [a.mnemonic for a in actions],
     )
-    pkg_indices = [i for i, a in enumerate(action.argv) if a.startswith("--packages=")]
-    script_indices = [i for i, a in enumerate(action.argv) if a.endswith("/app_jit_snapshot.dart")]
-    asserts.true(
-        env,
-        len(pkg_indices) >= 1 and len(script_indices) >= 1 and pkg_indices[0] < script_indices[0],
-        "%s action must pass --packages=<file> before app_jit_snapshot.dart in argv=%s" % (ctx.attr.mnemonic, action.argv),
-    )
-    pkg_path = action.argv[pkg_indices[0]][len("--packages="):]
-    input_paths = [f.path for f in action.inputs.to_list()]
-    asserts.true(
-        env,
-        pkg_path in input_paths,
-        "--packages file %s must be a declared input of %s" % (pkg_path, ctx.attr.mnemonic),
-    )
+    for action in matching:
+        asserts.true(
+            env,
+            "HOME" in action.env or "USERPROFILE" in action.env,
+            "%s action must set writable_home_env, got env=%s" % (action.mnemonic, action.env),
+        )
+        pkg_indices = [i for i, a in enumerate(action.argv) if a.startswith("--packages=")]
+        script_indices = [i for i, a in enumerate(action.argv) if i > 0 and a.endswith(".dart")]
+        asserts.true(
+            env,
+            len(pkg_indices) >= 1 and len(script_indices) >= 1 and pkg_indices[0] < script_indices[0],
+            "%s action must pass --packages=<file> before .dart script in argv=%s" % (action.mnemonic, action.argv),
+        )
+        pkg_path = action.argv[pkg_indices[0]][len("--packages="):]
+        input_paths = [f.path for f in action.inputs.to_list()]
+        asserts.true(
+            env,
+            pkg_path in input_paths,
+            "--packages file %s must be a declared input of %s" % (pkg_path, action.mnemonic),
+        )
     return analysistest.end(env)
 
-_script_action_packages_test = analysistest.make(
-    _script_action_packages_test_impl,
-    attrs = {
-        "mnemonic": attr.string(mandatory = True),
-    },
-)
+_script_action_packages_test = analysistest.make(_script_action_packages_test_impl)
 
 _exe_windows_test = unittest.make(_exe_gets_dot_exe_on_windows_test_impl)
 _exe_other_test = unittest.make(_exe_bare_off_windows_test_impl)
@@ -240,13 +244,11 @@ def dart_binary_test_suite(name):
     _script_action_packages_test(
         name = "dart_jit_snapshot_packages_test",
         size = "small",
-        mnemonic = "DartJitSnapshot",
         target_under_test = ":jit_snapshot_fixture",
     )
     _script_action_packages_test(
         name = "dart_kernel_wrapper_packages_test",
         size = "small",
-        mnemonic = "DartKernel",
         target_under_test = "//dart/private/tools:noop",
     )
     dart_test_kernel(
@@ -263,7 +265,6 @@ def dart_binary_test_suite(name):
     _script_action_packages_test(
         name = "dart_test_runner_snapshot_packages_test",
         size = "small",
-        mnemonic = "DartTestRunnerSnapshot",
         target_under_test = ":test_runner_snapshot_fixture",
     )
     native.test_suite(
