@@ -1052,7 +1052,14 @@ String _normFsPath(String path) =>
 
 /// Links [dstPath] to [srcPath] (a file or directory), copying instead when
 /// the platform refuses symlinks (Windows without developer mode).
-void _stageEntitySync(String srcPath, String dstPath) {
+///
+/// [createLink] injects symlink creation (tests pass a throwing function to
+/// exercise the copy fallback that Windows without developer mode takes).
+void _stageEntitySync(
+  String srcPath,
+  String dstPath, {
+  void Function(String linkPath, String target)? createLink,
+}) {
   if (FileSystemEntity.typeSync(srcPath) == FileSystemEntityType.notFound) {
     return;
   }
@@ -1062,7 +1069,11 @@ void _stageEntitySync(String srcPath, String dstPath) {
     final target = slashSrc.startsWith('/') || _isWindowsDrivePath(slashSrc)
         ? slashSrc
         : '${Directory.current.path.replaceAll(r'\', '/')}/$slashSrc';
-    Link(dstPath).createSync(target);
+    if (createLink != null) {
+      createLink(dstPath, target);
+    } else {
+      Link(dstPath).createSync(target);
+    }
     return;
   } on FileSystemException {
     // Fall through to a copy, which isolates just as well.
@@ -1074,7 +1085,8 @@ bool _isWindowsDrivePath(String s) =>
     s.length >= 2 &&
     ((s.codeUnitAt(0) >= 0x41 && s.codeUnitAt(0) <= 0x5a) ||
         (s.codeUnitAt(0) >= 0x61 && s.codeUnitAt(0) <= 0x7a)) &&
-    s.codeUnitAt(1) == 0x3a;
+    s.codeUnitAt(1) == 0x3a &&
+    (s.length == 2 || s.codeUnitAt(2) == 0x2f || s.codeUnitAt(2) == 0x5c);
 
 /// Runs `gen_kernel` via `dartaotruntime` with comma-splitting disabled on
 /// `-D` / `--define` options and an isolated `--filesystem-root` containing

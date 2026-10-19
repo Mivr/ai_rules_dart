@@ -321,6 +321,10 @@ Future<int> compileModule(
   StringBuffer log,
   List<Uint8List> inputs, {
   KernelModuleCache? cache,
+  // Injects symlink creation for isolated-root staging. Tests pass a throwing
+  // function to exercise the copy fallback that Windows without developer
+  // mode takes. Production callers leave it null to create real symlinks.
+  void Function(String linkPath, String target)? createLink,
 }) async {
   final base = <String>[];
   final sources = <String>[];
@@ -550,6 +554,7 @@ Future<int> compileModule(
         files,
         inputDigests,
         includeInputDigests: inputs.isNotEmpty || compiler is _Persistent,
+        createLink: createLink,
       );
       final staged = isolated;
       final entryBase = _baseWithSingleMultiRoot(base, staged.rootDir);
@@ -652,6 +657,7 @@ Future<int> compileModule(
       files,
       inputDigests,
       includeInputDigests: inputs.isNotEmpty || compiler is _Persistent,
+      createLink: createLink,
     );
     final staged = isolated;
     while (true) {
@@ -930,6 +936,23 @@ Uint8List? _lookupDigest(String path, Map<String, Uint8List>? inputDigests) {
   if (inputDigests == null) return null;
   final direct = inputDigests[path];
   if (direct != null && direct.isNotEmpty) return direct;
+  // Requests and staged keys may spell the same file as a `file:///` URI or
+  // as a filesystem path (Windows drive-letter paths become `file:///` URIs
+  // for `kernel_worker`). Try the alternate spelling before normalization so
+  // a cache keyed on one spelling still hits for the other.
+  if (path.startsWith('file://')) {
+    final filePath = _filePathOf(path);
+    if (filePath != path) {
+      final hit = _lookupDigest(filePath, inputDigests);
+      if (hit != null) return hit;
+    }
+  } else {
+    final uri = kernelWorkerUri(path);
+    if (uri != path) {
+      final hit = inputDigests[uri];
+      if (hit != null && hit.isNotEmpty) return hit;
+    }
+  }
   if (_isNormalizedRelative(path)) {
     final dotHit = inputDigests['./$path'];
     if (dotHit != null && dotHit.isNotEmpty) return dotHit;
@@ -2358,6 +2381,9 @@ List<String> _baseWithSingleMultiRoot(List<String> base, String singleRoot) {
 /// spellings) to the digest passed for it, so callers can withhold the
 /// now-duplicate origin inputs from the compiler: it reads each declared
 /// file once, through the isolated root.
+///
+/// [createLink] injects symlink creation (tests pass a throwing function to
+/// exercise the copy fallback that Windows without developer mode takes).
 Future<
   ({String rootDir, List<Uint8List> inputs, Map<String, Uint8List> covered})
 >
@@ -2366,6 +2392,7 @@ _stageIsolatedMultiRoot(
   _Files files,
   Map<String, Uint8List>? inputDigests, {
   required bool includeInputDigests,
+  void Function(String linkPath, String target)? createLink,
 }) async {
   final rootDir = '$output/.isolated_root';
   final dir = Directory(_filePathOf(rootDir));
@@ -2389,7 +2416,7 @@ _stageIsolatedMultiRoot(
     if (createdParents.add(dstParent.path)) {
       await dstParent.create(recursive: true);
     }
-    if (!_linkOrCopy(origin, dstPath, cwd)) continue;
+    if (!_linkOrCopy(origin, dstPath, cwd, createLink: createLink)) continue;
     if (includeInputDigests) {
       final digest =
           _lookupDigest(origin, inputDigests) ??
@@ -2403,7 +2430,8 @@ _stageIsolatedMultiRoot(
 
 /// Records [origin] in [covered] under each of its path spellings, mirroring
 /// how request input digests are indexed, so [_uncoveredInputs] recognizes
-/// the origin however the worker request spells it.
+/// the origin however the worker request spells it (relative, `./`-prefixed,
+/// backslash-separated, drive-letter, or `file:///` URI).
 void _addCovered(
   Map<String, Uint8List> covered,
   String origin,
@@ -2420,6 +2448,16 @@ void _addCovered(
   final normFile = _normalizeFilePath(origin);
   if (normFile != origin) {
     covered.putIfAbsent(normFile, () => digest);
+  }
+  // Staged inputs are encoded as `file:///` URIs on Windows, while worker
+  // requests may spell the same origin as a filesystem path (or vice versa).
+  final uri = kernelWorkerUri(origin);
+  if (uri != origin) {
+    covered.putIfAbsent(uri, () => digest);
+  }
+  final uriNorm = kernelWorkerUri(normFile);
+  if (uriNorm != normFile) {
+    covered.putIfAbsent(uriNorm, () => digest);
   }
 }
 
@@ -2470,13 +2508,25 @@ void _writePatchSentinel(File sentinelFile, String snapshotPath) {
 
 /// Creates [dstPath] as a symlink to [origin], falling back to a copy when
 /// the platform refuses symlinks. Returns whether [dstPath] was created.
-bool _linkOrCopy(String origin, String dstPath, String cwd) {
+///
+/// [createLink] injects symlink creation (tests pass a throwing function to
+/// exercise the copy fallback that Windows without developer mode takes).
+bool _linkOrCopy(
+  String origin,
+  String dstPath,
+  String cwd, {
+  void Function(String linkPath, String target)? createLink,
+}) {
   final slashOrigin = origin.replaceAll(r'\', '/');
   final target = slashOrigin.startsWith('/') || isWindowsDrivePath(slashOrigin)
       ? slashOrigin
       : '$cwd/$slashOrigin';
   try {
-    Link(dstPath).createSync(target);
+    if (createLink != null) {
+      createLink(dstPath, target);
+    } else {
+      Link(dstPath).createSync(target);
+    }
     return true;
   } on FileSystemException {
     // Symlinks need privileges on some platforms (Windows without developer

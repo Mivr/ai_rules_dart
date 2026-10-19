@@ -2980,7 +2980,9 @@ void main(List<String> args) {
         _decodeInputForTest(raw).path: _decodeInputForTest(raw).digest,
     };
     expect(
-      call0Inputs['$outDir/.isolated_root/pkg/lib/part_parent.dart'],
+      call0Inputs[kernelWorkerUri(
+        '$outDir/.isolated_root/pkg/lib/part_parent.dart',
+      )],
       equals(stagedSentinelDigest),
       reason: 'staged tree-artifact source must reuse its WorkRequest.inputs digest without re-hashing',
     );
@@ -3941,14 +3943,156 @@ void main(List<String> args) {
       '${_root.path}/out/win_smoke.kmod/0.dill',
     ]);
   });
+
+  test('isolated staging falls back to copies when symlinks are refused and still reuses digests', () async {
+    // Simulates Windows without developer mode: symlink creation throws, so
+    // staging must copy file contents instead, isolate just as well, and
+    // still reuse WorkRequest.inputs digests without re-hashing from disk.
+    _write('pkg/lib/fb_a.dart', "import 'fb_b.dart';\nclass FbA {}\n");
+    _write('pkg/lib/fb_b.dart', 'class FbB {}\n');
+    final outDir = '${_root.path}/out/fallback.kmod';
+    final outlineDir = '${_root.path}/out/fallback.koutline';
+    final sentinelA = Uint8List.fromList(utf8.encode('fallback-digest-a-1234'));
+    final sentinelB = Uint8List.fromList(utf8.encode('fallback-digest-b-5678'));
+    // While staging still exists (before compileModule cleans it up), each
+    // staged file must be a real copied file (not a symlink) whose contents
+    // equal the declared origin, so isolation holds without links.
+    final recorder = _InputRecordingCompiler(
+      onRun: (_) {
+        for (final key in ['pkg/lib/fb_a.dart', 'pkg/lib/fb_b.dart']) {
+          final stagedPath = '$outDir/.isolated_root/$key';
+          expect(
+            FileSystemEntity.typeSync(stagedPath, followLinks: false),
+            FileSystemEntityType.file,
+            reason: '$key must be a copied file when symlinks are refused',
+          );
+          expect(
+            File(stagedPath).readAsStringSync(),
+            File('${_root.path}/$key').readAsStringSync(),
+            reason: 'copied $key must equal its declared origin',
+          );
+        }
+      },
+    );
+    final log = StringBuffer();
+    FileSystemException linkError() =>
+        const FileSystemException('symlinks refused', 'isolated_root');
+    final prevCwd = Directory.current;
+    Directory.current = _root;
+    try {
+      final code = await compileModule(
+        [
+          '--source',
+          _uri('pkg/lib/fb_a.dart'),
+          '--source',
+          _uri('pkg/lib/fb_b.dart'),
+          '--output',
+          outDir,
+          '--output-outline',
+          outlineDir,
+          '--excluded-output',
+          '$outDir.vm_excluded.txt',
+          '--packages-file',
+          '${_root.path}/package_config.json',
+          '--libraries-json',
+          '${_root.path}/libraries.json',
+          '--multi-root',
+          _root.path,
+          '--target',
+          'vm',
+        ],
+        recorder,
+        log,
+        [
+          _encodeInputForTest('${_root.path}/pkg/lib/fb_a.dart', sentinelA),
+          _encodeInputForTest('${_root.path}/pkg/lib/fb_b.dart', sentinelB),
+        ],
+        createLink: (_, _) => throw linkError(),
+      );
+      expect(code, 0, reason: log.toString());
+    } finally {
+      Directory.current = prevCwd;
+    }
+    // The front end must still see a single isolated root on every call.
+    expect(recorder.calls, isNotEmpty);
+    for (final call in recorder.calls) {
+      expect(_valuesAfter(call, '--multi-root'), [
+        kernelWorkerUri('$outDir/.isolated_root'),
+      ]);
+    }
+    // Staged inputs must reuse the WorkRequest.inputs digests, and the origin
+    // inputs must be withheld as duplicates, across every compile call.
+    final callInputs = {
+      for (final call in recorder.callInputs)
+        for (final raw in call)
+          _decodeInputForTest(raw).path: _decodeInputForTest(raw).digest,
+    };
+    expect(
+      callInputs[kernelWorkerUri('$outDir/.isolated_root/pkg/lib/fb_a.dart')],
+      equals(sentinelA),
+    );
+    expect(
+      callInputs[kernelWorkerUri('$outDir/.isolated_root/pkg/lib/fb_b.dart')],
+      equals(sentinelB),
+    );
+    expect(
+      callInputs.keys,
+      isNot(contains('${_root.path}/pkg/lib/fb_a.dart')),
+      reason: 'origin inputs must be withheld once staged',
+    );
+    expect(
+      callInputs.keys,
+      isNot(contains('${_root.path}/pkg/lib/fb_b.dart')),
+      reason: 'origin inputs must be withheld once staged',
+    );
+  });
+
+  test('ensureSummaryDigests reuses digests across Windows path spellings without touching disk', () async {
+    // Windows spells the same file with backslashes, forward slashes, or a
+    // `file:///` URI; the digest must be reused in every spelling without
+    // reading the file from disk (the file does not exist under these names).
+    const backslash =
+        r'C:\Users\runneradmin\AppData\Local\Temp\winspell\dep.koutline\0.dill';
+    const forward =
+        'C:/Users/runneradmin/AppData/Local/Temp/winspell/dep.koutline/0.dill';
+    const uri =
+        'file:///C:/Users/runneradmin/AppData/Local/Temp/winspell/dep.koutline/0.dill';
+    final sentinel = Uint8List.fromList([0xaa, 0xbb, 0xcc, 0xdd]);
+    for (final spelling in [backslash, forward, uri]) {
+      final inputs = await ensureSummaryDigests(
+        ['--input-summary', uri],
+        [_encodeInputForTest(spelling, sentinel)],
+      );
+      final decoded = {
+        for (final raw in inputs)
+          _decodeInputForTest(raw).path: _decodeInputForTest(raw).digest,
+      };
+      expect(
+        decoded[uri],
+        equals(sentinel),
+        reason: 'input spelled as $spelling must reuse its digest for $uri',
+      );
+    }
+    // Drive-relative `C:foo` is not an absolute Windows path.
+    expect(isWindowsDrivePath(r'C:foo'), isFalse);
+    expect(isWindowsDrivePath('C:'), isTrue);
+    expect(isWindowsDrivePath(r'C:\x'), isTrue);
+    expect(isWindowsDrivePath('C:/x'), isTrue);
+  });
 }
 
 class _InputRecordingCompiler implements ModuleCompiler {
+  _InputRecordingCompiler({this.onRun});
+
+  /// Invoked synchronously from [run], while isolated staging still exists.
+  final void Function(List<String> args)? onRun;
+
   final List<List<String>> calls = [];
   final List<List<Uint8List>> callInputs = [];
 
   @override
   Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
+    onRun?.call(args);
     calls.add(args);
     callInputs.add([for (final i in inputs) Uint8List.fromList(i)]);
     final outIdx = args.indexOf('--output');
