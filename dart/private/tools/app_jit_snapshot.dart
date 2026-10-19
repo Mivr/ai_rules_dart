@@ -908,31 +908,43 @@ bool patchSnapshotSplitCommasBytes(Uint8List bytes) {
 String patchSnapshotSplitCommas(String snapshotPath) {
   final file = File(snapshotPath);
   if (!file.existsSync()) return snapshotPath;
+  final baseName = snapshotPath
+      .replaceAll(r'\', '/')
+      .split('/')
+      .last
+      .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+  // Fast path: SDK snapshots are immutable in practice, so a patched copy (or
+  // a record that patching does not apply) keyed by size and mtime lets every
+  // action start reuse it with two stats instead of re-reading and re-scanning
+  // tens of megabytes.
+  FileStat snapshotStat;
+  try {
+    snapshotStat = file.statSync();
+  } on FileSystemException {
+    return snapshotPath;
+  }
+  final cacheFile = File(
+    '${Directory.systemTemp.path}/'
+    'rules_dart_nocomma_${baseName}_${snapshotStat.size}_'
+    '${snapshotStat.modified.microsecondsSinceEpoch}.snapshot',
+  );
+  if (cacheFile.existsSync()) {
+    return cacheFile.path;
+  }
+  final sentinelFile = File('${cacheFile.path}.nopatch');
+  if (sentinelFile.existsSync()) {
+    return snapshotPath;
+  }
   final Uint8List bytes;
   try {
     bytes = file.readAsBytesSync();
   } on FileSystemException {
     return snapshotPath;
   }
-  var hash = 0xcbf29ce484222325;
-  for (var i = 0; i < bytes.length; i += 64) {
-    hash ^= bytes[i];
-    hash = (hash * 0x100000001b3) & 0x7fffffffffffffff;
-  }
-  final baseName = snapshotPath
-      .replaceAll(r'\', '/')
-      .split('/')
-      .last
-      .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
-  final cacheFile = File(
-    '${Directory.systemTemp.path}/'
-    'rules_dart_nocomma_${baseName}_${bytes.length}_'
-    '${hash.toRadixString(16)}.snapshot',
-  );
-  if (cacheFile.existsSync() && cacheFile.lengthSync() == bytes.length) {
-    return cacheFile.path;
-  }
+  // The size-and-mtime cache name above already pins the content; a torn
+  // cached copy is impossible because the write below is atomic.
   if (!patchSnapshotSplitCommasBytes(bytes)) {
+    _writePatchSentinel(sentinelFile, snapshotPath);
     return snapshotPath;
   }
   final tmpFile = File(
@@ -961,6 +973,33 @@ String patchSnapshotSplitCommas(String snapshotPath) {
       // Ignore cleanup errors.
     }
     return snapshotPath;
+  }
+}
+
+/// Records that [snapshotPath]'s snapshot needs no comma-splitting patch, so
+/// future [patchSnapshotSplitCommas] calls skip re-reading and re-scanning it.
+void _writePatchSentinel(File sentinelFile, String snapshotPath) {
+  final tmpFile = File(
+    '${sentinelFile.path}.tmp.$pid.${DateTime.now().microsecondsSinceEpoch}',
+  );
+  try {
+    tmpFile.writeAsStringSync('$snapshotPath\n', flush: true);
+    try {
+      tmpFile.renameSync(sentinelFile.path);
+    } on FileSystemException {
+      if (!sentinelFile.existsSync()) {
+        tmpFile.copySync(sentinelFile.path);
+      }
+      if (tmpFile.existsSync()) {
+        tmpFile.deleteSync();
+      }
+    }
+  } on FileSystemException {
+    try {
+      if (tmpFile.existsSync()) tmpFile.deleteSync();
+    } on FileSystemException {
+      // Ignore cleanup errors.
+    }
   }
 }
 
