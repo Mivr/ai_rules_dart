@@ -1253,6 +1253,7 @@ def library_kernel_info(
     need_graph = len(pkgs) < len(records)
     owned_list = owned.to_list() if need_graph else []
     edges_list = edges.to_list() if need_graph else []
+
     # One name for the cross-package check: a merged library owns several,
     # and its members compile in this very module, so no member can be split
     # across targets. A single-package library passes its own name as before.

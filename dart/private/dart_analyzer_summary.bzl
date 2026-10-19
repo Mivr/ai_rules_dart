@@ -393,6 +393,7 @@ def _dart_analyzer_summary_impl(target, ctx):
         for d in deps
         if DartAnalyzerSummaryInfo in d
     ])
+
     # One key per owned package: a merged multi-package target summarizes all
     # of its members' files in this one summary. A target owning no package
     # keeps the empty package's key, as before.
@@ -526,6 +527,7 @@ def _dart_analyzer_summary_impl(target, ctx):
     # `lib/`-relative path, and one shared `lib/` could hold only one of them.
     staged = []
     own_staged_roots = {}
+    prefix = ""
     if len(own_records) == 1:
         prefix = (info.lib_root + "/lib/") if info.lib_root else "lib/"
         stage_root = config.dirname + "/" + name + ".summary_root"

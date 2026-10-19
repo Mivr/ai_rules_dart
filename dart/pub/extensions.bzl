@@ -6,7 +6,7 @@ load("//dart/pub:pub_lock_package.bzl", "pub_lock_git_package", "pub_lock_packag
 load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
 load("//dart/pub:yaml_parser.bzl", "lock_package_error", "parse_pubspec_lock")
 load("//dart/pub/private:pub_repository.bzl", "pub_package", "pub_package_sha256_error")
-load("//dart/pub/private:scc.bzl", "compute_sccs", "normalize_pub_dep", "pubspec_dep_graph", "rewrite_vanished_spoke", "scc_repo_name")
+load("//dart/pub/private:scc.bzl", "compute_sccs", "pubspec_dep_graph", "rewrite_vanished_spoke", "scc_repo_name")
 load("//dart/pub/private:version.bzl", "semver_gt")
 
 _SPOKE_PREFIX = "dart_pub"
@@ -117,12 +117,11 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted):
         contents[name] = ctx.read(pubspec) if ctx.path(pubspec).exists else ""
     return contents
 
-def plan_scope_sccs(scope_names, hosted, explicit_deps, hub_names, spoke_prefix, pubspec_contents):
+def plan_scope_sccs(scope_names, explicit_deps, hub_names, spoke_prefix, pubspec_contents):
     """Plans the merges of one lock scope from its dependency graph.
 
     Args:
       scope_names: Every package name in scope (hosted plus explicit).
-      hosted: Dict of hosted package name to `struct(version, sha256, url)`.
       explicit_deps: Dict of explicit package name to user-declared deps.
       hub_names: All hub repository names in scope.
       spoke_prefix: The scope's spoke repo name prefix.
@@ -686,7 +685,6 @@ def _pub_impl(ctx):
         shared_contents = _scope_pubspec_contents(ctx, "_scc_shared", resolved)
     shared_sccs = plan_scope_sccs(
         shared_names,
-        resolved,
         explicit_deps,
         shared_hubs,
         _SPOKE_PREFIX,
@@ -709,7 +707,6 @@ def _pub_impl(ctx):
             contents = _scope_pubspec_contents(ctx, "_scc_" + hub_name, packages)
         isolated_sccs[hub_name] = plan_scope_sccs(
             scope_names,
-            packages,
             explicit_deps,
             hub_names,
             hub_name,

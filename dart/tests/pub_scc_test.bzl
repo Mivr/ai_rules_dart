@@ -10,7 +10,7 @@ components.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
-load("//dart/pub:extensions.bzl", plan_scope_sccs = "plan_scope_sccs")
+load("//dart/pub:extensions.bzl", "plan_scope_sccs")
 load("//dart/pub:pub_lock_hub.bzl", "pub_lock_hub_content")
 
 # buildifier: disable=bzl-visibility
@@ -348,6 +348,7 @@ def _merged_content_test_impl(ctx):
     asserts.true(env, 'name = "dio_web_adapter"' in content)
     asserts.true(env, 'name = "dart_pub__scc__dio__dio_web_adapter"' in content)
     asserts.true(env, "actual = \":merged\"" in content)
+
     # Edges leaving the cycle are the merged target's deps, in order.
     deps_at = content.find("deps = [")
     meta_at = content.find('"@dart_pub__meta//:meta"')
@@ -358,12 +359,6 @@ def _plan_scope_sccs_test_impl(ctx):
     env = unittest.begin(ctx)
     plan = plan_scope_sccs(
         ["dio", "dio_web_adapter", "meta", "my_app"],
-        {
-            "dio": struct(version = "5.11.1", sha256 = "s", url = "https://pub.dev"),
-            "dio_web_adapter": struct(version = "2.2.2", sha256 = "s", url = "https://pub.dev"),
-            "meta": struct(version = "1.19.0", sha256 = "s", url = "https://pub.dev"),
-            "my_app": struct(version = "1.0.0", sha256 = "s", url = "https://pub.dev"),
-        },
         {},
         ["pub_deps"],
         "dart_pub",
@@ -390,10 +385,6 @@ def _plan_scope_sccs_isolated_test_impl(ctx):
     env = unittest.begin(ctx)
     plan = plan_scope_sccs(
         ["aaa", "bbb"],
-        {
-            "aaa": struct(version = "1.0.0", sha256 = "s", url = "https://pub.dev"),
-            "bbb": struct(version = "1.0.0", sha256 = "s", url = "https://pub.dev"),
-        },
         {},
         ["tool_deps"],
         "tool_deps",
@@ -413,9 +404,6 @@ def _plan_scope_sccs_explicit_left_alone_test_impl(ctx):
     env = unittest.begin(ctx)
     plan = plan_scope_sccs(
         ["aaa", "exp"],
-        {
-            "aaa": struct(version = "1.0.0", sha256 = "s", url = "https://pub.dev"),
-        },
         {"exp": ["aaa"]},
         ["pub_deps"],
         "dart_pub",
