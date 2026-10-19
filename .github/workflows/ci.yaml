@@ -56,6 +56,7 @@ jobs:
           - "e2e/fix"
           - "e2e/analyze_composition"
           - "e2e/link_hook"
+          - "e2e/isolated_hub"
         bzlmodEnabled:
           - true
     steps:

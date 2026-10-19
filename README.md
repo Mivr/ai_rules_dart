@@ -173,6 +173,26 @@ dart_binary(
 > as local `dart_library` targets. Each `from_lock()` prints one summary of
 > everything it skipped, grouped by source.
 
+Set `isolated = True` on a `pub.from_lock()` to keep that hub out of the shared
+registry: its spokes are namespaced `<hub>__<pkg>`, it pins the versions in its
+own lock (no `on_version_conflict` resolution with other hubs), and its
+spokes depend only on other spokes of the same hub. Use this for standalone
+tools that legitimately need a different version of a package (for example an
+analyzer-based checker) from the rest of the build:
+
+```starlark
+pub.from_lock(
+    name = "tool_deps",
+    lock = "//tools:pubspec.lock",
+    isolated = True,
+)
+```
+
+An isolated hub ignores `pub.package()` declarations for packages it contains:
+it builds and uses its own spoke at the version its lock pins, so an explicit
+declaration does not override an isolated hub's version. A non-isolated hub
+continues to honour `pub.package()` as before.
+
 ### BUILD file generation with Gazelle
 
 rules_dart includes a [Gazelle](https://github.com/bazelbuild/bazel-gazelle)
