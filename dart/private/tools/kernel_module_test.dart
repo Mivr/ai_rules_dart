@@ -2975,16 +2975,26 @@ void main(List<String> args) {
 
     // Call 0 compiles `part_parent.dart` + `part_child.dart` (`0.dill`), Call 1 compiles `scc_a.dart` (`1.dill`),
     // Call 2 compiles `scc_b.dart` (`2.dill`) against `--input-summary` of `0.dill` and `1.dill`.
+    // Every declared origin already resolves through the ordered roots (the
+    // staged tree-artifact root first), so isolated staging is skipped and the
+    // request passes the declared inputs through untouched.
+    expect(_valuesAfter(inputRecorder.calls[0], '--multi-root'), [
+      'dep_parent.koutline/sources',
+      _root.path,
+    ]);
     final call0Inputs = {
       for (final raw in inputRecorder.callInputs[0])
         _decodeInputForTest(raw).path: _decodeInputForTest(raw).digest,
     };
     expect(
-      call0Inputs[kernelWorkerUri(
-        '$outDir/.isolated_root/pkg/lib/part_parent.dart',
-      )],
+      call0Inputs['./dep_parent.koutline/sources/pkg/lib/part_parent.dart'],
       equals(stagedSentinelDigest),
       reason: 'staged tree-artifact source must reuse its WorkRequest.inputs digest without re-hashing',
+    );
+    expect(
+      call0Inputs.keys,
+      isNot(contains('$outDir/.isolated_root/pkg/lib/part_parent.dart')),
+      reason: 'skipped staging must not add isolated inputs',
     );
 
     final call2Inputs = {
@@ -3948,8 +3958,13 @@ void main(List<String> args) {
     // Simulates Windows without developer mode: symlink creation throws, so
     // staging must copy file contents instead, isolate just as well, and
     // still reuse WorkRequest.inputs digests without re-hashing from disk.
+    // `fb_b.dart` carries an unterminated comment its directives scan cannot
+    // follow, so the probe keeps isolated staging (an unscannable source may
+    // import files planning never saw). It stays the dependency `fb_a`
+    // imports, so its component still compiles first and every recorded call
+    // runs staged.
     _write('pkg/lib/fb_a.dart', "import 'fb_b.dart';\nclass FbA {}\n");
-    _write('pkg/lib/fb_b.dart', 'class FbB {}\n');
+    _write('pkg/lib/fb_b.dart', '/* unterminated prologue\nclass FbB {}\n');
     final outDir = '${_root.path}/out/fallback.kmod';
     final outlineDir = '${_root.path}/out/fallback.koutline';
     final sentinelA = Uint8List.fromList(utf8.encode('fallback-digest-a-1234'));

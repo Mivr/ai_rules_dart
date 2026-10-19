@@ -541,30 +541,80 @@ Future<int> compileModule(
       return 1;
     }
     const dill = 'entry.dill';
+    // Staged-source roots for every declared key the base roots do not hold,
+    // in first-seen order: the front end resolves those keys through the
+    // pinned dependency copies, ahead of any workspace shadow.
+    final extraMultiRoots = <String>[];
+    final seenStagedRoots = <String>{};
+    for (final key in files.declaredKeys) {
+      if (!files.isDeclaredInRoots(key)) {
+        final stagedRoot = stagedSources[key];
+        if (stagedRoot != null && seenStagedRoots.add(stagedRoot)) {
+          extraMultiRoots.add(stagedRoot);
+        }
+      }
+    }
+    final stagedInputs = <Uint8List>[];
+    for (final key in entry.keys) {
+      if (!files.isDeclaredInRoots(key)) {
+        final stagedRoot = stagedSources[key];
+        if (stagedRoot != null && inputs.isNotEmpty) {
+          final stagedPath = '$stagedRoot/$key';
+          if (_lookupDigest(stagedPath, inputDigests) == null) {
+            stagedInputs.add(
+              _encodeInput(
+                stagedPath,
+                sha256Of(await File(stagedPath).readAsBytes()),
+              ),
+            );
+          }
+        }
+      }
+    }
+    final useIsolated = await _needsIsolatedMultiRoot(
+      multiRoots,
+      extraMultiRoots,
+      entry.keys,
+      files,
+      vm,
+    );
     ({String rootDir, List<Uint8List> inputs, Map<String, Uint8List> covered})?
     isolated;
     final ModuleOutcome outcome;
     try {
-      // The front end sees a single `--multi-root` holding symlinks to exactly
-      // the declared origins, so untracked workspace files and stale generated
-      // outputs can never shadow a declared source, and references to
-      // undeclared files fail instead of reading the workspace.
-      isolated = await _stageIsolatedMultiRoot(
-        output,
-        files,
-        inputDigests,
-        includeInputDigests: inputs.isNotEmpty || compiler is _Persistent,
-        createLink: createLink,
-      );
+      if (useIsolated) {
+        // The front end sees a single `--multi-root` holding symlinks to exactly
+        // the declared origins, so untracked workspace files and stale generated
+        // outputs can never shadow a declared source, and references to
+        // undeclared files fail instead of reading the workspace.
+        isolated = await _stageIsolatedMultiRoot(
+          output,
+          files,
+          inputDigests,
+          includeInputDigests: inputs.isNotEmpty || compiler is _Persistent,
+          createLink: createLink,
+        );
+      }
       final staged = isolated;
-      final entryBase = _baseWithSingleMultiRoot(base, staged.rootDir);
+      final entryBase = staged != null
+          ? _baseWithSingleMultiRoot(base, staged.rootDir)
+          : _baseWithOrderedMultiRoots(base, multiRoots, entry.keys, files);
       // The compiler reads each declared file through the isolated root, so
       // its origin inputs are withheld as duplicates.
-      final callInputs = staged.inputs.isEmpty
-          ? inputs
-          : [...staged.inputs, ..._uncoveredInputs(inputs, staged.covered)];
+      final callInputs = staged != null
+          ? (staged.inputs.isEmpty
+                ? inputs
+                : [
+                    ...staged.inputs,
+                    ..._uncoveredInputs(inputs, staged.covered),
+                  ])
+          : (stagedInputs.isEmpty ? inputs : [...inputs, ...stagedInputs]);
       outcome = await compiler.run(
         kernelWorkerArgs([
+          // Staged-source roots come first so the pinned dependency copies
+          // win over any workspace shadow, exactly as the probe validates.
+          if (staged == null)
+            for (final root in extraMultiRoots) ...[_multiRootFlag, root],
           ...entryBase,
           for (final d in neededDills(entry.imports, graph)) ...[
             '--input-summary',
@@ -649,17 +699,22 @@ Future<int> compileModule(
   ];
   var retried = false;
   var sccs = <_Scc>[];
+  // Staged-source roots for every declared key the base roots do not hold, in
+  // first-seen order: the front end resolves those keys through the pinned
+  // dependency copies, ahead of any workspace shadow.
+  final extraMultiRoots = <String>[];
+  final seenStagedRoots = <String>{};
+  for (final key in files.declaredKeys) {
+    if (!files.isDeclaredInRoots(key)) {
+      final stagedRoot = stagedSources[key];
+      if (stagedRoot != null && seenStagedRoots.add(stagedRoot)) {
+        extraMultiRoots.add(stagedRoot);
+      }
+    }
+  }
   ({String rootDir, List<Uint8List> inputs, Map<String, Uint8List> covered})?
   isolated;
   try {
-    isolated = await _stageIsolatedMultiRoot(
-      output,
-      files,
-      inputDigests,
-      includeInputDigests: inputs.isNotEmpty || compiler is _Persistent,
-      createLink: createLink,
-    );
-    final staged = isolated;
     while (true) {
       sccs = _componentsOf(remaining, keys, plan);
       // The kernels this attempt has written, by key. A later component links to them.
@@ -667,6 +722,47 @@ Future<int> compileModule(
       ModuleOutcome? failure;
       var failedUris = const <String>[];
       for (final scc in sccs) {
+        final stagedInputs = <Uint8List>[];
+        for (final key in scc.keys) {
+          if (!files.isDeclaredInRoots(key)) {
+            final stagedRoot = stagedSources[key];
+            if (stagedRoot != null && inputs.isNotEmpty) {
+              final stagedPath = '$stagedRoot/$key';
+              if (_lookupDigest(stagedPath, inputDigests) == null) {
+                stagedInputs.add(
+                  _encodeInput(
+                    stagedPath,
+                    sha256Of(await File(stagedPath).readAsBytes()),
+                  ),
+                );
+              }
+            }
+          }
+        }
+        final useIsolated =
+            isolated != null ||
+            await _needsIsolatedMultiRoot(
+              multiRoots,
+              extraMultiRoots,
+              scc.keys,
+              files,
+              vm,
+            );
+        if (useIsolated && isolated == null) {
+          // The front end sees a single `--multi-root` holding symlinks to
+          // exactly the declared origins, so untracked workspace files and
+          // stale generated outputs can never shadow a declared source, and
+          // references to undeclared files fail instead of reading the
+          // workspace.
+          isolated = await _stageIsolatedMultiRoot(
+            output,
+            files,
+            inputDigests,
+            includeInputDigests: inputs.isNotEmpty || compiler is _Persistent,
+            createLink: createLink,
+          );
+        }
+        final staged = isolated;
         final summaryNodes = _neededNodes(scc.imports, local);
         final summaryInputs = <Uint8List>[];
         if (inputs.isNotEmpty || compiler is _Persistent) {
@@ -678,21 +774,29 @@ Future<int> compileModule(
           }
         }
         final dillPath = '$output/${scc.dill}';
-        final sccBase = _baseWithSingleMultiRoot(base, staged.rootDir);
+        final sccBase = staged != null
+            ? _baseWithSingleMultiRoot(base, staged.rootDir)
+            : _baseWithOrderedMultiRoots(base, multiRoots, scc.keys, files);
         final extraInputs = [
-          ...staged.inputs,
+          if (staged != null) ...staged.inputs else ...stagedInputs,
           ...summaryInputs,
-          ..._uncoveredInputs(inputs, staged.covered),
+          if (staged != null) ..._uncoveredInputs(inputs, staged.covered),
         ];
         final outcome = await compiler.run(
           kernelWorkerArgs([
+            // Staged-source roots come first so the pinned dependency copies
+            // win over any workspace shadow, exactly as the probe validates.
+            if (staged == null)
+              for (final root in extraMultiRoots) ...[_multiRootFlag, root],
             ...sccBase,
             for (final node in summaryNodes) ...['--input-summary', node.dill],
             for (final uri in scc.uris) ...['--source', uri],
             '--output',
             dillPath,
           ]),
-          extraInputs.isEmpty ? inputs : extraInputs,
+          staged != null
+              ? (extraInputs.isEmpty ? inputs : extraInputs)
+              : (extraInputs.isEmpty ? inputs : [...inputs, ...extraInputs]),
         );
         if (outcome.exitCode != 0) {
           failure = outcome;
@@ -2366,6 +2470,162 @@ List<String> _baseWithSingleMultiRoot(List<String> base, String singleRoot) {
       ..add(singleRoot);
   }
   return out;
+}
+
+/// Orders [multiRoots] so the front end resolves each of [keys] to its declared
+/// input: roots holding an explicitly declared spelling come first, then
+/// roots without conflicts, then roots where an undeclared file shadows a
+/// declared key. Within one build the order is stable, so a warm compiler
+/// reuses its cached files across requests; a shadowing root never wins over
+/// the declared copy, so untracked and stale files stay invisible without
+/// staging anything.
+List<String> _orderedMultiRoots(
+  List<String> multiRoots,
+  Iterable<String> keys,
+  _Files files,
+) {
+  if (multiRoots.length <= 1) return multiRoots;
+  final checkKeys = keys.toList();
+  final useKeys = checkKeys.isNotEmpty
+      ? checkKeys
+      : files.declaredKeys.toList();
+  if (useKeys.isEmpty) return multiRoots;
+  final hasConflict = <String, bool>{};
+  final hasExplicit = <String, bool>{};
+  for (final root in multiRoots) {
+    var conflict = false;
+    var explicit = false;
+    for (final key in useKeys) {
+      if (files.isExplicitlyDeclaredInRoot(root, key)) {
+        explicit = true;
+      } else if (!files.isDeclaredInRoot(root, key)) {
+        final f = File(root == '.' ? key : '$root/$key');
+        if (f.existsSync()) {
+          conflict = true;
+        }
+      }
+    }
+    hasConflict[root] = conflict;
+    hasExplicit[root] = explicit;
+  }
+  final orderedRoots = [
+    for (final root in multiRoots)
+      if (!hasConflict[root]! && hasExplicit[root]!) root,
+    for (final root in multiRoots)
+      if (!hasConflict[root]! && !hasExplicit[root]!) root,
+    for (final root in multiRoots)
+      if (hasConflict[root]!) root,
+  ];
+  var sameOrder = true;
+  for (var i = 0; i < multiRoots.length; i++) {
+    if (orderedRoots[i] != multiRoots[i]) {
+      sameOrder = false;
+      break;
+    }
+  }
+  if (sameOrder) return multiRoots;
+  return orderedRoots;
+}
+
+/// Rewrites the `--multi-root` flags in [base] to the order
+/// [_orderedMultiRoots] computes.
+List<String> _baseWithOrderedMultiRoots(
+  List<String> base,
+  List<String> multiRoots,
+  Iterable<String> keys,
+  _Files files,
+) {
+  final orderedRoots = _orderedMultiRoots(multiRoots, keys, files);
+  if (identical(orderedRoots, multiRoots)) return base;
+  final out = <String>[];
+  var rootIdx = 0;
+  for (var i = 0; i < base.length; i++) {
+    final arg = base[i];
+    if (arg == _multiRootFlag && i + 1 < base.length) {
+      out
+        ..add(_multiRootFlag)
+        ..add(orderedRoots[rootIdx++]);
+      i++;
+    } else if (arg.startsWith('$_multiRootFlag=')) {
+      out.add('$_multiRootFlag=${orderedRoots[rootIdx++]}');
+    } else {
+      out.add(arg);
+    }
+  }
+  return out;
+}
+
+/// Whether `compileModule` should stage an isolated `--multi-root` directory
+/// containing only declared inputs at their single declared origins.
+///
+/// Staging is skipped when the front end already resolves every key it may
+/// read to exactly its declared origin through the staged-source roots in
+/// [extraMultiRoots] (first) and the ordered base [multiRoots]: the first
+/// root holding the key is its [files.declaredOriginOf], so an unstaged
+/// compile reads byte-for-byte the same files staging would link, and the
+/// request keeps the stable roots a warm compiler caches across requests.
+/// Staging stays for layouts where a shadow would win (stale generated
+/// outputs, untracked files over declared keys), for origins outside every
+/// root, and for keys whose directives do not scan.
+Future<bool> _needsIsolatedMultiRoot(
+  List<String> multiRoots,
+  List<String> extraMultiRoots,
+  Iterable<String> keys,
+  _Files files,
+  Set<String> vm,
+) async {
+  final orderedBase = _orderedMultiRoots(multiRoots, keys, files);
+  final finalOrder = <String>[...extraMultiRoots, ...orderedBase];
+  final candidateRoots = <String>{...finalOrder};
+  // Staging can be skipped only when every declared input already lives under
+  // one of the candidate roots (so the front end can resolve it without a
+  // staged copy).
+  for (final key in files.declaredKeys) {
+    final origin = files.declaredOriginOf(key);
+    if (origin == null) return true;
+    final originNorm = origin.replaceAll(r'\', '/');
+    var underRoot = false;
+    for (final root in candidateRoots) {
+      final slashRoot = root
+          .replaceAll(r'\', '/')
+          .replaceFirst(RegExp(r'/+$'), '');
+      final prefix = slashRoot == '.' ? '' : '$slashRoot/';
+      if (slashRoot == '.' && !originNorm.startsWith('/')) {
+        // relative origin under cwd root
+        underRoot = true;
+        break;
+      }
+      if (prefix.isNotEmpty && originNorm.startsWith(prefix)) {
+        underRoot = true;
+        break;
+      }
+    }
+    if (!underRoot) return true;
+  }
+  // ... and the first root holding each key the front end may read is exactly
+  // its declared origin (so no shadow or stale copy wins over it).
+  final checkKeys = <String>{...keys, ...files.declaredKeys};
+  for (final key in checkKeys) {
+    final origin = files.declaredOriginOf(key);
+    if (origin == null) return true;
+    String? winner;
+    for (final root in finalOrder) {
+      final path = _filePathOf(root == '.' ? key : '$root/$key');
+      if (File(path).existsSync()) {
+        winner = path;
+        break;
+      }
+    }
+    if (winner != _filePathOf(origin)) return true;
+  }
+  // ... and every compiled key's directives scan (so planning sees every
+  // import the front end will follow).
+  for (final key in keys) {
+    if (await files.scan(key, vm) == null) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /// Stages `$output/.isolated_root` holding one symlink per declared input in
