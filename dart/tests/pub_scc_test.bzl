@@ -10,7 +10,7 @@ components.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
-load("//dart/pub:extensions.bzl", "plan_scope_sccs")
+load("//dart/pub:extensions.bzl", "plan_scope_sccs", "scc_member_entries")
 load("//dart/pub:pub_lock_hub.bzl", "pub_lock_hub_content")
 
 # buildifier: disable=bzl-visibility
@@ -431,6 +431,41 @@ def _plan_scope_sccs_explicit_left_alone_test_impl(ctx):
     asserts.equals(env, {}, plan.merged)
     return unittest.end(env)
 
+def _git_cycle_in_graph_test_impl(ctx):
+    env = unittest.begin(ctx)
+    graph = pubspec_dep_graph(
+        {
+            "hosted_a": "name: hosted_a\ndependencies:\n  git_b: any\n",
+            "git_b": "name: git_b\ndependencies:\n  hosted_a: any\n",
+        },
+        {},
+        ["hosted_a", "git_b"],
+        ["pub_deps"],
+        ["dart_pub"],
+    )
+    asserts.equals(
+        env,
+        [["git_b", "hosted_a"]],
+        compute_sccs(graph),
+    )
+    return unittest.end(env)
+
+def _scc_member_entries_test_impl(ctx):
+    env = unittest.begin(ctx)
+    entries = scc_member_entries(
+        ["git_b", "hosted_a"],
+        {"hosted_a": struct(version = "1.0.0", sha256 = "s", url = "https://pub.dev")},
+        {"git_b": struct(version = "1.0.0", url = "https://example.com/repo.git", resolved_ref = "deadbeef", path = "pkgs/git_b")},
+    )
+    asserts.equals(env, 2, len(entries))
+    asserts.equals(env, "git", entries[0].source)
+    asserts.equals(env, "git_b", entries[0].name)
+    asserts.equals(env, "deadbeef", entries[0].resolved_ref)
+    asserts.equals(env, "pkgs/git_b", entries[0].path)
+    asserts.equals(env, "hosted", entries[1].source)
+    asserts.equals(env, "hosted_a", entries[1].name)
+    return unittest.end(env)
+
 _t0_test = unittest.make(_two_node_cycle_test_impl)
 _t1_test = unittest.make(_three_node_cycle_test_impl)
 _t2_test = unittest.make(_two_disjoint_cycles_test_impl)
@@ -453,6 +488,8 @@ _t18_test = unittest.make(_plan_scope_sccs_test_impl)
 _t19_test = unittest.make(_plan_scope_sccs_isolated_test_impl)
 _t20_test = unittest.make(_plan_scope_sccs_explicit_left_alone_test_impl)
 _t21_test = unittest.make(_merged_test_member_content_test_impl)
+_t22_test = unittest.make(_git_cycle_in_graph_test_impl)
+_t23_test = unittest.make(_scc_member_entries_test_impl)
 
 def pub_scc_test_suite(name):
     small_unittest_suite(
@@ -479,4 +516,6 @@ def pub_scc_test_suite(name):
         _t19_test,
         _t20_test,
         _t21_test,
+        _t22_test,
+        _t23_test,
     )

@@ -251,7 +251,7 @@
     },
     "@@rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "If+J2wlitiZdKHMtZ6wgLQ1VUFyNMeD6yXa48S/sygw=",
+        "bzlTransitiveDigest": "OIfYAUN5AkmY/1+0UEKKO6RNCorOKTZnAqJikfcCQ6c=",
         "usagesDigest": "zp8r72wUneX8Jys76kJ5g44OmB9xJx0hbxbsCqfocAY=",
         "recordedInputs": [
           "FILE:@@//pubspec.lock 3e87ae6877571ca926689b57d2f0c7cd2e9e46bcfad0383fe552aee84f74995e",
@@ -376,7 +376,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__analyzer": {
@@ -488,7 +489,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__args": {
@@ -600,7 +602,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__async": {
@@ -712,7 +715,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__boolean_selector": {
@@ -824,7 +828,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__build": {
@@ -936,7 +941,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__built_collection": {
@@ -1048,7 +1054,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__built_value": {
@@ -1160,7 +1167,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__change_case": {
@@ -1272,7 +1280,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__cli_config": {
@@ -1384,7 +1393,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__cli_util": {
@@ -1496,7 +1506,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__code_assets": {
@@ -1608,7 +1619,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__code_builder": {
@@ -1720,7 +1732,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__collection": {
@@ -1832,7 +1845,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__convert": {
@@ -1944,7 +1958,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__copy_with_extension": {
@@ -2056,7 +2071,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__coverage": {
@@ -2168,7 +2184,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__crypto": {
@@ -2280,7 +2297,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__dart_style": {
@@ -2392,7 +2410,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__drift": {
@@ -2504,7 +2523,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__ffi": {
@@ -2616,7 +2636,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__file": {
@@ -2728,7 +2749,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__fixnum": {
@@ -2840,7 +2862,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__freezed_annotation": {
@@ -2952,7 +2975,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__frontend_server_client": {
@@ -3064,7 +3088,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__get_it": {
@@ -3176,7 +3201,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__glob": {
@@ -3288,7 +3314,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__hooks": {
@@ -3400,7 +3427,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__http_multi_server": {
@@ -3512,7 +3540,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__http_parser": {
@@ -3624,7 +3653,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__io": {
@@ -3736,7 +3766,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__json_annotation": {
@@ -3848,7 +3879,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__logging": {
@@ -3960,7 +3992,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__matcher": {
@@ -4072,7 +4105,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__meta": {
@@ -4184,7 +4218,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__mime": {
@@ -4296,7 +4331,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__mockito": {
@@ -4408,7 +4444,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__native_toolchain_c": {
@@ -4520,7 +4557,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__native_toolchain_cmake": {
@@ -4632,7 +4670,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__node_preamble": {
@@ -4744,7 +4783,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__package_config": {
@@ -4856,7 +4896,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__path": {
@@ -4968,7 +5009,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__pool": {
@@ -5080,7 +5122,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__pub_semver": {
@@ -5192,7 +5235,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__record_use": {
@@ -5304,7 +5348,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__shelf": {
@@ -5416,7 +5461,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__shelf_packages_handler": {
@@ -5528,7 +5574,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__shelf_static": {
@@ -5640,7 +5687,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__shelf_web_socket": {
@@ -5752,7 +5800,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__source_gen": {
@@ -5864,7 +5913,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__source_map_stack_trace": {
@@ -5976,7 +6026,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__source_maps": {
@@ -6088,7 +6139,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__source_span": {
@@ -6200,7 +6252,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__sqlite3": {
@@ -6314,7 +6367,8 @@
               "code_assets": [
                 "@rules_dart//dart/ext/sqlite3:code_asset"
               ],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__stack_trace": {
@@ -6426,7 +6480,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__stacked_shared": {
@@ -6538,7 +6593,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__stream_channel": {
@@ -6650,7 +6706,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__string_scanner": {
@@ -6762,7 +6819,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__term_glyph": {
@@ -6874,7 +6932,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__test": {
@@ -6986,7 +7045,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__test_api": {
@@ -7098,7 +7158,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__test_core": {
@@ -7210,7 +7271,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__typed_data": {
@@ -7322,7 +7384,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__vm_service": {
@@ -7434,7 +7497,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__watcher": {
@@ -7546,7 +7610,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__web": {
@@ -7658,7 +7723,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__web_socket": {
@@ -7770,7 +7836,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__web_socket_channel": {
@@ -7882,7 +7949,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__webcrypto": {
@@ -7996,7 +8064,8 @@
               "code_assets": [
                 "@rules_dart//dart/ext/webcrypto:code_asset"
               ],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__webkit_inspection_protocol": {
@@ -8108,7 +8177,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__yaml": {
@@ -8220,7 +8290,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__analyzer_buffer": {
@@ -8332,7 +8403,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__bazel_worker": {
@@ -8444,7 +8516,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__build_config": {
@@ -8556,7 +8629,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__built_value_generator": {
@@ -8668,7 +8742,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__charcode": {
@@ -8780,7 +8855,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__checked_yaml": {
@@ -8892,7 +8968,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__clock": {
@@ -9004,7 +9081,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__copy_with_extension_gen": {
@@ -9116,7 +9194,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__data_assets": {
@@ -9228,7 +9307,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__drift_dev": {
@@ -9340,7 +9420,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__freezed": {
@@ -9452,7 +9533,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__go_router_builder": {
@@ -9564,7 +9646,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__json_serializable": {
@@ -9676,7 +9759,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__logger": {
@@ -9788,7 +9872,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__platform": {
@@ -9900,7 +9985,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__process": {
@@ -10012,7 +10098,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__protobuf": {
@@ -10124,7 +10211,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__pubspec_parse": {
@@ -10236,7 +10324,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__recase": {
@@ -10348,7 +10437,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__source_helper": {
@@ -10460,7 +10550,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__sqlparser": {
@@ -10572,7 +10663,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__stacked_generator": {
@@ -10684,7 +10776,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__stream_transform": {
@@ -10796,7 +10889,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__yaml_edit": {
@@ -10908,7 +11002,8 @@
                 "very_good_analysis"
               ],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "pub_deps": {
@@ -10989,7 +11084,8 @@
                 "webkit_inspection_protocol",
                 "yaml"
               ],
-              "explicit_packages": []
+              "explicit_packages": [],
+              "scc_targets": {}
             }
           },
           "ext_pub_deps": {
@@ -11091,7 +11187,8 @@
                 "yaml",
                 "yaml_edit"
               ],
-              "explicit_packages": []
+              "explicit_packages": [],
+              "scc_targets": {}
             }
           }
         },

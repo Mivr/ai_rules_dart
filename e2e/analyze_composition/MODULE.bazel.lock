@@ -251,7 +251,7 @@
     },
     "@@rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "If+J2wlitiZdKHMtZ6wgLQ1VUFyNMeD6yXa48S/sygw=",
+        "bzlTransitiveDigest": "OIfYAUN5AkmY/1+0UEKKO6RNCorOKTZnAqJikfcCQ6c=",
         "usagesDigest": "mDJKd26L5bPbn+60Xm+FZB2sj/ECVzhIGBELk2wu6JI=",
         "recordedInputs": [
           "FILE:@@rules_dart+//dart/ext/pubspec.lock ae866f3a1d4ebad9a74f9b9efab33c74dfbf904ae0d69dfe94192029d4955188"
@@ -361,7 +361,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__analyzer": {
@@ -468,7 +469,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__analyzer_buffer": {
@@ -575,7 +577,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__args": {
@@ -682,7 +685,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__async": {
@@ -789,7 +793,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__bazel_worker": {
@@ -896,7 +901,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__boolean_selector": {
@@ -1003,7 +1009,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__build": {
@@ -1110,7 +1117,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__build_config": {
@@ -1217,7 +1225,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__built_collection": {
@@ -1324,7 +1333,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__built_value": {
@@ -1431,7 +1441,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__built_value_generator": {
@@ -1538,7 +1549,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__charcode": {
@@ -1645,7 +1657,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__checked_yaml": {
@@ -1752,7 +1765,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__cli_config": {
@@ -1859,7 +1873,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__cli_util": {
@@ -1966,7 +1981,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__clock": {
@@ -2073,7 +2089,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__code_assets": {
@@ -2180,7 +2197,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__code_builder": {
@@ -2287,7 +2305,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__collection": {
@@ -2394,7 +2413,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__convert": {
@@ -2501,7 +2521,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__copy_with_extension": {
@@ -2608,7 +2629,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__copy_with_extension_gen": {
@@ -2715,7 +2737,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__coverage": {
@@ -2822,7 +2845,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__crypto": {
@@ -2929,7 +2953,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__dart_style": {
@@ -3036,7 +3061,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__data_assets": {
@@ -3143,7 +3169,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__drift": {
@@ -3250,7 +3277,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__drift_dev": {
@@ -3357,7 +3385,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__ffi": {
@@ -3464,7 +3493,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__file": {
@@ -3571,7 +3601,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__fixnum": {
@@ -3678,7 +3709,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__freezed": {
@@ -3785,7 +3817,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__freezed_annotation": {
@@ -3892,7 +3925,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__frontend_server_client": {
@@ -3999,7 +4033,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__get_it": {
@@ -4106,7 +4141,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__glob": {
@@ -4213,7 +4249,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__go_router_builder": {
@@ -4320,7 +4357,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__hooks": {
@@ -4427,7 +4465,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__http_multi_server": {
@@ -4534,7 +4573,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__http_parser": {
@@ -4641,7 +4681,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__io": {
@@ -4748,7 +4789,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__json_annotation": {
@@ -4855,7 +4897,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__json_serializable": {
@@ -4962,7 +5005,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__logger": {
@@ -5069,7 +5113,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__logging": {
@@ -5176,7 +5221,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__matcher": {
@@ -5283,7 +5329,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__meta": {
@@ -5390,7 +5437,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__mime": {
@@ -5497,7 +5545,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__mockito": {
@@ -5604,7 +5653,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__native_toolchain_c": {
@@ -5711,7 +5761,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__node_preamble": {
@@ -5818,7 +5869,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__package_config": {
@@ -5925,7 +5977,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__path": {
@@ -6032,7 +6085,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__platform": {
@@ -6139,7 +6193,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__pool": {
@@ -6246,7 +6301,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__process": {
@@ -6353,7 +6409,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__protobuf": {
@@ -6460,7 +6517,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__pub_semver": {
@@ -6567,7 +6625,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__pubspec_parse": {
@@ -6674,7 +6733,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__recase": {
@@ -6781,7 +6841,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__record_use": {
@@ -6888,7 +6949,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__shelf": {
@@ -6995,7 +7057,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__shelf_packages_handler": {
@@ -7102,7 +7165,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__shelf_static": {
@@ -7209,7 +7273,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__shelf_web_socket": {
@@ -7316,7 +7381,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__source_gen": {
@@ -7423,7 +7489,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__source_helper": {
@@ -7530,7 +7597,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__source_map_stack_trace": {
@@ -7637,7 +7705,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__source_maps": {
@@ -7744,7 +7813,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__source_span": {
@@ -7851,7 +7921,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__sqlite3": {
@@ -7960,7 +8031,8 @@
               "code_assets": [
                 "@rules_dart//dart/ext/sqlite3:code_asset"
               ],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__sqlparser": {
@@ -8067,7 +8139,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__stack_trace": {
@@ -8174,7 +8247,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__stacked_generator": {
@@ -8281,7 +8355,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__stacked_shared": {
@@ -8388,7 +8463,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__stream_channel": {
@@ -8495,7 +8571,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__stream_transform": {
@@ -8602,7 +8679,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__string_scanner": {
@@ -8709,7 +8787,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__term_glyph": {
@@ -8816,7 +8895,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__test": {
@@ -8923,7 +9003,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__test_api": {
@@ -9030,7 +9111,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__test_core": {
@@ -9137,7 +9219,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__typed_data": {
@@ -9244,7 +9327,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__vm_service": {
@@ -9351,7 +9435,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__watcher": {
@@ -9458,7 +9543,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__web": {
@@ -9565,7 +9651,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__web_socket": {
@@ -9672,7 +9759,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__web_socket_channel": {
@@ -9779,7 +9867,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__webkit_inspection_protocol": {
@@ -9886,7 +9975,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__yaml": {
@@ -9993,7 +10083,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "dart_pub__yaml_edit": {
@@ -10100,7 +10191,8 @@
               ],
               "explicit_packages": [],
               "code_assets": [],
-              "ignore_hook": false
+              "ignore_hook": false,
+              "scc_targets": {}
             }
           },
           "ext_pub_deps": {
@@ -10202,7 +10294,8 @@
                 "yaml",
                 "yaml_edit"
               ],
-              "explicit_packages": []
+              "explicit_packages": [],
+              "scc_targets": {}
             }
           }
         },

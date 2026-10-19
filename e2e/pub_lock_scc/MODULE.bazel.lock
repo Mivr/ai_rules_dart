@@ -251,7 +251,7 @@
     },
     "@@rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "KDopH/q5KzzFUHLLXMmGmX6kaX5Uo5bLG+jdcNLMK8k=",
+        "bzlTransitiveDigest": "OIfYAUN5AkmY/1+0UEKKO6RNCorOKTZnAqJikfcCQ6c=",
         "usagesDigest": "ITYndLx61OHCYHazRbIV9+c+lQSZAYVc91nRFyXSrqg=",
         "recordedInputs": [
           "FILE:@@//pubspec.lock 679ea035d1a72b7b4866d65ef54493bef6423ea5184392c709500f88ea642344",
@@ -10852,7 +10852,8 @@
           "dart_pub__scc__dio__dio_web_adapter": {
             "repoRuleId": "@@rules_dart+//dart/pub:pub_lock_scc.bzl%pub_lock_scc_package",
             "attributes": {
-              "members_json": "[{\"code_assets\":[],\"name\":\"dio\",\"sha256\":\"852ec3b48cc431ac04fff978413c541502b67ffc3e26921e74e3d994694192c1\",\"url\":\"https://pub.dev\",\"version\":\"5.11.1\"},{\"code_assets\":[],\"name\":\"dio_web_adapter\",\"sha256\":\"3a1b2cd7be71086f38504956e3ebcd2837288d231ff454bafa78021244102bfc\",\"url\":\"https://pub.dev\",\"version\":\"2.2.2\"}]",
+              "repo_name": "dart_pub__scc__dio__dio_web_adapter",
+              "members_json": "[{\"code_assets\":[],\"name\":\"dio\",\"sha256\":\"852ec3b48cc431ac04fff978413c541502b67ffc3e26921e74e3d994694192c1\",\"source\":\"hosted\",\"url\":\"https://pub.dev\",\"version\":\"5.11.1\"},{\"code_assets\":[],\"name\":\"dio_web_adapter\",\"sha256\":\"3a1b2cd7be71086f38504956e3ebcd2837288d231ff454bafa78021244102bfc\",\"source\":\"hosted\",\"url\":\"https://pub.dev\",\"version\":\"2.2.2\"}]",
               "hub_name": "dart_pub",
               "lock_packages": [
                 "_fe_analyzer_shared",

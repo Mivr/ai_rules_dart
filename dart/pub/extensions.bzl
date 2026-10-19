@@ -77,13 +77,14 @@ _from_lock = tag_class(
     },
 )
 
-def _scope_pubspec_contents(ctx, scope_dir, hosted):
-    """Downloads each hosted package and returns its `pubspec.yaml` contents.
+def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
+    """Downloads each in-scope package and returns its `pubspec.yaml` contents.
 
     The extension needs every package's `dependencies:` to find dependency
     cycles before any repository is generated, so it downloads the same
-    tarballs the spokes will (verified by the same sha256) and reads the one
-    file it needs from each. The padded-tarball workaround is the spokes'
+    tarballs the hosted spokes will (verified by the same sha256) and clones
+    the same git revisions the git spokes will, reading the one file it needs
+    from each. The padded-tarball workaround is the spokes'
     (`trim_gzip_trailing_nulls`): some pub.dev archives end past the gzip
     trailer, which Bazel's extractor rejects.
 
@@ -91,13 +92,16 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted):
       ctx: The module extension context.
       scope_dir: Scratch directory for this scope's downloads, unique per
         scope so shared and isolated scopes never collide.
-      hosted: Dict of package name to `struct(version, sha256, url)`.
+      hosted: Dict of hosted package name to `struct(version, sha256, url)`.
+      git_pkgs: Dict of git package name to
+        `struct(version, url, resolved_ref, path)`.
 
     Returns:
       Dict of package name to its `pubspec.yaml` contents ("" when the
       package ships none).
     """
     contents = {}
+    ctx.file(scope_dir + "/.scc_scope", "pub dependency-cycle scope scratch")
     for name in sorted(hosted.keys()):
         pkg = hosted[name]
         url = "{base}/packages/{name}/versions/{version}.tar.gz".format(
@@ -112,6 +116,29 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted):
         trimmed = trim_gzip_trailing_nulls(raw)
         if trimmed != raw:
             ctx.file(archive, trimmed, executable = False)
+        ctx.extract(archive, output = out)
+        pubspec = out + "/pubspec.yaml"
+        contents[name] = ctx.read(pubspec) if ctx.path(pubspec).exists else ""
+    for name in sorted(git_pkgs.keys()):
+        pkg = git_pkgs[name]
+        # Absolute paths: `git -C <dir> archive -o <file>` resolves `-o`
+        # against the `-C` directory rather than the working directory.
+        clone_dir = str(ctx.path("{dir}/{name}_clone".format(dir = scope_dir, name = name)))
+        out = "{dir}/{name}".format(dir = scope_dir, name = name)
+        res = ctx.execute(["git", "clone", "--no-checkout", pkg.url, clone_dir])
+        if res.return_code != 0:
+            fail("pub.from_lock: git clone failed for %s (%s): %s" % (name, pkg.url, res.stderr))
+        res = ctx.execute(["git", "-C", clone_dir, "checkout", "--quiet", pkg.resolved_ref])
+        if res.return_code != 0:
+            res = ctx.execute(["git", "-C", clone_dir, "fetch", "origin", pkg.resolved_ref])
+            res = ctx.execute(["git", "-C", clone_dir, "checkout", "--quiet", pkg.resolved_ref])
+            if res.return_code != 0:
+                fail("pub.from_lock: git checkout failed for %s at %s: %s" % (name, pkg.resolved_ref, res.stderr))
+        archive = str(ctx.path("{dir}/{name}.tar".format(dir = scope_dir, name = name)))
+        spec = pkg.resolved_ref if pkg.path == "." else pkg.resolved_ref + ":" + pkg.path
+        res = ctx.execute(["git", "-C", clone_dir, "archive", "--format=tar", "-o", archive, spec])
+        if res.return_code != 0:
+            fail("pub.from_lock: git archive failed for %s at %s: %s" % (name, spec, res.stderr))
         ctx.extract(archive, output = out)
         pubspec = out + "/pubspec.yaml"
         contents[name] = ctx.read(pubspec) if ctx.path(pubspec).exists else ""
@@ -155,6 +182,49 @@ def plan_scope_sccs(scope_names, explicit_deps, hub_names, spoke_prefix, pubspec
         for member in component:
             members[member] = repo
     return struct(members = members, merged = merged)
+
+def scc_member_entries(members, hosted, git_pkgs):
+    """Builds the merged repository's member entries for `members_json`.
+
+    Pure given the resolved packages: hosted members carry their tarball
+    coordinates, git members their remote, resolved ref and in-repo path, so
+    the merged repository fetches each member the way its spoke would.
+
+    Args:
+      members: Sorted member package names.
+      hosted: Dict of hosted package name to
+        `struct(version, sha256, url)`.
+      git_pkgs: Dict of git package name to
+        `struct(version, url, resolved_ref, path)`.
+
+    Returns:
+      List of structs, each with `source` (`"hosted"` or `"git"`) plus the
+      coordinates the merged repository rule reads.
+    """
+    entries = []
+    for member in members:
+        if member in hosted:
+            pkg = hosted[member]
+            entries.append(struct(
+                source = "hosted",
+                name = member,
+                version = pkg.version,
+                sha256 = pkg.sha256,
+                url = pkg.url,
+                code_assets = curated_code_assets(member, pkg.version),
+            ))
+        else:
+            pkg = git_pkgs[member]
+            entries.append(struct(
+                source = "git",
+                name = member,
+                version = pkg.version,
+                url = pkg.url,
+                resolved_ref = pkg.resolved_ref,
+                path = pkg.path,
+                code_assets = curated_code_assets(member, pkg.version),
+            ))
+    return entries
 
 def resolve_pub_packages(package_tags, lock_tags):
     """Validates and resolves `pub.package` and `pub.from_lock` declarations.
@@ -677,12 +747,12 @@ def _pub_impl(ctx):
     shared_hubs = sorted([
         hub_name
         for hub_name in hub_packages.keys()
-        if hub_name not in isolated_packages
+        if hub_name not in isolated_packages and hub_name not in isolated_git_packages
     ])
-    shared_names = sorted(resolved.keys()) + explicit_package_names
+    shared_names = sorted(set(resolved.keys()) | set(resolved_git.keys())) + explicit_package_names
     shared_contents = {}
-    if len(resolved) > 1 or (resolved and any([explicit_deps[name] for name in explicit_deps])):
-        shared_contents = _scope_pubspec_contents(ctx, "_scc_shared", resolved)
+    if len(shared_names) > len(explicit_package_names) + 1 or (shared_names != explicit_package_names and any([explicit_deps[name] for name in explicit_deps])):
+        shared_contents = _scope_pubspec_contents(ctx, "_scc_shared", resolved, resolved_git)
     shared_sccs = plan_scope_sccs(
         shared_names,
         explicit_deps,
@@ -698,13 +768,16 @@ def _pub_impl(ctx):
     for member, repo in shared_sccs.members.items():
         vanished_spokes[_SPOKE_PREFIX + "__" + member] = repo
 
+    isolated_hub_names = sorted(set(isolated_packages.keys()) | set(isolated_git_packages.keys()))
     isolated_sccs = {}
-    for hub_name, packages in isolated_packages.items():
+    for hub_name in isolated_hub_names:
+        hosted = isolated_packages.get(hub_name, {})
+        git_pkgs = isolated_git_packages.get(hub_name, {})
         hub_names = [hub_name]
-        scope_names = sorted(packages.keys()) + explicit_package_names
+        scope_names = sorted(set(hosted.keys()) | set(git_pkgs.keys())) + explicit_package_names
         contents = {}
-        if len(packages) > 1 or (packages and any([explicit_deps[name] for name in explicit_deps])):
-            contents = _scope_pubspec_contents(ctx, "_scc_" + hub_name, packages)
+        if len(scope_names) > len(explicit_package_names) + 1 or (scope_names != explicit_package_names and any([explicit_deps[name] for name in explicit_deps])):
+            contents = _scope_pubspec_contents(ctx, "_scc_" + hub_name, hosted, git_pkgs)
         isolated_sccs[hub_name] = plan_scope_sccs(
             scope_names,
             explicit_deps,
@@ -758,18 +831,10 @@ def _pub_impl(ctx):
 
     # Create one merged repository per shared dependency cycle.
     for repo, members in shared_sccs.merged.items():
-        entries = []
-        for member in members:
-            pkg = resolved[member]
-            entries.append(struct(
-                name = member,
-                version = pkg.version,
-                sha256 = pkg.sha256,
-                url = pkg.url,
-                code_assets = curated_code_assets(member, pkg.version),
-            ))
+        entries = scc_member_entries(members, resolved, resolved_git)
         pub_lock_scc_package(
             name = repo,
+            repo_name = repo,
             members_json = json.encode(entries),
             hub_name = _SPOKE_PREFIX,
             lock_packages = all_package_names,
@@ -831,18 +896,10 @@ def _pub_impl(ctx):
 
         # One merged repository per isolated dependency cycle.
         for repo, members in isolated_sccs[hub_name].merged.items():
-            entries = []
-            for member in members:
-                pkg = hosted[member]
-                entries.append(struct(
-                    name = member,
-                    version = pkg.version,
-                    sha256 = pkg.sha256,
-                    url = pkg.url,
-                    code_assets = curated_code_assets(member, pkg.version),
-                ))
+            entries = scc_member_entries(members, hosted, git_pkgs)
             pub_lock_scc_package(
                 name = repo,
+                repo_name = repo,
                 members_json = json.encode(entries),
                 hub_name = hub_name,
                 lock_packages = package_names,
@@ -871,7 +928,7 @@ def _pub_impl(ctx):
     # Create per-from_lock hub repos
     for hub_name, packages in hub_packages.items():
         package_names = sorted(packages)
-        isolated = hub_name in isolated_packages
+        isolated = hub_name in isolated_hub_names
         if isolated:
             spoke_prefix = hub_name
             hub_explicit = []
