@@ -95,31 +95,54 @@ class Runfiles {
       manifest = _parseManifest(manifestFile);
     }
 
-    // 3-6. Probe from executable path
+    // 3-6. Probe from executable path (or Platform.script for kernel binaries)
     if (directory == null && manifest == null) {
       // Use Platform.executable (not resolvedExecutable) to preserve the
       // symlink path. Bazel materializes .runfiles/ next to the symlink,
-      // not next to the resolved binary.
-      final exe = Platform.executable;
-
-      for (final candidate in ['$exe.runfiles', '$exe.exe.runfiles']) {
-        if (Directory(candidate).existsSync()) {
-          // Hold the tree where it really is, not the path that found it.
-          // That path runs through the symlink, and `./bazel-bin/...` is
-          // repointed by the next build in another configuration.
-          directory = Directory(candidate).resolveSymbolicLinksSync();
-          break;
+      // not next to the resolved binary. When a `.dill` kernel is executed
+      // directly via `dart <path>.dill` (such as a `generator_bin` worker),
+      // `Platform.executable` is the SDK VM and the runfiles tree sits next
+      // to `Platform.script` (or its launcher stem when `launcher = True`).
+      final bases = <String>[Platform.executable];
+      final scriptUri = Platform.script;
+      if (scriptUri.isScheme('file')) {
+        try {
+          final scriptPath = scriptUri.toFilePath();
+          if (scriptPath.isNotEmpty) {
+            bases.add(scriptPath);
+            if (scriptPath.endsWith('.dill')) {
+              bases.add(scriptPath.substring(0, scriptPath.length - 5));
+            }
+          }
+        } on UnsupportedError {
+          // Ignore non-file script URIs.
         }
       }
 
-      for (final candidate in [
-        '$exe.runfiles_manifest',
-        '$exe.exe.runfiles_manifest',
-      ]) {
-        if (File(candidate).existsSync()) {
-          manifest = _parseManifest(candidate);
-          break;
+      for (final base in bases) {
+        for (final candidate in ['$base.runfiles', '$base.exe.runfiles']) {
+          if (Directory(candidate).existsSync()) {
+            // Hold the tree where it really is, not the path that found it.
+            // That path runs through the symlink, and `./bazel-bin/...` is
+            // repointed by the next build in another configuration.
+            directory = Directory(candidate).resolveSymbolicLinksSync();
+            break;
+          }
         }
+        if (directory != null) break;
+      }
+
+      for (final base in bases) {
+        for (final candidate in [
+          '$base.runfiles_manifest',
+          '$base.exe.runfiles_manifest',
+        ]) {
+          if (File(candidate).existsSync()) {
+            manifest = _parseManifest(candidate);
+            break;
+          }
+        }
+        if (manifest != null) break;
       }
     }
 

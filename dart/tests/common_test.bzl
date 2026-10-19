@@ -1,7 +1,7 @@
 """Unit tests for common.bzl utilities."""
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
-load("//dart:providers.bzl", "DartCompileInfo")
+load("//dart:providers.bzl", "DartCompileInfo", "DartInfo", "DartPackageInfo")
 load(
     "//dart/private:common.bzl",
     "asset_path_for",
@@ -13,6 +13,7 @@ load(
     "kernel_sdk_mismatch_error",
     "relative_path",
     "resolve_package_roots",
+    "same_package_library_dep_files",
     "writable_home_env",
 )
 load("//dart/private:dart_compile.bzl", "cross_target_error")
@@ -596,6 +597,33 @@ def _cross_target_error_test_impl(ctx):
     asserts.true(env, unsupported_err != None and "unsupported cross-compilation target (macos, arm64)" in unsupported_err)
     return unittest.end(env)
 
+def _same_package_library_dep_files_includes_resources_test_impl(ctx):
+    env = unittest.begin(ctx)
+    src_file = struct(path = "myapp/lib/a.dart", short_path = "myapp/lib/a.dart")
+    res_file = struct(path = "myapp/lib/schema.json", short_path = "myapp/lib/schema.json")
+    other_res = struct(path = "other/lib/other.json", short_path = "other/lib/other.json")
+    dep = {
+        DartInfo: DartInfo(
+            package_name = "myapp",
+            lib_root = "myapp",
+            transitive_srcs = depset([src_file]),
+            transitive_resources = depset([res_file, other_res]),
+            transitive_packages = depset([
+                DartPackageInfo(package_name = "myapp", lib_root = "myapp"),
+                DartPackageInfo(package_name = "other", lib_root = "other"),
+            ]),
+            transitive_code_asset_files = depset(),
+        ),
+    }
+    files, lib_root = same_package_library_dep_files([dep], "myapp")
+    asserts.equals(env, "myapp", lib_root)
+    asserts.equals(
+        env,
+        ["myapp/lib/a.dart", "myapp/lib/schema.json"],
+        [f.short_path for f in files],
+    )
+    return unittest.end(env)
+
 _t0_test = unittest.make(_empty_packages_test_impl)
 _t1_test = unittest.make(_single_package_test_impl)
 _t2_test = unittest.make(_multiple_packages_test_impl)
@@ -636,6 +664,7 @@ _t39_test = unittest.make(_kernel_sdk_mismatch_different_version_reports_error_t
 _t40_test = unittest.make(_writable_home_env_posix_test_impl)
 _t41_test = unittest.make(_writable_home_env_windows_test_impl)
 _t42_test = unittest.make(_cross_target_error_test_impl)
+_t43_test = unittest.make(_same_package_library_dep_files_includes_resources_test_impl)
 
 def common_test_suite(name):
     small_unittest_suite(
@@ -680,4 +709,5 @@ def common_test_suite(name):
         _t40_test,
         _t41_test,
         _t42_test,
+        _t43_test,
     )

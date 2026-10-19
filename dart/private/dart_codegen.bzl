@@ -252,6 +252,7 @@ def _dart_codegen_impl(ctx):
 
     args = ctx.actions.args()
     direct_inputs = [src] + list(ctx.files.data)
+    data_runfiles = [dep[DefaultInfo].default_runfiles.files for dep in ctx.attr.data]
 
     if ctx.executable.generator_bin:
         # Worker mode requires a single `@flagfile` / `--flagfile=` arg; the
@@ -284,6 +285,7 @@ def _dart_codegen_impl(ctx):
             direct_inputs.extend(summaries)
             direct_inputs.append(sdk_summary)
 
+        generator_runfiles = ctx.attr.generator_bin[DefaultInfo].default_runfiles.files
         is_kernel_bin = (
             DartCompileInfo in ctx.attr.generator_bin and
             ctx.attr.generator_bin[DartCompileInfo].compile_mode == "kernel"
@@ -294,22 +296,31 @@ def _dart_codegen_impl(ctx):
             arguments = [kernel_bin.path, args]
             direct_inputs.append(kernel_bin)
             bin_sdk_files = script_sdk_files
-            action_tools = depset(
-                direct = [kernel_bin, dart],
-                transitive = [toolchain.dart_sdk_info.runtime_files],
-            )
+            action_tools = [
+                ctx.attr.generator_bin[DefaultInfo].files_to_run,
+                depset(
+                    direct = [kernel_bin, dart],
+                    transitive = [toolchain.dart_sdk_info.runtime_files, generator_runfiles],
+                ),
+            ]
         else:
             executable = ctx.executable.generator_bin
             arguments = [args]
             bin_sdk_files = sdk_files
-            action_tools = depset(direct = [ctx.executable.generator_bin, dart])
+            action_tools = [
+                ctx.attr.generator_bin[DefaultInfo].files_to_run,
+                depset(
+                    direct = [ctx.executable.generator_bin, dart],
+                    transitive = [generator_runfiles],
+                ),
+            ]
 
         ctx.actions.run(
             executable = executable,
             arguments = arguments,
             inputs = depset(
                 direct = direct_inputs,
-                transitive = _transitive(library_dep_srcs) + [bin_sdk_files],
+                transitive = _transitive(library_dep_srcs) + [bin_sdk_files, generator_runfiles] + data_runfiles,
             ),
             tools = action_tools,
             outputs = outputs,
@@ -360,7 +371,7 @@ def _dart_codegen_impl(ctx):
             arguments = [args],
             inputs = depset(
                 direct = direct_inputs,
-                transitive = _transitive(library_dep_srcs) + [script_sdk_files],
+                transitive = _transitive(library_dep_srcs) + [script_sdk_files] + data_runfiles,
             ),
             outputs = outputs,
             mnemonic = "DartCodegen",

@@ -107,6 +107,8 @@ def _runner_kernel(ctx, runner):
     Returns:
       The kernel File.
     """
+    if DartCompileInfo in runner and runner[DartCompileInfo].compile_mode == "kernel":
+        return runner[DartCompileInfo].executable
     dills = [f for f in runner[DefaultInfo].files.to_list() if f.extension == "dill"]
     if len(dills) != 1:
         fail("%s: `runner` must produce exactly one `.dill`, got %s" % (ctx.label, dills))
@@ -182,6 +184,7 @@ def _dart_test_runner_snapshot_impl(ctx):
         fail(mismatch)
 
     runner = _runner_kernel(ctx, ctx.attr.runner)
+    runner_runfiles = ctx.attr.runner[DefaultInfo].default_runfiles.files
     training = ctx.attr.training[DartTestKernelInfo]
     snapshot = ctx.actions.declare_file(ctx.label.name + ".jit")
 
@@ -220,7 +223,7 @@ def _dart_test_runner_snapshot_impl(ctx):
         arguments = [args],
         inputs = depset(
             direct = [ctx.file._tool, pkg_cfg, exec_sdk.dart, runner, training.dill, training.source] + ([dartvm] if dartvm != None else []),
-            transitive = [exec_sdk.compile_files, exec_sdk.runtime_files],
+            transitive = [exec_sdk.compile_files, exec_sdk.runtime_files, runner_runfiles],
         ),
         outputs = [snapshot],
         mnemonic = "DartTestRunnerSnapshot",

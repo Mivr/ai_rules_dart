@@ -1149,6 +1149,7 @@ def synth_package_config(ctx, library_deps):
         return None, None
     packages = collect_packages(library_deps)
     transitive_srcs = collect_transitive_srcs(library_deps)
+    transitive_resources = collect_transitive_resources(library_deps)
     package_config = ctx.actions.declare_file(
         ctx.label.name + ".package_config.json",
     )
@@ -1157,7 +1158,7 @@ def synth_package_config(ctx, library_deps):
     stage_root = package_config.dirname + "/" + stage_name
     pkg_index = package_index(packages)
     by_pkg = {}
-    for f in transitive_srcs.to_list():
+    for f in transitive_srcs.to_list() + transitive_resources.to_list():
         owner = package_for_index(f.short_path, pkg_index)
         if owner != None:
             by_pkg.setdefault(owner, []).append(f)
@@ -1199,7 +1200,7 @@ def synth_package_config(ctx, library_deps):
         roots = roots,
     )
     ctx.actions.write(output = package_config, content = content)
-    return package_config, depset(staged, transitive = [transitive_srcs])
+    return package_config, depset(staged, transitive = [transitive_srcs, transitive_resources])
 
 # --- Native code-asset (gen_kernel --native-assets) helpers ---
 #
@@ -1605,7 +1606,7 @@ def same_package_library_dep_files(deps, package_name, exclude_paths = None):
     excluded = {p: True for p in exclude_paths}
     seen = {}
     out = []
-    for src in collect_transitive_srcs(deps).to_list():
+    for src in collect_transitive_srcs(deps).to_list() + collect_transitive_resources(deps).to_list():
         if src.path in excluded:
             continue
         if src.short_path in seen:

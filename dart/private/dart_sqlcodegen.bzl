@@ -108,7 +108,9 @@ def _dart_sqlcodegen_impl(ctx):
     ))
     args.add_all(ctx.attr.generator_args)
 
-    transitive = ([lib_dep_srcs] if lib_dep_srcs != None else []) + [sdk_files]
+    generator_runfiles = ctx.attr.generator_bin[DefaultInfo].default_runfiles.files
+    data_runfiles = [dep[DefaultInfo].default_runfiles.files for dep in ctx.attr.data]
+    transitive = ([lib_dep_srcs] if lib_dep_srcs != None else []) + [sdk_files, generator_runfiles] + data_runfiles
 
     is_kernel_bin = (
         DartCompileInfo in ctx.attr.generator_bin and
@@ -120,14 +122,23 @@ def _dart_sqlcodegen_impl(ctx):
         arguments = [kernel_bin.path, args]
         direct.append(kernel_bin)
         transitive.append(toolchain.dart_sdk_info.runtime_files)
-        action_tools = depset(
-            direct = [kernel_bin, toolchain.dart_sdk_info.dart],
-            transitive = [toolchain.dart_sdk_info.runtime_files],
-        )
+        action_tools = [
+            ctx.attr.generator_bin[DefaultInfo].files_to_run,
+            depset(
+                direct = [kernel_bin, toolchain.dart_sdk_info.dart],
+                transitive = [toolchain.dart_sdk_info.runtime_files, generator_runfiles],
+            ),
+        ]
     else:
         executable = ctx.executable.generator_bin
         arguments = [args]
-        action_tools = depset(direct = [ctx.executable.generator_bin, toolchain.dart_sdk_info.dart])
+        action_tools = [
+            ctx.attr.generator_bin[DefaultInfo].files_to_run,
+            depset(
+                direct = [ctx.executable.generator_bin, toolchain.dart_sdk_info.dart],
+                transitive = [generator_runfiles],
+            ),
+        ]
 
     ctx.actions.run(
         executable = executable,
