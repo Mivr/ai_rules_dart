@@ -965,6 +965,16 @@ void main(List<String> args) {
         isNull,
       );
       expect(resolveDirectiveUri('C:/x.dart', 'pkg/lib/a.dart', dirs), isNull);
+      expect(resolveDirectiveUri('C:\\x.dart', 'pkg/lib/a.dart', dirs), isNull);
+      expect(
+        resolveDirectiveUri('%43:/x.dart', 'pkg/lib/a.dart', dirs),
+        isNull,
+        reason: 'an encoded drive letter is still a scheme',
+      );
+      expect(
+        resolveDirectiveUri('file:///C:/x.dart', 'pkg/lib/a.dart', dirs),
+        isNull,
+      );
       expect(resolveDirectiveUri('a:b.dart', 'pkg/lib/a.dart', dirs), isNull);
       expect(resolveDirectiveUri('dart:core', 'pkg/lib/a.dart', dirs), isNull);
       expect(resolveDirectiveUri('', 'pkg/lib/a.dart', dirs), 'pkg/lib');
