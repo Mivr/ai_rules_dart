@@ -1149,10 +1149,12 @@ void main(List<String> args) {
       entry.sourcesPerCall.single,
       containsAll([_uri('pkg/test/main_test.dart'), 'package:pkg/cyclic.dart']),
     );
-    expect(
-      _valuesAfter(entry.calls.single, '--multi-root'),
-      contains(kernelWorkerUri('$pkgOutline/sources')),
-    );
+    // The entry compile must see a single isolated root holding the declared
+    // origins (including the staged excluded source), never the sidecar
+    // directory or the workspace roots alongside it.
+    expect(_valuesAfter(entry.calls.single, '--multi-root'), [
+      kernelWorkerUri('${_root.path}/out/entry_from_staged/.isolated_root'),
+    ]);
   });
 
   test(
@@ -2978,7 +2980,7 @@ void main(List<String> args) {
         _decodeInputForTest(raw).path: _decodeInputForTest(raw).digest,
     };
     expect(
-      call0Inputs['dep_parent.koutline/sources/pkg/lib/part_parent.dart'],
+      call0Inputs['$outDir/.isolated_root/pkg/lib/part_parent.dart'],
       equals(stagedSentinelDigest),
       reason: 'staged tree-artifact source must reuse its WorkRequest.inputs digest without re-hashing',
     );

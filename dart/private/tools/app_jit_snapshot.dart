@@ -1006,6 +1006,37 @@ String _stripFsRootPrefix(String path, List<String> fsRoots) {
   return bestRel ?? slashPath.replaceFirst(RegExp(r'^(?:\./)+'), '');
 }
 
+/// Normalizes a filesystem path for comparison: `/` separators, no leading
+/// `./` segments.
+String _normFsPath(String path) =>
+    path.replaceAll(r'\', '/').replaceFirst(RegExp(r'^(?:\./)+'), '');
+
+/// Links [dstPath] to [srcPath] (a file or directory), copying instead when
+/// the platform refuses symlinks (Windows without developer mode).
+void _stageEntitySync(String srcPath, String dstPath) {
+  if (FileSystemEntity.typeSync(srcPath) == FileSystemEntityType.notFound) {
+    return;
+  }
+  try {
+    File(dstPath).parent.createSync(recursive: true);
+    final slashSrc = srcPath.replaceAll(r'\', '/');
+    final target = slashSrc.startsWith('/') || _isWindowsDrivePath(slashSrc)
+        ? slashSrc
+        : '${Directory.current.path.replaceAll(r'\', '/')}/$slashSrc';
+    Link(dstPath).createSync(target);
+    return;
+  } on FileSystemException {
+    // Fall through to a copy, which isolates just as well.
+  }
+  _copyEntitySync(srcPath, dstPath);
+}
+
+bool _isWindowsDrivePath(String s) =>
+    s.length >= 2 &&
+    ((s.codeUnitAt(0) >= 0x41 && s.codeUnitAt(0) <= 0x5a) ||
+        (s.codeUnitAt(0) >= 0x61 && s.codeUnitAt(0) <= 0x7a)) &&
+    s.codeUnitAt(1) == 0x3a;
+
 /// Runs `gen_kernel` via `dartaotruntime` with comma-splitting disabled on
 /// `-D` / `--define` options and an isolated `--filesystem-root` containing
 /// only declared input sources.
@@ -1085,37 +1116,36 @@ void _runGenKernel(List<String> argv) {
     rawGenArgs[0] = patchSnapshotSplitCommas(rawGenArgs[0]);
   }
 
-  // Only stage an isolated multi-root when an undeclared file would otherwise
-  // shadow a declared input. In the common case (no shadows) skip staging.
+  // Only stage an isolated filesystem root when an undeclared file would
+  // otherwise shadow a declared input. Each declared source is compared
+  // against every root: the candidate naming the declared file itself is its
+  // origin, and any other candidate that exists on disk is a shadow. In the
+  // common case (no shadows) the declared roots are forwarded unchanged.
   var hasShadowRisk = false;
   if (declaredInputSources.isNotEmpty && fsRoots.isNotEmpty) {
+    final normRoots = <String>[
+      for (final root in fsRoots)
+        _normFsPath(root).replaceFirst(RegExp(r'/+$'), ''),
+    ];
     for (final srcPath in declaredInputSources) {
-      final key = _stripFsRootPrefix(srcPath, fsRoots);
-      if (key.isEmpty) {
+      final normSrc = _normFsPath(srcPath);
+      final normKey = _normFsPath(_stripFsRootPrefix(srcPath, fsRoots));
+      if (normKey.isEmpty) {
         hasShadowRisk = true;
         break;
       }
-      final slashSrc = srcPath.replaceAll(r'\\', '/');
-      var originFound = false;
-      for (final root in fsRoots) {
-        final slashRoot = root
-            .replaceAll(r'\\', '/')
-            .replaceFirst(RegExp(r'/+$'), '');
-        if (slashSrc.startsWith('$slashRoot/')) {
-          originFound = true;
-          continue;
-        }
-        final candidate = slashRoot == '.' ? key : '$slashRoot/$key';
+      for (final normRoot in normRoots) {
+        final candidate = normRoot == '.' || normRoot.isEmpty
+            ? normKey
+            : '$normRoot/$normKey';
+        // The candidate naming the declared file itself is its origin.
+        if (candidate == normSrc) continue;
         if (File(candidate).existsSync()) {
           hasShadowRisk = true;
           break;
         }
       }
       if (hasShadowRisk) break;
-      if (!originFound) {
-        hasShadowRisk = true;
-        break;
-      }
     }
   }
 
@@ -1131,7 +1161,7 @@ void _runGenKernel(List<String> argv) {
     for (final srcPath in declaredInputSources) {
       final key = _stripFsRootPrefix(srcPath, fsRoots);
       if (key.isEmpty || !seenKeys.add(key)) continue;
-      _copyEntitySync(srcPath, '${isolatedRootDir.path}/$key');
+      _stageEntitySync(srcPath, '${isolatedRootDir.path}/$key');
     }
     var insertedRoot = false;
     for (var i = 0; i < rawGenArgs.length; i++) {

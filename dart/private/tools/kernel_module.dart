@@ -401,7 +401,6 @@ Future<int> compileModule(
 
   final Set<String>? workerInputPaths;
   final Map<String, Uint8List>? inputDigests;
-  final exactInputPathsWithDigest = <String>{};
   if (inputs.isEmpty) {
     workerInputPaths = null;
     inputDigests = null;
@@ -415,7 +414,6 @@ Future<int> compileModule(
       if (_isNormalizedRelative(rawPath)) {
         paths.add(rawPath);
         if (decoded.digest.isNotEmpty) {
-          exactInputPathsWithDigest.add(rawPath);
           digests[rawPath] = decoded.digest;
         }
       } else {
@@ -423,7 +421,6 @@ Future<int> compileModule(
         final norm = _normalize(rawPath);
         if (norm.isNotEmpty) paths.add(norm);
         if (decoded.digest.isNotEmpty) {
-          exactInputPathsWithDigest.add(rawPath);
           digests[rawPath] = decoded.digest;
           final normFile = _normalizeFilePath(rawPath);
           digests.putIfAbsent(normFile, () => decoded.digest);
@@ -539,59 +536,28 @@ Future<int> compileModule(
       }
       return 1;
     }
-    final extraMultiRoots = <String>[];
-    final seenStagedRoots = <String>{};
-    final stagedInputs = <Uint8List>[];
-    for (final key in entry.keys) {
-      if (!files.isDeclaredInRoots(key)) {
-        final stagedRoot = stagedSources[key];
-        if (stagedRoot != null) {
-          if (seenStagedRoots.add(stagedRoot)) {
-            extraMultiRoots.add(stagedRoot);
-          }
-          if (inputs.isNotEmpty) {
-            final stagedPath = '$stagedRoot/$key';
-            if (!exactInputPathsWithDigest.contains(stagedPath)) {
-              final knownDigest =
-                  _lookupDigest(stagedPath, inputDigests) ??
-                  await _digestOf(stagedPath);
-              stagedInputs.add(_encodeInput(stagedPath, knownDigest));
-            }
-          }
-        }
-      }
-    }
     const dill = 'entry.dill';
-    final useIsolated = await _needsIsolatedMultiRoot(
-      compiler,
-      multiRoots,
-      extraMultiRoots,
-      entry.keys,
-      files,
-      vm,
-    );
     ({String rootDir, List<Uint8List> inputs})? isolated;
     final ModuleOutcome outcome;
     try {
-      if (useIsolated) {
-        isolated = await _stageIsolatedMultiRoot(
-          output,
-          files,
-          inputDigests,
-          includeInputDigests: inputs.isNotEmpty || compiler is _Persistent,
-        );
-      }
-      final entryBase = isolated != null
-          ? _baseWithSingleMultiRoot(base, isolated.rootDir)
-          : base;
-      final callInputs = isolated != null
-          ? (isolated.inputs.isEmpty ? inputs : [...inputs, ...isolated.inputs])
-          : (stagedInputs.isEmpty ? inputs : [...inputs, ...stagedInputs]);
+      // The front end sees a single `--multi-root` holding symlinks to exactly
+      // the declared origins, so untracked workspace files and stale generated
+      // outputs can never shadow a declared source, and references to
+      // undeclared files fail instead of reading the workspace.
+      isolated = await _stageIsolatedMultiRoot(
+        output,
+        files,
+        inputDigests,
+        includeInputDigests: inputs.isNotEmpty || compiler is _Persistent,
+      );
+      final staged = isolated;
+      final entryBase = _baseWithSingleMultiRoot(base, staged.rootDir);
+      final callInputs = staged.inputs.isEmpty
+          ? inputs
+          : [...inputs, ...staged.inputs];
       outcome = await compiler.run(
         kernelWorkerArgs([
           ...entryBase,
-          if (isolated == null)
-            for (final root in extraMultiRoots) ...[_multiRootFlag, root],
           for (final d in neededDills(entry.imports, graph)) ...[
             '--input-summary',
             d,
@@ -677,6 +643,13 @@ Future<int> compileModule(
   var sccs = <_Scc>[];
   ({String rootDir, List<Uint8List> inputs})? isolated;
   try {
+    isolated = await _stageIsolatedMultiRoot(
+      output,
+      files,
+      inputDigests,
+      includeInputDigests: inputs.isNotEmpty || compiler is _Persistent,
+    );
+    final staged = isolated;
     while (true) {
       sccs = _componentsOf(remaining, keys, plan);
       // The kernels this attempt has written, by key. A later component links to them.
@@ -684,46 +657,6 @@ Future<int> compileModule(
       ModuleOutcome? failure;
       var failedUris = const <String>[];
       for (final scc in sccs) {
-        final extraMultiRoots = <String>[];
-        final seenStagedRoots = <String>{};
-        final stagedInputs = <Uint8List>[];
-        for (final key in scc.keys) {
-          if (!files.isDeclaredInRoots(key)) {
-            final stagedRoot = stagedSources[key];
-            if (stagedRoot != null) {
-              if (seenStagedRoots.add(stagedRoot)) {
-                extraMultiRoots.add(stagedRoot);
-              }
-              if (inputs.isNotEmpty) {
-                final stagedPath = '$stagedRoot/$key';
-                if (!exactInputPathsWithDigest.contains(stagedPath)) {
-                  final knownDigest =
-                      _lookupDigest(stagedPath, inputDigests) ??
-                      await _digestOf(stagedPath);
-                  stagedInputs.add(_encodeInput(stagedPath, knownDigest));
-                }
-              }
-            }
-          }
-        }
-        final useIsolated =
-            isolated != null ||
-            await _needsIsolatedMultiRoot(
-              compiler,
-              multiRoots,
-              extraMultiRoots,
-              scc.keys,
-              files,
-              vm,
-            );
-        if (useIsolated && isolated == null) {
-          isolated = await _stageIsolatedMultiRoot(
-            output,
-            files,
-            inputDigests,
-            includeInputDigests: inputs.isNotEmpty || compiler is _Persistent,
-          );
-        }
         final summaryNodes = _neededNodes(scc.imports, local);
         final summaryInputs = <Uint8List>[];
         if (inputs.isNotEmpty || compiler is _Persistent) {
@@ -735,18 +668,11 @@ Future<int> compileModule(
           }
         }
         final dillPath = '$output/${scc.dill}';
-        final sccBase = isolated != null
-            ? _baseWithSingleMultiRoot(base, isolated.rootDir)
-            : base;
-        final extraInputs = [
-          if (isolated != null) ...isolated.inputs else ...stagedInputs,
-          ...summaryInputs,
-        ];
+        final sccBase = _baseWithSingleMultiRoot(base, staged.rootDir);
+        final extraInputs = [...staged.inputs, ...summaryInputs];
         final outcome = await compiler.run(
           kernelWorkerArgs([
             ...sccBase,
-            if (isolated == null)
-              for (final root in extraMultiRoots) ...[_multiRootFlag, root],
             for (final node in summaryNodes) ...['--input-summary', node.dill],
             for (final uri in scc.uris) ...['--source', uri],
             '--output',
@@ -2411,69 +2337,15 @@ List<String> _baseWithSingleMultiRoot(List<String> base, String singleRoot) {
   return out;
 }
 
-/// Whether `compileModule` should stage an isolated `--multi-root` directory
-/// containing only declared inputs at their single declared origins so
-/// `kernel_worker`'s `MultiRootFileSystem` cannot see any undeclared or
-/// shadowing files on disk.
-Future<bool> _needsIsolatedMultiRoot(
-  ModuleCompiler compiler,
-  List<String> multiRoots,
-  Iterable<String> extraMultiRoots,
-  Iterable<String> keys,
-  _Files files,
-  Set<String> vm,
-) async {
-  final candidateRoots = <String>{
-    ...(multiRoots.isEmpty ? const ['.'] : multiRoots),
-    ...extraMultiRoots,
-  };
-  // Staging can be skipped only when every declared input already lives under
-  // one of the declared roots (so the front end can resolve it without a
-  // staged copy) and no undeclared file shadows it. Persistent workers still
-  // get per-request isolation whenever staging is needed.
-  for (final key in files.declaredKeys) {
-    final origin = files.declaredOriginOf(key);
-    if (origin == null) return true;
-    final originNorm = origin.replaceAll(r'\\', '/');
-    var underRoot = false;
-    for (final root in candidateRoots) {
-      final slashRoot = root
-          .replaceAll(r'\\', '/')
-          .replaceFirst(RegExp(r'/+$'), '');
-      final prefix = slashRoot == '.' ? '' : '$slashRoot/';
-      if (slashRoot == '.' && !originNorm.startsWith('/')) {
-        // relative origin under cwd root
-        underRoot = true;
-        break;
-      }
-      if (prefix.isNotEmpty && originNorm.startsWith(prefix)) {
-        underRoot = true;
-        break;
-      }
-    }
-    if (!underRoot) return true;
-  }
-  final checkKeys = <String>{...keys, ...files.declaredKeys};
-  for (final key in checkKeys) {
-    final declaredRoot = files.declaredRootOf(key);
-    for (final root in candidateRoots) {
-      if (root == declaredRoot) continue;
-      final path = _filePathOf(root == '.' ? key : '$root/$key');
-      if (File(path).existsSync()) {
-        return true;
-      }
-    }
-  }
-  for (final key in keys) {
-    if (await files.scan(key, vm) == null) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/// Stages `$output/.isolated_root` containing only the declared inputs in
-/// [files], each copied from its single [files.declaredOriginOf].
+/// Stages `$output/.isolated_root` holding one symlink per declared input in
+/// [files], each pointing at its single [files.declaredOriginOf].
+///
+/// The front end runs with a single `--multi-root` pointing here, so it
+/// resolves exactly the declared inputs: untracked workspace files and stale
+/// generated outputs can never shadow a declared source, and references to
+/// undeclared files fail instead of reading them from the workspace.
+/// Symlinks keep staging to metadata operations; no file contents are read or
+/// copied. When the platform refuses symlinks, files are copied instead.
 Future<({String rootDir, List<Uint8List> inputs})> _stageIsolatedMultiRoot(
   String output,
   _Files files,
@@ -2487,23 +2359,52 @@ Future<({String rootDir, List<Uint8List> inputs})> _stageIsolatedMultiRoot(
   }
   await dir.create(recursive: true);
   final stagedInputs = <Uint8List>[];
+  final createdParents = <String>{};
   final sortedKeys = files.declaredKeys.toList()..sort();
+  final cwd = Directory.current.path.replaceAll(r'\', '/');
   for (final key in sortedKeys) {
     final origin = files.declaredOriginOf(key);
     if (origin == null) continue;
-    final srcFile = File(origin);
-    if (!await srcFile.exists()) continue;
-    final bytes = await srcFile.readAsBytes();
-    final dstPath = '$rootDir/$key';
-    final dstFile = File(_filePathOf(dstPath));
-    await dstFile.parent.create(recursive: true);
-    await dstFile.writeAsBytes(bytes);
+    // A `File` view of a directory never exists, so directories are skipped
+    // exactly as with the previous copying stage.
+    if (!File(origin).existsSync()) continue;
+    final dstPath = _filePathOf('$rootDir/$key');
+    final dstParent = File(dstPath).parent;
+    if (createdParents.add(dstParent.path)) {
+      await dstParent.create(recursive: true);
+    }
+    if (!_linkOrCopy(origin, dstPath, cwd)) continue;
     if (includeInputDigests) {
-      final digest = _lookupDigest(origin, inputDigests) ?? sha256Of(bytes);
+      final digest =
+          _lookupDigest(origin, inputDigests) ??
+          _lookupDigest(dstPath, inputDigests) ??
+          sha256Of(await File(origin).readAsBytes());
       stagedInputs.add(_encodeInput(kernelWorkerUri(dstPath), digest));
     }
   }
   return (rootDir: rootDir, inputs: stagedInputs);
+}
+
+/// Creates [dstPath] as a symlink to [origin], falling back to a copy when
+/// the platform refuses symlinks. Returns whether [dstPath] was created.
+bool _linkOrCopy(String origin, String dstPath, String cwd) {
+  final slashOrigin = origin.replaceAll(r'\', '/');
+  final target = slashOrigin.startsWith('/') || isWindowsDrivePath(slashOrigin)
+      ? slashOrigin
+      : '$cwd/$slashOrigin';
+  try {
+    Link(dstPath).createSync(target);
+    return true;
+  } on FileSystemException {
+    // Symlinks need privileges on some platforms (Windows without developer
+    // mode); fall back to a copy, which isolates just as well.
+  }
+  try {
+    File(dstPath).writeAsBytesSync(File(origin).readAsBytesSync());
+    return true;
+  } on FileSystemException {
+    return false;
+  }
 }
 
 /// The excluded files the sidecars list, by key. Each maps to its `package:` URI
