@@ -149,48 +149,75 @@ Map<String, dynamic> _readConfig(Runfiles? runfiles) {
   exit(1);
 }
 
-File? _adjacentConfigFile() {
-  var exe = Platform.executable;
+File? adjacentConfigFile([String? executable]) {
+  final exe = (executable == null || executable.isEmpty)
+      ? Platform.executable
+      : executable;
   if (exe.isEmpty) return null;
+  // On Windows the launcher is invoked as `<name>.exe` while its sidecar
+  // config is written as `<name>.kernel_launcher.json` (no `.exe`). Accept
+  // either spelling so a config placed next to the executable is found
+  // regardless of which form was used.
+  final candidates = <String>[exe];
   if (exe.toLowerCase().endsWith('.exe')) {
-    exe = exe.substring(0, exe.length - 4);
+    candidates.add(exe.substring(0, exe.length - 4));
+  } else {
+    candidates.add('$exe.exe');
   }
-  return File('$exe.kernel_launcher.json');
+  for (final candidate in candidates) {
+    final file = File('$candidate.kernel_launcher.json');
+    if (file.existsSync()) return file;
+  }
+  // Default to the `.exe`-stripped form, matching what Bazel writes.
+  var stripped = exe;
+  if (stripped.toLowerCase().endsWith('.exe')) {
+    stripped = stripped.substring(0, stripped.length - 4);
+  }
+  return File('$stripped.kernel_launcher.json');
 }
 
-Iterable<String> _candidateConfigRlocations(String exe) sync* {
+Iterable<String> candidateConfigRlocations(String exe) sync* {
   if (exe.isEmpty) return;
-  var base = exe.replaceAll(r'\', '/');
-  if (base.toLowerCase().endsWith('.exe')) {
-    base = base.substring(0, base.length - 4);
-  }
-  final workspace = Platform.environment['TEST_WORKSPACE'];
-  final runfilesIdx = base.lastIndexOf('.runfiles/');
-  if (runfilesIdx >= 0) {
-    final rel = base.substring(runfilesIdx + '.runfiles/'.length);
-    yield '$rel.kernel_launcher.json';
-  }
-  const binExternal = '/bin/external/';
-  final binExtIdx = base.lastIndexOf(binExternal);
-  if (binExtIdx >= 0) {
-    final rel = base.substring(binExtIdx + binExternal.length);
-    yield '$rel.kernel_launcher.json';
+  // Normalize Windows separators so the path matching below works on every
+  // host. Bazel may record the config under either the `.exe`-stripped name
+  // (what it writes) or the executable's full name, so try both forms.
+  final normalized = exe.replaceAll(r'\', '/');
+  final bases = <String>{normalized};
+  if (normalized.toLowerCase().endsWith('.exe')) {
+    bases.add(normalized.substring(0, normalized.length - 4));
   } else {
-    const bin = '/bin/';
-    final binIdx = base.lastIndexOf(bin);
-    if (binIdx >= 0) {
-      final rel = base.substring(binIdx + bin.length);
-      if (workspace != null && workspace.isNotEmpty) {
-        yield '$workspace/$rel.kernel_launcher.json';
-      }
-      yield '_main/$rel.kernel_launcher.json';
-    }
+    bases.add('$normalized.exe');
   }
-  if (!base.startsWith('/')) {
-    if (workspace != null && workspace.isNotEmpty) {
-      yield '$workspace/$base.kernel_launcher.json';
+
+  final workspace = Platform.environment['TEST_WORKSPACE'];
+  for (final base in bases) {
+    final runfilesIdx = base.lastIndexOf('.runfiles/');
+    if (runfilesIdx >= 0) {
+      final rel = base.substring(runfilesIdx + '.runfiles/'.length);
+      yield '$rel.kernel_launcher.json';
     }
-    yield '_main/$base.kernel_launcher.json';
+    const binExternal = '/bin/external/';
+    final binExtIdx = base.lastIndexOf(binExternal);
+    if (binExtIdx >= 0) {
+      final rel = base.substring(binExtIdx + binExternal.length);
+      yield '$rel.kernel_launcher.json';
+    } else {
+      const bin = '/bin/';
+      final binIdx = base.lastIndexOf(bin);
+      if (binIdx >= 0) {
+        final rel = base.substring(binIdx + bin.length);
+        if (workspace != null && workspace.isNotEmpty) {
+          yield '$workspace/$rel.kernel_launcher.json';
+        }
+        yield '_main/$rel.kernel_launcher.json';
+      }
+    }
+    if (!base.startsWith('/')) {
+      if (workspace != null && workspace.isNotEmpty) {
+        yield '$workspace/$base.kernel_launcher.json';
+      }
+      yield '_main/$base.kernel_launcher.json';
+    }
   }
 }
 
@@ -285,4 +312,12 @@ String _join(String base, String relative) {
   final path = [base, ...relative.split('/')].join(Platform.pathSeparator);
   File(path).parent.createSync(recursive: true);
   return path;
+}
+
+// Private aliases retained for internal callers and older tests.
+File? _adjacentConfigFile([String? executable]) =>
+    adjacentConfigFile(executable);
+
+Iterable<String> _candidateConfigRlocations(String exe) sync* {
+  yield* candidateConfigRlocations(exe);
 }

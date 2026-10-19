@@ -323,3 +323,13 @@ dart_test(
         "@ext_pub_deps//:test",
     ],
 )
+
+dart_test(
+    name = "kernel_launcher_test",
+    srcs = ["kernel_launcher.dart"],
+    main = "kernel_launcher_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
