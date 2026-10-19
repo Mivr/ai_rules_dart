@@ -155,13 +155,15 @@ int runWebCompileRequest(
     }
   }
 
-  // No staged source may read the host: a `file:` URI (in any spelling) or any
-  // other non-`dart:`/`package:` directive URI would reach an undeclared file
-  // through the compiler's working directory. Refuse before compiling.
+  // No staged source may read the host: a `file:` URI (in any spelling), any
+  // other non-`dart:`/`package:` directive URI, a `package:` URI climbing
+  // above its package, or a relative URI climbing out of the staged tree
+  // would reach an undeclared file through the compiler's working directory.
+  // Refuse before compiling, through the one shared staged-source check.
   final stagedRoots = <String>[normProject];
   final siblingExtpkgs = _siblingExtpkgsDir(normProject);
   if (siblingExtpkgs != null) stagedRoots.add(siblingExtpkgs.path);
-  final violations = findDisallowedStagedDirectives(
+  final violations = findStagedDirectiveViolations(
     stagedRoots,
     tool: 'web_compile_runner',
   );

@@ -2195,6 +2195,68 @@ void main() {
       },
     );
   });
+
+  group('findStagedShimViolations', () {
+    late Directory staging;
+
+    setUp(() {
+      staging = Directory.systemTemp.createTempSync('shim_guard_');
+    });
+
+    tearDown(() {
+      staging.deleteSync(recursive: true);
+    });
+
+    Future<void> stage(String relative, String content) async {
+      final file = File(p.joinAll([staging.path, ...relative.split('/')]));
+      await file.parent.create(recursive: true);
+      await file.writeAsString(content);
+    }
+
+    test('allows directives inside the declared staging dir', () async {
+      await stage('lib/a.dart', '''
+import 'b.dart';
+import 'dart:core';
+import 'package:p/c.dart';
+''');
+      await stage('lib/b.dart', 'library b;\n');
+      await stage('lib/sub/d.dart', '''
+import '../b.dart';
+part 'e.dart';
+''');
+      await stage('lib/sub/e.dart', "part of 'd.dart';\n");
+      expect(
+        await findStagedShimViolations(staging, tool: 'builder_shim'),
+        isEmpty,
+      );
+    });
+
+    test('refuses escapes in every directive kind and branch', () async {
+      await stage('lib/a.dart', "import '../../evil.dart';\n");
+      await stage(
+        'lib/b.dart',
+        "export 'dart:core' if (dart.library.io) '../../evil.dart';\n",
+      );
+      await stage('lib/c.dart', "part '../../evil_part.dart';\n");
+      await stage('lib/d.dart', "part of '../../evil_lib.dart';\n");
+      await stage('lib/e.dart', "import 'package:p/sub/../../evil.dart';\n");
+      await stage('lib/f.dart', "import 'file:///etc/hosts';\n");
+      await stage('lib/g.dart', "import '/etc/hostname';\n");
+      final violations = await findStagedShimViolations(
+        staging,
+        tool: 'builder_shim',
+      );
+      expect(violations, hasLength(7));
+      for (final violation in violations) {
+        expect(violation, startsWith('builder_shim: '));
+        expect(violation, endsWith('is not a declared input.'));
+      }
+      expect(
+        violations,
+        contains(contains("import '../../evil.dart' is not a declared input.")),
+      );
+    });
+  });
 }
 
 class _DisposeTrackingCollection implements AnalysisContextCollection {

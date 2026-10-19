@@ -37,6 +37,7 @@ dart_binary(
 # a staged project against summaries. See dart/private/dart_analyzer_summary.bzl.
 dart_binary(
     name = "analyzer_summary",
+    srcs = ["directive_guard.dart"],
     code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "analyzer_summary.dart",
@@ -157,6 +158,7 @@ dart_binary(
 
 dart_binary(
     name = "link_hook_runner",
+    srcs = ["directive_guard.dart"],
     code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "link_hook_runner.dart",
@@ -173,7 +175,10 @@ dart_binary(
 dart_test(
     name = "link_hook_runner_test",
     size = "small",
-    srcs = ["link_hook_runner.dart"],
+    srcs = [
+        "directive_guard.dart",
+        "link_hook_runner.dart",
+    ],
     main = "link_hook_runner_test.dart",
     deps = [
         "@ext_pub_deps//:args",
@@ -241,10 +246,60 @@ dart_test(
     ],
 )
 
+# Bare sources for `directive_guard_test`, which reads every Dart-reading tool
+# and fails when one stops enforcing the shared staged-source check.
+exports_files(
+    [
+        "analyze_runner.dart",
+        "analyzer_summary.dart",
+        "directive_guard.dart",
+        "fix_runner.dart",
+        "kernel_module.dart",
+        "link_hook_runner.dart",
+        "web_compile_runner.dart",
+    ],
+)
+
+dart_test(
+    name = "directive_guard_test",
+    size = "small",
+    srcs = ["directive_guard.dart"],
+    args = [
+        "$(rlocationpath :analyze_runner.dart)",
+        "$(rlocationpath :analyzer_summary.dart)",
+        "$(rlocationpath :app_jit_snapshot.dart)",
+        "$(rlocationpath :directive_guard.dart)",
+        "$(rlocationpath :fix_runner.dart)",
+        "$(rlocationpath :kernel_module.dart)",
+        "$(rlocationpath :link_hook_runner.dart)",
+        "$(rlocationpath :web_compile_runner.dart)",
+        "$(rlocationpath //dart/ext:lib/builder_shim.dart)",
+    ],
+    data = [
+        ":analyze_runner.dart",
+        ":analyzer_summary.dart",
+        ":app_jit_snapshot.dart",
+        ":directive_guard.dart",
+        ":fix_runner.dart",
+        ":kernel_module.dart",
+        ":link_hook_runner.dart",
+        ":web_compile_runner.dart",
+        "//dart/ext:lib/builder_shim.dart",
+    ],
+    main = "directive_guard_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
 dart_test(
     name = "analyzer_summary_test",
     size = "small",
-    srcs = ["analyzer_summary.dart"],
+    srcs = [
+        "analyzer_summary.dart",
+        "directive_guard.dart",
+    ],
     main = "analyzer_summary_test.dart",
     deps = [
         "//third_party/dart_linter:linter",

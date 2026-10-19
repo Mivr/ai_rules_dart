@@ -11,6 +11,10 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 
+# Bare shim source for `directive_guard_test`, which reads every Dart-reading
+# tool and fails when one stops enforcing the shared staged-source check.
+exports_files(["lib/builder_shim.dart"])
+
 # The curated-registry resolver is supported API for other rule sets:
 # rules_flutter generates its own pub spokes and so cannot reach the registry
 # through `pub_lock_package`. Only the two functions are supported; `_ENTRIES`

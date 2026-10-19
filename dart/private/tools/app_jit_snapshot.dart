@@ -1052,12 +1052,24 @@ String _normFsPath(String path) =>
 
 /// A diagnostic for every `gen_kernel` input source with a directive URI that
 /// names no file the action can read through its declared inputs: a `file:`
-/// URI in any spelling, or any other scheme but `dart:` and `package:`. The
-/// front end reads such a URI off the host, outside every `--filesystem-root`,
-/// so the wrapper refuses before compiling. Every `if` alternative is checked,
-/// since the wrapper has no configuration to select by. Empty when clean. Each
-/// diagnostic names the file, the directive and the URI.
-List<String> _findDisallowedGenKernelDirectives(List<String> sources) {
+/// URI in any spelling, any other scheme but `dart:` and `package:`, a
+/// `package:` URI climbing above its package, or a relative URI resolving to
+/// no declared input source. The front end reads such a URI off the host,
+/// outside every `--filesystem-root`, so the wrapper refuses before compiling.
+/// Climbing `..` segments are followed past the declared inputs, never
+/// clamped: enough segments name any host path. Every `if` alternative is
+/// checked, since the wrapper has no configuration to select by. Empty when
+/// clean. Each diagnostic names the file, the directive and the URI.
+///
+/// A relative URI is accepted when it resolves to a declared source beside the
+/// importing file, or when it resolves to a declared source's multi-root key
+/// ([_resolveKeyRelativeTarget] over [_stableSourceKey]): the front end finds
+/// each key where it is, so a generated sibling in `bazel-out` staged beside a
+/// source-tree importer reads a declared input, not the host.
+List<String> _findDisallowedGenKernelDirectives(
+  List<String> sources,
+  List<String> fsRoots,
+) {
   final contents = <String, String>{};
   for (final path in sources) {
     try {
@@ -1068,7 +1080,130 @@ List<String> _findDisallowedGenKernelDirectives(List<String> sources) {
       // Not decodable text; gen_kernel reports it.
     }
   }
-  return findDisallowedDirectives(contents, tool: 'app_jit_snapshot');
+  final declared = <String>{
+    for (final path in contents.keys) _normAbsStagedPath(path),
+  };
+  final declaredKeys = <String>{
+    for (final path in contents.keys) _stableSourceKey(path, fsRoots),
+  };
+  final errors = <String>[];
+  final paths = contents.keys.toList()..sort();
+  for (final path in paths) {
+    final content = contents[path];
+    if (content == null) continue;
+    final from = _normAbsStagedPath(path);
+    final fromKey = _stableSourceKey(path, fsRoots);
+    for (final ref in scanAllDirectiveUris(content)) {
+      final uri = ref.uri;
+      if (uri.startsWith(defaultMultiRootPrefix) || uri.startsWith('dart:')) {
+        continue;
+      }
+      if (uri.startsWith('package:')) {
+        if (isEscapingPackageUri(uri)) {
+          errors.add(
+            "app_jit_snapshot: $path ${ref.kind} '$uri' "
+            'is not a declared input.',
+          );
+        }
+        continue;
+      }
+      if (isFileSchemeDirectiveUri(uri) || isDisallowedDirectiveUri(uri)) {
+        errors.add(
+          "app_jit_snapshot: $path ${ref.kind} '$uri' is not a declared input.",
+        );
+        continue;
+      }
+      final target = resolveStagedRelativeTarget(uri, from);
+      if (target == null || declared.contains(target)) continue;
+      final keyTarget = _resolveKeyRelativeTarget(uri, fromKey);
+      if (keyTarget != null && declaredKeys.contains(keyTarget)) continue;
+      errors.add(
+        "app_jit_snapshot: $path ${ref.kind} '$uri' is not a declared input.",
+      );
+    }
+  }
+  return errors;
+}
+
+/// The multi-root key naming the declared input source [path]: the
+/// exec-root-relative path with its longest `--filesystem-root` prefix
+/// stripped. The wrapper runs with the exec root as its working directory (the
+/// `"."` root), so an absolute declared path under it becomes relative, and a
+/// generated file's key drops the bin-root prefix — the same derivation the
+/// entrypoint URI uses (see `stable_entry_path` and `stable_path` in
+/// `common.bzl`). A relative directive URI resolved against one declared
+/// source's key therefore names the same key the front end looks up whether
+/// the target lives in the source tree or under `bazel-out`. Paths already
+/// relative, or absolute but under no root and outside the working directory
+/// (tests), keep the [_stripFsRootPrefix] spelling, which stays consistent
+/// because every key in the comparison uses this same function.
+String _stableSourceKey(String path, List<String> fsRoots) {
+  var slash = path.replaceAll(r'\', '/');
+  final cwd = Directory.current.path
+      .replaceAll(r'\', '/')
+      .replaceFirst(RegExp(r'/+$'), '');
+  if (slash == cwd) {
+    slash = '';
+  } else if (slash.startsWith('$cwd/')) {
+    slash = slash.substring(cwd.length + 1);
+  }
+  slash = slash.replaceFirst(RegExp(r'^(?:\./)+'), '');
+  String? best;
+  for (final rawRoot in fsRoots) {
+    final root = rawRoot
+        .replaceAll(r'\', '/')
+        .replaceFirst(RegExp(r'/+$'), '')
+        .replaceFirst(RegExp(r'^(?:\./)+'), '');
+    if (root.isEmpty || root == '.') continue;
+    if ((slash == root || slash.startsWith('$root/')) &&
+        (best == null || root.length > best.length)) {
+      best = root;
+    }
+  }
+  if (best != null) {
+    slash = slash == best ? '' : slash.substring(best.length + 1);
+  }
+  return slash;
+}
+
+/// The multi-root key a schemeless relative directive URI in the declared
+/// source with key [fromKey] refers to: the front end resolves the URI against
+/// the importing file's key and finds each key where it is, whether in the
+/// source tree or under `bazel-out`, so a generated sibling staged beside its
+/// importer names a declared input. `\` separates and escapes decode once, as
+/// in [resolveStagedRelativeTarget]; a `..` climbing above the key root drops
+/// away, the way the front end's own resolution stays inside the multi-root
+/// space, and the caller accepts the result only when some declared source
+/// holds that key.
+///
+/// Null when [uri] is not a relative URI (any scheme, a query, a fragment, a
+/// `//`-prefixed authority, or a `/`-absolute path, which names a host file
+/// outside every root) or when a decoded `/` names no file. Null never means
+/// "declared": the caller refuses it unless the filesystem-path check above
+/// already accepted it.
+String? _resolveKeyRelativeTarget(String uri, String fromKey) {
+  final text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
+  if (text.contains(':')) return null;
+  if (text.contains('?') || text.contains('#')) return null;
+  if (text.startsWith('//') || text.startsWith('/')) return null;
+  final stack = <String>[];
+  for (final part in fromKey.split('/')) {
+    if (part.isNotEmpty) stack.add(part);
+  }
+  // Drop the file name: the URI resolves against its directory.
+  if (stack.isNotEmpty) stack.removeLast();
+  for (final raw in text.split('/')) {
+    if (raw.isEmpty) continue;
+    final seg = decodeUriSegment(raw);
+    if (seg.isEmpty || seg == '.') continue;
+    if (seg == '..') {
+      if (stack.isNotEmpty) stack.removeLast();
+      continue;
+    }
+    if (seg.contains('/')) return null;
+    stack.add(seg);
+  }
+  return stack.join('/');
 }
 
 /// Links [dstPath] to [srcPath] (a file or directory), copying instead when
@@ -1193,6 +1328,7 @@ void _runGenKernel(List<String> argv) {
   // staging below: a disallowed URI fails however the roots resolve.
   final disallowedDirectives = _findDisallowedGenKernelDirectives(
     declaredInputSources,
+    fsRoots,
   );
   if (disallowedDirectives.isNotEmpty) {
     for (final error in disallowedDirectives) {
@@ -1317,9 +1453,10 @@ void _runGenKernel(List<String> argv) {
   }
 }
 // Mirror of `directive_guard.dart` (the shared directive-URI check): the
-// prologue scanner, the directive-URI resolution and the disallowed-scheme
-// classification, copied verbatim (names included) so this tool classifies
-// exactly what the modular kernel planner classifies.
+// prologue scanner, the directive-URI resolution, the disallowed-scheme
+// classification and the staged-relative resolution, copied verbatim (names
+// included) so this tool classifies exactly what the modular kernel planner
+// classifies.
 //
 // This file runs from source inside the whole-program `gen_kernel` action,
 // where only this file is staged: it cannot import the guard library. Keep
@@ -1334,37 +1471,6 @@ String? _stripPrefix(String uri, String multiRootPrefix) {
     return uri.substring(multiRootPrefix.length);
   }
   return null;
-}
-
-/// Decodes one raw URI path segment the way the front end does (RFC 3986): each
-/// valid `%XX` escape becomes its byte (bytes together decode as UTF-8, either
-/// hex case), while anything else — including a lone `%` — stays literal.
-/// Decoding happens once: a `%` produced by decoding is never decoded again.
-String decodeUriSegment(String segment) {
-  if (!segment.contains('%')) return segment;
-  final out = StringBuffer();
-  final bytes = <int>[];
-  void flush() {
-    if (bytes.isEmpty) return;
-    out.write(utf8.decode(bytes, allowMalformed: true));
-    bytes.clear();
-  }
-
-  for (var i = 0; i < segment.length; i++) {
-    final c = segment.codeUnitAt(i);
-    if (c == 0x25 && i + 2 < segment.length) {
-      final hex = int.tryParse(segment.substring(i + 1, i + 3), radix: 16);
-      if (hex != null && hex >= 0 && hex <= 0xff) {
-        bytes.add(hex);
-        i += 2;
-        continue;
-      }
-    }
-    flush();
-    out.writeCharCode(c);
-  }
-  flush();
-  return out.toString();
 }
 
 /// The segments of the longest [packageDirs] directory holding `fromKey`, or
@@ -1989,54 +2095,6 @@ class _Prologue {
   }
 }
 
-/// Whether `uri` is a `file:` URI in any spelling: any letter case, any
-/// authority (`file://localhost/`), a bare path (`file:x.dart`), backslash
-/// separators, or a query or fragment suffix. The front end reads all of these
-/// off the host filesystem, outside every multi-root.
-bool isFileSchemeDirectiveUri(String uri) {
-  final colon = uri.indexOf(':');
-  if (colon != 4) return false;
-  const scheme = 'file';
-  for (var i = 0; i < 4; i++) {
-    var c = uri.codeUnitAt(i);
-    if (c >= 0x41 && c <= 0x5A) c += 0x20;
-    if (c != scheme.codeUnitAt(i)) return false;
-  }
-  return true;
-}
-
-bool _isSchemeStart(int c) =>
-    (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A);
-
-bool _isSchemeChar(int c) =>
-    _isSchemeStart(c) ||
-    (c >= 0x30 && c <= 0x39) ||
-    c == 0x2B ||
-    c == 0x2D ||
-    c == 0x2E;
-
-/// Whether an `import` or `export` directive URI must fail the build: it names
-/// no file the action can read through its declared inputs. That is a `file:`
-/// URI in any spelling, or any other URI scheme but `dart:`, `package:` and
-/// the multi-root scheme. `dart:` libraries are checked against the VM set and
-/// `package:` URIs against the package config by the caller; relative URIs
-/// resolve through the declared inputs (or fail as undeclared) by the caller.
-bool isDisallowedDirectiveUri(
-  String uri, {
-  String multiRootPrefix = defaultMultiRootPrefix,
-}) {
-  if (uri.startsWith(multiRootPrefix)) return false;
-  if (uri.startsWith('package:') || uri.startsWith('dart:')) return false;
-  if (isFileSchemeDirectiveUri(uri)) return true;
-  final colon = uri.indexOf(':');
-  if (colon <= 0) return false;
-  if (!_isSchemeStart(uri.codeUnitAt(0))) return false;
-  for (var i = 1; i < colon; i++) {
-    if (!_isSchemeChar(uri.codeUnitAt(i))) return false;
-  }
-  return true;
-}
-
 /// Every URI-bearing directive of a source's prologue: each `import` and
 /// `export` contributes its declared URI and every `if` alternative, each
 /// `part` and `part of` its URI. Conditions are not evaluated, so no VM
@@ -2076,3 +2134,219 @@ List<String> findDisallowedDirectives(
   }
   return errors;
 }
+
+// BEGIN staged-resolver-mirror: byte-identical in directive_guard.dart,
+// app_jit_snapshot.dart and builder_shim.dart (pinned by
+// directive_guard_test.dart). Edit only by syncing all three copies.
+
+/// Decodes one raw URI path segment the way the front end does (RFC 3986): each
+/// valid `%XX` escape becomes its byte (bytes together decode as UTF-8, either
+/// hex case), while anything else — including a lone `%` — stays literal.
+/// Decoding happens once: a `%` produced by decoding is never decoded again.
+String decodeUriSegment(String segment) {
+  if (!segment.contains('%')) return segment;
+  final out = StringBuffer();
+  final bytes = <int>[];
+  void flush() {
+    if (bytes.isEmpty) return;
+    out.write(utf8.decode(bytes, allowMalformed: true));
+    bytes.clear();
+  }
+
+  for (var i = 0; i < segment.length; i++) {
+    final c = segment.codeUnitAt(i);
+    if (c == 0x25 && i + 2 < segment.length) {
+      final hex = int.tryParse(segment.substring(i + 1, i + 3), radix: 16);
+      if (hex != null && hex >= 0 && hex <= 0xff) {
+        bytes.add(hex);
+        i += 2;
+        continue;
+      }
+    }
+    flush();
+    out.writeCharCode(c);
+  }
+  flush();
+  return out.toString();
+}
+
+/// Whether [uri] is a `package:` URI whose path climbs above its package
+/// directory (`package:pkg/sub/../../x.dart`). The front end reports leaving
+/// the package, but a tool that resolves against the real filesystem reads a
+/// host file instead, so the staged-source check refuses it before they run.
+/// False for any other URI, including a `package:` URI that stays inside its
+/// package (an unknown package name fails closed downstream, where the
+/// analyzer cannot resolve it, so it is not refused here).
+bool isEscapingPackageUri(String uri) {
+  if (!uri.startsWith('package:')) return false;
+  final rest = uri.substring('package:'.length);
+  if (rest.contains('?') || rest.contains('#')) return false;
+  final slash = rest.indexOf('/');
+  if (slash <= 0) return false;
+  final text = rest.substring(slash + 1).replaceAll(r'\', '/');
+  var depth = 0;
+  for (final raw in text.split('/')) {
+    if (raw.isEmpty) continue;
+    final seg = decodeUriSegment(raw);
+    if (seg.isEmpty || seg == '.') continue;
+    if (seg == '..') {
+      depth--;
+      if (depth < 0) return true;
+    } else if (!seg.contains('/')) {
+      depth++;
+    }
+  }
+  return false;
+}
+
+/// Whether [path] is absolute: POSIX `/`, a Windows drive (`C:/`, `C:\`), or
+/// a UNC share (`\\`).
+bool _isAbsoluteStagedPath(String path) =>
+    path.startsWith('/') ||
+    path.startsWith(r'\') ||
+    (path.length >= 3 &&
+        ((path.codeUnitAt(0) >= 0x41 && path.codeUnitAt(0) <= 0x5a) ||
+            (path.codeUnitAt(0) >= 0x61 && path.codeUnitAt(0) <= 0x7a)) &&
+        path.codeUnitAt(1) == 0x3a &&
+        (path.codeUnitAt(2) == 0x2f || path.codeUnitAt(2) == 0x5c));
+
+bool _isWindowsDriveSegment(String s) =>
+    s.length == 2 &&
+    ((s.codeUnitAt(0) >= 0x41 && s.codeUnitAt(0) <= 0x5a) ||
+        (s.codeUnitAt(0) >= 0x61 && s.codeUnitAt(0) <= 0x7a)) &&
+    s.codeUnitAt(1) == 0x3a;
+
+/// [path] as an absolute `/`-separated path: backslashes become separators,
+/// a relative path resolves against the current directory, and empty and `.`
+/// segments drop out. `..` segments stay (the caller applies them against its
+/// own base), except the resolution below, which clamps them at the
+/// filesystem root the way the analyzer does.
+String _normAbsStagedPath(String path) {
+  final slashed = path.replaceAll(r'\', '/');
+  final absolute = _isAbsoluteStagedPath(slashed)
+      ? slashed
+      : '${Directory.current.path.replaceAll(r'\', '/')}/$slashed';
+  final unc = absolute.startsWith('//');
+  final parts = <String>[];
+  for (final part in absolute.split('/')) {
+    if (part.isEmpty || part == '.') continue;
+    if (part == '..') {
+      // `..` clamps at the filesystem root the way the analyzer clamps it:
+      // past `/`, past a drive (`C:`), or past a UNC share's host.
+      final floor = unc
+          ? (parts.length <= 2 ? parts.length : 2)
+          : (parts.isNotEmpty && _isWindowsDriveSegment(parts.first) ? 1 : 0);
+      if (parts.length > floor) {
+        parts.removeLast();
+      }
+      continue;
+    }
+    parts.add(part);
+  }
+  final joined = parts.join('/');
+  if (unc) return '//$joined';
+  if (absolute.startsWith('/')) return '/$joined';
+  return joined;
+}
+
+/// The absolute `/`-separated path a schemeless relative or `/`-absolute
+/// directive URI in the staged file [fromPath] refers to, resolved the way the
+/// analyzer resolves it on the real filesystem: `\` separates, escapes decode
+/// once, and `..` climbs past the staged tree (clamped at the filesystem
+/// root, where overshooting names any host path) instead of staying inside
+/// the declared inputs.
+///
+/// Null when [uri] is not such a URI: any scheme (`dart:`, `package:`,
+/// `file:`, the multi-root scheme, or anything else with a `:`), a query, a
+/// fragment, or a `//`-prefixed authority. A decoded `/` also yields null: it
+/// names no file, so the compiler reports it and the guard has nothing to
+/// confine. Null means "no host file beyond what the scheme check already
+/// refuses", never "inside the declared inputs".
+String? resolveStagedRelativeTarget(String uri, String fromPath) {
+  final text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
+  if (text.contains(':')) return null;
+  if (text.contains('?') || text.contains('#')) return null;
+  if (text.startsWith('//')) return null;
+  final from = _normAbsStagedPath(fromPath);
+  final rooted = from.startsWith('/');
+  final drive =
+      !rooted &&
+      from.contains('/') &&
+      _isWindowsDriveSegment(from.split('/').first);
+  final stack = from.split('/');
+  // Drop the file name: the URI resolves against its directory.
+  if (stack.isNotEmpty) stack.removeLast();
+  final floor = rooted || drive ? 1 : 0;
+  final absolute = text.startsWith('/');
+  final base = absolute ? stack.sublist(0, floor) : stack;
+  final queue = absolute ? text.substring(1) : text;
+  for (final raw in queue.split('/')) {
+    if (raw.isEmpty) continue;
+    final seg = decodeUriSegment(raw);
+    if (seg.isEmpty || seg == '.') continue;
+    if (seg == '..') {
+      if (base.length > floor) base.removeLast();
+      continue;
+    }
+    if (seg.contains('/')) return null;
+    base.add(seg);
+  }
+  final joined = base.join('/');
+  // A rooted `from` splits with a leading empty segment, so the join already
+  // starts with `/` (or `//` for a UNC share); only fill in a bare `/` when
+  // the base ran empty.
+  if (rooted) return joined.startsWith('/') ? joined : '/$joined';
+  return joined;
+}
+
+/// Whether `uri` is a `file:` URI in any spelling: any letter case, any
+/// authority (`file://localhost/`), a bare path (`file:x.dart`), backslash
+/// separators, or a query or fragment suffix. The front end reads all of these
+/// off the host filesystem, outside every multi-root.
+bool isFileSchemeDirectiveUri(String uri) {
+  final colon = uri.indexOf(':');
+  if (colon != 4) return false;
+  const scheme = 'file';
+  for (var i = 0; i < 4; i++) {
+    var c = uri.codeUnitAt(i);
+    if (c >= 0x41 && c <= 0x5A) c += 0x20;
+    if (c != scheme.codeUnitAt(i)) return false;
+  }
+  return true;
+}
+
+bool _isSchemeStart(int c) =>
+    (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7a);
+
+bool _isSchemeChar(int c) =>
+    _isSchemeStart(c) ||
+    (c >= 0x30 && c <= 0x39) ||
+    c == 0x2B ||
+    c == 0x2D ||
+    c == 0x2E;
+
+/// Whether an `import` or `export` directive URI must fail the build: it names
+/// no file the action can read through its declared inputs. That is a `file:`
+/// URI in any spelling, or any other URI scheme but `dart:`, `package:` and
+/// the multi-root scheme. `dart:` libraries are checked against the VM set and
+/// `package:` URIs against the package config by the caller. Schemeless
+/// relative URIs are not classified here: the staged-source check resolves
+/// those against the importing file's declared location itself, since no
+/// caller confines them.
+bool isDisallowedDirectiveUri(
+  String uri, {
+  String multiRootPrefix = defaultMultiRootPrefix,
+}) {
+  if (uri.startsWith(multiRootPrefix)) return false;
+  if (uri.startsWith('package:') || uri.startsWith('dart:')) return false;
+  if (isFileSchemeDirectiveUri(uri)) return true;
+  final colon = uri.indexOf(':');
+  if (colon <= 0) return false;
+  if (!_isSchemeStart(uri.codeUnitAt(0))) return false;
+  for (var i = 1; i < colon; i++) {
+    if (!_isSchemeChar(uri.codeUnitAt(i))) return false;
+  }
+  return true;
+}
+
+// END staged-resolver-mirror

@@ -502,4 +502,41 @@ void main(List<String> args) {
       );
     },
   );
+
+  test('--gen-kernel refuses a climbing relative import without compiling', () {
+    final ws = Directory('${tmp.path}/rel_ws')..createSync(recursive: true);
+    final main = File('${ws.path}/main.dart')
+      ..writeAsStringSync(
+        "import '../secret.dart';\n"
+        'void main() => print(secretValue);\n',
+      );
+    final sibling = File('${ws.path}/sibling.dart')
+      ..writeAsStringSync(
+        "import 'main.dart';\n"
+        'void helper() {}\n',
+      );
+    // End to end: the wrapper fails before running gen_kernel (which is never
+    // reached, so no SDK snapshot is needed).
+    final toolPath = args.isNotEmpty
+        ? Runfiles.create().rlocation(args[0])
+        : File.fromUri(Platform.script.resolve('app_jit_snapshot.dart')).path;
+    final res = Process.runSync(Platform.resolvedExecutable, [
+      toolPath,
+      '--gen-kernel',
+      'never-reached-runtime',
+      '--input-source=${main.path}',
+      '--input-source=${sibling.path}',
+    ]);
+    expect(res.exitCode, isNonZero);
+    expect(
+      res.stderr as String,
+      contains("import '../secret.dart' is not a declared input"),
+    );
+    // Exactly one diagnostic: the sibling's import stays inside the declared
+    // inputs, so the guard refuses nothing for it.
+    expect(
+      'is not a declared input'.allMatches(res.stderr as String),
+      hasLength(1),
+    );
+  });
 }

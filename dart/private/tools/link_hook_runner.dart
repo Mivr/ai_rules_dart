@@ -16,6 +16,8 @@ import 'package:args/args.dart';
 import 'package:data_assets/data_assets.dart';
 import 'package:hooks/hooks.dart';
 
+import 'directive_guard.dart';
+
 Future<void> main(List<String> arguments) async {
   final parser = ArgParser()
     ..addOption('dart', mandatory: true)
@@ -44,6 +46,22 @@ Future<void> main(List<String> arguments) async {
       hook: File(args.option('hook')!),
       scratch: scratch,
     );
+    // No staged source may read the host: the hook runs with its staged
+    // package root as its working directory, so a `file:` URI, a `package:`
+    // URI climbing above its package, or a relative URI climbing out of the
+    // staged tree in the hook (or anything it reaches) would read an
+    // undeclared file. Refuse before running, through the one shared
+    // staged-source check.
+    final stagedViolations = findStagedDirectiveViolations([
+      staged.packageRoot.path,
+    ], tool: 'link_hook_runner');
+    if (stagedViolations.isNotEmpty) {
+      _fail(
+        packageName,
+        'reads files outside its declared inputs',
+        stagedViolations.join('\n'),
+      );
+    }
     final input = _linkInput(
       packageName: packageName,
       packageRoot: staged.packageRoot,

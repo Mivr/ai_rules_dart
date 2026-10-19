@@ -21,6 +21,7 @@ import 'dart:typed_data';
 import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
 import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/dart/analysis/session.dart';
+import 'package:analyzer/dart/analysis/utilities.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/file_system/file_system.dart' as fs;
@@ -659,6 +660,23 @@ Future<void> _runWithStaging(
   if (!await analysisOptionsFile.exists()) {
     await analysisOptionsFile.writeAsString(
       '# rules_dart: bounds analysis_options.yaml discovery\n',
+    );
+  }
+
+  // Refuse staged entries whose directives would read outside the staging dir
+  // before the analyzer or any Builder can. This is the shim-world half of the
+  // shared staged-source check: the staging dir holds only declared inputs, so
+  // a schemeless relative (or `/`-absolute) URI that resolves outside it, a
+  // `file:` or other foreign scheme, or a `package:` URI climbing above its
+  // package would read an undeclared host file.
+  final stagedViolations = await findStagedShimViolations(
+    canonicalStagingDir,
+    tool: 'builder_shim',
+  );
+  if (stagedViolations.isNotEmpty) {
+    throw StateError(
+      'builder_shim refuses to run builders on staged entries that read '
+      'files outside the declared inputs:\n${stagedViolations.join('\n')}',
     );
   }
 
@@ -1822,4 +1840,340 @@ class AccumulatorSink<T> implements ChunkedConversionSink<T> {
   void add(T chunk) => events.add(chunk);
   @override
   void close() {}
+}
+
+/// The multi-root scheme every compile resolves its inputs through.
+const defaultMultiRootPrefix = 'org-dartlang-root:///';
+
+// BEGIN staged-resolver-mirror: byte-identical in directive_guard.dart,
+// app_jit_snapshot.dart and builder_shim.dart (pinned by
+// directive_guard_test.dart). Edit only by syncing all three copies.
+
+/// Decodes one raw URI path segment the way the front end does (RFC 3986): each
+/// valid `%XX` escape becomes its byte (bytes together decode as UTF-8, either
+/// hex case), while anything else — including a lone `%` — stays literal.
+/// Decoding happens once: a `%` produced by decoding is never decoded again.
+String decodeUriSegment(String segment) {
+  if (!segment.contains('%')) return segment;
+  final out = StringBuffer();
+  final bytes = <int>[];
+  void flush() {
+    if (bytes.isEmpty) return;
+    out.write(utf8.decode(bytes, allowMalformed: true));
+    bytes.clear();
+  }
+
+  for (var i = 0; i < segment.length; i++) {
+    final c = segment.codeUnitAt(i);
+    if (c == 0x25 && i + 2 < segment.length) {
+      final hex = int.tryParse(segment.substring(i + 1, i + 3), radix: 16);
+      if (hex != null && hex >= 0 && hex <= 0xff) {
+        bytes.add(hex);
+        i += 2;
+        continue;
+      }
+    }
+    flush();
+    out.writeCharCode(c);
+  }
+  flush();
+  return out.toString();
+}
+
+/// Whether [uri] is a `package:` URI whose path climbs above its package
+/// directory (`package:pkg/sub/../../x.dart`). The front end reports leaving
+/// the package, but a tool that resolves against the real filesystem reads a
+/// host file instead, so the staged-source check refuses it before they run.
+/// False for any other URI, including a `package:` URI that stays inside its
+/// package (an unknown package name fails closed downstream, where the
+/// analyzer cannot resolve it, so it is not refused here).
+bool isEscapingPackageUri(String uri) {
+  if (!uri.startsWith('package:')) return false;
+  final rest = uri.substring('package:'.length);
+  if (rest.contains('?') || rest.contains('#')) return false;
+  final slash = rest.indexOf('/');
+  if (slash <= 0) return false;
+  final text = rest.substring(slash + 1).replaceAll(r'\', '/');
+  var depth = 0;
+  for (final raw in text.split('/')) {
+    if (raw.isEmpty) continue;
+    final seg = decodeUriSegment(raw);
+    if (seg.isEmpty || seg == '.') continue;
+    if (seg == '..') {
+      depth--;
+      if (depth < 0) return true;
+    } else if (!seg.contains('/')) {
+      depth++;
+    }
+  }
+  return false;
+}
+
+/// Whether [path] is absolute: POSIX `/`, a Windows drive (`C:/`, `C:\`), or
+/// a UNC share (`\\`).
+bool _isAbsoluteStagedPath(String path) =>
+    path.startsWith('/') ||
+    path.startsWith(r'\') ||
+    (path.length >= 3 &&
+        ((path.codeUnitAt(0) >= 0x41 && path.codeUnitAt(0) <= 0x5a) ||
+            (path.codeUnitAt(0) >= 0x61 && path.codeUnitAt(0) <= 0x7a)) &&
+        path.codeUnitAt(1) == 0x3a &&
+        (path.codeUnitAt(2) == 0x2f || path.codeUnitAt(2) == 0x5c));
+
+bool _isWindowsDriveSegment(String s) =>
+    s.length == 2 &&
+    ((s.codeUnitAt(0) >= 0x41 && s.codeUnitAt(0) <= 0x5a) ||
+        (s.codeUnitAt(0) >= 0x61 && s.codeUnitAt(0) <= 0x7a)) &&
+    s.codeUnitAt(1) == 0x3a;
+
+/// [path] as an absolute `/`-separated path: backslashes become separators,
+/// a relative path resolves against the current directory, and empty and `.`
+/// segments drop out. `..` segments stay (the caller applies them against its
+/// own base), except the resolution below, which clamps them at the
+/// filesystem root the way the analyzer does.
+String _normAbsStagedPath(String path) {
+  final slashed = path.replaceAll(r'\', '/');
+  final absolute = _isAbsoluteStagedPath(slashed)
+      ? slashed
+      : '${Directory.current.path.replaceAll(r'\', '/')}/$slashed';
+  final unc = absolute.startsWith('//');
+  final parts = <String>[];
+  for (final part in absolute.split('/')) {
+    if (part.isEmpty || part == '.') continue;
+    if (part == '..') {
+      // `..` clamps at the filesystem root the way the analyzer clamps it:
+      // past `/`, past a drive (`C:`), or past a UNC share's host.
+      final floor = unc
+          ? (parts.length <= 2 ? parts.length : 2)
+          : (parts.isNotEmpty && _isWindowsDriveSegment(parts.first) ? 1 : 0);
+      if (parts.length > floor) {
+        parts.removeLast();
+      }
+      continue;
+    }
+    parts.add(part);
+  }
+  final joined = parts.join('/');
+  if (unc) return '//$joined';
+  if (absolute.startsWith('/')) return '/$joined';
+  return joined;
+}
+
+/// The absolute `/`-separated path a schemeless relative or `/`-absolute
+/// directive URI in the staged file [fromPath] refers to, resolved the way the
+/// analyzer resolves it on the real filesystem: `\` separates, escapes decode
+/// once, and `..` climbs past the staged tree (clamped at the filesystem
+/// root, where overshooting names any host path) instead of staying inside
+/// the declared inputs.
+///
+/// Null when [uri] is not such a URI: any scheme (`dart:`, `package:`,
+/// `file:`, the multi-root scheme, or anything else with a `:`), a query, a
+/// fragment, or a `//`-prefixed authority. A decoded `/` also yields null: it
+/// names no file, so the compiler reports it and the guard has nothing to
+/// confine. Null means "no host file beyond what the scheme check already
+/// refuses", never "inside the declared inputs".
+String? resolveStagedRelativeTarget(String uri, String fromPath) {
+  final text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
+  if (text.contains(':')) return null;
+  if (text.contains('?') || text.contains('#')) return null;
+  if (text.startsWith('//')) return null;
+  final from = _normAbsStagedPath(fromPath);
+  final rooted = from.startsWith('/');
+  final drive =
+      !rooted &&
+      from.contains('/') &&
+      _isWindowsDriveSegment(from.split('/').first);
+  final stack = from.split('/');
+  // Drop the file name: the URI resolves against its directory.
+  if (stack.isNotEmpty) stack.removeLast();
+  final floor = rooted || drive ? 1 : 0;
+  final absolute = text.startsWith('/');
+  final base = absolute ? stack.sublist(0, floor) : stack;
+  final queue = absolute ? text.substring(1) : text;
+  for (final raw in queue.split('/')) {
+    if (raw.isEmpty) continue;
+    final seg = decodeUriSegment(raw);
+    if (seg.isEmpty || seg == '.') continue;
+    if (seg == '..') {
+      if (base.length > floor) base.removeLast();
+      continue;
+    }
+    if (seg.contains('/')) return null;
+    base.add(seg);
+  }
+  final joined = base.join('/');
+  // A rooted `from` splits with a leading empty segment, so the join already
+  // starts with `/` (or `//` for a UNC share); only fill in a bare `/` when
+  // the base ran empty.
+  if (rooted) return joined.startsWith('/') ? joined : '/$joined';
+  return joined;
+}
+
+/// Whether `uri` is a `file:` URI in any spelling: any letter case, any
+/// authority (`file://localhost/`), a bare path (`file:x.dart`), backslash
+/// separators, or a query or fragment suffix. The front end reads all of these
+/// off the host filesystem, outside every multi-root.
+bool isFileSchemeDirectiveUri(String uri) {
+  final colon = uri.indexOf(':');
+  if (colon != 4) return false;
+  const scheme = 'file';
+  for (var i = 0; i < 4; i++) {
+    var c = uri.codeUnitAt(i);
+    if (c >= 0x41 && c <= 0x5A) c += 0x20;
+    if (c != scheme.codeUnitAt(i)) return false;
+  }
+  return true;
+}
+
+bool _isSchemeStart(int c) =>
+    (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7a);
+
+bool _isSchemeChar(int c) =>
+    _isSchemeStart(c) ||
+    (c >= 0x30 && c <= 0x39) ||
+    c == 0x2B ||
+    c == 0x2D ||
+    c == 0x2E;
+
+/// Whether an `import` or `export` directive URI must fail the build: it names
+/// no file the action can read through its declared inputs. That is a `file:`
+/// URI in any spelling, or any other URI scheme but `dart:`, `package:` and
+/// the multi-root scheme. `dart:` libraries are checked against the VM set and
+/// `package:` URIs against the package config by the caller. Schemeless
+/// relative URIs are not classified here: the staged-source check resolves
+/// those against the importing file's declared location itself, since no
+/// caller confines them.
+bool isDisallowedDirectiveUri(
+  String uri, {
+  String multiRootPrefix = defaultMultiRootPrefix,
+}) {
+  if (uri.startsWith(multiRootPrefix)) return false;
+  if (uri.startsWith('package:') || uri.startsWith('dart:')) return false;
+  if (isFileSchemeDirectiveUri(uri)) return true;
+  final colon = uri.indexOf(':');
+  if (colon <= 0) return false;
+  if (!_isSchemeStart(uri.codeUnitAt(0))) return false;
+  for (var i = 1; i < colon; i++) {
+    if (!_isSchemeChar(uri.codeUnitAt(i))) return false;
+  }
+  return true;
+}
+
+// END staged-resolver-mirror
+
+/// One URI-bearing directive of a staged source: its kind (`import`,
+/// `export`, `part`, `part of`) and its URI.
+class _ShimDirectiveRef {
+  _ShimDirectiveRef(this.kind, this.uri);
+
+  final String kind;
+  final String uri;
+}
+
+/// The URI-bearing directives the analyzer parses from [source]: each
+/// `import` and `export` contributes its declared URI and every `if`
+/// alternative without evaluating conditions, each `part` and `part of` its
+/// URI. URIs that do not survive as static strings (interpolations) contribute
+/// nothing: they name no file for a Builder to read. Empty when the source
+/// does not parse; the analyzer reports the genuine syntax error.
+List<_ShimDirectiveRef> _parseShimDirectives(String source) {
+  final refs = <_ShimDirectiveRef>[];
+  void add(String kind, String? uri) {
+    if (uri != null) refs.add(_ShimDirectiveRef(kind, uri));
+  }
+
+  late final ParseStringResult parsed;
+  try {
+    parsed = parseString(content: source, throwIfDiagnostics: false);
+  } catch (_) {
+    return refs;
+  }
+  for (final directive in parsed.unit.directives) {
+    if (directive is ImportDirective) {
+      add('import', directive.uri.stringValue);
+      for (final alternative in directive.configurations) {
+        add('import', alternative.uri.stringValue);
+      }
+    } else if (directive is ExportDirective) {
+      add('export', directive.uri.stringValue);
+      for (final alternative in directive.configurations) {
+        add('export', alternative.uri.stringValue);
+      }
+    } else if (directive is PartDirective) {
+      add('part', directive.uri.stringValue);
+    } else if (directive is PartOfDirective) {
+      final uri = directive.uri;
+      if (uri != null) add('part of', uri.stringValue);
+    }
+  }
+  return refs;
+}
+
+/// The diagnostics for every staged directive under [stagingDir] that would
+/// read a file outside it, in path order. Empty when clean. The builder-shim
+/// half of the shared staged-source check ([_runWithStaging] refuses these
+/// before any Builder runs): `dart:`, `package:` URIs that stay inside their
+/// package, and schemeless relatives that stay inside the staging dir pass,
+/// while `file:` and other schemes, `package:` URIs climbing above their
+/// package ([isEscapingPackageUri]), and relatives escaping the staging dir
+/// (resolved by [resolveStagedRelativeTarget] against the importing file's
+/// staged path, the way the analyzer resolves them) are refused. Each
+/// diagnostic names the file, the directive and the URI, in the same shape as
+/// the shared check's.
+Future<List<String>> findStagedShimViolations(
+  Directory stagingDir, {
+  required String tool,
+}) async {
+  final allowed = <String>{_normAbsStagedPath(stagingDir.path)};
+  try {
+    allowed.add(_normAbsStagedPath(await stagingDir.resolveSymbolicLinks()));
+  } on FileSystemException {
+    // Unresolvable; the passed spelling still applies.
+  }
+  bool declared(String target) =>
+      allowed.any((root) => target == root || target.startsWith('$root/'));
+  final errors = <String>[];
+  final paths = <String>[];
+  await for (final entity in stagingDir.list(
+    recursive: true,
+    followLinks: false,
+  )) {
+    if (entity is File || entity is Link) {
+      if (entity.path.endsWith('.dart')) paths.add(entity.path);
+    }
+  }
+  paths.sort();
+  for (final path in paths) {
+    String content;
+    try {
+      content = await File(path).readAsString();
+    } on FileSystemException {
+      // Gone between listing and reading; the analyzer reports it.
+      continue;
+    } on FormatException {
+      // Not decodable text; the analyzer reports it.
+      continue;
+    }
+    final key = path.replaceAll(r'\', '/');
+    final from = _normAbsStagedPath(key);
+    for (final ref in _parseShimDirectives(content)) {
+      final uri = ref.uri;
+      if (uri.startsWith('dart:')) continue;
+      if (uri.startsWith('package:')) {
+        if (isEscapingPackageUri(uri)) {
+          errors.add("$tool: $key ${ref.kind} '$uri' is not a declared input.");
+        }
+        continue;
+      }
+      if (isFileSchemeDirectiveUri(uri) || isDisallowedDirectiveUri(uri)) {
+        errors.add("$tool: $key ${ref.kind} '$uri' is not a declared input.");
+        continue;
+      }
+      final target = resolveStagedRelativeTarget(uri, from);
+      if (target != null && !declared(target)) {
+        errors.add("$tool: $key ${ref.kind} '$uri' is not a declared input.");
+      }
+    }
+  }
+  return errors;
 }

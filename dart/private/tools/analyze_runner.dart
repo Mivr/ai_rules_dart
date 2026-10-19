@@ -58,17 +58,13 @@ void main(List<String> args) {
     exit(1);
   }
 
-  // No staged source may read the host: a `file:` URI (in any spelling) or any
-  // other non-`dart:`/`package:` directive URI would reach an undeclared file
-  // through the analyzer's working directory. Refuse before analyzing.
-  final stagedRoots = <String>[project];
-  if (project.endsWith('.proj')) {
-    stagedRoots.add(
-      '${project.substring(0, project.length - '.proj'.length)}.extpkgs',
-    );
-  }
-  final violations = findDisallowedStagedDirectives(
-    stagedRoots,
+  // No staged source may read the host: a `file:` URI (in any spelling), any
+  // other non-`dart:`/`package:` directive URI, a `package:` URI climbing
+  // above its package, or a relative URI climbing out of the staged tree
+  // would reach an undeclared file through the analyzer's working directory.
+  // Refuse before analyzing, through the one shared staged-source check.
+  final violations = findStagedDirectiveViolations(
+    projectStagedRoots(project),
     tool: 'analyze_runner',
   );
   if (violations.isNotEmpty) {

@@ -46,6 +46,8 @@ import 'package:analyzer/src/summary/package_bundle_reader.dart'
 import 'package:linter/src/rules.dart';
 import 'package:path/path.dart' as p;
 
+import 'directive_guard.dart';
+
 const _optionsBasename = 'analysis_options.yaml';
 const _packageConfig = '.dart_tool/package_config.json';
 
@@ -387,6 +389,21 @@ Future<int> _summarize(
       _pruneUnlistedUnder(depLibRoot, normDepSources);
     }
   }
+  // No staged source may read the host: a `file:` URI (in any spelling), any
+  // other non-`dart:`/`package:` directive URI, a `package:` URI climbing
+  // above its package, or a relative URI climbing out of the staged tree
+  // would reach an undeclared file when the analyzer resolves it against the
+  // real filesystem. Refuse before summarizing, through the one shared
+  // staged-source check.
+  final stagedViolations = findStagedDirectiveViolations([
+    sourceRoot,
+  ], tool: 'analyzer_summary');
+  if (stagedViolations.isNotEmpty) {
+    for (final violation in stagedViolations) {
+      errSink.writeln(violation);
+    }
+    return _failed;
+  }
   final boundedProvider = BoundedResourceProvider(
     resourceProvider,
     primaryRoot: sourceRoot,
@@ -546,6 +563,21 @@ Future<int> _analyze(
     for (final s in args.all('source')) resolveProjectSource(project, s),
   ];
   final allowedSrcPaths = _pruneOrphanedStagedFiles(project);
+  // No staged source may read the host (see `_summarize`): the default
+  // summary-mode analysis never ran the directive guard, so a climbing
+  // relative import reached undeclared host files wherever the analyzer
+  // resolved against the real filesystem. Refuse before analyzing, through
+  // the one shared staged-source check.
+  final stagedViolations = findStagedDirectiveViolations(
+    projectStagedRoots(project),
+    tool: 'analyzer_summary',
+  );
+  if (stagedViolations.isNotEmpty) {
+    for (final violation in stagedViolations) {
+      errSink.writeln(violation);
+    }
+    return _failed;
+  }
   final sdkPath = p.normalize(p.absolute(args.single('sdk')));
   final sdkSummaryPath = p.normalize(p.absolute(args.single('sdk-summary')));
   final packagesPath = p.normalize(p.join(project, _packageConfig));
