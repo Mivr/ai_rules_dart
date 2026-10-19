@@ -9,7 +9,7 @@ the `flutter pub get` analog) reuse this helper to emit the same
 `dart_library` shape for non-plugin packages without duplicating the format.
 """
 
-load("//dart/pub:yaml_parser.bzl", "is_valid_sha256", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
+load("//dart/pub:yaml_parser.bzl", "is_valid_git_ref", "is_valid_sha256", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_library_build_content = "make_dart_library_build_content")
 load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
 
@@ -217,4 +217,127 @@ pub_lock_package = repository_rule(
         ),
     },
     doc = "Downloads a single hosted package from a pubspec.lock and generates a BUILD file.",
+)
+
+def _pub_lock_git_package_impl(ctx):
+    if not is_valid_git_ref(ctx.attr.resolved_ref):
+        fail(
+            'pub_lock_git_package "%s" (%s) requires a full 40-hex resolved-ref, got %r.' % (
+                ctx.attr.package_name,
+                ctx.attr.version,
+                ctx.attr.resolved_ref,
+            ),
+        )
+
+    path = ctx.attr.path.strip() if ctx.attr.path != None else "."
+    if path == "":
+        path = "."
+
+    clone_dir = ctx.path("_git_clone")
+    res = ctx.execute(["git", "clone", "--no-checkout", ctx.attr.url, str(clone_dir)])
+    if res.return_code != 0:
+        fail("git clone failed for %s: %s" % (ctx.attr.url, res.stderr))
+
+    res = ctx.execute(["git", "-C", str(clone_dir), "checkout", "--quiet", ctx.attr.resolved_ref])
+    if res.return_code != 0:
+        ctx.execute(["git", "-C", str(clone_dir), "fetch", "origin", ctx.attr.resolved_ref])
+        res = ctx.execute(["git", "-C", str(clone_dir), "checkout", "--quiet", ctx.attr.resolved_ref])
+        if res.return_code != 0:
+            fail("git checkout failed for %s at %s: %s" % (ctx.attr.url, ctx.attr.resolved_ref, res.stderr))
+
+    archive_path = ctx.path("_git_archive.tar")
+    spec = ctx.attr.resolved_ref if path == "." else ctx.attr.resolved_ref + ":" + path
+    res = ctx.execute(["git", "-C", str(clone_dir), "archive", "--format=tar", "-o", str(archive_path), spec])
+    if res.return_code != 0:
+        fail("git archive failed for %s at %s: %s" % (ctx.attr.url, spec, res.stderr))
+
+    ctx.extract(archive_path)
+    ctx.delete(archive_path)
+    ctx.delete(clone_dir)
+
+    # Read pubspec.yaml to discover deps + the package's SDK constraint.
+    bazel_deps = []
+    language_version = ""
+    pubspec_path = ctx.path("pubspec.yaml")
+    if pubspec_path.exists:
+        pubspec_content = ctx.read(pubspec_path)
+        all_deps = parse_pubspec_deps(pubspec_content)
+        available = {p: True for p in ctx.attr.lock_packages + ctx.attr.explicit_packages}
+        bazel_deps = sorted([d for d in all_deps if d in available])
+        language_version = _derive_language_version(
+            parse_pubspec_sdk_constraint(pubspec_content),
+        )
+
+    explicit = {p: True for p in ctx.attr.explicit_packages}
+    dep_labels = [
+        "@{repo}//:{dep}".format(
+            repo = dep if dep in explicit else "{hub}__{dep}".format(hub = ctx.attr.hub_name, dep = dep),
+            dep = dep,
+        )
+        for dep in bazel_deps
+    ]
+
+    hooks = _classify_pub_hooks(
+        has_build_hook = ctx.path("hook/build.dart").exists,
+        has_link_hook = ctx.path("hook/link.dart").exists,
+        build_hook_handled = bool(ctx.attr.code_assets) or ctx.attr.ignore_hook,
+    )
+
+    build_content = make_dart_library_build_content(
+        name = ctx.attr.package_name,
+        deps = dep_labels,
+        language_version = language_version,
+        code_assets = ctx.attr.code_assets,
+        has_unreplaced_hook = hooks.unreplaced_hook,
+        version = ctx.attr.version,
+        link_hook = hooks.link_hook,
+    )
+
+    ctx.file("BUILD.bazel", build_content)
+
+pub_lock_git_package = repository_rule(
+    implementation = _pub_lock_git_package_impl,
+    attrs = {
+        "package_name": attr.string(
+            doc = "The pub package name.",
+            mandatory = True,
+        ),
+        "version": attr.string(
+            doc = "The package version.",
+            mandatory = True,
+        ),
+        "url": attr.string(
+            doc = "Git remote URL.",
+            mandatory = True,
+        ),
+        "resolved_ref": attr.string(
+            doc = "Full 40-hex commit SHA to fetch.",
+            mandatory = True,
+        ),
+        "path": attr.string(
+            doc = "Subdirectory inside the git repo holding the package; '.' means repo root.",
+            default = ".",
+        ),
+        "hub_name": attr.string(
+            doc = "Name of the hub repo (for constructing cross-spoke dep labels).",
+            mandatory = True,
+        ),
+        "lock_packages": attr.string_list(
+            doc = "All package names in the lock file (for dep filtering).",
+            default = [],
+        ),
+        "explicit_packages": attr.string_list(
+            doc = "Every name declared with `pub.package()`.",
+            default = [],
+        ),
+        "ignore_hook": attr.bool(
+            doc = "Suppress the unreplaced-hook diagnostic for this package.",
+            default = False,
+        ),
+        "code_assets": attr.string_list(
+            doc = "Labels of `dart_code_asset` targets replacing this package's `hook/build.dart`.",
+            default = [],
+        ),
+    },
+    doc = "Fetches a single git-sourced package from a pubspec.lock and generates a BUILD file.",
 )

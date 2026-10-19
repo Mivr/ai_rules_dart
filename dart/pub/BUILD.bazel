@@ -14,6 +14,7 @@ bzl_library(
     deps = [
         ":yaml_parser",
         "//dart/pub/private:build_content",
+        "//dart/pub/private:language_version",
     ],
 )
 

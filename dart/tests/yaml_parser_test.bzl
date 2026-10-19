@@ -270,7 +270,7 @@ packages:
     description:
       path: "."
       ref: main
-      resolved-ref: "deadbeef1234567890"
+      resolved-ref: "0123456789abcdef0123456789abcdef01234567"
       url: "https://example.com/repo.git"
     source: git
     version: "1.0.0"
@@ -317,6 +317,56 @@ packages:
         env,
         'pub package "whitespace_ref_git" 1.2.3 in //:pubspec.lock has no resolved-ref. Run `dart pub get` and commit the lock.',
         lock_package_error("whitespace_ref_git", parsed["whitespace_ref_git"], "//:pubspec.lock"),
+    )
+    return unittest.end(env)
+
+def _lock_package_invalid_resolved_ref_test_impl(ctx):
+    env = unittest.begin(ctx)
+    git_lock = """\
+packages:
+  branch_git:
+    dependency: "direct main"
+    description:
+      path: "."
+      ref: main
+      resolved-ref: "main"
+      url: "https://example.com/repo.git"
+    source: git
+    version: "1.0.0"
+  short_git:
+    dependency: "direct main"
+    description:
+      path: "."
+      ref: main
+      resolved-ref: "deadbeef"
+      url: "https://example.com/repo.git"
+    source: git
+    version: "1.0.0"
+  tag_git:
+    dependency: "direct main"
+    description:
+      path: "."
+      ref: main
+      resolved-ref: "v1.2.3"
+      url: "https://example.com/repo.git"
+    source: git
+    version: "1.0.0"
+"""
+    parsed = parse_pubspec_lock(git_lock)
+    asserts.equals(
+        env,
+        'pub package "branch_git" 1.0.0 in //:pubspec.lock has invalid resolved-ref "main": expected 40 lowercase hex digits.',
+        lock_package_error("branch_git", parsed["branch_git"], "//:pubspec.lock"),
+    )
+    asserts.equals(
+        env,
+        'pub package "short_git" 1.0.0 in //:pubspec.lock has invalid resolved-ref "deadbeef": expected 40 lowercase hex digits.',
+        lock_package_error("short_git", parsed["short_git"], "//:pubspec.lock"),
+    )
+    asserts.equals(
+        env,
+        'pub package "tag_git" 1.0.0 in //:pubspec.lock has invalid resolved-ref "v1.2.3": expected 40 lowercase hex digits.',
+        lock_package_error("tag_git", parsed["tag_git"], "//:pubspec.lock"),
     )
     return unittest.end(env)
 
@@ -536,6 +586,7 @@ _t10_test = unittest.make(_lock_package_missing_sha256_test_impl)
 _t11_test = unittest.make(_lock_package_missing_resolved_ref_test_impl)
 _t12_test = unittest.make(_trim_gzip_trailing_nulls_test_impl)
 _t13_test = unittest.make(_resolve_pub_packages_conflict_test_impl)
+_t14_test = unittest.make(_lock_package_invalid_resolved_ref_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -559,6 +610,7 @@ def yaml_parser_test_suite(name):
         _t11_test,
         _t12_test,
         _t13_test,
+        _t14_test,
     )
     native.test_suite(
         name = name,

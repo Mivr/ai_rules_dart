@@ -2,7 +2,7 @@
 
 load("//dart/ext:registry.bzl", "curated_code_assets")
 load("//dart/pub:pub_lock_hub.bzl", "pub_lock_hub")
-load("//dart/pub:pub_lock_package.bzl", "pub_lock_package", "pub_lock_package_sha256_error")
+load("//dart/pub:pub_lock_package.bzl", "pub_lock_git_package", "pub_lock_package", "pub_lock_package_sha256_error")
 load("//dart/pub:yaml_parser.bzl", "lock_package_error", "parse_pubspec_lock")
 load("//dart/pub/private:pub_repository.bzl", "pub_package", "pub_package_sha256_error")
 load("//dart/pub/private:version.bzl", "semver_gt")
@@ -89,16 +89,19 @@ def resolve_pub_packages(package_tags, lock_tags):
         lock_tags: List of structs with `(name, lock, packages, on_version_conflict, isolated)`.
 
     Returns:
-        `struct(error, explicit, resolved, hub_packages, isolated_packages, warnings)` where `error`
-        is an error string when any declaration is unpinned, malformed, or
-        conflicting, or `None` when resolution succeeds. `isolated_packages` maps
-        each isolated hub name to `{pkg_name: struct(version, sha256, url)}`.
+        `struct(error, explicit, resolved, resolved_git, hub_packages, isolated_packages, isolated_git_packages, warnings)`
+        where `error` is an error string when any declaration is unpinned,
+        malformed, or conflicting, or `None` when resolution succeeds.
+        `isolated_packages` maps each isolated hub name to
+        `{pkg_name: struct(version, sha256, url)}` and `isolated_git_packages`
+        maps each isolated hub name to
+        `{pkg_name: struct(version, url, resolved_ref, path)}`.
     """
     explicit = {}
     for pkg in package_tags:
         err = pub_package_sha256_error(pkg.name, pkg.version, pkg.sha256)
         if err:
-            return struct(error = err, explicit = {}, resolved = {}, hub_packages = {}, warnings = [])
+            return struct(error = err, explicit = {}, resolved = {}, resolved_git = {}, hub_packages = {}, warnings = [])
         sha256 = pkg.sha256.strip()
         if pkg.name in explicit:
             existing = explicit[pkg.name]
@@ -111,6 +114,7 @@ def resolve_pub_packages(package_tags, lock_tags):
                     ),
                     explicit = {},
                     resolved = {},
+                    resolved_git = {},
                     hub_packages = {},
                     isolated_packages = {},
                     warnings = [],
@@ -124,6 +128,7 @@ def resolve_pub_packages(package_tags, lock_tags):
                     ),
                     explicit = {},
                     resolved = {},
+                    resolved_git = {},
                     hub_packages = {},
                     isolated_packages = {},
                     warnings = [],
@@ -137,6 +142,7 @@ def resolve_pub_packages(package_tags, lock_tags):
                     ),
                     explicit = {},
                     resolved = {},
+                    resolved_git = {},
                     hub_packages = {},
                     isolated_packages = {},
                     warnings = [],
@@ -153,6 +159,10 @@ def resolve_pub_packages(package_tags, lock_tags):
     # registry[pkg_name] = {url, entries: [{version, sha256, hub_name, lock_label, on_version_conflict}]}
     registry = {}
 
+    # Same shape for git-sourced packages, which are pinned by commit SHA rather
+    # than by sha256.
+    git_registry = {}
+
     # Which packages belong to each hub, as a set per hub (for per-hub alias
     # creation). A set, not a list, because a hub name is shared by every
     # `from_lock` that states it — including ones in *different modules*, which
@@ -166,6 +176,11 @@ def resolve_pub_packages(package_tags, lock_tags):
 
     isolated_hub_packages = {}
     isolated_hubs = {}
+
+    # Same shape for git-sourced packages in isolated hubs, which pin their
+    # own versions like isolated hosted packages and never join the global
+    # git registry or version resolution.
+    isolated_git_packages = {}
 
     for lock_tag in lock_tags:
         hub_name = lock_tag.name
@@ -204,6 +219,7 @@ def resolve_pub_packages(package_tags, lock_tags):
                         error = "%s (%s)" % (err, sha_err),
                         explicit = {},
                         resolved = {},
+                        resolved_git = {},
                         hub_packages = {},
                         isolated_packages = {},
                         warnings = [],
@@ -212,12 +228,81 @@ def resolve_pub_packages(package_tags, lock_tags):
                     error = err,
                     explicit = {},
                     resolved = {},
+                    resolved_git = {},
                     hub_packages = {},
                     isolated_packages = {},
                     warnings = [],
                 )
 
             source = info.get("source", "unknown")
+            if source == "git":
+                # Git packages are fetched at their resolved-ref commit, like
+                # hosted packages, and exposed in the hub the same way.
+                hub_packages[hub_name][name] = True
+
+                desc = info.get("description", {})
+                url = desc.get("url", "")
+                version = info.get("version", "")
+                resolved_ref = desc.get("resolved-ref", "").strip()
+                path = desc.get("path", ".")
+                if path == None or str(path).strip() == "":
+                    path = "."
+
+                if not url:
+                    return struct(
+                        error = 'pub package "%s" %s in %s has no url for its git source.' % (name, version, lock_tag.lock),
+                        explicit = {},
+                        resolved = {},
+                        resolved_git = {},
+                        hub_packages = {},
+                        isolated_packages = {},
+                        isolated_git_packages = {},
+                        warnings = [],
+                    )
+
+                if isolated:
+                    # Isolated hubs pin their own versions: the spoke is
+                    # namespaced by the hub and never joins the global
+                    # registry or `on_version_conflict` resolution.
+                    isolated_git_packages.setdefault(hub_name, {})[name] = struct(
+                        version = version,
+                        url = url,
+                        resolved_ref = resolved_ref,
+                        path = path,
+                    )
+                    continue
+
+                entry = struct(
+                    version = version,
+                    resolved_ref = resolved_ref,
+                    path = path,
+                    hub_name = hub_name,
+                    lock_label = str(lock_tag.lock),
+                    on_version_conflict = lock_tag.on_version_conflict,
+                )
+
+                if name not in git_registry:
+                    git_registry[name] = struct(url = url, entries = [entry])
+                else:
+                    existing = git_registry[name]
+                    if existing.url != url:
+                        return struct(
+                            error = (
+                                "Package \"%s\" has conflicting git URLs:\n" % name +
+                                "  - %s (from \"%s\")\n" % (existing.url, existing.entries[0].hub_name) +
+                                "  - %s (from \"%s\")" % (url, hub_name)
+                            ),
+                            explicit = {},
+                            resolved = {},
+                            resolved_git = {},
+                            hub_packages = {},
+                            isolated_packages = {},
+                            isolated_git_packages = {},
+                            warnings = [],
+                        )
+                    git_registry[name] = struct(url = existing.url, entries = existing.entries + [entry])
+                continue
+
             if source != "hosted":
                 skipped_by_source.setdefault(source, []).append(name)
                 continue
@@ -248,6 +333,7 @@ def resolve_pub_packages(package_tags, lock_tags):
                         ),
                         explicit = {},
                         resolved = {},
+                        resolved_git = {},
                         hub_packages = {},
                         isolated_packages = {},
                         warnings = [],
@@ -274,6 +360,7 @@ def resolve_pub_packages(package_tags, lock_tags):
                         ),
                         explicit = {},
                         resolved = {},
+                        resolved_git = {},
                         hub_packages = {},
                         isolated_packages = {},
                         warnings = [],
@@ -305,6 +392,7 @@ def resolve_pub_packages(package_tags, lock_tags):
 
     # Resolve each package to a single version
     resolved = {}  # pkg_name -> {version, sha256, url}
+    resolved_git = {}  # pkg_name -> {version, url, resolved_ref, path}
     for name, pkg in registry.items():
         # Conflicting sha256 values for the same package version across locks
         # are an error, even when that version is later superseded by a higher
@@ -323,6 +411,7 @@ def resolve_pub_packages(package_tags, lock_tags):
                     ),
                     explicit = {},
                     resolved = {},
+                    resolved_git = {},
                     hub_packages = {},
                     isolated_packages = {},
                     warnings = [],
@@ -371,6 +460,7 @@ def resolve_pub_packages(package_tags, lock_tags):
                     ),
                     explicit = {},
                     resolved = {},
+                    resolved_git = {},
                     hub_packages = {},
                     isolated_packages = {},
                     warnings = [],
@@ -378,12 +468,68 @@ def resolve_pub_packages(package_tags, lock_tags):
 
         resolved[name] = struct(version = best.version, sha256 = best.sha256, url = pkg.url)
 
+    # Resolve git packages to a single version, mirroring hosted resolution.
+    for name, pkg in git_registry.items():
+        by_version = {}
+        for e in pkg.entries:
+            if e.version not in by_version:
+                by_version[e.version] = e
+            elif by_version[e.version].resolved_ref != e.resolved_ref:
+                first = by_version[e.version]
+                return struct(
+                    error = (
+                        "Package \"%s\" (%s) has conflicting resolved-ref values across lock files:\n" % (name, e.version) +
+                        "  - %s (from \"%s\", %s)\n" % (first.resolved_ref, first.hub_name, first.lock_label) +
+                        "  - %s (from \"%s\", %s)" % (e.resolved_ref, e.hub_name, e.lock_label)
+                    ),
+                    explicit = {},
+                    resolved = {},
+                    resolved_git = {},
+                    hub_packages = {},
+                    isolated_packages = {},
+                    isolated_git_packages = {},
+                    warnings = [],
+                )
+
+        if len(pkg.entries) == 1:
+            e = pkg.entries[0]
+            resolved_git[name] = struct(version = e.version, url = pkg.url, resolved_ref = e.resolved_ref, path = e.path)
+            continue
+
+        best = pkg.entries[0]
+        for e in pkg.entries[1:]:
+            if semver_gt(e.version, best.version):
+                best = e
+
+        for e in pkg.entries:
+            if e.version != best.version and e.on_version_conflict == "error":
+                return struct(
+                    error = (
+                        "Package \"%s\" has conflicting versions across lock files:\n" % name +
+                        "".join([
+                            "  - %s (from \"%s\", %s)\n" % (entry.version, entry.hub_name, entry.lock_label)
+                            for entry in pkg.entries
+                        ])
+                    ),
+                    explicit = {},
+                    resolved = {},
+                    resolved_git = {},
+                    hub_packages = {},
+                    isolated_packages = {},
+                    isolated_git_packages = {},
+                    warnings = [],
+                )
+
+        resolved_git[name] = struct(version = best.version, url = pkg.url, resolved_ref = best.resolved_ref, path = best.path)
+
     return struct(
         error = None,
         explicit = explicit,
         resolved = resolved,
+        resolved_git = resolved_git,
         hub_packages = hub_packages,
         isolated_packages = isolated_hub_packages,
+        isolated_git_packages = isolated_git_packages,
         warnings = warnings,
     )
 
@@ -435,8 +581,10 @@ def _pub_impl(ctx):
 
     explicit = resolution.explicit
     resolved = resolution.resolved
+    resolved_git = resolution.resolved_git
     hub_packages = resolution.hub_packages
     isolated_packages = getattr(resolution, "isolated_packages", {})
+    isolated_git_packages = getattr(resolution, "isolated_git_packages", {})
 
     for name, pkg in explicit.items():
         pub_package(
@@ -448,7 +596,7 @@ def _pub_impl(ctx):
         )
 
     # Create shared spoke repos
-    all_package_names = sorted(resolved.keys())
+    all_package_names = sorted(resolved.keys() + [n for n in resolved_git.keys() if n not in resolved])
     explicit_package_names = sorted(explicit.keys())
     for name, pkg in resolved.items():
         err = pub_lock_package_sha256_error(name, pkg.version, pkg.sha256)
@@ -469,11 +617,31 @@ def _pub_impl(ctx):
             ignore_hook = name in ignore_hooks,
         )
 
-    # Create isolated spoke repos (namespaced by hub).
-    for hub_name, packages in isolated_packages.items():
-        package_names = sorted(packages.keys())
-        hub_explicit = [n for n in explicit_package_names if n not in packages]
-        for pkg_name, pkg in packages.items():
+    for name, pkg in resolved_git.items():
+        pub_lock_git_package(
+            name = _SPOKE_PREFIX + "__" + name,
+            package_name = name,
+            version = pkg.version,
+            url = pkg.url,
+            resolved_ref = pkg.resolved_ref,
+            path = pkg.path,
+            hub_name = _SPOKE_PREFIX,
+            lock_packages = all_package_names,
+            explicit_packages = explicit_package_names,
+            code_assets = curated_code_assets(name, pkg.version),
+            ignore_hook = name in ignore_hooks,
+        )
+
+    # Create isolated spoke repos (namespaced by hub, outside the global
+    # registry). Hosted and git packages in one hub share its package set so
+    # cross-source deps within the hub resolve to sibling spokes.
+    isolated_hub_names = sorted(set(isolated_packages.keys()) | set(isolated_git_packages.keys()))
+    for hub_name in isolated_hub_names:
+        hosted = isolated_packages.get(hub_name, {})
+        git_pkgs = isolated_git_packages.get(hub_name, {})
+        package_names = sorted(set(hosted.keys()) | set(git_pkgs.keys()))
+        hub_explicit = [n for n in explicit_package_names if n not in hosted and n not in git_pkgs]
+        for pkg_name, pkg in hosted.items():
             err = pub_lock_package_sha256_error(pkg_name, pkg.version, pkg.sha256)
             if err:
                 fail(err)
@@ -483,6 +651,20 @@ def _pub_impl(ctx):
                 version = pkg.version,
                 sha256 = pkg.sha256,
                 base_url = pkg.url,
+                hub_name = hub_name,
+                lock_packages = package_names,
+                explicit_packages = hub_explicit,
+                code_assets = curated_code_assets(pkg_name, pkg.version),
+                ignore_hook = pkg_name in ignore_hooks,
+            )
+        for pkg_name, pkg in git_pkgs.items():
+            pub_lock_git_package(
+                name = hub_name + "__" + pkg_name,
+                package_name = pkg_name,
+                version = pkg.version,
+                url = pkg.url,
+                resolved_ref = pkg.resolved_ref,
+                path = pkg.path,
                 hub_name = hub_name,
                 lock_packages = package_names,
                 explicit_packages = hub_explicit,

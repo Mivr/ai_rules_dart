@@ -90,6 +90,29 @@ def is_valid_sha256(sha256):
             return False
     return True
 
+def is_valid_git_ref(ref):
+    """Returns True when `ref` is a full 40-hex lowercase commit SHA.
+
+    Args:
+        ref: Candidate resolved-ref string.
+
+    Returns:
+        True when `ref` trims to 40 lowercase hex characters, else False.
+    """
+    if type(ref) != "string":
+        return False
+    trimmed = ref.strip()
+    if len(trimmed) != 40:
+        return False
+    for ch in trimmed.elems():
+        if ch not in _HEX_LOWER:
+            return False
+    return True
+
+# Backwards/alternative names for callers and tests.
+is_valid_resolved_ref = is_valid_git_ref
+is_valid_commit_sha = is_valid_git_ref
+
 def lock_package_error(name, info, lock_file):
     """Validates that a parsed `pubspec.lock` package entry is pinned.
 
@@ -128,6 +151,11 @@ def lock_package_error(name, info, lock_file):
                 'pub package "%s" %s in %s has no resolved-ref. ' +
                 "Run `dart pub get` and commit the lock."
             ) % (name, version, lock_file)
+        if not is_valid_git_ref(resolved_ref):
+            return (
+                'pub package "%s" %s in %s has invalid resolved-ref %r: ' +
+                "expected 40 lowercase hex digits."
+            ) % (name, version, lock_file, raw_ref)
     return None
 
 def parse_pubspec_deps(content):
