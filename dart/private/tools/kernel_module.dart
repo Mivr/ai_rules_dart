@@ -4074,14 +4074,21 @@ List<(int, int)>? _componentRanges(Uint8List data) {
 }
 
 /// Adds the `fileUri` of every source in the one kernel component [part] to
-/// [uris]. Returns false (leaving [uris] short) when [part] is not a supported
-/// component: every offset and length is bounds-checked against its source
-/// table, so malformed bytes fail instead of misreading.
+/// [uris]. Returns false (leaving [uris] short) when [part] is not a
+/// well-formed component: every offset and length is bounds-checked against
+/// its source table, so malformed bytes fail instead of misreading.
+///
+/// The source-table entry layout (`uri`, `sourceCode`, `lineStarts`,
+/// `importUri`, `constantCoverageConstructors`) is stable across every Dart
+/// SDK this rule set supports, while the 32-bit kernel format version in the
+/// header moves with the SDK (127 under 3.11.0, 130 under 3.12.2, 138 under
+/// 3.13.5), so the table is parsed structurally with no version gate: gating
+/// here failed every read-set verification on older SDKs, failing legitimate
+/// compiles. Byte-rewriting stays version-gated in the strippers below.
 bool _collectComponentSourceUris(Uint8List part, List<String> uris) {
   if (part.length < 12) return false;
   final bd = ByteData.sublistView(part);
   if (bd.getUint32(0) != Tag.ComponentFile) return false;
-  if (!supportedKernelFormatVersions.contains(bd.getUint32(4))) return false;
   final libCount = bd.getUint32(part.length - 8);
   final idxBytes = (libCount + 12) * 4;
   if (idxBytes > part.length) return false;
@@ -4156,7 +4163,8 @@ bool _collectComponentSourceUris(Uint8List part, List<String> uris) {
 
 /// The `fileUri` of every source recorded in the kernel component(s) in [data]
 /// — the files the compile actually read — or null when [data] is not a
-/// supported kernel file.
+/// well-formed kernel file. Any format version parses: the source-table layout
+/// is stable across SDKs, and every offset is bounds-checked.
 List<String>? dillSourceUris(Uint8List data) {
   final ranges = _componentRanges(data);
   if (ranges == null) return null;

@@ -1011,10 +1011,16 @@ void main(List<String> args) {
       final good = _buildDillWithUris(['a']);
       final badMagic = Uint8List.fromList(good)..[0] = 0;
       expect(dillSourceUris(badMagic), isNull);
-      expect(
-        dillSourceUris(_buildDillWithUris(['a'], formatVersion: 1)),
-        isNull,
-      );
+      // The source-table layout is stable across SDKs, so well-formed tables
+      // parse at any format version (127 is Dart 3.11.0, 130 is 3.12.2):
+      // gating on the version failed legitimate compiles.
+      for (final version in [127, 130, Tag.BinaryFormatVersion]) {
+        expect(
+          dillSourceUris(_buildDillWithUris(['a'], formatVersion: version)),
+          ['a'],
+          reason: 'format version $version',
+        );
+      }
       expect(dillSourceUris(good.sublist(0, 10)), isNull, reason: 'truncated');
       // A source count the table cannot hold.
       final badCount = Uint8List.fromList(good);
@@ -1233,6 +1239,27 @@ void main(List<String> args) {
       expect(result.log, isNot(contains('isolated multi-root')));
     },
   );
+
+  test('a compile that reads only declared files verifies at an older format version', () async {
+    _write('pkg/lib/a.dart', 'class A {}\n');
+    final compiler = _DillWritingCompiler(
+      () => _buildDillWithUris([_uri('pkg/lib/a.dart')], formatVersion: 127),
+    );
+    final result = await _compile(
+      'm_old_version',
+      ['pkg/lib/a.dart'],
+      inputs: [
+        _encodeInputForTest(
+          '${_root.path}/pkg/lib/a.dart',
+          Uint8List.fromList([7]),
+        ),
+      ],
+      compiler: compiler,
+    );
+    expect(result.code, 0, reason: result.log);
+    expect(result.calls.length, 1, reason: 'no isolated restage');
+    expect(result.log, isNot(contains('cannot read the sources')));
+  });
 
   group('directive guard classification', () {
     test('decodeUriSegment decodes once, like the front end', () {
