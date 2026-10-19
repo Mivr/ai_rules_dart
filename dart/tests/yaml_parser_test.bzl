@@ -370,6 +370,55 @@ packages:
     )
     return unittest.end(env)
 
+_GIT_REF = "0123456789abcdef0123456789abcdef01234567"
+
+def _resolve_pub_packages_isolated_git_test_impl(ctx):
+    env = unittest.begin(ctx)
+    git_lock = parse_pubspec_lock("""\
+packages:
+  git_dep:
+    dependency: "direct main"
+    description:
+      path: "pkgs/git_dep"
+      ref: main
+      resolved-ref: "%s"
+      url: "https://example.com/repo.git"
+    source: git
+    version: "1.2.3"
+""" % _GIT_REF)
+
+    # A git entry in an isolated hub stays out of the global registry and is
+    # pinned by the hub itself.
+    res = resolve_pub_packages(
+        [],
+        [struct(name = "tool_deps", lock = "//:tool.lock", packages = git_lock, on_version_conflict = "error", isolated = True)],
+    )
+    asserts.equals(env, None, res.error)
+    asserts.equals(env, 0, len(res.resolved_git))
+    asserts.true(env, "tool_deps" in res.isolated_git_packages)
+    git_pkg = res.isolated_git_packages["tool_deps"]["git_dep"]
+    asserts.equals(env, "1.2.3", git_pkg.version)
+    asserts.equals(env, "https://example.com/repo.git", git_pkg.url)
+    asserts.equals(env, _GIT_REF, git_pkg.resolved_ref)
+    asserts.equals(env, "pkgs/git_dep", git_pkg.path)
+    asserts.true(env, "git_dep" in res.hub_packages["tool_deps"])
+
+    # The same git package in a shared hub still joins the global registry
+    # while the isolated hub keeps its own pin.
+    res_both = resolve_pub_packages(
+        [],
+        [
+            struct(name = "tool_deps", lock = "//:tool.lock", packages = git_lock, on_version_conflict = "error", isolated = True),
+            struct(name = "app_deps", lock = "//:app.lock", packages = git_lock, on_version_conflict = "error", isolated = False),
+        ],
+    )
+    asserts.equals(env, None, res_both.error)
+    asserts.equals(env, _GIT_REF, res_both.resolved_git["git_dep"].resolved_ref)
+    asserts.equals(env, _GIT_REF, res_both.isolated_git_packages["tool_deps"]["git_dep"].resolved_ref)
+    asserts.true(env, "git_dep" in res_both.hub_packages["app_deps"])
+
+    return unittest.end(env)
+
 def _resolve_pub_packages_conflict_test_impl(ctx):
     env = unittest.begin(ctx)
 
@@ -587,6 +636,7 @@ _t11_test = unittest.make(_lock_package_missing_resolved_ref_test_impl)
 _t12_test = unittest.make(_trim_gzip_trailing_nulls_test_impl)
 _t13_test = unittest.make(_resolve_pub_packages_conflict_test_impl)
 _t14_test = unittest.make(_lock_package_invalid_resolved_ref_test_impl)
+_t15_test = unittest.make(_resolve_pub_packages_isolated_git_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -611,6 +661,7 @@ def yaml_parser_test_suite(name):
         _t12_test,
         _t13_test,
         _t14_test,
+        _t15_test,
     )
     native.test_suite(
         name = name,
