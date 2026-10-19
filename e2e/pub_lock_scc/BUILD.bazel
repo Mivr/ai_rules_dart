@@ -1,0 +1,61 @@
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_binary", "dart_js_binary", "dart_test")
+
+exports_files(["pubspec.lock"])
+
+# The VM program imports only `package:dio`. `dio`'s own sources import
+# `package:dio_web_adapter` through conditional imports, and the adapter
+# imports `package:dio` back — the cycle the merged library absorbs.
+dart_binary(
+    name = "app",
+    main = "main.dart",
+    deps = [
+        "@pub_deps//:dio",
+        "@pub_deps//:dio_web_adapter",
+    ],
+)
+
+# The same closure as a kernel test, so the merged library also compiles
+# through the modular kernel path, not only whole-program `exe`.
+dart_test(
+    name = "dio_test",
+    size = "small",
+    main = "dio_test.dart",
+    deps = [
+        "@pub_deps//:dio",
+        "@pub_deps//:dio_web_adapter",
+        "@pub_deps//:test",
+    ],
+)
+
+# The web program names `package:dio_web_adapter` outright, proving the
+# member's own root resolves on web.
+dart_js_binary(
+    name = "web_app",
+    main = "web_main.dart",
+    deps = [
+        "@pub_deps//:dio",
+        "@pub_deps//:dio_web_adapter",
+    ],
+)
+
+dart_test(
+    name = "js_output_test",
+    size = "small",
+    data = [":web_app"],
+    main = "test/js_output_test.dart",
+    deps = ["@rules_dart//dart/runfiles"],
+)
+
+# The ruleset is named here rather than in the programs' `deps`: a lint
+# ruleset is not a dependency of the code it lints, and listing it there
+# would carry it into every `DartInfo` downstream.
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@very_good_analysis"],
+)
+
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)

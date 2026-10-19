@@ -199,6 +199,13 @@ it builds and uses its own spoke at the version its lock pins, so an explicit
 declaration does not override an isolated hub's version. A non-isolated hub
 continues to honour `pub.package()` as before.
 
+Pub allows two packages to depend on each other (`dio` and `dio_web_adapter`
+do), which would turn the generated `dart_library` targets into a dependency
+cycle. `pub.from_lock()` merges every such cycle into one `dart_library` that
+carries all of the cycle's packages — each keeps its own `package_name` and
+its own `lib/` root — so `@pub_deps//:dio` and `@pub_deps//:dio_web_adapter`
+keep working with no cycle in the target graph.
+
 ### BUILD file generation with Gazelle
 
 rules_dart includes a [Gazelle](https://github.com/bazelbuild/bazel-gazelle)

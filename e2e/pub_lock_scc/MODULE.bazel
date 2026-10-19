@@ -1,0 +1,31 @@
+module(name = "pub_lock_scc_e2e")
+
+bazel_dep(name = "rules_dart", version = "0.0.0")
+local_path_override(
+    module_name = "rules_dart",
+    path = "../..",
+)
+
+dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
+dart.toolchain(dart_version = "3.13.5")
+use_repo(dart, "dart_toolchains")
+
+register_toolchains("@dart_toolchains//:all")
+
+# `dio` and `dio_web_adapter` depend on each other. The hub must merge them
+# into one multi-package library instead of emitting a target cycle.
+pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
+pub.from_lock(
+    name = "pub_deps",
+    lock = "//:pubspec.lock",
+)
+
+# The lint ruleset is declared with pub.package rather than added to
+# pubspec.lock: the lock is this workspace's fixture input, and a lint-only
+# package is not a dependency of the code it lints.
+pub.package(
+    name = "very_good_analysis",
+    sha256 = "0bd5eb8d6be76aa0d71e70cbdae6cac8f784f761170568e3c2214a6948c7f6d3",
+    version = "11.0.0",
+)
+use_repo(pub, "pub_deps", "very_good_analysis")
