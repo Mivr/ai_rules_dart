@@ -2,7 +2,15 @@
 
 load("//dart:providers.bzl", "DartCodeAssetInfo", "DartInfo", "DartPackageInfo")
 load("//dart/private:common.bzl", "PACKAGE_IDENTITY_ATTRS", "codegen_identity_error", "resolve_package_identity")
+load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR")
 load("//dart/private:dart_info.bzl", "dart_info", "dart_info_multi", "package_lib_prefix")
+load(
+    "//dart/private:dart_kernel.bzl",
+    "KERNEL_MODULE_ATTRS",
+    "MODULAR_KERNEL_TOOLCHAINS",
+    "library_kernel_info",
+    "library_module_inputs",
+)
 
 def derive_package_name(package_name_attr, label_package, label_name):
     """Derive the Dart package name from rule attributes and label.
@@ -147,6 +155,32 @@ def derive_lib_root(workspace_root, label_package):
         lib_root = lib_root[:-4] if lib_root.endswith("/lib") else ""
     return lib_root
 
+def _own_kernel_providers(ctx, info):
+    """The `DartKernelInfo` this library's own module compile yields, if any.
+
+    The rule compiles its module once, and every aspect evaluation shares it:
+    the aspect returns no providers of its own for a target that already
+    carries this one, so the one registration serves them all. A library with
+    no module — opaque, disabled, or unresolvable against its dependencies —
+    provides nothing, and the aspect falls back to its historical behavior
+    for it.
+    """
+    module_inputs = library_module_inputs(ctx.attr, ctx.files, info)
+    kernel_info = library_kernel_info(
+        ctx,
+        module_inputs.own_record,
+        module_inputs.package_name,
+        module_inputs.lib_root,
+        module_inputs.own_srcs,
+        opaque = module_inputs.opaque,
+        rule_deps = module_inputs.rule_deps,
+        own_records = module_inputs.own_records,
+        unused_inputs = True,
+    )
+    if not kernel_info.modular:
+        return []
+    return [kernel_info]
+
 def _multi_package_library_impl(ctx):
     """Implements `dart_library` for a library merged over several packages.
 
@@ -182,6 +216,7 @@ def _multi_package_library_impl(ctx):
         srcs = own_srcs,
         resources = own_resources,
     )
+    kernel_providers = _own_kernel_providers(ctx, info)
 
     return [
         DefaultInfo(
@@ -189,7 +224,7 @@ def _multi_package_library_impl(ctx):
             runfiles = ctx.runfiles(files = own_srcs + own_resources),
         ),
         info,
-    ]
+    ] + kernel_providers
 
 def _dart_library_impl(ctx):
     if ctx.attr.members:
@@ -288,7 +323,7 @@ def _dart_library_impl(ctx):
             runfiles = ctx.runfiles(files = own_srcs + own_resources),
         ),
         info,
-    ]
+    ] + _own_kernel_providers(ctx, info)
 
 dart_library = rule(
     implementation = _dart_library_impl,
@@ -353,6 +388,7 @@ resolve at runtime.""",
         "version": attr.string(
             doc = "The package's own version, as resolved by pub (e.g. `2.2.0`). Set automatically by `pub.package()` / `pub.from_lock()`; leave it empty on hand-written targets, which have no resolved version to state. Its only use is agreement checking: when one package name arrives twice — two pub hubs each supplying `ffi`, say — a build whose two records name different versions would otherwise compile against whichever came first in dependency order, silently ignoring the other. Two *known*, differing versions fail the build; an empty one never conflicts.",
         ),
-    } | PACKAGE_IDENTITY_ATTRS,
+    } | PACKAGE_IDENTITY_ATTRS | KERNEL_MODULE_ATTRS | EXTRA_DART_DEFINES_ATTR,
+    toolchains = MODULAR_KERNEL_TOOLCHAINS,
     doc = "Collects Dart sources and propagates dependency information via `DartInfo`. Consumers co-locate generated sources.",
 )

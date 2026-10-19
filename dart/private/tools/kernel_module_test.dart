@@ -96,6 +96,70 @@ class _DillWritingCompiler implements ModuleCompiler {
   Future<void> close() async {}
 }
 
+/// A compiler that simulates `kernel_worker --used-inputs`: it writes
+/// [reported] to each request's `--used-inputs` file as `file://` URIs, like
+/// the worker, writes [dillBytes] to each request's `--output` when set, and
+/// answers [exitCode]. A null [reported] writes no file, so the planner's
+/// passed summaries count as used.
+class _ReportingCompiler implements ModuleCompiler {
+  _ReportingCompiler({this.reported, this.dillBytes, this.exitCode = 0});
+
+  final Set<String>? reported;
+  final Uint8List Function()? dillBytes;
+  final int exitCode;
+  final List<List<String>> calls = [];
+
+  @override
+  Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
+    calls.add(args);
+    String? usedPath;
+    for (var i = 0; i < args.length; i++) {
+      if (args[i].startsWith('--used-inputs=')) {
+        usedPath = args[i].substring('--used-inputs='.length);
+      } else if (args[i] == '--used-inputs' && i + 1 < args.length) {
+        usedPath = args[++i];
+      }
+    }
+    if (usedPath != null && reported != null) {
+      final path = usedPath.startsWith('file://')
+          ? Uri.parse(usedPath).toFilePath()
+          : usedPath;
+      await File(path)
+          .writeAsString([for (final p in reported!) 'file://$p\n'].join());
+    }
+    final outIdx = args.indexOf('--output');
+    if (exitCode == 0 && dillBytes != null) {
+      await File(args[outIdx + 1]).writeAsBytes(dillBytes!());
+    }
+    return ModuleOutcome(exitCode, '');
+  }
+
+  @override
+  Future<void> close() async {}
+}
+
+/// A compiler whose worker predates `--used-inputs`: it fails each request
+/// that passes the flag with the `package:args` unknown-option error, and
+/// succeeds without it.
+class _OldWorkerCompiler implements ModuleCompiler {
+  final List<List<String>> calls = [];
+
+  @override
+  Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
+    calls.add(args);
+    if (args.any((arg) => arg.startsWith('--used-inputs'))) {
+      return const ModuleOutcome(
+        64,
+        'Could not find an option named "used-inputs".',
+      );
+    }
+    return const ModuleOutcome(0, '');
+  }
+
+  @override
+  Future<void> close() async {}
+}
+
 /// The values that follow each `flag` in `args`, in order.
 List<String> _valuesAfter(List<String> args, String flag) => [
   for (var i = 0; i + 1 < args.length; i++)
@@ -188,15 +252,23 @@ Future<_Result> _compile(
   String? packagesFile,
   List<Uint8List> inputs = const [],
   ModuleCompiler? compiler,
+  // When set, passes `--unused-inputs-list` with this path and returns what
+  // was written there (or null when the compile wrote nothing).
+  String? unusedInputsList,
 }) async {
   final output = '${_root.path}/out/$name';
   final excludedPath = '$output.vm_excluded.txt';
   final prefix = scheme == null ? _prefix : '$scheme:///';
   final args = <String>[
     for (final source in sources) ...['--source', '$prefix$source'],
+    for (final source in sources) ...[
+      '--own-source-file',
+      '${_root.path}/$source',
+    ],
     for (final inputSource in inputSources) ...['--input-source', inputSource],
     '--output',
     output,
+    if (unusedInputsList != null) ...['--unused-inputs-list', unusedInputsList],
     if (outputOutline != null) ...['--output-outline', outputOutline],
     '--excluded-output',
     excludedPath,
@@ -1857,6 +1929,314 @@ void main(List<String> args) {
       entry.log,
       isNot(contains('transitive_secret.dart')),
       reason: 'undeclared file pkg/lib/web.dart must not be read from disk',
+    );
+  });
+
+  group('unused inputs list', () {
+    test('a library lists an unused module directory but not a used or shadowing one', () async {
+      _write('pkg/lib/a.dart', 'class A {}\n');
+      final unused = _module('unused', [
+        _Scc('u.dill', ['dep/lib/u.dart'], []),
+      ]);
+      final shadow = _module('shadow', [
+        _Scc('s.dill', ['pkg/lib/a.dart'], []),
+      ]);
+      final unusedPath = '${_root.path}/out/m.unused';
+      final result = await _compile(
+        'm_unused_tree',
+        ['pkg/lib/a.dart'],
+        inputKmods: [unused, shadow],
+        unusedInputsList: unusedPath,
+      );
+      expect(result.code, 0, reason: result.log);
+      expect(File(unusedPath).readAsLinesSync(), [unused]);
+    });
+
+    test(
+      'a library never lists a module directory sharing its package',
+      () async {
+        _write('pkg/lib/a.dart', 'class A {}\n');
+        final samePkg = _module('samepkg', [
+          _Scc('o.dill', ['pkg/lib/other.dart'], []),
+        ]);
+        final otherPkg = _module('otherpkg', [
+          _Scc('o.dill', ['dep/lib/o.dart'], []),
+        ]);
+        final unusedPath = '${_root.path}/out/m2.unused';
+        final result = await _compile(
+          'm_unused_samepkg',
+          ['pkg/lib/a.dart'],
+          inputKmods: [samePkg, otherPkg],
+          unusedInputsList: unusedPath,
+        );
+        expect(result.code, 0, reason: result.log);
+        expect(File(unusedPath).readAsLinesSync(), [otherPkg]);
+      },
+    );
+
+    test('a library never lists a module directory staging an excluded source it reads', () async {
+      _write('pkg/lib/a.dart', 'class A {}\n');
+      final excluder = '${_root.path}/excluder';
+      _write(
+        'excluder/index.json',
+        jsonEncode({
+          'version': 1,
+          'sccs': [
+            {
+              'dill': 'e.dill',
+              'defines': ['dep/lib/e.dart'],
+              'imports': [],
+            },
+          ],
+          'excluded': ['dep/lib/x.dart'],
+        }),
+      );
+      final clean = _module('clean', [
+        _Scc('c.dill', ['dep/lib/c.dart'], []),
+      ]);
+      final sidecar = _sidecar('upstream', {
+        'dep/lib/x.dart': 'dart:html is not a VM library',
+      });
+      final unusedPath = '${_root.path}/out/m3.unused';
+      final result = await _compile(
+        'm_unused_staged',
+        ['pkg/lib/a.dart'],
+        inputKmods: [excluder, clean],
+        closureExcluded: [sidecar],
+        unusedInputsList: unusedPath,
+      );
+      expect(result.code, 0, reason: result.log);
+      expect(File(unusedPath).readAsLinesSync(), [clean]);
+    });
+
+    test('a used-inputs report marks a passed summary used', () async {
+      _write('pkg/lib/a.dart', "import 'package:dep/u.dart';\nclass A {}\n");
+      final used = _module('used', [
+        _Scc('u.dill', ['dep/lib/u.dart'], []),
+      ]);
+      final clean = _module('clean', [
+        _Scc('c.dill', ['dep/lib/c.dart'], []),
+      ]);
+      final compiler = _ReportingCompiler(reported: {'$used/u.dill'});
+      final unusedPath = '${_root.path}/out/m4.unused';
+      final result = await _compile(
+        'm_unused_report',
+        ['pkg/lib/a.dart'],
+        inputKmods: [used, clean],
+        compiler: compiler,
+        unusedInputsList: unusedPath,
+      );
+      expect(result.code, 0, reason: result.log);
+      expect(File(unusedPath).readAsLinesSync(), [clean]);
+      expect(compiler.calls.single, contains(startsWith('--used-inputs=')));
+      expect(
+        Directory('${_root.path}/out/m_unused_report')
+            .listSync()
+            .where((entity) => entity.path.contains('.used-inputs-')),
+        isEmpty,
+        reason: 'the per-invocation report is deleted after it is read',
+      );
+    });
+
+    test(
+      'a report naming a file the action never passed lists nothing',
+      () async {
+        _write('pkg/lib/a.dart', "import 'package:dep/u.dart';\nclass A {}\n");
+        final unused = _module('unused', [
+          _Scc('u.dill', ['dep/lib/u.dart'], []),
+        ]);
+        final compiler = _ReportingCompiler(
+          reported: {'/never/passed/foreign.dill'},
+        );
+        final unusedPath = '${_root.path}/out/m5.unused';
+        final result = await _compile(
+          'm_unused_tripwire',
+          ['pkg/lib/a.dart'],
+          inputKmods: [unused],
+          compiler: compiler,
+          unusedInputsList: unusedPath,
+        );
+        expect(result.code, 0, reason: result.log);
+        expect(
+          File(unusedPath).readAsLinesSync(),
+          isEmpty,
+          reason: 'a foreign report fails closed to an empty list',
+        );
+      },
+    );
+
+    test(
+      'a worker without used-inputs support compiles on, listing from the plan',
+      () async {
+        _write('pkg/lib/a.dart', 'class A {}\n');
+        final clean = _module('clean', [
+          _Scc('c.dill', ['dep/lib/c.dart'], []),
+        ]);
+        final compiler = _OldWorkerCompiler();
+        final unusedPath = '${_root.path}/out/m6.unused';
+        final result = await _compile(
+          'm_unused_oldworker',
+          ['pkg/lib/a.dart'],
+          inputKmods: [clean],
+          compiler: compiler,
+          unusedInputsList: unusedPath,
+        );
+        expect(result.code, 0, reason: result.log);
+        expect(compiler.calls.length, 2);
+        expect(compiler.calls[0], contains(startsWith('--used-inputs=')));
+        expect(
+          compiler.calls[1],
+          isNot(contains(startsWith('--used-inputs='))),
+        );
+        expect(File(unusedPath).readAsLinesSync(), [clean]);
+      },
+    );
+
+    test('a failed compile writes no unused-inputs file', () async {
+      _write('pkg/lib/a.dart', 'class A {}\n');
+      final compiler = _ReportingCompiler(exitCode: 1);
+      final unusedPath = '${_root.path}/out/m7.unused';
+      final result = await _compile(
+        'm_unused_failure',
+        ['pkg/lib/a.dart'],
+        compiler: compiler,
+        unusedInputsList: unusedPath,
+      );
+      expect(result.code, 1);
+      expect(File(unusedPath).existsSync(), isFalse);
+    });
+
+    test('an entry lists dependency sources it never compiles', () async {
+      _write(
+        'pkg/lib/main.dart',
+        "import 'package:dep/x.dart';\nvoid main() {}\n",
+      );
+      _write('dep/lib/x.dart', 'class X {}\n');
+      _write('dep/lib/y.dart', 'class Y {}\n');
+      final dep = _module('dep', [
+        _Scc('x.dill', ['dep/lib/x.dart'], []),
+      ]);
+      final ownPath = '${_root.path}/pkg/lib/main.dart';
+      final xPath = '${_root.path}/dep/lib/x.dart';
+      final yPath = '${_root.path}/dep/lib/y.dart';
+      final compiler = _ReportingCompiler(
+        dillBytes: () => _buildDillWithUris([_uri('pkg/lib/main.dart')]),
+      );
+      final unusedPath = '${_root.path}/out/entry.unused';
+      final entry = await _compile(
+        'entry_unused_sources',
+        ['pkg/lib/main.dart'],
+        inputSources: [ownPath, xPath, yPath],
+        inputKmods: [dep],
+        noDrop: true,
+        compiler: compiler,
+        unusedInputsList: unusedPath,
+      );
+      expect(entry.code, 0, reason: entry.log);
+      expect(File(unusedPath).readAsLinesSync(), [xPath, yPath]);
+    });
+
+    test('an entry lists no dependency source when its output embeds an unplanned one', () async {
+      _write(
+        'pkg/lib/main.dart',
+        "import 'package:dep/x.dart';\nvoid main() {}\n",
+      );
+      _write('dep/lib/x.dart', 'class X {}\n');
+      _write('dep/lib/y.dart', 'class Y {}\n');
+      final dep = _module('dep', [
+        _Scc('x.dill', ['dep/lib/x.dart'], []),
+      ]);
+      final compiler = _ReportingCompiler(
+        dillBytes: () => _buildDillWithUris([
+          _uri('pkg/lib/main.dart'),
+          _uri('dep/lib/x.dart'),
+        ]),
+      );
+      final unusedPath = '${_root.path}/out/entry2.unused';
+      final entry = await _compile(
+        'entry_unused_embedded',
+        ['pkg/lib/main.dart'],
+        inputSources: [
+          '${_root.path}/dep/lib/x.dart',
+          '${_root.path}/dep/lib/y.dart',
+        ],
+        inputKmods: [dep],
+        noDrop: true,
+        compiler: compiler,
+        unusedInputsList: unusedPath,
+      );
+      expect(entry.code, 0, reason: entry.log);
+      expect(
+        File(unusedPath).readAsLinesSync(),
+        isEmpty,
+        reason: 'the embedded dependency source is read',
+      );
+    });
+
+    test('an entry lists no dependency source after scanning declared files for a part-of name', () async {
+      _write('pkg/lib/main.dart', 'part of mylib;\nclass A {}\n');
+      _write('dep/lib/lib.dart', 'library mylib;\nclass L {}\n');
+      _write('dep/lib/y.dart', 'class Y {}\n');
+      final dep = _module('dep', [
+        _Scc('lib.dill', ['dep/lib/lib.dart'], []),
+      ]);
+      final other = _module('other', [
+        _Scc('o.dill', ['dep/lib/o.dart'], []),
+      ]);
+      final unusedPath = '${_root.path}/out/entry3.unused';
+      final compiler = _ReportingCompiler(
+        dillBytes: () => _buildDillWithUris([_uri('pkg/lib/main.dart')]),
+      );
+      final entry = await _compile(
+        'entry_unused_lookup',
+        ['pkg/lib/main.dart'],
+        inputSources: ['dep/lib/lib.dart', 'dep/lib/y.dart'],
+        inputKmods: [dep, other],
+        noDrop: true,
+        compiler: compiler,
+        unusedInputsList: unusedPath,
+      );
+      expect(entry.code, 0, reason: entry.log);
+      expect(
+        File(unusedPath).readAsLinesSync(),
+        [other],
+        reason:
+            'the name lookup scanned declared files, so no source is listed, '
+            'but the untouched module directory still is',
+      );
+    });
+
+    test(
+      'a report in absolute URIs matches summaries passed as relative paths',
+      () async {
+        _write('pkg/lib/a.dart', "import 'package:dep/u.dart';\nclass A {}\n");
+        final usedDir = _module('used', [
+          _Scc('u.dill', ['dep/lib/u.dart'], []),
+        ]);
+        _module('clean', [
+          _Scc('c.dill', ['dep/lib/c.dart'], []),
+        ]);
+        // Production passes exec-root-relative `--input-kmod` directories while
+        // the worker reports absolute `file://` URIs: the same file under two
+        // spellings must match, not trip the foreign-report wire.
+        final previous = Directory.current;
+        Directory.current = _root.path;
+        try {
+          final compiler = _ReportingCompiler(reported: {'$usedDir/u.dill'});
+          final unusedPath = '${_root.path}/out/m8.unused';
+          final result = await _compile(
+            'm_unused_spellings',
+            ['pkg/lib/a.dart'],
+            inputKmods: ['used', 'clean'],
+            compiler: compiler,
+            unusedInputsList: unusedPath,
+          );
+          expect(result.code, 0, reason: result.log);
+          expect(File(unusedPath).readAsLinesSync(), ['clean']);
+        } finally {
+          Directory.current = previous;
+        }
+      },
     );
   });
 

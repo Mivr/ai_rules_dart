@@ -120,6 +120,8 @@ const _extraLibraryFlag = '--extra-library';
 const _inputKmodFlag = '--input-kmod';
 const _inputSourceFlag = '--input-source';
 const _outputOutlineFlag = '--output-outline';
+const _ownSourceFileFlag = '--own-source-file';
+const _unusedInputsListFlag = '--unused-inputs-list';
 
 /// The file in each module directory that lists its kernels.
 const _indexName = 'index.json';
@@ -354,11 +356,13 @@ Future<int> compileModule(
   final base = <String>[];
   final sources = <String>[];
   final inputSources = <String>[];
+  final ownSourceFiles = <String>[];
   final multiRoots = <String>[];
   final closureExcluded = <String>[];
   final inputKmods = <String>[];
   final extraLibraries = <String>[];
   String? excludedPath;
+  String? unusedInputsPath;
   String? output;
   String? outputOutline;
   String? packagesFile;
@@ -372,6 +376,14 @@ Future<int> compileModule(
       sources.add(rawArgs[++i]);
     } else if (arg == _inputSourceFlag) {
       inputSources.add(rawArgs[++i]);
+    } else if (arg == _ownSourceFileFlag && i + 1 < rawArgs.length) {
+      ownSourceFiles.add(rawArgs[++i]);
+    } else if (arg.startsWith('$_ownSourceFileFlag=')) {
+      ownSourceFiles.add(arg.substring(_ownSourceFileFlag.length + 1));
+    } else if (arg == _unusedInputsListFlag && i + 1 < rawArgs.length) {
+      unusedInputsPath = rawArgs[++i];
+    } else if (arg.startsWith('$_unusedInputsListFlag=')) {
+      unusedInputsPath = arg.substring(_unusedInputsListFlag.length + 1);
     } else if (arg == '--output') {
       output = rawArgs[++i];
     } else if (arg == _outputOutlineFlag) {
@@ -427,6 +439,10 @@ Future<int> compileModule(
     );
     return 64;
   }
+
+  // Records each invocation's `--used-inputs` report for the unused-inputs
+  // list. `compiler` itself still answers the `_Persistent` checks below.
+  final reporter = _UsedInputsReporter(compiler, output);
 
   final Set<String>? workerInputPaths;
   final Map<String, Uint8List>? inputDigests;
@@ -626,7 +642,7 @@ Future<int> compileModule(
                     ..._uncoveredInputs(inputs, staged.covered),
                   ])
           : (stagedInputs.isEmpty ? inputs : [...inputs, ...stagedInputs]);
-      return compiler.run(
+      return reporter.run(
         kernelWorkerArgs([
           // Staged-source roots come first so the pinned dependency copies
           // win over any workspace shadow, exactly as the probe validates.
@@ -730,6 +746,28 @@ Future<int> compileModule(
       await _writeIndex(outputOutline, entrySccs);
     }
     await File(excludedPath).writeAsString('');
+    if (unusedInputsPath != null) {
+      await _writeUnusedInputsList(
+        unusedInputsPath: unusedInputsPath,
+        reports: reporter.records,
+        inputKmods: inputKmods,
+        graph: graph,
+        inherited: inherited,
+        stagedSources: stagedSources,
+        ownKeys: {
+          for (final uri in sources) ?_keyOfUri(uri, roots, multiRootPrefix),
+        },
+        output: output,
+        outputOutline: outputOutline,
+        entryKeys: entry.keys.toSet(),
+        lookedUpLibraryNames: entry.lookedUpLibraryNames,
+        inputSources: inputSources,
+        ownSourceFiles: ownSourceFiles.toSet(),
+        multiRoots: multiRoots,
+        entryDill: '$output/$dill',
+        multiRootPrefix: multiRootPrefix,
+      );
+    }
     return 0;
   }
 
@@ -867,7 +905,7 @@ Future<int> compileModule(
             ...summaryInputs,
             if (staged != null) ..._uncoveredInputs(inputs, staged.covered),
           ];
-          return compiler.run(
+          return reporter.run(
             kernelWorkerArgs([
               // Staged-source roots come first so the pinned dependency copies
               // win over any workspace shadow, exactly as the probe validates.
@@ -1028,6 +1066,32 @@ Future<int> compileModule(
     }
   }
   await File(excludedPath).writeAsString(lines.toString());
+  if (unusedInputsPath != null) {
+    // A library never lists dependency sources (its part-peer scan reads
+    // them), only the module directories no invocation used. Every own source
+    // counts as referencing, including one a shadowing dependency dropped from
+    // the compile: the module links that dependency's kernel for it.
+    await _writeUnusedInputsList(
+      unusedInputsPath: unusedInputsPath,
+      reports: reporter.records,
+      inputKmods: inputKmods,
+      graph: graph,
+      inherited: inherited,
+      stagedSources: stagedSources,
+      ownKeys: {
+        for (final uri in sources) ?_keyOfUri(uri, roots, multiRootPrefix),
+      },
+      output: output,
+      outputOutline: outputOutline,
+      entryKeys: null,
+      lookedUpLibraryNames: false,
+      inputSources: const [],
+      ownSourceFiles: const {},
+      multiRoots: const [],
+      entryDill: null,
+      multiRootPrefix: multiRootPrefix,
+    );
+  }
   return 0;
 }
 
@@ -2056,6 +2120,7 @@ class _EntrySources {
     this.keys,
     this.undeclared,
     this.disallowed,
+    this.lookedUpLibraryNames,
   );
 
   /// The URIs the entry compiles: its own sources, and each excluded file it reaches.
@@ -2074,6 +2139,11 @@ class _EntrySources {
   /// A diagnostic for every directive URI the walk reached that names no file
   /// the action can read through its declared inputs (see [_planImports]).
   final List<String> disallowed;
+
+  /// Whether the walk scanned declared files for a `part of` library name.
+  /// Those wrapper reads are invisible to the unused-inputs report, so no
+  /// dependency source is listed when this is set.
+  final bool lookedUpLibraryNames;
 }
 
 /// The sources the entry module compiles: its own, and each excluded file it reaches.
@@ -2265,6 +2335,7 @@ Future<_EntrySources> _entrySources(
     ownUris.keys.toList(),
     undeclared,
     disallowed,
+    declaredLibraryByName != null,
   );
 }
 
@@ -3167,6 +3238,345 @@ bool _hasCommaDefines(List<String> args) {
     }
   }
   return false;
+}
+
+/// One `kernel_worker` invocation's `--input-summary` files, and the subset the
+/// worker reports it used, or null when no report exists.
+class _UsedReport {
+  _UsedReport(this.passed, this.reported);
+
+  /// Every `--input-summary` the invocation passed, canonicalized.
+  final Set<String> passed;
+
+  /// The canonicalized `--used-inputs` report, or null when the worker wrote
+  /// none (an older `kernel_worker`, or a fake compiler in tests). Then every
+  /// passed summary counts as used.
+  final Set<String>? reported;
+}
+
+/// Records per-invocation `--used-inputs` reports for the unused-inputs list.
+///
+/// Wraps the real [ModuleCompiler]: each invocation gets its own
+/// `--used-inputs` file under the module's output directory, read back and
+/// deleted right after the invocation, so the output tree holds it only
+/// transiently. A worker that rejects `--used-inputs` as an unknown option is
+/// an older SDK: the invocation is retried without the flag, later invocations
+/// skip it, and every passed summary counts as used.
+class _UsedInputsReporter implements ModuleCompiler {
+  _UsedInputsReporter(this._inner, this._outputDir);
+
+  final ModuleCompiler _inner;
+  final String _outputDir;
+  final records = <_UsedReport>[];
+  var _invocations = 0;
+
+  /// False once a worker rejects `--used-inputs`, so later invocations of this
+  /// action skip it. An older SDK pays one rejected invocation per action.
+  var _supportsUsedInputs = true;
+
+  /// `package:args` rejecting an unknown option.
+  static final _unknownOption = RegExp('Could not find an option');
+
+  @override
+  Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
+    final passed = <String>{};
+    for (var i = 0; i + 1 < args.length; i++) {
+      if (args[i] == '--input-summary') {
+        passed.add(_canonicalActionPath(args[i + 1]));
+      }
+    }
+    if (!_supportsUsedInputs) {
+      records.add(_UsedReport(passed, null));
+      return _inner.run(args, inputs);
+    }
+    final tmp = _canonicalActionPath(
+      '$_outputDir/.used-inputs-${_invocations++}.tmp',
+    );
+    ModuleOutcome outcome;
+    Set<String>? reported;
+    try {
+      outcome = await _inner.run([
+        ...args,
+        '--used-inputs=${kernelWorkerUri(tmp)}',
+      ], inputs);
+      if (outcome.exitCode != 0 &&
+          outcome.output.contains('used-inputs') &&
+          _unknownOption.hasMatch(outcome.output)) {
+        // An older `kernel_worker`: retry without the flag, and stop asking.
+        _supportsUsedInputs = false;
+        outcome = await _inner.run(args, inputs);
+      } else {
+        reported = _readUsedInputs(tmp);
+      }
+    } finally {
+      try {
+        File(tmp).deleteSync();
+      } on Object {
+        // The compile owns its outputs; a stale report only costs precision.
+      }
+    }
+    records.add(_UsedReport(passed, reported));
+    return outcome;
+  }
+
+  @override
+  Future<void> close() => _inner.close();
+}
+
+/// The canonical absolute form of an action path or `file://` URI: `file://`
+/// URIs become paths, relative paths resolve against the execution root (this
+/// process runs with it as its working directory), and `.`/`..` segments are
+/// applied. Compares `--used-inputs` report lines with the paths this action
+/// passed to `kernel_worker`.
+String _canonicalActionPath(String pathOrUri) {
+  final slash = _filePathOf(pathOrUri).replaceAll(r'\', '/');
+  if (isWindowsDrivePath(slash)) return _normalize(slash);
+  // `_normalize` drops empty segments, including the leading one: restore the
+  // root, so an absolute path stays absolute. A relative tmp or report path
+  // would otherwise resolve against whatever directory the caller runs in
+  // instead of the execution root.
+  if (slash.startsWith('/')) return '/${_normalize(slash)}';
+  final cwd = Directory.current.path.replaceAll(r'\', '/');
+  final joined = _normalize('$cwd/$slash');
+  // `_normalize` drops the leading segment too: a posix absolute working
+  // directory must stay absolute (a Windows drive letter survives as a segment,
+  // so only posix needs the root restored). Without this, a relative action
+  // path canonicalizes differently from the absolute `file://` URI the worker
+  // reports for the same file, and the foreign-report tripwire fires on every
+  // precise report.
+  if (cwd.startsWith('/')) return '/$joined';
+  return joined;
+}
+
+/// The canonicalized lines of the `--used-inputs` file the worker wrote, or
+/// null when it wrote none.
+Set<String>? _readUsedInputs(String path) {
+  final file = File(path);
+  if (!file.existsSync()) return null;
+  try {
+    final used = <String>{};
+    for (final line in file.readAsLinesSync()) {
+      final trimmed = line.trim();
+      if (trimmed.isNotEmpty) used.add(_canonicalActionPath(trimmed));
+    }
+    return used;
+  } on Object {
+    return null;
+  }
+}
+
+/// The package (or bare first segment) of a module key.
+String _packageOfKey(String key) {
+  final slash = key.indexOf('/');
+  return slash < 0 ? key : key.substring(0, slash);
+}
+
+/// Whether the entry's output embeds only the sources it planned to compile.
+///
+/// The front end embeds a dependency source it was never passed to compile
+/// (a mixin a compiled library applies, say), and the planner resolves some
+/// directive spellings differently than the front end does. Either case reads
+/// a declared dependency source outside [planned]; then no dependency source
+/// is listed as unused. Unmappable URIs (`dart:`, the SDK) are never listed
+/// anyway. A missing or unreadable output proves nothing, and lists nothing.
+Future<bool> _entryReadsArePlanned(
+  String entryDill,
+  Set<String> planned,
+  List<String> multiRoots,
+  String multiRootPrefix,
+) async {
+  final dillFile = File(entryDill);
+  if (!await dillFile.exists()) return false;
+  final uris = dillSourceUris(await dillFile.readAsBytes());
+  if (uris == null) return false;
+  for (final uri in uris) {
+    final key = _keyOfDillSourceUri(uri, multiRoots, multiRootPrefix);
+    if (key != null && !planned.contains(key)) return false;
+  }
+  return true;
+}
+
+/// Writes the Bazel `unused_inputs_list` file at [unusedInputsPath]: the
+/// execution-root-relative paths of the declared inputs no compile of this
+/// action read. Writes an empty file when everything was read.
+///
+/// A dependency module directory is listed only when no invocation used a
+/// summary it holds (reported, or every passed one when no report exists),
+/// none of its keys is referenced (by a used summary, by an own source, which
+/// a shadowing dependency would drop from the compile, or by an entry key,
+/// which an adopted part peer embeds), none shares an own source's package (so a key it gains later cannot shadow one), and it stages
+/// no excluded source this action reads or scans. A dependency source of an
+/// entry module is listed only when the entry neither compiled it nor scanned
+/// it for a `part of` library name, and its output embeds nothing unplanned.
+/// Anything else (own sources, configs, sidecars, the toolchain) is never
+/// listed. A report naming a file the action never passed fails closed to an
+/// empty list.
+Future<void> _writeUnusedInputsList({
+  required String unusedInputsPath,
+  required List<_UsedReport> reports,
+  required List<String> inputKmods,
+  required Map<String, _Node> graph,
+  required Map<String, String> inherited,
+  required Map<String, String> stagedSources,
+  required Set<String> ownKeys,
+  required String output,
+  required String? outputOutline,
+  required Set<String>? entryKeys,
+  required bool lookedUpLibraryNames,
+  required List<String> inputSources,
+  required Set<String> ownSourceFiles,
+  required List<String> multiRoots,
+  required String? entryDill,
+  required String multiRootPrefix,
+}) async {
+  final lines =
+      await _unusedInputsLines(
+        reports: reports,
+        inputKmods: inputKmods,
+        graph: graph,
+        inherited: inherited,
+        stagedSources: stagedSources,
+        ownKeys: ownKeys,
+        output: output,
+        outputOutline: outputOutline,
+        entryKeys: entryKeys,
+        lookedUpLibraryNames: lookedUpLibraryNames,
+        inputSources: inputSources,
+        ownSourceFiles: ownSourceFiles,
+        multiRoots: multiRoots,
+        entryDill: entryDill,
+        multiRootPrefix: multiRootPrefix,
+      ) ??
+      const <String>[];
+  final file = File(unusedInputsPath);
+  await file.parent.create(recursive: true);
+  await file.writeAsString(lines.isEmpty ? '' : '${lines.join('\n')}\n');
+}
+
+/// The unused input lines [_writeUnusedInputsList] writes, or null when a
+/// report names a file the action never passed.
+Future<List<String>?> _unusedInputsLines({
+  required List<_UsedReport> reports,
+  required List<String> inputKmods,
+  required Map<String, _Node> graph,
+  required Map<String, String> inherited,
+  required Map<String, String> stagedSources,
+  required Set<String> ownKeys,
+  required String output,
+  required String? outputOutline,
+  required Set<String>? entryKeys,
+  required bool lookedUpLibraryNames,
+  required List<String> inputSources,
+  required Set<String> ownSourceFiles,
+  required List<String> multiRoots,
+  required String? entryDill,
+  required String multiRootPrefix,
+}) async {
+  final outputRoots = <String>{
+    _canonicalActionPath(output),
+    if (outputOutline != null) _canonicalActionPath(outputOutline),
+  };
+  bool isOwnOutput(String path) =>
+      outputRoots.any((root) => path == root || path.startsWith('$root/'));
+  final keysOfDill = <String, Set<String>>{};
+  for (final entry in graph.entries) {
+    keysOfDill
+        .putIfAbsent(_canonicalActionPath(entry.value.dill), () => <String>{})
+        .add(entry.key);
+  }
+  // Every summary an invocation used: reported when the worker wrote its
+  // report, else every summary it passed. A reported file that is neither a
+  // passed summary nor the action's own output fails closed to no list.
+  final used = <String>{};
+  // A module that defines a key this action compiles is linked for it (a
+  // shadowing dependency) or embeds it (an entry's adopted part peer), so its
+  // keys count as referenced alongside the own ones.
+  final referenced = <String>{...ownKeys, if (entryKeys != null) ...entryKeys};
+  final usedTrees = <String>{};
+  for (final report in reports) {
+    final reported = report.reported;
+    if (reported == null) {
+      used.addAll(report.passed);
+      continue;
+    }
+    for (final path in reported) {
+      if (!report.passed.contains(path) && !isOwnOutput(path)) {
+        return null;
+      }
+    }
+    used.addAll(reported);
+  }
+  final canonicalKmods = <String, String>{};
+  for (final dir in inputKmods) {
+    canonicalKmods.putIfAbsent(dir, () => _canonicalActionPath(dir));
+  }
+  for (final path in used) {
+    final keys = keysOfDill[path];
+    if (keys == null) continue;
+    referenced.addAll(keys);
+    for (final entry in canonicalKmods.entries) {
+      if (path == entry.value || path.startsWith('${entry.value}/')) {
+        usedTrees.add(entry.value);
+      }
+    }
+  }
+  final ownPackages = {for (final key in ownKeys) _packageOfKey(key)};
+  final lines = <String>[];
+  for (final dir in inputKmods) {
+    final canonical = canonicalKmods[dir]!;
+    if (usedTrees.contains(canonical)) continue;
+    var defines = false;
+    var definesReferenced = false;
+    var sharesOwnPackage = false;
+    for (final entry in keysOfDill.entries) {
+      final dill = entry.key;
+      if (dill != canonical && !dill.startsWith('$canonical/')) continue;
+      for (final key in entry.value) {
+        defines = true;
+        if (referenced.contains(key)) definesReferenced = true;
+        if (ownPackages.contains(_packageOfKey(key))) {
+          sharesOwnPackage = true;
+        }
+      }
+    }
+    // A module directory that defines nothing has no summary to use, but its
+    // index still feeds the plan, so only a directory that defines an
+    // unreferenced library outside the own packages is listed.
+    if (!defines || definesReferenced || sharesOwnPackage) continue;
+    final stagedPrefix = '$dir/sources';
+    var stagesInherited = false;
+    for (final staged in stagedSources.entries) {
+      if (staged.value == stagedPrefix && inherited.containsKey(staged.key)) {
+        stagesInherited = true;
+        break;
+      }
+    }
+    if (stagesInherited) continue;
+    lines.add(dir);
+  }
+  if (entryKeys != null &&
+      !lookedUpLibraryNames &&
+      entryDill != null &&
+      await _entryReadsArePlanned(
+        entryDill,
+        entryKeys,
+        multiRoots,
+        multiRootPrefix,
+      )) {
+    final seen = <String>{};
+    for (final path in inputSources) {
+      if (!seen.add(path) || ownSourceFiles.contains(path)) continue;
+      var visited = false;
+      for (final spelling in _inputSpellings(path, multiRoots)) {
+        if (entryKeys.contains(spelling)) {
+          visited = true;
+          break;
+        }
+      }
+      if (!visited) lines.add(path);
+    }
+  }
+  return lines;
 }
 
 /// One `kernel_worker` process per compile.

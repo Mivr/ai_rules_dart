@@ -1082,6 +1082,139 @@ def _worker_execution_requirements_test_impl(ctx):
     )
     return unittest.end(env)
 
+def _unused_inputs_wiring_test_impl(ctx):
+    env = unittest.begin(ctx)
+    runs = []
+    added = []
+
+    def _declare_file(name):
+        return struct(basename = name, path = "out/" + name, short_path = name)
+
+    def _args():
+        return struct(
+            use_param_file = lambda *_a, **_kw: None,
+            set_param_file_format = lambda *_a, **_kw: None,
+            add = lambda *_a: added.append(_a),
+            add_all = lambda *_a, **_kw: None,
+        )
+
+    fake_actions = struct(
+        declare_file = _declare_file,
+        write = lambda **_kw: None,
+        args = _args,
+        run = lambda **kw: runs.append(kw),
+    )
+    fake_ctx = struct(
+        label = struct(name = "manual_target", package = "flutter/tests/foo"),
+        attr = struct(tags = ["manual"], _kernel_module = None, _kernel_link = None),
+        rule = struct(attr = struct(tags = ["manual"])),
+        bin_dir = struct(path = "bazel-out/k8-fastbuild/bin"),
+        executable = struct(
+            _kernel_module = _declare_file("kernel_module.dill"),
+            _kernel_link = _declare_file("kernel_link.dill"),
+        ),
+        toolchains = {},
+        actions = fake_actions,
+    )
+    fake_tools = struct(
+        dartaotruntime = _declare_file("dartaotruntime"),
+        kernel_worker = _declare_file("kernel_worker.snapshot"),
+        platform_dill = _declare_file("vm_platform_strong.dill"),
+        libraries_json = _declare_file("libraries.json"),
+        version = "3.11.0",
+    )
+
+    def _compile(**kw):
+        kwargs = dict(
+            ctx = fake_ctx,
+            tools = fake_tools,
+            sources = [struct(uri = "package:a/a.dart", file = _declare_file("a.dart"))],
+            packages = [_pkg("a", "pkg/a", "3.9")],
+            dep_kmods = depset(),
+            output = _declare_file("manual_target.kmod"),
+            defines = [],
+            exclude_non_sources = False,
+            droppable = False,
+        )
+        kwargs.update(kw)
+        kernel_module_action(**kwargs)
+
+    _compile(unused_inputs = True)
+    asserts.equals(env, 1, len(runs), "registers one DartKernel action")
+    asserts.true(
+        env,
+        runs[0]["unused_inputs_list"] != None,
+        "unused_inputs = True passes unused_inputs_list to the action",
+    )
+    asserts.equals(
+        env,
+        "manual_target.kmod.unused_inputs",
+        runs[0]["unused_inputs_list"].basename,
+        "the list file sits next to the module output",
+    )
+    flags = [a[0] for a in added]
+    asserts.true(
+        env,
+        "--unused-inputs-list" in flags,
+        "unused_inputs = True forwards --unused-inputs-list to kernel_module",
+    )
+    asserts.true(
+        env,
+        "--own-source-file" in flags,
+        "unused_inputs = True reports own sources for the used-input check",
+    )
+
+    runs.clear()
+    added.clear()
+    _compile()
+    asserts.equals(env, 1, len(runs), "registers one DartKernel action by default")
+    asserts.true(
+        env,
+        runs[0]["unused_inputs_list"] == None,
+        "the default registers the historical action with no list",
+    )
+    flags = [a[0] for a in added]
+    asserts.true(
+        env,
+        "--unused-inputs-list" not in flags,
+        "the default passes no --unused-inputs-list to kernel_module",
+    )
+    return unittest.end(env)
+
+def _entry_unused_inputs_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
+    actions = analysistest.target_actions(env)
+
+    kernel_actions = [a for a in actions if a.mnemonic == "DartKernel"]
+    asserts.equals(env, 1, len(kernel_actions), "modular kernel binary registers one DartKernel entry action")
+    kernel_out_basenames = [f.basename for f in kernel_actions[0].outputs.to_list()]
+    asserts.true(
+        env,
+        target.label.name + ".entry.kmod.unused_inputs" in kernel_out_basenames,
+        "DartKernel entry action declares the unused-inputs list",
+    )
+    return analysistest.end(env)
+
+_entry_unused_inputs_test = analysistest.make(_entry_unused_inputs_test_impl)
+
+def _library_unused_inputs_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
+    actions = analysistest.target_actions(env)
+
+    kernel_actions = [a for a in actions if a.mnemonic == "DartKernel"]
+    asserts.equals(env, 1, len(kernel_actions), "dart_library registers one DartKernel module action")
+    kernel_out_basenames = [f.basename for f in kernel_actions[0].outputs.to_list()]
+    asserts.true(
+        env,
+        target.label.name + ".kmod.unused_inputs" in kernel_out_basenames,
+        "DartKernel module action declares the unused-inputs list",
+    )
+    return analysistest.end(env)
+
+_library_unused_inputs_test = analysistest.make(_library_unused_inputs_test_impl)
+
 _root_path_test = unittest.make(_root_path_test_impl)
 _multi_root_uri_test = unittest.make(_multi_root_uri_test_impl)
 _multi_root_uri_custom_scheme_test = unittest.make(_multi_root_uri_custom_scheme_test_impl)
@@ -1095,6 +1228,7 @@ _first_per_package_test = unittest.make(_first_per_package_test_impl)
 _duplicated_source_test = unittest.make(_duplicated_source_test_impl)
 _eligible_test = unittest.make(_eligible_test_impl)
 _has_cross_pkg_cycle_test = unittest.make(_has_cross_pkg_cycle_test_impl)
+_unused_inputs_wiring_test = unittest.make(_unused_inputs_wiring_test_impl)
 _worker_execution_requirements_test = unittest.make(_worker_execution_requirements_test_impl)
 
 def kernel_test_suite(name):
@@ -1214,6 +1348,16 @@ def kernel_test_suite(name):
         target_under_test = "//dart/tests/cross_pkg_cycle_fixture:app_modular",
         size = "small",
     )
+    _entry_unused_inputs_test(
+        name = name + "_entry_unused_inputs_test",
+        target_under_test = ":" + name + "_modular_binary_fixture",
+        size = "small",
+    )
+    _library_unused_inputs_test(
+        name = name + "_library_unused_inputs_test",
+        target_under_test = "//dart/tests/shape_fixture:shape_fixture_lib",
+        size = "small",
+    )
     _part_sources_inputs_test(
         name = name + "_part_sources_inputs_test",
         target_under_test = "//dart/tests/part_sources_fixture/same_pkg:part_lib",
@@ -1234,6 +1378,7 @@ def kernel_test_suite(name):
         _duplicated_source_test,
         _eligible_test,
         _has_cross_pkg_cycle_test,
+        _unused_inputs_wiring_test,
         _worker_execution_requirements_test,
     )
     native.test_suite(
@@ -1250,6 +1395,8 @@ def kernel_test_suite(name):
             ":" + name + "_user_kernel_link_modular_test",
             ":" + name + "_unseeded_base_kmods_intersection_test",
             ":" + name + "_cross_pkg_cycle_inputs_test",
+            ":" + name + "_entry_unused_inputs_test",
+            ":" + name + "_library_unused_inputs_test",
             ":" + name + "_part_sources_inputs_test",
             "//dart/tests/cross_pkg_cycle_fixture:cross_pkg_cycle_test",
             "//dart/tests/legacy_mixin_fixture:legacy_mixin_test",

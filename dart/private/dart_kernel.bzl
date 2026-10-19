@@ -68,6 +68,69 @@ EXEC_TOOLS_TOOLCHAIN = Label("//dart:exec_tools_toolchain_type")
 
 DartKernelInfo = _DartKernelInfo
 
+def library_module_inputs(rule_attr, rule_files, dart_info):
+    """The module inputs a `dart_library` target states, for the rule and the aspect.
+
+    Both the `dart_library` rule (which compiles its own module) and the kernel
+    module aspect (which falls back to compiling modules for targets whose rule
+    does not) derive the same inputs from the same target. One function, so the
+    two can never disagree about what the module holds — in particular about
+    `opaque`, whose conditions are easy to restate slightly wrongly.
+
+    Args:
+      rule_attr: The target's attributes (`ctx.attr` in the rule,
+        `ctx.rule.attr` in the aspect).
+      rule_files: The target's files (`ctx.files` in the rule,
+        `ctx.rule.files` in the aspect).
+      dart_info: The target's `DartInfo`.
+
+    Returns:
+      A struct with `own_record`, `package_name`, `lib_root`, `own_srcs`,
+      `opaque`, `rule_deps`, and `own_records`, as `library_kernel_info` takes
+      them.
+    """
+    package_name = dart_info.package_name
+    lib_root = dart_info.lib_root
+    own_record = own_package_record(dart_info)
+    own_records = owned_package_records(dart_info)
+    srcs_dir = getattr(rule_attr, "srcs_dir", None)
+    has_srcs_attr = hasattr(rule_attr, "srcs")
+    own_srcs = list(getattr(rule_files, "srcs", []))
+    rule_deps = getattr(rule_attr, "deps", [])
+    if type(rule_deps) != "list":
+        rule_deps = [rule_deps]
+
+    # A merged multi-package library carries no `srcs` of its own: its files
+    # arrive through `members`. They compile in this one module, like any
+    # library's own sources.
+    for member in getattr(rule_attr, "members", []):
+        own_srcs.extend([
+            f
+            for f in member[DefaultInfo].files.to_list()
+            if f.extension == "dart"
+        ])
+
+    opaque = bool(srcs_dir)
+    if not has_srcs_attr and dart_info.transitive_srcs.to_list() != [] and len(rule_deps) == 0:
+        opaque = True
+    if own_srcs and not own_records:
+        opaque = True
+    else:
+        for f in own_srcs:
+            if not any([f.short_path.startswith(package_lib_prefix(record.lib_root)) for record in own_records]):
+                opaque = True
+                break
+
+    return struct(
+        own_record = own_record,
+        package_name = package_name,
+        lib_root = lib_root,
+        own_srcs = own_srcs,
+        opaque = opaque,
+        rule_deps = rule_deps,
+        own_records = own_records,
+    )
+
 def _kernel_module_for_mode(compile_mode, modular_kernel):
     if compile_mode == "kernel" and modular_kernel:
         return Label("//dart/private/tools:kernel_module")
@@ -636,7 +699,8 @@ def kernel_module_action(
         libraries_platform = None,
         extra_libraries = [],
         scheme = STABLE_SCHEME,
-        extra_frontend_flags = []):
+        extra_frontend_flags = [],
+        unused_inputs = False):
     """Compiles one module with `kernel_module`, which drives the persistent `kernel_worker`.
 
     `kernel_module` is a Bazel persistent worker: it keeps one `kernel_worker` child
@@ -682,6 +746,15 @@ def kernel_module_action(
         available in `platform_dill` even when absent from `libraries.json`.
       scheme: The multi-root URI scheme (`STABLE_SCHEME` by default).
       extra_frontend_flags: Extra flags forwarded to `kernel_worker`.
+      unused_inputs: Whether the compile writes its unused-inputs list — the
+        declared inputs no compile of this action read — and takes it as the
+        action's `unused_inputs_list`, so Bazel skips the action when only an
+        unread input changed. True only where one evaluation registers the
+        action: an executable's entry, or a `dart_library`'s own module. The
+        aspect's fallback compile leaves it False: several evaluations
+        register that action, and a file each declared itself would keep their
+        keys from matching. False registers the historical action with no
+        list.
 
     Returns:
       The `.vm_excluded.txt` sidecar File, which lists each source that the module
@@ -695,6 +768,13 @@ def kernel_module_action(
         content = kernel_package_config(packages, scheme = scheme),
     )
     excluded = ctx.actions.declare_file(output.basename + ".vm_excluded.txt")
+    if unused_inputs:
+        # Written by `kernel_module` alongside the module. Declared here, where
+        # the one registering action is, so the declaration and the action
+        # that generates the file can never part ways.
+        unused_inputs_list = ctx.actions.declare_file(output.basename + ".unused_inputs")
+    else:
+        unused_inputs_list = None
 
     args = ctx.actions.args()
     args.use_param_file("@%s", use_always = True)
@@ -738,12 +818,16 @@ def kernel_module_action(
     for s in sources:
         args.add("--source", s.uri)
         args.add("--input-source", s.file)
+        if unused_inputs_list != None:
+            args.add("--own-source-file", s.file)
     args.add("--output", output.path)
     if koutline != None:
         args.add("--output-outline", koutline.path)
 
     # Read by `kernel_module` and not passed to `kernel_worker`.
     args.add("--excluded-output", excluded)
+    if unused_inputs_list != None:
+        args.add("--unused-inputs-list", unused_inputs_list)
     if not droppable:
         args.add("--no-drop")
     if closure_excluded:
@@ -838,7 +922,8 @@ def kernel_module_action(
             direct = action_tools,
             transitive = [runtime_files] if runtime_files != None else [],
         ),
-        outputs = [output, excluded] + ([koutline] if koutline != None else []),
+        outputs = [output, excluded] + ([unused_inputs_list] if unused_inputs_list != None else []) + ([koutline] if koutline != None else []),
+        unused_inputs_list = unused_inputs_list,
         mnemonic = "DartKernel",
         progress_message = "Compiling Dart kernel module %s" % output.short_path,
         env = writable_home_env(dart_exe or tools.dartaotruntime, output),
@@ -1131,6 +1216,9 @@ def modular_executable_kernel(
         extra_libraries = extra_libraries,
         scheme = scheme,
         extra_frontend_flags = extra_frontend_flags,
+        # This entry compiles in exactly one action registered by the
+        # executable's own rule, so the list file stays single-owner.
+        unused_inputs = True,
     )
     base_dill = None
     base_keys = None
@@ -1199,7 +1287,9 @@ def library_kernel_info(
         scheme = STABLE_SCHEME,
         extra_frontend_flags = [],
         rule_deps = None,
-        own_records = None):
+        own_records = None,
+        unused_inputs = False,
+        non_standalone = False):
     """The `DartKernelInfo` a `dart_library` provides.
 
     The module is declared only here. Nothing builds it until an executable links
@@ -1220,6 +1310,15 @@ def library_kernel_info(
       extra_libraries: Extra bare `dart:` library names available on the target.
       scheme: The multi-root URI scheme (`STABLE_SCHEME` by default).
       extra_frontend_flags: Extra flags forwarded to `kernel_worker`.
+      unused_inputs: Whether `kernel_module_action` writes an unused-inputs
+        list. True when the caller registers the action once (the
+        `dart_library` rule compiles its own module); False in the aspect's
+        fallback compile, where several evaluations register it.
+      non_standalone: True when the target carries the `no-dart-analyze` tag.
+        The aspect computes this from its host (`_has_no_analyze_tag`, which
+        reads `ctx.rule` and runs only there); the rule passes nothing, which
+        is exact in practice — the tag's in-repo carrier is a plumbing library
+        no kernel host depends on, and a rule cannot read its own tags anyway.
       rule_deps: Optional list of dependency targets (defaults to `ctx.attr.deps`).
       own_records: The library's own `DartPackageInfo` records, one per owned
         package. Defaults to `[own_record]` (or empty when it is None), which
@@ -1268,7 +1367,6 @@ def library_kernel_info(
         transitive = [k.edges for k in dep_kernels],
     )
     pkgs = first_per_package(records)
-    non_standalone = _has_no_analyze_tag(ctx)
     has_upstream_cross_pkg = any([bool(k.cross_pkg_srcs.to_list()) for k in dep_kernels])
     need_graph = len(pkgs) < len(records)
     owned_list = owned.to_list() if need_graph else []
@@ -1416,6 +1514,7 @@ def library_kernel_info(
         extra_libraries = extra_libraries,
         scheme = scheme,
         extra_frontend_flags = extra_frontend_flags,
+        unused_inputs = unused_inputs,
     )
     if (package_name == "test" or "test" in [record.package_name for record in own_records]) and target == "vm" and hasattr(ctx.executable, "_kernel_link"):
         base_dill = ctx.actions.declare_file(ctx.label.name + ".base.dill")
@@ -1466,49 +1565,18 @@ def _dart_kernel_module_aspect_impl(target, ctx):
     if library != None and DartKernelInfo in library:
         return [library[DartKernelInfo]]
 
-    dart_info = target[DartInfo]
-    package_name = dart_info.package_name
-    lib_root = dart_info.lib_root
-    own_record = own_package_record(dart_info)
-    own_records = owned_package_records(dart_info)
-    srcs_dir = getattr(ctx.rule.attr, "srcs_dir", None)
-    has_srcs_attr = hasattr(ctx.rule.attr, "srcs")
-    own_srcs = list(getattr(ctx.rule.files, "srcs", []))
-    rule_deps = getattr(ctx.rule.attr, "deps", [])
-    if type(rule_deps) != "list":
-        rule_deps = [rule_deps]
-
-    # A merged multi-package library carries no `srcs` of its own: its files
-    # arrive through `members`. They compile in this one module, like any
-    # library's own sources.
-    for member in getattr(ctx.rule.attr, "members", []):
-        own_srcs.extend([
-            f
-            for f in member[DefaultInfo].files.to_list()
-            if f.extension == "dart"
-        ])
-
-    opaque = bool(srcs_dir)
-    if not has_srcs_attr and dart_info.transitive_srcs.to_list() != [] and len(rule_deps) == 0:
-        opaque = True
-    if own_srcs and not own_records:
-        opaque = True
-    else:
-        for f in own_srcs:
-            if not any([f.short_path.startswith(package_lib_prefix(record.lib_root)) for record in own_records]):
-                opaque = True
-                break
-
+    inputs = library_module_inputs(ctx.rule.attr, ctx.rule.files, target[DartInfo])
     return [
         library_kernel_info(
             ctx,
-            own_record,
-            package_name,
-            lib_root,
-            own_srcs,
-            opaque = opaque,
-            rule_deps = rule_deps,
-            own_records = own_records,
+            inputs.own_record,
+            inputs.package_name,
+            inputs.lib_root,
+            inputs.own_srcs,
+            opaque = inputs.opaque,
+            rule_deps = inputs.rule_deps,
+            own_records = inputs.own_records,
+            non_standalone = _has_no_analyze_tag(ctx),
         ),
     ]
 
