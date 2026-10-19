@@ -228,6 +228,46 @@ jobs:
             [ "$(cat "$logdir/$slug.status")" = 0 ] || fail=1
           done <<< "$FOLDERS"
           exit "$fail"
+      # The pub symlink guard (`dart/pub/private/pub_symlink.bzl`) must not
+      # depend on host tools or PATH. Every step above runs Bazel under bash
+      # (see the Test step's `shell: bash`), where Git Bash's GNU
+      # find/readlink/cp/rm/mv come first on PATH and mask such a
+      # dependency — rules_flutter main caught it instead, with Windows
+      # resolving `find` to FIND.EXE. This step fetches and builds a
+      # workspace holding one hosted and one git pub package from
+      # PowerShell, with a fresh output base so the fetch really runs under
+      # PowerShell's PATH. It shares shard 3's runner and disk cache, so it
+      # fits the existing shard time.
+      - name: PowerShell pub fetch (no host tools)
+        if: matrix.os == 'windows-latest' && matrix.shard == 3
+        working-directory: e2e/pub_fetch_powershell
+        shell: powershell
+        run: |
+          [System.IO.File]::WriteAllText(".bazelversion", "9.3.0`n")
+          bazel --output_base="$env:RUNNER_TEMP/bazel-pwsh" build //...
+          bazel --output_base="$env:RUNNER_TEMP/bazel-pwsh" run //:app
+      # Same guard, other direction: shadow find/readlink/cp/rm/mv with
+      # shims that fail loudly, fetch the mixed hosted+git workspace twice
+      # (normal vs stubbed PATH, fresh output bases so both really fetch),
+      # and diff the fetched package trees: they must be identical, with no
+      # symlinks left behind. Shares shard 3's runner and disk cache.
+      - name: Restricted-PATH pub fetch equality
+        if: matrix.os == 'ubuntu-latest' && matrix.shard == 3
+        shell: bash
+        run: |
+          ws="${GITHUB_WORKSPACE}"
+          shims="$(mktemp -d)"
+          for tool in find readlink cp rm mv; do
+            printf '#!/bin/sh\necho "blocked: %s must not be used" >&2\nexit 99\n' "$tool" > "$shims/$tool"
+            chmod +x "$shims/$tool"
+          done
+          echo "9.3.0" > "$ws/e2e/pub_fetch_powershell/.bazelversion"
+          ( cd "$ws/e2e/pub_fetch_powershell" && bazel --output_base="$RUNNER_TEMP/bazel-pw-normal" build //... )
+          ( cd "$ws/e2e/pub_fetch_powershell" && bazel --output_base="$RUNNER_TEMP/bazel-pw-stubbed" build --repo_env=PATH="$shims:/usr/local/bin:/usr/bin:/bin" //... )
+          for repo in "rules_dart++pub+dart_pub__characters" "rules_dart++pub+dart_pub__meta" "rules_dart++pub+pub_deps"; do
+            diff -r "$RUNNER_TEMP/bazel-pw-normal/external/$repo" "$RUNNER_TEMP/bazel-pw-stubbed/external/$repo"
+          done
+          test -z "$(find "$RUNNER_TEMP/bazel-pw-stubbed/external/rules_dart++pub+dart_pub__characters" "$RUNNER_TEMP/bazel-pw-stubbed/external/rules_dart++pub+dart_pub__meta" -type l)"
       # Guards Mivr/rules_dart#1: a minimal consuming module must be able to
       # enumerate the whole published module. Dev-only tooling lives in nested
       # modules excluded via REPO.bazel `ignore_directories`, so no package under
