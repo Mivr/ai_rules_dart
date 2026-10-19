@@ -284,7 +284,7 @@ def make_dart_package_member_build_content(name, language_version, code_assets =
 
     member = """\
 dart_package_member(
-    name = "{name}",
+    name = "{target}",
     srcs = glob(["lib/**/*.dart"], allow_empty = True),
 {assets}{hook}{link_hook}{version}    package_name = "{name}",
     resources = glob(
@@ -296,6 +296,9 @@ dart_package_member(
     visibility = ["//visibility:public"],
 )
 """.format(
+        # `package:test` keeps its public name for the target that carries
+        # the runner beside it; see `_MEMBER_TEST_RUNNER_BLOCK`.
+        target = _TEST_LIBRARY if name == "test" else name,
         name = name,
         assets = assets_block,
         hook = hook_block,
@@ -316,7 +319,10 @@ def make_scc_merged_build_content(members, dep_labels, repo_name):
     One `dart_library` names every member package and the edges leaving the
     cycle; one `alias` per member (plus one named for the repository itself,
     the default target) points at it, so `@hub//:<member>` and a direct
-    dependency on the repository both resolve to the merged closure.
+    dependency on the repository both resolve to the merged closure. The one
+    exception is a `test` member: like its spoke, it keeps its public name
+    for the `dart_test_package` carrying the runner, which is what its alias
+    points at.
 
     Args:
       members: Sorted list of member package names.
@@ -333,17 +339,30 @@ def make_scc_merged_build_content(members, dep_labels, repo_name):
         dep_lines = ['        "{}",'.format(dep) for dep in dep_labels]
         deps_block = "    deps = [\n{}\n    ],\n".format("\n".join(dep_lines))
 
-    member_lines = ['        "//{member}:{member}",'.format(member = member) for member in members]
+    member_lines = []
+    for member in members:
+        target = _TEST_LIBRARY if member == "test" else member
+        member_lines.append('        "//{member}:{target}",'.format(member = member, target = target))
     members_block = "    members = [\n{}\n    ],\n".format("\n".join(member_lines))
 
     aliases = []
-    for member in members + [repo_name]:
+    for member in members:
+        if member == "test":
+            actual = "//test:test"
+        else:
+            actual = ":merged"
         aliases.append("""\
 alias(
     name = "{member}",
+    actual = "{actual}",
+    visibility = ["//visibility:public"],
+)""".format(member = member, actual = actual))
+    aliases.append("""\
+alias(
+    name = "{repo}",
     actual = ":merged",
     visibility = ["//visibility:public"],
-)""".format(member = member))
+)""".format(repo = repo_name))
 
     return (
         _LOAD + "\n" +

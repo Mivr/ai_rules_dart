@@ -327,6 +327,9 @@ def _member_test_content_test_impl(ctx):
         version = "1.25.0",
         merged_label = "//:merged",
     )
+    asserts.true(env, "dart_package_member(" in content)
+    asserts.true(env, 'name = "test_library"' in content)
+    asserts.true(env, 'package_name = "test"' in content)
     asserts.true(env, "dart_test_package(" in content)
     asserts.true(env, 'library = "//:merged"' in content)
     asserts.true(env, 'deps = ["//:merged"]' in content)
@@ -353,6 +356,19 @@ def _merged_content_test_impl(ctx):
     deps_at = content.find("deps = [")
     meta_at = content.find('"@dart_pub__meta//:meta"')
     asserts.true(env, deps_at != -1 and deps_at < meta_at)
+    return unittest.end(env)
+
+def _merged_test_member_content_test_impl(ctx):
+    env = unittest.begin(ctx)
+    content = make_scc_merged_build_content(
+        members = ["foo", "test"],
+        dep_labels = [],
+        repo_name = "dart_pub__scc__foo__test",
+    )
+    asserts.true(env, '"//foo:foo"' in content)
+    asserts.true(env, '"//test:test_library"' in content)
+    asserts.true(env, 'name = "test",\n    actual = "//test:test"' in content)
+    asserts.true(env, 'name = "foo",\n    actual = ":merged"' in content)
     return unittest.end(env)
 
 def _plan_scope_sccs_test_impl(ctx):
@@ -436,6 +452,7 @@ _t17_test = unittest.make(_merged_content_test_impl)
 _t18_test = unittest.make(_plan_scope_sccs_test_impl)
 _t19_test = unittest.make(_plan_scope_sccs_isolated_test_impl)
 _t20_test = unittest.make(_plan_scope_sccs_explicit_left_alone_test_impl)
+_t21_test = unittest.make(_merged_test_member_content_test_impl)
 
 def pub_scc_test_suite(name):
     small_unittest_suite(
@@ -461,4 +478,5 @@ def pub_scc_test_suite(name):
         _t18_test,
         _t19_test,
         _t20_test,
+        _t21_test,
     )
