@@ -71,6 +71,7 @@ load(
     "resolve_package_identity",
     "same_package_library_dep_files",
     "synth_package_config",
+    "writable_home_env",
 )
 load(
     ":dart_analyzer_summary.bzl",
@@ -314,6 +315,7 @@ def _dart_codegen_impl(ctx):
             outputs = outputs,
             mnemonic = "DartCodegen",
             progress_message = "DartCodegen %s" % ctx.label,
+            env = writable_home_env(dart, outputs[0]),
             execution_requirements = {
                 "supports-workers": "1",
                 "requires-worker-protocol": "proto",
@@ -325,6 +327,17 @@ def _dart_codegen_impl(ctx):
         )
     else:
         # Run generator as a Dart script via the SDK's dart executable.
+        # Always pass an explicit `--packages` before the script path so the
+        # Dart VM never walks ancestor directories above `output_user_root`.
+        script_pc = ctx.file.package_config or synth_pc
+        if script_pc == None:
+            script_pc = ctx.actions.declare_file(ctx.label.name + ".package_config.json")
+            ctx.actions.write(
+                output = script_pc,
+                content = '{"configVersion": 2, "packages": []}\n',
+            )
+            direct_inputs.append(script_pc)
+        args.add(script_pc, format = "--packages=%s")
         args.add(ctx.file.generator.path)
         args.add("--input", src.path)
         args.add("--input-asset", asset_path_for(src, lib_root))
@@ -352,6 +365,7 @@ def _dart_codegen_impl(ctx):
             outputs = outputs,
             mnemonic = "DartCodegen",
             progress_message = "DartCodegen %s" % ctx.label,
+            env = writable_home_env(dart, outputs[0]),
         )
 
     return [

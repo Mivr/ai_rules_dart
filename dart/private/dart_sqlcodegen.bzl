@@ -34,6 +34,7 @@ load(
     "resolve_package_identity",
     "same_package_library_dep_files",
     "synth_package_config",
+    "writable_home_env",
 )
 
 def _dart_sqlcodegen_impl(ctx):
@@ -136,6 +137,7 @@ def _dart_sqlcodegen_impl(ctx):
         outputs = outputs,
         mnemonic = "DartSqlCodegen",
         progress_message = "DartSqlCodegen %s" % ctx.label,
+        env = writable_home_env(toolchain.dart_sdk_info.dart, outputs[0]),
         execution_requirements = {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",

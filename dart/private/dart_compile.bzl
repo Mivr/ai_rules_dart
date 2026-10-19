@@ -164,7 +164,13 @@ def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asse
     """
     dart_bin = dart_sdk_info.dart
     dartvm = sdk_dartvm(dart_sdk_info)
+    pkg_cfg = ctx.actions.declare_file(output.basename + ".jit_package_config.json")
+    ctx.actions.write(
+        output = pkg_cfg,
+        content = '{"configVersion": 2, "packages": []}\n',
+    )
     args = ctx.actions.args()
+    args.add(pkg_cfg, format = "--packages=%s")
     args.add(jit_tool)
     args.add(dart_bin, format = "--dart=%s")
     if dartvm != None:
@@ -182,7 +188,7 @@ def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asse
         executable = dart_bin,
         arguments = [args],
         inputs = depset(
-            direct = [jit_tool, dart_bin, main] + ([dartvm] if dartvm != None else []),
+            direct = [jit_tool, pkg_cfg, dart_bin, main] + ([dartvm] if dartvm != None else []),
             transitive = [dart_sdk_info.compile_files],
         ),
         outputs = [output],
@@ -281,8 +287,7 @@ def _kernel_action(
     if jit_tool != None:
         dartvm = sdk_dartvm(dart_sdk_info)
         wrapper_args = ctx.actions.args()
-        if dartvm == None:
-            wrapper_args.add(package_config, format = "--packages=%s")
+        wrapper_args.add(package_config, format = "--packages=%s")
         wrapper_args.add(jit_tool)
         wrapper_args.add("--gen-kernel")
         wrapper_args.add(tools.dartaotruntime)

@@ -233,6 +233,9 @@ int _trainInScratch({
     for (final t in trees) {
       _copyTree(t.value, '${scratch.path}/${t.key}');
     }
+    File('${scratch.path}/.dart_tool/package_config.json')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync('{"configVersion": 2, "packages": []}\n');
 
     // The training run keeps the VM flags that make the snapshot repeat, and
     // none that name a host path. The scratch directory is the working
@@ -257,6 +260,7 @@ int _trainInScratch({
         // intent is cross-CPU identity, so a cache can share the snapshot.
         '--target_unknown_cpu',
         if (enableAsserts) '--enable-asserts',
+        '--packages=.dart_tool/package_config.json',
         '--snapshot-kind=app-jit',
         '--snapshot=snapshot.jit',
         ...dartArgs,

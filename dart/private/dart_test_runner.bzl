@@ -191,7 +191,13 @@ def _dart_test_runner_snapshot_impl(ctx):
     # reaches the training run, so a developer's `DartTest.yaml` cannot change
     # what the snapshot is trained on.
     dartvm = sdk_dartvm(exec_sdk)
+    pkg_cfg = ctx.actions.declare_file(ctx.label.name + ".jit_package_config.json")
+    ctx.actions.write(
+        output = pkg_cfg,
+        content = '{"configVersion": 2, "packages": []}\n',
+    )
     args = ctx.actions.args()
+    args.add(pkg_cfg, format = "--packages=%s")
     args.add(ctx.file._tool)
     args.add(exec_sdk.dart, format = "--dart=%s")
     if dartvm != None:
@@ -213,7 +219,7 @@ def _dart_test_runner_snapshot_impl(ctx):
         executable = exec_sdk.dart,
         arguments = [args],
         inputs = depset(
-            direct = [ctx.file._tool, exec_sdk.dart, runner, training.dill, training.source] + ([dartvm] if dartvm != None else []),
+            direct = [ctx.file._tool, pkg_cfg, exec_sdk.dart, runner, training.dill, training.source] + ([dartvm] if dartvm != None else []),
             transitive = [exec_sdk.compile_files, exec_sdk.runtime_files],
         ),
         outputs = [snapshot],

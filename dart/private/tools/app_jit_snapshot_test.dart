@@ -351,4 +351,28 @@ void main() {
       'a,b|true|declared-bazel-out|declared-dot',
     );
   });
+
+  test('app-jit training passes explicit --packages in scratch and ignores ancestor .dart_tool', () {
+    final dartBin = Platform.resolvedExecutable;
+    // Poison the ancestor directory with a malformed .dart_tool/package_config.json
+    // so any upward directory walk from the training scratch dir would fail.
+    File('${tmp.path}/.dart_tool/package_config.json')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync('{malformed package_config');
+
+    final workDir = Directory('${tmp.path}/nested/work')
+      ..createSync(recursive: true);
+    final trainScript = File('${workDir.path}/train.dart')
+      ..writeAsStringSync('void main(List<String> args) {}\n');
+    final outJit = File('${workDir.path}/out.jit');
+
+    snapshot.main([
+      '--dart=$dartBin',
+      '--sdk-version=3.13.5',
+      '--snapshot=${outJit.path}',
+      '--',
+      trainScript.path,
+    ]);
+    expect(outJit.existsSync(), isTrue);
+  });
 }

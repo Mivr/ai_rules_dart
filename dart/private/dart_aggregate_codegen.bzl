@@ -55,6 +55,7 @@ load(
     "resolve_package_identity",
     "same_package_library_dep_files",
     "synth_package_config",
+    "writable_home_env",
 )
 
 def _dart_aggregate_codegen_impl(ctx):
@@ -160,6 +161,7 @@ def _dart_aggregate_codegen_impl(ctx):
             outputs = outputs,
             mnemonic = "DartAggregateCodegen",
             progress_message = "DartAggregateCodegen %s" % ctx.label,
+            env = writable_home_env(dart_sdk_info.dart, outputs[0]),
             execution_requirements = {
                 "supports-workers": "1",
                 "requires-worker-protocol": "proto",
@@ -169,10 +171,20 @@ def _dart_aggregate_codegen_impl(ctx):
     else:
         # A `generator_script` is run by the `dart` launcher, which also loads
         # `dartvm` and the kernel service: the runtime subset, on top of the
-        # analyze subset.
+        # analyze subset. Always pass an explicit `--packages` before the script
+        # path so the Dart VM never walks ancestor directories above
+        # `output_user_root`.
+        script_pc = ctx.file.package_config or synth_pc
+        if script_pc == None:
+            script_pc = ctx.actions.declare_file(ctx.label.name + ".package_config.json")
+            ctx.actions.write(
+                output = script_pc,
+                content = '{"configVersion": 2, "packages": []}\n',
+            )
+            direct_inputs = direct_inputs + [script_pc]
         ctx.actions.run(
             executable = dart_sdk_info.dart,
-            arguments = [ctx.file.generator_script.path, args],
+            arguments = ["--packages=" + script_pc.path, ctx.file.generator_script.path, args],
             inputs = depset(
                 direct = [ctx.file.generator_script] + direct_inputs,
                 transitive = transitive + [dart_sdk_info.runtime_files],
@@ -180,6 +192,7 @@ def _dart_aggregate_codegen_impl(ctx):
             outputs = outputs,
             mnemonic = "DartAggregateCodegen",
             progress_message = "DartAggregateCodegen %s" % ctx.label,
+            env = writable_home_env(dart_sdk_info.dart, outputs[0]),
         )
 
     return [

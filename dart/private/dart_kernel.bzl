@@ -53,6 +53,7 @@ load(
     "own_package_record",
     "sdk_path_from_dart",
     "stable_path",
+    "writable_home_env",
 )
 load("//dart/private:dart_info.bzl", "package_lib_prefix")
 
@@ -794,6 +795,7 @@ def kernel_module_action(
         outputs = [output, excluded] + ([koutline] if koutline != None else []),
         mnemonic = "DartKernel",
         progress_message = "Compiling Dart kernel module %s" % output.short_path,
+        env = writable_home_env(dart_exe or tools.dartaotruntime, output),
         execution_requirements = {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
@@ -895,6 +897,7 @@ def kernel_link_action(
         outputs = outputs,
         mnemonic = "DartKernelLink",
         progress_message = "Linking Dart kernel %s" % ctx.label,
+        env = writable_home_env(exec_sdk.dart if exec_sdk != None else executable, output),
         execution_requirements = {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",

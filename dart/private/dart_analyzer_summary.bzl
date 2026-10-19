@@ -29,7 +29,7 @@ unsafe: a toolchain SDK newer than the pinned analyzer supports
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartInfo")
-load("//dart/private:common.bzl", "generate_package_config", "kernel_sdk_mismatch_error")
+load("//dart/private:common.bzl", "generate_package_config", "kernel_sdk_mismatch_error", "writable_home_env")
 load("//dart/private:project_staging.bzl", "mangle_package_dir")
 load("//dart/private:source_set.bzl", "package_for_index", "package_index")
 
@@ -225,6 +225,7 @@ def _analyzer_sdk_summary_impl(ctx):
         outputs = [summary],
         mnemonic = "DartAnalyzerSdkSummary",
         progress_message = "Summarizing the Dart SDK for analysis",
+        env = writable_home_env(dart_sdk_info.dart, summary),
     )
     return [DefaultInfo(files = depset([summary]))]
 
@@ -402,6 +403,7 @@ def _dart_analyzer_summary_impl(target, ctx):
             outputs = [embedder_sdk],
             mnemonic = "DartAnalyzerSdkSummary",
             progress_message = "Summarizing Dart embedder SDK %{label}",
+            env = writable_home_env(dart_sdk_info.dart, embedder_sdk),
         )
         return [DartAnalyzerSummaryInfo(
             summary = None,
@@ -595,6 +597,7 @@ def _dart_analyzer_summary_impl(target, ctx):
         outputs = [summary],
         mnemonic = "DartAnalyzerSummary",
         progress_message = "Summarizing Dart library %{label}",
+        env = writable_home_env(dart_sdk_info.dart, summary),
         execution_requirements = {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",

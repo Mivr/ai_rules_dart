@@ -326,6 +326,7 @@ def _analyze_summaries(ctx, name, staged, summaries, sdk_summary, sdk_inputs, ow
         outputs = [stamp],
         mnemonic = "DartAnalyze",
         progress_message = "Analyzing Dart sources of %{label} against summaries",
+        env = writable_home_env(dart_sdk_info.dart, stamp),
         execution_requirements = {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",

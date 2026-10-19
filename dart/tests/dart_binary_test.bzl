@@ -5,6 +5,8 @@ load("//dart:defs.bzl", "dart_binary", "dart_codegen", "dart_test")
 load("//dart:providers.bzl", "DartCompileInfo")
 load("//dart/private:dart_binary.bzl", "binary_output_basename")
 load("//dart/private:dart_compile.bzl", "compile_quiet_flags")
+load("//dart/private:dart_test.bzl", "dart_test_kernel")
+load("//dart/private:dart_test_runner.bzl", "dart_test_runner_snapshot")
 
 _RuleKindInfo = provider(
     doc = "Records `ctx.rule.kind` for `target_under_test`.",
@@ -131,6 +133,43 @@ def _kernel_launcher_binary_test_impl(ctx):
 
 _kernel_launcher_binary_test = analysistest.make(_kernel_launcher_binary_test_impl)
 
+def _script_action_packages_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    matching = [
+        a
+        for a in analysistest.target_actions(env)
+        if a.mnemonic == ctx.attr.mnemonic
+    ]
+    asserts.equals(env, 1, len(matching), "expected one %s action" % ctx.attr.mnemonic)
+    action = matching[0]
+    asserts.true(
+        env,
+        "HOME" in action.env or "USERPROFILE" in action.env,
+        "%s action must set writable_home_env, got env=%s" % (ctx.attr.mnemonic, action.env),
+    )
+    pkg_indices = [i for i, a in enumerate(action.argv) if a.startswith("--packages=")]
+    script_indices = [i for i, a in enumerate(action.argv) if a.endswith("/app_jit_snapshot.dart")]
+    asserts.true(
+        env,
+        len(pkg_indices) >= 1 and len(script_indices) >= 1 and pkg_indices[0] < script_indices[0],
+        "%s action must pass --packages=<file> before app_jit_snapshot.dart in argv=%s" % (ctx.attr.mnemonic, action.argv),
+    )
+    pkg_path = action.argv[pkg_indices[0]][len("--packages="):]
+    input_paths = [f.path for f in action.inputs.to_list()]
+    asserts.true(
+        env,
+        pkg_path in input_paths,
+        "--packages file %s must be a declared input of %s" % (pkg_path, ctx.attr.mnemonic),
+    )
+    return analysistest.end(env)
+
+_script_action_packages_test = analysistest.make(
+    _script_action_packages_test_impl,
+    attrs = {
+        "mnemonic": attr.string(mandatory = True),
+    },
+)
+
 _exe_windows_test = unittest.make(_exe_gets_dot_exe_on_windows_test_impl)
 _exe_other_test = unittest.make(_exe_bare_off_windows_test_impl)
 _snapshot_test = unittest.make(_snapshot_modes_fixed_extensions_test_impl)
@@ -192,6 +231,41 @@ def dart_binary_test_suite(name):
         size = "small",
         target_under_test = "//dart/ext/json_serializable:shim",
     )
+    dart_binary(
+        name = "jit_snapshot_fixture",
+        compile_mode = "jit-snapshot",
+        main = "//dart/private/tools:noop.dart",
+        tags = ["manual"],
+    )
+    _script_action_packages_test(
+        name = "dart_jit_snapshot_packages_test",
+        size = "small",
+        mnemonic = "DartJitSnapshot",
+        target_under_test = ":jit_snapshot_fixture",
+    )
+    _script_action_packages_test(
+        name = "dart_kernel_wrapper_packages_test",
+        size = "small",
+        mnemonic = "DartKernel",
+        target_under_test = "//dart/private/tools:noop",
+    )
+    dart_test_kernel(
+        name = "test_runner_training_fixture",
+        main = "//dart/private/tools:noop.dart",
+        tags = ["manual"],
+    )
+    dart_test_runner_snapshot(
+        name = "test_runner_snapshot_fixture",
+        runner = "//dart/private/tools:analyze_runner",
+        tags = ["manual"],
+        training = ":test_runner_training_fixture",
+    )
+    _script_action_packages_test(
+        name = "dart_test_runner_snapshot_packages_test",
+        size = "small",
+        mnemonic = "DartTestRunnerSnapshot",
+        target_under_test = ":test_runner_snapshot_fixture",
+    )
     native.test_suite(
         name = name,
         tests = [
@@ -205,5 +279,8 @@ def dart_binary_test_suite(name):
             ":dart_test_rule_kind_test",
             ":dart_codegen_kernel_sdk_mismatch_test",
             ":dart_binary_kernel_launcher_test",
+            ":dart_jit_snapshot_packages_test",
+            ":dart_kernel_wrapper_packages_test",
+            ":dart_test_runner_snapshot_packages_test",
         ],
     )
