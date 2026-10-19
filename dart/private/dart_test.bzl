@@ -142,15 +142,19 @@ def _compile_test_kernel(ctx, own, bootstrap, use_base_dill = False):
     dart_sdk_info = toolchain.dart_sdk_info
     packages = own.packages
 
-    hook_err = check_unreplaced_hooks(ctx.label, packages)
-    if hook_err != None:
-        fail(hook_err)
+    if ctx.attr.code_assets_from_deps:
+        hook_err = check_unreplaced_hooks(ctx.label, packages)
+        if hook_err != None:
+            fail(hook_err)
 
-    # Transitively propagated assets plus any named outright — see the same
-    # comment in `dart_binary`.
+    # Transitively propagated assets (unless opted out) plus any named outright
+    # — see the same comment in `dart_binary`.
+    transitive_assets = (
+        collect_transitive_code_assets(ctx.attr.deps) if ctx.attr.code_assets_from_deps else depset()
+    )
     resolved_assets = resolve_code_assets(
         ctx.label,
-        collect_transitive_code_assets(ctx.attr.deps),
+        transitive_assets,
         [dep[DartCodeAssetInfo] for dep in ctx.attr.code_assets],
     )
     defines = merge_dart_defines(ctx)
@@ -429,6 +433,17 @@ def _write_bootstrap(ctx, main_path):
     )
     return bootstrap
 
+def _test_code_assets_transition_impl(_settings, attr):
+    return {
+        "//dart/private:code_assets_enabled": getattr(attr, "code_assets_from_deps", True),
+    }
+
+_test_code_assets_transition = transition(
+    implementation = _test_code_assets_transition_impl,
+    inputs = [],
+    outputs = ["//dart/private:code_assets_enabled"],
+)
+
 # The attributes that define a test's kernel, shared by `dart_test` and
 # `dart_test_kernel` so the two compile the same way.
 _TEST_KERNEL_ATTRS = dict({
@@ -460,14 +475,26 @@ runfiles so the Dart VM resolves them — no `dart:ffi` ceremony in the test sou
 must provide `DartCodeAssetInfo` (see the `dart_code_asset` rule).""",
         providers = [DartCodeAssetInfo],
     ),
+    "code_assets_from_deps": attr.bool(
+        default = True,
+        doc = """Whether to pick up native code assets propagated through `deps`.
+
+Leave this on for a test that runs the native packages it depends on. Turn it off for a pure-Dart \
+`dart_test` that imports packages for their Dart API (such as `package:drift` with a mock or \
+custom executor) without loading their native libraries at runtime.""",
+    ),
     "_jit_tool": attr.label(
         default = "//dart/private/tools:app_jit_snapshot.dart",
         allow_single_file = True,
+    ),
+    "_allowlist_function_transition": attr.label(
+        default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
     ),
 }, **dict(WINDOWS_CONSTRAINT_ATTR, **dict(DART_ABI_CONSTRAINT_ATTRS, **dict(EXTRA_DART_DEFINES_ATTR, **dict(MODULAR_KERNEL_ATTRS, **EXECUTABLE_PACKAGE_ATTRS)))))
 
 dart_test = rule(
     implementation = _dart_test_impl,
+    cfg = _test_code_assets_transition,
     attrs = dict(
         _TEST_KERNEL_ATTRS,
         data = attr.label_list(
@@ -500,6 +527,7 @@ told where a runfile is (resolve it with `Runfiles.rlocation()`).""",
 
 dart_test_kernel = rule(
     implementation = _dart_test_kernel_impl,
+    cfg = _test_code_assets_transition,
     attrs = _TEST_KERNEL_ATTRS,
     toolchains = ["//dart:toolchain_type"] + MODULAR_KERNEL_TOOLCHAINS,
     doc = (

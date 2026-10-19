@@ -21,6 +21,61 @@ guessing at them.
 load("@rules_cc//cc/common:cc_shared_library_info.bzl", "CcSharedLibraryInfo")
 load("//dart:providers.bzl", "CODE_ASSET_LINK_MODES", "DartCodeAssetInfo")
 
+_CcToolchainCheckInfo = provider(
+    doc = "Records the C/C++ toolchain resolved for a `dart_code_asset`'s `shared_library`.",
+    fields = {
+        "toolchain_label": "Label of the resolved `cc_toolchain` target, or `None`.",
+    },
+)
+
+def _cc_toolchain_check_aspect_impl(_target, ctx):
+    tc_info = ctx.toolchains["@bazel_tools//tools/cpp:toolchain_type"]
+    if tc_info == None or getattr(tc_info, "cc", None) == None:
+        return [_CcToolchainCheckInfo(toolchain_label = None)]
+    return [
+        _CcToolchainCheckInfo(
+            toolchain_label = getattr(tc_info.cc, "_toolchain_label", None),
+        ),
+    ]
+
+_cc_toolchain_check_aspect = aspect(
+    implementation = _cc_toolchain_check_aspect_impl,
+    toolchains = [
+        config_common.toolchain_type("@bazel_tools//tools/cpp:toolchain_type", mandatory = False),
+    ],
+)
+
+def check_registered_cc_toolchain(target_label, shared_library_label, cc_toolchain_label, is_windows = False):
+    """Returns an actionable error if `shared_library` resolved to an unregistered/probed host C toolchain.
+
+    Args:
+      target_label: Label of the `dart_code_asset` target.
+      shared_library_label: Label of its `shared_library` target.
+      cc_toolchain_label: Label (or string) of the resolved `cc_toolchain`, or `None`.
+      is_windows: Whether the target platform is Windows.
+
+    Returns:
+      An error message string, or `None` if a registered C/C++ toolchain is active.
+    """
+    if cc_toolchain_label == None:
+        return (
+            "dart_code_asset %s: building `shared_library` %s requires a C/C++ toolchain " +
+            "registered by the consuming module (for example `hermetic_cc_toolchain` in " +
+            "MODULE.bazel), but no `@bazel_tools//tools/cpp:toolchain_type` toolchain was resolved."
+        ) % (target_label, shared_library_label)
+    label_str = str(cc_toolchain_label)
+    if not is_windows and "local_config_cc" in label_str:
+        return (
+            "dart_code_asset %s: `shared_library` %s resolved to the host-probed C/C++ " +
+            "toolchain (%s). `rules_dart` does not register a C/C++ toolchain for its " +
+            "consumers or fall back to `@local_config_cc`. Register a hermetic C/C++ " +
+            "toolchain in your `MODULE.bazel` (for example `bazel_dep(name = " +
+            "\"hermetic_cc_toolchain\", ...)` and `register_toolchains(\"@zig_sdk//toolchain:...\")`), " +
+            "or set `code_assets_from_deps = False` on a pure-Dart `dart_binary` / `dart_test` " +
+            "that does not load native code assets at runtime."
+        ) % (target_label, shared_library_label, label_str)
+    return None
+
 def _extract_dynamic_library(ctx, library_target):
     """Pull the dynamic-library File out of a `cc_shared_library` target.
 
@@ -64,6 +119,18 @@ def _dart_code_asset_impl(ctx):
         if ctx.attr.system_uri:
             fail(("dart_code_asset %s: `system_uri` is only valid with " +
                   "link_mode = \"dynamic_loading_system\".") % ctx.label)
+        is_windows = ctx.target_platform_has_constraint(
+            ctx.attr._os_windows[platform_common.ConstraintValueInfo],
+        )
+        tc_check = ctx.attr.shared_library[_CcToolchainCheckInfo]
+        tc_err = check_registered_cc_toolchain(
+            ctx.label,
+            ctx.attr.shared_library.label,
+            tc_check.toolchain_label,
+            is_windows = is_windows,
+        )
+        if tc_err != None:
+            fail(tc_err)
         dynamic_library = _extract_dynamic_library(ctx, ctx.attr.shared_library)
     elif link_mode == "dynamic_loading_system":
         if not ctx.attr.system_uri:
@@ -113,10 +180,14 @@ another expresses that here, and consumers see a single target.""",
         ),
         "shared_library": attr.label(
             providers = [CcSharedLibraryInfo],
+            aspects = [_cc_toolchain_check_aspect],
             doc = "A `cc_shared_library` target whose dynamic library backs this code asset. Required for `dynamic_loading_bundle`; forbidden for the other link modes.",
         ),
         "system_uri": attr.string(
             doc = "System library URI, e.g. `libsqlite3.so.0`. Required for `dynamic_loading_system`; forbidden for the other link modes.",
+        ),
+        "_os_windows": attr.label(
+            default = "@platforms//os:windows",
         ),
     },
     provides = [DartCodeAssetInfo],

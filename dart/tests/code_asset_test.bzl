@@ -5,11 +5,69 @@ An untested `fail()` is a message nobody has ever read, so each one gets a
 case here asserting both that it fires and what it says.
 """
 
-load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
+load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load("//dart:defs.bzl", "dart_code_asset")
+load("//dart/private:dart_code_asset.bzl", "check_registered_cc_toolchain")
 
 _ASSET_ID = "package:fixture/src/ffi/fixture.g.dart"
 _SHARED_LIB = "//dart/tests/cc_fixture:empty_shared"
+
+def _cc_toolchain_check_unit_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    probed_err = check_registered_cc_toolchain(
+        "//dart/ext/sqlite3:code_asset",
+        "//dart/ext/sqlite3:libsqlite3",
+        "@@rules_cc++cc_configure_extension+local_config_cc//:cc-compiler-k8",
+    )
+    asserts.true(
+        env,
+        probed_err != None and "hermetic_cc_toolchain" in probed_err and "local_config_cc" in probed_err,
+        "probed host local_config_cc toolchain must fail with actionable hermetic_cc_toolchain guidance: %s" % probed_err,
+    )
+
+    missing_err = check_registered_cc_toolchain(
+        "//dart/ext/sqlite3:code_asset",
+        "//dart/ext/sqlite3:libsqlite3",
+        None,
+    )
+    asserts.true(
+        env,
+        missing_err != None and "hermetic_cc_toolchain" in missing_err,
+        "missing C/C++ toolchain must fail with actionable hermetic_cc_toolchain guidance: %s" % missing_err,
+    )
+
+    asserts.equals(
+        env,
+        None,
+        check_registered_cc_toolchain(
+            "//dart/ext/sqlite3:code_asset",
+            "//dart/ext/sqlite3:libsqlite3",
+            "@@hermetic_cc_toolchain++toolchains+zig_sdk//toolchain:linux_amd64_gnu.2.28_cc",
+        ),
+    )
+    asserts.equals(
+        env,
+        None,
+        check_registered_cc_toolchain(
+            "//dart/ext/sqlite3:code_asset",
+            "//dart/ext/sqlite3:libsqlite3",
+            "@@apple_support++apple_cc_configure_extension+local_config_apple_cc//:cc-compiler-darwin_arm64",
+        ),
+    )
+    asserts.equals(
+        env,
+        None,
+        check_registered_cc_toolchain(
+            "//dart/ext/sqlite3:code_asset",
+            "//dart/ext/sqlite3:libsqlite3",
+            "@@rules_cc++cc_configure_extension+local_config_cc//:cc-compiler-x64_windows",
+            is_windows = True,
+        ),
+    )
+    return unittest.end(env)
+
+_cc_toolchain_check_unit_test = unittest.make(_cc_toolchain_check_unit_test_impl)
 
 def _expect(msg):
     def _impl(ctx):
@@ -125,6 +183,11 @@ def code_asset_test_suite(name):
         target_under_test = ":ca_executable_with_system_uri",
     )
 
+    _cc_toolchain_check_unit_test(
+        name = "cc_toolchain_check_unit_test",
+        size = "small",
+    )
+
     native.test_suite(
         name = name,
         tests = [
@@ -135,5 +198,6 @@ def code_asset_test_suite(name):
             ":system_rejects_library_test",
             ":process_rejects_library_test",
             ":executable_rejects_system_uri_test",
+            ":cc_toolchain_check_unit_test",
         ],
     )

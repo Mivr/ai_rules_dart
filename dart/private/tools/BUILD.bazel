@@ -2,6 +2,7 @@ load("//dart:defs.bzl", "dart_binary", "dart_test")
 
 dart_binary(
     name = "noop",
+    code_assets_from_deps = False,
     compile_mode = "exe",
     main = "noop.dart",
     visibility = ["//dart:__subpackages__"],
@@ -24,6 +25,7 @@ exports_files(
 
 dart_binary(
     name = "analyze_runner",
+    code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "analyze_runner.dart",
     modular_kernel = False,
@@ -48,6 +50,7 @@ dart_binary(
 
 dart_binary(
     name = "fix_runner",
+    code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "fix_runner.dart",
     modular_kernel = False,
@@ -56,6 +59,7 @@ dart_binary(
 
 dart_binary(
     name = "fix_applier",
+    code_assets_from_deps = False,
     compile_mode = "exe",
     main = "fix_applier.dart",
     visibility = ["//dart:__subpackages__"],
@@ -63,6 +67,7 @@ dart_binary(
 
 dart_binary(
     name = "test_runner",
+    code_assets_from_deps = False,
     compile_mode = "exe",
     main = "test_runner.dart",
     visibility = ["//dart:__subpackages__"],
@@ -71,6 +76,7 @@ dart_binary(
 
 dart_binary(
     name = "kernel_launcher",
+    code_assets_from_deps = False,
     compile_mode = "exe",
     main = "kernel_launcher.dart",
     visibility = ["//visibility:public"],
@@ -80,6 +86,7 @@ dart_binary(
 # What `test_runner_test` runs through the launcher in place of a real test.
 dart_binary(
     name = "test_runner_fixture",
+    code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "test_runner_fixture.dart",
 )
@@ -106,6 +113,7 @@ dart_test(
 # //dart:copy_toolchain_type. Only dart:io, so it names no pub dependencies.
 dart_binary(
     name = "copy_tree",
+    code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "copy_tree.dart",
     modular_kernel = False,
@@ -137,6 +145,7 @@ dart_binary(
 
 dart_binary(
     name = "format_writer",
+    code_assets_from_deps = False,
     compile_mode = "exe",
     main = "format_writer.dart",
     visibility = ["//dart:__subpackages__"],
@@ -145,6 +154,7 @@ dart_binary(
 
 dart_binary(
     name = "link_hook_runner",
+    code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "link_hook_runner.dart",
     modular_kernel = False,
@@ -161,6 +171,7 @@ dart_binary(
 # `dart_binary(compile_mode = "kernel")`'s kernel. See the file's header.
 dart_binary(
     name = "kernel_link",
+    code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "kernel_link.dart",
     modular_kernel = False,
@@ -173,6 +184,7 @@ dart_binary(
 dart_binary(
     name = "kernel_module",
     srcs = ["dill_outline.dart"],
+    code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "kernel_module.dart",
     modular_kernel = False,

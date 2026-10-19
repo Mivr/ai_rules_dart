@@ -138,6 +138,8 @@ This split is why codegen and host tools resolve even under a target platform ru
 
 For its own in-repo C/C++ targets (`dart/tests/cc_fixture`, `dart/ext/sqlite3`, `dart/ext/webcrypto`), `MODULE.bazel` registers `hermetic_cc_toolchain` (a SHA-256-pinned Zig C/C++ toolchain) with `dev_dependency = True` for Linux targets only (`@zig_sdk//toolchain:linux_amd64_gnu.2.28` and `@zig_sdk//toolchain:linux_arm64_gnu.2.28`). Because the dependency and toolchain registrations are `dev_dependency = True`, they never leak into downstream consumers of `rules_dart`. Scoping registration to Linux targets keeps macOS, iOS, Android, and Windows targets on their own platform toolchains while allowing Linux analysis, builds, and minimal remote execution environments to compile C/C++ hermetically without consulting `local_config_cc` or requiring a host C compiler.
 
+Curated pub-spoke `code_assets` are gated on `//dart/private:code_assets_on` (default `False`), which only `dart_binary(code_assets_from_deps = True)` and `dart_test(code_assets_from_deps = True)` enable, so pure-Dart library, codegen, and tool builds never trigger C/C++ toolchain resolution. Downstream consumers that build bundled `dart_code_asset` targets on Linux must register a C/C++ toolchain in their own `MODULE.bazel` (such as `hermetic_cc_toolchain`); `dart_code_asset` rejects fallback to `@local_config_cc` with an actionable error.
+
 ---
 
 ## Compilation Modes

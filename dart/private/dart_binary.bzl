@@ -284,8 +284,20 @@ def _dart_binary_impl(ctx):
         own.analyzable,
     ] + recorded_uses_info
 
+def _binary_code_assets_transition_impl(_settings, attr):
+    return {
+        "//dart/private:code_assets_enabled": getattr(attr, "code_assets_from_deps", True),
+    }
+
+_binary_code_assets_transition = transition(
+    implementation = _binary_code_assets_transition_impl,
+    inputs = [],
+    outputs = ["//dart/private:code_assets_enabled"],
+)
+
 dart_binary = rule(
     implementation = _dart_binary_impl,
+    cfg = _binary_code_assets_transition,
     attrs = dict({
         "main": attr.label(
             doc = "The Dart entrypoint file containing a top-level `main()` function.",
@@ -377,6 +389,9 @@ persistent-worker rules (`dart_codegen`, `dart_aggregate_codegen`, `dart_sqlcode
 In the `exe` and `aot-snapshot` modes the compiler records them as it tree-shakes. The \
 `kernel` and `jit-snapshot` modes do not tree-shake, so nothing is recorded and the file is \
 the empty JSON object `{}` (`kind = "empty"`).""",
+        ),
+        "_allowlist_function_transition": attr.label(
+            default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
         ),
     }, **dict(DART_ABI_CONSTRAINT_ATTRS, **dict(EXTRA_DART_DEFINES_ATTR, **dict(EXECUTABLE_PACKAGE_ATTRS, **BINARY_MODULAR_KERNEL_ATTRS)))),
     executable = True,

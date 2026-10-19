@@ -133,8 +133,15 @@ def make_dart_library_build_content(name, deps, language_version, code_assets = 
 
     assets_block = ""
     if code_assets:
-        asset_lines = ['        "{}",'.format(a) for a in code_assets]
-        assets_block = "    code_assets = [\n{}\n    ],\n".format("\n".join(asset_lines))
+        asset_lines = ['            "{}",'.format(a) for a in code_assets]
+        assets_block = (
+            "    code_assets = select({{\n" +
+            '        "@rules_dart//dart/private:code_assets_on": [\n' +
+            "{}\n" +
+            "        ],\n" +
+            '        "//conditions:default": [],\n' +
+            "    }}),\n"
+        ).format("\n".join(asset_lines))
 
     hook_block = ""
     if has_unreplaced_hook:

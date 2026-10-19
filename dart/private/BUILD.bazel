@@ -64,6 +64,25 @@ alias(
     visibility = ["//visibility:public"],
 )
 
+# Curated pub-spoke `code_assets` (such as `@dart_pub__sqlite3//:sqlite3` ->
+# `//dart/ext/sqlite3:code_asset`) are gated on `:code_assets_on` so pure-Dart
+# library, codegen, and tool builds never configure `cc_*` targets or probe a C
+# toolchain. `dart_binary(code_assets_from_deps = True)` and `dart_test`
+# transition `:code_assets_enabled` to `True`, while `dart_binary` tools with
+# `code_assets_from_deps = False` transition it to `False`.
+bool_setting(
+    name = "code_assets_enabled",
+    build_setting_default = False,
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "code_assets_on",
+    flag_values = {":code_assets_enabled": "true"},
+    visibility = ["//visibility:public"],
+)
+
 bzl_library(
     name = "toolchains_repo",
     srcs = ["toolchains_repo.bzl"],

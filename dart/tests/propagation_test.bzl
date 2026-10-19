@@ -9,6 +9,9 @@ gets you its assets with no opt-in.
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load("//dart:providers.bzl", "DartCodeAssetInfo", "DartInfo", "DartPackageInfo")
 load("//dart/private:common.bzl", "merge_package_records", "package_agreement_error", "package_code_assets", "resolve_code_assets")
+
+# buildifier: disable=bzl-visibility
+load("//dart/pub/private:build_content.bzl", "make_dart_library_build_content")
 load(":small_suite.bzl", "small_unittest_suite")
 
 _L = "//pkg:consumer"
@@ -412,6 +415,45 @@ asset_conflict_test = analysistest.make(
     expect_failure = True,
 )
 
+def _pub_build_content_gates_code_assets_test_impl(ctx):
+    env = unittest.begin(ctx)
+    content = make_dart_library_build_content(
+        name = "sqlite3",
+        deps = [],
+        language_version = "3.5",
+        code_assets = ["@rules_dart//dart/ext/sqlite3:code_asset"],
+    )
+    asserts.true(
+        env,
+        '"@rules_dart//dart/private:code_assets_on": [\n            "@rules_dart//dart/ext/sqlite3:code_asset",\n        ]' in content and
+        '"//conditions:default": []' in content,
+        "generated pub BUILD content must gate curated code_assets on code_assets_on: %s" % content,
+    )
+    return unittest.end(env)
+
+_CODE_ASSETS_FLAG = str(Label("//dart/private:code_assets_enabled"))
+
+def _pub_spoke_code_assets_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
+    info = target[DartInfo]
+    ids = []
+    for pkg in info.transitive_packages.to_list():
+        ids.extend([a.asset_id for a in package_code_assets(pkg)])
+    asserts.equals(env, sorted(ctx.attr.expected_asset_ids), sorted(ids))
+    return analysistest.end(env)
+
+_pub_spoke_default_code_assets_test = analysistest.make(
+    _pub_spoke_code_assets_test_impl,
+    attrs = {"expected_asset_ids": attr.string_list()},
+)
+
+_pub_spoke_enabled_code_assets_test = analysistest.make(
+    _pub_spoke_code_assets_test_impl,
+    attrs = {"expected_asset_ids": attr.string_list()},
+    config_settings = {_CODE_ASSETS_FLAG: True},
+)
+
 _t0_test = unittest.make(_resolve_dedups_diamond_test_impl)
 _t1_test = unittest.make(_resolve_explicit_matching_transitive_test_impl)
 _t2_test = unittest.make(_resolve_unions_distinct_test_impl)
@@ -430,6 +472,7 @@ _t14_test = unittest.make(_agreement_ignores_distinct_packages_test_impl)
 _t15_test = unittest.make(_agreement_tolerates_records_without_the_field_test_impl)
 _t16_test = unittest.make(_agreement_reports_every_disagreeing_package_test_impl)
 _t17_test = unittest.make(_agreement_reports_both_fields_together_test_impl)
+_t18_test = unittest.make(_pub_build_content_gates_code_assets_test_impl)
 
 def propagation_test_suite(name):
     """Declares the code-asset propagation unit tests.
@@ -438,7 +481,7 @@ def propagation_test_suite(name):
       name: Name of the generated `test_suite`.
     """
     small_unittest_suite(
-        name,
+        name + "_unit",
         _t0_test,
         _t1_test,
         _t2_test,
@@ -457,4 +500,25 @@ def propagation_test_suite(name):
         _t15_test,
         _t16_test,
         _t17_test,
+        _t18_test,
+    )
+    _pub_spoke_default_code_assets_test(
+        name = name + "_pub_spoke_default_omits_code_assets_test",
+        size = "small",
+        expected_asset_ids = [],
+        target_under_test = "@ext_pub_deps//:sqlite3",
+    )
+    _pub_spoke_enabled_code_assets_test(
+        name = name + "_pub_spoke_enabled_attaches_code_assets_test",
+        size = "small",
+        expected_asset_ids = ["package:sqlite3/src/ffi/libsqlite3.g.dart"],
+        target_under_test = "@ext_pub_deps//:sqlite3",
+    )
+    native.test_suite(
+        name = name,
+        tests = [
+            ":" + name + "_unit",
+            ":" + name + "_pub_spoke_default_omits_code_assets_test",
+            ":" + name + "_pub_spoke_enabled_attaches_code_assets_test",
+        ],
     )
