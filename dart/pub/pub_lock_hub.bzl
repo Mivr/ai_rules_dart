@@ -1,20 +1,42 @@
 """Hub repository rule for pubspec.lock packages.
 
 Generates a BUILD file with aliases from each package name to its
-spoke repository: `@hub//:pkg` → `@hub__pkg//:pkg`. A package also declared
-with `pub.package()` aliases to that explicit repository instead, `@pkg//:pkg`,
-which is the one repository the name means in this build.
+repository: a one-package spoke (`@hub__pkg//:pkg`), an explicit
+`pub.package()` repository (`@pkg//:pkg`), or — for a package merged over a
+dependency cycle — the merged repository holding the whole cycle. A package
+also declared with `pub.package()` aliases to that explicit repository
+instead, `@pkg//:pkg`, which is the one repository the name means in this
+build.
 """
 
-def _pub_lock_hub_impl(ctx):
-    spoke_prefix = ctx.attr.spoke_prefix if ctx.attr.spoke_prefix else ctx.attr.hub_name
-    explicit = {pkg: True for pkg in ctx.attr.explicit_packages}
+def pub_lock_hub_content(packages, explicit_packages, spoke_prefix, scc_targets = {}):
+    """Generates the hub BUILD file content, as a string.
+
+    Pure so the alias layout for acyclic graphs can be pinned byte-for-byte:
+    when no package is merged (`scc_targets` empty), the output is exactly
+    what the hub has always generated.
+
+    Args:
+      packages: All hosted package names to create aliases for.
+      explicit_packages: Names in `packages` that are also declared with
+        `pub.package()`. Each aliases to that explicit repository rather
+        than a spoke.
+      spoke_prefix: Prefix for spoke repo names.
+      scc_targets: Dict of package name to the merged repository target a
+        cycle member aliases to. Empty when nothing is merged.
+
+    Returns:
+      BUILD.bazel content as a string.
+    """
+    explicit = {pkg: True for pkg in explicit_packages}
     aliases = []
-    for pkg in ctx.attr.packages:
-        if pkg in explicit:
+    for pkg in packages:
+        if pkg in scc_targets:
+            actual = scc_targets[pkg]
+        elif pkg in explicit:
             actual = "@{pkg}//:{pkg}".format(pkg = pkg)
         else:
-            actual = "@{spoke}__{pkg}//:{pkg}".format(pkg = pkg, spoke = spoke_prefix)
+            actual = "@{spoke}__{pkg}//:{pkg}".format(spoke = spoke_prefix, pkg = pkg)
         aliases.append("""\
 alias(
     name = "{pkg}",
@@ -24,7 +46,16 @@ alias(
             pkg = pkg,
             actual = actual,
         ))
-    ctx.file("BUILD.bazel", "\n\n".join(aliases) + "\n")
+    return "\n\n".join(aliases) + "\n"
+
+def _pub_lock_hub_impl(ctx):
+    spoke_prefix = ctx.attr.spoke_prefix if ctx.attr.spoke_prefix else ctx.attr.hub_name
+    ctx.file("BUILD.bazel", pub_lock_hub_content(
+        ctx.attr.packages,
+        ctx.attr.explicit_packages,
+        spoke_prefix,
+        ctx.attr.scc_targets,
+    ))
 
 pub_lock_hub = repository_rule(
     implementation = _pub_lock_hub_impl,
@@ -45,6 +76,11 @@ pub_lock_hub = repository_rule(
             doc = "Names in `packages` that are also declared with `pub.package()`. " +
                   "Each aliases to that explicit repository rather than a spoke.",
             default = [],
+        ),
+        "scc_targets": attr.string_dict(
+            doc = "Package name to merged repository target, for packages merged over a dependency cycle. " +
+                  "Each aliases to the merged target instead of a spoke. Empty when nothing is merged.",
+            default = {},
         ),
     },
     doc = "Creates a hub repo with aliases pointing to individual spoke package repos.",

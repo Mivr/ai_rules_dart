@@ -86,6 +86,35 @@ def trim_gzip_trailing_nulls(data):
         return stripped + "\0\0"
     return stripped
 
+def pub_lock_spoke_dep_labels(bazel_deps, hub_name, explicit_packages, scc_targets = {}):
+    """Maps a spoke's pubspec dependencies to Bazel labels.
+
+    Pure so the label layout can be tested without downloading anything. With
+    no merged cycle (`scc_targets` empty) the labels are exactly what spokes
+    have always generated.
+
+    Args:
+      bazel_deps: Sorted dependency package names (already filtered to the
+        lock's packages).
+      hub_name: The hub repo name, for constructing cross-spoke labels.
+      explicit_packages: Every name declared with `pub.package()`.
+      scc_targets: Dict of package name to merged repository target, for
+        dependencies merged over a cycle. Empty when nothing is merged.
+
+    Returns:
+      List of fully-qualified Bazel label strings.
+    """
+    explicit = {p: True for p in explicit_packages}
+    labels = []
+    for dep in bazel_deps:
+        if dep in scc_targets:
+            labels.append(scc_targets[dep])
+        elif dep in explicit:
+            labels.append("@{dep}//:{dep}".format(dep = dep))
+        else:
+            labels.append("@{hub}__{dep}//:{dep}".format(hub = hub_name, dep = dep))
+    return labels
+
 def _pub_lock_package_impl(ctx):
     err = pub_lock_package_sha256_error(
         ctx.attr.package_name,
@@ -130,21 +159,21 @@ def _pub_lock_package_impl(ctx):
         pubspec_content = ctx.read(pubspec_path)
         all_deps = parse_pubspec_deps(pubspec_content)
         available = {p: True for p in ctx.attr.lock_packages + ctx.attr.explicit_packages}
-        bazel_deps = sorted([d for d in all_deps if d in available])
+        bazel_deps = sorted([d for d in all_deps if d in available and d != ctx.attr.package_name])
         language_version = _derive_language_version(
             parse_pubspec_sdk_constraint(pubspec_content),
         )
 
-    # Build full label strings for sibling repos: a dependency declared with
-    # `pub.package()` is that explicit repo, every other one is its spoke.
-    explicit = {p: True for p in ctx.attr.explicit_packages}
-    dep_labels = [
-        "@{repo}//:{dep}".format(
-            repo = dep if dep in explicit else "{hub}__{dep}".format(hub = ctx.attr.hub_name, dep = dep),
-            dep = dep,
-        )
-        for dep in bazel_deps
-    ]
+    # Build full label strings for sibling repos: a dependency on a cycle
+    # member points at the merged repository holding the cycle; a dependency
+    # declared with `pub.package()` is that explicit repo, every other one is
+    # its spoke.
+    dep_labels = pub_lock_spoke_dep_labels(
+        bazel_deps,
+        ctx.attr.hub_name,
+        ctx.attr.explicit_packages,
+        ctx.attr.scc_targets,
+    )
 
     # A package that builds native code declares a build hook. rules_dart
     # cannot run it, so unless a curated `dart_code_asset` replaces it — or the
@@ -202,6 +231,12 @@ pub_lock_package = repository_rule(
                   "points at that explicit repository, not a spoke, and is kept even when " +
                   "no lock file lists it.",
             default = [],
+        ),
+        "scc_targets": attr.string_dict(
+            doc = "Package name to merged repository target, for dependencies merged over a " +
+                  "dependency cycle. A dependency on a cycle member points at the merged " +
+                  "repository instead of a spoke. Empty when nothing is merged.",
+            default = {},
         ),
         "ignore_hook": attr.bool(
             doc = "Suppress the unreplaced-hook diagnostic for this package. Set by " +
@@ -263,19 +298,19 @@ def _pub_lock_git_package_impl(ctx):
         pubspec_content = ctx.read(pubspec_path)
         all_deps = parse_pubspec_deps(pubspec_content)
         available = {p: True for p in ctx.attr.lock_packages + ctx.attr.explicit_packages}
-        bazel_deps = sorted([d for d in all_deps if d in available])
+        bazel_deps = sorted([d for d in all_deps if d in available and d != ctx.attr.package_name])
         language_version = _derive_language_version(
             parse_pubspec_sdk_constraint(pubspec_content),
         )
 
-    explicit = {p: True for p in ctx.attr.explicit_packages}
-    dep_labels = [
-        "@{repo}//:{dep}".format(
-            repo = dep if dep in explicit else "{hub}__{dep}".format(hub = ctx.attr.hub_name, dep = dep),
-            dep = dep,
-        )
-        for dep in bazel_deps
-    ]
+    # Build full label strings for sibling repos: a dependency on a cycle
+    # member points at the merged repository holding the cycle.
+    dep_labels = pub_lock_spoke_dep_labels(
+        bazel_deps,
+        ctx.attr.hub_name,
+        ctx.attr.explicit_packages,
+        ctx.attr.scc_targets,
+    )
 
     hooks = _classify_pub_hooks(
         has_build_hook = ctx.path("hook/build.dart").exists,
@@ -329,6 +364,12 @@ pub_lock_git_package = repository_rule(
         "explicit_packages": attr.string_list(
             doc = "Every name declared with `pub.package()`.",
             default = [],
+        ),
+        "scc_targets": attr.string_dict(
+            doc = "Package name to merged repository target, for dependencies on packages merged over a " +
+                  "dependency cycle. A dependency on a cycle member points at the merged " +
+                  "repository instead of a spoke. Empty when nothing is merged.",
+            default = {},
         ),
         "ignore_hook": attr.bool(
             doc = "Suppress the unreplaced-hook diagnostic for this package.",

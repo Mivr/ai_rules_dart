@@ -184,3 +184,173 @@ dart_library(
     if name != "test":
         return _LOAD + "\n" + library
     return _LOAD + _TEST_RUNNER_LOAD + "\n" + library + "\n" + _TEST_RUNNER_BLOCK
+
+_MEMBER_LOAD = 'load("@rules_dart//dart:defs.bzl", "dart_package_member")\n'
+
+# `package:test` merged over a dependency cycle keeps the runner beside its
+# member, exactly as its spoke would — but the runner trains against the merged
+# library, which is what carries `package:test`'s sources now.
+_MEMBER_TEST_RUNNER_LOAD = """\
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_package_member")
+load("@rules_dart//dart/private:dart_test.bzl", "dart_test_kernel")
+load(
+    "@rules_dart//dart/private:dart_test_runner.bzl",
+    "dart_test_package",
+    "dart_test_runner_main",
+    "dart_test_runner_snapshot",
+)
+"""
+
+_MEMBER_TEST_RUNNER_BLOCK = """\
+dart_test_runner_main(name = "test_runner_main")
+
+dart_binary(
+    name = "test_runner",
+    compile_mode = "kernel",
+    main = ":test_runner_main",
+    deps = ["{merged}"],
+)
+
+dart_test_kernel(
+    name = "runner_training",
+    main = "@rules_dart//dart/private/tools:runner_training_test.dart",
+    deps = ["{merged}"],
+)
+
+dart_test_runner_snapshot(
+    name = "test_runner_snapshot",
+    runner = ":test_runner",
+    training = ":runner_training",
+)
+
+dart_test_package(
+    name = "test",
+    library = "{merged}",
+    runner = ":test_runner",
+    snapshot = ":test_runner_snapshot",
+    visibility = ["//visibility:public"],
+)
+"""
+
+def make_dart_package_member_build_content(name, language_version, code_assets = [], has_unreplaced_hook = "", version = "", link_hook = "", merged_label = "//:merged"):
+    """Generate the BUILD.bazel content for one member of a merged SCC repository.
+
+    The member lives in its own subdirectory of the merged repository (so its
+    `lib/` root stays its own) and declares a `dart_package_member` with the
+    sources, identity and hooks a `dart_library` of its own would carry. The
+    merged repository's root `dart_library` names it in `members` and compiles
+    every member's sources in one module.
+
+    Args:
+      name: The member's package name (also its target and subdirectory name).
+      language_version: Dart language version string (e.g. `"3.0"`).
+      code_assets: List of `dart_code_asset` label strings replacing this
+        member's `hook/build.dart` output.
+      has_unreplaced_hook: Path of a build hook this member ships that has no
+        replacement, or empty.
+      version: The resolved package version this member was fetched at, or
+        empty.
+      link_hook: Package-relative path of the member's link hook
+        (`hook/link.dart`), or empty.
+      merged_label: Label of the merged root library, used only when `name`
+        is `"test"`: the runner beside it trains against the merged library.
+
+    Returns:
+      BUILD.bazel content as a string.
+    """
+    assets_block = ""
+    if code_assets:
+        asset_lines = ['            "{}",'.format(a) for a in code_assets]
+        assets_block = (
+            "    code_assets = select({{\n" +
+            '        "@rules_dart//dart/private:code_assets_on": [\n' +
+            "{}\n" +
+            "        ],\n" +
+            '        "//conditions:default": [],\n' +
+            "    }}),\n"
+        ).format("\n".join(asset_lines))
+
+    hook_block = ""
+    if has_unreplaced_hook:
+        hook_block = '    has_unreplaced_hook = "{}",\n'.format(has_unreplaced_hook)
+
+    link_hook_block = ""
+    if link_hook:
+        link_hook_block = '    link_hook = "{}",\n'.format(link_hook)
+
+    version_block = ""
+    if version:
+        version_block = '    version = "{}",\n'.format(version)
+
+    member = """\
+dart_package_member(
+    name = "{name}",
+    srcs = glob(["lib/**/*.dart"], allow_empty = True),
+{assets}{hook}{link_hook}{version}    package_name = "{name}",
+    resources = glob(
+        ["lib/**"],
+        exclude = ["lib/**/*.dart"],
+        allow_empty = True,
+    ),
+    language_version = "{language_version}",
+    visibility = ["//visibility:public"],
+)
+""".format(
+        name = name,
+        assets = assets_block,
+        hook = hook_block,
+        link_hook = link_hook_block,
+        version = version_block,
+        language_version = language_version,
+    )
+    if name != "test":
+        return _MEMBER_LOAD + "\n" + member
+    return (
+        _MEMBER_TEST_RUNNER_LOAD + "\n" + member + "\n" +
+        _MEMBER_TEST_RUNNER_BLOCK.format(merged = merged_label)
+    )
+
+def make_scc_merged_build_content(members, dep_labels, repo_name):
+    """Generate the root BUILD.bazel content of a merged SCC repository.
+
+    One `dart_library` names every member package and the edges leaving the
+    cycle; one `alias` per member (plus one named for the repository itself,
+    the default target) points at it, so `@hub//:<member>` and a direct
+    dependency on the repository both resolve to the merged closure.
+
+    Args:
+      members: Sorted list of member package names.
+      dep_labels: Sorted list of fully-qualified Bazel label strings for the
+        edges leaving the cycle. Empty when the cycle is closed.
+      repo_name: The merged repository's own name, for its default-target
+        alias.
+
+    Returns:
+      BUILD.bazel content as a string.
+    """
+    deps_block = ""
+    if dep_labels:
+        dep_lines = ['        "{}",'.format(dep) for dep in dep_labels]
+        deps_block = "    deps = [\n{}\n    ],\n".format("\n".join(dep_lines))
+
+    member_lines = ['        "//{member}:{member}",'.format(member = member) for member in members]
+    members_block = "    members = [\n{}\n    ],\n".format("\n".join(member_lines))
+
+    aliases = []
+    for member in members + [repo_name]:
+        aliases.append("""\
+alias(
+    name = "{member}",
+    actual = ":merged",
+    visibility = ["//visibility:public"],
+)""".format(member = member))
+
+    return (
+        _LOAD + "\n" +
+        "dart_library(\n" +
+        '    name = "merged",\n' +
+        members_block +
+        deps_block +
+        ")\n\n" +
+        "\n\n".join(aliases) + "\n"
+    )

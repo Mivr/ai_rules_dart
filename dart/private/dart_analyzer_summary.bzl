@@ -445,7 +445,7 @@ def _dart_analyzer_summary_impl(target, ctx):
             transitive_summaries = dependencies,
             packaged_summaries = packaged,
             embedder_sdk_summaries = depset([embedder_sdk], transitive = [inherited_embedder_sdks]),
-            packages = depset([key], transitive = [d[DartAnalyzerSummaryInfo].packages for d in deps if DartAnalyzerSummaryInfo in d]),
+            packages = depset(own_keys, transitive = [d[DartAnalyzerSummaryInfo].packages for d in deps if DartAnalyzerSummaryInfo in d]),
             own_files = own_files,
         )]
 

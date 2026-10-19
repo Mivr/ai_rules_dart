@@ -12,6 +12,8 @@ graph the extension builds from the lock's packages and their pubspecs'
 that one pure function so it can be unit tested without downloading anything.
 """
 
+load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps")
+
 def compute_sccs(dep_map):
     """Computes the strongly connected components of a dependency graph.
 
@@ -109,3 +111,104 @@ def compute_sccs(dep_map):
         first = component[0]
         order[first] = component
     return [order[key] for key in sorted(order.keys())]
+
+def normalize_pub_dep(dep, hub_names, spoke_prefixes):
+    """Normalizes one user-declared `pub.package()` dep to a package name.
+
+    Lock packages name each other by package name (their pubspecs do), but
+    an explicit `pub.package()` names repositories: a bare spoke
+    (`dart_pub__foo`), a spoke label (`@dart_pub__foo//:foo`), or a hub alias
+    (`@my_hub//:foo`). All three mean package `foo` for cycle purposes. A
+    label on an unknown repository names no lock package, so it contributes
+    no edge.
+
+    Args:
+      dep: The user-declared dep string.
+      hub_names: All hub repository names in scope.
+      spoke_prefixes: Spoke repo name prefixes in scope (`dart_pub` for the
+        shared scope, hub names for isolated ones).
+
+    Returns:
+      The package name, or "" when the dep names no lock package.
+    """
+    label = dep[1:] if dep.startswith("@") else dep
+    if "//" in label:
+        repo, _, target = label.partition("//")
+        name = target[1:] if target.startswith(":") else target.split("/")[0]
+        if repo in hub_names:
+            return name
+        for prefix in spoke_prefixes:
+            if repo == prefix + "__" + name:
+                return name
+        return ""
+    if dep.startswith("@"):
+        return ""
+    for prefix in spoke_prefixes:
+        if dep.startswith(prefix + "__"):
+            return dep[len(prefix) + 2:]
+    return dep
+
+def pubspec_dep_graph(package_pubspecs, explicit_deps, scope_names, hub_names, spoke_prefixes):
+    """Builds the package dependency graph of one lock scope.
+
+    Pure given the pubspec contents: the extension downloads each hosted
+    package once and calls this to plan the merges, so the shape is unit
+    tested without any download.
+
+    Args:
+      package_pubspecs: Dict of hosted package name to its `pubspec.yaml`
+        contents.
+      explicit_deps: Dict of explicit `pub.package()` name to its
+        user-declared deps.
+      scope_names: Every package name in scope (hosted plus explicit).
+      hub_names: All hub repository names in scope.
+      spoke_prefixes: Spoke repo name prefixes in scope.
+
+    Returns:
+      Dict of package name to its sorted in-scope dependency names, with
+      self-edges dropped.
+    """
+    in_scope = {name: True for name in scope_names}
+    graph = {}
+    for name, content in package_pubspecs.items():
+        deps = parse_pubspec_deps(content)
+        graph[name] = sorted([d for d in deps if d in in_scope and d != name])
+    for name, user_deps in explicit_deps.items():
+        normalized = [
+            normalize_pub_dep(d, hub_names, spoke_prefixes)
+            for d in user_deps
+        ]
+        graph[name] = sorted([d for d in normalized if d in in_scope and d != name])
+    return graph
+
+def scc_repo_name(spoke_prefix, members):
+    """Names the merged repository holding one dependency cycle.
+
+    Deterministic in the sorted member names, so every hub aliasing the
+    cycle, and every spoke depending into it, names the same repository.
+
+    Args:
+      spoke_prefix: The scope's spoke repo name prefix.
+      members: The cycle's sorted member package names. Must be non-empty.
+
+    Returns:
+      The merged repository name.
+    """
+    return spoke_prefix + "__scc__" + "__".join(members)
+
+def rewrite_vanished_spoke(dep, vanished):
+    """Rewrites a dep on a merged-away spoke to its merged repository.
+
+    Args:
+      dep: A user-declared dep string (a bare repo name or a label).
+      vanished: Dict of vanished spoke repo name to merged repo name.
+
+    Returns:
+      The dep naming the merged repository, or `dep` unchanged.
+    """
+    bare = dep[1:] if dep.startswith("@") else dep
+    repo, sep, rest = bare.partition("//")
+    if repo in vanished:
+        fixed = vanished[repo] + (sep + rest if sep else "")
+        return ("@" if dep.startswith("@") else "") + fixed
+    return dep
