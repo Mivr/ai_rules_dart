@@ -10,6 +10,7 @@ components.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
+load("//dart/pub:extensions.bzl", plan_scope_sccs = "plan_scope_sccs")
 load("//dart/pub:pub_lock_hub.bzl", "pub_lock_hub_content")
 
 # buildifier: disable=bzl-visibility
@@ -353,6 +354,79 @@ def _merged_content_test_impl(ctx):
     asserts.true(env, deps_at != -1 and deps_at < meta_at)
     return unittest.end(env)
 
+def _plan_scope_sccs_test_impl(ctx):
+    env = unittest.begin(ctx)
+    plan = plan_scope_sccs(
+        ["dio", "dio_web_adapter", "meta", "my_app"],
+        {
+            "dio": struct(version = "5.11.1", sha256 = "s", url = "https://pub.dev"),
+            "dio_web_adapter": struct(version = "2.2.2", sha256 = "s", url = "https://pub.dev"),
+            "meta": struct(version = "1.19.0", sha256 = "s", url = "https://pub.dev"),
+            "my_app": struct(version = "1.0.0", sha256 = "s", url = "https://pub.dev"),
+        },
+        {},
+        ["pub_deps"],
+        "dart_pub",
+        {
+            "dio": _DIO_PUBSPEC,
+            "dio_web_adapter": _ADAPTER_PUBSPEC,
+            "meta": "name: meta\n",
+            "my_app": "name: my_app\ndependencies:\n  dio: any\n",
+        },
+    )
+    asserts.equals(
+        env,
+        {"dio": "dart_pub__scc__dio__dio_web_adapter", "dio_web_adapter": "dart_pub__scc__dio__dio_web_adapter"},
+        plan.members,
+    )
+    asserts.equals(
+        env,
+        {"dart_pub__scc__dio__dio_web_adapter": ["dio", "dio_web_adapter"]},
+        plan.merged,
+    )
+    return unittest.end(env)
+
+def _plan_scope_sccs_isolated_test_impl(ctx):
+    env = unittest.begin(ctx)
+    plan = plan_scope_sccs(
+        ["aaa", "bbb"],
+        {
+            "aaa": struct(version = "1.0.0", sha256 = "s", url = "https://pub.dev"),
+            "bbb": struct(version = "1.0.0", sha256 = "s", url = "https://pub.dev"),
+        },
+        {},
+        ["tool_deps"],
+        "tool_deps",
+        {
+            "aaa": "name: aaa\ndependencies:\n  bbb: any\n",
+            "bbb": "name: bbb\ndependencies:\n  aaa: any\n",
+        },
+    )
+    asserts.equals(
+        env,
+        {"aaa": "tool_deps__scc__aaa__bbb", "bbb": "tool_deps__scc__aaa__bbb"},
+        plan.members,
+    )
+    return unittest.end(env)
+
+def _plan_scope_sccs_explicit_left_alone_test_impl(ctx):
+    env = unittest.begin(ctx)
+    plan = plan_scope_sccs(
+        ["aaa", "exp"],
+        {
+            "aaa": struct(version = "1.0.0", sha256 = "s", url = "https://pub.dev"),
+        },
+        {"exp": ["aaa"]},
+        ["pub_deps"],
+        "dart_pub",
+        {
+            "aaa": "name: aaa\ndependencies:\n  exp: any\n",
+        },
+    )
+    asserts.equals(env, {}, plan.members)
+    asserts.equals(env, {}, plan.merged)
+    return unittest.end(env)
+
 _t0_test = unittest.make(_two_node_cycle_test_impl)
 _t1_test = unittest.make(_three_node_cycle_test_impl)
 _t2_test = unittest.make(_two_disjoint_cycles_test_impl)
@@ -371,6 +445,9 @@ _t14_test = unittest.make(_hub_content_scc_test_impl)
 _t15_test = unittest.make(_member_content_test_impl)
 _t16_test = unittest.make(_member_test_content_test_impl)
 _t17_test = unittest.make(_merged_content_test_impl)
+_t18_test = unittest.make(_plan_scope_sccs_test_impl)
+_t19_test = unittest.make(_plan_scope_sccs_isolated_test_impl)
+_t20_test = unittest.make(_plan_scope_sccs_explicit_left_alone_test_impl)
 
 def pub_scc_test_suite(name):
     small_unittest_suite(
@@ -393,4 +470,7 @@ def pub_scc_test_suite(name):
         _t15_test,
         _t16_test,
         _t17_test,
+        _t18_test,
+        _t19_test,
+        _t20_test,
     )

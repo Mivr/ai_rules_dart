@@ -117,7 +117,7 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted):
         contents[name] = ctx.read(pubspec) if ctx.path(pubspec).exists else ""
     return contents
 
-def _plan_scope_sccs(scope_names, hosted, explicit_deps, hub_names, spoke_prefix, pubspec_contents):
+def plan_scope_sccs(scope_names, hosted, explicit_deps, hub_names, spoke_prefix, pubspec_contents):
     """Plans the merges of one lock scope from its dependency graph.
 
     Args:
@@ -684,7 +684,7 @@ def _pub_impl(ctx):
     shared_contents = {}
     if len(resolved) > 1 or (resolved and any([explicit_deps[name] for name in explicit_deps])):
         shared_contents = _scope_pubspec_contents(ctx, "_scc_shared", resolved)
-    shared_sccs = _plan_scope_sccs(
+    shared_sccs = plan_scope_sccs(
         shared_names,
         resolved,
         explicit_deps,
@@ -707,7 +707,7 @@ def _pub_impl(ctx):
         contents = {}
         if len(packages) > 1 or (packages and any([explicit_deps[name] for name in explicit_deps])):
             contents = _scope_pubspec_contents(ctx, "_scc_" + hub_name, packages)
-        isolated_sccs[hub_name] = _plan_scope_sccs(
+        isolated_sccs[hub_name] = plan_scope_sccs(
             scope_names,
             packages,
             explicit_deps,
