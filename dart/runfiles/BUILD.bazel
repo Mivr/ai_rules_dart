@@ -15,10 +15,21 @@ dart_binary(
     deps = [":runfiles"],
 )
 
+dart_binary(
+    name = "create_probe_kernel",
+    compile_mode = "kernel",
+    launcher = True,
+    main = "test/create_probe.dart",
+    deps = [":runfiles"],
+)
+
 dart_test(
     name = "runfiles_test",
     size = "small",
-    data = [":create_probe"],
+    data = [
+        ":create_probe",
+        ":create_probe_kernel",
+    ],
     main = "test/runfiles_test.dart",
     deps = [
         ":runfiles",

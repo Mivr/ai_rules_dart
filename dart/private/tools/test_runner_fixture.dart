@@ -30,8 +30,12 @@ Future<void> main(List<String> args) async {
       while (!File(release).existsSync()) {
         await Future<void>.delayed(const Duration(milliseconds: 50));
       }
+    case ['read-cwd', final relPath]:
+      stdout.writeln(File(relPath).readAsStringSync().trim());
     default:
-      stderr.writeln('usage: stream | leak <release> | linger <release>');
+      stderr.writeln(
+        'usage: stream | leak <release> | linger <release> | read-cwd <path>',
+      );
       exit(2);
   }
 }

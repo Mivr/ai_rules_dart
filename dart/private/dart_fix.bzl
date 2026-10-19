@@ -19,7 +19,7 @@ eligibility list is decided from Bazel's record of what each file is
 (`is_source`), not from its name.
 """
 
-load("//dart/private:common.bzl", "WINDOWS_CONSTRAINT_ATTR")
+load("//dart/private:common.bzl", "WINDOWS_CONSTRAINT_ATTR", "runfiles_path")
 load("//dart/private:dart_analyze_aspect.bzl", "DartFixOutputsInfo", "dart_analyze")
 
 def _dart_fix_impl(ctx):
@@ -60,8 +60,8 @@ def _dart_fix_impl(ctx):
         # rather than through a shell wrapper this repo would have to keep
         # working on Windows.
         RunEnvironmentInfo(environment = {
-            "DART_FIX_FIXES": outputs.fixes.short_path,
-            "DART_FIX_MANIFEST": outputs.manifest.short_path,
+            "DART_FIX_FIXES": runfiles_path(outputs.fixes, ctx.workspace_name),
+            "DART_FIX_MANIFEST": runfiles_path(outputs.manifest, ctx.workspace_name),
         }),
     ]
 

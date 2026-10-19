@@ -63,6 +63,7 @@ dart_binary(
     compile_mode = "exe",
     main = "fix_applier.dart",
     visibility = ["//dart:__subpackages__"],
+    deps = ["//dart/runfiles"],
 )
 
 dart_binary(

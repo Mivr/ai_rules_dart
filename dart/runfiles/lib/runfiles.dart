@@ -53,9 +53,14 @@ class Runfiles {
   /// 1. `RUNFILES_DIR` environment variable (set by `bazel test`)
   /// 2. `RUNFILES_MANIFEST_FILE` environment variable (manifest-only mode)
   /// 3. `<executable>.runfiles` directory next to the running binary
+  ///    (also probed next to `Platform.script`, including the `.dill`-stripped
+  ///    stem, for kernels executed directly via `dart <path>.dill`)
   /// 4. `<executable>.exe.runfiles` directory (Windows .exe launcher)
   /// 5. `<executable>.runfiles_manifest` file
   /// 6. `<executable>.exe.runfiles_manifest` file
+  /// 7. `<executable>.runfiles/MANIFEST` (manifest-only mode without
+  ///    `RUNFILES_MANIFEST_FILE`, including the `.exe` and `Platform.script`
+  ///    variants above)
   ///
   /// A directory found next to the executable is held by its resolved
   /// path, so [rlocation] keeps working after a symlink on the way to it,
@@ -84,7 +89,7 @@ class Runfiles {
     if (runfilesDir != null &&
         runfilesDir.isNotEmpty &&
         Directory(runfilesDir).existsSync()) {
-      directory = runfilesDir;
+      directory = Directory(runfilesDir).resolveSymbolicLinksSync();
     }
 
     // 2. RUNFILES_MANIFEST_FILE environment variable
@@ -93,6 +98,27 @@ class Runfiles {
         manifestFile.isNotEmpty &&
         File(manifestFile).existsSync()) {
       manifest = _parseManifest(manifestFile);
+    }
+
+    // Under `--noenable_runfiles`, Bazel still creates a `.runfiles` directory
+    // containing only a `MANIFEST` file (and an empty workspace subdirectory).
+    // When `RUNFILES_DIR` is set without `RUNFILES_MANIFEST_FILE` (for example
+    // under `bazel run --noenable_runfiles`), load that manifest too so
+    // `rlocation` resolves from the manifest rather than the empty directory.
+    if (directory != null && manifest == null) {
+      for (final candidate in [
+        if (runfilesDir != null && runfilesDir.isNotEmpty) ...[
+          '$runfilesDir/MANIFEST',
+          '${runfilesDir}_manifest',
+        ],
+        '$directory/MANIFEST',
+        '${directory}_manifest',
+      ]) {
+        if (File(candidate).existsSync()) {
+          manifest = _parseManifest(candidate);
+          break;
+        }
+      }
     }
 
     // 3-6. Probe from executable path (or Platform.script for kernel binaries)
@@ -136,6 +162,8 @@ class Runfiles {
         for (final candidate in [
           '$base.runfiles_manifest',
           '$base.exe.runfiles_manifest',
+          '$base.runfiles/MANIFEST',
+          '$base.exe.runfiles/MANIFEST',
         ]) {
           if (File(candidate).existsSync()) {
             manifest = _parseManifest(candidate);
@@ -196,8 +224,24 @@ class Runfiles {
 
     // Manifest takes priority — it's the source of truth on Windows and
     // in manifest-only mode.
-    final mapped = _manifest?[translated];
-    if (mapped != null) return mapped;
+    final manifest = _manifest;
+    if (manifest != null) {
+      final mapped = manifest[translated];
+      if (mapped != null) return mapped;
+      // Tree artifacts (declared directories) appear in the manifest as a
+      // single entry for the directory root (`<repo>/<pkg>/<dir> <real-dir>`).
+      // Walk parent prefixes so files inside a tree artifact resolve too.
+      for (
+        var slash = translated.lastIndexOf('/');
+        slash > 0;
+        slash = translated.lastIndexOf('/', slash - 1)
+      ) {
+        final prefix = manifest[translated.substring(0, slash)];
+        if (prefix != null) {
+          return '$prefix${translated.substring(slash)}';
+        }
+      }
+    }
 
     if (_directory != null) return '$_directory/$translated';
 

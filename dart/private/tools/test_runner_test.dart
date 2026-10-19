@@ -125,4 +125,40 @@ void main(List<String> args) {
     expect(await process.exitCode, 1);
     expect(err, contains('dart_test: base dill not found'));
   });
+
+  test('a test without package:test materializes workspace from manifest when not in place', () async {
+    final tmp = await Directory.systemTemp.createTemp('test_runner_manifest_');
+    addTearDown(() => tmp.deleteSync(recursive: true));
+
+    final fixtureDill = Runfiles.create().rlocation(args[1]);
+    final emptyCwd = Directory('${tmp.path}/empty_cwd')..createSync();
+    final runfilesDir = Directory('${tmp.path}/skeleton.runfiles')
+      ..createSync();
+    final realData = File('${tmp.path}/real_data.txt')
+      ..writeAsStringSync('manifest-data\n');
+    File('${runfilesDir.path}/MANIFEST').writeAsStringSync(
+      '_main/pkg/data.txt ${realData.path}\n'
+      'dart_sdk/bin/dart ${Platform.resolvedExecutable}\n'
+      '${args[1]} $fixtureDill\n',
+    );
+
+    final process = await Process.start(
+      launcher,
+      ['read-cwd', 'pkg/data.txt'],
+      workingDirectory: emptyCwd.path,
+      environment: {
+        'RUNFILES_DIR': runfilesDir.path,
+        'RUNFILES_MANIFEST_FILE': '',
+        'TEST_WORKSPACE': '_main',
+        'TEST_TMPDIR': tmp.path,
+        'RULES_DART_DART': 'dart_sdk/bin/dart',
+        'RULES_DART_DILL': args[1],
+        'RULES_DART_TEST_RUNNER': '',
+      },
+    );
+    final out = await process.stdout.transform(utf8.decoder).join();
+    final err = await process.stderr.transform(utf8.decoder).join();
+    expect(await process.exitCode, 0, reason: err);
+    expect(out.trim(), 'manifest-data');
+  });
 }

@@ -1,10 +1,9 @@
 // The `bazel run` half of `dart_fix`: copies fixes that a hermetic build action
 // already computed into the user's real source tree.
-//
-// Pure Dart with no package dependencies, so it builds as a plain `dart_binary`
-// and runs on every host platform the rule set supports.
 import 'dart:convert';
 import 'dart:io';
+
+import 'package:runfiles/runfiles.dart';
 
 const _usage =
     'usage: fix_applier --manifest <manifest-file> --fixes <fixes-dir> '
@@ -36,13 +35,29 @@ void main(List<String> args) {
   // RunEnvironmentInfo instead. An explicit flag still wins, which keeps the
   // tool runnable by hand and debuggable outside Bazel.
   final env = Platform.environment;
-  manifestPath ??= _nonEmpty(env['DART_FIX_MANIFEST']);
-  fixesDir ??= _nonEmpty(env['DART_FIX_FIXES']);
-  if (manifestPath == null || fixesDir == null) {
+  final rawManifest = manifestPath ?? _nonEmpty(env['DART_FIX_MANIFEST']);
+  final rawFixes = fixesDir ?? _nonEmpty(env['DART_FIX_FIXES']);
+  if (rawManifest == null || rawFixes == null) {
     _usageError(
       '--manifest and --fixes are required (or DART_FIX_MANIFEST and '
       'DART_FIX_FIXES in the environment)',
     );
+  }
+  var resolvedManifest = rawManifest;
+  var resolvedFixes = rawFixes;
+  if (!File(resolvedManifest).existsSync() ||
+      !Directory(resolvedFixes).existsSync()) {
+    try {
+      final runfiles = Runfiles.create();
+      if (!File(resolvedManifest).existsSync()) {
+        resolvedManifest = runfiles.rlocation(resolvedManifest);
+      }
+      if (!Directory(resolvedFixes).existsSync()) {
+        resolvedFixes = runfiles.rlocation(resolvedFixes);
+      }
+    } on StateError {
+      // Leave paths as given so the check below reports the missing path.
+    }
   }
 
   // Bazel sets BUILD_WORKSPACE_DIRECTORY only under `bazel run`. The manifest
@@ -61,22 +76,27 @@ void main(List<String> args) {
     exit(1);
   }
 
-  if (!Directory(fixesDir).existsSync()) {
-    stderr.writeln('fix_applier: fixes directory not found: $fixesDir');
+  if (!Directory(resolvedFixes).existsSync()) {
+    stderr.writeln('fix_applier: fixes directory not found: $resolvedFixes');
     exit(1);
   }
 
-  final manifest = _readManifest(manifestPath);
-  final fixed = _entries(manifest, 'fixed', manifestPath);
-  final dropped = _entries(manifest, 'dropped', manifestPath);
+  final manifest = _readManifest(resolvedManifest);
+  final fixed = _entries(manifest, 'fixed', resolvedManifest);
+  final dropped = _entries(manifest, 'dropped', resolvedManifest);
 
   // Resolve every source up front. A missing staged file means the action that
   // produced the manifest is broken; discovering that halfway through leaves
   // the tree half-fixed, which is far harder to reason about than not starting.
   final pending = <_Fix>[];
   for (final entry in fixed) {
-    final relative = _requireString(entry, 'workspace', 'fixed', manifestPath);
-    final staged = File(_join(fixesDir, relative));
+    final relative = _requireString(
+      entry,
+      'workspace',
+      'fixed',
+      resolvedManifest,
+    );
+    final staged = File(_join(resolvedFixes, relative));
     if (!staged.existsSync()) {
       stderr.writeln(
         'fix_applier: manifest lists $relative but ${staged.path} does not '

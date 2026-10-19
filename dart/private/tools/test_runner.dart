@@ -36,20 +36,30 @@ Future<void> main(List<String> args) async {
   }
 
   final r = Runfiles.create();
-  final dart = r.rlocation(dartKey);
-  final dill = r.rlocation(dillKey);
+  final dart = File(r.rlocation(dartKey)).absolute.path;
+  final dill = File(r.rlocation(dillKey)).absolute.path;
+  final manifest = _findManifestFile(env);
+  final workspace = _workspaceName(env, dillKey);
 
   // Empty counts as unset, so a test that starts another `dart_test` binary
   // can keep its own runner settings from leaking into the child.
   final runnerKey = env['RULES_DART_TEST_RUNNER'];
   if (runnerKey == null || runnerKey.isEmpty) {
-    exit(await _runDirectly(dart, dill, args));
+    exit(
+      await _runDirectly(
+        dart,
+        dill,
+        args,
+        manifest: manifest,
+        workspace: workspace,
+      ),
+    );
   }
   final baseDillKey = env['RULES_DART_BASE_DILL'];
   String? baseDill;
   if (baseDillKey != null && baseDillKey.isNotEmpty) {
     try {
-      baseDill = r.rlocation(baseDillKey);
+      baseDill = File(r.rlocation(baseDillKey)).absolute.path;
     } on StateError catch (e) {
       stderr.writeln('dart_test: base dill not found ($baseDillKey): $e');
       exit(1);
@@ -60,9 +70,11 @@ Future<void> main(List<String> args) async {
       dart: dart,
       dill: dill,
       baseDill: baseDill,
-      runner: r.rlocation(runnerKey),
-      testSource: r.rlocation(env['RULES_DART_TEST_MAIN']!),
+      runner: File(r.rlocation(runnerKey)).absolute.path,
+      testSource: File(r.rlocation(env['RULES_DART_TEST_MAIN']!)).absolute.path,
       testPath: env['RULES_DART_TEST_PATH']!,
+      manifest: manifest,
+      workspace: workspace,
       args: args,
     ),
   );
@@ -78,7 +90,13 @@ String _suiteTimeout(Map<String, String> env) {
 /// The exit code `package:test`'s runner uses when no test ran.
 const _noTestsRan = 79;
 
-Future<int> _runDirectly(String dart, String dill, List<String> args) async {
+Future<int> _runDirectly(
+  String dart,
+  String dill,
+  List<String> args, {
+  required String? manifest,
+  required String? workspace,
+}) async {
   final env = Platform.environment;
   // A plain `main` has no notion of test cases, so there is nothing to filter
   // or split. Running every case anyway would report a filtered or sharded run
@@ -97,12 +115,34 @@ Future<int> _runDirectly(String dart, String dill, List<String> args) async {
     );
     return 1;
   }
-  final vm = await Process.start(dart, [
-    '--enable-asserts',
-    dill,
-    ...args,
-  ], mode: ProcessStartMode.inheritStdio);
-  return vm.exitCode;
+  final inPlace = _workspaceInPlace(manifest: manifest, workspace: workspace);
+  Directory? scratch;
+  if (!inPlace) {
+    scratch = Directory(env['TEST_TMPDIR'] ?? Directory.systemTemp.path)
+        .createTempSync('dart_test.');
+    materializeWorkspace(
+      manifest: File(manifest!).readAsLinesSync(),
+      workspace: workspace!,
+      into: scratch.path,
+    );
+  }
+  final childEnv = _childRunfilesEnv(env, manifest);
+  final vm = await Process.start(
+    dart,
+    ['--enable-asserts', dill, ...args],
+    workingDirectory: scratch?.path,
+    environment: childEnv.isEmpty ? null : childEnv,
+    mode: ProcessStartMode.inheritStdio,
+  );
+  try {
+    return await vm.exitCode;
+  } finally {
+    if (scratch != null && !env.containsKey('TEST_TMPDIR')) {
+      try {
+        scratch.deleteSync(recursive: true);
+      } catch (_) {}
+    }
+  }
 }
 
 Future<int> _runUnderRunner({
@@ -112,6 +152,8 @@ Future<int> _runUnderRunner({
   required String runner,
   required String testSource,
   required String testPath,
+  required String? manifest,
+  required String? workspace,
   required List<String> args,
 }) async {
   final env = Platform.environment;
@@ -123,8 +165,8 @@ Future<int> _runUnderRunner({
   // runner's working directory is the test's: Bazel's contract makes that the
   // runfiles workspace root, where `data` is found by workspace-relative path.
   // Only where runfiles cannot hold the source at that relative path (Windows
-  // has only a manifest) is the workspace's runfiles laid out in a scratch
-  // directory from the manifest, to run in.
+  // or `--noenable_runfiles` has only a manifest) is the workspace's runfiles
+  // laid out in a scratch directory from the manifest, to run in.
   final suffix = '/$testPath.vm_test.vm.app.dill';
   final normalized = dill.replaceAll(r'\', '/');
   if (!normalized.endsWith(suffix)) {
@@ -154,12 +196,14 @@ Future<int> _runUnderRunner({
       ..add(File(baseDill).readAsBytesSync());
     combinedDill.writeAsBytesSync(builder.takeBytes(), flush: true);
   }
-  final inPlace = File(testPath).existsSync();
+  final inPlace = _workspaceInPlace(
+    testPath: testPath,
+    manifest: manifest,
+    workspace: workspace,
+  );
   if (!inPlace) {
     // The workspace's runfiles are laid out in the scratch directory, so `data`
     // is found by workspace-relative path as it is in a runfiles tree.
-    final manifest = env['RUNFILES_MANIFEST_FILE'];
-    final workspace = env['TEST_WORKSPACE'];
     if (manifest != null && workspace != null) {
       materializeWorkspace(
         manifest: File(manifest).readAsLinesSync(),
@@ -209,6 +253,7 @@ Future<int> _runUnderRunner({
     ],
     workingDirectory: inPlace ? null : tmp.path,
     environment: {
+      ..._childRunfilesEnv(env, manifest),
       'RULES_DART_TEST_ARGS': jsonEncode(args),
       // The runner reads a per-user config (`~/.dart_test.yaml`, or
       // `%LOCALAPPDATA%\DartTest.yaml`) unless this names one. A path that
@@ -249,12 +294,97 @@ Future<int> _runUnderRunner({
   return code;
 }
 
+String? _findManifestFile(Map<String, String> env) {
+  final fromEnv = env['RUNFILES_MANIFEST_FILE'];
+  if (fromEnv != null && fromEnv.isNotEmpty && File(fromEnv).existsSync()) {
+    return fromEnv;
+  }
+  final runfilesDir = env['RUNFILES_DIR'];
+  if (runfilesDir != null && runfilesDir.isNotEmpty) {
+    for (final candidate in [
+      '$runfilesDir/MANIFEST',
+      '${runfilesDir}_manifest',
+    ]) {
+      if (File(candidate).existsSync()) return candidate;
+    }
+  }
+  final exe = Platform.executable;
+  for (final candidate in [
+    '$exe.runfiles_manifest',
+    '$exe.exe.runfiles_manifest',
+    '$exe.runfiles/MANIFEST',
+    '$exe.exe.runfiles/MANIFEST',
+  ]) {
+    if (File(candidate).existsSync()) return candidate;
+  }
+  return null;
+}
+
+String? _workspaceName(Map<String, String> env, String dillKey) {
+  final fromEnv = env['TEST_WORKSPACE'];
+  if (fromEnv != null && fromEnv.isNotEmpty) return fromEnv;
+  final slash = dillKey.indexOf('/');
+  return slash > 0 ? dillKey.substring(0, slash) : null;
+}
+
+Map<String, String> _childRunfilesEnv(
+  Map<String, String> env,
+  String? manifest,
+) {
+  final out = <String, String>{};
+  final runfilesDir = env['RUNFILES_DIR'];
+  if (runfilesDir != null &&
+      runfilesDir.isNotEmpty &&
+      Directory(runfilesDir).existsSync()) {
+    out['RUNFILES_DIR'] = Directory(runfilesDir).resolveSymbolicLinksSync();
+  } else {
+    final exe = Platform.executable;
+    for (final candidate in ['$exe.runfiles', '$exe.exe.runfiles']) {
+      if (Directory(candidate).existsSync()) {
+        out['RUNFILES_DIR'] = Directory(candidate).resolveSymbolicLinksSync();
+        break;
+      }
+    }
+  }
+  if (manifest != null) {
+    out['RUNFILES_MANIFEST_FILE'] = File(manifest).absolute.path;
+  }
+  return out;
+}
+
+bool _workspaceInPlace({
+  String? testPath,
+  String? manifest,
+  String? workspace,
+}) {
+  if (testPath != null && !File(testPath).existsSync()) {
+    return false;
+  }
+  if (manifest == null || workspace == null) {
+    return true;
+  }
+  final prefix = '$workspace/';
+  for (final line in File(manifest).readAsLinesSync()) {
+    final space = line.indexOf(' ');
+    if (space < 0 || !line.startsWith(prefix)) continue;
+    final relative = line.substring(prefix.length, space);
+    final real = line.substring(space + 1);
+    if (Directory(real).existsSync()) {
+      if (!Directory(relative).existsSync()) return false;
+    } else if (File(real).existsSync()) {
+      if (!File(relative).existsSync()) return false;
+    }
+  }
+  return true;
+}
+
 /// Lays out `workspace`'s runfiles under [into] from the lines of a runfiles
 /// manifest, each `<runfiles path> <real path>`.
 ///
-/// Where Bazel builds no runfiles tree (Windows by default) the manifest is all
-/// there is, and a test's working directory would hold none of its `data`. A
-/// real path that is a directory (a tree artifact is one entry) is copied whole.
+/// Where Bazel builds no runfiles tree (Windows by default, or
+/// `--noenable_runfiles`) the manifest is all there is, and a test's working
+/// directory would hold none of its `data`. A real path that is a directory (a
+/// tree artifact is one entry) is copied whole.
 void materializeWorkspace({
   required List<String> manifest,
   required String workspace,
@@ -270,7 +400,11 @@ void materializeWorkspace({
     if (Directory(real).existsSync()) {
       _copyDirectory(Directory(real), Directory(destination));
     } else if (File(real).existsSync()) {
-      Directory(File(destination).parent.path).createSync(recursive: true);
+      final destFile = File(destination);
+      destFile.parent.createSync(recursive: true);
+      if (destFile.existsSync()) {
+        destFile.deleteSync();
+      }
       File(real).copySync(destination);
     }
   }
@@ -278,13 +412,17 @@ void materializeWorkspace({
 
 void _copyDirectory(Directory from, Directory to) {
   to.createSync(recursive: true);
-  for (final entity in from.listSync(recursive: true, followLinks: false)) {
+  for (final entity in from.listSync(recursive: true, followLinks: true)) {
     final relative = entity.path.substring(from.path.length + 1);
     final target = _join(to.path, relative.replaceAll(r'\', '/'));
     if (entity is Directory) {
       Directory(target).createSync(recursive: true);
     } else if (entity is File) {
-      Directory(File(target).parent.path).createSync(recursive: true);
+      final targetFile = File(target);
+      targetFile.parent.createSync(recursive: true);
+      if (targetFile.existsSync()) {
+        targetFile.deleteSync();
+      }
       entity.copySync(target);
     }
   }

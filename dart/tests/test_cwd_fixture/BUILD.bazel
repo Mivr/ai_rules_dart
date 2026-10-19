@@ -25,3 +25,14 @@ dart_test(
         "@ext_pub_deps//:test",
     ],
 )
+
+# A plain-`main` `dart_test` (without `package:test`) also runs in a working
+# directory where `data` is found by workspace-relative path, including under
+# `--noenable_runfiles`.
+dart_test(
+    name = "direct_cwd_test",
+    size = "small",
+    data = ["data.txt"],
+    main = "direct_cwd_test.dart",
+    deps = ["//dart/runfiles"],
+)

@@ -167,6 +167,17 @@ void main() {
       );
       expect(r.rlocation('baz/foo'), '/abs/baz/foo');
     });
+
+    test('manifest directory prefix resolves files inside tree artifact', () {
+      final r = Runfiles.fromState(
+        directory: '/empty_runfiles',
+        manifest: {'_main/pkg/tree': '/abs/out/pkg/tree'},
+      );
+      expect(
+        r.rlocation('_main/pkg/tree/sub/file.txt'),
+        '/abs/out/pkg/tree/sub/file.txt',
+      );
+    });
   });
 
   group('create() probing next to the executable', () {
@@ -221,6 +232,109 @@ void main() {
       expect(await process.exitCode, 0, reason: await stderr);
       expect(rest, ['found']);
     });
+
+    test(
+      'loads MANIFEST inside RUNFILES_DIR when RUNFILES_MANIFEST_FILE is unset',
+      () async {
+        final sep = Platform.pathSeparator;
+        final exeName = Platform.isWindows
+            ? 'create_probe.exe'
+            : 'create_probe';
+        final tmp = Directory.systemTemp.createTempSync(
+          'runfiles_manifest_dir',
+        );
+        addTearDown(() => tmp.deleteSync(recursive: true));
+
+        final probeExe = Runfiles.create().rlocation(
+          '_main/dart/runfiles/$exeName',
+        );
+        final skeleton = Directory('${tmp.path}${sep}skeleton.runfiles')
+          ..createSync();
+        final realData = File('${tmp.path}${sep}real_data.txt')
+          ..writeAsStringSync('from-manifest');
+        File('${skeleton.path}${sep}MANIFEST')
+            .writeAsStringSync('_main/data.txt ${realData.path}\n');
+
+        final process = await Process.start(
+          probeExe,
+          const [],
+          environment: (Map.of(Platform.environment)
+            ..['RUNFILES_DIR'] = skeleton.path
+            ..remove('RUNFILES_MANIFEST_FILE')),
+          includeParentEnvironment: false,
+        );
+        addTearDown(process.kill);
+        await process.stdin.close();
+        final out = await process.stdout
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())
+            .toList();
+        final err = await process.stderr.transform(utf8.decoder).join();
+        expect(await process.exitCode, 0, reason: err);
+        expect(out, ['ready', 'from-manifest']);
+      },
+    );
+
+    test(
+      'kernel launcher propagates discovered runfiles to child VM',
+      () async {
+        final sep = Platform.pathSeparator;
+        final exeName = Platform.isWindows
+            ? 'create_probe_kernel.exe'
+            : 'create_probe_kernel';
+        final tmp = Directory.systemTemp.createTempSync(
+          'runfiles_kernel_probe',
+        );
+        addTearDown(() => tmp.deleteSync(recursive: true));
+
+        final r = Runfiles.create();
+        final kernelExe = r.rlocation('_main/dart/runfiles/$exeName');
+        final kernelConfig = r.rlocation(
+          '_main/dart/runfiles/create_probe_kernel.kernel_launcher.json',
+        );
+        final configJson = jsonDecode(
+          File(kernelConfig).readAsStringSync(),
+        ) as Map<String, dynamic>;
+        final dartPath = r.rlocation(configJson['dart'] as String);
+        final dillPath = r.rlocation(configJson['dill'] as String);
+
+        final binDir = Directory('${tmp.path}${sep}bin')..createSync();
+        final stagedExe = '${binDir.path}$sep$exeName';
+        File(kernelExe).copySync(stagedExe);
+        final runfilesDir = Directory('$stagedExe.runfiles')..createSync();
+        final realData = File('${tmp.path}${sep}real_data.txt')
+          ..writeAsStringSync('from-kernel-manifest');
+        final stagedConfig = File(
+          '${tmp.path}${sep}staged.kernel_launcher.json',
+        )..writeAsStringSync(jsonEncode(configJson));
+        File('${runfilesDir.path}${sep}MANIFEST').writeAsStringSync(
+          '_main/data.txt ${realData.path}\n'
+          '_main/$exeName.kernel_launcher.json ${stagedConfig.path}\n'
+          '${configJson['dart']} $dartPath\n'
+          '${configJson['dill']} $dillPath\n',
+        );
+
+        final process = await Process.start(
+          stagedExe,
+          const [],
+          workingDirectory: binDir.path,
+          environment: Map.of(Platform.environment)
+            ..remove('RUNFILES_DIR')
+            ..remove('RUNFILES_MANIFEST_FILE')
+            ..remove('RULES_DART_KERNEL_CONFIG'),
+          includeParentEnvironment: false,
+        );
+        addTearDown(process.kill);
+        await process.stdin.close();
+        final out = await process.stdout
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())
+            .toList();
+        final err = await process.stderr.transform(utf8.decoder).join();
+        expect(await process.exitCode, 0, reason: err);
+        expect(out, ['ready', 'from-kernel-manifest']);
+      },
+    );
   });
 }
 
