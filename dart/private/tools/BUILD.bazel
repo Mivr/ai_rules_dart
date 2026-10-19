@@ -25,9 +25,9 @@ exports_files(
 
 dart_binary(
     name = "analyze_runner",
+    srcs = ["directive_guard.dart"],
     code_assets_from_deps = False,
     compile_mode = "kernel",
-    srcs = ["directive_guard.dart"],
     main = "analyze_runner.dart",
     modular_kernel = False,
     visibility = ["//dart:__subpackages__"],
@@ -51,9 +51,9 @@ dart_binary(
 
 dart_binary(
     name = "fix_runner",
+    srcs = ["directive_guard.dart"],
     code_assets_from_deps = False,
     compile_mode = "kernel",
-    srcs = ["directive_guard.dart"],
     main = "fix_runner.dart",
     modular_kernel = False,
     visibility = ["//dart:__subpackages__"],
@@ -308,8 +308,8 @@ dart_test(
 
 dart_binary(
     name = "web_compile_runner",
-    compile_mode = "kernel",
     srcs = ["directive_guard.dart"],
+    compile_mode = "kernel",
     main = "web_compile_runner.dart",
     modular_kernel = False,
     visibility = ["//visibility:public"],
