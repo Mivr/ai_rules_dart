@@ -59,9 +59,18 @@ _from_lock = tag_class(
         ),
         "on_version_conflict": attr.string(
             doc = "What to do when another lock file provides a higher version of a package. " +
-                  "'error' (default) fails the build. 'upgrade' accepts the higher version.",
+                  "'error' (default) fails the build. 'upgrade' accepts the higher version. " +
+                  "Ignored for isolated hubs, which never join version resolution.",
             default = "error",
             values = ["error", "upgrade"],
+        ),
+        "isolated": attr.bool(
+            doc = "When True, this hub is isolated: its spokes are namespaced by the hub " +
+                  "name (`<hub>__<pkg>`), it does not join the global registry or " +
+                  "`on_version_conflict` resolution, and it pins the versions in its own " +
+                  "lock. Use for standalone tools that need a different version of a " +
+                  "package than the rest of the build. Defaults to False.",
+            default = False,
         ),
     },
 )
@@ -77,12 +86,13 @@ def resolve_pub_packages(package_tags, lock_tags):
 
     Args:
         package_tags: List of structs with `(name, version, sha256, deps)`.
-        lock_tags: List of structs with `(name, lock, packages, on_version_conflict)`.
+        lock_tags: List of structs with `(name, lock, packages, on_version_conflict, isolated)`.
 
     Returns:
-        `struct(error, explicit, resolved, hub_packages, warnings)` where `error`
+        `struct(error, explicit, resolved, hub_packages, isolated_packages, warnings)` where `error`
         is an error string when any declaration is unpinned, malformed, or
-        conflicting, or `None` when resolution succeeds.
+        conflicting, or `None` when resolution succeeds. `isolated_packages` maps
+        each isolated hub name to `{pkg_name: struct(version, sha256, url)}`.
     """
     explicit = {}
     for pkg in package_tags:
@@ -102,6 +112,7 @@ def resolve_pub_packages(package_tags, lock_tags):
                     explicit = {},
                     resolved = {},
                     hub_packages = {},
+                    isolated_packages = {},
                     warnings = [],
                 )
             if existing.sha256 != sha256:
@@ -114,6 +125,7 @@ def resolve_pub_packages(package_tags, lock_tags):
                     explicit = {},
                     resolved = {},
                     hub_packages = {},
+                    isolated_packages = {},
                     warnings = [],
                 )
             if sorted(existing.deps) != sorted(pkg.deps):
@@ -126,6 +138,7 @@ def resolve_pub_packages(package_tags, lock_tags):
                     explicit = {},
                     resolved = {},
                     hub_packages = {},
+                    isolated_packages = {},
                     warnings = [],
                 )
         else:
@@ -151,16 +164,31 @@ def resolve_pub_packages(package_tags, lock_tags):
     hub_packages = {}
     warnings = []
 
+    isolated_hub_packages = {}
+    isolated_hubs = {}
+
     for lock_tag in lock_tags:
         hub_name = lock_tag.name
         lock_pkgs = lock_tag.packages
+        isolated = getattr(lock_tag, "isolated", False)
+
+        if hub_name in isolated_hubs and isolated_hubs[hub_name] != isolated:
+            return struct(
+                error = "Hub \"%s\" is declared both isolated and non-isolated." % hub_name,
+                explicit = {},
+                resolved = {},
+                hub_packages = {},
+                isolated_packages = {},
+                warnings = [],
+            )
+        isolated_hubs[hub_name] = isolated
 
         hub_packages.setdefault(hub_name, {})
+        if isolated:
+            isolated_hub_packages.setdefault(hub_name, {})
 
         # Only hosted packages can be fetched from a pub registry. Collect
-        # every non-hosted package and report once per lock file — Flutter
-        # locks routinely list many sdk-source packages, so a per-package
-        # print would drown the useful signal.
+        # every non-hosted package and report once per lock file.
         skipped_by_source = {}
 
         for name, info in lock_pkgs.items():
@@ -177,6 +205,7 @@ def resolve_pub_packages(package_tags, lock_tags):
                         explicit = {},
                         resolved = {},
                         hub_packages = {},
+                        isolated_packages = {},
                         warnings = [],
                     )
                 return struct(
@@ -184,6 +213,7 @@ def resolve_pub_packages(package_tags, lock_tags):
                     explicit = {},
                     resolved = {},
                     hub_packages = {},
+                    isolated_packages = {},
                     warnings = [],
                 )
 
@@ -192,15 +222,20 @@ def resolve_pub_packages(package_tags, lock_tags):
                 skipped_by_source.setdefault(source, []).append(name)
                 continue
 
-            # The hub aliases every package its lock names, explicit or not:
-            # an explicit package stands in for the name everywhere, so a
-            # hub that lists it points at the explicit repo, not a spoke.
             hub_packages[hub_name][name] = True
 
             desc = info.get("description", {})
             url = desc.get("url", "https://pub.dev")
             version = info.get("version", "")
             sha256 = desc["sha256"].strip()
+
+            if isolated:
+                isolated_hub_packages[hub_name][name] = struct(
+                    version = version,
+                    sha256 = sha256,
+                    url = url,
+                )
+                continue
 
             if name in explicit:
                 exp = explicit[name]
@@ -214,6 +249,7 @@ def resolve_pub_packages(package_tags, lock_tags):
                         explicit = {},
                         resolved = {},
                         hub_packages = {},
+                        isolated_packages = {},
                         warnings = [],
                     )
 
@@ -239,6 +275,7 @@ def resolve_pub_packages(package_tags, lock_tags):
                         explicit = {},
                         resolved = {},
                         hub_packages = {},
+                        isolated_packages = {},
                         warnings = [],
                     )
                 registry[name] = struct(url = existing.url, entries = existing.entries + [entry])
@@ -287,6 +324,7 @@ def resolve_pub_packages(package_tags, lock_tags):
                     explicit = {},
                     resolved = {},
                     hub_packages = {},
+                    isolated_packages = {},
                     warnings = [],
                 )
 
@@ -334,6 +372,7 @@ def resolve_pub_packages(package_tags, lock_tags):
                     explicit = {},
                     resolved = {},
                     hub_packages = {},
+                    isolated_packages = {},
                     warnings = [],
                 )
 
@@ -344,6 +383,7 @@ def resolve_pub_packages(package_tags, lock_tags):
         explicit = explicit,
         resolved = resolved,
         hub_packages = hub_packages,
+        isolated_packages = isolated_hub_packages,
         warnings = warnings,
     )
 
@@ -382,6 +422,7 @@ def _pub_impl(ctx):
                 lock = lock_tag.lock,
                 packages = parse_pubspec_lock(lock_content),
                 on_version_conflict = lock_tag.on_version_conflict,
+                isolated = lock_tag.isolated,
             ))
 
     resolution = resolve_pub_packages(package_tags, lock_tags)
@@ -395,6 +436,7 @@ def _pub_impl(ctx):
     explicit = resolution.explicit
     resolved = resolution.resolved
     hub_packages = resolution.hub_packages
+    isolated_packages = getattr(resolution, "isolated_packages", {})
 
     for name, pkg in explicit.items():
         pub_package(
@@ -427,15 +469,43 @@ def _pub_impl(ctx):
             ignore_hook = name in ignore_hooks,
         )
 
+    # Create isolated spoke repos (namespaced by hub).
+    for hub_name, packages in isolated_packages.items():
+        package_names = sorted(packages.keys())
+        hub_explicit = [n for n in explicit_package_names if n not in packages]
+        for pkg_name, pkg in packages.items():
+            err = pub_lock_package_sha256_error(pkg_name, pkg.version, pkg.sha256)
+            if err:
+                fail(err)
+            pub_lock_package(
+                name = hub_name + "__" + pkg_name,
+                package_name = pkg_name,
+                version = pkg.version,
+                sha256 = pkg.sha256,
+                base_url = pkg.url,
+                hub_name = hub_name,
+                lock_packages = package_names,
+                explicit_packages = hub_explicit,
+                code_assets = curated_code_assets(pkg_name, pkg.version),
+                ignore_hook = pkg_name in ignore_hooks,
+            )
+
     # Create per-from_lock hub repos
     for hub_name, packages in hub_packages.items():
         package_names = sorted(packages)
+        isolated = hub_name in isolated_packages
+        if isolated:
+            spoke_prefix = hub_name
+            hub_explicit = []
+        else:
+            spoke_prefix = _SPOKE_PREFIX
+            hub_explicit = [n for n in package_names if n in explicit]
         pub_lock_hub(
             name = hub_name,
             hub_name = hub_name,
-            spoke_prefix = _SPOKE_PREFIX,
+            spoke_prefix = spoke_prefix,
             packages = package_names,
-            explicit_packages = [n for n in package_names if n in explicit],
+            explicit_packages = hub_explicit,
         )
 
     return ctx.extension_metadata(
