@@ -6,6 +6,7 @@ load("//dart/pub:pub_lock_package.bzl", "pub_lock_git_package", "pub_lock_packag
 load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
 load("//dart/pub:yaml_parser.bzl", "lock_package_error", "parse_pubspec_lock")
 load("//dart/pub/private:pub_repository.bzl", "pub_package", "pub_package_sha256_error")
+load("//dart/pub/private:pub_symlink.bzl", "check_package_symlinks")
 load("//dart/pub/private:scc.bzl", "compute_sccs", "pubspec_dep_graph", "rewrite_vanished_spoke", "scc_repo_name")
 load("//dart/pub/private:version.bzl", "semver_gt")
 
@@ -117,6 +118,7 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
         if trimmed != raw:
             ctx.file(archive, trimmed, executable = False)
         ctx.extract(archive, output = out)
+        check_package_symlinks(ctx, name, out)
         pubspec = out + "/pubspec.yaml"
         contents[name] = ctx.read(pubspec) if ctx.path(pubspec).exists else ""
     for name in sorted(git_pkgs.keys()):
@@ -141,6 +143,7 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
         if res.return_code != 0:
             fail("pub.from_lock: git archive failed for %s at %s: %s" % (name, spec, res.stderr))
         ctx.extract(archive, output = out)
+        check_package_symlinks(ctx, name, out)
         pubspec = out + "/pubspec.yaml"
         contents[name] = ctx.read(pubspec) if ctx.path(pubspec).exists else ""
     return contents

@@ -12,6 +12,7 @@ the `flutter pub get` analog) reuse this helper to emit the same
 load("//dart/pub:yaml_parser.bzl", "is_valid_git_ref", "is_valid_sha256", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_library_build_content = "make_dart_library_build_content")
 load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
+load("//dart/pub/private:pub_symlink.bzl", _check_package_symlinks = "check_package_symlinks")
 
 # Re-export for consumers outside //dart/pub (rules_flutter's
 # flutter_pub_package). Loading the private bzl directly would trip
@@ -149,6 +150,7 @@ def _pub_lock_package_impl(ctx):
         ctx.file("_archive.tar.gz", trimmed_archive, executable = False)
     ctx.extract("_archive.tar.gz")
     ctx.delete("_archive.tar.gz")
+    _check_package_symlinks(ctx, ctx.attr.package_name)
 
     # Read pubspec.yaml to discover deps + the package's SDK constraint, the
     # latter so we can mirror pub's per-package languageVersion behaviour.
@@ -289,6 +291,7 @@ def _pub_lock_git_package_impl(ctx):
     ctx.extract(archive_path)
     ctx.delete(archive_path)
     ctx.delete(clone_dir)
+    _check_package_symlinks(ctx, ctx.attr.package_name)
 
     # Read pubspec.yaml to discover deps + the package's SDK constraint.
     bazel_deps = []

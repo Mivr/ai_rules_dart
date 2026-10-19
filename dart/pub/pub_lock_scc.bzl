@@ -16,6 +16,7 @@ load("//dart/pub:pub_lock_package.bzl", "pub_lock_spoke_dep_labels", "trim_gzip_
 load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_package_member_build_content = "make_dart_package_member_build_content", _make_scc_merged_build_content = "make_scc_merged_build_content")
 load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
+load("//dart/pub/private:pub_symlink.bzl", _check_package_symlinks = "check_package_symlinks")
 
 # Re-exported for rule sets outside //dart/pub that reuse the merged shape.
 # Loading the private bzl directly would trip buildifier's bzl-visibility
@@ -47,6 +48,7 @@ def _fetch_hosted_member(ctx, member, name):
         ctx.file(archive, trimmed_archive, executable = False)
     ctx.extract(archive, output = name)
     ctx.delete(archive)
+    _check_package_symlinks(ctx, name, name)
 
 def _fetch_git_member(ctx, member, name):
     """Clones one git member at its resolved ref and extracts it into `name/`."""
@@ -68,6 +70,7 @@ def _fetch_git_member(ctx, member, name):
     ctx.extract(archive_path, output = name)
     ctx.delete(archive_path)
     ctx.delete(clone_dir)
+    _check_package_symlinks(ctx, name, name)
 
 def _pub_lock_scc_package_impl(ctx):
     members = json.decode(ctx.attr.members_json)

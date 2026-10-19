@@ -3,6 +3,7 @@
 load("//dart/pub:yaml_parser.bzl", "is_valid_sha256", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", "make_dart_library_build_content")
 load("//dart/pub/private:language_version.bzl", "derive_language_version")
+load("//dart/pub/private:pub_symlink.bzl", "check_package_symlinks")
 
 def pub_package_sha256_error(package_name, version, sha256):
     """Validates `sha256` for a `pub_package` target.
@@ -49,6 +50,7 @@ def _pub_package_impl(ctx):
         sha256 = ctx.attr.sha256.strip(),
         type = "tar.gz",
     )
+    check_package_symlinks(ctx, ctx.attr.package_name)
 
     # Read the package's pubspec.yaml so we can mirror pub's per-package
     # languageVersion behaviour. This lets the analyzer apply the right

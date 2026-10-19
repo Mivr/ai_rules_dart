@@ -15,6 +15,7 @@ bzl_library(
         ":yaml_parser",
         "//dart/pub/private:build_content",
         "//dart/pub/private:language_version",
+        "//dart/pub/private:pub_symlink",
     ],
 )
 
@@ -33,6 +34,7 @@ bzl_library(
         ":pub_lock_package",
         ":yaml_parser",
         "//dart/pub/private:pub_repository",
+        "//dart/pub/private:pub_symlink",
         "//dart/pub/private:version",
     ],
 )
