@@ -1,0 +1,32 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary")
+load(":symlink_contract.bzl", "check_pub_symlink_contract")
+
+exports_files(["pubspec.lock"])
+
+# Pins the guard's decision procedure: fails at load time when an
+# in-package target is rejected or an escaping one is allowed.
+check_pub_symlink_contract()
+
+# This workspace should FAIL to fetch: `evil_pkg`'s `lib/evil.dart` is a
+# symlink climbing above the package root, so the guard refuses to
+# materialise it. Recreate the scratch git remote, fill its commit into
+# `pubspec.lock`'s `resolved-ref`, and rebuild:
+#
+#   rm -rf /tmp/pub_symlink_evil && mkdir -p /tmp/pub_symlink_evil/evil_pkg/lib
+#   cd /tmp/pub_symlink_evil && git init -q . && git config user.email t@t.t && git config user.name t
+#   printf 'name: evil_pkg\nversion: 1.0.0\nenvironment:\n  sdk: ">=3.0.0 <4.0.0"\n' > evil_pkg/pubspec.yaml
+#   echo 'OUTSIDE-SECRET' > /tmp/pub_symlink_outside.txt
+#   ln -s ../../outside.txt evil_pkg/lib/evil.dart
+#   printf 'String get ok => "ok";\n' > evil_pkg/lib/ok.dart
+#   git add -A && git commit -qm init
+#   # put `git rev-parse HEAD` into pubspec.lock's resolved-ref, then:
+#   if bazel build //:app 2>/dev/null; then
+#     echo "ERROR: build should have failed on the escaping symlink"
+#     exit 1
+#   fi
+#   bazel build //:app 2>&1 | grep -q 'pub package "evil_pkg": symlink "lib/evil.dart" escapes the package'
+dart_binary(
+    name = "app",
+    main = "main.dart",
+    deps = ["@pub_deps//:evil_pkg"],
+)

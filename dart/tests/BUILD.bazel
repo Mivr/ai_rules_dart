@@ -15,6 +15,7 @@ load(":project_staging_test.bzl", "project_staging_test_suite")
 load(":propagation_test.bzl", "propagation_test_suite")
 load(":provider_shape_test.bzl", "provider_shape_probe")
 load(":pub_scc_test.bzl", "pub_scc_test_suite")
+load(":pub_symlink_test.bzl", "pub_symlink_test_suite")
 load(":registry_test.bzl", "registry_test_suite")
 load(":semver_test.bzl", "semver_test_suite")
 load(":source_set_test.bzl", "source_set_test_suite")
@@ -45,6 +46,8 @@ code_asset_test_suite(name = "code_asset_test")
 propagation_test_suite(name = "propagation_test")
 
 pub_scc_test_suite(name = "pub_scc_test")
+
+pub_symlink_test_suite(name = "pub_symlink_test")
 
 registry_test_suite(name = "registry_test")
 
