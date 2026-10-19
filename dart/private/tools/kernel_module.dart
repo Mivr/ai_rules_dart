@@ -537,7 +537,8 @@ Future<int> compileModule(
       return 1;
     }
     const dill = 'entry.dill';
-    ({String rootDir, List<Uint8List> inputs})? isolated;
+    ({String rootDir, List<Uint8List> inputs, Map<String, Uint8List> covered})?
+    isolated;
     final ModuleOutcome outcome;
     try {
       // The front end sees a single `--multi-root` holding symlinks to exactly
@@ -552,9 +553,11 @@ Future<int> compileModule(
       );
       final staged = isolated;
       final entryBase = _baseWithSingleMultiRoot(base, staged.rootDir);
+      // The compiler reads each declared file through the isolated root, so
+      // its origin inputs are withheld as duplicates.
       final callInputs = staged.inputs.isEmpty
           ? inputs
-          : [...inputs, ...staged.inputs];
+          : [...staged.inputs, ..._uncoveredInputs(inputs, staged.covered)];
       outcome = await compiler.run(
         kernelWorkerArgs([
           ...entryBase,
@@ -641,7 +644,8 @@ Future<int> compileModule(
   ];
   var retried = false;
   var sccs = <_Scc>[];
-  ({String rootDir, List<Uint8List> inputs})? isolated;
+  ({String rootDir, List<Uint8List> inputs, Map<String, Uint8List> covered})?
+  isolated;
   try {
     isolated = await _stageIsolatedMultiRoot(
       output,
@@ -669,7 +673,11 @@ Future<int> compileModule(
         }
         final dillPath = '$output/${scc.dill}';
         final sccBase = _baseWithSingleMultiRoot(base, staged.rootDir);
-        final extraInputs = [...staged.inputs, ...summaryInputs];
+        final extraInputs = [
+          ...staged.inputs,
+          ...summaryInputs,
+          ..._uncoveredInputs(inputs, staged.covered),
+        ];
         final outcome = await compiler.run(
           kernelWorkerArgs([
             ...sccBase,
@@ -678,7 +686,7 @@ Future<int> compileModule(
             '--output',
             dillPath,
           ]),
-          extraInputs.isEmpty ? inputs : [...inputs, ...extraInputs],
+          extraInputs.isEmpty ? inputs : extraInputs,
         );
         if (outcome.exitCode != 0) {
           failure = outcome;
@@ -2346,7 +2354,14 @@ List<String> _baseWithSingleMultiRoot(List<String> base, String singleRoot) {
 /// undeclared files fail instead of reading them from the workspace.
 /// Symlinks keep staging to metadata operations; no file contents are read or
 /// copied. When the platform refuses symlinks, files are copied instead.
-Future<({String rootDir, List<Uint8List> inputs})> _stageIsolatedMultiRoot(
+/// The returned `covered` maps every staged origin (under each of its path
+/// spellings) to the digest passed for it, so callers can withhold the
+/// now-duplicate origin inputs from the compiler: it reads each declared
+/// file once, through the isolated root.
+Future<
+  ({String rootDir, List<Uint8List> inputs, Map<String, Uint8List> covered})
+>
+_stageIsolatedMultiRoot(
   String output,
   _Files files,
   Map<String, Uint8List>? inputDigests, {
@@ -2359,6 +2374,7 @@ Future<({String rootDir, List<Uint8List> inputs})> _stageIsolatedMultiRoot(
   }
   await dir.create(recursive: true);
   final stagedInputs = <Uint8List>[];
+  final covered = <String, Uint8List>{};
   final createdParents = <String>{};
   final sortedKeys = files.declaredKeys.toList()..sort();
   final cwd = Directory.current.path.replaceAll(r'\', '/');
@@ -2377,12 +2393,52 @@ Future<({String rootDir, List<Uint8List> inputs})> _stageIsolatedMultiRoot(
     if (includeInputDigests) {
       final digest =
           _lookupDigest(origin, inputDigests) ??
-          _lookupDigest(dstPath, inputDigests) ??
           sha256Of(await File(origin).readAsBytes());
+      _addCovered(covered, origin, digest);
       stagedInputs.add(_encodeInput(kernelWorkerUri(dstPath), digest));
     }
   }
-  return (rootDir: rootDir, inputs: stagedInputs);
+  return (rootDir: rootDir, inputs: stagedInputs, covered: covered);
+}
+
+/// Records [origin] in [covered] under each of its path spellings, mirroring
+/// how request input digests are indexed, so [_uncoveredInputs] recognizes
+/// the origin however the worker request spells it.
+void _addCovered(
+  Map<String, Uint8List> covered,
+  String origin,
+  Uint8List digest,
+) {
+  covered[origin] = digest;
+  final norm = _normalize(origin);
+  if (norm.isNotEmpty) {
+    covered.putIfAbsent(norm, () => digest);
+    if (!norm.startsWith('/')) {
+      covered.putIfAbsent('./$norm', () => digest);
+    }
+  }
+  final normFile = _normalizeFilePath(origin);
+  if (normFile != origin) {
+    covered.putIfAbsent(normFile, () => digest);
+  }
+}
+
+/// The entries of [inputs] whose paths are not staged isolated origins in
+/// [covered]. The compiler resolves every declared file through the isolated
+/// root, so passing its origin inputs as well only repeats work.
+List<Uint8List> _uncoveredInputs(
+  List<Uint8List> inputs,
+  Map<String, Uint8List> covered,
+) {
+  if (covered.isEmpty) return inputs;
+  final out = <Uint8List>[];
+  for (final raw in inputs) {
+    final path = _decodeInputView(raw).path;
+    if (path.isEmpty || _lookupDigest(path, covered) == null) {
+      out.add(raw);
+    }
+  }
+  return out;
 }
 
 /// Creates [dstPath] as a symlink to [origin], falling back to a copy when
