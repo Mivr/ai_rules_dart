@@ -234,7 +234,10 @@ def resolve_pub_packages(package_tags, lock_tags):
     64-lowercase-hex-digit `sha256` after trimming, even when later superseded
     by version resolution or an explicit `pub.package()`. Conflicting `sha256`
     values for the same package version across lock files or between
-    `pub.package()` and a lock file are rejected.
+    `pub.package()` and a lock file are rejected. A package listed as both a
+    hosted package and a git package resolves to its git checkout: the hosted
+    entries are ignored with a warning, so the package materialises exactly
+    once however the dependency cycles fall.
 
     Args:
         package_tags: List of structs with `(name, version, sha256, deps)`.
@@ -572,6 +575,23 @@ def resolve_pub_packages(package_tags, lock_tags):
         if name in explicit:
             continue  # pub.package() wins: no version to reconcile, no spoke
 
+        if name in git_registry:
+            # A package listed as both hosted and git materialises once, from
+            # its git checkout: generating both a hosted spoke and a git spoke
+            # would name two repositories dart_pub__<name>, and a merged cycle
+            # would otherwise fetch the hosted tarball and drop the git
+            # checkout silently. A single pubspec.lock cannot list both (its
+            # package names are unique), so this only fires across the union
+            # of several locks.
+            git_pkg = git_registry[name]
+            lines = ["Package \"%s\" is listed as both a hosted package and a git package; using the git checkout and ignoring the hosted entries:" % name]
+            for e in pkg.entries:
+                lines.append("  - %s (hosted, from \"%s\", %s)" % (e.version, e.hub_name, e.lock_label))
+            for e in git_pkg.entries:
+                lines.append("  - %s (git, from \"%s\", %s)" % (e.version, e.hub_name, e.lock_label))
+            warnings.append("\n".join(lines))
+            continue
+
         if len(pkg.entries) == 1:
             e = pkg.entries[0]
             resolved[name] = struct(version = e.version, sha256 = e.sha256, url = pkg.url)
@@ -673,6 +693,21 @@ def resolve_pub_packages(package_tags, lock_tags):
                 )
 
         resolved_git[name] = struct(version = best.version, url = pkg.url, resolved_ref = best.resolved_ref, path = best.path)
+
+    # A package listed as both hosted and git in one isolated hub
+    # materialises once, from its git checkout, like the shared scope above.
+    for hub_name, git_pkgs in isolated_git_packages.items():
+        hosted = isolated_hub_packages.get(hub_name, {})
+        for name in sorted(git_pkgs.keys()):
+            if name in hosted:
+                warnings.append(
+                    "\n".join([
+                        "Package \"%s\" in isolated hub \"%s\" is listed as both a hosted package and a git package; using the git checkout and ignoring the hosted entry:" % (name, hub_name),
+                        "  - %s (hosted)" % hosted[name].version,
+                        "  - %s (git)" % git_pkgs[name].version,
+                    ]),
+                )
+                hosted.pop(name)
 
     return struct(
         error = None,
