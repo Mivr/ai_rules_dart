@@ -167,6 +167,19 @@ dart_binary(
     ],
 )
 
+dart_test(
+    name = "link_hook_runner_test",
+    size = "small",
+    srcs = ["link_hook_runner.dart"],
+    main = "link_hook_runner_test.dart",
+    deps = [
+        "@ext_pub_deps//:args",
+        "@ext_pub_deps//:data_assets",
+        "@ext_pub_deps//:hooks",
+        "@ext_pub_deps//:test",
+    ],
+)
+
 # Concatenates module kernels into a modular `dart_test`'s or
 # `dart_binary(compile_mode = "kernel")`'s kernel. See the file's header.
 dart_binary(

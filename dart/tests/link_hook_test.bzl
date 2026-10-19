@@ -274,8 +274,25 @@ def _link_hook_actions_test_impl(ctx):
     runs = _actions(env, "DartLinkHook")
     asserts.equals(env, 1, len(runs))
     argv = runs[0].argv
+    stage_prefix = target.label.name + ".pkg_roots/link__hook__fixture"
     asserts.true(env, "--package-name" in argv and argv[argv.index("--package-name") + 1] == "link_hook_fixture", str(argv))
-    asserts.true(env, argv[argv.index("--package-root") + 1].endswith("dart/tests/link_hook_fixture"), str(argv))
+    asserts.true(env, argv[argv.index("--package-root") + 1].endswith(stage_prefix), str(argv))
+    asserts.true(env, argv[argv.index("--hook") + 1].endswith(stage_prefix + "/hook/link.dart"), str(argv))
+
+    pc_writes = [
+        a
+        for a in _actions(env, "FileWrite")
+        if a.outputs.to_list()[0].basename == target.label.name + ".package_config.json"
+    ]
+    asserts.equals(env, 1, len(pc_writes))
+    for line in pc_writes[0].content.split("\n"):
+        if '"rootUri"' not in line:
+            continue
+        asserts.true(
+            env,
+            '"' + target.label.name + ".pkg_roots/" in line,
+            "link hook package_config rootUri must resolve inside .pkg_roots: %s" % line,
+        )
 
     assets = target[DartDataAssetInfo].assets.to_list()
     asserts.equals(env, ["package:link_hook_fixture/data/index.json"], [a.id for a in assets])
@@ -287,9 +304,22 @@ def _link_hook_actions_test_impl(ctx):
     asserts.equals(env, [assets[0].file], target[DefaultInfo].files.to_list())
 
     recorded = ctx.attr.recorded_uses_basename
-    inputs = [f.basename for f in runs[0].inputs.to_list()]
+    input_files = runs[0].inputs.to_list()
+    inputs = [f.basename for f in input_files]
     asserts.true(env, recorded in inputs, "%s not among inputs" % recorded)
     asserts.true(env, "link.dart" in inputs)
+    input_short_paths = [f.short_path for f in input_files]
+    for staged_rel in [
+        stage_prefix + "/lib/fixture.dart",
+        stage_prefix + "/lib/generated.g.dart",
+        stage_prefix + "/hook/link.dart",
+        target.label.name + ".pkg_roots/link__hook__fixture__dep/lib/dep.dart",
+    ]:
+        asserts.true(
+            env,
+            any([p.endswith(staged_rel) for p in input_short_paths]),
+            "%s not staged among inputs: %s" % (staged_rel, input_short_paths),
+        )
     return analysistest.end(env)
 
 link_hook_actions_test = analysistest.make(

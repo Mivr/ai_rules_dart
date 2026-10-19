@@ -219,6 +219,7 @@ bzl_library(
     visibility = ["//dart:__subpackages__"],
     deps = [
         ":common",
+        ":source_set",
         "//dart:providers",
     ],
 )

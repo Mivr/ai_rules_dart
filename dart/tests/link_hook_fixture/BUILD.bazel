@@ -5,6 +5,7 @@ so the hook is never run and no binary is compiled. The behaviour the hooks
 produce is `e2e/link_hook`'s to show.
 """
 
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("//dart:defs.bzl", "dart_binary", "dart_code_asset", "dart_library", "dart_link_hook")
 load(
     "//dart/tests:link_hook_test.bzl",
@@ -20,10 +21,19 @@ load(
     "validation_runs_assetless_hook_test",
 )
 
+write_file(
+    name = "generated",
+    out = "lib/generated.g.dart",
+    content = ["const int generated = 1;\n"],
+)
+
 dart_library(
     name = "lib",
     package_name = "link_hook_fixture",
-    srcs = ["lib/fixture.dart"],
+    srcs = [
+        "lib/fixture.dart",
+        ":generated",
+    ],
     link_hook = "hook/link.dart",
     deps = ["//dart/tests/link_hook_fixture/dep"],
 )

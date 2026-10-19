@@ -28,6 +28,26 @@ load(
     "package_link_hook",
     "writable_home_env",
 )
+load("//dart/private:source_set.bzl", "package_index")
+
+def _match_package_file(short_path, index):
+    """Returns `(package_name, lib_rel_path)` for `short_path`, or `(None, None)`.
+
+    Matches the longest `lib_root` in `index`, using the same rule as
+    `package_for_index`: a path equal to `lib_root` is an opaque package
+    directory (`lib_rel_path = None`), and any other match sits under
+    `<lib_root>/lib/<lib_rel_path>`.
+    """
+    name = index.get(short_path) if short_path else None
+    if name != None:
+        return name, None
+    parts = short_path.split("/")
+    for i in range(len(parts) - 1, -1, -1):
+        if parts[i] == "lib":
+            name = index.get("/".join(parts[:i]))
+            if name != None:
+                return name, "/".join(parts[i + 1:])
+    return None, None
 
 def parse_data_asset_ids(label, ids):
     """Splits declared data asset ids into package and name.
@@ -160,16 +180,79 @@ def dart_link_hook_actions(ctx, runner, sdk, recorded_uses, deps, data_asset_ids
 
     srcs = collect_transitive_srcs(deps)
     resources = collect_transitive_resources(deps)
+    all_records = depset(
+        transitive = [dep[DartInfo].transitive_packages for dep in deps],
+    ).to_list()
+    pkg_index = package_index(all_records)
+    by_pkg = {}
+    for f in srcs.to_list() + resources.to_list():
+        owner, rel = _match_package_file(f.short_path, pkg_index)
+        if owner != None:
+            by_pkg.setdefault(owner, []).append((rel, f))
+
     package_config = ctx.actions.declare_file(name + ".package_config.json")
+    stage_name = name + ".pkg_roots"
+    manifest = ctx.actions.declare_file(stage_name + "/.manifest")
+    stage_root = manifest.dirname
+    roots = {}
+    staged = [manifest]
+    staged_hooks = {}
+    manifest_entries = []
+    for pkg in packages:
+        pkg_name = pkg.package_name
+        if not pkg_name or pkg_name in roots:
+            continue
+        dep_mangled = pkg_name.replace("_", "__").replace("/", "_s")
+        pfiles = by_pkg.get(pkg_name, [])
+        hook = hooks.get(pkg_name)
+        if len(pfiles) == 1 and pfiles[0][1].is_directory and hook == None:
+            dir_link = ctx.actions.declare_directory(stage_name + "/" + dep_mangled)
+            ctx.actions.symlink(output = dir_link, target_file = pfiles[0][1])
+            staged.append(dir_link)
+            manifest_entries.append("dir\t%s\t%s" % (dep_mangled, dir_link.path))
+        else:
+            occupied = {}
+            dir_idx = 0
+            for rel, f in pfiles:
+                if f.is_directory:
+                    dir_link = ctx.actions.declare_directory(
+                        "%s/%s.dir_%d" % (stage_name, dep_mangled, dir_idx),
+                    )
+                    dir_idx += 1
+                    ctx.actions.symlink(output = dir_link, target_file = f)
+                    staged.append(dir_link)
+                    manifest_entries.append("dir\t%s\t%s" % (dep_mangled, dir_link.path))
+                    continue
+                if not rel or rel in occupied:
+                    continue
+                occupied[rel] = True
+                rel_path = dep_mangled + "/lib/" + rel
+                link = ctx.actions.declare_file(stage_name + "/" + rel_path)
+                ctx.actions.symlink(output = link, target_file = f)
+                staged.append(link)
+                manifest_entries.append("file\t%s\t%s" % (rel_path, link.path))
+            if hook != None:
+                hook_rel = dep_mangled + "/hook/link.dart"
+                hook_link = ctx.actions.declare_file(stage_name + "/" + hook_rel)
+                ctx.actions.symlink(output = hook_link, target_file = hook)
+                staged.append(hook_link)
+                staged_hooks[pkg_name] = hook_link
+                manifest_entries.append("file\t%s\t%s" % (hook_rel, hook_link.path))
+        roots[pkg_name] = stage_root + "/" + dep_mangled
+
+    ctx.actions.write(
+        output = manifest,
+        content = "".join([e + "\n" for e in manifest_entries]),
+    )
     ctx.actions.write(
         output = package_config,
-        content = generate_package_config(packages, srcs.to_list(), package_config),
+        content = generate_package_config(packages, [], package_config, roots = roots),
     )
 
     asset_infos = []
     link_outputs = []
     for package_name in sorted(hooks.keys()):
-        hook = hooks[package_name]
+        hook = staged_hooks[package_name]
         link_output = ctx.actions.declare_file(
             "%s/%s.link_output.json" % (name, package_name),
         )
@@ -201,7 +284,7 @@ def dart_link_hook_actions(ctx, runner, sdk, recorded_uses, deps, data_asset_ids
             executable = sdk.dart,
             arguments = [runner.path, args],
             inputs = depset(
-                [runner, hook, package_config, recorded_uses],
+                [runner, hooks[package_name], package_config, recorded_uses] + staged,
                 transitive = [srcs, resources, sdk.tool_files, sdk.runtime_files],
             ),
             outputs = outputs,

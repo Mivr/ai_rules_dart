@@ -38,9 +38,15 @@ Future<void> main(List<String> arguments) async {
 
   final scratch = Directory.systemTemp.createTempSync('dart_link_hook_');
   try {
+    final staged = stageWorkspace(
+      packages: File(args.option('packages')!),
+      packageRoot: Directory(args.option('package-root')!),
+      hook: File(args.option('hook')!),
+      scratch: scratch,
+    );
     final input = _linkInput(
       packageName: packageName,
-      packageRoot: Directory(args.option('package-root')!).absolute,
+      packageRoot: staged.packageRoot,
       recordedUses: File(args.option('recorded-uses')!).absolute,
       scratch: scratch,
     );
@@ -52,8 +58,8 @@ Future<void> main(List<String> arguments) async {
     final hook = await Process.run(
       File(args.option('dart')!).absolute.path,
       [
-        '--packages=${File(args.option('packages')!).absolute.path}',
-        File(args.option('hook')!).absolute.path,
+        '--packages=${staged.packages.path}',
+        staged.hook.path,
         '--config=${inputFile.path}',
       ],
       workingDirectory: input.packageRoot.toFilePath(),
@@ -143,6 +149,76 @@ Future<void> main(List<String> arguments) async {
     exitCode = 1;
   } finally {
     scratch.deleteSync(recursive: true);
+  }
+}
+
+/// Copies the manifest-declared files for a link hook action into [scratch]
+/// so the hook sees only declared sources in an isolated directory tree.
+({File packages, Directory packageRoot, File hook}) stageWorkspace({
+  required File packages,
+  required Directory packageRoot,
+  required File hook,
+  required Directory scratch,
+}) {
+  final stageParent = packageRoot.parent;
+  final manifest = File('${stageParent.path}/.manifest');
+  if (!manifest.existsSync()) {
+    return (
+      packages: packages.absolute,
+      packageRoot: packageRoot.absolute,
+      hook: hook.absolute,
+    );
+  }
+  final stageName = stageParent.uri.pathSegments
+      .where((s) => s.isNotEmpty)
+      .last;
+  final hookDirName = packageRoot.uri.pathSegments
+      .where((s) => s.isNotEmpty)
+      .last;
+  final stagedRoot = Directory('${scratch.path}/$stageName')
+    ..createSync(recursive: true);
+  for (final line in manifest.readAsLinesSync()) {
+    if (line.isEmpty) continue;
+    final parts = line.split('\t');
+    if (parts.length != 3) continue;
+    final kind = parts[0];
+    final rel = parts[1];
+    final srcPath = parts[2];
+    if (kind == 'file') {
+      final dst = File('${stagedRoot.path}/$rel');
+      dst.parent.createSync(recursive: true);
+      dst.writeAsBytesSync(File(srcPath).readAsBytesSync());
+    } else if (kind == 'dir') {
+      _copyDirectory(Directory(srcPath), Directory('${stagedRoot.path}/$rel'));
+    }
+  }
+  final stagedPackages = File(
+    '${scratch.path}/${packages.uri.pathSegments.last}',
+  )..writeAsBytesSync(packages.readAsBytesSync());
+  final stagedPackageRoot = Directory('${stagedRoot.path}/$hookDirName')
+    ..createSync(recursive: true);
+  final stagedHook = File('${stagedPackageRoot.path}/hook/link.dart');
+  if (!stagedHook.existsSync()) {
+    stagedHook.parent.createSync(recursive: true);
+    stagedHook.writeAsBytesSync(hook.readAsBytesSync());
+  }
+  return (
+    packages: stagedPackages.absolute,
+    packageRoot: stagedPackageRoot.absolute,
+    hook: stagedHook.absolute,
+  );
+}
+
+void _copyDirectory(Directory src, Directory dst) {
+  if (!src.existsSync()) return;
+  dst.createSync(recursive: true);
+  final prefix = src.uri.path;
+  for (final entity in src.listSync(recursive: true, followLinks: true)) {
+    if (entity is! File) continue;
+    final rel = entity.uri.path.substring(prefix.length);
+    final out = File.fromUri(dst.uri.resolve(rel));
+    out.parent.createSync(recursive: true);
+    out.writeAsBytesSync(entity.readAsBytesSync());
   }
 }
 
