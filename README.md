@@ -16,6 +16,12 @@ use_repo(dart, "dart_toolchains")
 register_toolchains("@dart_toolchains//:all")
 ```
 
+A `dart.toolchain(...)` request from the root module takes precedence over
+requests from dependencies (rules_dart's included), even when the root's version
+is older; with no root request, the highest requested version is selected.
+
+````
+
 ## Usage
 
 ### Running the Dart SDK
@@ -27,7 +33,7 @@ automatically. To run the `dart` CLI directly:
 bazel run @rules_dart//dart -- --version
 bazel run @rules_dart//dart -- analyze lib/
 bazel run @rules_dart//dart -- format lib/
-```
+````
 
 > **Tip**: Consider using [`bazel_env`](https://github.com/buildbuddy-io/bazel_env.bzl)
 > to put Bazel-managed tool binaries on your `PATH` for IDE and shell use.
