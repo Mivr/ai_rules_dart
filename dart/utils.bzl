@@ -22,6 +22,7 @@ load(
     _generate_package_config_content = "generate_package_config_content",
     _generate_stable_package_config = "generate_stable_package_config",
     _kernel_uri = "kernel_uri",
+    _owned_package_records = "owned_package_records",
     _runfiles_path = "runfiles_path",
     _stable_entry_path = "stable_entry_path",
     _stable_path = "stable_path",
@@ -31,6 +32,7 @@ load(
     _dart_analyzable_info = "dart_analyzable_info",
     _dart_analyzable_info_with_package = "dart_analyzable_info_with_package",
     _dart_info = "dart_info",
+    _dart_info_multi = "dart_info_multi",
     _dart_info_no_package = "dart_info_no_package",
 )
 load(
@@ -87,6 +89,11 @@ load(
 # Reading stays direct — `DartInfo` is indexed off targets as before.
 dart_info = _dart_info
 
+# The multi-package sibling of `dart_info()`, for one `dart_library` that owns
+# several packages at once (a library merged over a pub dependency cycle).
+# Takes the members' records rather than the facts they were built from.
+dart_info_multi = _dart_info_multi
+
 # The other constructor, for a target that ships no Dart package at all and
 # provides `DartInfo` only to satisfy a `deps` attribute that requires one (a
 # font-only target, a facade grouping other libraries). Takes `deps` and nothing
@@ -111,6 +118,12 @@ dart_analyzable_info = _dart_analyzable_info
 dart_analyzable_info_with_package = _dart_analyzable_info_with_package
 
 collect_packages = _collect_packages
+
+# Every `DartPackageInfo` record the target itself contributes: one for most
+# targets, one per member for a merged multi-package target, none for a facade.
+# Prefer this over matching `package_name`/`lib_root` by hand, so producers
+# that predate the field keep working.
+owned_package_records = _owned_package_records
 
 # Returns a depset[File]; pass it to action inputs / runfiles directly and
 # flatten (once) only where per-file paths are inspected.

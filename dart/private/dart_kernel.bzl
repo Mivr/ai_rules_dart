@@ -51,6 +51,7 @@ load(
     "generate_stable_package_config",
     "kernel_sdk_mismatch_error",
     "own_package_record",
+    "owned_package_records",
     "sdk_path_from_dart",
     "stable_path",
     "writable_home_env",
@@ -164,6 +165,31 @@ def entry_source_uri(short_path, scheme = STABLE_SCHEME):
       The URI string.
     """
     return multi_root_uri(short_path, scheme = scheme)
+
+def _owned_source_uri(short_path, packages):
+    """The `package:` URI of an owned source of a multi-package library.
+
+    The library owns several packages, so the single-package
+    `library_source_uri` cannot name the file: the package is the one of the
+    library's records whose `lib/` contains it.
+
+    Args:
+      short_path: The source's `File.short_path`.
+      packages: The library's deduplicated `DartPackageInfo` records.
+
+    Returns:
+      The URI string, e.g. `package:dio/dio.dart`.
+    """
+    name = package_of_source(short_path, packages)
+    if name == None:
+        fail("kernel module source `%s` is in none of the library's packages: %s." % (
+            short_path,
+            ", ".join(sorted([pkg.package_name for pkg in packages])),
+        ))
+    for pkg in packages:
+        if pkg.package_name == name:
+            return library_source_uri(pkg.package_name, pkg.lib_root, short_path)
+    fail("kernel module source `%s` names package \"%s\", which has no record." % (short_path, name))
 
 def library_source_uri(package_name, lib_root, short_path):
     """The `package:` URI of a library's own source.
@@ -1152,7 +1178,8 @@ def library_kernel_info(
         extra_libraries = [],
         scheme = STABLE_SCHEME,
         extra_frontend_flags = [],
-        rule_deps = None):
+        rule_deps = None,
+        own_records = None):
     """The `DartKernelInfo` a `dart_library` provides.
 
     The module is declared only here. Nothing builds it until an executable links
@@ -1174,6 +1201,11 @@ def library_kernel_info(
       scheme: The multi-root URI scheme (`STABLE_SCHEME` by default).
       extra_frontend_flags: Extra flags forwarded to `kernel_worker`.
       rule_deps: Optional list of dependency targets (defaults to `ctx.attr.deps`).
+      own_records: The library's own `DartPackageInfo` records, one per owned
+        package. Defaults to `[own_record]` (or empty when it is None), which
+        is what every one-package library passes; a merged multi-package
+        library passes one record per member, and its module compiles all of
+        their sources together, against a package config naming every member.
 
     Returns:
       A `DartKernelInfo`.
@@ -1191,7 +1223,9 @@ def library_kernel_info(
         return no_kernel_module()
 
     raw = depset(transitive = [dep[DartInfo].transitive_packages for dep in deps if DartInfo in dep]).to_list()
-    records = ([own_record] if own_record != None else []) + raw
+    if own_records == None:
+        own_records = [own_record] if own_record != None else []
+    records = own_records + raw
     modular = kernel_packages_consistent(records) and all([k.modular for k in dep_kernels])
     if not modular:
         return no_kernel_module()
@@ -1219,8 +1253,12 @@ def library_kernel_info(
     need_graph = len(pkgs) < len(records)
     owned_list = owned.to_list() if need_graph else []
     edges_list = edges.to_list() if need_graph else []
+    # One name for the cross-package check: a merged library owns several,
+    # and its members compile in this very module, so no member can be split
+    # across targets. A single-package library passes its own name as before.
+    single_package_name = own_records[0].package_name if len(own_records) == 1 else ""
     has_cross_pkg_cycle_val = has_cross_pkg_cycle(
-        package_name if own_record != None else "",
+        single_package_name,
         raw,
         owned = owned_list,
         edges = edges_list,
@@ -1231,7 +1269,7 @@ def library_kernel_info(
     if has_cross_pkg_cycle_val:
         if need_graph:
             cyclic_paths = _cyclic_source_paths(
-                package_name if own_record != None else "",
+                single_package_name,
                 raw,
                 owned_list,
                 edges_list,
@@ -1325,10 +1363,18 @@ def library_kernel_info(
 
     kmod = ctx.actions.declare_directory(ctx.label.name + ".kmod")
     koutline = ctx.actions.declare_directory(ctx.label.name + ".koutline")
-    sources = [
-        struct(uri = library_source_uri(package_name, lib_root, f.short_path), file = f)
-        for f in own_srcs
-    ]
+    if len(own_records) == 1:
+        sources = [
+            struct(uri = library_source_uri(package_name, lib_root, f.short_path), file = f)
+            for f in own_srcs
+        ]
+    else:
+        # A merged library's sources span its members' roots: each file is
+        # named by the member package whose `lib/` holds it.
+        sources = [
+            struct(uri = _owned_source_uri(f.short_path, pkgs), file = f)
+            for f in own_srcs
+        ]
     excluded = kernel_module_action(
         ctx,
         tools,
@@ -1350,7 +1396,7 @@ def library_kernel_info(
         scheme = scheme,
         extra_frontend_flags = extra_frontend_flags,
     )
-    if package_name == "test" and target == "vm" and hasattr(ctx.executable, "_kernel_link"):
+    if (package_name == "test" or "test" in [record.package_name for record in own_records]) and target == "vm" and hasattr(ctx.executable, "_kernel_link"):
         base_dill = ctx.actions.declare_file(ctx.label.name + ".base.dill")
         base_keys = ctx.actions.declare_file(ctx.label.name + ".base.keys")
         seeded_dep_kmods = [
@@ -1403,19 +1449,34 @@ def _dart_kernel_module_aspect_impl(target, ctx):
     package_name = dart_info.package_name
     lib_root = dart_info.lib_root
     own_record = own_package_record(dart_info)
+    own_records = owned_package_records(dart_info)
     srcs_dir = getattr(ctx.rule.attr, "srcs_dir", None)
     has_srcs_attr = hasattr(ctx.rule.attr, "srcs")
-    own_srcs = getattr(ctx.rule.files, "srcs", [])
+    own_srcs = list(getattr(ctx.rule.files, "srcs", []))
     rule_deps = getattr(ctx.rule.attr, "deps", [])
     if type(rule_deps) != "list":
         rule_deps = [rule_deps]
 
+    # A merged multi-package library carries no `srcs` of its own: its files
+    # arrive through `members`. They compile in this one module, like any
+    # library's own sources.
+    for member in getattr(ctx.rule.attr, "members", []):
+        own_srcs.extend([
+            f
+            for f in member[DefaultInfo].files.to_list()
+            if f.extension == "dart"
+        ])
+
     opaque = bool(srcs_dir)
     if not has_srcs_attr and dart_info.transitive_srcs.to_list() != [] and len(rule_deps) == 0:
         opaque = True
-    prefix = package_lib_prefix(lib_root)
-    if own_srcs and (not package_name or own_record == None or any([not f.short_path.startswith(prefix) for f in own_srcs])):
+    if own_srcs and not own_records:
         opaque = True
+    else:
+        for f in own_srcs:
+            if not any([f.short_path.startswith(package_lib_prefix(record.lib_root)) for record in own_records]):
+                opaque = True
+                break
 
     return [
         library_kernel_info(
@@ -1426,6 +1487,7 @@ def _dart_kernel_module_aspect_impl(target, ctx):
             own_srcs,
             opaque = opaque,
             rule_deps = rule_deps,
+            own_records = own_records,
         ),
     ]
 

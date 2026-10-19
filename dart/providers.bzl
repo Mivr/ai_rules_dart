@@ -21,15 +21,19 @@ DartInfo = provider(
 Read this directly off any target that provides it. To *build* one, call \
 `dart_info()` from `//dart:utils.bzl` rather than this constructor — or \
 `dart_info_no_package()` when the target ships no Dart package and provides \
-`DartInfo` only to satisfy a `deps` attribute requiring one. Either takes what \
+`DartInfo` only to satisfy a `deps` attribute requiring one. A target that \
+owns several packages at once (one `dart_library` merged over a pub \
+dependency cycle) calls `dart_info_multi()` with one record per package. \
+Either takes what \
 a target contributes itself and merges every dependency's closure internally, \
 so a field added here needs no change in the rule sets that produce `DartInfo` \
 — rules_flutter and rules_dart_proto both do. Constructing it here means \
 enumerating and merging each field by hand, and a field left empty rather than \
 forwarded silently discards every dependency's values.""",
     fields = {
-        "package_name": "str: The Dart package name for this library.",
-        "lib_root": "str: The short_path-based path to the package root directory (parent of `lib/`). Configuration-independent; consumers derive exec-root paths from source File objects.",
+        "package_name": "str: The Dart package name for this library. Empty when the target owns no single package: a facade owns none, and a merged multi-package target owns several (see `owned_packages`).",
+        "lib_root": "str: The short_path-based path to the package root directory (parent of `lib/`). Configuration-independent; consumers derive exec-root paths from source File objects. Empty together with `package_name` when the target owns no single package.",
+        "owned_packages": "list[DartPackageInfo]: The package records this target itself contributes, in order. Most targets contribute exactly one; a merged multi-package target contributes one per member package; a facade contributes none. `transitive_packages` carries these first, then every dependency's. Prefer `owned_package_records()` over reading this directly, so producers that predate the field keep working.",
         "transitive_srcs": "depset[File]: All transitive Dart source files, including this library's own sources.",
         "transitive_resources": "depset[File]: Non-Dart files shipped inside `lib/` (see `dart_library`'s `resources`) by this library and all transitive deps. Carried beside `transitive_srcs` rather than within it because the two are routed differently: everything that stages a whole package wants both, and nothing that feeds the compiler wants these.",
         "transitive_packages": "depset[DartPackageInfo]: Package records for this library and all transitive deps.",

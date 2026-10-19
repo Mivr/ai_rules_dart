@@ -21,6 +21,9 @@ its own. `dart_info_no_package()` is for one that deliberately carries none:
 because `flutter_application(deps = ...)` requires one on every dep. Neither
 takes a field list, and the enumeration they share lives in `_merged_dart_info`
 below, so a field added to `DartInfo` is a change to this file and nowhere else.
+A target that owns several packages at once — one `dart_library` merged over a
+pub dependency cycle, whose members each keep their own `package_name` and
+`lib/` root — calls `dart_info_multi()` with one record per member package.
 
 The narrow signature is the point for the second one. A target with no package
 can have no `srcs`, no `lib_root`, and no `code_assets` — assets ride
@@ -251,6 +254,66 @@ def dart_info_no_package(deps = []):
         code_asset_files = [],
     )
 
+def dart_info_multi(label, records, deps = [], srcs = [], resources = []):
+    """Builds a `DartInfo` for a library that owns several packages at once.
+
+    The one case `dart_info()` cannot state: a single `dart_library` merged
+    over a pub dependency cycle, whose member packages each keep their own
+    `package_name` and their own `lib/` root. The members' sources are
+    compiled and summarized together, in one module, against a package config
+    naming every member — which is what keeps a cycle in the pubspec graph
+    from becoming a cycle in the Bazel target graph.
+
+    The records arrive built (by the `dart_package_member` targets the merged
+    library names in `members`), so this takes them rather than the facts
+    they were built from. Names must be distinct: two records for one name
+    would silently compile against whichever came first, so a duplicate fails
+    here, where the merged library is declared, rather than deep in a
+    consumer.
+
+    Args:
+      label: The constructing rule's label, for error messages.
+      records: The member packages' `DartPackageInfo` records, one per
+        package, in a stable order. Must be non-empty with distinct names:
+        an empty merge is what `dart_info_no_package()` is for.
+      deps: Targets providing `DartInfo` whose closures are merged in. Edges
+        inside the merged cycle are gone already — the members name no
+        dependency on each other — so these are only the edges leaving it.
+      srcs: The members' own Dart sources.
+      resources: The members' own non-Dart files under their `lib/`s.
+
+    Returns:
+      A `DartInfo` whose `owned_packages` are `records`.
+    """
+    if not records:
+        fail("%s: `dart_info_multi()` needs at least one package record. A merged library over an empty cycle is what `dart_info_no_package()` is for." % label)
+    seen = {}
+    for record in records:
+        if record.package_name in seen:
+            fail(("%s: merged library owns package \"%s\" twice (at `%s` and `%s`). " +
+                  "One package name resolves to one `lib/` root; name the two packages differently.") % (
+                label,
+                record.package_name,
+                seen[record.package_name],
+                record.lib_root,
+            ))
+        seen[record.package_name] = record.lib_root
+
+    return _merged_dart_info(
+        dep_infos = [dep[DartInfo] for dep in deps],
+        package_name = "",
+        lib_root = "",
+        srcs = srcs,
+        resources = resources,
+        packages = list(records),
+        code_asset_files = [
+            a.dynamic_library
+            for record in records
+            for a in getattr(record, "code_assets", ())
+            if a.dynamic_library != None
+        ],
+    )
+
 def dart_analyzable_info(deps = [], srcs = []):
     """Builds a `DartAnalyzableInfo` for an executable target.
 
@@ -440,6 +503,7 @@ def _merged_dart_info(
     return DartInfo(
         package_name = package_name,
         lib_root = lib_root,
+        owned_packages = list(packages),
         transitive_srcs = depset(
             direct = srcs,
             transitive = [info.transitive_srcs for info in dep_infos],

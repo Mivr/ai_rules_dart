@@ -186,6 +186,31 @@ def own_package_record(info):
             return pkg
     return None
 
+def owned_package_records(info):
+    """Returns every `DartPackageInfo` record the `DartInfo` itself owns.
+
+    Most targets own exactly one package, and this returns it in a list.
+    A merged multi-package target (one `dart_library` over a pub dependency
+    cycle) owns one record per member package, and a facade owns none.
+
+    Reads `DartInfo.owned_packages`, which every constructor in
+    `dart_info.bzl` sets. A `DartInfo` built by hand — or by a producer from
+    before the field existed — carries none, so those fall back to the
+    single record `own_package_record` matches, or to empty when the target
+    contributes no package at all.
+
+    Args:
+      info: A `DartInfo`.
+
+    Returns:
+      The owned `DartPackageInfo` records, in order.
+    """
+    owned = getattr(info, "owned_packages", None)
+    if owned != None:
+        return list(owned)
+    record = own_package_record(info)
+    return [record] if record != None else []
+
 def collect_packages(deps):
     """Collect unique DartPackageInfo providers from transitive deps.
 

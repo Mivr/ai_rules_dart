@@ -33,6 +33,7 @@ load("//dart/private:dart_fix.bzl", _dart_fix = "dart_fix")
 load("//dart/private:dart_format.bzl", _dart_format = "dart_format")
 load("//dart/private:dart_library.bzl", _dart_library = "dart_library")
 load("//dart/private:dart_link_hook.bzl", _dart_link_hook = "dart_link_hook")
+load("//dart/private:dart_package_member.bzl", _dart_package_member = "dart_package_member")
 load("//dart/private:dart_package_metadata.bzl", _dart_package_metadata = "dart_package_metadata")
 load("//dart/private:dart_sqlcodegen.bzl", _dart_sqlcodegen = "dart_sqlcodegen")
 load("//dart/private:dart_test.bzl", _dart_test = "dart_test")
@@ -40,6 +41,7 @@ load("//dart/private:dart_web_application.bzl", _dart_js_binary = "dart_js_binar
 load("//dart/private:source_set.bzl", _dart_source_set = "dart_source_set")
 
 dart_library = _dart_library
+dart_package_member = _dart_package_member
 dart_package_metadata = _dart_package_metadata
 dart_source_set = _dart_source_set
 dart_binary = _dart_binary

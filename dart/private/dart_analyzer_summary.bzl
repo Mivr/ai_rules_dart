@@ -29,7 +29,7 @@ unsafe: a toolchain SDK newer than the pinned analyzer supports
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartInfo")
-load("//dart/private:common.bzl", "generate_package_config", "kernel_sdk_mismatch_error", "writable_home_env")
+load("//dart/private:common.bzl", "generate_package_config", "kernel_sdk_mismatch_error", "owned_package_records", "writable_home_env")
 load("//dart/private:project_staging.bzl", "mangle_package_dir")
 load("//dart/private:source_set.bzl", "package_for_index", "package_index")
 
@@ -268,6 +268,25 @@ def closure_attrs(ctx):
         targets.append(sky_engine)
     return targets
 
+def _own_record_for(own_records, short_path):
+    """Returns the first owned record whose `lib/` contains `short_path`, or None.
+
+    A one-package library matches its one record; a merged multi-package
+    library matches the member package the file belongs to.
+
+    Args:
+      own_records: The target's own `DartPackageInfo` records, in order.
+      short_path: A `File.short_path`.
+
+    Returns:
+      The matching record, or None.
+    """
+    for record in own_records:
+        prefix = (record.lib_root + "/lib/") if record.lib_root else "lib/"
+        if short_path.startswith(prefix):
+            return record
+    return None
+
 def _own_sources(info, files):
     """Returns the `.dart` files of `files` that are `info`'s package's `lib/` files.
 
@@ -278,10 +297,14 @@ def _own_sources(info, files):
     Returns:
       The package's library files, in the order given.
     """
-    if not info.package_name:
+    records = owned_package_records(info)
+    if not records:
         return []
-    prefix = (info.lib_root + "/lib/") if info.lib_root else "lib/"
-    return [f for f in files if f.extension == "dart" and f.short_path.startswith(prefix)]
+    return [
+        f
+        for f in files
+        if f.extension == "dart" and _own_record_for(records, f.short_path) != None
+    ]
 
 def own_lib_sources(info, files):
     """Returns the `.dart` files among `files` that are in a package's `lib/`.
@@ -328,9 +351,12 @@ def _has_own_sources(files):
     return any([f.is_directory or f.extension == "dart" for f in files])
 
 def _package_uri(info, f):
-    """Returns the `package:` URI of library `f` of `info`'s own package."""
-    prefix = (info.lib_root + "/lib/") if info.lib_root else "lib/"
-    return "package:%s/%s" % (info.package_name, f.short_path[len(prefix):])
+    """Returns the `package:` URI of library `f` of the target's own package(s)."""
+    for record in owned_package_records(info):
+        prefix = (record.lib_root + "/lib/") if record.lib_root else "lib/"
+        if f.short_path.startswith(prefix):
+            return "package:%s/%s" % (record.package_name, f.short_path[len(prefix):])
+    fail("summary source `%s` is in none of the target's packages." % f.short_path)
 
 def _dart_analyzer_summary_impl(target, ctx):
     if DartInfo not in target:
@@ -367,8 +393,17 @@ def _dart_analyzer_summary_impl(target, ctx):
         for d in deps
         if DartAnalyzerSummaryInfo in d
     ])
-    key = package_key(info)
-    lib_keys = [key + "|" + f.short_path for f in srcs]
+    # One key per owned package: a merged multi-package target summarizes all
+    # of its members' files in this one summary. A target owning no package
+    # keeps the empty package's key, as before.
+    own_records = owned_package_records(info)
+    own_keys = [package_key(record) for record in own_records] or [package_key(info)]
+    own_key_by_path = {}
+    for f in srcs:
+        record = _own_record_for(own_records, f.short_path)
+        if record != None:
+            own_key_by_path[f.short_path] = package_key(record)
+    lib_keys = [own_key_by_path.get(f.short_path, own_keys[0]) + "|" + f.short_path for f in srcs]
     own_files = depset(
         lib_keys,
         transitive = [d[DartAnalyzerSummaryInfo].own_files for d in deps if DartAnalyzerSummaryInfo in d],
@@ -449,22 +484,22 @@ def _dart_analyzer_summary_impl(target, ctx):
                 seen_pkg_files[pkg_k] = file_map
     split = False
     redundant = False
-    if srcs and key in inherited:
-        # A dependency covers this package. Whether this target adds to it
-        # depends on its own `lib/` files: one that no dependency defines makes
-        # the package split (a `part` in this target, or a file listed by two
-        # targets). When every one is defined already, the target re-lists its
-        # dependency's library (a `dart_test_package` over its `test_library`,
-        # say) and adds nothing.
+    if srcs and any([k in inherited for k in own_keys]):
+        # A dependency covers one of this target's packages. Whether this
+        # target adds to it depends on its own `lib/` files: one that no
+        # dependency defines makes the package split (a `part` in this target,
+        # or a file listed by two targets). When every one is defined already,
+        # the target re-lists its dependency's library (a `dart_test_package`
+        # over its `test_library`, say) and adds nothing.
         defined = {
             k: True
             for k in depset(transitive = [d[DartAnalyzerSummaryInfo].own_files for d in deps if DartAnalyzerSummaryInfo in d]).to_list()
         }
         split = any([k not in defined for k in lib_keys])
         redundant = not split
-    own = [key] if (not embedder and not split and not sibling_conflicts and not redundant and (srcs or not _has_own_sources(files))) else []
+    own = list(own_keys) if (not embedder and not split and not sibling_conflicts and not redundant and (srcs or not _has_own_sources(files))) else []
     if split:
-        own = [CONFLICT_PREFIX + key]
+        own = [CONFLICT_PREFIX + k for k in own_keys]
     own = own + sibling_conflicts
     packages = depset(
         own,
@@ -486,15 +521,30 @@ def _dart_analyzer_summary_impl(target, ctx):
 
     # Always stage the package's own libraries under `.summary_root` so
     # `package_config.json` never points at the real source tree where
-    # undeclared files might exist on disk.
-    prefix = (info.lib_root + "/lib/") if info.lib_root else "lib/"
-    stage_root = config.dirname + "/" + name + ".summary_root"
+    # undeclared files might exist on disk. A merged library stages each
+    # member under its own directory: two members may ship the same
+    # `lib/`-relative path, and one shared `lib/` could hold only one of them.
     staged = []
-    for f in srcs:
-        link = ctx.actions.declare_file(name + ".summary_root/lib/" + f.short_path[len(prefix):])
-        ctx.actions.symlink(output = link, target_file = f)
-        staged.append(link)
-    own_root = stage_root
+    own_staged_roots = {}
+    if len(own_records) == 1:
+        prefix = (info.lib_root + "/lib/") if info.lib_root else "lib/"
+        stage_root = config.dirname + "/" + name + ".summary_root"
+        for f in srcs:
+            link = ctx.actions.declare_file(name + ".summary_root/lib/" + f.short_path[len(prefix):])
+            ctx.actions.symlink(output = link, target_file = f)
+            staged.append(link)
+        own_root = stage_root
+    else:
+        stage_root = config.dirname + "/" + name + ".summary_root"
+        for f in srcs:
+            record = _own_record_for(own_records, f.short_path)
+            member_prefix = (record.lib_root + "/lib/") if record.lib_root else "lib/"
+            member_dir = name + ".summary_root/_own/" + mangle_package_dir(record.package_name)
+            own_staged_roots[record.package_name] = stage_root + "/_own/" + mangle_package_dir(record.package_name)
+            link = ctx.actions.declare_file(member_dir + "/lib/" + f.short_path[len(member_prefix):])
+            ctx.actions.symlink(output = link, target_file = f)
+            staged.append(link)
+        own_root = stage_root
 
     # Covered dependency packages come from their `.sum` files, so their `rootUri`
     # must not point at undeclared real execroot directories where unsandboxed
@@ -502,11 +552,15 @@ def _dart_analyzer_summary_impl(target, ctx):
     # packages (e.g. `srcs_dir` or split packages) have no summary, so their
     # declared files are staged under `.summary_root/_deps/` as well.
     all_pkgs = info.transitive_packages.to_list()
-    roots = {info.package_name: own_root}
+    if len(own_records) == 1:
+        roots = {info.package_name: own_root}
+    else:
+        roots = dict(own_staged_roots)
+    own_names = {record.package_name: True for record in own_records}
     uncovered_pkgs = {}
     conflicted_names = {}
     for pkg in all_pkgs:
-        if pkg.package_name == info.package_name:
+        if pkg.package_name in own_names:
             continue
         pkey = package_key(pkg)
         if pkey in inherited and (CONFLICT_PREFIX + pkey) not in inherited:
@@ -519,7 +573,10 @@ def _dart_analyzer_summary_impl(target, ctx):
     uncovered_inputs = []
     uncovered_staged = []
     if uncovered_pkgs:
-        others = [f for f in info.transitive_srcs.to_list() if not f.short_path.startswith(prefix)]
+        if len(own_records) == 1:
+            others = [f for f in info.transitive_srcs.to_list() if not f.short_path.startswith(prefix)]
+        else:
+            others = [f for f in info.transitive_srcs.to_list() if _own_record_for(own_records, f.short_path) == None]
         pkg_index = package_index(all_pkgs)
         by_pkg = {}
         for f in others:
@@ -606,7 +663,10 @@ def _dart_analyzer_summary_impl(target, ctx):
     return [DartAnalyzerSummaryInfo(
         summary = summary,
         transitive_summaries = depset([summary], transitive = [dependencies]),
-        packaged_summaries = depset([(info.package_name, summary)], transitive = [packaged]),
+        packaged_summaries = depset(
+            [(record.package_name, summary) for record in own_records] or [(info.package_name, summary)],
+            transitive = [packaged],
+        ),
         embedder_sdk_summaries = inherited_embedder_sdks,
         packages = packages,
         own_files = own_files,

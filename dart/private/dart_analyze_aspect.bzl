@@ -69,7 +69,7 @@ vendored in `//third_party/dart_linter`, so they can drift from `dart analyze`
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartAnalysisOptionsInfo", "DartAnalyzableInfo", "DartInfo")
-load("//dart/private:common.bzl", "kernel_sdk_mismatch_error", "merge_package_records", "own_package_record", "writable_home_env")
+load("//dart/private:common.bzl", "kernel_sdk_mismatch_error", "merge_package_records", "owned_package_records", "writable_home_env")
 load("//dart/private:dart_analyzer_summary.bzl", "CONFLICT_PREFIX", "DartAnalyzerSummaryInfo", "analyzer_summaries_supported", "closure_attrs", "dart_analyzer_summary", "own_lib_sources", "package_key", "sdk_root_path", "unbacked_embedder_in_closure")
 load("//dart/private:project_staging.bzl", "pubspec_stub", "stage_dart_project")
 load("//dart/private:source_set.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS")
@@ -379,7 +379,9 @@ def _summaries_ready(ctx, info, has_own_lib, staged_files = []):
                 if not pkg_root.startswith("../"):
                     prefix = (pkg_root + "/lib/") if pkg_root else "lib/"
                     covered_lib_prefixes[prefix] = True
-    own = package_key(info)
+    own_records = owned_package_records(info)
+    own_keys = [package_key(record) for record in own_records] or [package_key(info)]
+    own_names = [record.package_name for record in own_records]
 
     # A package split across targets is analyzed from source when the target
     # stages `lib/` files of a covered package: a dependency's summary defines
@@ -388,7 +390,7 @@ def _summaries_ready(ctx, info, has_own_lib, staged_files = []):
     # empty `own` key even when its `srcs` stage `lib/` files of a dependency's
     # package. A test or executable that stages only `test/` or `bin/` files
     # conflicts with no summary.
-    if (own in covered or (info.package_name and info.package_name in covered_names)) and has_own_lib:
+    if (any([k in covered for k in own_keys]) or any([n and n in covered_names for n in own_names])) and has_own_lib:
         return False
     if covered_lib_prefixes:
         for f in staged_files:
@@ -398,7 +400,7 @@ def _summaries_ready(ctx, info, has_own_lib, staged_files = []):
                         return False
     for pkg in info.transitive_packages.to_list():
         key = package_key(pkg)
-        if key != own and key not in covered:
+        if key not in own_keys and key not in covered:
             return False
     return True
 
@@ -430,9 +432,29 @@ def _format_language_versions(info, own_paths):
       Dict of language version ("" when none is stated) to the paths to format
       at it.
     """
-    own_package = own_package_record(info)
-    if own_package:
-        return {getattr(own_package, "language_version", ""): own_paths}
+    own_records = owned_package_records(info)
+    if len(own_records) == 1:
+        return {getattr(own_records[0], "language_version", ""): own_paths}
+    if own_records:
+        # A merged multi-package target: each file formats at the version of
+        # the member package whose root directory contains it.
+        groups = {}
+        for path in own_paths:
+            version = ""
+            matched = False
+            for record in own_records:
+                root = record.lib_root
+                if root and (path == root or path.startswith(root + "/")):
+                    version = getattr(record, "language_version", "")
+                    matched = True
+                    break
+            if not matched:
+                for record in own_records:
+                    if not record.lib_root:
+                        version = getattr(record, "language_version", "")
+                        break
+            groups.setdefault(version, []).append(path)
+        return groups
     roots = [
         p
         for p in info.transitive_packages.to_list()
