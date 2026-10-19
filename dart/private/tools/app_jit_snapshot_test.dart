@@ -1,11 +1,12 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
 
 import 'app_jit_snapshot.dart' as snapshot;
 
-void main() {
+void main(List<String> args) {
   late Directory tmp;
 
   setUp(() {
@@ -447,4 +448,58 @@ void main() {
       expect(key.contains('='), isFalse, reason: 'invalid key $key');
     }
   });
+
+  test(
+    '--gen-kernel refuses a file: import in any spelling without compiling',
+    () {
+      final ws = Directory('${tmp.path}/file_ws')..createSync(recursive: true);
+      final main = File('${ws.path}/main.dart')
+        ..writeAsStringSync(
+          "import 'file:///proc/self/cwd/pkg/lib/secret.dart';\n"
+          'void main() => print(secretValue);\n',
+        );
+      final conditional = File('${ws.path}/cond.dart')
+        ..writeAsStringSync(
+          "import 'dart:async' if (dart.library.io) 'FILE:///secret.dart';\n"
+          'Future<void> f() async {}\n',
+        );
+      // The mirror classifies exactly what the planner classifies.
+      expect(
+        snapshot.findDisallowedDirectives({
+          main.path: main.readAsStringSync(),
+          conditional.path: conditional.readAsStringSync(),
+        }, tool: 'app_jit_snapshot'),
+        [
+          "app_jit_snapshot: ${conditional.path} import 'FILE:///secret.dart' "
+              'is not a declared input.',
+          "app_jit_snapshot: ${main.path} import "
+              "'file:///proc/self/cwd/pkg/lib/secret.dart' is not a declared input.",
+        ],
+      );
+      // End to end: the wrapper fails before running gen_kernel (which is never
+      // reached, so no SDK snapshot is needed).
+      final toolPath = args.isNotEmpty
+          ? Runfiles.create().rlocation(args[0])
+          : File.fromUri(Platform.script.resolve('app_jit_snapshot.dart')).path;
+      final res = Process.runSync(Platform.resolvedExecutable, [
+        toolPath,
+        '--gen-kernel',
+        'never-reached-runtime',
+        '--input-source=${main.path}',
+        '--input-source=${conditional.path}',
+      ]);
+      expect(res.exitCode, isNonZero);
+      expect(
+        res.stderr as String,
+        contains(
+          "import 'file:///proc/self/cwd/pkg/lib/secret.dart' "
+          'is not a declared input',
+        ),
+      );
+      expect(
+        res.stderr as String,
+        contains("import 'FILE:///secret.dart' is not a declared input"),
+      );
+    },
+  );
 }

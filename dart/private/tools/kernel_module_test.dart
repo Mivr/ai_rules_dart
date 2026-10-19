@@ -21,13 +21,19 @@ import 'kernel_module.dart'
         ModuleOutcome,
         compileModule,
         decodeKernelModuleWorkRequestInputs,
+        decodeUriSegment,
+        defaultMultiRootPrefix,
         dillSourceUris,
         ensureSummaryDigests,
+        findDisallowedDirectives,
+        isDisallowedDirectiveUri,
+        isFileSchemeDirectiveUri,
         isWindowsDrivePath,
         kernelWorkerArgs,
         kernelWorkerUri,
         patchSnapshotSplitCommas,
         resolveDirectiveUri,
+        scanAllDirectiveUris,
         scanDirectives,
         sha256Of,
         stripSourceCodeFromDill,
@@ -1135,45 +1141,74 @@ void main(List<String> args) {
     },
   );
 
-  test(
-    'an unstaged compile that reads an undeclared file is redone isolated',
-    () async {
-      _write('pkg/lib/a.dart', 'class A {}\n');
-      final compiler = _DillWritingCompiler(
-        () => _buildDillWithUris([
-          _uri('pkg/lib/a.dart'),
-          _uri('pkg/lib/piece.dart'),
-        ]),
-      );
-      final result = await _compile(
-        'm_fallback',
-        ['pkg/lib/a.dart'],
-        // Worker inputs keep the marker-URI spellings from forcing isolated
-        // staging, so the first compile runs unstaged as in a real build.
-        inputs: [
-          _encodeInputForTest(
-            '${_root.path}/pkg/lib/a.dart',
-            Uint8List.fromList([7]),
-          ),
-        ],
-        compiler: compiler,
-      );
-      expect(result.code, 0);
-      expect(result.calls.length, 2, reason: 'unstaged, then isolated');
-      expect(_valuesAfter(result.calls[0], '--multi-root'), [
-        kernelWorkerUri(_root.path),
-      ]);
-      final isolatedRoots = _valuesAfter(result.calls[1], '--multi-root');
-      expect(isolatedRoots.length, 1);
-      expect(isolatedRoots.single, contains('.isolated_root'));
-      expect(result.log, contains('which is not a declared input'));
-      expect(
-        Directory('${_root.path}/out/m_fallback/.isolated_root').existsSync(),
-        isFalse,
-        reason: 'the isolated root is cleaned up',
-      );
-    },
-  );
+  test('an unstaged compile that reads an undeclared file is redone isolated, and refused when the restage still reads outside the declared inputs', () async {
+    _write('pkg/lib/a.dart', 'class A {}\n');
+    final compiler = _DillWritingCompiler(
+      () => _buildDillWithUris([
+        _uri('pkg/lib/a.dart'),
+        _uri('pkg/lib/piece.dart'),
+      ]),
+    );
+    final result = await _compile(
+      'm_fallback',
+      ['pkg/lib/a.dart'],
+      // Worker inputs keep the marker-URI spellings from forcing isolated
+      // staging, so the first compile runs unstaged as in a real build.
+      inputs: [
+        _encodeInputForTest(
+          '${_root.path}/pkg/lib/a.dart',
+          Uint8List.fromList([7]),
+        ),
+      ],
+      compiler: compiler,
+    );
+    expect(result.calls.length, 2, reason: 'unstaged, then isolated');
+    expect(_valuesAfter(result.calls[0], '--multi-root'), [
+      kernelWorkerUri(_root.path),
+    ]);
+    final isolatedRoots = _valuesAfter(result.calls[1], '--multi-root');
+    expect(isolatedRoots.length, 1);
+    expect(isolatedRoots.single, contains('.isolated_root'));
+    expect(result.log, contains('which is not a declared input'));
+    // The restaged compile reads the same undeclared file (a `file:` URI
+    // reads the host whatever the multi-root holds): the result is refused,
+    // never accepted.
+    expect(result.code, 1);
+    expect(result.log, contains('failing the compile'));
+    expect(
+      Directory('${_root.path}/out/m_fallback/.isolated_root').existsSync(),
+      isFalse,
+      reason: 'the isolated root is cleaned up',
+    );
+  });
+
+  test('an unstaged compile whose isolated restage reads only declared files is accepted', () async {
+    _write('pkg/lib/a.dart', 'class A {}\n');
+    var calls = 0;
+    final compiler = _DillWritingCompiler(
+      () => calls++ == 0
+          ? _buildDillWithUris([
+              _uri('pkg/lib/a.dart'),
+              _uri('pkg/lib/piece.dart'),
+            ])
+          : _buildDillWithUris([_uri('pkg/lib/a.dart')]),
+    );
+    final result = await _compile(
+      'm_fallback_clean',
+      ['pkg/lib/a.dart'],
+      inputs: [
+        _encodeInputForTest(
+          '${_root.path}/pkg/lib/a.dart',
+          Uint8List.fromList([7]),
+        ),
+      ],
+      compiler: compiler,
+    );
+    expect(result.code, 0, reason: result.log);
+    expect(result.calls.length, 2, reason: 'unstaged, then isolated');
+    expect(result.log, contains('which is not a declared input'));
+    expect(result.log, isNot(contains('failing the compile')));
+  });
 
   test(
     'an unstaged compile that reads only declared files runs once',
@@ -1198,6 +1233,218 @@ void main(List<String> args) {
       expect(result.log, isNot(contains('isolated multi-root')));
     },
   );
+
+  group('directive guard classification', () {
+    test('decodeUriSegment decodes once, like the front end', () {
+      expect(decodeUriSegment('pie%63e'), 'piece');
+      expect(decodeUriSegment('%2563'), '%63');
+      expect(defaultMultiRootPrefix, 'org-dartlang-root:///');
+    });
+    test('isFileSchemeDirectiveUri matches every file: spelling', () {
+      for (final uri in [
+        'file:///proc/self/cwd/pkg/lib/secret.dart',
+        'FILE:///x.dart',
+        'File:x.dart',
+        'file://localhost/x.dart',
+        r'file:C:\x.dart',
+        'file:x.dart?y=1#z',
+      ]) {
+        expect(isFileSchemeDirectiveUri(uri), isTrue, reason: uri);
+      }
+      for (final uri in [
+        'package:pkg/x.dart',
+        'dart:core',
+        'x.dart',
+        '../x.dart',
+        'notfile:x.dart',
+        'org-dartlang-root:///x.dart',
+        'other-scheme:///x.dart',
+      ]) {
+        expect(isFileSchemeDirectiveUri(uri), isFalse, reason: uri);
+      }
+    });
+
+    test('isDisallowedDirectiveUri exempts only package, dart and the multi-root scheme', () {
+      for (final uri in [
+        'file:///x.dart',
+        'FILE:x.dart',
+        'other-scheme:///x.dart',
+        'http://host/y.dart',
+        'data:text/plain,hi',
+        'C:/x.dart',
+        'a:b.dart',
+      ]) {
+        expect(isDisallowedDirectiveUri(uri), isTrue, reason: uri);
+      }
+      for (final uri in [
+        'package:pkg/x.dart',
+        'dart:core',
+        'org-dartlang-root:///x.dart',
+        'x.dart',
+        '../x.dart',
+        '/pkg/x.dart',
+      ]) {
+        expect(isDisallowedDirectiveUri(uri), isFalse, reason: uri);
+      }
+      expect(
+        isDisallowedDirectiveUri(
+          'org-dartlang-app:///x.dart',
+          multiRootPrefix: 'org-dartlang-app:///',
+        ),
+        isFalse,
+      );
+    });
+
+    test('scanAllDirectiveUris collects every conditional alternative', () {
+      final refs = scanAllDirectiveUris(
+        "import 'a.dart' if (dart.library.html) 'file:///s.dart';\n"
+        "export 'package:pkg/e.dart';\n"
+        "part 'p.dart';\n",
+      );
+      expect(
+        [for (final ref in refs) '${ref.kind} ${ref.uri}'],
+        [
+          'import a.dart',
+          'import file:///s.dart',
+          'export package:pkg/e.dart',
+          'part p.dart',
+        ],
+      );
+    });
+
+    test('findDisallowedDirectives names the file, the directive and the URI', () {
+      expect(
+        findDisallowedDirectives({
+          'b.dart': "import 'package:pkg/a.dart';\n",
+          'a.dart': "import 'file:///secret.dart';\n",
+        }),
+        ["dart: a.dart import 'file:///secret.dart' is not a declared input."],
+      );
+    });
+  });
+
+  group('disallowed directive URIs fail the module', () {
+    test('a file: import fails in every spelling', () async {
+      const spellings = [
+        'file:///proc/self/cwd/pkg/lib/secret.dart',
+        'FILE:///proc/self/cwd/pkg/lib/secret.dart',
+        'file://localhost/proc/self/cwd/pkg/lib/secret.dart',
+        'file:pkg/lib/secret.dart',
+        'file:///proc/self/cwd/pkg/lib/secret.dart?x=1',
+        'file:///proc/self/cwd/pkg/lib/secret.dart#frag',
+      ];
+      for (var i = 0; i < spellings.length; i++) {
+        _write('pkg/lib/f$i.dart', "import '${spellings[i]}';\nclass F$i {}\n");
+      }
+      final result = await _compile('m_file_uri', [
+        for (var i = 0; i < spellings.length; i++) 'pkg/lib/f$i.dart',
+      ]);
+      expect(result.code, 1);
+      for (final spelling in spellings) {
+        expect(
+          result.log,
+          contains("import '$spelling' is not a declared input"),
+          reason: spelling,
+        );
+      }
+    });
+
+    test(
+      'a file: export, part and selected conditional alternative fail',
+      () async {
+        _write('pkg/lib/e.dart', "export 'file:///secret.dart';\nclass E {}\n");
+        _write('pkg/lib/p.dart', "part 'file:///secret.dart';\nclass P {}\n");
+        _write(
+          'pkg/lib/c.dart',
+          "import 'file:///secret.dart' if (dart.library.html) 'dart:async';\n"
+              'class C {}\n',
+        );
+        _write(
+          'pkg/lib/d.dart',
+          "import 'dart:async' if (dart.library.io) 'file:///secret.dart';\n"
+              'class D {}\n',
+        );
+        final result = await _compile('m_file_kinds', [
+          'pkg/lib/e.dart',
+          'pkg/lib/p.dart',
+          'pkg/lib/c.dart',
+          'pkg/lib/d.dart',
+        ]);
+        expect(result.code, 1);
+        expect(
+          result.log,
+          contains("export 'file:///secret.dart' is not a declared input"),
+        );
+        expect(
+          result.log,
+          contains("part 'file:///secret.dart' is not a declared input"),
+        );
+        expect(
+          result.log,
+          contains(
+            "cannot compile ${_uri('pkg/lib/c.dart')}: "
+            "import 'file:///secret.dart' is not a declared input",
+          ),
+        );
+        expect(
+          result.log,
+          contains(
+            "cannot compile ${_uri('pkg/lib/d.dart')}: "
+            "import 'file:///secret.dart' is not a declared input",
+          ),
+        );
+      },
+    );
+
+    test(
+      'an unknown-scheme import fails instead of staying excluded',
+      () async {
+        _write(
+          'pkg/lib/a.dart',
+          "import 'other-scheme:///missing.dart';\nclass A {}\n",
+        );
+        final result = await _compile('m_scheme', ['pkg/lib/a.dart']);
+        expect(result.code, 1);
+        expect(
+          result.log,
+          contains(
+            "cannot compile ${_uri('pkg/lib/a.dart')}: "
+            "import 'other-scheme:///missing.dart' is not a declared input",
+          ),
+        );
+      },
+    );
+
+    test(
+      'a file: import fails the whole-program entry instead of compiling',
+      () async {
+        _write(
+          'pkg/lib/a.dart',
+          "import 'file:///proc/self/cwd/pkg/lib/secret.dart';\n"
+              'String describe() => secretValue;\n',
+        );
+        _write('pkg/lib/secret.dart', "const secretValue = 'x';\n");
+        _write(
+          'pkg/bin/main.dart',
+          "import 'package:pkg/a.dart';\nvoid main() => print(describe());\n",
+        );
+        final result = await _compile(
+          'm_file_entry',
+          ['pkg/bin/main.dart'],
+          inputSources: [_uri('pkg/lib/a.dart')],
+          noDrop: true,
+        );
+        expect(result.code, 1);
+        expect(
+          result.log,
+          contains(
+            "import 'file:///proc/self/cwd/pkg/lib/secret.dart' "
+            'is not a declared input',
+          ),
+        );
+      },
+    );
+  });
 
   test('split part/part of modules produce byte-identical outputs sandboxed vs unsandboxed and rebuild when the parent edits', () async {
     final sdkDir = File(Platform.resolvedExecutable).parent.parent;

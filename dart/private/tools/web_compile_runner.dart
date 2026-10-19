@@ -11,6 +11,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'directive_guard.dart';
+
 void main(List<String> rawArgs) {
   final code = runWebCompileRequest(
     _expandParamFiles(rawArgs),
@@ -151,6 +153,23 @@ int runWebCompileRequest(
       );
       return 1;
     }
+  }
+
+  // No staged source may read the host: a `file:` URI (in any spelling) or any
+  // other non-`dart:`/`package:` directive URI would reach an undeclared file
+  // through the compiler's working directory. Refuse before compiling.
+  final stagedRoots = <String>[normProject];
+  final siblingExtpkgs = _siblingExtpkgsDir(normProject);
+  if (siblingExtpkgs != null) stagedRoots.add(siblingExtpkgs.path);
+  final violations = findDisallowedStagedDirectives(
+    stagedRoots,
+    tool: 'web_compile_runner',
+  );
+  if (violations.isNotEmpty) {
+    for (final violation in violations) {
+      errSink.writeln(violation);
+    }
+    return 1;
   }
 
   final tempHome = Directory.systemTemp.createTempSync('rules_dart_web_home.');

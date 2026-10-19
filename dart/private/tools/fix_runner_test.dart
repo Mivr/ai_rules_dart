@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import 'directive_guard.dart';
 import 'fix_runner.dart' as fix_runner;
 
 void main() {
@@ -121,5 +122,25 @@ void main() {
     );
     expect(packages['win_drive_slash'], isNot(contains(r'\')));
     expect(packages['win_drive_backslash'], isNot(contains(r'\')));
+  });
+
+  test('staged sources with a file: directive are refused before fixing', () {
+    final project = Directory('${tmp.path}/demo.proj')
+      ..createSync(recursive: true);
+    Directory('${project.path}/src/pkg').createSync(recursive: true);
+    final main = File('${project.path}/src/pkg/main.dart')
+      ..writeAsStringSync(
+        "import 'file://localhost/secret.dart';\n"
+        'void main() => print(secretValue);\n',
+      );
+    File('${project.path}/src/pkg/ok.dart')
+        .writeAsStringSync('const ok = 1;\n');
+    final violations = findDisallowedStagedDirectives([
+      project.path,
+    ], tool: 'fix_runner');
+    expect(violations, [
+      "fix_runner: ${main.path} import 'file://localhost/secret.dart' "
+          'is not a declared input.',
+    ]);
   });
 }

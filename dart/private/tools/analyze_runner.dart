@@ -5,6 +5,8 @@
 // on success. Pure Dart (no shell) so the action is portable to Windows.
 import 'dart:io';
 
+import 'directive_guard.dart';
+
 void main(List<String> args) {
   String? dart;
   String? project;
@@ -53,6 +55,26 @@ void main(List<String> args) {
   }
   if (!_hasAnalyzableDartFile(project, allowed)) {
     stderr.writeln('analyze_runner: no Dart files to analyze in $project');
+    exit(1);
+  }
+
+  // No staged source may read the host: a `file:` URI (in any spelling) or any
+  // other non-`dart:`/`package:` directive URI would reach an undeclared file
+  // through the analyzer's working directory. Refuse before analyzing.
+  final stagedRoots = <String>[project];
+  if (project.endsWith('.proj')) {
+    stagedRoots.add(
+      '${project.substring(0, project.length - '.proj'.length)}.extpkgs',
+    );
+  }
+  final violations = findDisallowedStagedDirectives(
+    stagedRoots,
+    tool: 'analyze_runner',
+  );
+  if (violations.isNotEmpty) {
+    for (final violation in violations) {
+      stderr.writeln(violation);
+    }
     exit(1);
   }
 

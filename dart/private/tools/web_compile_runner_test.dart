@@ -272,4 +272,43 @@ void main() {
     );
     expect(outWasm.existsSync(), isFalse);
   });
+
+  test('refuses a staged source with a file: import before compiling', () {
+    final projDir = Directory('${tmp.path}/file_app.proj');
+    Directory('${projDir.path}/src/pkg').createSync(recursive: true);
+    Directory('${projDir.path}/.dart_tool').createSync(recursive: true);
+
+    File('${projDir.path}/src/pkg/main.dart').writeAsStringSync(
+      "import 'file:///proc/self/cwd/pkg/lib/secret.dart';\n"
+      'void main() => print(secretValue);\n',
+    );
+    File('${projDir.path}/.dart_tool/src_manifest.txt')
+        .writeAsStringSync('pkg/main.dart\n');
+
+    final outBuf = StringBuffer();
+    final errBuf = StringBuffer();
+    final code = runWebCompileRequest(
+      [
+        '--dart=${Platform.resolvedExecutable}',
+        '--project=file_app.proj',
+        'compile',
+        'js',
+        '-o',
+        '${tmp.path}/file_app.js',
+        'org-dartlang-root:///file_app.proj/src/pkg/main.dart',
+      ],
+      outSink: outBuf,
+      errSink: errBuf,
+      workingDirectory: tmp.path,
+    );
+    expect(code, isNonZero);
+    expect(
+      errBuf.toString(),
+      contains(
+        "import 'file:///proc/self/cwd/pkg/lib/secret.dart' "
+        'is not a declared input',
+      ),
+    );
+    expect(File('${tmp.path}/file_app.js').existsSync(), isFalse);
+  });
 }

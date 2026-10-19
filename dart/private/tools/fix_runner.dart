@@ -8,6 +8,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'directive_guard.dart';
+
 /// Recorded for every changed file outside the eligible set. One constant
 /// string: the manifest says *that* a fix was discarded, and the rule's
 /// excludes are what say why.
@@ -58,6 +60,26 @@ void main(List<String> args) {
 
   final writeBack = _readEligible(eligible);
   final allowedSrcPaths = pruneOrphanedStagedFiles(project);
+
+  // No staged source may read the host: a `file:` URI (in any spelling) or any
+  // other non-`dart:`/`package:` directive URI would reach an undeclared file
+  // through the fixer's working directory. Refuse before fixing.
+  final stagedRoots = <String>[project];
+  if (project.endsWith('.proj')) {
+    stagedRoots.add(
+      '${project.substring(0, project.length - '.proj'.length)}.extpkgs',
+    );
+  }
+  final violations = findDisallowedStagedDirectives(
+    stagedRoots,
+    tool: 'fix_runner',
+  );
+  if (violations.isNotEmpty) {
+    for (final violation in violations) {
+      stderr.writeln(violation);
+    }
+    exit(1);
+  }
 
   final scratchDir = Directory(scratch);
   if (scratchDir.existsSync()) {
