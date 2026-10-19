@@ -1160,7 +1160,9 @@ void main(List<String> args) {
       );
       expect(result.code, 0);
       expect(result.calls.length, 2, reason: 'unstaged, then isolated');
-      expect(_valuesAfter(result.calls[0], '--multi-root'), [_root.path]);
+      expect(_valuesAfter(result.calls[0], '--multi-root'), [
+        kernelWorkerUri(_root.path),
+      ]);
       final isolatedRoots = _valuesAfter(result.calls[1], '--multi-root');
       expect(isolatedRoots.length, 1);
       expect(isolatedRoots.single, contains('.isolated_root'));
@@ -3508,7 +3510,7 @@ void main(List<String> args) {
     // request passes the declared inputs through untouched.
     expect(_valuesAfter(inputRecorder.calls[0], '--multi-root'), [
       'dep_parent.koutline/sources',
-      _root.path,
+      kernelWorkerUri(_root.path),
     ]);
     final call0Inputs = {
       for (final raw in inputRecorder.callInputs[0])
