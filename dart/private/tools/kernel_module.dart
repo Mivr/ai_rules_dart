@@ -3149,6 +3149,24 @@ abstract class ModuleCompiler {
   Future<void> close();
 }
 
+/// Whether any `-D` / `--define` option in [args] carries a comma in its value.
+///
+/// Only then does the front end need the snapshot patch that disables
+/// `Parser._setOption`'s comma splitting ([patchSnapshotSplitCommas]).
+bool _hasCommaDefines(List<String> args) {
+  for (var i = 0; i < args.length; i++) {
+    final arg = args[i];
+    if (arg == '-D' || arg == '--define') {
+      if (i + 1 < args.length && args[i + 1].contains(',')) return true;
+    } else if (arg.startsWith('-D') && arg.length > 2) {
+      if (arg.substring(2).contains(',')) return true;
+    } else if (arg.startsWith('--define=')) {
+      if (arg.substring('--define='.length).contains(',')) return true;
+    }
+  }
+  return false;
+}
+
 /// One `kernel_worker` process per compile.
 class _OneShot implements ModuleCompiler {
   _OneShot(this._dartaotruntime, this._kernelWorker);
@@ -3158,8 +3176,13 @@ class _OneShot implements ModuleCompiler {
 
   @override
   Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
+    // The comma-splitting patch is only needed when a define value actually
+    // contains a comma; otherwise the pristine snapshot runs as is.
+    final workerSnapshot = _hasCommaDefines(args)
+        ? patchSnapshotSplitCommas(_kernelWorker)
+        : _kernelWorker;
     final result = await Process.run(_dartaotruntime, [
-      patchSnapshotSplitCommas(_kernelWorker),
+      workerSnapshot,
       ...kernelWorkerArgs(args),
     ]);
     return ModuleOutcome(result.exitCode, '${result.stdout}${result.stderr}');
@@ -3198,6 +3221,12 @@ class _Persistent implements ModuleCompiler {
   Process? _child;
   _Frames? _responses;
 
+  /// Whether the running child uses the comma-splitting patched snapshot.
+  /// A child that needs the patch keeps it: the patch is a no-op for defines
+  /// without commas, so a patched child correctly serves every later request
+  /// and is never restarted for this reason.
+  bool _patchedChild = false;
+
   /// The `request_id` of every request. Bazel sends a worker that is not multiplexed
   /// request 0, and `kernel_worker` answers with the id it was sent.
   static const _requestId = 0;
@@ -3211,9 +3240,12 @@ class _Persistent implements ModuleCompiler {
     // request with its reason, not as a child that died.
     final workerArgs = kernelWorkerArgs(args);
     final withDigests = await _withDigests(workerArgs, inputs);
-    final first = await _attempt(workerArgs, withDigests);
+    // The comma-splitting patch is only needed when a define value actually
+    // contains a comma; otherwise the pristine snapshot runs as is.
+    final patched = _hasCommaDefines(workerArgs);
+    final first = await _attempt(workerArgs, withDigests, patched: patched);
     if (!first.lost) return first.outcome;
-    final second = await _attempt(workerArgs, withDigests);
+    final second = await _attempt(workerArgs, withDigests, patched: patched);
     if (second.lost) {
       return ModuleOutcome(
         second.outcome.exitCode,
@@ -3226,8 +3258,12 @@ class _Persistent implements ModuleCompiler {
   }
 
   /// Sends one request to the running child, or to a new one, and reads its answer.
-  Future<_Attempt> _attempt(List<String> args, List<Uint8List> inputs) async {
-    final child = await _start();
+  Future<_Attempt> _attempt(
+    List<String> args,
+    List<Uint8List> inputs, {
+    required bool patched,
+  }) async {
+    final child = await _start(patched: patched);
     try {
       child.stdin.add(_frame(_encodeRequest(args, inputs, _requestId)));
       await child.stdin.flush();
@@ -3277,16 +3313,21 @@ class _Persistent implements ModuleCompiler {
     }
   }
 
-  Future<Process> _start() async {
+  Future<Process> _start({required bool patched}) async {
     final running = _child;
-    if (running != null) return running;
+    // A patched child serves requests without comma defines identically to a
+    // pristine one, so it is kept; only an unpatched child that now needs the
+    // patch is replaced.
+    if (running != null && (!patched || _patchedChild)) return running;
+    if (running != null) await _reap();
     final child = await Process.start(_dartaotruntime, [
-      patchSnapshotSplitCommas(_kernelWorker),
+      patched ? patchSnapshotSplitCommas(_kernelWorker) : _kernelWorker,
       _persistentFlag,
     ]);
     _stderr.clear();
     child.stderr.transform(utf8.decoder).listen(_stderr.write);
     _child = child;
+    _patchedChild = patched;
     _responses = _Frames(child.stdout);
     return child;
   }
