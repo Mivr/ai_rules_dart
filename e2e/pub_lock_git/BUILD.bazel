@@ -46,6 +46,10 @@ sh_test(
     name = "hostile_env_test",
     size = "small",
     srcs = ["check_hostile_markers.sh"],
-    args = ["$(rootpath %s)" % marker for marker in _HOSTILE_MARKERS],
+    args = ["$(rlocationpath %s)" % marker for marker in _HOSTILE_MARKERS],
     data = _HOSTILE_MARKERS,
+    # Runfiles resolution (rlocationpath + runfiles.bash in the script) keeps
+    # this portable: on Windows runfiles arrive via a manifest, not a symlink
+    # tree, so a raw $(rootpath) does not resolve from the test's cwd.
+    deps = ["@bazel_tools//tools/bash/runfiles"],
 )
