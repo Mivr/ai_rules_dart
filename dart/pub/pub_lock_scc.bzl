@@ -12,7 +12,7 @@ subdirectory (so each keeps its own `lib/` root), and generates one merged
 leaving it become the merged target's `deps`.
 """
 
-load("//dart/pub:pinned_sources.bzl", "pinned_source_error", "verify_git_checkout")
+load("//dart/pub:pinned_sources.bzl", "git_archive", "git_checkout", "git_fetch", "pinned_source_error", "verify_git_checkout")
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_spoke_dep_labels", "trim_gzip_trailing_nulls")
 load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_package_member_build_content = "make_dart_package_member_build_content", _make_scc_merged_build_content = "make_scc_merged_build_content")
@@ -72,15 +72,10 @@ def _fetch_git_member(ctx, member, name):
     if err:
         fail(err)
     clone_dir = ctx.path("_" + name + "_clone")
-    res = ctx.execute(["git", "clone", "--no-checkout", member["url"], str(clone_dir)])
+    res = git_fetch(ctx, ["clone", "--no-checkout", member["url"], str(clone_dir)])
     if res.return_code != 0:
         fail("pub_lock_scc_package %s: git clone failed for %s: %s" % (name, member["url"], res.stderr))
-    res = ctx.execute(["git", "-C", str(clone_dir), "checkout", "--quiet", member["resolved_ref"]])
-    if res.return_code != 0:
-        ctx.execute(["git", "-C", str(clone_dir), "fetch", "origin", member["resolved_ref"]])
-        res = ctx.execute(["git", "-C", str(clone_dir), "checkout", "--quiet", member["resolved_ref"]])
-        if res.return_code != 0:
-            fail("pub_lock_scc_package %s: git checkout failed at %s: %s" % (name, member["resolved_ref"], res.stderr))
+    git_checkout(ctx, clone_dir, member["resolved_ref"], "pub_lock_scc_package %s" % name)
     verify_git_checkout(
         ctx,
         clone_dir,
@@ -89,9 +84,7 @@ def _fetch_git_member(ctx, member, name):
     )
     archive_path = ctx.path("_" + name + ".tar")
     spec = member["resolved_ref"] if member["path"] == "." else member["resolved_ref"] + ":" + member["path"]
-    res = ctx.execute(["git", "-C", str(clone_dir), "archive", "--format=tar", "-o", str(archive_path), spec])
-    if res.return_code != 0:
-        fail("pub_lock_scc_package %s: git archive failed at %s: %s" % (name, spec, res.stderr))
+    git_archive(ctx, clone_dir, archive_path, spec, "pub_lock_scc_package %s" % name)
     ctx.extract(archive_path, output = name)
     ctx.delete(archive_path)
     ctx.delete(clone_dir)

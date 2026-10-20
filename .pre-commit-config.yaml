@@ -25,10 +25,12 @@ repos:
       - id: destroyed-symlinks
       - id: detect-private-key
       # Vendored third-party code, kept byte-for-byte as the SDK ships it.
+      # The git bundle below is a binary fixture: rewriting its bytes would
+      # corrupt it.
       - id: end-of-file-fixer
-        exclude: ^third_party/dart_linter/
+        exclude: ^third_party/dart_linter/|^e2e/pub_lock_git/fmtpkg\.bundle$
       - id: trailing-whitespace
-        exclude: ^third_party/dart_linter/
+        exclude: ^third_party/dart_linter/|^e2e/pub_lock_git/fmtpkg\.bundle$
   # Check formatting and lint for starlark code
   - repo: https://github.com/keith/pre-commit-buildifier
     rev: 10.1.0

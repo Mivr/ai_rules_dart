@@ -1,7 +1,7 @@
 """Module extension for declaring pub.dev package dependencies."""
 
 load("//dart/ext:registry.bzl", "curated_code_assets")
-load("//dart/pub:pinned_sources.bzl", "pinned_source_error", "verify_git_checkout")
+load("//dart/pub:pinned_sources.bzl", "git_archive", "git_checkout", "git_fetch", "pinned_source_error", "verify_git_checkout")
 load("//dart/pub:pub_lock_hub.bzl", "pub_lock_hub")
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_git_package", "pub_lock_package", "pub_lock_package_sha256_error", "trim_gzip_trailing_nulls")
 load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
@@ -147,21 +147,14 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
         # against the `-C` directory rather than the working directory.
         clone_dir = str(ctx.path("{dir}/{name}_clone".format(dir = scope_dir, name = name)))
         out = "{dir}/{name}".format(dir = scope_dir, name = name)
-        res = ctx.execute(["git", "clone", "--no-checkout", pkg.url, clone_dir])
+        res = git_fetch(ctx, ["clone", "--no-checkout", pkg.url, clone_dir])
         if res.return_code != 0:
             fail("pub.from_lock: git clone failed for %s (%s): %s" % (name, pkg.url, res.stderr))
-        res = ctx.execute(["git", "-C", clone_dir, "checkout", "--quiet", pkg.resolved_ref])
-        if res.return_code != 0:
-            res = ctx.execute(["git", "-C", clone_dir, "fetch", "origin", pkg.resolved_ref])
-            res = ctx.execute(["git", "-C", clone_dir, "checkout", "--quiet", pkg.resolved_ref])
-            if res.return_code != 0:
-                fail("pub.from_lock: git checkout failed for %s at %s: %s" % (name, pkg.resolved_ref, res.stderr))
+        git_checkout(ctx, clone_dir, pkg.resolved_ref, 'pub.from_lock "%s"' % name)
         verify_git_checkout(ctx, clone_dir, pkg.resolved_ref, 'pub.from_lock "%s"' % name)
         archive = str(ctx.path("{dir}/{name}.tar".format(dir = scope_dir, name = name)))
         spec = pkg.resolved_ref if pkg.path == "." else pkg.resolved_ref + ":" + pkg.path
-        res = ctx.execute(["git", "-C", clone_dir, "archive", "--format=tar", "-o", archive, spec])
-        if res.return_code != 0:
-            fail("pub.from_lock: git archive failed for %s at %s: %s" % (name, spec, res.stderr))
+        git_archive(ctx, clone_dir, archive, spec, 'pub.from_lock "%s"' % name)
         ctx.extract(archive, output = out)
         check_package_symlinks(ctx, name, out)
         pubspec = out + "/pubspec.yaml"

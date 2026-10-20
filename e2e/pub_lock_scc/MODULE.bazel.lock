@@ -251,7 +251,7 @@
     },
     "@@rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "d7eSY71Gm27ZW6ZiAh6nYj0ZK6Qfy+/Q4zeYFtIgiTU=",
+        "bzlTransitiveDigest": "4yW9oPBDCJli2qb9f8V0ERfz2Hqa4xGUCqZ8DTNsEiA=",
         "usagesDigest": "ITYndLx61OHCYHazRbIV9+c+lQSZAYVc91nRFyXSrqg=",
         "recordedInputs": [
           "FILE:@@//pubspec.lock 679ea035d1a72b7b4866d65ef54493bef6423ea5184392c709500f88ea642344",

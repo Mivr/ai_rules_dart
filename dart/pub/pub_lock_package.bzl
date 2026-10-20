@@ -9,7 +9,7 @@ the `flutter pub get` analog) reuse this helper to emit the same
 `dart_library` shape for non-plugin packages without duplicating the format.
 """
 
-load("//dart/pub:pinned_sources.bzl", "pinned_source_error", "verify_git_checkout")
+load("//dart/pub:pinned_sources.bzl", "git_archive", "git_checkout", "git_fetch", "pinned_source_error", "verify_git_checkout")
 load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_library_build_content = "make_dart_library_build_content")
 load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
@@ -267,16 +267,16 @@ def _pub_lock_git_package_impl(ctx):
         path = "."
 
     clone_dir = ctx.path("_git_clone")
-    res = ctx.execute(["git", "clone", "--no-checkout", ctx.attr.url, str(clone_dir)])
+    res = git_fetch(ctx, ["clone", "--no-checkout", ctx.attr.url, str(clone_dir)])
     if res.return_code != 0:
         fail("git clone failed for %s: %s" % (ctx.attr.url, res.stderr))
 
-    res = ctx.execute(["git", "-C", str(clone_dir), "checkout", "--quiet", ctx.attr.resolved_ref])
-    if res.return_code != 0:
-        ctx.execute(["git", "-C", str(clone_dir), "fetch", "origin", ctx.attr.resolved_ref])
-        res = ctx.execute(["git", "-C", str(clone_dir), "checkout", "--quiet", ctx.attr.resolved_ref])
-        if res.return_code != 0:
-            fail("git checkout failed for %s at %s: %s" % (ctx.attr.url, ctx.attr.resolved_ref, res.stderr))
+    git_checkout(
+        ctx,
+        clone_dir,
+        ctx.attr.resolved_ref,
+        'pub_lock_git_package "%s"' % ctx.attr.package_name,
+    )
 
     verify_git_checkout(
         ctx,
@@ -287,9 +287,13 @@ def _pub_lock_git_package_impl(ctx):
 
     archive_path = ctx.path("_git_archive.tar")
     spec = ctx.attr.resolved_ref if path == "." else ctx.attr.resolved_ref + ":" + path
-    res = ctx.execute(["git", "-C", str(clone_dir), "archive", "--format=tar", "-o", str(archive_path), spec])
-    if res.return_code != 0:
-        fail("git archive failed for %s at %s: %s" % (ctx.attr.url, spec, res.stderr))
+    git_archive(
+        ctx,
+        clone_dir,
+        archive_path,
+        spec,
+        'pub_lock_git_package "%s"' % ctx.attr.package_name,
+    )
 
     ctx.extract(archive_path)
     ctx.delete(archive_path)
