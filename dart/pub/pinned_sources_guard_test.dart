@@ -18,16 +18,16 @@ import 'package:test/test.dart';
 ///
 /// `pinned_sources.bzl` is the single validation entry point and the single
 /// place that runs host `git`, split into exactly two phases:
-/// `git_transport_fetch` (bare-repository transport fetch, which may inherit
-/// the host's transport configuration) and `git_materialize` (fully
-/// isolated verification and archive). A new `git` invocation that bypasses
-/// the helpers — spelling the `git` binary, a git subcommand, or
-/// `ctx.execute` in any other file — fails the `only the shared helpers run
-/// git` tests below, and a git call inside the helper that leaves either
-/// phase (a subcommand outside transport/materialization, an `execute`
-/// without `--no-replace-objects`) fails the phase-boundary tests: every
-/// argv list is spelled out at its call site precisely so the boundary is
-/// greppable.
+/// `git_transport_fetch` (bare-repository transport fetch assembled without
+/// `git init`, which may inherit the host's transport configuration) and
+/// `git_materialize` (fully isolated verification and archive). A new `git`
+/// invocation that bypasses the helpers — spelling the `git` binary, a git
+/// subcommand, or `ctx.execute` in any other file — fails the `only the
+/// shared helpers run git` tests below, and a git call inside the helper
+/// that leaves either phase (a subcommand outside transport/materialization,
+/// an `execute` without `--no-replace-objects`, a reintroduced `git init`)
+/// fails the phase-boundary tests: every argv list is spelled out at its
+/// call site precisely so the boundary is greppable.
 
 /// The test's Starlark sources by file name, from the `rlocationpath`
 /// arguments under Bazel or from the source tree for a direct `dart test`
@@ -103,16 +103,15 @@ const _validatorMarker = 'pinned_source_error(';
 
 /// Git subcommands and flags that only the two phases may spell. A new git
 /// operation anywhere else — or a new phase operation that leaves the two
-/// helpers — fails.
+/// helpers — fails. (`git init` is deliberately absent: transport assembles
+/// the bare repository without it, and a separate test fails any
+/// reintroduction.)
 const _phaseMarkers = [
-  '"init"',
   '"fetch"',
   '"rev-parse"',
   '"archive"',
   '"cat-file"',
   '"count-objects"',
-  '"--bare"',
-  '--template=',
   '--git-dir=',
   '--no-replace-objects',
 ];
@@ -322,22 +321,23 @@ void main(List<String> args) {
       final sources = _bzlSources(args);
       final text = File(sources['pinned_sources.bzl']!).readAsStringSync();
       // The transport phase inherits the host's transport configuration
-      // (credentials, insteadOf, proxies) from its config files, so the
-      // file selectors stay readable there — while every code-executing and
-      // resolution knob is pinned on the command line or in the
-      // environment.
+      // (credentials, insteadOf, proxies) from its config files and the
+      // allowlisted transport variables, while every code-executing and
+      // resolution knob is pinned on the command line or scrubbed in the
+      // environment. The bare repository is assembled without `git init`,
+      // so host templates have no channel at all.
       for (final marker in [
-        '"init"',
-        '"--bare"',
         '"fetch"',
-        '--template=',
-        'GIT_TEMPLATE_DIR',
+        '_TRANSPORT_PASSTHROUGH',
+        'GIT_WORK_TREE',
+        'GIT_CONFIG_COUNT',
         'core.hooksPath=',
         'core.fsmonitor=false',
         'core.untrackedCache=false',
         'GIT_OBJECT_DIRECTORY',
         'GIT_COMMON_DIR',
         'GIT_ALLOW_PROTOCOL',
+        'repositoryformatversion',
         'info/attributes',
       ]) {
         expect(
@@ -350,6 +350,27 @@ void main(List<String> args) {
               'transport configuration keeps working',
         );
       }
+    });
+
+    test('transport never runs git init', () {
+      // `git init` is the one command a stray `GIT_WORK_TREE` breaks (git
+      // refuses it while that variable is set, even empty) and the only
+      // channel a host template enters through. Transport assembles the
+      // bare skeleton with `ctx.file` instead; reintroducing an init
+      // subcommand in any enumerated file fails here.
+      final sources = _bzlSources(args);
+      final spelling = [
+        for (final entry in sources.entries)
+          if (File(entry.value).readAsStringSync().contains('"init"'))
+            entry.key,
+      ];
+      expect(
+        spelling,
+        isEmpty,
+        reason:
+            'no enumerated file may spell "init"; transport assembles the '
+            'bare repository without running git (offenders: $spelling)',
+      );
     });
 
     test('the materialization helper neutralizes host git configuration', () {
@@ -402,14 +423,23 @@ void main(List<String> args) {
       }
     });
 
-    test('every git step ignores host templates, hooks and attributes', () {
+    test('no git step consults host templates', () {
       final sources = _bzlSources(args);
       final text = File(sources['pinned_sources.bzl']!).readAsStringSync();
-      // `--template=` (backed by `GIT_TEMPLATE_DIR` at the same empty
-      // directory) beats `init.templateDir` from every config file, so a host
-      // template's `info/attributes` and `hooks/` never reach the clone.
+      // No `init` runs and no `--template` flag is spelled anywhere, so a
+      // hostile `init.templateDir` has nothing to act on; the template
+      // directory variable is still scrubbed, and the hook pin and the
+      // repository-local attributes truncation stay as defense in depth.
+      for (final marker in ['--template', '"init"']) {
+        expect(
+          text.contains(marker),
+          isFalse,
+          reason:
+              'pinned_sources.bzl must not spell $marker: templates enter '
+              'only through init, which transport no longer runs',
+        );
+      }
       for (final marker in [
-        '--template=',
         'GIT_TEMPLATE_DIR',
         'core.hooksPath=',
         'info/attributes',
@@ -419,7 +449,7 @@ void main(List<String> args) {
           isTrue,
           reason:
               'pinned_sources.bzl must apply $marker on every git step, '
-              'so host templates and hooks cannot change bytes or run code',
+              'so host hooks cannot run code',
         );
       }
     });

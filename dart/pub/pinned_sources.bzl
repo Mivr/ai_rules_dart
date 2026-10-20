@@ -20,31 +20,44 @@ change the extracted bytes nor run host code, while transport configuration
 (credentials, `url.<base>.insteadOf` rewrites, proxies, SSH) keeps working:
 
 1. Transport (`git_transport_fetch`): the pinned commit is fetched into a
-   fresh BARE repository — `git init --bare` plus `git fetch <url> <sha>`,
-   falling back to fetching all refs on servers that reject a bare SHA.
-   There is no working tree, so no checkout ever runs: hooks, `core.fsmonitor`
-   and working-tree attributes have nothing to act on. Hooks and fsmonitor
-   are additionally pinned off on the command line (`-c` beats config files
-   and environment on every git version). Every repository-resolution
-   selector the host could otherwise redirect is pinned at the new bare
-   repository instead: `--git-dir` (which beats `GIT_DIR`), `--template=`
-   plus `GIT_TEMPLATE_DIR` (which beat `init.templateDir` from any config
-   file), `GIT_OBJECT_DIRECTORY` and `GIT_COMMON_DIR` (pointed at the new
-   repository's own directories, which are pre-created so the pins always
-   name existing paths), and `--no-replace-objects` (which beats replace
-   refs from any source). The remaining non-transport selectors
-   (`GIT_INDEX_FILE`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_NAMESPACE`,
-   `GIT_REPLACE_REF_BASE`, `GIT_CEILING_DIRECTORIES`, ...) are scrubbed from
-   the environment. What is deliberately inherited is only transport: the
-   host's config files and `GIT_CONFIG_COUNT` / `GIT_CONFIG_PARAMETERS`
-   (which may carry `insteadOf` rewrites), SSH and credential-helper
-   variables, and proxies. `GIT_ALLOW_PROTOCOL` is pinned to a fixed
-   transport-only list so host state cannot widen the fetch to a
-   command-executing helper. One host variable cannot be neutralized: git
-   refuses to run `init` at all when `GIT_WORK_TREE` is set, and an empty
-   value is equally fatal, so a host that exports `GIT_WORK_TREE` fails the
-   fetch loudly instead of fetching wrongly; it is never set during builds,
-   and every later command ignores it (a bare repository has no work tree).
+   fresh BARE repository that is assembled without running `git init` at
+   all — the helper writes the skeleton (`HEAD`, `config`, `objects/`,
+   `refs/`) with `ctx.file`, then runs `git fetch <url> <sha>`, falling
+   back to fetching all refs on servers that reject a bare SHA. Skipping
+   `init` removes the host template surface by construction (no template
+   is ever copied, so no template `info/attributes` or `hooks/` can reach
+   the clone), and it removes the one command `GIT_WORK_TREE` breaks: git
+   refuses `init` while that variable is set, even empty, while every
+   other command ignores it on a bare repository with no worktree
+   operation. There is no working tree, so no checkout ever runs: hooks,
+   `core.fsmonitor` and working-tree attributes have nothing to act on.
+   Hooks and fsmonitor are additionally pinned off on the command line
+   (`-c` beats config files and environment on every git version). Every
+   repository-resolution selector the host could otherwise redirect is
+   pinned at the new bare repository instead: `--git-dir` (which beats
+   `GIT_DIR`), `GIT_OBJECT_DIRECTORY` and `GIT_COMMON_DIR` (pointed at
+   the new repository's own directories, which are pre-created so the
+   pins always name existing paths), and `--no-replace-objects` plus
+   `GIT_NO_REPLACE_OBJECTS=1` (which beat replace refs from any source).
+   Every other documented non-transport `GIT_*` variable is scrubbed to
+   an empty value (which git reads as unset): `GIT_INDEX_FILE`,
+   `GIT_NAMESPACE`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`,
+   `GIT_QUARANTINE_PATH`, `GIT_REPLACE_REF_BASE`,
+   `GIT_CEILING_DIRECTORIES`, `GIT_DISCOVERY_ACROSS_FILESYSTEM`,
+   `GIT_PREFIX`, `GIT_TEMPLATE_DIR`, `GIT_GRAFT_FILE`, the
+   `GIT_CONFIG_COUNT` / `GIT_CONFIG_PARAMETERS` inline-config channel,
+   and the editor, pager and tracing variables. `GIT_WORK_TREE` stays
+   inherited: any non-empty value is ignored by every transport command
+   on a bare repository with an explicit `--git-dir`, while an empty
+   value is fatal to `fetch` — and scrubbing is impossible, because the
+   empty value itself is what git rejects. `GIT_INTERNAL_SUPER_PREFIX`
+   likewise stays inherited (only git itself ever sets it). What is
+   deliberately
+   inherited is only transport: the host's config files (which may carry
+   `insteadOf` rewrites) and the SSH, TLS, proxy and credential-helper
+   variables allowlisted in `_TRANSPORT_PASSTHROUGH`. `GIT_ALLOW_PROTOCOL`
+   is pinned to a fixed transport-only list so host state cannot widen
+   the fetch to a command-executing helper.
 2. Materialization (`git_materialize`): every later git command — the
    `count-objects` alternates refusal, the `rev-parse`/`cat-file`
    verification, the tree read, the `archive` — runs against that bare
@@ -171,45 +184,113 @@ def _git_empty_file(ctx):
 # remotes, ssh in both syntaxes, file URLs and plain local paths).
 _GIT_ALLOW_PROTOCOL = "https:http:git:ssh:file"
 
-def _transport_env(empty_dir, bare_abs):
+# Transport variables inherited from the host environment, copied verbatim
+# only when the host sets them. The list is an allowlist: transport needs
+# are met by copying these and nothing else, while every documented
+# non-transport `GIT_*` variable is scrubbed or pinned in
+# `_transport_env`. Each entry is transport only — SSH and TLS settings,
+# proxy commands and credential helpers — which private repositories
+# need; nothing here can redirect repository resolution or execute code
+# during a bare fetch.
+_TRANSPORT_PASSTHROUGH = [
+    "GIT_SSH",
+    "GIT_SSH_COMMAND",
+    "GIT_SSH_VARIANT",
+    "GIT_SSL_CAINFO",
+    "GIT_SSL_CAPATH",
+    "GIT_SSL_CERT",
+    "GIT_SSL_KEY",
+    "GIT_SSL_CIPHER_LIST",
+    "GIT_SSL_VERSION",
+    "GIT_PROXY_COMMAND",
+    "GIT_ASKPASS",
+    "GIT_TERMINAL_PROMPT",
+]
+
+def _transport_env(ctx, bare_abs):
     """Environment for one transport command: host transport, pinned resolution.
 
     The host's transport configuration is deliberately inherited — config
-    files and `GIT_CONFIG_COUNT` / `GIT_CONFIG_PARAMETERS` (which may carry
-    `url.<base>.insteadOf` rewrites), credential helpers, proxies and SSH
-    settings keep working, which private repositories need. Only
-    host-controlled resolution and byte inputs are neutralized: the template
-    directory, the object and common directories (pinned at the new bare
-    repository, whose directories are pre-created so the pins always name
-    existing paths — git refuses empty values there), the protocol
-    allowlist, and every remaining non-transport selector scrubbed to an
-    empty value (which git reads as unset). `GIT_DIR` is left to the argv
-    flags: `--git-dir` beats it on the fetch, and the `init` target
-    directory wins over it. `GIT_WORK_TREE` cannot be neutralized — git
-    refuses `init` while it is set — and is documented on
-    `git_transport_fetch`.
+    files (which may carry `url.<base>.insteadOf` rewrites) and the
+    allowlisted SSH, TLS, proxy and credential-helper variables keep
+    working, which private repositories need. Everything else the host
+    could steer resolution or bytes with is neutralized: the object and
+    common directories are pinned at the new bare repository (whose
+    directories are pre-created so the pins always name existing paths —
+    git refuses empty values there), the protocol allowlist is pinned,
+    replacements are disabled twice (flag and variable), and every
+    remaining documented non-transport `GIT_*` selector is scrubbed to an
+    empty value (which git reads as unset), including the inline-config
+    channel (`GIT_CONFIG_COUNT` / `GIT_CONFIG_PARAMETERS`, whose absence
+    makes git ignore any `GIT_CONFIG_KEY_*` entries) and `GIT_DIR`
+    (the `--git-dir` flag beats it, and an empty value is accepted
+    alongside the flag). Two documented selectors cannot be scrubbed to
+    empty and stay inherited instead. `GIT_WORK_TREE` is ignored by every
+    transport command — any non-empty value is inert on a bare repository
+    with an explicit `--git-dir` and no worktree operation, and no
+    transport command consults it now that `init` no longer runs — while
+    an empty value is fatal to `fetch`, so a host exporting it fails
+    loudly, never wrongly. `GIT_INTERNAL_SUPER_PREFIX` is set only by git
+    itself for submodule processes, and `fetch` rejects it when empty. A
+    host exporting either as empty fails loudly; neither is set during
+    builds. `ctx.execute` merges this dict
+    over the host environment, so anything not named here and not on the
+    passthrough allowlist (notably the global/system config file
+    selectors, which transport file configuration needs) is inherited
+    deliberately.
 
     Args:
-        empty_dir: The shared empty directory's path string.
+        ctx: A repository or module-extension context (for `os.environ`).
         bare_abs: The bare repository's absolute path string.
 
     Returns:
         The `environment` dict for one transport `ctx.execute` call.
     """
-    return {
-        "GIT_TEMPLATE_DIR": empty_dir,
+    env = {
+        "GIT_DIR": "",
         "GIT_OBJECT_DIRECTORY": bare_abs + "/objects",
         "GIT_COMMON_DIR": bare_abs,
-        "GIT_ALLOW_PROTOCOL": _GIT_ALLOW_PROTOCOL,
         "GIT_INDEX_FILE": "",
-        "GIT_ALTERNATE_OBJECT_DIRECTORIES": "",
+        "GIT_INDEX_VERSION": "",
         "GIT_NAMESPACE": "",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES": "",
+        "GIT_QUARANTINE_PATH": "",
         "GIT_REPLACE_REF_BASE": "",
+        "GIT_NO_REPLACE_OBJECTS": "1",
         "GIT_CEILING_DIRECTORIES": "",
-        "GIT_PREFIX": "",
         "GIT_DISCOVERY_ACROSS_FILESYSTEM": "",
+        "GIT_PREFIX": "",
+        "GIT_SUPER_PREFIX": "",
+        "GIT_TEMPLATE_DIR": "",
+        "GIT_ALLOW_PROTOCOL": _GIT_ALLOW_PROTOCOL,
+        "GIT_CONFIG_COUNT": "",
+        "GIT_CONFIG_PARAMETERS": "",
+        "GIT_GRAFT_FILE": "",
+        "GIT_AUTHOR_NAME": "",
+        "GIT_AUTHOR_EMAIL": "",
+        "GIT_AUTHOR_DATE": "",
+        "GIT_COMMITTER_NAME": "",
+        "GIT_COMMITTER_EMAIL": "",
+        "GIT_COMMITTER_DATE": "",
+        "GIT_REFLOG_ACTION": "",
         "GIT_FLUSH": "",
+        "GIT_EDITOR": "",
+        "GIT_PAGER": "",
+        "GIT_EXTERNAL_DIFF": "",
+        "GIT_DIFF_OPTS": "",
+        "GIT_LITERAL_PATHSPECS": "",
+        "GIT_TRACE": "",
+        "GIT_TRACE_PACK_ACCESS": "",
+        "GIT_TRACE_PACKET": "",
+        "GIT_TRACE_PERFORMANCE": "",
+        "GIT_TRACE_SETUP": "",
+        "GIT_CURL_VERBOSE": "",
     }
+    host = ctx.os.environ
+    for var in _TRANSPORT_PASSTHROUGH:
+        if var in host:
+            env[var] = host[var]
+    return env
 
 def _materialize_env(empty, empty_dir, bare_abs):
     """Environment for one materialization command: nothing but PATH and a scratch HOME.
@@ -275,32 +356,30 @@ def _materialize_env(empty, empty_dir, bare_abs):
 def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
     """Fetches the pinned commit into a fresh bare repository (phase 1: transport).
 
-    `git init --bare` (with `--template=` at the shared empty directory, so
-    no host template's `info/attributes` or `hooks/` ever reach the clone)
-    plus `git fetch <url> <sha>` (falling back to fetching all refs on
-    servers that reject a bare SHA, such as some corporate mirrors). Nothing
-    is ever checked out: with no working tree, host hooks, `core.fsmonitor`
-    and working-tree attributes have nothing to act on, and the command-line
+    The bare repository is assembled without running `git init`: the
+    skeleton (`HEAD`, `config`, `objects/`, `refs/`) is written with
+    `ctx.file`, then `git fetch <url> <sha>` runs (falling back to
+    fetching all refs on servers that reject a bare SHA, such as some
+    corporate mirrors). Skipping `init` removes the host template surface
+    by construction — no template is ever copied, so no template
+    `info/attributes` or `hooks/` can reach the clone — and it removes the
+    one command a stray `GIT_WORK_TREE` breaks (git refuses `init` while
+    that variable is set, even empty; every other command ignores it on a
+    bare repository with no worktree operation). Nothing is ever checked
+    out: with no working tree, host hooks, `core.fsmonitor` and
+    working-tree attributes have nothing to act on, and the command-line
     pins (`core.hooksPath`, `core.fsmonitor=false`,
-    `core.untrackedCache=false`, `--no-replace-objects`) keep them off even
-    where host configuration is deliberately inherited for transport. The
-    bare repository's directories are pre-created (via a `keep` file, since
-    `ctx.file` cannot create an empty directory) so the object and common
-    directory pins always name existing paths, and the repository-local
-    `info/attributes` is truncated right after `init` (git has no switch for
-    that file; the package's own committed `.gitattributes` are untouched
-    and keep the documented behaviour).
-
-    A host that exports `GIT_WORK_TREE` fails this function loudly at
-    `init`: git refuses to initialize while it is set, and no scrubbed value
-    satisfies it. That variable is never set during builds, and every later
-    command ignores it.
+    `core.untrackedCache=false`, `--no-replace-objects`) keep them off
+    even where host configuration is deliberately inherited for transport.
+    The repository-local `info/attributes` is truncated (nothing
+    legitimate writes it; the package's own committed `.gitattributes` are
+    untouched and keep the documented behaviour).
 
     Args:
         ctx: A repository or module-extension context.
         url: The git remote URL (or local path, or bundle path) to fetch.
         bare_rel: The repository-relative bare directory (for example
-            `"_git_bare"`): relative so the pre-creation and the attributes
+            `"_git_bare"`): relative so the skeleton and the attributes
             truncation work with `ctx.file` on every context, including
             module extensions, which have no `ctx.delete`.
         resolved_ref: The pinned full 40-hex commit SHA.
@@ -309,37 +388,27 @@ def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
     empty_dir = _git_empty_dir(ctx)
     bare_abs = str(ctx.path(bare_rel))
 
-    # Pre-create the bare repository's directories: the object and common
-    # directory pins below must name existing paths (git rejects empty
-    # values there), and `ctx.file` creates parents but not empty
-    # directories, so a `keep` file stands in. A stray top-level file in
-    # `objects/` is inert: git only reads the `info/`, `pack/` entries and
-    # two-hex subdirectories there.
+    # Assemble the skeleton of a bare repository with `ctx.file` (which
+    # creates parents but not empty directories, so `keep` files stand
+    # in). The layout is the stable bare minimum every git version reads:
+    # an unborn-HEAD symref, a minimal config marking the repository bare,
+    # and the directories `is_git_directory` requires. A stray top-level
+    # file in `objects/` is inert: git only reads the `info/`, `pack/`
+    # entries and two-hex subdirectories there. `refs/.keep` is not a
+    # valid ref name (components may not start with `.`), so ref
+    # enumeration never sees it — and no phase command enumerates refs.
     ctx.file(bare_rel + "/objects/keep", "", executable = False)
-
-    res = ctx.execute(
-        ["git", "--no-replace-objects"] + [
-            "-c",
-            "core.hooksPath=" + empty_dir,
-            "-c",
-            "core.fsmonitor=false",
-            "-c",
-            "core.untrackedCache=false",
-            "init",
-            "--bare",
-            "--template=" + empty_dir,
-            bare_abs,
-        ],
-        environment = _transport_env(empty_dir, bare_abs),
+    ctx.file(bare_rel + "/HEAD", "ref: refs/heads/main\n", executable = False)
+    ctx.file(
+        bare_rel + "/config",
+        "[core]\n\trepositoryformatversion = 0\n\tbare = true\n",
+        executable = False,
     )
-    if res.return_code != 0:
-        fail("%s: git init failed for %s: %s" % (what, url, res.stderr))
+    ctx.file(bare_rel + "/refs/.keep", "", executable = False)
 
-    # The clone's repository-local attributes file is truncated (git has no
-    # switch for it): with the empty template it is already absent, but a
-    # hostile `init.templateDir` file entry is beaten by the `--template=`
-    # flag only for copied content, so the truncation closes the file
-    # itself. Committed `.gitattributes` are untouched.
+    # The repository-local attributes file is truncated (git has no switch
+    # for it, and with no `init` nothing legitimate writes it).
+    # Committed `.gitattributes` are untouched.
     ctx.file(bare_rel + "/info/attributes", "", executable = False)
 
     res = ctx.execute(
@@ -355,7 +424,7 @@ def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
             url,
             resolved_ref,
         ],
-        environment = _transport_env(empty_dir, bare_abs),
+        environment = _transport_env(ctx, bare_abs),
     )
     if res.return_code != 0:
         # Servers that reject fetching a bare SHA still serve the commit on
@@ -374,7 +443,7 @@ def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
                 url,
                 "+refs/*:refs/origin/*",
             ],
-            environment = _transport_env(empty_dir, bare_abs),
+            environment = _transport_env(ctx, bare_abs),
         )
     if res.return_code != 0:
         fail("%s: git fetch failed for %s at %s: %s" % (what, url, resolved_ref, res.stderr))

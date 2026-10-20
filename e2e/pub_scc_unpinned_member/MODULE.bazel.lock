@@ -229,7 +229,7 @@
   "moduleExtensions": {
     "//:red.bzl%red": {
       "general": {
-        "bzlTransitiveDigest": "MpBYTDxY2cjGSN7nLW4aQW8bVD3njKVE1rX9/aLnGb0=",
+        "bzlTransitiveDigest": "ZKNjkeNrVm2MRjEkY0rgasUN1vCzhqOtKZwPrqvdhL4=",
         "usagesDigest": "Ep/+EX6v19fdPj7qFhBbV4/VR6FMewlellf3qhUeXCI=",
         "recordedInputs": [
           "REPO_MAPPING:,rules_dart rules_dart+"
@@ -270,7 +270,7 @@
     },
     "@@rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "OWoaq3qmbasOJHXgpjcbrVET7vvz8JG3XRr9bMZHkq0=",
+        "bzlTransitiveDigest": "ldlPOzRQz1GxJcU2Q4Sk1pc7zDDUb2hfCIimyyTxWww=",
         "usagesDigest": "mDJKd26L5bPbn+60Xm+FZB2sj/ECVzhIGBELk2wu6JI=",
         "recordedInputs": [
           "FILE:@@rules_dart+//dart/ext/pubspec.lock ae866f3a1d4ebad9a74f9b9efab33c74dfbf904ae0d69dfe94192029d4955188"
