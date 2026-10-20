@@ -2073,6 +2073,259 @@ void main(List<String> args) {
       expect(File(unusedPath).readAsLinesSync(), [clean]);
     });
 
+    test(
+      'a library never lists a module directory whose staged part it adopted',
+      () async {
+        _write(
+          'pkg/lib/lib.dart',
+          "library a_lib;\npart 'package:dep/part.dart';\nint libValue() => partValue();\n",
+        );
+        _write('dep/lib/part.dart', 'part of a_lib;\nint partValue() => 7;\n');
+        _write('dep/lib/other.dart', 'int otherValue() => 0;\n');
+        // The provider excludes the part (a part is not a library) and stages
+        // a copy for dependents, as a real outline index does.
+        _write(
+          'b/index.json',
+          jsonEncode({
+            'version': 1,
+            'sccs': [
+              {
+                'dill': 'o.dill',
+                'defines': ['dep/lib/other.dart'],
+                'imports': [],
+              },
+            ],
+            'excluded': ['dep/lib/part.dart'],
+          }),
+        );
+        _write(
+          'b/sources/dep/lib/part.dart',
+          'part of a_lib;\nint partValue() => 7;\n',
+        );
+        final b = '${_root.path}/b';
+        final sidecar = _sidecar('b', {
+          'dep/lib/part.dart':
+              'its library a_lib is not an input of this module',
+        });
+        final clean = _module('clean', [
+          _Scc('c.dill', ['dep/lib/c.dart'], []),
+        ]);
+
+        // Without a written kernel there is no embedded-source evidence: the
+        // plan alone lists the provider, which is the RT10 staleness.
+        final controlPath = '${_root.path}/out/m_adopt_control.unused';
+        final control = await _compile(
+          'm_adopt_control',
+          ['pkg/lib/lib.dart'],
+          inputKmods: [b, clean],
+          closureExcluded: [sidecar],
+          unusedInputsList: controlPath,
+        );
+        expect(control.code, 0, reason: control.log);
+        expect(File(controlPath).readAsLinesSync(), [b, clean]);
+
+        // The written kernel embeds the adopted part while the worker reports
+        // no summary used: the evidence keeps the provider, while a truly
+        // unused module is still listed.
+        final compiler = _ReportingCompiler(
+          reported: const {},
+          dillBytes: () => _buildDillWithUris([
+            _uri('pkg/lib/lib.dart'),
+            _uri('dep/lib/part.dart'),
+          ]),
+        );
+        final unusedPath = '${_root.path}/out/m_adopt.unused';
+        final result = await _compile(
+          'm_adopt',
+          ['pkg/lib/lib.dart'],
+          inputKmods: [b, clean],
+          closureExcluded: [sidecar],
+          compiler: compiler,
+          unusedInputsList: unusedPath,
+        );
+        expect(result.code, 0, reason: result.log);
+        expect(compiler.calls.length, 1);
+        expect(File(unusedPath).readAsLinesSync(), [clean]);
+      },
+    );
+
+    test(
+      'a library never lists the transitive provider of an adopted part',
+      () async {
+        _write(
+          'pkg/lib/lib.dart',
+          "library a_lib;\npart 'package:dep/part.dart';\nint libValue() => partValue();\n",
+        );
+        _write('dep/lib/part.dart', 'part of a_lib;\nint partValue() => 7;\n');
+        // The transitively reached module stages the part; the middle module
+        // defines an unrelated library this module never uses.
+        _write(
+          'c/index.json',
+          jsonEncode({
+            'version': 1,
+            'sccs': [
+              {
+                'dill': 'c.dill',
+                'defines': ['dep/lib/cother.dart'],
+                'imports': [],
+              },
+            ],
+            'excluded': ['dep/lib/part.dart'],
+          }),
+        );
+        _write(
+          'c/sources/dep/lib/part.dart',
+          'part of a_lib;\nint partValue() => 7;\n',
+        );
+        final c = '${_root.path}/c';
+        final sidecar = _sidecar('c', {
+          'dep/lib/part.dart':
+              'its library a_lib is not an input of this module',
+        });
+        final b = _module('b', [
+          _Scc('m.dill', ['dep/lib/mid.dart'], []),
+        ]);
+        final compiler = _ReportingCompiler(
+          reported: const {},
+          dillBytes: () => _buildDillWithUris([
+            _uri('pkg/lib/lib.dart'),
+            _uri('dep/lib/part.dart'),
+          ]),
+        );
+        final unusedPath = '${_root.path}/out/m_adopt_transitive.unused';
+        final result = await _compile(
+          'm_adopt_transitive',
+          ['pkg/lib/lib.dart'],
+          inputKmods: [b, c],
+          closureExcluded: [sidecar],
+          compiler: compiler,
+          unusedInputsList: unusedPath,
+        );
+        expect(result.code, 0, reason: result.log);
+        expect(File(unusedPath).readAsLinesSync(), [b]);
+      },
+    );
+
+    test(
+      'a library never lists the provider of a part adopted by URI',
+      () async {
+        _write(
+          'pkg/lib/lib.dart',
+          "library a_lib;\npart 'package:dep/part.dart';\nint libValue() => partValue();\n",
+        );
+        _write(
+          'dep/lib/part.dart',
+          "part of 'package:pkg/lib.dart';\nint partValue() => 7;\n",
+        );
+        _write(
+          'b/index.json',
+          jsonEncode({
+            'version': 1,
+            'sccs': [
+              {
+                'dill': 'o.dill',
+                'defines': ['dep/lib/other.dart'],
+                'imports': [],
+              },
+            ],
+            'excluded': ['dep/lib/part.dart'],
+          }),
+        );
+        _write(
+          'b/sources/dep/lib/part.dart',
+          "part of 'package:pkg/lib.dart';\nint partValue() => 7;\n",
+        );
+        final b = '${_root.path}/b';
+        final sidecar = _sidecar('b', {
+          'dep/lib/part.dart':
+              'its library package:pkg/lib.dart is not an input of this module',
+        });
+        final clean = _module('clean', [
+          _Scc('c.dill', ['dep/lib/c.dart'], []),
+        ]);
+        final compiler = _ReportingCompiler(
+          reported: const {},
+          dillBytes: () => _buildDillWithUris([
+            _uri('pkg/lib/lib.dart'),
+            _uri('dep/lib/part.dart'),
+          ]),
+        );
+        final unusedPath = '${_root.path}/out/m_adopt_uri.unused';
+        final result = await _compile(
+          'm_adopt_uri',
+          ['pkg/lib/lib.dart'],
+          inputKmods: [b, clean],
+          closureExcluded: [sidecar],
+          compiler: compiler,
+          unusedInputsList: unusedPath,
+        );
+        expect(result.code, 0, reason: result.log);
+        expect(File(unusedPath).readAsLinesSync(), [clean]);
+      },
+    );
+
+    test(
+      'a library never lists a module whose source its kernel embeds',
+      () async {
+        _write(
+          'pkg/lib/a.dart',
+          "import 'package:dep/k.dart';\nconst x = kConst;\nclass A {}\n",
+        );
+        _write('dep/lib/k.dart', 'const kConst = 1;\n');
+        final used = _module('used', [
+          _Scc('k.dill', ['dep/lib/k.dart'], []),
+        ]);
+        final clean = _module('clean', [
+          _Scc('c.dill', ['dep/lib/c.dart'], []),
+        ]);
+        // The worker reports no summary used, but the kernel embeds the
+        // dependency source (a folded constant): the evidence keeps it.
+        final compiler = _ReportingCompiler(
+          reported: const {},
+          dillBytes: () => _buildDillWithUris([
+            _uri('pkg/lib/a.dart'),
+            _uri('dep/lib/k.dart'),
+          ]),
+        );
+        final unusedPath = '${_root.path}/out/m_embedded.unused';
+        final result = await _compile(
+          'm_embedded',
+          ['pkg/lib/a.dart'],
+          inputKmods: [used, clean],
+          compiler: compiler,
+          unusedInputsList: unusedPath,
+        );
+        expect(result.code, 0, reason: result.log);
+        expect(File(unusedPath).readAsLinesSync(), [clean]);
+      },
+    );
+
+    test(
+      'a kernel embedding only own sources still lists an unused module',
+      () async {
+        _write('pkg/lib/a.dart', 'class A {}\n');
+        final clean = _module('clean', [
+          _Scc('c.dill', ['dep/lib/c.dart'], []),
+        ]);
+        final compiler = _ReportingCompiler(
+          reported: const {},
+          dillBytes: () => _buildDillWithUris([_uri('pkg/lib/a.dart')]),
+        );
+        final unusedPath = '${_root.path}/out/m_embedded_precise.unused';
+        final result = await _compile(
+          'm_embedded_precise',
+          ['pkg/lib/a.dart'],
+          inputKmods: [clean],
+          compiler: compiler,
+          unusedInputsList: unusedPath,
+        );
+        expect(result.code, 0, reason: result.log);
+        expect(File(unusedPath).readAsLinesSync(), [
+          clean,
+        ], reason: 'the evidence veto keeps only modules the output embeds');
+      },
+    );
+
     test('a used-inputs report marks a passed summary used', () async {
       _write('pkg/lib/a.dart', "import 'package:dep/u.dart';\nclass A {}\n");
       final used = _module('used', [

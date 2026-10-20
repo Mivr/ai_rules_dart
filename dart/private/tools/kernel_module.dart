@@ -765,6 +765,8 @@ Future<int> compileModule(
         ownSourceFiles: ownSourceFiles.toSet(),
         multiRoots: multiRoots,
         entryDill: '$output/$dill',
+        outputDills: const [],
+        declaredKeys: files.declaredKeys,
         multiRootPrefix: multiRootPrefix,
       );
     }
@@ -1070,7 +1072,9 @@ Future<int> compileModule(
     // A library never lists dependency sources (its part-peer scan reads
     // them), only the module directories no invocation used. Every own source
     // counts as referencing, including one a shadowing dependency dropped from
-    // the compile: the module links that dependency's kernel for it.
+    // the compile: the module links that dependency's kernel for it. The
+    // evidence veto reads what the written kernels embedded, so an adopted
+    // part peer keeps the module that staged it.
     await _writeUnusedInputsList(
       unusedInputsPath: unusedInputsPath,
       reports: reporter.records,
@@ -1087,8 +1091,10 @@ Future<int> compileModule(
       lookedUpLibraryNames: false,
       inputSources: const [],
       ownSourceFiles: const {},
-      multiRoots: const [],
+      multiRoots: multiRoots,
       entryDill: null,
+      outputDills: [for (final scc in sccs) '$output/${scc.dill}'],
+      declaredKeys: files.declaredKeys,
       multiRootPrefix: multiRootPrefix,
     );
   }
@@ -3408,13 +3414,15 @@ Future<bool> _entryReadsArePlanned(
 /// summary it holds (reported, or every passed one when no report exists),
 /// none of its keys is referenced (by a used summary, by an own source, which
 /// a shadowing dependency would drop from the compile, or by an entry key,
-/// which an adopted part peer embeds), none shares an own source's package (so a key it gains later cannot shadow one), and it stages
+/// which an adopted part peer embeds), none shares an own source's package (so a key it gains later cannot shadow one), no kernel this action wrote embeds
+/// a source it staged or defined ([outputDills], plus [entryDill]), and it stages
 /// no excluded source this action reads or scans. A dependency source of an
 /// entry module is listed only when the entry neither compiled it nor scanned
 /// it for a `part of` library name, and its output embeds nothing unplanned.
 /// Anything else (own sources, configs, sidecars, the toolchain) is never
 /// listed. A report naming a file the action never passed fails closed to an
-/// empty list.
+/// empty list, as does a written kernel whose source table names a file no
+/// known input maps to, or names no table at all.
 Future<void> _writeUnusedInputsList({
   required String unusedInputsPath,
   required List<_UsedReport> reports,
@@ -3431,6 +3439,8 @@ Future<void> _writeUnusedInputsList({
   required Set<String> ownSourceFiles,
   required List<String> multiRoots,
   required String? entryDill,
+  required List<String> outputDills,
+  required Set<String> declaredKeys,
   required String multiRootPrefix,
 }) async {
   final lines =
@@ -3449,6 +3459,8 @@ Future<void> _writeUnusedInputsList({
         ownSourceFiles: ownSourceFiles,
         multiRoots: multiRoots,
         entryDill: entryDill,
+        outputDills: outputDills,
+        declaredKeys: declaredKeys,
         multiRootPrefix: multiRootPrefix,
       ) ??
       const <String>[];
@@ -3458,7 +3470,8 @@ Future<void> _writeUnusedInputsList({
 }
 
 /// The unused input lines [_writeUnusedInputsList] writes, or null when a
-/// report names a file the action never passed.
+/// report names a file the action never passed, or when a kernel this action
+/// wrote embeds a source no known input maps to (or no readable source table).
 Future<List<String>?> _unusedInputsLines({
   required List<_UsedReport> reports,
   required List<String> inputKmods,
@@ -3474,6 +3487,8 @@ Future<List<String>?> _unusedInputsLines({
   required Set<String> ownSourceFiles,
   required List<String> multiRoots,
   required String? entryDill,
+  required List<String> outputDills,
+  required Set<String> declaredKeys,
   required String multiRootPrefix,
 }) async {
   final outputRoots = <String>{
@@ -3525,10 +3540,62 @@ Future<List<String>?> _unusedInputsLines({
     }
   }
   final ownPackages = {for (final key in ownKeys) _packageOfKey(key)};
+  // Evidence veto: every source a kernel this action wrote embedded keeps the
+  // module directory that staged or defined it. The dill's source table cannot
+  // drift from what the compile read — an adopted part peer, a folded
+  // constant, a re-export, a mixin, an augmentation — so a dependency whose
+  // bytes the output holds is never listed, however the plan classified the
+  // file. A source no known input maps to, or a table that cannot be read,
+  // fails closed to no list. A missing output (a recording test compiler,
+  // which writes none) proves nothing, and the report and plan checks still
+  // apply to it.
+  final keepTrees = <String>{};
+  for (final dillPath in [...outputDills, if (entryDill != null) entryDill]) {
+    final dillFile = File(dillPath);
+    if (!await dillFile.exists()) continue;
+    final uris = dillSourceUris(await dillFile.readAsBytes());
+    if (uris == null) return null;
+    for (final uri in uris) {
+      final key = _keyOfDillSourceUri(uri, multiRoots, multiRootPrefix);
+      if (key == null) continue;
+      if (ownKeys.contains(key) || (entryKeys?.contains(key) ?? false)) {
+        continue;
+      }
+      final stagedRoot = stagedSources[key];
+      if (stagedRoot != null) {
+        String? owner;
+        for (final dir in inputKmods) {
+          if ('$dir/sources' == stagedRoot) {
+            owner = dir;
+            break;
+          }
+        }
+        if (owner == null) return null;
+        keepTrees.add(owner);
+        continue;
+      }
+      if (graph.containsKey(key)) {
+        final dill = _canonicalActionPath(graph[key]!.dill);
+        String? owner;
+        for (final entry in canonicalKmods.entries) {
+          if (dill == entry.value || dill.startsWith('${entry.value}/')) {
+            owner = entry.key;
+            break;
+          }
+        }
+        if (owner == null) return null;
+        keepTrees.add(owner);
+        continue;
+      }
+      if (declaredKeys.contains(key)) continue;
+      return null;
+    }
+  }
   final lines = <String>[];
   for (final dir in inputKmods) {
     final canonical = canonicalKmods[dir]!;
     if (usedTrees.contains(canonical)) continue;
+    if (keepTrees.contains(dir)) continue;
     var defines = false;
     var definesReferenced = false;
     var sharesOwnPackage = false;
