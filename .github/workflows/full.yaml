@@ -25,6 +25,8 @@ jobs:
   # Same folders, commands and flags as the old per-folder macOS jobs from
   # ci.yaml, in 2 shards sharing one Bazel disk cache per shard. The
   # repository, external and bazelisk caches keep their shared keys.
+  # Red-by-design workspaces (ci.yaml's `expected-failure` job) and the
+  # pub-fetch Powershell/PATH steps are push-CI-only and not repeated here.
   test-macos:
     name: test-macos (shard ${{ matrix.shard }})
     runs-on: macos-latest
@@ -68,6 +70,9 @@ jobs:
               e2e/library_deps
               e2e/dart_test_pkg
               e2e/isolated_hub
+              e2e/guard_reuse
+              e2e/root_sdk_pin
+              e2e/sdk_coupling
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0

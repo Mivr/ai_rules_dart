@@ -39,6 +39,18 @@ jobs:
   # folders kill each other's servers and flake with exit 1.
   # The per-shard `cache` name keys the shared disk cache; the repository,
   # external and bazelisk caches keep their shared keys.
+  # Coverage map: every directory under e2e/ with a MODULE.bazel is built and
+  # tested by some job in this workflow. Green workspaces run
+  # `bazel test //...` in the `test` shards above (and in `full.yaml` on
+  # macOS): every e2e/ folder a shard lists. Red-by-design workspaces run in
+  # `expected-failure` below: e2e/pub_lock_conflict, e2e/pub_lock_unpinned,
+  # e2e/pub_package_unpinned, e2e/pub_spoke_blank_sha,
+  # e2e/pub_spoke_malformed_sha, e2e/pub_git_unpinned_ref,
+  # e2e/pub_scc_unpinned_member, e2e/sdk_unknown_version, e2e/pub_symlink.
+  # e2e/pub_fetch_powershell runs in the shard-3-only steps below;
+  # e2e/analysis_failure and e2e/analyze_composition also run in
+  # `expected-failure` and `format-hermeticity`, and e2e/dart_test also in
+  # `dbg-mode` and `expected-failure`. No e2e workspace is left without a job.
   test:
     name: test (${{ matrix.os }}, shard ${{ matrix.shard }})
     runs-on: ${{ matrix.os }}
@@ -88,6 +100,9 @@ jobs:
               e2e/pub_lock_git
               e2e/pub_lock_cross_module
               e2e/pub_lock_dedup
+              e2e/guard_reuse
+              e2e/root_sdk_pin
+              e2e/sdk_coupling
           - os: windows-latest
             shard: 1
             parallelism: 3
@@ -118,6 +133,9 @@ jobs:
               e2e/pub_lock_git
               e2e/pub_lock_cross_module
               e2e/pub_lock_dedup
+              e2e/guard_reuse
+              e2e/root_sdk_pin
+              e2e/sdk_coupling
           - os: windows-latest
             shard: 4
             parallelism: 3
@@ -372,6 +390,99 @@ jobs:
           fi
           bazel build //:app 2>&1 | grep -q "conflicting versions across lock files"
           echo "OK: expected conflict error detected"
+      # A hosted lock entry without a sha256 fails module resolution: the
+      # extension reports both the lock-level error and the spoke-level one.
+      - name: pub_lock_unpinned — expect a missing sha256 to fail resolution
+        working-directory: e2e/pub_lock_unpinned
+        run: |
+          if bazel build //:app 2>/dev/null; then
+            echo "ERROR: build should have failed with a missing sha256 error"
+            exit 1
+          fi
+          bazel build //:app 2>&1 | grep -F -q 'pub package "collection" 1.18.0 in @@//:pubspec.lock has no sha256.'
+          bazel build //:app 2>&1 | grep -F -q 'pub_lock_package "collection" (1.18.0) requires a non-empty sha256.'
+          echo "OK: expected missing-checksum error detected"
+      # One step per remaining pub/SDK fetch path. Each red workspace below
+      # instantiates a single fetch rule with unpinned coordinates through a
+      # test extension, so the failure carries that fetch site's own message:
+      # deleting the site's check turns its step red instead of surfacing a
+      # neighbouring site's message. Each fails before any download, so the
+      # steps stay cheap.
+      - name: pub_package_unpinned — expect an explicit package without sha256 to fail its fetch
+        working-directory: e2e/pub_package_unpinned
+        run: |
+          if bazel build @bad_package//... 2>/dev/null; then
+            echo "ERROR: build should have failed with a missing sha256 error"
+            exit 1
+          fi
+          bazel build @bad_package//... 2>&1 | grep -F -q 'pub_package "collection" (1.18.0) requires a non-empty sha256.'
+          echo "OK: expected missing-checksum error detected"
+      - name: pub_spoke_blank_sha — expect a blank sha256 to fail the spoke fetch
+        working-directory: e2e/pub_spoke_blank_sha
+        run: |
+          if bazel build @bad_spoke//... 2>/dev/null; then
+            echo "ERROR: build should have failed with a missing sha256 error"
+            exit 1
+          fi
+          bazel build @bad_spoke//... 2>&1 | grep -F -q 'pub_lock_package "collection" (1.18.0) requires a non-empty sha256.'
+          echo "OK: expected missing-checksum error detected"
+      - name: pub_spoke_malformed_sha — expect a malformed sha256 to fail the spoke fetch
+        working-directory: e2e/pub_spoke_malformed_sha
+        run: |
+          if bazel build @bad_spoke//... 2>/dev/null; then
+            echo "ERROR: build should have failed with a malformed sha256 error"
+            exit 1
+          fi
+          bazel build @bad_spoke//... 2>&1 | grep -F -q 'pub_lock_package "collection" (1.18.0) has invalid sha256 "not-hex": expected 64 lowercase hex digits.'
+          echo "OK: expected malformed-checksum error detected"
+      - name: pub_git_unpinned_ref — expect a branch resolved-ref to fail the git fetch
+        working-directory: e2e/pub_git_unpinned_ref
+        run: |
+          if bazel build @bad_git//... 2>/dev/null; then
+            echo "ERROR: build should have failed with an unpinned resolved-ref error"
+            exit 1
+          fi
+          bazel build @bad_git//... 2>&1 | grep -F -q 'pub_lock_git_package "evil_pkg" (1.0.0) requires a full 40-hex resolved-ref, got "main".'
+          echo "OK: expected unpinned-ref error detected"
+      - name: pub_scc_unpinned_member — expect an unpinned merged-cycle member to fail its fetch
+        working-directory: e2e/pub_scc_unpinned_member
+        run: |
+          if bazel build @bad_scc//... 2>/dev/null; then
+            echo "ERROR: build should have failed with a missing sha256 error"
+            exit 1
+          fi
+          bazel build @bad_scc//... 2>&1 | grep -F -q 'pub_lock_scc_package "collection" (1.18.0) requires a non-empty sha256.'
+          echo "OK: expected missing-checksum error detected"
+      # An SDK version outside the pinned toolchain table must fail instead
+      # of downloading an SDK release with no recorded checksum.
+      - name: sdk_unknown_version — expect an unpinned SDK version to fail resolution
+        working-directory: e2e/sdk_unknown_version
+        run: |
+          if bazel build //:app 2>/dev/null; then
+            echo "ERROR: build should have failed with an unknown SDK version error"
+            exit 1
+          fi
+          bazel build //:app 2>&1 | grep -F -q "instead of '9.9.9'"
+          echo "OK: expected unknown-SDK-version error detected"
+      # `e2e/pub_symlink` fails at fetch only against a live git remote whose
+      # package smuggles a symlink above its root. The step builds that
+      # scratch remote, points the lock's placeholder resolved-ref at it,
+      # expects the escape refusal, and restores the lock on exit.
+      - name: pub_symlink — expect an escaping symlink to fail the fetch
+        working-directory: e2e/pub_symlink
+        run: |
+          trap 'git checkout -- pubspec.lock' EXIT
+          rm -rf /tmp/pub_symlink_evil /tmp/pub_symlink_outside.txt
+          mkdir -p /tmp/pub_symlink_evil/evil_pkg/lib
+          ( cd /tmp/pub_symlink_evil && git init -q . && git config user.email t@t.t && git config user.name t && printf 'name: evil_pkg\nversion: 1.0.0\nenvironment:\n  sdk: ">=3.0.0 <4.0.0"\n' > evil_pkg/pubspec.yaml && echo 'OUTSIDE-SECRET' > /tmp/pub_symlink_outside.txt && ln -s ../../outside.txt evil_pkg/lib/evil.dart && printf 'String get ok => "ok";\n' > evil_pkg/lib/ok.dart && git add -A && git commit -qm init )
+          ref=$(git -C /tmp/pub_symlink_evil rev-parse HEAD)
+          sed -i "s/0000000000000000000000000000000000000000/$ref/" pubspec.lock
+          if bazel build //:app 2>/dev/null; then
+            echo "ERROR: build should have failed on the escaping symlink"
+            exit 1
+          fi
+          bazel build //:app 2>&1 | grep -F -q 'pub package "evil_pkg": symlink "lib/evil.dart" escapes the package'
+          echo "OK: expected symlink-escape error detected"
       # A link hook that refuses the program's recorded uses fails the build,
       # and its own message reaches the user.
       - name: link_hook — expect a hook's refusal to fail the build, with its message
