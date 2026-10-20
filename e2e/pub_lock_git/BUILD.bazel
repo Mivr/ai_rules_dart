@@ -15,3 +15,13 @@ dart_test(
     main = "host_config_test.dart",
     deps = ["@fmtpkg"],
 )
+
+# The template probe's helper-fetched package (see template_probe.bzl): its
+# bytes must survive a hostile template directory (export-subst attributes,
+# post-checkout hook) all the way to the compiler, on any OS.
+dart_test(
+    name = "probe_test",
+    size = "small",
+    main = "probe_test.dart",
+    deps = ["@probe//:fmtpkg"],
+)

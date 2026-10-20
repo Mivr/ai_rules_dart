@@ -4,10 +4,10 @@ Every repository rule and helper in `//dart/pub` that fetches a package —
 hosted tarballs and git checkouts alike, including each member of a merged
 cycle and the `pub` extension's own cycle-planning downloads — validates its
 coordinates through `pinned_source_error` before it fetches, every git
-checkout is verified afterwards with `verify_git_checkout`, and every host
-`git` invocation goes through `git_fetch`, `git_checkout` or `git_archive`
-below, so a new git call that bypasses the helper fails the
-`pinned_sources_guard_test` enumeration.
+checkout is verified afterwards with `verify_git_checkout`, every clone goes
+through `git_clone`, and every other host `git` invocation goes through
+`git_fetch`, `git_checkout` or `git_archive` below, so a new git call that
+bypasses the helper fails the `pinned_sources_guard_test` enumeration.
 
 A git source is pinned only by its full 40-hex commit SHA; anything else
 (a branch, a tag, `HEAD`, a short SHA, a SHA with a revision suffix, ...)
@@ -15,14 +15,25 @@ fails the build instead of tracking a moving ref. A hosted source is pinned
 by its non-blank sha256 checksum. There is deliberately one function for
 both, so a new fetch call site cannot pick the wrong check.
 
-Host git configuration and the archived bytes: the materialization step
-(`git_archive`) neutralizes every host-side git configuration — system,
-global, XDG and HOME config files, `GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_*` /
-`GIT_CONFIG_VALUE_*` and `GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_GLOBAL` and
-`GIT_CONFIG_SYSTEM` — by pinning the conversion knobs on the command line
-(`-c` beats both files and environment) and by pointing the file selectors
-at an empty file this helper writes. Fetching (`git_fetch`, `git_checkout`)
-deliberately keeps the host's transport configuration (credential helpers,
+Host git configuration and the archived bytes: cloning ignores the host's
+template directory — `GIT_TEMPLATE_DIR` in the environment, or
+`init.templateDir` from any readable config file — by passing `--template=`
+pointing at an empty directory this helper creates (a command-line flag beats
+every config file) and by pointing `GIT_TEMPLATE_DIR` at the same directory,
+so a host template's `info/attributes` (with `export-subst` or `eol`) cannot
+change the extracted bytes and its `hooks/` are never installed. The clone's
+repository-local `.git/info/attributes` is truncated right after cloning (git
+has no switch for that file), and every git invocation points
+`core.hooksPath` at the empty directory on the command line (`-c` beats both
+files and environment), so no host hook runs at any step. The materialization
+step (`git_archive`) additionally neutralizes every host-side git
+configuration — system, global, XDG and HOME config files,
+`GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_*` / `GIT_CONFIG_VALUE_*` and
+`GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM` — by
+pinning the conversion knobs on the command line (`-c` beats both files and
+environment) and by pointing the file selectors at an empty file this helper
+writes. Fetching (`git_clone`, `git_fetch`, `git_checkout`) deliberately keeps
+the host's transport configuration (credential helpers,
 `url.<base>.insteadOf` rewrites, proxies, SSH settings): the commit id
 already verifies what was fetched, and private repositories need it.
 
@@ -82,24 +93,100 @@ def pinned_source_error(source, package_name, version, sha256 = None, resolved_r
         source,
     )
 
+def _git_empty_dir(ctx):
+    """Ensures the shared empty directory for git template and hook isolation.
+
+    The directory holds one inert placeholder file: `ctx.file` creates parent
+    directories but cannot create an empty one, and module-extension contexts
+    have no `ctx.delete` to remove the placeholder afterwards. The placeholder
+    is inert for both uses: as a template it copies to `.git/keep`, outside
+    `hooks/` and `info/`, and as a hooks directory git only looks up exact
+    hook names, never `keep`.
+
+    Args:
+        ctx: A repository or module-extension context.
+
+    Returns:
+        The empty directory's path string.
+    """
+    ctx.file("_git_empty/keep", "", executable = False)
+    return str(ctx.path("_git_empty"))
+
 def git_fetch(ctx, args):
-    """Runs host `git` for one fetching step (clone, checkout, fetch, rev-parse).
+    """Runs host `git` for one fetching step (checkout, fetch, rev-parse).
 
     The host's transport configuration is deliberately inherited — credential
     helpers, `url.<base>.insteadOf` rewrites, proxies and SSH settings keep
-    working, which private repositories need. Only the byte-producing
-    materialization step is isolated; see `git_archive`.
+    working, which private repositories need. Only host-controlled code and
+    byte inputs are neutralized: `core.hooksPath` is pointed at the shared
+    empty directory on the command line (`-c` beats config files and
+    environment on every git version, so an environment-injected hooks path
+    loses too) and `GIT_TEMPLATE_DIR` is pointed at the same directory.
+    Cloning additionally needs `--template=` and the attributes truncation,
+    so it uses `git_clone`, not this function.
 
     Args:
         ctx: A repository or module-extension context.
         args: The `git` arguments, without the binary name
-            (for example `["clone", "--no-checkout", url, clone_dir]`).
+            (for example `["-C", clone_dir, "checkout", "--quiet", ref]`).
 
     Returns:
         The `ctx.execute` result, so the caller reports failures in its own
-        words (clone, checkout and fetch failures name different things).
+        words (checkout and fetch failures name different things).
     """
-    return ctx.execute(["git"] + args)
+    empty_dir = _git_empty_dir(ctx)
+    return ctx.execute(
+        ["git", "-c", "core.hooksPath=" + empty_dir] + args,
+        environment = {"GIT_TEMPLATE_DIR": empty_dir},
+    )
+
+def git_clone(ctx, url, clone_dir):
+    """Clones `url` without checkout, ignoring host templates, hooks and attributes.
+
+    `git clone` populates the new repository's `.git/info/attributes` and
+    `.git/hooks/` from the host's template directory (`GIT_TEMPLATE_DIR`, or
+    `init.templateDir` from any readable config file): a template
+    `info/attributes` with `export-subst` changes the archived bytes of the
+    pinned commit, and a template `post-checkout` hook runs host code at
+    checkout time. The clone therefore passes `--template=` pointing at the
+    shared empty directory (a command-line flag beats `init.templateDir` from
+    every config file), points `GIT_TEMPLATE_DIR` at the same directory, pins
+    `core.hooksPath` at it so no host hook runs, and truncates the clone's
+    repository-local `.git/info/attributes` (git has no switch for that file;
+    the package's own committed `.gitattributes` are untouched and keep the
+    documented behaviour). Transport configuration is inherited, like
+    `git_fetch`.
+
+    Args:
+        ctx: A repository or module-extension context.
+        url: The git remote URL (or local bundle path) to clone.
+        clone_dir: The repository-relative clone directory (for example
+            `"_git_clone"`): relative so the attributes file can be
+            neutralized with `ctx.file` on every context, including module
+            extensions, which have no `ctx.delete`.
+
+    Returns:
+        The `ctx.execute` result, so the caller reports clone failures in its
+        own words. The attributes file is neutralized only on success.
+    """
+    empty_dir = _git_empty_dir(ctx)
+    res = ctx.execute(
+        [
+            "git",
+            "-c",
+            "core.hooksPath=" + empty_dir,
+            "clone",
+            "--no-checkout",
+            "--template=" + empty_dir,
+            url,
+            str(ctx.path(clone_dir)),
+        ],
+        environment = {"GIT_TEMPLATE_DIR": empty_dir},
+    )
+    if res.return_code != 0:
+        return res
+    ctx.file(clone_dir + "/info/attributes", "", executable = False)
+    return res
 
 def git_checkout(ctx, clone_dir, resolved_ref, what):
     """Checks out the pinned commit, fetching it first when the clone lacks it.
@@ -140,12 +227,16 @@ def git_archive(ctx, clone_dir, output, spec, what):
     The archived bytes therefore depend only on the pinned commit and the
     package's own committed content: the command pins `core.autocrlf=false`,
     `core.eol=lf` and `tar.umask=002` (git's default), points
-    `core.attributesFile` at an empty file written for the call, and scrubs
-    the environment selectors (`GIT_CONFIG_COUNT`, `GIT_CONFIG_PARAMETERS`,
+    `core.attributesFile` at an empty file written for the call, points
+    `core.hooksPath` at the shared empty directory (archive runs no hooks,
+    but the pin keeps every git invocation uniformly hook-free), points
+    `GIT_TEMPLATE_DIR` at the same directory, and scrubs the environment
+    selectors (`GIT_CONFIG_COUNT`, `GIT_CONFIG_PARAMETERS`,
     `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`) at the same empty file.
     Command-line `-c` pins take precedence over both config files and
     environment on every git version, so the scrubbing is defence in depth.
-    The package's own committed `.gitattributes` still apply — their
+    The clone's repository-local `.git/info/attributes` was already truncated
+    by `git_clone`, so only the committed `.gitattributes` still apply — their
     expansion is a pure function of the pinned commit, identical on every
     host and OS.
 
@@ -168,6 +259,7 @@ def git_archive(ctx, clone_dir, output, spec, what):
     # repository root, and the planning scratch is Bazel-managed).
     ctx.file("_git_empty_config", "", executable = False)
     empty = str(ctx.path("_git_empty_config"))
+    empty_dir = _git_empty_dir(ctx)
     res = ctx.execute(
         [
             "git",
@@ -177,6 +269,8 @@ def git_archive(ctx, clone_dir, output, spec, what):
             "core.eol=lf",
             "-c",
             "core.attributesfile=" + empty,
+            "-c",
+            "core.hooksPath=" + empty_dir,
             "-c",
             "tar.umask=002",
             "-C",
@@ -192,6 +286,7 @@ def git_archive(ctx, clone_dir, output, spec, what):
             "GIT_CONFIG_PARAMETERS": "",
             "GIT_CONFIG_GLOBAL": empty,
             "GIT_CONFIG_SYSTEM": empty,
+            "GIT_TEMPLATE_DIR": empty_dir,
         },
     )
     if res.return_code != 0:

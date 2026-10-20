@@ -1,7 +1,7 @@
 """Module extension for declaring pub.dev package dependencies."""
 
 load("//dart/ext:registry.bzl", "curated_code_assets")
-load("//dart/pub:pinned_sources.bzl", "git_archive", "git_checkout", "git_fetch", "pinned_source_error", "verify_git_checkout")
+load("//dart/pub:pinned_sources.bzl", "git_archive", "git_checkout", "git_clone", "pinned_source_error", "verify_git_checkout")
 load("//dart/pub:pub_lock_hub.bzl", "pub_lock_hub")
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_git_package", "pub_lock_package", "pub_lock_package_sha256_error", "trim_gzip_trailing_nulls")
 load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
@@ -145,9 +145,10 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
 
         # Absolute paths: `git -C <dir> archive -o <file>` resolves `-o`
         # against the `-C` directory rather than the working directory.
-        clone_dir = str(ctx.path("{dir}/{name}_clone".format(dir = scope_dir, name = name)))
+        clone_rel = "{dir}/{name}_clone".format(dir = scope_dir, name = name)
+        clone_dir = str(ctx.path(clone_rel))
         out = "{dir}/{name}".format(dir = scope_dir, name = name)
-        res = git_fetch(ctx, ["clone", "--no-checkout", pkg.url, clone_dir])
+        res = git_clone(ctx, pkg.url, clone_rel)
         if res.return_code != 0:
             fail("pub.from_lock: git clone failed for %s (%s): %s" % (name, pkg.url, res.stderr))
         git_checkout(ctx, clone_dir, pkg.resolved_ref, 'pub.from_lock "%s"' % name)

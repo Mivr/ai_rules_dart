@@ -9,7 +9,7 @@ the `flutter pub get` analog) reuse this helper to emit the same
 `dart_library` shape for non-plugin packages without duplicating the format.
 """
 
-load("//dart/pub:pinned_sources.bzl", "git_archive", "git_checkout", "git_fetch", "pinned_source_error", "verify_git_checkout")
+load("//dart/pub:pinned_sources.bzl", "git_archive", "git_checkout", "git_clone", "pinned_source_error", "verify_git_checkout")
 load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_library_build_content = "make_dart_library_build_content")
 load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
@@ -267,7 +267,7 @@ def _pub_lock_git_package_impl(ctx):
         path = "."
 
     clone_dir = ctx.path("_git_clone")
-    res = git_fetch(ctx, ["clone", "--no-checkout", ctx.attr.url, str(clone_dir)])
+    res = git_clone(ctx, ctx.attr.url, "_git_clone")
     if res.return_code != 0:
         fail("git clone failed for %s: %s" % (ctx.attr.url, res.stderr))
 

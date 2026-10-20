@@ -21,3 +21,6 @@ use_repo(pub, "pub_deps")
 
 gitpkg = use_extension("//:git_host_config_ext.bzl", "gitpkg")
 use_repo(gitpkg, "fmtpkg")
+
+probe = use_extension("//:template_probe.bzl", "probe")
+use_repo(probe, "probe")

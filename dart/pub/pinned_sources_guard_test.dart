@@ -17,12 +17,13 @@ import 'package:test/test.dart';
 /// are deliberately absent from the markers: they download nothing.
 ///
 /// `pinned_sources.bzl` is the single validation entry point and the single
-/// place that runs host `git` (`git_fetch`, `git_checkout`, `git_archive`).
-/// It performs no fetch itself besides the read-only `rev-parse` checkout
-/// verification and the host-independent `git archive` materialization, so a
-/// new `git` invocation that bypasses the helper — spelling the `git` binary
-/// in any other file — fails the `only the shared helper spells the git
-/// binary` test below.
+/// place that runs host `git` (`git_clone`, `git_fetch`, `git_checkout`,
+/// `git_archive`). It performs no fetch itself besides the read-only
+/// `rev-parse` checkout verification and the host-independent `git archive`
+/// materialization, so a new `git` invocation that bypasses the helper —
+/// spelling the `git` binary in any other file — fails the `only the shared
+/// helper spells the git binary` test below, and a new clone that bypasses
+/// the template isolation fails the `only the shared helper clones` test.
 
 /// The test's Starlark sources by file name, from the `rlocationpath`
 /// arguments under Bazel or from the source tree for a direct `dart test`
@@ -79,9 +80,14 @@ const _downloadMarkers = ['ctx.download(', 'ctx.download_and_extract('];
 
 /// The `git` binary spelled as a `ctx.execute` argument list. Only the shared
 /// helper in `pinned_sources.bzl` may contain it: every other file runs git
-/// through `git_fetch(`, `git_checkout(` or `git_archive(`.
+/// through `git_clone(`, `git_fetch(`, `git_checkout(` or `git_archive(`.
 const _gitMarker = '["git"';
-const _gitHelpers = ['git_fetch(', 'git_checkout(', 'git_archive('];
+const _gitHelpers = [
+  'git_clone(',
+  'git_fetch(',
+  'git_checkout(',
+  'git_archive(',
+];
 const _validatorMarker = 'pinned_source_error(';
 const _verifyMarker = 'verify_git_checkout(';
 
@@ -197,9 +203,31 @@ void main(List<String> args) {
         equals(['pinned_sources.bzl']),
         reason:
             'only pinned_sources.bzl may spell $_gitMarker; '
-            'run git through git_fetch(, git_checkout( or git_archive( '
+            'run git through git_clone(, git_fetch(, git_checkout( or git_archive( '
             'instead (offenders: $spelling)',
       );
+    });
+
+    test('only the shared helper clones without host templates', () {
+      final sources = _bzlSources(args);
+      // The clone operation and its template isolation: a call site that
+      // clones with its own arguments bypasses `--template=`, the
+      // `GIT_TEMPLATE_DIR` override and the `.git/info/attributes`
+      // truncation, so both markers live only in the shared helper.
+      for (final marker in ['"clone"', '--template=']) {
+        final spelling = [
+          for (final entry in sources.entries)
+            if (File(entry.value).readAsStringSync().contains(marker))
+              entry.key,
+        ];
+        expect(
+          spelling,
+          equals(['pinned_sources.bzl']),
+          reason:
+              'only pinned_sources.bzl may spell $marker; '
+              'clone through git_clone( instead (offenders: $spelling)',
+        );
+      }
     });
 
     test('every git call site uses the shared helper', () {
@@ -234,6 +262,7 @@ void main(List<String> args) {
         'core.autocrlf=false',
         'core.eol=lf',
         'core.attributesfile=',
+        'core.hooksPath=',
         'tar.umask=',
       ]) {
         expect(
@@ -254,6 +283,28 @@ void main(List<String> args) {
           text.contains(name),
           isTrue,
           reason: 'pinned_sources.bzl must scrub $name for git archive',
+        );
+      }
+    });
+
+    test('every git step ignores host templates, hooks and attributes', () {
+      final sources = _bzlSources(args);
+      final text = File(sources['pinned_sources.bzl']!).readAsStringSync();
+      // `--template=` (backed by `GIT_TEMPLATE_DIR` at the same empty
+      // directory) beats `init.templateDir` from every config file, so a host
+      // template's `info/attributes` and `hooks/` never reach the clone.
+      for (final marker in [
+        '--template=',
+        'GIT_TEMPLATE_DIR',
+        'core.hooksPath=',
+        'info/attributes',
+      ]) {
+        expect(
+          text.contains(marker),
+          isTrue,
+          reason:
+              'pinned_sources.bzl must apply $marker on every git step, '
+              'so host templates and hooks cannot change bytes or run code',
         );
       }
     });
