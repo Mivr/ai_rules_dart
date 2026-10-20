@@ -21,6 +21,7 @@ on:
         type: string
 jobs:
   publish:
+    timeout-minutes: 60
     uses: bazel-contrib/publish-to-bcr/.github/workflows/publish.yaml@v1.5.1
     with:
       tag_name: ${{ inputs.tag_name }}

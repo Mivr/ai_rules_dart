@@ -13,6 +13,7 @@ jobs:
     permissions:
       contents: write # allow create tag
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       new-tag: ${{ steps.ccv.outputs.new-tag }}
       new-tag-version: ${{ steps.ccv.outputs.new-tag-version }}
@@ -27,6 +28,7 @@ jobs:
         uses: smlx/ccv@v0.10.0
   release:
     needs: tag
+    timeout-minutes: 60
     uses: ./.github/workflows/release.yaml
     with:
       tag_name: ${{ needs.tag.outputs.new-tag-version }}

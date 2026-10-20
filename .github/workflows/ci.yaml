@@ -54,6 +54,9 @@ jobs:
   test:
     name: test (${{ matrix.os }}, shard ${{ matrix.shard }})
     runs-on: ${{ matrix.os }}
+    # A hung folder fails fast instead of burning the runner for an hour.
+    # Healthy shards finish well inside this; bump it if sharding changes.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -307,6 +310,7 @@ jobs:
   # pre-release workflow, which releases require.
   mac-smoke:
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
@@ -353,6 +357,7 @@ jobs:
   # includes and language versions must agree across all four cells too.
   format-hermeticity:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -379,6 +384,7 @@ jobs:
   # Validates that rules_dart produces the correct error messages.
   expected-failure:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - name: pub_lock_conflict — expect version conflict error
@@ -701,6 +707,7 @@ jobs:
   # dart_test exercises the kernel test path end-to-end.
   dbg-mode:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - name: hello_world — build all compile modes under -c dbg
@@ -711,6 +718,7 @@ jobs:
         run: bazel test -c dbg --test_output=errors //...
   pre-commit:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: j178/prek-action@v3.0.1
@@ -728,6 +736,7 @@ jobs:
       - dbg-mode
       - pre-commit
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: always()
     steps:
       - name: Fail if any job did not succeed

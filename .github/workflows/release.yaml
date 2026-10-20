@@ -22,6 +22,9 @@ jobs:
   # tells the developer to run the Full matrix workflow for the commit first.
   full-matrix:
     runs-on: ubuntu-latest
+    # The wait loop polls for up to 90 minutes; the timeout only bounds a
+    # hung poll past that deadline.
+    timeout-minutes: 120
     steps:
       - name: Wait for a passing full-matrix run on this commit
         env:
@@ -48,6 +51,7 @@ jobs:
           done
   release:
     needs: full-matrix
+    timeout-minutes: 60
     uses: bazel-contrib/.github/.github/workflows/release_ruleset.yaml@v7.7.0
     with:
       release_files: rules_dart-*.tar.gz
