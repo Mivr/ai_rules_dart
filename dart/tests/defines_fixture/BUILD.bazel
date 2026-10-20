@@ -13,6 +13,13 @@ load(
 # front-end flag through `dart_compile_flags`, so the tests below assert only
 # on where they land.
 
+# The `snapshot_patch_test` suite in `//dart/tests` builds its fixtures on this
+# entrypoint and inspects their compile actions, so the file is visible there.
+exports_files(
+    ["main.dart"],
+    visibility = ["//dart/tests:__pkg__"],
+)
+
 dart_library(
     name = "comma_lib",
     package_name = "defines_fixture",

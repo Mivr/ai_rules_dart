@@ -370,6 +370,7 @@ def _eligible_test_impl(ctx):
 def _custom_kernel_module_fixture_impl(ctx):
     dartaotruntime = ctx.actions.declare_file(ctx.label.name + "_dartaotruntime")
     kernel_worker = ctx.actions.declare_file(ctx.label.name + "_kernel_worker.snapshot")
+    patched_kernel_worker = ctx.actions.declare_file(ctx.label.name + "_kernel_worker_nocomma.snapshot")
     default_platform_dill = ctx.actions.declare_file(ctx.label.name + "_vm_platform_strong.dill")
     default_libraries_json = ctx.actions.declare_file(ctx.label.name + "_default_libraries.json")
     custom_platform_dill = ctx.actions.declare_file(ctx.label.name + "_flutter_platform_strong.dill")
@@ -378,6 +379,7 @@ def _custom_kernel_module_fixture_impl(ctx):
     for f in [
         dartaotruntime,
         kernel_worker,
+        patched_kernel_worker,
         default_platform_dill,
         default_libraries_json,
         custom_platform_dill,
@@ -392,6 +394,7 @@ def _custom_kernel_module_fixture_impl(ctx):
         platform_dill = default_platform_dill,
         libraries_json = default_libraries_json,
         version = "3.11.0",
+        patched_kernel_worker = patched_kernel_worker,
     )
     kmod = ctx.actions.declare_directory(ctx.label.name + ".kmod")
     koutline = ctx.actions.declare_directory(ctx.label.name + ".koutline")
@@ -521,6 +524,24 @@ def _kernel_module_action_custom_params_test_impl(ctx):
         env,
         "-DCOMMA_VAL=a,b" in argv,
         "comma-containing define is forwarded to kernel_module",
+    )
+    asserts.true(
+        env,
+        "--comma-patched-snapshot" in argv,
+        "comma defines pass the patched-snapshot marker as a startup argument",
+    )
+    snapshot_argv = [argv[i + 1] for i in range(len(argv) - 1) if argv[i] == "--kernel-worker"]
+    asserts.equals(env, 1, len(snapshot_argv), "one --kernel-worker startup argument")
+    asserts.true(
+        env,
+        snapshot_argv[0].endswith("_kernel_worker_nocomma.snapshot"),
+        "comma defines run the patched worker snapshot, not the pristine one: %s" % snapshot_argv,
+    )
+    kernel_input_basenames = [f.basename for f in kernel_action.inputs.to_list()]
+    asserts.true(
+        env,
+        any([b.endswith("_kernel_worker_nocomma.snapshot") for b in kernel_input_basenames]),
+        "the patched worker snapshot is an action input: %s" % kernel_input_basenames,
     )
 
     input_basenames = [f.basename for f in kernel_action.inputs.to_list()]
@@ -667,6 +688,17 @@ def _comma_defines_modular_binary_test_impl(ctx):
         env,
         "-DCOMMA_FLAG=a,b" in kernel_actions[0].argv,
         "comma-containing define is passed to modular DartKernel action",
+    )
+    asserts.true(
+        env,
+        "--comma-patched-snapshot" in kernel_actions[0].argv,
+        "modular comma compile passes the patched-snapshot marker",
+    )
+    entry_inputs = [f.basename for f in kernel_actions[0].inputs.to_list()]
+    asserts.true(
+        env,
+        "kernel_worker_nocomma.snapshot" in entry_inputs,
+        "the toolchain's patched worker snapshot is an input of the modular DartKernel action: %s" % entry_inputs,
     )
     link_actions = [a for a in actions if a.mnemonic == "DartKernelLink"]
     asserts.equals(env, 1, len(link_actions), "modular kernel binary with comma defines registers one DartKernelLink action")

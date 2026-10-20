@@ -8,8 +8,8 @@
 // source, so it needs no build of its own.
 //
 // Usage:
-//   dart app_jit_snapshot.dart --dart=<dart> --sdk-version=<version> \
-//       --snapshot=<out> [--dartvm=<dartvm>] [--enable-asserts] \
+//   dart app_jit_snapshot.dart --dart=<dart> --snapshot=<out> \
+//       [--dartvm=<dartvm>] [--enable-asserts] \
 //       [--env=KEY=VALUE]... [--copy=DEST=SOURCE]... [--copy-tree=DEST=DIR]... \
 //       -- <dart arguments>
 //
@@ -28,11 +28,12 @@
 //    share a `/tmp` cannot collide. On Windows there is no such root, and the
 //    rules build no snapshot there.
 //  * The environment names nothing but paths relative to the scratch directory.
-//  * The training VM runs from a fixed path, `/tmp/rules_dart_vm-<version>/bin`,
-//    which holds a copy of the SDK's `dart` (and `dartvm`). The absolute path of
-//    the training binary changes the snapshot, so a copy at one path per SDK
-//    version is what makes the snapshot the same across SDK installs. Every
-//    copy is byte-identical, so concurrent actions may write the same file.
+//  * The training VM runs from a copy of the SDK's `dart` (and `dartvm`)
+//    beside the declared snapshot output, under the action's own outputs. The
+//    absolute path of the training binary changes the snapshot, so every build
+//    of one target trains with the binary at one path, whatever SDK install it
+//    came from. The copy is private to the action, so no shared fixed path is
+//    read or written: a planted `/tmp/rules_dart_vm-*` copy has no effect.
 //
 // A program whose own training run is not deterministic (it reads the clock,
 // random numbers, or files outside the build) yields a snapshot that differs
@@ -42,6 +43,8 @@ import 'dart:ffi' as ffi;
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
+
+import 'comma_patch.dart';
 
 void main(List<String> argv) {
   if (argv.isNotEmpty && argv.first == '--aot') {
@@ -54,7 +57,6 @@ void main(List<String> argv) {
   }
   String? dart;
   String? dartvm;
-  String? sdkVersion;
   String? snapshot;
   var enableAsserts = false;
   final env = <String, String>{};
@@ -81,8 +83,6 @@ void main(List<String> argv) {
         dart = value;
       case '--dartvm':
         dartvm = value;
-      case '--sdk-version':
-        sdkVersion = value;
       case '--snapshot':
         snapshot = value;
       case '--env':
@@ -97,20 +97,15 @@ void main(List<String> argv) {
     }
   }
   final dartArgs = argv.sublist(i);
-  if (dart == null ||
-      sdkVersion == null ||
-      snapshot == null ||
-      dartArgs.isEmpty) {
-    _usage(
-      '--dart, --sdk-version, --snapshot and the dart arguments are required',
-    );
+  if (dart == null || snapshot == null || dartArgs.isEmpty) {
+    _usage('--dart, --snapshot and the dart arguments are required');
   }
 
   final out = File(snapshot).absolute;
-  final trainingVm = _stableVm(
+  final trainingVm = _trainingVm(
     dart: File(dart).absolute.path,
     dartvm: dartvm == null ? null : File(dartvm).absolute.path,
-    sdkVersion: sdkVersion,
+    snapshotOut: out,
   );
   final exitCode = _trainInScratch(
     dart: trainingVm,
@@ -136,28 +131,30 @@ void main(List<String> argv) {
 Never _usage(String problem) {
   stderr.writeln(
     'app_jit_snapshot: $problem\n'
-    'usage: dart app_jit_snapshot.dart --dart=<dart> --sdk-version=<v> '
+    'usage: dart app_jit_snapshot.dart --dart=<dart> '
     '--snapshot=<out> [--dartvm=<dartvm>] [--enable-asserts] [--env=K=V]... '
     '[--copy=D=S]... [--copy-tree=D=DIR]... -- <dart arguments>',
   );
   exit(64);
 }
 
-/// Returns the path of the training `dart`: a copy at a fixed path for
-/// [sdkVersion], made from [dart] and [dartvm] when they are not there yet.
+/// Returns the path of the training `dart`: a copy beside the declared
+/// snapshot output [snapshotOut], made from [dart] and [dartvm] when they are
+/// not there yet.
 ///
-/// Under the Linux sandbox `/tmp` is private to each action, so the copy is
-/// removed with the action. Elsewhere one copy per SDK version stays in `/tmp`,
-/// and it is not deleted afterwards: another action may be using it. A version
-/// is taken to name one binary; a copy with other bytes is replaced.
-String _stableVm({
+/// The copy lives under the action's own outputs, so concurrent actions (each
+/// with its own output) never share it, and no fixed shared path is read or
+/// executed: a planted `/tmp/rules_dart_vm-*` copy has no effect, and the
+/// tool writes no such path either. A copy with other bytes is replaced. The
+/// directory is private to the action's outputs, so no other user can plant
+/// or replace the binary between the byte check and the training run.
+String _trainingVm({
   required String dart,
   required String? dartvm,
-  required String sdkVersion,
+  required File snapshotOut,
 }) {
   final exeExt = dart.endsWith('.exe') ? '.exe' : '';
-  final root = Platform.isWindows ? Directory.systemTemp.path : '/tmp';
-  final bin = Directory('$root/rules_dart_vm-$sdkVersion/bin');
+  final bin = Directory('${snapshotOut.path}.vm/bin');
   bin.createSync(recursive: true);
   _installCopy(dart, '${bin.path}/dart$exeExt');
   final effectiveDartvm = dartvm ?? _adjacentDartvm(dart, exeExt);
@@ -249,7 +246,10 @@ String? _lookupEnvCaseInsensitive(Map<String, String> env, String name) {
 /// [parentEnv] (falling back to `C:\Windows` for `SystemRoot` when absent),
 /// and points the home, cache, and temporary directory variables
 /// (`USERPROFILE`, `LOCALAPPDATA`, `APPDATA`, `HOME`, `PUB_CACHE`, `TEMP`,
-/// `TMP`, `TMPDIR`) at [homeDir]. Any entry with an empty name or `=` in the
+/// `TMP`, `TMPDIR`) at [homeDir]. On other systems, inherits [parentEnv]
+/// except the home and cache variables (pointed at [homeDir]) and `TMPDIR`
+/// (pointed at [homeDir], so no child writes to the shared system temp
+/// directory). Any entry with an empty name or `=` in the
 /// name is omitted.
 Map<String, String> buildChildEnvironment({
   required String homeDir,
@@ -349,6 +349,10 @@ Map<String, String> buildChildEnvironment({
       'LOCALAPPDATA',
       'APPDATA',
       'PUB_CACHE',
+      // Pointed at the action-private directory, not inherited: a compile
+      // must leave no file under the shared system temp directory, whatever
+      // scratch `TMPDIR` names.
+      'TMPDIR',
     ]) {
       setEnv(homeKey, homeDir);
     }
@@ -390,13 +394,12 @@ int _trainInScratch({
   required List<_Pair> trees,
   required File out,
 }) {
-  // A private directory per run, so concurrent snapshot actions that share a
-  // `/tmp` (no sandbox, or a shared one) cannot collide. The random suffix is
+  // A private directory per run under the declared output's directory, so no
+  // compile reads or writes the shared system temp directory, and concurrent
+  // actions (each with its own output) cannot collide. The random suffix is
   // fixed-length, so the absolute path has the same length on every run.
-  final scratchRoot = Platform.isWindows
-      ? Directory.systemTemp
-      : Directory('/tmp');
-  final scratch = scratchRoot.createTempSync('rules_dart_snapshot.');
+  out.parent.createSync(recursive: true);
+  final scratch = out.parent.createTempSync('rules_dart_snapshot.');
   try {
     // Every input is copied to its relative place, so the run needs only
     // relative paths.
@@ -620,9 +623,8 @@ void _runAot(List<String> argv) {
       outputPath,
       dillPath,
     ];
-    final tempHome = Directory.systemTemp.createTempSync(
-      'rules_dart_compile_home.',
-    );
+    final scratchBase = File(outputPath).parent..createSync(recursive: true);
+    final tempHome = scratchBase.createTempSync('rules_dart_compile_home.');
     final childEnv = buildChildEnvironment(
       homeDir: tempHome.path,
       parentEnv: Platform.environment,
@@ -653,7 +655,8 @@ void _runAot(List<String> argv) {
     return;
   }
 
-  final tmpDir = Directory.systemTemp.createTempSync('rules_dart_aot.');
+  final scratchBase = File(outputPath).parent..createSync(recursive: true);
+  final tmpDir = scratchBase.createTempSync('rules_dart_aot.');
   final homeDir = Directory('${tmpDir.path}/home')..createSync(recursive: true);
   final homeEnv = buildChildEnvironment(
     homeDir: homeDir.path,
@@ -839,167 +842,6 @@ void chmodFile(String path, int mode) {
     }
   } finally {
     free(ptr);
-  }
-}
-
-const _x64SplitCommasPattern = <int>[
-  0x48, 0x8b, 0x45, 0xf0, // mov rax, [rbp-0x10]
-  0x48, 0x8b, 0x48, 0x5f, // mov rcx, [rax+0x5f]
-  0xf6, 0xc1, 0x10, // test cl, 0x10
-  0x0f, 0x85, 0x3a, 0x01, 0x00, 0x00, // jnz +0x13a
-  0x48, 0x8b, 0x4d, 0xe8, // mov rcx, [rbp-0x18]
-  0x8b, 0x51, 0xff, // mov edx, [rcx-0x1]
-];
-
-const _arm64SplitCommasPattern = <int>[
-  0xa3, 0x03, 0x5f, 0xf8, // ldur x3, [fp, #-16]
-  0x60, 0xf0, 0x45, 0xf8, // ldur x0, [x3, #95]
-  0xc0, 0x09, 0x20, 0x37, // tbnz w0, #4, +0x138
-  0xa0, 0x83, 0x5e, 0xf8, // ldur x0, [fp, #-24]
-  0x01, 0xf0, 0x5f, 0xf8, // ldur w1, [x0, #-1]
-];
-
-int _findBytesPattern(Uint8List haystack, List<int> needle) {
-  final nLen = needle.length;
-  final limit = haystack.length - nLen;
-  if (limit < 0) return -1;
-  final first = needle[0];
-  for (var i = 0; i <= limit; i++) {
-    if (haystack[i] != first) continue;
-    var match = true;
-    for (var j = 1; j < nLen; j++) {
-      if (haystack[i + j] != needle[j]) {
-        match = false;
-        break;
-      }
-    }
-    if (match) return i;
-  }
-  return -1;
-}
-
-/// Patches `Parser._setOption` in a `kernel_worker` or `gen_kernel` AOT
-/// snapshot byte buffer so `addMultiOption` options (`-D` / `--define`) do not
-/// split values on `,` (`0x2C`), allowing comma-containing defines to reach
-/// the front end's constant evaluation unchanged.
-///
-/// Returns `true` if the pattern was found and patched in [bytes].
-bool patchSnapshotSplitCommasBytes(Uint8List bytes) {
-  final x64Idx = _findBytesPattern(bytes, _x64SplitCommasPattern);
-  if (x64Idx >= 0) {
-    bytes[x64Idx + 11] = 0x90; // nop
-    bytes[x64Idx + 12] = 0xe9; // jmp rel32 (+0x13a)
-    return true;
-  }
-  final arm64Idx = _findBytesPattern(bytes, _arm64SplitCommasPattern);
-  if (arm64Idx >= 0) {
-    bytes[arm64Idx + 8] = 0x4e; // b +0x138
-    bytes[arm64Idx + 9] = 0x00;
-    bytes[arm64Idx + 10] = 0x00;
-    bytes[arm64Idx + 11] = 0x14;
-    return true;
-  }
-  return false;
-}
-
-/// Returns the path to a cached copy of [snapshotPath] with
-/// `Parser._setOption`'s comma-splitting disabled, or [snapshotPath] if the
-/// file does not match a known AOT snapshot pattern.
-String patchSnapshotSplitCommas(String snapshotPath) {
-  final file = File(snapshotPath);
-  if (!file.existsSync()) return snapshotPath;
-  final baseName = snapshotPath
-      .replaceAll(r'\', '/')
-      .split('/')
-      .last
-      .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
-  // Fast path: SDK snapshots are immutable in practice, so a patched copy (or
-  // a record that patching does not apply) keyed by size and mtime lets every
-  // action start reuse it with two stats instead of re-reading and re-scanning
-  // tens of megabytes.
-  FileStat snapshotStat;
-  try {
-    snapshotStat = file.statSync();
-  } on FileSystemException {
-    return snapshotPath;
-  }
-  final cacheFile = File(
-    '${Directory.systemTemp.path}/'
-    'rules_dart_nocomma_${baseName}_${snapshotStat.size}_'
-    '${snapshotStat.modified.microsecondsSinceEpoch}.snapshot',
-  );
-  if (cacheFile.existsSync()) {
-    return cacheFile.path;
-  }
-  final sentinelFile = File('${cacheFile.path}.nopatch');
-  if (sentinelFile.existsSync()) {
-    return snapshotPath;
-  }
-  final Uint8List bytes;
-  try {
-    bytes = file.readAsBytesSync();
-  } on FileSystemException {
-    return snapshotPath;
-  }
-  // The size-and-mtime cache name above already pins the content; a torn
-  // cached copy is impossible because the write below is atomic.
-  if (!patchSnapshotSplitCommasBytes(bytes)) {
-    _writePatchSentinel(sentinelFile, snapshotPath);
-    return snapshotPath;
-  }
-  final tmpFile = File(
-    '${cacheFile.path}.tmp.$pid.${DateTime.now().microsecondsSinceEpoch}',
-  );
-  try {
-    tmpFile.writeAsBytesSync(bytes, flush: true);
-    if (Platform.isMacOS) {
-      Process.runSync('/usr/bin/codesign', ['-f', '-s', '-', tmpFile.path]);
-    }
-    try {
-      tmpFile.renameSync(cacheFile.path);
-    } on FileSystemException {
-      if (!cacheFile.existsSync()) {
-        tmpFile.copySync(cacheFile.path);
-      }
-      if (tmpFile.existsSync()) {
-        tmpFile.deleteSync();
-      }
-    }
-    return cacheFile.path;
-  } on FileSystemException {
-    try {
-      if (tmpFile.existsSync()) tmpFile.deleteSync();
-    } on FileSystemException {
-      // Ignore cleanup errors.
-    }
-    return snapshotPath;
-  }
-}
-
-/// Records that [snapshotPath]'s snapshot needs no comma-splitting patch, so
-/// future [patchSnapshotSplitCommas] calls skip re-reading and re-scanning it.
-void _writePatchSentinel(File sentinelFile, String snapshotPath) {
-  final tmpFile = File(
-    '${sentinelFile.path}.tmp.$pid.${DateTime.now().microsecondsSinceEpoch}',
-  );
-  try {
-    tmpFile.writeAsStringSync('$snapshotPath\n', flush: true);
-    try {
-      tmpFile.renameSync(sentinelFile.path);
-    } on FileSystemException {
-      if (!sentinelFile.existsSync()) {
-        tmpFile.copySync(sentinelFile.path);
-      }
-      if (tmpFile.existsSync()) {
-        tmpFile.deleteSync();
-      }
-    }
-  } on FileSystemException {
-    try {
-      if (tmpFile.existsSync()) tmpFile.deleteSync();
-    } on FileSystemException {
-      // Ignore cleanup errors.
-    }
   }
 }
 
@@ -1278,8 +1120,16 @@ void _runGenKernel(List<String> argv) {
   final declaredInputSources = <String>[];
   final fsRoots = <String>[];
   String? outputPath;
+  var snapshotPatched = false;
   for (var i = 1; i < argv.length; i++) {
     final arg = argv[i];
+    // Passed by Starlark when the snapshot at rawGenArgs[0] is the
+    // content-keyed patched copy declared by the toolchain. Consumed here and
+    // never forwarded to gen_kernel.
+    if (arg == '--comma-patched-snapshot') {
+      snapshotPatched = true;
+      continue;
+    }
     if (arg == '--input-source' && i + 1 < argv.length) {
       declaredInputSources.add(argv[++i]);
       continue;
@@ -1320,26 +1170,18 @@ void _runGenKernel(List<String> argv) {
     rawGenArgs.add(arg);
   }
 
-  // Only patch the gen_kernel snapshot when a define actually contains a comma:
-  // the patch disables Parser._setOption's comma splitting, which is only
-  // needed for comma-containing defines.
-  var hasCommaDefines = false;
-  for (var i = 0; i < rawGenArgs.length; i++) {
-    final arg = rawGenArgs[i];
-    if (arg == '-D' || arg == '--define') {
-      if (i + 1 < rawGenArgs.length && rawGenArgs[i + 1].contains(',')) {
-        hasCommaDefines = true;
-      }
-    } else if (arg.startsWith('-D') && arg.length > 2) {
-      if (arg.substring(2).contains(',')) hasCommaDefines = true;
-    } else if (arg.startsWith('--define=')) {
-      if (arg.substring('--define='.length).contains(',')) {
-        hasCommaDefines = true;
-      }
-    }
-  }
-  if (rawGenArgs.isNotEmpty && hasCommaDefines) {
-    rawGenArgs[0] = patchSnapshotSplitCommas(rawGenArgs[0]);
+  // The gen_kernel snapshot must already be the toolchain's patched copy when
+  // a define contains a comma: its Parser._setOption comma-splitting is only
+  // tolerable for comma-free defines. Fail loudly instead of miscompiling.
+  final commaError = unpatchedCommaDefinesError(
+    rawGenArgs,
+    snapshotPatched: snapshotPatched,
+    snapshotKind: 'gen_kernel',
+    toolName: 'app_jit_snapshot',
+  );
+  if (commaError != null) {
+    stderr.writeln(commaError);
+    exit(1);
   }
 
   // No declared source may read the host (see
@@ -1354,6 +1196,13 @@ void _runGenKernel(List<String> argv) {
       stderr.writeln(error);
     }
     exit(1);
+  }
+
+  // The scratch directories below anchor at the declared output: shared temp
+  // is never used, so concurrent actions cannot see each other's files.
+  if (outputPath == null) {
+    stderr.writeln('app_jit_snapshot --gen-kernel: -o/--output is required');
+    exit(64);
   }
 
   // Only stage an isolated filesystem root when an undeclared file would
@@ -1392,9 +1241,7 @@ void _runGenKernel(List<String> argv) {
   Directory? isolatedRootDir;
   final forwarded = <String>[];
   if (declaredInputSources.isNotEmpty && fsRoots.isNotEmpty && hasShadowRisk) {
-    final baseDir = outputPath != null
-        ? File(outputPath).parent
-        : Directory.systemTemp;
+    final baseDir = File(outputPath).parent;
     baseDir.createSync(recursive: true);
     isolatedRootDir = baseDir.createTempSync('.gen_kernel_root.');
     final seenKeys = <String>{};
@@ -1429,7 +1276,9 @@ void _runGenKernel(List<String> argv) {
     forwarded.addAll(rawGenArgs);
   }
 
-  final tempHome = Directory.systemTemp.createTempSync(
+  final genKernelScratchBase = File(outputPath).parent
+    ..createSync(recursive: true);
+  final tempHome = genKernelScratchBase.createTempSync(
     'rules_dart_gen_kernel_home.',
   );
   final childEnv = buildChildEnvironment(

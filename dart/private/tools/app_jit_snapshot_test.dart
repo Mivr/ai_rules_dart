@@ -5,6 +5,7 @@ import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
 
 import 'app_jit_snapshot.dart' as snapshot;
+import 'comma_patch.dart' as comma;
 
 void main(List<String> args) {
   late Directory tmp;
@@ -23,6 +24,68 @@ void main(List<String> args) {
     }
     tmp.deleteSync(recursive: true);
   });
+
+  /// Copies the tool and its `comma_patch.dart` import into a fresh directory
+  /// under [tmp] so a subprocess can run the tool from source, and returns
+  /// the entry path. Under Bazel both files come from the test's `args` (see
+  /// BUILD.bazel); a direct `dart test` run resolves them beside this test.
+  String stageTool() {
+    final toolSource = args.isNotEmpty
+        ? Runfiles.create().rlocation(args[0])
+        : File.fromUri(Platform.script.resolve('app_jit_snapshot.dart')).path;
+    final patchSource = args.length > 1
+        ? Runfiles.create().rlocation(args[1])
+        : File.fromUri(Platform.script.resolve('comma_patch.dart')).path;
+    final dir = Directory(
+      '${tmp.path}/tool_${DateTime.now().microsecondsSinceEpoch}',
+    )..createSync(recursive: true);
+    File('${dir.path}/app_jit_snapshot.dart')
+        .writeAsBytesSync(File(toolSource).readAsBytesSync());
+    File('${dir.path}/comma_patch.dart')
+        .writeAsBytesSync(File(patchSource).readAsBytesSync());
+    return '${dir.path}/app_jit_snapshot.dart';
+  }
+
+  /// Patches the SDK snapshot at [inputPath] into [tmp], failing the test
+  /// when the pattern is missing: the build's declared patch action in test
+  /// form, with the SDK snapshot in and the patched copy out.
+  String patchSnapshot(String inputPath, String kind) {
+    final out = File('${tmp.path}/patched_$kind.snapshot');
+    final error = comma.patchSnapshotFile(
+      inputPath: inputPath,
+      outputPath: out.path,
+      sdkVersion: Platform.version.split(' ').first,
+      snapshotKind: kind,
+    );
+    expect(error, isNull, reason: '$inputPath: $error');
+    return out.path;
+  }
+
+  /// A child environment whose temp directories are [scratch] and whose home
+  /// is [home]: nothing the child spawns may use the shared system temp.
+  Map<String, String> scratchEnv(String scratch, String home) {
+    final env = <String, String>{
+      'HOME': home,
+      'USERPROFILE': home,
+      'TMPDIR': scratch,
+      'TEMP': scratch,
+      'TMP': scratch,
+    };
+    const keep = {
+      'systemroot',
+      'windir',
+      'systemdrive',
+      'comspec',
+      'pathext',
+      'path',
+      'number_of_processors',
+      'processor_architecture',
+    };
+    for (final entry in Platform.environment.entries) {
+      if (keep.contains(entry.key.toLowerCase())) env[entry.key] = entry.value;
+    }
+    return env;
+  }
 
   for (final mode in [0x124 /* 0444 */, 0x16d /* 0555 */]) {
     final octal = mode.toRadixString(8).padLeft(4, '0');
@@ -119,8 +182,10 @@ void main(List<String> args) {
     final sdkDir = File(Platform.resolvedExecutable).parent.parent;
     final exeSuffix = Platform.isWindows ? '.exe' : '';
     final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
-    final genKernel =
-        '${sdkDir.path}/bin/snapshots/gen_kernel_aot.dart.snapshot';
+    final genKernel = patchSnapshot(
+      '${sdkDir.path}/bin/snapshots/gen_kernel_aot.dart.snapshot',
+      'gen_kernel',
+    );
     final platformDill = '${sdkDir.path}/lib/_internal/vm_platform_strong.dill';
 
     final pkgConfig = File('${tmp.path}/package_config.json')
@@ -136,6 +201,7 @@ void main(List<String> args) {
     snapshot.main([
       '--gen-kernel',
       dartaotruntime,
+      '--comma-patched-snapshot',
       genKernel,
       '--platform',
       platformDill,
@@ -273,7 +339,10 @@ void main(List<String> args) {
     final sdkDir = File(dartBin).parent.parent.path;
     final exeSuffix = Platform.isWindows ? '.exe' : '';
     final dartaotruntime = '$sdkDir/bin/dartaotruntime$exeSuffix';
-    final genKernel = '$sdkDir/bin/snapshots/gen_kernel_aot.dart.snapshot';
+    final genKernel = patchSnapshot(
+      '$sdkDir/bin/snapshots/gen_kernel_aot.dart.snapshot',
+      'gen_kernel',
+    );
     final platformDill = '$sdkDir/lib/_internal/vm_platform_product.dill';
     final ws = Directory('${tmp.path}/gen_kernel_ws')
       ..createSync(recursive: true);
@@ -323,6 +392,7 @@ void main(List<String> args) {
       snapshot.main([
         '--gen-kernel',
         dartaotruntime,
+        '--comma-patched-snapshot',
         '--input-sources-file=${sourcesFile.path}',
         genKernel,
         '--platform',
@@ -367,15 +437,30 @@ void main(List<String> args) {
       ..writeAsStringSync('void main(List<String> args) {}\n');
     final outJit = File('${workDir.path}/out.jit');
 
-    snapshot.main([
-      '--dart=$dartBin',
-      '--sdk-version=3.13.5',
-      '--snapshot=${outJit.path}',
-      '--copy=train.dart=${trainScript.path}',
-      '--',
-      'train.dart',
-    ]);
-    expect(outJit.existsSync(), isTrue);
+    // A planted fixed-path training VM from the old layout: the training
+    // must neither read nor execute it.
+    final plantedVm = File(
+      '${Directory.systemTemp.path}/rules_dart_vm-planted-test',
+    )..writeAsBytesSync([0x7f, 0x45, 0x4c, 0x46, 0x99]);
+    try {
+      snapshot.main([
+        '--dart=$dartBin',
+        '--snapshot=${outJit.path}',
+        '--copy=train.dart=${trainScript.path}',
+        '--',
+        'train.dart',
+      ]);
+      expect(outJit.existsSync(), isTrue);
+      // The training VM lives beside the declared output, not at a shared
+      // fixed path, and the planted file is untouched.
+      final vmDart = File(
+        '${outJit.path}.vm/bin/dart${Platform.isWindows ? '.exe' : ''}',
+      );
+      expect(vmDart.existsSync(), isTrue);
+      expect(plantedVm.readAsBytesSync(), [0x7f, 0x45, 0x4c, 0x46, 0x99]);
+    } finally {
+      if (plantedVm.existsSync()) plantedVm.deleteSync();
+    }
   });
 
   test('buildChildEnvironment on Windows preserves SystemRoot and valid names while isolating home and cache directories', () {
@@ -478,9 +563,7 @@ void main(List<String> args) {
       );
       // End to end: the wrapper fails before running gen_kernel (which is never
       // reached, so no SDK snapshot is needed).
-      final toolPath = args.isNotEmpty
-          ? Runfiles.create().rlocation(args[0])
-          : File.fromUri(Platform.script.resolve('app_jit_snapshot.dart')).path;
+      final toolPath = stageTool();
       final res = Process.runSync(Platform.resolvedExecutable, [
         toolPath,
         '--gen-kernel',
@@ -568,5 +651,189 @@ void main(List<String> args) {
       res.stderr as String,
       contains("import 'sibling//helper.dart' is not a declared input"),
     );
+  });
+
+  test('--gen-kernel with comma define and pristine snapshot fails loudly', () {
+    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final exeSuffix = Platform.isWindows ? '.exe' : '';
+    final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
+    final genKernel =
+        '${sdkDir.path}/bin/snapshots/gen_kernel_aot.dart.snapshot';
+    final platformDill = '${sdkDir.path}/lib/_internal/vm_platform_strong.dill';
+
+    final pkgConfig = File('${tmp.path}/loud_package_config.json')
+      ..writeAsStringSync('{"configVersion": 2, "packages": []}\n');
+    final mainDart = File('${tmp.path}/loud_main.dart')
+      ..writeAsStringSync(
+        'void main() {\n'
+        "  print(const String.fromEnvironment('COMMA_VAL', defaultValue: 'UNSET'));\n"
+        '}\n',
+      );
+    final outDill = File('${tmp.path}/loud_out.dill');
+
+    // The wrapper fails before running gen_kernel (which is never reached),
+    // so the pristine snapshot is enough to prove the fail-closed check.
+    final toolPath = stageTool();
+    final res = Process.runSync(Platform.resolvedExecutable, [
+      toolPath,
+      '--gen-kernel',
+      dartaotruntime,
+      genKernel,
+      '--platform',
+      platformDill,
+      '--packages',
+      pkgConfig.path,
+      '-DCOMMA_VAL=a,b',
+      '-o',
+      outDill.path,
+      mainDart.path,
+    ]);
+    expect(res.exitCode, 1);
+    expect('${res.stdout}\n${res.stderr}', contains('comma'));
+    expect(outDill.existsSync(), isFalse);
+  });
+
+  test('--gen-kernel ignores planted shared-temp files', () {
+    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final exeSuffix = Platform.isWindows ? '.exe' : '';
+    final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
+    final genKernel = patchSnapshot(
+      '${sdkDir.path}/bin/snapshots/gen_kernel_aot.dart.snapshot',
+      'gen_kernel',
+    );
+    final platformDill = '${sdkDir.path}/lib/_internal/vm_platform_strong.dill';
+
+    final sysTmp = Directory.systemTemp;
+
+    /// Basenames in the shared temp dir that look like the old fixed-path
+    /// cache: the `*nocomma.snapshot` files and `rules_dart_vm-*` dirs.
+    Set<String> sharedCacheNames() {
+      final names = <String>{};
+      for (final e in sysTmp.listSync()) {
+        final base = e.path.split(Platform.pathSeparator).last;
+        if (base.contains('nocomma.snapshot') ||
+            base.startsWith('rules_dart_vm-')) {
+          names.add(base);
+        }
+      }
+      return names;
+    }
+
+    // Whatever other builds left in shared temp stays: only files this run
+    // adds may appear below.
+    final before = sharedCacheNames();
+    final plants = <String, String>{
+      'kernel_worker_nocomma.snapshot': 'planted',
+      'kernel_worker_nocomma.snapshot.version': 'planted',
+      'gen_kernel_nocomma.snapshot': 'planted',
+      'gen_kernel_nocomma.snapshot.version': 'planted',
+    };
+    for (final entry in plants.entries) {
+      File('${sysTmp.path}/${entry.key}').writeAsStringSync(entry.value);
+    }
+    final plantedVmDir = Directory('${sysTmp.path}/rules_dart_vm-planted-test')
+      ..createSync(recursive: true);
+    File('${plantedVmDir.path}/bin_dart${Platform.isWindows ? '.exe' : ''}')
+        .writeAsStringSync('planted');
+    try {
+      final pkgConfig = File('${tmp.path}/plant_package_config.json')
+        ..writeAsStringSync('{"configVersion": 2, "packages": []}\n');
+      final mainDart = File('${tmp.path}/plant_main.dart')
+        ..writeAsStringSync(
+          'void main() {\n'
+          "  print(const String.fromEnvironment('COMMA_VAL', defaultValue: 'UNSET'));\n"
+          '}\n',
+        );
+      final outDill = File('${tmp.path}/plant_out.dill');
+
+      final toolPath = stageTool();
+      final res = Process.runSync(Platform.resolvedExecutable, [
+        toolPath,
+        '--gen-kernel',
+        dartaotruntime,
+        '--comma-patched-snapshot',
+        genKernel,
+        '--platform',
+        platformDill,
+        '--packages',
+        pkgConfig.path,
+        '-DCOMMA_VAL=a,b',
+        '-o',
+        outDill.path,
+        mainDart.path,
+      ]);
+      expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
+      expect(outDill.existsSync(), isTrue);
+
+      for (final entry in plants.entries) {
+        expect(
+          File('${sysTmp.path}/${entry.key}').readAsStringSync(),
+          'planted',
+        );
+      }
+      expect(
+        File('${plantedVmDir.path}/bin_dart${Platform.isWindows ? '.exe' : ''}')
+            .readAsStringSync(),
+        'planted',
+      );
+      final leftovers = sharedCacheNames().difference(before);
+      // Only the plants this test wrote may have appeared.
+      leftovers.removeAll(plants.keys);
+      leftovers.remove('rules_dart_vm-planted-test');
+      expect(leftovers, isEmpty, reason: '$leftovers');
+    } finally {
+      for (final key in plants.keys) {
+        final f = File('${sysTmp.path}/$key');
+        if (f.existsSync()) f.deleteSync();
+      }
+      if (plantedVmDir.existsSync()) {
+        plantedVmDir.deleteSync(recursive: true);
+      }
+    }
+  });
+
+  test('--aot leaves scratch TMPDIR empty', () {
+    if (Platform.isWindows) return;
+    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final dartBin = '${sdkDir.path}/bin/dart';
+    final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime';
+    final genKernel =
+        '${sdkDir.path}/bin/snapshots/gen_kernel_aot.dart.snapshot';
+    final platformDill = '${sdkDir.path}/lib/_internal/vm_platform_strong.dill';
+
+    final pkgConfig = File('${tmp.path}/aot_package_config.json')
+      ..writeAsStringSync('{"configVersion": 2, "packages": []}\n');
+    final mainDart = File('${tmp.path}/aot_main.dart')
+      ..writeAsStringSync('void main() {}\n');
+    final inDill = File('${tmp.path}/aot_main.dill');
+    final gkRes = Process.runSync(dartaotruntime, [
+      genKernel,
+      '--platform=$platformDill',
+      '--packages=${pkgConfig.path}',
+      '--aot',
+      '--tfa',
+      '--no-embed-sources',
+      '-o',
+      inDill.path,
+      mainDart.path,
+    ]);
+    expect(gkRes.exitCode, 0, reason: '${gkRes.stdout}\n${gkRes.stderr}');
+
+    final scratch = Directory('${tmp.path}/aot-scratch')..createSync();
+    final home = Directory('${tmp.path}/aot-home')..createSync();
+    final outExe = File('${tmp.path}/aot-scratch-out/tool');
+    final toolPath = stageTool();
+    final res = Process.runSync(Platform.resolvedExecutable, [
+      toolPath,
+      '--aot',
+      '--dart=$dartBin',
+      '--mode=exe',
+      '-o',
+      outExe.path,
+      inDill.path,
+    ], environment: scratchEnv(scratch.path, home.path));
+    expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
+    expect(outExe.existsSync(), isTrue);
+    expect(scratch.listSync(recursive: true).toList(), isEmpty);
   });
 }

@@ -92,6 +92,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import '../../guard/lib/directive_guard.dart';
+import 'comma_patch.dart';
 import 'dill_outline.dart';
 
 export '../../guard/lib/directive_guard.dart'
@@ -110,6 +111,17 @@ export '../../guard/lib/directive_guard.dart'
 const _kernelWorkerFlag = '--kernel-worker';
 const _dartaotruntimeFlag = '--dartaotruntime';
 const _persistentFlag = '--persistent_worker';
+
+/// Startup flag the build passes when `--kernel-worker` names the
+/// comma-patched snapshot the toolchain's declared patch action produced (see
+/// `comma_patch.dart`). Without it, a request whose `-D` / `--define` values
+/// contain a comma fails loudly instead of silently splitting the value.
+///
+/// A startup flag, not a params-file flag: the worker key covers the startup
+/// arguments, so comma compiles (which name the patched snapshot) get their
+/// own worker process and never share one running the pristine snapshot. It
+/// never reaches a request's arguments, so `kernel_worker` never sees it.
+const _commaPatchedFlag = '--comma-patched-snapshot';
 
 // Flags this tool consumes. `kernel_worker` never sees them.
 const _excludedOutputFlag = '--excluded-output';
@@ -234,6 +246,7 @@ List<String> kernelWorkerArgs(List<String> args) {
 
 Future<void> main(List<String> argv) async {
   var persistent = false;
+  var snapshotPatched = false;
   String? kernelWorker;
   String? dartaotruntime;
   Duration? requestTimeout;
@@ -242,6 +255,8 @@ Future<void> main(List<String> argv) async {
     final arg = argv[i];
     if (arg == _persistentFlag) {
       persistent = true;
+    } else if (arg == _commaPatchedFlag) {
+      snapshotPatched = true;
     } else if (arg.startsWith(_requestTimeoutFlag)) {
       final seconds = int.tryParse(arg.substring(_requestTimeoutFlag.length));
       if (seconds == null || seconds <= 0) {
@@ -268,7 +283,7 @@ Future<void> main(List<String> argv) async {
     return;
   }
   if (persistent) {
-    await _serve(dartaotruntime, kernelWorker, requestTimeout);
+    await _serve(dartaotruntime, kernelWorker, requestTimeout, snapshotPatched);
     // Exit explicitly. Streams of the `kernel_worker` child stay subscribed after
     // it is killed, and would otherwise keep this process alive past its work.
     await stdout.flush();
@@ -278,7 +293,7 @@ Future<void> main(List<String> argv) async {
   final log = StringBuffer();
   final code = await compileModule(
     args,
-    _OneShot(dartaotruntime, kernelWorker),
+    _OneShot(dartaotruntime, kernelWorker, snapshotPatched: snapshotPatched),
     log,
     const [],
   );
@@ -294,12 +309,14 @@ Future<void> _serve(
   String dartaotruntime,
   String kernelWorker,
   Duration? requestTimeout,
+  bool snapshotPatched,
 ) async {
   final requests = _Frames(stdin);
   final cache = KernelModuleCache();
   final compiler = _Persistent(
     dartaotruntime,
     kernelWorker,
+    snapshotPatched: snapshotPatched,
     requestTimeout: requestTimeout,
   );
   try {
@@ -3089,33 +3106,6 @@ List<Uint8List> _uncoveredInputs(
   return out;
 }
 
-/// Records that [snapshotPath]'s snapshot needs no comma-splitting patch, so
-/// future [patchSnapshotSplitCommas] calls skip re-reading and re-scanning it.
-void _writePatchSentinel(File sentinelFile, String snapshotPath) {
-  final tmpFile = File(
-    '${sentinelFile.path}.tmp.$pid.${DateTime.now().microsecondsSinceEpoch}',
-  );
-  try {
-    tmpFile.writeAsStringSync('$snapshotPath\n', flush: true);
-    try {
-      tmpFile.renameSync(sentinelFile.path);
-    } on FileSystemException {
-      if (!sentinelFile.existsSync()) {
-        tmpFile.copySync(sentinelFile.path);
-      }
-      if (tmpFile.existsSync()) {
-        tmpFile.deleteSync();
-      }
-    }
-  } on FileSystemException {
-    try {
-      if (tmpFile.existsSync()) tmpFile.deleteSync();
-    } on FileSystemException {
-      // Ignore cleanup errors.
-    }
-  }
-}
-
 /// Creates [dstPath] as a symlink to [origin], falling back to a copy when
 /// the platform refuses symlinks. Returns whether [dstPath] was created.
 ///
@@ -3295,24 +3285,6 @@ abstract class ModuleCompiler {
   Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs);
 
   Future<void> close();
-}
-
-/// Whether any `-D` / `--define` option in [args] carries a comma in its value.
-///
-/// Only then does the front end need the snapshot patch that disables
-/// `Parser._setOption`'s comma splitting ([patchSnapshotSplitCommas]).
-bool _hasCommaDefines(List<String> args) {
-  for (var i = 0; i < args.length; i++) {
-    final arg = args[i];
-    if (arg == '-D' || arg == '--define') {
-      if (i + 1 < args.length && args[i + 1].contains(',')) return true;
-    } else if (arg.startsWith('-D') && arg.length > 2) {
-      if (arg.substring(2).contains(',')) return true;
-    } else if (arg.startsWith('--define=')) {
-      if (arg.substring('--define='.length).contains(',')) return true;
-    }
-  }
-  return false;
 }
 
 /// One `kernel_worker` invocation's `--input-summary` files, and the subset the
@@ -3745,21 +3717,32 @@ Future<List<String>?> _unusedInputsLines({
 
 /// One `kernel_worker` process per compile.
 class _OneShot implements ModuleCompiler {
-  _OneShot(this._dartaotruntime, this._kernelWorker);
+  _OneShot(
+    this._dartaotruntime,
+    this._kernelWorker, {
+    bool snapshotPatched = false,
+  }) : _snapshotPatched = snapshotPatched;
 
   final String _dartaotruntime;
   final String _kernelWorker;
 
+  /// Whether [_kernelWorker] is the comma-patched snapshot the toolchain's
+  /// declared patch action produced, rather than the SDK's pristine one.
+  final bool _snapshotPatched;
+
   @override
   Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
-    // The comma-splitting patch is only needed when a define value actually
-    // contains a comma; otherwise the pristine snapshot runs as is.
-    final workerSnapshot = _hasCommaDefines(args)
-        ? patchSnapshotSplitCommas(_kernelWorker)
-        : _kernelWorker;
+    final workerArgs = kernelWorkerArgs(args);
+    final error = unpatchedCommaDefinesError(
+      workerArgs,
+      snapshotPatched: _snapshotPatched,
+      snapshotKind: 'kernel_worker',
+      toolName: 'kernel_module',
+    );
+    if (error != null) return ModuleOutcome(1, '$error\n');
     final result = await Process.run(_dartaotruntime, [
-      workerSnapshot,
-      ...kernelWorkerArgs(args),
+      _kernelWorker,
+      ...workerArgs,
     ]);
     return ModuleOutcome(result.exitCode, '${result.stdout}${result.stderr}');
   }
@@ -3780,8 +3763,10 @@ class _Persistent implements ModuleCompiler {
   _Persistent(
     this._dartaotruntime,
     this._kernelWorker, {
+    bool snapshotPatched = false,
     Duration? requestTimeout,
-  }) : _requestTimeout = requestTimeout ?? _defaultRequestTimeout;
+  }) : _snapshotPatched = snapshotPatched,
+       _requestTimeout = requestTimeout ?? _defaultRequestTimeout;
 
   /// Far above the compile of one library. A request that takes longer is wedged.
   /// `--request-timeout-seconds` replaces it, so a test can exercise a wedged child
@@ -3793,15 +3778,14 @@ class _Persistent implements ModuleCompiler {
 
   final String _dartaotruntime;
   final String _kernelWorker;
+
+  /// Whether [_kernelWorker] is the comma-patched snapshot the toolchain's
+  /// declared patch action produced, rather than the SDK's pristine one.
+  final bool _snapshotPatched;
+
   final Duration _requestTimeout;
   Process? _child;
   _Frames? _responses;
-
-  /// Whether the running child uses the comma-splitting patched snapshot.
-  /// A child that needs the patch keeps it: the patch is a no-op for defines
-  /// without commas, so a patched child correctly serves every later request
-  /// and is never restarted for this reason.
-  bool _patchedChild = false;
 
   /// The `request_id` of every request. Bazel sends a worker that is not multiplexed
   /// request 0, and `kernel_worker` answers with the id it was sent.
@@ -3815,13 +3799,17 @@ class _Persistent implements ModuleCompiler {
     // Digested before the child is written to, so a file that cannot be read fails the
     // request with its reason, not as a child that died.
     final workerArgs = kernelWorkerArgs(args);
+    final error = unpatchedCommaDefinesError(
+      workerArgs,
+      snapshotPatched: _snapshotPatched,
+      snapshotKind: 'kernel_worker',
+      toolName: 'kernel_module',
+    );
+    if (error != null) return ModuleOutcome(1, '$error\n');
     final withDigests = await _withDigests(workerArgs, inputs);
-    // The comma-splitting patch is only needed when a define value actually
-    // contains a comma; otherwise the pristine snapshot runs as is.
-    final patched = _hasCommaDefines(workerArgs);
-    final first = await _attempt(workerArgs, withDigests, patched: patched);
+    final first = await _attempt(workerArgs, withDigests);
     if (!first.lost) return first.outcome;
-    final second = await _attempt(workerArgs, withDigests, patched: patched);
+    final second = await _attempt(workerArgs, withDigests);
     if (second.lost) {
       return ModuleOutcome(
         second.outcome.exitCode,
@@ -3834,12 +3822,8 @@ class _Persistent implements ModuleCompiler {
   }
 
   /// Sends one request to the running child, or to a new one, and reads its answer.
-  Future<_Attempt> _attempt(
-    List<String> args,
-    List<Uint8List> inputs, {
-    required bool patched,
-  }) async {
-    final child = await _start(patched: patched);
+  Future<_Attempt> _attempt(List<String> args, List<Uint8List> inputs) async {
+    final child = await _start();
     try {
       child.stdin.add(_frame(_encodeRequest(args, inputs, _requestId)));
       await child.stdin.flush();
@@ -3889,21 +3873,16 @@ class _Persistent implements ModuleCompiler {
     }
   }
 
-  Future<Process> _start({required bool patched}) async {
+  Future<Process> _start() async {
     final running = _child;
-    // A patched child serves requests without comma defines identically to a
-    // pristine one, so it is kept; only an unpatched child that now needs the
-    // patch is replaced.
-    if (running != null && (!patched || _patchedChild)) return running;
-    if (running != null) await _reap();
+    if (running != null) return running;
     final child = await Process.start(_dartaotruntime, [
-      patched ? patchSnapshotSplitCommas(_kernelWorker) : _kernelWorker,
+      _kernelWorker,
       _persistentFlag,
     ]);
     _stderr.clear();
     child.stderr.transform(utf8.decoder).listen(_stderr.write);
     _child = child;
-    _patchedChild = patched;
     _responses = _Frames(child.stdout);
     return child;
   }
@@ -5154,138 +5133,4 @@ Future<bool> _unstagedReadsAreDeclared(
     }
   }
   return true;
-}
-
-const _x64SplitCommasPattern = <int>[
-  0x48, 0x8b, 0x45, 0xf0, // mov rax, [rbp-0x10]
-  0x48, 0x8b, 0x48, 0x5f, // mov rcx, [rax+0x5f]
-  0xf6, 0xc1, 0x10, // test cl, 0x10
-  0x0f, 0x85, 0x3a, 0x01, 0x00, 0x00, // jnz +0x13a
-  0x48, 0x8b, 0x4d, 0xe8, // mov rcx, [rbp-0x18]
-  0x8b, 0x51, 0xff, // mov edx, [rcx-0x1]
-];
-
-const _arm64SplitCommasPattern = <int>[
-  0xa3, 0x03, 0x5f, 0xf8, // ldur x3, [fp, #-16]
-  0x60, 0xf0, 0x45, 0xf8, // ldur x0, [x3, #95]
-  0xc0, 0x09, 0x20, 0x37, // tbnz w0, #4, +0x138
-  0xa0, 0x83, 0x5e, 0xf8, // ldur x0, [fp, #-24]
-  0x01, 0xf0, 0x5f, 0xf8, // ldur w1, [x0, #-1]
-];
-
-int _findBytesPattern(Uint8List haystack, List<int> needle) {
-  final nLen = needle.length;
-  final limit = haystack.length - nLen;
-  if (limit < 0) return -1;
-  final first = needle[0];
-  for (var i = 0; i <= limit; i++) {
-    if (haystack[i] != first) continue;
-    var match = true;
-    for (var j = 1; j < nLen; j++) {
-      if (haystack[i + j] != needle[j]) {
-        match = false;
-        break;
-      }
-    }
-    if (match) return i;
-  }
-  return -1;
-}
-
-/// Patches `Parser._setOption` in a `kernel_worker` or `gen_kernel` AOT
-/// snapshot byte buffer so `addMultiOption` options (`-D` / `--define`) do not
-/// split values on `,` (`0x2C`), allowing comma-containing defines to reach
-/// the front end's constant evaluation unchanged.
-///
-/// Returns `true` if the pattern was found and patched in [bytes].
-bool patchSnapshotSplitCommasBytes(Uint8List bytes) {
-  final x64Idx = _findBytesPattern(bytes, _x64SplitCommasPattern);
-  if (x64Idx >= 0) {
-    bytes[x64Idx + 11] = 0x90; // nop
-    bytes[x64Idx + 12] = 0xe9; // jmp rel32 (+0x13a)
-    return true;
-  }
-  final arm64Idx = _findBytesPattern(bytes, _arm64SplitCommasPattern);
-  if (arm64Idx >= 0) {
-    bytes[arm64Idx + 8] = 0x4e; // b +0x138
-    bytes[arm64Idx + 9] = 0x00;
-    bytes[arm64Idx + 10] = 0x00;
-    bytes[arm64Idx + 11] = 0x14;
-    return true;
-  }
-  return false;
-}
-
-/// Returns the path to a cached copy of [snapshotPath] with
-/// `Parser._setOption`'s comma-splitting disabled, or [snapshotPath] if the
-/// file does not match a known AOT snapshot pattern.
-String patchSnapshotSplitCommas(String snapshotPath) {
-  final file = File(_filePathOf(snapshotPath));
-  if (!file.existsSync()) return snapshotPath;
-  final baseName = snapshotPath
-      .replaceAll(r'\', '/')
-      .split('/')
-      .last
-      .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
-  // Fast path: SDK snapshots are immutable in practice, so a patched copy (or
-  // a record that patching does not apply) keyed by size and mtime lets every
-  // worker or action start reuse it with two stats instead of re-reading and
-  // re-scanning tens of megabytes.
-  FileStat snapshotStat;
-  try {
-    snapshotStat = file.statSync();
-  } on FileSystemException {
-    return snapshotPath;
-  }
-  final cacheFile = File(
-    '${Directory.systemTemp.path}/'
-    'rules_dart_nocomma_${baseName}_${snapshotStat.size}_'
-    '${snapshotStat.modified.microsecondsSinceEpoch}.snapshot',
-  );
-  if (cacheFile.existsSync()) {
-    return cacheFile.path;
-  }
-  final sentinelFile = File('${cacheFile.path}.nopatch');
-  if (sentinelFile.existsSync()) {
-    return snapshotPath;
-  }
-  final Uint8List bytes;
-  try {
-    bytes = file.readAsBytesSync();
-  } on FileSystemException {
-    return snapshotPath;
-  }
-  // The size-and-mtime cache name above already pins the content; a torn
-  // cached copy is impossible because the write below is atomic.
-  if (!patchSnapshotSplitCommasBytes(bytes)) {
-    _writePatchSentinel(sentinelFile, snapshotPath);
-    return snapshotPath;
-  }
-  final tmpFile = File(
-    '${cacheFile.path}.tmp.$pid.${DateTime.now().microsecondsSinceEpoch}',
-  );
-  try {
-    tmpFile.writeAsBytesSync(bytes, flush: true);
-    if (Platform.isMacOS) {
-      Process.runSync('/usr/bin/codesign', ['-f', '-s', '-', tmpFile.path]);
-    }
-    try {
-      tmpFile.renameSync(cacheFile.path);
-    } on FileSystemException {
-      if (!cacheFile.existsSync()) {
-        tmpFile.copySync(cacheFile.path);
-      }
-      if (tmpFile.existsSync()) {
-        tmpFile.deleteSync();
-      }
-    }
-    return cacheFile.path;
-  } on FileSystemException {
-    try {
-      if (tmpFile.existsSync()) tmpFile.deleteSync();
-    } on FileSystemException {
-      // Ignore cleanup errors.
-    }
-    return snapshotPath;
-  }
 }

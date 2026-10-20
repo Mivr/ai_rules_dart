@@ -893,7 +893,7 @@ def generate_stable_package_config(packages, all_srcs, roots = None, scheme = ST
         packages = ",\n".join(entries),
     )
 
-def gen_kernel_args(ctx, tools, platform, package_config, scheme = STABLE_SCHEME):
+def gen_kernel_args(ctx, tools, platform, package_config, scheme = STABLE_SCHEME, gen_kernel_snapshot = None):
     """Starts the argument list of a `gen_kernel` run whose URIs are stable.
 
     The two `--filesystem-root`s are relative to the action's working directory,
@@ -909,13 +909,16 @@ def gen_kernel_args(ctx, tools, platform, package_config, scheme = STABLE_SCHEME
             for an AOT kernel, the strong one otherwise.
         package_config: The `package_config.json` File, or None.
         scheme: The multi-root URI scheme (`STABLE_SCHEME` by default).
+        gen_kernel_snapshot: The snapshot File to run, for a compile whose
+            defines need comma-splitting disabled (the toolchain's
+            `patched_gen_kernel`). Defaults to `tools.gen_kernel_snapshot`.
 
     Returns:
         A `ctx.actions.args()` object beginning with the `gen_kernel` snapshot,
         which the caller runs with `dartaotruntime`.
     """
     args = ctx.actions.args()
-    args.add(tools.gen_kernel_snapshot)
+    args.add(gen_kernel_snapshot if gen_kernel_snapshot != None else tools.gen_kernel_snapshot)
     args.add("--platform", platform)
     if package_config != None:
         args.add("--packages", package_config)
@@ -1277,6 +1280,28 @@ def target_dart_abi(ctx):
     # rather than as a build error. Not worth a validity table.
     return os + "_" + arch
 
+def has_comma_define(defines):
+    """Whether any `-D` declaration carries a comma in its value.
+
+    `gen_kernel` and `kernel_worker` split `-D`/`--define` values on commas
+    (`Parser._setOption`), so a comma-containing value only survives when the
+    compile runs a snapshot whose comma-splitting is disabled (see
+    `comma_patch.dart`). Callers run the toolchain's patched snapshot and pass
+    the `--comma-patched-snapshot` marker when this returns True, and the
+    pristine snapshot otherwise.
+
+    Args:
+      defines: Environment declarations, each `NAME=value` (the `-D` prefix
+        the compiler takes is added by the caller, not present here).
+
+    Returns:
+      True when any entry contains a comma.
+    """
+    for define in defines:
+        if "," in define:
+            return True
+    return False
+
 def find_sdk_kernel_tools(dart_sdk_info):
     """Locates the gen_kernel toolchain files within the SDK tree.
 
@@ -1297,7 +1322,9 @@ def find_sdk_kernel_tools(dart_sdk_info):
 
     Returns:
       `struct(dartaotruntime, gen_kernel_snapshot, platform_dill,
-      product_platform_dill)` of Files.
+      product_platform_dill, patched_gen_kernel)` of Files, where
+      `patched_gen_kernel` is the toolchain's comma-splitting-disabled copy of
+      `gen_kernel_snapshot`, or None when the toolchain declares none.
     """
     sdk_root = sdk_path_from_dart(dart_sdk_info.dart)
     wanted = {
@@ -1328,6 +1355,7 @@ def find_sdk_kernel_tools(dart_sdk_info):
         gen_kernel_snapshot = found["gen_kernel_snapshot"],
         platform_dill = found["platform_dill"],
         product_platform_dill = found["product_platform_dill"],
+        patched_gen_kernel = getattr(dart_sdk_info, "patched_gen_kernel", None),
     )
 
 # Code-asset link mode -> the Dart VM path type it maps to

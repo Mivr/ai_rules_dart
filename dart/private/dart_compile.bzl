@@ -5,6 +5,7 @@ load(
     "STABLE_SCHEME",
     "find_sdk_kernel_tools",
     "gen_kernel_args",
+    "has_comma_define",
     "sdk_dartvm",
     "stable_entry_path",
     "writable_home_env",
@@ -144,7 +145,7 @@ def split_compile_flags(flags):
             backend.append(flag)
     return struct(front_end = front_end, backend = backend, error = None)
 
-def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asserts):
+def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asserts, comma_patch = None):
     """Trains the app-JIT snapshot of a kernel in a fixed-length scratch directory.
 
     `dart compile jit-snapshot` trains in the action's own directory, so the
@@ -158,6 +159,9 @@ def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asse
         ctx: The rule context.
         dart_sdk_info: The `DartSdkInfo` of the toolchain.
         jit_tool: The `app_jit_snapshot.dart` File.
+        comma_patch: The `comma_patch.dart` File the tool imports. It lands
+            beside the tool in the sandbox, so the tool's relative import
+            resolves. Required whenever `jit_tool` runs.
         main: The kernel File to train on, with no program arguments.
         output: The `.jit` File to produce.
         enable_asserts: Whether the training run enables asserts.
@@ -175,7 +179,6 @@ def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asse
     args.add(dart_bin, format = "--dart=%s")
     if dartvm != None:
         args.add(dartvm, format = "--dartvm=%s")
-    args.add("--sdk-version=" + dart_sdk_info.version)
     args.add(output, format = "--snapshot=%s")
     if enable_asserts:
         args.add("--enable-asserts")
@@ -188,7 +191,7 @@ def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asse
         executable = dart_bin,
         arguments = [args],
         inputs = depset(
-            direct = [jit_tool, pkg_cfg, dart_bin, main] + ([dartvm] if dartvm != None else []),
+            direct = [jit_tool, pkg_cfg, dart_bin, main] + ([dartvm] if dartvm != None else []) + ([comma_patch] if comma_patch != None else []),
             transitive = [dart_sdk_info.compile_files],
         ),
         outputs = [output],
@@ -212,6 +215,7 @@ def _kernel_action(
         recorded_uses,
         extra_flags,
         jit_tool = None,
+        comma_patch = None,
         native_assets_yaml = None,
         embed_sources = True,
         product = None):
@@ -236,11 +240,19 @@ def _kernel_action(
         aot: Whether to produce an AOT kernel (`--aot --tfa`).
         target_os: The target OS for an AOT kernel, or "".
         enable_asserts: Whether to pass `--enable-asserts`.
-        defines: Environment declarations; each becomes a `-D` flag.
+        defines: Environment declarations; each becomes a `-D` flag. When one
+            contains a comma, the `gen_kernel` step runs the toolchain's
+            patched snapshot (see below); otherwise the pristine snapshot runs.
         recorded_uses: Optional File for the recorded `@RecordUse` uses.
         extra_flags: Flags for `gen_kernel` itself, appended last.
-        jit_tool: Optional `app_jit_snapshot.dart` File, used to preserve
-            comma-containing `-D` defines across `gen_kernel`.
+        jit_tool: Optional `app_jit_snapshot.dart` File, used to run the
+            `gen_kernel` step above with an isolated filesystem root. Required
+            when `defines` contains a comma: only the wrapper consumes the
+            `--comma-patched-snapshot` marker that authorizes the patched
+            snapshot.
+        comma_patch: Optional `comma_patch.dart` File the wrapper imports. It
+            lands beside the wrapper in the sandbox, so the wrapper's relative
+            import resolves. Required whenever `jit_tool` is passed.
         native_assets_yaml: Optional `native_assets.yaml` File, embedded as the
             `vm:ffi:native-assets` mapping.
         embed_sources: Whether non-AOT kernels embed source text. The generated
@@ -253,7 +265,29 @@ def _kernel_action(
         product = True
     tools = find_sdk_kernel_tools(dart_sdk_info)
     platform = tools.product_platform_dill if product else tools.platform_dill
-    args = gen_kernel_args(ctx, tools, platform, package_config)
+
+    # A comma-containing value only survives the frontend when `gen_kernel`
+    # runs the toolchain's patched snapshot: the frontend splits `-D` values
+    # on commas. The patched snapshot is a declared action output taken as a
+    # tool input, so the patch runs once per SDK, not once per compile. The
+    # wrapper consumes the marker below and refuses comma defines without it,
+    # so a comma compile can never silently run the pristine snapshot.
+    comma_defines = has_comma_define(defines)
+    gen_snapshot = None
+    if comma_defines:
+        gen_snapshot = tools.patched_gen_kernel
+        if gen_snapshot == None:
+            fail(("dart_compile_action: target %s passes comma-containing " +
+                  "`defines` %s, but the SDK (Dart %s) declares no patched " +
+                  "`gen_kernel` snapshot, so no compile can keep the commas. " +
+                  "Use an SDK whose snapshot `comma_patch.dart` knows how " +
+                  "to patch.") % (ctx.label, defines, dart_sdk_info.version))
+        if jit_tool == None:
+            fail(("dart_compile_action: target %s passes comma-containing " +
+                  "`defines` %s, but no `jit_tool` wrapper runs its " +
+                  "`gen_kernel` step to authorize the patched snapshot.") %
+                 (ctx.label, defines))
+    args = gen_kernel_args(ctx, tools, platform, package_config, gen_kernel_snapshot = gen_snapshot)
     args.add("-Ddart.vm.product=" + ("true" if product else "false"))
     args.add_all(["-Ddart.vm.asan=false", "-Ddart.vm.msan=false", "-Ddart.vm.tsan=false"])
     if aot:
@@ -291,11 +325,23 @@ def _kernel_action(
         wrapper_args.add(jit_tool)
         wrapper_args.add("--gen-kernel")
         wrapper_args.add(tools.dartaotruntime)
+        if comma_defines:
+            # After `dartaotruntime`: `_runGenKernel` takes `argv.first` as the
+            # runtime positionally and consumes this marker in its flag loop,
+            # never forwarding it to `gen_kernel`.
+            wrapper_args.add("--comma-patched-snapshot")
         input_srcs_args = ctx.actions.args()
         input_srcs_args.use_param_file("--input-sources-file=%s", use_always = True)
         input_srcs_args.set_param_file_format("multiline")
         input_srcs_args.add_all(depset([main] + srcs))
         direct.append(jit_tool)
+        if comma_patch != None:
+            direct.append(comma_patch)
+        if gen_snapshot != None:
+            # The patched snapshot lives in `bazel-out`, outside the SDK file
+            # sets, so it is declared explicitly. Builds without comma defines
+            # never take it and never run the action that produces it.
+            direct.append(gen_snapshot)
         if dartvm != None:
             direct.append(dartvm)
         else:
@@ -371,6 +417,7 @@ def dart_compile_action(
         main_path = None,
         recorded_uses = None,
         jit_tool = None,
+        comma_patch = None,
         native_assets_yaml = None,
         embed_sources = True):
     """Creates the actions that compile a Dart entrypoint in `compile_mode`.
@@ -399,7 +446,8 @@ def dart_compile_action(
             (see `split_compile_flags`) go to `gen_kernel` and the rest to
             `dart compile`. A pre-built kernel passes them all to `dart compile`.
         defines: Environment declarations; each entry becomes a -D flag, given to
-            the `gen_kernel` step.
+            the `gen_kernel` step. A comma-containing entry runs the
+            toolchain's patched `gen_kernel` snapshot.
         main_path: Optional path string to pass as the compile target instead of
             `main.path` (e.g. a path inside an assembled `main` directory).
         recorded_uses: Optional output File for the uses of `@RecordUse`
@@ -409,6 +457,9 @@ def dart_compile_action(
             with it when given, so the snapshot is reproducible. Without it, and on
             a Windows host (which has no fixed-length scratch directory), the mode
             uses `dart compile jit-snapshot`.
+        comma_patch: The `comma_patch.dart` File the tool imports, staged beside
+            it in every action that runs it from source. Required whenever
+            `jit_tool` is passed.
         native_assets_yaml: Optional `native_assets.yaml` File.
         embed_sources: Whether non-AOT kernels embed source text.
     """
@@ -420,6 +471,10 @@ def dart_compile_action(
         fail(stage_err)
     if recorded_uses != None and compile_mode not in RECORDING_COMPILE_MODES:
         fail("dart_compile_action: `dart compile %s` records no uses." % compile_mode)
+    if jit_tool != None and comma_patch == None:
+        fail("dart_compile_action: target %s passes `jit_tool` without the " +
+             "`comma_patch.dart` File it imports, so no action could run it " +
+             "from source. Pass `comma_patch` alongside `jit_tool`." % ctx.label)
 
     dart_bin = dart_sdk_info.dart
     sdk_files = dart_sdk_info.compile_files
@@ -464,6 +519,7 @@ def dart_compile_action(
                 recorded_uses = None,
                 extra_flags = front_end_flags + backend_flags,
                 jit_tool = jit_tool,
+                comma_patch = comma_patch,
                 native_assets_yaml = native_assets_yaml,
                 embed_sources = embed_sources,
                 product = True,
@@ -489,6 +545,7 @@ def dart_compile_action(
             recorded_uses = None,
             extra_flags = front_end_flags,
             jit_tool = jit_tool,
+            comma_patch = comma_patch,
             native_assets_yaml = native_assets_yaml,
             embed_sources = embed_sources,
             product = compile_mode != "jit-snapshot",
@@ -506,6 +563,7 @@ def dart_compile_action(
             ctx = ctx,
             dart_sdk_info = dart_sdk_info,
             jit_tool = jit_tool,
+            comma_patch = comma_patch,
             main = compile_main,
             output = output,
             enable_asserts = enable_asserts,
@@ -547,6 +605,8 @@ def dart_compile_action(
         args.add("-o", output)
         args.add(compile_main)
         direct_inputs = [jit_tool, pkg_cfg, compile_main] + compile_srcs
+        if comma_patch != None:
+            direct_inputs.append(comma_patch)
         if cross_gen_snapshot != None:
             direct_inputs.append(cross_gen_snapshot)
         if cross_dartaotruntime != None:

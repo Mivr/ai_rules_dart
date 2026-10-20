@@ -10,6 +10,7 @@ import 'dart:typed_data';
 import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
 
+import 'comma_patch.dart' show patchSnapshotFile;
 import 'dill_outline.dart'
     show Tag, stripDillToOutline, supportedKernelFormatVersions;
 import 'kernel_link.dart'
@@ -32,7 +33,6 @@ import 'kernel_module.dart'
         isWindowsDrivePath,
         kernelWorkerArgs,
         kernelWorkerUri,
-        patchSnapshotSplitCommas,
         resolveDirectiveUri,
         scanAllDirectiveUris,
         scanDirectives,
@@ -43,6 +43,11 @@ import 'kernel_module.dart'
 const _prefix = 'org-dartlang-root:///';
 
 late List<String> _sdkDartPaths;
+
+/// AOT snapshot of `kernel_module.dart` under test (first test arg). Empty on
+/// direct `dart path/to/kernel_module_test.dart` runs, where the snapshot is
+/// unavailable; the subprocess tests below skip themselves in that case.
+late String _toolSnapshotPath;
 
 /// The test's files: sources, module directories and sidecars, and the configs.
 late Directory _root;
@@ -767,8 +772,18 @@ bool _containsSubsequence(Uint8List haystack, List<int> needle) {
 void main(List<String> args) {
   if (args.isNotEmpty) {
     final r = Runfiles.create();
-    _sdkDartPaths = [for (final a in args) r.rlocation(a)];
+    // First arg is the `kernel_module` AOT snapshot under test; the rest are
+    // the `dart` binaries for the SDK-version matrix.
+    _toolSnapshotPath = r.rlocation(args.first);
+    _sdkDartPaths = [
+      for (final a in args.sublist(1)) //
+        r.rlocation(a),
+    ];
+    if (_sdkDartPaths.isEmpty) {
+      _sdkDartPaths = [Platform.resolvedExecutable];
+    }
   } else {
+    _toolSnapshotPath = '';
     _sdkDartPaths = [Platform.resolvedExecutable];
   }
   setUp(() {
@@ -3995,8 +4010,18 @@ void main(List<String> args) {
     final sdkDir = File(Platform.resolvedExecutable).parent.parent;
     final exeSuffix = Platform.isWindows ? '.exe' : '';
     final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
-    final kernelWorker =
-        '${sdkDir.path}/bin/snapshots/kernel_worker_aot.dart.snapshot';
+    // The build's declared patch action, in test form: the SDK snapshot in,
+    // the patched copy out beside this test's outputs. Nothing is read from
+    // or written to a shared directory.
+    final kernelWorker = '${_root.path}/patched/kernel_worker.snapshot';
+    File(kernelWorker).parent.createSync(recursive: true);
+    final patchError = patchSnapshotFile(
+      inputPath: '${sdkDir.path}/bin/snapshots/kernel_worker_aot.dart.snapshot',
+      outputPath: kernelWorker,
+      sdkVersion: Platform.version.split(' ').first,
+      snapshotKind: 'kernel_worker',
+    );
+    expect(patchError, isNull, reason: '$patchError');
     final platformDill = '${sdkDir.path}/lib/_internal/vm_platform_strong.dill';
     final librariesJson = '${sdkDir.path}/lib/libraries.json';
 
@@ -4109,6 +4134,204 @@ void main(List<String> args) {
       (runRes.stdout as String).trim(),
       'a,b|true|matched-lib|a,b|true|matched-main',
     );
+  });
+
+  group('patched snapshot startup selection (AOT subprocess)', () {
+    // Drives the real `kernel_module` AOT snapshot under test through its
+    // startup flags, exactly as `kernel_module_action` in dart_kernel.bzl
+    // invokes it:
+    //   dartaotruntime <tool> --kernel-worker <snapshot>
+    //       --dartaotruntime <rt> [--comma-patched-snapshot]
+    //       --target vm --dart-sdk-summary ... <module args>
+    // Direct `dart` runs lack the snapshot and skip these tests.
+    String sdkVersionOf(String dartBin) {
+      final r = Process.runSync(dartBin, ['--version']);
+      final out = '${r.stdout}${r.stderr}';
+      final m = RegExp(r'(\d+\.\d+\.\d+(?:-\S+)?)').firstMatch(out);
+      if (m == null) throw StateError('cannot parse SDK version from: $out');
+      return m.group(1)!;
+    }
+
+    Future<String> patchedSnapshot(String sdkBin) async {
+      final sdkDir = File(sdkBin).parent.parent;
+      final out = '${_root.path}/patched-sub/kernel_worker.snapshot';
+      File(out).parent.createSync(recursive: true);
+      final patchError = patchSnapshotFile(
+        inputPath:
+            '${sdkDir.path}/bin/snapshots/kernel_worker_aot.dart.snapshot',
+        outputPath: out,
+        sdkVersion: sdkVersionOf(sdkBin),
+        snapshotKind: 'kernel_worker',
+      );
+      expect(patchError, isNull, reason: '$patchError');
+      return out;
+    }
+
+    Future<ProcessResult> runOneShot({
+      required String kernelWorker,
+      required bool patchedMarker,
+      Map<String, String>? environment,
+    }) async {
+      final dartBin = _sdkDartPaths.first;
+      final sdkDir = File(dartBin).parent.parent;
+      final exeSuffix = Platform.isWindows ? '.exe' : '';
+      final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
+      _write(
+        'pkg/lib/sel.dart',
+        "const sel = String.fromEnvironment('COMMA_VAL');\n"
+            "const selOk = sel == 'a,b';\n",
+      );
+      Directory('${_root.path}/selout').createSync(recursive: true);
+      final out = '${_root.path}/selout/sel.kmod';
+      return Process.run(dartaotruntime, [
+        _toolSnapshotPath,
+        '--kernel-worker',
+        kernelWorker,
+        '--dartaotruntime',
+        dartaotruntime,
+        if (patchedMarker) '--comma-patched-snapshot',
+        '--target',
+        'vm',
+        '--dart-sdk-summary',
+        '${sdkDir.path}/lib/_internal/vm_platform_strong.dill',
+        '--packages-file',
+        '${_root.path}/package_config.json',
+        '--libraries-json',
+        '${_root.path}/libraries.json',
+        '--multi-root',
+        _root.path,
+        '--multi-root-scheme',
+        'org-dartlang-root',
+        '-DCOMMA_VAL=a,b',
+        '--no-summary-only',
+        '--source',
+        'package:pkg/sel.dart',
+        '--output',
+        out,
+        '--excluded-output',
+        '$out.vm_excluded.txt',
+      ], environment: environment);
+    }
+
+    test('pristine snapshot with comma define fails loudly', () async {
+      if (_toolSnapshotPath.isEmpty) return;
+      final sdkDir = File(_sdkDartPaths.first).parent.parent;
+      final res = await runOneShot(
+        kernelWorker:
+            '${sdkDir.path}/bin/snapshots/kernel_worker_aot.dart.snapshot',
+        patchedMarker: false,
+      );
+      expect(res.exitCode, 1);
+      expect('${res.stdout}\n${res.stderr}', contains('comma'));
+    });
+
+    test('patched snapshot without marker still fails', () async {
+      if (_toolSnapshotPath.isEmpty) return;
+      final res = await runOneShot(
+        kernelWorker: await patchedSnapshot(_sdkDartPaths.first),
+        patchedMarker: false,
+      );
+      expect(res.exitCode, 1);
+      expect('${res.stdout}\n${res.stderr}', contains('comma'));
+    });
+
+    test('patched snapshot plus marker succeeds', () async {
+      if (_toolSnapshotPath.isEmpty) return;
+      final res = await runOneShot(
+        kernelWorker: await patchedSnapshot(_sdkDartPaths.first),
+        patchedMarker: true,
+      );
+      expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
+      expect(File('${_root.path}/selout/sel.kmod/0.dill').existsSync(), isTrue);
+    });
+
+    test('ignores planted shared-temp files', () async {
+      if (_toolSnapshotPath.isEmpty) return;
+      final tmp = Directory.systemTemp;
+
+      /// Basenames in the shared temp dir that look like the old fixed-path
+      /// cache: the `*nocomma.snapshot` files and `rules_dart_vm-*` dirs.
+      Set<String> sharedCacheNames() {
+        final names = <String>{};
+        for (final e in tmp.listSync()) {
+          final base = e.path.split(Platform.pathSeparator).last;
+          if (base.contains('nocomma.snapshot') ||
+              base.startsWith('rules_dart_vm-')) {
+            names.add(base);
+          }
+        }
+        return names;
+      }
+
+      // Whatever other builds left in shared temp stays: only files this run
+      // adds may appear below.
+      final before = sharedCacheNames();
+      final plants = <String, String>{
+        'kernel_worker_nocomma.snapshot': 'planted',
+        'kernel_worker_nocomma.snapshot.version': 'planted',
+        'gen_kernel_nocomma.snapshot': 'planted',
+        'gen_kernel_nocomma.snapshot.version': 'planted',
+        'rules_dart_vm-planted-test': 'planted-dir',
+      };
+      for (final entry in plants.entries) {
+        final target = '${tmp.path}/${entry.key}';
+        if (entry.value == 'planted-dir') {
+          Directory(target).createSync(recursive: true);
+          File('$target/bin_dart${Platform.isWindows ? '.exe' : ''}')
+              .writeAsStringSync('planted');
+        } else {
+          File(target).writeAsStringSync(entry.value);
+        }
+      }
+      try {
+        final res = await runOneShot(
+          kernelWorker: await patchedSnapshot(_sdkDartPaths.first),
+          patchedMarker: true,
+        );
+        expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
+        for (final entry in plants.entries) {
+          final target = '${tmp.path}/${entry.key}';
+          if (entry.value == 'planted-dir') {
+            expect(
+              File('$target/bin_dart${Platform.isWindows ? '.exe' : ''}')
+                  .readAsStringSync(),
+              'planted',
+            );
+          } else {
+            expect(File(target).readAsStringSync(), 'planted');
+          }
+        }
+        final leftovers = sharedCacheNames().difference(before);
+        // Only the plants this test wrote may have appeared.
+        leftovers.removeAll(plants.keys);
+        expect(leftovers, isEmpty, reason: '$leftovers');
+      } finally {
+        for (final key in plants.keys) {
+          final target = File('${tmp.path}/$key');
+          if (target.existsSync()) target.deleteSync();
+          final dir = Directory('${tmp.path}/$key');
+          if (dir.existsSync()) dir.deleteSync(recursive: true);
+        }
+      }
+    });
+
+    test('leaves scratch TMPDIR empty', () async {
+      if (_toolSnapshotPath.isEmpty) return;
+      final scratch = Directory('${_root.path}/scratch-tmp')..createSync();
+      final home = Directory('${_root.path}/scratch-home')..createSync();
+      final env = Map<String, String>.from(Platform.environment)
+        ..['TMPDIR'] = scratch.path
+        ..['TMP'] = scratch.path
+        ..['TEMP'] = scratch.path
+        ..['HOME'] = home.path;
+      final res = await runOneShot(
+        kernelWorker: await patchedSnapshot(_sdkDartPaths.first),
+        patchedMarker: true,
+        environment: env,
+      );
+      expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
+      expect(scratch.listSync(recursive: true).toList(), isEmpty);
+    });
   });
 
   test('whole-program and modular kernel compiles are byte-identical across clean builds and checkout paths', () async {
@@ -4457,6 +4680,23 @@ void main(List<String> args) {
           '${sdkDir.path}/lib/_internal/vm_platform_strong.dill';
       final librariesJson = '${sdkDir.path}/lib/libraries.json';
 
+      // Comma defines only survive the front end with the patched snapshot:
+      // mirror the toolchain's declared patch action into this test's tmp.
+      final patchedWorker =
+          '${_root.path}/patched-outline-$sdkVersion/kernel_worker.snapshot';
+      File(patchedWorker).parent.createSync(recursive: true);
+      final outlinePatchError = patchSnapshotFile(
+        inputPath: kernelWorker,
+        outputPath: patchedWorker,
+        sdkVersion: sdkVersion,
+        snapshotKind: 'kernel_worker',
+      );
+      expect(
+        outlinePatchError,
+        isNull,
+        reason: '$sdkVersion: $outlinePatchError',
+      );
+
       _write(
         'multi_sdk_packages.json',
         jsonEncode({
@@ -4570,7 +4810,7 @@ void main(List<String> args) {
             '}\n',
       );
 
-      final realCompiler = _RealOneShotCompiler(dartaotruntime, kernelWorker);
+      final realCompiler = _RealOneShotCompiler(dartaotruntime, patchedWorker);
 
       Future<(Uint8List, Uint8List)> compilePkgModule(String tag) async {
         final kmod = '${_root.path}/out/${sdkVersion}_$tag.kmod';
@@ -6445,10 +6685,7 @@ class _RealOneShotCompiler implements ModuleCompiler {
 
   @override
   Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
-    final res = await Process.run(_dartaotruntime, [
-      patchSnapshotSplitCommas(_kernelWorker),
-      ...args,
-    ]);
+    final res = await Process.run(_dartaotruntime, [_kernelWorker, ...args]);
     return ModuleOutcome(res.exitCode, '${res.stdout}${res.stderr}');
   }
 
@@ -6466,7 +6703,7 @@ class _CwdOneShotCompiler implements ModuleCompiler {
   @override
   Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
     final res = await Process.run(_dartaotruntime, [
-      patchSnapshotSplitCommas(_kernelWorker),
+      _kernelWorker,
       ...args,
     ], workingDirectory: _cwd);
     return ModuleOutcome(res.exitCode, '${res.stdout}${res.stderr}');

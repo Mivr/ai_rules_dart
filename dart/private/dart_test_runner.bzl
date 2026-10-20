@@ -205,7 +205,6 @@ def _dart_test_runner_snapshot_impl(ctx):
     args.add(exec_sdk.dart, format = "--dart=%s")
     if dartvm != None:
         args.add(dartvm, format = "--dartvm=%s")
-    args.add("--sdk-version=" + exec_sdk.version)
     args.add(snapshot, format = "--snapshot=%s")
     args.add("--enable-asserts")
     args.add("--env=DART_TEST_CONFIG=none/DartTest.yaml")
@@ -222,7 +221,7 @@ def _dart_test_runner_snapshot_impl(ctx):
         executable = exec_sdk.dart,
         arguments = [args],
         inputs = depset(
-            direct = [ctx.file._tool, pkg_cfg, exec_sdk.dart, runner, training.dill, training.source] + ([dartvm] if dartvm != None else []),
+            direct = [ctx.file._tool, ctx.file._comma_patch, pkg_cfg, exec_sdk.dart, runner, training.dill, training.source] + ([dartvm] if dartvm != None else []),
             transitive = [exec_sdk.compile_files, exec_sdk.runtime_files, runner_runfiles],
         ),
         outputs = [snapshot],
@@ -249,6 +248,10 @@ dart_test_runner_snapshot = rule(
         ),
         "_tool": attr.label(
             default = "//dart/private/tools:app_jit_snapshot.dart",
+            allow_single_file = True,
+        ),
+        "_comma_patch": attr.label(
+            default = "//dart/private/tools:comma_patch.dart",
             allow_single_file = True,
         ),
         "_enabled": attr.label(

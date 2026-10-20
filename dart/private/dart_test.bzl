@@ -232,6 +232,7 @@ def _compile_test_kernel(ctx, own, bootstrap, use_base_dill = False):
         main_path = main_arg,
         defines = defines,
         jit_tool = ctx.file._jit_tool,
+        comma_patch = ctx.file._comma_patch,
         native_assets_yaml = native_assets_yaml,
     )
     return struct(dill = dill, base_dill = None, runtime_libs = runtime_libs)
@@ -485,6 +486,10 @@ custom executor) without loading their native libraries at runtime.""",
     ),
     "_jit_tool": attr.label(
         default = "//dart/private/tools:app_jit_snapshot.dart",
+        allow_single_file = True,
+    ),
+    "_comma_patch": attr.label(
+        default = "//dart/private/tools:comma_patch.dart",
         allow_single_file = True,
     ),
     "_allowlist_function_transition": attr.label(

@@ -23,6 +23,14 @@ exports_files(
     visibility = ["//dart:__subpackages__"],
 )
 
+# The single comma-splitting patch implementation (see `comma_patch.dart`):
+# run from source by the toolchain's declared patch actions, compiled into
+# `kernel_module` and `app_jit_snapshot` through `srcs`.
+exports_files(
+    ["comma_patch.dart"],
+    visibility = ["//dart:__subpackages__"],
+)
+
 dart_binary(
     name = "analyze_runner",
     code_assets_from_deps = False,
@@ -208,6 +216,7 @@ dart_binary(
 dart_binary(
     name = "kernel_module",
     srcs = [
+        "comma_patch.dart",
         "dill_outline.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
@@ -223,16 +232,19 @@ dart_test(
     name = "kernel_module_test",
     size = "small",
     srcs = [
+        "comma_patch.dart",
         "dill_outline.dart",
         "kernel_link.dart",
         "kernel_module.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
     args = [
+        "$(rlocationpath :kernel_module)",
         "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
         "$(rlocationpath @dart_toolchains//sdk/3.13.4:dart)",
     ],
     data = [
+        ":kernel_module",
         "//dart",
         "@dart_toolchains//sdk/3.13.4:compile_files",
         "@dart_toolchains//sdk/3.13.4:dart",
@@ -309,13 +321,46 @@ dart_test(
 dart_test(
     name = "app_jit_snapshot_test",
     size = "small",
-    srcs = ["app_jit_snapshot.dart"],
-    args = ["$(rlocationpath :app_jit_snapshot.dart)"],
+    srcs = [
+        "app_jit_snapshot.dart",
+        "comma_patch.dart",
+    ],
+    args = [
+        "$(rlocationpath :app_jit_snapshot.dart)",
+        "$(rlocationpath :comma_patch.dart)",
+    ],
     data = [
         ":app_jit_snapshot.dart",
+        ":comma_patch.dart",
         "//dart",
     ],
     main = "app_jit_snapshot_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# The comma-splitting patch's unit tests: byte patterns, the fail-closed
+# helpers, the file and CLI entry points against every listed SDK, and the
+# no-shared-state regression guard.
+dart_test(
+    name = "comma_patch_test",
+    size = "small",
+    srcs = ["comma_patch.dart"],
+    args = [
+        "$(rlocationpath :comma_patch.dart)",
+        "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
+        "$(rlocationpath @dart_toolchains//sdk/3.13.4:dart)",
+    ],
+    data = [
+        ":comma_patch.dart",
+        "@dart_toolchains//sdk/3.13.4:compile_files",
+        "@dart_toolchains//sdk/3.13.4:dart",
+        "@dart_toolchains//sdk/3.13.5:compile_files",
+        "@dart_toolchains//sdk/3.13.5:dart",
+    ],
+    main = "comma_patch_test.dart",
     deps = [
         "//dart/runfiles",
         "@ext_pub_deps//:test",

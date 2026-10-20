@@ -49,6 +49,7 @@ load(
     "STABLE_SCHEME",
     "collect_transitive_srcs",
     "generate_stable_package_config",
+    "has_comma_define",
     "kernel_sdk_mismatch_error",
     "own_package_record",
     "owned_package_records",
@@ -587,8 +588,10 @@ def find_kernel_module_tools(dart_sdk_info):
 
     Returns:
       `struct(dartaotruntime, kernel_worker, platform_dill, libraries_json,
-      version)`, or None
-      when the SDK lacks the worker snapshot.
+      version, patched_kernel_worker)`, or None
+      when the SDK lacks the worker snapshot. `patched_kernel_worker` is the
+      toolchain's comma-splitting-disabled copy of the worker snapshot, or
+      None when the toolchain declares none.
     """
     sdk_root = sdk_path_from_dart(dart_sdk_info.dart)
     dartvm_paths = [
@@ -623,6 +626,7 @@ def find_kernel_module_tools(dart_sdk_info):
         platform_dill = found["platform_dill"],
         libraries_json = found["libraries_json"],
         version = dart_sdk_info.version,
+        patched_kernel_worker = getattr(dart_sdk_info, "patched_kernel_worker", None),
     )
 
 def kernel_tools_for(ctx):
@@ -718,7 +722,9 @@ def kernel_module_action(
       output: The module's directory File to produce. It holds one kernel per
         component of the module's sources, and an `index.json` that lists them.
       defines: The `-D` declarations every compile of this module takes. The
-        `//dart:extra_dart_defines` flag, the same for the whole build.
+        `//dart:extra_dart_defines` flag, the same for the whole build. When
+        one contains a comma, the compile runs the toolchain's patched worker
+        snapshot (see below); otherwise the pristine snapshot runs.
       exclude_non_sources: Whether to emit only the listed sources, and not the
         libraries reached through them. Both kinds pass True, so a module holds its
         own libraries and an entry holds its own sources, and neither embeds the SDK
@@ -800,6 +806,27 @@ def kernel_module_action(
     args.add_all(defines, format_each = "-D%s")
     args.add_all(extra_frontend_flags)
 
+    # A comma-containing value only survives the frontend when the compile runs
+    # the toolchain's patched worker snapshot: `kernel_worker` splits `-D`
+    # values on commas. The patched snapshot is a distinct `--kernel-worker`
+    # startup argument, so comma compiles get their own worker process and never
+    # share one running the pristine snapshot. The marker is a startup argument
+    # too (never params-file content): the worker parses it once, and it never
+    # reaches a request's arguments, so `kernel_worker` never sees it. Without
+    # comma defines the pristine snapshot runs, exactly as before.
+    worker_snapshot = tools.kernel_worker
+    patched_marker = []
+    if has_comma_define(defines):
+        worker_snapshot = getattr(tools, "patched_kernel_worker", None)
+        if worker_snapshot == None:
+            fail(("kernel_module_action: target %s passes comma-containing " +
+                  "`-D` defines %s, but the exec SDK (Dart %s) declares no " +
+                  "patched `kernel_worker` snapshot, so no compile of this " +
+                  "module can keep the commas. Use an SDK whose snapshot " +
+                  "`comma_patch.dart` knows how to patch.") %
+                 (ctx.label, defines, getattr(tools, "version", "")))
+        patched_marker = ["--comma-patched-snapshot"]
+
     # The VM target does not support `--summary-only`: it prints an error and
     # embeds the whole platform. Its absence keeps each kernel to its own libraries.
     args.add("--no-summary-only")
@@ -841,13 +868,13 @@ def kernel_module_action(
     direct_inputs = [
         package_config,
         tools.dartaotruntime,
-        tools.kernel_worker,
+        worker_snapshot,
         libraries,
         platform,
     ] + [s.file for s in sources]
     action_tools = [
         tools.dartaotruntime,
-        tools.kernel_worker,
+        worker_snapshot,
         platform,
         ctx.executable._kernel_module,
     ]
@@ -866,11 +893,11 @@ def kernel_module_action(
         arguments = [
             ctx.executable._kernel_module.path,
             "--kernel-worker",
-            tools.kernel_worker.path,
+            worker_snapshot.path,
             "--dartaotruntime",
             tools.dartaotruntime.path,
             args,
-        ]
+        ] + patched_marker
     elif dart_exe != None:
         mismatch = kernel_sdk_mismatch_error(
             ctx.label,
@@ -889,20 +916,20 @@ def kernel_module_action(
         arguments = [
             ctx.executable._kernel_module.path,
             "--kernel-worker",
-            tools.kernel_worker.path,
+            worker_snapshot.path,
             "--dartaotruntime",
             tools.dartaotruntime.path,
             args,
-        ]
+        ] + patched_marker
     else:
         executable = ctx.executable._kernel_module
         arguments = [
             "--kernel-worker",
-            tools.kernel_worker.path,
+            worker_snapshot.path,
             "--dartaotruntime",
             tools.dartaotruntime.path,
             args,
-        ]
+        ] + patched_marker
 
     ctx.actions.run(
         executable = executable,

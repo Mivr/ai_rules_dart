@@ -198,6 +198,7 @@ def _dart_binary_impl(ctx):
             defines = merge_dart_defines(ctx),
             recorded_uses = compile_recorded_uses,
             jit_tool = ctx.file._jit_tool,
+            comma_patch = ctx.file._comma_patch,
             native_assets_yaml = native_assets_yaml,
             embed_sources = DartTestRunnerMainInfo not in ctx.attr.main,
         )
@@ -365,6 +366,10 @@ Every other flag goes to `dart compile`. In the `kernel` mode, setting `dart_com
         ),
         "_jit_tool": attr.label(
             default = "//dart/private/tools:app_jit_snapshot.dart",
+            allow_single_file = True,
+        ),
+        "_comma_patch": attr.label(
+            default = "//dart/private/tools:comma_patch.dart",
             allow_single_file = True,
         ),
         "launcher": attr.bool(

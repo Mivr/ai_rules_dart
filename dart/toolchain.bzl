@@ -14,6 +14,8 @@ DartSdkInfo = provider(
         "target_arch": "str: Cross-compilation target architecture (`x64`, `arm64`, `riscv64`, `arm`), or empty for native.",
         "cross_gen_snapshot": "File or None: Pinned host-to-target `gen_snapshot` binary for cross-compilation (`target_os`/`target_arch`), or `None` for native.",
         "cross_dartaotruntime": "File or None: Pinned target `dartaotruntime` binary for cross-compilation (`target_os`/`target_arch`), or `None` for native.",
+        "patched_kernel_worker": "File or None: The `kernel_worker` AOT snapshot with comma-splitting disabled (see `comma_patch.dart`), or `None` when the SDK names no `kernel_worker` snapshot. Declared by one action per SDK; compiles that pass comma-containing `-D` values take it as a tool input.",
+        "patched_gen_kernel": "File or None: The `gen_kernel` AOT snapshot with comma-splitting disabled, or `None` when the SDK names no `gen_kernel` snapshot. One action per SDK, like `patched_kernel_worker`.",
     },
 )
 
@@ -23,6 +25,56 @@ _SUPPORTED_CROSS_TARGET_PAIRS = {
     ("linux", "riscv64"): True,
     ("linux", "arm"): True,
 }
+
+def _patched_snapshot(ctx, sdk_files, dart, snapshot_suffix, out_name, kind):
+    """Declares the comma-patch action for one SDK AOT snapshot, or None.
+
+    The patched snapshot is a declared action output (the SDK snapshot in,
+    the patched copy out), so every compile of this SDK that passes a
+    comma-containing `-D` value takes the same file as a tool input, and the
+    patch runs once per SDK instead of once per compile process. The action
+    executes only when a compile needs its output: builds without comma
+    defines never run it and never fail for it. When the snapshot matches no
+    known pattern, the action fails loudly, so a comma-containing compile of
+    this SDK fails with the patch tool's error instead of silently splitting
+    the value.
+
+    Args:
+      ctx: The `dart_toolchain` rule context.
+      sdk_files: Depset of the SDK files to search for the snapshot.
+      dart: The SDK's `dart` File, which runs the patch tool from source.
+      snapshot_suffix: The `bin/snapshots/...` suffix naming the snapshot.
+      out_name: The basename of the declared patched output.
+      kind: The snapshot kind for the patch tool's diagnostics.
+
+    Returns:
+      The declared patched File, or None when the SDK names no such snapshot
+      (an older SDK without a `kernel_worker` snapshot compiles no module).
+    """
+    snapshot = None
+    for f in sdk_files.to_list():
+        if f.path.endswith("/" + snapshot_suffix):
+            snapshot = f
+            break
+    if snapshot == None:
+        return None
+    patched = ctx.actions.declare_file(out_name)
+    patch_tool = ctx.file._comma_patch
+    args = ctx.actions.args()
+    args.add(patch_tool)
+    args.add(snapshot, format = "--input=%s")
+    args.add(patched, format = "--output=%s")
+    args.add("--sdk-version=" + ctx.attr.version)
+    args.add("--kind=" + kind)
+    ctx.actions.run(
+        executable = dart,
+        arguments = [args],
+        inputs = depset(direct = [patch_tool, snapshot, dart]),
+        outputs = [patched],
+        mnemonic = "DartPatchSnapshot",
+        progress_message = "Patching Dart SDK %s %s snapshot" % (ctx.attr.version, kind),
+    )
+    return patched
 
 def _dart_toolchain_impl(ctx):
     if bool(ctx.attr.target_os) != bool(ctx.attr.target_arch):
@@ -67,6 +119,22 @@ def _dart_toolchain_impl(ctx):
         target_arch = ctx.attr.target_arch,
         cross_gen_snapshot = ctx.file.cross_gen_snapshot,
         cross_dartaotruntime = ctx.file.cross_dartaotruntime,
+        patched_kernel_worker = _patched_snapshot(
+            ctx,
+            compile_files,
+            ctx.file.dart,
+            "bin/snapshots/kernel_worker_aot.dart.snapshot",
+            "kernel_worker_nocomma.snapshot",
+            "kernel_worker",
+        ),
+        patched_gen_kernel = _patched_snapshot(
+            ctx,
+            compile_files,
+            ctx.file.dart,
+            "bin/snapshots/gen_kernel_aot.dart.snapshot",
+            "gen_kernel_nocomma.snapshot",
+            "gen_kernel",
+        ),
     )
 
     template_variables = platform_common.TemplateVariableInfo({
@@ -125,6 +193,11 @@ dart_toolchain = rule(
         ),
         "cross_dartaotruntime": attr.label(
             doc = "Pinned target `dartaotruntime` binary for cross-compilation (`target_os`/`target_arch`).",
+            allow_single_file = True,
+        ),
+        "_comma_patch": attr.label(
+            doc = "The `comma_patch.dart` tool that disables comma-splitting in the SDK snapshots.",
+            default = Label("//dart/private/tools:comma_patch.dart"),
             allow_single_file = True,
         ),
     },
