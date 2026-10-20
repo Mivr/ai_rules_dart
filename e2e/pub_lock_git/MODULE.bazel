@@ -18,3 +18,6 @@ pub.from_lock(
     lock = "//:pubspec.lock",
 )
 use_repo(pub, "pub_deps")
+
+gitpkg = use_extension("//:git_host_config_ext.bzl", "gitpkg")
+use_repo(gitpkg, "fmtpkg")

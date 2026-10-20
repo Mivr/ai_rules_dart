@@ -1,7 +1,17 @@
-load("@rules_dart//dart:defs.bzl", "dart_binary")
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_test")
 
 dart_binary(
     name = "app",
     main = "main.dart",
     deps = ["@pub_deps//:characters"],
+)
+
+# A git package materialized from a bundle in this workspace (see
+# git_host_config_ext.bzl): its bytes must not depend on host git
+# configuration (core.autocrlf, core.eol, core.attributesFile), on any OS.
+dart_test(
+    name = "host_config_test",
+    size = "small",
+    main = "host_config_test.dart",
+    deps = ["@fmtpkg"],
 )

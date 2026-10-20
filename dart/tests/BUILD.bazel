@@ -12,6 +12,7 @@ load(":library_test.bzl", "library_test_suite")
 load(":link_hook_test.bzl", "link_hook_test_suite")
 load(":native_assets_test.bzl", "native_assets_test_suite")
 load(":pinned_sources_test.bzl", "pinned_sources_test_suite")
+load(":git_host_config_test.bzl", "git_host_config_test_suite")
 load(":project_staging_test.bzl", "project_staging_test_suite")
 load(":propagation_test.bzl", "propagation_test_suite")
 load(":provider_shape_test.bzl", "provider_shape_probe")
@@ -43,6 +44,8 @@ compile_flags_test_suite(name = "compile_flags_test")
 native_assets_test_suite(name = "native_assets_test")
 
 pinned_sources_test_suite(name = "pinned_sources_test")
+
+git_host_config_test_suite(name = "git_host_config_test")
 
 code_asset_test_suite(name = "code_asset_test")
 

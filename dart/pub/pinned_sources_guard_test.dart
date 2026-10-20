@@ -4,7 +4,7 @@ import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
 
 /// Enumeration of every fetch call site in `//dart/pub` through the shared
-/// pinned-source validation.
+/// pinned-source validation and the shared host-git helper.
 ///
 /// A package source that stops going through `pinned_source_error` before it
 /// fetches — or a git checkout that stops being verified with
@@ -16,11 +16,13 @@ import 'package:test/test.dart';
 /// `yaml_parser.bzl`, the `private` helpers other than `pub_repository.bzl`)
 /// are deliberately absent from the markers: they download nothing.
 ///
-/// `pinned_sources.bzl` is the single validation entry point. It runs no
-/// fetch itself — only a read-only `rev-parse` that verifies a checkout —
-/// so the test additionally pins that no fetch-capable call (`ctx.download`,
-/// `ctx.download_and_extract`, or a `git` invocation other than `rev-parse`)
-/// ever appears there.
+/// `pinned_sources.bzl` is the single validation entry point and the single
+/// place that runs host `git` (`git_fetch`, `git_checkout`, `git_archive`).
+/// It performs no fetch itself besides the read-only `rev-parse` checkout
+/// verification and the host-independent `git archive` materialization, so a
+/// new `git` invocation that bypasses the helper — spelling the `git` binary
+/// in any other file — fails the `only the shared helper spells the git
+/// binary` test below.
 
 /// The test's Starlark sources by file name, from the `rlocationpath`
 /// arguments under Bazel or from the source tree for a direct `dart test`
@@ -74,13 +76,21 @@ const _topLevel = {
 /// through the shared validation entry point. A file without its marker
 /// fails.
 const _downloadMarkers = ['ctx.download(', 'ctx.download_and_extract('];
-const _gitMarker = '["git",';
+
+/// The `git` binary spelled as a `ctx.execute` argument list. Only the shared
+/// helper in `pinned_sources.bzl` may contain it: every other file runs git
+/// through `git_fetch(`, `git_checkout(` or `git_archive(`.
+const _gitMarker = '["git"';
+const _gitHelpers = ['git_fetch(', 'git_checkout(', 'git_archive('];
 const _validatorMarker = 'pinned_source_error(';
 const _verifyMarker = 'verify_git_checkout(';
 
 bool _fetchesDownload(String text) => _downloadMarkers.any(text.contains);
 
-bool _runsGit(String text) => text.contains(_gitMarker);
+/// Whether the file runs host `git`: either by spelling the binary (only the
+/// helper may) or by calling one of the shared helpers.
+bool _runsGit(String text) =>
+    text.contains(_gitMarker) || _gitHelpers.any(text.contains);
 
 void main(List<String> args) {
   group('every fetch goes through the shared validation', () {
@@ -99,6 +109,13 @@ void main(List<String> args) {
             isTrue,
             reason: 'pinned_sources.bzl must define $_validatorMarker',
           );
+          for (final helper in _gitHelpers) {
+            expect(
+              text.contains('def $helper'),
+              isTrue,
+              reason: 'pinned_sources.bzl must define $helper',
+            );
+          }
         } else {
           expect(
             text.contains('def pinned_source_error('),
@@ -107,6 +124,15 @@ void main(List<String> args) {
                 '${entry.key} must not redefine $_validatorMarker; '
                 'call the single entry point instead',
           );
+          for (final helper in _gitHelpers) {
+            expect(
+              text.contains('def $helper'),
+              isFalse,
+              reason:
+                  '${entry.key} must not redefine $helper; '
+                  'call the shared helper instead',
+            );
+          }
         }
       }
     });
@@ -159,34 +185,77 @@ void main(List<String> args) {
       );
     });
 
-    test('the entry point itself fetches nothing', () {
+    test('only the shared helper spells the git binary', () {
+      final sources = _bzlSources(args);
+      final spelling = [
+        for (final entry in sources.entries)
+          if (File(entry.value).readAsStringSync().contains(_gitMarker))
+            entry.key,
+      ];
+      expect(
+        spelling,
+        equals(['pinned_sources.bzl']),
+        reason:
+            'only pinned_sources.bzl may spell $_gitMarker; '
+            'run git through git_fetch(, git_checkout( or git_archive( '
+            'instead (offenders: $spelling)',
+      );
+    });
+
+    test('every git call site uses the shared helper', () {
+      final sources = _bzlSources(args);
+      var gated = 0;
+      for (final entry in sources.entries) {
+        if (entry.key == 'pinned_sources.bzl') continue;
+        final text = File(entry.value).readAsStringSync();
+        if (!_gitHelpers.any(text.contains)) continue;
+        gated++;
+        expect(
+          text.contains('pinned_sources.bzl'),
+          isTrue,
+          reason:
+              '${entry.key} calls the shared git helper but never loads '
+              'pinned_sources.bzl',
+        );
+      }
+      expect(
+        gated,
+        greaterThan(0),
+        reason: 'no git helper call site found; the test would pass vacuously',
+      );
+    });
+
+    test('the materialization helper neutralizes host git configuration', () {
       final sources = _bzlSources(args);
       final text = File(sources['pinned_sources.bzl']!).readAsStringSync();
-      for (final marker in _downloadMarkers) {
-        expect(
-          text.contains(marker),
-          isFalse,
-          reason: 'pinned_sources.bzl must not fetch via $marker',
-        );
-      }
-      // The only git invocation the entry point runs is the read-only
-      // post-checkout verification.
-      expect(_runsGit(text), isTrue);
-      for (final subcommand in [
-        '"clone"',
-        '"checkout"',
-        '"fetch"',
-        '"archive"',
+      // The conversion knobs pinned on the `git archive` command line: `-c`
+      // beats both config files and environment on every git version.
+      for (final pin in [
+        'core.autocrlf=false',
+        'core.eol=lf',
+        'core.attributesfile=',
+        'tar.umask=',
       ]) {
         expect(
-          text.contains(subcommand),
-          isFalse,
-          reason:
-              'pinned_sources.bzl must not run git $subcommand; '
-              'only rev-parse verification belongs here',
+          text.contains(pin),
+          isTrue,
+          reason: 'pinned_sources.bzl must pin $pin for git archive',
         );
       }
-      expect(text.contains('"rev-parse"'), isTrue);
+      // The host configuration selectors scrubbed from the archive's
+      // environment, pointed at the helper's empty file where they name one.
+      for (final name in [
+        'GIT_CONFIG_COUNT',
+        'GIT_CONFIG_PARAMETERS',
+        'GIT_CONFIG_GLOBAL',
+        'GIT_CONFIG_SYSTEM',
+      ]) {
+        expect(
+          text.contains(name),
+          isTrue,
+          reason: 'pinned_sources.bzl must scrub $name for git archive',
+        );
+      }
     });
   });
 }
