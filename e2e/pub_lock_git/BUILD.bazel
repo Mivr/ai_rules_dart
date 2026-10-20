@@ -1,4 +1,5 @@
 load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_test")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 dart_binary(
     name = "app",
@@ -24,4 +25,27 @@ dart_test(
     size = "small",
     main = "probe_test.dart",
     deps = ["@probe//:fmtpkg"],
+)
+
+# The hostile-host fetch probes (see hostile_probe_ext.bzl): each marker
+# re-verifies that fetching under a hostile `GIT_*` environment (set and
+# empty quarantine/work-tree variables, unknown names, all-refs fallback,
+# inline-config `insteadOf`) yields the clean control's bytes on the
+# expected fetch path.
+_HOSTILE_MARKERS = [
+    "@hostile_quarantine_set//:marker.txt",
+    "@hostile_quarantine_empty//:marker.txt",
+    "@hostile_worktree_set//:marker.txt",
+    "@hostile_worktree_empty//:marker.txt",
+    "@hostile_unknown_vars//:marker.txt",
+    "@hostile_fallback_quarantine//:marker.txt",
+    "@hostile_insteadof//:marker.txt",
+]
+
+sh_test(
+    name = "hostile_env_test",
+    size = "small",
+    srcs = ["check_hostile_markers.sh"],
+    args = ["$(rootpath %s)" % marker for marker in _HOSTILE_MARKERS],
+    data = _HOSTILE_MARKERS,
 )

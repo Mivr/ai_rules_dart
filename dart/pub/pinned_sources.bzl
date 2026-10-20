@@ -186,12 +186,14 @@ _GIT_ALLOW_PROTOCOL = "https:http:git:ssh:file"
 
 # Transport variables inherited from the host environment, copied verbatim
 # only when the host sets them. The list is an allowlist: transport needs
-# are met by copying these and nothing else, while every documented
-# non-transport `GIT_*` variable is scrubbed or pinned in
-# `_transport_env`. Each entry is transport only — SSH and TLS settings,
-# proxy commands and credential helpers — which private repositories
-# need; nothing here can redirect repository resolution or execute code
-# during a bare fetch.
+# are met by copying these and nothing else, while every other `GIT_*`
+# variable the host sets is unset in `_transport_env`. Each entry is
+# transport only — SSH and TLS settings, HTTP knobs, proxy commands,
+# credential helpers, and the inline-config channel carrying `url.<base>`
+# `insteadOf` rewrites — which private repositories need; nothing here can
+# redirect repository resolution or execute code during a bare fetch beyond
+# what the inherited config files already allow, and the `-c` pins on every
+# transport command line override any smuggled configuration.
 _TRANSPORT_PASSTHROUGH = [
     "GIT_SSH",
     "GIT_SSH_COMMAND",
@@ -202,156 +204,213 @@ _TRANSPORT_PASSTHROUGH = [
     "GIT_SSL_KEY",
     "GIT_SSL_CIPHER_LIST",
     "GIT_SSL_VERSION",
+    "GIT_SSL_NO_VERIFY",
     "GIT_PROXY_COMMAND",
     "GIT_ASKPASS",
     "GIT_TERMINAL_PROMPT",
+    "GIT_CONFIG_COUNT",
+    "GIT_CONFIG_PARAMETERS",
 ]
+
+# Prefix families copied verbatim like the entries above: every `http.*`
+# knob, and the numbered inline-config slots (`GIT_CONFIG_KEY_<n>` /
+# `GIT_CONFIG_VALUE_<n>`), which are meaningless without the count above.
+_TRANSPORT_PASSTHROUGH_PREFIXES = [
+    "GIT_HTTP_",
+    "GIT_CONFIG_KEY_",
+    "GIT_CONFIG_VALUE_",
+]
+
+# Config-file selectors inherited verbatim by staying out of the environment
+# dict: transport file configuration (which may carry `insteadOf` rewrites,
+# credentials and proxies) needs the host's global and system files
+# readable. They are exempt from the `_transport_env` sweep below.
+_TRANSPORT_INHERITED = [
+    "GIT_CONFIG_GLOBAL",
+    "GIT_CONFIG_SYSTEM",
+    "GIT_CONFIG_NOSYSTEM",
+]
+
+def _is_transport_variable(var):
+    """Whether a host `GIT_*` variable belongs to the transport allowlist.
+
+    Args:
+        var: The variable name.
+
+    Returns:
+        True for the verbatim-copied entries and prefix families
+        (`_TRANSPORT_PASSTHROUGH`, `_TRANSPORT_PASSTHROUGH_PREFIXES`) and
+        the inherited selectors (`_TRANSPORT_INHERITED`).
+    """
+    if var in _TRANSPORT_PASSTHROUGH or var in _TRANSPORT_INHERITED:
+        return True
+    for prefix in _TRANSPORT_PASSTHROUGH_PREFIXES:
+        if var.startswith(prefix):
+            return True
+    return False
 
 def _transport_env(ctx, bare_abs):
     """Environment for one transport command: host transport, pinned resolution.
 
     The host's transport configuration is deliberately inherited — config
     files (which may carry `url.<base>.insteadOf` rewrites) and the
-    allowlisted SSH, TLS, proxy and credential-helper variables keep
-    working, which private repositories need. Everything else the host
-    could steer resolution or bytes with is neutralized: the object and
-    common directories are pinned at the new bare repository (whose
-    directories are pre-created so the pins always name existing paths —
-    git refuses empty values there), the protocol allowlist is pinned,
-    replacements are disabled twice (flag and variable), and every
-    remaining documented non-transport `GIT_*` selector is scrubbed to an
-    empty value (which git reads as unset), including the inline-config
-    channel (`GIT_CONFIG_COUNT` / `GIT_CONFIG_PARAMETERS`, whose absence
-    makes git ignore any `GIT_CONFIG_KEY_*` entries) and `GIT_DIR`
-    (the `--git-dir` flag beats it, and an empty value is accepted
-    alongside the flag). Two documented selectors cannot be scrubbed to
-    empty and stay inherited instead. `GIT_WORK_TREE` is ignored by every
-    transport command — any non-empty value is inert on a bare repository
-    with an explicit `--git-dir` and no worktree operation, and no
-    transport command consults it now that `init` no longer runs — while
-    an empty value is fatal to `fetch`, so a host exporting it fails
-    loudly, never wrongly. `GIT_INTERNAL_SUPER_PREFIX` is set only by git
-    itself for submodule processes, and `fetch` rejects it when empty. A
-    host exporting either as empty fails loudly; neither is set during
-    builds. `ctx.execute` merges this dict
-    over the host environment, so anything not named here and not on the
-    passthrough allowlist (notably the global/system config file
-    selectors, which transport file configuration needs) is inherited
-    deliberately.
+    allowlisted SSH, TLS, HTTP, proxy, credential-helper and inline-config
+    variables keep working, which private repositories need. Everything else
+    the host could steer resolution or bytes with is unset: every documented
+    non-transport `GIT_*` variable maps to `None` (which `ctx.execute`
+    removes from the child process on Bazel 9.3 — an empty string would
+    stay set, and git treats a set-but-empty `GIT_QUARANTINE_PATH`,
+    `GIT_WORK_TREE` or `GIT_INTERNAL_SUPER_PREFIX` as fatal), and so does
+    every other key in `ctx.os.environ` starting with `GIT_` that is not on
+    the transport allowlist, closing undocumented and future variables. The
+    object and common directories are pinned at the new bare repository
+    (whose directories are pre-created so the pins always name existing
+    paths), the protocol allowlist is pinned, and replacements are disabled
+    twice (flag and variable). The inline-config channel passes through
+    verbatim on purpose — a host-provided `insteadOf` rewrite keeps working
+    — while the `-c` pins on every transport command line override it, so it
+    cannot redirect repository resolution or re-enable hooks, fsmonitor,
+    templates or replacements.
 
     Args:
         ctx: A repository or module-extension context (for `os.environ`).
         bare_abs: The bare repository's absolute path string.
 
     Returns:
-        The `environment` dict for one transport `ctx.execute` call.
+        The `environment` dict for one transport `ctx.execute` call. It
+        carries no empty-string value: unsets are `None`, pins are paths.
     """
     env = {
-        "GIT_DIR": "",
+        "GIT_DIR": None,
+        "GIT_WORK_TREE": None,
+        "GIT_INTERNAL_SUPER_PREFIX": None,
+        "GIT_EXEC_PATH": None,
         "GIT_OBJECT_DIRECTORY": bare_abs + "/objects",
         "GIT_COMMON_DIR": bare_abs,
-        "GIT_INDEX_FILE": "",
-        "GIT_INDEX_VERSION": "",
-        "GIT_NAMESPACE": "",
-        "GIT_ALTERNATE_OBJECT_DIRECTORIES": "",
-        "GIT_QUARANTINE_PATH": "",
-        "GIT_REPLACE_REF_BASE": "",
+        "GIT_INDEX_FILE": None,
+        "GIT_INDEX_VERSION": None,
+        "GIT_NAMESPACE": None,
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES": None,
+        "GIT_QUARANTINE_PATH": None,
+        "GIT_REPLACE_REF_BASE": None,
         "GIT_NO_REPLACE_OBJECTS": "1",
-        "GIT_CEILING_DIRECTORIES": "",
-        "GIT_DISCOVERY_ACROSS_FILESYSTEM": "",
-        "GIT_PREFIX": "",
-        "GIT_SUPER_PREFIX": "",
-        "GIT_TEMPLATE_DIR": "",
+        "GIT_CEILING_DIRECTORIES": None,
+        "GIT_DISCOVERY_ACROSS_FILESYSTEM": None,
+        "GIT_PREFIX": None,
+        "GIT_SUPER_PREFIX": None,
+        "GIT_TEMPLATE_DIR": None,
         "GIT_ALLOW_PROTOCOL": _GIT_ALLOW_PROTOCOL,
-        "GIT_CONFIG_COUNT": "",
-        "GIT_CONFIG_PARAMETERS": "",
-        "GIT_GRAFT_FILE": "",
-        "GIT_AUTHOR_NAME": "",
-        "GIT_AUTHOR_EMAIL": "",
-        "GIT_AUTHOR_DATE": "",
-        "GIT_COMMITTER_NAME": "",
-        "GIT_COMMITTER_EMAIL": "",
-        "GIT_COMMITTER_DATE": "",
-        "GIT_REFLOG_ACTION": "",
-        "GIT_FLUSH": "",
-        "GIT_EDITOR": "",
-        "GIT_PAGER": "",
-        "GIT_EXTERNAL_DIFF": "",
-        "GIT_DIFF_OPTS": "",
-        "GIT_LITERAL_PATHSPECS": "",
-        "GIT_TRACE": "",
-        "GIT_TRACE_PACK_ACCESS": "",
-        "GIT_TRACE_PACKET": "",
-        "GIT_TRACE_PERFORMANCE": "",
-        "GIT_TRACE_SETUP": "",
-        "GIT_CURL_VERBOSE": "",
+        "GIT_GRAFT_FILE": None,
+        "GIT_AUTHOR_NAME": None,
+        "GIT_AUTHOR_EMAIL": None,
+        "GIT_AUTHOR_DATE": None,
+        "GIT_COMMITTER_NAME": None,
+        "GIT_COMMITTER_EMAIL": None,
+        "GIT_COMMITTER_DATE": None,
+        "GIT_REFLOG_ACTION": None,
+        "GIT_FLUSH": None,
+        "GIT_EDITOR": None,
+        "GIT_PAGER": None,
+        "GIT_EXTERNAL_DIFF": None,
+        "GIT_DIFF_OPTS": None,
+        "GIT_LITERAL_PATHSPECS": None,
+        "GIT_TRACE": None,
+        "GIT_TRACE_PACK_ACCESS": None,
+        "GIT_TRACE_PACKET": None,
+        "GIT_TRACE_PERFORMANCE": None,
+        "GIT_TRACE_SETUP": None,
+        "GIT_CURL_VERBOSE": None,
     }
     host = ctx.os.environ
+    for var in host:
+        if var in _TRANSPORT_INHERITED:
+            # Inherited verbatim: left out of the dict, which `ctx.execute`
+            # merges over the host environment.
+            continue
+        if var in env:
+            # Scrubbed (`None`), pinned, or already passed through below.
+            continue
+        if _is_transport_variable(var):
+            env[var] = host[var]
+        elif var.startswith("GIT_"):
+            env[var] = None
     for var in _TRANSPORT_PASSTHROUGH:
         if var in host:
             env[var] = host[var]
     return env
 
-def _materialize_env(empty, empty_dir, bare_abs):
+def _materialize_env(ctx, empty, empty_dir, bare_abs):
     """Environment for one materialization command: nothing but PATH and a scratch HOME.
 
     `ctx.execute` inherits the host environment, so every selector is
     overridden explicitly: `HOME` and `XDG_CONFIG_HOME` point at the shared
     empty directory (neither `<dir>/.gitconfig` nor `<dir>/git/config`
     exists), system config is disabled, the global and system file selectors
-    point at the shared empty file, the inline-config selectors are emptied,
-    replacements are disabled, the object and common directories are pinned
-    at the bare repository, and every transport-executing variable (SSH,
-    askpass, proxies) is emptied — materialization never touches the
-    network. `GIT_DIR` is left to the argv flag: `--git-dir` beats it on
-    every git version, and an empty value is fatal. `GIT_WORK_TREE` is
-    likewise inherited but inert: every materialization command runs against
-    a bare repository with no worktree operation. What `ctx.execute` merges
-    in untouched is only `PATH` (which locates the `git` binary) and
-    transport-adjacent variables nothing here consults.
+    point at the shared empty file, replacements are disabled, the object
+    and common directories are pinned at the bare repository, and every
+    transport-executing variable (SSH, askpass, proxies) is unset —
+    materialization never touches the network. `GIT_DIR` is unset and left
+    to the argv flag: `--git-dir` beats it on every git version. So is
+    `GIT_WORK_TREE`: every materialization command runs against a bare
+    repository with no worktree operation, but git still validates the path
+    when set — a nonexistent host work tree is fatal — so it is unset
+    rather than inherited. Every other host `GIT_*` variable is unset too,
+    closing undocumented and future variables. Unsets are `None` (which
+    `ctx.execute` removes from the child process), never the empty string.
+    What `ctx.execute` merges in untouched is only `PATH` (which locates
+    the `git` binary) and non-`GIT_*` variables nothing here consults.
 
     Args:
+        ctx: A repository or module-extension context (for `os.environ`).
         empty: The shared empty file's path string.
         empty_dir: The shared empty directory's path string.
         bare_abs: The bare repository's absolute path string.
 
     Returns:
         The `environment` dict for one materialization `ctx.execute` call.
+        It carries no empty-string value: unsets are `None`, pins are
+        paths.
     """
-    return {
+    env = {
         "HOME": empty_dir,
         "XDG_CONFIG_HOME": empty_dir,
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_CONFIG_GLOBAL": empty,
         "GIT_CONFIG_SYSTEM": empty,
-        "GIT_CONFIG_COUNT": "",
-        "GIT_CONFIG_PARAMETERS": "",
+        "GIT_CONFIG_COUNT": None,
+        "GIT_CONFIG_PARAMETERS": None,
         "GIT_NO_REPLACE_OBJECTS": "1",
         "GIT_TEMPLATE_DIR": empty_dir,
         "GIT_OBJECT_DIRECTORY": bare_abs + "/objects",
         "GIT_COMMON_DIR": bare_abs,
-        "GIT_ALTERNATE_OBJECT_DIRECTORIES": "",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES": None,
         "GIT_ALLOW_PROTOCOL": _GIT_ALLOW_PROTOCOL,
-        "GIT_INDEX_FILE": "",
-        "GIT_NAMESPACE": "",
-        "GIT_REPLACE_REF_BASE": "",
-        "GIT_CEILING_DIRECTORIES": "",
-        "GIT_PREFIX": "",
-        "GIT_DISCOVERY_ACROSS_FILESYSTEM": "",
-        "GIT_SSH": "",
-        "GIT_SSH_COMMAND": "",
-        "GIT_ASKPASS": "",
-        "GIT_PROXY_COMMAND": "",
-        "GIT_EDITOR": "",
-        "GIT_PAGER": "",
-        "GIT_FLUSH": "",
-        "GIT_TRACE": "",
-        "GIT_TRACE_PACK_ACCESS": "",
-        "GIT_TRACE_PACKET": "",
-        "GIT_TRACE_PERFORMANCE": "",
-        "GIT_TRACE_SETUP": "",
-        "GIT_CURL_VERBOSE": "",
+        "GIT_DIR": None,
+        "GIT_WORK_TREE": None,
+        "GIT_INDEX_FILE": None,
+        "GIT_NAMESPACE": None,
+        "GIT_REPLACE_REF_BASE": None,
+        "GIT_CEILING_DIRECTORIES": None,
+        "GIT_PREFIX": None,
+        "GIT_DISCOVERY_ACROSS_FILESYSTEM": None,
+        "GIT_SSH": None,
+        "GIT_SSH_COMMAND": None,
+        "GIT_ASKPASS": None,
+        "GIT_PROXY_COMMAND": None,
+        "GIT_EDITOR": None,
+        "GIT_PAGER": None,
+        "GIT_FLUSH": None,
+        "GIT_TRACE": None,
+        "GIT_TRACE_PACK_ACCESS": None,
+        "GIT_TRACE_PACKET": None,
+        "GIT_TRACE_PERFORMANCE": None,
+        "GIT_TRACE_SETUP": None,
+        "GIT_CURL_VERBOSE": None,
     }
+    for var in ctx.os.environ:
+        if var not in env and var.startswith("GIT_"):
+            env[var] = None
+    return env
 
 def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
     """Fetches the pinned commit into a fresh bare repository (phase 1: transport).
@@ -362,11 +421,11 @@ def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
     fetching all refs on servers that reject a bare SHA, such as some
     corporate mirrors). Skipping `init` removes the host template surface
     by construction — no template is ever copied, so no template
-    `info/attributes` or `hooks/` can reach the clone — and it removes the
-    one command a stray `GIT_WORK_TREE` breaks (git refuses `init` while
-    that variable is set, even empty; every other command ignores it on a
-    bare repository with no worktree operation). Nothing is ever checked
-    out: with no working tree, host hooks, `core.fsmonitor` and
+    `info/attributes` or `hooks/` can reach the clone — and every
+    non-transport host `GIT_*` variable (including `GIT_WORK_TREE`,
+    `GIT_QUARANTINE_PATH` and any undocumented or future `GIT_*` entry) is
+    unset in the fetch environment rather than inherited. Nothing is ever
+    checked out: with no working tree, host hooks, `core.fsmonitor` and
     working-tree attributes have nothing to act on, and the command-line
     pins (`core.hooksPath`, `core.fsmonitor=false`,
     `core.untrackedCache=false`, `--no-replace-objects`) keep them off
@@ -500,7 +559,7 @@ def git_materialize(ctx, bare_rel, resolved_ref, output, spec, what):
             "count-objects",
             "-v",
         ],
-        environment = _materialize_env(empty, empty_dir, bare_abs),
+        environment = _materialize_env(ctx, empty, empty_dir, bare_abs),
     )
     if res.return_code != 0:
         fail("%s: git count-objects failed at %s: %s" % (what, resolved_ref, res.stderr))
@@ -521,7 +580,7 @@ def git_materialize(ctx, bare_rel, resolved_ref, output, spec, what):
             "--verify",
             str(resolved_ref) + "^{commit}",
         ],
-        environment = _materialize_env(empty, empty_dir, bare_abs),
+        environment = _materialize_env(ctx, empty, empty_dir, bare_abs),
     )
     if res.return_code != 0:
         fail("%s: could not verify the fetched commit: %s" % (what, res.stderr))
@@ -542,7 +601,7 @@ def git_materialize(ctx, bare_rel, resolved_ref, output, spec, what):
             "-t",
             str(resolved_ref),
         ],
-        environment = _materialize_env(empty, empty_dir, bare_abs),
+        environment = _materialize_env(ctx, empty, empty_dir, bare_abs),
     )
     if res.return_code != 0 or res.stdout.strip() != "commit":
         fail("%s: resolved-ref %r is not a commit object." % (what, resolved_ref))
@@ -559,7 +618,7 @@ def git_materialize(ctx, bare_rel, resolved_ref, output, spec, what):
             "rev-parse",
             str(resolved_ref) + "^{tree}",
         ],
-        environment = _materialize_env(empty, empty_dir, bare_abs),
+        environment = _materialize_env(ctx, empty, empty_dir, bare_abs),
     )
     if res.return_code != 0:
         fail("%s: could not read the tree of %r: %s" % (what, resolved_ref, res.stderr))
@@ -587,7 +646,7 @@ def git_materialize(ctx, bare_rel, resolved_ref, output, spec, what):
             str(output),
             spec,
         ],
-        environment = _materialize_env(empty, empty_dir, bare_abs),
+        environment = _materialize_env(ctx, empty, empty_dir, bare_abs),
     )
     if res.return_code != 0:
         fail("%s: git archive failed at %s: %s" % (what, spec, res.stderr))

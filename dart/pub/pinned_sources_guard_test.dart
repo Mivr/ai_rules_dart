@@ -323,9 +323,9 @@ void main(List<String> args) {
       // The transport phase inherits the host's transport configuration
       // (credentials, insteadOf, proxies) from its config files and the
       // allowlisted transport variables, while every code-executing and
-      // resolution knob is pinned on the command line or scrubbed in the
-      // environment. The bare repository is assembled without `git init`,
-      // so host templates have no channel at all.
+      // resolution knob is pinned on the command line or unset (`None`,
+      // never empty) in the environment. The bare repository is assembled
+      // without `git init`, so host templates have no channel at all.
       for (final marker in [
         '"fetch"',
         '_TRANSPORT_PASSTHROUGH',

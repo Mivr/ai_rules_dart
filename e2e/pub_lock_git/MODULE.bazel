@@ -1,6 +1,9 @@
 module(name = "pub_lock_git_e2e")
 
 bazel_dep(name = "rules_dart", version = "0.0.0")
+
+bazel_dep(name = "rules_shell", version = "0.8.0", dev_dependency = True)
+
 local_path_override(
     module_name = "rules_dart",
     path = "../..",
@@ -24,3 +27,15 @@ use_repo(gitpkg, "fmtpkg")
 
 probe = use_extension("//:template_probe.bzl", "probe")
 use_repo(probe, "probe")
+
+hostile = use_extension("//:hostile_probe_ext.bzl", "hostile")
+use_repo(
+    hostile,
+    "hostile_fallback_quarantine",
+    "hostile_insteadof",
+    "hostile_quarantine_empty",
+    "hostile_quarantine_set",
+    "hostile_unknown_vars",
+    "hostile_worktree_empty",
+    "hostile_worktree_set",
+)
