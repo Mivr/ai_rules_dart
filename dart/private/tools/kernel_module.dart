@@ -686,6 +686,8 @@ Future<int> compileModule(
           multiRoots,
           multiRootPrefix,
           log,
+          entry.uris.toSet(),
+          roots,
         )) {
           verified = true;
         } else {
@@ -712,6 +714,8 @@ Future<int> compileModule(
             multiRoots,
             multiRootPrefix,
             log,
+            entry.uris.toSet(),
+            roots,
             consequence: 'failing the compile',
           )) {
         // The isolated restage still read outside the declared inputs (a
@@ -942,6 +946,8 @@ Future<int> compileModule(
             multiRoots,
             multiRootPrefix,
             log,
+            scc.uris.toSet(),
+            roots,
           )) {
             verified = true;
           } else {
@@ -968,6 +974,8 @@ Future<int> compileModule(
               multiRoots,
               multiRootPrefix,
               log,
+              scc.uris.toSet(),
+              roots,
               consequence: 'failing the compile',
             )) {
           // The isolated restage still read outside the declared inputs (a
@@ -4651,7 +4659,15 @@ List<(int, int)>? _componentRanges(Uint8List data) {
 /// 3.13.5), so the table is parsed structurally with no version gate: gating
 /// here failed every read-set verification on older SDKs, failing legitimate
 /// compiles. Byte-rewriting stays version-gated in the strippers below.
-bool _collectComponentSourceUris(Uint8List part, List<String> uris) {
+/// Adds the `fileUri` of every source in the one kernel component [part] to
+/// [uris] — and, when [importUris] is given, the `importUri` recorded
+/// alongside it (the spelling the importer named the library by, which the
+/// library-reference check below verifies independently of the file read).
+bool _collectComponentSourceUris(
+  Uint8List part,
+  List<String> uris, [
+  List<String>? importUris,
+]) {
   if (part.length < 12) return false;
   final bd = ByteData.sublistView(part);
   if (bd.getUint32(0) != Tag.ComponentFile) return false;
@@ -4716,7 +4732,17 @@ bool _collectComponentSourceUris(Uint8List part, List<String> uris) {
     }
     // 4. importUri: UInt30 byteLength + UTF-8 bytes.
     final impLen = readU30();
-    if (impLen == null || !skipBytes(impLen)) return false;
+    if (impLen == null || impLen < 0 || pos + impLen > offConstantTable) {
+      return false;
+    }
+    if (importUris != null) {
+      try {
+        importUris.add(utf8.decode(part.sublist(pos, pos + impLen)));
+      } catch (_) {
+        return false;
+      }
+    }
+    pos += impLen;
     // 5. constantCoverageConstructors: UInt30 count + count * UInt30.
     final covCount = readU30();
     if (covCount == null) return false;
@@ -4744,6 +4770,190 @@ List<String>? dillSourceUris(Uint8List data) {
     }
   }
   return uris;
+}
+
+/// One library node of a kernel component: the source-table entry it was read
+/// from, and the names it is linked under. A `null` [fileUri] or [importUri]
+/// means the node's source index names no table entry (a corrupt or
+/// truncated component, which carries no reference to check); an empty
+/// [canonicalName] means the node has no canonical-name reference.
+typedef DillLibraryReference = ({
+  int fileUriIndex,
+  String? fileUri,
+  String? importUri,
+  String canonicalName,
+});
+
+/// The library references of the kernel component(s) in [data] — one record
+/// per library node, holding its source-table index with that entry's
+/// `fileUri`/`importUri` spellings, and its canonical name's root string
+/// (libraries link under their import URI, so the root names the library the
+/// same way the source table's `importUri` does).
+///
+/// Null when [data] is not a well-formed kernel file, or when its
+/// string, link, or library tables do not parse: the caller then keeps the
+/// source-table verdict, which never depends on these tables. Per-library
+/// reference failures (a dangling source index, an unresolvable canonical
+/// name) degrade to a missing reference in that record, never to a refusal:
+/// only a present reference the inputs do not define fails the check, so a
+/// future SDK that reshapes an unread table cannot fail a legitimate compile
+/// here — the source table still verifies every file read.
+///
+/// The node header prefix (`flags`, version, canonical-name, name, file-URI
+/// references) is position-stable across SDKs; only that prefix is read, so
+/// appended fields never disturb the parse. Every offset and length is
+/// bounds-checked against its table.
+List<DillLibraryReference>? dillLibraryReferences(Uint8List data) {
+  final ranges = _componentRanges(data);
+  if (ranges == null) return null;
+  final refs = <DillLibraryReference>[];
+  for (final (start, end) in ranges) {
+    if (!_collectComponentLibraries(
+      Uint8List.sublistView(data, start, end),
+      refs,
+    )) {
+      return null;
+    }
+  }
+  return refs;
+}
+
+/// Adds one [DillLibraryReference] per library node of the one kernel
+/// component [part] to [refs]. Returns false (leaving [refs] short) when the
+/// component's tables do not parse; every offset and length is bounds-checked.
+bool _collectComponentLibraries(
+  Uint8List part,
+  List<DillLibraryReference> refs,
+) {
+  if (part.length < 12) return false;
+  final bd = ByteData.sublistView(part);
+  if (bd.getUint32(0) != Tag.ComponentFile) return false;
+  final libCount = bd.getUint32(part.length - 8);
+  // No library nodes means no library references: the source-table verdict
+  // stands alone, and the remaining tables (whose offsets test fixtures may
+  // leave unset) are never touched.
+  if (libCount == 0) return true;
+  final idxBytes = (libCount + 12) * 4;
+  if (idxBytes > part.length) return false;
+  final rawIdxStart = part.length - idxBytes;
+  int u32(int offset) => bd.getUint32(offset);
+  final offSourceTable = u32(rawIdxStart);
+  final offLinkTable = u32(rawIdxStart + 12);
+  final offStringTable = u32(rawIdxStart + 24);
+  if (offSourceTable + 4 > part.length ||
+      offLinkTable > rawIdxStart ||
+      offStringTable > rawIdxStart ||
+      offLinkTable > offStringTable) {
+    return false;
+  }
+  final fileUris = <String>[];
+  final importUris = <String>[];
+  if (!_collectComponentSourceUris(part, fileUris, importUris)) return false;
+
+  // The string table: a count, cumulative end offsets, then the bytes.
+  var pos = offStringTable;
+  int? readU30(int limit) {
+    if (pos >= limit) return null;
+    final b0 = part[pos++];
+    if ((b0 & 0x80) == 0) return b0;
+    if ((b0 & 0x40) == 0) {
+      if (pos >= limit) return null;
+      return ((b0 & 0x3f) << 8) | part[pos++];
+    }
+    if (pos + 3 > limit) return null;
+    final value =
+        ((b0 & 0x3f) << 24) |
+        (part[pos] << 16) |
+        (part[pos + 1] << 8) |
+        part[pos + 2];
+    pos += 3;
+    return value;
+  }
+
+  final strCount = readU30(rawIdxStart);
+  if (strCount == null || strCount < 0) return false;
+  final strEnds = <int>[];
+  var prevEnd = 0;
+  for (var i = 0; i < strCount; i++) {
+    final end = readU30(rawIdxStart);
+    if (end == null || end < prevEnd) return false;
+    strEnds.add(end);
+    prevEnd = end;
+  }
+  final strBase = pos;
+  if (strEnds.isNotEmpty && strBase + strEnds.last > rawIdxStart) return false;
+  String? stringAt(int index) {
+    if (index < 0 || index >= strEnds.length) return null;
+    final start = index == 0 ? 0 : strEnds[index - 1];
+    try {
+      return utf8.decode(
+        part.sublist(strBase + start, strBase + strEnds[index]),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // The canonical-name table: a count of (parent, name-string) pairs, with
+  // the parent biased by one (zero names the nameless root).
+  pos = offLinkTable;
+  final canonCount = readU30(offStringTable);
+  if (canonCount == null || canonCount < 0) return false;
+  final canonParents = <int>[];
+  final canonStrings = <int>[];
+  for (var i = 0; i < canonCount; i++) {
+    final parent = readU30(offStringTable);
+    final name = readU30(offStringTable);
+    if (parent == null || name == null) return false;
+    canonParents.add(parent);
+    canonStrings.add(name);
+  }
+  String canonicalRoot(int biased) {
+    var index = biased - 1;
+    if (biased <= 0 || index >= canonCount) return '';
+    var guard = canonCount + 1;
+    while (canonParents[index] != 0) {
+      if (guard-- <= 0) return '';
+      index = canonParents[index] - 1;
+      if (index < 0 || index >= canonCount) return '';
+    }
+    return stringAt(canonStrings[index]) ?? '';
+  }
+
+  // Each node header opens with a flags byte, the version, and three
+  // references — canonical name (biased), name string, source-table file URI
+  // — after which only that prefix has been consumed.
+  for (var i = 0; i < libCount; i++) {
+    final libStart = u32(rawIdxStart + 36 + i * 4);
+    final libEnd = u32(rawIdxStart + 36 + (i + 1) * 4);
+    if (libEnd < libStart || libStart > part.length || libEnd > part.length) {
+      return false;
+    }
+    pos = libStart;
+    int? readNodeU30() => readU30(libEnd);
+    // Flags.
+    if (pos >= libEnd) return false;
+    pos++;
+    if (readNodeU30() == null) return false; // Major version.
+    if (readNodeU30() == null) return false; // Minor version.
+    final canon = readNodeU30();
+    if (canon == null) return false;
+    if (readNodeU30() == null) return false; // Name string reference.
+    final fileUriIndex = readNodeU30();
+    if (fileUriIndex == null) return false;
+    final importUri = fileUriIndex >= 0 && fileUriIndex < importUris.length
+        ? importUris[fileUriIndex]
+        : null;
+    refs.add((
+      fileUriIndex: fileUriIndex,
+      fileUri: fileUriIndex >= 0 && fileUriIndex < fileUris.length
+          ? fileUris[fileUriIndex]
+          : null,
+      importUri: importUri == null || importUri.isEmpty ? null : importUri,
+      canonicalName: canonicalRoot(canon),
+    ));
+  }
+  return true;
 }
 
 /// The declared-input key the `.dill` source-table URI [uri] names, or null when
@@ -4815,18 +5025,56 @@ String? _keyOfDillSourceUri(
 /// `recompiling with an isolated multi-root` (the unstaged compile is redone
 /// where only declared inputs exist) or `failing the compile` (the isolated
 /// restage still read outside the declared inputs, so its result is refused).
+/// Whether the `.dill` a compile wrote read only declared or pinned
+/// inputs: every workspace file its source table names is either one of
+/// [files]' declared inputs, or defined by a dependency module of the closure
+/// ([graph] holds the keys every module of the closure defines). Dependency
+/// sources are pinned inputs the front end links against — it embeds one when,
+/// for example, a compiled library applies its mixin — so they cannot smuggle
+/// an undeclared workspace file in. A missing output (a recording test
+/// compiler, which writes none) passes; an unreadable table fails closed.
+///
+/// The source table is spelling-dependent: it records the file the front end
+/// read, but a library node also records the `importUri` spelling the
+/// importer named it by and the canonical name it links under, and either can
+/// name a file the recorded `fileUri` spelling does not. So every library
+/// reference is checked too, spelling-independently: each `importUri` and
+/// canonical-name root must be one of [ownUris] (the URIs this compile was
+/// given as `--source`), a `dart:` library, or an import URI an input module
+/// defines — the `package:` and multi-root spellings of [graph]'s keys under
+/// [roots], computed without touching the filesystem — or else name a
+/// declared or graph-contained file when resolved like a recorded source URI
+/// (a `file:` spelling of one, say). Any other present reference fails
+/// closed, except a bare identifier with neither URI nor path shape, which
+/// names no file (only synthetic kernels record those as canonical roots). References no input can define never occur legitimately: the
+/// front end records the URI it was given for own sources, the import URI
+/// for linked ones, and `dart:` URIs for the SDK.
+///
+/// A library table that does not parse, or a node whose source index dangles,
+/// keeps the source-table verdict instead of refusing: those carry no
+/// reference to check, so refusing on them would fail legitimate compiles
+/// over a tool limitation, while the source table still verifies every file
+/// actually read.
+///
+/// A dirty read set never passes: [consequence] says what happens next, either
+/// `recompiling with an isolated multi-root` (the unstaged compile is redone
+/// where only declared inputs exist) or `failing the compile` (the isolated
+/// restage still read outside the declared inputs, so its result is refused).
 Future<bool> _unstagedReadsAreDeclared(
   String dillPath,
   _Files files,
   Map<String, _Node> graph,
   List<String> multiRoots,
   String multiRootPrefix,
-  StringBuffer log, {
+  StringBuffer log,
+  Set<String> ownUris,
+  Map<String, _PackageRoot> roots, {
   String consequence = 'recompiling with an isolated multi-root',
 }) async {
   final dillFile = File(dillPath);
   if (!await dillFile.exists()) return true;
-  final uris = dillSourceUris(await dillFile.readAsBytes());
+  final bytes = await dillFile.readAsBytes();
+  final uris = dillSourceUris(bytes);
   if (uris == null) {
     log.writeln(
       'kernel_module: cannot read the sources of $dillPath; $consequence.',
@@ -4842,6 +5090,67 @@ Future<bool> _unstagedReadsAreDeclared(
         '$consequence.',
       );
       return false;
+    }
+  }
+  // The import URIs input modules define: every graph key under its
+  // multi-root spelling and its `package:` spellings (one per package whose
+  // directory holds the key, as [_packageUriOf] builds them).
+  final packagePrefixes = <String, String>{
+    for (final entry in roots.entries)
+      entry.key: '${entry.value.path}${entry.value.packageUri}',
+  };
+  final depImportUris = <String>{
+    for (final key in graph.keys) ...[
+      '$multiRootPrefix$key',
+      for (final entry in packagePrefixes.entries)
+        if (key.startsWith(entry.value))
+          'package:${entry.key}/${key.substring(entry.value.length)}',
+    ],
+  };
+  bool referenceIsDeclared(String? reference) {
+    if (reference == null || reference.isEmpty) return true;
+    // A bare identifier names no file: only a URI- or path-shaped reference
+    // can name one. Real front ends record URIs here; anything else is a
+    // linking name from a synthetic kernel, with no file identity to verify
+    // (the file read is verified separately through the source table).
+    if (!reference.contains(':') && !reference.contains('/')) return true;
+    if (ownUris.contains(reference) || depImportUris.contains(reference)) {
+      return true;
+    }
+    if (reference.startsWith('dart:') ||
+        reference.startsWith('data:') ||
+        reference.startsWith('org-dartlang-sdk:') ||
+        reference.startsWith('org-dartlang-untranslatable-uri:')) {
+      return true;
+    }
+    // A resolvable spelling of a verified file passes: the source table
+    // already verified the file read, and this spelling names it. The
+    // recorded-URI mapping comes first so multi-root and `file:` spellings
+    // resolve exactly as the source-table check resolves them; the
+    // package-URI mapping covers `package:` spellings, which the recorded
+    // mapping leaves untranslated.
+    var key = _keyOfDillSourceUri(reference, multiRoots, multiRootPrefix);
+    if (key == null || key.isEmpty) {
+      key = _keyOfUri(reference, roots, multiRootPrefix);
+    }
+    return key != null &&
+        key.isNotEmpty &&
+        (files.isDeclared(key) || graph.containsKey(key));
+  }
+
+  final libraries = dillLibraryReferences(bytes);
+  if (libraries != null) {
+    for (final library in libraries) {
+      for (final reference in [library.importUri, library.canonicalName]) {
+        if (!referenceIsDeclared(reference)) {
+          log.writeln(
+            'kernel_module: $dillPath references $reference, which no '
+            'compiled source, `dart:` library, or input module defines; '
+            '$consequence.',
+          );
+          return false;
+        }
+      }
     }
   }
   return true;

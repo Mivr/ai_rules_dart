@@ -23,6 +23,7 @@ import 'kernel_module.dart'
         decodeKernelModuleWorkRequestInputs,
         decodeUriSegment,
         defaultMultiRootPrefix,
+        dillLibraryReferences,
         dillSourceUris,
         ensureSummaryDigests,
         findDisallowedDirectives,
@@ -632,6 +633,119 @@ Uint8List _buildDillWithUris(
     u32(constantTableOffset);
   }
   u32(0); // libraryCount = 0
+  u32(out.length + 4);
+  return out.toBytes();
+}
+
+/// A structurally valid kernel component whose source table holds [sources]
+/// as (`fileUri`, `importUri`) pairs and whose library table holds one node
+/// per entry of [libraries]: a source-table index with a canonical-name root
+/// (null for a null reference). The string table holds the empty node name
+/// plus each distinct canonical name, and the link table one root per
+/// library, so the bytes exercise the library-reference check's tables.
+Uint8List _buildDillWithLibraries({
+  required List<(String, String)> sources,
+  required List<(int, String?)> libraries,
+  int formatVersion = Tag.BinaryFormatVersion,
+}) {
+  final out = BytesBuilder();
+  void u30(int v) {
+    if (v < 0x80) {
+      out.addByte(v);
+    } else if (v < 0x4000) {
+      out.addByte(0x80 | (v >> 8));
+      out.addByte(v & 0xff);
+    } else {
+      out.addByte(0xc0 | ((v >> 24) & 0x3f));
+      out.addByte((v >> 16) & 0xff);
+      out.addByte((v >> 8) & 0xff);
+      out.addByte(v & 0xff);
+    }
+  }
+
+  void u32(int v) {
+    out.addByte((v >> 24) & 0xff);
+    out.addByte((v >> 16) & 0xff);
+    out.addByte((v >> 8) & 0xff);
+    out.addByte(v & 0xff);
+  }
+
+  void str(String s) {
+    final bytes = utf8.encode(s);
+    u30(bytes.length);
+    out.add(bytes);
+  }
+
+  final strings = <String>[''];
+  int stringIndexOf(String s) {
+    var index = strings.indexOf(s);
+    if (index < 0) {
+      index = strings.length;
+      strings.add(s);
+    }
+    return index;
+  }
+
+  u32(Tag.ComponentFile);
+  u32(formatVersion);
+  out.add(List.filled(64, 0));
+  final sourceTableOffset = out.length;
+  u32(sources.length);
+  for (final (fileUri, importUri) in sources) {
+    str(fileUri);
+    str('');
+    u30(0);
+    str(importUri);
+    u30(0);
+  }
+  final constantTableOffset = out.length;
+  u30(0);
+  final linkTableOffset = out.length;
+  u30(libraries.length);
+  for (final (_, canon) in libraries) {
+    u30(0); // Parent: the nameless root.
+    u30(canon == null ? 0 : stringIndexOf(canon));
+  }
+  final stringTableOffset = out.length;
+  u30(strings.length);
+  var end = 0;
+  final ends = <int>[];
+  for (final s in strings) {
+    end += utf8.encode(s).length;
+    ends.add(end);
+  }
+  for (final e in ends) {
+    u30(e);
+  }
+  for (final s in strings) {
+    out.add(utf8.encode(s));
+  }
+  final libraryOffsets = <int>[];
+  for (var i = 0; i < libraries.length; i++) {
+    libraryOffsets.add(out.length);
+    final (source, canon) = libraries[i];
+    out.addByte(4); // Flags.
+    u30(3); // Major version.
+    u30(0); // Minor version.
+    // Canonical-name reference, biased by one; zero names no reference.
+    u30(canon == null ? 0 : i + 1);
+    u30(0); // Name string reference: the empty name.
+    u30(source);
+  }
+  libraryOffsets.add(out.length);
+  u32(sourceTableOffset);
+  u32(constantTableOffset);
+  u32(constantTableOffset);
+  u32(linkTableOffset);
+  u32(linkTableOffset);
+  u32(linkTableOffset);
+  u32(stringTableOffset);
+  u32(stringTableOffset);
+  u32(stringTableOffset);
+  for (final offset in libraryOffsets) {
+    u32(offset);
+  }
+  u32(libraries.length);
   u32(out.length + 4);
   return out.toBytes();
 }
@@ -1410,6 +1524,165 @@ void main(List<String> args) {
     expect(result.code, 0, reason: result.log);
     expect(result.calls.length, 1, reason: 'no isolated restage');
     expect(result.log, isNot(contains('cannot read the sources')));
+  });
+
+  group('library references', () {
+    test('dillLibraryReferences reads each node with its source spellings and canonical name', () {
+      final dill = _buildDillWithLibraries(
+        sources: [
+          (_uri('pkg/lib/a.dart'), 'package:pkg/a.dart'),
+          (_uri('dep/lib/d.dart'), 'package:dep/d.dart'),
+          ('org-dartlang-sdk:///sdk/lib/core/core.dart', 'dart:core'),
+        ],
+        libraries: [
+          (0, 'package:pkg/a.dart'),
+          (1, 'package:dep/d.dart'),
+          (2, 'dart:core'),
+        ],
+      );
+      final refs = dillLibraryReferences(dill);
+      expect(refs, hasLength(3));
+      expect(refs![0].fileUriIndex, 0);
+      expect(refs[0].fileUri, _uri('pkg/lib/a.dart'));
+      expect(refs[0].importUri, 'package:pkg/a.dart');
+      expect(refs[0].canonicalName, 'package:pkg/a.dart');
+      expect(refs[1].importUri, 'package:dep/d.dart');
+      expect(refs[1].canonicalName, 'package:dep/d.dart');
+      expect(refs[2].importUri, 'dart:core');
+      expect(refs[2].canonicalName, 'dart:core');
+    });
+
+    test('dillLibraryReferences degrades per-library failures to missing references', () {
+      final dill = _buildDillWithLibraries(
+        sources: [(_uri('pkg/lib/a.dart'), 'package:pkg/a.dart')],
+        libraries: [(7, 'package:pkg/a.dart'), (0, null)],
+      );
+      final refs = dillLibraryReferences(dill);
+      expect(refs, hasLength(2));
+      // A dangling source index carries no reference to check.
+      expect(refs![0].fileUri, isNull);
+      expect(refs[0].importUri, isNull);
+      expect(refs[0].canonicalName, 'package:pkg/a.dart');
+      // A null canonical-name reference reads as no name.
+      expect(refs[1].fileUri, _uri('pkg/lib/a.dart'));
+      expect(refs[1].importUri, 'package:pkg/a.dart');
+      expect(refs[1].canonicalName, isEmpty);
+    });
+
+    test(
+      'dillLibraryReferences is empty without nodes and null without tables',
+      () {
+        expect(dillLibraryReferences(_buildDillWithUris(['a'])), isEmpty);
+        expect(dillLibraryReferences(Uint8List(0)), isNull);
+        // A library table whose string table points outside the file keeps no
+        // verdict of its own: the caller falls back to the source table.
+        final dill = _buildDillWithLibraries(
+          sources: [(_uri('pkg/lib/a.dart'), 'package:pkg/a.dart')],
+          libraries: [(0, 'package:pkg/a.dart')],
+        );
+        final patched = Uint8List.fromList(dill);
+        final bd = ByteData.sublistView(patched);
+        // The string-table offset is the seventh fixed index field.
+        bd.setUint32(patched.length - 13 * 4 + 24, 0xffffffff);
+        expect(dillLibraryReferences(patched), isNull);
+        expect(dillSourceUris(patched), [_uri('pkg/lib/a.dart')]);
+      },
+    );
+
+    test('an unstaged compile whose library names an undefined import fails closed', () async {
+      _write('pkg/lib/a.dart', 'class A {}\n');
+      // H-3: the file read is declared, but the library's `importUri`
+      // spelling names a file the plan never saw — the guard's empty-segment
+      // skipping would have resolved this differently than the front end.
+      final compiler = _DillWritingCompiler(
+        () => _buildDillWithLibraries(
+          sources: [(_uri('pkg/lib/a.dart'), _uri('pkg/lib/a.dart'))],
+          libraries: [(0, 'package:pkg//lib/evil.dart')],
+        ),
+      );
+      final result = await _compile(
+        'm_evil_import',
+        ['pkg/lib/a.dart'],
+        inputs: [
+          _encodeInputForTest(
+            '${_root.path}/pkg/lib/a.dart',
+            Uint8List.fromList([7]),
+          ),
+        ],
+        compiler: compiler,
+      );
+      expect(result.calls.length, 2, reason: 'unstaged, then isolated');
+      expect(result.log, contains('references package:pkg//lib/evil.dart'));
+      expect(result.code, 1);
+      expect(result.log, contains('failing the compile'));
+    });
+
+    test(
+      'an unstaged compile whose canonical name is undefined fails closed',
+      () async {
+        _write('pkg/lib/a.dart', 'class A {}\n');
+        final compiler = _DillWritingCompiler(
+          () => _buildDillWithLibraries(
+            sources: [(_uri('pkg/lib/a.dart'), 'package:pkg/a.dart')],
+            libraries: [(0, 'package:pkg//lib/canon_evil.dart')],
+          ),
+        );
+        final result = await _compile(
+          'm_evil_canon',
+          ['pkg/lib/a.dart'],
+          inputs: [
+            _encodeInputForTest(
+              '${_root.path}/pkg/lib/a.dart',
+              Uint8List.fromList([7]),
+            ),
+          ],
+          compiler: compiler,
+        );
+        expect(result.calls.length, 2, reason: 'unstaged, then isolated');
+        expect(
+          result.log,
+          contains('references package:pkg//lib/canon_evil.dart'),
+        );
+        expect(result.code, 1);
+      },
+    );
+
+    test(
+      'a compile whose libraries name only defined imports verifies once',
+      () async {
+        _write(
+          'pkg/lib/a.dart',
+          "import 'package:dep/d.dart';\nconst x = d;\n",
+        );
+        _write('dep/lib/d.dart', 'const d = 1;\n');
+        final dep = _module('depmod', [
+          _Scc('d.dill', ['dep/lib/d.dart'], []),
+        ]);
+        final compiler = _DillWritingCompiler(
+          () => _buildDillWithLibraries(
+            sources: [
+              (_uri('pkg/lib/a.dart'), 'package:pkg/a.dart'),
+              (_uri('dep/lib/d.dart'), 'package:dep/d.dart'),
+            ],
+            libraries: [(0, 'package:pkg/a.dart'), (1, 'package:dep/d.dart')],
+          ),
+        );
+        final result = await _compile(
+          'm_defined_imports',
+          ['pkg/lib/a.dart'],
+          inputKmods: [dep],
+          inputs: [
+            _encodeInputForTest(
+              '${_root.path}/pkg/lib/a.dart',
+              Uint8List.fromList([7]),
+            ),
+          ],
+          compiler: compiler,
+        );
+        expect(result.code, 0, reason: result.log);
+        expect(result.calls.length, 1, reason: 'no isolated restage');
+      },
+    );
   });
 
   group('directive guard classification', () {
@@ -3514,6 +3787,153 @@ void main(List<String> args) {
       (runRes.stdout as String).replaceAll('\r\n', '\n'),
       'legacy-body-v1:thing[legacy-tag-v1:15]\n'
       'legacy-body-v1:chained[legacy-tag-v1:12]\n',
+    );
+  });
+
+  test('dillLibraryReferences surfaces every library of a real modular compile with an input summary', () async {
+    // H-3 backstop fidelity: the parser must read real front-end tables —
+    // including a dependency linked under `--exclude-non-sources`, which the
+    // worker emits twice (once per URI it was given) — and surface any
+    // spelling a smuggled reference would carry.
+    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final exeSuffix = Platform.isWindows ? '.exe' : '';
+    final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
+    final kernelWorker =
+        '${sdkDir.path}/bin/snapshots/kernel_worker_aot.dart.snapshot';
+    final platformDill = '${sdkDir.path}/lib/_internal/vm_platform_strong.dill';
+    expect(File(dartaotruntime).existsSync(), isTrue);
+    expect(File(kernelWorker).existsSync(), isTrue);
+    expect(File(platformDill).existsSync(), isTrue);
+
+    _write(
+      'libref_packages.json',
+      jsonEncode({
+        'configVersion': 2,
+        'packages': [
+          {'name': 'dep', 'rootUri': '${_prefix}dep', 'packageUri': 'lib/'},
+          {'name': 'app', 'rootUri': '${_prefix}app', 'packageUri': 'lib/'},
+        ],
+      }),
+    );
+    _write('dep/lib/d.dart', 'const d = 1;\n');
+    _write(
+      'app/bin/main.dart',
+      "import 'package:dep/d.dart';\nconst x = d;\nvoid main() {}\n",
+    );
+
+    Future<Uint8List> compile(
+      String outName,
+      List<String> sources, {
+      List<String> inputSummaries = const [],
+      bool excludeNonSources = true,
+    }) async {
+      final outPath = '${_root.path}/$outName';
+      final res = await Process.run(dartaotruntime, [
+        kernelWorker,
+        ...kernelWorkerArgs([
+          '--target',
+          'vm',
+          '--dart-sdk-summary',
+          platformDill,
+          '--packages-file',
+          '${_root.path}/libref_packages.json',
+          '--multi-root',
+          _root.path,
+          '--multi-root-scheme',
+          'org-dartlang-root',
+          // Default summary mode (without `--no-summary-only`): the output
+          // keeps every linked library as an outline node, which is the
+          // shape the check must accept.
+          if (excludeNonSources) '--exclude-non-sources',
+          for (final s in inputSummaries) ...['--input-summary', s],
+          for (final s in sources) ...['--source', s],
+          '--output',
+          outPath,
+        ]),
+      ]);
+      expect(
+        res.exitCode,
+        0,
+        reason: 'kernel_worker failed: ${res.stdout}\n${res.stderr}',
+      );
+      return File(outPath).readAsBytesSync();
+    }
+
+    final appSource = '${_prefix}app/bin/main.dart';
+    // The dependency compiles whole: linked from such a summary under
+    // `--exclude-non-sources`, its library stays in the output (under both
+    // URIs it was given), which is the shape the check must accept.
+    await compile('libref_dep.dill', [
+      '${_prefix}dep/lib/d.dart',
+    ], excludeNonSources: false);
+    final appDill = await compile(
+      'libref_app.dill',
+      [appSource],
+      inputSummaries: ['${_root.path}/libref_dep.dill'],
+    );
+    final refs = dillLibraryReferences(appDill);
+    expect(refs, isNotNull);
+    for (final ref in refs!) {
+      expect(ref.fileUri, isNotNull, reason: 'no dangling file-URI index');
+      expect(ref.importUri, isNotNull);
+      expect(ref.canonicalName, isNotEmpty);
+      // Canonical roots are URIs by construction: the `--source` spelling
+      // for own sources, the import URI for linked ones, `dart:` for the SDK.
+      expect(
+        ref.canonicalName == appSource ||
+            ref.canonicalName.startsWith('package:') ||
+            ref.canonicalName.startsWith('dart:') ||
+            ref.canonicalName.startsWith(_prefix),
+        isTrue,
+        reason: 'unexpected canonical root ${ref.canonicalName}',
+      );
+    }
+    expect(
+      refs.any((ref) => ref.fileUri == appSource),
+      isTrue,
+      reason: 'own library present',
+    );
+    expect(
+      refs.any((ref) => ref.importUri == 'package:dep/d.dart'),
+      isTrue,
+      reason: 'linked dependency present under its import URI',
+    );
+    for (final ref in refs) {
+      expect(
+        ref.importUri == appSource ||
+            (ref.importUri?.startsWith('package:dep/') ?? false) ||
+            (ref.importUri?.startsWith('dart:') ?? false),
+        isTrue,
+        reason: 'unexpected import URI ${ref.importUri}',
+      );
+    }
+    // A smuggled spelling patched into the table at the same length reaches
+    // the check: the parser surfaces the bytes as written.
+    const smuggled = 'package:dex/d.dart';
+    expect(smuggled.length, 'package:dep/d.dart'.length);
+    final patched = Uint8List.fromList(appDill);
+    bool replaced = false;
+    final needle = utf8.encode('package:dep/d.dart');
+    for (var i = 0; i + needle.length <= patched.length; i++) {
+      var match = true;
+      for (var j = 0; j < needle.length; j++) {
+        if (patched[i + j] != needle[j]) {
+          match = false;
+          break;
+        }
+      }
+      if (match) {
+        patched.setRange(i, i + needle.length, utf8.encode(smuggled));
+        replaced = true;
+      }
+    }
+    expect(replaced, isTrue);
+    final patchedRefs = dillLibraryReferences(patched);
+    expect(patchedRefs, isNotNull);
+    expect(
+      patchedRefs!.any((ref) => ref.importUri == smuggled),
+      isTrue,
+      reason: 'smuggled spelling surfaces in the references',
     );
   });
 
