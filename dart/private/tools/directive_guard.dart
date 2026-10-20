@@ -154,22 +154,36 @@ String _normAbsStagedPath(String path) {
 /// The absolute `/`-separated path a schemeless relative or `/`-absolute
 /// directive URI in the staged file [fromPath] refers to, resolved the way the
 /// analyzer resolves it on the real filesystem: `\` separates, escapes decode
-/// once, and `..` climbs past the staged tree (clamped at the filesystem
-/// root, where overshooting names any host path) instead of staying inside
-/// the declared inputs.
+/// once, a `?...` query is dropped (the front end reads the file the path part
+/// names, query or not), and `..` climbs past the staged tree (clamped at the
+/// filesystem root, where overshooting names any host path) instead of staying
+/// inside the declared inputs.
+///
+/// An empty reference — `''`, or `'?query'` with no path — names the importing
+/// file itself (RFC 3986): a self-import, always declared.
 ///
 /// Null when [uri] is not such a URI: any scheme (`dart:`, `package:`,
-/// `file:`, the multi-root scheme, or anything else with a `:`), a query, a
-/// fragment, or a `//`-prefixed authority. A decoded `/` also yields null: it
-/// names no file, so the compiler reports it and the guard has nothing to
-/// confine. Null means "no host file beyond what the scheme check already
-/// refuses", never "inside the declared inputs".
+/// `file:`, the multi-root scheme, or anything else with a `:`), a fragment
+/// (the front end reports a URI with one instead of reading through it), or a
+/// `//`-prefixed authority. A decoded `/` also yields null: it names no file,
+/// so the compiler reports it and the guard has nothing to confine. Null means
+/// "no host file beyond what the scheme check already refuses", never "inside
+/// the declared inputs".
 String? resolveStagedRelativeTarget(String uri, String fromPath) {
   final text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
-  if (text.contains(':')) return null;
-  if (text.contains('?') || text.contains('#')) return null;
-  if (text.startsWith('//')) return null;
+  // A fragment names no file: the front end reports a URI with one instead of
+  // reading through it, whatever path precedes it.
+  if (text.contains('#')) return null;
+  // A query names no file either: the front end reads the file the path part
+  // names, so the path part alone is classified and resolved below. Cutting
+  // here also keeps a `:` inside the query from looking like a scheme.
+  final query = text.indexOf('?');
+  final path = query < 0 ? text : text.substring(0, query);
+  if (path.contains(':')) return null;
+  if (path.startsWith('//')) return null;
   final from = _normAbsStagedPath(fromPath);
+  // An empty reference names the importing file itself (RFC 3986).
+  if (path.isEmpty) return from;
   final rooted = from.startsWith('/');
   final drive =
       !rooted &&
@@ -179,9 +193,9 @@ String? resolveStagedRelativeTarget(String uri, String fromPath) {
   // Drop the file name: the URI resolves against its directory.
   if (stack.isNotEmpty) stack.removeLast();
   final floor = rooted || drive ? 1 : 0;
-  final absolute = text.startsWith('/');
+  final absolute = path.startsWith('/');
   final base = absolute ? stack.sublist(0, floor) : stack;
-  final queue = absolute ? text.substring(1) : text;
+  final queue = absolute ? path.substring(1) : path;
   for (final raw in queue.split('/')) {
     if (raw.isEmpty) continue;
     final seg = decodeUriSegment(raw);
@@ -305,7 +319,9 @@ String? _resolveDirectivePath(
 /// [multiRootPrefix] is the scheme the absolute URIs of multi-root files start
 /// with (`org-dartlang-root:///`). Null when the URI names no workspace file:
 /// an unknown package or scheme, an escape above a `package:` directory, a
-/// query, a fragment, an authority, or a decoded `/`.
+/// fragment, an authority, or a decoded `/`. A `?...` query is dropped and the
+/// path part resolved instead: an empty reference names the importing file
+/// itself.
 ///
 /// The resolution mirrors the front end exactly: `\` is a separator everywhere,
 /// escapes decode once (either hex case), `/`-absolute URIs resolve against the
@@ -338,20 +354,27 @@ String? resolveDirectiveUri(
       true,
     );
   }
-  if (text.contains(':')) return null;
-  if (text.contains('?') || text.contains('#') || text.startsWith('//')) {
-    return null;
-  }
-  if (text.startsWith('/')) {
+  // A fragment names no file: the front end reports a URI with one instead of
+  // reading through it. A query names no file either: the front end reads the
+  // file the path part names, so the path part alone is classified and
+  // resolved below.
+  if (text.contains('#')) return null;
+  final query = text.indexOf('?');
+  final path = query < 0 ? text : text.substring(0, query);
+  if (path.contains(':')) return null;
+  if (path.startsWith('//')) return null;
+  // An empty reference names the importing file itself (RFC 3986).
+  if (path.isEmpty) return fromKey;
+  if (path.startsWith('/')) {
     final base = _packageDirOf(fromKey, packageDirs);
-    return _resolveDirectivePath(text, base, base.length, false);
+    return _resolveDirectivePath(path, base, base.length, false);
   }
   final slash = fromKey.lastIndexOf('/');
   final base = slash < 0
       ? const <String>[]
       : fromKey.substring(0, slash).split('/');
   final floor = _packageDirOf(fromKey, packageDirs).length;
-  return _resolveDirectivePath(text, base, floor, false);
+  return _resolveDirectivePath(path, base, floor, false);
 }
 
 /// One URI-bearing directive of a source's prologue.

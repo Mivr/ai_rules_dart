@@ -1032,10 +1032,32 @@ void main(List<String> args) {
       );
     });
 
-    test('queries, fragments, authorities and schemes name no file', () {
-      expect(resolveDirectiveUri('b.dart?x=1', 'pkg/lib/a.dart', dirs), isNull);
+    test('queries resolve through their path part', () {
+      expect(
+        resolveDirectiveUri('b.dart?x=1', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/b.dart',
+        reason: 'the front end reads the file the path part names',
+      );
+      expect(
+        resolveDirectiveUri('?x=1', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/a.dart',
+        reason: 'a query with no path names the importing file itself',
+      );
+      expect(
+        resolveDirectiveUri('../x.dart?a:b', 'pkg/lib/sub/a.dart', dirs),
+        'pkg/lib/x.dart',
+        reason: 'a colon in the query is not a scheme',
+      );
+    });
+
+    test('fragments, authorities and schemes name no file', () {
       expect(
         resolveDirectiveUri('b.dart#frag', 'pkg/lib/a.dart', dirs),
+        isNull,
+      );
+      expect(resolveDirectiveUri('#frag', 'pkg/lib/a.dart', dirs), isNull);
+      expect(
+        resolveDirectiveUri('b.dart?x=1#frag', 'pkg/lib/a.dart', dirs),
         isNull,
       );
       expect(
@@ -1055,7 +1077,11 @@ void main(List<String> args) {
       );
       expect(resolveDirectiveUri('a:b.dart', 'pkg/lib/a.dart', dirs), isNull);
       expect(resolveDirectiveUri('dart:core', 'pkg/lib/a.dart', dirs), isNull);
-      expect(resolveDirectiveUri('', 'pkg/lib/a.dart', dirs), 'pkg/lib');
+      expect(
+        resolveDirectiveUri('', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/a.dart',
+        reason: 'an empty reference is a self-import',
+      );
       expect(resolveDirectiveUri('b.dart', 'main.dart', dirs), 'b.dart');
     });
   });

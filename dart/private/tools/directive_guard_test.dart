@@ -138,12 +138,52 @@ void main(List<String> args) {
       );
     });
 
-    test('schemes, queries, fragments and authorities yield null', () {
+    test('an empty reference names the importing file itself', () {
+      expect(
+        resolveStagedRelativeTarget('', '/r/proj/lib/a.dart'),
+        '/r/proj/lib/a.dart',
+      );
+      expect(
+        resolveStagedRelativeTarget('?query=1', '/r/proj/lib/a.dart'),
+        '/r/proj/lib/a.dart',
+      );
+    });
+
+    test('a query is dropped and the path part resolved', () {
+      expect(
+        resolveStagedRelativeTarget('b.dart?x=1', '/r/proj/lib/a.dart'),
+        '/r/proj/lib/b.dart',
+      );
+      expect(
+        resolveStagedRelativeTarget(
+          '../../evil.dart?x=1',
+          '/r/proj/lib/a.dart',
+        ),
+        '/r/evil.dart',
+      );
+      expect(
+        resolveStagedRelativeTarget('/etc/hostname?x=1', '/r/proj/lib/a.dart'),
+        '/etc/hostname',
+      );
+      expect(
+        resolveStagedRelativeTarget('../evil.dart?a:b', '/r/proj/main.dart'),
+        '/r/evil.dart',
+      );
+    });
+
+    test('a fragment names no file, whatever path precedes it', () {
+      const from = '/r/proj/lib/a.dart';
+      expect(resolveStagedRelativeTarget('#frag', from), isNull);
+      expect(resolveStagedRelativeTarget('b.dart#frag', from), isNull);
+      expect(resolveStagedRelativeTarget('b.dart?x=1#frag', from), isNull);
+      expect(resolveStagedRelativeTarget('../../evil.dart#frag', from), isNull);
+    });
+
+    test('schemes, authorities and drive paths yield null', () {
       const from = '/r/proj/lib/a.dart';
       expect(resolveStagedRelativeTarget('dart:core', from), isNull);
       expect(resolveStagedRelativeTarget('package:p/a.dart', from), isNull);
       expect(resolveStagedRelativeTarget('file:/etc/hosts', from), isNull);
-      expect(resolveStagedRelativeTarget('a.dart?x=1', from), isNull);
       expect(resolveStagedRelativeTarget('a.dart#x', from), isNull);
       expect(resolveStagedRelativeTarget('//host/a.dart', from), isNull);
       expect(resolveStagedRelativeTarget('C:/a.dart', from), isNull);
@@ -212,6 +252,12 @@ void main(List<String> args) {
       stagedFile('lib/partof.dart', "part of '../../evil_lib.dart';\n");
       stagedFile('lib/dart.dart', "import 'dart:core';\n");
       stagedFile('lib/inside.dart', "import 'package:demo/sub/a.dart';\n");
+      stagedFile('lib/self.dart', "import '' as self;\n");
+      stagedFile('lib/selfq.dart', "import '?v=1' as self;\n");
+      stagedFile('lib/qsib.dart', "import 'b.dart?v=1';\n");
+      stagedFile('lib/qclimb.dart', "import '../../evil.dart?v=1';\n");
+      stagedFile('lib/qabs.dart', "import '/etc/hostname?v=1';\n");
+      stagedFile('lib/frag.dart', "import 'b.dart#frag';\n");
       stagedFile('main.dart', "import '../evil.dart';\n");
     });
 
@@ -234,6 +280,10 @@ void main(List<String> args) {
             'is not a declared input.',
         "guard-test: ${at('lib/pkg.dart')} import "
             "'package:demo/sub/../../evil.dart' is not a declared input.",
+        "guard-test: ${at('lib/qabs.dart')} import '/etc/hostname?v=1' "
+            'is not a declared input.',
+        "guard-test: ${at('lib/qclimb.dart')} import '../../evil.dart?v=1' "
+            'is not a declared input.',
         "guard-test: ${at('lib/scheme.dart')} import 'file:///etc/hosts' "
             'is not a declared input.',
         "guard-test: ${at('main.dart')} import '../evil.dart' "

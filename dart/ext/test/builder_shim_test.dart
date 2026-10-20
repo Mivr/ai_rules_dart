@@ -2225,6 +2225,9 @@ import '../b.dart';
 part 'e.dart';
 ''');
       await stage('lib/sub/e.dart', "part of 'd.dart';\n");
+      await stage('lib/self.dart', "import '' as self;\n");
+      await stage('lib/selfq.dart', "import '?v=1' as self;\n");
+      await stage('lib/qsib.dart', "import 'b.dart?v=1';\n");
       expect(
         await findStagedShimViolations(staging, tool: 'builder_shim'),
         isEmpty,
@@ -2242,11 +2245,12 @@ part 'e.dart';
       await stage('lib/e.dart', "import 'package:p/sub/../../evil.dart';\n");
       await stage('lib/f.dart', "import 'file:///etc/hosts';\n");
       await stage('lib/g.dart', "import '/etc/hostname';\n");
+      await stage('lib/h.dart', "import '../../evil.dart?v=1';\n");
       final violations = await findStagedShimViolations(
         staging,
         tool: 'builder_shim',
       );
-      expect(violations, hasLength(7));
+      expect(violations, hasLength(8));
       for (final violation in violations) {
         expect(violation, startsWith('builder_shim: '));
         expect(violation, endsWith('is not a declared input.'));
