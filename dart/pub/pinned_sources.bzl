@@ -160,6 +160,7 @@ def git_archive(ctx, clone_dir, output, spec, what):
     Returns:
         The successful archive's `ctx.execute` result.
     """
+
     # The empty file doubles as the `core.attributesFile` replacement and as
     # the `GIT_CONFIG_GLOBAL` / `GIT_CONFIG_SYSTEM` replacement. It is left
     # behind on purpose: module-extension contexts have no `ctx.delete`, and

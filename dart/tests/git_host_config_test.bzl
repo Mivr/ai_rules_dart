@@ -41,7 +41,7 @@ def _fake_ctx(record, results = []):
             return pending.pop(0)
         return struct(return_code = 0, stdout = "", stderr = "")
 
-    def _file(path, content, executable = False):
+    def _file(path, content):
         record.append(struct(path = path, content = content))
 
     def _path(path):
