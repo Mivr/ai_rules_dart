@@ -229,7 +229,7 @@
   "moduleExtensions": {
     "//:git_host_config_ext.bzl%gitpkg": {
       "general": {
-        "bzlTransitiveDigest": "2HCQWZMv7AOKklxTWMkvclqzDKy7qhZww6vV8+CbsTc=",
+        "bzlTransitiveDigest": "BLWX2Zcb169yAhuDbWiRHgNSr+Dj3PFTl0QCwmf5WEk=",
         "usagesDigest": "sG176Z+iphREB1IFxR7Ff9zT3kl3nrqSziEDMMNXk4o=",
         "recordedInputs": [
           "REPO_MAPPING:,rules_dart rules_dart+"
@@ -276,7 +276,7 @@
     },
     "@@rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "4yW9oPBDCJli2qb9f8V0ERfz2Hqa4xGUCqZ8DTNsEiA=",
+        "bzlTransitiveDigest": "EYggSkzzH7Jn00cpa6UeMdZ+U6YgiPNwnfErUby0c9g=",
         "usagesDigest": "Z6f4OQJFmlqlgMtTOORmnGCuCGkTYaXzE9IaP2N/504=",
         "recordedInputs": [
           "FILE:@@//pubspec.lock 1957ddbb0124d9830047cf6c5f527e05b7301b7c4bd6fbb76796bb25f1aa1836",
