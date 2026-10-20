@@ -12,6 +12,7 @@ subdirectory (so each keeps its own `lib/` root), and generates one merged
 leaving it become the merged target's `deps`.
 """
 
+load("//dart/pub:pinned_sources.bzl", "pinned_source_error", "verify_git_checkout")
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_spoke_dep_labels", "trim_gzip_trailing_nulls")
 load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_package_member_build_content = "make_dart_package_member_build_content", _make_scc_merged_build_content = "make_scc_merged_build_content")
@@ -27,6 +28,15 @@ make_scc_merged_build_content = _make_scc_merged_build_content
 
 def _fetch_hosted_member(ctx, member, name):
     """Downloads one hosted member tarball and extracts it into `name/`."""
+    err = pinned_source_error(
+        "hosted",
+        name,
+        member.get("version", ""),
+        sha256 = member.get("sha256", ""),
+        rule = "pub_lock_scc_package",
+    )
+    if err:
+        fail(err)
     url = "{base}/packages/{name}/versions/{version}.tar.gz".format(
         base = member["url"],
         name = name,
@@ -52,6 +62,15 @@ def _fetch_hosted_member(ctx, member, name):
 
 def _fetch_git_member(ctx, member, name):
     """Clones one git member at its resolved ref and extracts it into `name/`."""
+    err = pinned_source_error(
+        "git",
+        name,
+        member.get("version", ""),
+        resolved_ref = member.get("resolved_ref", ""),
+        rule = "pub_lock_scc_package",
+    )
+    if err:
+        fail(err)
     clone_dir = ctx.path("_" + name + "_clone")
     res = ctx.execute(["git", "clone", "--no-checkout", member["url"], str(clone_dir)])
     if res.return_code != 0:
@@ -62,6 +81,12 @@ def _fetch_git_member(ctx, member, name):
         res = ctx.execute(["git", "-C", str(clone_dir), "checkout", "--quiet", member["resolved_ref"]])
         if res.return_code != 0:
             fail("pub_lock_scc_package %s: git checkout failed at %s: %s" % (name, member["resolved_ref"], res.stderr))
+    verify_git_checkout(
+        ctx,
+        clone_dir,
+        member.get("resolved_ref", ""),
+        'pub_lock_scc_package "%s"' % name,
+    )
     archive_path = ctx.path("_" + name + ".tar")
     spec = member["resolved_ref"] if member["path"] == "." else member["resolved_ref"] + ":" + member["path"]
     res = ctx.execute(["git", "-C", str(clone_dir), "archive", "--format=tar", "-o", str(archive_path), spec])
@@ -140,7 +165,8 @@ pub_lock_scc_package = repository_rule(
         "members_json": attr.string(
             doc = "JSON list of member packages. Hosted members carry `{source: \"hosted\", name, version, " +
                   "sha256, url, code_assets}`; git members carry `{source: \"git\", name, version, url, " +
-                  "resolved_ref, path, code_assets}`. Encoded by the `pub` extension; decoded here.",
+                  "resolved_ref, path, code_assets}`. A git member's `resolved_ref` must be a full 40-hex " +
+                  "commit SHA; anything else fails the build. Encoded by the `pub` extension; decoded here.",
             mandatory = True,
         ),
         "hub_name": attr.string(

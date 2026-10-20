@@ -19,6 +19,7 @@ bzl_library(
     deps = [
         ":build_content",
         ":pub_symlink",
+        "//dart/pub:pinned_sources",
     ],
 )
 
@@ -38,4 +39,19 @@ bzl_library(
     name = "yaml_subset",
     srcs = ["yaml_subset.bzl"],
     visibility = ["//dart/pub:__subpackages__"],
+)
+
+# Bare sources for `//dart/pub:pinned_sources_guard_test`, which reads every
+# Starlark file in `//dart/pub` and fails when a fetch call site stops going
+# through the shared pinned-source validation.
+exports_files(
+    [
+        "build_content.bzl",
+        "language_version.bzl",
+        "pub_repository.bzl",
+        "pub_symlink.bzl",
+        "scc.bzl",
+        "version.bzl",
+        "yaml_subset.bzl",
+    ],
 )

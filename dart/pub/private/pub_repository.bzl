@@ -1,6 +1,7 @@
 """Repository rule for downloading a single pub.dev package."""
 
-load("//dart/pub:yaml_parser.bzl", "is_valid_sha256", "parse_pubspec_sdk_constraint")
+load("//dart/pub:pinned_sources.bzl", "pinned_source_error")
+load("//dart/pub:yaml_parser.bzl", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", "make_dart_library_build_content")
 load("//dart/pub/private:language_version.bzl", "derive_language_version")
 load("//dart/pub/private:pub_symlink.bzl", "check_package_symlinks")
@@ -17,19 +18,13 @@ def pub_package_sha256_error(package_name, version, sha256):
         An error string when `sha256` is empty or not 64 lowercase hex digits,
         or None when valid.
     """
-    trimmed = str(sha256).strip() if sha256 != None else ""
-    if not trimmed:
-        return 'pub_package "%s" (%s) requires a non-empty sha256.' % (
-            package_name,
-            version,
-        )
-    if not is_valid_sha256(trimmed):
-        return 'pub_package "%s" (%s) has invalid sha256 %r: expected 64 lowercase hex digits.' % (
-            package_name,
-            version,
-            sha256,
-        )
-    return None
+    return pinned_source_error(
+        "hosted",
+        package_name,
+        version,
+        sha256 = sha256,
+        rule = "pub_package",
+    )
 
 def _pub_package_impl(ctx):
     err = pub_package_sha256_error(

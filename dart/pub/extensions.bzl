@@ -1,6 +1,7 @@
 """Module extension for declaring pub.dev package dependencies."""
 
 load("//dart/ext:registry.bzl", "curated_code_assets")
+load("//dart/pub:pinned_sources.bzl", "pinned_source_error", "verify_git_checkout")
 load("//dart/pub:pub_lock_hub.bzl", "pub_lock_hub")
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_git_package", "pub_lock_package", "pub_lock_package_sha256_error", "trim_gzip_trailing_nulls")
 load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
@@ -105,6 +106,15 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
     ctx.file(scope_dir + "/.scc_scope", "pub dependency-cycle scope scratch")
     for name in sorted(hosted.keys()):
         pkg = hosted[name]
+        err = pinned_source_error(
+            "hosted",
+            name,
+            pkg.version,
+            sha256 = pkg.sha256,
+            rule = "pub.from_lock",
+        )
+        if err:
+            fail(err)
         url = "{base}/packages/{name}/versions/{version}.tar.gz".format(
             base = pkg.url,
             name = name,
@@ -123,6 +133,15 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
         contents[name] = ctx.read(pubspec) if ctx.path(pubspec).exists else ""
     for name in sorted(git_pkgs.keys()):
         pkg = git_pkgs[name]
+        err = pinned_source_error(
+            "git",
+            name,
+            pkg.version,
+            resolved_ref = pkg.resolved_ref,
+            rule = "pub.from_lock",
+        )
+        if err:
+            fail(err)
 
         # Absolute paths: `git -C <dir> archive -o <file>` resolves `-o`
         # against the `-C` directory rather than the working directory.
@@ -137,6 +156,7 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
             res = ctx.execute(["git", "-C", clone_dir, "checkout", "--quiet", pkg.resolved_ref])
             if res.return_code != 0:
                 fail("pub.from_lock: git checkout failed for %s at %s: %s" % (name, pkg.resolved_ref, res.stderr))
+        verify_git_checkout(ctx, clone_dir, pkg.resolved_ref, 'pub.from_lock "%s"' % name)
         archive = str(ctx.path("{dir}/{name}.tar".format(dir = scope_dir, name = name)))
         spec = pkg.resolved_ref if pkg.path == "." else pkg.resolved_ref + ":" + pkg.path
         res = ctx.execute(["git", "-C", clone_dir, "archive", "--format=tar", "-o", archive, spec])

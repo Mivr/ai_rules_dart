@@ -9,7 +9,8 @@ the `flutter pub get` analog) reuse this helper to emit the same
 `dart_library` shape for non-plugin packages without duplicating the format.
 """
 
-load("//dart/pub:yaml_parser.bzl", "is_valid_git_ref", "is_valid_sha256", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
+load("//dart/pub:pinned_sources.bzl", "pinned_source_error", "verify_git_checkout")
+load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_library_build_content = "make_dart_library_build_content")
 load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
 load("//dart/pub/private:pub_symlink.bzl", _check_package_symlinks = "check_package_symlinks")
@@ -32,19 +33,13 @@ def pub_lock_package_sha256_error(package_name, version, sha256):
         An error string when `sha256` is empty or not 64 lowercase hex digits,
         or None when valid.
     """
-    trimmed = str(sha256).strip() if sha256 != None else ""
-    if not trimmed:
-        return 'pub_lock_package "%s" (%s) requires a non-empty sha256.' % (
-            package_name,
-            version,
-        )
-    if not is_valid_sha256(trimmed):
-        return 'pub_lock_package "%s" (%s) has invalid sha256 %r: expected 64 lowercase hex digits.' % (
-            package_name,
-            version,
-            sha256,
-        )
-    return None
+    return pinned_source_error(
+        "hosted",
+        package_name,
+        version,
+        sha256 = sha256,
+        rule = "pub_lock_package",
+    )
 
 def trim_gzip_trailing_nulls(data):
     """Strips trailing NUL padding after a `.tar.gz` gzip stream.
@@ -257,14 +252,15 @@ pub_lock_package = repository_rule(
 )
 
 def _pub_lock_git_package_impl(ctx):
-    if not is_valid_git_ref(ctx.attr.resolved_ref):
-        fail(
-            'pub_lock_git_package "%s" (%s) requires a full 40-hex resolved-ref, got %r.' % (
-                ctx.attr.package_name,
-                ctx.attr.version,
-                ctx.attr.resolved_ref,
-            ),
-        )
+    err = pinned_source_error(
+        "git",
+        ctx.attr.package_name,
+        ctx.attr.version,
+        resolved_ref = ctx.attr.resolved_ref,
+        rule = "pub_lock_git_package",
+    )
+    if err:
+        fail(err)
 
     path = ctx.attr.path.strip() if ctx.attr.path != None else "."
     if path == "":
@@ -281,6 +277,13 @@ def _pub_lock_git_package_impl(ctx):
         res = ctx.execute(["git", "-C", str(clone_dir), "checkout", "--quiet", ctx.attr.resolved_ref])
         if res.return_code != 0:
             fail("git checkout failed for %s at %s: %s" % (ctx.attr.url, ctx.attr.resolved_ref, res.stderr))
+
+    verify_git_checkout(
+        ctx,
+        clone_dir,
+        ctx.attr.resolved_ref,
+        'pub_lock_git_package "%s"' % ctx.attr.package_name,
+    )
 
     archive_path = ctx.path("_git_archive.tar")
     spec = ctx.attr.resolved_ref if path == "." else ctx.attr.resolved_ref + ":" + path
