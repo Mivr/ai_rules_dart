@@ -3297,7 +3297,11 @@ class _UsedInputsReporter implements ModuleCompiler {
     try {
       outcome = await _inner.run([
         ...args,
-        '--used-inputs=${kernelWorkerUri(tmp)}',
+        // A native path on every OS: the worker opens this with `File()`
+        // (frontend_server's compute_kernel.dart), which rejects `file://`
+        // URIs (on Windows: errno 123). Only URI-bearing flags the worker
+        // resolves with `Uri.base.resolve` go through [kernelWorkerUri].
+        '--used-inputs=$tmp',
       ], inputs);
       if (outcome.exitCode != 0 &&
           outcome.output.contains('used-inputs') &&

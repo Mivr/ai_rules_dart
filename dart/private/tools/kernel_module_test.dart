@@ -97,10 +97,13 @@ class _DillWritingCompiler implements ModuleCompiler {
 }
 
 /// A compiler that simulates `kernel_worker --used-inputs`: it writes
-/// [reported] to each request's `--used-inputs` file as `file://` URIs, like
-/// the worker, writes [dillBytes] to each request's `--output` when set, and
-/// answers [exitCode]. A null [reported] writes no file, so the planner's
-/// passed summaries count as used.
+/// [reported] to each request's `--used-inputs` file like the worker, writes
+/// [dillBytes] to each request's `--output` when set, and answers [exitCode].
+/// Like the worker (frontend_server's compute_kernel.dart), it opens the flag
+/// value with `File()` directly: a `file://` URI value fails the request the
+/// way the worker fails it (on Windows: `FileSystemException`, errno 123),
+/// instead of being decoded. A null [reported] writes no file, so the
+/// planner's passed summaries count as used.
 class _ReportingCompiler implements ModuleCompiler {
   _ReportingCompiler({this.reported, this.dillBytes, this.exitCode = 0});
 
@@ -121,11 +124,24 @@ class _ReportingCompiler implements ModuleCompiler {
       }
     }
     if (usedPath != null && reported != null) {
-      final path = usedPath.startsWith('file://')
-          ? Uri.parse(usedPath).toFilePath()
-          : usedPath;
-      await File(path)
-          .writeAsString([for (final p in reported!) 'file://$p\n'].join());
+      if (usedPath.startsWith('file://')) {
+        return ModuleOutcome(
+          1,
+          "FileSystemException: Exists failed, path = '$usedPath' "
+          '(OS Error: The filename, directory name, or volume label syntax '
+          'is incorrect, errno = 123)',
+        );
+      }
+      final file = File(usedPath);
+      await file.parent.create(recursive: true);
+      await file.writeAsString(
+        [
+          for (final p in reported!)
+            // What the worker writes for a summary it was passed: a `file://`
+            // URI, triple-slashed for posix-absolute and drive-letter paths.
+            '${p.startsWith('/') ? 'file://$p' : 'file:///$p'}\n',
+        ].join(),
+      );
     }
     final outIdx = args.indexOf('--output');
     if (exitCode == 0 && dillBytes != null) {
@@ -255,8 +271,11 @@ Future<_Result> _compile(
   // When set, passes `--unused-inputs-list` with this path and returns what
   // was written there (or null when the compile wrote nothing).
   String? unusedInputsList,
+  // Overrides `--output` (and the derived excluded-output path): a
+  // drive-letter spelling exercises Windows-style action paths on Linux.
+  String? outputDir,
 }) async {
-  final output = '${_root.path}/out/$name';
+  final output = outputDir ?? '${_root.path}/out/$name';
   final excludedPath = '$output.vm_excluded.txt';
   final prefix = scheme == null ? _prefix : '$scheme:///';
   final args = <String>[
@@ -2002,9 +2021,9 @@ void main(List<String> args) {
 
     test('a library never lists a module directory staging an excluded source it reads', () async {
       _write('pkg/lib/a.dart', 'class A {}\n');
-      final excluder = '${_root.path}/excluder';
+      final excluded = '${_root.path}/excluded';
       _write(
-        'excluder/index.json',
+        'excluded/index.json',
         jsonEncode({
           'version': 1,
           'sccs': [
@@ -2027,7 +2046,7 @@ void main(List<String> args) {
       final result = await _compile(
         'm_unused_staged',
         ['pkg/lib/a.dart'],
-        inputKmods: [excluder, clean],
+        inputKmods: [excluded, clean],
         closureExcluded: [sidecar],
         unusedInputsList: unusedPath,
       );
@@ -2264,6 +2283,55 @@ void main(List<String> args) {
         }
       },
     );
+
+    test('m_unused_win: a Windows drive-letter output keeps --used-inputs a '
+        'native path', () async {
+      _write('pkg/lib/a.dart', "import 'package:dep/u.dart';\nclass A {}\n");
+      final unusedPath = '${_root.path}/m_unused_win.unused_inputs';
+      // `D:/...` is a legal relative spelling on Linux too, so the module
+      // directories really exist under the test root while exercising
+      // drive-letter canonicalization: the planner joins them with the
+      // action directory, and the worker reports `file:///D:/...` URIs.
+      _module('D:/w7mods/used', [
+        _Scc('u.dill', ['dep/lib/u.dart'], []),
+      ]);
+      _module('D:/w7mods/clean', [
+        _Scc('c.dill', ['dep/lib/c.dart'], []),
+      ]);
+      // The fake writes the worker's `file://` report spellings from these
+      // native paths, and fails the request worker-style if `--used-inputs`
+      // arrives as a `file://` URI. The used summary is spelled the way a
+      // Windows worker reports the passed `D:/...` summary.
+      final compiler = _ReportingCompiler(reported: {'D:/w7mods/used/u.dill'});
+      final previous = Directory.current;
+      try {
+        Directory.current = _root.path;
+        final result = await _compile(
+          'm_unused_win',
+          ['pkg/lib/a.dart'],
+          inputKmods: ['D:/w7mods/used', 'D:/w7mods/clean'],
+          outputDir: 'D:/w7out/m_unused_win',
+          compiler: compiler,
+          unusedInputsList: unusedPath,
+        );
+        expect(result.code, 0, reason: result.log);
+        // The tmp must reach the real worker as a native path: the SDK
+        // opens `--used-inputs` with File(), which rejects file:// URIs
+        // (on Windows: errno 123).
+        final seen = [
+          for (final call in compiler.calls)
+            for (final arg in call)
+              if (arg.startsWith('--used-inputs=')) arg,
+        ];
+        expect(seen, isNotEmpty);
+        for (final flag in seen) {
+          expect(flag, isNot(startsWith('--used-inputs=file://')));
+        }
+        expect(File(unusedPath).readAsLinesSync(), ['D:/w7mods/clean']);
+      } finally {
+        Directory.current = previous;
+      }
+    });
   });
 
   test('WorkRequest.inputs restricts which declared sources may be read and compiled', () async {
@@ -5051,6 +5119,8 @@ void main(List<String> args) {
     const winSummary =
         r'C:\Users\runneradmin\AppData\Local\Temp\kernel_module_test_123\dep.koutline/0.dill';
     const winOut = r'C:\Users\runneradmin\out\0.dill';
+    const winUsedInputs =
+        r'C:\Users\runneradmin\AppData\Local\Temp\kernel_module_test_123\m.used-inputs-0.tmp';
 
     expect(
       kernelWorkerUri(winSdkSummary),
@@ -5087,6 +5157,12 @@ void main(List<String> args) {
       'package:pkg/a.dart',
       '--output',
       winOut,
+      // `--used-inputs` is opened with `File()` by the worker, never
+      // resolved as a URI: encoding it as `file:///` breaks every Windows
+      // compile (errno 123). Both spellings must pass through untouched.
+      '--used-inputs',
+      winUsedInputs,
+      '--used-inputs=$winUsedInputs',
     ]);
     expect(rewritten, [
       '--target',
@@ -5105,6 +5181,9 @@ void main(List<String> args) {
       'package:pkg/a.dart',
       '--output',
       winOut,
+      '--used-inputs',
+      winUsedInputs,
+      '--used-inputs=$winUsedInputs',
     ]);
 
     // Verify ensureSummaryDigests matches a Windows drive-letter input path (with

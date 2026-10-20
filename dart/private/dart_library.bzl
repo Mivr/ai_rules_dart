@@ -1,8 +1,8 @@
 """Implementation of the dart_library rule."""
 
 load("//dart:providers.bzl", "DartCodeAssetInfo", "DartInfo", "DartPackageInfo")
-load("//dart/private:common.bzl", "PACKAGE_IDENTITY_ATTRS", "codegen_identity_error", "resolve_package_identity")
 load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR")
+load("//dart/private:common.bzl", "PACKAGE_IDENTITY_ATTRS", "codegen_identity_error", "resolve_package_identity")
 load("//dart/private:dart_info.bzl", "dart_info", "dart_info_multi", "package_lib_prefix")
 load(
     "//dart/private:dart_kernel.bzl",
