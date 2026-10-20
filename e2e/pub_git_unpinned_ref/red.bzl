@@ -6,7 +6,7 @@ would track a moving ref, so the spoke must fail before cloning anything.
 
 load("@rules_dart//dart/pub:pub_lock_package.bzl", "pub_lock_git_package")
 
-def _red_impl(ctx):
+def _red_impl(_ctx):
     pub_lock_git_package(
         name = "bad_git",
         package_name = "evil_pkg",

@@ -7,7 +7,7 @@ repository before it downloads anything.
 
 load("@rules_dart//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
 
-def _red_impl(ctx):
+def _red_impl(_ctx):
     pub_lock_scc_package(
         name = "bad_scc",
         repo_name = "bad_scc",

@@ -8,7 +8,7 @@ fails the build instead of downloading unverified.
 # buildifier: disable=bzl-visibility
 load("@rules_dart//dart/pub/private:pub_repository.bzl", "pub_package")
 
-def _red_impl(ctx):
+def _red_impl(_ctx):
     pub_package(
         name = "bad_package",
         package_name = "collection",
