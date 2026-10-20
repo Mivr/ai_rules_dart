@@ -1,0 +1,11 @@
+load("@rules_dart//dart:defs.bzl", "dart_test")
+
+# Proves the directive guard is reusable from outside rules_dart: this
+# external module depends on the public library and imports it by its stable
+# `package:` URI, exactly as a rule set built on rules_dart would.
+dart_test(
+    name = "guard_reuse_test",
+    size = "small",
+    main = "guard_reuse_test.dart",
+    deps = ["@rules_dart//dart/guard:directive_guard"],
+)
