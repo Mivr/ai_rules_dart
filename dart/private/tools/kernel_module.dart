@@ -757,6 +757,10 @@ Future<int> compileModule(
         ownKeys: {
           for (final uri in sources) ?_keyOfUri(uri, roots, multiRootPrefix),
         },
+        // The entry walk has no removal decisions about dependency files: a
+        // source it compiled is visited, and looking up a `part of` name
+        // lists nothing at all.
+        consultedTargets: const {},
         output: output,
         outputOutline: outputOutline,
         entryKeys: entry.keys.toSet(),
@@ -1069,12 +1073,14 @@ Future<int> compileModule(
   }
   await File(excludedPath).writeAsString(lines.toString());
   if (unusedInputsPath != null) {
-    // A library never lists dependency sources (its part-peer scan reads
-    // them), only the module directories no invocation used. Every own source
-    // counts as referencing, including one a shadowing dependency dropped from
-    // the compile: the module links that dependency's kernel for it. The
-    // evidence veto reads what the written kernels embedded, so an adopted
-    // part peer keeps the module that staged it.
+    // A library lists only the module directories no invocation used and
+    // whose files no plan decision consulted. Every own source counts as
+    // referencing, including one a shadowing dependency dropped from the
+    // compile: the module links that dependency's kernel for it. Every
+    // dependency key a removal decision read counts too: an exclusion
+    // target, an adopted part peer, a missing closure key. The evidence veto
+    // reads what the written kernels embedded, so an adopted part peer keeps
+    // the module that staged it even when no kernel was written.
     await _writeUnusedInputsList(
       unusedInputsPath: unusedInputsPath,
       reports: reporter.records,
@@ -1085,6 +1091,7 @@ Future<int> compileModule(
       ownKeys: {
         for (final uri in sources) ?_keyOfUri(uri, roots, multiRootPrefix),
       },
+      consultedTargets: plan.consultedTargets,
       output: output,
       outputOutline: outputOutline,
       entryKeys: null,
@@ -1766,6 +1773,20 @@ class _Plan {
   /// What each source imports or exports, by key: own sources and dependencies alike.
   final Map<String, Set<String>> _imports = {};
 
+  /// The dependency keys a plan decision consulted while removing a source
+  /// from the compile: an exclusion's target (an inherited-excluded source, a
+  /// non-own part or parent library, a missing closure key), or an adopted
+  /// part peer. A module that stages or defines a key of one of these keys'
+  /// packages is never listed as unused: renaming a file into such a name
+  /// recompiles the dependency but would skip this module, keeping the stale
+  /// decision.
+  final Set<String> consultedTargets = {};
+
+  /// Records that a removal decision consulted `target`.
+  void addConsulted(String target) {
+    consultedTargets.add(target);
+  }
+
   void addOwn(String key, String uri) => _uriOf.putIfAbsent(key, () => uri);
 
   bool isOwn(String key) => _uriOf.containsKey(key);
@@ -1912,6 +1933,9 @@ Future<void> _adoptDeclaredPartPeers(
     }
     for (final member in unit) {
       if (plan.isOwn(member)) continue;
+      // The adoption decision read this peer: renaming a file into its name
+      // recompiles the dependency, so its provider is never listed as unused.
+      plan.addConsulted(member);
       final uri = _packageUriOf(
         member,
         inherited[member] ?? '$multiRootPrefix$member',
@@ -2007,6 +2031,9 @@ Future<List<String>> _planImports(
       if (parent == null ||
           !plan.isOwn(parent) ||
           !_reachesViaPart(parent, key, declaredPartsOf)) {
+        // The exclusion decision consulted the named parent (when it names a
+        // file), so its provider is never listed as unused.
+        if (parent != null) plan.addConsulted(parent);
         direct.putIfAbsent(
           key,
           () => 'its library $libName is not an input of this module',
@@ -2065,6 +2092,9 @@ Future<List<String>> _planImports(
       if (ref.isPartOf) {
         if (!plan.isOwn(target) ||
             !_reachesViaPart(target, key, declaredPartsOf)) {
+          // The exclusion decision consulted the parent library, so its
+          // provider is never listed as unused.
+          plan.addConsulted(target);
           direct.putIfAbsent(
             key,
             () => 'its library ${ref.uri} is not an input of this module',
@@ -2079,6 +2109,9 @@ Future<List<String>> _planImports(
       }
       plan.addImport(importer: key, target: target);
       if (ref.isPart && !plan.isOwn(target)) {
+        // The exclusion decision consulted the non-own part, so its provider
+        // is never listed as unused.
+        plan.addConsulted(target);
         direct.putIfAbsent(
           key,
           () => 'its part ${ref.uri} is not an input of this module',
@@ -2093,8 +2126,14 @@ Future<List<String>> _planImports(
           plan.addImport(importer: target, target: key);
         }
       } else if (inherited.containsKey(target)) {
+        // The exclusion decision consulted the closure-excluded source, so
+        // its provider is never listed as unused.
+        plan.addConsulted(target);
         direct.putIfAbsent(key, () => 'imports ${ref.uri}, which is excluded');
       } else if (!graph.containsKey(target)) {
+        // The missing-key exclusion consulted the absent closure key, so its
+        // package's providers are never listed as unused.
+        plan.addConsulted(target);
         direct.putIfAbsent(
           key,
           () => 'imports ${ref.uri}, which is not in this module closure',
@@ -3414,11 +3453,16 @@ Future<bool> _entryReadsArePlanned(
 /// summary it holds (reported, or every passed one when no report exists),
 /// none of its keys is referenced (by a used summary, by an own source, which
 /// a shadowing dependency would drop from the compile, or by an entry key,
-/// which an adopted part peer embeds), none shares an own source's package (so a key it gains later cannot shadow one), no kernel this action wrote embeds
-/// a source it staged or defined ([outputDills], plus [entryDill]), and it stages
-/// no excluded source this action reads or scans. A dependency source of an
-/// entry module is listed only when the entry neither compiled it nor scanned
-/// it for a `part of` library name, and its output embeds nothing unplanned.
+/// which an adopted part peer embeds), none shares an own source's package,
+/// none shares the package of a dependency key a plan decision consulted
+/// while removing a source from the compile (an exclusion target, an adopted
+/// part peer, a missing closure key: renaming a file into such a name
+/// recompiles the dependency but must recompile this module too), no kernel
+/// this action wrote embeds a source it staged or defined ([outputDills],
+/// plus [entryDill]), and it stages no excluded source this action reads or
+/// scans. A dependency source of an entry module is listed only when the entry
+/// neither compiled it nor scanned it for a `part of` library name, and its
+/// output embeds nothing unplanned.
 /// Anything else (own sources, configs, sidecars, the toolchain) is never
 /// listed. A report naming a file the action never passed fails closed to an
 /// empty list, as does a written kernel whose source table names a file no
@@ -3431,6 +3475,7 @@ Future<void> _writeUnusedInputsList({
   required Map<String, String> inherited,
   required Map<String, String> stagedSources,
   required Set<String> ownKeys,
+  required Set<String> consultedTargets,
   required String output,
   required String? outputOutline,
   required Set<String>? entryKeys,
@@ -3451,6 +3496,7 @@ Future<void> _writeUnusedInputsList({
         inherited: inherited,
         stagedSources: stagedSources,
         ownKeys: ownKeys,
+        consultedTargets: consultedTargets,
         output: output,
         outputOutline: outputOutline,
         entryKeys: entryKeys,
@@ -3479,6 +3525,7 @@ Future<List<String>?> _unusedInputsLines({
   required Map<String, String> inherited,
   required Map<String, String> stagedSources,
   required Set<String> ownKeys,
+  required Set<String> consultedTargets,
   required String output,
   required String? outputOutline,
   required Set<String>? entryKeys,
@@ -3540,6 +3587,13 @@ Future<List<String>?> _unusedInputsLines({
     }
   }
   final ownPackages = {for (final key in ownKeys) _packageOfKey(key)};
+  // A plan decision that removes a source from the compile still read the
+  // dependency key it decided about. Renaming a file into such a name
+  // recompiles the dependency but must recompile this module too, so a
+  // module sharing one of those keys' packages is never listed as unused.
+  final consultedPackages = {
+    for (final key in consultedTargets) _packageOfKey(key),
+  };
   // Evidence veto: every source a kernel this action wrote embedded keeps the
   // module directory that staged or defined it. The dill's source table cannot
   // drift from what the compile read — an adopted part peer, a folded
@@ -3599,6 +3653,7 @@ Future<List<String>?> _unusedInputsLines({
     var defines = false;
     var definesReferenced = false;
     var sharesOwnPackage = false;
+    var sharesConsultedPackage = false;
     for (final entry in keysOfDill.entries) {
       final dill = entry.key;
       if (dill != canonical && !dill.startsWith('$canonical/')) continue;
@@ -3608,12 +3663,20 @@ Future<List<String>?> _unusedInputsLines({
         if (ownPackages.contains(_packageOfKey(key))) {
           sharesOwnPackage = true;
         }
+        if (consultedPackages.contains(_packageOfKey(key))) {
+          sharesConsultedPackage = true;
+        }
       }
     }
     // A module directory that defines nothing has no summary to use, but its
     // index still feeds the plan, so only a directory that defines an
-    // unreferenced library outside the own packages is listed.
-    if (!defines || definesReferenced || sharesOwnPackage) continue;
+    // unreferenced library outside the own and consulted packages is listed.
+    if (!defines ||
+        definesReferenced ||
+        sharesOwnPackage ||
+        sharesConsultedPackage) {
+      continue;
+    }
     final stagedPrefix = '$dir/sources';
     var stagesInherited = false;
     for (final staged in stagedSources.entries) {
