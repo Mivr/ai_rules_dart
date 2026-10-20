@@ -1,4 +1,5 @@
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+load("//dart:defs.bzl", "dart_test")
 
 bzl_library(
     name = "yaml_parser",
@@ -52,4 +53,61 @@ bzl_library(
     name = "defs",
     srcs = ["defs.bzl"],
     visibility = ["//visibility:public"],
+)
+
+# Bare sources for `pinned_sources_guard_test`, which reads every Starlark
+# file in `//dart/pub` and fails when a fetch call site stops going through
+# the shared pinned-source validation.
+exports_files(
+    [
+        "defs.bzl",
+        "extensions.bzl",
+        "pinned_sources.bzl",
+        "pub_lock_hub.bzl",
+        "pub_lock_package.bzl",
+        "pub_lock_scc.bzl",
+        "yaml_parser.bzl",
+    ],
+)
+
+dart_test(
+    name = "pinned_sources_guard_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :defs.bzl)",
+        "$(rlocationpath :extensions.bzl)",
+        "$(rlocationpath :pinned_sources.bzl)",
+        "$(rlocationpath :pub_lock_hub.bzl)",
+        "$(rlocationpath :pub_lock_package.bzl)",
+        "$(rlocationpath :pub_lock_scc.bzl)",
+        "$(rlocationpath :yaml_parser.bzl)",
+        "$(rlocationpath //dart/pub/private:build_content.bzl)",
+        "$(rlocationpath //dart/pub/private:language_version.bzl)",
+        "$(rlocationpath //dart/pub/private:pub_repository.bzl)",
+        "$(rlocationpath //dart/pub/private:pub_symlink.bzl)",
+        "$(rlocationpath //dart/pub/private:scc.bzl)",
+        "$(rlocationpath //dart/pub/private:version.bzl)",
+        "$(rlocationpath //dart/pub/private:yaml_subset.bzl)",
+    ],
+    data = [
+        ":defs.bzl",
+        ":extensions.bzl",
+        ":pinned_sources.bzl",
+        ":pub_lock_hub.bzl",
+        ":pub_lock_package.bzl",
+        ":pub_lock_scc.bzl",
+        ":yaml_parser.bzl",
+        "//dart/pub/private:build_content.bzl",
+        "//dart/pub/private:language_version.bzl",
+        "//dart/pub/private:pub_repository.bzl",
+        "//dart/pub/private:pub_symlink.bzl",
+        "//dart/pub/private:scc.bzl",
+        "//dart/pub/private:version.bzl",
+        "//dart/pub/private:yaml_subset.bzl",
+    ],
+    main = "pinned_sources_guard_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
 )
