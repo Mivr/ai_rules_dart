@@ -223,10 +223,10 @@ dart_test(
     name = "kernel_module_test",
     size = "small",
     srcs = [
-        "//dart/guard:lib/directive_guard.dart",
         "dill_outline.dart",
         "kernel_link.dart",
         "kernel_module.dart",
+        "//dart/guard:lib/directive_guard.dart",
     ],
     args = [
         "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
@@ -278,12 +278,12 @@ dart_test(
         ":analyze_runner.dart",
         ":analyzer_summary.dart",
         ":app_jit_snapshot.dart",
-        "//dart/guard:lib/directive_guard.dart",
         ":fix_runner.dart",
         ":kernel_module.dart",
         ":link_hook_runner.dart",
         ":web_compile_runner.dart",
         "//dart/ext:lib/builder_shim.dart",
+        "//dart/guard:lib/directive_guard.dart",
     ],
     main = "directive_guard_test.dart",
     deps = [
@@ -326,8 +326,8 @@ dart_test(
     name = "fix_runner_test",
     size = "small",
     srcs = [
-        "//dart/guard:lib/directive_guard.dart",
         "fix_runner.dart",
+        "//dart/guard:lib/directive_guard.dart",
     ],
     main = "fix_runner_test.dart",
     deps = [

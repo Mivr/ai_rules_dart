@@ -5,8 +5,8 @@ load("//dart:defs.bzl", "dart_library")
 # check in their own tools. See lib/directive_guard.dart for the API.
 dart_library(
     name = "directive_guard",
-    srcs = ["lib/directive_guard.dart"],
     package_name = "rules_dart_guard",
+    srcs = ["lib/directive_guard.dart"],
     visibility = ["//visibility:public"],
 )
 

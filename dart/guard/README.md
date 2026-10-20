@@ -34,18 +34,18 @@ the list is not empty. Each line names the file, the directive and the URI:
 <tool>: <path> <kind> '<uri>' is not a declared input.
 ```
 
-* `findStagedDirectiveViolations(roots, {required tool})` — pass staged
+- `findStagedDirectiveViolations(roots, {required tool})` — pass staged
   roots, get every directive under them that would read a file outside them.
   Reads every `.dart` file under `roots`; missing roots scan as empty. This
   is the check rules_dart's own runners enforce.
-* `findDisallowedDirectives({path: source}, {tool})` — pass file contents,
+- `findDisallowedDirectives({path: source}, {tool})` — pass file contents,
   get every disallowed-scheme directive, without touching the filesystem.
-* `resolveDirectiveUri(uri, fromKey, packageDirs)` — pass one URI, the
+- `resolveDirectiveUri(uri, fromKey, packageDirs)` — pass one URI, the
   importing file's workspace key and the package-name-to-directory map, get
   the key the front end reads, or null when the URI names no workspace file.
-* `scanAllDirectiveUris(source)` — every URI-bearing directive of a source's
+- `scanAllDirectiveUris(source)` — every URI-bearing directive of a source's
   prologue, without evaluating `if` conditions.
-* Predicates for tools that stage their own trees: `isDisallowedDirectiveUri`,
+- Predicates for tools that stage their own trees: `isDisallowedDirectiveUri`,
   `isFileSchemeDirectiveUri`, `isEscapingPackageUri`, `hasEmptyPathSegment`,
   `resolveStagedRelativeTarget`, `normalizeStagedPath`, `decodeUriSegment`.
 
