@@ -1,0 +1,10 @@
+module(name = "pub_spoke_malformed_sha_e2e")
+
+bazel_dep(name = "rules_dart", version = "0.0.0")
+local_path_override(
+    module_name = "rules_dart",
+    path = "../..",
+)
+
+red = use_extension("//:red.bzl", "red")
+use_repo(red, "bad_spoke")

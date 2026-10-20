@@ -1,0 +1,15 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary")
+
+# This workspace should FAIL at module resolution: 9.9.9 is not a pinned SDK
+# version, so the toolchain table refuses it instead of downloading an
+# SDK with no recorded checksum.
+#
+#   if bazel build //:app 2>/dev/null; then
+#     echo "ERROR: build should have failed with an unknown SDK version error"
+#     exit 1
+#   fi
+#   bazel build //:app 2>&1 | grep -F -q "instead of '9.9.9'"
+dart_binary(
+    name = "app",
+    main = "main.dart",
+)

@@ -1,0 +1,8 @@
+# This workspace should FAIL to fetch: `bad_spoke` is a hosted lock package
+# whose sha256 is blank, so the fetch site refuses it before downloading.
+#
+#   if bazel build @bad_spoke//... 2>/dev/null; then
+#     echo "ERROR: build should have failed with a missing sha256 error"
+#     exit 1
+#   fi
+#   bazel build @bad_spoke//... 2>&1 | grep -F -q 'pub_lock_package "collection" (1.18.0) requires a non-empty sha256.'
