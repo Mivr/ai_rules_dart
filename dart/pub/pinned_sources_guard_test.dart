@@ -4,11 +4,11 @@ import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
 
 /// Enumeration of every fetch call site in `//dart/pub` through the shared
-/// pinned-source validation and the shared host-git helper.
+/// pinned-source validation and the shared two-phase host-git helpers.
 ///
 /// A package source that stops going through `pinned_source_error` before it
-/// fetches — or a git checkout that stops being verified with
-/// `verify_git_checkout` afterwards — must fail the
+/// fetches — or a git checkout that stops going through both
+/// `git_transport_fetch` and `git_materialize` — must fail the
 /// `every fetch goes through the shared validation` test below: each
 /// Starlark file in `//dart/pub` is passed as a test argument (see
 /// BUILD.bazel) and any file that fetches must contain the enforcement
@@ -17,13 +17,17 @@ import 'package:test/test.dart';
 /// are deliberately absent from the markers: they download nothing.
 ///
 /// `pinned_sources.bzl` is the single validation entry point and the single
-/// place that runs host `git` (`git_clone`, `git_fetch`, `git_checkout`,
-/// `git_archive`). It performs no fetch itself besides the read-only
-/// `rev-parse` checkout verification and the host-independent `git archive`
-/// materialization, so a new `git` invocation that bypasses the helper —
-/// spelling the `git` binary in any other file — fails the `only the shared
-/// helper spells the git binary` test below, and a new clone that bypasses
-/// the template isolation fails the `only the shared helper clones` test.
+/// place that runs host `git`, split into exactly two phases:
+/// `git_transport_fetch` (bare-repository transport fetch, which may inherit
+/// the host's transport configuration) and `git_materialize` (fully
+/// isolated verification and archive). A new `git` invocation that bypasses
+/// the helpers — spelling the `git` binary, a git subcommand, or
+/// `ctx.execute` in any other file — fails the `only the shared helpers run
+/// git` tests below, and a git call inside the helper that leaves either
+/// phase (a subcommand outside transport/materialization, an `execute`
+/// without `--no-replace-objects`) fails the phase-boundary tests: every
+/// argv list is spelled out at its call site precisely so the boundary is
+/// greppable.
 
 /// The test's Starlark sources by file name, from the `rlocationpath`
 /// arguments under Bazel or from the source tree for a direct `dart test`
@@ -79,22 +83,44 @@ const _topLevel = {
 const _downloadMarkers = ['ctx.download(', 'ctx.download_and_extract('];
 
 /// The `git` binary spelled as a `ctx.execute` argument list. Only the shared
-/// helper in `pinned_sources.bzl` may contain it: every other file runs git
-/// through `git_clone(`, `git_fetch(`, `git_checkout(` or `git_archive(`.
+/// helpers in `pinned_sources.bzl` may contain it: every other file fetches
+/// git packages through `git_transport_fetch(` and `git_materialize(`.
 const _gitMarker = '["git"';
-const _gitHelpers = [
+
+/// The two phases. Every git call site runs both: transport first, then
+/// materialization. A call site that runs one without the other fails.
+const _gitHelpers = ['git_transport_fetch(', 'git_materialize('];
+
+/// Helpers that predated the two-phase design. A reintroduction fails.
+const _retiredHelpers = [
   'git_clone(',
   'git_fetch(',
   'git_checkout(',
   'git_archive(',
+  'verify_git_checkout(',
 ];
 const _validatorMarker = 'pinned_source_error(';
-const _verifyMarker = 'verify_git_checkout(';
+
+/// Git subcommands and flags that only the two phases may spell. A new git
+/// operation anywhere else — or a new phase operation that leaves the two
+/// helpers — fails.
+const _phaseMarkers = [
+  '"init"',
+  '"fetch"',
+  '"rev-parse"',
+  '"archive"',
+  '"cat-file"',
+  '"count-objects"',
+  '"--bare"',
+  '--template=',
+  '--git-dir=',
+  '--no-replace-objects',
+];
 
 bool _fetchesDownload(String text) => _downloadMarkers.any(text.contains);
 
 /// Whether the file runs host `git`: either by spelling the binary (only the
-/// helper may) or by calling one of the shared helpers.
+/// helpers may) or by calling one of the shared two-phase helpers.
 bool _runsGit(String text) =>
     text.contains(_gitMarker) || _gitHelpers.any(text.contains);
 
@@ -122,6 +148,15 @@ void main(List<String> args) {
               reason: 'pinned_sources.bzl must define $helper',
             );
           }
+          for (final retired in _retiredHelpers) {
+            expect(
+              text.contains('def $retired'),
+              isFalse,
+              reason:
+                  'pinned_sources.bzl must not reintroduce $retired; '
+                  'fetch through the two phases instead',
+            );
+          }
         } else {
           expect(
             text.contains('def pinned_source_error('),
@@ -130,13 +165,13 @@ void main(List<String> args) {
                 '${entry.key} must not redefine $_validatorMarker; '
                 'call the single entry point instead',
           );
-          for (final helper in _gitHelpers) {
+          for (final helper in [..._gitHelpers, ..._retiredHelpers]) {
             expect(
               text.contains('def $helper'),
               isFalse,
               reason:
                   '${entry.key} must not redefine $helper; '
-                  'call the shared helper instead',
+                  'call the shared helpers instead',
             );
           }
         }
@@ -165,7 +200,7 @@ void main(List<String> args) {
       );
     });
 
-    test('every git checkout is validated and verified', () {
+    test('every git checkout is validated and runs both phases', () {
       final sources = _bzlSources(args);
       var gated = 0;
       for (final entry in sources.entries) {
@@ -178,11 +213,15 @@ void main(List<String> args) {
           isTrue,
           reason: '${entry.key} runs git but never calls $_validatorMarker',
         );
-        expect(
-          text.contains(_verifyMarker),
-          isTrue,
-          reason: '${entry.key} checks out git but never calls $_verifyMarker',
-        );
+        for (final helper in _gitHelpers) {
+          expect(
+            text.contains(helper),
+            isTrue,
+            reason:
+                '${entry.key} runs git but never calls $helper; '
+                'a fetch that skips either phase is unverified',
+          );
+        }
       }
       expect(
         gated,
@@ -191,7 +230,7 @@ void main(List<String> args) {
       );
     });
 
-    test('only the shared helper spells the git binary', () {
+    test('only the shared helpers spell the git binary', () {
       final sources = _bzlSources(args);
       final spelling = [
         for (final entry in sources.entries)
@@ -203,18 +242,18 @@ void main(List<String> args) {
         equals(['pinned_sources.bzl']),
         reason:
             'only pinned_sources.bzl may spell $_gitMarker; '
-            'run git through git_clone(, git_fetch(, git_checkout( or git_archive( '
+            'fetch through git_transport_fetch( and git_materialize( '
             'instead (offenders: $spelling)',
       );
     });
 
-    test('only the shared helper clones without host templates', () {
+    test('only the shared helpers run git commands', () {
       final sources = _bzlSources(args);
-      // The clone operation and its template isolation: a call site that
-      // clones with its own arguments bypasses `--template=`, the
-      // `GIT_TEMPLATE_DIR` override and the `.git/info/attributes`
-      // truncation, so both markers live only in the shared helper.
-      for (final marker in ['"clone"', '--template=']) {
+      // The phase boundary: every git subcommand, flag and executor lives
+      // in the two helpers. A git call anywhere else — a new fetch path
+      // that bypasses the phases, or a new operation inside a call site —
+      // spells one of these markers outside pinned_sources.bzl and fails.
+      for (final marker in [..._phaseMarkers, 'ctx.execute(']) {
         final spelling = [
           for (final entry in sources.entries)
             if (File(entry.value).readAsStringSync().contains(marker))
@@ -225,12 +264,38 @@ void main(List<String> args) {
           equals(['pinned_sources.bzl']),
           reason:
               'only pinned_sources.bzl may spell $marker; '
-              'clone through git_clone( instead (offenders: $spelling)',
+              'a git call outside git_transport_fetch( and git_materialize( '
+              'runs unverified (offenders: $spelling)',
         );
       }
     });
 
-    test('every git call site uses the shared helper', () {
+    test('every git invocation disables replace refs', () {
+      // `--no-replace-objects` is spelled out at every `ctx.execute` call
+      // (not hidden in a shared list) so a new invocation without it fails
+      // here: a host `refs/replace/*` ref must never change the archived
+      // tree while verification still sees the pinned commit.
+      final sources = _bzlSources(args);
+      final text = File(sources['pinned_sources.bzl']!).readAsStringSync();
+      final calls = text.split('ctx.execute(');
+      expect(
+        calls.length,
+        greaterThan(1),
+        reason: 'no git invocation found; the test would pass vacuously',
+      );
+      for (var i = 1; i < calls.length; i++) {
+        expect(
+          calls[i].contains('--no-replace-objects'),
+          isTrue,
+          reason:
+              'git invocation $i in pinned_sources.bzl spells no '
+              '--no-replace-objects; every phase command must disable '
+              'replace refs',
+        );
+      }
+    });
+
+    test('every git call site uses the shared helpers', () {
       final sources = _bzlSources(args);
       var gated = 0;
       for (final entry in sources.entries) {
@@ -242,7 +307,7 @@ void main(List<String> args) {
           text.contains('pinned_sources.bzl'),
           isTrue,
           reason:
-              '${entry.key} calls the shared git helper but never loads '
+              '${entry.key} calls the shared git helpers but never loads '
               'pinned_sources.bzl',
         );
       }
@@ -251,6 +316,40 @@ void main(List<String> args) {
         greaterThan(0),
         reason: 'no git helper call site found; the test would pass vacuously',
       );
+    });
+
+    test('transport keeps working while hooks and fsmonitor stay off', () {
+      final sources = _bzlSources(args);
+      final text = File(sources['pinned_sources.bzl']!).readAsStringSync();
+      // The transport phase inherits the host's transport configuration
+      // (credentials, insteadOf, proxies) from its config files, so the
+      // file selectors stay readable there — while every code-executing and
+      // resolution knob is pinned on the command line or in the
+      // environment.
+      for (final marker in [
+        '"init"',
+        '"--bare"',
+        '"fetch"',
+        '--template=',
+        'GIT_TEMPLATE_DIR',
+        'core.hooksPath=',
+        'core.fsmonitor=false',
+        'core.untrackedCache=false',
+        'GIT_OBJECT_DIRECTORY',
+        'GIT_COMMON_DIR',
+        'GIT_ALLOW_PROTOCOL',
+        'info/attributes',
+      ]) {
+        expect(
+          text.contains(marker),
+          isTrue,
+          reason:
+              'pinned_sources.bzl must apply $marker on the transport '
+              'phase, so host templates, hooks, fsmonitor and object '
+              'redirection cannot change bytes or run code while '
+              'transport configuration keeps working',
+        );
+      }
     });
 
     test('the materialization helper neutralizes host git configuration', () {
@@ -263,6 +362,7 @@ void main(List<String> args) {
         'core.eol=lf',
         'core.attributesfile=',
         'core.hooksPath=',
+        'core.fsmonitor=false',
         'tar.umask=',
       ]) {
         expect(
@@ -271,18 +371,33 @@ void main(List<String> args) {
           reason: 'pinned_sources.bzl must pin $pin for git archive',
         );
       }
-      // The host configuration selectors scrubbed from the archive's
-      // environment, pointed at the helper's empty file where they name one.
+      // The isolated materialization environment: an explicit `--git-dir`
+      // of the bare repository, replacements disabled twice (flag and
+      // variable), every config source pointed at empty files or emptied,
+      // alternates refused and the commit, its type and its tree verified
+      // before the archive streams from the same repository.
       for (final name in [
+        '--git-dir=',
+        'GIT_NO_REPLACE_OBJECTS',
+        'GIT_CONFIG_NOSYSTEM',
         'GIT_CONFIG_COUNT',
         'GIT_CONFIG_PARAMETERS',
         'GIT_CONFIG_GLOBAL',
         'GIT_CONFIG_SYSTEM',
+        'XDG_CONFIG_HOME',
+        'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+        'GIT_OBJECT_DIRECTORY',
+        'GIT_COMMON_DIR',
+        'count-objects',
+        'alternate:',
+        'cat-file',
+        '^{commit}',
+        '^{tree}',
       ]) {
         expect(
           text.contains(name),
           isTrue,
-          reason: 'pinned_sources.bzl must scrub $name for git archive',
+          reason: 'pinned_sources.bzl must apply $name for git materialization',
         );
       }
     });

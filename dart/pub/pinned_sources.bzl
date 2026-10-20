@@ -3,11 +3,9 @@
 Every repository rule and helper in `//dart/pub` that fetches a package —
 hosted tarballs and git checkouts alike, including each member of a merged
 cycle and the `pub` extension's own cycle-planning downloads — validates its
-coordinates through `pinned_source_error` before it fetches, every git
-checkout is verified afterwards with `verify_git_checkout`, every clone goes
-through `git_clone`, and every other host `git` invocation goes through
-`git_fetch`, `git_checkout` or `git_archive` below, so a new git call that
-bypasses the helper fails the `pinned_sources_guard_test` enumeration.
+coordinates through `pinned_source_error` before it fetches, and every git
+package is fetched through exactly the two phases below, so a new git call
+that bypasses the helpers fails the `pinned_sources_guard_test` enumeration.
 
 A git source is pinned only by its full 40-hex commit SHA; anything else
 (a branch, a tag, `HEAD`, a short SHA, a SHA with a revision suffix, ...)
@@ -15,27 +13,62 @@ fails the build instead of tracking a moving ref. A hosted source is pinned
 by its non-blank sha256 checksum. There is deliberately one function for
 both, so a new fetch call site cannot pick the wrong check.
 
-Host git configuration and the archived bytes: cloning ignores the host's
-template directory — `GIT_TEMPLATE_DIR` in the environment, or
-`init.templateDir` from any readable config file — by passing `--template=`
-pointing at an empty directory this helper creates (a command-line flag beats
-every config file) and by pointing `GIT_TEMPLATE_DIR` at the same directory,
-so a host template's `info/attributes` (with `export-subst` or `eol`) cannot
-change the extracted bytes and its `hooks/` are never installed. The clone's
-repository-local `.git/info/attributes` is truncated right after cloning (git
-has no switch for that file), and every git invocation points
-`core.hooksPath` at the empty directory on the command line (`-c` beats both
-files and environment), so no host hook runs at any step. The materialization
-step (`git_archive`) additionally neutralizes every host-side git
-configuration — system, global, XDG and HOME config files,
-`GIT_CONFIG_COUNT` / `GIT_CONFIG_KEY_*` / `GIT_CONFIG_VALUE_*` and
-`GIT_CONFIG_PARAMETERS`, `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM` — by
-pinning the conversion knobs on the command line (`-c` beats both files and
-environment) and by pointing the file selectors at an empty file this helper
-writes. Fetching (`git_clone`, `git_fetch`, `git_checkout`) deliberately keeps
-the host's transport configuration (credential helpers,
-`url.<base>.insteadOf` rewrites, proxies, SSH settings): the commit id
-already verifies what was fetched, and private repositories need it.
+## The two phases
+
+Fetching a pinned commit is split in two so that host git state can neither
+change the extracted bytes nor run host code, while transport configuration
+(credentials, `url.<base>.insteadOf` rewrites, proxies, SSH) keeps working:
+
+1. Transport (`git_transport_fetch`): the pinned commit is fetched into a
+   fresh BARE repository — `git init --bare` plus `git fetch <url> <sha>`,
+   falling back to fetching all refs on servers that reject a bare SHA.
+   There is no working tree, so no checkout ever runs: hooks, `core.fsmonitor`
+   and working-tree attributes have nothing to act on. Hooks and fsmonitor
+   are additionally pinned off on the command line (`-c` beats config files
+   and environment on every git version). Every repository-resolution
+   selector the host could otherwise redirect is pinned at the new bare
+   repository instead: `--git-dir` (which beats `GIT_DIR`), `--template=`
+   plus `GIT_TEMPLATE_DIR` (which beat `init.templateDir` from any config
+   file), `GIT_OBJECT_DIRECTORY` and `GIT_COMMON_DIR` (pointed at the new
+   repository's own directories, which are pre-created so the pins always
+   name existing paths), and `--no-replace-objects` (which beats replace
+   refs from any source). The remaining non-transport selectors
+   (`GIT_INDEX_FILE`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`, `GIT_NAMESPACE`,
+   `GIT_REPLACE_REF_BASE`, `GIT_CEILING_DIRECTORIES`, ...) are scrubbed from
+   the environment. What is deliberately inherited is only transport: the
+   host's config files and `GIT_CONFIG_COUNT` / `GIT_CONFIG_PARAMETERS`
+   (which may carry `insteadOf` rewrites), SSH and credential-helper
+   variables, and proxies. `GIT_ALLOW_PROTOCOL` is pinned to a fixed
+   transport-only list so host state cannot widen the fetch to a
+   command-executing helper. One host variable cannot be neutralized: git
+   refuses to run `init` at all when `GIT_WORK_TREE` is set, and an empty
+   value is equally fatal, so a host that exports `GIT_WORK_TREE` fails the
+   fetch loudly instead of fetching wrongly; it is never set during builds,
+   and every later command ignores it (a bare repository has no work tree).
+2. Materialization (`git_materialize`): every later git command — the
+   `count-objects` alternates refusal, the `rev-parse`/`cat-file`
+   verification, the tree read, the `archive` — runs against that bare
+   repository with an explicit `--git-dir`, `--no-replace-objects`, the same
+   hook/fsmonitor pins, and an environment scrubbed to `PATH` plus a scratch
+   `HOME`: no `GIT_*` at all (every selector is either pinned at the bare
+   repository or pointed at an empty file or directory), `XDG_CONFIG_HOME`
+   pointed at the empty directory, `GIT_CONFIG_NOSYSTEM=1`, the global and
+   system selectors pointed at an empty file this helper writes, and
+   `GIT_NO_REPLACE_OBJECTS=1`. A repository with `objects/info/alternates`
+   is refused outright (a fresh `init` never writes that file, so its
+   presence means tampering). Verification reads the commit object id
+   (`rev-parse --verify <sha>^{commit}` must print the pinned SHA), its type
+   (`cat-file -t` must say `commit`), and its tree (`rev-parse
+   <sha>^{tree}`), all under that empty environment; the archive is then
+   streamed from the same bare repository under the same environment, so the
+   tree written out is by construction the verified commit's tree — no host
+   channel can make the two commands resolve the same SHA differently once
+   replacements, alternates, templates, hooks, fsmonitor and every config
+   source are pinned or removed. The archive additionally pins the byte
+   conversion knobs (`core.autocrlf=false`, `core.eol=lf`,
+   `core.attributesFile` at the empty file, `tar.umask=002`), and the
+   repository-local `info/attributes` is truncated both after `init` and
+   before the archive.
 
 The package's own committed `.gitattributes` are honoured: `export-subst`,
 `export-ignore` and `eol` attributes from the archived tree are a pure
@@ -101,7 +134,9 @@ def _git_empty_dir(ctx):
     have no `ctx.delete` to remove the placeholder afterwards. The placeholder
     is inert for both uses: as a template it copies to `.git/keep`, outside
     `hooks/` and `info/`, and as a hooks directory git only looks up exact
-    hook names, never `keep`.
+    hook names, never `keep`. It also serves as the scratch `HOME` and
+    `XDG_CONFIG_HOME` for materialization: neither `<dir>/.gitconfig` nor
+    `<dir>/git/config` exists, so no host file is read.
 
     Args:
         ctx: A repository or module-extension context.
@@ -112,157 +147,357 @@ def _git_empty_dir(ctx):
     ctx.file("_git_empty/keep", "", executable = False)
     return str(ctx.path("_git_empty"))
 
-def git_fetch(ctx, args):
-    """Runs host `git` for one fetching step (checkout, fetch, rev-parse).
+def _git_empty_file(ctx):
+    """Ensures the shared empty file replacing host-side git config selectors.
 
-    The host's transport configuration is deliberately inherited — credential
-    helpers, `url.<base>.insteadOf` rewrites, proxies and SSH settings keep
-    working, which private repositories need. Only host-controlled code and
-    byte inputs are neutralized: `core.hooksPath` is pointed at the shared
-    empty directory on the command line (`-c` beats config files and
-    environment on every git version, so an environment-injected hooks path
-    loses too) and `GIT_TEMPLATE_DIR` is pointed at the same directory.
-    Cloning additionally needs `--template=` and the attributes truncation,
-    so it uses `git_clone`, not this function.
+    The file doubles as the `core.attributesFile` replacement and as the
+    `GIT_CONFIG_GLOBAL` / `GIT_CONFIG_SYSTEM` replacement. It is left behind
+    on purpose: module-extension contexts have no `ctx.delete`, and an empty
+    underscore-prefixed file is inert (no BUILD glob reaches the repository
+    root, and the planning scratch is Bazel-managed).
 
     Args:
         ctx: A repository or module-extension context.
-        args: The `git` arguments, without the binary name
-            (for example `["-C", clone_dir, "checkout", "--quiet", ref]`).
 
     Returns:
-        The `ctx.execute` result, so the caller reports failures in its own
-        words (checkout and fetch failures name different things).
+        The empty file's path string.
     """
-    empty_dir = _git_empty_dir(ctx)
-    return ctx.execute(
-        ["git", "-c", "core.hooksPath=" + empty_dir] + args,
-        environment = {"GIT_TEMPLATE_DIR": empty_dir},
-    )
+    ctx.file("_git_empty_config", "", executable = False)
+    return str(ctx.path("_git_empty_config"))
 
-def git_clone(ctx, url, clone_dir):
-    """Clones `url` without checkout, ignoring host templates, hooks and attributes.
+# Protocols the transport phase may speak. Pinned (rather than inherited)
+# so host state cannot widen a fetch to a command-executing helper: the
+# list covers every URL shape pub git sources use (https, http and git
+# remotes, ssh in both syntaxes, file URLs and plain local paths).
+_GIT_ALLOW_PROTOCOL = "https:http:git:ssh:file"
 
-    `git clone` populates the new repository's `.git/info/attributes` and
-    `.git/hooks/` from the host's template directory (`GIT_TEMPLATE_DIR`, or
-    `init.templateDir` from any readable config file): a template
-    `info/attributes` with `export-subst` changes the archived bytes of the
-    pinned commit, and a template `post-checkout` hook runs host code at
-    checkout time. The clone therefore passes `--template=` pointing at the
-    shared empty directory (a command-line flag beats `init.templateDir` from
-    every config file), points `GIT_TEMPLATE_DIR` at the same directory, pins
-    `core.hooksPath` at it so no host hook runs, and truncates the clone's
-    repository-local `.git/info/attributes` (git has no switch for that file;
-    the package's own committed `.gitattributes` are untouched and keep the
-    documented behaviour). Transport configuration is inherited, like
-    `git_fetch`.
+def _transport_env(empty_dir, bare_abs):
+    """Environment for one transport command: host transport, pinned resolution.
+
+    The host's transport configuration is deliberately inherited — config
+    files and `GIT_CONFIG_COUNT` / `GIT_CONFIG_PARAMETERS` (which may carry
+    `url.<base>.insteadOf` rewrites), credential helpers, proxies and SSH
+    settings keep working, which private repositories need. Only
+    host-controlled resolution and byte inputs are neutralized: the template
+    directory, the object and common directories (pinned at the new bare
+    repository, whose directories are pre-created so the pins always name
+    existing paths — git refuses empty values there), the protocol
+    allowlist, and every remaining non-transport selector scrubbed to an
+    empty value (which git reads as unset). `GIT_DIR` is left to the argv
+    flags: `--git-dir` beats it on the fetch, and the `init` target
+    directory wins over it. `GIT_WORK_TREE` cannot be neutralized — git
+    refuses `init` while it is set — and is documented on
+    `git_transport_fetch`.
 
     Args:
-        ctx: A repository or module-extension context.
-        url: The git remote URL (or local bundle path) to clone.
-        clone_dir: The repository-relative clone directory (for example
-            `"_git_clone"`): relative so the attributes file can be
-            neutralized with `ctx.file` on every context, including module
-            extensions, which have no `ctx.delete`.
+        empty_dir: The shared empty directory's path string.
+        bare_abs: The bare repository's absolute path string.
 
     Returns:
-        The `ctx.execute` result, so the caller reports clone failures in its
-        own words. The attributes file is neutralized only on success.
+        The `environment` dict for one transport `ctx.execute` call.
     """
-    empty_dir = _git_empty_dir(ctx)
-    res = ctx.execute(
-        [
-            "git",
-            "-c",
-            "core.hooksPath=" + empty_dir,
-            "clone",
-            "--no-checkout",
-            "--template=" + empty_dir,
-            url,
-            str(ctx.path(clone_dir)),
-        ],
-        environment = {"GIT_TEMPLATE_DIR": empty_dir},
-    )
-    if res.return_code != 0:
-        return res
-    ctx.file(clone_dir + "/info/attributes", "", executable = False)
-    return res
+    return {
+        "GIT_TEMPLATE_DIR": empty_dir,
+        "GIT_OBJECT_DIRECTORY": bare_abs + "/objects",
+        "GIT_COMMON_DIR": bare_abs,
+        "GIT_ALLOW_PROTOCOL": _GIT_ALLOW_PROTOCOL,
+        "GIT_INDEX_FILE": "",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES": "",
+        "GIT_NAMESPACE": "",
+        "GIT_REPLACE_REF_BASE": "",
+        "GIT_CEILING_DIRECTORIES": "",
+        "GIT_PREFIX": "",
+        "GIT_DISCOVERY_ACROSS_FILESYSTEM": "",
+        "GIT_FLUSH": "",
+    }
 
-def git_checkout(ctx, clone_dir, resolved_ref, what):
-    """Checks out the pinned commit, fetching it first when the clone lacks it.
+def _materialize_env(empty, empty_dir, bare_abs):
+    """Environment for one materialization command: nothing but PATH and a scratch HOME.
 
-    A `--no-checkout` clone of a bundle or a shallow mirror may not contain
-    the pinned commit yet; the fetch-then-retry keeps such remotes working.
-    Transport uses the host configuration, like `git_fetch`.
+    `ctx.execute` inherits the host environment, so every selector is
+    overridden explicitly: `HOME` and `XDG_CONFIG_HOME` point at the shared
+    empty directory (neither `<dir>/.gitconfig` nor `<dir>/git/config`
+    exists), system config is disabled, the global and system file selectors
+    point at the shared empty file, the inline-config selectors are emptied,
+    replacements are disabled, the object and common directories are pinned
+    at the bare repository, and every transport-executing variable (SSH,
+    askpass, proxies) is emptied — materialization never touches the
+    network. `GIT_DIR` is left to the argv flag: `--git-dir` beats it on
+    every git version, and an empty value is fatal. `GIT_WORK_TREE` is
+    likewise inherited but inert: every materialization command runs against
+    a bare repository with no worktree operation. What `ctx.execute` merges
+    in untouched is only `PATH` (which locates the `git` binary) and
+    transport-adjacent variables nothing here consults.
+
+    Args:
+        empty: The shared empty file's path string.
+        empty_dir: The shared empty directory's path string.
+        bare_abs: The bare repository's absolute path string.
+
+    Returns:
+        The `environment` dict for one materialization `ctx.execute` call.
+    """
+    return {
+        "HOME": empty_dir,
+        "XDG_CONFIG_HOME": empty_dir,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": empty,
+        "GIT_CONFIG_SYSTEM": empty,
+        "GIT_CONFIG_COUNT": "",
+        "GIT_CONFIG_PARAMETERS": "",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_TEMPLATE_DIR": empty_dir,
+        "GIT_OBJECT_DIRECTORY": bare_abs + "/objects",
+        "GIT_COMMON_DIR": bare_abs,
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES": "",
+        "GIT_ALLOW_PROTOCOL": _GIT_ALLOW_PROTOCOL,
+        "GIT_INDEX_FILE": "",
+        "GIT_NAMESPACE": "",
+        "GIT_REPLACE_REF_BASE": "",
+        "GIT_CEILING_DIRECTORIES": "",
+        "GIT_PREFIX": "",
+        "GIT_DISCOVERY_ACROSS_FILESYSTEM": "",
+        "GIT_SSH": "",
+        "GIT_SSH_COMMAND": "",
+        "GIT_ASKPASS": "",
+        "GIT_PROXY_COMMAND": "",
+        "GIT_EDITOR": "",
+        "GIT_PAGER": "",
+        "GIT_FLUSH": "",
+        "GIT_TRACE": "",
+        "GIT_TRACE_PACK_ACCESS": "",
+        "GIT_TRACE_PACKET": "",
+        "GIT_TRACE_PERFORMANCE": "",
+        "GIT_TRACE_SETUP": "",
+        "GIT_CURL_VERBOSE": "",
+    }
+
+def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
+    """Fetches the pinned commit into a fresh bare repository (phase 1: transport).
+
+    `git init --bare` (with `--template=` at the shared empty directory, so
+    no host template's `info/attributes` or `hooks/` ever reach the clone)
+    plus `git fetch <url> <sha>` (falling back to fetching all refs on
+    servers that reject a bare SHA, such as some corporate mirrors). Nothing
+    is ever checked out: with no working tree, host hooks, `core.fsmonitor`
+    and working-tree attributes have nothing to act on, and the command-line
+    pins (`core.hooksPath`, `core.fsmonitor=false`,
+    `core.untrackedCache=false`, `--no-replace-objects`) keep them off even
+    where host configuration is deliberately inherited for transport. The
+    bare repository's directories are pre-created (via a `keep` file, since
+    `ctx.file` cannot create an empty directory) so the object and common
+    directory pins always name existing paths, and the repository-local
+    `info/attributes` is truncated right after `init` (git has no switch for
+    that file; the package's own committed `.gitattributes` are untouched
+    and keep the documented behaviour).
+
+    A host that exports `GIT_WORK_TREE` fails this function loudly at
+    `init`: git refuses to initialize while it is set, and no scrubbed value
+    satisfies it. That variable is never set during builds, and every later
+    command ignores it.
 
     Args:
         ctx: A repository or module-extension context.
-        clone_dir: The clone directory (or its string path).
+        url: The git remote URL (or local path, or bundle path) to fetch.
+        bare_rel: The repository-relative bare directory (for example
+            `"_git_bare"`): relative so the pre-creation and the attributes
+            truncation work with `ctx.file` on every context, including
+            module extensions, which have no `ctx.delete`.
         resolved_ref: The pinned full 40-hex commit SHA.
         what: Human-readable label of the fetching rule, for diagnostics.
-
-    Returns:
-        The successful checkout's `ctx.execute` result.
     """
-    res = git_fetch(ctx, ["-C", str(clone_dir), "checkout", "--quiet", resolved_ref])
+    empty_dir = _git_empty_dir(ctx)
+    bare_abs = str(ctx.path(bare_rel))
+
+    # Pre-create the bare repository's directories: the object and common
+    # directory pins below must name existing paths (git rejects empty
+    # values there), and `ctx.file` creates parents but not empty
+    # directories, so a `keep` file stands in. A stray top-level file in
+    # `objects/` is inert: git only reads the `info/`, `pack/` entries and
+    # two-hex subdirectories there.
+    ctx.file(bare_rel + "/objects/keep", "", executable = False)
+
+    res = ctx.execute(
+        ["git", "--no-replace-objects"] + [
+            "-c",
+            "core.hooksPath=" + empty_dir,
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.untrackedCache=false",
+            "init",
+            "--bare",
+            "--template=" + empty_dir,
+            bare_abs,
+        ],
+        environment = _transport_env(empty_dir, bare_abs),
+    )
     if res.return_code != 0:
-        git_fetch(ctx, ["-C", str(clone_dir), "fetch", "origin", resolved_ref])
-        res = git_fetch(ctx, ["-C", str(clone_dir), "checkout", "--quiet", resolved_ref])
-        if res.return_code != 0:
-            fail("%s: git checkout failed at %s: %s" % (what, resolved_ref, res.stderr))
-    return res
+        fail("%s: git init failed for %s: %s" % (what, url, res.stderr))
 
-def git_archive(ctx, clone_dir, output, spec, what):
-    """Archives the pinned commit to `output` independently of host git configuration.
+    # The clone's repository-local attributes file is truncated (git has no
+    # switch for it): with the empty template it is already absent, but a
+    # hostile `init.templateDir` file entry is beaten by the `--template=`
+    # flag only for copied content, so the truncation closes the file
+    # itself. Committed `.gitattributes` are untouched.
+    ctx.file(bare_rel + "/info/attributes", "", executable = False)
 
-    `git archive` applies working-tree conversions to the bytes it writes, and
-    the conversion knobs can come from the host rather than the repository:
-    `core.autocrlf` / `core.eol` rewrite line endings (Git for Windows ships
-    `core.autocrlf=true`, so Windows and Linux already differ without this),
-    and a host `core.attributesFile` adds attributes such as `export-subst`
-    or `eol=crlf` for the archived paths. Only the commit id is verified
-    afterwards, so without isolation the same pinned commit builds different
-    bytes on different hosts.
+    res = ctx.execute(
+        ["git", "--no-replace-objects"] + [
+            "--git-dir=" + bare_abs,
+            "-c",
+            "core.hooksPath=" + empty_dir,
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.untrackedCache=false",
+            "fetch",
+            url,
+            resolved_ref,
+        ],
+        environment = _transport_env(empty_dir, bare_abs),
+    )
+    if res.return_code != 0:
+        # Servers that reject fetching a bare SHA still serve the commit on
+        # its refs: fetch everything and let the materialization phase verify
+        # the pinned commit arrived.
+        res = ctx.execute(
+            ["git", "--no-replace-objects"] + [
+                "--git-dir=" + bare_abs,
+                "-c",
+                "core.hooksPath=" + empty_dir,
+                "-c",
+                "core.fsmonitor=false",
+                "-c",
+                "core.untrackedCache=false",
+                "fetch",
+                url,
+                "+refs/*:refs/origin/*",
+            ],
+            environment = _transport_env(empty_dir, bare_abs),
+        )
+    if res.return_code != 0:
+        fail("%s: git fetch failed for %s at %s: %s" % (what, url, resolved_ref, res.stderr))
 
-    The archived bytes therefore depend only on the pinned commit and the
-    package's own committed content: the command pins `core.autocrlf=false`,
-    `core.eol=lf` and `tar.umask=002` (git's default), points
-    `core.attributesFile` at an empty file written for the call, points
-    `core.hooksPath` at the shared empty directory (archive runs no hooks,
-    but the pin keeps every git invocation uniformly hook-free), points
-    `GIT_TEMPLATE_DIR` at the same directory, and scrubs the environment
-    selectors (`GIT_CONFIG_COUNT`, `GIT_CONFIG_PARAMETERS`,
-    `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`) at the same empty file.
-    Command-line `-c` pins take precedence over both config files and
-    environment on every git version, so the scrubbing is defence in depth.
-    The clone's repository-local `.git/info/attributes` was already truncated
-    by `git_clone`, so only the committed `.gitattributes` still apply — their
-    expansion is a pure function of the pinned commit, identical on every
-    host and OS.
+def git_materialize(ctx, bare_rel, resolved_ref, output, spec, what):
+    """Verifies the pinned commit and archives it, isolated from the host (phase 2).
+
+    Every git command here runs against the phase-1 bare repository with an
+    explicit `--git-dir`, `--no-replace-objects`, the hook/fsmonitor pins,
+    and the scrubbed `_materialize_env` environment (PATH plus a scratch
+    HOME; no host config file, variable, template, hook, fsmonitor,
+    replacement ref or alternate object store is consulted). The sequence
+    refuses a repository with `objects/info/alternates` (a fresh `init`
+    never writes that file), verifies the commit object id (`rev-parse
+    --verify <sha>^{commit}` must print the pinned SHA) and its type
+    (`cat-file -t` must say `commit`), reads the commit's tree (`rev-parse
+    <sha>^{tree}`), and only then streams `git archive` of the pinned spec
+    from the same repository under the same environment: the tree written
+    out is by construction the verified commit's tree, because no remaining
+    host channel can make the verification and the archive resolve the same
+    SHA differently. The archive pins the byte conversion knobs
+    (`core.autocrlf=false`, `core.eol=lf`, an empty `core.attributesFile`,
+    `tar.umask=002`) so the bytes depend only on the pinned commit and its
+    own committed `.gitattributes`.
 
     Args:
         ctx: A repository or module-extension context.
-        clone_dir: The clone directory (or its string path).
+        bare_rel: The repository-relative bare directory created by
+            `git_transport_fetch`.
+        resolved_ref: The pinned full 40-hex commit SHA.
         output: Where to write the tar archive (or its string path).
         spec: The archive spec: the pinned commit, or `<commit>:<path>` for a
             package living in a subdirectory of its repository.
         what: Human-readable label of the fetching rule, for diagnostics.
-
-    Returns:
-        The successful archive's `ctx.execute` result.
     """
-
-    # The empty file doubles as the `core.attributesFile` replacement and as
-    # the `GIT_CONFIG_GLOBAL` / `GIT_CONFIG_SYSTEM` replacement. It is left
-    # behind on purpose: module-extension contexts have no `ctx.delete`, and
-    # an empty underscore-prefixed file is inert (no BUILD glob reaches the
-    # repository root, and the planning scratch is Bazel-managed).
-    ctx.file("_git_empty_config", "", executable = False)
-    empty = str(ctx.path("_git_empty_config"))
     empty_dir = _git_empty_dir(ctx)
+    empty = _git_empty_file(ctx)
+    bare_abs = str(ctx.path(bare_rel))
+
+    # Materialization-time truncation: the transport phase already truncated
+    # this file, and nothing legitimate rewrites it in between, so whatever
+    # it holds now is hostile by definition.
+    ctx.file(bare_rel + "/info/attributes", "", executable = False)
+
     res = ctx.execute(
-        [
-            "git",
+        ["git", "--no-replace-objects"] + [
+            "--git-dir=" + bare_abs,
+            "-c",
+            "core.hooksPath=" + empty_dir,
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.untrackedCache=false",
+            "count-objects",
+            "-v",
+        ],
+        environment = _materialize_env(empty, empty_dir, bare_abs),
+    )
+    if res.return_code != 0:
+        fail("%s: git count-objects failed at %s: %s" % (what, resolved_ref, res.stderr))
+    for line in res.stdout.splitlines():
+        if line.startswith("alternate:"):
+            fail("%s: refusing git repository with alternates (%s)." % (what, line.strip()))
+
+    res = ctx.execute(
+        ["git", "--no-replace-objects"] + [
+            "--git-dir=" + bare_abs,
+            "-c",
+            "core.hooksPath=" + empty_dir,
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.untrackedCache=false",
+            "rev-parse",
+            "--verify",
+            str(resolved_ref) + "^{commit}",
+        ],
+        environment = _materialize_env(empty, empty_dir, bare_abs),
+    )
+    if res.return_code != 0:
+        fail("%s: could not verify the fetched commit: %s" % (what, res.stderr))
+    actual = res.stdout.strip()
+    if actual != str(resolved_ref).strip():
+        fail("%s: fetched commit %r does not match the pinned resolved-ref %r." % (what, actual, resolved_ref))
+
+    res = ctx.execute(
+        ["git", "--no-replace-objects"] + [
+            "--git-dir=" + bare_abs,
+            "-c",
+            "core.hooksPath=" + empty_dir,
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.untrackedCache=false",
+            "cat-file",
+            "-t",
+            str(resolved_ref),
+        ],
+        environment = _materialize_env(empty, empty_dir, bare_abs),
+    )
+    if res.return_code != 0 or res.stdout.strip() != "commit":
+        fail("%s: resolved-ref %r is not a commit object." % (what, resolved_ref))
+
+    res = ctx.execute(
+        ["git", "--no-replace-objects"] + [
+            "--git-dir=" + bare_abs,
+            "-c",
+            "core.hooksPath=" + empty_dir,
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.untrackedCache=false",
+            "rev-parse",
+            str(resolved_ref) + "^{tree}",
+        ],
+        environment = _materialize_env(empty, empty_dir, bare_abs),
+    )
+    if res.return_code != 0:
+        fail("%s: could not read the tree of %r: %s" % (what, resolved_ref, res.stderr))
+
+    res = ctx.execute(
+        ["git", "--no-replace-objects"] + [
+            "--git-dir=" + bare_abs,
             "-c",
             "core.autocrlf=false",
             "-c",
@@ -272,46 +507,18 @@ def git_archive(ctx, clone_dir, output, spec, what):
             "-c",
             "core.hooksPath=" + empty_dir,
             "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.untrackedCache=false",
+            "-c",
             "tar.umask=002",
-            "-C",
-            str(clone_dir),
             "archive",
             "--format=tar",
             "-o",
             str(output),
             spec,
         ],
-        environment = {
-            "GIT_CONFIG_COUNT": "",
-            "GIT_CONFIG_PARAMETERS": "",
-            "GIT_CONFIG_GLOBAL": empty,
-            "GIT_CONFIG_SYSTEM": empty,
-            "GIT_TEMPLATE_DIR": empty_dir,
-        },
+        environment = _materialize_env(empty, empty_dir, bare_abs),
     )
     if res.return_code != 0:
         fail("%s: git archive failed at %s: %s" % (what, spec, res.stderr))
-    return res
-
-def verify_git_checkout(ctx, clone_dir, resolved_ref, what):
-    """Fails unless the git checkout at `clone_dir` is the pinned commit.
-
-    Validation before the fetch rejects every non-SHA spelling, but a ref
-    that git resolves differently must still not slip through, so after
-    checkout this resolves what git actually checked out and compares it to
-    the requested commit.
-
-    Args:
-        ctx: A repository or module-extension context.
-        clone_dir: The checkout directory (or its string path).
-        resolved_ref: The pinned full 40-hex commit SHA that was validated
-            before the fetch.
-        what: Human-readable label of the fetching rule, for diagnostics.
-    """
-    want = str(resolved_ref).strip()
-    res = git_fetch(ctx, ["-C", str(clone_dir), "rev-parse", "HEAD^{commit}"])
-    if res.return_code != 0:
-        fail("%s: could not verify the checked-out commit: %s" % (what, res.stderr))
-    actual = res.stdout.strip()
-    if actual != want:
-        fail("%s: checked-out commit %r does not match the pinned resolved-ref %r." % (what, actual, resolved_ref))

@@ -12,7 +12,7 @@ subdirectory (so each keeps its own `lib/` root), and generates one merged
 leaving it become the merged target's `deps`.
 """
 
-load("//dart/pub:pinned_sources.bzl", "git_archive", "git_checkout", "git_clone", "pinned_source_error", "verify_git_checkout")
+load("//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "pinned_source_error")
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_spoke_dep_labels", "trim_gzip_trailing_nulls")
 load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_package_member_build_content = "make_dart_package_member_build_content", _make_scc_merged_build_content = "make_scc_merged_build_content")
@@ -71,23 +71,14 @@ def _fetch_git_member(ctx, member, name):
     )
     if err:
         fail(err)
-    clone_dir = ctx.path("_" + name + "_clone")
-    res = git_clone(ctx, member["url"], "_" + name + "_clone")
-    if res.return_code != 0:
-        fail("pub_lock_scc_package %s: git clone failed for %s: %s" % (name, member["url"], res.stderr))
-    git_checkout(ctx, clone_dir, member["resolved_ref"], "pub_lock_scc_package %s" % name)
-    verify_git_checkout(
-        ctx,
-        clone_dir,
-        member.get("resolved_ref", ""),
-        'pub_lock_scc_package "%s"' % name,
-    )
+    bare_rel = "_" + name + "_bare"
+    git_transport_fetch(ctx, member["url"], bare_rel, member["resolved_ref"], "pub_lock_scc_package %s" % name)
     archive_path = ctx.path("_" + name + ".tar")
     spec = member["resolved_ref"] if member["path"] == "." else member["resolved_ref"] + ":" + member["path"]
-    git_archive(ctx, clone_dir, archive_path, spec, "pub_lock_scc_package %s" % name)
+    git_materialize(ctx, bare_rel, member["resolved_ref"], archive_path, spec, "pub_lock_scc_package %s" % name)
     ctx.extract(archive_path, output = name)
     ctx.delete(archive_path)
-    ctx.delete(clone_dir)
+    ctx.delete(ctx.path(bare_rel))
     _check_package_symlinks(ctx, name, name)
 
 def _pub_lock_scc_package_impl(ctx):

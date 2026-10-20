@@ -9,7 +9,7 @@ the `flutter pub get` analog) reuse this helper to emit the same
 `dart_library` shape for non-plugin packages without duplicating the format.
 """
 
-load("//dart/pub:pinned_sources.bzl", "git_archive", "git_checkout", "git_clone", "pinned_source_error", "verify_git_checkout")
+load("//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "pinned_source_error")
 load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_library_build_content = "make_dart_library_build_content")
 load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
@@ -266,30 +266,21 @@ def _pub_lock_git_package_impl(ctx):
     if path == "":
         path = "."
 
-    clone_dir = ctx.path("_git_clone")
-    res = git_clone(ctx, ctx.attr.url, "_git_clone")
-    if res.return_code != 0:
-        fail("git clone failed for %s: %s" % (ctx.attr.url, res.stderr))
-
-    git_checkout(
+    clone_rel = "_git_bare"
+    git_transport_fetch(
         ctx,
-        clone_dir,
-        ctx.attr.resolved_ref,
-        'pub_lock_git_package "%s"' % ctx.attr.package_name,
-    )
-
-    verify_git_checkout(
-        ctx,
-        clone_dir,
+        ctx.attr.url,
+        clone_rel,
         ctx.attr.resolved_ref,
         'pub_lock_git_package "%s"' % ctx.attr.package_name,
     )
 
     archive_path = ctx.path("_git_archive.tar")
     spec = ctx.attr.resolved_ref if path == "." else ctx.attr.resolved_ref + ":" + path
-    git_archive(
+    git_materialize(
         ctx,
-        clone_dir,
+        clone_rel,
+        ctx.attr.resolved_ref,
         archive_path,
         spec,
         'pub_lock_git_package "%s"' % ctx.attr.package_name,
@@ -297,7 +288,7 @@ def _pub_lock_git_package_impl(ctx):
 
     ctx.extract(archive_path)
     ctx.delete(archive_path)
-    ctx.delete(clone_dir)
+    ctx.delete(ctx.path(clone_rel))
     _check_package_symlinks(ctx, ctx.attr.package_name)
 
     # Read pubspec.yaml to discover deps + the package's SDK constraint.

@@ -1,7 +1,7 @@
 """Module extension for declaring pub.dev package dependencies."""
 
 load("//dart/ext:registry.bzl", "curated_code_assets")
-load("//dart/pub:pinned_sources.bzl", "git_archive", "git_checkout", "git_clone", "pinned_source_error", "verify_git_checkout")
+load("//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "pinned_source_error")
 load("//dart/pub:pub_lock_hub.bzl", "pub_lock_hub")
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_git_package", "pub_lock_package", "pub_lock_package_sha256_error", "trim_gzip_trailing_nulls")
 load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
@@ -143,19 +143,14 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
         if err:
             fail(err)
 
-        # Absolute paths: `git -C <dir> archive -o <file>` resolves `-o`
-        # against the `-C` directory rather than the working directory.
-        clone_rel = "{dir}/{name}_clone".format(dir = scope_dir, name = name)
-        clone_dir = str(ctx.path(clone_rel))
+        # Absolute paths: `--git-dir` and `-o` take absolute paths, so no
+        # command depends on the working directory.
+        bare_rel = "{dir}/{name}_bare".format(dir = scope_dir, name = name)
         out = "{dir}/{name}".format(dir = scope_dir, name = name)
-        res = git_clone(ctx, pkg.url, clone_rel)
-        if res.return_code != 0:
-            fail("pub.from_lock: git clone failed for %s (%s): %s" % (name, pkg.url, res.stderr))
-        git_checkout(ctx, clone_dir, pkg.resolved_ref, 'pub.from_lock "%s"' % name)
-        verify_git_checkout(ctx, clone_dir, pkg.resolved_ref, 'pub.from_lock "%s"' % name)
+        git_transport_fetch(ctx, pkg.url, bare_rel, pkg.resolved_ref, 'pub.from_lock "%s"' % name)
         archive = str(ctx.path("{dir}/{name}.tar".format(dir = scope_dir, name = name)))
         spec = pkg.resolved_ref if pkg.path == "." else pkg.resolved_ref + ":" + pkg.path
-        git_archive(ctx, clone_dir, archive, spec, 'pub.from_lock "%s"' % name)
+        git_materialize(ctx, bare_rel, pkg.resolved_ref, archive, spec, 'pub.from_lock "%s"' % name)
         ctx.extract(archive, output = out)
         check_package_symlinks(ctx, name, out)
         pubspec = out + "/pubspec.yaml"
