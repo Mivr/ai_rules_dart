@@ -243,6 +243,25 @@ String _module(String name, List<_Scc> sccs) {
   return '${_root.path}/$name';
 }
 
+/// Writes a dependency module directory at exactly [dir] with `sccs`, and
+/// returns its path. Unlike [_module], [dir] is not joined under the test
+/// root, so an absolute drive-letter path stays absolute (joining `D:/...`
+/// under the temp root is invalid on Windows).
+String _moduleAt(String dir, List<_Scc> sccs) {
+  final file = File('$dir/index.json');
+  file.parent.createSync(recursive: true);
+  file.writeAsStringSync(
+    jsonEncode({
+      'version': 1,
+      'sccs': [
+        for (final scc in sccs)
+          {'dill': scc.dill, 'defines': scc.defines, 'imports': scc.imports},
+      ],
+    }),
+  );
+  return dir;
+}
+
 /// Writes the `.vm_excluded.txt` sidecar of a module, with `excluded` as its sources.
 String _sidecar(String name, Map<String, String> excluded) {
   final lines = [
@@ -2288,29 +2307,51 @@ void main(List<String> args) {
         'native path', () async {
       _write('pkg/lib/a.dart', "import 'package:dep/u.dart';\nclass A {}\n");
       final unusedPath = '${_root.path}/m_unused_win.unused_inputs';
-      // `D:/...` is a legal relative spelling on Linux too, so the module
+      // `D:/...` is a legal relative spelling on Linux, so the module
       // directories really exist under the test root while exercising
       // drive-letter canonicalization: the planner joins them with the
-      // action directory, and the worker reports `file:///D:/...` URIs.
-      _module('D:/w7mods/used', [
-        _Scc('u.dill', ['dep/lib/u.dart'], []),
-      ]);
-      _module('D:/w7mods/clean', [
-        _Scc('c.dill', ['dep/lib/c.dart'], []),
-      ]);
+      // action directory, and the worker reports `file:///D:/...` URIs. On
+      // Windows that join is invalid (a colon under the temp root, errno
+      // 123), so use a real absolute drive-letter path under the temp root,
+      // with forward slashes: still a drive-letter spelling end to end.
+      final rootForward = _root.path.replaceAll(r'\', '/');
+      final usedDir = Platform.isWindows
+          ? '$rootForward/w7mods/used'
+          : 'D:/w7mods/used';
+      final cleanDir = Platform.isWindows
+          ? '$rootForward/w7mods/clean'
+          : 'D:/w7mods/clean';
+      final outputDir = Platform.isWindows
+          ? '$rootForward/w7out/m_unused_win'
+          : 'D:/w7out/m_unused_win';
+      if (Platform.isWindows) {
+        _moduleAt(usedDir, [
+          _Scc('u.dill', ['dep/lib/u.dart'], []),
+        ]);
+        _moduleAt(cleanDir, [
+          _Scc('c.dill', ['dep/lib/c.dart'], []),
+        ]);
+      } else {
+        _module('D:/w7mods/used', [
+          _Scc('u.dill', ['dep/lib/u.dart'], []),
+        ]);
+        _module('D:/w7mods/clean', [
+          _Scc('c.dill', ['dep/lib/c.dart'], []),
+        ]);
+      }
       // The fake writes the worker's `file://` report spellings from these
       // native paths, and fails the request worker-style if `--used-inputs`
       // arrives as a `file://` URI. The used summary is spelled the way a
       // Windows worker reports the passed `D:/...` summary.
-      final compiler = _ReportingCompiler(reported: {'D:/w7mods/used/u.dill'});
+      final compiler = _ReportingCompiler(reported: {'$usedDir/u.dill'});
       final previous = Directory.current;
       try {
         Directory.current = _root.path;
         final result = await _compile(
           'm_unused_win',
           ['pkg/lib/a.dart'],
-          inputKmods: ['D:/w7mods/used', 'D:/w7mods/clean'],
-          outputDir: 'D:/w7out/m_unused_win',
+          inputKmods: [usedDir, cleanDir],
+          outputDir: outputDir,
           compiler: compiler,
           unusedInputsList: unusedPath,
         );
@@ -2327,7 +2368,7 @@ void main(List<String> args) {
         for (final flag in seen) {
           expect(flag, isNot(startsWith('--used-inputs=file://')));
         }
-        expect(File(unusedPath).readAsLinesSync(), ['D:/w7mods/clean']);
+        expect(File(unusedPath).readAsLinesSync(), [cleanDir]);
       } finally {
         Directory.current = previous;
       }
