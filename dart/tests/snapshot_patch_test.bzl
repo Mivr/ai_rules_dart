@@ -37,7 +37,9 @@ _clean_defines_test = unittest.make(_clean_defines_test_impl)
 def _whole_program_comma_test_impl(ctx):
     env = analysistest.begin(ctx)
     kernel_actions = [
-        a for a in analysistest.target_actions(env) if a.mnemonic == "DartKernel"
+        a
+        for a in analysistest.target_actions(env)
+        if a.mnemonic == "DartKernel"
     ]
     asserts.equals(env, 1, len(kernel_actions), "one whole-program DartKernel action")
     argv = kernel_actions[0].argv
@@ -75,7 +77,9 @@ _whole_program_comma_test = analysistest.make(_whole_program_comma_test_impl)
 def _whole_program_plain_test_impl(ctx):
     env = analysistest.begin(ctx)
     kernel_actions = [
-        a for a in analysistest.target_actions(env) if a.mnemonic == "DartKernel"
+        a
+        for a in analysistest.target_actions(env)
+        if a.mnemonic == "DartKernel"
     ]
     asserts.equals(env, 1, len(kernel_actions), "one whole-program DartKernel action")
     argv = kernel_actions[0].argv
