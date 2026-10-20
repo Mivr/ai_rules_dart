@@ -32,8 +32,14 @@ change the extracted bytes nor run host code, while transport configuration
    operation. There is no working tree, so no checkout ever runs: hooks,
    `core.fsmonitor` and working-tree attributes have nothing to act on.
    Hooks and fsmonitor are additionally pinned off on the command line
-   (`-c` beats config files and environment on every git version). Every
-   repository-resolution selector the host could otherwise redirect is
+   (`-c` beats config files and environment on every git version), as is
+   every fetch-time switch git consults during a bare fetch that could
+   fail the pinned fetch or add work on one host and not another
+   (`transfer`/`fetch.fsckObjects`, `gc.auto`, `maintenance.auto`,
+   `fetch.writeCommitGraph`, `fetch.recurseSubmodules`,
+   `submodule.recurse`, `fetch.prune`, `fetch.pruneTags` — see
+   `_transport_config_args`). Every repository-resolution selector the
+   host could otherwise redirect is
    pinned at the new bare repository instead: `--git-dir` (which beats
    `GIT_DIR`), `GIT_OBJECT_DIRECTORY` and `GIT_COMMON_DIR` (pointed at
    the new repository's own directories, which are pre-created so the
@@ -183,6 +189,49 @@ def _git_empty_file(ctx):
 # list covers every URL shape pub git sources use (https, http and git
 # remotes, ssh in both syntaxes, file URLs and plain local paths).
 _GIT_ALLOW_PROTOCOL = "https:http:git:ssh:file"
+
+def _transport_config_args(empty_dir):
+    """`-c` pins shared by every transport fetch command line (SHA and all-refs fallback).
+
+    `-c` beats config files and the inline-config environment channel on
+    every git version, including payloads a host file pulls in through
+    `include`/`includeIf` chains conditioned on the skeleton path — so the
+    fetch behaves like a default-configured host everywhere. Materialization
+    stays unchanged: the SHA and tree verification there remain the
+    integrity check. One line of reason per pin:
+
+    Args:
+        empty_dir: The shared empty directory's path string (hooks target).
+
+    Returns:
+        The `-c` flag pairs for one transport `git fetch` argv.
+    """
+    return [
+        "-c",
+        "core.hooksPath=" + empty_dir,  # Hooks have no checkout to run on a bare repository.
+        "-c",
+        "core.fsmonitor=false",  # No working tree exists for fsmonitor to watch.
+        "-c",
+        "core.untrackedCache=false",  # No working tree exists for the untracked cache.
+        "-c",
+        "transfer.fsckObjects=false",  # Receive-side fsck off (git default); the SHA is verified in materialization.
+        "-c",
+        "fetch.fsckObjects=false",  # Fetch-specific fsck off (git default); remote fetches match local ones.
+        "-c",
+        "gc.auto=0",  # No post-fetch auto-repack; host thresholds cannot add repack work.
+        "-c",
+        "maintenance.auto=false",  # No post-fetch background maintenance jobs.
+        "-c",
+        "fetch.writeCommitGraph=false",  # No post-fetch commit-graph files.
+        "-c",
+        "fetch.recurseSubmodules=false",  # Never recurse into submodules; host cannot add submodule fetches.
+        "-c",
+        "submodule.recurse=false",  # Companion recursion switch off; host cannot widen the fetch.
+        "-c",
+        "fetch.prune=false",  # Never prune refs; host cannot delete freshly fetched refs.
+        "-c",
+        "fetch.pruneTags=false",  # Never prune tags; host cannot delete freshly fetched tags.
+    ]
 
 # Transport variables inherited from the host environment, copied verbatim
 # only when the host sets them. The list is an allowlist: transport needs
@@ -428,11 +477,14 @@ def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
     checked out: with no working tree, host hooks, `core.fsmonitor` and
     working-tree attributes have nothing to act on, and the command-line
     pins (`core.hooksPath`, `core.fsmonitor=false`,
-    `core.untrackedCache=false`, `--no-replace-objects`) keep them off
-    even where host configuration is deliberately inherited for transport.
-    The repository-local `info/attributes` is truncated (nothing
-    legitimate writes it; the package's own committed `.gitattributes` are
-    untouched and keep the documented behaviour).
+    `core.untrackedCache=false`, the `transfer`/`fetch.fsckObjects`,
+    `gc.auto`, `maintenance.auto`, `fetch.writeCommitGraph`,
+    `fetch.recurseSubmodules`, `submodule.recurse`, `fetch.prune` and
+    `fetch.pruneTags` fetch-time switches, `--no-replace-objects`) keep
+    them off even where host configuration is deliberately inherited for
+    transport. The repository-local `info/attributes` is truncated
+    (nothing legitimate writes it; the package's own committed
+    `.gitattributes` are untouched and keep the documented behaviour).
 
     Args:
         ctx: A repository or module-extension context.
@@ -471,14 +523,8 @@ def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
     ctx.file(bare_rel + "/info/attributes", "", executable = False)
 
     res = ctx.execute(
-        ["git", "--no-replace-objects"] + [
-            "--git-dir=" + bare_abs,
-            "-c",
-            "core.hooksPath=" + empty_dir,
-            "-c",
-            "core.fsmonitor=false",
-            "-c",
-            "core.untrackedCache=false",
+        ["git", "--no-replace-objects", "--git-dir=" + bare_abs] +
+        _transport_config_args(empty_dir) + [
             "fetch",
             url,
             resolved_ref,
@@ -490,14 +536,8 @@ def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
         # its refs: fetch everything and let the materialization phase verify
         # the pinned commit arrived.
         res = ctx.execute(
-            ["git", "--no-replace-objects"] + [
-                "--git-dir=" + bare_abs,
-                "-c",
-                "core.hooksPath=" + empty_dir,
-                "-c",
-                "core.fsmonitor=false",
-                "-c",
-                "core.untrackedCache=false",
+            ["git", "--no-replace-objects", "--git-dir=" + bare_abs] +
+            _transport_config_args(empty_dir) + [
                 "fetch",
                 url,
                 "+refs/*:refs/origin/*",

@@ -26,6 +26,14 @@ all-refs fallback, `insteadOf` rewrites) and compares the bytes with a
 clean control fetch. It is instantiated by `//e2e/pub_lock_git`'s
 `hostile_probe_ext.bzl`, whose markers `check_hostile_markers.sh`
 re-verifies at test time.
+
+`git_fsck_fetch_probe`, next to it, covers the fetch-time config pins:
+it crafts a commit that fails `git fsck` (bad dates via
+`git hash-object -t commit --literally`), serves it over `file://`, and
+fetches it under a hostile `transfer.fsckObjects=true` delivered through
+a config file, the inline-config channel, or a `gitdir`-conditional
+include matching the fetch directory — one channel per instance — again
+requiring the clean control's bytes.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
@@ -88,6 +96,24 @@ def _transport_pins():
         "core.fsmonitor=false",
         "-c",
         "core.untrackedCache=false",
+        "-c",
+        "transfer.fsckObjects=false",
+        "-c",
+        "fetch.fsckObjects=false",
+        "-c",
+        "gc.auto=0",
+        "-c",
+        "maintenance.auto=false",
+        "-c",
+        "fetch.writeCommitGraph=false",
+        "-c",
+        "fetch.recurseSubmodules=false",
+        "-c",
+        "submodule.recurse=false",
+        "-c",
+        "fetch.prune=false",
+        "-c",
+        "fetch.pruneTags=false",
     ]
 
 # Transport variables the helpers copy from the host environment. The
@@ -1181,6 +1207,24 @@ def _hostile_probe_impl(ctx):
                 "core.fsmonitor=false",
                 "-c",
                 "core.untrackedCache=false",
+                "-c",
+                "transfer.fsckObjects=false",
+                "-c",
+                "fetch.fsckObjects=false",
+                "-c",
+                "gc.auto=0",
+                "-c",
+                "maintenance.auto=false",
+                "-c",
+                "fetch.writeCommitGraph=false",
+                "-c",
+                "fetch.recurseSubmodules=false",
+                "-c",
+                "submodule.recurse=false",
+                "-c",
+                "fetch.prune=false",
+                "-c",
+                "fetch.pruneTags=false",
                 "fetch",
                 url,
                 "+refs/*:refs/origin/*",
@@ -1246,4 +1290,217 @@ git_hostile_fetch_probe = repository_rule(
         ),
     },
     doc = "Fetches one commit through the production helpers under a hostile host next to a clean control.",
+)
+
+# ---------------------------------------------------------------------------
+# fsck functional probe: `git_fsck_fetch_probe`.
+#
+# Each instance crafts at test time a commit that fails `git fsck` (a bad
+# author/committer date written with `git hash-object -t commit
+# --literally`), serves it over `file://` (bundle fetches skip fsck on
+# some git versions), and fetches it twice through the production helpers:
+# once with the true host environment (control) and once with a hostile
+# `transfer.fsckObjects=true` delivered through one channel — a config
+# file (`GIT_CONFIG_GLOBAL` pointing at a hostile file), the inline-config
+# channel (`GIT_CONFIG_COUNT`), or a `gitdir`-conditional include
+# (`includeIf`) matching the fetch directory. The hostile fetch must
+# succeed with the control's bytes: the `-c` pins on every transport
+# command line override all three channels. Like `git_hostile_fetch_probe`,
+# every instance fails loudly on any deviation and writes a `marker.txt`
+# (`expect`/`mode`/`clean`/`hostile`) that
+# `//e2e/pub_lock_git:hostile_env_test` re-verifies at test time.
+# ---------------------------------------------------------------------------
+
+def _probe_make_fsck_origin(ctx, bundle, what):
+    """Clones the bundle and crafts an fsck-failing child commit.
+
+    The child keeps the deterministic commit's tree and message but carries
+    garbage author/committer dates, written with `git hash-object -t commit
+    --literally` so no git version rejects it at creation time. Only the
+    commit metadata fails fsck; the tree (package bytes) is unchanged.
+
+    Args:
+        ctx: The repository context.
+        bundle: Absolute path of the git bundle to clone.
+        what: Human-readable label, for diagnostics.
+
+    Returns:
+        The fsck-failing commit's SHA string, served from the clone over
+        `file://` by the caller.
+    """
+    origin = str(ctx.path("origin"))
+    res = ctx.execute(
+        ["git", "clone", "--quiet", "--no-checkout", bundle, origin],
+        environment = _probe_setup_env(),
+    )
+    if res.return_code != 0:
+        fail("%s: cloning the probe origin failed: %s" % (what, res.stderr))
+    res = ctx.execute(
+        ["git", "-C", origin, "checkout", "--quiet", "-b", "main"],
+        environment = _probe_setup_env(),
+    )
+    if res.return_code != 0:
+        fail("%s: branching the probe origin failed: %s" % (what, res.stderr))
+    ctx.file("probe_empty/keep", "", executable = False)
+    res = ctx.execute(
+        ["git", "-C", origin] + [
+            "-c",
+            "user.name=probe",
+            "-c",
+            "user.email=probe@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.hooksPath=" + str(ctx.path("probe_empty")),
+            "commit",
+            "--quiet",
+            "--allow-empty",
+            "-m",
+            "probe second commit",
+        ],
+        environment = _probe_setup_env({
+            "GIT_AUTHOR_NAME": "probe",
+            "GIT_AUTHOR_EMAIL": "probe@example.invalid",
+            "GIT_COMMITTER_NAME": "probe",
+            "GIT_COMMITTER_EMAIL": "probe@example.invalid",
+            "GIT_AUTHOR_DATE": "2000-01-01T00:00:00+00:00",
+            "GIT_COMMITTER_DATE": "2000-01-01T00:00:00+00:00",
+        }),
+    )
+    if res.return_code != 0:
+        fail("%s: appending the probe origin commit failed: %s" % (what, res.stderr))
+    good = _probe_rev_parse(
+        ctx.execute,
+        origin + "/.git",
+        "HEAD",
+        _probe_setup_env(),
+        what + " origin",
+    )
+    res = ctx.execute(
+        ["git", "--git-dir=" + origin + "/.git", "cat-file", "commit", good],
+        environment = _probe_setup_env(),
+    )
+    if res.return_code != 0:
+        fail("%s: reading the probe origin commit failed: %s" % (what, res.stderr))
+
+    # Rewrite every author/committer timestamp and zone to garbage the
+    # fsck date check rejects. The probe authors its own commit above with
+    # a spaceless name and email, so the last two tokens are the date.
+    bad_lines = []
+    for line in res.stdout.splitlines():
+        if line.startswith("author ") or line.startswith("committer "):
+            parts = line.split(" ")
+            bad_lines.append(" ".join(parts[:-2]) + " 0 notadate badtz")
+        else:
+            bad_lines.append(line)
+    ctx.file("badcommit", "\n".join(bad_lines) + "\n", executable = False)
+    res = ctx.execute(
+        ["git", "--git-dir=" + origin + "/.git", "hash-object", "-t", "commit", "--literally", "-w", str(ctx.path("badcommit"))],
+        environment = _probe_setup_env(),
+    )
+    if res.return_code != 0:
+        fail("%s: crafting the fsck-failing commit failed: %s" % (what, res.stderr))
+    return res.stdout.strip()
+
+def _fsck_probe_impl(ctx):
+    what = "git_fsck_fetch_probe \"%s\"" % ctx.name
+    if ctx.attr.bundle_path == "":
+        fail("%s: needs bundle_path." % what)
+    if ctx.attr.channel not in ["config-file", "inline", "includeif"]:
+        fail("%s: unknown channel %r." % (what, ctx.attr.channel))
+
+    bad = _probe_make_fsck_origin(ctx, ctx.attr.bundle_path, what)
+    url = _probe_file_url(str(ctx.path("origin")))
+
+    git_transport_fetch(ctx, url, "_clean_bare", bad, what + " control")
+    clean_archive = ctx.path("_clean.tar")
+    git_materialize(ctx, "_clean_bare", bad, clean_archive, bad, what + " control")
+    clean_bare = str(ctx.path("_clean_bare"))
+    clean_tree = _probe_rev_parse(ctx.execute, clean_bare, bad + "^{tree}", None, what + " control")
+
+    hostile = dict(ctx.os.environ)
+    if ctx.attr.channel == "inline":
+        hostile.update({
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "transfer.fsckObjects",
+            "GIT_CONFIG_VALUE_0": "true",
+        })
+    elif ctx.attr.channel == "config-file":
+        ctx.file("fsck-hostile.gitconfig", "[transfer]\n\tfsckObjects = true\n", executable = False)
+        hostile["GIT_CONFIG_GLOBAL"] = str(ctx.path("fsck-hostile.gitconfig"))
+    else:
+        bare_abs = str(ctx.path("_hostile_bare"))
+        parent = bare_abs.rpartition("/")[0]
+        ctx.file("fsck-payload.gitconfig", "[transfer]\n\tfsckObjects = true\n", executable = False)
+        payload = str(ctx.path("fsck-payload.gitconfig"))
+        ctx.file(
+            "fsck-hostile.gitconfig",
+            "[includeIf \"gitdir:" + bare_abs + "\"]\n\tpath = " + payload + "\n" +
+            "[includeIf \"gitdir:" + parent + "/**\"]\n\tpath = " + payload + "\n",
+            executable = False,
+        )
+        hostile["GIT_CONFIG_GLOBAL"] = str(ctx.path("fsck-hostile.gitconfig"))
+
+    def _shim_execute(args, environment = None):
+        merged = dict(hostile)
+        if environment != None:
+            merged.update(environment)
+        return ctx.execute(args, environment = merged)
+
+    def _shim_file(path, content, executable = True):
+        ctx.file(path, content, executable = executable)
+
+    def _shim_path(path):
+        return ctx.path(path)
+
+    shim = struct(
+        execute = _shim_execute,
+        file = _shim_file,
+        path = _shim_path,
+        os = struct(environ = hostile),
+    )
+
+    git_transport_fetch(shim, url, "_hostile_bare", bad, what + " hostile")
+    hostile_archive = ctx.path("_hostile.tar")
+    git_materialize(shim, "_hostile_bare", bad, hostile_archive, bad, what + " hostile")
+    hostile_bare = str(ctx.path("_hostile_bare"))
+    hostile_tree = _probe_rev_parse(_shim_execute, hostile_bare, bad + "^{tree}", _probe_setup_env(), what + " hostile")
+
+    if hostile_tree != clean_tree:
+        fail(
+            "%s: hostile fetch bytes differ from the clean control: " % what +
+            "hostile tree %r vs clean tree %r." % (hostile_tree, clean_tree),
+        )
+
+    mode = "sha"
+    if len(_probe_origin_refs(_shim_execute, hostile_bare, _probe_setup_env(), what)) > 0:
+        mode = "all-refs"
+    if mode != "sha":
+        fail("%s: expected fetch mode %r but observed %r." % (what, "sha", mode))
+
+    ctx.file(
+        "marker.txt",
+        "expect=sha\nmode=%s\nclean=%s\nhostile=%s\n" % (mode, clean_tree, hostile_tree),
+    )
+    ctx.file("BUILD.bazel", "exports_files([\"marker.txt\"])\n")
+    ctx.delete(clean_archive)
+    ctx.delete(hostile_archive)
+    ctx.delete(ctx.path("_clean_bare"))
+    ctx.delete(ctx.path("_hostile_bare"))
+    ctx.delete(ctx.path("origin"))
+
+git_fsck_fetch_probe = repository_rule(
+    implementation = _fsck_probe_impl,
+    attrs = {
+        "bundle_path": attr.string(
+            doc = "Absolute path of the git bundle to clone the fsck-failing commit from.",
+            default = "",
+        ),
+        "channel": attr.string(
+            doc = "How the hostile transfer.fsckObjects=true reaches the fetch: config file, inline-config channel, or path-conditional include.",
+            default = "inline",
+            values = ["config-file", "inline", "includeif"],
+        ),
+    },
+    doc = "Fetches an fsck-failing commit under a hostile fsck switch next to a clean control.",
 )

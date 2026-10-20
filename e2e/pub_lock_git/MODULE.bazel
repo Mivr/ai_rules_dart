@@ -32,6 +32,9 @@ hostile = use_extension("//:hostile_probe_ext.bzl", "hostile")
 use_repo(
     hostile,
     "hostile_fallback_quarantine",
+    "hostile_fsck_config_file",
+    "hostile_fsck_includeif",
+    "hostile_fsck_inline",
     "hostile_insteadof",
     "hostile_quarantine_empty",
     "hostile_quarantine_set",

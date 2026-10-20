@@ -8,13 +8,17 @@ bytes are identical to the clean control's. The cases below cover every
 fetch path: the quarantine variable set and empty, the work-tree variable
 set and empty, unknown `GIT_*` names, the all-refs fallback under a
 hostile quarantine, and an `insteadOf` rewrite delivered through the
-inline-config channel. Like `git_host_config_ext.bzl`, the extension is
+inline-config channel. The `git_fsck_fetch_probe` repositories next to
+them fetch an fsck-failing commit (crafted at test time) under a hostile
+`transfer.fsckObjects=true` delivered through a config file, the
+inline-config channel, or a `gitdir`-conditional include matching the
+fetch directory. Like `git_host_config_ext.bzl`, the extension is
 marked reproducible so the generated repositories (built from absolute
 host paths) are recomputed on every machine and never stored in
 `MODULE.bazel.lock`.
 """
 
-load("@rules_dart//dart/tests:git_host_config_test.bzl", "git_hostile_fetch_probe")
+load("@rules_dart//dart/tests:git_host_config_test.bzl", "git_fsck_fetch_probe", "git_hostile_fetch_probe")
 
 _FMTPKG_SHA = "08da52a5f5ee8530fcffaa7b4a6aecdc09a0e9cc"
 _REWRITTEN_URL = "https://rewritten.example.invalid/r.git"
@@ -78,6 +82,21 @@ def _hostile_impl(mctx):
             "GIT_CONFIG_VALUE_0": _REWRITTEN_URL,
         },
         expect_fetch_mode = "sha",
+    )
+    git_fsck_fetch_probe(
+        name = "hostile_fsck_config_file",
+        bundle_path = bundle,
+        channel = "config-file",
+    )
+    git_fsck_fetch_probe(
+        name = "hostile_fsck_inline",
+        bundle_path = bundle,
+        channel = "inline",
+    )
+    git_fsck_fetch_probe(
+        name = "hostile_fsck_includeif",
+        bundle_path = bundle,
+        channel = "includeif",
     )
     return mctx.extension_metadata(reproducible = True)
 
