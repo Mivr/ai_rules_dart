@@ -442,9 +442,8 @@ Future<Directory> prepareSourceGenCwd({
   await baseDir.create(recursive: true);
   final canonicalBasePath = p.normalize(await baseDir.resolveSymbolicLinks());
   final canonicalBaseDir = Directory(canonicalBasePath);
-  await File(
-    p.join(canonicalBasePath, 'pubspec.yaml'),
-  ).writeAsString('name: ""\nenvironment:\n  sdk: ^3.0.0\n');
+  await File(p.join(canonicalBasePath, 'pubspec.yaml'))
+      .writeAsString('name: ""\nenvironment:\n  sdk: ^3.0.0\n');
   await File(p.join(canonicalBasePath, 'stacked.json')).writeAsString('{}\n');
   Directory.current = canonicalBaseDir;
   final currentPath = p.normalize(Directory.current.path);
@@ -543,13 +542,12 @@ String? extractShimFlag(List<String> argv, String flag) {
 /// Signature of a function that returns an [AnalysisContextCollection]
 /// for the given inclusion + SDK settings. Tests can inject a stub; the
 /// shim's default is [_defaultBuildAnalysisContext].
-typedef AnalysisContextBuilder =
-    Future<AnalysisContextCollection> Function({
-      required List<String> includedPaths,
-      required String? sdkPath,
-      String? sdkSummaryPath,
-      required List<String> librarySummaryPaths,
-    });
+typedef AnalysisContextBuilder = Future<AnalysisContextCollection> Function({
+  required List<String> includedPaths,
+  required String? sdkPath,
+  String? sdkSummaryPath,
+  required List<String> librarySummaryPaths,
+});
 
 /// With no [sdkSummaryPath] or [librarySummaryPaths] this is the public
 /// constructor, as it always was. With summaries, the analyzer resolves the SDK
@@ -825,9 +823,8 @@ Future<void> _runWithStaging(
     // No matching emission (the builder saw no relevant annotations):
     // write an empty file, since Bazel still requires the declared output.
     if (match != null) claimed.add(match);
-    await File(
-      outPath,
-    ).writeAsBytes(match != null ? emitted[match]! : const <int>[]);
+    await File(outPath)
+        .writeAsBytes(match != null ? emitted[match]! : const <int>[]);
   }
 }
 
@@ -991,9 +988,8 @@ String _serializePackageConfig(PackageConfig config) {
     }
     entries.add(entry);
   }
-  return const JsonEncoder.withIndent(
-    '  ',
-  ).convert({'configVersion': 2, 'packages': entries});
+  return const JsonEncoder.withIndent('  ')
+      .convert({'configVersion': 2, 'packages': entries});
 }
 
 // ---------------------------------------------------------------------------
@@ -1881,12 +1877,16 @@ String decodeUriSegment(String segment) {
 }
 
 /// Whether [uri] is a `package:` URI whose path climbs above its package
-/// directory (`package:pkg/sub/../../x.dart`). The front end reports leaving
-/// the package, but a tool that resolves against the real filesystem reads a
-/// host file instead, so the staged-source check refuses it before they run.
-/// False for any other URI, including a `package:` URI that stays inside its
-/// package (an unknown package name fails closed downstream, where the
-/// analyzer cannot resolve it, so it is not refused here).
+/// directory (`package:pkg/sub/../../x.dart`) or has an empty path segment
+/// (`package:pkg//x.dart`). The front end reports leaving the package, but a
+/// tool that resolves against the real filesystem reads a host file instead,
+/// so the staged-source check refuses it before they run. An empty segment is
+/// refused too: the front end resolves the doubled slash as an absolute path,
+/// so `package:pkg//x.dart` reads the workspace-root file, not the package's,
+/// which no empty-skipping resolver reproduces. False for any other URI,
+/// including a `package:` URI that stays inside its package (an unknown
+/// package name fails closed downstream, where the analyzer cannot resolve
+/// it, so it is not refused here).
 bool isEscapingPackageUri(String uri) {
   if (!uri.startsWith('package:')) return false;
   final rest = uri.substring('package:'.length);
@@ -1896,7 +1896,9 @@ bool isEscapingPackageUri(String uri) {
   final text = rest.substring(slash + 1).replaceAll(r'\', '/');
   var depth = 0;
   for (final raw in text.split('/')) {
-    if (raw.isEmpty) continue;
+    // An empty segment resolves absolutely in the front end, outside the
+    // package, so it escapes however the siblings resolve.
+    if (raw.isEmpty) return true;
     final seg = decodeUriSegment(raw);
     if (seg.isEmpty || seg == '.') continue;
     if (seg == '..') {
@@ -2073,6 +2075,35 @@ bool isDisallowedDirectiveUri(
   return true;
 }
 
+/// Whether [uri] has an empty path segment (`a//b.dart`): the resolvers below
+/// skip empty segments, but the front end does not resolve every such spelling
+/// the same way — the doubled slash of a `package:` URI resolves as an
+/// absolute path, so `package:c//s/t.dart` reads the workspace-root file, not
+/// the package's. A directive the guard cannot resolve exactly like the front
+/// end is refused, so such URIs fail before the compiler runs. False for URIs
+/// with no path to resolve: an empty reference, a query or fragment alone, a
+/// `//` authority, or any scheme but `package:` and the multi-root scheme
+/// (those never reach a path resolver: their own checks refuse them).
+bool hasEmptyPathSegment(String uri) {
+  var text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
+  if (text.startsWith(defaultMultiRootPrefix)) {
+    text = text.substring(defaultMultiRootPrefix.length);
+  } else if (text.startsWith('package:')) {
+    final slash = text.indexOf('/', 'package:'.length);
+    if (slash < 0) return false;
+    text = text.substring(slash + 1);
+  } else {
+    if (text.contains(':')) return false;
+    if (text.startsWith('//')) return false;
+    if (text.startsWith('/')) text = text.substring(1);
+  }
+  final query = text.indexOf('?');
+  final path = query < 0 ? text : text.substring(0, query);
+  final hash = path.indexOf('#');
+  final clean = hash < 0 ? path : path.substring(0, hash);
+  return clean.startsWith('/') || clean.contains('//');
+}
+
 // END staged-resolver-mirror
 
 /// One URI-bearing directive of a staged source: its kind (`import`,
@@ -2172,6 +2203,12 @@ Future<List<String>> findStagedShimViolations(
     final from = _normAbsStagedPath(key);
     for (final ref in _parseShimDirectives(content)) {
       final uri = ref.uri;
+      // The resolvers below skip empty segments, but the front end resolves
+      // some such spellings absolutely: refuse them before resolving.
+      if (hasEmptyPathSegment(uri)) {
+        errors.add("$tool: $key ${ref.kind} '$uri' is not a declared input.");
+        continue;
+      }
       if (uri.startsWith('dart:')) continue;
       if (uri.startsWith('package:')) {
         if (isEscapingPackageUri(uri)) {

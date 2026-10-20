@@ -539,4 +539,34 @@ void main(List<String> args) {
       hasLength(1),
     );
   });
+
+  test('--gen-kernel refuses an empty path segment without compiling', () {
+    final ws = Directory('${tmp.path}/empty_ws')..createSync(recursive: true);
+    final main = File('${ws.path}/main.dart')
+      ..writeAsStringSync(
+        "import 'sibling//helper.dart';\n"
+        'void main() => print(helperValue);\n',
+      );
+    File('${ws.path}/sibling/helper.dart')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('const helperValue = 1;\n');
+    // End to end: the wrapper fails before running gen_kernel (which is never
+    // reached, so no SDK snapshot is needed), even though skipping the empty
+    // segment would resolve inside the declared inputs: the front end need
+    // not resolve it the same way.
+    final toolPath = args.isNotEmpty
+        ? Runfiles.create().rlocation(args[0])
+        : File.fromUri(Platform.script.resolve('app_jit_snapshot.dart')).path;
+    final res = Process.runSync(Platform.resolvedExecutable, [
+      toolPath,
+      '--gen-kernel',
+      'never-reached-runtime',
+      '--input-source=${main.path}',
+    ]);
+    expect(res.exitCode, isNonZero);
+    expect(
+      res.stderr as String,
+      contains("import 'sibling//helper.dart' is not a declared input"),
+    );
+  });
 }

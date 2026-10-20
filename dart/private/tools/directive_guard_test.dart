@@ -197,6 +197,11 @@ void main(List<String> args) {
       expect(isEscapingPackageUri('package:p/%2e%2e/x.dart'), isTrue);
     });
 
+    test('an empty segment escapes: the front end resolves it absolutely', () {
+      expect(isEscapingPackageUri('package:p//x.dart'), isTrue);
+      expect(isEscapingPackageUri('package:p/a//x.dart'), isTrue);
+    });
+
     test('URIs inside the package do not escape', () {
       expect(isEscapingPackageUri('package:p/a.dart'), isFalse);
       expect(isEscapingPackageUri('package:p/sub/../a.dart'), isFalse);
@@ -207,6 +212,32 @@ void main(List<String> args) {
       expect(isEscapingPackageUri('package:p/a.dart?x=1'), isFalse);
       expect(isEscapingPackageUri('../x.dart'), isFalse);
       expect(isEscapingPackageUri('dart:core'), isFalse);
+    });
+  });
+
+  group('hasEmptyPathSegment', () {
+    test('doubled slashes count, wherever they hide', () {
+      expect(hasEmptyPathSegment('a//b.dart'), isTrue);
+      expect(hasEmptyPathSegment('/a//b.dart'), isTrue);
+      expect(hasEmptyPathSegment('package:p//a.dart'), isTrue);
+      expect(hasEmptyPathSegment('package:p/a//b.dart'), isTrue);
+      expect(hasEmptyPathSegment('org-dartlang-root:////a.dart'), isTrue);
+      expect(hasEmptyPathSegment(r'a\\b.dart'), isTrue);
+      expect(hasEmptyPathSegment('a//b.dart?x=1'), isTrue);
+    });
+
+    test('single slashes and segment-free URIs do not', () {
+      expect(hasEmptyPathSegment('a/b.dart'), isFalse);
+      expect(hasEmptyPathSegment('/a/b.dart'), isFalse);
+      expect(hasEmptyPathSegment('package:p/a.dart'), isFalse);
+      expect(hasEmptyPathSegment('org-dartlang-root:///a.dart'), isFalse);
+      expect(hasEmptyPathSegment(''), isFalse);
+      expect(hasEmptyPathSegment('?x=1'), isFalse);
+      expect(hasEmptyPathSegment('#frag'), isFalse);
+      expect(hasEmptyPathSegment('//host/a.dart'), isFalse);
+      expect(hasEmptyPathSegment('dart:core'), isFalse);
+      expect(hasEmptyPathSegment('file:///etc/hosts'), isFalse);
+      expect(hasEmptyPathSegment('package:p'), isFalse);
     });
   });
 
@@ -248,6 +279,8 @@ void main(List<String> args) {
         "import 'package:demo/sub/../../evil.dart';\n",
       );
       stagedFile('lib/abs.dart', "import '/etc/hostname';\n");
+      stagedFile('lib/empty.dart', "import 'a//b.dart';\n");
+      stagedFile('lib/emptypkg.dart', "import 'package:demo//evil.dart';\n");
       stagedFile('lib/part.dart', "part '../../evil_part.dart';\n");
       stagedFile('lib/partof.dart', "part of '../../evil_lib.dart';\n");
       stagedFile('lib/dart.dart', "import 'dart:core';\n");
@@ -273,6 +306,10 @@ void main(List<String> args) {
         "guard-test: ${at('lib/climb.dart')} import '../../evil.dart' "
             'is not a declared input.',
         "guard-test: ${at('lib/cond.dart')} import '../../evil.dart' "
+            'is not a declared input.',
+        "guard-test: ${at('lib/empty.dart')} import 'a//b.dart' "
+            'is not a declared input.',
+        "guard-test: ${at('lib/emptypkg.dart')} import 'package:demo//evil.dart' "
             'is not a declared input.',
         "guard-test: ${at('lib/part.dart')} part '../../evil_part.dart' "
             'is not a declared input.',

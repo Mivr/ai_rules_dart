@@ -1976,13 +1976,15 @@ bool _reachesViaPart(
 /// source, or a file that `inherited` lists as excluded.
 ///
 /// Returns a diagnostic for every directive URI that names no file the action
-/// can read through its declared inputs: a `file:` URI in any spelling, or any
-/// other scheme but `dart:` and `package:`. The front end reads such a URI off
-/// the host, outside every multi-root, so the module fails instead of compiling
-/// it. (A `part` or `part of` keeps its old rule unless it is a `file:` URI:
-/// excluding the library already keeps an unknown-scheme part out of the
-/// compile, while a `file:` part would still read the host.) Each diagnostic
-/// names the file, the directive and the URI.
+/// can read through its declared inputs: a `file:` URI in any spelling, any
+/// other scheme but `dart:` and `package:`, or any URI with an empty path
+/// segment (which the front end resolves differently than skipping it would).
+/// The front end reads such a URI off the host, outside every multi-root, so
+/// the module fails instead of compiling it. (A `part` or `part of` keeps its
+/// old rule unless it is a `file:` URI or has an empty segment: excluding the
+/// library already keeps an unknown-scheme part out of the compile, while a
+/// `file:` part would still read the host.) Each diagnostic names the file,
+/// the directive and the URI.
 Future<List<String>> _planImports(
   _Plan plan,
   Map<String, String> keys,
@@ -2046,6 +2048,16 @@ Future<List<String>> _planImports(
       }
     }
     for (final ref in scan.refs) {
+      // An empty path segment resolves differently in the front end than by
+      // skipping it (a `package:` doubled slash resolves absolutely), so the
+      // directive fails the build instead of compiling the wrong file.
+      if (hasEmptyPathSegment(ref.uri)) {
+        disallowed.add(
+          'kernel_module: cannot compile ${uriOfKey[key] ?? key}: '
+          "${ref.kind} '${ref.uri}' is not a declared input.",
+        );
+        continue;
+      }
       if (ref.uri.startsWith('dart:')) {
         if (!vm.contains(ref.uri.substring('dart:'.length))) {
           direct.putIfAbsent(key, () => '${ref.uri} is not a VM library');
@@ -2279,6 +2291,16 @@ Future<_EntrySources> _entrySources(
     }
     for (final ref in scan.refs) {
       if (ref.uri.startsWith('dart:')) continue;
+      // An empty path segment resolves differently in the front end than by
+      // skipping it (a `package:` doubled slash resolves absolutely), so the
+      // directive fails the build instead of compiling the wrong file.
+      if (hasEmptyPathSegment(ref.uri)) {
+        disallowed.add(
+          'kernel_module: cannot compile ${ownUris[key] ?? key}: '
+          "${ref.kind} '${ref.uri}' is not a declared input.",
+        );
+        continue;
+      }
       final target = _resolveUri(ref.uri, key, roots, multiRootPrefix);
       if (target == null) {
         // A directive URI outside the declared inputs fails the build (see

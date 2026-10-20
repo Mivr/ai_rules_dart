@@ -939,9 +939,24 @@ void main(List<String> args) {
         resolveDirectiveUri('./b.dart', 'pkg/lib/a.dart', dirs),
         'pkg/lib/b.dart',
       );
+    });
+
+    test('an empty path segment names no file', () {
       expect(
         resolveDirectiveUri('a//b.dart', 'pkg/lib/a.dart', dirs),
-        'pkg/lib/a/b.dart',
+        isNull,
+        reason: 'skipping it would not resolve like the front end',
+      );
+      expect(resolveDirectiveUri('//b.dart', 'pkg/lib/a.dart', dirs), isNull);
+      expect(resolveDirectiveUri('/a//b.dart', 'pkg/lib/a.dart', dirs), isNull);
+      expect(
+        resolveDirectiveUri('package:pkg//b.dart', 'pkg/lib/a.dart', dirs),
+        isNull,
+        reason: 'the front end resolves the doubled slash absolutely',
+      );
+      expect(
+        resolveDirectiveUri('package:pkg/a//b.dart', 'pkg/lib/a.dart', dirs),
+        isNull,
       );
     });
 
@@ -1577,6 +1592,66 @@ void main(List<String> args) {
         );
       },
     );
+
+    test('an empty path segment fails instead of resolving like the front end does not', () async {
+      _write(
+        'pkg/lib/a.dart',
+        "import 'package:pkg//secret.dart';\nclass A {}\n",
+      );
+      _write('pkg/lib/b.dart', "import 'sub//sibling.dart';\nclass B {}\n");
+      _write('pkg/lib/c.dart', "import '/sub//root.dart';\nclass C {}\n");
+      _write('pkg/lib/d.dart', "part 'part//piece.dart';\nclass D {}\n");
+      final result = await _compile('m_empty_segment', [
+        'pkg/lib/a.dart',
+        'pkg/lib/b.dart',
+        'pkg/lib/c.dart',
+        'pkg/lib/d.dart',
+      ]);
+      expect(result.code, 1);
+      expect(
+        result.log,
+        contains(
+          "cannot compile ${_uri('pkg/lib/a.dart')}: "
+          "import 'package:pkg//secret.dart' is not a declared input",
+        ),
+      );
+      expect(
+        result.log,
+        contains("import 'sub//sibling.dart' is not a declared input"),
+      );
+      expect(
+        result.log,
+        contains("import '/sub//root.dart' is not a declared input"),
+      );
+      expect(
+        result.log,
+        contains("part 'part//piece.dart' is not a declared input"),
+      );
+    });
+
+    test('an empty path segment fails the whole-program entry instead of compiling', () async {
+      _write(
+        'pkg/lib/a.dart',
+        "import 'package:pkg//secret.dart';\n"
+            'String describe() => secretValue;\n',
+      );
+      _write('pkg/lib/secret.dart', "const secretValue = 'x';\n");
+      _write(
+        'pkg/bin/main.dart',
+        "import 'package:pkg/a.dart';\nvoid main() => print(describe());\n",
+      );
+      final result = await _compile(
+        'm_empty_segment_entry',
+        ['pkg/bin/main.dart'],
+        inputSources: [_uri('pkg/lib/a.dart')],
+        noDrop: true,
+      );
+      expect(result.code, 1);
+      expect(
+        result.log,
+        contains("import 'package:pkg//secret.dart' is not a declared input"),
+      );
+    });
 
     test(
       'a file: import fails the whole-program entry instead of compiling',
