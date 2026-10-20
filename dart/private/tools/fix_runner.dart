@@ -8,7 +8,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'directive_guard.dart';
+import 'package:rules_dart_guard/directive_guard.dart';
 
 /// Recorded for every changed file outside the eligible set. One constant
 /// string: the manifest says *that* a fix was discarded, and the rule's

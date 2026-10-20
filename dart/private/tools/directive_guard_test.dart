@@ -3,10 +3,19 @@ import 'dart:io';
 import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
 
-import 'directive_guard.dart';
+import '../../guard/lib/directive_guard.dart';
 
-/// Unit tests for the shared staged-source check, the byte-identity of its two
-/// mirrors, and the enumeration of every Dart-reading tool through it.
+/// Unit tests for the shared staged-source check, the byte-identity of its one
+/// remaining mirror, and the enumeration of every Dart-reading tool through it.
+///
+/// The shared check lives in the public `package:rules_dart_guard` library
+/// (`dart/guard/lib/directive_guard.dart`), which every tool below imports —
+/// except the two that cannot: the whole-program `gen_kernel` wrapper runs
+/// from source (`app_jit_snapshot.dart`), and the modular kernel planner
+/// takes no `deps` edge (every `dart_library` names it, so that would be a
+/// cycle) and reads the same file through `srcs` instead. The wrapper's copy
+/// is byte-identical to the library's marked block, pinned by the mirror test
+/// below, so it still classifies exactly what the shared check classifies.
 ///
 /// A Dart-reading tool that stops enforcing the check must fail the
 /// `every tool enforces the shared check` test below: each tool source is
@@ -21,6 +30,7 @@ import 'directive_guard.dart';
 /// under Bazel or from the source tree for a direct `dart test` run.
 Map<String, String> _toolSources(List<String> args) {
   if (args.isEmpty) {
+    const guard = '../../guard/lib/directive_guard.dart';
     const shim = '../../ext/lib/builder_shim.dart';
     const names = [
       'analyze_runner.dart',
@@ -33,11 +43,14 @@ Map<String, String> _toolSources(List<String> args) {
       'web_compile_runner.dart',
       'builder_shim.dart',
     ];
+    const relocated = {
+      'builder_shim.dart': shim,
+      'directive_guard.dart': guard,
+    };
     return {
       for (final name in names)
-        name: File.fromUri(
-          Platform.script.resolve(name == 'builder_shim.dart' ? shim : name),
-        ).path,
+        name: File.fromUri(Platform.script.resolve(relocated[name] ?? name))
+            .path,
     };
   }
   final runfiles = Runfiles.create();
@@ -339,7 +352,7 @@ void main(List<String> args) {
   });
 
   group('staged-resolver mirrors', () {
-    test('the three copies are byte-identical', () {
+    test('the library and the wrapper copies are byte-identical', () {
       final sources = _toolSources(args);
       final guard = _mirrorRegion(
         'directive_guard.dart',
@@ -349,21 +362,17 @@ void main(List<String> args) {
         'app_jit_snapshot.dart',
         File(sources['app_jit_snapshot.dart']!).readAsStringSync(),
       );
-      final shim = _mirrorRegion(
-        'builder_shim.dart',
-        File(sources['builder_shim.dart']!).readAsStringSync(),
-      );
       expect(appJit, guard);
-      expect(shim, guard);
     });
   });
 
   group('every tool enforces the shared check', () {
     // Each Dart-reading tool and the marker proving it enforces the shared
     // staged-source check: the runners call it directly, the whole-program
-    // gen_kernel wrapper and the builder shims enforce their byte-identical
-    // mirrors, and the modular kernel planner resolves every directive
-    // through the shared front-end mirror. A tool without its marker fails.
+    // gen_kernel wrapper enforces its byte-identical mirror, the modular
+    // kernel planner resolves every directive through the shared file it
+    // reads through `srcs`, and the builder shims import the shared library.
+    // A tool without its marker fails.
     const markers = {
       'analyze_runner.dart': 'findStagedDirectiveViolations(',
       'analyzer_summary.dart': 'findStagedDirectiveViolations(',

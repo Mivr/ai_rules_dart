@@ -91,10 +91,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import '../../guard/lib/directive_guard.dart';
 import 'dill_outline.dart';
-import 'directive_guard.dart';
 
-export 'directive_guard.dart'
+export '../../guard/lib/directive_guard.dart'
     show
         ScanRef,
         ScanResult,

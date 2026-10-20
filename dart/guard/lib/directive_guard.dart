@@ -1,11 +1,47 @@
 // The one shared directive-URI check every Dart compile and analysis action
-// runs: no directive spelling may read an undeclared host file. Two copies of
-// the staged-source half live where an import is impossible: the whole-program
-// `gen_kernel` wrapper runs from source (`app_jit_snapshot.dart`), and the
-// builder shims cannot see this library across the Bazel package boundary
-// (`builder_shim.dart`). Each copy is byte-identical to the marked block below
-// (pinned by `directive_guard_test.dart`), so every tool still classifies
-// exactly what the shared check classifies.
+// runs: no directive spelling may read an undeclared host file.
+//
+// This is a public library so rule sets built on rules_dart can enforce the
+// same check in their own tools. Depend on it and import it by its stable
+// URI:
+//
+// ```python
+// deps = ["@rules_dart//dart/guard:directive_guard"],
+// ```
+// ```dart
+// import 'package:rules_dart_guard/directive_guard.dart';
+// ```
+//
+// The API is three entry points plus the predicates they are built from.
+// Every check is pure and synchronous; every failure is a diagnostic string,
+// never an exception. A check returns the diagnostics for what it saw, in
+// path order, and the empty list when clean; the caller prints each line and
+// fails its action when the list is not empty.
+//
+// * Pass staged roots and get every directive that would read outside them:
+//   `findStagedDirectiveViolations(roots, tool: <name>)` reads every `.dart`
+//   file under `roots` (missing roots scan as empty) and returns one
+//   `"<tool>: <path> <kind> '<uri>' is not a declared input."` line per
+//   offending directive. This is the check rules_dart's own runners enforce.
+// * Pass file contents and get every disallowed-scheme directive:
+//   `findDisallowedDirectives({path: source}, tool: <name>)` checks
+//   in-memory sources without touching the filesystem.
+// * Pass one URI and resolve it: `resolveDirectiveUri(uri, fromKey,
+//   packageDirs)` maps a directive URI to the workspace key the front end
+//   reads, or null when the URI names no workspace file. `packageDirs` maps
+//   each package name to its directory key.
+// * The predicates underneath — `isDisallowedDirectiveUri`,
+//   `isFileSchemeDirectiveUri`, `isEscapingPackageUri`,
+//   `hasEmptyPathSegment`, `resolveStagedRelativeTarget`,
+//   `normalizeStagedPath`, `decodeUriSegment` — classify one URI each, for
+//   tools that stage their own trees; `scanAllDirectiveUris(source)` lists a
+//   source's directives without evaluating `if` conditions.
+//
+// One copy of the staged-source half below lives where an import is
+// impossible: the whole-program `gen_kernel` wrapper runs from source
+// (`dart/private/tools/app_jit_snapshot.dart`). That copy is byte-identical
+// to the marked block below (pinned by `directive_guard_test.dart`), so it
+// classifies exactly what the shared check classifies.
 //
 // The Dart front end loads `file:` URIs straight off the host filesystem,
 // outside every `--multi-root` (and outside the sandbox roots a spawn sees),
@@ -37,9 +73,10 @@ String? _stripPrefix(String uri, String multiRootPrefix) {
   return null;
 }
 
-// BEGIN staged-resolver-mirror: byte-identical in directive_guard.dart,
-// app_jit_snapshot.dart and builder_shim.dart (pinned by
-// directive_guard_test.dart). Edit only by syncing all three copies.
+// BEGIN staged-resolver-mirror: byte-identical in
+// dart/guard/lib/directive_guard.dart and
+// dart/private/tools/app_jit_snapshot.dart (pinned by
+// directive_guard_test.dart). Edit only by syncing both copies.
 
 /// Decodes one raw URI path segment the way the front end does (RFC 3986): each
 /// valid `%XX` escape becomes its byte (bytes together decode as UTF-8, either
@@ -129,7 +166,11 @@ bool _isWindowsDriveSegment(String s) =>
 /// segments drop out. `..` segments stay (the caller applies them against its
 /// own base), except the resolution below, which clamps them at the
 /// filesystem root the way the analyzer does.
-String _normAbsStagedPath(String path) {
+///
+/// Public because tools that stage their own trees compare staged paths the
+/// same way the guard does: normalize both sides with this before comparing,
+/// so a root passed with a trailing slash or backslashes still matches.
+String normalizeStagedPath(String path) {
   final slashed = path.replaceAll(r'\', '/');
   final absolute = _isAbsoluteStagedPath(slashed)
       ? slashed
@@ -187,7 +228,7 @@ String? resolveStagedRelativeTarget(String uri, String fromPath) {
   final path = query < 0 ? text : text.substring(0, query);
   if (path.contains(':')) return null;
   if (path.startsWith('//')) return null;
-  final from = _normAbsStagedPath(fromPath);
+  final from = normalizeStagedPath(fromPath);
   // An empty reference names the importing file itself (RFC 3986).
   if (path.isEmpty) return from;
   final rooted = from.startsWith('/');
@@ -1055,7 +1096,7 @@ List<String> projectStagedRoots(String project) {
 /// a file under it. Both sides are normalized first, so a root passed with a
 /// trailing slash or backslashes still matches.
 bool _isWithinStagedRoot(String target, String root) {
-  final want = _normAbsStagedPath(root);
+  final want = normalizeStagedPath(root);
   if (target == want) return true;
   return target.startsWith('$want/');
 }
@@ -1064,10 +1105,10 @@ bool _isWithinStagedRoot(String target, String root) {
 /// Staged trees hold symlinks, and the analyzer may spell one staged file through
 /// either, so a target matching either spelling counts as declared.
 Set<String> _stagedRootSpellings(String root) {
-  final spellings = <String>{_normAbsStagedPath(root)};
+  final spellings = <String>{normalizeStagedPath(root)};
   try {
     final resolved = Directory(root).resolveSymbolicLinksSync();
-    spellings.add(_normAbsStagedPath(resolved));
+    spellings.add(normalizeStagedPath(resolved));
   } on FileSystemException {
     // Vanished or unresolvable; the passed spelling still applies.
   }
@@ -1105,7 +1146,7 @@ List<String> findStagedDirectiveViolations(
   for (final path in paths) {
     final content = contents[path];
     if (content == null) continue;
-    final from = _normAbsStagedPath(path.replaceAll(r'\', '/'));
+    final from = normalizeStagedPath(path.replaceAll(r'\', '/'));
     for (final ref in scanAllDirectiveUris(content)) {
       final uri = ref.uri;
       // The resolvers below skip empty segments, but the front end resolves

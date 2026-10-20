@@ -25,25 +25,25 @@ exports_files(
 
 dart_binary(
     name = "analyze_runner",
-    srcs = ["directive_guard.dart"],
     code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "analyze_runner.dart",
     modular_kernel = False,
     visibility = ["//dart:__subpackages__"],
+    deps = ["//dart/guard:directive_guard"],
 )
 
 # The analyzer-summary mode of `dart_analyze`: summarizes one package, and checks
 # a staged project against summaries. See dart/private/dart_analyzer_summary.bzl.
 dart_binary(
     name = "analyzer_summary",
-    srcs = ["directive_guard.dart"],
     code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "analyzer_summary.dart",
     modular_kernel = False,
     visibility = ["//dart:__subpackages__"],
     deps = [
+        "//dart/guard:directive_guard",
         "//third_party/dart_linter:linter",
         "@ext_pub_deps//:analyzer",
         "@ext_pub_deps//:path",
@@ -52,12 +52,12 @@ dart_binary(
 
 dart_binary(
     name = "fix_runner",
-    srcs = ["directive_guard.dart"],
     code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "fix_runner.dart",
     modular_kernel = False,
     visibility = ["//dart:__subpackages__"],
+    deps = ["//dart/guard:directive_guard"],
 )
 
 dart_binary(
@@ -158,7 +158,6 @@ dart_binary(
 
 dart_binary(
     name = "link_hook_runner",
-    srcs = ["directive_guard.dart"],
     code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "link_hook_runner.dart",
@@ -166,6 +165,7 @@ dart_binary(
     # Public: rules calling `dart_link_hook_actions` declare it as an attribute.
     visibility = ["//visibility:public"],
     deps = [
+        "//dart/guard:directive_guard",
         "@ext_pub_deps//:args",
         "@ext_pub_deps//:data_assets",
         "@ext_pub_deps//:hooks",
@@ -175,12 +175,10 @@ dart_binary(
 dart_test(
     name = "link_hook_runner_test",
     size = "small",
-    srcs = [
-        "directive_guard.dart",
-        "link_hook_runner.dart",
-    ],
+    srcs = ["link_hook_runner.dart"],
     main = "link_hook_runner_test.dart",
     deps = [
+        "//dart/guard:directive_guard",
         "@ext_pub_deps//:args",
         "@ext_pub_deps//:data_assets",
         "@ext_pub_deps//:hooks",
@@ -200,8 +198,10 @@ dart_binary(
 )
 
 # Compiles one kernel module, excluding the sources that cannot compile for the VM.
-# A Bazel persistent worker. It has no pub dependencies on purpose: every `dart_library`
+# A Bazel persistent worker. It has no dependencies on purpose: every `dart_library`
 # names it as an attribute, so depending on a `dart_library` would be a cycle.
+# It reads the shared guard through `srcs` instead: the file compiles in place,
+# so the relative import reaches it with no package edge.
 # An AOT snapshot (run by `dartaotruntime` in `kernel_module_action`): every module
 # and entry action pays the tool's startup, and the snapshot skips the VM's JIT
 # compile of the wrapper. It is smaller and faster to build than `exe`.
@@ -209,7 +209,7 @@ dart_binary(
     name = "kernel_module",
     srcs = [
         "dill_outline.dart",
-        "directive_guard.dart",
+        "//dart/guard:lib/directive_guard.dart",
     ],
     code_assets_from_deps = False,
     compile_mode = "aot-snapshot",
@@ -223,8 +223,8 @@ dart_test(
     name = "kernel_module_test",
     size = "small",
     srcs = [
+        "//dart/guard:lib/directive_guard.dart",
         "dill_outline.dart",
-        "directive_guard.dart",
         "kernel_link.dart",
         "kernel_module.dart",
     ],
@@ -252,7 +252,6 @@ exports_files(
     [
         "analyze_runner.dart",
         "analyzer_summary.dart",
-        "directive_guard.dart",
         "fix_runner.dart",
         "kernel_module.dart",
         "link_hook_runner.dart",
@@ -263,12 +262,12 @@ exports_files(
 dart_test(
     name = "directive_guard_test",
     size = "small",
-    srcs = ["directive_guard.dart"],
+    srcs = ["//dart/guard:lib/directive_guard.dart"],
     args = [
         "$(rlocationpath :analyze_runner.dart)",
         "$(rlocationpath :analyzer_summary.dart)",
         "$(rlocationpath :app_jit_snapshot.dart)",
-        "$(rlocationpath :directive_guard.dart)",
+        "$(rlocationpath //dart/guard:lib/directive_guard.dart)",
         "$(rlocationpath :fix_runner.dart)",
         "$(rlocationpath :kernel_module.dart)",
         "$(rlocationpath :link_hook_runner.dart)",
@@ -279,7 +278,7 @@ dart_test(
         ":analyze_runner.dart",
         ":analyzer_summary.dart",
         ":app_jit_snapshot.dart",
-        ":directive_guard.dart",
+        "//dart/guard:lib/directive_guard.dart",
         ":fix_runner.dart",
         ":kernel_module.dart",
         ":link_hook_runner.dart",
@@ -296,12 +295,10 @@ dart_test(
 dart_test(
     name = "analyzer_summary_test",
     size = "small",
-    srcs = [
-        "analyzer_summary.dart",
-        "directive_guard.dart",
-    ],
+    srcs = ["analyzer_summary.dart"],
     main = "analyzer_summary_test.dart",
     deps = [
+        "//dart/guard:directive_guard",
         "//third_party/dart_linter:linter",
         "@ext_pub_deps//:analyzer",
         "@ext_pub_deps//:path",
@@ -329,11 +326,14 @@ dart_test(
     name = "fix_runner_test",
     size = "small",
     srcs = [
-        "directive_guard.dart",
+        "//dart/guard:lib/directive_guard.dart",
         "fix_runner.dart",
     ],
     main = "fix_runner_test.dart",
-    deps = ["@ext_pub_deps//:test"],
+    deps = [
+        "//dart/guard:directive_guard",
+        "@ext_pub_deps//:test",
+    ],
 )
 
 dart_test(
@@ -363,23 +363,23 @@ dart_test(
 
 dart_binary(
     name = "web_compile_runner",
-    srcs = ["directive_guard.dart"],
     compile_mode = "kernel",
     main = "web_compile_runner.dart",
     modular_kernel = False,
     visibility = ["//visibility:public"],
+    deps = ["//dart/guard:directive_guard"],
 )
 
 dart_test(
     name = "web_compile_runner_test",
     size = "small",
-    srcs = [
-        "directive_guard.dart",
-        "web_compile_runner.dart",
-    ],
+    srcs = ["web_compile_runner.dart"],
     data = ["//dart"],
     main = "web_compile_runner_test.dart",
-    deps = ["@ext_pub_deps//:test"],
+    deps = [
+        "//dart/guard:directive_guard",
+        "@ext_pub_deps//:test",
+    ],
 )
 
 dart_binary(

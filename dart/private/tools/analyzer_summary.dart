@@ -46,7 +46,7 @@ import 'package:analyzer/src/summary/package_bundle_reader.dart'
 import 'package:linter/src/rules.dart';
 import 'package:path/path.dart' as p;
 
-import 'directive_guard.dart';
+import 'package:rules_dart_guard/directive_guard.dart';
 
 const _optionsBasename = 'analysis_options.yaml';
 const _packageConfig = '.dart_tool/package_config.json';

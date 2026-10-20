@@ -11,7 +11,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'directive_guard.dart';
+import 'package:rules_dart_guard/directive_guard.dart';
 
 void main(List<String> rawArgs) {
   final code = runWebCompileRequest(

@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
-import 'directive_guard.dart';
+import '../../guard/lib/directive_guard.dart';
 import 'fix_runner.dart' as fix_runner;
 
 void main() {

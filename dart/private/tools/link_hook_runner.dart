@@ -16,7 +16,7 @@ import 'package:args/args.dart';
 import 'package:data_assets/data_assets.dart';
 import 'package:hooks/hooks.dart';
 
-import 'directive_guard.dart';
+import 'package:rules_dart_guard/directive_guard.dart';
 
 Future<void> main(List<String> arguments) async {
   final parser = ArgParser()

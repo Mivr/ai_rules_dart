@@ -1081,7 +1081,7 @@ List<String> _findDisallowedGenKernelDirectives(
     }
   }
   final declared = <String>{
-    for (final path in contents.keys) _normAbsStagedPath(path),
+    for (final path in contents.keys) normalizeStagedPath(path),
   };
   final declaredKeys = <String>{
     for (final path in contents.keys) _stableSourceKey(path, fsRoots),
@@ -1091,7 +1091,7 @@ List<String> _findDisallowedGenKernelDirectives(
   for (final path in paths) {
     final content = contents[path];
     if (content == null) continue;
-    final from = _normAbsStagedPath(path);
+    final from = normalizeStagedPath(path);
     final fromKey = _stableSourceKey(path, fsRoots);
     for (final ref in scanAllDirectiveUris(content)) {
       final uri = ref.uri;
@@ -2171,9 +2171,10 @@ List<String> findDisallowedDirectives(
   return errors;
 }
 
-// BEGIN staged-resolver-mirror: byte-identical in directive_guard.dart,
-// app_jit_snapshot.dart and builder_shim.dart (pinned by
-// directive_guard_test.dart). Edit only by syncing all three copies.
+// BEGIN staged-resolver-mirror: byte-identical in
+// dart/guard/lib/directive_guard.dart and
+// dart/private/tools/app_jit_snapshot.dart (pinned by
+// directive_guard_test.dart). Edit only by syncing both copies.
 
 /// Decodes one raw URI path segment the way the front end does (RFC 3986): each
 /// valid `%XX` escape becomes its byte (bytes together decode as UTF-8, either
@@ -2263,7 +2264,11 @@ bool _isWindowsDriveSegment(String s) =>
 /// segments drop out. `..` segments stay (the caller applies them against its
 /// own base), except the resolution below, which clamps them at the
 /// filesystem root the way the analyzer does.
-String _normAbsStagedPath(String path) {
+///
+/// Public because tools that stage their own trees compare staged paths the
+/// same way the guard does: normalize both sides with this before comparing,
+/// so a root passed with a trailing slash or backslashes still matches.
+String normalizeStagedPath(String path) {
   final slashed = path.replaceAll(r'\', '/');
   final absolute = _isAbsoluteStagedPath(slashed)
       ? slashed
@@ -2321,7 +2326,7 @@ String? resolveStagedRelativeTarget(String uri, String fromPath) {
   final path = query < 0 ? text : text.substring(0, query);
   if (path.contains(':')) return null;
   if (path.startsWith('//')) return null;
-  final from = _normAbsStagedPath(fromPath);
+  final from = normalizeStagedPath(fromPath);
   // An empty reference names the importing file itself (RFC 3986).
   if (path.isEmpty) return from;
   final rooted = from.startsWith('/');

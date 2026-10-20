@@ -5,7 +5,7 @@
 // on success. Pure Dart (no shell) so the action is portable to Windows.
 import 'dart:io';
 
-import 'directive_guard.dart';
+import 'package:rules_dart_guard/directive_guard.dart';
 
 void main(List<String> args) {
   String? dart;

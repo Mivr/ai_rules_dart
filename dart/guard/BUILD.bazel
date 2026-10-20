@@ -1,0 +1,18 @@
+load("//dart:defs.bzl", "dart_library")
+
+# The shared directive-URI check every Dart compile and analysis action runs,
+# as a public library so rule sets built on rules_dart can enforce the same
+# check in their own tools. See lib/directive_guard.dart for the API.
+dart_library(
+    name = "directive_guard",
+    srcs = ["lib/directive_guard.dart"],
+    package_name = "rules_dart_guard",
+    visibility = ["//visibility:public"],
+)
+
+# Bare source for `directive_guard_test`, which pins the `app_jit_snapshot`
+# mirror byte-identical to the library's marked block.
+exports_files(
+    ["lib/directive_guard.dart"],
+    visibility = ["//visibility:public"],
+)
