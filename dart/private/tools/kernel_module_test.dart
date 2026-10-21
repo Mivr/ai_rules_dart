@@ -10,6 +10,11 @@ import 'dart:typed_data';
 import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
 
+import 'app_jit_snapshot.dart'
+    show
+        genKernelDillCanonicalRoots,
+        genKernelDillLibraryReferences,
+        genKernelDillSourceUris;
 import 'comma_patch.dart' show patchSnapshotFile;
 import 'dill_outline.dart'
     show Tag, stripDillToOutline, supportedKernelFormatVersions;
@@ -1775,6 +1780,35 @@ void main(List<String> args) {
         expect(result.calls.length, 1, reason: 'no isolated restage');
       },
     );
+
+    test('the whole-program reader parses what the modular reader parses', () {
+      final dills = [
+        _buildDillWithUris([_uri('pkg/lib/a.dart'), 'dart:core']),
+        _buildDillWithLibraries(
+          sources: [
+            (_uri('pkg/lib/a.dart'), 'package:pkg/a.dart'),
+            (_uri('dep/lib/d.dart'), 'package:dep/d.dart'),
+          ],
+          libraries: [(0, 'package:pkg/a.dart'), (1, 'package:dep/d.dart')],
+          extraRoots: ['file:///host/evil.dart'],
+        ),
+      ];
+      for (final dill in dills) {
+        expect(genKernelDillSourceUris(dill), dillSourceUris(dill));
+        final whole = genKernelDillLibraryReferences(dill);
+        final modular = dillLibraryReferences(dill);
+        expect(whole?.length, modular?.length);
+        if (whole != null && modular != null) {
+          for (var i = 0; i < whole.length; i++) {
+            expect(whole[i].fileUriIndex, modular[i].fileUriIndex);
+            expect(whole[i].fileUri, modular[i].fileUri);
+            expect(whole[i].importUri, modular[i].importUri);
+            expect(whole[i].canonicalName, modular[i].canonicalName);
+          }
+        }
+        expect(genKernelDillCanonicalRoots(dill), dillCanonicalRoots(dill));
+      }
+    });
   });
 
   group('directive guard classification', () {

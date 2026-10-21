@@ -232,6 +232,7 @@ dart_test(
     name = "kernel_module_test",
     size = "small",
     srcs = [
+        "app_jit_snapshot.dart",
         "comma_patch.dart",
         "dill_outline.dart",
         "kernel_link.dart",

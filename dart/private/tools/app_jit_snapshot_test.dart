@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -85,6 +86,123 @@ void main(List<String> args) {
       if (keep.contains(entry.key.toLowerCase())) env[entry.key] = entry.value;
     }
     return env;
+  }
+
+  /// A structurally valid kernel component for read-set unit tests: [sources]
+  /// are (`fileUri`, `importUri`) source-table entries, [libraries] are
+  /// (source index, canonical root or null) library nodes, and [extraRoots]
+  /// are canonical roots no node mentions. It mirrors the builder in
+  /// `kernel_module_test.dart`, and the parser-agreement test there pins both
+  /// readers to identical verdicts on its bytes.
+  Uint8List verifyDill({
+    required List<(String, String)> sources,
+    required List<(int, String?)> libraries,
+    List<String> extraRoots = const [],
+  }) {
+    final out = BytesBuilder();
+    void u30(int v) {
+      if (v < 0x80) {
+        out.addByte(v);
+      } else if (v < 0x4000) {
+        out.addByte(0x80 | (v >> 8));
+        out.addByte(v & 0xff);
+      } else {
+        out.addByte(0xc0 | ((v >> 24) & 0x3f));
+        out.addByte((v >> 16) & 0xff);
+        out.addByte((v >> 8) & 0xff);
+        out.addByte(v & 0xff);
+      }
+    }
+
+    void u32(int v) {
+      out.addByte((v >> 24) & 0xff);
+      out.addByte((v >> 16) & 0xff);
+      out.addByte((v >> 8) & 0xff);
+      out.addByte(v & 0xff);
+    }
+
+    void str(String s) {
+      final bytes = utf8.encode(s);
+      u30(bytes.length);
+      out.add(bytes);
+    }
+
+    final strings = <String>[''];
+    int stringIndexOf(String s) {
+      var index = strings.indexOf(s);
+      if (index < 0) {
+        index = strings.length;
+        strings.add(s);
+      }
+      return index;
+    }
+
+    u32(0x90ABCDEF);
+    u32(138);
+    out.add(List.filled(64, 0));
+    final sourceTableOffset = out.length;
+    u32(sources.length);
+    for (final (fileUri, importUri) in sources) {
+      str(fileUri);
+      str('');
+      u30(0);
+      str(importUri);
+      u30(0);
+    }
+    final constantTableOffset = out.length;
+    u30(0);
+    final linkTableOffset = out.length;
+    u30(libraries.length + extraRoots.length);
+    for (final (_, canon) in libraries) {
+      u30(0); // Parent: the nameless root.
+      u30(canon == null ? 0 : stringIndexOf(canon));
+    }
+    for (final root in extraRoots) {
+      u30(0); // Parent: the nameless root no node references.
+      u30(stringIndexOf(root));
+    }
+    final stringTableOffset = out.length;
+    u30(strings.length);
+    var end = 0;
+    final ends = <int>[];
+    for (final s in strings) {
+      end += utf8.encode(s).length;
+      ends.add(end);
+    }
+    for (final e in ends) {
+      u30(e);
+    }
+    for (final s in strings) {
+      out.add(utf8.encode(s));
+    }
+    final libraryOffsets = <int>[];
+    for (var i = 0; i < libraries.length; i++) {
+      libraryOffsets.add(out.length);
+      final (source, canon) = libraries[i];
+      out.addByte(4); // Flags.
+      u30(3); // Major version.
+      u30(0); // Minor version.
+      // Canonical-name reference, biased by one; zero names no reference.
+      u30(canon == null ? 0 : i + 1);
+      u30(0); // Name string reference: the empty name.
+      u30(source);
+    }
+    libraryOffsets.add(out.length);
+    u32(sourceTableOffset);
+    u32(constantTableOffset);
+    u32(constantTableOffset);
+    u32(linkTableOffset);
+    u32(linkTableOffset);
+    u32(linkTableOffset);
+    u32(stringTableOffset);
+    u32(stringTableOffset);
+    u32(stringTableOffset);
+    for (final offset in libraryOffsets) {
+      u32(offset);
+    }
+    u32(libraries.length);
+    u32(out.length + 4);
+    return out.toBytes();
   }
 
   for (final mode in [0x124 /* 0444 */, 0x16d /* 0555 */]) {
@@ -202,6 +320,7 @@ void main(List<String> args) {
       '--gen-kernel',
       dartaotruntime,
       '--comma-patched-snapshot',
+      '--input-source=${mainDart.path}',
       genKernel,
       '--platform',
       platformDill,
@@ -752,6 +871,7 @@ void main(List<String> args) {
         '--gen-kernel',
         dartaotruntime,
         '--comma-patched-snapshot',
+        '--input-source=${mainDart.path}',
         genKernel,
         '--platform',
         platformDill,
@@ -836,4 +956,330 @@ void main(List<String> args) {
     expect(outExe.existsSync(), isTrue);
     expect(scratch.listSync(recursive: true).toList(), isEmpty);
   });
+
+  test('--gen-kernel refuses a schemeless authority without compiling', () {
+    final ws = Directory('${tmp.path}/auth_ws')..createSync(recursive: true);
+    final main = File('${ws.path}/main.dart')
+      ..writeAsStringSync(
+        "import '//host/evil.dart';\n"
+        'void main() => print(secretValue);\n',
+      );
+    // Four source backslashes: the scanner unescapes `\\` pairs, so the
+    // extracted URI leads with `\\`, which fails as the `//` authority.
+    const bs = '\\';
+    final authSource = '${bs * 4}host${bs * 2}evil.dart';
+    final authExtracted = '${bs * 2}host${bs}evil.dart';
+    final conditional = File('${ws.path}/cond.dart')
+      ..writeAsStringSync(
+        "import 'dart:async' if (dart.library.io) '$authSource';\n"
+        'Future<void> f() async {}\n',
+      );
+    // End to end: the wrapper fails before running gen_kernel (which is never
+    // reached, so no SDK snapshot is needed).
+    final toolPath = stageTool();
+    final res = Process.runSync(Platform.resolvedExecutable, [
+      toolPath,
+      '--gen-kernel',
+      'never-reached-runtime',
+      '--input-source=${main.path}',
+      '--input-source=${conditional.path}',
+    ]);
+    expect(res.exitCode, isNonZero);
+    expect(
+      res.stderr as String,
+      contains("import '//host/evil.dart' is not a declared input"),
+    );
+    expect(
+      res.stderr as String,
+      contains("import '$authExtracted' is not a declared input"),
+    );
+    expect(
+      'is not a declared input'.allMatches(res.stderr as String),
+      hasLength(2),
+    );
+  });
+
+  test(
+    '--gen-kernel scans files with malformed UTF-8 instead of skipping them',
+    () {
+      final ws = Directory('${tmp.path}/malformed_ws')
+        ..createSync(recursive: true);
+      File('${ws.path}/b.dart').writeAsStringSync('class B {}\n');
+      // An invalid byte mid-file: gen_kernel still accepts the file, so the
+      // guard scans what it can (with U+FFFD) instead of skipping it.
+      File('${ws.path}/main.dart').writeAsBytesSync([
+        ...utf8.encode("import 'b.dart';\n// "),
+        0xff,
+        ...utf8.encode("\nimport '../../evil.dart';\nvoid main() {}\n"),
+      ]);
+      // End to end: the wrapper fails before running gen_kernel (which is
+      // never reached, so no SDK snapshot is needed).
+      final toolPath = stageTool();
+      final res = Process.runSync(Platform.resolvedExecutable, [
+        toolPath,
+        '--gen-kernel',
+        'never-reached-runtime',
+        '--input-source=${ws.path}/main.dart',
+        '--input-source=${ws.path}/b.dart',
+      ]);
+      expect(res.exitCode, isNonZero);
+      expect(
+        res.stderr as String,
+        contains("import '../../evil.dart' is not a declared input"),
+      );
+      // Exactly one diagnostic: the declared sibling import is clean, and the
+      // malformed file itself was scanned, not skipped.
+      expect(
+        'is not a declared input'.allMatches(res.stderr as String),
+        hasLength(1),
+      );
+    },
+  );
+
+  group('verifyGenKernelReads', () {
+    const prefix = 'org-dartlang-root:///';
+
+    List<String> verify(
+      String name,
+      Uint8List bytes, {
+      Set<String> declaredKeys = const {'app/main.dart'},
+      Map<String, String> packageKeyPrefixes = const {},
+    }) {
+      final out = File('${tmp.path}/$name')..writeAsBytesSync(bytes);
+      return snapshot.verifyGenKernelReads(
+        outputPath: out.path,
+        declaredKeys: declaredKeys,
+        multiRootPrefix: prefix,
+        fsRoots: const ['.'],
+        packageKeyPrefixes: packageKeyPrefixes,
+      );
+    }
+
+    test('a clean kernel verifies', () {
+      expect(
+        verify(
+          'clean.dill',
+          verifyDill(
+            sources: [('${prefix}app/main.dart', '${prefix}app/main.dart')],
+            libraries: [(0, '${prefix}app/main.dart')],
+          ),
+        ),
+        isEmpty,
+      );
+    });
+
+    test('an undeclared file read fails closed and names the file', () {
+      final errors = verify(
+        'dirty.dill',
+        verifyDill(
+          sources: [
+            ('${prefix}app/main.dart', '${prefix}app/main.dart'),
+            ('file:///host/evil.dart', 'file:///host/evil.dart'),
+          ],
+          libraries: [(0, '${prefix}app/main.dart')],
+        ),
+      );
+      expect(errors, isNotEmpty);
+      expect(errors.join('\n'), contains('reads file:///host/evil.dart'));
+    });
+
+    test('an undefined import spelling fails closed', () {
+      final errors = verify(
+        'evil_import.dill',
+        verifyDill(
+          sources: [('${prefix}app/main.dart', '${prefix}app/main.dart')],
+          libraries: [(0, 'package:pkg//evil.dart')],
+        ),
+      );
+      expect(errors, isNotEmpty);
+      expect(errors.join('\n'), contains('references package:pkg//evil.dart'));
+    });
+
+    test('a smuggled canonical root fails closed', () {
+      final errors = verify(
+        'evil_root.dill',
+        verifyDill(
+          sources: [('${prefix}app/main.dart', '${prefix}app/main.dart')],
+          libraries: [(0, '${prefix}app/main.dart')],
+          extraRoots: ['file:///host/evil.dart'],
+        ),
+      );
+      expect(errors, isNotEmpty);
+      expect(errors.join('\n'), contains('references file:///host/evil.dart'));
+    });
+
+    test('a package spelling of a declared input verifies', () {
+      expect(
+        verify(
+          'package.dill',
+          verifyDill(
+            sources: [('${prefix}pkg/lib/a.dart', 'package:pkg/a.dart')],
+            libraries: [(0, 'package:pkg/a.dart')],
+          ),
+          declaredKeys: const {'pkg/lib/a.dart'},
+          packageKeyPrefixes: const {'pkg': 'pkg/lib'},
+        ),
+        isEmpty,
+      );
+    });
+
+    test('an unparseable kernel fails closed and a missing output passes', () {
+      expect(verify('garbage.dill', Uint8List.fromList([1, 2, 3])), isNotEmpty);
+      expect(
+        snapshot.verifyGenKernelReads(
+          outputPath: '${tmp.path}/absent.dill',
+          declaredKeys: const {'app/main.dart'},
+          multiRootPrefix: prefix,
+          fsRoots: const ['.'],
+          packageKeyPrefixes: const {},
+        ),
+        isEmpty,
+      );
+    });
+  });
+
+  group('genKernelPackageKeyPrefixes', () {
+    test('scheme, relative, and file roots map to key prefixes', () {
+      final dir = Directory('${tmp.path}/cfg/sub')..createSync(recursive: true);
+      File('${dir.path}/package_config.json').writeAsStringSync(
+        jsonEncode({
+          'configVersion': 2,
+          'packages': [
+            {
+              'name': 'a',
+              'rootUri': 'org-dartlang-root:///pkg/a',
+              'packageUri': 'lib/',
+            },
+            {'name': 'b', 'rootUri': '../src/b', 'packageUri': 'lib/'},
+            {'name': 'c', 'rootUri': 'file:///tmp/abs/c', 'packageUri': 'lib/'},
+            {
+              'name': 'other',
+              'rootUri': 'weird-scheme:///x',
+              'packageUri': 'lib/',
+            },
+            {'name': '', 'rootUri': 'org-dartlang-root:///pkg/a'},
+          ],
+        }),
+      );
+      expect(
+        snapshot.genKernelPackageKeyPrefixes(
+          packagesPath: '${dir.path}/package_config.json',
+          multiRootPrefix: 'org-dartlang-root:///',
+          fsRoots: const ['.'],
+        ),
+        {
+          'a': 'pkg/a/lib',
+          'b': '${tmp.path.replaceAll(r'\', '/')}/cfg/src/b/lib',
+          'c': '/tmp/abs/c/lib',
+        },
+      );
+    });
+
+    test('a relative root above the exec root maps to nothing', () {
+      final prevCwd = Directory.current;
+      Directory.current = tmp;
+      try {
+        Directory('cfg').createSync();
+        File('cfg/package_config.json').writeAsStringSync(
+          jsonEncode({
+            'configVersion': 2,
+            'packages': [
+              {'name': 'in', 'rootUri': 'sub/pkg', 'packageUri': 'lib/'},
+              {'name': 'out', 'rootUri': '../../outside', 'packageUri': 'lib/'},
+            ],
+          }),
+        );
+        expect(
+          snapshot.genKernelPackageKeyPrefixes(
+            packagesPath: 'cfg/package_config.json',
+            multiRootPrefix: 'org-dartlang-root:///',
+            fsRoots: const ['.'],
+          ),
+          {'in': 'cfg/sub/pkg/lib'},
+        );
+      } finally {
+        Directory.current = prevCwd;
+      }
+    });
+
+    test('a missing or malformed config maps every package to nothing', () {
+      File('${tmp.path}/broken.json').writeAsStringSync('{nope');
+      for (final path in [
+        '${tmp.path}/absent.json',
+        '${tmp.path}/broken.json',
+      ]) {
+        expect(
+          snapshot.genKernelPackageKeyPrefixes(
+            packagesPath: path,
+            multiRootPrefix: 'org-dartlang-root:///',
+            fsRoots: const ['.'],
+          ),
+          isEmpty,
+        );
+      }
+    });
+  });
+
+  test(
+    '--gen-kernel deletes an output whose read set names an undeclared file',
+    () {
+      if (Platform.isWindows) return;
+      final ws = Directory('${tmp.path}/readset_ws')
+        ..createSync(recursive: true);
+      final main = File('${ws.path}/main.dart')
+        ..writeAsStringSync('void main() {}\n');
+      final pkgConfig = File('${ws.path}/package_config.json')
+        ..writeAsStringSync('{"configVersion": 2, "packages": []}\n');
+      // Whatever the front end would have read, the bytes below name a host
+      // file no declared input covers.
+      File('${ws.path}/dirty.dill').writeAsBytesSync(
+        verifyDill(
+          sources: [('file:///host/evil.dart', 'file:///host/evil.dart')],
+          libraries: const [],
+        ),
+      );
+      // A stand-in for the runtime: it "compiles" by copying the dirty bytes to
+      // the `-o` output and exiting successfully, so only the read-set check
+      // can still refuse the action.
+      final runtime = File('${ws.path}/fake_runtime.sh')
+        ..writeAsStringSync(
+          '#!/bin/sh\n'
+          'out=""\n'
+          'prev=""\n'
+          'for a in "\$@"; do\n'
+          '  case "\$a" in\n'
+          '    -o=*|--output=*) out="\${a#*=}";;\n'
+          '    -o|--output) prev="out";;\n'
+          '    *) if [ "\$prev" = "out" ]; then out="\$a"; fi; prev="";;\n'
+          '  esac\n'
+          'done\n'
+          '/bin/cp \'${ws.path}/dirty.dill\' "\$out"\n',
+        );
+      snapshot.chmodFile(runtime.path, 0x1ed);
+      final outDill = File('${ws.path}/out.dill');
+
+      final toolPath = stageTool();
+      final res = Process.runSync(Platform.resolvedExecutable, [
+        toolPath,
+        '--gen-kernel',
+        runtime.path,
+        '--input-source=${main.path}',
+        'fake-gen-kernel-snapshot',
+        '--platform',
+        'fake-platform.dill',
+        '--packages',
+        pkgConfig.path,
+        '-o',
+        outDill.path,
+        main.path,
+      ]);
+      expect(res.exitCode, 1, reason: '${res.stdout}\n${res.stderr}');
+      expect(res.stderr as String, contains('reads file:///host/evil.dart'));
+      expect(
+        outDill.existsSync(),
+        isFalse,
+        reason: 'the dirty output is deleted',
+      );
+    },
+  );
 }
