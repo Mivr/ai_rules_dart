@@ -22,7 +22,7 @@ change the extracted bytes nor run host code, while transport configuration
 1. Transport (`git_transport_fetch`): the pinned commit is fetched into a
    fresh BARE repository that is assembled without running `git init` at
    all — the helper writes the skeleton (`HEAD`, `config`, `objects/`,
-   `refs/`) with `ctx.file`, then runs `git fetch <url> <sha>`, falling
+   `refs/`) with `ctx.file`, then runs `git fetch -- <url> <sha>`, falling
    back to fetching all refs on servers that reject a bare SHA. Skipping
    `init` removes the host template surface by construction (no template
    is ever copied, so no template `info/attributes` or `hooks/` can reach
@@ -38,32 +38,43 @@ change the extracted bytes nor run host code, while transport configuration
    (`transfer`/`fetch.fsckObjects`, `gc.auto`, `maintenance.auto`,
    `fetch.writeCommitGraph`, `fetch.recurseSubmodules`,
    `submodule.recurse`, `fetch.prune`, `fetch.pruneTags` — see
-   `_transport_config_args`). Every repository-resolution selector the
+   `_transport_config_args`). The wire protocol is pinned at version 2, so
+   a host `protocol.version=0` cannot push the fetch onto the all-refs
+   fallback (which would store host-dependent refs and tags). Every
+   repository-resolution selector the
    host could otherwise redirect is
    pinned at the new bare repository instead: `--git-dir` (which beats
    `GIT_DIR`), `GIT_OBJECT_DIRECTORY` and `GIT_COMMON_DIR` (pointed at
    the new repository's own directories, which are pre-created so the
    pins always name existing paths), and `--no-replace-objects` plus
    `GIT_NO_REPLACE_OBJECTS=1` (which beat replace refs from any source).
-   Every other documented non-transport `GIT_*` variable is scrubbed to
-   an empty value (which git reads as unset): `GIT_INDEX_FILE`,
+   Every other documented non-transport `GIT_*` variable is unset with
+   `None` (which `ctx.execute` removes from the child process — an empty
+   string would stay set, and git treats a set-but-empty
+   `GIT_QUARANTINE_PATH`, `GIT_WORK_TREE` or
+   `GIT_INTERNAL_SUPER_PREFIX` as fatal): `GIT_DIR`, `GIT_WORK_TREE`,
+   `GIT_INTERNAL_SUPER_PREFIX`, `GIT_EXEC_PATH`, `GIT_INDEX_FILE`,
    `GIT_NAMESPACE`, `GIT_ALTERNATE_OBJECT_DIRECTORIES`,
    `GIT_QUARANTINE_PATH`, `GIT_REPLACE_REF_BASE`,
    `GIT_CEILING_DIRECTORIES`, `GIT_DISCOVERY_ACROSS_FILESYSTEM`,
    `GIT_PREFIX`, `GIT_TEMPLATE_DIR`, `GIT_GRAFT_FILE`, the
    `GIT_CONFIG_COUNT` / `GIT_CONFIG_PARAMETERS` inline-config channel,
-   and the editor, pager and tracing variables. `GIT_WORK_TREE` stays
-   inherited: any non-empty value is ignored by every transport command
-   on a bare repository with an explicit `--git-dir`, while an empty
-   value is fatal to `fetch` — and scrubbing is impossible, because the
-   empty value itself is what git rejects. `GIT_INTERNAL_SUPER_PREFIX`
-   likewise stays inherited (only git itself ever sets it). What is
+   and the editor, pager and tracing variables, plus every other
+   `GIT_*` name in the host environment, closing undocumented and future
+   variables. `GIT_INTERNAL_SUPER_PREFIX`
+   likewise stays dropped (only git itself ever sets it). What is
    deliberately
    inherited is only transport: the host's config files (which may carry
    `insteadOf` rewrites) and the SSH, TLS, proxy and credential-helper
-   variables allowlisted in `_TRANSPORT_PASSTHROUGH`. `GIT_ALLOW_PROTOCOL`
+   variables allowlisted in `_TRANSPORT_PASSTHROUGH`. For local URLs
+   (`file://`, plain paths, bundles) even the config files are replaced:
+   the global and system selectors point at the shared empty file, so a
+   host-global `uploadpack.packObjectsHook` (which runs on every local
+   fetch, where `-c` pins cannot reach it) stays unread; local fetches
+   need no credentials. `GIT_ALLOW_PROTOCOL`
    is pinned to a fixed transport-only list so host state cannot widen
-   the fetch to a command-executing helper.
+   the fetch to a command-executing helper. The `--` before the URL keeps
+   a lock URL from being read as an option.
 2. Materialization (`git_materialize`): every later git command — the
    `count-objects` alternates refusal, the `rev-parse`/`cat-file`
    verification, the tree read, the `archive` — runs against that bare
@@ -74,11 +85,11 @@ change the extracted bytes nor run host code, while transport configuration
    pointed at the empty directory, `GIT_CONFIG_NOSYSTEM=1`, the global and
    system selectors pointed at an empty file this helper writes, and
    `GIT_NO_REPLACE_OBJECTS=1`. A repository with `objects/info/alternates`
-   is refused outright (a fresh `init` never writes that file, so its
+   is refused outright (the assembled skeleton never writes that file, so its
    presence means tampering). Verification reads the commit object id
    (`rev-parse --verify <sha>^{commit}` must print the pinned SHA), its type
-   (`cat-file -t` must say `commit`), and its tree (`rev-parse
-   <sha>^{tree}`), all under that empty environment; the archive is then
+   (`cat-file -t` must say `commit`), and the commit's tree id (`rev-parse
+   <sha>^{tree}` must succeed), all under that empty environment; the archive is then
    streamed from the same bare repository under the same environment, so the
    tree written out is by construction the verified commit's tree — no host
    channel can make the two commands resolve the same SHA differently once
@@ -86,13 +97,18 @@ change the extracted bytes nor run host code, while transport configuration
    source are pinned or removed. The archive additionally pins the byte
    conversion knobs (`core.autocrlf=false`, `core.eol=lf`,
    `core.attributesFile` at the empty file, `tar.umask=002`), and the
-   repository-local `info/attributes` is truncated both after `init` and
-   before the archive.
+   repository-local `info/attributes` holds the override below, written
+   before the archive (and already at transport time).
 
-The package's own committed `.gitattributes` are honoured: `export-subst`,
-`export-ignore` and `eol` attributes from the archived tree are a pure
-function of the pinned commit, so they expand identically on every host and
-OS, including Windows. Only host-side configuration is neutralized.
+The package's own `export-subst`, `export-ignore` and
+`working-tree-encoding` attributes are turned off: before `git archive`,
+the helper writes `* -export-subst -export-ignore -working-tree-encoding`
+into the bare repository's `info/attributes`, which outranks the committed
+`.gitattributes`. Placeholders stay literal and export-ignored files are
+kept, exactly as `dart pub get` materializes the same package (it checks
+out a work tree and applies neither). Other committed attributes (such as
+`eol`) still apply, and remain a pure function of the pinned commit. Only
+host-side configuration is neutralized.
 """
 
 load("//dart/pub:yaml_parser.bzl", "is_valid_git_ref", "is_valid_sha256")
@@ -190,6 +206,46 @@ def _git_empty_file(ctx):
 # remotes, ssh in both syntaxes, file URLs and plain local paths).
 _GIT_ALLOW_PROTOCOL = "https:http:git:ssh:file"
 
+# Repository-local attributes override, written into the bare repository's
+# `info/attributes` (which outranks the committed `.gitattributes`) before
+# any archive runs. `export-subst` placeholders would otherwise expand from
+# host state that is not a function of the pinned commit (stored refs and
+# tags, pack-vs-loose abbreviation length, the wall clock, host gpg/ssh
+# programs), and `export-ignore` would drop files `dart pub get` keeps.
+_GIT_ATTRIBUTES_OVERRIDE = "* -export-subst -export-ignore -working-tree-encoding\n"
+
+def _is_local_url(url):
+    """Whether a git URL is served from the local machine.
+
+    Local transports (`file://`, plain paths, bundles) need no credentials,
+    so their fetch environment replaces the host's global and system config
+    files with the empty file — closing, among others, a host-global
+    `uploadpack.packObjectsHook`, which runs on every local fetch and which
+    `-c` pins cannot reach. An scp-like `host:path` remote has its colon
+    before any slash and stays remote (a single-letter `C:\\...` drive
+    prefix stays local); anything with a `://` scheme other than `file://`
+    stays remote.
+
+    Args:
+        url: The git remote URL, local path or bundle path to classify.
+
+    Returns:
+        True for local URLs, False for remote ones.
+    """
+    if url.startswith("file://"):
+        return True
+    if "://" in url:
+        return False
+    colon = url.find(":")
+    if colon == -1:
+        return True
+    if colon == 1:
+        return True
+    seps = [i for i in [url.find("/"), url.find("\\")] if i != -1]
+    if not seps:
+        return False
+    return colon > min(seps)
+
 def _transport_config_args(empty_dir):
     """`-c` pins shared by every transport fetch command line (SHA and all-refs fallback).
 
@@ -231,6 +287,8 @@ def _transport_config_args(empty_dir):
         "fetch.prune=false",  # Never prune refs; host cannot delete freshly fetched refs.
         "-c",
         "fetch.pruneTags=false",  # Never prune tags; host cannot delete freshly fetched tags.
+        "-c",
+        "protocol.version=2",  # Speak v2 even under a host protocol.version=0, which would otherwise refuse the bare-SHA fetch and push it onto the all-refs fallback (landing host-dependent refs and tags).
     ]
 
 # Transport variables inherited from the host environment, copied verbatim
@@ -298,7 +356,7 @@ def _is_transport_variable(var):
             return True
     return False
 
-def _transport_env(ctx, bare_abs):
+def _transport_env(ctx, bare_abs, empty, local):
     """Environment for one transport command: host transport, pinned resolution.
 
     The host's transport configuration is deliberately inherited — config
@@ -319,11 +377,17 @@ def _transport_env(ctx, bare_abs):
     verbatim on purpose — a host-provided `insteadOf` rewrite keeps working
     — while the `-c` pins on every transport command line override it, so it
     cannot redirect repository resolution or re-enable hooks, fsmonitor,
-    templates or replacements.
+    templates or replacements. For local URLs the global and system config
+    selectors point at the shared empty file instead of staying inherited:
+    local fetches need no credentials, and a host-global
+    `uploadpack.packObjectsHook` (which git runs on every local fetch
+    without consulting `-c` pins) stays unread.
 
     Args:
         ctx: A repository or module-extension context (for `os.environ`).
         bare_abs: The bare repository's absolute path string.
+        empty: The shared empty file's path string (local config replacement).
+        local: Whether the fetch URL is local (see `_is_local_url`).
 
     Returns:
         The `environment` dict for one transport `ctx.execute` call. It
@@ -370,14 +434,20 @@ def _transport_env(ctx, bare_abs):
         "GIT_TRACE_SETUP": None,
         "GIT_CURL_VERBOSE": None,
     }
+    if local:
+        env["GIT_CONFIG_GLOBAL"] = empty
+        env["GIT_CONFIG_SYSTEM"] = empty
     host = ctx.os.environ
     for var in host:
+        if var in env:
+            # Scrubbed (`None`), pinned, or already passed through below.
+            # The local config replacement above wins over inheritance:
+            # `GIT_CONFIG_GLOBAL` / `GIT_CONFIG_SYSTEM` stay pointed at the
+            # empty file instead of the host's files.
+            continue
         if var in _TRANSPORT_INHERITED:
             # Inherited verbatim: left out of the dict, which `ctx.execute`
             # merges over the host environment.
-            continue
-        if var in env:
-            # Scrubbed (`None`), pinned, or already passed through below.
             continue
         if _is_transport_variable(var):
             env[var] = host[var]
@@ -466,10 +536,11 @@ def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
 
     The bare repository is assembled without running `git init`: the
     skeleton (`HEAD`, `config`, `objects/`, `refs/`) is written with
-    `ctx.file`, then `git fetch <url> <sha>` runs (falling back to
+    `ctx.file`, then `git fetch -- <url> <sha>` runs (falling back to
     fetching all refs on servers that reject a bare SHA, such as some
-    corporate mirrors). Skipping `init` removes the host template surface
-    by construction — no template is ever copied, so no template
+    corporate mirrors). The `--` keeps a lock URL from being read as an
+    option. Skipping `init` removes the host template surface by
+    construction — no template is ever copied, so no template
     `info/attributes` or `hooks/` can reach the clone — and every
     non-transport host `GIT_*` variable (including `GIT_WORK_TREE`,
     `GIT_QUARANTINE_PATH` and any undocumented or future `GIT_*` entry) is
@@ -479,25 +550,34 @@ def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
     pins (`core.hooksPath`, `core.fsmonitor=false`,
     `core.untrackedCache=false`, the `transfer`/`fetch.fsckObjects`,
     `gc.auto`, `maintenance.auto`, `fetch.writeCommitGraph`,
-    `fetch.recurseSubmodules`, `submodule.recurse`, `fetch.prune` and
-    `fetch.pruneTags` fetch-time switches, `--no-replace-objects`) keep
+    `fetch.recurseSubmodules`, `submodule.recurse`, `fetch.prune`,
+    `fetch.pruneTags` and `protocol.version=2` fetch-time switches,
+    `--no-replace-objects`) keep
     them off even where host configuration is deliberately inherited for
-    transport. The repository-local `info/attributes` is truncated
-    (nothing legitimate writes it; the package's own committed
-    `.gitattributes` are untouched and keep the documented behaviour).
+    transport. For local URLs (`file://`, plain paths, bundles) the global
+    and system config selectors point at the shared empty file instead:
+    local fetches need no credentials, and a host-global
+    `uploadpack.packObjectsHook` stays unread. The repository-local
+    `info/attributes` holds `* -export-subst -export-ignore
+    -working-tree-encoding` (nothing legitimate writes it; that file
+    outranks the package's own committed `.gitattributes`, so placeholders
+    stay literal and export-ignored files are kept, as with `dart pub
+    get`).
 
     Args:
         ctx: A repository or module-extension context.
         url: The git remote URL (or local path, or bundle path) to fetch.
         bare_rel: The repository-relative bare directory (for example
             `"_git_bare"`): relative so the skeleton and the attributes
-            truncation work with `ctx.file` on every context, including
+            override work with `ctx.file` on every context, including
             module extensions, which have no `ctx.delete`.
         resolved_ref: The pinned full 40-hex commit SHA.
         what: Human-readable label of the fetching rule, for diagnostics.
     """
     empty_dir = _git_empty_dir(ctx)
+    empty = _git_empty_file(ctx)
     bare_abs = str(ctx.path(bare_rel))
+    local = _is_local_url(url)
 
     # Assemble the skeleton of a bare repository with `ctx.file` (which
     # creates parents but not empty directories, so `keep` files stand
@@ -517,19 +597,22 @@ def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
     )
     ctx.file(bare_rel + "/refs/.keep", "", executable = False)
 
-    # The repository-local attributes file is truncated (git has no switch
-    # for it, and with no `init` nothing legitimate writes it).
-    # Committed `.gitattributes` are untouched.
-    ctx.file(bare_rel + "/info/attributes", "", executable = False)
+    # The repository-local attributes file carries the export override (git
+    # has no switch for it, and with no `init` nothing legitimate writes it).
+    # `info/attributes` outranks the committed `.gitattributes`, so the
+    # package's own `export-subst`/`export-ignore`/`working-tree-encoding`
+    # entries stay inert and the archive matches `dart pub get`.
+    ctx.file(bare_rel + "/info/attributes", _GIT_ATTRIBUTES_OVERRIDE, executable = False)
 
     res = ctx.execute(
         ["git", "--no-replace-objects", "--git-dir=" + bare_abs] +
         _transport_config_args(empty_dir) + [
             "fetch",
+            "--",
             url,
             resolved_ref,
         ],
-        environment = _transport_env(ctx, bare_abs),
+        environment = _transport_env(ctx, bare_abs, empty, local),
     )
     if res.return_code != 0:
         # Servers that reject fetching a bare SHA still serve the commit on
@@ -539,10 +622,11 @@ def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
             ["git", "--no-replace-objects", "--git-dir=" + bare_abs] +
             _transport_config_args(empty_dir) + [
                 "fetch",
+                "--",
                 url,
                 "+refs/*:refs/origin/*",
             ],
-            environment = _transport_env(ctx, bare_abs),
+            environment = _transport_env(ctx, bare_abs, empty, local),
         )
     if res.return_code != 0:
         fail("%s: git fetch failed for %s at %s: %s" % (what, url, resolved_ref, res.stderr))
@@ -565,8 +649,10 @@ def git_materialize(ctx, bare_rel, resolved_ref, output, spec, what):
     host channel can make the verification and the archive resolve the same
     SHA differently. The archive pins the byte conversion knobs
     (`core.autocrlf=false`, `core.eol=lf`, an empty `core.attributesFile`,
-    `tar.umask=002`) so the bytes depend only on the pinned commit and its
-    own committed `.gitattributes`.
+    `tar.umask=002`) so the bytes depend only on the pinned commit: the
+    repository-local `info/attributes` override (rewritten below, so
+    whatever it holds now is hostile by definition) keeps the package's own
+    `export-subst`/`export-ignore`/`working-tree-encoding` entries inert.
 
     Args:
         ctx: A repository or module-extension context.
@@ -582,10 +668,10 @@ def git_materialize(ctx, bare_rel, resolved_ref, output, spec, what):
     empty = _git_empty_file(ctx)
     bare_abs = str(ctx.path(bare_rel))
 
-    # Materialization-time truncation: the transport phase already truncated
-    # this file, and nothing legitimate rewrites it in between, so whatever
-    # it holds now is hostile by definition.
-    ctx.file(bare_rel + "/info/attributes", "", executable = False)
+    # Materialization-time override: the transport phase already wrote the
+    # export override, and nothing legitimate rewrites it in between, so
+    # whatever it holds now is hostile by definition.
+    ctx.file(bare_rel + "/info/attributes", _GIT_ATTRIBUTES_OVERRIDE, executable = False)
 
     res = ctx.execute(
         ["git", "--no-replace-objects"] + [
