@@ -992,6 +992,15 @@ List<String> _findDisallowedGenKernelDirectives(
     final fromKey = _stableSourceKey(path, fsRoots);
     for (final ref in scanAllDirectiveUris(content)) {
       final uri = ref.uri;
+      // A URI spanning lines is refused however it spells its target: the
+      // front end's multi-line first-line rule reads a different file than
+      // the resolvers below see (see [hasLineBreak]).
+      if (hasLineBreak(uri)) {
+        errors.add(
+          "app_jit_snapshot: $path ${ref.kind} '$uri' is not a declared input.",
+        );
+        continue;
+      }
       // The resolvers below skip empty segments, but the front end resolves
       // some such spellings absolutely: refuse them before resolving.
       if (hasEmptyPathSegment(uri)) {
@@ -2868,6 +2877,15 @@ List<String> findDisallowedDirectives(
     final content = fileContents[path];
     if (content == null) continue;
     for (final ref in scanAllDirectiveUris(content)) {
+      // A URI spanning lines is refused however it spells its target: the
+      // front end's multi-line first-line rule reads a different file than
+      // the resolvers below see (see [hasLineBreak]).
+      if (hasLineBreak(ref.uri)) {
+        errors.add(
+          "$tool: $path ${ref.kind} '${ref.uri}' is not a declared input.",
+        );
+        continue;
+      }
       final disallowed = ref.isPart || ref.isPartOf
           ? isFileSchemeDirectiveUri(ref.uri)
           : isDisallowedDirectiveUri(ref.uri, multiRootPrefix: multiRootPrefix);
@@ -3155,5 +3173,19 @@ bool hasEmptyPathSegment(String uri) {
   final clean = hash < 0 ? path : path.substring(0, hash);
   return clean.startsWith('/') || clean.contains('//');
 }
+
+/// Whether [uri] spans lines: it holds a `\n` or `\r`.
+///
+/// A scanned directive URI holding a line break is refused wherever it
+/// appears, however the directive names it. The front end drops a
+/// whitespace-only (or lone-`\`) first line of a multi-line string literal,
+/// so the file it reads differs from the relative path the resolvers below
+/// see; reimplementing that first-line rule would risk the next spelling of
+/// the same divergence, so multi-line directive URIs are refused outright. A
+/// line break can never address a declared file through the resolvers below,
+/// so refusing is fail-closed: real directives use single-line URIs.
+/// (A single-line literal spelling the break as an escape — `'a\nb.dart'` —
+/// is refused too. No clean program names a file that way.)
+bool hasLineBreak(String uri) => uri.contains('\n') || uri.contains('\r');
 
 // END staged-resolver-mirror

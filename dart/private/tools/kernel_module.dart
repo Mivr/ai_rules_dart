@@ -2073,10 +2073,13 @@ Future<List<String>> _planImports(
       }
     }
     for (final ref in scan.refs) {
-      // An empty path segment resolves differently in the front end than by
-      // skipping it (a `package:` doubled slash resolves absolutely), so the
-      // directive fails the build instead of compiling the wrong file.
-      if (hasEmptyPathSegment(ref.uri)) {
+      // A URI spanning lines is refused however it spells its target: the
+      // front end's multi-line first-line rule reads a different file than
+      // [_resolveUri] names. An empty path segment resolves differently in
+      // the front end than by skipping it (a `package:` doubled slash
+      // resolves absolutely), so the directive fails the build instead of
+      // compiling the wrong file.
+      if (hasLineBreak(ref.uri) || hasEmptyPathSegment(ref.uri)) {
         disallowed.add(
           'kernel_module: cannot compile ${uriOfKey[key] ?? key}: '
           "${ref.kind} '${ref.uri}' is not a declared input.",
@@ -2334,10 +2337,13 @@ Future<_EntrySources> _entrySources(
     }
     for (final ref in scan.refs) {
       if (ref.uri.startsWith('dart:')) continue;
-      // An empty path segment resolves differently in the front end than by
-      // skipping it (a `package:` doubled slash resolves absolutely), so the
-      // directive fails the build instead of compiling the wrong file.
-      if (hasEmptyPathSegment(ref.uri)) {
+      // A URI spanning lines is refused however it spells its target: the
+      // front end's multi-line first-line rule reads a different file than
+      // [_resolveUri] names. An empty path segment resolves differently in
+      // the front end than by skipping it (a `package:` doubled slash
+      // resolves absolutely), so the directive fails the build instead of
+      // compiling the wrong file.
+      if (hasLineBreak(ref.uri) || hasEmptyPathSegment(ref.uri)) {
         disallowed.add(
           'kernel_module: cannot compile ${ownUris[key] ?? key}: '
           "${ref.kind} '${ref.uri}' is not a declared input.",

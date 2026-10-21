@@ -311,4 +311,59 @@ void main() {
     );
     expect(File('${tmp.path}/file_app.js').existsSync(), isFalse);
   });
+
+  test('refuses triple-quoted directive URIs before compiling', () {
+    // The compile is rooted at the staged project (the argv shape
+    // `dart_web_application.bzl` emits): the multi-root names the `.proj`
+    // directory, and the package config and entrypoint are addressed under it.
+    final projDir = Directory('${tmp.path}/tq_app.proj');
+    Directory('${projDir.path}/src/pkg').createSync(recursive: true);
+    Directory('${projDir.path}/.dart_tool').createSync(recursive: true);
+
+    File('${projDir.path}/src/pkg/main.dart').writeAsStringSync(
+      "import '''   \n/secret/s.dart''';\n"
+      'void main() => print(hostSecret);\n',
+    );
+    File('${projDir.path}/src/pkg/evil_export.dart')
+        .writeAsStringSync("export r'''\t\n/secret/s.dart''';\n");
+    File('${projDir.path}/src/pkg/missing.dart')
+        .writeAsStringSync("import 'nosuch.dart';\n");
+    File('${projDir.path}/.dart_tool/src_manifest.txt').writeAsStringSync(
+      'pkg/main.dart\npkg/evil_export.dart\npkg/missing.dart\n',
+    );
+
+    final outBuf = StringBuffer();
+    final errBuf = StringBuffer();
+    final code = runWebCompileRequest(
+      [
+        '--dart=${Platform.resolvedExecutable}',
+        '--project=tq_app.proj',
+        'compile',
+        'js',
+        '--multi-root-scheme=org-dartlang-root',
+        '--multi-root=tq_app.proj/',
+        '--packages=org-dartlang-root:///.dart_tool/package_config.json',
+        '-o',
+        '${tmp.path}/tq_app.js',
+        'org-dartlang-root:///src/pkg/main.dart',
+      ],
+      outSink: outBuf,
+      errSink: errBuf,
+      workingDirectory: tmp.path,
+    );
+    expect(code, isNonZero);
+    expect(
+      errBuf.toString(),
+      contains("import '   \n/secret/s.dart' is not a declared input"),
+    );
+    expect(
+      errBuf.toString(),
+      contains("export '\t\n/secret/s.dart' is not a declared input"),
+    );
+    expect(
+      errBuf.toString(),
+      contains("import 'nosuch.dart' is not a declared input"),
+    );
+    expect(File('${tmp.path}/tq_app.js').existsSync(), isFalse);
+  });
 }

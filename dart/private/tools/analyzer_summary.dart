@@ -394,10 +394,15 @@ Future<int> _summarize(
   // above its package, or a relative URI climbing out of the staged tree
   // would reach an undeclared file when the analyzer resolves it against the
   // real filesystem. Refuse before summarizing, through the one shared
-  // staged-source check.
-  final stagedViolations = findStagedDirectiveViolations([
-    sourceRoot,
-  ], tool: 'analyzer_summary');
+  // staged-source check. Missing staged files stay allowed here: dependency
+  // sources arrive through summaries, not the staged tree, so a relative
+  // target with no staged file resolves against a declared summary (or fails
+  // in the analyzer with `uri_does_not_exist` — both closed).
+  final stagedViolations = findStagedDirectiveViolations(
+    [sourceRoot],
+    tool: 'analyzer_summary',
+    requireTargetsExist: false,
+  );
   if (stagedViolations.isNotEmpty) {
     for (final violation in stagedViolations) {
       errSink.writeln(violation);
@@ -567,10 +572,14 @@ Future<int> _analyze(
   // summary-mode analysis never ran the directive guard, so a climbing
   // relative import reached undeclared host files wherever the analyzer
   // resolved against the real filesystem. Refuse before analyzing, through
-  // the one shared staged-source check.
+  // the one shared staged-source check. Missing staged files stay allowed:
+  // dependency sources arrive through summaries, so a relative target with
+  // no staged file resolves against a declared summary (or fails with
+  // `uri_does_not_exist` — both closed).
   final stagedViolations = findStagedDirectiveViolations(
     projectStagedRoots(project),
     tool: 'analyzer_summary',
+    requireTargetsExist: false,
   );
   if (stagedViolations.isNotEmpty) {
     for (final violation in stagedViolations) {

@@ -280,6 +280,42 @@ void main(List<String> args) {
     });
   });
 
+  group('findDisallowedDirectives', () {
+    test('triple-quoted URIs are refused in every directive kind', () {
+      expect(
+        findDisallowedDirectives({
+          'm.dart': "import '''   \nfile:///etc/hosts''';\n",
+          'n.dart': "export '''\t\n/secret/s.dart''';\n",
+          'o.dart': "part '''   \n../../evil_part.dart''';\n",
+          'p.dart': "part of r'''   \n../../evil_lib.dart''';\n",
+        }, tool: 'guard-test'),
+        [
+          "guard-test: m.dart import '   \nfile:///etc/hosts' "
+              'is not a declared input.',
+          "guard-test: n.dart export '\t\n/secret/s.dart' "
+              'is not a declared input.',
+          "guard-test: o.dart part '   \n../../evil_part.dart' "
+              'is not a declared input.',
+          "guard-test: p.dart part of '   \n../../evil_lib.dart' "
+              'is not a declared input.',
+        ],
+      );
+    });
+
+    test('single-line URIs still classify by scheme', () {
+      expect(
+        findDisallowedDirectives({
+          'm.dart': "import 'file:///etc/hosts';\n",
+          'n.dart': "import '''b.dart''';\n",
+        }, tool: 'guard-test'),
+        [
+          "guard-test: m.dart import 'file:///etc/hosts' "
+              'is not a declared input.',
+        ],
+      );
+    });
+  });
+
   group('projectStagedRoots', () {
     test('a .proj project scans itself and its .extpkgs sibling', () {
       expect(projectStagedRoots('/r/x.proj'), ['/r/x.proj', '/r/x.extpkgs']);
@@ -288,6 +324,27 @@ void main(List<String> args) {
 
     test('other roots scan alone', () {
       expect(projectStagedRoots('/r/other'), ['/r/other']);
+    });
+  });
+
+  group('hasLineBreak', () {
+    test('a scanned value holding a line break counts', () {
+      expect(hasLineBreak('a\nb.dart'), isTrue);
+      expect(hasLineBreak('a\rb.dart'), isTrue);
+      expect(hasLineBreak('a\r\nb.dart'), isTrue);
+      expect(hasLineBreak('   \n/secret/s.dart'), isTrue);
+      expect(hasLineBreak('\n/secret/s.dart'), isTrue);
+    });
+
+    test('single-line spellings do not', () {
+      expect(hasLineBreak('b.dart'), isFalse);
+      expect(hasLineBreak('/etc/hostname'), isFalse);
+      expect(hasLineBreak('file:///etc/hosts'), isFalse);
+      // A literal backslash-n is two characters, not a break: only the
+      // scanner's unescaped value (where an escape became a real break)
+      // reaches this predicate.
+      expect(hasLineBreak(r'a\nb.dart'), isFalse);
+      expect(hasLineBreak(''), isFalse);
     });
   });
 
@@ -407,6 +464,111 @@ void main(List<String> args) {
         ], tool: 'guard-test'),
         isEmpty,
       );
+    });
+
+    group('triple-quoted URIs', () {
+      late Directory tq;
+      late String hostSecret;
+
+      String tqFile(String relative, String content) {
+        final file = File('${tq.path}/$relative')
+          ..createSync(recursive: true)
+          ..writeAsStringSync(content);
+        return file.path.replaceAll(r'\', '/');
+      }
+
+      setUp(() {
+        tq = Directory('${tmp.path}/tq.proj')..createSync(recursive: true);
+        tqFile('lib/ok.dart', 'const ok = 1;\n');
+        // A host file outside the staged tree, named by an absolute path.
+        hostSecret =
+            (File('${tmp.path}/host_secret.dart')
+                  ..writeAsStringSync('const hostSecret = 1;\n'))
+                .path
+                .replaceAll(r'\', '/');
+        // Every spelling the front end reads differently from the guard: a
+        // whitespace-only (or lone-backslash) first line is dropped, so the
+        // front end reads `/secret/s.dart` (or the host path) while the
+        // guard would see a relative staged path. All are refused outright.
+        tqFile('lib/ws.dart', "import '''   \n/secret/s.dart''';\n");
+        tqFile('lib/tab.dart', "import '''\t\t\n/secret/s.dart''';\n");
+        tqFile('lib/bs.dart', "import '''\\\n/secret/s.dart''';\n");
+        tqFile('lib/raw.dart', "import r'''   \n/secret/s.dart''';\n");
+        tqFile('lib/dq.dart', 'import """   \n/secret/s.dart""";\n');
+        tqFile('lib/host.dart', "import '''   \n$hostSecret''';\n");
+        tqFile('lib/hostfile.dart', "import '''   \nfile:///etc/hosts''';\n");
+        tqFile('lib/exp.dart', "export '''   \n/secret/s.dart''';\n");
+        tqFile('lib/prt.dart', "part '''   \n../../evil_part.dart''';\n");
+        tqFile('lib/pof.dart', "part of '''   \n../../evil_lib.dart''';\n");
+        // A relative target with no staged file is refused too: only a
+        // staged file backs a declared input.
+        tqFile('lib/missing.dart', "import 'nosuch.dart';\n");
+      });
+
+      test('every triple-quote spelling is refused', () {
+        final violations = findStagedDirectiveViolations([
+          tq.path,
+        ], tool: 'guard-test');
+        final at = (String relative) =>
+            '${tq.path}/$relative'.replaceAll(r'\', '/');
+        expect(violations, [
+          "guard-test: ${at('lib/bs.dart')} import '\n/secret/s.dart' "
+              'is not a declared input.',
+          "guard-test: ${at('lib/dq.dart')} import '   \n/secret/s.dart' "
+              'is not a declared input.',
+          "guard-test: ${at('lib/exp.dart')} export '   \n/secret/s.dart' "
+              'is not a declared input.',
+          "guard-test: ${at('lib/host.dart')} import '   \n$hostSecret' "
+              'is not a declared input.',
+          "guard-test: ${at('lib/hostfile.dart')} import "
+              "'   \nfile:///etc/hosts' is not a declared input.",
+          "guard-test: ${at('lib/missing.dart')} import 'nosuch.dart' "
+              'is not a declared input.',
+          "guard-test: ${at('lib/pof.dart')} part of '   \n../../evil_lib.dart' "
+              'is not a declared input.',
+          "guard-test: ${at('lib/prt.dart')} part '   \n../../evil_part.dart' "
+              'is not a declared input.',
+          "guard-test: ${at('lib/raw.dart')} import '   \n/secret/s.dart' "
+              'is not a declared input.',
+          "guard-test: ${at('lib/tab.dart')} import '\t\t\n/secret/s.dart' "
+              'is not a declared input.',
+          "guard-test: ${at('lib/ws.dart')} import '   \n/secret/s.dart' "
+              'is not a declared input.',
+        ]);
+      });
+
+      test('single-line triple-quoted URIs still resolve', () {
+        tqFile('lib/clean.dart', "import '''ok.dart''';\n");
+        tqFile('lib/cleanexp.dart', "export '''ok.dart''';\n");
+        // An empty first line is dropped by the guard and the front end
+        // alike, so this names the staged sibling, not the host.
+        tqFile('lib/emptyfirst.dart', "import '''\nok.dart''';\n");
+        final violations = findStagedDirectiveViolations([
+          tq.path,
+        ], tool: 'guard-test');
+        expect(violations.where((v) => v.contains('clean')), isEmpty);
+        expect(violations.where((v) => v.contains('emptyfirst')), isEmpty);
+      });
+
+      test('the summary runner still refuses multi-line URIs', () {
+        // Dependency sources arrive through summaries, not the staged tree,
+        // so the summary runner allows a relative target with no staged file
+        // — but a URI spanning lines is refused however it spells its target.
+        final allowed = findStagedDirectiveViolations(
+          [tq.path],
+          tool: 'guard-test',
+          requireTargetsExist: false,
+        );
+        expect(allowed.where((v) => v.contains('missing.dart')), isEmpty);
+        final wsAt = '${tq.path}/lib/ws.dart'.replaceAll(r'\', '/');
+        expect(
+          allowed,
+          contains(
+            "guard-test: $wsAt import '   \n/secret/s.dart' "
+            'is not a declared input.',
+          ),
+        );
+      });
     });
   });
 

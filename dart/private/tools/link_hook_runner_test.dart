@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import '../../guard/lib/directive_guard.dart';
 import 'link_hook_runner.dart' as runner;
 
 void main() {
@@ -146,6 +147,76 @@ void main() {
       File('${scratch.path}/linked.pkg_roots/dep/lib/dep.dart')
           .readAsStringSync(),
       'const int dep = 1;\n',
+    );
+  });
+
+  test('a triple-quoted hook import is refused by the staged check', () {
+    // The hook runs with its staged package root as its working directory,
+    // so a multi-line first line the guard keeps but the front end drops
+    // would read an undeclared host file. The runner refuses it through the
+    // one shared staged-source check before running.
+    final workspace = Directory('${tmp.path}/workspace')
+      ..createSync(recursive: true);
+    File('${workspace.path}/lib/src.dart')
+      ..createSync(recursive: true)
+      ..writeAsStringSync("const String v = 'declared';\n");
+    final wsHook = File('${workspace.path}/hook/link.dart')
+      ..createSync(recursive: true)
+      ..writeAsStringSync(
+        "import '''   \n/secret/s.dart''';\n"
+        'void main() {}\n',
+      );
+
+    final binDir = Directory('${tmp.path}/bazel-out/bin')
+      ..createSync(recursive: true);
+    final pkgRoots = Directory('${binDir.path}/linked.pkg_roots')
+      ..createSync(recursive: true);
+    final pkgDir = Directory('${pkgRoots.path}/repro')
+      ..createSync(recursive: true);
+    final stagedSrc = File('${pkgDir.path}/lib/src.dart')
+      ..createSync(recursive: true)
+      ..writeAsStringSync("const String v = 'declared';\n");
+    final stagedHook = File('${pkgDir.path}/hook/link.dart')
+      ..createSync(recursive: true)
+      ..writeAsStringSync(wsHook.readAsStringSync());
+
+    File('${pkgRoots.path}/.manifest').writeAsStringSync(
+      [
+        'file\trepro/lib/src.dart\t${stagedSrc.path}',
+        'file\trepro/hook/link.dart\t${stagedHook.path}',
+      ].join('\n'),
+    );
+
+    final packageConfig = File('${binDir.path}/linked.package_config.json')
+      ..writeAsStringSync(
+        jsonEncode({
+          'configVersion': 2,
+          'packages': [
+            {
+              'name': 'repro',
+              'rootUri': 'linked.pkg_roots/repro',
+              'packageUri': 'lib/',
+            },
+          ],
+        }),
+      );
+
+    final scratch = Directory('${tmp.path}/scratch')
+      ..createSync(recursive: true);
+    final staged = runner.stageWorkspace(
+      packages: packageConfig,
+      packageRoot: pkgDir,
+      hook: stagedHook,
+      scratch: scratch,
+    );
+
+    final violations = findStagedDirectiveViolations([
+      staged.packageRoot.path,
+    ], tool: 'link_hook_runner');
+    expect(violations, hasLength(1));
+    expect(
+      violations.single,
+      contains("import '   \n/secret/s.dart' is not a declared input"),
     );
   });
 }

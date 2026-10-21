@@ -973,6 +973,50 @@ int checkLoud() => loudValue();
       expect(missingRelStamp.existsSync(), isFalse);
       expect(outSink.toString(), contains('uri_does_not_exist'));
     });
+
+    test('refuses a triple-quoted import before analyzing', () async {
+      // A multi-line first line the guard keeps but the front end drops
+      // would read an undeclared host file through the analyzer's working
+      // directory. The staged check refuses it before any SDK or summary is
+      // read, so this needs no summaries.
+      final stageAnalyze = Directory(p.join(tempDir.path, 'tq.analyze'))
+        ..createSync(recursive: true);
+      final stagedMain =
+          File(p.join(stageAnalyze.path, 'src', 'pkg', 'main.dart'))
+            ..parent.createSync(recursive: true)
+            ..writeAsStringSync(
+              "import '''   \n/secret/s.dart''';\n"
+              'void main() => print(hostSecret);\n',
+            );
+      File(p.join(stageAnalyze.path, 'src', 'pkg', 'ok.dart'))
+          .writeAsStringSync('const ok = 1;\n');
+      final stamp = File(p.join(tempDir.path, 'tq.analyzed'));
+      final outSink = StringBuffer();
+      final errSink = StringBuffer();
+      expect(
+        await runSingleRequest(
+          [
+            'analyze',
+            '--project',
+            stageAnalyze.path,
+            '--source',
+            stagedMain.path,
+            '--stamp',
+            stamp.path,
+          ],
+          outSink: outSink,
+          errSink: errSink,
+          resourceProvider: PhysicalResourceProvider.INSTANCE,
+        ),
+        1,
+        reason: '${outSink.toString()}\n${errSink.toString()}',
+      );
+      expect(stamp.existsSync(), isFalse);
+      expect(
+        errSink.toString(),
+        contains("import '   \n/secret/s.dart' is not a declared input"),
+      );
+    });
   });
 }
 

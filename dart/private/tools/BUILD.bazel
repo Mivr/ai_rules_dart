@@ -41,6 +41,20 @@ dart_binary(
     deps = ["//dart/guard:directive_guard"],
 )
 
+# Drives the built `analyze_runner` as a subprocess (it exits rather than
+# returning) and refuses a triple-quoted import before `dart analyze` runs.
+dart_test(
+    name = "analyze_runner_test",
+    size = "small",
+    args = ["$(rlocationpath :analyze_runner)"],
+    data = [":analyze_runner"],
+    main = "analyze_runner_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
 # The analyzer-summary mode of `dart_analyze`: summarizes one package, and checks
 # a staged project against summaries. See dart/private/dart_analyzer_summary.bzl.
 dart_binary(
@@ -183,7 +197,10 @@ dart_binary(
 dart_test(
     name = "link_hook_runner_test",
     size = "small",
-    srcs = ["link_hook_runner.dart"],
+    srcs = [
+        "link_hook_runner.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
     main = "link_hook_runner_test.dart",
     deps = [
         "//dart/guard:directive_guard",

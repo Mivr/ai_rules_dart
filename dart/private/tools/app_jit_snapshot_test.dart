@@ -938,6 +938,66 @@ void main(List<String> args) {
     );
   });
 
+  test('--gen-kernel refuses a triple-quoted import without compiling', () {
+    // The front end drops a whitespace-only first line of a multi-line
+    // string, so it reads `/secret/s.dart` where the pre-guard sees a
+    // relative declared path. The wrapper refuses every spelling before
+    // running gen_kernel (which is never reached, so no SDK snapshot is
+    // needed), and refuses a relative target with no staged file too.
+    final ws = Directory('${tmp.path}/tq_ws')..createSync(recursive: true);
+    File('${ws.path}/ok.dart').writeAsStringSync('const ok = 1;\n');
+    final main = File('${ws.path}/main.dart')
+      ..writeAsStringSync(
+        "import '''   \n/secret/s.dart''';\n"
+        'void main() => print(hostSecret);\n',
+      );
+    File('${ws.path}/raw.dart').writeAsStringSync(
+      "import r'''\t\n/secret/s.dart''';\n"
+      'const raw = 1;\n',
+    );
+    File('${ws.path}/dq.dart').writeAsStringSync(
+      'import """   \n/secret/s.dart""";\n'
+      'const dq = 1;\n',
+    );
+    File('${ws.path}/exp.dart')
+        .writeAsStringSync("export '''   \n/secret/s.dart''';\n");
+    File('${ws.path}/missing.dart').writeAsStringSync(
+      "import 'nosuch.dart';\n"
+      'const missing = 1;\n',
+    );
+    final toolPath = args.isNotEmpty
+        ? Runfiles.create().rlocation(args[0])
+        : File.fromUri(Platform.script.resolve('app_jit_snapshot.dart')).path;
+    final res = Process.runSync(Platform.resolvedExecutable, [
+      toolPath,
+      '--gen-kernel',
+      'never-reached-runtime',
+      '--input-source=${main.path}',
+      '--input-source=${ws.path}/raw.dart',
+      '--input-source=${ws.path}/dq.dart',
+      '--input-source=${ws.path}/exp.dart',
+      '--input-source=${ws.path}/missing.dart',
+      '--input-source=${ws.path}/ok.dart',
+    ]);
+    expect(res.exitCode, isNonZero);
+    expect(
+      res.stderr as String,
+      contains("import '   \n/secret/s.dart' is not a declared input"),
+    );
+    expect(
+      res.stderr as String,
+      contains("import '\t\n/secret/s.dart' is not a declared input"),
+    );
+    expect(
+      res.stderr as String,
+      contains("export '   \n/secret/s.dart' is not a declared input"),
+    );
+    expect(
+      res.stderr as String,
+      contains("import 'nosuch.dart' is not a declared input"),
+    );
+  });
+
   test('--gen-kernel refuses an empty path segment without compiling', () {
     final ws = Directory('${tmp.path}/empty_ws')..createSync(recursive: true);
     final main = File('${ws.path}/main.dart')

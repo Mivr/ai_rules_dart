@@ -348,6 +348,20 @@ bool hasEmptyPathSegment(String uri) {
   return clean.startsWith('/') || clean.contains('//');
 }
 
+/// Whether [uri] spans lines: it holds a `\n` or `\r`.
+///
+/// A scanned directive URI holding a line break is refused wherever it
+/// appears, however the directive names it. The front end drops a
+/// whitespace-only (or lone-`\`) first line of a multi-line string literal,
+/// so the file it reads differs from the relative path the resolvers below
+/// see; reimplementing that first-line rule would risk the next spelling of
+/// the same divergence, so multi-line directive URIs are refused outright. A
+/// line break can never address a declared file through the resolvers below,
+/// so refusing is fail-closed: real directives use single-line URIs.
+/// (A single-line literal spelling the break as an escape — `'a\nb.dart'` —
+/// is refused too. No clean program names a file that way.)
+bool hasLineBreak(String uri) => uri.contains('\n') || uri.contains('\r');
+
 // END staged-resolver-mirror
 
 /// The segments of the longest [packageDirs] directory holding `fromKey`, or
@@ -1016,6 +1030,15 @@ List<String> findDisallowedDirectives(
     final content = fileContents[path];
     if (content == null) continue;
     for (final ref in scanAllDirectiveUris(content)) {
+      // A URI spanning lines is refused however it spells its target: the
+      // front end's multi-line first-line rule reads a different file than
+      // the resolvers below see (see [hasLineBreak]).
+      if (hasLineBreak(ref.uri)) {
+        errors.add(
+          "$tool: $path ${ref.kind} '${ref.uri}' is not a declared input.",
+        );
+        continue;
+      }
       final disallowed = ref.isPart || ref.isPartOf
           ? isFileSchemeDirectiveUri(ref.uri)
           : isDisallowedDirectiveUri(ref.uri, multiRootPrefix: multiRootPrefix);
@@ -1079,11 +1102,13 @@ List<String> findDisallowedStagedDirectives(
   Iterable<String> roots, {
   required String tool,
   String multiRootPrefix = defaultMultiRootPrefix,
+  bool requireTargetsExist = true,
 }) {
   return findStagedDirectiveViolations(
     roots,
     tool: tool,
     multiRootPrefix: multiRootPrefix,
+    requireTargetsExist: requireTargetsExist,
   );
 }
 
@@ -1141,13 +1166,26 @@ Set<String> _stagedRootSpellings(String root) {
 /// root) URI is resolved against its importing file's staged path — climbing
 /// `..` segments are followed past the staged tree, never clamped — and any
 /// target outside [roots] is refused, as is a `package:` URI that climbs above
-/// its package ([isEscapingPackageUri]) and any URI that resolves to no file
-/// at all (a `//` authority, a fragment, or a decoded `/`). Each diagnostic
+/// its package ([isEscapingPackageUri]), a URI spanning lines ([hasLineBreak])
+/// and any URI that resolves to no file
+/// at all (a `//` authority, a fragment, or a decoded `/`). A relative target
+/// inside [roots] is refused unless the file exists in the staged tree: the
+/// front end reads an absolute path the scanner sees as relative (a
+/// multi-line first line the guard keeps but the front end drops), so a
+/// target no staged file backs names a host file, never a declared input.
+/// The summary runner passes [requireTargetsExist] as false: its projects
+/// stage only the target's own files while dependency sources arrive through
+/// summaries, so a relative target with no staged file may still resolve
+/// against a declared summary (or fail in the analyzer with
+/// `uri_does_not_exist` — both closed). Every other caller stages its full
+/// closure, so a missing staged file is refused here.
+/// Each diagnostic
 /// names the file, the directive and the URI.
 List<String> findStagedDirectiveViolations(
   Iterable<String> roots, {
   required String tool,
   String multiRootPrefix = defaultMultiRootPrefix,
+  bool requireTargetsExist = true,
 }) {
   final allowed = <String>{
     for (final root in roots) ..._stagedRootSpellings(root),
@@ -1163,6 +1201,13 @@ List<String> findStagedDirectiveViolations(
     final from = normalizeStagedPath(path.replaceAll(r'\', '/'));
     for (final ref in scanAllDirectiveUris(content)) {
       final uri = ref.uri;
+      // A URI spanning lines is refused however it spells its target: the
+      // front end's multi-line first-line rule reads a different file than
+      // the resolvers below see (see [hasLineBreak]).
+      if (hasLineBreak(uri)) {
+        errors.add("$tool: $path ${ref.kind} '$uri' is not a declared input.");
+        continue;
+      }
       // The resolvers below skip empty segments, but the front end resolves
       // some such spellings absolutely: refuse them before resolving.
       if (hasEmptyPathSegment(uri)) {
@@ -1187,8 +1232,14 @@ List<String> findStagedDirectiveViolations(
       }
       final target = resolveStagedRelativeTarget(uri, from);
       // A null resolution names no declared file (a `//` authority, a
-      // fragment, or a decoded `/`): it is refused, never passed.
-      if (target == null || !declared(target)) {
+      // fragment, or a decoded `/`): it is refused, never passed. A resolved
+      // target is refused unless the file exists in the staged tree (see
+      // [requireTargetsExist] above): the front end may read an absolute
+      // host path the scanner sees as a relative staged path, so only a
+      // staged file backs a declared input.
+      if (target == null ||
+          !declared(target) ||
+          (requireTargetsExist && !File(target).existsSync())) {
         errors.add("$tool: $path ${ref.kind} '$uri' is not a declared input.");
       }
     }

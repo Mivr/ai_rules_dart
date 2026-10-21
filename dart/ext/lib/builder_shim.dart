@@ -1899,7 +1899,8 @@ List<_ShimDirectiveRef> _parseShimDirectives(String source) {
 /// while `file:` and other schemes, `package:` URIs climbing above their
 /// package ([isEscapingPackageUri]), relatives escaping the staging dir
 /// (resolved by [resolveStagedRelativeTarget] against the importing file's
-/// staged path, the way the analyzer resolves them), and URIs resolving to no
+/// staged path, the way the analyzer resolves them), URIs spanning lines
+/// ([hasLineBreak]), and URIs resolving to no
 /// file at all (`//` authorities, fragments, decoded `/`) are refused. Each
 /// diagnostic names the file, the directive and the URI, in the same shape as
 /// the shared check's.
@@ -1943,6 +1944,13 @@ Future<List<String>> findStagedShimViolations(
     final from = normalizeStagedPath(key);
     for (final ref in _parseShimDirectives(content)) {
       final uri = ref.uri;
+      // A URI spanning lines is refused however it spells its target: the
+      // front end's multi-line first-line rule reads a different file than
+      // the resolvers below see (see [hasLineBreak]).
+      if (hasLineBreak(uri)) {
+        errors.add("$tool: $key ${ref.kind} '$uri' is not a declared input.");
+        continue;
+      }
       // The resolvers below skip empty segments, but the front end resolves
       // some such spellings absolutely: refuse them before resolving.
       if (hasEmptyPathSegment(uri)) {
@@ -1962,7 +1970,10 @@ Future<List<String>> findStagedShimViolations(
       }
       final target = resolveStagedRelativeTarget(uri, from);
       // A null resolution names no declared file (a `//` authority, a
-      // fragment, or a decoded `/`): it is refused, never passed.
+      // fragment, or a decoded `/`): it is refused, never passed. The staging
+      // dir holds every entry the builders may read, so a resolved target
+      // outside it is undeclared; a missing file inside it fails in the
+      // builder, never on the host.
       if (target == null || !declared(target)) {
         errors.add("$tool: $key ${ref.kind} '$uri' is not a declared input.");
       }

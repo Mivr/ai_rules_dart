@@ -176,4 +176,27 @@ void main() {
       ]);
     },
   );
+
+  test('staged sources with a triple-quoted directive are refused', () {
+    // A multi-line first line the guard keeps but the front end drops reads
+    // an undeclared host file through the fix action's working directory.
+    final project = Directory('${tmp.path}/demo.proj')
+      ..createSync(recursive: true);
+    Directory('${project.path}/src/pkg').createSync(recursive: true);
+    final main = File('${project.path}/src/pkg/main.dart')
+      ..writeAsStringSync(
+        "import '''   \n/secret/s.dart''';\n"
+        'void main() => print(secretValue);\n',
+      );
+    File('${project.path}/src/pkg/ok.dart')
+        .writeAsStringSync('const ok = 1;\n');
+    final violations = findDisallowedStagedDirectives([
+      project.path,
+    ], tool: 'fix_runner');
+    final mainDisplay = main.path.replaceAll(r'\', '/');
+    expect(violations, [
+      "fix_runner: $mainDisplay import '   \n/secret/s.dart' "
+          'is not a declared input.',
+    ]);
+  });
 }

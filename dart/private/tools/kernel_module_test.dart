@@ -2138,6 +2138,59 @@ void main(List<String> args) {
       }
     });
 
+    test('a triple-quoted URI fails in every spelling', () async {
+      // The front end drops a whitespace-only (or lone-backslash) first
+      // line of a multi-line string, so it reads `/secret/s.dart` where the
+      // planner sees a relative staged path. Every spelling is refused
+      // outright, without compiling.
+      final spellings = [
+        "'''   \n/secret/s.dart'''",
+        "'''\t\t\n/secret/s.dart'''",
+        "'''\\\n/secret/s.dart'''",
+        "r'''   \n/secret/s.dart'''",
+        '"""   \n/secret/s.dart"""',
+      ];
+      for (var i = 0; i < spellings.length; i++) {
+        _write('pkg/lib/t$i.dart', 'import ${spellings[i]};\nclass T$i {}\n');
+      }
+      _write(
+        'pkg/lib/te.dart',
+        "export '''   \n/secret/s.dart''';\nclass TE {}\n",
+      );
+      _write(
+        'pkg/lib/tp.dart',
+        "part '''   \nsub/piece.dart''';\nclass TP {}\n",
+      );
+      final result = await _compile('m_triple_quote', [
+        for (var i = 0; i < spellings.length; i++) 'pkg/lib/t$i.dart',
+        'pkg/lib/te.dart',
+        'pkg/lib/tp.dart',
+      ]);
+      expect(result.code, 1);
+      const expectedUris = [
+        '   \n/secret/s.dart',
+        '\t\t\n/secret/s.dart',
+        '\n/secret/s.dart',
+        '   \n/secret/s.dart',
+        '   \n/secret/s.dart',
+      ];
+      for (var i = 0; i < expectedUris.length; i++) {
+        expect(
+          result.log,
+          contains("import '${expectedUris[i]}' is not a declared input"),
+          reason: spellings[i],
+        );
+      }
+      expect(
+        result.log,
+        contains("export '   \n/secret/s.dart' is not a declared input"),
+      );
+      expect(
+        result.log,
+        contains("part '   \nsub/piece.dart' is not a declared input"),
+      );
+    });
+
     test(
       'a backslash authority import fails as a schemeless authority',
       () async {
