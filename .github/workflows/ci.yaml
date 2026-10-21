@@ -6,9 +6,13 @@ on:
     branches: [main, "ci/**"]
   pull_request:
     branches: [main]
-  # Weekly run to catch upstream breakage (new Dart SDK, Bazel, deps)
+  # Nightly run to catch upstream breakage (new Dart SDK, Bazel, deps).
+  # A `schedule` run never restores or saves any Bazel cache (see the
+  # `schedule` branches on every cache input below), so this is the cold,
+  # uncached run: every test job re-executes instead of replaying the disk
+  # cache.
   schedule:
-    - cron: "0 9 * * 1"
+    - cron: "0 9 * * *"
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
     inputs:
@@ -32,8 +36,10 @@ jobs:
   # runs in the `full.yaml` pre-release workflow. Every folder still runs
   # `bazel test //...` with the same flags on every OS it ran on before (exit
   # code 4 still means "no test targets"). Folders in a shard run a few at a
-  # time (`parallelism` waves); each folder's full log is printed under a
-  # `===== <folder> =====` header so the executed-test counts stay auditable.
+  # time (`parallelism` waves); each folder's full log is streamed under a
+  # `===== <folder> =====` header the moment that folder finishes (not after
+  # all waves), and uploaded as an artifact `if: always()`, so a killed job
+  # still leaves its evidence and the executed-test counts stay auditable.
   # Each folder runs under its own Bazel server (`--output_base`): the folders
   # of a shard otherwise share the output base setup-bazel pins, so concurrent
   # folders kill each other's servers and flake with exit 1.
@@ -210,7 +216,15 @@ jobs:
         shell: bash
         run: |
           ws="${GITHUB_WORKSPACE//\\//}"
-          logdir="$(mktemp -d)"
+          # Per-folder logs live under RUNNER_TEMP so the upload step below can
+          # ship them even when this step fails or the job is killed. Each
+          # folder's log is printed under a `===== <folder> =====` header the
+          # moment that folder finishes (not after all waves), so a killed job
+          # still leaves the completed folders' evidence and the
+          # executed-test counts stay auditable.
+          logdir="${RUNNER_TEMP}/shard-logs"
+          rm -rf "$logdir"
+          mkdir -p "$logdir"
           # One Bazel server per folder (see run_one below). Native path: the
           # Windows bazel.exe does not understand msys /tmp spellings.
           outbasedir="${RUNNER_TEMP}/bazel-servers"
@@ -245,25 +259,70 @@ jobs:
             done <<< "$FOLDERS"
           fi
           running=0
+          # Folders already printed by print_done below.
+          printed=""
+          # Print the log of every finished folder not printed yet.
+          print_done() {
+            while IFS= read -r folder; do
+              [ -z "$folder" ] && continue
+              slug="$(printf '%s' "$folder" | tr '/.' '_')"
+              case " $printed " in
+                *" $slug "*) continue ;;
+              esac
+              if [ -f "$logdir/$slug.status" ]; then
+                echo "===== $folder (exit $(cat "$logdir/$slug.status")) ====="
+                cat "$logdir/$slug.log"
+                printed="$printed $slug "
+              fi
+            done <<< "$FOLDERS"
+          }
+          # Block until at least one more folder finishes, then stream the
+          # newly finished logs. Polling (not `wait -n`) so this also runs
+          # under macOS bash 3.2, which full.yaml shares.
+          wait_one() {
+            before=0
+            for s in "$logdir"/*.status; do
+              [ -f "$s" ] || continue
+              before=$((before + 1))
+            done
+            while true; do
+              print_done
+              have=0
+              for s in "$logdir"/*.status; do
+                [ -f "$s" ] || continue
+                have=$((have + 1))
+              done
+              [ "$have" -gt "$before" ] && return 0
+              sleep 10
+            done
+          }
           while IFS= read -r folder; do
             [ -z "$folder" ] && continue
             run_one "$folder" &
             running=$((running + 1))
             if [ "$running" -ge "$PARALLELISM" ]; then
-              wait
-              running=0
+              wait_one
+              running=$((running - 1))
             fi
           done <<< "$FOLDERS"
           wait
+          print_done
           fail=0
           while IFS= read -r folder; do
             [ -z "$folder" ] && continue
             slug="$(printf '%s' "$folder" | tr '/.' '_')"
-            echo "===== $folder (exit $(cat "$logdir/$slug.status")) ====="
-            cat "$logdir/$slug.log"
             [ "$(cat "$logdir/$slug.status")" = 0 ] || fail=1
           done <<< "$FOLDERS"
           exit "$fail"
+      # Ship the per-folder logs even when the Test step fails or the job is
+      # killed, so a dead shard still leaves its evidence for diagnosis.
+      - name: Upload shard logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: shard-logs-${{ matrix.os }}-shard-${{ matrix.shard }}
+          path: ${{ runner.temp }}/shard-logs
+          if-no-files-found: warn
       # The pub symlink guard (`dart/pub/private/pub_symlink.bzl`) must not
       # depend on host tools or PATH. Every step above runs Bazel under bash
       # (see the Test step's `shell: bash`), where Git Bash's GNU
@@ -316,13 +375,18 @@ jobs:
         run: |
           echo "9.3.0" > .bazelversion
           bazel query "@rules_dart//..."
-  # Push CI's only macOS job: a fast smoke test. The macOS-specific risks are
-  # toolchain/SDK resolution for macOS-arm64 and action execution under the
-  # darwin sandbox; `e2e/hello_world` exercises both through a representative
-  # build+test (four `dart_binary` compile modes under the analyzer aspect),
-  # and the consumer query keeps the Mivr/rules_dart#1 module-enumeration
-  # guard on macOS. Full per-folder macOS coverage runs in the `full.yaml`
-  # pre-release workflow, which releases require.
+  # Push CI's only macOS job: a fast smoke test that always runs cold (no
+  # cache restore or save), so it executes real compile actions under the
+  # darwin sandbox on every run instead of replaying the disk cache. The
+  # macOS-specific risks are toolchain/SDK resolution for macOS-arm64 and
+  # action execution under the darwin sandbox; `e2e/hello_world` exercises
+  # both by building all four `dart_binary` compile modes and running the
+  # binary, whose output is asserted: unlike the old
+  # `bazel test //... || [ $? -eq 4 ]`, this cannot pass while executing
+  # 0 actions on a "no tests found" no-op. The consumer query keeps the
+  # Mivr/rules_dart#1 module-enumeration guard on macOS. Full per-folder
+  # macOS coverage runs in the `full.yaml` pre-release workflow, which
+  # releases require.
   mac-smoke:
     runs-on: macos-latest
     timeout-minutes: 30
@@ -331,11 +395,12 @@ jobs:
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           bazelisk-cache: true
-          disk-cache: ${{ github.event_name != 'schedule' && !inputs.uncached && 'smoke-macos' || false }}
-          external-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
-          repository-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
-          cache-save: ${{ github.event_name != 'schedule' && !inputs.uncached }}
-          cache-version: "1"
+          # Always cold: this job's whole point is executing real macOS
+          # actions, so it neither restores nor saves any Bazel cache.
+          disk-cache: false
+          external-cache: false
+          repository-cache: false
+          cache-save: false
           bazelrc: |
             common --announce_rc
             common --color=yes
@@ -360,11 +425,18 @@ jobs:
         run: |
           echo "9.3.0" > .bazelversion
           bazel version
-      # Exit code 4 means "build succeeded but no test targets found".
-      # Same command as the old per-folder Test step for this workspace.
-      - name: Test hello_world
+      # `bazel build` executes the real compile actions for all four compile
+      # modes under the darwin sandbox; `bazel run` executes the result. The
+      # output assertion means this fails unless something really ran.
+      - name: Build hello_world
         working-directory: e2e/hello_world
-        run: "bash -c 'bazel test --test_output=errors //... || [ $? -eq 4 ]'"
+        run: bazel build //...
+      - name: Run hello_world
+        working-directory: e2e/hello_world
+        run: |
+          out="$(bazel run //:hello 2>&1)"
+          echo "$out"
+          echo "$out" | grep -q "Hello, World!"
       - name: Consumer query
         working-directory: e2e/smoke
         run: |

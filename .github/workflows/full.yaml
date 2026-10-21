@@ -2,7 +2,7 @@ name: Full matrix
 # Pre-release coverage: the complete per-folder macOS matrix that push CI
 # (ci.yaml) no longer runs. Linux and Windows keep full coverage on every
 # push, so they are not repeated here. Releases require a passing run of this
-# workflow on the tagged commit (see release.yaml); it also runs weekly and
+# workflow on the tagged commit (see release.yaml); it also runs nightly and
 # on demand. It has no 7-minute target, but its macOS jobs run one at a time
 # (`max-parallel: 1`) so a concurrent push run's macOS smoke job keeps a slot.
 on:
@@ -17,7 +17,7 @@ on:
     tags:
       - "v*"
   schedule:
-    - cron: "0 10 * * 1"
+    - cron: "0 10 * * *"
 concurrency:
   group: concurrency-group::${{ github.workflow }}::${{ github.ref_name }}${{ github.ref_name == 'main' && format('::{0}', github.run_id) || ''}}
   cancel-in-progress: ${{ github.ref_name != 'main' }}
@@ -27,6 +27,9 @@ jobs:
   # repository, external and bazelisk caches keep their shared keys.
   # Red-by-design workspaces (ci.yaml's `expected-failure` job) and the
   # pub-fetch Powershell/PATH steps are push-CI-only and not repeated here.
+  # Each folder's log is streamed under a `===== <folder> =====` header the
+  # moment that folder finishes (not after all waves), and uploaded as an
+  # artifact `if: always()`, so a killed job still leaves its evidence.
   test-macos:
     name: test-macos (shard ${{ matrix.shard }})
     runs-on: macos-latest
@@ -110,7 +113,11 @@ jobs:
         shell: bash
         run: |
           ws="${GITHUB_WORKSPACE//\\//}"
-          logdir="$(mktemp -d)"
+          # Per-folder logs live under RUNNER_TEMP so the upload step below
+          # can ship them even when this step fails or the job is killed.
+          logdir="${RUNNER_TEMP}/shard-logs"
+          rm -rf "$logdir"
+          mkdir -p "$logdir"
           # Pin the Bazel version in every folder of this shard, as the old
           # per-folder Configure step did.
           while IFS= read -r folder; do
@@ -128,22 +135,67 @@ jobs:
             fi
           }
           running=0
+          # Folders already printed by print_done below.
+          printed=""
+          # Print the log of every finished folder not printed yet.
+          print_done() {
+            while IFS= read -r folder; do
+              [ -z "$folder" ] && continue
+              slug="$(printf '%s' "$folder" | tr '/.' '_')"
+              case " $printed " in
+                *" $slug "*) continue ;;
+              esac
+              if [ -f "$logdir/$slug.status" ]; then
+                echo "===== $folder (exit $(cat "$logdir/$slug.status")) ====="
+                cat "$logdir/$slug.log"
+                printed="$printed $slug "
+              fi
+            done <<< "$FOLDERS"
+          }
+          # Block until at least one more folder finishes, then stream the
+          # newly finished logs. Polling (not `wait -n`) so this also runs
+          # under macOS bash 3.2.
+          wait_one() {
+            before=0
+            for s in "$logdir"/*.status; do
+              [ -f "$s" ] || continue
+              before=$((before + 1))
+            done
+            while true; do
+              print_done
+              have=0
+              for s in "$logdir"/*.status; do
+                [ -f "$s" ] || continue
+                have=$((have + 1))
+              done
+              [ "$have" -gt "$before" ] && return 0
+              sleep 10
+            done
+          }
           while IFS= read -r folder; do
             [ -z "$folder" ] && continue
             run_one "$folder" &
             running=$((running + 1))
             if [ "$running" -ge "$PARALLELISM" ]; then
-              wait
-              running=0
+              wait_one
+              running=$((running - 1))
             fi
           done <<< "$FOLDERS"
           wait
+          print_done
           fail=0
           while IFS= read -r folder; do
             [ -z "$folder" ] && continue
             slug="$(printf '%s' "$folder" | tr '/.' '_')"
-            echo "===== $folder (exit $(cat "$logdir/$slug.status")) ====="
-            cat "$logdir/$slug.log"
             [ "$(cat "$logdir/$slug.status")" = 0 ] || fail=1
           done <<< "$FOLDERS"
           exit "$fail"
+      # Ship the per-folder logs even when the Test step fails or the job is
+      # killed, so a dead shard still leaves its evidence for diagnosis.
+      - name: Upload shard logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: shard-logs-macos-shard-${{ matrix.shard }}
+          path: ${{ runner.temp }}/shard-logs
+          if-no-files-found: warn
