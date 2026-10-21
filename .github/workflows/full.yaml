@@ -88,6 +88,21 @@ jobs:
             common --announce_rc
             common --color=yes
             common --enable_bzlmod=true
+            # Memory bounds: a shard runs PARALLELISM=3 folders at once (see
+            # the Test step). By default every server grows its JVM heap to
+            # ~1/4 of host RAM and schedules actions as if it owned the whole
+            # machine, so concurrent cold servers exhaust a 4-CPU/16 GB runner
+            # and the job dies on a shutdown signal (exit 143). Per server:
+            # heap 2 GB (3 x 2 = 6 GB, was ~3 x 4 = 12 GB), 1 CPU (3 of 4
+            # cores), scheduled RAM 15% of host RAM (3 x 15% = 45%, ~7.2 GB of
+            # 16 GB): heaps plus scheduled actions stay near ~13 GB, leaving
+            # room for the OS, the Bazel clients and JVM off-heap.
+            # HOST-relative so smaller runners (macOS) scale the same
+            # fractions. Scheduling limits only: action keys are unchanged, so
+            # cache warmth is unaffected.
+            startup --host_jvm_args=-Xmx2g
+            build --local_resources=cpu=1
+            build --local_resources=memory=HOST_RAM*.15
       - name: Test
         env:
           FOLDERS: ${{ matrix.folders }}

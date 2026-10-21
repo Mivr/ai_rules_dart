@@ -1,5 +1,8 @@
 # This file contains Bazel settings to apply on CI only.
-# It is referenced with a --bazelrc option in the call to bazel in ci.yaml
+# It is currently not referenced by any workflow: per-job Bazel settings live
+# in the setup-bazel `bazelrc` inputs in ci.yaml and full.yaml, which the
+# action writes to the runner user's bazelrc so every Bazel invocation,
+# including each folder's own server, reads them.
 
 common --config=ci
 # This directory is configured in GitHub actions to be persisted between runs.
