@@ -24,6 +24,7 @@ import 'kernel_module.dart'
         decodeKernelModuleWorkRequestInputs,
         decodeUriSegment,
         defaultMultiRootPrefix,
+        dillCanonicalRoots,
         dillLibraryReferences,
         dillSourceUris,
         ensureSummaryDigests,
@@ -647,11 +648,13 @@ Uint8List _buildDillWithUris(
 /// per entry of [libraries]: a source-table index with a canonical-name root
 /// (null for a null reference). The string table holds the empty node name
 /// plus each distinct canonical name, and the link table one root per
-/// library, so the bytes exercise the library-reference check's tables.
+/// library — plus each of [extraRoots], which no node mentions, so the bytes
+/// exercise a smuggled canonical root the library walk alone would miss.
 Uint8List _buildDillWithLibraries({
   required List<(String, String)> sources,
   required List<(int, String?)> libraries,
   int formatVersion = Tag.BinaryFormatVersion,
+  List<String> extraRoots = const [],
 }) {
   final out = BytesBuilder();
   void u30(int v) {
@@ -706,10 +709,14 @@ Uint8List _buildDillWithLibraries({
   final constantTableOffset = out.length;
   u30(0);
   final linkTableOffset = out.length;
-  u30(libraries.length);
+  u30(libraries.length + extraRoots.length);
   for (final (_, canon) in libraries) {
     u30(0); // Parent: the nameless root.
     u30(canon == null ? 0 : stringIndexOf(canon));
+  }
+  for (final root in extraRoots) {
+    u30(0); // Parent: the nameless root no node references.
+    u30(stringIndexOf(root));
   }
   final stringTableOffset = out.length;
   u30(strings.length);
@@ -1698,6 +1705,76 @@ void main(List<String> args) {
         expect(result.calls.length, 1, reason: 'no isolated restage');
       },
     );
+
+    test('dillCanonicalRoots reads every top-level root, including ones no node mentions', () {
+      final dill = _buildDillWithLibraries(
+        sources: [(_uri('pkg/lib/a.dart'), 'package:pkg/a.dart')],
+        libraries: [(0, 'package:pkg/a.dart')],
+        extraRoots: ['file:///host/evil.dart'],
+      );
+      expect(dillCanonicalRoots(dill), [
+        'package:pkg/a.dart',
+        'file:///host/evil.dart',
+      ]);
+      // The smuggled root has no library node.
+      expect(dillLibraryReferences(dill), hasLength(1));
+      // No nodes means no roots, and no tables means no verdict.
+      expect(dillCanonicalRoots(_buildDillWithUris(['a'])), isEmpty);
+      expect(dillCanonicalRoots(Uint8List(0)), isNull);
+    });
+
+    test('an unstaged compile that smuggles a root no library node mentions fails closed', () async {
+      _write('pkg/lib/a.dart', 'class A {}\n');
+      final compiler = _DillWritingCompiler(
+        () => _buildDillWithLibraries(
+          sources: [(_uri('pkg/lib/a.dart'), 'package:pkg/a.dart')],
+          libraries: [(0, 'package:pkg/a.dart')],
+          extraRoots: ['file:///host/evil.dart'],
+        ),
+      );
+      final result = await _compile(
+        'm_evil_root',
+        ['pkg/lib/a.dart'],
+        inputs: [
+          _encodeInputForTest(
+            '${_root.path}/pkg/lib/a.dart',
+            Uint8List.fromList([7]),
+          ),
+        ],
+        compiler: compiler,
+      );
+      expect(result.calls.length, 2, reason: 'unstaged, then isolated');
+      expect(result.log, contains('references file:///host/evil.dart'));
+      expect(result.code, 1);
+      expect(result.log, contains('failing the compile'));
+    });
+
+    test(
+      'a compile whose roots name only defined inputs verifies once',
+      () async {
+        _write('pkg/lib/a.dart', 'class A {}\n');
+        final compiler = _DillWritingCompiler(
+          () => _buildDillWithLibraries(
+            sources: [(_uri('pkg/lib/a.dart'), 'package:pkg/a.dart')],
+            libraries: [(0, 'package:pkg/a.dart')],
+            extraRoots: ['package:pkg/a.dart', 'myapp.a'],
+          ),
+        );
+        final result = await _compile(
+          'm_defined_roots',
+          ['pkg/lib/a.dart'],
+          inputs: [
+            _encodeInputForTest(
+              '${_root.path}/pkg/lib/a.dart',
+              Uint8List.fromList([7]),
+            ),
+          ],
+          compiler: compiler,
+        );
+        expect(result.code, 0, reason: result.log);
+        expect(result.calls.length, 1, reason: 'no isolated restage');
+      },
+    );
   });
 
   group('directive guard classification', () {
@@ -1967,6 +2044,144 @@ void main(List<String> args) {
             "import 'file:///proc/self/cwd/pkg/lib/secret.dart' "
             'is not a declared input',
           ),
+        );
+      },
+    );
+
+    test('a schemeless authority import fails in every spelling', () async {
+      const spellings = [
+        '//host/evil.dart',
+        '//host/evil.dart?v=1',
+        '//host/evil.dart#frag',
+      ];
+      for (var i = 0; i < spellings.length; i++) {
+        _write('pkg/lib/g$i.dart', "import '${spellings[i]}';\nclass G$i {}\n");
+      }
+      final result = await _compile('m_slash_auth', [
+        for (var i = 0; i < spellings.length; i++) 'pkg/lib/g$i.dart',
+      ]);
+      expect(result.code, 1);
+      for (final spelling in spellings) {
+        expect(
+          result.log,
+          contains("import '$spelling' is not a declared input"),
+          reason: spelling,
+        );
+      }
+    });
+
+    test(
+      'a backslash authority import fails as a schemeless authority',
+      () async {
+        // Four source backslashes: the scanner unescapes `\\` pairs, so the
+        // extracted URI leads with `\\`, which fails as the `//` authority.
+        const bs = '\\';
+        final uri = '${bs * 4}host${bs * 2}evil.dart';
+        final extracted = '${bs * 2}host${bs}evil.dart';
+        _write('pkg/lib/h.dart', "import '$uri';\nclass H {}\n");
+        final result = await _compile('m_backslash_auth', ['pkg/lib/h.dart']);
+        expect(result.code, 1);
+        expect(
+          result.log,
+          contains("import '$extracted' is not a declared input"),
+        );
+      },
+    );
+
+    test(
+      'a schemeless authority export, part and conditional alternative fail',
+      () async {
+        _write('pkg/lib/e2.dart', "export '//host/evil.dart';\nclass E2 {}\n");
+        _write(
+          'pkg/lib/p2.dart',
+          "part '//host/evil_part.dart';\nclass P2 {}\n",
+        );
+        _write(
+          'pkg/lib/c2.dart',
+          "import 'dart:async' if (dart.library.io) '//host/evil.dart';\n"
+              'class C2 {}\n',
+        );
+        final result = await _compile('m_slash_kinds', [
+          'pkg/lib/e2.dart',
+          'pkg/lib/p2.dart',
+          'pkg/lib/c2.dart',
+        ]);
+        expect(result.code, 1);
+        expect(
+          result.log,
+          contains("export '//host/evil.dart' is not a declared input"),
+        );
+        expect(
+          result.log,
+          contains("part '//host/evil_part.dart' is not a declared input"),
+        );
+        expect(
+          result.log,
+          contains("import '//host/evil.dart' is not a declared input"),
+        );
+      },
+    );
+
+    test('a fragment import fails instead of resolving to its file', () async {
+      _write('pkg/lib/b.dart', 'class B {}\n');
+      _write('pkg/lib/f.dart', "import 'b.dart#frag';\nclass F {}\n");
+      final result = await _compile('m_frag', [
+        'pkg/lib/f.dart',
+        'pkg/lib/b.dart',
+      ]);
+      expect(result.code, 1);
+      expect(
+        result.log,
+        contains("import 'b.dart#frag' is not a declared input"),
+      );
+    });
+
+    test('a schemeless authority import fails the whole-program entry instead of compiling', () async {
+      _write(
+        'pkg/lib/a.dart',
+        "import '//host/evil.dart';\n"
+            'String describe() => secretValue;\n',
+      );
+      _write('pkg/lib/secret.dart', "const secretValue = 'x';\n");
+      _write(
+        'pkg/bin/main.dart',
+        "import 'package:pkg/a.dart';\nvoid main() => print(describe());\n",
+      );
+      final result = await _compile(
+        'm_slash_auth_entry',
+        ['pkg/bin/main.dart'],
+        inputSources: [_uri('pkg/lib/a.dart')],
+        noDrop: true,
+      );
+      expect(result.code, 1);
+      expect(
+        result.log,
+        contains("import '//host/evil.dart' is not a declared input"),
+      );
+    });
+
+    test(
+      'a fragment import fails the whole-program entry instead of compiling',
+      () async {
+        _write('pkg/lib/b.dart', 'class B {}\n');
+        _write(
+          'pkg/lib/a.dart',
+          "import 'b.dart#frag';\nString describe() => 'x';\n",
+        );
+        _write(
+          'pkg/bin/main.dart',
+          "import 'package:pkg/a.dart';\nvoid main() => print(describe());\n",
+        );
+        final result = await _compile(
+          'm_frag_entry',
+          ['pkg/bin/main.dart'],
+          inputSources: [_uri('pkg/lib/a.dart'), _uri('pkg/lib/b.dart')],
+          noDrop: true,
+        );
+        expect(result.code, 1);
+        expect(
+          result.log,
+          contains("import 'b.dart#frag' is not a declared input"),
         );
       },
     );

@@ -2091,6 +2091,16 @@ Future<List<String>> _planImports(
       }
       final target = _resolveUri(ref.uri, key, roots, multiRootPrefix);
       if (target == null) {
+        // A schemeless `//` authority (`\` separates like the front end, so a
+        // leading `\\` counts too) reads above every root, outside the declared
+        // inputs: it fails however the directive names it, parts included.
+        if (_isSlashAuthorityUri(ref.uri)) {
+          disallowed.add(
+            'kernel_module: cannot compile ${uriOfKey[key] ?? key}: '
+            "${ref.kind} '${ref.uri}' is not a declared input.",
+          );
+          continue;
+        }
         // A directive URI outside the declared inputs fails the build (see the
         // doc comment): it would read the host, outside every multi-root.
         final outsideInputs = ref.isPart || ref.isPartOf
@@ -2122,6 +2132,14 @@ Future<List<String>> _planImports(
           direct.putIfAbsent(
             key,
             () => '${ref.uri} names a package this module does not have',
+          );
+        } else {
+          // A schemeless URI the resolver cannot name (a fragment, a decoded
+          // `/`): the front end reads no declared file through it, so the
+          // directive fails instead of compiling without it.
+          disallowed.add(
+            'kernel_module: cannot compile ${uriOfKey[key] ?? key}: '
+            "${ref.kind} '${ref.uri}' is not a declared input.",
           );
         }
         continue;
@@ -2328,6 +2346,15 @@ Future<_EntrySources> _entrySources(
       }
       final target = _resolveUri(ref.uri, key, roots, multiRootPrefix);
       if (target == null) {
+        // A schemeless `//` authority reads above every root, outside the
+        // declared inputs: it fails however the directive names it.
+        if (_isSlashAuthorityUri(ref.uri)) {
+          disallowed.add(
+            'kernel_module: cannot compile ${ownUris[key] ?? key}: '
+            "${ref.kind} '${ref.uri}' is not a declared input.",
+          );
+          continue;
+        }
         // A directive URI outside the declared inputs fails the build (see
         // [_planImports]): it would read the host, outside every multi-root.
         final outsideInputs = ref.isPart || ref.isPartOf
@@ -2337,6 +2364,17 @@ Future<_EntrySources> _entrySources(
                 multiRootPrefix: multiRootPrefix,
               );
         if (outsideInputs) {
+          disallowed.add(
+            'kernel_module: cannot compile ${ownUris[key] ?? key}: '
+            "${ref.kind} '${ref.uri}' is not a declared input.",
+          );
+          continue;
+        }
+        // A schemeless `import` or `export` URI the resolver cannot name (a
+        // fragment, a decoded `/`) reads no declared file: it fails instead of
+        // compiling without it. Other nulls (parts, unknown packages) stay on
+        // their exclusion paths, where the compiler reports them.
+        if (!ref.isPart && !ref.isPartOf && !ref.uri.startsWith('package:')) {
           disallowed.add(
             'kernel_module: cannot compile ${ownUris[key] ?? key}: '
             "${ref.kind} '${ref.uri}' is not a declared input.",
@@ -2599,6 +2637,15 @@ String? _keyOfUri(
   return _normalize(
     '${root.path}${root.packageUri}${rest.substring(slash + 1)}',
   );
+}
+
+/// Whether [uri] is a schemeless `//`-authority reference: after `\` becomes
+/// `/` (it separates like the front end), it starts with `//`. The front end
+/// resolves such a reference above every multi-root, so it reads the host
+/// whatever the roots hold, and every resolver nulls it.
+bool _isSlashAuthorityUri(String uri) {
+  final text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
+  return text.startsWith('//');
 }
 
 /// The key a URI in a file named `fromKey` refers to, or null when the URI is not
@@ -4797,23 +4844,36 @@ List<DillLibraryReference>? dillLibraryReferences(Uint8List data) {
   return refs;
 }
 
-/// Adds one [DillLibraryReference] per library node of the one kernel
-/// component [part] to [refs]. Returns false (leaving [refs] short) when the
-/// component's tables do not parse; every offset and length is bounds-checked.
-bool _collectComponentLibraries(
-  Uint8List part,
-  List<DillLibraryReference> refs,
-) {
-  if (part.length < 12) return false;
+/// The name tables of one kernel component: its source-table URIs plus the
+/// string table and canonical-name table its library references link through.
+/// Null when the component's tables do not parse; every offset and length is
+/// bounds-checked.
+({
+  List<String> fileUris,
+  List<String> importUris,
+  String? Function(int) stringAt,
+  List<int> canonParents,
+  List<int> canonStrings,
+})?
+_componentNameTables(Uint8List part) {
+  if (part.length < 12) return null;
   final bd = ByteData.sublistView(part);
-  if (bd.getUint32(0) != Tag.ComponentFile) return false;
+  if (bd.getUint32(0) != Tag.ComponentFile) return null;
   final libCount = bd.getUint32(part.length - 8);
   // No library nodes means no library references: the source-table verdict
   // stands alone, and the remaining tables (whose offsets test fixtures may
   // leave unset) are never touched.
-  if (libCount == 0) return true;
+  if (libCount == 0) {
+    return (
+      fileUris: <String>[],
+      importUris: <String>[],
+      stringAt: (int index) => null,
+      canonParents: <int>[],
+      canonStrings: <int>[],
+    );
+  }
   final idxBytes = (libCount + 12) * 4;
-  if (idxBytes > part.length) return false;
+  if (idxBytes > part.length) return null;
   final rawIdxStart = part.length - idxBytes;
   int u32(int offset) => bd.getUint32(offset);
   final offSourceTable = u32(rawIdxStart);
@@ -4823,11 +4883,11 @@ bool _collectComponentLibraries(
       offLinkTable > rawIdxStart ||
       offStringTable > rawIdxStart ||
       offLinkTable > offStringTable) {
-    return false;
+    return null;
   }
   final fileUris = <String>[];
   final importUris = <String>[];
-  if (!_collectComponentSourceUris(part, fileUris, importUris)) return false;
+  if (!_collectComponentSourceUris(part, fileUris, importUris)) return null;
 
   // The string table: a count, cumulative end offsets, then the bytes.
   var pos = offStringTable;
@@ -4850,17 +4910,17 @@ bool _collectComponentLibraries(
   }
 
   final strCount = readU30(rawIdxStart);
-  if (strCount == null || strCount < 0) return false;
+  if (strCount == null || strCount < 0) return null;
   final strEnds = <int>[];
   var prevEnd = 0;
   for (var i = 0; i < strCount; i++) {
     final end = readU30(rawIdxStart);
-    if (end == null || end < prevEnd) return false;
+    if (end == null || end < prevEnd) return null;
     strEnds.add(end);
     prevEnd = end;
   }
   final strBase = pos;
-  if (strEnds.isNotEmpty && strBase + strEnds.last > rawIdxStart) return false;
+  if (strEnds.isNotEmpty && strBase + strEnds.last > rawIdxStart) return null;
   String? stringAt(int index) {
     if (index < 0 || index >= strEnds.length) return null;
     final start = index == 0 ? 0 : strEnds[index - 1];
@@ -4877,16 +4937,37 @@ bool _collectComponentLibraries(
   // the parent biased by one (zero names the nameless root).
   pos = offLinkTable;
   final canonCount = readU30(offStringTable);
-  if (canonCount == null || canonCount < 0) return false;
+  if (canonCount == null || canonCount < 0) return null;
   final canonParents = <int>[];
   final canonStrings = <int>[];
   for (var i = 0; i < canonCount; i++) {
     final parent = readU30(offStringTable);
     final name = readU30(offStringTable);
-    if (parent == null || name == null) return false;
+    if (parent == null || name == null) return null;
     canonParents.add(parent);
     canonStrings.add(name);
   }
+  return (
+    fileUris: fileUris,
+    importUris: importUris,
+    stringAt: stringAt,
+    canonParents: canonParents,
+    canonStrings: canonStrings,
+  );
+}
+
+/// Adds one [DillLibraryReference] per library node of the one kernel
+/// component [part] to [refs]. Returns false (leaving [refs] short) when the
+/// component's tables do not parse; every offset and length is bounds-checked.
+bool _collectComponentLibraries(
+  Uint8List part,
+  List<DillLibraryReference> refs,
+) {
+  final tables = _componentNameTables(part);
+  if (tables == null) return false;
+  final (:fileUris, :importUris, :stringAt, :canonParents, :canonStrings) =
+      tables;
+  final canonCount = canonParents.length;
   String canonicalRoot(int biased) {
     var index = biased - 1;
     if (biased <= 0 || index >= canonCount) return '';
@@ -4897,6 +4978,35 @@ bool _collectComponentLibraries(
       if (index < 0 || index >= canonCount) return '';
     }
     return stringAt(canonStrings[index]) ?? '';
+  }
+
+  if (part.length < 12) return false;
+  final bd = ByteData.sublistView(part);
+  final libCount = bd.getUint32(part.length - 8);
+  // No library nodes means no library references: the source-table verdict
+  // stands alone, and the remaining tables are never touched.
+  if (libCount == 0) return true;
+  final idxBytes = (libCount + 12) * 4;
+  if (idxBytes > part.length) return false;
+  final rawIdxStart = part.length - idxBytes;
+  int u32(int offset) => bd.getUint32(offset);
+  var pos = 0;
+  int? readU30(int limit) {
+    if (pos >= limit) return null;
+    final b0 = part[pos++];
+    if ((b0 & 0x80) == 0) return b0;
+    if ((b0 & 0x40) == 0) {
+      if (pos >= limit) return null;
+      return ((b0 & 0x3f) << 8) | part[pos++];
+    }
+    if (pos + 3 > limit) return null;
+    final value =
+        ((b0 & 0x3f) << 24) |
+        (part[pos] << 16) |
+        (part[pos + 1] << 8) |
+        part[pos + 2];
+    pos += 3;
+    return value;
   }
 
   // Each node header opens with a flags byte, the version, and three
@@ -4933,6 +5043,34 @@ bool _collectComponentLibraries(
     ));
   }
   return true;
+}
+
+/// Every top-level canonical-name string (parent index zero) recorded in the
+/// `.dill` [bytes] across all components, or `null` when the tables do not
+/// parse. A held component can smuggle a root the library nodes never mention —
+/// a `file:` canonical root with no corresponding library node, for example —
+/// so the backstop below checks these roots too, not just the library nodes.
+/// Returns an empty list (never `null`) for a component file with no
+/// libraries, mirroring [dillLibraryReferences].
+List<String>? dillCanonicalRoots(Uint8List bytes) {
+  final ranges = _componentRanges(bytes);
+  if (ranges == null) return null;
+  final roots = <String>[];
+  for (final (start, end) in ranges) {
+    final tables = _componentNameTables(
+      Uint8List.sublistView(bytes, start, end),
+    );
+    if (tables == null) return null;
+    for (var i = 0; i < tables.canonParents.length; i++) {
+      // An unresolvable root string degrades to empty (accepted, like the
+      // per-library walk's `canonicalRoot`): only a present root the inputs do
+      // not define fails the check.
+      if (tables.canonParents[i] == 0) {
+        roots.add(tables.stringAt(tables.canonStrings[i]) ?? '');
+      }
+    }
+  }
+  return roots;
 }
 
 /// The declared-input key the `.dill` source-table URI [uri] names, or null when
@@ -5017,8 +5155,10 @@ String? _keyOfDillSourceUri(
 /// read, but a library node also records the `importUri` spelling the
 /// importer named it by and the canonical name it links under, and either can
 /// name a file the recorded `fileUri` spelling does not. So every library
-/// reference is checked too, spelling-independently: each `importUri` and
-/// canonical-name root must be one of [ownUris] (the URIs this compile was
+/// reference is checked too, spelling-independently — its `importUri` and
+/// canonical-name root — and every top-level canonical name is checked as
+/// well, since a held component can smuggle a root no library node mentions.
+/// Each must be one of [ownUris] (the URIs this compile was
 /// given as `--source`), a `dart:` library, or an import URI an input module
 /// defines — the `package:` and multi-root spellings of [graph]'s keys under
 /// [roots], computed without touching the filesystem — or else name a
@@ -5124,6 +5264,23 @@ Future<bool> _unstagedReadsAreDeclared(
         if (!referenceIsDeclared(reference)) {
           log.writeln(
             'kernel_module: $dillPath references $reference, which no '
+            'compiled source, `dart:` library, or input module defines; '
+            '$consequence.',
+          );
+          return false;
+        }
+      }
+    }
+    // A held component can smuggle a root the library nodes never mention, so
+    // every top-level canonical name is checked with the same predicate. An
+    // unparseable table keeps the source-table verdict: it carries no root to
+    // check, and the sources were still verified above.
+    final canonicalRoots = dillCanonicalRoots(bytes);
+    if (canonicalRoots != null) {
+      for (final root in canonicalRoots) {
+        if (!referenceIsDeclared(root)) {
+          log.writeln(
+            'kernel_module: $dillPath references $root, which no '
             'compiled source, `dart:` library, or input module defines; '
             '$consequence.',
           );
