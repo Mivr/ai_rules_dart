@@ -37,13 +37,17 @@ repos:
     hooks:
       - id: buildifier
       - id: buildifier-lint
-  # Lint the GitHub workflows with a pinned actionlint release. The hook
-  # downloads the platform's archive from that release only when the cache
-  # is empty, verifies its sha256 against the pinned checksum below (an
+  # Lint the GitHub workflows with pinned actionlint and ShellCheck releases.
+  # The hook downloads each platform's archive from its release only when the
+  # cache is empty, verifies its sha256 against the pinned checksum below (an
   # unknown platform or a missing checksum fails closed), then lints every
-  # workflow file, so an invalid workflow fails pre-commit. Bump the
-  # version, asset names and checksums together from the release's
-  # actionlint_<version>_checksums.txt.
+  # workflow file, so an invalid workflow fails pre-commit. ShellCheck runs
+  # from the pinned binary (`-shellcheck=`) and pyflakes is disabled
+  # (`-pyflakes=`), so the verdict never depends on host PATH tools. Bump
+  # the versions, asset names and checksums together: actionlint checksums
+  # come from the release's actionlint_<version>_checksums.txt; ShellCheck
+  # upstream publishes no checksums file, so its pins below were recorded
+  # from the release archives over TLS and are re-verified on every run.
   - repo: local
     hooks:
       - id: actionlint
@@ -51,36 +55,44 @@ repos:
         entry: |-
           bash -c '
           set -eu
-          version=1.7.12
-          base="https://github.com/rhysd/actionlint/releases/download/v${version}"
+          actionlint_version=1.7.12
+          shellcheck_version=0.11.0
+          al_base="https://github.com/rhysd/actionlint/releases/download/v${actionlint_version}"
+          sc_base="https://github.com/koalaman/shellcheck/releases/download/v${shellcheck_version}"
           os="$(uname -s)"
           arch="$(uname -m)"
+          exe=""
+          case "${os}" in MINGW*|MSYS*|CYGWIN*) exe=".exe" ;; esac
           case "${os}/${arch}" in
-            Linux/x86_64) asset="actionlint_${version}_linux_amd64.tar.gz"; want=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8 ;;
-            Linux/aarch64|Linux/arm64) asset="actionlint_${version}_linux_arm64.tar.gz"; want=325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6 ;;
-            Darwin/x86_64) asset="actionlint_${version}_darwin_amd64.tar.gz"; want=5b44c3bc2255115c9b69e30efc0fecdf498fdb63c5d58e17084fd5f16324c644 ;;
-            Darwin/arm64|Darwin/aarch64) asset="actionlint_${version}_darwin_arm64.tar.gz"; want=aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f ;;
-            MINGW*/x86_64|MSYS*/x86_64|CYGWIN*/x86_64) asset="actionlint_${version}_windows_amd64.zip"; want=6e7241b51e6817ea6a047693d8e6fed13b31819c9a0dd6c5a726e1592d22f6e9 ;;
-            MINGW*/aarch64|MINGW*/arm64|MSYS*/aarch64|MSYS*/arm64|CYGWIN*/aarch64|CYGWIN*/arm64) asset="actionlint_${version}_windows_arm64.zip"; want=cadcf7ea4efe3a68728893813643cebe1185e5b1d4be5b96245f65c9a4d5ea41 ;;
+            Linux/x86_64) al_asset="actionlint_${actionlint_version}_linux_amd64.tar.gz"; al_want=8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8; sc_asset="shellcheck-v${shellcheck_version}.linux.x86_64.tar.gz"; sc_want=b7af85e41cc99489dcc21d66c6d5f3685138f06d34651e6d34b42ec6d54fe6f6; sc_subdir="shellcheck-v${shellcheck_version}/" ;;
+            Linux/aarch64|Linux/arm64) al_asset="actionlint_${actionlint_version}_linux_arm64.tar.gz"; al_want=325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6; sc_asset="shellcheck-v${shellcheck_version}.linux.aarch64.tar.gz"; sc_want=68a8133197a50beb8803f8d42f9908d1af1c5540d4bb05fdfca8c1fa47decefc; sc_subdir="shellcheck-v${shellcheck_version}/" ;;
+            Darwin/x86_64) al_asset="actionlint_${actionlint_version}_darwin_amd64.tar.gz"; al_want=5b44c3bc2255115c9b69e30efc0fecdf498fdb63c5d58e17084fd5f16324c644; sc_asset="shellcheck-v${shellcheck_version}.darwin.x86_64.tar.gz"; sc_want=c2c15e08df0e8fbc374c335b230a7ee958c313fa5714817a59aa59f1aa594f51; sc_subdir="shellcheck-v${shellcheck_version}/" ;;
+            Darwin/arm64|Darwin/aarch64) al_asset="actionlint_${actionlint_version}_darwin_arm64.tar.gz"; al_want=aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f; sc_asset="shellcheck-v${shellcheck_version}.darwin.aarch64.tar.gz"; sc_want=339b930feb1ea764467013cc1f72d09cd6b869ebf1013296ba9055ab2ffbd26f; sc_subdir="shellcheck-v${shellcheck_version}/" ;;
+            MINGW*/x86_64|MSYS*/x86_64|CYGWIN*/x86_64) al_asset="actionlint_${actionlint_version}_windows_amd64.zip"; al_want=6e7241b51e6817ea6a047693d8e6fed13b31819c9a0dd6c5a726e1592d22f6e9; sc_asset="shellcheck-v${shellcheck_version}.zip"; sc_want=8a4e35ab0b331c85d73567b12f2a444df187f483e5079ceffa6bda1faa2e740e; sc_subdir="" ;;
             *) echo "actionlint hook: unsupported platform ${os}/${arch}" >&2; exit 1 ;;
           esac
-          : "${want:?actionlint hook: no pinned checksum for this platform}"
+          : "${al_want:?actionlint hook: no pinned checksum for this platform}"
+          : "${sc_want:?actionlint hook: no pinned checksum for this platform}"
           command -v curl >/dev/null || { echo "actionlint hook: curl is required" >&2; exit 1; }
           if command -v sha256sum >/dev/null; then sum="sha256sum"; elif command -v shasum >/dev/null; then sum="shasum -a 256"; else echo "actionlint hook: sha256sum or shasum is required" >&2; exit 1; fi
-          dir="${XDG_CACHE_HOME:-$HOME/.cache}/rules-dart-actionlint-${version}"
+          dir="${XDG_CACHE_HOME:-$HOME/.cache}/rules-dart-actionlint-${actionlint_version}-shellcheck-${shellcheck_version}"
           mkdir -p "${dir}"
-          archive="${dir}/${asset}"
-          bin="${dir}/actionlint"
-          case "${os}" in MINGW*|MSYS*|CYGWIN*) bin="${bin}.exe" ;; esac
-          if [ ! -f "${archive}" ]; then curl -fsSL -o "${archive}" "${base}/${asset}"; fi
-          printf "%s  %s\n" "${want}" "${archive}" | ${sum} -c -
-          if [ ! -x "${bin}" ]; then
-            case "${archive}" in
-              *.zip) command -v unzip >/dev/null || { echo "actionlint hook: unzip is required" >&2; exit 1; }; unzip -o -d "${dir}" "${archive}" ;;
-              *.tar.gz) tar -xzf "${archive}" -C "${dir}" ;;
-            esac
-          fi
-          "${bin}" .github/workflows/*.yaml
+          fetch() {
+            archive="${dir}/$2"
+            if [ ! -f "${archive}" ]; then curl -fsSL -o "${archive}" "$1/$2"; fi
+            printf "%s  %s\n" "$3" "${archive}" | ${sum} -c - >&2
+            target="${dir}/$4$5"
+            if [ ! -x "${target}" ]; then
+              case "${archive}" in
+                *.zip) command -v unzip >/dev/null || { echo "actionlint hook: unzip is required" >&2; exit 1; }; unzip -o -d "${dir}" "${archive}" ;;
+                *.tar.gz) tar -xzf "${archive}" -C "${dir}" ;;
+              esac
+            fi
+            printf "%s" "${target}"
+          }
+          al_bin="$(fetch "${al_base}" "${al_asset}" "${al_want}" "" "actionlint${exe}")"
+          sc_bin="$(fetch "${sc_base}" "${sc_asset}" "${sc_want}" "${sc_subdir}" "shellcheck${exe}")"
+          "${al_bin}" -shellcheck="${sc_bin}" -pyflakes= .github/workflows/*.yaml
           ' _
         language: system
         files: ^\.github/workflows/[^/]+\.ya?ml$
