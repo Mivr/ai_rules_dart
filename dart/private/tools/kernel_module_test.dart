@@ -4589,14 +4589,17 @@ void main(List<String> args) {
       }
 
       // Whatever other builds left in shared temp stays: only files this run
-      // adds may appear below.
+      // adds may appear below. Every plant carries a per-test tag: this
+      // suite's tests (and the app-JIT snapshot suite's) run concurrently,
+      // and shared fixed plant names would race between processes.
       final before = sharedCacheNames();
+      final tag = 'kmod-test.$pid';
       final plants = <String, String>{
-        'kernel_worker_nocomma.snapshot': 'planted',
-        'kernel_worker_nocomma.snapshot.version': 'planted',
-        'gen_kernel_nocomma.snapshot': 'planted',
-        'gen_kernel_nocomma.snapshot.version': 'planted',
-        'rules_dart_vm-planted-test': 'planted-dir',
+        'kernel_worker_nocomma.snapshot.$tag': 'planted',
+        'kernel_worker_nocomma.snapshot.version.$tag': 'planted',
+        'gen_kernel_nocomma.snapshot.$tag': 'planted',
+        'gen_kernel_nocomma.snapshot.version.$tag': 'planted',
+        'rules_dart_vm-planted-$tag': 'planted-dir',
       };
       for (final entry in plants.entries) {
         final target = '${tmp.path}/${entry.key}';

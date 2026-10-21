@@ -42,7 +42,8 @@ def _patched_snapshot(ctx, sdk_files, dart, snapshot_suffix, out_name, kind):
     Args:
       ctx: The `dart_toolchain` rule context.
       sdk_files: Depset of the SDK files to search for the snapshot.
-      dart: The SDK's `dart` File, which runs the patch tool from source.
+      dart: The SDK's `dart` File, which runs the patch tool from source when
+          the SDK names no `dartvm`.
       snapshot_suffix: The `bin/snapshots/...` suffix naming the snapshot.
       out_name: The basename of the declared patched output.
       kind: The snapshot kind for the patch tool's diagnostics.
@@ -52,12 +53,22 @@ def _patched_snapshot(ctx, sdk_files, dart, snapshot_suffix, out_name, kind):
       (an older SDK without a `kernel_worker` snapshot compiles no module).
     """
     snapshot = None
+    dartvm = None
     for f in sdk_files.to_list():
-        if f.path.endswith("/" + snapshot_suffix):
+        if snapshot == None and f.path.endswith("/" + snapshot_suffix):
             snapshot = f
-            break
+        if dartvm == None and f.basename in ("dartvm", "dartvm.exe"):
+            dartvm = f
     if snapshot == None:
         return None
+
+    # The patch tool is Dart source, and both `dart` and `dartvm` run it. The
+    # `dart` launcher finds its sibling `dartvm` by following its own path,
+    # which works only when the sandbox lays the SDK out as siblings: under
+    # remote execution (and the referee's twin) the launcher cannot find it,
+    # so the action runs `dartvm` directly, declared as an input like every
+    # other file it reads. An SDK layout without `dartvm` keeps the launcher.
+    runner = dartvm if dartvm != None else dart
     patched = ctx.actions.declare_file(out_name)
     patch_tool = ctx.file._comma_patch
     args = ctx.actions.args()
@@ -67,9 +78,9 @@ def _patched_snapshot(ctx, sdk_files, dart, snapshot_suffix, out_name, kind):
     args.add("--sdk-version=" + ctx.attr.version)
     args.add("--kind=" + kind)
     ctx.actions.run(
-        executable = dart,
+        executable = runner,
         arguments = [args],
-        inputs = depset(direct = [patch_tool, snapshot, dart]),
+        inputs = depset(direct = [patch_tool, snapshot, runner]),
         outputs = [patched],
         mnemonic = "DartPatchSnapshot",
         progress_message = "Patching Dart SDK %s %s snapshot" % (ctx.attr.version, kind),

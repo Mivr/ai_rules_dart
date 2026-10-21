@@ -620,9 +620,11 @@ void main(List<String> args) {
     final outJit = File('${workDir.path}/out.jit');
 
     // A planted fixed-path training VM from the old layout: the training
-    // must neither read nor execute it.
+    // must neither read nor execute it. The plant lives at a per-test path:
+    // this suite's tests (and the planner suite's) run concurrently, and a
+    // shared fixed plant would race between processes.
     final plantedVm = File(
-      '${Directory.systemTemp.path}/rules_dart_vm-planted-test',
+      '${Directory.systemTemp.path}/rules_dart_vm-planted-appjit-test.$pid',
     )..writeAsBytesSync([0x7f, 0x45, 0x4c, 0x46, 0x99]);
     try {
       snapshot.main([
@@ -1012,18 +1014,21 @@ void main(List<String> args) {
     }
 
     // Whatever other builds left in shared temp stays: only files this run
-    // adds may appear below.
+    // adds may appear below. Every plant carries a per-test tag: this
+    // suite's tests (and the planner suite's) run concurrently, and shared
+    // fixed plant names would race between processes.
     final before = sharedCacheNames();
+    final tag = 'appjit-test.$pid';
     final plants = <String, String>{
-      'kernel_worker_nocomma.snapshot': 'planted',
-      'kernel_worker_nocomma.snapshot.version': 'planted',
-      'gen_kernel_nocomma.snapshot': 'planted',
-      'gen_kernel_nocomma.snapshot.version': 'planted',
+      'kernel_worker_nocomma.snapshot.$tag': 'planted',
+      'kernel_worker_nocomma.snapshot.version.$tag': 'planted',
+      'gen_kernel_nocomma.snapshot.$tag': 'planted',
+      'gen_kernel_nocomma.snapshot.version.$tag': 'planted',
     };
     for (final entry in plants.entries) {
       File('${sysTmp.path}/${entry.key}').writeAsStringSync(entry.value);
     }
-    final plantedVmDir = Directory('${sysTmp.path}/rules_dart_vm-planted-test')
+    final plantedVmDir = Directory('${sysTmp.path}/rules_dart_vm-planted-$tag')
       ..createSync(recursive: true);
     File('${plantedVmDir.path}/bin_dart${Platform.isWindows ? '.exe' : ''}')
         .writeAsStringSync('planted');
@@ -1072,7 +1077,7 @@ void main(List<String> args) {
       final leftovers = sharedCacheNames().difference(before);
       // Only the plants this test wrote may have appeared.
       leftovers.removeAll(plants.keys);
-      leftovers.remove('rules_dart_vm-planted-test');
+      leftovers.remove('rules_dart_vm-planted-$tag');
       expect(leftovers, isEmpty, reason: '$leftovers');
     } finally {
       for (final key in plants.keys) {

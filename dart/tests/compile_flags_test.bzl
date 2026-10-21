@@ -6,7 +6,7 @@ The front end consumes a few flags, and `gen_kernel` must receive them, since
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
-load("//dart/private:dart_compile.bzl", "split_compile_flags")
+load("//dart/private:dart_compile.bzl", "has_comma_define_flag", "split_compile_flags")
 load(":small_suite.bzl", "small_unittest_suite")
 
 def _split(flags):
@@ -102,6 +102,25 @@ _backend_flags_test = unittest.make(_backend_flags_test_impl)
 _mixed_order_test = unittest.make(_mixed_order_test_impl)
 _value_flag_without_value_test = unittest.make(_value_flag_without_value_test_impl)
 
+def _comma_define_flag_test_impl(ctx):
+    # Only a comma in a -D/--define value needs the patched snapshot; a comma
+    # in any other flag never reaches the front end's define splitting.
+    env = unittest.begin(ctx)
+    asserts.true(env, has_comma_define_flag(["-DFOO=a,b"]), "comma -D detected")
+    asserts.true(env, has_comma_define_flag(["--define=FOO=a,b"]), "comma --define= detected")
+    asserts.true(env, has_comma_define_flag(["--enable-asserts", "-DFOO=a,b"]), "comma among others detected")
+    asserts.false(env, has_comma_define_flag([]), "no flags is clean")
+    asserts.false(env, has_comma_define_flag(["-DFOO=a", "--define=BAR="]), "comma-free defines are clean")
+    asserts.false(env, has_comma_define_flag(["-D"]), "a bare -D names no value")
+    asserts.false(
+        env,
+        has_comma_define_flag(["--extra-gen-snapshot-options=--foo=a,b"]),
+        "a comma outside a define needs no patch",
+    )
+    return unittest.end(env)
+
+_comma_define_flag_test = unittest.make(_comma_define_flag_test_impl)
+
 def compile_flags_test_suite(name):
     """Declares the `split_compile_flags` unit tests.
 
@@ -116,4 +135,5 @@ def compile_flags_test_suite(name):
         _backend_flags_test,
         _mixed_order_test,
         _value_flag_without_value_test,
+        _comma_define_flag_test,
     )

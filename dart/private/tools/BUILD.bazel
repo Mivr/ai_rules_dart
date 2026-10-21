@@ -344,7 +344,14 @@ dart_test(
 
 # The comma-splitting patch's unit tests: byte patterns, the fail-closed
 # helpers, the file and CLI entry points against every listed SDK, and the
-# no-shared-state regression guard.
+# no-shared-state regression guard. The listed SDKs go beyond the two the
+# rules test by default (3.13.5, 3.13.4): 3.13.2 pins the patch against the
+# next-older SDK in the version table. Older table versions are not listed:
+# each entry downloads an SDK per CI platform, and the byte patterns are
+# compiler-codegen-specific, so an older SDK whose snapshot no longer matches
+# needs its own pattern, not silent inclusion here. The arm64 pattern runs
+# against real snapshots only on arm64 CI hosts; elsewhere synthetic buffers
+# cover its shape, and no macOS-built snapshot is ever executed off macOS.
 dart_test(
     name = "comma_patch_test",
     size = "small",
@@ -353,9 +360,12 @@ dart_test(
         "$(rlocationpath :comma_patch.dart)",
         "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
         "$(rlocationpath @dart_toolchains//sdk/3.13.4:dart)",
+        "$(rlocationpath @dart_toolchains//sdk/3.13.2:dart)",
     ],
     data = [
         ":comma_patch.dart",
+        "@dart_toolchains//sdk/3.13.2:compile_files",
+        "@dart_toolchains//sdk/3.13.2:dart",
         "@dart_toolchains//sdk/3.13.4:compile_files",
         "@dart_toolchains//sdk/3.13.4:dart",
         "@dart_toolchains//sdk/3.13.5:compile_files",

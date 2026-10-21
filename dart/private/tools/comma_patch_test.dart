@@ -276,6 +276,44 @@ void main(List<String> args) {
       ]);
       expect(exitCode, 1);
     });
+
+    test('the CLI runs through an isolated dartvm with no SDK beside it', () {
+      // Covers M-7's mechanism: the patch action executes `dartvm`
+      // directly, so `dartvm` must run the tool even when no `dart`
+      // launcher or SDK tree sits beside it.
+      final sdkDir = sdkDirs.first;
+      final vmName = Platform.isWindows ? 'dartvm.exe' : 'dartvm';
+      final vm = File('$sdkDir/bin/$vmName');
+      if (!vm.existsSync()) {
+        markTestSkipped('no $vmName in $sdkDir/bin');
+        return;
+      }
+      final iso = Directory('${tmp.path}/iso')..createSync();
+      final isoVm = vm.copySync('${iso.path}/$vmName').path;
+      // A loader may need DLLs the VM ships with; those are not the SDK.
+      for (final entity in Directory('$sdkDir/bin').listSync()) {
+        if (entity is File && entity.path.endsWith('.dll')) {
+          entity.copySync('${iso.path}/${entity.uri.pathSegments.last}');
+        }
+      }
+      File(commaPatchSource).copySync('${iso.path}/comma_patch.dart');
+      File('$sdkDir/bin/snapshots/gen_kernel_aot.dart.snapshot')
+          .copySync('${iso.path}/in.snapshot');
+      final result = Process.runSync(isoVm, [
+        'comma_patch.dart',
+        '--input=in.snapshot',
+        '--output=out.snapshot',
+        '--sdk-version=3.13.5',
+        '--kind=gen_kernel',
+      ], workingDirectory: iso.path);
+      expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
+      final out = File('${iso.path}/out.snapshot');
+      expect(out.existsSync(), isTrue);
+      expect(
+        out.readAsBytesSync(),
+        isNot(equals(File('${iso.path}/in.snapshot').readAsBytesSync())),
+      );
+    }, timeout: const Timeout(Duration(minutes: 2)));
   });
 
   group('no shared state', () {

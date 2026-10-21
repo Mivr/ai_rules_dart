@@ -145,6 +145,30 @@ def split_compile_flags(flags):
             backend.append(flag)
     return struct(front_end = front_end, backend = backend, error = None)
 
+def has_comma_define_flag(flags):
+    """Whether any `-D`/`--define` flag in `flags` carries a comma in its value.
+
+    `gen_kernel` splits `-D`/`--define` values on commas, so a comma-containing
+    value only survives when the compile runs the toolchain's patched snapshot
+    (see `comma_patch.dart`). `split_compile_flags` normalizes every define to
+    the one-flag `-D<value>` form, so only that form (and the `--define=<value>`
+    form a caller may pass through) is inspected: a comma in any other flag
+    never reaches the front end's define splitting.
+
+    Args:
+        flags: Flag strings bound for `gen_kernel` (the `extra_flags` of a
+            whole-program action).
+
+    Returns:
+        True when a `-D<value>` or `--define=<value>` entry contains a comma.
+    """
+    for flag in flags:
+        if flag.startswith("-D") and len(flag) > 2 and "," in flag[2:]:
+            return True
+        if flag.startswith("--define=") and "," in flag[len("--define="):]:
+            return True
+    return False
+
 def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asserts, comma_patch = None):
     """Trains the app-JIT snapshot of a kernel in a fixed-length scratch directory.
 
@@ -244,7 +268,10 @@ def _kernel_action(
             contains a comma, the `gen_kernel` step runs the toolchain's
             patched snapshot (see below); otherwise the pristine snapshot runs.
         recorded_uses: Optional File for the recorded `@RecordUse` uses.
-        extra_flags: Flags for `gen_kernel` itself, appended last.
+        extra_flags: Flags for `gen_kernel` itself, appended last. A
+            comma-containing `-D`/`--define` among them takes the same
+            comma-safe path as `defines` (the toolchain's patched snapshot
+            plus the `--comma-patched-snapshot` marker).
         jit_tool: Optional `app_jit_snapshot.dart` File, used to run the
             `gen_kernel` step above with an isolated filesystem root. Required
             when `defines` contains a comma: only the wrapper consumes the
@@ -271,22 +298,32 @@ def _kernel_action(
     # on commas. The patched snapshot is a declared action output taken as a
     # tool input, so the patch runs once per SDK, not once per compile. The
     # wrapper consumes the marker below and refuses comma defines without it,
-    # so a comma compile can never silently run the pristine snapshot.
+    # so a comma compile can never silently run the pristine snapshot. A
+    # comma `-D` in `dart_compile_flags` takes the same path: those flags all
+    # reach `gen_kernel` (see `dart_compile_action`), so they need the patch
+    # exactly like `defines` do.
     comma_defines = has_comma_define(defines)
-    gen_snapshot = None
+    comma_flags = has_comma_define_flag(extra_flags)
+    comma_sources = []
     if comma_defines:
+        comma_sources.append("`defines` %s" % (defines,))
+    if comma_flags:
+        comma_sources.append("`dart_compile_flags` %s" % (extra_flags,))
+    gen_snapshot = None
+    if comma_sources:
+        comma_source = " and ".join(comma_sources)
         gen_snapshot = tools.patched_gen_kernel
         if gen_snapshot == None:
             fail(("dart_compile_action: target %s passes comma-containing " +
-                  "`defines` %s, but the SDK (Dart %s) declares no patched " +
+                  "%s, but the SDK (Dart %s) declares no patched " +
                   "`gen_kernel` snapshot, so no compile can keep the commas. " +
                   "Use an SDK whose snapshot `comma_patch.dart` knows how " +
-                  "to patch.") % (ctx.label, defines, dart_sdk_info.version))
+                  "to patch.") % (ctx.label, comma_source, dart_sdk_info.version))
         if jit_tool == None:
             fail(("dart_compile_action: target %s passes comma-containing " +
-                  "`defines` %s, but no `jit_tool` wrapper runs its " +
+                  "%s, but no `jit_tool` wrapper runs its " +
                   "`gen_kernel` step to authorize the patched snapshot.") %
-                 (ctx.label, defines))
+                 (ctx.label, comma_source))
     args = gen_kernel_args(ctx, tools, platform, package_config, gen_kernel_snapshot = gen_snapshot)
     args.add("-Ddart.vm.product=" + ("true" if product else "false"))
     args.add_all(["-Ddart.vm.asan=false", "-Ddart.vm.msan=false", "-Ddart.vm.tsan=false"])
@@ -325,7 +362,7 @@ def _kernel_action(
         wrapper_args.add(jit_tool)
         wrapper_args.add("--gen-kernel")
         wrapper_args.add(tools.dartaotruntime)
-        if comma_defines:
+        if comma_sources:
             # After `dartaotruntime`: `_runGenKernel` takes `argv.first` as the
             # runtime positionally and consumes this marker in its flag loop,
             # never forwarding it to `gen_kernel`.
