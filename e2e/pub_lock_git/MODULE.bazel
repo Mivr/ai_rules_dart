@@ -31,6 +31,8 @@ use_repo(probe, "probe")
 hostile = use_extension("//:hostile_probe_ext.bzl", "hostile")
 use_repo(
     hostile,
+    "export_subst_protocol0",
+    "export_subst_unpacklimit",
     "hostile_fallback_quarantine",
     "hostile_fsck_config_file",
     "hostile_fsck_includeif",

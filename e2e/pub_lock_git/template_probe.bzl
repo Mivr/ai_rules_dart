@@ -10,8 +10,8 @@ The probe fetches the same pinned bundle (`//:fmtpkg.bundle`) three ways:
 - through the production helpers (`git_transport_fetch`, `git_materialize`
   — the exact sequence `pub_lock_git_package` runs), whose bytes must stay
   pristine: the literal `$Format:%H$` placeholder survives and the commit id
-  never leaks into them, because only the package's own committed
-  `.gitattributes` apply;
+  never leaks into them, because the helpers' `info/attributes` override
+  keeps every `export-subst` entry inert;
 - raw, with the hostile template as `GIT_TEMPLATE_DIR` and no isolation: the
   archived bytes must expand and the hook must run. These controls fail the
   fetch when the environment cannot show hostility (for example a hook that

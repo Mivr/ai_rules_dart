@@ -13,7 +13,9 @@ git binary:
   variables and unsetting every other `GIT_*` selector to `None` — one
   hostile-value test per variable below, plus sweep tests for
   undocumented `GIT_*` names and a regression test that no value is ever
-  the empty string (git treats set-but-empty as set);
+  the empty string (git treats set-but-empty as set). The fetch pins
+  `protocol.version=2`, separates the URL with `--`, and replaces the
+  host's global and system config with the empty file for local URLs;
 - materialization (`git_materialize`) refuses alternates, verifies the
   commit id, its type and its tree, and archives the pinned spec, every
   command with an explicit `--git-dir`, `--no-replace-objects` and an
@@ -22,8 +24,9 @@ git binary:
 Real-git coverage lives in `git_hostile_fetch_probe` at the bottom of
 this file: it runs the production helpers against a real git binary under
 a hostile host environment (hook, quarantine, worktree, unknown `GIT_*`,
-all-refs fallback, `insteadOf` rewrites) and compares the bytes with a
-clean control fetch. It is instantiated by `//e2e/pub_lock_git`'s
+all-refs fallback, `insteadOf` rewrites) and requires the hostile run's
+materialized archive bytes to equal the clean control's (compared as
+`git hash-object` digests). It is instantiated by `//e2e/pub_lock_git`'s
 `hostile_probe_ext.bzl`, whose markers `check_hostile_markers.sh`
 re-verifies at test time.
 
@@ -33,7 +36,15 @@ it crafts a commit that fails `git fsck` (bad dates via
 fetches it under a hostile `transfer.fsckObjects=true` delivered through
 a config file, the inline-config channel, or a `gitdir`-conditional
 include matching the fetch directory — one channel per instance — again
-requiring the clean control's bytes.
+requiring the hostile archive's bytes to equal the clean control's, plus
+a positive control per channel showing an unpinned fetch rejects the
+crafted commit.
+
+`git_export_subst_probe` covers the archive byte channels: a package
+pinned to a non-tip commit with `export-subst`/`export-ignore`
+attributes, fetched under hostile `protocol.version=0` and
+`transfer.unpackLimit` configs, again requiring byte-equal archives next
+to a naive control proving the fixture is sensitive.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
@@ -114,7 +125,13 @@ def _transport_pins():
         "fetch.prune=false",
         "-c",
         "fetch.pruneTags=false",
+        "-c",
+        "protocol.version=2",
     ]
+
+# The repository-local attributes override the helpers write before any
+# archive runs (see `_GIT_ATTRIBUTES_OVERRIDE` in `pinned_sources.bzl`).
+_ATTRIBUTES_OVERRIDE = "* -export-subst -export-ignore -working-tree-encoding\n"
 
 # Transport variables the helpers copy from the host environment. The
 # passthrough test below sets every one to a sentinel and requires it
@@ -141,7 +158,7 @@ _TRANSPORT_PASSTHROUGH = [
     "GIT_CONFIG_PARAMETERS",
 ]
 
-def _transport_env(extra = {}):
+def _transport_env(extra = {}, local = False):
     env = {
         "GIT_DIR": None,
         "GIT_WORK_TREE": None,
@@ -183,6 +200,9 @@ def _transport_env(extra = {}):
         "GIT_TRACE_SETUP": None,
         "GIT_CURL_VERBOSE": None,
     }
+    if local:
+        env["GIT_CONFIG_GLOBAL"] = _EMPTY_FILE
+        env["GIT_CONFIG_SYSTEM"] = _EMPTY_FILE
     env.update(extra)
     return env
 
@@ -252,11 +272,13 @@ def _transport_skeleton_test_impl(ctx):
     # No `git init` runs: the bare repository is assembled with `ctx.file`,
     # so a stray `GIT_WORK_TREE` (which makes git refuse `init`) and host
     # templates (which only `init` copies) cannot reach the fetch. The
-    # first and only `execute` calls are the SHA fetch.
+    # first and only `execute` calls are the SHA fetch, with `--` keeping
+    # the URL from being read as an option and `protocol.version=2` keeping
+    # a hostile host off the all-refs fallback.
     asserts.equals(env, 1, len(calls))
     asserts.equals(
         env,
-        ["git", "--no-replace-objects", "--git-dir=" + _BARE] + _transport_pins() + ["fetch", _URL, _SHA],
+        ["git", "--no-replace-objects", "--git-dir=" + _BARE] + _transport_pins() + ["fetch", "--", _URL, _SHA],
         calls[0].args,
     )
     asserts.equals(env, _transport_env(), calls[0].environment)
@@ -283,8 +305,13 @@ def _transport_precreates_dirs_test_impl(ctx):
         by_path["_git_bare/config"],
     )
     asserts.equals(env, "", by_path["_git_bare/refs/.keep"])
-    asserts.equals(env, "", by_path["_git_bare/info/attributes"])
+
+    # The repository-local attributes carry the export override, not an
+    # empty file: `info/attributes` outranks the committed `.gitattributes`,
+    # so the package's own `export-subst`/`export-ignore` entries stay inert.
+    asserts.equals(env, _ATTRIBUTES_OVERRIDE, by_path["_git_bare/info/attributes"])
     asserts.equals(env, "", by_path["_git_empty/keep"])
+    asserts.equals(env, "", by_path["_git_empty_config"])
     return unittest.end(env)
 
 def _transport_fetch_test_impl(ctx):
@@ -302,7 +329,7 @@ def _transport_fetch_test_impl(ctx):
     calls = _executes(record)
     asserts.equals(
         env,
-        ["git", "--no-replace-objects", "--git-dir=" + _BARE] + _transport_pins() + ["fetch", _URL, _SHA],
+        ["git", "--no-replace-objects", "--git-dir=" + _BARE] + _transport_pins() + ["fetch", "--", _URL, _SHA],
         calls[0].args,
     )
     asserts.equals(env, _transport_env(), calls[0].environment)
@@ -313,6 +340,73 @@ def _transport_fetch_test_impl(ctx):
     asserts.false(env, "GIT_CONFIG_GLOBAL" in calls[0].environment)
     asserts.false(env, "GIT_CONFIG_SYSTEM" in calls[0].environment)
     asserts.false(env, "GIT_CONFIG_NOSYSTEM" in calls[0].environment)
+    return unittest.end(env)
+
+def _transport_local_config_test_impl(ctx):
+    env = unittest.begin(ctx)
+    for url in [
+        "file:///srv/repos/r.git",
+        "file:///C:/repos/r.git",
+        "/srv/repos/r.git",
+        "C:\\repos\\r.git",
+        "relative/bundle",
+        "../sibling/r.git",
+    ]:
+        record = []
+        git_transport_fetch(
+            _fake_ctx(
+                record,
+                [struct(return_code = 0, stdout = "", stderr = "")],
+                os_environ = {
+                    "GIT_CONFIG_GLOBAL": "/hostile/global.gitconfig",
+                    "GIT_CONFIG_SYSTEM": "/hostile/system.gitconfig",
+                },
+            ),
+            url,
+            "_git_bare",
+            _SHA,
+            "test",
+        )
+        fetch_env = _executes(record)[0].environment
+
+        # Local transports need no credentials: the host's global and system
+        # files stay unread (a host-global `uploadpack.packObjectsHook`
+        # would otherwise run on the fetch, where `-c` pins cannot reach
+        # it), and the fetch URL is still separated with `--`.
+        asserts.equals(env, _EMPTY_FILE, fetch_env["GIT_CONFIG_GLOBAL"])
+        asserts.equals(env, _EMPTY_FILE, fetch_env["GIT_CONFIG_SYSTEM"])
+        asserts.equals(
+            env,
+            ["git", "--no-replace-objects", "--git-dir=" + _BARE] + _transport_pins() + ["fetch", "--", url, _SHA],
+            _executes(record)[0].args,
+        )
+    for url in [
+        "https://example.com/r.git",
+        "ssh://git@example.com/r.git",
+        "git@example.com:r.git",
+        "host.xz:path/to/r.git",
+    ]:
+        record = []
+        git_transport_fetch(
+            _fake_ctx(
+                record,
+                [struct(return_code = 0, stdout = "", stderr = "")],
+                os_environ = {
+                    "GIT_CONFIG_GLOBAL": "/host/global.gitconfig",
+                    "GIT_CONFIG_SYSTEM": "/host/system.gitconfig",
+                },
+            ),
+            url,
+            "_git_bare",
+            _SHA,
+            "test",
+        )
+        fetch_env = _executes(record)[0].environment
+
+        # Remote transports keep the host's config files (credentials and
+        # `insteadOf` rewrites); only local ones are replaced.
+        asserts.false(env, "GIT_CONFIG_GLOBAL" in fetch_env)
+        asserts.false(env, "GIT_CONFIG_SYSTEM" in fetch_env)
     return unittest.end(env)
 
 def _transport_fallback_test_impl(ctx):
@@ -332,7 +426,7 @@ def _transport_fallback_test_impl(ctx):
     asserts.equals(env, 2, len(calls))
     asserts.equals(
         env,
-        ["git", "--no-replace-objects", "--git-dir=" + _BARE] + _transport_pins() + ["fetch", _URL, "+refs/*:refs/origin/*"],
+        ["git", "--no-replace-objects", "--git-dir=" + _BARE] + _transport_pins() + ["fetch", "--", _URL, "+refs/*:refs/origin/*"],
         calls[1].args,
     )
     asserts.equals(env, _transport_env(), calls[1].environment)
@@ -927,7 +1021,7 @@ def _materialize_truncates_attributes_test_impl(ctx):
         "test",
     )
     by_path = {call.path: call.content for call in _files(record)}
-    asserts.equals(env, "", by_path["_git_bare/info/attributes"])
+    asserts.equals(env, _ATTRIBUTES_OVERRIDE, by_path["_git_bare/info/attributes"])
     asserts.equals(env, "", by_path["_git_empty_config"])
     asserts.equals(env, "", by_path["_git_empty/keep"])
     return unittest.end(env)
@@ -968,6 +1062,7 @@ _t10_test = unittest.make(_transport_passthrough_test_impl)
 _t11_test = unittest.make(_transport_no_empty_values_test_impl)
 _t12_test = unittest.make(_transport_unknown_vars_test_impl)
 _t13_test = unittest.make(_transport_empty_hostile_test_impl)
+_t15_test = unittest.make(_transport_local_config_test_impl)
 
 def git_host_config_test_suite(name):
     small_unittest_suite(
@@ -987,6 +1082,7 @@ def git_host_config_test_suite(name):
         _t12_test,
         _t13_test,
         _t14_test,
+        _t15_test,
         *_clears_var_tests
     )
 
@@ -999,8 +1095,10 @@ def git_host_config_test_suite(name):
 # twice over the same commit — once with the true host environment
 # (control) and once under a hostile host (the case's `hostile_env`
 # overlaid on the process environment) — and requires byte-identical
-# results: the hostile fetch must succeed, and its commit tree must equal
-# the control's tree. The hostile run drives the helpers through a shim
+# materialized archives: the hostile fetch must succeed, and the
+# `git hash-object` digest of its archive must equal the control's. The
+# pinned commit id alone cannot show that (it is fixed by the pin), so the
+# tree ids are not compared. The hostile run drives the helpers through a shim
 # context whose `execute` merges exactly like production `ctx.execute`
 # does (the helper-built dict over the hostile host), so helper `None`
 # entries unset hostile variables and pins and passthrough flow through
@@ -1052,6 +1150,26 @@ def _probe_rev_parse(execute, git_dir, rev, env, what):
     )
     if res.return_code != 0:
         fail("%s: rev-parse %s failed: %s" % (what, rev, res.stderr))
+    return res.stdout.strip()
+
+def _probe_archive_digest(execute, archive, what):
+    """Digests one materialized archive with the real git binary.
+
+    `git hash-object` hashes the raw file bytes, so equal digests mean
+    byte-identical archives. It runs everywhere the probes run (git is
+    already required) without a platform-specific checksum program.
+
+    Args:
+        execute: A `ctx.execute`-compatible callable.
+        archive: The archive path string to digest.
+        what: Human-readable label, for diagnostics.
+
+    Returns:
+        The hex digest string.
+    """
+    res = execute(["git", "hash-object", str(archive)])
+    if res.return_code != 0:
+        fail("%s: hashing the materialized archive failed: %s" % (what, res.stderr))
     return res.stdout.strip()
 
 def _probe_origin_refs(execute, git_dir, env, what):
@@ -1166,23 +1284,23 @@ def _hostile_probe_impl(ctx):
     git_transport_fetch(ctx, control_url, "_clean_bare", sha, what + " control")
     clean_archive = ctx.path("_clean.tar")
     git_materialize(ctx, "_clean_bare", sha, clean_archive, sha, what + " control")
-    clean_bare = str(ctx.path("_clean_bare"))
-    clean_tree = _probe_rev_parse(ctx.execute, clean_bare, sha + "^{tree}", None, what + " control")
+    clean_digest = _probe_archive_digest(ctx.execute, clean_archive, what + " control")
 
     git_transport_fetch(shim, url, "_hostile_bare", sha, what + " hostile")
     hostile_archive = ctx.path("_hostile.tar")
     git_materialize(shim, "_hostile_bare", sha, hostile_archive, sha, what + " hostile")
     hostile_bare = str(ctx.path("_hostile_bare"))
 
-    # The reads below verify results, so they run scrubbed: the hostile
-    # coverage lives in the helper runs above, whose commands all merged
-    # the helper-built dict over the hostile host.
-    hostile_tree = _probe_rev_parse(_shim_execute, hostile_bare, sha + "^{tree}", _probe_setup_env(), what + " hostile")
+    # The digests compare the materialized archive bytes, not the tree ids:
+    # the pinned SHA fixes the tree by construction, so only the bytes can
+    # still differ across hosts. `git hash-object` reads no configuration,
+    # so both digests run on the plain context.
+    hostile_digest = _probe_archive_digest(ctx.execute, hostile_archive, what + " hostile")
 
-    if hostile_tree != clean_tree:
+    if hostile_digest != clean_digest:
         fail(
             "%s: hostile fetch bytes differ from the clean control: " % what +
-            "hostile tree %r vs clean tree %r." % (hostile_tree, clean_tree),
+            "hostile archive %r vs clean archive %r." % (hostile_digest, clean_digest),
         )
 
     mode = "sha"
@@ -1225,7 +1343,10 @@ def _hostile_probe_impl(ctx):
                 "fetch.prune=false",
                 "-c",
                 "fetch.pruneTags=false",
+                "-c",
+                "protocol.version=2",
                 "fetch",
+                "--",
                 url,
                 "+refs/*:refs/origin/*",
             ],
@@ -1243,7 +1364,7 @@ def _hostile_probe_impl(ctx):
 
     ctx.file(
         "marker.txt",
-        "expect=%s\nmode=%s\nclean=%s\nhostile=%s\n" % (ctx.attr.expect_fetch_mode, mode, clean_tree, hostile_tree),
+        "expect=%s\nmode=%s\nclean=%s\nhostile=%s\n" % (ctx.attr.expect_fetch_mode, mode, clean_digest, hostile_digest),
     )
     ctx.file("BUILD.bazel", "exports_files([\"marker.txt\"])\n")
     ctx.delete(clean_archive)
@@ -1415,8 +1536,7 @@ def _fsck_probe_impl(ctx):
     git_transport_fetch(ctx, url, "_clean_bare", bad, what + " control")
     clean_archive = ctx.path("_clean.tar")
     git_materialize(ctx, "_clean_bare", bad, clean_archive, bad, what + " control")
-    clean_bare = str(ctx.path("_clean_bare"))
-    clean_tree = _probe_rev_parse(ctx.execute, clean_bare, bad + "^{tree}", None, what + " control")
+    clean_digest = _probe_archive_digest(ctx.execute, clean_archive, what + " control")
 
     hostile = dict(ctx.os.environ)
     if ctx.attr.channel == "inline":
@@ -1464,12 +1584,15 @@ def _fsck_probe_impl(ctx):
     hostile_archive = ctx.path("_hostile.tar")
     git_materialize(shim, "_hostile_bare", bad, hostile_archive, bad, what + " hostile")
     hostile_bare = str(ctx.path("_hostile_bare"))
-    hostile_tree = _probe_rev_parse(_shim_execute, hostile_bare, bad + "^{tree}", _probe_setup_env(), what + " hostile")
 
-    if hostile_tree != clean_tree:
+    # Archive bytes, not tree ids: the pinned SHA fixes the tree, so only
+    # the bytes can still differ across hosts.
+    hostile_digest = _probe_archive_digest(ctx.execute, hostile_archive, what + " hostile")
+
+    if hostile_digest != clean_digest:
         fail(
             "%s: hostile fetch bytes differ from the clean control: " % what +
-            "hostile tree %r vs clean tree %r." % (hostile_tree, clean_tree),
+            "hostile archive %r vs clean archive %r." % (hostile_digest, clean_digest),
         )
 
     mode = "sha"
@@ -1478,9 +1601,37 @@ def _fsck_probe_impl(ctx):
     if mode != "sha":
         fail("%s: expected fetch mode %r but observed %r." % (what, "sha", mode))
 
+    # Positive control: the crafted commit really fails fsck — the same
+    # hostile switch without the helpers' `-c ...=false` pins must reject
+    # it, or the byte comparison above proves nothing.
+    ctx.file("_naive_bare/objects/keep", "", executable = False)
+    ctx.file("_naive_bare/HEAD", "ref: refs/heads/main\n", executable = False)
+    ctx.file(
+        "_naive_bare/config",
+        "[core]\n\trepositoryformatversion = 0\n\tbare = true\n",
+        executable = False,
+    )
+    ctx.file("_naive_bare/refs/.keep", "", executable = False)
+    naive_bare = str(ctx.path("_naive_bare"))
+    naive_env = dict(hostile)
+    naive_env.update(_probe_setup_env())
+    naive_env["GIT_OBJECT_DIRECTORY"] = naive_bare + "/objects"
+    naive_env["GIT_COMMON_DIR"] = naive_bare
+    res = ctx.execute(
+        ["git", "--git-dir=" + naive_bare, "fetch", "--", url, bad],
+        environment = naive_env,
+    )
+    if res.return_code == 0:
+        fail(
+            "%s: positive control vacuous: an unpinned fetch accepted " % what +
+            "the fsck-failing commit under the hostile switch, so the " +
+            "helper comparison proves nothing.",
+        )
+    ctx.delete(ctx.path("_naive_bare"))
+
     ctx.file(
         "marker.txt",
-        "expect=sha\nmode=%s\nclean=%s\nhostile=%s\n" % (mode, clean_tree, hostile_tree),
+        "expect=sha\nmode=%s\nclean=%s\nhostile=%s\n" % (mode, clean_digest, hostile_digest),
     )
     ctx.file("BUILD.bazel", "exports_files([\"marker.txt\"])\n")
     ctx.delete(clean_archive)
@@ -1503,4 +1654,258 @@ git_fsck_fetch_probe = repository_rule(
         ),
     },
     doc = "Fetches an fsck-failing commit under a hostile fsck switch next to a clean control.",
+)
+
+# ---------------------------------------------------------------------------
+# Export-subst functional probe: `git_export_subst_probe`.
+#
+# Each instance builds an origin whose pinned commit is a non-tip commit
+# carrying `export-subst` placeholders (`%H`, `%(describe)`, `%h`) and an
+# `export-ignore`d file, with an annotated tag on the base commit and the
+# branch tip moved past the pin (so the pin is advertised by no ref). It
+# then fetches the pin twice through the production helpers — clean and
+# under one hostile config (`protocol.version=0` or
+# `transfer.unpackLimit=1000000` via `GIT_CONFIG_GLOBAL`) — and requires
+# byte-identical archives, the SHA fetch path (no refs land, proving the
+# `protocol.version=2` pin holds), literal placeholders and the kept
+# ignored file in the extracted helper bytes.
+#
+# A naive control fetches the same pin with raw git under the same hostile
+# config and no helper isolation (empty `info/attributes`, the old
+# behavior): under `protocol.version=0` the bare-SHA fetch must fail and
+# the fallback must land the tag, expanding `%(describe)` to the release
+# tag; under `transfer.unpackLimit` the `%H` placeholder must expand and
+# the ignored file must drop out. Without that the byte comparison proves
+# nothing. (`%h`'s abbreviation length needs tens of thousands of packed
+# objects to move, so no small fixture shows it; the override neutralizes
+# every placeholder regardless.)
+# ---------------------------------------------------------------------------
+
+_EXPORT_SUBST_V_DART = (
+    "const hash = r'$Format:%H$';\n" +
+    "const describe = r'$Format:%(describe)$';\n" +
+    "const shortHash = r'$Format:%h$';\n"
+)
+_EXPORT_SUBST_ATTRIBUTES = "*.dart export-subst\nignored.txt export-ignore\n"
+_EXPORT_SUBST_IGNORED = "kept by pub\n"
+
+def _export_subst_commit(ctx, origin, message, what, allow_empty = False):
+    args = ["git", "-C", origin] + [
+        "-c",
+        "user.name=probe",
+        "-c",
+        "user.email=probe@example.invalid",
+        "-c",
+        "commit.gpgsign=false",
+        "-c",
+        "core.hooksPath=" + str(ctx.path("probe_empty")),
+        "commit",
+        "--quiet",
+        "-m",
+        message,
+    ]
+    if allow_empty:
+        args.append("--allow-empty")
+    res = ctx.execute(args, environment = _probe_setup_env({
+        "GIT_AUTHOR_NAME": "probe",
+        "GIT_AUTHOR_EMAIL": "probe@example.invalid",
+        "GIT_COMMITTER_NAME": "probe",
+        "GIT_COMMITTER_EMAIL": "probe@example.invalid",
+    }))
+    if res.return_code != 0:
+        fail("%s: committing %r failed: %s" % (what, message, res.stderr))
+
+def _export_subst_probe_impl(ctx):
+    what = "git_export_subst_probe \"%s\"" % ctx.name
+    if ctx.attr.channel not in ["protocol0", "unpacklimit"]:
+        fail("%s: unknown channel %r." % (what, ctx.attr.channel))
+
+    # 1. Assemble the origin: a tagged base, the pinned package commit, and
+    # a tip commit past the pin so no ref advertises it.
+    origin = str(ctx.path("origin"))
+    res = ctx.execute(["git", "init", "--quiet", origin], environment = _probe_setup_env())
+    if res.return_code != 0:
+        fail("%s: initializing the probe origin failed: %s" % (what, res.stderr))
+    res = ctx.execute(
+        ["git", "-C", origin, "checkout", "--quiet", "-b", "main"],
+        environment = _probe_setup_env(),
+    )
+    if res.return_code != 0:
+        fail("%s: branching the probe origin failed: %s" % (what, res.stderr))
+    ctx.file("probe_empty/keep", "", executable = False)
+    ctx.file("origin/base.txt", "base\n", executable = False)
+    res = ctx.execute(["git", "-C", origin, "add", "-A"], environment = _probe_setup_env())
+    if res.return_code != 0:
+        fail("%s: staging the probe origin base failed: %s" % (what, res.stderr))
+    _export_subst_commit(ctx, origin, "base", what)
+    res = ctx.execute(
+        ["git", "-C", origin, "-c", "user.name=probe", "-c", "user.email=probe@example.invalid", "tag", "-a", "v1.0.0", "-m", "release"],
+        environment = _probe_setup_env({
+            "GIT_AUTHOR_NAME": "probe",
+            "GIT_AUTHOR_EMAIL": "probe@example.invalid",
+            "GIT_COMMITTER_NAME": "probe",
+            "GIT_COMMITTER_EMAIL": "probe@example.invalid",
+        }),
+    )
+    if res.return_code != 0:
+        fail("%s: tagging the probe origin failed: %s" % (what, res.stderr))
+    ctx.file("origin/v.dart", _EXPORT_SUBST_V_DART, executable = False)
+    ctx.file("origin/.gitattributes", _EXPORT_SUBST_ATTRIBUTES, executable = False)
+    ctx.file("origin/ignored.txt", _EXPORT_SUBST_IGNORED, executable = False)
+    res = ctx.execute(["git", "-C", origin, "add", "-A"], environment = _probe_setup_env())
+    if res.return_code != 0:
+        fail("%s: staging the probe package failed: %s" % (what, res.stderr))
+    _export_subst_commit(ctx, origin, "package with export-subst", what)
+    pinned = _probe_rev_parse(ctx.execute, origin + "/.git", "HEAD", _probe_setup_env(), what + " origin")
+    ctx.file("origin/README", "tip\n", executable = False)
+    res = ctx.execute(["git", "-C", origin, "add", "-A"], environment = _probe_setup_env())
+    if res.return_code != 0:
+        fail("%s: staging the probe origin tip failed: %s" % (what, res.stderr))
+    _export_subst_commit(ctx, origin, "tip past the pin", what)
+    url = _probe_file_url(origin)
+
+    # 2. The hostile config for this channel.
+    if ctx.attr.channel == "protocol0":
+        ctx.file("export-hostile.gitconfig", "[protocol]\n\tversion = 0\n", executable = False)
+    else:
+        ctx.file("export-hostile.gitconfig", "[transfer]\n\tunpackLimit = 1000000\n", executable = False)
+    hostile = dict(ctx.os.environ)
+    hostile["GIT_CONFIG_GLOBAL"] = str(ctx.path("export-hostile.gitconfig"))
+
+    def _shim_execute(args, environment = None):
+        merged = dict(hostile)
+        if environment != None:
+            merged.update(environment)
+        return ctx.execute(args, environment = merged)
+
+    def _shim_file(path, content, executable = True):
+        ctx.file(path, content, executable = executable)
+
+    def _shim_path(path):
+        return ctx.path(path)
+
+    shim = struct(
+        execute = _shim_execute,
+        file = _shim_file,
+        path = _shim_path,
+        os = struct(environ = hostile),
+    )
+
+    # 3. The production helper sequence, clean and hostile: byte-identical
+    # archives on the SHA fetch path.
+    git_transport_fetch(ctx, url, "_clean_bare", pinned, what + " control")
+    clean_archive = ctx.path("_clean.tar")
+    git_materialize(ctx, "_clean_bare", pinned, clean_archive, pinned, what + " control")
+    clean_digest = _probe_archive_digest(ctx.execute, clean_archive, what + " control")
+
+    git_transport_fetch(shim, url, "_hostile_bare", pinned, what + " hostile")
+    hostile_archive = ctx.path("_hostile.tar")
+    git_materialize(shim, "_hostile_bare", pinned, hostile_archive, pinned, what + " hostile")
+    hostile_bare = str(ctx.path("_hostile_bare"))
+    hostile_digest = _probe_archive_digest(ctx.execute, hostile_archive, what + " hostile")
+
+    if hostile_digest != clean_digest:
+        fail(
+            "%s: hostile fetch bytes differ from the clean control: " % what +
+            "hostile archive %r vs clean archive %r." % (hostile_digest, clean_digest),
+        )
+
+    mode = "sha"
+    if len(_probe_origin_refs(_shim_execute, hostile_bare, _probe_setup_env(), what)) > 0:
+        mode = "all-refs"
+    if mode != "sha":
+        fail("%s: expected fetch mode %r but observed %r." % (what, "sha", mode))
+
+    # 4. The helper bytes: placeholders literal, the export-ignored file
+    # kept — the `dart pub get` materialization of the same package.
+    ctx.extract(hostile_archive, output = "out")
+    helper_src = ctx.read("out/v.dart")
+    if "$Format:%H$" not in helper_src or pinned in helper_src:
+        fail("%s: helper expanded %%H: %r." % (what, helper_src))
+    if "$Format:%(describe)$" not in helper_src or "v1.0.0" in helper_src:
+        fail("%s: helper expanded %%(describe): %r." % (what, helper_src))
+    if "$Format:%h$" not in helper_src:
+        fail("%s: helper expanded %%h: %r." % (what, helper_src))
+    if not ctx.path("out/ignored.txt").exists:
+        fail("%s: helper dropped the export-ignored file." % what)
+    if ctx.read("out/ignored.txt") != _EXPORT_SUBST_IGNORED:
+        fail("%s: helper rewrote the export-ignored file." % what)
+
+    # 5. Naive control: raw git under the same hostile config, without the
+    # attributes override (empty `info/attributes`, the old behavior) and
+    # without `-c` pins. The committed `export-subst` must expand there, or
+    # the comparison above proves nothing.
+    ctx.file("_naive_bare/objects/keep", "", executable = False)
+    ctx.file("_naive_bare/HEAD", "ref: refs/heads/main\n", executable = False)
+    ctx.file(
+        "_naive_bare/config",
+        "[core]\n\trepositoryformatversion = 0\n\tbare = true\n",
+        executable = False,
+    )
+    ctx.file("_naive_bare/refs/.keep", "", executable = False)
+    ctx.file("_naive_bare/info/attributes", "", executable = False)
+    naive_bare = str(ctx.path("_naive_bare"))
+    naive_env = dict(hostile)
+    naive_env.update(_probe_setup_env())
+    naive_env["GIT_OBJECT_DIRECTORY"] = naive_bare + "/objects"
+    naive_env["GIT_COMMON_DIR"] = naive_bare
+    res = ctx.execute(
+        ["git", "--no-replace-objects", "--git-dir=" + naive_bare, "fetch", "--", url, pinned],
+        environment = naive_env,
+    )
+    sha_ok = res.return_code == 0
+    if not sha_ok:
+        res = ctx.execute(
+            ["git", "--no-replace-objects", "--git-dir=" + naive_bare, "fetch", "--", url, "+refs/*:refs/origin/*"],
+            environment = naive_env,
+        )
+    if res.return_code != 0:
+        fail("%s: naive control fetch failed: %s" % (what, res.stderr))
+    if ctx.attr.channel == "protocol0":
+        # The hostile protocol version refuses the unadvertised pin and
+        # pushes raw git onto the all-refs fallback: the tag lands, and
+        # `%(describe)` below expands through it. (Observed on git 2.39.5;
+        # a loud failure here means re-examining local negotiation.)
+        if sha_ok:
+            fail("%s: control vacuous: raw git fetched the unadvertised pin under protocol.version=0." % what)
+        if len(_probe_origin_refs(ctx.execute, naive_bare, _probe_setup_env(), what)) == 0:
+            fail("%s: control vacuous: the naive fallback landed no refs." % what)
+    res = ctx.execute(
+        ["git", "--git-dir=" + naive_bare, "archive", "--format=tar", "-o", str(ctx.path("_raw.tar")), pinned],
+        environment = naive_env,
+    )
+    if res.return_code != 0:
+        fail("%s: naive control archive failed: %s" % (what, res.stderr))
+    ctx.extract(ctx.path("_raw.tar"), output = "raw")
+    raw_src = ctx.read("raw/v.dart")
+    if "$Format:%H$" in raw_src or pinned not in raw_src:
+        fail("%s: control vacuous: raw git did not expand %%H: %r." % (what, raw_src))
+    if ctx.attr.channel == "protocol0" and "v1.0.0" not in raw_src:
+        fail("%s: control vacuous: raw git did not expand %%(describe) through the fetched tag: %r." % (what, raw_src))
+    if ctx.path("raw/ignored.txt").exists:
+        fail("%s: control vacuous: raw git kept the export-ignored file." % what)
+
+    ctx.file(
+        "marker.txt",
+        "expect=sha\nmode=%s\nclean=%s\nhostile=%s\n" % (mode, clean_digest, hostile_digest),
+    )
+    ctx.file("BUILD.bazel", "exports_files([\"marker.txt\"])\n")
+    ctx.delete(clean_archive)
+    ctx.delete(hostile_archive)
+    ctx.delete(ctx.path("_raw.tar"))
+    ctx.delete(ctx.path("_clean_bare"))
+    ctx.delete(ctx.path("_hostile_bare"))
+    ctx.delete(ctx.path("_naive_bare"))
+    ctx.delete(ctx.path("origin"))
+
+git_export_subst_probe = repository_rule(
+    implementation = _export_subst_probe_impl,
+    attrs = {
+        "channel": attr.string(
+            doc = "The hostile config reaching the fetch through GIT_CONFIG_GLOBAL: protocol.version=0 or transfer.unpackLimit.",
+            default = "protocol0",
+            values = ["protocol0", "unpacklimit"],
+        ),
+    },
+    doc = "Fetches a non-tip export-subst package under a hostile git config next to a clean control and a naive control.",
 )

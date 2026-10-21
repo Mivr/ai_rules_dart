@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Re-verifies the hostile-host fetch markers at test time.
 #
-# Each marker was written by a `git_hostile_fetch_probe` repository that
+# Each marker was written by a `git_hostile_fetch_probe`,
+# `git_fsck_fetch_probe` or `git_export_subst_probe` repository that
 # already failed its fetch loudly on any deviation; this script pins the
 # contract a second time from the test side: the observed fetch mode must
-# equal the expected one, and the hostile commit tree must equal the clean
-# control's tree (plain-host bytes). Arguments are marker runfiles paths
+# equal the expected one, and the hostile materialized archive digest must
+# equal the clean control's (the pinned SHA fixes the tree id, so only the
+# archive bytes can still differ across hosts). Arguments are marker runfiles paths
 # (`$(rlocationpath ...)`), resolved below so the test also works where
 # runfiles arrive via a manifest instead of a symlink tree (Windows).
 set -euo pipefail

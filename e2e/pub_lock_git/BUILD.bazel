@@ -30,9 +30,10 @@ dart_test(
 # The hostile-host fetch probes (see hostile_probe_ext.bzl): each marker
 # re-verifies that fetching under a hostile `GIT_*` environment (set and
 # empty quarantine/work-tree variables, unknown names, all-refs fallback,
-# inline-config `insteadOf`) or a hostile `transfer.fsckObjects=true`
-# (config file, inline-config channel, path-conditional include) yields
-# the clean control's bytes on the expected fetch path.
+# inline-config `insteadOf`), a hostile `transfer.fsckObjects=true`
+# (config file, inline-config channel, path-conditional include), or a
+# hostile `protocol.version=0` / `transfer.unpackLimit` config file yields
+# byte-identical materialized archives on the expected fetch path.
 _HOSTILE_MARKERS = [
     "@hostile_quarantine_set//:marker.txt",
     "@hostile_quarantine_empty//:marker.txt",
@@ -44,6 +45,8 @@ _HOSTILE_MARKERS = [
     "@hostile_fsck_config_file//:marker.txt",
     "@hostile_fsck_inline//:marker.txt",
     "@hostile_fsck_includeif//:marker.txt",
+    "@export_subst_protocol0//:marker.txt",
+    "@export_subst_unpacklimit//:marker.txt",
 ]
 
 sh_test(
