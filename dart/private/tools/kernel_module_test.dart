@@ -3250,6 +3250,52 @@ void main(List<String> args) {
       },
     );
 
+    test('a report through a symlinked working directory matches summaries passed as relative paths', () async {
+      _write('pkg/lib/a.dart', "import 'package:dep/u.dart';\nclass A {}\n");
+      // macOS runs actions under /var, a symlink to /private/var: `getcwd`
+      // spells the working directory physically while the worker reports the
+      // caller's logical spelling. `real/` holds the files and `link` points
+      // at it, so the action runs with one spelling while the report names
+      // the other; the two must still match, not trip the foreign-report
+      // wire. Reproduces on Linux too.
+      final realRoot = Directory('${_root.path}/real')..createSync();
+      final linkPath = '${_root.path}/link';
+      try {
+        Link(linkPath).createSync(realRoot.path);
+      } on FileSystemException {
+        markTestSkipped('this platform cannot create symlinks');
+        return;
+      }
+      _moduleAt('${realRoot.path}/used', [
+        _Scc('u.dill', ['dep/lib/u.dart'], []),
+      ]);
+      _moduleAt('${realRoot.path}/clean', [
+        _Scc('c.dill', ['dep/lib/c.dart'], []),
+      ]);
+      final previous = Directory.current;
+      Directory.current = linkPath;
+      try {
+        // Whichever spelling `getcwd` returns, the report uses the other
+        // one, so the test fails without symlink resolution either way.
+        final logical = Directory.current.path == realRoot.path
+            ? linkPath
+            : realRoot.path;
+        final compiler = _ReportingCompiler(reported: {'$logical/used/u.dill'});
+        final unusedPath = '${_root.path}/out/m8sym.unused';
+        final result = await _compile(
+          'm_unused_symlink',
+          ['pkg/lib/a.dart'],
+          inputKmods: ['used', 'clean'],
+          compiler: compiler,
+          unusedInputsList: unusedPath,
+        );
+        expect(result.code, 0, reason: result.log);
+        expect(File(unusedPath).readAsLinesSync(), ['clean']);
+      } finally {
+        Directory.current = previous;
+      }
+    });
+
     test('m_unused_win: a Windows drive-letter output keeps --used-inputs a '
         'native path', () async {
       _write('pkg/lib/a.dart', "import 'package:dep/u.dart';\nclass A {}\n");

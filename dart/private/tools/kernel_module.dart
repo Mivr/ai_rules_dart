@@ -3423,9 +3423,15 @@ class _UsedInputsReporter implements ModuleCompiler {
 
 /// The canonical absolute form of an action path or `file://` URI: `file://`
 /// URIs become paths, relative paths resolve against the execution root (this
-/// process runs with it as its working directory), and `.`/`..` segments are
-/// applied. Compares `--used-inputs` report lines with the paths this action
-/// passed to `kernel_worker`.
+/// process runs with it as its working directory), `.`/`..` segments are
+/// applied, and symlinks resolve to one physical spelling. That last step is
+/// what lets a relative path and an absolute URI name the same file: `getcwd`
+/// spells the working directory physically (`/private/var/...` on macOS, where
+/// `/var` is a symlink), while the worker reports the caller's logical spelling
+/// (`/var/...`). Without it the same file has two spellings and the
+/// foreign-report tripwire fires on every precise report. Compares
+/// `--used-inputs` report lines with the paths this action passed to
+/// `kernel_worker`.
 String _canonicalActionPath(String pathOrUri) {
   final slash = _filePathOf(pathOrUri).replaceAll(r'\', '/');
   if (isWindowsDrivePath(slash)) return _normalize(slash);
@@ -3433,7 +3439,8 @@ String _canonicalActionPath(String pathOrUri) {
   // root, so an absolute path stays absolute. A relative tmp or report path
   // would otherwise resolve against whatever directory the caller runs in
   // instead of the execution root.
-  if (slash.startsWith('/')) return '/${_normalize(slash)}';
+  if (slash.startsWith('/'))
+    return _resolveActionPathSymlinks('/${_normalize(slash)}');
   final cwd = Directory.current.path.replaceAll(r'\', '/');
   final joined = _normalize('$cwd/$slash');
   // `_normalize` drops the leading segment too: a posix absolute working
@@ -3442,8 +3449,32 @@ String _canonicalActionPath(String pathOrUri) {
   // path canonicalizes differently from the absolute `file://` URI the worker
   // reports for the same file, and the foreign-report tripwire fires on every
   // precise report.
-  if (cwd.startsWith('/')) return '/$joined';
+  if (cwd.startsWith('/')) return _resolveActionPathSymlinks('/$joined');
   return joined;
+}
+
+/// [normalized] (a posix-absolute path with `.`/`..` applied) with every
+/// symlink resolved, so two spellings of one file compare equal. The file
+/// itself may not exist (a summary that was never written, a report file not
+/// yet created), so the longest existing prefix resolves and the rest is
+/// re-appended. Anything unresolvable keeps its normalized spelling: still
+/// consistent for identical inputs, just not symlink-proof.
+String _resolveActionPathSymlinks(String normalized) {
+  final parts = normalized.split('/');
+  for (var end = parts.length; end > 1; end--) {
+    final prefix = parts.sublist(0, end).join('/');
+    String resolved;
+    try {
+      resolved = File(prefix.isEmpty ? '/' : prefix).resolveSymbolicLinksSync();
+    } on FileSystemException {
+      continue;
+    }
+    resolved = resolved.replaceAll(r'\', '/');
+    final rest = parts.sublist(end).join('/');
+    final combined = rest.isEmpty ? resolved : '$resolved/$rest';
+    return combined.startsWith('/') ? '/${_normalize(combined)}' : combined;
+  }
+  return normalized;
 }
 
 /// The canonicalized lines of the `--used-inputs` file the worker wrote, or
