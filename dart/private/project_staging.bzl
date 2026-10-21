@@ -8,6 +8,7 @@ declared artifacts — no `mktemp`, no shell — as sibling outputs:
     <name>.proj/.dart_tool/package_config.json   (declared file)
     <name>.proj/src/...                          (tree artifact; workspace-relative paths)
     <name>.proj/src/<lib_root>/pubspec.yaml      (stub, one per main-repo package)
+    <name>.proj/ext/<pkg>                        (symlink to the sibling tree; `link_ext_under_proj` only)
     <name>.extpkgs/<pkg>/...                     (external packages, copy mode only)
 
 Main-repo sources (hand-written and generated) merge into one `src` tree at
@@ -86,7 +87,7 @@ def _external_sub_path(lib_root):
     parts = lib_root.split("/")
     return "/".join(parts[2:])
 
-def staged_package_config_content(packages, ext_staged, proj_name, ext_roots = {}, config_dir = "", main_roots = {}):
+def staged_package_config_content(packages, ext_staged, proj_name, ext_roots = {}, config_dir = "", main_roots = {}, ext_under_proj = False):
     """Builds package_config.json content for the staged-project layout.
 
     The config lives at `<proj_name>.proj/.dart_tool/package_config.json`:
@@ -95,7 +96,10 @@ def staged_package_config_content(packages, ext_staged, proj_name, ext_roots = {
     directory to their exec-root directory. An external package named in
     `ext_roots` resolves to the relative path from the config's directory to its
     exec-root directory. Every other external package resolves to its copied
-    tree, `../../<proj_name>.extpkgs/<mangled>[/<sub>]`.
+    tree, `../../<proj_name>.extpkgs/<mangled>[/<sub>]` — or, when
+    `ext_under_proj` is True, to the symlink `stage_dart_project` plants for
+    it inside the project, `../ext/<mangled>[/<sub>]`, so every rootUri stays
+    under `<proj_name>.proj/` (see `link_ext_under_proj`).
 
     Args:
       packages: List of DartPackageInfo providers.
@@ -112,6 +116,8 @@ def staged_package_config_content(packages, ext_staged, proj_name, ext_roots = {
       main_roots: Dict of package_name -> exec-root-relative directory, for the
         main-repo dependency packages referenced in place (see
         `main_package_placement`).
+      ext_under_proj: When True, external package rootUris name the
+        `<proj_name>.proj/ext/` symlinks instead of the sibling trees.
 
     Returns:
       String content of the package_config.json file.
@@ -124,10 +130,15 @@ def staged_package_config_content(packages, ext_staged, proj_name, ext_roots = {
             if pkg.package_name in ext_roots:
                 root_uri = relative_path(config_dir, ext_roots[pkg.package_name])
             else:
-                root_uri = "../../{}.extpkgs/{}".format(
-                    proj_name,
-                    mangle_package_dir(pkg.package_name),
-                )
+                if ext_under_proj:
+                    root_uri = "../ext/{}".format(
+                        mangle_package_dir(pkg.package_name),
+                    )
+                else:
+                    root_uri = "../../{}.extpkgs/{}".format(
+                        proj_name,
+                        mangle_package_dir(pkg.package_name),
+                    )
                 sub = _external_sub_path(pkg.lib_root)
                 if sub:
                     root_uri += "/" + sub
@@ -432,6 +443,7 @@ def stage_dart_project(
         sdk_version = "",
         copy_external = True,
         all_packages_named = False,
+        link_ext_under_proj = False,
         own = None,
         options_files = None):
     """Stages packages and sources into a hermetic Dart project layout.
@@ -462,6 +474,15 @@ def stage_dart_project(
         files the project reads; the analyzer resolves its libraries from
         summaries instead. Default False: the config names only what is
         staged, as before.
+      link_ext_under_proj: When True, plant a symlink
+        `<name>.proj/ext/<mangled>` for each staged external package,
+        pointing at its sibling `<name>.extpkgs/<mangled>` tree, and name
+        external package roots `../ext/<mangled>[/<sub>]` in the config, so
+        every rootUri stays under `<name>.proj/`. A compiler rooted at the
+        project by `--multi-root=<name>.proj/` then resolves all of its
+        inputs inside the staged tree. Only for compilations: the analyzer
+        reads `external/` paths fine, and only `dart_web_application` sets
+        this today.
       own: Optional collection of the target's own files, forwarded to
         `main_package_placement` when `copy_external` is False.
       options_files: Optional list of `analysis_options.yaml` Files that must
@@ -629,6 +650,18 @@ def stage_dart_project(
                 ctx.actions.symlink(output = link, target_file = f)
                 inputs.append(link)
             inputs.extend(files)
+        if link_ext_under_proj:
+            # A directory symlink inside the project, so the package root
+            # resolves under `<name>.proj/` however the sibling tree itself
+            # is staged (a copied tree or per-file links). The target is
+            # expressed relative to the link, so the layout is identical
+            # sandboxed and local.
+            ext_link = ctx.actions.declare_symlink("{}.proj/ext/{}".format(name, mangled))
+            ctx.actions.symlink(
+                output = ext_link,
+                target_path = "../../{}.extpkgs/{}".format(name, mangled),
+            )
+            inputs.append(ext_link)
 
     if not copy_external:
         extpkgs_manifest = ctx.actions.declare_file(name + ".proj/.dart_tool/extpkgs_manifest.txt")
@@ -647,6 +680,7 @@ def stage_dart_project(
             ext_roots = ext_roots,
             config_dir = config_dir,
             main_roots = main_roots,
+            ext_under_proj = link_ext_under_proj,
         ),
     )
     inputs.append(package_config)

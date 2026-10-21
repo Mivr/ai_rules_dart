@@ -64,7 +64,16 @@ def _dart_web_compile(ctx, compile_mode):
     all_srcs = ([ctx.file.main] + list(ctx.files.srcs) +
                 collect_transitive_srcs(ctx.attr.deps).to_list() +
                 collect_transitive_resources(ctx.attr.deps).to_list())
-    staged = stage_dart_project(ctx, packages, all_srcs, copy_external = False)
+    staged = stage_dart_project(
+        ctx,
+        packages,
+        all_srcs,
+        copy_external = False,
+        # External package roots resolve to `<name>.proj/ext/` symlinks, so
+        # the `--multi-root=<name>.proj/` below covers every input: nothing
+        # the compiler reads lives outside the staged tree.
+        link_ext_under_proj = True,
+    )
 
     # `dart compile wasm` writes more than the module: the `.mjs` loader that
     # instantiates it, the `.support.js` feature check a page runs first, and
@@ -88,23 +97,41 @@ def _dart_web_compile(ctx, compile_mode):
     args.add("compile")
     args.add(compile_mode)
     args.add_all(_get_web_compilation_mode_flags(ctx, compile_mode))
+
+    # The multi-root maps onto the staged project directory — never the exec
+    # root. A directive the staged guard reads as relative (a multi-line
+    # first line the guard keeps but the front end drops) would otherwise
+    # resolve to an undeclared exec-root file, and the output would depend on
+    # the spawn strategy. Rooted at the staged tree, which holds only declared
+    # inputs, such a URI names a missing staged file, so the compile fails
+    # identically sandboxed and local (after the runner's staged check refuses
+    # it with a clear error first).
     if compile_mode == "js":
         args.add("--multi-root-scheme=" + STABLE_SCHEME)
-        args.add("--multi-root=.")
+        args.add("--multi-root=" + staged.proj_path + "/")
     else:
         args.add("-E--multi-root-scheme=" + STABLE_SCHEME)
-        args.add("-E--multi-root=.")
-    args.add("--packages=%s:///%s" % (STABLE_SCHEME, staged.package_config.path))
+        args.add("-E--multi-root=" + staged.proj_path + "/")
+
+    # The package config is addressed through `STABLE_SCHEME` rooted at the
+    # staged project directory: `dart compile` only resolves
+    # `org-dartlang-root:///` URIs on its command line when the multi-root
+    # value ends in `/`, and the scheme address keeps every package source —
+    # entrypoint included — under `org-dartlang-root:///` in the outputs
+    # instead of leaking a `file:///` working directory into the source maps.
+    args.add("--packages=%s:///.dart_tool/package_config.json" % STABLE_SCHEME)
     for d in merge_dart_defines(ctx):
         args.add("-D" + d)
     args.add_all(ctx.attr.dart_compile_flags)
     args.add("-o", output)
 
-    # The entrypoint and package_config are addressed through `STABLE_SCHEME`
-    # rooted at the exec root, so relative `rootUri`s in the staged
-    # `package_config.json` resolve under `org-dartlang-root:///` rather than
-    # leaking the sandbox's `file:///` working directory into `.wasm.map`.
-    args.add("%s:///%s/%s" % (STABLE_SCHEME, staged.src_tree.path, ctx.file.main.short_path))
+    # The entrypoint is addressed through `STABLE_SCHEME` rooted at the staged
+    # project directory, so the compiler reads the staged entrypoint — never
+    # an exec-root file a multi-line directive URI could name — while relative
+    # `rootUri`s in the staged `package_config.json` and every source URL in
+    # the outputs resolve under `org-dartlang-root:///` rather than leaking
+    # the sandbox's `file:///` working directory into the source maps.
+    args.add("%s:///src/%s" % (STABLE_SCHEME, ctx.file.main.short_path))
 
     env = writable_home_env(dart_sdk_info.dart, output)
 

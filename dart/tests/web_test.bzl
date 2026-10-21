@@ -41,10 +41,21 @@ def _web_compile_is_hermetic_test_impl(ctx):
         "-E--multi-root-scheme=org-dartlang-root" in argv,
         "web compile must configure the org-dartlang-root multi-root scheme: %s" % argv,
     )
+
+    # The multi-root is the staged project directory — never the exec root, so
+    # a directive the staged guard reads as relative can never resolve to an
+    # undeclared exec-root file, whatever the spawn strategy. The trailing
+    # slash is load-bearing: `dart compile` only resolves
+    # `org-dartlang-root:///` command-line URIs against a slash-terminated
+    # multi-root.
     asserts.true(
         env,
-        "--multi-root=." in argv or "-E--multi-root=." in argv,
-        "web compile must root org-dartlang-root at the exec root: %s" % argv,
+        any([
+            (a.startswith("--multi-root=") or a.startswith("-E--multi-root=")) and
+            ".proj/" in a and a != "--multi-root=." and a != "-E--multi-root=."
+            for a in argv
+        ]),
+        "web compile must root org-dartlang-root at the staged <name>.proj/: %s" % argv,
     )
     asserts.true(
         env,
@@ -53,8 +64,8 @@ def _web_compile_is_hermetic_test_impl(ctx):
     )
     asserts.true(
         env,
-        argv[-1].startswith("org-dartlang-root:///"),
-        "web compile entrypoint must use org-dartlang-root scheme, got: %s" % argv[-1],
+        argv[-1].startswith("org-dartlang-root:///src/"),
+        "web compile entrypoint must use org-dartlang-root under src/, got: %s" % argv[-1],
     )
     asserts.true(
         env,
