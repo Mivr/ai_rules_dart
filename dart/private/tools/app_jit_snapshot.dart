@@ -146,11 +146,21 @@ Never _usage(String problem) {
 /// length too (it lives at a fixed relative place inside). Snapshots are
 /// platform-specific (each embeds its own SDK's binary), so the constant is
 /// per OS: POSIX builds need room for long Bazel output bases under the 4096
-/// path limit, while Windows keeps under its 260-character path limit (only
-/// the tool's own tests train there; the rules build no snapshot on
-/// Windows). A longer base fails loudly in [_fixedLengthDir] instead of
-/// silently training different bytes.
-int get _fixedTrainingPathLength => Platform.isWindows ? 240 : 320;
+/// path limit, while Windows keeps every derived path under its
+/// 260-character limit: the training binary lives 16 characters deeper
+/// (`/vm/bin/dart.exe`), and [_installCopy] stages it through a sibling temp
+/// file fewer than 26 characters deeper still (`.$pid.$rand.tmp`), so
+/// 200 + 16 + 26 stays well under 260 (only the tool's own tests train
+/// there; the rules build no snapshot on Windows). A longer base fails loudly
+/// in [_fixedLengthDir] instead of silently training different bytes.
+///
+/// Public (rather than private like [_fixedLengthDir]) so tests pin both
+/// branches on every host: a Windows-only overflow like this one would
+/// otherwise go unnoticed until Windows CI.
+int fixedTrainingPathLengthFor({required bool windows}) => windows ? 200 : 320;
+
+int get _fixedTrainingPathLength =>
+    fixedTrainingPathLengthFor(windows: Platform.isWindows);
 
 /// Returns the training directory: [base] (a private per-run directory) with
 /// padding appended so its absolute path is exactly [_fixedTrainingPathLength]

@@ -662,6 +662,23 @@ void main(List<String> args) {
     }
   });
 
+  test('training path lengths fit the platform limits on both branches', () {
+    // The training binary lives 16 characters below the training directory
+    // (`/vm/bin/dart.exe`), and its install stages a sibling temp file
+    // fewer than 26 characters deeper (`.$pid.$rand.tmp`). Longer derived
+    // paths break process startup on Windows (MAX_PATH 260): padding to 240
+    // put the staged copy near 277 characters and CreateProcess reported it
+    // as missing. Both branches are pinned here so a Windows-only overflow
+    // fails on every host, not just on Windows CI.
+    const derivativeBudget = 16 + 26;
+    expect(snapshot.fixedTrainingPathLengthFor(windows: true), 200);
+    expect(
+      snapshot.fixedTrainingPathLengthFor(windows: true) + derivativeBudget,
+      lessThan(260),
+    );
+    expect(snapshot.fixedTrainingPathLengthFor(windows: false), 320);
+  });
+
   test('app-jit training writes identical bytes from working directories whose paths differ in length', () {
     final dartBin = Platform.resolvedExecutable;
     final trainScript = File('${tmp.path}/len_train.dart')
