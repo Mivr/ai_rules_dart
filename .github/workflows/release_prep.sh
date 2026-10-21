@@ -12,7 +12,9 @@ PREFIX="rules_dart-${TAG:1}"
 ARCHIVE="rules_dart-$TAG.tar.gz"
 
 # NB: configuration for 'git archive' is in /.gitattributes
-git archive --format=tar --prefix=${PREFIX}/ ${TAG} | gzip > $ARCHIVE
+# `gzip -n`: no filename or timestamp in the header, so the same tag always
+# yields the same archive bytes (and the same sha256).
+git archive --format=tar --prefix=${PREFIX}/ ${TAG} | gzip -n > $ARCHIVE
 SHA=$(shasum -a 256 $ARCHIVE | awk '{print $1}')
 
 # Add generated API docs to the release, see https://github.com/bazelbuild/bazel-central-registry/issues/5593
@@ -36,5 +38,10 @@ EOF
 git fetch --quiet --tags --unshallow origin 2>/dev/null || git fetch --quiet --tags origin
 PREV=$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' "$TAG^" 2>/dev/null) || PREV=""
 echo
-bazel run @multitool//tools/git-cliff -- \
-    --workdir "$PWD" --config cliff.toml --strip header "${PREV:+$PREV..}$TAG"
+# git-cliff is provided by rules_multitool, which now lives in the tools/
+# module (tools/MODULE.bazel): the root module has no `@multitool` repo, so
+# run it from tools/ with --workdir pointing back at the repo root. Same
+# flags and tag range as before, so the notes are unchanged in content.
+ROOT="$PWD"
+(cd tools && bazel run @multitool//tools/git-cliff -- \
+    --workdir "$ROOT" --config "$ROOT/cliff.toml" --strip header "${PREV:+$PREV..}$TAG")
