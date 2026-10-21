@@ -3429,12 +3429,16 @@ class _UsedInputsReporter implements ModuleCompiler {
 /// spells the working directory physically (`/private/var/...` on macOS, where
 /// `/var` is a symlink), while the worker reports the caller's logical spelling
 /// (`/var/...`). Without it the same file has two spellings and the
-/// foreign-report tripwire fires on every precise report. Compares
-/// `--used-inputs` report lines with the paths this action passed to
-/// `kernel_worker`.
+/// foreign-report tripwire fires on every precise report. The same holds on
+/// Windows, where the working directory may sit behind a symlink or junction:
+/// drive-letter paths resolve to one physical spelling too, with separators
+/// and drive-letter case normalized. Compares `--used-inputs` report lines
+/// with the paths this action passed to `kernel_worker`.
 String _canonicalActionPath(String pathOrUri) {
   final slash = _filePathOf(pathOrUri).replaceAll(r'\', '/');
-  if (isWindowsDrivePath(slash)) return _normalize(slash);
+  if (isWindowsDrivePath(slash)) {
+    return _resolveActionPathSymlinks(_normalizeDrivePath(_normalize(slash)));
+  }
   // `_normalize` drops empty segments, including the leading one: restore the
   // root, so an absolute path stays absolute. A relative tmp or report path
   // would otherwise resolve against whatever directory the caller runs in
@@ -3449,19 +3453,62 @@ String _canonicalActionPath(String pathOrUri) {
   // path canonicalizes differently from the absolute `file://` URI the worker
   // reports for the same file, and the foreign-report tripwire fires on every
   // precise report.
+  // A UNC working directory keeps its double-slash root, so an absolute
+  // report spelling still matches a relative action path through it.
+  if (cwd.startsWith('//')) return _resolveActionPathSymlinks('//${joined}');
   if (cwd.startsWith('/')) return _resolveActionPathSymlinks('/$joined');
+  if (isWindowsDrivePath(cwd)) {
+    return _resolveActionPathSymlinks(_normalizeDrivePath(joined));
+  }
   return joined;
 }
 
-/// [normalized] (a posix-absolute path with `.`/`..` applied) with every
-/// symlink resolved, so two spellings of one file compare equal. The file
-/// itself may not exist (a summary that was never written, a report file not
-/// yet created), so the longest existing prefix resolves and the rest is
-/// re-appended. Anything unresolvable keeps its normalized spelling: still
-/// consistent for identical inputs, just not symlink-proof.
+/// [path] with an upper-case Windows drive letter (`c:/...` becomes `C:/...`),
+/// so drive-letter spellings compare equal whatever case named them.
+String _normalizeDrivePath(String path) {
+  if (isWindowsDrivePath(path)) {
+    final drive = path.codeUnitAt(0);
+    if (drive >= 0x61 && drive <= 0x7a) {
+      return '${String.fromCharCode(drive - 0x20)}${path.substring(1)}';
+    }
+  }
+  return path;
+}
+
+/// A path `File.resolveSymbolicLinksSync` returned, in slash spelling: native
+/// separators become `/`, and a verbatim `\\?\` prefix (an extended-length
+/// `\\?\C:\...` path or a `\\?\UNC\...` device path) is removed, so a verbatim
+/// spelling compares equal with the plain one it names.
+String _normalizeResolvedPath(String resolved) {
+  var slash = resolved.contains(r'\')
+      ? resolved.replaceAll(r'\', '/')
+      : resolved;
+  if (slash.startsWith('//?/')) {
+    slash = slash.substring(4);
+    if (slash.startsWith('UNC/')) {
+      // A `\\?\UNC\server\share` device path names the `\\server\share` UNC
+      // root: keep the double slash so it matches the plain UNC spelling.
+      slash = '/${slash.substring(3)}';
+    }
+  }
+  return slash;
+}
+
+/// [normalized] (an absolute path with `.`/`..` applied, posix or Windows
+/// drive-letter) with every symlink resolved, so two spellings of one file
+/// compare equal. The file itself may not exist (a summary that was never
+/// written, a report file not yet created), so the longest existing prefix
+/// resolves and the rest is re-appended. Anything unresolvable keeps its
+/// normalized spelling: still consistent for identical inputs, just not
+/// symlink-proof.
 String _resolveActionPathSymlinks(String normalized) {
+  final isDrive = isWindowsDrivePath(normalized);
+  if (!isDrive && !normalized.startsWith('/')) return normalized;
   final parts = normalized.split('/');
-  for (var end = parts.length; end > 1; end--) {
+  // A bare drive root (`C:`) names the drive's working directory, which
+  // resolves elsewhere: only resolve prefixes below the root.
+  final floor = isDrive ? 2 : 1;
+  for (var end = parts.length; end > floor; end--) {
     final prefix = parts.sublist(0, end).join('/');
     String resolved;
     try {
@@ -3469,9 +3516,14 @@ String _resolveActionPathSymlinks(String normalized) {
     } on FileSystemException {
       continue;
     }
-    resolved = resolved.replaceAll(r'\', '/');
+    resolved = _normalizeDrivePath(_normalizeResolvedPath(resolved));
     final rest = parts.sublist(end).join('/');
     final combined = rest.isEmpty ? resolved : '$resolved/$rest';
+    if (isWindowsDrivePath(combined)) {
+      return _normalizeDrivePath(_normalize(combined));
+    }
+    // A UNC spelling keeps its double-slash root through normalization.
+    if (combined.startsWith('//')) return '//${_normalize(combined)}';
     return combined.startsWith('/') ? '/${_normalize(combined)}' : combined;
   }
   return normalized;

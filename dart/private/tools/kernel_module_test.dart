@@ -3257,15 +3257,11 @@ void main(List<String> args) {
       // caller's logical spelling. `real/` holds the files and `link` points
       // at it, so the action runs with one spelling while the report names
       // the other; the two must still match, not trip the foreign-report
-      // wire. Reproduces on Linux too.
+      // wire. Reproduces on Linux too. A plain directory symlink: the Windows
+      // CI runner creates one without extra privileges.
       final realRoot = Directory('${_root.path}/real')..createSync();
       final linkPath = '${_root.path}/link';
-      try {
-        Link(linkPath).createSync(realRoot.path);
-      } on FileSystemException {
-        markTestSkipped('this platform cannot create symlinks');
-        return;
-      }
+      Link(linkPath).createSync(realRoot.path);
       _moduleAt('${realRoot.path}/used', [
         _Scc('u.dill', ['dep/lib/u.dart'], []),
       ]);
