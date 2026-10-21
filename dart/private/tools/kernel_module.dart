@@ -5273,7 +5273,7 @@ Future<bool> _unstagedReadsAreDeclared(
     }
     // A held component can smuggle a root the library nodes never mention, so
     // every top-level canonical name is checked with the same predicate. An
-    // unparseable table keeps the source-table verdict: it carries no root to
+    // unparsable table keeps the source-table verdict: it carries no root to
     // check, and the sources were still verified above.
     final canonicalRoots = dillCanonicalRoots(bytes);
     if (canonicalRoots != null) {

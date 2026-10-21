@@ -1123,7 +1123,7 @@ void main(List<String> args) {
       );
     });
 
-    test('an unparseable kernel fails closed and a missing output passes', () {
+    test('an unparsable kernel fails closed and a missing output passes', () {
       expect(verify('garbage.dill', Uint8List.fromList([1, 2, 3])), isNotEmpty);
       expect(
         snapshot.verifyGenKernelReads(

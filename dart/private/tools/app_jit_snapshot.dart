@@ -1709,7 +1709,7 @@ String? _gkKeyOfPackageUri(String uri, Map<String, String> packageKeyPrefixes) {
 /// declared file. Returns the diagnostics, empty when clean.
 ///
 /// A missing output passes: there is no read set to verify. An unreadable
-/// file or an unparseable table fails closed: the compile produced bytes whose
+/// file or an unparsable table fails closed: the compile produced bytes whose
 /// reads cannot be verified.
 List<String> verifyGenKernelReads({
   required String outputPath,
@@ -1796,7 +1796,7 @@ List<String> verifyGenKernelReads({
     }
     // A held component can smuggle a root the library nodes never mention, so
     // every top-level canonical name is checked with the same predicate. An
-    // unparseable table keeps the source-table verdict: it carries no root to
+    // unparsable table keeps the source-table verdict: it carries no root to
     // check, and the sources were still verified above.
     final canonicalRoots = genKernelDillCanonicalRoots(bytes);
     if (canonicalRoots != null) {
