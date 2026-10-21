@@ -443,8 +443,9 @@ Future<Directory> prepareSourceGenCwd({
   await baseDir.create(recursive: true);
   final canonicalBasePath = p.normalize(await baseDir.resolveSymbolicLinks());
   final canonicalBaseDir = Directory(canonicalBasePath);
-  await File(p.join(canonicalBasePath, 'pubspec.yaml'))
-      .writeAsString('name: ""\nenvironment:\n  sdk: ^3.0.0\n');
+  await File(
+    p.join(canonicalBasePath, 'pubspec.yaml'),
+  ).writeAsString('name: ""\nenvironment:\n  sdk: ^3.0.0\n');
   await File(p.join(canonicalBasePath, 'stacked.json')).writeAsString('{}\n');
   Directory.current = canonicalBaseDir;
   final currentPath = p.normalize(Directory.current.path);
@@ -543,12 +544,13 @@ String? extractShimFlag(List<String> argv, String flag) {
 /// Signature of a function that returns an [AnalysisContextCollection]
 /// for the given inclusion + SDK settings. Tests can inject a stub; the
 /// shim's default is [_defaultBuildAnalysisContext].
-typedef AnalysisContextBuilder = Future<AnalysisContextCollection> Function({
-  required List<String> includedPaths,
-  required String? sdkPath,
-  String? sdkSummaryPath,
-  required List<String> librarySummaryPaths,
-});
+typedef AnalysisContextBuilder =
+    Future<AnalysisContextCollection> Function({
+      required List<String> includedPaths,
+      required String? sdkPath,
+      String? sdkSummaryPath,
+      required List<String> librarySummaryPaths,
+    });
 
 /// With no [sdkSummaryPath] or [librarySummaryPaths] this is the public
 /// constructor, as it always was. With summaries, the analyzer resolves the SDK
@@ -824,8 +826,9 @@ Future<void> _runWithStaging(
     // No matching emission (the builder saw no relevant annotations):
     // write an empty file, since Bazel still requires the declared output.
     if (match != null) claimed.add(match);
-    await File(outPath)
-        .writeAsBytes(match != null ? emitted[match]! : const <int>[]);
+    await File(
+      outPath,
+    ).writeAsBytes(match != null ? emitted[match]! : const <int>[]);
   }
 }
 
@@ -989,8 +992,9 @@ String _serializePackageConfig(PackageConfig config) {
     }
     entries.add(entry);
   }
-  return const JsonEncoder.withIndent('  ')
-      .convert({'configVersion': 2, 'packages': entries});
+  return const JsonEncoder.withIndent(
+    '  ',
+  ).convert({'configVersion': 2, 'packages': entries});
 }
 
 // ---------------------------------------------------------------------------
