@@ -25,12 +25,12 @@ when the exec and target SDKs are the same `dart`: an app-JIT snapshot is
 accepted only by the VM that wrote it, and the snapshot is written by the exec
 SDK but run by the target SDK in the test. Where they differ, there is no
 snapshot and the kernel is run as before. It is also not built on Windows,
-where the training run has no fixed-length scratch directory to run in (see
-`app_jit_snapshot.dart`), so the snapshot would depend on the build's path.
+where the fixed-length training scratch directory has no room under the path
+limit (see `app_jit_snapshot.dart`), so the snapshot would depend on the build's path.
 
 The training run is `--deterministic` and targets an unknown CPU, and runs with
-the same inputs in the same fixed scratch directory and environment each time,
-from a copy of the SDK's `dart` at a fixed path per SDK version (see
+the same inputs in the same fixed-length scratch directory and environment each time,
+from a copy of the SDK's `dart` at a fixed-length path (see
 `app_jit_snapshot.dart`). Those make the snapshot the same across builds and
 across SDK install locations. The baseline-CPU target is meant to let a remote
 cache share it across CPUs. The snapshot's action key does not record the CPU
@@ -169,9 +169,9 @@ def _dart_test_runner_snapshot_impl(ctx):
     # exec SDK's `dart`, but the test that runs the snapshot uses the target SDK's,
     # so the two must be the same binary. A cross-compile has no such binary, and
     # its tests fall back to the kernel.
-    # The training run's scratch directory is `/tmp`, which only a POSIX host has
-    # at a fixed length. A Windows exec host gets no snapshot, and its tests run
-    # the kernel.
+    # The training run's scratch directory is padded to a fixed absolute
+    # length, which only a POSIX host has room for under its path limit. A
+    # Windows exec host gets no snapshot, and its tests run the kernel.
     is_windows = exec_sdk.dart.basename.endswith(".exe")
     if not enabled or is_windows or exec_sdk.dart.path != target_sdk.dart.path:
         return [

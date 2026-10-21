@@ -21,19 +21,22 @@
 //  * `--deterministic` makes the VM's own choices repeat, so one training run
 //    and the next write the same bytes. `--no-background-compilation` keeps
 //    optimizing compiles on the training thread.
-//  * The absolute length of the directory the training runs in changes the
-//    snapshot. So the training runs in a scratch directory whose name has a
-//    fixed length (a random suffix of fixed length), under relative arguments.
+//  * The absolute paths of the training directory and the training binary end
+//    up in the snapshot, so both train at paths whose absolute length is
+//    fixed: a private per-run scratch directory beside the declared output
+//    holds a padding component that brings the training directory's absolute
+//    path to exactly [_fixedTrainingPathLength] characters, and the training
+//    `dart` (and `dartvm`) copies live at a fixed relative place inside it.
 //    The scratch directory is private to the run, so concurrent actions that
-//    share a `/tmp` cannot collide. On Windows there is no such root, and the
-//    rules build no snapshot there.
+//    share a `/tmp` cannot collide, and it is deleted afterwards, so the
+//    action leaves no undeclared output. On Windows there is no such root,
+//    and the rules build no snapshot there.
 //  * The environment names nothing but paths relative to the scratch directory.
 //  * The training VM runs from a copy of the SDK's `dart` (and `dartvm`)
-//    beside the declared snapshot output, under the action's own outputs. The
-//    absolute path of the training binary changes the snapshot, so every build
-//    of one target trains with the binary at one path, whatever SDK install it
-//    came from. The copy is private to the action, so no shared fixed path is
-//    read or written: a planted `/tmp/rules_dart_vm-*` copy has no effect.
+//    inside that scratch directory, so every build of one target trains with
+//    the binary at one path, whatever SDK install it came from. The copy is
+//    private to the action, so no shared fixed path is read or written: a
+//    planted `/tmp/rules_dart_vm-*` copy has no effect.
 //
 // A program whose own training run is not deterministic (it reads the clock,
 // random numbers, or files outside the build) yields a snapshot that differs
@@ -102,13 +105,9 @@ void main(List<String> argv) {
   }
 
   final out = File(snapshot).absolute;
-  final trainingVm = _trainingVm(
+  final exitCode = _trainInScratch(
     dart: File(dart).absolute.path,
     dartvm: dartvm == null ? null : File(dartvm).absolute.path,
-    snapshotOut: out,
-  );
-  final exitCode = _trainInScratch(
-    dart: trainingVm,
     dartArgs: dartArgs,
     enableAsserts: enableAsserts,
     env: env,
@@ -138,31 +137,51 @@ Never _usage(String problem) {
   exit(64);
 }
 
-/// Returns the path of the training `dart`: a copy beside the declared
-/// snapshot output [snapshotOut], made from [dart] and [dartvm] when they are
-/// not there yet.
+/// The absolute length, in characters, of the directory the training runs in.
 ///
-/// The copy lives under the action's own outputs, so concurrent actions (each
-/// with its own output) never share it, and no fixed shared path is read or
-/// executed: a planted `/tmp/rules_dart_vm-*` copy has no effect, and the
-/// tool writes no such path either. A copy with other bytes is replaced. The
-/// directory is private to the action's outputs, so no other user can plant
-/// or replace the binary between the byte check and the training run.
-String _trainingVm({
-  required String dart,
-  required String? dartvm,
-  required File snapshotOut,
-}) {
-  final exeExt = dart.endsWith('.exe') ? '.exe' : '';
-  final bin = Directory('${snapshotOut.path}.vm/bin');
-  bin.createSync(recursive: true);
-  _installCopy(dart, '${bin.path}/dart$exeExt');
-  final effectiveDartvm = dartvm ?? _adjacentDartvm(dart, exeExt);
-  if (effectiveDartvm != null) {
-    final vmExt = effectiveDartvm.endsWith('.exe') ? '.exe' : '';
-    _installCopy(effectiveDartvm, '${bin.path}/dartvm$vmExt');
+/// The snapshot embeds the absolute paths of the training directory and the
+/// training binary, so both must read the same on every build of one target:
+/// the training directory's absolute path is padded out to exactly this many
+/// characters (see [_fixedLengthDir]), which fixes the training binary's
+/// length too (it lives at a fixed relative place inside). Snapshots are
+/// platform-specific (each embeds its own SDK's binary), so the constant is
+/// per OS: POSIX builds need room for long Bazel output bases under the 4096
+/// path limit, while Windows keeps under its 260-character path limit (only
+/// the tool's own tests train there; the rules build no snapshot on
+/// Windows). A longer base fails loudly in [_fixedLengthDir] instead of
+/// silently training different bytes.
+int get _fixedTrainingPathLength => Platform.isWindows ? 240 : 320;
+
+/// Returns the training directory: [base] (a private per-run directory) with
+/// padding appended so its absolute path is exactly [_fixedTrainingPathLength]
+/// characters long, plus a fixed leaf.
+///
+/// Long runs split across several components (each at most 200 characters),
+/// so short bases stay under the 255-character single-component limit.
+/// Exits loudly when [base] is already too long to pad: training there would
+/// write a snapshot with different bytes, silently breaking caching across
+/// sandboxes and machines.
+Directory _fixedLengthDir(Directory base) {
+  // The `/<pad>/t` tail contributes 3 characters besides the padding itself.
+  var rest = _fixedTrainingPathLength - base.path.length - 3;
+  if (rest < 0) {
+    stderr.writeln(
+      'app_jit_snapshot: the action output directory ${base.path} is too '
+      'long to train a reproducible snapshot in: padding its training '
+      'directory to $_fixedTrainingPathLength characters is impossible. '
+      'Move the build outputs to a shorter path.',
+    );
+    exit(1);
   }
-  return '${bin.path}/dart$exeExt';
+  final parts = <String>[];
+  while (rest > 200) {
+    parts.add('p' * 200);
+    rest -= 201; // 200 p's plus the '/' joining the next part.
+  }
+  parts.add('p' * rest);
+  final dir = Directory('${base.path}/${parts.join('/')}/t');
+  dir.createSync(recursive: true);
+  return dir;
 }
 
 String? _adjacentDartvm(String dart, String exeExt) {
@@ -383,10 +402,14 @@ class _Pair {
 /// Runs the training in a fresh scratch directory and copies the snapshot it
 /// writes to [out]. Returns the training run's exit code.
 ///
-/// The scratch directory is removed whatever the outcome. `exit` is not called
-/// in here: it would skip the cleanup.
+/// [dart] and [dartvm] name the SDK binaries to train with; both are copied
+/// into the scratch directory (see below), so the training binary's absolute
+/// path has the same fixed length on every build. The scratch directory is
+/// removed whatever the outcome. `exit` is not called in here: it would skip
+/// the cleanup.
 int _trainInScratch({
   required String dart,
+  required String? dartvm,
   required List<String> dartArgs,
   required bool enableAsserts,
   required Map<String, String> env,
@@ -396,25 +419,44 @@ int _trainInScratch({
 }) {
   // A private directory per run under the declared output's directory, so no
   // compile reads or writes the shared system temp directory, and concurrent
-  // actions (each with its own output) cannot collide. The random suffix is
-  // fixed-length, so the absolute path has the same length on every run.
+  // actions (each with its own output) cannot collide. The training itself
+  // runs one level down, in a directory padded to a fixed absolute length, so
+  // neither the sandbox path nor the digit count of a sandbox number leaks
+  // into the snapshot bytes.
   out.parent.createSync(recursive: true);
   final scratch = out.parent.createTempSync('rules_dart_snapshot.');
   try {
+    final trainDir = _fixedLengthDir(scratch);
+    // The training VM is a copy inside the scratch directory: no shared fixed
+    // path is read or written (a planted `/tmp/rules_dart_vm-*` copy has no
+    // effect), and the copy is deleted with the scratch directory, leaving no
+    // undeclared output beside the snapshot. The directory is private to the
+    // action's outputs, so no other user can plant or replace the binary
+    // between the copy and the training run.
+    final exeExt = dart.endsWith('.exe') ? '.exe' : '';
+    final bin = Directory('${trainDir.path}/vm/bin')
+      ..createSync(recursive: true);
+    _installCopy(dart, '${bin.path}/dart$exeExt');
+    final effectiveDartvm = dartvm ?? _adjacentDartvm(dart, exeExt);
+    if (effectiveDartvm != null) {
+      final vmExt = effectiveDartvm.endsWith('.exe') ? '.exe' : '';
+      _installCopy(effectiveDartvm, '${bin.path}/dartvm$vmExt');
+    }
+    final trainingDart = '${bin.path}/dart$exeExt';
     // Every input is copied to its relative place, so the run needs only
     // relative paths.
     for (final c in copies) {
-      _copyFile(c.value, '${scratch.path}/${c.key}');
+      _copyFile(c.value, '${trainDir.path}/${c.key}');
     }
     for (final t in trees) {
-      _copyTree(t.value, '${scratch.path}/${t.key}');
+      _copyTree(t.value, '${trainDir.path}/${t.key}');
     }
-    File('${scratch.path}/.dart_tool/package_config.json')
+    File('${trainDir.path}/.dart_tool/package_config.json')
       ..parent.createSync(recursive: true)
       ..writeAsStringSync('{"configVersion": 2, "packages": []}\n');
 
     final childEnv = buildChildEnvironment(
-      homeDir: Platform.isWindows ? scratch.path : '.',
+      homeDir: Platform.isWindows ? trainDir.path : '.',
       parentEnv: Platform.environment,
       overrides: env,
       isWindows: Platform.isWindows,
@@ -431,7 +473,7 @@ int _trainInScratch({
     // next; with none of them, ten runs gave one snapshot. Nothing here reads a
     // report, and the test's exit code is all the training needs.
     final result = Process.runSync(
-      dart,
+      trainingDart,
       [
         '--deterministic',
         // Optimizing compilation stays on the training thread, so the functions
@@ -449,7 +491,7 @@ int _trainInScratch({
         '--snapshot=snapshot.jit',
         ...dartArgs,
       ],
-      workingDirectory: scratch.path,
+      workingDirectory: trainDir.path,
       environment: childEnv,
       includeParentEnvironment: false,
     );
@@ -460,7 +502,7 @@ int _trainInScratch({
       stderr.write(result.stderr as String);
       return result.exitCode;
     }
-    final written = File('${scratch.path}/snapshot.jit');
+    final written = File('${trainDir.path}/snapshot.jit');
     if (written.existsSync()) {
       out.parent.createSync(recursive: true);
       out.writeAsBytesSync(written.readAsBytesSync());

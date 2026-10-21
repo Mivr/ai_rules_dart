@@ -633,16 +633,89 @@ void main(List<String> args) {
         'train.dart',
       ]);
       expect(outJit.existsSync(), isTrue);
-      // The training VM lives beside the declared output, not at a shared
-      // fixed path, and the planted file is untouched.
-      final vmDart = File(
-        '${outJit.path}.vm/bin/dart${Platform.isWindows ? '.exe' : ''}',
+      // The training VM lives inside the training scratch directory, which
+      // is deleted afterwards: nothing undeclared stays beside the declared
+      // output, and the planted file is untouched.
+      expect(
+        Directory('${outJit.path}.vm').existsSync(),
+        isFalse,
+        reason: 'no training-VM directory may stay beside the output',
       );
-      expect(vmDart.existsSync(), isTrue);
+      expect(
+        workDir
+            .listSync()
+            .where(
+              (e) => e.path
+                  .split(Platform.pathSeparator)
+                  .last
+                  .startsWith('rules_dart_snapshot.'),
+            )
+            .toList(),
+        isEmpty,
+        reason: 'no training scratch may stay beside the output',
+      );
       expect(plantedVm.readAsBytesSync(), [0x7f, 0x45, 0x4c, 0x46, 0x99]);
     } finally {
       if (plantedVm.existsSync()) plantedVm.deleteSync();
     }
+  });
+
+  test('app-jit training writes identical bytes from working directories whose paths differ in length', () {
+    final dartBin = Platform.resolvedExecutable;
+    final trainScript = File('${tmp.path}/len_train.dart')
+      ..writeAsStringSync('void main(List<String> args) {}\n');
+    // The training input is a compiled kernel, as in real builds (the
+    // `jit-snapshot` action trains `input.dill`): compiling once keeps the
+    // input bytes fixed, so only the working directories vary.
+    final trainDill = File('${tmp.path}/len_train.dill');
+    final compileRes = Process.runSync(dartBin, [
+      'compile',
+      'kernel',
+      trainScript.path,
+      '-o',
+      trainDill.path,
+    ]);
+    expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
+
+    // Two sandbox stand-ins whose absolute paths differ in length, crossing
+    // a digit-count change the way sandbox 9 and 10 do.
+    final shortDir = Directory('${tmp.path}/sandbox/9/execroot/_main')
+      ..createSync(recursive: true);
+    final longDir = Directory('${tmp.path}/sandbox/10/execroot/_main')
+      ..createSync(recursive: true);
+    expect(
+      longDir.path.length,
+      greaterThan(shortDir.path.length),
+      reason: 'the test needs two path lengths',
+    );
+
+    List<int> trainIn(Directory root) {
+      final outJit = File(
+        '${root.path}/bazel-out/k8-fastbuild/bin/pkg/app.jit',
+      );
+      snapshot.main([
+        '--dart=$dartBin',
+        '--snapshot=${outJit.path}',
+        '--env=TMPDIR=.',
+        '--env=HOME=.',
+        '--copy=input.dill=${trainDill.path}',
+        '--',
+        'input.dill',
+      ]);
+      expect(outJit.existsSync(), isTrue, reason: 'snapshot in $root');
+      // Nothing undeclared stays behind: neither the training VM copy nor
+      // the training scratch directory.
+      final leftovers = Directory('${root.path}/bazel-out/k8-fastbuild/bin/pkg')
+          .listSync()
+          .where((e) => e.path != outJit.path)
+          .toList();
+      expect(leftovers, isEmpty, reason: 'no leftovers in $root: $leftovers');
+      return outJit.readAsBytesSync();
+    }
+
+    final shortBytes = trainIn(shortDir);
+    final longBytes = trainIn(longDir);
+    expect(longBytes, equals(shortBytes));
   });
 
   test('buildChildEnvironment on Windows preserves SystemRoot and valid names while isolating home and cache directories', () {
