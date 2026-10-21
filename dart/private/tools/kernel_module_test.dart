@@ -1674,6 +1674,39 @@ void main(List<String> args) {
       },
     );
 
+    test('an unstaged compile naming the synthesized native-assets library fails closed', () async {
+      _write('pkg/lib/a.dart', 'class A {}\n');
+      // The modular planner never passes `--native-assets` (code assets
+      // force the whole-program path), so the front end can never emit the
+      // synthesized `vm:ffi:native-assets` entries here: a dill carrying
+      // them is crafted, and the modular walk stays strict on every
+      // attempt.
+      final compiler = _DillWritingCompiler(
+        () => _buildDillWithLibraries(
+          sources: [
+            (_uri('pkg/lib/a.dart'), 'package:pkg/a.dart'),
+            ('dummy', ''),
+          ],
+          libraries: [(0, 'package:pkg/a.dart'), (1, 'vm:ffi:native-assets')],
+        ),
+      );
+      final result = await _compile(
+        'm_native_assets',
+        ['pkg/lib/a.dart'],
+        inputs: [
+          _encodeInputForTest(
+            '${_root.path}/pkg/lib/a.dart',
+            Uint8List.fromList([7]),
+          ),
+        ],
+        compiler: compiler,
+      );
+      expect(result.calls.length, 2, reason: 'unstaged, then isolated');
+      expect(result.log, contains('reads dummy'));
+      expect(result.code, 1);
+      expect(result.log, contains('failing the compile'));
+    });
+
     test(
       'a compile whose libraries name only defined imports verifies once',
       () async {
@@ -1847,6 +1880,7 @@ void main(List<String> args) {
         'FILE:x.dart',
         'other-scheme:///x.dart',
         'http://host/y.dart',
+        'vm:ffi:native-assets',
         'data:text/plain,hi',
         'C:/x.dart',
         'a:b.dart',

@@ -338,6 +338,69 @@ void main(List<String> args) {
     expect((runRes.stdout as String).trim(), 'a,b');
   });
 
+  test(
+    '--gen-kernel accepts the manifest-synthesized native-assets library',
+    () {
+      final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+      final exeSuffix = Platform.isWindows ? '.exe' : '';
+      final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
+      final genKernel = patchSnapshot(
+        '${sdkDir.path}/bin/snapshots/gen_kernel_aot.dart.snapshot',
+        'gen_kernel',
+      );
+      final platformDill =
+          '${sdkDir.path}/lib/_internal/vm_platform_strong.dill';
+
+      final ws = Directory('${tmp.path}/na_ws')..createSync(recursive: true);
+      File('${ws.path}/package_config.json')
+          .writeAsStringSync('{"configVersion": 2, "packages": []}\n');
+      final mainDart = File('${ws.path}/main.dart')
+        ..writeAsStringSync('void main() {\n  print("native assets ok");\n}\n');
+      // Every ABI section the rule layer can emit: only the host section is
+      // read, and the rest must be harmless.
+      final sections = <String>[
+        for (final os in ['linux', 'macos', 'windows'])
+          for (final arch in ['x64', 'arm64'])
+            '"${os}_$arch": '
+                '{"package:example/hook.dart": ["system", "libc.so.6"]}',
+      ];
+      final manifest = File('${ws.path}/native_assets.yaml')
+        ..writeAsStringSync(
+          '{"format-version": [1, 0, 0], '
+          '"native-assets": {${sections.join(', ')}}}\n',
+        );
+      final outDill = File('${ws.path}/out.dill');
+
+      snapshot.main([
+        '--gen-kernel',
+        dartaotruntime,
+        '--comma-patched-snapshot',
+        '--input-source=${mainDart.path}',
+        '--input-source=${manifest.path}',
+        genKernel,
+        '--platform',
+        platformDill,
+        '--packages',
+        '${ws.path}/package_config.json',
+        '--native-assets',
+        manifest.path,
+        '-o',
+        outDill.path,
+        mainDart.path,
+      ]);
+
+      expect(outDill.existsSync(), isTrue);
+      // The manifest was honored, not dropped: the output carries the front
+      // end's synthetic entries, and the read-set check accepted them.
+      final outBytes = outDill.readAsBytesSync();
+      expect(snapshot.genKernelDillSourceUris(outBytes), contains('dummy'));
+      expect(
+        snapshot.genKernelDillCanonicalRoots(outBytes),
+        contains('vm:ffi:native-assets'),
+      );
+    },
+  );
+
   test('--aot preserves --enable-asserts in exe and aot-snapshot modes with and without --recorded-uses', () {
     if (Platform.isWindows) return;
     final sdkDir = File(Platform.resolvedExecutable).parent.parent;
@@ -705,6 +768,43 @@ void main(List<String> args) {
     },
   );
 
+  test(
+    '--gen-kernel refuses a vm:ffi:native-assets import without a manifest',
+    () {
+      final ws = Directory('${tmp.path}/vm_ws')..createSync(recursive: true);
+      final main = File('${ws.path}/main.dart')
+        ..writeAsStringSync(
+          "import 'vm:ffi:native-assets';\n"
+          'void main() => print("unreachable");\n',
+        );
+      // The classifier refuses the asset-library URI as an other-scheme
+      // import: user sources can never name it, manifest or not.
+      expect(
+        snapshot.findDisallowedDirectives({
+          main.path: main.readAsStringSync(),
+        }, tool: 'app_jit_snapshot'),
+        [
+          "app_jit_snapshot: ${main.path} import 'vm:ffi:native-assets' "
+              'is not a declared input.',
+        ],
+      );
+      // End to end: the wrapper fails before running gen_kernel (which is
+      // never reached, so no SDK snapshot is needed).
+      final toolPath = stageTool();
+      final res = Process.runSync(Platform.resolvedExecutable, [
+        toolPath,
+        '--gen-kernel',
+        'never-reached-runtime',
+        '--input-source=${main.path}',
+      ]);
+      expect(res.exitCode, isNonZero);
+      expect(
+        res.stderr as String,
+        contains("import 'vm:ffi:native-assets' is not a declared input"),
+      );
+    },
+  );
+
   test('--gen-kernel refuses a climbing relative import without compiling', () {
     final ws = Directory('${tmp.path}/rel_ws')..createSync(recursive: true);
     final main = File('${ws.path}/main.dart')
@@ -1044,6 +1144,7 @@ void main(List<String> args) {
       Uint8List bytes, {
       Set<String> declaredKeys = const {'app/main.dart'},
       Map<String, String> packageKeyPrefixes = const {},
+      bool hasNativeAssetsManifest = false,
     }) {
       final out = File('${tmp.path}/$name')..writeAsBytesSync(bytes);
       return snapshot.verifyGenKernelReads(
@@ -1052,6 +1153,7 @@ void main(List<String> args) {
         multiRootPrefix: prefix,
         fsRoots: const ['.'],
         packageKeyPrefixes: packageKeyPrefixes,
+        hasNativeAssetsManifest: hasNativeAssetsManifest,
       );
     }
 
@@ -1132,9 +1234,95 @@ void main(List<String> args) {
           multiRootPrefix: prefix,
           fsRoots: const ['.'],
           packageKeyPrefixes: const {},
+          hasNativeAssetsManifest: false,
         ),
         isEmpty,
       );
+    });
+
+    // The exact shape the front end emits for a `--native-assets` manifest:
+    // a `dummy` source-table entry, a node with the `dummy` source, no import
+    // URI, and the `vm:ffi:native-assets` canonical name (which is also its
+    // own root). With a manifest the whole triple verifies; without one every
+    // piece is refused.
+    Uint8List nativeAssetsDill() => verifyDill(
+      sources: [
+        ('${prefix}app/main.dart', '${prefix}app/main.dart'),
+        ('dummy', ''),
+      ],
+      libraries: [(0, '${prefix}app/main.dart'), (1, 'vm:ffi:native-assets')],
+    );
+
+    test('a manifest-synthesized native-assets library verifies', () {
+      expect(
+        verify(
+          'native_assets.dill',
+          nativeAssetsDill(),
+          hasNativeAssetsManifest: true,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('synthetic native-assets entries are refused without a manifest', () {
+      final errors = verify(
+        'native_assets_no_manifest.dill',
+        nativeAssetsDill(),
+      );
+      expect(errors, isNotEmpty);
+      expect(errors.join('\n'), contains('reads dummy'));
+      expect(errors.join('\n'), contains('references vm:ffi:native-assets'));
+    });
+
+    test('a near-miss native-assets shape is refused with a manifest', () {
+      // A real file behind the asset-library name still fails: the node must
+      // name the `dummy` placeholder, not a workspace file.
+      final errors = verify(
+        'native_assets_miss.dill',
+        verifyDill(
+          sources: [
+            ('${prefix}app/main.dart', '${prefix}app/main.dart'),
+            ('${prefix}app/dummy.dart', '${prefix}app/dummy.dart'),
+          ],
+          libraries: [
+            (0, '${prefix}app/main.dart'),
+            (1, 'vm:ffi:native-assets'),
+          ],
+        ),
+        declaredKeys: const {'app/main.dart', 'app/dummy.dart'},
+        hasNativeAssetsManifest: true,
+      );
+      expect(errors, isNotEmpty);
+      expect(errors.join('\n'), contains('references vm:ffi:native-assets'));
+    });
+
+    test('a user file literally named dummy is refused with a manifest', () {
+      final errors = verify(
+        'user_dummy.dill',
+        verifyDill(
+          sources: [
+            ('${prefix}app/main.dart', '${prefix}app/main.dart'),
+            ('${prefix}dummy', '${prefix}dummy'),
+          ],
+          libraries: [(0, '${prefix}app/main.dart')],
+        ),
+        hasNativeAssetsManifest: true,
+      );
+      expect(errors, isNotEmpty);
+      expect(errors.join('\n'), contains('reads ${prefix}dummy'));
+    });
+
+    test('a smuggled vm: root is refused without a manifest', () {
+      final errors = verify(
+        'vm_root.dill',
+        verifyDill(
+          sources: [('${prefix}app/main.dart', '${prefix}app/main.dart')],
+          libraries: [(0, '${prefix}app/main.dart')],
+          extraRoots: ['vm:ffi:native-assets'],
+        ),
+      );
+      expect(errors, isNotEmpty);
+      expect(errors.join('\n'), contains('references vm:ffi:native-assets'));
     });
   });
 

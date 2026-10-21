@@ -1708,6 +1708,36 @@ String? _gkKeyOfPackageUri(String uri, Map<String, String> packageKeyPrefixes) {
 /// [genKernelPackageKeyPrefixes] builds it), or a resolvable spelling of a
 /// declared file. Returns the diagnostics, empty when clean.
 ///
+/// Whether [library] is the front end's synthesized `vm:ffi:native-assets`
+/// entry: with a `--native-assets` manifest the front end records the asset
+/// library with the bare placeholder `dummy` as its source, no import URI,
+/// and the library URI itself as its canonical name (the shape the pinned
+/// SDK's `gen_kernel` emits). A user library cannot take this shape: `vm:`
+/// imports are refused in directives before the compile runs, and no declared
+/// file is ever recorded under the bare name `dummy`.
+bool _isSynthesizedNativeAssetsLibrary(GenKernelLibraryReference library) =>
+    library.fileUri == 'dummy' &&
+    library.importUri == null &&
+    library.canonicalName == 'vm:ffi:native-assets';
+
+/// Verifies that the `gen_kernel` output at [outputPath] read only declared
+/// inputs: every workspace file its source table names is one of
+/// [declaredKeys] (stable multi-root keys, as [_stableSourceKey] derives
+/// them), and every library `importUri` and top-level canonical-name root is
+/// either a `dart:` library, a multi-root or `package:` spelling of a declared
+/// input ([packageKeyPrefixes] maps the `package:` spellings, as
+/// [genKernelPackageKeyPrefixes] builds it), or a resolvable spelling of a
+/// declared file. Returns the diagnostics, empty when clean.
+///
+/// When [hasNativeAssetsManifest] is set, the compile was given a
+/// `--native-assets` manifest, so exactly the front end's synthesized
+/// `vm:ffi:native-assets` entries are accepted (see
+/// [_isSynthesizedNativeAssetsLibrary]): the bare `dummy` source-table URI,
+/// which names no file, and the asset library's node and canonical-name root.
+/// Without a manifest — or for any entry that only resembles the shape, such
+/// as a user file or library literally named `dummy` — the same entries are
+/// refused as usual.
+///
 /// A missing output passes: there is no read set to verify. An unreadable
 /// file or an unparsable table fails closed: the compile produced bytes whose
 /// reads cannot be verified.
@@ -1717,6 +1747,7 @@ List<String> verifyGenKernelReads({
   required String multiRootPrefix,
   required List<String> fsRoots,
   required Map<String, String> packageKeyPrefixes,
+  required bool hasNativeAssetsManifest,
 }) {
   final dillFile = File(outputPath);
   if (!dillFile.existsSync()) return <String>[];
@@ -1738,6 +1769,11 @@ List<String> verifyGenKernelReads({
     ];
   }
   for (final uri in uris) {
+    // A `--native-assets` manifest makes the front end synthesize the
+    // `vm:ffi:native-assets` library from the bare placeholder URI `dummy`,
+    // which names no file; without a manifest the same spelling still fails
+    // below, as does any other undeclared spelling.
+    if (hasNativeAssetsManifest && uri == 'dummy') continue;
     final key = _gkKeyOfRecordedUri(uri, multiRootPrefix, fsRoots);
     if (key == null) continue;
     if (key.isEmpty || !declaredKeys.contains(key)) {
@@ -1784,6 +1820,12 @@ List<String> verifyGenKernelReads({
   final libraries = genKernelDillLibraryReferences(bytes);
   if (libraries != null) {
     for (final library in libraries) {
+      // The manifest-synthesized asset library names no file: only its exact
+      // shape passes, and only with a manifest.
+      if (hasNativeAssetsManifest &&
+          _isSynthesizedNativeAssetsLibrary(library)) {
+        continue;
+      }
       for (final reference in [library.importUri, library.canonicalName]) {
         if (!referenceIsDeclared(reference)) {
           errors.add(
@@ -1801,6 +1843,10 @@ List<String> verifyGenKernelReads({
     final canonicalRoots = genKernelDillCanonicalRoots(bytes);
     if (canonicalRoots != null) {
       for (final root in canonicalRoots) {
+        // The synthesized asset library's canonical name is its own root.
+        if (hasNativeAssetsManifest && root == 'vm:ffi:native-assets') {
+          continue;
+        }
         if (!referenceIsDeclared(root)) {
           errors.add(
             'app_jit_snapshot: $outputPath references $root, which no '
@@ -2037,6 +2083,7 @@ void _runGenKernel(List<String> argv) {
   // the kernel must never carry an undeclared file.
   var scheme = defaultMultiRootPrefix.replaceFirst(RegExp(r':///$'), '');
   String? packagesPath;
+  var hasNativeAssetsManifest = false;
   for (var i = 0; i < rawGenArgs.length; i++) {
     final arg = rawGenArgs[i];
     if (arg == '--filesystem-scheme' && i + 1 < rawGenArgs.length) {
@@ -2047,6 +2094,10 @@ void _runGenKernel(List<String> argv) {
       packagesPath = rawGenArgs[i + 1];
     } else if (arg.startsWith('--packages=')) {
       packagesPath = arg.substring('--packages='.length);
+    } else if (arg == '--native-assets' && i + 1 < rawGenArgs.length) {
+      hasNativeAssetsManifest = true;
+    } else if (arg.startsWith('--native-assets=')) {
+      hasNativeAssetsManifest = true;
     }
   }
   final multiRootPrefix = '$scheme:///';
@@ -2057,6 +2108,7 @@ void _runGenKernel(List<String> argv) {
     },
     multiRootPrefix: multiRootPrefix,
     fsRoots: fsRoots,
+    hasNativeAssetsManifest: hasNativeAssetsManifest,
     packageKeyPrefixes: packagesPath == null
         ? <String, String>{}
         : genKernelPackageKeyPrefixes(
