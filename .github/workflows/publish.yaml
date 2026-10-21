@@ -11,6 +11,10 @@ on:
     secrets:
       publish_token:
         required: true
+      # Fallback token a caller may pass through; without it the expression
+      # below can only resolve the repository secret on manual dispatch.
+      BCR_PUBLISH_TOKEN:
+        required: false
   # In case of problems, let release engineers retry by manually dispatching
   # the workflow from the GitHub UI
   workflow_dispatch:
@@ -21,7 +25,8 @@ on:
         type: string
 jobs:
   publish:
-    timeout-minutes: 60
+    # No timeout-minutes here: GitHub rejects it on jobs that call a reusable
+    # workflow.
     uses: bazel-contrib/publish-to-bcr/.github/workflows/publish.yaml@v1.5.1
     with:
       tag_name: ${{ inputs.tag_name }}

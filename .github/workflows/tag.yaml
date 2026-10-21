@@ -28,7 +28,8 @@ jobs:
         uses: smlx/ccv@v0.10.0
   release:
     needs: tag
-    timeout-minutes: 60
+    # No timeout-minutes here: GitHub rejects it on jobs that call a reusable
+    # workflow.
     uses: ./.github/workflows/release.yaml
     with:
       tag_name: ${{ needs.tag.outputs.new-tag-version }}

@@ -51,7 +51,8 @@ jobs:
           done
   release:
     needs: full-matrix
-    timeout-minutes: 60
+    # No timeout-minutes here: GitHub rejects it on jobs that call a reusable
+    # workflow. The wait loop above carries its own 90-minute deadline.
     uses: bazel-contrib/.github/.github/workflows/release_ruleset.yaml@v7.7.0
     with:
       release_files: rules_dart-*.tar.gz
