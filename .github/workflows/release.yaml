@@ -56,5 +56,13 @@ jobs:
     uses: bazel-contrib/.github/.github/workflows/release_ruleset.yaml@v7.7.0
     with:
       release_files: rules_dart-*.tar.gz
+      # The full-matrix job above already refuses to release without a passing
+      # Full matrix run (`bazel test //...` in every workspace) on the tagged
+      # commit, so this job repeats no tests: it only builds the root
+      # workspace to verify the checkout before cutting the archive. A cold
+      # `bazel test //...` here timed out small tests on v0.11.0 even though
+      # the same commit was green, so testing again buys no coverage and only
+      # reintroduces cold-runner flakes.
+      bazel_test_command: bazel build //...
       prerelease: false
       tag_name: ${{ inputs.tag_name || github.ref_name }}
