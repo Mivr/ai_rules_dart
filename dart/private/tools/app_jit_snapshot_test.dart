@@ -723,10 +723,14 @@ void main(List<String> args) {
       ]);
       expect(outJit.existsSync(), isTrue, reason: 'snapshot in $root');
       // Nothing undeclared stays behind: neither the training VM copy nor
-      // the training scratch directory.
+      // the training scratch directory. listSync() reports platform
+      // separators (`\` on Windows) while the expected path above is built
+      // with `/`, so both sides are normalized before comparing; a real
+      // stray file still differs and fails on every OS.
+      String slashes(String path) => path.replaceAll(r'\', '/');
       final leftovers = Directory('${root.path}/bazel-out/k8-fastbuild/bin/pkg')
           .listSync()
-          .where((e) => e.path != outJit.path)
+          .where((e) => slashes(e.path) != slashes(outJit.path))
           .toList();
       expect(leftovers, isEmpty, reason: 'no leftovers in $root: $leftovers');
       return outJit.readAsBytesSync();
