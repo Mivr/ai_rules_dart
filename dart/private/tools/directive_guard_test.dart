@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:runfiles/runfiles.dart';
@@ -254,6 +255,31 @@ void main(List<String> args) {
     });
   });
 
+  group('isDisallowedDirectiveUri', () {
+    test(
+      'schemeless authorities are disallowed in every separator spelling',
+      () {
+        expect(isDisallowedDirectiveUri('//host/evil.dart'), isTrue);
+        expect(isDisallowedDirectiveUri(r'\\host\evil.dart'), isTrue);
+        expect(isDisallowedDirectiveUri('//host/evil.dart?v=1'), isTrue);
+        expect(isDisallowedDirectiveUri('//host/evil.dart#frag'), isTrue);
+      },
+    );
+
+    test('relatives and declared schemes pass', () {
+      expect(isDisallowedDirectiveUri('b.dart'), isFalse);
+      expect(isDisallowedDirectiveUri('../b.dart'), isFalse);
+      expect(isDisallowedDirectiveUri('b.dart#frag'), isFalse);
+      expect(isDisallowedDirectiveUri('dart:core'), isFalse);
+      expect(isDisallowedDirectiveUri('package:demo/b.dart'), isFalse);
+      expect(
+        isDisallowedDirectiveUri('org-dartlang-root:///pkg/lib/b.dart'),
+        isFalse,
+      );
+      expect(isDisallowedDirectiveUri(''), isFalse);
+    });
+  });
+
   group('projectStagedRoots', () {
     test('a .proj project scans itself and its .extpkgs sibling', () {
       expect(projectStagedRoots('/r/x.proj'), ['/r/x.proj', '/r/x.extpkgs']);
@@ -304,6 +330,31 @@ void main(List<String> args) {
       stagedFile('lib/qclimb.dart', "import '../../evil.dart?v=1';\n");
       stagedFile('lib/qabs.dart', "import '/etc/hostname?v=1';\n");
       stagedFile('lib/frag.dart', "import 'b.dart#frag';\n");
+      stagedFile('lib/slashauth.dart', "import '//host/evil.dart';\n");
+      // Four source backslashes (0x5C): the scanner unescapes `\\` pairs, so
+      // the extracted URI leads with `\\`, which the check reads as the `//`
+      // authority refusal. A single source backslash would unescape to one and
+      // refuse as an absolute path instead.
+      File('${staged.path}/lib/backslash.dart'.replaceAll(r'\', '/'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync([
+          ...utf8.encode("import '"),
+          0x5c,
+          0x5c,
+          0x5c,
+          0x5c,
+          ...utf8.encode('host'),
+          0x5c,
+          0x5c,
+          ...utf8.encode("evil.dart';\n"),
+        ]);
+      File('${staged.path}/lib/malformed.dart'.replaceAll(r'\', '/'))
+        ..createSync(recursive: true)
+        ..writeAsBytesSync([
+          ...utf8.encode("import 'b.dart';\n// "),
+          0xff,
+          ...utf8.encode("\nimport '../../evil.dart';\n"),
+        ]);
       stagedFile('main.dart', "import '../evil.dart';\n");
     });
 
@@ -316,6 +367,8 @@ void main(List<String> args) {
       expect(violations, [
         "guard-test: ${at('lib/abs.dart')} import '/etc/hostname' "
             'is not a declared input.',
+        "guard-test: ${at('lib/backslash.dart')} import '\\\\host\\evil.dart' "
+            'is not a declared input.',
         "guard-test: ${at('lib/climb.dart')} import '../../evil.dart' "
             'is not a declared input.',
         "guard-test: ${at('lib/cond.dart')} import '../../evil.dart' "
@@ -323,6 +376,10 @@ void main(List<String> args) {
         "guard-test: ${at('lib/empty.dart')} import 'a//b.dart' "
             'is not a declared input.',
         "guard-test: ${at('lib/emptypkg.dart')} import 'package:demo//evil.dart' "
+            'is not a declared input.',
+        "guard-test: ${at('lib/frag.dart')} import 'b.dart#frag' "
+            'is not a declared input.',
+        "guard-test: ${at('lib/malformed.dart')} import '../../evil.dart' "
             'is not a declared input.',
         "guard-test: ${at('lib/part.dart')} part '../../evil_part.dart' "
             'is not a declared input.',
@@ -335,6 +392,8 @@ void main(List<String> args) {
         "guard-test: ${at('lib/qclimb.dart')} import '../../evil.dart?v=1' "
             'is not a declared input.',
         "guard-test: ${at('lib/scheme.dart')} import 'file:///etc/hosts' "
+            'is not a declared input.',
+        "guard-test: ${at('lib/slashauth.dart')} import '//host/evil.dart' "
             'is not a declared input.',
         "guard-test: ${at('main.dart')} import '../evil.dart' "
             'is not a declared input.',

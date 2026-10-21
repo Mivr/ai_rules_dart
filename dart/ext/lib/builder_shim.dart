@@ -443,9 +443,8 @@ Future<Directory> prepareSourceGenCwd({
   await baseDir.create(recursive: true);
   final canonicalBasePath = p.normalize(await baseDir.resolveSymbolicLinks());
   final canonicalBaseDir = Directory(canonicalBasePath);
-  await File(
-    p.join(canonicalBasePath, 'pubspec.yaml'),
-  ).writeAsString('name: ""\nenvironment:\n  sdk: ^3.0.0\n');
+  await File(p.join(canonicalBasePath, 'pubspec.yaml'))
+      .writeAsString('name: ""\nenvironment:\n  sdk: ^3.0.0\n');
   await File(p.join(canonicalBasePath, 'stacked.json')).writeAsString('{}\n');
   Directory.current = canonicalBaseDir;
   final currentPath = p.normalize(Directory.current.path);
@@ -544,13 +543,12 @@ String? extractShimFlag(List<String> argv, String flag) {
 /// Signature of a function that returns an [AnalysisContextCollection]
 /// for the given inclusion + SDK settings. Tests can inject a stub; the
 /// shim's default is [_defaultBuildAnalysisContext].
-typedef AnalysisContextBuilder =
-    Future<AnalysisContextCollection> Function({
-      required List<String> includedPaths,
-      required String? sdkPath,
-      String? sdkSummaryPath,
-      required List<String> librarySummaryPaths,
-    });
+typedef AnalysisContextBuilder = Future<AnalysisContextCollection> Function({
+  required List<String> includedPaths,
+  required String? sdkPath,
+  String? sdkSummaryPath,
+  required List<String> librarySummaryPaths,
+});
 
 /// With no [sdkSummaryPath] or [librarySummaryPaths] this is the public
 /// constructor, as it always was. With summaries, the analyzer resolves the SDK
@@ -826,9 +824,8 @@ Future<void> _runWithStaging(
     // No matching emission (the builder saw no relevant annotations):
     // write an empty file, since Bazel still requires the declared output.
     if (match != null) claimed.add(match);
-    await File(
-      outPath,
-    ).writeAsBytes(match != null ? emitted[match]! : const <int>[]);
+    await File(outPath)
+        .writeAsBytes(match != null ? emitted[match]! : const <int>[]);
   }
 }
 
@@ -992,9 +989,8 @@ String _serializePackageConfig(PackageConfig config) {
     }
     entries.add(entry);
   }
-  return const JsonEncoder.withIndent(
-    '  ',
-  ).convert({'configVersion': 2, 'packages': entries});
+  return const JsonEncoder.withIndent('  ')
+      .convert({'configVersion': 2, 'packages': entries});
 }
 
 // ---------------------------------------------------------------------------
@@ -1897,9 +1893,10 @@ List<_ShimDirectiveRef> _parseShimDirectives(String source) {
 /// before any Builder runs): `dart:`, `package:` URIs that stay inside their
 /// package, and schemeless relatives that stay inside the staging dir pass,
 /// while `file:` and other schemes, `package:` URIs climbing above their
-/// package ([isEscapingPackageUri]), and relatives escaping the staging dir
+/// package ([isEscapingPackageUri]), relatives escaping the staging dir
 /// (resolved by [resolveStagedRelativeTarget] against the importing file's
-/// staged path, the way the analyzer resolves them) are refused. Each
+/// staged path, the way the analyzer resolves them), and URIs resolving to no
+/// file at all (`//` authorities, fragments, decoded `/`) are refused. Each
 /// diagnostic names the file, the directive and the URI, in the same shape as
 /// the shared check's.
 Future<List<String>> findStagedShimViolations(
@@ -1928,12 +1925,14 @@ Future<List<String>> findStagedShimViolations(
   for (final path in paths) {
     String content;
     try {
-      content = await File(path).readAsString();
+      // Malformed sequences become U+FFFD, never a skipped file: the analyzer
+      // accepts the file, so the guard scans what it can.
+      content = utf8.decode(
+        await File(path).readAsBytes(),
+        allowMalformed: true,
+      );
     } on FileSystemException {
       // Gone between listing and reading; the analyzer reports it.
-      continue;
-    } on FormatException {
-      // Not decodable text; the analyzer reports it.
       continue;
     }
     final key = path.replaceAll(r'\', '/');
@@ -1958,7 +1957,9 @@ Future<List<String>> findStagedShimViolations(
         continue;
       }
       final target = resolveStagedRelativeTarget(uri, from);
-      if (target != null && !declared(target)) {
+      // A null resolution names no declared file (a `//` authority, a
+      // fragment, or a decoded `/`): it is refused, never passed.
+      if (target == null || !declared(target)) {
         errors.add("$tool: $key ${ref.kind} '$uri' is not a declared input.");
       }
     }

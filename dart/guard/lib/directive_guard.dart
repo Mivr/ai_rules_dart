@@ -290,12 +290,14 @@ bool _isSchemeChar(int c) =>
 
 /// Whether an `import` or `export` directive URI must fail the build: it names
 /// no file the action can read through its declared inputs. That is a `file:`
-/// URI in any spelling, or any other URI scheme but `dart:`, `package:` and
-/// the multi-root scheme. `dart:` libraries are checked against the VM set and
-/// `package:` URIs against the package config by the caller. Schemeless
-/// relative URIs are not classified here: the staged-source check resolves
-/// those against the importing file's declared location itself, since no
-/// caller confines them.
+/// URI in any spelling, a schemeless `//` authority in any separator spelling
+/// (`//host/x.dart`, `\\host\x.dart`: the front end resolves those above every
+/// root, outside the declared inputs), or any other URI scheme but `dart:`,
+/// `package:` and the multi-root scheme. `dart:` libraries are checked against
+/// the VM set and `package:` URIs against the package config by the caller.
+/// Other schemeless relative URIs are not classified here: the staged-source
+/// check resolves those against the importing file's declared location itself,
+/// since no caller confines them.
 bool isDisallowedDirectiveUri(
   String uri, {
   String multiRootPrefix = defaultMultiRootPrefix,
@@ -303,6 +305,11 @@ bool isDisallowedDirectiveUri(
   if (uri.startsWith(multiRootPrefix)) return false;
   if (uri.startsWith('package:') || uri.startsWith('dart:')) return false;
   if (isFileSchemeDirectiveUri(uri)) return true;
+  // A schemeless `//` authority names no declared file: the front end resolves
+  // it above every root, so it reads the host whatever the roots hold. `\`
+  // separates like the front end, so a leading `\\` counts too.
+  final text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
+  if (text.startsWith('//')) return true;
   final colon = uri.indexOf(':');
   if (colon <= 0) return false;
   if (!_isSchemeStart(uri.codeUnitAt(0))) return false;
@@ -1023,8 +1030,11 @@ List<String> findDisallowedDirectives(
 }
 
 /// The contents of every `.dart` file under [roots], keyed by path, skipping
-/// directories that do not exist and files that vanish or do not decode: the
-/// compiler reports those itself. Synchronous for the sync build-action
+/// only directories that do not exist and files that vanish before they are
+/// read (the compiler reports those itself). Files that do not decode as UTF-8
+/// are decoded with malformed sequences replaced, so the guard still scans
+/// every directive they hold: the front end accepts such files, so skipping
+/// them would hide their imports. Synchronous for the sync build-action
 /// runners, which validate their staged sources before invoking the compiler.
 ///
 /// Staged trees hold symlinks (`ctx.actions.symlink`), which list as `Link`,
@@ -1047,11 +1057,14 @@ Map<String, String> readStagedDartSources(Iterable<String> roots) {
       }
       final key = entity.path.replaceAll(r'\', '/');
       try {
-        contents[key] = File(entity.path).readAsStringSync();
+        // Malformed sequences become U+FFFD, never a skipped file: the front
+        // end accepts the file, so the guard scans what it can.
+        contents[key] = utf8.decode(
+          File(entity.path).readAsBytesSync(),
+          allowMalformed: true,
+        );
       } on FileSystemException {
         // Gone between listing and reading; the compiler reports it.
-      } on FormatException {
-        // Not decodable text; the compiler reports it.
       }
     }
   }
@@ -1128,8 +1141,9 @@ Set<String> _stagedRootSpellings(String root) {
 /// root) URI is resolved against its importing file's staged path — climbing
 /// `..` segments are followed past the staged tree, never clamped — and any
 /// target outside [roots] is refused, as is a `package:` URI that climbs above
-/// its package ([isEscapingPackageUri]). Each diagnostic names the file, the
-/// directive and the URI.
+/// its package ([isEscapingPackageUri]) and any URI that resolves to no file
+/// at all (a `//` authority, a fragment, or a decoded `/`). Each diagnostic
+/// names the file, the directive and the URI.
 List<String> findStagedDirectiveViolations(
   Iterable<String> roots, {
   required String tool,
@@ -1172,7 +1186,9 @@ List<String> findStagedDirectiveViolations(
         continue;
       }
       final target = resolveStagedRelativeTarget(uri, from);
-      if (target != null && !declared(target)) {
+      // A null resolution names no declared file (a `//` authority, a
+      // fragment, or a decoded `/`): it is refused, never passed.
+      if (target == null || !declared(target)) {
         errors.add("$tool: $path ${ref.kind} '$uri' is not a declared input.");
       }
     }

@@ -915,11 +915,14 @@ List<String> _findDisallowedGenKernelDirectives(
   final contents = <String, String>{};
   for (final path in sources) {
     try {
-      contents[path] = File(path).readAsStringSync();
+      // Malformed sequences become U+FFFD, never a skipped file: gen_kernel
+      // accepts the file, so the guard scans what it can.
+      contents[path] = utf8.decode(
+        File(path).readAsBytesSync(),
+        allowMalformed: true,
+      );
     } on FileSystemException {
       // Missing or unreadable here; gen_kernel reports it.
-    } on FormatException {
-      // Not decodable text; gen_kernel reports it.
     }
   }
   final declared = <String>{
@@ -964,7 +967,9 @@ List<String> _findDisallowedGenKernelDirectives(
         continue;
       }
       final target = resolveStagedRelativeTarget(uri, from);
-      if (target == null || declared.contains(target)) continue;
+      // A null filesystem-path resolution is not acceptance: the key-space
+      // lookup below gets its say, and a null there refuses the directive.
+      if (target != null && declared.contains(target)) continue;
       final keyTarget = _resolveKeyRelativeTarget(uri, fromKey);
       if (keyTarget != null && declaredKeys.contains(keyTarget)) continue;
       errors.add(
@@ -2237,12 +2242,14 @@ bool _isSchemeChar(int c) =>
 
 /// Whether an `import` or `export` directive URI must fail the build: it names
 /// no file the action can read through its declared inputs. That is a `file:`
-/// URI in any spelling, or any other URI scheme but `dart:`, `package:` and
-/// the multi-root scheme. `dart:` libraries are checked against the VM set and
-/// `package:` URIs against the package config by the caller. Schemeless
-/// relative URIs are not classified here: the staged-source check resolves
-/// those against the importing file's declared location itself, since no
-/// caller confines them.
+/// URI in any spelling, a schemeless `//` authority in any separator spelling
+/// (`//host/x.dart`, `\\host\x.dart`: the front end resolves those above every
+/// root, outside the declared inputs), or any other URI scheme but `dart:`,
+/// `package:` and the multi-root scheme. `dart:` libraries are checked against
+/// the VM set and `package:` URIs against the package config by the caller.
+/// Other schemeless relative URIs are not classified here: the staged-source
+/// check resolves those against the importing file's declared location itself,
+/// since no caller confines them.
 bool isDisallowedDirectiveUri(
   String uri, {
   String multiRootPrefix = defaultMultiRootPrefix,
@@ -2250,6 +2257,11 @@ bool isDisallowedDirectiveUri(
   if (uri.startsWith(multiRootPrefix)) return false;
   if (uri.startsWith('package:') || uri.startsWith('dart:')) return false;
   if (isFileSchemeDirectiveUri(uri)) return true;
+  // A schemeless `//` authority names no declared file: the front end resolves
+  // it above every root, so it reads the host whatever the roots hold. `\`
+  // separates like the front end, so a leading `\\` counts too.
+  final text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
+  if (text.startsWith('//')) return true;
   final colon = uri.indexOf(':');
   if (colon <= 0) return false;
   if (!_isSchemeStart(uri.codeUnitAt(0))) return false;

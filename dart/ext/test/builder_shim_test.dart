@@ -2260,6 +2260,65 @@ part 'e.dart';
         contains(contains("import '../../evil.dart' is not a declared input.")),
       );
     });
+
+    test('scans a file with invalid UTF-8 instead of skipping it', () async {
+      // A FormatException from a strict UTF-8 decode used to skip the file
+      // entirely, so an escape planted after the bad byte compiled silently.
+      final file = File(p.join(staging.path, 'lib', 'malformed.dart'));
+      await file.parent.create(recursive: true);
+      await file.writeAsBytes([
+        ...utf8.encode("import 'b.dart';\n// "),
+        0xff,
+        ...utf8.encode("\nimport '../../evil.dart';\n"),
+      ]);
+      final violations = await findStagedShimViolations(
+        staging,
+        tool: 'builder_shim',
+      );
+      expect(
+        violations,
+        contains(contains("import '../../evil.dart' is not a declared input.")),
+      );
+    });
+
+    test(
+      'refuses schemeless //-authority, backslash-spelled, and fragment URIs',
+      () async {
+        // Under the entry's org-dartlang-root:/// multi-root these resolve to
+        // nothing; a null that compiled anyway would embed host bytes.
+        await stage('lib/slashauth.dart', "import '//host/evil.dart';\n");
+        await stage('lib/frag.dart', "import 'b.dart#frag';\n");
+        // Four source backslashes extract as a leading `\\`, which the guard
+        // normalises to the `//` authority rule (fewer backslashes extract as
+        // a single `\` and take the absolute-path refusal instead).
+        final backslash = File(p.join(staging.path, 'lib', 'backslash.dart'));
+        await backslash.parent.create(recursive: true);
+        await backslash.writeAsBytes(
+          utf8.encode("import '\\\\\\\\host\\\\evil.dart';\n"),
+        );
+        final violations = await findStagedShimViolations(
+          staging,
+          tool: 'builder_shim',
+        );
+        expect(violations, hasLength(3));
+        expect(
+          violations,
+          contains(
+            contains("import '//host/evil.dart' is not a declared input."),
+          ),
+        );
+        expect(
+          violations,
+          contains(contains("import 'b.dart#frag' is not a declared input.")),
+        );
+        expect(
+          violations,
+          contains(
+            contains("import '\\\\host\\evil.dart' is not a declared input."),
+          ),
+        );
+      },
+    );
   });
 }
 

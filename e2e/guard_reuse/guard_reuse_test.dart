@@ -1,6 +1,7 @@
 // Proves an external module can enforce the same directive-URI check as
 // rules_dart: this file lives outside rules_dart and reaches the guard only
 // through its public library target and stable `package:` URI.
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:rules_dart_guard/directive_guard.dart';
@@ -47,6 +48,15 @@ void main() {
     'file: URIs are disallowed',
   );
   _check(
+    isDisallowedDirectiveUri('//host/evil.dart'),
+    '//-authority is refused',
+  );
+  _check(
+    isDisallowedDirectiveUri('\\\\host\\evil.dart'),
+    'backslash-spelled authority is refused',
+  );
+  _check(!isDisallowedDirectiveUri('b.dart'), 'a relative path is allowed');
+  _check(
     !isDisallowedDirectiveUri('package:p/a.dart'),
     'package: URIs are allowed',
   );
@@ -76,6 +86,18 @@ void main() {
     stagedFile('lib/scheme.dart', "import 'file:///etc/hosts';\n");
     stagedFile('lib/pkg.dart', "import 'package:demo/sub/../../evil.dart';\n");
     stagedFile('lib/empty.dart', "import 'a//b.dart';\n");
+    stagedFile('lib/slashauth.dart', "import '//host/evil.dart';\n");
+    stagedFile('lib/frag.dart', "import 'b.dart#frag';\n");
+    File('${staged.path}/lib/backslash.dart')
+      ..createSync(recursive: true)
+      ..writeAsBytesSync(utf8.encode("import '\\\\\\\\host\\\\evil.dart';\n"));
+    File('${staged.path}/lib/malformed.dart')
+      ..createSync(recursive: true)
+      ..writeAsBytesSync([
+        ...utf8.encode("import 'b.dart';\n// "),
+        0xff,
+        ...utf8.encode("\nimport '../../evil.dart';\n"),
+      ]);
 
     final violations = findStagedDirectiveViolations([
       staged.path,
@@ -83,13 +105,21 @@ void main() {
     String at(String relative) =>
         '${staged.path}/$relative'.replaceAll(r'\', '/');
     final expected = [
+      "guard-reuse: ${at('lib/backslash.dart')} import '\\\\host\\evil.dart' "
+          'is not a declared input.',
       "guard-reuse: ${at('lib/climb.dart')} import '../../evil.dart' "
           'is not a declared input.',
       "guard-reuse: ${at('lib/empty.dart')} import 'a//b.dart' "
           'is not a declared input.',
+      "guard-reuse: ${at('lib/frag.dart')} import 'b.dart#frag' "
+          'is not a declared input.',
+      "guard-reuse: ${at('lib/malformed.dart')} import '../../evil.dart' "
+          'is not a declared input.',
       "guard-reuse: ${at('lib/pkg.dart')} import "
           "'package:demo/sub/../../evil.dart' is not a declared input.",
       "guard-reuse: ${at('lib/scheme.dart')} import 'file:///etc/hosts' "
+          'is not a declared input.',
+      "guard-reuse: ${at('lib/slashauth.dart')} import '//host/evil.dart' "
           'is not a declared input.',
     ];
     _check(
