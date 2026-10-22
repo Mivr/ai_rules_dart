@@ -343,6 +343,39 @@ def _embedder_sdk_summary(ctx):
     ]).to_list()
     return summaries[0] if len(summaries) == 1 else None
 
+def _collect_covered(ctx):
+    """Collects covered package keys, names and lib prefixes, or None on conflict."""
+    covered = {}
+    covered_names = {}
+    covered_lib_prefixes = {}
+    for d in closure_attrs(ctx):
+        if DartAnalyzerSummaryInfo in d:
+            for key in d[DartAnalyzerSummaryInfo].packages.to_list():
+                if key.startswith(CONFLICT_PREFIX):
+                    return None
+                covered[key] = True
+                pkg_name, _, pkg_root = key.partition("|")
+                if pkg_name:
+                    covered_names[pkg_name] = True
+                if not pkg_root.startswith("../"):
+                    prefix = (pkg_root + "/lib/") if pkg_root else "lib/"
+                    covered_lib_prefixes[prefix] = True
+    return covered, covered_names, covered_lib_prefixes
+
+def _own_keys_conflict(own_keys, own_names, covered, covered_names, has_own_lib):
+    """Whether the target's own package keys clash with a dependency's summary."""
+    return (any([k in covered for k in own_keys]) or any([n and n in covered_names for n in own_names])) and has_own_lib
+
+def _staged_files_conflict(staged_files, covered_lib_prefixes):
+    """Whether a staged Dart file sits under a covered package's `lib/`."""
+    if covered_lib_prefixes:
+        for f in staged_files:
+            if f.extension == "dart" or f.is_directory:
+                for prefix in covered_lib_prefixes.keys():
+                    if f.short_path.startswith(prefix):
+                        return True
+    return False
+
 def _summaries_ready(ctx, info, has_own_lib, staged_files = []):
     """Whether the target can be analyzed from summaries.
 
@@ -364,21 +397,10 @@ def _summaries_ready(ctx, info, has_own_lib, staged_files = []):
     """
     if unbacked_embedder_in_closure(info, _embedder_sdk_summary(ctx)):
         return False
-    covered = {}
-    covered_names = {}
-    covered_lib_prefixes = {}
-    for d in closure_attrs(ctx):
-        if DartAnalyzerSummaryInfo in d:
-            for key in d[DartAnalyzerSummaryInfo].packages.to_list():
-                if key.startswith(CONFLICT_PREFIX):
-                    return False
-                covered[key] = True
-                pkg_name, _, pkg_root = key.partition("|")
-                if pkg_name:
-                    covered_names[pkg_name] = True
-                if not pkg_root.startswith("../"):
-                    prefix = (pkg_root + "/lib/") if pkg_root else "lib/"
-                    covered_lib_prefixes[prefix] = True
+    collected = _collect_covered(ctx)
+    if collected == None:
+        return False
+    covered, covered_names, covered_lib_prefixes = collected
     own_records = owned_package_records(info)
     own_keys = [package_key(record) for record in own_records] or [package_key(info)]
     own_names = [record.package_name for record in own_records]
@@ -390,14 +412,10 @@ def _summaries_ready(ctx, info, has_own_lib, staged_files = []):
     # empty `own` key even when its `srcs` stage `lib/` files of a dependency's
     # package. A test or executable that stages only `test/` or `bin/` files
     # conflicts with no summary.
-    if (any([k in covered for k in own_keys]) or any([n and n in covered_names for n in own_names])) and has_own_lib:
+    if _own_keys_conflict(own_keys, own_names, covered, covered_names, has_own_lib):
         return False
-    if covered_lib_prefixes:
-        for f in staged_files:
-            if f.extension == "dart" or f.is_directory:
-                for prefix in covered_lib_prefixes.keys():
-                    if f.short_path.startswith(prefix):
-                        return False
+    if _staged_files_conflict(staged_files, covered_lib_prefixes):
+        return False
     for pkg in info.transitive_packages.to_list():
         key = package_key(pkg)
         if key not in own_keys and key not in covered:
@@ -411,6 +429,37 @@ def _dependency_summaries(ctx):
         for d in closure_attrs(ctx)
         if DartAnalyzerSummaryInfo in d
     ])
+
+def _merged_path_version(own_records, path):
+    """The language version of the member package whose root contains `path`."""
+    for record in own_records:
+        root = record.lib_root
+        if root and (path == root or path.startswith(root + "/")):
+            return getattr(record, "language_version", "")
+    for record in own_records:
+        if not record.lib_root:
+            return getattr(record, "language_version", "")
+    return ""
+
+def _merged_version_groups(own_records, own_paths):
+    """Groups paths by their containing member package's language version."""
+    groups = {}
+    for path in own_paths:
+        groups.setdefault(_merged_path_version(own_records, path), []).append(path)
+    return groups
+
+def _closure_version_groups(roots, own_paths):
+    """Groups paths by the innermost containing closure package's language version."""
+    groups = {}
+    for path in own_paths:
+        best = None
+        for p in roots:
+            if p.lib_root == "" or path.startswith(p.lib_root + "/"):
+                if best == None or len(p.lib_root) > len(best.lib_root):
+                    best = p
+        version = getattr(best, "language_version", "") if best else ""
+        groups.setdefault(version, []).append(path)
+    return groups
 
 def _format_language_versions(info, own_paths):
     """Groups a target's own files by the language version to format them at.
@@ -438,38 +487,13 @@ def _format_language_versions(info, own_paths):
     if own_records:
         # A merged multi-package target: each file formats at the version of
         # the member package whose root directory contains it.
-        groups = {}
-        for path in own_paths:
-            version = ""
-            matched = False
-            for record in own_records:
-                root = record.lib_root
-                if root and (path == root or path.startswith(root + "/")):
-                    version = getattr(record, "language_version", "")
-                    matched = True
-                    break
-            if not matched:
-                for record in own_records:
-                    if not record.lib_root:
-                        version = getattr(record, "language_version", "")
-                        break
-            groups.setdefault(version, []).append(path)
-        return groups
+        return _merged_version_groups(own_records, own_paths)
     roots = [
         p
         for p in info.transitive_packages.to_list()
         if not p.lib_root.startswith("../")
     ]
-    groups = {}
-    for path in own_paths:
-        best = None
-        for p in roots:
-            if p.lib_root == "" or path.startswith(p.lib_root + "/"):
-                if best == None or len(p.lib_root) > len(best.lib_root):
-                    best = p
-        version = getattr(best, "language_version", "") if best else ""
-        groups.setdefault(version, []).append(path)
-    return groups
+    return _closure_version_groups(roots, own_paths)
 
 # The SDK `<major>.<minor>` series whose `dart format` rules match the
 # vendored `package:dart_style` in `dart/ext/pubspec.lock`, and the minimum
@@ -629,33 +653,8 @@ def _closure_summary_outputs(target, ctx):
             sets.append(d[DartAnalyzerSummaryInfo].embedder_sdk_summaries)
     return depset(transitive = sets)
 
-def _dart_analyze_aspect_impl(target, ctx):
-    # Checked here, not with `required_providers`: that matches only rules that
-    # advertise the provider via `provides`, which dart_library and downstream
-    # producers do not.
-    if DartInfo not in target and DartAnalyzableInfo not in target:
-        return []
-    if ctx.label.repo_name:
-        return []
-
-    default_outputs = _closure_summary_outputs(target, ctx)
-
-    # A target's own files are its `DefaultInfo` Dart files — a library's
-    # sources, which for a `flutter_library` are its package's `lib/` — plus an
-    # executable's entrypoints, which no package can name. Generated and
-    # external files are never checked.
-    if DartAnalyzableInfo in target:
-        info = target[DartAnalyzableInfo].dart_info
-        entry = target[DartAnalyzableInfo].srcs.to_list()
-
-        # A package's own `lib/` files, which a target's `DefaultInfo` (a web
-        # bundle, a test executable) need not list. Absent from records built
-        # against an older rules_dart.
-        package_srcs = getattr(target[DartAnalyzableInfo], "package_srcs", depset()).to_list()
-    else:
-        info = target[DartInfo]
-        entry = []
-        package_srcs = []
+def _analyze_own_files(target, entry, package_srcs):
+    """Splits a target's checkable Dart files into own and generated. Returns (own, generated_by_path), or (None, None) when there is nothing to check."""
     own = {}
     generated_by_path = {}
     for f in [f for f in target[DefaultInfo].files.to_list() + entry + package_srcs if f.extension == "dart"]:
@@ -666,119 +665,81 @@ def _dart_analyze_aspect_impl(target, ctx):
         else:
             generated_by_path[f.path] = f
     if not own:
-        return [OutputGroupInfo(default = default_outputs)]
-    own_paths = sorted([f.short_path for f in own.values()])
-    generated = generated_by_path.values()
+        return None, None
+    return own, generated_by_path
 
-    name = ctx.label.name + ".dart_analyze"
-    config = ctx.attr._config[DartAnalysisConfigInfo]
-    sdk_version = ctx.toolchains[_TOOLCHAIN].dart_sdk_info.version
-    all_pkgs = info.transitive_packages.to_list()
-    all_closure_srcs = info.transitive_srcs.to_list() + info.transitive_resources.to_list() + entry + own.values() + generated
-    has_non_own_closure_srcs = any([f.path not in own for f in all_closure_srcs])
-    has_non_own_pkgs = any([p.package_name != info.package_name for p in all_pkgs])
-    is_leaf_own_only = not has_non_own_closure_srcs and not has_non_own_pkgs
-    staged = stage_config_project(
+def _analyze_summary_or_source(ctx, info, name, staged, all_pkgs, own, generated, own_paths, sdk_inputs, sdk_version, config, is_leaf_own_only):
+    """Runs the summary-mode or source-mode analyze action. Returns (output, summary_mode, summary_staged)."""
+    # The SDK check is the analyzing toolchain's own: the same one the
+    # summary aspect and the codegen rules read.
+    summary_files = own.values() + generated
+    has_own_lib = bool(own_lib_sources(info, summary_files))
+    summary_mode = ctx.attr._summaries[BuildSettingInfo].value and analyzer_summaries_supported(sdk_version) and _summaries_ready(ctx, info, has_own_lib, summary_files)
+    if not summary_mode:
+        return depset([_analyze(ctx, name, staged, sdk_inputs, own_paths)]), False, None
+    # Only the target's own files are staged: its dependencies come from
+    # their summaries, so no closure is read and no closure edit reaches
+    # this action. The fix action below keeps the full staging.
+    # The target's generated `.dart` sources are staged too, to resolve
+    # its imports against, but are excluded from analysis, as the
+    # default path excludes them. A generated source is in the closure
+    # there, but in no dependency's summary.
+    if is_leaf_own_only and not generated:
+        summary_staged = staged
+    else:
+        summary_staged = stage_config_project(
+            ctx,
+            config,
+            all_pkgs,
+            summary_files,
+            own.values(),
+            name + ".summary",
+            sdk_version,
+            copy_external = False,
+            all_packages_named = True,
+        )
+    sdk_summary = _embedder_sdk_summary(ctx) or ctx.file._sdk_summary
+    return depset([_analyze_summaries(
         ctx,
-        config,
-        all_pkgs,
-        all_closure_srcs,
-        own.values(),
         name,
-        sdk_version,
-        copy_external = False,
-        all_packages_named = is_leaf_own_only,
-    )
+        summary_staged,
+        _dependency_summaries(ctx),
+        sdk_summary,
+        sdk_inputs,
+        own_paths,
+    )]), True, summary_staged
 
-    dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
+def _analyze_format_checks(ctx, info, name, staged, own, own_paths, generated, is_leaf_own_only, sdk_version, config, summary_staged):
+    """Runs one format check per language version. Returns the `DartFormat` list."""
+    by_version = _format_language_versions(info, own_paths)
+    if summary_staged != None and not generated:
+        format_staged = summary_staged
+    elif is_leaf_own_only:
+        format_staged = staged
+    else:
+        format_staged = stage_config_project(
+            ctx,
+            config,
+            [],
+            own.values(),
+            own.values(),
+            name + ".format",
+            sdk_version,
+            copy_external = False,
+        )
+    return [
+        _format(
+            ctx,
+            name if len(by_version) == 1 else "%s.%s" % (name, version or "latest"),
+            format_staged,
+            paths,
+            version,
+        )
+        for version, paths in sorted(by_version.items())
+    ]
 
-    # The analyzer and `dart fix` read the SDK's launcher, its analysis snapshots
-    # and its `lib/` sources, which is the analyze subset, plus `runtime_files`
-    # so the launcher can run the `.dill` runner tools (`analyze_runner`,
-    # `analyzer_summary`, `fix_runner`).
-    sdk_inputs = depset(direct = [dart_sdk_info.dart], transitive = [dart_sdk_info.analyze_files, dart_sdk_info.runtime_files])
-
-    tags = getattr(ctx.rule.attr, "tags", [])
-    groups = {}
-    summary_mode = False
-    summary_staged = None
-    if NO_ANALYZE_TAG not in tags:
-        # The SDK check is the analyzing toolchain's own: the same one the
-        # summary aspect and the codegen rules read.
-        summary_files = own.values() + generated
-        has_own_lib = bool(own_lib_sources(info, summary_files))
-        summary_mode = ctx.attr._summaries[BuildSettingInfo].value and analyzer_summaries_supported(sdk_version) and _summaries_ready(ctx, info, has_own_lib, summary_files)
-        if summary_mode:
-            # Only the target's own files are staged: its dependencies come from
-            # their summaries, so no closure is read and no closure edit reaches
-            # this action. The fix action below keeps the full staging.
-            # The target's generated `.dart` sources are staged too, to resolve
-            # its imports against, but are excluded from analysis, as the
-            # default path excludes them. A generated source is in the closure
-            # there, but in no dependency's summary.
-            if is_leaf_own_only and not generated:
-                summary_staged = staged
-            else:
-                summary_staged = stage_config_project(
-                    ctx,
-                    config,
-                    all_pkgs,
-                    summary_files,
-                    own.values(),
-                    name + ".summary",
-                    sdk_version,
-                    copy_external = False,
-                    all_packages_named = True,
-                )
-            sdk_summary = _embedder_sdk_summary(ctx) or ctx.file._sdk_summary
-            groups["dart_analyze"] = depset([_analyze_summaries(
-                ctx,
-                name,
-                summary_staged,
-                _dependency_summaries(ctx),
-                sdk_summary,
-                sdk_inputs,
-                own_paths,
-            )])
-        else:
-            groups["dart_analyze"] = depset([_analyze(ctx, name, staged, sdk_inputs, own_paths)])
-    format_checks = []
-    if NO_FORMAT_TAG not in tags:
-        by_version = _format_language_versions(info, own_paths)
-        if summary_staged != None and not generated:
-            format_staged = summary_staged
-        elif is_leaf_own_only:
-            format_staged = staged
-        else:
-            format_staged = stage_config_project(
-                ctx,
-                config,
-                [],
-                own.values(),
-                own.values(),
-                name + ".format",
-                sdk_version,
-                copy_external = False,
-            )
-        format_checks = [
-            _format(
-                ctx,
-                name if len(by_version) == 1 else "%s.%s" % (name, version or "latest"),
-                format_staged,
-                paths,
-                version,
-            )
-            for version, paths in sorted(by_version.items())
-        ]
-        groups["dart_format"] = depset([c.stamp for c in format_checks])
-
-    # Write-back is limited to the target's own hand-written files, decided
-    # from Bazel's record of what each file is rather than from its name:
-    # `dart fix`'s built-in generated-file skip matches `*.g.dart` and nothing
-    # else, so a `.freezed.dart` part would otherwise be rewritten.
-    fix_mismatch = kernel_sdk_mismatch_error(ctx.label, "_fix_tool", ctx.attr._fix_tool, dart_sdk_info.version)
-    if fix_mismatch != None:
-        fail(fix_mismatch)
+def _analyze_fix_outputs(ctx, name, staged, own_paths, sdk_inputs, dart_sdk_info):
+    """Runs the fix action over the staged project. Returns (fixes, manifest)."""
     eligible = ctx.actions.declare_file(name + ".eligible")
     ctx.actions.write(
         output = eligible,
@@ -804,6 +765,123 @@ def _dart_analyze_aspect_impl(target, ctx):
         progress_message = "Computing Dart fixes for %{label}",
         env = writable_home_env(dart_sdk_info.dart, manifest),
     )
+    return fixes, manifest
+
+def _analyze_target_info(target):
+    """Returns (info, entry, package_srcs) for an analyzable target."""
+    if DartAnalyzableInfo in target:
+        info = target[DartAnalyzableInfo].dart_info
+        entry = target[DartAnalyzableInfo].srcs.to_list()
+
+        # A package's own `lib/` files, which a target's `DefaultInfo` (a web
+        # bundle, a test executable) need not list. Absent from records built
+        # against an older rules_dart.
+        package_srcs = getattr(target[DartAnalyzableInfo], "package_srcs", depset()).to_list()
+    else:
+        info = target[DartInfo]
+        entry = []
+        package_srcs = []
+    return info, entry, package_srcs
+
+def _analyze_stage_all(ctx, info, entry, own, generated, name, sdk_version, config):
+    """Stages the full closure project. Returns (all_pkgs, is_leaf_own_only, staged)."""
+    all_pkgs = info.transitive_packages.to_list()
+    all_closure_srcs = info.transitive_srcs.to_list() + info.transitive_resources.to_list() + entry + own.values() + generated
+    has_non_own_closure_srcs = any([f.path not in own for f in all_closure_srcs])
+    has_non_own_pkgs = any([p.package_name != info.package_name for p in all_pkgs])
+    is_leaf_own_only = not has_non_own_closure_srcs and not has_non_own_pkgs
+    staged = stage_config_project(
+        ctx,
+        config,
+        all_pkgs,
+        all_closure_srcs,
+        own.values(),
+        name,
+        sdk_version,
+        copy_external = False,
+        all_packages_named = is_leaf_own_only,
+    )
+    return all_pkgs, is_leaf_own_only, staged
+
+def _dart_analyze_aspect_impl(target, ctx):
+    # Checked here, not with `required_providers`: that matches only rules that
+    # advertise the provider via `provides`, which dart_library and downstream
+    # producers do not.
+    if DartInfo not in target and DartAnalyzableInfo not in target:
+        return []
+    if ctx.label.repo_name:
+        return []
+
+    default_outputs = _closure_summary_outputs(target, ctx)
+
+    # A target's own files are its `DefaultInfo` Dart files — a library's
+    # sources, which for a `flutter_library` are its package's `lib/` — plus an
+    # executable's entrypoints, which no package can name. Generated and
+    # external files are never checked.
+    info, entry, package_srcs = _analyze_target_info(target)
+    own, generated_by_path = _analyze_own_files(target, entry, package_srcs)
+    if own == None:
+        return [OutputGroupInfo(default = default_outputs)]
+    own_paths = sorted([f.short_path for f in own.values()])
+    generated = generated_by_path.values()
+
+    name = ctx.label.name + ".dart_analyze"
+    config = ctx.attr._config[DartAnalysisConfigInfo]
+    sdk_version = ctx.toolchains[_TOOLCHAIN].dart_sdk_info.version
+    all_pkgs, is_leaf_own_only, staged = _analyze_stage_all(ctx, info, entry, own, generated, name, sdk_version, config)
+
+    dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
+
+    # The analyzer and `dart fix` read the SDK's launcher, its analysis snapshots
+    # and its `lib/` sources, which is the analyze subset, plus `runtime_files`
+    # so the launcher can run the `.dill` runner tools (`analyze_runner`,
+    # `analyzer_summary`, `fix_runner`).
+    sdk_inputs = depset(direct = [dart_sdk_info.dart], transitive = [dart_sdk_info.analyze_files, dart_sdk_info.runtime_files])
+
+    tags = getattr(ctx.rule.attr, "tags", [])
+    groups = {}
+    summary_mode = False
+    summary_staged = None
+    if NO_ANALYZE_TAG not in tags:
+        groups["dart_analyze"], summary_mode, summary_staged = _analyze_summary_or_source(
+            ctx,
+            info,
+            name,
+            staged,
+            all_pkgs,
+            own,
+            generated,
+            own_paths,
+            sdk_inputs,
+            sdk_version,
+            config,
+            is_leaf_own_only,
+        )
+    format_checks = []
+    if NO_FORMAT_TAG not in tags:
+        format_checks = _analyze_format_checks(
+            ctx,
+            info,
+            name,
+            staged,
+            own,
+            own_paths,
+            generated,
+            is_leaf_own_only,
+            sdk_version,
+            config,
+            summary_staged,
+        )
+        groups["dart_format"] = depset([c.stamp for c in format_checks])
+
+    # Write-back is limited to the target's own hand-written files, decided
+    # from Bazel's record of what each file is rather than from its name:
+    # `dart fix`'s built-in generated-file skip matches `*.g.dart` and nothing
+    # else, so a `.freezed.dart` part would otherwise be rewritten.
+    fix_mismatch = kernel_sdk_mismatch_error(ctx.label, "_fix_tool", ctx.attr._fix_tool, dart_sdk_info.version)
+    if fix_mismatch != None:
+        fail(fix_mismatch)
+    fixes, manifest = _analyze_fix_outputs(ctx, name, staged, own_paths, sdk_inputs, dart_sdk_info)
 
     return [
         OutputGroupInfo(
