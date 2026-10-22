@@ -981,7 +981,7 @@ def _pub_emit_isolated_git(hub_name, git_pkgs, hub_sccs, package_names, hub_expl
             scc_targets = hub_scc_targets,
         )
 
-def _pub_emit_isolated_hub(ctx, hub_name, isolated_packages, isolated_git_packages, isolated_sccs, explicit_package_names, ignore_hooks):
+def _pub_emit_isolated_hub(hub_name, isolated_packages, isolated_git_packages, isolated_sccs, explicit_package_names, ignore_hooks):
     """Creates one isolated hub's spokes and merged repositories."""
 
     # Create isolated spoke repos (namespaced by hub, outside the global
@@ -1078,7 +1078,7 @@ def _pub_impl(ctx):
     _pub_emit_shared_git(resolved_git, shared_sccs, all_package_names, explicit_package_names, ignore_hooks, shared_scc_targets)
 
     for hub_name in isolated_hub_names:
-        _pub_emit_isolated_hub(ctx, hub_name, isolated_packages, isolated_git_packages, isolated_sccs, explicit_package_names, ignore_hooks)
+        _pub_emit_isolated_hub(hub_name, isolated_packages, isolated_git_packages, isolated_sccs, explicit_package_names, ignore_hooks)
 
     _pub_emit_hubs(hub_packages, isolated_hub_names, isolated_sccs, shared_sccs, explicit)
 
