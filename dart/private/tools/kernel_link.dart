@@ -571,6 +571,67 @@ int linkOne(
   Map<String, Uint8List>? inputs,
   required StringSink errSink,
 }) {
+  final parsed = _parseLinkArgs(rawArgs);
+  final output = parsed.paths[0];
+  final _Kernel? entry;
+  final Iterable<String> depDirs;
+  if (parsed.seedModules.isEmpty) {
+    entry = cache.kernelsOf(parsed.paths[1], inputs).single;
+    depDirs = parsed.paths.skip(2);
+  } else {
+    entry = null;
+    depDirs = parsed.paths.skip(1);
+  }
+
+  final indexed = _indexKernels(
+    cache,
+    seedModules: parsed.seedModules,
+    depDirs: depDirs,
+    inputs: inputs,
+  );
+  final baseKeys = parsed.baseKeysPath != null
+      ? cache.baseKeysOf(parsed.baseKeysPath!, inputs)
+      : const <String>{};
+
+  final walker = _LinkWalker(
+    owner: indexed.owner,
+    baseKeys: baseKeys,
+    errSink: errSink,
+  );
+  if (entry != null) {
+    walker.visitImports(entry.imports, importerPath: entry.path);
+  } else {
+    walker.visitSeeds(indexed.kernelsByDir, parsed.seedModules);
+  }
+  if (walker.missingModule) return 1;
+
+  final linked = [if (entry != null) entry, ...walker.order];
+  if (!_checkDuplicateDefines(linked, errSink)) return 1;
+
+  _emitLinked(
+    output: output,
+    platform: parsed.platform,
+    entry: entry,
+    order: walker.order,
+    baseKeys: baseKeys,
+    writeKeysPath: parsed.writeKeysPath,
+    cache: cache,
+    inputs: inputs,
+  );
+  return 0;
+}
+
+/// Parsed `linkOne` command line.
+typedef _LinkArgs = ({
+  String? writeKeysPath,
+  String? baseKeysPath,
+  String? platform,
+  List<String> seedModules,
+  List<String> paths,
+});
+
+/// Splits the runner flags from the output, entry, and dependency paths.
+_LinkArgs _parseLinkArgs(List<String> rawArgs) {
   String? writeKeysPath;
   String? baseKeysPath;
   String? platform;
@@ -593,17 +654,24 @@ int linkOne(
       paths.add(arg);
     }
   }
-  final output = paths[0];
-  final _Kernel? entry;
-  final Iterable<String> depDirs;
-  if (seedModules.isEmpty) {
-    entry = cache.kernelsOf(paths[1], inputs).single;
-    depDirs = paths.skip(2);
-  } else {
-    entry = null;
-    depDirs = paths.skip(1);
-  }
+  return (
+    writeKeysPath: writeKeysPath,
+    baseKeysPath: baseKeysPath,
+    platform: platform,
+    seedModules: seedModules,
+    paths: paths,
+  );
+}
 
+/// The kernels each seed and dependency directory provides, and which kernel
+/// owns each defined library.
+({Map<String, _Kernel> owner, Map<String, List<_Kernel>> kernelsByDir})
+_indexKernels(
+  KernelLinkCache cache, {
+  required List<String> seedModules,
+  required Iterable<String> depDirs,
+  required Map<String, Uint8List>? inputs,
+}) {
   final owner = <String, _Kernel>{};
   final kernelsByDir = <String, List<_Kernel>>{};
   for (final dir in <String>{...seedModules, ...depDirs}) {
@@ -615,69 +683,76 @@ int linkOne(
       }
     }
   }
+  return (owner: owner, kernelsByDir: kernelsByDir);
+}
 
-  final baseKeys = baseKeysPath != null
-      ? cache.baseKeysOf(baseKeysPath, inputs)
-      : const <String>{};
+/// Walks kernel imports in dependency order, reporting missing modules.
+class _LinkWalker {
+  _LinkWalker({
+    required this.owner,
+    required this.baseKeys,
+    required this.errSink,
+  });
 
-  final order = <_Kernel>[];
-  final visited = <_Kernel>{};
+  final Map<String, _Kernel> owner;
+  final Set<String> baseKeys;
+  final StringSink errSink;
+  final List<_Kernel> order = [];
+  final Set<_Kernel> visited = {};
   var missingModule = false;
+
   void visit(_Kernel kernel) {
     if (baseKeys.contains(kernel.key) || !visited.add(kernel)) return;
-    for (final key in kernel.imports) {
-      if (baseKeys.contains(key)) continue;
-      final dependency = owner[key];
-      if (dependency != null) {
-        visit(dependency);
-      } else if (!key.startsWith('dart:')) {
-        errSink.writeln(
-          'kernel_link: missing module for imported library $key (imported by ${kernel.path})',
-        );
-        missingModule = true;
-      }
-    }
+    visitImports(kernel.imports, importerPath: kernel.path);
     order.add(kernel);
   }
 
-  if (entry != null) {
-    for (final key in entry.imports) {
+  /// Visits each import's owning kernel, refusing unowned libraries.
+  void visitImports(Iterable<String> imports, {required String importerPath}) {
+    for (final key in imports) {
       if (baseKeys.contains(key)) continue;
       final dependency = owner[key];
       if (dependency != null) {
         visit(dependency);
       } else if (!key.startsWith('dart:')) {
         errSink.writeln(
-          'kernel_link: missing module for imported library $key (imported by ${entry.path})',
+          'kernel_link: missing module for imported library $key (imported by $importerPath)',
         );
         missingModule = true;
       }
     }
-  } else {
+  }
+
+  /// Visits every seed kernel, keeping only the test API for test seeds.
+  void visitSeeds(
+    Map<String, List<_Kernel>> kernelsByDir,
+    List<String> seedModules,
+  ) {
     for (final seedDir in seedModules) {
       final kernels = kernelsByDir[seedDir]!;
       final isPackageTest = kernels.any(
         (k) => k.defines.any((d) => d.endsWith('/lib/bootstrap/vm.dart')),
       );
       for (final kernel in kernels) {
-        if (isPackageTest) {
-          final isTestApi = kernel.defines.any(
-            (d) =>
-                d.endsWith('/lib/test.dart') ||
-                d.endsWith('/lib/scaffolding.dart') ||
-                d.endsWith('/lib/expect.dart') ||
-                d.endsWith('/lib/bootstrap/vm.dart') ||
-                d.endsWith('/lib/fake.dart'),
-          );
-          if (!isTestApi) continue;
-        }
+        if (isPackageTest && !_isTestApiKernel(kernel)) continue;
         visit(kernel);
       }
     }
   }
-  if (missingModule) return 1;
 
-  final linked = [if (entry != null) entry, ...order];
+  /// Whether [kernel] is part of `package:test`'s own API.
+  bool _isTestApiKernel(_Kernel kernel) => kernel.defines.any(
+    (d) =>
+        d.endsWith('/lib/test.dart') ||
+        d.endsWith('/lib/scaffolding.dart') ||
+        d.endsWith('/lib/expect.dart') ||
+        d.endsWith('/lib/bootstrap/vm.dart') ||
+        d.endsWith('/lib/fake.dart'),
+  );
+}
+
+/// Refuses linked kernels that define the same library twice.
+bool _checkDuplicateDefines(List<_Kernel> linked, StringSink errSink) {
   final definedBy = <String, _Kernel>{};
   for (final kernel in linked) {
     for (final key in kernel.defines) {
@@ -686,12 +761,26 @@ int linkOne(
         errSink.writeln(
           'kernel_link: $key is defined by ${other.path} and ${kernel.path}.',
         );
-        return 1;
+        return false;
       }
       definedBy[key] = kernel;
     }
   }
+  return true;
+}
 
+/// Concatenates the platform and linked kernels into [output], and records
+/// the emitted keys when asked.
+void _emitLinked({
+  required String output,
+  required String? platform,
+  required _Kernel? entry,
+  required List<_Kernel> order,
+  required Set<String> baseKeys,
+  required String? writeKeysPath,
+  required KernelLinkCache cache,
+  required Map<String, Uint8List>? inputs,
+}) {
   final emitted = [
     if (entry != null) entry,
     for (final kernel in order)
@@ -717,7 +806,6 @@ int linkOne(
     }
     File(writeKeysPath).writeAsStringSync(keysOut.toString());
   }
-  return 0;
 }
 
 /// Decodes the `inputs` map from a raw `WorkRequest` protobuf payload,
