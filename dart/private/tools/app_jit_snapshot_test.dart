@@ -322,6 +322,31 @@ void main(List<String> args) {
     return out.toBytes();
   }
 
+  /// A copy of [clean] with the [occurrence]-th (zero-based) recording of
+  /// [uri]'s bytes replaced by invalid UTF-8: every length prefix still bounds
+  /// its entry, but decoding that recording fails.
+  Uint8List corruptRecordedUri(Uint8List clean, String uri, int occurrence) {
+    final patched = Uint8List.fromList(clean);
+    final needle = utf8.encode(uri);
+    var seen = 0;
+    for (var i = 0; i + needle.length <= patched.length; i++) {
+      var match = true;
+      for (var j = 0; j < needle.length; j++) {
+        if (patched[i + j] != needle[j]) {
+          match = false;
+          break;
+        }
+      }
+      if (!match) continue;
+      if (seen == occurrence) {
+        patched[i] = 0xff;
+        return patched;
+      }
+      seen++;
+    }
+    throw StateError('recorded URI $uri occurrence $occurrence not found');
+  }
+
   for (final mode in [0x124 /* 0444 */, 0x16d /* 0555 */]) {
     final octal = mode.toRadixString(8).padLeft(4, '0');
     test(
@@ -2468,6 +2493,67 @@ void main(List<String> args) {
       );
     });
 
+    test('a malformed source-table URI fails closed', () {
+      final clean = verifyDill(
+        sources: [('${prefix}app/main.dart', '${prefix}app/main.dart')],
+        libraries: [(0, '${prefix}app/main.dart')],
+      );
+      // The first recording of the URI is the source entry's file URI:
+      // corrupting it leaves every length prefix intact while the entry no
+      // longer decodes.
+      final patched = corruptRecordedUri(clean, '${prefix}app/main.dart', 0);
+      expect(snapshot.genKernelDillSourceUris(patched), isNull);
+      final errors = verify('evil_uri.dill', patched);
+      expect(errors, isNotEmpty);
+      expect(errors.join('\n'), contains('cannot read the sources'));
+    });
+
+    test('a malformed source-table import URI fails closed', () {
+      final clean = verifyDill(
+        sources: [('${prefix}app/other.dart', '${prefix}app/main.dart')],
+        libraries: [(0, '${prefix}app/main.dart')],
+      );
+      // Distinct spellings record the import URI separately from the file URI,
+      // so the first recording of the import spelling is the entry's import
+      // URI. The source-reader skips import bytes without decoding them, so
+      // the source table still parses; the library-reader decodes them, so
+      // the library table no longer parses.
+      final patched = corruptRecordedUri(clean, '${prefix}app/main.dart', 0);
+      expect(snapshot.genKernelDillSourceUris(patched), isNotNull);
+      expect(snapshot.genKernelDillLibraryReferences(patched), isNull);
+      final errors = verify(
+        'evil_import_uri.dill',
+        patched,
+        declaredKeys: const {'app/other.dart'},
+      );
+      expect(errors, isNotEmpty);
+      expect(errors.join('\n'), contains('cannot read the libraries'));
+    });
+
+    test('a malformed string-table entry degrades to an empty reference', () {
+      final clean = verifyDill(
+        sources: [('${prefix}app/main.dart', '${prefix}app/main.dart')],
+        libraries: [(0, '${prefix}app/main.dart')],
+      );
+      // The last recording of the URI is the string table's copy: corrupting
+      // it leaves the source table readable while the canonical name no longer
+      // decodes, degrading to the empty reference the check accepts.
+      final patched = corruptRecordedUri(clean, '${prefix}app/main.dart', 2);
+      expect(snapshot.genKernelDillSourceUris(patched), isNotNull);
+      expect(snapshot.genKernelDillCanonicalRoots(patched), equals(['']));
+      expect(verify('degraded.dill', patched), isEmpty);
+    });
+
+    test('an unparsable recorded file URI fails closed', () {
+      const evil = 'file://[::1/host/evil.dart';
+      final errors = verify(
+        'evil_file_uri.dill',
+        verifyDill(sources: [(evil, evil)], libraries: const []),
+      );
+      expect(errors, isNotEmpty);
+      expect(errors.join('\n'), contains('reads $evil'));
+    });
+
     // The exact shape the front end emits for a `--native-assets` manifest:
     // a `dummy` source-table entry, a node with the `dummy` source, no import
     // URI, and the `vm:ffi:native-assets` canonical name (which is also its
@@ -2633,6 +2719,29 @@ void main(List<String> args) {
           isEmpty,
         );
       }
+    });
+
+    test('an unparsable file root maps to nothing', () {
+      File('${tmp.path}/evil_root.json').writeAsStringSync(
+        jsonEncode({
+          'configVersion': 2,
+          'packages': [
+            {
+              'name': 'evil',
+              'rootUri': 'file://[::1/pkg',
+              'packageUri': 'lib/',
+            },
+          ],
+        }),
+      );
+      expect(
+        snapshot.genKernelPackageKeyPrefixes(
+          packagesPath: '${tmp.path}/evil_root.json',
+          multiRootPrefix: 'org-dartlang-root:///',
+          fsRoots: const ['.'],
+        ),
+        isEmpty,
+      );
     });
   });
 

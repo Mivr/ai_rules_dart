@@ -1620,8 +1620,7 @@ void _runAot(List<String> argv) {
   final sdkBin = File(dart).parent.path;
   final hostExeExt = dart.endsWith('.exe') ? '.exe' : '';
   final hostDartaotruntime = '$sdkBin/dartaotruntime$hostExeExt';
-  final targetDartaotruntime =
-      args.customDartaotruntime ?? hostDartaotruntime;
+  final targetDartaotruntime = args.customDartaotruntime ?? hostDartaotruntime;
   final genSnapshot =
       args.customGenSnapshot ?? '$sdkBin/utils/gen_snapshot$hostExeExt';
 
@@ -2498,7 +2497,8 @@ bool _gkReadSourceEntry(
   String uri;
   try {
     uri = utf8.decode(part.sublist(reader.pos, reader.pos + uriLen));
-  } catch (_) {
+  } on FormatException catch (_) {
+    // The length prefix bounds-checked above, so only malformed UTF-8 fails.
     return false;
   }
   reader.pos += uriLen;
@@ -2515,8 +2515,11 @@ bool _gkReadSourceEntry(
   }
   if (importUris != null) {
     try {
-      importUris.add(utf8.decode(part.sublist(reader.pos, reader.pos + impLen)));
-    } catch (_) {
+      importUris.add(
+        utf8.decode(part.sublist(reader.pos, reader.pos + impLen)),
+      );
+    } on FormatException catch (_) {
+      // The length prefix bounds-checked above, so only malformed UTF-8 fails.
       return false;
     }
   }
@@ -2536,6 +2539,7 @@ bool _gkSkipU30List(_GkU30Reader reader) {
   }
   return true;
 }
+
 /// Adds the `fileUri` of every source in the one kernel component [part] to
 /// [uris] — and, when [importUris] is given, the `importUri` recorded
 /// alongside it. Returns false (leaving [uris] short) when [part] is not a
@@ -2559,8 +2563,7 @@ bool _gkCollectComponentSourceUris(
   if (offSourceTable + 4 > offConstantTable || offConstantTable > rawIdxStart) {
     return false;
   }
-  final reader = _GkU30Reader(part, offConstantTable)
-    ..pos = offSourceTable + 4;
+  final reader = _GkU30Reader(part, offConstantTable)..pos = offSourceTable + 4;
   final numSources = u32(offSourceTable);
   for (var i = 0; i < numSources; i++) {
     if (!_gkReadSourceEntry(reader, part, uris, importUris)) return false;
@@ -2693,7 +2696,11 @@ String? _gkStringAt(Uint8List part, List<int> ends, int base, int index) {
   final start = index == 0 ? 0 : ends[index - 1];
   try {
     return utf8.decode(part.sublist(base + start, base + ends[index]));
-  } catch (_) {
+  } on FormatException catch (_) {
+    // Malformed UTF-8 in the table: the entry names nothing verifiable.
+    return null;
+  } on RangeError catch (_) {
+    // A corrupt ends table running past the component bytes: no such entry.
     return null;
   }
 }
@@ -2774,8 +2781,7 @@ bool _gkReadLibraryNode(
   if (reader.read() == null) return false; // Name string reference.
   final fileUriIndex = reader.read();
   if (fileUriIndex == null) return false;
-  final importUri =
-      fileUriIndex >= 0 && fileUriIndex < tables.importUris.length
+  final importUri = fileUriIndex >= 0 && fileUriIndex < tables.importUris.length
       ? tables.importUris[fileUriIndex]
       : null;
   refs.add((
@@ -2906,7 +2912,8 @@ Map<String, String> genKernelPackageKeyPrefixes({
   dynamic config;
   try {
     config = jsonDecode(text);
-  } catch (_) {
+  } on FormatException catch (_) {
+    // Not JSON: the config defines no packages.
     return prefixes;
   }
   final packages = config is Map ? config['packages'] : null;
@@ -2963,7 +2970,11 @@ String? _packageEntryFsRootKey(
     String path;
     try {
       path = Uri.parse(rootUri).toFilePath();
-    } catch (_) {
+    } on FormatException catch (_) {
+      // Unparsable all the way down: names no package root.
+      return null;
+    } on UnsupportedError catch (_) {
+      // A `file:` URI with no path form: names no package root.
       return null;
     }
     // An empty key names the exec root itself: a valid package root whose
@@ -3048,7 +3059,11 @@ String? _gkKeyOfRecordedUri(
     String path;
     try {
       path = Uri.parse(uri).toFilePath();
-    } catch (_) {
+    } on FormatException catch (_) {
+      // Unparsable all the way down: an unresolvable read, never declared.
+      return '';
+    } on UnsupportedError catch (_) {
+      // A `file:` URI with no path form: an unresolvable read, never declared.
       return '';
     }
     final normPath = _normFsPath(path);
@@ -3330,7 +3345,8 @@ List<String> _canonicalRootErrors({
   } on FileSystemException {
     return (
       bytes: null,
-      error: 'app_jit_snapshot: cannot read the kernel output at $outputPath; '
+      error:
+          'app_jit_snapshot: cannot read the kernel output at $outputPath; '
           'refusing the compile.',
     );
   }
@@ -3550,10 +3566,7 @@ void _runGenKernel(List<String> argv) {
 // filesystem root: each declared source is compared against every root, where
 // the candidate naming the declared file itself is its origin, and any other
 // candidate that exists on disk is a shadow.
-bool _hasShadowRisk(
-  List<String> declaredInputSources,
-  List<String> fsRoots,
-) {
+bool _hasShadowRisk(List<String> declaredInputSources, List<String> fsRoots) {
   if (declaredInputSources.isEmpty || fsRoots.isEmpty) return false;
   final normRoots = <String>[
     for (final root in fsRoots)
