@@ -5258,11 +5258,15 @@ String? _keyOfDillSourceUri(
 /// front end records the URI it was given for own sources, the import URI
 /// for linked ones, and `dart:` URIs for the SDK.
 ///
-/// A library table that does not parse, or a node whose source index dangles,
-/// keeps the source-table verdict instead of refusing: those carry no
-/// reference to check, so refusing on them would fail legitimate compiles
-/// over a tool limitation, while the source table still verifies every file
-/// actually read.
+/// A library or canonical-root table that does not parse counts as unverified
+/// on the unstaged path, so the isolated recompile runs: without the tables
+/// there is no reference to check, and passing would accept a read set the
+/// check never saw. On the isolated path the source-table verdict stands,
+/// since isolation already confines reads to declared inputs. A node whose
+/// source index dangles keeps the source-table verdict on either path: it
+/// carries no reference to check, so refusing on it would fail legitimate
+/// compiles over a tool limitation, while the source table still verifies
+/// every file actually read.
 ///
 /// A dirty read set never passes: [consequence] says what happens next, either
 /// `recompiling with an isolated multi-root` (the unstaged compile is redone
@@ -5347,7 +5351,23 @@ Future<bool> _unstagedReadsAreDeclared(
   }
 
   final libraries = dillLibraryReferences(bytes);
-  if (libraries != null) {
+  // Whether this check guards the unstaged compile (whose consequence is an
+  // isolated recompile) rather than the isolated restage (whose consequence
+  // is refusing the result).
+  final unstaged = consequence == 'recompiling with an isolated multi-root';
+  if (libraries == null) {
+    // An unparsable library table carries no reference to check. On the
+    // unstaged path that counts as unverified, so the isolated recompile
+    // runs; on the isolated path the source-table verdict stands, since
+    // isolation already confines reads to declared inputs.
+    if (unstaged) {
+      log.writeln(
+        'kernel_module: cannot read the libraries of $dillPath; '
+        '$consequence.',
+      );
+      return false;
+    }
+  } else {
     for (final library in libraries) {
       for (final reference in [library.importUri, library.canonicalName]) {
         if (!referenceIsDeclared(reference)) {
@@ -5362,10 +5382,19 @@ Future<bool> _unstagedReadsAreDeclared(
     }
     // A held component can smuggle a root the library nodes never mention, so
     // every top-level canonical name is checked with the same predicate. An
-    // unparsable table keeps the source-table verdict: it carries no root to
-    // check, and the sources were still verified above.
+    // unparsable table counts as unverified on the unstaged path, so the
+    // isolated recompile runs; on the isolated path the source-table verdict
+    // stands, since isolation already confines reads to declared inputs.
     final canonicalRoots = dillCanonicalRoots(bytes);
-    if (canonicalRoots != null) {
+    if (canonicalRoots == null) {
+      if (unstaged) {
+        log.writeln(
+          'kernel_module: cannot read the canonical names of $dillPath; '
+          '$consequence.',
+        );
+        return false;
+      }
+    } else {
       for (final root in canonicalRoots) {
         if (!referenceIsDeclared(root)) {
           log.writeln(

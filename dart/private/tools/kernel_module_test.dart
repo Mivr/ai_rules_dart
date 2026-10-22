@@ -1814,6 +1814,83 @@ void main(List<String> args) {
       },
     );
 
+    test(
+      'an unstaged compile with an unparsable library table is redone isolated',
+      () async {
+        _write('pkg/lib/a.dart', 'class A {}\n');
+        final clean = _buildDillWithLibraries(
+          sources: [(_uri('pkg/lib/a.dart'), 'package:pkg/a.dart')],
+          libraries: [(0, 'package:pkg/a.dart')],
+        );
+        final patched = Uint8List.fromList(clean);
+        final bd = ByteData.sublistView(patched);
+        // The string-table offset is the seventh fixed index field.
+        bd.setUint32(patched.length - 13 * 4 + 24, 0xffffffff);
+        // The sources still verify, but the library table does not parse.
+        expect(dillSourceUris(patched), [_uri('pkg/lib/a.dart')]);
+        expect(dillLibraryReferences(patched), isNull);
+        final compiler = _DillWritingCompiler(() => patched);
+        final result = await _compile(
+          'm_unparsable_libraries',
+          ['pkg/lib/a.dart'],
+          inputs: [
+            _encodeInputForTest(
+              '${_root.path}/pkg/lib/a.dart',
+              Uint8List.fromList([7]),
+            ),
+          ],
+          compiler: compiler,
+        );
+        // The unreadable table counts as unverified on the unstaged path, so
+        // the isolated recompile runs; the restage reads the same declared
+        // sources, so the result is accepted.
+        expect(result.calls.length, 2, reason: 'unstaged, then isolated');
+        expect(result.log, contains('cannot read the libraries'));
+        expect(result.code, 0, reason: result.log);
+        expect(result.log, isNot(contains('failing the compile')));
+      },
+    );
+
+    test('an isolated restage with an unparsable library table keeps the source-table verdict', () async {
+      _write('pkg/lib/a.dart', 'class A {}\n');
+      final clean = _buildDillWithLibraries(
+        sources: [(_uri('pkg/lib/a.dart'), 'package:pkg/a.dart')],
+        libraries: [(0, 'package:pkg/a.dart')],
+      );
+      final patched = Uint8List.fromList(clean);
+      final bd = ByteData.sublistView(patched);
+      // The string-table offset is the seventh fixed index field.
+      bd.setUint32(patched.length - 13 * 4 + 24, 0xffffffff);
+      expect(dillLibraryReferences(patched), isNull);
+      var calls = 0;
+      final compiler = _DillWritingCompiler(
+        () => calls++ == 0
+            ? _buildDillWithUris([
+                _uri('pkg/lib/a.dart'),
+                _uri('pkg/lib/piece.dart'),
+              ])
+            : patched,
+      );
+      final result = await _compile(
+        'm_unparsable_isolated',
+        ['pkg/lib/a.dart'],
+        inputs: [
+          _encodeInputForTest(
+            '${_root.path}/pkg/lib/a.dart',
+            Uint8List.fromList([7]),
+          ),
+        ],
+        compiler: compiler,
+      );
+      // The unstaged compile reads an undeclared file, so the isolated
+      // restage runs; its sources are declared, and isolation already
+      // confines reads, so the unparsable table keeps the source-table
+      // verdict instead of refusing the result.
+      expect(result.calls.length, 2, reason: 'unstaged, then isolated');
+      expect(result.code, 0, reason: result.log);
+      expect(result.log, isNot(contains('failing the compile')));
+    });
+
     test('the whole-program reader parses what the modular reader parses', () {
       final dills = [
         _buildDillWithUris([_uri('pkg/lib/a.dart'), 'dart:core']),
@@ -2964,6 +3041,40 @@ void main(List<String> args) {
         // module of that package is listed, however unrelated the rest of it
         // is.
         expect(File(unusedPath).readAsLinesSync(), isEmpty);
+      },
+    );
+
+    test(
+      'a library never lists the provider of a missing closure key',
+      () async {
+        // `a.dart` imports `package:dep/missing.dart`, which no input module
+        // defines. The missing-key exclusion consults `dep/lib/missing.dart`,
+        // so no module of package `dep` is listed as unused — renaming an
+        // unrelated `dep` library into that name must recompile this module
+        // too — while a package no plan decision consulted still is.
+        _write(
+          'pkg/lib/a.dart',
+          "import 'package:dep/missing.dart';\nint f() => 1;\n",
+        );
+        _write('dep/lib/missing.dart', 'int missing() => 1;\n');
+        final missing = _module('missing', [
+          _Scc('m.dill', ['dep/lib/other.dart'], []),
+        ]);
+        final clean = _module('clean', [
+          _Scc('c.dill', ['other/lib/c.dart'], []),
+        ]);
+        final unusedPath = '${_root.path}/out/m_missing_key.unused';
+        final result = await _compile(
+          'm_missing_key',
+          ['pkg/lib/a.dart'],
+          inputKmods: [missing, clean],
+          unusedInputsList: unusedPath,
+        );
+        expect(result.code, 0, reason: result.log);
+        expect(result.excluded, {
+          _uri('pkg/lib/a.dart'): 'imports package:dep/missing.dart, which is not in this module closure',
+        });
+        expect(File(unusedPath).readAsLinesSync(), [clean]);
       },
     );
 
