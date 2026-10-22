@@ -20,6 +20,36 @@ const _droppedReason = 'not write-back eligible';
 const _packageConfigPath = '.dart_tool/package_config.json';
 
 void main(List<String> args) {
+  final parsed = _parseFixArgs(args);
+
+  final writeBack = _stageFixProject(parsed);
+
+  final result = _runDartFix(parsed.dart, parsed.scratch);
+
+  // Bazel echoes any action output, and this action runs whenever fixes are
+  // asked for: its progress chatter is printed only when it fails. What it
+  // changed is in the manifest.
+  stderr.write(result.stderr);
+  if (result.exitCode != 0) {
+    stdout.write(result.stdout);
+    exit(result.exitCode);
+  }
+
+  _emitFixes(parsed, writeBack);
+}
+
+/// Parsed `fix_runner` command line.
+typedef _FixArgs = ({
+  String dart,
+  String project,
+  String scratch,
+  String fixes,
+  String manifest,
+  String eligible,
+});
+
+/// Parses the command line, exiting 64 on an unknown or missing argument.
+_FixArgs _parseFixArgs(List<String> args) {
   String? dart;
   String? project;
   String? scratch;
@@ -57,9 +87,23 @@ void main(List<String> args) {
     );
     exit(64);
   }
+  return (
+    dart: dart,
+    project: project,
+    scratch: scratch,
+    fixes: fixes,
+    manifest: manifest,
+    eligible: eligible,
+  );
+}
 
-  final writeBack = _readEligible(eligible);
-  final allowedSrcPaths = pruneOrphanedStagedFiles(project);
+/// Stages the project into the scratch directory for `dart fix --apply`:
+/// prunes orphaned staged files, refuses host-reading directives, clears the
+/// scratch directory, and copies the tree with a repointed package config.
+/// Returns the rule's write-back map.
+Map<String, String> _stageFixProject(_FixArgs parsed) {
+  final writeBack = _readEligible(parsed.eligible);
+  final allowedSrcPaths = pruneOrphanedStagedFiles(parsed.project);
 
   // No staged source may read the host: a `file:` URI (in any spelling), any
   // other non-`dart:`/`package:` directive URI, a `package:` URI climbing
@@ -67,7 +111,7 @@ void main(List<String> args) {
   // would reach an undeclared file through the fixer's working directory.
   // Refuse before fixing, through the one shared staged-source check.
   final violations = findStagedDirectiveViolations(
-    projectStagedRoots(project),
+    projectStagedRoots(parsed.project),
     tool: 'fix_runner',
   );
   if (violations.isNotEmpty) {
@@ -77,24 +121,27 @@ void main(List<String> args) {
     exit(1);
   }
 
-  final scratchDir = Directory(scratch);
+  final scratchDir = Directory(parsed.scratch);
   if (scratchDir.existsSync()) {
     for (final child in scratchDir.listSync(followLinks: false)) {
       child.deleteSync(recursive: true);
     }
   }
   _copyTree(
-    project,
-    scratch,
-    projectRoot: project,
+    parsed.project,
+    parsed.scratch,
+    projectRoot: parsed.project,
     allowedSrcPaths: allowedSrcPaths,
   );
-  repointPackageConfig(project, scratch);
+  repointPackageConfig(parsed.project, parsed.scratch);
+  return writeBack;
+}
 
+/// Runs `dart fix --apply` over [scratch] with a hermetic home directory.
+ProcessResult _runDartFix(String dart, String scratch) {
   final tempHome = Directory.systemTemp.createTempSync('rules_dart_fix_home.');
-  final ProcessResult result;
   try {
-    result = Process.runSync(
+    return Process.runSync(
       dart,
       ['fix', '--apply', scratch],
       environment: {
@@ -113,17 +160,13 @@ void main(List<String> args) {
       }
     }
   }
-  // Bazel echoes any action output, and this action runs whenever fixes are
-  // asked for: its progress chatter is printed only when it fails. What it
-  // changed is in the manifest.
-  stderr.write(result.stderr);
-  if (result.exitCode != 0) {
-    stdout.write(result.stdout);
-    exit(result.exitCode);
-  }
+}
 
+/// Copies each changed write-back-eligible file into the fixes directory and
+/// writes the manifest of fixed and dropped files.
+void _emitFixes(_FixArgs parsed, Map<String, String> writeBack) {
   // Declared outputs must exist even when nothing was fixed.
-  final fixesDir = Directory(fixes);
+  final fixesDir = Directory(parsed.fixes);
   if (fixesDir.existsSync()) {
     for (final child in fixesDir.listSync(followLinks: false)) {
       child.deleteSync(recursive: true);
@@ -133,19 +176,25 @@ void main(List<String> args) {
 
   final fixed = <Map<String, String>>[];
   writeBack.forEach((staged, workspace) {
-    if (!_differs('$project/$staged', '$scratch/$staged')) return;
-    _copyFile('$scratch/$staged', '$fixes/$workspace');
+    if (!_differs('${parsed.project}/$staged', '${parsed.scratch}/$staged')) {
+      return;
+    }
+    _copyFile('${parsed.scratch}/$staged', '${parsed.fixes}/$workspace');
     fixed.add({'staged': staged, 'workspace': workspace});
   });
 
-  final dropped = _scanDropped(project, scratch, writeBack.keys.toSet());
+  final dropped = _scanDropped(
+    parsed.project,
+    parsed.scratch,
+    writeBack.keys.toSet(),
+  );
 
   // Bazel actions must be reproducible; directory listings are not ordered.
   fixed.sort((a, b) => a['staged']!.compareTo(b['staged']!));
   dropped.sort((a, b) => a['staged']!.compareTo(b['staged']!));
 
   const encoder = JsonEncoder.withIndent('  ');
-  File(manifest).writeAsStringSync(
+  File(parsed.manifest).writeAsStringSync(
     '${encoder.convert({'fixed': fixed, 'dropped': dropped})}\n',
   );
 }
