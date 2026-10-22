@@ -67,18 +67,183 @@ def binary_output_basename(name, compile_mode, is_windows):
         return name + ".jit"
     fail("Unknown compile_mode: %s" % compile_mode)
 
+def _binary_sdk_info(ctx):
+    """Selects the compiling SDK: the exec-tools SDK for tool configurations, else the target toolchain's."""
+    exec_tc = ctx.toolchains[EXEC_TOOLS_TOOLCHAIN] if EXEC_TOOLS_TOOLCHAIN in ctx.toolchains else None
+    if ctx.configuration.is_tool_configuration() and exec_tc != None and exec_tc.dart_sdk_info != None:
+        return exec_tc.dart_sdk_info
+    return ctx.toolchains["//dart:toolchain_type"].dart_sdk_info
+
+def _binary_recorded_uses(ctx, compile_mode):
+    """Declares the recorded-uses file when `record_use` is set. Returns (compile_recorded_uses, recorded_uses_info)."""
+    compile_recorded_uses = None
+    recorded_uses_info = []
+    if ctx.attr.record_use:
+        recorded_uses = ctx.actions.declare_file(ctx.label.name + ".recorded_uses.json")
+        kind = recorded_uses_kind(compile_mode)
+        if kind == "aot":
+            compile_recorded_uses = recorded_uses
+        else:
+            ctx.actions.write(output = recorded_uses, content = "{}")
+        recorded_uses_info = [DartRecordedUsesInfo(file = recorded_uses, kind = kind)]
+    return compile_recorded_uses, recorded_uses_info
+
+def _binary_source_compile(ctx, dart_sdk_info, own_files, own, packages, output, compile_mode, compile_recorded_uses, resolved_assets):
+    """Compiles from source through `executable_inputs`. Returns (packages, code_asset_libs)."""
+    # Nothing is copied: a package split between the source tree and `bazel-out`
+    # compiles in place, through the multi-root file system (`executable_inputs`).
+    # The one flatten per rule: the package lookup inspects per-file paths.
+    inputs = executable_inputs(
+        packages,
+        collect_transitive_srcs(ctx.attr.deps).to_list(),
+        ctx.file.main,
+        ctx.files.srcs,
+        own.record,
+    )
+    packages = inputs.packages
+    main_input = inputs.main_input
+    main_arg = inputs.main_arg
+    all_srcs = inputs.srcs
+
+    # Root resolution must see the rule's own inputs too: a package whose
+    # metadata comes from a srcs-less façade library resolves only via the
+    # files this rule supplies itself.
+    package_config = ctx.actions.declare_file(ctx.label.name + ".package_config.json")
+    ctx.actions.write(
+        output = package_config,
+        content = generate_stable_package_config(packages, all_srcs, inputs.roots),
+    )
+
+    code_asset_libs = []
+    native_assets_yaml = None
+    if resolved_assets:
+        abi = target_dart_abi(ctx)
+        entries, code_asset_libs = code_asset_entries(
+            ctx.label,
+            resolved_assets,
+            output.dirname,
+        )
+        native_assets_yaml = ctx.actions.declare_file(ctx.label.name + ".native_assets.yaml")
+        ctx.actions.write(
+            output = native_assets_yaml,
+            content = generate_native_assets_yaml(abi, entries),
+        )
+
+    # Run dart compile
+    dart_compile_action(
+        ctx = ctx,
+        dart_sdk_info = dart_sdk_info,
+        main = main_input,
+        main_path = main_arg,
+        srcs = all_srcs,
+        package_config = package_config,
+        output = output,
+        compile_mode = compile_mode,
+        target_os = dart_sdk_info.target_os,
+        target_arch = dart_sdk_info.target_arch,
+        extra_flags = ctx.attr.dart_compile_flags,
+        defines = merge_dart_defines(ctx),
+        recorded_uses = compile_recorded_uses,
+        jit_tool = ctx.file._jit_tool,
+        comma_patch = ctx.file._comma_patch,
+        jit_snapshot_fallback = ctx.attr._jit_snapshot_fallback[BuildSettingInfo].value,
+        native_assets_yaml = native_assets_yaml,
+        embed_sources = DartTestRunnerMainInfo not in ctx.attr.main,
+    )
+    return packages, code_asset_libs
+
+def _binary_launcher_outputs(ctx, dart_sdk_info, output, is_windows, code_asset_libs, compile_mode, recorded_uses_info, own):
+    """The launcher-executable providers for `kernel` mode with `launcher = True`."""
+    launcher_exe = ctx.actions.declare_file(
+        ctx.label.name + (".exe" if is_windows else ""),
+    )
+    ctx.actions.symlink(
+        output = launcher_exe,
+        target_file = ctx.executable._kernel_launcher,
+        is_executable = True,
+    )
+    config_file = ctx.actions.declare_file(
+        ctx.label.name + ".kernel_launcher.json",
+    )
+    ctx.actions.write(
+        output = config_file,
+        content = json.encode({
+            "dart": runfiles_path(dart_sdk_info.dart, ctx.workspace_name),
+            "dill": runfiles_path(output, ctx.workspace_name),
+            "dart_exec": dart_sdk_info.dart.path,
+            "dill_exec": output.path,
+        }),
+    )
+    runfiles = ctx.runfiles(
+        files = ctx.files.data + code_asset_libs + [output, config_file, dart_sdk_info.dart],
+        transitive_files = depset(
+            transitive = [
+                collect_transitive_resources(ctx.attr.deps),
+                dart_sdk_info.runtime_files,
+            ],
+        ),
+    ).merge_all(
+        [dep[DefaultInfo].default_runfiles for dep in ctx.attr.data] +
+        [ctx.attr._kernel_launcher[DefaultInfo].default_runfiles],
+    )
+    return [
+        DefaultInfo(
+            files = depset([launcher_exe]),
+            executable = launcher_exe,
+            runfiles = runfiles,
+        ),
+        RunEnvironmentInfo(
+            environment = {
+                "RULES_DART_KERNEL_CONFIG": runfiles_path(config_file, ctx.workspace_name),
+            },
+        ),
+        DartCompileInfo(
+            executable = output,
+            compile_mode = compile_mode,
+            sdk_version = dart_sdk_info.version,
+        ),
+        own.analyzable,
+    ] + recorded_uses_info
+
+def _binary_default_outputs(ctx, output, code_asset_libs, compile_mode, dart_sdk_info, recorded_uses_info, own):
+    """The standard executable providers, with package resources in runfiles."""
+    # Resources ride the runfiles, not the compile. A dep's `lib/**` non-Dart
+    # files are part of the package at run time under pub, and the compiled
+    # binary is the one place that cannot recover them: `Isolate.resolvePackageUri`
+    # returns null in an AOT binary with no package_config above it, so a
+    # package cannot read its own shipped files back out. Staging them here is
+    # what makes `rlocation` work for them.
+    runfiles = ctx.runfiles(
+        files = ctx.files.data + code_asset_libs,
+        transitive_files = collect_transitive_resources(ctx.attr.deps),
+    ).merge_all(
+        [dep[DefaultInfo].default_runfiles for dep in ctx.attr.data],
+    )
+
+    return [
+        DefaultInfo(
+            files = depset([output]),
+            executable = output,
+            runfiles = runfiles,
+        ),
+        DartCompileInfo(
+            executable = output,
+            compile_mode = compile_mode,
+            sdk_version = dart_sdk_info.version,
+        ),
+        # What makes the `dart_analyze` aspect and `dart_fix` reach this entrypoint
+        # without making this target a legal `deps` entry. Staging goes by
+        # `short_path`, which is the source file's own path.
+        own.analyzable,
+    ] + recorded_uses_info
+
 def _dart_binary_impl(ctx):
     # A `dart_binary` evaluated in the execution configuration (`cfg = "exec"`)
     # is a build-time tool — a codegen shim, analyzer/format runner, link-hook
     # runner, or kernel compiler — and will be executed by the host's
     # `//dart:exec_tools_toolchain_type` VM. Compile it with that same SDK so a
     # kernel tool's `.dill` format and SDK hash always match the VM that runs it.
-    exec_tc = ctx.toolchains[EXEC_TOOLS_TOOLCHAIN] if EXEC_TOOLS_TOOLCHAIN in ctx.toolchains else None
-    if ctx.configuration.is_tool_configuration() and exec_tc != None and exec_tc.dart_sdk_info != None:
-        dart_sdk_info = exec_tc.dart_sdk_info
-    else:
-        toolchain = ctx.toolchains["//dart:toolchain_type"]
-        dart_sdk_info = toolchain.dart_sdk_info
+    dart_sdk_info = _binary_sdk_info(ctx)
 
     own_files = [ctx.file.main] + ctx.files.srcs
     own = executable_package(ctx, own_files)
@@ -113,16 +278,7 @@ def _dart_binary_impl(ctx):
     # tree-shakes, so the other modes get the file it writes when there is
     # nothing to record: a link hook then runs over no uses, as for a program
     # that uses none.
-    compile_recorded_uses = None
-    recorded_uses_info = []
-    if ctx.attr.record_use:
-        recorded_uses = ctx.actions.declare_file(ctx.label.name + ".recorded_uses.json")
-        kind = recorded_uses_kind(compile_mode)
-        if kind == "aot":
-            compile_recorded_uses = recorded_uses
-        else:
-            ctx.actions.write(output = recorded_uses, content = "{}")
-        recorded_uses_info = [DartRecordedUsesInfo(file = recorded_uses, kind = kind)]
+    compile_recorded_uses, recorded_uses_info = _binary_recorded_uses(ctx, compile_mode)
 
     code_asset_libs = []
     kernel_tools = modular_executable_tools(
@@ -145,147 +301,22 @@ def _dart_binary_impl(ctx):
             output,
         )
     else:
-        # Nothing is copied: a package split between the source tree and `bazel-out`
-        # compiles in place, through the multi-root file system (`executable_inputs`).
-        # The one flatten per rule: the package lookup inspects per-file paths.
-        inputs = executable_inputs(
+        packages, code_asset_libs = _binary_source_compile(
+            ctx,
+            dart_sdk_info,
+            own_files,
+            own,
             packages,
-            collect_transitive_srcs(ctx.attr.deps).to_list(),
-            ctx.file.main,
-            ctx.files.srcs,
-            own.record,
-        )
-        packages = inputs.packages
-        main_input = inputs.main_input
-        main_arg = inputs.main_arg
-        all_srcs = inputs.srcs
-
-        # Root resolution must see the rule's own inputs too: a package whose
-        # metadata comes from a srcs-less façade library resolves only via the
-        # files this rule supplies itself.
-        package_config = ctx.actions.declare_file(ctx.label.name + ".package_config.json")
-        ctx.actions.write(
-            output = package_config,
-            content = generate_stable_package_config(packages, all_srcs, inputs.roots),
-        )
-
-        native_assets_yaml = None
-        if resolved_assets:
-            abi = target_dart_abi(ctx)
-            entries, code_asset_libs = code_asset_entries(
-                ctx.label,
-                resolved_assets,
-                output.dirname,
-            )
-            native_assets_yaml = ctx.actions.declare_file(ctx.label.name + ".native_assets.yaml")
-            ctx.actions.write(
-                output = native_assets_yaml,
-                content = generate_native_assets_yaml(abi, entries),
-            )
-
-        # Run dart compile
-        dart_compile_action(
-            ctx = ctx,
-            dart_sdk_info = dart_sdk_info,
-            main = main_input,
-            main_path = main_arg,
-            srcs = all_srcs,
-            package_config = package_config,
-            output = output,
-            compile_mode = compile_mode,
-            target_os = dart_sdk_info.target_os,
-            target_arch = dart_sdk_info.target_arch,
-            extra_flags = ctx.attr.dart_compile_flags,
-            defines = merge_dart_defines(ctx),
-            recorded_uses = compile_recorded_uses,
-            jit_tool = ctx.file._jit_tool,
-            comma_patch = ctx.file._comma_patch,
-            jit_snapshot_fallback = ctx.attr._jit_snapshot_fallback[BuildSettingInfo].value,
-            native_assets_yaml = native_assets_yaml,
-            embed_sources = DartTestRunnerMainInfo not in ctx.attr.main,
+            output,
+            compile_mode,
+            compile_recorded_uses,
+            resolved_assets,
         )
 
     if compile_mode == "kernel" and ctx.attr.launcher:
-        launcher_exe = ctx.actions.declare_file(
-            ctx.label.name + (".exe" if is_windows else ""),
-        )
-        ctx.actions.symlink(
-            output = launcher_exe,
-            target_file = ctx.executable._kernel_launcher,
-            is_executable = True,
-        )
-        config_file = ctx.actions.declare_file(
-            ctx.label.name + ".kernel_launcher.json",
-        )
-        ctx.actions.write(
-            output = config_file,
-            content = json.encode({
-                "dart": runfiles_path(dart_sdk_info.dart, ctx.workspace_name),
-                "dill": runfiles_path(output, ctx.workspace_name),
-                "dart_exec": dart_sdk_info.dart.path,
-                "dill_exec": output.path,
-            }),
-        )
-        runfiles = ctx.runfiles(
-            files = ctx.files.data + code_asset_libs + [output, config_file, dart_sdk_info.dart],
-            transitive_files = depset(
-                transitive = [
-                    collect_transitive_resources(ctx.attr.deps),
-                    dart_sdk_info.runtime_files,
-                ],
-            ),
-        ).merge_all(
-            [dep[DefaultInfo].default_runfiles for dep in ctx.attr.data] +
-            [ctx.attr._kernel_launcher[DefaultInfo].default_runfiles],
-        )
-        return [
-            DefaultInfo(
-                files = depset([launcher_exe]),
-                executable = launcher_exe,
-                runfiles = runfiles,
-            ),
-            RunEnvironmentInfo(
-                environment = {
-                    "RULES_DART_KERNEL_CONFIG": runfiles_path(config_file, ctx.workspace_name),
-                },
-            ),
-            DartCompileInfo(
-                executable = output,
-                compile_mode = compile_mode,
-                sdk_version = dart_sdk_info.version,
-            ),
-            own.analyzable,
-        ] + recorded_uses_info
+        return _binary_launcher_outputs(ctx, dart_sdk_info, output, is_windows, code_asset_libs, compile_mode, recorded_uses_info, own)
 
-    # Resources ride the runfiles, not the compile. A dep's `lib/**` non-Dart
-    # files are part of the package at run time under pub, and the compiled
-    # binary is the one place that cannot recover them: `Isolate.resolvePackageUri`
-    # returns null in an AOT binary with no package_config above it, so a
-    # package cannot read its own shipped files back out. Staging them here is
-    # what makes `rlocation` work for them.
-    runfiles = ctx.runfiles(
-        files = ctx.files.data + code_asset_libs,
-        transitive_files = collect_transitive_resources(ctx.attr.deps),
-    ).merge_all(
-        [dep[DefaultInfo].default_runfiles for dep in ctx.attr.data],
-    )
-
-    return [
-        DefaultInfo(
-            files = depset([output]),
-            executable = output,
-            runfiles = runfiles,
-        ),
-        DartCompileInfo(
-            executable = output,
-            compile_mode = compile_mode,
-            sdk_version = dart_sdk_info.version,
-        ),
-        # What makes the `dart_analyze` aspect and `dart_fix` reach this entrypoint
-        # without making this target a legal `deps` entry. Staging goes by
-        # `short_path`, which is the source file's own path.
-        own.analyzable,
-    ] + recorded_uses_info
+    return _binary_default_outputs(ctx, output, code_asset_libs, compile_mode, dart_sdk_info, recorded_uses_info, own)
 
 def _binary_code_assets_transition_impl(_settings, attr):
     return {
