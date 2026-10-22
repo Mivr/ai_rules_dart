@@ -792,20 +792,36 @@ void main(List<String> args) {
 
   test('app-jit training matches across working-directory layouts', () {
     final dartBin = Platform.resolvedExecutable;
-    // A trivial program: it trains identical bytes whatever the layout, on
-    // every design tried (even ones that leak the build path into bigger
-    // programs' bytes), so this pins the tool's own determinism and hygiene
-    // — the same inputs must write the same bytes from every working
-    // directory — rather than heap-size-dependent serializer order. A big
-    // heap (ten thousand map entries, say) can flip a few serializer-order
-    // bytes with the working directory's content hash, rarely and without
-    // changing what the snapshot runs; no test could pin that without
-    // failing on some machine's paths, so the byte gate uses this program
-    // and the unit tests above pin the rewriting instead.
+    // A JIT-heavy program: hot loops that optimize, several small classes,
+    // string-keyed maps, closures. Training this in varying directories
+    // trains different bytes from the same inputs (systematically, not
+    // rarely); at the constant training path every layout must write one
+    // snapshot.
     final trainScript = File('${tmp.path}/layout_train.dart')
       ..writeAsStringSync(
-        'void main(List<String> args) {\n'
-        '  print(10000);\n'
+        'class K0 { final int v; K0(this.v); int f() => v * 2 + 1; }\n'
+        'class K1 { final String s; K1(this.s); int f() => s.length * 3; }\n'
+        'class K2 { final double d; K2(this.d); int f() => d.toInt() - 7; }\n'
+        'class K3 { final List<int> l; K3(this.l); int f() => l.fold(0, (a, b) => a + b); }\n'
+        'class K4 { final Map<String, int> m; K4(this.m); int f() => m.values.fold(0, (a, b) => a + b); }\n'
+        'class K5 { final bool b; K5(this.b); int f() => b ? 11 : 13; }\n'
+        'class K6 { final int a, c; K6(this.a, this.c); int f() => a * a + c; }\n'
+        'class K7 { final String x, y; K7(this.x, this.y); int f() => (x + y).length; }\n'
+        'int apply(Object o) => (o as dynamic).f() as int;\n'
+        'void main() {\n'
+        '  final objs = <Object>[K0(3), K1(\'abc\'), K2(2.5), K3([1, 2, 3]), K4({\'a\': 1}), K5(true), K6(4, 5), K7(\'x\', \'yy\')];\n'
+        '  final table = <String, int Function(int)>{};\n'
+        '  for (var i = 0; i < objs.length; i++) {\n'
+        '    final o = objs[i];\n'
+        '    table[\'k\$i\'] = (int x) => apply(o) + x + i;\n'
+        '  }\n'
+        '  var acc = 0;\n'
+        '  for (var iter = 0; iter < 5000; iter++) {\n'
+        '    for (var k = 0; k < objs.length; k++) {\n'
+        '      acc += table[\'k\$k\']!(iter & 255) + apply(objs[(iter + k) % objs.length]);\n'
+        '    }\n'
+        '  }\n'
+        '  print(acc);\n'
         '}\n',
       );
     // The training input is a compiled kernel, as in real builds (the
@@ -915,16 +931,124 @@ void main(List<String> args) {
       'input.dill',
     ]);
     expect(res.exitCode, isNot(0));
-    final leftovers = Directory('${tmp.path}/fail')
-        .listSync()
-        .where(
-          (e) => e.path
-              .split(Platform.pathSeparator)
-              .last
-              .startsWith('rules_dart_snapshot.'),
-        )
-        .toList();
-    expect(leftovers, isEmpty, reason: 'no scratch stays behind: $leftovers');
+    if (!Platform.isWindows) {
+      // At the constant path the failed training must delete its directory
+      // before releasing the lock, too.
+      expect(
+        FileSystemEntity.typeSync('/tmp/rules_dart_jit', followLinks: false),
+        FileSystemEntityType.notFound,
+        reason: 'constant training directory deleted on failure',
+      );
+    }
+  });
+
+  test('planted constant training path falls back without touching it', () {
+    // Anything pre-existing at the constant training path — a symlink here,
+    // a file or an undeletable directory in the tests below — must never be
+    // read, followed, or deleted: the tool falls back to the private scratch
+    // directory and still writes the snapshot. POSIX only: Windows never
+    // trains at the constant path.
+    if (Platform.isWindows) return;
+    const constant = '/tmp/rules_dart_jit';
+    const lock = '/tmp/rules_dart_jit.lock';
+    // A stale lock file from an earlier test in this file is ours and held
+    // by no live training (tests in one file run sequentially); remove it so
+    // the lock plant below starts clear. Never touch anything else.
+    if (FileSystemEntity.typeSync(lock, followLinks: false) ==
+        FileSystemEntityType.file) {
+      File(lock).deleteSync();
+    }
+    void expectClear() {
+      // The lock file persists by design (it carries the flock); it must be
+      // a file or absent, never a directory. The training directory itself
+      // must be gone: every training deletes it before releasing the lock.
+      expect(
+        FileSystemEntity.typeSync(constant, followLinks: false),
+        FileSystemEntityType.notFound,
+        reason: '$constant left behind by an earlier test',
+      );
+      final lockType = FileSystemEntity.typeSync(lock, followLinks: false);
+      expect(
+        lockType == FileSystemEntityType.notFound ||
+            lockType == FileSystemEntityType.file,
+        isTrue,
+        reason: '$lock is a $lockType',
+      );
+    }
+
+    final trivialDill = File('${tmp.path}/fallback_train.dill');
+    if (!trivialDill.existsSync()) {
+      File('${tmp.path}/fallback_train.dart').writeAsStringSync(
+        'void main(List<String> args) {\n  print(10000);\n}\n',
+      );
+      final compileRes = Process.runSync(Platform.resolvedExecutable, [
+        'compile',
+        'kernel',
+        '${tmp.path}/fallback_train.dart',
+        '-o',
+        trivialDill.path,
+      ]);
+      expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
+    }
+    var n = 0;
+    void trainAndCheck(String why) {
+      n++;
+      final outJit = File('${tmp.path}/fallback$n/app.jit');
+      snapshot.main([
+        '--dart=${Platform.resolvedExecutable}',
+        '--snapshot=${outJit.path}',
+        '--env=TMPDIR=.',
+        '--env=HOME=.',
+        '--copy=input.dill=${trivialDill.path}',
+        '--',
+        'input.dill',
+      ]);
+      expect(outJit.existsSync(), isTrue, reason: 'snapshot ($why)');
+    }
+
+    // A symlink at the training path: never followed (the victim holds only
+    // its sentinel afterwards) and never deleted as a link.
+    expectClear();
+    final victim = Directory('${tmp.path}/fallback_victim')..createSync();
+    File('${victim.path}/sentinel').writeAsStringSync('untouched');
+    Link(constant).createSync(victim.path);
+    try {
+      trainAndCheck('symlink plant');
+      expect(
+        Link(constant).targetSync(),
+        victim.path,
+        reason: 'planted link intact',
+      );
+      expect(victim.listSync().map((e) => e.path.split('/').last).toList(), [
+        'sentinel',
+      ], reason: 'planted directory never staged into');
+      expect(File('${victim.path}/sentinel').readAsStringSync(), 'untouched');
+    } finally {
+      Link(constant).deleteSync();
+    }
+
+    // A regular file at the training path: never read or deleted.
+    expectClear();
+    File(constant).writeAsStringSync('planted');
+    try {
+      trainAndCheck('file plant');
+      expect(File(constant).readAsStringSync(), 'planted');
+    } finally {
+      File(constant).deleteSync();
+    }
+
+    // A directory at the lock path: the lock cannot be opened, so the tool
+    // falls back without touching it.
+    expectClear();
+    if (File(lock).existsSync()) File(lock).deleteSync();
+    Directory(lock).createSync();
+    try {
+      trainAndCheck('lock plant');
+      expect(Directory(lock).existsSync(), isTrue);
+    } finally {
+      Directory(lock).deleteSync();
+    }
+    expectClear();
   });
 
   test('buildChildEnvironment on Windows preserves SystemRoot and valid names while isolating home and cache directories', () {

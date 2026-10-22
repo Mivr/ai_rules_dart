@@ -170,11 +170,11 @@ def has_comma_define_flag(flags):
     return False
 
 def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asserts, comma_patch = None):
-    """Trains the app-JIT snapshot of a kernel in a private scratch directory.
+    """Trains the app-JIT snapshot of a kernel at one constant absolute path.
 
     `dart compile jit-snapshot` trains in the action's own directory, so the
     absolute path of the sandbox ends up in the snapshot. `jit_tool` trains in a
-    private scratch directory beside the output, with the flags that keep the
+    constant absolute path, with the flags that keep the
     snapshot the same from build to build. See `app_jit_snapshot.dart`. A
     program whose own training run is not deterministic (it reads the clock,
     random numbers, or files outside the build) still differs between builds.
