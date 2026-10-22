@@ -2103,7 +2103,72 @@ Future<List<String>> _planImports(
   final uriOfKey = <String, String>{
     for (final entry in keys.entries) entry.value: entry.key,
   };
+  final scanned = await _scanImportDirectives(
+    keys,
+    files,
+    vm,
+    roots,
+    multiRootPrefix,
+    log,
+  );
   final direct = <String, String>{};
+  for (final entry in scanned.scans.entries) {
+    final key = entry.key;
+    final scan = entry.value;
+    if (scan.partOfLibrary != null) {
+      _planPartOfLibrary(
+        key,
+        scan,
+        scanned.libraryKeyByName,
+        scanned.declaredPartsOf,
+        plan,
+        direct,
+      );
+    }
+    for (final ref in scan.refs) {
+      if (_rejectMalformedRef(ref, key, uriOfKey, disallowed)) continue;
+      if (_planSdkRef(ref, key, vm, direct)) continue;
+      final target = _resolveUri(ref.uri, key, roots, multiRootPrefix);
+      if (target == null) {
+        _planUnresolvedRef(
+          ref,
+          key,
+          uriOfKey,
+          multiRootPrefix,
+          plan,
+          direct,
+          disallowed,
+        );
+        continue;
+      }
+      if (ref.isPartOf) {
+        _planPartOfRef(ref, key, target, scanned.declaredPartsOf, plan, direct);
+        continue;
+      }
+      _planResolvedImport(ref, key, target, inherited, graph, plan, direct);
+    }
+  }
+  plan.exclude(direct);
+  return disallowed;
+}
+
+/// The scanned directives of a module's own sources.
+typedef _ScannedImports = ({
+  Map<String, ScanResult> scans,
+  Map<String, String> libraryKeyByName,
+  Map<String, Set<String>> declaredPartsOf,
+});
+
+/// Scans each own source's directives, indexing libraries by declared name and
+/// recording each library's declared parts.
+Future<_ScannedImports> _scanImportDirectives(
+  Map<String, String> keys,
+  _Files files,
+  Set<String> vm,
+  Map<String, _PackageRoot> roots,
+  String multiRootPrefix,
+  StringBuffer log,
+) async {
   final scans = <String, ScanResult>{};
   final libraryKeyByName = <String, String>{};
   final declaredPartsOf = <String, Set<String>>{};
@@ -2127,158 +2192,208 @@ Future<List<String>> _planImports(
       }
     }
   }
-  for (final entry in scans.entries) {
-    final key = entry.key;
-    final scan = entry.value;
-    if (scan.partOfLibrary != null) {
-      final libName = scan.partOfLibrary!;
-      final parent = libraryKeyByName[libName];
-      if (parent == null ||
-          !plan.isOwn(parent) ||
-          !_reachesViaPart(parent, key, declaredPartsOf)) {
-        // The exclusion decision consulted the named parent (when it names a
-        // file), so its provider is never listed as unused.
-        if (parent != null) plan.addConsulted(parent);
-        direct.putIfAbsent(
-          key,
-          () => 'its library $libName is not an input of this module',
-        );
-      } else {
-        plan.addImport(importer: key, target: parent);
-        plan.addImporter(imported: parent, importer: key);
-        plan.addImporter(imported: key, importer: parent);
-        plan.addImport(importer: parent, target: key);
-      }
-    }
-    for (final ref in scan.refs) {
-      // A URI spanning lines is refused however it spells its target: the
-      // front end's multi-line first-line rule reads a different file than
-      // [_resolveUri] names. An empty path segment resolves differently in
-      // the front end than by skipping it (a `package:` doubled slash
-      // resolves absolutely), so the directive fails the build instead of
-      // compiling the wrong file.
-      if (hasLineBreak(ref.uri) || hasEmptyPathSegment(ref.uri)) {
-        disallowed.add(
-          'kernel_module: cannot compile ${uriOfKey[key] ?? key}: '
-          "${ref.kind} '${ref.uri}' is not a declared input.",
-        );
-        continue;
-      }
-      if (ref.uri.startsWith('dart:')) {
-        if (!vm.contains(ref.uri.substring('dart:'.length))) {
-          direct.putIfAbsent(key, () => '${ref.uri} is not a VM library');
-        }
-        continue;
-      }
-      final target = _resolveUri(ref.uri, key, roots, multiRootPrefix);
-      if (target == null) {
-        // A schemeless `//` authority (`\` separates like the front end, so a
-        // leading `\\` counts too) reads above every root, outside the declared
-        // inputs: it fails however the directive names it, parts included.
-        if (_isSlashAuthorityUri(ref.uri)) {
-          disallowed.add(
-            'kernel_module: cannot compile ${uriOfKey[key] ?? key}: '
-            "${ref.kind} '${ref.uri}' is not a declared input.",
-          );
-          continue;
-        }
-        // A directive URI outside the declared inputs fails the build (see the
-        // doc comment): it would read the host, outside every multi-root.
-        final outsideInputs = ref.isPart || ref.isPartOf
-            ? isFileSchemeDirectiveUri(ref.uri)
-            : isDisallowedDirectiveUri(
-                ref.uri,
-                multiRootPrefix: multiRootPrefix,
-              );
-        if (outsideInputs) {
-          disallowed.add(
-            'kernel_module: cannot compile ${uriOfKey[key] ?? key}: '
-            "${ref.kind} '${ref.uri}' is not a declared input.",
-          );
-          continue;
-        }
-        // A `package:` the module's config does not name. Other schemes are not Dart
-        // sources this module can read, and resolve to null without a rule of their own.
-        if (ref.isPartOf) {
-          direct.putIfAbsent(
-            key,
-            () => 'its library ${ref.uri} is not an input of this module',
-          );
-        } else if (ref.isPart) {
-          direct.putIfAbsent(
-            key,
-            () => 'its part ${ref.uri} is not an input of this module',
-          );
-        } else if (ref.uri.startsWith('package:')) {
-          direct.putIfAbsent(
-            key,
-            () => '${ref.uri} names a package this module does not have',
-          );
-        } else {
-          // A schemeless URI the resolver cannot name (a fragment, a decoded
-          // `/`): the front end reads no declared file through it, so the
-          // directive fails instead of compiling without it.
-          disallowed.add(
-            'kernel_module: cannot compile ${uriOfKey[key] ?? key}: '
-            "${ref.kind} '${ref.uri}' is not a declared input.",
-          );
-        }
-        continue;
-      }
-      if (ref.isPartOf) {
-        if (!plan.isOwn(target) ||
-            !_reachesViaPart(target, key, declaredPartsOf)) {
-          // The exclusion decision consulted the parent library, so its
-          // provider is never listed as unused.
-          plan.addConsulted(target);
-          direct.putIfAbsent(
-            key,
-            () => 'its library ${ref.uri} is not an input of this module',
-          );
-          continue;
-        }
-        plan.addImport(importer: key, target: target);
-        plan.addImporter(imported: target, importer: key);
-        plan.addImporter(imported: key, importer: target);
-        plan.addImport(importer: target, target: key);
-        continue;
-      }
-      plan.addImport(importer: key, target: target);
-      if (ref.isPart && !plan.isOwn(target)) {
-        // The exclusion decision consulted the non-own part, so its provider
-        // is never listed as unused.
-        plan.addConsulted(target);
-        direct.putIfAbsent(
-          key,
-          () => 'its part ${ref.uri} is not an input of this module',
-        );
-        continue;
-      }
-      if (plan.isOwn(target)) {
-        plan.addImporter(imported: target, importer: key);
-        // A part follows its library both ways.
-        if (ref.isPart) {
-          plan.addImporter(imported: key, importer: target);
-          plan.addImport(importer: target, target: key);
-        }
-      } else if (inherited.containsKey(target)) {
-        // The exclusion decision consulted the closure-excluded source, so
-        // its provider is never listed as unused.
-        plan.addConsulted(target);
-        direct.putIfAbsent(key, () => 'imports ${ref.uri}, which is excluded');
-      } else if (!graph.containsKey(target)) {
-        // The missing-key exclusion consulted the absent closure key, so its
-        // package's providers are never listed as unused.
-        plan.addConsulted(target);
-        direct.putIfAbsent(
-          key,
-          () => 'imports ${ref.uri}, which is not in this module closure',
-        );
-      }
-    }
+  return (
+    scans: scans,
+    libraryKeyByName: libraryKeyByName,
+    declaredPartsOf: declaredPartsOf,
+  );
+}
+
+/// Plans a `part of <name>` directive: links a part to its own parent library,
+/// or excludes a part whose library is not an input of this module.
+void _planPartOfLibrary(
+  String key,
+  ScanResult scan,
+  Map<String, String> libraryKeyByName,
+  Map<String, Set<String>> declaredPartsOf,
+  _Plan plan,
+  Map<String, String> direct,
+) {
+  final libName = scan.partOfLibrary!;
+  final parent = libraryKeyByName[libName];
+  if (parent == null ||
+      !plan.isOwn(parent) ||
+      !_reachesViaPart(parent, key, declaredPartsOf)) {
+    // The exclusion decision consulted the named parent (when it names a
+    // file), so its provider is never listed as unused.
+    if (parent != null) plan.addConsulted(parent);
+    direct.putIfAbsent(
+      key,
+      () => 'its library $libName is not an input of this module',
+    );
+  } else {
+    plan.addImport(importer: key, target: parent);
+    plan.addImporter(imported: parent, importer: key);
+    plan.addImporter(imported: key, importer: parent);
+    plan.addImport(importer: parent, target: key);
   }
-  plan.exclude(direct);
-  return disallowed;
+}
+
+/// Refuses a URI spanning lines or with an empty path segment, however it
+/// spells its target: the front end's multi-line first-line rule reads a
+/// different file than [_resolveUri] names, and an empty segment resolves
+/// differently in the front end than by skipping it (a `package:` doubled
+/// slash resolves absolutely). Reports whether the directive was refused.
+bool _rejectMalformedRef(
+  ScanRef ref,
+  String key,
+  Map<String, String> uriOfKey,
+  List<String> disallowed,
+) {
+  if (!hasLineBreak(ref.uri) && !hasEmptyPathSegment(ref.uri)) return false;
+  disallowed.add(
+    'kernel_module: cannot compile ${uriOfKey[key] ?? key}: '
+    "${ref.kind} '${ref.uri}' is not a declared input.",
+  );
+  return true;
+}
+
+/// Plans a `dart:` import: allowed for VM libraries, excluding otherwise.
+/// Reports whether the directive was a `dart:` import.
+bool _planSdkRef(
+  ScanRef ref,
+  String key,
+  Set<String> vm,
+  Map<String, String> direct,
+) {
+  if (!ref.uri.startsWith('dart:')) return false;
+  if (!vm.contains(ref.uri.substring('dart:'.length))) {
+    direct.putIfAbsent(key, () => '${ref.uri} is not a VM library');
+  }
+  return true;
+}
+
+/// Plans a directive URI the resolver cannot name: slash-authority and
+/// host-reading URIs fail the build, while unknown-scheme names exclude the
+/// importer with the reason the compiler would lack.
+void _planUnresolvedRef(
+  ScanRef ref,
+  String key,
+  Map<String, String> uriOfKey,
+  String multiRootPrefix,
+  _Plan plan,
+  Map<String, String> direct,
+  List<String> disallowed,
+) {
+  // A schemeless `//` authority (`\` separates like the front end, so a
+  // leading `\\` counts too) reads above every root, outside the declared
+  // inputs: it fails however the directive names it, parts included.
+  if (_isSlashAuthorityUri(ref.uri)) {
+    disallowed.add(
+      'kernel_module: cannot compile ${uriOfKey[key] ?? key}: '
+      "${ref.kind} '${ref.uri}' is not a declared input.",
+    );
+    return;
+  }
+  // A directive URI outside the declared inputs fails the build (see the
+  // doc comment): it would read the host, outside every multi-root.
+  final outsideInputs = ref.isPart || ref.isPartOf
+      ? isFileSchemeDirectiveUri(ref.uri)
+      : isDisallowedDirectiveUri(ref.uri, multiRootPrefix: multiRootPrefix);
+  if (outsideInputs) {
+    disallowed.add(
+      'kernel_module: cannot compile ${uriOfKey[key] ?? key}: '
+      "${ref.kind} '${ref.uri}' is not a declared input.",
+    );
+    return;
+  }
+  // A `package:` the module's config does not name. Other schemes are not Dart
+  // sources this module can read, and resolve to null without a rule of their own.
+  if (ref.isPartOf) {
+    direct.putIfAbsent(
+      key,
+      () => 'its library ${ref.uri} is not an input of this module',
+    );
+  } else if (ref.isPart) {
+    direct.putIfAbsent(
+      key,
+      () => 'its part ${ref.uri} is not an input of this module',
+    );
+  } else if (ref.uri.startsWith('package:')) {
+    direct.putIfAbsent(
+      key,
+      () => '${ref.uri} names a package this module does not have',
+    );
+  } else {
+    // A schemeless URI the resolver cannot name (a fragment, a decoded
+    // `/`): the front end reads no declared file through it, so the
+    // directive fails instead of compiling without it.
+    disallowed.add(
+      'kernel_module: cannot compile ${uriOfKey[key] ?? key}: '
+      "${ref.kind} '${ref.uri}' is not a declared input.",
+    );
+  }
+}
+
+/// Plans a resolved `part of` URI: links the part both ways to an own parent
+/// it reaches through `part` directives, or excludes it.
+void _planPartOfRef(
+  ScanRef ref,
+  String key,
+  String target,
+  Map<String, Set<String>> declaredPartsOf,
+  _Plan plan,
+  Map<String, String> direct,
+) {
+  if (!plan.isOwn(target) || !_reachesViaPart(target, key, declaredPartsOf)) {
+    // The exclusion decision consulted the parent library, so its
+    // provider is never listed as unused.
+    plan.addConsulted(target);
+    direct.putIfAbsent(
+      key,
+      () => 'its library ${ref.uri} is not an input of this module',
+    );
+    return;
+  }
+  plan.addImport(importer: key, target: target);
+  plan.addImporter(imported: target, importer: key);
+  plan.addImporter(imported: key, importer: target);
+  plan.addImport(importer: target, target: key);
+}
+
+/// Plans a resolved import, export or `part` URI: records the edge, and
+/// excludes the importer when the target is outside this module's closure.
+void _planResolvedImport(
+  ScanRef ref,
+  String key,
+  String target,
+  Map<String, String> inherited,
+  Map<String, _Node> graph,
+  _Plan plan,
+  Map<String, String> direct,
+) {
+  plan.addImport(importer: key, target: target);
+  if (ref.isPart && !plan.isOwn(target)) {
+    // The exclusion decision consulted the non-own part, so its provider
+    // is never listed as unused.
+    plan.addConsulted(target);
+    direct.putIfAbsent(
+      key,
+      () => 'its part ${ref.uri} is not an input of this module',
+    );
+    return;
+  }
+  if (plan.isOwn(target)) {
+    plan.addImporter(imported: target, importer: key);
+    // A part follows its library both ways.
+    if (ref.isPart) {
+      plan.addImporter(imported: key, importer: target);
+      plan.addImport(importer: target, target: key);
+    }
+  } else if (inherited.containsKey(target)) {
+    // The exclusion decision consulted the closure-excluded source, so
+    // its provider is never listed as unused.
+    plan.addConsulted(target);
+    direct.putIfAbsent(key, () => 'imports ${ref.uri}, which is excluded');
+  } else if (!graph.containsKey(target)) {
+    // The missing-key exclusion consulted the absent closure key, so its
+    // package's providers are never listed as unused.
+    plan.addConsulted(target);
+    direct.putIfAbsent(
+      key,
+      () => 'imports ${ref.uri}, which is not in this module closure',
+    );
+  }
 }
 
 /// Whether the source at `uri` is one a module of the closure defines, so that this
