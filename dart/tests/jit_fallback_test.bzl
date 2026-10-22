@@ -16,6 +16,12 @@ load("//dart/private:dart_test_runner.bzl", "dart_test_runner_snapshot")
 _FLAG = str(Label("//dart:jit_snapshot_fallback"))
 _FALLBACK_ARG = "--fallback-allowed"
 
+# On Windows jit-snapshot trains through `dart compile` and there is no runner snapshot action, so these argv tests run on POSIX hosts only.
+_POSIX_ONLY = select({
+    "@platforms//os:windows": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
 def _argv_for(env, mnemonic):
     """The argv of the target's action with `mnemonic`, or None if absent."""
     for action in analysistest.target_actions(env):
@@ -99,6 +105,7 @@ def jit_fallback_test_suite(name):
     _jit_default_test(
         name = "jit_fallback_default_test",
         size = "small",
+        target_compatible_with = _POSIX_ONLY,
         expect_fallback = False,
         mnemonic = "DartJitSnapshot",
         target_under_test = ":jit_fallback_fixture",
@@ -106,6 +113,7 @@ def jit_fallback_test_suite(name):
     _jit_flag_test(
         name = "jit_fallback_enabled_test",
         size = "small",
+        target_compatible_with = _POSIX_ONLY,
         expect_fallback = True,
         mnemonic = "DartJitSnapshot",
         target_under_test = ":jit_fallback_fixture",
@@ -113,6 +121,7 @@ def jit_fallback_test_suite(name):
     _runner_default_test(
         name = "runner_fallback_default_test",
         size = "small",
+        target_compatible_with = _POSIX_ONLY,
         expect_fallback = False,
         mnemonic = "DartTestRunnerSnapshot",
         target_under_test = ":jit_fallback_runner_fixture",
@@ -120,6 +129,7 @@ def jit_fallback_test_suite(name):
     _runner_flag_test(
         name = "runner_fallback_enabled_test",
         size = "small",
+        target_compatible_with = _POSIX_ONLY,
         expect_fallback = True,
         mnemonic = "DartTestRunnerSnapshot",
         target_under_test = ":jit_fallback_runner_fixture",
