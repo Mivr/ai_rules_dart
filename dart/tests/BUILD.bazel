@@ -1,4 +1,5 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("//dart:defs.bzl", "dart_test")
 load(":analyzer_summary_test.bzl", "analyzer_summary_test_suite")
 load(":code_asset_test.bzl", "code_asset_test_suite")
 load(":codegen_test.bzl", "codegen_test_suite")
@@ -90,4 +91,21 @@ provider_shape_probe(
 build_test(
     name = "provider_shape_test",
     targets = [":provider_shape_probe_target"],
+)
+
+# Fail-closed guard over every download in //dart: no context download
+# outside dart/private/download.bzl (direct, aliased or via getattr), and a
+# non-empty literal sha256/integrity on every http rule. The test discovers
+# every .bzl under dart/ and every MODULE.bazel from the live tree itself, so
+# it runs unsandboxed and local: it always re-runs, and a file it never
+# declared cannot change under a cached pass.
+dart_test(
+    name = "download_digest_guard_test",
+    size = "small",
+    main = "download_digest_guard_test.dart",
+    tags = ["external", "no-sandbox"],
+    local = True,
+    deps = [
+        "@ext_pub_deps//:test",
+    ],
 )

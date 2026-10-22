@@ -79,8 +79,19 @@ const _topLevel = {
 
 /// Every fetch call site in `//dart/pub` and the marker proving it goes
 /// through the shared validation entry point. A file without its marker
-/// fails.
-const _downloadMarkers = ['ctx.download(', 'ctx.download_and_extract('];
+/// fails. A download counts as a fetch whether it spells the Bazel primitive
+/// or the fail-closed digest helper: `pinned_download(` refuses a missing or
+/// malformed digest before any bytes move and passes the digest to
+/// `ctx.download`, so calling it is the validated path.
+/// (`pinned_download_and_extract(` does not contain the `pinned_download(`
+/// prefix — the `_and_extract` infix sits between them — so both spellings
+/// are listed.)
+const _downloadMarkers = [
+  'ctx.download(',
+  'ctx.download_and_extract(',
+  'pinned_download(',
+  'pinned_download_and_extract(',
+];
 
 /// The `git` binary spelled as a `ctx.execute` argument list. Only the shared
 /// helpers in `pinned_sources.bzl` may contain it: every other file fetches
