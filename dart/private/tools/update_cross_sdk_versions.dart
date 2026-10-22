@@ -252,6 +252,51 @@ Future<String> _fetchSha256(HttpClient client, Uri url) async {
 }
 
 Future<void> main(List<String> args) async {
+  final parsed = _parseVersionsArgs(args);
+  final versionsBzlPath = _resolveVersionsBzl(parsed.versionsBzlPath);
+
+  final file = File(versionsBzlPath);
+  if (!file.existsSync()) {
+    stderr.writeln(
+      'update_cross_sdk_versions: versions.bzl not found at $versionsBzlPath',
+    );
+    exit(1);
+  }
+
+  final existingContent = file.readAsStringSync();
+  final versions = parseToolVersions(existingContent);
+  final pins = _loadExistingPins(existingContent, force: parsed.force);
+
+  final client = HttpClient();
+  try {
+    final tasks = _planFetchTasks(
+      versions: versions,
+      genSnapshotPins: pins.genSnapshot,
+      dartaotruntimePins: pins.dartaotruntime,
+      client: client,
+    );
+    await _runFetchTasks(tasks);
+    final rendered = renderVersionsBzl(
+      existingContent: existingContent,
+      versions: versions,
+      genSnapshotVersions: pins.genSnapshot,
+      dartaotruntimeVersions: pins.dartaotruntime,
+    );
+    file.writeAsStringSync(rendered);
+    stdout.writeln(
+      'Updated $versionsBzlPath (${versions.length} SDK versions, '
+      '${tasks.length} artifacts fetched).',
+    );
+  } finally {
+    client.close(force: true);
+  }
+}
+
+/// Parsed `update_cross_sdk_versions` command line.
+typedef _VersionsArgs = ({String? versionsBzlPath, bool force});
+
+/// Parses the command line, rejecting unknown arguments.
+_VersionsArgs _parseVersionsArgs(List<String> args) {
   String? versionsBzlPath;
   var force = false;
   for (final arg in args) {
@@ -264,97 +309,116 @@ Future<void> main(List<String> args) async {
       exit(64);
     }
   }
+  return (versionsBzlPath: versionsBzlPath, force: force);
+}
 
-  if (versionsBzlPath == null) {
-    final workspace = Platform.environment['BUILD_WORKSPACE_DIRECTORY'];
-    if (workspace != null && workspace.isNotEmpty) {
-      versionsBzlPath = '$workspace/dart/private/versions.bzl';
-    } else {
-      versionsBzlPath = 'dart/private/versions.bzl';
-    }
+/// The `versions.bzl` to update: the flag, or the workspace checkout's.
+String _resolveVersionsBzl(String? flagPath) {
+  if (flagPath != null) return flagPath;
+  final workspace = Platform.environment['BUILD_WORKSPACE_DIRECTORY'];
+  if (workspace != null && workspace.isNotEmpty) {
+    return '$workspace/dart/private/versions.bzl';
   }
+  return 'dart/private/versions.bzl';
+}
 
-  final file = File(versionsBzlPath);
-  if (!file.existsSync()) {
-    stderr.writeln(
-      'update_cross_sdk_versions: versions.bzl not found at $versionsBzlPath',
+/// Existing cross pins, or empty maps under `--force`.
+({
+  Map<String, Map<String, String>> genSnapshot,
+  Map<String, Map<String, String>> dartaotruntime,
+})
+_loadExistingPins(String existingContent, {required bool force}) {
+  if (force) {
+    return (
+      genSnapshot: <String, Map<String, String>>{},
+      dartaotruntime: <String, Map<String, String>>{},
     );
-    exit(1);
   }
+  return (
+    genSnapshot: parseExistingNestedPins(
+      existingContent,
+      'CROSS_GEN_SNAPSHOT_VERSIONS',
+    ),
+    dartaotruntime: parseExistingNestedPins(
+      existingContent,
+      'CROSS_DARTAOTRUNTIME_VERSIONS',
+    ),
+  );
+}
 
-  final existingContent = file.readAsStringSync();
-  final versions = parseToolVersions(existingContent);
-  final genSnapshotPins = force
-      ? <String, Map<String, String>>{}
-      : parseExistingNestedPins(existingContent, 'CROSS_GEN_SNAPSHOT_VERSIONS');
-  final dartaotruntimePins = force
-      ? <String, Map<String, String>>{}
-      : parseExistingNestedPins(
-          existingContent,
-          'CROSS_DARTAOTRUNTIME_VERSIONS',
-        );
-
+/// One fetch per unpinned artifact, writing its digest into [genSnapshotPins]
+/// or [dartaotruntimePins] when run.
+List<Future<void> Function()> _planFetchTasks({
+  required List<String> versions,
+  required Map<String, Map<String, String>> genSnapshotPins,
+  required Map<String, Map<String, String>> dartaotruntimePins,
+  required HttpClient client,
+}) {
   final tasks = <Future<void> Function()>[];
-  final client = HttpClient();
-
   for (final version in versions) {
     final gsMap = genSnapshotPins.putIfAbsent(version, () => {});
     final rtMap = dartaotruntimePins.putIfAbsent(version, () => {});
+    _planGenSnapshotFetches(version, gsMap, client, tasks);
+    _planDartaotruntimeFetches(version, rtMap, client, tasks);
+  }
+  return tasks;
+}
 
-    for (final entry in crossTargets.entries) {
-      final host = entry.key;
-      for (final target in entry.value) {
-        final pairKey = '${host}_$target';
-        if (gsMap[pairKey] == null || gsMap[pairKey]!.isEmpty) {
-          final url = Uri.parse(crossGenSnapshotUrl(version, host, target));
-          tasks.add(() async {
-            final digest = await _fetchSha256(client, url);
-            gsMap[pairKey] = digest;
-            stdout.writeln('Pinned $version $pairKey -> $digest');
-          });
-        }
-      }
-    }
-
-    for (final target in crossTargetPlatforms.keys) {
-      if (rtMap[target] == null || rtMap[target]!.isEmpty) {
-        final url = Uri.parse(crossDartaotruntimeUrl(version, target));
+/// Queues a fetch for each unpinned `(host -> target)` gen_snapshot binary.
+void _planGenSnapshotFetches(
+  String version,
+  Map<String, String> gsMap,
+  HttpClient client,
+  List<Future<void> Function()> tasks,
+) {
+  for (final entry in crossTargets.entries) {
+    final host = entry.key;
+    for (final target in entry.value) {
+      final pairKey = '${host}_$target';
+      if (gsMap[pairKey] == null || gsMap[pairKey]!.isEmpty) {
+        final url = Uri.parse(crossGenSnapshotUrl(version, host, target));
         tasks.add(() async {
           final digest = await _fetchSha256(client, url);
-          rtMap[target] = digest;
-          stdout.writeln('Pinned $version dartaotruntime $target -> $digest');
+          gsMap[pairKey] = digest;
+          stdout.writeln('Pinned $version $pairKey -> $digest');
         });
       }
     }
   }
+}
 
-  try {
-    const concurrency = 16;
-    var nextIndex = 0;
-    Future<void> worker() async {
-      while (true) {
-        final idx = nextIndex++;
-        if (idx >= tasks.length) break;
-        await tasks[idx]();
-      }
+/// Queues a fetch for each unpinned target dartaotruntime binary.
+void _planDartaotruntimeFetches(
+  String version,
+  Map<String, String> rtMap,
+  HttpClient client,
+  List<Future<void> Function()> tasks,
+) {
+  for (final target in crossTargetPlatforms.keys) {
+    if (rtMap[target] == null || rtMap[target]!.isEmpty) {
+      final url = Uri.parse(crossDartaotruntimeUrl(version, target));
+      tasks.add(() async {
+        final digest = await _fetchSha256(client, url);
+        rtMap[target] = digest;
+        stdout.writeln('Pinned $version dartaotruntime $target -> $digest');
+      });
     }
+  }
+}
 
-    await Future.wait([
-      for (var i = 0; i < concurrency && i < tasks.length; i++) worker(),
-    ]);
-  } finally {
-    client.close(force: true);
+/// Runs fetch tasks with bounded concurrency.
+Future<void> _runFetchTasks(List<Future<void> Function()> tasks) async {
+  const concurrency = 16;
+  var nextIndex = 0;
+  Future<void> worker() async {
+    while (true) {
+      final idx = nextIndex++;
+      if (idx >= tasks.length) break;
+      await tasks[idx]();
+    }
   }
 
-  final rendered = renderVersionsBzl(
-    existingContent: existingContent,
-    versions: versions,
-    genSnapshotVersions: genSnapshotPins,
-    dartaotruntimeVersions: dartaotruntimePins,
-  );
-  file.writeAsStringSync(rendered);
-  stdout.writeln(
-    'Updated $versionsBzlPath (${versions.length} SDK versions, '
-    '${tasks.length} artifacts fetched).',
-  );
+  await Future.wait([
+    for (var i = 0; i < concurrency && i < tasks.length; i++) worker(),
+  ]);
 }
