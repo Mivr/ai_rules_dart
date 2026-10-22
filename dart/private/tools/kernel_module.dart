@@ -4045,133 +4045,239 @@ Future<List<String>?> _unusedInputsLines({
   required List<String> outputDills,
   required Set<String> declaredKeys,
   required String multiRootPrefix,
-}) async {
-  final outputRoots = <String>{
-    _canonicalActionPath(output),
-    if (outputOutline != null) _canonicalActionPath(outputOutline),
-  };
-  bool isOwnOutput(String path) =>
-      outputRoots.any((root) => path == root || path.startsWith('$root/'));
-  final keysOfDill = <String, Set<String>>{};
-  for (final entry in graph.entries) {
-    keysOfDill
-        .putIfAbsent(_canonicalActionPath(entry.value.dill), () => <String>{})
-        .add(entry.key);
-  }
-  // Every summary an invocation used: reported when the worker wrote its
-  // report, else every summary it passed. A reported file that is neither a
-  // passed summary nor the action's own output fails closed to no list.
-  final used = <String>{};
+}) => _UnusedInputs(
+  reports: reports,
+  inputKmods: inputKmods,
+  graph: graph,
+  inherited: inherited,
+  stagedSources: stagedSources,
+  ownKeys: ownKeys,
+  consultedTargets: consultedTargets,
+  output: output,
+  outputOutline: outputOutline,
+  entryKeys: entryKeys,
+  lookedUpLibraryNames: lookedUpLibraryNames,
+  inputSources: inputSources,
+  ownSourceFiles: ownSourceFiles,
+  multiRoots: multiRoots,
+  entryDill: entryDill,
+  outputDills: outputDills,
+  declaredKeys: declaredKeys,
+  multiRootPrefix: multiRootPrefix,
+).compute();
+
+/// Computes the unused input lines [_writeUnusedInputsList] writes.
+class _UnusedInputs {
+  _UnusedInputs({
+    required this.reports,
+    required this.inputKmods,
+    required this.graph,
+    required this.inherited,
+    required this.stagedSources,
+    required this.ownKeys,
+    required this.consultedTargets,
+    required this.output,
+    required this.outputOutline,
+    required this.entryKeys,
+    required this.lookedUpLibraryNames,
+    required this.inputSources,
+    required this.ownSourceFiles,
+    required this.multiRoots,
+    required this.entryDill,
+    required this.outputDills,
+    required this.declaredKeys,
+    required this.multiRootPrefix,
+  });
+
+  final List<_UsedReport> reports;
+  final List<String> inputKmods;
+  final Map<String, _Node> graph;
+  final Map<String, String> inherited;
+  final Map<String, String> stagedSources;
+  final Set<String> ownKeys;
+  final Set<String> consultedTargets;
+  final String output;
+  final String? outputOutline;
+  final Set<String>? entryKeys;
+  final bool lookedUpLibraryNames;
+  final List<String> inputSources;
+  final Set<String> ownSourceFiles;
+  final List<String> multiRoots;
+  final String? entryDill;
+  final List<String> outputDills;
+  final Set<String> declaredKeys;
+  final String multiRootPrefix;
+
+  /// Every summary an invocation used.
+  final _used = <String>{};
+
   // A module that defines a key this action compiles is linked for it (a
   // shadowing dependency) or embeds it (an entry's adopted part peer), so its
   // keys count as referenced alongside the own ones.
-  final referenced = <String>{...ownKeys, if (entryKeys != null) ...entryKeys};
-  final usedTrees = <String>{};
-  for (final report in reports) {
-    final reported = report.reported;
-    if (reported == null) {
-      used.addAll(report.passed);
-      continue;
-    }
-    for (final path in reported) {
-      if (!report.passed.contains(path) && !isOwnOutput(path)) {
-        return null;
-      }
-    }
-    used.addAll(reported);
-  }
-  final canonicalKmods = <String, String>{};
-  for (final dir in inputKmods) {
-    canonicalKmods.putIfAbsent(dir, () => _canonicalActionPath(dir));
-  }
-  for (final path in used) {
-    final keys = keysOfDill[path];
-    if (keys == null) continue;
-    referenced.addAll(keys);
-    for (final entry in canonicalKmods.entries) {
-      if (path == entry.value || path.startsWith('${entry.value}/')) {
-        usedTrees.add(entry.value);
-      }
-    }
-  }
-  final ownPackages = {for (final key in ownKeys) _packageOfKey(key)};
+  late final _referenced = <String>{...ownKeys, ...?entryKeys};
+  final _usedTrees = <String>{};
+  final _keepTrees = <String>{};
+
+  late final _outputRoots = <String>{
+    _canonicalActionPath(output),
+    if (outputOutline != null) _canonicalActionPath(outputOutline!),
+  };
+  late final _keysOfDill = _indexKeysOfDill(graph);
+  late final _canonicalKmods = <String, String>{
+    for (final dir in inputKmods) dir: _canonicalActionPath(dir),
+  };
+  late final _ownPackages = {for (final key in ownKeys) _packageOfKey(key)};
+
   // A plan decision that removes a source from the compile still read the
   // dependency key it decided about. Renaming a file into such a name
   // recompiles the dependency but must recompile this module too, so a
   // module sharing one of those keys' packages is never listed as unused.
-  final consultedPackages = {
+  late final _consultedPackages = {
     for (final key in consultedTargets) _packageOfKey(key),
   };
-  // Evidence veto: every source a kernel this action wrote embedded keeps the
-  // module directory that staged or defined it. The dill's source table cannot
-  // drift from what the compile read — an adopted part peer, a folded
-  // constant, a re-export, a mixin, an augmentation — so a dependency whose
-  // bytes the output holds is never listed, however the plan classified the
-  // file. A source no known input maps to, or a table that cannot be read,
-  // fails closed to no list. A missing output (a recording test compiler,
-  // which writes none) proves nothing, and the report and plan checks still
-  // apply to it.
-  final keepTrees = <String>{};
-  for (final dillPath in [...outputDills, if (entryDill != null) entryDill]) {
-    final dillFile = File(dillPath);
-    if (!await dillFile.exists()) continue;
-    final uris = dillSourceUris(await dillFile.readAsBytes());
-    if (uris == null) return null;
-    for (final uri in uris) {
-      final key = _keyOfDillSourceUri(uri, multiRoots, multiRootPrefix);
-      if (key == null) continue;
-      if (ownKeys.contains(key) || (entryKeys?.contains(key) ?? false)) {
+
+  /// The lines, or null when a report names a file the action never passed,
+  /// or when a written kernel embeds an unmapped source (or no readable
+  /// source table).
+  Future<List<String>?> compute() async {
+    if (!_collectUsedReports()) return null;
+    _markUsedTrees();
+    if (!await _collectEvidenceVeto()) return null;
+    final lines = _listUnusedModules();
+    await _listUnusedEntrySources(lines);
+    return lines;
+  }
+
+  bool _isOwnOutput(String path) =>
+      _outputRoots.any((root) => path == root || path.startsWith('$root/'));
+
+  /// Folds every used report into [_used], failing closed when a reported
+  /// file is neither a passed summary nor the action's own output.
+  bool _collectUsedReports() {
+    for (final report in reports) {
+      final reported = report.reported;
+      if (reported == null) {
+        _used.addAll(report.passed);
         continue;
       }
-      final stagedRoot = stagedSources[key];
-      if (stagedRoot != null) {
-        String? owner;
-        for (final dir in inputKmods) {
-          if ('$dir/sources' == stagedRoot) {
-            owner = dir;
-            break;
-          }
+      for (final path in reported) {
+        if (!report.passed.contains(path) && !_isOwnOutput(path)) {
+          return false;
         }
-        if (owner == null) return null;
-        keepTrees.add(owner);
-        continue;
       }
-      if (graph.containsKey(key)) {
-        final dill = _canonicalActionPath(graph[key]!.dill);
-        String? owner;
-        for (final entry in canonicalKmods.entries) {
-          if (dill == entry.value || dill.startsWith('${entry.value}/')) {
-            owner = entry.key;
-            break;
-          }
+      _used.addAll(reported);
+    }
+    return true;
+  }
+
+  /// Marks the summaries the invocations used as referenced, with their trees.
+  void _markUsedTrees() {
+    for (final path in _used) {
+      final keys = _keysOfDill[path];
+      if (keys == null) continue;
+      _referenced.addAll(keys);
+      for (final entry in _canonicalKmods.entries) {
+        if (path == entry.value || path.startsWith('${entry.value}/')) {
+          _usedTrees.add(entry.value);
         }
-        if (owner == null) return null;
-        keepTrees.add(owner);
-        continue;
       }
-      if (declaredKeys.contains(key)) continue;
-      return null;
     }
   }
-  final lines = <String>[];
-  for (final dir in inputKmods) {
-    final canonical = canonicalKmods[dir]!;
-    if (usedTrees.contains(canonical)) continue;
-    if (keepTrees.contains(dir)) continue;
+
+  /// Keeps the module directory that staged or defined every source a kernel
+  /// this action wrote embedded. The dill's source table cannot drift from
+  /// what the compile read — an adopted part peer, a folded constant, a
+  /// re-export, a mixin, an augmentation — so a dependency whose bytes the
+  /// output holds is never listed, however the plan classified the file. A
+  /// source no known input maps to, or a table that cannot be read, fails
+  /// closed to no list. A missing output (a recording test compiler, which
+  /// writes none) proves nothing, and the report and plan checks still apply.
+  Future<bool> _collectEvidenceVeto() async {
+    final entry = entryDill;
+    for (final dillPath in [...outputDills, if (entry != null) entry]) {
+      final dillFile = File(dillPath);
+      if (!await dillFile.exists()) continue;
+      final uris = dillSourceUris(await dillFile.readAsBytes());
+      if (uris == null) return false;
+      for (final uri in uris) {
+        if (!_vetoEvidenceOwner(uri)) return false;
+      }
+    }
+    return true;
+  }
+
+  /// Keeps the owner of one embedded source. Reports whether it has one.
+  bool _vetoEvidenceOwner(String uri) {
+    final key = _keyOfDillSourceUri(uri, multiRoots, multiRootPrefix);
+    if (key == null) return true;
+    if (ownKeys.contains(key) || (entryKeys?.contains(key) ?? false)) {
+      return true;
+    }
+    final stagedRoot = stagedSources[key];
+    if (stagedRoot != null) {
+      final owner = _ownerStaging(stagedRoot);
+      if (owner == null) return false;
+      _keepTrees.add(owner);
+      return true;
+    }
+    if (graph.containsKey(key)) {
+      final owner = _ownerDefining(key);
+      if (owner == null) return false;
+      _keepTrees.add(owner);
+      return true;
+    }
+    if (declaredKeys.contains(key)) return true;
+    return false;
+  }
+
+  /// The module directory whose staged sources hold [stagedRoot], if any.
+  String? _ownerStaging(String stagedRoot) {
+    for (final dir in inputKmods) {
+      if ('$dir/sources' == stagedRoot) return dir;
+    }
+    return null;
+  }
+
+  /// The module directory whose summary defines [key], if any.
+  String? _ownerDefining(String key) {
+    final dill = _canonicalActionPath(graph[key]!.dill);
+    for (final entry in _canonicalKmods.entries) {
+      if (dill == entry.value || dill.startsWith('${entry.value}/')) {
+        return entry.key;
+      }
+    }
+    return null;
+  }
+
+  /// The input module directories no check keeps.
+  List<String> _listUnusedModules() {
+    final lines = <String>[];
+    for (final dir in inputKmods) {
+      if (_isModuleUsed(dir)) continue;
+      lines.add(dir);
+    }
+    return lines;
+  }
+
+  /// Whether [dir] is used, referenced, package-shared, or stages inheritance.
+  bool _isModuleUsed(String dir) {
+    final canonical = _canonicalKmods[dir]!;
+    if (_usedTrees.contains(canonical)) return true;
+    if (_keepTrees.contains(dir)) return true;
     var defines = false;
     var definesReferenced = false;
     var sharesOwnPackage = false;
     var sharesConsultedPackage = false;
-    for (final entry in keysOfDill.entries) {
+    for (final entry in _keysOfDill.entries) {
       final dill = entry.key;
       if (dill != canonical && !dill.startsWith('$canonical/')) continue;
       for (final key in entry.value) {
         defines = true;
-        if (referenced.contains(key)) definesReferenced = true;
-        if (ownPackages.contains(_packageOfKey(key))) {
+        if (_referenced.contains(key)) definesReferenced = true;
+        if (_ownPackages.contains(_packageOfKey(key))) {
           sharesOwnPackage = true;
         }
-        if (consultedPackages.contains(_packageOfKey(key))) {
+        if (_consultedPackages.contains(_packageOfKey(key))) {
           sharesConsultedPackage = true;
         }
       }
@@ -4183,42 +4289,57 @@ Future<List<String>?> _unusedInputsLines({
         definesReferenced ||
         sharesOwnPackage ||
         sharesConsultedPackage) {
-      continue;
+      return true;
     }
     final stagedPrefix = '$dir/sources';
-    var stagesInherited = false;
     for (final staged in stagedSources.entries) {
       if (staged.value == stagedPrefix && inherited.containsKey(staged.key)) {
-        stagesInherited = true;
-        break;
+        return true;
       }
     }
-    if (stagesInherited) continue;
-    lines.add(dir);
+    return false;
   }
-  if (entryKeys != null &&
-      !lookedUpLibraryNames &&
-      entryDill != null &&
-      await _entryReadsArePlanned(
-        entryDill,
-        entryKeys,
-        multiRoots,
-        multiRootPrefix,
-      )) {
+
+  /// Lists the dependency sources of an entry module the entry neither
+  /// compiled nor scanned for a `part of` library name, when its output
+  /// embeds nothing unplanned.
+  Future<void> _listUnusedEntrySources(List<String> lines) async {
+    if (entryKeys == null ||
+        lookedUpLibraryNames ||
+        entryDill == null ||
+        !await _entryReadsArePlanned(
+          entryDill!,
+          entryKeys!,
+          multiRoots,
+          multiRootPrefix,
+        )) {
+      return;
+    }
     final seen = <String>{};
     for (final path in inputSources) {
       if (!seen.add(path) || ownSourceFiles.contains(path)) continue;
-      var visited = false;
-      for (final spelling in _inputSpellings(path, multiRoots)) {
-        if (entryKeys.contains(spelling)) {
-          visited = true;
-          break;
-        }
-      }
-      if (!visited) lines.add(path);
+      if (!_isEntryVisited(path)) lines.add(path);
     }
   }
-  return lines;
+
+  /// Whether the entry's keys visit [path] under any of its spellings.
+  bool _isEntryVisited(String path) {
+    for (final spelling in _inputSpellings(path, multiRoots)) {
+      if (entryKeys!.contains(spelling)) return true;
+    }
+    return false;
+  }
+}
+
+/// Indexes closure keys by the canonical path of the summary defining them.
+Map<String, Set<String>> _indexKeysOfDill(Map<String, _Node> graph) {
+  final keysOfDill = <String, Set<String>>{};
+  for (final entry in graph.entries) {
+    keysOfDill
+        .putIfAbsent(_canonicalActionPath(entry.value.dill), () => <String>{})
+        .add(entry.key);
+  }
+  return keysOfDill;
 }
 
 /// One `kernel_worker` process per compile.
