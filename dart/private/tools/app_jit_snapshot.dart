@@ -2754,7 +2754,7 @@ String _gkCanonicalRoot(
 /// each node header opens with a flags byte, the version, and three
 /// references — canonical name (biased), name string, source-table file URI —
 /// after which only that prefix has been consumed. Returns false when the node
-/// does not parse. Copied from the modular kernel planner
+/// does not parse. The layout follows the modular kernel planner's
 /// (`_collectComponentLibraries` in `kernel_module.dart`).
 bool _gkReadLibraryNode(
   ({
