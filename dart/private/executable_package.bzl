@@ -47,6 +47,91 @@ def _in_root(path, root):
 def _how_stated(label, stated_by):
     return "%s (via %s)" % (label, stated_by)
 
+def _outside_root_error(me, name, shown_root, own_paths, root):
+    """Error when an own file lies outside the stated package root, else None."""
+    for path in own_paths:
+        if not _in_root(path, root):
+            return (
+                ("%s states package \"%s\", rooted at its Bazel package " +
+                 "directory `%s`, but its source `%s` is outside that " +
+                 "directory — Dart would not give it the package's language " +
+                 "version. Move the file into this package, or drop `package` " +
+                 "/ `package_name` / `language_version` so the file takes the " +
+                 "version of the package that does contain it.") %
+                (me, name, shown_root, path)
+            )
+    return None
+
+def _same_name_error(me, name, shown_root, root, same_name, reached_through):
+    """Error when no same-named dep record shares the stated root, else None."""
+    if same_name and not [p for p in same_name if p.lib_root == root]:
+        other = same_name[0]
+        return (
+            ("%s states package \"%s\" rooted at `%s`, but %s supplies package " +
+             "\"%s\" rooted at `%s`. One package has one root, so these are two " +
+             "packages with one name, and a build keeps only one of them. If " +
+             "this target is part of that package, declare it in the BUILD " +
+             "file at `%s`, or drop `package` / `package_name` / " +
+             "`language_version` — its entrypoint then takes that package's " +
+             "version if the package's root contains it. Otherwise give it a " +
+             "different `package_name`.") %
+            (me, name, shown_root, reached_through(other), name, other.lib_root or ".", other.lib_root or ".")
+        )
+    return None
+
+def _same_root_error(me, name, shown_root, root, dep_packages, reached_through):
+    """Error when a dep record names the stated root differently, else None."""
+    for p in dep_packages:
+        if p.lib_root == root and p.package_name != name:
+            return (
+                ("%s states package \"%s\", but %s declares the same directory " +
+                 "`%s` as package \"%s\". One directory is one package. Name " +
+                 "the same package on both, ideally by pointing both at one " +
+                 "`dart_package_metadata`.") %
+                (me, name, reached_through(p), shown_root, p.package_name)
+            )
+    return None
+
+def _version_error(me, name, own, root, dep_packages, reached_through):
+    """Error when a same-package dep record states another version, else None."""
+    for p in dep_packages:
+        if p.package_name != name or p.lib_root != root:
+            continue
+        theirs = getattr(p, "language_version", "")
+        if theirs != own.language_version:
+            return (
+                ("%s states package \"%s\" at language version %s, but %s, " +
+                 "the same package, states %s. One package has one language " +
+                 "version, and this target's statement would decide it for " +
+                 "the library's files in this build alone. Point both at one " +
+                 "`dart_package_metadata`, or state the same " +
+                 "`language_version` on each.") %
+                (
+                    me,
+                    name,
+                    own.language_version or "none",
+                    reached_through(p),
+                    theirs or "none",
+                )
+            )
+    return None
+
+def _nested_root_error(me, name, shown_root, own_paths, root, dep_packages, reached_through):
+    """Error when an own file lies inside a deeper dep package root, else None."""
+    for path in own_paths:
+        for p in dep_packages:
+            r = p.lib_root
+            if r != root and _in_root(r, root) and _in_root(path, r):
+                return (
+                    ("%s states package \"%s\" rooted at `%s`, but its source " +
+                     "`%s` lies inside package \"%s\" (root `%s`, from %s), " +
+                     "which Dart gives it instead. Declare this target in " +
+                     "that package's BUILD file with its identity, or drop " +
+                     "`package` / `package_name` / `language_version` here.") %
+                    (me, name, shown_root, path, p.package_name, r, reached_through(p))
+                )
+    return None
+
 def executable_package_error(label, own, stated_by, own_paths, dep_packages, reached_through):
     """Reports a stated executable package that contradicts what its deps say.
 
@@ -90,77 +175,24 @@ def executable_package_error(label, own, stated_by, own_paths, dep_packages, rea
     shown_root = root or "."
     me = _how_stated(label, stated_by)
 
-    for path in own_paths:
-        if not _in_root(path, root):
-            return (
-                ("%s states package \"%s\", rooted at its Bazel package " +
-                 "directory `%s`, but its source `%s` is outside that " +
-                 "directory — Dart would not give it the package's language " +
-                 "version. Move the file into this package, or drop `package` " +
-                 "/ `package_name` / `language_version` so the file takes the " +
-                 "version of the package that does contain it.") %
-                (me, name, shown_root, path)
-            )
+    err = _outside_root_error(me, name, shown_root, own_paths, root)
+    if err != None:
+        return err
 
     same_name = [p for p in dep_packages if p.package_name == name]
-    if same_name and not [p for p in same_name if p.lib_root == root]:
-        other = same_name[0]
-        return (
-            ("%s states package \"%s\" rooted at `%s`, but %s supplies package " +
-             "\"%s\" rooted at `%s`. One package has one root, so these are two " +
-             "packages with one name, and a build keeps only one of them. If " +
-             "this target is part of that package, declare it in the BUILD " +
-             "file at `%s`, or drop `package` / `package_name` / " +
-             "`language_version` — its entrypoint then takes that package's " +
-             "version if the package's root contains it. Otherwise give it a " +
-             "different `package_name`.") %
-            (me, name, shown_root, reached_through(other), name, other.lib_root or ".", other.lib_root or ".")
-        )
+    err = _same_name_error(me, name, shown_root, root, same_name, reached_through)
+    if err != None:
+        return err
 
-    for p in dep_packages:
-        if p.lib_root == root and p.package_name != name:
-            return (
-                ("%s states package \"%s\", but %s declares the same directory " +
-                 "`%s` as package \"%s\". One directory is one package. Name " +
-                 "the same package on both, ideally by pointing both at one " +
-                 "`dart_package_metadata`.") %
-                (me, name, reached_through(p), shown_root, p.package_name)
-            )
+    err = _same_root_error(me, name, shown_root, root, dep_packages, reached_through)
+    if err != None:
+        return err
 
-    for p in dep_packages:
-        if p.package_name != name or p.lib_root != root:
-            continue
-        theirs = getattr(p, "language_version", "")
-        if theirs != own.language_version:
-            return (
-                ("%s states package \"%s\" at language version %s, but %s, " +
-                 "the same package, states %s. One package has one language " +
-                 "version, and this target's statement would decide it for " +
-                 "the library's files in this build alone. Point both at one " +
-                 "`dart_package_metadata`, or state the same " +
-                 "`language_version` on each.") %
-                (
-                    me,
-                    name,
-                    own.language_version or "none",
-                    reached_through(p),
-                    theirs or "none",
-                )
-            )
+    err = _version_error(me, name, own, root, dep_packages, reached_through)
+    if err != None:
+        return err
 
-    for path in own_paths:
-        for p in dep_packages:
-            r = p.lib_root
-            if r != root and _in_root(r, root) and _in_root(path, r):
-                return (
-                    ("%s states package \"%s\" rooted at `%s`, but its source " +
-                     "`%s` lies inside package \"%s\" (root `%s`, from %s), " +
-                     "which Dart gives it instead. Declare this target in " +
-                     "that package's BUILD file with its identity, or drop " +
-                     "`package` / `package_name` / `language_version` here.") %
-                    (me, name, shown_root, path, p.package_name, r, reached_through(p))
-                )
-    return None
+    return _nested_root_error(me, name, shown_root, own_paths, root, dep_packages, reached_through)
 
 def _reached_through(deps):
     def find(record):
