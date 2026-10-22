@@ -364,6 +364,22 @@ Map<String, String> buildChildEnvironment({
 }) {
   final source = parentEnv ?? Platform.environment;
   final win = isWindows ?? Platform.isWindows;
+  final env = _ChildEnvBuilder(win: win);
+  if (win) {
+    _applyWindowsChildEnv(env, source, homeDir, includeParent, overrides);
+  } else {
+    _applyPosixChildEnv(env, source, homeDir, includeParent, overrides);
+  }
+  return env.result;
+}
+
+/// A child-process environment under construction, with the case handling of
+/// [buildChildEnvironment]: on Windows names compare case-insensitively, so
+/// setting a name removes any existing spelling of it first.
+final class _ChildEnvBuilder {
+  _ChildEnvBuilder({required this.win});
+
+  final bool win;
   final result = <String, String>{};
 
   bool isValidEntry(String key, String value) =>
@@ -372,7 +388,7 @@ Map<String, String> buildChildEnvironment({
       !key.contains('\x00') &&
       !value.contains('\x00');
 
-  void setEnv(String key, String value) {
+  void set(String key, String value) {
     if (!isValidEntry(key, value)) return;
     if (win) {
       final upper = key.toUpperCase();
@@ -382,70 +398,90 @@ Map<String, String> buildChildEnvironment({
     }
     result[key] = value;
   }
+}
 
-  if (win) {
-    final systemRoot =
-        _lookupEnvCaseInsensitive(source, 'SystemRoot') ??
-        _lookupEnvCaseInsensitive(source, 'WINDIR') ??
-        r'C:\Windows';
-    final systemDrive =
-        _lookupEnvCaseInsensitive(source, 'SystemDrive') ??
-        (systemRoot.length >= 2 && systemRoot[1] == ':'
-            ? systemRoot.substring(0, 2)
-            : 'C:');
-    setEnv('SystemRoot', systemRoot);
-    setEnv('WINDIR', _lookupEnvCaseInsensitive(source, 'WINDIR') ?? systemRoot);
-    setEnv('SystemDrive', systemDrive);
-    setEnv(
-      'COMSPEC',
-      _lookupEnvCaseInsensitive(source, 'COMSPEC') ??
-          '$systemRoot\\System32\\cmd.exe',
-    );
-    setEnv(
-      'PATHEXT',
-      _lookupEnvCaseInsensitive(source, 'PATHEXT') ?? '.COM;.EXE;.BAT;.CMD',
-    );
-    final parentPath = _lookupEnvCaseInsensitive(source, 'PATH');
-    setEnv(
-      'PATH',
-      (includeParent && parentPath != null)
-          ? parentPath
-          : '$systemRoot\\System32;$systemRoot',
-    );
-    for (final optionalKey in const [
-      'NUMBER_OF_PROCESSORS',
-      'PROCESSOR_ARCHITECTURE',
-    ]) {
-      final val = _lookupEnvCaseInsensitive(source, optionalKey);
-      if (val != null) {
-        setEnv(optionalKey, val);
-      }
+/// Applies the Windows branch of [buildChildEnvironment]: the minimal system
+/// variables Windows needs to start a process, the home, cache, and temporary
+/// directory variables pointed at [homeDir], then [overrides].
+void _applyWindowsChildEnv(
+  _ChildEnvBuilder env,
+  Map<String, String> source,
+  String homeDir,
+  bool includeParent,
+  Map<String, String> overrides,
+) {
+  final systemRoot =
+      _lookupEnvCaseInsensitive(source, 'SystemRoot') ??
+      _lookupEnvCaseInsensitive(source, 'WINDIR') ??
+      r'C:\Windows';
+  final systemDrive =
+      _lookupEnvCaseInsensitive(source, 'SystemDrive') ??
+      (systemRoot.length >= 2 && systemRoot[1] == ':'
+          ? systemRoot.substring(0, 2)
+          : 'C:');
+  env.set('SystemRoot', systemRoot);
+  env.set('WINDIR', _lookupEnvCaseInsensitive(source, 'WINDIR') ?? systemRoot);
+  env.set('SystemDrive', systemDrive);
+  env.set(
+    'COMSPEC',
+    _lookupEnvCaseInsensitive(source, 'COMSPEC') ??
+        '$systemRoot\\System32\\cmd.exe',
+  );
+  env.set(
+    'PATHEXT',
+    _lookupEnvCaseInsensitive(source, 'PATHEXT') ?? '.COM;.EXE;.BAT;.CMD',
+  );
+  final parentPath = _lookupEnvCaseInsensitive(source, 'PATH');
+  env.set(
+    'PATH',
+    (includeParent && parentPath != null)
+        ? parentPath
+        : '$systemRoot\\System32;$systemRoot',
+  );
+  for (final optionalKey in const [
+    'NUMBER_OF_PROCESSORS',
+    'PROCESSOR_ARCHITECTURE',
+  ]) {
+    final val = _lookupEnvCaseInsensitive(source, optionalKey);
+    if (val != null) {
+      env.set(optionalKey, val);
     }
-    for (final homeKey in const [
-      'USERPROFILE',
-      'LOCALAPPDATA',
-      'APPDATA',
-      'HOME',
-      'PUB_CACHE',
-      'TEMP',
-      'TMP',
-      'TMPDIR',
-    ]) {
-      setEnv(homeKey, homeDir);
-    }
-    for (final entry in overrides.entries) {
-      setEnv(entry.key, entry.value);
-    }
-    if ((_lookupEnvCaseInsensitive(result, 'SystemRoot') ?? '').isEmpty) {
-      setEnv('SystemRoot', systemRoot);
-    }
-    return result;
   }
+  for (final homeKey in const [
+    'USERPROFILE',
+    'LOCALAPPDATA',
+    'APPDATA',
+    'HOME',
+    'PUB_CACHE',
+    'TEMP',
+    'TMP',
+    'TMPDIR',
+  ]) {
+    env.set(homeKey, homeDir);
+  }
+  for (final entry in overrides.entries) {
+    env.set(entry.key, entry.value);
+  }
+  if ((_lookupEnvCaseInsensitive(env.result, 'SystemRoot') ?? '').isEmpty) {
+    env.set('SystemRoot', systemRoot);
+  }
+}
 
+/// Applies the POSIX branch of [buildChildEnvironment]: [source] except the
+/// home and cache variables (pointed at [homeDir]) and `TMPDIR` (pointed at
+/// [homeDir], so no child writes to the shared system temp directory), then
+/// [overrides].
+void _applyPosixChildEnv(
+  _ChildEnvBuilder env,
+  Map<String, String> source,
+  String homeDir,
+  bool includeParent,
+  Map<String, String> overrides,
+) {
   if (includeParent) {
     for (final entry in source.entries) {
       if (_isolatedHomeEnvKeys.contains(entry.key.toUpperCase())) continue;
-      setEnv(entry.key, entry.value);
+      env.set(entry.key, entry.value);
     }
     for (final homeKey in const [
       'HOME',
@@ -458,16 +494,15 @@ Map<String, String> buildChildEnvironment({
       // scratch `TMPDIR` names.
       'TMPDIR',
     ]) {
-      setEnv(homeKey, homeDir);
+      env.set(homeKey, homeDir);
     }
   } else {
-    setEnv('HOME', homeDir);
-    setEnv('TMPDIR', homeDir);
+    env.set('HOME', homeDir);
+    env.set('TMPDIR', homeDir);
   }
   for (final entry in overrides.entries) {
-    setEnv(entry.key, entry.value);
+    env.set(entry.key, entry.value);
   }
-  return result;
 }
 
 /// A `KEY=VALUE` (or `DEST=SOURCE`) option value. Splits at the first `=`.
@@ -1260,17 +1295,22 @@ void _copyFile(String from, String to) {
   dest.writeAsBytesSync(File(from).readAsBytesSync());
 }
 
-/// Compiles a pre-built kernel `.dill` to an AOT snapshot (`--mode=aot-snapshot`)
-/// or self-contained AOT executable (`--mode=exe`) without invoking `dartdev`.
-///
-/// `dart compile exe` runs through `dartdev`, which walks ancestor directories
-/// up to `/` probing `pubspec.yaml` and `.dart_tool/package_config.json` (for
-/// native-asset hook discovery) and spawns `/usr/bin/chmod` via `PATH`. Driving
-/// `gen_snapshot --deterministic` directly and writing a fresh executable from
-/// `dartaotruntime` plus the ELF snapshot (marking it `0755` via libc `chmod`)
-/// keeps the compile strictly hermetic inside the action sandbox, even when
-/// inputs are staged read-only and no shell or coreutils exist.
-void _runAot(List<String> argv) {
+// Compiles a pre-built kernel `.dill` to an AOT snapshot (`--mode=aot-snapshot`)
+// or self-contained AOT executable (`--mode=exe`) without invoking `dartdev`.
+//
+// `dart compile exe` runs through `dartdev`, which walks ancestor directories
+// up to `/` probing `pubspec.yaml` and `.dart_tool/package_config.json` (for
+// native-asset hook discovery) and spawns `/usr/bin/chmod` via `PATH`. Driving
+// `gen_snapshot --deterministic` directly and writing a fresh executable from
+// `dartaotruntime` plus the ELF snapshot (marking it `0755` via libc `chmod`)
+// keeps the compile strictly hermetic inside the action sandbox, even when
+// inputs are staged read-only and no shell or coreutils exist.
+//
+// The `--aot` branch ([_runAot] below) parses with [_parseAotArgs], delegates
+// non-ELF targets to `dart compile`, and otherwise drives `gen_snapshot`
+// directly.
+/// The parsed `--aot` arguments (see [_parseAotArgs]).
+final class _AotArgs {
   String? dart;
   String? mode;
   String? recordedUses;
@@ -1282,51 +1322,288 @@ void _runAot(List<String> argv) {
   String? targetArch;
   var enableAsserts = false;
   final extraGenSnapshotOptions = <String>[];
+}
 
+/// Parses the `--aot` arguments.
+_AotArgs _parseAotArgs(List<String> argv) {
+  final args = _AotArgs();
   for (var i = 0; i < argv.length; i++) {
-    final arg = argv[i];
-    if (arg == '--enable-asserts') {
-      enableAsserts = true;
-    } else if (arg == '--verbosity=error') {
-      // Ignored: gen_snapshot is silent on success.
-    } else if (arg.startsWith('--dart=')) {
-      dart = arg.substring('--dart='.length);
-    } else if (arg.startsWith('--mode=')) {
-      mode = arg.substring('--mode='.length);
-    } else if (arg.startsWith('--recorded-uses=')) {
-      recordedUses = arg.substring('--recorded-uses='.length);
-    } else if (arg.startsWith('--gen-snapshot=')) {
-      customGenSnapshot = arg.substring('--gen-snapshot='.length);
-    } else if (arg == '--gen-snapshot') {
-      customGenSnapshot = argv[++i];
-    } else if (arg.startsWith('--dartaotruntime=')) {
-      customDartaotruntime = arg.substring('--dartaotruntime='.length);
-    } else if (arg == '--dartaotruntime') {
-      customDartaotruntime = argv[++i];
-    } else if (arg.startsWith('--target-os=')) {
-      targetOs = arg.substring('--target-os='.length);
-    } else if (arg == '--target-os') {
-      targetOs = argv[++i];
-    } else if (arg.startsWith('--target-arch=')) {
-      targetArch = arg.substring('--target-arch='.length);
-    } else if (arg == '--target-arch') {
-      targetArch = argv[++i];
-    } else if (arg.startsWith('--extra-gen-snapshot-options=')) {
-      final opts = arg.substring('--extra-gen-snapshot-options='.length);
-      for (final opt in opts.split(',')) {
-        if (opt.isNotEmpty) extraGenSnapshotOptions.add(opt);
+    i = _applyAotArg(args, argv, i);
+  }
+  return args;
+}
+
+/// Applies the argument at [i], returning the index of the last argument it
+/// consumed (the same index, or one further when it takes a separate value).
+int _applyAotArg(_AotArgs args, List<String> argv, int i) {
+  final arg = argv[i];
+  final toolchainIndex = _applyAotToolchainOption(args, argv, i);
+  if (toolchainIndex != null) return toolchainIndex;
+  if (arg == '--enable-asserts') {
+    args.enableAsserts = true;
+    return i;
+  }
+  if (arg == '--verbosity=error') {
+    // Ignored: gen_snapshot is silent on success.
+    return i;
+  }
+  if (arg.startsWith('--extra-gen-snapshot-options=')) {
+    final opts = arg.substring('--extra-gen-snapshot-options='.length);
+    for (final opt in opts.split(',')) {
+      if (opt.isNotEmpty) args.extraGenSnapshotOptions.add(opt);
+    }
+    return i;
+  }
+  if (arg == '-o') {
+    args.outputPath = argv[++i];
+    return i;
+  }
+  if (arg.startsWith('-o=')) {
+    args.outputPath = arg.substring('-o='.length);
+    return i;
+  }
+  if (!arg.startsWith('-')) {
+    args.dillPath = arg;
+    return i;
+  }
+  stderr.writeln('app_jit_snapshot --aot: unknown argument $arg');
+  exit(64);
+}
+
+/// Applies a toolchain or target option at [i], returning the index of the
+/// last argument it consumed, or null when [arg] is no such option.
+int? _applyAotToolchainOption(_AotArgs args, List<String> argv, int i) {
+  final arg = argv[i];
+  if (arg.startsWith('--dart=')) {
+    args.dart = arg.substring('--dart='.length);
+    return i;
+  }
+  if (arg.startsWith('--mode=')) {
+    args.mode = arg.substring('--mode='.length);
+    return i;
+  }
+  if (arg.startsWith('--recorded-uses=')) {
+    args.recordedUses = arg.substring('--recorded-uses='.length);
+    return i;
+  }
+  if (arg.startsWith('--gen-snapshot=')) {
+    args.customGenSnapshot = arg.substring('--gen-snapshot='.length);
+    return i;
+  }
+  if (arg == '--gen-snapshot') {
+    args.customGenSnapshot = argv[++i];
+    return i;
+  }
+  if (arg.startsWith('--dartaotruntime=')) {
+    args.customDartaotruntime = arg.substring('--dartaotruntime='.length);
+    return i;
+  }
+  if (arg == '--dartaotruntime') {
+    args.customDartaotruntime = argv[++i];
+    return i;
+  }
+  if (arg.startsWith('--target-os=')) {
+    args.targetOs = arg.substring('--target-os='.length);
+    return i;
+  }
+  if (arg == '--target-os') {
+    args.targetOs = argv[++i];
+    return i;
+  }
+  if (arg.startsWith('--target-arch=')) {
+    args.targetArch = arg.substring('--target-arch='.length);
+    return i;
+  }
+  if (arg == '--target-arch') {
+    args.targetArch = argv[++i];
+    return i;
+  }
+  return null;
+}
+
+/// Exits unless a cross-compilation has the toolchain it needs: a custom
+/// `gen_snapshot`, and a custom `dartaotruntime` for executables.
+void _checkAotCrossRequirements(_AotArgs args, String mode, bool isCross) {
+  if (!isCross) return;
+  if (args.customGenSnapshot == null || args.customGenSnapshot!.isEmpty) {
+    stderr.writeln(
+      'app_jit_snapshot --aot: cross-compilation to '
+      '${args.targetOs}-${args.targetArch} requires --gen-snapshot',
+    );
+    exit(64);
+  }
+  if (mode == 'exe' &&
+      (args.customDartaotruntime == null ||
+          args.customDartaotruntime!.isEmpty)) {
+    stderr.writeln(
+      'app_jit_snapshot --aot: cross-compiling exe to '
+      '${args.targetOs}-${args.targetArch} requires --dartaotruntime',
+    );
+    exit(64);
+  }
+}
+
+/// Whether the compile delegates to `dart compile` with a fresh temporary
+/// HOME directory: on non-ELF targets (e.g. native macOS Mach-O executables or
+/// Windows) or jit-snapshot fallback on Windows. Cross-compilation targets are
+/// always ELF and never delegate to `dartdev`.
+bool _aotDelegatesToDartCompile({
+  required String dart,
+  required String mode,
+  required bool isCross,
+  required String targetDartaotruntime,
+}) =>
+    !isCross &&
+    (mode == 'jit-snapshot' ||
+        dart.endsWith('.exe') ||
+        (mode == 'exe' && !_isElfFile(File(targetDartaotruntime))));
+
+/// Compiles through `dart compile` instead of driving `gen_snapshot` directly
+/// (see [_aotDelegatesToDartCompile]), exiting when the compile fails.
+void _runAotViaDartCompile({
+  required String dart,
+  required String mode,
+  required bool enableAsserts,
+  required String? recordedUses,
+  required List<String> extraGenSnapshotOptions,
+  required String outputPath,
+  required String dillPath,
+}) {
+  final compileArgs = <String>[
+    'compile',
+    mode,
+    if (mode == 'exe' || mode == 'aot-snapshot') '--verbosity=error',
+    if (enableAsserts) '--enable-asserts',
+    if (recordedUses != null) '--recorded-uses=$recordedUses',
+    for (final opt in extraGenSnapshotOptions)
+      '--extra-gen-snapshot-options=$opt',
+    '-o',
+    outputPath,
+    dillPath,
+  ];
+  final scratchBase = File(outputPath).parent..createSync(recursive: true);
+  final tempHome = scratchBase.createTempSync('rules_dart_compile_home.');
+  final childEnv = buildChildEnvironment(
+    homeDir: tempHome.path,
+    parentEnv: Platform.environment,
+    isWindows: Platform.isWindows,
+  );
+  final ProcessResult res;
+  try {
+    res = Process.runSync(
+      dart,
+      compileArgs,
+      environment: childEnv,
+      includeParentEnvironment: false,
+    );
+  } finally {
+    if (tempHome.existsSync()) {
+      try {
+        tempHome.deleteSync(recursive: true);
+      } on FileSystemException {
+        // Ignore cleanup errors.
       }
-    } else if (arg == '-o') {
-      outputPath = argv[++i];
-    } else if (arg.startsWith('-o=')) {
-      outputPath = arg.substring('-o='.length);
-    } else if (!arg.startsWith('-')) {
-      dillPath = arg;
-    } else {
-      stderr.writeln('app_jit_snapshot --aot: unknown argument $arg');
-      exit(64);
     }
   }
+  if (res.exitCode != 0) {
+    stdout.write(res.stdout as String);
+    stderr.write(res.stderr as String);
+    exit(res.exitCode);
+  }
+}
+
+/// Bakes [dillPath] with its recorded usages into the scratch directory,
+/// returning the baked path and the bake's exit code (echoing a failed bake's
+/// output, as the caller fails the action with that code).
+({String dill, int exitCode}) _bakeRecordedDill({
+  required String sdkBin,
+  required String hostDartaotruntime,
+  required String dillPath,
+  required String recordedUses,
+  required String? targetOs,
+  required bool enableAsserts,
+  required Directory tmpDir,
+  required Map<String, String> homeEnv,
+}) {
+  final productPlatform = '$sdkBin/../lib/_internal/vm_platform_product.dill';
+  final strongPlatform = '$sdkBin/../lib/_internal/vm_platform_strong.dill';
+  final platformDill = File(productPlatform).existsSync()
+      ? productPlatform
+      : strongPlatform;
+  final recordedDill = '${tmpDir.path}/recorded.dill';
+  final gkRes = Process.runSync(
+    hostDartaotruntime,
+    [
+      '$sdkBin/snapshots/gen_kernel_aot.dart.snapshot',
+      '--platform=$platformDill',
+      '--aot',
+      '--tfa',
+      '--no-embed-sources',
+      '-Ddart.vm.product=true',
+      '-Ddart.vm.asan=false',
+      '-Ddart.vm.msan=false',
+      '-Ddart.vm.tsan=false',
+      if (targetOs != null && targetOs.isNotEmpty) '--target-os=$targetOs',
+      if (enableAsserts) '--enable-asserts',
+      '--from-dill=$dillPath',
+      '--recorded-usages-file=$recordedUses',
+      '-o',
+      recordedDill,
+      dillPath,
+    ],
+    environment: homeEnv,
+    includeParentEnvironment: false,
+  );
+  if (gkRes.exitCode != 0) {
+    stdout.write(gkRes.stdout as String);
+    stderr.write(gkRes.stderr as String);
+    return (dill: dillPath, exitCode: gkRes.exitCode);
+  }
+  return (dill: recordedDill, exitCode: 0);
+}
+
+/// Runs `gen_snapshot` over [activeDill] into [elfPath], returning its exit
+/// code (echoing a failed run's output, as the caller fails the action with
+/// that code).
+int _runGenSnapshotElf({
+  required String genSnapshot,
+  required String elfPath,
+  required bool enableAsserts,
+  required List<String> extraGenSnapshotOptions,
+  required String activeDill,
+  required Map<String, String> homeEnv,
+}) {
+  final gsRes = Process.runSync(
+    genSnapshot,
+    [
+      '--deterministic',
+      '--snapshot_kind=app-aot-elf',
+      '--elf=$elfPath',
+      if (enableAsserts) '--enable_asserts',
+      ...extraGenSnapshotOptions,
+      activeDill,
+    ],
+    environment: homeEnv,
+    includeParentEnvironment: false,
+  );
+  if (gsRes.exitCode != 0) {
+    stdout.write(gsRes.stdout as String);
+    stderr.write(gsRes.stderr as String);
+    return gsRes.exitCode;
+  }
+  return 0;
+}
+
+/// Compiles a pre-built kernel `.dill` to an AOT snapshot or executable (see
+/// the section comment above [_AotArgs]).
+void _runAot(List<String> argv) {
+  final args = _parseAotArgs(argv);
+  final dart = args.dart;
+  final mode = args.mode;
+  final outputPath = args.outputPath;
+  final dillPath = args.dillPath;
+  final targetOs = args.targetOs;
+  final targetArch = args.targetArch;
 
   if (dart == null || mode == null || outputPath == null || dillPath == null) {
     stderr.writeln(
@@ -1338,163 +1615,95 @@ void _runAot(List<String> argv) {
   final isCross =
       (targetOs != null && targetOs.isNotEmpty) ||
       (targetArch != null && targetArch.isNotEmpty);
-  if (isCross) {
-    if (customGenSnapshot == null || customGenSnapshot.isEmpty) {
-      stderr.writeln(
-        'app_jit_snapshot --aot: cross-compilation to $targetOs-$targetArch '
-        'requires --gen-snapshot',
-      );
-      exit(64);
-    }
-    if (mode == 'exe' &&
-        (customDartaotruntime == null || customDartaotruntime.isEmpty)) {
-      stderr.writeln(
-        'app_jit_snapshot --aot: cross-compiling exe to $targetOs-$targetArch '
-        'requires --dartaotruntime',
-      );
-      exit(64);
-    }
-  }
+  _checkAotCrossRequirements(args, mode, isCross);
 
   final sdkBin = File(dart).parent.path;
   final hostExeExt = dart.endsWith('.exe') ? '.exe' : '';
   final hostDartaotruntime = '$sdkBin/dartaotruntime$hostExeExt';
-  final targetDartaotruntime = customDartaotruntime ?? hostDartaotruntime;
+  final targetDartaotruntime =
+      args.customDartaotruntime ?? hostDartaotruntime;
   final genSnapshot =
-      customGenSnapshot ?? '$sdkBin/utils/gen_snapshot$hostExeExt';
+      args.customGenSnapshot ?? '$sdkBin/utils/gen_snapshot$hostExeExt';
 
-  // On non-ELF targets (e.g. native macOS Mach-O executables or Windows) or
-  // jit-snapshot fallback on Windows, delegate to `dart compile` with a fresh
-  // temporary HOME directory. Cross-compilation targets are always ELF and
-  // never delegate to `dartdev`.
-  if (!isCross &&
-      (mode == 'jit-snapshot' ||
-          dart.endsWith('.exe') ||
-          (mode == 'exe' && !_isElfFile(File(targetDartaotruntime))))) {
-    final compileArgs = <String>[
-      'compile',
-      mode,
-      if (mode == 'exe' || mode == 'aot-snapshot') '--verbosity=error',
-      if (enableAsserts) '--enable-asserts',
-      if (recordedUses != null) '--recorded-uses=$recordedUses',
-      for (final opt in extraGenSnapshotOptions)
-        '--extra-gen-snapshot-options=$opt',
-      '-o',
-      outputPath,
-      dillPath,
-    ];
-    final scratchBase = File(outputPath).parent..createSync(recursive: true);
-    final tempHome = scratchBase.createTempSync('rules_dart_compile_home.');
-    final childEnv = buildChildEnvironment(
-      homeDir: tempHome.path,
-      parentEnv: Platform.environment,
-      isWindows: Platform.isWindows,
+  if (_aotDelegatesToDartCompile(
+    dart: dart,
+    mode: mode,
+    isCross: isCross,
+    targetDartaotruntime: targetDartaotruntime,
+  )) {
+    _runAotViaDartCompile(
+      dart: dart,
+      mode: mode,
+      enableAsserts: args.enableAsserts,
+      recordedUses: args.recordedUses,
+      extraGenSnapshotOptions: args.extraGenSnapshotOptions,
+      outputPath: outputPath,
+      dillPath: dillPath,
     );
-    final ProcessResult res;
-    try {
-      res = Process.runSync(
-        dart,
-        compileArgs,
-        environment: childEnv,
-        includeParentEnvironment: false,
-      );
-    } finally {
-      if (tempHome.existsSync()) {
-        try {
-          tempHome.deleteSync(recursive: true);
-        } on FileSystemException {
-          // Ignore cleanup errors.
-        }
-      }
-    }
-    if (res.exitCode != 0) {
-      stdout.write(res.stdout as String);
-      stderr.write(res.stderr as String);
-      exit(res.exitCode);
-    }
     return;
   }
 
-  final scratchBase = File(outputPath).parent..createSync(recursive: true);
-  final tmpDir = scratchBase.createTempSync('rules_dart_aot.');
-  final homeDir = Directory('${tmpDir.path}/home')..createSync(recursive: true);
-  final homeEnv = buildChildEnvironment(
-    homeDir: homeDir.path,
-    parentEnv: Platform.environment,
-    isWindows: Platform.isWindows,
+  final failureExitCode = _runAotDirect(
+    args: args,
+    mode: mode,
+    outputPath: outputPath,
+    dillPath: dillPath,
+    sdkBin: sdkBin,
+    hostDartaotruntime: hostDartaotruntime,
+    targetDartaotruntime: targetDartaotruntime,
+    genSnapshot: genSnapshot,
+    targetOs: targetOs,
   );
+  if (failureExitCode != 0) {
+    exit(failureExitCode);
+  }
+}
+
+// Runs AOT compilation through gen_snapshot in a scratch directory.
+// Returns the process exit code: 0 on success.
+int _runAotDirect({
+  required _AotArgs args,
+  required String mode,
+  required String outputPath,
+  required String dillPath,
+  required String sdkBin,
+  required String hostDartaotruntime,
+  required String targetDartaotruntime,
+  required String genSnapshot,
+  required String? targetOs,
+}) {
+  final scratch = _prepareAotScratch(outputPath);
+  final tmpDir = scratch.tmpDir;
+  final homeEnv = scratch.homeEnv;
   var failureExitCode = 0;
   try {
-    var activeDill = dillPath;
-    if (recordedUses != null) {
-      final productPlatform =
-          '$sdkBin/../lib/_internal/vm_platform_product.dill';
-      final strongPlatform = '$sdkBin/../lib/_internal/vm_platform_strong.dill';
-      final platformDill = File(productPlatform).existsSync()
-          ? productPlatform
-          : strongPlatform;
-      final recordedDill = '${tmpDir.path}/recorded.dill';
-      final gkRes = Process.runSync(
-        hostDartaotruntime,
-        [
-          '$sdkBin/snapshots/gen_kernel_aot.dart.snapshot',
-          '--platform=$platformDill',
-          '--aot',
-          '--tfa',
-          '--no-embed-sources',
-          '-Ddart.vm.product=true',
-          '-Ddart.vm.asan=false',
-          '-Ddart.vm.msan=false',
-          '-Ddart.vm.tsan=false',
-          if (targetOs != null && targetOs.isNotEmpty) '--target-os=$targetOs',
-          if (enableAsserts) '--enable-asserts',
-          '--from-dill=$dillPath',
-          '--recorded-usages-file=$recordedUses',
-          '-o',
-          recordedDill,
-          dillPath,
-        ],
-        environment: homeEnv,
-        includeParentEnvironment: false,
-      );
-      if (gkRes.exitCode != 0) {
-        stdout.write(gkRes.stdout as String);
-        stderr.write(gkRes.stderr as String);
-        failureExitCode = gkRes.exitCode;
-        return;
-      }
-      activeDill = recordedDill;
-    }
+    final active = _aotActiveDill(
+      args: args,
+      dillPath: dillPath,
+      sdkBin: sdkBin,
+      hostDartaotruntime: hostDartaotruntime,
+      targetOs: targetOs,
+      tmpDir: tmpDir,
+      homeEnv: homeEnv,
+    );
+    if (active.exitCode != 0) return active.exitCode;
 
     final elfPath = mode == 'aot-snapshot'
         ? outputPath
         : '${tmpDir.path}/snapshot.elf';
-    final gsRes = Process.runSync(
-      genSnapshot,
-      [
-        '--deterministic',
-        '--snapshot_kind=app-aot-elf',
-        '--elf=$elfPath',
-        if (enableAsserts) '--enable_asserts',
-        ...extraGenSnapshotOptions,
-        activeDill,
-      ],
-      environment: homeEnv,
-      includeParentEnvironment: false,
+    final gsExitCode = _snapshotElfAndLink(
+      args: args,
+      mode: mode,
+      outputPath: outputPath,
+      targetDartaotruntime: targetDartaotruntime,
+      genSnapshot: genSnapshot,
+      elfPath: elfPath,
+      activeDill: active.dill,
+      homeEnv: homeEnv,
     );
-    if (gsRes.exitCode != 0) {
-      stdout.write(gsRes.stdout as String);
-      stderr.write(gsRes.stderr as String);
-      failureExitCode = gsRes.exitCode;
-      return;
-    }
-
-    if (mode == 'exe') {
-      writeAppAotElfExe(
-        dartaotruntime: File(targetDartaotruntime),
-        snapshotElf: File(elfPath),
-        output: File(outputPath),
-      );
+    if (gsExitCode != 0) {
+      failureExitCode = gsExitCode;
+      return failureExitCode;
     }
   } finally {
     if (tmpDir.existsSync()) {
@@ -1505,9 +1714,79 @@ void _runAot(List<String> argv) {
       }
     }
   }
-  if (failureExitCode != 0) {
-    exit(failureExitCode);
+  return failureExitCode;
+}
+
+// The scratch directory for one direct AOT compile, with an isolated HOME.
+({Directory tmpDir, Map<String, String> homeEnv}) _prepareAotScratch(
+  String outputPath,
+) {
+  final scratchBase = File(outputPath).parent..createSync(recursive: true);
+  final tmpDir = scratchBase.createTempSync('rules_dart_aot.');
+  final homeDir = Directory('${tmpDir.path}/home')..createSync(recursive: true);
+  final homeEnv = buildChildEnvironment(
+    homeDir: homeDir.path,
+    parentEnv: Platform.environment,
+    isWindows: Platform.isWindows,
+  );
+  return (tmpDir: tmpDir, homeEnv: homeEnv);
+}
+
+// The dill to snapshot: with `--recorded-uses` the uses baked in, otherwise
+// the input dill. A nonzero exit code means baking failed.
+({String dill, int exitCode}) _aotActiveDill({
+  required _AotArgs args,
+  required String dillPath,
+  required String sdkBin,
+  required String hostDartaotruntime,
+  required String? targetOs,
+  required Directory tmpDir,
+  required Map<String, String> homeEnv,
+}) {
+  if (args.recordedUses == null) return (dill: dillPath, exitCode: 0);
+  final baked = _bakeRecordedDill(
+    sdkBin: sdkBin,
+    hostDartaotruntime: hostDartaotruntime,
+    dillPath: dillPath,
+    recordedUses: args.recordedUses!,
+    targetOs: targetOs,
+    enableAsserts: args.enableAsserts,
+    tmpDir: tmpDir,
+    homeEnv: homeEnv,
+  );
+  if (baked.exitCode != 0) return (dill: dillPath, exitCode: baked.exitCode);
+  return (dill: baked.dill, exitCode: 0);
+}
+
+// Snapshots [activeDill] to [elfPath] and, for `exe`, links the executable.
+// Returns the gen_snapshot exit code.
+int _snapshotElfAndLink({
+  required _AotArgs args,
+  required String mode,
+  required String outputPath,
+  required String targetDartaotruntime,
+  required String genSnapshot,
+  required String elfPath,
+  required String activeDill,
+  required Map<String, String> homeEnv,
+}) {
+  final gsExitCode = _runGenSnapshotElf(
+    genSnapshot: genSnapshot,
+    elfPath: elfPath,
+    enableAsserts: args.enableAsserts,
+    extraGenSnapshotOptions: args.extraGenSnapshotOptions,
+    activeDill: activeDill,
+    homeEnv: homeEnv,
+  );
+  if (gsExitCode != 0) return gsExitCode;
+  if (mode == 'exe') {
+    writeAppAotElfExe(
+      dartaotruntime: File(targetDartaotruntime),
+      snapshotElf: File(elfPath),
+      output: File(outputPath),
+    );
   }
+  return 0;
 }
 
 bool _isElfFile(File file) {
@@ -1943,54 +2222,62 @@ List<String> _findDisallowedGenKernelDirectives(
     final from = normalizeStagedPath(path);
     final fromKey = _stableSourceKey(path, fsRoots);
     for (final ref in scanAllDirectiveUris(content)) {
-      final uri = ref.uri;
-      // A URI spanning lines is refused however it spells its target: the
-      // front end's multi-line first-line rule reads a different file than
-      // the resolvers below see (see [hasLineBreak]).
-      if (hasLineBreak(uri)) {
-        errors.add(
-          "app_jit_snapshot: $path ${ref.kind} '$uri' is not a declared input.",
-        );
-        continue;
-      }
-      // The resolvers below skip empty segments, but the front end resolves
-      // some such spellings absolutely: refuse them before resolving.
-      if (hasEmptyPathSegment(uri)) {
-        errors.add(
-          "app_jit_snapshot: $path ${ref.kind} '$uri' is not a declared input.",
-        );
-        continue;
-      }
-      if (uri.startsWith(defaultMultiRootPrefix) || uri.startsWith('dart:')) {
-        continue;
-      }
-      if (uri.startsWith('package:')) {
-        if (isEscapingPackageUri(uri)) {
-          errors.add(
-            "app_jit_snapshot: $path ${ref.kind} '$uri' "
-            'is not a declared input.',
-          );
-        }
-        continue;
-      }
-      if (isFileSchemeDirectiveUri(uri) || isDisallowedDirectiveUri(uri)) {
-        errors.add(
-          "app_jit_snapshot: $path ${ref.kind} '$uri' is not a declared input.",
-        );
-        continue;
-      }
-      final target = resolveStagedRelativeTarget(uri, from);
-      // A null filesystem-path resolution is not acceptance: the key-space
-      // lookup below gets its say, and a null there refuses the directive.
-      if (target != null && declared.contains(target)) continue;
-      final keyTarget = _resolveKeyRelativeTarget(uri, fromKey);
-      if (keyTarget != null && declaredKeys.contains(keyTarget)) continue;
-      errors.add(
-        "app_jit_snapshot: $path ${ref.kind} '$uri' is not a declared input.",
+      final error = _disallowedDirectiveError(
+        ref,
+        path: path,
+        from: from,
+        fromKey: fromKey,
+        declared: declared,
+        declaredKeys: declaredKeys,
       );
+      if (error != null) errors.add(error);
     }
   }
   return errors;
+}
+
+// The refusal message for one directive reference naming an undeclared input,
+// or null when the reference is allowed.
+String? _disallowedDirectiveError(
+  ScanRef ref, {
+  required String path,
+  required String from,
+  required String fromKey,
+  required Set<String> declared,
+  required Set<String> declaredKeys,
+}) {
+  final uri = ref.uri;
+  // A URI spanning lines is refused however it spells its target: the
+  // front end's multi-line first-line rule reads a different file than
+  // the resolvers below see (see [hasLineBreak]).
+  if (hasLineBreak(uri)) {
+    return "app_jit_snapshot: $path ${ref.kind} '$uri' is not a declared input.";
+  }
+  // The resolvers below skip empty segments, but the front end resolves
+  // some such spellings absolutely: refuse them before resolving.
+  if (hasEmptyPathSegment(uri)) {
+    return "app_jit_snapshot: $path ${ref.kind} '$uri' is not a declared input.";
+  }
+  if (uri.startsWith(defaultMultiRootPrefix) || uri.startsWith('dart:')) {
+    return null;
+  }
+  if (uri.startsWith('package:')) {
+    if (isEscapingPackageUri(uri)) {
+      return "app_jit_snapshot: $path ${ref.kind} '$uri' "
+          'is not a declared input.';
+    }
+    return null;
+  }
+  if (isFileSchemeDirectiveUri(uri) || isDisallowedDirectiveUri(uri)) {
+    return "app_jit_snapshot: $path ${ref.kind} '$uri' is not a declared input.";
+  }
+  final target = resolveStagedRelativeTarget(uri, from);
+  // A null filesystem-path resolution is not acceptance: the key-space
+  // lookup below gets its say, and a null there refuses the directive.
+  if (target != null && declared.contains(target)) return null;
+  final keyTarget = _resolveKeyRelativeTarget(uri, fromKey);
+  if (keyTarget != null && declaredKeys.contains(keyTarget)) return null;
+  return "app_jit_snapshot: $path ${ref.kind} '$uri' is not a declared input.";
 }
 
 /// The multi-root key naming the declared input source [path]: the
@@ -2155,15 +2442,105 @@ List<(int, int)>? _gkComponentRanges(Uint8List data) {
   return ranges.reversed.toList();
 }
 
+/// Reads the variable-length `UInt30` integers of one kernel table: one, two,
+/// or five bytes, bounded by [limit]. Shared by the component readers below,
+/// which each parsed the same encoding with its own closure.
+final class _GkU30Reader {
+  _GkU30Reader(this.part, this.limit);
+
+  final Uint8List part;
+  final int limit;
+  var pos = 0;
+
+  int? read() {
+    if (pos >= limit) return null;
+    final b0 = part[pos++];
+    if ((b0 & 0x80) == 0) return b0;
+    if ((b0 & 0x40) == 0) {
+      if (pos >= limit) return null;
+      return ((b0 & 0x3f) << 8) | part[pos++];
+    }
+    if (pos + 3 > limit) return null;
+    final value =
+        ((b0 & 0x3f) << 24) |
+        (part[pos] << 16) |
+        (part[pos + 1] << 8) |
+        part[pos + 2];
+    pos += 3;
+    return value;
+  }
+
+  bool skip(int n) {
+    if (n < 0 || pos + n > limit) return false;
+    pos += n;
+    return true;
+  }
+}
+
+/// Adds the `fileUri` of the one source-table entry at [reader]'s position to
+/// [uris] — and, when [importUris] is given, the `importUri` recorded
+/// alongside it. Returns false (leaving [uris] short) when the entry does not
+/// parse. The entry layout (`uri`, `sourceCode`, `lineStarts`, `importUri`,
+/// `constantCoverageConstructors`) is stable across SDKs, so the table is
+/// parsed structurally with no version gate, and every offset and length is
+/// bounds-checked against the table.
+bool _gkReadSourceEntry(
+  _GkU30Reader reader,
+  Uint8List part,
+  List<String> uris, [
+  List<String>? importUris,
+]) {
+  // 1. uri: UInt30 byteLength + UTF-8 bytes.
+  final uriLen = reader.read();
+  if (uriLen == null || uriLen < 0 || reader.pos + uriLen > reader.limit) {
+    return false;
+  }
+  String uri;
+  try {
+    uri = utf8.decode(part.sublist(reader.pos, reader.pos + uriLen));
+  } catch (_) {
+    return false;
+  }
+  reader.pos += uriLen;
+  uris.add(uri);
+  // 2. sourceCode: UInt30 byteLength + UTF-8 bytes.
+  final srcLen = reader.read();
+  if (srcLen == null || !reader.skip(srcLen)) return false;
+  // 3. lineStarts: UInt30 count + count * UInt30 delta.
+  if (!_gkSkipU30List(reader)) return false;
+  // 4. importUri: UInt30 byteLength + UTF-8 bytes.
+  final impLen = reader.read();
+  if (impLen == null || impLen < 0 || reader.pos + impLen > reader.limit) {
+    return false;
+  }
+  if (importUris != null) {
+    try {
+      importUris.add(utf8.decode(part.sublist(reader.pos, reader.pos + impLen)));
+    } catch (_) {
+      return false;
+    }
+  }
+  reader.pos += impLen;
+  // 5. constantCoverageConstructors: UInt30 count + count * UInt30.
+  if (!_gkSkipU30List(reader)) return false;
+  return true;
+}
+
+/// Skips one `UInt30` count followed by that many `UInt30` values, returning
+/// false when [reader] runs out.
+bool _gkSkipU30List(_GkU30Reader reader) {
+  final count = reader.read();
+  if (count == null) return false;
+  for (var j = 0; j < count; j++) {
+    if (reader.read() == null) return false;
+  }
+  return true;
+}
 /// Adds the `fileUri` of every source in the one kernel component [part] to
 /// [uris] — and, when [importUris] is given, the `importUri` recorded
 /// alongside it. Returns false (leaving [uris] short) when [part] is not a
 /// well-formed component. Copied from the modular kernel planner
-/// (`_collectComponentSourceUris` in `kernel_module.dart`): the source-table
-/// entry layout (`uri`, `sourceCode`, `lineStarts`, `importUri`,
-/// `constantCoverageConstructors`) is stable across SDKs, so the table is
-/// parsed structurally with no version gate, and every offset and length is
-/// bounds-checked against the table.
+/// (`_collectComponentSourceUris` in `kernel_module.dart`).
 bool _gkCollectComponentSourceUris(
   Uint8List part,
   List<String> uris, [
@@ -2182,74 +2559,11 @@ bool _gkCollectComponentSourceUris(
   if (offSourceTable + 4 > offConstantTable || offConstantTable > rawIdxStart) {
     return false;
   }
-  var pos = offSourceTable + 4;
-  int? readU30() {
-    if (pos >= offConstantTable) return null;
-    final b0 = part[pos++];
-    if ((b0 & 0x80) == 0) return b0;
-    if ((b0 & 0x40) == 0) {
-      if (pos >= offConstantTable) return null;
-      return ((b0 & 0x3f) << 8) | part[pos++];
-    }
-    if (pos + 3 > offConstantTable) return null;
-    final value =
-        ((b0 & 0x3f) << 24) |
-        (part[pos] << 16) |
-        (part[pos + 1] << 8) |
-        part[pos + 2];
-    pos += 3;
-    return value;
-  }
-
-  bool skipBytes(int n) {
-    if (n < 0 || pos + n > offConstantTable) return false;
-    pos += n;
-    return true;
-  }
-
+  final reader = _GkU30Reader(part, offConstantTable)
+    ..pos = offSourceTable + 4;
   final numSources = u32(offSourceTable);
   for (var i = 0; i < numSources; i++) {
-    // 1. uri: UInt30 byteLength + UTF-8 bytes.
-    final uriLen = readU30();
-    if (uriLen == null || uriLen < 0 || pos + uriLen > offConstantTable) {
-      return false;
-    }
-    String uri;
-    try {
-      uri = utf8.decode(part.sublist(pos, pos + uriLen));
-    } catch (_) {
-      return false;
-    }
-    pos += uriLen;
-    uris.add(uri);
-    // 2. sourceCode: UInt30 byteLength + UTF-8 bytes.
-    final srcLen = readU30();
-    if (srcLen == null || !skipBytes(srcLen)) return false;
-    // 3. lineStarts: UInt30 count + count * UInt30 delta.
-    final lineCount = readU30();
-    if (lineCount == null) return false;
-    for (var j = 0; j < lineCount; j++) {
-      if (readU30() == null) return false;
-    }
-    // 4. importUri: UInt30 byteLength + UTF-8 bytes.
-    final impLen = readU30();
-    if (impLen == null || impLen < 0 || pos + impLen > offConstantTable) {
-      return false;
-    }
-    if (importUris != null) {
-      try {
-        importUris.add(utf8.decode(part.sublist(pos, pos + impLen)));
-      } catch (_) {
-        return false;
-      }
-    }
-    pos += impLen;
-    // 5. constantCoverageConstructors: UInt30 count + count * UInt30.
-    final covCount = readU30();
-    if (covCount == null) return false;
-    for (var j = 0; j < covCount; j++) {
-      if (readU30() == null) return false;
-    }
+    if (!_gkReadSourceEntry(reader, part, uris, importUris)) return false;
   }
   return true;
 }
@@ -2329,70 +2643,155 @@ _gkComponentNameTables(Uint8List part) {
   if (!_gkCollectComponentSourceUris(part, fileUris, importUris)) return null;
 
   // The string table: a count, cumulative end offsets, then the bytes.
-  var pos = offStringTable;
-  int? readU30(int limit) {
-    if (pos >= limit) return null;
-    final b0 = part[pos++];
-    if ((b0 & 0x80) == 0) return b0;
-    if ((b0 & 0x40) == 0) {
-      if (pos >= limit) return null;
-      return ((b0 & 0x3f) << 8) | part[pos++];
-    }
-    if (pos + 3 > limit) return null;
-    final value =
-        ((b0 & 0x3f) << 24) |
-        (part[pos] << 16) |
-        (part[pos + 1] << 8) |
-        part[pos + 2];
-    pos += 3;
-    return value;
-  }
-
-  final strCount = readU30(rawIdxStart);
-  if (strCount == null || strCount < 0) return null;
-  final strEnds = <int>[];
-  var prevEnd = 0;
-  for (var i = 0; i < strCount; i++) {
-    final end = readU30(rawIdxStart);
-    if (end == null || end < prevEnd) return null;
-    strEnds.add(end);
-    prevEnd = end;
-  }
-  final strBase = pos;
-  if (strEnds.isNotEmpty && strBase + strEnds.last > rawIdxStart) return null;
-  String? stringAt(int index) {
-    if (index < 0 || index >= strEnds.length) return null;
-    final start = index == 0 ? 0 : strEnds[index - 1];
-    try {
-      return utf8.decode(
-        part.sublist(strBase + start, strBase + strEnds[index]),
-      );
-    } catch (_) {
-      return null;
-    }
-  }
+  final stringTable = _gkReadStringEnds(part, offStringTable, rawIdxStart);
+  if (stringTable == null) return null;
+  String? stringAt(int index) =>
+      _gkStringAt(part, stringTable.ends, stringTable.base, index);
 
   // The canonical-name table: a count of (parent, name-string) pairs, with
   // the parent biased by one (zero names the nameless root).
-  pos = offLinkTable;
-  final canonCount = readU30(offStringTable);
-  if (canonCount == null || canonCount < 0) return null;
-  final canonParents = <int>[];
-  final canonStrings = <int>[];
-  for (var i = 0; i < canonCount; i++) {
-    final parent = readU30(offStringTable);
-    final name = readU30(offStringTable);
-    if (parent == null || name == null) return null;
-    canonParents.add(parent);
-    canonStrings.add(name);
-  }
+  final canon = _gkReadCanonPairs(part, offLinkTable, offStringTable);
+  if (canon == null) return null;
   return (
     fileUris: fileUris,
     importUris: importUris,
     stringAt: stringAt,
-    canonParents: canonParents,
-    canonStrings: canonStrings,
+    canonParents: canon.parents,
+    canonStrings: canon.strings,
   );
+}
+
+/// The cumulative end offsets of the string table starting at [start],
+/// bounded by [limit]: a count, that many cumulative end offsets, then the
+/// bytes. Null when the table does not parse.
+({List<int> ends, int base})? _gkReadStringEnds(
+  Uint8List part,
+  int start,
+  int limit,
+) {
+  final reader = _GkU30Reader(part, limit)..pos = start;
+  final strCount = reader.read();
+  if (strCount == null || strCount < 0) return null;
+  final ends = <int>[];
+  var prevEnd = 0;
+  for (var i = 0; i < strCount; i++) {
+    final end = reader.read();
+    if (end == null || end < prevEnd) return null;
+    ends.add(end);
+    prevEnd = end;
+  }
+  final base = reader.pos;
+  if (ends.isNotEmpty && base + ends.last > limit) return null;
+  return (ends: ends, base: base);
+}
+
+/// The string-table entry at [index]: the bytes from [base] between the
+/// cumulative [ends], decoded once. Null when the index names no entry or the
+/// bytes are not valid UTF-8.
+String? _gkStringAt(Uint8List part, List<int> ends, int base, int index) {
+  if (index < 0 || index >= ends.length) return null;
+  final start = index == 0 ? 0 : ends[index - 1];
+  try {
+    return utf8.decode(part.sublist(base + start, base + ends[index]));
+  } catch (_) {
+    return null;
+  }
+}
+
+/// The canonical-name table starting at [start], bounded by [limit]: a count
+/// of (parent, name-string) pairs, with the parent biased by one (zero names
+/// the nameless root). Null when the table does not parse.
+({List<int> parents, List<int> strings})? _gkReadCanonPairs(
+  Uint8List part,
+  int start,
+  int limit,
+) {
+  final reader = _GkU30Reader(part, limit)..pos = start;
+  final canonCount = reader.read();
+  if (canonCount == null || canonCount < 0) return null;
+  final parents = <int>[];
+  final strings = <int>[];
+  for (var i = 0; i < canonCount; i++) {
+    final parent = reader.read();
+    final name = reader.read();
+    if (parent == null || name == null) return null;
+    parents.add(parent);
+    strings.add(name);
+  }
+  return (parents: parents, strings: strings);
+}
+
+/// The root string of the canonical name biased by [biased]: walks [parents]
+/// to the nameless root, then resolves through [stringAt]. Empty when the
+/// reference names no root. An unresolvable root string degrades to empty
+/// (accepted, like the per-library walk): only a present root the inputs do
+/// not define fails.
+String _gkCanonicalRoot(
+  List<int> parents,
+  List<int> strings,
+  String? Function(int) stringAt,
+  int biased,
+) {
+  var index = biased - 1;
+  if (biased <= 0 || index >= parents.length) return '';
+  var guard = parents.length + 1;
+  while (parents[index] != 0) {
+    if (guard-- <= 0) return '';
+    index = parents[index] - 1;
+    if (index < 0 || index >= parents.length) return '';
+  }
+  return stringAt(strings[index]) ?? '';
+}
+
+/// Adds the library node at bytes [libStart]..[libEnd] of [part] to [refs]:
+/// each node header opens with a flags byte, the version, and three
+/// references — canonical name (biased), name string, source-table file URI —
+/// after which only that prefix has been consumed. Returns false when the node
+/// does not parse. Copied from the modular kernel planner
+/// (`_collectComponentLibraries` in `kernel_module.dart`).
+bool _gkReadLibraryNode(
+  ({
+    List<String> fileUris,
+    List<String> importUris,
+    String? Function(int) stringAt,
+    List<int> canonParents,
+    List<int> canonStrings,
+  })
+  tables,
+  Uint8List part,
+  int libStart,
+  int libEnd,
+  List<GenKernelLibraryReference> refs,
+) {
+  final reader = _GkU30Reader(part, libEnd)..pos = libStart;
+  // Flags.
+  if (reader.pos >= libEnd) return false;
+  reader.pos++;
+  if (reader.read() == null) return false; // Major version.
+  if (reader.read() == null) return false; // Minor version.
+  final canon = reader.read();
+  if (canon == null) return false;
+  if (reader.read() == null) return false; // Name string reference.
+  final fileUriIndex = reader.read();
+  if (fileUriIndex == null) return false;
+  final importUri =
+      fileUriIndex >= 0 && fileUriIndex < tables.importUris.length
+      ? tables.importUris[fileUriIndex]
+      : null;
+  refs.add((
+    fileUriIndex: fileUriIndex,
+    fileUri: fileUriIndex >= 0 && fileUriIndex < tables.fileUris.length
+        ? tables.fileUris[fileUriIndex]
+        : null,
+    importUri: importUri == null || importUri.isEmpty ? null : importUri,
+    canonicalName: _gkCanonicalRoot(
+      tables.canonParents,
+      tables.canonStrings,
+      tables.stringAt,
+      canon,
+    ),
+  ));
+  return true;
 }
 
 /// Adds one [GenKernelLibraryReference] per library node of the one kernel
@@ -2408,20 +2807,6 @@ bool _gkCollectComponentLibraries(
 ) {
   final tables = _gkComponentNameTables(part);
   if (tables == null) return false;
-  final (:fileUris, :importUris, :stringAt, :canonParents, :canonStrings) =
-      tables;
-  final canonCount = canonParents.length;
-  String canonicalRoot(int biased) {
-    var index = biased - 1;
-    if (biased <= 0 || index >= canonCount) return '';
-    var guard = canonCount + 1;
-    while (canonParents[index] != 0) {
-      if (guard-- <= 0) return '';
-      index = canonParents[index] - 1;
-      if (index < 0 || index >= canonCount) return '';
-    }
-    return stringAt(canonStrings[index]) ?? '';
-  }
 
   if (part.length < 12) return false;
   final bd = ByteData.sublistView(part);
@@ -2433,24 +2818,6 @@ bool _gkCollectComponentLibraries(
   if (idxBytes > part.length) return false;
   final rawIdxStart = part.length - idxBytes;
   int u32(int offset) => bd.getUint32(offset);
-  var pos = 0;
-  int? readU30(int limit) {
-    if (pos >= limit) return null;
-    final b0 = part[pos++];
-    if ((b0 & 0x80) == 0) return b0;
-    if ((b0 & 0x40) == 0) {
-      if (pos >= limit) return null;
-      return ((b0 & 0x3f) << 8) | part[pos++];
-    }
-    if (pos + 3 > limit) return null;
-    final value =
-        ((b0 & 0x3f) << 24) |
-        (part[pos] << 16) |
-        (part[pos + 1] << 8) |
-        part[pos + 2];
-    pos += 3;
-    return value;
-  }
 
   for (var i = 0; i < libCount; i++) {
     final libStart = u32(rawIdxStart + 36 + i * 4);
@@ -2458,29 +2825,9 @@ bool _gkCollectComponentLibraries(
     if (libEnd < libStart || libStart > part.length || libEnd > part.length) {
       return false;
     }
-    pos = libStart;
-    int? readNodeU30() => readU30(libEnd);
-    // Flags.
-    if (pos >= libEnd) return false;
-    pos++;
-    if (readNodeU30() == null) return false; // Major version.
-    if (readNodeU30() == null) return false; // Minor version.
-    final canon = readNodeU30();
-    if (canon == null) return false;
-    if (readNodeU30() == null) return false; // Name string reference.
-    final fileUriIndex = readNodeU30();
-    if (fileUriIndex == null) return false;
-    final importUri = fileUriIndex >= 0 && fileUriIndex < importUris.length
-        ? importUris[fileUriIndex]
-        : null;
-    refs.add((
-      fileUriIndex: fileUriIndex,
-      fileUri: fileUriIndex >= 0 && fileUriIndex < fileUris.length
-          ? fileUris[fileUriIndex]
-          : null,
-      importUri: importUri == null || importUri.isEmpty ? null : importUri,
-      canonicalName: canonicalRoot(canon),
-    ));
+    if (!_gkReadLibraryNode(tables, part, libStart, libEnd, refs)) {
+      return false;
+    }
   }
   return true;
 }
@@ -2578,29 +2925,19 @@ Map<String, String> genKernelPackageKeyPrefixes({
               .replaceFirst(RegExp(r'^/+'), '')
               .replaceFirst(RegExp(r'/+$'), '')
         : 'lib';
-    String rootKey;
+    String? rootKey;
     if (rootUri.startsWith(multiRootPrefix)) {
       rootKey = rootUri
           .substring(multiRootPrefix.length)
           .replaceFirst(RegExp(r'/+$'), '');
-    } else if (rootUri.startsWith('file:')) {
-      String path;
-      try {
-        path = Uri.parse(rootUri).toFilePath();
-      } catch (_) {
-        continue;
-      }
-      // An empty key names the exec root itself: a valid package root whose
-      // `package:` spellings the prefix below still scopes by name.
-      rootKey = _gkKeyOfFsPath(path, fsRoots);
-    } else if (!rootUri.contains(':')) {
-      // A path relative to the config file, per the package-config spec.
-      final resolved = _gkResolveRelative(configDir, rootUri);
-      // Above the exec root: no declared input lives there.
-      if (resolved == '..' || resolved.startsWith('../')) continue;
-      rootKey = _gkKeyOfFsPath(resolved, fsRoots);
     } else {
-      continue;
+      rootKey = _packageEntryFsRootKey(
+        rootUri,
+        multiRootPrefix: multiRootPrefix,
+        configDir: configDir,
+        fsRoots: fsRoots,
+      );
+      if (rootKey == null) continue;
     }
     final prefix = packagePath.isEmpty
         ? rootKey
@@ -2610,6 +2947,36 @@ Map<String, String> genKernelPackageKeyPrefixes({
     prefixes[name] = prefix;
   }
   return prefixes;
+}
+
+// The filesystem-root key for a package-config `rootUri` that is not a
+// multi-root URI: a `file:` URI via its path, a schemeless spelling relative
+// to the config file, or null for any other scheme or an escape above the
+// exec root (no declared input lives there).
+String? _packageEntryFsRootKey(
+  String rootUri, {
+  required String multiRootPrefix,
+  required String configDir,
+  required List<String> fsRoots,
+}) {
+  if (rootUri.startsWith('file:')) {
+    String path;
+    try {
+      path = Uri.parse(rootUri).toFilePath();
+    } catch (_) {
+      return null;
+    }
+    // An empty key names the exec root itself: a valid package root whose
+    // `package:` spellings the prefix below still scopes by name.
+    return _gkKeyOfFsPath(path, fsRoots);
+  }
+  if (!rootUri.contains(':')) {
+    // A path relative to the config file, per the package-config spec.
+    final resolved = _gkResolveRelative(configDir, rootUri);
+    if (resolved == '..' || resolved.startsWith('../')) return null;
+    return _gkKeyOfFsPath(resolved, fsRoots);
+  }
+  return null;
 }
 
 /// Resolves the config-relative [rel] against the config directory [dir],
@@ -2762,17 +3129,10 @@ List<String> verifyGenKernelReads({
   required Map<String, String> packageKeyPrefixes,
   required bool hasNativeAssetsManifest,
 }) {
-  final dillFile = File(outputPath);
-  if (!dillFile.existsSync()) return <String>[];
-  Uint8List bytes;
-  try {
-    bytes = dillFile.readAsBytesSync();
-  } on FileSystemException {
-    return <String>[
-      'app_jit_snapshot: cannot read the kernel output at $outputPath; '
-          'refusing the compile.',
-    ];
-  }
+  final output = _readKernelOutput(outputPath);
+  if (output.error != null) return <String>[output.error!];
+  final bytes = output.bytes;
+  if (bytes == null) return <String>[];
   final errors = <String>[];
   final uris = genKernelDillSourceUris(bytes);
   if (uris == null) {
@@ -2781,54 +3141,24 @@ List<String> verifyGenKernelReads({
           'refusing the compile.',
     ];
   }
-  for (final uri in uris) {
-    // A `--native-assets` manifest makes the front end synthesize the
-    // `vm:ffi:native-assets` library from the bare placeholder URI `dummy`,
-    // which names no file; without a manifest the same spelling still fails
-    // below, as does any other undeclared spelling.
-    if (hasNativeAssetsManifest && uri == 'dummy') continue;
-    final key = _gkKeyOfRecordedUri(uri, multiRootPrefix, fsRoots);
-    if (key == null) continue;
-    if (key.isEmpty || !declaredKeys.contains(key)) {
-      errors.add(
-        'app_jit_snapshot: $outputPath reads $uri, which is not a declared '
-        'input; refusing the compile.',
-      );
-    }
-  }
+  errors.addAll(
+    _recordedSourceUriErrors(
+      uris: uris,
+      outputPath: outputPath,
+      hasNativeAssetsManifest: hasNativeAssetsManifest,
+      multiRootPrefix: multiRootPrefix,
+      fsRoots: fsRoots,
+      declaredKeys: declaredKeys,
+    ),
+  );
   // The import URIs the packages define: every declared key under its
   // multi-root spelling and its `package:` spellings (one per package whose
   // root directory holds the key).
-  final depImportUris = <String>{
-    for (final key in declaredKeys) ...[
-      '$multiRootPrefix$key',
-      for (final entry in packageKeyPrefixes.entries)
-        if (entry.value.isEmpty ||
-            key == entry.value ||
-            key.startsWith('${entry.value}/'))
-          'package:${entry.key}/${entry.value.isEmpty ? key : key.substring(entry.value.length + 1)}',
-    ],
-  };
-  bool referenceIsDeclared(String? reference) {
-    if (reference == null || reference.isEmpty) return true;
-    // A bare identifier names no file: only a URI- or path-shaped reference
-    // can name one.
-    if (!reference.contains(':') && !reference.contains('/')) return true;
-    if (depImportUris.contains(reference)) return true;
-    if (reference.startsWith('dart:') ||
-        reference.startsWith('data:') ||
-        reference.startsWith('org-dartlang-sdk:') ||
-        reference.startsWith('org-dartlang-untranslatable-uri:')) {
-      return true;
-    }
-    // A resolvable spelling of a declared file passes: the source table
-    // already verified the file read, and this spelling names it.
-    var key = _gkKeyOfRecordedUri(reference, multiRootPrefix, fsRoots);
-    if (key == null || key.isEmpty) {
-      key = _gkKeyOfPackageUri(reference, packageKeyPrefixes);
-    }
-    return key != null && key.isNotEmpty && declaredKeys.contains(key);
-  }
+  final depImportUris = _depImportUris(
+    declaredKeys: declaredKeys,
+    multiRootPrefix: multiRootPrefix,
+    packageKeyPrefixes: packageKeyPrefixes,
+  );
 
   // An unparsable library or canonical-name table fails closed like an
   // unparsable source table: the compile produced bytes whose reads cannot be
@@ -2849,6 +3179,101 @@ List<String> verifyGenKernelReads({
     );
   }
   if (libraries == null || canonicalRoots == null) return errors;
+  final ref = _ReferenceChecker(
+    depImportUris: depImportUris,
+    multiRootPrefix: multiRootPrefix,
+    fsRoots: fsRoots,
+    packageKeyPrefixes: packageKeyPrefixes,
+    declaredKeys: declaredKeys,
+  );
+  errors.addAll(
+    _libraryReferenceErrors(
+      outputPath: outputPath,
+      libraries: libraries,
+      hasNativeAssetsManifest: hasNativeAssetsManifest,
+      checker: ref,
+    ),
+  );
+  errors.addAll(
+    _canonicalRootErrors(
+      outputPath: outputPath,
+      canonicalRoots: canonicalRoots,
+      hasNativeAssetsManifest: hasNativeAssetsManifest,
+      checker: ref,
+    ),
+  );
+  return errors;
+}
+
+// The import URIs the packages define: every declared key under its
+// multi-root spelling and its `package:` spellings (one per package whose
+// root directory holds the key).
+Set<String> _depImportUris({
+  required Set<String> declaredKeys,
+  required String multiRootPrefix,
+  required Map<String, String> packageKeyPrefixes,
+}) {
+  return <String>{
+    for (final key in declaredKeys) ...[
+      '$multiRootPrefix$key',
+      for (final entry in packageKeyPrefixes.entries)
+        if (entry.value.isEmpty ||
+            key == entry.value ||
+            key.startsWith('${entry.value}/'))
+          'package:${entry.key}/${entry.value.isEmpty ? key : key.substring(entry.value.length + 1)}',
+    ],
+  };
+}
+
+// Decides whether one library-table reference names a declared input, a
+// `dart:` library, or a package: the source table already verified the file
+// read, and a resolvable spelling of a declared file passes.
+final class _ReferenceChecker {
+  _ReferenceChecker({
+    required this.depImportUris,
+    required this.multiRootPrefix,
+    required this.fsRoots,
+    required this.packageKeyPrefixes,
+    required this.declaredKeys,
+  });
+
+  final Set<String> depImportUris;
+  final String multiRootPrefix;
+  final List<String> fsRoots;
+  final Map<String, String> packageKeyPrefixes;
+  final Set<String> declaredKeys;
+
+  bool isDeclared(String? reference) {
+    if (reference == null || reference.isEmpty) return true;
+    // A bare identifier names no file: only a URI- or path-shaped reference
+    // can name one.
+    if (!reference.contains(':') && !reference.contains('/')) return true;
+    if (depImportUris.contains(reference)) return true;
+    if (reference.startsWith('dart:') ||
+        reference.startsWith('data:') ||
+        reference.startsWith('org-dartlang-sdk:') ||
+        reference.startsWith('org-dartlang-untranslatable-uri:')) {
+      return true;
+    }
+    // A resolvable spelling of a declared file passes: the source table
+    // already verified the file read, and this spelling names it.
+    var key = _gkKeyOfRecordedUri(reference, multiRootPrefix, fsRoots);
+    if (key == null || key.isEmpty) {
+      key = _gkKeyOfPackageUri(reference, packageKeyPrefixes);
+    }
+    return key != null && key.isNotEmpty && declaredKeys.contains(key);
+  }
+}
+
+// The refusal messages for library import URIs and canonical names naming no
+// declared input, `dart:` library, or package.
+List<String> _libraryReferenceErrors({
+  required String outputPath,
+  required List<GenKernelLibraryReference> libraries,
+  required bool hasNativeAssetsManifest,
+  required _ReferenceChecker checker,
+}) {
+  final errors = <String>[];
   for (final library in libraries) {
     // The manifest-synthesized asset library names no file: only its exact
     // shape passes, and only with a manifest.
@@ -2856,7 +3281,7 @@ List<String> verifyGenKernelReads({
       continue;
     }
     for (final reference in [library.importUri, library.canonicalName]) {
-      if (!referenceIsDeclared(reference)) {
+      if (!checker.isDeclared(reference)) {
         errors.add(
           'app_jit_snapshot: $outputPath references $reference, which no '
           'declared input, `dart:` library, or package defines; refusing '
@@ -2865,14 +3290,26 @@ List<String> verifyGenKernelReads({
       }
     }
   }
-  // A held component can smuggle a root the library nodes never mention, so
-  // every top-level canonical name is checked with the same predicate.
+  return errors;
+}
+
+// The refusal messages for top-level canonical names naming no declared
+// input, `dart:` library, or package. A held component can smuggle a root the
+// library nodes never mention, so every root is checked with the same
+// predicate.
+List<String> _canonicalRootErrors({
+  required String outputPath,
+  required List<String> canonicalRoots,
+  required bool hasNativeAssetsManifest,
+  required _ReferenceChecker checker,
+}) {
+  final errors = <String>[];
   for (final root in canonicalRoots) {
     // The synthesized asset library's canonical name is its own root.
     if (hasNativeAssetsManifest && root == 'vm:ffi:native-assets') {
       continue;
     }
-    if (!referenceIsDeclared(root)) {
+    if (!checker.isDeclared(root)) {
       errors.add(
         'app_jit_snapshot: $outputPath references $root, which no '
         'declared input, `dart:` library, or package defines; refusing '
@@ -2881,6 +3318,164 @@ List<String> verifyGenKernelReads({
     }
   }
   return errors;
+}
+
+// The kernel output bytes, or the refusal message when they cannot be read.
+// A missing output has no read set to verify.
+({Uint8List? bytes, String? error}) _readKernelOutput(String outputPath) {
+  final dillFile = File(outputPath);
+  if (!dillFile.existsSync()) return (bytes: null, error: null);
+  try {
+    return (bytes: dillFile.readAsBytesSync(), error: null);
+  } on FileSystemException {
+    return (
+      bytes: null,
+      error: 'app_jit_snapshot: cannot read the kernel output at $outputPath; '
+          'refusing the compile.',
+    );
+  }
+}
+
+// The refusal messages for recorded source URIs naming no declared input.
+List<String> _recordedSourceUriErrors({
+  required List<String> uris,
+  required String outputPath,
+  required bool hasNativeAssetsManifest,
+  required String multiRootPrefix,
+  required List<String> fsRoots,
+  required Set<String> declaredKeys,
+}) {
+  final errors = <String>[];
+  for (final uri in uris) {
+    // A `--native-assets` manifest makes the front end synthesize the
+    // `vm:ffi:native-assets` library from the bare placeholder URI `dummy`,
+    // which names no file; without a manifest the same spelling still fails
+    // below, as does any other undeclared spelling.
+    if (hasNativeAssetsManifest && uri == 'dummy') continue;
+    final key = _gkKeyOfRecordedUri(uri, multiRootPrefix, fsRoots);
+    if (key == null) continue;
+    if (key.isEmpty || !declaredKeys.contains(key)) {
+      errors.add(
+        'app_jit_snapshot: $outputPath reads $uri, which is not a declared '
+        'input; refusing the compile.',
+      );
+    }
+  }
+  return errors;
+}
+
+/// The parsed `--gen-kernel` arguments (see [_parseGenKernelArgs]): the
+/// runtime, the args forwarded to `gen_kernel`, the declared inputs, the
+/// filesystem roots, and the output.
+final class _GenKernelArgs {
+  var snapshotPatched = false;
+  String? outputPath;
+  final rawGenArgs = <String>[];
+  final declaredInputSources = <String>[];
+  final fsRoots = <String>[];
+}
+
+/// Parses the `--gen-kernel` arguments after the `dartaotruntime` executable.
+_GenKernelArgs _parseGenKernelArgs(List<String> argv) {
+  final args = _GenKernelArgs();
+  for (var i = 1; i < argv.length; i++) {
+    i = _applyGenKernelArg(args, argv, i);
+  }
+  return args;
+}
+
+/// Applies the argument at [i], returning the index of the last argument it
+/// consumed (the same index, or one further when it takes a separate value).
+/// Wrapper-only options are consumed; `--filesystem-root` and `-o`/`--output`
+/// are recorded without consuming their value, and every other argument —
+/// including those — is forwarded to `gen_kernel`.
+int _applyGenKernelArg(_GenKernelArgs args, List<String> argv, int i) {
+  final arg = argv[i];
+  // Passed by Starlark when the snapshot at rawGenArgs[0] is the
+  // content-keyed patched copy declared by the toolchain. Consumed here and
+  // never forwarded to gen_kernel.
+  if (arg == '--comma-patched-snapshot') {
+    args.snapshotPatched = true;
+    return i;
+  }
+  if (arg == '--input-source' && i + 1 < argv.length) {
+    args.declaredInputSources.add(argv[++i]);
+    return i;
+  }
+  if (arg.startsWith('--input-source=')) {
+    args.declaredInputSources.add(arg.substring('--input-source='.length));
+    return i;
+  }
+  if (arg == '--input-sources-file' && i + 1 < argv.length) {
+    _readInputSourcesFile(args, argv[++i]);
+    return i;
+  }
+  if (arg.startsWith('--input-sources-file=')) {
+    _readInputSourcesFile(args, arg.substring('--input-sources-file='.length));
+    return i;
+  }
+  if (arg == '--filesystem-root' && i + 1 < argv.length) {
+    args.fsRoots.add(argv[i + 1]);
+  } else if (arg.startsWith('--filesystem-root=')) {
+    args.fsRoots.add(arg.substring('--filesystem-root='.length));
+  } else if ((arg == '-o' || arg == '--output') && i + 1 < argv.length) {
+    args.outputPath = argv[i + 1];
+  } else if (arg.startsWith('-o=')) {
+    args.outputPath = arg.substring('-o='.length);
+  } else if (arg.startsWith('--output=')) {
+    args.outputPath = arg.substring('--output='.length);
+  }
+  args.rawGenArgs.add(arg);
+  return i;
+}
+
+/// Reads declared inputs from the `--input-sources-file` at [path]: one
+/// source per nonempty line. A missing file lists nothing.
+void _readInputSourcesFile(_GenKernelArgs args, String path) {
+  final file = File(path);
+  if (file.existsSync()) {
+    for (final line in file.readAsLinesSync()) {
+      if (line.isNotEmpty) args.declaredInputSources.add(line);
+    }
+  }
+}
+
+// Exits when a define contains a comma but the gen_kernel snapshot is not the
+// toolchain's patched copy: its Parser._setOption comma-splitting is only
+// tolerable for comma-free defines. Fail loudly instead of miscompiling.
+void _rejectUnpatchedCommaDefines(
+  List<String> rawGenArgs,
+  bool snapshotPatched,
+) {
+  final commaError = unpatchedCommaDefinesError(
+    rawGenArgs,
+    snapshotPatched: snapshotPatched,
+    snapshotKind: 'gen_kernel',
+    toolName: 'app_jit_snapshot',
+  );
+  if (commaError != null) {
+    stderr.writeln(commaError);
+    exit(1);
+  }
+}
+
+// Exits when a declared source's directives read the host (see
+// [_findDisallowedGenKernelDirectives]): a disallowed URI fails however the
+// roots resolve.
+void _rejectDisallowedDirectives(
+  List<String> declaredInputSources,
+  List<String> fsRoots,
+) {
+  final disallowedDirectives = _findDisallowedGenKernelDirectives(
+    declaredInputSources,
+    fsRoots,
+  );
+  if (disallowedDirectives.isNotEmpty) {
+    for (final error in disallowedDirectives) {
+      stderr.writeln(error);
+    }
+    exit(1);
+  }
 }
 
 /// Runs `gen_kernel` via `dartaotruntime` with comma-splitting disabled on
@@ -2894,87 +3489,22 @@ void _runGenKernel(List<String> argv) {
     exit(64);
   }
   final dartaotruntime = argv.first;
-  final rawGenArgs = <String>[];
-  final declaredInputSources = <String>[];
-  final fsRoots = <String>[];
-  String? outputPath;
-  var snapshotPatched = false;
-  for (var i = 1; i < argv.length; i++) {
-    final arg = argv[i];
-    // Passed by Starlark when the snapshot at rawGenArgs[0] is the
-    // content-keyed patched copy declared by the toolchain. Consumed here and
-    // never forwarded to gen_kernel.
-    if (arg == '--comma-patched-snapshot') {
-      snapshotPatched = true;
-      continue;
-    }
-    if (arg == '--input-source' && i + 1 < argv.length) {
-      declaredInputSources.add(argv[++i]);
-      continue;
-    }
-    if (arg.startsWith('--input-source=')) {
-      declaredInputSources.add(arg.substring('--input-source='.length));
-      continue;
-    }
-    if (arg == '--input-sources-file' && i + 1 < argv.length) {
-      final file = File(argv[++i]);
-      if (file.existsSync()) {
-        for (final line in file.readAsLinesSync()) {
-          if (line.isNotEmpty) declaredInputSources.add(line);
-        }
-      }
-      continue;
-    }
-    if (arg.startsWith('--input-sources-file=')) {
-      final file = File(arg.substring('--input-sources-file='.length));
-      if (file.existsSync()) {
-        for (final line in file.readAsLinesSync()) {
-          if (line.isNotEmpty) declaredInputSources.add(line);
-        }
-      }
-      continue;
-    }
-    if (arg == '--filesystem-root' && i + 1 < argv.length) {
-      fsRoots.add(argv[i + 1]);
-    } else if (arg.startsWith('--filesystem-root=')) {
-      fsRoots.add(arg.substring('--filesystem-root='.length));
-    } else if ((arg == '-o' || arg == '--output') && i + 1 < argv.length) {
-      outputPath = argv[i + 1];
-    } else if (arg.startsWith('-o=')) {
-      outputPath = arg.substring('-o='.length);
-    } else if (arg.startsWith('--output=')) {
-      outputPath = arg.substring('--output='.length);
-    }
-    rawGenArgs.add(arg);
-  }
+  final args = _parseGenKernelArgs(argv);
+  final rawGenArgs = args.rawGenArgs;
+  final declaredInputSources = args.declaredInputSources;
+  final fsRoots = args.fsRoots;
+  final snapshotPatched = args.snapshotPatched;
+  final outputPath = args.outputPath;
 
   // The gen_kernel snapshot must already be the toolchain's patched copy when
   // a define contains a comma: its Parser._setOption comma-splitting is only
   // tolerable for comma-free defines. Fail loudly instead of miscompiling.
-  final commaError = unpatchedCommaDefinesError(
-    rawGenArgs,
-    snapshotPatched: snapshotPatched,
-    snapshotKind: 'gen_kernel',
-    toolName: 'app_jit_snapshot',
-  );
-  if (commaError != null) {
-    stderr.writeln(commaError);
-    exit(1);
-  }
+  _rejectUnpatchedCommaDefines(rawGenArgs, snapshotPatched);
 
   // No declared source may read the host (see
   // [_findDisallowedGenKernelDirectives]). This runs before the isolated-root
   // staging below: a disallowed URI fails however the roots resolve.
-  final disallowedDirectives = _findDisallowedGenKernelDirectives(
-    declaredInputSources,
-    fsRoots,
-  );
-  if (disallowedDirectives.isNotEmpty) {
-    for (final error in disallowedDirectives) {
-      stderr.writeln(error);
-    }
-    exit(1);
-  }
+  _rejectDisallowedDirectives(declaredInputSources, fsRoots);
 
   // The scratch directories below anchor at the declared output: shared temp
   // is never used, so concurrent actions cannot see each other's files.
@@ -2984,76 +3514,125 @@ void _runGenKernel(List<String> argv) {
   }
 
   // Only stage an isolated filesystem root when an undeclared file would
-  // otherwise shadow a declared input. Each declared source is compared
-  // against every root: the candidate naming the declared file itself is its
-  // origin, and any other candidate that exists on disk is a shadow. In the
-  // common case (no shadows) the declared roots are forwarded unchanged.
-  var hasShadowRisk = false;
-  if (declaredInputSources.isNotEmpty && fsRoots.isNotEmpty) {
-    final normRoots = <String>[
-      for (final root in fsRoots)
-        _normFsPath(root).replaceFirst(RegExp(r'/+$'), ''),
-    ];
-    for (final srcPath in declaredInputSources) {
-      final normSrc = _normFsPath(srcPath);
-      final normKey = _normFsPath(_stripFsRootPrefix(srcPath, fsRoots));
-      if (normKey.isEmpty) {
-        hasShadowRisk = true;
-        break;
-      }
-      for (final normRoot in normRoots) {
-        final candidate = normRoot == '.' || normRoot.isEmpty
-            ? normKey
-            : '$normRoot/$normKey';
-        // The candidate naming the declared file itself is its origin.
-        if (candidate == normSrc) continue;
-        if (File(candidate).existsSync()) {
-          hasShadowRisk = true;
-          break;
-        }
-      }
-      if (hasShadowRisk) break;
+  // otherwise shadow a declared input. In the common case (no shadows) the
+  // declared roots are forwarded unchanged.
+  final staged = _stageIsolatedRoot(
+    declaredInputSources: declaredInputSources,
+    fsRoots: fsRoots,
+    outputPath: outputPath,
+    rawGenArgs: rawGenArgs,
+  );
+  _runGenKernelProcess(
+    dartaotruntime: dartaotruntime,
+    forwarded: staged.forwarded,
+    isolatedRootDir: staged.isolatedRoot,
+    outputPath: outputPath,
+  );
+
+  // The compile read only what its directives name, and the directive check
+  // above refused every hostile spelling it knows — but a spelling it misses
+  // would read the host into the output, so the output's own read set is
+  // verified against the declared inputs before the action succeeds (see
+  // [verifyGenKernelReads]). A dirty read set deletes the output and fails:
+  // the kernel must never carry an undeclared file.
+  final verify = _genKernelVerifyOptions(rawGenArgs);
+  _verifyGenKernelOutput(
+    outputPath: outputPath,
+    declaredInputSources: declaredInputSources,
+    fsRoots: fsRoots,
+    multiRootPrefix: '${verify.scheme}:///',
+    hasNativeAssetsManifest: verify.hasNativeAssetsManifest,
+    packagesPath: verify.packagesPath,
+  );
+}
+
+// Whether an undeclared file would shadow a declared input through some
+// filesystem root: each declared source is compared against every root, where
+// the candidate naming the declared file itself is its origin, and any other
+// candidate that exists on disk is a shadow.
+bool _hasShadowRisk(
+  List<String> declaredInputSources,
+  List<String> fsRoots,
+) {
+  if (declaredInputSources.isEmpty || fsRoots.isEmpty) return false;
+  final normRoots = <String>[
+    for (final root in fsRoots)
+      _normFsPath(root).replaceFirst(RegExp(r'/+$'), ''),
+  ];
+  for (final srcPath in declaredInputSources) {
+    final normSrc = _normFsPath(srcPath);
+    final normKey = _normFsPath(_stripFsRootPrefix(srcPath, fsRoots));
+    if (normKey.isEmpty) return true;
+    for (final normRoot in normRoots) {
+      final candidate = normRoot == '.' || normRoot.isEmpty
+          ? normKey
+          : '$normRoot/$normKey';
+      // The candidate naming the declared file itself is its origin.
+      if (candidate == normSrc) continue;
+      if (File(candidate).existsSync()) return true;
     }
   }
+  return false;
+}
 
-  Directory? isolatedRootDir;
+// The isolated `--filesystem-root` staging the declared inputs, with the
+// forwarded `gen_kernel` arguments rewritten to it; without shadow risk the
+// declared roots are forwarded unchanged and no staging exists.
+({Directory? isolatedRoot, List<String> forwarded}) _stageIsolatedRoot({
+  required List<String> declaredInputSources,
+  required List<String> fsRoots,
+  required String outputPath,
+  required List<String> rawGenArgs,
+}) {
   final forwarded = <String>[];
-  if (declaredInputSources.isNotEmpty && fsRoots.isNotEmpty && hasShadowRisk) {
-    final baseDir = File(outputPath).parent;
-    baseDir.createSync(recursive: true);
-    isolatedRootDir = baseDir.createTempSync('.gen_kernel_root.');
-    final seenKeys = <String>{};
-    for (final srcPath in declaredInputSources) {
-      final key = _stripFsRootPrefix(srcPath, fsRoots);
-      if (key.isEmpty || !seenKeys.add(key)) continue;
-      _stageEntitySync(srcPath, '${isolatedRootDir.path}/$key');
-    }
-    var insertedRoot = false;
-    for (var i = 0; i < rawGenArgs.length; i++) {
-      final arg = rawGenArgs[i];
-      if (arg == '--filesystem-root' && i + 1 < rawGenArgs.length) {
-        i++;
-        if (!insertedRoot) {
-          insertedRoot = true;
-          forwarded
-            ..add('--filesystem-root')
-            ..add(isolatedRootDir.path);
-        }
-        continue;
-      }
-      if (arg.startsWith('--filesystem-root=')) {
-        if (!insertedRoot) {
-          insertedRoot = true;
-          forwarded.add('--filesystem-root=${isolatedRootDir.path}');
-        }
-        continue;
-      }
-      forwarded.add(arg);
-    }
-  } else {
+  if (!_hasShadowRisk(declaredInputSources, fsRoots)) {
     forwarded.addAll(rawGenArgs);
+    return (isolatedRoot: null, forwarded: forwarded);
   }
+  final baseDir = File(outputPath).parent;
+  baseDir.createSync(recursive: true);
+  final isolatedRootDir = baseDir.createTempSync('.gen_kernel_root.');
+  final seenKeys = <String>{};
+  for (final srcPath in declaredInputSources) {
+    final key = _stripFsRootPrefix(srcPath, fsRoots);
+    if (key.isEmpty || !seenKeys.add(key)) continue;
+    _stageEntitySync(srcPath, '${isolatedRootDir.path}/$key');
+  }
+  var insertedRoot = false;
+  for (var i = 0; i < rawGenArgs.length; i++) {
+    final arg = rawGenArgs[i];
+    if (arg == '--filesystem-root' && i + 1 < rawGenArgs.length) {
+      i++;
+      if (!insertedRoot) {
+        insertedRoot = true;
+        forwarded
+          ..add('--filesystem-root')
+          ..add(isolatedRootDir.path);
+      }
+      continue;
+    }
+    if (arg.startsWith('--filesystem-root=')) {
+      if (!insertedRoot) {
+        insertedRoot = true;
+        forwarded.add('--filesystem-root=${isolatedRootDir.path}');
+      }
+      continue;
+    }
+    forwarded.add(arg);
+  }
+  return (isolatedRoot: isolatedRootDir, forwarded: forwarded);
+}
 
+// Runs `gen_kernel` with an isolated home, relays its output, and exits
+// non-zero when it fails. The scratch directories anchor at the declared
+// output: shared temp is never used, so concurrent actions cannot see each
+// other's files.
+void _runGenKernelProcess({
+  required String dartaotruntime,
+  required List<String> forwarded,
+  required Directory? isolatedRootDir,
+  required String outputPath,
+}) {
   final genKernelScratchBase = File(outputPath).parent
     ..createSync(recursive: true);
   final tempHome = genKernelScratchBase.createTempSync(
@@ -3097,13 +3676,12 @@ void _runGenKernel(List<String> argv) {
   if (res.exitCode != 0) {
     exit(res.exitCode);
   }
+}
 
-  // The compile read only what its directives name, and the directive check
-  // above refused every hostile spelling it knows — but a spelling it misses
-  // would read the host into the output, so the output's own read set is
-  // verified against the declared inputs before the action succeeds (see
-  // [verifyGenKernelReads]). A dirty read set deletes the output and fails:
-  // the kernel must never carry an undeclared file.
+// The read-set verification options carried in the forwarded arguments: the
+// filesystem scheme, the packages config, and the native-assets manifest flag.
+({String scheme, String? packagesPath, bool hasNativeAssetsManifest})
+_genKernelVerifyOptions(List<String> rawGenArgs) {
   var scheme = defaultMultiRootPrefix.replaceFirst(RegExp(r':///$'), '');
   String? packagesPath;
   var hasNativeAssetsManifest = false;
@@ -3123,7 +3701,24 @@ void _runGenKernel(List<String> argv) {
       hasNativeAssetsManifest = true;
     }
   }
-  final multiRootPrefix = '$scheme:///';
+  return (
+    scheme: scheme,
+    packagesPath: packagesPath,
+    hasNativeAssetsManifest: hasNativeAssetsManifest,
+  );
+}
+
+// Verifies the compile's own read set against the declared inputs (see
+// [verifyGenKernelReads]). A dirty read set deletes the output and fails: the
+// kernel must never carry an undeclared file.
+void _verifyGenKernelOutput({
+  required String outputPath,
+  required List<String> declaredInputSources,
+  required List<String> fsRoots,
+  required String multiRootPrefix,
+  required bool hasNativeAssetsManifest,
+  required String? packagesPath,
+}) {
   final readErrors = verifyGenKernelReads(
     outputPath: outputPath,
     declaredKeys: {
@@ -3386,6 +3981,16 @@ int _skipBlockComment(String src, int start) {
   throw const _Unparsable();
 }
 
+// The single-character Dart string escapes.
+const _simpleStringEscapes = <String, String>{
+  'n': '\n',
+  'r': '\r',
+  'f': '\f',
+  'b': '\b',
+  't': '\t',
+  'v': '\v',
+};
+
 String _unescape(String s) {
   if (!s.contains('\\')) return s;
   final out = StringBuffer();
@@ -3398,47 +4003,41 @@ String _unescape(String s) {
     }
     if (i >= s.length) throw const _Unparsable();
     final esc = s[i++];
-    switch (esc) {
-      case 'n':
-        out.write('\n');
-      case 'r':
-        out.write('\r');
-      case 'f':
-        out.write('\f');
-      case 'b':
-        out.write('\b');
-      case 't':
-        out.write('\t');
-      case 'v':
-        out.write('\v');
-      case 'x':
-        if (i + 2 > s.length) throw const _Unparsable();
-        final code = int.tryParse(s.substring(i, i + 2), radix: 16);
-        if (code == null) throw const _Unparsable();
-        out.writeCharCode(code);
-        i += 2;
-      case 'u':
-        if (i < s.length && s[i] == '{') {
-          final close = s.indexOf('}', i + 1);
-          if (close < 0) throw const _Unparsable();
-          final code = int.tryParse(s.substring(i + 1, close), radix: 16);
-          if (code == null || code < 0 || code > 0x10FFFF) {
-            throw const _Unparsable();
-          }
-          out.writeCharCode(code);
-          i = close + 1;
-        } else {
-          if (i + 4 > s.length) throw const _Unparsable();
-          final code = int.tryParse(s.substring(i, i + 4), radix: 16);
-          if (code == null) throw const _Unparsable();
-          out.writeCharCode(code);
-          i += 4;
-        }
-      default:
-        out.write(esc);
+    if (esc == 'x' || esc == 'u') {
+      i = _writeHexEscape(out, s, i, esc);
+      continue;
     }
+    // Any other escaped character stands for itself.
+    out.write(_simpleStringEscapes[esc] ?? esc);
   }
   return out.toString();
+}
+
+// Writes the `\xHH` or `\u....` escape starting at [i] (just past the `x` or
+// `u`) to [out], returning the index just past the escape.
+int _writeHexEscape(StringBuffer out, String s, int i, String esc) {
+  if (esc == 'x') {
+    if (i + 2 > s.length) throw const _Unparsable();
+    final code = int.tryParse(s.substring(i, i + 2), radix: 16);
+    if (code == null) throw const _Unparsable();
+    out.writeCharCode(code);
+    return i + 2;
+  }
+  if (i < s.length && s[i] == '{') {
+    final close = s.indexOf('}', i + 1);
+    if (close < 0) throw const _Unparsable();
+    final code = int.tryParse(s.substring(i + 1, close), radix: 16);
+    if (code == null || code < 0 || code > 0x10FFFF) {
+      throw const _Unparsable();
+    }
+    out.writeCharCode(code);
+    return close + 1;
+  }
+  if (i + 4 > s.length) throw const _Unparsable();
+  final code = int.tryParse(s.substring(i, i + 4), radix: 16);
+  if (code == null) throw const _Unparsable();
+  out.writeCharCode(code);
+  return i + 4;
 }
 
 /// Reads the tokens of a Dart source one at a time, so a scan that stops at the end
@@ -3468,43 +4067,60 @@ class _Lexer {
       }
     }
     while (_at < n) {
-      final ch = src[_at];
-      if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') {
-        _at++;
-        continue;
-      }
-      if (ch == '/' && _at + 1 < n && src[_at + 1] == '/') {
-        _at = _skipLine(src, _at + 2);
-        continue;
-      }
-      if (ch == '/' && _at + 1 < n && src[_at + 1] == '*') {
-        _at = _skipBlockComment(src, _at);
-        continue;
-      }
-      final code = ch.codeUnitAt(0);
-      if (_isIdentStart(code)) {
-        final start = _at;
-        while (_at < n && _isIdentChar(src.codeUnitAt(_at))) {
-          _at++;
-        }
-        final word = src.substring(start, _at);
-        if (word == 'r' && _at < n && (src[_at] == "'" || src[_at] == '"')) {
-          return _string(raw: true);
-        }
-        return _Token(_identKind, word);
-      }
-      if (_isDigit(code)) {
-        final start = _at;
-        while (_at < n && _isIdentChar(src.codeUnitAt(_at))) {
-          _at++;
-        }
-        return _Token(_otherKind, src.substring(start, _at));
-      }
-      if (ch == "'" || ch == '"') return _string(raw: false);
-      _at++;
-      return _Token(_punctKind, ch);
+      if (_skipTrivia()) continue;
+      return _scanToken();
     }
     return null;
+  }
+
+  /// Skips one whitespace run or comment at `_at`: true when something was
+  /// skipped (the caller keeps scanning), false at a real token.
+  bool _skipTrivia() {
+    final src = _src;
+    final n = src.length;
+    final ch = src[_at];
+    if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') {
+      _at++;
+      return true;
+    }
+    if (ch == '/' && _at + 1 < n && src[_at + 1] == '/') {
+      _at = _skipLine(src, _at + 2);
+      return true;
+    }
+    if (ch == '/' && _at + 1 < n && src[_at + 1] == '*') {
+      _at = _skipBlockComment(src, _at);
+      return true;
+    }
+    return false;
+  }
+
+  /// The token starting at `_at`.
+  _Token _scanToken() {
+    final src = _src;
+    final n = src.length;
+    final ch = src[_at];
+    final code = ch.codeUnitAt(0);
+    if (_isIdentStart(code)) {
+      final start = _at;
+      while (_at < n && _isIdentChar(src.codeUnitAt(_at))) {
+        _at++;
+      }
+      final word = src.substring(start, _at);
+      if (word == 'r' && _at < n && (src[_at] == "'" || src[_at] == '"')) {
+        return _string(raw: true);
+      }
+      return _Token(_identKind, word);
+    }
+    if (_isDigit(code)) {
+      final start = _at;
+      while (_at < n && _isIdentChar(src.codeUnitAt(_at))) {
+        _at++;
+      }
+      return _Token(_otherKind, src.substring(start, _at));
+    }
+    if (ch == "'" || ch == '"') return _string(raw: false);
+    _at++;
+    return _Token(_punctKind, ch);
   }
 
   /// The string literal at `_at`, with its quotes removed and its escapes kept.
@@ -3568,27 +4184,15 @@ class _Lexer {
     var at = start;
     var depth = 1;
     while (at < n) {
+      final commentEnd = _commentEnd(at);
+      if (commentEnd != null) {
+        at = commentEnd;
+        continue;
+      }
       final ch = src[at];
-      if (ch == '/' && at + 1 < n && src[at + 1] == '/') {
-        at = _skipLine(src, at + 2);
-        continue;
-      }
-      if (ch == '/' && at + 1 < n && src[at + 1] == '*') {
-        at = _skipBlockComment(src, at);
-        continue;
-      }
       final code = ch.codeUnitAt(0);
       if (_isIdentStart(code) || _isDigit(code)) {
-        final wordStart = at;
-        while (at < n && _isIdentChar(src.codeUnitAt(at))) {
-          at++;
-        }
-        if (at - wordStart == 1 &&
-            src[wordStart] == 'r' &&
-            at < n &&
-            (src[at] == "'" || src[at] == '"')) {
-          at = _skipString(at, raw: true);
-        }
+        at = _skipWordOrRawString(at);
         continue;
       }
       if (ch == "'" || ch == '"') {
@@ -3604,6 +4208,34 @@ class _Lexer {
       at++;
     }
     throw const _Unparsable();
+  }
+
+  /// The index past the comment starting at [at], or null when no comment
+  /// starts there.
+  int? _commentEnd(int at) {
+    final src = _src;
+    if (src[at] != '/' || at + 1 >= src.length) return null;
+    if (src[at + 1] == '/') return _skipLine(src, at + 2);
+    if (src[at + 1] == '*') return _skipBlockComment(src, at);
+    return null;
+  }
+
+  /// The index past the identifier or number starting at [at], skipping a raw
+  /// string opened by a lone `r`.
+  int _skipWordOrRawString(int at) {
+    final src = _src;
+    final n = src.length;
+    final wordStart = at;
+    while (at < n && _isIdentChar(src.codeUnitAt(at))) {
+      at++;
+    }
+    if (at - wordStart == 1 &&
+        src[wordStart] == 'r' &&
+        at < n &&
+        (src[at] == "'" || src[at] == '"')) {
+      at = _skipString(at, raw: true);
+    }
+    return at;
   }
 }
 
@@ -3770,36 +4402,15 @@ class _Prologue {
       }
       if (token.kind != _identKind) break;
       if (token.text == 'library') {
-        _lexer.take();
-        if (_punct(';')) {
-          _lexer.take();
-        } else if (_peek()?.kind == _identKind) {
-          libraryName ??= _dottedIdent();
-          _expect(';');
-        } else {
-          break;
-        }
+        final clause = _parseLibraryClause(libraryName);
+        if (!clause.ok) break;
+        libraryName = clause.libraryName;
       } else if (token.text == 'import' || token.text == 'export') {
-        _lexer.take();
-        if (_peek()?.kind != _stringKind) break;
-        final ref = _uriDirective(token.text, refs);
-        if (!collectAll) refs.add(ref);
+        if (!_parseImportExport(token.text, refs)) break;
       } else if (token.text == 'part') {
-        _lexer.take();
-        if (_ident('of')) {
-          _lexer.take();
-          if (_peek()?.kind == _stringKind) {
-            refs.add(ScanRef('part of', _string()));
-          } else {
-            partOfLibrary ??= _dottedIdent();
-          }
-          _expect(';');
-        } else if (_peek()?.kind == _stringKind) {
-          refs.add(ScanRef('part', _string()));
-          _expect(';');
-        } else {
-          break;
-        }
+        final clause = _parsePartClause(partOfLibrary, refs);
+        if (!clause.ok) break;
+        partOfLibrary = clause.partOfLibrary;
       } else {
         break;
       }
@@ -3809,6 +4420,57 @@ class _Prologue {
       libraryName: libraryName,
       partOfLibrary: partOfLibrary,
     );
+  }
+
+  // Parses the `library` clause after its keyword, seeding [libraryName].
+  // A malformed clause ends the prologue.
+  ({bool ok, String? libraryName}) _parseLibraryClause(String? libraryName) {
+    _lexer.take();
+    if (_punct(';')) {
+      _lexer.take();
+      return (ok: true, libraryName: libraryName);
+    }
+    if (_peek()?.kind == _identKind) {
+      libraryName ??= _dottedIdent();
+      _expect(';');
+      return (ok: true, libraryName: libraryName);
+    }
+    return (ok: false, libraryName: libraryName);
+  }
+
+  // Parses the `import`/`export` [keyword] directive after its keyword into
+  // [refs]. False ends the prologue.
+  bool _parseImportExport(String keyword, List<ScanRef> refs) {
+    _lexer.take();
+    if (_peek()?.kind != _stringKind) return false;
+    final ref = _uriDirective(keyword, refs);
+    if (!collectAll) refs.add(ref);
+    return true;
+  }
+
+  // Parses the `part` clause after its keyword into [refs], seeding
+  // [partOfLibrary]. A malformed clause ends the prologue.
+  ({bool ok, String? partOfLibrary}) _parsePartClause(
+    String? partOfLibrary,
+    List<ScanRef> refs,
+  ) {
+    _lexer.take();
+    if (_ident('of')) {
+      _lexer.take();
+      if (_peek()?.kind == _stringKind) {
+        refs.add(ScanRef('part of', _string()));
+      } else {
+        partOfLibrary ??= _dottedIdent();
+      }
+      _expect(';');
+      return (ok: true, partOfLibrary: partOfLibrary);
+    }
+    if (_peek()?.kind == _stringKind) {
+      refs.add(ScanRef('part', _string()));
+      _expect(';');
+      return (ok: true, partOfLibrary: partOfLibrary);
+    }
+    return (ok: false, partOfLibrary: partOfLibrary);
   }
 }
 
