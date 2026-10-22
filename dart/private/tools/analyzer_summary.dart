@@ -38,6 +38,8 @@ import 'package:analyzer/src/dart/analysis/analysis_context_collection.dart';
 // ignore: implementation_imports
 import 'package:analyzer/src/dart/analysis/driver.dart';
 // ignore: implementation_imports
+import 'package:analyzer/src/dart/analysis/driver_based_analysis_context.dart';
+// ignore: implementation_imports
 import 'package:analyzer/src/generated/source.dart' show UriResolver;
 // ignore: implementation_imports
 import 'package:analyzer/src/summary/package_bundle_reader.dart'
@@ -344,17 +346,8 @@ Future<int> _summarize(
   }
   final packagesPath = p.normalize(p.absolute(args.single('packages')));
   final packagesDir = p.dirname(packagesPath);
-  String normUnderPackagesDir(String raw) {
-    final abs = p.normalize(p.absolute(raw));
-    if (p.equals(packagesDir, abs) || p.isWithin(packagesDir, abs)) {
-      return abs;
-    }
-    return _reanchorThroughSymlink(packagesDir, abs) ?? abs;
-  }
 
-  final normSources = <String>[
-    for (final s in sources) normUnderPackagesDir(s),
-  ];
+  final normSources = _normalizeSummarizeSources(sources, packagesDir);
   final libraryUris = <String>[
     for (var i = 0; i < normSources.length; i++)
       if (!_isPart(normSources[i])) uris[i],
@@ -365,7 +358,8 @@ Future<int> _summarize(
     for (final s in args.all('summary')) p.normalize(p.absolute(s)),
   ];
   final normDepSources = <String>{
-    for (final s in args.all('dep-source')) normUnderPackagesDir(s),
+    for (final s in args.all('dep-source'))
+      _normalizeSummarizeSource(s, packagesDir),
   };
   final sourceRoot = inferSummarizeRoot(
     normSources,
@@ -373,12 +367,7 @@ Future<int> _summarize(
     pathContext: resourceProvider.pathContext,
   );
   final normSourceSet = normSources.toSet();
-  for (final src in normSources) {
-    if (!FileSystemEntity.isFileSync(src)) {
-      errSink.writeln('analyzer_summary: missing source $src');
-      return _failed;
-    }
-  }
+  if (!_checkSummarizeSources(normSources, errSink)) return _failed;
   final libRoot = p.normalize(p.join(sourceRoot, 'lib'));
   final depsDir = p.normalize(p.join(sourceRoot, '_deps'));
   final depLibRoots = <String>{
@@ -388,12 +377,84 @@ Future<int> _summarize(
           p.join(depsDir, p.split(p.relative(s, from: depsDir)).first, 'lib'),
         ),
   };
-  if (p.basename(sourceRoot).endsWith('.summary_root')) {
-    _pruneUnlistedUnder(libRoot, normSourceSet);
-    for (final depLibRoot in depLibRoots) {
-      _pruneUnlistedUnder(depLibRoot, normDepSources);
+  _pruneSummarizeTree(
+    sourceRoot: sourceRoot,
+    libRoot: libRoot,
+    depLibRoots: depLibRoots,
+    normSourceSet: normSourceSet,
+    normDepSources: normDepSources,
+  );
+  if (!_checkSummarizeDirectives(sourceRoot, errSink)) return _failed;
+  final boundedProvider = _summarizeResourceProvider(
+    resourceProvider: resourceProvider,
+    sourceRoot: sourceRoot,
+    packagesDir: packagesDir,
+    packagesPath: packagesPath,
+    sdkPath: sdkPath,
+    sdkSummaryPath: sdkSummaryPath,
+    summaryPaths: summaryPaths,
+    normSources: normSources,
+    normDepSources: normDepSources,
+    libRoot: libRoot,
+    depLibRoots: depLibRoots,
+  );
+  final collection = AnalysisContextCollectionImpl(
+    resourceProvider: boundedProvider,
+    includedPaths: [normSources.first],
+    sdkPath: sdkPath,
+    sdkSummaryPath: sdkSummaryPath,
+    packageConfigFile: packagesPath,
+    librarySummaryPaths: summaryPaths,
+  );
+  _installFileAwareSummaryResolver(collection, boundedProvider.pathContext);
+  final bytes = await _buildPackageBundle(collection, libraryUris: libraryUris);
+  File(args.single('out')).writeAsBytesSync(bytes);
+  return 0;
+}
+
+/// The `--source` paths normalized under [packagesDir].
+List<String> _normalizeSummarizeSources(
+  List<String> sources,
+  String packagesDir,
+) => [for (final s in sources) _normalizeSummarizeSource(s, packagesDir)];
+
+/// One `--source` path normalized under [packagesDir].
+String _normalizeSummarizeSource(String raw, String packagesDir) {
+  final abs = p.normalize(p.absolute(raw));
+  if (p.equals(packagesDir, abs) || p.isWithin(packagesDir, abs)) {
+    return abs;
+  }
+  return _reanchorThroughSymlink(packagesDir, abs) ?? abs;
+}
+
+/// Refuses missing staged sources.
+bool _checkSummarizeSources(List<String> normSources, StringSink errSink) {
+  for (final src in normSources) {
+    if (!FileSystemEntity.isFileSync(src)) {
+      errSink.writeln('analyzer_summary: missing source $src');
+      return false;
     }
   }
+  return true;
+}
+
+/// Drops staged files the summary request does not list.
+void _pruneSummarizeTree({
+  required String sourceRoot,
+  required String libRoot,
+  required Set<String> depLibRoots,
+  required Set<String> normSourceSet,
+  required Set<String> normDepSources,
+}) {
+  if (!p.basename(sourceRoot).endsWith('.summary_root')) return;
+  _pruneUnlistedUnder(libRoot, normSourceSet);
+  for (final depLibRoot in depLibRoots) {
+    _pruneUnlistedUnder(depLibRoot, normDepSources);
+  }
+}
+
+/// Refuses staged sources that read outside their declared inputs.
+bool _checkSummarizeDirectives(String sourceRoot, StringSink errSink) {
   // No staged source may read the host: a `file:` URI (in any spelling), any
   // other non-`dart:`/`package:` directive URI, a `package:` URI climbing
   // above its package, or a relative URI climbing out of the staged tree
@@ -412,44 +473,54 @@ Future<int> _summarize(
     for (final violation in stagedViolations) {
       errSink.writeln(violation);
     }
-    return _failed;
+    return false;
   }
-  final boundedProvider = BoundedResourceProvider(
-    resourceProvider,
-    primaryRoot: sourceRoot,
-    boundaryRoots: {sourceRoot, packagesDir, sdkPath},
-    allowedFiles: {
-      packagesPath,
-      sdkSummaryPath,
-      ...summaryPaths,
-      ...normSources,
-      ...normDepSources,
-    },
-    restrictedRoot: libRoot,
-    extraRestrictedRoots: depLibRoots,
-    allowedUnderRestrictedRoot: {...normSourceSet, ...normDepSources},
-    blockAnalysisOptions: true,
-  );
-  final collection = AnalysisContextCollectionImpl(
-    resourceProvider: boundedProvider,
-    includedPaths: [normSources.first],
-    sdkPath: sdkPath,
-    sdkSummaryPath: sdkSummaryPath,
-    packageConfigFile: packagesPath,
-    librarySummaryPaths: summaryPaths,
-  );
-  _installFileAwareSummaryResolver(collection, boundedProvider.pathContext);
-  final Uint8List bytes;
+  return true;
+}
+
+/// The resource provider bounding the summary request to its staged inputs.
+BoundedResourceProvider _summarizeResourceProvider({
+  required fs.ResourceProvider resourceProvider,
+  required String sourceRoot,
+  required String packagesDir,
+  required String packagesPath,
+  required String sdkPath,
+  required String sdkSummaryPath,
+  required List<String> summaryPaths,
+  required List<String> normSources,
+  required Set<String> normDepSources,
+  required String libRoot,
+  required Set<String> depLibRoots,
+}) => BoundedResourceProvider(
+  resourceProvider,
+  primaryRoot: sourceRoot,
+  boundaryRoots: {sourceRoot, packagesDir, sdkPath},
+  allowedFiles: {
+    packagesPath,
+    sdkSummaryPath,
+    ...summaryPaths,
+    ...normSources,
+    ...normDepSources,
+  },
+  restrictedRoot: libRoot,
+  extraRestrictedRoots: depLibRoots,
+  allowedUnderRestrictedRoot: {...normSources, ...normDepSources},
+  blockAnalysisOptions: true,
+);
+
+/// Builds the package bundle, releasing the collection afterwards.
+Future<Uint8List> _buildPackageBundle(
+  AnalysisContextCollectionImpl collection, {
+  required List<String> libraryUris,
+}) async {
   try {
     final driver = collection.contexts.single.driver;
-    bytes = await driver.buildPackageBundle(
+    return await driver.buildPackageBundle(
       uriList: [for (final u in libraryUris) Uri.parse(u)],
     );
   } finally {
     await disposeContextCollection(collection);
   }
-  File(args.single('out')).writeAsBytesSync(bytes);
-  return 0;
 }
 
 /// Replaces each context's [InSummaryUriResolver] with
@@ -566,32 +637,13 @@ Future<int> _analyze(
   required fs.ResourceProvider resourceProvider,
   Set<String>? requestInputPaths,
 }) async {
-  final project = p.normalize(p.absolute(args.single('project')));
-  final stamp = args.single('stamp');
-  final fatalInfos = args.flag('fatal-infos');
-  final explicitSources = <String>[
-    for (final s in args.all('source')) resolveProjectSource(project, s),
-  ];
-  final allowedSrcPaths = _pruneOrphanedStagedFiles(project);
-  // No staged source may read the host (see `_summarize`): the default
-  // summary-mode analysis never ran the directive guard, so a climbing
-  // relative import reached undeclared host files wherever the analyzer
-  // resolved against the real filesystem. Refuse before analyzing, through
-  // the one shared staged-source check. Missing staged files stay allowed:
-  // dependency sources arrive through summaries, so a relative target with
-  // no staged file resolves against a declared summary (or fails with
-  // `uri_does_not_exist` — both closed).
-  final stagedViolations = findStagedDirectiveViolations(
-    projectStagedRoots(project),
-    tool: 'analyzer_summary',
-    requireTargetsExist: false,
-  );
-  if (stagedViolations.isNotEmpty) {
-    for (final violation in stagedViolations) {
-      errSink.writeln(violation);
-    }
-    return _failed;
-  }
+  final prepared = _prepareAnalyzeProject(args, errSink: errSink);
+  if (prepared == null) return _failed;
+  final project = prepared.project;
+  final stamp = prepared.stamp;
+  final fatalInfos = prepared.fatalInfos;
+  final explicitSources = prepared.explicitSources;
+  final allowedSrcPaths = prepared.allowedSrcPaths;
   final sdkPath = p.normalize(p.absolute(args.single('sdk')));
   final sdkSummaryPath = p.normalize(p.absolute(args.single('sdk-summary')));
   final packagesPath = p.normalize(p.join(project, _packageConfig));
@@ -624,108 +676,211 @@ Future<int> _analyze(
   _installFileAwareSummaryResolver(collection, boundedProvider.pathContext);
   try {
     final context = collection.contexts.single;
-    final driver = context.driver;
-
     final analyzed = _analyzedPaths(
       project,
       context,
       allowedSrcPaths: allowedSrcPaths,
     );
-    final analyzedSet = analyzed.toSet();
-    final expectedDartFiles = <String>{
-      for (final s in explicitSources)
-        if (s.endsWith('.dart')) s,
-      if (allowedSrcPaths != null)
-        for (final s in allowedSrcPaths)
-          if (s.endsWith('.dart')) s,
-    };
-    for (final expected in explicitSources) {
-      if (allowedSrcPaths != null &&
-          p.isWithin(srcRoot, expected) &&
-          !allowedSrcPaths.contains(expected)) {
-        errSink.writeln(
-          'analyzer_summary: source not listed in src_manifest.txt: $expected',
-        );
-        return _failed;
-      }
-    }
-    for (final expected in expectedDartFiles) {
-      if (!FileSystemEntity.isFileSync(expected)) {
-        errSink.writeln(
-          'analyzer_summary: expected source does not exist: $expected',
-        );
-        return _failed;
-      }
-      if (!p.isWithin(project, expected) ||
-          (context.contextRoot.isAnalyzed(expected) &&
-              !analyzedSet.contains(expected))) {
-        errSink.writeln(
-          'analyzer_summary: expected source was not analyzed: $expected',
-        );
-        return _failed;
-      }
-    }
-    if (!analyzed.any((path) => path.endsWith('.dart'))) {
-      errSink.writeln(
-        'analyzer_summary: no Dart files were analyzed in $project',
-      );
+    if (!_checkExpectedSources(
+      project: project,
+      context: context,
+      analyzed: analyzed,
+      explicitSources: explicitSources,
+      allowedSrcPaths: allowedSrcPaths,
+      srcRoot: srcRoot,
+      errSink: errSink,
+    )) {
       return _failed;
     }
-
-    final findings = <_Finding>[];
-    for (final path in analyzed) {
-      final options = context.getAnalysisOptionsForFile(
-        boundedProvider.getFile(path),
-      );
-      if (p.basename(path) == _optionsBasename) {
-        findings.addAll(
-          _optionsFindings(project, driver, path, options, boundedProvider),
-        );
-        continue;
-      }
-      final result = await driver.getErrors(path);
-      if (result is! ErrorsResult) {
-        errSink.writeln(
-          'analyzer_summary: cannot analyze $path (${result.runtimeType})',
-        );
-        return _failed;
-      }
-      for (final d in result.diagnostics) {
-        findings.add(_finding(project, path, result.lineInfo, options, d));
-      }
-    }
-
-    // Printed as `dart analyze` prints them: most severe first, then by file
-    // and position.
-    findings.sort();
-    final shown = [
-      for (final f in findings)
-        if (f.level != null) f,
-    ];
-    if (shown.isNotEmpty) {
-      outSink.writeln();
-      for (final f in shown) {
-        outSink.writeln(f.text);
-      }
-      outSink.writeln();
-      outSink.writeln(
-        shown.length == 1 ? '1 issue found.' : '${shown.length} issues found.',
-      );
-    }
-
-    final failing =
-        shown.any(
-          (f) => f.level == Severity.error || f.level == Severity.warning,
-        ) ||
-        (fatalInfos && shown.any((f) => f.level == Severity.info));
-    if (failing) {
-      return _failed;
-    }
-    File(stamp).writeAsStringSync('analyzed\n');
-    return 0;
+    final findings = await _collectAnalyzeFindings(
+      project: project,
+      context: context,
+      analyzed: analyzed,
+      boundedProvider: boundedProvider,
+      errSink: errSink,
+    );
+    if (findings == null) return _failed;
+    return _reportAnalyzeFindings(
+      project: project,
+      stamp: stamp,
+      findings: findings,
+      fatalInfos: fatalInfos,
+      outSink: outSink,
+    );
   } finally {
     await disposeContextCollection(collection);
   }
+}
+
+/// The staged project an analyze request checks, after pruning and guarding.
+///
+/// Returns null after reporting staged sources that read off-host.
+({
+  String project,
+  String stamp,
+  bool fatalInfos,
+  List<String> explicitSources,
+  Set<String>? allowedSrcPaths,
+})?
+_prepareAnalyzeProject(_Args args, {required StringSink errSink}) {
+  final project = p.normalize(p.absolute(args.single('project')));
+  final explicitSources = <String>[
+    for (final s in args.all('source')) resolveProjectSource(project, s),
+  ];
+  final allowedSrcPaths = _pruneOrphanedStagedFiles(project);
+  // No staged source may read the host (see `_summarize`): the default
+  // summary-mode analysis never ran the directive guard, so a climbing
+  // relative import reached undeclared host files wherever the analyzer
+  // resolved against the real filesystem. Refuse before analyzing, through
+  // the one shared staged-source check. Missing staged files stay allowed:
+  // dependency sources arrive through summaries, so a relative target with
+  // no staged file resolves against a declared summary (or fails with
+  // `uri_does_not_exist` — both closed).
+  final stagedViolations = findStagedDirectiveViolations(
+    projectStagedRoots(project),
+    tool: 'analyzer_summary',
+    requireTargetsExist: false,
+  );
+  if (stagedViolations.isNotEmpty) {
+    for (final violation in stagedViolations) {
+      errSink.writeln(violation);
+    }
+    return null;
+  }
+  return (
+    project: project,
+    stamp: args.single('stamp'),
+    fatalInfos: args.flag('fatal-infos'),
+    explicitSources: explicitSources,
+    allowedSrcPaths: allowedSrcPaths,
+  );
+}
+
+/// Refuses expected sources that are unlisted, missing, or unanalyzed.
+bool _checkExpectedSources({
+  required String project,
+  required DriverBasedAnalysisContext context,
+  required List<String> analyzed,
+  required List<String> explicitSources,
+  required Set<String>? allowedSrcPaths,
+  required String srcRoot,
+  required StringSink errSink,
+}) {
+  final analyzedSet = analyzed.toSet();
+  final expectedDartFiles = <String>{
+    for (final s in explicitSources)
+      if (s.endsWith('.dart')) s,
+    if (allowedSrcPaths != null)
+      for (final s in allowedSrcPaths)
+        if (s.endsWith('.dart')) s,
+  };
+  for (final expected in explicitSources) {
+    if (allowedSrcPaths != null &&
+        p.isWithin(srcRoot, expected) &&
+        !allowedSrcPaths.contains(expected)) {
+      errSink.writeln(
+        'analyzer_summary: source not listed in src_manifest.txt: $expected',
+      );
+      return false;
+    }
+  }
+  for (final expected in expectedDartFiles) {
+    if (!FileSystemEntity.isFileSync(expected)) {
+      errSink.writeln(
+        'analyzer_summary: expected source does not exist: $expected',
+      );
+      return false;
+    }
+    if (!p.isWithin(project, expected) ||
+        (context.contextRoot.isAnalyzed(expected) &&
+            !analyzedSet.contains(expected))) {
+      errSink.writeln(
+        'analyzer_summary: expected source was not analyzed: $expected',
+      );
+      return false;
+    }
+  }
+  if (!analyzed.any((path) => path.endsWith('.dart'))) {
+    errSink.writeln(
+      'analyzer_summary: no Dart files were analyzed in $project',
+    );
+    return false;
+  }
+  return true;
+}
+
+/// The diagnostics of every analyzed file, most severe first.
+///
+/// Returns null after reporting a file the driver cannot analyze.
+Future<List<_Finding>?> _collectAnalyzeFindings({
+  required String project,
+  required DriverBasedAnalysisContext context,
+  required List<String> analyzed,
+  required BoundedResourceProvider boundedProvider,
+  required StringSink errSink,
+}) async {
+  final driver = context.driver;
+  final findings = <_Finding>[];
+  for (final path in analyzed) {
+    final options = context.getAnalysisOptionsForFile(
+      boundedProvider.getFile(path),
+    );
+    if (p.basename(path) == _optionsBasename) {
+      findings.addAll(
+        _optionsFindings(project, driver, path, options, boundedProvider),
+      );
+      continue;
+    }
+    final result = await driver.getErrors(path);
+    if (result is! ErrorsResult) {
+      errSink.writeln(
+        'analyzer_summary: cannot analyze $path (${result.runtimeType})',
+      );
+      return null;
+    }
+    for (final d in result.diagnostics) {
+      findings.add(_finding(project, path, result.lineInfo, options, d));
+    }
+  }
+  // Printed as `dart analyze` prints them: most severe first, then by file
+  // and position.
+  findings.sort();
+  return findings;
+}
+
+/// Prints the findings and writes the stamp, returning the exit code.
+int _reportAnalyzeFindings({
+  required String project,
+  required String stamp,
+  required List<_Finding> findings,
+  required bool fatalInfos,
+  required StringSink outSink,
+}) {
+  final shown = [
+    for (final f in findings)
+      if (f.level != null) f,
+  ];
+  if (shown.isNotEmpty) {
+    outSink.writeln();
+    for (final f in shown) {
+      outSink.writeln(f.text);
+    }
+    outSink.writeln();
+    outSink.writeln(
+      shown.length == 1 ? '1 issue found.' : '${shown.length} issues found.',
+    );
+  }
+
+  final failing =
+      shown.any(
+        (f) => f.level == Severity.error || f.level == Severity.warning,
+      ) ||
+      (fatalInfos && shown.any((f) => f.level == Severity.info));
+  if (failing) {
+    return _failed;
+  }
+  File(stamp).writeAsStringSync('analyzed\n');
+  return 0;
 }
 
 void _pruneUnlistedUnder(String dirPath, Set<String> allowedPaths) {
@@ -1155,48 +1310,57 @@ final class BoundedResourceProvider implements fs.ResourceProvider {
   bool isBlockedPath(String rawPath) {
     final ctx = pathContext;
     final normPath = _resolveToPrimaryRoot(rawPath);
-    if (restrictedRoots.isNotEmpty &&
-        allowedUnderRestrictedRoot != null &&
-        restrictedRoots.any((r) => ctx.isWithin(r, normPath)) &&
-        !allowedUnderRestrictedRoot!.contains(normPath)) {
-      return true;
-    }
-    if (allowedFiles.contains(normPath)) {
+    if (_isUnderRestrictedRoot(normPath)) return true;
+    if (allowedFiles.contains(normPath)) return false;
+    final base = ctx.basename(normPath);
+    if (blockAnalysisOptions && _isBlockedOptionsBasename(base)) return true;
+    if (ctx.equals(normPath, primaryRoot) ||
+        ctx.isWithin(primaryRoot, normPath)) {
       return false;
     }
-    final base = ctx.basename(normPath);
-    if (blockAnalysisOptions &&
-        (base == _optionsBasename ||
-            base == '.analysis_options' ||
-            base == 'pubspec.yaml')) {
-      return true;
+    return _isBlockedOutsidePrimary(normPath, base);
+  }
+
+  /// Whether [normPath] sits under a restricted root without an allowance.
+  bool _isUnderRestrictedRoot(String normPath) {
+    final ctx = pathContext;
+    return restrictedRoots.isNotEmpty &&
+        allowedUnderRestrictedRoot != null &&
+        restrictedRoots.any((r) => ctx.isWithin(r, normPath)) &&
+        !allowedUnderRestrictedRoot!.contains(normPath);
+  }
+
+  /// Whether [base] names an options file the analysis must not read.
+  bool _isBlockedOptionsBasename(String base) =>
+      base == _optionsBasename ||
+      base == '.analysis_options' ||
+      base == 'pubspec.yaml';
+
+  /// Whether a path outside the primary root probes the workspace.
+  bool _isBlockedOutsidePrimary(String normPath, String base) {
+    final ctx = pathContext;
+    if (_alwaysBlockedWorkspaceBasenames.contains(base)) return true;
+    final parentDir = ctx.dirname(normPath);
+    if (ctx.isWithin(parentDir, primaryRoot) ||
+        boundaryRoots.contains(parentDir)) {
+      return _isBlockedAncestorProbe(base, parentDir);
     }
-    if (!ctx.equals(normPath, primaryRoot) &&
-        !ctx.isWithin(primaryRoot, normPath)) {
-      if (_alwaysBlockedWorkspaceBasenames.contains(base)) {
-        return true;
-      }
-      final parentDir = ctx.dirname(normPath);
-      if (ctx.isWithin(parentDir, primaryRoot) ||
-          boundaryRoots.contains(parentDir)) {
-        if (_ancestorProbeBasenames.contains(base)) {
-          return true;
-        }
-        // Also block `<ancestor>/.dart_tool/package_config.json`.
-        if (ctx.basename(parentDir) == '.dart_tool' &&
-            (ctx.isWithin(ctx.dirname(parentDir), primaryRoot) ||
-                boundaryRoots.contains(ctx.dirname(parentDir)))) {
-          return true;
-        }
-      } else if (ctx.basename(parentDir) == '.dart_tool') {
-        final grandParent = ctx.dirname(parentDir);
-        if (ctx.isWithin(grandParent, primaryRoot) ||
-            boundaryRoots.contains(grandParent)) {
-          return true;
-        }
-      }
+    if (ctx.basename(parentDir) == '.dart_tool') {
+      final grandParent = ctx.dirname(parentDir);
+      return ctx.isWithin(grandParent, primaryRoot) ||
+          boundaryRoots.contains(grandParent);
     }
     return false;
+  }
+
+  /// Whether [base] probes an ancestor directory for configuration.
+  bool _isBlockedAncestorProbe(String base, String parentDir) {
+    final ctx = pathContext;
+    if (_ancestorProbeBasenames.contains(base)) return true;
+    // Also block `<ancestor>/.dart_tool/package_config.json`.
+    if (ctx.basename(parentDir) != '.dart_tool') return false;
+    return ctx.isWithin(ctx.dirname(parentDir), primaryRoot) ||
+        boundaryRoots.contains(ctx.dirname(parentDir));
   }
 
   @override
