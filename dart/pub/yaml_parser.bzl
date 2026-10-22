@@ -12,6 +12,25 @@ def _load(content):
     data = parse_document(content)
     return data if type(data) == "dict" else None
 
+def _lock_description(value):
+    """Normalises a lock `description` value to a dict of strings."""
+    if type(value) == "dict":
+        return {sk: "" if sv == None else str(sv) for sk, sv in value.items()}
+    return {"name": "" if value == None else str(value)}
+
+def _lock_entry(info):
+    """Projects one lock package entry to string fields and a dict description."""
+    entry = {}
+    for k, v in info.items():
+        if k == "description":
+            # An inline scalar `description: flutter` is normalised to
+            # {"name": "flutter"} so callers can always treat description
+            # as a dict.
+            entry["description"] = _lock_description(v)
+        else:
+            entry[k] = "" if v == None else str(v)
+    return entry
+
 def parse_pubspec_lock(content):
     """Parse a pubspec.lock file into a dict of package info.
 
@@ -37,19 +56,7 @@ def parse_pubspec_lock(content):
     for name, info in packages.items():
         if type(info) != "dict":
             continue
-        entry = {}
-        for k, v in info.items():
-            if k == "description":
-                # An inline scalar `description: flutter` is normalised to
-                # {"name": "flutter"} so callers can always treat description
-                # as a dict.
-                if type(v) == "dict":
-                    entry["description"] = {sk: "" if sv == None else str(sv) for sk, sv in v.items()}
-                else:
-                    entry["description"] = {"name": "" if v == None else str(v)}
-            else:
-                entry[k] = "" if v == None else str(v)
-        result[name] = entry
+        result[name] = _lock_entry(info)
     return result
 
 _HEX_LOWER = {
