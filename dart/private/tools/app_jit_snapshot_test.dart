@@ -605,88 +605,213 @@ void main(List<String> args) {
     );
   });
 
-  test('app-jit training passes explicit --packages in scratch and ignores ancestor .dart_tool', () {
-    final dartBin = Platform.resolvedExecutable;
-    // Poison the ancestor directory with a malformed .dart_tool/package_config.json
-    // so any upward directory walk from the training scratch dir would fail.
-    File('${tmp.path}/.dart_tool/package_config.json')
-      ..parent.createSync(recursive: true)
-      ..writeAsStringSync('{malformed package_config');
-
-    final workDir = Directory('${tmp.path}/nested/work')
-      ..createSync(recursive: true);
-    final trainScript = File('${workDir.path}/train.dart')
-      ..writeAsStringSync('void main(List<String> args) {}\n');
-    final outJit = File('${workDir.path}/out.jit');
-
-    // A planted fixed-path training VM from the old layout: the training
-    // must neither read nor execute it. The plant lives at a per-test path:
-    // this suite's tests (and the planner suite's) run concurrently, and a
-    // shared fixed plant would race between processes.
-    final plantedVm = File(
-      '${Directory.systemTemp.path}/rules_dart_vm-planted-appjit-test.$pid',
-    )..writeAsBytesSync([0x7f, 0x45, 0x4c, 0x46, 0x99]);
-    try {
-      snapshot.main([
-        '--dart=$dartBin',
-        '--snapshot=${outJit.path}',
-        '--copy=train.dart=${trainScript.path}',
-        '--',
-        'train.dart',
+  test(
+    'app-jit training takes no --packages and ignores ancestor .dart_tool',
+    () {
+      final dartBin = Platform.resolvedExecutable;
+      final workDir = Directory('${tmp.path}/nested/work')
+        ..createSync(recursive: true);
+      final trainScript = File('${workDir.path}/train.dart')
+        ..writeAsStringSync('void main(List<String> args) {}\n');
+      // The training input is a compiled kernel, as in real builds: kernel
+      // training needs no package map, so no `--packages` value is passed.
+      final trainDill = File('${workDir.path}/train.dill');
+      final compileRes = Process.runSync(dartBin, [
+        'compile',
+        'kernel',
+        trainScript.path,
+        '-o',
+        trainDill.path,
       ]);
-      expect(outJit.existsSync(), isTrue);
-      // The training VM lives inside the training scratch directory, which
-      // is deleted afterwards: nothing undeclared stays beside the declared
-      // output, and the planted file is untouched.
-      expect(
-        Directory('${outJit.path}.vm').existsSync(),
-        isFalse,
-        reason: 'no training-VM directory may stay beside the output',
-      );
-      expect(
-        workDir
-            .listSync()
-            .where(
-              (e) => e.path
-                  .split(Platform.pathSeparator)
-                  .last
-                  .startsWith('rules_dart_snapshot.'),
-            )
-            .toList(),
-        isEmpty,
-        reason: 'no training scratch may stay beside the output',
-      );
-      expect(plantedVm.readAsBytesSync(), [0x7f, 0x45, 0x4c, 0x46, 0x99]);
-    } finally {
-      if (plantedVm.existsSync()) plantedVm.deleteSync();
-    }
-  });
+      expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
+      // Poison the ancestor directory with a malformed
+      // .dart_tool/package_config.json after compiling: with no `--packages`
+      // value the training must not walk up to it (a source compile would
+      // fail on the malformed file, which is why real trainings train
+      // kernels, never sources).
+      File('${tmp.path}/.dart_tool/package_config.json')
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync('{malformed package_config');
+      final outJit = File('${workDir.path}/out.jit');
 
-  test('training path lengths fit the platform limits on both branches', () {
-    // The training binary lives 16 characters below the training directory
-    // (`/vm/bin/dart.exe`), and its install stages a sibling temp file
-    // fewer than 26 characters deeper (`.$pid.$rand.tmp`). Longer derived
-    // paths break process startup on Windows (MAX_PATH 260): padding to 240
-    // put the staged copy near 277 characters and CreateProcess reported it
-    // as missing. Both branches are pinned here so a Windows-only overflow
-    // fails on every host, not just on Windows CI.
-    const derivativeBudget = 16 + 26;
-    expect(snapshot.fixedTrainingPathLengthFor(windows: true), 200);
-    expect(
-      snapshot.fixedTrainingPathLengthFor(windows: true) + derivativeBudget,
-      lessThan(260),
+      // A planted fixed-path training VM from the old layout: the training
+      // must neither read nor execute it. The plant lives at a per-test path:
+      // this suite's tests (and the planner suite's) run concurrently, and a
+      // shared fixed plant would race between processes.
+      final plantedVm = File(
+        '${Directory.systemTemp.path}/rules_dart_vm-planted-appjit-test.$pid',
+      )..writeAsBytesSync([0x7f, 0x45, 0x4c, 0x46, 0x99]);
+      try {
+        snapshot.main([
+          '--dart=$dartBin',
+          '--snapshot=${outJit.path}',
+          '--copy=train.dill=${trainDill.path}',
+          '--',
+          'train.dill',
+        ]);
+        expect(outJit.existsSync(), isTrue);
+        // The training VM lives inside the training scratch directory, which
+        // is deleted afterwards: nothing undeclared stays beside the declared
+        // output, and the planted file is untouched.
+        expect(
+          Directory('${outJit.path}.vm').existsSync(),
+          isFalse,
+          reason: 'no training-VM directory may stay beside the output',
+        );
+        expect(
+          workDir
+              .listSync()
+              .where(
+                (e) => e.path
+                    .split(Platform.pathSeparator)
+                    .last
+                    .startsWith('rules_dart_snapshot.'),
+              )
+              .toList(),
+          isEmpty,
+          reason: 'no training scratch may stay beside the output',
+        );
+        expect(plantedVm.readAsBytesSync(), [0x7f, 0x45, 0x4c, 0x46, 0x99]);
+      } finally {
+        if (plantedVm.existsSync()) plantedVm.deleteSync();
+      }
+    },
+  );
+
+  test(
+    'stageTrainingArgs absolutizes staged paths and passes the rest through',
+    () {
+      final trainDir = Directory('${tmp.path}/train');
+      List<String> stage(List<String> args) => snapshot.stageTrainingArgs(
+        args,
+        trainDir,
+        stagedFiles: {
+          'input.dill',
+          'test/main_test.dart',
+          'runner.dill',
+          'dart/private/tools/runner_training_test.dart',
+        },
+        stagedTrees: const ['precompiled'],
+      );
+
+      // The script names a file under the training dir, even when later
+      // arguments naming the same staged files stay relative.
+      expect(stage(['input.dill']), ['${trainDir.path}/input.dill']);
+      expect(stage(['input.dill', 'input.dill']), [
+        '${trainDir.path}/input.dill',
+        'input.dill',
+      ]);
+      expect(stage(['test/main_test.dart']), [
+        '${trainDir.path}/test/main_test.dart',
+      ]);
+      // A `--flag=value` form keeps its flag and absolutizes a staged value.
+      expect(stage(['--precompiled=precompiled']), [
+        '--precompiled=${trainDir.path}/precompiled',
+      ]);
+      // Flags, test names, URIs and absolute paths pass through untouched.
+      expect(
+        stage([
+          'runner.dill',
+          '--precompiled=precompiled',
+          'dart/private/tools/runner_training_test.dart',
+        ]),
+        [
+          '${trainDir.path}/runner.dill',
+          '--precompiled=${trainDir.path}/precompiled',
+          // The runner joins the test path it is given onto the absolute
+          // `--precompiled` directory itself, so the test path must stay
+          // relative even though its source is staged.
+          'dart/private/tools/runner_training_test.dart',
+        ],
+      );
+      // Flags, test names, URIs and absolute paths pass through untouched.
+      expect(
+        stage([
+          '--deterministic',
+          '--enable-asserts',
+          'a passing test name',
+          'package:mypkg/mypkg.dart',
+          'dart:async',
+          '/abs/path.dart',
+          '--out=/abs/out.jit',
+          '--flag=',
+        ]),
+        [
+          '--deterministic',
+          '--enable-asserts',
+          'a passing test name',
+          'package:mypkg/mypkg.dart',
+          'dart:async',
+          '/abs/path.dart',
+          '--out=/abs/out.jit',
+          '--flag=',
+        ],
+      );
+    },
+  );
+
+  test('stageTrainingArgs absolutizes files under staged trees', () {
+    final trainDir = Directory('${tmp.path}/train');
+    List<String> stage(List<String> args) => snapshot.stageTrainingArgs(
+      args,
+      trainDir,
+      stagedFiles: const {},
+      stagedTrees: const ['precompiled'],
     );
-    expect(snapshot.fixedTrainingPathLengthFor(windows: false), 320);
+
+    expect(stage(['--precompiled=precompiled']), [
+      '--precompiled=${trainDir.path}/precompiled',
+    ]);
+    expect(stage(['precompiled/a.kmod']), [
+      '${trainDir.path}/precompiled/a.kmod',
+    ]);
+    // A same-named file outside the tree is not staged: only the tree root
+    // and what is under it are rewritten.
+    expect(stage(['other/precompiled']), ['other/precompiled']);
   });
 
-  test('app-jit training writes identical bytes from working directories whose paths differ in length', () {
+  test(
+    'absoluteHomeEnv resolves scratch-relative home variables absolutely',
+    () {
+      final trainDir = Directory('${tmp.path}/train');
+      final staged = snapshot.absoluteHomeEnv({
+        'HOME': '.',
+        'TMPDIR': 'scratch-tmp',
+        'DART_TEST_CONFIG': 'none/DartTest.yaml',
+        'PUB_CACHE': '/abs/cache',
+      }, trainDir);
+
+      expect(staged['HOME'], '${trainDir.path}/.');
+      expect(staged['TMPDIR'], '${trainDir.path}/scratch-tmp');
+      // Non-home variables keep their value, resolving against the training
+      // directory at runtime.
+      expect(staged['DART_TEST_CONFIG'], 'none/DartTest.yaml');
+      expect(staged['PUB_CACHE'], '/abs/cache');
+    },
+  );
+
+  test('app-jit training matches across working-directory layouts', () {
     final dartBin = Platform.resolvedExecutable;
-    final trainScript = File('${tmp.path}/len_train.dart')
-      ..writeAsStringSync('void main(List<String> args) {}\n');
+    // A trivial program: it trains identical bytes whatever the layout, on
+    // every design tried (even ones that leak the build path into bigger
+    // programs' bytes), so this pins the tool's own determinism and hygiene
+    // — the same inputs must write the same bytes from every working
+    // directory — rather than heap-size-dependent serializer order. A big
+    // heap (ten thousand map entries, say) can flip a few serializer-order
+    // bytes with the working directory's content hash, rarely and without
+    // changing what the snapshot runs; no test could pin that without
+    // failing on some machine's paths, so the byte gate uses this program
+    // and the unit tests above pin the rewriting instead.
+    final trainScript = File('${tmp.path}/layout_train.dart')
+      ..writeAsStringSync(
+        'void main(List<String> args) {\n'
+        '  print(10000);\n'
+        '}\n',
+      );
     // The training input is a compiled kernel, as in real builds (the
     // `jit-snapshot` action trains `input.dill`): compiling once keeps the
     // input bytes fixed, so only the working directories vary.
-    final trainDill = File('${tmp.path}/len_train.dill');
+    final trainDill = File('${tmp.path}/layout_train.dill');
     final compileRes = Process.runSync(dartBin, [
       'compile',
       'kernel',
@@ -696,22 +821,41 @@ void main(List<String> args) {
     ]);
     expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
 
-    // Two sandbox stand-ins whose absolute paths differ in length, crossing
-    // a digit-count change the way sandbox 9 and 10 do.
-    final shortDir = Directory('${tmp.path}/sandbox/9/execroot/_main')
-      ..createSync(recursive: true);
-    final longDir = Directory('${tmp.path}/sandbox/10/execroot/_main')
-      ..createSync(recursive: true);
-    expect(
-      longDir.path.length,
-      greaterThan(shortDir.path.length),
-      reason: 'the test needs two path lengths',
-    );
+    // Layouts: nine splits with the same total path length but different
+    // content (the sandboxed-vs-local shape that trained different bytes),
+    // sixteen lengths covering every length mod 16 (a past fixed-length
+    // design trained different bytes by length mod 16), one long output
+    // directory near the old 290-character budget (which now simply works),
+    // and a rerun of the first layout. Every training of the same kernel
+    // must write one snapshot.
+    String repeat(String char, int count) => List.filled(count, char).join();
+    final layoutNames = <String>[
+      for (final i in [1, 2, 3, 8, 13, 21, 29, 37, 39])
+        'mid/x/m/${repeat('a', i)}/${repeat('b', 40 - i)}/bin/pkg',
+      // Sixteen consecutive lengths: whatever `${tmp.path}/layouts` reads,
+      // the output directories cover every residue mod 16.
+      for (var k = 1; k <= 16; k++) 'mod/${repeat('e', k)}',
+      // Near the old budget on POSIX; under the OS path limit on Windows
+      // (only the tool's own tests train there; the rules build no snapshot
+      // on Windows).
+      if (Platform.isWindows)
+        'long/${repeat('x', 100)}/pkg'
+      else
+        'long/${repeat('x', 220)}/pkg',
+      'mid/x/m/${repeat('a', 1)}/${repeat('b', 39)}/bin/pkg/rerun',
+    ];
+    expect(layoutNames.length, greaterThanOrEqualTo(12));
+    // The sixteen `mod/` output directories really do cover every residue:
+    // their lengths are consecutive whatever `${tmp.path}` reads.
+    expect({
+      for (final layout in layoutNames)
+        '${tmp.path}/layouts/$layout'.length % 16,
+    }, equals({for (var r = 0; r < 16; r++) r}));
 
-    List<int> trainIn(Directory root) {
-      final outJit = File(
-        '${root.path}/bazel-out/k8-fastbuild/bin/pkg/app.jit',
-      );
+    List<int> trainIn(String layout) {
+      final root = Directory('${tmp.path}/layouts/$layout')
+        ..createSync(recursive: true);
+      final outJit = File('${root.path}/app.jit');
       snapshot.main([
         '--dart=$dartBin',
         '--snapshot=${outJit.path}',
@@ -721,24 +865,66 @@ void main(List<String> args) {
         '--',
         'input.dill',
       ]);
-      expect(outJit.existsSync(), isTrue, reason: 'snapshot in $root');
+      expect(outJit.existsSync(), isTrue, reason: 'snapshot in $layout');
       // Nothing undeclared stays behind: neither the training VM copy nor
       // the training scratch directory. listSync() reports platform
       // separators (`\` on Windows) while the expected path above is built
       // with `/`, so both sides are normalized before comparing; a real
       // stray file still differs and fails on every OS.
       String slashes(String path) => path.replaceAll(r'\', '/');
-      final leftovers = Directory('${root.path}/bazel-out/k8-fastbuild/bin/pkg')
+      final leftovers = root
           .listSync()
           .where((e) => slashes(e.path) != slashes(outJit.path))
           .toList();
-      expect(leftovers, isEmpty, reason: 'no leftovers in $root: $leftovers');
+      expect(leftovers, isEmpty, reason: 'no leftovers in $layout: $leftovers');
       return outJit.readAsBytesSync();
     }
 
-    final shortBytes = trainIn(shortDir);
-    final longBytes = trainIn(longDir);
-    expect(longBytes, equals(shortBytes));
+    final first = trainIn(layoutNames.first);
+    for (final layout in layoutNames.skip(1)) {
+      expect(trainIn(layout), equals(first), reason: 'layout $layout');
+    }
+  });
+
+  test('app-jit training failure leaves no scratch beside the output', () {
+    // A training run that fails (here: the program throws) must fail the
+    // tool without stranding its scratch directory. The tool exits on
+    // failure, so it runs in a subprocess: an in-process exit would kill
+    // this test runner.
+    final tool = stageTool();
+    final failScript = File('${tmp.path}/fail_train.dart')
+      ..writeAsStringSync(
+        'void main(List<String> args) {\n  throw "nope";\n}\n',
+      );
+    final failDill = File('${tmp.path}/fail_train.dill');
+    final compileRes = Process.runSync(Platform.resolvedExecutable, [
+      'compile',
+      'kernel',
+      failScript.path,
+      '-o',
+      failDill.path,
+    ]);
+    expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
+    final outJit = File('${tmp.path}/fail/app.jit');
+    final res = Process.runSync(Platform.resolvedExecutable, [
+      tool,
+      '--dart=${Platform.resolvedExecutable}',
+      '--snapshot=${outJit.path}',
+      '--copy=input.dill=${failDill.path}',
+      '--',
+      'input.dill',
+    ]);
+    expect(res.exitCode, isNot(0));
+    final leftovers = Directory('${tmp.path}/fail')
+        .listSync()
+        .where(
+          (e) => e.path
+              .split(Platform.pathSeparator)
+              .last
+              .startsWith('rules_dart_snapshot.'),
+        )
+        .toList();
+    expect(leftovers, isEmpty, reason: 'no scratch stays behind: $leftovers');
   });
 
   test('buildChildEnvironment on Windows preserves SystemRoot and valid names while isolating home and cache directories', () {

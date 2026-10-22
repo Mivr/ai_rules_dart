@@ -170,11 +170,11 @@ def has_comma_define_flag(flags):
     return False
 
 def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asserts, comma_patch = None):
-    """Trains the app-JIT snapshot of a kernel in a fixed-length scratch directory.
+    """Trains the app-JIT snapshot of a kernel in a private scratch directory.
 
     `dart compile jit-snapshot` trains in the action's own directory, so the
     absolute path of the sandbox ends up in the snapshot. `jit_tool` trains in a
-    scratch directory with a fixed-length path, with the flags that keep the
+    private scratch directory beside the output, with the flags that keep the
     snapshot the same from build to build. See `app_jit_snapshot.dart`. A
     program whose own training run is not deterministic (it reads the clock,
     random numbers, or files outside the build) still differs between builds.
@@ -491,9 +491,9 @@ def dart_compile_action(
             definitions the compiler records (`--recorded-uses`). Only the
             `exe` and `aot-snapshot` modes record.
         jit_tool: The `app_jit_snapshot.dart` File. The `jit-snapshot` mode trains
-            with it when given, so the snapshot is reproducible. Without it, and on
-            a Windows host (which has no fixed-length scratch directory), the mode
-            uses `dart compile jit-snapshot`.
+            with it when given, so the snapshot is reproducible. Without it, and
+            on a Windows host, the mode uses `dart compile jit-snapshot`, so the
+            snapshot keeps the sandbox path.
         comma_patch: The `comma_patch.dart` File the tool imports, staged beside
             it in every action that runs it from source. Required whenever
             `jit_tool` is passed.
@@ -591,8 +591,9 @@ def dart_compile_action(
         compile_main_path = None
         compile_srcs = []
 
-    # The app-JIT snapshot is trained by the fixed-scratch tool when it has one,
-    # and on a POSIX host, which has the fixed-length `/tmp` the tool needs.
+    # The app-JIT snapshot is trained by the scratch-directory tool when it has
+    # one, and on a POSIX host (on Windows the mode uses `dart compile
+    # jit-snapshot`, so the snapshot keeps the sandbox path).
     if compile_mode == "jit-snapshot" and jit_tool != None and compile_main_path == None and not dart_bin.basename.endswith(".exe"):
         if backend_flags:
             fail("dart_compile_flags %s do not apply to jit-snapshot" % backend_flags)

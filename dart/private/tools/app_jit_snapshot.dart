@@ -14,33 +14,64 @@
 //       -- <dart arguments>
 //
 // The `<dart arguments>` are what `dart` runs in the training: the script
-// first, then its own arguments. Paths in them are relative to the scratch
-// directory, where each `--copy` and `--copy-tree` places its files.
+// first, then its own arguments. Each `--copy` and `--copy-tree` places its
+// files under the scratch directory, and the tool rewrites the script and the
+// staged-tree paths among the dart arguments to absolute ones before spawning
+// the training run (see [stageTrainingArgs]); a program argument that merely
+// names a staged file stays relative for the program to resolve itself.
 //
-// The snapshot should not depend on how it was built. Four things aim at that:
+// The snapshot should not depend on how it was built. Three things aim at
+// that:
 //  * `--deterministic` makes the VM's own choices repeat, so one training run
 //    and the next write the same bytes. `--no-background-compilation` keeps
 //    optimizing compiles on the training thread.
-//  * The absolute paths of the training directory and the training binary end
-//    up in the snapshot, so both train at paths whose absolute length is
-//    fixed: a private per-run scratch directory beside the declared output
-//    holds a padding component that brings the training directory's absolute
-//    path to exactly [_fixedTrainingPathLength] characters, and the training
-//    `dart` (and `dartvm`) copies live at a fixed relative place inside it.
-//    The scratch directory is private to the run, so concurrent actions that
-//    share a `/tmp` cannot collide, and it is deleted afterwards, so the
-//    action leaves no undeclared output. On Windows there is no such root,
-//    and the rules build no snapshot there.
-//  * The environment names nothing but paths relative to the scratch directory.
-//  * The training VM runs from a copy of the SDK's `dart` (and `dartvm`)
+//  * The training is passed no `--packages` option, and the script and every
+//    staged-tree path it resolves is absolute. At startup the VM resolves
+//    the script and any `--packages` value against the working directory
+//    into `Uri`s, and the resolved `Uri`s intern strings whose content
+//    hashes perturb the order the serializer later walks its clusters: a
+//    relative script under a varying working directory, or any `--packages`
+//    value naming the build, trains different bytes from the same inputs.
+//    Absolute paths keep those resolved strings out of the build's control.
+//    What remains is luck, not dependence: the string table the snapshot
+//    stores is layout-stable (the `jit-snapshot` action's kernel already
+//    carries stable library URIs), but transiently interned
+//    layout-derived strings still perturb cluster-walk order by content
+//    hash. Straight-line programs are byte-identical across every layout
+//    tried (same-total splits, a length sweep, platform edges, per-layout
+//    SDK copies); programs with larger heaps or hot loops still flip
+//    occasionally (length changes commonly, content changes rarely). The
+//    one relative path left, the runner's test path, is constant across
+//    builds by construction (it is joined onto the absolute `--precompiled`
+//    directory by the runner itself).
+//  * The environment names the private scratch directory, absolutely. The
+//    training VM runs from a copy of the SDK's `dart` (and `dartvm`)
 //    inside that scratch directory, so every build of one target trains with
 //    the binary at one path, whatever SDK install it came from. The copy is
 //    private to the action, so no shared fixed path is read or written: a
 //    planted `/tmp/rules_dart_vm-*` copy has no effect.
 //
-// A program whose own training run is not deterministic (it reads the clock,
-// random numbers, or files outside the build) yields a snapshot that differs
-// between builds, whatever this tool does.
+// The training runs with the private training directory as its working
+// directory: the runner only runs a test path naming a file under the working
+// directory, so the working directory must hold the staged test. A
+// `dart_binary` training on a straight-line program (no program arguments,
+// everything absolute) is byte-identical across the layouts tried; programs
+// with larger heaps or hot loops still flip occasionally (see above), through
+// no path the tool controls. The runner training varies run to run:
+// `package:test` eagerly derives heap strings from the working directory, the
+// environment, and the snapshot path (its incremental-kernel directory from
+// `p.current`, its temp directory from `TMPDIR`, its config path from `HOME`),
+// and the whole heap serializes, so the runner snapshot varies with the
+// build's path. Its action is marked `no-remote-cache` (see
+// `dart_test_runner.bzl`); the snapshots it writes still run every test
+// identically, so entries are interchangeable, just not shareable.
+//
+// The training input must be a kernel file whose library URIs are already
+// resolved (as the `jit-snapshot` action's compiled dill is): with no
+// `--packages` value a runtime `package:` import cannot resolve. A program
+// whose own training run is not deterministic (it reads the clock, random
+// numbers, `Directory.current`, or files outside the build) yields a
+// snapshot that differs between builds, whatever this tool does.
 import 'dart:convert';
 import 'dart:ffi' as ffi;
 import 'dart:io';
@@ -135,63 +166,6 @@ Never _usage(String problem) {
     '[--copy=D=S]... [--copy-tree=D=DIR]... -- <dart arguments>',
   );
   exit(64);
-}
-
-/// The absolute length, in characters, of the directory the training runs in.
-///
-/// The snapshot embeds the absolute paths of the training directory and the
-/// training binary, so both must read the same on every build of one target:
-/// the training directory's absolute path is padded out to exactly this many
-/// characters (see [_fixedLengthDir]), which fixes the training binary's
-/// length too (it lives at a fixed relative place inside). Snapshots are
-/// platform-specific (each embeds its own SDK's binary), so the constant is
-/// per OS: POSIX builds need room for long Bazel output bases under the 4096
-/// path limit, while Windows keeps every derived path under its
-/// 260-character limit: the training binary lives 16 characters deeper
-/// (`/vm/bin/dart.exe`), and [_installCopy] stages it through a sibling temp
-/// file fewer than 26 characters deeper still (`.$pid.$rand.tmp`), so
-/// 200 + 16 + 26 stays well under 260 (only the tool's own tests train
-/// there; the rules build no snapshot on Windows). A longer base fails loudly
-/// in [_fixedLengthDir] instead of silently training different bytes.
-///
-/// Public (rather than private like [_fixedLengthDir]) so tests pin both
-/// branches on every host: a Windows-only overflow like this one would
-/// otherwise go unnoticed until Windows CI.
-int fixedTrainingPathLengthFor({required bool windows}) => windows ? 200 : 320;
-
-int get _fixedTrainingPathLength =>
-    fixedTrainingPathLengthFor(windows: Platform.isWindows);
-
-/// Returns the training directory: [base] (a private per-run directory) with
-/// padding appended so its absolute path is exactly [_fixedTrainingPathLength]
-/// characters long, plus a fixed leaf.
-///
-/// Long runs split across several components (each at most 200 characters),
-/// so short bases stay under the 255-character single-component limit.
-/// Exits loudly when [base] is already too long to pad: training there would
-/// write a snapshot with different bytes, silently breaking caching across
-/// sandboxes and machines.
-Directory _fixedLengthDir(Directory base) {
-  // The `/<pad>/t` tail contributes 3 characters besides the padding itself.
-  var rest = _fixedTrainingPathLength - base.path.length - 3;
-  if (rest < 0) {
-    stderr.writeln(
-      'app_jit_snapshot: the action output directory ${base.path} is too '
-      'long to train a reproducible snapshot in: padding its training '
-      'directory to $_fixedTrainingPathLength characters is impossible. '
-      'Move the build outputs to a shorter path.',
-    );
-    exit(1);
-  }
-  final parts = <String>[];
-  while (rest > 200) {
-    parts.add('p' * 200);
-    rest -= 201; // 200 p's plus the '/' joining the next part.
-  }
-  parts.add('p' * rest);
-  final dir = Directory('${base.path}/${parts.join('/')}/t');
-  dir.createSync(recursive: true);
-  return dir;
 }
 
 String? _adjacentDartvm(String dart, String exeExt) {
@@ -413,10 +387,9 @@ class _Pair {
 /// writes to [out]. Returns the training run's exit code.
 ///
 /// [dart] and [dartvm] name the SDK binaries to train with; both are copied
-/// into the scratch directory (see below), so the training binary's absolute
-/// path has the same fixed length on every build. The scratch directory is
-/// removed whatever the outcome. `exit` is not called in here: it would skip
-/// the cleanup.
+/// into the scratch directory (see below), so no shared fixed path is read
+/// or executed. The scratch directory is removed whatever the outcome.
+/// `exit` is not called in here: it would skip the cleanup.
 int _trainInScratch({
   required String dart,
   required String? dartvm,
@@ -429,14 +402,14 @@ int _trainInScratch({
 }) {
   // A private directory per run under the declared output's directory, so no
   // compile reads or writes the shared system temp directory, and concurrent
-  // actions (each with its own output) cannot collide. The training itself
-  // runs one level down, in a directory padded to a fixed absolute length, so
-  // neither the sandbox path nor the digit count of a sandbox number leaks
-  // into the snapshot bytes.
+  // actions (each with its own output) cannot collide. The training runs with
+  // the training directory as its working directory (see below), so the
+  // runner's relative test path resolves into the staged tree; no padding is
+  // needed (an empty pad component once trained a stray `//` into snapshots).
   out.parent.createSync(recursive: true);
   final scratch = out.parent.createTempSync('rules_dart_snapshot.');
   try {
-    final trainDir = _fixedLengthDir(scratch);
+    final trainDir = Directory('${scratch.path}/t')..createSync();
     // The training VM is a copy inside the scratch directory: no shared fixed
     // path is read or written (a planted `/tmp/rules_dart_vm-*` copy has no
     // effect), and the copy is deleted with the scratch directory, leaving no
@@ -453,29 +426,43 @@ int _trainInScratch({
       _installCopy(effectiveDartvm, '${bin.path}/dartvm$vmExt');
     }
     final trainingDart = '${bin.path}/dart$exeExt';
-    // Every input is copied to its relative place, so the run needs only
-    // relative paths.
+    // Every input is staged under the training directory. The script and the
+    // staged trees are named absolutely (see [stageTrainingArgs]): the run
+    // resolves them at startup into `Uri`s whose interned strings would
+    // otherwise name the build's paths (see the header comment). A program
+    // argument that merely equals a staged file stays relative: the runner
+    // joins its test path onto the absolute `--precompiled` directory itself.
     for (final c in copies) {
       _copyFile(c.value, '${trainDir.path}/${c.key}');
     }
     for (final t in trees) {
       _copyTree(t.value, '${trainDir.path}/${t.key}');
     }
-    File('${trainDir.path}/.dart_tool/package_config.json')
-      ..parent.createSync(recursive: true)
-      ..writeAsStringSync('{"configVersion": 2, "packages": []}\n');
-
+    // No `--packages` value is passed, and no package config is staged. The
+    // value would resolve against the working directory and intern
+    // build-specific strings (see the header comment). The training input is
+    // a kernel file whose library URIs are already resolved, so loading
+    // needs no package map; a runtime `package:` import would resolve by
+    // walking up from the training directory, where no package config lives.
+    final stagedEnv = absoluteHomeEnv(env, trainDir);
     final childEnv = buildChildEnvironment(
-      homeDir: Platform.isWindows ? trainDir.path : '.',
+      homeDir: trainDir.path,
       parentEnv: Platform.environment,
-      overrides: env,
+      overrides: stagedEnv,
       isWindows: Platform.isWindows,
       includeParent: false,
     );
 
     // The training run keeps the VM flags that make the snapshot repeat, and
-    // none that name a host path. The scratch directory is the working
-    // directory, so every relative path resolves inside it.
+    // none that name a host path. Its working directory is the private
+    // training directory: the runner only runs a test path naming a file
+    // under the working directory, and joins that path onto the absolute
+    // `--precompiled` directory itself, so the working directory must hold
+    // the staged test source. Every path the run resolves is absolute (see
+    // [stageTrainingArgs]) except the runner's test path, which is constant
+    // across builds by construction; the directory's own value perturbs
+    // cluster-walk order only through the residual hash luck the header
+    // comment describes.
     //
     // The runner keeps its default reporter and timeout, and no file reporter
     // is passed. With the file reporter, and with the explicit reporter and
@@ -496,10 +483,14 @@ int _trainInScratch({
         // intent is cross-CPU identity, so a cache can share the snapshot.
         '--target_unknown_cpu',
         if (enableAsserts) '--enable-asserts',
-        '--packages=.dart_tool/package_config.json',
         '--snapshot-kind=app-jit',
-        '--snapshot=snapshot.jit',
-        ...dartArgs,
+        '--snapshot=${trainDir.path}/snapshot.jit',
+        ...stageTrainingArgs(
+          dartArgs,
+          trainDir,
+          stagedFiles: {for (final c in copies) c.key},
+          stagedTrees: [for (final t in trees) t.key],
+        ),
       ],
       workingDirectory: trainDir.path,
       environment: childEnv,
@@ -527,6 +518,103 @@ int _trainInScratch({
       }
     }
   }
+}
+
+/// Home-directory-like variable names whose values name a directory.
+/// Mirrors the home keys [buildChildEnvironment] isolates.
+const _scratchEnvKeys = {
+  'HOME',
+  'USERPROFILE',
+  'LOCALAPPDATA',
+  'APPDATA',
+  'PUB_CACHE',
+  'TMPDIR',
+  'TEMP',
+  'TMP',
+};
+
+/// Copies [env], resolving the relative values of scratch-directory variables
+/// (see [_scratchEnvKeys]) against [trainDir]. The callers pass those as `.`,
+/// naming the training directory without depending on the working directory
+/// to resolve them. Every other entry passes through untouched: only the
+/// tool's own home variables are known to name the scratch directory (a
+/// `DART_TEST_CONFIG=none/DartTest.yaml`, for example, must keep resolving
+/// the way its caller staged it).
+///
+/// Public so tests pin the rewriting both branches rely on.
+Map<String, String> absoluteHomeEnv(
+  Map<String, String> env,
+  Directory trainDir,
+) {
+  final staged = <String, String>{};
+  for (final entry in env.entries) {
+    if (_scratchEnvKeys.contains(entry.key.toUpperCase()) &&
+        entry.value.isNotEmpty &&
+        !File(entry.value).isAbsolute) {
+      staged[entry.key] = '${trainDir.path}/${entry.value}';
+    } else {
+      staged[entry.key] = entry.value;
+    }
+  }
+  return staged;
+}
+
+/// Rewrites the staged paths among [dartArgs] to absolute paths under
+/// [trainDir]: the training run resolves the script and any tree-rooted path
+/// at startup, and relative values would intern the working directory's own
+/// layout-derived strings (see the header comment).
+///
+/// The first argument is the script `dart` runs, so it is rewritten when it
+/// names a staged file or a file at or under a staged tree. A later argument
+/// is rewritten only when it is (or, past the first `=`, holds) a path at or
+/// under a root in [stagedTrees]; a later argument that merely equals a file
+/// in [stagedFiles] passes through untouched. The runner training relies on
+/// that: its test path names a staged source file, but the runner joins the
+/// path it is given onto the (rewritten, absolute) `--precompiled` directory
+/// itself (`p.join` keeps a relative second half and mangles an absolute one
+/// into a nonexistent path), so the test path must stay relative. Anything
+/// else (flags, test names, URIs) passes through untouched.
+///
+/// Public so tests pin the rewriting both branches rely on.
+List<String> stageTrainingArgs(
+  List<String> dartArgs,
+  Directory trainDir, {
+  required Set<String> stagedFiles,
+  required List<String> stagedTrees,
+}) {
+  String slashes(String path) => path.replaceAll(r'\', '/');
+  final files = {for (final f in stagedFiles) slashes(f)};
+  final roots = [for (final t in stagedTrees) slashes(t)];
+
+  bool underTree(String candidate) {
+    for (final root in roots) {
+      if (candidate == root || candidate.startsWith('$root/')) return true;
+    }
+    return false;
+  }
+
+  String stage(String arg, {required bool isScript}) {
+    final eq = arg.indexOf('=');
+    final value = eq < 0 ? arg : arg.substring(eq + 1);
+    if (value.isEmpty || value.contains(':') || File(value).isAbsolute) {
+      // A URI (`package:`, `dart:`, `file://`), a Windows absolute path
+      // (`C:\...`, whose colon would otherwise read as relative), or any
+      // absolute path: never a staged relative path.
+      return arg;
+    }
+    final candidate = slashes(value);
+    final staged = isScript
+        ? files.contains(candidate) || underTree(candidate)
+        : underTree(candidate);
+    if (!staged) return arg;
+    final stagedValue = '${trainDir.path}/$value';
+    return eq < 0 ? stagedValue : '${arg.substring(0, eq)}=$stagedValue';
+  }
+
+  return [
+    for (var n = 0; n < dartArgs.length; n++)
+      stage(dartArgs[n], isScript: n == 0),
+  ];
 }
 
 /// Copies every file under [from] to the same relative place under [to].

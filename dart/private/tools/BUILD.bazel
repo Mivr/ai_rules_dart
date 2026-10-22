@@ -338,7 +338,7 @@ dart_test(
 
 dart_test(
     name = "app_jit_snapshot_test",
-    size = "small",
+    size = "medium",
     srcs = [
         "app_jit_snapshot.dart",
         "comma_patch.dart",

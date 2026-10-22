@@ -25,17 +25,24 @@ when the exec and target SDKs are the same `dart`: an app-JIT snapshot is
 accepted only by the VM that wrote it, and the snapshot is written by the exec
 SDK but run by the target SDK in the test. Where they differ, there is no
 snapshot and the kernel is run as before. It is also not built on Windows,
-where the fixed-length training scratch directory has no room under the path
-limit (see `app_jit_snapshot.dart`), so the snapshot would depend on the build's path.
+where the training scratch directory has no room under the path limit (see
+`app_jit_snapshot.dart`), so the snapshot would depend on the build's path.
 
 The training run is `--deterministic` and targets an unknown CPU, and runs with
-the same inputs in the same fixed-length scratch directory and environment each time,
-from a copy of the SDK's `dart` at a fixed-length path (see
-`app_jit_snapshot.dart`). Those make the snapshot the same across builds and
-across SDK install locations. The baseline-CPU target is meant to let a remote
-cache share it across CPUs. The snapshot's action key does not record the CPU
-features its code uses, so that intent is the only guard against a cache serving
-code a CPU cannot run.
+the same inputs in the private training scratch directory and environment each
+time, from a copy of the SDK's `dart` (see `app_jit_snapshot.dart`). Those make
+the snapshot the same across SDK install locations. The baseline-CPU target is
+meant to let a remote cache share it across CPUs. The snapshot's action key does
+not record the CPU features its code uses, so that intent is the only guard
+against a cache serving code a CPU cannot run.
+
+Unlike a `dart_binary` `jit-snapshot` training of a straight-line program, which
+is byte-identical across builds, the runner training is not: `package:test`
+derives heap strings from the training run's own paths (notably its working
+directory, and its home, temp, and snapshot paths), and the whole heap
+serializes. The snapshot still runs every test identically, so its bytes are
+interchangeable, but they must not be shared between builds: the action below carries a `no-remote-cache` execution
+requirement, and remote caching must stay off for it.
 
 `//dart:test_runner_snapshot` turns the snapshot off for the whole build: the
 kernel runs instead, as before. Use it for a snapshot that misbehaves.
@@ -169,9 +176,8 @@ def _dart_test_runner_snapshot_impl(ctx):
     # exec SDK's `dart`, but the test that runs the snapshot uses the target SDK's,
     # so the two must be the same binary. A cross-compile has no such binary, and
     # its tests fall back to the kernel.
-    # The training run's scratch directory is padded to a fixed absolute
-    # length, which only a POSIX host has room for under its path limit. A
-    # Windows exec host gets no snapshot, and its tests run the kernel.
+    # The training run's scratch directory has no room under the Windows path
+    # limit. A Windows exec host gets no snapshot, and its tests run the kernel.
     is_windows = exec_sdk.dart.basename.endswith(".exe")
     if not enabled or is_windows or exec_sdk.dart.path != target_sdk.dart.path:
         return [
@@ -189,10 +195,15 @@ def _dart_test_runner_snapshot_impl(ctx):
     snapshot = ctx.actions.declare_file(ctx.label.name + ".jit")
 
     # `app_jit_snapshot.dart` trains in a scratch directory, where the runner,
-    # the precompiled training test and its source sit at relative paths. The
-    # environment is set here, and nothing else from the action's environment
-    # reaches the training run, so a developer's `DartTest.yaml` cannot change
-    # what the snapshot is trained on.
+    # the precompiled training test and its source are staged; the tool names
+    # the script and the `--precompiled` directory absolutely, keeps the test
+    # path relative (the runner joins it onto `--precompiled` itself), and
+    # trains with the scratch directory as its working directory, so the test
+    # path resolves into the staged tree. The environment is set here, and
+    # nothing else from the action's environment reaches the training run, so
+    # a developer's `DartTest.yaml` cannot change what the snapshot is trained
+    # on. The snapshot still varies with the build's paths (see the module
+    # docstring), so remote caching stays off for this action.
     dartvm = sdk_dartvm(exec_sdk)
     pkg_cfg = ctx.actions.declare_file(ctx.label.name + ".jit_package_config.json")
     ctx.actions.write(
@@ -228,6 +239,7 @@ def _dart_test_runner_snapshot_impl(ctx):
         mnemonic = "DartTestRunnerSnapshot",
         progress_message = "Snapshotting the test runner %{label}",
         env = writable_home_env(exec_sdk.dart, snapshot),
+        execution_requirements = {"no-remote-cache": ""},
     )
     return [
         DefaultInfo(files = depset([snapshot])),
