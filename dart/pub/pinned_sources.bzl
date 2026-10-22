@@ -631,6 +631,104 @@ def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
     if res.return_code != 0:
         fail("%s: git fetch failed for %s at %s: %s" % (what, url, resolved_ref, res.stderr))
 
+def _materialize_base_argv(bare_abs, empty_dir):
+    """The `git` argv prefix shared by every materialization command."""
+    return ["git", "--no-replace-objects"] + [
+        "--git-dir=" + bare_abs,
+        "-c",
+        "core.hooksPath=" + empty_dir,
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.untrackedCache=false",
+    ]
+
+def _refuse_alternates(ctx, bare_abs, empty, empty_dir, resolved_ref, what):
+    """Fails when the bare repository carries an `objects/info/alternates` file."""
+    res = ctx.execute(
+        _materialize_base_argv(bare_abs, empty_dir) + [
+            "count-objects",
+            "-v",
+        ],
+        environment = _materialize_env(ctx, empty, empty_dir, bare_abs),
+    )
+    if res.return_code != 0:
+        fail("%s: git count-objects failed at %s: %s" % (what, resolved_ref, res.stderr))
+    for line in res.stdout.splitlines():
+        if line.startswith("alternate:"):
+            fail("%s: refusing git repository with alternates (%s)." % (what, line.strip()))
+
+def _verify_commit_id(ctx, bare_abs, empty, empty_dir, resolved_ref, what):
+    """Fails unless `rev-parse --verify <sha>^{commit}` prints the pinned SHA."""
+    res = ctx.execute(
+        _materialize_base_argv(bare_abs, empty_dir) + [
+            "rev-parse",
+            "--verify",
+            str(resolved_ref) + "^{commit}",
+        ],
+        environment = _materialize_env(ctx, empty, empty_dir, bare_abs),
+    )
+    if res.return_code != 0:
+        fail("%s: could not verify the fetched commit: %s" % (what, res.stderr))
+    actual = res.stdout.strip()
+    if actual != str(resolved_ref).strip():
+        fail("%s: fetched commit %r does not match the pinned resolved-ref %r." % (what, actual, resolved_ref))
+
+def _verify_commit_type(ctx, bare_abs, empty, empty_dir, resolved_ref, what):
+    """Fails unless the pinned SHA names a commit object."""
+    res = ctx.execute(
+        _materialize_base_argv(bare_abs, empty_dir) + [
+            "cat-file",
+            "-t",
+            str(resolved_ref),
+        ],
+        environment = _materialize_env(ctx, empty, empty_dir, bare_abs),
+    )
+    if res.return_code != 0 or res.stdout.strip() != "commit":
+        fail("%s: resolved-ref %r is not a commit object." % (what, resolved_ref))
+
+def _verify_commit_tree(ctx, bare_abs, empty, empty_dir, resolved_ref, what):
+    """Fails unless the pinned commit's tree id reads back."""
+    res = ctx.execute(
+        _materialize_base_argv(bare_abs, empty_dir) + [
+            "rev-parse",
+            str(resolved_ref) + "^{tree}",
+        ],
+        environment = _materialize_env(ctx, empty, empty_dir, bare_abs),
+    )
+    if res.return_code != 0:
+        fail("%s: could not read the tree of %r: %s" % (what, resolved_ref, res.stderr))
+
+def _archive_verified_tree(ctx, bare_abs, empty, empty_dir, output, spec, what, resolved_ref):
+    """Streams `git archive` of the verified spec under the scrubbed environment."""
+    res = ctx.execute(
+        ["git", "--no-replace-objects"] + [
+            "--git-dir=" + bare_abs,
+            "-c",
+            "core.autocrlf=false",
+            "-c",
+            "core.eol=lf",
+            "-c",
+            "core.attributesfile=" + empty,
+            "-c",
+            "core.hooksPath=" + empty_dir,
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.untrackedCache=false",
+            "-c",
+            "tar.umask=002",
+            "archive",
+            "--format=tar",
+            "-o",
+            str(output),
+            spec,
+        ],
+        environment = _materialize_env(ctx, empty, empty_dir, bare_abs),
+    )
+    if res.return_code != 0:
+        fail("%s: git archive failed at %s: %s" % (what, spec, res.stderr))
+
 def git_materialize(ctx, bare_rel, resolved_ref, output, spec, what):
     """Verifies the pinned commit and archives it, isolated from the host (phase 2).
 
@@ -673,106 +771,8 @@ def git_materialize(ctx, bare_rel, resolved_ref, output, spec, what):
     # whatever it holds now is hostile by definition.
     ctx.file(bare_rel + "/info/attributes", _GIT_ATTRIBUTES_OVERRIDE, executable = False)
 
-    res = ctx.execute(
-        ["git", "--no-replace-objects"] + [
-            "--git-dir=" + bare_abs,
-            "-c",
-            "core.hooksPath=" + empty_dir,
-            "-c",
-            "core.fsmonitor=false",
-            "-c",
-            "core.untrackedCache=false",
-            "count-objects",
-            "-v",
-        ],
-        environment = _materialize_env(ctx, empty, empty_dir, bare_abs),
-    )
-    if res.return_code != 0:
-        fail("%s: git count-objects failed at %s: %s" % (what, resolved_ref, res.stderr))
-    for line in res.stdout.splitlines():
-        if line.startswith("alternate:"):
-            fail("%s: refusing git repository with alternates (%s)." % (what, line.strip()))
-
-    res = ctx.execute(
-        ["git", "--no-replace-objects"] + [
-            "--git-dir=" + bare_abs,
-            "-c",
-            "core.hooksPath=" + empty_dir,
-            "-c",
-            "core.fsmonitor=false",
-            "-c",
-            "core.untrackedCache=false",
-            "rev-parse",
-            "--verify",
-            str(resolved_ref) + "^{commit}",
-        ],
-        environment = _materialize_env(ctx, empty, empty_dir, bare_abs),
-    )
-    if res.return_code != 0:
-        fail("%s: could not verify the fetched commit: %s" % (what, res.stderr))
-    actual = res.stdout.strip()
-    if actual != str(resolved_ref).strip():
-        fail("%s: fetched commit %r does not match the pinned resolved-ref %r." % (what, actual, resolved_ref))
-
-    res = ctx.execute(
-        ["git", "--no-replace-objects"] + [
-            "--git-dir=" + bare_abs,
-            "-c",
-            "core.hooksPath=" + empty_dir,
-            "-c",
-            "core.fsmonitor=false",
-            "-c",
-            "core.untrackedCache=false",
-            "cat-file",
-            "-t",
-            str(resolved_ref),
-        ],
-        environment = _materialize_env(ctx, empty, empty_dir, bare_abs),
-    )
-    if res.return_code != 0 or res.stdout.strip() != "commit":
-        fail("%s: resolved-ref %r is not a commit object." % (what, resolved_ref))
-
-    res = ctx.execute(
-        ["git", "--no-replace-objects"] + [
-            "--git-dir=" + bare_abs,
-            "-c",
-            "core.hooksPath=" + empty_dir,
-            "-c",
-            "core.fsmonitor=false",
-            "-c",
-            "core.untrackedCache=false",
-            "rev-parse",
-            str(resolved_ref) + "^{tree}",
-        ],
-        environment = _materialize_env(ctx, empty, empty_dir, bare_abs),
-    )
-    if res.return_code != 0:
-        fail("%s: could not read the tree of %r: %s" % (what, resolved_ref, res.stderr))
-
-    res = ctx.execute(
-        ["git", "--no-replace-objects"] + [
-            "--git-dir=" + bare_abs,
-            "-c",
-            "core.autocrlf=false",
-            "-c",
-            "core.eol=lf",
-            "-c",
-            "core.attributesfile=" + empty,
-            "-c",
-            "core.hooksPath=" + empty_dir,
-            "-c",
-            "core.fsmonitor=false",
-            "-c",
-            "core.untrackedCache=false",
-            "-c",
-            "tar.umask=002",
-            "archive",
-            "--format=tar",
-            "-o",
-            str(output),
-            spec,
-        ],
-        environment = _materialize_env(ctx, empty, empty_dir, bare_abs),
-    )
-    if res.return_code != 0:
-        fail("%s: git archive failed at %s: %s" % (what, spec, res.stderr))
+    _refuse_alternates(ctx, bare_abs, empty, empty_dir, resolved_ref, what)
+    _verify_commit_id(ctx, bare_abs, empty, empty_dir, resolved_ref, what)
+    _verify_commit_type(ctx, bare_abs, empty, empty_dir, resolved_ref, what)
+    _verify_commit_tree(ctx, bare_abs, empty, empty_dir, resolved_ref, what)
+    _archive_verified_tree(ctx, bare_abs, empty, empty_dir, output, spec, what, resolved_ref)
