@@ -3,6 +3,7 @@
 // `kernel_worker` runs. The planner decides before it compiles, so nothing else is
 // needed.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -781,6 +782,124 @@ bool _containsSubsequence(Uint8List haystack, List<int> needle) {
   return false;
 }
 
+/// A fake `kernel_worker`: answers the first request with undecodable bytes,
+/// then exits, so the tool retries once on a fresh child. `FAKE_WORKER_FRAME`
+/// selects the garbage: `format` is not UTF-8, `range` is truncated mid-field.
+/// It blocks for the request first, so the tool never writes to a closed pipe.
+const _fakeWorkerSource = '''
+import 'dart:io';
+
+Future<void> main() async {
+  await stdin.first;
+  final mode = Platform.environment['FAKE_WORKER_FRAME'] ?? 'format';
+  final List<int> payload = mode == 'range'
+      // Field 2 (`output`), wire type 2, claiming ten bytes with one
+      // following: the frame is truncated mid-field.
+      ? [0x12, 0x0a, 0x61]
+      // Field 2 (`output`), wire type 2, one byte that is not UTF-8.
+      : [0x12, 0x01, 0xff];
+  stdout.add([payload.length, ...payload]);
+  await stdout.flush();
+  exit(0);
+}
+''';
+
+void _writeVarintForTest(BytesBuilder out, int value) {
+  var rest = value;
+  while (rest >= 0x80) {
+    out.addByte((rest & 0x7f) | 0x80);
+    rest >>= 7;
+  }
+  out.addByte(rest);
+}
+
+/// One framed `WorkRequest` carrying [arguments] as request [requestId].
+Uint8List _requestFrameForTest(List<String> arguments, int requestId) {
+  final message = BytesBuilder();
+  for (final argument in arguments) {
+    message.addByte(0x0a);
+    final bytes = utf8.encode(argument);
+    _writeVarintForTest(message, bytes.length);
+    message.add(bytes);
+  }
+  message.addByte(0x18);
+  _writeVarintForTest(message, requestId);
+  final frame = BytesBuilder();
+  final payload = message.toBytes();
+  _writeVarintForTest(frame, payload.length);
+  frame.add(payload);
+  return frame.toBytes();
+}
+
+/// Reads one framed `WorkResponse` as (exit code, output, request id).
+Future<(int, String, int)> _readResponseForTest(
+  Stream<List<int>> source,
+) async {
+  final buf = <int>[];
+  var pos = 0;
+  final it = StreamIterator<List<int>>(source);
+  Future<int> byte() async {
+    while (pos >= buf.length) {
+      if (!await it.moveNext()) {
+        throw StateError('worker stdout ended mid-response');
+      }
+      buf.addAll(it.current);
+    }
+    return buf[pos++];
+  }
+
+  Future<int> varint() async {
+    var result = 0;
+    var shift = 0;
+    while (true) {
+      final b = await byte();
+      result |= (b & 0x7f) << shift;
+      if (b < 0x80) return result;
+      shift += 7;
+    }
+  }
+
+  Future<Uint8List> bytes(int n) async {
+    final out = <int>[];
+    while (out.length < n) {
+      out.add(await byte());
+    }
+    return Uint8List.fromList(out);
+  }
+
+  final payload = await bytes(await varint());
+  var exitCode = 0;
+  var output = '';
+  var requestId = 0;
+  var p = 0;
+  int v() {
+    var r = 0;
+    var s = 0;
+    while (true) {
+      final b = payload[p++];
+      r |= (b & 0x7f) << s;
+      if (b < 0x80) return r;
+      s += 7;
+    }
+  }
+
+  while (p < payload.length) {
+    switch (v()) {
+      case 0x08:
+        exitCode = v();
+      case 0x12:
+        final n = v();
+        output = utf8.decode(payload.sublist(p, p + n));
+        p += n;
+      case 0x18:
+        requestId = v();
+      default:
+        throw StateError('unexpected WorkResponse field');
+    }
+  }
+  return (exitCode, output, requestId);
+}
+
 void main(List<String> args) {
   if (args.isNotEmpty) {
     final r = Runfiles.create();
@@ -1320,6 +1439,16 @@ void main(List<String> args) {
       badCount[73] = 0x27;
       expect(dillSourceUris(badCount), isNull);
     });
+
+    test('undecodable source bytes fail the table', () {
+      // Byte 76 is the first entry's length, byte 77 its one-byte `a` URI:
+      // 0xFF is never valid UTF-8, so the entry's bytes are malformed.
+      final badUtf8 = Uint8List.fromList(_buildDillWithUris(['a']));
+      expect(badUtf8[76], 1);
+      expect(badUtf8[77], 0x61);
+      badUtf8[77] = 0xff;
+      expect(dillSourceUris(badUtf8), isNull);
+    });
   });
 
   test('a percent-encoded part that decodes to an undeclared shadow excludes the library', () async {
@@ -1509,6 +1638,40 @@ void main(List<String> args) {
   });
 
   test(
+    'an unstaged compile whose dill names an unkeyable file: URI is refused',
+    () async {
+      _write('pkg/lib/a.dart', 'class A {}\n');
+      // `file://[::1` never parses as a URI, and a `file:` URI with an
+      // authority converts to no local path: either keys to no workspace
+      // file, so the compile is restaged, and the restage reads it again, so
+      // the result is refused, never accepted.
+      for (final (name, uri) in [
+        ('m_bad_file_uri', 'file://[::1'),
+        ('m_authority_file_uri', 'file://host/undeclared.dart'),
+      ]) {
+        final compiler = _DillWritingCompiler(
+          () => _buildDillWithUris([_uri('pkg/lib/a.dart'), uri]),
+        );
+        final result = await _compile(
+          name,
+          ['pkg/lib/a.dart'],
+          inputs: [
+            _encodeInputForTest(
+              '${_root.path}/pkg/lib/a.dart',
+              Uint8List.fromList([7]),
+            ),
+          ],
+          compiler: compiler,
+        );
+        expect(result.calls.length, 2, reason: 'unstaged, then isolated');
+        expect(result.log, contains('which is not a declared input'));
+        expect(result.code, 1);
+        expect(result.log, contains('failing the compile'));
+      }
+    },
+  );
+
+  test(
     'an unstaged compile that reads only declared files runs once',
     () async {
       _write('pkg/lib/a.dart', 'class A {}\n');
@@ -1613,6 +1776,32 @@ void main(List<String> args) {
         bd.setUint32(patched.length - 13 * 4 + 24, 0xffffffff);
         expect(dillLibraryReferences(patched), isNull);
         expect(dillSourceUris(patched), [_uri('pkg/lib/a.dart')]);
+      },
+    );
+
+    test(
+      'dillLibraryReferences degrades an undecodable canonical name to empty',
+      () {
+        final dill = _buildDillWithLibraries(
+          sources: [(_uri('pkg/lib/a.dart'), 'package:pkg/a.dart')],
+          libraries: [(0, 'package:pkg/a.dart')],
+        );
+        final patched = Uint8List.fromList(dill);
+        final bd = ByteData.sublistView(patched);
+        // The string-table offset is the seventh fixed index field. The table
+        // holds the count, one end per string, then the bytes: the strings are
+        // the empty name and the canonical name, so the name's first byte is
+        // three bytes in. 0xFF is never valid UTF-8.
+        final stringTable = bd.getUint32(patched.length - 13 * 4 + 24);
+        expect(patched[stringTable], 2);
+        expect(patched[stringTable + 1], 0);
+        expect(patched[stringTable + 2], 'package:pkg/a.dart'.length);
+        patched[stringTable + 3] = 0xff;
+        final refs = dillLibraryReferences(patched);
+        expect(refs, hasLength(1));
+        expect(refs![0].fileUri, _uri('pkg/lib/a.dart'));
+        expect(refs[0].importUri, 'package:pkg/a.dart');
+        expect(refs[0].canonicalName, isEmpty);
       },
     );
 
@@ -4623,6 +4812,85 @@ void main(List<String> args) {
       (runRes.stdout as String).trim(),
       'a,b|true|matched-lib|a,b|true|matched-main',
     );
+  });
+
+  group('persistent worker garbage answers (AOT subprocess)', () {
+    // Drives the real `kernel_module` snapshot in worker mode with a fake
+    // `kernel_worker` (a Dart source the SDK `dart` runs) that answers every
+    // request with undecodable bytes: the tool must fail the request after
+    // retrying once, never the worker. Direct `dart` runs lack the snapshot
+    // and skip these tests.
+    Future<(int, String, int)> garbageResponse(String mode) async {
+      _write('pkg/lib/garbage.dart', 'class Garbage {}\n');
+      _write('fake_worker.dart', _fakeWorkerSource);
+      final dartBin = _sdkDartPaths.first;
+      final sdkDir = File(dartBin).parent.parent;
+      final exeSuffix = Platform.isWindows ? '.exe' : '';
+      final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
+      final tool = await Process.start(
+        dartaotruntime,
+        [
+          _toolSnapshotPath,
+          '--persistent_worker',
+          '--kernel-worker',
+          '${_root.path}/fake_worker.dart',
+          '--dartaotruntime',
+          dartBin,
+          '--request-timeout-seconds=120',
+        ],
+        environment: {'FAKE_WORKER_FRAME': mode},
+      );
+      final drained = tool.stderr.drain();
+      final out = '${_root.path}/out/garbage';
+      tool.stdin.add(
+        _requestFrameForTest([
+          '--target',
+          'vm',
+          '--dart-sdk-summary',
+          '${sdkDir.path}/lib/_internal/vm_platform_strong.dill',
+          '--packages-file',
+          '${_root.path}/package_config.json',
+          '--libraries-json',
+          '${_root.path}/libraries.json',
+          '--multi-root',
+          _root.path,
+          '--multi-root-scheme',
+          'org-dartlang-root',
+          '--no-summary-only',
+          '--source',
+          'package:pkg/garbage.dart',
+          '--output',
+          out,
+          '--excluded-output',
+          '$out.vm_excluded.txt',
+        ], 7),
+      );
+      await tool.stdin.flush();
+      final response = await _readResponseForTest(tool.stdout)
+          .timeout(const Duration(minutes: 2));
+      await tool.stdin.close();
+      expect(await tool.exitCode, 0);
+      await drained;
+      return response;
+    }
+
+    test('undecodable bytes fail the request after one retry', () async {
+      if (_toolSnapshotPath.isEmpty) return;
+      final (code, output, requestId) = await garbageResponse('format');
+      expect(requestId, 7);
+      expect(code, 1);
+      expect(output, contains('not a WorkResponse'));
+      expect(output, contains('Failed twice'));
+    });
+
+    test('a truncated frame fails the request after one retry', () async {
+      if (_toolSnapshotPath.isEmpty) return;
+      final (code, output, requestId) = await garbageResponse('range');
+      expect(requestId, 7);
+      expect(code, 1);
+      expect(output, contains('not a WorkResponse'));
+      expect(output, contains('Failed twice'));
+    });
   });
 
   group('patched snapshot startup selection (AOT subprocess)', () {

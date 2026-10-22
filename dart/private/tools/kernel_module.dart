@@ -4776,17 +4776,33 @@ class _Persistent implements ModuleCompiler {
         ),
         lost: true,
       );
-    } catch (error) {
-      await _reap();
-      return _Attempt(
-        ModuleOutcome(
-          1,
-          'kernel_worker sent bytes that are not a WorkResponse ($error), so it was '
-          'killed.\n$_stderr',
-        ),
-        lost: true,
-      );
+    } on FormatException catch (error) {
+      // Undecodable bytes (bad UTF-8, an unknown wire type, or an answer to
+      // another request): the child cannot be trusted, so it is reaped and
+      // the request is repeated on a fresh child.
+      return _lostChildResponse(error);
+    } on RangeError catch (error) {
+      // A frame truncated mid-field reads past its bytes: same lost child.
+      return _lostChildResponse(error);
     }
+  }
+
+  /// Reaps a child that answered with bytes that are not a `WorkResponse` and
+  /// reports the request as lost, so it runs again on a fresh child. Only
+  /// decoding failures reach here: a write to a dead child is swallowed above
+  /// (the read then reports it), an ended stdout reads as null, and a late
+  /// answer is a `TimeoutException`. Anything else escapes to the worker
+  /// loop, which logs it and fails the request.
+  Future<_Attempt> _lostChildResponse(Object error) async {
+    await _reap();
+    return _Attempt(
+      ModuleOutcome(
+        1,
+        'kernel_worker sent bytes that are not a WorkResponse ($error), so it was '
+        'killed.\n$_stderr',
+      ),
+      lost: true,
+    );
   }
 
   Future<Process> _start() async {
@@ -5722,9 +5738,11 @@ class _TableCursor {
   String? readUtf8(int n) {
     final start = _pos;
     _pos += n;
+    // Callers bounds-check with `hasBytes` first, so the slice is in range
+    // and only malformed UTF-8 fails.
     try {
       return utf8.decode(_part.sublist(start, start + n));
-    } catch (_) {
+    } on FormatException {
       return null;
     }
   }
@@ -5979,11 +5997,13 @@ String? Function(int)? _readComponentStrings(
   String? stringAt(int index) {
     if (index < 0 || index >= strEnds.length) return null;
     final start = index == 0 ? 0 : strEnds[index - 1];
+    // The header enforces monotonic ends within the part, so the slice is in
+    // range and only malformed UTF-8 fails.
     try {
       return utf8.decode(
         part.sublist(strBase + start, strBase + strEnds[index]),
       );
-    } catch (_) {
+    } on FormatException {
       return null;
     }
   }
@@ -6180,7 +6200,12 @@ String _keyOfDillFileUri(String uri, List<String> multiRoots) {
   String path;
   try {
     path = Uri.parse(uri).toFilePath();
-  } catch (_) {
+  } on FormatException {
+    // Not a URI at all: no workspace file.
+    return '';
+  } on UnsupportedError {
+    // A `file:` URI with an authority or query converts to no local path:
+    // no workspace file.
     return '';
   }
   final normPath = path.contains(r'\') ? path.replaceAll(r'\', '/') : path;
