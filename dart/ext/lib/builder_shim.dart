@@ -1852,40 +1852,52 @@ class _ShimDirectiveRef {
   final String uri;
 }
 
-/// The URI-bearing directives the analyzer parses from [source]: each
-/// `import` and `export` contributes its declared URI and every `if`
-/// alternative without evaluating conditions, each `part` and `part of` its
-/// URI. URIs that do not survive as static strings (interpolations) contribute
-/// nothing: they name no file for a Builder to read. Empty when the source
-/// does not parse; the analyzer reports the genuine syntax error.
-List<_ShimDirectiveRef> _parseShimDirectives(String source) {
+/// The URI-bearing directives the analyzer parses from the staged file [file]
+/// holding [source]: each `import` and `export` contributes its declared URI
+/// and every `if` alternative without evaluating conditions, each `part` and
+/// `part of` its URI.
+///
+/// Fail-closed: a source that does not parse, or a directive URI with no
+/// static `stringValue` (an interpolation), throws a [StateError] naming
+/// [file]. Either names no file the staged-source check can confine: an
+/// unchecked directive could read an undeclared host file, so the caller
+/// reports the message as a violation and no Builder runs. A `part of` that
+/// names a library instead of a URI contributes nothing: it names no file.
+List<_ShimDirectiveRef> _parseShimDirectives(String source, String file) {
   final refs = <_ShimDirectiveRef>[];
-  void add(String kind, String? uri) {
-    if (uri != null) refs.add(_ShimDirectiveRef(kind, uri));
+  void add(String kind, String? uri, String spelling) {
+    if (uri == null) {
+      throw StateError(
+        "$file $kind $spelling names no static file, so it cannot be checked.",
+      );
+    }
+    refs.add(_ShimDirectiveRef(kind, uri));
   }
 
   late final ParseStringResult parsed;
   try {
     parsed = parseString(content: source, throwIfDiagnostics: false);
   } catch (_) {
-    return refs;
+    throw StateError(
+      "$file could not be parsed, so its directives cannot be checked.",
+    );
   }
   for (final directive in parsed.unit.directives) {
     if (directive is ImportDirective) {
-      add('import', directive.uri.stringValue);
+      add('import', directive.uri.stringValue, directive.uri.toSource());
       for (final alternative in directive.configurations) {
-        add('import', alternative.uri.stringValue);
+        add('import', alternative.uri.stringValue, alternative.uri.toSource());
       }
     } else if (directive is ExportDirective) {
-      add('export', directive.uri.stringValue);
+      add('export', directive.uri.stringValue, directive.uri.toSource());
       for (final alternative in directive.configurations) {
-        add('export', alternative.uri.stringValue);
+        add('export', alternative.uri.stringValue, alternative.uri.toSource());
       }
     } else if (directive is PartDirective) {
-      add('part', directive.uri.stringValue);
+      add('part', directive.uri.stringValue, directive.uri.toSource());
     } else if (directive is PartOfDirective) {
       final uri = directive.uri;
-      if (uri != null) add('part of', uri.stringValue);
+      if (uri != null) add('part of', uri.stringValue, uri.toSource());
     }
   }
   return refs;
@@ -1900,8 +1912,10 @@ List<_ShimDirectiveRef> _parseShimDirectives(String source) {
 /// package ([isEscapingPackageUri]), relatives escaping the staging dir
 /// (resolved by [resolveStagedRelativeTarget] against the importing file's
 /// staged path, the way the analyzer resolves them), URIs spanning lines
-/// ([hasLineBreak]), and URIs resolving to no
-/// file at all (`//` authorities, fragments, decoded `/`) are refused. Each
+/// ([hasLineBreak]), URIs resolving to no
+/// file at all (`//` authorities, fragments, decoded `/`), sources that do
+/// not parse, and directive URIs with no static value (interpolations) are
+/// refused. Each
 /// diagnostic names the file, the directive and the URI, in the same shape as
 /// the shared check's.
 Future<List<String>> findStagedShimViolations(
@@ -1942,7 +1956,17 @@ Future<List<String>> findStagedShimViolations(
     }
     final key = path.replaceAll(r'\', '/');
     final from = normalizeStagedPath(key);
-    for (final ref in _parseShimDirectives(content)) {
+    // A source whose directives cannot be listed (it does not parse, or a
+    // directive URI has no static value) is refused before any Builder runs:
+    // an unchecked directive could read outside the staging dir.
+    late final List<_ShimDirectiveRef> refs;
+    try {
+      refs = _parseShimDirectives(content, key);
+    } on StateError catch (e) {
+      errors.add('$tool: ${e.message}');
+      continue;
+    }
+    for (final ref in refs) {
       final uri = ref.uri;
       // A URI spanning lines is refused however it spells its target: the
       // front end's multi-line first-line rule reads a different file than

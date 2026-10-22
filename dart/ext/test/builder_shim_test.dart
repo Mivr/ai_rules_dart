@@ -2319,6 +2319,52 @@ part 'e.dart';
         );
       },
     );
+
+    test('refuses a source that does not parse, naming it', () async {
+      // Nested prefix operators overflow the parser's stack, so the parse
+      // throws instead of returning directives: nothing this file names can
+      // be checked, so it is refused rather than skipped.
+      await stage('lib/unparsable.dart', 'var x = ${'!' * 100000}true;\n');
+      await stage('lib/clean.dart', "import 'b.dart';\n");
+      await stage('lib/b.dart', 'int y() => 1;\n');
+      final violations = await findStagedShimViolations(
+        staging,
+        tool: 'builder_shim',
+      );
+      expect(violations, hasLength(1));
+      expect(violations.single, startsWith('builder_shim: '));
+      expect(violations.single, contains('unparsable.dart'));
+      expect(violations.single, contains('could not be parsed'));
+    });
+
+    test(
+      'refuses directive URIs with no static value, naming the source',
+      () async {
+        // An interpolated URI has no static `stringValue`: it names no file
+        // the check can confine, so the Builder never runs on it.
+        await stage('lib/dyn_import.dart', "import 'a\${name}.dart';\n");
+        await stage(
+          'lib/dyn_export_alt.dart',
+          "export 'a.dart' if (dart.library.io == 'x') 'b\${name}.dart';\n",
+        );
+        await stage(
+          'lib/dyn_part.dart',
+          "library l;\npart 'c\${name}.dart';\n",
+        );
+        final violations = await findStagedShimViolations(
+          staging,
+          tool: 'builder_shim',
+        );
+        expect(violations, hasLength(3));
+        for (final violation in violations) {
+          expect(violation, startsWith('builder_shim: '));
+          expect(violation, contains('names no static file'));
+        }
+        expect(violations, contains(contains('dyn_import.dart')));
+        expect(violations, contains(contains('dyn_export_alt.dart')));
+        expect(violations, contains(contains('dyn_part.dart')));
+      },
+    );
   });
 }
 
