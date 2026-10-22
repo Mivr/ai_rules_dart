@@ -5,6 +5,7 @@ See https://docs.bazel.build/versions/main/skylark/deploying.html#dependencies
 """
 
 load("//dart:toolchain.bzl", _declare_dart_sdk_toolchains = "declare_dart_sdk_toolchains")
+load("//dart/private:download.bzl", "pinned_download", "pinned_download_and_extract")
 load(
     "//dart/private:toolchains_repo.bzl",
     "CROSS_TARGETS",
@@ -50,7 +51,8 @@ def _dart_sdk_repo_impl(repository_ctx):
         platform = platform,
     )
     sha256 = TOOL_VERSIONS[version][platform]
-    repository_ctx.download_and_extract(
+    pinned_download_and_extract(
+        repository_ctx,
         url = url,
         sha256 = sha256,
         stripPrefix = "dart-sdk",
@@ -130,13 +132,15 @@ def _dart_cross_sdk_repo_impl(repository_ctx):
         exec_platform = repository_ctx.attr.host_platform,
         target_platform = repository_ctx.attr.target_platform,
     )
-    repository_ctx.download(
+    pinned_download(
+        repository_ctx,
         url = artifacts.gen_snapshot_url,
         output = artifacts.gen_snapshot_filename,
         sha256 = artifacts.gen_snapshot_sha256,
         executable = True,
     )
-    repository_ctx.download(
+    pinned_download(
+        repository_ctx,
         url = artifacts.dartaotruntime_url,
         output = artifacts.dartaotruntime_filename,
         sha256 = artifacts.dartaotruntime_sha256,

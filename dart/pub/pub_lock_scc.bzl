@@ -13,6 +13,7 @@ leaving it become the merged target's `deps`.
 """
 
 load("//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "pinned_source_error")
+load("//dart/private:download.bzl", "pinned_download")
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_spoke_dep_labels", "trim_gzip_trailing_nulls")
 load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_package_member_build_content = "make_dart_package_member_build_content", _make_scc_merged_build_content = "make_scc_merged_build_content")
@@ -46,7 +47,8 @@ def _fetch_hosted_member(ctx, member, name):
 
     # Same padded-tarball workaround as `pub_lock_package`: pub.dev serves
     # some archives padded with trailing NUL bytes past the gzip trailer.
-    ctx.download(
+    pinned_download(
+        ctx,
         url = url,
         output = archive,
         sha256 = member["sha256"].strip(),

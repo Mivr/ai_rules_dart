@@ -2,6 +2,7 @@
 
 load("//dart/ext:registry.bzl", "curated_code_assets")
 load("//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "pinned_source_error")
+load("//dart/private:download.bzl", "pinned_download")
 load("//dart/pub:pub_lock_hub.bzl", "pub_lock_hub")
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_git_package", "pub_lock_package", "pub_lock_package_sha256_error", "trim_gzip_trailing_nulls")
 load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
@@ -122,7 +123,7 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
         )
         archive = "{dir}/{name}.tar.gz".format(dir = scope_dir, name = name)
         out = "{dir}/{name}".format(dir = scope_dir, name = name)
-        ctx.download(url = url, output = archive, sha256 = pkg.sha256)
+        pinned_download(ctx, url = url, output = archive, sha256 = pkg.sha256)
         raw = ctx.read(archive)
         trimmed = trim_gzip_trailing_nulls(raw)
         if trimmed != raw:

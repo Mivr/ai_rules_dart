@@ -10,6 +10,7 @@ the `flutter pub get` analog) reuse this helper to emit the same
 """
 
 load("//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "pinned_source_error")
+load("//dart/private:download.bzl", "pinned_download")
 load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_library_build_content = "make_dart_library_build_content")
 load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
@@ -133,7 +134,8 @@ def _pub_lock_package_impl(ctx):
     #
     # Download the archive (verifying its sha256), strip any trailing NUL
     # padding past the gzip trailer, and unpack with `ctx.extract`.
-    ctx.download(
+    pinned_download(
+        ctx,
         url = url,
         output = "_archive.tar.gz",
         sha256 = ctx.attr.sha256.strip(),

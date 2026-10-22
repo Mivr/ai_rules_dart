@@ -22,6 +22,7 @@ bzl_library(
     deps = [
         ":pinned_sources",
         ":yaml_parser",
+        "//dart/private:download",
         "//dart/pub/private:build_content",
         "//dart/pub/private:language_version",
         "//dart/pub/private:pub_symlink",
@@ -43,6 +44,7 @@ bzl_library(
         ":pub_lock_hub",
         ":pub_lock_package",
         ":yaml_parser",
+        "//dart/private:download",
         "//dart/pub/private:pub_repository",
         "//dart/pub/private:pub_symlink",
         "//dart/pub/private:version",

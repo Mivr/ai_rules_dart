@@ -19,6 +19,7 @@ bzl_library(
     deps = [
         ":build_content",
         ":pub_symlink",
+        "//dart/private:download",
         "//dart/pub:pinned_sources",
     ],
 )
