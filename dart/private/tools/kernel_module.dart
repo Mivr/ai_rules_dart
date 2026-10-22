@@ -4288,63 +4288,15 @@ Future<List<Uint8List>> _withDigests(
   List<String> args,
   List<Uint8List> inputs,
 ) async {
-  var hasSummaryArg = false;
-  for (var i = 0; i + 1 < args.length; i++) {
-    final arg = args[i];
-    if (arg == '--input-summary' || arg == '--input-linked') {
-      hasSummaryArg = true;
-      break;
-    }
-  }
-  if (!hasSummaryArg) return inputs;
+  if (!_takesSummaryInputs(args)) return inputs;
 
-  final exactWithDigest = <String>{};
-  for (var idx = 0; idx < inputs.length; idx++) {
-    final decoded = _decodeInputView(inputs[idx]);
-    if (decoded.path.isNotEmpty && decoded.digest.isNotEmpty) {
-      exactWithDigest.add(decoded.path);
-    }
-  }
-
-  var allPresent = true;
-  for (var i = 0; i + 1 < args.length; i++) {
-    final arg = args[i];
-    if (arg != '--input-summary' && arg != '--input-linked') continue;
-    final targetPath = kernelWorkerUri(args[i + 1]);
-    if (!exactWithDigest.contains(targetPath)) {
-      allPresent = false;
-      break;
-    }
-  }
-  if (allPresent) return inputs;
+  final exactWithDigest = _exactDigestedPaths(inputs);
+  if (_summaryDigestsComplete(args, exactWithDigest)) return inputs;
 
   final emptyDigestIndices = <String, List<int>>{};
   final byPath = <String, Uint8List>{};
   for (var idx = 0; idx < inputs.length; idx++) {
-    final decoded = _decodeInput(inputs[idx]);
-    if (decoded.path.isEmpty) continue;
-    if (decoded.digest.isNotEmpty) {
-      byPath[decoded.path] = decoded.digest;
-      final fileSpelling = _filePathOf(decoded.path);
-      byPath.putIfAbsent(fileSpelling, () => decoded.digest);
-      byPath.putIfAbsent(kernelWorkerUri(fileSpelling), () => decoded.digest);
-      final norm = _normalizeFilePath(fileSpelling);
-      byPath.putIfAbsent(norm, () => decoded.digest);
-      byPath.putIfAbsent(kernelWorkerUri(norm), () => decoded.digest);
-      final relNorm = _normalize(fileSpelling);
-      if (relNorm.isNotEmpty &&
-          !isWindowsDrivePath(fileSpelling) &&
-          !fileSpelling.startsWith('/')) {
-        byPath.putIfAbsent(relNorm, () => decoded.digest);
-        byPath.putIfAbsent('./$relNorm', () => decoded.digest);
-      }
-    } else {
-      (emptyDigestIndices[decoded.path] ??= <int>[]).add(idx);
-      final uriSpelling = kernelWorkerUri(decoded.path);
-      if (uriSpelling != decoded.path) {
-        (emptyDigestIndices[uriSpelling] ??= <int>[]).add(idx);
-      }
-    }
+    _indexInputDigest(byPath, emptyDigestIndices, inputs[idx], idx);
   }
   List<Uint8List>? out;
   for (var i = 0; i + 1 < args.length; i++) {
@@ -4353,26 +4305,122 @@ Future<List<Uint8List>> _withDigests(
     final targetPath = kernelWorkerUri(rawPath);
     final filePath = _filePathOf(rawPath);
     if (!exactWithDigest.add(targetPath)) continue;
-    final digest =
-        _lookupDigest(targetPath, byPath) ??
-        _lookupDigest(filePath, byPath) ??
-        await _digestOf(filePath);
-    byPath[targetPath] = digest;
-    byPath[filePath] = digest;
+    final digest = await _resolveTargetDigest(targetPath, filePath, byPath);
     out ??= [...inputs];
-    final replaceIndices =
-        emptyDigestIndices.remove(targetPath) ??
-        emptyDigestIndices.remove(filePath);
-    if (replaceIndices != null && replaceIndices.isNotEmpty) {
-      final encoded = _encodeInput(targetPath, digest);
-      for (final idx in replaceIndices) {
-        out[idx] = encoded;
-      }
-    } else {
-      out.add(_encodeInput(targetPath, digest));
-    }
+    _placeDigest(out, targetPath, digest, filePath, emptyDigestIndices);
   }
   return out ?? inputs;
+}
+
+/// Whether any `--input-summary` or `--input-linked` file is requested.
+bool _takesSummaryInputs(List<String> args) {
+  for (var i = 0; i + 1 < args.length; i++) {
+    final arg = args[i];
+    if (arg == '--input-summary' || arg == '--input-linked') return true;
+  }
+  return false;
+}
+
+/// The exact input paths that already carry a non-empty digest.
+Set<String> _exactDigestedPaths(List<Uint8List> inputs) {
+  final exactWithDigest = <String>{};
+  for (var idx = 0; idx < inputs.length; idx++) {
+    final decoded = _decodeInputView(inputs[idx]);
+    if (decoded.path.isNotEmpty && decoded.digest.isNotEmpty) {
+      exactWithDigest.add(decoded.path);
+    }
+  }
+  return exactWithDigest;
+}
+
+/// Whether every requested summary or linked file is already digested.
+bool _summaryDigestsComplete(List<String> args, Set<String> exactWithDigest) {
+  for (var i = 0; i + 1 < args.length; i++) {
+    final arg = args[i];
+    if (arg != '--input-summary' && arg != '--input-linked') continue;
+    if (!exactWithDigest.contains(kernelWorkerUri(args[i + 1]))) return false;
+  }
+  return true;
+}
+
+/// Indexes one input's digest under its path spellings, or records the indices
+/// whose digest still needs filling in.
+void _indexInputDigest(
+  Map<String, Uint8List> byPath,
+  Map<String, List<int>> emptyDigestIndices,
+  Uint8List input,
+  int idx,
+) {
+  final decoded = _decodeInput(input);
+  if (decoded.path.isEmpty) return;
+  if (decoded.digest.isNotEmpty) {
+    byPath[decoded.path] = decoded.digest;
+    _indexDigestSpellings(byPath, decoded.path, decoded.digest);
+  } else {
+    (emptyDigestIndices[decoded.path] ??= <int>[]).add(idx);
+    final uriSpelling = kernelWorkerUri(decoded.path);
+    if (uriSpelling != decoded.path) {
+      (emptyDigestIndices[uriSpelling] ??= <int>[]).add(idx);
+    }
+  }
+}
+
+/// Indexes a digest under every spelling of its path the worker may use.
+void _indexDigestSpellings(
+  Map<String, Uint8List> byPath,
+  String path,
+  Uint8List digest,
+) {
+  final fileSpelling = _filePathOf(path);
+  byPath.putIfAbsent(fileSpelling, () => digest);
+  byPath.putIfAbsent(kernelWorkerUri(fileSpelling), () => digest);
+  final norm = _normalizeFilePath(fileSpelling);
+  byPath.putIfAbsent(norm, () => digest);
+  byPath.putIfAbsent(kernelWorkerUri(norm), () => digest);
+  final relNorm = _normalize(fileSpelling);
+  if (relNorm.isNotEmpty &&
+      !isWindowsDrivePath(fileSpelling) &&
+      !fileSpelling.startsWith('/')) {
+    byPath.putIfAbsent(relNorm, () => digest);
+    byPath.putIfAbsent('./$relNorm', () => digest);
+  }
+}
+
+/// The digest for a requested file: reused from the index, else hashed from
+/// disk, then memoized under both spellings for later requests.
+Future<Uint8List> _resolveTargetDigest(
+  String targetPath,
+  String filePath,
+  Map<String, Uint8List> byPath,
+) async {
+  final digest =
+      _lookupDigest(targetPath, byPath) ??
+      _lookupDigest(filePath, byPath) ??
+      await _digestOf(filePath);
+  byPath[targetPath] = digest;
+  byPath[filePath] = digest;
+  return digest;
+}
+
+/// Replaces the inputs still missing a digest, or appends a new digested input.
+void _placeDigest(
+  List<Uint8List> out,
+  String targetPath,
+  Uint8List digest,
+  String filePath,
+  Map<String, List<int>> emptyDigestIndices,
+) {
+  final replaceIndices =
+      emptyDigestIndices.remove(targetPath) ??
+      emptyDigestIndices.remove(filePath);
+  if (replaceIndices != null && replaceIndices.isNotEmpty) {
+    final encoded = _encodeInput(targetPath, digest);
+    for (final idx in replaceIndices) {
+      out[idx] = encoded;
+    }
+  } else {
+    out.add(_encodeInput(targetPath, digest));
+  }
 }
 
 // ---------------------------------------------------------------------------
