@@ -213,6 +213,25 @@ String normalizeStagedPath(String path) {
   return joined;
 }
 
+/// Applies each `/`-separated segment of the relative reference [queue] to
+/// the [base] directory stack: `.` and empty segments skip, `..` pops unless
+/// already at [floor], anything else appends. Returns the joined path, or null
+/// when a decoded segment still holds a `/`, which names no readable file.
+String? _applyStagedSegments(List<String> base, int floor, String queue) {
+  for (final raw in queue.split('/')) {
+    if (raw.isEmpty) continue;
+    final seg = decodeUriSegment(raw);
+    if (seg.isEmpty || seg == '.') continue;
+    if (seg == '..') {
+      if (base.length > floor) base.removeLast();
+      continue;
+    }
+    if (seg.contains('/')) return null;
+    base.add(seg);
+  }
+  return base.join('/');
+}
+
 /// The absolute `/`-separated path a schemeless relative or `/`-absolute
 /// directive URI in the staged file [fromPath] refers to, resolved the way the
 /// analyzer resolves it on the real filesystem: `\` separates, escapes decode
@@ -258,18 +277,8 @@ String? resolveStagedRelativeTarget(String uri, String fromPath) {
   final absolute = path.startsWith('/');
   final base = absolute ? stack.sublist(0, floor) : stack;
   final queue = absolute ? path.substring(1) : path;
-  for (final raw in queue.split('/')) {
-    if (raw.isEmpty) continue;
-    final seg = decodeUriSegment(raw);
-    if (seg.isEmpty || seg == '.') continue;
-    if (seg == '..') {
-      if (base.length > floor) base.removeLast();
-      continue;
-    }
-    if (seg.contains('/')) return null;
-    base.add(seg);
-  }
-  final joined = base.join('/');
+  final joined = _applyStagedSegments(base, floor, queue);
+  if (joined == null) return null;
   // A rooted `from` splits with a leading empty segment, so the join already
   // starts with `/` (or `//` for a UNC share); only fill in a bare `/` when
   // the base ran empty.
