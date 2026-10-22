@@ -109,6 +109,39 @@ def is_builder_shim_generator(generator):
             return True
     return False
 
+def _summaries_flag_eligible(ctx):
+    """Returns whether summary passing is enabled by flag, SDK, and generator kind."""
+    if not ctx.attr._analyzer_summaries[BuildSettingInfo].value:
+        return False
+    if not analyzer_summaries_supported(ctx.toolchains["//dart:exec_tools_toolchain_type"].dart_sdk_info.version):
+        return False
+    return is_builder_shim_generator(ctx.attr.generator_bin)
+
+def _covered_summary_keys(ctx):
+    """Returns the covered summary keys, or None when a dep disqualifies summaries."""
+    covered = {}
+    for d in ctx.attr.deps:
+        if DartInfo in d and embedder_in_closure(d[DartInfo]):
+            return None
+        if DartAnalyzerSummaryInfo in d:
+            for key in d[DartAnalyzerSummaryInfo].packages.to_list():
+                if key.startswith(CONFLICT_PREFIX):
+                    return None
+                covered[key] = True
+    return covered
+
+def _deps_fully_covered(ctx, package_name, covered):
+    """Returns whether every non-own dependency package has a summary."""
+    for d in ctx.attr.deps:
+        if DartInfo not in d:
+            continue
+        for pkg in d[DartInfo].transitive_packages.to_list():
+            if pkg.package_name == package_name:
+                continue
+            if package_key(pkg) not in covered:
+                return False
+    return True
+
 def analyzer_summary_inputs(ctx, package_name):
     """Returns the analyzer summaries a `generator_bin` shim resolves `deps` against.
 
@@ -138,29 +171,13 @@ def analyzer_summary_inputs(ctx, package_name):
       the SDK summary to pass as `--sdk-summary`. Both are empty when no
       summaries are passed.
     """
-    if not ctx.attr._analyzer_summaries[BuildSettingInfo].value:
+    if not _summaries_flag_eligible(ctx):
         return [], None
-    if not analyzer_summaries_supported(ctx.toolchains["//dart:exec_tools_toolchain_type"].dart_sdk_info.version):
+    covered = _covered_summary_keys(ctx)
+    if covered == None:
         return [], None
-    if not is_builder_shim_generator(ctx.attr.generator_bin):
+    if not _deps_fully_covered(ctx, package_name, covered):
         return [], None
-    covered = {}
-    for d in ctx.attr.deps:
-        if DartInfo in d and embedder_in_closure(d[DartInfo]):
-            return [], None
-        if DartAnalyzerSummaryInfo in d:
-            for key in d[DartAnalyzerSummaryInfo].packages.to_list():
-                if key.startswith(CONFLICT_PREFIX):
-                    return [], None
-                covered[key] = True
-    for d in ctx.attr.deps:
-        if DartInfo not in d:
-            continue
-        for pkg in d[DartInfo].transitive_packages.to_list():
-            if pkg.package_name == package_name:
-                continue
-            if package_key(pkg) not in covered:
-                return [], None
     packaged = depset(transitive = [
         d[DartAnalyzerSummaryInfo].packaged_summaries
         for d in ctx.attr.deps
@@ -187,17 +204,14 @@ def compute_codegen_output_name(src_path, output_suffix):
         base = src_path
     return base + output_suffix
 
-def _dart_codegen_impl(ctx):
-    identity = resolve_package_identity(ctx)
-    toolchain = ctx.toolchains["//dart:exec_tools_toolchain_type"]
-    dart = toolchain.dart_sdk_info.dart
-
-    # The shim reads what the analyzer reads: the analyze subset. A `generator`
-    # script is run by the `dart` launcher, which also loads `dartvm` and the
-    # kernel service, so that branch takes the runtime subset as well.
+def _codegen_sdk_files(ctx, toolchain):
+    """Returns (sdk_files, script_sdk_files) for the analyze and script branches."""
     sdk_files = toolchain.dart_sdk_info.analyze_files
     script_sdk_files = depset(transitive = [sdk_files, toolchain.dart_sdk_info.runtime_files])
+    return sdk_files, script_sdk_files
 
+def _codegen_validate(ctx, toolchain):
+    """Fails on bad generator/output-suffix combinations; returns the bin mismatch or None."""
     if ctx.file.generator and ctx.executable.generator_bin:
         fail("%s: only one of `generator` or `generator_bin` may be set." %
              ctx.label)
@@ -208,14 +222,198 @@ def _dart_codegen_impl(ctx):
         fail("%s: `output_suffixes` must contain at least one suffix." %
              ctx.label)
     if ctx.executable.generator_bin:
-        mismatch = kernel_sdk_mismatch_error(
+        return kernel_sdk_mismatch_error(
             ctx.label,
             "generator_bin",
             ctx.attr.generator_bin,
             toolchain.dart_sdk_info.version,
         )
-        if mismatch != None:
-            fail(mismatch)
+    return None
+
+def _codegen_lib_root(ctx, identity):
+    """Derives the Dart package's lib root from deps' DartInfo, falling back to the Bazel package."""
+    lib_root_from_deps = dart_lib_root_for_package(
+        ctx.attr.deps,
+        identity.package_name,
+    )
+    if lib_root_from_deps != None:
+        return lib_root_from_deps
+    return ctx.label.package
+
+def _codegen_declare_outputs(ctx, src):
+    """Declares one sibling output per `output_suffixes` entry next to the source."""
+    rel = src.short_path
+    if ctx.label.package and rel.startswith(ctx.label.package + "/"):
+        rel = rel[len(ctx.label.package) + 1:]
+    rel_no_ext = rel[:-len(".dart")] if rel.endswith(".dart") else rel
+    return [
+        ctx.actions.declare_file(rel_no_ext + suffix)
+        for suffix in ctx.attr.output_suffixes
+    ]
+
+def _codegen_providers(identity, outputs):
+    """Returns the DefaultInfo + DartPackageMetadataInfo providers for the outputs."""
+    return [
+        DefaultInfo(files = depset(outputs)),
+        # The *effective* values, built-in default included: a library stating
+        # 3.11 over a generator that silently fell back to 3.0 is exactly the
+        # disagreement `codegen_identity_error` exists to name.
+        DartPackageMetadataInfo(
+            package_name = identity.package_name,
+            language_version = (
+                identity.language_version or DEFAULT_ROOT_LANGUAGE_VERSION
+            ),
+        ),
+    ]
+
+def _codegen_run_worker(ctx, toolchain, dart, sdk_files, script_sdk_files, synth_pc, library_dep_srcs, lib_root, auto_staged, src, outputs, identity):
+    """Runs the `generator_bin` worker action."""
+    args = ctx.actions.args()
+    direct_inputs = [src] + list(ctx.files.data)
+    data_runfiles = [dep[DefaultInfo].default_runfiles.files for dep in ctx.attr.data]
+
+    # Worker mode requires a single `@flagfile` / `--flagfile=` arg; the
+    # `use_param_file` + `multiline` format produces exactly that and
+    # Bazel expands it into `WorkRequest.arguments` on the transport.
+    args.use_param_file("@%s", use_always = True)
+    args.set_param_file_format("multiline")
+    args.add("--input", src.path)
+    args.add("--input-asset", asset_path_for(src, lib_root))
+    for output in outputs:
+        args.add("--output", output.path)
+    direct_inputs.extend(add_shim_contract_args(
+        args,
+        ctx,
+        synth_pc,
+        dart,
+        auto_stage_srcs = auto_staged,
+        asset_deps = ctx.files.asset_deps,
+        lib_root = lib_root,
+    ))
+    args.add_all(ctx.attr.generator_args)
+
+    # Under `//dart:analyzer_summaries` only: the other packages of `deps`
+    # resolve from their summaries. The script branch below takes no
+    # summaries, since a script does not speak the shim contract.
+    summaries, sdk_summary = analyzer_summary_inputs(ctx, identity.package_name)
+    if sdk_summary != None:
+        args.add_all(summaries, before_each = "--summary")
+        args.add("--sdk-summary", sdk_summary)
+        direct_inputs.extend(summaries)
+        direct_inputs.append(sdk_summary)
+
+    generator_runfiles = ctx.attr.generator_bin[DefaultInfo].default_runfiles.files
+    is_kernel_bin = (
+        DartCompileInfo in ctx.attr.generator_bin and
+        ctx.attr.generator_bin[DartCompileInfo].compile_mode == "kernel"
+    )
+    if is_kernel_bin:
+        kernel_bin = ctx.attr.generator_bin[DartCompileInfo].executable
+        executable = dart
+        arguments = [kernel_bin.path, args]
+        direct_inputs.append(kernel_bin)
+        bin_sdk_files = script_sdk_files
+        action_tools = [
+            ctx.attr.generator_bin[DefaultInfo].files_to_run,
+            depset(
+                direct = [kernel_bin, dart],
+                transitive = [toolchain.dart_sdk_info.runtime_files, generator_runfiles],
+            ),
+        ]
+    else:
+        executable = ctx.executable.generator_bin
+        arguments = [args]
+        bin_sdk_files = sdk_files
+        action_tools = [
+            ctx.attr.generator_bin[DefaultInfo].files_to_run,
+            depset(
+                direct = [ctx.executable.generator_bin, dart],
+                transitive = [generator_runfiles],
+            ),
+        ]
+
+    ctx.actions.run(
+        executable = executable,
+        arguments = arguments,
+        inputs = depset(
+            direct = direct_inputs,
+            transitive = _transitive(library_dep_srcs) + [bin_sdk_files, generator_runfiles] + data_runfiles,
+        ),
+        tools = action_tools,
+        outputs = outputs,
+        mnemonic = "DartCodegen",
+        progress_message = "DartCodegen %s" % ctx.label,
+        env = writable_home_env(dart, outputs[0]),
+        execution_requirements = {
+            "supports-workers": "1",
+            "requires-worker-protocol": "proto",
+            # The worker key includes the shim binary path; using the
+            # same mnemonic across builders still yields distinct worker
+            # pools because Bazel keys on `(mnemonic, binary)`.
+            "worker-key-mnemonic": "DartCodegen",
+        },
+    )
+
+def _codegen_run_script(ctx, dart, script_sdk_files, synth_pc, library_dep_srcs, lib_root, auto_staged, src, outputs):
+    """Runs the generator as a Dart script via the SDK's dart executable."""
+    # Run generator as a Dart script via the SDK's dart executable.
+    # Always pass an explicit `--packages` before the script path so the
+    # Dart VM never walks ancestor directories above `output_user_root`.
+    args = ctx.actions.args()
+    direct_inputs = [src] + list(ctx.files.data)
+    data_runfiles = [dep[DefaultInfo].default_runfiles.files for dep in ctx.attr.data]
+    script_pc = ctx.file.package_config or synth_pc
+    if script_pc == None:
+        script_pc = ctx.actions.declare_file(ctx.label.name + ".package_config.json")
+        ctx.actions.write(
+            output = script_pc,
+            content = '{"configVersion": 2, "packages": []}\n',
+        )
+        direct_inputs.append(script_pc)
+    args.add(script_pc, format = "--packages=%s")
+    args.add(ctx.file.generator.path)
+    args.add("--input", src.path)
+    args.add("--input-asset", asset_path_for(src, lib_root))
+    for output in outputs:
+        args.add("--output", output.path)
+    direct_inputs.extend(add_shim_contract_args(
+        args,
+        ctx,
+        synth_pc,
+        dart,
+        auto_stage_srcs = auto_staged,
+        asset_deps = ctx.files.asset_deps,
+        lib_root = lib_root,
+    ))
+    args.add_all(ctx.attr.generator_args)
+    direct_inputs.append(ctx.file.generator)
+
+    ctx.actions.run(
+        executable = dart,
+        arguments = [args],
+        inputs = depset(
+            direct = direct_inputs,
+            transitive = _transitive(library_dep_srcs) + [script_sdk_files] + data_runfiles,
+        ),
+        outputs = outputs,
+        mnemonic = "DartCodegen",
+        progress_message = "DartCodegen %s" % ctx.label,
+        env = writable_home_env(dart, outputs[0]),
+    )
+
+def _dart_codegen_impl(ctx):
+    identity = resolve_package_identity(ctx)
+    toolchain = ctx.toolchains["//dart:exec_tools_toolchain_type"]
+    dart = toolchain.dart_sdk_info.dart
+
+    # The shim reads what the analyzer reads: the analyze subset. A `generator`
+    # script is run by the `dart` launcher, which also loads `dartvm` and the
+    # kernel service, so that branch takes the runtime subset as well.
+    sdk_files, script_sdk_files = _codegen_sdk_files(ctx, toolchain)
+
+    mismatch = _codegen_validate(ctx, toolchain)
+    if mismatch != None:
+        fail(mismatch)
 
     src = ctx.file.src
     synth_pc, library_dep_srcs = synth_package_config(ctx, ctx.attr.deps)
@@ -223,11 +421,7 @@ def _dart_codegen_impl(ctx):
     # Derive the Dart package's lib_root from deps' DartInfo — works even
     # when the codegen rule's Bazel package path doesn't match the Dart
     # package root (e.g. `//myapp/lib:codegen` for Dart package `myapp`).
-    lib_root_from_deps = dart_lib_root_for_package(
-        ctx.attr.deps,
-        identity.package_name,
-    )
-    lib_root = lib_root_from_deps if lib_root_from_deps != None else ctx.label.package
+    lib_root = _codegen_lib_root(ctx, identity)
 
     # Auto-stage same-package sibling files discovered in `deps` so builders
     # (stacked, mockito, cross-file resolvers, …) see them via the Resolver /
@@ -241,156 +435,14 @@ def _dart_codegen_impl(ctx):
     # Place each output next to the source. declare_file paths are package-
     # relative, so compute a package-relative stem by stripping the Bazel
     # package prefix from src.short_path.
-    rel = src.short_path
-    if ctx.label.package and rel.startswith(ctx.label.package + "/"):
-        rel = rel[len(ctx.label.package) + 1:]
-    rel_no_ext = rel[:-len(".dart")] if rel.endswith(".dart") else rel
-    outputs = [
-        ctx.actions.declare_file(rel_no_ext + suffix)
-        for suffix in ctx.attr.output_suffixes
-    ]
-
-    args = ctx.actions.args()
-    direct_inputs = [src] + list(ctx.files.data)
-    data_runfiles = [dep[DefaultInfo].default_runfiles.files for dep in ctx.attr.data]
+    outputs = _codegen_declare_outputs(ctx, src)
 
     if ctx.executable.generator_bin:
-        # Worker mode requires a single `@flagfile` / `--flagfile=` arg; the
-        # `use_param_file` + `multiline` format produces exactly that and
-        # Bazel expands it into `WorkRequest.arguments` on the transport.
-        args.use_param_file("@%s", use_always = True)
-        args.set_param_file_format("multiline")
-        args.add("--input", src.path)
-        args.add("--input-asset", asset_path_for(src, lib_root))
-        for output in outputs:
-            args.add("--output", output.path)
-        direct_inputs.extend(add_shim_contract_args(
-            args,
-            ctx,
-            synth_pc,
-            dart,
-            auto_stage_srcs = auto_staged,
-            asset_deps = ctx.files.asset_deps,
-            lib_root = lib_root,
-        ))
-        args.add_all(ctx.attr.generator_args)
-
-        # Under `//dart:analyzer_summaries` only: the other packages of `deps`
-        # resolve from their summaries. The script branch below takes no
-        # summaries, since a script does not speak the shim contract.
-        summaries, sdk_summary = analyzer_summary_inputs(ctx, identity.package_name)
-        if sdk_summary != None:
-            args.add_all(summaries, before_each = "--summary")
-            args.add("--sdk-summary", sdk_summary)
-            direct_inputs.extend(summaries)
-            direct_inputs.append(sdk_summary)
-
-        generator_runfiles = ctx.attr.generator_bin[DefaultInfo].default_runfiles.files
-        is_kernel_bin = (
-            DartCompileInfo in ctx.attr.generator_bin and
-            ctx.attr.generator_bin[DartCompileInfo].compile_mode == "kernel"
-        )
-        if is_kernel_bin:
-            kernel_bin = ctx.attr.generator_bin[DartCompileInfo].executable
-            executable = dart
-            arguments = [kernel_bin.path, args]
-            direct_inputs.append(kernel_bin)
-            bin_sdk_files = script_sdk_files
-            action_tools = [
-                ctx.attr.generator_bin[DefaultInfo].files_to_run,
-                depset(
-                    direct = [kernel_bin, dart],
-                    transitive = [toolchain.dart_sdk_info.runtime_files, generator_runfiles],
-                ),
-            ]
-        else:
-            executable = ctx.executable.generator_bin
-            arguments = [args]
-            bin_sdk_files = sdk_files
-            action_tools = [
-                ctx.attr.generator_bin[DefaultInfo].files_to_run,
-                depset(
-                    direct = [ctx.executable.generator_bin, dart],
-                    transitive = [generator_runfiles],
-                ),
-            ]
-
-        ctx.actions.run(
-            executable = executable,
-            arguments = arguments,
-            inputs = depset(
-                direct = direct_inputs,
-                transitive = _transitive(library_dep_srcs) + [bin_sdk_files, generator_runfiles] + data_runfiles,
-            ),
-            tools = action_tools,
-            outputs = outputs,
-            mnemonic = "DartCodegen",
-            progress_message = "DartCodegen %s" % ctx.label,
-            env = writable_home_env(dart, outputs[0]),
-            execution_requirements = {
-                "supports-workers": "1",
-                "requires-worker-protocol": "proto",
-                # The worker key includes the shim binary path; using the
-                # same mnemonic across builders still yields distinct worker
-                # pools because Bazel keys on `(mnemonic, binary)`.
-                "worker-key-mnemonic": "DartCodegen",
-            },
-        )
+        _codegen_run_worker(ctx, toolchain, dart, sdk_files, script_sdk_files, synth_pc, library_dep_srcs, lib_root, auto_staged, src, outputs, identity)
     else:
-        # Run generator as a Dart script via the SDK's dart executable.
-        # Always pass an explicit `--packages` before the script path so the
-        # Dart VM never walks ancestor directories above `output_user_root`.
-        script_pc = ctx.file.package_config or synth_pc
-        if script_pc == None:
-            script_pc = ctx.actions.declare_file(ctx.label.name + ".package_config.json")
-            ctx.actions.write(
-                output = script_pc,
-                content = '{"configVersion": 2, "packages": []}\n',
-            )
-            direct_inputs.append(script_pc)
-        args.add(script_pc, format = "--packages=%s")
-        args.add(ctx.file.generator.path)
-        args.add("--input", src.path)
-        args.add("--input-asset", asset_path_for(src, lib_root))
-        for output in outputs:
-            args.add("--output", output.path)
-        direct_inputs.extend(add_shim_contract_args(
-            args,
-            ctx,
-            synth_pc,
-            dart,
-            auto_stage_srcs = auto_staged,
-            asset_deps = ctx.files.asset_deps,
-            lib_root = lib_root,
-        ))
-        args.add_all(ctx.attr.generator_args)
-        direct_inputs.append(ctx.file.generator)
+        _codegen_run_script(ctx, dart, script_sdk_files, synth_pc, library_dep_srcs, lib_root, auto_staged, src, outputs)
 
-        ctx.actions.run(
-            executable = dart,
-            arguments = [args],
-            inputs = depset(
-                direct = direct_inputs,
-                transitive = _transitive(library_dep_srcs) + [script_sdk_files] + data_runfiles,
-            ),
-            outputs = outputs,
-            mnemonic = "DartCodegen",
-            progress_message = "DartCodegen %s" % ctx.label,
-            env = writable_home_env(dart, outputs[0]),
-        )
-
-    return [
-        DefaultInfo(files = depset(outputs)),
-        # The *effective* values, built-in default included: a library stating
-        # 3.11 over a generator that silently fell back to 3.0 is exactly the
-        # disagreement `codegen_identity_error` exists to name.
-        DartPackageMetadataInfo(
-            package_name = identity.package_name,
-            language_version = (
-                identity.language_version or DEFAULT_ROOT_LANGUAGE_VERSION
-            ),
-        ),
-    ]
+    return _codegen_providers(identity, outputs)
 
 def _transitive(d):
     """Wraps an optional depset as a single-element list for `depset(transitive=...)`.
