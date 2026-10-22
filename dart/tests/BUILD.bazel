@@ -8,6 +8,7 @@ load(":compile_flags_test.bzl", "compile_flags_test_suite")
 load(":dart_binary_test.bzl", "dart_binary_test_suite")
 load(":defines_test.bzl", "defines_test_suite")
 load(":git_host_config_test.bzl", "git_host_config_test_suite")
+load(":jit_fallback_test.bzl", "jit_fallback_test_suite")
 load(":kernel_test.bzl", "kernel_test_suite")
 load(":language_version_test.bzl", "language_version_test_suite")
 load(":library_test.bzl", "library_test_suite")
@@ -38,6 +39,8 @@ toolchain_selection_test_suite(name = "toolchain_selection_test")
 common_test_suite(name = "common_test")
 
 dart_binary_test_suite(name = "dart_binary_test")
+
+jit_fallback_test_suite(name = "jit_fallback_test")
 
 defines_test_suite(name = "defines_test")
 

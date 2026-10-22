@@ -45,6 +45,12 @@ keeps one action key.
 
 `//dart:test_runner_snapshot` turns the snapshot off for the whole build: the
 kernel runs instead, as before. Use it for a snapshot that misbehaves.
+
+When the constant training path is blocked by an entry another user owns, the
+snapshot action fails and names the entry rather than training elsewhere under
+the same action key. `//dart:jit_snapshot_fallback` allows the non-reproducible
+private-scratch fallback instead, and is part of the action's command line, so
+builds that allow it and builds that do not have different action keys.
 """
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
@@ -218,6 +224,8 @@ def _dart_test_runner_snapshot_impl(ctx):
         args.add(dartvm, format = "--dartvm=%s")
     args.add(snapshot, format = "--snapshot=%s")
     args.add("--enable-asserts")
+    if ctx.attr._fallback[BuildSettingInfo].value:
+        args.add("--fallback-allowed")
     args.add("--env=DART_TEST_CONFIG=none/DartTest.yaml")
     args.add("--env=TMPDIR=.")
     args.add("--env=HOME=.")
@@ -269,10 +277,14 @@ dart_test_runner_snapshot = rule(
             default = "//dart:test_runner_snapshot",
             providers = [BuildSettingInfo],
         ),
+        "_fallback": attr.label(
+            default = "//dart:jit_snapshot_fallback",
+            providers = [BuildSettingInfo],
+        ),
     },
     toolchains = [
         "//dart:toolchain_type",
         "//dart:exec_tools_toolchain_type",
     ],
-    doc = "Runs one training test under the `package:test` runner and keeps the app-JIT snapshot that run writes. Empty where exec and target SDKs differ, where the exec host is Windows, or where `--@rules_dart//dart:test_runner_snapshot=false` turns snapshots off.",
+    doc = "Runs one training test under the `package:test` runner and keeps the app-JIT snapshot that run writes. Empty where exec and target SDKs differ, where the exec host is Windows, or where `--@rules_dart//dart:test_runner_snapshot=false` turns snapshots off. Fails where the constant training path is blocked by another user's entry unless `--@rules_dart//dart:jit_snapshot_fallback=true` allows the fallback.",
 )

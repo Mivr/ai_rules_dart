@@ -169,7 +169,7 @@ def has_comma_define_flag(flags):
             return True
     return False
 
-def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asserts, comma_patch = None):
+def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asserts, comma_patch = None, fallback_allowed = False):
     """Trains the app-JIT snapshot of a kernel at one constant absolute path.
 
     `dart compile jit-snapshot` trains in the action's own directory, so the
@@ -189,6 +189,11 @@ def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asse
         main: The kernel File to train on, with no program arguments.
         output: The `.jit` File to produce.
         enable_asserts: Whether the training run enables asserts.
+        fallback_allowed: Whether the training may fall back to a private
+            scratch directory when the constant training path is unavailable
+            (from `//dart:jit_snapshot_fallback`). Passed on the command line,
+            so builds that allow the fallback and builds that do not have
+            different action keys.
     """
     dart_bin = dart_sdk_info.dart
     dartvm = sdk_dartvm(dart_sdk_info)
@@ -206,6 +211,8 @@ def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asse
     args.add(output, format = "--snapshot=%s")
     if enable_asserts:
         args.add("--enable-asserts")
+    if fallback_allowed:
+        args.add("--fallback-allowed")
     args.add("--env=TMPDIR=.")
     args.add("--env=HOME=.")
     args.add(main, format = "--copy=input.dill=%s")
@@ -456,7 +463,8 @@ def dart_compile_action(
         jit_tool = None,
         comma_patch = None,
         native_assets_yaml = None,
-        embed_sources = True):
+        embed_sources = True,
+        jit_snapshot_fallback = False):
     """Creates the actions that compile a Dart entrypoint in `compile_mode`.
 
     A source entrypoint (one with a `package_config`) is first compiled to a
@@ -499,6 +507,11 @@ def dart_compile_action(
             `jit_tool` is passed.
         native_assets_yaml: Optional `native_assets.yaml` File.
         embed_sources: Whether non-AOT kernels embed source text.
+        jit_snapshot_fallback: Whether a `jit-snapshot` training may fall back
+            to a private scratch directory when the constant training path is
+            unavailable (from `//dart:jit_snapshot_fallback`). Reaches the
+            snapshot action's command line, so builds that allow the fallback
+            and builds that do not have different action keys.
     """
     cross_err = cross_target_error(target_os, target_arch)
     if cross_err != None:
@@ -605,6 +618,7 @@ def dart_compile_action(
             main = compile_main,
             output = output,
             enable_asserts = enable_asserts,
+            fallback_allowed = jit_snapshot_fallback,
         )
         return
 

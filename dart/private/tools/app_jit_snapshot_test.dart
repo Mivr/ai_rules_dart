@@ -10,12 +10,24 @@ import 'comma_patch.dart' as comma;
 
 void main(List<String> args) {
   late Directory tmp;
+  late int Function(String, int) realMkdir;
+  late bool Function(String) realRemoveStale;
 
   setUp(() {
     tmp = Directory.systemTemp.createTempSync('app_jit_snapshot_test_');
+    // Other builds on this host train at the real constant paths
+    // concurrently: every training in this file uses test directories.
+    snapshot.trainDirOverride = '${tmp.path}/jit_train';
+    snapshot.trainLockOverride = '${tmp.path}/jit_train.lock';
+    realMkdir = snapshot.mkdirExclusive;
+    realRemoveStale = snapshot.removeStaleEntry;
   });
 
   tearDown(() {
+    snapshot.trainDirOverride = null;
+    snapshot.trainLockOverride = null;
+    snapshot.mkdirExclusive = realMkdir;
+    snapshot.removeStaleEntry = realRemoveStale;
     if (!Platform.isWindows) {
       for (final entity in tmp.listSync(recursive: true)) {
         if (entity is File) {
@@ -45,6 +57,66 @@ void main(List<String> args) {
     File('${dir.path}/comma_patch.dart')
         .writeAsBytesSync(File(patchSource).readAsBytesSync());
     return '${dir.path}/app_jit_snapshot.dart';
+  }
+
+  /// Stages the tool with one source replacement applied (failing the test
+  /// when [from] is missing, so a silent no-op patch cannot pass), for tests
+  /// that force an error path a live host cannot produce on demand.
+  String stagePatchedTool(String from, String to) {
+    final staged = stageTool();
+    final source = File(staged).readAsStringSync();
+    expect(source, contains(from), reason: 'patch anchor present');
+    File(staged).writeAsStringSync(source.replaceFirst(from, to));
+    return staged;
+  }
+
+  /// Compiles [source] to a kernel file named [name].dill under [tmp] (as in
+  /// real builds the training input is a compiled kernel), returning its path.
+  String compileDill(String source, String name) {
+    File('${tmp.path}/$name.dart').writeAsStringSync(source);
+    final dill = File('${tmp.path}/$name.dill');
+    final compileRes = Process.runSync(Platform.resolvedExecutable, [
+      'compile',
+      'kernel',
+      '${tmp.path}/$name.dart',
+      '-o',
+      dill.path,
+    ]);
+    expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
+    return dill.path;
+  }
+
+  /// The test training paths for a staged tool subprocess, which cannot see
+  /// the in-process overrides: the same directories the in-process
+  /// [snapshot.constantTrainDir] and [snapshot.constantTrainLock] name.
+  Map<String, String> constantTrainEnv() => {
+    'RULES_DART_JIT_TRAIN_DIR': snapshot.constantTrainDir,
+    'RULES_DART_JIT_TRAIN_LOCK': snapshot.constantTrainLock,
+  };
+
+  /// Trains [dill] to [out] in-process at the constant training path,
+  /// returning the snapshot bytes. Fails the test when the run leaves
+  /// anything but the snapshot beside the output: the fallback trains into a
+  /// scratch directory beside the output, so leftovers prove the constant
+  /// path was not used.
+  List<int> trainAtConstant({required String dill, required String out}) {
+    final outJit = File(out);
+    snapshot.main([
+      '--dart=${Platform.resolvedExecutable}',
+      '--snapshot=${outJit.path}',
+      '--env=TMPDIR=.',
+      '--env=HOME=.',
+      '--copy=input.dill=$dill',
+      '--',
+      'input.dill',
+    ]);
+    expect(outJit.existsSync(), isTrue, reason: 'snapshot written to $out');
+    expect(
+      outJit.parent.listSync().map((e) => e.path.split('/').last).toList(),
+      ['app.jit'],
+      reason: 'no training scratch may stay beside the output ($out)',
+    );
+    return outJit.readAsBytesSync();
   }
 
   /// Patches the SDK snapshot at [inputPath] into [tmp], failing the test
@@ -927,131 +999,356 @@ void main(List<String> args) {
     ]);
     expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
     final outJit = File('${tmp.path}/fail/app.jit');
-    final res = Process.runSync(Platform.resolvedExecutable, [
-      tool,
-      '--dart=${Platform.resolvedExecutable}',
-      '--snapshot=${outJit.path}',
-      '--copy=input.dill=${failDill.path}',
-      '--',
-      'input.dill',
-    ]);
+    final res = Process.runSync(
+      Platform.resolvedExecutable,
+      [
+        tool,
+        '--dart=${Platform.resolvedExecutable}',
+        '--snapshot=${outJit.path}',
+        '--copy=input.dill=${failDill.path}',
+        '--',
+        'input.dill',
+      ],
+      // The staged tool cannot see the in-process overrides.
+      environment: constantTrainEnv(),
+    );
     expect(res.exitCode, isNot(0));
     if (!Platform.isWindows) {
       // At the constant path the failed training must delete its directory
       // before releasing the lock, too.
       expect(
-        FileSystemEntity.typeSync('/tmp/rules_dart_jit', followLinks: false),
+        FileSystemEntity.typeSync(
+          snapshot.constantTrainDir,
+          followLinks: false,
+        ),
         FileSystemEntityType.notFound,
         reason: 'constant training directory deleted on failure',
       );
     }
   });
 
-  test('planted constant training path falls back without touching it', () {
-    // Anything pre-existing at the constant training path — a symlink here,
-    // a file or an undeletable directory in the tests below — must never be
-    // read, followed, or deleted: the tool falls back to the private scratch
-    // directory and still writes the snapshot.
-    const constant = '/tmp/rules_dart_jit';
-    const lock = '/tmp/rules_dart_jit.lock';
-    // A stale lock file from an earlier test in this file is ours and held
-    // by no live training (tests in one file run sequentially); remove it so
-    // the lock plant below starts clear. Never touch anything else.
-    if (FileSystemEntity.typeSync(lock, followLinks: false) ==
-        FileSystemEntityType.file) {
-      File(lock).deleteSync();
-    }
-    void expectClear() {
-      // The lock file persists by design (it carries the flock); it must be
-      // a file or absent, never a directory. The training directory itself
-      // must be gone: every training deletes it before releasing the lock.
-      expect(
-        FileSystemEntity.typeSync(constant, followLinks: false),
-        FileSystemEntityType.notFound,
-        reason: '$constant left behind by an earlier test',
-      );
-      final lockType = FileSystemEntity.typeSync(lock, followLinks: false);
-      expect(
-        lockType == FileSystemEntityType.notFound ||
-            lockType == FileSystemEntityType.file,
-        isTrue,
-        reason: '$lock is a $lockType',
-      );
-    }
-
-    final trivialDill = File('${tmp.path}/fallback_train.dill');
-    if (!trivialDill.existsSync()) {
-      File('${tmp.path}/fallback_train.dart').writeAsStringSync(
+  test(
+    'stale own entries are removed and training keeps constant-path bytes',
+    () {
+      // A stale entry of our own at the training path — file, symlink, FIFO —
+      // is removed without being read, and the training uses the constant path
+      // with unchanged bytes: no host state leaks into the shared output under
+      // the same action key.
+      final trainDir = snapshot.constantTrainDir;
+      final dill = compileDill(
         'void main(List<String> args) {\n  print(10000);\n}\n',
+        'stale_train',
       );
-      final compileRes = Process.runSync(Platform.resolvedExecutable, [
-        'compile',
-        'kernel',
-        '${tmp.path}/fallback_train.dart',
-        '-o',
-        trivialDill.path,
-      ]);
-      expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
-    }
-    var n = 0;
-    void trainAndCheck(String why) {
-      n++;
-      final outJit = File('${tmp.path}/fallback$n/app.jit');
-      snapshot.main([
-        '--dart=${Platform.resolvedExecutable}',
-        '--snapshot=${outJit.path}',
-        '--env=TMPDIR=.',
-        '--env=HOME=.',
-        '--copy=input.dill=${trivialDill.path}',
-        '--',
-        'input.dill',
-      ]);
-      expect(outJit.existsSync(), isTrue, reason: 'snapshot ($why)');
-    }
 
-    // A symlink at the training path: never followed (the victim holds only
-    // its sentinel afterwards) and never deleted as a link.
-    expectClear();
-    final victim = Directory('${tmp.path}/fallback_victim')..createSync();
-    File('${victim.path}/sentinel').writeAsStringSync('untouched');
-    Link(constant).createSync(victim.path);
-    try {
-      trainAndCheck('symlink plant');
+      List<int> train(String name) =>
+          trainAtConstant(dill: dill, out: '${tmp.path}/$name/app.jit');
+
+      final first = train('stale_clear');
       expect(
-        Link(constant).targetSync(),
-        victim.path,
-        reason: 'planted link intact',
+        File(snapshot.constantTrainLock).existsSync(),
+        isTrue,
+        reason: 'lock file proves the constant path was used',
       );
+
+      // A stale regular file of our own is removed, never read.
+      File(trainDir).writeAsStringSync('stale');
+      expect(train('stale_file'), equals(first));
+      expect(
+        FileSystemEntity.typeSync(trainDir, followLinks: false),
+        FileSystemEntityType.notFound,
+      );
+
+      // A stale symlink of our own is unlinked as a link: its target keeps only
+      // its sentinel, with its bytes untouched.
+      final victim = Directory('${tmp.path}/stale_victim')..createSync();
+      File('${victim.path}/sentinel').writeAsStringSync('untouched');
+      Link(trainDir).createSync(victim.path);
+      expect(train('stale_link'), equals(first));
+      expect(
+        FileSystemEntity.typeSync(trainDir, followLinks: false),
+        FileSystemEntityType.notFound,
+      );
+      expect(File('${victim.path}/sentinel').readAsStringSync(), 'untouched');
       expect(victim.listSync().map((e) => e.path.split('/').last).toList(), [
         'sentinel',
-      ], reason: 'planted directory never staged into');
-      expect(File('${victim.path}/sentinel').readAsStringSync(), 'untouched');
-    } finally {
-      Link(constant).deleteSync();
-    }
+      ]);
 
-    // A regular file at the training path: never read or deleted.
-    expectClear();
-    File(constant).writeAsStringSync('planted');
-    try {
-      trainAndCheck('file plant');
-      expect(File(constant).readAsStringSync(), 'planted');
-    } finally {
-      File(constant).deleteSync();
-    }
+      // A stale FIFO of our own is unlinked without blocking.
+      final mkfifo = Process.runSync('mkfifo', [trainDir]);
+      expect(mkfifo.exitCode, 0, reason: '${mkfifo.stderr}');
+      expect(train('stale_fifo'), equals(first));
+      expect(
+        FileSystemEntity.typeSync(trainDir, followLinks: false),
+        FileSystemEntityType.notFound,
+      );
+    },
+    skip: Platform.isWindows ? posixOnlyReason : false,
+  );
 
-    // A directory at the lock path: the lock cannot be opened, so the tool
-    // falls back without touching it.
-    expectClear();
-    if (File(lock).existsSync()) File(lock).deleteSync();
-    Directory(lock).createSync();
+  test('removeStaleEntry removes any entry type without following links', () {
+    final base = '${tmp.path}/entries';
+    // A regular file.
+    final file = File('$base/file')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('x');
+    expect(snapshot.removeStaleEntry(file.path), isTrue);
+    expect(file.existsSync(), isFalse);
+    // An absent path is already clear.
+    expect(snapshot.removeStaleEntry('$base/missing'), isTrue);
+    // A symlink is unlinked as a link: its target is untouched.
+    final target = Directory('$base/target')..createSync(recursive: true);
+    File('${target.path}/sentinel').writeAsStringSync('untouched');
+    final link = Link('$base/link');
+    link.createSync(target.path);
+    expect(snapshot.removeStaleEntry(link.path), isTrue);
+    expect(
+      FileSystemEntity.typeSync(link.path, followLinks: false),
+      FileSystemEntityType.notFound,
+    );
+    expect(File('${target.path}/sentinel').readAsStringSync(), 'untouched');
+    // A FIFO.
+    final fifo = '$base/fifo';
+    final mkfifo = Process.runSync('mkfifo', [fifo]);
+    expect(mkfifo.exitCode, 0, reason: '${mkfifo.stderr}');
+    expect(snapshot.removeStaleEntry(fifo), isTrue);
+    expect(
+      FileSystemEntity.typeSync(fifo, followLinks: false),
+      FileSystemEntityType.notFound,
+    );
+    // A directory holding a nested symlink is removed without following the
+    // link: the link's target keeps its file.
+    final outerTarget = Directory('$base/outer_target')
+      ..createSync(recursive: true);
+    File('${outerTarget.path}/keep').writeAsStringSync('keep');
+    final dir = Directory('$base/dir')..createSync(recursive: true);
+    File('${dir.path}/inner.txt').writeAsStringSync('inner');
+    Link('${dir.path}/escape').createSync(outerTarget.path);
+    expect(snapshot.removeStaleEntry(dir.path), isTrue);
+    expect(Directory(dir.path).existsSync(), isFalse);
+    expect(File('${outerTarget.path}/keep').readAsStringSync(), 'keep');
+    // The hook is replaceable: a false return pins the fail-closed path.
+    final real = snapshot.removeStaleEntry;
+    snapshot.removeStaleEntry = (_) => false;
     try {
-      trainAndCheck('lock plant');
-      expect(Directory(lock).existsSync(), isTrue);
+      expect(snapshot.removeStaleEntry(file.path), isFalse);
     } finally {
-      Directory(lock).deleteSync();
+      snapshot.removeStaleEntry = real;
     }
-    expectClear();
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('lock file without group/other write bits is fixed to 0666', () {
+    // A lock of our own left with a restrictive umask's bits still opens
+    // append-only (we own it), and the open fixes the missing group/other
+    // write bits umask-proof, so every user on a shared host can open it.
+    // The lock file is never written.
+    final lock = File(snapshot.constantTrainLock);
+    lock.writeAsStringSync('seed');
+    snapshot.chmodFile(lock.path, 0x180); // 0600.
+    final dill = compileDill(
+      'void main(List<String> args) {\n  print(10000);\n}\n',
+      'lockbits_train',
+    );
+    trainAtConstant(dill: dill, out: '${tmp.path}/lockbits/app.jit');
+    expect(lock.statSync().mode & 0x1ff, 0x1b6);
+    expect(lock.readAsStringSync(), 'seed');
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('training proceeds under a read-only lock', () {
+    // A lock nobody can open append-only (as a foreign 0644 lock looks to
+    // us) still trains at the constant path under a shared lock, and the
+    // lock file is never written.
+    final lock = File(snapshot.constantTrainLock);
+    lock.writeAsStringSync('seed');
+    snapshot.chmodFile(lock.path, 0x124); // 0444.
+    final dill = compileDill(
+      'void main(List<String> args) {\n  print(10000);\n}\n',
+      'rolock_train',
+    );
+    trainAtConstant(dill: dill, out: '${tmp.path}/rolock/app.jit');
+    expect(lock.readAsStringSync(), 'seed');
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('a shared lock can be taken on a read-only open', () {
+    // What a foreign 0644 lock looks like to us: the append-open fails, and
+    // Dart's `lockSync` is an `fcntl(2)` lock whose exclusive lock needs
+    // write access, so the fallback takes a shared lock on a read-only
+    // descriptor instead.
+    final probed = File('${tmp.path}/ro.lock')..writeAsStringSync('x');
+    snapshot.chmodFile(probed.path, 0x124); // 0444.
+    expect(
+      () => probed.openSync(mode: FileMode.append),
+      throwsA(isA<FileSystemException>()),
+    );
+    final first = probed.openSync(mode: FileMode.read);
+    first.lockSync(FileLock.blockingShared);
+    // Another shared lock succeeds: shared holders coexist (the atomic
+    // `mkdir(0700)` claim decides among them).
+    final second = probed.openSync(mode: FileMode.read);
+    second.lockSync(FileLock.shared);
+    second.unlockSync();
+    second.closeSync();
+    first.unlockSync();
+    first.closeSync();
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('a read-only shared lock waits out an exclusive holder', () async {
+    // `fcntl(2)` locks merge within one process, so the shared lock's
+    // conflict with an exclusive holder is observable only across processes:
+    // a helper holds the file exclusively while this test locks a read-only
+    // descriptor of it.
+    final probed = File('${tmp.path}/ro_holder.lock')..writeAsStringSync('x');
+    File('${tmp.path}/hold_lock.dart').writeAsStringSync(
+      "import 'dart:async';\n"
+      "import 'dart:io';\n"
+      "Future<void> main(List<String> args) async {\n"
+      "  final lock = File(args[0]).openSync(mode: FileMode.append);\n"
+      "  lock.lockSync(FileLock.blockingExclusive);\n"
+      "  stdout.writeln('locked');\n"
+      "  await stdout.flush();\n"
+      "  await Future<void>.delayed(Duration(seconds: 60));\n"
+      "}\n",
+    );
+    final holder = await Process.start(Platform.resolvedExecutable, [
+      '${tmp.path}/hold_lock.dart',
+      probed.path,
+    ]);
+    try {
+      final lines = holder.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter());
+      expect(await lines.first.timeout(const Duration(seconds: 60)), 'locked');
+      // The exclusive holder blocks the shared lock: the read-only training
+      // waits out an active training.
+      final read = probed.openSync(mode: FileMode.read);
+      try {
+        expect(
+          () => read.lockSync(FileLock.shared),
+          throwsA(isA<FileSystemException>()),
+        );
+      } finally {
+        read.closeSync();
+      }
+    } finally {
+      holder.kill();
+      await holder.exitCode;
+    }
+    // Once the holder is gone the shared lock succeeds.
+    snapshot.chmodFile(probed.path, 0x124); // 0444.
+    final read = probed.openSync(mode: FileMode.read);
+    read.lockSync(FileLock.blockingShared);
+    read.unlockSync();
+    read.closeSync();
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('unremovable blocker fails closed without the fallback flag', () {
+    // A blocker no removal can take: the parent directory is read-only, so
+    // unlinking the entry fails even for its owner. The tool runs in a
+    // subprocess (it exits on failure), with the training paths pointed at
+    // the blocker through the environment.
+    final tool = stageTool();
+    final dill = compileDill(
+      'void main(List<String> args) {\n  print(10000);\n}\n',
+      'blocked_train',
+    );
+    final parent = Directory('${tmp.path}/blocked')..createSync();
+    final blocker = File('${parent.path}/jit')
+      ..writeAsStringSync('not ours to remove');
+    snapshot.chmodFile(parent.path, 0x155); // 0555.
+    List<String> toolArgs(String snapshotOut, {bool fallback = false}) => [
+      tool,
+      '--dart=${Platform.resolvedExecutable}',
+      '--snapshot=$snapshotOut',
+      if (fallback) '--fallback-allowed',
+      '--copy=input.dill=$dill',
+      '--',
+      'input.dill',
+    ];
+    final trainEnv = {
+      'RULES_DART_JIT_TRAIN_DIR': blocker.path,
+      'RULES_DART_JIT_TRAIN_LOCK': snapshot.constantTrainLock,
+    };
+    try {
+      final outJit = '${tmp.path}/blocked_out/app.jit';
+      final denied = Process.runSync(
+        Platform.resolvedExecutable,
+        toolArgs(outJit),
+        environment: trainEnv,
+      );
+      expect(denied.exitCode, isNot(0), reason: 'blocked training must fail');
+      expect(File(outJit).existsSync(), isFalse);
+      final err = denied.stderr as String;
+      expect(err, contains('cannot train in ${blocker.path}'));
+      expect(err, contains('cannot be removed'));
+      expect(err, contains('regular file'));
+      final id = Process.runSync('id', ['-u']);
+      expect(id.exitCode, 0);
+      expect(err, contains('owned by uid ${(id.stdout as String).trim()}'));
+      expect(err, contains('jit_snapshot_fallback=true'));
+      expect(err, contains('test_runner_snapshot=false'));
+      expect(
+        File(blocker.path).readAsStringSync(),
+        'not ours to remove',
+        reason: 'blocker never touched',
+      );
+
+      final allowedOut = '${tmp.path}/blocked_allowed/app.jit';
+      final allowed = Process.runSync(
+        Platform.resolvedExecutable,
+        toolArgs(allowedOut, fallback: true),
+        environment: trainEnv,
+      );
+      expect(allowed.exitCode, 0, reason: '${allowed.stderr}');
+      expect(File(allowedOut).existsSync(), isTrue);
+    } finally {
+      snapshot.chmodFile(parent.path, 0x1ed);
+    }
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('unclaimable training path fails closed without the fallback flag', () {
+    // The delete-to-create race lost: another local user created the training
+    // directory in the window, so the atomic mkdir claim sees EEXIST. Forced
+    // through the mkdir hook in a staged copy of the tool; the in-process
+    // hook resets in tearDown, and the failure names the blocker.
+    final tool = stagePatchedTool(
+      'int Function(String path, int mode) mkdirExclusive = _libcMkdir;',
+      'int Function(String path, int mode) mkdirExclusive = (_, __) => -1;',
+    );
+    final dill = compileDill(
+      'void main(List<String> args) {\n  print(10000);\n}\n',
+      'unclaimable_train',
+    );
+    final trainDir = '${tmp.path}/unclaimable_jit';
+    final trainEnv = {
+      'RULES_DART_JIT_TRAIN_DIR': trainDir,
+      'RULES_DART_JIT_TRAIN_LOCK': snapshot.constantTrainLock,
+    };
+    List<String> toolArgs(String snapshotOut, {bool fallback = false}) => [
+      tool,
+      '--dart=${Platform.resolvedExecutable}',
+      '--snapshot=$snapshotOut',
+      if (fallback) '--fallback-allowed',
+      '--copy=input.dill=$dill',
+      '--',
+      'input.dill',
+    ];
+    final outJit = '${tmp.path}/unclaimable_out/app.jit';
+    final denied = Process.runSync(
+      Platform.resolvedExecutable,
+      toolArgs(outJit),
+      environment: trainEnv,
+    );
+    expect(denied.exitCode, isNot(0), reason: 'unclaimable training must fail');
+    expect(File(outJit).existsSync(), isFalse);
+    expect(denied.stderr as String, contains('cannot be claimed'));
+
+    final allowedOut = '${tmp.path}/unclaimable_allowed/app.jit';
+    final allowed = Process.runSync(
+      Platform.resolvedExecutable,
+      toolArgs(allowedOut, fallback: true),
+      environment: trainEnv,
+    );
+    expect(allowed.exitCode, 0, reason: '${allowed.stderr}');
+    expect(File(allowedOut).existsSync(), isTrue);
   }, skip: Platform.isWindows ? posixOnlyReason : false);
 
   test('pre-existing lock file keeps its content after a training run', () {
@@ -1059,17 +1356,8 @@ void main(List<String> args) {
     // a regular file already at the lock path trains (at the constant path,
     // under its flock) and keeps its bytes: no truncate-though-symlink, no
     // clobber.
-    const constant = '/tmp/rules_dart_jit';
-    const lock = '/tmp/rules_dart_jit.lock';
-    expect(
-      FileSystemEntity.typeSync(constant, followLinks: false),
-      FileSystemEntityType.notFound,
-      reason: '$constant left behind by an earlier test',
-    );
-    if (FileSystemEntity.typeSync(lock, followLinks: false) ==
-        FileSystemEntityType.file) {
-      File(lock).deleteSync();
-    }
+    final constant = snapshot.constantTrainDir;
+    final lock = snapshot.constantTrainLock;
     File(
       '${tmp.path}/lock_train.dart',
     ).writeAsStringSync('void main(List<String> args) {\n  print(10000);\n}\n');
@@ -1083,105 +1371,97 @@ void main(List<String> args) {
     ]);
     expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
     File(lock).writeAsStringSync('not-ours');
-    try {
-      final outJit = File('${tmp.path}/lock_content/app.jit');
-      snapshot.main([
-        '--dart=${Platform.resolvedExecutable}',
-        '--snapshot=${outJit.path}',
-        '--env=TMPDIR=.',
-        '--env=HOME=.',
-        '--copy=input.dill=${trivialDill.path}',
-        '--',
-        'input.dill',
-      ]);
-      expect(outJit.existsSync(), isTrue, reason: 'snapshot written');
-      expect(
-        File(lock).readAsStringSync(),
-        'not-ours',
-        reason: 'lock file never truncated',
-      );
-      expect(
-        FileSystemEntity.typeSync(constant, followLinks: false),
-        FileSystemEntityType.notFound,
-        reason: 'constant training directory deleted after the run',
-      );
-    } finally {
-      if (File(lock).existsSync()) File(lock).deleteSync();
-    }
-  }, skip: Platform.isWindows ? posixOnlyReason : false);
-
-  test('racy claim at the constant training path falls back', () {
-    // Another local user creating the training directory in the
-    // delete-to-create window must not hand us a directory they own: the
-    // atomic mkdir claim sees EEXIST, the tool falls back to the private
-    // scratch directory, and the VM copy never lands in the planted
-    // directory. Simulated by making mkdirExclusive plant the directory just
-    // before the real mkdir runs.
-    const constant = '/tmp/rules_dart_jit';
-    const lock = '/tmp/rules_dart_jit.lock';
+    final outJit = File('${tmp.path}/lock_content/app.jit');
+    snapshot.main([
+      '--dart=${Platform.resolvedExecutable}',
+      '--snapshot=${outJit.path}',
+      '--env=TMPDIR=.',
+      '--env=HOME=.',
+      '--copy=input.dill=${trivialDill.path}',
+      '--',
+      'input.dill',
+    ]);
+    expect(outJit.existsSync(), isTrue, reason: 'snapshot written');
+    expect(
+      File(lock).readAsStringSync(),
+      'not-ours',
+      reason: 'lock file never truncated',
+    );
     expect(
       FileSystemEntity.typeSync(constant, followLinks: false),
       FileSystemEntityType.notFound,
-      reason: '$constant left behind by an earlier test',
+      reason: 'constant training directory deleted after the run',
     );
-    final lockType = FileSystemEntity.typeSync(lock, followLinks: false);
-    expect(
-      lockType == FileSystemEntityType.notFound ||
-          lockType == FileSystemEntityType.file,
-      isTrue,
-      reason: '$lock is a $lockType',
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('racy claim at the constant training path fails closed', () {
+    // Another local user creating the training directory in the
+    // delete-to-create window must not hand us a directory they own: the
+    // atomic mkdir claim sees EEXIST, and the action fails instead of
+    // training in a directory they own, where a swapped binary would run as
+    // us. Simulated in a staged copy of the tool whose mkdir plants the
+    // directory just before the real mkdir runs (the tool exits on failure,
+    // so it runs in a subprocess: an in-process exit would kill this test
+    // runner).
+    final tool = stagePatchedTool(
+      'int Function(String path, int mode) mkdirExclusive = _libcMkdir;',
+      'int Function(String path, int mode) mkdirExclusive = (path, mode) {\n'
+          '  final planted = Directory(path)..createSync();\n'
+          '  File("\${planted.path}/sentinel").writeAsStringSync("theirs");\n'
+          '  return _libcMkdir(path, mode);\n'
+          '};',
     );
-    File(
-      '${tmp.path}/race_train.dart',
-    ).writeAsStringSync('void main(List<String> args) {\n  print(10000);\n}\n');
-    final trivialDill = File('${tmp.path}/race_train.dill');
-    final compileRes = Process.runSync(Platform.resolvedExecutable, [
-      'compile',
-      'kernel',
-      '${tmp.path}/race_train.dart',
-      '-o',
-      trivialDill.path,
-    ]);
-    expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
-    final realMkdir = snapshot.mkdirExclusive;
-    snapshot.mkdirExclusive = (path, mode) {
-      // The attacker wins the race just before our claim.
-      final planted = Directory(path)..createSync();
-      File('${planted.path}/sentinel').writeAsStringSync('theirs');
-      return realMkdir(path, mode);
+    final dill = compileDill(
+      'void main(List<String> args) {\n  print(10000);\n}\n',
+      'race_train',
+    );
+    final trainDir = '${tmp.path}/race_jit';
+    final trainEnv = {
+      'RULES_DART_JIT_TRAIN_DIR': trainDir,
+      'RULES_DART_JIT_TRAIN_LOCK': snapshot.constantTrainLock,
     };
-    try {
-      final outJit = File('${tmp.path}/race_claim/app.jit');
-      snapshot.main([
-        '--dart=${Platform.resolvedExecutable}',
-        '--snapshot=${outJit.path}',
-        '--env=TMPDIR=.',
-        '--env=HOME=.',
-        '--copy=input.dill=${trivialDill.path}',
-        '--',
-        'input.dill',
-      ]);
-      expect(
-        outJit.existsSync(),
-        isTrue,
-        reason: 'snapshot written via the fallback',
-      );
-      final racedNames = Directory(constant)
+    List<String> toolArgs(String snapshotOut, {bool fallback = false}) => [
+      tool,
+      '--dart=${Platform.resolvedExecutable}',
+      '--snapshot=$snapshotOut',
+      if (fallback) '--fallback-allowed',
+      '--copy=input.dill=$dill',
+      '--',
+      'input.dill',
+    ];
+    final outJit = '${tmp.path}/race_claim/app.jit';
+    final denied = Process.runSync(
+      Platform.resolvedExecutable,
+      toolArgs(outJit),
+      environment: trainEnv,
+    );
+    expect(denied.exitCode, isNot(0), reason: 'raced claim must fail');
+    expect(File(outJit).existsSync(), isFalse);
+    final err = denied.stderr as String;
+    expect(err, contains('cannot train in $trainDir'));
+    expect(err, contains('cannot be claimed'));
+    expect(
+      Directory(trainDir)
           .listSync()
           .map((e) => e.path.split('/').last)
-          .toList();
-      expect(racedNames, [
-        'sentinel',
-      ], reason: 'VM copy never staged into the raced directory');
-      expect(
-        File('$constant/sentinel').readAsStringSync(),
-        'theirs',
-        reason: 'raced directory untouched',
-      );
-    } finally {
-      snapshot.mkdirExclusive = realMkdir;
-      Directory(constant).deleteSync(recursive: true);
-    }
+          .toList(),
+      ['sentinel'],
+      reason: 'VM copy never staged into the raced directory',
+    );
+    expect(
+      File('$trainDir/sentinel').readAsStringSync(),
+      'theirs',
+      reason: 'raced directory untouched',
+    );
+
+    final allowedOut = '${tmp.path}/race_allowed/app.jit';
+    final allowed = Process.runSync(
+      Platform.resolvedExecutable,
+      toolArgs(allowedOut, fallback: true),
+      environment: trainEnv,
+    );
+    expect(allowed.exitCode, 0, reason: '${allowed.stderr}');
+    expect(File(allowedOut).existsSync(), isTrue);
   }, skip: Platform.isWindows ? posixOnlyReason : false);
 
   test('buildChildEnvironment on Windows preserves SystemRoot and valid names while isolating home and cache directories', () {

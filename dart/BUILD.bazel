@@ -26,6 +26,23 @@ bool_flag(
     visibility = ["//visibility:public"],
 )
 
+# Whether an app-JIT snapshot training (`dart_binary(compile_mode = "jit-snapshot")`
+# and the `package:test` runner snapshot) may fall back to a private scratch
+# directory when the constant training path is unavailable (see
+# `app_jit_snapshot.dart`). Off by default: the fallback trains different bytes
+# under the same action key, and both actions are remote-cacheable, so one host's
+# state would leak into shared outputs. When the path is blocked, the action fails
+# and names the blocker instead; remove the entry, or pass this flag to allow the
+# fallback whose bytes are not reproducible:
+#   bazel build //... --@rules_dart//dart:jit_snapshot_fallback=true
+# The flag is part of both snapshot actions' command lines, so builds that allow
+# the fallback and builds that do not have different action keys.
+bool_flag(
+    name = "jit_snapshot_fallback",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
 # Whether `dart_analyze` checks each target against per-library summaries of its
 # dependencies, rather than analyzing the dependencies' source again. It is
 # faster, and a body edit in a library stops re-analyzing the libraries above it,

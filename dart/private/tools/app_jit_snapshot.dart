@@ -9,7 +9,7 @@
 //
 // Usage:
 //   dart app_jit_snapshot.dart --dart=<dart> --snapshot=<out> \
-//       [--dartvm=<dartvm>] [--enable-asserts] \
+//       [--dartvm=<dartvm>] [--enable-asserts] [--fallback-allowed] \
 //       [--env=KEY=VALUE]... [--copy=DEST=SOURCE]... [--copy-tree=DEST=DIR]... \
 //       -- <dart arguments>
 //
@@ -27,11 +27,11 @@
 //  * The training is passed no `--packages` option, and every path the
 //    training VM resolves is byte-identical on every build of one target. On
 //    POSIX the training runs at the constant path `/tmp/rules_dart_jit` (see
-//    [_constantTrainDir]): the working directory, the training VM copy, the
+//    [constantTrainDir]): the working directory, the training VM copy, the
 //    staged inputs, `HOME`, `TMPDIR`, the script, and the `--snapshot` output
 //    all read the same whatever output root or sandbox the build runs in, so
 //    no interned path string can name the build. Concurrent trainings on one
-//    host serialize on [_constantTrainLock]. A JIT-heavy program (hot loops,
+//    host serialize on [constantTrainLock]. A JIT-heavy program (hot loops,
 //    many small classes, string-keyed maps, closures) trains identical bytes
 //    across output roots and strategies at the constant path; training the
 //    same inputs in varying directories trains different bytes from the same
@@ -52,11 +52,26 @@
 // `no-remote-cache` requirement: the first machine's snapshot is reused, and
 // every dependant keeps one action key.
 //
-// Where the constant directory is unavailable (Windows, which keeps the
-// private scratch directory beside the output, or a host where the path
-// cannot be locked or cleared) the training falls back to the private
-// scratch directory and prints one notice: that snapshot may name the
-// build's paths and must not be shared.
+// Where the constant directory is unavailable the action fails instead of
+// training elsewhere: a private-scratch training emits different bytes under
+// the same action key, and both actions are remote-cacheable, so one host's
+// state would leak into shared outputs. A stale entry of our own is removed
+// first, whatever its type (a regular file, a symlink, a FIFO, a socket, or a
+// directory, removed recursively): nothing that was there is ever read or
+// followed, so a symlink's target is untouched. The lock is shared across
+// users (mode 0666, fixed where missing), so only an entry owned by another
+// user still blocks the path. That failure names the path, the entry's type
+// and its owner uid: remove the entry, pass
+// `--@rules_dart//dart:jit_snapshot_fallback=true` to allow the
+// private-scratch fallback (whose bytes are not reproducible, so builds that
+// allow it and builds that do not have different action keys), or, for the
+// runner snapshot, `--@rules_dart//dart:test_runner_snapshot=false` to run
+// the kernel instead. Windows keeps the private scratch directory beside the
+// output with the one notice below. Under linux-sandbox with a hermetic
+// `/tmp` (the default on CI Linux runners) the path is private per action, so
+// host state cannot block it there; that sandbox was not executed while
+// making this change (the machine has no user namespaces), so the claim is
+// the sandbox's documented `/tmp` namespacing, not a local measurement.
 //
 // The training input must be a kernel file whose library URIs are already
 // resolved (as the `jit-snapshot` action's compiled dill is): with no
@@ -85,6 +100,7 @@ void main(List<String> argv) {
   String? dartvm;
   String? snapshot;
   var enableAsserts = false;
+  var fallbackAllowed = false;
   final env = <String, String>{};
   final copies = <_Pair>[];
   final trees = <_Pair>[];
@@ -98,6 +114,15 @@ void main(List<String> argv) {
     }
     if (arg == '--enable-asserts') {
       enableAsserts = true;
+      continue;
+    }
+    if (arg == '--fallback-allowed') {
+      // Opts into the private-scratch fallback when the constant training
+      // path is unavailable (see [_trainInScratch]): set from
+      // `--@rules_dart//dart:jit_snapshot_fallback=true`, which is part of
+      // the snapshot actions' command lines, so builds that allow the
+      // fallback and builds that do not have different action keys.
+      fallbackAllowed = true;
       continue;
     }
     final eq = arg.indexOf('=');
@@ -133,6 +158,7 @@ void main(List<String> argv) {
     dartvm: dartvm == null ? null : File(dartvm).absolute.path,
     dartArgs: dartArgs,
     enableAsserts: enableAsserts,
+    fallbackAllowed: fallbackAllowed,
     env: env,
     copies: [for (final c in copies) _Pair(c.key, File(c.value).absolute.path)],
     trees: [
@@ -154,7 +180,8 @@ Never _usage(String problem) {
   stderr.writeln(
     'app_jit_snapshot: $problem\n'
     'usage: dart app_jit_snapshot.dart --dart=<dart> '
-    '--snapshot=<out> [--dartvm=<dartvm>] [--enable-asserts] [--env=K=V]... '
+    '--snapshot=<out> [--dartvm=<dartvm>] [--enable-asserts] '
+    '[--fallback-allowed] [--env=K=V]... '
     '[--copy=D=S]... [--copy-tree=D=DIR]... -- <dart arguments>',
   );
   exit(64);
@@ -375,18 +402,45 @@ class _Pair {
   }
 }
 
-/// The one absolute path every POSIX training runs in, so the bytes never
+/// The default absolute path every POSIX training runs in, so the bytes never
 /// name the build: the working directory, the training VM copy, the staged
 /// inputs, `HOME`, `TMPDIR`, the script and the `--snapshot` output all read
-/// the same here on every build of one target. Serialized by
-/// [_constantTrainLock]; see [_acquireConstantDir].
-const _constantTrainDir = '/tmp/rules_dart_jit';
+/// the same here on every build of one target. Serialized by the default lock
+/// below; see [_acquireConstantDir].
+const _defaultTrainDir = '/tmp/rules_dart_jit';
 
-/// The lock serializing trainings at [_constantTrainDir] across concurrent
-/// actions on one host. Held from before the directory is cleared until after
-/// it is deleted, so no two trainings share the path, and a crashed training
-/// leaves at most an empty locked directory for the next holder to clear.
-const _constantTrainLock = '/tmp/rules_dart_jit.lock';
+/// The default lock serializing trainings at [_defaultTrainDir] across
+/// concurrent actions on one host. Held from before the directory is cleared
+/// until after it is deleted, so no two trainings share the path, and a
+/// crashed training leaves at most an empty locked directory for the next
+/// holder to clear.
+const _defaultTrainLock = '/tmp/rules_dart_jit.lock';
+
+/// Overrides for the constant training paths, for tests.
+///
+/// Unit tests set these to directories under `TEST_TMPDIR`: other builds on
+/// the host train at the real paths concurrently, and a planted test entry
+/// would change their bytes. A subprocess run of this tool (see `stageTool`
+/// in the test) inherits the same overrides through
+/// `RULES_DART_JIT_TRAIN_DIR` and `RULES_DART_JIT_TRAIN_LOCK` instead, since
+/// it cannot see these variables. Production code never sets either; the
+/// variables exist so tests never touch the real paths.
+String? trainDirOverride;
+String? trainLockOverride;
+
+/// The one absolute path every POSIX training runs in (see [_defaultTrainDir]
+/// for why), or the test override where one is set.
+String get constantTrainDir =>
+    trainDirOverride ??
+    Platform.environment['RULES_DART_JIT_TRAIN_DIR'] ??
+    _defaultTrainDir;
+
+/// The lock serializing trainings at [constantTrainDir], or the test override
+/// where one is set.
+String get constantTrainLock =>
+    trainLockOverride ??
+    Platform.environment['RULES_DART_JIT_TRAIN_LOCK'] ??
+    _defaultTrainLock;
 
 bool _fallbackWarned = false;
 
@@ -396,7 +450,7 @@ void _warnFallback() {
   if (_fallbackWarned) return;
   _fallbackWarned = true;
   stderr.writeln(
-    'app_jit_snapshot: cannot train in $_constantTrainDir on this host; '
+    'app_jit_snapshot: cannot train in $constantTrainDir on this host; '
     'the snapshot may not be reproducible',
   );
 }
@@ -414,103 +468,327 @@ void _releaseConstantLock(RandomAccessFile lock) {
   }
 }
 
-/// Takes the exclusive training lock and claims [_constantTrainDir] as an
+/// Why the last [_acquireConstantDir] call found the constant directory
+/// unavailable: a sentence naming the blocker for the fail-closed error.
+/// Only meaningful after a null return.
+String _constantDirUnavailable = '';
+
+/// Opens the lock serializing trainings at [constantTrainDir] and takes it
+/// exclusively, returning the held lock.
+///
+/// The lock file opens append-only and is never written: a pre-existing
+/// regular file keeps its content. A freshly created lock (made with the
+/// process umask, usually 0644) is set to 0666 explicitly, umask-proof, so
+/// every user on a shared host can open it; a pre-existing lock that is ours
+/// but lacks the group/other write bits is fixed the same way (a foreign
+/// lock's chmod fails, which is ignored: the lock is still held). When the
+/// append-open itself fails, as on a foreign 0644 lock, a read-only open is
+/// tried instead: Dart's `lockSync` is an `fcntl(2)` lock, whose exclusive
+/// (write) lock needs write access but whose shared (read) lock needs only
+/// read access. The shared lock still conflicts with every exclusive holder,
+/// so a training that reaches the constant path this way waits out an active
+/// training; it coexists with other shared holders, and there the atomic
+/// `mkdir(0700)` claim decides: exactly one training owns the path and any
+/// other fails closed instead of training elsewhere. Null when the lock path
+/// is a symlink, or cannot be opened or locked at all.
+RandomAccessFile? _openConstantLock() {
+  if (FileSystemEntity.isLinkSync(constantTrainLock)) return null;
+  try {
+    final lock = File(constantTrainLock).openSync(mode: FileMode.append);
+    try {
+      lock.lockSync(FileLock.blockingExclusive);
+    } on FileSystemException {
+      try {
+        lock.closeSync();
+      } on FileSystemException {
+        // Ignore cleanup errors.
+      }
+      return null;
+    }
+    try {
+      // Shareable across users on a shared host, whatever the creator's
+      // umask; a no-op fixup where the bits are already set.
+      chmodFile(constantTrainLock, 0x1b6);
+    } on FileSystemException {
+      // Not ours to chmod (a lock that opens append-only but is owned by
+      // another user): the lock is still held, so training proceeds.
+    }
+    return lock;
+  } on FileSystemException {
+    // The append-open failed (a foreign 0644 lock, or a non-file at the
+    // path): fall through to the read-only attempt below.
+  }
+  try {
+    final lock = File(constantTrainLock).openSync(mode: FileMode.read);
+    try {
+      // Shared, not exclusive: an fcntl exclusive lock needs write access
+      // (see above). It still waits out every exclusive holder.
+      lock.lockSync(FileLock.blockingShared);
+    } on FileSystemException {
+      try {
+        lock.closeSync();
+      } on FileSystemException {
+        // Ignore cleanup errors.
+      }
+      return null;
+    }
+    return lock;
+  } on FileSystemException {
+    return null;
+  }
+}
+
+/// Deletes any stale entry at [path] without reading its content or following
+/// a link, returning true when [path] is now absent.
+///
+/// A symlink is unlinked as a link, so its target is untouched; a directory
+/// is removed recursively without following links (see [_deleteTreeNoFollow]);
+/// anything else (a regular file, a FIFO, a socket) is unlinked, which never
+/// blocks. False means the entry is not ours to remove (another user's entry
+/// under `/tmp`'s sticky bit): the caller fails the action instead of
+/// training elsewhere under the same action key.
+bool _unlinkStaleEntry(String path) {
+  FileSystemEntityType type;
+  try {
+    type = FileSystemEntity.typeSync(path, followLinks: false);
+  } on FileSystemException {
+    // An entry Dart cannot classify: unlink blindly, which never follows a
+    // link, and report whether the path is now absent.
+    try {
+      File(path).deleteSync();
+    } on FileSystemException {
+      return false;
+    }
+    return _entryAbsent(path);
+  }
+  try {
+    if (type == FileSystemEntityType.notFound) return true;
+    if (type == FileSystemEntityType.directory) {
+      _deleteTreeNoFollow(path);
+    } else if (type == FileSystemEntityType.link) {
+      Link(path).deleteSync();
+    } else {
+      File(path).deleteSync();
+    }
+  } on FileSystemException {
+    return false;
+  }
+  return _entryAbsent(path);
+}
+
+/// Whether [path] currently names no entry.
+bool _entryAbsent(String path) {
+  try {
+    return FileSystemEntity.typeSync(path, followLinks: false) ==
+        FileSystemEntityType.notFound;
+  } on FileSystemException {
+    return false;
+  }
+}
+
+/// Removes any stale entry at the constant training path (see
+/// [_unlinkStaleEntry]).
+///
+/// A variable so tests can make the entry unremovable and pin the fail-closed
+/// error; production code never reassigns it.
+bool Function(String path) removeStaleEntry = _unlinkStaleEntry;
+
+/// Removes the directory at [path] without following symlinks: links inside
+/// are unlinked as links, subdirectories are removed the same way, and only
+/// then is the directory itself removed. A link swapped in for a directory
+/// mid-removal fails the final remove, so the caller fails closed rather than
+/// training in a directory it does not own.
+void _deleteTreeNoFollow(String path) {
+  for (final entity in Directory(
+    path,
+  ).listSync(recursive: false, followLinks: false)) {
+    if (entity is Link) {
+      entity.deleteSync();
+    } else if (entity is Directory) {
+      _deleteTreeNoFollow(entity.path);
+    } else {
+      File(entity.path).deleteSync();
+    }
+  }
+  Directory(path).deleteSync();
+}
+
+/// Names the entry currently at [constantTrainDir] for the fail-closed error:
+/// its type and its owner uid, never its content.
+String _describeEntry() {
+  final info = _statEntry(constantTrainDir);
+  if (info == null) {
+    return 'entry at $constantTrainDir of unknown ownership';
+  }
+  return '${info.kind} at $constantTrainDir owned by uid ${info.uid}';
+}
+
+/// Takes the exclusive training lock and claims [constantTrainDir] as an
 /// empty directory with mode 0700, returning it with the held lock.
 ///
-/// The lock file opens append-only and is never written: a symlink planted at
-/// the lock path in the check-to-open race only lends its target's flock
-/// without changing a byte of it, and a pre-existing regular file keeps its
-/// content. Nothing that already exists at the training path is ever read: a
-/// pre-existing directory is deleted first, and anything else (a symlink, a
-/// file, an undeletable directory) falls back to the private scratch
-/// directory with the notice from [_warnFallback]. The cleared path is then
-/// claimed with [mkdirExclusive], which succeeds only when this call creates
-/// the directory: another local user winning the delete-to-create race reads
-/// as `EEXIST` and falls back, so the training VM copy never lands in a
-/// directory they own, where a swapped binary would run as us. The symlink
-/// checks run before the lock is taken and again under it, so a link planted
-/// between the two is removed as a link only, never followed. Returns null on
-/// Windows and on any failure; the caller deletes the directory before
-/// releasing the lock, also on failure.
+/// Any stale entry at the training path is removed first, whatever its type
+/// (see [removeStaleEntry]): only our own entries can be removed under
+/// `/tmp`'s sticky bit, and nothing that was there is ever read or followed.
+/// The cleared path is then claimed with [mkdirExclusive], which succeeds
+/// only when this call creates the directory: another local user winning the
+/// delete-to-create race reads as `EEXIST` and fails the action (see
+/// [_trainInScratch]), so the training VM copy never lands in a directory
+/// they own, where a swapped binary would run as us. A link swapped in after
+/// the claim is removed as a link only, never followed. Returns null on
+/// Windows and on any failure, recording the blocker in
+/// [_constantDirUnavailable] for the fail-closed error; the caller deletes
+/// the directory before releasing the lock, also on failure.
 ({Directory dir, RandomAccessFile lock})? _acquireConstantDir() {
   if (Platform.isWindows) return null;
-  if (FileSystemEntity.isLinkSync(_constantTrainLock) ||
-      FileSystemEntity.isLinkSync(_constantTrainDir)) {
-    _warnFallback();
+  final RandomAccessFile? lock = _openConstantLock();
+  if (lock == null) {
+    _constantDirUnavailable =
+        'the lock file $constantTrainLock cannot be opened or locked';
     return null;
   }
-  final RandomAccessFile lock;
-  try {
-    lock = File(_constantTrainLock).openSync(mode: FileMode.append);
-    lock.lockSync(FileLock.blockingExclusive);
-  } on FileSystemException {
-    _warnFallback();
-    return null;
-  }
-  ({Directory dir, RandomAccessFile lock})? fail() {
-    _warnFallback();
+  ({Directory dir, RandomAccessFile lock})? fail(String reason) {
+    _constantDirUnavailable = reason;
     _releaseConstantLock(lock);
     return null;
   }
 
   try {
-    if (FileSystemEntity.isLinkSync(_constantTrainDir)) {
-      // Planted before or under the lock: remove only the link itself.
-      try {
-        File(_constantTrainDir).deleteSync();
-      } on FileSystemException {
-        // Ignore cleanup errors.
-      }
-      return fail();
-    }
-    final dir = Directory(_constantTrainDir);
-    if (dir.existsSync()) {
-      try {
-        dir.deleteSync(recursive: true);
-      } on FileSystemException {
-        return fail();
-      }
-    } else if (FileSystemEntity.typeSync(
-          _constantTrainDir,
-          followLinks: false,
-        ) !=
-        FileSystemEntityType.notFound) {
-      // A file or worse at the training path; never read or delete it.
-      return fail();
+    if (!removeStaleEntry(constantTrainDir)) {
+      return fail('the ${_describeEntry()} cannot be removed');
     }
     // Claim the cleared path atomically: [mkdirExclusive] succeeds only when
     // this call creates the directory, so another local user winning the
-    // delete-to-create race (or any other error) falls back instead of
-    // training in a directory they own. `Directory.createSync` cannot claim:
-    // it silently succeeds when the path already exists, and a later chmod
-    // cannot prove ownership.
+    // delete-to-create race (or any other error) fails instead of training in
+    // a directory they own. `Directory.createSync` cannot claim: it silently
+    // succeeds when the path already exists, and a later chmod cannot prove
+    // ownership.
     // 0700: only our uid trains here.
-    if (mkdirExclusive(_constantTrainDir, 0x1c0) != 0) {
-      return fail();
+    if (mkdirExclusive(constantTrainDir, 0x1c0) != 0) {
+      return fail('the ${_describeEntry()} cannot be claimed');
     }
-    if (FileSystemEntity.isLinkSync(_constantTrainDir)) {
+    if (FileSystemEntity.isLinkSync(constantTrainDir)) {
       // Swapped under us after the claim: remove only the link itself.
       try {
-        File(_constantTrainDir).deleteSync();
+        Link(constantTrainDir).deleteSync();
       } on FileSystemException {
         // Ignore cleanup errors.
       }
-      return fail();
+      return fail('the ${_describeEntry()} cannot be claimed');
     }
   } on FileSystemException {
-    return fail();
+    return fail('the ${_describeEntry()} cannot be claimed');
   }
-  return (dir: Directory(_constantTrainDir), lock: lock);
+  return (dir: Directory(constantTrainDir), lock: lock);
 }
 
-/// Runs the training in a fresh scratch directory and copies the snapshot it
-/// writes to [out]. Returns the training run's exit code.
+/// Trains the snapshot and copies it to [out], at the constant training path
+/// where one can be claimed. Returns the training run's exit code.
 ///
-/// [dart] and [dartvm] name the SDK binaries to train with; both are copied
-/// into the scratch directory (see below), so no shared fixed path is read
-/// or executed. The scratch directory is removed whatever the outcome.
+/// Every build of one target trains at one constant absolute path (see
+/// [constantTrainDir]), so the bytes never name the build's output root or
+/// sandbox. The exclusive lock serializes concurrent trainings on one host.
+/// On Windows the training uses a private directory per run under the
+/// declared output's directory, as documented. On POSIX, when the constant
+/// directory is unavailable the action fails by default: the failure names
+/// the blocker and its remedies (see [_acquireConstantDir]). Only with
+/// [fallbackAllowed] (from `--fallback-allowed`, set by
+/// `--@rules_dart//dart:jit_snapshot_fallback=true`) does the training fall
+/// back to a private directory per run under the declared output's directory
+/// (with the notice from [_warnFallback]), whose bytes are not reproducible.
+/// Either way no compile reads or writes the shared system temp directory,
+/// and concurrent actions (each with its own output) cannot collide. The
+/// training runs with the training directory as its working directory (see
+/// below), so the runner's relative test path resolves into the staged tree;
+/// no padding is needed (an empty pad component once trained a stray `//`
+/// into snapshots).
 /// `exit` is not called in here: it would skip the cleanup.
 int _trainInScratch({
+  required String dart,
+  required String? dartvm,
+  required List<String> dartArgs,
+  required bool enableAsserts,
+  required bool fallbackAllowed,
+  required Map<String, String> env,
+  required List<_Pair> copies,
+  required List<_Pair> trees,
+  required File out,
+}) {
+  out.parent.createSync(recursive: true);
+  final constant = Platform.isWindows ? null : _acquireConstantDir();
+  if (constant != null) {
+    final trainDir = constant.dir;
+    final exitCode = _runTraining(
+      trainDir: trainDir,
+      dart: dart,
+      dartvm: dartvm,
+      dartArgs: dartArgs,
+      enableAsserts: enableAsserts,
+      env: env,
+      copies: copies,
+      trees: trees,
+      out: out,
+    );
+    // The constant directory holds only what this training put there, but it
+    // is shared by path: delete it only when it is still a real directory,
+    // never when it became a link, and before releasing the lock, also on
+    // failure (see [_acquireConstantDir]).
+    try {
+      if (!FileSystemEntity.isLinkSync(constantTrainDir) &&
+          trainDir.existsSync()) {
+        trainDir.deleteSync(recursive: true);
+      }
+    } on FileSystemException {
+      // Ignore cleanup errors.
+    }
+    _releaseConstantLock(constant.lock);
+    return exitCode;
+  }
+  if (!Platform.isWindows && !fallbackAllowed) {
+    stderr.writeln(
+      'app_jit_snapshot: cannot train in $constantTrainDir on this host: '
+      '$_constantDirUnavailable. Remove the entry, or pass '
+      '`--@rules_dart//dart:jit_snapshot_fallback=true`, which allows the '
+      'private-scratch fallback whose bytes are not reproducible, or, for '
+      'tests, `--@rules_dart//dart:test_runner_snapshot=false` to run the '
+      "runner's kernel instead of its snapshot",
+    );
+    return 1;
+  }
+  _warnFallback();
+  final scratch = out.parent.createTempSync('rules_dart_snapshot.');
+  final trainDir = Directory('${scratch.path}/t')..createSync();
+  try {
+    return _runTraining(
+      trainDir: trainDir,
+      dart: dart,
+      dartvm: dartvm,
+      dartArgs: dartArgs,
+      enableAsserts: enableAsserts,
+      env: env,
+      copies: copies,
+      trees: trees,
+      out: out,
+    );
+  } finally {
+    if (scratch.existsSync()) {
+      try {
+        scratch.deleteSync(recursive: true);
+      } on FileSystemException {
+        // Ignore cleanup errors.
+      }
+    }
+  }
+}
+
+/// Stages the training inputs under [trainDir], runs the training there, and
+/// copies the snapshot it writes to [out]. Returns the training run's exit
+/// code.
+///
+/// [dart] and [dartvm] name the SDK binaries to train with; both are copied
+/// into the training directory (see below), so no shared fixed path is read
+/// or executed.
+int _runTraining({
+  required Directory trainDir,
   required String dart,
   required String? dartvm,
   required List<String> dartArgs,
@@ -520,153 +798,103 @@ int _trainInScratch({
   required List<_Pair> trees,
   required File out,
 }) {
-  // Every build of one target trains at one constant absolute path (see
-  // [_constantTrainDir]), so the bytes never name the build's output root or
-  // sandbox. The exclusive lock serializes concurrent trainings on one host;
-  // when the constant directory is unavailable the training falls back to a
-  // private directory per run under the declared output's directory (with
-  // the notice from [_warnFallback]), so no compile reads or writes the
-  // shared system temp directory, and concurrent actions (each with its own
-  // output) cannot collide. The training runs with the training directory
-  // as its working directory (see below), so the runner's relative test
-  // path resolves into the staged tree; no padding is needed (an empty pad
-  // component once trained a stray `//` into snapshots).
-  out.parent.createSync(recursive: true);
-  final constant = _acquireConstantDir();
-  final Directory scratch;
-  final Directory trainDir;
-  final RandomAccessFile? constantLock;
-  if (constant != null) {
-    scratch = constant.dir;
-    trainDir = constant.dir;
-    constantLock = constant.lock;
-  } else {
-    scratch = out.parent.createTempSync('rules_dart_snapshot.');
-    trainDir = Directory('${scratch.path}/t')..createSync();
-    constantLock = null;
+  // The training VM is a copy inside the training directory, and the copy
+  // is deleted with it, leaving no undeclared output beside the snapshot.
+  // At the constant path the copy reads the same on every build; in the
+  // fallback the directory is private to the action's outputs, so no other
+  // user can plant or replace the binary between the copy and the run.
+  final exeExt = dart.endsWith('.exe') ? '.exe' : '';
+  final bin = Directory('${trainDir.path}/vm/bin')..createSync(recursive: true);
+  _installCopy(dart, '${bin.path}/dart$exeExt');
+  final effectiveDartvm = dartvm ?? _adjacentDartvm(dart, exeExt);
+  if (effectiveDartvm != null) {
+    final vmExt = effectiveDartvm.endsWith('.exe') ? '.exe' : '';
+    _installCopy(effectiveDartvm, '${bin.path}/dartvm$vmExt');
   }
-  try {
-    // The training VM is a copy inside the training directory, and the copy
-    // is deleted with it, leaving no undeclared output beside the snapshot.
-    // At the constant path the copy reads the same on every build; in the
-    // fallback the directory is private to the action's outputs, so no other
-    // user can plant or replace the binary between the copy and the run.
-    final exeExt = dart.endsWith('.exe') ? '.exe' : '';
-    final bin = Directory('${trainDir.path}/vm/bin')
-      ..createSync(recursive: true);
-    _installCopy(dart, '${bin.path}/dart$exeExt');
-    final effectiveDartvm = dartvm ?? _adjacentDartvm(dart, exeExt);
-    if (effectiveDartvm != null) {
-      final vmExt = effectiveDartvm.endsWith('.exe') ? '.exe' : '';
-      _installCopy(effectiveDartvm, '${bin.path}/dartvm$vmExt');
-    }
-    final trainingDart = '${bin.path}/dart$exeExt';
-    // Every input is staged under the training directory. The script and the
-    // staged trees are named absolutely (see [stageTrainingArgs]): the run
-    // resolves them at startup into `Uri`s whose interned strings would
-    // otherwise name the build's paths (see the header comment). A program
-    // argument that merely equals a staged file stays relative: the runner
-    // joins its test path onto the absolute `--precompiled` directory itself.
-    for (final c in copies) {
-      _copyFile(c.value, '${trainDir.path}/${c.key}');
-    }
-    for (final t in trees) {
-      _copyTree(t.value, '${trainDir.path}/${t.key}');
-    }
-    // No `--packages` value is passed, and no package config is staged. The
-    // value would resolve against the working directory and intern
-    // build-specific strings (see the header comment). The training input is
-    // a kernel file whose library URIs are already resolved, so loading
-    // needs no package map; a runtime `package:` import would resolve by
-    // walking up from the training directory, where no package config lives.
-    final stagedEnv = absoluteHomeEnv(env, trainDir);
-    final childEnv = buildChildEnvironment(
-      homeDir: trainDir.path,
-      parentEnv: Platform.environment,
-      overrides: stagedEnv,
-      isWindows: Platform.isWindows,
-      includeParent: false,
-    );
-
-    // The training run keeps the VM flags that make the snapshot repeat, and
-    // none that name a host path. Its working directory is the private
-    // training directory: the runner only runs a test path naming a file
-    // under the working directory, and joins that path onto the absolute
-    // `--precompiled` directory itself, so the working directory must hold
-    // the staged test source. Every path the run resolves is absolute (see
-    // [stageTrainingArgs]) except the runner's test path, which is constant
-    // across builds by construction; the directory's own value perturbs
-    // cluster-walk order only through the residual hash luck the header
-    // comment describes.
-    //
-    // The runner keeps its default reporter and timeout, and no file reporter
-    // is passed. With the file reporter, and with the explicit reporter and
-    // timeout, the same inputs gave different snapshots from one run to the
-    // next; with none of them, ten runs gave one snapshot. Nothing here reads a
-    // report, and the test's exit code is all the training needs.
-    final result = Process.runSync(
-      trainingDart,
-      [
-        '--deterministic',
-        // Optimizing compilation stays on the training thread, so the functions
-        // the snapshot holds optimized do not depend on when a background
-        // compile happens to finish. (The stability measured for this tool was
-        // with the flag in place; its own contribution was not measured
-        // separately.)
-        '--no-background-compilation',
-        // Code for the VM's baseline CPU rather than the build machine's. The
-        // intent is cross-CPU identity, so a cache can share the snapshot.
-        '--target_unknown_cpu',
-        if (enableAsserts) '--enable-asserts',
-        '--snapshot-kind=app-jit',
-        '--snapshot=${trainDir.path}/snapshot.jit',
-        ...stageTrainingArgs(
-          dartArgs,
-          trainDir,
-          stagedFiles: {for (final c in copies) c.key},
-          stagedTrees: [for (final t in trees) t.key],
-        ),
-      ],
-      workingDirectory: trainDir.path,
-      environment: childEnv,
-      includeParentEnvironment: false,
-    );
-
-    // Bazel echoes any action output, so a clean run stays silent.
-    if (result.exitCode != 0) {
-      stdout.write(result.stdout as String);
-      stderr.write(result.stderr as String);
-      return result.exitCode;
-    }
-    final written = File('${trainDir.path}/snapshot.jit');
-    if (written.existsSync()) {
-      out.parent.createSync(recursive: true);
-      out.writeAsBytesSync(written.readAsBytesSync());
-    }
-    return 0;
-  } finally {
-    if (constantLock != null) {
-      // The constant directory holds only what this training put there, but
-      // it is shared by path: delete it only when it is still a real
-      // directory, never when it became a link, and before releasing the
-      // lock, also on failure (see [_acquireConstantDir]).
-      try {
-        if (!FileSystemEntity.isLinkSync(_constantTrainDir) &&
-            scratch.existsSync()) {
-          scratch.deleteSync(recursive: true);
-        }
-      } on FileSystemException {
-        // Ignore cleanup errors.
-      }
-      _releaseConstantLock(constantLock);
-    } else if (scratch.existsSync()) {
-      try {
-        scratch.deleteSync(recursive: true);
-      } on FileSystemException {
-        // Ignore cleanup errors.
-      }
-    }
+  final trainingDart = '${bin.path}/dart$exeExt';
+  // Every input is staged under the training directory. The script and the
+  // staged trees are named absolutely (see [stageTrainingArgs]): the run
+  // resolves them at startup into `Uri`s whose interned strings would
+  // otherwise name the build's paths (see the header comment). A program
+  // argument that merely equals a staged file stays relative: the runner
+  // joins its test path onto the absolute `--precompiled` directory itself.
+  for (final c in copies) {
+    _copyFile(c.value, '${trainDir.path}/${c.key}');
   }
+  for (final t in trees) {
+    _copyTree(t.value, '${trainDir.path}/${t.key}');
+  }
+  // No `--packages` value is passed, and no package config is staged. The
+  // value would resolve against the working directory and intern
+  // build-specific strings (see the header comment). The training input is
+  // a kernel file whose library URIs are already resolved, so loading
+  // needs no package map; a runtime `package:` import would resolve by
+  // walking up from the training directory, where no package config lives.
+  final stagedEnv = absoluteHomeEnv(env, trainDir);
+  final childEnv = buildChildEnvironment(
+    homeDir: trainDir.path,
+    parentEnv: Platform.environment,
+    overrides: stagedEnv,
+    isWindows: Platform.isWindows,
+    includeParent: false,
+  );
+
+  // The training run keeps the VM flags that make the snapshot repeat, and
+  // none that name a host path. Its working directory is the private
+  // training directory: the runner only runs a test path naming a file
+  // under the working directory, and joins that path onto the absolute
+  // `--precompiled` directory itself, so the working directory must hold
+  // the staged test source. Every path the run resolves is absolute (see
+  // [stageTrainingArgs]) except the runner's test path, which is constant
+  // across builds by construction; the directory's own value perturbs
+  // cluster-walk order only through the residual hash luck the header
+  // comment describes.
+  //
+  // The runner keeps its default reporter and timeout, and no file reporter
+  // is passed. With the file reporter, and with the explicit reporter and
+  // timeout, the same inputs gave different snapshots from one run to the
+  // next; with none of them, ten runs gave one snapshot. Nothing here reads a
+  // report, and the test's exit code is all the training needs.
+  final result = Process.runSync(
+    trainingDart,
+    [
+      '--deterministic',
+      // Optimizing compilation stays on the training thread, so the functions
+      // the snapshot holds optimized do not depend on when a background
+      // compile happens to finish. (The stability measured for this tool was
+      // with the flag in place; its own contribution was not measured
+      // separately.)
+      '--no-background-compilation',
+      // Code for the VM's baseline CPU rather than the build machine's. The
+      // intent is cross-CPU identity, so a cache can share the snapshot.
+      '--target_unknown_cpu',
+      if (enableAsserts) '--enable-asserts',
+      '--snapshot-kind=app-jit',
+      '--snapshot=${trainDir.path}/snapshot.jit',
+      ...stageTrainingArgs(
+        dartArgs,
+        trainDir,
+        stagedFiles: {for (final c in copies) c.key},
+        stagedTrees: [for (final t in trees) t.key],
+      ),
+    ],
+    workingDirectory: trainDir.path,
+    environment: childEnv,
+    includeParentEnvironment: false,
+  );
+
+  // Bazel echoes any action output, so a clean run stays silent.
+  if (result.exitCode != 0) {
+    stdout.write(result.stdout as String);
+    stderr.write(result.stderr as String);
+    return result.exitCode;
+  }
+  final written = File('${trainDir.path}/snapshot.jit');
+  if (written.existsSync()) {
+    out.parent.createSync(recursive: true);
+    out.writeAsBytesSync(written.readAsBytesSync());
+  }
+  return 0;
 }
 
 /// Home-directory-like variable names whose values name a directory.
@@ -1110,6 +1338,128 @@ typedef _ChmodNative = ffi.Int Function(ffi.Pointer<ffi.Uint8>, ffi.Uint32);
 typedef _ChmodDart = int Function(ffi.Pointer<ffi.Uint8>, int);
 typedef _MkdirNative = ffi.Int Function(ffi.Pointer<ffi.Uint8>, ffi.Uint32);
 typedef _MkdirDart = int Function(ffi.Pointer<ffi.Uint8>, int);
+typedef _StatxNative = ffi.Int Function(
+  ffi.Int,
+  ffi.Pointer<ffi.Uint8>,
+  ffi.Int,
+  ffi.Uint32,
+  ffi.Pointer<ffi.Uint8>,
+);
+typedef _StatxDart = int Function(
+  int,
+  ffi.Pointer<ffi.Uint8>,
+  int,
+  int,
+  ffi.Pointer<ffi.Uint8>,
+);
+typedef _LstatNative = ffi.Int Function(
+  ffi.Pointer<ffi.Uint8>,
+  ffi.Pointer<ffi.Uint8>,
+);
+typedef _LstatDart = int Function(
+  ffi.Pointer<ffi.Uint8>,
+  ffi.Pointer<ffi.Uint8>,
+);
+
+/// Allocates a zero-terminated UTF-8 copy of [path] with libc `malloc`.
+/// The caller frees it with libc `free`.
+ffi.Pointer<ffi.Uint8> _toCString(
+  ffi.Pointer<ffi.Uint8> Function(int) malloc,
+  String path,
+) {
+  final bytes = utf8.encode(path);
+  final ptr = malloc(bytes.length + 1);
+  if (ptr == ffi.nullptr) {
+    throw FileSystemException('malloc failed', path);
+  }
+  ptr.asTypedList(bytes.length + 1)
+    ..setAll(0, bytes)
+    ..[bytes.length] = 0;
+  return ptr;
+}
+
+int _u32le(List<int> bytes, int offset) =>
+    bytes[offset] |
+    (bytes[offset + 1] << 8) |
+    (bytes[offset + 2] << 16) |
+    (bytes[offset + 3] << 24);
+
+int _u16le(List<int> bytes, int offset) =>
+    bytes[offset] | (bytes[offset + 1] << 8);
+
+/// Names a POSIX file-type bit pattern for the fail-closed error.
+String _entryKind(int mode) {
+  switch (mode & 0xf000) {
+    case 0x4000:
+      return 'directory';
+    case 0x8000:
+      return 'regular file';
+    case 0xa000:
+      return 'symlink';
+    case 0x1000:
+      return 'FIFO';
+    case 0xc000:
+      return 'socket';
+    case 0x2000:
+      return 'character device';
+    case 0x6000:
+      return 'block device';
+    default:
+      return 'entry of unknown type';
+  }
+}
+
+/// Stats [path] without following symlinks, returning its kind (see
+/// [_entryKind]) and its owner uid for the fail-closed error. Null when the
+/// entry cannot be statted or the platform has no suitable call.
+///
+/// On Linux this is `statx(2)`, whose `struct statx` layout is the same on
+/// every architecture (the uid is a little-endian u32 at offset 20, the mode
+/// a little-endian u16 at offset 28); on macOS it is `lstat(2)` with the
+/// 64-bit `struct stat` layout (the mode at offset 4, the uid at offset 16).
+/// All supported hosts are little-endian. Metadata only: the entry's content
+/// is never read.
+({String kind, int uid})? _statEntry(String path) {
+  if (Platform.isWindows) return null;
+  try {
+    final lib = ffi.DynamicLibrary.process();
+    final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
+    final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
+    final pathPtr = _toCString(malloc, path);
+    try {
+      final buf = malloc(256);
+      if (buf == ffi.nullptr) return null;
+      try {
+        buf.asTypedList(256).fillRange(0, 256, 0);
+        if (Platform.isLinux) {
+          final statx = lib.lookupFunction<_StatxNative, _StatxDart>('statx');
+          const atFdcwd = -100;
+          const nofollow = 0x100;
+          const basicStats = 0x7ff;
+          if (statx(atFdcwd, pathPtr, nofollow, basicStats, buf) != 0) {
+            return null;
+          }
+          final bytes = buf.asTypedList(64);
+          return (kind: _entryKind(_u16le(bytes, 28)), uid: _u32le(bytes, 20));
+        }
+        if (Platform.isMacOS) {
+          final lstat = lib.lookupFunction<_LstatNative, _LstatDart>('lstat');
+          if (lstat(pathPtr, buf) != 0) return null;
+          final bytes = buf.asTypedList(64);
+          return (kind: _entryKind(_u16le(bytes, 4)), uid: _u32le(bytes, 16));
+        }
+        return null;
+      } finally {
+        free(buf);
+      }
+    } finally {
+      free(pathPtr);
+    }
+  } on ArgumentError {
+    // The stat call is missing from this libc: no description available.
+    return null;
+  }
+}
 
 /// Atomically claims a new directory at [path] with POSIX permission bits
 /// [mode]: libc `mkdir(2)` returns 0 only when this call creates the
@@ -1117,8 +1467,8 @@ typedef _MkdirDart = int Function(ffi.Pointer<ffi.Uint8>, int);
 /// race to the cleared constant training path, or any other error — when it
 /// does not. The caller must never use the path unless this returns 0.
 ///
-/// A variable so tests can make the claim see `EEXIST` (see the racy-claim
-/// test); production code never reassigns it.
+/// A variable so tests can make the claim see `EEXIST` (see the unclaimable
+/// training path test); production code never reassigns it.
 int Function(String path, int mode) mkdirExclusive = _libcMkdir;
 
 /// Claims [path] with libc `mkdir(2)`: 0 when this call created it, -1 on any

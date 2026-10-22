@@ -1,5 +1,6 @@
 """Implementation of the dart_binary rule."""
 
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartCodeAssetInfo", "DartCompileInfo", "DartInfo", "DartRecordedUsesInfo")
 load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR", "merge_dart_defines")
 load(
@@ -199,6 +200,7 @@ def _dart_binary_impl(ctx):
             recorded_uses = compile_recorded_uses,
             jit_tool = ctx.file._jit_tool,
             comma_patch = ctx.file._comma_patch,
+            jit_snapshot_fallback = ctx.attr._jit_snapshot_fallback[BuildSettingInfo].value,
             native_assets_yaml = native_assets_yaml,
             embed_sources = DartTestRunnerMainInfo not in ctx.attr.main,
         )
@@ -347,7 +349,7 @@ The `dart compile` mode. Determines the output format:
 - `exe` (default): Self-contained native machine code. No Dart SDK needed at runtime. Best for deployment.
 - `aot-snapshot`: AOT-compiled snapshot. Requires `dartaotruntime` to execute. Smaller than `exe`.
 - `kernel`: Dart kernel binary (`.dill`). Requires `dart` to execute. Fastest compilation, useful for development. Compiles modularly by default (`modular_kernel = True` and `//dart:modular_kernel = True`) against dependency `.kmod`/`.koutline` modules when eligible, or whole-program via `gen_kernel` when `modular_kernel = False` or when target `defines`, `dart_compile_flags`, or `code_assets` are set.
-- `jit-snapshot`: JIT snapshot with trained profile data. Requires `dart` to execute. Fastest startup after warmup. The program is trained once, with no arguments, at one constant absolute path used as its working directory and with no `--packages` value, so the snapshot is byte-identical across builds. The snapshot is reproducible only if that training run is deterministic: a program that reads the clock, random numbers, or files outside the build gives a different snapshot each build (see `app_jit_snapshot.dart`). The training runs from a copy of the SDK's `dart`, so the snapshot does not depend on where the SDK is installed or where the build runs.
+- `jit-snapshot`: JIT snapshot with trained profile data. Requires `dart` to execute. Fastest startup after warmup. The program is trained once, with no arguments, at one constant absolute path used as its working directory and with no `--packages` value, so the snapshot is byte-identical across builds. The snapshot is reproducible only if that training run is deterministic: a program that reads the clock, random numbers, or files outside the build gives a different snapshot each build (see `app_jit_snapshot.dart`). The training runs from a copy of the SDK's `dart`, so the snapshot does not depend on where the SDK is installed or where the build runs. When the constant training path is blocked by an entry another user owns, the action fails and names the entry rather than training elsewhere under the same action key; `--@rules_dart//dart:jit_snapshot_fallback=true` allows the non-reproducible private-scratch fallback instead.
 """,
             default = "exe",
             values = ["exe", "aot-snapshot", "kernel", "jit-snapshot"],
@@ -371,6 +373,10 @@ Every other flag goes to `dart compile`. In the `kernel` mode, setting `dart_com
         "_comma_patch": attr.label(
             default = "//dart/private/tools:comma_patch.dart",
             allow_single_file = True,
+        ),
+        "_jit_snapshot_fallback": attr.label(
+            default = "//dart:jit_snapshot_fallback",
+            providers = [BuildSettingInfo],
         ),
         "launcher": attr.bool(
             default = False,
