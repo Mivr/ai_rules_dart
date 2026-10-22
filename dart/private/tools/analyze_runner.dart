@@ -8,6 +8,76 @@ import 'dart:io';
 import 'package:rules_dart_guard/directive_guard.dart';
 
 void main(List<String> args) {
+  final parsed = _parseAnalyzeArgs(args);
+  final project = parsed.project;
+  final allowed = pruneOrphanedStagedFiles(project);
+  _checkStagedSources(project, parsed.sources, allowed);
+  if (!_hasAnalyzableDartFile(project, allowed)) {
+    stderr.writeln('analyze_runner: no Dart files to analyze in $project');
+    exit(1);
+  }
+
+  // No staged source may read the host: a `file:` URI (in any spelling), any
+  // other non-`dart:`/`package:` directive URI, a `package:` URI climbing
+  // above its package, or a relative URI climbing out of the staged tree
+  // would reach an undeclared file through the analyzer's working directory.
+  // Refuse before analyzing, through the one shared staged-source check.
+  final violations = findStagedDirectiveViolations(
+    projectStagedRoots(project),
+    tool: 'analyze_runner',
+  );
+  if (violations.isNotEmpty) {
+    for (final violation in violations) {
+      stderr.writeln(violation);
+    }
+    exit(1);
+  }
+
+  final tempHome = Directory.systemTemp.createTempSync(
+    'rules_dart_analyze_home.',
+  );
+  final ProcessResult result;
+  try {
+    result = Process.runSync(
+      parsed.dart,
+      ['analyze', if (parsed.fatalInfos) '--fatal-infos', project],
+      environment: {
+        'HOME': tempHome.path,
+        'USERPROFILE': tempHome.path,
+        'LOCALAPPDATA': tempHome.path,
+        'APPDATA': tempHome.path,
+      },
+    );
+  } finally {
+    if (tempHome.existsSync()) {
+      try {
+        tempHome.deleteSync(recursive: true);
+      } on FileSystemException {
+        // Ignore cleanup errors.
+      }
+    }
+  }
+  // Bazel echoes any action output, so a clean run stays silent rather than
+  // printing the analyzer's "No issues found!" on every build.
+  stderr.write(unstage(result.stderr as String, project));
+  if (result.exitCode != 0) {
+    stdout.write(unstage(result.stdout as String, project));
+    exit(result.exitCode);
+  }
+  File(parsed.stamp).writeAsStringSync('analyzed\n');
+}
+
+/// Parsed `analyze_runner` command line.
+typedef _AnalyzeArgs = ({
+  String dart,
+  String project,
+  String stamp,
+  bool fatalInfos,
+  List<String> sources,
+});
+
+/// Parses the command line, exiting 64 on an unknown or missing argument.
+_AnalyzeArgs _parseAnalyzeArgs(List<String> args) {
   String? dart;
   String? project;
   String? stamp;
@@ -36,8 +106,22 @@ void main(List<String> args) {
     );
     exit(64);
   }
+  return (
+    dart: dart,
+    project: project,
+    stamp: stamp,
+    fatalInfos: fatalInfos,
+    sources: sources,
+  );
+}
 
-  final allowed = pruneOrphanedStagedFiles(project);
+/// Rejects a `--source` that the manifest does not list or that is missing
+/// from the staged tree, exiting 1 on the first one.
+void _checkStagedSources(
+  String project,
+  List<String> sources,
+  Set<String>? allowed,
+) {
   for (final s in sources) {
     final norm = _normRel(s);
     if (allowed != null &&
@@ -53,59 +137,6 @@ void main(List<String> args) {
       exit(1);
     }
   }
-  if (!_hasAnalyzableDartFile(project, allowed)) {
-    stderr.writeln('analyze_runner: no Dart files to analyze in $project');
-    exit(1);
-  }
-
-  // No staged source may read the host: a `file:` URI (in any spelling), any
-  // other non-`dart:`/`package:` directive URI, a `package:` URI climbing
-  // above its package, or a relative URI climbing out of the staged tree
-  // would reach an undeclared file through the analyzer's working directory.
-  // Refuse before analyzing, through the one shared staged-source check.
-  final violations = findStagedDirectiveViolations(
-    projectStagedRoots(project),
-    tool: 'analyze_runner',
-  );
-  if (violations.isNotEmpty) {
-    for (final violation in violations) {
-      stderr.writeln(violation);
-    }
-    exit(1);
-  }
-
-  final tempHome = Directory.systemTemp.createTempSync(
-    'rules_dart_analyze_home.',
-  );
-  final ProcessResult result;
-  try {
-    result = Process.runSync(
-      dart,
-      ['analyze', if (fatalInfos) '--fatal-infos', project],
-      environment: {
-        'HOME': tempHome.path,
-        'USERPROFILE': tempHome.path,
-        'LOCALAPPDATA': tempHome.path,
-        'APPDATA': tempHome.path,
-      },
-    );
-  } finally {
-    if (tempHome.existsSync()) {
-      try {
-        tempHome.deleteSync(recursive: true);
-      } on FileSystemException {
-        // Ignore cleanup errors.
-      }
-    }
-  }
-  // Bazel echoes any action output, so a clean run stays silent rather than
-  // printing the analyzer's "No issues found!" on every build.
-  stderr.write(unstage(result.stderr as String, project));
-  if (result.exitCode != 0) {
-    stdout.write(unstage(result.stdout as String, project));
-    exit(result.exitCode);
-  }
-  File(stamp).writeAsStringSync('analyzed\n');
 }
 
 /// Removes any orphaned symlinks or unlisted files under `<project>/src/` when
