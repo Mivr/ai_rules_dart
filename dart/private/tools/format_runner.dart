@@ -231,6 +231,96 @@ Future<int> runFormatRequest(
   required StringSink outSink,
   required StringSink errSink,
 }) async {
+  final parsed = _parseFormatArgs(args, errSink: errSink);
+  if (parsed == null) return 64;
+  final project = parsed.project;
+  final manifest = parsed.manifest;
+  final stamp = parsed.stamp;
+  final languageVersion = parsed.languageVersion;
+
+  final allowedSrcPaths = _pruneOrphanedStagedFiles(project);
+
+  final files = _readFormatManifest(
+    project: project,
+    manifest: manifest,
+    allowedSrcPaths: allowedSrcPaths,
+    errSink: errSink,
+  );
+  if (files == null) return 1;
+  final projectRoot = p.normalize(p.absolute(project));
+  final srcRoot = p.normalize(p.join(projectRoot, 'src'));
+
+  final resolvedSdkVersion = _resolveSdkVersion(parsed.sdkVersion, parsed.dart);
+  final mode = resolveFormatMode(resolvedSdkVersion, languageVersion);
+  final parsedVersion = mode.parsedLanguageVersion;
+  if (!mode.inProcess || parsedVersion == null) {
+    if (parsed.dart case final dart?) {
+      return _runSubprocessFallback(
+        dart: dart,
+        project: project,
+        files: files,
+        languageVersion: mode.languageVersion,
+        stamp: stamp,
+        outSink: outSink,
+        errSink: errSink,
+      );
+    }
+    errSink.writeln(
+      'format_runner: unsupported --language-version "$languageVersion" '
+      'for SDK "$resolvedSdkVersion"',
+    );
+    return 64;
+  }
+
+  final outBuf = StringBuffer();
+  final errBuf = StringBuffer();
+  final session = _FormatSession(
+    fileSystem: _BoundedFileSystem(
+      IOFileSystem(),
+      srcRoot: srcRoot,
+      projectRoot: projectRoot,
+    ),
+    projectRoot: projectRoot,
+    errBuf: errBuf,
+  );
+
+  final stopwatch = Stopwatch()..start();
+  final outcome = await session.formatFiles(
+    files,
+    parsedVersion: parsedVersion,
+    sdkLanguageVersion: mode.sdkLanguageVersion,
+    outBuf: outBuf,
+  );
+  stopwatch.stop();
+  return _reportFormatResult(
+    project: project,
+    stamp: stamp,
+    fileCount: files.length,
+    changedCount: outcome.changedCount,
+    hadError: outcome.hadError,
+    elapsedSeconds: (stopwatch.elapsedMilliseconds / 1000).toStringAsFixed(2),
+    outBuf: outBuf,
+    errBuf: errBuf,
+    outSink: outSink,
+    errSink: errSink,
+  );
+}
+
+/// Parsed `format_runner` command line; null after reporting a bad flag.
+typedef _FormatArgs = ({
+  String? dart,
+  String? sdkVersion,
+  String project,
+  String manifest,
+  String stamp,
+  String languageVersion,
+});
+
+/// Parses the command line, requiring the project inputs.
+_FormatArgs? _parseFormatArgs(
+  List<String> args, {
+  required StringSink errSink,
+}) {
   String? dart;
   String? sdkVersion;
   String? project;
@@ -255,7 +345,7 @@ Future<int> runFormatRequest(
         languageVersion = args[++i];
       default:
         errSink.writeln('format_runner: unknown argument $arg');
-        return 64;
+        return null;
     }
   }
   if (project == null ||
@@ -266,19 +356,35 @@ Future<int> runFormatRequest(
       'format_runner: --project, --manifest, --stamp, and '
       '--language-version are required',
     );
-    return 64;
+    return null;
   }
+  return (
+    dart: dart,
+    sdkVersion: sdkVersion,
+    project: project,
+    manifest: manifest,
+    stamp: stamp,
+    languageVersion: languageVersion,
+  );
+}
 
-  final allowedSrcPaths = _pruneOrphanedStagedFiles(project);
-
+/// The manifest's files, refused when empty or outside the staged sources.
+///
+/// Returns null after reporting the problem.
+List<String>? _readFormatManifest({
+  required String project,
+  required String manifest,
+  required Set<String>? allowedSrcPaths,
+  required StringSink errSink,
+}) {
   final files = File(manifest)
       .readAsLinesSync()
       .where((l) => l.trim().isNotEmpty)
-      .map((l) => _join(project!, l.trim()))
+      .map((l) => _join(project, l.trim()))
       .toList();
   if (files.isEmpty) {
     errSink.writeln('format_runner: no files listed in manifest $manifest');
-    return 1;
+    return null;
   }
   final projectRoot = p.normalize(p.absolute(project));
   final srcRoot = p.normalize(p.join(projectRoot, 'src'));
@@ -290,52 +396,96 @@ Future<int> runFormatRequest(
         errSink.writeln(
           'format_runner: file not listed in src_manifest.txt: $file',
         );
-        return 1;
+        return null;
       }
     }
   }
+  return files;
+}
 
-  final resolvedSdkVersion = _resolveSdkVersion(sdkVersion, dart);
-  final mode = resolveFormatMode(resolvedSdkVersion, languageVersion);
-  final parsedVersion = mode.parsedLanguageVersion;
-  if (!mode.inProcess || parsedVersion == null) {
-    if (dart != null) {
-      return _runSubprocessFallback(
-        dart: dart,
-        project: project,
-        files: files,
-        languageVersion: mode.languageVersion,
-        stamp: stamp,
-        outSink: outSink,
-        errSink: errSink,
+/// Per-file formatter options resolved against the staged project.
+typedef _FormatOptions = ({
+  int? pageWidth,
+  TrailingCommas? trailingCommas,
+  List<String> experimentFlags,
+});
+
+/// Formats one request's files with cached per-directory options.
+class _FormatSession {
+  _FormatSession({
+    required this.fileSystem,
+    required this.projectRoot,
+    required this.errBuf,
+  });
+
+  final _BoundedFileSystem fileSystem;
+  final String projectRoot;
+  final StringBuffer errBuf;
+  final Map<String, PackageConfig?> directoryConfigs = {};
+  final Map<String, _FormatOptions> directoryOptions = {};
+  final Set<String> failedReadPaths = {};
+
+  /// Formats [files], reporting each file's outcome into [outBuf].
+  Future<({int changedCount, bool hadError})> formatFiles(
+    List<String> files, {
+    required Version parsedVersion,
+    required Version? sdkLanguageVersion,
+    required StringBuffer outBuf,
+  }) async {
+    var changedCount = 0;
+    var hadError = false;
+    for (final path in files) {
+      final file = File(path);
+      if (!file.existsSync()) {
+        errBuf.writeln('No file or directory found at "$path".');
+        hadError = true;
+        continue;
+      }
+      final opts = await findOptions(file);
+      final formatter = DartFormatter(
+        languageVersion: parsedVersion,
+        pageWidth: opts.pageWidth ?? DartFormatter.defaultPageWidth,
+        trailingCommas: opts.trailingCommas,
+        experimentFlags: opts.experimentFlags,
       );
+      try {
+        final text = file.readAsStringSync();
+        final probe = _probeForSdkOverride(text, sdkLanguageVersion);
+        if (probe != null) {
+          formatter.formatSource(SourceCode(probe, uri: file.path));
+        }
+        final source = SourceCode(text, uri: file.path);
+        final output = formatter.formatSource(source);
+        final changed = source.text != output.text;
+        if (changed) {
+          outBuf.writeln('Changed ${file.path}');
+          changedCount++;
+        }
+      } on FormatterException catch (err) {
+        errBuf.writeln(err.message(color: false));
+        hadError = true;
+      } on UnexpectedOutputException catch (err) {
+        errBuf.writeln(
+          '''Hit a bug in the formatter when formatting ${file.path}.
+$err
+Please report at github.com/dart-lang/dart_style/issues.''',
+        );
+        hadError = true;
+      } on Object catch (err, stack) {
+        errBuf.writeln(
+          '''Hit a bug in the formatter when formatting ${file.path}.
+Please report at github.com/dart-lang/dart_style/issues.
+$err
+$stack''',
+        );
+        hadError = true;
+      }
     }
-    errSink.writeln(
-      'format_runner: unsupported --language-version "$languageVersion" '
-      'for SDK "$resolvedSdkVersion"',
-    );
-    return 64;
+    return (changedCount: changedCount, hadError: hadError);
   }
 
-  final outBuf = StringBuffer();
-  final errBuf = StringBuffer();
-  final fileSystem = _BoundedFileSystem(
-    IOFileSystem(),
-    srcRoot: srcRoot,
-    projectRoot: projectRoot,
-  );
-  final directoryConfigs = <String, PackageConfig?>{};
-  final directoryOptions =
-      <
-        String,
-        ({
-          int? pageWidth,
-          TrailingCommas? trailingCommas,
-          List<String> experimentFlags,
-        })
-      >{};
-  final failedReadPaths = <String>{};
-
+  /// The nearest `package_config.json` at or above [file]'s directory,
+  /// stopping at the staged project root.
   Future<PackageConfig?> findDirPackageConfig(File file) async {
     final dir = file.parent.path;
     if (directoryConfigs.containsKey(dir)) {
@@ -372,19 +522,15 @@ Future<int> runFormatRequest(
     }
   }
 
-  Future<
-    ({
-      int? pageWidth,
-      TrailingCommas? trailingCommas,
-      List<String> experimentFlags,
-    })
-  >
-  findOptions(File file) async {
+  /// The formatter options for [file]'s directory, read once and cached.
+  Future<_FormatOptions> findOptions(File file) async {
     final dir = file.parent.path;
     if (directoryOptions[dir] case final cached?) return cached;
-    int? pageWidth;
-    TrailingCommas? trailingCommas;
-    var experimentFlags = <String>[];
+    _FormatOptions options = (
+      pageWidth: null,
+      trailingCommas: null,
+      experimentFlags: <String>[],
+    );
     try {
       final optionsFile = await findAnalysisOptions(
         fileSystem,
@@ -392,121 +538,111 @@ Future<int> runFormatRequest(
         reportFailedRead: reportFailedRead,
         resolvePackageUri: (uri) => resolvePackageUri(file, uri),
       );
-      if (optionsFile['analyzer'] case Map<Object?, Object?> analyzer) {
-        if (analyzer case {'enable-experiment': final experiment?}) {
-          switch (experiment) {
-            case final String flag:
-              experimentFlags = [flag];
-            case final List<Object?> flags:
-              for (final flag in flags) {
-                switch (flag) {
-                  case final String flag:
-                    experimentFlags.add(flag);
-                  default:
-                    errBuf.writeln(
-                      'Warning: "enable-experiment" option list should contain '
-                      'only strings, but contained "$flag".',
-                    );
-                }
-              }
-            default:
-              errBuf.writeln(
-                'Warning: "enable-experiment" option should be a string or '
-                'list of strings, but was "$experiment".',
-              );
-          }
-        }
-      }
-      if (optionsFile['formatter'] case Map<Object?, Object?> formatter) {
-        if (formatter case {'page_width': int width}) {
-          pageWidth = width;
-        }
-        if (formatter case {'trailing_commas': var commas}) {
-          switch (commas) {
-            case 'automate':
-              trailingCommas = TrailingCommas.automate;
-            case 'preserve':
-              trailingCommas = TrailingCommas.preserve;
-            default:
-              errBuf.writeln(
-                'Warning: "trailing_commas" option should be "automate" or '
-                '"preserve", but was "$commas".',
-              );
-          }
-        }
-      }
+      options = (
+        pageWidth: options.pageWidth,
+        trailingCommas: options.trailingCommas,
+        experimentFlags: _experimentFlags(optionsFile['analyzer']),
+      );
+      final formatterOptions = _formatterSettings(optionsFile['formatter']);
+      options = (
+        pageWidth: formatterOptions.pageWidth ?? options.pageWidth,
+        trailingCommas:
+            formatterOptions.trailingCommas ?? options.trailingCommas,
+        experimentFlags: options.experimentFlags,
+      );
     } on PackageResolutionException catch (exception) {
       errBuf.writeln(
         'Warning: Package resolution error when reading '
         '"analysis_options.yaml" file for "${file.path}":\n$exception',
       );
     }
-    return directoryOptions[dir] = (
-      pageWidth: pageWidth,
-      trailingCommas: trailingCommas,
-      experimentFlags: experimentFlags,
-    );
+    return directoryOptions[dir] = options;
   }
 
-  final stopwatch = Stopwatch()..start();
-  var changedCount = 0;
-  var hadError = false;
-
-  for (final path in files) {
-    final file = File(path);
-    if (!file.existsSync()) {
-      errBuf.writeln('No file or directory found at "$path".');
-      hadError = true;
-      continue;
-    }
-    final opts = await findOptions(file);
-    final formatter = DartFormatter(
-      languageVersion: parsedVersion,
-      pageWidth: opts.pageWidth ?? DartFormatter.defaultPageWidth,
-      trailingCommas: opts.trailingCommas,
-      experimentFlags: opts.experimentFlags,
-    );
-    try {
-      final text = file.readAsStringSync();
-      final probe = _probeForSdkOverride(text, mode.sdkLanguageVersion);
-      if (probe != null) {
-        formatter.formatSource(SourceCode(probe, uri: file.path));
+  /// The `enable-experiment` flags in an `analyzer` options section.
+  List<String> _experimentFlags(Object? analyzer) {
+    if (analyzer case Map<Object?, Object?> analyzerMap) {
+      if (analyzerMap case {'enable-experiment': final experiment?}) {
+        switch (experiment) {
+          case final String flag:
+            return [flag];
+          case final List<Object?> flags:
+            final parsed = <String>[];
+            for (final flag in flags) {
+              switch (flag) {
+                case final String flag:
+                  parsed.add(flag);
+                default:
+                  errBuf.writeln(
+                    'Warning: "enable-experiment" option list should contain '
+                    'only strings, but contained "$flag".',
+                  );
+              }
+            }
+            return parsed;
+          default:
+            errBuf.writeln(
+              'Warning: "enable-experiment" option should be a string or '
+              'list of strings, but was "$experiment".',
+            );
+        }
       }
-      final source = SourceCode(text, uri: file.path);
-      final output = formatter.formatSource(source);
-      final changed = source.text != output.text;
-      if (changed) {
-        outBuf.writeln('Changed ${file.path}');
-        changedCount++;
-      }
-    } on FormatterException catch (err) {
-      errBuf.writeln(err.message(color: false));
-      hadError = true;
-    } on UnexpectedOutputException catch (err) {
-      errBuf.writeln('''Hit a bug in the formatter when formatting ${file.path}.
-$err
-Please report at github.com/dart-lang/dart_style/issues.''');
-      hadError = true;
-    } on Object catch (err, stack) {
-      errBuf.writeln('''Hit a bug in the formatter when formatting ${file.path}.
-Please report at github.com/dart-lang/dart_style/issues.
-$err
-$stack''');
-      hadError = true;
     }
+    return <String>[];
   }
 
-  stopwatch.stop();
-  final time = (stopwatch.elapsedMilliseconds / 1000).toStringAsFixed(2);
-  if (files.isEmpty) {
+  /// The `formatter` options section: page width and trailing commas.
+  ({int? pageWidth, TrailingCommas? trailingCommas}) _formatterSettings(
+    Object? formatter,
+  ) {
+    if (formatter case Map<Object?, Object?> formatterMap) {
+      int? pageWidth;
+      TrailingCommas? trailingCommas;
+      if (formatterMap case {'page_width': int width}) {
+        pageWidth = width;
+      }
+      if (formatterMap case {'trailing_commas': var commas}) {
+        switch (commas) {
+          case 'automate':
+            trailingCommas = TrailingCommas.automate;
+          case 'preserve':
+            trailingCommas = TrailingCommas.preserve;
+          default:
+            errBuf.writeln(
+              'Warning: "trailing_commas" option should be "automate" or '
+              '"preserve", but was "$commas".',
+            );
+        }
+      }
+      return (pageWidth: pageWidth, trailingCommas: trailingCommas);
+    }
+    return (pageWidth: null, trailingCommas: null);
+  }
+}
+
+/// Writes the run's summary and stamp file, returning its exit code.
+int _reportFormatResult({
+  required String project,
+  required String stamp,
+  required int fileCount,
+  required int changedCount,
+  required bool hadError,
+  required String elapsedSeconds,
+  required StringBuffer outBuf,
+  required StringBuffer errBuf,
+  required StringSink outSink,
+  required StringSink errSink,
+}) {
+  final time = elapsedSeconds;
+  if (fileCount == 0) {
     outBuf.writeln('Formatted no files in $time seconds.');
-  } else if (files.length == 1) {
+  } else if (fileCount == 1) {
     outBuf.writeln(
       'Formatted 1 file ($changedCount changed) in $time seconds.',
     );
   } else {
     outBuf.writeln(
-      'Formatted ${files.length} files ($changedCount changed) in $time seconds.',
+      'Formatted $fileCount files ($changedCount changed) in $time seconds.',
     );
   }
 
