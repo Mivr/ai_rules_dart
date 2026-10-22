@@ -807,7 +807,7 @@ def _parse_float_text(text):
 # ---------------------------------------------------------------------------
 
 def _unescape_code_point(text, i, nxt):
-    """Decodes a `\x`, `\u` or `\U` escape at `i`. Returns (decoded, next index)."""
+    """Decodes a `\\x`, `\\u` or `\\U` escape at `i`. Returns (decoded, next index)."""
     width = 2 if nxt == "x" else (4 if nxt == "u" else 8)
     if i + 1 + width >= len(text):
         # Too few characters left for the digits: keep the escape letter.

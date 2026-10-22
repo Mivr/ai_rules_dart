@@ -699,7 +699,7 @@ def _verify_commit_tree(ctx, bare_abs, empty, empty_dir, resolved_ref, what):
     if res.return_code != 0:
         fail("%s: could not read the tree of %r: %s" % (what, resolved_ref, res.stderr))
 
-def _archive_verified_tree(ctx, bare_abs, empty, empty_dir, output, spec, what, resolved_ref):
+def _archive_verified_tree(ctx, bare_abs, empty, empty_dir, output, spec, what):
     """Streams `git archive` of the verified spec under the scrubbed environment."""
     res = ctx.execute(
         ["git", "--no-replace-objects"] + [
@@ -775,4 +775,4 @@ def git_materialize(ctx, bare_rel, resolved_ref, output, spec, what):
     _verify_commit_id(ctx, bare_abs, empty, empty_dir, resolved_ref, what)
     _verify_commit_type(ctx, bare_abs, empty, empty_dir, resolved_ref, what)
     _verify_commit_tree(ctx, bare_abs, empty, empty_dir, resolved_ref, what)
-    _archive_verified_tree(ctx, bare_abs, empty, empty_dir, output, spec, what, resolved_ref)
+    _archive_verified_tree(ctx, bare_abs, empty, empty_dir, output, spec, what)

@@ -204,7 +204,7 @@ def compute_codegen_output_name(src_path, output_suffix):
         base = src_path
     return base + output_suffix
 
-def _codegen_sdk_files(ctx, toolchain):
+def _codegen_sdk_files(toolchain):
     """Returns (sdk_files, script_sdk_files) for the analyze and script branches."""
     sdk_files = toolchain.dart_sdk_info.analyze_files
     script_sdk_files = depset(transitive = [sdk_files, toolchain.dart_sdk_info.runtime_files])
@@ -356,6 +356,7 @@ def _codegen_run_worker(ctx, toolchain, dart, sdk_files, script_sdk_files, synth
 
 def _codegen_run_script(ctx, dart, script_sdk_files, synth_pc, library_dep_srcs, lib_root, auto_staged, src, outputs):
     """Runs the generator as a Dart script via the SDK's dart executable."""
+
     # Run generator as a Dart script via the SDK's dart executable.
     # Always pass an explicit `--packages` before the script path so the
     # Dart VM never walks ancestor directories above `output_user_root`.
@@ -409,7 +410,7 @@ def _dart_codegen_impl(ctx):
     # The shim reads what the analyzer reads: the analyze subset. A `generator`
     # script is run by the `dart` launcher, which also loads `dartvm` and the
     # kernel service, so that branch takes the runtime subset as well.
-    sdk_files, script_sdk_files = _codegen_sdk_files(ctx, toolchain)
+    sdk_files, script_sdk_files = _codegen_sdk_files(toolchain)
 
     mismatch = _codegen_validate(ctx, toolchain)
     if mismatch != None:

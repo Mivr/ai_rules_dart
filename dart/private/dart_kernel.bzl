@@ -715,7 +715,7 @@ def _kmod_declare_outputs(ctx, output, packages, scheme, unused_inputs):
         unused_inputs_list = None
     return package_config, excluded, unused_inputs_list
 
-def _kmod_common_args(ctx, args, tools, platform, libraries, package_config, target, libraries_platform, extra_libraries, defines, extra_frontend_flags, scheme):
+def _kmod_common_args(ctx, args, platform, libraries, package_config, target, libraries_platform, extra_libraries, defines, extra_frontend_flags, scheme):
     """Adds the target/platform/define args shared by every module compile."""
     args.add("--target", target)
     args.add("--dart-sdk-summary", platform)
@@ -739,6 +739,7 @@ def _kmod_common_args(ctx, args, tools, platform, libraries, package_config, tar
 
 def _kmod_worker_snapshot(ctx, tools, defines):
     """Selects the worker snapshot for comma defines. Returns (worker_snapshot, patched_marker)."""
+
     # A comma-containing value only survives the frontend when the compile runs
     # the toolchain's patched worker snapshot: `kernel_worker` splits `-D`
     # values on commas. The patched snapshot is a distinct `--kernel-worker`
@@ -763,6 +764,7 @@ def _kmod_worker_snapshot(ctx, tools, defines):
 
 def _kmod_source_args(args, sources, dep_kmods, output, koutline, excluded, unused_inputs_list, droppable, closure_excluded, extra_inputs, exclude_non_sources):
     """Adds the per-module source, output, and exclusion args."""
+
     # The VM target does not support `--summary-only`: it prints an error and
     # embeds the whole platform. Its absence keeps each kernel to its own libraries.
     args.add("--no-summary-only")
@@ -798,7 +800,7 @@ def _kmod_source_args(args, sources, dep_kmods, output, koutline, excluded, unus
     if extra_inputs:
         args.add_all(extra_inputs, before_each = "--input-source")
 
-def _kmod_select_executable(ctx, tools, worker_snapshot, sources, package_config, libraries, platform, direct_inputs, action_tools):
+def _kmod_select_executable(ctx, tools, direct_inputs, action_tools):
     """Selects the module action's executable. Returns (executable, arguments-prefix, dart_exe)."""
     dart_exe = getattr(tools, "dart", None)
     dartvm = getattr(tools, "dartvm", None)
@@ -952,7 +954,7 @@ def kernel_module_action(
     args.use_param_file("@%s", use_always = True)
     args.set_param_file_format("multiline")
 
-    _kmod_common_args(ctx, args, tools, platform, libraries, package_config, target, libraries_platform, extra_libraries, defines, extra_frontend_flags, scheme)
+    _kmod_common_args(ctx, args, platform, libraries, package_config, target, libraries_platform, extra_libraries, defines, extra_frontend_flags, scheme)
 
     worker_snapshot, patched_marker = _kmod_worker_snapshot(ctx, tools, defines)
 
@@ -972,7 +974,7 @@ def kernel_module_action(
         platform,
         ctx.executable._kernel_module,
     ]
-    executable, tool_path, _ = _kmod_select_executable(ctx, tools, worker_snapshot, sources, package_config, libraries, platform, direct_inputs, action_tools)
+    executable, tool_path, _ = _kmod_select_executable(ctx, tools, direct_inputs, action_tools)
     if tool_path != None:
         arguments = [
             tool_path,
@@ -1404,6 +1406,7 @@ def _lib_kernel_graph(ctx, deps, dep_kernels, own_srcs, records):
 
 def _lib_kernel_has_cycle(single_package_name, raw, owned_list, edges_list, pkgs, non_standalone):
     """Whether the library's packages form a cross-package cycle."""
+
     # One name for the cross-package check: a merged library owns several,
     # and its members compile in this very module, so no member can be split
     # across targets. A single-package library passes its own name as before.
@@ -1441,7 +1444,7 @@ def _lib_kernel_cyclic_srcs(deps, dep_kernels, own_srcs, single_package_name, ra
         ),
     )
 
-def _lib_kernel_cross_srcs(deps, dep_kernels, own_srcs, single_package_name, raw, owned_list, edges_list, pkgs, need_graph, has_cycle, has_upstream_cross_pkg, non_standalone):
+def _lib_kernel_cross_srcs(deps, dep_kernels, own_srcs, single_package_name, raw, owned_list, edges_list, pkgs, need_graph, has_cycle, has_upstream_cross_pkg):
     """Returns (cross_pkg_srcs, dep_cross_pkg_srcs) for the cycle/upstream/passthrough cases."""
     if has_cycle:
         if need_graph:
@@ -1511,6 +1514,7 @@ def _lib_kernel_base(dep_kernels):
 
 def _lib_kernel_facade(dep_closure, dep_outline_closure, upstream_excluded, cross_pkg_srcs, owned, edges, base_dill, base_keys, base_kmods, unseeded_base_kmods):
     """The `DartKernelInfo` for a façade library with nothing to compile."""
+
     # A façade: nothing to compile, but its dependencies' modules still link.
     return DartKernelInfo(
         kmod = None,
@@ -1535,6 +1539,7 @@ def _lib_kernel_sources(package_name, lib_root, own_srcs, own_records, pkgs):
             struct(uri = library_source_uri(package_name, lib_root, f.short_path), file = f)
             for f in own_srcs
         ]
+
     # A merged library's sources span its members' roots: each file is
     # named by the member package whose `lib/` holds it.
     return [
@@ -1640,7 +1645,7 @@ def library_kernel_info(
 
     single_package_name = own_records[0].package_name if len(own_records) == 1 else ""
     has_cycle = _lib_kernel_has_cycle(single_package_name, raw, owned_list, edges_list, pkgs, non_standalone)
-    cross_pkg_srcs, dep_cross_pkg_srcs = _lib_kernel_cross_srcs(deps, dep_kernels, own_srcs, single_package_name, raw, owned_list, edges_list, pkgs, need_graph, has_cycle, has_upstream_cross_pkg, non_standalone)
+    cross_pkg_srcs, dep_cross_pkg_srcs = _lib_kernel_cross_srcs(deps, dep_kernels, own_srcs, single_package_name, raw, owned_list, edges_list, pkgs, need_graph, has_cycle, has_upstream_cross_pkg)
 
     base_dill, base_keys, base_kmods, unseeded_base_kmods = _lib_kernel_base(dep_kernels)
     if not own_srcs:

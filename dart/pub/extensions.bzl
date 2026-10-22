@@ -285,6 +285,7 @@ def _explicit_declarations(package_tags):
 
 def _resolve_state():
     """Returns the mutable resolution state for lock collection."""
+
     # registry[pkg_name] = {url, entries: [{version, sha256, hub_name, lock_label, on_version_conflict}]}
     # git_registry mirrors it for git-sourced packages, pinned by commit SHA.
     # hub_packages maps each hub to its package set (a set, not a list: a hub
@@ -327,6 +328,7 @@ def _lock_entry_error(name, info, lock_tag):
 
 def _register_git_package(state, name, info, lock_tag, hub_name, isolated):
     """Registers one git-sourced lock entry. Returns the error string, or None."""
+
     # Git packages are fetched at their resolved-ref commit, like
     # hosted packages, and exposed in the hub the same way.
     state["hub_packages"][hub_name][name] = True
@@ -440,6 +442,7 @@ def _register_lock_package(state, explicit, name, info, lock_tag, hub_name, isol
 
 def _warn_skipped_sources(state, lock_tag, hub_name, skipped_by_source):
     """Warns once per lock file about non-hosted packages getting no repository."""
+
     # Only hosted packages can be fetched from a pub registry. Collect
     # every non-hosted package and report once per lock file.
     if not skipped_by_source:
@@ -483,6 +486,7 @@ def _resolve_lock_tag(state, explicit, lock_tag):
 
 def _check_hosted_sha(name, pkg):
     """Returns the cross-lock sha256 conflict error, or None."""
+
     # Conflicting sha256 values for the same package version across locks
     # are an error, even when that version is later superseded by a higher
     # version or by an explicit pub.package().
@@ -622,6 +626,7 @@ def _resolve_git_versions(state):
 
 def _resolve_isolated_overlap(state):
     """Drops hosted entries shadowed by a git checkout in an isolated hub."""
+
     # A package listed as both hosted and git in one isolated hub
     # materialises once, from its git checkout, like the shared scope above.
     for hub_name, git_pkgs in state["isolated_git_packages"].items():
@@ -760,6 +765,7 @@ def resolve_pub_packages(package_tags, lock_tags):
 
 def _pub_collect_tags(ctx):
     """Collects package/lock tags across modules. Returns (package_tags, lock_tags, ignore_hooks, root_repos)."""
+
     # Packages the user has declared hook-irrelevant, unioned across every
     # from_lock call — a package is one repo regardless of how many locks
     # mention it, so the flag cannot be per-lock.
@@ -805,7 +811,7 @@ def _pub_scope_contents(ctx, scope_dir, scope_names, explicit_package_names, exp
         contents = _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs)
     return contents
 
-def _pub_plan_shared_sccs(ctx, explicit, resolved, resolved_git, hub_packages, isolated_packages, isolated_git_packages, explicit_deps, explicit_package_names):
+def _pub_plan_shared_sccs(ctx, resolved, resolved_git, hub_packages, isolated_packages, isolated_git_packages, explicit_deps, explicit_package_names):
     """Plans the shared scope's merges. Returns (shared_sccs, vanished_spokes)."""
     shared_hubs = sorted([
         hub_name
@@ -830,7 +836,7 @@ def _pub_plan_shared_sccs(ctx, explicit, resolved, resolved_git, hub_packages, i
         vanished_spokes[_SPOKE_PREFIX + "__" + member] = repo
     return shared_sccs, vanished_spokes
 
-def _pub_plan_isolated_sccs(ctx, hub_name, explicit, isolated_packages, isolated_git_packages, explicit_deps, explicit_package_names, vanished_spokes):
+def _pub_plan_isolated_sccs(ctx, hub_name, isolated_packages, isolated_git_packages, explicit_deps, explicit_package_names, vanished_spokes):
     """Plans one isolated hub's merges. Returns the hub's sccs struct."""
     hosted = isolated_packages.get(hub_name, {})
     git_pkgs = isolated_git_packages.get(hub_name, {})
@@ -859,7 +865,7 @@ def _pub_emit_explicit(explicit, vanished_spokes):
             deps = [rewrite_vanished_spoke(dep, vanished_spokes) for dep in pkg.deps],
         )
 
-def _pub_emit_shared_spokes(resolved, resolved_git, shared_sccs, all_package_names, explicit_package_names, ignore_hooks, shared_scc_targets):
+def _pub_emit_shared_spokes(resolved, shared_sccs, all_package_names, explicit_package_names, ignore_hooks, shared_scc_targets):
     """Creates shared hosted spoke repos. Cycle members get no spoke of their own: the merged repository holds the whole cycle."""
     for name, pkg in resolved.items():
         if name in shared_sccs.members:
@@ -918,7 +924,7 @@ def _pub_emit_shared_git(resolved_git, shared_sccs, all_package_names, explicit_
             scc_targets = shared_scc_targets,
         )
 
-def _pub_emit_isolated_spokes(ctx, hub_name, hosted, hub_sccs, package_names, hub_explicit, hub_scc_targets, ignore_hooks):
+def _pub_emit_isolated_spokes(hub_name, hosted, hub_sccs, package_names, hub_explicit, hub_scc_targets, ignore_hooks):
     """Creates one isolated hub's hosted spoke repos."""
     for pkg_name, pkg in hosted.items():
         if pkg_name in hub_sccs.members:
@@ -977,6 +983,7 @@ def _pub_emit_isolated_git(hub_name, git_pkgs, hub_sccs, package_names, hub_expl
 
 def _pub_emit_isolated_hub(ctx, hub_name, isolated_packages, isolated_git_packages, isolated_sccs, explicit_package_names, ignore_hooks):
     """Creates one isolated hub's spokes and merged repositories."""
+
     # Create isolated spoke repos (namespaced by hub, outside the global
     # registry). Hosted and git packages in one hub share its package set so
     # cross-source deps within the hub resolve to sibling spokes.
@@ -988,7 +995,7 @@ def _pub_emit_isolated_hub(ctx, hub_name, isolated_packages, isolated_git_packag
         member: "@{repo}//:{member}".format(repo = repo, member = member)
         for member, repo in isolated_sccs[hub_name].members.items()
     }
-    _pub_emit_isolated_spokes(ctx, hub_name, hosted, isolated_sccs[hub_name], package_names, hub_explicit, hub_scc_targets, ignore_hooks)
+    _pub_emit_isolated_spokes(hub_name, hosted, isolated_sccs[hub_name], package_names, hub_explicit, hub_scc_targets, ignore_hooks)
     _pub_emit_isolated_merged(hub_name, isolated_sccs[hub_name], hosted, git_pkgs, package_names, hub_explicit, hub_scc_targets, ignore_hooks)
     _pub_emit_isolated_git(hub_name, git_pkgs, isolated_sccs[hub_name], package_names, hub_explicit, hub_scc_targets, ignore_hooks)
 
@@ -1047,12 +1054,12 @@ def _pub_impl(ctx):
     explicit_deps = {name: pkg.deps for name, pkg in explicit.items()}
     explicit_package_names = sorted(explicit.keys())
 
-    shared_sccs, vanished_spokes = _pub_plan_shared_sccs(ctx, explicit, resolved, resolved_git, hub_packages, isolated_packages, isolated_git_packages, explicit_deps, explicit_package_names)
+    shared_sccs, vanished_spokes = _pub_plan_shared_sccs(ctx, resolved, resolved_git, hub_packages, isolated_packages, isolated_git_packages, explicit_deps, explicit_package_names)
 
     isolated_hub_names = sorted(set(isolated_packages.keys()) | set(isolated_git_packages.keys()))
     isolated_sccs = {}
     for hub_name in isolated_hub_names:
-        isolated_sccs[hub_name] = _pub_plan_isolated_sccs(ctx, hub_name, explicit, isolated_packages, isolated_git_packages, explicit_deps, explicit_package_names, vanished_spokes)
+        isolated_sccs[hub_name] = _pub_plan_isolated_sccs(ctx, hub_name, isolated_packages, isolated_git_packages, explicit_deps, explicit_package_names, vanished_spokes)
 
     # Labels spokes and hubs point at for merged members, per scope.
     shared_scc_targets = {
@@ -1066,7 +1073,7 @@ def _pub_impl(ctx):
     # merged repository below holds the whole cycle, and every edge into it
     # (mapped through `scc_targets`) names the merged target instead.
     all_package_names = sorted(resolved.keys() + [n for n in resolved_git.keys() if n not in resolved])
-    _pub_emit_shared_spokes(resolved, resolved_git, shared_sccs, all_package_names, explicit_package_names, ignore_hooks, shared_scc_targets)
+    _pub_emit_shared_spokes(resolved, shared_sccs, all_package_names, explicit_package_names, ignore_hooks, shared_scc_targets)
     _pub_emit_shared_merged(shared_sccs, resolved, resolved_git, all_package_names, explicit_package_names, shared_scc_targets, ignore_hooks)
     _pub_emit_shared_git(resolved_git, shared_sccs, all_package_names, explicit_package_names, ignore_hooks, shared_scc_targets)
 

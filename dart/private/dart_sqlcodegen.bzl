@@ -39,6 +39,7 @@ load(
 
 def _sqlcodegen_outputs(ctx, src):
     """Declares sibling outputs by stripping the source's extension and appending each suffix."""
+
     # Strip the source's actual extension (may be `.drift`, `.moor`, …) and
     # append each output_suffix; place outputs next to the source.
     rel = src.short_path
@@ -100,7 +101,7 @@ def _sqlcodegen_launch(ctx, toolchain, args, direct, transitive):
                     direct = [kernel_bin, toolchain.dart_sdk_info.dart],
                     transitive = [toolchain.dart_sdk_info.runtime_files, generator_runfiles],
                 ),
-            ]
+            ],
         )
     return (
         ctx.executable.generator_bin,
@@ -111,7 +112,7 @@ def _sqlcodegen_launch(ctx, toolchain, args, direct, transitive):
                 direct = [ctx.executable.generator_bin, toolchain.dart_sdk_info.dart],
                 transitive = [generator_runfiles],
             ),
-        ]
+        ],
     )
 
 def _dart_sqlcodegen_impl(ctx):

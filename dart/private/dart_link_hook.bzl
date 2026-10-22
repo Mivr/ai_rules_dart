@@ -210,7 +210,7 @@ def _link_hook_stage_files(ctx, stage_name, dep_mangled, pfiles, hook, staged, m
         staged_hooks[pkg_name] = hook_link
         manifest_entries.append("file\t%s\t%s" % (hook_rel, hook_link.path))
 
-def _link_hook_stage_all(ctx, deps, packages, hooks, by_pkg, name):
+def _link_hook_stage_all(ctx, packages, hooks, by_pkg, name):
     """Stages every package root and writes the manifest + package config. Returns (package_config, staged, staged_hooks)."""
     package_config = ctx.actions.declare_file(name + ".package_config.json")
     stage_name = name + ".pkg_roots"
@@ -317,7 +317,7 @@ def dart_link_hook_actions(ctx, runner, sdk, recorded_uses, deps, data_asset_ids
 
     srcs, resources, by_pkg = _link_hook_owner_index(deps)
 
-    package_config, staged, staged_hooks = _link_hook_stage_all(ctx, deps, packages, hooks, by_pkg, name)
+    package_config, staged, staged_hooks = _link_hook_stage_all(ctx, packages, hooks, by_pkg, name)
 
     return _link_hook_run_all(ctx, runner, sdk, recorded_uses, hooks, staged_hooks, staged, declared, package_config, srcs, resources, name)
 

@@ -244,6 +244,7 @@ def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asse
 
 def _kernel_comma_snapshot(ctx, dart_sdk_info, tools, defines, extra_flags, jit_tool):
     """Selects the patched `gen_kernel` snapshot for comma defines. Returns (gen_snapshot, comma_sources)."""
+
     # A comma-containing value only survives the frontend when `gen_kernel`
     # runs the toolchain's patched snapshot: the frontend splits `-D` values
     # on commas. The patched snapshot is a declared action output taken as a
@@ -492,6 +493,7 @@ def _compile_validate(ctx, compile_mode, recorded_uses, jit_tool, comma_patch, t
 
 def _compile_split_flags(extra_flags, package_config):
     """Splits extra flags between the front end and `dart compile`. Returns (front_end_flags, backend_flags)."""
+
     # The front end consumes its flags, so they go to `gen_kernel` for a source
     # entrypoint. `kernel` is the `gen_kernel` stage itself and gets them all; a
     # pre-built kernel has no front end to receive them.
@@ -527,6 +529,7 @@ def _compile_kernel_mode(ctx, dart_sdk_info, main, srcs, package_config, output,
 
 def _compile_front_end(ctx, dart_sdk_info, main, srcs, package_config, output, main_path, compile_mode, mode_flags, target_os, defines, front_end_flags, jit_tool, comma_patch, native_assets_yaml, embed_sources):
     """Runs the front-end `gen_kernel` step. Returns the kernel File feeding `dart compile`."""
+
     # The front end runs once, here, with the stable URIs. Its kernel is the
     # input of the `dart compile` step below.
     aot = compile_mode in RECORDING_COMPILE_MODES
@@ -555,6 +558,7 @@ def _compile_front_end(ctx, dart_sdk_info, main, srcs, package_config, output, m
 
 def _compile_jit_train(ctx, dart_sdk_info, compile_mode, jit_tool, compile_main, compile_main_path, dart_bin, backend_flags, output, enable_asserts, comma_patch, jit_snapshot_fallback):
     """Trains the app-JIT snapshot when eligible. Returns True when the output is produced."""
+
     # The app-JIT snapshot is trained by the scratch-directory tool when it has
     # one, and on a POSIX host (on Windows the mode uses `dart compile
     # jit-snapshot`, so the snapshot keeps the sandbox path).
@@ -574,7 +578,7 @@ def _compile_jit_train(ctx, dart_sdk_info, compile_mode, jit_tool, compile_main,
     )
     return True
 
-def _compile_aot_wrapper(ctx, dart_sdk_info, dart_bin, sdk_files, jit_tool, comma_patch, pkg_cfg, compile_main, compile_main_path, compile_srcs, compile_mode, target_os, target_arch, cross_gen_snapshot, cross_dartaotruntime, mode_flags, enable_asserts, backend_flags, output, compile_recorded_uses):
+def _compile_aot_wrapper(ctx, dart_bin, sdk_files, jit_tool, comma_patch, pkg_cfg, compile_main, compile_main_path, compile_srcs, compile_mode, target_os, target_arch, cross_gen_snapshot, cross_dartaotruntime, mode_flags, enable_asserts, backend_flags, output, compile_recorded_uses):
     """Compiles exe/aot/jit via the isolated-filesystem wrapper. Returns True when it ran."""
     if compile_mode not in ("exe", "aot-snapshot", "jit-snapshot") or jit_tool == None or compile_main_path != None:
         return False
@@ -778,7 +782,7 @@ def dart_compile_action(
     cross_gen_snapshot = getattr(dart_sdk_info, "cross_gen_snapshot", None) if is_cross else None
     cross_dartaotruntime = getattr(dart_sdk_info, "cross_dartaotruntime", None) if is_cross else None
 
-    if _compile_aot_wrapper(ctx, dart_sdk_info, dart_bin, sdk_files, jit_tool, comma_patch, package_config, compile_main, compile_main_path, compile_srcs, compile_mode, target_os, target_arch, cross_gen_snapshot, cross_dartaotruntime, mode_flags, enable_asserts, backend_flags, output, compile_recorded_uses):
+    if _compile_aot_wrapper(ctx, dart_bin, sdk_files, jit_tool, comma_patch, package_config, compile_main, compile_main_path, compile_srcs, compile_mode, target_os, target_arch, cross_gen_snapshot, cross_dartaotruntime, mode_flags, enable_asserts, backend_flags, output, compile_recorded_uses):
         return
 
     _compile_dart_compile(ctx, dart_bin, sdk_files, compile_main, compile_main_path, compile_srcs, compile_mode, target_os, target_arch, cross_gen_snapshot, cross_dartaotruntime, mode_flags, enable_asserts, backend_flags, output, compile_recorded_uses)

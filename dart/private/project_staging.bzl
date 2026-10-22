@@ -312,6 +312,7 @@ def _main_pkgs_by_root(packages):
 
 def _main_own_roots(own_short_paths, sorted_roots):
     """Returns the set of lib_roots containing an `own` file (plus the root package)."""
+
     # Any package that contains an `own` file (plus the root package `""`) must stay
     # staged under `src/` so `own` files and same-package `lib/` files share a single
     # `rootUri` in `package_config.json` and relative `../` imports within the package work.
@@ -478,6 +479,7 @@ def _stage_collect_external(packages, all_srcs):
 
 def _stage_active_stubs(packages, src_files):
     """Returns (active_stubs, stub_paths) for main-repo packages staged under `src/`."""
+
     # Only generate stub pubspec.yaml files for main-repo packages that actually
     # have at least one file staged under `src/`.
     all_roots = dict(main_package_roots(packages))

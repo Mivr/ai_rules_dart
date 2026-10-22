@@ -88,8 +88,9 @@ def _binary_recorded_uses(ctx, compile_mode):
         recorded_uses_info = [DartRecordedUsesInfo(file = recorded_uses, kind = kind)]
     return compile_recorded_uses, recorded_uses_info
 
-def _binary_source_compile(ctx, dart_sdk_info, own_files, own, packages, output, compile_mode, compile_recorded_uses, resolved_assets):
+def _binary_source_compile(ctx, dart_sdk_info, own, packages, output, compile_mode, compile_recorded_uses, resolved_assets):
     """Compiles from source through `executable_inputs`. Returns (packages, code_asset_libs)."""
+
     # Nothing is copied: a package split between the source tree and `bazel-out`
     # compiles in place, through the multi-root file system (`executable_inputs`).
     # The one flatten per rule: the package lookup inspects per-file paths.
@@ -207,6 +208,7 @@ def _binary_launcher_outputs(ctx, dart_sdk_info, output, is_windows, code_asset_
 
 def _binary_default_outputs(ctx, output, code_asset_libs, compile_mode, dart_sdk_info, recorded_uses_info, own):
     """The standard executable providers, with package resources in runfiles."""
+
     # Resources ride the runfiles, not the compile. A dep's `lib/**` non-Dart
     # files are part of the package at run time under pub, and the compiled
     # binary is the one place that cannot recover them: `Isolate.resolvePackageUri`
@@ -304,7 +306,6 @@ def _dart_binary_impl(ctx):
         packages, code_asset_libs = _binary_source_compile(
             ctx,
             dart_sdk_info,
-            own_files,
             own,
             packages,
             output,

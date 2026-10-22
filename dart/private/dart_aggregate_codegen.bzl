@@ -92,6 +92,7 @@ def _aggregate_lib_root(ctx, identity):
 
 def _aggregate_build_args(ctx, args, synth_pc, dart_sdk_info, lib_root, auto_staged, outputs):
     """Adds the shared input/output/contract args. Returns the extra staged inputs."""
+
     # Configure param-file up-front when a worker binary is used so the
     # flagfile convention (`@<path>`, multiline) is set before any args
     # are added. Matches `dart_codegen`'s ordering.
@@ -170,6 +171,7 @@ def _aggregate_run_worker(ctx, args, dart_sdk_info, outputs, direct_inputs, tran
 
 def _aggregate_run_script(ctx, args, dart_sdk_info, synth_pc, outputs, direct_inputs, transitive):
     """Runs the `generator_script` via the SDK's dart executable."""
+
     # A `generator_script` is run by the `dart` launcher, which also loads
     # `dartvm` and the kernel service: the runtime subset, on top of the
     # analyze subset. Always pass an explicit `--packages` before the script

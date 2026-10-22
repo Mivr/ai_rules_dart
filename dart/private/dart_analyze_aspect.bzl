@@ -670,6 +670,7 @@ def _analyze_own_files(target, entry, package_srcs):
 
 def _analyze_summary_or_source(ctx, info, name, staged, all_pkgs, own, generated, own_paths, sdk_inputs, sdk_version, config, is_leaf_own_only):
     """Runs the summary-mode or source-mode analyze action. Returns (output, summary_mode, summary_staged)."""
+
     # The SDK check is the analyzing toolchain's own: the same one the
     # summary aspect and the codegen rules read.
     summary_files = own.values() + generated
@@ -677,6 +678,7 @@ def _analyze_summary_or_source(ctx, info, name, staged, all_pkgs, own, generated
     summary_mode = ctx.attr._summaries[BuildSettingInfo].value and analyzer_summaries_supported(sdk_version) and _summaries_ready(ctx, info, has_own_lib, summary_files)
     if not summary_mode:
         return depset([_analyze(ctx, name, staged, sdk_inputs, own_paths)]), False, None
+
     # Only the target's own files are staged: its dependencies come from
     # their summaries, so no closure is read and no closure edit reaches
     # this action. The fix action below keeps the full staging.
