@@ -51,7 +51,9 @@ _HOSTILE_MARKERS = [
 
 sh_test(
     name = "hostile_env_test",
-    size = "small",
+    # Medium: the twelve markers each re-fetch, which once took 60.1 s and
+    # timed out a small (60 s) test on a Windows runner.
+    size = "medium",
     srcs = ["check_hostile_markers.sh"],
     args = ["$(rlocationpath %s)" % marker for marker in _HOSTILE_MARKERS],
     data = _HOSTILE_MARKERS,
