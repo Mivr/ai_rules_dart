@@ -112,6 +112,50 @@ def _has_directive(lines):
 # Block structure
 # ---------------------------------------------------------------------------
 
+def _block_line_text(raw):
+    """Returns (indent, comment-stripped text) of a block line, or (None, None) when it carries no content."""
+    stripped = raw.strip()
+    if not stripped or stripped.startswith("#") or stripped.startswith("%") or stripped in ["---", "..."]:
+        return None, None
+    indent = _indent_width(raw)
+    text = _strip_comment(raw[indent:])
+    if text == "":
+        return None, None
+    return indent, text
+
+def _close_block_containers(stack, indent):
+    """Pops the containers that the line at `indent` is not nested into."""
+    for _ in range(len(stack)):
+        if not stack or indent > stack[-1]["indent"]:
+            break
+        stack.pop()
+
+def _attach_pending_child(pending, indent, text, anchors, stack):
+    """Attaches the child container for a pending key or dash."""
+    if indent > pending["indent"]:
+        child = _new_block(text)
+        pending["parent"][pending["slot"]] = child
+        if pending["anchor"] != None:
+            anchors[pending["anchor"]] = child
+        stack.append({
+            "kind": "seq" if type(child) == "list" else "map",
+            "indent": pending["indent"],
+            "value": child,
+            "entry": None,
+        })
+
+def _init_block_root(text, indent, anchors, stack):
+    """Creates the root container or scalar. Returns (root, is_scalar)."""
+    if text == "-" or text.startswith("- "):
+        root = []
+        stack.append({"kind": "seq", "indent": indent - 1, "value": root, "entry": None})
+        return root, False
+    if _find_colon(text) >= 0 or text.startswith("? "):
+        root = {}
+        stack.append({"kind": "map", "indent": indent - 1, "value": root, "entry": None})
+        return root, False
+    return _parse_scalar(text, anchors), True
+
 def _parse_block(lines):
     """Parses the block-structured lines of one document into a value.
 
@@ -132,46 +176,21 @@ def _parse_block(lines):
         if idx >= len(lines):
             break
         raw = lines[idx]
-        stripped = raw.strip()
-        if not stripped or stripped.startswith("#") or stripped.startswith("%") or stripped in ["---", "..."]:
-            idx += 1
-            continue
-
-        indent = _indent_width(raw)
-        text = _strip_comment(raw[indent:])
-        if text == "":
+        indent, text = _block_line_text(raw)
+        if indent == None:
             idx += 1
             continue
 
         # Close the containers that this line is not indented into.
-        for _ in range(len(stack)):
-            if not stack or indent > stack[-1]["indent"]:
-                break
-            stack.pop()
+        _close_block_containers(stack, indent)
 
         if pending != None:
-            if indent > pending["indent"]:
-                child = _new_block(text)
-                pending["parent"][pending["slot"]] = child
-                if pending["anchor"] != None:
-                    anchors[pending["anchor"]] = child
-                stack.append({
-                    "kind": "seq" if type(child) == "list" else "map",
-                    "indent": pending["indent"],
-                    "value": child,
-                    "entry": None,
-                })
+            _attach_pending_child(pending, indent, text, anchors, stack)
             pending = None
 
         if root == None and not stack:
-            if text == "-" or text.startswith("- "):
-                root = []
-                stack.append({"kind": "seq", "indent": indent - 1, "value": root, "entry": None})
-            elif _find_colon(text) >= 0 or text.startswith("? "):
-                root = {}
-                stack.append({"kind": "map", "indent": indent - 1, "value": root, "entry": None})
-            else:
-                root = _parse_scalar(text, anchors)
+            root, is_scalar = _init_block_root(text, indent, anchors, stack)
+            if is_scalar:
                 idx += 1
                 continue
 
@@ -334,13 +353,8 @@ def _consume_plain(lines, start, parent_indent, first):
 # Block scalars
 # ---------------------------------------------------------------------------
 
-def _parse_block_scalar(lines, start, parent_indent, header):
-    """Reads a `|` or `>` block scalar. Returns (text, next index).
-
-    `header` is the indicator text after the key or dash, such as `|-` or
-    `>2`. The content is every following line indented deeper than
-    `parent_indent`, plus the blank lines between them.
-    """
+def _block_scalar_header(header):
+    """Reads a `|` or `>` header into (style, chomping, explicit_indent)."""
     style = header[0]
     chomping = ""
     explicit_indent = 0
@@ -350,7 +364,10 @@ def _parse_block_scalar(lines, start, parent_indent, header):
             chomping = ch
         elif ch.isdigit() and explicit_indent == 0:
             explicit_indent = int(ch)
+    return style, chomping, explicit_indent
 
+def _block_scalar_raw_lines(lines, start, parent_indent):
+    """Collects the scalar content lines. Returns (raw_lines, min_indent, next index)."""
     idx = start
     raw_lines = []
     min_indent = -1
@@ -369,16 +386,10 @@ def _parse_block_scalar(lines, start, parent_indent, header):
             min_indent = indent
         raw_lines.append(raw)
         idx += 1
+    return raw_lines, min_indent, idx
 
-    if explicit_indent > 0:
-        content_indent = parent_indent + explicit_indent
-    elif min_indent >= 0:
-        content_indent = min_indent
-    else:
-        content_indent = parent_indent + 1
-
-    values = [raw[content_indent:] if raw != "" else "" for raw in raw_lines]
-
+def _block_scalar_chomp(style, values, chomping):
+    """Folds a `>` scalar and applies the chomping indicator."""
     if style == "|":
         text = "\n".join(values)
     else:
@@ -395,7 +406,29 @@ def _parse_block_scalar(lines, start, parent_indent, header):
         text += "\n" * (1 + trailing_blank_lines)
     elif chomping == "":
         text += "\n"
-    return text, idx
+    return text
+
+def _parse_block_scalar(lines, start, parent_indent, header):
+    """Reads a `|` or `>` block scalar. Returns (text, next index).
+
+    `header` is the indicator text after the key or dash, such as `|-` or
+    `>2`. The content is every following line indented deeper than
+    `parent_indent`, plus the blank lines between them.
+    """
+    style, chomping, explicit_indent = _block_scalar_header(header)
+
+    raw_lines, min_indent, idx = _block_scalar_raw_lines(lines, start, parent_indent)
+
+    if explicit_indent > 0:
+        content_indent = parent_indent + explicit_indent
+    elif min_indent >= 0:
+        content_indent = min_indent
+    else:
+        content_indent = parent_indent + 1
+
+    values = [raw[content_indent:] if raw != "" else "" for raw in raw_lines]
+
+    return _block_scalar_chomp(style, values, chomping), idx
 
 def _fold_lines(values):
     """Folds `>` scalar lines: a single newline becomes a space, blanks stay."""
@@ -544,6 +577,36 @@ def _clone(value):
         return dict(value)
     return value
 
+def _apply_seq_map_tag(name, raw, value, anchors):
+    """Applies a `!!seq` or `!!map` tag, converting or emptying as yaml.bzl does."""
+    want = "list" if name == "seq" else "dict"
+    if type(value) == want:
+        return value
+    parsed = _parse_flow(raw, anchors) if raw[:1] in ["[", "{"] else None
+    if type(parsed) == want:
+        return parsed
+    return [] if name == "seq" else {}
+
+def _apply_int_tag(value, raw):
+    """Applies a `!!int` tag; a failed conversion gives 0, as yaml.bzl does."""
+    if type(value) == "int":
+        return value
+    parsed = _parse_int_text(value if type(value) == "string" else raw)
+    return parsed if parsed != None else 0
+
+def _apply_float_tag(value, raw):
+    """Applies a `!!float` tag; a failed conversion gives 0.0, as yaml.bzl does."""
+    if type(value) == "float":
+        return value
+    parsed = _parse_float_text(value if type(value) == "string" else raw)
+    return parsed if parsed != None else 0.0
+
+def _apply_bool_tag(value, raw):
+    """Applies a `!!bool` tag; only true/yes/on spell true, as yaml.bzl does."""
+    if type(value) == "bool":
+        return value
+    return (value if type(value) == "string" else raw).strip().lower() in ["true", "yes", "on"]
+
 def _apply_tag(tag, raw, value, anchors):
     """Applies a supported tag to a parsed value. `raw` is the untagged text.
 
@@ -552,29 +615,15 @@ def _apply_tag(tag, raw, value, anchors):
     """
     name = _tag_name(tag)
     if name == "seq" or name == "map":
-        want = "list" if name == "seq" else "dict"
-        if type(value) == want:
-            return value
-        parsed = _parse_flow(raw, anchors) if raw[:1] in ["[", "{"] else None
-        if type(parsed) == want:
-            return parsed
-        return [] if name == "seq" else {}
+        return _apply_seq_map_tag(name, raw, value, anchors)
     if name == "str":
         return value if type(value) == "string" else raw
     if name == "int":
-        if type(value) == "int":
-            return value
-        parsed = _parse_int_text(value if type(value) == "string" else raw)
-        return parsed if parsed != None else 0
+        return _apply_int_tag(value, raw)
     if name == "float":
-        if type(value) == "float":
-            return value
-        parsed = _parse_float_text(value if type(value) == "string" else raw)
-        return parsed if parsed != None else 0.0
+        return _apply_float_tag(value, raw)
     if name == "bool":
-        if type(value) == "bool":
-            return value
-        return (value if type(value) == "string" else raw).strip().lower() in ["true", "yes", "on"]
+        return _apply_bool_tag(value, raw)
     if name == "null":
         return None
     return value
@@ -589,6 +638,31 @@ def _tag_name(tag):
     if tag.startswith("!") and len(tag) > 1 and tag.count("!") == 1:
         return tag[1:]
     return None
+
+def _parse_numeric_text(s, lower, num):
+    """Parses an int, based int, infinity, NaN or float, or returns `s` unchanged."""
+    if _is_int_digits(num):
+        return int(num)
+    if len(num) > 2 and num[0:2].lower() == "0x":
+        parsed = _parse_based_int(num, 16)
+        return parsed if parsed != None else s
+    if len(num) > 2 and num[0:2].lower() == "0o":
+        parsed = _parse_based_int(num, 8)
+        return parsed if parsed != None else s
+    if lower in [".inf", "+.inf"]:
+        return float("inf")
+    if lower == "-.inf":
+        return float("-inf")
+    if lower == ".nan":
+        return float("nan")
+    scientific = _parse_scientific_float(num)
+    if scientific != None:
+        return scientific
+    if num.count(".") == 1:
+        left, right = num.split(".")
+        if _is_decimal_part(left) and right.isdigit():
+            return float(num)
+    return s
 
 def _parse_nonflow(s, anchors):
     """Parses an alias, a quoted scalar or a plain scalar."""
@@ -613,28 +687,7 @@ def _parse_nonflow(s, anchors):
         return True
     if lower == "false":
         return False
-    if _is_int_digits(num):
-        return int(num)
-    if len(num) > 2 and num[0:2].lower() == "0x":
-        parsed = _parse_based_int(num, 16)
-        return parsed if parsed != None else s
-    if len(num) > 2 and num[0:2].lower() == "0o":
-        parsed = _parse_based_int(num, 8)
-        return parsed if parsed != None else s
-    if lower in [".inf", "+.inf"]:
-        return float("inf")
-    if lower == "-.inf":
-        return float("-inf")
-    if lower == ".nan":
-        return float("nan")
-    scientific = _parse_scientific_float(num)
-    if scientific != None:
-        return scientific
-    if num.count(".") == 1:
-        left, right = num.split(".")
-        if _is_decimal_part(left) and right.isdigit():
-            return float(num)
-    return s
+    return _parse_numeric_text(s, lower, num)
 
 def _is_int_digits(text):
     """True for `123`, `+123` and `-123`."""
@@ -753,6 +806,19 @@ def _parse_float_text(text):
 # Double-quoted escapes
 # ---------------------------------------------------------------------------
 
+def _unescape_code_point(text, i, nxt):
+    """Decodes a `\x`, `\u` or `\U` escape at `i`. Returns (decoded, next index)."""
+    width = 2 if nxt == "x" else (4 if nxt == "u" else 8)
+    if i + 1 + width >= len(text):
+        # Too few characters left for the digits: keep the escape letter.
+        return "\\" + nxt, i + 2
+    digits = text[i + 2:i + 2 + width]
+    code_point = _parse_hex(digits)
+    converted = _code_point_text(code_point) if code_point != None else None
+    if converted == None:
+        return "\\" + nxt + digits, i + 2 + width
+    return converted, i + 2 + width
+
 def _unescape_double(text):
     """Decodes the escapes in the body of a double-quoted scalar.
 
@@ -776,20 +842,8 @@ def _unescape_double(text):
             out.append(_code_point_text(0x1b))
             i += 2
         elif nxt in ["x", "u", "U"]:
-            width = 2 if nxt == "x" else (4 if nxt == "u" else 8)
-            if i + 1 + width >= len(text):
-                # Too few characters left for the digits: keep the escape letter.
-                out.append("\\" + nxt)
-                i += 2
-                continue
-            digits = text[i + 2:i + 2 + width]
-            code_point = _parse_hex(digits)
-            converted = _code_point_text(code_point) if code_point != None else None
-            if converted == None:
-                out.append("\\" + nxt + digits)
-            else:
-                out.append(converted)
-            i += 2 + width
+            decoded, i = _unescape_code_point(text, i, nxt)
+            out.append(decoded)
         else:
             out.append("\\" + nxt)
             i += 2
@@ -829,6 +883,40 @@ def _hex4(value):
 # Flow collections
 # ---------------------------------------------------------------------------
 
+def _flow_close_step(stack, s, i, frame):
+    """Pops a closed flow frame. Returns (done, value, next_i)."""
+    stack.pop()
+    i += 1
+    if not stack:
+        if _skip_flow_space(s, i) == len(s):
+            return True, frame["value"], i
+        return True, None, i
+    _flow_add(stack[-1], frame["value"])
+    return False, None, i
+
+def _flow_key_step(s, i, frame, anchors):
+    """Reads one flow map key up to its colon. Returns (next_i, ok)."""
+    token, i = _flow_token(s, i, [":", frame["close"], ","])
+    if token == "":
+        return i, False
+    frame["key"] = _key(_parse_nonflow(token, anchors))
+    i = _skip_flow_space(s, i)
+    if i >= len(s) or s[i] != ":":
+        return i, False
+    frame["state"] = "value"
+    return i + 1, True
+
+def _flow_item_step(s, i, frame, anchors, stack):
+    """Reads one nested collection or scalar flow token. Returns (next_i, ok)."""
+    if s[i] in ["[", "{"]:
+        stack.append(_flow_frame(s[i]))
+        return i + 1, True
+    token, next_i = _flow_token(s, i, [",", frame["close"]])
+    if token == "":
+        return next_i, False
+    _flow_add(frame, _flow_token_value(token, anchors))
+    return next_i, True
+
 def _parse_flow(text, anchors):
     """Parses the flow collection that starts `text`, or returns None.
 
@@ -848,11 +936,9 @@ def _parse_flow(text, anchors):
         state = frame["state"]
 
         if ch == frame["close"] and state != "value":
-            stack.pop()
-            i += 1
-            if not stack:
-                return frame["value"] if _skip_flow_space(s, i) == len(s) else None
-            _flow_add(stack[-1], frame["value"])
+            done, value, i = _flow_close_step(stack, s, i, frame)
+            if done:
+                return value
             continue
 
         if state == "after":
@@ -863,25 +949,14 @@ def _parse_flow(text, anchors):
             continue
 
         if state == "key":
-            token, i = _flow_token(s, i, [":", frame["close"], ","])
-            if token == "":
+            i, ok = _flow_key_step(s, i, frame, anchors)
+            if not ok:
                 return None
-            frame["key"] = _key(_parse_nonflow(token, anchors))
-            i = _skip_flow_space(s, i)
-            if i >= len(s) or s[i] != ":":
-                return None
-            frame["state"] = "value"
-            i += 1
             continue
 
-        if ch in ["[", "{"]:
-            stack.append(_flow_frame(ch))
-            i += 1
-            continue
-        token, i = _flow_token(s, i, [",", frame["close"]])
-        if token == "":
+        i, ok = _flow_item_step(s, i, frame, anchors, stack)
+        if not ok:
             return None
-        _flow_add(frame, _flow_token_value(token, anchors))
     return None
 
 def _flow_frame(opener):
