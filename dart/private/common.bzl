@@ -973,6 +973,88 @@ def _exec_root_of(f):
         root = root[:-1]
     return root
 
+def _dev_empty_config(scheme):
+    """The dev package config for an empty package list."""
+    return struct(
+        content = '{"configVersion": 2, "packages": []}\n',
+        filesystem_roots = [],
+        scheme = scheme,
+        generated_source_paths = [],
+        generated_source_uris = [],
+        source_packages = [],
+    )
+
+def _dev_index_srcs(packages, all_srcs):
+    """Indexes `all_srcs` by owning package name."""
+    by_pkg = {}
+    index = package_index(packages)
+    for f in all_srcs:
+        name = package_for_index(f.short_path, index)
+        if name == None:
+            continue
+        by_pkg.setdefault(name, []).append(f)
+    return by_pkg
+
+def _dev_source_packages(packages, by_pkg):
+    """`(name, lib_root)` for packages contributing an editable main-repo source file."""
+    source_packages = []
+    for pkg in packages:
+        for f in by_pkg.get(pkg.package_name, []):
+            if (f.is_source and
+                not f.short_path.startswith("external/") and
+                not f.short_path.startswith("../")):
+                source_packages.append((pkg.package_name, pkg.lib_root))
+                break
+    return source_packages
+
+def _dev_record_file_roots(pkg, files, source_roots, generated_roots, generated_source_paths, generated_source_uris):
+    """Records exec roots and generated path/URI pairs for one assembled package."""
+    lib_prefix = package_lib_prefix(pkg.lib_root)
+    for f in files:
+        er = _exec_root_of(f)
+        if f.is_source:
+            if er not in source_roots:
+                source_roots.append(er)
+        else:
+            if er not in generated_roots:
+                generated_roots.append(er)
+
+            # Pair each generated file's exec path with its `package:`
+            # URI so the dev tool can invalidate it on reload after a
+            # rebuild — no path→URI inference needed downstream.
+            if f.short_path.startswith(lib_prefix):
+                generated_source_paths.append(f.path)
+                generated_source_uris.append("package:{name}/{rel}".format(
+                    name = pkg.package_name,
+                    rel = f.short_path[len(lib_prefix):],
+                ))
+
+def _dev_entry_uri(pkg, files, exec_roots, config_dir, scheme, source_roots, generated_roots, generated_source_paths, generated_source_uris):
+    """The rootUri for one package, recording assembled roots; None when it has no entry."""
+    if needs_source_assembly(files):
+        _dev_record_file_roots(pkg, files, source_roots, generated_roots, generated_source_paths, generated_source_uris)
+        return "{scheme}:///{lib_root}".format(
+            scheme = scheme,
+            lib_root = pkg.lib_root,
+        )
+    exec_root = exec_roots.get(pkg.package_name)
+    if exec_root != None:
+        return relative_path(config_dir, exec_root)
+    if not pkg.lib_root:
+        return relative_path(config_dir, "")
+    return None
+
+def _dev_entry_text(pkg, root_uri):
+    """One `package_config.json` packages entry, with the language version when set."""
+    lv = ""
+    if hasattr(pkg, "language_version") and pkg.language_version:
+        lv = ', "languageVersion": "{lv}"'.format(lv = pkg.language_version)
+    return '    {{"name": "{name}", "rootUri": "{root_uri}", "packageUri": "lib/"{lv}}}'.format(
+        name = pkg.package_name,
+        root_uri = root_uri,
+        lv = lv,
+    )
+
 def generate_dev_package_config(packages, all_srcs, config_file, scheme = "org-dartlang-app"):
     """`generate_package_config` variant for live hot reload of codegen apps.
 
@@ -1013,22 +1095,9 @@ def generate_dev_package_config(packages, all_srcs, config_file, scheme = "org-d
             generated-only packages.
     """
     if not packages:
-        return struct(
-            content = '{"configVersion": 2, "packages": []}\n',
-            filesystem_roots = [],
-            scheme = scheme,
-            generated_source_paths = [],
-            generated_source_uris = [],
-            source_packages = [],
-        )
+        return _dev_empty_config(scheme)
 
-    by_pkg = {}
-    index = package_index(packages)
-    for f in all_srcs:
-        name = package_for_index(f.short_path, index)
-        if name == None:
-            continue
-        by_pkg.setdefault(name, []).append(f)
+    by_pkg = _dev_index_srcs(packages, all_srcs)
 
     exec_roots = resolve_package_roots(packages, all_srcs)
     config_dir = config_file.dirname
@@ -1040,14 +1109,7 @@ def generate_dev_package_config(packages, all_srcs, config_file, scheme = "org-d
     # packages. `lib_root` is short_path-relative, i.e. workspace-relative, so
     # the dev tool resolves a path to `package:<name>/<rel>` without inverting
     # rootUris — see the dev tool's PackageUriResolver.
-    source_packages = []
-    for pkg in packages:
-        for f in by_pkg.get(pkg.package_name, []):
-            if (f.is_source and
-                not f.short_path.startswith("external/") and
-                not f.short_path.startswith("../")):
-                source_packages.append((pkg.package_name, pkg.lib_root))
-                break
+    source_packages = _dev_source_packages(packages, by_pkg)
 
     source_roots = []
     generated_roots = []
@@ -1056,48 +1118,10 @@ def generate_dev_package_config(packages, all_srcs, config_file, scheme = "org-d
     entries = []
     for pkg in packages:
         files = by_pkg.get(pkg.package_name, [])
-        if needs_source_assembly(files):
-            root_uri = "{scheme}:///{lib_root}".format(
-                scheme = scheme,
-                lib_root = pkg.lib_root,
-            )
-            lib_prefix = package_lib_prefix(pkg.lib_root)
-            for f in files:
-                er = _exec_root_of(f)
-                if f.is_source:
-                    if er not in source_roots:
-                        source_roots.append(er)
-                else:
-                    if er not in generated_roots:
-                        generated_roots.append(er)
-
-                    # Pair each generated file's exec path with its `package:`
-                    # URI so the dev tool can invalidate it on reload after a
-                    # rebuild — no path→URI inference needed downstream.
-                    if f.short_path.startswith(lib_prefix):
-                        generated_source_paths.append(f.path)
-                        generated_source_uris.append("package:{name}/{rel}".format(
-                            name = pkg.package_name,
-                            rel = f.short_path[len(lib_prefix):],
-                        ))
-        else:
-            exec_root = exec_roots.get(pkg.package_name)
-            if exec_root != None:
-                root_uri = relative_path(config_dir, exec_root)
-            elif not pkg.lib_root:
-                root_uri = relative_path(config_dir, "")
-            else:
-                continue
-        lv = ""
-        if hasattr(pkg, "language_version") and pkg.language_version:
-            lv = ', "languageVersion": "{lv}"'.format(lv = pkg.language_version)
-        entries.append(
-            '    {{"name": "{name}", "rootUri": "{root_uri}", "packageUri": "lib/"{lv}}}'.format(
-                name = pkg.package_name,
-                root_uri = root_uri,
-                lv = lv,
-            ),
-        )
+        root_uri = _dev_entry_uri(pkg, files, exec_roots, config_dir, scheme, source_roots, generated_roots, generated_source_paths, generated_source_uris)
+        if root_uri == None:
+            continue
+        entries.append(_dev_entry_text(pkg, root_uri))
     content = '{{\n  "configVersion": 2,\n  "packages": [\n{packages}\n  ]\n}}\n'.format(
         packages = ",\n".join(entries),
     )
@@ -1194,6 +1218,39 @@ def sdk_path_from_dart(dart_file):
             return p[:-len(suffix)]
     return p
 
+def _synth_index_srcs(transitive_srcs, transitive_resources, pkg_index):
+    """Indexes transitive sources and resources by owning package name."""
+    by_pkg = {}
+    for f in transitive_srcs.to_list() + transitive_resources.to_list():
+        owner = package_for_index(f.short_path, pkg_index)
+        if owner != None:
+            by_pkg.setdefault(owner, []).append(f)
+    return by_pkg
+
+def _synth_stage_package(ctx, pkg, pfiles, stage_name, stage_root):
+    """Stages one package's files under the stage root. Returns (root, staged outputs)."""
+    dep_mangled = pkg.package_name.replace("_", "__").replace("/", "_s")
+    if not pfiles:
+        return stage_root + "/" + dep_mangled, []
+    if len(pfiles) == 1 and pfiles[0].is_directory:
+        dir_link = ctx.actions.declare_directory(stage_name + "/" + dep_mangled)
+        ctx.actions.symlink(output = dir_link, target_file = pfiles[0])
+        return stage_root + "/" + dep_mangled, [dir_link]
+    dep_prefix = (pkg.lib_root + "/lib/") if pkg.lib_root else "lib/"
+    occupied = {}
+    staged = []
+    for f in pfiles:
+        if f.is_directory or not f.short_path.startswith(dep_prefix):
+            continue
+        rel = f.short_path[len(dep_prefix):]
+        if rel in occupied:
+            continue
+        occupied[rel] = True
+        link = ctx.actions.declare_file(stage_name + "/" + dep_mangled + "/lib/" + rel)
+        ctx.actions.symlink(output = link, target_file = f)
+        staged.append(link)
+    return stage_root + "/" + dep_mangled, staged
+
 def synth_package_config(ctx, library_deps):
     """Synthesises a `package_config.json` from `dart_library` targets.
 
@@ -1218,11 +1275,7 @@ def synth_package_config(ctx, library_deps):
     stage_name = ctx.label.name + ".pkg_roots"
     stage_root = package_config.dirname + "/" + stage_name
     pkg_index = package_index(packages)
-    by_pkg = {}
-    for f in transitive_srcs.to_list() + transitive_resources.to_list():
-        owner = package_for_index(f.short_path, pkg_index)
-        if owner != None:
-            by_pkg.setdefault(owner, []).append(f)
+    by_pkg = _synth_index_srcs(transitive_srcs, transitive_resources, pkg_index)
 
     roots = {}
     staged = []
@@ -1230,29 +1283,9 @@ def synth_package_config(ctx, library_deps):
         pkg_name = pkg.package_name
         if not pkg_name or pkg_name in roots:
             continue
-        dep_mangled = pkg_name.replace("_", "__").replace("/", "_s")
-        pfiles = by_pkg.get(pkg_name, [])
-        if not pfiles:
-            roots[pkg_name] = stage_root + "/" + dep_mangled
-        elif len(pfiles) == 1 and pfiles[0].is_directory:
-            dir_link = ctx.actions.declare_directory(stage_name + "/" + dep_mangled)
-            ctx.actions.symlink(output = dir_link, target_file = pfiles[0])
-            staged.append(dir_link)
-            roots[pkg_name] = stage_root + "/" + dep_mangled
-        else:
-            dep_prefix = (pkg.lib_root + "/lib/") if pkg.lib_root else "lib/"
-            occupied = {}
-            for f in pfiles:
-                if f.is_directory or not f.short_path.startswith(dep_prefix):
-                    continue
-                rel = f.short_path[len(dep_prefix):]
-                if rel in occupied:
-                    continue
-                occupied[rel] = True
-                link = ctx.actions.declare_file(stage_name + "/" + dep_mangled + "/lib/" + rel)
-                ctx.actions.symlink(output = link, target_file = f)
-                staged.append(link)
-            roots[pkg_name] = stage_root + "/" + dep_mangled
+        root, new_staged = _synth_stage_package(ctx, pkg, by_pkg.get(pkg_name, []), stage_name, stage_root)
+        roots[pkg_name] = root
+        staged.extend(new_staged)
 
     content = generate_package_config(
         packages,
