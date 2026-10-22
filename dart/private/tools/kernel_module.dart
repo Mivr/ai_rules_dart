@@ -2462,140 +2462,222 @@ Future<_EntrySources> _entrySources(
   Set<String> vm,
   String multiRootPrefix,
 ) async {
-  final out = <String>[];
-  final ownUris = <String, String>{};
-  final imports = <String>{};
-  final seen = <String>{};
-  final queue = Queue<String>();
-  final edges = <_EntryEdge>[];
-  final undeclared = <String>[];
-  final disallowed = <String>[];
-  Map<String, String>? declaredLibraryByName;
-  Future<String?> findLibraryByName(String name) async {
-    if (declaredLibraryByName == null) {
-      final map = <String, String>{};
+  final walk = _EntryWalk(closure, graph, roots, files, vm, multiRootPrefix);
+  walk.seed(sources);
+  await walk.run();
+  return walk.result();
+}
+
+/// Lazily indexes declared sources by their `library <name>`.
+class _LibraryNameIndex {
+  _LibraryNameIndex(this._closure, this._files, this._vm);
+
+  final Map<String, String> _closure;
+  final _Files _files;
+  final Set<String> _vm;
+
+  Map<String, String>? _map;
+
+  /// Whether the index was built: the walk scanned declared files for a
+  /// `part of` library name. Those wrapper reads are invisible to the
+  /// unused-inputs report, so no dependency source is listed when set.
+  bool get wasBuilt => _map != null;
+
+  Future<String?> find(String name) async {
+    var map = _map;
+    if (map == null) {
+      map = <String, String>{};
       for (final candidate in <String>{
-        ...closure.keys,
-        ...files.declaredKeys,
+        ..._closure.keys,
+        ..._files.declaredKeys,
       }) {
-        final scan = await files.scan(candidate, vm);
+        final scan = await _files.scan(candidate, _vm);
         if (scan?.libraryName != null) {
           map.putIfAbsent(scan!.libraryName!, () => candidate);
         }
       }
-      declaredLibraryByName = map;
+      _map = map;
     }
-    return declaredLibraryByName![name];
+    return map[name];
+  }
+}
+
+/// The breadth-first walk from the entry's sources through their directives.
+class _EntryWalk {
+  _EntryWalk(
+    Map<String, String> closure,
+    Map<String, _Node> graph,
+    Map<String, _PackageRoot> roots,
+    _Files files,
+    Set<String> vm,
+    String multiRootPrefix,
+  ) : _closure = closure,
+      _graph = graph,
+      _roots = roots,
+      _files = files,
+      _vm = vm,
+      _multiRootPrefix = multiRootPrefix,
+      _names = _LibraryNameIndex(closure, files, vm);
+
+  final Map<String, String> _closure;
+  final Map<String, _Node> _graph;
+  final Map<String, _PackageRoot> _roots;
+  final _Files _files;
+  final Set<String> _vm;
+  final String _multiRootPrefix;
+
+  final _out = <String>[];
+  final _ownUris = <String, String>{};
+  final _imports = <String>{};
+  final _seen = <String>{};
+  final _queue = Queue<String>();
+  final _edges = <_EntryEdge>[];
+  final _undeclared = <String>[];
+  final _disallowed = <String>[];
+  final _LibraryNameIndex _names;
+
+  void seed(List<String> sources) {
+    for (final uri in sources) {
+      final key = _keyOfUri(uri, _roots, _multiRootPrefix);
+      if (key == null) {
+        _out.add(uri);
+      } else {
+        _ownUris.putIfAbsent(key, () => uri);
+        if (_seen.add(key)) _queue.add(key);
+      }
+    }
   }
 
-  for (final uri in sources) {
-    final key = _keyOfUri(uri, roots, multiRootPrefix);
-    if (key == null) {
-      out.add(uri);
-    } else {
-      ownUris.putIfAbsent(key, () => uri);
-      if (seen.add(key)) queue.add(key);
+  Future<void> run() async {
+    while (_queue.isNotEmpty) {
+      await _visitKey(_queue.removeFirst());
     }
+    _imports.removeAll(_ownUris.keys);
   }
-  while (queue.isNotEmpty) {
-    final key = queue.removeFirst();
-    if (!files.isDeclared(key)) {
-      undeclared.add('${ownUris[key] ?? key} ($key)');
-      continue;
+
+  _EntrySources result() {
+    final shapes = _entryUriShapes(_ownUris, _edges, _roots, _multiRootPrefix);
+    _emitEntryUris(
+      _out,
+      _ownUris,
+      _roots,
+      _multiRootPrefix,
+      shapes.usedAsRaw,
+      shapes.usedAsPackage,
+    );
+    return _EntrySources(
+      _out,
+      _imports.toList()..sort(),
+      _ownUris.keys.toList(),
+      _undeclared,
+      _disallowed,
+      _names.wasBuilt,
+    );
+  }
+
+  Future<void> _visitKey(String key) async {
+    if (!_files.isDeclared(key)) {
+      _undeclared.add('${_ownUris[key] ?? key} ($key)');
+      return;
     }
-    final text = await files.read(key);
+    final text = await _files.read(key);
     if (text == null) {
-      undeclared.add('${ownUris[key] ?? key} ($key)');
-      continue;
+      _undeclared.add('${_ownUris[key] ?? key} ($key)');
+      return;
     }
-    final scan = await files.scan(key, vm);
-    if (scan == null) continue;
+    final scan = await _files.scan(key, _vm);
+    if (scan == null) return;
     if (scan.partOfLibrary != null) {
-      final target = await findLibraryByName(scan.partOfLibrary!);
-      if (target == null) {
-        undeclared.add(
-          '${ownUris[key] ?? key} (part of ${scan.partOfLibrary!})',
-        );
-      } else {
-        final uri =
-            closure[target] ??
-            _packageUriOf(target, '$multiRootPrefix$target', roots);
-        edges.add(_EntryEdge(key, uri, target));
-        imports.add(target);
-        if (seen.add(target)) {
-          ownUris.putIfAbsent(target, () => uri);
-          queue.add(target);
-        }
-      }
+      await _followPartOfName(key, scan.partOfLibrary!);
     }
     for (final ref in scan.refs) {
       if (ref.uri.startsWith('dart:')) continue;
-      // A URI spanning lines is refused however it spells its target: the
-      // front end's multi-line first-line rule reads a different file than
-      // [_resolveUri] names. An empty path segment resolves differently in
-      // the front end than by skipping it (a `package:` doubled slash
-      // resolves absolutely), so the directive fails the build instead of
-      // compiling the wrong file.
-      if (hasLineBreak(ref.uri) || hasEmptyPathSegment(ref.uri)) {
-        disallowed.add(
-          'kernel_module: cannot compile ${ownUris[key] ?? key}: '
-          "${ref.kind} '${ref.uri}' is not a declared input.",
-        );
-        continue;
-      }
-      final target = _resolveUri(ref.uri, key, roots, multiRootPrefix);
-      if (target == null) {
-        // A schemeless `//` authority reads above every root, outside the
-        // declared inputs: it fails however the directive names it.
-        if (_isSlashAuthorityUri(ref.uri)) {
-          disallowed.add(
-            'kernel_module: cannot compile ${ownUris[key] ?? key}: '
-            "${ref.kind} '${ref.uri}' is not a declared input.",
-          );
-          continue;
-        }
-        // A directive URI outside the declared inputs fails the build (see
-        // [_planImports]): it would read the host, outside every multi-root.
-        final outsideInputs = ref.isPart || ref.isPartOf
-            ? isFileSchemeDirectiveUri(ref.uri)
-            : isDisallowedDirectiveUri(
-                ref.uri,
-                multiRootPrefix: multiRootPrefix,
-              );
-        if (outsideInputs) {
-          disallowed.add(
-            'kernel_module: cannot compile ${ownUris[key] ?? key}: '
-            "${ref.kind} '${ref.uri}' is not a declared input.",
-          );
-          continue;
-        }
-        // A schemeless `import` or `export` URI the resolver cannot name (a
-        // fragment, a decoded `/`) reads no declared file: it fails instead of
-        // compiling without it. Other nulls (parts, unknown packages) stay on
-        // their exclusion paths, where the compiler reports them.
-        if (!ref.isPart && !ref.isPartOf && !ref.uri.startsWith('package:')) {
-          disallowed.add(
-            'kernel_module: cannot compile ${ownUris[key] ?? key}: '
-            "${ref.kind} '${ref.uri}' is not a declared input.",
-          );
-        }
-        continue;
-      }
-      edges.add(_EntryEdge(key, ref.uri, target));
-      imports.add(target);
-      if (!seen.add(target)) continue;
-      final uri =
-          closure[target] ??
-          ((!graph.containsKey(target) || ref.isPart || ref.isPartOf)
-              ? _packageUriOf(target, '$multiRootPrefix$target', roots)
-              : null);
-      if (uri == null) continue;
-      ownUris.putIfAbsent(target, () => uri);
-      queue.add(target);
+      await _followRef(key, ref);
     }
   }
-  imports.removeAll(ownUris.keys);
 
+  Future<void> _followPartOfName(String key, String library) async {
+    final target = await _names.find(library);
+    if (target == null) {
+      _undeclared.add('${_ownUris[key] ?? key} (part of $library)');
+      return;
+    }
+    final uri =
+        _closure[target] ??
+        _packageUriOf(target, '$_multiRootPrefix$target', _roots);
+    _edges.add(_EntryEdge(key, uri, target));
+    _imports.add(target);
+    if (_seen.add(target)) {
+      _ownUris.putIfAbsent(target, () => uri);
+      _queue.add(target);
+    }
+  }
+
+  Future<void> _followRef(String key, ScanRef ref) async {
+    if (_rejectMalformedRef(ref, key, _ownUris, _disallowed)) return;
+    final target = _resolveUri(ref.uri, key, _roots, _multiRootPrefix);
+    if (target == null) {
+      _followUnresolvedRef(key, ref);
+      return;
+    }
+    _edges.add(_EntryEdge(key, ref.uri, target));
+    _imports.add(target);
+    if (!_seen.add(target)) return;
+    final uri =
+        _closure[target] ??
+        ((!_graph.containsKey(target) || ref.isPart || ref.isPartOf)
+            ? _packageUriOf(target, '$_multiRootPrefix$target', _roots)
+            : null);
+    if (uri == null) return;
+    _ownUris.putIfAbsent(target, () => uri);
+    _queue.add(target);
+  }
+
+  void _followUnresolvedRef(String key, ScanRef ref) {
+    // A schemeless `//` authority reads above every root, outside the
+    // declared inputs: it fails however the directive names it.
+    if (_isSlashAuthorityUri(ref.uri)) {
+      _disallowed.add(
+        'kernel_module: cannot compile ${_ownUris[key] ?? key}: '
+        "${ref.kind} '${ref.uri}' is not a declared input.",
+      );
+      return;
+    }
+    // A directive URI outside the declared inputs fails the build (see
+    // [_planImports]): it would read the host, outside every multi-root.
+    final outsideInputs = ref.isPart || ref.isPartOf
+        ? isFileSchemeDirectiveUri(ref.uri)
+        : isDisallowedDirectiveUri(ref.uri, multiRootPrefix: _multiRootPrefix);
+    if (outsideInputs) {
+      _disallowed.add(
+        'kernel_module: cannot compile ${_ownUris[key] ?? key}: '
+        "${ref.kind} '${ref.uri}' is not a declared input.",
+      );
+      return;
+    }
+    // A schemeless `import` or `export` URI the resolver cannot name (a
+    // fragment, a decoded `/`) reads no declared file: it fails instead of
+    // compiling without it. Other nulls (parts, unknown packages) stay on
+    // their exclusion paths, where the compiler reports them.
+    if (!ref.isPart && !ref.isPartOf && !ref.uri.startsWith('package:')) {
+      _disallowed.add(
+        'kernel_module: cannot compile ${_ownUris[key] ?? key}: '
+        "${ref.kind} '${ref.uri}' is not a declared input.",
+      );
+    }
+  }
+}
+
+/// How each walked source is named on the compile command line.
+typedef _EntryUriShapes = ({Set<String> usedAsRaw, Set<String> usedAsPackage});
+
+/// Computes which walked sources are named by raw or `package:` URI.
+_EntryUriShapes _entryUriShapes(
+  Map<String, String> ownUris,
+  List<_EntryEdge> edges,
+  Map<String, _PackageRoot> roots,
+  String multiRootPrefix,
+) {
   final usedAsRaw = <String>{};
   final usedAsPackage = <String>{};
   ownUris.forEach((key, uri) {
@@ -2614,26 +2696,50 @@ Future<_EntrySources> _entrySources(
       usedAsRaw.add(edge.target);
     }
   }
-  var changed = true;
-  while (changed) {
-    changed = false;
-    for (final edge in edges) {
-      if (!ownUris.containsKey(edge.target) || edge.uri.contains(':')) continue;
-      if (usedAsRaw.contains(edge.from) && usedAsRaw.add(edge.target)) {
-        changed = true;
-      }
-    }
-  }
+  _propagateRawUse(edges, ownUris, usedAsRaw);
   ownUris.forEach((key, uri) {
     if (_packageUriOf(key, uri, roots) != uri && !usedAsRaw.contains(key)) {
       usedAsPackage.add(key);
     }
   });
-  changed = true;
+  _propagatePackageUse(edges, ownUris, roots, usedAsPackage);
+  return (usedAsRaw: usedAsRaw, usedAsPackage: usedAsPackage);
+}
+
+/// Spreads raw naming along relative edges from raw-named sources.
+void _propagateRawUse(
+  List<_EntryEdge> edges,
+  Map<String, String> ownUris,
+  Set<String> usedAsRaw,
+) {
+  var changed = true;
   while (changed) {
     changed = false;
     for (final edge in edges) {
-      if (!ownUris.containsKey(edge.target) || edge.uri.contains(':')) continue;
+      if (!ownUris.containsKey(edge.target) || edge.uri.contains(':')) {
+        continue;
+      }
+      if (usedAsRaw.contains(edge.from) && usedAsRaw.add(edge.target)) {
+        changed = true;
+      }
+    }
+  }
+}
+
+/// Spreads `package:` naming along relative edges from `package:` sources.
+void _propagatePackageUse(
+  List<_EntryEdge> edges,
+  Map<String, String> ownUris,
+  Map<String, _PackageRoot> roots,
+  Set<String> usedAsPackage,
+) {
+  var changed = true;
+  while (changed) {
+    changed = false;
+    for (final edge in edges) {
+      if (!ownUris.containsKey(edge.target) || edge.uri.contains(':')) {
+        continue;
+      }
       final targetUri = ownUris[edge.target]!;
       if (usedAsPackage.contains(edge.from) &&
           _packageUriOf(edge.target, targetUri, roots) != targetUri &&
@@ -2642,6 +2748,17 @@ Future<_EntrySources> _entrySources(
       }
     }
   }
+}
+
+/// Emits each walked source under the URIs the compile must name it by.
+void _emitEntryUris(
+  List<String> out,
+  Map<String, String> ownUris,
+  Map<String, _PackageRoot> roots,
+  String multiRootPrefix,
+  Set<String> usedAsRaw,
+  Set<String> usedAsPackage,
+) {
   ownUris.forEach((key, uri) {
     final pkgUri = _packageUriOf(key, uri, roots);
     if (pkgUri == uri) {
@@ -2658,14 +2775,6 @@ Future<_EntrySources> _entrySources(
       if (rawUri != pkgUri) out.add(rawUri);
     }
   });
-  return _EntrySources(
-    out,
-    imports.toList()..sort(),
-    ownUris.keys.toList(),
-    undeclared,
-    disallowed,
-    declaredLibraryByName != null,
-  );
 }
 
 /// The `package:` URI of the file with `key`, when a package names it under its
