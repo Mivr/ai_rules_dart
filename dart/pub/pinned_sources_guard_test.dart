@@ -305,31 +305,34 @@ void main(List<String> args) {
       }
     });
 
-    test('every git invocation spells the binary with replace refs disabled', () {
-      // The `git` binary and `--no-replace-objects` are spelled together at
-      // every `ctx.execute` call site (not hidden in a shared argv helper),
-      // so an invocation assembled from a helper without the flag fails
-      // here: a host `refs/replace/*` ref must never change the archived
-      // tree while verification still sees the pinned commit.
-      final sources = _bzlSources(args);
-      final text = File(sources['pinned_sources.bzl']!).readAsStringSync();
-      final calls = text.split('ctx.execute(');
-      expect(
-        calls.length,
-        greaterThan(1),
-        reason: 'no git invocation found; the test would pass vacuously',
-      );
-      for (var i = 1; i < calls.length; i++) {
+    test(
+      'every git invocation spells the binary with replace refs disabled',
+      () {
+        // The `git` binary and `--no-replace-objects` are spelled together at
+        // every `ctx.execute` call site (not hidden in a shared argv helper),
+        // so an invocation assembled from a helper without the flag fails
+        // here: a host `refs/replace/*` ref must never change the archived
+        // tree while verification still sees the pinned commit.
+        final sources = _bzlSources(args);
+        final text = File(sources['pinned_sources.bzl']!).readAsStringSync();
+        final calls = text.split('ctx.execute(');
         expect(
-          calls[i].contains('["git", "--no-replace-objects"'),
-          isTrue,
-          reason:
-              'git invocation $i in pinned_sources.bzl does not spell '
-              '["git", "--no-replace-objects"] at its call site; every '
-              'phase command must disable replace refs where it runs git',
+          calls.length,
+          greaterThan(1),
+          reason: 'no git invocation found; the test would pass vacuously',
         );
-      }
-    });
+        for (var i = 1; i < calls.length; i++) {
+          expect(
+            calls[i].contains('["git", "--no-replace-objects"'),
+            isTrue,
+            reason:
+                'git invocation $i in pinned_sources.bzl does not spell '
+                '["git", "--no-replace-objects"] at its call site; every '
+                'phase command must disable replace refs where it runs git',
+          );
+        }
+      },
+    );
 
     test('every git call site uses the shared helpers', () {
       final sources = _bzlSources(args);
