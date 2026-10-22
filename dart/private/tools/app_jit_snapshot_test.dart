@@ -1051,6 +1051,138 @@ void main(List<String> args) {
     expectClear();
   });
 
+  test('pre-existing lock file keeps its content after a training run', () {
+    // The lock file opens append-only for its flock and is never written, so
+    // a regular file already at the lock path trains (at the constant path,
+    // under its flock) and keeps its bytes: no truncate-though-symlink, no
+    // clobber. POSIX only: Windows never trains at the constant path.
+    if (Platform.isWindows) return;
+    const constant = '/tmp/rules_dart_jit';
+    const lock = '/tmp/rules_dart_jit.lock';
+    expect(
+      FileSystemEntity.typeSync(constant, followLinks: false),
+      FileSystemEntityType.notFound,
+      reason: '$constant left behind by an earlier test',
+    );
+    if (FileSystemEntity.typeSync(lock, followLinks: false) ==
+        FileSystemEntityType.file) {
+      File(lock).deleteSync();
+    }
+    File(
+      '${tmp.path}/lock_train.dart',
+    ).writeAsStringSync('void main(List<String> args) {\n  print(10000);\n}\n');
+    final trivialDill = File('${tmp.path}/lock_train.dill');
+    final compileRes = Process.runSync(Platform.resolvedExecutable, [
+      'compile',
+      'kernel',
+      '${tmp.path}/lock_train.dart',
+      '-o',
+      trivialDill.path,
+    ]);
+    expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
+    File(lock).writeAsStringSync('not-ours');
+    try {
+      final outJit = File('${tmp.path}/lock_content/app.jit');
+      snapshot.main([
+        '--dart=${Platform.resolvedExecutable}',
+        '--snapshot=${outJit.path}',
+        '--env=TMPDIR=.',
+        '--env=HOME=.',
+        '--copy=input.dill=${trivialDill.path}',
+        '--',
+        'input.dill',
+      ]);
+      expect(outJit.existsSync(), isTrue, reason: 'snapshot written');
+      expect(
+        File(lock).readAsStringSync(),
+        'not-ours',
+        reason: 'lock file never truncated',
+      );
+      expect(
+        FileSystemEntity.typeSync(constant, followLinks: false),
+        FileSystemEntityType.notFound,
+        reason: 'constant training directory deleted after the run',
+      );
+    } finally {
+      if (File(lock).existsSync()) File(lock).deleteSync();
+    }
+  });
+
+  test('racy claim at the constant training path falls back', () {
+    // Another local user creating the training directory in the
+    // delete-to-create window must not hand us a directory they own: the
+    // atomic mkdir claim sees EEXIST, the tool falls back to the private
+    // scratch directory, and the VM copy never lands in the planted
+    // directory. Simulated by making mkdirExclusive plant the directory just
+    // before the real mkdir runs. POSIX only.
+    if (Platform.isWindows) return;
+    const constant = '/tmp/rules_dart_jit';
+    const lock = '/tmp/rules_dart_jit.lock';
+    expect(
+      FileSystemEntity.typeSync(constant, followLinks: false),
+      FileSystemEntityType.notFound,
+      reason: '$constant left behind by an earlier test',
+    );
+    final lockType = FileSystemEntity.typeSync(lock, followLinks: false);
+    expect(
+      lockType == FileSystemEntityType.notFound ||
+          lockType == FileSystemEntityType.file,
+      isTrue,
+      reason: '$lock is a $lockType',
+    );
+    File(
+      '${tmp.path}/race_train.dart',
+    ).writeAsStringSync('void main(List<String> args) {\n  print(10000);\n}\n');
+    final trivialDill = File('${tmp.path}/race_train.dill');
+    final compileRes = Process.runSync(Platform.resolvedExecutable, [
+      'compile',
+      'kernel',
+      '${tmp.path}/race_train.dart',
+      '-o',
+      trivialDill.path,
+    ]);
+    expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
+    final realMkdir = snapshot.mkdirExclusive;
+    snapshot.mkdirExclusive = (path, mode) {
+      // The attacker wins the race just before our claim.
+      final planted = Directory(path)..createSync();
+      File('${planted.path}/sentinel').writeAsStringSync('theirs');
+      return realMkdir(path, mode);
+    };
+    try {
+      final outJit = File('${tmp.path}/race_claim/app.jit');
+      snapshot.main([
+        '--dart=${Platform.resolvedExecutable}',
+        '--snapshot=${outJit.path}',
+        '--env=TMPDIR=.',
+        '--env=HOME=.',
+        '--copy=input.dill=${trivialDill.path}',
+        '--',
+        'input.dill',
+      ]);
+      expect(
+        outJit.existsSync(),
+        isTrue,
+        reason: 'snapshot written via the fallback',
+      );
+      final racedNames = Directory(constant)
+          .listSync()
+          .map((e) => e.path.split('/').last)
+          .toList();
+      expect(racedNames, [
+        'sentinel',
+      ], reason: 'VM copy never staged into the raced directory');
+      expect(
+        File('$constant/sentinel').readAsStringSync(),
+        'theirs',
+        reason: 'raced directory untouched',
+      );
+    } finally {
+      snapshot.mkdirExclusive = realMkdir;
+      Directory(constant).deleteSync(recursive: true);
+    }
+  });
+
   test('buildChildEnvironment on Windows preserves SystemRoot and valid names while isolating home and cache directories', () {
     const privateHome = r'C:\b\tmp\private_home';
     final env = snapshot.buildChildEnvironment(

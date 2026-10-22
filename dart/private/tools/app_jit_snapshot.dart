@@ -414,16 +414,24 @@ void _releaseConstantLock(RandomAccessFile lock) {
   }
 }
 
-/// Takes the exclusive training lock and (re)creates [_constantTrainDir] as
-/// an empty directory with mode 0700, returning it with the held lock.
+/// Takes the exclusive training lock and claims [_constantTrainDir] as an
+/// empty directory with mode 0700, returning it with the held lock.
 ///
-/// Nothing that already exists there is ever read: a pre-existing directory
-/// is deleted first, and anything else (a symlink, a file, an undeletable
-/// directory) falls back to the private scratch directory with the notice
-/// from [_warnFallback]. The symlink checks run before the lock is taken and
-/// again under it, so a link planted between the two is removed as a link
-/// only, never followed. Returns null on Windows and on any failure; the
-/// caller deletes the directory before releasing the lock, also on failure.
+/// The lock file opens append-only and is never written: a symlink planted at
+/// the lock path in the check-to-open race only lends its target's flock
+/// without changing a byte of it, and a pre-existing regular file keeps its
+/// content. Nothing that already exists at the training path is ever read: a
+/// pre-existing directory is deleted first, and anything else (a symlink, a
+/// file, an undeletable directory) falls back to the private scratch
+/// directory with the notice from [_warnFallback]. The cleared path is then
+/// claimed with [mkdirExclusive], which succeeds only when this call creates
+/// the directory: another local user winning the delete-to-create race reads
+/// as `EEXIST` and falls back, so the training VM copy never lands in a
+/// directory they own, where a swapped binary would run as us. The symlink
+/// checks run before the lock is taken and again under it, so a link planted
+/// between the two is removed as a link only, never followed. Returns null on
+/// Windows and on any failure; the caller deletes the directory before
+/// releasing the lock, also on failure.
 ({Directory dir, RandomAccessFile lock})? _acquireConstantDir() {
   if (Platform.isWindows) return null;
   if (FileSystemEntity.isLinkSync(_constantTrainLock) ||
@@ -433,7 +441,7 @@ void _releaseConstantLock(RandomAccessFile lock) {
   }
   final RandomAccessFile lock;
   try {
-    lock = File(_constantTrainLock).openSync(mode: FileMode.write);
+    lock = File(_constantTrainLock).openSync(mode: FileMode.append);
     lock.lockSync(FileLock.blockingExclusive);
   } on FileSystemException {
     _warnFallback();
@@ -470,10 +478,18 @@ void _releaseConstantLock(RandomAccessFile lock) {
       // A file or worse at the training path; never read or delete it.
       return fail();
     }
-    dir.createSync();
-    chmodFile(dir.path, 0x1c0); // 0700: only our uid trains here.
+    // Claim the cleared path atomically: [mkdirExclusive] succeeds only when
+    // this call creates the directory, so another local user winning the
+    // delete-to-create race (or any other error) falls back instead of
+    // training in a directory they own. `Directory.createSync` cannot claim:
+    // it silently succeeds when the path already exists, and a later chmod
+    // cannot prove ownership.
+    // 0700: only our uid trains here.
+    if (mkdirExclusive(_constantTrainDir, 0x1c0) != 0) {
+      return fail();
+    }
     if (FileSystemEntity.isLinkSync(_constantTrainDir)) {
-      // Swapped under us after creation: remove only the link itself.
+      // Swapped under us after the claim: remove only the link itself.
       try {
         File(_constantTrainDir).deleteSync();
       } on FileSystemException {
@@ -1092,6 +1108,39 @@ typedef _FreeNative = ffi.Void Function(ffi.Pointer<ffi.Uint8>);
 typedef _FreeDart = void Function(ffi.Pointer<ffi.Uint8>);
 typedef _ChmodNative = ffi.Int Function(ffi.Pointer<ffi.Uint8>, ffi.Uint32);
 typedef _ChmodDart = int Function(ffi.Pointer<ffi.Uint8>, int);
+typedef _MkdirNative = ffi.Int Function(ffi.Pointer<ffi.Uint8>, ffi.Uint32);
+typedef _MkdirDart = int Function(ffi.Pointer<ffi.Uint8>, int);
+
+/// Atomically claims a new directory at [path] with POSIX permission bits
+/// [mode]: libc `mkdir(2)` returns 0 only when this call creates the
+/// directory, and fails nonzero — `EEXIST` when another local user won the
+/// race to the cleared constant training path, or any other error — when it
+/// does not. The caller must never use the path unless this returns 0.
+///
+/// A variable so tests can make the claim see `EEXIST` (see the racy-claim
+/// test); production code never reassigns it.
+int Function(String path, int mode) mkdirExclusive = _libcMkdir;
+
+/// Claims [path] with libc `mkdir(2)`: 0 when this call created it, -1 on any
+/// failure (the caller falls back without reading `errno`).
+int _libcMkdir(String path, int mode) {
+  if (Platform.isWindows) return -1;
+  final lib = ffi.DynamicLibrary.process();
+  final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
+  final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
+  final mkdir = lib.lookupFunction<_MkdirNative, _MkdirDart>('mkdir');
+  final bytes = utf8.encode(path);
+  final ptr = malloc(bytes.length + 1);
+  if (ptr == ffi.nullptr) return -1;
+  try {
+    ptr.asTypedList(bytes.length + 1)
+      ..setAll(0, bytes)
+      ..[bytes.length] = 0;
+    return mkdir(ptr, mode) == 0 ? 0 : -1;
+  } finally {
+    free(ptr);
+  }
+}
 
 /// Sets POSIX permission bits [mode] on [path] via libc's `chmod(2)`.
 void chmodFile(String path, int mode) {
