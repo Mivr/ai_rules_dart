@@ -102,9 +102,12 @@ build_test(
 dart_test(
     name = "download_digest_guard_test",
     size = "small",
-    main = "download_digest_guard_test.dart",
-    tags = ["external", "no-sandbox"],
     local = True,
+    main = "download_digest_guard_test.dart",
+    tags = [
+        "external",
+        "no-sandbox",
+    ],
     deps = [
         "@ext_pub_deps//:test",
     ],

@@ -1,7 +1,7 @@
 """Repository rule for downloading a single pub.dev package."""
 
-load("//dart/pub:pinned_sources.bzl", "pinned_source_error")
 load("//dart/private:download.bzl", "pinned_download_and_extract")
+load("//dart/pub:pinned_sources.bzl", "pinned_source_error")
 load("//dart/pub:yaml_parser.bzl", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", "make_dart_library_build_content")
 load("//dart/pub/private:language_version.bzl", "derive_language_version")
