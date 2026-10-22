@@ -14,6 +14,71 @@ that one pure function so it can be unit tested without downloading anything.
 
 load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps")
 
+def _successor_map(names, dep_map, in_graph):
+    """Successors filtered to in-graph edges and sorted, for determinism."""
+    return {
+        name: sorted([
+            dep
+            for dep in dep_map[name]
+            if dep in in_graph and dep != name
+        ])
+        for name in names
+    }
+
+def _tarjan_visit(node, index_of, lowlink, on_stack, stack, counter):
+    """Records the first visit of `node` in the shared Tarjan state."""
+    index_of[node] = counter[0]
+    lowlink[node] = counter[0]
+    counter[0] += 1
+    stack.append(node)
+    on_stack[node] = True
+
+def _tarjan_advance(node, child, index_of, lowlink, on_stack, work):
+    """Follows one edge: descends into an unvisited child or relaxes `lowlink`."""
+    if child not in index_of:
+        work.append((child, 0))
+    elif on_stack.get(child, False):
+        if index_of[child] < lowlink[node]:
+            lowlink[node] = index_of[child]
+
+def _tarjan_pop_component(node, stack, on_stack):
+    """Pops one component off the stack, sorted."""
+    component = []
+    for _ in range(len(stack)):
+        member = stack.pop()
+        on_stack[member] = False
+        component.append(member)
+        if member == node:
+            break
+    return sorted(component)
+
+def _tarjan_finish(node, work, index_of, lowlink, stack, on_stack, result):
+    """Pops a finished node, propagates its lowlink, and emits a root component."""
+    work.pop()
+    if work:
+        parent = work[-1][0]
+        if lowlink[node] < lowlink[parent]:
+            lowlink[parent] = lowlink[node]
+    if lowlink[node] == index_of[node]:
+        result.append(_tarjan_pop_component(node, stack, on_stack))
+
+def _tarjan_walk(root, successors, index_of, lowlink, on_stack, stack, counter, result, budget):
+    """Iteratively walks the reachable graph from `root`, appending components to `result`."""
+    work = [(root, 0)]
+    for _ in range(budget):
+        if not work:
+            break
+        node = work[-1][0]
+        child_pos = work[-1][1]
+        if child_pos == 0 and node not in index_of:
+            _tarjan_visit(node, index_of, lowlink, on_stack, stack, counter)
+        deps = successors[node]
+        if child_pos < len(deps):
+            work[-1] = (node, child_pos + 1)
+            _tarjan_advance(node, deps[child_pos], index_of, lowlink, on_stack, work)
+        else:
+            _tarjan_finish(node, work, index_of, lowlink, stack, on_stack, result)
+
 def compute_sccs(dep_map):
     """Computes the strongly connected components of a dependency graph.
 
@@ -42,14 +107,7 @@ def compute_sccs(dep_map):
 
     # Successors, filtered and sorted: only edges inside the graph, in a
     # fixed order, so iteration order cannot leak into the result.
-    successors = {
-        name: sorted([
-            dep
-            for dep in dep_map[name]
-            if dep in in_graph and dep != name
-        ])
-        for name in names
-    }
+    successors = _successor_map(names, dep_map, in_graph)
 
     index_of = {}
     lowlink = {}
@@ -64,47 +122,12 @@ def compute_sccs(dep_map):
     total_edges = 0
     for name in names:
         total_edges += len(successors[name])
+    budget = 2 * len(names) + total_edges + 1
 
     for root in names:
         if root in index_of:
             continue
-        work = [(root, 0)]
-        for _ in range(2 * len(names) + total_edges + 1):
-            if not work:
-                break
-            top = work[-1]
-            node = top[0]
-            child_pos = top[1]
-            if child_pos == 0 and node not in index_of:
-                index_of[node] = counter[0]
-                lowlink[node] = counter[0]
-                counter[0] += 1
-                stack.append(node)
-                on_stack[node] = True
-            deps = successors[node]
-            if child_pos < len(deps):
-                work[-1] = (node, child_pos + 1)
-                child = deps[child_pos]
-                if child not in index_of:
-                    work.append((child, 0))
-                elif on_stack.get(child, False):
-                    if index_of[child] < lowlink[node]:
-                        lowlink[node] = index_of[child]
-            else:
-                work.pop()
-                if work:
-                    parent = work[-1][0]
-                    if lowlink[node] < lowlink[parent]:
-                        lowlink[parent] = lowlink[node]
-                if lowlink[node] == index_of[node]:
-                    component = []
-                    for _ in range(len(stack)):
-                        member = stack.pop()
-                        on_stack[member] = False
-                        component.append(member)
-                        if member == node:
-                            break
-                    result.append(sorted(component))
+        _tarjan_walk(root, successors, index_of, lowlink, on_stack, stack, counter, result, budget)
 
     order = {}
     for component in result:
