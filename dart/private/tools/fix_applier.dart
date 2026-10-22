@@ -13,6 +13,44 @@ const _usage =
 const _contextLines = 3;
 
 void main(List<String> args) {
+  final parsed = _parseApplierArgs(args);
+  final env = Platform.environment;
+  final resolved = _resolveApplierPaths(parsed, env);
+  final workspace = _requireWorkspace(env);
+
+  if (!Directory(resolved.fixes).existsSync()) {
+    stderr.writeln('fix_applier: fixes directory not found: ${resolved.fixes}');
+    exit(1);
+  }
+
+  final manifest = _readManifest(resolved.manifest);
+  final fixed = _entries(manifest, 'fixed', resolved.manifest);
+  final dropped = _entries(manifest, 'dropped', resolved.manifest);
+
+  // Resolve every source up front. A missing staged file means the action that
+  // produced the manifest is broken; discovering that halfway through leaves
+  // the tree half-fixed, which is far harder to reason about than not starting.
+  final pending = _collectPending(
+    fixed,
+    resolvedManifest: resolved.manifest,
+    resolvedFixes: resolved.fixes,
+    workspace: workspace,
+  );
+
+  _applyFixes(pending, dryRun: parsed.dryRun);
+  _reportDropped(dropped);
+  _reportApplierSummary(
+    pending.length,
+    dropped.length,
+    dryRun: parsed.dryRun,
+  );
+}
+
+/// Parsed `fix_applier` command line.
+typedef _ApplierArgs = ({String? manifest, String? fixes, bool dryRun});
+
+/// Parses the command line, exiting 64 on an unknown argument.
+_ApplierArgs _parseApplierArgs(List<String> args) {
   String? manifestPath;
   String? fixesDir;
   var dryRun = false;
@@ -28,15 +66,21 @@ void main(List<String> args) {
         _usageError('unknown argument ${args[i]}');
     }
   }
-  // `bazel run //pkg:fix -- --dry-run` forwards only the user's own arguments
-  // to the executable, so the rule has nowhere on the command line to inject
-  // the manifest and fixes directory; a shell wrapper could, but this rule set
-  // stays shell-free for Windows. The rule supplies them through
-  // RunEnvironmentInfo instead. An explicit flag still wins, which keeps the
-  // tool runnable by hand and debuggable outside Bazel.
-  final env = Platform.environment;
-  final rawManifest = manifestPath ?? _nonEmpty(env['DART_FIX_MANIFEST']);
-  final rawFixes = fixesDir ?? _nonEmpty(env['DART_FIX_FIXES']);
+  return (manifest: manifestPath, fixes: fixesDir, dryRun: dryRun);
+}
+
+/// Resolved manifest and fixes directory, from flags or the environment.
+///
+/// An explicit flag still wins, which keeps the tool runnable by hand and
+/// debuggable outside Bazel.
+typedef _ApplierPaths = ({String manifest, String fixes});
+
+_ApplierPaths _resolveApplierPaths(
+  _ApplierArgs parsed,
+  Map<String, String> env,
+) {
+  final rawManifest = parsed.manifest ?? _nonEmpty(env['DART_FIX_MANIFEST']);
+  final rawFixes = parsed.fixes ?? _nonEmpty(env['DART_FIX_FIXES']);
   if (rawManifest == null || rawFixes == null) {
     _usageError(
       '--manifest and --fixes are required (or DART_FIX_MANIFEST and '
@@ -59,13 +103,18 @@ void main(List<String> args) {
       // Leave paths as given so the check below reports the missing path.
     }
   }
+  return (manifest: resolvedManifest, fixes: resolvedFixes);
+}
 
-  // Bazel sets BUILD_WORKSPACE_DIRECTORY only under `bazel run`. The manifest
-  // names files by workspace-relative path, so without it there is no anchor to
-  // resolve them against; falling back to the cwd would silently write source
-  // files into whatever directory the binary happened to be launched from. A
-  // hard error is the only outcome that cannot corrupt an unrelated tree.
-  // `--dry-run` needs it just as much: the diff is against the workspace copy.
+/// The workspace directory, from `BUILD_WORKSPACE_DIRECTORY`.
+///
+/// The manifest names files by workspace-relative path, so without it there
+/// is no anchor to resolve them against; falling back to the cwd would
+/// silently write source files into whatever directory the binary happened
+/// to be launched from. A hard error is the only outcome that cannot corrupt
+/// an unrelated tree. `--dry-run` needs it just as much: the diff is against
+/// the workspace copy.
+String _requireWorkspace(Map<String, String> env) {
   final workspace = _nonEmpty(env['BUILD_WORKSPACE_DIRECTORY']);
   if (workspace == null) {
     stderr.writeln(
@@ -75,19 +124,17 @@ void main(List<String> args) {
     );
     exit(1);
   }
+  return workspace;
+}
 
-  if (!Directory(resolvedFixes).existsSync()) {
-    stderr.writeln('fix_applier: fixes directory not found: $resolvedFixes');
-    exit(1);
-  }
-
-  final manifest = _readManifest(resolvedManifest);
-  final fixed = _entries(manifest, 'fixed', resolvedManifest);
-  final dropped = _entries(manifest, 'dropped', resolvedManifest);
-
-  // Resolve every source up front. A missing staged file means the action that
-  // produced the manifest is broken; discovering that halfway through leaves
-  // the tree half-fixed, which is far harder to reason about than not starting.
+/// Resolves every `fixed` entry to a [_Fix], exiting 1 on the first entry
+/// whose staged file is missing.
+List<_Fix> _collectPending(
+  List<Map<String, dynamic>> fixed, {
+  required String resolvedManifest,
+  required String resolvedFixes,
+  required String workspace,
+}) {
   final pending = <_Fix>[];
   for (final entry in fixed) {
     final relative = _requireString(
@@ -106,30 +153,44 @@ void main(List<String> args) {
     }
     pending.add(_Fix(relative, staged, File(_join(workspace, relative))));
   }
+  return pending;
+}
 
+/// Writes every pending fix, or prints its diff in `--dry-run`.
+void _applyFixes(List<_Fix> pending, {required bool dryRun}) {
   try {
     for (final fix in pending) {
       if (dryRun) {
         _printDiff(fix);
       } else {
-        fix.destination.parent.createSync(recursive: true);
-        // A whole-file overwrite is safe because `bazel run` rebuilds the fix
-        // action before running this tool: the staged file was computed from
-        // exactly the sources now on disk, so there are no concurrent edits to
-        // preserve and nothing to merge.
-        //
-        // The bytes are copied by hand rather than with File.copySync because
-        // build outputs are read-only; copySync can carry that mode onto the
-        // destination and leave the user's own source file unwritable.
-        fix.destination.writeAsBytesSync(fix.staged.readAsBytesSync());
-        stdout.writeln('wrote ${fix.relative}');
+        _writeFix(fix);
       }
     }
   } on FileSystemException catch (e) {
     stderr.writeln('fix_applier: ${e.message}: ${e.path}');
     exit(1);
   }
+}
 
+/// Overwrites one destination with its staged bytes.
+///
+/// A whole-file overwrite is safe because `bazel run` rebuilds the fix
+/// action before running this tool: the staged file was computed from
+/// exactly the sources now on disk, so there are no concurrent edits to
+/// preserve and nothing to merge.
+///
+/// The bytes are copied by hand rather than with File.copySync because
+/// build outputs are read-only; copySync can carry that mode onto the
+/// destination and leave the user's own source file unwritable.
+void _writeFix(_Fix fix) {
+  fix.destination.parent.createSync(recursive: true);
+  fix.destination.writeAsBytesSync(fix.staged.readAsBytesSync());
+  stdout.writeln('wrote ${fix.relative}');
+}
+
+/// Warns about every dropped fix: a fix targeted a generated file, so the
+/// generator's inputs or the builder itself need the fix, not its output.
+void _reportDropped(List<Map<String, dynamic>> dropped) {
   for (final entry in dropped) {
     final name =
         _optionalString(entry, 'workspace') ??
@@ -143,19 +204,21 @@ void main(List<String> args) {
       'builder itself, not its output.',
     );
   }
+}
 
-  final files = pending.length == 1 ? 'file' : 'files';
+/// Prints the closing line: how many files were (or would be) written.
+void _reportApplierSummary(int written, int dropped, {required bool dryRun}) {
+  final files = written == 1 ? 'file' : 'files';
   if (dryRun) {
     stdout.writeln(
-      'fix_applier: ${pending.length} $files would be written, '
-      '${dropped.length} dropped (dry run, nothing modified)',
+      'fix_applier: $written $files would be written, '
+      '$dropped dropped (dry run, nothing modified)',
     );
   } else {
     stdout.writeln(
-      'fix_applier: ${pending.length} $files written, ${dropped.length} '
-      'dropped',
+      'fix_applier: $written $files written, $dropped dropped',
     );
-    if (pending.isNotEmpty) {
+    if (written > 0) {
       // One pass can unblock fixes the analyzer could not see before, and some
       // fixes are not idempotent, so a clean run is the only completion signal.
       stdout.writeln(
@@ -165,7 +228,6 @@ void main(List<String> args) {
     }
   }
 }
-
 /// A single write-back: where the fixed bytes are, and where they belong.
 class _Fix {
   _Fix(this.relative, this.staged, this.destination);
