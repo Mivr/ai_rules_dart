@@ -58,11 +58,8 @@ load(
     "writable_home_env",
 )
 
-def _dart_aggregate_codegen_impl(ctx):
-    identity = resolve_package_identity(ctx)
-    toolchain = ctx.toolchains["//dart:exec_tools_toolchain_type"]
-    dart_sdk_info = toolchain.dart_sdk_info
-
+def _aggregate_validate(ctx, dart_sdk_info):
+    """Fails on bad generator/outputs/srcs combinations; fails on SDK mismatch."""
     if ctx.file.generator_script and ctx.executable.generator_bin:
         fail("%s: only one of `generator_bin` or `generator_script` may be set." %
              ctx.label)
@@ -83,24 +80,18 @@ def _dart_aggregate_codegen_impl(ctx):
         if mismatch != None:
             fail(mismatch)
 
-    outputs = [ctx.actions.declare_file(path) for path in ctx.attr.outputs]
-    synth_pc, transitive_srcs = synth_package_config(ctx, ctx.attr.deps)
-
+def _aggregate_lib_root(ctx, identity):
+    """Derives the Dart package's lib root from deps' DartInfo, falling back to the Bazel package."""
     lib_root_from_deps = dart_lib_root_for_package(
         ctx.attr.deps,
         identity.package_name,
     )
-    lib_root = lib_root_from_deps if lib_root_from_deps != None else ctx.label.package
+    if lib_root_from_deps != None:
+        return lib_root_from_deps
+    return ctx.label.package
 
-    src_paths = [s.path for s in ctx.files.srcs]
-    auto_staged, _ = same_package_library_dep_files(
-        ctx.attr.deps,
-        identity.package_name,
-        exclude_paths = src_paths,
-    )
-
-    args = ctx.actions.args()
-
+def _aggregate_build_args(ctx, args, synth_pc, dart_sdk_info, lib_root, auto_staged, outputs):
+    """Adds the shared input/output/contract args. Returns the extra staged inputs."""
     # Configure param-file up-front when a worker binary is used so the
     # flagfile convention (`@<path>`, multiline) is set before any args
     # are added. Matches `dart_codegen`'s ordering.
@@ -127,83 +118,115 @@ def _dart_aggregate_codegen_impl(ctx):
         lib_root = lib_root,
     )
     args.add_all(ctx.attr.generator_args)
+    return extra_inputs
+
+def _aggregate_run_worker(ctx, args, dart_sdk_info, outputs, direct_inputs, transitive):
+    """Runs the `generator_bin` worker action."""
+    generator_runfiles = ctx.attr.generator_bin[DefaultInfo].default_runfiles.files
+    is_kernel_bin = (
+        DartCompileInfo in ctx.attr.generator_bin and
+        ctx.attr.generator_bin[DartCompileInfo].compile_mode == "kernel"
+    )
+    if is_kernel_bin:
+        kernel_bin = ctx.attr.generator_bin[DartCompileInfo].executable
+        executable = dart_sdk_info.dart
+        arguments = [kernel_bin.path, args]
+        direct_inputs = direct_inputs + [kernel_bin]
+        bin_transitive = transitive + [dart_sdk_info.runtime_files, generator_runfiles]
+        action_tools = [
+            ctx.attr.generator_bin[DefaultInfo].files_to_run,
+            depset(
+                direct = [kernel_bin, dart_sdk_info.dart],
+                transitive = [dart_sdk_info.runtime_files, generator_runfiles],
+            ),
+        ]
+    else:
+        executable = ctx.executable.generator_bin
+        arguments = [args]
+        bin_transitive = transitive + [generator_runfiles]
+        action_tools = [
+            ctx.attr.generator_bin[DefaultInfo].files_to_run,
+            depset(
+                direct = [ctx.executable.generator_bin, dart_sdk_info.dart],
+                transitive = [generator_runfiles],
+            ),
+        ]
+
+    ctx.actions.run(
+        executable = executable,
+        arguments = arguments,
+        inputs = depset(direct = direct_inputs, transitive = bin_transitive),
+        tools = action_tools,
+        outputs = outputs,
+        mnemonic = "DartAggregateCodegen",
+        progress_message = "DartAggregateCodegen %s" % ctx.label,
+        env = writable_home_env(dart_sdk_info.dart, outputs[0]),
+        execution_requirements = {
+            "supports-workers": "1",
+            "requires-worker-protocol": "proto",
+            "worker-key-mnemonic": "DartAggregateCodegen",
+        },
+    )
+
+def _aggregate_run_script(ctx, args, dart_sdk_info, synth_pc, outputs, direct_inputs, transitive):
+    """Runs the `generator_script` via the SDK's dart executable."""
+    # A `generator_script` is run by the `dart` launcher, which also loads
+    # `dartvm` and the kernel service: the runtime subset, on top of the
+    # analyze subset. Always pass an explicit `--packages` before the script
+    # path so the Dart VM never walks ancestor directories above
+    # `output_user_root`.
+    script_pc = ctx.file.package_config or synth_pc
+    if script_pc == None:
+        script_pc = ctx.actions.declare_file(ctx.label.name + ".package_config.json")
+        ctx.actions.write(
+            output = script_pc,
+            content = '{"configVersion": 2, "packages": []}\n',
+        )
+        direct_inputs = direct_inputs + [script_pc]
+    ctx.actions.run(
+        executable = dart_sdk_info.dart,
+        arguments = ["--packages=" + script_pc.path, ctx.file.generator_script.path, args],
+        inputs = depset(
+            direct = [ctx.file.generator_script] + direct_inputs,
+            transitive = transitive + [dart_sdk_info.runtime_files],
+        ),
+        outputs = outputs,
+        mnemonic = "DartAggregateCodegen",
+        progress_message = "DartAggregateCodegen %s" % ctx.label,
+        env = writable_home_env(dart_sdk_info.dart, outputs[0]),
+    )
+
+def _dart_aggregate_codegen_impl(ctx):
+    identity = resolve_package_identity(ctx)
+    toolchain = ctx.toolchains["//dart:exec_tools_toolchain_type"]
+    dart_sdk_info = toolchain.dart_sdk_info
+
+    _aggregate_validate(ctx, dart_sdk_info)
+
+    outputs = [ctx.actions.declare_file(path) for path in ctx.attr.outputs]
+    synth_pc, transitive_srcs = synth_package_config(ctx, ctx.attr.deps)
+
+    lib_root = _aggregate_lib_root(ctx, identity)
+
+    src_paths = [s.path for s in ctx.files.srcs]
+    auto_staged, _ = same_package_library_dep_files(
+        ctx.attr.deps,
+        identity.package_name,
+        exclude_paths = src_paths,
+    )
+
+    args = ctx.actions.args()
+
+    extra_inputs = _aggregate_build_args(ctx, args, synth_pc, dart_sdk_info, lib_root, auto_staged, outputs)
 
     direct_inputs = list(ctx.files.srcs) + extra_inputs
     transitive = [transitive_srcs] if transitive_srcs != None else []
     transitive.append(dart_sdk_info.analyze_files)
 
     if ctx.executable.generator_bin:
-        generator_runfiles = ctx.attr.generator_bin[DefaultInfo].default_runfiles.files
-        is_kernel_bin = (
-            DartCompileInfo in ctx.attr.generator_bin and
-            ctx.attr.generator_bin[DartCompileInfo].compile_mode == "kernel"
-        )
-        if is_kernel_bin:
-            kernel_bin = ctx.attr.generator_bin[DartCompileInfo].executable
-            executable = dart_sdk_info.dart
-            arguments = [kernel_bin.path, args]
-            direct_inputs = direct_inputs + [kernel_bin]
-            bin_transitive = transitive + [dart_sdk_info.runtime_files, generator_runfiles]
-            action_tools = [
-                ctx.attr.generator_bin[DefaultInfo].files_to_run,
-                depset(
-                    direct = [kernel_bin, dart_sdk_info.dart],
-                    transitive = [dart_sdk_info.runtime_files, generator_runfiles],
-                ),
-            ]
-        else:
-            executable = ctx.executable.generator_bin
-            arguments = [args]
-            bin_transitive = transitive + [generator_runfiles]
-            action_tools = [
-                ctx.attr.generator_bin[DefaultInfo].files_to_run,
-                depset(
-                    direct = [ctx.executable.generator_bin, dart_sdk_info.dart],
-                    transitive = [generator_runfiles],
-                ),
-            ]
-
-        ctx.actions.run(
-            executable = executable,
-            arguments = arguments,
-            inputs = depset(direct = direct_inputs, transitive = bin_transitive),
-            tools = action_tools,
-            outputs = outputs,
-            mnemonic = "DartAggregateCodegen",
-            progress_message = "DartAggregateCodegen %s" % ctx.label,
-            env = writable_home_env(dart_sdk_info.dart, outputs[0]),
-            execution_requirements = {
-                "supports-workers": "1",
-                "requires-worker-protocol": "proto",
-                "worker-key-mnemonic": "DartAggregateCodegen",
-            },
-        )
+        _aggregate_run_worker(ctx, args, dart_sdk_info, outputs, direct_inputs, transitive)
     else:
-        # A `generator_script` is run by the `dart` launcher, which also loads
-        # `dartvm` and the kernel service: the runtime subset, on top of the
-        # analyze subset. Always pass an explicit `--packages` before the script
-        # path so the Dart VM never walks ancestor directories above
-        # `output_user_root`.
-        script_pc = ctx.file.package_config or synth_pc
-        if script_pc == None:
-            script_pc = ctx.actions.declare_file(ctx.label.name + ".package_config.json")
-            ctx.actions.write(
-                output = script_pc,
-                content = '{"configVersion": 2, "packages": []}\n',
-            )
-            direct_inputs = direct_inputs + [script_pc]
-        ctx.actions.run(
-            executable = dart_sdk_info.dart,
-            arguments = ["--packages=" + script_pc.path, ctx.file.generator_script.path, args],
-            inputs = depset(
-                direct = [ctx.file.generator_script] + direct_inputs,
-                transitive = transitive + [dart_sdk_info.runtime_files],
-            ),
-            outputs = outputs,
-            mnemonic = "DartAggregateCodegen",
-            progress_message = "DartAggregateCodegen %s" % ctx.label,
-            env = writable_home_env(dart_sdk_info.dart, outputs[0]),
-        )
+        _aggregate_run_script(ctx, args, dart_sdk_info, synth_pc, outputs, direct_inputs, transitive)
 
     return [
         DefaultInfo(files = depset(outputs)),
