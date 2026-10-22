@@ -10,6 +10,7 @@ URL is built from an absolute label path so the workspace works on Windows
 too (`file:///C:/...` there, `file:///...` elsewhere).
 """
 
+# buildifier: disable=bzl-visibility
 load("@rules_dart//dart/private:download.bzl", "pinned_download")
 
 # The sha256 of `fixture.bin` (`sha256sum fixture.bin`).
