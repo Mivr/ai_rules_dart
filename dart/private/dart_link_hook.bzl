@@ -130,29 +130,8 @@ def link_hook_runner_attr():
         ),
     }
 
-def dart_link_hook_actions(ctx, runner, sdk, recorded_uses, deps, data_asset_ids, name):
-    """Registers the link-hook actions for a closure; what `dart_link_hook` runs.
-
-    For a rule that compiles its own kernel and so cannot depend on a
-    `dart_link_hook` target without a cycle. The caller's rule needs the
-    `//dart:exec_tools_toolchain_type` toolchain and `link_hook_runner_attr()`
-    in its `attrs`; `ctx` is used only for `ctx.actions` and `ctx.label`.
-
-    Args:
-      ctx: The rule context.
-      runner: The link-hook runner executable (`ctx.executable._link_hook_runner`).
-      sdk: The exec toolchain's `dart_sdk_info`.
-      recorded_uses: The recorded-uses JSON File.
-      deps: Targets providing `DartInfo`; their closure is linked.
-      data_asset_ids: The declared ids, each `package:<package>/<name>`.
-      name: Prefix for declared outputs, unique within the package.
-
-    Returns:
-      A struct: `assets` (a list of `struct(package, name, file, id)`, the
-      content of `DartDataAssetInfo`), and `validation_outputs` (Files to
-      put in an `_validation` output group, so every hook runs whenever the
-      target builds even if it emits no asset).
-    """
+def _link_hook_validate(ctx, sdk, data_asset_ids, deps):
+    """Checks the SDK, parses asset ids, and collects hooked packages. Returns (declared, packages, hooks)."""
     mismatch = kernel_sdk_mismatch_error(
         ctx.label,
         "_link_hook_runner",
@@ -177,7 +156,10 @@ def dart_link_hook_actions(ctx, runner, sdk, recorded_uses, deps, data_asset_ids
             fail(("%s: data asset `%s` is declared for package `%s`, which has " +
                   "no link hook in `deps`. Packages with one: %s.") %
                  (ctx.label, asset.id, asset.package, sorted(hooks.keys()) or "none"))
+    return declared, packages, hooks
 
+def _link_hook_owner_index(deps):
+    """Indexes closure sources and resources by owning package. Returns (srcs, resources, by_pkg)."""
     srcs = collect_transitive_srcs(deps)
     resources = collect_transitive_resources(deps)
     all_records = depset(
@@ -189,7 +171,47 @@ def dart_link_hook_actions(ctx, runner, sdk, recorded_uses, deps, data_asset_ids
         owner, rel = _match_package_file(f.short_path, pkg_index)
         if owner != None:
             by_pkg.setdefault(owner, []).append((rel, f))
+    return srcs, resources, by_pkg
 
+def _link_hook_stage_opaque(ctx, stage_name, dep_mangled, pfiles, staged, manifest_entries):
+    """Stages a package whose only file is an opaque directory. Returns True when staged."""
+    dir_link = ctx.actions.declare_directory(stage_name + "/" + dep_mangled)
+    ctx.actions.symlink(output = dir_link, target_file = pfiles[0][1])
+    staged.append(dir_link)
+    manifest_entries.append("dir\t%s\t%s" % (dep_mangled, dir_link.path))
+
+def _link_hook_stage_files(ctx, stage_name, dep_mangled, pfiles, hook, staged, manifest_entries, staged_hooks, pkg_name):
+    """Stages one package's files and hook link. Mutates staged, manifest_entries, staged_hooks."""
+    occupied = {}
+    dir_idx = 0
+    for rel, f in pfiles:
+        if f.is_directory:
+            dir_link = ctx.actions.declare_directory(
+                "%s/%s.dir_%d" % (stage_name, dep_mangled, dir_idx),
+            )
+            dir_idx += 1
+            ctx.actions.symlink(output = dir_link, target_file = f)
+            staged.append(dir_link)
+            manifest_entries.append("dir\t%s\t%s" % (dep_mangled, dir_link.path))
+            continue
+        if not rel or rel in occupied:
+            continue
+        occupied[rel] = True
+        rel_path = dep_mangled + "/lib/" + rel
+        link = ctx.actions.declare_file(stage_name + "/" + rel_path)
+        ctx.actions.symlink(output = link, target_file = f)
+        staged.append(link)
+        manifest_entries.append("file\t%s\t%s" % (rel_path, link.path))
+    if hook != None:
+        hook_rel = dep_mangled + "/hook/link.dart"
+        hook_link = ctx.actions.declare_file(stage_name + "/" + hook_rel)
+        ctx.actions.symlink(output = hook_link, target_file = hook)
+        staged.append(hook_link)
+        staged_hooks[pkg_name] = hook_link
+        manifest_entries.append("file\t%s\t%s" % (hook_rel, hook_link.path))
+
+def _link_hook_stage_all(ctx, deps, packages, hooks, by_pkg, name):
+    """Stages every package root and writes the manifest + package config. Returns (package_config, staged, staged_hooks)."""
     package_config = ctx.actions.declare_file(name + ".package_config.json")
     stage_name = name + ".pkg_roots"
     manifest = ctx.actions.declare_file(stage_name + "/.manifest")
@@ -206,38 +228,9 @@ def dart_link_hook_actions(ctx, runner, sdk, recorded_uses, deps, data_asset_ids
         pfiles = by_pkg.get(pkg_name, [])
         hook = hooks.get(pkg_name)
         if len(pfiles) == 1 and pfiles[0][1].is_directory and hook == None:
-            dir_link = ctx.actions.declare_directory(stage_name + "/" + dep_mangled)
-            ctx.actions.symlink(output = dir_link, target_file = pfiles[0][1])
-            staged.append(dir_link)
-            manifest_entries.append("dir\t%s\t%s" % (dep_mangled, dir_link.path))
+            _link_hook_stage_opaque(ctx, stage_name, dep_mangled, pfiles, staged, manifest_entries)
         else:
-            occupied = {}
-            dir_idx = 0
-            for rel, f in pfiles:
-                if f.is_directory:
-                    dir_link = ctx.actions.declare_directory(
-                        "%s/%s.dir_%d" % (stage_name, dep_mangled, dir_idx),
-                    )
-                    dir_idx += 1
-                    ctx.actions.symlink(output = dir_link, target_file = f)
-                    staged.append(dir_link)
-                    manifest_entries.append("dir\t%s\t%s" % (dep_mangled, dir_link.path))
-                    continue
-                if not rel or rel in occupied:
-                    continue
-                occupied[rel] = True
-                rel_path = dep_mangled + "/lib/" + rel
-                link = ctx.actions.declare_file(stage_name + "/" + rel_path)
-                ctx.actions.symlink(output = link, target_file = f)
-                staged.append(link)
-                manifest_entries.append("file\t%s\t%s" % (rel_path, link.path))
-            if hook != None:
-                hook_rel = dep_mangled + "/hook/link.dart"
-                hook_link = ctx.actions.declare_file(stage_name + "/" + hook_rel)
-                ctx.actions.symlink(output = hook_link, target_file = hook)
-                staged.append(hook_link)
-                staged_hooks[pkg_name] = hook_link
-                manifest_entries.append("file\t%s\t%s" % (hook_rel, hook_link.path))
+            _link_hook_stage_files(ctx, stage_name, dep_mangled, pfiles, hook, staged, manifest_entries, staged_hooks, pkg_name)
         roots[pkg_name] = stage_root + "/" + dep_mangled
 
     ctx.actions.write(
@@ -248,7 +241,10 @@ def dart_link_hook_actions(ctx, runner, sdk, recorded_uses, deps, data_asset_ids
         output = package_config,
         content = generate_package_config(packages, [], package_config, roots = roots),
     )
+    return package_config, staged, staged_hooks
 
+def _link_hook_run_all(ctx, runner, sdk, recorded_uses, hooks, staged_hooks, staged, declared, package_config, srcs, resources, name):
+    """Runs one link-hook action per hooked package. Returns struct(assets, validation_outputs)."""
     asset_infos = []
     link_outputs = []
     for package_name in sorted(hooks.keys()):
@@ -293,6 +289,37 @@ def dart_link_hook_actions(ctx, runner, sdk, recorded_uses, deps, data_asset_ids
             env = writable_home_env(sdk.dart, link_output),
         )
     return struct(assets = asset_infos, validation_outputs = link_outputs)
+
+def dart_link_hook_actions(ctx, runner, sdk, recorded_uses, deps, data_asset_ids, name):
+    """Registers the link-hook actions for a closure; what `dart_link_hook` runs.
+
+    For a rule that compiles its own kernel and so cannot depend on a
+    `dart_link_hook` target without a cycle. The caller's rule needs the
+    `//dart:exec_tools_toolchain_type` toolchain and `link_hook_runner_attr()`
+    in its `attrs`; `ctx` is used only for `ctx.actions` and `ctx.label`.
+
+    Args:
+      ctx: The rule context.
+      runner: The link-hook runner executable (`ctx.executable._link_hook_runner`).
+      sdk: The exec toolchain's `dart_sdk_info`.
+      recorded_uses: The recorded-uses JSON File.
+      deps: Targets providing `DartInfo`; their closure is linked.
+      data_asset_ids: The declared ids, each `package:<package>/<name>`.
+      name: Prefix for declared outputs, unique within the package.
+
+    Returns:
+      A struct: `assets` (a list of `struct(package, name, file, id)`, the
+      content of `DartDataAssetInfo`), and `validation_outputs` (Files to
+      put in an `_validation` output group, so every hook runs whenever the
+      target builds even if it emits no asset).
+    """
+    declared, packages, hooks = _link_hook_validate(ctx, sdk, data_asset_ids, deps)
+
+    srcs, resources, by_pkg = _link_hook_owner_index(deps)
+
+    package_config, staged, staged_hooks = _link_hook_stage_all(ctx, deps, packages, hooks, by_pkg, name)
+
+    return _link_hook_run_all(ctx, runner, sdk, recorded_uses, hooks, staged_hooks, staged, declared, package_config, srcs, resources, name)
 
 def _dart_link_hook_impl(ctx):
     result = dart_link_hook_actions(
