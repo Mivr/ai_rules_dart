@@ -39,11 +39,7 @@ void main(List<String> args) {
 
   _applyFixes(pending, dryRun: parsed.dryRun);
   _reportDropped(dropped);
-  _reportApplierSummary(
-    pending.length,
-    dropped.length,
-    dryRun: parsed.dryRun,
-  );
+  _reportApplierSummary(pending.length, dropped.length, dryRun: parsed.dryRun);
 }
 
 /// Parsed `fix_applier` command line.
@@ -215,9 +211,7 @@ void _reportApplierSummary(int written, int dropped, {required bool dryRun}) {
       '$dropped dropped (dry run, nothing modified)',
     );
   } else {
-    stdout.writeln(
-      'fix_applier: $written $files written, $dropped dropped',
-    );
+    stdout.writeln('fix_applier: $written $files written, $dropped dropped');
     if (written > 0) {
       // One pass can unblock fixes the analyzer could not see before, and some
       // fixes are not idempotent, so a clean run is the only completion signal.
@@ -228,6 +222,7 @@ void _reportApplierSummary(int written, int dropped, {required bool dryRun}) {
     }
   }
 }
+
 /// A single write-back: where the fixed bytes are, and where they belong.
 class _Fix {
   _Fix(this.relative, this.staged, this.destination);
