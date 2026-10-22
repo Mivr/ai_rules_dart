@@ -201,7 +201,6 @@ def _dart_binary_impl(ctx):
             jit_tool = ctx.file._jit_tool,
             comma_patch = ctx.file._comma_patch,
             jit_snapshot_fallback = ctx.attr._jit_snapshot_fallback[BuildSettingInfo].value,
-            jit_lock_timeout = ctx.attr._jit_lock_timeout[BuildSettingInfo].value,
             native_assets_yaml = native_assets_yaml,
             embed_sources = DartTestRunnerMainInfo not in ctx.attr.main,
         )

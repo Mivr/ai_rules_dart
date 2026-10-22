@@ -1,5 +1,6 @@
 """Shared compilation action helpers for Dart."""
 
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load(
     "//dart/private:common.bzl",
     "JIT_SNAPSHOT_LOCK_TIMEOUT_DEFAULT",
@@ -171,7 +172,7 @@ def has_comma_define_flag(flags):
             return True
     return False
 
-def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asserts, comma_patch = None, fallback_allowed = False, lock_timeout_secs = JIT_SNAPSHOT_LOCK_TIMEOUT_DEFAULT):
+def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asserts, comma_patch = None, fallback_allowed = False):
     """Trains the app-JIT snapshot of a kernel at its keyed absolute path.
 
     `dart compile jit-snapshot` trains in the action's own directory, so the
@@ -197,12 +198,11 @@ def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asse
             (from `//dart:jit_snapshot_fallback`). Passed on the command line,
             so builds that allow the fallback and builds that do not have
             different action keys.
-        lock_timeout_secs: Seconds the training waits for the keyed training
-            lock before the action fails (from
-            `//dart:jit_snapshot_lock_timeout`). Passed on the command line
-            only when it differs from the default, so the action key follows
-            a non-default deadline.
     """
+    lock_setting = getattr(ctx.attr, "_jit_lock_timeout", None)
+    lock_timeout_secs = lock_setting[BuildSettingInfo].value if lock_setting != None else JIT_SNAPSHOT_LOCK_TIMEOUT_DEFAULT
+    if lock_timeout_secs <= 0:
+        fail("dart_compile_action: `//dart:jit_snapshot_lock_timeout` must be above 0, got %r" % lock_timeout_secs)
     dart_bin = dart_sdk_info.dart
     dartvm = sdk_dartvm(dart_sdk_info)
     pkg_cfg = ctx.actions.declare_file(output.basename + ".jit_package_config.json")
@@ -475,8 +475,7 @@ def dart_compile_action(
         comma_patch = None,
         native_assets_yaml = None,
         embed_sources = True,
-        jit_snapshot_fallback = False,
-        jit_lock_timeout = JIT_SNAPSHOT_LOCK_TIMEOUT_DEFAULT):
+        jit_snapshot_fallback = False):
     """Creates the actions that compile a Dart entrypoint in `compile_mode`.
 
     A source entrypoint (one with a `package_config`) is first compiled to a
@@ -524,14 +523,7 @@ def dart_compile_action(
             unavailable (from `//dart:jit_snapshot_fallback`). Reaches the
             snapshot action's command line, so builds that allow the fallback
             and builds that do not have different action keys.
-        jit_lock_timeout: Seconds a `jit-snapshot` training waits for the
-            keyed training lock before the action fails (from
-            `//dart:jit_snapshot_lock_timeout`). Must be above 0. Reaches the
-            snapshot action's command line only when it differs from the
-            default, so the action key follows a non-default deadline.
     """
-    if jit_lock_timeout <= 0:
-        fail("dart_compile_action: `jit_snapshot_lock_timeout` must be above 0, got %r" % jit_lock_timeout)
     cross_err = cross_target_error(target_os, target_arch)
     if cross_err != None:
         fail(cross_err)
@@ -638,7 +630,6 @@ def dart_compile_action(
             output = output,
             enable_asserts = enable_asserts,
             fallback_allowed = jit_snapshot_fallback,
-            lock_timeout_secs = jit_lock_timeout,
         )
         return
 
