@@ -229,7 +229,7 @@
   "moduleExtensions": {
     "//:red.bzl%digest": {
       "general": {
-        "bzlTransitiveDigest": "72GsvrqfbkBNN+MMHJG7VKJA8s3WxGObzH40hnvPTVY=",
+        "bzlTransitiveDigest": "/NfiEl5tj672szUDR+vf17MAqCbkBML8sZEEuBkgSos=",
         "usagesDigest": "JENjO4ETxqBrmveW9yU4IgJHr//8PdYPcGXfDh9i5CM=",
         "recordedInputs": [
           "REPO_MAPPING:,rules_dart rules_dart+"
@@ -238,35 +238,35 @@
           "bad_empty": {
             "repoRuleId": "@@//:red.bzl%digest_case",
             "attributes": {
-              "url": "file:///src/workspaces/rules-dart-flutter/fix-wt/FD-review3-digest/e2e/digest_mismatch/fixture.bin",
+              "fixture": "@@//:fixture.bin",
               "sha256": ""
             }
           },
           "bad_short": {
             "repoRuleId": "@@//:red.bzl%digest_case",
             "attributes": {
-              "url": "file:///src/workspaces/rules-dart-flutter/fix-wt/FD-review3-digest/e2e/digest_mismatch/fixture.bin",
+              "fixture": "@@//:fixture.bin",
               "sha256": "86bea300d6701fb6c1fddc33b21235231d108b44a9793db9dcd48940fa46a6a"
             }
           },
           "bad_upper": {
             "repoRuleId": "@@//:red.bzl%digest_case",
             "attributes": {
-              "url": "file:///src/workspaces/rules-dart-flutter/fix-wt/FD-review3-digest/e2e/digest_mismatch/fixture.bin",
+              "fixture": "@@//:fixture.bin",
               "sha256": "86BEA300D6701FB6C1FDDC33B21235231D108B44A9793DB9DCD48940FA46A6A6"
             }
           },
           "bad_sri": {
             "repoRuleId": "@@//:red.bzl%digest_case",
             "attributes": {
-              "url": "file:///src/workspaces/rules-dart-flutter/fix-wt/FD-review3-digest/e2e/digest_mismatch/fixture.bin",
+              "fixture": "@@//:fixture.bin",
               "sha256": "sha256-hr6jANZwH7bB/dwzshI1Ix0Qi0SpeT253NSJQPpGpqY="
             }
           },
           "bad_conditional": {
             "repoRuleId": "@@//:red.bzl%digest_case",
             "attributes": {
-              "url": "file:///src/workspaces/rules-dart-flutter/fix-wt/FD-review3-digest/e2e/digest_mismatch/fixture.bin",
+              "fixture": "@@//:fixture.bin",
               "sha256": "86bea300d6701fb6c1fddc33b21235231d108b44a9793db9dcd48940fa46a6a6",
               "enforce": false
             }
@@ -274,14 +274,14 @@
           "bad_wrong": {
             "repoRuleId": "@@//:red.bzl%digest_case",
             "attributes": {
-              "url": "file:///src/workspaces/rules-dart-flutter/fix-wt/FD-review3-digest/e2e/digest_mismatch/fixture.bin",
+              "fixture": "@@//:fixture.bin",
               "sha256": "86bea300d6701fb6c1fddc33b21235231d108b44a9793db9dcd48940fa46a6a7"
             }
           },
           "good": {
             "repoRuleId": "@@//:red.bzl%digest_case",
             "attributes": {
-              "url": "file:///src/workspaces/rules-dart-flutter/fix-wt/FD-review3-digest/e2e/digest_mismatch/fixture.bin",
+              "fixture": "@@//:fixture.bin",
               "sha256": "86bea300d6701fb6c1fddc33b21235231d108b44a9793db9dcd48940fa46a6a6"
             }
           }
