@@ -1879,23 +1879,67 @@ Future<void> _adoptDeclaredPartPeers(
   Set<String> vm,
   String multiRootPrefix,
 ) async {
-  var hasPartDirective = false;
-  for (final key in <String>{...keys.values, ...inherited.keys}) {
-    final scan = await files.scan(key, vm);
-    if (scan == null) continue;
-    if (scan.partOfLibrary != null ||
-        scan.refs.any((r) => r.isPart || r.isPartOf)) {
-      hasPartDirective = true;
-      break;
-    }
+  if (!await _usesPartDirectives(
+    {...keys.values, ...inherited.keys},
+    files,
+    vm,
+  )) {
+    return;
   }
-  if (!hasPartDirective) return;
 
   final candidates = <String>{
     ...keys.values,
     for (final key in files.declaredKeys)
       if (!graph.containsKey(key)) key,
   };
+  final peers = await _scanPeerCandidates(candidates, files, vm);
+  final links = _linkPartDirectives(
+    peers.scans,
+    peers.libraryByName,
+    roots,
+    multiRootPrefix,
+  );
+
+  final resolvedPartsOf = <String, Set<String>>{
+    for (final entry in links.partsOf.entries)
+      entry.key: {for (final target in entry.value) ?target},
+  };
+  final sortedRoots = peers.scans.keys.toList()..sort();
+  for (final root in sortedRoots) {
+    if (links.hasPartOf.contains(root)) continue;
+    final unit = _completeUnit(root, links, peers.scans, resolvedPartsOf);
+    if (unit == null ||
+        !unit.any((m) => plan.isOwn(m) || inherited.containsKey(m))) {
+      continue;
+    }
+    _adoptUnit(unit, plan, inherited, own, keys, roots, multiRootPrefix);
+  }
+}
+
+/// Whether any scanned source uses a `part` or `part of` directive.
+Future<bool> _usesPartDirectives(
+  Set<String> keys,
+  _Files files,
+  Set<String> vm,
+) async {
+  for (final key in keys) {
+    final scan = await files.scan(key, vm);
+    if (scan == null) continue;
+    if (scan.partOfLibrary != null ||
+        scan.refs.any((r) => r.isPart || r.isPartOf)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// Scans the candidate peers, indexing libraries by their declared name.
+Future<({Map<String, ScanResult> scans, Map<String, String> libraryByName})>
+_scanPeerCandidates(
+  Set<String> candidates,
+  _Files files,
+  Set<String> vm,
+) async {
   final scans = <String, ScanResult>{};
   final libraryByName = <String, String>{};
   for (final key in candidates) {
@@ -1906,7 +1950,23 @@ Future<void> _adoptDeclaredPartPeers(
       libraryByName.putIfAbsent(scan.libraryName!, () => key);
     }
   }
+  return (scans: scans, libraryByName: libraryByName);
+}
 
+/// The `part` targets, `part of` members, and member parents of scanned peers.
+typedef _PartLinks = ({
+  Map<String, List<String?>> partsOf,
+  Set<String> hasPartOf,
+  Map<String, String?> parentOf,
+});
+
+/// Resolves each peer's `part` and `part of` directives to graph keys.
+_PartLinks _linkPartDirectives(
+  Map<String, ScanResult> scans,
+  Map<String, String> libraryByName,
+  Map<String, _PackageRoot> roots,
+  String multiRootPrefix,
+) {
   final partsOf = <String, List<String?>>{};
   final hasPartOf = <String>{};
   final parentOf = <String, String?>{};
@@ -1926,61 +1986,69 @@ Future<void> _adoptDeclaredPartPeers(
       }
     }
   });
+  return (partsOf: partsOf, hasPartOf: hasPartOf, parentOf: parentOf);
+}
 
-  final resolvedPartsOf = <String, Set<String>>{
-    for (final entry in partsOf.entries)
-      entry.key: {for (final target in entry.value) ?target},
-  };
-  final sortedRoots = scans.keys.toList()..sort();
-  for (final root in sortedRoots) {
-    if (hasPartOf.contains(root)) continue;
-    final directParts = partsOf[root];
-    if (directParts == null || directParts.isEmpty) continue;
-    final unit = <String>[root];
-    final seen = <String>{root};
-    final queue = Queue<String>()..add(root);
-    var complete = true;
-    while (queue.isNotEmpty && complete) {
-      final current = queue.removeFirst();
-      for (final partKey in partsOf[current] ?? const <String?>[]) {
-        if (partKey == null ||
-            !scans.containsKey(partKey) ||
-            !hasPartOf.contains(partKey)) {
-          complete = false;
-          break;
-        }
-        final parent = parentOf[partKey];
-        if (parent == null ||
-            !seen.contains(parent) ||
-            !_reachesViaPart(parent, partKey, resolvedPartsOf)) {
-          complete = false;
-          break;
-        }
-        if (seen.add(partKey)) {
-          unit.add(partKey);
-          queue.add(partKey);
-        }
+/// The complete `part` unit rooted at `root`, or null when a part is missing,
+/// unscanned, or parented outside the unit.
+List<String>? _completeUnit(
+  String root,
+  _PartLinks links,
+  Map<String, ScanResult> scans,
+  Map<String, Set<String>> resolvedPartsOf,
+) {
+  final directParts = links.partsOf[root];
+  if (directParts == null || directParts.isEmpty) return null;
+  final unit = <String>[root];
+  final seen = <String>{root};
+  final queue = Queue<String>()..add(root);
+  while (queue.isNotEmpty) {
+    final current = queue.removeFirst();
+    for (final partKey in links.partsOf[current] ?? const <String?>[]) {
+      if (partKey == null ||
+          !scans.containsKey(partKey) ||
+          !links.hasPartOf.contains(partKey)) {
+        return null;
+      }
+      final parent = links.parentOf[partKey];
+      if (parent == null ||
+          !seen.contains(parent) ||
+          !_reachesViaPart(parent, partKey, resolvedPartsOf)) {
+        return null;
+      }
+      if (seen.add(partKey)) {
+        unit.add(partKey);
+        queue.add(partKey);
       }
     }
-    if (!complete ||
-        !unit.any((m) => plan.isOwn(m) || inherited.containsKey(m))) {
-      continue;
-    }
-    for (final member in unit) {
-      if (plan.isOwn(member)) continue;
-      // The adoption decision read this peer: renaming a file into its name
-      // recompiles the dependency, so its provider is never listed as unused.
-      plan.addConsulted(member);
-      final uri = _packageUriOf(
-        member,
-        inherited[member] ?? '$multiRootPrefix$member',
-        roots,
-      );
-      own.add(uri);
-      keys[uri] = member;
-      plan.addOwn(member, uri);
-      inherited.remove(member);
-    }
+  }
+  return unit;
+}
+
+/// Moves a complete unit's non-own members into this module's own sources.
+void _adoptUnit(
+  List<String> unit,
+  _Plan plan,
+  Map<String, String> inherited,
+  List<String> own,
+  Map<String, String> keys,
+  Map<String, _PackageRoot> roots,
+  String multiRootPrefix,
+) {
+  for (final member in unit) {
+    if (plan.isOwn(member)) continue;
+    // The adoption decision read this peer: renaming a file into its name
+    // recompiles the dependency, so its provider is never listed as unused.
+    plan.addConsulted(member);
+    final uri = _packageUriOf(
+      member,
+      inherited[member] ?? '$multiRootPrefix$member',
+      roots,
+    );
+    own.add(uri);
+    keys[uri] = member;
+    plan.addOwn(member, uri);
+    inherited.remove(member);
   }
 }
 
