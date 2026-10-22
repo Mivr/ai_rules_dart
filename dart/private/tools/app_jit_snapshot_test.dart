@@ -774,11 +774,15 @@ void main(List<String> args) {
     'absoluteHomeEnv resolves scratch-relative home variables absolutely',
     () {
       final trainDir = Directory('${tmp.path}/train');
+      // An absolute path on the host: '/abs/cache' reads absolute on POSIX
+      // but drive-relative on Windows, so derive it from the test's own
+      // temporary directory, which is absolute on every OS.
+      final absCache = '${tmp.path}/cache';
       final staged = snapshot.absoluteHomeEnv({
         'HOME': '.',
         'TMPDIR': 'scratch-tmp',
         'DART_TEST_CONFIG': 'none/DartTest.yaml',
-        'PUB_CACHE': '/abs/cache',
+        'PUB_CACHE': absCache,
       }, trainDir);
 
       expect(staged['HOME'], '${trainDir.path}/.');
@@ -786,9 +790,18 @@ void main(List<String> args) {
       // Non-home variables keep their value, resolving against the training
       // directory at runtime.
       expect(staged['DART_TEST_CONFIG'], 'none/DartTest.yaml');
-      expect(staged['PUB_CACHE'], '/abs/cache');
+      expect(staged['PUB_CACHE'], absCache);
     },
   );
+
+  /// Why the constant-training-path tests skip on Windows: there each build
+  /// trains in a private scratch directory whose path names the build, so
+  /// equal inputs train different bytes by design (see the Windows paragraph
+  /// in the app_jit_snapshot.dart header).
+  const posixOnlyReason =
+      'constant-path training is POSIX-only: on Windows each build trains '
+      'in a private scratch directory whose path names the build, so equal '
+      'inputs train different bytes by design';
 
   test('app-jit training matches across working-directory layouts', () {
     final dartBin = Platform.resolvedExecutable;
@@ -851,13 +864,9 @@ void main(List<String> args) {
       // Sixteen consecutive lengths: whatever `${tmp.path}/layouts` reads,
       // the output directories cover every residue mod 16.
       for (var k = 1; k <= 16; k++) 'mod/${repeat('e', k)}',
-      // Near the old budget on POSIX; under the OS path limit on Windows
-      // (only the tool's own tests train there; the rules build no snapshot
-      // on Windows).
-      if (Platform.isWindows)
-        'long/${repeat('x', 100)}/pkg'
-      else
-        'long/${repeat('x', 220)}/pkg',
+      // Near the old 290-character budget (POSIX only, like the rest of
+      // this test).
+      'long/${repeat('x', 220)}/pkg',
       'mid/x/m/${repeat('a', 1)}/${repeat('b', 39)}/bin/pkg/rerun',
     ];
     expect(layoutNames.length, greaterThanOrEqualTo(12));
@@ -883,14 +892,10 @@ void main(List<String> args) {
       ]);
       expect(outJit.existsSync(), isTrue, reason: 'snapshot in $layout');
       // Nothing undeclared stays behind: neither the training VM copy nor
-      // the training scratch directory. listSync() reports platform
-      // separators (`\` on Windows) while the expected path above is built
-      // with `/`, so both sides are normalized before comparing; a real
-      // stray file still differs and fails on every OS.
-      String slashes(String path) => path.replaceAll(r'\', '/');
+      // the training scratch directory.
       final leftovers = root
           .listSync()
-          .where((e) => slashes(e.path) != slashes(outJit.path))
+          .where((e) => e.path != outJit.path)
           .toList();
       expect(leftovers, isEmpty, reason: 'no leftovers in $layout: $leftovers');
       return outJit.readAsBytesSync();
@@ -900,7 +905,7 @@ void main(List<String> args) {
     for (final layout in layoutNames.skip(1)) {
       expect(trainIn(layout), equals(first), reason: 'layout $layout');
     }
-  });
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
 
   test('app-jit training failure leaves no scratch beside the output', () {
     // A training run that fails (here: the program throws) must fail the
@@ -946,9 +951,7 @@ void main(List<String> args) {
     // Anything pre-existing at the constant training path — a symlink here,
     // a file or an undeletable directory in the tests below — must never be
     // read, followed, or deleted: the tool falls back to the private scratch
-    // directory and still writes the snapshot. POSIX only: Windows never
-    // trains at the constant path.
-    if (Platform.isWindows) return;
+    // directory and still writes the snapshot.
     const constant = '/tmp/rules_dart_jit';
     const lock = '/tmp/rules_dart_jit.lock';
     // A stale lock file from an earlier test in this file is ours and held
@@ -1049,14 +1052,13 @@ void main(List<String> args) {
       Directory(lock).deleteSync();
     }
     expectClear();
-  });
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
 
   test('pre-existing lock file keeps its content after a training run', () {
     // The lock file opens append-only for its flock and is never written, so
     // a regular file already at the lock path trains (at the constant path,
     // under its flock) and keeps its bytes: no truncate-though-symlink, no
-    // clobber. POSIX only: Windows never trains at the constant path.
-    if (Platform.isWindows) return;
+    // clobber.
     const constant = '/tmp/rules_dart_jit';
     const lock = '/tmp/rules_dart_jit.lock';
     expect(
@@ -1106,7 +1108,7 @@ void main(List<String> args) {
     } finally {
       if (File(lock).existsSync()) File(lock).deleteSync();
     }
-  });
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
 
   test('racy claim at the constant training path falls back', () {
     // Another local user creating the training directory in the
@@ -1114,8 +1116,7 @@ void main(List<String> args) {
     // atomic mkdir claim sees EEXIST, the tool falls back to the private
     // scratch directory, and the VM copy never lands in the planted
     // directory. Simulated by making mkdirExclusive plant the directory just
-    // before the real mkdir runs. POSIX only.
-    if (Platform.isWindows) return;
+    // before the real mkdir runs.
     const constant = '/tmp/rules_dart_jit';
     const lock = '/tmp/rules_dart_jit.lock';
     expect(
@@ -1181,7 +1182,7 @@ void main(List<String> args) {
       snapshot.mkdirExclusive = realMkdir;
       Directory(constant).deleteSync(recursive: true);
     }
-  });
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
 
   test('buildChildEnvironment on Windows preserves SystemRoot and valid names while isolating home and cache directories', () {
     const privateHome = r'C:\b\tmp\private_home';
