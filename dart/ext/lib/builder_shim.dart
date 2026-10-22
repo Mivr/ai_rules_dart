@@ -431,9 +431,20 @@ Future<void> runShim(
         await stagingDir.delete(recursive: true);
       }
     }
-  } catch (e, st) {
-    sink('Builder failed for ${args.inputPath}: $e');
-    sink(st.toString());
+  } on Exception catch (e, st) {
+    // Builders, the analyzer and staging I/O signal expected failures as
+    // Exceptions (StateError for refused staged entries, FileSystemException
+    // for vanished inputs, FormatException for bad flags): report the failure
+    // and fail the action instead of crashing the isolate.
+    _reportShimFailure(sink, args.inputPath, e, st);
+    exitCode = 1;
+  } on Error catch (e, st) {
+    // Errors (failed assertions, analyzer bugs) still fail the action with a
+    // diagnostic rather than an unhandled dump: in one-shot mode Bazel needs
+    // the exit code, in worker mode the loop reads it per request. Anything
+    // that is neither (a builder throwing a bare string, say) escapes to the
+    // caller, which reports it.
+    _reportShimFailure(sink, args.inputPath, e, st);
     exitCode = 1;
   }
 }
@@ -443,6 +454,18 @@ Future<void> runShim(
 /// appends to `WorkResponse.output` so diagnostics surface in Bazel's
 /// action-failure output instead of the shared worker stderr.
 typedef DiagnosticSink = void Function(String message);
+
+/// Reports a failed shim run to the diagnostic sink: the failing input plus
+/// the error and its stack trace. The caller fails the action via `exitCode`.
+void _reportShimFailure(
+  DiagnosticSink sink,
+  String inputPath,
+  Object error,
+  StackTrace stack,
+) {
+  sink('Builder failed for $inputPath: $error');
+  sink(stack.toString());
+}
 
 void _stderrSink(String message) => stderr.writeln(message);
 
@@ -905,7 +928,13 @@ Future<void> _runBuilderPipeline({
     // records still flow to the listener because we cancel *after* disposal.
     try {
       await resourceManager.disposeAll();
-    } catch (e, st) {
+    } on Exception catch (e, st) {
+      // A Resource that fails to dispose must neither fail the build (the
+      // outputs are already written) nor poison the next worker request:
+      // report and continue.
+      writeDiagnostic('ResourceManager.disposeAll failed: $e\n$st');
+    } on Error catch (e, st) {
+      // Same as above for Errors from Resource.dispose implementations.
       writeDiagnostic('ResourceManager.disposeAll failed: $e\n$st');
     }
     await logSub.cancel();

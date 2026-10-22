@@ -858,6 +858,70 @@ void main() {
       exitCode = 0;
     });
 
+    test('builder Exception routes message + stack trace to sink', () async {
+      // The shim converts `on Exception` failures to diagnostics exactly like
+      // `on Error` ones; only non-error throws escape.
+      final input = File(p.join(tmp.path, 'a.dart'))
+        ..writeAsStringSync('class Foo {}');
+      final out = p.join(tmp.path, 'a.g.dart');
+      final stage = await Directory(p.join(tmp.path, 'stage')).create();
+      final captured = <String>[];
+      await runShim(
+        [
+          '--input',
+          input.path,
+          '--input-asset',
+          'lib/a.dart',
+          '--output',
+          out,
+          '--package',
+          'p',
+          '--root-language-version',
+          '3.11',
+        ],
+        (_) => _ThrowingExceptionBuilder(),
+        stagingRoot: stage,
+        writeDiagnostic: captured.add,
+      );
+      expect(exitCode, 1);
+      final combined = captured.join('\n');
+      expect(combined, contains('Builder failed for'));
+      expect(combined, contains('intentional checked failure'));
+      exitCode = 0;
+    });
+
+    test('builder bare-string throw escapes runShim to the caller', () async {
+      // A throw that is neither Exception nor Error is not a convertible
+      // failure: it propagates so the caller (one-shot `main`, worker loop)
+      // reports it instead of being masked as a builder diagnostic.
+      final input = File(p.join(tmp.path, 'a.dart'))
+        ..writeAsStringSync('class Foo {}');
+      final out = p.join(tmp.path, 'a.g.dart');
+      final stage = await Directory(p.join(tmp.path, 'stage')).create();
+      final captured = <String>[];
+      await expectLater(
+        runShim(
+          [
+            '--input',
+            input.path,
+            '--input-asset',
+            'lib/a.dart',
+            '--output',
+            out,
+            '--package',
+            'p',
+            '--root-language-version',
+            '3.11',
+          ],
+          (_) => _ThrowingStringBuilder(),
+          stagingRoot: stage,
+          writeDiagnostic: captured.add,
+        ),
+        throwsA('intentional bare-string failure'),
+      );
+      expect(exitCode, 0);
+    });
+
     test('--config JSON is surfaced to the Builder via BuilderOptions', () async {
       // Guards ShimArgs.parse's JSON-object validation + the
       // builder-factory's BuilderOptions wiring. A regression anywhere
@@ -2442,6 +2506,35 @@ class _ThrowingBuilder implements Builder {
   @override
   Future<void> build(BuildStep step) async {
     throw StateError('intentional failure');
+  }
+}
+
+/// Throws an [Exception] (rather than the [Error] [_ThrowingBuilder]
+/// throws) so the shim's `on Exception` failure path is driven too.
+class _ThrowingExceptionBuilder implements Builder {
+  @override
+  Map<String, List<String>> get buildExtensions => const {
+    '.dart': ['.g.dart'],
+  };
+
+  @override
+  Future<void> build(BuildStep step) async {
+    throw const FormatException('intentional checked failure');
+  }
+}
+
+/// Throws a bare string — neither [Exception] nor [Error] — so the shim's
+/// fail-open escape path is driven: only real error types are converted to
+/// diagnostics, anything else propagates to the caller.
+class _ThrowingStringBuilder implements Builder {
+  @override
+  Map<String, List<String>> get buildExtensions => const {
+    '.dart': ['.g.dart'],
+  };
+
+  @override
+  Future<void> build(BuildStep step) async {
+    throw 'intentional bare-string failure';
   }
 }
 
