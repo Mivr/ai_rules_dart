@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:test/test.dart';
 
 import 'kernel_launcher.dart'
-    show adjacentConfigFile, candidateConfigRlocations;
+    show adjacentConfigFile, candidateConfigRlocations, deleteScratchQuietly;
 
 void main() {
   group('kernel_launcher config lookup (Windows path form)', () {
@@ -36,6 +36,21 @@ void main() {
       final file = adjacentConfigFile(exe);
       expect(file, isNotNull);
       expect(file!.path, endsWith('create_probe_kernel.kernel_launcher.json'));
+    });
+  });
+
+  group('deleteScratchQuietly', () {
+    test('removes an existing scratch directory', () {
+      final tmp = Directory.systemTemp.createTempSync('kl_scratch');
+      File('${tmp.path}/entry').writeAsStringSync('x');
+      deleteScratchQuietly(tmp);
+      expect(tmp.existsSync(), isFalse);
+    });
+
+    test('ignores a scratch directory that is already gone', () {
+      final tmp = Directory.systemTemp.createTempSync('kl_scratch');
+      tmp.deleteSync(recursive: true);
+      expect(() => deleteScratchQuietly(tmp), returnsNormally);
     });
   });
 }

@@ -90,6 +90,21 @@ String _suiteTimeout(Map<String, String> env) {
 /// The exit code `package:test`'s runner uses when no test ran.
 const _noTestsRan = 79;
 
+/// Deletes a scratch file the launcher no longer needs, ignoring failure.
+///
+/// Scratch cleanup is best-effort: the run's result no longer depends on these
+/// files, so a failure to remove one must not fail the run or mask its exit
+/// code. Only filesystem failures are ignored; anything else is a programming
+/// error and propagates.
+void deleteScratchQuietly(FileSystemEntity entity) {
+  if (!entity.existsSync()) return;
+  try {
+    entity.deleteSync(recursive: true);
+  } on FileSystemException {
+    // Best-effort cleanup; the run already has its result.
+  }
+}
+
 Future<int> _runDirectly(
   String dart,
   String dill,
@@ -138,9 +153,7 @@ Future<int> _runDirectly(
     return await vm.exitCode;
   } finally {
     if (scratch != null && !env.containsKey('TEST_TMPDIR')) {
-      try {
-        scratch.deleteSync(recursive: true);
-      } catch (_) {}
+      deleteScratchQuietly(scratch);
     }
   }
 }
@@ -350,10 +363,8 @@ Future<int> _waitForSuite(Process vm, {required File? combined}) async {
   try {
     return await vm.exitCode;
   } finally {
-    if (combined != null && combined.existsSync()) {
-      try {
-        combined.deleteSync();
-      } catch (_) {}
+    if (combined != null) {
+      deleteScratchQuietly(combined);
     }
   }
 }
@@ -368,8 +379,8 @@ int _finishSuiteRun({
   // A filter that selects nothing here, or a shard that drew no cases, is not
   // a failure: `bazel test //... --test_filter=x` has to pass every target the
   // filter does not touch.
-  final selecting = env['TESTBRIDGE_TEST_ONLY'] != null ||
-      env['TEST_TOTAL_SHARDS'] != null;
+  final selecting =
+      env['TESTBRIDGE_TEST_ONLY'] != null || env['TEST_TOTAL_SHARDS'] != null;
   if (code == _noTestsRan && selecting) {
     code = 0;
   }

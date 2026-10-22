@@ -135,6 +135,17 @@ dart_test(
     ],
 )
 
+dart_test(
+    name = "test_runner_cleanup_test",
+    size = "small",
+    srcs = ["test_runner.dart"],
+    main = "test_runner_cleanup_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
 # Copies files into a declared directory for `assemble_source_dir`, through
 # //dart:copy_toolchain_type. Only dart:io, so it names no pub dependencies.
 dart_binary(

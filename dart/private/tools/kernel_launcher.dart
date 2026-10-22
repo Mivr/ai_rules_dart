@@ -60,10 +60,23 @@ Future<void> main(List<String> args) async {
     exit(await vm.exitCode);
   } finally {
     if (scratch != null && !env.containsKey('TEST_TMPDIR')) {
-      try {
-        scratch.deleteSync(recursive: true);
-      } catch (_) {}
+      deleteScratchQuietly(scratch);
     }
+  }
+}
+
+/// Deletes a scratch directory the launcher no longer needs, ignoring failure.
+///
+/// Scratch cleanup is best-effort: the run's result no longer depends on these
+/// files, so a failure to remove one must not fail the run or mask its exit
+/// code. Only filesystem failures are ignored; anything else is a programming
+/// error and propagates.
+void deleteScratchQuietly(FileSystemEntity entity) {
+  if (!entity.existsSync()) return;
+  try {
+    entity.deleteSync(recursive: true);
+  } on FileSystemException {
+    // Best-effort cleanup; the run already has its result.
   }
 }
 
