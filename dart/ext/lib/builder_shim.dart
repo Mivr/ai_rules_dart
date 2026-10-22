@@ -103,11 +103,7 @@ class ShimArgs {
 
   static void _addInputOptions(ArgParser parser) {
     parser
-      ..addOption(
-        'input',
-        help: 'Input file exec-root path.',
-        mandatory: true,
-      )
+      ..addOption('input', help: 'Input file exec-root path.', mandatory: true)
       ..addMultiOption(
         'output',
         help:
@@ -753,12 +749,7 @@ Future<void> _runWithStaging(
     allowedOutputs: allowedOutputs,
     writeDiagnostic: writeDiagnostic,
   );
-  await _routeDeclaredOutputs(
-    writer,
-    allowedOutputs,
-    inputId,
-    absOutputPaths,
-  );
+  await _routeDeclaredOutputs(writer, allowedOutputs, inputId, absOutputPaths);
 }
 
 /// Dedupes staged inputs by asset path before staging. The same logical file
@@ -2128,10 +2119,7 @@ Future<List<String>> _collectStagedDartPaths(Directory stagingDir) async {
 /// analyzer accepts the file, so the guard scans what it can.
 Future<String?> _readStagedText(String path) async {
   try {
-    return utf8.decode(
-      await File(path).readAsBytes(),
-      allowMalformed: true,
-    );
+    return utf8.decode(await File(path).readAsBytes(), allowMalformed: true);
   } on FileSystemException {
     return null;
   }
