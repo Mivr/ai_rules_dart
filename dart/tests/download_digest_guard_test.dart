@@ -11,14 +11,17 @@ import 'package:test/test.dart';
 /// before any bytes move. Likewise every `http_archive` / `http_file` /
 /// `http_jar` instantiation — in `.bzl` files and in every `MODULE.bazel`,
 /// including dev and e2e ones — carries a non-empty literal `sha256` or
-/// `integrity`.
+/// `integrity`, no matter what local name it is called through: a load alias
+/// (`_x = "http_archive"`), a plain re-binding (`_y = _x`), or a
+/// `use_repo_rule` proxy (`_fetch = use_repo_rule(..., "http_archive")`).
 ///
 /// The test discovers its inputs by itself: it walks the live source tree
 /// from the workspace root (so a `.bzl` in a new package, with a new `BUILD`
 /// file and no other change, is checked without re-listing anything) and
 /// reports one `file:line` finding per violation. It runs unsandboxed and
 /// local, so it always re-runs: a file it never declared cannot change
-/// under a cached pass.
+/// under a cached pass. The `guard unit tests` group pins the checker itself
+/// against one inline source per evasion shape.
 void main() {
   group('download digest guard', () {
     test('the workspace root resolves and sources are discovered', () {
@@ -118,43 +121,175 @@ void main() {
 
     test('every http rule carries a non-empty literal checksum', () {
       final root = _workspaceRoot();
+      var calls = 0;
       final findings = <String>[];
-      var rules = 0;
       final files = [..._dartBzlFiles(root), ..._moduleFiles(root)];
       for (final file in files) {
-        final rel = _relative(root, file);
-        final original = file.readAsStringSync();
-        final blanked = _blanked(original);
-        for (final match in _httpRule.allMatches(blanked)) {
-          rules++;
-          final open = match.end - 1;
-          final close = _matchingParen(blanked, open);
-          final line =
-              '\n'.allMatches(blanked.substring(0, match.start)).length + 1;
-          if (close == -1) {
-            findings.add('$rel:$line: http_${match.group(1)} never closes');
-            continue;
-          }
-          final extent = original.substring(match.start, close + 1);
-          final literal = _literalChecksum.firstMatch(extent);
-          if (literal != null && literal.group(1)!.length > 2) continue;
-          if (_checksumAttr.hasMatch(extent)) {
-            findings.add(
-              '$rel:$line: http_${match.group(1)} rule without a non-empty literal sha256 or integrity; a variable, conditional or empty string pins nothing',
-            );
-          } else {
-            findings.add(
-              '$rel:$line: http_${match.group(1)} rule without sha256 or integrity',
-            );
-          }
-        }
+        final scan = _scanHttp(_relative(root, file), file.readAsStringSync());
+        calls += scan.calls;
+        findings.addAll(scan.findings);
       }
       expect(
-        rules,
+        calls,
         greaterThan(0),
-        reason: 'no http_archive/http_file/http_jar rule found; the checksum check would pass vacuously',
+        reason: 'no http_archive/http_file/http_jar instantiation found; the checksum check would pass vacuously',
       );
       expect(findings, isEmpty, reason: '\n${findings.join('\n')}');
+    });
+  });
+
+  group('guard unit tests', () {
+    test('a load alias without a checksum fails with file:line', () {
+      const src =
+          'load("@bazel_tools//tools/build_defs/repo:http.bzl", _my_archive = "http_archive")\n'
+          '\n'
+          '\n'
+          'def x():\n'
+          '    _my_archive(\n'
+          '        name = "x",\n'
+          '        urls = ["https://example.invalid/x.tgz"],\n'
+          '    )\n';
+      final scan = _scanHttp('probe.bzl', src);
+      expect(scan.calls, 1);
+      expect(scan.findings, hasLength(1));
+      expect(
+        scan.findings.single,
+        startsWith(
+          "probe.bzl:5: http_archive instantiation through '_my_archive' "
+          'without sha256 or integrity',
+        ),
+      );
+    });
+
+    test('a load alias with a literal checksum passes', () {
+      const src =
+          'load("@bazel_tools//tools/build_defs/repo:http.bzl", _my_archive = "http_archive")\n'
+          'def x():\n'
+          '    _my_archive(\n'
+          '        name = "x",\n'
+          '        sha256 = "86bea300d6701fb6c1fddc33b21235231d108b44a9793db9dcd48940fa46a6a6",\n'
+          '        urls = ["https://example.invalid/x.tgz"],\n'
+          '    )\n';
+      final scan = _scanHttp('probe.bzl', src);
+      expect(scan.calls, 1);
+      expect(scan.findings, isEmpty);
+    });
+
+    test('a re-binding chain without a checksum fails', () {
+      const src =
+          'load("@bazel_tools//tools/build_defs/repo:http.bzl", _my_archive = "http_archive")\n'
+          '_mid = _my_archive\n'
+          '_leaf = _mid\n'
+          'def x():\n'
+          '    _leaf(name = "x", urls = ["https://example.invalid/x.tgz"])\n';
+      final scan = _scanHttp('probe.bzl', src);
+      expect(scan.calls, 1);
+      expect(scan.findings, hasLength(1));
+      expect(
+        scan.findings.single,
+        startsWith(
+          "probe.bzl:5: http_archive instantiation through '_leaf' "
+          'without sha256 or integrity',
+        ),
+      );
+    });
+
+    test('a direct http_archive without a checksum still fails', () {
+      const src =
+          'http_archive(\n'
+          '    name = "x",\n'
+          '    urls = ["https://example.invalid/x.tgz"],\n'
+          ')\n';
+      final scan = _scanHttp('probe.bzl', src);
+      expect(scan.calls, 1);
+      expect(scan.findings, [
+        'probe.bzl:1: http_archive rule without sha256 or integrity',
+      ]);
+    });
+
+    test('a variable checksum through an alias pins nothing', () {
+      const src =
+          'load("@bazel_tools//tools/build_defs/repo:http.bzl", _my_archive = "http_archive")\n'
+          'def x():\n'
+          '    _my_archive(name = "x", sha256 = PIN, urls = ["https://example.invalid/x.tgz"])\n';
+      final scan = _scanHttp('probe.bzl', src);
+      expect(scan.calls, 1);
+      expect(scan.findings, hasLength(1));
+      expect(
+        scan.findings.single,
+        contains('without a non-empty literal sha256 or integrity'),
+      );
+    });
+
+    test('a use_repo_rule proxy without a checksum fails', () {
+      const src =
+          'my_fetch = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")\n'
+          '\n'
+          'my_fetch(\n'
+          '    name = "x",\n'
+          '    urls = ["https://example.invalid/x.tgz"],\n'
+          ')\n';
+      final scan = _scanHttp('MODULE.bazel', src);
+      expect(scan.calls, 1);
+      expect(scan.findings, [
+        "MODULE.bazel:3: http_archive instantiation through 'my_fetch' "
+            'without sha256 or integrity',
+      ]);
+    });
+
+    test('an http_file proxy with an empty integrity fails', () {
+      const src =
+          'my_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")\n'
+          'my_file(\n'
+          '    name = "x",\n'
+          '    integrity = "",\n'
+          '    urls = ["https://example.invalid/x.bin"],\n'
+          ')\n';
+      final scan = _scanHttp('MODULE.bazel', src);
+      expect(scan.calls, 1);
+      expect(scan.findings, hasLength(1));
+      expect(
+        scan.findings.single,
+        startsWith(
+          "MODULE.bazel:2: http_file instantiation through 'my_file' "
+          'without a non-empty literal sha256 or integrity',
+        ),
+      );
+    });
+
+    test('a pinned use_repo_rule proxy passes', () {
+      const src =
+          'http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")\n'
+          'http_archive(\n'
+          '    name = "x",\n'
+          '    sha256 = "86bea300d6701fb6c1fddc33b21235231d108b44a9793db9dcd48940fa46a6a6",\n'
+          '    urls = ["https://example.invalid/x.tgz"],\n'
+          ')\n';
+      final scan = _scanHttp('MODULE.bazel', src);
+      expect(scan.calls, 1);
+      expect(scan.findings, isEmpty);
+    });
+
+    test('a proxy of a non-http rule is not an http instantiation', () {
+      const src =
+          'my_git = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")\n'
+          'my_git(\n'
+          '    name = "x",\n'
+          '    remote = "https://example.invalid/x.git",\n'
+          ')\n';
+      final scan = _scanHttp('MODULE.bazel', src);
+      expect(scan.calls, 0);
+      expect(scan.findings, isEmpty);
+    });
+
+    test('a load alias of another symbol is not checked', () {
+      const src =
+          'load("//dart/pub:extensions.bzl", _plan = "plan_scope_sccs")\n'
+          'def x():\n'
+          '    return _plan()\n';
+      final scan = _scanHttp('probe.bzl', src);
+      expect(scan.calls, 0);
+      expect(scan.findings, isEmpty);
     });
   });
 }
@@ -177,8 +312,135 @@ final _getattrDownload = RegExp(
   'getattr\\s*\\([^()]*[\'"]download(_and_extract)?[\'"]',
 );
 
-/// `http_archive(`, `http_file(`, `http_jar(` call starts.
-final _httpRule = RegExp(r'\bhttp_(archive|file|jar)\s*\(');
+/// One examined file's http instantiations: direct `http_archive(` /
+/// `http_file(` / `http_jar(` calls, calls through load aliases and plain
+/// re-bindings, and calls through `use_repo_rule` proxies — each checked for
+/// a non-empty literal checksum, with one `file:line` finding per violation.
+class _HttpScan {
+  var calls = 0;
+  final findings = <String>[];
+}
+
+_HttpScan _scanHttp(String rel, String original) {
+  final scan = _HttpScan();
+  final blanked = _blanked(original);
+  final kinds = <String, String>{
+    ..._httpLocalNames(blanked, original),
+    ..._repoRuleProxies(blanked, original),
+  };
+  for (final entry in kinds.entries) {
+    final local = entry.key;
+    final kind = entry.value;
+    final what = local == 'http_$kind'
+        ? 'http_$kind rule'
+        : 'http_$kind instantiation through \'$local\'';
+    for (final match in RegExp(
+      '\\b${RegExp.escape(local)}\\s*\\(',
+    ).allMatches(blanked)) {
+      scan.calls++;
+      final open = match.end - 1;
+      final close = _matchingParen(blanked, open);
+      final line =
+          '\n'.allMatches(blanked.substring(0, match.start)).length + 1;
+      if (close == -1) {
+        scan.findings.add('$rel:$line: $what never closes');
+        continue;
+      }
+      final extent = original.substring(match.start, close + 1);
+      final literal = _literalChecksum.firstMatch(extent);
+      if (literal != null && literal.group(1)!.length > 2) continue;
+      if (_checksumAttr.hasMatch(extent)) {
+        scan.findings.add(
+          '$rel:$line: $what without a non-empty literal sha256 or integrity; '
+          'a variable, conditional or empty string pins nothing',
+        );
+      } else {
+        scan.findings.add('$rel:$line: $what without sha256 or integrity');
+      }
+    }
+  }
+  return scan;
+}
+
+/// Local names that instantiate an http rule in one file, mapped to their
+/// rule kind (`archive`, `file`, `jar`): the three rule names themselves,
+/// every load alias bound to one of them (`_x = "http_archive"` in any
+/// `load`, whatever file it loads from), and plain re-bindings (`_y = _x`)
+/// closed to a fixpoint so chains resolve.
+Map<String, String> _httpLocalNames(String blanked, String original) {
+  const kinds = {
+    'http_archive': 'archive',
+    'http_file': 'file',
+    'http_jar': 'jar',
+  };
+  final found = Map<String, String>.of(kinds);
+  for (final load in RegExp(r'\bload\s*\(').allMatches(blanked)) {
+    final close = _matchingParen(blanked, load.end - 1);
+    if (close == -1) continue;
+    final items = _loadItems
+        .allMatches(original.substring(load.start, close + 1))
+        .toList();
+    for (final item in items.skip(1)) {
+      final value = _unquote(item.group(2)!);
+      final kind = kinds[value];
+      if (kind != null) found[item.group(1) ?? value] = kind;
+    }
+  }
+  var changed = true;
+  while (changed) {
+    changed = false;
+    for (final m in _rebinding.allMatches(blanked)) {
+      final kind = found[m.group(2)];
+      if (kind != null && !found.containsKey(m.group(1))) {
+        found[m.group(1)!] = kind;
+        changed = true;
+      }
+    }
+  }
+  return found;
+}
+
+/// `use_repo_rule` proxies bound to an http rule in one module file, mapping
+/// the bound name to its rule kind. A proxy of any other rule is not an http
+/// instantiation and is ignored.
+Map<String, String> _repoRuleProxies(String blanked, String original) {
+  const kinds = {
+    'http_archive': 'archive',
+    'http_file': 'file',
+    'http_jar': 'jar',
+  };
+  final proxies = <String, String>{};
+  for (final m in RegExp(
+    r'([A-Za-z_][A-Za-z0-9_]*)\s*=\s*use_repo_rule\s*\(',
+  ).allMatches(blanked)) {
+    final close = _matchingParen(blanked, m.end - 1);
+    if (close == -1) continue;
+    final literals = RegExp('"[^"]*"|\'[^\']*\'')
+        .allMatches(original.substring(m.start, close + 1))
+        .map((lit) => _unquote(lit.group(0)!))
+        .toList();
+    if (literals.length >= 2 && kinds.containsKey(literals[1])) {
+      proxies[m.group(1)!] = kinds[literals[1]]!;
+    }
+  }
+  return proxies;
+}
+
+/// One `load` item: an optional `alias =` and its quoted symbol. The first
+/// item is the loaded file's label; the rest bind local names.
+final _loadItems = RegExp(
+  '(?:([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*)?("[^"]*"|\'[^\']*\')',
+);
+
+/// A plain re-binding: `name = other` with nothing else on the code line.
+/// `==`, `+=`, calls and attribute paths never match.
+final _rebinding = RegExp(
+  r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\s*$',
+  multiLine: true,
+);
+
+/// The quoted string without its quotes.
+String _unquote(String quoted) => quoted.substring(1, quoted.length - 1);
 
 /// A `sha256` / `integrity` argument with a single quoted-string value.
 /// Group 1 is the quotes plus their content; the caller requires content.
