@@ -593,10 +593,10 @@ def jit_train_key(short_path):
         The 16-character key both snapshot actions pass as `--train-key=`.
     """
     h = hash(short_path) % 4294967296
-    l = hash("rules_dart_jit:" + short_path) % 4294967296
+    lo = hash("rules_dart_jit:" + short_path) % 4294967296
     digits = "0123456789abcdef"
     key = ""
-    v = h * 4294967296 + l
+    v = h * 4294967296 + lo
     for _i in range(16):
         key = digits[v % 16] + key
         v = v // 16
