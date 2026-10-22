@@ -242,6 +242,128 @@ def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asse
         env = writable_home_env(dart_bin, output),
     )
 
+def _kernel_comma_snapshot(ctx, dart_sdk_info, tools, defines, extra_flags, jit_tool):
+    """Selects the patched `gen_kernel` snapshot for comma defines. Returns (gen_snapshot, comma_sources)."""
+    # A comma-containing value only survives the frontend when `gen_kernel`
+    # runs the toolchain's patched snapshot: the frontend splits `-D` values
+    # on commas. The patched snapshot is a declared action output taken as a
+    # tool input, so the patch runs once per SDK, not once per compile. The
+    # wrapper consumes the marker below and refuses comma defines without it,
+    # so a comma compile can never silently run the pristine snapshot. A
+    # comma `-D` in `dart_compile_flags` takes the same path: those flags all
+    # reach `gen_kernel` (see `dart_compile_action`), so they need the patch
+    # exactly like `defines` do.
+    comma_defines = has_comma_define(defines)
+    comma_flags = has_comma_define_flag(extra_flags)
+    comma_sources = []
+    if comma_defines:
+        comma_sources.append("`defines` %s" % (defines,))
+    if comma_flags:
+        comma_sources.append("`dart_compile_flags` %s" % (extra_flags,))
+    gen_snapshot = None
+    if comma_sources:
+        comma_source = " and ".join(comma_sources)
+        gen_snapshot = tools.patched_gen_kernel
+        if gen_snapshot == None:
+            fail(("dart_compile_action: target %s passes comma-containing " +
+                  "%s, but the SDK (Dart %s) declares no patched " +
+                  "`gen_kernel` snapshot, so no compile can keep the commas. " +
+                  "Use an SDK whose snapshot `comma_patch.dart` knows how " +
+                  "to patch.") % (ctx.label, comma_source, dart_sdk_info.version))
+        if jit_tool == None:
+            fail(("dart_compile_action: target %s passes comma-containing " +
+                  "%s, but no `jit_tool` wrapper runs its " +
+                  "`gen_kernel` step to authorize the patched snapshot.") %
+                 (ctx.label, comma_source))
+    return gen_snapshot, comma_sources
+
+def _kernel_front_args(ctx, tools, platform, package_config, gen_snapshot, product, aot, target_os, enable_asserts, defines, recorded_uses, extra_flags, native_assets_yaml, embed_sources, main_path, main, output):
+    """Builds the `gen_kernel` args and outputs. Returns (args, outputs)."""
+    args = gen_kernel_args(ctx, tools, platform, package_config, gen_kernel_snapshot = gen_snapshot)
+    args.add("-Ddart.vm.product=" + ("true" if product else "false"))
+    args.add_all(["-Ddart.vm.asan=false", "-Ddart.vm.msan=false", "-Ddart.vm.tsan=false"])
+    if aot:
+        args.add("--aot")
+        args.add("--tfa")
+        args.add("--no-embed-sources")
+        if target_os:
+            args.add("--target-os", target_os)
+    elif not embed_sources:
+        args.add("--no-embed-sources")
+    if native_assets_yaml != None:
+        args.add("--native-assets", native_assets_yaml)
+    if enable_asserts:
+        args.add("--enable-asserts")
+    for d in defines:
+        args.add("-D" + d)
+
+    outputs = [output]
+    if recorded_uses != None:
+        args.add(recorded_uses, format = "--recorded-usages-file=%s")
+        outputs.append(recorded_uses)
+
+    args.add_all(extra_flags)
+    args.add("-o", output)
+    args.add(STABLE_SCHEME + ":///" + stable_entry_path(ctx, main_path if main_path != None else main.path))
+    return args, outputs
+
+def _kernel_run_wrapper(ctx, dart_sdk_info, tools, package_config, args, direct, outputs, main, srcs, jit_tool, comma_patch, gen_snapshot, comma_sources):
+    """Runs `gen_kernel` through the isolated-filesystem wrapper."""
+    dartvm = sdk_dartvm(dart_sdk_info)
+    wrapper_args = ctx.actions.args()
+    wrapper_args.add(package_config, format = "--packages=%s")
+    wrapper_args.add(jit_tool)
+    wrapper_args.add("--gen-kernel")
+    wrapper_args.add(tools.dartaotruntime)
+    if comma_sources:
+        # After `dartaotruntime`: `_runGenKernel` takes `argv.first` as the
+        # runtime positionally and consumes this marker in its flag loop,
+        # never forwarding it to `gen_kernel`.
+        wrapper_args.add("--comma-patched-snapshot")
+    input_srcs_args = ctx.actions.args()
+    input_srcs_args.use_param_file("--input-sources-file=%s", use_always = True)
+    input_srcs_args.set_param_file_format("multiline")
+    input_srcs_args.add_all(depset([main] + srcs))
+    direct.append(jit_tool)
+    if comma_patch != None:
+        direct.append(comma_patch)
+    if gen_snapshot != None:
+        # The patched snapshot lives in `bazel-out`, outside the SDK file
+        # sets, so it is declared explicitly. Builds without comma defines
+        # never take it and never run the action that produces it.
+        direct.append(gen_snapshot)
+    if dartvm != None:
+        direct.append(dartvm)
+    else:
+        direct.append(dart_sdk_info.dart)
+    ctx.actions.run(
+        executable = dartvm if dartvm != None else dart_sdk_info.dart,
+        arguments = [wrapper_args, input_srcs_args, args],
+        inputs = depset(
+            direct = direct,
+            transitive = [dart_sdk_info.compile_files],
+        ),
+        outputs = outputs,
+        mnemonic = "DartKernel",
+        progress_message = "Compiling Dart kernel %s" % ctx.label,
+        env = writable_home_env(dart_sdk_info.dart, outputs[0]),
+    )
+
+def _kernel_run_direct(ctx, dart_sdk_info, tools, args, direct, outputs):
+    """Runs `gen_kernel` directly via `dartaotruntime`."""
+    ctx.actions.run(
+        executable = tools.dartaotruntime,
+        arguments = [args],
+        inputs = depset(
+            direct = direct,
+            transitive = [dart_sdk_info.compile_files],
+        ),
+        outputs = outputs,
+        mnemonic = "DartKernel",
+        progress_message = "Compiling Dart kernel %s" % ctx.label,
+        env = writable_home_env(dart_sdk_info.dart, outputs[0]),
+    )
+
 def _kernel_action(
         ctx,
         dart_sdk_info,
@@ -311,122 +433,18 @@ def _kernel_action(
     tools = find_sdk_kernel_tools(dart_sdk_info)
     platform = tools.product_platform_dill if product else tools.platform_dill
 
-    # A comma-containing value only survives the frontend when `gen_kernel`
-    # runs the toolchain's patched snapshot: the frontend splits `-D` values
-    # on commas. The patched snapshot is a declared action output taken as a
-    # tool input, so the patch runs once per SDK, not once per compile. The
-    # wrapper consumes the marker below and refuses comma defines without it,
-    # so a comma compile can never silently run the pristine snapshot. A
-    # comma `-D` in `dart_compile_flags` takes the same path: those flags all
-    # reach `gen_kernel` (see `dart_compile_action`), so they need the patch
-    # exactly like `defines` do.
-    comma_defines = has_comma_define(defines)
-    comma_flags = has_comma_define_flag(extra_flags)
-    comma_sources = []
-    if comma_defines:
-        comma_sources.append("`defines` %s" % (defines,))
-    if comma_flags:
-        comma_sources.append("`dart_compile_flags` %s" % (extra_flags,))
-    gen_snapshot = None
-    if comma_sources:
-        comma_source = " and ".join(comma_sources)
-        gen_snapshot = tools.patched_gen_kernel
-        if gen_snapshot == None:
-            fail(("dart_compile_action: target %s passes comma-containing " +
-                  "%s, but the SDK (Dart %s) declares no patched " +
-                  "`gen_kernel` snapshot, so no compile can keep the commas. " +
-                  "Use an SDK whose snapshot `comma_patch.dart` knows how " +
-                  "to patch.") % (ctx.label, comma_source, dart_sdk_info.version))
-        if jit_tool == None:
-            fail(("dart_compile_action: target %s passes comma-containing " +
-                  "%s, but no `jit_tool` wrapper runs its " +
-                  "`gen_kernel` step to authorize the patched snapshot.") %
-                 (ctx.label, comma_source))
-    args = gen_kernel_args(ctx, tools, platform, package_config, gen_kernel_snapshot = gen_snapshot)
-    args.add("-Ddart.vm.product=" + ("true" if product else "false"))
-    args.add_all(["-Ddart.vm.asan=false", "-Ddart.vm.msan=false", "-Ddart.vm.tsan=false"])
-    if aot:
-        args.add("--aot")
-        args.add("--tfa")
-        args.add("--no-embed-sources")
-        if target_os:
-            args.add("--target-os", target_os)
-    elif not embed_sources:
-        args.add("--no-embed-sources")
-    if native_assets_yaml != None:
-        args.add("--native-assets", native_assets_yaml)
-    if enable_asserts:
-        args.add("--enable-asserts")
-    for d in defines:
-        args.add("-D" + d)
-
-    outputs = [output]
-    if recorded_uses != None:
-        args.add(recorded_uses, format = "--recorded-usages-file=%s")
-        outputs.append(recorded_uses)
-
-    args.add_all(extra_flags)
-    args.add("-o", output)
-    args.add(STABLE_SCHEME + ":///" + stable_entry_path(ctx, main_path if main_path != None else main.path))
+    gen_snapshot, comma_sources = _kernel_comma_snapshot(ctx, dart_sdk_info, tools, defines, extra_flags, jit_tool)
+    args, outputs = _kernel_front_args(ctx, tools, platform, package_config, gen_snapshot, product, aot, target_os, enable_asserts, defines, recorded_uses, extra_flags, native_assets_yaml, embed_sources, main_path, main, output)
 
     direct = [main, package_config] + srcs
     if native_assets_yaml != None:
         direct.append(native_assets_yaml)
 
     if jit_tool != None:
-        dartvm = sdk_dartvm(dart_sdk_info)
-        wrapper_args = ctx.actions.args()
-        wrapper_args.add(package_config, format = "--packages=%s")
-        wrapper_args.add(jit_tool)
-        wrapper_args.add("--gen-kernel")
-        wrapper_args.add(tools.dartaotruntime)
-        if comma_sources:
-            # After `dartaotruntime`: `_runGenKernel` takes `argv.first` as the
-            # runtime positionally and consumes this marker in its flag loop,
-            # never forwarding it to `gen_kernel`.
-            wrapper_args.add("--comma-patched-snapshot")
-        input_srcs_args = ctx.actions.args()
-        input_srcs_args.use_param_file("--input-sources-file=%s", use_always = True)
-        input_srcs_args.set_param_file_format("multiline")
-        input_srcs_args.add_all(depset([main] + srcs))
-        direct.append(jit_tool)
-        if comma_patch != None:
-            direct.append(comma_patch)
-        if gen_snapshot != None:
-            # The patched snapshot lives in `bazel-out`, outside the SDK file
-            # sets, so it is declared explicitly. Builds without comma defines
-            # never take it and never run the action that produces it.
-            direct.append(gen_snapshot)
-        if dartvm != None:
-            direct.append(dartvm)
-        else:
-            direct.append(dart_sdk_info.dart)
-        ctx.actions.run(
-            executable = dartvm if dartvm != None else dart_sdk_info.dart,
-            arguments = [wrapper_args, input_srcs_args, args],
-            inputs = depset(
-                direct = direct,
-                transitive = [dart_sdk_info.compile_files],
-            ),
-            outputs = outputs,
-            mnemonic = "DartKernel",
-            progress_message = "Compiling Dart kernel %s" % ctx.label,
-            env = writable_home_env(dart_sdk_info.dart, output),
-        )
+        _kernel_run_wrapper(ctx, dart_sdk_info, tools, package_config, args, direct, outputs, main, srcs, jit_tool, comma_patch, gen_snapshot, comma_sources)
         return
 
-    ctx.actions.run(
-        executable = tools.dartaotruntime,
-        arguments = [args],
-        inputs = depset(
-            direct = direct,
-            transitive = [dart_sdk_info.compile_files],
-        ),
-        outputs = outputs,
-        mnemonic = "DartKernel",
-        progress_message = "Compiling Dart kernel %s" % ctx.label,
-        env = writable_home_env(dart_sdk_info.dart, output),
-    )
+    _kernel_run_direct(ctx, dart_sdk_info, tools, args, direct, outputs)
 
 _SUPPORTED_CROSS_TARGET_PAIRS = {
     ("linux", "x64"): True,
@@ -456,6 +474,208 @@ def cross_target_error(target_os, target_arch):
             target_arch,
         )
     return None
+
+def _compile_validate(ctx, compile_mode, recorded_uses, jit_tool, comma_patch, target_os, target_arch, defines, package_config):
+    """Fails on invalid cross targets, late defines, unrecordable modes, and tool mismatches."""
+    cross_err = cross_target_error(target_os, target_arch)
+    if cross_err != None:
+        fail(cross_err)
+    stage_err = defines_stage_error(defines, package_config)
+    if stage_err != None:
+        fail(stage_err)
+    if recorded_uses != None and compile_mode not in RECORDING_COMPILE_MODES:
+        fail("dart_compile_action: `dart compile %s` records no uses." % compile_mode)
+    if jit_tool != None and comma_patch == None:
+        fail("dart_compile_action: target %s passes `jit_tool` without the " +
+             "`comma_patch.dart` File it imports, so no action could run it " +
+             "from source. Pass `comma_patch` alongside `jit_tool`." % ctx.label)
+
+def _compile_split_flags(extra_flags, package_config):
+    """Splits extra flags between the front end and `dart compile`. Returns (front_end_flags, backend_flags)."""
+    # The front end consumes its flags, so they go to `gen_kernel` for a source
+    # entrypoint. `kernel` is the `gen_kernel` stage itself and gets them all; a
+    # pre-built kernel has no front end to receive them.
+    if package_config == None:
+        return [], extra_flags
+    split = split_compile_flags(extra_flags)
+    if split.error != None:
+        fail(split.error)
+    return split.front_end, split.backend
+
+def _compile_kernel_mode(ctx, dart_sdk_info, main, srcs, package_config, output, main_path, defines, front_end_flags, backend_flags, jit_tool, comma_patch, native_assets_yaml, embed_sources):
+    """Runs the `kernel` mode's lone `gen_kernel` step."""
+    _kernel_action(
+        ctx = ctx,
+        dart_sdk_info = dart_sdk_info,
+        main = main,
+        srcs = srcs,
+        package_config = package_config,
+        output = output,
+        main_path = main_path,
+        aot = False,
+        target_os = "",
+        enable_asserts = False,
+        defines = defines,
+        recorded_uses = None,
+        extra_flags = front_end_flags + backend_flags,
+        jit_tool = jit_tool,
+        comma_patch = comma_patch,
+        native_assets_yaml = native_assets_yaml,
+        embed_sources = embed_sources,
+        product = True,
+    )
+
+def _compile_front_end(ctx, dart_sdk_info, main, srcs, package_config, output, main_path, compile_mode, mode_flags, target_os, defines, front_end_flags, jit_tool, comma_patch, native_assets_yaml, embed_sources):
+    """Runs the front-end `gen_kernel` step. Returns the kernel File feeding `dart compile`."""
+    # The front end runs once, here, with the stable URIs. Its kernel is the
+    # input of the `dart compile` step below.
+    aot = compile_mode in RECORDING_COMPILE_MODES
+    kernel = ctx.actions.declare_file(output.basename + ".dill")
+    _kernel_action(
+        ctx = ctx,
+        dart_sdk_info = dart_sdk_info,
+        main = main,
+        srcs = srcs,
+        package_config = package_config,
+        output = kernel,
+        main_path = main_path,
+        aot = aot,
+        target_os = target_os,
+        enable_asserts = "--enable-asserts" in mode_flags and "--enable-asserts" not in front_end_flags,
+        defines = defines,
+        recorded_uses = None,
+        extra_flags = front_end_flags,
+        jit_tool = jit_tool,
+        comma_patch = comma_patch,
+        native_assets_yaml = native_assets_yaml,
+        embed_sources = embed_sources,
+        product = compile_mode != "jit-snapshot",
+    )
+    return kernel
+
+def _compile_jit_train(ctx, dart_sdk_info, compile_mode, jit_tool, compile_main, compile_main_path, dart_bin, backend_flags, output, enable_asserts, comma_patch, jit_snapshot_fallback):
+    """Trains the app-JIT snapshot when eligible. Returns True when the output is produced."""
+    # The app-JIT snapshot is trained by the scratch-directory tool when it has
+    # one, and on a POSIX host (on Windows the mode uses `dart compile
+    # jit-snapshot`, so the snapshot keeps the sandbox path).
+    if compile_mode != "jit-snapshot" or jit_tool == None or compile_main_path != None or dart_bin.basename.endswith(".exe"):
+        return False
+    if backend_flags:
+        fail("dart_compile_flags %s do not apply to jit-snapshot" % backend_flags)
+    _jit_snapshot_action(
+        ctx = ctx,
+        dart_sdk_info = dart_sdk_info,
+        jit_tool = jit_tool,
+        comma_patch = comma_patch,
+        main = compile_main,
+        output = output,
+        enable_asserts = enable_asserts,
+        fallback_allowed = jit_snapshot_fallback,
+    )
+    return True
+
+def _compile_aot_wrapper(ctx, dart_sdk_info, dart_bin, sdk_files, jit_tool, comma_patch, pkg_cfg, compile_main, compile_main_path, compile_srcs, compile_mode, target_os, target_arch, cross_gen_snapshot, cross_dartaotruntime, mode_flags, enable_asserts, backend_flags, output, compile_recorded_uses):
+    """Compiles exe/aot/jit via the isolated-filesystem wrapper. Returns True when it ran."""
+    if compile_mode not in ("exe", "aot-snapshot", "jit-snapshot") or jit_tool == None or compile_main_path != None:
+        return False
+    if pkg_cfg == None:
+        pkg_cfg = ctx.actions.declare_file(output.basename + ".aot_package_config.json")
+        ctx.actions.write(output = pkg_cfg, content = "{\"configVersion\": 2, \"packages\": []}\n")
+    args = ctx.actions.args()
+    args.add(pkg_cfg, format = "--packages=%s")
+    args.add(jit_tool)
+    args.add("--aot")
+    args.add(dart_bin, format = "--dart=%s")
+    args.add(compile_mode, format = "--mode=%s")
+    if target_os:
+        args.add("--target-os", target_os)
+    if target_arch:
+        args.add("--target-arch", target_arch)
+    if cross_gen_snapshot != None:
+        args.add(cross_gen_snapshot, format = "--gen-snapshot=%s")
+    if cross_dartaotruntime != None:
+        args.add(cross_dartaotruntime, format = "--dartaotruntime=%s")
+    args.add_all(compile_quiet_flags(compile_mode))
+    args.add_all(mode_flags)
+    if enable_asserts and "--enable-asserts" not in mode_flags and "--enable-asserts" not in backend_flags:
+        args.add("--enable-asserts")
+    outputs = [output]
+    if compile_recorded_uses != None:
+        args.add(compile_recorded_uses, format = "--recorded-uses=%s")
+        outputs.append(compile_recorded_uses)
+    args.add_all(backend_flags)
+    args.add("-o", output)
+    args.add(compile_main)
+    direct_inputs = [jit_tool, pkg_cfg, compile_main] + compile_srcs
+    if comma_patch != None:
+        direct_inputs.append(comma_patch)
+    if cross_gen_snapshot != None:
+        direct_inputs.append(cross_gen_snapshot)
+    if cross_dartaotruntime != None:
+        direct_inputs.append(cross_dartaotruntime)
+    ctx.actions.run(
+        executable = dart_bin,
+        arguments = [args],
+        inputs = depset(
+            direct = direct_inputs,
+            transitive = [sdk_files],
+        ),
+        outputs = outputs,
+        mnemonic = "DartCompile",
+        progress_message = "Compiling Dart %s %s" % (compile_mode, ctx.label),
+        env = writable_home_env(dart_bin, output),
+    )
+    return True
+
+def _compile_dart_compile(ctx, dart_bin, sdk_files, compile_main, compile_main_path, compile_srcs, compile_mode, target_os, target_arch, cross_gen_snapshot, cross_dartaotruntime, mode_flags, enable_asserts, backend_flags, output, compile_recorded_uses):
+    """Runs the plain `dart compile` action."""
+    args = ctx.actions.args()
+    args.add("compile")
+    args.add(compile_mode)
+    args.add_all(compile_quiet_flags(compile_mode))
+
+    # Cross-compilation flags (only valid for exe and aot-snapshot modes)
+    if target_os and (compile_mode == "exe" or compile_mode == "aot-snapshot"):
+        args.add("--target-os", target_os)
+    if target_arch and (compile_mode == "exe" or compile_mode == "aot-snapshot"):
+        args.add("--target-arch", target_arch)
+
+    # Compilation mode defaults
+    args.add_all(mode_flags)
+    if enable_asserts and "--enable-asserts" not in mode_flags and "--enable-asserts" not in backend_flags:
+        args.add("--enable-asserts")
+
+    outputs = [output]
+    if compile_recorded_uses != None:
+        args.add(compile_recorded_uses, format = "--recorded-uses=%s")
+        outputs.append(compile_recorded_uses)
+
+    # Per-target extra flags (last, so they can override defaults)
+    args.add_all(backend_flags)
+
+    args.add("-o", output)
+    args.add(compile_main_path if compile_main_path != None else compile_main)
+
+    env = writable_home_env(dart_bin, output)
+
+    direct_inputs = [compile_main] + compile_srcs
+    if cross_gen_snapshot != None and compile_mode in ("exe", "aot-snapshot"):
+        direct_inputs.append(cross_gen_snapshot)
+    if cross_dartaotruntime != None and compile_mode in ("exe", "aot-snapshot"):
+        direct_inputs.append(cross_dartaotruntime)
+
+    ctx.actions.run(
+        executable = dart_bin,
+        arguments = [args],
+        inputs = depset(
+            direct = direct_inputs,
+            transitive = [sdk_files],
+        ),
+        outputs = outputs,
+        mnemonic = "DartCompile",
+        progress_message = "Compiling Dart %s %s" % (compile_mode, ctx.label),
+        env = env,
+    )
 
 def dart_compile_action(
         ctx,
@@ -524,33 +744,12 @@ def dart_compile_action(
             snapshot action's command line, so builds that allow the fallback
             and builds that do not have different action keys.
     """
-    cross_err = cross_target_error(target_os, target_arch)
-    if cross_err != None:
-        fail(cross_err)
-    stage_err = defines_stage_error(defines, package_config)
-    if stage_err != None:
-        fail(stage_err)
-    if recorded_uses != None and compile_mode not in RECORDING_COMPILE_MODES:
-        fail("dart_compile_action: `dart compile %s` records no uses." % compile_mode)
-    if jit_tool != None and comma_patch == None:
-        fail("dart_compile_action: target %s passes `jit_tool` without the " +
-             "`comma_patch.dart` File it imports, so no action could run it " +
-             "from source. Pass `comma_patch` alongside `jit_tool`." % ctx.label)
+    _compile_validate(ctx, compile_mode, recorded_uses, jit_tool, comma_patch, target_os, target_arch, defines, package_config)
 
     dart_bin = dart_sdk_info.dart
     sdk_files = dart_sdk_info.compile_files
 
-    # The front end consumes its flags, so they go to `gen_kernel` for a source
-    # entrypoint. `kernel` is the `gen_kernel` stage itself and gets them all; a
-    # pre-built kernel has no front end to receive them.
-    front_end_flags = []
-    backend_flags = extra_flags
-    if package_config != None:
-        split = split_compile_flags(extra_flags)
-        if split.error != None:
-            fail(split.error)
-        front_end_flags = split.front_end
-        backend_flags = split.backend
+    front_end_flags, backend_flags = _compile_split_flags(extra_flags, package_config)
 
     mode_flags = get_compilation_mode_flags(ctx, compile_mode)
     enable_asserts = (
@@ -565,173 +764,21 @@ def dart_compile_action(
     compile_recorded_uses = recorded_uses
     if package_config != None:
         if compile_mode == "kernel":
-            _kernel_action(
-                ctx = ctx,
-                dart_sdk_info = dart_sdk_info,
-                main = main,
-                srcs = srcs,
-                package_config = package_config,
-                output = output,
-                main_path = main_path,
-                aot = False,
-                target_os = "",
-                enable_asserts = False,
-                defines = defines,
-                recorded_uses = None,
-                extra_flags = front_end_flags + backend_flags,
-                jit_tool = jit_tool,
-                comma_patch = comma_patch,
-                native_assets_yaml = native_assets_yaml,
-                embed_sources = embed_sources,
-                product = True,
-            )
+            _compile_kernel_mode(ctx, dart_sdk_info, main, srcs, package_config, output, main_path, defines, front_end_flags, backend_flags, jit_tool, comma_patch, native_assets_yaml, embed_sources)
             return
 
-        # The front end runs once, here, with the stable URIs. Its kernel is the
-        # input of the `dart compile` step below.
-        aot = compile_mode in RECORDING_COMPILE_MODES
-        kernel = ctx.actions.declare_file(output.basename + ".dill")
-        _kernel_action(
-            ctx = ctx,
-            dart_sdk_info = dart_sdk_info,
-            main = main,
-            srcs = srcs,
-            package_config = package_config,
-            output = kernel,
-            main_path = main_path,
-            aot = aot,
-            target_os = target_os,
-            enable_asserts = "--enable-asserts" in mode_flags and "--enable-asserts" not in front_end_flags,
-            defines = defines,
-            recorded_uses = None,
-            extra_flags = front_end_flags,
-            jit_tool = jit_tool,
-            comma_patch = comma_patch,
-            native_assets_yaml = native_assets_yaml,
-            embed_sources = embed_sources,
-            product = compile_mode != "jit-snapshot",
-        )
-        compile_main = kernel
+        compile_main = _compile_front_end(ctx, dart_sdk_info, main, srcs, package_config, output, main_path, compile_mode, mode_flags, target_os, defines, front_end_flags, jit_tool, comma_patch, native_assets_yaml, embed_sources)
         compile_main_path = None
         compile_srcs = []
 
-    # The app-JIT snapshot is trained by the scratch-directory tool when it has
-    # one, and on a POSIX host (on Windows the mode uses `dart compile
-    # jit-snapshot`, so the snapshot keeps the sandbox path).
-    if compile_mode == "jit-snapshot" and jit_tool != None and compile_main_path == None and not dart_bin.basename.endswith(".exe"):
-        if backend_flags:
-            fail("dart_compile_flags %s do not apply to jit-snapshot" % backend_flags)
-        _jit_snapshot_action(
-            ctx = ctx,
-            dart_sdk_info = dart_sdk_info,
-            jit_tool = jit_tool,
-            comma_patch = comma_patch,
-            main = compile_main,
-            output = output,
-            enable_asserts = enable_asserts,
-            fallback_allowed = jit_snapshot_fallback,
-        )
+    if _compile_jit_train(ctx, dart_sdk_info, compile_mode, jit_tool, compile_main, compile_main_path, dart_bin, backend_flags, output, enable_asserts, comma_patch, jit_snapshot_fallback):
         return
 
     is_cross = bool(target_os) or bool(target_arch)
     cross_gen_snapshot = getattr(dart_sdk_info, "cross_gen_snapshot", None) if is_cross else None
     cross_dartaotruntime = getattr(dart_sdk_info, "cross_dartaotruntime", None) if is_cross else None
 
-    if compile_mode in ("exe", "aot-snapshot", "jit-snapshot") and jit_tool != None and compile_main_path == None:
-        pkg_cfg = package_config
-        if pkg_cfg == None:
-            pkg_cfg = ctx.actions.declare_file(output.basename + ".aot_package_config.json")
-            ctx.actions.write(output = pkg_cfg, content = "{\"configVersion\": 2, \"packages\": []}\n")
-        args = ctx.actions.args()
-        args.add(pkg_cfg, format = "--packages=%s")
-        args.add(jit_tool)
-        args.add("--aot")
-        args.add(dart_bin, format = "--dart=%s")
-        args.add(compile_mode, format = "--mode=%s")
-        if target_os:
-            args.add("--target-os", target_os)
-        if target_arch:
-            args.add("--target-arch", target_arch)
-        if cross_gen_snapshot != None:
-            args.add(cross_gen_snapshot, format = "--gen-snapshot=%s")
-        if cross_dartaotruntime != None:
-            args.add(cross_dartaotruntime, format = "--dartaotruntime=%s")
-        args.add_all(compile_quiet_flags(compile_mode))
-        args.add_all(mode_flags)
-        if enable_asserts and "--enable-asserts" not in mode_flags and "--enable-asserts" not in backend_flags:
-            args.add("--enable-asserts")
-        outputs = [output]
-        if compile_recorded_uses != None:
-            args.add(compile_recorded_uses, format = "--recorded-uses=%s")
-            outputs.append(compile_recorded_uses)
-        args.add_all(backend_flags)
-        args.add("-o", output)
-        args.add(compile_main)
-        direct_inputs = [jit_tool, pkg_cfg, compile_main] + compile_srcs
-        if comma_patch != None:
-            direct_inputs.append(comma_patch)
-        if cross_gen_snapshot != None:
-            direct_inputs.append(cross_gen_snapshot)
-        if cross_dartaotruntime != None:
-            direct_inputs.append(cross_dartaotruntime)
-        ctx.actions.run(
-            executable = dart_bin,
-            arguments = [args],
-            inputs = depset(
-                direct = direct_inputs,
-                transitive = [sdk_files],
-            ),
-            outputs = outputs,
-            mnemonic = "DartCompile",
-            progress_message = "Compiling Dart %s %s" % (compile_mode, ctx.label),
-            env = writable_home_env(dart_bin, output),
-        )
+    if _compile_aot_wrapper(ctx, dart_sdk_info, dart_bin, sdk_files, jit_tool, comma_patch, package_config, compile_main, compile_main_path, compile_srcs, compile_mode, target_os, target_arch, cross_gen_snapshot, cross_dartaotruntime, mode_flags, enable_asserts, backend_flags, output, compile_recorded_uses):
         return
 
-    args = ctx.actions.args()
-    args.add("compile")
-    args.add(compile_mode)
-    args.add_all(compile_quiet_flags(compile_mode))
-
-    # Cross-compilation flags (only valid for exe and aot-snapshot modes)
-    if target_os and (compile_mode == "exe" or compile_mode == "aot-snapshot"):
-        args.add("--target-os", target_os)
-    if target_arch and (compile_mode == "exe" or compile_mode == "aot-snapshot"):
-        args.add("--target-arch", target_arch)
-
-    # Compilation mode defaults
-    args.add_all(mode_flags)
-    if enable_asserts and "--enable-asserts" not in mode_flags and "--enable-asserts" not in backend_flags:
-        args.add("--enable-asserts")
-
-    outputs = [output]
-    if compile_recorded_uses != None:
-        args.add(compile_recorded_uses, format = "--recorded-uses=%s")
-        outputs.append(compile_recorded_uses)
-
-    # Per-target extra flags (last, so they can override defaults)
-    args.add_all(backend_flags)
-
-    args.add("-o", output)
-    args.add(compile_main_path if compile_main_path != None else compile_main)
-
-    env = writable_home_env(dart_bin, output)
-
-    direct_inputs = [compile_main] + compile_srcs
-    if cross_gen_snapshot != None and compile_mode in ("exe", "aot-snapshot"):
-        direct_inputs.append(cross_gen_snapshot)
-    if cross_dartaotruntime != None and compile_mode in ("exe", "aot-snapshot"):
-        direct_inputs.append(cross_dartaotruntime)
-
-    ctx.actions.run(
-        executable = dart_bin,
-        arguments = [args],
-        inputs = depset(
-            direct = direct_inputs,
-            transitive = [sdk_files],
-        ),
-        outputs = outputs,
-        mnemonic = "DartCompile",
-        progress_message = "Compiling Dart %s %s" % (compile_mode, ctx.label),
-        env = env,
-    )
+    _compile_dart_compile(ctx, dart_bin, sdk_files, compile_main, compile_main_path, compile_srcs, compile_mode, target_os, target_arch, cross_gen_snapshot, cross_dartaotruntime, mode_flags, enable_asserts, backend_flags, output, compile_recorded_uses)
