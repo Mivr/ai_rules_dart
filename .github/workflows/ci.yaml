@@ -576,6 +576,76 @@ jobs:
           fi
           bazel build @bad_scc//... 2>&1 | grep -F -q 'pub_lock_scc_package "collection" (1.18.0) requires a non-empty sha256.'
           echo "OK: expected missing-checksum error detected"
+      # Each `e2e/digest_mismatch` case fetches the committed fixture over a
+      # local file:// URL through `pinned_download` with a different digest
+      # shape. Malformed shapes fail before any bytes move with the helper's
+      # own message (which names the URL, so only its stable half is grepped);
+      # the wrong digest fails on Bazel's checksum comparison; the correct
+      # digest succeeds. No network is involved.
+      - name: digest_mismatch — expect an empty digest to fail the fetch
+        working-directory: e2e/digest_mismatch
+        run: |
+          if bazel build @bad_empty//... 2>/dev/null; then
+            echo "ERROR: build should have failed with an empty-digest error"
+            exit 1
+          fi
+          bazel build @bad_empty//... 2>&1 | grep -F -q 'pinned_download: refusing to fetch'
+          bazel build @bad_empty//... 2>&1 | grep -F -q '"sha256" must be exactly 64 lowercase hex digits, got "".'
+          echo "OK: expected empty-digest error detected"
+      - name: digest_mismatch — expect a short digest to fail the fetch
+        working-directory: e2e/digest_mismatch
+        run: |
+          if bazel build @bad_short//... 2>/dev/null; then
+            echo "ERROR: build should have failed with a short-digest error"
+            exit 1
+          fi
+          bazel build @bad_short//... 2>&1 | grep -F -q 'pinned_download: refusing to fetch'
+          bazel build @bad_short//... 2>&1 | grep -F -q '"sha256" must be exactly 64 lowercase hex digits, got "86bea300d6701fb6c1fddc33b21235231d108b44a9793db9dcd48940fa46a6a".'
+          echo "OK: expected short-digest error detected"
+      - name: digest_mismatch — expect an uppercase digest to fail the fetch
+        working-directory: e2e/digest_mismatch
+        run: |
+          if bazel build @bad_upper//... 2>/dev/null; then
+            echo "ERROR: build should have failed with an uppercase-digest error"
+            exit 1
+          fi
+          bazel build @bad_upper//... 2>&1 | grep -F -q 'pinned_download: refusing to fetch'
+          bazel build @bad_upper//... 2>&1 | grep -F -q '"sha256" must be exactly 64 lowercase hex digits, got "86BEA300D6701FB6C1FDDC33B21235231D108B44A9793DB9DCD48940FA46A6A6".'
+          echo "OK: expected uppercase-digest error detected"
+      - name: digest_mismatch — expect an SRI digest to fail the fetch
+        working-directory: e2e/digest_mismatch
+        run: |
+          if bazel build @bad_sri//... 2>/dev/null; then
+            echo "ERROR: build should have failed with an SRI-digest error"
+            exit 1
+          fi
+          bazel build @bad_sri//... 2>&1 | grep -F -q 'pinned_download: refusing to fetch'
+          bazel build @bad_sri//... 2>&1 | grep -F -q '"sha256" must be exactly 64 lowercase hex digits, got "sha256-hr6jANZwH7bB/dwzshI1Ix0Qi0SpeT253NSJQPpGpqY=".'
+          echo "OK: expected SRI-digest error detected"
+      - name: digest_mismatch — expect a conditional blank digest to fail the fetch
+        working-directory: e2e/digest_mismatch
+        run: |
+          if bazel build @bad_conditional//... 2>/dev/null; then
+            echo "ERROR: build should have failed with a conditional-blank-digest error"
+            exit 1
+          fi
+          bazel build @bad_conditional//... 2>&1 | grep -F -q 'pinned_download: refusing to fetch'
+          bazel build @bad_conditional//... 2>&1 | grep -F -q '"sha256" must be exactly 64 lowercase hex digits, got "".'
+          echo "OK: expected conditional-blank-digest error detected"
+      - name: digest_mismatch — expect a wrong digest to fail the fetch
+        working-directory: e2e/digest_mismatch
+        run: |
+          if bazel build @bad_wrong//... 2>/dev/null; then
+            echo "ERROR: build should have failed with a checksum-mismatch error"
+            exit 1
+          fi
+          bazel build @bad_wrong//... 2>&1 | grep -F -q 'Checksum was 86bea300d6701fb6c1fddc33b21235231d108b44a9793db9dcd48940fa46a6a6 but wanted 86bea300d6701fb6c1fddc33b21235231d108b44a9793db9dcd48940fa46a6a7'
+          echo "OK: expected checksum-mismatch error detected"
+      - name: digest_mismatch — a correct digest on the same fixture succeeds
+        working-directory: e2e/digest_mismatch
+        run: |
+          bazel build @good//...
+          echo "OK: correct digest fetched"
       # An SDK version outside the pinned toolchain table must fail instead
       # of downloading an SDK release with no recorded checksum.
       - name: sdk_unknown_version — expect an unpinned SDK version to fail resolution

@@ -1,0 +1,20 @@
+module(name = "digest_mismatch_e2e")
+
+bazel_dep(name = "rules_dart", version = "0.0.0")
+local_path_override(
+    module_name = "rules_dart",
+    path = "../..",
+)
+
+digest = use_extension("//:red.bzl", "digest")
+digest.fixture(fixture = "//:fixture.bin")
+use_repo(
+    digest,
+    "bad_conditional",
+    "bad_empty",
+    "bad_short",
+    "bad_sri",
+    "bad_upper",
+    "bad_wrong",
+    "good",
+)

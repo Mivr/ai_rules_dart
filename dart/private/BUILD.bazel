@@ -83,10 +83,14 @@ config_setting(
     visibility = ["//visibility:public"],
 )
 
+# Public so the `e2e/digest_mismatch` red workspace — a separate module that
+# exercises the digest shapes as an external consumer — can load the helpers
+# without tripping buildifier's bzl-visibility check. Every in-module call
+# site loads them the same way.
 bzl_library(
     name = "download",
     srcs = ["download.bzl"],
-    visibility = ["//dart:__subpackages__"],
+    visibility = ["//visibility:public"],
 )
 
 bzl_library(
