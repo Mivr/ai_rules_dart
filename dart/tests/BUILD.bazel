@@ -98,10 +98,19 @@ build_test(
 # non-empty literal sha256/integrity on every http rule. The test discovers
 # every .bzl under dart/ and every MODULE.bazel from the live tree itself, so
 # it runs unsandboxed and local: it always re-runs, and a file it never
-# declared cannot change under a cached pass.
+# declared cannot change under a cached pass. The anchor below additionally
+# declares this test's own source as a runfiles data file, so the root
+# resolves through the runfiles manifest where runfiles are a manifest
+# rather than symlinks (Windows).
 dart_test(
     name = "download_digest_guard_test",
     size = "small",
+    args = [
+        "$(rlocationpath :download_digest_guard_test.dart)",
+    ],
+    data = [
+        "download_digest_guard_test.dart",
+    ],
     local = True,
     main = "download_digest_guard_test.dart",
     tags = [
@@ -109,6 +118,7 @@ dart_test(
         "no-sandbox",
     ],
     deps = [
+        "//dart/runfiles",
         "@ext_pub_deps//:test",
     ],
 )

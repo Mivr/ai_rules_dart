@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
 
 /// Fail-closed guard for every download in `//dart`.
@@ -22,10 +23,16 @@ import 'package:test/test.dart';
 /// local, so it always re-runs: a file it never declared cannot change
 /// under a cached pass. The `guard unit tests` group pins the checker itself
 /// against one inline source per evasion shape.
-void main() {
+///
+/// The workspace root comes from a runfiles-resolved anchor (this test's own
+/// source, passed as an `rlocationpath` argument and declared in `data`), so
+/// discovery works where runfiles are a manifest rather than symlinks
+/// (Windows) exactly as where they are links. A direct `dart test` run
+/// passes no arguments and falls back to the ancestor walk.
+void main(List<String> args) {
   group('download digest guard', () {
     test('the workspace root resolves and sources are discovered', () {
-      final root = _workspaceRoot();
+      final root = _workspaceRoot(args);
       final bzl = _dartBzlFiles(root);
       final modules = _moduleFiles(root);
       expect(
@@ -49,7 +56,7 @@ void main() {
     });
 
     test('the helpers are defined once, in dart/private/download.bzl', () {
-      final root = _workspaceRoot();
+      final root = _workspaceRoot(args);
       final helper = File('$root/dart/private/download.bzl');
       expect(
         helper.existsSync(),
@@ -70,7 +77,7 @@ void main() {
     });
 
     test('no context download outside dart/private/download.bzl', () {
-      final root = _workspaceRoot();
+      final root = _workspaceRoot(args);
       final findings = <String>[];
       var users = 0;
       for (final file in _dartBzlFiles(root)) {
@@ -96,7 +103,7 @@ void main() {
     });
 
     test('no aliased or getattr download', () {
-      final root = _workspaceRoot();
+      final root = _workspaceRoot(args);
       final findings = <String>[];
       for (final file in _dartBzlFiles(root)) {
         final rel = _relative(root, file);
@@ -120,7 +127,7 @@ void main() {
     });
 
     test('every http rule carries a non-empty literal checksum', () {
-      final root = _workspaceRoot();
+      final root = _workspaceRoot(args);
       var calls = 0;
       final findings = <String>[];
       final files = [..._dartBzlFiles(root), ..._moduleFiles(root)];
@@ -291,6 +298,24 @@ void main() {
       expect(scan.calls, 0);
       expect(scan.findings, isEmpty);
     });
+
+    test('relative paths normalize windows separators and drive case', () {
+      expect(
+        _relative(
+          r'D:\a\rules_dart',
+          File(r'd:\a\rules_dart\dart\pub\defs.bzl'),
+        ),
+        'dart/pub/defs.bzl',
+      );
+      expect(
+        _relative('D:/a/rules_dart', File(r'D:\a\rules_dart\MODULE.bazel')),
+        'MODULE.bazel',
+      );
+    });
+
+    test('an unresolvable anchor yields no root instead of throwing', () {
+      expect(_anchorRoot('does/not/exist.bzl'), isNull);
+    });
   });
 }
 
@@ -455,13 +480,20 @@ final _checksumAttr = RegExp(r'(?:sha256|integrity)\s*=');
 ///
 /// The test runs unsandboxed, but beside the tree, not in it: the current
 /// directory is the test's runfiles tree, and no `BUILD_WORKSPACE_DIRECTORY`
-/// is set. Build outputs mirror the tree through symlinks (the execroot maps
-/// every source through a link, runfiles nest under `bazel-out`), so the
-/// first ancestor holding `MODULE.bazel` may be a mirror. A mirror's
-/// `MODULE.bazel` is itself a link into the real tree, so resolving it
-/// lands on the sources whatever mirror the search starts from; a direct
-/// `dart test` run from a source subdirectory resolves to itself.
-String _workspaceRoot() {
+/// is set. On Linux and macOS, build outputs mirror the tree through symlinks
+/// (the execroot maps every source through a link, runfiles nest under
+/// `bazel-out`), so the first ancestor holding `MODULE.bazel` may be a
+/// mirror. A mirror's `MODULE.bazel` is itself a link into the real tree, so
+/// resolving it lands on the sources whatever mirror the search starts from;
+/// a direct `dart test` run from a source subdirectory resolves to itself. On
+/// Windows there are no links to resolve — runfiles are a manifest — so the
+/// anchor argument (this test's own source, resolved through the runfiles
+/// manifest) is tried first: it names a real source path on every platform.
+String _workspaceRoot(List<String> args) {
+  if (args.isNotEmpty) {
+    final root = _anchorRoot(args.first);
+    if (root != null) return root;
+  }
   final env = Platform.environment;
   for (final start in [
     env['BUILD_WORKSPACE_DIRECTORY'],
@@ -472,11 +504,31 @@ String _workspaceRoot() {
     if (root != null) return root;
   }
   fail(
-    'cannot locate the workspace root: no ancestor of the workspace '
-    'directory, the invocation directory or the current directory holds a '
-    'MODULE.bazel whose tree contains dart/. The guard must run unsandboxed '
-    '(tags = ["no-sandbox"]) so it reads the live tree.',
+    'cannot locate the workspace root: neither the runfiles anchor nor any '
+    'ancestor of the workspace directory, the invocation directory or the '
+    'current directory holds a MODULE.bazel whose tree contains dart/. The '
+    'guard must run unsandboxed (tags = ["no-sandbox"]) so it reads the live '
+    'tree.',
   );
+}
+
+/// The workspace root from a runfiles-resolved anchor: the `rlocationpath`
+/// argument naming this test's own source file. `rlocation` consults the
+/// runfiles manifest on Windows and the link tree elsewhere, so the anchor
+/// is a real source path on every platform; the existing ancestor search
+/// then climbs from its directory to the root. Null when anything along the
+/// way fails (a direct `dart test` run has no manifest), letting the caller
+/// fall back to the environment walk.
+String? _anchorRoot(String arg) {
+  try {
+    final located = Runfiles.create().rlocation(arg);
+    // `rlocation` maps even undeclared paths; only a declared data file
+    // counts as an anchor.
+    if (!File(located).existsSync()) return null;
+    return _sourceRootAbove(Directory(located).parent.path);
+  } catch (_) {
+    return null;
+  }
 }
 
 /// The source-tree workspace root at or above [start], or null when none.
@@ -546,10 +598,22 @@ void _walk(Directory dir, void Function(File) visit) {
   }
 }
 
+/// The `file:line` path of [file] under [root], always with forward slashes.
+/// Both sides are normalized first: the root may come from the runfiles
+/// manifest (forward slashes) while walked paths use the platform separator
+/// (backslashes on Windows), and Windows drive letters compare
+/// case-insensitively.
 String _relative(String root, File file) {
-  var rel = file.path;
-  if (rel.startsWith(root)) rel = rel.substring(root.length);
-  rel = rel.replaceAll('\\', '/');
+  var base = root.replaceAll('\\', '/');
+  var rel = file.path.replaceAll('\\', '/');
+  if (base.length >= 2 &&
+      base[1] == ':' &&
+      rel.length >= 2 &&
+      rel[1] == ':' &&
+      base[0].toLowerCase() == rel[0].toLowerCase()) {
+    rel = base.substring(0, 1) + rel.substring(1);
+  }
+  if (rel.startsWith(base)) rel = rel.substring(base.length);
   while (rel.startsWith('/')) {
     rel = rel.substring(1);
   }
