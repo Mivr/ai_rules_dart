@@ -56,8 +56,14 @@ def _fallback_argv_test(flag):
     return analysistest.make(
         _fallback_argv_test_impl,
         attrs = {
-            "mnemonic": attr.string(mandatory = True),
-            "expect_fallback": attr.bool(mandatory = True),
+            "mnemonic": attr.string(
+                doc = "The snapshot action mnemonic whose argv must carry the flag.",
+                mandatory = True,
+            ),
+            "expect_fallback": attr.bool(
+                doc = "Whether `--fallback-allowed` must be in that action's argv.",
+                mandatory = True,
+            ),
         },
         config_settings = {} if flag == None else {_FLAG: flag},
     )

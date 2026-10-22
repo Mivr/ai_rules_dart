@@ -112,17 +112,17 @@ void main(List<String> argv) {
       i++;
       break;
     }
-    if (arg == '--enable-asserts') {
-      enableAsserts = true;
-      continue;
-    }
-    if (arg == '--fallback-allowed') {
-      // Opts into the private-scratch fallback when the constant training
-      // path is unavailable (see [_trainInScratch]): set from
-      // `--@rules_dart//dart:jit_snapshot_fallback=true`, which is part of
-      // the snapshot actions' command lines, so builds that allow the
+    if (arg == '--enable-asserts' || arg == '--fallback-allowed') {
+      // `--fallback-allowed` opts into the private-scratch fallback when the
+      // constant training path is unavailable (see [_trainInScratch]): set
+      // from `--@rules_dart//dart:jit_snapshot_fallback=true`, which is part
+      // of the snapshot actions' command lines, so builds that allow the
       // fallback and builds that do not have different action keys.
-      fallbackAllowed = true;
+      if (arg == '--fallback-allowed') {
+        fallbackAllowed = true;
+      } else {
+        enableAsserts = true;
+      }
       continue;
     }
     final eq = arg.indexOf('=');
