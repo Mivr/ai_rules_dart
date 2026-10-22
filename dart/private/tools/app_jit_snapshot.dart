@@ -2936,20 +2936,31 @@ String decodeUriSegment(String segment) {
 }
 
 /// Whether [uri] is a `package:` URI whose path climbs above its package
-/// directory (`package:pkg/sub/../../x.dart`) or has an empty path segment
-/// (`package:pkg//x.dart`). The front end reports leaving the package, but a
-/// tool that resolves against the real filesystem reads a host file instead,
-/// so the staged-source check refuses it before they run. An empty segment is
-/// refused too: the front end resolves the doubled slash as an absolute path,
-/// so `package:pkg//x.dart` reads the workspace-root file, not the package's,
-/// which no empty-skipping resolver reproduces. False for any other URI,
-/// including a `package:` URI that stays inside its package (an unknown
-/// package name fails closed downstream, where the analyzer cannot resolve
-/// it, so it is not refused here).
+/// directory (`package:pkg/sub/../../x.dart`), has an empty path segment
+/// (`package:pkg//x.dart`), or hides a separator in one decoded segment
+/// (`package:pkg/..%2F..%2Fx.dart`). The front end reports leaving the
+/// package, but a tool that resolves against the real filesystem reads a host
+/// file instead, so the staged-source check refuses it before they run. An
+/// empty segment is refused too: the front end resolves the doubled slash as
+/// an absolute path, so `package:pkg//x.dart` reads the workspace-root file,
+/// not the package's, which no empty-skipping resolver reproduces. A decoded
+/// `/` or `\` is refused as well: it climbs without counting, and a
+/// filesystem resolver may honour it. A query or fragment suffix is dropped
+/// before classifying (the front end reads the file the path part names), so
+/// an escaping path still escapes with one, while a path that stays inside
+/// its package is still false with one. False for any other URI, including a
+/// `package:` URI that stays inside its package (an unknown package name
+/// fails closed downstream, where the analyzer cannot resolve it, so it is
+/// not refused here).
 bool isEscapingPackageUri(String uri) {
   if (!uri.startsWith('package:')) return false;
-  final rest = uri.substring('package:'.length);
-  if (rest.contains('?') || rest.contains('#')) return false;
+  var rest = uri.substring('package:'.length);
+  // A query or fragment names no file: the front end reads the file the path
+  // part names, so the path part alone is classified below.
+  final hash = rest.indexOf('#');
+  if (hash >= 0) rest = rest.substring(0, hash);
+  final query = rest.indexOf('?');
+  if (query >= 0) rest = rest.substring(0, query);
   final slash = rest.indexOf('/');
   if (slash <= 0) return false;
   final text = rest.substring(slash + 1).replaceAll(r'\', '/');
@@ -2963,7 +2974,11 @@ bool isEscapingPackageUri(String uri) {
     if (seg == '..') {
       depth--;
       if (depth < 0) return true;
-    } else if (!seg.contains('/')) {
+    } else if (seg.contains('/') || seg.contains(r'\')) {
+      // A decoded separator climbs without counting: a filesystem resolver
+      // may honour it, so it escapes however the front end spells it.
+      return true;
+    } else {
       depth++;
     }
   }

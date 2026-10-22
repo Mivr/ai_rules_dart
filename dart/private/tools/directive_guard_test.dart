@@ -209,6 +209,26 @@ void main(List<String> args) {
       expect(isEscapingPackageUri('package:p/sub/../../x.dart'), isTrue);
       expect(isEscapingPackageUri('package:p/../../x.dart'), isTrue);
       expect(isEscapingPackageUri('package:p/%2e%2e/x.dart'), isTrue);
+      expect(isEscapingPackageUri('package:p/%2E%2E/x.dart'), isTrue);
+    });
+
+    test('an escaping path still escapes with a query or fragment', () {
+      expect(isEscapingPackageUri('package:p/../../x.dart?q'), isTrue);
+      expect(
+        isEscapingPackageUri('package:p/sub/../../x.dart?x=1#frag'),
+        isTrue,
+      );
+      expect(isEscapingPackageUri('package:p/../../x.dart#frag'), isTrue);
+      expect(isEscapingPackageUri('package:p//x.dart?x=1'), isTrue);
+      expect(isEscapingPackageUri('package:p/..%2F..%2Fx.dart?q'), isTrue);
+    });
+
+    test('a decoded separator escapes however the front end spells it', () {
+      expect(isEscapingPackageUri('package:p/..%2F..%2Fx.dart'), isTrue);
+      expect(isEscapingPackageUri('package:p/..%2f..%2fx.dart'), isTrue);
+      expect(isEscapingPackageUri('package:p/..%5C..%5Cx.dart'), isTrue);
+      expect(isEscapingPackageUri('package:p/a%2Fb.dart'), isTrue);
+      expect(isEscapingPackageUri('package:p/a%5Cb.dart'), isTrue);
     });
 
     test('an empty segment escapes: the front end resolves it absolutely', () {
@@ -220,6 +240,10 @@ void main(List<String> args) {
       expect(isEscapingPackageUri('package:p/a.dart'), isFalse);
       expect(isEscapingPackageUri('package:p/sub/../a.dart'), isFalse);
       expect(isEscapingPackageUri('package:p'), isFalse);
+      expect(isEscapingPackageUri('package:p/a.dart?x=1'), isFalse);
+      expect(isEscapingPackageUri('package:p/a.dart#frag'), isFalse);
+      expect(isEscapingPackageUri('package:p/a.dart?x=1#frag'), isFalse);
+      expect(isEscapingPackageUri('package:p/sub/a.dart?x=../../y'), isFalse);
     });
 
     test('only plain package: URIs are classified', () {
