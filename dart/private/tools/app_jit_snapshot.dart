@@ -1807,8 +1807,8 @@ bool _gkCollectComponentLibraries(
 /// per library node, holding its source-table index with that entry's
 /// `fileUri`/`importUri` spellings, and its canonical name's root string.
 /// Null when [data] is not a well-formed kernel file, or when its string,
-/// link, or library tables do not parse: the caller then keeps the
-/// source-table verdict, which never depends on these tables.
+/// link, or library tables do not parse: the caller refuses the compile, since
+/// an unreadable table may carry references nobody verified.
 List<GenKernelLibraryReference>? genKernelDillLibraryReferences(
   Uint8List data,
 ) {
@@ -2148,44 +2148,54 @@ List<String> verifyGenKernelReads({
     return key != null && key.isNotEmpty && declaredKeys.contains(key);
   }
 
+  // An unparsable library or canonical-name table fails closed like an
+  // unparsable source table: the compile produced bytes whose reads cannot be
+  // verified. (An empty component is not unparsable: with no library nodes the
+  // readers return no references, and the source-table verdict stands alone.)
   final libraries = genKernelDillLibraryReferences(bytes);
-  if (libraries != null) {
-    for (final library in libraries) {
-      // The manifest-synthesized asset library names no file: only its exact
-      // shape passes, and only with a manifest.
-      if (hasNativeAssetsManifest &&
-          _isSynthesizedNativeAssetsLibrary(library)) {
-        continue;
-      }
-      for (final reference in [library.importUri, library.canonicalName]) {
-        if (!referenceIsDeclared(reference)) {
-          errors.add(
-            'app_jit_snapshot: $outputPath references $reference, which no '
-            'declared input, `dart:` library, or package defines; refusing '
-            'the compile.',
-          );
-        }
+  final canonicalRoots = genKernelDillCanonicalRoots(bytes);
+  if (libraries == null) {
+    errors.add(
+      'app_jit_snapshot: cannot read the libraries of $outputPath; '
+      'refusing the compile.',
+    );
+  }
+  if (canonicalRoots == null) {
+    errors.add(
+      'app_jit_snapshot: cannot read the canonical names of $outputPath; '
+      'refusing the compile.',
+    );
+  }
+  if (libraries == null || canonicalRoots == null) return errors;
+  for (final library in libraries) {
+    // The manifest-synthesized asset library names no file: only its exact
+    // shape passes, and only with a manifest.
+    if (hasNativeAssetsManifest && _isSynthesizedNativeAssetsLibrary(library)) {
+      continue;
+    }
+    for (final reference in [library.importUri, library.canonicalName]) {
+      if (!referenceIsDeclared(reference)) {
+        errors.add(
+          'app_jit_snapshot: $outputPath references $reference, which no '
+          'declared input, `dart:` library, or package defines; refusing '
+          'the compile.',
+        );
       }
     }
-    // A held component can smuggle a root the library nodes never mention, so
-    // every top-level canonical name is checked with the same predicate. An
-    // unparsable table keeps the source-table verdict: it carries no root to
-    // check, and the sources were still verified above.
-    final canonicalRoots = genKernelDillCanonicalRoots(bytes);
-    if (canonicalRoots != null) {
-      for (final root in canonicalRoots) {
-        // The synthesized asset library's canonical name is its own root.
-        if (hasNativeAssetsManifest && root == 'vm:ffi:native-assets') {
-          continue;
-        }
-        if (!referenceIsDeclared(root)) {
-          errors.add(
-            'app_jit_snapshot: $outputPath references $root, which no '
-            'declared input, `dart:` library, or package defines; refusing '
-            'the compile.',
-          );
-        }
-      }
+  }
+  // A held component can smuggle a root the library nodes never mention, so
+  // every top-level canonical name is checked with the same predicate.
+  for (final root in canonicalRoots) {
+    // The synthesized asset library's canonical name is its own root.
+    if (hasNativeAssetsManifest && root == 'vm:ffi:native-assets') {
+      continue;
+    }
+    if (!referenceIsDeclared(root)) {
+      errors.add(
+        'app_jit_snapshot: $outputPath references $root, which no '
+        'declared input, `dart:` library, or package defines; refusing '
+        'the compile.',
+      );
     }
   }
   return errors;

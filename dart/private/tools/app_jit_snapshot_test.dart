@@ -1812,6 +1812,61 @@ void main(List<String> args) {
       expect(errors.join('\n'), contains('references file:///host/evil.dart'));
     });
 
+    test('an unreadable library table fails closed', () {
+      final clean = verifyDill(
+        sources: [('${prefix}app/main.dart', '${prefix}app/main.dart')],
+        libraries: [(0, '${prefix}app/main.dart')],
+      );
+      // One library node: the trailing index holds 13 fields (nine fixed
+      // offsets, two library offsets, the node count, the end marker), so the
+      // first library offset sits 16 bytes before the end. Clobbering it
+      // leaves the source table and the name tables readable while the library
+      // table no longer parses.
+      final patched = Uint8List.fromList(clean);
+      ByteData.sublistView(patched).setUint32(patched.length - 16, 0xffffffff);
+      expect(snapshot.genKernelDillSourceUris(patched), isNotNull);
+      expect(snapshot.genKernelDillLibraryReferences(patched), isNull);
+      final errors = verify('evil_libraries.dill', patched);
+      expect(errors, isNotEmpty);
+      expect(errors.join('\n'), contains('cannot read the libraries'));
+      expect(errors.join('\n'), contains('evil_libraries.dill'));
+    });
+
+    test('an unreadable canonical-name table fails closed', () {
+      final clean = verifyDill(
+        sources: [('${prefix}app/main.dart', '${prefix}app/main.dart')],
+        libraries: [(0, '${prefix}app/main.dart')],
+      );
+      // The string-table offset is the seventh fixed index field: clobbering
+      // it leaves the source table readable while the name tables (and so the
+      // canonical roots) no longer parse.
+      final patched = Uint8List.fromList(clean);
+      ByteData.sublistView(patched)
+          .setUint32(patched.length - 13 * 4 + 24, 0xffffffff);
+      expect(snapshot.genKernelDillSourceUris(patched), isNotNull);
+      expect(snapshot.genKernelDillCanonicalRoots(patched), isNull);
+      final errors = verify('evil_roots.dill', patched);
+      expect(errors, isNotEmpty);
+      expect(errors.join('\n'), contains('cannot read the canonical names'));
+      expect(errors.join('\n'), contains('evil_roots.dill'));
+    });
+
+    test('an empty component verifies through its source table', () {
+      // No library nodes means no library references: the name tables are
+      // legitimately absent, not unparsable, and the source-table verdict
+      // stands alone.
+      expect(
+        verify(
+          'empty.dill',
+          verifyDill(
+            sources: [('${prefix}app/main.dart', '${prefix}app/main.dart')],
+            libraries: const [],
+          ),
+        ),
+        isEmpty,
+      );
+    });
+
     test('a package spelling of a declared input verifies', () {
       expect(
         verify(
