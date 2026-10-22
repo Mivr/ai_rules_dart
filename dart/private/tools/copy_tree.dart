@@ -376,22 +376,9 @@ class _Glob {
         case '?':
           out.write('[^/]');
         case '[':
-          final close = seg.indexOf(']', i + 2);
-          if (close < 0) {
-            throw FormatException('bad glob "$seg": unclosed [');
-          }
-          var body = seg.substring(i + 1, close);
-          var negate = false;
-          if (body.startsWith('!') || body.startsWith('^')) {
-            negate = true;
-            body = body.substring(1);
-          }
-          out.write(negate ? '[^' : '[');
-          for (final ch in body.split('')) {
-            out.write(_classSpecial.contains(ch) ? '\\$ch' : ch);
-          }
-          out.write(']');
-          i = close;
+          final parsed = _parseCharClass(seg, i);
+          out.write(parsed.body);
+          i = parsed.close;
         case '{':
           braces++;
           out.write('(?:');
@@ -418,6 +405,30 @@ class _Glob {
       throw FormatException('bad glob "$seg": unclosed {');
     }
     return out.toString();
+  }
+
+  /// Parses a `[...]` character class starting at [open] in [seg], returning
+  /// its regular expression body and the index of the closing `]`.
+  ///
+  /// A leading `!` or `^` negates the class. Characters special inside a
+  /// class are backslash-escaped.
+  static ({String body, int close}) _parseCharClass(String seg, int open) {
+    final close = seg.indexOf(']', open + 2);
+    if (close < 0) {
+      throw FormatException('bad glob "$seg": unclosed [');
+    }
+    var body = seg.substring(open + 1, close);
+    var negate = false;
+    if (body.startsWith('!') || body.startsWith('^')) {
+      negate = true;
+      body = body.substring(1);
+    }
+    final out = StringBuffer(negate ? '[^' : '[');
+    for (final ch in body.split('')) {
+      out.write(_classSpecial.contains(ch) ? '\\$ch' : ch);
+    }
+    out.write(']');
+    return (body: out.toString(), close: close);
   }
 }
 
