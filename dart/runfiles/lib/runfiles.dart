@@ -81,97 +81,21 @@ class Runfiles {
   /// Throws [StateError] if no runfiles can be found.
   factory Runfiles.create({String sourceRepository = ''}) {
     final env = Platform.environment;
-    String? directory;
-    Map<String, String>? manifest;
-
-    // 1. RUNFILES_DIR environment variable
-    final runfilesDir = env['RUNFILES_DIR'];
-    if (runfilesDir != null &&
-        runfilesDir.isNotEmpty &&
-        Directory(runfilesDir).existsSync()) {
-      directory = Directory(runfilesDir).resolveSymbolicLinksSync();
-    }
-
-    // 2. RUNFILES_MANIFEST_FILE environment variable
-    final manifestFile = env['RUNFILES_MANIFEST_FILE'];
-    if (manifestFile != null &&
-        manifestFile.isNotEmpty &&
-        File(manifestFile).existsSync()) {
-      manifest = _parseManifest(manifestFile);
-    }
+    String? directory = _directoryFromEnv(env);
+    Map<String, String>? manifest = _manifestFromEnv(env);
 
     // Under `--noenable_runfiles`, Bazel still creates a `.runfiles` directory
     // containing only a `MANIFEST` file (and an empty workspace subdirectory).
     // When `RUNFILES_DIR` is set without `RUNFILES_MANIFEST_FILE` (for example
     // under `bazel run --noenable_runfiles`), load that manifest too so
     // `rlocation` resolves from the manifest rather than the empty directory.
-    if (directory != null && manifest == null) {
-      for (final candidate in [
-        if (runfilesDir != null && runfilesDir.isNotEmpty) ...[
-          '$runfilesDir/MANIFEST',
-          '${runfilesDir}_manifest',
-        ],
-        '$directory/MANIFEST',
-        '${directory}_manifest',
-      ]) {
-        if (File(candidate).existsSync()) {
-          manifest = _parseManifest(candidate);
-          break;
-        }
-      }
-    }
+    manifest ??= _manifestBesideDirectory(directory, env['RUNFILES_DIR']);
 
     // 3-6. Probe from executable path (or Platform.script for kernel binaries)
     if (directory == null && manifest == null) {
-      // Use Platform.executable (not resolvedExecutable) to preserve the
-      // symlink path. Bazel materializes .runfiles/ next to the symlink,
-      // not next to the resolved binary. When a `.dill` kernel is executed
-      // directly via `dart <path>.dill` (such as a `generator_bin` worker),
-      // `Platform.executable` is the SDK VM and the runfiles tree sits next
-      // to `Platform.script` (or its launcher stem when `launcher = True`).
-      final bases = <String>[Platform.executable];
-      final scriptUri = Platform.script;
-      if (scriptUri.isScheme('file')) {
-        try {
-          final scriptPath = scriptUri.toFilePath();
-          if (scriptPath.isNotEmpty) {
-            bases.add(scriptPath);
-            if (scriptPath.endsWith('.dill')) {
-              bases.add(scriptPath.substring(0, scriptPath.length - 5));
-            }
-          }
-        } on UnsupportedError {
-          // Ignore non-file script URIs.
-        }
-      }
-
-      for (final base in bases) {
-        for (final candidate in ['$base.runfiles', '$base.exe.runfiles']) {
-          if (Directory(candidate).existsSync()) {
-            // Hold the tree where it really is, not the path that found it.
-            // That path runs through the symlink, and `./bazel-bin/...` is
-            // repointed by the next build in another configuration.
-            directory = Directory(candidate).resolveSymbolicLinksSync();
-            break;
-          }
-        }
-        if (directory != null) break;
-      }
-
-      for (final base in bases) {
-        for (final candidate in [
-          '$base.runfiles_manifest',
-          '$base.exe.runfiles_manifest',
-          '$base.runfiles/MANIFEST',
-          '$base.exe.runfiles/MANIFEST',
-        ]) {
-          if (File(candidate).existsSync()) {
-            manifest = _parseManifest(candidate);
-            break;
-          }
-        }
-        if (manifest != null) break;
-      }
+      final bases = _probeBases();
+      directory ??= _directoryBesideBases(bases);
+      manifest ??= _manifestBesideBases(bases);
     }
 
     if (directory == null && manifest == null) {
@@ -187,6 +111,117 @@ class Runfiles {
       repoMapping: _loadRepoMapping(directory: directory, manifest: manifest),
       defaultSourceRepo: sourceRepository,
     );
+  }
+
+  /// Step 1: the `RUNFILES_DIR` environment variable (set by `bazel test`),
+  /// held by its resolved path so [rlocation] keeps working after a symlink
+  /// on the way to it, such as `bazel-bin`, is repointed.
+  static String? _directoryFromEnv(Map<String, String> env) {
+    final runfilesDir = env['RUNFILES_DIR'];
+    if (runfilesDir != null &&
+        runfilesDir.isNotEmpty &&
+        Directory(runfilesDir).existsSync()) {
+      return Directory(runfilesDir).resolveSymbolicLinksSync();
+    }
+    return null;
+  }
+
+  /// Step 2: the `RUNFILES_MANIFEST_FILE` environment variable
+  /// (manifest-only mode).
+  static Map<String, String>? _manifestFromEnv(Map<String, String> env) {
+    final manifestFile = env['RUNFILES_MANIFEST_FILE'];
+    if (manifestFile != null &&
+        manifestFile.isNotEmpty &&
+        File(manifestFile).existsSync()) {
+      return _parseManifest(manifestFile);
+    }
+    return null;
+  }
+
+  /// The `MANIFEST` next to a `RUNFILES_DIR` tree (or its `_manifest`
+  /// sibling), for `--noenable_runfiles` runs where the directory alone
+  /// resolves nothing.
+  static Map<String, String>? _manifestBesideDirectory(
+    String? directory,
+    String? runfilesDir,
+  ) {
+    if (directory == null) return null;
+    for (final candidate in [
+      if (runfilesDir != null && runfilesDir.isNotEmpty) ...[
+        '$runfilesDir/MANIFEST',
+        '${runfilesDir}_manifest',
+      ],
+      '$directory/MANIFEST',
+      '${directory}_manifest',
+    ]) {
+      if (File(candidate).existsSync()) {
+        return _parseManifest(candidate);
+      }
+    }
+    return null;
+  }
+
+  /// Steps 3-6: the executable path plus the `Platform.script` kernel paths
+  /// to probe runfiles layouts beside. Uses `Platform.executable` (not
+  /// resolvedExecutable) to preserve the symlink path: Bazel materializes
+  /// .runfiles/ next to the symlink, not next to the resolved binary. When a
+  /// `.dill` kernel is executed directly via `dart <path>.dill` (such as a
+  /// `generator_bin` worker), `Platform.executable` is the SDK VM and the
+  /// runfiles tree sits next to `Platform.script` (or its launcher stem when
+  /// `launcher = True`).
+  static List<String> _probeBases() {
+    final bases = <String>[Platform.executable];
+    final scriptUri = Platform.script;
+    if (scriptUri.isScheme('file')) {
+      try {
+        final scriptPath = scriptUri.toFilePath();
+        if (scriptPath.isNotEmpty) {
+          bases.add(scriptPath);
+          if (scriptPath.endsWith('.dill')) {
+            bases.add(scriptPath.substring(0, scriptPath.length - 5));
+          }
+        }
+      } on UnsupportedError {
+        // Ignore non-file script URIs.
+      }
+    }
+    return bases;
+  }
+
+  /// The `.runfiles` (or `.exe.runfiles`) directory beside one of [bases],
+  /// held by its resolved path: that path runs through the symlink, and
+  /// `./bazel-bin/...` is repointed by the next build in another
+  /// configuration.
+  static String? _directoryBesideBases(List<String> bases) {
+    for (final base in bases) {
+      for (final candidate in ['$base.runfiles', '$base.exe.runfiles']) {
+        if (Directory(candidate).existsSync()) {
+          // Hold the tree where it really is, not the path that found it.
+          // That path runs through the symlink, and `./bazel-bin/...` is
+          // repointed by the next build in another configuration.
+          return Directory(candidate).resolveSymbolicLinksSync();
+        }
+      }
+    }
+    return null;
+  }
+
+  /// The runfiles manifest beside one of [bases]: the `_manifest` files or
+  /// the `MANIFEST` inside a `.runfiles` tree.
+  static Map<String, String>? _manifestBesideBases(List<String> bases) {
+    for (final base in bases) {
+      for (final candidate in [
+        '$base.runfiles_manifest',
+        '$base.exe.runfiles_manifest',
+        '$base.runfiles/MANIFEST',
+        '$base.exe.runfiles/MANIFEST',
+      ]) {
+        if (File(candidate).existsSync()) {
+          return _parseManifest(candidate);
+        }
+      }
+    }
+    return null;
   }
 
   /// Returns a [Runfiles] that shares the underlying directory, manifest,
