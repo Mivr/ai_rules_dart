@@ -148,6 +148,33 @@ void main(List<String> argv) {
     }
   }
   final dartArgs = argv.sublist(i);
+  _trainFromArgs(
+    dart: dart,
+    dartvm: dartvm,
+    snapshot: snapshot,
+    dartArgs: dartArgs,
+    enableAsserts: enableAsserts,
+    fallbackAllowed: fallbackAllowed,
+    env: env,
+    copies: copies,
+    trees: trees,
+  );
+}
+
+/// Trains the snapshot from parsed `main` arguments, exiting when required
+/// arguments are missing, when the training fails, or when it writes no
+/// snapshot (see [_trainInScratch]).
+void _trainFromArgs({
+  required String? dart,
+  required String? dartvm,
+  required String? snapshot,
+  required List<String> dartArgs,
+  required bool enableAsserts,
+  required bool fallbackAllowed,
+  required Map<String, String> env,
+  required List<_Pair> copies,
+  required List<_Pair> trees,
+}) {
   if (dart == null || snapshot == null || dartArgs.isEmpty) {
     _usage('--dart, --snapshot and the dart arguments are required');
   }

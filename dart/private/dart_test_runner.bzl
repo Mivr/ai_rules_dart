@@ -278,6 +278,7 @@ dart_test_runner_snapshot = rule(
             providers = [BuildSettingInfo],
         ),
         "_fallback": attr.label(
+            doc = "Whether `--fallback-allowed` is passed when the constant training path is unavailable.",
             default = "//dart:jit_snapshot_fallback",
             providers = [BuildSettingInfo],
         ),

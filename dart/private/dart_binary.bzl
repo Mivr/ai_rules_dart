@@ -375,6 +375,7 @@ Every other flag goes to `dart compile`. In the `kernel` mode, setting `dart_com
             allow_single_file = True,
         ),
         "_jit_snapshot_fallback": attr.label(
+            doc = "Whether `--fallback-allowed` is passed when the constant training path is unavailable.",
             default = "//dart:jit_snapshot_fallback",
             providers = [BuildSettingInfo],
         ),
