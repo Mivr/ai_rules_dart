@@ -5561,70 +5561,29 @@ Future<bool> _unstagedReadsAreDeclared(
   final dillFile = File(dillPath);
   if (!await dillFile.exists()) return true;
   final bytes = await dillFile.readAsBytes();
-  final uris = dillSourceUris(bytes);
-  if (uris == null) {
-    log.writeln(
-      'kernel_module: cannot read the sources of $dillPath; $consequence.',
-    );
+  if (!_dillSourcesAreDeclared(
+    bytes,
+    dillPath,
+    files,
+    graph,
+    multiRoots,
+    multiRootPrefix,
+    log,
+    consequence,
+  )) {
     return false;
   }
-  for (final uri in uris) {
-    final key = _keyOfDillSourceUri(uri, multiRoots, multiRootPrefix);
-    if (key == null) continue;
-    if (!files.isDeclared(key) && !graph.containsKey(key)) {
-      log.writeln(
-        'kernel_module: $dillPath reads $uri, which is not a declared input; '
-        '$consequence.',
-      );
-      return false;
-    }
-  }
-  // The import URIs input modules define: every graph key under its
-  // multi-root spelling and its `package:` spellings (one per package whose
-  // directory holds the key, as [_packageUriOf] builds them).
-  final packagePrefixes = <String, String>{
-    for (final entry in roots.entries)
-      entry.key: '${entry.value.path}${entry.value.packageUri}',
-  };
-  final depImportUris = <String>{
-    for (final key in graph.keys) ...[
-      '$multiRootPrefix$key',
-      for (final entry in packagePrefixes.entries)
-        if (key.startsWith(entry.value))
-          'package:${entry.key}/${key.substring(entry.value.length)}',
-    ],
-  };
-  bool referenceIsDeclared(String? reference) {
-    if (reference == null || reference.isEmpty) return true;
-    // A bare identifier names no file: only a URI- or path-shaped reference
-    // can name one. Real front ends record URIs here; anything else is a
-    // linking name from a synthetic kernel, with no file identity to verify
-    // (the file read is verified separately through the source table).
-    if (!reference.contains(':') && !reference.contains('/')) return true;
-    if (ownUris.contains(reference) || depImportUris.contains(reference)) {
-      return true;
-    }
-    if (reference.startsWith('dart:') ||
-        reference.startsWith('data:') ||
-        reference.startsWith('org-dartlang-sdk:') ||
-        reference.startsWith('org-dartlang-untranslatable-uri:')) {
-      return true;
-    }
-    // A resolvable spelling of a verified file passes: the source table
-    // already verified the file read, and this spelling names it. The
-    // recorded-URI mapping comes first so multi-root and `file:` spellings
-    // resolve exactly as the source-table check resolves them; the
-    // package-URI mapping covers `package:` spellings, which the recorded
-    // mapping leaves untranslated.
-    var key = _keyOfDillSourceUri(reference, multiRoots, multiRootPrefix);
-    if (key == null || key.isEmpty) {
-      key = _keyOfUri(reference, roots, multiRootPrefix);
-    }
-    return key != null &&
-        key.isNotEmpty &&
-        (files.isDeclared(key) || graph.containsKey(key));
-  }
-
+  final checker = _ReferenceChecker(
+    dillPath,
+    files,
+    graph,
+    multiRoots,
+    multiRootPrefix,
+    roots,
+    ownUris,
+    _depImportUris(graph, roots, multiRootPrefix),
+    consequence,
+  );
   final libraries = dillLibraryReferences(bytes);
   // Whether this check guards the unstaged compile (whose consequence is an
   // isolated recompile) rather than the isolated restage (whose consequence
@@ -5643,17 +5602,13 @@ Future<bool> _unstagedReadsAreDeclared(
       return false;
     }
   } else {
-    for (final library in libraries) {
-      for (final reference in [library.importUri, library.canonicalName]) {
-        if (!referenceIsDeclared(reference)) {
-          log.writeln(
-            'kernel_module: $dillPath references $reference, which no '
-            'compiled source, `dart:` library, or input module defines; '
-            '$consequence.',
-          );
-          return false;
-        }
-      }
+    if (!checker.allDeclared([
+      for (final library in libraries) ...[
+        library.importUri,
+        library.canonicalName,
+      ],
+    ], log)) {
+      return false;
     }
     // A held component can smuggle a root the library nodes never mention, so
     // every top-level canonical name is checked with the same predicate. An
@@ -5669,18 +5624,135 @@ Future<bool> _unstagedReadsAreDeclared(
         );
         return false;
       }
-    } else {
-      for (final root in canonicalRoots) {
-        if (!referenceIsDeclared(root)) {
-          log.writeln(
-            'kernel_module: $dillPath references $root, which no '
-            'compiled source, `dart:` library, or input module defines; '
-            '$consequence.',
-          );
-          return false;
-        }
-      }
+    } else if (!checker.allDeclared(canonicalRoots, log)) {
+      return false;
     }
   }
   return true;
+}
+
+/// Whether the dill's source table names only declared inputs.
+bool _dillSourcesAreDeclared(
+  Uint8List bytes,
+  String dillPath,
+  _Files files,
+  Map<String, _Node> graph,
+  List<String> multiRoots,
+  String multiRootPrefix,
+  StringBuffer log,
+  String consequence,
+) {
+  final uris = dillSourceUris(bytes);
+  if (uris == null) {
+    log.writeln(
+      'kernel_module: cannot read the sources of $dillPath; $consequence.',
+    );
+    return false;
+  }
+  for (final uri in uris) {
+    final key = _keyOfDillSourceUri(uri, multiRoots, multiRootPrefix);
+    if (key == null) continue;
+    if (!files.isDeclared(key) && !graph.containsKey(key)) {
+      log.writeln(
+        'kernel_module: $dillPath reads $uri, which is not a declared input; '
+        '$consequence.',
+      );
+      return false;
+    }
+  }
+  return true;
+}
+
+/// The import URIs input modules define: every graph key under its
+/// multi-root spelling and its `package:` spellings (one per package whose
+/// directory holds the key, as [_packageUriOf] builds them).
+Set<String> _depImportUris(
+  Map<String, _Node> graph,
+  Map<String, _PackageRoot> roots,
+  String multiRootPrefix,
+) {
+  final packagePrefixes = <String, String>{
+    for (final entry in roots.entries)
+      entry.key: '${entry.value.path}${entry.value.packageUri}',
+  };
+  return <String>{
+    for (final key in graph.keys) ...[
+      '$multiRootPrefix$key',
+      for (final entry in packagePrefixes.entries)
+        if (key.startsWith(entry.value))
+          'package:${entry.key}/${key.substring(entry.value.length)}',
+    ],
+  };
+}
+
+/// Checks dill library references against the declared inputs.
+class _ReferenceChecker {
+  _ReferenceChecker(
+    this._dillPath,
+    this._files,
+    this._graph,
+    this._multiRoots,
+    this._multiRootPrefix,
+    this._roots,
+    this._ownUris,
+    this._depImportUris,
+    this._consequence,
+  );
+
+  final String _dillPath;
+  final _Files _files;
+  final Map<String, _Node> _graph;
+  final List<String> _multiRoots;
+  final String _multiRootPrefix;
+  final Map<String, _PackageRoot> _roots;
+  final Set<String> _ownUris;
+  final Set<String> _depImportUris;
+  final String _consequence;
+
+  /// Whether every reference is declared, logging the first that is not.
+  bool allDeclared(Iterable<String?> references, StringBuffer log) {
+    for (final reference in references) {
+      if (!isDeclared(reference)) {
+        log.writeln(
+          'kernel_module: $_dillPath references $reference, which no '
+          'compiled source, `dart:` library, or input module defines; '
+          '$_consequence.',
+        );
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Whether one library reference names a declared input or dependency.
+  bool isDeclared(String? reference) {
+    if (reference == null || reference.isEmpty) return true;
+    // A bare identifier names no file: only a URI- or path-shaped reference
+    // can name one. Real front ends record URIs here; anything else is a
+    // linking name from a synthetic kernel, with no file identity to verify
+    // (the file read is verified separately through the source table).
+    if (!reference.contains(':') && !reference.contains('/')) return true;
+    if (_ownUris.contains(reference) || _depImportUris.contains(reference)) {
+      return true;
+    }
+    if (reference.startsWith('dart:') ||
+        reference.startsWith('data:') ||
+        reference.startsWith('org-dartlang-sdk:') ||
+        reference.startsWith('org-dartlang-untranslatable-uri:')) {
+      return true;
+    }
+    // A resolvable spelling of a verified file passes: the source table
+    // already verified the file read, and this spelling names it. The
+    // recorded-URI mapping comes first so multi-root and `file:` spellings
+    // resolve exactly as the source-table check resolves them; the
+    // package-URI mapping covers `package:` spellings, which the recorded
+    // mapping leaves untranslated.
+    var key = _keyOfDillSourceUri(reference, _multiRoots, _multiRootPrefix);
+    if (key == null || key.isEmpty) {
+      key = _keyOfUri(reference, _roots, _multiRootPrefix);
+    }
+    return key != null &&
+        key.isNotEmpty &&
+        (_files.isDeclared(key) || _graph.containsKey(key));
+  }
 }
