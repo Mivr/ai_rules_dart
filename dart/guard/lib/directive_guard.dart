@@ -602,49 +602,66 @@ String _unescape(String s) {
       out.write(ch);
       continue;
     }
-    if (i >= s.length) throw const _Unparsable();
-    final esc = s[i++];
-    switch (esc) {
-      case 'n':
-        out.write('\n');
-      case 'r':
-        out.write('\r');
-      case 'f':
-        out.write('\f');
-      case 'b':
-        out.write('\b');
-      case 't':
-        out.write('\t');
-      case 'v':
-        out.write('\v');
-      case 'x':
-        if (i + 2 > s.length) throw const _Unparsable();
-        final code = int.tryParse(s.substring(i, i + 2), radix: 16);
-        if (code == null) throw const _Unparsable();
-        out.writeCharCode(code);
-        i += 2;
-      case 'u':
-        if (i < s.length && s[i] == '{') {
-          final close = s.indexOf('}', i + 1);
-          if (close < 0) throw const _Unparsable();
-          final code = int.tryParse(s.substring(i + 1, close), radix: 16);
-          if (code == null || code < 0 || code > 0x10FFFF) {
-            throw const _Unparsable();
-          }
-          out.writeCharCode(code);
-          i = close + 1;
-        } else {
-          if (i + 4 > s.length) throw const _Unparsable();
-          final code = int.tryParse(s.substring(i, i + 4), radix: 16);
-          if (code == null) throw const _Unparsable();
-          out.writeCharCode(code);
-          i += 4;
-        }
-      default:
-        out.write(esc);
-    }
+    i = _unescapeOne(s, i, out);
   }
   return out.toString();
+}
+
+/// Consumes the escape starting at `s[i]` (just past the backslash), writes
+/// its value to [out], and returns the index just past it.
+int _unescapeOne(String s, int i, StringBuffer out) {
+  if (i >= s.length) throw const _Unparsable();
+  final esc = s[i++];
+  switch (esc) {
+    case 'n':
+      out.write('\n');
+    case 'r':
+      out.write('\r');
+    case 'f':
+      out.write('\f');
+    case 'b':
+      out.write('\b');
+    case 't':
+      out.write('\t');
+    case 'v':
+      out.write('\v');
+    case 'x':
+      final code = _unescapeHexCode(s, i, 2);
+      if (code == null) throw const _Unparsable();
+      out.writeCharCode(code);
+      return i + 2;
+    case 'u':
+      if (i < s.length && s[i] == '{') {
+        final braced = _unescapeBracedCode(s, i);
+        if (braced == null) throw const _Unparsable();
+        out.writeCharCode(braced.$1);
+        return braced.$2;
+      }
+      final code = _unescapeHexCode(s, i, 4);
+      if (code == null) throw const _Unparsable();
+      out.writeCharCode(code);
+      return i + 4;
+    default:
+      out.write(esc);
+  }
+  return i;
+}
+
+/// The code point of the [digits]-digit hex escape at `s[i]`, or null when
+/// the digits are missing or not hexadecimal.
+int? _unescapeHexCode(String s, int i, int digits) {
+  if (i + digits > s.length) return null;
+  return int.tryParse(s.substring(i, i + digits), radix: 16);
+}
+
+/// The (code point, next index) of the `\u{...}` escape at `s[i]`, or null
+/// when the brace never closes or the digits are not a valid code point.
+(int, int)? _unescapeBracedCode(String s, int i) {
+  final close = s.indexOf('}', i + 1);
+  if (close < 0) return null;
+  final code = int.tryParse(s.substring(i + 1, close), radix: 16);
+  if (code == null || code < 0 || code > 0x10FFFF) return null;
+  return (code, close + 1);
 }
 
 /// Reads the tokens of a Dart source one at a time, so a scan that stops at the end
@@ -666,51 +683,67 @@ class _Lexer {
 
   _Token? _scan() {
     final src = _src;
-    final n = src.length;
     if (_at == 0) {
       if (src.startsWith('\uFEFF')) _at++;
       if (src.startsWith('#!', _at)) {
         _at = _skipLine(src, _at + 2);
       }
     }
-    while (_at < n) {
-      final ch = src[_at];
-      if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') {
-        _at++;
-        continue;
-      }
-      if (ch == '/' && _at + 1 < n && src[_at + 1] == '/') {
-        _at = _skipLine(src, _at + 2);
-        continue;
-      }
-      if (ch == '/' && _at + 1 < n && src[_at + 1] == '*') {
-        _at = _skipBlockComment(src, _at);
-        continue;
-      }
-      final code = ch.codeUnitAt(0);
-      if (_isIdentStart(code)) {
-        final start = _at;
-        while (_at < n && _isIdentChar(src.codeUnitAt(_at))) {
-          _at++;
-        }
-        final word = src.substring(start, _at);
-        if (word == 'r' && _at < n && (src[_at] == "'" || src[_at] == '"')) {
-          return _string(raw: true);
-        }
-        return _Token(_identKind, word);
-      }
-      if (_isDigit(code)) {
-        final start = _at;
-        while (_at < n && _isIdentChar(src.codeUnitAt(_at))) {
-          _at++;
-        }
-        return _Token(_otherKind, src.substring(start, _at));
-      }
-      if (ch == "'" || ch == '"') return _string(raw: false);
-      _at++;
-      return _Token(_punctKind, ch);
+    while (_at < _src.length) {
+      if (_skipGap()) continue;
+      return _scanToken();
     }
     return null;
+  }
+
+  /// Skips one whitespace run or comment; false when [_at] is at a real token.
+  bool _skipGap() {
+    final src = _src;
+    final n = src.length;
+    final ch = src[_at];
+    if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') {
+      _at++;
+      return true;
+    }
+    if (ch == '/' && _at + 1 < n && src[_at + 1] == '/') {
+      _at = _skipLine(src, _at + 2);
+      return true;
+    }
+    if (ch == '/' && _at + 1 < n && src[_at + 1] == '*') {
+      _at = _skipBlockComment(src, _at);
+      return true;
+    }
+    return false;
+  }
+
+  /// The token starting at [_at]: an identifier (or raw-string prefix),
+  /// a number, a string literal, or one punctuation character.
+  _Token _scanToken() {
+    final src = _src;
+    final n = src.length;
+    final ch = src[_at];
+    final code = ch.codeUnitAt(0);
+    if (_isIdentStart(code)) {
+      final start = _at;
+      while (_at < n && _isIdentChar(src.codeUnitAt(_at))) {
+        _at++;
+      }
+      final word = src.substring(start, _at);
+      if (word == 'r' && _at < n && (src[_at] == "'" || src[_at] == '"')) {
+        return _string(raw: true);
+      }
+      return _Token(_identKind, word);
+    }
+    if (_isDigit(code)) {
+      final start = _at;
+      while (_at < n && _isIdentChar(src.codeUnitAt(_at))) {
+        _at++;
+      }
+      return _Token(_otherKind, src.substring(start, _at));
+    }
+    if (ch == "'" || ch == '"') return _string(raw: false);
+    _at++;
+    return _Token(_punctKind, ch);
   }
 
   /// The string literal at `_at`, with its quotes removed and its escapes kept.
@@ -785,16 +818,7 @@ class _Lexer {
       }
       final code = ch.codeUnitAt(0);
       if (_isIdentStart(code) || _isDigit(code)) {
-        final wordStart = at;
-        while (at < n && _isIdentChar(src.codeUnitAt(at))) {
-          at++;
-        }
-        if (at - wordStart == 1 &&
-            src[wordStart] == 'r' &&
-            at < n &&
-            (src[at] == "'" || src[at] == '"')) {
-          at = _skipString(at, raw: true);
-        }
+        at = _skipInterpolationWord(src, n, at);
         continue;
       }
       if (ch == "'" || ch == '"') {
@@ -810,6 +834,22 @@ class _Lexer {
       at++;
     }
     throw const _Unparsable();
+  }
+
+  /// The index just past the identifier (or digit run) starting at `at`,
+  /// including a raw-string literal when the word is the `r` prefix of one.
+  int _skipInterpolationWord(String src, int n, int at) {
+    final wordStart = at;
+    while (at < n && _isIdentChar(src.codeUnitAt(at))) {
+      at++;
+    }
+    if (at - wordStart == 1 &&
+        src[wordStart] == 'r' &&
+        at < n &&
+        (src[at] == "'" || src[at] == '"')) {
+      at = _skipString(at, raw: true);
+    }
+    return at;
   }
 }
 
@@ -963,58 +1003,82 @@ class _Prologue {
     return ScanRef(kind, chosen);
   }
 
+  String? _libraryName;
+  String? _partOfLibrary;
+
   ScanResult parse() {
     final refs = <ScanRef>[];
-    String? libraryName;
-    String? partOfLibrary;
-    while (true) {
-      final token = _peek();
-      if (token == null) break;
-      if (token.kind == _punctKind && token.text == '@') {
-        _annotation();
-        continue;
-      }
-      if (token.kind != _identKind) break;
-      if (token.text == 'library') {
-        _lexer.take();
-        if (_punct(';')) {
-          _lexer.take();
-        } else if (_peek()?.kind == _identKind) {
-          libraryName ??= _dottedIdent();
-          _expect(';');
-        } else {
-          break;
-        }
-      } else if (token.text == 'import' || token.text == 'export') {
-        _lexer.take();
-        if (_peek()?.kind != _stringKind) break;
-        final ref = _uriDirective(token.text, refs);
-        if (!collectAll) refs.add(ref);
-      } else if (token.text == 'part') {
-        _lexer.take();
-        if (_ident('of')) {
-          _lexer.take();
-          if (_peek()?.kind == _stringKind) {
-            refs.add(ScanRef('part of', _string()));
-          } else {
-            partOfLibrary ??= _dottedIdent();
-          }
-          _expect(';');
-        } else if (_peek()?.kind == _stringKind) {
-          refs.add(ScanRef('part', _string()));
-          _expect(';');
-        } else {
-          break;
-        }
-      } else {
-        break;
-      }
-    }
+    while (_parseDirective(refs)) {}
     return ScanResult(
       refs,
-      libraryName: libraryName,
-      partOfLibrary: partOfLibrary,
+      libraryName: _libraryName,
+      partOfLibrary: _partOfLibrary,
     );
+  }
+
+  /// Parses one prologue directive into [refs]; false when the prologue ends
+  /// here (end of input or the first non-directive token).
+  bool _parseDirective(List<ScanRef> refs) {
+    final token = _peek();
+    if (token == null) return false;
+    if (token.kind == _punctKind && token.text == '@') {
+      _annotation();
+      return true;
+    }
+    if (token.kind != _identKind) return false;
+    if (token.text == 'library') return _parseLibraryTail();
+    if (token.text == 'import' || token.text == 'export') {
+      return _parseImportOrExport(token.text, refs);
+    }
+    if (token.text == 'part') return _parsePartTail(refs);
+    return false;
+  }
+
+  /// The tail of a `library` directive after its keyword: `;`, a dotted name
+  /// and `;`, or anything else, which ends the prologue. The first name wins.
+  bool _parseLibraryTail() {
+    _lexer.take();
+    if (_punct(';')) {
+      _lexer.take();
+    } else if (_peek()?.kind == _identKind) {
+      _libraryName ??= _dottedIdent();
+      _expect(';');
+    } else {
+      return false;
+    }
+    return true;
+  }
+
+  /// An `import` or `export` directive after its keyword: the URI must follow
+  /// or the prologue ends here.
+  bool _parseImportOrExport(String kind, List<ScanRef> refs) {
+    _lexer.take();
+    if (_peek()?.kind != _stringKind) return false;
+    final ref = _uriDirective(kind, refs);
+    if (!collectAll) refs.add(ref);
+    return true;
+  }
+
+  /// A `part` directive after its keyword: `part of` (a URI or a library
+  /// name) or a part URI, each followed by `;`. Anything else ends the
+  /// prologue. The first `part of` library name wins.
+  bool _parsePartTail(List<ScanRef> refs) {
+    _lexer.take();
+    if (_ident('of')) {
+      _lexer.take();
+      if (_peek()?.kind == _stringKind) {
+        refs.add(ScanRef('part of', _string()));
+      } else {
+        _partOfLibrary ??= _dottedIdent();
+      }
+      _expect(';');
+    } else if (_peek()?.kind == _stringKind) {
+      refs.add(ScanRef('part', _string()));
+      _expect(';');
+    } else {
+      return false;
+    }
+    return true;
   }
 }
 
@@ -1215,49 +1279,78 @@ List<String> findStagedDirectiveViolations(
     if (content == null) continue;
     final from = normalizeStagedPath(path.replaceAll(r'\', '/'));
     for (final ref in scanAllDirectiveUris(content)) {
-      final uri = ref.uri;
-      // A URI spanning lines is refused however it spells its target: the
-      // front end's multi-line first-line rule reads a different file than
-      // the resolvers below see (see [hasLineBreak]).
-      if (hasLineBreak(uri)) {
-        errors.add("$tool: $path ${ref.kind} '$uri' is not a declared input.");
-        continue;
-      }
-      // The resolvers below skip empty segments, but the front end resolves
-      // some such spellings absolutely: refuse them before resolving.
-      if (hasEmptyPathSegment(uri)) {
-        errors.add("$tool: $path ${ref.kind} '$uri' is not a declared input.");
-        continue;
-      }
-      if (uri.startsWith(multiRootPrefix) || uri.startsWith('dart:')) {
-        continue;
-      }
-      if (uri.startsWith('package:')) {
-        if (isEscapingPackageUri(uri)) {
-          errors.add(
-            "$tool: $path ${ref.kind} '$uri' is not a declared input.",
-          );
-        }
-        continue;
-      }
-      if (isFileSchemeDirectiveUri(uri) ||
-          isDisallowedDirectiveUri(uri, multiRootPrefix: multiRootPrefix)) {
-        errors.add("$tool: $path ${ref.kind} '$uri' is not a declared input.");
-        continue;
-      }
-      final target = resolveStagedRelativeTarget(uri, from);
-      // A null resolution names no declared file (a `//` authority, a
-      // fragment, or a decoded `/`): it is refused, never passed. A resolved
-      // target is refused unless the file exists in the staged tree (see
-      // [requireTargetsExist] above): the front end may read an absolute
-      // host path the scanner sees as a relative staged path, so only a
-      // staged file backs a declared input.
-      if (target == null ||
-          !declared(target) ||
-          (requireTargetsExist && !File(target).existsSync())) {
-        errors.add("$tool: $path ${ref.kind} '$uri' is not a declared input.");
-      }
+      final violation = _stagedRefViolation(
+        tool,
+        path,
+        ref,
+        from,
+        declared,
+        multiRootPrefix,
+        requireTargetsExist,
+      );
+      if (violation != null) errors.add(violation);
     }
   }
   return errors;
+}
+
+/// The violation line for one staged directive reference, or null when the
+/// reference names a declared input. Beyond the scheme check
+/// ([findDisallowedDirectives]), every schemeless relative (and `/`-absolute)
+/// URI is resolved against its importing file's staged path and refused
+/// outside [roots] (via [declared]); a `package:` URI climbing above its
+/// package ([isEscapingPackageUri]), a URI spanning lines ([hasLineBreak])
+/// and any URI resolving to no file at all (a `//` authority, a fragment, or
+/// a decoded `/`) are refused too. A relative target inside [roots] is
+/// refused unless the file exists in the staged tree when
+/// [requireTargetsExist] holds: the front end may read an absolute host path
+/// the scanner sees as a relative staged path, so only a staged file backs a
+/// declared input.
+String? _stagedRefViolation(
+  String tool,
+  String path,
+  ScanRef ref,
+  String from,
+  bool Function(String) declared,
+  String multiRootPrefix,
+  bool requireTargetsExist,
+) {
+  final uri = ref.uri;
+  // A URI spanning lines is refused however it spells its target: the
+  // front end's multi-line first-line rule reads a different file than
+  // the resolvers below see (see [hasLineBreak]).
+  if (hasLineBreak(uri)) {
+    return "$tool: $path ${ref.kind} '$uri' is not a declared input.";
+  }
+  // The resolvers below skip empty segments, but the front end resolves
+  // some such spellings absolutely: refuse them before resolving.
+  if (hasEmptyPathSegment(uri)) {
+    return "$tool: $path ${ref.kind} '$uri' is not a declared input.";
+  }
+  if (uri.startsWith(multiRootPrefix) || uri.startsWith('dart:')) {
+    return null;
+  }
+  if (uri.startsWith('package:')) {
+    if (isEscapingPackageUri(uri)) {
+      return "$tool: $path ${ref.kind} '$uri' is not a declared input.";
+    }
+    return null;
+  }
+  if (isFileSchemeDirectiveUri(uri) ||
+      isDisallowedDirectiveUri(uri, multiRootPrefix: multiRootPrefix)) {
+    return "$tool: $path ${ref.kind} '$uri' is not a declared input.";
+  }
+  final target = resolveStagedRelativeTarget(uri, from);
+  // A null resolution names no declared file (a `//` authority, a
+  // fragment, or a decoded `/`): it is refused, never passed. A resolved
+  // target is refused unless the file exists in the staged tree (see
+  // [requireTargetsExist] above): the front end may read an absolute
+  // host path the scanner sees as a relative staged path, so only a
+  // staged file backs a declared input.
+  if (target == null ||
+      !declared(target) ||
+      (requireTargetsExist && !File(target).existsSync())) {
+    return "$tool: $path ${ref.kind} '$uri' is not a declared input.";
+  }
+  return null;
 }
