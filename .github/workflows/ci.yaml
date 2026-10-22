@@ -4,13 +4,18 @@ on:
   # Triggers the workflow on push or pull request events but only for the main branch
   push:
     branches: [main, "ci/**"]
+    # Tag pushes run the whole workflow UNCACHED (see the cache inputs
+    # below): the release gate (release.yaml) requires passing tag-push runs
+    # of this workflow and of full.yaml on the tagged commit.
+    tags: ["v*"]
   pull_request:
     branches: [main]
   # Nightly run to catch upstream breakage (new Dart SDK, Bazel, deps).
   # A `schedule` run never restores or saves any Bazel cache (see the
   # `schedule` branches on every cache input below), so this is the cold,
   # uncached run: every test job re-executes instead of replaying the disk
-  # cache.
+  # cache. Tag pushes (`v*`) run the same cold shape minus the disk/external
+  # restore (see below); branch and PR pushes stay cached.
   schedule:
     - cron: "0 9 * * *"
   # Allows you to run this workflow manually from the Actions tab
@@ -57,12 +62,15 @@ jobs:
   # e2e/analysis_failure and e2e/analyze_composition also run in
   # `expected-failure` and `format-hermeticity`, and e2e/dart_test also in
   # `dbg-mode` and `expected-failure`. No e2e workspace is left without a job.
+  # A tag push runs every job, matrix entry and step below, uncached: no job
+  # skips work on a tag push that the nightly `schedule` run does.
   test:
     name: test (${{ matrix.os }}, shard ${{ matrix.shard }})
     runs-on: ${{ matrix.os }}
-    # A hung folder fails fast instead of burning the runner for an hour.
-    # Healthy shards finish well inside this; bump it if sharding changes.
-    timeout-minutes: 60
+    # A hung folder fails fast instead of burning the runner for hours.
+    # Healthy shards finish well inside this; cold tag-push and nightly runs
+    # need the headroom. GitHub caps jobs at 6 h.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -176,10 +184,17 @@ jobs:
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           bazelisk-cache: true
-          disk-cache: ${{ github.event_name != 'schedule' && !inputs.uncached && matrix.cache || false }}
-          external-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
+          # Branch and PR pushes restore and save every cache below. Tag
+          # pushes (`github.ref_type == 'tag'`), `schedule` runs and
+          # `uncached` dispatches restore neither the Bazel disk cache nor
+          # the external cache and save nothing, so every test really
+          # executes instead of replaying the disk cache. The
+          # content-addressed repository cache and the bazelisk cache still
+          # restore (every fetch is sha256-pinned).
+          disk-cache: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached && matrix.cache || false }}
+          external-cache: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached }}
           repository-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
-          cache-save: ${{ github.event_name != 'schedule' && !inputs.uncached }}
+          cache-save: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached }}
           # Rotates every cache key below (disk, repository, external,
           # bazelisk). setup-bazel skips the post-job save for any cache whose
           # key restored with an exact hit, so a key saved by a failed or

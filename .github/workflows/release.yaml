@@ -16,49 +16,72 @@ permissions:
   attestations: write
   contents: write
 jobs:
-  # Releases require the pre-release coverage: at least one passing run of
-  # the Full matrix workflow on the tagged commit. A tag push triggers that
-  # workflow too, so this usually just waits for it; otherwise it fails and
-  # tells the developer to run the Full matrix workflow for the commit first.
-  full-matrix:
+  # Releases are gated on proof, not on replay: a tag push (`v*.*.*`) triggers
+  # ci.yaml and full.yaml UNCACHED (no disk or external cache restored, nothing
+  # saved; only the repository and bazelisk caches restore), and it triggers
+  # this workflow too. This job releases only if the ci.yaml AND full.yaml runs
+  # that the tag push itself triggered (push event, head branch = the tag, head
+  # SHA = the tagged commit) both concluded `success`. A run from any other
+  # event (schedule, workflow_dispatch, branch push) never satisfies the gate,
+  # so a release always proves every test executed on the tagged commit.
+  gate:
     runs-on: ubuntu-latest
-    # The wait loop polls for up to 90 minutes; the timeout only bounds a
-    # hung poll past that deadline.
-    timeout-minutes: 120
+    # The wait loop polls for up to 4 hours: uncached CI takes ~25 minutes and
+    # uncached Full matrix ~60 minutes, with headroom for slow runners. The
+    # timeout only bounds a hung poll past that deadline. GitHub caps jobs at
+    # 6 h.
+    timeout-minutes: 300
     steps:
-      - name: Wait for a passing full-matrix run on this commit
+      - name: Wait for passing CI and Full matrix tag-push runs on this commit
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           sha="${{ github.sha }}"
-          deadline=$(( $(date +%s) + 5400 ))
+          tag="${{ inputs.tag_name || github.ref_name }}"
+          deadline=$(( $(date +%s) + 14400 ))
           while true; do
-            if ! runs="$(gh run list --repo "${{ github.repository }}" --workflow full.yaml --commit "$sha" --limit 10 --json status,conclusion)"; then
-              echo "Listing runs failed; retrying..."
-            elif [ "$(echo "$runs" | jq -r '[.[] | select(.status == "completed" and .conclusion == "success")] | length > 0')" = "true" ]; then
-              echo "Found a passing full-matrix run on $sha"
+            waiting=""
+            for workflow in ci.yaml full.yaml; do
+              if ! runs="$(gh run list --repo "${{ github.repository }}" --workflow "$workflow" --commit "$sha" --limit 50 --json event,headBranch,headSha,status,conclusion)"; then
+                echo "Listing $workflow runs failed; retrying..."
+                waiting="$waiting $workflow(list)"
+                continue
+              fi
+              if [ "$(printf '%s' "$runs" | jq -r --arg tag "$tag" --arg sha "$sha" '[.[] | select(.event == "push" and .headBranch == $tag and .headSha == $sha and .status == "completed" and .conclusion == "success")] | length > 0')" = "true" ]; then
+                echo "Found a passing $workflow tag-push run on $sha ($tag)"
+              elif [ "$(printf '%s' "$runs" | jq -r --arg tag "$tag" --arg sha "$sha" '[.[] | select(.event == "push" and .headBranch == $tag and .headSha == $sha and .status != "completed")] | length > 0')" = "true" ]; then
+                echo "Waiting for the $workflow tag-push run on $sha ($tag)..."
+                waiting="$waiting $workflow"
+              elif [ "$(printf '%s' "$runs" | jq -r --arg tag "$tag" --arg sha "$sha" '[.[] | select(.event == "push" and .headBranch == $tag and .headSha == $sha and .status == "completed")] | length > 0')" = "true" ]; then
+                echo "The $workflow tag-push run on $sha ($tag) completed without success; refusing to release"
+                exit 1
+              else
+                echo "No $workflow tag-push run on $sha ($tag) yet; waiting for the tag push to trigger it..."
+                waiting="$waiting $workflow"
+              fi
+            done
+            if [ -z "$waiting" ]; then
+              echo "Both gates passed on $sha ($tag)"
               exit 0
-            elif [ "$(echo "$runs" | jq -r '[.[] | select(.status != "completed")] | length > 0')" != "true" ]; then
-              echo "No passing full-matrix run on $sha and none in flight; run the Full matrix workflow for this commit first"
-              exit 1
             fi
             if [ "$(date +%s)" -ge "$deadline" ]; then
-              echo "Timed out waiting for a passing full-matrix run on $sha"
+              echo "Timed out waiting for tag-push runs on $sha ($tag):$waiting"
               exit 1
             fi
-            echo "Waiting for the full-matrix run on $sha..."
+            echo "Waiting for:$waiting ..."
             sleep 60
           done
   release:
-    needs: full-matrix
+    needs: gate
     # No timeout-minutes here: GitHub rejects it on jobs that call a reusable
-    # workflow. The wait loop above carries its own 90-minute deadline.
-    uses: bazel-contrib/.github/.github/workflows/release_ruleset.yaml@v7.7.0
+    # workflow. The wait loop above carries its own 4-hour deadline.
+    uses: bazel-contrib/.github/.github/workflows/release_ruleset.yaml@1d798ff015ed0696433e01e2c3ccbb2abefadad7 # v7.7.0
     with:
       release_files: rules_dart-*.tar.gz
-      # The full-matrix job above already refuses to release without a passing
-      # Full matrix run (`bazel test //...` in every workspace) on the tagged
-      # commit, so this job repeats no tests: it only builds the root
+      # The gate job above already refuses to release without passing UNCACHED
+      # tag-push runs of ci.yaml (Linux, Windows, macOS smoke, red-by-design,
+      # format, dbg) and full.yaml (per-folder macOS) on the tagged commit,
+      # so this job repeats no tests: it only builds the root
       # workspace to verify the checkout before cutting the archive. A cold
       # `bazel test //...` here timed out small tests on v0.11.0 even though
       # the same commit was green, so testing again buys no coverage and only
