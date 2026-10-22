@@ -631,10 +631,14 @@ def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
     if res.return_code != 0:
         fail("%s: git fetch failed for %s at %s: %s" % (what, url, resolved_ref, res.stderr))
 
-def _materialize_base_argv(bare_abs, empty_dir):
-    """The `git` argv prefix shared by every materialization command."""
-    return ["git", "--no-replace-objects"] + [
-        "--git-dir=" + bare_abs,
+def _materialize_config_args(empty_dir):
+    """The `-c` pins shared by every materialization command.
+
+    `--no-replace-objects` stays spelled out at each `ctx.execute` call
+    site (not here): the guard test requires the flag visible at every
+    invocation so a new one without it fails.
+    """
+    return [
         "-c",
         "core.hooksPath=" + empty_dir,
         "-c",
@@ -646,7 +650,8 @@ def _materialize_base_argv(bare_abs, empty_dir):
 def _refuse_alternates(ctx, bare_abs, empty, empty_dir, resolved_ref, what):
     """Fails when the bare repository carries an `objects/info/alternates` file."""
     res = ctx.execute(
-        _materialize_base_argv(bare_abs, empty_dir) + [
+        ["git", "--no-replace-objects", "--git-dir=" + bare_abs] +
+        _materialize_config_args(empty_dir) + [
             "count-objects",
             "-v",
         ],
@@ -661,7 +666,8 @@ def _refuse_alternates(ctx, bare_abs, empty, empty_dir, resolved_ref, what):
 def _verify_commit_id(ctx, bare_abs, empty, empty_dir, resolved_ref, what):
     """Fails unless `rev-parse --verify <sha>^{commit}` prints the pinned SHA."""
     res = ctx.execute(
-        _materialize_base_argv(bare_abs, empty_dir) + [
+        ["git", "--no-replace-objects", "--git-dir=" + bare_abs] +
+        _materialize_config_args(empty_dir) + [
             "rev-parse",
             "--verify",
             str(resolved_ref) + "^{commit}",
@@ -677,7 +683,8 @@ def _verify_commit_id(ctx, bare_abs, empty, empty_dir, resolved_ref, what):
 def _verify_commit_type(ctx, bare_abs, empty, empty_dir, resolved_ref, what):
     """Fails unless the pinned SHA names a commit object."""
     res = ctx.execute(
-        _materialize_base_argv(bare_abs, empty_dir) + [
+        ["git", "--no-replace-objects", "--git-dir=" + bare_abs] +
+        _materialize_config_args(empty_dir) + [
             "cat-file",
             "-t",
             str(resolved_ref),
@@ -690,7 +697,8 @@ def _verify_commit_type(ctx, bare_abs, empty, empty_dir, resolved_ref, what):
 def _verify_commit_tree(ctx, bare_abs, empty, empty_dir, resolved_ref, what):
     """Fails unless the pinned commit's tree id reads back."""
     res = ctx.execute(
-        _materialize_base_argv(bare_abs, empty_dir) + [
+        ["git", "--no-replace-objects", "--git-dir=" + bare_abs] +
+        _materialize_config_args(empty_dir) + [
             "rev-parse",
             str(resolved_ref) + "^{tree}",
         ],
