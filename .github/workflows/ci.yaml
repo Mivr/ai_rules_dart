@@ -585,67 +585,111 @@ jobs:
       - name: digest_mismatch — expect an empty digest to fail the fetch
         working-directory: e2e/digest_mismatch
         run: |
-          if bazel build @bad_empty//... 2>/dev/null; then
+          fail_with_output() {
+            echo "ERROR: $1 not found; full output:"
+            printf '%s\n' "$out"
+            exit 1
+          }
+          if out=$(bazel build @bad_empty//... 2>&1); then
             echo "ERROR: build should have failed with an empty-digest error"
+            printf '%s\n' "$out"
             exit 1
           fi
-          bazel build @bad_empty//... 2>&1 | grep -F -q 'pinned_download: refusing to fetch'
-          bazel build @bad_empty//... 2>&1 | grep -F -q '"sha256" must be exactly 64 lowercase hex digits, got "".'
+          printf '%s\n' "$out" | grep -F -q 'pinned_download: refusing to fetch' || fail_with_output "refusing-to-fetch error"
+          printf '%s\n' "$out" | grep -F -q '"sha256" must be exactly 64 lowercase hex digits, got "".' || fail_with_output "empty-digest error"
           echo "OK: expected empty-digest error detected"
       - name: digest_mismatch — expect a short digest to fail the fetch
         working-directory: e2e/digest_mismatch
         run: |
-          if bazel build @bad_short//... 2>/dev/null; then
+          fail_with_output() {
+            echo "ERROR: $1 not found; full output:"
+            printf '%s\n' "$out"
+            exit 1
+          }
+          if out=$(bazel build @bad_short//... 2>&1); then
             echo "ERROR: build should have failed with a short-digest error"
+            printf '%s\n' "$out"
             exit 1
           fi
-          bazel build @bad_short//... 2>&1 | grep -F -q 'pinned_download: refusing to fetch'
-          bazel build @bad_short//... 2>&1 | grep -F -q '"sha256" must be exactly 64 lowercase hex digits, got "86bea300d6701fb6c1fddc33b21235231d108b44a9793db9dcd48940fa46a6a".'
+          printf '%s\n' "$out" | grep -F -q 'pinned_download: refusing to fetch' || fail_with_output "refusing-to-fetch error"
+          printf '%s\n' "$out" | grep -F -q '"sha256" must be exactly 64 lowercase hex digits, got "86bea300d6701fb6c1fddc33b21235231d108b44a9793db9dcd48940fa46a6a".' || fail_with_output "short-digest error"
           echo "OK: expected short-digest error detected"
       - name: digest_mismatch — expect an uppercase digest to fail the fetch
         working-directory: e2e/digest_mismatch
         run: |
-          if bazel build @bad_upper//... 2>/dev/null; then
+          fail_with_output() {
+            echo "ERROR: $1 not found; full output:"
+            printf '%s\n' "$out"
+            exit 1
+          }
+          if out=$(bazel build @bad_upper//... 2>&1); then
             echo "ERROR: build should have failed with an uppercase-digest error"
+            printf '%s\n' "$out"
             exit 1
           fi
-          bazel build @bad_upper//... 2>&1 | grep -F -q 'pinned_download: refusing to fetch'
-          bazel build @bad_upper//... 2>&1 | grep -F -q '"sha256" must be exactly 64 lowercase hex digits, got "86BEA300D6701FB6C1FDDC33B21235231D108B44A9793DB9DCD48940FA46A6A6".'
+          printf '%s\n' "$out" | grep -F -q 'pinned_download: refusing to fetch' || fail_with_output "refusing-to-fetch error"
+          printf '%s\n' "$out" | grep -F -q '"sha256" must be exactly 64 lowercase hex digits, got "86BEA300D6701FB6C1FDDC33B21235231D108B44A9793DB9DCD48940FA46A6A6".' || fail_with_output "uppercase-digest error"
           echo "OK: expected uppercase-digest error detected"
       - name: digest_mismatch — expect an SRI digest to fail the fetch
         working-directory: e2e/digest_mismatch
         run: |
-          if bazel build @bad_sri//... 2>/dev/null; then
+          fail_with_output() {
+            echo "ERROR: $1 not found; full output:"
+            printf '%s\n' "$out"
+            exit 1
+          }
+          if out=$(bazel build @bad_sri//... 2>&1); then
             echo "ERROR: build should have failed with an SRI-digest error"
+            printf '%s\n' "$out"
             exit 1
           fi
-          bazel build @bad_sri//... 2>&1 | grep -F -q 'pinned_download: refusing to fetch'
-          bazel build @bad_sri//... 2>&1 | grep -F -q '"sha256" must be exactly 64 lowercase hex digits, got "sha256-hr6jANZwH7bB/dwzshI1Ix0Qi0SpeT253NSJQPpGpqY=".'
+          printf '%s\n' "$out" | grep -F -q 'pinned_download: refusing to fetch' || fail_with_output "refusing-to-fetch error"
+          printf '%s\n' "$out" | grep -F -q '"sha256" must be exactly 64 lowercase hex digits, got "sha256-hr6jANZwH7bB/dwzshI1Ix0Qi0SpeT253NSJQPpGpqY=".' || fail_with_output "SRI-digest error"
           echo "OK: expected SRI-digest error detected"
       - name: digest_mismatch — expect a conditional blank digest to fail the fetch
         working-directory: e2e/digest_mismatch
         run: |
-          if bazel build @bad_conditional//... 2>/dev/null; then
+          fail_with_output() {
+            echo "ERROR: $1 not found; full output:"
+            printf '%s\n' "$out"
+            exit 1
+          }
+          if out=$(bazel build @bad_conditional//... 2>&1); then
             echo "ERROR: build should have failed with a conditional-blank-digest error"
+            printf '%s\n' "$out"
             exit 1
           fi
-          bazel build @bad_conditional//... 2>&1 | grep -F -q 'pinned_download: refusing to fetch'
-          bazel build @bad_conditional//... 2>&1 | grep -F -q '"sha256" must be exactly 64 lowercase hex digits, got "".'
+          printf '%s\n' "$out" | grep -F -q 'pinned_download: refusing to fetch' || fail_with_output "refusing-to-fetch error"
+          printf '%s\n' "$out" | grep -F -q '"sha256" must be exactly 64 lowercase hex digits, got "".' || fail_with_output "conditional-blank-digest error"
           echo "OK: expected conditional-blank-digest error detected"
       - name: digest_mismatch — expect a wrong digest to fail the fetch
         working-directory: e2e/digest_mismatch
         run: |
-          if bazel build @bad_wrong//... 2>/dev/null; then
+          fail_with_output() {
+            echo "ERROR: $1 not found; full output:"
+            printf '%s\n' "$out"
+            exit 1
+          }
+          if out=$(bazel build @bad_wrong//... 2>&1); then
             echo "ERROR: build should have failed with a checksum-mismatch error"
+            printf '%s\n' "$out"
             exit 1
           fi
-          bazel build @bad_wrong//... 2>&1 | grep -F -q 'Checksum was 86bea300d6701fb6c1fddc33b21235231d108b44a9793db9dcd48940fa46a6a6 but wanted 86bea300d6701fb6c1fddc33b21235231d108b44a9793db9dcd48940fa46a6a7'
+          # Only the wanted digest is grepped: the actual digest depends on
+          # the fixture bytes, which must survive every checkout unnormalized.
+          printf '%s\n' "$out" | grep -F -q 'Checksum was' || fail_with_output "checksum-mismatch error"
+          printf '%s\n' "$out" | grep -F -q 'but wanted 86bea300d6701fb6c1fddc33b21235231d108b44a9793db9dcd48940fa46a6a7' || fail_with_output "wanted-digest error"
           echo "OK: expected checksum-mismatch error detected"
       - name: digest_mismatch — a correct digest on the same fixture succeeds
         working-directory: e2e/digest_mismatch
         run: |
-          bazel build @good//...
-          echo "OK: correct digest fetched"
+          if out=$(bazel build @good//... 2>&1); then
+            echo "OK: correct digest fetched"
+          else
+            echo "ERROR: correct digest should have fetched; full output:"
+            printf '%s\n' "$out"
+            exit 1
+          fi
       # An SDK version outside the pinned toolchain table must fail instead
       # of downloading an SDK release with no recorded checksum.
       - name: sdk_unknown_version — expect an unpinned SDK version to fail resolution

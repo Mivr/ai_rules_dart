@@ -1,5 +1,8 @@
 * text=auto eol=lf
 
+# Digest fixtures hash exact bytes: never normalize them.
+e2e/digest_mismatch/fixture.bin -text
+
 #################################
 # Configuration for 'git archive'
 # See https://git-scm.com/docs/git-archive#ATTRIBUTES
