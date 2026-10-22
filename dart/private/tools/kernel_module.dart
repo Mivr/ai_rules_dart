@@ -1274,45 +1274,55 @@ String _normalizeFilePath(String path) {
 
 Uint8List? _lookupDigest(String path, Map<String, Uint8List>? inputDigests) {
   if (inputDigests == null) return null;
-  final direct = inputDigests[path];
-  if (direct != null && direct.isNotEmpty) return direct;
-  // Requests and staged keys may spell the same file as a `file:///` URI or
-  // as a filesystem path (Windows drive-letter paths become `file:///` URIs
-  // for `kernel_worker`). Try the alternate spelling before normalization so
-  // a cache keyed on one spelling still hits for the other.
-  if (path.startsWith('file://')) {
-    final filePath = _filePathOf(path);
-    if (filePath != path) {
-      final hit = _lookupDigest(filePath, inputDigests);
-      if (hit != null) return hit;
-    }
-  } else {
-    final uri = kernelWorkerUri(path);
-    if (uri != path) {
-      final hit = inputDigests[uri];
-      if (hit != null && hit.isNotEmpty) return hit;
-    }
-  }
+  final direct = _nonEmptyDigest(inputDigests[path]);
+  if (direct != null) return direct;
+  final alternate = _lookupAlternateSpelling(path, inputDigests);
+  if (alternate != null) return alternate;
   if (_isNormalizedRelative(path)) {
-    final dotHit = inputDigests['./$path'];
-    if (dotHit != null && dotHit.isNotEmpty) return dotHit;
-    return null;
+    return _nonEmptyDigest(inputDigests['./$path']);
   }
   final normFile = _normalizeFilePath(path);
   if (normFile != path) {
-    final hit = inputDigests[normFile];
-    if (hit != null && hit.isNotEmpty) return hit;
+    final hit = _nonEmptyDigest(inputDigests[normFile]);
+    if (hit != null) return hit;
   }
-  final relNorm = _normalize(path);
-  if (relNorm.isNotEmpty) {
-    final relHit = inputDigests[relNorm];
-    if (relHit != null && relHit.isNotEmpty) return relHit;
-    if (!relNorm.startsWith('/')) {
-      final dotHit = inputDigests['./$relNorm'];
-      if (dotHit != null && dotHit.isNotEmpty) return dotHit;
-    }
+  return _lookupNormalizedRelative(path, inputDigests);
+}
+
+/// [digest] when it names file bytes, else null.
+Uint8List? _nonEmptyDigest(Uint8List? digest) =>
+    digest != null && digest.isNotEmpty ? digest : null;
+
+// Requests and staged keys may spell the same file as a `file:///` URI or
+// as a filesystem path (Windows drive-letter paths become `file:///` URIs
+// for `kernel_worker`). Try the alternate spelling before normalization so
+// a cache keyed on one spelling still hits for the other.
+Uint8List? _lookupAlternateSpelling(
+  String path,
+  Map<String, Uint8List> inputDigests,
+) {
+  if (path.startsWith('file://')) {
+    final filePath = _filePathOf(path);
+    if (filePath != path) return _lookupDigest(filePath, inputDigests);
+    return null;
   }
+  final uri = kernelWorkerUri(path);
+  if (uri != path) return _nonEmptyDigest(inputDigests[uri]);
   return null;
+}
+
+/// The digest stored under the `./`-less or `./`-prefixed relative
+/// normalization of [path], or null.
+Uint8List? _lookupNormalizedRelative(
+  String path,
+  Map<String, Uint8List> inputDigests,
+) {
+  final relNorm = _normalize(path);
+  if (relNorm.isEmpty) return null;
+  final relHit = _nonEmptyDigest(inputDigests[relNorm]);
+  if (relHit != null) return relHit;
+  if (relNorm.startsWith('/')) return null;
+  return _nonEmptyDigest(inputDigests['./$relNorm']);
 }
 
 /// Byte-bounded cache of parsed `index.json` manifests, `.vm_excluded.txt`
@@ -2905,46 +2915,78 @@ List<String> _orderedMultiRoots(
   _Files files,
 ) {
   if (multiRoots.length <= 1) return multiRoots;
-  final checkKeys = keys.toList();
-  final useKeys = checkKeys.isNotEmpty
-      ? checkKeys
-      : files.declaredKeys.toList();
+  final useKeys = _orderedCheckKeys(keys, files);
   if (useKeys.isEmpty) return multiRoots;
-  final hasConflict = <String, bool>{};
-  final hasExplicit = <String, bool>{};
+  final kinds = _classifyMultiRoots(multiRoots, useKeys, files);
+  final orderedRoots = _conflictLastOrder(multiRoots, kinds);
+  if (_sameRootOrder(multiRoots, orderedRoots)) return multiRoots;
+  return orderedRoots;
+}
+
+/// The keys whose resolution decides the root order: [keys], or every declared
+/// key when the compile names none.
+List<String> _orderedCheckKeys(Iterable<String> keys, _Files files) {
+  final checkKeys = keys.toList();
+  if (checkKeys.isNotEmpty) return checkKeys;
+  return files.declaredKeys.toList();
+}
+
+/// Whether each root holds an explicitly declared spelling, and whether an
+/// undeclared file shadows a checked key under it.
+Map<String, ({bool explicit, bool conflict})> _classifyMultiRoots(
+  List<String> multiRoots,
+  List<String> useKeys,
+  _Files files,
+) {
+  final kinds = <String, ({bool explicit, bool conflict})>{};
   for (final root in multiRoots) {
-    var conflict = false;
-    var explicit = false;
-    for (final key in useKeys) {
-      if (files.isExplicitlyDeclaredInRoot(root, key)) {
-        explicit = true;
-      } else if (!files.isDeclaredInRoot(root, key)) {
-        final f = File(root == '.' ? key : '$root/$key');
-        if (f.existsSync()) {
-          conflict = true;
-        }
+    kinds[root] = _classifyMultiRoot(root, useKeys, files);
+  }
+  return kinds;
+}
+
+/// Whether [root] holds an explicitly declared spelling of a checked key, and
+/// whether an undeclared file shadows one under it.
+({bool explicit, bool conflict}) _classifyMultiRoot(
+  String root,
+  List<String> useKeys,
+  _Files files,
+) {
+  var conflict = false;
+  var explicit = false;
+  for (final key in useKeys) {
+    if (files.isExplicitlyDeclaredInRoot(root, key)) {
+      explicit = true;
+    } else if (!files.isDeclaredInRoot(root, key)) {
+      final f = File(root == '.' ? key : '$root/$key');
+      if (f.existsSync()) {
+        conflict = true;
       }
     }
-    hasConflict[root] = conflict;
-    hasExplicit[root] = explicit;
   }
-  final orderedRoots = [
-    for (final root in multiRoots)
-      if (!hasConflict[root]! && hasExplicit[root]!) root,
-    for (final root in multiRoots)
-      if (!hasConflict[root]! && !hasExplicit[root]!) root,
-    for (final root in multiRoots)
-      if (hasConflict[root]!) root,
-  ];
-  var sameOrder = true;
+  return (explicit: explicit, conflict: conflict);
+}
+
+/// [multiRoots] with shadowing roots last: roots holding an explicitly declared
+/// spelling come first, then roots without conflicts.
+List<String> _conflictLastOrder(
+  List<String> multiRoots,
+  Map<String, ({bool explicit, bool conflict})> kinds,
+) => [
+  for (final root in multiRoots)
+    if (!kinds[root]!.conflict && kinds[root]!.explicit) root,
+  for (final root in multiRoots)
+    if (!kinds[root]!.conflict && !kinds[root]!.explicit) root,
+  for (final root in multiRoots)
+    if (kinds[root]!.conflict) root,
+];
+
+/// Whether [orderedRoots] names the same roots in the same order.
+bool _sameRootOrder(List<String> multiRoots, List<String> orderedRoots) {
   for (var i = 0; i < multiRoots.length; i++) {
-    if (orderedRoots[i] != multiRoots[i]) {
-      sameOrder = false;
-      break;
-    }
+    if (orderedRoots[i] != multiRoots[i]) return false;
   }
-  if (sameOrder) return multiRoots;
-  return orderedRoots;
+  return true;
 }
 
 /// Rewrites the `--multi-root` flags in [base] to the order
@@ -2996,54 +3038,81 @@ Future<bool> _needsIsolatedMultiRoot(
 ) async {
   final orderedBase = _orderedMultiRoots(multiRoots, keys, files);
   final finalOrder = <String>[...extraMultiRoots, ...orderedBase];
-  final candidateRoots = <String>{...finalOrder};
   // Staging can be skipped only when every declared input already lives under
   // one of the candidate roots (so the front end can resolve it without a
   // staged copy).
-  for (final key in files.declaredKeys) {
-    final origin = files.declaredOriginOf(key);
-    if (origin == null) return true;
-    final originNorm = origin.replaceAll(r'\', '/');
-    var underRoot = false;
-    for (final root in candidateRoots) {
-      final slashRoot = root
-          .replaceAll(r'\', '/')
-          .replaceFirst(RegExp(r'/+$'), '');
-      final prefix = slashRoot == '.' ? '' : '$slashRoot/';
-      if (slashRoot == '.' && !originNorm.startsWith('/')) {
-        // relative origin under cwd root
-        underRoot = true;
-        break;
-      }
-      if (prefix.isNotEmpty && originNorm.startsWith(prefix)) {
-        underRoot = true;
-        break;
-      }
-    }
-    if (!underRoot) return true;
-  }
+  if (_hasOriginOutsideRoots(files, finalOrder.toSet())) return true;
   // ... and the first root holding each key the front end may read is exactly
   // its declared origin (so no shadow or stale copy wins over it).
+  if (_hasShadowedKey(keys, files, finalOrder)) return true;
+  // ... and every compiled key's directives scan (so planning sees every
+  // import the front end will follow).
+  return _hasUnscannableKey(keys, files, vm);
+}
+
+/// Whether a declared input's origin lives outside every candidate root.
+bool _hasOriginOutsideRoots(_Files files, Set<String> candidateRoots) {
+  for (final key in files.declaredKeys) {
+    final origin = files.declaredOriginOf(key);
+    if (origin == null || !_originIsUnderRoots(origin, candidateRoots)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// Whether [origin] lives under one of [candidateRoots].
+bool _originIsUnderRoots(String origin, Set<String> candidateRoots) {
+  final originNorm = origin.replaceAll(r'\', '/');
+  for (final root in candidateRoots) {
+    final slashRoot = root
+        .replaceAll(r'\', '/')
+        .replaceFirst(RegExp(r'/+$'), '');
+    final prefix = slashRoot == '.' ? '' : '$slashRoot/';
+    if (slashRoot == '.' && !originNorm.startsWith('/')) {
+      // relative origin under cwd root
+      return true;
+    }
+    if (prefix.isNotEmpty && originNorm.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+/// Whether the first root holding a key the front end may read is not exactly
+/// its declared origin.
+bool _hasShadowedKey(
+  Iterable<String> keys,
+  _Files files,
+  List<String> finalOrder,
+) {
   final checkKeys = <String>{...keys, ...files.declaredKeys};
   for (final key in checkKeys) {
     final origin = files.declaredOriginOf(key);
-    if (origin == null) return true;
-    String? winner;
-    for (final root in finalOrder) {
-      final path = _filePathOf(root == '.' ? key : '$root/$key');
-      if (File(path).existsSync()) {
-        winner = path;
-        break;
-      }
-    }
-    if (winner != _filePathOf(origin)) return true;
-  }
-  // ... and every compiled key's directives scan (so planning sees every
-  // import the front end will follow).
-  for (final key in keys) {
-    if (await files.scan(key, vm) == null) {
+    if (origin == null ||
+        _firstRootHolding(key, finalOrder) != _filePathOf(origin)) {
       return true;
     }
+  }
+  return false;
+}
+
+/// The first root's path holding [key], or null when no root holds it.
+String? _firstRootHolding(String key, List<String> finalOrder) {
+  for (final root in finalOrder) {
+    final path = _filePathOf(root == '.' ? key : '$root/$key');
+    if (File(path).existsSync()) return path;
+  }
+  return null;
+}
+
+/// Whether a compiled key's directives do not scan.
+Future<bool> _hasUnscannableKey(
+  Iterable<String> keys,
+  _Files files,
+  Set<String> vm,
+) async {
+  for (final key in keys) {
+    if (await files.scan(key, vm) == null) return true;
   }
   return false;
 }
@@ -3238,44 +3307,53 @@ Set<String> vmLibraries(
 }) {
   final names = <String>{};
   final seen = <String>{};
-  void collect(String target) {
-    if (!seen.add(target)) return;
-    final entry = json[target];
-    if (entry is! Map) return;
-    final libraries = entry['libraries'];
-    if (libraries is Map) {
-      libraries.forEach((name, spec) {
-        if (spec is Map && spec['supported'] == false) return;
-        final text = name.toString();
-        final bare = text.startsWith('dart:')
-            ? text.substring('dart:'.length)
-            : text;
-        if (bare.startsWith('_')) return;
-        names.add(bare);
-      });
-    }
-    final includes = entry['include'];
-    if (includes is List) {
-      for (final include in includes) {
-        if (include is Map && include['target'] is String) {
-          collect(include['target'] as String);
-        }
+  if (json.containsKey(platform)) {
+    _collectVmPlatform(json, platform, seen, names);
+  }
+  if (platform != 'vm' && json.containsKey('vm')) {
+    _collectVmPlatform(json, 'vm', seen, names);
+  }
+  for (final extra in extraLibraries) {
+    names.add(_bareDartLibraryName(extra));
+  }
+  return names;
+}
+
+/// The `dart:`-less name of a `libraries.json` library or `--extra-library`.
+String _bareDartLibraryName(String text) =>
+    text.startsWith('dart:') ? text.substring('dart:'.length) : text;
+
+/// Adds the libraries of `target` in [json] to [names], following its `include`s.
+void _collectVmPlatform(
+  Map<String, dynamic> json,
+  String target,
+  Set<String> seen,
+  Set<String> names,
+) {
+  if (!seen.add(target)) return;
+  final entry = json[target];
+  if (entry is! Map) return;
+  _addVmPlatformLibraries(entry['libraries'], names);
+  final includes = entry['include'];
+  if (includes is List) {
+    for (final include in includes) {
+      if (include is Map && include['target'] is String) {
+        _collectVmPlatform(json, include['target'] as String, seen, names);
       }
     }
   }
+}
 
-  if (json.containsKey(platform)) {
-    collect(platform);
+/// Adds every supported, non-private library of one platform entry to [names].
+void _addVmPlatformLibraries(Object? libraries, Set<String> names) {
+  if (libraries is! Map) return;
+  for (final entry in libraries.entries) {
+    final spec = entry.value;
+    if (spec is Map && spec['supported'] == false) continue;
+    final bare = _bareDartLibraryName(entry.key.toString());
+    if (bare.startsWith('_')) continue;
+    names.add(bare);
   }
-  if (platform != 'vm' && json.containsKey('vm')) {
-    collect('vm');
-  }
-  for (final extra in extraLibraries) {
-    names.add(
-      extra.startsWith('dart:') ? extra.substring('dart:'.length) : extra,
-    );
-  }
-  return names;
 }
 
 /// Each package's root, read from the `package_config.json` the module compiles
