@@ -38,6 +38,176 @@ def _token(s):
         t = t.split(":")[-1]
     return t.replace("/", "_").replace(".", "_").replace("-", "_")
 
+def _drift_prep_targets(name, drift_srcs, package_name, language_version, effective_deps):
+    """Stage 1: `PreprocessBuilder` per `.drift`/`.moor`; returns prep target labels."""
+    prep_targets = []
+    for drift_src in drift_srcs:
+        prep_target = "_{name}_{token}_prep".format(
+            name = name,
+            token = _token(drift_src),
+        )
+        dart_sqlcodegen(
+            name = prep_target,
+            src = drift_src,
+            generator_bin = "@rules_dart//dart/ext/drift:shim_prep",
+            output_suffixes = [".drift_prep.json", ".expr.temp.dart"],
+            package_name = package_name,
+            language_version = language_version,
+            deps = effective_deps,
+        )
+        prep_targets.append(":" + prep_target)
+    return prep_targets
+
+def _drift_discover_targets(name, drift_srcs, package_name, language_version, effective_deps, prep_targets):
+    """Stage 2: `DriftDiscover` per `.drift`/`.moor`; returns discover target labels."""
+    discover_targets = []
+    for drift_src in drift_srcs:
+        discover_target = "_{name}_{token}_discover".format(
+            name = name,
+            token = _token(drift_src),
+        )
+        dart_sqlcodegen(
+            name = discover_target,
+            src = drift_src,
+            generator_bin = "@rules_dart//dart/ext/drift:shim_discover",
+            output_suffixes = [".drift.drift_elements.json"],
+            package_name = package_name,
+            language_version = language_version,
+            deps = effective_deps,
+            asset_deps = drift_srcs + prep_targets,
+        )
+        discover_targets.append(":" + discover_target)
+    return discover_targets
+
+def _drift_siblings_lib(name, srcs, package_name, language_version):
+    """Wraps the Dart srcs in a source-only library for cross-file visibility; returns its name."""
+    siblings_lib = "_{}_siblings".format(name)
+    dart_library(
+        name = siblings_lib,
+        srcs = srcs,
+        package_name = package_name,
+        language_version = language_version,
+        # Plumbing, not a library: its files import parts and packages it does
+        # not carry. They are analyzed as the `name` library's own files.
+        tags = ["no-dart-analyze"],
+        visibility = ["//visibility:private"],
+    )
+    return siblings_lib
+
+def _drift_dart_discover_targets(name, srcs, package_name, language_version, effective_deps, siblings_lib, drift_srcs, prep_targets, discover_targets):
+    """Discover per `.dart`; returns the discover target labels."""
+    dart_discover_targets = []
+    for src in srcs:
+        t = _token(src)
+        dart_discover_target = "_{name}_{token}_dart_discover".format(
+            name = name,
+            token = t,
+        )
+        dart_codegen(
+            name = dart_discover_target,
+            src = src,
+            generator_bin = "@rules_dart//dart/ext/drift:shim_discover",
+            output_suffixes = [".dart.drift_elements.json"],
+            package_name = package_name,
+            language_version = language_version,
+            deps = effective_deps + [":" + siblings_lib],
+            asset_deps = drift_srcs + prep_targets + discover_targets,
+        )
+        dart_discover_targets.append(":" + dart_discover_target)
+    return dart_discover_targets
+
+def _drift_dart_analyzer_targets(name, srcs, package_name, language_version, effective_deps, siblings_lib, drift_srcs, prep_targets, discover_targets, dart_discover_targets):
+    """`DriftAnalyzer` per `.dart`; returns the analyzer target labels."""
+    dart_analyzer_targets = []
+    for src in srcs:
+        t = _token(src)
+        dart_analyzer_target = "_{name}_{token}_dart_analyzer".format(
+            name = name,
+            token = t,
+        )
+        dart_codegen(
+            name = dart_analyzer_target,
+            src = src,
+            generator_bin = "@rules_dart//dart/ext/drift:shim_analyzer",
+            output_suffixes = [
+                ".dart.drift_module.json",
+                ".dart.types.temp.dart",
+            ],
+            package_name = package_name,
+            language_version = language_version,
+            deps = effective_deps + [":" + siblings_lib],
+            asset_deps = (
+                drift_srcs + prep_targets + discover_targets +
+                dart_discover_targets
+            ),
+        )
+        dart_analyzer_targets.append(":" + dart_analyzer_target)
+    return dart_analyzer_targets
+
+def _drift_analyzer_targets(name, drift_srcs, package_name, language_version, effective_deps, prep_targets, discover_targets, dart_discover_targets, dart_analyzer_targets):
+    """`DriftAnalyzer` per `.drift`/`.moor`; returns the analyzer target labels."""
+    analyzer_targets = []
+    for drift_src in drift_srcs:
+        analyzer_target = "_{name}_{token}_analyzer".format(
+            name = name,
+            token = _token(drift_src),
+        )
+        dart_sqlcodegen(
+            name = analyzer_target,
+            src = drift_src,
+            generator_bin = "@rules_dart//dart/ext/drift:shim_analyzer",
+            output_suffixes = [
+                ".drift.drift_module.json",
+                ".drift.types.temp.dart",
+            ],
+            package_name = package_name,
+            language_version = language_version,
+            deps = effective_deps,
+            asset_deps = (
+                drift_srcs + prep_targets + discover_targets +
+                dart_discover_targets + dart_analyzer_targets
+            ),
+        )
+        analyzer_targets.append(":" + analyzer_target)
+    return analyzer_targets
+
+def _drift_combined_targets(name, srcs, package_name, language_version, effective_deps, siblings_lib, drift_side_outputs):
+    """Stages 4-5: `DriftBuilder` shard plus combining shim per `.dart`; returns `.g.dart` labels."""
+    combined_targets = []
+    for src in srcs:
+        token = _token(src)
+        part_target = "_{name}_{token}_part".format(
+            name = name,
+            token = token,
+        )
+        combined_target = "_{name}_{token}_combined".format(
+            name = name,
+            token = token,
+        )
+        dart_codegen(
+            name = part_target,
+            src = src,
+            generator_bin = "@rules_dart//dart/ext/drift:shim_drift",
+            output_suffixes = [".drift.g.part"],
+            package_name = package_name,
+            language_version = language_version,
+            deps = effective_deps + [":" + siblings_lib],
+            asset_deps = drift_side_outputs,
+        )
+
+        # Stage 5: combining shim → `.g.dart`.
+        dart_codegen(
+            name = combined_target,
+            src = src,
+            generator_bin = "@rules_dart//dart/ext/_shared/combining_shim:bin",
+            output_suffixes = [".g.dart"],
+            parts = [":" + part_target],
+            package_name = package_name,
+            language_version = language_version,
+        )
+        combined_targets.append(":" + combined_target)
+    return combined_targets
+
 def drift_library(
         name,
         srcs,
@@ -72,43 +242,12 @@ def drift_library(
     # `.expr.temp.dart` (consumed by `backend.dart`'s expression-helper
     # lookup at `canRead('.expr.temp.dart')`). Declaring only one would
     # silently drop the other.
-    prep_targets = []
-    for drift_src in drift_srcs:
-        prep_target = "_{name}_{token}_prep".format(
-            name = name,
-            token = _token(drift_src),
-        )
-        dart_sqlcodegen(
-            name = prep_target,
-            src = drift_src,
-            generator_bin = "@rules_dart//dart/ext/drift:shim_prep",
-            output_suffixes = [".drift_prep.json", ".expr.temp.dart"],
-            package_name = package_name,
-            language_version = language_version,
-            deps = effective_deps,
-        )
-        prep_targets.append(":" + prep_target)
+    prep_targets = _drift_prep_targets(name, drift_srcs, package_name, language_version, effective_deps)
 
     # Stage 2: DriftDiscover per `.drift`/`.moor` — emits the
     # `.drift.drift_elements.json` cache file that `BuildCacheReader`
     # keys `readDiscovery` on. Needed for `include:` resolution.
-    discover_targets = []
-    for drift_src in drift_srcs:
-        discover_target = "_{name}_{token}_discover".format(
-            name = name,
-            token = _token(drift_src),
-        )
-        dart_sqlcodegen(
-            name = discover_target,
-            src = drift_src,
-            generator_bin = "@rules_dart//dart/ext/drift:shim_discover",
-            output_suffixes = [".drift.drift_elements.json"],
-            package_name = package_name,
-            language_version = language_version,
-            deps = effective_deps,
-            asset_deps = drift_srcs + prep_targets,
-        )
-        discover_targets.append(":" + discover_target)
+    discover_targets = _drift_discover_targets(name, drift_srcs, package_name, language_version, effective_deps, prep_targets)
 
     # Cross-source visibility for the DriftBuilder stage. When a project
     # splits @DriftDatabase and @DriftAccessor across multiple .dart files
@@ -118,17 +257,7 @@ def drift_library(
     # Wrap the user's Dart srcs in a source-only `dart_library` so each
     # per-src codegen sees the siblings via `same_package_library_dep_files`
     # auto-staging.
-    siblings_lib = "_{}_siblings".format(name)
-    dart_library(
-        name = siblings_lib,
-        srcs = srcs,
-        package_name = package_name,
-        language_version = language_version,
-        # Plumbing, not a library: its files import parts and packages it does
-        # not carry. They are analyzed as the `name` library's own files.
-        tags = ["no-dart-analyze"],
-        visibility = ["//visibility:private"],
-    )
+    siblings_lib = _drift_siblings_lib(name, srcs, package_name, language_version)
 
     # Discover per `.dart`. `@DriftDatabase(include: {'foo.drift'})` combined
     # with the reverse — a `.drift` file's `import 'bar.dart';` referencing
@@ -136,24 +265,7 @@ def drift_library(
     # available before either's analyzer runs, so we emit the `.dart`
     # discover in parallel with the `.drift` discover and feed BOTH into
     # every analyzer stage below.
-    dart_discover_targets = []
-    for src in srcs:
-        t = _token(src)
-        dart_discover_target = "_{name}_{token}_dart_discover".format(
-            name = name,
-            token = t,
-        )
-        dart_codegen(
-            name = dart_discover_target,
-            src = src,
-            generator_bin = "@rules_dart//dart/ext/drift:shim_discover",
-            output_suffixes = [".dart.drift_elements.json"],
-            package_name = package_name,
-            language_version = language_version,
-            deps = effective_deps + [":" + siblings_lib],
-            asset_deps = drift_srcs + prep_targets + discover_targets,
-        )
-        dart_discover_targets.append(":" + dart_discover_target)
+    dart_discover_targets = _drift_dart_discover_targets(name, srcs, package_name, language_version, effective_deps, siblings_lib, drift_srcs, prep_targets, discover_targets)
 
     # DriftAnalyzer per `.dart` — emits `.dart.drift_module.json`. Must
     # run BEFORE the `.drift` analyzer because a `.drift` file that
@@ -164,59 +276,14 @@ def drift_library(
     # to locate elements by id — the visible symptom is
     # `DriftResolver._restoreOrResolve` throwing `"Bad state: No element"`
     # on `.drift` queries that reference Dart-defined tables.
-    dart_analyzer_targets = []
-    for src in srcs:
-        t = _token(src)
-        dart_analyzer_target = "_{name}_{token}_dart_analyzer".format(
-            name = name,
-            token = t,
-        )
-        dart_codegen(
-            name = dart_analyzer_target,
-            src = src,
-            generator_bin = "@rules_dart//dart/ext/drift:shim_analyzer",
-            output_suffixes = [
-                ".dart.drift_module.json",
-                ".dart.types.temp.dart",
-            ],
-            package_name = package_name,
-            language_version = language_version,
-            deps = effective_deps + [":" + siblings_lib],
-            asset_deps = (
-                drift_srcs + prep_targets + discover_targets +
-                dart_discover_targets
-            ),
-        )
-        dart_analyzer_targets.append(":" + dart_analyzer_target)
+    dart_analyzer_targets = _drift_dart_analyzer_targets(name, srcs, package_name, language_version, effective_deps, siblings_lib, drift_srcs, prep_targets, discover_targets, dart_discover_targets)
 
     # DriftAnalyzer per `.drift`/`.moor` — emits `.drift.drift_module.json`
     # (element cache) + `.drift.types.temp.dart` (type helpers). Cross-
     # references Dart-defined tables via the Dart-side analyzer output,
     # so its asset_deps must include both Dart discover AND Dart analyzer
     # outputs.
-    analyzer_targets = []
-    for drift_src in drift_srcs:
-        analyzer_target = "_{name}_{token}_analyzer".format(
-            name = name,
-            token = _token(drift_src),
-        )
-        dart_sqlcodegen(
-            name = analyzer_target,
-            src = drift_src,
-            generator_bin = "@rules_dart//dart/ext/drift:shim_analyzer",
-            output_suffixes = [
-                ".drift.drift_module.json",
-                ".drift.types.temp.dart",
-            ],
-            package_name = package_name,
-            language_version = language_version,
-            deps = effective_deps,
-            asset_deps = (
-                drift_srcs + prep_targets + discover_targets +
-                dart_discover_targets + dart_analyzer_targets
-            ),
-        )
-        analyzer_targets.append(":" + analyzer_target)
+    analyzer_targets = _drift_analyzer_targets(name, drift_srcs, package_name, language_version, effective_deps, prep_targets, discover_targets, dart_discover_targets, dart_analyzer_targets)
 
     drift_side_outputs = (
         drift_srcs + prep_targets + discover_targets + analyzer_targets +
@@ -230,39 +297,7 @@ def drift_library(
     # cache files produced above via `findAssets` when resolving
     # `include:` and the per-`.dart` cache files when resolving
     # cross-file DAO references.
-    combined_targets = []
-    for src in srcs:
-        token = _token(src)
-        part_target = "_{name}_{token}_part".format(
-            name = name,
-            token = token,
-        )
-        combined_target = "_{name}_{token}_combined".format(
-            name = name,
-            token = token,
-        )
-        dart_codegen(
-            name = part_target,
-            src = src,
-            generator_bin = "@rules_dart//dart/ext/drift:shim_drift",
-            output_suffixes = [".drift.g.part"],
-            package_name = package_name,
-            language_version = language_version,
-            deps = effective_deps + [":" + siblings_lib],
-            asset_deps = drift_side_outputs,
-        )
-
-        # Stage 5: combining shim → `.g.dart`.
-        dart_codegen(
-            name = combined_target,
-            src = src,
-            generator_bin = "@rules_dart//dart/ext/_shared/combining_shim:bin",
-            output_suffixes = [".g.dart"],
-            parts = [":" + part_target],
-            package_name = package_name,
-            language_version = language_version,
-        )
-        combined_targets.append(":" + combined_target)
+    combined_targets = _drift_combined_targets(name, srcs, package_name, language_version, effective_deps, siblings_lib, drift_side_outputs)
 
     dart_library(
         name = name,
