@@ -1,6 +1,6 @@
 """Tests that `//dart:jit_snapshot_fallback` reaches both snapshot actions' argv.
 
-The flag opts into the private-scratch fallback when the constant training
+The flag opts into the private-scratch fallback when the keyed training
 path is unavailable. Both snapshot actions (`dart_binary` in `jit-snapshot`
 mode and `dart_test_runner_snapshot`) must carry it on the command line, so
 builds that allow the fallback and builds that do not have different action

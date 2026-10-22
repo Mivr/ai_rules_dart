@@ -569,6 +569,39 @@ def noop_test_executable(ctx, tool):
         runfiles = tool[DefaultInfo].default_runfiles,
     )
 
+# Seconds a snapshot training waits for its keyed training lock before the
+# action fails (or falls back where allowed). The default of
+# `//dart:jit_snapshot_lock_timeout`: both snapshot actions pass
+# `--lock-timeout=` only when set differently, so the action key follows a
+# non-default deadline. The tool's own default matches; keep the two equal.
+JIT_SNAPSHOT_LOCK_TIMEOUT_DEFAULT = 300
+
+def jit_train_key(short_path):
+    """The keyed-training key for a declared snapshot output.
+
+    16 lowercase hex characters from two 32-bit digests of the output's
+    root-relative path (`File.short_path`). The key depends only on that
+    path, so it is identical across output bases, strategies and machines,
+    and two different targets hold different keys (so their trainings run in
+    parallel) while concurrent trainings of one output contend for one lock.
+    See `app_jit_snapshot.dart`.
+
+    Args:
+        short_path: The declared output's root-relative path.
+
+    Returns:
+        The 16-character key both snapshot actions pass as `--train-key=`.
+    """
+    h = hash(short_path) % 4294967296
+    l = hash("rules_dart_jit:" + short_path) % 4294967296
+    digits = "0123456789abcdef"
+    key = ""
+    v = h * 4294967296 + l
+    for _i in range(16):
+        key = digits[v % 16] + key
+        v = v // 16
+    return key
+
 def sdk_dartvm(dart_sdk_info):
     """Returns the SDK's `dartvm` executable File, or None if the SDK has none.
 

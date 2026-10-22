@@ -10,8 +10,17 @@
 // Usage:
 //   dart app_jit_snapshot.dart --dart=<dart> --snapshot=<out> \
 //       [--dartvm=<dartvm>] [--enable-asserts] [--fallback-allowed] \
+//       [--train-key=<key>] [--lock-timeout=<seconds>] \
 //       [--env=KEY=VALUE]... [--copy=DEST=SOURCE]... [--copy-tree=DEST=DIR]... \
 //       -- <dart arguments>
+//
+// `<key>` selects the keyed training paths (see [trainDirForKey]): both
+// snapshot actions pass the deterministic key of the declared output, so two
+// different targets train in parallel and only concurrent trainings of one
+// output contend. `<seconds>` bounds the wait for the training lock (see
+// [_openConstantLock]); both snapshot actions pass it only when it differs
+// from [defaultLockTimeoutSecs], so the action key follows a non-default
+// deadline.
 //
 // The `<dart arguments>` are what `dart` runs in the training: the script
 // first, then its own arguments. Each `--copy` and `--copy-tree` places its
@@ -26,14 +35,18 @@
 //    optimizing compiles on the training thread.
 //  * The training is passed no `--packages` option, and every path the
 //    training VM resolves is byte-identical on every build of one target. On
-//    POSIX the training runs at the constant path `/tmp/rules_dart_jit` (see
-//    [constantTrainDir]): the working directory, the training VM copy, the
-//    staged inputs, `HOME`, `TMPDIR`, the script, and the `--snapshot` output
-//    all read the same whatever output root or sandbox the build runs in, so
-//    no interned path string can name the build. Concurrent trainings on one
-//    host serialize on [constantTrainLock]. A JIT-heavy program (hot loops,
+//    POSIX each output trains at its own keyed path
+//    `/tmp/rules_dart_jit-<key>` (see [trainDirForKey]), where `<key>` is 16
+//    lowercase hex characters of a deterministic digest of the declared
+//    output's root-relative path: the working directory, the training VM
+//    copy, the staged inputs, `HOME`, `TMPDIR`, the script, and the
+//    `--snapshot` output all read the same whatever output root or sandbox
+//    the build runs in, so no interned path string can name the build.
+//    Concurrent trainings of one output serialize on the keyed lock
+//    `/tmp/rules_dart_jit-<key>.lock`; trainings of different outputs hold
+//    different locks and run in parallel. A JIT-heavy program (hot loops,
 //    many small classes, string-keyed maps, closures) trains identical bytes
-//    across output roots and strategies at the constant path; training the
+//    across output roots and strategies at its keyed path; training the
 //    same inputs in varying directories trains different bytes from the same
 //    inputs (see the layout property test). The one relative path left, the
 //    runner's test path, is constant across builds by construction (it is
@@ -47,12 +60,12 @@
 // the runner only runs a test path naming a file under the working
 // directory, so the working directory must hold the staged test. `package:test`
 // derives heap strings from the training run's own paths at startup, but at
-// the constant path those read the same on every build, so the runner
+// the keyed path those read the same on every build, so the runner
 // snapshot is byte-identical across builds too, and its action carries no
 // `no-remote-cache` requirement: the first machine's snapshot is reused, and
 // every dependant keeps one action key.
 //
-// Where the constant directory is unavailable the action fails instead of
+// Where the keyed directory is unavailable the action fails instead of
 // training elsewhere: a private-scratch training emits different bytes under
 // the same action key, and both actions are remote-cacheable, so one host's
 // state would leak into shared outputs. A stale entry of our own is removed
@@ -64,7 +77,9 @@
 // fixed where missing); a lock that still will not open for writing, as
 // another user's 0644 lock, fails the action too — a shared lock would let
 // two trainings hold it at once, and the second would delete the first's
-// live training directory as its own. Either failure names the path, the
+// live training directory as its own. A lock held past the deadline fails the
+// action the same way (see [_openConstantLock]): the failure names the lock,
+// the holder's PID, the deadline, and the remedies. Either failure names the path, the
 // entry's type and its owner uid: remove the entry (or have the lock's owner
 // make it world-writable or remove it), pass
 // `--@rules_dart//dart:jit_snapshot_fallback=true` to allow the
@@ -104,6 +119,8 @@ void main(List<String> argv) {
   String? dart;
   String? dartvm;
   String? snapshot;
+  String? trainKey;
+  var lockTimeout = defaultLockTimeoutSecs;
   var enableAsserts = false;
   var fallbackAllowed = false;
   final env = <String, String>{};
@@ -141,6 +158,22 @@ void main(List<String> argv) {
         dartvm = value;
       case '--snapshot':
         snapshot = value;
+      case '--train-key':
+        // The keyed training paths (see [trainDirForKey]): 16 lowercase hex
+        // characters of a deterministic digest of the declared output's
+        // root-relative path, passed by both snapshot actions, so the key is
+        // identical across output bases, strategies and machines.
+        if (!_isTrainKey(value)) _usage('expected 16 lowercase hex in $arg');
+        trainKey = value;
+      case '--lock-timeout':
+        // Seconds to wait for the training lock (see [_openConstantLock]):
+        // passed by both snapshot actions only when it differs from
+        // [defaultLockTimeoutSecs], so the action key follows the deadline.
+        final secs = int.tryParse(value);
+        if (secs == null || secs <= 0) {
+          _usage('expected seconds above 0 in $arg');
+        }
+        lockTimeout = secs;
       case '--env':
         final pair = _Pair.parse(value, arg);
         env[pair.key] = pair.value;
@@ -157,6 +190,8 @@ void main(List<String> argv) {
     dart: dart,
     dartvm: dartvm,
     snapshot: snapshot,
+    trainKey: trainKey,
+    lockTimeout: lockTimeout,
     dartArgs: dartArgs,
     enableAsserts: enableAsserts,
     fallbackAllowed: fallbackAllowed,
@@ -173,6 +208,8 @@ void _trainFromArgs({
   required String? dart,
   required String? dartvm,
   required String? snapshot,
+  required String? trainKey,
+  required int lockTimeout,
   required List<String> dartArgs,
   required bool enableAsserts,
   required bool fallbackAllowed,
@@ -183,6 +220,8 @@ void _trainFromArgs({
   if (dart == null || snapshot == null || dartArgs.isEmpty) {
     _usage('--dart, --snapshot and the dart arguments are required');
   }
+  trainKeyOverride = trainKey;
+  lockTimeoutSecs = lockTimeout;
 
   final out = File(snapshot).absolute;
   final exitCode = _trainInScratch(
@@ -213,10 +252,21 @@ Never _usage(String problem) {
     'app_jit_snapshot: $problem\n'
     'usage: dart app_jit_snapshot.dart --dart=<dart> '
     '--snapshot=<out> [--dartvm=<dartvm>] [--enable-asserts] '
-    '[--fallback-allowed] [--env=K=V]... '
+    '[--fallback-allowed] [--train-key=<key>] [--lock-timeout=<seconds>] '
+    '[--env=K=V]... '
     '[--copy=D=S]... [--copy-tree=D=DIR]... -- <dart arguments>',
   );
   exit(64);
+}
+
+/// Whether [value] is a training key: 16 lowercase hex characters (see
+/// [trainDirForKey]).
+bool _isTrainKey(String value) {
+  if (value.length != 16) return false;
+  for (final c in value.codeUnits) {
+    if ((c < 0x30 || c > 0x39) && (c < 0x61 || c > 0x66)) return false;
+  }
+  return true;
 }
 
 String? _adjacentDartvm(String dart, String exeExt) {
@@ -434,18 +484,51 @@ class _Pair {
   }
 }
 
-/// The default absolute path every POSIX training runs in, so the bytes never
-/// name the build: the working directory, the training VM copy, the staged
-/// inputs, `HOME`, `TMPDIR`, the script and the `--snapshot` output all read
-/// the same here on every build of one target. Serialized by the default lock
-/// below; see [_acquireConstantDir].
+/// The default seconds a training waits for its training lock before treating
+/// the keyed path as unavailable (see [_openConstantLock]). Mirrors the
+/// `//dart:jit_snapshot_lock_timeout` build setting's default: both snapshot
+/// actions pass `--lock-timeout=` only when set differently, so the default
+/// here and the setting's default must stay equal.
+const defaultLockTimeoutSecs = 300;
+
+/// The training key selecting the keyed training paths (see [trainDirForKey]):
+/// 16 lowercase hex characters of a deterministic digest of the declared
+/// output's root-relative path, passed by both snapshot actions on argv as
+/// `--train-key=`. Null where the caller passed none (unit tests training at
+/// injected paths): the legacy host-wide paths below apply.
+///
+/// Public so tests pin the keyed routing without touching the real paths.
+String? trainKeyOverride;
+
+/// Seconds a training waits for the training lock (see [_openConstantLock]),
+/// from `--lock-timeout=`, or [defaultLockTimeoutSecs] where none was passed.
+///
+/// Public so tests bound the wait without touching the real paths.
+int lockTimeoutSecs = defaultLockTimeoutSecs;
+
+/// The keyed training directory for [key]: one absolute path per declared
+/// output, so two different targets train in parallel and only concurrent
+/// trainings of one output contend for the lock. The key depends only on the
+/// output's root-relative path, so it is identical across output bases,
+/// strategies and machines.
+///
+/// Public so tests pin the routing both snapshot actions rely on.
+String trainDirForKey(String key) => '/tmp/rules_dart_jit-$key';
+
+/// The lock serializing trainings at [trainDirForKey] for [key] (see
+/// [_openConstantLock]).
+///
+/// Public so tests pin the routing both snapshot actions rely on.
+String trainLockForKey(String key) => '/tmp/rules_dart_jit-$key.lock';
+
+/// The legacy host-wide training path, used only where no `--train-key=` was
+/// passed. Every production training passes a key; the legacy path stays so
+/// keyless runs (older actions, direct tool runs) keep training somewhere the
+/// bytes never name the build.
 const _defaultTrainDir = '/tmp/rules_dart_jit';
 
-/// The default lock serializing trainings at [_defaultTrainDir] across
-/// concurrent actions on one host. Held from before the directory is cleared
-/// until after it is deleted, so no two trainings share the path, and a
-/// crashed training leaves at most an empty locked directory for the next
-/// holder to clear.
+/// The legacy host-wide lock, used only where no `--train-key=` was passed
+/// (see [_defaultTrainDir]).
 const _defaultTrainLock = '/tmp/rules_dart_jit.lock';
 
 /// Overrides for the constant training paths, for tests.
@@ -460,19 +543,23 @@ const _defaultTrainLock = '/tmp/rules_dart_jit.lock';
 String? trainDirOverride;
 String? trainLockOverride;
 
-/// The one absolute path every POSIX training runs in (see [_defaultTrainDir]
+/// The one absolute path every POSIX training runs in (see [trainDirForKey]
 /// for why), or the test override where one is set.
 String get constantTrainDir =>
     trainDirOverride ??
     Platform.environment['RULES_DART_JIT_TRAIN_DIR'] ??
-    _defaultTrainDir;
+    (trainKeyOverride != null
+        ? trainDirForKey(trainKeyOverride!)
+        : _defaultTrainDir);
 
 /// The lock serializing trainings at [constantTrainDir], or the test override
 /// where one is set.
 String get constantTrainLock =>
     trainLockOverride ??
     Platform.environment['RULES_DART_JIT_TRAIN_LOCK'] ??
-    _defaultTrainLock;
+    (trainKeyOverride != null
+        ? trainLockForKey(trainKeyOverride!)
+        : _defaultTrainLock);
 
 bool _fallbackWarned = false;
 
@@ -511,6 +598,49 @@ String _constantDirUnavailable = '';
 /// [_acquireConstantDir] call, like [_constantDirUnavailable] itself.
 bool _constantLockUnavailable = false;
 
+/// Whether the last [_openConstantLock] call ran past its deadline: the lock
+/// was contended for the whole wait. Only meaningful after a null return;
+/// reset on every call, like [_constantDirUnavailable] itself.
+bool _lockWaitTimedOut = false;
+
+/// The holder's PID at the last deadline, for the fail-closed error. Null
+/// where it could not be read; the error then says "unknown".
+int? _lockHolderPidAtDeadline;
+
+/// The deadline seconds the last [_openConstantLock] call waited, for the
+/// fail-closed error.
+int _lockDeadlineSecs = defaultLockTimeoutSecs;
+
+/// Takes the lock without blocking, returning true when it is now held.
+///
+/// A non-blocking exclusive `fcntl` try-lock: false means another process
+/// holds the lock, and the caller polls until its deadline (see
+/// [_openConstantLock]) instead of hanging forever. Any other lock error
+/// reads the same way: the deadline still fails the action closed.
+bool _tryExclusiveLock(RandomAccessFile lock) {
+  try {
+    lock.lockSync(FileLock.exclusive);
+    return true;
+  } on FileSystemException {
+    // Held by another process (or unlocked for us): poll until the deadline.
+    return false;
+  }
+}
+
+/// Fixes the group/other write bits on [constantTrainLock] where they are
+/// missing (see [_openConstantLock]): a no-op where the bits are already set,
+/// ignored where the lock is not ours to chmod.
+void _fixLockMode() {
+  try {
+    // Shareable across users on a shared host, whatever the creator's
+    // umask; a no-op fixup where the bits are already set.
+    chmodFile(constantTrainLock, 0x1b6);
+  } on FileSystemException {
+    // Not ours to chmod (a lock that opens append-only but is owned by
+    // another user): the lock is still held, so training proceeds.
+  }
+}
+
 /// Opens the lock serializing trainings at [constantTrainDir] and takes it
 /// exclusively, returning the held lock.
 ///
@@ -522,39 +652,71 @@ bool _constantLockUnavailable = false;
 /// lock's chmod fails, which is ignored: the lock is still held). When the
 /// append-open itself fails, as on a foreign 0644 lock, there is no
 /// read-only path: an `fcntl(2)` shared lock coexists with other shared
-/// holders, so two trainings that reached the constant path that way could
+/// holders, so two trainings that reached the keyed path that way could
 /// both hold it, and the second would delete the first's live training
 /// directory as "its own" before claiming the path. The caller fails the
 /// action instead (see [_acquireConstantDir]). Null when the lock path is a
-/// symlink, or cannot be opened or locked at all.
+/// symlink, or cannot be opened at all.
+///
+/// A contended lock never blocks forever: the exclusive take is a
+/// non-blocking `fcntl` try-lock (see [_tryExclusiveLock]), polled with
+/// sleeps backing off from 50 ms to 1 s until [lockTimeoutSecs] seconds pass.
+/// After 10 s of waiting, and then every 60 s, one notice names the lock path
+/// and the holder's PID (see [_lockHolderPid]), or "unknown" where it cannot
+/// be read. At the deadline the path counts as unavailable: null is returned
+/// with [_lockWaitTimedOut] set, and the caller fails the action (or falls
+/// back where allowed), naming the lock, the holder and the deadline.
 RandomAccessFile? _openConstantLock() {
   if (FileSystemEntity.isLinkSync(constantTrainLock)) return null;
+  _lockWaitTimedOut = false;
+  _lockHolderPidAtDeadline = null;
+  _lockDeadlineSecs = lockTimeoutSecs;
+  final RandomAccessFile lock;
   try {
-    final lock = File(constantTrainLock).openSync(mode: FileMode.append);
-    try {
-      lock.lockSync(FileLock.blockingExclusive);
-    } on FileSystemException {
-      try {
-        lock.closeSync();
-      } on FileSystemException {
-        // Ignore cleanup errors.
-      }
-      return null;
-    }
-    try {
-      // Shareable across users on a shared host, whatever the creator's
-      // umask; a no-op fixup where the bits are already set.
-      chmodFile(constantTrainLock, 0x1b6);
-    } on FileSystemException {
-      // Not ours to chmod (a lock that opens append-only but is owned by
-      // another user): the lock is still held, so training proceeds.
-    }
-    return lock;
+    lock = File(constantTrainLock).openSync(mode: FileMode.append);
   } on FileSystemException {
     // The append-open failed (a foreign 0644 lock, or a non-file at the
     // path): no shared-lock fallback, the caller fails the action.
     return null;
   }
+  if (_tryExclusiveLock(lock)) {
+    _fixLockMode();
+    return lock;
+  }
+  final stopwatch = Stopwatch()..start();
+  final deadline = Duration(seconds: lockTimeoutSecs);
+  var sleepMs = 50;
+  var nextNotice = const Duration(seconds: 10);
+  for (;;) {
+    final remaining = deadline - stopwatch.elapsed;
+    if (remaining <= Duration.zero) break;
+    sleep(
+      remaining < Duration(milliseconds: sleepMs)
+          ? remaining
+          : Duration(milliseconds: sleepMs),
+    );
+    if (_tryExclusiveLock(lock)) {
+      _fixLockMode();
+      return lock;
+    }
+    sleepMs = sleepMs >= 500 ? 1000 : sleepMs * 2;
+    if (stopwatch.elapsed >= nextNotice) {
+      final holder = _lockHolderPid(constantTrainLock);
+      stderr.writeln(
+        'app_jit_snapshot: waiting for $constantTrainLock'
+        '${holder == null ? ' held by process unknown' : ' held by process $holder'}...',
+      );
+      nextNotice += const Duration(seconds: 60);
+    }
+  }
+  _lockWaitTimedOut = true;
+  _lockHolderPidAtDeadline = _lockHolderPid(constantTrainLock);
+  try {
+    lock.closeSync();
+  } on FileSystemException {
+    // Ignore cleanup errors.
+  }
+  return null;
 }
 
 /// Deletes any stale entry at [path] without reading its content or following
@@ -684,8 +846,17 @@ String _describeEntryAt(String path) {
   _constantLockUnavailable = false;
   final RandomAccessFile? lock = _openConstantLock();
   if (lock == null) {
-    _constantDirUnavailable =
-        'the lock file ${_describeEntryAt(constantTrainLock)} cannot be opened for writing';
+    if (_lockWaitTimedOut) {
+      final holder = _lockHolderPidAtDeadline == null
+          ? 'process unknown'
+          : 'process ${_lockHolderPidAtDeadline}';
+      _constantDirUnavailable =
+          'the lock file $constantTrainLock is still held by $holder '
+          'after waiting $_lockDeadlineSecs seconds';
+    } else {
+      _constantDirUnavailable =
+          'the lock file ${_describeEntryAt(constantTrainLock)} cannot be opened for writing';
+    }
     _constantLockUnavailable = true;
     return null;
   }
@@ -731,14 +902,25 @@ String _describeEntryAt(String path) {
 }
 
 /// Writes the fail-closed error for a null [_acquireConstantDir]: the
-/// blocker in [_constantDirUnavailable] and its remedies. A blocked lock
-/// names the lock's own remedies — its owner makes it world-writable or
-/// removes it — since we cannot remove another user's lock; a blocked
-/// training directory names removing the entry.
+/// blocker in [_constantDirUnavailable] and its remedies. A lock that stayed
+/// held past its deadline names stopping the holder and waiting longer; any
+/// other blocked lock names the lock's own remedies — its owner makes it
+/// world-writable or removes it — since we cannot remove another user's lock;
+/// a blocked training directory names removing the entry.
 void _writeUnavailableError() {
-  final remedy = _constantLockUnavailable
-      ? 'Have its owner run `chmod 0666 $constantTrainLock` or remove it, or pass '
-      : 'Remove the entry, or pass ';
+  final String remedy;
+  if (_lockWaitTimedOut) {
+    final holder = _lockHolderPidAtDeadline == null
+        ? 'process unknown'
+        : 'process ${_lockHolderPidAtDeadline}';
+    remedy =
+        'Stop the holder ($holder), raise `--@rules_dart//dart:jit_snapshot_lock_timeout` '
+        'above $_lockDeadlineSecs, or pass ';
+  } else {
+    remedy = _constantLockUnavailable
+        ? 'Have its owner run `chmod 0666 $constantTrainLock` or remove it, or pass '
+        : 'Remove the entry, or pass ';
+  }
   stderr.writeln(
     'app_jit_snapshot: cannot train in $constantTrainDir on this host: '
     '$_constantDirUnavailable. $remedy'
@@ -1423,6 +1605,82 @@ typedef _LstatDart = int Function(
 );
 typedef _GeteuidNative = ffi.Uint32 Function();
 typedef _GeteuidDart = int Function();
+typedef _Open2Native = ffi.Int Function(ffi.Pointer<ffi.Uint8>, ffi.Int);
+typedef _Open2Dart = int Function(ffi.Pointer<ffi.Uint8>, int);
+typedef _CloseNative = ffi.Int Function(ffi.Int);
+typedef _CloseDart = int Function(int);
+typedef _FcntlGetlkNative = ffi.Int Function(
+  ffi.Int,
+  ffi.Int,
+  ffi.Pointer<ffi.Uint8>,
+);
+typedef _FcntlGetlkDart = int Function(int, int, ffi.Pointer<ffi.Uint8>);
+
+/// The PID holding an exclusive `fcntl` lock on [path], for the lock-wait
+/// notices and the deadline error. Null where no process holds one, where the
+/// path cannot be opened, or where the platform has no suitable call: the
+/// callers then say "unknown".
+///
+/// Queries with `fcntl(2)` `F_GETLK` for a conflicting write lock over the
+/// whole file: the kernel reports the lock the training's own try-lock
+/// refuses, with the holder's PID. The `struct flock` layout differs by OS:
+/// on Linux the type is a little-endian i16 at offset 0 and the PID a
+/// little-endian i32 at offset 20+4, on macOS the start/len are two i64 at
+/// offsets 0/8, the PID an i32 at offset 16 and the type an i16 at offset 20.
+/// All supported hosts are little-endian. Metadata only: the file is opened
+/// read-only and never read.
+int? _lockHolderPid(String path) {
+  if (Platform.isWindows) return null;
+  try {
+    final lib = ffi.DynamicLibrary.process();
+    final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
+    final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
+    final open = lib.lookupFunction<_Open2Native, _Open2Dart>('open');
+    final close = lib.lookupFunction<_CloseNative, _CloseDart>('close');
+    final fcntl = lib.lookupFunction<_FcntlGetlkNative, _FcntlGetlkDart>(
+      'fcntl',
+    );
+    final pathPtr = _toCString(malloc, path);
+    try {
+      final buf = malloc(32);
+      if (buf == ffi.nullptr) return null;
+      try {
+        buf.asTypedList(32).fillRange(0, 32, 0);
+        final fd = open(pathPtr, 0);
+        if (fd < 0) return null;
+        try {
+          final view = ByteData.sublistView(buf.asTypedList(32));
+          final int cmd;
+          if (Platform.isMacOS) {
+            view.setInt16(20, 1, Endian.little);
+            cmd = 7;
+          } else {
+            view.setInt16(0, 1, Endian.little);
+            cmd = 5;
+          }
+          if (fcntl(fd, cmd, buf) != 0) return null;
+          final type = Platform.isMacOS
+              ? view.getInt16(20, Endian.little)
+              : view.getInt16(0, Endian.little);
+          if (type == 2) return null;
+          final holderPid = Platform.isMacOS
+              ? view.getInt32(16, Endian.little)
+              : view.getInt32(24, Endian.little);
+          return holderPid > 0 ? holderPid : null;
+        } finally {
+          close(fd);
+        }
+      } finally {
+        free(buf);
+      }
+    } finally {
+      free(pathPtr);
+    }
+  } on ArgumentError {
+    // A libc call this host lacks (`fcntl`, `open`): no holder available.
+    return null;
+  }
+}
 
 /// Allocates a zero-terminated UTF-8 copy of [path] with libc `malloc`.
 /// The caller frees it with libc `free`.

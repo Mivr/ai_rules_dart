@@ -2,10 +2,12 @@
 
 load(
     "//dart/private:common.bzl",
+    "JIT_SNAPSHOT_LOCK_TIMEOUT_DEFAULT",
     "STABLE_SCHEME",
     "find_sdk_kernel_tools",
     "gen_kernel_args",
     "has_comma_define",
+    "jit_train_key",
     "sdk_dartvm",
     "stable_entry_path",
     "writable_home_env",
@@ -169,12 +171,13 @@ def has_comma_define_flag(flags):
             return True
     return False
 
-def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asserts, comma_patch = None, fallback_allowed = False):
-    """Trains the app-JIT snapshot of a kernel at one constant absolute path.
+def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asserts, comma_patch = None, fallback_allowed = False, lock_timeout_secs = JIT_SNAPSHOT_LOCK_TIMEOUT_DEFAULT):
+    """Trains the app-JIT snapshot of a kernel at its keyed absolute path.
 
     `dart compile jit-snapshot` trains in the action's own directory, so the
-    absolute path of the sandbox ends up in the snapshot. `jit_tool` trains in a
-    constant absolute path, with the flags that keep the
+    absolute path of the sandbox ends up in the snapshot. `jit_tool` trains at
+    the keyed path for this output (`--train-key=`, from the output's
+    root-relative path), with the flags that keep the
     snapshot the same from build to build. See `app_jit_snapshot.dart`. A
     program whose own training run is not deterministic (it reads the clock,
     random numbers, or files outside the build) still differs between builds.
@@ -190,10 +193,15 @@ def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asse
         output: The `.jit` File to produce.
         enable_asserts: Whether the training run enables asserts.
         fallback_allowed: Whether the training may fall back to a private
-            scratch directory when the constant training path is unavailable
+            scratch directory when the keyed training path is unavailable
             (from `//dart:jit_snapshot_fallback`). Passed on the command line,
             so builds that allow the fallback and builds that do not have
             different action keys.
+        lock_timeout_secs: Seconds the training waits for the keyed training
+            lock before the action fails (from
+            `//dart:jit_snapshot_lock_timeout`). Passed on the command line
+            only when it differs from the default, so the action key follows
+            a non-default deadline.
     """
     dart_bin = dart_sdk_info.dart
     dartvm = sdk_dartvm(dart_sdk_info)
@@ -209,6 +217,9 @@ def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asse
     if dartvm != None:
         args.add(dartvm, format = "--dartvm=%s")
     args.add(output, format = "--snapshot=%s")
+    args.add("--train-key=" + jit_train_key(output.short_path))
+    if lock_timeout_secs != JIT_SNAPSHOT_LOCK_TIMEOUT_DEFAULT:
+        args.add("--lock-timeout=%d" % lock_timeout_secs)
     if enable_asserts:
         args.add("--enable-asserts")
     if fallback_allowed:
@@ -464,7 +475,8 @@ def dart_compile_action(
         comma_patch = None,
         native_assets_yaml = None,
         embed_sources = True,
-        jit_snapshot_fallback = False):
+        jit_snapshot_fallback = False,
+        jit_lock_timeout = JIT_SNAPSHOT_LOCK_TIMEOUT_DEFAULT):
     """Creates the actions that compile a Dart entrypoint in `compile_mode`.
 
     A source entrypoint (one with a `package_config`) is first compiled to a
@@ -508,11 +520,18 @@ def dart_compile_action(
         native_assets_yaml: Optional `native_assets.yaml` File.
         embed_sources: Whether non-AOT kernels embed source text.
         jit_snapshot_fallback: Whether a `jit-snapshot` training may fall back
-            to a private scratch directory when the constant training path is
+            to a private scratch directory when the keyed training path is
             unavailable (from `//dart:jit_snapshot_fallback`). Reaches the
             snapshot action's command line, so builds that allow the fallback
             and builds that do not have different action keys.
+        jit_lock_timeout: Seconds a `jit-snapshot` training waits for the
+            keyed training lock before the action fails (from
+            `//dart:jit_snapshot_lock_timeout`). Must be above 0. Reaches the
+            snapshot action's command line only when it differs from the
+            default, so the action key follows a non-default deadline.
     """
+    if jit_lock_timeout <= 0:
+        fail("dart_compile_action: `jit_snapshot_lock_timeout` must be above 0, got %r" % jit_lock_timeout)
     cross_err = cross_target_error(target_os, target_arch)
     if cross_err != None:
         fail(cross_err)
@@ -619,6 +638,7 @@ def dart_compile_action(
             output = output,
             enable_asserts = enable_asserts,
             fallback_allowed = jit_snapshot_fallback,
+            lock_timeout_secs = jit_lock_timeout,
         )
         return
 

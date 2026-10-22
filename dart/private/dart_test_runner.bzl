@@ -29,16 +29,16 @@ where the training scratch directory has no room under the path limit (see
 `app_jit_snapshot.dart`), so the snapshot would depend on the build's path.
 
 The training run is `--deterministic` and targets an unknown CPU, and runs with
-the same inputs at one constant absolute training path in the same environment
-each time, from a copy of the SDK's `dart` (see `app_jit_snapshot.dart`). Those
-make the snapshot the same across builds and across SDK install locations. The
+the same inputs at the keyed absolute training path for its output in the same
+environment each time, from a copy of the SDK's `dart` (see
+`app_jit_snapshot.dart`). Those make the snapshot the same across builds and across SDK install locations. The
 baseline-CPU target is meant to let a remote cache share it across CPUs. The
 snapshot's action key does not record the CPU features its code uses, so that
 intent is the only guard against a cache serving code a CPU cannot run.
 
 Like a `dart_binary` `jit-snapshot` training, the runner training is
 byte-identical across builds: `package:test` derives heap strings from the
-training run's own paths, but at the constant training path those read the
+training run's own paths, but at the keyed training path those read the
 same on every build. The action key holds no absolute path, so remote caching
 stays on for it: the first machine's snapshot is reused and every dependant
 keeps one action key.
@@ -46,16 +46,18 @@ keeps one action key.
 `//dart:test_runner_snapshot` turns the snapshot off for the whole build: the
 kernel runs instead, as before. Use it for a snapshot that misbehaves.
 
-When the constant training path is blocked by an entry another user owns, the
-snapshot action fails and names the entry rather than training elsewhere under
-the same action key. `//dart:jit_snapshot_fallback` allows the non-reproducible
-private-scratch fallback instead, and is part of the action's command line, so
-builds that allow it and builds that do not have different action keys.
+When the keyed training path is blocked by an entry another user owns, or its
+lock stays held past `--@rules_dart//dart:jit_snapshot_lock_timeout` seconds,
+the snapshot action fails and names the entry rather than training elsewhere
+under the same action key. `//dart:jit_snapshot_fallback` allows the
+non-reproducible private-scratch fallback instead, and is part of the action's
+command line, so builds that allow it and builds that do not have different
+action keys.
 """
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartCompileInfo", "DartInfo")
-load("//dart/private:common.bzl", "kernel_sdk_mismatch_error", "sdk_dartvm", "writable_home_env")
+load("//dart/private:common.bzl", "JIT_SNAPSHOT_LOCK_TIMEOUT_DEFAULT", "jit_train_key", "kernel_sdk_mismatch_error", "sdk_dartvm", "writable_home_env")
 load("//dart/private:dart_kernel.bzl", "DartKernelInfo", "dart_kernel_module_aspect")
 
 DartTestRunnerInfo = provider(
@@ -194,14 +196,18 @@ def _dart_test_runner_snapshot_impl(ctx):
     if mismatch != None:
         fail(mismatch)
 
+    lock_timeout = ctx.attr._lock_timeout[BuildSettingInfo].value
+    if lock_timeout <= 0:
+        fail("dart_test_runner_snapshot: `//dart:jit_snapshot_lock_timeout` must be above 0, got %r" % lock_timeout)
+
     runner = _runner_kernel(ctx, ctx.attr.runner)
     runner_runfiles = ctx.attr.runner[DefaultInfo].default_runfiles.files
     training = ctx.attr.training[DartTestKernelInfo]
     snapshot = ctx.actions.declare_file(ctx.label.name + ".jit")
 
-    # `app_jit_snapshot.dart` trains at one constant absolute path, where the
-    # runner, the precompiled training test and its source are staged; the tool
-    # names the script and the `--precompiled` directory absolutely, keeps the
+    # `app_jit_snapshot.dart` trains at the keyed absolute path for this
+    # output, where the runner, the precompiled training test and its source
+    # are staged; the tool names the script and the `--precompiled` directory absolutely, keeps the
     # test path relative (the runner joins it onto `--precompiled` itself), and
     # trains with the constant directory as its working directory, so the test
     # path resolves into the staged tree. The environment is set here, and
@@ -223,6 +229,9 @@ def _dart_test_runner_snapshot_impl(ctx):
     if dartvm != None:
         args.add(dartvm, format = "--dartvm=%s")
     args.add(snapshot, format = "--snapshot=%s")
+    args.add("--train-key=" + jit_train_key(snapshot.short_path))
+    if lock_timeout != JIT_SNAPSHOT_LOCK_TIMEOUT_DEFAULT:
+        args.add("--lock-timeout=%d" % lock_timeout)
     args.add("--enable-asserts")
     if ctx.attr._fallback[BuildSettingInfo].value:
         args.add("--fallback-allowed")
@@ -278,8 +287,13 @@ dart_test_runner_snapshot = rule(
             providers = [BuildSettingInfo],
         ),
         "_fallback": attr.label(
-            doc = "Whether `--fallback-allowed` is passed when the constant training path is unavailable.",
+            doc = "Whether `--fallback-allowed` is passed when the keyed training path is unavailable.",
             default = "//dart:jit_snapshot_fallback",
+            providers = [BuildSettingInfo],
+        ),
+        "_lock_timeout": attr.label(
+            doc = "Seconds the training waits for the keyed training lock. Passed as `--lock-timeout=` only when it differs from the default.",
+            default = "//dart:jit_snapshot_lock_timeout",
             providers = [BuildSettingInfo],
         ),
     },
@@ -287,5 +301,5 @@ dart_test_runner_snapshot = rule(
         "//dart:toolchain_type",
         "//dart:exec_tools_toolchain_type",
     ],
-    doc = "Runs one training test under the `package:test` runner and keeps the app-JIT snapshot that run writes. Empty where exec and target SDKs differ, where the exec host is Windows, or where `--@rules_dart//dart:test_runner_snapshot=false` turns snapshots off. Fails where the constant training path is blocked by another user's entry unless `--@rules_dart//dart:jit_snapshot_fallback=true` allows the fallback.",
+    doc = "Runs one training test under the `package:test` runner and keeps the app-JIT snapshot that run writes. Empty where exec and target SDKs differ, where the exec host is Windows, or where `--@rules_dart//dart:test_runner_snapshot=false` turns snapshots off. Fails where the keyed training path is blocked by another user's entry, or its lock stays held past `--@rules_dart//dart:jit_snapshot_lock_timeout` seconds, unless `--@rules_dart//dart:jit_snapshot_fallback=true` allows the fallback.",
 )

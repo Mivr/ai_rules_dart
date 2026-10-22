@@ -1,5 +1,5 @@
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
-load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "int_flag")
 load("//dart/private:build_settings.bzl", "dart_defines_flag")
 load("//dart/private:copy_toolchain.bzl", "copy_toolchain")
 load("//dart/private:dart_sdk_binary.bzl", "dart_sdk_binary")
@@ -28,7 +28,7 @@ bool_flag(
 
 # Whether an app-JIT snapshot training (`dart_binary(compile_mode = "jit-snapshot")`
 # and the `package:test` runner snapshot) may fall back to a private scratch
-# directory when the constant training path is unavailable (see
+# directory when the keyed training path is unavailable (see
 # `app_jit_snapshot.dart`). Off by default: the fallback trains different bytes
 # under the same action key, and both actions are remote-cacheable, so one host's
 # state would leak into shared outputs. When the path is blocked, the action fails
@@ -40,6 +40,23 @@ bool_flag(
 bool_flag(
     name = "jit_snapshot_fallback",
     build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
+# Seconds an app-JIT snapshot training waits for its keyed training lock
+# (`/tmp/rules_dart_jit-<key>.lock`, where `<key>` is 16 lowercase hex
+# characters of a deterministic digest of the declared output's root-relative
+# path) before the action fails and names the lock, the holder's PID and the
+# deadline (see `app_jit_snapshot.dart`). While waiting past 10 s the training
+# prints the holder's PID every 60 s. At the deadline the action fails by
+# default; `--@rules_dart//dart:jit_snapshot_fallback=true` allows the
+# non-reproducible private-scratch fallback instead. Must be above 0:
+#   bazel build //... --@rules_dart//dart:jit_snapshot_lock_timeout=20
+# The flag reaches both snapshot actions' command lines only when it differs
+# from the default, so the action key follows a non-default deadline.
+int_flag(
+    name = "jit_snapshot_lock_timeout",
+    build_setting_default = 300,
     visibility = ["//visibility:public"],
 )
 

@@ -201,6 +201,7 @@ def _dart_binary_impl(ctx):
             jit_tool = ctx.file._jit_tool,
             comma_patch = ctx.file._comma_patch,
             jit_snapshot_fallback = ctx.attr._jit_snapshot_fallback[BuildSettingInfo].value,
+            jit_lock_timeout = ctx.attr._jit_lock_timeout[BuildSettingInfo].value,
             native_assets_yaml = native_assets_yaml,
             embed_sources = DartTestRunnerMainInfo not in ctx.attr.main,
         )
@@ -349,7 +350,7 @@ The `dart compile` mode. Determines the output format:
 - `exe` (default): Self-contained native machine code. No Dart SDK needed at runtime. Best for deployment.
 - `aot-snapshot`: AOT-compiled snapshot. Requires `dartaotruntime` to execute. Smaller than `exe`.
 - `kernel`: Dart kernel binary (`.dill`). Requires `dart` to execute. Fastest compilation, useful for development. Compiles modularly by default (`modular_kernel = True` and `//dart:modular_kernel = True`) against dependency `.kmod`/`.koutline` modules when eligible, or whole-program via `gen_kernel` when `modular_kernel = False` or when target `defines`, `dart_compile_flags`, or `code_assets` are set.
-- `jit-snapshot`: JIT snapshot with trained profile data. Requires `dart` to execute. Fastest startup after warmup. The program is trained once, with no arguments, at one constant absolute path used as its working directory and with no `--packages` value, so the snapshot is byte-identical across builds. The snapshot is reproducible only if that training run is deterministic: a program that reads the clock, random numbers, or files outside the build gives a different snapshot each build (see `app_jit_snapshot.dart`). The training runs from a copy of the SDK's `dart`, so the snapshot does not depend on where the SDK is installed or where the build runs. When the constant training path is blocked by an entry another user owns, the action fails and names the entry rather than training elsewhere under the same action key; `--@rules_dart//dart:jit_snapshot_fallback=true` allows the non-reproducible private-scratch fallback instead.
+- `jit-snapshot`: JIT snapshot with trained profile data. Requires `dart` to execute. Fastest startup after warmup. The program is trained once, with no arguments, at the keyed absolute path for its output (`/tmp/rules_dart_jit-<key>`, where `<key>` is 16 lowercase hex characters of a deterministic digest of the output's root-relative path) used as its working directory and with no `--packages` value, so the snapshot is byte-identical across builds. The snapshot is reproducible only if that training run is deterministic: a program that reads the clock, random numbers, or files outside the build gives a different snapshot each build (see `app_jit_snapshot.dart`). The training runs from a copy of the SDK's `dart`, so the snapshot does not depend on where the SDK is installed or where the build runs. A training waits for the keyed lock up to `--@rules_dart//dart:jit_snapshot_lock_timeout` seconds (default 300), printing the holder's PID while it waits; when the keyed training path is blocked by an entry another user owns, or the lock stays held past the deadline, the action fails and names the entry rather than training elsewhere under the same action key; `--@rules_dart//dart:jit_snapshot_fallback=true` allows the non-reproducible private-scratch fallback instead.
 """,
             default = "exe",
             values = ["exe", "aot-snapshot", "kernel", "jit-snapshot"],
@@ -375,8 +376,13 @@ Every other flag goes to `dart compile`. In the `kernel` mode, setting `dart_com
             allow_single_file = True,
         ),
         "_jit_snapshot_fallback": attr.label(
-            doc = "Whether `--fallback-allowed` is passed when the constant training path is unavailable.",
+            doc = "Whether `--fallback-allowed` is passed when the keyed training path is unavailable.",
             default = "//dart:jit_snapshot_fallback",
+            providers = [BuildSettingInfo],
+        ),
+        "_jit_lock_timeout": attr.label(
+            doc = "Seconds a `jit-snapshot` training waits for the keyed training lock. Passed as `--lock-timeout=` only when it differs from the default.",
+            default = "//dart:jit_snapshot_lock_timeout",
             providers = [BuildSettingInfo],
         ),
         "launcher": attr.bool(

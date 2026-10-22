@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -19,6 +20,8 @@ void main(List<String> args) {
     // concurrently: every training in this file uses test directories.
     snapshot.trainDirOverride = '${tmp.path}/jit_train';
     snapshot.trainLockOverride = '${tmp.path}/jit_train.lock';
+    snapshot.trainKeyOverride = null;
+    snapshot.lockTimeoutSecs = snapshot.defaultLockTimeoutSecs;
     realMkdir = snapshot.mkdirExclusive;
     realRemoveStale = snapshot.removeStaleEntry;
   });
@@ -26,6 +29,8 @@ void main(List<String> args) {
   tearDown(() {
     snapshot.trainDirOverride = null;
     snapshot.trainLockOverride = null;
+    snapshot.trainKeyOverride = null;
+    snapshot.lockTimeoutSecs = snapshot.defaultLockTimeoutSecs;
     snapshot.mkdirExclusive = realMkdir;
     snapshot.removeStaleEntry = realRemoveStale;
     if (!Platform.isWindows) {
@@ -95,6 +100,44 @@ void main(List<String> args) {
     'RULES_DART_JIT_TRAIN_DIR': snapshot.constantTrainDir,
     'RULES_DART_JIT_TRAIN_LOCK': snapshot.constantTrainLock,
   };
+
+  /// Writes a lock-holder script under [tmp] that takes an exclusive lock on
+  /// its first argument, prints `held` once taken, and holds it for its
+  /// second argument's seconds. Returns its path.
+  String writeLockHolder() {
+    final holder = File('${tmp.path}/lock_holder.dart')
+      ..writeAsStringSync(
+        "import 'dart:io';\n"
+        'void main(List<String> args) {\n'
+        '  final lock = File(args[0]).openSync(mode: FileMode.append);\n'
+        '  lock.lockSync(FileLock.blockingExclusive);\n'
+        "  stdout.writeln('held');\n"
+        '  sleep(Duration(seconds: int.parse(args[1])));\n'
+        '}\n',
+      );
+    return holder.path;
+  }
+
+  /// Starts [holderScript] holding [lockPath] for [seconds], waiting for its
+  /// `held` line. The caller kills the returned process.
+  Future<Process> startLockHolder(
+    String holderScript,
+    String lockPath,
+    String seconds,
+  ) async {
+    final holder = await Process.start(Platform.resolvedExecutable, [
+      holderScript,
+      lockPath,
+      seconds,
+    ]);
+    final held = await holder.stdout
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .first
+        .timeout(const Duration(seconds: 60));
+    expect(held, 'held', reason: 'holder took $lockPath');
+    return holder;
+  }
 
   /// Trains [dill] to [out] in-process at the constant training path,
   /// returning the snapshot bytes. Fails the test when the run leaves
@@ -1217,6 +1260,222 @@ void main(List<String> args) {
     );
     expect(allowed.exitCode, 0, reason: '${allowed.stderr}');
     expect(File(allowedOut).existsSync(), isTrue);
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('held lock fails after the deadline naming the holder', () async {
+    // Another process holding the training lock must not hang the training
+    // forever: the run waits until its deadline, then fails closed naming
+    // the lock, the holder's PID, the deadline and the remedies. The tool
+    // runs in a subprocess (it exits on failure).
+    final holderScript = writeLockHolder();
+    final lock = '${tmp.path}/held.lock';
+    final holder = await startLockHolder(holderScript, lock, '30');
+    try {
+      final tool = stageTool();
+      final dill = compileDill(
+        'void main(List<String> args) {\n  print(10000);\n}\n',
+        'deadline_train',
+      );
+      final trainDir = '${tmp.path}/held_jit';
+      final trainEnv = {
+        'RULES_DART_JIT_TRAIN_DIR': trainDir,
+        'RULES_DART_JIT_TRAIN_LOCK': lock,
+      };
+      final outJit = '${tmp.path}/held_out/app.jit';
+      final stopwatch = Stopwatch()..start();
+      final denied = Process.runSync(Platform.resolvedExecutable, [
+        tool,
+        '--dart=${Platform.resolvedExecutable}',
+        '--snapshot=$outJit',
+        '--lock-timeout=2',
+        '--copy=input.dill=$dill',
+        '--',
+        'input.dill',
+      ], environment: trainEnv);
+      stopwatch.stop();
+      expect(denied.exitCode, isNot(0), reason: 'held lock must fail');
+      expect(File(outJit).existsSync(), isFalse);
+      final err = denied.stderr as String;
+      expect(err, contains('cannot train in $trainDir'));
+      expect(err, contains(lock));
+      expect(err, contains('${holder.pid}'));
+      expect(err, contains('after waiting 2 seconds'));
+      expect(err, contains('jit_snapshot_lock_timeout'));
+      expect(err, contains('jit_snapshot_fallback=true'));
+      expect(err, contains('test_runner_snapshot=false'));
+      // A 2 s deadline waits without a notice: the first notice goes out
+      // after 10 s of waiting.
+      expect(err, isNot(contains('waiting for')));
+      expect(
+        stopwatch.elapsedMilliseconds,
+        greaterThanOrEqualTo(1000),
+        reason: 'the run waits out its deadline rather than failing fast',
+      );
+    } finally {
+      holder.kill();
+      await holder.exitCode;
+    }
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('held lock falls back where allowed', () async {
+    // At the deadline the training counts as unavailable, so with the
+    // fallback allowed the run trains in scratch and succeeds.
+    final holderScript = writeLockHolder();
+    final lock = '${tmp.path}/held_fb.lock';
+    final holder = await startLockHolder(holderScript, lock, '30');
+    try {
+      final tool = stageTool();
+      final dill = compileDill(
+        'void main(List<String> args) {\n  print(10000);\n}\n',
+        'deadline_fb_train',
+      );
+      final trainEnv = {
+        'RULES_DART_JIT_TRAIN_DIR': '${tmp.path}/held_fb_jit',
+        'RULES_DART_JIT_TRAIN_LOCK': lock,
+      };
+      final outJit = '${tmp.path}/held_fb_out/app.jit';
+      final allowed = Process.runSync(Platform.resolvedExecutable, [
+        tool,
+        '--dart=${Platform.resolvedExecutable}',
+        '--snapshot=$outJit',
+        '--lock-timeout=2',
+        '--fallback-allowed',
+        '--copy=input.dill=$dill',
+        '--',
+        'input.dill',
+      ], environment: trainEnv);
+      expect(allowed.exitCode, 0, reason: '${allowed.stderr}');
+      expect(File(outJit).existsSync(), isTrue);
+    } finally {
+      holder.kill();
+      await holder.exitCode;
+    }
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('released lock trains before the deadline', () async {
+    // A holder that releases mid-wait hands the lock over: the training
+    // proceeds at the injected path with no fallback.
+    final holderScript = writeLockHolder();
+    final holder = await startLockHolder(
+      holderScript,
+      snapshot.constantTrainLock,
+      '1',
+    );
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      final dill = compileDill(
+        'void main(List<String> args) {\n  print(10000);\n}\n',
+        'release_train',
+      );
+      final outJit = File('${tmp.path}/release_out/app.jit');
+      snapshot.main([
+        '--dart=${Platform.resolvedExecutable}',
+        '--snapshot=${outJit.path}',
+        '--lock-timeout=5',
+        '--env=TMPDIR=.',
+        '--env=HOME=.',
+        '--copy=input.dill=$dill',
+        '--',
+        'input.dill',
+      ]);
+      expect(outJit.existsSync(), isTrue, reason: 'snapshot written');
+      expect(
+        FileSystemEntity.typeSync(
+          snapshot.constantTrainDir,
+          followLinks: false,
+        ),
+        FileSystemEntityType.notFound,
+        reason: 'training directory deleted after the run',
+      );
+    } finally {
+      holder.kill();
+      await holder.exitCode;
+    }
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('no waiting notice when the lock is free', () {
+    // A training that takes a free lock stays silent: notices go out only
+    // past 10 s of waiting. The tool runs in a subprocess so its stderr can
+    // be read back.
+    final tool = stageTool();
+    final dill = compileDill(
+      'void main(List<String> args) {\n  print(10000);\n}\n',
+      'quiet_train',
+    );
+    final outJit = '${tmp.path}/quiet_out/app.jit';
+    final res = Process.runSync(Platform.resolvedExecutable, [
+      tool,
+      '--dart=${Platform.resolvedExecutable}',
+      '--snapshot=$outJit',
+      '--lock-timeout=2',
+      '--copy=input.dill=$dill',
+      '--',
+      'input.dill',
+    ], environment: constantTrainEnv());
+    expect(res.exitCode, 0, reason: '${res.stderr}');
+    expect(File(outJit).existsSync(), isTrue);
+    expect(res.stderr as String, isNot(contains('waiting for')));
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('train key selects keyed paths', () {
+    // The key routes the training without touching the filesystem: with no
+    // injected paths set, the keyed directory and lock name the key, and two
+    // keys name different paths, so their trainings run in parallel.
+    final realDir = snapshot.trainDirOverride;
+    final realLock = snapshot.trainLockOverride;
+    snapshot.trainDirOverride = null;
+    snapshot.trainLockOverride = null;
+    try {
+      snapshot.trainKeyOverride = '0123456789abcdef';
+      expect(snapshot.constantTrainDir, '/tmp/rules_dart_jit-0123456789abcdef');
+      expect(
+        snapshot.constantTrainLock,
+        '/tmp/rules_dart_jit-0123456789abcdef.lock',
+      );
+      snapshot.trainKeyOverride = 'fedcba9876543210';
+      expect(snapshot.constantTrainDir, '/tmp/rules_dart_jit-fedcba9876543210');
+      expect(
+        snapshot.constantTrainLock,
+        '/tmp/rules_dart_jit-fedcba9876543210.lock',
+      );
+    } finally {
+      snapshot.trainDirOverride = realDir;
+      snapshot.trainLockOverride = realLock;
+      snapshot.trainKeyOverride = null;
+    }
+  });
+
+  test('a holder on one path does not block another', () async {
+    // Per-path contention: a holder on one training lock leaves a training
+    // at another path to take its own lock straight away.
+    final holderScript = writeLockHolder();
+    final holder = await startLockHolder(
+      holderScript,
+      '${tmp.path}/other.lock',
+      '30',
+    );
+    try {
+      snapshot.trainDirOverride = '${tmp.path}/other_jit';
+      snapshot.trainLockOverride = '${tmp.path}/own.lock';
+      final dill = compileDill(
+        'void main(List<String> args) {\n  print(10000);\n}\n',
+        'other_train',
+      );
+      final outJit = File('${tmp.path}/other_out/app.jit');
+      snapshot.main([
+        '--dart=${Platform.resolvedExecutable}',
+        '--snapshot=${outJit.path}',
+        '--env=TMPDIR=.',
+        '--env=HOME=.',
+        '--copy=input.dill=$dill',
+        '--',
+        'input.dill',
+      ]);
+      expect(outJit.existsSync(), isTrue, reason: 'snapshot written');
+    } finally {
+      holder.kill();
+      await holder.exitCode;
+    }
   }, skip: Platform.isWindows ? posixOnlyReason : false);
 
   test(
