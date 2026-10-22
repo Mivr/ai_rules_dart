@@ -594,29 +594,47 @@ String junitXml(List<String> lines, {required String suiteName}) {
       'time="${seconds(total)}">',
     );
   for (final c in shown) {
-    out.write(
-      '    <testcase name="${_attr(names[c.id] ?? 'test ${c.id}')}" '
-      'classname="${_attr(suiteName)}" time="${seconds(c.millis)}">',
+    _writeTestCaseElement(
+      out,
+      c,
+      names: names,
+      suiteName: suiteName,
+      seconds: seconds,
     );
-    if (c.skipped) {
-      out.write('<skipped/>');
-    } else if (c.result != 'success') {
-      final tag = c.result == 'failure' ? 'failure' : 'error';
-      final message = c.errors.isEmpty ? c.result : c.errors.first;
-      out.write(
-        '<$tag message="${_attr(message.split('\n').first)}">'
-        '${_text(c.errors.join('\n'))}</$tag>',
-      );
-    }
-    if (c.output.isNotEmpty) {
-      out.write('<system-out>${_text(c.output.toString())}</system-out>');
-    }
-    out.writeln('</testcase>');
   }
   out
     ..writeln('  </testsuite>')
     ..writeln('</testsuites>');
   return out.toString();
+}
+
+/// One `<testcase>` element for a shown case: open tag, skipped/failure
+/// details, captured output, and close tag.
+void _writeTestCaseElement(
+  StringBuffer out,
+  _Case c, {
+  required Map<int, String> names,
+  required String suiteName,
+  required String Function(int) seconds,
+}) {
+  out.write(
+    '    <testcase name="${_attr(names[c.id] ?? 'test ${c.id}')}" '
+    'classname="${_attr(suiteName)}" time="${seconds(c.millis)}">',
+  );
+  if (c.skipped) {
+    out.write('<skipped/>');
+  } else if (c.result != 'success') {
+    final tag = c.result == 'failure' ? 'failure' : 'error';
+    final message = c.errors.isEmpty ? c.result : c.errors.first;
+    out.write(
+      '<$tag message="${_attr(message.split('\n').first)}">'
+      '${_text(c.errors.join('\n'))}</$tag>',
+    );
+  }
+  if (c.output.isNotEmpty) {
+    out.write('<system-out>${_text(c.output.toString())}</system-out>');
+  }
+  out.writeln('</testcase>');
 }
 
 class _Case {
