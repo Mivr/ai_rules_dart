@@ -665,15 +665,14 @@ Future<int> _analyze(
     allowedUnderRestrictedRoot: allowedSrcPaths,
     blockAnalysisOptions: false,
   );
-  final collection = AnalysisContextCollectionImpl(
-    resourceProvider: boundedProvider,
-    includedPaths: [project],
+  final collection = _openAnalyzeCollection(
+    boundedProvider: boundedProvider,
+    project: project,
     sdkPath: sdkPath,
     sdkSummaryPath: sdkSummaryPath,
-    packageConfigFile: packagesPath,
-    librarySummaryPaths: summaryPaths,
+    packagesPath: packagesPath,
+    summaryPaths: summaryPaths,
   );
-  _installFileAwareSummaryResolver(collection, boundedProvider.pathContext);
   try {
     final context = collection.contexts.single;
     final analyzed = _analyzedPaths(
@@ -710,6 +709,28 @@ Future<int> _analyze(
   } finally {
     await disposeContextCollection(collection);
   }
+}
+
+/// The analysis context collection for a staged project, with the
+/// file-aware summary resolver installed.
+AnalysisContextCollectionImpl _openAnalyzeCollection({
+  required BoundedResourceProvider boundedProvider,
+  required String project,
+  required String sdkPath,
+  required String sdkSummaryPath,
+  required String packagesPath,
+  required List<String> summaryPaths,
+}) {
+  final collection = AnalysisContextCollectionImpl(
+    resourceProvider: boundedProvider,
+    includedPaths: [project],
+    sdkPath: sdkPath,
+    sdkSummaryPath: sdkSummaryPath,
+    packageConfigFile: packagesPath,
+    librarySummaryPaths: summaryPaths,
+  );
+  _installFileAwareSummaryResolver(collection, boundedProvider.pathContext);
+  return collection;
 }
 
 /// The staged project an analyze request checks, after pruning and guarding.
