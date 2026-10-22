@@ -288,37 +288,50 @@ _ANALYZE_FILE_PATTERNS = [
     "revision",
 ]
 
-# Public macro exported by `//dart:toolchain.bzl` and `//dart:repositories.bzl`
-# that declares the fixed suite of SDK filegroups (`sdk_root`, `compile_files`,
-# `runtime_files`, `analyze_files`) and `dart_toolchain` targets; its positional
-# `(version, dart, ...)` signature is public API and cannot add a leading `name`
-# parameter without an API break.
-# buildifier: disable=unnamed-macro
-def declare_dart_sdk_toolchains(
-        version,
-        dart,
-        prefix = "",
-        sdk_root_name = "sdk_root",
-        cross_targets = ()):
-    """Declares SDK filegroups and `dart_toolchain` targets over an extracted Dart SDK.
+def _normalize_cross_items(cross_targets):
+    """Normalises `cross_targets` to `(platform, os, arch, gen_snapshot, dartaotruntime)` tuples."""
+    if type(cross_targets) == "dict":
+        return [
+            (
+                target_platform,
+                entry[0],
+                entry[1],
+                entry[2] if len(entry) > 2 else None,
+                entry[3] if len(entry) > 3 else None,
+            )
+            for target_platform, entry in cross_targets.items()
+        ]
+    return [
+        (
+            entry[0],
+            entry[1],
+            entry[2],
+            entry[3] if len(entry) > 3 else None,
+            entry[4] if len(entry) > 4 else None,
+        )
+        for entry in cross_targets
+    ]
 
-    Args:
-        version: The Dart SDK version string (e.g. `3.11.0`).
-        dart: Label or repo-relative path of the `dart` executable (e.g. `bin/dart`
-            or `dart-sdk/bin/dart`).
-        prefix: Path prefix inside the package where the Dart SDK lives (e.g. `""`
-            when the SDK is at the root, or `"dart-sdk/"` when nested). A non-empty
-            prefix without a trailing `"/"` has one appended.
-        sdk_root_name: Name of the full SDK filegroup (default `"sdk_root"`). When
-            set to another name (e.g. `"dart_sdk_files"`), a public `"sdk_root"`
-            alias pointing to `":" + sdk_root_name` is also declared.
-        cross_targets: Cross-compilation targets to declare `dart_toolchain_cross_<platform>`
-            rules for. Accepts either a sequence of `(target_platform, target_os, target_arch[, cross_gen_snapshot, cross_dartaotruntime])`
-            tuples or a dict mapping `target_platform` to `(target_os, target_arch[, cross_gen_snapshot, cross_dartaotruntime])`.
-    """
-    if prefix and not prefix.endswith("/"):
-        prefix = prefix + "/"
+def _declare_cross_toolchains(cross_items, dart, sdk_root_label, version):
+    """Declares one `dart_toolchain_cross_<platform>` target per normalized item."""
+    for target_platform, target_os, target_arch, cross_gen_snapshot, cross_dartaotruntime in cross_items:
+        dart_toolchain(
+            name = "dart_toolchain_cross_" + target_platform,
+            analyze_files = ":analyze_files",
+            compile_files = ":compile_files",
+            cross_dartaotruntime = cross_dartaotruntime,
+            cross_gen_snapshot = cross_gen_snapshot,
+            dart = dart,
+            runtime_files = ":runtime_files",
+            sdk_root = sdk_root_label,
+            target_arch = target_arch,
+            target_os = target_os,
+            version = version,
+            visibility = ["//visibility:public"],
+        )
 
+def _declare_sdk_filegroups(prefix, sdk_root_name):
+    """Declares the `sdk_root`, `compile_files`, `runtime_files` and `analyze_files` filegroups."""
     native.filegroup(
         name = sdk_root_name,
         srcs = native.glob([prefix + "**"]),
@@ -358,6 +371,39 @@ def declare_dart_sdk_toolchains(
         visibility = ["//visibility:public"],
     )
 
+# Public macro exported by `//dart:toolchain.bzl` and `//dart:repositories.bzl`
+# that declares the fixed suite of SDK filegroups (`sdk_root`, `compile_files`,
+# `runtime_files`, `analyze_files`) and `dart_toolchain` targets; its positional
+# `(version, dart, ...)` signature is public API and cannot add a leading `name`
+# parameter without an API break.
+# buildifier: disable=unnamed-macro
+def declare_dart_sdk_toolchains(
+        version,
+        dart,
+        prefix = "",
+        sdk_root_name = "sdk_root",
+        cross_targets = ()):
+    """Declares SDK filegroups and `dart_toolchain` targets over an extracted Dart SDK.
+
+    Args:
+        version: The Dart SDK version string (e.g. `3.11.0`).
+        dart: Label or repo-relative path of the `dart` executable (e.g. `bin/dart`
+            or `dart-sdk/bin/dart`).
+        prefix: Path prefix inside the package where the Dart SDK lives (e.g. `""`
+            when the SDK is at the root, or `"dart-sdk/"` when nested). A non-empty
+            prefix without a trailing `"/"` has one appended.
+        sdk_root_name: Name of the full SDK filegroup (default `"sdk_root"`). When
+            set to another name (e.g. `"dart_sdk_files"`), a public `"sdk_root"`
+            alias pointing to `":" + sdk_root_name` is also declared.
+        cross_targets: Cross-compilation targets to declare `dart_toolchain_cross_<platform>`
+            rules for. Accepts either a sequence of `(target_platform, target_os, target_arch[, cross_gen_snapshot, cross_dartaotruntime])`
+            tuples or a dict mapping `target_platform` to `(target_os, target_arch[, cross_gen_snapshot, cross_dartaotruntime])`.
+    """
+    if prefix and not prefix.endswith("/"):
+        prefix = prefix + "/"
+
+    _declare_sdk_filegroups(prefix, sdk_root_name)
+
     sdk_root_label = ":" + sdk_root_name
     dart_toolchain(
         name = "dart_toolchain",
@@ -370,41 +416,4 @@ def declare_dart_sdk_toolchains(
         visibility = ["//visibility:public"],
     )
 
-    if type(cross_targets) == "dict":
-        cross_items = [
-            (
-                target_platform,
-                entry[0],
-                entry[1],
-                entry[2] if len(entry) > 2 else None,
-                entry[3] if len(entry) > 3 else None,
-            )
-            for target_platform, entry in cross_targets.items()
-        ]
-    else:
-        cross_items = [
-            (
-                entry[0],
-                entry[1],
-                entry[2],
-                entry[3] if len(entry) > 3 else None,
-                entry[4] if len(entry) > 4 else None,
-            )
-            for entry in cross_targets
-        ]
-
-    for target_platform, target_os, target_arch, cross_gen_snapshot, cross_dartaotruntime in cross_items:
-        dart_toolchain(
-            name = "dart_toolchain_cross_" + target_platform,
-            analyze_files = ":analyze_files",
-            compile_files = ":compile_files",
-            cross_dartaotruntime = cross_dartaotruntime,
-            cross_gen_snapshot = cross_gen_snapshot,
-            dart = dart,
-            runtime_files = ":runtime_files",
-            sdk_root = sdk_root_label,
-            target_arch = target_arch,
-            target_os = target_os,
-            version = version,
-            visibility = ["//visibility:public"],
-        )
+    _declare_cross_toolchains(_normalize_cross_items(cross_targets), dart, sdk_root_label, version)
