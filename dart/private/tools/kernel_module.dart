@@ -4794,11 +4794,45 @@ Uint8List _stripSourceCodeFromDill(Uint8List data, {StringSink? errSink}) {
 }
 
 Uint8List _stripSingleComponentSourceCode(Uint8List data, StringSink sink) {
+  final index = _parseStripIndex(data);
+  if (index == null) return data;
+  final numSources = ByteData.sublistView(data).getUint32(index.offSourceTable);
+  if (numSources == 0) return data;
+  final rebuilt = _rebuildSourceTable(
+    data,
+    index.offSourceTable,
+    index.offConstantTable,
+    numSources,
+  );
+  final delta = rebuilt.bytes.length - rebuilt.replacedLength;
+  if (delta == 0) return data;
+  final linkTableEnd = _linkTableEnd(
+    data,
+    index.offLinkTable,
+    index.offMetadataPayloads,
+  );
+  return _reassembleStripped(data, index, rebuilt.bytes, delta, linkTableEnd);
+}
+
+/// A single component's table layout for source stripping.
+typedef _StripIndex = ({
+  List<int> fields,
+  int idxCount,
+  int idxBytes,
+  int offSourceTable,
+  int offConstantTable,
+  int offLinkTable,
+  int offMetadataPayloads,
+  int offComponentIndex,
+});
+
+/// Reads and validates the component index, or null when it is inconsistent.
+_StripIndex? _parseStripIndex(Uint8List data) {
   final bd = ByteData.sublistView(data);
   final libCount = bd.getUint32(data.length - 8);
   final idxCount = libCount + 12;
   final idxBytes = idxCount * 4;
-  if (idxBytes > data.length) return data;
+  if (idxBytes > data.length) return null;
   final rawIdxStart = data.length - idxBytes;
 
   final fields = List<int>.generate(
@@ -4819,12 +4853,28 @@ Uint8List _stripSingleComponentSourceCode(Uint8List data, StringSink sink) {
       offMetadataMappings > offStringTable ||
       offStringTable > offComponentIndex ||
       offComponentIndex > rawIdxStart) {
-    return data;
+    return null;
   }
+  return (
+    fields: fields,
+    idxCount: idxCount,
+    idxBytes: idxBytes,
+    offSourceTable: offSourceTable,
+    offConstantTable: offConstantTable,
+    offLinkTable: offLinkTable,
+    offMetadataPayloads: offMetadataPayloads,
+    offComponentIndex: offComponentIndex,
+  );
+}
 
-  final numSources = bd.getUint32(offSourceTable);
-  if (numSources == 0) return data;
-
+/// Rewrites the source table with every source body emptied, returning the new
+/// table and the length of the table it replaces.
+({Uint8List bytes, int replacedLength}) _rebuildSourceTable(
+  Uint8List data,
+  int offSourceTable,
+  int offConstantTable,
+  int numSources,
+) {
   var pos = offSourceTable + 4;
   int readUInt30() {
     final b0 = data[pos++];
@@ -4880,23 +4930,49 @@ Uint8List _stripSingleComponentSourceCode(Uint8List data, StringSink sink) {
   }
   newSt.add(offsetsBuf.buffer.asUint8List());
 
-  final newStBytes = newSt.takeBytes();
-  final oldStLen = offConstantTable - offSourceTable;
-  final delta = newStBytes.length - oldStLen;
-  if (delta == 0) return data;
+  return (
+    bytes: newSt.takeBytes(),
+    replacedLength: offConstantTable - offSourceTable,
+  );
+}
 
-  pos = offLinkTable;
+/// The end of the link table's canonical entries, clamped to the metadata.
+int _linkTableEnd(Uint8List data, int offLinkTable, int offMetadataPayloads) {
+  var pos = offLinkTable;
+  int readUInt30() {
+    final b0 = data[pos++];
+    if ((b0 & 0x80) == 0) return b0;
+    if ((b0 & 0x40) == 0) {
+      return ((b0 & 0x3f) << 8) | data[pos++];
+    }
+    final b1 = data[pos++];
+    final b2 = data[pos++];
+    final b3 = data[pos++];
+    return ((b0 & 0x3f) << 24) | (b1 << 16) | (b2 << 8) | b3;
+  }
+
   final canonCount = readUInt30();
   for (var i = 0; i < canonCount; i++) {
     readUInt30();
     readUInt30();
   }
-  final linkTableEnd = pos <= offMetadataPayloads ? pos : offMetadataPayloads;
+  return pos <= offMetadataPayloads ? pos : offMetadataPayloads;
+}
 
+/// Splices the rewritten source table back into the component, realigning the
+/// metadata payloads and rewriting the component index.
+Uint8List _reassembleStripped(
+  Uint8List data,
+  _StripIndex index,
+  Uint8List newStBytes,
+  int delta,
+  int linkTableEnd,
+) {
+  final fields = index.fields;
   final out = BytesBuilder(copy: false);
-  out.add(Uint8List.sublistView(data, 0, offSourceTable));
+  out.add(Uint8List.sublistView(data, 0, index.offSourceTable));
   out.add(newStBytes);
-  out.add(Uint8List.sublistView(data, offConstantTable, linkTableEnd));
+  out.add(Uint8List.sublistView(data, index.offConstantTable, linkTableEnd));
 
   // Kernel requires binaryOffsetForMetadataPayloads (fields[4]) to be 8-byte
   // aligned (ComponentFile.metadataPayloadsAlignment = 8).
@@ -4905,12 +4981,18 @@ Uint8List _stripSingleComponentSourceCode(Uint8List data, StringSink sink) {
     out.add(Uint8List(metaPad));
   }
   final newOffMetadataPayloads = out.length;
-  final metaDelta = newOffMetadataPayloads - offMetadataPayloads;
+  final metaDelta = newOffMetadataPayloads - index.offMetadataPayloads;
 
-  out.add(Uint8List.sublistView(data, offMetadataPayloads, offComponentIndex));
+  out.add(
+    Uint8List.sublistView(
+      data,
+      index.offMetadataPayloads,
+      index.offComponentIndex,
+    ),
+  );
 
   final newOffComponentIndex = out.length;
-  final totalUnpadded = out.length + idxBytes;
+  final totalUnpadded = out.length + index.idxBytes;
   final pad = (8 - (totalUnpadded % 8)) % 8;
   if (pad > 0) {
     out.add(Uint8List(pad));
@@ -4923,10 +5005,10 @@ Uint8List _stripSingleComponentSourceCode(Uint8List data, StringSink sink) {
     fields[i] += metaDelta;
   }
   fields[7] = newOffComponentIndex;
-  fields[idxCount - 1] = out.length + idxBytes;
+  fields[index.idxCount - 1] = out.length + index.idxBytes;
 
-  final idxBuf = ByteData(idxBytes);
-  for (var i = 0; i < idxCount; i++) {
+  final idxBuf = ByteData(index.idxBytes);
+  for (var i = 0; i < index.idxCount; i++) {
     idxBuf.setUint32(i * 4, fields[i]);
   }
   out.add(idxBuf.buffer.asUint8List());
