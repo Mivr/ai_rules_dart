@@ -58,10 +58,15 @@
 // state would leak into shared outputs. A stale entry of our own is removed
 // first, whatever its type (a regular file, a symlink, a FIFO, a socket, or a
 // directory, removed recursively): nothing that was there is ever read or
-// followed, so a symlink's target is untouched. The lock is shared across
-// users (mode 0666, fixed where missing), so only an entry owned by another
-// user still blocks the path. That failure names the path, the entry's type
-// and its owner uid: remove the entry, pass
+// followed, so a symlink's target is untouched. A directory we own is made
+// writable before it is listed, so a read-only tree a crashed training left
+// behind still clears. The lock opens append-only for every user (mode 0666,
+// fixed where missing); a lock that still will not open for writing, as
+// another user's 0644 lock, fails the action too — a shared lock would let
+// two trainings hold it at once, and the second would delete the first's
+// live training directory as its own. Either failure names the path, the
+// entry's type and its owner uid: remove the entry (or have the lock's owner
+// make it world-writable or remove it), pass
 // `--@rules_dart//dart:jit_snapshot_fallback=true` to allow the
 // private-scratch fallback (whose bytes are not reproducible, so builds that
 // allow it and builds that do not have different action keys), or, for the
@@ -500,6 +505,12 @@ void _releaseConstantLock(RandomAccessFile lock) {
 /// Only meaningful after a null return.
 String _constantDirUnavailable = '';
 
+/// Whether [_constantDirUnavailable] names the lock file rather than the
+/// training directory: a lock owned by another user cannot be removed by us,
+/// so the error names the lock's own remedies. Reset on every
+/// [_acquireConstantDir] call, like [_constantDirUnavailable] itself.
+bool _constantLockUnavailable = false;
+
 /// Opens the lock serializing trainings at [constantTrainDir] and takes it
 /// exclusively, returning the held lock.
 ///
@@ -509,15 +520,13 @@ String _constantDirUnavailable = '';
 /// every user on a shared host can open it; a pre-existing lock that is ours
 /// but lacks the group/other write bits is fixed the same way (a foreign
 /// lock's chmod fails, which is ignored: the lock is still held). When the
-/// append-open itself fails, as on a foreign 0644 lock, a read-only open is
-/// tried instead: Dart's `lockSync` is an `fcntl(2)` lock, whose exclusive
-/// (write) lock needs write access but whose shared (read) lock needs only
-/// read access. The shared lock still conflicts with every exclusive holder,
-/// so a training that reaches the constant path this way waits out an active
-/// training; it coexists with other shared holders, and there the atomic
-/// `mkdir(0700)` claim decides: exactly one training owns the path and any
-/// other fails closed instead of training elsewhere. Null when the lock path
-/// is a symlink, or cannot be opened or locked at all.
+/// append-open itself fails, as on a foreign 0644 lock, there is no
+/// read-only path: an `fcntl(2)` shared lock coexists with other shared
+/// holders, so two trainings that reached the constant path that way could
+/// both hold it, and the second would delete the first's live training
+/// directory as "its own" before claiming the path. The caller fails the
+/// action instead (see [_acquireConstantDir]). Null when the lock path is a
+/// symlink, or cannot be opened or locked at all.
 RandomAccessFile? _openConstantLock() {
   if (FileSystemEntity.isLinkSync(constantTrainLock)) return null;
   try {
@@ -543,24 +552,7 @@ RandomAccessFile? _openConstantLock() {
     return lock;
   } on FileSystemException {
     // The append-open failed (a foreign 0644 lock, or a non-file at the
-    // path): fall through to the read-only attempt below.
-  }
-  try {
-    final lock = File(constantTrainLock).openSync(mode: FileMode.read);
-    try {
-      // Shared, not exclusive: an fcntl exclusive lock needs write access
-      // (see above). It still waits out every exclusive holder.
-      lock.lockSync(FileLock.blockingShared);
-    } on FileSystemException {
-      try {
-        lock.closeSync();
-      } on FileSystemException {
-        // Ignore cleanup errors.
-      }
-      return null;
-    }
-    return lock;
-  } on FileSystemException {
+    // path): no shared-lock fallback, the caller fails the action.
     return null;
   }
 }
@@ -625,7 +617,20 @@ bool Function(String path) removeStaleEntry = _unlinkStaleEntry;
 /// then is the directory itself removed. A link swapped in for a directory
 /// mid-removal fails the final remove, so the caller fails closed rather than
 /// training in a directory it does not own.
+///
+/// A crashed training can leave a read-only tree (Bazel inputs and outputs
+/// are read-only and copies keep modes): a real directory owned by us gets
+/// owner access back before it is listed, so our own stale trees clear.
+/// Only such a directory is chmodded, never a link and never through one,
+/// and never what another user owns: anything else is deleted as found, and
+/// the OS refuses what is not ours to remove.
 void _deleteTreeNoFollow(String path) {
+  if (!FileSystemEntity.isLinkSync(path)) {
+    final info = _statEntry(path);
+    if (info != null && info.kind == 'directory' && info.uid == _ownUid()) {
+      chmodFile(path, 0x1c0);
+    }
+  }
   for (final entity in Directory(
     path,
   ).listSync(recursive: false, followLinks: false)) {
@@ -640,14 +645,23 @@ void _deleteTreeNoFollow(String path) {
   Directory(path).deleteSync();
 }
 
-/// Names the entry currently at [constantTrainDir] for the fail-closed error:
-/// its type and its owner uid, never its content.
-String _describeEntry() {
-  final info = _statEntry(constantTrainDir);
+/// Our uid, for telling our own stale directories (whose modes a crashed
+/// training may have left read-only) from another user's.
+int _ownUid() {
+  if (Platform.isWindows) return -1;
+  final lib = ffi.DynamicLibrary.process();
+  final geteuid = lib.lookupFunction<_GeteuidNative, _GeteuidDart>('geteuid');
+  return geteuid();
+}
+
+/// Names the entry currently at [path] for the fail-closed error: its type
+/// and its owner uid, never its content.
+String _describeEntryAt(String path) {
+  final info = _statEntry(path);
   if (info == null) {
-    return 'entry at $constantTrainDir of unknown ownership';
+    return 'entry at $path of unknown ownership';
   }
-  return '${info.kind} at $constantTrainDir owned by uid ${info.uid}';
+  return '${info.kind} at $path owned by uid ${info.uid}';
 }
 
 /// Takes the exclusive training lock and claims [constantTrainDir] as an
@@ -667,10 +681,12 @@ String _describeEntry() {
 /// the directory before releasing the lock, also on failure.
 ({Directory dir, RandomAccessFile lock})? _acquireConstantDir() {
   if (Platform.isWindows) return null;
+  _constantLockUnavailable = false;
   final RandomAccessFile? lock = _openConstantLock();
   if (lock == null) {
     _constantDirUnavailable =
-        'the lock file $constantTrainLock cannot be opened or locked';
+        'the lock file ${_describeEntryAt(constantTrainLock)} cannot be opened for writing';
+    _constantLockUnavailable = true;
     return null;
   }
   ({Directory dir, RandomAccessFile lock})? fail(String reason) {
@@ -681,7 +697,9 @@ String _describeEntry() {
 
   try {
     if (!removeStaleEntry(constantTrainDir)) {
-      return fail('the ${_describeEntry()} cannot be removed');
+      return fail(
+        'the ${_describeEntryAt(constantTrainDir)} cannot be removed',
+      );
     }
     // Claim the cleared path atomically: [mkdirExclusive] succeeds only when
     // this call creates the directory, so another local user winning the
@@ -691,7 +709,9 @@ String _describeEntry() {
     // ownership.
     // 0700: only our uid trains here.
     if (mkdirExclusive(constantTrainDir, 0x1c0) != 0) {
-      return fail('the ${_describeEntry()} cannot be claimed');
+      return fail(
+        'the ${_describeEntryAt(constantTrainDir)} cannot be claimed',
+      );
     }
     if (FileSystemEntity.isLinkSync(constantTrainDir)) {
       // Swapped under us after the claim: remove only the link itself.
@@ -700,12 +720,33 @@ String _describeEntry() {
       } on FileSystemException {
         // Ignore cleanup errors.
       }
-      return fail('the ${_describeEntry()} cannot be claimed');
+      return fail(
+        'the ${_describeEntryAt(constantTrainDir)} cannot be claimed',
+      );
     }
   } on FileSystemException {
-    return fail('the ${_describeEntry()} cannot be claimed');
+    return fail('the ${_describeEntryAt(constantTrainDir)} cannot be claimed');
   }
   return (dir: Directory(constantTrainDir), lock: lock);
+}
+
+/// Writes the fail-closed error for a null [_acquireConstantDir]: the
+/// blocker in [_constantDirUnavailable] and its remedies. A blocked lock
+/// names the lock's own remedies — its owner makes it world-writable or
+/// removes it — since we cannot remove another user's lock; a blocked
+/// training directory names removing the entry.
+void _writeUnavailableError() {
+  final remedy = _constantLockUnavailable
+      ? 'Have its owner run `chmod 0666 $constantTrainLock` or remove it, or pass '
+      : 'Remove the entry, or pass ';
+  stderr.writeln(
+    'app_jit_snapshot: cannot train in $constantTrainDir on this host: '
+    '$_constantDirUnavailable. $remedy'
+    '`--@rules_dart//dart:jit_snapshot_fallback=true`, which allows the '
+    'private-scratch fallback whose bytes are not reproducible, or, for '
+    'tests, `--@rules_dart//dart:test_runner_snapshot=false` to run the '
+    "runner's kernel instead of its snapshot",
+  );
 }
 
 /// Trains the snapshot and copies it to [out], at the constant training path
@@ -771,14 +812,7 @@ int _trainInScratch({
     return exitCode;
   }
   if (!Platform.isWindows && !fallbackAllowed) {
-    stderr.writeln(
-      'app_jit_snapshot: cannot train in $constantTrainDir on this host: '
-      '$_constantDirUnavailable. Remove the entry, or pass '
-      '`--@rules_dart//dart:jit_snapshot_fallback=true`, which allows the '
-      'private-scratch fallback whose bytes are not reproducible, or, for '
-      'tests, `--@rules_dart//dart:test_runner_snapshot=false` to run the '
-      "runner's kernel instead of its snapshot",
-    );
+    _writeUnavailableError();
     return 1;
   }
   _warnFallback();
@@ -1387,6 +1421,8 @@ typedef _LstatDart = int Function(
   ffi.Pointer<ffi.Uint8>,
   ffi.Pointer<ffi.Uint8>,
 );
+typedef _GeteuidNative = ffi.Uint32 Function();
+typedef _GeteuidDart = int Function();
 
 /// Allocates a zero-terminated UTF-8 copy of [path] with libc `malloc`.
 /// The caller frees it with libc `free`.

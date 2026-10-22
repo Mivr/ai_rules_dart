@@ -29,8 +29,10 @@ void main(List<String> args) {
     snapshot.mkdirExclusive = realMkdir;
     snapshot.removeStaleEntry = realRemoveStale;
     if (!Platform.isWindows) {
+      // Files and directories alike: a test may leave a read-only tree, and
+      // deleting it needs owner access on every directory on the way down.
       for (final entity in tmp.listSync(recursive: true)) {
-        if (entity is File) {
+        if (entity is! Link) {
           snapshot.chmodFile(entity.path, 0x1ed);
         }
       }
@@ -1153,92 +1155,101 @@ void main(List<String> args) {
     expect(lock.readAsStringSync(), 'seed');
   }, skip: Platform.isWindows ? posixOnlyReason : false);
 
-  test('training proceeds under a read-only lock', () {
-    // A lock nobody can open append-only (as a foreign 0644 lock looks to
-    // us) still trains at the constant path under a shared lock, and the
-    // lock file is never written.
-    final lock = File(snapshot.constantTrainLock);
-    lock.writeAsStringSync('seed');
-    snapshot.chmodFile(lock.path, 0x124); // 0444.
+  test('unwritable lock fails closed without the fallback flag', () {
+    // A lock nobody can open append-only (as another user's 0644 lock looks
+    // to us) fails the action instead of training under a shared lock: two
+    // trainings holding one shared lock could both reach the constant path,
+    // and the second would delete the first's live training directory as its
+    // own. The tool runs in a subprocess (it exits on failure), with the
+    // lock path pointed at the unwritable file through the environment: the
+    // variables are the subprocess hook for the in-process overrides.
+    final tool = stageTool();
     final dill = compileDill(
       'void main(List<String> args) {\n  print(10000);\n}\n',
-      'rolock_train',
+      'lockblocked_train',
     );
-    trainAtConstant(dill: dill, out: '${tmp.path}/rolock/app.jit');
-    expect(lock.readAsStringSync(), 'seed');
-  }, skip: Platform.isWindows ? posixOnlyReason : false);
-
-  test('a shared lock can be taken on a read-only open', () {
-    // What a foreign 0644 lock looks like to us: the append-open fails, and
-    // Dart's `lockSync` is an `fcntl(2)` lock whose exclusive lock needs
-    // write access, so the fallback takes a shared lock on a read-only
-    // descriptor instead.
-    final probed = File('${tmp.path}/ro.lock')..writeAsStringSync('x');
-    snapshot.chmodFile(probed.path, 0x124); // 0444.
+    final lock = File('${tmp.path}/foreign.lock')
+      ..writeAsStringSync('not ours to open');
+    snapshot.chmodFile(lock.path, 0x124); // 0444.
+    final trainEnv = {
+      'RULES_DART_JIT_TRAIN_DIR': snapshot.constantTrainDir,
+      'RULES_DART_JIT_TRAIN_LOCK': lock.path,
+    };
+    List<String> toolArgs(String snapshotOut, {bool fallback = false}) => [
+      tool,
+      '--dart=${Platform.resolvedExecutable}',
+      '--snapshot=$snapshotOut',
+      if (fallback) '--fallback-allowed',
+      '--copy=input.dill=$dill',
+      '--',
+      'input.dill',
+    ];
+    final outJit = '${tmp.path}/lockblocked_out/app.jit';
+    final denied = Process.runSync(
+      Platform.resolvedExecutable,
+      toolArgs(outJit),
+      environment: trainEnv,
+    );
+    expect(denied.exitCode, isNot(0), reason: 'locked-out training must fail');
+    expect(File(outJit).existsSync(), isFalse);
+    final err = denied.stderr as String;
+    expect(err, contains('cannot train in ${snapshot.constantTrainDir}'));
+    expect(err, contains('cannot be opened for writing'));
+    expect(err, contains(lock.path));
+    expect(err, contains('regular file'));
+    final id = Process.runSync('id', ['-u']);
+    expect(id.exitCode, 0);
+    expect(err, contains('owned by uid ${(id.stdout as String).trim()}'));
+    expect(err, contains('chmod 0666'));
+    expect(err, contains('jit_snapshot_fallback=true'));
+    expect(err, contains('test_runner_snapshot=false'));
     expect(
-      () => probed.openSync(mode: FileMode.append),
-      throwsA(isA<FileSystemException>()),
+      lock.readAsStringSync(),
+      'not ours to open',
+      reason: 'lock never touched',
     );
-    final first = probed.openSync(mode: FileMode.read);
-    first.lockSync(FileLock.blockingShared);
-    // Another shared lock succeeds: shared holders coexist (the atomic
-    // `mkdir(0700)` claim decides among them).
-    final second = probed.openSync(mode: FileMode.read);
-    second.lockSync(FileLock.shared);
-    second.unlockSync();
-    second.closeSync();
-    first.unlockSync();
-    first.closeSync();
+
+    final allowedOut = '${tmp.path}/lockblocked_allowed/app.jit';
+    final allowed = Process.runSync(
+      Platform.resolvedExecutable,
+      toolArgs(allowedOut, fallback: true),
+      environment: trainEnv,
+    );
+    expect(allowed.exitCode, 0, reason: '${allowed.stderr}');
+    expect(File(allowedOut).existsSync(), isTrue);
   }, skip: Platform.isWindows ? posixOnlyReason : false);
 
-  test('a read-only shared lock waits out an exclusive holder', () async {
-    // `fcntl(2)` locks merge within one process, so the shared lock's
-    // conflict with an exclusive holder is observable only across processes:
-    // a helper holds the file exclusively while this test locks a read-only
-    // descriptor of it.
-    final probed = File('${tmp.path}/ro_holder.lock')..writeAsStringSync('x');
-    File('${tmp.path}/hold_lock.dart').writeAsStringSync(
-      "import 'dart:async';\n"
-      "import 'dart:io';\n"
-      "Future<void> main(List<String> args) async {\n"
-      "  final lock = File(args[0]).openSync(mode: FileMode.append);\n"
-      "  lock.lockSync(FileLock.blockingExclusive);\n"
-      "  stdout.writeln('locked');\n"
-      "  await stdout.flush();\n"
-      "  await Future<void>.delayed(Duration(seconds: 60));\n"
-      "}\n",
-    );
-    final holder = await Process.start(Platform.resolvedExecutable, [
-      '${tmp.path}/hold_lock.dart',
-      probed.path,
-    ]);
-    try {
-      final lines = holder.stdout
-          .transform(utf8.decoder)
-          .transform(const LineSplitter());
-      expect(await lines.first.timeout(const Duration(seconds: 60)), 'locked');
-      // The exclusive holder blocks the shared lock: the read-only training
-      // waits out an active training.
-      final read = probed.openSync(mode: FileMode.read);
-      try {
-        expect(
-          () => read.lockSync(FileLock.shared),
-          throwsA(isA<FileSystemException>()),
-        );
-      } finally {
-        read.closeSync();
-      }
-    } finally {
-      holder.kill();
-      await holder.exitCode;
-    }
-    // Once the holder is gone the shared lock succeeds.
-    snapshot.chmodFile(probed.path, 0x124); // 0444.
-    final read = probed.openSync(mode: FileMode.read);
-    read.lockSync(FileLock.blockingShared);
-    read.unlockSync();
-    read.closeSync();
-  }, skip: Platform.isWindows ? posixOnlyReason : false);
+  test(
+    'read-only own tree is cleared and training keeps constant-path bytes',
+    () {
+      // A crashed training can leave a read-only tree (Bazel inputs and
+      // outputs are read-only and copies keep modes): an owned directory is
+      // made writable before it is listed, so our own stale trees clear and
+      // the training uses the constant path with unchanged bytes.
+      final trainDir = snapshot.constantTrainDir;
+      final dill = compileDill(
+        'void main(List<String> args) {\n  print(10000);\n}\n',
+        'rotree_train',
+      );
+      final first = trainAtConstant(
+        dill: dill,
+        out: '${tmp.path}/rotree_clear/app.jit',
+      );
+      final deep = Directory('$trainDir/ro/deep')..createSync(recursive: true);
+      File('${deep.path}/f').writeAsStringSync('stale');
+      snapshot.chmodFile('$trainDir/ro', 0x155); // 0555.
+      snapshot.chmodFile(deep.path, 0x155); // 0555.
+      expect(
+        trainAtConstant(dill: dill, out: '${tmp.path}/rotree_ro/app.jit'),
+        equals(first),
+      );
+      expect(
+        FileSystemEntity.typeSync(trainDir, followLinks: false),
+        FileSystemEntityType.notFound,
+      );
+    },
+    skip: Platform.isWindows ? posixOnlyReason : false,
+  );
 
   test('unremovable blocker fails closed without the fallback flag', () {
     // A blocker no removal can take: the parent directory is read-only, so
