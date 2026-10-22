@@ -528,7 +528,6 @@ def _stage_src_links(ctx, name, proj_path, packages, src_files, active_stubs, sd
     )
     staged_links.append(src_manifest)
 
-    proj_path = name + ".proj"
     src_tree = struct(
         path = proj_path + "/src",
         dirname = proj_path,
