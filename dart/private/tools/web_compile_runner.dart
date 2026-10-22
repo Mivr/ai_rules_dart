@@ -29,6 +29,58 @@ int runWebCompileRequest(
   required StringSink errSink,
   String? workingDirectory,
 }) {
+  final parsed = _splitWebArgs(args, errSink: errSink);
+  if (parsed == null) return 64;
+  var (dart, project) = (parsed.dart, parsed.project);
+  final compileArgs = parsed.compileArgs;
+
+  project ??= _inferProjectFromArgs(compileArgs);
+
+  if (dart == null ||
+      dart.isEmpty ||
+      project == null ||
+      project.isEmpty ||
+      compileArgs.isEmpty) {
+    errSink.writeln(
+      'web_compile_runner: --dart, --project, and compile arguments are required',
+    );
+    return 64;
+  }
+
+  final (:outputPath, :normProject, :entrypointPath) = _resolveWebPaths(
+    project: project,
+    compileArgs: compileArgs,
+    workingDirectory: workingDirectory,
+  );
+  if (outputPath != null) {
+    _deleteOutputs(outputPath);
+  }
+
+  final allowedSrc = pruneOrphanedStagedFiles(normProject);
+  if (!_checkStagedSources(normProject, allowedSrc, errSink)) return 1;
+  if (!_checkExternalSources(normProject, errSink)) return 1;
+  if (!_checkEntrypoint(normProject, allowedSrc, entrypointPath, errSink)) {
+    return 1;
+  }
+  if (!_checkStagedDirectives(normProject, errSink)) return 1;
+
+  return _runCompiler(
+    dart: dart,
+    compileArgs: compileArgs,
+    workingDirectory: workingDirectory,
+    outputPath: outputPath,
+    outSink: outSink,
+    errSink: errSink,
+  );
+}
+
+/// The runner flags split from the compiler arguments.
+///
+/// Returns null after reporting a malformed flag.
+({String? dart, String? project, List<String> compileArgs})? _splitWebArgs(
+  List<String> args, {
+  required StringSink errSink,
+}) {
   String? dart;
   String? project;
   final compileArgs = <String>[];
@@ -48,7 +100,7 @@ int runWebCompileRequest(
     if (arg == '--dart') {
       if (i + 1 >= args.length) {
         errSink.writeln('web_compile_runner: --dart requires a value');
-        return 64;
+        return null;
       }
       dart = args[++i];
     } else if (arg.startsWith('--dart=')) {
@@ -56,7 +108,7 @@ int runWebCompileRequest(
     } else if (arg == '--project') {
       if (i + 1 >= args.length) {
         errSink.writeln('web_compile_runner: --project requires a value');
-        return 64;
+        return null;
       }
       project = args[++i];
     } else if (arg.startsWith('--project=')) {
@@ -66,20 +118,16 @@ int runWebCompileRequest(
       compileArgs.add(arg);
     }
   }
+  return (dart: dart, project: project, compileArgs: compileArgs);
+}
 
-  project ??= _inferProjectFromArgs(compileArgs);
-
-  if (dart == null ||
-      dart.isEmpty ||
-      project == null ||
-      project.isEmpty ||
-      compileArgs.isEmpty) {
-    errSink.writeln(
-      'web_compile_runner: --dart, --project, and compile arguments are required',
-    );
-    return 64;
-  }
-
+/// Output, project, and entrypoint paths resolved into [workingDirectory].
+({String? outputPath, String normProject, String? entrypointPath})
+_resolveWebPaths({
+  required String project,
+  required List<String> compileArgs,
+  required String? workingDirectory,
+}) {
   String resolveInWorkDir(String path) {
     if (workingDirectory == null ||
         workingDirectory.isEmpty ||
@@ -91,70 +139,85 @@ int runWebCompileRequest(
   }
 
   final rawOutputPath = _extractOutputPath(compileArgs);
-  final outputPath = rawOutputPath == null
-      ? null
-      : resolveInWorkDir(rawOutputPath);
-  if (outputPath != null) {
-    _deleteOutputs(outputPath);
-  }
+  final rawEntrypointPath = _extractEntrypointPath(compileArgs);
+  return (
+    outputPath: rawOutputPath == null ? null : resolveInWorkDir(rawOutputPath),
+    normProject: _trimTrailingSlash(resolveInWorkDir(project)),
+    entrypointPath: rawEntrypointPath == null
+        ? null
+        : resolveInWorkDir(rawEntrypointPath),
+  );
+}
 
-  final normProject = _trimTrailingSlash(resolveInWorkDir(project));
-  final allowedSrc = pruneOrphanedStagedFiles(normProject);
-  if (allowedSrc != null) {
-    if (allowedSrc.isEmpty) {
-      errSink.writeln(
-        'web_compile_runner: no sources listed in src_manifest.txt in $normProject',
-      );
-      return 1;
-    }
-    for (final rel in allowedSrc) {
-      if (!FileSystemEntity.isFileSync('$normProject/src/$rel')) {
-        errSink.writeln('web_compile_runner: expected source missing: $rel');
-        return 1;
-      }
+/// Refuses a `src_manifest.txt` the staged tree does not satisfy.
+bool _checkStagedSources(
+  String normProject,
+  Set<String>? allowedSrc,
+  StringSink errSink,
+) {
+  if (allowedSrc == null) return true;
+  if (allowedSrc.isEmpty) {
+    errSink.writeln(
+      'web_compile_runner: no sources listed in src_manifest.txt in $normProject',
+    );
+    return false;
+  }
+  for (final rel in allowedSrc) {
+    if (!FileSystemEntity.isFileSync('$normProject/src/$rel')) {
+      errSink.writeln('web_compile_runner: expected source missing: $rel');
+      return false;
     }
   }
+  return true;
+}
 
+/// Refuses an `extpkgs_manifest.txt` the sibling tree does not satisfy.
+bool _checkExternalSources(String normProject, StringSink errSink) {
   final extManifest = File('$normProject/.dart_tool/extpkgs_manifest.txt');
   final extDir = _siblingExtpkgsDir(normProject);
-  if (extManifest.existsSync() && extDir != null) {
-    for (final raw in extManifest.readAsLinesSync()) {
-      final line = raw.trim();
-      if (line.isEmpty || line.endsWith('/')) continue;
-      final rel = _normRel(line);
-      if (!FileSystemEntity.isFileSync('${extDir.path}/$rel')) {
-        errSink.writeln(
-          'web_compile_runner: expected external source missing: $rel',
-        );
-        return 1;
-      }
-    }
-  }
-
-  final rawEntrypointPath = _extractEntrypointPath(compileArgs);
-  final entrypointPath = rawEntrypointPath == null
-      ? null
-      : resolveInWorkDir(rawEntrypointPath);
-  if (entrypointPath != null) {
-    final normEntry = entrypointPath.replaceAll(r'\', '/');
-    final srcPrefix = '${normProject.replaceAll(r'\', '/')}/src/';
-    if (allowedSrc != null && normEntry.startsWith(srcPrefix)) {
-      final relEntry = _normRel(normEntry.substring(srcPrefix.length));
-      if (!allowedSrc.contains(relEntry)) {
-        errSink.writeln(
-          'web_compile_runner: entrypoint not listed in src_manifest.txt: $relEntry',
-        );
-        return 1;
-      }
-    }
-    if (!FileSystemEntity.isFileSync(entrypointPath)) {
+  if (!extManifest.existsSync() || extDir == null) return true;
+  for (final raw in extManifest.readAsLinesSync()) {
+    final line = raw.trim();
+    if (line.isEmpty || line.endsWith('/')) continue;
+    final rel = _normRel(line);
+    if (!FileSystemEntity.isFileSync('${extDir.path}/$rel')) {
       errSink.writeln(
-        'web_compile_runner: entrypoint missing: $entrypointPath',
+        'web_compile_runner: expected external source missing: $rel',
       );
-      return 1;
+      return false;
     }
   }
+  return true;
+}
 
+/// Refuses an entrypoint outside the staged sources or missing on disk.
+bool _checkEntrypoint(
+  String normProject,
+  Set<String>? allowedSrc,
+  String? entrypointPath,
+  StringSink errSink,
+) {
+  if (entrypointPath == null) return true;
+  final normEntry = entrypointPath.replaceAll(r'\', '/');
+  final srcPrefix = '${normProject.replaceAll(r'\', '/')}/src/';
+  if (allowedSrc != null && normEntry.startsWith(srcPrefix)) {
+    final relEntry = _normRel(normEntry.substring(srcPrefix.length));
+    if (!allowedSrc.contains(relEntry)) {
+      errSink.writeln(
+        'web_compile_runner: entrypoint not listed in src_manifest.txt: $relEntry',
+      );
+      return false;
+    }
+  }
+  if (!FileSystemEntity.isFileSync(entrypointPath)) {
+    errSink.writeln('web_compile_runner: entrypoint missing: $entrypointPath');
+    return false;
+  }
+  return true;
+}
+
+/// Refuses staged sources that read outside their declared inputs.
+bool _checkStagedDirectives(String normProject, StringSink errSink) {
   // No staged source may read the host: a `file:` URI (in any spelling), any
   // other non-`dart:`/`package:` directive URI, a `package:` URI climbing
   // above its package, or a relative URI climbing out of the staged tree
@@ -171,9 +234,20 @@ int runWebCompileRequest(
     for (final violation in violations) {
       errSink.writeln(violation);
     }
-    return 1;
+    return false;
   }
+  return true;
+}
 
+/// Runs `dart compile` over the staged project, deleting stale outputs.
+int _runCompiler({
+  required String dart,
+  required List<String> compileArgs,
+  required String? workingDirectory,
+  required String? outputPath,
+  required StringSink outSink,
+  required StringSink errSink,
+}) {
   final tempHome = Directory.systemTemp.createTempSync('rules_dart_web_home.');
   final env = <String, String>{
     'HOME': tempHome.path,
@@ -253,38 +327,51 @@ void _pruneExtpkgs(String normProject) {
 
   final extManifest = File('$normProject/.dart_tool/extpkgs_manifest.txt');
   if (extManifest.existsSync()) {
-    final allowedFiles = <String>{};
-    final allowedDirPrefixes = <String>[];
-    for (final raw in extManifest.readAsLinesSync()) {
-      final trimmed = raw.trim();
-      if (trimmed.isEmpty) continue;
-      if (trimmed.endsWith('/')) {
-        allowedDirPrefixes.add(_normRel(trimmed));
-      } else {
-        allowedFiles.add(_normRel(trimmed));
-      }
-    }
-    final rootPath = extDir.path;
-    final dirs = <Directory>[];
-    for (final entity in extDir.listSync(recursive: true, followLinks: false)) {
-      if (entity is Directory) {
-        dirs.add(entity);
-        continue;
-      }
-      final rel = _relative(rootPath, entity.path);
-      final inAllowedDir = allowedDirPrefixes.any(rel.startsWith);
-      if (!inAllowedDir && !allowedFiles.contains(rel)) {
-        _tryDelete(entity);
-      }
-    }
-    _removeEmptyDirsBottomUp(dirs);
+    _pruneExtpkgsFromManifest(extDir, extManifest);
     return;
   }
 
   final srcManifest = File('$normProject/.dart_tool/src_manifest.txt');
   final pkgConfig = File('$normProject/.dart_tool/package_config.json');
   if (!srcManifest.existsSync() || !pkgConfig.existsSync()) return;
+  _pruneUnreferencedExtpkgs(normProject, extDir, pkgConfig);
+}
 
+/// Removes sibling entries the `extpkgs_manifest.txt` does not list.
+void _pruneExtpkgsFromManifest(Directory extDir, File extManifest) {
+  final allowedFiles = <String>{};
+  final allowedDirPrefixes = <String>[];
+  for (final raw in extManifest.readAsLinesSync()) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) continue;
+    if (trimmed.endsWith('/')) {
+      allowedDirPrefixes.add(_normRel(trimmed));
+    } else {
+      allowedFiles.add(_normRel(trimmed));
+    }
+  }
+  final rootPath = extDir.path;
+  final dirs = <Directory>[];
+  for (final entity in extDir.listSync(recursive: true, followLinks: false)) {
+    if (entity is Directory) {
+      dirs.add(entity);
+      continue;
+    }
+    final rel = _relative(rootPath, entity.path);
+    final inAllowedDir = allowedDirPrefixes.any(rel.startsWith);
+    if (!inAllowedDir && !allowedFiles.contains(rel)) {
+      _tryDelete(entity);
+    }
+  }
+  _removeEmptyDirsBottomUp(dirs);
+}
+
+/// Removes sibling packages `package_config.json` no longer references.
+void _pruneUnreferencedExtpkgs(
+  String normProject,
+  Directory extDir,
+  File pkgConfig,
+) {
   final referencedExtPkgs = _referencedExtPackages(normProject, pkgConfig);
   if (referencedExtPkgs == null) return;
   for (final entity in extDir.listSync(followLinks: false)) {
