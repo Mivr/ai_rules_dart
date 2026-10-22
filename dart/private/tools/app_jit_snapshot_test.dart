@@ -1262,6 +1262,27 @@ void main(List<String> args) {
     expect(File(allowedOut).existsSync(), isTrue);
   }, skip: Platform.isWindows ? posixOnlyReason : false);
 
+  test('libc variadic calls bind through VarArgs', () {
+    // `fcntl` and `open` are variadic in libc (`int fcntl(int, int, ...)`).
+    // On Apple arm64 variadic arguments travel on the stack, so a fixed
+    // binding passes the `struct flock` pointer where `fcntl` never reads
+    // it and the holder lookup reports "unknown". Linux passes either way,
+    // so this pins the binding shape itself; the deadline test below is the
+    // behavioral cover.
+    final staged = stageTool();
+    final source = File(staged).readAsStringSync();
+    expect(
+      source,
+      contains('ffi.VarArgs<(ffi.Pointer<ffi.Uint8>,)>'),
+      reason: 'fcntl binds its flock pointer as a variadic argument',
+    );
+    expect(
+      source,
+      contains('ffi.VarArgs<(ffi.Int,)>'),
+      reason: 'open binds its mode as a variadic argument',
+    );
+  });
+
   test('held lock fails after the deadline naming the holder', () async {
     // Another process holding the training lock must not hang the training
     // forever: the run waits until its deadline, then fails closed naming

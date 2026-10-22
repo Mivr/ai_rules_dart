@@ -1605,14 +1605,18 @@ typedef _LstatDart = int Function(
 );
 typedef _GeteuidNative = ffi.Uint32 Function();
 typedef _GeteuidDart = int Function();
-typedef _Open2Native = ffi.Int Function(ffi.Pointer<ffi.Uint8>, ffi.Int);
-typedef _Open2Dart = int Function(ffi.Pointer<ffi.Uint8>, int);
+typedef _OpenNative = ffi.Int Function(
+  ffi.Pointer<ffi.Uint8>,
+  ffi.Int,
+  ffi.VarArgs<(ffi.Int,)>,
+);
+typedef _OpenDart = int Function(ffi.Pointer<ffi.Uint8>, int, int);
 typedef _CloseNative = ffi.Int Function(ffi.Int);
 typedef _CloseDart = int Function(int);
 typedef _FcntlGetlkNative = ffi.Int Function(
   ffi.Int,
   ffi.Int,
-  ffi.Pointer<ffi.Uint8>,
+  ffi.VarArgs<(ffi.Pointer<ffi.Uint8>,)>,
 );
 typedef _FcntlGetlkDart = int Function(int, int, ffi.Pointer<ffi.Uint8>);
 
@@ -1623,7 +1627,11 @@ typedef _FcntlGetlkDart = int Function(int, int, ffi.Pointer<ffi.Uint8>);
 ///
 /// Queries with `fcntl(2)` `F_GETLK` for a conflicting write lock over the
 /// whole file: the kernel reports the lock the training's own try-lock
-/// refuses, with the holder's PID. The `struct flock` layout differs by OS:
+/// refuses, with the holder's PID. `fcntl` is variadic
+/// (`int fcntl(int, int, ...)`), so its `struct flock` pointer binds through
+/// `ffi.VarArgs`: a fixed binding passes the pointer in a register that
+/// `fcntl` never reads on Apple arm64, and the lookup reports "unknown".
+/// The `struct flock` layout differs by OS:
 /// on Linux the type is a little-endian i16 at offset 0 and the PID a
 /// little-endian i32 at offset 20+4, on macOS the start/len are two i64 at
 /// offsets 0/8, the PID an i32 at offset 16 and the type an i16 at offset 20.
@@ -1635,7 +1643,7 @@ int? _lockHolderPid(String path) {
     final lib = ffi.DynamicLibrary.process();
     final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
     final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
-    final open = lib.lookupFunction<_Open2Native, _Open2Dart>('open');
+    final open = lib.lookupFunction<_OpenNative, _OpenDart>('open');
     final close = lib.lookupFunction<_CloseNative, _CloseDart>('close');
     final fcntl = lib.lookupFunction<_FcntlGetlkNative, _FcntlGetlkDart>(
       'fcntl',
@@ -1646,7 +1654,10 @@ int? _lockHolderPid(String path) {
       if (buf == ffi.nullptr) return null;
       try {
         buf.asTypedList(32).fillRange(0, 32, 0);
-        final fd = open(pathPtr, 0);
+        // `open` is variadic (`int open(const char *, int, ...)`): the mode
+        // slot is passed explicitly so the call marshals as variadic. The
+        // flags open read-only without `O_CREAT`, so the kernel ignores it.
+        final fd = open(pathPtr, 0, 0);
         if (fd < 0) return null;
         try {
           final view = ByteData.sublistView(buf.asTypedList(32));
