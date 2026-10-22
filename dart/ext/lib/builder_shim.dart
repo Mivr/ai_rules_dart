@@ -935,9 +935,15 @@ Future<void> _runBuilderPipeline({
     // across every request until it exhausts file descriptors.
     try {
       await collection.dispose();
-    } catch (_) {
-      // Older analyzer releases don't expose dispose; swallow so we don't
-      // regress workers on versions that lack it.
+    } on Exception catch (e, st) {
+      // A failing context-collection dispose must neither fail the build
+      // (the outputs are already written) nor hide: report and continue.
+      // `collection` is statically an AnalysisContextCollection, whose pinned
+      // interface always exposes dispose, so no missing-method guard applies.
+      writeDiagnostic('AnalysisContextCollection.dispose failed: $e\n$st');
+    } on Error catch (e, st) {
+      // Same as above for Errors from driver teardown.
+      writeDiagnostic('AnalysisContextCollection.dispose failed: $e\n$st');
     }
   }
 }

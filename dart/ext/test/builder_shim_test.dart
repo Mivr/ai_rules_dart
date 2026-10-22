@@ -1642,6 +1642,118 @@ void main() {
     );
 
     test(
+      'a failing AnalysisContextCollection.dispose is reported, not fatal',
+      () async {
+        final input = File(p.join(tmp.path, 'a.dart'))
+          ..writeAsStringSync('class Foo {}');
+        final out = p.join(tmp.path, 'a.g.dart');
+        final captured = <String>[];
+
+        await runShim(
+          [
+            '--input',
+            input.path,
+            '--input-asset',
+            'lib/a.dart',
+            '--output',
+            out,
+            '--package',
+            'p',
+            '--root-language-version',
+            '3.11',
+          ],
+          (_) => _FixedOutputBuilder('// generated'),
+          writeDiagnostic: captured.add,
+          buildAnalysisContext:
+              ({
+                required List<String> includedPaths,
+                required String? sdkPath,
+                String? sdkSummaryPath,
+                required List<String> librarySummaryPaths,
+              }) async {
+                final inner = AnalysisContextCollection(
+                  includedPaths: includedPaths,
+                  sdkPath: sdkPath,
+                );
+                return _DisposeTrackingCollection(
+                  inner,
+                  onDispose: () => throw FormatException('teardown boom'),
+                );
+              },
+        );
+
+        expect(exitCode, 0);
+        expect(
+          File(out).existsSync(),
+          isTrue,
+          reason: 'a dispose failure must not lose already-written outputs',
+        );
+        expect(
+          captured.join('\n'),
+          contains('AnalysisContextCollection.dispose failed'),
+        );
+        expect(captured.join('\n'), contains('teardown boom'));
+        exitCode = 0;
+      },
+    );
+
+    test(
+      'an Error from AnalysisContextCollection.dispose is reported, not fatal',
+      () async {
+        final input = File(p.join(tmp.path, 'a.dart'))
+          ..writeAsStringSync('class Foo {}');
+        final out = p.join(tmp.path, 'a.g.dart');
+        final captured = <String>[];
+
+        await runShim(
+          [
+            '--input',
+            input.path,
+            '--input-asset',
+            'lib/a.dart',
+            '--output',
+            out,
+            '--package',
+            'p',
+            '--root-language-version',
+            '3.11',
+          ],
+          (_) => _FixedOutputBuilder('// generated'),
+          writeDiagnostic: captured.add,
+          buildAnalysisContext:
+              ({
+                required List<String> includedPaths,
+                required String? sdkPath,
+                String? sdkSummaryPath,
+                required List<String> librarySummaryPaths,
+              }) async {
+                final inner = AnalysisContextCollection(
+                  includedPaths: includedPaths,
+                  sdkPath: sdkPath,
+                );
+                return _DisposeTrackingCollection(
+                  inner,
+                  onDispose: () => throw StateError('driver teardown boom'),
+                );
+              },
+        );
+
+        expect(exitCode, 0);
+        expect(
+          File(out).existsSync(),
+          isTrue,
+          reason: 'a dispose failure must not lose already-written outputs',
+        );
+        expect(
+          captured.join('\n'),
+          contains('AnalysisContextCollection.dispose failed'),
+        );
+        expect(captured.join('\n'), contains('driver teardown boom'));
+        exitCode = 0;
+      },
+    );
+
+    test(
       'drives several codegen requests with real sdk and library summaries through the same ShimWorkerLoop instance and disposes contexts cleanly',
       () async {
         final sdkDir = File(Platform.resolvedExecutable).parent.parent;
