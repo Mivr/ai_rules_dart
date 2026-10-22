@@ -370,6 +370,27 @@ Future<int> compileModule(
   // mode takes. Production callers leave it null to create real symlinks.
   void Function(String linkPath, String target)? createLink,
 }) async {
+  final options = _ModuleOptions();
+  final usage = _parseModuleArgs(rawArgs, options, log);
+  if (usage != null) return usage;
+  final decoded = _decodeWorkerInputs(inputs);
+  final build = await _ModuleBuild.load(
+    options,
+    compiler,
+    log,
+    inputs,
+    decoded.workerInputPaths,
+    decoded.inputDigests,
+    cache: cache,
+    createLink: createLink,
+  );
+  if (build == null) return 1;
+  if (options.noDrop) return build.runEntry();
+  return build.runLibrary();
+}
+
+/// The command-line options of one `compileModule` run.
+class _ModuleOptions {
   final base = <String>[];
   final sources = <String>[];
   final inputSources = <String>[];
@@ -387,160 +408,256 @@ Future<int> compileModule(
   var librariesPlatform = 'vm';
   var multiRootPrefix = _defaultMultiRootPrefix;
   var noDrop = false;
-  for (var i = 0; i < rawArgs.length; i++) {
-    final arg = rawArgs[i];
-    if (arg == '--source') {
-      sources.add(rawArgs[++i]);
-    } else if (arg == _inputSourceFlag) {
-      inputSources.add(rawArgs[++i]);
-    } else if (arg == _ownSourceFileFlag && i + 1 < rawArgs.length) {
-      ownSourceFiles.add(rawArgs[++i]);
-    } else if (arg.startsWith('$_ownSourceFileFlag=')) {
-      ownSourceFiles.add(arg.substring(_ownSourceFileFlag.length + 1));
-    } else if (arg == _unusedInputsListFlag && i + 1 < rawArgs.length) {
-      unusedInputsPath = rawArgs[++i];
-    } else if (arg.startsWith('$_unusedInputsListFlag=')) {
-      unusedInputsPath = arg.substring(_unusedInputsListFlag.length + 1);
-    } else if (arg == '--output') {
-      output = rawArgs[++i];
-    } else if (arg == _outputOutlineFlag) {
-      outputOutline = rawArgs[++i];
-    } else if (arg == _excludedOutputFlag) {
-      excludedPath = rawArgs[++i];
-    } else if (arg == _closureExcludedFlag) {
-      closureExcluded.add(rawArgs[++i]);
-    } else if (arg == _inputKmodFlag) {
-      inputKmods.add(rawArgs[++i]);
-    } else if (arg == _librariesJsonFlag) {
-      librariesJson = rawArgs[++i];
-    } else if (arg == _librariesPlatformFlag) {
-      librariesPlatform = rawArgs[++i];
-    } else if (arg == _extraLibraryFlag) {
-      extraLibraries.add(rawArgs[++i]);
-    } else if (arg == _noDropFlag) {
-      noDrop = true;
-    } else if (arg == '--input-linked') {
-      log.writeln(
-        'kernel_module: --input-linked is not accepted; pass $_inputKmodFlag.',
-      );
-      return 64;
-    } else if ((arg == '-D' || arg == '--define') && i + 1 < rawArgs.length) {
-      base
-        ..add(arg)
-        ..add(rawArgs[++i]);
-    } else {
-      if (arg == _packagesFlag) {
-        packagesFile = rawArgs[i + 1];
-      } else if (arg.startsWith('$_packagesFlag=')) {
-        packagesFile = arg.substring(_packagesFlag.length + 1);
-      } else if (arg == _multiRootFlag) {
-        multiRoots.add(rawArgs[i + 1]);
-      } else if (arg.startsWith('$_multiRootFlag=')) {
-        multiRoots.add(arg.substring(_multiRootFlag.length + 1));
-      } else if (arg == _multiRootSchemeFlag) {
-        multiRootPrefix = '${rawArgs[i + 1]}:///';
-      } else if (arg.startsWith('$_multiRootSchemeFlag=')) {
-        multiRootPrefix =
-            '${arg.substring(_multiRootSchemeFlag.length + 1)}:///';
-      }
-      base.add(arg);
-    }
+}
+
+/// Parses [rawArgs] into [options], returning the exit code on fatal usage
+/// errors, or null to continue.
+int? _parseModuleArgs(
+  List<String> rawArgs,
+  _ModuleOptions options,
+  StringBuffer log,
+) {
+  var i = 0;
+  while (i < rawArgs.length) {
+    i = _parseModuleArg(rawArgs, i, options, log);
+    if (i < 0) return 64;
   }
-  if (excludedPath == null ||
-      output == null ||
-      packagesFile == null ||
-      librariesJson == null) {
+  if (options.excludedPath == null ||
+      options.output == null ||
+      options.packagesFile == null ||
+      options.librariesJson == null) {
     log.writeln(
       'kernel_module: $_excludedOutputFlag, $_librariesJsonFlag, --output and '
       '$_packagesFlag are required.',
     );
     return 64;
   }
+  return null;
+}
 
-  // Records each invocation's `--used-inputs` report for the unused-inputs
-  // list. `compiler` itself still answers the `_Persistent` checks below.
-  final reporter = _UsedInputsReporter(compiler, output);
-
-  final Set<String>? workerInputPaths;
-  final Map<String, Uint8List>? inputDigests;
-  if (inputs.isEmpty) {
-    workerInputPaths = null;
-    inputDigests = null;
+/// Parses the argument at [i], returning the next index, or -1 when
+/// `--input-linked` was passed.
+int _parseModuleArg(
+  List<String> rawArgs,
+  int i,
+  _ModuleOptions options,
+  StringBuffer log,
+) {
+  final arg = rawArgs[i];
+  if (arg == '--source') {
+    options.sources.add(rawArgs[++i]);
+  } else if (arg == _inputSourceFlag) {
+    options.inputSources.add(rawArgs[++i]);
+  } else if (arg == _ownSourceFileFlag && i + 1 < rawArgs.length) {
+    options.ownSourceFiles.add(rawArgs[++i]);
+  } else if (arg.startsWith('$_ownSourceFileFlag=')) {
+    options.ownSourceFiles.add(arg.substring(_ownSourceFileFlag.length + 1));
+  } else if (arg == _unusedInputsListFlag && i + 1 < rawArgs.length) {
+    options.unusedInputsPath = rawArgs[++i];
+  } else if (arg.startsWith('$_unusedInputsListFlag=')) {
+    options.unusedInputsPath = arg.substring(_unusedInputsListFlag.length + 1);
+  } else if (arg == '--output') {
+    options.output = rawArgs[++i];
+  } else if (arg == _outputOutlineFlag) {
+    options.outputOutline = rawArgs[++i];
+  } else if (arg == _excludedOutputFlag) {
+    options.excludedPath = rawArgs[++i];
+  } else if (arg == _closureExcludedFlag) {
+    options.closureExcluded.add(rawArgs[++i]);
+  } else if (arg == _inputKmodFlag) {
+    options.inputKmods.add(rawArgs[++i]);
+  } else if (arg == _librariesJsonFlag) {
+    options.librariesJson = rawArgs[++i];
+  } else if (arg == _librariesPlatformFlag) {
+    options.librariesPlatform = rawArgs[++i];
+  } else if (arg == _extraLibraryFlag) {
+    options.extraLibraries.add(rawArgs[++i]);
+  } else if (arg == _noDropFlag) {
+    options.noDrop = true;
+  } else if (arg == '--input-linked') {
+    log.writeln(
+      'kernel_module: --input-linked is not accepted; pass $_inputKmodFlag.',
+    );
+    return -1;
+  } else if ((arg == '-D' || arg == '--define') && i + 1 < rawArgs.length) {
+    options.base
+      ..add(arg)
+      ..add(rawArgs[++i]);
   } else {
-    final paths = <String>{};
-    final digests = <String, Uint8List>{};
-    for (final raw in inputs) {
-      final decoded = _decodeInputView(raw);
-      final rawPath = decoded.path;
-      if (rawPath.isEmpty) continue;
-      if (_isNormalizedRelative(rawPath)) {
-        paths.add(rawPath);
-        if (decoded.digest.isNotEmpty) {
-          digests[rawPath] = decoded.digest;
-        }
-      } else {
-        paths.add(rawPath);
-        final norm = _normalize(rawPath);
-        if (norm.isNotEmpty) paths.add(norm);
-        if (decoded.digest.isNotEmpty) {
-          digests[rawPath] = decoded.digest;
-          final normFile = _normalizeFilePath(rawPath);
-          digests.putIfAbsent(normFile, () => decoded.digest);
-          if (norm.isNotEmpty) {
-            digests.putIfAbsent(norm, () => decoded.digest);
-            digests.putIfAbsent('./$norm', () => decoded.digest);
-          }
+    _parseBaseArg(rawArgs, i, options);
+  }
+  return i + 1;
+}
+
+/// Parses a compiler pass-through argument at [i] into [options].
+void _parseBaseArg(List<String> rawArgs, int i, _ModuleOptions options) {
+  final arg = rawArgs[i];
+  if (arg == _packagesFlag) {
+    options.packagesFile = rawArgs[i + 1];
+  } else if (arg.startsWith('$_packagesFlag=')) {
+    options.packagesFile = arg.substring(_packagesFlag.length + 1);
+  } else if (arg == _multiRootFlag) {
+    options.multiRoots.add(rawArgs[i + 1]);
+  } else if (arg.startsWith('$_multiRootFlag=')) {
+    options.multiRoots.add(arg.substring(_multiRootFlag.length + 1));
+  } else if (arg == _multiRootSchemeFlag) {
+    options.multiRootPrefix = '${rawArgs[i + 1]}:///';
+  } else if (arg.startsWith('$_multiRootSchemeFlag=')) {
+    options.multiRootPrefix =
+        '${arg.substring(_multiRootSchemeFlag.length + 1)}:///';
+  }
+  options.base.add(arg);
+}
+
+/// The worker input paths and their digests, or nulls when [inputs] is empty.
+({Set<String>? workerInputPaths, Map<String, Uint8List>? inputDigests})
+_decodeWorkerInputs(List<Uint8List> inputs) {
+  if (inputs.isEmpty) {
+    return (workerInputPaths: null, inputDigests: null);
+  }
+  final paths = <String>{};
+  final digests = <String, Uint8List>{};
+  for (final raw in inputs) {
+    final decoded = _decodeInputView(raw);
+    final rawPath = decoded.path;
+    if (rawPath.isEmpty) continue;
+    if (_isNormalizedRelative(rawPath)) {
+      paths.add(rawPath);
+      if (decoded.digest.isNotEmpty) {
+        digests[rawPath] = decoded.digest;
+      }
+    } else {
+      paths.add(rawPath);
+      final norm = _normalize(rawPath);
+      if (norm.isNotEmpty) paths.add(norm);
+      if (decoded.digest.isNotEmpty) {
+        digests[rawPath] = decoded.digest;
+        final normFile = _normalizeFilePath(rawPath);
+        digests.putIfAbsent(normFile, () => decoded.digest);
+        if (norm.isNotEmpty) {
+          digests.putIfAbsent(norm, () => decoded.digest);
+          digests.putIfAbsent('./$norm', () => decoded.digest);
         }
       }
     }
-    workerInputPaths = paths;
-    inputDigests = digests;
   }
+  return (workerInputPaths: paths, inputDigests: digests);
+}
 
-  final roots = await _packageRoots(packagesFile, multiRootPrefix);
-  final closure = await _readExcluded(
-    closureExcluded,
-    roots,
-    multiRootPrefix,
-    cache: cache,
-    inputDigests: inputDigests,
-  );
-  final Set<String> vm;
-  if (cache != null && extraLibraries.isEmpty) {
-    vm = await cache.vmLibrariesOf(
-      librariesJson,
-      inputDigests,
-      platform: librariesPlatform,
-    );
-  } else {
-    final librariesMap = cache != null
-        ? await cache.librariesJsonOf(librariesJson, inputDigests)
-        : jsonDecode(await File(librariesJson).readAsString())
-              as Map<String, dynamic>;
-    vm = vmLibraries(
-      librariesMap,
-      platform: librariesPlatform,
-      extraLibraries: extraLibraries,
-    );
-  }
-  // Every kernel the closure indexes, by the key of each library it defines.
-  final graph = <String, _Node>{};
-  final stagedSources = <String, String>{};
-  for (final dir in inputKmods) {
-    if (!await _readIndex(
-      dir,
+/// A staged isolated `--multi-root` and the inputs it covers.
+typedef _IsolatedRoot = ({
+  String rootDir,
+  List<Uint8List> inputs,
+  Map<String, Uint8List> covered,
+});
+
+/// The entry kernel's file name within the module's directory.
+const _entryDillName = 'entry.dill';
+
+/// Compiles with [runCompile] and verifies the read set of [dillPath]. An
+/// unverified unstaged success is redone after [stage] isolates the compile.
+/// Returns the outcome and the (possibly newly staged) isolated root; [refused]
+/// reports an isolated result that still read outside the declared inputs — a
+/// `file:` URI reads the host whatever the multi-root holds — whose result is
+/// refused, never accepted.
+Future<({ModuleOutcome outcome, _IsolatedRoot? isolated, bool refused})>
+_compileAndVerify(
+  Future<ModuleOutcome> Function(_IsolatedRoot? isolated) runCompile,
+  Future<_IsolatedRoot> Function() stage,
+  _IsolatedRoot? isolated,
+  String dillPath,
+  _Files files,
+  Map<String, _Node> graph,
+  List<String> multiRoots,
+  String multiRootPrefix,
+  StringBuffer log,
+  Set<String> ownUris,
+  Map<String, _PackageRoot> roots,
+) async {
+  var current = isolated;
+  var outcome = await runCompile(current);
+  var verified = false;
+  if (outcome.exitCode == 0 && current == null) {
+    if (await _unstagedReadsAreDeclared(
+      dillPath,
+      files,
       graph,
+      multiRoots,
+      multiRootPrefix,
       log,
-      stagedSources: stagedSources,
-      cache: cache,
-      inputDigests: inputDigests,
+      ownUris,
+      roots,
     )) {
-      return 1;
+      verified = true;
+    } else {
+      // The plan missed a file the front end read (a directive spelling the
+      // planner resolves differently): redo the compile where only declared
+      // inputs exist, so the read fails instead of escaping the sandbox.
+      current = await stage();
+      outcome = await runCompile(current);
     }
   }
+  if (outcome.exitCode == 0 &&
+      !verified &&
+      !await _unstagedReadsAreDeclared(
+        dillPath,
+        files,
+        graph,
+        multiRoots,
+        multiRootPrefix,
+        log,
+        ownUris,
+        roots,
+        consequence: 'failing the compile',
+      )) {
+    return (outcome: outcome, isolated: current, refused: true);
+  }
+  return (outcome: outcome, isolated: current, refused: false);
+}
+
+/// Deletes the isolated staging directory, if any.
+Future<void> _cleanIsolated(_IsolatedRoot? isolated) async {
+  if (isolated == null) return;
+  final dir = Directory(_filePathOf(isolated.rootDir));
+  if (await dir.exists()) {
+    await dir.delete(recursive: true);
+  }
+}
+
+/// The VM libraries for the module's platform and extra libraries.
+Future<Set<String>> _loadVmLibraries(
+  _ModuleOptions options,
+  KernelModuleCache? cache,
+  Map<String, Uint8List>? inputDigests,
+) async {
+  if (cache != null && options.extraLibraries.isEmpty) {
+    return cache.vmLibrariesOf(
+      options.librariesJson!,
+      inputDigests,
+      platform: options.librariesPlatform,
+    );
+  }
+  final librariesMap = cache != null
+      ? await cache.librariesJsonOf(options.librariesJson!, inputDigests)
+      : jsonDecode(await File(options.librariesJson!).readAsString())
+            as Map<String, dynamic>;
+  return vmLibraries(
+    librariesMap,
+    platform: options.librariesPlatform,
+    extraLibraries: options.extraLibraries,
+  );
+}
+
+/// The declared keys and root paths of the entry and input sources.
+({Set<String> keys, Set<String> rootPaths}) _declareInputs(
+  List<String> raws,
+  Map<String, _PackageRoot> roots,
+  List<String> multiRoots,
+  String multiRootPrefix,
+) {
   final declaredKeys = <String>{};
   final declaredRootPaths = <String>{};
-  for (final raw in [...sources, ...inputSources]) {
+  for (final raw in raws) {
     final key = _keyOfUri(raw, roots, multiRootPrefix);
     if (key != null) declaredKeys.add(key);
     for (final spelling in _inputSpellings(raw, multiRoots)) {
@@ -554,60 +671,194 @@ Future<int> compileModule(
       if (normFile.isNotEmpty) declaredRootPaths.add(normFile);
     }
   }
-  final files = _Files(
-    multiRoots.isEmpty ? const ['.'] : multiRoots,
-    declaredKeys: declaredKeys,
-    declaredRootPaths: declaredRootPaths,
-    stagedRoots: stagedSources,
-    workerInputPaths: workerInputPaths,
-  );
-  await Directory(output).create(recursive: true);
-  if (outputOutline != null) {
-    await Directory(outputOutline).create(recursive: true);
+  return (keys: declaredKeys, rootPaths: declaredRootPaths);
+}
+
+/// The parsed options and loaded inputs of one `compileModule` run.
+class _ModuleBuild {
+  _ModuleBuild({
+    required this.options,
+    required this.compiler,
+    required this.log,
+    required this.inputs,
+    required this.workerInputPaths,
+    required this.inputDigests,
+    required this.roots,
+    required this.closure,
+    required this.vm,
+    required this.graph,
+    required this.stagedSources,
+    required this.own,
+    required this.inherited,
+    required this.files,
+    required this.reporter,
+    required this.cache,
+    required this.createLink,
+  });
+
+  final _ModuleOptions options;
+  final ModuleCompiler compiler;
+  final StringBuffer log;
+  final List<Uint8List> inputs;
+  final Set<String>? workerInputPaths;
+  final Map<String, Uint8List>? inputDigests;
+  final Map<String, _PackageRoot> roots;
+  final Map<String, String> closure;
+  final Set<String> vm;
+  final Map<String, _Node> graph;
+  final Map<String, String> stagedSources;
+
+  /// The own sources this module compiles: `--source` URIs no closure module
+  /// defines.
+  final List<String> own;
+
+  /// The closure's excluded sources no closure module defines: this module
+  /// neither compiles nor excludes them.
+  final Map<String, String> inherited;
+  final _Files files;
+  final _UsedInputsReporter reporter;
+  final KernelModuleCache? cache;
+  final void Function(String linkPath, String target)? createLink;
+
+  /// Loads the packages, closure, VM libraries, indexes and file view,
+  /// returning null when a module index cannot be read.
+  static Future<_ModuleBuild?> load(
+    _ModuleOptions options,
+    ModuleCompiler compiler,
+    StringBuffer log,
+    List<Uint8List> inputs,
+    Set<String>? workerInputPaths,
+    Map<String, Uint8List>? inputDigests, {
+    KernelModuleCache? cache,
+    void Function(String linkPath, String target)? createLink,
+  }) async {
+    final roots = await _packageRoots(
+      options.packagesFile!,
+      options.multiRootPrefix,
+    );
+    final closure = await _readExcluded(
+      options.closureExcluded,
+      roots,
+      options.multiRootPrefix,
+      cache: cache,
+      inputDigests: inputDigests,
+    );
+    final vm = await _loadVmLibraries(options, cache, inputDigests);
+    // Every kernel the closure indexes, by the key of each library it defines.
+    final graph = <String, _Node>{};
+    final stagedSources = <String, String>{};
+    for (final dir in options.inputKmods) {
+      if (!await _readIndex(
+        dir,
+        graph,
+        log,
+        stagedSources: stagedSources,
+        cache: cache,
+        inputDigests: inputDigests,
+      )) {
+        return null;
+      }
+    }
+    final declared = _declareInputs(
+      [...options.sources, ...options.inputSources],
+      roots,
+      options.multiRoots,
+      options.multiRootPrefix,
+    );
+    return _assemble(
+      options,
+      compiler,
+      log,
+      inputs,
+      workerInputPaths,
+      inputDigests,
+      roots,
+      closure,
+      vm,
+      graph,
+      stagedSources,
+      declared,
+      cache: cache,
+      createLink: createLink,
+    );
   }
 
-  // A file that a dependency module defines is linked from that module, so this module
-  // neither compiles it nor excludes it. An excluded file in the closure counts only
-  // while no module of the closure defines it: then the module that defines it is the
-  // copy the executable links.
-  final inherited = <String, String>{
-    for (final entry in closure.entries)
-      if (!graph.containsKey(entry.key)) entry.key: entry.value,
-  };
-  final own = <String>[
-    for (final uri in sources)
-      if (!_definedBy(uri, graph, roots, multiRootPrefix)) uri,
-  ];
-
-  if (noDrop) {
-    final entry = await _entrySources(
-      sources,
-      inherited,
-      graph,
-      roots,
-      files,
-      vm,
-      multiRootPrefix,
+  /// Assembles the file view, outputs and plan inputs from the loaded parts.
+  static Future<_ModuleBuild> _assemble(
+    _ModuleOptions options,
+    ModuleCompiler compiler,
+    StringBuffer log,
+    List<Uint8List> inputs,
+    Set<String>? workerInputPaths,
+    Map<String, Uint8List>? inputDigests,
+    Map<String, _PackageRoot> roots,
+    Map<String, String> closure,
+    Set<String> vm,
+    Map<String, _Node> graph,
+    Map<String, String> stagedSources,
+    ({Set<String> keys, Set<String> rootPaths}) declared, {
+    KernelModuleCache? cache,
+    void Function(String linkPath, String target)? createLink,
+  }) async {
+    final files = _Files(
+      options.multiRoots.isEmpty ? const ['.'] : options.multiRoots,
+      declaredKeys: declared.keys,
+      declaredRootPaths: declared.rootPaths,
+      stagedRoots: stagedSources,
+      workerInputPaths: workerInputPaths,
     );
-    if (entry.disallowed.isNotEmpty) {
-      for (final error in entry.disallowed) {
-        log.writeln(error);
-      }
-      return 1;
+    await Directory(options.output!).create(recursive: true);
+    if (options.outputOutline != null) {
+      await Directory(options.outputOutline!).create(recursive: true);
     }
-    if (entry.undeclared.isNotEmpty) {
-      for (final missing in entry.undeclared) {
-        log.writeln(
-          'kernel_module: cannot compile $missing: '
-          'source is not a declared input.',
-        );
-      }
-      return 1;
-    }
-    const dill = 'entry.dill';
-    // Staged-source roots for every declared key the base roots do not hold,
-    // in first-seen order: the front end resolves those keys through the
-    // pinned dependency copies, ahead of any workspace shadow.
+    // An excluded file in the closure counts only while no module of the
+    // closure defines it: then the module that defines it is the copy the
+    // executable links.
+    final inherited = <String, String>{
+      for (final entry in closure.entries)
+        if (!graph.containsKey(entry.key)) entry.key: entry.value,
+    };
+    final own = <String>[
+      for (final uri in options.sources)
+        if (!_definedBy(uri, graph, roots, options.multiRootPrefix)) uri,
+    ];
+    // Records each invocation's `--used-inputs` report for the unused-inputs
+    // list. `compiler` itself still answers the `_Persistent` checks below.
+    final reporter = _UsedInputsReporter(compiler, options.output!);
+    return _ModuleBuild(
+      options: options,
+      compiler: compiler,
+      log: log,
+      inputs: inputs,
+      workerInputPaths: workerInputPaths,
+      inputDigests: inputDigests,
+      roots: roots,
+      closure: closure,
+      vm: vm,
+      graph: graph,
+      stagedSources: stagedSources,
+      own: own,
+      inherited: inherited,
+      files: files,
+      reporter: reporter,
+      cache: cache,
+      createLink: createLink,
+    );
+  }
+
+  /// Stages the isolated `--multi-root` holding exactly the declared origins.
+  Future<_IsolatedRoot> _stageIsolated() => _stageIsolatedMultiRoot(
+    options.output!,
+    files,
+    inputDigests,
+    includeInputDigests: inputs.isNotEmpty || compiler is _Persistent,
+    createLink: createLink,
+  );
+
+  /// Staged-source roots for every declared key the base roots do not hold, in
+  /// first-seen order: the front end resolves those keys through the pinned
+  /// dependency copies, ahead of any workspace shadow.
+  List<String> _extraStagedRoots() {
     final extraMultiRoots = <String>[];
     final seenStagedRoots = <String>{};
     for (final key in files.declaredKeys) {
@@ -618,8 +869,13 @@ Future<int> compileModule(
         }
       }
     }
+    return extraMultiRoots;
+  }
+
+  /// Digests for staged keys the worker inputs do not already digest.
+  Future<List<Uint8List>> _stagedInputsFor(Iterable<String> keys) async {
     final stagedInputs = <Uint8List>[];
-    for (final key in entry.keys) {
+    for (final key in keys) {
       if (!files.isDeclaredInRoots(key)) {
         final stagedRoot = stagedSources[key];
         if (stagedRoot != null && inputs.isNotEmpty) {
@@ -635,435 +891,495 @@ Future<int> compileModule(
         }
       }
     }
-    final useIsolated = await _needsIsolatedMultiRoot(
-      multiRoots,
-      extraMultiRoots,
-      entry.keys,
+    return stagedInputs;
+  }
+
+  /// Compiles the entry module from source, verifying and staging as needed.
+  Future<int> runEntry() async {
+    final entry = await _entrySources(
+      options.sources,
+      inherited,
+      graph,
+      roots,
       files,
       vm,
+      options.multiRootPrefix,
     );
-    ({String rootDir, List<Uint8List> inputs, Map<String, Uint8List> covered})?
-    isolated;
-    Future<ModuleOutcome> runEntry() async {
-      final staged = isolated;
-      final entryBase = staged != null
-          ? _baseWithSingleMultiRoot(base, staged.rootDir)
-          : _baseWithOrderedMultiRoots(base, multiRoots, entry.keys, files);
-      // The compiler reads each declared file through the isolated root, so
-      // its origin inputs are withheld as duplicates.
-      final callInputs = staged != null
-          ? (staged.inputs.isEmpty
-                ? inputs
-                : [
-                    ...staged.inputs,
-                    ..._uncoveredInputs(inputs, staged.covered),
-                  ])
-          : (stagedInputs.isEmpty ? inputs : [...inputs, ...stagedInputs]);
-      return reporter.run(
-        kernelWorkerArgs([
-          // Staged-source roots come first so the pinned dependency copies
-          // win over any workspace shadow, exactly as the probe validates.
-          if (staged == null)
-            for (final root in extraMultiRoots) ...[_multiRootFlag, root],
-          ...entryBase,
-          for (final d in neededDills(entry.imports, graph)) ...[
-            '--input-summary',
-            d,
-          ],
-          for (final source in entry.uris) ...['--source', source],
-          '--output',
-          '$output/$dill',
-        ]),
-        callInputs,
-      );
-    }
-
-    final ModuleOutcome outcome;
+    final blocked = _checkEntry(entry);
+    if (blocked != null) return blocked;
+    final extraMultiRoots = _extraStagedRoots();
+    final stagedInputs = await _stagedInputsFor(entry.keys);
+    _IsolatedRoot? isolated;
     try {
-      if (useIsolated) {
-        // The front end sees a single `--multi-root` holding symlinks to exactly
-        // the declared origins, so untracked workspace files and stale generated
-        // outputs can never shadow a declared source, and references to
-        // undeclared files fail instead of reading the workspace.
-        isolated = await _stageIsolatedMultiRoot(
-          output,
-          files,
-          inputDigests,
-          includeInputDigests: inputs.isNotEmpty || compiler is _Persistent,
-          createLink: createLink,
-        );
+      if (await _needsIsolatedMultiRoot(
+        options.multiRoots,
+        extraMultiRoots,
+        entry.keys,
+        files,
+        vm,
+      )) {
+        isolated = await _stageIsolated();
       }
-      var first = await runEntry();
-      var verified = false;
-      if (first.exitCode == 0 && isolated == null) {
-        if (await _unstagedReadsAreDeclared(
-          '$output/$dill',
-          files,
-          graph,
-          multiRoots,
-          multiRootPrefix,
-          log,
-          entry.uris.toSet(),
-          roots,
-        )) {
-          verified = true;
-        } else {
-          // The plan missed a file the front end read (a directive spelling the
-          // planner resolves differently): redo the compile where only declared
-          // inputs exist, so the read fails instead of escaping the sandbox.
-          isolated = await _stageIsolatedMultiRoot(
-            output,
-            files,
-            inputDigests,
-            includeInputDigests: inputs.isNotEmpty || compiler is _Persistent,
-            createLink: createLink,
-          );
-          first = await runEntry();
-        }
-      }
-      outcome = first;
-      if (outcome.exitCode == 0 &&
-          !verified &&
-          !await _unstagedReadsAreDeclared(
-            '$output/$dill',
-            files,
-            graph,
-            multiRoots,
-            multiRootPrefix,
-            log,
-            entry.uris.toSet(),
-            roots,
-            consequence: 'failing the compile',
-          )) {
-        // The isolated restage still read outside the declared inputs (a
-        // `file:` URI reads the host whatever the multi-root holds): its
-        // result is refused, never accepted.
-        log.write(outcome.output);
+      final result = await _compileAndVerify(
+        (current) =>
+            _compileEntry(current, extraMultiRoots, entry, stagedInputs),
+        _stageIsolated,
+        isolated,
+        '${options.output!}/$_entryDillName',
+        files,
+        graph,
+        options.multiRoots,
+        options.multiRootPrefix,
+        log,
+        entry.uris.toSet(),
+        roots,
+      );
+      isolated = result.isolated;
+      if (result.refused) {
+        log.write(result.outcome.output);
         return 1;
       }
-    } finally {
-      if (isolated != null) {
-        final dir = Directory(_filePathOf(isolated.rootDir));
-        if (await dir.exists()) {
-          await dir.delete(recursive: true);
-        }
+      if (result.outcome.exitCode != 0) {
+        log.write(result.outcome.output);
+        return 1;
       }
+      await _finishEntry(entry);
+    } finally {
+      await _cleanIsolated(isolated);
     }
-    if (outcome.exitCode != 0) {
-      log.write(outcome.output);
+    return 0;
+  }
+
+  /// Reports the entry walk's failures, returning the exit code, or null.
+  int? _checkEntry(_EntrySources entry) {
+    if (entry.disallowed.isNotEmpty) {
+      for (final error in entry.disallowed) {
+        log.writeln(error);
+      }
       return 1;
     }
+    if (entry.undeclared.isNotEmpty) {
+      for (final missing in entry.undeclared) {
+        log.writeln(
+          'kernel_module: cannot compile $missing: '
+          'source is not a declared input.',
+        );
+      }
+      return 1;
+    }
+    return null;
+  }
+
+  /// Compiles the entry sources once, through the isolated root when staged.
+  Future<ModuleOutcome> _compileEntry(
+    _IsolatedRoot? isolated,
+    List<String> extraMultiRoots,
+    _EntrySources entry,
+    List<Uint8List> stagedInputs,
+  ) async {
+    final staged = isolated;
+    final entryBase = staged != null
+        ? _baseWithSingleMultiRoot(options.base, staged.rootDir)
+        : _baseWithOrderedMultiRoots(
+            options.base,
+            options.multiRoots,
+            entry.keys,
+            files,
+          );
+    // The compiler reads each declared file through the isolated root, so
+    // its origin inputs are withheld as duplicates.
+    final callInputs = staged != null
+        ? (staged.inputs.isEmpty
+              ? inputs
+              : [...staged.inputs, ..._uncoveredInputs(inputs, staged.covered)])
+        : (stagedInputs.isEmpty ? inputs : [...inputs, ...stagedInputs]);
+    return reporter.run(
+      kernelWorkerArgs([
+        // Staged-source roots come first so the pinned dependency copies
+        // win over any workspace shadow, exactly as the probe validates.
+        if (staged == null)
+          for (final root in extraMultiRoots) ...[_multiRootFlag, root],
+        ...entryBase,
+        for (final d in neededDills(entry.imports, graph)) ...[
+          '--input-summary',
+          d,
+        ],
+        for (final source in entry.uris) ...['--source', source],
+        '--output',
+        '${options.output!}/$_entryDillName',
+      ]),
+      callInputs,
+    );
+  }
+
+  /// Writes the entry index, outline, sidecar and unused-inputs list.
+  Future<void> _finishEntry(_EntrySources entry) async {
+    final output = options.output!;
     final entrySccs = [
-      _Scc(dill: dill, keys: const [], uris: const [], imports: entry.imports),
+      _Scc(
+        dill: _entryDillName,
+        keys: const [],
+        uris: const [],
+        imports: entry.imports,
+      ),
     ];
     await _writeIndex(output, entrySccs);
-    if (outputOutline != null) {
-      final fullFile = File('$output/$dill');
+    if (options.outputOutline != null) {
+      final fullFile = File('$output/$_entryDillName');
       if (await fullFile.exists()) {
         final rawBytes = await fullFile.readAsBytes();
         final outlineBytes = stripDillToOutline(rawBytes);
-        await File('$outputOutline/$dill').writeAsBytes(outlineBytes);
+        await File('${options.outputOutline}/$_entryDillName')
+            .writeAsBytes(outlineBytes);
       }
-      await _writeIndex(outputOutline, entrySccs);
+      await _writeIndex(options.outputOutline!, entrySccs);
     }
-    await File(excludedPath).writeAsString('');
-    if (unusedInputsPath != null) {
+    await File(options.excludedPath!).writeAsString('');
+    if (options.unusedInputsPath != null) {
       await _writeUnusedInputsList(
-        unusedInputsPath: unusedInputsPath,
+        unusedInputsPath: options.unusedInputsPath!,
         reports: reporter.records,
-        inputKmods: inputKmods,
+        inputKmods: options.inputKmods,
         graph: graph,
         inherited: inherited,
         stagedSources: stagedSources,
         ownKeys: {
-          for (final uri in sources) ?_keyOfUri(uri, roots, multiRootPrefix),
+          for (final uri in options.sources)
+            ?_keyOfUri(uri, roots, options.multiRootPrefix),
         },
         // The entry walk has no removal decisions about dependency files: a
         // source it compiled is visited, and looking up a `part of` name
         // lists nothing at all.
         consultedTargets: const {},
         output: output,
-        outputOutline: outputOutline,
+        outputOutline: options.outputOutline,
         entryKeys: entry.keys.toSet(),
         lookedUpLibraryNames: entry.lookedUpLibraryNames,
-        inputSources: inputSources,
-        ownSourceFiles: ownSourceFiles.toSet(),
-        multiRoots: multiRoots,
-        entryDill: '$output/$dill',
+        inputSources: options.inputSources,
+        ownSourceFiles: options.ownSourceFiles.toSet(),
+        multiRoots: options.multiRoots,
+        entryDill: '$output/$_entryDillName',
         outputDills: const [],
         declaredKeys: files.declaredKeys,
-        multiRootPrefix: multiRootPrefix,
+        multiRootPrefix: options.multiRootPrefix,
       );
     }
+  }
+
+  /// Plans, compiles and links the module's own sources component by component.
+  Future<int> runLibrary() async {
+    final planned = await _planLibrary();
+    final plannedExit = planned.exit;
+    if (plannedExit != null) return plannedExit;
+    final keys = planned.keys;
+    final plan = planned.plan;
+    var remaining = [
+      for (final uri in own)
+        if (!plan.isExcluded(keys[uri])) uri,
+    ];
+    final extraMultiRoots = _extraStagedRoots();
+    var retried = false;
+    _IsolatedRoot? isolated;
+    var sccs = <_Scc>[];
+    try {
+      while (true) {
+        sccs = _componentsOf(remaining, keys, plan);
+        // The kernels this attempt has written, by key. A later component
+        // links to them.
+        final local = Map<String, _Node>.of(graph);
+        ModuleOutcome? failure;
+        var failedUris = const <String>[];
+        for (final scc in sccs) {
+          final step = await _compileScc(scc, local, extraMultiRoots, isolated);
+          isolated = step.isolated;
+          if (step.stop) return 1;
+          if (step.failure != null) {
+            failure = step.failure;
+            failedUris = scc.uris;
+            break;
+          }
+        }
+        if (failure == null) break;
+        // The one retry: drop the own sources that failed, and their
+        // importers. The components are then formed again from what remains.
+        final verdict = _attribute(
+          failure.output,
+          failedUris,
+          roots,
+          options.multiRootPrefix,
+        );
+        if (retried ||
+            verdict.unattributed ||
+            verdict.outside ||
+            verdict.failing.isEmpty) {
+          log.write(failure.output);
+          return 1;
+        }
+        retried = true;
+        plan.exclude({
+          for (final entry in verdict.failing.entries)
+            entry.key: 'compile error: ${entry.value}',
+        });
+        remaining = [
+          for (final uri in remaining)
+            if (!plan.isExcluded(keys[uri])) uri,
+        ];
+      }
+    } finally {
+      await _cleanIsolated(isolated);
+    }
+    await _finishLibrary(sccs, keys, plan, remaining);
     return 0;
   }
 
-  final keys = <String, String>{};
-  final plan = _Plan();
-  for (final uri in own) {
-    final key = _keyOfUri(uri, roots, multiRootPrefix);
-    if (key == null) continue;
-    if (!files.isDeclared(key)) {
-      log.writeln(
-        'kernel_module: cannot compile $uri ($key): '
-        'source is not a declared input.',
-      );
-      return 1;
+  /// Plans the own sources' imports, adopting part peers. Returns the exit
+  /// code when an own source is undeclared or a directive is disallowed.
+  Future<({Map<String, String> keys, _Plan plan, int? exit})>
+  _planLibrary() async {
+    final keys = <String, String>{};
+    final plan = _Plan();
+    for (final uri in own) {
+      final key = _keyOfUri(uri, roots, options.multiRootPrefix);
+      if (key == null) continue;
+      if (!files.isDeclared(key)) {
+        log.writeln(
+          'kernel_module: cannot compile $uri ($key): '
+          'source is not a declared input.',
+        );
+        return (keys: keys, plan: plan, exit: 1);
+      }
+      keys[uri] = key;
+      plan.addOwn(key, uri);
     }
-    keys[uri] = key;
-    plan.addOwn(key, uri);
-  }
-  await _adoptDeclaredPartPeers(
-    own,
-    keys,
-    plan,
-    inherited,
-    graph,
-    roots,
-    files,
-    vm,
-    multiRootPrefix,
-  );
-  final disallowed = await _planImports(
-    plan,
-    keys,
-    inherited,
-    graph,
-    roots,
-    files,
-    vm,
-    log,
-    multiRootPrefix,
-  );
-  if (disallowed.isNotEmpty) {
-    for (final error in disallowed) {
-      log.writeln(error);
+    await _adoptDeclaredPartPeers(
+      own,
+      keys,
+      plan,
+      inherited,
+      graph,
+      roots,
+      files,
+      vm,
+      options.multiRootPrefix,
+    );
+    final disallowed = await _planImports(
+      plan,
+      keys,
+      inherited,
+      graph,
+      roots,
+      files,
+      vm,
+      log,
+      options.multiRootPrefix,
+    );
+    if (disallowed.isNotEmpty) {
+      for (final error in disallowed) {
+        log.writeln(error);
+      }
+      return (keys: keys, plan: plan, exit: 1);
     }
-    return 1;
+    return (keys: keys, plan: plan, exit: null);
   }
 
-  var remaining = [
-    for (final uri in own)
-      if (!plan.isExcluded(keys[uri])) uri,
-  ];
-  var retried = false;
-  var sccs = <_Scc>[];
-  // Staged-source roots for every declared key the base roots do not hold, in
-  // first-seen order: the front end resolves those keys through the pinned
-  // dependency copies, ahead of any workspace shadow.
-  final extraMultiRoots = <String>[];
-  final seenStagedRoots = <String>{};
-  for (final key in files.declaredKeys) {
-    if (!files.isDeclaredInRoots(key)) {
-      final stagedRoot = stagedSources[key];
-      if (stagedRoot != null && seenStagedRoots.add(stagedRoot)) {
-        extraMultiRoots.add(stagedRoot);
-      }
+  /// Compiles one component and records its kernel node. Returns whether the
+  /// build must stop, the outcome to attribute when the compile failed, and
+  /// the isolated root (staged when an unstaged success proved unverified).
+  Future<({bool stop, ModuleOutcome? failure, _IsolatedRoot? isolated})>
+  _compileScc(
+    _Scc scc,
+    Map<String, _Node> local,
+    List<String> extraMultiRoots,
+    _IsolatedRoot? isolated,
+  ) async {
+    final stagedInputs = await _stagedInputsFor(scc.keys);
+    var current = isolated;
+    if (current == null &&
+        await _needsIsolatedMultiRoot(
+          options.multiRoots,
+          extraMultiRoots,
+          scc.keys,
+          files,
+          vm,
+        )) {
+      // The front end sees a single `--multi-root` holding symlinks to
+      // exactly the declared origins, so untracked workspace files and
+      // stale generated outputs can never shadow a declared source, and
+      // references to undeclared files fail instead of reading the
+      // workspace.
+      current = await _stageIsolated();
     }
+    final dillPath = '${options.output!}/${scc.dill}';
+    final result = await _compileAndVerify(
+      (staged) => _compileSccOnce(
+        scc,
+        local,
+        staged,
+        extraMultiRoots,
+        stagedInputs,
+        dillPath,
+      ),
+      _stageIsolated,
+      current,
+      dillPath,
+      files,
+      local,
+      options.multiRoots,
+      options.multiRootPrefix,
+      log,
+      scc.uris.toSet(),
+      roots,
+    );
+    if (result.refused) {
+      // The isolated restage still read outside the declared inputs: its
+      // result is refused, never accepted.
+      log.write(result.outcome.output);
+      return (stop: true, failure: null, isolated: result.isolated);
+    }
+    final outcome = result.outcome;
+    if (outcome.exitCode != 0) {
+      return (stop: false, failure: outcome, isolated: result.isolated);
+    }
+    await _recordSccNode(scc, local, dillPath);
+    return (stop: false, failure: null, isolated: result.isolated);
   }
-  ({String rootDir, List<Uint8List> inputs, Map<String, Uint8List> covered})?
-  isolated;
-  try {
-    while (true) {
-      sccs = _componentsOf(remaining, keys, plan);
-      // The kernels this attempt has written, by key. A later component links to them.
-      final local = Map<String, _Node>.of(graph);
-      ModuleOutcome? failure;
-      var failedUris = const <String>[];
-      for (final scc in sccs) {
-        final stagedInputs = <Uint8List>[];
-        for (final key in scc.keys) {
-          if (!files.isDeclaredInRoots(key)) {
-            final stagedRoot = stagedSources[key];
-            if (stagedRoot != null && inputs.isNotEmpty) {
-              final stagedPath = '$stagedRoot/$key';
-              if (_lookupDigest(stagedPath, inputDigests) == null) {
-                stagedInputs.add(
-                  _encodeInput(
-                    stagedPath,
-                    sha256Of(await File(stagedPath).readAsBytes()),
-                  ),
-                );
-              }
-            }
-          }
-        }
-        final useIsolated =
-            isolated != null ||
-            await _needsIsolatedMultiRoot(
-              multiRoots,
-              extraMultiRoots,
-              scc.keys,
-              files,
-              vm,
-            );
-        if (useIsolated && isolated == null) {
-          // The front end sees a single `--multi-root` holding symlinks to
-          // exactly the declared origins, so untracked workspace files and
-          // stale generated outputs can never shadow a declared source, and
-          // references to undeclared files fail instead of reading the
-          // workspace.
-          isolated = await _stageIsolatedMultiRoot(
-            output,
-            files,
-            inputDigests,
-            includeInputDigests: inputs.isNotEmpty || compiler is _Persistent,
-            createLink: createLink,
-          );
-        }
-        final dillPath = '$output/${scc.dill}';
-        Future<ModuleOutcome> runOnce() async {
-          final staged = isolated;
-          final summaryNodes = _neededNodes(scc.imports, local);
-          final summaryInputs = <Uint8List>[];
-          if (inputs.isNotEmpty || compiler is _Persistent) {
-            for (final node in summaryNodes) {
-              final encoded = node.encodedInput;
-              if (encoded != null) {
-                summaryInputs.add(encoded);
-              }
-            }
-          }
-          final sccBase = staged != null
-              ? _baseWithSingleMultiRoot(base, staged.rootDir)
-              : _baseWithOrderedMultiRoots(base, multiRoots, scc.keys, files);
-          final extraInputs = [
-            if (staged != null) ...staged.inputs else ...stagedInputs,
-            ...summaryInputs,
-            if (staged != null) ..._uncoveredInputs(inputs, staged.covered),
-          ];
-          return reporter.run(
-            kernelWorkerArgs([
-              // Staged-source roots come first so the pinned dependency copies
-              // win over any workspace shadow, exactly as the probe validates.
-              if (staged == null)
-                for (final root in extraMultiRoots) ...[_multiRootFlag, root],
-              ...sccBase,
-              for (final node in summaryNodes) ...[
-                '--input-summary',
-                node.dill,
-              ],
-              for (final uri in scc.uris) ...['--source', uri],
-              '--output',
-              dillPath,
-            ]),
-            staged != null
-                ? (extraInputs.isEmpty ? inputs : extraInputs)
-                : (extraInputs.isEmpty ? inputs : [...inputs, ...extraInputs]),
-          );
-        }
 
-        var outcome = await runOnce();
-        var verified = false;
-        if (outcome.exitCode == 0 && isolated == null) {
-          if (await _unstagedReadsAreDeclared(
-            dillPath,
-            files,
-            local,
-            multiRoots,
-            multiRootPrefix,
-            log,
-            scc.uris.toSet(),
-            roots,
-          )) {
-            verified = true;
-          } else {
-            // The plan missed a file the front end read (a directive spelling
-            // the planner resolves differently): redo the compile where only
-            // declared inputs exist, so the read fails instead of escaping the
-            // sandbox. Later components inherit the isolated root.
-            isolated = await _stageIsolatedMultiRoot(
-              output,
-              files,
-              inputDigests,
-              includeInputDigests: inputs.isNotEmpty || compiler is _Persistent,
-              createLink: createLink,
-            );
-            outcome = await runOnce();
-          }
-        }
-        if (outcome.exitCode == 0 &&
-            !verified &&
-            !await _unstagedReadsAreDeclared(
-              dillPath,
-              files,
-              local,
-              multiRoots,
-              multiRootPrefix,
-              log,
-              scc.uris.toSet(),
-              roots,
-              consequence: 'failing the compile',
-            )) {
-          // The isolated restage still read outside the declared inputs (a
-          // `file:` URI reads the host whatever the multi-root holds): its
-          // result is refused, never accepted.
-          log.write(outcome.output);
-          return 1;
-        }
-        if (outcome.exitCode != 0) {
-          failure = outcome;
-          failedUris = scc.uris;
-          break;
-        }
-        var nodeDill = dillPath;
-        Uint8List? nodeDillBytes;
-        final dillFile = File(dillPath);
-        if (await dillFile.exists()) {
-          final rawBytes = await dillFile.readAsBytes();
-          if (outputOutline != null) {
-            final outlineBytes = stripDillToOutline(rawBytes);
-            nodeDill = '$outputOutline/${scc.dill}';
-            await File(nodeDill).writeAsBytes(outlineBytes);
-            nodeDillBytes = outlineBytes;
-            await dillFile.writeAsBytes(_stripSourceCodeFromDill(rawBytes));
-          } else {
-            final strippedBytes = _stripSourceCodeFromDill(rawBytes);
-            await dillFile.writeAsBytes(strippedBytes);
-            nodeDillBytes = strippedBytes;
-          }
-        }
-        final node = _Node(nodeDill, scc.imports, dillBytes: nodeDillBytes);
-        for (final key in scc.keys) {
-          local[key] = node;
+  /// Compiles one component once, through the isolated root when staged.
+  Future<ModuleOutcome> _compileSccOnce(
+    _Scc scc,
+    Map<String, _Node> local,
+    _IsolatedRoot? isolated,
+    List<String> extraMultiRoots,
+    List<Uint8List> stagedInputs,
+    String dillPath,
+  ) async {
+    final staged = isolated;
+    final summaryNodes = _neededNodes(scc.imports, local);
+    final summaryInputs = <Uint8List>[];
+    if (inputs.isNotEmpty || compiler is _Persistent) {
+      for (final node in summaryNodes) {
+        final encoded = node.encodedInput;
+        if (encoded != null) {
+          summaryInputs.add(encoded);
         }
       }
-      if (failure == null) break;
-      // The one retry: drop the own sources that failed, and their importers. The
-      // components are then formed again from what remains.
-      final verdict = _attribute(
-        failure.output,
-        failedUris,
-        roots,
-        multiRootPrefix,
-      );
-      if (retried ||
-          verdict.unattributed ||
-          verdict.outside ||
-          verdict.failing.isEmpty) {
-        log.write(failure.output);
-        return 1;
-      }
-      retried = true;
-      plan.exclude({
-        for (final entry in verdict.failing.entries)
-          entry.key: 'compile error: ${entry.value}',
-      });
-      remaining = [
-        for (final uri in remaining)
-          if (!plan.isExcluded(keys[uri])) uri,
-      ];
     }
-  } finally {
-    if (isolated != null) {
-      final dir = Directory(_filePathOf(isolated.rootDir));
-      if (await dir.exists()) {
-        await dir.delete(recursive: true);
+    final sccBase = staged != null
+        ? _baseWithSingleMultiRoot(options.base, staged.rootDir)
+        : _baseWithOrderedMultiRoots(
+            options.base,
+            options.multiRoots,
+            scc.keys,
+            files,
+          );
+    final extraInputs = [
+      if (staged != null) ...staged.inputs else ...stagedInputs,
+      ...summaryInputs,
+      if (staged != null) ..._uncoveredInputs(inputs, staged.covered),
+    ];
+    return reporter.run(
+      kernelWorkerArgs([
+        // Staged-source roots come first so the pinned dependency copies
+        // win over any workspace shadow, exactly as the probe validates.
+        if (staged == null)
+          for (final root in extraMultiRoots) ...[_multiRootFlag, root],
+        ...sccBase,
+        for (final node in summaryNodes) ...['--input-summary', node.dill],
+        for (final uri in scc.uris) ...['--source', uri],
+        '--output',
+        dillPath,
+      ]),
+      staged != null
+          ? (extraInputs.isEmpty ? inputs : extraInputs)
+          : (extraInputs.isEmpty ? inputs : [...inputs, ...extraInputs]),
+    );
+  }
+
+  /// Strips a written component and records its kernel node for linking.
+  Future<void> _recordSccNode(
+    _Scc scc,
+    Map<String, _Node> local,
+    String dillPath,
+  ) async {
+    var nodeDill = dillPath;
+    Uint8List? nodeDillBytes;
+    final dillFile = File(dillPath);
+    if (await dillFile.exists()) {
+      final rawBytes = await dillFile.readAsBytes();
+      if (options.outputOutline != null) {
+        final outlineBytes = stripDillToOutline(rawBytes);
+        nodeDill = '${options.outputOutline}/${scc.dill}';
+        await File(nodeDill).writeAsBytes(outlineBytes);
+        nodeDillBytes = outlineBytes;
+        await dillFile.writeAsBytes(_stripSourceCodeFromDill(rawBytes));
+      } else {
+        final strippedBytes = _stripSourceCodeFromDill(rawBytes);
+        await dillFile.writeAsBytes(strippedBytes);
+        nodeDillBytes = strippedBytes;
       }
+    }
+    final node = _Node(nodeDill, scc.imports, dillBytes: nodeDillBytes);
+    for (final key in scc.keys) {
+      local[key] = node;
     }
   }
-  await _writeIndex(output, sccs);
-  if (outputOutline != null) {
+
+  /// Writes the indexes, the excluded sidecar and the unused-inputs list.
+  Future<void> _finishLibrary(
+    List<_Scc> sccs,
+    Map<String, String> keys,
+    _Plan plan,
+    List<String> remaining,
+  ) async {
+    await _writeLibraryIndexes(sccs, own, keys, plan);
+    await _writeExcludedSidecar(keys, plan, remaining);
+    if (options.unusedInputsPath != null) {
+      // A library lists only the module directories no invocation used and
+      // whose files no plan decision consulted. Every own source counts as
+      // referencing, including one a shadowing dependency dropped from the
+      // compile: the module links that dependency's kernel for it. Every
+      // dependency key a removal decision read counts too: an exclusion
+      // target, an adopted part peer, a missing closure key. The evidence veto
+      // reads what the written kernels embedded, so an adopted part peer keeps
+      // the module that staged it even when no kernel was written.
+      await _writeUnusedInputsList(
+        unusedInputsPath: options.unusedInputsPath!,
+        reports: reporter.records,
+        inputKmods: options.inputKmods,
+        graph: graph,
+        inherited: inherited,
+        stagedSources: stagedSources,
+        ownKeys: {
+          for (final uri in options.sources)
+            ?_keyOfUri(uri, roots, options.multiRootPrefix),
+        },
+        consultedTargets: plan.consultedTargets,
+        output: options.output!,
+        outputOutline: options.outputOutline,
+        entryKeys: null,
+        lookedUpLibraryNames: false,
+        inputSources: const [],
+        ownSourceFiles: const {},
+        multiRoots: options.multiRoots,
+        entryDill: null,
+        outputDills: [for (final scc in sccs) '${options.output!}/${scc.dill}'],
+        declaredKeys: files.declaredKeys,
+        multiRootPrefix: options.multiRootPrefix,
+      );
+    }
+  }
+
+  /// Writes the component index, staging excluded sources beside outlines.
+  Future<void> _writeLibraryIndexes(
+    List<_Scc> sccs,
+    List<String> own,
+    Map<String, String> keys,
+    _Plan plan,
+  ) async {
+    final output = options.output!;
+    final outputOutline = options.outputOutline;
+    await _writeIndex(output, sccs);
+    if (outputOutline == null) return;
     final excludedKeys = <String>[];
     for (final uri in own) {
       final key = keys[uri];
@@ -1079,58 +1395,31 @@ Future<int> compileModule(
     await _writeIndex(outputOutline, sccs, excluded: excludedKeys);
   }
 
-  // Written even when nothing is excluded: the sidecar is a declared output. Its
-  // `#` line is a count for the build log, and each excluded source is listed under
-  // its `package:` URI and its multi-root URI, with the reason.
-  final lines = StringBuffer()
-    ..writeln(
-      '# ${remaining.length} of ${own.length} sources compile; the others '
-      'are excluded for the VM.',
-    );
-  for (final uri in own) {
-    final key = keys[uri];
-    final reason = plan.reasonOf(key);
-    if (key == null || reason == null) continue;
-    lines.writeln('$uri\t$reason');
-    if (!uri.startsWith(multiRootPrefix)) {
-      lines.writeln('$multiRootPrefix$key\t$reason');
+  /// Writes the excluded-sources sidecar: a declared output even when nothing
+  /// is excluded. Its `#` line is a count for the build log, and each excluded
+  /// source is listed under its `package:` URI and its multi-root URI, with
+  /// the reason.
+  Future<void> _writeExcludedSidecar(
+    Map<String, String> keys,
+    _Plan plan,
+    List<String> remaining,
+  ) async {
+    final lines = StringBuffer()
+      ..writeln(
+        '# ${remaining.length} of ${own.length} sources compile; the others '
+        'are excluded for the VM.',
+      );
+    for (final uri in own) {
+      final key = keys[uri];
+      final reason = plan.reasonOf(key);
+      if (key == null || reason == null) continue;
+      lines.writeln('$uri\t$reason');
+      if (!uri.startsWith(options.multiRootPrefix)) {
+        lines.writeln('${options.multiRootPrefix}$key\t$reason');
+      }
     }
+    await File(options.excludedPath!).writeAsString(lines.toString());
   }
-  await File(excludedPath).writeAsString(lines.toString());
-  if (unusedInputsPath != null) {
-    // A library lists only the module directories no invocation used and
-    // whose files no plan decision consulted. Every own source counts as
-    // referencing, including one a shadowing dependency dropped from the
-    // compile: the module links that dependency's kernel for it. Every
-    // dependency key a removal decision read counts too: an exclusion
-    // target, an adopted part peer, a missing closure key. The evidence veto
-    // reads what the written kernels embedded, so an adopted part peer keeps
-    // the module that staged it even when no kernel was written.
-    await _writeUnusedInputsList(
-      unusedInputsPath: unusedInputsPath,
-      reports: reporter.records,
-      inputKmods: inputKmods,
-      graph: graph,
-      inherited: inherited,
-      stagedSources: stagedSources,
-      ownKeys: {
-        for (final uri in sources) ?_keyOfUri(uri, roots, multiRootPrefix),
-      },
-      consultedTargets: plan.consultedTargets,
-      output: output,
-      outputOutline: outputOutline,
-      entryKeys: null,
-      lookedUpLibraryNames: false,
-      inputSources: const [],
-      ownSourceFiles: const {},
-      multiRoots: multiRoots,
-      entryDill: null,
-      outputDills: [for (final scc in sccs) '$output/${scc.dill}'],
-      declaredKeys: files.declaredKeys,
-      multiRootPrefix: multiRootPrefix,
-    );
-  }
-  return 0;
 }
 
 /// One kernel a module writes: the sources it compiles, and the keys it imports.
