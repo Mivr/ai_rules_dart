@@ -158,6 +158,67 @@ Future<int> _runUnderRunner({
 }) async {
   final env = Platform.environment;
 
+  if (!_isRunnableLayout(dill: dill, baseDill: baseDill, testPath: testPath)) {
+    return 1;
+  }
+  final tmp = Directory(env['TEST_TMPDIR'] ?? Directory.systemTemp.path)
+      .createTempSync('dart_test.');
+  final precompiled = _preparePrecompiled(
+    dill: dill,
+    baseDill: baseDill,
+    testPath: testPath,
+    tmp: tmp,
+  );
+  final inPlace = _stageSuiteWorkspace(
+    testSource: testSource,
+    testPath: testPath,
+    manifest: manifest,
+    workspace: workspace,
+    tmp: tmp,
+  );
+  final report = _join(tmp.path, 'results.json');
+
+  final vm = await Process.start(
+    dart,
+    _suiteCommand(
+      runner: runner,
+      precompiled: precompiled.precompiled,
+      testPath: testPath,
+      report: report,
+      tmp: tmp,
+      args: args,
+      env: env,
+    ),
+    workingDirectory: inPlace ? null : tmp.path,
+    environment: {
+      ..._childRunfilesEnv(env, manifest),
+      'RULES_DART_TEST_ARGS': jsonEncode(args),
+      // The runner reads a per-user config (`~/.dart_test.yaml`, or
+      // `%LOCALAPPDATA%\DartTest.yaml`) unless this names one. A path that
+      // does not exist means none: a developer's own settings must not change
+      // what a test does under Bazel, and Bazel's Windows test environment has
+      // no LOCALAPPDATA for the runner to read at all.
+      'DART_TEST_CONFIG': _join(tmp.path, 'no_global_config/DartTest.yaml'),
+    },
+    mode: ProcessStartMode.inheritStdio,
+  );
+  final code = await _waitForSuite(vm, combined: precompiled.combined);
+  return _finishSuiteRun(
+    code: code,
+    report: report,
+    testPath: testPath,
+    env: env,
+  );
+}
+
+/// Whether the dill is laid out where the runner loads it from.
+///
+/// Reports the layout problem and returns false when it is not.
+bool _isRunnableLayout({
+  required String dill,
+  required String? baseDill,
+  required String testPath,
+}) {
   // The runner loads the precompiled suite from `<dir>/<path>.vm_test.vm.app.dill`
   // — which is where `dart_test` put the dill, so it is loaded in place — and
   // reads the test's source at `<path>` relative to its working directory for
@@ -171,16 +232,27 @@ Future<int> _runUnderRunner({
   final normalized = dill.replaceAll(r'\', '/');
   if (!normalized.endsWith(suffix)) {
     stderr.writeln('dart_test: $dill is not laid out for $testPath');
-    return 1;
+    return false;
   }
   if (baseDill != null && !File(baseDill).existsSync()) {
     stderr.writeln('dart_test: base dill not found: $baseDill');
-    return 1;
+    return false;
   }
+  return true;
+}
+
+/// The precompiled suite directory and the combined dill, when one is needed.
+///
+/// The layout is already checked by [_isRunnableLayout].
+({String precompiled, File? combined}) _preparePrecompiled({
+  required String dill,
+  required String? baseDill,
+  required String testPath,
+  required Directory tmp,
+}) {
+  final suffix = '/$testPath.vm_test.vm.app.dill';
   var precompiled = dill.substring(0, dill.length - suffix.length);
-  final tmp = Directory(env['TEST_TMPDIR'] ?? Directory.systemTemp.path)
-      .createTempSync('dart_test.');
-  File? combinedDill;
+  File? combined;
   if (baseDill != null) {
     final combinedPath = _join(
       tmp.path,
@@ -190,12 +262,25 @@ Future<int> _runUnderRunner({
       0,
       combinedPath.length - suffix.length,
     );
-    combinedDill = File(combinedPath);
+    combined = File(combinedPath);
     final builder = BytesBuilder(copy: false)
       ..add(File(dill).readAsBytesSync())
       ..add(File(baseDill).readAsBytesSync());
-    combinedDill.writeAsBytesSync(builder.takeBytes(), flush: true);
+    combined.writeAsBytesSync(builder.takeBytes(), flush: true);
   }
+  return (precompiled: precompiled, combined: combined);
+}
+
+/// Lays out the workspace's runfiles in [tmp] unless they are usable in place.
+///
+/// Returns whether the suite runs in place.
+bool _stageSuiteWorkspace({
+  required String testSource,
+  required String testPath,
+  required String? manifest,
+  required String? workspace,
+  required Directory tmp,
+}) {
   final inPlace = _workspaceInPlace(
     testPath: testPath,
     manifest: manifest,
@@ -216,73 +301,80 @@ Future<int> _runUnderRunner({
       File(testSource).copySync(inScratch.path);
     }
   }
+  return inPlace;
+}
 
+/// The runner command line for one suite run.
+List<String> _suiteCommand({
+  required String runner,
+  required String precompiled,
+  required String testPath,
+  required String report,
+  required Directory tmp,
+  required List<String> args,
+  required Map<String, String> env,
+}) {
   final filter = env['TESTBRIDGE_TEST_ONLY'];
   final totalShards = env['TEST_TOTAL_SHARDS'];
   final shardIndex = env['TEST_SHARD_INDEX'];
-  final xmlOutput = env['XML_OUTPUT_FILE'];
   final shardStatus = env['TEST_SHARD_STATUS_FILE'];
-  final report = _join(tmp.path, 'results.json');
 
   // Touched before the run, as Bazel asks: it is how a test runner says it
   // supports sharding at all.
   if (shardStatus != null) {
     File(shardStatus).writeAsStringSync('');
   }
-
-  final vm = await Process.start(
-    dart,
-    [
-      '--enable-asserts',
-      runner,
-      '--precompiled=$precompiled',
-      '--reporter=expanded',
-      // Bazel's timeout replaces `package:test`'s 30-second default. Not
-      // `none`: in `package:test` a suite-level `none` also overrides the
-      // timeout a test states on its own case, and that one is the author's.
-      '--timeout=${_suiteTimeout(env)}',
-      '--file-reporter=json:$report',
-      if (filter != null && filter.isNotEmpty) ...['--name', filter],
-      if (totalShards != null && shardIndex != null) ...[
-        '--total-shards',
-        totalShards,
-        '--shard-index',
-        shardIndex,
-      ],
-      testPath,
+  return [
+    '--enable-asserts',
+    runner,
+    '--precompiled=$precompiled',
+    '--reporter=expanded',
+    // Bazel's timeout replaces `package:test`'s 30-second default. Not
+    // `none`: in `package:test` a suite-level `none` also overrides the
+    // timeout a test states on its own case, and that one is the author's.
+    '--timeout=${_suiteTimeout(env)}',
+    '--file-reporter=json:$report',
+    if (filter != null && filter.isNotEmpty) ...['--name', filter],
+    if (totalShards != null && shardIndex != null) ...[
+      '--total-shards',
+      totalShards,
+      '--shard-index',
+      shardIndex,
     ],
-    workingDirectory: inPlace ? null : tmp.path,
-    environment: {
-      ..._childRunfilesEnv(env, manifest),
-      'RULES_DART_TEST_ARGS': jsonEncode(args),
-      // The runner reads a per-user config (`~/.dart_test.yaml`, or
-      // `%LOCALAPPDATA%\DartTest.yaml`) unless this names one. A path that
-      // does not exist means none: a developer's own settings must not change
-      // what a test does under Bazel, and Bazel's Windows test environment has
-      // no LOCALAPPDATA for the runner to read at all.
-      'DART_TEST_CONFIG': _join(tmp.path, 'no_global_config/DartTest.yaml'),
-    },
-    mode: ProcessStartMode.inheritStdio,
-  );
-  int code;
+    testPath,
+  ];
+}
+
+/// Waits for the suite VM, deleting the combined dill it no longer needs.
+Future<int> _waitForSuite(Process vm, {required File? combined}) async {
   try {
-    code = await vm.exitCode;
+    return await vm.exitCode;
   } finally {
-    if (combinedDill != null && combinedDill.existsSync()) {
+    if (combined != null && combined.existsSync()) {
       try {
-        combinedDill.deleteSync();
+        combined.deleteSync();
       } catch (_) {}
     }
   }
+}
 
+/// Maps the suite's exit code onto Bazel's and writes the JUnit report.
+int _finishSuiteRun({
+  required int code,
+  required String report,
+  required String testPath,
+  required Map<String, String> env,
+}) {
   // A filter that selects nothing here, or a shard that drew no cases, is not
   // a failure: `bazel test //... --test_filter=x` has to pass every target the
   // filter does not touch.
-  final selecting = filter != null || totalShards != null;
+  final selecting = env['TESTBRIDGE_TEST_ONLY'] != null ||
+      env['TEST_TOTAL_SHARDS'] != null;
   if (code == _noTestsRan && selecting) {
     code = 0;
   }
 
+  final xmlOutput = env['XML_OUTPUT_FILE'];
   if (xmlOutput != null) {
     final reportFile = File(report);
     if (reportFile.existsSync()) {
