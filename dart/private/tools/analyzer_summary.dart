@@ -68,12 +68,17 @@ int disposedContextCollectionsCount = 0;
 void Function(AnalysisContextCollectionImpl collection)?
 onContextCollectionDisposed;
 
-Future<void> _disposeCollection(
+/// Disposes [collection], counting and announcing the release.
+///
+/// Tear-down failures are swallowed: the request already has its result, so a
+/// failure to release the collection must not fail the request. Only
+/// [Exception]s are ignored; programming errors still propagate.
+Future<void> disposeContextCollection(
   AnalysisContextCollectionImpl collection,
 ) async {
   try {
     await collection.dispose();
-  } catch (_) {
+  } on Exception {
     // Swallow tear-down exceptions from any older analyzer internals after
     // scheduling driver disposal.
   } finally {
@@ -441,7 +446,7 @@ Future<int> _summarize(
       uriList: [for (final u in libraryUris) Uri.parse(u)],
     );
   } finally {
-    await _disposeCollection(collection);
+    await disposeContextCollection(collection);
   }
   File(args.single('out')).writeAsBytesSync(bytes);
   return 0;
@@ -719,7 +724,7 @@ Future<int> _analyze(
     File(stamp).writeAsStringSync('analyzed\n');
     return 0;
   } finally {
-    await _disposeCollection(collection);
+    await disposeContextCollection(collection);
   }
 }
 

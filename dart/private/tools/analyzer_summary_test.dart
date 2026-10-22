@@ -7,6 +7,9 @@ import 'package:analyzer/file_system/memory_file_system.dart';
 import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:analyzer/src/source/package_map_resolver.dart'
     show PackageMapUriResolver;
+// ignore: implementation_imports
+import 'package:analyzer/src/dart/analysis/analysis_context_collection.dart'
+    show AnalysisContextCollectionImpl;
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -16,11 +19,32 @@ import 'analyzer_summary.dart'
         SummaryByteCache,
         SummaryCachingResourceProvider,
         decodeAnalyzerWorkRequestInputs,
+        disposeContextCollection,
         disposedContextCollectionsCount,
         inferSummarizeRoot,
         onContextCollectionDisposed,
         resolveProjectSource,
         runSingleRequest;
+
+/// A collection whose tear-down raises a trappable failure.
+final class _ThrowingCollection extends AnalysisContextCollectionImpl {
+  _ThrowingCollection() : super(includedPaths: const []);
+
+  @override
+  Future<void> dispose({bool forTesting = false}) async {
+    throw const FormatException('simulated tear-down failure');
+  }
+}
+
+/// A collection whose tear-down raises a programming error.
+final class _ErroringCollection extends AnalysisContextCollectionImpl {
+  _ErroringCollection() : super(includedPaths: const []);
+
+  @override
+  Future<void> dispose({bool forTesting = false}) async {
+    throw StateError('simulated programming error');
+  }
+}
 
 /// Recording wrapper around [PhysicalResourceProvider.INSTANCE] to verify that
 /// blocked ancestor probes never reach the underlying filesystem.
@@ -734,6 +758,29 @@ void main() {
       } finally {
         onContextCollectionDisposed = prevHook;
       }
+    });
+
+    group('disposeContextCollection tear-down failures', () {
+      test('still releases a collection whose dispose throws', () async {
+        final beforeCount = disposedContextCollectionsCount;
+        final released = <AnalysisContextCollectionImpl>[];
+        final prevHook = onContextCollectionDisposed;
+        onContextCollectionDisposed = released.add;
+        try {
+          await disposeContextCollection(_ThrowingCollection());
+          expect(disposedContextCollectionsCount, beforeCount + 1);
+          expect(released, hasLength(1));
+        } finally {
+          onContextCollectionDisposed = prevHook;
+        }
+      });
+
+      test('lets a programming error from dispose propagate', () {
+        expect(
+          disposeContextCollection(_ErroringCollection()),
+          throwsStateError,
+        );
+      });
     });
 
     test('handles symlinked staging roots for nested lib/ sources and fails closed with result type on NotPathOfUriResult', () async {
