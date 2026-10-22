@@ -101,97 +101,190 @@ class ShimArgs {
 
   final LanguageVersion rootLanguageVersion;
 
-  static ArgParser _buildParser() => ArgParser()
-    ..addFlag(
-      'help',
-      abbr: 'h',
-      negatable: false,
-      help: 'Print this usage information.',
-    )
-    ..addOption('input', help: 'Input file exec-root path.', mandatory: true)
-    ..addMultiOption(
-      'output',
-      help:
-          'Declared output file path (repeatable). Each builder-'
-          'produced asset is routed to the declared output whose '
-          'basename shares the input stem + matching suffix. At least '
-          'one `--output` is required.',
-    )
-    ..addOption(
-      'input-asset',
-      help:
-          'Asset path for the input within its package, relative to the '
-          "package root (e.g. `lib/src/models/user.dart`). Preserves "
-          "subdirectory structure that `p.basename(--input)` would drop. "
-          "Required.",
-      mandatory: true,
-    )
-    ..addOption(
-      'package',
-      help:
-          'Owning Dart package name (matches consumer pubspec `name:`). '
-          'Required — the shim builds AssetIds from this.',
-      mandatory: true,
-    )
-    ..addMultiOption(
-      'dep',
-      help:
-          'Additional source file visible to the Resolver. '
-          'Format: `<exec_path>|<asset_path>` (asset path is the path '
-          'within the owning package, e.g. `lib/base.dart`). Repeatable.',
-    )
-    ..addMultiOption(
-      'input-asset-extra',
-      help:
-          'Extra aggregate inputs beyond the primary `--input`. Same '
-          '`<exec>|<asset>` form as `--dep`, but these are exposed to '
-          'the Builder as primary asset inputs (used by aggregate / '
-          'PackageBuilder-style shims). Repeatable.',
-    )
-    ..addOption(
-      'config',
-      help: 'Builder options as JSON. Defaults to "{}".',
-      defaultsTo: '{}',
-    )
-    ..addOption(
-      'package-config',
-      help:
-          'Path to package_config.json for third-party import resolution. '
-          "Defaults to the running process's package_config.",
-      defaultsTo: '',
-    )
-    ..addOption(
-      'root-language-version',
-      help:
-          'Dart language version (in `<major>.<minor>` form) for the '
-          'root package, propagated from the consuming dart_library. '
-          'Required — no default.',
-      mandatory: true,
-    )
-    ..addOption(
-      'sdk-path',
-      help:
-          'Path to the Dart SDK installation root (the directory '
-          'containing `lib/_internal/libraries.dart`). Required when '
-          "the shim runs as an AOT-compiled binary so the analyzer's "
-          "context collection can locate the SDK's libraries. The "
-          "rules_dart codegen rules pass this from the toolchain.",
-      defaultsTo: '',
-    )
-    ..addMultiOption(
-      'summary',
-      help:
-          'Analyzer summary (`.sum`) of a library outside the input\'s '
-          'package. Repeatable. The analysis context resolves those '
-          'libraries from the summary instead of their source.',
-    )
-    ..addOption(
-      'sdk-summary',
-      help:
-          'Analyzer summary of the Dart SDK\'s own libraries. Read with '
-          'each `--summary`, since a dependency summary refers to them.',
-      defaultsTo: '',
-    );
+  static void _addInputOptions(ArgParser parser) {
+    parser
+      ..addOption(
+        'input',
+        help: 'Input file exec-root path.',
+        mandatory: true,
+      )
+      ..addMultiOption(
+        'output',
+        help:
+            'Declared output file path (repeatable). Each builder-'
+            'produced asset is routed to the declared output whose '
+            'basename shares the input stem + matching suffix. At least '
+            'one `--output` is required.',
+      )
+      ..addOption(
+        'input-asset',
+        help:
+            'Asset path for the input within its package, relative to the '
+            "package root (e.g. `lib/src/models/user.dart`). Preserves "
+            "subdirectory structure that `p.basename(--input)` would drop. "
+            "Required.",
+        mandatory: true,
+      )
+      ..addOption(
+        'package',
+        help:
+            'Owning Dart package name (matches consumer pubspec `name:`). '
+            'Required — the shim builds AssetIds from this.',
+        mandatory: true,
+      );
+  }
+
+  static void _addDepOptions(ArgParser parser) {
+    parser
+      ..addMultiOption(
+        'dep',
+        help:
+            'Additional source file visible to the Resolver. '
+            'Format: `<exec_path>|<asset_path>` (asset path is the path '
+            'within the owning package, e.g. `lib/base.dart`). Repeatable.',
+      )
+      ..addMultiOption(
+        'input-asset-extra',
+        help:
+            'Extra aggregate inputs beyond the primary `--input`. Same '
+            '`<exec>|<asset>` form as `--dep`, but these are exposed to '
+            'the Builder as primary asset inputs (used by aggregate / '
+            'PackageBuilder-style shims). Repeatable.',
+      );
+  }
+
+  static void _addConfigOptions(ArgParser parser) {
+    parser
+      ..addOption(
+        'config',
+        help: 'Builder options as JSON. Defaults to "{}".',
+        defaultsTo: '{}',
+      )
+      ..addOption(
+        'package-config',
+        help:
+            'Path to package_config.json for third-party import resolution. '
+            "Defaults to the running process's package_config.",
+        defaultsTo: '',
+      )
+      ..addOption(
+        'root-language-version',
+        help:
+            'Dart language version (in `<major>.<minor>` form) for the '
+            'root package, propagated from the consuming dart_library. '
+            'Required — no default.',
+        mandatory: true,
+      )
+      ..addOption(
+        'sdk-path',
+        help:
+            'Path to the Dart SDK installation root (the directory '
+            'containing `lib/_internal/libraries.dart`). Required when '
+            "the shim runs as an AOT-compiled binary so the analyzer's "
+            "context collection can locate the SDK's libraries. The "
+            "rules_dart codegen rules pass this from the toolchain.",
+        defaultsTo: '',
+      );
+  }
+
+  static void _addSummaryOptions(ArgParser parser) {
+    parser
+      ..addMultiOption(
+        'summary',
+        help:
+            'Analyzer summary (`.sum`) of a library outside the input\'s '
+            'package. Repeatable. The analysis context resolves those '
+            'libraries from the summary instead of their source.',
+      )
+      ..addOption(
+        'sdk-summary',
+        help:
+            'Analyzer summary of the Dart SDK\'s own libraries. Read with '
+            'each `--summary`, since a dependency summary refers to them.',
+        defaultsTo: '',
+      );
+  }
+
+  static ArgParser _buildParser() {
+    final parser = ArgParser()
+      ..addFlag(
+        'help',
+        abbr: 'h',
+        negatable: false,
+        help: 'Print this usage information.',
+      );
+    _addInputOptions(parser);
+    _addDepOptions(parser);
+    _addConfigOptions(parser);
+    _addSummaryOptions(parser);
+    return parser;
+  }
+
+  /// Parses `<exec_path>|<asset_path>` entries of [--dep] or
+  /// [--input-asset-extra] into (exec, asset) records.
+  static List<({String exec, String asset})> _parsePipeList(
+    List<String> raws,
+    String flag,
+  ) {
+    final out = <({String exec, String asset})>[];
+    for (final raw in raws) {
+      final sep = raw.indexOf('|');
+      if (sep < 0) {
+        throw FormatException(
+          '$flag must be `<exec_path>|<asset_path>`; got "$raw"',
+        );
+      }
+      out.add((exec: raw.substring(0, sep), asset: raw.substring(sep + 1)));
+    }
+    return out;
+  }
+
+  /// Parses `--root-language-version` (`<major>.<minor>`) the way the
+  /// analyzer's [LanguageVersion] needs it.
+  static LanguageVersion _parseRootLanguageVersion(String rootLvRaw) {
+    final rootLvParts = rootLvRaw.split('.');
+    if (rootLvParts.length != 2) {
+      throw FormatException(
+        '--root-language-version must be `<major>.<minor>`, got '
+        '"$rootLvRaw"',
+      );
+    }
+    final rootLvMajor = int.tryParse(rootLvParts[0]);
+    final rootLvMinor = int.tryParse(rootLvParts[1]);
+    if (rootLvMajor == null ||
+        rootLvMinor == null ||
+        rootLvMajor < 0 ||
+        rootLvMinor < 0) {
+      throw FormatException(
+        '--root-language-version components must be non-negative ints, '
+        'got "$rootLvRaw"',
+      );
+    }
+    return LanguageVersion(rootLvMajor, rootLvMinor);
+  }
+
+  /// Parses `--config` into builder options. Empty and `{}` mean no options;
+  /// anything else must decode to a JSON object.
+  static Map<String, dynamic> _parseConfig(String configJson) {
+    final trimmed = configJson.trim();
+    if (trimmed.isEmpty || trimmed == '{}') {
+      return <String, dynamic>{};
+    }
+    Object? decoded;
+    try {
+      decoded = jsonDecode(configJson);
+    } on FormatException catch (e) {
+      throw FormatException(
+        '--config must be a JSON object string. Parse error: ${e.message}',
+      );
+    }
+    if (decoded is! Map) {
+      throw FormatException(
+        '--config must be a JSON object (got ${decoded.runtimeType}).',
+      );
+    }
+    return decoded.map((k, v) => MapEntry(k.toString(), v));
+  }
 
   factory ShimArgs.parse(List<String> argv) {
     final parser = _buildParser();
@@ -233,70 +326,20 @@ class ShimArgs {
         'At least one --output is required.\n${parser.usage}',
       );
     }
-    final deps = <({String exec, String asset})>[];
-    ({String exec, String asset}) parsePipe(String raw, String flag) {
-      final sep = raw.indexOf('|');
-      if (sep < 0) {
-        throw FormatException(
-          '$flag must be `<exec_path>|<asset_path>`; got "$raw"',
-        );
-      }
-      return (exec: raw.substring(0, sep), asset: raw.substring(sep + 1));
-    }
-
-    for (final d in (parsed['dep'] as List).cast<String>()) {
-      deps.add(parsePipe(d, '--dep'));
-    }
     // Aggregate-codegen extras are staged identically to deps so the
     // Builder sees them via AssetReader / findAssets.
-    for (final e in (parsed['input-asset-extra'] as List).cast<String>()) {
-      deps.add(parsePipe(e, '--input-asset-extra'));
-    }
+    final deps = [
+      ..._parsePipeList((parsed['dep'] as List).cast<String>(), '--dep'),
+      ..._parsePipeList(
+        (parsed['input-asset-extra'] as List).cast<String>(),
+        '--input-asset-extra',
+      ),
+    ];
     final configJson = parsed['config'] as String;
     final pkgConfig = parsed['package-config'] as String;
     final sdkPath = parsed['sdk-path'] as String;
     final summaries = (parsed['summary'] as List).cast<String>();
     final sdkSummary = parsed['sdk-summary'] as String;
-    final rootLvParts = rootLvRaw.split('.');
-    if (rootLvParts.length != 2) {
-      throw FormatException(
-        '--root-language-version must be `<major>.<minor>`, got '
-        '"$rootLvRaw"',
-      );
-    }
-    final rootLvMajor = int.tryParse(rootLvParts[0]);
-    final rootLvMinor = int.tryParse(rootLvParts[1]);
-    if (rootLvMajor == null ||
-        rootLvMinor == null ||
-        rootLvMajor < 0 ||
-        rootLvMinor < 0) {
-      throw FormatException(
-        '--root-language-version components must be non-negative ints, '
-        'got "$rootLvRaw"',
-      );
-    }
-    final rootLv = LanguageVersion(rootLvMajor, rootLvMinor);
-
-    final Map<String, dynamic> config;
-    final trimmed = configJson.trim();
-    if (trimmed.isEmpty || trimmed == '{}') {
-      config = <String, dynamic>{};
-    } else {
-      Object? decoded;
-      try {
-        decoded = jsonDecode(configJson);
-      } on FormatException catch (e) {
-        throw FormatException(
-          '--config must be a JSON object string. Parse error: ${e.message}',
-        );
-      }
-      if (decoded is! Map) {
-        throw FormatException(
-          '--config must be a JSON object (got ${decoded.runtimeType}).',
-        );
-      }
-      config = decoded.map((k, v) => MapEntry(k.toString(), v));
-    }
 
     return ShimArgs(
       inputPath: input,
@@ -304,12 +347,12 @@ class ShimArgs {
       outputPaths: outputs,
       packageName: pkg,
       depPaths: deps,
-      config: config,
+      config: _parseConfig(configJson),
       packageConfigUri: pkgConfig.isEmpty ? null : pkgConfig,
       sdkPath: sdkPath.isEmpty ? null : sdkPath,
       summaryPaths: summaries,
       sdkSummaryPath: sdkSummary.isEmpty ? null : sdkSummary,
-      rootLanguageVersion: rootLv,
+      rootLanguageVersion: _parseRootLanguageVersion(rootLvRaw),
     );
   }
 }
@@ -597,89 +640,22 @@ Future<void> _runWithStaging(
   final stagingPath = p.normalize(await stagingDir.resolveSymbolicLinks());
   final canonicalStagingDir = Directory(stagingPath);
   final absOutputPaths = args.outputPaths;
-  final absInputExec = args.inputPath;
 
-  // Dedup by asset path before staging. The same logical file can arrive via
-  // more than one exec path — the input is also listed among the deps (e.g.
-  // drift passes the `.drift` src in `asset_deps`), and a co-located package
-  // may surface a file both as a source and as its bazel-out copy. Staging the
-  // same asset twice races to one dest: a harmless overwrite on POSIX, but a
-  // hard error on Windows (`File.copy` won't overwrite). The input asset wins.
-  final normalizedInputAsset = p.posix.normalize(args.inputAssetPath);
-  final execByAsset = <String, String>{normalizedInputAsset: absInputExec};
-  for (final dep in args.depPaths) {
-    execByAsset.putIfAbsent(p.posix.normalize(dep.asset), () => dep.exec);
-  }
-
-  // Same-package deps land in the synthetic root; cross-package deps need
-  // a PackageConfig entry (currently unsupported). Write bytes rather than
-  // calling `File.copy` so read-only mode bits (`0444`/`0555`) from remote
-  // execution, sandboxes, or `bazel-out` are not carried onto staged files.
-  final assetIdToPath = <AssetId, String>{};
-  await Future.wait(
-    execByAsset.entries.map((entry) async {
-      final dest = stagedPath(p.context, stagingPath, entry.key);
-      await Directory(p.dirname(dest)).create(recursive: true);
-      await File(dest).writeAsBytes(await File(entry.value).readAsBytes());
-      assetIdToPath[AssetId(args.packageName, entry.key)] = dest;
-    }),
+  final execByAsset = _dedupeExecByAsset(args);
+  final staged = await _stageExecAssets(
+    execByAsset,
+    stagingPath,
+    args.packageName,
+    p.posix.normalize(args.inputAssetPath),
   );
-  final inputId = AssetId(args.packageName, normalizedInputAsset);
+  final inputId = staged.inputId;
 
   // Build a PackageConfig that maps the synthetic root package to the
   // staging dir, and merges in every package from the upstream config so
   // third-party `package:` imports resolve.
   final packageConfig = await _buildPackageConfig(args, canonicalStagingDir);
-
-  // Write `.dart_tool/package_config.json` so the AnalysisContextCollection
-  // picks it up via Dart's standard package-resolution lookup.
-  final dartTool = Directory(p.join(stagingPath, '.dart_tool'));
-  await dartTool.create(recursive: true);
-  final pcFile = File(p.join(dartTool.path, 'package_config.json'));
-  await pcFile.writeAsString(_serializePackageConfig(packageConfig));
-
-  // Write a minimal pubspec.yaml so the analyzer recognises the staging
-  // dir as a Dart package root, unless the caller already staged one.
-  final pubspecFile = File(p.join(stagingPath, 'pubspec.yaml'));
-  if (!await pubspecFile.exists()) {
-    await pubspecFile.writeAsString(
-      'name: ${args.packageName}\nenvironment:\n  sdk: ^3.0.0\n',
-    );
-  }
-
-  // Bound the analyzer's options discovery at the staging root unless the
-  // caller already staged an `analysis_options.yaml` there. It finds
-  // `analysis_options.yaml` by walking up from the files it analyses, and this
-  // directory lives under the system temp dir — so without a file of its own,
-  // whichever stray options file happens to sit in a temp ancestor would
-  // silently configure codegen, differently on different machines. An empty
-  // options file is equivalent to no file at all when nothing above interferes,
-  // so this changes nothing except the ancestor read.
-  final analysisOptionsFile = File(
-    p.join(stagingPath, 'analysis_options.yaml'),
-  );
-  if (!await analysisOptionsFile.exists()) {
-    await analysisOptionsFile.writeAsString(
-      '# rules_dart: bounds analysis_options.yaml discovery\n',
-    );
-  }
-
-  // Refuse staged entries whose directives would read outside the staging dir
-  // before the analyzer or any Builder can. This is the shim-world half of the
-  // shared staged-source check: the staging dir holds only declared inputs, so
-  // a schemeless relative (or `/`-absolute) URI that resolves outside it, a
-  // `file:` or other foreign scheme, or a `package:` URI climbing above its
-  // package would read an undeclared host file.
-  final stagedViolations = await findStagedShimViolations(
-    canonicalStagingDir,
-    tool: 'builder_shim',
-  );
-  if (stagedViolations.isNotEmpty) {
-    throw StateError(
-      'builder_shim refuses to run builders on staged entries that read '
-      'files outside the declared inputs:\n${stagedViolations.join('\n')}',
-    );
-  }
+  await _writeStagingSupportFiles(stagingPath, packageConfig, args.packageName);
+  await _refuseEscapingStagedEntries(canonicalStagingDir);
 
   // Include ONLY the staging dir. Cross-package imports (`package:drift/...`,
   // `package:json_annotation/...`, …) are resolved through the
@@ -708,10 +684,10 @@ Future<void> _runWithStaging(
   // CWD must contain a valid pubspec before any Builder runs; the shim
   // entry pre-populates it via [prepareSourceGenCwd].
   final writer = _ShimAssetWriter();
-  final reader = _ShimAssetReader(assetIdToPath, packageConfig, writer);
+  final reader = _ShimAssetReader(staged.assetIdToPath, packageConfig, writer);
   final resolver = _ShimAnalyzerResolver(
     collection,
-    assetIdToPath,
+    staged.assetIdToPath,
     packageConfig,
   );
   // One ResourceManager per shim invocation, shared by every pipeline
@@ -742,9 +718,148 @@ Future<void> _runWithStaging(
     absOutputPaths,
   );
 
-  // Wire a Logger listener so Builder-emitted warnings/errors reach the
-  // diagnostic sink; without this, `package:build`'s `log` sinks into a
-  // silent fallback.
+  await _runBuilderPipeline(
+    builders: builders,
+    inputId: inputId,
+    reader: reader,
+    writer: writer,
+    resolver: resolver,
+    packageConfig: packageConfig,
+    resourceManager: resourceManager,
+    collection: collection,
+    allowedOutputs: allowedOutputs,
+    writeDiagnostic: writeDiagnostic,
+  );
+  await _routeDeclaredOutputs(
+    writer,
+    allowedOutputs,
+    inputId,
+    absOutputPaths,
+  );
+}
+
+/// Dedupes staged inputs by asset path before staging. The same logical file
+/// can arrive via more than one exec path — the input is also listed among
+/// the deps (e.g. drift passes the `.drift` src in `asset_deps`), and a
+/// co-located package may surface a file both as a source and as its
+/// bazel-out copy. Staging the same asset twice races to one dest: a harmless
+/// overwrite on POSIX, but a hard error on Windows (`File.copy` won't
+/// overwrite). The input asset wins.
+Map<String, String> _dedupeExecByAsset(ShimArgs args) {
+  final execByAsset = <String, String>{
+    p.posix.normalize(args.inputAssetPath): args.inputPath,
+  };
+  for (final dep in args.depPaths) {
+    execByAsset.putIfAbsent(p.posix.normalize(dep.asset), () => dep.exec);
+  }
+  return execByAsset;
+}
+
+/// Copies every exec path into the staging dir under its asset path.
+///
+/// Same-package deps land in the synthetic root; cross-package deps need
+/// a PackageConfig entry (currently unsupported). Bytes are written rather
+/// than `File.copy`ied so read-only mode bits (`0444`/`0555`) from remote
+/// execution, sandboxes, or `bazel-out` are not carried onto staged files.
+Future<({Map<AssetId, String> assetIdToPath, AssetId inputId})>
+_stageExecAssets(
+  Map<String, String> execByAsset,
+  String stagingPath,
+  String packageName,
+  String inputAsset,
+) async {
+  final assetIdToPath = <AssetId, String>{};
+  await Future.wait(
+    execByAsset.entries.map((entry) async {
+      final dest = stagedPath(p.context, stagingPath, entry.key);
+      await Directory(p.dirname(dest)).create(recursive: true);
+      await File(dest).writeAsBytes(await File(entry.value).readAsBytes());
+      assetIdToPath[AssetId(packageName, entry.key)] = dest;
+    }),
+  );
+  return (
+    assetIdToPath: assetIdToPath,
+    inputId: AssetId(packageName, inputAsset),
+  );
+}
+
+/// Writes the support files the analyzer expects at the staging root:
+/// `.dart_tool/package_config.json` (so the AnalysisContextCollection picks
+/// it up via Dart's standard package-resolution lookup), a minimal
+/// `pubspec.yaml` (so the analyzer recognises the staging dir as a Dart
+/// package root, unless the caller already staged one), and an empty
+/// `analysis_options.yaml` bounding the analyzer's upward options discovery
+/// at the staging root (without a file of its own, whichever stray options
+/// file happens to sit in a temp ancestor would silently configure codegen,
+/// differently on different machines — an empty file is equivalent to no
+/// file at all when nothing above interferes, so this changes nothing except
+/// the ancestor read).
+Future<void> _writeStagingSupportFiles(
+  String stagingPath,
+  PackageConfig packageConfig,
+  String packageName,
+) async {
+  final dartTool = Directory(p.join(stagingPath, '.dart_tool'));
+  await dartTool.create(recursive: true);
+  final pcFile = File(p.join(dartTool.path, 'package_config.json'));
+  await pcFile.writeAsString(_serializePackageConfig(packageConfig));
+
+  final pubspecFile = File(p.join(stagingPath, 'pubspec.yaml'));
+  if (!await pubspecFile.exists()) {
+    await pubspecFile.writeAsString(
+      'name: $packageName\nenvironment:\n  sdk: ^3.0.0\n',
+    );
+  }
+
+  final analysisOptionsFile = File(
+    p.join(stagingPath, 'analysis_options.yaml'),
+  );
+  if (!await analysisOptionsFile.exists()) {
+    await analysisOptionsFile.writeAsString(
+      '# rules_dart: bounds analysis_options.yaml discovery\n',
+    );
+  }
+}
+
+/// Refuses staged entries whose directives would read outside the staging dir
+/// before the analyzer or any Builder can. This is the shim-world half of the
+/// shared staged-source check: the staging dir holds only declared inputs, so
+/// a schemeless relative (or `/`-absolute) URI that resolves outside it, a
+/// `file:` or other foreign scheme, or a `package:` URI climbing above its
+/// package would read an undeclared host file.
+Future<void> _refuseEscapingStagedEntries(Directory stagingDir) async {
+  final stagedViolations = await findStagedShimViolations(
+    stagingDir,
+    tool: 'builder_shim',
+  );
+  if (stagedViolations.isNotEmpty) {
+    throw StateError(
+      'builder_shim refuses to run builders on staged entries that read '
+      'files outside the declared inputs:\n${stagedViolations.join('\n')}',
+    );
+  }
+}
+
+/// Runs every pipeline stage with a Logger listener so Builder-emitted
+/// warnings/errors reach the diagnostic sink (without this, `package:build`'s
+/// `log` sinks into a silent fallback), then releases per-invocation state:
+/// Resources are drained so they don't leak across sequential worker
+/// requests (disposal-phase log records still flow to the listener because
+/// it is cancelled *after* disposal), and analyzer drivers, file-watching
+/// handles and thread-pool workers are released so a long-running worker
+/// doesn't accumulate drivers until it exhausts file descriptors.
+Future<void> _runBuilderPipeline({
+  required List<Builder> builders,
+  required AssetId inputId,
+  required _ShimAssetReader reader,
+  required _ShimAssetWriter writer,
+  required _ShimAnalyzerResolver resolver,
+  required PackageConfig packageConfig,
+  required ResourceManager resourceManager,
+  required AnalysisContextCollection collection,
+  required Iterable<AssetId> allowedOutputs,
+  required DiagnosticSink writeDiagnostic,
+}) async {
   final originalLevel = Logger.root.level;
   final logger = Logger('rules_dart_ext');
   final logSub = Logger.root.onRecord.listen((rec) {
@@ -805,15 +920,23 @@ Future<void> _runWithStaging(
       // regress workers on versions that lack it.
     }
   }
+}
 
-  // Route each builder-emitted asset to the declared Bazel output file
-  // whose basename matches the same `input_stem + <extension>` pattern.
-  // Multi-output builders (e.g. a builder emitting both
-  // `.config.dart` and `.module.dart`) declare one `--output` per extension
-  // and the shim writes each emitted asset to the correct declared path.
-  // For multi-stage pipelines we only care about the last (primary)
-  // Builder's outputs; anything else is an intermediate from an earlier
-  // stage visible only via `findAssets`.
+/// Routes each builder-emitted asset to the declared Bazel output file whose
+/// basename matches the same `input_stem + <extension>` pattern. Multi-output
+/// builders (e.g. a builder emitting both `.config.dart` and `.module.dart`)
+/// declare one `--output` per extension and the shim writes each emitted
+/// asset to the correct declared path. For multi-stage pipelines only the
+/// last (primary) Builder's outputs matter; anything else is an intermediate
+/// from an earlier stage visible only via `findAssets`. A declared path with
+/// no matching emission (the builder saw no relevant annotations) is written
+/// empty, since Bazel still requires the declared output.
+Future<void> _routeDeclaredOutputs(
+  _ShimAssetWriter writer,
+  Iterable<AssetId> allowedOutputs,
+  AssetId inputId,
+  List<String> absOutputPaths,
+) async {
   final allowedSet = allowedOutputs.toSet();
   final emitted = <AssetId, List<int>>{
     for (final e in writer.assets.entries)
@@ -1931,29 +2054,10 @@ Future<List<String>> findStagedShimViolations(
   bool declared(String target) =>
       allowed.any((root) => target == root || target.startsWith('$root/'));
   final errors = <String>[];
-  final paths = <String>[];
-  await for (final entity in stagingDir.list(
-    recursive: true,
-    followLinks: false,
-  )) {
-    if (entity is File || entity is Link) {
-      if (entity.path.endsWith('.dart')) paths.add(entity.path);
-    }
-  }
-  paths.sort();
-  for (final path in paths) {
-    String content;
-    try {
-      // Malformed sequences become U+FFFD, never a skipped file: the analyzer
-      // accepts the file, so the guard scans what it can.
-      content = utf8.decode(
-        await File(path).readAsBytes(),
-        allowMalformed: true,
-      );
-    } on FileSystemException {
-      // Gone between listing and reading; the analyzer reports it.
-      continue;
-    }
+  for (final path in await _collectStagedDartPaths(stagingDir)) {
+    final content = await _readStagedText(path);
+    // Gone between listing and reading; the analyzer reports it.
+    if (content == null) continue;
     final key = path.replaceAll(r'\', '/');
     final from = normalizeStagedPath(key);
     // A source whose directives cannot be listed (it does not parse, or a
@@ -1967,41 +2071,91 @@ Future<List<String>> findStagedShimViolations(
       continue;
     }
     for (final ref in refs) {
-      final uri = ref.uri;
-      // A URI spanning lines is refused however it spells its target: the
-      // front end's multi-line first-line rule reads a different file than
-      // the resolvers below see (see [hasLineBreak]).
-      if (hasLineBreak(uri)) {
-        errors.add("$tool: $key ${ref.kind} '$uri' is not a declared input.");
-        continue;
-      }
-      // The resolvers below skip empty segments, but the front end resolves
-      // some such spellings absolutely: refuse them before resolving.
-      if (hasEmptyPathSegment(uri)) {
-        errors.add("$tool: $key ${ref.kind} '$uri' is not a declared input.");
-        continue;
-      }
-      if (uri.startsWith('dart:')) continue;
-      if (uri.startsWith('package:')) {
-        if (isEscapingPackageUri(uri)) {
-          errors.add("$tool: $key ${ref.kind} '$uri' is not a declared input.");
-        }
-        continue;
-      }
-      if (isFileSchemeDirectiveUri(uri) || isDisallowedDirectiveUri(uri)) {
-        errors.add("$tool: $key ${ref.kind} '$uri' is not a declared input.");
-        continue;
-      }
-      final target = resolveStagedRelativeTarget(uri, from);
-      // A null resolution names no declared file (a `//` authority, a
-      // fragment, or a decoded `/`): it is refused, never passed. The staging
-      // dir holds every entry the builders may read, so a resolved target
-      // outside it is undeclared; a missing file inside it fails in the
-      // builder, never on the host.
-      if (target == null || !declared(target)) {
-        errors.add("$tool: $key ${ref.kind} '$uri' is not a declared input.");
-      }
+      final violation = _shimRefViolation(tool, key, ref, from, declared);
+      if (violation != null) errors.add(violation);
     }
   }
   return errors;
+}
+
+/// Every `.dart` file under [stagingDir] in path order.
+Future<List<String>> _collectStagedDartPaths(Directory stagingDir) async {
+  final paths = <String>[];
+  await for (final entity in stagingDir.list(
+    recursive: true,
+    followLinks: false,
+  )) {
+    if (entity is File || entity is Link) {
+      if (entity.path.endsWith('.dart')) paths.add(entity.path);
+    }
+  }
+  paths.sort();
+  return paths;
+}
+
+/// The staged file at [path] with malformed sequences replaced, or null when
+/// it vanished between listing and reading (the analyzer reports those
+/// itself). Malformed sequences become U+FFFD, never a skipped file: the
+/// analyzer accepts the file, so the guard scans what it can.
+Future<String?> _readStagedText(String path) async {
+  try {
+    return utf8.decode(
+      await File(path).readAsBytes(),
+      allowMalformed: true,
+    );
+  } on FileSystemException {
+    return null;
+  }
+}
+
+/// The violation line for one staged directive reference, or null when the
+/// reference stays inside the staging dir: `dart:`, `package:` URIs that stay
+/// inside their package, and schemeless relatives that stay inside the staging
+/// dir pass, while `file:` and other schemes, `package:` URIs climbing above
+/// their package ([isEscapingPackageUri]), relatives escaping the staging dir
+/// (resolved by [resolveStagedRelativeTarget] against the importing file's
+/// staged path, the way the analyzer resolves them), URIs spanning lines
+/// ([hasLineBreak]), and URIs resolving to no file at all (`//` authorities,
+/// fragments, decoded `/`) are refused. The staging dir holds every entry the
+/// builders may read, so a resolved target outside it is undeclared; a missing
+/// file inside it fails in the builder, never on the host.
+String? _shimRefViolation(
+  String tool,
+  String key,
+  _ShimDirectiveRef ref,
+  String from,
+  bool Function(String) declared,
+) {
+  final uri = ref.uri;
+  // A URI spanning lines is refused however it spells its target: the
+  // front end's multi-line first-line rule reads a different file than
+  // the resolvers below see (see [hasLineBreak]).
+  if (hasLineBreak(uri)) {
+    return "$tool: $key ${ref.kind} '$uri' is not a declared input.";
+  }
+  // The resolvers below skip empty segments, but the front end resolves
+  // some such spellings absolutely: refuse them before resolving.
+  if (hasEmptyPathSegment(uri)) {
+    return "$tool: $key ${ref.kind} '$uri' is not a declared input.";
+  }
+  if (uri.startsWith('dart:')) return null;
+  if (uri.startsWith('package:')) {
+    if (isEscapingPackageUri(uri)) {
+      return "$tool: $key ${ref.kind} '$uri' is not a declared input.";
+    }
+    return null;
+  }
+  if (isFileSchemeDirectiveUri(uri) || isDisallowedDirectiveUri(uri)) {
+    return "$tool: $key ${ref.kind} '$uri' is not a declared input.";
+  }
+  final target = resolveStagedRelativeTarget(uri, from);
+  // A null resolution names no declared file (a `//` authority, a
+  // fragment, or a decoded `/`): it is refused, never passed. The staging
+  // dir holds every entry the builders may read, so a resolved target
+  // outside it is undeclared; a missing file inside it fails in the
+  // builder, never on the host.
+  if (target == null || !declared(target)) {
+    return "$tool: $key ${ref.kind} '$uri' is not a declared input.";
+  }
+  return null;
 }
