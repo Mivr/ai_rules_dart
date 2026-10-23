@@ -366,4 +366,105 @@ void main() {
     );
     expect(File('${tmp.path}/tq_app.js').existsSync(), isFalse);
   });
+
+  test('an unreadable package config skips the extpkgs prune', () {
+    // Drives `_referencedExtPackages` with configs it cannot use: malformed
+    // JSON (`FormatException`) and a config path that cannot be read
+    // (`FileSystemException`). Both read as no referenced packages, so the
+    // extpkgs prune is skipped while `src/` orphans are still pruned.
+    for (final config in ['{oops', null]) {
+      final tag = config == null ? 'unreadable' : 'malformed';
+      final projDir = Directory('${tmp.path}/${tag}_app.proj');
+      final extDir = Directory('${tmp.path}/${tag}_app.extpkgs');
+      Directory('${projDir.path}/src/pkg').createSync(recursive: true);
+      Directory('${projDir.path}/.dart_tool').createSync(recursive: true);
+      Directory('${extDir.path}/orphan_pkg/lib').createSync(recursive: true);
+      File(
+        '${projDir.path}/src/pkg/pubspec.yaml',
+      ).writeAsStringSync('name: pkg\n');
+      File(
+        '${projDir.path}/src/pkg/main.dart',
+      ).writeAsStringSync('void main() {}\n');
+      File(
+        '${projDir.path}/src/pkg/orphan.dart',
+      ).writeAsStringSync('void orphan() {}\n');
+      File(
+        '${extDir.path}/orphan_pkg/lib/o.dart',
+      ).writeAsStringSync('void o() {}\n');
+      File('${projDir.path}/.dart_tool/src_manifest.txt')
+          .writeAsStringSync('pkg/pubspec.yaml\npkg/main.dart\n');
+      if (config == null) {
+        Directory(
+          '${projDir.path}/.dart_tool/package_config.json',
+        ).createSync();
+      } else {
+        File(
+          '${projDir.path}/.dart_tool/package_config.json',
+        ).writeAsStringSync(config);
+      }
+
+      final allowed = pruneOrphanedStagedFiles(projDir.path);
+      expect(allowed, contains('pkg/main.dart'));
+      expect(
+        File('${projDir.path}/src/pkg/orphan.dart').existsSync(),
+        isFalse,
+        reason: '$tag config still prunes unlisted src files',
+      );
+      expect(
+        File('${extDir.path}/orphan_pkg/lib/o.dart').existsSync(),
+        isTrue,
+        reason: '$tag config names no referenced packages, so nothing '
+            'is pruned from extpkgs',
+      );
+    }
+  });
+
+  test('a valid package config prunes unreferenced extpkgs', () {
+    final projDir = Directory('${tmp.path}/valid_app.proj');
+    final extDir = Directory('${tmp.path}/valid_app.extpkgs');
+    Directory('${projDir.path}/src/pkg').createSync(recursive: true);
+    Directory('${projDir.path}/.dart_tool').createSync(recursive: true);
+    Directory('${extDir.path}/kept_pkg/lib').createSync(recursive: true);
+    Directory('${extDir.path}/orphan_pkg/lib').createSync(recursive: true);
+    File(
+      '${projDir.path}/src/pkg/pubspec.yaml',
+    ).writeAsStringSync('name: pkg\n');
+    File(
+      '${projDir.path}/src/pkg/main.dart',
+    ).writeAsStringSync('void main() {}\n');
+    File(
+      '${extDir.path}/kept_pkg/lib/k.dart',
+    ).writeAsStringSync('void k() {}\n');
+    File(
+      '${extDir.path}/orphan_pkg/lib/o.dart',
+    ).writeAsStringSync('void o() {}\n');
+    File('${projDir.path}/.dart_tool/src_manifest.txt')
+        .writeAsStringSync('pkg/pubspec.yaml\npkg/main.dart\n');
+    File('${projDir.path}/.dart_tool/package_config.json').writeAsStringSync(
+      jsonEncode({
+        'configVersion': 2,
+        'packages': [
+          {'name': 'pkg', 'rootUri': '../src/pkg', 'packageUri': 'lib/'},
+          {
+            'name': 'kept_pkg',
+            'rootUri': '../../valid_app.extpkgs/kept_pkg',
+            'packageUri': 'lib/',
+          },
+        ],
+      }),
+    );
+
+    pruneOrphanedStagedFiles(projDir.path);
+    expect(
+      File('${extDir.path}/kept_pkg/lib/k.dart').existsSync(),
+      isTrue,
+    );
+    expect(
+      FileSystemEntity.typeSync(
+        '${extDir.path}/orphan_pkg',
+        followLinks: false,
+      ),
+      FileSystemEntityType.notFound,
+    );
+  });
 }

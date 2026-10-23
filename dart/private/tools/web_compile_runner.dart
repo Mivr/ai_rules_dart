@@ -390,7 +390,13 @@ Set<String>? _referencedExtPackages(String normProject, File pkgConfig) {
   final Object? decoded;
   try {
     decoded = jsonDecode(pkgConfig.readAsStringSync());
-  } on Object {
+  } on FileSystemException {
+    // An unreadable package config names no referenced packages: skip the
+    // extpkgs prune, as when the config is absent.
+    return null;
+  } on FormatException {
+    // Malformed JSON names no referenced packages either: same fallback.
+    // Anything else propagates.
     return null;
   }
   if (decoded is! Map || decoded['packages'] is! List) return null;
