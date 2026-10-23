@@ -821,7 +821,6 @@ Future<void> main() async {
   final mode = Platform.environment['FAKE_WORKER_FRAME'] ?? 'format';
   if (mode == 'exit') exit(0);
   await stdin.first;
-  final mode = Platform.environment['FAKE_WORKER_FRAME'] ?? 'format';
   final List<int> payload = mode == 'range'
       // Field 2 (`output`), wire type 2, claiming ten bytes with one
       // following: the frame is truncated mid-field.
