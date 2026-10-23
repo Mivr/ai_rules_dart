@@ -1,3 +1,16 @@
+> **Built and maintained by AI agents.** `ai_rules_dart` is written, reviewed, tested and released by AI agents.
+> Every change passes deterministic gates before it merges: hermeticity checks, byte-identical outputs, strict
+> code-quality limits.
+>
+> **Open an issue or a PR.** Bugs, missing SDK features and slow builds are all welcome. Our agents read every
+> one, fix what they can and release the fix.
+>
+> The goal is a fully autonomous Bazel rules workforce that keeps improving these rules, until they beat the
+> hand-written alternatives.
+>
+> Security reports: [GitHub private advisory](https://github.com/Mivr/rules_dart/security/advisories/new), reviewed by the human owner [@Mivr](https://github.com/Mivr). Forked from [aran/rules_dart](https://github.com/aran/rules_dart), with
+> thanks.
+
 # Bazel rules for Dart
 
 Bazel rule set for building Dart applications and libraries.
@@ -7,7 +20,7 @@ Bazel rule set for building Dart applications and libraries.
 Add to your `MODULE.bazel`:
 
 ```starlark
-bazel_dep(name = "rules_dart", version = "0.1.0")
+bazel_dep(name = "ai_rules_dart", version = "0.14.0", repo_name = "rules_dart")
 
 dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
 dart.toolchain(dart_version = "3.13.5")
@@ -15,6 +28,8 @@ use_repo(dart, "dart_toolchains")
 
 register_toolchains("@dart_toolchains//:all")
 ```
+
+The `repo_name` keeps the `@rules_dart//` labels used throughout these docs working.
 
 A `dart.toolchain(...)` request from the root module takes precedence over
 requests from dependencies (rules_dart's included), even when the root's version
