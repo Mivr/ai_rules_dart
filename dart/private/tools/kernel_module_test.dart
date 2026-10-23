@@ -3667,6 +3667,45 @@ void main(List<String> args) {
       expect(File(unusedPath).readAsLinesSync(), [xPath, yPath]);
     });
 
+    test(
+      'an entry lists an unreached input source but not a reached excluded one',
+      () async {
+        _write(
+          'pkg/lib/main.dart',
+          "import 'package:dep/x.dart';\nvoid main() {}\n",
+        );
+        _write('dep/lib/x.dart', 'class X {}\n');
+        _write('dep/lib/y.dart', 'class Y {}\n');
+        // The provider defines nothing: the entry compiles the reached
+        // excluded source from the workspace, visiting it, while the
+        // unreached input source stays unvisited and is listed.
+        final dep = _module('dep', []);
+        final sidecar = _sidecar('dep', {
+          'dep/lib/x.dart': 'dart:html is not a VM library',
+        });
+        final yPath = '${_root.path}/dep/lib/y.dart';
+        final compiler = _ReportingCompiler(
+          dillBytes: () => _buildDillWithUris([
+            _uri('pkg/lib/main.dart'),
+            _uri('dep/lib/x.dart'),
+          ]),
+        );
+        final unusedPath = '${_root.path}/out/entry_reached_excluded.unused';
+        final entry = await _compile(
+          'entry_reached_excluded',
+          ['pkg/lib/main.dart'],
+          inputSources: ['${_root.path}/dep/lib/x.dart', yPath],
+          inputKmods: [dep],
+          closureExcluded: [sidecar],
+          noDrop: true,
+          compiler: compiler,
+          unusedInputsList: unusedPath,
+        );
+        expect(entry.code, 0, reason: entry.log);
+        expect(File(unusedPath).readAsLinesSync(), [yPath]);
+      },
+    );
+
     test('an entry lists no dependency source when its output embeds an unplanned one', () async {
       _write(
         'pkg/lib/main.dart',

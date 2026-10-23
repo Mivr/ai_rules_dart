@@ -1042,31 +1042,33 @@ class _ModuleBuild {
     await File(options.excludedPath!).writeAsString('');
     if (options.unusedInputsPath != null) {
       await _writeUnusedInputsList(
-        unusedInputsPath: options.unusedInputsPath!,
-        reports: reporter.records,
-        inputKmods: options.inputKmods,
-        graph: graph,
-        inherited: inherited,
-        stagedSources: stagedSources,
-        ownKeys: {
-          for (final uri in options.sources)
-            ?_keyOfUri(uri, roots, options.multiRootPrefix),
-        },
-        // The entry walk has no removal decisions about dependency files: a
-        // source it compiled is visited, and looking up a `part of` name
-        // lists nothing at all.
-        consultedTargets: const {},
-        output: output,
-        outputOutline: options.outputOutline,
-        entryKeys: entry.keys.toSet(),
-        lookedUpLibraryNames: entry.lookedUpLibraryNames,
-        inputSources: options.inputSources,
-        ownSourceFiles: options.ownSourceFiles.toSet(),
-        multiRoots: options.multiRoots,
-        entryDill: '$output/$_entryDillName',
-        outputDills: const [],
-        declaredKeys: files.declaredKeys,
-        multiRootPrefix: options.multiRootPrefix,
+        options.unusedInputsPath!,
+        _UnusedInputs(
+          reports: reporter.records,
+          inputKmods: options.inputKmods,
+          graph: graph,
+          inherited: inherited,
+          stagedSources: stagedSources,
+          ownKeys: {
+            for (final uri in options.sources)
+              ?_keyOfUri(uri, roots, options.multiRootPrefix),
+          },
+          // The entry walk has no removal decisions about dependency files: a
+          // source it compiled is visited, and looking up a `part of` name
+          // lists nothing at all.
+          consultedTargets: const {},
+          output: output,
+          outputOutline: options.outputOutline,
+          entryKeys: entry.keys.toSet(),
+          lookedUpLibraryNames: entry.lookedUpLibraryNames,
+          inputSources: options.inputSources,
+          ownSourceFiles: options.ownSourceFiles.toSet(),
+          multiRoots: options.multiRoots,
+          entryDill: '$output/$_entryDillName',
+          outputDills: const [],
+          declaredKeys: files.declaredKeys,
+          multiRootPrefix: options.multiRootPrefix,
+        ),
       );
     }
   }
@@ -1345,28 +1347,32 @@ class _ModuleBuild {
       // reads what the written kernels embedded, so an adopted part peer keeps
       // the module that staged it even when no kernel was written.
       await _writeUnusedInputsList(
-        unusedInputsPath: options.unusedInputsPath!,
-        reports: reporter.records,
-        inputKmods: options.inputKmods,
-        graph: graph,
-        inherited: inherited,
-        stagedSources: stagedSources,
-        ownKeys: {
-          for (final uri in options.sources)
-            ?_keyOfUri(uri, roots, options.multiRootPrefix),
-        },
-        consultedTargets: plan.consultedTargets,
-        output: options.output!,
-        outputOutline: options.outputOutline,
-        entryKeys: null,
-        lookedUpLibraryNames: false,
-        inputSources: const [],
-        ownSourceFiles: const {},
-        multiRoots: options.multiRoots,
-        entryDill: null,
-        outputDills: [for (final scc in sccs) '${options.output!}/${scc.dill}'],
-        declaredKeys: files.declaredKeys,
-        multiRootPrefix: options.multiRootPrefix,
+        options.unusedInputsPath!,
+        _UnusedInputs(
+          reports: reporter.records,
+          inputKmods: options.inputKmods,
+          graph: graph,
+          inherited: inherited,
+          stagedSources: stagedSources,
+          ownKeys: {
+            for (final uri in options.sources)
+              ?_keyOfUri(uri, roots, options.multiRootPrefix),
+          },
+          consultedTargets: plan.consultedTargets,
+          output: options.output!,
+          outputOutline: options.outputOutline,
+          entryKeys: null,
+          lookedUpLibraryNames: false,
+          inputSources: const [],
+          ownSourceFiles: const {},
+          multiRoots: options.multiRoots,
+          entryDill: null,
+          outputDills: [
+            for (final scc in sccs) '${options.output!}/${scc.dill}',
+          ],
+          declaredKeys: files.declaredKeys,
+          multiRootPrefix: options.multiRootPrefix,
+        ),
       );
     }
   }
@@ -4272,96 +4278,17 @@ Future<bool> _entryReadsArePlanned(
 /// listed. A report naming a file the action never passed fails closed to an
 /// empty list, as does a written kernel whose source table names a file no
 /// known input maps to, or names no table at all.
-Future<void> _writeUnusedInputsList({
-  required String unusedInputsPath,
-  required List<_UsedReport> reports,
-  required List<String> inputKmods,
-  required Map<String, _Node> graph,
-  required Map<String, String> inherited,
-  required Map<String, String> stagedSources,
-  required Set<String> ownKeys,
-  required Set<String> consultedTargets,
-  required String output,
-  required String? outputOutline,
-  required Set<String>? entryKeys,
-  required bool lookedUpLibraryNames,
-  required List<String> inputSources,
-  required Set<String> ownSourceFiles,
-  required List<String> multiRoots,
-  required String? entryDill,
-  required List<String> outputDills,
-  required Set<String> declaredKeys,
-  required String multiRootPrefix,
-}) async {
-  final lines =
-      await _unusedInputsLines(
-        reports: reports,
-        inputKmods: inputKmods,
-        graph: graph,
-        inherited: inherited,
-        stagedSources: stagedSources,
-        ownKeys: ownKeys,
-        consultedTargets: consultedTargets,
-        output: output,
-        outputOutline: outputOutline,
-        entryKeys: entryKeys,
-        lookedUpLibraryNames: lookedUpLibraryNames,
-        inputSources: inputSources,
-        ownSourceFiles: ownSourceFiles,
-        multiRoots: multiRoots,
-        entryDill: entryDill,
-        outputDills: outputDills,
-        declaredKeys: declaredKeys,
-        multiRootPrefix: multiRootPrefix,
-      ) ??
-      const <String>[];
+/// Writes the unused input lines [unused] computes: every input module
+/// directory and entry input source no invocation used and no check kept.
+Future<void> _writeUnusedInputsList(
+  String unusedInputsPath,
+  _UnusedInputs unused,
+) async {
+  final lines = await unused.compute() ?? const <String>[];
   final file = File(unusedInputsPath);
   await file.parent.create(recursive: true);
   await file.writeAsString(lines.isEmpty ? '' : '${lines.join('\n')}\n');
 }
-
-/// The unused input lines [_writeUnusedInputsList] writes, or null when a
-/// report names a file the action never passed, or when a kernel this action
-/// wrote embeds a source no known input maps to (or no readable source table).
-Future<List<String>?> _unusedInputsLines({
-  required List<_UsedReport> reports,
-  required List<String> inputKmods,
-  required Map<String, _Node> graph,
-  required Map<String, String> inherited,
-  required Map<String, String> stagedSources,
-  required Set<String> ownKeys,
-  required Set<String> consultedTargets,
-  required String output,
-  required String? outputOutline,
-  required Set<String>? entryKeys,
-  required bool lookedUpLibraryNames,
-  required List<String> inputSources,
-  required Set<String> ownSourceFiles,
-  required List<String> multiRoots,
-  required String? entryDill,
-  required List<String> outputDills,
-  required Set<String> declaredKeys,
-  required String multiRootPrefix,
-}) => _UnusedInputs(
-  reports: reports,
-  inputKmods: inputKmods,
-  graph: graph,
-  inherited: inherited,
-  stagedSources: stagedSources,
-  ownKeys: ownKeys,
-  consultedTargets: consultedTargets,
-  output: output,
-  outputOutline: outputOutline,
-  entryKeys: entryKeys,
-  lookedUpLibraryNames: lookedUpLibraryNames,
-  inputSources: inputSources,
-  ownSourceFiles: ownSourceFiles,
-  multiRoots: multiRoots,
-  entryDill: entryDill,
-  outputDills: outputDills,
-  declaredKeys: declaredKeys,
-  multiRootPrefix: multiRootPrefix,
-).compute();
 
 /// Computes the unused input lines [_writeUnusedInputsList] writes.
 class _UnusedInputs {
