@@ -191,6 +191,7 @@ dart_binary(
     modular_kernel = False,
     visibility = ["//dart:__subpackages__"],
     deps = [
+        ":worker_protocol",
         "@ext_pub_deps//:dart_style",
         "@ext_pub_deps//:package_config",
         "@ext_pub_deps//:path",
@@ -478,6 +479,7 @@ dart_test(
     ],
     main = "format_runner_test.dart",
     deps = [
+        ":worker_protocol",
         "//dart/runfiles",
         "@ext_pub_deps//:dart_style",
         "@ext_pub_deps//:package_config",

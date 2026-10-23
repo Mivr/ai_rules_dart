@@ -17,7 +17,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:dart_style/dart_style.dart';
 // ignore: implementation_imports
@@ -29,23 +28,13 @@ import 'package:dart_style/src/analysis_options/io_file_system.dart';
 import 'package:package_config/package_config.dart';
 import 'package:path/path.dart' as p;
 import 'package:pub_semver/pub_semver.dart';
+import 'package:rules_dart_worker/worker_protocol.dart';
+import 'package:rules_dart_worker/worker_tool_fs.dart';
 
 const _argvBudget = 8000;
 
-List<String> _expandParamFiles(List<String> args) {
-  final out = <String>[];
-  for (final arg in args) {
-    if (arg.startsWith('@')) {
-      out.addAll(File(arg.substring(1)).readAsLinesSync());
-    } else {
-      out.add(arg);
-    }
-  }
-  return out;
-}
-
 Future<void> main(List<String> rawArgs) async {
-  final args = _expandParamFiles(rawArgs);
+  final args = expandParamFiles(rawArgs);
   if (args.contains('--persistent_worker')) {
     await _runPersistentWorker();
     exit(0);
@@ -55,13 +44,13 @@ Future<void> main(List<String> rawArgs) async {
 }
 
 Future<void> _runPersistentWorker() async {
-  await for (final bytes in _Frames(stdin)) {
-    final request = _WorkRequest.read(bytes);
+  await for (final bytes in WorkerFrames(stdin)) {
+    final request = WorkerRequest.read(bytes);
     if (request.cancel) continue;
     final output = StringBuffer();
     var code = 1;
     try {
-      final expanded = _expandParamFiles(request.arguments);
+      final expanded = expandParamFiles(request.arguments);
       code = await runFormatRequest(expanded, outSink: output, errSink: output);
     } on Object catch (e, st) {
       // A worker must answer every request, so this stays broad; the error
@@ -75,7 +64,7 @@ Future<void> _runPersistentWorker() async {
       code = 1;
     }
     stdout.add(
-      _WorkResponse(
+      WorkerResponse(
         exitCode: code,
         output: output.toString(),
         requestId: request.requestId,
@@ -243,7 +232,7 @@ Future<int> runFormatRequest(
   final stamp = parsed.stamp;
   final languageVersion = parsed.languageVersion;
 
-  final allowedSrcPaths = _pruneOrphanedStagedFiles(project);
+  final allowedSrcPaths = pruneStagedSrcFiles(project);
 
   final files = _readFormatManifest(
     project: project,
@@ -260,7 +249,7 @@ Future<int> runFormatRequest(
   final parsedVersion = mode.parsedLanguageVersion;
   if (!mode.inProcess || parsedVersion == null) {
     if (parsed.dart case final dart?) {
-      return _runSubprocessFallback(
+      return _runSubprocessFallback((
         dart: dart,
         project: project,
         files: files,
@@ -268,7 +257,7 @@ Future<int> runFormatRequest(
         stamp: stamp,
         outSink: outSink,
         errSink: errSink,
-      );
+      ));
     }
     errSink.writeln(
       'format_runner: unsupported --language-version "$languageVersion" '
@@ -297,7 +286,7 @@ Future<int> runFormatRequest(
     outBuf: outBuf,
   );
   stopwatch.stop();
-  return _reportFormatResult(
+  return _reportFormatResult((
     project: project,
     stamp: stamp,
     fileCount: files.length,
@@ -308,7 +297,7 @@ Future<int> runFormatRequest(
     errBuf: errBuf,
     outSink: outSink,
     errSink: errSink,
-  );
+  ));
 }
 
 /// Parsed `format_runner` command line; null after reporting a bad flag.
@@ -632,41 +621,45 @@ $stack''',
 }
 
 /// Writes the run's summary and stamp file, returning its exit code.
-int _reportFormatResult({
-  required String project,
-  required String stamp,
-  required int fileCount,
-  required int changedCount,
-  required bool hadError,
-  required String elapsedSeconds,
-  required StringBuffer outBuf,
-  required StringBuffer errBuf,
-  required StringSink outSink,
-  required StringSink errSink,
-}) {
-  final time = elapsedSeconds;
-  if (fileCount == 0) {
-    outBuf.writeln('Formatted no files in $time seconds.');
-  } else if (fileCount == 1) {
-    outBuf.writeln(
-      'Formatted 1 file ($changedCount changed) in $time seconds.',
+typedef _FormatReport = ({
+  String project,
+  String stamp,
+  int fileCount,
+  int changedCount,
+  bool hadError,
+  String elapsedSeconds,
+  StringBuffer outBuf,
+  StringBuffer errBuf,
+  StringSink outSink,
+  StringSink errSink,
+});
+
+/// Writes the run's summary and stamp file, returning its exit code.
+int _reportFormatResult(_FormatReport report) {
+  final time = report.elapsedSeconds;
+  if (report.fileCount == 0) {
+    report.outBuf.writeln('Formatted no files in $time seconds.');
+  } else if (report.fileCount == 1) {
+    report.outBuf.writeln(
+      'Formatted 1 file (${report.changedCount} changed) in $time seconds.',
     );
   } else {
-    outBuf.writeln(
-      'Formatted $fileCount files ($changedCount changed) in $time seconds.',
+    report.outBuf.writeln(
+      'Formatted ${report.fileCount} files (${report.changedCount} changed) '
+      'in $time seconds.',
     );
   }
 
   var failed = false;
-  final errStr = errBuf.toString();
-  final outStr = outBuf.toString();
-  errSink.write(_unstage(errStr, project));
-  if (changedCount > 0 || hadError) {
-    outSink.write(_unstage(outStr, project));
+  final errStr = report.errBuf.toString();
+  final outStr = report.outBuf.toString();
+  report.errSink.write(_unstage(errStr, report.project));
+  if (report.changedCount > 0 || report.hadError) {
+    report.outSink.write(_unstage(outStr, report.project));
     failed = true;
   }
   if (_warned(errStr)) {
-    errSink.writeln(
+    report.errSink.writeln(
       'format_runner: `dart format` warned while reading analysis options, '
       'so the check would have run at stock defaults rather than the '
       'configured ones. Fix the options file named above.',
@@ -677,19 +670,22 @@ int _reportFormatResult({
   if (failed) {
     return 1;
   }
-  File(stamp).writeAsStringSync('formatted\n');
+  File(report.stamp).writeAsStringSync('formatted\n');
   return 0;
 }
 
-int _runSubprocessFallback({
-  required String dart,
-  required String project,
-  required List<String> files,
-  required String languageVersion,
-  required String stamp,
-  required StringSink outSink,
-  required StringSink errSink,
-}) {
+/// A `dart format` CLI fallback invocation for one format request.
+typedef _FallbackRequest = ({
+  String dart,
+  String project,
+  List<String> files,
+  String languageVersion,
+  String stamp,
+  StringSink outSink,
+  StringSink errSink,
+});
+
+int _runSubprocessFallback(_FallbackRequest request) {
   final tempHome = Directory.systemTemp.createTempSync(
     'rules_dart_format_home.',
   );
@@ -701,27 +697,29 @@ int _runSubprocessFallback({
   };
   var failed = false;
   try {
-    for (final chunk in _chunks(files)) {
+    for (final chunk in _chunks(request.files)) {
       final result = Process.runSync(
-        dart,
+        request.dart,
         [
           'format',
           '--output=none',
           '--set-exit-if-changed',
-          '--language-version=$languageVersion',
+          '--language-version=${request.languageVersion}',
           ...chunk,
         ],
         environment: env,
         stdoutEncoding: systemEncoding,
         stderrEncoding: systemEncoding,
       );
-      errSink.write(_unstage(result.stderr as String, project));
+      request.errSink.write(_unstage(result.stderr as String, request.project));
       if (result.exitCode != 0) {
-        outSink.write(_unstage(result.stdout as String, project));
+        request.outSink.write(
+          _unstage(result.stdout as String, request.project),
+        );
         failed = true;
       }
       if (_warned(result.stderr as String)) {
-        errSink.writeln(
+        request.errSink.writeln(
           'format_runner: `dart format` warned while reading analysis options, '
           'so the check would have run at stock defaults rather than the '
           'configured ones. Fix the options file named above.',
@@ -739,74 +737,8 @@ int _runSubprocessFallback({
     }
   }
   if (failed) return 1;
-  File(stamp).writeAsStringSync('formatted\n');
+  File(request.stamp).writeAsStringSync('formatted\n');
   return 0;
-}
-
-Set<String>? _pruneOrphanedStagedFiles(String project) {
-  _pruneExtpkgs(project);
-  final srcDir = Directory(p.join(project, 'src'));
-  if (!srcDir.existsSync()) return null;
-  final manifestFile = File(p.join(project, '.dart_tool', 'src_manifest.txt'));
-  if (!manifestFile.existsSync()) return null;
-  final lines = [
-    for (final line in manifestFile.readAsLinesSync())
-      if (line.trim().isNotEmpty) line.trim(),
-  ];
-  if (lines.contains('*')) return null;
-  final allowedPaths = <String>{
-    for (final line in lines)
-      p.normalize(p.absolute(p.join(srcDir.path, line))),
-  };
-  for (final entity in srcDir.listSync(recursive: true, followLinks: false)) {
-    if (entity is Directory) continue;
-    final normPath = p.normalize(entity.absolute.path);
-    if (!allowedPaths.contains(normPath)) {
-      try {
-        entity.deleteSync();
-      } on FileSystemException {
-        // Ignore if read-only or already removed.
-      }
-    }
-  }
-  return allowedPaths;
-}
-
-void _pruneExtpkgs(String project) {
-  final normProject = p.normalize(p.absolute(project));
-  if (!normProject.endsWith('.proj')) return;
-  final extDir = Directory(
-    '${normProject.substring(0, normProject.length - '.proj'.length)}.extpkgs',
-  );
-  if (!extDir.existsSync()) return;
-  final extManifest = File(
-    p.join(normProject, '.dart_tool', 'extpkgs_manifest.txt'),
-  );
-  if (!extManifest.existsSync()) return;
-
-  final allowedFiles = <String>{};
-  final allowedDirs = <String>[];
-  for (final raw in extManifest.readAsLinesSync()) {
-    final trimmed = raw.trim();
-    if (trimmed.isEmpty) continue;
-    if (trimmed.endsWith('/')) {
-      allowedDirs.add(p.normalize(p.absolute(p.join(extDir.path, trimmed))));
-    } else {
-      allowedFiles.add(p.normalize(p.absolute(p.join(extDir.path, trimmed))));
-    }
-  }
-  for (final entity in extDir.listSync(recursive: true, followLinks: false)) {
-    if (entity is Directory) continue;
-    final normPath = p.normalize(entity.absolute.path);
-    final inAllowedDir = allowedDirs.any((dir) => p.isWithin(dir, normPath));
-    if (!inAllowedDir && !allowedFiles.contains(normPath)) {
-      try {
-        entity.deleteSync();
-      } on FileSystemException {
-        // Ignore if read-only or already removed.
-      }
-    }
-  }
 }
 
 /// Wraps [IOFileSystem] so upward directory walks for `analysis_options.yaml`
@@ -881,222 +813,3 @@ Iterable<List<String>> _chunks(List<String> files) sync* {
 
 String _join(String project, String relative) =>
     '${project.replaceAll(r'\', '/')}/$relative';
-
-final class _WorkRequest {
-  _WorkRequest({
-    required this.arguments,
-    required this.inputs,
-    required this.requestId,
-    required this.cancel,
-  });
-
-  factory _WorkRequest.read(Uint8List bytes) {
-    final arguments = <String>[];
-    final inputs = <String, Uint8List>{};
-    var requestId = 0;
-    var cancel = false;
-    final r = _Reader(bytes);
-    while (!r.isDone) {
-      final tag = r.varint();
-      switch (tag >> 3) {
-        case 1:
-          arguments.add(r.string());
-        case 2:
-          final nested = r.submessage();
-          var path = '';
-          var digest = Uint8List(0);
-          while (!nested.isDone) {
-            final inputTag = nested.varint();
-            switch (inputTag >> 3) {
-              case 1:
-                path = nested.string();
-              case 2:
-                digest = Uint8List.fromList(nested.bytes());
-              default:
-                nested.skip(inputTag & 7);
-            }
-          }
-          if (path.isNotEmpty) {
-            inputs[path] = digest;
-          }
-        case 3:
-          requestId = r.varint();
-        case 4:
-          cancel = r.varint() != 0;
-        default:
-          r.skip(tag & 7);
-      }
-    }
-    return _WorkRequest(
-      arguments: arguments,
-      inputs: inputs,
-      requestId: requestId,
-      cancel: cancel,
-    );
-  }
-
-  final List<String> arguments;
-  final Map<String, Uint8List> inputs;
-  final int requestId;
-  final bool cancel;
-}
-
-final class _WorkResponse {
-  const _WorkResponse({
-    required this.exitCode,
-    required this.output,
-    required this.requestId,
-  });
-
-  final int exitCode;
-  final String output;
-  final int requestId;
-
-  Uint8List write() {
-    final body = _Writer();
-    if (exitCode != 0) {
-      body
-        ..varint((1 << 3) | 0)
-        ..varint(exitCode);
-    }
-    if (output.isNotEmpty) {
-      final utf8Bytes = utf8.encode(output);
-      body
-        ..varint((2 << 3) | 2)
-        ..varint(utf8Bytes.length)
-        ..raw(utf8Bytes);
-    }
-    if (requestId != 0) {
-      body
-        ..varint((3 << 3) | 0)
-        ..varint(requestId);
-    }
-    final payload = body.takeBytes();
-    final frame = _Writer()
-      ..varint(payload.length)
-      ..raw(payload);
-    return frame.takeBytes();
-  }
-}
-
-final class _Frames extends Stream<Uint8List> {
-  _Frames(this._source);
-
-  final Stream<List<int>> _source;
-
-  @override
-  StreamSubscription<Uint8List> listen(
-    void Function(Uint8List)? onData, {
-    Function? onError,
-    void Function()? onDone,
-    bool? cancelOnError,
-  }) {
-    final controller = StreamController<Uint8List>();
-    var buf = Uint8List(0);
-    late final StreamSubscription<List<int>> sub;
-    sub = _source.listen(
-      (chunk) {
-        final merged = Uint8List(buf.length + chunk.length);
-        merged.setRange(0, buf.length, buf);
-        merged.setRange(buf.length, merged.length, chunk);
-        buf = merged;
-        while (true) {
-          var len = 0;
-          var shift = 0;
-          var pos = 0;
-          while (true) {
-            if (pos >= buf.length) return;
-            final b = buf[pos++];
-            len |= (b & 0x7f) << shift;
-            if ((b & 0x80) == 0) break;
-            shift += 7;
-          }
-          if (buf.length < pos + len) return;
-          controller.add(
-            Uint8List.fromList(Uint8List.sublistView(buf, pos, pos + len)),
-          );
-          final rem = buf.length - (pos + len);
-          buf = rem == 0
-              ? Uint8List(0)
-              : Uint8List.fromList(Uint8List.sublistView(buf, pos + len));
-        }
-      },
-      onError: controller.addError,
-      onDone: controller.close,
-      cancelOnError: cancelOnError,
-    );
-    controller
-      ..onPause = sub.pause
-      ..onResume = sub.resume
-      ..onCancel = sub.cancel;
-    return controller.stream.listen(
-      onData,
-      onError: onError,
-      onDone: onDone,
-      cancelOnError: cancelOnError,
-    );
-  }
-}
-
-final class _Reader {
-  _Reader(this._buf);
-
-  final Uint8List _buf;
-  int _pos = 0;
-
-  bool get isDone => _pos >= _buf.length;
-
-  int varint() {
-    var result = 0;
-    var shift = 0;
-    while (true) {
-      final b = _buf[_pos++];
-      result |= (b & 0x7f) << shift;
-      if ((b & 0x80) == 0) return result;
-      shift += 7;
-    }
-  }
-
-  Uint8List bytes() {
-    final len = varint();
-    final slice = Uint8List.sublistView(_buf, _pos, _pos + len);
-    _pos += len;
-    return slice;
-  }
-
-  String string() => utf8.decode(bytes());
-
-  _Reader submessage() => _Reader(bytes());
-
-  void skip(int wireType) {
-    switch (wireType) {
-      case 0:
-        varint();
-      case 1:
-        _pos += 8;
-      case 2:
-        _pos += varint();
-      case 5:
-        _pos += 4;
-      default:
-        throw FormatException('unsupported wire type: $wireType');
-    }
-  }
-}
-
-final class _Writer {
-  final _buf = BytesBuilder(copy: false);
-
-  void varint(int value) {
-    var v = value;
-    while (v < 0 || v >= 0x80) {
-      _buf.addByte((v & 0x7f) | 0x80);
-      v = v >>> 7;
-    }
-    _buf.addByte(v);
-  }
-
-  void raw(List<int> bytes) => _buf.add(bytes);
-
-  Uint8List takeBytes() => _buf.takeBytes();
-}
