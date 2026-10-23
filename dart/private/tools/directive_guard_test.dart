@@ -702,6 +702,42 @@ void main(List<String> args) {
         isEmpty,
       );
     });
+
+    test('functions named with directive keywords end the prologue', () {
+      const keywords = ['library', 'import', 'export', 'part'];
+      const shapes = [
+        '() => 1;',
+        '<T>() => 2;',
+        '\n() => 1;',
+        '/* c */ () => 1;',
+        '// c\n() => 1;',
+      ];
+      final sources = <String, String>{};
+      for (final keyword in keywords) {
+        for (var i = 0; i < shapes.length; i++) {
+          final src = "import 'a.dart';\n$keyword${shapes[i]}\n";
+          expect(scanAllDirectiveUris(src).map((r) => r.uri).toList(), [
+            'a.dart',
+          ], reason: '$keyword${shapes[i]}');
+          sources['$keyword$i.dart'] = src;
+        }
+      }
+      expect(findDisallowedDirectives(sources, tool: 'guard-test'), isEmpty);
+    });
+
+    test('keyword-named declarations are clean in the staged tree', () {
+      final root = Directory('${tmp.path}/kwnames.proj')
+        ..createSync(recursive: true);
+      File('${root.path}/a.dart').writeAsStringSync('const a = 1;\n');
+      for (final keyword in ['library', 'import', 'export', 'part']) {
+        File('${root.path}/$keyword.dart')
+            .writeAsStringSync("import 'a.dart';\n$keyword<T>() => 2;\n");
+      }
+      expect(
+        findStagedDirectiveViolations([root.path], tool: 'guard-test'),
+        isEmpty,
+      );
+    });
   });
 
   group('isEscapingPackageUri backslashes', () {

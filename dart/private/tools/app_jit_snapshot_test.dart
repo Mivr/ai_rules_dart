@@ -2031,6 +2031,34 @@ void main(List<String> args) {
     expect(res.stderr as String, contains('syntax error'));
   });
 
+  test(
+    '--gen-kernel does not refuse functions named with directive keywords',
+    () {
+      // Each source declares a function named with a directive keyword after a
+      // valid directive: the prologue scan ends there, so the input check stays
+      // silent and the wrapper runs past it (it then fails for the missing
+      // output option, which proves the check passed).
+      final ws = Directory('${tmp.path}/kw_ws')..createSync(recursive: true);
+      File('${ws.path}/a.dart').writeAsStringSync('const a = 1;\n');
+      final paths = <String>[];
+      for (final keyword in ['library', 'import', 'export', 'part']) {
+        final file = File('${ws.path}/$keyword.dart')
+          ..writeAsStringSync("import 'a.dart';\n$keyword() => 1;\n");
+        paths.add(file.path);
+      }
+      final toolPath = stageTool();
+      final res = Process.runSync(Platform.resolvedExecutable, [
+        toolPath,
+        '--gen-kernel',
+        'never-reached-runtime',
+        for (final path in paths) '--input-source=$path',
+        '--input-source=${ws.path}/a.dart',
+      ]);
+      expect(res.stderr as String, isNot(contains('could not be checked')));
+      expect(res.stderr as String, contains('-o/--output is required'));
+    },
+  );
+
   test('--gen-kernel refuses a triple-quoted import without compiling', () {
     // The front end drops a whitespace-only first line of a multi-line
     // string, so it reads `/secret/s.dart` where the pre-guard sees a

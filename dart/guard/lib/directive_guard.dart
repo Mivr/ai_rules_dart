@@ -1049,10 +1049,17 @@ class _Prologue {
     return false;
   }
 
+  /// Whether the prologue ends here with a declaration named by a directive
+  /// keyword: `(` or `<` follows (after gaps), so `part() => 1` or
+  /// `part<T>() => 2` declares a function rather than opening a directive.
+  /// Keywords are built-in identifiers, so any of the four can name one.
+  bool _isDeclarationStart() => _punct('(') || _punct('<');
+
   /// The tail of a `library` directive after its keyword: `;` or a dotted name
-  /// and `;`. Anything else is a syntax error, never the end of the prologue:
-  /// no valid top-level declaration starts with `library` and continues any
-  /// other way, so the scan fails and the caller refuses the file instead of
+  /// and `;`. A following `(` or `<` declares a function named `library` and
+  /// ends the prologue instead. Anything else is a syntax error, never the
+  /// end of the prologue: no other valid top-level declaration starts with
+  /// `library`, so the scan fails and the caller refuses the file instead of
   /// never checking what follows. The first name wins.
   bool _parseLibraryTail() {
     _lexer.take();
@@ -1061,6 +1068,8 @@ class _Prologue {
     } else if (_peek()?.kind == _identKind) {
       _libraryName ??= _dottedIdent();
       _expect(';');
+    } else if (_isDeclarationStart()) {
+      return false;
     } else {
       throw const _Unparsable();
     }
@@ -1068,23 +1077,28 @@ class _Prologue {
   }
 
   /// An `import` or `export` directive after its keyword: the URI string must
-  /// follow. Anything else is a syntax error, never the end of the prologue:
-  /// no valid top-level declaration starts with `import` or `export` and
-  /// continues any other way, so the scan fails and the caller refuses the
+  /// follow. A following `(` or `<` declares a function named by the keyword
+  /// and ends the prologue instead. Anything else is a syntax error, never
+  /// the end of the prologue: no other valid top-level declaration starts
+  /// with `import` or `export`, so the scan fails and the caller refuses the
   /// file instead of never checking what follows.
   bool _parseImportOrExport(String kind, List<ScanRef> refs) {
     _lexer.take();
-    if (_peek()?.kind != _stringKind) throw const _Unparsable();
-    final ref = _uriDirective(kind, refs);
-    if (!collectAll) refs.add(ref);
-    return true;
+    if (_peek()?.kind == _stringKind) {
+      final ref = _uriDirective(kind, refs);
+      if (!collectAll) refs.add(ref);
+      return true;
+    }
+    if (_isDeclarationStart()) return false;
+    throw const _Unparsable();
   }
 
   /// A `part` directive after its keyword: `part of` (a URI or a library
-  /// name) or a part URI, each followed by `;`. Anything else is a syntax
-  /// error, never the end of the prologue: no valid top-level declaration
-  /// starts with `part` and continues any other way, so the scan fails and
-  /// the caller refuses the file instead of never checking what follows.
+  /// name) or a part URI, each followed by `;`. A following `(` or `<`
+  /// declares a function named `part` and ends the prologue instead. Anything
+  /// else is a syntax error, never the end of the prologue: no other valid
+  /// top-level declaration starts with `part`, so the scan fails and the
+  /// caller refuses the file instead of never checking what follows.
   /// The first `part of` library name wins.
   bool _parsePartTail(List<ScanRef> refs) {
     _lexer.take();
@@ -1099,6 +1113,8 @@ class _Prologue {
     } else if (_peek()?.kind == _stringKind) {
       refs.add(ScanRef('part', _string()));
       _expect(';');
+    } else if (_isDeclarationStart()) {
+      return false;
     } else {
       throw const _Unparsable();
     }
