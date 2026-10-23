@@ -382,9 +382,11 @@ Future<int> compileModule(
     options,
     compiler,
     log,
-    inputs,
-    decoded.workerInputPaths,
-    decoded.inputDigests,
+    (
+      inputs: inputs,
+      workerInputPaths: decoded.workerInputPaths,
+      inputDigests: decoded.inputDigests,
+    ),
     cache: cache,
     createLink: createLink,
   );
@@ -681,6 +683,49 @@ Future<Set<String>> _loadVmLibraries(
   return (keys: declaredKeys, rootPaths: declaredRootPaths);
 }
 
+/// The worker inputs one `compileModule` run decodes: the raw request
+/// inputs, the declared worker input paths and their digests. One record
+/// travels from the request through the load into the assembled build.
+typedef _WorkerInputs = ({
+  List<Uint8List> inputs,
+  Set<String>? workerInputPaths,
+  Map<String, Uint8List>? inputDigests,
+});
+
+/// Everything [load] resolved before assembling the build: the run's
+/// options, compiler, log and worker inputs, the loaded roots, closure, VM
+/// libraries, graph, staged sources and declared inputs, and the cache and
+/// link injection the build stages with. One object travels into [_assemble].
+final class _LoadedModule {
+  _LoadedModule({
+    required this.options,
+    required this.compiler,
+    required this.log,
+    required this.worker,
+    required this.roots,
+    required this.closure,
+    required this.vm,
+    required this.graph,
+    required this.stagedSources,
+    required this.declared,
+    required this.cache,
+    required this.createLink,
+  });
+
+  final _ModuleOptions options;
+  final ModuleCompiler compiler;
+  final StringBuffer log;
+  final _WorkerInputs worker;
+  final Map<String, _PackageRoot> roots;
+  final Map<String, String> closure;
+  final Set<String> vm;
+  final Map<String, _Node> graph;
+  final Map<String, String> stagedSources;
+  final ({Set<String> keys, Set<String> rootPaths}) declared;
+  final KernelModuleCache? cache;
+  final void Function(String linkPath, String target)? createLink;
+}
+
 /// The parsed options and loaded inputs of one `compileModule` run.
 class _ModuleBuild {
   _ModuleBuild({
@@ -733,9 +778,7 @@ class _ModuleBuild {
     _ModuleOptions options,
     ModuleCompiler compiler,
     StringBuffer log,
-    List<Uint8List> inputs,
-    Set<String>? workerInputPaths,
-    Map<String, Uint8List>? inputDigests, {
+    _WorkerInputs worker, {
     KernelModuleCache? cache,
     void Function(String linkPath, String target)? createLink,
   }) async {
@@ -748,9 +791,9 @@ class _ModuleBuild {
       roots,
       options.multiRootPrefix,
       cache: cache,
-      inputDigests: inputDigests,
+      inputDigests: worker.inputDigests,
     );
-    final vm = await _loadVmLibraries(options, cache, inputDigests);
+    final vm = await _loadVmLibraries(options, cache, worker.inputDigests);
     // Every kernel the closure indexes, by the key of each library it defines.
     final graph = <String, _Node>{};
     final stagedSources = <String, String>{};
@@ -761,7 +804,7 @@ class _ModuleBuild {
         log,
         stagedSources: stagedSources,
         cache: cache,
-        inputDigests: inputDigests,
+        inputDigests: worker.inputDigests,
       )) {
         return null;
       }
@@ -773,46 +816,34 @@ class _ModuleBuild {
       options.multiRootPrefix,
     );
     return _assemble(
-      options,
-      compiler,
-      log,
-      inputs,
-      workerInputPaths,
-      inputDigests,
-      roots,
-      closure,
-      vm,
-      graph,
-      stagedSources,
-      declared,
-      cache: cache,
-      createLink: createLink,
+      _LoadedModule(
+        options: options,
+        compiler: compiler,
+        log: log,
+        worker: worker,
+        roots: roots,
+        closure: closure,
+        vm: vm,
+        graph: graph,
+        stagedSources: stagedSources,
+        declared: declared,
+        cache: cache,
+        createLink: createLink,
+      ),
     );
   }
 
   /// Assembles the file view, outputs and plan inputs from the loaded parts.
-  static Future<_ModuleBuild> _assemble(
-    _ModuleOptions options,
-    ModuleCompiler compiler,
-    StringBuffer log,
-    List<Uint8List> inputs,
-    Set<String>? workerInputPaths,
-    Map<String, Uint8List>? inputDigests,
-    Map<String, _PackageRoot> roots,
-    Map<String, String> closure,
-    Set<String> vm,
-    Map<String, _Node> graph,
-    Map<String, String> stagedSources,
-    ({Set<String> keys, Set<String> rootPaths}) declared, {
-    KernelModuleCache? cache,
-    void Function(String linkPath, String target)? createLink,
-  }) async {
+  static Future<_ModuleBuild> _assemble(_LoadedModule loaded) async {
+    final options = loaded.options;
+    final declared = loaded.declared;
+    final worker = loaded.worker;
     final files = _Files(
       options.multiRoots.isEmpty ? const ['.'] : options.multiRoots,
       declaredKeys: declared.keys,
       declaredRootPaths: declared.rootPaths,
-      stagedRoots: stagedSources,
-      workerInputPaths: workerInputPaths,
+      stagedRoots: loaded.stagedSources,
+      workerInputPaths: worker.workerInputPaths,
     );
     await Directory(options.output!).create(recursive: true);
     if (options.outputOutline != null) {
@@ -822,34 +853,40 @@ class _ModuleBuild {
     // closure defines it: then the module that defines it is the copy the
     // executable links.
     final inherited = <String, String>{
-      for (final entry in closure.entries)
-        if (!graph.containsKey(entry.key)) entry.key: entry.value,
+      for (final entry in loaded.closure.entries)
+        if (!loaded.graph.containsKey(entry.key)) entry.key: entry.value,
     };
     final own = <String>[
       for (final uri in options.sources)
-        if (!_definedBy(uri, graph, roots, options.multiRootPrefix)) uri,
+        if (!_definedBy(
+          uri,
+          loaded.graph,
+          loaded.roots,
+          options.multiRootPrefix,
+        ))
+          uri,
     ];
     // Records each invocation's `--used-inputs` report for the unused-inputs
     // list. `compiler` itself still answers the `_Persistent` checks below.
-    final reporter = _UsedInputsReporter(compiler, options.output!);
+    final reporter = _UsedInputsReporter(loaded.compiler, options.output!);
     return _ModuleBuild(
       options: options,
-      compiler: compiler,
-      log: log,
-      inputs: inputs,
-      workerInputPaths: workerInputPaths,
-      inputDigests: inputDigests,
-      roots: roots,
-      closure: closure,
-      vm: vm,
-      graph: graph,
-      stagedSources: stagedSources,
+      compiler: loaded.compiler,
+      log: loaded.log,
+      inputs: worker.inputs,
+      workerInputPaths: worker.workerInputPaths,
+      inputDigests: worker.inputDigests,
+      roots: loaded.roots,
+      closure: loaded.closure,
+      vm: loaded.vm,
+      graph: loaded.graph,
+      stagedSources: loaded.stagedSources,
       own: own,
       inherited: inherited,
       files: files,
       reporter: reporter,
-      cache: cache,
-      createLink: createLink,
+      cache: loaded.cache,
+      createLink: loaded.createLink,
     );
   }
 

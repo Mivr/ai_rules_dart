@@ -3706,6 +3706,50 @@ void main(List<String> args) {
       },
     );
 
+    test(
+      'sequential cached compiles reuse the parsed libraries entry',
+      () async {
+        _write('pkg/lib/cached_a.dart', 'class CachedA {}\n');
+        final cache = KernelModuleCache();
+        Future<int> compileCached(String name) {
+          final output = '${_root.path}/out/$name';
+          return compileModule(
+            [
+              '--source',
+              _uri('pkg/lib/cached_a.dart'),
+              '--own-source-file',
+              '${_root.path}/pkg/lib/cached_a.dart',
+              '--output',
+              output,
+              '--excluded-output',
+              '$output.vm_excluded.txt',
+              '--packages-file',
+              '${_root.path}/package_config.json',
+              '--libraries-json',
+              '${_root.path}/libraries.json',
+              '--multi-root',
+              _root.path,
+              '--target',
+              'vm',
+            ],
+            _Recorder(),
+            StringBuffer(),
+            const [],
+            cache: cache,
+          );
+        }
+
+        expect(await compileCached('cached_first'), 0);
+        expect(cache.librariesEntryCount, 1);
+        expect(await compileCached('cached_second'), 0);
+        expect(
+          cache.librariesEntryCount,
+          1,
+          reason: 'the second load must reuse the parsed libraries.json',
+        );
+      },
+    );
+
     test('an entry lists no dependency source when its output embeds an unplanned one', () async {
       _write(
         'pkg/lib/main.dart',
