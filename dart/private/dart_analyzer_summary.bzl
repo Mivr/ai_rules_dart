@@ -683,6 +683,17 @@ def _summary_run_action(ctx, info, own_records, action, closure):
         own_files = closure.own_files,
     )
 
+def _summary_uncovered_info(dependencies, packaged, inherited_embedder_sdks, packages, own_files):
+    """Returns the summary provider for a target that builds no summary of its own."""
+    return DartAnalyzerSummaryInfo(
+        summary = None,
+        transitive_summaries = dependencies,
+        packaged_summaries = packaged,
+        embedder_sdk_summaries = inherited_embedder_sdks,
+        packages = packages,
+        own_files = own_files,
+    )
+
 def _dart_analyzer_summary_impl(target, ctx):
     if DartInfo not in target:
         return []
@@ -754,14 +765,7 @@ def _dart_analyzer_summary_impl(target, ctx):
         transitive = [d[DartAnalyzerSummaryInfo].packages for d in deps if DartAnalyzerSummaryInfo in d],
     )
     if not srcs or embedder or split or sibling_conflicts or redundant:
-        return [DartAnalyzerSummaryInfo(
-            summary = None,
-            transitive_summaries = dependencies,
-            packaged_summaries = packaged,
-            embedder_sdk_summaries = inherited_embedder_sdks,
-            packages = packages,
-            own_files = own_files,
-        )]
+        return [_summary_uncovered_info(dependencies, packaged, inherited_embedder_sdks, packages, own_files)]
 
     name = ctx.label.name + ".dart_analyzer_summary"
     config = ctx.actions.declare_file(name + ".package_config.json")
