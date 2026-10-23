@@ -5,7 +5,7 @@ module just projects the parsed value down to the exact shapes the rules_dart
 pub extension and repository rules consume.
 """
 
-load("//dart/pub/private:yaml_subset.bzl", "parse_document")
+load("//dart/pub/private:yaml_subset.bzl", "document_problems", "parse_document")
 
 def _load(content):
     """Parse YAML content into a top-level dict, or None if not a mapping."""
@@ -31,11 +31,68 @@ def _lock_entry(info):
             entry[k] = "" if v == None else str(v)
     return entry
 
-def parse_pubspec_lock(content):
-    """Parse a pubspec.lock file into a dict of package info.
+def _lock_syntax_error(content, lock_label):
+    """Returns the first strict-parse problem for lock content, or None."""
+    problems = document_problems(content, True)
+    if not problems:
+        return None
+    return "%s: %s" % (lock_label, problems[0])
+
+def _lock_shape_error(data, lock_label):
+    """Returns the missing or non-mapping `packages` error, or None."""
+    if type(data) != "dict":
+        return "%s: expected a mapping with a 'packages' key" % lock_label
+    if "packages" not in data:
+        return "%s: missing 'packages' mapping" % lock_label
+    if type(data["packages"]) != "dict":
+        return "%s: 'packages' is not a mapping" % lock_label
+    return None
+
+def _lock_entry_shape_error(name, info, lock_label):
+    """Returns the non-mapping package entry error, or None."""
+    if type(info) != "dict":
+        return "%s: package %r entry is not a mapping" % (lock_label, name)
+    return None
+
+def pubspec_lock_error(content, lock_label = "pubspec.lock"):
+    """Returns why a pubspec.lock is unreadable, or None when it is clean.
+
+    Duplicate keys, lines the parser cannot read (other than blank and
+    comment lines), a missing or non-mapping `packages`, and package entries
+    that are not mappings are all errors. `packages: {}` with valid `sdks`
+    stays a valid, empty lock.
 
     Args:
         content: String contents of a pubspec.lock file.
+        lock_label: Label naming the lock file for diagnostics.
+
+    Returns:
+        An error string naming the lock and the problem, or None.
+    """
+    err = _lock_syntax_error(content, lock_label)
+    if err:
+        return err
+    data = parse_document(content)
+    err = _lock_shape_error(data, lock_label)
+    if err:
+        return err
+    for name, info in data["packages"].items():
+        err = _lock_entry_shape_error(name, info, lock_label)
+        if err:
+            return err
+    return None
+
+def parse_pubspec_lock(content, lock_label = "pubspec.lock"):
+    """Parse a pubspec.lock file into a dict of package info.
+
+    Fails when the lock has duplicate keys, lines the parser cannot read, a
+    missing or non-mapping `packages`, or a package entry that is not a
+    mapping, so a lock the parser cannot read never becomes a silently
+    empty hub.
+
+    Args:
+        content: String contents of a pubspec.lock file.
+        lock_label: Label naming the lock file for diagnostics.
 
     Returns:
         Dict of package_name -> {
@@ -45,17 +102,13 @@ def parse_pubspec_lock(content):
             "description": dict (keys vary by source type),
         }
     """
-    data = _load(content)
-    if data == None:
-        return {}
-    packages = data.get("packages")
-    if type(packages) != "dict":
-        return {}
+    err = pubspec_lock_error(content, lock_label)
+    if err:
+        fail(err)
+    packages = parse_document(content)["packages"]
 
     result = {}
     for name, info in packages.items():
-        if type(info) != "dict":
-            continue
         result[name] = _lock_entry(info)
     return result
 

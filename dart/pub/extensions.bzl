@@ -800,7 +800,7 @@ def _pub_collect_tags(ctx):
             lock_tags.append(struct(
                 name = lock_tag.name,
                 lock = lock_tag.lock,
-                packages = parse_pubspec_lock(lock_content),
+                packages = parse_pubspec_lock(lock_content, str(lock_tag.lock)),
                 on_version_conflict = lock_tag.on_version_conflict,
                 isolated = lock_tag.isolated,
             ))

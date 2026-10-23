@@ -9,9 +9,15 @@ bool, `~` None, `0x1F` an int), because `str()` of those values reaches the
 lock-file output.
 
 Starlark has no recursion and no `while`, so the parser keeps an explicit
-stack of open containers and runs bounded `for` loops. Like yaml.bzl in its
-default non-strict mode, it never fails on malformed input: it skips lines it
-cannot place, and returns None for a flow collection it cannot read.
+stack of open containers and runs bounded `for` loops. Like pub's own YAML
+loader, it fails on duplicate keys in any mapping (block or flow, at any
+depth), naming the key and the line where known: a silently resolved
+duplicate would pin the wrong source or version. Other malformed input stays
+lenient as in yaml.bzl's default non-strict mode: `parse_document` skips
+lines it cannot place and reads an unreadable flow collection as None, while
+`document_problems` with strict lines reports every skipped line so lock
+files can fail closed. A leading byte-order mark is stripped, as pub accepts
+it.
 
 Supported:
 - block mappings and sequences nested by indentation, including `- key: v`
@@ -33,6 +39,8 @@ testing, so the projections are unaffected on real pubspec files:
   YAML 1.2 defines no merge keys.
 - `%TAG` handles are ignored, so a tag written through one reads as untagged;
   yaml.bzl resolves it. Other unknown tags read as untagged in both.
+- duplicate mapping keys fail; yaml.bzl's default non-strict mode silently
+  keeps the first scalar and replaces a nested block with a later one.
 """
 
 # Escapes allowed in double-quoted scalars, as yaml.bzl maps them.
@@ -53,6 +61,11 @@ _ESCAPES = {
 
 _HEX_DIGITS = "0123456789abcdef"
 
+# A leading UTF-8 byte-order mark (U+FEFF), written as octal escapes so the
+# source stays ASCII. Pub accepts it; without stripping, the first key would
+# carry it and a lock would read as missing `packages`.
+_BOM = "\357\273\277"
+
 _FLOW_SPACE = " \t\n\r"
 
 _YAML_TAG_PREFIX = "tag:yaml.org,2002:"
@@ -64,17 +77,56 @@ _YAML_TAG_PREFIX = "tag:yaml.org,2002:"
 def parse_document(content):
     """Returns the value of the first YAML document in `content`.
 
+    Fails on duplicate keys in any mapping, naming the key and the line
+    where known. Other malformed input is skipped as in yaml.bzl's default
+    non-strict mode; lock files that must fail on it use
+    `document_problems` with strict lines instead.
+
     Args:
-        content: The text of a YAML stream.
+        content: The text of a YAML stream. A leading byte-order mark is
+            stripped, as pub accepts it.
 
     Returns:
         The document's value, or None when the document is empty.
     """
-    lines = _first_document_lines(content)
+    value, problems = _parse_document(content, False)
+    if problems:
+        fail(problems[0])
+    return value
+
+def document_problems(content, strict_lines = False):
+    """Reports what `parse_document` would skip or resolve silently.
+
+    Duplicate keys are always reported. Skipped lines (wrong indentation,
+    explicit keys, lines without a colon, unreadable flow values) are
+    reported only with strict lines, for lock files that must fail closed.
+    Blank lines, comments, directives and document markers are never
+    problems.
+
+    Args:
+        content: The text of a YAML stream.
+        strict_lines: Also report lines the parser cannot place.
+
+    Returns:
+        The list of problem messages, empty when the document is clean.
+    """
+    _value, problems = _parse_document(content, strict_lines)
+    return problems
+
+def _parse_document(content, strict_lines):
+    """Parses one document. Returns (value, problems) without failing."""
+    state = struct(problems = [], strict_lines = strict_lines)
+    lines = _first_document_lines(_strip_bom(content))
     text = "\n".join(lines).strip()
     if text[:1] in ["{", "["]:
-        return _parse_flow(text, {})
-    return _parse_block(lines)
+        return _parse_flow(text, {}, state), state.problems
+    return _parse_block(lines, state), state.problems
+
+def _strip_bom(content):
+    """Strips a leading UTF-8 byte-order mark, which pub accepts."""
+    if content.startswith(_BOM):
+        return content[len(_BOM):]
+    return content
 
 def _first_document_lines(content):
     """Returns the lines of the first document, split as yaml.bzl splits them.
@@ -144,7 +196,7 @@ def _attach_pending_child(pending, indent, text, anchors, stack):
             "entry": None,
         })
 
-def _init_block_root(text, indent, anchors, stack):
+def _init_block_root(text, indent, anchors, stack, state, line):
     """Creates the root container or scalar. Returns (root, is_scalar)."""
     if text == "-" or text.startswith("- "):
         root = []
@@ -154,9 +206,9 @@ def _init_block_root(text, indent, anchors, stack):
         root = {}
         stack.append({"kind": "map", "indent": indent - 1, "value": root, "entry": None})
         return root, False
-    return _parse_scalar(text, anchors), True
+    return _parse_scalar(text, anchors, state, line), True
 
-def _parse_block(lines):
+def _parse_block(lines, state):
     """Parses the block-structured lines of one document into a value.
 
     An open container is a frame, a dict {kind, indent, value, entry}. `kind`
@@ -166,6 +218,7 @@ def _parse_block(lines):
 
     `pending` describes a key or dash whose value is on the following lines:
     the next line indented deeper than it becomes the child container.
+    `state` collects duplicate-key and (when strict) unreadable-line problems.
     """
     anchors = {}
     root = None
@@ -189,59 +242,73 @@ def _parse_block(lines):
             pending = None
 
         if root == None and not stack:
-            root, is_scalar = _init_block_root(text, indent, anchors, stack)
+            root, is_scalar = _init_block_root(text, indent, anchors, stack, state, idx + 1)
             if is_scalar:
                 idx += 1
                 continue
 
         if not stack:
+            _record_unreadable(state, idx, text)
             idx += 1
             continue
 
         frame = stack[-1]
         if frame["kind"] == "map":
-            idx, pending = _map_line(lines, idx, indent, text, frame, anchors)
+            idx, pending = _map_line(lines, idx, indent, text, frame, anchors, state)
         else:
-            idx, pending = _seq_line(lines, idx, indent, text, frame, anchors, stack)
+            idx, pending = _seq_line(lines, idx, indent, text, frame, anchors, stack, state)
     return root
 
-def _map_line(lines, idx, indent, text, frame, anchors):
+def _map_line(lines, idx, indent, text, frame, anchors, state):
     """Reads one line of a block mapping. Returns (next index, pending)."""
     if not _entry_indent_ok(frame, indent):
+        _record_unreadable(state, idx, text)
         return idx + 1, None
     if text.startswith("? "):
         # Explicit keys are not supported (see the module docstring).
+        _record_unreadable(state, idx, text)
         return idx + 1, None
     key_text, value_text, ok = _split_key_value(text)
     if not ok or key_text == "":
+        _record_unreadable(state, idx, text)
         return idx + 1, None
 
+    line = idx + 1
     mapping = frame["value"]
-    key = _key(_parse_scalar(key_text, anchors))
+    key = _key(_parse_scalar(key_text, anchors, state, line))
     anchor = _anchor_only(value_text)
     if value_text == "" or anchor != None:
-        _set_first(mapping, key, None)
+        if _is_duplicate(mapping, key, line, state):
+            return idx + 1, None
+        mapping[key] = None
         return idx + 1, {"parent": mapping, "slot": key, "indent": indent, "anchor": anchor}
 
     if value_text.startswith("|") or value_text.startswith(">"):
         parsed, next_idx = _parse_block_scalar(lines, idx + 1, indent, value_text)
-        _set_first(mapping, key, parsed)
+        if _is_duplicate(mapping, key, line, state):
+            return next_idx, None
+        mapping[key] = parsed
         return next_idx, None
 
-    value = _parse_scalar(value_text, anchors)
+    value = _parse_scalar(value_text, anchors, state, line)
     next_idx = idx + 1
     if type(value) == "string" and not _is_quoted(value_text):
         value, next_idx = _consume_plain(lines, idx + 1, indent, value)
-    _set_first(mapping, key, value)
+    if _is_duplicate(mapping, key, line, state):
+        return next_idx, None
+    mapping[key] = value
     return next_idx, None
 
-def _seq_line(lines, idx, indent, text, frame, anchors, stack):
+def _seq_line(lines, idx, indent, text, frame, anchors, stack, state):
     """Reads one line of a block sequence. Returns (next index, pending)."""
     if not _entry_indent_ok(frame, indent):
+        _record_unreadable(state, idx, text)
         return idx + 1, None
     if not (text == "-" or text.startswith("- ")):
+        _record_unreadable(state, idx, text)
         return idx + 1, None
 
+    line = idx + 1
     items = frame["value"]
     rest = text[1:].strip()
     if rest == "":
@@ -252,8 +319,8 @@ def _seq_line(lines, idx, indent, text, frame, anchors, stack):
         # `- key: value` starts a mapping whose first entry is on this line.
         key_text, value_text, _ok = _split_key_value(rest)
         item = {}
-        key = _key(_parse_scalar(key_text, anchors))
-        _set_first(item, key, _parse_scalar(value_text, anchors) if value_text else None)
+        key = _key(_parse_scalar(key_text, anchors, state, line))
+        item[key] = _parse_scalar(value_text, anchors, state, line) if value_text else None
         items.append(item)
         stack.append({"kind": "map", "indent": indent, "value": item, "entry": None})
         if value_text == "":
@@ -265,7 +332,7 @@ def _seq_line(lines, idx, indent, text, frame, anchors, stack):
         items.append(parsed)
         return next_idx, None
 
-    value = _parse_scalar(rest, anchors)
+    value = _parse_scalar(rest, anchors, state, line)
     next_idx = idx + 1
     if type(value) == "string" and not _is_quoted(rest):
         value, next_idx = _consume_plain(lines, idx + 1, indent, value)
@@ -289,10 +356,17 @@ def _anchor_only(value_text):
         return value_text[1:]
     return None
 
-def _set_first(mapping, key, value):
-    """Stores `value` unless `key` is already present: the first key wins."""
+def _is_duplicate(mapping, key, line, state):
+    """Records a duplicate-key problem when `key` is taken. Returns whether it is."""
     if key not in mapping:
-        mapping[key] = value
+        return False
+    state.problems.append("duplicate key %r at line %d" % (key, line))
+    return True
+
+def _record_unreadable(state, idx, text):
+    """Records a skipped line when strict. Lenient parsing ignores it."""
+    if state.strict_lines:
+        state.problems.append("unreadable line %d: %r" % (idx + 1, text))
 
 def _key(value):
     """Converts a parsed value to a dict key, as yaml.bzl does."""
@@ -533,11 +607,12 @@ def _is_quoted(text):
 # Scalars
 # ---------------------------------------------------------------------------
 
-def _parse_scalar(text, anchors):
+def _parse_scalar(text, anchors, state, line):
     """Parses the text after a key, dash or flow separator into a value.
 
     Leading `&anchor` and `!tag` words are consumed first. An anchor records
-    a shallow copy of the value under its name.
+    a shallow copy of the value under its name. A flow collection that cannot
+    be read is a strict-lines problem; lenient parsing reads it as None.
     """
     s = text.strip()
     if s == "":
@@ -559,11 +634,13 @@ def _parse_scalar(text, anchors):
             break
 
     if s[:1] in ["[", "{"]:
-        value = _parse_flow(s, anchors)
+        value = _parse_flow(s, anchors, state)
+        if value == None and state.strict_lines:
+            state.problems.append("unreadable flow value at line %d: %r" % (line, s))
     else:
         value = _parse_nonflow(s, anchors)
     if tag != None:
-        value = _apply_tag(tag, s, value, anchors)
+        value = _apply_tag(tag, s, value, anchors, state)
     if anchor:
         anchors[anchor] = _clone(value)
     return value
@@ -577,12 +654,12 @@ def _clone(value):
         return dict(value)
     return value
 
-def _apply_seq_map_tag(name, raw, value, anchors):
+def _apply_seq_map_tag(name, raw, value, anchors, state):
     """Applies a `!!seq` or `!!map` tag, converting or emptying as yaml.bzl does."""
     want = "list" if name == "seq" else "dict"
     if type(value) == want:
         return value
-    parsed = _parse_flow(raw, anchors) if raw[:1] in ["[", "{"] else None
+    parsed = _parse_flow(raw, anchors, state) if raw[:1] in ["[", "{"] else None
     if type(parsed) == want:
         return parsed
     return [] if name == "seq" else {}
@@ -607,7 +684,7 @@ def _apply_bool_tag(value, raw):
         return value
     return (value if type(value) == "string" else raw).strip().lower() in ["true", "yes", "on"]
 
-def _apply_tag(tag, raw, value, anchors):
+def _apply_tag(tag, raw, value, anchors, state):
     """Applies a supported tag to a parsed value. `raw` is the untagged text.
 
     A tag that names a type the value does not have converts it where yaml.bzl
@@ -615,7 +692,7 @@ def _apply_tag(tag, raw, value, anchors):
     """
     name = _tag_name(tag)
     if name == "seq" or name == "map":
-        return _apply_seq_map_tag(name, raw, value, anchors)
+        return _apply_seq_map_tag(name, raw, value, anchors, state)
     if name == "str":
         return value if type(value) == "string" else raw
     if name == "int":
@@ -883,7 +960,7 @@ def _hex4(value):
 # Flow collections
 # ---------------------------------------------------------------------------
 
-def _flow_close_step(stack, s, i, frame):
+def _flow_close_step(stack, s, i, frame, state):
     """Pops a closed flow frame. Returns (done, value, next_i)."""
     stack.pop()
     i += 1
@@ -891,7 +968,7 @@ def _flow_close_step(stack, s, i, frame):
         if _skip_flow_space(s, i) == len(s):
             return True, frame["value"], i
         return True, None, i
-    _flow_add(stack[-1], frame["value"])
+    _flow_add(stack[-1], frame["value"], state)
     return False, None, i
 
 def _flow_key_step(s, i, frame, anchors):
@@ -906,7 +983,7 @@ def _flow_key_step(s, i, frame, anchors):
     frame["state"] = "value"
     return i + 1, True
 
-def _flow_item_step(s, i, frame, anchors, stack):
+def _flow_item_step(s, i, frame, anchors, stack, state):
     """Reads one nested collection or scalar flow token. Returns (next_i, ok)."""
     if s[i] in ["[", "{"]:
         stack.append(_flow_frame(s[i]))
@@ -914,15 +991,16 @@ def _flow_item_step(s, i, frame, anchors, stack):
     token, next_i = _flow_token(s, i, [",", frame["close"]])
     if token == "":
         return next_i, False
-    _flow_add(frame, _flow_token_value(token, anchors))
+    _flow_add(frame, _flow_token_value(token, anchors), state)
     return next_i, True
 
-def _parse_flow(text, anchors):
+def _parse_flow(text, anchors, parse_state):
     """Parses the flow collection that starts `text`, or returns None.
 
-    A flow frame is a dict {kind, close, value, state, key}. `state` is
-    "item" or "value" where a value may start, "after" once a value is
-    complete, and "key" where a map key is read.
+    A flow frame is a dict {kind, close, value, state, key}. The frame's
+    `state` is "item" or "value" where a value may start, "after" once a
+    value is complete, and "key" where a map key is read. Duplicate map keys
+    are recorded on `parse_state`.
     """
     s = text.strip()
     stack = [_flow_frame(s[:1])]
@@ -936,7 +1014,7 @@ def _parse_flow(text, anchors):
         state = frame["state"]
 
         if ch == frame["close"] and state != "value":
-            done, value, i = _flow_close_step(stack, s, i, frame)
+            done, value, i = _flow_close_step(stack, s, i, frame, parse_state)
             if done:
                 return value
             continue
@@ -954,7 +1032,7 @@ def _parse_flow(text, anchors):
                 return None
             continue
 
-        i, ok = _flow_item_step(s, i, frame, anchors, stack)
+        i, ok = _flow_item_step(s, i, frame, anchors, stack, parse_state)
         if not ok:
             return None
     return None
@@ -964,12 +1042,18 @@ def _flow_frame(opener):
         return {"kind": "seq", "close": "]", "value": [], "state": "item", "key": None}
     return {"kind": "map", "close": "}", "value": {}, "state": "key", "key": None}
 
-def _flow_add(frame, value):
-    """Stores a completed value in its collection and expects `,` or the close."""
+def _flow_add(frame, value, parse_state):
+    """Stores a completed value and expects `,` or the close.
+
+    A duplicate map key is recorded on the parse state instead of being
+    resolved silently; the first value wins.
+    """
     if frame["kind"] == "seq":
         frame["value"].append(value)
+    elif frame["key"] in frame["value"]:
+        parse_state.problems.append("duplicate key %r in flow mapping" % (frame["key"],))
     else:
-        _set_first(frame["value"], frame["key"], value)
+        frame["value"][frame["key"]] = value
     frame["state"] = "after"
 
 def _flow_token_value(token, anchors):
@@ -978,7 +1062,7 @@ def _flow_token_value(token, anchors):
     if not is_pair:
         return _parse_nonflow(token, anchors)
     pair = {}
-    _set_first(pair, _key(_parse_nonflow(key_text, anchors)), _parse_nonflow(value_text, anchors))
+    pair[_key(_parse_nonflow(key_text, anchors))] = _parse_nonflow(value_text, anchors)
     return pair
 
 def _flow_token(s, start, stops):

@@ -8,7 +8,7 @@ documents; these cases pin the constructs it covers.
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 
 # buildifier: disable=bzl-visibility
-load("//dart/pub/private:yaml_subset.bzl", "parse_document")
+load("//dart/pub/private:yaml_subset.bzl", "document_problems", "parse_document")
 load(":small_suite.bzl", "small_unittest_suite")
 
 def _block_mapping_test_impl(ctx):
@@ -221,9 +221,72 @@ def _json_document_test_impl(ctx):
 def _duplicate_key_test_impl(ctx):
     env = unittest.begin(ctx)
 
-    # The first scalar wins. A later block replaces what was there, as yaml.bzl does.
-    asserts.equals(env, {"a": 1}, parse_document("a: 1\na: 2\n"))
-    asserts.equals(env, {"a": {"c": 2}}, parse_document("a:\n  b: 1\na:\n  c: 2\n"))
+    # Duplicate keys fail instead of resolving silently, naming key and line.
+    asserts.equals(env, ["duplicate key \"a\" at line 2"], document_problems("a: 1\na: 2\n"))
+    asserts.equals(env, ["duplicate key \"a\" at line 3"], document_problems("a:\n  b: 1\na:\n  c: 2\n"))
+    asserts.equals(env, ["duplicate key \"b\" at line 3"], document_problems("a:\n  b: 1\n  b: 2\n"))
+    asserts.equals(env, [], document_problems("a: 1\nb: 2\n"))
+    return unittest.end(env)
+
+def _duplicate_flow_key_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Flow mappings fail on duplicates too; the parser knows no line there.
+    asserts.equals(env, ["duplicate key \"x\" in flow mapping"], document_problems("a: {x: 1, x: 2}\n"))
+    asserts.equals(env, ["duplicate key \"y\" in flow mapping"], document_problems("a: {x: {y: 1, y: 2}}\n"))
+    asserts.equals(env, ["duplicate key \"a\" in flow mapping"], document_problems("{\"a\": 1, \"a\": 2}"))
+    asserts.equals(env, [], document_problems("a: {x: 1, y: 2}\n"))
+    return unittest.end(env)
+
+def _duplicate_sequence_key_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A `- key: value` item is a mapping, so its later entries check dups.
+    asserts.equals(env, ["duplicate key \"k\" at line 2"], document_problems("- k: 1\n  k: 2\n"))
+    asserts.equals(env, [], document_problems("- k: 1\n  n: 2\n"))
+    return unittest.end(env)
+
+def _bom_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A leading byte-order mark is stripped, as pub accepts it.
+    asserts.equals(env, {"a": 1}, parse_document("\357\273\277a: 1\n"))
+    asserts.equals(env, [], document_problems("\357\273\277a: 1\n"))
+    asserts.equals(env, [], document_problems("\357\273\277a: 1\n", True))
+    asserts.equals(
+        env,
+        ["duplicate key \"a\" at line 2"],
+        document_problems("\357\273\277a: 1\na: 2\n"),
+    )
+    return unittest.end(env)
+
+def _strict_lines_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Lenient parsing skips what it cannot place; strict lines report it.
+    asserts.equals(env, [], document_problems("a:\n    b: 1\n  c: 2\n"))
+    asserts.equals(env, ["unreadable line 3: \"c: 2\""], document_problems("a:\n    b: 1\n  c: 2\n", True))
+    asserts.equals(env, [], document_problems("? a\n: 1\nb: 2\n"))
+    asserts.equals(
+        env,
+        ["unreadable line 1: \"? a\"", "unreadable line 2: \": 1\""],
+        document_problems("? a\n: 1\nb: 2\n", True),
+    )
+    asserts.equals(env, [], document_problems("a: 1\nno colon here\n"))
+    asserts.equals(env, ["unreadable line 2: \"no colon here\""], document_problems("a: 1\nno colon here\n", True))
+    asserts.equals(env, [], document_problems("a: {x: 1}\nb: 2\n", True))
+    asserts.equals(
+        env,
+        ["unreadable flow value at line 1: \"[1, 2\""],
+        document_problems("a: [1, 2\nb: 2\n", True),
+    )
+
+    # Blank lines, comments, directives and markers are never problems.
+    asserts.equals(
+        env,
+        [],
+        document_problems("# lead\n---\na: 1\n\n# tail\n", True),
+    )
     return unittest.end(env)
 
 def _indentation_test_impl(ctx):
@@ -295,6 +358,10 @@ _t14_test = unittest.make(_duplicate_key_test_impl)
 _t15_test = unittest.make(_indentation_test_impl)
 _t16_test = unittest.make(_explicit_key_and_merge_test_impl)
 _t17_test = unittest.make(_malformed_input_test_impl)
+_t18_test = unittest.make(_duplicate_flow_key_test_impl)
+_t19_test = unittest.make(_duplicate_sequence_key_test_impl)
+_t20_test = unittest.make(_bom_test_impl)
+_t21_test = unittest.make(_strict_lines_test_impl)
 
 def yaml_subset_test_suite(name):
     small_unittest_suite(
@@ -317,4 +384,8 @@ def yaml_subset_test_suite(name):
         _t15_test,
         _t16_test,
         _t17_test,
+        _t18_test,
+        _t19_test,
+        _t20_test,
+        _t21_test,
     )

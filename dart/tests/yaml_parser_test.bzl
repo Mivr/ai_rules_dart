@@ -4,7 +4,7 @@ load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load("//dart:providers.bzl", "DartInfo")
 load("//dart/pub:extensions.bzl", "resolve_pub_packages")
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_package_sha256_error", "trim_gzip_trailing_nulls")
-load("//dart/pub:yaml_parser.bzl", "is_valid_sha256", "lock_package_error", "parse_pubspec_deps", "parse_pubspec_lock", "parse_pubspec_sdk_constraint")
+load("//dart/pub:yaml_parser.bzl", "is_valid_sha256", "lock_package_error", "parse_pubspec_deps", "parse_pubspec_lock", "parse_pubspec_sdk_constraint", "pubspec_lock_error")
 
 # buildifier: disable=bzl-visibility
 load("//dart/pub/private:pub_repository.bzl", "pub_package_sha256_error")
@@ -43,6 +43,71 @@ packages:
 sdks:
   dart: ">=3.0.0 <4.0.0"
 """
+
+def _parse_lock_empty_packages_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # `packages: {}` with valid `sdks` stays a valid, empty lock.
+    content = "packages: {}\nsdks:\n  dart: '>=3.0.0 <4.0.0'\n"
+    asserts.equals(env, None, pubspec_lock_error(content, "//:pubspec.lock"))
+    asserts.equals(env, {}, parse_pubspec_lock(content, "//:pubspec.lock"))
+    asserts.equals(env, None, pubspec_lock_error(_SAMPLE_LOCK, "//:pubspec.lock"))
+    return unittest.end(env)
+
+def _parse_lock_missing_packages_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A missing or non-mapping `packages` fails, naming the lock.
+    err = pubspec_lock_error("sdks:\n  dart: '>=3.0.0 <4.0.0'\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "packages" in err)
+    err = pubspec_lock_error("packages: []\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "packages" in err)
+    err = pubspec_lock_error("- just\n- a\n- list\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err)
+    err = pubspec_lock_error("", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err)
+    return unittest.end(env)
+
+def _parse_lock_non_mapping_entry_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A package entry that is not a mapping fails, naming the package.
+    err = pubspec_lock_error("packages:\n  foo: 3\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "foo" in err)
+    return unittest.end(env)
+
+def _parse_lock_unreadable_line_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Any line the subset cannot read fails, naming the lock and the line.
+    err = pubspec_lock_error("packages:\n  a:\n    version: '1'\n  ???\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 4" in err)
+
+    # A merge-conflict marker on line 1 no longer yields a silently empty hub.
+    err = pubspec_lock_error("<<<<<<< HEAD\npackages:\n  a:\n    version: '1'\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line" in err)
+    return unittest.end(env)
+
+def _parse_lock_duplicate_key_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Duplicate keys fail in block and flow mappings, at any depth.
+    err = pubspec_lock_error("packages:\n  a:\n    version: '1'\n    version: '2'\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "version" in err)
+    err = pubspec_lock_error("packages:\n  a: {version: '1', version: '2'}\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "version" in err)
+    err = pubspec_lock_error("packages:\n  a:\n    description:\n      url: u\n      url: v\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "url" in err)
+    return unittest.end(env)
+
+def _parse_lock_bom_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A leading byte-order mark parses normally instead of emptying the hub.
+    content = "\357\273\277packages:\n  a:\n    version: '1'\n"
+    asserts.equals(env, None, pubspec_lock_error(content, "//:pubspec.lock"))
+    asserts.equals(env, "1", parse_pubspec_lock(content, "//:pubspec.lock")["a"]["version"])
+    return unittest.end(env)
 
 def _parse_lock_packages_test_impl(ctx):
     env = unittest.begin(ctx)
@@ -637,6 +702,12 @@ _t12_test = unittest.make(_trim_gzip_trailing_nulls_test_impl)
 _t13_test = unittest.make(_resolve_pub_packages_conflict_test_impl)
 _t14_test = unittest.make(_lock_package_invalid_resolved_ref_test_impl)
 _t15_test = unittest.make(_resolve_pub_packages_isolated_git_test_impl)
+_t16_test = unittest.make(_parse_lock_empty_packages_test_impl)
+_t17_test = unittest.make(_parse_lock_missing_packages_test_impl)
+_t18_test = unittest.make(_parse_lock_non_mapping_entry_test_impl)
+_t19_test = unittest.make(_parse_lock_unreadable_line_test_impl)
+_t20_test = unittest.make(_parse_lock_duplicate_key_test_impl)
+_t21_test = unittest.make(_parse_lock_bom_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -662,6 +733,12 @@ def yaml_parser_test_suite(name):
         _t13_test,
         _t14_test,
         _t15_test,
+        _t16_test,
+        _t17_test,
+        _t18_test,
+        _t19_test,
+        _t20_test,
+        _t21_test,
     )
     native.test_suite(
         name = name,
