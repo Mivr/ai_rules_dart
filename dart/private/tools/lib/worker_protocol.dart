@@ -399,7 +399,8 @@ final class WorkerReader {
       case 1:
         _pos += 8;
       case 2:
-        _pos += varint();
+        final length = varint();
+        _pos += length;
       case 5:
         _pos += 4;
       default:
