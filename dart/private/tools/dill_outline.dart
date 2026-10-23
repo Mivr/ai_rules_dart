@@ -385,6 +385,18 @@ class _ByteWriter {
   Uint8List toBytes() => Uint8List.sublistView(_buf, 0, _len);
 }
 
+/// The output offsets the trailing component index names: every table the
+/// stripper wrote, in the order the index lists them.
+typedef _ComponentIndexOffsets = ({
+  List<int> libraryOffsets,
+  int sourceTableOffset,
+  int constantTableOffset,
+  int constantTableIndexOffset,
+  int linkTableOffset,
+  int metadataPayloadsOffset,
+  int stringTableOffset,
+});
+
 class _DillOutlineStripper {
   final Uint8List _in;
   int _pos = 0;
@@ -477,13 +489,15 @@ class _DillOutlineStripper {
     final outMetadataPayloadsOffset = _writeMetadata();
     final outStringTableOffset = _writeStringTable();
     _writeComponentIndex(
-      outLibraryOffsets: outLibraryOffsets,
-      outSourceTableOffset: outSourceTableOffset,
-      outConstantTableOffset: tableOffset,
-      outConstantTableIndexOffset: outConstantTableIndexOffset,
-      outLinkTableOffset: outLinkTableOffset,
-      outMetadataPayloadsOffset: outMetadataPayloadsOffset,
-      outStringTableOffset: outStringTableOffset,
+      offsets: (
+        libraryOffsets: outLibraryOffsets,
+        sourceTableOffset: outSourceTableOffset,
+        constantTableOffset: tableOffset,
+        constantTableIndexOffset: outConstantTableIndexOffset,
+        linkTableOffset: outLinkTableOffset,
+        metadataPayloadsOffset: outMetadataPayloadsOffset,
+        stringTableOffset: outStringTableOffset,
+      ),
     );
 
     return _out.toBytes();
@@ -613,15 +627,7 @@ class _DillOutlineStripper {
   }
 
   /// The trailing component index naming every table.
-  void _writeComponentIndex({
-    required List<int> outLibraryOffsets,
-    required int outSourceTableOffset,
-    required int outConstantTableOffset,
-    required int outConstantTableIndexOffset,
-    required int outLinkTableOffset,
-    required int outMetadataPayloadsOffset,
-    required int outStringTableOffset,
-  }) {
+  void _writeComponentIndex({required _ComponentIndexOffsets offsets}) {
     final componentIndexOffset = _out.length;
     final numFixedFields = 9 + (_inLibraryCount + 1) + 2;
     final unalignedSize = componentIndexOffset + numFixedFields * 4;
@@ -629,19 +635,19 @@ class _DillOutlineStripper {
     for (int i = 0; i < indexPadding; i++) {
       _out.writeByte(0);
     }
-    _out.writeUInt32(outSourceTableOffset);
-    _out.writeUInt32(outConstantTableOffset);
-    _out.writeUInt32(outConstantTableIndexOffset);
-    _out.writeUInt32(outLinkTableOffset);
-    _out.writeUInt32(outMetadataPayloadsOffset);
-    _out.writeUInt32(outMetadataPayloadsOffset);
-    _out.writeUInt32(outStringTableOffset);
+    _out.writeUInt32(offsets.sourceTableOffset);
+    _out.writeUInt32(offsets.constantTableOffset);
+    _out.writeUInt32(offsets.constantTableIndexOffset);
+    _out.writeUInt32(offsets.linkTableOffset);
+    _out.writeUInt32(offsets.metadataPayloadsOffset);
+    _out.writeUInt32(offsets.metadataPayloadsOffset);
+    _out.writeUInt32(offsets.stringTableOffset);
     _out.writeUInt32(componentIndexOffset);
     _out.writeUInt32(0); // mainMethodReference = 0
     for (int i = 0; i < _inLibraryCount; i++) {
-      _out.writeUInt32(outLibraryOffsets[i]);
+      _out.writeUInt32(offsets.libraryOffsets[i]);
     }
-    _out.writeUInt32(outSourceTableOffset);
+    _out.writeUInt32(offsets.sourceTableOffset);
     _out.writeUInt32(_inLibraryCount);
     _out.writeUInt32(_out.length + 4);
   }

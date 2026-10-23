@@ -4152,6 +4152,31 @@ void main(List<String> args) {
     );
   });
 
+  test(
+    'stripDillToOutline ends the outline with a well-formed component index',
+    () {
+      final stripped = stripDillToOutline(
+        _buildMinimalFieldDill(hasConstConstructor: true),
+      );
+      final words = ByteData.sublistView(stripped);
+      final fileSize = stripped.length;
+      final libraryCount = words.getUint32(fileSize - 8, Endian.big);
+      final numFixedFields = 9 + (libraryCount + 1) + 2;
+      var pos = fileSize - numFixedFields * 4;
+      final offsets = [
+        for (var i = 0; i < 7; i++, pos += 4) words.getUint32(pos, Endian.big),
+      ];
+      // Each table starts where the previous one ended, so the offsets grow
+      // in write order and stay inside the file; the last word names the file
+      // size itself.
+      for (var i = 1; i < offsets.length; i++) {
+        expect(offsets[i], greaterThanOrEqualTo(offsets[i - 1]));
+      }
+      expect(offsets.last, lessThan(fileSize));
+      expect(words.getUint32(fileSize - 4, Endian.big), fileSize);
+    },
+  );
+
   test('scanDirectives and compileModule handle shebangs and generic annotations in directive prologues', () async {
     final scanned = scanDirectives(
       "#!/usr/bin/env dart\n"
