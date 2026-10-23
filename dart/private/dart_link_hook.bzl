@@ -180,35 +180,42 @@ def _link_hook_stage_opaque(ctx, stage_name, dep_mangled, pfiles, staged, manife
     staged.append(dir_link)
     manifest_entries.append("dir\t%s\t%s" % (dep_mangled, dir_link.path))
 
-def _link_hook_stage_files(ctx, stage_name, dep_mangled, pfiles, hook, staged, manifest_entries, staged_hooks, pkg_name):
-    """Stages one package's files and hook link. Mutates staged, manifest_entries, staged_hooks."""
+def _link_hook_stage_files(ctx, stage, pkg):
+    """Stages one package's files and hook link. Mutates the stage's lists.
+
+    Args:
+      ctx: The rule context.
+      stage: `struct(stage_name, staged, manifest_entries, staged_hooks)` built
+        once by `_link_hook_stage_all`; its lists are appended to in place.
+      pkg: `struct(dep_mangled, pfiles, hook, pkg_name)` for the package staged.
+    """
     occupied = {}
     dir_idx = 0
-    for rel, f in pfiles:
+    for rel, f in pkg.pfiles:
         if f.is_directory:
             dir_link = ctx.actions.declare_directory(
-                "%s/%s.dir_%d" % (stage_name, dep_mangled, dir_idx),
+                "%s/%s.dir_%d" % (stage.stage_name, pkg.dep_mangled, dir_idx),
             )
             dir_idx += 1
             ctx.actions.symlink(output = dir_link, target_file = f)
-            staged.append(dir_link)
-            manifest_entries.append("dir\t%s\t%s" % (dep_mangled, dir_link.path))
+            stage.staged.append(dir_link)
+            stage.manifest_entries.append("dir\t%s\t%s" % (pkg.dep_mangled, dir_link.path))
             continue
         if not rel or rel in occupied:
             continue
         occupied[rel] = True
-        rel_path = dep_mangled + "/lib/" + rel
-        link = ctx.actions.declare_file(stage_name + "/" + rel_path)
+        rel_path = pkg.dep_mangled + "/lib/" + rel
+        link = ctx.actions.declare_file(stage.stage_name + "/" + rel_path)
         ctx.actions.symlink(output = link, target_file = f)
-        staged.append(link)
-        manifest_entries.append("file\t%s\t%s" % (rel_path, link.path))
-    if hook != None:
-        hook_rel = dep_mangled + "/hook/link.dart"
-        hook_link = ctx.actions.declare_file(stage_name + "/" + hook_rel)
-        ctx.actions.symlink(output = hook_link, target_file = hook)
-        staged.append(hook_link)
-        staged_hooks[pkg_name] = hook_link
-        manifest_entries.append("file\t%s\t%s" % (hook_rel, hook_link.path))
+        stage.staged.append(link)
+        stage.manifest_entries.append("file\t%s\t%s" % (rel_path, link.path))
+    if pkg.hook != None:
+        hook_rel = pkg.dep_mangled + "/hook/link.dart"
+        hook_link = ctx.actions.declare_file(stage.stage_name + "/" + hook_rel)
+        ctx.actions.symlink(output = hook_link, target_file = pkg.hook)
+        stage.staged.append(hook_link)
+        stage.staged_hooks[pkg.pkg_name] = hook_link
+        stage.manifest_entries.append("file\t%s\t%s" % (hook_rel, hook_link.path))
 
 def _link_hook_stage_all(ctx, packages, hooks, by_pkg, name):
     """Stages every package root and writes the manifest + package config. Returns (package_config, staged, staged_hooks)."""
@@ -220,6 +227,12 @@ def _link_hook_stage_all(ctx, packages, hooks, by_pkg, name):
     staged = [manifest]
     staged_hooks = {}
     manifest_entries = []
+    stage = struct(
+        stage_name = stage_name,
+        staged = staged,
+        manifest_entries = manifest_entries,
+        staged_hooks = staged_hooks,
+    )
     for pkg in packages:
         pkg_name = pkg.package_name
         if not pkg_name or pkg_name in roots:
@@ -230,7 +243,12 @@ def _link_hook_stage_all(ctx, packages, hooks, by_pkg, name):
         if len(pfiles) == 1 and pfiles[0][1].is_directory and hook == None:
             _link_hook_stage_opaque(ctx, stage_name, dep_mangled, pfiles, staged, manifest_entries)
         else:
-            _link_hook_stage_files(ctx, stage_name, dep_mangled, pfiles, hook, staged, manifest_entries, staged_hooks, pkg_name)
+            _link_hook_stage_files(ctx, stage, struct(
+                dep_mangled = dep_mangled,
+                pfiles = pfiles,
+                hook = hook,
+                pkg_name = pkg_name,
+            ))
         roots[pkg_name] = stage_root + "/" + dep_mangled
 
     ctx.actions.write(
@@ -243,30 +261,38 @@ def _link_hook_stage_all(ctx, packages, hooks, by_pkg, name):
     )
     return package_config, staged, staged_hooks
 
-def _link_hook_run_all(ctx, runner, sdk, recorded_uses, hooks, staged_hooks, staged, declared, package_config, srcs, resources, name):
-    """Runs one link-hook action per hooked package. Returns struct(assets, validation_outputs)."""
+def _link_hook_run_all(ctx, env, data):
+    """Runs one link-hook action per hooked package. Returns struct(assets, validation_outputs).
+
+    Args:
+      ctx: The rule context.
+      env: `struct(runner, sdk, recorded_uses, name)` built once by
+        `dart_link_hook_actions`.
+      data: `struct(hooks, staged_hooks, staged, declared, package_config,
+        srcs, resources)` for the closure linked.
+    """
     asset_infos = []
     link_outputs = []
-    for package_name in sorted(hooks.keys()):
-        hook = staged_hooks[package_name]
+    for package_name in sorted(data.hooks.keys()):
+        hook = data.staged_hooks[package_name]
         link_output = ctx.actions.declare_file(
-            "%s/%s.link_output.json" % (name, package_name),
+            "%s/%s.link_output.json" % (env.name, package_name),
         )
         link_outputs.append(link_output)
         args = ctx.actions.args()
-        args.add("--dart", sdk.dart)
-        args.add("--packages", package_config)
+        args.add("--dart", env.sdk.dart)
+        args.add("--packages", data.package_config)
         args.add("--package-name", package_name)
         args.add("--package-root", link_hook_package_root(hook))
         args.add("--hook", hook)
-        args.add("--recorded-uses", recorded_uses)
+        args.add("--recorded-uses", env.recorded_uses)
         args.add("--output", link_output)
         outputs = [link_output]
-        for asset in declared:
+        for asset in data.declared:
             if asset.package != package_name:
                 continue
             out = ctx.actions.declare_file(
-                "%s/%s/%s" % (name, package_name, asset.name),
+                "%s/%s/%s" % (env.name, package_name, asset.name),
             )
             outputs.append(out)
             args.add("--data-asset", "%s=%s" % (asset.name, out.path))
@@ -277,16 +303,16 @@ def _link_hook_run_all(ctx, runner, sdk, recorded_uses, hooks, staged_hooks, sta
                 id = asset.id,
             ))
         ctx.actions.run(
-            executable = sdk.dart,
-            arguments = [runner.path, args],
+            executable = env.sdk.dart,
+            arguments = [env.runner.path, args],
             inputs = depset(
-                [runner, hooks[package_name], package_config, recorded_uses] + staged,
-                transitive = [srcs, resources, sdk.tool_files, sdk.runtime_files],
+                [env.runner, data.hooks[package_name], data.package_config, env.recorded_uses] + data.staged,
+                transitive = [data.srcs, data.resources, env.sdk.tool_files, env.sdk.runtime_files],
             ),
             outputs = outputs,
             mnemonic = "DartLinkHook",
             progress_message = "Running link hook of %s for %s" % (package_name, ctx.label),
-            env = writable_home_env(sdk.dart, link_output),
+            env = writable_home_env(env.sdk.dart, link_output),
         )
     return struct(assets = asset_infos, validation_outputs = link_outputs)
 
@@ -319,7 +345,24 @@ def dart_link_hook_actions(ctx, runner, sdk, recorded_uses, deps, data_asset_ids
 
     package_config, staged, staged_hooks = _link_hook_stage_all(ctx, packages, hooks, by_pkg, name)
 
-    return _link_hook_run_all(ctx, runner, sdk, recorded_uses, hooks, staged_hooks, staged, declared, package_config, srcs, resources, name)
+    return _link_hook_run_all(
+        ctx,
+        struct(
+            runner = runner,
+            sdk = sdk,
+            recorded_uses = recorded_uses,
+            name = name,
+        ),
+        struct(
+            hooks = hooks,
+            staged_hooks = staged_hooks,
+            staged = staged,
+            declared = declared,
+            package_config = package_config,
+            srcs = srcs,
+            resources = resources,
+        ),
+    )
 
 def _dart_link_hook_impl(ctx):
     result = dart_link_hook_actions(
