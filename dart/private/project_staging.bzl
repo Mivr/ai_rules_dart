@@ -628,21 +628,29 @@ def _stage_external(ctx, name, ext_files_by_pkg, copy_external, link_ext_under_p
             inputs.append(ext_link)
     return ext_manifest_entries, inputs
 
-def _stage_write_config(ctx, name, packages, ext_staged, config_dir, package_config, main_roots, link_ext_under_proj, inputs):
-    """Writes the staged package_config.json and appends it to inputs."""
+def _stage_write_config(ctx, cfg, out):
+    """Writes the staged package_config.json and appends it to the inputs.
+
+    Args:
+      ctx: The rule context.
+      cfg: `struct(name, packages, ext_staged, config_dir, main_roots,
+        link_ext_under_proj)` built once by `stage_dart_project`.
+      out: `struct(package_config, inputs)`; the config file and the input
+        list it is appended to.
+    """
     ctx.actions.write(
-        output = package_config,
+        output = out.package_config,
         content = staged_package_config_content(
-            packages,
-            ext_staged,
-            name,
+            cfg.packages,
+            cfg.ext_staged,
+            cfg.name,
             ext_roots = {},
-            config_dir = config_dir,
-            main_roots = main_roots,
-            ext_under_proj = link_ext_under_proj,
+            config_dir = cfg.config_dir,
+            main_roots = cfg.main_roots,
+            ext_under_proj = cfg.link_ext_under_proj,
         ),
     )
-    inputs.append(package_config)
+    out.inputs.append(out.package_config)
 
 def _stage_extra_files(ctx, name, extra_proj_files, inputs):
     """Writes `extra_proj_files` under the project. Returns proj_files."""
@@ -658,14 +666,10 @@ def stage_dart_project(
         ctx,
         packages,
         all_srcs,
-        extra_proj_files = {},
-        name = None,
-        sdk_version = "",
+        staging = None,
         copy_external = True,
         all_packages_named = False,
-        link_ext_under_proj = False,
-        own = None,
-        options_files = None):
+        link_ext_under_proj = False):
     """Stages packages and sources into a hermetic Dart project layout.
 
     Args:
@@ -673,13 +677,15 @@ def stage_dart_project(
       packages: List of DartPackageInfo (from `collect_packages`).
       all_srcs: Flat list of Files to stage (the rule's own srcs/main plus the
         flattened transitive closure).
-      extra_proj_files: Dict of `<filename> -> content string` written as
-        declared files directly under `<name>.proj/` (e.g. a `pubspec.yaml`
-        stub for `dart analyze`).
-      name: Prefix for the staged paths; defaults to the target's name. An
-        aspect passes its own, so it cannot collide with the target's outputs.
-      sdk_version: The toolchain SDK's version, the staged SDK constraint of a
-        package that states no `language_version`. Empty for the old default.
+      staging: `struct(extra_proj_files, name, sdk_version)` naming the staged
+        project: `extra_proj_files` is a dict of `<filename> -> content string`
+        written as declared files directly under `<name>.proj/` (e.g. a
+        `pubspec.yaml` stub for `dart analyze`); `name` prefixes the staged
+        paths (defaults to the target's name — an aspect passes its own, so it
+        cannot collide with the target's outputs); `sdk_version` is the
+        toolchain SDK's version, the staged SDK constraint of a package that
+        states no `language_version` (empty for the old default). None for all
+        three defaults.
       copy_external: True copies each external package into its own
         `<name>.extpkgs/<pkg>` tree. False points the config at each external
         package's real directory in the exec root and declares its files as
@@ -703,10 +709,6 @@ def stage_dart_project(
         inputs inside the staged tree. Only for compilations: the analyzer
         reads `external/` paths fine, and only `dart_web_application` sets
         this today.
-      own: Optional collection of the target's own files, forwarded to
-        `main_package_placement` when `copy_external` is False.
-      options_files: Optional list of `analysis_options.yaml` Files that must
-        always be staged under `src/`.
 
     Returns:
       struct(
@@ -721,8 +723,9 @@ def stage_dart_project(
           referenced in place (which the config names directly).
       )
     """
-    _ = (own, options_files)
-    name = name or ctx.label.name
+    extra_proj_files = staging.extra_proj_files if staging else {}
+    name = (staging.name if staging else None) or ctx.label.name
+    sdk_version = staging.sdk_version if staging else ""
 
     ext_pkgs, ext_files_by_pkg = _stage_collect_external(packages, all_srcs)
 
@@ -762,7 +765,21 @@ def stage_dart_project(
         )
         inputs.append(extpkgs_manifest)
 
-    _stage_write_config(ctx, name, packages, ext_staged, config_dir, package_config, main_roots, link_ext_under_proj, inputs)
+    _stage_write_config(
+        ctx,
+        struct(
+            name = name,
+            packages = packages,
+            ext_staged = ext_staged,
+            config_dir = config_dir,
+            main_roots = main_roots,
+            link_ext_under_proj = link_ext_under_proj,
+        ),
+        struct(
+            package_config = package_config,
+            inputs = inputs,
+        ),
+    )
 
     proj_files = _stage_extra_files(ctx, name, extra_proj_files, inputs)
 
