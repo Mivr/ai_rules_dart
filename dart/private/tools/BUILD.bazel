@@ -425,10 +425,12 @@ dart_test(
     size = "small",
     srcs = ["format_runner.dart"],
     args = [
+        "$(rlocationpath :format_runner)",
         "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
         "$(rlocationpath @dart_toolchains//sdk/3.13.4:dart)",
     ],
     data = [
+        ":format_runner",
         "@dart_toolchains//sdk/3.13.4:compile_files",
         "@dart_toolchains//sdk/3.13.4:dart",
         "@dart_toolchains//sdk/3.13.5:compile_files",

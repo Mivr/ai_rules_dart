@@ -27,6 +27,8 @@ import 'package:dart_style/src/analysis_options/file_system.dart';
 // ignore: implementation_imports
 import 'package:dart_style/src/analysis_options/io_file_system.dart';
 import 'package:package_config/package_config.dart';
+// ignore: implementation_imports
+import 'package:package_config/src/errors.dart' show PackageConfigError;
 import 'package:path/path.dart' as p;
 import 'package:pub_semver/pub_semver.dart';
 
@@ -64,6 +66,11 @@ Future<void> _runPersistentWorker() async {
       final expanded = _expandParamFiles(request.arguments);
       code = await runFormatRequest(expanded, outSink: output, errSink: output);
     } on Object catch (e, st) {
+      // A worker must answer every request, so this stays broad; the error
+      // goes to the work response and to stderr (Bazel keeps worker stderr
+      // in the worker log).
+      stderr.writeln('format_runner: unhandled exception: $e');
+      stderr.writeln(st);
       output
         ..writeln('format_runner: unhandled exception: $e')
         ..writeln(st);
@@ -505,7 +512,13 @@ $stack''',
         current = parent;
       }
       return directoryConfigs[dir] = null;
-    } on Object {
+    } on FileSystemException {
+      // An unreadable package config resolves nothing: format without
+      // package URIs, as when no config exists.
+      return directoryConfigs[dir] = null;
+    } on PackageConfigError {
+      // An unparsable config (bad JSON, unknown version) resolves nothing
+      // either: same fallback. Anything else propagates.
       return directoryConfigs[dir] = null;
     }
   }
