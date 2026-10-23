@@ -24,6 +24,7 @@ source "${RUNFILES_DIR:-/dev/null}/$f" 2>/dev/null || \
 # runfiles tree of rules that generate bash launcher scripts.
 BASH_RUNFILES_ATTR = {
     "_runfiles_lib": attr.label(
+        doc = "Bash runfiles helper library joined to the runfiles tree of rules that emit bash launcher scripts. Defaults to `@bazel_tools//tools/bash/runfiles`.",
         default = "@bazel_tools//tools/bash/runfiles",
     ),
 }
@@ -31,6 +32,7 @@ BASH_RUNFILES_ATTR = {
 # Private attribute for detecting Windows at analysis time (for .exe extension).
 WINDOWS_CONSTRAINT_ATTR = {
     "_windows_constraint": attr.label(
+        doc = "Platform constraint value probed at analysis time to detect Windows, for the `.exe` output suffix. Defaults to `@platforms//os:windows`.",
         default = "@platforms//os:windows",
     ),
 }
@@ -46,13 +48,34 @@ WINDOWS_CONSTRAINT_ATTR = {
 # The set covers every CPU rules_dart registers a toolchain for, so a user who
 # brings their own cc toolchain for one of them is not blocked here.
 DART_ABI_CONSTRAINT_ATTRS = {
-    "_os_macos": attr.label(default = "@platforms//os:macos"),
-    "_os_linux": attr.label(default = "@platforms//os:linux"),
-    "_os_windows": attr.label(default = "@platforms//os:windows"),
-    "_cpu_arm64": attr.label(default = "@platforms//cpu:aarch64"),
-    "_cpu_x64": attr.label(default = "@platforms//cpu:x86_64"),
-    "_cpu_riscv64": attr.label(default = "@platforms//cpu:riscv64"),
-    "_cpu_arm": attr.label(default = "@platforms//cpu:armv7"),
+    "_os_macos": attr.label(
+        doc = "Platform constraint probed at analysis time to derive the code-asset ABI OS string when the SDK toolchain leaves it empty. Defaults to `@platforms//os:macos`.",
+        default = "@platforms//os:macos",
+    ),
+    "_os_linux": attr.label(
+        doc = "Platform constraint probed at analysis time to derive the code-asset ABI OS string when the SDK toolchain leaves it empty. Defaults to `@platforms//os:linux`.",
+        default = "@platforms//os:linux",
+    ),
+    "_os_windows": attr.label(
+        doc = "Platform constraint probed at analysis time to derive the code-asset ABI OS string when the SDK toolchain leaves it empty. Defaults to `@platforms//os:windows`.",
+        default = "@platforms//os:windows",
+    ),
+    "_cpu_arm64": attr.label(
+        doc = "Platform constraint probed at analysis time to derive the code-asset ABI arch string when the SDK toolchain leaves it empty. Defaults to `@platforms//cpu:aarch64`.",
+        default = "@platforms//cpu:aarch64",
+    ),
+    "_cpu_x64": attr.label(
+        doc = "Platform constraint probed at analysis time to derive the code-asset ABI arch string when the SDK toolchain leaves it empty. Defaults to `@platforms//cpu:x86_64`.",
+        default = "@platforms//cpu:x86_64",
+    ),
+    "_cpu_riscv64": attr.label(
+        doc = "Platform constraint probed at analysis time to derive the code-asset ABI arch string when the SDK toolchain leaves it empty. Defaults to `@platforms//cpu:riscv64`.",
+        default = "@platforms//cpu:riscv64",
+    ),
+    "_cpu_arm": attr.label(
+        doc = "Platform constraint probed at analysis time to derive the code-asset ABI arch string when the SDK toolchain leaves it empty. Defaults to `@platforms//cpu:armv7`.",
+        default = "@platforms//cpu:armv7",
+    ),
 }
 
 def runfiles_path(f, workspace_name):
