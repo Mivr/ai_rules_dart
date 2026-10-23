@@ -12,7 +12,7 @@ names (the latest version will be picked for each name) and can register them as
 effectively overriding the default named toolchain due to toolchain resolution precedence.
 """
 
-load("//dart/private:toolchain_selection.bzl", "select_toolchain_version")
+load("//dart/private:toolchain_selection.bzl", "select_toolchain_version", "toolchain_name_override_error")
 load(":repositories.bzl", "dart_register_toolchains")
 
 _DEFAULT_NAME = "dart"
@@ -35,11 +35,9 @@ def _toolchain_extension(module_ctx):
     registrations = {}
     for mod in module_ctx.modules:
         for toolchain in mod.tags.toolchain:
-            if toolchain.name != _DEFAULT_NAME and not mod.is_root:
-                fail("""\
-                Only the root module may override the default name for the Dart toolchain.
-                This prevents conflicting registrations in the global namespace of external repos.
-                """)
+            err = toolchain_name_override_error(toolchain.name, mod.is_root, _DEFAULT_NAME)
+            if err != None:
+                fail(err)
             if toolchain.name not in registrations.keys():
                 registrations[toolchain.name] = []
             registrations[toolchain.name].append(struct(

@@ -1,5 +1,28 @@
 """Picks one Dart SDK version per toolchain name from the versions modules request."""
 
+def toolchain_name_override_error(name, is_root, default_name):
+    """Error when a module overrides the default toolchain name, else None.
+
+    Only the root module may register a toolchain name other than the default:
+    any other module's override would collide in the global namespace of
+    external repos.
+
+    Args:
+      name: The requested toolchain repository base name.
+      is_root: Whether the requesting module is the root module.
+      default_name: The toolchain name every module may request.
+
+    Returns:
+      The failure message naming the offending tag, or None when allowed.
+    """
+    if name != default_name and not is_root:
+        return (
+            "Only the root module may override the default name for the Dart toolchain. " +
+            "Found toolchain `%s` in a non-root module. " % name +
+            "This prevents conflicting registrations in the global namespace of external repos."
+        )
+    return None
+
 def _parse_version(v):
     """Splits a version string into a list of ints for comparison."""
     return [int(x) for x in v.split(".")]
