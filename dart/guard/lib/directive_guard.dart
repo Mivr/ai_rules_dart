@@ -1289,10 +1289,7 @@ List<String> findStagedDirectiveViolations(
     final from = normalizeStagedPath(path.replaceAll(r'\', '/'));
     for (final ref in scanAllDirectiveUris(content)) {
       final violation = _stagedRefViolation(
-        tool,
-        path,
-        ref,
-        from,
+        (tool: tool, path: path, ref: ref, from: from),
         declared,
         multiRootPrefix,
         requireTargetsExist,
@@ -1302,6 +1299,11 @@ List<String> findStagedDirectiveViolations(
   }
   return errors;
 }
+
+/// One staged directive reference with the context its violation diagnostic
+/// names: the calling tool, the importing file path, the reference, and the
+/// importing file's staged path.
+typedef _StagedRef = ({String tool, String path, ScanRef ref, String from});
 
 /// The violation line for one staged directive reference, or null when the
 /// reference names a declared input. Beyond the scheme check
@@ -1316,14 +1318,15 @@ List<String> findStagedDirectiveViolations(
 /// the scanner sees as a relative staged path, so only a staged file backs a
 /// declared input.
 String? _stagedRefViolation(
-  String tool,
-  String path,
-  ScanRef ref,
-  String from,
+  _StagedRef target,
   bool Function(String) declared,
   String multiRootPrefix,
   bool requireTargetsExist,
 ) {
+  final tool = target.tool;
+  final path = target.path;
+  final ref = target.ref;
+  final from = target.from;
   final uri = ref.uri;
   // A URI spanning lines is refused however it spells its target: the
   // front end's multi-line first-line rule reads a different file than
@@ -1349,16 +1352,16 @@ String? _stagedRefViolation(
       isDisallowedDirectiveUri(uri, multiRootPrefix: multiRootPrefix)) {
     return "$tool: $path ${ref.kind} '$uri' is not a declared input.";
   }
-  final target = resolveStagedRelativeTarget(uri, from);
+  final resolved = resolveStagedRelativeTarget(uri, from);
   // A null resolution names no declared file (a `//` authority, a
   // fragment, or a decoded `/`): it is refused, never passed. A resolved
   // target is refused unless the file exists in the staged tree (see
   // [requireTargetsExist] above): the front end may read an absolute
   // host path the scanner sees as a relative staged path, so only a
   // staged file backs a declared input.
-  if (target == null ||
-      !declared(target) ||
-      (requireTargetsExist && !File(target).existsSync())) {
+  if (resolved == null ||
+      !declared(resolved) ||
+      (requireTargetsExist && !File(resolved).existsSync())) {
     return "$tool: $path ${ref.kind} '$uri' is not a declared input.";
   }
   return null;
