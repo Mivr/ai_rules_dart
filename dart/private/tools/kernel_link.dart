@@ -36,6 +36,11 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+// Shared through `srcs`, like `kernel_module`'s guard import: this binary is
+// an implicit exec tool of every `dart_library`, so it takes no
+// `dart_library` dependency (that would be a cycle).
+import 'lib/worker_protocol.dart';
+
 /// A kernel an index lists: its file, its `<dir>:<dill>` key, and what it defines and imports.
 class _Kernel {
   _Kernel(this.path, this.key, this.defines, this.imports);
@@ -60,69 +65,6 @@ class _CachedEntry<T> {
   final Uint8List? contentSha256;
   final int byteSize;
   int tick;
-}
-
-bool _isAsciiAlpha(int c) =>
-    (c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a);
-
-bool _isWindowsDrivePath(String s) =>
-    s.length >= 2 &&
-    _isAsciiAlpha(s.codeUnitAt(0)) &&
-    s.codeUnitAt(1) == 0x3a &&
-    (s.length == 2 || s.codeUnitAt(2) == 0x2f || s.codeUnitAt(2) == 0x5c);
-
-bool _isNormalizedRelative(String path) {
-  final len = path.length;
-  if (len == 0) return false;
-  if (_isWindowsDrivePath(path)) return false;
-  var segStart = 0;
-  for (var i = 0; i <= len; i++) {
-    final c = i < len ? path.codeUnitAt(i) : 0x2f;
-    if (c == 0x5c) return false;
-    if (c == 0x2f) {
-      final segLen = i - segStart;
-      if (segLen == 0) return false;
-      if (segLen == 1 && path.codeUnitAt(segStart) == 0x2e) return false;
-      if (segLen == 2 &&
-          path.codeUnitAt(segStart) == 0x2e &&
-          path.codeUnitAt(segStart + 1) == 0x2e) {
-        return false;
-      }
-      segStart = i + 1;
-    }
-  }
-  return true;
-}
-
-String _normalizePath(String path) {
-  if (_isNormalizedRelative(path)) return path;
-  if (path.isEmpty) return '.';
-  final slashPath = path.contains(r'\') ? path.replaceAll(r'\', '/') : path;
-  String? drivePrefix;
-  var rest = slashPath;
-  if (_isWindowsDrivePath(slashPath)) {
-    drivePrefix = '${slashPath.substring(0, 2)}/';
-    rest = slashPath.substring(2);
-  }
-  final isAbs = drivePrefix != null || rest.startsWith('/');
-  final parts = rest.split('/');
-  final stack = <String>[];
-  for (final part in parts) {
-    if (part.isEmpty || part == '.') continue;
-    if (part == '..') {
-      if (stack.isNotEmpty && stack.last != '..') {
-        stack.removeLast();
-      } else if (!isAbs) {
-        stack.add('..');
-      }
-    } else {
-      stack.add(part);
-    }
-  }
-  if (stack.isEmpty) return drivePrefix ?? (isAbs ? '/' : '.');
-  final joined = stack.join('/');
-  if (drivePrefix != null) return '$drivePrefix$joined';
-  return isAbs ? '/$joined' : joined;
 }
 
 /// Caches parsed `index.json` manifests, `--base-keys` sets, and `.dill` bytes
@@ -202,7 +144,7 @@ class KernelLinkCache {
     if (inputs == null) return null;
     final direct = inputs[path];
     if (direct != null && direct.isNotEmpty) return direct;
-    final norm = _normalizePath(path);
+    final norm = normalizePath(path);
     if (norm != path) {
       final normHit = inputs[norm];
       if (normHit != null && normHit.isNotEmpty) return normHit;
@@ -269,7 +211,7 @@ class KernelLinkCache {
   }
 
   List<_Kernel> kernelsOf(String dir, Map<String, Uint8List>? inputs) {
-    final normDir = _normalizePath(dir);
+    final normDir = normalizePath(dir);
     final indexPath = '$dir/index.json';
     final digest = _lookupDigest(indexPath, inputs);
     final hasDigest = digest != null && digest.isNotEmpty;
@@ -287,7 +229,7 @@ class KernelLinkCache {
 
     final bytes = File(indexPath).readAsBytesSync();
     final entryBytes = bytes.length;
-    final contentSha256 = hasDigest ? null : _sha256Of(bytes);
+    final contentSha256 = hasDigest ? null : sha256Of(bytes);
     if (!hasDigest &&
         cached != null &&
         cached.byteSize == entryBytes &&
@@ -337,7 +279,7 @@ class KernelLinkCache {
   }
 
   Set<String> baseKeysOf(String path, Map<String, Uint8List>? inputs) {
-    final key = _normalizePath(path);
+    final key = normalizePath(path);
     final digest = _lookupDigest(path, inputs);
     final hasDigest = digest != null && digest.isNotEmpty;
     final cached = _baseKeysCache.remove(key);
@@ -354,7 +296,7 @@ class KernelLinkCache {
 
     final bytes = File(path).readAsBytesSync();
     final entryBytes = bytes.length;
-    final contentSha256 = hasDigest ? null : _sha256Of(bytes);
+    final contentSha256 = hasDigest ? null : sha256Of(bytes);
     if (!hasDigest &&
         cached != null &&
         cached.byteSize == entryBytes &&
@@ -399,7 +341,7 @@ class KernelLinkCache {
   }
 
   Uint8List dillBytesOf(String path, Map<String, Uint8List>? inputs) {
-    final key = _normalizePath(path);
+    final key = normalizePath(path);
     final digest = _lookupDigest(path, inputs);
     final hasDigest = digest != null && digest.isNotEmpty;
     final cached = _dillCache.remove(key);
@@ -437,93 +379,8 @@ class KernelLinkCache {
   }
 }
 
-Uint8List _sha256Of(Uint8List message) {
-  final h = [
-    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, //
-    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
-  ];
-  final paddedLength = ((message.length + 9 + 63) ~/ 64) * 64;
-  final padded = Uint8List(paddedLength)..setRange(0, message.length, message);
-  padded[message.length] = 0x80;
-  final bits = message.length * 8;
-  final view = ByteData.sublistView(padded);
-  view.setUint32(paddedLength - 8, bits ~/ 0x100000000);
-  view.setUint32(paddedLength - 4, bits & 0xffffffff);
-
-  final w = List<int>.filled(64, 0);
-  for (var block = 0; block < paddedLength; block += 64) {
-    for (var i = 0; i < 16; i++) {
-      w[i] = view.getUint32(block + i * 4);
-    }
-    for (var i = 16; i < 64; i++) {
-      final s0 = _rotr(w[i - 15], 7) ^ _rotr(w[i - 15], 18) ^ (w[i - 15] >> 3);
-      final s1 = _rotr(w[i - 2], 17) ^ _rotr(w[i - 2], 19) ^ (w[i - 2] >> 10);
-      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) & 0xffffffff;
-    }
-    var a = h[0], b = h[1], c = h[2], d = h[3];
-    var e = h[4], f = h[5], g = h[6], hh = h[7];
-    for (var i = 0; i < 64; i++) {
-      final s1 = _rotr(e, 6) ^ _rotr(e, 11) ^ _rotr(e, 25);
-      final ch = (e & f) ^ ((~e) & g);
-      final t1 = (hh + s1 + ch + _sha256K[i] + w[i]) & 0xffffffff;
-      final s0 = _rotr(a, 2) ^ _rotr(a, 13) ^ _rotr(a, 22);
-      final maj = (a & b) ^ (a & c) ^ (b & c);
-      final t2 = (s0 + maj) & 0xffffffff;
-      hh = g;
-      g = f;
-      f = e;
-      e = (d + t1) & 0xffffffff;
-      d = c;
-      c = b;
-      b = a;
-      a = (t1 + t2) & 0xffffffff;
-    }
-    h[0] = (h[0] + a) & 0xffffffff;
-    h[1] = (h[1] + b) & 0xffffffff;
-    h[2] = (h[2] + c) & 0xffffffff;
-    h[3] = (h[3] + d) & 0xffffffff;
-    h[4] = (h[4] + e) & 0xffffffff;
-    h[5] = (h[5] + f) & 0xffffffff;
-    h[6] = (h[6] + g) & 0xffffffff;
-    h[7] = (h[7] + hh) & 0xffffffff;
-  }
-  final out = ByteData(32);
-  for (var i = 0; i < 8; i++) {
-    out.setUint32(i * 4, h[i]);
-  }
-  return out.buffer.asUint8List();
-}
-
-int _rotr(int x, int n) => ((x >> n) | (x << (32 - n))) & 0xffffffff;
-
-const _sha256K = <int>[
-  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, //
-  0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
-  0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
-  0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
-  0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
-  0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
-  0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
-  0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
-  0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
-];
-
-List<String> _expandParamFiles(List<String> args) {
-  final out = <String>[];
-  for (final arg in args) {
-    if (arg.startsWith('@')) {
-      out.addAll(File(arg.substring(1)).readAsLinesSync());
-    } else {
-      out.add(arg);
-    }
-  }
-  return out;
-}
-
 Future<void> main(List<String> args) async {
-  final expanded = _expandParamFiles(args);
+  final expanded = expandParamFiles(args);
   if (expanded.contains('--persistent_worker')) {
     await _runPersistentWorker();
     return;
@@ -535,13 +392,13 @@ Future<void> main(List<String> args) async {
 
 Future<void> _runPersistentWorker() async {
   final cache = KernelLinkCache();
-  await for (final bytes in _Frames(stdin)) {
-    final request = _WorkRequest.read(bytes);
+  await for (final bytes in WorkerFrames(stdin)) {
+    final request = WorkerRequest.read(bytes, copyDigests: false);
     if (request.cancel) continue;
     final output = StringBuffer();
     var code = 1;
     try {
-      final expanded = _expandParamFiles(request.arguments);
+      final expanded = expandParamFiles(request.arguments);
       code = linkOne(
         expanded,
         cache: cache,
@@ -560,7 +417,7 @@ Future<void> _runPersistentWorker() async {
       code = 1;
     }
     stdout.add(
-      _WorkResponse(
+      WorkerResponse(
         exitCode: code,
         output: output.toString(),
         requestId: request.requestId,
@@ -613,7 +470,7 @@ int linkOne(
   final linked = [if (entry != null) entry, ...walker.order];
   if (!_checkDuplicateDefines(linked, errSink)) return 1;
 
-  _emitLinked(
+  _emitLinked((
     output: output,
     platform: parsed.platform,
     entry: entry,
@@ -622,7 +479,7 @@ int linkOne(
     writeKeysPath: parsed.writeKeysPath,
     cache: cache,
     inputs: inputs,
-  );
+  ));
   return 0;
 }
 
@@ -776,30 +633,37 @@ bool _checkDuplicateDefines(List<_Kernel> linked, StringSink errSink) {
 
 /// Concatenates the platform and linked kernels into [output], and records
 /// the emitted keys when asked.
-void _emitLinked({
-  required String output,
-  required String? platform,
-  required _Kernel? entry,
-  required List<_Kernel> order,
-  required Set<String> baseKeys,
-  required String? writeKeysPath,
-  required KernelLinkCache cache,
-  required Map<String, Uint8List>? inputs,
-}) {
+typedef _LinkedOutput = ({
+  String output,
+  String? platform,
+  _Kernel? entry,
+  List<_Kernel> order,
+  Set<String> baseKeys,
+  String? writeKeysPath,
+  KernelLinkCache cache,
+  Map<String, Uint8List>? inputs,
+});
+
+/// Concatenates the platform and linked kernels into [output], and records
+/// the emitted keys when asked.
+void _emitLinked(_LinkedOutput linked) {
+  final entry = linked.entry;
+  final platform = linked.platform;
+  final writeKeysPath = linked.writeKeysPath;
   final emitted = [
     if (entry != null) entry,
-    for (final kernel in order)
-      if (!baseKeys.contains(kernel.key)) kernel,
+    for (final kernel in linked.order)
+      if (!linked.baseKeys.contains(kernel.key)) kernel,
   ];
 
   final outBuilder = BytesBuilder(copy: false);
   if (platform != null) {
-    outBuilder.add(cache.dillBytesOf(platform, inputs));
+    outBuilder.add(linked.cache.dillBytesOf(platform, linked.inputs));
   }
   for (final kernel in emitted) {
-    outBuilder.add(cache.dillBytesOf(kernel.path, inputs));
+    outBuilder.add(linked.cache.dillBytesOf(kernel.path, linked.inputs));
   }
-  File(output).writeAsBytesSync(outBuilder.takeBytes());
+  File(linked.output).writeAsBytesSync(outBuilder.takeBytes());
 
   if (writeKeysPath != null) {
     final keysOut = StringBuffer();
@@ -816,227 +680,4 @@ void _emitLinked({
 /// Decodes the `inputs` map from a raw `WorkRequest` protobuf payload,
 /// copying each digest out of [bytes] so the request buffer is not pinned.
 Map<String, Uint8List> decodeKernelLinkWorkRequestInputs(Uint8List bytes) =>
-    _WorkRequest.read(bytes, copyDigests: true).inputs;
-
-final Uint8List _emptyBytes = Uint8List(0);
-
-final class _WorkRequest {
-  _WorkRequest({
-    required this.arguments,
-    required this.inputs,
-    required this.requestId,
-    required this.cancel,
-  });
-
-  factory _WorkRequest.read(Uint8List bytes, {bool copyDigests = false}) {
-    final arguments = <String>[];
-    final inputs = <String, Uint8List>{};
-    var requestId = 0;
-    var cancel = false;
-    final r = _Reader(bytes);
-    while (!r.isDone) {
-      final tag = r.varint();
-      switch (tag >> 3) {
-        case 1:
-          arguments.add(r.string());
-        case 2:
-          final nested = r.submessage();
-          var path = '';
-          var digest = _emptyBytes;
-          while (!nested.isDone) {
-            final inputTag = nested.varint();
-            switch (inputTag >> 3) {
-              case 1:
-                path = nested.string();
-              case 2:
-                final raw = nested.bytes();
-                digest = copyDigests ? Uint8List.fromList(raw) : raw;
-              default:
-                nested.skip(inputTag & 7);
-            }
-          }
-          if (path.isNotEmpty) {
-            inputs[path] = digest;
-          }
-        case 3:
-          requestId = r.varint();
-        case 4:
-          cancel = r.varint() != 0;
-        default:
-          r.skip(tag & 7);
-      }
-    }
-    return _WorkRequest(
-      arguments: arguments,
-      inputs: inputs,
-      requestId: requestId,
-      cancel: cancel,
-    );
-  }
-
-  final List<String> arguments;
-  final Map<String, Uint8List> inputs;
-  final int requestId;
-  final bool cancel;
-}
-
-final class _WorkResponse {
-  const _WorkResponse({
-    required this.exitCode,
-    required this.output,
-    required this.requestId,
-  });
-
-  final int exitCode;
-  final String output;
-  final int requestId;
-
-  Uint8List write() {
-    final body = _Writer();
-    if (exitCode != 0) {
-      body
-        ..varint((1 << 3) | 0)
-        ..varint(exitCode);
-    }
-    if (output.isNotEmpty) {
-      final utf8Bytes = utf8.encode(output);
-      body
-        ..varint((2 << 3) | 2)
-        ..varint(utf8Bytes.length)
-        ..raw(utf8Bytes);
-    }
-    if (requestId != 0) {
-      body
-        ..varint((3 << 3) | 0)
-        ..varint(requestId);
-    }
-    final payload = body.takeBytes();
-    final frame = _Writer()
-      ..varint(payload.length)
-      ..raw(payload);
-    return frame.takeBytes();
-  }
-}
-
-final class _Frames extends Stream<Uint8List> {
-  _Frames(this._source);
-
-  final Stream<List<int>> _source;
-
-  @override
-  StreamSubscription<Uint8List> listen(
-    void Function(Uint8List)? onData, {
-    Function? onError,
-    void Function()? onDone,
-    bool? cancelOnError,
-  }) {
-    final controller = StreamController<Uint8List>();
-    var buf = Uint8List(0);
-    late final StreamSubscription<List<int>> sub;
-    sub = _source.listen(
-      (chunk) {
-        final merged = Uint8List(buf.length + chunk.length);
-        merged.setRange(0, buf.length, buf);
-        merged.setRange(buf.length, merged.length, chunk);
-        buf = merged;
-        while (true) {
-          var len = 0;
-          var shift = 0;
-          var pos = 0;
-          while (true) {
-            if (pos >= buf.length) return;
-            final b = buf[pos++];
-            len |= (b & 0x7f) << shift;
-            if ((b & 0x80) == 0) break;
-            shift += 7;
-          }
-          if (buf.length < pos + len) return;
-          final frame = Uint8List.fromList(
-            Uint8List.sublistView(buf, pos, pos + len),
-          );
-          final nextStart = pos + len;
-          buf = nextStart == buf.length
-              ? Uint8List(0)
-              : Uint8List.fromList(Uint8List.sublistView(buf, nextStart));
-          controller.add(frame);
-        }
-      },
-      onError: controller.addError,
-      onDone: controller.close,
-      cancelOnError: cancelOnError,
-    );
-    controller
-      ..onPause = sub.pause
-      ..onResume = sub.resume
-      ..onCancel = sub.cancel;
-    return controller.stream.listen(
-      onData,
-      onError: onError,
-      onDone: onDone,
-      cancelOnError: cancelOnError,
-    );
-  }
-}
-
-final class _Reader {
-  _Reader(this._buf);
-
-  final Uint8List _buf;
-  int _pos = 0;
-
-  bool get isDone => _pos >= _buf.length;
-
-  int varint() {
-    var result = 0;
-    var shift = 0;
-    while (true) {
-      final b = _buf[_pos++];
-      result |= (b & 0x7f) << shift;
-      if ((b & 0x80) == 0) return result;
-      shift += 7;
-    }
-  }
-
-  Uint8List bytes() {
-    final len = varint();
-    final slice = Uint8List.sublistView(_buf, _pos, _pos + len);
-    _pos += len;
-    return slice;
-  }
-
-  String string() => utf8.decode(bytes());
-
-  _Reader submessage() => _Reader(bytes());
-
-  void skip(int wireType) {
-    switch (wireType) {
-      case 0:
-        varint();
-      case 1:
-        _pos += 8;
-      case 2:
-        _pos += varint();
-      case 5:
-        _pos += 4;
-      default:
-        throw FormatException('unsupported wire type: $wireType');
-    }
-  }
-}
-
-final class _Writer {
-  final _buf = BytesBuilder();
-
-  void varint(int value) {
-    var v = value;
-    while (v < 0 || v >= 0x80) {
-      _buf.addByte((v & 0x7f) | 0x80);
-      v = v >>> 7;
-    }
-    _buf.addByte(v);
-  }
-
-  void raw(List<int> bytes) => _buf.add(bytes);
-
-  Uint8List takeBytes() => _buf.takeBytes();
-}
+    WorkerRequest.read(bytes).inputs;

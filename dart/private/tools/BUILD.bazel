@@ -243,8 +243,13 @@ dart_test(
 
 # Concatenates module kernels into a modular `dart_test`'s or
 # `dart_binary(compile_mode = "kernel")`'s kernel. See the file's header.
+# It takes no `dart_library` dependency on purpose (like `kernel_module`
+# below): every `dart_library` names it as an implicit exec tool, so a
+# dependency would be a cycle. It reads the shared worker protocol through
+# `srcs` instead.
 dart_binary(
     name = "kernel_link",
+    srcs = ["lib/worker_protocol.dart"],
     code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "kernel_link.dart",
@@ -256,7 +261,10 @@ dart_binary(
 dart_test(
     name = "kernel_link_test",
     size = "small",
-    srcs = ["kernel_link.dart"],
+    srcs = [
+        "kernel_link.dart",
+        "lib/worker_protocol.dart",
+    ],
     args = [
         "$(rlocationpath :kernel_link)",
         "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
