@@ -42,6 +42,7 @@ module, against a package config naming every member.
 load("//dart:providers.bzl", "DartCodeAssetInfo", "DartPackageInfo")
 load("//dart/private:common.bzl", "PACKAGE_IDENTITY_ATTRS", "codegen_identity_error", "resolve_package_identity")
 load("//dart/private:dart_info.bzl", "dart_info")
+load("//dart/private:dart_info_params.bzl", "dart_package_identity")
 load("//dart/private:dart_library.bzl", "check_files_under_lib_root", "check_no_duplicate_srcs", "derive_lib_root", "derive_package_name", "link_hook_error")
 
 def _dart_package_member_impl(ctx):
@@ -99,15 +100,17 @@ def _dart_package_member_impl(ctx):
     # which is what the merged library is for.
     record = dart_info(
         label = ctx.label,
-        package_name = package_name,
-        lib_root = lib_root,
+        package = dart_package_identity(
+            package_name = package_name,
+            lib_root = lib_root,
+            language_version = identity.language_version,
+            version = ctx.attr.version,
+        ),
         deps = [],
         srcs = own_srcs,
         resources = own_resources,
         code_assets = ctx.attr.code_assets,
-        language_version = identity.language_version,
         has_unreplaced_hook = ctx.attr.has_unreplaced_hook,
-        version = ctx.attr.version,
         link_hook = ctx.file.link_hook,
     ).transitive_packages.to_list()[0]
 

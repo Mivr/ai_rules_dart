@@ -142,7 +142,16 @@ bzl_library(
     name = "dart_info",
     srcs = ["dart_info.bzl"],
     visibility = ["//dart:__subpackages__"],
-    deps = ["//dart:providers"],
+    deps = [
+        ":dart_info_params",
+        "//dart:providers",
+    ],
+)
+
+bzl_library(
+    name = "dart_info_params",
+    srcs = ["dart_info_params.bzl"],
+    visibility = ["//dart:__subpackages__"],
 )
 
 bzl_library(
@@ -173,6 +182,7 @@ bzl_library(
         ":build_settings",
         ":common",
         ":dart_info",
+        ":dart_info_params",
         ":dart_kernel",
         ":kernel_params",
         "//dart:providers",
@@ -247,6 +257,7 @@ bzl_library(
     deps = [
         ":common",
         ":dart_info",
+        ":dart_info_params",
         ":dart_library",
         "//dart:providers",
     ],

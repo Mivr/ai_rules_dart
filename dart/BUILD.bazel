@@ -218,6 +218,7 @@ bzl_library(
         ":providers",
         "//dart/private:common",
         "//dart/private:dart_info",
+        "//dart/private:dart_info_params",
         "//dart/private:dart_kernel",
         "//dart/private:dart_library",
         "//dart/private:dart_link_hook",

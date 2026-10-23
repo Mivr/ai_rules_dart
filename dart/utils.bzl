@@ -36,6 +36,10 @@ load(
     _dart_info_no_package = "dart_info_no_package",
 )
 load(
+    "//dart/private:dart_info_params.bzl",
+    _dart_package_identity = "dart_package_identity",
+)
+load(
     "//dart/private:dart_kernel.bzl",
     _KERNEL_MODULE_ATTRS = "KERNEL_MODULE_ATTRS",
     _MODULAR_KERNEL_ATTRS = "MODULAR_KERNEL_ATTRS",
@@ -104,6 +108,11 @@ dart_info = _dart_info
 # several packages at once (a library merged over a pub dependency cycle).
 # Takes the members' records rather than the facts they were built from.
 dart_info_multi = _dart_info_multi
+
+# The package a target contributes, shared by `dart_info()` and
+# `dart_analyzable_info_with_package()` so the two cannot disagree about what
+# a package is.
+dart_package_identity = _dart_package_identity
 
 # The other constructor, for a target that ships no Dart package at all and
 # provides `DartInfo` only to satisfy a `deps` attribute that requires one (a

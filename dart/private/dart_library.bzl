@@ -4,6 +4,7 @@ load("//dart:providers.bzl", "DartCodeAssetInfo", "DartInfo", "DartPackageInfo")
 load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR")
 load("//dart/private:common.bzl", "PACKAGE_IDENTITY_ATTRS", "codegen_identity_error", "resolve_package_identity")
 load("//dart/private:dart_info.bzl", "dart_info", "dart_info_multi", "package_lib_prefix")
+load("//dart/private:dart_info_params.bzl", "dart_package_identity")
 load(
     "//dart/private:dart_kernel.bzl",
     "KERNEL_MODULE_ATTRS",
@@ -311,15 +312,17 @@ def _dart_library_impl(ctx):
 
     info = dart_info(
         label = ctx.label,
-        package_name = package_name,
-        lib_root = lib_root,
+        package = dart_package_identity(
+            package_name = package_name,
+            lib_root = lib_root,
+            language_version = identity.language_version,
+            version = ctx.attr.version,
+        ),
         deps = ctx.attr.deps,
         srcs = own_srcs,
         resources = own_resources,
         code_assets = ctx.attr.code_assets,
-        language_version = identity.language_version,
         has_unreplaced_hook = ctx.attr.has_unreplaced_hook,
-        version = ctx.attr.version,
         link_hook = ctx.file.link_hook,
     )
 

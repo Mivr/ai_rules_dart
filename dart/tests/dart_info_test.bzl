@@ -25,6 +25,7 @@ invalid `deps` entry.
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 load("//dart:providers.bzl", "DartAnalyzableInfo", "DartCodeAssetInfo", "DartInfo")
+load("//dart:utils.bzl", "dart_package_identity")
 load("//dart/private:common.bzl", "package_code_assets")
 load(
     "//dart/private:dart_info.bzl",
@@ -38,13 +39,15 @@ def _wrapper_library_impl(ctx):
         DefaultInfo(files = depset(ctx.files.srcs + ctx.files.resources)),
         dart_info(
             label = ctx.label,
-            package_name = ctx.attr.package_name,
-            lib_root = ctx.label.package,
+            package = dart_package_identity(
+                package_name = ctx.attr.package_name,
+                lib_root = ctx.label.package,
+                language_version = ctx.attr.language_version,
+            ),
             deps = ctx.attr.deps,
             srcs = ctx.files.srcs,
             resources = ctx.files.resources,
             code_assets = ctx.attr.code_assets,
-            language_version = ctx.attr.language_version,
         ),
     ]
 

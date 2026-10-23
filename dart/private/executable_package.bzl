@@ -22,6 +22,7 @@ pure, so each can be tested by calling it.
 load("//dart:providers.bzl", "DartInfo")
 load("//dart/private:common.bzl", "PACKAGE_IDENTITY_ATTRS", "codegen_identity_error", "merge_package_records", "resolve_package_identity")
 load("//dart/private:dart_info.bzl", "dart_analyzable_info", "dart_analyzable_info_with_package", "dart_info", "package_lib_prefix")
+load("//dart/private:dart_info_params.bzl", "dart_package_identity")
 load("//dart/private:dart_library.bzl", "derive_lib_root", "derive_package_name")
 
 # The identity attributes of every executable rule: `package` from
@@ -263,9 +264,11 @@ def executable_package(ctx, own_srcs):
     # closure would match a dependency's record for this same package first.
     record = dart_info(
         label = ctx.label,
-        package_name = name,
-        lib_root = root,
-        language_version = identity.language_version,
+        package = dart_package_identity(
+            package_name = name,
+            lib_root = root,
+            language_version = identity.language_version,
+        ),
     ).transitive_packages.to_list()[0]
 
     err = executable_package_error(

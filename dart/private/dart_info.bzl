@@ -79,6 +79,7 @@ say: `language_version = ""` remains legal and keeps its meaning, which
 """
 
 load("//dart:providers.bzl", "DartAnalyzableInfo", "DartCodeAssetInfo", "DartInfo", "DartPackageInfo")
+load("//dart/private:dart_info_params.bzl", "dart_package_identity")
 
 def package_lib_prefix(lib_root):
     """Returns the short_path prefix under which a package's importable files live.
@@ -137,15 +138,12 @@ def check_code_asset_ownership(label, package_name, assets):
 
 def dart_info(
         label,
-        package_name,
-        lib_root,
-        language_version,
+        package,
         deps = [],
         srcs = [],
         resources = [],
         code_assets = [],
         has_unreplaced_hook = "",
-        version = "",
         link_hook = None):
     """Builds a `DartInfo` for a library, merging its dependencies' closures.
 
@@ -162,42 +160,32 @@ def dart_info(
 
     Args:
       label: The constructing rule's label, for error messages.
-      package_name: The Dart package name this target provides.
-      lib_root: `short_path`-based path to the package root (parent of `lib/`).
-        Empty string for the root package.
+      package: The struct from `dart_package_identity()`: the package name,
+        `lib/` root, language version, and resolved version this target
+        provides.
       deps: Targets providing `DartInfo` whose closures are merged in.
       srcs: This target's own Dart sources (or its source directory).
       resources: This target's own non-Dart files under `lib/`.
       code_assets: Targets providing `DartCodeAssetInfo` that this package owns.
-      language_version: Dart language version in `<major>.<minor>` form, or ""
-        when the package states none. Required to pass — not because a package
-        must have one, but because omitting the argument and stating `""` are
-        different intentions that used to produce the same call. An absent
-        `languageVersion` in `package_config.json` is not "no language version",
-        it is *the current SDK's*, so a forgotten argument silently compiles the
-        package under newer semantics than its pubspec allows. `""` remains a
-        legal, meaningful value; only not answering is gone.
       has_unreplaced_hook: Path of a pub build hook with no Bazel replacement,
         or "".
-      version: The package's own resolved version, or "" when unknown. Only pub
-        spokes know it; a hand-written `dart_library` leaves it empty.
       link_hook: The package's `hook/link.dart` File, or None.
 
     Returns:
       A `DartInfo`.
     """
     own_assets = [dep[DartCodeAssetInfo] for dep in code_assets]
-    err = check_code_asset_ownership(label, package_name, own_assets)
+    err = check_code_asset_ownership(label, package.package_name, own_assets)
     if err != None:
         fail(err)
 
     dep_infos = [dep[DartInfo] for dep in deps]
 
     this_pkg = DartPackageInfo(
-        package_name = package_name,
-        lib_root = lib_root,
-        version = version,
-        language_version = language_version,
+        package_name = package.package_name,
+        lib_root = package.lib_root,
+        version = package.version,
+        language_version = package.language_version,
         code_assets = tuple(own_assets),
         has_unreplaced_hook = has_unreplaced_hook,
         link_hook = link_hook,
@@ -205,8 +193,8 @@ def dart_info(
 
     return _merged_dart_info(
         dep_infos = dep_infos,
-        package_name = package_name,
-        lib_root = lib_root,
+        package_name = package.package_name,
+        lib_root = package.lib_root,
         srcs = srcs,
         resources = resources,
         packages = [this_pkg],
@@ -419,14 +407,16 @@ def dart_analyzable_info_with_package(
     return DartAnalyzableInfo(
         dart_info = dart_info(
             label = label,
-            package_name = package_name,
-            lib_root = lib_root,
+            package = dart_package_identity(
+                package_name = package_name,
+                lib_root = lib_root,
+                language_version = language_version,
+                version = version,
+            ),
             deps = deps,
             srcs = package_srcs,
             resources = resources,
             code_assets = code_assets,
-            language_version = language_version,
-            version = version,
         ),
         srcs = depset(srcs),
         package_srcs = depset(package_srcs),

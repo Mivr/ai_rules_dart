@@ -2,6 +2,7 @@
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load("//dart:defs.bzl", "DartCodeAssetInfo", "dart_aggregate_codegen", "dart_binary", "dart_codegen", "dart_library", "dart_sqlcodegen")
+load("//dart:utils.bzl", "dart_package_identity")
 load("//dart/private:dart_codegen.bzl", "compute_codegen_output_name")
 load("//dart/private:dart_info.bzl", "dart_info")
 load(":small_suite.bzl", "small_unittest_suite")
@@ -138,12 +139,14 @@ def _dummy_res_only_lib_impl(ctx):
         DefaultInfo(files = depset([out])),
         dart_info(
             label = ctx.label,
-            package_name = ctx.attr.package_name,
-            lib_root = lib_root,
+            package = dart_package_identity(
+                package_name = ctx.attr.package_name,
+                lib_root = lib_root,
+                language_version = "3.0",
+            ),
             deps = [],
             srcs = [],
             resources = [out],
-            language_version = "3.0",
         ),
     ]
 
