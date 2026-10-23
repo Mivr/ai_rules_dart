@@ -27,6 +27,16 @@ A non-root declaration that agrees with the pin is silent. A non-root
 declaration at the pin's version with a different sha256 is an integrity
 conflict, not a choice: evaluation fails naming both values.
 
+Whenever any module declares `pub.package()` for a package, the
+package-named repository exists. A root `pub.package()` pin materializes it
+directly. A root lock pin instead resolves the package through the locks,
+and the package-named repository is generated as a thin alias to the lock
+spoke `dart_pub__<name>` (or to the merged repository holding the whole
+cycle, when the spoke merged away). The spoke stays the single
+materialization: hubs alias it, the alias names it, and the package's
+registry URL, archive hash and transitive dependencies all come from the
+lock, which a second materialization could not reproduce.
+
 Without a root pin, `pub.package()` behaves as before: the single
 declaration applies, and disagreeing non-root declarations fail. Inside the
 root nothing changes either: the root's own `pub.package()` still overrides

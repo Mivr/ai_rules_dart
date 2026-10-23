@@ -556,6 +556,7 @@ def _resolve_error_sha(error):
         resolved = {},
         resolved_git = {},
         hub_packages = {},
+        aliases = {},
         notes = [],
         warnings = [],
     )
@@ -569,6 +570,7 @@ def _resolve_error_conflict(error):
         resolved_git = {},
         hub_packages = {},
         isolated_packages = {},
+        aliases = {},
         notes = [],
         warnings = [],
     )
@@ -581,6 +583,7 @@ def _resolve_error_hub(error):
         resolved = {},
         hub_packages = {},
         isolated_packages = {},
+        aliases = {},
         notes = [],
         warnings = [],
     )
@@ -594,6 +597,7 @@ def _resolve_error_lock(error):
         resolved_git = {},
         hub_packages = {},
         isolated_packages = {},
+        aliases = {},
         notes = [],
         warnings = [],
     )
@@ -608,6 +612,7 @@ def _resolve_error_git(error):
         hub_packages = {},
         isolated_packages = {},
         isolated_git_packages = {},
+        aliases = {},
         notes = [],
         warnings = [],
     )
@@ -638,16 +643,19 @@ def resolve_pub_packages(package_tags, lock_tags):
             and optionally `(is_root, module)`.
 
     Returns:
-        `struct(error, explicit, resolved, resolved_git, hub_packages, isolated_packages, isolated_git_packages, notes, warnings)`
+        `struct(error, explicit, resolved, resolved_git, hub_packages, isolated_packages, isolated_git_packages, aliases, notes, warnings)`
         where `error` is an error string when any declaration is unpinned,
         malformed, or conflicting, or `None` when resolution succeeds.
         `isolated_packages` maps each isolated hub name to
         `{pkg_name: struct(version, sha256, url)}` and `isolated_git_packages`
         maps each isolated hub name to
-        `{pkg_name: struct(version, url, resolved_ref, path)}`. `notes` holds
+        `{pkg_name: struct(version, url, resolved_ref, path)}`. `aliases`
+        maps package name to `(version, sha256, source)` for names a root
+        lock pin resolves while declarations exist: the package-named
+        repository is generated as an alias to the lock spoke. `notes` holds
         one NOTE per package whose root pin overrode a different version.
     """
-    explicit, notes, err, err_shape = select_all_explicit(package_tags, lock_tags)
+    explicit, aliases, notes, err, err_shape = select_all_explicit(package_tags, lock_tags)
     if err:
         if err_shape == "sha":
             return _resolve_error_sha(err)
@@ -681,6 +689,7 @@ def resolve_pub_packages(package_tags, lock_tags):
         hub_packages = state["hub_packages"],
         isolated_packages = state["isolated_hub_packages"],
         isolated_git_packages = state["isolated_git_packages"],
+        aliases = aliases,
         notes = notes,
         warnings = state["warnings"],
     )
@@ -790,6 +799,30 @@ def _pub_emit_explicit(explicit, vanished_spokes):
             version = pkg.version,
             sha256 = pkg.sha256,
             deps = [rewrite_vanished_spoke(dep, vanished_spokes) for dep in pkg.deps],
+        )
+
+def _pub_emit_aliased(aliases, vanished_spokes):
+    """Creates one alias repository per lock-pinned `pub.package()` name.
+
+    A dependency may import the package by its `pub.package()` name even
+    when a root lock pin resolves it, so the name must exist as a
+    repository. The lock spoke stays the single materialization: the alias
+    names its spoke, or the merged repository holding the whole cycle when
+    the spoke merged away.
+    """
+    for name in sorted(aliases.keys()):
+        spoke = _SPOKE_PREFIX + "__" + name
+        scc_targets = {}
+        if spoke in vanished_spokes:
+            repo = vanished_spokes[spoke]
+            scc_targets = {name: "@{repo}//:{member}".format(repo = repo, member = name)}
+        pub_lock_hub(
+            name = name,
+            hub_name = _SPOKE_PREFIX,
+            spoke_prefix = _SPOKE_PREFIX,
+            packages = [name],
+            explicit_packages = [],
+            scc_targets = scc_targets,
         )
 
 def _pub_emit_shared_spokes(resolved, shared_sccs, all_package_names, explicit_package_names, ignore_hooks, shared_scc_targets):
@@ -972,6 +1005,7 @@ def _pub_impl(ctx):
         print(warning)
 
     explicit = resolution.explicit
+    aliases = getattr(resolution, "aliases", {})
     resolved = resolution.resolved
     resolved_git = resolution.resolved_git
     hub_packages = resolution.hub_packages
@@ -999,6 +1033,7 @@ def _pub_impl(ctx):
     }
 
     _pub_emit_explicit(explicit, vanished_spokes)
+    _pub_emit_aliased(aliases, vanished_spokes)
 
     # Create shared spoke repos. Cycle members get no spoke of their own: the
     # merged repository below holds the whole cycle, and every edge into it

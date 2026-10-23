@@ -25,6 +25,7 @@ def _root_explicit_beats_dep_test_impl(ctx):
     asserts.equals(env, None, sel.error)
     asserts.equals(env, "1.9.1", sel.selected.version)
     asserts.equals(env, _V191, sel.selected.sha256)
+    asserts.equals(env, None, sel.alias)
     asserts.equals(
         env,
         "Pub package \"path\" uses 1.9.1 from the root module's pub.package(), not 1.9.0 declared by module \"dep_a\".",
@@ -45,6 +46,12 @@ def _root_lock_beats_dep_test_impl(ctx):
         "Pub package \"path\" uses 1.9.1 from //:pubspec.lock, not 1.9.0 declared by module \"dep_a\".",
         sel.note,
     )
+
+    # The dependency's `P` repository is still generated, as an alias
+    # resolving to the root's version.
+    asserts.true(env, sel.alias != None)
+    asserts.equals(env, "1.9.1", sel.alias.version)
+    asserts.equals(env, _V191, sel.alias.sha256)
     return unittest.end(env)
 
 def _root_older_than_dep_still_wins_test_impl(ctx):
@@ -97,6 +104,12 @@ def _agreeing_dep_with_lock_pin_is_silent_test_impl(ctx):
     asserts.equals(env, None, sel.error)
     asserts.equals(env, None, sel.selected)
     asserts.equals(env, None, sel.note)
+
+    # The agreeing declaration still gets its `P` repository, resolving to
+    # the root's version.
+    asserts.true(env, sel.alias != None)
+    asserts.equals(env, "1.9.1", sel.alias.version)
+    asserts.equals(env, _V191, sel.alias.sha256)
     return unittest.end(env)
 
 def _root_deps_survive_test_impl(ctx):
@@ -125,6 +138,7 @@ def _lone_dep_applies_test_impl(ctx):
     sel = select_pub_package("path", [_decl("1.9.0", _V190)], [])
     asserts.equals(env, None, sel.error)
     asserts.equals(env, None, sel.note)
+    asserts.equals(env, None, sel.alias)
     asserts.equals(env, "1.9.0", sel.selected.version)
     asserts.equals(env, _V190, sel.selected.sha256)
     return unittest.end(env)
@@ -229,6 +243,7 @@ def _root_locks_upgrade_test_impl(ctx):
     ])
     asserts.equals(env, None, sel.error)
     asserts.equals(env, None, sel.selected)
+    asserts.equals(env, None, sel.alias)
     asserts.equals(env, None, sel.note)
     return unittest.end(env)
 
@@ -241,7 +256,7 @@ def _bad_sha_reports_sha_shape_test_impl(ctx):
 
 def _all_explicit_wires_pins_test_impl(ctx):
     env = unittest.begin(ctx)
-    explicit, notes, error, _ = select_all_explicit(
+    explicit, aliases, notes, error, _ = select_all_explicit(
         [
             struct(name = "path", version = "1.9.1", sha256 = _V191, deps = [], is_root = True, module = "myapp"),
             struct(name = "path", version = "1.9.0", sha256 = _V190, deps = [], is_root = False, module = "dep_a"),
@@ -252,13 +267,14 @@ def _all_explicit_wires_pins_test_impl(ctx):
     asserts.equals(env, None, error)
     asserts.equals(env, "1.9.1", explicit["path"].version)
     asserts.equals(env, "1.11.0", explicit["meta"].version)
+    asserts.equals(env, {}, aliases)
     asserts.equals(env, 1, len(notes))
     asserts.true(env, "path" in notes[0])
     return unittest.end(env)
 
 def _all_explicit_lock_pin_leaves_locks_test_impl(ctx):
     env = unittest.begin(ctx)
-    explicit, notes, error, _ = select_all_explicit(
+    explicit, aliases, notes, error, _ = select_all_explicit(
         [struct(name = "path", version = "1.9.0", sha256 = _V190, deps = [], is_root = False, module = "dep_a")],
         [struct(
             name = "pub_deps",
@@ -277,6 +293,12 @@ def _all_explicit_lock_pin_leaves_locks_test_impl(ctx):
     asserts.equals(env, None, error)
     asserts.equals(env, {}, explicit)
     asserts.equals(env, 1, len(notes))
+
+    # The locks resolve the package, and the dependency's `P` repository
+    # is generated as an alias at the root's version.
+    asserts.true(env, "path" in aliases)
+    asserts.equals(env, "1.9.1", aliases["path"].version)
+    asserts.equals(env, _V191, aliases["path"].sha256)
     return unittest.end(env)
 
 _t0_test = unittest.make(_root_explicit_beats_dep_test_impl)

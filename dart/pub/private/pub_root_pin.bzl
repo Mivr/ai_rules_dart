@@ -271,20 +271,27 @@ def select_all_explicit(package_tags, lock_tags):
       lock_tags: The `from_lock` tags (see `root_hosted_lock_entries`).
 
     Returns:
-      `(explicit, notes, error, error_shape)`: `explicit` maps package name
-      to the winning `(name, version, sha256, deps)` struct; `notes` holds
-      one NOTE per package whose root pin overrode a different version;
-      `error` with `error_shape` (`"sha"` or `"conflict"`) reports the
-      first failure in sorted package name order.
+      `(explicit, aliases, notes, error, error_shape)`: `explicit` maps
+      package name to the winning `(name, version, sha256, deps)` struct, a
+      repository the extension generates under the package name;
+      `aliases` maps package name to `(version, sha256, source)` for names
+      a root lock pin resolves while declarations exist: the extension
+      generates the package-named repository as an alias to the lock
+      spoke, so modules importing the name keep loading at the root's
+      version; `notes` holds one NOTE per package whose root pin
+      overrode a different version; `error` with `error_shape` (`"sha"`
+      or `"conflict"`) reports the first failure in sorted package name
+      order.
     """
     grouped = decls_by_name(package_tags)
     pins = root_hosted_lock_entries(lock_tags)
     explicit = {}
+    aliases = {}
     notes = []
     for name in sorted(grouped.keys()):
         sel = select_pub_package(name, grouped[name], pins.get(name, []))
         if sel.error:
-            return {}, [], sel.error, sel.error_shape
+            return {}, {}, [], sel.error, sel.error_shape
         if sel.note:
             notes.append(sel.note)
         if sel.selected != None:
@@ -294,7 +301,9 @@ def select_all_explicit(package_tags, lock_tags):
                 sha256 = sel.selected.sha256,
                 deps = sel.selected.deps,
             )
-    return explicit, notes, None, ""
+        elif sel.alias != None:
+            aliases[name] = sel.alias
+    return explicit, aliases, notes, None, ""
 
 def select_pub_package(name, decls, root_entries):
     """Resolves the winning `pub.package()` declaration for one package.
@@ -307,17 +316,20 @@ def select_pub_package(name, decls, root_entries):
         package (see `root_hosted_lock_entries`), in any order.
 
     Returns:
-      `struct(selected, note, error, error_shape)`: `selected` is the
+      `struct(selected, alias, note, error, error_shape)`: `selected` is the
       winning declaration `(version, sha256, deps, source)` or None when no
-      `pub.package()` applies (the locks resolve the package); `note` is
-      the informational NOTE when a root pin overrides a different
-      version; `error` with `error_shape` (`"sha"` or `"conflict"`) reports
-      the failure.
+      `pub.package()` applies (the locks resolve the package); `alias` is
+      `(version, sha256, source)` when declarations exist but a root lock
+      pin resolves the package, telling the caller to generate the
+      package-named repository as an alias to the lock spoke at the root's
+      version, or None otherwise; `note` is the informational NOTE when a
+      root pin overrides a different version; `error` with `error_shape`
+      (`"sha"` or `"conflict"`) reports the failure.
     """
     for decl in decls:
         err = pub_package_sha256_error(decl.name, decl.version, decl.sha256)
         if err:
-            return struct(selected = None, note = None, error = err, error_shape = "sha")
+            return struct(selected = None, alias = None, note = None, error = err, error_shape = "sha")
     clean = [struct(
         is_root = decl.is_root,
         module = decl.module,
@@ -330,33 +342,39 @@ def select_pub_package(name, decls, root_entries):
     dep_decls = [decl for decl in clean if not decl.is_root]
     root_decl, err = _fold_same_level(root_decls)
     if err:
-        return struct(selected = None, note = None, error = err, error_shape = "conflict")
+        return struct(selected = None, alias = None, note = None, error = err, error_shape = "conflict")
     if root_decl:
         pin = struct(version = root_decl.version, sha256 = root_decl.sha256, source = "the root module's pub.package()")
         err = _root_decl_lock_error(name, pin, root_entries)
         if err:
-            return struct(selected = None, note = None, error = err, error_shape = "conflict")
+            return struct(selected = None, alias = None, note = None, error = err, error_shape = "conflict")
     else:
         pin, err = _lock_pin(name, root_entries)
         if err:
-            return struct(selected = None, note = None, error = err, error_shape = "conflict")
+            return struct(selected = None, alias = None, note = None, error = err, error_shape = "conflict")
     if pin == None:
         winner, err = _fold_same_level(dep_decls)
         if err:
-            return struct(selected = None, note = None, error = err, error_shape = "conflict")
+            return struct(selected = None, alias = None, note = None, error = err, error_shape = "conflict")
         if winner == None:
-            return struct(selected = None, note = None, error = None, error_shape = "")
+            return struct(selected = None, alias = None, note = None, error = None, error_shape = "")
         return struct(
             selected = struct(version = winner.version, sha256 = winner.sha256, deps = winner.deps, source = "pub.package() from module \"%s\"" % winner.module),
+            alias = None,
             note = None,
             error = None,
             error_shape = "",
         )
     note, err = _drop_dep_decls(name, pin, pin.source, dep_decls)
     if err:
-        return struct(selected = None, note = None, error = err, error_shape = "conflict")
+        return struct(selected = None, alias = None, note = None, error = err, error_shape = "conflict")
     if root_decl:
         selected = struct(version = root_decl.version, sha256 = root_decl.sha256, deps = root_decl.deps, source = pin.source)
+        alias = None
+    elif dep_decls:
+        selected = None
+        alias = struct(version = pin.version, sha256 = pin.sha256, source = pin.source)
     else:
         selected = None
-    return struct(selected = selected, note = note, error = None, error_shape = "")
+        alias = None
+    return struct(selected = selected, alias = alias, note = note, error = None, error_shape = "")
