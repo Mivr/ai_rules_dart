@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
 
+import '../../guard/lib/directive_guard.dart' as guard;
 import 'app_jit_snapshot.dart' as snapshot;
 import 'comma_patch.dart' as comma;
 import 'dill_reader.dart'
@@ -1884,9 +1885,9 @@ void main(List<String> args) {
           "import 'dart:async' if (dart.library.io) 'FILE:///secret.dart';\n"
           'Future<void> f() async {}\n',
         );
-      // The mirror classifies exactly what the planner classifies.
+      // The shared check classifies exactly what the planner classifies.
       expect(
-        snapshot.findDisallowedDirectives({
+        guard.findDisallowedDirectives({
           main.path: main.readAsStringSync(),
           conditional.path: conditional.readAsStringSync(),
         }, tool: 'app_jit_snapshot'),
@@ -1934,7 +1935,7 @@ void main(List<String> args) {
       // The classifier refuses the asset-library URI as an other-scheme
       // import: user sources can never name it, manifest or not.
       expect(
-        snapshot.findDisallowedDirectives({
+        guard.findDisallowedDirectives({
           main.path: main.readAsStringSync(),
         }, tool: 'app_jit_snapshot'),
         [

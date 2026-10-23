@@ -6,17 +6,15 @@ import 'package:test/test.dart';
 
 import '../../guard/lib/directive_guard.dart';
 
-/// Unit tests for the shared staged-source check, the byte-identity of its one
-/// remaining mirror, and the enumeration of every Dart-reading tool through it.
+/// Unit tests for the shared staged-source check, the absence of its former
+/// copies, and the enumeration of every Dart-reading tool through it.
 ///
 /// The shared check lives in the public `package:rules_dart_guard` library
-/// (`dart/guard/lib/directive_guard.dart`), which every tool below imports —
-/// except the two that cannot: the whole-program `gen_kernel` wrapper runs
-/// from source (`app_jit_snapshot.dart`), and the modular kernel planner
-/// takes no `deps` edge (every `dart_library` names it, so that would be a
-/// cycle) and reads the same file through `srcs` instead. The wrapper's copy
-/// is byte-identical to the library's marked block, pinned by the mirror test
-/// below, so it still classifies exactly what the shared check classifies.
+/// (`dart/guard/lib/directive_guard.dart`). Every tool below enforces it: the
+/// whole-program `gen_kernel` wrapper imports it from source through its
+/// staged tool bundle, and the modular kernel planner — which takes no `deps`
+/// edge (every `dart_library` names it, so that would be a cycle) — reads the
+/// same file through `srcs` instead. One copy classifies every compile.
 ///
 /// A Dart-reading tool that stops enforcing the check must fail the
 /// `every tool enforces the shared check` test below: each tool source is
@@ -60,22 +58,6 @@ Map<String, String> _toolSources(List<String> args) {
     sources[arg.split('/').last] = runfiles.rlocation(arg);
   }
   return sources;
-}
-
-/// The staged-resolver mirror region of a tool source: the lines between the
-/// `BEGIN` and `END` markers, trailing whitespace stripped.
-String _mirrorRegion(String name, String text) {
-  final lines = text.split('\n').map((line) => line.trimRight()).toList();
-  final begin = lines.indexWhere(
-    (line) => line.startsWith('// BEGIN staged-resolver-mirror'),
-  );
-  final end = lines.indexWhere(
-    (line) => line == '// END staged-resolver-mirror',
-  );
-  expect(begin, isNot(-1), reason: '$name lacks the mirror BEGIN marker');
-  expect(end, isNot(-1), reason: '$name lacks the mirror END marker');
-  expect(end, greaterThan(begin), reason: '$name has an empty mirror region');
-  return lines.sublist(begin + 1, end).join('\n');
 }
 
 void main(List<String> args) {
@@ -596,27 +578,22 @@ void main(List<String> args) {
     });
   });
 
-  group('staged-resolver mirrors', () {
-    test('the library and the wrapper copies are byte-identical', () {
+  group('no staged-resolver copies', () {
+    test('the wrapper imports the shared library instead of copying it', () {
       final sources = _toolSources(args);
-      final guard = _mirrorRegion(
-        'directive_guard.dart',
-        File(sources['directive_guard.dart']!).readAsStringSync(),
-      );
-      final appJit = _mirrorRegion(
-        'app_jit_snapshot.dart',
-        File(sources['app_jit_snapshot.dart']!).readAsStringSync(),
-      );
-      expect(appJit, guard);
+      final text = File(sources['app_jit_snapshot.dart']!).readAsStringSync();
+      expect(text, contains("import '../../guard/lib/directive_guard.dart';"));
+      expect(text, isNot(contains('staged-resolver-mirror')));
+      expect(text, isNot(contains('Mirror of `directive_guard.dart`')));
     });
   });
 
   group('every tool enforces the shared check', () {
     // Each Dart-reading tool and the marker proving it enforces the shared
     // staged-source check: the runners call it directly, the whole-program
-    // gen_kernel wrapper enforces its byte-identical mirror, the modular
-    // kernel planner resolves every directive through the shared file it
-    // reads through `srcs`, and the builder shims import the shared library.
+    // gen_kernel wrapper scans through the shared library it imports, the
+    // modular kernel planner resolves every directive through the shared file
+    // it reads through `srcs`, and the builder shims import the shared library.
     // A tool without its marker fails.
     const markers = {
       'analyze_runner.dart': 'findStagedDirectiveViolations(',

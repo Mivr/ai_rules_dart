@@ -37,12 +37,6 @@
 //   tools that stage their own trees; `scanAllDirectiveUris(source)` lists a
 //   source's directives without evaluating `if` conditions.
 //
-// One copy of the staged-source half below lives where an import is
-// impossible: the whole-program `gen_kernel` wrapper runs from source
-// (`dart/private/tools/app_jit_snapshot.dart`). That copy is byte-identical
-// to the marked block below (pinned by `directive_guard_test.dart`), so it
-// classifies exactly what the shared check classifies.
-//
 // The Dart front end loads `file:` URIs straight off the host filesystem,
 // outside every `--multi-root` (and outside the sandbox roots a spawn sees),
 // so a planner that resolves such a URI to nothing and compiles anyway embeds
@@ -72,11 +66,6 @@ String? _stripPrefix(String uri, String multiRootPrefix) {
   }
   return null;
 }
-
-// BEGIN staged-resolver-mirror: byte-identical in
-// dart/guard/lib/directive_guard.dart and
-// dart/private/tools/app_jit_snapshot.dart (pinned by
-// directive_guard_test.dart). Edit only by syncing both copies.
 
 /// Decodes one raw URI path segment the way the front end does (RFC 3986): each
 /// valid `%XX` escape becomes its byte (bytes together decode as UTF-8, either
@@ -385,8 +374,6 @@ bool hasEmptyPathSegment(String uri) {
 /// (A single-line literal spelling the break as an escape — `'a\nb.dart'` —
 /// is refused too. No clean program names a file that way.)
 bool hasLineBreak(String uri) => uri.contains('\n') || uri.contains('\r');
-
-// END staged-resolver-mirror
 
 /// The segments of the longest [packageDirs] directory holding `fromKey`, or
 /// the empty list when no package holds it (an unpackaged file).
@@ -1246,8 +1233,9 @@ Set<String> _stagedRootSpellings(String root) {
 /// clean. The one shared staged-source check every rules_dart tool that reads
 /// Dart sources enforces before the compiler or analyzer runs: the analyze,
 /// summary, fix and web runners and the link-hook runner call it directly,
-/// while the whole-program `gen_kernel` wrapper and the builder shims enforce
-/// their byte-identical copies (see above).
+/// while the whole-program `gen_kernel` wrapper builds its own input check on
+/// the same shared scanner, and the builder shims run their own
+/// analyzer-based staged check.
 ///
 /// Beyond the scheme check ([findDisallowedDirectives]), every schemeless
 /// relative (and `/`-absolute, which the analyzer reads off the filesystem
