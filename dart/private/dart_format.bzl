@@ -90,10 +90,12 @@ dart_format = rule(
     implementation = _dart_format_impl,
     attrs = dict({
         "_config": attr.label(
+            doc = "Analysis configuration whose options files the rule stages so each file meets the formatter settings the check applies. Defaults to `//dart:analysis_config`.",
             default = "//dart:analysis_config",
             providers = [DartAnalysisConfigInfo],
         ),
         "_format_writer": attr.label(
+            doc = "Executable symlinked as this rule's output, formatting the named files in a scratch project and writing back the changed ones. Defaults to `//dart/private/tools:format_writer`.",
             default = "//dart/private/tools:format_writer",
             executable = True,
             cfg = "target",

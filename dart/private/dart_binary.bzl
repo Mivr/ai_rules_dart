@@ -406,6 +406,7 @@ Every other flag goes to `dart compile`. In the `kernel` mode, setting `dart_com
             allow_files = True,
         ),
         "_comma_patch": attr.label(
+            doc = "The `comma_patch.dart` source staged beside the JIT tool's entry so comma-containing `-D` values survive the front end. Defaults to `//dart/private/tools:comma_patch.dart`.",
             default = "//dart/private/tools:comma_patch.dart",
             allow_single_file = True,
         ),
@@ -443,6 +444,7 @@ In the `exe` and `aot-snapshot` modes the compiler records them as it tree-shake
 the empty JSON object `{}` (`kind = "empty"`).""",
         ),
         "_allowlist_function_transition": attr.label(
+            doc = "Allowlist target permitting the Starlark function transition this rule applies. Defaults to `@bazel_tools//tools/allowlists/function_transition_allowlist`.",
             default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
         ),
     }, **dict(DART_ABI_CONSTRAINT_ATTRS, **dict(EXTRA_DART_DEFINES_ATTR, **dict(EXECUTABLE_PACKAGE_ATTRS, **BINARY_MODULAR_KERNEL_ATTRS)))),

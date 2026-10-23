@@ -547,10 +547,12 @@ dart_codegen = rule(
             aspects = [dart_analyzer_summary],
         ),
         "_analyzer_summaries": attr.label(
+            doc = "Build setting telling the generator's analyzer whether to read dependency summaries in place of sources. Defaults to `//dart:analyzer_summaries`.",
             default = "//dart:analyzer_summaries",
             providers = [BuildSettingInfo],
         ),
         "_analyzer_sdk_summary": attr.label(
+            doc = "Prebuilt summary of the SDK's own libraries, read by the generator's analyzer alongside the dependency summaries. Defaults to `//dart/private:analyzer_sdk_summary_input`.",
             default = "//dart/private:analyzer_sdk_summary_input",
             allow_single_file = True,
         ),

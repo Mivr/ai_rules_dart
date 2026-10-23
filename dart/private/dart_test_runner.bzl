@@ -281,10 +281,12 @@ dart_test_runner_snapshot = rule(
             allow_files = True,
         ),
         "_comma_patch": attr.label(
+            doc = "The `comma_patch.dart` source staged beside the JIT tool's entry when training the runner snapshot from source. Defaults to `//dart/private/tools:comma_patch.dart`.",
             default = "//dart/private/tools:comma_patch.dart",
             allow_single_file = True,
         ),
         "_enabled": attr.label(
+            doc = "Build setting gating snapshot training: when off, tests run the runner's kernel instead of a trained app-JIT snapshot. Defaults to `//dart:test_runner_snapshot`.",
             default = "//dart:test_runner_snapshot",
             providers = [BuildSettingInfo],
         ),
