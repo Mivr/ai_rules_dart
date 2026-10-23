@@ -16,6 +16,7 @@ value survives.
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load("//dart:defs.bzl", "dart_binary")
 load("//dart/private:common.bzl", "has_comma_define")
+load(":pruned_inputs.bzl", "pruned_inputs_settings")
 load(":small_suite.bzl", "small_unittest_suite")
 
 # --- has_comma_define ---
@@ -76,7 +77,10 @@ def _whole_program_comma_test_impl(ctx):
     )
     return analysistest.end(env)
 
-_whole_program_comma_test = analysistest.make(_whole_program_comma_test_impl)
+_whole_program_comma_test = analysistest.make(
+    _whole_program_comma_test_impl,
+    config_settings = pruned_inputs_settings(),
+)
 
 def _whole_program_plain_test_impl(ctx):
     env = analysistest.begin(ctx)
@@ -161,7 +165,10 @@ def _patch_action_dartvm_test_impl(ctx):
         )
     return analysistest.end(env)
 
-_patch_action_dartvm_test = analysistest.make(_patch_action_dartvm_test_impl)
+_patch_action_dartvm_test = analysistest.make(
+    _patch_action_dartvm_test_impl,
+    config_settings = pruned_inputs_settings(),
+)
 
 def snapshot_patch_test_suite(name):
     """Declares the patched-snapshot selection tests as one suite.

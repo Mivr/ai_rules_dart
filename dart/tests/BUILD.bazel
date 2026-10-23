@@ -1,4 +1,5 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("//dart:defs.bzl", "dart_test")
 load(":analyzer_summary_test.bzl", "analyzer_summary_test_suite")
 load(":code_asset_test.bzl", "code_asset_test_suite")
@@ -32,6 +33,17 @@ load(":yaml_parser_test.bzl", "yaml_parser_test_suite")
 load(":yaml_subset_test.bzl", "yaml_subset_test_suite")
 
 versions_test_suite(name = "versions_test")
+
+# Build setting read by no rule, set only by the `pruned_inputs.bzl` analysis
+# tests (see that file): it puts the target under test in a configuration no
+# build uses, so `unused_inputs_list` pruning from an executed build can never
+# rewrite the inputs those tests inspect. The default (`False`) keeps every
+# normal, `-c dbg`, and hermeticity build on the shared configuration.
+bool_flag(
+    name = "pruned_inputs_isolation",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
 
 toolchains_test_suite(name = "toolchains_test")
 

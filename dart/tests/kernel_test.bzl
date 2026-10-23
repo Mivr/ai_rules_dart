@@ -34,6 +34,7 @@ load(
     "stable_path",
 )
 load("//dart/private:dart_test_runner.bzl", "dart_test_runner_main")
+load(":pruned_inputs.bzl", "pruned_inputs_settings")
 load(":small_suite.bzl", "small_unittest_suite")
 
 def _pkg(package_name, lib_root, language_version = ""):
@@ -584,6 +585,7 @@ def _kernel_module_action_custom_params_test_impl(ctx):
 
 _kernel_module_action_custom_params_test = analysistest.make(
     _kernel_module_action_custom_params_test_impl,
+    config_settings = pruned_inputs_settings(),
 )
 
 def _dummy_dart_source_impl(ctx):
@@ -706,9 +708,9 @@ def _comma_defines_modular_binary_test_impl(ctx):
 
 _comma_defines_modular_binary_test = analysistest.make(
     _comma_defines_modular_binary_test_impl,
-    config_settings = {
+    config_settings = pruned_inputs_settings({
         str(Label("//dart:extra_dart_defines")): ["COMMA_FLAG=a,b"],
-    },
+    }),
 )
 
 def _unseeded_base_kmods_fixture_impl(ctx):
@@ -1011,7 +1013,10 @@ def _cross_pkg_cycle_inputs_test_impl(ctx):
     )
     return analysistest.end(env)
 
-_cross_pkg_cycle_inputs_test = analysistest.make(_cross_pkg_cycle_inputs_test_impl)
+_cross_pkg_cycle_inputs_test = analysistest.make(
+    _cross_pkg_cycle_inputs_test_impl,
+    config_settings = pruned_inputs_settings(),
+)
 
 def _part_sources_inputs_test_impl(ctx):
     env = analysistest.begin(ctx)
