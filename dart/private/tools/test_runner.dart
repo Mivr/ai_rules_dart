@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:runfiles/runfiles.dart';
 
+import 'test_runner_workspace.dart' as staging;
+
 /// Runs a `dart_test`'s pre-compiled kernel with asserts enabled.
 ///
 /// `dart_test` compiles the test at build time, so this launcher only resolves
@@ -96,14 +98,8 @@ const _noTestsRan = 79;
 /// files, so a failure to remove one must not fail the run or mask its exit
 /// code. Only filesystem failures are ignored; anything else is a programming
 /// error and propagates.
-void deleteScratchQuietly(FileSystemEntity entity) {
-  if (!entity.existsSync()) return;
-  try {
-    entity.deleteSync(recursive: true);
-  } on FileSystemException {
-    // Best-effort cleanup; the run already has its result.
-  }
-}
+void deleteScratchQuietly(FileSystemEntity entity) =>
+    staging.deleteScratchQuietly(entity);
 
 Future<int> _runDirectly(
   String dart,
@@ -130,12 +126,15 @@ Future<int> _runDirectly(
     );
     return 1;
   }
-  final inPlace = _workspaceInPlace(manifest: manifest, workspace: workspace);
+  final inPlace = staging.workspaceInPlace(
+    manifest: manifest,
+    workspace: workspace,
+  );
   Directory? scratch;
   if (!inPlace) {
     scratch = Directory(env['TEST_TMPDIR'] ?? Directory.systemTemp.path)
         .createTempSync('dart_test.');
-    materializeWorkspace(
+    staging.materializeWorkspace(
       manifest: File(manifest!).readAsLinesSync(),
       workspace: workspace!,
       into: scratch.path,
@@ -189,7 +188,7 @@ Future<int> _runUnderRunner({
     workspace: workspace,
     tmp: tmp,
   );
-  final report = _join(tmp.path, 'results.json');
+  final report = staging.joinPaths(tmp.path, 'results.json');
 
   final vm = await Process.start(
     dart,
@@ -211,7 +210,10 @@ Future<int> _runUnderRunner({
       // does not exist means none: a developer's own settings must not change
       // what a test does under Bazel, and Bazel's Windows test environment has
       // no LOCALAPPDATA for the runner to read at all.
-      'DART_TEST_CONFIG': _join(tmp.path, 'no_global_config/DartTest.yaml'),
+      'DART_TEST_CONFIG': staging.joinPaths(
+        tmp.path,
+        'no_global_config/DartTest.yaml',
+      ),
     },
     mode: ProcessStartMode.inheritStdio,
   );
@@ -267,7 +269,7 @@ bool _isRunnableLayout({
   var precompiled = dill.substring(0, dill.length - suffix.length);
   File? combined;
   if (baseDill != null) {
-    final combinedPath = _join(
+    final combinedPath = staging.joinPaths(
       tmp.path,
       'precompiled/$testPath.vm_test.vm.app.dill',
     );
@@ -294,7 +296,7 @@ bool _stageSuiteWorkspace({
   required String? workspace,
   required Directory tmp,
 }) {
-  final inPlace = _workspaceInPlace(
+  final inPlace = staging.workspaceInPlace(
     testPath: testPath,
     manifest: manifest,
     workspace: workspace,
@@ -303,13 +305,13 @@ bool _stageSuiteWorkspace({
     // The workspace's runfiles are laid out in the scratch directory, so `data`
     // is found by workspace-relative path as it is in a runfiles tree.
     if (manifest != null && workspace != null) {
-      materializeWorkspace(
+      staging.materializeWorkspace(
         manifest: File(manifest).readAsLinesSync(),
         workspace: workspace,
         into: tmp.path,
       );
     }
-    final inScratch = File(_join(tmp.path, testPath));
+    final inScratch = File(staging.joinPaths(tmp.path, testPath));
     if (!inScratch.existsSync()) {
       File(testSource).copySync(inScratch.path);
     }
@@ -455,32 +457,6 @@ Map<String, String> _childRunfilesEnv(
   return out;
 }
 
-bool _workspaceInPlace({
-  String? testPath,
-  String? manifest,
-  String? workspace,
-}) {
-  if (testPath != null && !File(testPath).existsSync()) {
-    return false;
-  }
-  if (manifest == null || workspace == null) {
-    return true;
-  }
-  final prefix = '$workspace/';
-  for (final line in File(manifest).readAsLinesSync()) {
-    final space = line.indexOf(' ');
-    if (space < 0 || !line.startsWith(prefix)) continue;
-    final relative = line.substring(prefix.length, space);
-    final real = line.substring(space + 1);
-    if (Directory(real).existsSync()) {
-      if (!Directory(relative).existsSync()) return false;
-    } else if (File(real).existsSync()) {
-      if (!File(relative).existsSync()) return false;
-    }
-  }
-  return true;
-}
-
 /// Lays out `workspace`'s runfiles under [into] from the lines of a runfiles
 /// manifest, each `<runfiles path> <real path>`.
 ///
@@ -493,42 +469,11 @@ void materializeWorkspace({
   required String workspace,
   required String into,
 }) {
-  final prefix = '$workspace/';
-  for (final line in manifest) {
-    final space = line.indexOf(' ');
-    if (space < 0 || !line.startsWith(prefix)) continue;
-    final relative = line.substring(prefix.length, space);
-    final real = line.substring(space + 1);
-    final destination = _join(into, relative);
-    if (Directory(real).existsSync()) {
-      _copyDirectory(Directory(real), Directory(destination));
-    } else if (File(real).existsSync()) {
-      final destFile = File(destination);
-      destFile.parent.createSync(recursive: true);
-      if (destFile.existsSync()) {
-        destFile.deleteSync();
-      }
-      File(real).copySync(destination);
-    }
-  }
-}
-
-void _copyDirectory(Directory from, Directory to) {
-  to.createSync(recursive: true);
-  for (final entity in from.listSync(recursive: true, followLinks: true)) {
-    final relative = entity.path.substring(from.path.length + 1);
-    final target = _join(to.path, relative.replaceAll(r'\', '/'));
-    if (entity is Directory) {
-      Directory(target).createSync(recursive: true);
-    } else if (entity is File) {
-      final targetFile = File(target);
-      targetFile.parent.createSync(recursive: true);
-      if (targetFile.existsSync()) {
-        targetFile.deleteSync();
-      }
-      entity.copySync(target);
-    }
-  }
+  staging.materializeWorkspace(
+    manifest: manifest,
+    workspace: workspace,
+    into: into,
+  );
 }
 
 /// Converts `package:test`'s JSON reporter output into JUnit XML, one
@@ -653,10 +598,3 @@ String _text(String s) =>
     s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 
 String _attr(String s) => _text(s).replaceAll('"', '&quot;');
-
-/// Joins a forward-slashed relative path onto [base], creating its parents.
-String _join(String base, String relative) {
-  final path = [base, ...relative.split('/')].join(Platform.pathSeparator);
-  File(path).parent.createSync(recursive: true);
-  return path;
-}

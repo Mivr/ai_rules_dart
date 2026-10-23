@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:runfiles/runfiles.dart';
 
+import 'test_runner_workspace.dart' as staging;
+
 /// Runs a `dart_binary(compile_mode = "kernel", launcher = True)` kernel with
 /// the Dart VM that compiled it.
 ///
@@ -33,10 +35,14 @@ Future<void> main(List<String> args) async {
   if (manifestFile != null && cwd.parent.path.endsWith('.runfiles')) {
     final segments = cwd.uri.pathSegments.where((s) => s.isNotEmpty).toList();
     final workspace = segments.isEmpty ? null : segments.last;
-    if (workspace != null && !_workspaceInPlace(manifestFile, workspace)) {
+    if (workspace != null &&
+        !staging.workspaceInPlace(
+          manifest: manifestFile,
+          workspace: workspace,
+        )) {
       scratch = Directory(env['TEST_TMPDIR'] ?? Directory.systemTemp.path)
           .createTempSync('dart_binary.');
-      _materializeWorkspace(
+      staging.materializeWorkspace(
         manifest: File(manifestFile).readAsLinesSync(),
         workspace: workspace,
         into: scratch.path,
@@ -71,14 +77,8 @@ Future<void> main(List<String> args) async {
 /// files, so a failure to remove one must not fail the run or mask its exit
 /// code. Only filesystem failures are ignored; anything else is a programming
 /// error and propagates.
-void deleteScratchQuietly(FileSystemEntity entity) {
-  if (!entity.existsSync()) return;
-  try {
-    entity.deleteSync(recursive: true);
-  } on FileSystemException {
-    // Best-effort cleanup; the run already has its result.
-  }
-}
+void deleteScratchQuietly(FileSystemEntity entity) =>
+    staging.deleteScratchQuietly(entity);
 
 String? _findRunfilesDir(Map<String, String> env) {
   final fromEnv = env['RUNFILES_DIR'];
@@ -260,71 +260,6 @@ String _resolvePath(
   }
   stderr.writeln('kernel_launcher: could not resolve $rlocationKey');
   exit(1);
-}
-
-bool _workspaceInPlace(String manifest, String workspace) {
-  final prefix = '$workspace/';
-  for (final line in File(manifest).readAsLinesSync()) {
-    final space = line.indexOf(' ');
-    if (space < 0 || !line.startsWith(prefix)) continue;
-    final relative = line.substring(prefix.length, space);
-    final real = line.substring(space + 1);
-    if (Directory(real).existsSync()) {
-      if (!Directory(relative).existsSync()) return false;
-    } else if (File(real).existsSync()) {
-      if (!File(relative).existsSync()) return false;
-    }
-  }
-  return true;
-}
-
-void _materializeWorkspace({
-  required List<String> manifest,
-  required String workspace,
-  required String into,
-}) {
-  final prefix = '$workspace/';
-  for (final line in manifest) {
-    final space = line.indexOf(' ');
-    if (space < 0 || !line.startsWith(prefix)) continue;
-    final relative = line.substring(prefix.length, space);
-    final real = line.substring(space + 1);
-    final destination = _join(into, relative);
-    if (Directory(real).existsSync()) {
-      _copyDirectory(Directory(real), Directory(destination));
-    } else if (File(real).existsSync()) {
-      final destFile = File(destination);
-      destFile.parent.createSync(recursive: true);
-      if (destFile.existsSync()) {
-        destFile.deleteSync();
-      }
-      File(real).copySync(destination);
-    }
-  }
-}
-
-void _copyDirectory(Directory from, Directory to) {
-  to.createSync(recursive: true);
-  for (final entity in from.listSync(recursive: true, followLinks: true)) {
-    final relative = entity.path.substring(from.path.length + 1);
-    final target = _join(to.path, relative.replaceAll(r'\', '/'));
-    if (entity is Directory) {
-      Directory(target).createSync(recursive: true);
-    } else if (entity is File) {
-      final targetFile = File(target);
-      targetFile.parent.createSync(recursive: true);
-      if (targetFile.existsSync()) {
-        targetFile.deleteSync();
-      }
-      entity.copySync(target);
-    }
-  }
-}
-
-String _join(String base, String relative) {
-  final path = [base, ...relative.split('/')].join(Platform.pathSeparator);
-  File(path).parent.createSync(recursive: true);
-  return path;
 }
 
 // Private aliases retained for internal callers and older tests.
