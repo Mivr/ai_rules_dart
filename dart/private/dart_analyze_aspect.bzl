@@ -932,33 +932,40 @@ dart_analyze = aspect(
     requires = [dart_analyzer_summary],
     attrs = {
         "_config": attr.label(
+            doc = "Analysis configuration (options files and language versions) every analyze, fix and format action reads. Defaults to `//dart:analysis_config`.",
             default = "//dart:analysis_config",
             providers = [DartAnalysisConfigInfo],
         ),
         "_summaries": attr.label(
+            doc = "Build setting switching the aspect between source mode and analyzer-summary mode. Defaults to `//dart:analyzer_summaries`.",
             default = "//dart:analyzer_summaries",
             providers = [BuildSettingInfo],
         ),
         "_sdk_summary": attr.label(
+            doc = "Prebuilt summary of the SDK's own libraries, read by every summary-mode action alongside the package summaries. Defaults to `//dart/private:analyzer_sdk_summary_input`.",
             default = "//dart/private:analyzer_sdk_summary_input",
             allow_single_file = True,
         ),
         "_summary_tool": attr.label(
+            doc = "Executable writing a package summary consumed by summary-mode analysis. Defaults to `//dart/private:analyzer_summary_tool`.",
             default = "//dart/private:analyzer_summary_tool",
             executable = True,
             cfg = "exec",
         ),
         "_analyze_tool": attr.label(
+            doc = "Executable running `dart analyze` over the staged project. Defaults to `//dart/private/tools:analyze_runner`.",
             default = "//dart/private/tools:analyze_runner",
             executable = True,
             cfg = "exec",
         ),
         "_fix_tool": attr.label(
+            doc = "Executable computing `dart fix` edits for the staged project. Defaults to `//dart/private/tools:fix_runner`.",
             default = "//dart/private/tools:fix_runner",
             executable = True,
             cfg = "exec",
         ),
         "_format_tool": attr.label(
+            doc = "Executable checking `dart format` output for the staged project. Defaults to `//dart/private/tools:format_runner`.",
             default = "//dart/private/tools:format_runner",
             executable = True,
             cfg = "exec",

@@ -233,6 +233,7 @@ analyzer_sdk_summary = rule(
     implementation = _analyzer_sdk_summary_impl,
     attrs = {
         "_tool": attr.label(
+            doc = "Executable summarizing the SDK's own libraries into the summary every summary-mode action reads. Defaults to `//dart/private/tools:analyzer_summary`.",
             default = "//dart/private/tools:analyzer_summary",
             executable = True,
             cfg = "exec",
@@ -821,14 +822,17 @@ dart_analyzer_summary = aspect(
     attr_aspects = ["deps", "library", "_sky_engine"],
     attrs = {
         "_enabled": attr.label(
+            doc = "Build setting gating the aspect: with summary mode off, targets propagate no summaries. Defaults to `//dart:analyzer_summaries`.",
             default = "//dart:analyzer_summaries",
             providers = [BuildSettingInfo],
         ),
         "_sdk_summary": attr.label(
+            doc = "Prebuilt summary of the SDK's own libraries, read alongside each package summary because dependency summaries refer to SDK libraries. Defaults to `//dart/private:analyzer_sdk_summary_input`.",
             default = "//dart/private:analyzer_sdk_summary_input",
             allow_single_file = True,
         ),
         "_tool": attr.label(
+            doc = "Executable summarizing a package's libraries for `dart_analyze`'s analyzer-summary mode. Defaults to `//dart/private:analyzer_summary_tool`.",
             default = "//dart/private:analyzer_summary_tool",
             executable = True,
             cfg = "exec",
