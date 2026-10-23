@@ -1700,6 +1700,31 @@ void main(List<String> args) {
     },
   );
 
+  test('an unstaged compile that reads a long-named undeclared file is redone isolated', () async {
+    _write('pkg/lib/a.dart', 'class A {}\n');
+    // A 200-character name encodes its source-table length in two UInt30
+    // bytes: the read-set check must walk it exactly to refuse the compile.
+    final piece = 'pkg/lib/${'p' * 200}.dart';
+    final compiler = _DillWritingCompiler(
+      () => _buildDillWithUris([_uri('pkg/lib/a.dart'), _uri(piece)]),
+    );
+    final result = await _compile(
+      'm_long_undeclared',
+      ['pkg/lib/a.dart'],
+      inputs: [
+        _encodeInputForTest(
+          '${_root.path}/pkg/lib/a.dart',
+          Uint8List.fromList([7]),
+        ),
+      ],
+      compiler: compiler,
+    );
+    expect(result.calls.length, 2, reason: 'unstaged, then isolated');
+    expect(result.log, contains('which is not a declared input'));
+    expect(result.code, 1);
+    expect(result.log, contains('failing the compile'));
+  });
+
   test(
     'an unstaged compile that reads only declared files runs once',
     () async {

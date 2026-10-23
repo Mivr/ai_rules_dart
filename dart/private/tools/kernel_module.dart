@@ -558,40 +558,50 @@ typedef _IsolatedRoot = ({
 /// The entry kernel's file name within the module's directory.
 const _entryDillName = 'entry.dill';
 
-/// Compiles with [runCompile] and verifies the read set of [dillPath]. An
-/// unverified unstaged success is redone after [stage] isolates the compile.
-/// Returns the outcome and the (possibly newly staged) isolated root; [refused]
-/// reports an isolated result that still read outside the declared inputs — a
-/// `file:` URI reads the host whatever the multi-root holds — whose result is
-/// refused, never accepted.
+/// The inputs a post-compile read-set verification consults: the kernel it
+/// checks, the declared file view, the closure graph, the multi-root layout,
+/// the log, the entry's own URIs and the package roots. One object travels
+/// from the compile through the unstaged check to the isolated verdict.
+final class _VerifyReads {
+  const _VerifyReads({
+    required this.dillPath,
+    required this.files,
+    required this.graph,
+    required this.multiRoots,
+    required this.multiRootPrefix,
+    required this.log,
+    required this.ownUris,
+    required this.roots,
+  });
+
+  final String dillPath;
+  final _Files files;
+  final Map<String, _Node> graph;
+  final List<String> multiRoots;
+  final String multiRootPrefix;
+  final StringBuffer log;
+  final Set<String> ownUris;
+  final Map<String, _PackageRoot> roots;
+}
+
+/// Compiles with [runCompile] and verifies the read set of [verify.dillPath].
+/// An unverified unstaged success is redone after [stage] isolates the
+/// compile. Returns the outcome and the (possibly newly staged) isolated
+/// root; [refused] reports an isolated result that still read outside the
+/// declared inputs — a `file:` URI reads the host whatever the multi-root
+/// holds — whose result is refused, never accepted.
 Future<({ModuleOutcome outcome, _IsolatedRoot? isolated, bool refused})>
 _compileAndVerify(
   Future<ModuleOutcome> Function(_IsolatedRoot? isolated) runCompile,
   Future<_IsolatedRoot> Function() stage,
   _IsolatedRoot? isolated,
-  String dillPath,
-  _Files files,
-  Map<String, _Node> graph,
-  List<String> multiRoots,
-  String multiRootPrefix,
-  StringBuffer log,
-  Set<String> ownUris,
-  Map<String, _PackageRoot> roots,
+  _VerifyReads verify,
 ) async {
   var current = isolated;
   var outcome = await runCompile(current);
   var verified = false;
   if (outcome.exitCode == 0 && current == null) {
-    if (await _unstagedReadsAreDeclared(
-      dillPath,
-      files,
-      graph,
-      multiRoots,
-      multiRootPrefix,
-      log,
-      ownUris,
-      roots,
-    )) {
+    if (await _unstagedReadsAreDeclared(verify)) {
       verified = true;
     } else {
       // The plan missed a file the front end read (a directive spelling the
@@ -604,14 +614,7 @@ _compileAndVerify(
   if (outcome.exitCode == 0 &&
       !verified &&
       !await _unstagedReadsAreDeclared(
-        dillPath,
-        files,
-        graph,
-        multiRoots,
-        multiRootPrefix,
-        log,
-        ownUris,
-        roots,
+        verify,
         consequence: 'failing the compile',
       )) {
     return (outcome: outcome, isolated: current, refused: true);
@@ -929,14 +932,16 @@ class _ModuleBuild {
             _compileEntry(current, extraMultiRoots, entry, stagedInputs),
         _stageIsolated,
         isolated,
-        '${options.output!}/$_entryDillName',
-        files,
-        graph,
-        options.multiRoots,
-        options.multiRootPrefix,
-        log,
-        entry.uris.toSet(),
-        roots,
+        _VerifyReads(
+          dillPath: '${options.output!}/$_entryDillName',
+          files: files,
+          graph: graph,
+          multiRoots: options.multiRoots,
+          multiRootPrefix: options.multiRootPrefix,
+          log: log,
+          ownUris: entry.uris.toSet(),
+          roots: roots,
+        ),
       );
       isolated = result.isolated;
       if (result.refused) {
@@ -1225,14 +1230,16 @@ class _ModuleBuild {
       ),
       _stageIsolated,
       current,
-      dillPath,
-      files,
-      local,
-      options.multiRoots,
-      options.multiRootPrefix,
-      log,
-      scc.uris.toSet(),
-      roots,
+      _VerifyReads(
+        dillPath: dillPath,
+        files: files,
+        graph: local,
+        multiRoots: options.multiRoots,
+        multiRootPrefix: options.multiRootPrefix,
+        log: log,
+        ownUris: scc.uris.toSet(),
+        roots: roots,
+      ),
     );
     if (result.refused) {
       // The isolated restage still read outside the declared inputs: its
@@ -6207,40 +6214,24 @@ String? _keyUnderRoot(String normPath, String root, String cwd) {
 /// where only declared inputs exist) or `failing the compile` (the isolated
 /// restage still read outside the declared inputs, so its result is refused).
 Future<bool> _unstagedReadsAreDeclared(
-  String dillPath,
-  _Files files,
-  Map<String, _Node> graph,
-  List<String> multiRoots,
-  String multiRootPrefix,
-  StringBuffer log,
-  Set<String> ownUris,
-  Map<String, _PackageRoot> roots, {
+  _VerifyReads verify, {
   String consequence = 'recompiling with an isolated multi-root',
 }) async {
-  final dillFile = File(dillPath);
+  final dillFile = File(verify.dillPath);
   if (!await dillFile.exists()) return true;
   final bytes = await dillFile.readAsBytes();
-  if (!_dillSourcesAreDeclared(
-    bytes,
-    dillPath,
-    files,
-    graph,
-    multiRoots,
-    multiRootPrefix,
-    log,
-    consequence,
-  )) {
+  if (!_dillSourcesAreDeclared(bytes, verify, consequence)) {
     return false;
   }
   final checker = _ReferenceChecker(
-    dillPath,
-    files,
-    graph,
-    multiRoots,
-    multiRootPrefix,
-    roots,
-    ownUris,
-    _depImportUris(graph, roots, multiRootPrefix),
+    verify.dillPath,
+    verify.files,
+    verify.graph,
+    verify.multiRoots,
+    verify.multiRootPrefix,
+    verify.roots,
+    verify.ownUris,
+    _depImportUris(verify.graph, verify.roots, verify.multiRootPrefix),
     consequence,
   );
   final libraries = dillLibraryReferences(bytes);
@@ -6254,8 +6245,8 @@ Future<bool> _unstagedReadsAreDeclared(
     // runs; on the isolated path the source-table verdict stands, since
     // isolation already confines reads to declared inputs.
     if (unstaged) {
-      log.writeln(
-        'kernel_module: cannot read the libraries of $dillPath; '
+      verify.log.writeln(
+        'kernel_module: cannot read the libraries of ${verify.dillPath}; '
         '$consequence.',
       );
       return false;
@@ -6266,7 +6257,7 @@ Future<bool> _unstagedReadsAreDeclared(
         library.importUri,
         library.canonicalName,
       ],
-    ], log)) {
+    ], verify.log)) {
       return false;
     }
     // A held component can smuggle a root the library nodes never mention, so
@@ -6277,13 +6268,13 @@ Future<bool> _unstagedReadsAreDeclared(
     final canonicalRoots = dillCanonicalRoots(bytes);
     if (canonicalRoots == null) {
       if (unstaged) {
-        log.writeln(
-          'kernel_module: cannot read the canonical names of $dillPath; '
+        verify.log.writeln(
+          'kernel_module: cannot read the canonical names of ${verify.dillPath}; '
           '$consequence.',
         );
         return false;
       }
-    } else if (!checker.allDeclared(canonicalRoots, log)) {
+    } else if (!checker.allDeclared(canonicalRoots, verify.log)) {
       return false;
     }
   }
@@ -6293,27 +6284,26 @@ Future<bool> _unstagedReadsAreDeclared(
 /// Whether the dill's source table names only declared inputs.
 bool _dillSourcesAreDeclared(
   Uint8List bytes,
-  String dillPath,
-  _Files files,
-  Map<String, _Node> graph,
-  List<String> multiRoots,
-  String multiRootPrefix,
-  StringBuffer log,
+  _VerifyReads verify,
   String consequence,
 ) {
   final uris = dillSourceUris(bytes);
   if (uris == null) {
-    log.writeln(
-      'kernel_module: cannot read the sources of $dillPath; $consequence.',
+    verify.log.writeln(
+      'kernel_module: cannot read the sources of ${verify.dillPath}; $consequence.',
     );
     return false;
   }
   for (final uri in uris) {
-    final key = _keyOfDillSourceUri(uri, multiRoots, multiRootPrefix);
+    final key = _keyOfDillSourceUri(
+      uri,
+      verify.multiRoots,
+      verify.multiRootPrefix,
+    );
     if (key == null) continue;
-    if (!files.isDeclared(key) && !graph.containsKey(key)) {
-      log.writeln(
-        'kernel_module: $dillPath reads $uri, which is not a declared input; '
+    if (!verify.files.isDeclared(key) && !verify.graph.containsKey(key)) {
+      verify.log.writeln(
+        'kernel_module: ${verify.dillPath} reads $uri, which is not a declared input; '
         '$consequence.',
       );
       return false;
