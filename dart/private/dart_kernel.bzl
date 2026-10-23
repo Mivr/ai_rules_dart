@@ -715,27 +715,35 @@ def _kmod_declare_outputs(ctx, output, packages, scheme, unused_inputs):
         unused_inputs_list = None
     return package_config, excluded, unused_inputs_list
 
-def _kmod_common_args(ctx, args, platform, libraries, package_config, target, libraries_platform, extra_libraries, defines, extra_frontend_flags, scheme):
-    """Adds the target/platform/define args shared by every module compile."""
-    args.add("--target", target)
-    args.add("--dart-sdk-summary", platform)
-    args.add("--packages-file", package_config)
-    args.add("--libraries-json", libraries)
-    if libraries_platform:
-        args.add("--libraries-platform", libraries_platform)
-    args.add_all(extra_libraries, before_each = "--extra-library")
+def _kmod_common_args(ctx, args, compile):
+    """Adds the target/platform/define args shared by every module compile.
+
+    Args:
+      ctx: The rule context, for `ctx.bin_dir`.
+      args: The args object to add to.
+      compile: A struct with `target`, `platform`, `package_config`, `libraries`,
+        `libraries_platform`, `extra_libraries`, `defines`, `extra_frontend_flags`,
+        and `scheme`.
+    """
+    args.add("--target", compile.target)
+    args.add("--dart-sdk-summary", compile.platform)
+    args.add("--packages-file", compile.package_config)
+    args.add("--libraries-json", compile.libraries)
+    if compile.libraries_platform:
+        args.add("--libraries-platform", compile.libraries_platform)
+    args.add_all(compile.extra_libraries, before_each = "--extra-library")
     args.add("--multi-root", ".")
     args.add("--multi-root", ctx.bin_dir.path)
-    args.add("--multi-root-scheme", scheme)
-    if target == "vm":
+    args.add("--multi-root-scheme", compile.scheme)
+    if compile.target == "vm":
         args.add_all([
             "-Ddart.vm.product=true",
             "-Ddart.vm.asan=false",
             "-Ddart.vm.msan=false",
             "-Ddart.vm.tsan=false",
         ])
-    args.add_all(defines, format_each = "-D%s")
-    args.add_all(extra_frontend_flags)
+    args.add_all(compile.defines, format_each = "-D%s")
+    args.add_all(compile.extra_frontend_flags)
 
 def _kmod_worker_snapshot(ctx, tools, defines):
     """Selects the worker snapshot for comma defines. Returns (worker_snapshot, patched_marker)."""
@@ -762,8 +770,15 @@ def _kmod_worker_snapshot(ctx, tools, defines):
         patched_marker = ["--comma-patched-snapshot"]
     return worker_snapshot, patched_marker
 
-def _kmod_source_args(args, sources, dep_kmods, output, koutline, excluded, unused_inputs_list, droppable, closure_excluded, extra_inputs, exclude_non_sources):
-    """Adds the per-module source, output, and exclusion args."""
+def _kmod_source_args(args, compile):
+    """Adds the per-module source, output, and exclusion args.
+
+    Args:
+      args: The args object to add to.
+      compile: A struct with `sources`, `dep_kmods`, `output`, `koutline`,
+        `excluded`, `unused_inputs_list`, `droppable`, `closure_excluded`,
+        `extra_inputs`, and `exclude_non_sources`.
+    """
 
     # The VM target does not support `--summary-only`: it prints an error and
     # embeds the whole platform. Its absence keeps each kernel to its own libraries.
@@ -775,30 +790,30 @@ def _kmod_source_args(args, sources, dep_kmods, output, koutline, excluded, unus
     # their digests, so it never reads a file it was not given.
     args.add("--reuse-compiler-result")
     args.add("--use-incremental-compiler")
-    if exclude_non_sources:
+    if compile.exclude_non_sources:
         args.add("--exclude-non-sources")
 
     # A module directory is one argument, not its files: `expand_directories` is off.
-    args.add_all(dep_kmods, before_each = "--input-kmod", expand_directories = False)
-    for s in sources:
+    args.add_all(compile.dep_kmods, before_each = "--input-kmod", expand_directories = False)
+    for s in compile.sources:
         args.add("--source", s.uri)
         args.add("--input-source", s.file)
-        if unused_inputs_list != None:
+        if compile.unused_inputs_list != None:
             args.add("--own-source-file", s.file)
-    args.add("--output", output.path)
-    if koutline != None:
-        args.add("--output-outline", koutline.path)
+    args.add("--output", compile.output.path)
+    if compile.koutline != None:
+        args.add("--output-outline", compile.koutline.path)
 
     # Read by `kernel_module` and not passed to `kernel_worker`.
-    args.add("--excluded-output", excluded)
-    if unused_inputs_list != None:
-        args.add("--unused-inputs-list", unused_inputs_list)
-    if not droppable:
+    args.add("--excluded-output", compile.excluded)
+    if compile.unused_inputs_list != None:
+        args.add("--unused-inputs-list", compile.unused_inputs_list)
+    if not compile.droppable:
         args.add("--no-drop")
-    if closure_excluded:
-        args.add_all(closure_excluded, before_each = "--closure-excluded")
-    if extra_inputs:
-        args.add_all(extra_inputs, before_each = "--input-source")
+    if compile.closure_excluded:
+        args.add_all(compile.closure_excluded, before_each = "--closure-excluded")
+    if compile.extra_inputs:
+        args.add_all(compile.extra_inputs, before_each = "--input-source")
 
 def _kmod_select_executable(ctx, tools, direct_inputs, action_tools):
     """Selects the module action's executable. Returns (executable, arguments-prefix, dart_exe)."""
@@ -833,8 +848,21 @@ def _kmod_select_executable(ctx, tools, direct_inputs, action_tools):
         return dart_exe, ctx.executable._kernel_module.path, dart_exe
     return ctx.executable._kernel_module, None, dart_exe
 
-def _kmod_run_action(ctx, tools, executable, arguments, direct_inputs, dep_kmods, extra_inputs, closure_excluded, action_tools, runtime_files, output, excluded, unused_inputs_list, koutline):
-    """Registers the module's `kernel_module` worker action."""
+def _kmod_run_action(ctx, executable, arguments, compile, direct_inputs, action_tools, runtime_files):
+    """Registers the module's `kernel_module` worker action.
+
+    Args:
+      ctx: The rule context, for `ctx.actions.run`.
+      executable: The executable to run.
+      arguments: The startup arguments plus the params-file args.
+      compile: A struct with `tools`, `dep_kmods`, `extra_inputs`,
+        `closure_excluded`, `output`, `excluded`, `unused_inputs_list`, and
+        `koutline`.
+      direct_inputs: The action's direct input files.
+      action_tools: The action's direct tool files.
+      runtime_files: The SDK runtime files depset, or None.
+    """
+    tools = compile.tools
     ctx.actions.run(
         executable = executable,
         # The startup arguments name the SDK's compiler, so every module of one SDK
@@ -843,9 +871,9 @@ def _kmod_run_action(ctx, tools, executable, arguments, direct_inputs, dep_kmods
         arguments = arguments,
         inputs = depset(
             direct = direct_inputs,
-            transitive = [dep_kmods] + [
+            transitive = [compile.dep_kmods] + [
                 d
-                for d in [extra_inputs, closure_excluded]
+                for d in [compile.extra_inputs, compile.closure_excluded]
                 if d
             ],
         ),
@@ -853,11 +881,11 @@ def _kmod_run_action(ctx, tools, executable, arguments, direct_inputs, dep_kmods
             direct = action_tools,
             transitive = [runtime_files] if runtime_files != None else [],
         ),
-        outputs = [output, excluded] + ([unused_inputs_list] if unused_inputs_list != None else []) + ([koutline] if koutline != None else []),
-        unused_inputs_list = unused_inputs_list,
+        outputs = [compile.output, compile.excluded] + ([compile.unused_inputs_list] if compile.unused_inputs_list != None else []) + ([compile.koutline] if compile.koutline != None else []),
+        unused_inputs_list = compile.unused_inputs_list,
         mnemonic = "DartKernel",
-        progress_message = "Compiling Dart kernel module %s" % output.short_path,
-        env = writable_home_env(getattr(tools, "dart", None) or tools.dartaotruntime, output),
+        progress_message = "Compiling Dart kernel module %s" % compile.output.short_path,
+        env = writable_home_env(getattr(tools, "dart", None) or tools.dartaotruntime, compile.output),
         execution_requirements = {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
@@ -954,24 +982,62 @@ def kernel_module_action(
     args.use_param_file("@%s", use_always = True)
     args.set_param_file_format("multiline")
 
-    _kmod_common_args(ctx, args, platform, libraries, package_config, target, libraries_platform, extra_libraries, defines, extra_frontend_flags, scheme)
+    # One object for the module-compile clump that the helpers below share.
+    compile = struct(
+        tools = tools,
+        platform = platform,
+        libraries = libraries,
+        package_config = package_config,
+        target = target,
+        libraries_platform = libraries_platform,
+        extra_libraries = extra_libraries,
+        defines = defines,
+        extra_frontend_flags = extra_frontend_flags,
+        scheme = scheme,
+        sources = sources,
+        dep_kmods = dep_kmods,
+        output = output,
+        koutline = koutline,
+        excluded = excluded,
+        unused_inputs_list = unused_inputs_list,
+        droppable = droppable,
+        closure_excluded = closure_excluded,
+        extra_inputs = extra_inputs,
+        exclude_non_sources = exclude_non_sources,
+    )
+
+    _kmod_common_args(ctx, args, compile)
 
     worker_snapshot, patched_marker = _kmod_worker_snapshot(ctx, tools, defines)
 
-    _kmod_source_args(args, sources, dep_kmods, output, koutline, excluded, unused_inputs_list, droppable, closure_excluded, extra_inputs, exclude_non_sources)
+    _kmod_source_args(args, compile)
 
+    _kmod_register(ctx, compile, args, worker_snapshot, patched_marker)
+    return excluded
+
+def _kmod_register(ctx, compile, args, worker_snapshot, patched_marker):
+    """Builds the module action's inputs, selects its executable, and registers it.
+
+    Args:
+      ctx: The rule context, carrying the `_kernel_module` executable.
+      compile: The module-compile struct (see `kernel_module_action`).
+      args: The params-file args for the worker request.
+      worker_snapshot: The worker snapshot File to run.
+      patched_marker: The comma-patch startup marker list (possibly empty).
+    """
+    tools = compile.tools
     runtime_files = getattr(tools, "runtime_files", None)
     direct_inputs = [
-        package_config,
+        compile.package_config,
         tools.dartaotruntime,
         worker_snapshot,
-        libraries,
-        platform,
-    ] + [s.file for s in sources]
+        compile.libraries,
+        compile.platform,
+    ] + [s.file for s in compile.sources]
     action_tools = [
         tools.dartaotruntime,
         worker_snapshot,
-        platform,
+        compile.platform,
         ctx.executable._kernel_module,
     ]
     executable, tool_path, _ = _kmod_select_executable(ctx, tools, direct_inputs, action_tools)
@@ -993,8 +1059,7 @@ def kernel_module_action(
             args,
         ] + patched_marker
 
-    _kmod_run_action(ctx, tools, executable, arguments, direct_inputs, dep_kmods, extra_inputs, closure_excluded, action_tools, runtime_files, output, excluded, unused_inputs_list, koutline)
-    return excluded
+    _kmod_run_action(ctx, executable, arguments, compile, direct_inputs, action_tools, runtime_files)
 
 def kernel_link_action(
         ctx,
@@ -1379,7 +1444,7 @@ def _lib_kernel_records(deps, dep_kernels, own_record, own_records):
     return records, raw, own_records
 
 def _lib_kernel_graph(ctx, deps, dep_kernels, own_srcs, records):
-    """Collects closures, ownership, and edges. Returns (dep_closure, dep_outline_closure, upstream_excluded, owned, edges, pkgs, owned_list, edges_list, need_graph, has_upstream_cross_pkg)."""
+    """Collects closures, ownership, and edges. Returns a struct with `dep_closure`, `dep_outline_closure`, `upstream_excluded`, `owned`, `edges`, `pkgs`, `owned_list`, `edges_list`, `need_graph`, and `has_upstream_cross_pkg`."""
     dep_closure = depset(
         order = "postorder",
         transitive = [k.transitive_kmods for k in dep_kernels],
@@ -1402,7 +1467,18 @@ def _lib_kernel_graph(ctx, deps, dep_kernels, own_srcs, records):
     need_graph = len(pkgs) < len(records)
     owned_list = owned.to_list() if need_graph else []
     edges_list = edges.to_list() if need_graph else []
-    return dep_closure, dep_outline_closure, upstream_excluded, owned, edges, pkgs, owned_list, edges_list, need_graph, has_upstream_cross_pkg
+    return struct(
+        dep_closure = dep_closure,
+        dep_outline_closure = dep_outline_closure,
+        upstream_excluded = upstream_excluded,
+        owned = owned,
+        edges = edges,
+        pkgs = pkgs,
+        owned_list = owned_list,
+        edges_list = edges_list,
+        need_graph = need_graph,
+        has_upstream_cross_pkg = has_upstream_cross_pkg,
+    )
 
 def _lib_kernel_has_cycle(single_package_name, raw, owned_list, edges_list, pkgs, non_standalone):
     """Whether the library's packages form a cross-package cycle."""
@@ -1444,16 +1520,16 @@ def _lib_kernel_cyclic_srcs(deps, dep_kernels, own_srcs, single_package_name, ra
         ),
     )
 
-def _lib_kernel_cross_srcs(deps, dep_kernels, own_srcs, single_package_name, raw, owned_list, edges_list, pkgs, need_graph, has_cycle, has_upstream_cross_pkg):
-    """Returns (cross_pkg_srcs, dep_cross_pkg_srcs) for the cycle/upstream/passthrough cases."""
-    if has_cycle:
-        if need_graph:
-            return _lib_kernel_cyclic_srcs(deps, dep_kernels, own_srcs, single_package_name, raw, owned_list, edges_list, pkgs)
-        return (
-            depset(own_srcs, transitive = [k.cross_pkg_srcs for k in dep_kernels]),
-            depset(transitive = [k.cross_pkg_srcs for k in dep_kernels]),
-        )
-    if has_upstream_cross_pkg:
+def _lib_kernel_plain_srcs(dep_kernels, own_srcs, include_own):
+    """Returns (cross_pkg_srcs, dep_cross_pkg_srcs) when no cycle graph is needed.
+
+    Args:
+      dep_kernels: The `DartKernelInfo` of each direct dependency.
+      own_srcs: The library's own `.dart` files.
+      include_own: Whether the library's own sources join the cross-package set
+        (a cycle that needs no graph, or cross-package sources upstream).
+    """
+    if include_own:
         return (
             depset(own_srcs, transitive = [k.cross_pkg_srcs for k in dep_kernels]),
             depset(transitive = [k.cross_pkg_srcs for k in dep_kernels]),
@@ -1488,7 +1564,7 @@ def _lib_kernel_non_base_paths(dep_kernels):
     return paths
 
 def _lib_kernel_base(dep_kernels):
-    """Finds the shared base dill and its unseeded modules. Returns (base_dill, base_keys, base_kmods, unseeded_base_kmods)."""
+    """Finds the shared base dill and its unseeded modules. Returns a struct with `base_dill`, `base_keys`, `base_kmods`, and `unseeded_base_kmods`."""
     base_dill = None
     base_keys = None
     base_kmods = depset()
@@ -1510,26 +1586,37 @@ def _lib_kernel_base(dep_kernels):
                 for p, f in unseeded_candidates.items()
                 if p not in non_base_kmod_paths
             }
-    return base_dill, base_keys, base_kmods, depset(unseeded_candidates.values() if unseeded_candidates != None else [])
+    return struct(
+        base_dill = base_dill,
+        base_keys = base_keys,
+        base_kmods = base_kmods,
+        unseeded_base_kmods = depset(unseeded_candidates.values() if unseeded_candidates != None else []),
+    )
 
-def _lib_kernel_facade(dep_closure, dep_outline_closure, upstream_excluded, cross_pkg_srcs, owned, edges, base_dill, base_keys, base_kmods, unseeded_base_kmods):
-    """The `DartKernelInfo` for a façade library with nothing to compile."""
+def _lib_kernel_facade(graph, bases, cross_pkg_srcs):
+    """The `DartKernelInfo` for a façade library with nothing to compile.
+
+    Args:
+      graph: The struct from `_lib_kernel_graph`.
+      bases: The struct from `_lib_kernel_base`.
+      cross_pkg_srcs: The depset of cross-package sources.
+    """
 
     # A façade: nothing to compile, but its dependencies' modules still link.
     return DartKernelInfo(
         kmod = None,
         koutline = None,
-        transitive_kmods = dep_closure,
-        transitive_koutlines = dep_outline_closure,
+        transitive_kmods = graph.dep_closure,
+        transitive_koutlines = graph.dep_outline_closure,
         modular = True,
-        closure_excluded = upstream_excluded,
+        closure_excluded = graph.upstream_excluded,
         cross_pkg_srcs = cross_pkg_srcs,
-        owned = owned,
-        edges = edges,
-        base_dill = base_dill,
-        base_keys = base_keys,
-        base_kmods = base_kmods,
-        unseeded_base_kmods = unseeded_base_kmods,
+        owned = graph.owned,
+        edges = graph.edges,
+        base_dill = bases.base_dill,
+        base_keys = bases.base_keys,
+        base_kmods = bases.base_kmods,
+        unseeded_base_kmods = bases.unseeded_base_kmods,
     )
 
 def _lib_kernel_sources(package_name, lib_root, own_srcs, own_records, pkgs):
@@ -1548,7 +1635,7 @@ def _lib_kernel_sources(package_name, lib_root, own_srcs, own_records, pkgs):
     ]
 
 def _lib_kernel_seed_base(ctx, dep_closure, kmod, package_name, own_records, target):
-    """Links the shared test base dill. Returns (base_dill, base_keys, base_kmods, unseeded_base_kmods), or None."""
+    """Links the shared test base dill. Returns a struct with `base_dill`, `base_keys`, `base_kmods`, and `unseeded_base_kmods`, or None."""
     if (package_name == "test" or "test" in [record.package_name for record in own_records]) and target == "vm" and hasattr(ctx.executable, "_kernel_link"):
         base_dill = ctx.actions.declare_file(ctx.label.name + ".base.dill")
         base_keys = ctx.actions.declare_file(ctx.label.name + ".base.keys")
@@ -1571,7 +1658,12 @@ def _lib_kernel_seed_base(ctx, dep_closure, kmod, package_name, own_records, tar
             seed_modules = seed_kmods,
             write_keys = base_keys,
         )
-        return base_dill, base_keys, depset(seeded_dep_kmods), depset(unseeded_kmods)
+        return struct(
+            base_dill = base_dill,
+            base_keys = base_keys,
+            base_kmods = depset(seeded_dep_kmods),
+            unseeded_base_kmods = depset(unseeded_kmods),
+        )
     return None
 
 def library_kernel_info(
@@ -1641,32 +1733,35 @@ def library_kernel_info(
         return no_kernel_module()
     records, raw, own_records = recs
 
-    dep_closure, dep_outline_closure, upstream_excluded, owned, edges, pkgs, owned_list, edges_list, need_graph, has_upstream_cross_pkg = _lib_kernel_graph(ctx, deps, dep_kernels, own_srcs, records)
+    graph = _lib_kernel_graph(ctx, deps, dep_kernels, own_srcs, records)
 
     single_package_name = own_records[0].package_name if len(own_records) == 1 else ""
-    has_cycle = _lib_kernel_has_cycle(single_package_name, raw, owned_list, edges_list, pkgs, non_standalone)
-    cross_pkg_srcs, dep_cross_pkg_srcs = _lib_kernel_cross_srcs(deps, dep_kernels, own_srcs, single_package_name, raw, owned_list, edges_list, pkgs, need_graph, has_cycle, has_upstream_cross_pkg)
+    has_cycle = _lib_kernel_has_cycle(single_package_name, raw, graph.owned_list, graph.edges_list, graph.pkgs, non_standalone)
+    if has_cycle and graph.need_graph:
+        cross_pkg_srcs, dep_cross_pkg_srcs = _lib_kernel_cyclic_srcs(deps, dep_kernels, own_srcs, single_package_name, raw, graph.owned_list, graph.edges_list, graph.pkgs)
+    else:
+        cross_pkg_srcs, dep_cross_pkg_srcs = _lib_kernel_plain_srcs(dep_kernels, own_srcs, has_cycle or graph.has_upstream_cross_pkg)
 
-    base_dill, base_keys, base_kmods, unseeded_base_kmods = _lib_kernel_base(dep_kernels)
+    bases = _lib_kernel_base(dep_kernels)
     if not own_srcs:
-        return _lib_kernel_facade(dep_closure, dep_outline_closure, upstream_excluded, cross_pkg_srcs, owned, edges, base_dill, base_keys, base_kmods, unseeded_base_kmods)
+        return _lib_kernel_facade(graph, bases, cross_pkg_srcs)
 
     kmod = ctx.actions.declare_directory(ctx.label.name + ".kmod")
     koutline = ctx.actions.declare_directory(ctx.label.name + ".koutline")
-    sources = _lib_kernel_sources(package_name, lib_root, own_srcs, own_records, pkgs)
+    sources = _lib_kernel_sources(package_name, lib_root, own_srcs, own_records, graph.pkgs)
     excluded = kernel_module_action(
         ctx,
         tools,
         sources,
-        pkgs,
-        dep_outline_closure,
+        graph.pkgs,
+        graph.dep_outline_closure,
         kmod,
         koutline = koutline,
         defines = defines,
         exclude_non_sources = True,
         droppable = True,
         extra_inputs = dep_cross_pkg_srcs,
-        closure_excluded = upstream_excluded,
+        closure_excluded = graph.upstream_excluded,
         target = target,
         platform_dill = platform_dill,
         libraries_json = libraries_json,
@@ -1676,23 +1771,23 @@ def library_kernel_info(
         extra_frontend_flags = extra_frontend_flags,
         unused_inputs = unused_inputs,
     )
-    seeded = _lib_kernel_seed_base(ctx, dep_closure, kmod, package_name, own_records, target)
+    seeded = _lib_kernel_seed_base(ctx, graph.dep_closure, kmod, package_name, own_records, target)
     if seeded != None:
-        base_dill, base_keys, base_kmods, unseeded_base_kmods = seeded
+        bases = seeded
     return DartKernelInfo(
         kmod = kmod,
         koutline = koutline,
-        transitive_kmods = depset(order = "postorder", direct = [kmod], transitive = [dep_closure]),
-        transitive_koutlines = depset(order = "postorder", direct = [koutline], transitive = [dep_outline_closure]),
+        transitive_kmods = depset(order = "postorder", direct = [kmod], transitive = [graph.dep_closure]),
+        transitive_koutlines = depset(order = "postorder", direct = [koutline], transitive = [graph.dep_outline_closure]),
         modular = True,
-        closure_excluded = depset(direct = [excluded], transitive = [upstream_excluded]),
+        closure_excluded = depset(direct = [excluded], transitive = [graph.upstream_excluded]),
         cross_pkg_srcs = cross_pkg_srcs,
-        owned = owned,
-        edges = edges,
-        base_dill = base_dill,
-        base_keys = base_keys,
-        base_kmods = base_kmods,
-        unseeded_base_kmods = unseeded_base_kmods,
+        owned = graph.owned,
+        edges = graph.edges,
+        base_dill = bases.base_dill,
+        base_keys = bases.base_keys,
+        base_kmods = bases.base_kmods,
+        unseeded_base_kmods = bases.unseeded_base_kmods,
     )
 
 def _dart_kernel_module_aspect_impl(target, ctx):
