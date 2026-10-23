@@ -12,7 +12,6 @@
 // Supports both one-shot execution (with `@flagfile` expansion) and Bazel's
 // `--persistent_worker` binary protobuf protocol over stdin/stdout.
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -49,6 +48,8 @@ import 'package:linter/src/rules.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:rules_dart_guard/directive_guard.dart';
+import 'package:rules_dart_worker/worker_protocol.dart';
+import 'package:rules_dart_worker/worker_tool_fs.dart';
 
 const _optionsBasename = 'analysis_options.yaml';
 const _packageConfig = '.dart_tool/package_config.json';
@@ -98,7 +99,11 @@ void _ensureLintRulesRegistered() {
 }
 
 Future<void> main(List<String> rawArgs) async {
-  final args = _expandParamFiles(rawArgs);
+  final args = expandParamFiles(
+    rawArgs,
+    skipEmptyLines: true,
+    keepMissingArg: true,
+  );
   if (args.contains('--persistent_worker')) {
     await _runPersistentWorker();
     exit(0);
@@ -132,15 +137,19 @@ Future<void> _runPersistentWorker() async {
         : SummaryByteCache.defaultWorkerInstances,
   );
 
-  await for (final bytes in _Frames(stdin)) {
-    final request = _WorkRequest.read(bytes);
+  await for (final bytes in WorkerFrames(stdin)) {
+    final request = WorkerRequest.read(bytes);
     if (request.cancel) {
       continue;
     }
     final output = StringBuffer();
     var exitCode = _failed;
     try {
-      final expandedArgs = _expandParamFiles(request.arguments);
+      final expandedArgs = expandParamFiles(
+        request.arguments,
+        skipEmptyLines: true,
+        keepMissingArg: true,
+      );
       final fs.ResourceProvider provider;
       if (disableCache) {
         provider = PhysicalResourceProvider.INSTANCE;
@@ -168,7 +177,7 @@ Future<void> _runPersistentWorker() async {
       exitCode = _failed;
     }
     stdout.add(
-      _WorkResponse(
+      WorkerResponse(
         exitCode: exitCode,
         output: output.toString(),
         requestId: request.requestId,
@@ -385,7 +394,7 @@ Future<int> _summarize(
     normDepSources: normDepSources,
   );
   if (!_checkSummarizeDirectives(sourceRoot, errSink)) return _failed;
-  final boundedProvider = _summarizeResourceProvider(
+  final boundedProvider = _summarizeResourceProvider((
     resourceProvider: resourceProvider,
     sourceRoot: sourceRoot,
     packagesDir: packagesDir,
@@ -397,7 +406,7 @@ Future<int> _summarize(
     normDepSources: normDepSources,
     libRoot: libRoot,
     depLibRoots: depLibRoots,
-  );
+  ));
   final collection = AnalysisContextCollectionImpl(
     resourceProvider: boundedProvider,
     includedPaths: [normSources.first],
@@ -447,9 +456,9 @@ void _pruneSummarizeTree({
   required Set<String> normDepSources,
 }) {
   if (!p.basename(sourceRoot).endsWith('.summary_root')) return;
-  _pruneUnlistedUnder(libRoot, normSourceSet);
+  pruneUnlistedUnder(libRoot, normSourceSet);
   for (final depLibRoot in depLibRoots) {
-    _pruneUnlistedUnder(depLibRoot, normDepSources);
+    pruneUnlistedUnder(depLibRoot, normDepSources);
   }
 }
 
@@ -479,34 +488,41 @@ bool _checkSummarizeDirectives(String sourceRoot, StringSink errSink) {
 }
 
 /// The resource provider bounding the summary request to its staged inputs.
-BoundedResourceProvider _summarizeResourceProvider({
-  required fs.ResourceProvider resourceProvider,
-  required String sourceRoot,
-  required String packagesDir,
-  required String packagesPath,
-  required String sdkPath,
-  required String sdkSummaryPath,
-  required List<String> summaryPaths,
-  required List<String> normSources,
-  required Set<String> normDepSources,
-  required String libRoot,
-  required Set<String> depLibRoots,
-}) => BoundedResourceProvider(
-  resourceProvider,
-  primaryRoot: sourceRoot,
-  boundaryRoots: {sourceRoot, packagesDir, sdkPath},
-  allowedFiles: {
-    packagesPath,
-    sdkSummaryPath,
-    ...summaryPaths,
-    ...normSources,
-    ...normDepSources,
-  },
-  restrictedRoot: libRoot,
-  extraRestrictedRoots: depLibRoots,
-  allowedUnderRestrictedRoot: {...normSources, ...normDepSources},
-  blockAnalysisOptions: true,
-);
+/// The roots one summarize request confines the analyzer to.
+typedef _SummarizeRoots = ({
+  fs.ResourceProvider resourceProvider,
+  String sourceRoot,
+  String packagesDir,
+  String packagesPath,
+  String sdkPath,
+  String sdkSummaryPath,
+  List<String> summaryPaths,
+  List<String> normSources,
+  Set<String> normDepSources,
+  String libRoot,
+  Set<String> depLibRoots,
+});
+
+BoundedResourceProvider _summarizeResourceProvider(_SummarizeRoots roots) =>
+    BoundedResourceProvider(
+      roots.resourceProvider,
+      primaryRoot: roots.sourceRoot,
+      boundaryRoots: {roots.sourceRoot, roots.packagesDir, roots.sdkPath},
+      allowedFiles: {
+        roots.packagesPath,
+        roots.sdkSummaryPath,
+        ...roots.summaryPaths,
+        ...roots.normSources,
+        ...roots.normDepSources,
+      },
+      restrictedRoot: roots.libRoot,
+      extraRestrictedRoots: roots.depLibRoots,
+      allowedUnderRestrictedRoot: {
+        ...roots.normSources,
+        ...roots.normDepSources,
+      },
+      blockAnalysisOptions: true,
+    );
 
 /// Builds the package bundle, releasing the collection afterwards.
 Future<Uint8List> _buildPackageBundle(
@@ -680,15 +696,14 @@ Future<int> _analyze(
       context,
       allowedSrcPaths: allowedSrcPaths,
     );
-    if (!_checkExpectedSources(
+    if (!_checkExpectedSources((
       project: project,
       context: context,
       analyzed: analyzed,
       explicitSources: explicitSources,
       allowedSrcPaths: allowedSrcPaths,
       srcRoot: srcRoot,
-      errSink: errSink,
-    )) {
+    ), errSink: errSink)) {
       return _failed;
     }
     final findings = await _collectAnalyzeFindings(
@@ -748,7 +763,7 @@ _prepareAnalyzeProject(_Args args, {required StringSink errSink}) {
   final explicitSources = <String>[
     for (final s in args.all('source')) resolveProjectSource(project, s),
   ];
-  final allowedSrcPaths = _pruneOrphanedStagedFiles(project);
+  final allowedSrcPaths = pruneStagedSrcFiles(project);
   // No staged source may read the host (see `_summarize`): the default
   // summary-mode analysis never ran the directive guard, so a climbing
   // relative import reached undeclared host files wherever the analyzer
@@ -777,27 +792,33 @@ _prepareAnalyzeProject(_Args args, {required StringSink errSink}) {
   );
 }
 
+/// The staged sources one analyze request expects to find analyzed.
+typedef _ExpectedSources = ({
+  String project,
+  DriverBasedAnalysisContext context,
+  List<String> analyzed,
+  List<String> explicitSources,
+  Set<String>? allowedSrcPaths,
+  String srcRoot,
+});
+
 /// Refuses expected sources that are unlisted, missing, or unanalyzed.
-bool _checkExpectedSources({
-  required String project,
-  required DriverBasedAnalysisContext context,
-  required List<String> analyzed,
-  required List<String> explicitSources,
-  required Set<String>? allowedSrcPaths,
-  required String srcRoot,
+bool _checkExpectedSources(
+  _ExpectedSources sources, {
   required StringSink errSink,
 }) {
-  final analyzedSet = analyzed.toSet();
+  final allowedSrcPaths = sources.allowedSrcPaths;
+  final analyzedSet = sources.analyzed.toSet();
   final expectedDartFiles = <String>{
-    for (final s in explicitSources)
+    for (final s in sources.explicitSources)
       if (s.endsWith('.dart')) s,
     if (allowedSrcPaths != null)
       for (final s in allowedSrcPaths)
         if (s.endsWith('.dart')) s,
   };
-  for (final expected in explicitSources) {
+  for (final expected in sources.explicitSources) {
     if (allowedSrcPaths != null &&
-        p.isWithin(srcRoot, expected) &&
+        p.isWithin(sources.srcRoot, expected) &&
         !allowedSrcPaths.contains(expected)) {
       errSink.writeln(
         'analyzer_summary: source not listed in src_manifest.txt: $expected',
@@ -812,8 +833,8 @@ bool _checkExpectedSources({
       );
       return false;
     }
-    if (!p.isWithin(project, expected) ||
-        (context.contextRoot.isAnalyzed(expected) &&
+    if (!p.isWithin(sources.project, expected) ||
+        (sources.context.contextRoot.isAnalyzed(expected) &&
             !analyzedSet.contains(expected))) {
       errSink.writeln(
         'analyzer_summary: expected source was not analyzed: $expected',
@@ -821,9 +842,9 @@ bool _checkExpectedSources({
       return false;
     }
   }
-  if (!analyzed.any((path) => path.endsWith('.dart'))) {
+  if (!sources.analyzed.any((path) => path.endsWith('.dart'))) {
     errSink.writeln(
-      'analyzer_summary: no Dart files were analyzed in $project',
+      'analyzer_summary: no Dart files were analyzed in ${sources.project}',
     );
     return false;
   }
@@ -902,88 +923,6 @@ int _reportAnalyzeFindings({
   }
   File(stamp).writeAsStringSync('analyzed\n');
   return 0;
-}
-
-void _pruneUnlistedUnder(String dirPath, Set<String> allowedPaths) {
-  final dir = Directory(dirPath);
-  if (!dir.existsSync()) return;
-  for (final entity in dir.listSync(recursive: true, followLinks: false)) {
-    if (entity is Directory) continue;
-    final normPath = p.normalize(entity.absolute.path);
-    if (!allowedPaths.contains(normPath)) {
-      try {
-        entity.deleteSync();
-      } on FileSystemException {
-        // Ignore if read-only or already removed.
-      }
-    }
-  }
-}
-
-/// Removes any orphaned symlinks or unlisted files under `<project>/src/` left
-/// behind in the shared execroot by previous incremental builds when
-/// `.dart_tool/src_manifest.txt` is present, and under sibling `<name>.extpkgs/`
-/// when `.dart_tool/extpkgs_manifest.txt` is present. Returns the set of
-/// normalized absolute paths allowed under `<project>/src/` (or `null` when no
-/// manifest is present). Never prunes without a manifest.
-Set<String>? _pruneOrphanedStagedFiles(String project) {
-  _pruneExtpkgs(project);
-
-  final srcDir = Directory(p.join(project, 'src'));
-  if (!srcDir.existsSync()) return null;
-
-  final manifestFile = File(p.join(project, '.dart_tool', 'src_manifest.txt'));
-  if (!manifestFile.existsSync()) return null;
-
-  final lines = [
-    for (final line in manifestFile.readAsLinesSync())
-      if (line.trim().isNotEmpty) line.trim(),
-  ];
-  if (lines.contains('*')) return null;
-
-  final allowedPaths = <String>{
-    for (final line in lines)
-      p.normalize(p.absolute(p.join(srcDir.path, line))),
-  };
-  _pruneUnlistedUnder(srcDir.path, allowedPaths);
-  return allowedPaths;
-}
-
-void _pruneExtpkgs(String project) {
-  final normProject = p.normalize(p.absolute(project));
-  if (!normProject.endsWith('.proj')) return;
-  final extDir = Directory(
-    '${normProject.substring(0, normProject.length - '.proj'.length)}.extpkgs',
-  );
-  if (!extDir.existsSync()) return;
-  final extManifest = File(
-    p.join(normProject, '.dart_tool', 'extpkgs_manifest.txt'),
-  );
-  if (!extManifest.existsSync()) return;
-
-  final allowedFiles = <String>{};
-  final allowedDirs = <String>[];
-  for (final raw in extManifest.readAsLinesSync()) {
-    final trimmed = raw.trim();
-    if (trimmed.isEmpty) continue;
-    if (trimmed.endsWith('/')) {
-      allowedDirs.add(p.normalize(p.absolute(p.join(extDir.path, trimmed))));
-    } else {
-      allowedFiles.add(p.normalize(p.absolute(p.join(extDir.path, trimmed))));
-    }
-  }
-  for (final entity in extDir.listSync(recursive: true, followLinks: false)) {
-    if (entity is Directory) continue;
-    final normPath = p.normalize(entity.absolute.path);
-    final inAllowedDir = allowedDirs.any((dir) => p.isWithin(dir, normPath));
-    if (!inAllowedDir && !allowedFiles.contains(normPath)) {
-      try {
-        entity.deleteSync();
-      } on FileSystemException {
-        // Ignore if read-only or already removed.
-      }
-    }
-  }
 }
 
 /// Every Dart file and options file under the project that the analyzer
@@ -1186,26 +1125,6 @@ final class _Args {
     }
     return values.single;
   }
-}
-
-/// Expands `@param_file` arguments (multiline format, one argument per line).
-List<String> _expandParamFiles(List<String> args) {
-  final expanded = <String>[];
-  for (final arg in args) {
-    if (arg.startsWith('@') && arg.length > 1) {
-      final file = File(arg.substring(1));
-      if (file.existsSync()) {
-        for (final line in file.readAsLinesSync()) {
-          if (line.isNotEmpty) {
-            expanded.add(line);
-          }
-        }
-        continue;
-      }
-    }
-    expanded.add(arg);
-  }
-  return expanded;
 }
 
 // ---------------------------------------------------------------------------
@@ -1420,11 +1339,23 @@ final class BoundedResourceProvider implements fs.ResourceProvider {
       _delegate.getStateLocation(pluginId);
 }
 
-final class _BoundedFolder implements fs.Folder {
+final class _BoundedFolder with BoundedFolderForwards implements fs.Folder {
   const _BoundedFolder(this._provider, this._delegate);
 
   final BoundedResourceProvider _provider;
   final fs.Folder _delegate;
+
+  @override
+  fs.Folder get folderDelegate => _delegate;
+
+  @override
+  fs.ResourceProvider get folderProvider => _provider;
+
+  @override
+  fs.Folder wrapFolder(fs.Folder folder) => _BoundedFolder(_provider, folder);
+
+  @override
+  fs.File wrapFile(fs.File file) => _BoundedFile(_provider, file);
 
   String get _normPath =>
       BoundedResourceProvider._norm(_provider.pathContext, _delegate.path);
@@ -1433,62 +1364,16 @@ final class _BoundedFolder implements fs.Folder {
   bool get isRoot => _provider.isBoundaryFolder(_normPath) || _delegate.isRoot;
 
   @override
-  fs.Folder get parent =>
-      isRoot ? this : _BoundedFolder(_provider, _delegate.parent);
-
-  @override
   bool get exists {
     if (_provider.isBlockedPath(_normPath)) return false;
     return _delegate.exists;
   }
 
   @override
-  String get path => _delegate.path;
-
-  @override
-  fs.ResourceProvider get provider => _provider;
-
-  @override
-  String get shortName => _delegate.shortName;
-
-  @override
-  String canonicalizePath(String relPath) => _provider.pathContext.normalize(
-    _provider.pathContext.join(path, relPath),
-  );
-
-  @override
   bool contains(String oPath) => _provider.pathContext.isWithin(
     path,
     _provider.pathContext.normalize(oPath),
   );
-
-  @override
-  fs.Folder copyTo(fs.Folder parentFolder) =>
-      _BoundedFolder(_provider, _delegate.copyTo(parentFolder));
-
-  @override
-  void create() => _delegate.create();
-
-  @override
-  void delete() => _delegate.delete();
-
-  @override
-  fs.Resource getChild(String relPath) =>
-      _provider.getResource(canonicalizePath(relPath));
-
-  @override
-  fs.File getChildAssumingFile(String relPath) => getFile(relPath);
-
-  @override
-  fs.Folder getChildAssumingFolder(String relPath) => getFolder(relPath);
-
-  @override
-  fs.File getFile(String relPath) =>
-      _provider.getFile(canonicalizePath(relPath));
-
-  @override
-  fs.Folder getFolder(String relPath) =>
-      _provider.getFolder(canonicalizePath(relPath));
 
   @override
   List<fs.Resource> getChildren() {
@@ -1510,33 +1395,22 @@ final class _BoundedFolder implements fs.Folder {
     final norm = _provider.pathContext.normalize(oPath);
     return path == norm || _provider.pathContext.isWithin(path, norm);
   }
-
-  @override
-  fs.Resource resolveSymbolicLinksSync() {
-    final resolved = _delegate.resolveSymbolicLinksSync();
-    if (resolved is fs.Folder) return _BoundedFolder(_provider, resolved);
-    if (resolved is fs.File) return _BoundedFile(_provider, resolved);
-    return resolved;
-  }
-
-  @override
-  Uri toUri() => _delegate.toUri();
-
-  @override
-  fs.ResourceWatcher watch() => _delegate.watch();
-
-  @override
-  bool operator ==(Object other) => other is fs.Folder && path == other.path;
-
-  @override
-  int get hashCode => path.hashCode;
 }
 
-final class _BoundedFile implements fs.File {
+final class _BoundedFile with BoundedFileForwards implements fs.File {
   const _BoundedFile(this._provider, this._delegate);
 
   final BoundedResourceProvider _provider;
   final fs.File _delegate;
+
+  @override
+  fs.File get fileDelegate => _delegate;
+
+  @override
+  fs.Folder wrapFolder(fs.Folder folder) => _BoundedFolder(_provider, folder);
+
+  @override
+  fs.File wrapFile(fs.File file) => _BoundedFile(_provider, file);
 
   bool get _isBlocked => _provider.isBlockedPath(_delegate.path);
 
@@ -1563,26 +1437,7 @@ final class _BoundedFile implements fs.File {
   }
 
   @override
-  fs.Folder get parent => _BoundedFolder(_provider, _delegate.parent);
-
-  @override
-  String get path => _delegate.path;
-
-  @override
   fs.ResourceProvider get provider => _provider;
-
-  @override
-  String get shortName => _delegate.shortName;
-
-  @override
-  fs.File copyTo(fs.Folder parentFolder) =>
-      _BoundedFile(_provider, _delegate.copyTo(parentFolder));
-
-  @override
-  void delete() => _delegate.delete();
-
-  @override
-  bool isOrContains(String path) => _delegate.isOrContains(path);
 
   @override
   Uint8List readAsBytesSync() {
@@ -1601,10 +1456,6 @@ final class _BoundedFile implements fs.File {
   }
 
   @override
-  fs.File renameSync(String newPath) =>
-      _BoundedFile(_provider, _delegate.renameSync(newPath));
-
-  @override
   fs.Resource resolveSymbolicLinksSync() {
     if (_isBlocked) {
       throw fs.FileSystemException(path, 'File does not exist');
@@ -1614,25 +1465,6 @@ final class _BoundedFile implements fs.File {
     if (resolved is fs.Folder) return _BoundedFolder(_provider, resolved);
     return resolved;
   }
-
-  @override
-  Uri toUri() => _delegate.toUri();
-
-  @override
-  fs.ResourceWatcher watch() => _delegate.watch();
-
-  @override
-  void writeAsBytesSync(List<int> bytes) => _delegate.writeAsBytesSync(bytes);
-
-  @override
-  void writeAsStringSync(String content) =>
-      _delegate.writeAsStringSync(content);
-
-  @override
-  bool operator ==(Object other) => other is fs.File && path == other.path;
-
-  @override
-  int get hashCode => path.hashCode;
 }
 
 // ---------------------------------------------------------------------------
@@ -1863,224 +1695,4 @@ final class _CachedSummaryFile implements fs.File {
 /// Decodes the `inputs` map from a raw `WorkRequest` protobuf payload,
 /// copying each digest out of [bytes] so the request buffer is not pinned.
 Map<String, Uint8List> decodeAnalyzerWorkRequestInputs(Uint8List bytes) =>
-    _WorkRequest.read(bytes).inputs;
-
-final class _WorkRequest {
-  const _WorkRequest({
-    required this.arguments,
-    required this.inputs,
-    required this.requestId,
-    required this.cancel,
-  });
-
-  factory _WorkRequest.read(Uint8List bytes) {
-    final arguments = <String>[];
-    final inputs = <String, Uint8List>{};
-    var requestId = 0;
-    var cancel = false;
-    final r = _Reader(bytes);
-    while (!r.isDone) {
-      final tag = r.varint();
-      switch (tag >> 3) {
-        case 1:
-          arguments.add(r.string());
-        case 2:
-          final nested = r.submessage();
-          var path = '';
-          var digest = Uint8List(0);
-          while (!nested.isDone) {
-            final inputTag = nested.varint();
-            switch (inputTag >> 3) {
-              case 1:
-                path = nested.string();
-              case 2:
-                digest = Uint8List.fromList(nested.bytes());
-              default:
-                nested.skip(inputTag & 7);
-            }
-          }
-          if (path.isNotEmpty) {
-            inputs[path] = digest;
-          }
-        case 3:
-          requestId = r.varint();
-        case 4:
-          cancel = r.varint() != 0;
-        default:
-          r.skip(tag & 7);
-      }
-    }
-    return _WorkRequest(
-      arguments: arguments,
-      inputs: inputs,
-      requestId: requestId,
-      cancel: cancel,
-    );
-  }
-
-  final List<String> arguments;
-  final Map<String, Uint8List> inputs;
-  final int requestId;
-  final bool cancel;
-}
-
-final class _WorkResponse {
-  const _WorkResponse({
-    required this.exitCode,
-    required this.output,
-    required this.requestId,
-  });
-
-  final int exitCode;
-  final String output;
-  final int requestId;
-
-  Uint8List write() {
-    final body = _Writer();
-    if (exitCode != 0) {
-      body
-        ..varint((1 << 3) | 0)
-        ..varint(exitCode);
-    }
-    if (output.isNotEmpty) {
-      final utf8Bytes = utf8.encode(output);
-      body
-        ..varint((2 << 3) | 2)
-        ..varint(utf8Bytes.length)
-        ..raw(utf8Bytes);
-    }
-    if (requestId != 0) {
-      body
-        ..varint((3 << 3) | 0)
-        ..varint(requestId);
-    }
-    final payload = body.takeBytes();
-    final frame = _Writer()
-      ..varint(payload.length)
-      ..raw(payload);
-    return frame.takeBytes();
-  }
-}
-
-final class _Frames extends Stream<Uint8List> {
-  _Frames(this._source);
-
-  final Stream<List<int>> _source;
-
-  @override
-  StreamSubscription<Uint8List> listen(
-    void Function(Uint8List)? onData, {
-    Function? onError,
-    void Function()? onDone,
-    bool? cancelOnError,
-  }) {
-    final controller = StreamController<Uint8List>();
-    var buf = Uint8List(0);
-    late final StreamSubscription<List<int>> sub;
-    sub = _source.listen(
-      (chunk) {
-        final merged = Uint8List(buf.length + chunk.length);
-        merged.setRange(0, buf.length, buf);
-        merged.setRange(buf.length, merged.length, chunk);
-        buf = merged;
-        while (true) {
-          var len = 0;
-          var shift = 0;
-          var pos = 0;
-          while (true) {
-            if (pos >= buf.length) return;
-            final b = buf[pos++];
-            len |= (b & 0x7f) << shift;
-            if ((b & 0x80) == 0) break;
-            shift += 7;
-          }
-          if (buf.length < pos + len) return;
-          final frame = Uint8List.fromList(
-            Uint8List.sublistView(buf, pos, pos + len),
-          );
-          final nextStart = pos + len;
-          buf = nextStart == buf.length
-              ? Uint8List(0)
-              : Uint8List.fromList(Uint8List.sublistView(buf, nextStart));
-          controller.add(frame);
-        }
-      },
-      onError: controller.addError,
-      onDone: controller.close,
-      cancelOnError: cancelOnError,
-    );
-    controller
-      ..onPause = sub.pause
-      ..onResume = sub.resume
-      ..onCancel = sub.cancel;
-    return controller.stream.listen(
-      onData,
-      onError: onError,
-      onDone: onDone,
-      cancelOnError: cancelOnError,
-    );
-  }
-}
-
-final class _Reader {
-  _Reader(this._buf);
-
-  final Uint8List _buf;
-  int _pos = 0;
-
-  bool get isDone => _pos >= _buf.length;
-
-  int varint() {
-    var result = 0;
-    var shift = 0;
-    while (true) {
-      final b = _buf[_pos++];
-      result |= (b & 0x7f) << shift;
-      if ((b & 0x80) == 0) return result;
-      shift += 7;
-    }
-  }
-
-  Uint8List bytes() {
-    final len = varint();
-    final slice = Uint8List.sublistView(_buf, _pos, _pos + len);
-    _pos += len;
-    return slice;
-  }
-
-  String string() => utf8.decode(bytes());
-
-  _Reader submessage() => _Reader(bytes());
-
-  void skip(int wireType) {
-    switch (wireType) {
-      case 0:
-        varint();
-      case 1:
-        _pos += 8;
-      case 2:
-        _pos += varint();
-      case 5:
-        _pos += 4;
-      default:
-        throw FormatException('unsupported wire type: $wireType');
-    }
-  }
-}
-
-final class _Writer {
-  final _buf = BytesBuilder(copy: false);
-
-  void varint(int value) {
-    var v = value;
-    while (v < 0 || v >= 0x80) {
-      _buf.addByte((v & 0x7f) | 0x80);
-      v = v >>> 7;
-    }
-    _buf.addByte(v);
-  }
-
-  void raw(List<int> bytes) => _buf.add(bytes);
-
-  Uint8List takeBytes() => _buf.takeBytes();
-}
+    WorkerRequest.read(bytes).inputs;
