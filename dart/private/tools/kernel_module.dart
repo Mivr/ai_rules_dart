@@ -4074,7 +4074,7 @@ class _UsedInputsReporter implements ModuleCompiler {
     } finally {
       try {
         File(tmp).deleteSync();
-      } on Object {
+      } on FileSystemException {
         // The compile owns its outputs; a stale report only costs precision.
       }
     }
@@ -4206,7 +4206,13 @@ Set<String>? _readUsedInputs(String path) {
       if (trimmed.isNotEmpty) used.add(_canonicalActionPath(trimmed));
     }
     return used;
-  } on Object {
+  } on FileSystemException {
+    // An unreadable report (file reads surface malformed UTF-8 as a
+    // file-system error too) proves nothing: fall back to the plan.
+    return null;
+  } on FormatException {
+    // A report line naming no URI the planner understands (such as a
+    // malformed `file://` URI) proves nothing either: same fallback.
     return null;
   }
 }
@@ -4743,8 +4749,10 @@ class _Persistent implements ModuleCompiler {
     try {
       child.stdin.add(_frame(_encodeRequest(args, inputs, _requestId)));
       await child.stdin.flush();
-    } on Object {
+    } on StateError {
       // A child that died before reading the request: the read below reports it.
+    } on FileSystemException {
+      // A broken pipe to a dead child: the read below reports it too.
     }
     try {
       final frame = await _responses!.next().timeout(_requestTimeout);

@@ -167,6 +167,32 @@ class _ReportingCompiler implements ModuleCompiler {
   Future<void> close() async {}
 }
 
+/// A compiler that writes raw [bytes] to each request's `--used-inputs` file,
+/// so the planner reads back exactly those bytes: malformed UTF-8 or lines
+/// the planner cannot parse.
+class _RawReportCompiler implements ModuleCompiler {
+  _RawReportCompiler(this.bytes);
+
+  final List<int> bytes;
+  final List<List<String>> calls = [];
+
+  @override
+  Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
+    calls.add(args);
+    for (var i = 0; i < args.length; i++) {
+      if (args[i].startsWith('--used-inputs=')) {
+        final file = File(args[i].substring('--used-inputs='.length));
+        await file.parent.create(recursive: true);
+        await file.writeAsBytes(bytes);
+      }
+    }
+    return const ModuleOutcome(0, '');
+  }
+
+  @override
+  Future<void> close() async {}
+}
+
 /// A compiler whose worker predates `--used-inputs`: it fails each request
 /// that passes the flag with the `package:args` unknown-option error, and
 /// succeeds without it.
@@ -784,12 +810,16 @@ bool _containsSubsequence(Uint8List haystack, List<int> needle) {
 
 /// A fake `kernel_worker`: answers the first request with undecodable bytes,
 /// then exits, so the tool retries once on a fresh child. `FAKE_WORKER_FRAME`
-/// selects the garbage: `format` is not UTF-8, `range` is truncated mid-field.
-/// It blocks for the request first, so the tool never writes to a closed pipe.
+/// selects the garbage: `format` is not UTF-8, `range` is truncated mid-field,
+/// `exit` exits before reading the request, so the tool writes to a dying
+/// child and reads an exit. The garbage modes block for the request first, so
+/// the tool never writes to a closed pipe.
 const _fakeWorkerSource = '''
 import 'dart:io';
 
 Future<void> main() async {
+  final mode = Platform.environment['FAKE_WORKER_FRAME'] ?? 'format';
+  if (mode == 'exit') exit(0);
   await stdin.first;
   final mode = Platform.environment['FAKE_WORKER_FRAME'] ?? 'format';
   final List<int> payload = mode == 'range'
@@ -3470,6 +3500,87 @@ void main(List<String> args) {
       expect(File(unusedPath).existsSync(), isFalse);
     });
 
+    test('a vanished used-inputs report is cleaned up silently', () async {
+      // The worker wrote no report, so the per-invocation file is already
+      // gone when the cleanup deletes it: `deleteSync` throws
+      // `FileSystemException`, which is swallowed, and the passed summaries
+      // count as used, exactly like a missing report.
+      _write('pkg/lib/a.dart', "import 'package:dep/u.dart';\nclass A {}\n");
+      final used = _module('used', [
+        _Scc('u.dill', ['dep/lib/u.dart'], []),
+      ]);
+      final clean = _module('clean', [
+        _Scc('c.dill', ['dep/lib/c.dart'], []),
+      ]);
+      final compiler = _ReportingCompiler(reported: null);
+      final unusedPath = '${_root.path}/out/m_unused_vanished.unused';
+      final result = await _compile(
+        'm_unused_vanished',
+        ['pkg/lib/a.dart'],
+        inputKmods: [used, clean],
+        compiler: compiler,
+        unusedInputsList: unusedPath,
+      );
+      expect(result.code, 0, reason: result.log);
+      expect(
+        Directory('${_root.path}/out/m_unused_vanished')
+            .listSync()
+            .where((entity) => entity.path.contains('.used-inputs-')),
+        isEmpty,
+        reason: 'the per-invocation report is deleted after it is read',
+      );
+    });
+
+    test('an undecodable used-inputs report falls back like a missing one', () async {
+      // Bytes that are not UTF-8 make `readAsLinesSync` throw
+      // `FileSystemException`; a line that is not a URI the planner
+      // understands makes `Uri.parse` throw `FormatException`. Both must
+      // read as no report, matching a worker that wrote none.
+      _write('pkg/lib/a.dart', "import 'package:dep/u.dart';\nclass A {}\n");
+      final used = _module('used', [
+        _Scc('u.dill', ['dep/lib/u.dart'], []),
+      ]);
+      final clean = _module('clean', [
+        _Scc('c.dill', ['dep/lib/c.dart'], []),
+      ]);
+      Future<List<String>> unusedLinesFor(
+        ModuleCompiler compiler,
+        String tag,
+      ) async {
+        final unusedPath = '${_root.path}/out/$tag.unused';
+        final result = await _compile(
+          tag,
+          ['pkg/lib/a.dart'],
+          inputKmods: [used, clean],
+          compiler: compiler,
+          unusedInputsList: unusedPath,
+        );
+        expect(result.code, 0, reason: result.log);
+        return File(unusedPath).readAsLinesSync();
+      }
+
+      final missing = await unusedLinesFor(
+        _ReportingCompiler(reported: null),
+        'm_unused_missing',
+      );
+      expect(
+        await unusedLinesFor(
+          _RawReportCompiler(const [0xff, 0xfe, 0x0a]),
+          'm_unused_badbytes',
+        ),
+        missing,
+        reason: 'malformed bytes read as no report',
+      );
+      expect(
+        await unusedLinesFor(
+          _RawReportCompiler(utf8.encode('file://[invalid\n')),
+          'm_unused_baduri',
+        ),
+        missing,
+        reason: 'an unparsable report line reads as no report',
+      );
+    });
+
     test('an entry lists dependency sources it never compiles', () async {
       _write(
         'pkg/lib/main.dart',
@@ -4889,6 +5000,17 @@ void main(List<String> args) {
       expect(requestId, 7);
       expect(code, 1);
       expect(output, contains('not a WorkResponse'));
+      expect(output, contains('Failed twice'));
+    });
+
+    test('a worker that exits before reading fails the request after one retry', () async {
+      // The write to the dying child may fail or buffer; either way the
+      // read reports the exit and the request runs again on a fresh child.
+      if (_toolSnapshotPath.isEmpty) return;
+      final (code, output, requestId) = await garbageResponse('exit');
+      expect(requestId, 7);
+      expect(code, 1);
+      expect(output, contains('exited before responding'));
       expect(output, contains('Failed twice'));
     });
   });
