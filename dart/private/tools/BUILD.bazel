@@ -1,4 +1,4 @@
-load("//dart:defs.bzl", "dart_binary", "dart_test")
+load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
 
 dart_binary(
     name = "noop",
@@ -29,6 +29,23 @@ exports_files(
 exports_files(
     ["comma_patch.dart"],
     visibility = ["//dart:__subpackages__"],
+)
+
+# The single persistent-worker protocol and staged-source plumbing
+# implementation shared by the build-action runners (see
+# `worker_protocol.dart` and `worker_tool_fs.dart`).
+dart_library(
+    name = "worker_protocol",
+    package_name = "rules_dart_worker",
+    srcs = [
+        "lib/worker_protocol.dart",
+        "lib/worker_tool_fs.dart",
+    ],
+    visibility = ["//dart:__subpackages__"],
+    deps = [
+        "@ext_pub_deps//:analyzer",
+        "@ext_pub_deps//:path",
+    ],
 )
 
 dart_binary(
@@ -65,6 +82,7 @@ dart_binary(
     modular_kernel = False,
     visibility = ["//dart:__subpackages__"],
     deps = [
+        ":worker_protocol",
         "//dart/guard:directive_guard",
         "//third_party/dart_linter:linter",
         "@ext_pub_deps//:analyzer",
@@ -360,6 +378,7 @@ dart_test(
     srcs = ["analyzer_summary.dart"],
     main = "analyzer_summary_test.dart",
     deps = [
+        ":worker_protocol",
         "//dart/guard:directive_guard",
         "//third_party/dart_linter:linter",
         "@ext_pub_deps//:analyzer",
