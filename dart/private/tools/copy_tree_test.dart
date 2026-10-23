@@ -296,10 +296,10 @@ void main() {
       // in two configurations. The buggy planner kept the first silently.
       final first = File('${tmp.path}/first/a.dart')
         ..createSync(recursive: true)
-        ..writeAsStringSync('abc');
+        ..writeAsStringSync('hello one');
       final second = File('${tmp.path}/second/a.dart')
         ..createSync(recursive: true)
-        ..writeAsStringSync('abd');
+        ..writeAsStringSync('hello two');
       List<String> named(File file) => [
         file.path,
         'lib/a.dart',
@@ -342,10 +342,10 @@ void main() {
     test('two files with one destination and different sizes fail', () async {
       final first = File('${tmp.path}/first_size/a.dart')
         ..createSync(recursive: true)
-        ..writeAsStringSync('abc');
+        ..writeAsStringSync('hello one');
       final second = File('${tmp.path}/second_size/a.dart')
         ..createSync(recursive: true)
-        ..writeAsStringSync('abcd');
+        ..writeAsStringSync('hello one!');
       await expectLater(
         run(
           params(
