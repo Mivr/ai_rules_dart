@@ -62,22 +62,30 @@ def _tarjan_finish(node, work, index_of, lowlink, stack, on_stack, result):
     if lowlink[node] == index_of[node]:
         result.append(_tarjan_pop_component(node, stack, on_stack))
 
-def _tarjan_walk(root, successors, index_of, lowlink, on_stack, stack, counter, result, budget):
-    """Iteratively walks the reachable graph from `root`, appending components to `result`."""
+def _tarjan_walk(root, successors, state, budget):
+    """Iteratively walks the reachable graph from `root`, appending components to the state's result.
+
+    Args:
+      root: The package name to walk from.
+      successors: Dict of package name to its sorted in-graph successors.
+      state: The shared Tarjan `struct` built by `compute_sccs` (`index_of`,
+        `lowlink`, `on_stack`, `stack`, `counter`, `result`).
+      budget: Step budget for the walk (see `compute_sccs`).
+    """
     work = [(root, 0)]
     for _ in range(budget):
         if not work:
             break
         node = work[-1][0]
         child_pos = work[-1][1]
-        if child_pos == 0 and node not in index_of:
-            _tarjan_visit(node, index_of, lowlink, on_stack, stack, counter)
+        if child_pos == 0 and node not in state.index_of:
+            _tarjan_visit(node, state.index_of, state.lowlink, state.on_stack, state.stack, state.counter)
         deps = successors[node]
         if child_pos < len(deps):
             work[-1] = (node, child_pos + 1)
-            _tarjan_advance(node, deps[child_pos], index_of, lowlink, on_stack, work)
+            _tarjan_advance(node, deps[child_pos], state.index_of, state.lowlink, state.on_stack, work)
         else:
-            _tarjan_finish(node, work, index_of, lowlink, stack, on_stack, result)
+            _tarjan_finish(node, work, state.index_of, state.lowlink, state.stack, state.on_stack, state.result)
 
 def compute_sccs(dep_map):
     """Computes the strongly connected components of a dependency graph.
@@ -109,12 +117,17 @@ def compute_sccs(dep_map):
     # fixed order, so iteration order cannot leak into the result.
     successors = _successor_map(names, dep_map, in_graph)
 
-    index_of = {}
-    lowlink = {}
-    on_stack = {}
-    stack = []
-    counter = [0]
-    result = []
+    # The Tarjan walk state travels together through every step, so it is one
+    # struct built here and passed down, rather than six parameters on each
+    # call. Its dict and list fields are mutated in place through the struct.
+    state = struct(
+        index_of = {},
+        lowlink = {},
+        on_stack = {},
+        stack = [],
+        counter = [0],
+        result = [],
+    )
 
     # Step budget for the iterative walk: each iteration pushes a node, pops
     # one, or advances past one edge, so `2 * nodes + edges + 1` always
@@ -125,12 +138,12 @@ def compute_sccs(dep_map):
     budget = 2 * len(names) + total_edges + 1
 
     for root in names:
-        if root in index_of:
+        if root in state.index_of:
             continue
-        _tarjan_walk(root, successors, index_of, lowlink, on_stack, stack, counter, result, budget)
+        _tarjan_walk(root, successors, state, budget)
 
     order = {}
-    for component in result:
+    for component in state.result:
         first = component[0]
         order[first] = component
     return [order[key] for key in sorted(order.keys())]
