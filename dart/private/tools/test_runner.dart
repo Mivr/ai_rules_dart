@@ -67,16 +67,21 @@ Future<void> main(List<String> args) async {
       exit(1);
     }
   }
+  final suiteVm = (
+    dart: dart,
+    runner: File(r.rlocation(runnerKey)).absolute.path,
+  );
+  final suiteSource = (
+    dill: dill,
+    baseDill: baseDill,
+    testSource: File(r.rlocation(env['RULES_DART_TEST_MAIN']!)).absolute.path,
+    testPath: env['RULES_DART_TEST_PATH']!,
+  );
   exit(
     await _runUnderRunner(
-      dart: dart,
-      dill: dill,
-      baseDill: baseDill,
-      runner: File(r.rlocation(runnerKey)).absolute.path,
-      testSource: File(r.rlocation(env['RULES_DART_TEST_MAIN']!)).absolute.path,
-      testPath: env['RULES_DART_TEST_PATH']!,
-      manifest: manifest,
-      workspace: workspace,
+      vm: suiteVm,
+      source: suiteSource,
+      workspace: (manifest: manifest, workspace: workspace),
       args: args,
     ),
   );
@@ -157,53 +162,67 @@ Future<int> _runDirectly(
   }
 }
 
-Future<int> _runUnderRunner({
-  required String dart,
-  required String dill,
+/// The executables for one suite run: the Dart VM and the `package:test`
+/// runner that hosts the suite.
+typedef _SuiteVm = ({String dart, String runner});
+
+/// The suite under run: its precompiled dill, the base dill it extends, the
+/// test source, and the test's workspace-relative path.
+typedef _SuiteSource = ({
+  String dill,
   String? baseDill,
-  required String runner,
-  required String testSource,
-  required String testPath,
-  required String? manifest,
-  required String? workspace,
+  String testSource,
+  String testPath,
+});
+
+/// The runfiles context a suite runs in: the manifest file and the workspace
+/// name, each null outside Bazel.
+typedef _SuiteWorkspace = ({String? manifest, String? workspace});
+
+Future<int> _runUnderRunner({
+  required _SuiteVm vm,
+  required _SuiteSource source,
+  required _SuiteWorkspace workspace,
   required List<String> args,
 }) async {
   final env = Platform.environment;
 
-  if (!_isRunnableLayout(dill: dill, baseDill: baseDill, testPath: testPath)) {
+  if (!_isRunnableLayout(
+    dill: source.dill,
+    baseDill: source.baseDill,
+    testPath: source.testPath,
+  )) {
     return 1;
   }
   final tmp = Directory(env['TEST_TMPDIR'] ?? Directory.systemTemp.path)
       .createTempSync('dart_test.');
   final precompiled = _preparePrecompiled(
-    dill: dill,
-    baseDill: baseDill,
-    testPath: testPath,
+    dill: source.dill,
+    baseDill: source.baseDill,
+    testPath: source.testPath,
     tmp: tmp,
   );
   final inPlace = _stageSuiteWorkspace(
-    testSource: testSource,
-    testPath: testPath,
-    manifest: manifest,
-    workspace: workspace,
+    testSource: source.testSource,
+    testPath: source.testPath,
+    manifest: workspace.manifest,
+    workspace: workspace.workspace,
     tmp: tmp,
   );
   final report = staging.joinPaths(tmp.path, 'results.json');
 
-  final vm = await Process.start(
-    dart,
+  final vmProcess = await Process.start(
+    vm.dart,
     _suiteCommand(
-      runner: runner,
+      runner: vm.runner,
       precompiled: precompiled.precompiled,
-      testPath: testPath,
+      testPath: source.testPath,
       report: report,
-      tmp: tmp,
-      args: args,
       env: env,
     ),
     workingDirectory: inPlace ? null : tmp.path,
     environment: {
-      ..._childRunfilesEnv(env, manifest),
+      ..._childRunfilesEnv(env, workspace.manifest),
       'RULES_DART_TEST_ARGS': jsonEncode(args),
       // The runner reads a per-user config (`~/.dart_test.yaml`, or
       // `%LOCALAPPDATA%\DartTest.yaml`) unless this names one. A path that
@@ -217,11 +236,11 @@ Future<int> _runUnderRunner({
     },
     mode: ProcessStartMode.inheritStdio,
   );
-  final code = await _waitForSuite(vm, combined: precompiled.combined);
+  final code = await _waitForSuite(vmProcess, combined: precompiled.combined);
   return _finishSuiteRun(
     code: code,
     report: report,
-    testPath: testPath,
+    testPath: source.testPath,
     env: env,
   );
 }
@@ -325,8 +344,6 @@ List<String> _suiteCommand({
   required String precompiled,
   required String testPath,
   required String report,
-  required Directory tmp,
-  required List<String> args,
   required Map<String, String> env,
 }) {
   final filter = env['TESTBRIDGE_TEST_ONLY'];

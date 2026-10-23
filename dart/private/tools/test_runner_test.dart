@@ -126,6 +126,26 @@ void main(List<String> args) {
     expect(err, contains('dart_test: base dill not found'));
   });
 
+  test(
+    'a suite whose dill is not laid out for its path fails clearly',
+    () async {
+      final process = await Process.start(
+        launcher,
+        const [],
+        environment: {
+          'RULES_DART_DILL': args[1],
+          'RULES_DART_TEST_RUNNER': args[1],
+          'RULES_DART_TEST_MAIN': args[1],
+          'RULES_DART_TEST_PATH': 'pkg/my_test.dart',
+        },
+      );
+      final err = await process.stderr.transform(utf8.decoder).join();
+      await process.stdout.drain<void>();
+      expect(await process.exitCode, 1);
+      expect(err, contains('is not laid out for pkg/my_test.dart'));
+    },
+  );
+
   test('a test without package:test materializes workspace from manifest when not in place', () async {
     final tmp = await Directory.systemTemp.createTemp('test_runner_manifest_');
     addTearDown(() => tmp.deleteSync(recursive: true));
