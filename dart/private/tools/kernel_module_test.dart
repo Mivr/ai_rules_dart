@@ -1161,6 +1161,35 @@ void main(List<String> args) {
     ]);
   });
 
+  test('a split library adopts a part peer from a subdirectory', () async {
+    _write(
+      'pkg/lib/parent.dart',
+      "library my.parent;\npart 'sub/uri_part.dart';\nint f() => a;\n",
+    );
+    _write(
+      'pkg/lib/sub/uri_part.dart',
+      "part of '../parent.dart';\nconst a = 1;\n",
+    );
+
+    final dep = _module('dep_sub_part', []);
+    final sidecar = _sidecar('dep_sub_part', {
+      'pkg/lib/parent.dart':
+          'its part sub/uri_part.dart is not an input of this module',
+    });
+    final result = await _compile(
+      'from_sub_part',
+      ['pkg/lib/sub/uri_part.dart'],
+      inputSources: ['pkg/lib/parent.dart'],
+      inputKmods: [dep],
+      closureExcluded: [sidecar],
+    );
+    expect(result.code, 0);
+    expect(result.excluded, isEmpty);
+    expect(result.defines, [
+      ['pkg/lib/parent.dart', 'pkg/lib/sub/uri_part.dart'],
+    ]);
+  });
+
   group('directive URI resolution matches the front end', () {
     const dirs = {'pkg': 'pkg/lib', 'dep': 'dep/lib'};
 

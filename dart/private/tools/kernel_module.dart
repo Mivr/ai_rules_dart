@@ -906,11 +906,7 @@ class _ModuleBuild {
     final entry = await _entrySources(
       options.sources,
       inherited,
-      graph,
-      roots,
-      files,
-      vm,
-      options.multiRootPrefix,
+      _resolveScope,
     );
     final blocked = _checkEntry(entry);
     if (blocked != null) return blocked;
@@ -1141,6 +1137,15 @@ class _ModuleBuild {
     return 0;
   }
 
+  /// The shared resolution context of the planner, adoption and entry walk.
+  _ResolveScope get _resolveScope => _ResolveScope(
+    graph: graph,
+    roots: roots,
+    files: files,
+    vm: vm,
+    multiRootPrefix: options.multiRootPrefix,
+  );
+
   /// Plans the own sources' imports, adopting part peers. Returns the exit
   /// code when an own source is undeclared or a directive is disallowed.
   Future<({Map<String, String> keys, _Plan plan, int? exit})>
@@ -1160,27 +1165,13 @@ class _ModuleBuild {
       keys[uri] = key;
       plan.addOwn(key, uri);
     }
-    await _adoptDeclaredPartPeers(
-      own,
-      keys,
-      plan,
-      inherited,
-      graph,
-      roots,
-      files,
-      vm,
-      options.multiRootPrefix,
-    );
+    await _adoptDeclaredPartPeers(own, keys, plan, inherited, _resolveScope);
     final disallowed = await _planImports(
       plan,
       keys,
       inherited,
-      graph,
-      roots,
-      files,
-      vm,
       log,
-      options.multiRootPrefix,
+      _resolveScope,
     );
     if (disallowed.isNotEmpty) {
       for (final error in disallowed) {
@@ -2134,6 +2125,43 @@ class _Plan {
   }
 }
 
+/// The shared resolution context of the import planner, the part-peer
+/// adoption and the entry walk: the closure graph, the package roots, the
+/// declared file view, the VM libraries and the multi-root prefix. One
+/// object travels to every helper that resolves a directive URI to a key.
+final class _ResolveScope {
+  const _ResolveScope({
+    required this.graph,
+    required this.roots,
+    required this.files,
+    required this.vm,
+    required this.multiRootPrefix,
+  });
+
+  final Map<String, _Node> graph;
+  final Map<String, _PackageRoot> roots;
+  final _Files files;
+  final Set<String> vm;
+  final String multiRootPrefix;
+}
+
+/// One directive reference and the plan it updates: the scanned reference,
+/// its source key, the import plan and the direct exclusions. One object
+/// travels to every helper that plans a single reference.
+final class _RefPlan {
+  _RefPlan({
+    required this.ref,
+    required this.key,
+    required this.plan,
+    required this.direct,
+  });
+
+  final ScanRef ref;
+  final String key;
+  final _Plan plan;
+  final Map<String, String> direct;
+}
+
 /// Adopts declared non-graph peer files (`--input-source` or staged `.koutline`
 /// sources) that complete a `part` / `part of` library unit with this module's
 /// own or inherited excluded sources.
@@ -2142,31 +2170,27 @@ Future<void> _adoptDeclaredPartPeers(
   Map<String, String> keys,
   _Plan plan,
   Map<String, String> inherited,
-  Map<String, _Node> graph,
-  Map<String, _PackageRoot> roots,
-  _Files files,
-  Set<String> vm,
-  String multiRootPrefix,
+  _ResolveScope scope,
 ) async {
   if (!await _usesPartDirectives(
     {...keys.values, ...inherited.keys},
-    files,
-    vm,
+    scope.files,
+    scope.vm,
   )) {
     return;
   }
 
   final candidates = <String>{
     ...keys.values,
-    for (final key in files.declaredKeys)
-      if (!graph.containsKey(key)) key,
+    for (final key in scope.files.declaredKeys)
+      if (!scope.graph.containsKey(key)) key,
   };
-  final peers = await _scanPeerCandidates(candidates, files, vm);
+  final peers = await _scanPeerCandidates(candidates, scope.files, scope.vm);
   final links = _linkPartDirectives(
     peers.scans,
     peers.libraryByName,
-    roots,
-    multiRootPrefix,
+    scope.roots,
+    scope.multiRootPrefix,
   );
 
   final resolvedPartsOf = <String, Set<String>>{
@@ -2181,7 +2205,7 @@ Future<void> _adoptDeclaredPartPeers(
         !unit.any((m) => plan.isOwn(m) || inherited.containsKey(m))) {
       continue;
     }
-    _adoptUnit(unit, plan, inherited, own, keys, roots, multiRootPrefix);
+    _adoptUnit(unit, plan, inherited, own, keys, scope);
   }
 }
 
@@ -2301,8 +2325,7 @@ void _adoptUnit(
   Map<String, String> inherited,
   List<String> own,
   Map<String, String> keys,
-  Map<String, _PackageRoot> roots,
-  String multiRootPrefix,
+  _ResolveScope scope,
 ) {
   for (final member in unit) {
     if (plan.isOwn(member)) continue;
@@ -2311,8 +2334,8 @@ void _adoptUnit(
     plan.addConsulted(member);
     final uri = _packageUriOf(
       member,
-      inherited[member] ?? '$multiRootPrefix$member',
-      roots,
+      inherited[member] ?? '${scope.multiRootPrefix}$member',
+      scope.roots,
     );
     own.add(uri);
     keys[uri] = member;
@@ -2361,12 +2384,8 @@ Future<List<String>> _planImports(
   _Plan plan,
   Map<String, String> keys,
   Map<String, String> inherited,
-  Map<String, _Node> graph,
-  Map<String, _PackageRoot> roots,
-  _Files files,
-  Set<String> vm,
   StringBuffer log,
-  String multiRootPrefix,
+  _ResolveScope scope,
 ) async {
   final disallowed = <String>[];
   final uriOfKey = <String, String>{
@@ -2374,10 +2393,10 @@ Future<List<String>> _planImports(
   };
   final scanned = await _scanImportDirectives(
     keys,
-    files,
-    vm,
-    roots,
-    multiRootPrefix,
+    scope.files,
+    scope.vm,
+    scope.roots,
+    scope.multiRootPrefix,
     log,
   );
   final direct = <String, String>{};
@@ -2396,25 +2415,23 @@ Future<List<String>> _planImports(
     }
     for (final ref in scan.refs) {
       if (_rejectMalformedRef(ref, key, uriOfKey, disallowed)) continue;
-      if (_planSdkRef(ref, key, vm, direct)) continue;
-      final target = _resolveUri(ref.uri, key, roots, multiRootPrefix);
+      if (_planSdkRef(ref, key, scope.vm, direct)) continue;
+      final at = _RefPlan(ref: ref, key: key, plan: plan, direct: direct);
+      final target = _resolveUri(
+        ref.uri,
+        key,
+        scope.roots,
+        scope.multiRootPrefix,
+      );
       if (target == null) {
-        _planUnresolvedRef(
-          ref,
-          key,
-          uriOfKey,
-          multiRootPrefix,
-          plan,
-          direct,
-          disallowed,
-        );
+        _planUnresolvedRef(at, uriOfKey, disallowed, scope);
         continue;
       }
       if (ref.isPartOf) {
         _planPartOfRef(ref, key, target, scanned.declaredPartsOf, plan, direct);
         continue;
       }
-      _planResolvedImport(ref, key, target, inherited, graph, plan, direct);
+      _planResolvedImport(at, target, inherited, scope);
     }
   }
   plan.exclude(direct);
@@ -2536,14 +2553,13 @@ bool _planSdkRef(
 /// host-reading URIs fail the build, while unknown-scheme names exclude the
 /// importer with the reason the compiler would lack.
 void _planUnresolvedRef(
-  ScanRef ref,
-  String key,
+  _RefPlan at,
   Map<String, String> uriOfKey,
-  String multiRootPrefix,
-  _Plan plan,
-  Map<String, String> direct,
   List<String> disallowed,
+  _ResolveScope scope,
 ) {
+  final ref = at.ref;
+  final key = at.key;
   // A schemeless `//` authority (`\` separates like the front end, so a
   // leading `\\` counts too) reads above every root, outside the declared
   // inputs: it fails however the directive names it, parts included.
@@ -2558,7 +2574,10 @@ void _planUnresolvedRef(
   // doc comment): it would read the host, outside every multi-root.
   final outsideInputs = ref.isPart || ref.isPartOf
       ? isFileSchemeDirectiveUri(ref.uri)
-      : isDisallowedDirectiveUri(ref.uri, multiRootPrefix: multiRootPrefix);
+      : isDisallowedDirectiveUri(
+          ref.uri,
+          multiRootPrefix: scope.multiRootPrefix,
+        );
   if (outsideInputs) {
     disallowed.add(
       'kernel_module: cannot compile ${uriOfKey[key] ?? key}: '
@@ -2569,17 +2588,17 @@ void _planUnresolvedRef(
   // A `package:` the module's config does not name. Other schemes are not Dart
   // sources this module can read, and resolve to null without a rule of their own.
   if (ref.isPartOf) {
-    direct.putIfAbsent(
+    at.direct.putIfAbsent(
       key,
       () => 'its library ${ref.uri} is not an input of this module',
     );
   } else if (ref.isPart) {
-    direct.putIfAbsent(
+    at.direct.putIfAbsent(
       key,
       () => 'its part ${ref.uri} is not an input of this module',
     );
   } else if (ref.uri.startsWith('package:')) {
-    direct.putIfAbsent(
+    at.direct.putIfAbsent(
       key,
       () => '${ref.uri} names a package this module does not have',
     );
@@ -2623,20 +2642,20 @@ void _planPartOfRef(
 /// Plans a resolved import, export or `part` URI: records the edge, and
 /// excludes the importer when the target is outside this module's closure.
 void _planResolvedImport(
-  ScanRef ref,
-  String key,
+  _RefPlan at,
   String target,
   Map<String, String> inherited,
-  Map<String, _Node> graph,
-  _Plan plan,
-  Map<String, String> direct,
+  _ResolveScope scope,
 ) {
+  final ref = at.ref;
+  final key = at.key;
+  final plan = at.plan;
   plan.addImport(importer: key, target: target);
   if (ref.isPart && !plan.isOwn(target)) {
     // The exclusion decision consulted the non-own part, so its provider
     // is never listed as unused.
     plan.addConsulted(target);
-    direct.putIfAbsent(
+    at.direct.putIfAbsent(
       key,
       () => 'its part ${ref.uri} is not an input of this module',
     );
@@ -2653,12 +2672,12 @@ void _planResolvedImport(
     // The exclusion decision consulted the closure-excluded source, so
     // its provider is never listed as unused.
     plan.addConsulted(target);
-    direct.putIfAbsent(key, () => 'imports ${ref.uri}, which is excluded');
-  } else if (!graph.containsKey(target)) {
+    at.direct.putIfAbsent(key, () => 'imports ${ref.uri}, which is excluded');
+  } else if (!scope.graph.containsKey(target)) {
     // The missing-key exclusion consulted the absent closure key, so its
     // package's providers are never listed as unused.
     plan.addConsulted(target);
-    direct.putIfAbsent(
+    at.direct.putIfAbsent(
       key,
       () => 'imports ${ref.uri}, which is not in this module closure',
     );
@@ -2725,13 +2744,16 @@ class _EntryEdge {
 Future<_EntrySources> _entrySources(
   List<String> sources,
   Map<String, String> closure,
-  Map<String, _Node> graph,
-  Map<String, _PackageRoot> roots,
-  _Files files,
-  Set<String> vm,
-  String multiRootPrefix,
+  _ResolveScope scope,
 ) async {
-  final walk = _EntryWalk(closure, graph, roots, files, vm, multiRootPrefix);
+  final walk = _EntryWalk(
+    closure,
+    scope.graph,
+    scope.roots,
+    scope.files,
+    scope.vm,
+    scope.multiRootPrefix,
+  );
   walk.seed(sources);
   await walk.run();
   return walk.result();
