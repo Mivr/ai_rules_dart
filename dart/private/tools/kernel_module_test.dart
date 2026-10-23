@@ -5574,6 +5574,16 @@ void main(List<String> args) {
     }
   });
 
+  test('stripSourceCodeFromDill walks multi-byte UInt30 lengths', () {
+    // A URI over 127 bytes encodes its length in two UInt30 bytes: the
+    // rewriter must walk it exactly, keeping the URI while emptying the body.
+    final longUri = 'package:pkg/${'a' * 200}.dart';
+    final stripped = stripSourceCodeFromDill(
+      _buildDillWithUris([longUri, 'b.dart']),
+    );
+    expect(dillSourceUris(stripped), [longUri, 'b.dart']);
+  });
+
   test('modular outline preserves mixin stack trace offsets, UnevaluatedConstant children, and non-const final field edit cutoff across supported SDKs', () async {
     expect(_sdkDartPaths.length, greaterThanOrEqualTo(2));
     final seenSdkVersions = <String>{};

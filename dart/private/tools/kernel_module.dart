@@ -5423,6 +5423,38 @@ _StripIndex? _parseStripIndex(Uint8List data) {
   );
 }
 
+/// Reads kernel UInt30 values from a component's bytes, tracking the offset.
+/// The source-table rewriter and the link-table scanner read the same
+/// encoding over trusted offsets (both fail closed before reading), so one
+/// cursor serves both.
+final class _U30Reader {
+  _U30Reader(this._data, int position) : _pos = position;
+
+  final Uint8List _data;
+  int _pos;
+
+  /// The current offset in [_data].
+  int get position => _pos;
+
+  /// Advances past [count] bytes.
+  void skip(int count) {
+    _pos += count;
+  }
+
+  /// The next UInt30 value.
+  int read() {
+    final b0 = _data[_pos++];
+    if ((b0 & 0x80) == 0) return b0;
+    if ((b0 & 0x40) == 0) {
+      return ((b0 & 0x3f) << 8) | _data[_pos++];
+    }
+    final b1 = _data[_pos++];
+    final b2 = _data[_pos++];
+    final b3 = _data[_pos++];
+    return ((b0 & 0x3f) << 24) | (b1 << 16) | (b2 << 8) | b3;
+  }
+}
+
 /// Rewrites the source table with every source body emptied, returning the new
 /// table and the length of the table it replaces.
 ({Uint8List bytes, int replacedLength}) _rebuildSourceTable(
@@ -5431,18 +5463,7 @@ _StripIndex? _parseStripIndex(Uint8List data) {
   int offConstantTable,
   int numSources,
 ) {
-  var pos = offSourceTable + 4;
-  int readUInt30() {
-    final b0 = data[pos++];
-    if ((b0 & 0x80) == 0) return b0;
-    if ((b0 & 0x40) == 0) {
-      return ((b0 & 0x3f) << 8) | data[pos++];
-    }
-    final b1 = data[pos++];
-    final b2 = data[pos++];
-    final b3 = data[pos++];
-    return ((b0 & 0x3f) << 24) | (b1 << 16) | (b2 << 8) | b3;
-  }
+  final u30 = _U30Reader(data, offSourceTable + 4);
 
   final newSt = BytesBuilder(copy: false);
   final header4 = ByteData(4)..setUint32(0, numSources);
@@ -5453,31 +5474,31 @@ _StripIndex? _parseStripIndex(Uint8List data) {
     newSourceOffsets[i] = offSourceTable + newSt.length;
 
     // 1. uri: UInt30 byteLength + UTF-8 bytes
-    final uStart = pos;
-    final uLen = readUInt30();
-    pos += uLen;
-    newSt.add(Uint8List.sublistView(data, uStart, pos));
+    final uStart = u30.position;
+    final uLen = u30.read();
+    u30.skip(uLen);
+    newSt.add(Uint8List.sublistView(data, uStart, u30.position));
 
     // 2. sourceCode: UInt30 byteLength + UTF-8 bytes -> replace with empty (0x00)
-    final sLen = readUInt30();
-    pos += sLen;
+    final sLen = u30.read();
+    u30.skip(sLen);
     newSt.addByte(0);
 
     // 3. lineStarts: UInt30 count + count * UInt30 delta
-    final lsStart = pos;
-    final lineCount = readUInt30();
+    final lsStart = u30.position;
+    final lineCount = u30.read();
     for (var j = 0; j < lineCount; j++) {
-      readUInt30();
+      u30.read();
     }
     // 4. importUri: UInt30 byteLength + UTF-8 bytes
-    final iuLen = readUInt30();
-    pos += iuLen;
+    final iuLen = u30.read();
+    u30.skip(iuLen);
     // 5. constantCoverageConstructors: UInt30 count + count * UInt30
-    final ccCount = readUInt30();
+    final ccCount = u30.read();
     for (var j = 0; j < ccCount; j++) {
-      readUInt30();
+      u30.read();
     }
-    newSt.add(Uint8List.sublistView(data, lsStart, pos));
+    newSt.add(Uint8List.sublistView(data, lsStart, u30.position));
   }
 
   final offsetsBuf = ByteData(numSources * 4);
@@ -5494,25 +5515,16 @@ _StripIndex? _parseStripIndex(Uint8List data) {
 
 /// The end of the link table's canonical entries, clamped to the metadata.
 int _linkTableEnd(Uint8List data, int offLinkTable, int offMetadataPayloads) {
-  var pos = offLinkTable;
-  int readUInt30() {
-    final b0 = data[pos++];
-    if ((b0 & 0x80) == 0) return b0;
-    if ((b0 & 0x40) == 0) {
-      return ((b0 & 0x3f) << 8) | data[pos++];
-    }
-    final b1 = data[pos++];
-    final b2 = data[pos++];
-    final b3 = data[pos++];
-    return ((b0 & 0x3f) << 24) | (b1 << 16) | (b2 << 8) | b3;
-  }
+  final u30 = _U30Reader(data, offLinkTable);
 
-  final canonCount = readUInt30();
+  final canonCount = u30.read();
   for (var i = 0; i < canonCount; i++) {
-    readUInt30();
-    readUInt30();
+    u30.read();
+    u30.read();
   }
-  return pos <= offMetadataPayloads ? pos : offMetadataPayloads;
+  return u30.position <= offMetadataPayloads
+      ? u30.position
+      : offMetadataPayloads;
 }
 
 /// Splices the rewritten source table back into the component, realigning the
