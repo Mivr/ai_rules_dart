@@ -66,6 +66,8 @@ load(
     "kernel_module_outputs",
     "library_kernel_options",
     "library_kernel_sources",
+    "modular_kernel_conditions",
+    "modular_kernel_mode",
 )
 
 # The `org-dartlang-root` scheme `--multi-root` maps onto the exec root (`.`) and
@@ -551,52 +553,31 @@ def _has_no_analyze_tag(ctx):
                 return True
     return False
 
-def modular_kernel_eligible(
-        enabled,
-        kernel_mode,
-        dep_modular,
-        packages_consistent,
-        has_code_assets,
-        has_own_defines,
-        has_compile_flags,
-        has_duplicate_source,
-        same_sdk):
+def modular_kernel_eligible(conditions):
     """Whether one executable compiles modularly, given every fact that decides it.
 
-    Each `False` is a reason the executable falls back to whole-program compilation,
-    which is always correct, only slower.
+    Each `False` (each `True` of the `has_*` facts) is a reason the executable
+    falls back to whole-program compilation, which is always correct, only
+    slower.
 
     Args:
-      enabled: The `//dart:modular_kernel` flag.
-      kernel_mode: Whether the executable is a kernel (`dart_test` always is).
-      dep_modular: Whether every dependency's closure is modular.
-      packages_consistent: `kernel_packages_consistent` over the executable's closure.
-      has_code_assets: Whether native code assets are embedded in the kernel. The
-        embedding runs the front end over the whole program at once.
-      has_own_defines: Whether the executable's own `defines` attribute is set.
-        Modules compile with the `//dart:extra_dart_defines` flag, which is the same
-        for the whole build, so the flag's `-D`s are shared by every module. Only a
-        target's own `defines` cannot be shared, so only they fall back.
-      has_compile_flags: Whether `dart_compile_flags` are set. They reach
-        `dart compile`, which the modular path does not run.
-      has_duplicate_source: Whether `duplicated_source` found a repeat.
-      same_sdk: Whether the exec and target SDKs report the same version. A kernel
-        compiled by one is loaded by the other, and the VM accepts only its own
-        kernel format.
+      conditions: The struct from `modular_kernel_conditions()`, nesting the
+        struct from `modular_kernel_mode()`.
 
     Returns:
       True when the executable compiles modularly.
     """
+    mode = conditions.mode
     return (
-        enabled and
-        kernel_mode and
-        dep_modular and
-        packages_consistent and
-        not has_code_assets and
-        not has_own_defines and
-        not has_compile_flags and
-        not has_duplicate_source and
-        same_sdk
+        mode.enabled and
+        mode.kernel_mode and
+        conditions.dep_modular and
+        conditions.packages_consistent and
+        not conditions.has_code_assets and
+        not conditions.has_own_defines and
+        not conditions.has_compile_flags and
+        not conditions.has_duplicate_source and
+        conditions.same_sdk
     )
 
 def find_kernel_module_tools(dart_sdk_info):
@@ -1150,7 +1131,8 @@ def modular_executable_tools(
         target_sdk = None):
     """Decides whether an executable compiles modularly, and with which tools.
 
-    Reads the flag and gathers each fact `modular_kernel_eligible` takes. The
+    Reads the flag and gathers each fact of the `modular_kernel_conditions`
+    struct `modular_kernel_eligible` takes. The
     caller then compiles modularly only when this returns tools.
 
     Args:
@@ -1190,15 +1172,16 @@ def modular_executable_tools(
     duplicate = duplicated_source([f.short_path for f in own_files], owned, edges)
 
     eligible = modular_kernel_eligible(
-        enabled = enabled,
-        kernel_mode = kernel_mode,
-        dep_modular = dep_modular,
-        packages_consistent = kernel_packages_consistent(records),
-        has_code_assets = len(resolved_assets) > 0,
-        has_own_defines = len(own_defines) > 0,
-        has_compile_flags = len(compile_flags) > 0,
-        has_duplicate_source = duplicate != None,
-        same_sdk = tools.version == target_sdk.version,
+        modular_kernel_conditions(
+            modular_kernel_mode(enabled, kernel_mode),
+            dep_modular,
+            kernel_packages_consistent(records),
+            len(resolved_assets) > 0,
+            len(own_defines) > 0,
+            len(compile_flags) > 0,
+            duplicate != None,
+            tools.version == target_sdk.version,
+        ),
     )
     return tools if eligible else None
 

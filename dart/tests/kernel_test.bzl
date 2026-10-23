@@ -30,7 +30,9 @@ load(
     "kernel_packages_consistent",
     "library_source_uri",
     "modular_executable_kernel",
+    "modular_kernel_conditions",
     "modular_kernel_eligible",
+    "modular_kernel_mode",
     "multi_root_uri",
     "no_kernel_module",
     "package_of_source",
@@ -338,38 +340,45 @@ def _duplicated_source_test_impl(ctx):
     )
     return unittest.end(env)
 
-_ELIGIBLE = {
-    "enabled": True,
-    "kernel_mode": True,
-    "dep_modular": True,
-    "packages_consistent": True,
-    "has_code_assets": False,
-    "has_own_defines": False,
-    "has_compile_flags": False,
-    "has_duplicate_source": False,
-    "same_sdk": True,
-}
+def _conditions(
+        mode = None,
+        dep_modular = True,
+        packages_consistent = True,
+        has_code_assets = False,
+        has_own_defines = False,
+        has_compile_flags = False,
+        has_duplicate_source = False,
+        same_sdk = True):
+    """The all-eligible `modular_kernel_conditions`, with per-fact overrides."""
+    return modular_kernel_conditions(
+        mode if mode != None else modular_kernel_mode(True, True),
+        dep_modular,
+        packages_consistent,
+        has_code_assets,
+        has_own_defines,
+        has_compile_flags,
+        has_duplicate_source,
+        same_sdk,
+    )
 
 def _eligible_test_impl(ctx):
     env = unittest.begin(ctx)
-    asserts.true(env, modular_kernel_eligible(**_ELIGIBLE), "every condition met")
+    asserts.true(env, modular_kernel_eligible(_conditions()), "every condition met")
 
     # Each override is a reason to fall back to whole-program compilation.
     fallbacks = {
-        "flag is off": {"enabled": False},
-        "not a kernel": {"kernel_mode": False},
-        "a dependency is not modular": {"dep_modular": False},
-        "the closure has a package at two roots": {"packages_consistent": False},
-        "code assets are embedded": {"has_code_assets": True},
-        "the test sets its own `defines`": {"has_own_defines": True},
-        "dart_compile_flags are set": {"has_compile_flags": True},
-        "a source is compiled twice": {"has_duplicate_source": True},
-        "the exec and target SDKs differ": {"same_sdk": False},
+        "flag is off": _conditions(mode = modular_kernel_mode(False, True)),
+        "not a kernel": _conditions(mode = modular_kernel_mode(True, False)),
+        "a dependency is not modular": _conditions(dep_modular = False),
+        "the closure has a package at two roots": _conditions(packages_consistent = False),
+        "code assets are embedded": _conditions(has_code_assets = True),
+        "the test sets its own `defines`": _conditions(has_own_defines = True),
+        "dart_compile_flags are set": _conditions(has_compile_flags = True),
+        "a source is compiled twice": _conditions(has_duplicate_source = True),
+        "the exec and target SDKs differ": _conditions(same_sdk = False),
     }
-    for reason, override in fallbacks.items():
-        kwargs = dict(_ELIGIBLE)
-        kwargs.update(override)
-        asserts.false(env, modular_kernel_eligible(**kwargs), reason)
+    for reason, conditions in fallbacks.items():
+        asserts.false(env, modular_kernel_eligible(conditions), reason)
     return unittest.end(env)
 
 def _custom_kernel_module_fixture_impl(ctx):
