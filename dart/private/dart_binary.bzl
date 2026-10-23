@@ -31,6 +31,7 @@ load(
 )
 load("//dart/private:dart_test_runner.bzl", "DartTestRunnerMainInfo")
 load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "executable_package")
+load("//dart/private:kernel_params.bzl", "kernel_compile_settings")
 load("//dart/private:source_set.bzl", "executable_inputs")
 
 def _kernel_launcher_for_mode(compile_mode, launcher):
@@ -303,6 +304,7 @@ def _dart_binary_impl(ctx):
             packages,
             [dep[DartKernelInfo] for dep in ctx.attr.deps],
             output,
+            kernel_compile_settings(),
         )
     else:
         packages, code_asset_libs = _binary_source_compile(

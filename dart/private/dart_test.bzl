@@ -40,6 +40,7 @@ load(
 )
 load("//dart/private:dart_test_runner.bzl", "DartTestKernelInfo", "DartTestRunnerInfo")
 load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "executable_package")
+load("//dart/private:kernel_params.bzl", "kernel_compile_settings")
 load("//dart/private:source_set.bzl", "executable_inputs")
 
 def _dart_test_impl(ctx):
@@ -295,6 +296,7 @@ def _compile_modular_test_kernel(ctx, own, bootstrap, tools, use_base_dill = Fal
         own.packages,
         [dep[DartKernelInfo] for dep in ctx.attr.deps],
         dill,
+        kernel_compile_settings(),
         use_base_dill = use_base_dill,
     )
     return struct(dill = dill, base_dill = base_dill, runtime_libs = [])

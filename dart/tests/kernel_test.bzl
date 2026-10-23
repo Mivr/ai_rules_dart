@@ -794,6 +794,7 @@ def _unseeded_base_kmods_fixture_impl(ctx):
         packages = [_pkg("pkg", "pkg", "3.9")],
         dep_kernels = [dep_a, dep_b],
         output = out_dill,
+        compile = kernel_compile_settings(),
         use_base_dill = True,
     )
     return [DefaultInfo(files = depset([out_dill]))]

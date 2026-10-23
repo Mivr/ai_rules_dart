@@ -1270,13 +1270,7 @@ def modular_executable_kernel(
         packages,
         dep_kernels,
         output,
-        target = "vm",
-        platform_dill = None,
-        libraries_json = None,
-        libraries_platform = None,
-        extra_libraries = [],
-        scheme = STABLE_SCHEME,
-        extra_frontend_flags = [],
+        compile,
         use_base_dill = False):
     """Compiles an executable's entry module, then links it to `output`.
 
@@ -1291,13 +1285,8 @@ def modular_executable_kernel(
       packages: The executable's `DartPackageInfo` records, its own first.
       dep_kernels: The `DartKernelInfo` of each direct dependency.
       output: The linked kernel File the executable runs.
-      target: The `kernel_worker --target` name (`"vm"` by default).
-      platform_dill: Optional platform `.dill` File override.
-      libraries_json: Optional `libraries.json` File override.
-      libraries_platform: Optional platform key in `libraries.json`.
-      extra_libraries: Extra bare `dart:` library names available on the target.
-      scheme: The multi-root URI scheme (`STABLE_SCHEME` by default).
-      extra_frontend_flags: Extra flags forwarded to `kernel_worker`.
+      compile: The struct from `kernel_compile_settings()`: the frontend
+        target, platform, libraries, scheme, and extra flags.
       use_base_dill: When True, links `output` as a delta against any shared
         `base_dill`/`base_keys` provided in `dep_kernels` and returns `base_dill`.
 
@@ -1328,15 +1317,7 @@ def modular_executable_kernel(
             exclude_non_sources = True,
             droppable = False,
         ),
-        kernel_compile_settings(
-            target = target,
-            platform_dill = platform_dill,
-            libraries_json = libraries_json,
-            libraries_platform = libraries_platform,
-            extra_libraries = extra_libraries,
-            scheme = scheme,
-            extra_frontend_flags = extra_frontend_flags,
-        ),
+        compile,
     )
     base_dill = None
     base_keys = None
