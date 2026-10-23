@@ -549,6 +549,11 @@ Future<void> _runPersistentWorker() async {
         errSink: output,
       );
     } on Object catch (e, st) {
+      // A worker must answer every request, so this stays broad; the error
+      // goes to the work response and to stderr (Bazel keeps worker stderr
+      // in the worker log).
+      stderr.writeln('kernel_link: unhandled exception: $e');
+      stderr.writeln(st);
       output
         ..writeln('kernel_link: unhandled exception: $e')
         ..writeln(st);

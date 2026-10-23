@@ -233,6 +233,27 @@ dart_binary(
     visibility = ["//visibility:public"],
 )
 
+# The `kernel_link` persistent worker's top-level error handler.
+dart_test(
+    name = "kernel_link_test",
+    size = "small",
+    srcs = ["kernel_link.dart"],
+    args = [
+        "$(rlocationpath :kernel_link)",
+        "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
+    ],
+    data = [
+        ":kernel_link",
+        "@dart_toolchains//sdk/3.13.5:compile_files",
+        "@dart_toolchains//sdk/3.13.5:dart",
+    ],
+    main = "kernel_link_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
 # Compiles one kernel module, excluding the sources that cannot compile for the VM.
 # A Bazel persistent worker. It has no dependencies on purpose: every `dart_library`
 # names it as an attribute, so depending on a `dart_library` would be a cycle.
