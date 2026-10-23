@@ -20,16 +20,17 @@ _DEFAULT_NAME = "dart"
 dart_toolchain = tag_class(
     doc = "Requests a Dart SDK toolchain: the SDK version to install and the base name of the generated repositories. Every module may request a version under the default name; only the root module may register additional names. A root request wins when present, even when older; otherwise the highest requested version is selected.",
     attrs = {
-    "name": attr.string(doc = """\
+        "name": attr.string(doc = """\
 Base name for generated repositories, allowing more than one Dart toolchain to be registered.
 Overriding the default is only permitted in the root module.
 """, default = _DEFAULT_NAME),
-    "dart_version": attr.string(doc = """\
+        "dart_version": attr.string(doc = """\
 Explicit version of the Dart SDK. A version requested by the root module takes
 precedence over versions requested by dependencies (rules_dart's included), even
 when the root's version is older; without a root request, the highest requested
 version is selected.""", mandatory = True),
-})
+    },
+)
 
 def _toolchain_extension(module_ctx):
     registrations = {}
