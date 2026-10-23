@@ -73,15 +73,21 @@
 // directory, removed recursively): nothing that was there is ever read or
 // followed, so a symlink's target is untouched. A directory we own is made
 // writable before it is listed, so a read-only tree a crashed training left
-// behind still clears. The lock opens append-only for every user (mode 0666,
-// fixed where missing); a lock that still will not open for writing, as
-// another user's 0644 lock, fails the action too — a shared lock would let
-// two trainings hold it at once, and the second would delete the first's
+// behind still clears. The lock opens by file descriptor for every user (see
+// `jit_lock.dart`): an existing lock opens read-write with O_NOFOLLOW and
+// without O_CREAT, so a second user opens the first user's 0666 lock even
+// under `fs.protected_regular`; a missing lock is created O_CREAT|O_EXCL and
+// made 0666 through the descriptor whatever the umask. A symlink, directory,
+// FIFO or other non-regular entry at the lock path is never followed and
+// never created through, and fails the action instead — a shared lock would
+// let two trainings hold it at once, and the second would delete the first's
 // live training directory as its own. A lock held past the deadline fails the
 // action the same way (see [_openConstantLock]): the failure names the lock,
 // the holder's PID, the deadline, and the remedies. Either failure names the path, the
-// entry's type and its owner uid: remove the entry (or have the lock's owner
-// make it world-writable or remove it), pass
+// entry's type and its owner (the uid, plus the user name where the host
+// resolves it): have the lock's owner make it world-writable or remove it
+// where its mode is what denies us, have its owner (or root) remove it for
+// anything else, pass
 // `--@rules_dart//dart:jit_snapshot_fallback=true` to allow the
 // private-scratch fallback (whose bytes are not reproducible, so builds that
 // allow it and builds that do not have different action keys), or, for the
@@ -108,6 +114,7 @@ import 'dart:typed_data';
 import '../../guard/lib/directive_guard.dart';
 import 'comma_patch.dart';
 import 'dill_reader.dart';
+import 'jit_lock.dart';
 
 void main(List<String> argv) {
   if (argv.isNotEmpty && argv.first == '--aot') {
@@ -635,19 +642,6 @@ void _warnFallback() {
   );
 }
 
-void _releaseConstantLock(RandomAccessFile lock) {
-  try {
-    lock.unlockSync();
-  } on FileSystemException {
-    // Ignore cleanup errors.
-  }
-  try {
-    lock.closeSync();
-  } on FileSystemException {
-    // Ignore cleanup errors.
-  }
-}
-
 /// Why the last [_acquireConstantDir] call found the constant directory
 /// unavailable: a sentence naming the blocker for the fail-closed error.
 /// Only meaningful after a null return.
@@ -672,78 +666,58 @@ int? _lockHolderPidAtDeadline;
 /// fail-closed error.
 int _lockDeadlineSecs = defaultLockTimeoutSecs;
 
-/// Takes the lock without blocking, returning true when it is now held.
-///
-/// A non-blocking exclusive `fcntl` try-lock: false means another process
-/// holds the lock, and the caller polls until its deadline (see
-/// [_openConstantLock]) instead of hanging forever. Any other lock error
-/// reads the same way: the deadline still fails the action closed.
-bool _tryExclusiveLock(RandomAccessFile lock) {
-  try {
-    lock.lockSync(FileLock.exclusive);
-    return true;
-  } on FileSystemException {
-    // Held by another process (or unlocked for us): poll until the deadline.
-    return false;
-  }
-}
+/// The entry the last [_openConstantLock] call failed on, for the fail-closed
+/// error: its type and owner (see [jitDescribeEntry]). Only meaningful after
+/// a null return without a deadline.
+String _lockDetail = '';
 
-/// Fixes the group/other write bits on [constantTrainLock] where they are
-/// missing (see [_openConstantLock]): a no-op where the bits are already set,
-/// ignored where the lock is not ours to chmod.
-void _fixLockMode() {
-  try {
-    // Shareable across users on a shared host, whatever the creator's
-    // umask; a no-op fixup where the bits are already set.
-    chmodFile(constantTrainLock, 0x1b6);
-  } on FileSystemException {
-    // Not ours to chmod (a lock that opens append-only but is owned by
-    // another user): the lock is still held, so training proceeds.
-  }
-}
+/// Whether the last [_openConstantLock] failure wants the `chmod 0666`
+/// remedy: the lock's own mode is what denies us access. Anything else wants
+/// the entry removed (see [_writeUnavailableError]).
+bool _lockChmodRemedy = false;
+
+/// Whether the entry the last [_openConstantLock] call failed on is ours:
+/// the mode-denied remedy names us rather than "its owner".
+bool _lockOwnEntry = false;
 
 /// Opens the lock serializing trainings at [constantTrainDir] and takes it
-/// exclusively, returning the held lock.
+/// exclusively, returning the held lock's file descriptor.
 ///
-/// The lock file opens append-only and is never written: a pre-existing
-/// regular file keeps its content. A freshly created lock (made with the
-/// process umask, usually 0644) is set to 0666 explicitly, umask-proof, so
-/// every user on a shared host can open it; a pre-existing lock that is ours
-/// but lacks the group/other write bits is fixed the same way (a foreign
-/// lock's chmod fails, which is ignored: the lock is still held). When the
-/// append-open itself fails, as on a foreign 0644 lock, there is no
-/// read-only path: an `fcntl(2)` shared lock coexists with other shared
-/// holders, so two trainings that reached the keyed path that way could
-/// both hold it, and the second would delete the first's live training
-/// directory as "its own" before claiming the path. The caller fails the
-/// action instead (see [_acquireConstantDir]). Null when the lock path is a
-/// symlink, or cannot be opened at all.
+/// The lock opens by descriptor (see [jitOpenLock]), never by a path-based
+/// check-then-use: an existing lock opens read-write with O_NOFOLLOW and
+/// without O_CREAT, so a second user on a host with `fs.protected_regular`
+/// opens the first user's 0666 lock; a missing lock is created O_CREAT|O_EXCL
+/// and made 0666 through the descriptor whatever the umask. Only a regular
+/// file is kept (never written: a pre-existing lock keeps its content), and a
+/// lock of our own is repaired to 0666 through the descriptor. Null when the
+/// lock cannot be opened or is not a regular file; the failure detail and its
+/// remedy stay in [_lockDetail], [_lockChmodRemedy] and [_lockOwnEntry] for
+/// the fail-closed error (see [_acquireConstantDir]).
 ///
 /// A contended lock never blocks forever: the exclusive take is a
-/// non-blocking `fcntl` try-lock (see [_tryExclusiveLock]), polled with
+/// non-blocking `fcntl` try-lock (see [jitTryExclusiveLock]), polled with
 /// sleeps backing off from 50 ms to 1 s until [lockTimeoutSecs] seconds pass.
 /// After 10 s of waiting, and then every 60 s, one notice names the lock path
-/// and the holder's PID (see [_lockHolderPid]), or "unknown" where it cannot
+/// and the holder's PID (see [jitLockHolderPid]), or "unknown" where it cannot
 /// be read. At the deadline the path counts as unavailable: null is returned
 /// with [_lockWaitTimedOut] set, and the caller fails the action (or falls
 /// back where allowed), naming the lock, the holder and the deadline.
-RandomAccessFile? _openConstantLock() {
-  if (FileSystemEntity.isLinkSync(constantTrainLock)) return null;
+int? _openConstantLock() {
   _lockWaitTimedOut = false;
   _lockHolderPidAtDeadline = null;
   _lockDeadlineSecs = lockTimeoutSecs;
-  final RandomAccessFile lock;
-  try {
-    lock = File(constantTrainLock).openSync(mode: FileMode.append);
-  } on FileSystemException {
-    // The append-open failed (a foreign 0644 lock, or a non-file at the
-    // path): no shared-lock fallback, the caller fails the action.
+  _lockDetail = '';
+  _lockChmodRemedy = false;
+  _lockOwnEntry = false;
+  final opened = jitOpenLock(constantTrainLock);
+  if (opened.fd < 0) {
+    _lockDetail = opened.detail;
+    _lockChmodRemedy = opened.chmodRemedy;
+    _lockOwnEntry = opened.ownEntry;
     return null;
   }
-  if (_tryExclusiveLock(lock)) {
-    _fixLockMode();
-    return lock;
-  }
+  final fd = opened.fd;
+  if (jitTryExclusiveLock(fd)) return fd;
   final stopwatch = Stopwatch()..start();
   final deadline = Duration(seconds: lockTimeoutSecs);
   var sleepMs = 50;
@@ -756,13 +730,10 @@ RandomAccessFile? _openConstantLock() {
           ? remaining
           : Duration(milliseconds: sleepMs),
     );
-    if (_tryExclusiveLock(lock)) {
-      _fixLockMode();
-      return lock;
-    }
+    if (jitTryExclusiveLock(fd)) return fd;
     sleepMs = sleepMs >= 500 ? 1000 : sleepMs * 2;
     if (stopwatch.elapsed >= nextNotice) {
-      final holder = _lockHolderPid(constantTrainLock);
+      final holder = jitLockHolderPid(constantTrainLock);
       stderr.writeln(
         'app_jit_snapshot: waiting for $constantTrainLock'
         '${holder == null ? ' held by process unknown' : ' held by process $holder'}...',
@@ -771,12 +742,8 @@ RandomAccessFile? _openConstantLock() {
     }
   }
   _lockWaitTimedOut = true;
-  _lockHolderPidAtDeadline = _lockHolderPid(constantTrainLock);
-  try {
-    lock.closeSync();
-  } on FileSystemException {
-    // Ignore cleanup errors.
-  }
+  _lockHolderPidAtDeadline = jitLockHolderPid(constantTrainLock);
+  jitUnlockAndClose(fd);
   return null;
 }
 
@@ -849,8 +816,8 @@ bool Function(String path) removeStaleEntry = _unlinkStaleEntry;
 /// the OS refuses what is not ours to remove.
 void _deleteTreeNoFollow(String path) {
   if (!FileSystemEntity.isLinkSync(path)) {
-    final info = _statEntry(path);
-    if (info != null && info.kind == 'directory' && info.uid == _ownUid()) {
+    final info = jitStatEntry(path);
+    if (info != null && info.kind == 'directory' && info.uid == jitOwnUid()) {
       chmodFile(path, 0x1c0);
     }
   }
@@ -868,25 +835,6 @@ void _deleteTreeNoFollow(String path) {
   Directory(path).deleteSync();
 }
 
-/// Our uid, for telling our own stale directories (whose modes a crashed
-/// training may have left read-only) from another user's.
-int _ownUid() {
-  if (Platform.isWindows) return -1;
-  final lib = ffi.DynamicLibrary.process();
-  final geteuid = lib.lookupFunction<_GeteuidNative, _GeteuidDart>('geteuid');
-  return geteuid();
-}
-
-/// Names the entry currently at [path] for the fail-closed error: its type
-/// and its owner uid, never its content.
-String _describeEntryAt(String path) {
-  final info = _statEntry(path);
-  if (info == null) {
-    return 'entry at $path of unknown ownership';
-  }
-  return '${info.kind} at $path owned by uid ${info.uid}';
-}
-
 /// Takes the exclusive training lock and claims [constantTrainDir] as an
 /// empty directory with mode 0700, returning it with the held lock.
 ///
@@ -902,10 +850,10 @@ String _describeEntryAt(String path) {
 /// Windows and on any failure, recording the blocker in
 /// [_constantDirUnavailable] for the fail-closed error; the caller deletes
 /// the directory before releasing the lock, also on failure.
-({Directory dir, RandomAccessFile lock})? _acquireConstantDir() {
+({Directory dir, int lock})? _acquireConstantDir() {
   if (Platform.isWindows) return null;
   _constantLockUnavailable = false;
-  final RandomAccessFile? lock = _openConstantLock();
+  final int? lock = _openConstantLock();
   if (lock == null) {
     if (_lockWaitTimedOut) {
       final holder = _lockHolderPidAtDeadline == null
@@ -916,21 +864,21 @@ String _describeEntryAt(String path) {
           'after waiting $_lockDeadlineSecs seconds';
     } else {
       _constantDirUnavailable =
-          'the lock file ${_describeEntryAt(constantTrainLock)} cannot be opened for writing';
+          'the lock file $_lockDetail cannot be opened for writing';
     }
     _constantLockUnavailable = true;
     return null;
   }
-  ({Directory dir, RandomAccessFile lock})? fail(String reason) {
+  ({Directory dir, int lock})? fail(String reason) {
     _constantDirUnavailable = reason;
-    _releaseConstantLock(lock);
+    jitUnlockAndClose(lock);
     return null;
   }
 
   try {
     if (!removeStaleEntry(constantTrainDir)) {
       return fail(
-        'the ${_describeEntryAt(constantTrainDir)} cannot be removed',
+        'the ${jitDescribeEntry(constantTrainDir)} cannot be removed',
       );
     }
     // Claim the cleared path atomically: [mkdirExclusive] succeeds only when
@@ -942,7 +890,7 @@ String _describeEntryAt(String path) {
     // 0700: only our uid trains here.
     if (mkdirExclusive(constantTrainDir, 0x1c0) != 0) {
       return fail(
-        'the ${_describeEntryAt(constantTrainDir)} cannot be claimed',
+        'the ${jitDescribeEntry(constantTrainDir)} cannot be claimed',
       );
     }
     if (FileSystemEntity.isLinkSync(constantTrainDir)) {
@@ -953,21 +901,23 @@ String _describeEntryAt(String path) {
         // Ignore cleanup errors.
       }
       return fail(
-        'the ${_describeEntryAt(constantTrainDir)} cannot be claimed',
+        'the ${jitDescribeEntry(constantTrainDir)} cannot be claimed',
       );
     }
   } on FileSystemException {
-    return fail('the ${_describeEntryAt(constantTrainDir)} cannot be claimed');
+    return fail('the ${jitDescribeEntry(constantTrainDir)} cannot be claimed');
   }
   return (dir: Directory(constantTrainDir), lock: lock);
 }
 
 /// Writes the fail-closed error for a null [_acquireConstantDir]: the
 /// blocker in [_constantDirUnavailable] and its remedies. A lock that stayed
-/// held past its deadline names stopping the holder and waiting longer; any
-/// other blocked lock names the lock's own remedies — its owner makes it
-/// world-writable or removes it — since we cannot remove another user's lock;
-/// a blocked training directory names removing the entry.
+/// held past its deadline names stopping the holder and waiting longer. Any
+/// other blocked lock names the lock's own remedies: where the lock's own
+/// mode is what denies us access the owner makes it world-writable or removes
+/// it, and where anything else blocks it — a symlink, directory, FIFO or
+/// other entry — its owner (or root) must remove it, since we cannot remove
+/// another user's lock. A blocked training directory names removing the entry.
 void _writeUnavailableError() {
   final String remedy;
   if (_lockWaitTimedOut) {
@@ -977,10 +927,16 @@ void _writeUnavailableError() {
     remedy =
         'Stop the holder ($holder), raise `--@rules_dart//dart:jit_snapshot_lock_timeout` '
         'above $_lockDeadlineSecs, or pass ';
+  } else if (_constantLockUnavailable) {
+    // The `chmod 0666` remedy only where the lock's own mode denies us (see
+    // [_lockChmodRemedy]); anything else wants the entry removed.
+    remedy = _lockChmodRemedy
+        ? (_lockOwnEntry
+              ? 'Run `chmod 0666 $constantTrainLock` or remove it, or pass '
+              : 'Have its owner run `chmod 0666 $constantTrainLock` or remove it, or pass ')
+        : 'Have its owner (or root) remove it, or pass ';
   } else {
-    remedy = _constantLockUnavailable
-        ? 'Have its owner run `chmod 0666 $constantTrainLock` or remove it, or pass '
-        : 'Remove the entry, or pass ';
+    remedy = 'Remove the entry, or pass ';
   }
   stderr.writeln(
     'app_jit_snapshot: cannot train in $constantTrainDir on this host: '
@@ -1012,27 +968,42 @@ void _writeUnavailableError() {
 /// below), so the runner's relative test path resolves into the staged tree;
 /// no padding is needed (an empty pad component once trained a stray `//`
 /// into snapshots).
-/// `exit` is not called in here: it would skip the cleanup.
+/// `exit` is not called in here: it would skip the cleanup. Any exception the
+/// training throws is fail-closed: the training directory is still deleted,
+/// the lock still released, and the tool reports the cause and returns 1
+/// rather than a raw stack trace (see [_failTraining]).
 int _trainInScratch({required _TrainingJob job, required File out}) {
   out.parent.createSync(recursive: true);
-  final constant = Platform.isWindows ? null : _acquireConstantDir();
+  final ({Directory dir, int lock})? constant;
+  try {
+    constant = Platform.isWindows ? null : _acquireConstantDir();
+  } catch (error) {
+    // The claim itself threw, so nothing was claimed and no lock is held:
+    // fail closed with the cause instead of a raw stack trace.
+    return _failTraining(constantTrainDir, error);
+  }
   if (constant != null) {
-    final trainDir = constant.dir;
-    final exitCode = _runTraining(trainDir: trainDir, job: job, out: out);
-    // The constant directory holds only what this training put there, but it
-    // is shared by path: delete it only when it is still a real directory,
-    // never when it became a link, and before releasing the lock, also on
-    // failure (see [_acquireConstantDir]).
     try {
-      if (!FileSystemEntity.isLinkSync(constantTrainDir) &&
-          trainDir.existsSync()) {
-        trainDir.deleteSync(recursive: true);
+      return _runTraining(trainDir: constant.dir, job: job, out: out);
+    } catch (error) {
+      // Any training failure (a ProcessException when the copied training VM
+      // cannot run, say) still cleans up below: fail closed with the cause.
+      return _failTraining(constantTrainDir, error);
+    } finally {
+      // The constant directory holds only what this training put there, but it
+      // is shared by path: delete it only when it is still a real directory,
+      // never when it became a link, and before releasing the lock, also on
+      // failure (see [_acquireConstantDir]).
+      try {
+        if (!FileSystemEntity.isLinkSync(constantTrainDir) &&
+            constant.dir.existsSync()) {
+          constant.dir.deleteSync(recursive: true);
+        }
+      } on FileSystemException {
+        // Ignore cleanup errors.
       }
-    } on FileSystemException {
-      // Ignore cleanup errors.
+      jitUnlockAndClose(constant.lock);
     }
-    _releaseConstantLock(constant.lock);
-    return exitCode;
   }
   if (!Platform.isWindows && !job.fallbackAllowed) {
     _writeUnavailableError();
@@ -1043,6 +1014,9 @@ int _trainInScratch({required _TrainingJob job, required File out}) {
   final trainDir = Directory('${scratch.path}/t')..createSync();
   try {
     return _runTraining(trainDir: trainDir, job: job, out: out);
+  } catch (error) {
+    // As above: fail closed with the cause while the scratch below is deleted.
+    return _failTraining(scratch.path, error);
   } finally {
     if (scratch.existsSync()) {
       try {
@@ -1052,6 +1026,15 @@ int _trainInScratch({required _TrainingJob job, required File out}) {
       }
     }
   }
+}
+
+/// Fails a training run with the fail-closed error: the message names
+/// the training directory and the cause, and the caller exits non-zero, so a
+/// raw stack trace is never the only output. Returns 1 for the caller to
+/// return.
+int _failTraining(String where, Object error) {
+  stderr.writeln('app_jit_snapshot: training in $where failed: $error');
+  return 1;
 }
 
 /// Stages the training inputs under [trainDir], runs the training there, and
@@ -1827,217 +1810,6 @@ typedef _ChmodNative = ffi.Int Function(ffi.Pointer<ffi.Uint8>, ffi.Uint32);
 typedef _ChmodDart = int Function(ffi.Pointer<ffi.Uint8>, int);
 typedef _MkdirNative = ffi.Int Function(ffi.Pointer<ffi.Uint8>, ffi.Uint32);
 typedef _MkdirDart = int Function(ffi.Pointer<ffi.Uint8>, int);
-typedef _StatxNative = ffi.Int Function(
-  ffi.Int,
-  ffi.Pointer<ffi.Uint8>,
-  ffi.Int,
-  ffi.Uint32,
-  ffi.Pointer<ffi.Uint8>,
-);
-typedef _StatxDart = int Function(
-  int,
-  ffi.Pointer<ffi.Uint8>,
-  int,
-  int,
-  ffi.Pointer<ffi.Uint8>,
-);
-typedef _LstatNative = ffi.Int Function(
-  ffi.Pointer<ffi.Uint8>,
-  ffi.Pointer<ffi.Uint8>,
-);
-typedef _LstatDart = int Function(
-  ffi.Pointer<ffi.Uint8>,
-  ffi.Pointer<ffi.Uint8>,
-);
-typedef _GeteuidNative = ffi.Uint32 Function();
-typedef _GeteuidDart = int Function();
-typedef _OpenNative = ffi.Int Function(
-  ffi.Pointer<ffi.Uint8>,
-  ffi.Int,
-  ffi.VarArgs<(ffi.Int,)>,
-);
-typedef _OpenDart = int Function(ffi.Pointer<ffi.Uint8>, int, int);
-typedef _CloseNative = ffi.Int Function(ffi.Int);
-typedef _CloseDart = int Function(int);
-typedef _FcntlGetlkNative = ffi.Int Function(
-  ffi.Int,
-  ffi.Int,
-  ffi.VarArgs<(ffi.Pointer<ffi.Uint8>,)>,
-);
-typedef _FcntlGetlkDart = int Function(int, int, ffi.Pointer<ffi.Uint8>);
-
-/// The PID holding an exclusive `fcntl` lock on [path], for the lock-wait
-/// notices and the deadline error. Null where no process holds one, where the
-/// path cannot be opened, or where the platform has no suitable call: the
-/// callers then say "unknown".
-///
-/// Queries with `fcntl(2)` `F_GETLK` for a conflicting write lock over the
-/// whole file: the kernel reports the lock the training's own try-lock
-/// refuses, with the holder's PID. `fcntl` is variadic
-/// (`int fcntl(int, int, ...)`), so its `struct flock` pointer binds through
-/// `ffi.VarArgs`: a fixed binding passes the pointer in a register that
-/// `fcntl` never reads on Apple arm64, and the lookup reports "unknown".
-/// The `struct flock` layout differs by OS:
-/// on Linux the type is a little-endian i16 at offset 0 and the PID a
-/// little-endian i32 at offset 20+4, on macOS the start/len are two i64 at
-/// offsets 0/8, the PID an i32 at offset 16 and the type an i16 at offset 20.
-/// All supported hosts are little-endian. Metadata only: the file is opened
-/// read-only and never read.
-int? _lockHolderPid(String path) {
-  if (Platform.isWindows) return null;
-  try {
-    final lib = ffi.DynamicLibrary.process();
-    final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
-    final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
-    final open = lib.lookupFunction<_OpenNative, _OpenDart>('open');
-    final close = lib.lookupFunction<_CloseNative, _CloseDart>('close');
-    final fcntl = lib.lookupFunction<_FcntlGetlkNative, _FcntlGetlkDart>(
-      'fcntl',
-    );
-    final pathPtr = _toCString(malloc, path);
-    try {
-      final buf = malloc(32);
-      if (buf == ffi.nullptr) return null;
-      try {
-        buf.asTypedList(32).fillRange(0, 32, 0);
-        // `open` is variadic (`int open(const char *, int, ...)`): the mode
-        // slot is passed explicitly so the call marshals as variadic. The
-        // flags open read-only without `O_CREAT`, so the kernel ignores it.
-        final fd = open(pathPtr, 0, 0);
-        if (fd < 0) return null;
-        try {
-          final view = ByteData.sublistView(buf.asTypedList(32));
-          final int cmd;
-          if (Platform.isMacOS) {
-            view.setInt16(20, 1, Endian.little);
-            cmd = 7;
-          } else {
-            view.setInt16(0, 1, Endian.little);
-            cmd = 5;
-          }
-          if (fcntl(fd, cmd, buf) != 0) return null;
-          final type = Platform.isMacOS
-              ? view.getInt16(20, Endian.little)
-              : view.getInt16(0, Endian.little);
-          if (type == 2) return null;
-          final holderPid = Platform.isMacOS
-              ? view.getInt32(16, Endian.little)
-              : view.getInt32(24, Endian.little);
-          return holderPid > 0 ? holderPid : null;
-        } finally {
-          close(fd);
-        }
-      } finally {
-        free(buf);
-      }
-    } finally {
-      free(pathPtr);
-    }
-  } on ArgumentError {
-    // A libc call this host lacks (`fcntl`, `open`): no holder available.
-    return null;
-  }
-}
-
-/// Allocates a zero-terminated UTF-8 copy of [path] with libc `malloc`.
-/// The caller frees it with libc `free`.
-ffi.Pointer<ffi.Uint8> _toCString(
-  ffi.Pointer<ffi.Uint8> Function(int) malloc,
-  String path,
-) {
-  final bytes = utf8.encode(path);
-  final ptr = malloc(bytes.length + 1);
-  if (ptr == ffi.nullptr) {
-    throw FileSystemException('malloc failed', path);
-  }
-  ptr.asTypedList(bytes.length + 1)
-    ..setAll(0, bytes)
-    ..[bytes.length] = 0;
-  return ptr;
-}
-
-int _u32le(List<int> bytes, int offset) =>
-    bytes[offset] |
-    (bytes[offset + 1] << 8) |
-    (bytes[offset + 2] << 16) |
-    (bytes[offset + 3] << 24);
-
-int _u16le(List<int> bytes, int offset) =>
-    bytes[offset] | (bytes[offset + 1] << 8);
-
-/// Names a POSIX file-type bit pattern for the fail-closed error.
-String _entryKind(int mode) {
-  switch (mode & 0xf000) {
-    case 0x4000:
-      return 'directory';
-    case 0x8000:
-      return 'regular file';
-    case 0xa000:
-      return 'symlink';
-    case 0x1000:
-      return 'FIFO';
-    case 0xc000:
-      return 'socket';
-    case 0x2000:
-      return 'character device';
-    case 0x6000:
-      return 'block device';
-    default:
-      return 'entry of unknown type';
-  }
-}
-
-/// Stats [path] without following symlinks, returning its kind (see
-/// [_entryKind]) and its owner uid for the fail-closed error. Null when the
-/// entry cannot be statted or the platform has no suitable call.
-///
-/// On Linux this is `statx(2)`, whose `struct statx` layout is the same on
-/// every architecture (the uid is a little-endian u32 at offset 20, the mode
-/// a little-endian u16 at offset 28); on macOS it is `lstat(2)` with the
-/// 64-bit `struct stat` layout (the mode at offset 4, the uid at offset 16).
-/// All supported hosts are little-endian. Metadata only: the entry's content
-/// is never read.
-({String kind, int uid})? _statEntry(String path) {
-  if (Platform.isWindows) return null;
-  try {
-    final lib = ffi.DynamicLibrary.process();
-    final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
-    final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
-    final pathPtr = _toCString(malloc, path);
-    try {
-      final buf = malloc(256);
-      if (buf == ffi.nullptr) return null;
-      try {
-        buf.asTypedList(256).fillRange(0, 256, 0);
-        if (Platform.isLinux) {
-          final statx = lib.lookupFunction<_StatxNative, _StatxDart>('statx');
-          const atFdcwd = -100;
-          const nofollow = 0x100;
-          const basicStats = 0x7ff;
-          if (statx(atFdcwd, pathPtr, nofollow, basicStats, buf) != 0) {
-            return null;
-          }
-          final bytes = buf.asTypedList(64);
-          return (kind: _entryKind(_u16le(bytes, 28)), uid: _u32le(bytes, 20));
-        }
-        if (Platform.isMacOS) {
-          final lstat = lib.lookupFunction<_LstatNative, _LstatDart>('lstat');
-          if (lstat(pathPtr, buf) != 0) return null;
-          final bytes = buf.asTypedList(64);
-          return (kind: _entryKind(_u16le(bytes, 4)), uid: _u32le(bytes, 16));
-        }
-        return null;
-      } finally {
-        free(buf);
-      }
-    } finally {
-      free(pathPtr);
-    }
-  } on ArgumentError {
-    // The stat call is missing from this libc: no description available.
-    return null;
-  }
-}
 
 /// Atomically claims a new directory at [path] with POSIX permission bits
 /// [mode]: libc `mkdir(2)` returns 0 only when this call creates the

@@ -23,6 +23,14 @@ exports_files(
     visibility = ["//dart:__subpackages__"],
 )
 
+# The shared-host lock handling `app_jit_snapshot.dart` opens its training
+# lock through (see `jit_lock.dart`): exported for the unit test's staged tool
+# bundle, which resolves it beside the entry by relative import.
+exports_files(
+    ["jit_lock.dart"],
+    visibility = ["//dart:__subpackages__"],
+)
+
 # The kernel byte readers shared by the run-from-source tools (see
 # `dill_reader.dart`): compiled into `kernel_module` through `srcs`, run from
 # source beside the staged JIT tool through `:jit_tool_srcs`.
@@ -41,6 +49,7 @@ filegroup(
     srcs = [
         "app_jit_snapshot.dart",
         "dill_reader.dart",
+        "jit_lock.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
     visibility = ["//dart:__subpackages__"],
@@ -377,6 +386,7 @@ dart_test(
         "comma_patch.dart",
         "dill_outline.dart",
         "dill_reader.dart",
+        "jit_lock.dart",
         "kernel_link.dart",
         "kernel_module.dart",
         "lib/worker_protocol.dart",
@@ -471,18 +481,21 @@ dart_test(
         "app_jit_snapshot.dart",
         "comma_patch.dart",
         "dill_reader.dart",
+        "jit_lock.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
     args = [
         "$(rlocationpath :app_jit_snapshot.dart)",
         "$(rlocationpath :comma_patch.dart)",
         "$(rlocationpath :dill_reader.dart)",
+        "$(rlocationpath :jit_lock.dart)",
         "$(rlocationpath //dart/guard:lib/directive_guard.dart)",
     ],
     data = [
         ":app_jit_snapshot.dart",
         ":comma_patch.dart",
         ":dill_reader.dart",
+        ":jit_lock.dart",
         "//dart",
         "//dart/guard:lib/directive_guard.dart",
     ],

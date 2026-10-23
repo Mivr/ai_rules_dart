@@ -1,5 +1,14 @@
+// Tests for the app-JIT snapshot training tool (see `app_jit_snapshot.dart`).
+//
+// The constant-path tests train at test directories under TEST_TMPDIR through
+// the `RULES_DART_JIT_TRAIN_DIR`/`RULES_DART_JIT_TRAIN_LOCK` overrides, never
+// at the real shared paths. CI cannot exercise a second uid, so the
+// cross-user cases run as same-uid variants: an unopenable mode stands in for
+// a foreign lock and an unremovable entry for another user's leftover, while a
+// real second-user training runs in environments with two uids, not here.
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi' as ffi;
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -9,8 +18,19 @@ import 'package:test/test.dart';
 import '../../guard/lib/directive_guard.dart' as guard;
 import 'app_jit_snapshot.dart' as snapshot;
 import 'comma_patch.dart' as comma;
+import 'jit_lock.dart' as locks;
 import 'dill_reader.dart'
     show dillCanonicalRoots, dillLibraryReferences, dillSourceUris;
+
+typedef _UmaskNative = ffi.Int Function(ffi.Uint32);
+typedef _UmaskDart = int Function(int);
+
+/// Sets the process umask to [mask], returning the previous mask.
+int _setUmask(int mask) {
+  final lib = ffi.DynamicLibrary.process();
+  final umask = lib.lookupFunction<_UmaskNative, _UmaskDart>('umask');
+  return umask(mask);
+}
 
 void main(List<String> args) {
   late Directory tmp;
@@ -70,6 +90,7 @@ void main(List<String> args) {
         staged: 'dart/private/tools/dill_reader.dart',
         sibling: 'dill_reader.dart',
       ),
+      (staged: 'dart/private/tools/jit_lock.dart', sibling: 'jit_lock.dart'),
       (
         staged: 'dart/guard/lib/directive_guard.dart',
         sibling: '../../guard/lib/directive_guard.dart',
@@ -160,6 +181,13 @@ void main(List<String> args) {
         .timeout(const Duration(seconds: 60));
     expect(held, 'held', reason: 'holder took $lockPath');
     return holder;
+  }
+
+  /// The current user name, for pinning the owner naming in fail-closed errors.
+  String currentUserName() {
+    final res = Process.runSync('id', ['-un']);
+    expect(res.exitCode, 0);
+    return (res.stdout as String).trim();
   }
 
   /// Trains [dill] to [out] in-process at the constant training path,
@@ -1118,6 +1146,47 @@ void main(List<String> args) {
   });
 
   test(
+    'training exception cleans up, releases the lock and names the cause',
+    () {
+      // An exception during training (here: the training VM binary is missing,
+      // so staging it throws) must still delete the training directory and
+      // release the lock, and must report the cause rather than only a raw
+      // stack trace. The tool exits on failure, so it runs in a subprocess.
+      final tool = stageTool();
+      final dill = compileDill(
+        'void main(List<String> args) {\n  print(10000);\n}\n',
+        'boom_train',
+      );
+      final outJit = File('${tmp.path}/boom_out/app.jit');
+      final res = Process.runSync(Platform.resolvedExecutable, [
+        tool,
+        '--dart=${tmp.path}/no-such-dart',
+        '--snapshot=${outJit.path}',
+        '--copy=input.dill=$dill',
+        '--',
+        'input.dill',
+      ], environment: constantTrainEnv());
+      expect(res.exitCode, isNot(0), reason: 'failed training must fail');
+      expect(outJit.existsSync(), isFalse);
+      final err = res.stderr as String;
+      expect(err, contains('training in ${snapshot.constantTrainDir} failed'));
+      expect(err, contains('no-such-dart'));
+      expect(err, isNot(contains('Unhandled exception')));
+      expect(
+        FileSystemEntity.typeSync(
+          snapshot.constantTrainDir,
+          followLinks: false,
+        ),
+        FileSystemEntityType.notFound,
+        reason: 'constant training directory deleted on exception',
+      );
+      // The lock is released: a later training at the same paths succeeds.
+      trainAtConstant(dill: dill, out: '${tmp.path}/boom_after/app.jit');
+    },
+    skip: Platform.isWindows ? posixOnlyReason : false,
+  );
+
+  test(
     'stale own entries are removed and training keeps constant-path bytes',
     () {
       // A stale entry of our own at the training path — file, symlink, FIFO —
@@ -1313,9 +1382,11 @@ void main(List<String> args) {
     // binding passes the `struct flock` pointer where `fcntl` never reads
     // it and the holder lookup reports "unknown". Linux passes either way,
     // so this pins the binding shape itself; the deadline test below is the
-    // behavioral cover.
-    final staged = stageTool();
-    final source = File(staged).readAsStringSync();
+    // behavioral cover. Both bindings live in the staged `jit_lock.dart`.
+    final appStaged = stageTool();
+    final jitStaged = '${File(appStaged).parent.path}/jit_lock.dart';
+    final source =
+        File(appStaged).readAsStringSync() + File(jitStaged).readAsStringSync();
     expect(
       source,
       contains('ffi.VarArgs<(ffi.Pointer<ffi.Uint8>,)>'),
@@ -1724,11 +1795,99 @@ void main(List<String> args) {
       reason: 'lock file never truncated',
     );
     expect(
+      File(lock).statSync().mode & 0x1ff,
+      0x1b6,
+      reason: 'lock of our own repaired to 0666 through its descriptor',
+    );
+    expect(
       FileSystemEntity.typeSync(constant, followLinks: false),
       FileSystemEntityType.notFound,
       reason: 'constant training directory deleted after the run',
     );
   }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('missing lock is created 0666 under a restrictive umask', () {
+    // Whatever umask the creator runs with, a freshly created lock ends up
+    // world-writable through its descriptor, so a second user on a shared
+    // host opens it.
+    final lock = File(snapshot.constantTrainLock);
+    if (lock.existsSync()) lock.deleteSync();
+    final previous = _setUmask(0x3f); // 077.
+    try {
+      final dill = compileDill(
+        'void main(List<String> args) {\n  print(10000);\n}\n',
+        'umask_train',
+      );
+      trainAtConstant(dill: dill, out: '${tmp.path}/umask_out/app.jit');
+    } finally {
+      _setUmask(previous);
+    }
+    expect(lock.statSync().mode & 0x1ff, 0x1b6);
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('non-regular entries at the lock path fail closed without being followed', () {
+    // A symlink, FIFO or directory at the lock path is never followed and
+    // never created through: the action fails closed naming the lock path,
+    // the entry's type and its owner, with the removal remedy (never the
+    // `chmod 0666` remedy, which applies only when a regular lock's own mode
+    // denies us). Same-uid variants (see the file header).
+    final tool = stageTool();
+    final dill = compileDill(
+      'void main(List<String> args) {\n  print(10000);\n}\n',
+      'lockentry_train',
+    );
+    final victim = Directory('${tmp.path}/lockentry_victim')..createSync();
+    File('${victim.path}/sentinel').writeAsStringSync('untouched');
+    final user = currentUserName();
+    final lockPath = snapshot.constantTrainLock;
+    final cases = <String, void Function()>{
+      'symlink': () => Link(lockPath).createSync(victim.path),
+      'FIFO': () {
+        final mkfifo = Process.runSync('mkfifo', [lockPath]);
+        expect(mkfifo.exitCode, 0, reason: '${mkfifo.stderr}');
+      },
+      'directory': () => Directory(lockPath).createSync(),
+    };
+    for (final entry in cases.entries) {
+      entry.value();
+      final outJit = '${tmp.path}/lockentry_${entry.key}_out/app.jit';
+      final res = Process.runSync(Platform.resolvedExecutable, [
+        tool,
+        '--dart=${Platform.resolvedExecutable}',
+        '--snapshot=$outJit',
+        '--copy=input.dill=$dill',
+        '--',
+        'input.dill',
+      ], environment: constantTrainEnv());
+      expect(res.exitCode, isNot(0), reason: '${entry.key} must fail');
+      expect(File(outJit).existsSync(), isFalse);
+      final err = res.stderr as String;
+      expect(err, contains('cannot train in ${snapshot.constantTrainDir}'));
+      expect(err, contains(lockPath));
+      expect(err, contains(entry.key));
+      expect(err, contains('owned by uid'));
+      expect(err, contains('($user)'));
+      expect(err, contains('or root'));
+      expect(err, isNot(contains('chmod 0666')));
+      expect(err, contains('jit_snapshot_fallback=true'));
+      // Cleared as found for the next case; the link's target stays untouched.
+      expect(snapshot.removeStaleEntry(lockPath), isTrue);
+    }
+    expect(File('${victim.path}/sentinel').readAsStringSync(), 'untouched');
+    expect(victim.listSync().map((e) => e.path.split('/').last).toList(), [
+      'sentinel',
+    ]);
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('jitLstatSymbol binds the 64-bit variant on Intel macOS only', () {
+    // On Intel macOS the plain `lstat` symbol reads the legacy 32-bit-inode
+    // layout (wrong owner and type); the 64-bit one is `lstat$INODE64`.
+    // Every other host reads the 64-bit layout through the plain symbol.
+    expect(locks.jitLstatSymbol(isMacOS: true, isX64: true), 'lstat\$INODE64');
+    expect(locks.jitLstatSymbol(isMacOS: true, isX64: false), 'lstat');
+    expect(locks.jitLstatSymbol(isMacOS: false, isX64: true), 'lstat');
+    expect(locks.jitLstatSymbol(isMacOS: false, isX64: false), 'lstat');
+  });
 
   test('racy claim at the constant training path fails closed', () {
     // Another local user creating the training directory in the
