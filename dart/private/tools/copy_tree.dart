@@ -7,7 +7,8 @@
 // is placed at the path those options give, in the order the Go tool applies them.
 // Package filters and path patterns are left out, since their defaults match every
 // file. Two files that map to one destination are an error, unless they share a
-// short path and size, which is how a source file and its copy in `bazel-out` meet.
+// short path and identical bytes, which is how a source file and its copy in
+// `bazel-out` meet.
 //
 // The arguments are one params file, one value per line (the action writes it in
 // multiline format):
@@ -158,7 +159,8 @@ class PlannedCopy {
 /// Works out where each file goes and creates the directories, without copying.
 ///
 /// Files are planned in order. A file already planned to the same destination
-/// is dropped if it has the same short path and size, and is an error otherwise.
+/// is dropped if it has the same short path and byte-identical contents, and
+/// is an error otherwise.
 List<PlannedCopy> planCopies(Request request) {
   final globs = _Globs();
   final planned = <String, SourceFile>{};
@@ -170,7 +172,8 @@ List<PlannedCopy> planCopies(Request request) {
     final dup = planned[out];
     if (dup != null) {
       if (dup.shortPath == file.shortPath &&
-          File(dup.path).lengthSync() == File(file.path).lengthSync()) {
+          File(dup.path).lengthSync() == File(file.path).lengthSync() &&
+          _sameBytesSync(dup.path, file.path)) {
         continue;
       }
       throw CopyError(
@@ -198,6 +201,19 @@ List<PlannedCopy> planCopies(Request request) {
     }
   }
   return copies;
+}
+
+/// Whether the files at [a] and [b] hold identical bytes. Only called when two
+/// files collide at one destination with equal sizes, so contents are read
+/// only for colliding inputs.
+bool _sameBytesSync(String a, String b) {
+  final first = File(a).readAsBytesSync();
+  final second = File(b).readAsBytesSync();
+  if (first.length != second.length) return false;
+  for (var i = 0; i < first.length; i++) {
+    if (first[i] != second[i]) return false;
+  }
+  return true;
 }
 
 /// The destination of [file], or `null` if it is not copied.

@@ -290,6 +290,75 @@ void main() {
       },
     );
 
+    test('two files with one destination and equal sizes but different '
+        'contents fail', () async {
+      // Same short path and size, different files: a generated file built
+      // in two configurations. The buggy planner kept the first silently.
+      final first = File('${tmp.path}/first/a.dart')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('abc');
+      final second = File('${tmp.path}/second/a.dart')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('abd');
+      List<String> named(File file) => [
+        file.path,
+        'lib/a.dart',
+        '',
+        'lib/a.dart',
+      ];
+      await expectLater(
+        run(params(files: [named(first), named(second)])),
+        throwsA(
+          isA<tree.CopyError>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains(first.path), contains(second.path)),
+          ),
+        ),
+      );
+    });
+
+    test(
+      'two byte-identical files with one destination are copied once',
+      () async {
+        final first = File('${tmp.path}/first_warn/a.dart')
+          ..createSync(recursive: true)
+          ..writeAsStringSync('abc');
+        final second = File('${tmp.path}/second_warn/a.dart')
+          ..createSync(recursive: true)
+          ..writeAsStringSync('abc');
+        await run(
+          params(
+            files: [
+              [first.path, 'lib/a.dart', '', 'lib/a.dart'],
+              [second.path, 'lib/a.dart', '', 'lib/a.dart'],
+            ],
+          ),
+        );
+        expect(copied(), {'lib/a.dart': 'abc'});
+      },
+    );
+
+    test('two files with one destination and different sizes fail', () async {
+      final first = File('${tmp.path}/first_size/a.dart')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('abc');
+      final second = File('${tmp.path}/second_size/a.dart')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('abcd');
+      await expectLater(
+        run(
+          params(
+            files: [
+              [first.path, 'lib/a.dart', '', 'lib/a.dart'],
+              [second.path, 'lib/a.dart', '', 'lib/a.dart'],
+            ],
+          ),
+        ),
+        throwsA(isA<tree.CopyError>()),
+      );
+    });
+
     test('a collision is reported before anything is copied', () async {
       await expectLater(
         run(
