@@ -116,6 +116,30 @@ void main(List<String> argv) {
     _runGenKernel(argv.sublist(1));
     return;
   }
+  _trainFromArgs(_parseTrainArgs(argv));
+}
+
+/// The parsed training arguments: everything the snapshot training carries
+/// from `main` into [_trainFromArgs] (see [_parseTrainArgs]). Nullable fields
+/// are required options `main` has not validated yet; [_trainFromArgs] exits
+/// unless they are present.
+typedef _TrainingJob = ({
+  String? dart,
+  String? dartvm,
+  String? snapshot,
+  String? trainKey,
+  int lockTimeout,
+  List<String> dartArgs,
+  bool enableAsserts,
+  bool fallbackAllowed,
+  Map<String, String> env,
+  List<_Pair> copies,
+  List<_Pair> trees,
+});
+
+/// Parses the training arguments (the `main` parsing below the `--aot` and
+/// `--gen-kernel` dispatches), returning them as a [_TrainingJob].
+_TrainingJob _parseTrainArgs(List<String> argv) {
   String? dart;
   String? dartvm;
   String? snapshot;
@@ -186,7 +210,7 @@ void main(List<String> argv) {
     }
   }
   final dartArgs = argv.sublist(i);
-  _trainFromArgs(
+  return (
     dart: dart,
     dartvm: dartvm,
     snapshot: snapshot,
@@ -204,37 +228,37 @@ void main(List<String> argv) {
 /// Trains the snapshot from parsed `main` arguments, exiting when required
 /// arguments are missing, when the training fails, or when it writes no
 /// snapshot (see [_trainInScratch]).
-void _trainFromArgs({
-  required String? dart,
-  required String? dartvm,
-  required String? snapshot,
-  required String? trainKey,
-  required int lockTimeout,
-  required List<String> dartArgs,
-  required bool enableAsserts,
-  required bool fallbackAllowed,
-  required Map<String, String> env,
-  required List<_Pair> copies,
-  required List<_Pair> trees,
-}) {
+void _trainFromArgs(_TrainingJob job) {
+  final dart = job.dart;
+  final dartvm = job.dartvm;
+  final snapshot = job.snapshot;
+  final dartArgs = job.dartArgs;
   if (dart == null || snapshot == null || dartArgs.isEmpty) {
     _usage('--dart, --snapshot and the dart arguments are required');
   }
-  trainKeyOverride = trainKey;
-  lockTimeoutSecs = lockTimeout;
+  trainKeyOverride = job.trainKey;
+  lockTimeoutSecs = job.lockTimeout;
 
   final out = File(snapshot).absolute;
   final exitCode = _trainInScratch(
-    dart: File(dart).absolute.path,
-    dartvm: dartvm == null ? null : File(dartvm).absolute.path,
-    dartArgs: dartArgs,
-    enableAsserts: enableAsserts,
-    fallbackAllowed: fallbackAllowed,
-    env: env,
-    copies: [for (final c in copies) _Pair(c.key, File(c.value).absolute.path)],
-    trees: [
-      for (final t in trees) _Pair(t.key, Directory(t.value).absolute.path),
-    ],
+    job: (
+      dart: File(dart).absolute.path,
+      dartvm: dartvm == null ? null : File(dartvm).absolute.path,
+      snapshot: snapshot,
+      trainKey: job.trainKey,
+      lockTimeout: job.lockTimeout,
+      dartArgs: dartArgs,
+      enableAsserts: job.enableAsserts,
+      fallbackAllowed: job.fallbackAllowed,
+      env: job.env,
+      copies: [
+        for (final c in job.copies) _Pair(c.key, File(c.value).absolute.path),
+      ],
+      trees: [
+        for (final t in job.trees)
+          _Pair(t.key, Directory(t.value).absolute.path),
+      ],
+    ),
     out: out,
   );
   if (exitCode != 0) exit(exitCode);
@@ -987,32 +1011,12 @@ void _writeUnavailableError() {
 /// no padding is needed (an empty pad component once trained a stray `//`
 /// into snapshots).
 /// `exit` is not called in here: it would skip the cleanup.
-int _trainInScratch({
-  required String dart,
-  required String? dartvm,
-  required List<String> dartArgs,
-  required bool enableAsserts,
-  required bool fallbackAllowed,
-  required Map<String, String> env,
-  required List<_Pair> copies,
-  required List<_Pair> trees,
-  required File out,
-}) {
+int _trainInScratch({required _TrainingJob job, required File out}) {
   out.parent.createSync(recursive: true);
   final constant = Platform.isWindows ? null : _acquireConstantDir();
   if (constant != null) {
     final trainDir = constant.dir;
-    final exitCode = _runTraining(
-      trainDir: trainDir,
-      dart: dart,
-      dartvm: dartvm,
-      dartArgs: dartArgs,
-      enableAsserts: enableAsserts,
-      env: env,
-      copies: copies,
-      trees: trees,
-      out: out,
-    );
+    final exitCode = _runTraining(trainDir: trainDir, job: job, out: out);
     // The constant directory holds only what this training put there, but it
     // is shared by path: delete it only when it is still a real directory,
     // never when it became a link, and before releasing the lock, also on
@@ -1028,7 +1032,7 @@ int _trainInScratch({
     _releaseConstantLock(constant.lock);
     return exitCode;
   }
-  if (!Platform.isWindows && !fallbackAllowed) {
+  if (!Platform.isWindows && !job.fallbackAllowed) {
     _writeUnavailableError();
     return 1;
   }
@@ -1036,17 +1040,7 @@ int _trainInScratch({
   final scratch = out.parent.createTempSync('rules_dart_snapshot.');
   final trainDir = Directory('${scratch.path}/t')..createSync();
   try {
-    return _runTraining(
-      trainDir: trainDir,
-      dart: dart,
-      dartvm: dartvm,
-      dartArgs: dartArgs,
-      enableAsserts: enableAsserts,
-      env: env,
-      copies: copies,
-      trees: trees,
-      out: out,
-    );
+    return _runTraining(trainDir: trainDir, job: job, out: out);
   } finally {
     if (scratch.existsSync()) {
       try {
@@ -1067,15 +1061,13 @@ int _trainInScratch({
 /// or executed.
 int _runTraining({
   required Directory trainDir,
-  required String dart,
-  required String? dartvm,
-  required List<String> dartArgs,
-  required bool enableAsserts,
-  required Map<String, String> env,
-  required List<_Pair> copies,
-  required List<_Pair> trees,
+  required _TrainingJob job,
   required File out,
 }) {
+  // [_trainFromArgs] exits unless `dart` is present, so the assertion below
+  // never fires; the field stays nullable because parsing precedes validation.
+  final dart = job.dart!;
+  final dartArgs = job.dartArgs;
   // The training VM is a copy inside the training directory, and the copy
   // is deleted with it, leaving no undeclared output beside the snapshot.
   // At the constant path the copy reads the same on every build; in the
@@ -1084,7 +1076,7 @@ int _runTraining({
   final exeExt = dart.endsWith('.exe') ? '.exe' : '';
   final bin = Directory('${trainDir.path}/vm/bin')..createSync(recursive: true);
   _installCopy(dart, '${bin.path}/dart$exeExt');
-  final effectiveDartvm = dartvm ?? _adjacentDartvm(dart, exeExt);
+  final effectiveDartvm = job.dartvm ?? _adjacentDartvm(dart, exeExt);
   if (effectiveDartvm != null) {
     final vmExt = effectiveDartvm.endsWith('.exe') ? '.exe' : '';
     _installCopy(effectiveDartvm, '${bin.path}/dartvm$vmExt');
@@ -1096,10 +1088,10 @@ int _runTraining({
   // otherwise name the build's paths (see the header comment). A program
   // argument that merely equals a staged file stays relative: the runner
   // joins its test path onto the absolute `--precompiled` directory itself.
-  for (final c in copies) {
+  for (final c in job.copies) {
     _copyFile(c.value, '${trainDir.path}/${c.key}');
   }
-  for (final t in trees) {
+  for (final t in job.trees) {
     _copyTree(t.value, '${trainDir.path}/${t.key}');
   }
   // No `--packages` value is passed, and no package config is staged. The
@@ -1108,7 +1100,7 @@ int _runTraining({
   // a kernel file whose library URIs are already resolved, so loading
   // needs no package map; a runtime `package:` import would resolve by
   // walking up from the training directory, where no package config lives.
-  final stagedEnv = absoluteHomeEnv(env, trainDir);
+  final stagedEnv = absoluteHomeEnv(job.env, trainDir);
   final childEnv = buildChildEnvironment(
     homeDir: trainDir.path,
     parentEnv: Platform.environment,
@@ -1146,14 +1138,14 @@ int _runTraining({
       // Code for the VM's baseline CPU rather than the build machine's. The
       // intent is cross-CPU identity, so a cache can share the snapshot.
       '--target_unknown_cpu',
-      if (enableAsserts) '--enable-asserts',
+      if (job.enableAsserts) '--enable-asserts',
       '--snapshot-kind=app-jit',
       '--snapshot=${trainDir.path}/snapshot.jit',
       ...stageTrainingArgs(
         dartArgs,
         trainDir,
-        stagedFiles: {for (final c in copies) c.key},
-        stagedTrees: [for (final t in trees) t.key],
+        stagedFiles: {for (final c in job.copies) c.key},
+        stagedTrees: [for (final t in job.trees) t.key],
       ),
     ],
     workingDirectory: trainDir.path,
