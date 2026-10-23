@@ -124,6 +124,7 @@ def link_hook_runner_attr():
     """
     return {
         "_link_hook_runner": attr.label(
+            doc = "Link-hook runner executable invoked with the declared data and code assets to build them. Defaults to `//dart/private/tools:link_hook_runner`.",
             default = Label("//dart/private/tools:link_hook_runner"),
             executable = True,
             cfg = "exec",

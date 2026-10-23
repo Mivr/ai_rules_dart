@@ -79,6 +79,7 @@ dart_fix = rule(
             aspects = [dart_analyze],
         ),
         "_fix_applier": attr.label(
+            doc = "Executable writing the computed fixes into the workspace sources under `bazel run`. Defaults to `//dart/private/tools:fix_applier`.",
             default = "//dart/private/tools:fix_applier",
             executable = True,
             cfg = "target",

@@ -43,6 +43,7 @@ _cc_toolchain_check_aspect = aspect(
     toolchains = [
         config_common.toolchain_type("@bazel_tools//tools/cpp:toolchain_type", mandatory = False),
     ],
+    doc = "Records the C++ toolchain resolved for a code asset's `shared_library`, so the rule can refuse an unregistered host toolchain with an actionable error.",
 )
 
 def check_registered_cc_toolchain(target_label, shared_library_label, cc_toolchain_label, is_windows = False):
@@ -187,6 +188,7 @@ another expresses that here, and consumers see a single target.""",
             doc = "System library URI, e.g. `libsqlite3.so.0`. Required for `dynamic_loading_system`; forbidden for the other link modes.",
         ),
         "_os_windows": attr.label(
+            doc = "Platform constraint probed at analysis time to detect Windows, whose unregistered host C toolchain needs a dedicated error. Defaults to `@platforms//os:windows`.",
             default = "@platforms//os:windows",
         ),
     },

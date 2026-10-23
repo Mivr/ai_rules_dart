@@ -189,6 +189,7 @@ _WEB_BINARY_ATTRS = {
         doc = "Dart environment declarations (`key=value`). Each entry becomes a `-Dkey=value` flag.",
     ),
     "_web_compile_tool": attr.label(
+        doc = "Executable compiling the application to JavaScript or WebAssembly for the requested mode. Defaults to `//dart/private/tools:web_compile_runner`.",
         default = "//dart/private/tools:web_compile_runner",
         executable = True,
         cfg = "exec",
