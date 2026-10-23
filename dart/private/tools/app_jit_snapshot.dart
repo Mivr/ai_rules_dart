@@ -2188,7 +2188,12 @@ List<String> _findDisallowedGenKernelDirectives(
     if (content == null) continue;
     final from = normalizeStagedPath(path);
     final fromKey = _stableSourceKey(path, fsRoots);
-    for (final ref in scanAllDirectiveUris(content)) {
+    final checked = scanAllDirectiveUrisChecked(content);
+    if (checked.unparsable) {
+      errors.add(unparsableDirectiveDiagnostic('app_jit_snapshot', path));
+      continue;
+    }
+    for (final ref in checked.refs) {
       final error = _disallowedDirectiveError(
         ref,
         path: path,

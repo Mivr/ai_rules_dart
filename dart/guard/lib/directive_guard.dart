@@ -124,9 +124,13 @@ bool isEscapingPackageUri(String uri) {
   if (hash >= 0) rest = rest.substring(0, hash);
   final query = rest.indexOf('?');
   if (query >= 0) rest = rest.substring(0, query);
-  final slash = rest.indexOf('/');
-  if (slash <= 0) return false;
-  final text = rest.substring(slash + 1).replaceAll(r'\', '/');
+  // The package name ends at the first separator: `/` or `\` (the front end
+  // reads `\` like `/` everywhere), or either one percent-encoded in either
+  // hex case. An empty package name escapes: it names no package file.
+  final sep = _firstPackageSeparator(rest);
+  if (sep == null) return false;
+  if (sep.index <= 0) return true;
+  final text = rest.substring(sep.index + sep.length).replaceAll(r'\', '/');
   var depth = 0;
   for (final raw in text.split('/')) {
     // An empty segment resolves absolutely in the front end, outside the
@@ -146,6 +150,21 @@ bool isEscapingPackageUri(String uri) {
     }
   }
   return false;
+}
+
+/// The first separator between a `package:` URI's package name and its path:
+/// a `/` or `\`, or either one percent-encoded in either hex case. Null when
+/// the URI names no path.
+({int index, int length})? _firstPackageSeparator(String rest) {
+  for (var i = 0; i < rest.length; i++) {
+    final c = rest.codeUnitAt(i);
+    if (c == 0x2f || c == 0x5c) return (index: i, length: 1);
+    if (c == 0x25 && i + 2 < rest.length) {
+      final hex = int.tryParse(rest.substring(i + 1, i + 3), radix: 16);
+      if (hex == 0x2f || hex == 0x5c) return (index: i, length: 3);
+    }
+  }
+  return null;
 }
 
 /// Whether [path] is absolute: POSIX `/`, a Windows drive (`C:/`, `C:\`), or
@@ -1083,13 +1102,35 @@ class _Prologue {
 /// `part` and `part of` its URI. Conditions are not evaluated, so no VM
 /// library set is needed. An empty list when the prologue does not scan (the
 /// compiler then reports the genuine syntax error).
-List<ScanRef> scanAllDirectiveUris(String source) {
+List<ScanRef> scanAllDirectiveUris(String source) =>
+    scanAllDirectiveUrisChecked(source).refs;
+
+/// A prologue scan: the directives [scanAllDirectiveUris] would list, and
+/// whether the prologue did not scan at all. Checks that decide about inputs
+/// use this and refuse an unscannable source outright (see
+/// [unparsableDirectiveDiagnostic]): an empty directive list would otherwise
+/// report a file with a syntax error as clean, whatever it hides past the
+/// error.
+({List<ScanRef> refs, bool unparsable}) scanAllDirectiveUrisChecked(
+  String source,
+) {
   try {
-    return _Prologue(_Lexer(source), const {}, collectAll: true).parse().refs;
+    return (
+      refs: _Prologue(_Lexer(source), const {}, collectAll: true).parse().refs,
+      unparsable: false,
+    );
   } on _Unparsable {
-    return const [];
+    return (refs: const [], unparsable: true);
   }
 }
+
+/// The refusal line for a source whose prologue did not scan: it names [path]
+/// and says its directives could not be checked, so fixing its syntax error
+/// lets the check run. Never clean: the directives past the error are
+/// unchecked, so the source is refused however the compiler would report it.
+String unparsableDirectiveDiagnostic(String tool, String path) =>
+    '$tool: $path has directives that could not be checked; '
+    'fix its syntax error and the check will run.';
 
 /// The diagnostics for every disallowed-scheme directive URI in `fileContents`
 /// (display path to source text), in path order. Empty when clean. Each names
@@ -1104,7 +1145,12 @@ List<String> findDisallowedDirectives(
   for (final path in paths) {
     final content = fileContents[path];
     if (content == null) continue;
-    for (final ref in scanAllDirectiveUris(content)) {
+    final checked = scanAllDirectiveUrisChecked(content);
+    if (checked.unparsable) {
+      errors.add(unparsableDirectiveDiagnostic(tool, path));
+      continue;
+    }
+    for (final ref in checked.refs) {
       // A URI spanning lines is refused however it spells its target: the
       // front end's multi-line first-line rule reads a different file than
       // the resolvers below see (see [hasLineBreak]).
@@ -1275,7 +1321,12 @@ List<String> findStagedDirectiveViolations(
     final content = contents[path];
     if (content == null) continue;
     final from = normalizeStagedPath(path.replaceAll(r'\', '/'));
-    for (final ref in scanAllDirectiveUris(content)) {
+    final checked = scanAllDirectiveUrisChecked(content);
+    if (checked.unparsable) {
+      errors.add(unparsableDirectiveDiagnostic(tool, path));
+      continue;
+    }
+    for (final ref in checked.refs) {
       final violation = _stagedRefViolation(
         (tool: tool, path: path, ref: ref, from: from),
         declared,

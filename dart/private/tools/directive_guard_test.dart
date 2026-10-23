@@ -588,6 +588,112 @@ void main(List<String> args) {
     });
   });
 
+  group('unparsable prologues', () {
+    // Each source hides an escaping directive past a syntax error, so the
+    // scanner gives up: the checks refuse the file instead of calling it
+    // clean. The first is the review's probe.
+    const bad = [
+      "import 'dart:core' if (dart.library.io) ;\n"
+          "import '../../host/secret.dart';\n",
+      "library a.;\nimport 'file:///etc/hosts';\n",
+      "import 'a.dart;\nimport 'file:///etc/hosts';\n",
+    ];
+
+    test('findDisallowedDirectives refuses sources it cannot scan', () {
+      for (var i = 0; i < bad.length; i++) {
+        final errors = findDisallowedDirectives({
+          'bad$i.dart': bad[i],
+        }, tool: 'guard-test');
+        expect(errors, hasLength(1));
+        expect(errors.single, contains('bad$i.dart'));
+        expect(errors.single, contains('could not be checked'));
+        expect(errors.single, contains('syntax error'));
+      }
+    });
+
+    test('findStagedDirectiveViolations refuses sources it cannot scan', () {
+      final root = Directory('${tmp.path}/unparsable.proj')
+        ..createSync(recursive: true);
+      for (var i = 0; i < bad.length; i++) {
+        File('${root.path}/bad$i.dart').writeAsStringSync(bad[i]);
+      }
+      final violations = findStagedDirectiveViolations([
+        root.path,
+      ], tool: 'guard-test');
+      expect(violations, hasLength(bad.length));
+      for (var i = 0; i < bad.length; i++) {
+        expect(violations[i], contains('bad$i.dart'));
+        expect(violations[i], contains('could not be checked'));
+        expect(violations[i], contains('syntax error'));
+      }
+    });
+  });
+
+  group('valid prologues', () {
+    test('scan the same directives as before', () {
+      final cases = <String, List<String>>{
+        '#!/usr/bin/env dart\nimport \'a.dart\';\n': ['a.dart'],
+        '﻿import \'a.dart\';\n': ['a.dart'],
+        'library;\nimport \'a.dart\';\n': ['a.dart'],
+        'library a.b;\nimport \'a.dart\';\n': ['a.dart'],
+        '@Tag(\'x\', (1)) library L;\nimport \'a.dart\';\n': ['a.dart'],
+        '@Tag(\'x\') import \'a.dart\';\n': ['a.dart'],
+        'import \'a.dart\' if (dart.library.io) \'io.dart\' '
+            'if (dart.library.html == \'true\') \'html.dart\';\n': [
+          'a.dart',
+          'io.dart',
+          'html.dart',
+        ],
+        'export \'a.dart\' if (dart.library.io) \'io.dart\';\n': [
+          'a.dart',
+          'io.dart',
+        ],
+        'import \'a.dart\' deferred as a show Foo hide Bar;\n': ['a.dart'],
+        'import r\'a.dart\';\n': ['a.dart'],
+        'import \'a.dart\' \'b.dart\';\n': ['a.dartb.dart'],
+        'import \'\'\'a.dart\'\'\';\n': ['a.dart'],
+        'part \'p.dart\';\npart of \'l.dart\';\n': ['p.dart', 'l.dart'],
+        'part of my.lib;\n': [],
+        '// c\n/* d */ import /* e */ \'a.dart\' /* f */ ; // g\n': ['a.dart'],
+        'import \'a.dart\';\nvoid main() {}\nimport \'b.dart\';\n': ['a.dart'],
+      };
+      for (final entry in cases.entries) {
+        expect(
+          scanAllDirectiveUris(entry.key).map((r) => r.uri).toList(),
+          entry.value,
+          reason: entry.key,
+        );
+      }
+    });
+  });
+
+  group('isEscapingPackageUri backslashes', () {
+    test('backslash spellings climbing out escape', () {
+      const escaping = [
+        r'package:proj\..\..\host\secret.dart',
+        r'package:proj\..%5c..%5chost%5csecret.dart',
+        'package:proj%5c..%5c..%5chost%5csecret.dart',
+        'package:proj%5C..%5C..%5Chost%5Csecret.dart',
+        r'package:proj/..\..\host/secret.dart',
+        r'package:\x.dart',
+        'package:/x.dart',
+      ];
+      for (final uri in escaping) {
+        expect(isEscapingPackageUri(uri), isTrue, reason: uri);
+      }
+    });
+
+    test('backslash spellings staying inside do not escape', () {
+      const inside = [
+        r'package:proj\lib_file.dart',
+        r'package:proj/a\..\b.dart',
+      ];
+      for (final uri in inside) {
+        expect(isEscapingPackageUri(uri), isFalse, reason: uri);
+      }
+    });
+  });
+
   group('every tool enforces the shared check', () {
     // Each Dart-reading tool and the marker proving it enforces the shared
     // staged-source check: the runners call it directly, the whole-program

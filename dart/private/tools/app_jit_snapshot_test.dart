@@ -1997,6 +1997,38 @@ void main(List<String> args) {
     );
   });
 
+  test('--gen-kernel refuses sources it cannot scan without compiling', () {
+    // Each source hides an escaping directive past a syntax error, so the
+    // scanner gives up: the wrapper refuses the file instead of calling it
+    // clean, before gen_kernel (which is never reached, so no SDK snapshot
+    // is needed) runs.
+    final ws = Directory('${tmp.path}/scan_ws')..createSync(recursive: true);
+    final sources = [
+      "import 'dart:core' if (dart.library.io) ;\n"
+          "import '../../host/secret.dart';\n",
+      "library a.;\nimport 'file:///etc/hosts';\n",
+      "import 'a.dart;\nimport 'file:///etc/hosts';\n",
+    ];
+    final paths = <String>[];
+    for (var i = 0; i < sources.length; i++) {
+      final file = File('${ws.path}/bad$i.dart')..writeAsStringSync(sources[i]);
+      paths.add(file.path);
+    }
+    final toolPath = stageTool();
+    final res = Process.runSync(Platform.resolvedExecutable, [
+      toolPath,
+      '--gen-kernel',
+      'never-reached-runtime',
+      for (final path in paths) '--input-source=$path',
+    ]);
+    expect(res.exitCode, isNonZero);
+    for (final path in paths) {
+      expect(res.stderr as String, contains(path));
+    }
+    expect(res.stderr as String, contains('could not be checked'));
+    expect(res.stderr as String, contains('syntax error'));
+  });
+
   test('--gen-kernel refuses a triple-quoted import without compiling', () {
     // The front end drops a whitespace-only first line of a multi-line
     // string, so it reads `/secret/s.dart` where the pre-guard sees a
