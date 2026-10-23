@@ -58,7 +58,7 @@ EOF
 
 cat >"$tmp/MODULE.bazel" <<'EOF'
 module(name = "dual_build_fixture")
-bazel_dep(name = "rules_dart", version = "0.0.0")
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
 EOF
 
 # Bazel's convenience symlinks, pointed at /nonexistent to prove

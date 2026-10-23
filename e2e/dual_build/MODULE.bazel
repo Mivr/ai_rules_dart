@@ -1,10 +1,10 @@
 module(name = "dual_build_e2e")
 
-bazel_dep(name = "rules_dart", version = "0.0.0", dev_dependency = True)
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", dev_dependency = True, repo_name = "rules_dart")
 bazel_dep(name = "rules_shell", version = "0.8.0", dev_dependency = True)
 
 local_path_override(
-    module_name = "rules_dart",
+    module_name = "ai_rules_dart",
     path = "../..",
 )
 

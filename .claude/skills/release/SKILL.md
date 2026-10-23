@@ -99,7 +99,7 @@ targets were found` inside a step that goes on to print `OK` is that step's own
    tidied standalone and will error — that's expected, ignore them: `e2e/pub_lock_conflict`
    (intentional cross-lock version conflict), and every sub-module under
    `e2e/pub_lock_cross_module` (`module_b`, `module_c`) — each is resolved only within its
-   parent, so standalone it fails with `rules_dart@0.0.0 not found in registries`. Expect
+   parent, so standalone it fails with `ai_rules_dart@0.0.0 not found in registries`. Expect
    that list to grow as the cross-module fixture gains sub-modules; the count is not the
    check. What matters is that the tree stays clean.
 6. **Locks committed**: no `MODULE.bazel.lock` dirty or untracked.
@@ -136,7 +136,7 @@ their working trees stay clean. For **each** of `rules_dart_proto` and `rules_fl
    ```sh
    cd <folder>
    bazel test --test_output=errors //... \
-     --override_module=rules_dart=$HOME/Projects/rules_dart \
+     --override_module=ai_rules_dart=$HOME/Projects/rules_dart \
      --lockfile_mode=off \
      || [ $? -eq 4 ]
    ```
@@ -319,15 +319,15 @@ invalid GitHub user ID for aran` (aran's id is `5295`). Cause: `publish-to-bcr`
 
    ```sh
    d=$(mktemp -d) && cd "$d" && touch BUILD.bazel
-   printf 'module(name="c",version="0.0.0")\nbazel_dep(name="rules_dart",version="%s")\n' "${TARGET#v}" > MODULE.bazel
+   printf 'module(name="c",version="0.0.0")\nbazel_dep(name="ai_rules_dart",version="%s",repo_name="rules_dart")\n' "${TARGET#v}" > MODULE.bazel
    bazel mod show_repo rules_dart   # must print a real http_archive with an integrity hash
    ```
 
    Do **not** accept the file existing in the registry's git repo. Measured on 0.6.3: the
-   PR merged and `bcr.bazel.build/modules/rules_dart/0.6.3/{source.json,MODULE.bazel}`
+   PR merged and `bcr.bazel.build/modules/ai_rules_dart/0.6.3/{source.json,MODULE.bazel}`
    went on 404ing for a further **~30 minutes**, while
-   `raw.githubusercontent.com/.../modules/rules_dart/0.6.3/source.json` returned 200
-   immediately and `bcr.bazel.build/modules/rules_dart/metadata.json` listed 0.6.3 the
+   `raw.githubusercontent.com/.../modules/ai_rules_dart/0.6.3/source.json` returned 200
+   immediately and `bcr.bazel.build/modules/ai_rules_dart/metadata.json` listed 0.6.3 the
    whole time. So both the obvious shortcuts — check the repo, check the metadata — go
    green while Bazel still cannot fetch the module. A downstream bumped in that window
    fails with the version simply absent, which reads as a bad pin rather than a cold CDN.
@@ -367,12 +367,12 @@ From `$HOME/Projects/rules_dart_proto`:
    failure-prone step, and it has exactly one root cause worth remembering.
 
    `rules_dart_proto/.bazelrc.user` is **gitignored** (so `git status` stays clean) and
-   contains `common --override_module=rules_dart=$HOME/Projects/rules_dart`. `common`
+   contains `common --override_module=ai_rules_dart=$HOME/Projects/rules_dart`. `common`
    applies to _every_ bazel command, `bazel mod tidy` included. Regenerating a lock while
    it exists corrupts that lock in two ways at once, and CI rejects it:
 
    - the overridden module is never fetched from the registry, so the lock omits
-     `modules/rules_dart/<v>/MODULE.bazel` → `Missing checksum for registry file ...
+     `modules/ai_rules_dart/<v>/MODULE.bazel` → `Missing checksum for registry file ...
 not permitted with --lockfile_mode=error`;
    - the override changes the pub extension's owning module identity, so its
      `usagesDigest` differs → `usages of the extension '...%pub' have changed`.
@@ -398,12 +398,12 @@ not permitted with --lockfile_mode=error`;
    verification. For every module (root + each e2e):
 
    ```sh
-   grep -c "modules/rules_dart/${TARGET#v}/MODULE.bazel" <module>/MODULE.bazel.lock  # must be >= 1
+   grep -c "modules/ai_rules_dart/${TARGET#v}/MODULE.bazel" <module>/MODULE.bazel.lock  # must be >= 1
    bazel build //... --lockfile_mode=error                                            # must pass
    ```
 
    With `.bazelrc.user` in place the root fails on `the usages of the extension
-'@@rules_dart+//dart/pub:extensions.bzl%pub' have changed`: the lock you just
+'@@ai_rules_dart+//dart/pub:extensions.bzl%pub' have changed`: the lock you just
    regenerated correctly records the _published_ module, while the restored override
    points the pub extension at the sibling checkout, so its `usagesDigest` no longer
    matches. Nothing is wrong with the lock — CI has no `.bazelrc.user`, which is exactly

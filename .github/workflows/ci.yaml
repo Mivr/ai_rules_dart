@@ -374,10 +374,10 @@ jobs:
           echo "9.3.0" > "$ws/e2e/pub_fetch_powershell/.bazelversion"
           ( cd "$ws/e2e/pub_fetch_powershell" && bazel --output_base="$RUNNER_TEMP/bazel-pw-normal" build //... )
           ( cd "$ws/e2e/pub_fetch_powershell" && bazel --output_base="$RUNNER_TEMP/bazel-pw-stubbed" build --repo_env=PATH="$shims:/usr/local/bin:/usr/bin:/bin" //... )
-          for repo in "rules_dart++pub+dart_pub__characters" "rules_dart++pub+dart_pub__meta" "rules_dart++pub+pub_deps"; do
+          for repo in "ai_rules_dart++pub+dart_pub__characters" "ai_rules_dart++pub+dart_pub__meta" "ai_rules_dart++pub+pub_deps"; do
             diff -r "$RUNNER_TEMP/bazel-pw-normal/external/$repo" "$RUNNER_TEMP/bazel-pw-stubbed/external/$repo"
           done
-          test -z "$(find "$RUNNER_TEMP/bazel-pw-stubbed/external/rules_dart++pub+dart_pub__characters" "$RUNNER_TEMP/bazel-pw-stubbed/external/rules_dart++pub+dart_pub__meta" -type l)"
+          test -z "$(find "$RUNNER_TEMP/bazel-pw-stubbed/external/ai_rules_dart++pub+dart_pub__characters" "$RUNNER_TEMP/bazel-pw-stubbed/external/ai_rules_dart++pub+dart_pub__meta" -type l)"
       # Guards Mivr/rules_dart#1: a minimal consuming module must be able to
       # enumerate the whole published module. Dev-only tooling lives in nested
       # modules excluded via REPO.bazel `ignore_directories`, so no package under

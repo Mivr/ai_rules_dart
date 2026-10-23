@@ -17,8 +17,8 @@ def w(path, s):
 
 w("MODULE.bazel", f'''module(name = "bench")
 
-bazel_dep(name = "rules_dart", version = "0.0.0")
-local_path_override(module_name = "rules_dart", path = "{rules}")
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
+local_path_override(module_name = "ai_rules_dart", path = "{rules}")
 
 dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
 dart.toolchain(dart_version = "3.13.5")

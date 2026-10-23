@@ -12,8 +12,9 @@
 # breaking change affects most use cases and isn't easy to work around, and
 # in the same commit that introduces the incompatible change.
 module(
-    name = "rules_dart",
+    name = "ai_rules_dart",
     bazel_compatibility = [">=9.0.0"],
+    repo_name = "rules_dart",
 )
 
 bazel_dep(name = "bazel_skylib", version = "1.9.2")

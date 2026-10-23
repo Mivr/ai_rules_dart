@@ -29,7 +29,7 @@ cat << EOF
 Add to your \`MODULE.bazel\` file:
 
 \`\`\`starlark
-bazel_dep(name = "rules_dart", version = "${TAG:1}")
+bazel_dep(name = "ai_rules_dart", version = "${TAG:1}", repo_name = "rules_dart")
 \`\`\`
 EOF
 

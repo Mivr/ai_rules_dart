@@ -9,7 +9,7 @@ BZ = f"{S}/tools/bzb"
 rules, label = sys.argv[1], sys.argv[2]
 only = set(sys.argv[3:])
 os.makedirs(f"{S}/results", exist_ok=True)
-SDK_GLOB = "external/rules_dart++dart+dart_linux-x64"
+SDK_GLOB = "external/ai_rules_dart++dart+dart_linux-x64"
 
 def sh(cmd, cwd, check=True):
     t = time.time()

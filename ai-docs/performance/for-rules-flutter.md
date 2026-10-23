@@ -266,7 +266,7 @@ note any change here first.
 and `dart/private/dart_link_hook.bzl` wraps `link_hook_runner_attr()`'s default
 in `Label("//dart/private/tools:link_hook_runner")`. Verified from an external
 module (`e2e/codegen` `//source_set_pkg:colocated_test`) and against
-`rules_flutter` (`bazel test //... --override_module=rules_dart=...`).
+`rules_flutter` (`bazel test //... --override_module=ai_rules_dart=...`).
 
 ### `bazel_lib` and `yaml.bzl` are gone (`84c8767`, `5387726`, `44ee436`)
 

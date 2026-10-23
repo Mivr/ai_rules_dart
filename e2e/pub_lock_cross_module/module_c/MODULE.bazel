@@ -1,6 +1,6 @@
 module(name = "module_c")
 
-bazel_dep(name = "rules_dart", version = "0.0.0")
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
 
 # Deliberately the SAME hub name the root module uses, over a different lock.
 # Two modules cannot coordinate their hub names, and this is the shape a

@@ -1,10 +1,10 @@
 module(name = "dep_module")
 
-bazel_dep(name = "rules_dart", version = "0.0.0")
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
 
 # Only honoured when this module is built on its own.
 local_path_override(
-    module_name = "rules_dart",
+    module_name = "ai_rules_dart",
     path = "../../..",
 )
 
