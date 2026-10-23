@@ -1965,31 +1965,26 @@ void main(List<String> args) {
   });
 
   test('jitOpenFlags pins O_* per OS and ABI', () {
-    // Linux O_NOFOLLOW is architecture-specific: x86_64 and the other
-    // asm-generic ABIs (arm64, IA-32, RISC-V) number it 0400000, while 32-bit
-    // ARM headers number it 0100000. 0x40000 would be O_NOATIME, which the
-    // kernel refuses with EPERM on a file the caller does not own, locking a
-    // second user out of the first user's lock again. O_RDWR, O_CREAT, O_EXCL
-    // and O_NONBLOCK are the same on x86_64 and arm64.
+    // Linux O_NOFOLLOW is architecture-specific: x86_64, IA-32 and RISC-V
+    // number it 0400000 (asm-generic), while 32-bit ARM and arm64 number it
+    // 0100000 (arm64 keeps the 32-bit numbering for compat; its 0400000 is
+    // O_LARGEFILE, which would follow symlinks). 0x40000 would be O_NOATIME,
+    // which the kernel refuses with EPERM on a file the caller does not own,
+    // locking a second user out of the first user's lock again. O_RDWR,
+    // O_CREAT, O_EXCL and O_NONBLOCK are the same on x86_64 and arm64.
     const noAtime = 0x40000;
     const creat = 0x40;
     const excl = 0x80;
-    for (final abi in [
-      ffi.Abi.linuxX64,
-      ffi.Abi.linuxArm64,
-      ffi.Abi.linuxIA32,
-      ffi.Abi.linuxRiscv32,
-      ffi.Abi.linuxRiscv64,
-    ]) {
+    void checkNoFollow(ffi.Abi abi, int nofollow) {
       final flags = locks.jitOpenFlags(isMacOS: false, abi: abi);
       expect(
-        flags.noCreate & 0x20000,
-        0x20000,
+        flags.noCreate & nofollow,
+        nofollow,
         reason: '$abi no-create carries O_NOFOLLOW',
       );
       expect(
-        flags.create & 0x20000,
-        0x20000,
+        flags.create & nofollow,
+        nofollow,
         reason: '$abi create carries O_NOFOLLOW',
       );
       expect(
@@ -2000,23 +1995,24 @@ void main(List<String> args) {
       expect(flags.create & (creat | excl), creat | excl);
       final read = locks.jitReadFlags(isMacOS: false, abi: abi);
       expect(
-        read & 0x20000,
-        0x20000,
+        read & nofollow,
+        nofollow,
         reason: '$abi holder lookup carries O_NOFOLLOW',
       );
       expect(read & (creat | noAtime), 0);
     }
-    final arm = locks.jitOpenFlags(isMacOS: false, abi: ffi.Abi.linuxArm);
-    expect(
-      arm.noCreate & 0x8000,
-      0x8000,
-      reason: 'linux_arm no-create carries its O_NOFOLLOW',
-    );
-    expect(arm.noCreate & (creat | noAtime), 0);
-    expect(
-      locks.jitReadFlags(isMacOS: false, abi: ffi.Abi.linuxArm) & 0x8000,
-      0x8000,
-    );
+
+    for (final abi in [
+      ffi.Abi.linuxX64,
+      ffi.Abi.linuxIA32,
+      ffi.Abi.linuxRiscv32,
+      ffi.Abi.linuxRiscv64,
+    ]) {
+      checkNoFollow(abi, 0x20000);
+    }
+    for (final abi in [ffi.Abi.linuxArm, ffi.Abi.linuxArm64]) {
+      checkNoFollow(abi, 0x8000);
+    }
     // macOS values are unchanged and ABI-independent.
     for (final abi in [ffi.Abi.macosX64, ffi.Abi.macosArm64]) {
       final flags = locks.jitOpenFlags(isMacOS: true, abi: abi);

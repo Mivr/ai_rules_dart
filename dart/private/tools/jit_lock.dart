@@ -112,12 +112,13 @@ String jitLstatSymbol({required bool isMacOS, required bool isX64}) {
 /// and ABI. O_RDWR is 2, O_CREAT is 0x40 (Linux) or 0x200 (macOS), O_EXCL is
 /// 0x80 (Linux) or 0x800 (macOS), and O_NONBLOCK is 0x800 (Linux) or 0x4
 /// (macOS). O_NOFOLLOW is 0x100 on macOS but architecture-specific on Linux:
-/// 0x20000 on x86_64 and the other asm-generic ABIs (arm64, IA-32, RISC-V),
-/// 0x8000 on 32-bit ARM, whose headers number it differently. A Linux ABI
-/// whose values are not pinned here throws [UnsupportedError]: the caller
-/// fails closed rather than opening with guessed flags (0x40000 would be
-/// O_NOATIME, which the kernel refuses with EPERM on a file the caller does
-/// not own, locking a second user out of the first user's lock again).
+/// 0x20000 on x86_64, IA-32 and RISC-V (asm-generic), 0x8000 on 32-bit ARM and
+/// arm64, whose headers keep the 32-bit numbering for compat (0x20000 there is
+/// O_LARGEFILE, which would follow symlinks). A Linux ABI whose values are not
+/// pinned here throws [UnsupportedError]: the caller fails closed rather than
+/// opening with guessed flags (0x40000 would be O_NOATIME, which the kernel
+/// refuses with EPERM on a file the caller does not own, locking a second
+/// user out of the first user's lock again).
 JitOpenFlags jitOpenFlags({required bool isMacOS, required ffi.Abi abi}) {
   if (isMacOS) {
     // O_RDWR|O_NOFOLLOW|O_NONBLOCK, plus O_CREAT|O_EXCL to create.
@@ -140,14 +141,15 @@ JitOpenFlags jitOpenFlags({required bool isMacOS, required ffi.Abi abi}) {
 int _linuxNoFollow(ffi.Abi abi) {
   switch (abi) {
     case ffi.Abi.linuxX64:
-    case ffi.Abi.linuxArm64:
     case ffi.Abi.linuxIA32:
     case ffi.Abi.linuxRiscv32:
     case ffi.Abi.linuxRiscv64:
       // asm-generic headers number O_NOFOLLOW 0400000.
       return 0x20000;
     case ffi.Abi.linuxArm:
-      // 32-bit ARM headers number O_NOFOLLOW 0100000.
+    case ffi.Abi.linuxArm64:
+      // 32-bit ARM headers number O_NOFOLLOW 0100000, and arm64 keeps that
+      // numbering for compat (its 0400000 is O_LARGEFILE).
       return 0x8000;
     default:
       throw UnsupportedError(
