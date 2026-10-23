@@ -112,45 +112,18 @@ def pub_lock_spoke_dep_labels(bazel_deps, hub_name, explicit_packages, scc_targe
             labels.append("@{hub}__{dep}//:{dep}".format(hub = hub_name, dep = dep))
     return labels
 
-def _pub_lock_package_impl(ctx):
-    err = pub_lock_package_sha256_error(
-        ctx.attr.package_name,
-        ctx.attr.version,
-        ctx.attr.sha256,
-    )
-    if err:
-        fail(err)
+def _pub_lock_write_build(ctx):
+    """Reads the staged `pubspec.yaml` and writes the spoke `BUILD.bazel`.
 
-    url = "{base}/packages/{name}/versions/{version}.tar.gz".format(
-        base = ctx.attr.base_url,
-        name = ctx.attr.package_name,
-        version = ctx.attr.version,
-    )
+    Shared by the hosted and git spokes: both lay out the package's files and
+    then derive the same `dart_library` from its pubspec — its dependencies
+    (filtered to the lock and explicit packages, as sibling labels), its SDK
+    constraint (as the Dart language version), and its hooks (recorded for
+    the consuming binary to complain about, or for `dart_link_hook` to run).
 
-    # pub.dev serves some tarballs padded with trailing NUL bytes past the
-    # 8-byte RFC 1952 gzip trailer (observed as of 2026-04 on `nested@1.0.0`,
-    # among others). Bazel's built-in `GzipCompressorInputStream` rejects
-    # trailing bytes after the trailer with `Garbage after a valid .gz stream`.
-    #
-    # Download the archive (verifying its sha256), strip any trailing NUL
-    # padding past the gzip trailer, and unpack with `ctx.extract`.
-    pinned_download(
-        ctx,
-        url = url,
-        output = "_archive.tar.gz",
-        sha256 = ctx.attr.sha256.strip(),
-    )
-    raw_archive = ctx.read("_archive.tar.gz", watch = "no")
-    trimmed_archive = trim_gzip_trailing_nulls(raw_archive)
-    if trimmed_archive != raw_archive:
-        ctx.delete("_archive.tar.gz")
-        ctx.file("_archive.tar.gz", trimmed_archive, executable = False)
-    ctx.extract("_archive.tar.gz")
-    ctx.delete("_archive.tar.gz")
-    _check_package_symlinks(ctx, ctx.attr.package_name)
-
-    # Read pubspec.yaml to discover deps + the package's SDK constraint, the
-    # latter so we can mirror pub's per-package languageVersion behaviour.
+    Args:
+      ctx: The repository rule context.
+    """
     bazel_deps = []
     language_version = ""
     pubspec_path = ctx.path("pubspec.yaml")
@@ -197,6 +170,45 @@ def _pub_lock_package_impl(ctx):
     )
 
     ctx.file("BUILD.bazel", build_content)
+
+def _pub_lock_package_impl(ctx):
+    err = pub_lock_package_sha256_error(
+        ctx.attr.package_name,
+        ctx.attr.version,
+        ctx.attr.sha256,
+    )
+    if err:
+        fail(err)
+
+    url = "{base}/packages/{name}/versions/{version}.tar.gz".format(
+        base = ctx.attr.base_url,
+        name = ctx.attr.package_name,
+        version = ctx.attr.version,
+    )
+
+    # pub.dev serves some tarballs padded with trailing NUL bytes past the
+    # 8-byte RFC 1952 gzip trailer (observed as of 2026-04 on `nested@1.0.0`,
+    # among others). Bazel's built-in `GzipCompressorInputStream` rejects
+    # trailing bytes after the trailer with `Garbage after a valid .gz stream`.
+    #
+    # Download the archive (verifying its sha256), strip any trailing NUL
+    # padding past the gzip trailer, and unpack with `ctx.extract`.
+    pinned_download(
+        ctx,
+        url = url,
+        output = "_archive.tar.gz",
+        sha256 = ctx.attr.sha256.strip(),
+    )
+    raw_archive = ctx.read("_archive.tar.gz", watch = "no")
+    trimmed_archive = trim_gzip_trailing_nulls(raw_archive)
+    if trimmed_archive != raw_archive:
+        ctx.delete("_archive.tar.gz")
+        ctx.file("_archive.tar.gz", trimmed_archive, executable = False)
+    ctx.extract("_archive.tar.gz")
+    ctx.delete("_archive.tar.gz")
+    _check_package_symlinks(ctx, ctx.attr.package_name)
+
+    _pub_lock_write_build(ctx)
 
 pub_lock_package = repository_rule(
     implementation = _pub_lock_package_impl,
@@ -293,45 +305,7 @@ def _pub_lock_git_package_impl(ctx):
     ctx.delete(ctx.path(clone_rel))
     _check_package_symlinks(ctx, ctx.attr.package_name)
 
-    # Read pubspec.yaml to discover deps + the package's SDK constraint.
-    bazel_deps = []
-    language_version = ""
-    pubspec_path = ctx.path("pubspec.yaml")
-    if pubspec_path.exists:
-        pubspec_content = ctx.read(pubspec_path)
-        all_deps = parse_pubspec_deps(pubspec_content)
-        available = {p: True for p in ctx.attr.lock_packages + ctx.attr.explicit_packages}
-        bazel_deps = sorted([d for d in all_deps if d in available and d != ctx.attr.package_name])
-        language_version = _derive_language_version(
-            parse_pubspec_sdk_constraint(pubspec_content),
-        )
-
-    # Build full label strings for sibling repos: a dependency on a cycle
-    # member points at the merged repository holding the cycle.
-    dep_labels = pub_lock_spoke_dep_labels(
-        bazel_deps,
-        ctx.attr.hub_name,
-        ctx.attr.explicit_packages,
-        ctx.attr.scc_targets,
-    )
-
-    hooks = _classify_pub_hooks(
-        has_build_hook = ctx.path("hook/build.dart").exists,
-        has_link_hook = ctx.path("hook/link.dart").exists,
-        build_hook_handled = bool(ctx.attr.code_assets) or ctx.attr.ignore_hook,
-    )
-
-    build_content = make_dart_library_build_content(
-        name = ctx.attr.package_name,
-        deps = dep_labels,
-        language_version = language_version,
-        code_assets = ctx.attr.code_assets,
-        has_unreplaced_hook = hooks.unreplaced_hook,
-        version = ctx.attr.version,
-        link_hook = hooks.link_hook,
-    )
-
-    ctx.file("BUILD.bazel", build_content)
+    _pub_lock_write_build(ctx)
 
 pub_lock_git_package = repository_rule(
     implementation = _pub_lock_git_package_impl,
