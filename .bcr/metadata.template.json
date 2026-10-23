@@ -1,14 +1,13 @@
 {
-  "homepage": "https://github.com/aran/rules_dart",
+  "homepage": "https://github.com/Mivr/rules_dart",
   "maintainers": [
     {
-      "email": "aran.donohue@gmail.com",
-      "github": "aran",
-      "name": "Aran Donohue",
-      "github_user_id": 5295
+      "name": "Mivr",
+      "github": "Mivr",
+      "github_user_id": 19507580
     }
   ],
-  "repository": ["github:aran/rules_dart"],
+  "repository": ["github:Mivr/rules_dart"],
   "versions": [],
   "yanked_versions": {}
 }
