@@ -108,10 +108,17 @@ String jitLstatSymbol({required bool isMacOS, required bool isX64}) {
   return 'lstat';
 }
 
-/// The flags opening the lock (see [JitOpenFlags]): a pure function of the OS.
-/// Linux and macOS number O_CREAT, O_EXCL, O_NOFOLLOW and O_NONBLOCK
-/// differently; O_RDWR is 2 on both.
-JitOpenFlags jitOpenFlags({required bool isMacOS}) {
+/// The flags opening the lock (see [JitOpenFlags]): a pure function of the OS
+/// and ABI. O_RDWR is 2, O_CREAT is 0x40 (Linux) or 0x200 (macOS), O_EXCL is
+/// 0x80 (Linux) or 0x800 (macOS), and O_NONBLOCK is 0x800 (Linux) or 0x4
+/// (macOS). O_NOFOLLOW is 0x100 on macOS but architecture-specific on Linux:
+/// 0x20000 on x86_64 and the other asm-generic ABIs (arm64, IA-32, RISC-V),
+/// 0x8000 on 32-bit ARM, whose headers number it differently. A Linux ABI
+/// whose values are not pinned here throws [UnsupportedError]: the caller
+/// fails closed rather than opening with guessed flags (0x40000 would be
+/// O_NOATIME, which the kernel refuses with EPERM on a file the caller does
+/// not own, locking a second user out of the first user's lock again).
+JitOpenFlags jitOpenFlags({required bool isMacOS, required ffi.Abi abi}) {
   if (isMacOS) {
     // O_RDWR|O_NOFOLLOW|O_NONBLOCK, plus O_CREAT|O_EXCL to create.
     return (
@@ -119,11 +126,44 @@ JitOpenFlags jitOpenFlags({required bool isMacOS}) {
       create: 0x2 | 0x100 | 0x4 | 0x200 | 0x800,
     );
   }
+  final nofollow = _linuxNoFollow(abi);
   // O_RDWR|O_NOFOLLOW|O_NONBLOCK, plus O_CREAT|O_EXCL to create.
   return (
-    noCreate: 0x2 | 0x40000 | 0x800,
-    create: 0x2 | 0x40000 | 0x800 | 0x40 | 0x80,
+    noCreate: 0x2 | nofollow | 0x800,
+    create: 0x2 | nofollow | 0x800 | 0x40 | 0x80,
   );
+}
+
+/// Linux O_NOFOLLOW by ABI (see [jitOpenFlags]). Throws [UnsupportedError] for
+/// a Linux ABI whose headers are not pinned here: opening with guessed flags
+/// is worse than failing closed.
+int _linuxNoFollow(ffi.Abi abi) {
+  switch (abi) {
+    case ffi.Abi.linuxX64:
+    case ffi.Abi.linuxArm64:
+    case ffi.Abi.linuxIA32:
+    case ffi.Abi.linuxRiscv32:
+    case ffi.Abi.linuxRiscv64:
+      // asm-generic headers number O_NOFOLLOW 0400000.
+      return 0x20000;
+    case ffi.Abi.linuxArm:
+      // 32-bit ARM headers number O_NOFOLLOW 0100000.
+      return 0x8000;
+    default:
+      throw UnsupportedError(
+        'app_jit_snapshot: no pinned O_NOFOLLOW for Linux ABI $abi, '
+        'refusing to open the training lock',
+      );
+  }
+}
+
+/// The read-only flags for the holder-PID lookup (see [jitLockHolderPid]):
+/// O_NOFOLLOW|O_NONBLOCK without O_CREAT, so a symlink or FIFO at the path
+/// reports no holder instead of blocking or being followed. Throws as
+/// [jitOpenFlags] on a Linux ABI whose values are not pinned.
+int jitReadFlags({required bool isMacOS, required ffi.Abi abi}) {
+  if (isMacOS) return 0x0 | 0x100 | 0x4;
+  return _linuxNoFollow(abi) | 0x800;
 }
 
 /// Our uid, for telling our own lock (whose mode we repair) from another
@@ -284,7 +324,19 @@ JitLockOpen jitOpenLock(String path) {
     );
   }
   final lib = ffi.DynamicLibrary.process();
-  final flags = jitOpenFlags(isMacOS: Platform.isMacOS);
+  final JitOpenFlags flags;
+  try {
+    flags = jitOpenFlags(isMacOS: Platform.isMacOS, abi: ffi.Abi.current());
+  } on UnsupportedError catch (error) {
+    // This host's Linux ABI has no pinned O_* values: fail closed with the
+    // cause rather than opening the lock with guessed flags.
+    return (
+      fd: -1,
+      detail: 'entry at $path ($error)',
+      chmodRemedy: false,
+      ownEntry: false,
+    );
+  }
   final first = _jitOpen(lib, path, flags.noCreate, 0);
   if (first.fd >= 0) return _jitAdoptFd(lib, path, first.fd);
   if (first.errno != _enoent) {
@@ -407,11 +459,12 @@ int? jitLockHolderPid(String path) {
         // slot is passed explicitly so the call marshals as variadic. The
         // flags open read-only without `O_CREAT`, so the kernel ignores it;
         // O_NOFOLLOW never follows a final symlink and O_NONBLOCK never blocks
-        // on a FIFO.
-        final readFlags = Platform.isMacOS
-            ? (0x0 | 0x100 | 0x4)
-            : (0 | 0x40000 | 0x800);
-        final fd = open(pathPtr, readFlags, 0);
+        // on a FIFO (see [jitReadFlags]).
+        final fd = open(
+          pathPtr,
+          jitReadFlags(isMacOS: Platform.isMacOS, abi: ffi.Abi.current()),
+          0,
+        );
         if (fd < 0) return null;
         try {
           final view = ByteData.sublistView(buf.asTypedList(32));
@@ -443,6 +496,10 @@ int? jitLockHolderPid(String path) {
     }
   } on ArgumentError {
     // A libc call this host lacks (`fcntl`, `open`): no holder available.
+    return null;
+  } on UnsupportedError {
+    // This host's Linux ABI has no pinned O_* values: no holder available,
+    // and the callers then say "unknown".
     return null;
   }
 }

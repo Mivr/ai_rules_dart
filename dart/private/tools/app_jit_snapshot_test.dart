@@ -4,8 +4,9 @@
 // the `RULES_DART_JIT_TRAIN_DIR`/`RULES_DART_JIT_TRAIN_LOCK` overrides, never
 // at the real shared paths. CI cannot exercise a second uid, so the
 // cross-user cases run as same-uid variants: an unopenable mode stands in for
-// a foreign lock and an unremovable entry for another user's leftover, while a
-// real second-user training runs in environments with two uids, not here.
+// a foreign lock, an unremovable entry for another user's leftover, and a
+// patched owner check for another user's uid, while a real second-user
+// training runs in environments with two uids, not here.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi' as ffi;
@@ -36,6 +37,7 @@ void main(List<String> args) {
   late Directory tmp;
   late int Function(String, int) realMkdir;
   late bool Function(String) realRemoveStale;
+  late int Function() realOwnUid;
 
   setUp(() {
     tmp = Directory.systemTemp.createTempSync('app_jit_snapshot_test_');
@@ -47,6 +49,7 @@ void main(List<String> args) {
     snapshot.lockTimeoutSecs = snapshot.defaultLockTimeoutSecs;
     realMkdir = snapshot.mkdirExclusive;
     realRemoveStale = snapshot.removeStaleEntry;
+    realOwnUid = snapshot.ownUid;
   });
 
   tearDown(() {
@@ -56,6 +59,7 @@ void main(List<String> args) {
     snapshot.lockTimeoutSecs = snapshot.defaultLockTimeoutSecs;
     snapshot.mkdirExclusive = realMkdir;
     snapshot.removeStaleEntry = realRemoveStale;
+    snapshot.ownUid = realOwnUid;
     if (!Platform.isWindows) {
       // Files and directories alike: a test may leave a read-only tree, and
       // deleting it needs owner access on every directory on the way down.
@@ -1687,6 +1691,9 @@ void main(List<String> args) {
       expect(err, contains('cannot train in ${blocker.path}'));
       expect(err, contains('cannot be removed'));
       expect(err, contains('regular file'));
+      // The blocker is ours (same uid, unremovable only for its read-only
+      // parent): the remedy asks us to remove the entry ourselves.
+      expect(err, contains('Remove the entry, or pass'));
       final id = Process.runSync('id', ['-u']);
       expect(id.exitCode, 0);
       expect(err, contains('owned by uid ${(id.stdout as String).trim()}'));
@@ -1699,6 +1706,74 @@ void main(List<String> args) {
       );
 
       final allowedOut = '${tmp.path}/blocked_allowed/app.jit';
+      final allowed = Process.runSync(
+        Platform.resolvedExecutable,
+        toolArgs(allowedOut, fallback: true),
+        environment: trainEnv,
+      );
+      expect(allowed.exitCode, 0, reason: '${allowed.stderr}');
+      expect(File(allowedOut).existsSync(), isTrue);
+    } finally {
+      snapshot.chmodFile(parent.path, 0x1ed);
+    }
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('foreign training directory names its owner-or-root removal', () {
+    // Another user's leftover training directory cannot be removed under
+    // /tmp's sticky bit, so "Remove the entry" would tell the wrong fix: the
+    // remedy must name its owner (or root) instead, as with a foreign lock.
+    // Same-uid stand-in (see the file header): a staged copy of the tool
+    // whose owner check answers a uid nothing owns, over a blocker no removal
+    // can take. The tool runs in a subprocess (it exits on failure).
+    final tool = stagePatchedTool(
+      'int Function() ownUid = jitOwnUid;',
+      'int Function() ownUid = () => -1;',
+    );
+    final dill = compileDill(
+      'void main(List<String> args) {\n  print(10000);\n}\n',
+      'foreigndir_train',
+    );
+    final parent = Directory('${tmp.path}/foreigndir')..createSync();
+    final blocker = File('${parent.path}/jit')
+      ..writeAsStringSync('theirs to remove');
+    snapshot.chmodFile(parent.path, 0x155); // 0555.
+    final trainEnv = {
+      'RULES_DART_JIT_TRAIN_DIR': blocker.path,
+      'RULES_DART_JIT_TRAIN_LOCK': snapshot.constantTrainLock,
+    };
+    List<String> toolArgs(String snapshotOut, {bool fallback = false}) => [
+      tool,
+      '--dart=${Platform.resolvedExecutable}',
+      '--snapshot=$snapshotOut',
+      if (fallback) '--fallback-allowed',
+      '--copy=input.dill=$dill',
+      '--',
+      'input.dill',
+    ];
+    try {
+      final outJit = '${tmp.path}/foreigndir_out/app.jit';
+      final denied = Process.runSync(
+        Platform.resolvedExecutable,
+        toolArgs(outJit),
+        environment: trainEnv,
+      );
+      expect(denied.exitCode, isNot(0), reason: 'foreign entry must fail');
+      expect(File(outJit).existsSync(), isFalse);
+      final err = denied.stderr as String;
+      expect(err, contains('cannot train in ${blocker.path}'));
+      expect(err, contains('cannot be removed'));
+      expect(err, contains('regular file'));
+      expect(err, contains('owned by uid'));
+      expect(err, contains('Have its owner (or root) remove it'));
+      expect(err, isNot(contains('Remove the entry')));
+      expect(err, contains('jit_snapshot_fallback=true'));
+      expect(
+        File(blocker.path).readAsStringSync(),
+        'theirs to remove',
+        reason: 'blocker never touched',
+      );
+
+      final allowedOut = '${tmp.path}/foreigndir_allowed/app.jit';
       final allowed = Process.runSync(
         Platform.resolvedExecutable,
         toolArgs(allowedOut, fallback: true),
@@ -1888,6 +1963,100 @@ void main(List<String> args) {
     expect(locks.jitLstatSymbol(isMacOS: false, isX64: true), 'lstat');
     expect(locks.jitLstatSymbol(isMacOS: false, isX64: false), 'lstat');
   });
+
+  test('jitOpenFlags pins O_* per OS and ABI', () {
+    // Linux O_NOFOLLOW is architecture-specific: x86_64 and the other
+    // asm-generic ABIs (arm64, IA-32, RISC-V) number it 0400000, while 32-bit
+    // ARM headers number it 0100000. 0x40000 would be O_NOATIME, which the
+    // kernel refuses with EPERM on a file the caller does not own, locking a
+    // second user out of the first user's lock again. O_RDWR, O_CREAT, O_EXCL
+    // and O_NONBLOCK are the same on x86_64 and arm64.
+    const noAtime = 0x40000;
+    const creat = 0x40;
+    const excl = 0x80;
+    for (final abi in [
+      ffi.Abi.linuxX64,
+      ffi.Abi.linuxArm64,
+      ffi.Abi.linuxIA32,
+      ffi.Abi.linuxRiscv32,
+      ffi.Abi.linuxRiscv64,
+    ]) {
+      final flags = locks.jitOpenFlags(isMacOS: false, abi: abi);
+      expect(
+        flags.noCreate & 0x20000,
+        0x20000,
+        reason: '$abi no-create carries O_NOFOLLOW',
+      );
+      expect(
+        flags.create & 0x20000,
+        0x20000,
+        reason: '$abi create carries O_NOFOLLOW',
+      );
+      expect(
+        flags.noCreate & (creat | noAtime),
+        0,
+        reason: '$abi no-create opens with neither O_CREAT nor O_NOATIME',
+      );
+      expect(flags.create & (creat | excl), creat | excl);
+      final read = locks.jitReadFlags(isMacOS: false, abi: abi);
+      expect(
+        read & 0x20000,
+        0x20000,
+        reason: '$abi holder lookup carries O_NOFOLLOW',
+      );
+      expect(read & (creat | noAtime), 0);
+    }
+    final arm = locks.jitOpenFlags(isMacOS: false, abi: ffi.Abi.linuxArm);
+    expect(
+      arm.noCreate & 0x8000,
+      0x8000,
+      reason: 'linux_arm no-create carries its O_NOFOLLOW',
+    );
+    expect(arm.noCreate & (creat | noAtime), 0);
+    expect(
+      locks.jitReadFlags(isMacOS: false, abi: ffi.Abi.linuxArm) & 0x8000,
+      0x8000,
+    );
+    // macOS values are unchanged and ABI-independent.
+    for (final abi in [ffi.Abi.macosX64, ffi.Abi.macosArm64]) {
+      final flags = locks.jitOpenFlags(isMacOS: true, abi: abi);
+      expect(flags.noCreate, 0x2 | 0x100 | 0x4);
+      expect(flags.create, 0x2 | 0x100 | 0x4 | 0x200 | 0x800);
+      expect(locks.jitReadFlags(isMacOS: true, abi: abi), 0x0 | 0x100 | 0x4);
+    }
+    // A Linux ABI with no pinned values fails closed instead of guessing.
+    expect(
+      () => locks.jitOpenFlags(isMacOS: false, abi: ffi.Abi.androidArm64),
+      throwsUnsupportedError,
+      reason: 'unpinned ABI stands in for an unknown Linux ABI',
+    );
+    expect(
+      () => locks.jitReadFlags(isMacOS: false, abi: ffi.Abi.androidArm64),
+      throwsUnsupportedError,
+    );
+  });
+
+  test('lock open refuses a symlink at the open call itself', () {
+    // The no-create open must carry O_NOFOLLOW: the link below points at a
+    // real regular file, so any open that followed it would succeed, and no
+    // path-based check precedes the open that could refuse it instead.
+    // Same-uid (see the file header).
+    final target = File('${tmp.path}/nofollow_target')
+      ..writeAsStringSync('follow me');
+    final link = '${tmp.path}/nofollow.lock';
+    Link(link).createSync(target.path);
+    final opened = locks.jitOpenLock(link);
+    expect(opened.fd, -1, reason: 'symlink refused by the open call');
+    expect(opened.detail, contains('symlink'));
+    expect(opened.detail, contains(link));
+    expect(opened.detail, contains('owned by uid'));
+    expect(opened.chmodRemedy, isFalse);
+    expect(
+      target.readAsStringSync(),
+      'follow me',
+      reason: 'link target never touched',
+    );
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
 
   test('racy claim at the constant training path fails closed', () {
     // Another local user creating the training directory in the

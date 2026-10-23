@@ -653,6 +653,14 @@ String _constantDirUnavailable = '';
 /// [_acquireConstantDir] call, like [_constantDirUnavailable] itself.
 bool _constantLockUnavailable = false;
 
+/// Whether the training-directory entry the last [_acquireConstantDir] call
+/// failed on is ours: only then can we remove it ourselves, so only then does
+/// the error say "Remove the entry". Another user's entry wants its owner (or
+/// root) to remove it, as with a foreign lock. False where the entry cannot
+/// be statted: not known to be ours. Only meaningful after a null return
+/// without a lock failure; reset on every call.
+bool _constantDirOwnEntry = false;
+
 /// Whether the last [_openConstantLock] call ran past its deadline: the lock
 /// was contended for the whole wait. Only meaningful after a null return;
 /// reset on every call, like [_constantDirUnavailable] itself.
@@ -802,6 +810,12 @@ bool _entryAbsent(String path) {
 /// error; production code never reassigns it.
 bool Function(String path) removeStaleEntry = _unlinkStaleEntry;
 
+/// Our uid, for telling our own training-directory entries (which the tool
+/// removes itself) from another user's (whose owner or root must remove
+/// them, since we cannot under `/tmp`'s sticky bit). A variable so tests can
+/// stand in for another user; production code never reassigns it.
+int Function() ownUid = jitOwnUid;
+
 /// Removes the directory at [path] without following symlinks: links inside
 /// are unlinked as links, subdirectories are removed the same way, and only
 /// then is the directory itself removed. A link swapped in for a directory
@@ -853,6 +867,7 @@ void _deleteTreeNoFollow(String path) {
 ({Directory dir, int lock})? _acquireConstantDir() {
   if (Platform.isWindows) return null;
   _constantLockUnavailable = false;
+  _constantDirOwnEntry = false;
   final int? lock = _openConstantLock();
   if (lock == null) {
     if (_lockWaitTimedOut) {
@@ -871,6 +886,10 @@ void _deleteTreeNoFollow(String path) {
   }
   ({Directory dir, int lock})? fail(String reason) {
     _constantDirUnavailable = reason;
+    // Only our own entry is ours to remove (see [_constantDirOwnEntry]):
+    // another user's leftover under `/tmp`'s sticky bit is not.
+    final info = jitStatEntry(constantTrainDir);
+    _constantDirOwnEntry = info != null && info.uid == ownUid();
     jitUnlockAndClose(lock);
     return null;
   }
@@ -917,7 +936,9 @@ void _deleteTreeNoFollow(String path) {
 /// mode is what denies us access the owner makes it world-writable or removes
 /// it, and where anything else blocks it — a symlink, directory, FIFO or
 /// other entry — its owner (or root) must remove it, since we cannot remove
-/// another user's lock. A blocked training directory names removing the entry.
+/// another user's lock. A blocked training directory of our own names removing
+/// the entry; another user's names its owner (or root) removing it, since we
+/// cannot under `/tmp`'s sticky bit.
 void _writeUnavailableError() {
   final String remedy;
   if (_lockWaitTimedOut) {
@@ -936,7 +957,9 @@ void _writeUnavailableError() {
               : 'Have its owner run `chmod 0666 $constantTrainLock` or remove it, or pass ')
         : 'Have its owner (or root) remove it, or pass ';
   } else {
-    remedy = 'Remove the entry, or pass ';
+    remedy = _constantDirOwnEntry
+        ? 'Remove the entry, or pass '
+        : 'Have its owner (or root) remove it, or pass ';
   }
   stderr.writeln(
     'app_jit_snapshot: cannot train in $constantTrainDir on this host: '
