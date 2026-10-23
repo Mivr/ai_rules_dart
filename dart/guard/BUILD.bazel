@@ -10,8 +10,9 @@ dart_library(
     visibility = ["//visibility:public"],
 )
 
-# Bare source for `directive_guard_test`, which pins the `app_jit_snapshot`
-# mirror byte-identical to the library's marked block.
+# Bare source for run-from-source consumers: the JIT tool bundle stages it
+# beside the entry that imports it, the kernel planner compiles it through
+# `srcs`, and `directive_guard_test` reads it among the enforced sources.
 exports_files(
     ["lib/directive_guard.dart"],
     visibility = ["//visibility:public"],
