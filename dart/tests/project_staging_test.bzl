@@ -1,7 +1,8 @@
 """Unit tests for the stub pubspec in project_staging.bzl."""
 
-load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
-load("//dart/private:project_staging.bzl", "external_package_placement", "main_package_placement", "pubspec_stub", "staged_package_config_content")
+load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
+load("//dart/private:project_staging.bzl", "external_package_placement", "main_package_placement", "pubspec_stub", "stage_dart_project", "staged_package_config_content")
+load("//dart/private:source_set.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS")
 load(":small_suite.bzl", "small_unittest_suite")
 
 def _pkg(name, language_version = ""):
@@ -270,5 +271,42 @@ _t7_test = unittest.make(_main_mixed_package_test_impl)
 _t8_test = unittest.make(_main_placement_without_own_test_impl)
 _t9_test = unittest.make(_all_packages_named_no_undeclared_external_test_impl)
 
+def _staging_copy_names_probe_impl(ctx):
+    # Drives the `all_packages_named` + `copy_external` refusal: a copied
+    # package has its own tree, so naming unstaged ones is meaningless.
+    stage_dart_project(
+        ctx,
+        [],
+        [],
+        copy_external = True,
+        all_packages_named = True,
+    )
+    return [DefaultInfo()]
+
+staging_copy_names_probe = rule(
+    implementation = _staging_copy_names_probe_impl,
+    toolchains = COPY_TO_DIRECTORY_TOOLCHAINS,
+)
+
+def _copy_names_needs_direct_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    asserts.expect_failure(env, "all_packages_named needs copy_external = False")
+    asserts.expect_failure(env, "got copy_external = True")
+    return analysistest.end(env)
+
+copy_names_needs_direct_test = analysistest.make(
+    _copy_names_needs_direct_test_impl,
+    expect_failure = True,
+)
+
 def project_staging_test_suite(name):
+    staging_copy_names_probe(
+        name = name + "_copy_names_fixture",
+        tags = ["manual"],
+    )
+    copy_names_needs_direct_test(
+        name = name + "_copy_names_test",
+        size = "small",
+        target_under_test = ":" + name + "_copy_names_fixture",
+    )
     small_unittest_suite(name, _t0_test, _t1_test, _t2_test, _t3_test, _t4_test, _t5_test, _t6_test, _t7_test, _t8_test, _t9_test)

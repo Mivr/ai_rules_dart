@@ -553,7 +553,7 @@ def _stage_src_copy(ctx, name, packages, src_files, active_stubs, sdk_version, c
 def _stage_name_unstaged_external(ext_pkgs, ext_staged, copy_external):
     """Names unstaged external packages so the config still references them."""
     if copy_external:
-        fail("all_packages_named needs copy_external = False: a copied package has its own tree")
+        fail("all_packages_named needs copy_external = False: a copied package has its own tree (got copy_external = %s)" % copy_external)
     for pkg in ext_pkgs:
         if pkg.package_name in ext_staged:
             continue
