@@ -591,12 +591,22 @@ void main(List<String> args) {
   group('unparsable prologues', () {
     // Each source hides an escaping directive past a syntax error, so the
     // scanner gives up: the checks refuse the file instead of calling it
-    // clean. The first is the review's probe.
+    // clean. The first is the review's probe; the rest start with a directive
+    // keyword but form no directive of that kind, which ends the prologue
+    // early on older code and hides what follows.
     const bad = [
       "import 'dart:core' if (dart.library.io) ;\n"
           "import '../../host/secret.dart';\n",
       "library a.;\nimport 'file:///etc/hosts';\n",
       "import 'a.dart;\nimport 'file:///etc/hosts';\n",
+      "export lib.dart;\nimport '../../host/secret.dart';\n",
+      "import foo;\nimport 'file:///etc/hosts';\n",
+      "import;\nimport 'file:///etc/hosts';\n",
+      "import 'a.dart';\nimport",
+      "part foo;\nimport 'file:///etc/hosts';\n",
+      "part;\nimport 'file:///etc/hosts';\n",
+      "library 123;\nimport '../../host/secret.dart';\n",
+      "library 'x';\nimport '../../host/secret.dart';\n",
     ];
 
     test('findDisallowedDirectives refuses sources it cannot scan', () {
@@ -622,9 +632,9 @@ void main(List<String> args) {
       ], tool: 'guard-test');
       expect(violations, hasLength(bad.length));
       for (var i = 0; i < bad.length; i++) {
-        expect(violations[i], contains('bad$i.dart'));
-        expect(violations[i], contains('could not be checked'));
-        expect(violations[i], contains('syntax error'));
+        final hit = violations.singleWhere((v) => v.contains('bad$i.dart'));
+        expect(hit, contains('could not be checked'));
+        expect(hit, contains('syntax error'));
       }
     });
   });
@@ -656,6 +666,11 @@ void main(List<String> args) {
         'part of my.lib;\n': [],
         '// c\n/* d */ import /* e */ \'a.dart\' /* f */ ; // g\n': ['a.dart'],
         'import \'a.dart\';\nvoid main() {}\nimport \'b.dart\';\n': ['a.dart'],
+        // Directive words used as declaration names end the prologue instead:
+        // none of these statements starts with a directive keyword.
+        'final part = 1;\n': [],
+        'void importer() {}\n': [],
+        'import \'a.dart\';\nint get library => 0;\n': ['a.dart'],
       };
       for (final entry in cases.entries) {
         expect(
@@ -664,6 +679,28 @@ void main(List<String> args) {
           reason: entry.key,
         );
       }
+    });
+  });
+
+  group('directive words as names', () {
+    test('declarations using them still end the prologue cleanly', () {
+      final root = Directory('${tmp.path}/names.proj')
+        ..createSync(recursive: true);
+      File('${root.path}/a.dart')
+          .writeAsStringSync('final part = 1;\nvoid importer() {}\n');
+      File('${root.path}/b.dart')
+          .writeAsStringSync("import 'a.dart';\nint get library => 0;\n");
+      expect(
+        findStagedDirectiveViolations([root.path], tool: 'guard-test'),
+        isEmpty,
+      );
+      expect(
+        findDisallowedDirectives({
+          'a.dart': 'final part = 1;\nvoid importer() {}\n',
+          'b.dart': "import 'a.dart';\nint get library => 0;\n",
+        }, tool: 'guard-test'),
+        isEmpty,
+      );
     });
   });
 

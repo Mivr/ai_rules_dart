@@ -2008,6 +2008,8 @@ void main(List<String> args) {
           "import '../../host/secret.dart';\n",
       "library a.;\nimport 'file:///etc/hosts';\n",
       "import 'a.dart;\nimport 'file:///etc/hosts';\n",
+      "export lib.dart;\nimport '../../host/secret.dart';\n",
+      "part foo;\nimport 'file:///etc/hosts';\n",
     ];
     final paths = <String>[];
     for (var i = 0; i < sources.length; i++) {

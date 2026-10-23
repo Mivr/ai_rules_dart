@@ -1049,8 +1049,11 @@ class _Prologue {
     return false;
   }
 
-  /// The tail of a `library` directive after its keyword: `;`, a dotted name
-  /// and `;`, or anything else, which ends the prologue. The first name wins.
+  /// The tail of a `library` directive after its keyword: `;` or a dotted name
+  /// and `;`. Anything else is a syntax error, never the end of the prologue:
+  /// no valid top-level declaration starts with `library` and continues any
+  /// other way, so the scan fails and the caller refuses the file instead of
+  /// never checking what follows. The first name wins.
   bool _parseLibraryTail() {
     _lexer.take();
     if (_punct(';')) {
@@ -1059,24 +1062,30 @@ class _Prologue {
       _libraryName ??= _dottedIdent();
       _expect(';');
     } else {
-      return false;
+      throw const _Unparsable();
     }
     return true;
   }
 
-  /// An `import` or `export` directive after its keyword: the URI must follow
-  /// or the prologue ends here.
+  /// An `import` or `export` directive after its keyword: the URI string must
+  /// follow. Anything else is a syntax error, never the end of the prologue:
+  /// no valid top-level declaration starts with `import` or `export` and
+  /// continues any other way, so the scan fails and the caller refuses the
+  /// file instead of never checking what follows.
   bool _parseImportOrExport(String kind, List<ScanRef> refs) {
     _lexer.take();
-    if (_peek()?.kind != _stringKind) return false;
+    if (_peek()?.kind != _stringKind) throw const _Unparsable();
     final ref = _uriDirective(kind, refs);
     if (!collectAll) refs.add(ref);
     return true;
   }
 
   /// A `part` directive after its keyword: `part of` (a URI or a library
-  /// name) or a part URI, each followed by `;`. Anything else ends the
-  /// prologue. The first `part of` library name wins.
+  /// name) or a part URI, each followed by `;`. Anything else is a syntax
+  /// error, never the end of the prologue: no valid top-level declaration
+  /// starts with `part` and continues any other way, so the scan fails and
+  /// the caller refuses the file instead of never checking what follows.
+  /// The first `part of` library name wins.
   bool _parsePartTail(List<ScanRef> refs) {
     _lexer.take();
     if (_ident('of')) {
@@ -1091,7 +1100,7 @@ class _Prologue {
       refs.add(ScanRef('part', _string()));
       _expect(';');
     } else {
-      return false;
+      throw const _Unparsable();
     }
     return true;
   }
