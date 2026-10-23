@@ -12,10 +12,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:rules_dart_guard/directive_guard.dart';
+import 'package:rules_dart_worker/worker_protocol.dart';
 
 void main(List<String> rawArgs) {
   final code = runWebCompileRequest(
-    _expandParamFiles(rawArgs),
+    expandParamFiles(rawArgs, skipEmptyLines: true, keepMissingArg: true),
     outSink: stdout,
     errSink: stderr,
   );
@@ -534,25 +535,6 @@ void _deleteOutputs(String outputPath) {
       _tryDelete(file);
     }
   }
-}
-
-List<String> _expandParamFiles(List<String> args) {
-  final expanded = <String>[];
-  for (final arg in args) {
-    if (arg.startsWith('@') && arg.length > 1) {
-      final file = File(arg.substring(1));
-      if (file.existsSync()) {
-        for (final line in file.readAsLinesSync()) {
-          if (line.isNotEmpty) {
-            expanded.add(line);
-          }
-        }
-        continue;
-      }
-    }
-    expanded.add(arg);
-  }
-  return expanded;
 }
 
 String _trimTrailingSlash(String raw) {
