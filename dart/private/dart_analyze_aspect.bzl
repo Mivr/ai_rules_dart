@@ -197,7 +197,7 @@ def _wrapper_options(excluded):
             lines.append('    - "%s"' % path)
     return "\n".join(lines) + "\n"
 
-def stage_config_project(ctx, config, packages, files, own, name, sdk_version, copy_external = True, all_packages_named = False):
+def stage_config_project(ctx, config, packages, files, own, name, sdk_version, opts = None):
     """Stages a project holding every options file `config` lists.
 
     The one place a project is laid out for options to be found in: the
@@ -219,15 +219,19 @@ def stage_config_project(ctx, config, packages, files, own, name, sdk_version, c
       name: Prefix for the staged paths.
       sdk_version: The toolchain SDK's version, the staged SDK constraint of a
         package that states no `language_version`.
-      copy_external: Passed to `stage_dart_project`. The aspect's actions pass
-        False; `dart_format` keeps True, since its project is read from runfiles.
-      all_packages_named: Passed to `stage_dart_project`. True for the
-        summary-mode analysis, whose staged config must name every package of
-        the closure even though only the target's own files are staged.
+      opts: `struct(copy_external, all_packages_named)` forwarded to
+        `stage_dart_project`. The aspect's actions pass
+        `(False, ...)`; `dart_format` keeps the `(True, False)` default by
+        passing None, since its project is read from runfiles. The
+        summary-mode analysis passes `all_packages_named = True`, whose
+        staged config must name every package of the closure even though
+        only the target's own files are staged.
 
     Returns:
       The `stage_dart_project` struct.
     """
+    copy_external = opts.copy_external if opts else True
+    all_packages_named = opts.all_packages_named if opts else False
     packages = merge_package_records(packages + config.packages)
     staged_files = files + config.files + config.options_files
     own_paths = [f.short_path for f in own]
@@ -237,15 +241,15 @@ def stage_config_project(ctx, config, packages, files, own, name, sdk_version, c
         ctx,
         packages,
         staged_files,
-        extra_proj_files = {
-            "pubspec.yaml": pubspec_stub(packages, sdk_version = sdk_version),
-        },
-        name = name,
-        sdk_version = sdk_version,
+        staging = struct(
+            extra_proj_files = {
+                "pubspec.yaml": pubspec_stub(packages, sdk_version = sdk_version),
+            },
+            name = name,
+            sdk_version = sdk_version,
+        ),
         copy_external = copy_external,
         all_packages_named = all_packages_named,
-        own = own if not copy_external else None,
-        options_files = config.options_files,
     )
 
     # Everything else under `src/` is there to resolve against, and excluded —
@@ -668,16 +672,26 @@ def _analyze_own_files(target, entry, package_srcs):
         return None, None
     return own, generated_by_path
 
-def _analyze_summary_or_source(ctx, info, name, staged, all_pkgs, own, generated, own_paths, sdk_inputs, sdk_version, config, is_leaf_own_only):
-    """Runs the summary-mode or source-mode analyze action. Returns (output, summary_mode, summary_staged)."""
+def _analyze_summary_or_source(ctx, info, srcs, opts):
+    """Runs the summary-mode or source-mode analyze action. Returns (output, summary_mode, summary_staged).
+
+    Args:
+      ctx: The aspect context.
+      info: The target's `DartInfo` closure.
+      srcs: `struct(name, staged, all_pkgs, own, generated, own_paths)`: the
+        staged full-closure project and the target's own files, built once by
+        `_dart_analyze_aspect_impl`.
+      opts: `struct(sdk_inputs, sdk_version, config, is_leaf_own_only)`: the
+        SDK inputs, toolchain version, analysis config, and leaf shape flag.
+    """
 
     # The SDK check is the analyzing toolchain's own: the same one the
     # summary aspect and the codegen rules read.
-    summary_files = own.values() + generated
+    summary_files = srcs.own.values() + srcs.generated
     has_own_lib = bool(own_lib_sources(info, summary_files))
-    summary_mode = ctx.attr._summaries[BuildSettingInfo].value and analyzer_summaries_supported(sdk_version) and _summaries_ready(ctx, info, has_own_lib, summary_files)
+    summary_mode = ctx.attr._summaries[BuildSettingInfo].value and analyzer_summaries_supported(opts.sdk_version) and _summaries_ready(ctx, info, has_own_lib, summary_files)
     if not summary_mode:
-        return depset([_analyze(ctx, name, staged, sdk_inputs, own_paths)]), False, None
+        return depset([_analyze(ctx, srcs.name, srcs.staged, opts.sdk_inputs, srcs.own_paths)]), False, None
 
     # Only the target's own files are staged: its dependencies come from
     # their summaries, so no closure is read and no closure edit reaches
@@ -686,53 +700,63 @@ def _analyze_summary_or_source(ctx, info, name, staged, all_pkgs, own, generated
     # its imports against, but are excluded from analysis, as the
     # default path excludes them. A generated source is in the closure
     # there, but in no dependency's summary.
-    if is_leaf_own_only and not generated:
-        summary_staged = staged
+    if opts.is_leaf_own_only and not srcs.generated:
+        summary_staged = srcs.staged
     else:
         summary_staged = stage_config_project(
             ctx,
-            config,
-            all_pkgs,
+            opts.config,
+            srcs.all_pkgs,
             summary_files,
-            own.values(),
-            name + ".summary",
-            sdk_version,
-            copy_external = False,
-            all_packages_named = True,
+            srcs.own.values(),
+            srcs.name + ".summary",
+            opts.sdk_version,
+            struct(copy_external = False, all_packages_named = True),
         )
     sdk_summary = _embedder_sdk_summary(ctx) or ctx.file._sdk_summary
     return depset([_analyze_summaries(
         ctx,
-        name,
+        srcs.name,
         summary_staged,
         _dependency_summaries(ctx),
         sdk_summary,
-        sdk_inputs,
-        own_paths,
+        opts.sdk_inputs,
+        srcs.own_paths,
     )]), True, summary_staged
 
-def _analyze_format_checks(ctx, info, name, staged, own, own_paths, generated, is_leaf_own_only, sdk_version, config, summary_staged):
-    """Runs one format check per language version. Returns the `DartFormat` list."""
-    by_version = _format_language_versions(info, own_paths)
-    if summary_staged != None and not generated:
+def _analyze_format_checks(ctx, info, srcs, opts, summary_staged):
+    """Runs one format check per language version. Returns the `DartFormat` list.
+
+    Args:
+      ctx: The aspect context.
+      info: The target's `DartInfo` closure.
+      srcs: `struct(name, staged, own, own_paths, generated, ...)`: the staged
+        full-closure project and the target's own files, built once by
+        `_dart_analyze_aspect_impl` (extra fields are ignored).
+      opts: `struct(sdk_version, config, is_leaf_own_only, ...)`: the toolchain
+        version, analysis config, and leaf shape flag (extra fields ignored).
+      summary_staged: The summary-mode staged project, or None.
+    """
+    by_version = _format_language_versions(info, srcs.own_paths)
+    if summary_staged != None and not srcs.generated:
         format_staged = summary_staged
-    elif is_leaf_own_only:
-        format_staged = staged
+    elif opts.is_leaf_own_only:
+        format_staged = srcs.staged
     else:
         format_staged = stage_config_project(
             ctx,
-            config,
+            opts.config,
             [],
-            own.values(),
-            own.values(),
-            name + ".format",
-            sdk_version,
-            copy_external = False,
+            srcs.own.values(),
+            srcs.own.values(),
+            srcs.name + ".format",
+            opts.sdk_version,
+            struct(copy_external = False, all_packages_named = False),
         )
     return [
         _format(
             ctx,
-            name if len(by_version) == 1 else "%s.%s" % (name, version or "latest"),
+            srcs.name if len(by_version) == 1 else "%s.%s" % (srcs.name, version or "latest"),
             format_staged,
             paths,
             version,
@@ -800,8 +824,7 @@ def _analyze_stage_all(ctx, info, entry, own, generated, name, sdk_version, conf
         own.values(),
         name,
         sdk_version,
-        copy_external = False,
-        all_packages_named = is_leaf_own_only,
+        struct(copy_external = False, all_packages_named = is_leaf_own_only),
     )
     return all_pkgs, is_leaf_own_only, staged
 
@@ -844,34 +867,38 @@ def _dart_analyze_aspect_impl(target, ctx):
     groups = {}
     summary_mode = False
     summary_staged = None
+
+    # The values the analyze and format branches read travel together, so they
+    # are structs built once here and passed down, rather than a parameter
+    # per value.
+    analyze_srcs = struct(
+        name = name,
+        staged = staged,
+        all_pkgs = all_pkgs,
+        own = own,
+        generated = generated,
+        own_paths = own_paths,
+    )
+    analyze_opts = struct(
+        sdk_inputs = sdk_inputs,
+        sdk_version = sdk_version,
+        config = config,
+        is_leaf_own_only = is_leaf_own_only,
+    )
     if NO_ANALYZE_TAG not in tags:
         groups["dart_analyze"], summary_mode, summary_staged = _analyze_summary_or_source(
             ctx,
             info,
-            name,
-            staged,
-            all_pkgs,
-            own,
-            generated,
-            own_paths,
-            sdk_inputs,
-            sdk_version,
-            config,
-            is_leaf_own_only,
+            analyze_srcs,
+            analyze_opts,
         )
     format_checks = []
     if NO_FORMAT_TAG not in tags:
         format_checks = _analyze_format_checks(
             ctx,
             info,
-            name,
-            staged,
-            own,
-            own_paths,
-            generated,
-            is_leaf_own_only,
-            sdk_version,
-            config,
+            analyze_srcs,
+            analyze_opts,
             summary_staged,
         )
         groups["dart_format"] = depset([c.stamp for c in format_checks])
