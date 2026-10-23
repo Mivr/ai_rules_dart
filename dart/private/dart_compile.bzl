@@ -172,6 +172,24 @@ def has_comma_define_flag(flags):
             return True
     return False
 
+def jit_tool_entry(jit_tool_files):
+    """The entry source of the JIT tool bundle.
+
+    The `_jit_tool` attribute carries every source the tool imports, and the
+    actions stage them all beside each other so the entry's relative imports
+    resolve; the entry itself is picked by basename.
+
+    Args:
+        jit_tool_files: The `_jit_tool` files.
+
+    Returns:
+        The `app_jit_snapshot.dart` entry File.
+    """
+    for f in jit_tool_files:
+        if f.basename == "app_jit_snapshot.dart":
+            return f
+    fail("dart_compile_action: the `_jit_tool` bundle names no `app_jit_snapshot.dart` entry")
+
 def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asserts, comma_patch = None, fallback_allowed = False):
     """Trains the app-JIT snapshot of a kernel at its keyed absolute path.
 
@@ -186,7 +204,10 @@ def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asse
     Args:
         ctx: The rule context.
         dart_sdk_info: The `DartSdkInfo` of the toolchain.
-        jit_tool: The `app_jit_snapshot.dart` File.
+        jit_tool: The JIT tool sources: the `app_jit_snapshot.dart` entry and
+            every source it imports. The entry runs; the rest land beside it
+            in the sandbox, so the entry's relative imports resolve. Required
+            whenever `jit_tool` runs.
         comma_patch: The `comma_patch.dart` File the tool imports. It lands
             beside the tool in the sandbox, so the tool's relative import
             resolves. Required whenever `jit_tool` runs.
@@ -212,7 +233,7 @@ def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asse
     )
     args = ctx.actions.args()
     args.add(pkg_cfg, format = "--packages=%s")
-    args.add(jit_tool)
+    args.add(jit_tool_entry(jit_tool))
     args.add(dart_bin, format = "--dart=%s")
     if dartvm != None:
         args.add(dartvm, format = "--dartvm=%s")
@@ -233,7 +254,7 @@ def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asse
         executable = dart_bin,
         arguments = [args],
         inputs = depset(
-            direct = [jit_tool, pkg_cfg, dart_bin, main] + ([dartvm] if dartvm != None else []) + ([comma_patch] if comma_patch != None else []),
+            direct = jit_tool + [pkg_cfg, dart_bin, main] + ([dartvm] if dartvm != None else []) + ([comma_patch] if comma_patch != None else []),
             transitive = [dart_sdk_info.compile_files],
         ),
         outputs = [output],
@@ -271,7 +292,7 @@ def _kernel_comma_snapshot(ctx, dart_sdk_info, tools, defines, extra_flags, jit_
                   "`gen_kernel` snapshot, so no compile can keep the commas. " +
                   "Use an SDK whose snapshot `comma_patch.dart` knows how " +
                   "to patch.") % (ctx.label, comma_source, dart_sdk_info.version))
-        if jit_tool == None:
+        if not jit_tool:
             fail(("dart_compile_action: target %s passes comma-containing " +
                   "%s, but no `jit_tool` wrapper runs its " +
                   "`gen_kernel` step to authorize the patched snapshot.") %
@@ -319,7 +340,7 @@ def _kernel_run_wrapper(ctx, dart_sdk_info, st, tools, args, outputs, gen_snapsh
     dartvm = sdk_dartvm(dart_sdk_info)
     wrapper_args = ctx.actions.args()
     wrapper_args.add(st.package_config, format = "--packages=%s")
-    wrapper_args.add(st.jit_tool)
+    wrapper_args.add(jit_tool_entry(st.jit_tool))
     wrapper_args.add("--gen-kernel")
     wrapper_args.add(tools.dartaotruntime)
     if comma_sources:
@@ -334,7 +355,7 @@ def _kernel_run_wrapper(ctx, dart_sdk_info, st, tools, args, outputs, gen_snapsh
     direct = [st.main, st.package_config] + st.srcs
     if st.native_assets_yaml != None:
         direct.append(st.native_assets_yaml)
-    direct.append(st.jit_tool)
+    direct.extend(st.jit_tool)
     if st.comma_patch != None:
         direct.append(st.comma_patch)
     if gen_snapshot != None:
@@ -417,7 +438,7 @@ def _kernel_action(ctx, dart_sdk_info, st, aot, enable_asserts, extra_flags, pro
         output,
     )
 
-    if st.jit_tool != None:
+    if st.jit_tool:
         _kernel_run_wrapper(ctx, dart_sdk_info, st, tools, args, outputs, gen_snapshot, comma_sources)
         return
 
@@ -465,7 +486,7 @@ def _compile_validate(ctx, cfg):
         fail(stage_err)
     if cfg.recorded_uses != None and cfg.compile_mode not in RECORDING_COMPILE_MODES:
         fail("dart_compile_action: `dart compile %s` records no uses." % cfg.compile_mode)
-    if cfg.jit_tool != None and cfg.comma_patch == None:
+    if cfg.jit_tool and cfg.comma_patch == None:
         fail("dart_compile_action: target %s passes `jit_tool` without the " +
              "`comma_patch.dart` File it imports, so no action could run it " +
              "from source. Pass `comma_patch` alongside `jit_tool`." % ctx.label)
@@ -521,7 +542,7 @@ def _compile_jit_train(ctx, dart_sdk_info, st, compile_main, compile_main_path):
     # The app-JIT snapshot is trained by the scratch-directory tool when it has
     # one, and on a POSIX host (on Windows the mode uses `dart compile
     # jit-snapshot`, so the snapshot keeps the sandbox path).
-    if st.compile_mode != "jit-snapshot" or st.jit_tool == None or compile_main_path != None or dart_sdk_info.dart.basename.endswith(".exe"):
+    if st.compile_mode != "jit-snapshot" or not st.jit_tool or compile_main_path != None or dart_sdk_info.dart.basename.endswith(".exe"):
         return False
     if st.backend_flags:
         fail("dart_compile_flags %s do not apply to jit-snapshot" % st.backend_flags)
@@ -539,7 +560,7 @@ def _compile_jit_train(ctx, dart_sdk_info, st, compile_main, compile_main_path):
 
 def _compile_aot_wrapper(ctx, dart_sdk_info, st, compile_main, compile_main_path, compile_srcs):
     """Compiles exe/aot/jit via the isolated-filesystem wrapper. Returns True when it ran."""
-    if st.compile_mode not in ("exe", "aot-snapshot", "jit-snapshot") or st.jit_tool == None or compile_main_path != None:
+    if st.compile_mode not in ("exe", "aot-snapshot", "jit-snapshot") or not st.jit_tool or compile_main_path != None:
         return False
     dart_bin = dart_sdk_info.dart
     pkg_cfg = st.package_config
@@ -548,7 +569,7 @@ def _compile_aot_wrapper(ctx, dart_sdk_info, st, compile_main, compile_main_path
         ctx.actions.write(output = pkg_cfg, content = "{\"configVersion\": 2, \"packages\": []}\n")
     args = ctx.actions.args()
     args.add(pkg_cfg, format = "--packages=%s")
-    args.add(st.jit_tool)
+    args.add(jit_tool_entry(st.jit_tool))
     args.add("--aot")
     args.add(dart_bin, format = "--dart=%s")
     args.add(st.compile_mode, format = "--mode=%s")
@@ -571,7 +592,7 @@ def _compile_aot_wrapper(ctx, dart_sdk_info, st, compile_main, compile_main_path
     args.add_all(st.backend_flags)
     args.add("-o", st.output)
     args.add(compile_main)
-    direct_inputs = [st.jit_tool, pkg_cfg, compile_main] + compile_srcs
+    direct_inputs = st.jit_tool + [pkg_cfg, compile_main] + compile_srcs
     if st.comma_patch != None:
         direct_inputs.append(st.comma_patch)
     if st.cross_gen_snapshot != None:
@@ -683,9 +704,10 @@ def dart_compile_action(ctx, dart_sdk_info, cfg):
             of `main.path` (e.g. a path inside an assembled `main` directory).
             `recorded_uses` is the optional output File for the uses of
             `@RecordUse` definitions the compiler records (`--recorded-uses`);
-            only the `exe` and `aot-snapshot` modes record. `jit_tool` is the
-            `app_jit_snapshot.dart` File: the `jit-snapshot` mode trains with
-            it when given, so the snapshot is reproducible; without it, and on
+            only the `exe` and `aot-snapshot` modes record. `jit_tool` lists
+            the JIT tool sources: the `app_jit_snapshot.dart` entry and every
+            source it imports. The `jit-snapshot` mode trains with the entry
+            when given, so the snapshot is reproducible; without it, and on
             a Windows host, the mode uses `dart compile jit-snapshot`, so the
             snapshot keeps the sandbox path. `comma_patch` is the
             `comma_patch.dart` File the tool imports, staged beside it in

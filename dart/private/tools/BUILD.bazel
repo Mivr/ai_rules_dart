@@ -23,6 +23,29 @@ exports_files(
     visibility = ["//dart:__subpackages__"],
 )
 
+# The kernel byte readers shared by the run-from-source tools (see
+# `dill_reader.dart`): compiled into `kernel_module` through `srcs`, run from
+# source beside the staged JIT tool through `:jit_tool_srcs`.
+exports_files(
+    ["dill_reader.dart"],
+    visibility = ["//dart:__subpackages__"],
+)
+
+# The one bundle every action running the JIT tool from source stages: the
+# entry `app_jit_snapshot.dart` plus every source it imports, including the
+# guard library its reader helper resolves URIs through. The helpers pick
+# the entry by basename (see `dart_compile.bzl`), so the bundle grows by
+# adding a file here, with no rule change.
+filegroup(
+    name = "jit_tool_srcs",
+    srcs = [
+        "app_jit_snapshot.dart",
+        "dill_reader.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    visibility = ["//dart:__subpackages__"],
+)
+
 # The single comma-splitting patch implementation (see `comma_patch.dart`):
 # run from source by the toolchain's declared patch actions, compiled into
 # `kernel_module` and `app_jit_snapshot` through `srcs`.
@@ -334,6 +357,7 @@ dart_binary(
     srcs = [
         "comma_patch.dart",
         "dill_outline.dart",
+        "dill_reader.dart",
         "lib/worker_protocol.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
@@ -352,6 +376,7 @@ dart_test(
         "app_jit_snapshot.dart",
         "comma_patch.dart",
         "dill_outline.dart",
+        "dill_reader.dart",
         "kernel_link.dart",
         "kernel_module.dart",
         "lib/worker_protocol.dart",
@@ -445,15 +470,21 @@ dart_test(
     srcs = [
         "app_jit_snapshot.dart",
         "comma_patch.dart",
+        "dill_reader.dart",
+        "//dart/guard:lib/directive_guard.dart",
     ],
     args = [
         "$(rlocationpath :app_jit_snapshot.dart)",
         "$(rlocationpath :comma_patch.dart)",
+        "$(rlocationpath :dill_reader.dart)",
+        "$(rlocationpath //dart/guard:lib/directive_guard.dart)",
     ],
     data = [
         ":app_jit_snapshot.dart",
         ":comma_patch.dart",
+        ":dill_reader.dart",
         "//dart",
+        "//dart/guard:lib/directive_guard.dart",
     ],
     main = "app_jit_snapshot_test.dart",
     deps = [

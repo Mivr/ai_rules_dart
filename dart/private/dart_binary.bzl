@@ -146,7 +146,7 @@ def _binary_source_compile(ctx, dart_sdk_info, own, packages, output, compile_mo
             defines = merge_dart_defines(ctx),
             main_path = main_arg,
             recorded_uses = compile_recorded_uses,
-            jit_tool = ctx.file._jit_tool,
+            jit_tool = ctx.files._jit_tool,
             comma_patch = ctx.file._comma_patch,
             native_assets_yaml = native_assets_yaml,
             embed_sources = DartTestRunnerMainInfo not in ctx.attr.main,
@@ -401,8 +401,9 @@ Each flag goes to the stage that consumes it. A source entrypoint is first compi
 Every other flag goes to `dart compile`. In the `kernel` mode, setting `dart_compile_flags` opts out of modular kernel compilation and passes all flags to `gen_kernel`. For a pre-built kernel, all flags go to `dart compile`. The `jit-snapshot` mode takes no `dart compile` flags, so any other flag there is an error. A comma-containing `-D`/`--define` value takes the same comma-safe path as `defines`: the compile runs the toolchain's patched `gen_kernel` snapshot.""",
         ),
         "_jit_tool": attr.label(
-            default = "//dart/private/tools:app_jit_snapshot.dart",
-            allow_single_file = True,
+            doc = "Every source the JIT tool imports, staged beside its entry in the actions that run it from source.",
+            default = "//dart/private/tools:jit_tool_srcs",
+            allow_files = True,
         ),
         "_comma_patch": attr.label(
             default = "//dart/private/tools:comma_patch.dart",

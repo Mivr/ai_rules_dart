@@ -236,7 +236,7 @@ def _compile_test_kernel(ctx, own, bootstrap, use_base_dill = False):
             defines = defines,
             main_path = main_arg,
             recorded_uses = None,
-            jit_tool = ctx.file._jit_tool,
+            jit_tool = ctx.files._jit_tool,
             comma_patch = ctx.file._comma_patch,
             native_assets_yaml = native_assets_yaml,
             embed_sources = True,
@@ -493,8 +493,9 @@ Leave this on for a test that runs the native packages it depends on. Turn it of
 custom executor) without loading their native libraries at runtime.""",
     ),
     "_jit_tool": attr.label(
-        default = "//dart/private/tools:app_jit_snapshot.dart",
-        allow_single_file = True,
+        doc = "Every source the JIT tool imports, staged beside its entry in the actions that run it from source.",
+        default = "//dart/private/tools:jit_tool_srcs",
+        allow_files = True,
     ),
     "_comma_patch": attr.label(
         default = "//dart/private/tools:comma_patch.dart",

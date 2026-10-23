@@ -8,6 +8,8 @@ import 'package:test/test.dart';
 
 import 'app_jit_snapshot.dart' as snapshot;
 import 'comma_patch.dart' as comma;
+import 'dill_reader.dart'
+    show dillCanonicalRoots, dillLibraryReferences, dillSourceUris;
 
 void main(List<String> args) {
   late Directory tmp;
@@ -45,25 +47,45 @@ void main(List<String> args) {
     tmp.deleteSync(recursive: true);
   });
 
-  /// Copies the tool and its `comma_patch.dart` import into a fresh directory
-  /// under [tmp] so a subprocess can run the tool from source, and returns
-  /// the entry path. Under Bazel both files come from the test's `args` (see
-  /// BUILD.bazel); a direct `dart test` run resolves them beside this test.
+  /// Copies the tool and the sources it imports (`comma_patch.dart`,
+  /// `dill_reader.dart`, and the guard library the reader resolves URIs
+  /// through) into a fresh directory under [tmp] so a subprocess can run the
+  /// tool from source, and returns the entry path. The copies keep their
+  /// workspace-relative layout, the way the build stages them (see the
+  /// `jit_tool_srcs` bundle in BUILD.bazel). Under Bazel the files come from
+  /// the test's `args`; a direct `dart test` run resolves them beside this
+  /// test.
   String stageTool() {
-    final toolSource = args.isNotEmpty
-        ? Runfiles.create().rlocation(args[0])
-        : File.fromUri(Platform.script.resolve('app_jit_snapshot.dart')).path;
-    final patchSource = args.length > 1
-        ? Runfiles.create().rlocation(args[1])
-        : File.fromUri(Platform.script.resolve('comma_patch.dart')).path;
+    const sources = [
+      (
+        staged: 'dart/private/tools/app_jit_snapshot.dart',
+        sibling: 'app_jit_snapshot.dart',
+      ),
+      (
+        staged: 'dart/private/tools/comma_patch.dart',
+        sibling: 'comma_patch.dart',
+      ),
+      (
+        staged: 'dart/private/tools/dill_reader.dart',
+        sibling: 'dill_reader.dart',
+      ),
+      (
+        staged: 'dart/guard/lib/directive_guard.dart',
+        sibling: '../../guard/lib/directive_guard.dart',
+      ),
+    ];
     final dir = Directory(
       '${tmp.path}/tool_${DateTime.now().microsecondsSinceEpoch}',
     )..createSync(recursive: true);
-    File('${dir.path}/app_jit_snapshot.dart')
-        .writeAsBytesSync(File(toolSource).readAsBytesSync());
-    File('${dir.path}/comma_patch.dart')
-        .writeAsBytesSync(File(patchSource).readAsBytesSync());
-    return '${dir.path}/app_jit_snapshot.dart';
+    for (var i = 0; i < sources.length; i++) {
+      final from = args.length > i
+          ? Runfiles.create().rlocation(args[i])
+          : File.fromUri(Platform.script.resolve(sources[i].sibling)).path;
+      final to = File('${dir.path}/${sources[i].staged}')
+        ..createSync(recursive: true);
+      to.writeAsBytesSync(File(from).readAsBytesSync());
+    }
+    return '${dir.path}/dart/private/tools/app_jit_snapshot.dart';
   }
 
   /// Stages the tool with one source replacement applied (failing the test
@@ -535,11 +557,8 @@ void main(List<String> args) {
       // The manifest was honored, not dropped: the output carries the front
       // end's synthetic entries, and the read-set check accepted them.
       final outBytes = outDill.readAsBytesSync();
-      expect(snapshot.genKernelDillSourceUris(outBytes), contains('dummy'));
-      expect(
-        snapshot.genKernelDillCanonicalRoots(outBytes),
-        contains('vm:ffi:native-assets'),
-      );
+      expect(dillSourceUris(outBytes), contains('dummy'));
+      expect(dillCanonicalRoots(outBytes), contains('vm:ffi:native-assets'));
     },
   );
 
@@ -2420,8 +2439,8 @@ void main(List<String> args) {
       // table no longer parses.
       final patched = Uint8List.fromList(clean);
       ByteData.sublistView(patched).setUint32(patched.length - 16, 0xffffffff);
-      expect(snapshot.genKernelDillSourceUris(patched), isNotNull);
-      expect(snapshot.genKernelDillLibraryReferences(patched), isNull);
+      expect(dillSourceUris(patched), isNotNull);
+      expect(dillLibraryReferences(patched), isNull);
       final errors = verify('evil_libraries.dill', patched);
       expect(errors, isNotEmpty);
       expect(errors.join('\n'), contains('cannot read the libraries'));
@@ -2439,8 +2458,8 @@ void main(List<String> args) {
       final patched = Uint8List.fromList(clean);
       ByteData.sublistView(patched)
           .setUint32(patched.length - 13 * 4 + 24, 0xffffffff);
-      expect(snapshot.genKernelDillSourceUris(patched), isNotNull);
-      expect(snapshot.genKernelDillCanonicalRoots(patched), isNull);
+      expect(dillSourceUris(patched), isNotNull);
+      expect(dillCanonicalRoots(patched), isNull);
       final errors = verify('evil_roots.dill', patched);
       expect(errors, isNotEmpty);
       expect(errors.join('\n'), contains('cannot read the canonical names'));
@@ -2502,7 +2521,7 @@ void main(List<String> args) {
       // corrupting it leaves every length prefix intact while the entry no
       // longer decodes.
       final patched = corruptRecordedUri(clean, '${prefix}app/main.dart', 0);
-      expect(snapshot.genKernelDillSourceUris(patched), isNull);
+      expect(dillSourceUris(patched), isNull);
       final errors = verify('evil_uri.dill', patched);
       expect(errors, isNotEmpty);
       expect(errors.join('\n'), contains('cannot read the sources'));
@@ -2519,8 +2538,8 @@ void main(List<String> args) {
       // the source table still parses; the library-reader decodes them, so
       // the library table no longer parses.
       final patched = corruptRecordedUri(clean, '${prefix}app/main.dart', 0);
-      expect(snapshot.genKernelDillSourceUris(patched), isNotNull);
-      expect(snapshot.genKernelDillLibraryReferences(patched), isNull);
+      expect(dillSourceUris(patched), isNotNull);
+      expect(dillLibraryReferences(patched), isNull);
       final errors = verify(
         'evil_import_uri.dill',
         patched,
@@ -2539,8 +2558,8 @@ void main(List<String> args) {
       // it leaves the source table readable while the canonical name no longer
       // decodes, degrading to the empty reference the check accepts.
       final patched = corruptRecordedUri(clean, '${prefix}app/main.dart', 2);
-      expect(snapshot.genKernelDillSourceUris(patched), isNotNull);
-      expect(snapshot.genKernelDillCanonicalRoots(patched), equals(['']));
+      expect(dillSourceUris(patched), isNotNull);
+      expect(dillCanonicalRoots(patched), equals(['']));
       expect(verify('degraded.dill', patched), isEmpty);
     });
 

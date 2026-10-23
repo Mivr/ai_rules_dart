@@ -11,14 +11,11 @@ import 'dart:typed_data';
 import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
 
-import 'app_jit_snapshot.dart'
-    show
-        genKernelDillCanonicalRoots,
-        genKernelDillLibraryReferences,
-        genKernelDillSourceUris;
 import 'comma_patch.dart' show patchSnapshotFile;
 import 'dill_outline.dart'
     show Tag, stripDillToOutline, supportedKernelFormatVersions;
+import 'dill_reader.dart'
+    show dillCanonicalRoots, dillLibraryReferences, dillSourceUris;
 import 'kernel_link.dart'
     show KernelLinkCache, decodeKernelLinkWorkRequestInputs, linkOne;
 import 'kernel_module.dart'
@@ -30,9 +27,6 @@ import 'kernel_module.dart'
         decodeKernelModuleWorkRequestInputs,
         decodeUriSegment,
         defaultMultiRootPrefix,
-        dillCanonicalRoots,
-        dillLibraryReferences,
-        dillSourceUris,
         ensureSummaryDigests,
         findDisallowedDirectives,
         isDisallowedDirectiveUri,
@@ -2163,33 +2157,33 @@ void main(List<String> args) {
       expect(result.log, isNot(contains('failing the compile')));
     });
 
-    test('the whole-program reader parses what the modular reader parses', () {
-      final dills = [
-        _buildDillWithUris([_uri('pkg/lib/a.dart'), 'dart:core']),
-        _buildDillWithLibraries(
-          sources: [
-            (_uri('pkg/lib/a.dart'), 'package:pkg/a.dart'),
-            (_uri('dep/lib/d.dart'), 'package:dep/d.dart'),
-          ],
-          libraries: [(0, 'package:pkg/a.dart'), (1, 'package:dep/d.dart')],
-          extraRoots: ['file:///host/evil.dart'],
-        ),
-      ];
-      for (final dill in dills) {
-        expect(genKernelDillSourceUris(dill), dillSourceUris(dill));
-        final whole = genKernelDillLibraryReferences(dill);
-        final modular = dillLibraryReferences(dill);
-        expect(whole?.length, modular?.length);
-        if (whole != null && modular != null) {
-          for (var i = 0; i < whole.length; i++) {
-            expect(whole[i].fileUriIndex, modular[i].fileUriIndex);
-            expect(whole[i].fileUri, modular[i].fileUri);
-            expect(whole[i].importUri, modular[i].importUri);
-            expect(whole[i].canonicalName, modular[i].canonicalName);
-          }
-        }
-        expect(genKernelDillCanonicalRoots(dill), dillCanonicalRoots(dill));
-      }
+    test('the shared reader parses sources, libraries and roots', () {
+      final uris = [_uri('pkg/lib/a.dart'), 'dart:core'];
+      expect(dillSourceUris(_buildDillWithUris(uris)), uris);
+      final dill = _buildDillWithLibraries(
+        sources: [
+          (_uri('pkg/lib/a.dart'), 'package:pkg/a.dart'),
+          (_uri('dep/lib/d.dart'), 'package:dep/d.dart'),
+        ],
+        libraries: [(0, 'package:pkg/a.dart'), (1, 'package:dep/d.dart')],
+        extraRoots: ['file:///host/evil.dart'],
+      );
+      final refs = dillLibraryReferences(dill);
+      expect(refs?.length, 2);
+      expect(refs?[0].fileUriIndex, 0);
+      expect(refs?[0].fileUri, _uri('pkg/lib/a.dart'));
+      expect(refs?[0].importUri, 'package:pkg/a.dart');
+      expect(refs?[0].canonicalName, 'package:pkg/a.dart');
+      expect(refs?[1].fileUriIndex, 1);
+      expect(refs?[1].fileUri, _uri('dep/lib/d.dart'));
+      expect(refs?[1].importUri, 'package:dep/d.dart');
+      expect(refs?[1].canonicalName, 'package:dep/d.dart');
+      // The backstop sees the smuggled root no node mentions too.
+      expect(dillCanonicalRoots(dill), [
+        'package:pkg/a.dart',
+        'package:dep/d.dart',
+        'file:///host/evil.dart',
+      ]);
     });
   });
 

@@ -58,6 +58,7 @@ action keys.
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartCompileInfo", "DartInfo")
 load("//dart/private:common.bzl", "JIT_SNAPSHOT_LOCK_TIMEOUT_DEFAULT", "jit_train_key", "kernel_sdk_mismatch_error", "sdk_dartvm", "writable_home_env")
+load("//dart/private:dart_compile.bzl", "jit_tool_entry")
 load("//dart/private:dart_kernel.bzl", "DartKernelInfo", "dart_kernel_module_aspect")
 
 DartTestRunnerInfo = provider(
@@ -224,7 +225,7 @@ def _dart_test_runner_snapshot_impl(ctx):
     )
     args = ctx.actions.args()
     args.add(pkg_cfg, format = "--packages=%s")
-    args.add(ctx.file._tool)
+    args.add(jit_tool_entry(ctx.files._tool))
     args.add(exec_sdk.dart, format = "--dart=%s")
     if dartvm != None:
         args.add(dartvm, format = "--dartvm=%s")
@@ -249,7 +250,7 @@ def _dart_test_runner_snapshot_impl(ctx):
         executable = exec_sdk.dart,
         arguments = [args],
         inputs = depset(
-            direct = [ctx.file._tool, ctx.file._comma_patch, pkg_cfg, exec_sdk.dart, runner, training.dill, training.source] + ([dartvm] if dartvm != None else []),
+            direct = ctx.files._tool + [ctx.file._comma_patch, pkg_cfg, exec_sdk.dart, runner, training.dill, training.source] + ([dartvm] if dartvm != None else []),
             transitive = [exec_sdk.compile_files, exec_sdk.runtime_files, runner_runfiles],
         ),
         outputs = [snapshot],
@@ -275,8 +276,9 @@ dart_test_runner_snapshot = rule(
             providers = [DartTestKernelInfo],
         ),
         "_tool": attr.label(
-            default = "//dart/private/tools:app_jit_snapshot.dart",
-            allow_single_file = True,
+            doc = "Every source the JIT tool imports, staged beside its entry in the action that trains the runner snapshot.",
+            default = "//dart/private/tools:jit_tool_srcs",
+            allow_files = True,
         ),
         "_comma_patch": attr.label(
             default = "//dart/private/tools:comma_patch.dart",

@@ -106,6 +106,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'comma_patch.dart';
+import 'dill_reader.dart';
 
 void main(List<String> argv) {
   if (argv.isNotEmpty && argv.first == '--aot') {
@@ -2375,482 +2376,6 @@ bool _isWindowsDrivePath(String s) =>
     s.codeUnitAt(1) == 0x3a &&
     (s.length == 2 || s.codeUnitAt(2) == 0x2f || s.codeUnitAt(2) == 0x5c);
 
-/// The kernel component-file magic, read big-endian as the modular kernel
-/// planner reads it (`Tag.ComponentFile` in `dill_outline.dart`, which this
-/// file cannot import: it runs from source in the `gen_kernel` action where
-/// only this file is staged).
-const _gkComponentMagic = 0x90ABCDEF;
-
-/// The byte ranges of the kernel components in [data]: a single range for one
-/// component, or one range per appended component. Null when [data] is not a
-/// well-formed kernel file. Copied from the modular kernel planner
-/// (`_componentRanges` in `kernel_module.dart`) so the whole-program
-/// read-set check below parses exactly what the modular one parses; every
-/// offset is bounds-checked, so malformed bytes fail instead of misreading.
-List<(int, int)>? _gkComponentRanges(Uint8List data) {
-  if (data.length < 48) return null;
-  final bd = ByteData.sublistView(data);
-  if (bd.getUint32(0) != _gkComponentMagic) return null;
-  final lastSize = bd.getUint32(data.length - 4);
-  if (lastSize == data.length) return [(0, data.length)];
-  final ranges = <(int, int)>[];
-  var end = data.length;
-  while (end >= 48) {
-    final compSize = bd.getUint32(end - 4);
-    if (compSize < 48 || compSize > end) return null;
-    final start = end - compSize;
-    if (bd.getUint32(start) != _gkComponentMagic) return null;
-    ranges.add((start, end));
-    end = start;
-  }
-  if (end != 0 || ranges.isEmpty) return null;
-  return ranges.reversed.toList();
-}
-
-/// Reads the variable-length `UInt30` integers of one kernel table: one, two,
-/// or five bytes, bounded by [limit]. Shared by the component readers below,
-/// which each parsed the same encoding with its own closure.
-final class _GkU30Reader {
-  _GkU30Reader(this.part, this.limit);
-
-  final Uint8List part;
-  final int limit;
-  var pos = 0;
-
-  int? read() {
-    if (pos >= limit) return null;
-    final b0 = part[pos++];
-    if ((b0 & 0x80) == 0) return b0;
-    if ((b0 & 0x40) == 0) {
-      if (pos >= limit) return null;
-      return ((b0 & 0x3f) << 8) | part[pos++];
-    }
-    if (pos + 3 > limit) return null;
-    final value =
-        ((b0 & 0x3f) << 24) |
-        (part[pos] << 16) |
-        (part[pos + 1] << 8) |
-        part[pos + 2];
-    pos += 3;
-    return value;
-  }
-
-  bool skip(int n) {
-    if (n < 0 || pos + n > limit) return false;
-    pos += n;
-    return true;
-  }
-}
-
-/// Adds the `fileUri` of the one source-table entry at [reader]'s position to
-/// [uris] — and, when [importUris] is given, the `importUri` recorded
-/// alongside it. Returns false (leaving [uris] short) when the entry does not
-/// parse. The entry layout (`uri`, `sourceCode`, `lineStarts`, `importUri`,
-/// `constantCoverageConstructors`) is stable across SDKs, so the table is
-/// parsed structurally with no version gate, and every offset and length is
-/// bounds-checked against the table.
-bool _gkReadSourceEntry(
-  _GkU30Reader reader,
-  Uint8List part,
-  List<String> uris, [
-  List<String>? importUris,
-]) {
-  // 1. uri: UInt30 byteLength + UTF-8 bytes.
-  final uriLen = reader.read();
-  if (uriLen == null || uriLen < 0 || reader.pos + uriLen > reader.limit) {
-    return false;
-  }
-  String uri;
-  try {
-    uri = utf8.decode(part.sublist(reader.pos, reader.pos + uriLen));
-  } on FormatException catch (_) {
-    // The length prefix bounds-checked above, so only malformed UTF-8 fails.
-    return false;
-  }
-  reader.pos += uriLen;
-  uris.add(uri);
-  // 2. sourceCode: UInt30 byteLength + UTF-8 bytes.
-  final srcLen = reader.read();
-  if (srcLen == null || !reader.skip(srcLen)) return false;
-  // 3. lineStarts: UInt30 count + count * UInt30 delta.
-  if (!_gkSkipU30List(reader)) return false;
-  // 4. importUri: UInt30 byteLength + UTF-8 bytes.
-  final impLen = reader.read();
-  if (impLen == null || impLen < 0 || reader.pos + impLen > reader.limit) {
-    return false;
-  }
-  if (importUris != null) {
-    try {
-      importUris.add(
-        utf8.decode(part.sublist(reader.pos, reader.pos + impLen)),
-      );
-    } on FormatException catch (_) {
-      // The length prefix bounds-checked above, so only malformed UTF-8 fails.
-      return false;
-    }
-  }
-  reader.pos += impLen;
-  // 5. constantCoverageConstructors: UInt30 count + count * UInt30.
-  if (!_gkSkipU30List(reader)) return false;
-  return true;
-}
-
-/// Skips one `UInt30` count followed by that many `UInt30` values, returning
-/// false when [reader] runs out.
-bool _gkSkipU30List(_GkU30Reader reader) {
-  final count = reader.read();
-  if (count == null) return false;
-  for (var j = 0; j < count; j++) {
-    if (reader.read() == null) return false;
-  }
-  return true;
-}
-
-/// Adds the `fileUri` of every source in the one kernel component [part] to
-/// [uris] — and, when [importUris] is given, the `importUri` recorded
-/// alongside it. Returns false (leaving [uris] short) when [part] is not a
-/// well-formed component. Copied from the modular kernel planner
-/// (`_collectComponentSourceUris` in `kernel_module.dart`).
-bool _gkCollectComponentSourceUris(
-  Uint8List part,
-  List<String> uris, [
-  List<String>? importUris,
-]) {
-  if (part.length < 12) return false;
-  final bd = ByteData.sublistView(part);
-  if (bd.getUint32(0) != _gkComponentMagic) return false;
-  final libCount = bd.getUint32(part.length - 8);
-  final idxBytes = (libCount + 12) * 4;
-  if (idxBytes > part.length) return false;
-  final rawIdxStart = part.length - idxBytes;
-  int u32(int offset) => bd.getUint32(offset);
-  final offSourceTable = u32(rawIdxStart);
-  final offConstantTable = u32(rawIdxStart + 4);
-  if (offSourceTable + 4 > offConstantTable || offConstantTable > rawIdxStart) {
-    return false;
-  }
-  final reader = _GkU30Reader(part, offConstantTable)..pos = offSourceTable + 4;
-  final numSources = u32(offSourceTable);
-  for (var i = 0; i < numSources; i++) {
-    if (!_gkReadSourceEntry(reader, part, uris, importUris)) return false;
-  }
-  return true;
-}
-
-/// The `fileUri` of every source recorded in the kernel component(s) in [data]
-/// — the files the compile actually read — or null when [data] is not a
-/// well-formed kernel file.
-List<String>? genKernelDillSourceUris(Uint8List data) {
-  final ranges = _gkComponentRanges(data);
-  if (ranges == null) return null;
-  final uris = <String>[];
-  for (final (start, end) in ranges) {
-    if (!_gkCollectComponentSourceUris(
-      Uint8List.sublistView(data, start, end),
-      uris,
-    )) {
-      return null;
-    }
-  }
-  return uris;
-}
-
-/// One library node of a kernel component: the source-table entry it was read
-/// from, and the names it is linked under. A `null` [fileUri] or [importUri]
-/// means the node's source index names no table entry; an empty
-/// [canonicalName] means the node has no canonical-name reference.
-typedef GenKernelLibraryReference = ({
-  int fileUriIndex,
-  String? fileUri,
-  String? importUri,
-  String canonicalName,
-});
-
-/// The name tables of one kernel component: its source-table URIs plus the
-/// string table and canonical-name table its library references link through.
-/// Null when the component's tables do not parse; every offset and length is
-/// bounds-checked. Copied from the modular kernel planner
-/// (`_componentNameTables` in `kernel_module.dart`).
-({
-  List<String> fileUris,
-  List<String> importUris,
-  String? Function(int) stringAt,
-  List<int> canonParents,
-  List<int> canonStrings,
-})?
-_gkComponentNameTables(Uint8List part) {
-  if (part.length < 12) return null;
-  final bd = ByteData.sublistView(part);
-  if (bd.getUint32(0) != _gkComponentMagic) return null;
-  final libCount = bd.getUint32(part.length - 8);
-  // No library nodes means no library references: the source-table verdict
-  // stands alone, and the remaining tables are never touched.
-  if (libCount == 0) {
-    return (
-      fileUris: <String>[],
-      importUris: <String>[],
-      stringAt: (int index) => null,
-      canonParents: <int>[],
-      canonStrings: <int>[],
-    );
-  }
-  final idxBytes = (libCount + 12) * 4;
-  if (idxBytes > part.length) return null;
-  final rawIdxStart = part.length - idxBytes;
-  int u32(int offset) => bd.getUint32(offset);
-  final offSourceTable = u32(rawIdxStart);
-  final offLinkTable = u32(rawIdxStart + 12);
-  final offStringTable = u32(rawIdxStart + 24);
-  if (offSourceTable + 4 > part.length ||
-      offLinkTable > rawIdxStart ||
-      offStringTable > rawIdxStart ||
-      offLinkTable > offStringTable) {
-    return null;
-  }
-  final fileUris = <String>[];
-  final importUris = <String>[];
-  if (!_gkCollectComponentSourceUris(part, fileUris, importUris)) return null;
-
-  // The string table: a count, cumulative end offsets, then the bytes.
-  final stringTable = _gkReadStringEnds(part, offStringTable, rawIdxStart);
-  if (stringTable == null) return null;
-  String? stringAt(int index) =>
-      _gkStringAt(part, stringTable.ends, stringTable.base, index);
-
-  // The canonical-name table: a count of (parent, name-string) pairs, with
-  // the parent biased by one (zero names the nameless root).
-  final canon = _gkReadCanonPairs(part, offLinkTable, offStringTable);
-  if (canon == null) return null;
-  return (
-    fileUris: fileUris,
-    importUris: importUris,
-    stringAt: stringAt,
-    canonParents: canon.parents,
-    canonStrings: canon.strings,
-  );
-}
-
-/// The cumulative end offsets of the string table starting at [start],
-/// bounded by [limit]: a count, that many cumulative end offsets, then the
-/// bytes. Null when the table does not parse.
-({List<int> ends, int base})? _gkReadStringEnds(
-  Uint8List part,
-  int start,
-  int limit,
-) {
-  final reader = _GkU30Reader(part, limit)..pos = start;
-  final strCount = reader.read();
-  if (strCount == null || strCount < 0) return null;
-  final ends = <int>[];
-  var prevEnd = 0;
-  for (var i = 0; i < strCount; i++) {
-    final end = reader.read();
-    if (end == null || end < prevEnd) return null;
-    ends.add(end);
-    prevEnd = end;
-  }
-  final base = reader.pos;
-  if (ends.isNotEmpty && base + ends.last > limit) return null;
-  return (ends: ends, base: base);
-}
-
-/// The string-table entry at [index]: the bytes from [base] between the
-/// cumulative [ends], decoded once. Null when the index names no entry or the
-/// bytes are not valid UTF-8.
-String? _gkStringAt(Uint8List part, List<int> ends, int base, int index) {
-  if (index < 0 || index >= ends.length) return null;
-  final start = index == 0 ? 0 : ends[index - 1];
-  try {
-    return utf8.decode(part.sublist(base + start, base + ends[index]));
-  } on FormatException catch (_) {
-    // Malformed UTF-8 in the table: the entry names nothing verifiable.
-    return null;
-  } on RangeError catch (_) {
-    // A corrupt ends table running past the component bytes: no such entry.
-    return null;
-  }
-}
-
-/// The canonical-name table starting at [start], bounded by [limit]: a count
-/// of (parent, name-string) pairs, with the parent biased by one (zero names
-/// the nameless root). Null when the table does not parse.
-({List<int> parents, List<int> strings})? _gkReadCanonPairs(
-  Uint8List part,
-  int start,
-  int limit,
-) {
-  final reader = _GkU30Reader(part, limit)..pos = start;
-  final canonCount = reader.read();
-  if (canonCount == null || canonCount < 0) return null;
-  final parents = <int>[];
-  final strings = <int>[];
-  for (var i = 0; i < canonCount; i++) {
-    final parent = reader.read();
-    final name = reader.read();
-    if (parent == null || name == null) return null;
-    parents.add(parent);
-    strings.add(name);
-  }
-  return (parents: parents, strings: strings);
-}
-
-/// The root string of the canonical name biased by [biased]: walks [parents]
-/// to the nameless root, then resolves through [stringAt]. Empty when the
-/// reference names no root. An unresolvable root string degrades to empty
-/// (accepted, like the per-library walk): only a present root the inputs do
-/// not define fails.
-String _gkCanonicalRoot(
-  List<int> parents,
-  List<int> strings,
-  String? Function(int) stringAt,
-  int biased,
-) {
-  var index = biased - 1;
-  if (biased <= 0 || index >= parents.length) return '';
-  var guard = parents.length + 1;
-  while (parents[index] != 0) {
-    if (guard-- <= 0) return '';
-    index = parents[index] - 1;
-    if (index < 0 || index >= parents.length) return '';
-  }
-  return stringAt(strings[index]) ?? '';
-}
-
-/// Adds the library node at bytes [libStart]..[libEnd] of [part] to [refs]:
-/// each node header opens with a flags byte, the version, and three
-/// references — canonical name (biased), name string, source-table file URI —
-/// after which only that prefix has been consumed. Returns false when the node
-/// does not parse. The layout follows the modular kernel planner's
-/// (`_collectComponentLibraries` in `kernel_module.dart`).
-bool _gkReadLibraryNode(
-  ({
-    List<String> fileUris,
-    List<String> importUris,
-    String? Function(int) stringAt,
-    List<int> canonParents,
-    List<int> canonStrings,
-  })
-  tables,
-  Uint8List part,
-  int libStart,
-  int libEnd,
-  List<GenKernelLibraryReference> refs,
-) {
-  final reader = _GkU30Reader(part, libEnd)..pos = libStart;
-  // Flags.
-  if (reader.pos >= libEnd) return false;
-  reader.pos++;
-  if (reader.read() == null) return false; // Major version.
-  if (reader.read() == null) return false; // Minor version.
-  final canon = reader.read();
-  if (canon == null) return false;
-  if (reader.read() == null) return false; // Name string reference.
-  final fileUriIndex = reader.read();
-  if (fileUriIndex == null) return false;
-  final importUri = fileUriIndex >= 0 && fileUriIndex < tables.importUris.length
-      ? tables.importUris[fileUriIndex]
-      : null;
-  refs.add((
-    fileUriIndex: fileUriIndex,
-    fileUri: fileUriIndex >= 0 && fileUriIndex < tables.fileUris.length
-        ? tables.fileUris[fileUriIndex]
-        : null,
-    importUri: importUri == null || importUri.isEmpty ? null : importUri,
-    canonicalName: _gkCanonicalRoot(
-      tables.canonParents,
-      tables.canonStrings,
-      tables.stringAt,
-      canon,
-    ),
-  ));
-  return true;
-}
-
-/// Adds one [GenKernelLibraryReference] per library node of the one kernel
-/// component [part] to [refs]. Returns false (leaving [refs] short) when the
-/// component's tables do not parse; every offset and length is bounds-checked.
-/// Copied from the modular kernel planner (`_collectComponentLibraries` in
-/// `kernel_module.dart`): each node header opens with a flags byte, the
-/// version, and three references — canonical name (biased), name string,
-/// source-table file URI — after which only that prefix has been consumed.
-bool _gkCollectComponentLibraries(
-  Uint8List part,
-  List<GenKernelLibraryReference> refs,
-) {
-  final tables = _gkComponentNameTables(part);
-  if (tables == null) return false;
-
-  if (part.length < 12) return false;
-  final bd = ByteData.sublistView(part);
-  final libCount = bd.getUint32(part.length - 8);
-  // No library nodes means no library references: the source-table verdict
-  // stands alone, and the remaining tables are never touched.
-  if (libCount == 0) return true;
-  final idxBytes = (libCount + 12) * 4;
-  if (idxBytes > part.length) return false;
-  final rawIdxStart = part.length - idxBytes;
-  int u32(int offset) => bd.getUint32(offset);
-
-  for (var i = 0; i < libCount; i++) {
-    final libStart = u32(rawIdxStart + 36 + i * 4);
-    final libEnd = u32(rawIdxStart + 36 + (i + 1) * 4);
-    if (libEnd < libStart || libStart > part.length || libEnd > part.length) {
-      return false;
-    }
-    if (!_gkReadLibraryNode(tables, part, libStart, libEnd, refs)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-/// The library references of the kernel component(s) in [data] — one record
-/// per library node, holding its source-table index with that entry's
-/// `fileUri`/`importUri` spellings, and its canonical name's root string.
-/// Null when [data] is not a well-formed kernel file, or when its string,
-/// link, or library tables do not parse: the caller refuses the compile, since
-/// an unreadable table may carry references nobody verified.
-List<GenKernelLibraryReference>? genKernelDillLibraryReferences(
-  Uint8List data,
-) {
-  final ranges = _gkComponentRanges(data);
-  if (ranges == null) return null;
-  final refs = <GenKernelLibraryReference>[];
-  for (final (start, end) in ranges) {
-    if (!_gkCollectComponentLibraries(
-      Uint8List.sublistView(data, start, end),
-      refs,
-    )) {
-      return null;
-    }
-  }
-  return refs;
-}
-
-/// Every top-level canonical-name string (parent index zero) recorded in the
-/// kernel component(s) in [data], or `null` when the tables do not parse. A
-/// held component can smuggle a root the library nodes never mention, so the
-/// read-set check below checks these roots too, not just the library nodes.
-List<String>? genKernelDillCanonicalRoots(Uint8List data) {
-  final ranges = _gkComponentRanges(data);
-  if (ranges == null) return null;
-  final roots = <String>[];
-  for (final (start, end) in ranges) {
-    final tables = _gkComponentNameTables(
-      Uint8List.sublistView(data, start, end),
-    );
-    if (tables == null) return null;
-    for (var i = 0; i < tables.canonParents.length; i++) {
-      // An unresolvable root string degrades to empty (accepted, like the
-      // per-library walk): only a present root the inputs do not define fails.
-      if (tables.canonParents[i] == 0) {
-        roots.add(tables.stringAt(tables.canonStrings[i]) ?? '');
-      }
-    }
-  }
-  return roots;
-}
-
 /// The package-name to key-prefix map for the `package_config.json` at
 /// [packagesPath]: each package maps to the stable key of the directory its
 /// `package:` URIs name files under — the key of its `rootUri` joined with its
@@ -3006,43 +2531,35 @@ String? _gkKeyOfRecordedUri(
   String uri,
   String multiRootPrefix,
   List<String> fsRoots,
-) {
-  // An empty source-table entry names no file, so there is no read to verify.
-  if (uri.isEmpty) return null;
-  final stripped = _stripPrefix(uri, multiRootPrefix);
-  if (stripped != null) {
-    return stripped.contains('%')
-        ? stripped.split('/').map(decodeUriSegment).join('/')
-        : stripped;
+) => keyOfDillSourceUri(
+  uri,
+  multiRootPrefix,
+  (fileUri) => _gkKeyOfFileUri(fileUri, fsRoots),
+);
+
+/// The declared-input key the recorded `file:` URI [uri] names through the
+/// working directory and [fsRoots] the way the wrapper's staging keys them.
+/// The empty string marks an unresolvable read, never a declared input.
+String _gkKeyOfFileUri(String uri, List<String> fsRoots) {
+  String path;
+  try {
+    path = Uri.parse(uri).toFilePath();
+  } on FormatException catch (_) {
+    // Unparsable all the way down: an unresolvable read, never declared.
+    return '';
+  } on UnsupportedError catch (_) {
+    // A `file:` URI with no path form: an unresolvable read, never declared.
+    return '';
   }
-  if (uri.startsWith('dart:') ||
-      uri.startsWith('data:') ||
-      uri.startsWith('org-dartlang-sdk:') ||
-      uri.startsWith('org-dartlang-untranslatable-uri:')) {
-    return null;
-  }
-  if (uri.startsWith('file:')) {
-    String path;
-    try {
-      path = Uri.parse(uri).toFilePath();
-    } on FormatException catch (_) {
-      // Unparsable all the way down: an unresolvable read, never declared.
-      return '';
-    } on UnsupportedError catch (_) {
-      // A `file:` URI with no path form: an unresolvable read, never declared.
-      return '';
-    }
-    final normPath = _normFsPath(path);
-    final cwd = _normFsPath(Directory.current.path);
-    final rel = normPath == cwd
-        ? ''
-        : normPath.startsWith('$cwd/')
-        ? normPath.substring(cwd.length + 1)
-        : normPath;
-    final key = _normFsPath(_stripFsRootPrefix(rel, fsRoots));
-    return key.isEmpty ? '' : key;
-  }
-  return '';
+  final normPath = _normFsPath(path);
+  final cwd = _normFsPath(Directory.current.path);
+  final rel = normPath == cwd
+      ? ''
+      : normPath.startsWith('$cwd/')
+      ? normPath.substring(cwd.length + 1)
+      : normPath;
+  final key = _normFsPath(_stripFsRootPrefix(rel, fsRoots));
+  return key.isEmpty ? '' : key;
 }
 
 /// The declared-input key the `package:` URI [uri] names through
@@ -3076,7 +2593,7 @@ String? _gkKeyOfPackageUri(String uri, Map<String, String> packageKeyPrefixes) {
 /// SDK's `gen_kernel` emits). A user library cannot take this shape: `vm:`
 /// imports are refused in directives before the compile runs, and no declared
 /// file is ever recorded under the bare name `dummy`.
-bool _isSynthesizedNativeAssetsLibrary(GenKernelLibraryReference library) =>
+bool _isSynthesizedNativeAssetsLibrary(DillLibraryReference library) =>
     library.fileUri == 'dummy' &&
     library.importUri == null &&
     library.canonicalName == 'vm:ffi:native-assets';
@@ -3115,7 +2632,7 @@ List<String> verifyGenKernelReads({
   final bytes = output.bytes;
   if (bytes == null) return <String>[];
   final errors = <String>[];
-  final uris = genKernelDillSourceUris(bytes);
+  final uris = dillSourceUris(bytes);
   if (uris == null) {
     return <String>[
       'app_jit_snapshot: cannot read the sources of $outputPath; '
@@ -3145,8 +2662,8 @@ List<String> verifyGenKernelReads({
   // unparsable source table: the compile produced bytes whose reads cannot be
   // verified. (An empty component is not unparsable: with no library nodes the
   // readers return no references, and the source-table verdict stands alone.)
-  final libraries = genKernelDillLibraryReferences(bytes);
-  final canonicalRoots = genKernelDillCanonicalRoots(bytes);
+  final libraries = dillLibraryReferences(bytes);
+  final canonicalRoots = dillCanonicalRoots(bytes);
   if (libraries == null) {
     errors.add(
       'app_jit_snapshot: cannot read the libraries of $outputPath; '
@@ -3250,7 +2767,7 @@ final class _ReferenceChecker {
 // declared input, `dart:` library, or package.
 List<String> _libraryReferenceErrors({
   required String outputPath,
-  required List<GenKernelLibraryReference> libraries,
+  required List<DillLibraryReference> libraries,
   required bool hasNativeAssetsManifest,
   required _ReferenceChecker checker,
 }) {
@@ -3739,14 +3256,6 @@ void _verifyGenKernelOutput({
 
 const defaultMultiRootPrefix = 'org-dartlang-root:///';
 
-/// The path after `multiRootPrefix`, or null for any other URI.
-String? _stripPrefix(String uri, String multiRootPrefix) {
-  if (uri.startsWith(multiRootPrefix)) {
-    return uri.substring(multiRootPrefix.length);
-  }
-  return null;
-}
-
 /// The segments of the longest [packageDirs] directory holding `fromKey`, or
 /// the empty list when no package holds it (an unpackaged file).
 List<String> _packageDirOf(String fromKey, Map<String, String> packageDirs) {
@@ -3822,7 +3331,7 @@ String? resolveDirectiveUri(
   String multiRootPrefix = defaultMultiRootPrefix,
 }) {
   final text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
-  final absolute = _stripPrefix(text, multiRootPrefix);
+  final absolute = stripMultiRootPrefix(text, multiRootPrefix);
   if (absolute != null) {
     return _resolveDirectivePath(absolute, const [], 0, false);
   }
