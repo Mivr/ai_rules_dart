@@ -1316,6 +1316,23 @@ final class _AotArgs {
   final extraGenSnapshotOptions = <String>[];
 }
 
+/// One direct AOT compile: the parsed arguments plus the paths [_runAot]
+/// derives from them, threaded through the compile steps below instead of a
+/// long parameter list. The nullable targetOs is a genuinely optional
+/// derivation; every other field is present by construction.
+typedef _AotPlan = ({
+  _AotArgs args,
+  String dart,
+  String mode,
+  String outputPath,
+  String dillPath,
+  String sdkBin,
+  String hostDartaotruntime,
+  String targetDartaotruntime,
+  String genSnapshot,
+  String? targetOs,
+});
+
 /// Parses the `--aot` arguments.
 _AotArgs _parseAotArgs(List<String> argv) {
   final args = _AotArgs();
@@ -1452,22 +1469,19 @@ bool _aotDelegatesToDartCompile({
 
 /// Compiles through `dart compile` instead of driving `gen_snapshot` directly
 /// (see [_aotDelegatesToDartCompile]), exiting when the compile fails.
-void _runAotViaDartCompile({
-  required String dart,
-  required String mode,
-  required bool enableAsserts,
-  required String? recordedUses,
-  required List<String> extraGenSnapshotOptions,
-  required String outputPath,
-  required String dillPath,
-}) {
+void _runAotViaDartCompile(_AotPlan plan) {
+  final dart = plan.dart;
+  final mode = plan.mode;
+  final outputPath = plan.outputPath;
+  final dillPath = plan.dillPath;
   final compileArgs = <String>[
     'compile',
     mode,
     if (mode == 'exe' || mode == 'aot-snapshot') '--verbosity=error',
-    if (enableAsserts) '--enable-asserts',
-    if (recordedUses != null) '--recorded-uses=$recordedUses',
-    for (final opt in extraGenSnapshotOptions)
+    if (plan.args.enableAsserts) '--enable-asserts',
+    if (plan.args.recordedUses != null)
+      '--recorded-uses=${plan.args.recordedUses}',
+    for (final opt in plan.args.extraGenSnapshotOptions)
       '--extra-gen-snapshot-options=$opt',
     '-o',
     outputPath,
@@ -1508,15 +1522,16 @@ void _runAotViaDartCompile({
 /// returning the baked path and the bake's exit code (echoing a failed bake's
 /// output, as the caller fails the action with that code).
 ({String dill, int exitCode}) _bakeRecordedDill({
-  required String sdkBin,
-  required String hostDartaotruntime,
-  required String dillPath,
-  required String recordedUses,
-  required String? targetOs,
-  required bool enableAsserts,
+  required _AotPlan plan,
   required Directory tmpDir,
   required Map<String, String> homeEnv,
 }) {
+  // [_aotActiveDill] calls only with `--recorded-uses` present, so the
+  // assertion below never fires.
+  final recordedUses = plan.args.recordedUses!;
+  final sdkBin = plan.sdkBin;
+  final dillPath = plan.dillPath;
+  final targetOs = plan.targetOs;
   final productPlatform = '$sdkBin/../lib/_internal/vm_platform_product.dill';
   final strongPlatform = '$sdkBin/../lib/_internal/vm_platform_strong.dill';
   final platformDill = File(productPlatform).existsSync()
@@ -1524,7 +1539,7 @@ void _runAotViaDartCompile({
       : strongPlatform;
   final recordedDill = '${tmpDir.path}/recorded.dill';
   final gkRes = Process.runSync(
-    hostDartaotruntime,
+    plan.hostDartaotruntime,
     [
       '$sdkBin/snapshots/gen_kernel_aot.dart.snapshot',
       '--platform=$platformDill',
@@ -1536,7 +1551,7 @@ void _runAotViaDartCompile({
       '-Ddart.vm.msan=false',
       '-Ddart.vm.tsan=false',
       if (targetOs != null && targetOs.isNotEmpty) '--target-os=$targetOs',
-      if (enableAsserts) '--enable-asserts',
+      if (plan.args.enableAsserts) '--enable-asserts',
       '--from-dill=$dillPath',
       '--recorded-usages-file=$recordedUses',
       '-o',
@@ -1616,26 +1631,9 @@ void _runAot(List<String> argv) {
   final genSnapshot =
       args.customGenSnapshot ?? '$sdkBin/utils/gen_snapshot$hostExeExt';
 
-  if (_aotDelegatesToDartCompile(
-    dart: dart,
-    mode: mode,
-    isCross: isCross,
-    targetDartaotruntime: targetDartaotruntime,
-  )) {
-    _runAotViaDartCompile(
-      dart: dart,
-      mode: mode,
-      enableAsserts: args.enableAsserts,
-      recordedUses: args.recordedUses,
-      extraGenSnapshotOptions: args.extraGenSnapshotOptions,
-      outputPath: outputPath,
-      dillPath: dillPath,
-    );
-    return;
-  }
-
-  final failureExitCode = _runAotDirect(
+  final plan = (
     args: args,
+    dart: dart,
     mode: mode,
     outputPath: outputPath,
     dillPath: dillPath,
@@ -1645,6 +1643,17 @@ void _runAot(List<String> argv) {
     genSnapshot: genSnapshot,
     targetOs: targetOs,
   );
+  if (_aotDelegatesToDartCompile(
+    dart: dart,
+    mode: mode,
+    isCross: isCross,
+    targetDartaotruntime: targetDartaotruntime,
+  )) {
+    _runAotViaDartCompile(plan);
+    return;
+  }
+
+  final failureExitCode = _runAotDirect(plan);
   if (failureExitCode != 0) {
     exit(failureExitCode);
   }
@@ -1652,42 +1661,20 @@ void _runAot(List<String> argv) {
 
 // Runs AOT compilation through gen_snapshot in a scratch directory.
 // Returns the process exit code: 0 on success.
-int _runAotDirect({
-  required _AotArgs args,
-  required String mode,
-  required String outputPath,
-  required String dillPath,
-  required String sdkBin,
-  required String hostDartaotruntime,
-  required String targetDartaotruntime,
-  required String genSnapshot,
-  required String? targetOs,
-}) {
-  final scratch = _prepareAotScratch(outputPath);
+int _runAotDirect(_AotPlan plan) {
+  final scratch = _prepareAotScratch(plan.outputPath);
   final tmpDir = scratch.tmpDir;
   final homeEnv = scratch.homeEnv;
   var failureExitCode = 0;
   try {
-    final active = _aotActiveDill(
-      args: args,
-      dillPath: dillPath,
-      sdkBin: sdkBin,
-      hostDartaotruntime: hostDartaotruntime,
-      targetOs: targetOs,
-      tmpDir: tmpDir,
-      homeEnv: homeEnv,
-    );
+    final active = _aotActiveDill(plan: plan, tmpDir: tmpDir, homeEnv: homeEnv);
     if (active.exitCode != 0) return active.exitCode;
 
-    final elfPath = mode == 'aot-snapshot'
-        ? outputPath
+    final elfPath = plan.mode == 'aot-snapshot'
+        ? plan.outputPath
         : '${tmpDir.path}/snapshot.elf';
     final gsExitCode = _snapshotElfAndLink(
-      args: args,
-      mode: mode,
-      outputPath: outputPath,
-      targetDartaotruntime: targetDartaotruntime,
-      genSnapshot: genSnapshot,
+      plan: plan,
       elfPath: elfPath,
       activeDill: active.dill,
       homeEnv: homeEnv,
@@ -1726,55 +1713,42 @@ int _runAotDirect({
 // The dill to snapshot: with `--recorded-uses` the uses baked in, otherwise
 // the input dill. A nonzero exit code means baking failed.
 ({String dill, int exitCode}) _aotActiveDill({
-  required _AotArgs args,
-  required String dillPath,
-  required String sdkBin,
-  required String hostDartaotruntime,
-  required String? targetOs,
+  required _AotPlan plan,
   required Directory tmpDir,
   required Map<String, String> homeEnv,
 }) {
-  if (args.recordedUses == null) return (dill: dillPath, exitCode: 0);
-  final baked = _bakeRecordedDill(
-    sdkBin: sdkBin,
-    hostDartaotruntime: hostDartaotruntime,
-    dillPath: dillPath,
-    recordedUses: args.recordedUses!,
-    targetOs: targetOs,
-    enableAsserts: args.enableAsserts,
-    tmpDir: tmpDir,
-    homeEnv: homeEnv,
-  );
-  if (baked.exitCode != 0) return (dill: dillPath, exitCode: baked.exitCode);
+  if (plan.args.recordedUses == null) {
+    return (dill: plan.dillPath, exitCode: 0);
+  }
+  final baked = _bakeRecordedDill(plan: plan, tmpDir: tmpDir, homeEnv: homeEnv);
+  if (baked.exitCode != 0) {
+    return (dill: plan.dillPath, exitCode: baked.exitCode);
+  }
   return (dill: baked.dill, exitCode: 0);
 }
 
 // Snapshots [activeDill] to [elfPath] and, for `exe`, links the executable.
 // Returns the gen_snapshot exit code.
 int _snapshotElfAndLink({
-  required _AotArgs args,
-  required String mode,
-  required String outputPath,
-  required String targetDartaotruntime,
-  required String genSnapshot,
+  required _AotPlan plan,
   required String elfPath,
   required String activeDill,
   required Map<String, String> homeEnv,
 }) {
   final gsExitCode = _runGenSnapshotElf(
-    genSnapshot: genSnapshot,
+    genSnapshot: plan.genSnapshot,
     elfPath: elfPath,
-    enableAsserts: args.enableAsserts,
-    extraGenSnapshotOptions: args.extraGenSnapshotOptions,
+    enableAsserts: plan.args.enableAsserts,
+    extraGenSnapshotOptions: plan.args.extraGenSnapshotOptions,
     activeDill: activeDill,
     homeEnv: homeEnv,
   );
   if (gsExitCode != 0) return gsExitCode;
-  if (mode == 'exe') {
+  if (plan.mode == 'exe') {
     writeAppAotElfExe(
-      dartaotruntime: File(targetDartaotruntime),
+      dartaotruntime: File(plan.targetDartaotruntime),
       snapshotElf: File(elfPath),
-      output: File(outputPath),
+      output: File(plan.outputPath),
     );
   }
   return 0;
