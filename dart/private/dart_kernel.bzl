@@ -64,6 +64,8 @@ load(
     "kernel_module_inputs",
     "kernel_module_options",
     "kernel_module_outputs",
+    "library_kernel_options",
+    "library_kernel_sources",
 )
 
 # The `org-dartlang-root` scheme `--multi-root` maps onto the exec root (`.`) and
@@ -1605,24 +1607,7 @@ def _lib_kernel_seed_base(ctx, dep_closure, kmod, package_name, own_records, tar
         )
     return None
 
-def library_kernel_info(
-        ctx,
-        own_record,
-        package_name,
-        lib_root,
-        own_srcs,
-        opaque,
-        target = "vm",
-        platform_dill = None,
-        libraries_json = None,
-        libraries_platform = None,
-        extra_libraries = [],
-        scheme = STABLE_SCHEME,
-        extra_frontend_flags = [],
-        rule_deps = None,
-        own_records = None,
-        unused_inputs = False,
-        non_standalone = False):
+def library_kernel_info(ctx, library, compile, options):
     """The `DartKernelInfo` a `dart_library` provides.
 
     The module is declared only here. Nothing builds it until an executable links
@@ -1630,64 +1615,42 @@ def library_kernel_info(
 
     Args:
       ctx: The `dart_library` rule or aspect context.
-      own_record: The library's own `DartPackageInfo`, or None.
-      package_name: The package the library declares.
-      lib_root: The package's `lib_root`.
-      own_srcs: The library's own `.dart` files.
-      opaque: True when the sources arrive as one directory (`srcs_dir`), whose
-        files are not known here.
-      target: The `kernel_worker --target` name (`"vm"` by default).
-      platform_dill: Optional platform `.dill` File override.
-      libraries_json: Optional `libraries.json` File override.
-      libraries_platform: Optional platform key in `libraries.json`.
-      extra_libraries: Extra bare `dart:` library names available on the target.
-      scheme: The multi-root URI scheme (`STABLE_SCHEME` by default).
-      extra_frontend_flags: Extra flags forwarded to `kernel_worker`.
-      unused_inputs: Whether `kernel_module_action` writes an unused-inputs
-        list. True when the caller registers the action once (the
-        `dart_library` rule compiles its own module); False in the aspect's
-        fallback compile, where several evaluations register it.
-      non_standalone: True when the target carries the `no-dart-analyze` tag.
-        The aspect computes this from its host (`_has_no_analyze_tag`, which
-        reads `ctx.rule` and runs only there); the rule passes nothing, which
-        is exact in practice — the tag's in-repo carrier is a plumbing library
-        no kernel host depends on, and a rule cannot read its own tags anyway.
-      rule_deps: Optional list of dependency targets (defaults to `ctx.attr.deps`).
-      own_records: The library's own `DartPackageInfo` records, one per owned
-        package. Defaults to `[own_record]` (or empty when it is None), which
-        is what every one-package library passes; a merged multi-package
-        library passes one record per member, and its module compiles all of
-        their sources together, against a package config naming every member.
+      library: The struct from `library_kernel_sources()`: the library's
+        package identity, own sources, and own package records.
+      compile: The struct from `kernel_compile_settings()`: the frontend
+        target, platform, libraries, scheme, and extra flags.
+      options: The struct from `library_kernel_options()`: opaqueness, the
+        dependency targets, and the unused-inputs and standalone behavior.
 
     Returns:
       A `DartKernelInfo`.
     """
-    gated = _lib_kernel_gate(ctx, opaque, rule_deps)
+    gated = _lib_kernel_gate(ctx, options.opaque, options.rule_deps)
     if gated == None:
         return no_kernel_module()
     tools, deps, dep_kernels, defines = gated
 
-    recs = _lib_kernel_records(deps, dep_kernels, own_record, own_records)
+    recs = _lib_kernel_records(deps, dep_kernels, library.own_record, library.own_records)
     if recs == None:
         return no_kernel_module()
     records, raw, own_records = recs
 
-    graph = _lib_kernel_graph(ctx, deps, dep_kernels, own_srcs, records)
+    graph = _lib_kernel_graph(ctx, deps, dep_kernels, library.own_srcs, records)
 
     single_package_name = own_records[0].package_name if len(own_records) == 1 else ""
-    has_cycle = _lib_kernel_has_cycle(single_package_name, raw, graph.owned_list, graph.edges_list, graph.pkgs, non_standalone)
+    has_cycle = _lib_kernel_has_cycle(single_package_name, raw, graph.owned_list, graph.edges_list, graph.pkgs, options.non_standalone)
     if has_cycle and graph.need_graph:
-        cross_pkg_srcs, dep_cross_pkg_srcs = _lib_kernel_cyclic_srcs(deps, dep_kernels, own_srcs, single_package_name, raw, graph.owned_list, graph.edges_list, graph.pkgs)
+        cross_pkg_srcs, dep_cross_pkg_srcs = _lib_kernel_cyclic_srcs(deps, dep_kernels, library.own_srcs, single_package_name, raw, graph.owned_list, graph.edges_list, graph.pkgs)
     else:
-        cross_pkg_srcs, dep_cross_pkg_srcs = _lib_kernel_plain_srcs(dep_kernels, own_srcs, has_cycle or graph.has_upstream_cross_pkg)
+        cross_pkg_srcs, dep_cross_pkg_srcs = _lib_kernel_plain_srcs(dep_kernels, library.own_srcs, has_cycle or graph.has_upstream_cross_pkg)
 
     bases = _lib_kernel_base(dep_kernels)
-    if not own_srcs:
+    if not library.own_srcs:
         return _lib_kernel_facade(graph, bases, cross_pkg_srcs)
 
     kmod = ctx.actions.declare_directory(ctx.label.name + ".kmod")
     koutline = ctx.actions.declare_directory(ctx.label.name + ".koutline")
-    sources = _lib_kernel_sources(package_name, lib_root, own_srcs, own_records, graph.pkgs)
+    sources = _lib_kernel_sources(library.package_name, library.lib_root, library.own_srcs, own_records, graph.pkgs)
     excluded = kernel_module_action(
         ctx,
         tools,
@@ -1701,24 +1664,16 @@ def library_kernel_info(
         kernel_module_outputs(
             output = kmod,
             koutline = koutline,
-            unused_inputs = unused_inputs,
+            unused_inputs = options.unused_inputs,
         ),
         kernel_module_options(
             defines = defines,
             exclude_non_sources = True,
             droppable = True,
         ),
-        kernel_compile_settings(
-            target = target,
-            platform_dill = platform_dill,
-            libraries_json = libraries_json,
-            libraries_platform = libraries_platform,
-            extra_libraries = extra_libraries,
-            scheme = scheme,
-            extra_frontend_flags = extra_frontend_flags,
-        ),
+        compile,
     )
-    seeded = _lib_kernel_seed_base(ctx, graph.dep_closure, kmod, package_name, own_records, target)
+    seeded = _lib_kernel_seed_base(ctx, graph.dep_closure, kmod, library.package_name, own_records, compile.target)
     if seeded != None:
         bases = seeded
     return DartKernelInfo(
@@ -1750,14 +1705,19 @@ def _dart_kernel_module_aspect_impl(target, ctx):
     return [
         library_kernel_info(
             ctx,
-            inputs.own_record,
-            inputs.package_name,
-            inputs.lib_root,
-            inputs.own_srcs,
-            opaque = inputs.opaque,
-            rule_deps = inputs.rule_deps,
-            own_records = inputs.own_records,
-            non_standalone = _has_no_analyze_tag(ctx),
+            library_kernel_sources(
+                package_name = inputs.package_name,
+                lib_root = inputs.lib_root,
+                own_srcs = inputs.own_srcs,
+                own_record = inputs.own_record,
+                own_records = inputs.own_records,
+            ),
+            kernel_compile_settings(),
+            library_kernel_options(
+                opaque = inputs.opaque,
+                rule_deps = inputs.rule_deps,
+                non_standalone = _has_no_analyze_tag(ctx),
+            ),
         ),
     ]
 

@@ -11,6 +11,12 @@ load(
     "library_kernel_info",
     "library_module_inputs",
 )
+load(
+    "//dart/private:kernel_params.bzl",
+    "kernel_compile_settings",
+    "library_kernel_options",
+    "library_kernel_sources",
+)
 
 def derive_package_name(package_name_attr, label_package, label_name):
     """Derive the Dart package name from rule attributes and label.
@@ -168,14 +174,19 @@ def _own_kernel_providers(ctx, info):
     module_inputs = library_module_inputs(ctx.attr, ctx.files, info)
     kernel_info = library_kernel_info(
         ctx,
-        module_inputs.own_record,
-        module_inputs.package_name,
-        module_inputs.lib_root,
-        module_inputs.own_srcs,
-        opaque = module_inputs.opaque,
-        rule_deps = module_inputs.rule_deps,
-        own_records = module_inputs.own_records,
-        unused_inputs = True,
+        library_kernel_sources(
+            package_name = module_inputs.package_name,
+            lib_root = module_inputs.lib_root,
+            own_srcs = module_inputs.own_srcs,
+            own_record = module_inputs.own_record,
+            own_records = module_inputs.own_records,
+        ),
+        kernel_compile_settings(),
+        library_kernel_options(
+            opaque = module_inputs.opaque,
+            rule_deps = module_inputs.rule_deps,
+            unused_inputs = True,
+        ),
     )
     if not kernel_info.modular:
         return []
