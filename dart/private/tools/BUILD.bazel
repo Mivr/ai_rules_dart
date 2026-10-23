@@ -294,6 +294,7 @@ dart_binary(
     srcs = [
         "comma_patch.dart",
         "dill_outline.dart",
+        "lib/worker_protocol.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
     code_assets_from_deps = False,
@@ -313,6 +314,7 @@ dart_test(
         "dill_outline.dart",
         "kernel_link.dart",
         "kernel_module.dart",
+        "lib/worker_protocol.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
     args = [

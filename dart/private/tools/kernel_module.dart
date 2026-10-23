@@ -94,6 +94,9 @@ import 'dart:typed_data';
 import '../../guard/lib/directive_guard.dart';
 import 'comma_patch.dart';
 import 'dill_outline.dart';
+// Shared through `srcs`, like the guard import above: this binary takes no
+// `dart_library` dependency on purpose (see the `kernel_module` target).
+import 'lib/worker_protocol.dart';
 
 export '../../guard/lib/directive_guard.dart'
     show
@@ -107,6 +110,7 @@ export '../../guard/lib/directive_guard.dart'
         resolveDirectiveUri,
         scanAllDirectiveUris,
         scanDirectives;
+export 'lib/worker_protocol.dart' show sha256Of;
 
 const _kernelWorkerFlag = '--kernel-worker';
 const _dartaotruntimeFlag = '--dartaotruntime';
@@ -532,7 +536,7 @@ _decodeWorkerInputs(List<Uint8List> inputs) {
       if (norm.isNotEmpty) paths.add(norm);
       if (decoded.digest.isNotEmpty) {
         digests[rawPath] = decoded.digest;
-        final normFile = _normalizeFilePath(rawPath);
+        final normFile = normalizePath(rawPath);
         digests.putIfAbsent(normFile, () => decoded.digest);
         if (norm.isNotEmpty) {
           digests.putIfAbsent(norm, () => decoded.digest);
@@ -667,7 +671,7 @@ Future<Set<String>> _loadVmLibraries(
       declaredRootPaths.add(raw);
       final norm = _normalize(raw);
       if (norm.isNotEmpty) declaredRootPaths.add(norm);
-      final normFile = _normalizeFilePath(raw);
+      final normFile = normalizePath(raw);
       if (normFile.isNotEmpty) declaredRootPaths.add(normFile);
     }
   }
@@ -1530,37 +1534,6 @@ bool _isNormalizedRelative(String path) {
   return true;
 }
 
-String _normalizeFilePath(String path) {
-  if (_isNormalizedRelative(path)) return path;
-  if (path.isEmpty) return '.';
-  final slashPath = path.contains(r'\') ? path.replaceAll(r'\', '/') : path;
-  String? drivePrefix;
-  var rest = slashPath;
-  if (isWindowsDrivePath(slashPath)) {
-    drivePrefix = '${slashPath.substring(0, 2)}/';
-    rest = slashPath.substring(2);
-  }
-  final isAbs = drivePrefix != null || rest.startsWith('/');
-  final parts = rest.split('/');
-  final stack = <String>[];
-  for (final part in parts) {
-    if (part.isEmpty || part == '.') continue;
-    if (part == '..') {
-      if (stack.isNotEmpty && stack.last != '..') {
-        stack.removeLast();
-      } else if (!isAbs) {
-        stack.add('..');
-      }
-    } else {
-      stack.add(part);
-    }
-  }
-  if (stack.isEmpty) return drivePrefix ?? (isAbs ? '/' : '.');
-  final joined = stack.join('/');
-  if (drivePrefix != null) return '$drivePrefix$joined';
-  return isAbs ? '/$joined' : joined;
-}
-
 Uint8List? _lookupDigest(String path, Map<String, Uint8List>? inputDigests) {
   if (inputDigests == null) return null;
   final direct = _nonEmptyDigest(inputDigests[path]);
@@ -1570,7 +1543,7 @@ Uint8List? _lookupDigest(String path, Map<String, Uint8List>? inputDigests) {
   if (_isNormalizedRelative(path)) {
     return _nonEmptyDigest(inputDigests['./$path']);
   }
-  final normFile = _normalizeFilePath(path);
+  final normFile = normalizePath(path);
   if (normFile != path) {
     final hit = _nonEmptyDigest(inputDigests[normFile]);
     if (hit != null) return hit;
@@ -1714,7 +1687,7 @@ class KernelModuleCache {
     String path,
     Map<String, Uint8List>? inputDigests,
   ) async {
-    final key = _normalizeFilePath(path);
+    final key = normalizePath(path);
     final digest = _lookupDigest(path, inputDigests);
     final hasDigest = digest != null && digest.isNotEmpty;
     final cached = _librariesCache.remove(key);
@@ -1781,7 +1754,7 @@ class KernelModuleCache {
     String path,
     Map<String, Uint8List>? inputDigests,
   ) async {
-    final key = _normalizeFilePath(path);
+    final key = normalizePath(path);
     final digest = _lookupDigest(path, inputDigests);
     final hasDigest = digest != null && digest.isNotEmpty;
     final cached = _excludedCache.remove(key);
@@ -1840,7 +1813,7 @@ class KernelModuleCache {
     Map<String, Uint8List>? inputDigests,
   ) async {
     final indexPath = '$dir/$_indexName';
-    final key = _normalizeFilePath(indexPath);
+    final key = normalizePath(indexPath);
     final digest = _lookupDigest(indexPath, inputDigests);
     final hasDigest = digest != null && digest.isNotEmpty;
     final cached = _indexCache.remove(key);
@@ -3324,7 +3297,7 @@ class _Files {
         final rel = _normalize(raw.substring(_cwd.length + 1));
         if (pathSet.contains(rel)) return true;
       }
-      final normFile = _normalizeFilePath(raw);
+      final normFile = normalizePath(raw);
       if (pathSet.contains(normFile)) return true;
       if (normFile.startsWith('$_cwd/')) {
         final rel = _normalize(normFile.substring(_cwd.length + 1));
@@ -3334,7 +3307,7 @@ class _Files {
       final abs = '$_cwd/$norm';
       if (pathSet.contains(abs) ||
           pathSet.contains(_normalize(abs)) ||
-          pathSet.contains(_normalizeFilePath(abs))) {
+          pathSet.contains(normalizePath(abs))) {
         return true;
       }
     }
@@ -3775,7 +3748,7 @@ void _addCovered(
       covered.putIfAbsent('./$norm', () => digest);
     }
   }
-  final normFile = _normalizeFilePath(origin);
+  final normFile = normalizePath(origin);
   if (normFile != origin) {
     covered.putIfAbsent(normFile, () => digest);
   }
@@ -4872,81 +4845,6 @@ const _requestTimeoutFlag = '--request-timeout-seconds=';
 Future<Uint8List> _digestOf(String path) async =>
     sha256Of(await File(_filePathOf(path)).readAsBytes());
 
-/// The SHA-256 digest of `message`, as 32 bytes.
-Uint8List sha256Of(Uint8List message) {
-  final h = [
-    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, //
-    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
-  ];
-  // The message, a 0x80 byte, zeros, and its bit length as 64 bits, to a whole block.
-  final paddedLength = ((message.length + 9 + 63) ~/ 64) * 64;
-  final padded = Uint8List(paddedLength)..setRange(0, message.length, message);
-  padded[message.length] = 0x80;
-  final bits = message.length * 8;
-  final view = ByteData.sublistView(padded);
-  view.setUint32(paddedLength - 8, bits ~/ 0x100000000);
-  view.setUint32(paddedLength - 4, bits & 0xffffffff);
-
-  final w = List<int>.filled(64, 0);
-  for (var block = 0; block < paddedLength; block += 64) {
-    for (var i = 0; i < 16; i++) {
-      w[i] = view.getUint32(block + i * 4);
-    }
-    for (var i = 16; i < 64; i++) {
-      final s0 = _rotr(w[i - 15], 7) ^ _rotr(w[i - 15], 18) ^ (w[i - 15] >> 3);
-      final s1 = _rotr(w[i - 2], 17) ^ _rotr(w[i - 2], 19) ^ (w[i - 2] >> 10);
-      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) & 0xffffffff;
-    }
-    var a = h[0], b = h[1], c = h[2], d = h[3];
-    var e = h[4], f = h[5], g = h[6], hh = h[7];
-    for (var i = 0; i < 64; i++) {
-      final s1 = _rotr(e, 6) ^ _rotr(e, 11) ^ _rotr(e, 25);
-      final ch = (e & f) ^ ((~e) & g);
-      final t1 = (hh + s1 + ch + _sha256K[i] + w[i]) & 0xffffffff;
-      final s0 = _rotr(a, 2) ^ _rotr(a, 13) ^ _rotr(a, 22);
-      final maj = (a & b) ^ (a & c) ^ (b & c);
-      final t2 = (s0 + maj) & 0xffffffff;
-      hh = g;
-      g = f;
-      f = e;
-      e = (d + t1) & 0xffffffff;
-      d = c;
-      c = b;
-      b = a;
-      a = (t1 + t2) & 0xffffffff;
-    }
-    h[0] = (h[0] + a) & 0xffffffff;
-    h[1] = (h[1] + b) & 0xffffffff;
-    h[2] = (h[2] + c) & 0xffffffff;
-    h[3] = (h[3] + d) & 0xffffffff;
-    h[4] = (h[4] + e) & 0xffffffff;
-    h[5] = (h[5] + f) & 0xffffffff;
-    h[6] = (h[6] + g) & 0xffffffff;
-    h[7] = (h[7] + hh) & 0xffffffff;
-  }
-  final out = ByteData(32);
-  for (var i = 0; i < 8; i++) {
-    out.setUint32(i * 4, h[i]);
-  }
-  return out.buffer.asUint8List();
-}
-
-int _rotr(int x, int n) => ((x >> n) | (x << (32 - n))) & 0xffffffff;
-
-const _sha256K = <int>[
-  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, //
-  0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
-  0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
-  0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
-  0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
-  0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
-  0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
-  0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
-  0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
-];
-
 /// The `Input` message for a file: its `path` and `digest`.
 Uint8List _encodeInput(String path, Uint8List digest) {
   final writer = _Writer()
@@ -5100,7 +4998,7 @@ void _indexDigestSpellings(
   final fileSpelling = _filePathOf(path);
   byPath.putIfAbsent(fileSpelling, () => digest);
   byPath.putIfAbsent(kernelWorkerUri(fileSpelling), () => digest);
-  final norm = _normalizeFilePath(fileSpelling);
+  final norm = normalizePath(fileSpelling);
   byPath.putIfAbsent(norm, () => digest);
   byPath.putIfAbsent(kernelWorkerUri(norm), () => digest);
   final relNorm = _normalize(fileSpelling);
