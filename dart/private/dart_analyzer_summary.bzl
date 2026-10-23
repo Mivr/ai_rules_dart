@@ -395,8 +395,19 @@ def _summary_key_by_path(own_records, srcs):
             own_key_by_path[f.short_path] = package_key(record)
     return own_key_by_path
 
-def _summary_embedder_info(ctx, info, deps, files, dependencies, packaged, own_files, own_keys, inherited_embedder_sdks, embedder_yaml):
-    """Builds the embedder SDK summary action for `sky_engine`; returns the provider."""
+def _summary_embedder_info(ctx, info, deps, files, sums, own):
+    """Builds the embedder SDK summary action for `sky_engine`; returns the provider.
+
+    Args:
+      ctx: The aspect context.
+      info: The target's `DartInfo`.
+      deps: The closure targets.
+      files: The target's `DefaultInfo` files.
+      sums: `struct(dependencies, packaged, inherited_embedder_sdks,
+        embedder_yaml)`: the closure summary sets and the own embedder yaml.
+      own: `struct(own_files, own_keys)`: the own-files depset and own package
+        keys.
+    """
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
     mismatch = kernel_sdk_mismatch_error(ctx.label, "_tool", ctx.attr._tool, dart_sdk_info.version)
     if mismatch != None:
@@ -405,7 +416,7 @@ def _summary_embedder_info(ctx, info, deps, files, dependencies, packaged, own_f
     args = ctx.actions.args()
     args.add("sdk")
     args.add("--sdk", sdk_root_path(dart_sdk_info))
-    args.add("--embedder-yaml", embedder_yaml)
+    args.add("--embedder-yaml", sums.embedder_yaml)
     args.add("--out", embedder_sdk)
     ctx.actions.run(
         executable = dart_sdk_info.dart,
@@ -425,11 +436,11 @@ def _summary_embedder_info(ctx, info, deps, files, dependencies, packaged, own_f
     )
     return DartAnalyzerSummaryInfo(
         summary = None,
-        transitive_summaries = dependencies,
-        packaged_summaries = packaged,
-        embedder_sdk_summaries = depset([embedder_sdk], transitive = [inherited_embedder_sdks]),
-        packages = depset(own_keys, transitive = [d[DartAnalyzerSummaryInfo].packages for d in deps if DartAnalyzerSummaryInfo in d]),
-        own_files = own_files,
+        transitive_summaries = sums.dependencies,
+        packaged_summaries = sums.packaged,
+        embedder_sdk_summaries = depset([embedder_sdk], transitive = [sums.inherited_embedder_sdks]),
+        packages = depset(own.own_keys, transitive = [d[DartAnalyzerSummaryInfo].packages for d in deps if DartAnalyzerSummaryInfo in d]),
+        own_files = own.own_files,
     )
 
 def _summary_inherited_keys(deps):
@@ -528,30 +539,39 @@ def _summary_dep_roots(info, all_pkgs, own_records, own_root, own_staged_roots, 
                 conflicted_names[pkg.package_name] = True
     return roots, uncovered_pkgs, conflicted_names
 
-def _summary_stage_uncovered_pkg(ctx, pkg_name, pkg, pfiles, name, stage_root, roots, uncovered_inputs, uncovered_staged):
-    """Stages one uncovered dependency package. Returns nothing; mutates `roots` and the input lists."""
-    dep_mangled = mangle_package_dir(pkg_name)
-    if not pfiles:
-        roots[pkg_name] = stage_root + "/_deps/" + dep_mangled
+def _summary_stage_uncovered_pkg(ctx, pkg, stage):
+    """Stages one uncovered dependency package. Mutates the stage's inputs and roots.
+
+    Args:
+      ctx: The aspect context.
+      pkg: `struct(pkg_name, pkg, pfiles)`: the uncovered package's name,
+        record, and files to stage.
+      stage: `struct(name, stage_root, roots, uncovered_inputs,
+        uncovered_staged)` built once by `_summary_stage_uncovered`; its dict
+        and lists are mutated in place.
+    """
+    dep_mangled = mangle_package_dir(pkg.pkg_name)
+    if not pkg.pfiles:
+        stage.roots[pkg.pkg_name] = stage.stage_root + "/_deps/" + dep_mangled
         return
-    if len(pfiles) == 1 and pfiles[0].is_directory:
-        dir_link = ctx.actions.declare_directory(name + ".summary_root/_deps/" + dep_mangled)
-        ctx.actions.symlink(output = dir_link, target_file = pfiles[0])
-        uncovered_inputs.append(dir_link)
-        uncovered_inputs.extend(pfiles)
-        roots[pkg_name] = stage_root + "/_deps/" + dep_mangled
+    if len(pkg.pfiles) == 1 and pkg.pfiles[0].is_directory:
+        dir_link = ctx.actions.declare_directory(stage.name + ".summary_root/_deps/" + dep_mangled)
+        ctx.actions.symlink(output = dir_link, target_file = pkg.pfiles[0])
+        stage.uncovered_inputs.append(dir_link)
+        stage.uncovered_inputs.extend(pkg.pfiles)
+        stage.roots[pkg.pkg_name] = stage.stage_root + "/_deps/" + dep_mangled
         return
-    dep_prefix = (pkg.lib_root + "/lib/") if pkg.lib_root else "lib/"
-    for f in pfiles:
+    dep_prefix = (pkg.pkg.lib_root + "/lib/") if pkg.pkg.lib_root else "lib/"
+    for f in pkg.pfiles:
         if f.is_directory or not f.short_path.startswith(dep_prefix):
             continue
         rel = f.short_path[len(dep_prefix):]
-        link = ctx.actions.declare_file(name + ".summary_root/_deps/" + dep_mangled + "/lib/" + rel)
+        link = ctx.actions.declare_file(stage.name + ".summary_root/_deps/" + dep_mangled + "/lib/" + rel)
         ctx.actions.symlink(output = link, target_file = f)
-        uncovered_inputs.append(link)
-        uncovered_staged.append(link)
-    uncovered_inputs.extend(pfiles)
-    roots[pkg_name] = stage_root + "/_deps/" + dep_mangled
+        stage.uncovered_inputs.append(link)
+        stage.uncovered_staged.append(link)
+    stage.uncovered_inputs.extend(pkg.pfiles)
+    stage.roots[pkg.pkg_name] = stage.stage_root + "/_deps/" + dep_mangled
 
 def _summary_stage_uncovered(ctx, info, own_records, uncovered_pkgs, name, prefix, stage_root, roots):
     """Stages uncovered dependency files. Returns (uncovered_inputs, uncovered_staged)."""
@@ -570,50 +590,72 @@ def _summary_stage_uncovered(ctx, info, own_records, uncovered_pkgs, name, prefi
         if owner != None and owner in uncovered_pkgs:
             by_pkg.setdefault(owner, []).append(f)
     for pkg_name, pkg in uncovered_pkgs.items():
-        _summary_stage_uncovered_pkg(ctx, pkg_name, pkg, by_pkg.get(pkg_name, []), name, stage_root, roots, uncovered_inputs, uncovered_staged)
+        _summary_stage_uncovered_pkg(
+            ctx,
+            struct(pkg_name = pkg_name, pkg = pkg, pfiles = by_pkg.get(pkg_name, [])),
+            struct(
+                name = name,
+                stage_root = stage_root,
+                roots = roots,
+                uncovered_inputs = uncovered_inputs,
+                uncovered_staged = uncovered_staged,
+            ),
+        )
     return uncovered_inputs, uncovered_staged
 
-def _summary_run_action(ctx, info, own_records, srcs, staged, uncovered_inputs, uncovered_staged, all_pkgs, roots, packaged, dependencies, conflicted_names, inherited_embedder_sdks, embedder_sdk_summary, packages, own_files, name, config):
-    """Writes the summary package config, runs `summarize`, and returns the provider."""
+def _summary_run_action(ctx, info, own_records, action, closure):
+    """Writes the summary package config, runs `summarize`, and returns the provider.
+
+    Args:
+      ctx: The aspect context.
+      info: The target's `DartInfo`.
+      own_records: The target's own `DartPackageInfo` records, in order.
+      action: `struct(srcs, staged, uncovered_inputs, uncovered_staged, name,
+        config)`: the action's sources, staged links, and declared outputs.
+      closure: `struct(all_pkgs, roots, packaged, dependencies,
+        conflicted_names, inherited_embedder_sdks, embedder_sdk_summary,
+        packages, own_files)`: the closure-wide summary inputs, built once by
+        `_dart_analyzer_summary_impl`.
+    """
     ctx.actions.write(
-        output = config,
+        output = action.config,
         content = generate_package_config(
-            all_pkgs,
+            closure.all_pkgs,
             [],
-            config,
-            roots = roots,
+            action.config,
+            roots = closure.roots,
         ),
     )
 
     summary_inputs = (
-        depset([s for (pname, s) in packaged.to_list() if pname not in conflicted_names]) if conflicted_names else dependencies
+        depset([s for (pname, s) in closure.packaged.to_list() if pname not in closure.conflicted_names]) if closure.conflicted_names else closure.dependencies
     )
 
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
     mismatch = kernel_sdk_mismatch_error(ctx.label, "_tool", ctx.attr._tool, dart_sdk_info.version)
     if mismatch != None:
         fail(mismatch)
-    sdk_summary = embedder_sdk_summary or ctx.file._sdk_summary
-    summary = ctx.actions.declare_file(name + ".sum")
+    sdk_summary = closure.embedder_sdk_summary or ctx.file._sdk_summary
+    summary = ctx.actions.declare_file(action.name + ".sum")
     args = ctx.actions.args()
     args.use_param_file("@%s", use_always = True)
     args.set_param_file_format("multiline")
     args.add("summarize")
     args.add("--sdk", sdk_root_path(dart_sdk_info))
-    args.add("--packages", config)
+    args.add("--packages", action.config)
     args.add("--out", summary)
     args.add("--sdk-summary", sdk_summary)
-    for f, link in zip(srcs, staged):
+    for f, link in zip(action.srcs, action.staged):
         args.add("--source", link)
         args.add("--uri", _package_uri(info, f))
-    if uncovered_staged:
-        args.add_all(uncovered_staged, before_each = "--dep-source")
+    if action.uncovered_staged:
+        args.add_all(action.uncovered_staged, before_each = "--dep-source")
     args.add_all(summary_inputs, before_each = "--summary")
     ctx.actions.run(
         executable = dart_sdk_info.dart,
         arguments = [ctx.executable._tool.path, args],
         inputs = depset(
-            direct = [ctx.executable._tool, dart_sdk_info.dart, config, sdk_summary] + srcs + staged + uncovered_inputs,
+            direct = [ctx.executable._tool, dart_sdk_info.dart, action.config, sdk_summary] + action.srcs + action.staged + action.uncovered_inputs,
             transitive = [dart_sdk_info.analyze_files, dart_sdk_info.runtime_files, summary_inputs],
         ),
         tools = depset(
@@ -631,14 +673,14 @@ def _summary_run_action(ctx, info, own_records, srcs, staged, uncovered_inputs, 
     )
     return DartAnalyzerSummaryInfo(
         summary = summary,
-        transitive_summaries = depset([summary], transitive = [dependencies]),
+        transitive_summaries = depset([summary], transitive = [closure.dependencies]),
         packaged_summaries = depset(
             [(record.package_name, summary) for record in own_records] or [(info.package_name, summary)],
-            transitive = [packaged],
+            transitive = [closure.packaged],
         ),
-        embedder_sdk_summaries = inherited_embedder_sdks,
-        packages = packages,
-        own_files = own_files,
+        embedder_sdk_summaries = closure.inherited_embedder_sdks,
+        packages = closure.packages,
+        own_files = closure.own_files,
     )
 
 def _dart_analyzer_summary_impl(target, ctx):
@@ -675,7 +717,19 @@ def _dart_analyzer_summary_impl(target, ctx):
 
     embedder_yaml = _own_embedder_yaml(info, files)
     if embedder_yaml != None:
-        return [_summary_embedder_info(ctx, info, deps, files, dependencies, packaged, own_files, own_keys, inherited_embedder_sdks, embedder_yaml)]
+        return [_summary_embedder_info(
+            ctx,
+            info,
+            deps,
+            files,
+            struct(
+                dependencies = dependencies,
+                packaged = packaged,
+                inherited_embedder_sdks = inherited_embedder_sdks,
+                embedder_yaml = embedder_yaml,
+            ),
+            struct(own_files = own_files, own_keys = own_keys),
+        )]
 
     embedder_sdk_list = inherited_embedder_sdks.to_list()
     embedder_sdk_summary = embedder_sdk_list[0] if len(embedder_sdk_list) == 1 else None
@@ -729,7 +783,30 @@ def _dart_analyzer_summary_impl(target, ctx):
 
     uncovered_inputs, uncovered_staged = _summary_stage_uncovered(ctx, info, own_records, uncovered_pkgs, name, prefix, stage_root, roots)
 
-    return [_summary_run_action(ctx, info, own_records, srcs, staged, uncovered_inputs, uncovered_staged, all_pkgs, roots, packaged, dependencies, conflicted_names, inherited_embedder_sdks, embedder_sdk_summary, packages, own_files, name, config)]
+    return [_summary_run_action(
+        ctx,
+        info,
+        own_records,
+        struct(
+            srcs = srcs,
+            staged = staged,
+            uncovered_inputs = uncovered_inputs,
+            uncovered_staged = uncovered_staged,
+            name = name,
+            config = config,
+        ),
+        struct(
+            all_pkgs = all_pkgs,
+            roots = roots,
+            packaged = packaged,
+            dependencies = dependencies,
+            conflicted_names = conflicted_names,
+            inherited_embedder_sdks = inherited_embedder_sdks,
+            embedder_sdk_summary = embedder_sdk_summary,
+            packages = packages,
+            own_files = own_files,
+        ),
+    )]
 
 dart_analyzer_summary = aspect(
     implementation = _dart_analyzer_summary_impl,
