@@ -27,8 +27,6 @@ import 'package:dart_style/src/analysis_options/file_system.dart';
 // ignore: implementation_imports
 import 'package:dart_style/src/analysis_options/io_file_system.dart';
 import 'package:package_config/package_config.dart';
-// ignore: implementation_imports
-import 'package:package_config/src/errors.dart' show PackageConfigError;
 import 'package:path/path.dart' as p;
 import 'package:pub_semver/pub_semver.dart';
 
