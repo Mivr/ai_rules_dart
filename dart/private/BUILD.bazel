@@ -146,12 +146,20 @@ bzl_library(
 )
 
 bzl_library(
+    name = "kernel_params",
+    srcs = ["kernel_params.bzl"],
+    visibility = ["//dart:__subpackages__"],
+    deps = [":common"],
+)
+
+bzl_library(
     name = "dart_kernel",
     srcs = ["dart_kernel.bzl"],
     visibility = ["//dart:__subpackages__"],
     deps = [
         ":common",
         ":dart_info",
+        ":kernel_params",
         "//dart:providers",
         "@bazel_skylib//rules:common_settings",
     ],

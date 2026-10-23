@@ -20,8 +20,12 @@ load(
     "first_per_package",
     "generate_stable_package_config",
     "has_cross_pkg_cycle",
+    "kernel_compile_settings",
     "kernel_link_action",
     "kernel_module_action",
+    "kernel_module_inputs",
+    "kernel_module_options",
+    "kernel_module_outputs",
     "kernel_package_config",
     "kernel_packages_consistent",
     "library_source_uri",
@@ -402,21 +406,26 @@ def _custom_kernel_module_fixture_impl(ctx):
     excluded = kernel_module_action(
         ctx = ctx,
         tools = tools,
-        sources = [struct(uri = "package:a/widget.dart", file = src_file)],
-        packages = [_pkg("a", "pkg/a", "3.9")],
-        dep_kmods = depset(order = "postorder"),
-        output = kmod,
-        koutline = koutline,
-        defines = ["FLUTTER_WEB=false", "COMMA_VAL=a,b"],
-        exclude_non_sources = True,
-        droppable = True,
-        target = "flutter",
-        platform_dill = custom_platform_dill,
-        libraries_json = custom_libraries_json,
-        libraries_platform = "flutter",
-        extra_libraries = ["ui", "nativewrappers"],
-        scheme = "org-dartlang-app",
-        extra_frontend_flags = ["--track-widget-creation"],
+        inputs = kernel_module_inputs(
+            sources = [struct(uri = "package:a/widget.dart", file = src_file)],
+            packages = [_pkg("a", "pkg/a", "3.9")],
+            dep_kmods = depset(order = "postorder"),
+        ),
+        outputs = kernel_module_outputs(output = kmod, koutline = koutline),
+        options = kernel_module_options(
+            defines = ["FLUTTER_WEB=false", "COMMA_VAL=a,b"],
+            exclude_non_sources = True,
+            droppable = True,
+        ),
+        compile = kernel_compile_settings(
+            target = "flutter",
+            platform_dill = custom_platform_dill,
+            libraries_json = custom_libraries_json,
+            libraries_platform = "flutter",
+            extra_libraries = ["ui", "nativewrappers"],
+            scheme = "org-dartlang-app",
+            extra_frontend_flags = ["--track-widget-creation"],
+        ),
     )
     linked_dill = ctx.actions.declare_file(ctx.label.name + "_linked.dill")
     kernel_link_action(
@@ -1086,13 +1095,18 @@ def _worker_execution_requirements_test_impl(ctx):
     kernel_module_action(
         ctx = fake_ctx,
         tools = fake_tools,
-        sources = [struct(uri = "package:a/a.dart", file = _declare_file("a.dart"))],
-        packages = [_pkg("a", "pkg/a", "3.9")],
-        dep_kmods = depset(),
-        output = kmod,
-        defines = [],
-        exclude_non_sources = False,
-        droppable = False,
+        inputs = kernel_module_inputs(
+            sources = [struct(uri = "package:a/a.dart", file = _declare_file("a.dart"))],
+            packages = [_pkg("a", "pkg/a", "3.9")],
+            dep_kmods = depset(),
+        ),
+        outputs = kernel_module_outputs(output = kmod),
+        options = kernel_module_options(
+            defines = [],
+            exclude_non_sources = False,
+            droppable = False,
+        ),
+        compile = kernel_compile_settings(),
     )
     kernel_link_action(
         ctx = fake_ctx,
@@ -1161,20 +1175,26 @@ def _unused_inputs_wiring_test_impl(ctx):
         version = "3.11.0",
     )
 
-    def _compile(**kw):
-        kwargs = dict(
+    def _compile(unused_inputs = False):
+        kernel_module_action(
             ctx = fake_ctx,
             tools = fake_tools,
-            sources = [struct(uri = "package:a/a.dart", file = _declare_file("a.dart"))],
-            packages = [_pkg("a", "pkg/a", "3.9")],
-            dep_kmods = depset(),
-            output = _declare_file("manual_target.kmod"),
-            defines = [],
-            exclude_non_sources = False,
-            droppable = False,
+            inputs = kernel_module_inputs(
+                sources = [struct(uri = "package:a/a.dart", file = _declare_file("a.dart"))],
+                packages = [_pkg("a", "pkg/a", "3.9")],
+                dep_kmods = depset(),
+            ),
+            outputs = kernel_module_outputs(
+                output = _declare_file("manual_target.kmod"),
+                unused_inputs = unused_inputs,
+            ),
+            options = kernel_module_options(
+                defines = [],
+                exclude_non_sources = False,
+                droppable = False,
+            ),
+            compile = kernel_compile_settings(),
         )
-        kwargs.update(kw)
-        kernel_module_action(**kwargs)
 
     _compile(unused_inputs = True)
     asserts.equals(env, 1, len(runs), "registers one DartKernel action")

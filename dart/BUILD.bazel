@@ -221,6 +221,7 @@ bzl_library(
         "//dart/private:dart_kernel",
         "//dart/private:dart_library",
         "//dart/private:dart_link_hook",
+        "//dart/private:kernel_params",
         "//dart/private:source_set",
     ],
 )

@@ -58,6 +58,13 @@ load(
     "writable_home_env",
 )
 load("//dart/private:dart_info.bzl", "package_lib_prefix")
+load(
+    "//dart/private:kernel_params.bzl",
+    "kernel_compile_settings",
+    "kernel_module_inputs",
+    "kernel_module_options",
+    "kernel_module_outputs",
+)
 
 # The `org-dartlang-root` scheme `--multi-root` maps onto the exec root (`.`) and
 # the output directory (`ctx.bin_dir`). Its URIs are the exec-root-relative paths
@@ -715,35 +722,35 @@ def _kmod_declare_outputs(ctx, output, packages, scheme, unused_inputs):
         unused_inputs_list = None
     return package_config, excluded, unused_inputs_list
 
-def _kmod_common_args(ctx, args, compile):
+def _kmod_common_args(ctx, args, request):
     """Adds the target/platform/define args shared by every module compile.
 
     Args:
       ctx: The rule context, for `ctx.bin_dir`.
       args: The args object to add to.
-      compile: A struct with `target`, `platform`, `package_config`, `libraries`,
+      request: A struct with `target`, `platform`, `package_config`, `libraries`,
         `libraries_platform`, `extra_libraries`, `defines`, `extra_frontend_flags`,
         and `scheme`.
     """
-    args.add("--target", compile.target)
-    args.add("--dart-sdk-summary", compile.platform)
-    args.add("--packages-file", compile.package_config)
-    args.add("--libraries-json", compile.libraries)
-    if compile.libraries_platform:
-        args.add("--libraries-platform", compile.libraries_platform)
-    args.add_all(compile.extra_libraries, before_each = "--extra-library")
+    args.add("--target", request.target)
+    args.add("--dart-sdk-summary", request.platform)
+    args.add("--packages-file", request.package_config)
+    args.add("--libraries-json", request.libraries)
+    if request.libraries_platform:
+        args.add("--libraries-platform", request.libraries_platform)
+    args.add_all(request.extra_libraries, before_each = "--extra-library")
     args.add("--multi-root", ".")
     args.add("--multi-root", ctx.bin_dir.path)
-    args.add("--multi-root-scheme", compile.scheme)
-    if compile.target == "vm":
+    args.add("--multi-root-scheme", request.scheme)
+    if request.target == "vm":
         args.add_all([
             "-Ddart.vm.product=true",
             "-Ddart.vm.asan=false",
             "-Ddart.vm.msan=false",
             "-Ddart.vm.tsan=false",
         ])
-    args.add_all(compile.defines, format_each = "-D%s")
-    args.add_all(compile.extra_frontend_flags)
+    args.add_all(request.defines, format_each = "-D%s")
+    args.add_all(request.extra_frontend_flags)
 
 def _kmod_worker_snapshot(ctx, tools, defines):
     """Selects the worker snapshot for comma defines. Returns (worker_snapshot, patched_marker)."""
@@ -770,12 +777,12 @@ def _kmod_worker_snapshot(ctx, tools, defines):
         patched_marker = ["--comma-patched-snapshot"]
     return worker_snapshot, patched_marker
 
-def _kmod_source_args(args, compile):
+def _kmod_source_args(args, request):
     """Adds the per-module source, output, and exclusion args.
 
     Args:
       args: The args object to add to.
-      compile: A struct with `sources`, `dep_kmods`, `output`, `koutline`,
+      request: A struct with `sources`, `dep_kmods`, `output`, `koutline`,
         `excluded`, `unused_inputs_list`, `droppable`, `closure_excluded`,
         `extra_inputs`, and `exclude_non_sources`.
     """
@@ -790,30 +797,30 @@ def _kmod_source_args(args, compile):
     # their digests, so it never reads a file it was not given.
     args.add("--reuse-compiler-result")
     args.add("--use-incremental-compiler")
-    if compile.exclude_non_sources:
+    if request.exclude_non_sources:
         args.add("--exclude-non-sources")
 
     # A module directory is one argument, not its files: `expand_directories` is off.
-    args.add_all(compile.dep_kmods, before_each = "--input-kmod", expand_directories = False)
-    for s in compile.sources:
+    args.add_all(request.dep_kmods, before_each = "--input-kmod", expand_directories = False)
+    for s in request.sources:
         args.add("--source", s.uri)
         args.add("--input-source", s.file)
-        if compile.unused_inputs_list != None:
+        if request.unused_inputs_list != None:
             args.add("--own-source-file", s.file)
-    args.add("--output", compile.output.path)
-    if compile.koutline != None:
-        args.add("--output-outline", compile.koutline.path)
+    args.add("--output", request.output.path)
+    if request.koutline != None:
+        args.add("--output-outline", request.koutline.path)
 
     # Read by `kernel_module` and not passed to `kernel_worker`.
-    args.add("--excluded-output", compile.excluded)
-    if compile.unused_inputs_list != None:
-        args.add("--unused-inputs-list", compile.unused_inputs_list)
-    if not compile.droppable:
+    args.add("--excluded-output", request.excluded)
+    if request.unused_inputs_list != None:
+        args.add("--unused-inputs-list", request.unused_inputs_list)
+    if not request.droppable:
         args.add("--no-drop")
-    if compile.closure_excluded:
-        args.add_all(compile.closure_excluded, before_each = "--closure-excluded")
-    if compile.extra_inputs:
-        args.add_all(compile.extra_inputs, before_each = "--input-source")
+    if request.closure_excluded:
+        args.add_all(request.closure_excluded, before_each = "--closure-excluded")
+    if request.extra_inputs:
+        args.add_all(request.extra_inputs, before_each = "--input-source")
 
 def _kmod_select_executable(ctx, tools, direct_inputs, action_tools):
     """Selects the module action's executable. Returns (executable, arguments-prefix, dart_exe)."""
@@ -848,21 +855,21 @@ def _kmod_select_executable(ctx, tools, direct_inputs, action_tools):
         return dart_exe, ctx.executable._kernel_module.path, dart_exe
     return ctx.executable._kernel_module, None, dart_exe
 
-def _kmod_run_action(ctx, executable, arguments, compile, direct_inputs, action_tools, runtime_files):
+def _kmod_run_action(ctx, executable, arguments, request, direct_inputs, action_tools, runtime_files):
     """Registers the module's `kernel_module` worker action.
 
     Args:
       ctx: The rule context, for `ctx.actions.run`.
       executable: The executable to run.
       arguments: The startup arguments plus the params-file args.
-      compile: A struct with `tools`, `dep_kmods`, `extra_inputs`,
+      request: A struct with `tools`, `dep_kmods`, `extra_inputs`,
         `closure_excluded`, `output`, `excluded`, `unused_inputs_list`, and
         `koutline`.
       direct_inputs: The action's direct input files.
       action_tools: The action's direct tool files.
       runtime_files: The SDK runtime files depset, or None.
     """
-    tools = compile.tools
+    tools = request.tools
     ctx.actions.run(
         executable = executable,
         # The startup arguments name the SDK's compiler, so every module of one SDK
@@ -871,9 +878,9 @@ def _kmod_run_action(ctx, executable, arguments, compile, direct_inputs, action_
         arguments = arguments,
         inputs = depset(
             direct = direct_inputs,
-            transitive = [compile.dep_kmods] + [
+            transitive = [request.dep_kmods] + [
                 d
-                for d in [compile.extra_inputs, compile.closure_excluded]
+                for d in [request.extra_inputs, request.closure_excluded]
                 if d
             ],
         ),
@@ -881,38 +888,18 @@ def _kmod_run_action(ctx, executable, arguments, compile, direct_inputs, action_
             direct = action_tools,
             transitive = [runtime_files] if runtime_files != None else [],
         ),
-        outputs = [compile.output, compile.excluded] + ([compile.unused_inputs_list] if compile.unused_inputs_list != None else []) + ([compile.koutline] if compile.koutline != None else []),
-        unused_inputs_list = compile.unused_inputs_list,
+        outputs = [request.output, request.excluded] + ([request.unused_inputs_list] if request.unused_inputs_list != None else []) + ([request.koutline] if request.koutline != None else []),
+        unused_inputs_list = request.unused_inputs_list,
         mnemonic = "DartKernel",
-        progress_message = "Compiling Dart kernel module %s" % compile.output.short_path,
-        env = writable_home_env(getattr(tools, "dart", None) or tools.dartaotruntime, compile.output),
+        progress_message = "Compiling Dart kernel module %s" % request.output.short_path,
+        env = writable_home_env(getattr(tools, "dart", None) or tools.dartaotruntime, request.output),
         execution_requirements = {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
         },
     )
 
-def kernel_module_action(
-        ctx,
-        tools,
-        sources,
-        packages,
-        dep_kmods,
-        output,
-        defines,
-        exclude_non_sources,
-        droppable,
-        koutline = None,
-        extra_inputs = None,
-        closure_excluded = None,
-        target = "vm",
-        platform_dill = None,
-        libraries_json = None,
-        libraries_platform = None,
-        extra_libraries = [],
-        scheme = STABLE_SCHEME,
-        extra_frontend_flags = [],
-        unused_inputs = False):
+def kernel_module_action(ctx, tools, inputs, outputs, options, compile):
     """Compiles one module with `kernel_module`, which drives the persistent `kernel_worker`.
 
     `kernel_module` is a Bazel persistent worker: it keeps one `kernel_worker` child
@@ -923,121 +910,84 @@ def kernel_module_action(
     Args:
       ctx: The rule context, carrying the `_kernel_module` executable.
       tools: The struct from `find_kernel_module_tools`.
-      sources: `struct(uri, file)` for each source the module compiles. The URI is
-        the one the source is compiled under.
-      packages: The `DartPackageInfo` records the module's package config names.
-      dep_kmods: Postorder depset of the module directories it links against.
-      output: The module's directory File to produce. It holds one kernel per
-        component of the module's sources, and an `index.json` that lists them.
-      defines: The `-D` declarations every compile of this module takes. The
-        `//dart:extra_dart_defines` flag, the same for the whole build. When
-        one contains a comma, the compile runs the toolchain's patched worker
-        snapshot (see below); otherwise the pristine snapshot runs.
-      exclude_non_sources: Whether to emit only the listed sources, and not the
-        libraries reached through them. Both kinds pass True, so a module holds its
-        own libraries and an entry holds its own sources, and neither embeds the SDK
-        platform or a dependency library.
-      droppable: Whether `kernel_module` may retry once without the own sources
-        that fail for the VM. A library's module may, and one that still fails fails
-        the action. An entry module may not: dropping one of the test's own files
-        would silently run a test without it.
-      koutline: Optional directory File to receive stripped `.dill` outlines and
-        `index.json` for downstream `--input-kmod` compilation.
-      extra_inputs: A depset of files the compile may read beyond `sources`, such as
-        the closure's sources, which an entry module compiles from when it reaches
-        an excluded file. None for a library.
-      closure_excluded: A depset of the `.vm_excluded.txt` sidecars of the
-        module's upstream modules. None when there are none.
-      target: The `kernel_worker --target` name (`"vm"` by default; `"flutter"`
-        for Flutter modules).
-      platform_dill: The platform `.dill` File to compile against; defaults to
-        `tools.platform_dill`.
-      libraries_json: The `libraries.json` File the planner reads available `dart:`
-        libraries from; defaults to `tools.libraries_json`.
-      libraries_platform: Optional platform key in `libraries.json` (in addition to
-        `"vm"`) whose libraries are available on the target.
-      extra_libraries: Extra bare `dart:` library names (e.g. `["ui", "nativewrappers"]`)
-        available in `platform_dill` even when absent from `libraries.json`.
-      scheme: The multi-root URI scheme (`STABLE_SCHEME` by default).
-      extra_frontend_flags: Extra flags forwarded to `kernel_worker`.
-      unused_inputs: Whether the compile writes its unused-inputs list — the
-        declared inputs no compile of this action read — and takes it as the
-        action's `unused_inputs_list`, so Bazel skips the action when only an
-        unread input changed. True only where one evaluation registers the
-        action: an executable's entry, or a `dart_library`'s own module. The
-        aspect's fallback compile leaves it False: several evaluations
-        register that action, and a file each declared itself would keep their
-        keys from matching. False registers the historical action with no
-        list.
+      inputs: The struct from `kernel_module_inputs()`: the module's sources,
+        packages, dependency modules, and closure inputs.
+      outputs: The struct from `kernel_module_outputs()`: the module and
+        outline directories to produce, and whether to write unused inputs.
+      options: The struct from `kernel_module_options()`: the defines and the
+        exclusion and dropping behavior.
+      compile: The struct from `kernel_compile_settings()`: the frontend
+        target, platform, libraries, scheme, and extra flags.
 
     Returns:
       The `.vm_excluded.txt` sidecar File, which lists each source that the module
       excludes for the target, and why.
     """
-    platform = platform_dill if platform_dill != None else tools.platform_dill
-    libraries = libraries_json if libraries_json != None else tools.libraries_json
-    package_config, excluded, unused_inputs_list = _kmod_declare_outputs(ctx, output, packages, scheme, unused_inputs)
+    settings = compile
+    platform = settings.platform_dill if settings.platform_dill != None else tools.platform_dill
+    libraries = settings.libraries_json if settings.libraries_json != None else tools.libraries_json
+    package_config, excluded, unused_inputs_list = _kmod_declare_outputs(ctx, outputs.output, inputs.packages, settings.scheme, outputs.unused_inputs)
 
     args = ctx.actions.args()
     args.use_param_file("@%s", use_always = True)
     args.set_param_file_format("multiline")
 
     # One object for the module-compile clump that the helpers below share.
-    compile = struct(
+    request = struct(
         tools = tools,
         platform = platform,
         libraries = libraries,
         package_config = package_config,
-        target = target,
-        libraries_platform = libraries_platform,
-        extra_libraries = extra_libraries,
-        defines = defines,
-        extra_frontend_flags = extra_frontend_flags,
-        scheme = scheme,
-        sources = sources,
-        dep_kmods = dep_kmods,
-        output = output,
-        koutline = koutline,
+        target = settings.target,
+        libraries_platform = settings.libraries_platform,
+        extra_libraries = settings.extra_libraries,
+        defines = options.defines,
+        extra_frontend_flags = settings.extra_frontend_flags,
+        scheme = settings.scheme,
+        sources = inputs.sources,
+        dep_kmods = inputs.dep_kmods,
+        output = outputs.output,
+        koutline = outputs.koutline,
         excluded = excluded,
         unused_inputs_list = unused_inputs_list,
-        droppable = droppable,
-        closure_excluded = closure_excluded,
-        extra_inputs = extra_inputs,
-        exclude_non_sources = exclude_non_sources,
+        droppable = options.droppable,
+        closure_excluded = inputs.closure_excluded,
+        extra_inputs = inputs.extra_inputs,
+        exclude_non_sources = options.exclude_non_sources,
     )
 
-    _kmod_common_args(ctx, args, compile)
+    _kmod_common_args(ctx, args, request)
 
-    worker_snapshot, patched_marker = _kmod_worker_snapshot(ctx, tools, defines)
+    worker_snapshot, patched_marker = _kmod_worker_snapshot(ctx, tools, options.defines)
 
-    _kmod_source_args(args, compile)
+    _kmod_source_args(args, request)
 
-    _kmod_register(ctx, compile, args, worker_snapshot, patched_marker)
+    _kmod_register(ctx, request, args, worker_snapshot, patched_marker)
     return excluded
 
-def _kmod_register(ctx, compile, args, worker_snapshot, patched_marker):
+def _kmod_register(ctx, request, args, worker_snapshot, patched_marker):
     """Builds the module action's inputs, selects its executable, and registers it.
 
     Args:
       ctx: The rule context, carrying the `_kernel_module` executable.
-      compile: The module-compile struct (see `kernel_module_action`).
+      request: The module-compile struct (see `kernel_module_action`).
       args: The params-file args for the worker request.
       worker_snapshot: The worker snapshot File to run.
       patched_marker: The comma-patch startup marker list (possibly empty).
     """
-    tools = compile.tools
+    tools = request.tools
     runtime_files = getattr(tools, "runtime_files", None)
     direct_inputs = [
-        compile.package_config,
+        request.package_config,
         tools.dartaotruntime,
         worker_snapshot,
-        compile.libraries,
-        compile.platform,
-    ] + [s.file for s in compile.sources]
+        request.libraries,
+        request.platform,
+    ] + [s.file for s in request.sources]
     action_tools = [
         tools.dartaotruntime,
         worker_snapshot,
-        compile.platform,
+        request.platform,
         ctx.executable._kernel_module,
     ]
     executable, tool_path, _ = _kmod_select_executable(ctx, tools, direct_inputs, action_tools)
@@ -1059,7 +1009,7 @@ def _kmod_register(ctx, compile, args, worker_snapshot, patched_marker):
             args,
         ] + patched_marker
 
-    _kmod_run_action(ctx, executable, arguments, compile, direct_inputs, action_tools, runtime_files)
+    _kmod_run_action(ctx, executable, arguments, request, direct_inputs, action_tools, runtime_files)
 
 def kernel_link_action(
         ctx,
@@ -1360,25 +1310,33 @@ def modular_executable_kernel(
     kernel_module_action(
         ctx,
         tools,
-        sources,
-        packages,
-        dep_outline_closure,
-        entry,
-        defines = global_dart_defines(ctx),
-        exclude_non_sources = True,
-        droppable = False,
-        extra_inputs = cross_pkg_srcs,
-        closure_excluded = depset(transitive = [k.closure_excluded for k in dep_kernels]),
-        target = target,
-        platform_dill = platform_dill,
-        libraries_json = libraries_json,
-        libraries_platform = libraries_platform,
-        extra_libraries = extra_libraries,
-        scheme = scheme,
-        extra_frontend_flags = extra_frontend_flags,
-        # This entry compiles in exactly one action registered by the
-        # executable's own rule, so the list file stays single-owner.
-        unused_inputs = True,
+        kernel_module_inputs(
+            sources = sources,
+            packages = packages,
+            dep_kmods = dep_outline_closure,
+            extra_inputs = cross_pkg_srcs,
+            closure_excluded = depset(transitive = [k.closure_excluded for k in dep_kernels]),
+        ),
+        kernel_module_outputs(
+            output = entry,
+            # This entry compiles in exactly one action registered by the
+            # executable's own rule, so the list file stays single-owner.
+            unused_inputs = True,
+        ),
+        kernel_module_options(
+            defines = global_dart_defines(ctx),
+            exclude_non_sources = True,
+            droppable = False,
+        ),
+        kernel_compile_settings(
+            target = target,
+            platform_dill = platform_dill,
+            libraries_json = libraries_json,
+            libraries_platform = libraries_platform,
+            extra_libraries = extra_libraries,
+            scheme = scheme,
+            extra_frontend_flags = extra_frontend_flags,
+        ),
     )
     base_dill = None
     base_keys = None
@@ -1752,24 +1710,32 @@ def library_kernel_info(
     excluded = kernel_module_action(
         ctx,
         tools,
-        sources,
-        graph.pkgs,
-        graph.dep_outline_closure,
-        kmod,
-        koutline = koutline,
-        defines = defines,
-        exclude_non_sources = True,
-        droppable = True,
-        extra_inputs = dep_cross_pkg_srcs,
-        closure_excluded = graph.upstream_excluded,
-        target = target,
-        platform_dill = platform_dill,
-        libraries_json = libraries_json,
-        libraries_platform = libraries_platform,
-        extra_libraries = extra_libraries,
-        scheme = scheme,
-        extra_frontend_flags = extra_frontend_flags,
-        unused_inputs = unused_inputs,
+        kernel_module_inputs(
+            sources = sources,
+            packages = graph.pkgs,
+            dep_kmods = graph.dep_outline_closure,
+            extra_inputs = dep_cross_pkg_srcs,
+            closure_excluded = graph.upstream_excluded,
+        ),
+        kernel_module_outputs(
+            output = kmod,
+            koutline = koutline,
+            unused_inputs = unused_inputs,
+        ),
+        kernel_module_options(
+            defines = defines,
+            exclude_non_sources = True,
+            droppable = True,
+        ),
+        kernel_compile_settings(
+            target = target,
+            platform_dill = platform_dill,
+            libraries_json = libraries_json,
+            libraries_platform = libraries_platform,
+            extra_libraries = extra_libraries,
+            scheme = scheme,
+            extra_frontend_flags = extra_frontend_flags,
+        ),
     )
     seeded = _lib_kernel_seed_base(ctx, graph.dep_closure, kmod, package_name, own_records, target)
     if seeded != None:

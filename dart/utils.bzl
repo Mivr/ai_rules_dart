@@ -75,6 +75,17 @@ load(
     _parse_data_asset_ids = "parse_data_asset_ids",
 )
 load(
+    "//dart/private:kernel_params.bzl",
+    _kernel_compile_settings = "kernel_compile_settings",
+    _kernel_module_inputs = "kernel_module_inputs",
+    _kernel_module_options = "kernel_module_options",
+    _kernel_module_outputs = "kernel_module_outputs",
+    _library_kernel_options = "library_kernel_options",
+    _library_kernel_sources = "library_kernel_sources",
+    _modular_kernel_conditions = "modular_kernel_conditions",
+    _modular_kernel_mode = "modular_kernel_mode",
+)
+load(
     "//dart/private:source_set.bzl",
     _COPY_TO_DIRECTORY_TOOLCHAINS = "COPY_TO_DIRECTORY_TOOLCHAINS",
     _colocate_entrypoint = "colocate_entrypoint",
@@ -160,11 +171,20 @@ stable_entry_path = _stable_entry_path
 generate_stable_package_config = _generate_stable_package_config
 gen_kernel_args = _gen_kernel_args
 
-# Modular kernel compilation and linking (`dart/private/dart_kernel.bzl`).
+# Modular kernel compilation and linking (`dart/private/dart_kernel.bzl`,
+# with parameter objects from `dart/private/kernel_params.bzl`).
 DartKernelInfo = _DartKernelInfo
 KERNEL_MODULE_ATTRS = _KERNEL_MODULE_ATTRS
 MODULAR_KERNEL_ATTRS = _MODULAR_KERNEL_ATTRS
 MODULAR_KERNEL_TOOLCHAINS = _MODULAR_KERNEL_TOOLCHAINS
+kernel_compile_settings = _kernel_compile_settings
+kernel_module_inputs = _kernel_module_inputs
+kernel_module_options = _kernel_module_options
+kernel_module_outputs = _kernel_module_outputs
+library_kernel_sources = _library_kernel_sources
+library_kernel_options = _library_kernel_options
+modular_kernel_mode = _modular_kernel_mode
+modular_kernel_conditions = _modular_kernel_conditions
 dart_kernel_module_aspect = _dart_kernel_module_aspect
 find_kernel_module_tools = _find_kernel_module_tools
 kernel_tools_for = _kernel_tools_for
