@@ -199,4 +199,95 @@ void main() {
           'is not a declared input.',
     ]);
   });
+
+  group('pruneOrphanedStagedFiles', () {
+    Directory stageSrc(String name) {
+      final project = Directory('${tmp.path}/$name.proj')
+        ..createSync(recursive: true);
+      Directory('${project.path}/src/pkg').createSync(recursive: true);
+      return project;
+    }
+
+    void writeSrcManifest(Directory project, List<String> lines) {
+      Directory('${project.path}/.dart_tool').createSync(recursive: true);
+      File('${project.path}/.dart_tool/src_manifest.txt')
+          .writeAsStringSync("${lines.join('\n')}\n");
+    }
+
+    test('keys the allow-list project-relative and deletes unlisted files', () {
+      final project = stageSrc('demo');
+      File('${project.path}/src/pkg/keep.dart')
+          .writeAsStringSync('const keep = 1;\n');
+      File('${project.path}/src/pkg/drop.dart')
+          .writeAsStringSync('const drop = 1;\n');
+      writeSrcManifest(project, ['pkg/keep.dart']);
+
+      final allowed = fix_runner.pruneOrphanedStagedFiles(project.path);
+
+      expect(allowed, {'src/pkg/keep.dart'});
+      expect(File('${project.path}/src/pkg/keep.dart').existsSync(), isTrue);
+      expect(File('${project.path}/src/pkg/drop.dart').existsSync(), isFalse);
+    });
+
+    test('a dot-slashed manifest line matches nothing project-relative', () {
+      final project = stageSrc('dotslash');
+      File('${project.path}/src/pkg/keep.dart')
+          .writeAsStringSync('const keep = 1;\n');
+      writeSrcManifest(project, ['./pkg/keep.dart']);
+
+      final allowed = fix_runner.pruneOrphanedStagedFiles(project.path);
+
+      expect(allowed, {'src/./pkg/keep.dart'});
+      expect(File('${project.path}/src/pkg/keep.dart').existsSync(), isFalse);
+    });
+
+    test('a star manifest keeps everything and reports no allow-list', () {
+      final project = stageSrc('star');
+      File('${project.path}/src/pkg/any.dart')
+          .writeAsStringSync('const any = 1;\n');
+      writeSrcManifest(project, ['*']);
+
+      expect(fix_runner.pruneOrphanedStagedFiles(project.path), isNull);
+      expect(File('${project.path}/src/pkg/any.dart').existsSync(), isTrue);
+    });
+
+    test('without a manifest nothing is pruned', () {
+      final project = stageSrc('bare');
+      File('${project.path}/src/pkg/any.dart')
+          .writeAsStringSync('const any = 1;\n');
+
+      expect(fix_runner.pruneOrphanedStagedFiles(project.path), isNull);
+      expect(File('${project.path}/src/pkg/any.dart').existsSync(), isTrue);
+    });
+
+    test('prunes sibling extpkgs entries the manifest does not list', () {
+      final project = stageSrc('ext');
+      writeSrcManifest(project, ['*']);
+      final ext = Directory('${tmp.path}/ext.extpkgs/foo')
+        ..createSync(recursive: true);
+      File('${ext.path}/keep.dart').writeAsStringSync('const keep = 1;\n');
+      File('${ext.path}/drop.dart').writeAsStringSync('const drop = 1;\n');
+      File('${project.path}/.dart_tool/extpkgs_manifest.txt')
+          .writeAsStringSync('foo/keep.dart\n');
+
+      fix_runner.pruneOrphanedStagedFiles(project.path);
+
+      expect(File('${ext.path}/keep.dart').existsSync(), isTrue);
+      expect(File('${ext.path}/drop.dart').existsSync(), isFalse);
+    });
+
+    test('an extpkgs directory prefix keeps the whole listed tree', () {
+      final project = stageSrc('extdir');
+      writeSrcManifest(project, ['*']);
+      final ext = Directory('${tmp.path}/extdir.extpkgs/tree')
+        ..createSync(recursive: true);
+      File('${ext.path}/nested.dart').writeAsStringSync('const n = 1;\n');
+      File('${project.path}/.dart_tool/extpkgs_manifest.txt')
+          .writeAsStringSync('tree/\n');
+
+      fix_runner.pruneOrphanedStagedFiles(project.path);
+
+      expect(File('${ext.path}/nested.dart').existsSync(), isTrue);
+    });
+  });
 }

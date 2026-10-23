@@ -10,6 +10,8 @@ import 'dart:io';
 
 import 'package:rules_dart_guard/directive_guard.dart';
 
+import 'analyze_runner_staged_prune.dart';
+
 /// Recorded for every changed file outside the eligible set. One constant
 /// string: the manifest says *that* a fix was discarded, and the rule's
 /// excludes are what say why.
@@ -204,76 +206,19 @@ void _emitFixes(_FixArgs parsed, Map<String, String> writeBack) {
 /// when `.dart_tool/extpkgs_manifest.txt` is present. Returns the set of allowed
 /// `src/<rel>` paths relative to [project] (or `null` when no manifest is
 /// present). Never prunes without a manifest.
-Set<String>? pruneOrphanedStagedFiles(String project) {
-  _pruneExtpkgs(project);
-
-  final srcDir = Directory('$project/src');
-  if (!srcDir.existsSync()) return null;
-  final manifestFile = File('$project/.dart_tool/src_manifest.txt');
-  if (!manifestFile.existsSync()) return null;
-
-  final lines = [
-    for (final line in manifestFile.readAsLinesSync())
-      if (line.trim().isNotEmpty) line.trim(),
-  ];
-  if (lines.contains('*')) return null;
-
-  final allowed = <String>{
-    for (final line in lines) 'src/${_relative('', line)}',
-  };
-  for (final entity in srcDir.listSync(recursive: true, followLinks: false)) {
-    if (entity is Directory) continue;
-    final rel = _relative(project, entity.path);
-    if (!allowed.contains(rel)) {
-      try {
-        entity.deleteSync();
-      } on FileSystemException {
-        // Ignore if read-only or already removed.
-      }
-    }
-  }
-  return allowed;
-}
-
-void _pruneExtpkgs(String project) {
-  var normProject = project;
-  while (normProject.length > 1 &&
-      (normProject.endsWith('/') || normProject.endsWith(r'\'))) {
-    normProject = normProject.substring(0, normProject.length - 1);
-  }
-  if (!normProject.endsWith('.proj')) return;
-  final extDir = Directory(
-    '${normProject.substring(0, normProject.length - '.proj'.length)}.extpkgs',
-  );
-  if (!extDir.existsSync()) return;
-  final extManifest = File('$normProject/.dart_tool/extpkgs_manifest.txt');
-  if (!extManifest.existsSync()) return;
-
-  final allowedFiles = <String>{};
-  final allowedDirPrefixes = <String>[];
-  for (final raw in extManifest.readAsLinesSync()) {
-    final trimmed = raw.trim();
-    if (trimmed.isEmpty) continue;
-    if (trimmed.endsWith('/')) {
-      allowedDirPrefixes.add(_relative('', trimmed));
-    } else {
-      allowedFiles.add(_relative('', trimmed));
-    }
-  }
-  final rootPath = extDir.path;
-  for (final entity in extDir.listSync(recursive: true, followLinks: false)) {
-    if (entity is Directory) continue;
-    final rel = _relative(rootPath, entity.path);
-    final inAllowedDir = allowedDirPrefixes.any(rel.startsWith);
-    if (!inAllowedDir && !allowedFiles.contains(rel)) {
-      try {
-        entity.deleteSync();
-      } on FileSystemException {
-        // Ignore if read-only or already removed.
-      }
-    }
-  }
-}
+Set<String>? pruneOrphanedStagedFiles(String project) => pruneStagedSrcTree(
+  project,
+  spelling: (
+    manifestSrcEntry: (line) => 'src/${_relative('', line)}',
+    manifestExtEntry: (line) => _relative('', line),
+    // `fix_runner` keys its `src/` allow-list project-relative
+    // (`src/<rel>`), so `src/` entities are spelled below [project], not
+    // below the offered root. Sibling `.extpkgs` entities stay
+    // `.extpkgs`-relative.
+    relativeSrcPath: (_root, path) => _relative(project, path),
+    relativeExtPath: _relative,
+  ),
+);
 
 /// Reads the rule's `<staged-relative>\t<workspace-relative>` write-back list.
 Map<String, String> _readEligible(String path) {

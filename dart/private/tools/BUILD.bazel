@@ -75,6 +75,7 @@ dart_test(
 
 dart_binary(
     name = "analyze_runner",
+    srcs = ["analyze_runner_staged_prune.dart"],
     code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "analyze_runner.dart",
@@ -88,10 +89,16 @@ dart_binary(
 dart_test(
     name = "analyze_runner_test",
     size = "small",
+    srcs = [
+        "analyze_runner.dart",
+        "analyze_runner_staged_prune.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
     args = ["$(rlocationpath :analyze_runner)"],
     data = [":analyze_runner"],
     main = "analyze_runner_test.dart",
     deps = [
+        "//dart/guard:directive_guard",
         "//dart/runfiles",
         "@ext_pub_deps//:test",
     ],
@@ -118,6 +125,7 @@ dart_binary(
 
 dart_binary(
     name = "fix_runner",
+    srcs = ["analyze_runner_staged_prune.dart"],
     code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "fix_runner.dart",
@@ -489,6 +497,7 @@ dart_test(
     name = "fix_runner_test",
     size = "small",
     srcs = [
+        "analyze_runner_staged_prune.dart",
         "fix_runner.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],

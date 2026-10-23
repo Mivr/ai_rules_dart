@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
 
+import 'analyze_runner.dart' as analyze_runner;
+
 /// The `analyze_runner`'s staged-source check refuses directives that would
 /// read undeclared host files before `dart analyze` runs.
 ///
@@ -52,5 +54,56 @@ void main(List<String> args) {
       contains("import '   \n/secret/s.dart' is not a declared input"),
     );
     expect(stamp.existsSync(), isFalse);
+  });
+
+  group('pruneOrphanedStagedFiles', () {
+    Directory stageSrc(String name) {
+      final project = Directory('${tmp.path}/$name.proj')
+        ..createSync(recursive: true);
+      Directory('${project.path}/src/pkg').createSync(recursive: true);
+      Directory('${project.path}/.dart_tool').createSync(recursive: true);
+      return project;
+    }
+
+    void writeSrcManifest(Directory project, List<String> lines) {
+      File('${project.path}/.dart_tool/src_manifest.txt')
+          .writeAsStringSync("${lines.join('\n')}\n");
+    }
+
+    test('keys the allow-list src-relative and deletes unlisted files', () {
+      final project = stageSrc('demo');
+      File('${project.path}/src/pkg/keep.dart')
+          .writeAsStringSync('const keep = 1;\n');
+      File('${project.path}/src/pkg/drop.dart')
+          .writeAsStringSync('const drop = 1;\n');
+      writeSrcManifest(project, ['pkg/keep.dart']);
+
+      final allowed = analyze_runner.pruneOrphanedStagedFiles(project.path);
+
+      expect(allowed, {'pkg/keep.dart'});
+      expect(File('${project.path}/src/pkg/keep.dart').existsSync(), isTrue);
+      expect(File('${project.path}/src/pkg/drop.dart').existsSync(), isFalse);
+    });
+
+    test('a dot-slashed manifest line names the same staged file', () {
+      final project = stageSrc('dotslash');
+      File('${project.path}/src/pkg/keep.dart')
+          .writeAsStringSync('const keep = 1;\n');
+      writeSrcManifest(project, ['./pkg/keep.dart']);
+
+      final allowed = analyze_runner.pruneOrphanedStagedFiles(project.path);
+
+      expect(allowed, {'pkg/keep.dart'});
+      expect(File('${project.path}/src/pkg/keep.dart').existsSync(), isTrue);
+    });
+
+    test('without a manifest nothing is pruned', () {
+      final project = stageSrc('bare');
+      File('${project.path}/src/pkg/any.dart')
+          .writeAsStringSync('const any = 1;\n');
+
+      expect(analyze_runner.pruneOrphanedStagedFiles(project.path), isNull);
+      expect(File('${project.path}/src/pkg/any.dart').existsSync(), isTrue);
+    });
   });
 }
