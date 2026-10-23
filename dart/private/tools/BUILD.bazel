@@ -48,6 +48,19 @@ dart_library(
     ],
 )
 
+# Unit tests for the shared worker-protocol library: pin the behaviour every
+# build-action runner inherits, so a regression here blocks a behaviour
+# change in any tool.
+dart_test(
+    name = "worker_protocol_test",
+    size = "small",
+    main = "worker_protocol_test.dart",
+    deps = [
+        ":worker_protocol",
+        "@ext_pub_deps//:test",
+    ],
+)
+
 dart_binary(
     name = "analyze_runner",
     code_assets_from_deps = False,
