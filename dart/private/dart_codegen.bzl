@@ -266,10 +266,18 @@ def _codegen_providers(identity, outputs):
         ),
     ]
 
-def _codegen_run_worker(ctx, toolchain, dart, sdk_files, script_sdk_files, synth_pc, library_dep_srcs, lib_root, auto_staged, src, outputs, identity):
-    """Runs the `generator_bin` worker action."""
+def _codegen_run_worker(ctx, cg):
+    """Runs the `generator_bin` worker action.
+
+    Args:
+      ctx: The `dart_codegen` rule context.
+      cg: The codegen `struct` built by `_dart_codegen_impl` (`toolchain`,
+        `dart`, `sdk_files`, `script_sdk_files`, `synth_pc`,
+        `library_dep_srcs`, `lib_root`, `auto_staged`, `src`, `outputs`,
+        `identity`).
+    """
     args = ctx.actions.args()
-    direct_inputs = [src] + list(ctx.files.data)
+    direct_inputs = [cg.src] + list(ctx.files.data)
     data_runfiles = [dep[DefaultInfo].default_runfiles.files for dep in ctx.attr.data]
 
     # Worker mode requires a single `@flagfile` / `--flagfile=` arg; the
@@ -277,25 +285,25 @@ def _codegen_run_worker(ctx, toolchain, dart, sdk_files, script_sdk_files, synth
     # Bazel expands it into `WorkRequest.arguments` on the transport.
     args.use_param_file("@%s", use_always = True)
     args.set_param_file_format("multiline")
-    args.add("--input", src.path)
-    args.add("--input-asset", asset_path_for(src, lib_root))
-    for output in outputs:
+    args.add("--input", cg.src.path)
+    args.add("--input-asset", asset_path_for(cg.src, cg.lib_root))
+    for output in cg.outputs:
         args.add("--output", output.path)
     direct_inputs.extend(add_shim_contract_args(
         args,
         ctx,
-        synth_pc,
-        dart,
-        auto_stage_srcs = auto_staged,
+        cg.synth_pc,
+        cg.dart,
+        auto_stage_srcs = cg.auto_staged,
         asset_deps = ctx.files.asset_deps,
-        lib_root = lib_root,
+        lib_root = cg.lib_root,
     ))
     args.add_all(ctx.attr.generator_args)
 
     # Under `//dart:analyzer_summaries` only: the other packages of `deps`
     # resolve from their summaries. The script branch below takes no
     # summaries, since a script does not speak the shim contract.
-    summaries, sdk_summary = analyzer_summary_inputs(ctx, identity.package_name)
+    summaries, sdk_summary = analyzer_summary_inputs(ctx, cg.identity.package_name)
     if sdk_summary != None:
         args.add_all(summaries, before_each = "--summary")
         args.add("--sdk-summary", sdk_summary)
@@ -309,25 +317,25 @@ def _codegen_run_worker(ctx, toolchain, dart, sdk_files, script_sdk_files, synth
     )
     if is_kernel_bin:
         kernel_bin = ctx.attr.generator_bin[DartCompileInfo].executable
-        executable = dart
+        executable = cg.dart
         arguments = [kernel_bin.path, args]
         direct_inputs.append(kernel_bin)
-        bin_sdk_files = script_sdk_files
+        bin_sdk_files = cg.script_sdk_files
         action_tools = [
             ctx.attr.generator_bin[DefaultInfo].files_to_run,
             depset(
-                direct = [kernel_bin, dart],
-                transitive = [toolchain.dart_sdk_info.runtime_files, generator_runfiles],
+                direct = [kernel_bin, cg.dart],
+                transitive = [cg.toolchain.dart_sdk_info.runtime_files, generator_runfiles],
             ),
         ]
     else:
         executable = ctx.executable.generator_bin
         arguments = [args]
-        bin_sdk_files = sdk_files
+        bin_sdk_files = cg.sdk_files
         action_tools = [
             ctx.attr.generator_bin[DefaultInfo].files_to_run,
             depset(
-                direct = [ctx.executable.generator_bin, dart],
+                direct = [ctx.executable.generator_bin, cg.dart],
                 transitive = [generator_runfiles],
             ),
         ]
@@ -337,13 +345,13 @@ def _codegen_run_worker(ctx, toolchain, dart, sdk_files, script_sdk_files, synth
         arguments = arguments,
         inputs = depset(
             direct = direct_inputs,
-            transitive = _transitive(library_dep_srcs) + [bin_sdk_files, generator_runfiles] + data_runfiles,
+            transitive = _transitive(cg.library_dep_srcs) + [bin_sdk_files, generator_runfiles] + data_runfiles,
         ),
         tools = action_tools,
-        outputs = outputs,
+        outputs = cg.outputs,
         mnemonic = "DartCodegen",
         progress_message = "DartCodegen %s" % ctx.label,
-        env = writable_home_env(dart, outputs[0]),
+        env = writable_home_env(cg.dart, cg.outputs[0]),
         execution_requirements = {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
@@ -354,16 +362,23 @@ def _codegen_run_worker(ctx, toolchain, dart, sdk_files, script_sdk_files, synth
         },
     )
 
-def _codegen_run_script(ctx, dart, script_sdk_files, synth_pc, library_dep_srcs, lib_root, auto_staged, src, outputs):
-    """Runs the generator as a Dart script via the SDK's dart executable."""
+def _codegen_run_script(ctx, cg):
+    """Runs the generator as a Dart script via the SDK's dart executable.
+
+    Args:
+      ctx: The `dart_codegen` rule context.
+      cg: The codegen `struct` built by `_dart_codegen_impl`; only `dart`,
+        `script_sdk_files`, `synth_pc`, `library_dep_srcs`, `lib_root`,
+        `auto_staged`, `src` and `outputs` are read.
+    """
 
     # Run generator as a Dart script via the SDK's dart executable.
     # Always pass an explicit `--packages` before the script path so the
     # Dart VM never walks ancestor directories above `output_user_root`.
     args = ctx.actions.args()
-    direct_inputs = [src] + list(ctx.files.data)
+    direct_inputs = [cg.src] + list(ctx.files.data)
     data_runfiles = [dep[DefaultInfo].default_runfiles.files for dep in ctx.attr.data]
-    script_pc = ctx.file.package_config or synth_pc
+    script_pc = ctx.file.package_config or cg.synth_pc
     if script_pc == None:
         script_pc = ctx.actions.declare_file(ctx.label.name + ".package_config.json")
         ctx.actions.write(
@@ -373,33 +388,33 @@ def _codegen_run_script(ctx, dart, script_sdk_files, synth_pc, library_dep_srcs,
         direct_inputs.append(script_pc)
     args.add(script_pc, format = "--packages=%s")
     args.add(ctx.file.generator.path)
-    args.add("--input", src.path)
-    args.add("--input-asset", asset_path_for(src, lib_root))
-    for output in outputs:
+    args.add("--input", cg.src.path)
+    args.add("--input-asset", asset_path_for(cg.src, cg.lib_root))
+    for output in cg.outputs:
         args.add("--output", output.path)
     direct_inputs.extend(add_shim_contract_args(
         args,
         ctx,
-        synth_pc,
-        dart,
-        auto_stage_srcs = auto_staged,
+        cg.synth_pc,
+        cg.dart,
+        auto_stage_srcs = cg.auto_staged,
         asset_deps = ctx.files.asset_deps,
-        lib_root = lib_root,
+        lib_root = cg.lib_root,
     ))
     args.add_all(ctx.attr.generator_args)
     direct_inputs.append(ctx.file.generator)
 
     ctx.actions.run(
-        executable = dart,
+        executable = cg.dart,
         arguments = [args],
         inputs = depset(
             direct = direct_inputs,
-            transitive = _transitive(library_dep_srcs) + [script_sdk_files] + data_runfiles,
+            transitive = _transitive(cg.library_dep_srcs) + [cg.script_sdk_files] + data_runfiles,
         ),
-        outputs = outputs,
+        outputs = cg.outputs,
         mnemonic = "DartCodegen",
         progress_message = "DartCodegen %s" % ctx.label,
-        env = writable_home_env(dart, outputs[0]),
+        env = writable_home_env(cg.dart, cg.outputs[0]),
     )
 
 def _dart_codegen_impl(ctx):
@@ -438,10 +453,26 @@ def _dart_codegen_impl(ctx):
     # package prefix from src.short_path.
     outputs = _codegen_declare_outputs(ctx, src)
 
+    # The values the run branches below read travel together, so they are one
+    # struct built here and passed down, rather than a parameter per value.
+    cg = struct(
+        toolchain = toolchain,
+        dart = dart,
+        sdk_files = sdk_files,
+        script_sdk_files = script_sdk_files,
+        synth_pc = synth_pc,
+        library_dep_srcs = library_dep_srcs,
+        lib_root = lib_root,
+        auto_staged = auto_staged,
+        src = src,
+        outputs = outputs,
+        identity = identity,
+    )
+
     if ctx.executable.generator_bin:
-        _codegen_run_worker(ctx, toolchain, dart, sdk_files, script_sdk_files, synth_pc, library_dep_srcs, lib_root, auto_staged, src, outputs, identity)
+        _codegen_run_worker(ctx, cg)
     else:
-        _codegen_run_script(ctx, dart, script_sdk_files, synth_pc, library_dep_srcs, lib_root, auto_staged, src, outputs)
+        _codegen_run_script(ctx, cg)
 
     return _codegen_providers(identity, outputs)
 
