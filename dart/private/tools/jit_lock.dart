@@ -5,11 +5,13 @@
 // after the first created it. Linux's `fs.protected_regular` refuses O_CREAT
 // on another user's file in sticky world-writable /tmp, so an existing lock
 // opens without O_CREAT (read-write, O_NOFOLLOW), and only a missing lock is
-// created (O_CREAT|O_EXCL|O_NOFOLLOW, then 0666 through the descriptor
-// whatever the umask). Losing the create race falls back to the no-create
-// open. After opening, the descriptor is statted and anything but a regular
-// file is refused; a lock of our own is repaired to 0666 through the
-// descriptor. No path-based check precedes the open and no chmod by path
+// published: a uniquely named temporary in the same directory is created
+// (O_CREAT|O_EXCL|O_NOFOLLOW), made 0666 through its descriptor whatever the
+// umask, and hard-linked over the lock path, so the lock appears at its final
+// 0666 mode atomically and never at a mode another user cannot open. Losing
+// the publish race falls back to the no-create open. After opening, the
+// descriptor is statted and anything but a regular file is refused; a lock of
+// our own is repaired to 0666 through the descriptor. No path-based check precedes the open and no chmod by path
 // touches the lock, so a symlink, directory, FIFO or other non-regular entry
 // at the lock path is never followed and never created through: the open
 // fails closed instead.
@@ -20,6 +22,7 @@
 import 'dart:convert';
 import 'dart:ffi' as ffi;
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
 /// A path-based stat result: the entry kind (see [jitEntryKind]), its owner
@@ -43,6 +46,16 @@ typedef JitLockOpen = ({
   bool chmodRemedy,
   bool ownEntry,
 });
+
+/// Runs between the temporary's chmod and its publish (see
+/// [jitCreateAndPublishLock]): tests inspect the paths while the lock is still
+/// unpublished. Must return normally.
+typedef JitTempReady = void Function(String tempPath, int tempFd);
+
+/// An opened lock backend: the libc handle with the flags opening the lock.
+/// [_jitBackendFor] returns one, or a fail-closed [JitLockOpen] where the host
+/// cannot open the lock at all.
+typedef _JitBackend = ({ffi.DynamicLibrary lib, JitOpenFlags flags});
 
 typedef _MallocNative = ffi.Pointer<ffi.Uint8> Function(ffi.Size);
 typedef _MallocDart = ffi.Pointer<ffi.Uint8> Function(int);
@@ -84,6 +97,16 @@ typedef _LstatNative = ffi.Int Function(
   ffi.Pointer<ffi.Uint8>,
   ffi.Pointer<ffi.Uint8>,
 );
+typedef _LinkNative = ffi.Int Function(
+  ffi.Pointer<ffi.Uint8>,
+  ffi.Pointer<ffi.Uint8>,
+);
+typedef _LinkDart = int Function(
+  ffi.Pointer<ffi.Uint8>,
+  ffi.Pointer<ffi.Uint8>,
+);
+typedef _UnlinkNative = ffi.Int Function(ffi.Pointer<ffi.Uint8>);
+typedef _UnlinkDart = int Function(ffi.Pointer<ffi.Uint8>);
 typedef _LstatDart = int Function(
   ffi.Pointer<ffi.Uint8>,
   ffi.Pointer<ffi.Uint8>,
@@ -308,54 +331,206 @@ JitStat? jitStatEntry(String path) {
 /// [jitTryExclusiveLock] and release with [jitUnlockAndClose].
 ///
 /// An existing lock opens read-write with O_NOFOLLOW and without O_CREAT and
-/// is kept only when it is a regular file; a missing lock is created with
-/// O_CREAT|O_EXCL|O_NOFOLLOW at 0666 and made 0666 through the descriptor
-/// whatever the umask, so a second user opens the first user's lock even
-/// under `fs.protected_regular`. Losing the create race falls back to the
-/// no-create open. A lock of our own is repaired to 0666 through the
-/// descriptor. Nothing is followed and nothing is created through: a symlink,
-/// directory, FIFO or other non-regular entry fails closed with its path,
-/// type and owner in [JitLockOpen.detail].
+/// is kept only when it is a regular file; a missing lock is published at 0666
+/// through a uniquely named temporary linked over the lock path (see
+/// [jitCreateAndPublishLock]), so the lock never exists at a mode another user
+/// cannot open, whatever the umask or the scheduling. Losing the publish race
+/// falls back to the no-create open. A lock of our own is repaired to 0666
+/// through the descriptor. Nothing is followed and nothing is created through:
+/// a symlink, directory, FIFO or other non-regular entry fails closed with its
+/// path, type and owner in [JitLockOpen.detail].
 JitLockOpen jitOpenLock(String path) {
+  final ready = _jitBackendFor(path);
+  final backend = ready.backend;
+  if (backend == null) return ready.failure!;
+  final first = _jitOpen(backend.lib, path, backend.flags.noCreate, 0);
+  if (first.fd >= 0) return _jitAdoptFd(backend.lib, path, first.fd);
+  if (first.errno != _enoent) {
+    return _jitLockFailure(path, accessDenied: first.errno == _eacces);
+  }
+  return _jitCreateAndPublish(backend.lib, path, backend.flags, null);
+}
+
+/// Creates the lock at [path] at its final 0666 mode and opens it, for a
+/// missing lock (see [jitOpenLock]).
+///
+/// The lock never exists at a narrower mode: a uniquely named temporary in the
+/// same directory is created with O_CREAT|O_EXCL|O_NOFOLLOW, made 0666 through
+/// its descriptor whatever the umask, then hard-linked over [path], which
+/// fails with EEXIST when another process published first (then that lock
+/// opens without O_CREAT, as today). The temporary is unlinked on every path,
+/// and its name starts with the lock's file name, so a leftover from a killed
+/// process is recognisable; such a leftover never blocks a later run (names
+/// are unique per call) and is never taken for the lock (only [path] opens).
+/// The same construction runs on macOS; Windows fails closed as [jitOpenLock].
+///
+/// [onTempReady] runs after the temporary is 0666 and before it is published,
+/// so tests can inspect the paths between the steps; it must return normally.
+JitLockOpen jitCreateAndPublishLock(String path, {JitTempReady? onTempReady}) {
+  final ready = _jitBackendFor(path);
+  final backend = ready.backend;
+  if (backend == null) return ready.failure!;
+  return _jitCreateAndPublish(backend.lib, path, backend.flags, onTempReady);
+}
+
+/// The shared open preamble for [jitOpenLock] and [jitCreateAndPublishLock]:
+/// the libc handle with the flags opening the lock, or a fail-closed opening
+/// where the platform cannot open the lock at all (Windows, or a Linux ABI
+/// with no pinned O_* values).
+({_JitBackend? backend, JitLockOpen? failure}) _jitBackendFor(String path) {
   if (Platform.isWindows) {
     return (
-      fd: -1,
-      detail: 'entry at $path of unknown ownership',
-      chmodRemedy: false,
-      ownEntry: false,
+      backend: null,
+      failure: (
+        fd: -1,
+        detail: 'entry at $path of unknown ownership',
+        chmodRemedy: false,
+        ownEntry: false,
+      ),
     );
   }
   final lib = ffi.DynamicLibrary.process();
-  final JitOpenFlags flags;
   try {
-    flags = jitOpenFlags(isMacOS: Platform.isMacOS, abi: ffi.Abi.current());
+    final flags = jitOpenFlags(
+      isMacOS: Platform.isMacOS,
+      abi: ffi.Abi.current(),
+    );
+    return (backend: (lib: lib, flags: flags), failure: null);
   } on UnsupportedError catch (error) {
     // This host's Linux ABI has no pinned O_* values: fail closed with the
     // cause rather than opening the lock with guessed flags.
     return (
-      fd: -1,
-      detail: 'entry at $path ($error)',
-      chmodRemedy: false,
-      ownEntry: false,
+      backend: null,
+      failure: (
+        fd: -1,
+        detail: 'entry at $path ($error)',
+        chmodRemedy: false,
+        ownEntry: false,
+      ),
     );
   }
-  final first = _jitOpen(lib, path, flags.noCreate, 0);
-  if (first.fd >= 0) return _jitAdoptFd(lib, path, first.fd);
-  if (first.errno != _enoent) {
-    return _jitLockFailure(path, accessDenied: first.errno == _eacces);
+}
+
+/// Publishes the lock at [path] through a fresh temporary (see
+/// [jitCreateAndPublishLock]), retrying with a new name when the temporary's
+/// own name is taken. A taken name is all but impossible (names are unique per
+/// call); giving up still fails closed.
+JitLockOpen _jitCreateAndPublish(
+  ffi.DynamicLibrary lib,
+  String path,
+  JitOpenFlags flags,
+  JitTempReady? onTempReady,
+) {
+  var published = _jitPublishOnce(lib, path, flags, onTempReady);
+  for (var attempt = 1; published.retry && attempt < 3; attempt++) {
+    published = _jitPublishOnce(lib, path, flags, onTempReady);
   }
-  final created = _jitOpen(lib, path, flags.create, 0x1b6);
-  if (created.fd >= 0) {
-    _jitFchmod(lib, created.fd, 0x1b6);
-    return _jitAdoptFd(lib, path, created.fd);
+  return published.result;
+}
+
+/// One publish attempt (see [_jitCreateAndPublish]): creates a fresh temporary,
+/// makes it 0666, links it over [path] and unlinks it, keeping the linked
+/// descriptor. [retry] is true only when the temporary's own name was taken.
+({JitLockOpen result, bool retry}) _jitPublishOnce(
+  ffi.DynamicLibrary lib,
+  String path,
+  JitOpenFlags flags,
+  JitTempReady? onTempReady,
+) {
+  final temp = _jitTempPath(path);
+  final created = _jitOpen(lib, temp, flags.create, 0x1b6);
+  if (created.fd < 0) {
+    if (created.errno == _eexist) {
+      // Our temporary's own name is taken: retry with a new one.
+      return (
+        result: _jitLockFailure(path, accessDenied: false),
+        retry: true,
+      );
+    }
+    return (
+      result: _jitLockFailure(path, accessDenied: created.errno == _eacces),
+      retry: false,
+    );
   }
-  if (created.errno == _eexist) {
-    // Lost the create race: open the winner's lock without creating.
-    final retry = _jitOpen(lib, path, flags.noCreate, 0);
-    if (retry.fd >= 0) return _jitAdoptFd(lib, path, retry.fd);
-    return _jitLockFailure(path, accessDenied: retry.errno == _eacces);
+  final fd = created.fd;
+  _jitFchmod(lib, fd, 0x1b6);
+  onTempReady?.call(temp, fd);
+  int linkErrno;
+  try {
+    linkErrno = _jitLink(lib, temp, path);
+  } on ArgumentError {
+    // This libc has no `link`: nothing was published, so close the temporary
+    // and fail closed with the lock undescribed.
+    _jitClose(lib, fd);
+    _jitUnlink(lib, temp);
+    return (result: _jitLockFailure(path, accessDenied: false), retry: false);
   }
-  return _jitLockFailure(path, accessDenied: created.errno == _eacces);
+  _jitUnlink(lib, temp);
+  if (linkErrno == 0) return (result: _jitAdoptFd(lib, path, fd), retry: false);
+  _jitClose(lib, fd);
+  if (linkErrno != _eexist) {
+    return (
+      result: _jitLockFailure(path, accessDenied: linkErrno == _eacces),
+      retry: false,
+    );
+  }
+  // Lost the publish race: open the winner's lock without creating.
+  final winner = _jitOpen(lib, path, flags.noCreate, 0);
+  if (winner.fd >= 0) {
+    return (result: _jitAdoptFd(lib, path, winner.fd), retry: false);
+  }
+  return (
+    result: _jitLockFailure(path, accessDenied: winner.errno == _eacces),
+    retry: false,
+  );
+}
+
+/// Disambiguates temporary lock names within this process (see [_jitTempPath]).
+int _jitTempSequence = 0;
+
+/// A fresh temporary name owned by this call for the lock at [path]: the
+/// lock's file name plus the process, the time and a random part, so a
+/// leftover from a killed process is recognisable and never collides with a
+/// live call.
+String _jitTempPath(String path) =>
+    '$path.${pid}.${DateTime.now().microsecondsSinceEpoch}.'
+    '${Random().nextInt(1 << 31)}.${_jitTempSequence++}.tmp';
+
+/// Hard-links [from] over [to], returning 0 or the `errno`.
+int _jitLink(ffi.DynamicLibrary lib, String from, String to) {
+  final link = lib.lookupFunction<_LinkNative, _LinkDart>('link');
+  final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
+  final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
+  final fromPtr = _jitCString(malloc, from);
+  try {
+    final toPtr = _jitCString(malloc, to);
+    try {
+      final rc = link(fromPtr, toPtr);
+      // Read `errno` before any other libc call: freeing comes after.
+      return rc == 0 ? 0 : _jitErrno(lib);
+    } finally {
+      free(toPtr);
+    }
+  } finally {
+    free(fromPtr);
+  }
+}
+
+/// Removes [path] without following it, ignoring cleanup errors.
+void _jitUnlink(ffi.DynamicLibrary lib, String path) {
+  try {
+    final unlink = lib.lookupFunction<_UnlinkNative, _UnlinkDart>('unlink');
+    final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
+    final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
+    final pathPtr = _jitCString(malloc, path);
+    try {
+      unlink(pathPtr);
+    } finally {
+      free(pathPtr);
+    }
+  } on ArgumentError {
+    // This libc has no `unlink`: nothing to clean up.
+  }
 }
 
 /// Takes the lock without blocking, returning true when [fd] now holds an

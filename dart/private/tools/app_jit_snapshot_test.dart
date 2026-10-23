@@ -149,6 +149,25 @@ void main(List<String> args) {
     'RULES_DART_JIT_TRAIN_LOCK': snapshot.constantTrainLock,
   };
 
+  /// Paths beside [lockPath] whose names start with the lock's file name:
+  /// publish temporaries (see `jitCreateAndPublishLock`), never the lock
+  /// itself.
+  List<String> lockTemps(String lockPath) {
+    final parent = File(lockPath).parent;
+    if (!parent.existsSync()) return [];
+    final base = lockPath.split(Platform.pathSeparator).last;
+    final temps = <String>[];
+    for (final entity in parent.listSync()) {
+      if (entity.path == lockPath) continue;
+      if (entity.path.split(Platform.pathSeparator).last.startsWith(
+        '$base.',
+      )) {
+        temps.add(entity.path);
+      }
+    }
+    return temps;
+  }
+
   /// Writes a lock-holder script under [tmp] that takes an exclusive lock on
   /// its first argument, prints `held` once taken, and holds it for its
   /// second argument's seconds. Returns its path.
@@ -1898,6 +1917,128 @@ void main(List<String> args) {
       _setUmask(previous);
     }
     expect(lock.statSync().mode & 0x1ff, 0x1b6);
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('new lock appears at 0666 atomically under a restrictive umask', () {
+    // The publish construction (see `jitCreateAndPublishLock`): the temporary
+    // is already 0666 while the lock path still names nothing, so the lock
+    // appears at its final mode however the creator is scheduled. The hook
+    // records the paths between the steps and the assertions run after the
+    // call returns, before any later step, so a failing hook cannot strand
+    // the temporary.
+    final lockPath = '${tmp.path}/atomic.lock';
+    final previous = _setUmask(0x3f); // 077.
+    try {
+      String? seenTemp;
+      var lockExistedBeforePublish = true;
+      var tempModeBeforePublish = 0;
+      final opened = locks.jitCreateAndPublishLock(
+        lockPath,
+        onTempReady: (temp, _) {
+          seenTemp = temp;
+          tempModeBeforePublish = File(temp).statSync().mode & 0x1ff;
+          lockExistedBeforePublish =
+              FileSystemEntity.typeSync(lockPath, followLinks: false) !=
+              FileSystemEntityType.notFound;
+        },
+      );
+      try {
+        expect(opened.fd, greaterThanOrEqualTo(0), reason: 'publish opens it');
+        expect(seenTemp, isNotNull, reason: 'hook ran before the publish');
+        expect(
+          lockExistedBeforePublish,
+          isFalse,
+          reason: 'no narrow-mode lock ever existed',
+        );
+        expect(
+          tempModeBeforePublish,
+          0x1b6,
+          reason: 'temporary already 0666 before the publish',
+        );
+        expect(File(lockPath).statSync().mode & 0x1ff, 0x1b6);
+        expect(lockTemps(lockPath), isEmpty, reason: 'no temporary left');
+      } finally {
+        locks.jitUnlockAndClose(opened.fd);
+      }
+    } finally {
+      _setUmask(previous);
+    }
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test("publish loser opens the winner's lock", () {
+    // Another process publishing between our temporary's chmod and our link
+    // wins: our link fails with EEXIST and we open the winner's lock without
+    // creating, leaving the winner's bytes untouched and our temporary
+    // removed.
+    final lockPath = '${tmp.path}/publock.lock';
+    String? seenTemp;
+    final opened = locks.jitCreateAndPublishLock(
+      lockPath,
+      onTempReady: (temp, _) {
+        seenTemp = temp;
+        File(lockPath).writeAsStringSync('winner');
+      },
+    );
+    try {
+      expect(opened.fd, greaterThanOrEqualTo(0), reason: 'loser opens it');
+      expect(
+        File(lockPath).readAsStringSync(),
+        'winner',
+        reason: 'winner untouched',
+      );
+      expect(seenTemp, isNotNull, reason: 'hook ran before the publish');
+      expect(
+        FileSystemEntity.typeSync(seenTemp!, followLinks: false),
+        FileSystemEntityType.notFound,
+        reason: "loser's temporary removed",
+      );
+      expect(lockTemps(lockPath), isEmpty, reason: 'no temporary left');
+    } finally {
+      locks.jitUnlockAndClose(opened.fd);
+    }
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('failed publish leaves no temporary', () {
+    // A directory at the lock path refuses both the link and the open: the
+    // publish fails closed naming the directory, and the temporary is still
+    // removed.
+    final lockPath = '${tmp.path}/publockdir.lock';
+    Directory(lockPath).createSync();
+    final opened = locks.jitOpenLock(lockPath);
+    expect(opened.fd, -1, reason: 'directory refused');
+    expect(opened.detail, contains('directory'));
+    expect(opened.detail, contains(lockPath));
+    expect(opened.chmodRemedy, isFalse);
+    expect(lockTemps(lockPath), isEmpty, reason: 'no temporary left');
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('leftover temporary neither blocks nor passes for the lock', () {
+    // A killed publish leaves its temporary behind: the next run ignores it,
+    // publishes under a new name, and never opens the leftover as the lock.
+    final lockPath = '${tmp.path}/leftover.lock';
+    final leftover = File('$lockPath.4242.81818.tmp')
+      ..writeAsStringSync('stale temporary');
+    final opened = locks.jitOpenLock(lockPath);
+    try {
+      expect(opened.fd, greaterThanOrEqualTo(0), reason: 'lock opens');
+      expect(
+        File(lockPath).readAsStringSync(),
+        isEmpty,
+        reason: 'fresh lock published beside the leftover',
+      );
+      expect(
+        leftover.readAsStringSync(),
+        'stale temporary',
+        reason: 'leftover never taken for the lock',
+      );
+      expect(
+        lockTemps(lockPath),
+        [leftover.path],
+        reason: 'only the planted leftover stays',
+      );
+    } finally {
+      locks.jitUnlockAndClose(opened.fd);
+    }
   }, skip: Platform.isWindows ? posixOnlyReason : false);
 
   test('non-regular entries at the lock path fail closed without being followed', () {

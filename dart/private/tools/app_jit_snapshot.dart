@@ -76,8 +76,9 @@
 // behind still clears. The lock opens by file descriptor for every user (see
 // `jit_lock.dart`): an existing lock opens read-write with O_NOFOLLOW and
 // without O_CREAT, so a second user opens the first user's 0666 lock even
-// under `fs.protected_regular`; a missing lock is created O_CREAT|O_EXCL and
-// made 0666 through the descriptor whatever the umask. A symlink, directory,
+// under `fs.protected_regular`; a missing lock is published at 0666 through a
+// uniquely named temporary linked over the lock path, so it never exists at a
+// narrower mode whatever the umask or the scheduling. A symlink, directory,
 // FIFO or other non-regular entry at the lock path is never followed and
 // never created through, and fails the action instead — a shared lock would
 // let two trainings hold it at once, and the second would delete the first's
@@ -694,8 +695,9 @@ bool _lockOwnEntry = false;
 /// The lock opens by descriptor (see [jitOpenLock]), never by a path-based
 /// check-then-use: an existing lock opens read-write with O_NOFOLLOW and
 /// without O_CREAT, so a second user on a host with `fs.protected_regular`
-/// opens the first user's 0666 lock; a missing lock is created O_CREAT|O_EXCL
-/// and made 0666 through the descriptor whatever the umask. Only a regular
+/// opens the first user's 0666 lock; a missing lock is published at 0666
+/// through a uniquely named temporary linked over the lock path, whatever the
+/// umask or the scheduling. Only a regular
 /// file is kept (never written: a pre-existing lock keeps its content), and a
 /// lock of our own is repaired to 0666 through the descriptor. Null when the
 /// lock cannot be opened or is not a regular file; the failure detail and its
