@@ -252,9 +252,11 @@ def executable_package(ctx, own_srcs):
     prefix = package_lib_prefix(root)
     analyzable = dart_analyzable_info_with_package(
         label = ctx.label,
-        package_name = name,
-        lib_root = root,
-        language_version = identity.language_version,
+        package = dart_package_identity(
+            package_name = name,
+            lib_root = root,
+            language_version = identity.language_version,
+        ),
         deps = ctx.attr.deps,
         srcs = [f for f in own_srcs if not f.short_path.startswith(prefix)],
         package_srcs = [f for f in own_srcs if f.short_path.startswith(prefix)],

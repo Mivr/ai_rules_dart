@@ -13,19 +13,21 @@ re-export is exercised rather than assumed.
 """
 
 load("@rules_dart//dart:providers.bzl", "DartInfo")
-load("@rules_dart//dart:utils.bzl", "dart_analyzable_info_with_package")
+load("@rules_dart//dart:utils.bzl", "dart_analyzable_info_with_package", "dart_package_identity")
 
 def _pkg_executable_impl(ctx):
     return [
         DefaultInfo(files = depset(ctx.files.srcs + ctx.files.package_srcs)),
         dart_analyzable_info_with_package(
             label = ctx.label,
-            package_name = ctx.attr.package_name,
-            lib_root = ctx.label.package,
+            package = dart_package_identity(
+                package_name = ctx.attr.package_name,
+                lib_root = ctx.label.package,
+                language_version = ctx.attr.language_version,
+            ),
             deps = ctx.attr.deps,
             srcs = ctx.files.srcs,
             package_srcs = ctx.files.package_srcs,
-            language_version = ctx.attr.language_version,
         ),
     ]
 

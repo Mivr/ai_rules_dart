@@ -84,14 +84,16 @@ def _wrapper_executable_impl(ctx):
         DefaultInfo(files = depset(ctx.files.srcs + ctx.files.package_srcs)),
         dart_analyzable_info_with_package(
             label = ctx.label,
-            package_name = ctx.attr.package_name,
-            lib_root = ctx.label.package,
+            package = dart_package_identity(
+                package_name = ctx.attr.package_name,
+                lib_root = ctx.label.package,
+                language_version = ctx.attr.language_version,
+            ),
             deps = ctx.attr.deps,
             srcs = ctx.files.srcs,
             package_srcs = ctx.files.package_srcs,
             resources = ctx.files.resources,
             code_assets = ctx.attr.code_assets,
-            language_version = ctx.attr.language_version,
         ),
     ]
 
