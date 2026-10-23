@@ -442,10 +442,7 @@ JitLockOpen _jitCreateAndPublish(
   if (created.fd < 0) {
     if (created.errno == _eexist) {
       // Our temporary's own name is taken: retry with a new one.
-      return (
-        result: _jitLockFailure(path, accessDenied: false),
-        retry: true,
-      );
+      return (result: _jitLockFailure(path, accessDenied: false), retry: true);
     }
     return (
       result: _jitLockFailure(path, accessDenied: created.errno == _eacces),

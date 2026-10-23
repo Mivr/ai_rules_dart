@@ -159,9 +159,7 @@ void main(List<String> args) {
     final temps = <String>[];
     for (final entity in parent.listSync()) {
       if (entity.path == lockPath) continue;
-      if (entity.path.split(Platform.pathSeparator).last.startsWith(
-        '$base.',
-      )) {
+      if (entity.path.split(Platform.pathSeparator).last.startsWith('$base.')) {
         temps.add(entity.path);
       }
     }
@@ -2031,11 +2029,9 @@ void main(List<String> args) {
         'stale temporary',
         reason: 'leftover never taken for the lock',
       );
-      expect(
-        lockTemps(lockPath),
-        [leftover.path],
-        reason: 'only the planted leftover stays',
-      );
+      expect(lockTemps(lockPath), [
+        leftover.path,
+      ], reason: 'only the planted leftover stays');
     } finally {
       locks.jitUnlockAndClose(opened.fd);
     }
