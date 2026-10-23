@@ -2472,7 +2472,7 @@ Future<List<String>> _planImports(
         _planPartOfRef(ref, key, target, scanned.declaredPartsOf, plan, direct);
         continue;
       }
-      _planResolvedImport(at, target, inherited, scope);
+      _planResolvedImport(at, target, inherited, scope, uriOfKey, disallowed);
     }
   }
   plan.exclude(direct);
@@ -2681,16 +2681,36 @@ void _planPartOfRef(
 }
 
 /// Plans a resolved import, export or `part` URI: records the edge, and
-/// excludes the importer when the target is outside this module's closure.
+/// excludes the importer when the target is outside this module's closure. A
+/// multi-root spelling of a source a dependency module defines under a
+/// `package:` URI fails instead (see [_relativeDepImportError]): it reads the
+/// file itself however the module compiles it, while the plan links the
+/// dependency's outline. Relative spellings stay on the plan: the library
+/// compiles under `package:` URIs, so they resolve against the `package:`
+/// base and link the outline.
 void _planResolvedImport(
   _RefPlan at,
   String target,
   Map<String, String> inherited,
   _ResolveScope scope,
+  Map<String, String> uriOfKey,
+  List<String> disallowed,
 ) {
   final ref = at.ref;
   final key = at.key;
   final plan = at.plan;
+  if (ref.uri.startsWith(scope.multiRootPrefix)) {
+    final refused = _relativeDepImportError(
+      scope.graph,
+      scope.roots,
+      scope.multiRootPrefix,
+      (importer: uriOfKey[key] ?? key, ref: ref, target: target),
+    );
+    if (refused != null) {
+      disallowed.add(refused);
+      return;
+    }
+  }
   plan.addImport(importer: key, target: target);
   if (ref.isPart && !plan.isOwn(target)) {
     // The exclusion decision consulted the non-own part, so its provider
@@ -2723,6 +2743,45 @@ void _planResolvedImport(
       () => 'imports ${ref.uri}, which is not in this module closure',
     );
   }
+}
+
+/// One resolved directive edge: the importing file, the directive as written,
+/// and the key the resolver names for it.
+typedef _ResolvedRef = ({String importer, ScanRef ref, String target});
+
+/// Whether the directive spells its target without a `package:` URI: a
+/// relative or multi-root spelling reads the file itself, not the library a
+/// dependency module defines for it.
+bool _isNonPackageRef(String uri, String multiRootPrefix) =>
+    !uri.startsWith('package:') &&
+    (uri.startsWith(multiRootPrefix) || !uri.contains(':'));
+
+/// The guided refusal when a module reaches through a relative or multi-root
+/// directive at a source its dependencies define under a `package:` URI, or
+/// null when the edge needs none. The front end would compile the file from
+/// source under the spelling the directive names while the plan links the
+/// dependency's outline under its `package:` spelling, so the linked kernel
+/// lacks the library: the shape fails however the action executes, and the
+/// refusal names the `package:` spelling to use instead. The check depends
+/// only on the directive scan, the package roots and the closure graph, never
+/// on whether the file exists on disk.
+String? _relativeDepImportError(
+  Map<String, _Node> graph,
+  Map<String, _PackageRoot> roots,
+  String multiRootPrefix,
+  _ResolvedRef seen,
+) {
+  if (!graph.containsKey(seen.target)) return null;
+  if (!_isNonPackageRef(seen.ref.uri, multiRootPrefix)) return null;
+  final packageUri = _packageUriOf(
+    seen.target,
+    '$multiRootPrefix${seen.target}',
+    roots,
+  );
+  if (!packageUri.startsWith('package:')) return null;
+  return 'kernel_module: cannot compile ${seen.importer}: '
+      "${seen.ref.kind} '${seen.ref.uri}' reaches a source its dependencies "
+      "define under '$packageUri'; import that instead.";
 }
 
 /// Whether the source at `uri` is one a module of the closure defines, so that this
@@ -2864,6 +2923,7 @@ class _EntryWalk {
   final _seen = <String>{};
   final _queue = Queue<String>();
   final _edges = <_EntryEdge>[];
+  final _refCandidates = <_ResolvedRef>[];
   final _undeclared = <String>[];
   final _disallowed = <String>[];
   final _LibraryNameIndex _names;
@@ -2887,8 +2947,31 @@ class _EntryWalk {
     _imports.removeAll(_ownUris.keys);
   }
 
+  /// Post-walk refusal for entry compiles: a relative or multi-root edge into
+  /// a dependency key is actioned only when the importing file is itself
+  /// compiled from a non-`package:` URI, because that is the importer spell
+  /// the front end resolves from source rather than from a summary.
+  void _refuseRawDepEdges(Set<String> usedAsRaw) {
+    if (_refCandidates.isEmpty) return;
+    for (final cand in _refCandidates) {
+      if (!usedAsRaw.contains(cand.importer)) continue;
+      final refused = _relativeDepImportError(
+        _graph,
+        _roots,
+        _multiRootPrefix,
+        (
+          importer: _ownUris[cand.importer] ?? cand.importer,
+          ref: cand.ref,
+          target: cand.target,
+        ),
+      );
+      if (refused != null) _disallowed.add(refused);
+    }
+  }
+
   _EntrySources result() {
     final shapes = _entryUriShapes(_ownUris, _edges, _roots, _multiRootPrefix);
+    _refuseRawDepEdges(shapes.usedAsRaw);
     _emitEntryUris(
       _out,
       _ownUris,
@@ -2951,6 +3034,12 @@ class _EntryWalk {
     if (target == null) {
       _followUnresolvedRef(key, ref);
       return;
+    }
+    if (_isNonPackageRef(ref.uri, _multiRootPrefix)) {
+      // A relative or multi-root edge to a dependency-defined source fails
+      // once the walk knows how the importer compiles (see
+      // [_refuseRawDepEdges]): record it for the post-walk pass.
+      _refCandidates.add((importer: key, ref: ref, target: target));
     }
     _edges.add(_EntryEdge(key, ref.uri, target));
     _imports.add(target);
@@ -5658,10 +5747,13 @@ String? _keyUnderRoot(String normPath, String root, String cwd) {
 /// well, since a held component can smuggle a root no library node mentions.
 /// Each must be one of [ownUris] (the URIs this compile was
 /// given as `--source`), a `dart:` library, or an import URI an input module
-/// defines — the `package:` and multi-root spellings of [graph]'s keys under
-/// [roots], computed without touching the filesystem — or else name a
-/// declared or graph-contained file when resolved like a recorded source URI
-/// (a `file:` spelling of one, say). Any other present reference fails
+/// defines — the `package:` spellings of [graph]'s keys under [roots],
+/// computed without touching the filesystem — or else name a declared or
+/// graph-contained file when resolved like a recorded source URI (a `file:`
+/// spelling of one, say). A recorded multi-root or `file:` spelling of a key
+/// the module did not compile fails even when the graph defines the key: it
+/// names the file the front end read from source, not the library the
+/// dependency defined. Any other present reference fails
 /// closed, except a bare identifier with neither URI nor path shape, which
 /// names no file (only synthetic kernels record those as canonical roots). References no input can define never occur legitimately: the
 /// front end records the URI it was given for own sources, the import URI
@@ -5699,7 +5791,7 @@ Future<bool> _unstagedReadsAreDeclared(
     verify.multiRootPrefix,
     verify.roots,
     verify.ownUris,
-    _depImportUris(verify.graph, verify.roots, verify.multiRootPrefix),
+    _depImportUris(verify.graph, verify.roots),
     consequence,
   );
   final libraries = dillLibraryReferences(bytes);
@@ -5780,25 +5872,24 @@ bool _dillSourcesAreDeclared(
   return true;
 }
 
-/// The import URIs input modules define: every graph key under its
-/// multi-root spelling and its `package:` spellings (one per package whose
-/// directory holds the key, as [_packageUriOf] builds them).
+/// The import URIs input modules define: every graph key under its `package:`
+/// spellings (one per package whose directory holds the key, as
+/// [_packageUriOf] builds them). A multi-root spelling of a graph key is
+/// deliberately absent: it names the file the front end read, not the library
+/// a dependency defined (see [_ReferenceChecker.isDeclared]).
 Set<String> _depImportUris(
   Map<String, _Node> graph,
   Map<String, _PackageRoot> roots,
-  String multiRootPrefix,
 ) {
   final packagePrefixes = <String, String>{
     for (final entry in roots.entries)
       entry.key: '${entry.value.path}${entry.value.packageUri}',
   };
   return <String>{
-    for (final key in graph.keys) ...[
-      '$multiRootPrefix$key',
+    for (final key in graph.keys)
       for (final entry in packagePrefixes.entries)
         if (key.startsWith(entry.value))
           'package:${entry.key}/${key.substring(entry.value.length)}',
-    ],
   };
 }
 
@@ -5864,12 +5955,24 @@ class _ReferenceChecker {
     // resolve exactly as the source-table check resolves them; the
     // package-URI mapping covers `package:` spellings, which the recorded
     // mapping leaves untranslated.
-    var key = _keyOfDillSourceUri(reference, _multiRoots, _multiRootPrefix);
-    if (key == null || key.isEmpty) {
-      key = _keyOfUri(reference, _roots, _multiRootPrefix);
-    }
-    return key != null &&
-        key.isNotEmpty &&
-        (_files.isDeclared(key) || _graph.containsKey(key));
+    final recorded = _keyOfDillSourceUri(
+      reference,
+      _multiRoots,
+      _multiRootPrefix,
+    );
+    final key = (recorded == null || recorded.isEmpty)
+        ? _keyOfUri(reference, _roots, _multiRootPrefix)
+        : recorded;
+    if (key == null || key.isEmpty) return false;
+    if (_files.isDeclared(key)) return true;
+    // A recorded multi-root or `file:` spelling of a key the module did not
+    // compile names the file the front end read, not the library a
+    // dependency defined under its `package:` spelling: the source-table
+    // check passes such reads through graph membership (a compiled library
+    // embeds its dependencies' sources, as when it applies their mixins),
+    // while this reference check tells the shapes apart, so only the
+    // `package:` spellings above pass for dependency-defined keys.
+    if (recorded != null && recorded.isNotEmpty) return false;
+    return _graph.containsKey(key);
   }
 }

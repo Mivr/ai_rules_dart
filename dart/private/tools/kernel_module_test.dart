@@ -2010,6 +2010,45 @@ void main(List<String> args) {
       },
     );
 
+    test('an unstaged compile naming a dependency source by its multi-root spelling fails closed', () async {
+      // The planner refuses this shape before compiling, but a dill whose
+      // library carries the multi-root identity of a dependency-defined
+      // source (the front end compiled it from source instead of linking
+      // the outline) must fail read verification too: the source table
+      // passes the read through graph membership, while the reference
+      // check tells the multi-root identity apart from the `package:` one.
+      _write('pkg/lib/a.dart', "import 'package:dep/d.dart';\nconst x = d;\n");
+      _write('dep/lib/d.dart', 'const d = 1;\n');
+      final dep = _module('depmod', [
+        _Scc('d.dill', ['dep/lib/d.dart'], []),
+      ]);
+      final compiler = _DillWritingCompiler(
+        () => _buildDillWithLibraries(
+          sources: [
+            (_uri('pkg/lib/a.dart'), 'package:pkg/a.dart'),
+            (_uri('dep/lib/d.dart'), _uri('dep/lib/d.dart')),
+          ],
+          libraries: [(0, 'package:pkg/a.dart'), (1, _uri('dep/lib/d.dart'))],
+        ),
+      );
+      final result = await _compile(
+        'm_multiroot_dep_ref',
+        ['pkg/lib/a.dart'],
+        inputKmods: [dep],
+        inputs: [
+          _encodeInputForTest(
+            '${_root.path}/pkg/lib/a.dart',
+            Uint8List.fromList([7]),
+          ),
+        ],
+        compiler: compiler,
+      );
+      expect(result.calls.length, 2, reason: 'unstaged, then isolated');
+      expect(result.log, contains('references ${_uri('dep/lib/d.dart')}'));
+      expect(result.code, 1);
+      expect(result.log, contains('failing the compile'));
+    });
+
     test('dillCanonicalRoots reads every top-level root, including ones no node mentions', () {
       final dill = _buildDillWithLibraries(
         sources: [(_uri('pkg/lib/a.dart'), 'package:pkg/a.dart')],
@@ -2586,6 +2625,94 @@ void main(List<String> args) {
       },
     );
 
+    test('a multi-root import of a source a dependency defines fails with the package: spelling', () async {
+      _write('dep/lib/d.dart', 'const d = 1;\n');
+      _write(
+        'pkg/lib/a.dart',
+        "import 'org-dartlang-root:///dep/lib/d.dart';\nconst a = d;\n",
+      );
+      final dep = _module('dep_module', [
+        _Scc('0.dill', ['dep/lib/d.dart'], []),
+      ]);
+      final result = await _compile(
+        'm_dep_multiroot',
+        ['pkg/lib/a.dart'],
+        inputKmods: [dep],
+      );
+      expect(result.code, 1);
+      expect(result.calls, isEmpty, reason: 'the compiler never runs');
+      expect(
+        result.log,
+        contains(
+          "cannot compile ${_uri('pkg/lib/a.dart')}: "
+          "import 'org-dartlang-root:///dep/lib/d.dart' reaches a source "
+          "its dependencies define under 'package:dep/d.dart'; import that "
+          'instead.',
+        ),
+      );
+    });
+
+    test('every other directive kind reaching a dependency source fails with the package: spelling', () async {
+      _write('dep/lib/d.dart', 'const d = 1;\n');
+      _write(
+        'pkg/lib/e.dart',
+        "export 'org-dartlang-root:///dep/lib/d.dart';\nclass E {}\n",
+      );
+      _write(
+        'pkg/lib/p.dart',
+        "part 'org-dartlang-root:///dep/lib/d.dart';\nclass P {}\n",
+      );
+      _write(
+        'pkg/lib/m.dart',
+        "import 'org-dartlang-root:///dep/lib/d.dart';\nconst m = d;\n",
+      );
+      final dep = _module('dep_module', [
+        _Scc('0.dill', ['dep/lib/d.dart'], []),
+      ]);
+      final result = await _compile(
+        'm_dep_kinds',
+        ['pkg/lib/e.dart', 'pkg/lib/p.dart', 'pkg/lib/m.dart'],
+        inputKmods: [dep],
+      );
+      expect(result.code, 1);
+      expect(result.calls, isEmpty, reason: 'the compiler never runs');
+      for (final kind in ['export', 'part', 'import']) {
+        expect(
+          result.log,
+          contains(
+            "$kind 'org-dartlang-root:///dep/lib/d.dart' reaches a source "
+            "its dependencies define under 'package:dep/d.dart'; import "
+            'that instead.',
+          ),
+          reason: kind,
+        );
+      }
+    });
+
+    test(
+      'a relative import clamped inside the package is excluded, not refused',
+      () async {
+        // `..` never leaves the importer's package directory, so this names
+        // `pkg/lib/dep/lib/helper.dart`, which no module defines: the normal
+        // closure exclusion applies, never the dependency-shape refusal.
+        _write(
+          'pkg/lib/a.dart',
+          "import '../../dep/lib/helper.dart';\nconst a = h;\n",
+        );
+        final result = await _compile('m_relative_clamped', ['pkg/lib/a.dart']);
+        expect(result.code, 0, reason: result.log);
+        expect(result.excluded, {
+          _uri('pkg/lib/a.dart'):
+              'imports ../../dep/lib/helper.dart, which is not in this module '
+              'closure',
+        });
+        expect(
+          result.log,
+          isNot(contains('reaches a source its dependencies define')),
+        );
+      },
+    );
+
     test('a fragment import fails instead of resolving to its file', () async {
       _write('pkg/lib/b.dart', 'class B {}\n');
       _write('pkg/lib/f.dart', "import 'b.dart#frag';\nclass F {}\n");
@@ -3035,6 +3162,33 @@ void main(List<String> args) {
       entry.log,
       isNot(contains('transitive_secret.dart')),
       reason: 'undeclared file pkg/lib/web.dart must not be read from disk',
+    );
+  });
+
+  test('an entry reaching a dependency source through a relative import fails with the package: spelling', () async {
+    _write('dep/lib/d.dart', 'const d = 1;\n');
+    _write(
+      'pkg/test/main_test.dart',
+      "import '../../dep/lib/d.dart';\nvoid main() => print(d);\n",
+    );
+    final dep = _module('dep_module', [
+      _Scc('0.dill', ['dep/lib/d.dart'], []),
+    ]);
+    final entry = await _compile(
+      'entry_dep_relative',
+      ['pkg/test/main_test.dart'],
+      inputKmods: [dep],
+      noDrop: true,
+    );
+    expect(entry.code, 1);
+    expect(entry.calls, isEmpty, reason: 'the compiler never runs');
+    expect(
+      entry.log,
+      contains(
+        "cannot compile ${_uri('pkg/test/main_test.dart')}: "
+        "import '../../dep/lib/d.dart' reaches a source its dependencies "
+        "define under 'package:dep/d.dart'; import that instead.",
+      ),
     );
   });
 
@@ -6981,6 +7135,8 @@ void main(List<String> args) {
             '--exclude-non-sources',
             '--source',
             'package:pkg/config.dart',
+            '--input-source',
+            'pkg/lib/config.dart',
             '--output',
             libKmod,
             '--output-outline',
@@ -7021,6 +7177,8 @@ void main(List<String> args) {
             libKoutline,
             '--source',
             'org-dartlang-root:///app/bin/main.dart',
+            '--input-source',
+            'app/bin/main.dart',
             '--output',
             entryKmod,
             '--excluded-output',
@@ -7073,6 +7231,12 @@ void main(List<String> args) {
       reverseMultiRootOrder: false,
       passWorkerInputs: false,
     );
+    final incrementalLocalReversedRoots = await runSourceVsStaleBuild(
+      'incremental_local_reversed_roots',
+      hasStaleBazelOutFile: true,
+      reverseMultiRootOrder: true,
+      passWorkerInputs: false,
+    );
     final incrementalWorker = await runSourceVsStaleBuild(
       'incremental_worker',
       hasStaleBazelOutFile: true,
@@ -7088,10 +7252,15 @@ void main(List<String> args) {
 
     expect(cleanBuild.output, 'declared-source-v2');
     expect(incrementalLocal.output, 'declared-source-v2');
+    expect(incrementalLocalReversedRoots.output, 'declared-source-v2');
     expect(incrementalWorker.output, 'declared-source-v2');
     expect(incrementalWorkerReversedRoots.output, 'declared-source-v2');
     expect(incrementalLocal.wholeDill, equals(cleanBuild.wholeDill));
     expect(incrementalLocal.modularDill, equals(cleanBuild.modularDill));
+    expect(
+      incrementalLocalReversedRoots.modularDill,
+      equals(cleanBuild.modularDill),
+    );
     expect(incrementalWorker.modularDill, equals(cleanBuild.modularDill));
     expect(
       incrementalWorkerReversedRoots.modularDill,
@@ -7148,82 +7317,97 @@ void main(List<String> args) {
     final prevCwd = Directory.current;
     Directory.current = genWs;
     try {
-      for (final passInputs in [true, false]) {
-        final outDir =
-            'bazel-out/k8-fastbuild/bin/gen_${passInputs ? "worker" : "local"}.kmod';
-        final exclOut =
-            'bazel-out/k8-fastbuild/bin/gen_${passInputs ? "worker" : "local"}.vm_excluded.txt';
-        final genLog = StringBuffer();
-        final genCode = await compileModule(
-          [
-            '--target',
-            'vm',
-            '--dart-sdk-summary',
-            platformDill,
-            '--packages-file',
-            'package_config.json',
-            '--libraries-json',
-            librariesJson,
-            '--multi-root',
-            '.',
-            '--multi-root',
-            'bazel-out/k8-fastbuild/bin',
-            '--multi-root-scheme',
-            'org-dartlang-root',
-            '--no-summary-only',
-            '--exclude-non-sources',
-            '--source',
-            'package:pkg/gen.dart',
-            '--input-source',
-            'bazel-out/k8-fastbuild/bin/pkg/lib/gen.dart',
-            '--source',
-            'package:pkg/hand.dart',
-            '--input-source',
-            'pkg/lib/hand.dart',
-            '--output',
-            outDir,
-            '--excluded-output',
-            exclOut,
-          ],
-          genCompiler,
-          genLog,
-          passInputs
-              ? [
-                  _encodeInputForTest(
-                    'bazel-out/k8-fastbuild/bin/pkg/lib/gen.dart',
-                    Uint8List.fromList([9]),
-                  ),
-                  _encodeInputForTest(
-                    'pkg/lib/hand.dart',
-                    Uint8List.fromList([10]),
-                  ),
-                ]
-              : const [],
-        );
-        expect(genCode, 0, reason: genLog.toString());
-        final genIdx = jsonDecode(
-          File('$outDir/index.json').readAsStringSync(),
-        ) as Map<String, dynamic>;
-        expect((genIdx['sccs'] as List), hasLength(2));
-        final dill0 = File('$outDir/0.dill').readAsBytesSync();
-        final dill1 = File('$outDir/1.dill').readAsBytesSync();
-        final combined = Uint8List.fromList([...dill0, ...dill1]);
-        expect(
-          _containsSubsequence(combined, utf8.encode('declared-generated-v2')),
-          isTrue,
-        );
-        expect(
-          _containsSubsequence(combined, utf8.encode('declared-hand-v2')),
-          isTrue,
-        );
-        expect(
-          _containsSubsequence(combined, utf8.encode('untracked-dot-shadow')),
-          isFalse,
-        );
-        expect(
-          _containsSubsequence(combined, utf8.encode('stale-bazel-out-shadow')),
-          isFalse,
-        );
+      for (final reverseRoots in [false, true]) {
+        for (final passInputs in [true, false]) {
+          final outDir =
+              'bazel-out/k8-fastbuild/bin/gen_${reverseRoots ? "reversed_" : ""}${passInputs ? "worker" : "local"}.kmod';
+          final exclOut =
+              'bazel-out/k8-fastbuild/bin/gen_${reverseRoots ? "reversed_" : ""}${passInputs ? "worker" : "local"}.vm_excluded.txt';
+          final genLog = StringBuffer();
+          final genCode = await compileModule(
+            [
+              '--target',
+              'vm',
+              '--dart-sdk-summary',
+              platformDill,
+              '--packages-file',
+              'package_config.json',
+              '--libraries-json',
+              librariesJson,
+              if (reverseRoots) ...[
+                '--multi-root',
+                'bazel-out/k8-fastbuild/bin',
+                '--multi-root',
+                '.',
+              ] else ...[
+                '--multi-root',
+                '.',
+                '--multi-root',
+                'bazel-out/k8-fastbuild/bin',
+              ],
+              '--multi-root-scheme',
+              'org-dartlang-root',
+              '--no-summary-only',
+              '--exclude-non-sources',
+              '--source',
+              'package:pkg/gen.dart',
+              '--input-source',
+              'bazel-out/k8-fastbuild/bin/pkg/lib/gen.dart',
+              '--source',
+              'package:pkg/hand.dart',
+              '--input-source',
+              'pkg/lib/hand.dart',
+              '--output',
+              outDir,
+              '--excluded-output',
+              exclOut,
+            ],
+            genCompiler,
+            genLog,
+            passInputs
+                ? [
+                    _encodeInputForTest(
+                      'bazel-out/k8-fastbuild/bin/pkg/lib/gen.dart',
+                      Uint8List.fromList([9]),
+                    ),
+                    _encodeInputForTest(
+                      'pkg/lib/hand.dart',
+                      Uint8List.fromList([10]),
+                    ),
+                  ]
+                : const [],
+          );
+          expect(genCode, 0, reason: '$outDir: $genLog');
+          final genIdx = jsonDecode(
+            File('$outDir/index.json').readAsStringSync(),
+          ) as Map<String, dynamic>;
+          expect((genIdx['sccs'] as List), hasLength(2));
+          final dill0 = File('$outDir/0.dill').readAsBytesSync();
+          final dill1 = File('$outDir/1.dill').readAsBytesSync();
+          final combined = Uint8List.fromList([...dill0, ...dill1]);
+          expect(
+            _containsSubsequence(
+              combined,
+              utf8.encode('declared-generated-v2'),
+            ),
+            isTrue,
+          );
+          expect(
+            _containsSubsequence(combined, utf8.encode('declared-hand-v2')),
+            isTrue,
+          );
+          expect(
+            _containsSubsequence(combined, utf8.encode('untracked-dot-shadow')),
+            isFalse,
+          );
+          expect(
+            _containsSubsequence(
+              combined,
+              utf8.encode('stale-bazel-out-shadow'),
+            ),
+            isFalse,
+          );
+        }
       }
     } finally {
       Directory.current = prevCwd;
