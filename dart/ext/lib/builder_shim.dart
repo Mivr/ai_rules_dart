@@ -591,19 +591,6 @@ ShimArgs _absoluteArgs(ShimArgs a) => ShimArgs(
   rootLanguageVersion: a.rootLanguageVersion,
 );
 
-/// Extracts the value of a `--<flag>` argument from a raw argv list (or
-/// null if absent). Useful for shim entrypoints that wrap [runShim] and
-/// need to post-process the declared output path.
-String? extractShimFlag(List<String> argv, String flag) {
-  for (var i = 0; i < argv.length - 1; i++) {
-    if (argv[i] == flag) return argv[i + 1];
-    if (argv[i].startsWith('$flag=')) {
-      return argv[i].substring(flag.length + 1);
-    }
-  }
-  return null;
-}
-
 /// Signature of a function that returns an [AnalysisContextCollection]
 /// for the given inclusion + SDK settings. Tests can inject a stub; the
 /// shim's default is [_defaultBuildAnalysisContext].

@@ -1651,13 +1651,10 @@ class KernelModuleCache {
   int _clock = 0;
 
   int get indexBytes => _indexBytesTotal;
-  int get librariesBytes => _librariesBytesTotal;
-  int get excludedBytes => _excludedBytesTotal;
   int get totalBytes =>
       _indexBytesTotal + _librariesBytesTotal + _excludedBytesTotal;
   int get indexEntryCount => _indexCache.length;
   int get librariesEntryCount => _librariesCache.length;
-  int get excludedEntryCount => _excludedCache.length;
 
   static Uint8List _unpin(Uint8List bytes) =>
       bytes.buffer.lengthInBytes == bytes.lengthInBytes

@@ -1465,19 +1465,19 @@ _VM_PATH_TYPE = {
 # Load-time completeness check: the table must cover the vocabulary exactly, so
 # a link mode cannot be accepted by `dart_code_asset` and then go unhandled
 # here. Without it the gap would surface at analysis time, in whichever
-# consumer first used the new mode.
-#
-# Written as an if-*expression* bound to a name because Starlark allows neither
-# a top-level `if` statement nor a top-level bare expression. The binding is
-# never read; evaluating it at load time is the entire point.
-_UNMAPPED_LINK_MODES = [m for m in CODE_ASSET_LINK_MODES if m not in _VM_PATH_TYPE]
+# consumer first used the new mode. The call below runs at load time, which is
+# the entire point: an incomplete table fails every load, not one consumer.
+def _check_vm_path_type_total():
+    """Fails loading `common.bzl` when `_VM_PATH_TYPE` misses a link mode."""
+    unmapped = [m for m in CODE_ASSET_LINK_MODES if m not in _VM_PATH_TYPE]
+    if unmapped:
+        fail(
+            "common.bzl: _VM_PATH_TYPE has no entry for link mode(s) %s. Every mode in " %
+            ", ".join(unmapped) +
+            "CODE_ASSET_LINK_MODES must map to a Dart VM path type.",
+        )
 
-# buildifier: disable=unused-variable
-_VM_PATH_TYPE_IS_TOTAL = fail(
-    "common.bzl: _VM_PATH_TYPE has no entry for link mode(s) %s. Every mode in " %
-    ", ".join(_UNMAPPED_LINK_MODES) +
-    "CODE_ASSET_LINK_MODES must map to a Dart VM path type.",
-) if _UNMAPPED_LINK_MODES else True
+_check_vm_path_type_total()
 
 def native_assets_path_list(label, link_mode, relative_lib_path, system_uri):
     """Returns the VM path-list for one code asset, per its link mode.

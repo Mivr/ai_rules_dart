@@ -247,25 +247,6 @@ def main_package_roots(packages):
             seen[pkg.lib_root] = pkg.package_name
     return sorted(seen.items())
 
-def staged_pubspec_paths(packages):
-    """Project-relative paths of the per-package stub pubspecs staging writes.
-
-    The `dart_analyze` aspect composes its wrapper `analysis_options.yaml`
-    before calling `stage_dart_project`, so the stub paths it must exclude are
-    computed here, from the same dedupe rule staging uses, rather than
-    returned by it.
-
-    Args:
-      packages: List of DartPackageInfo (from `collect_packages`).
-
-    Returns:
-      Sorted list of `src/...` path strings, one per stub pubspec.
-    """
-    return [
-        ("src/%s/pubspec.yaml" % lib_root) if lib_root else "src/pubspec.yaml"
-        for lib_root, _ in main_package_roots(packages)
-    ]
-
 def _is_under(short_path, root):
     if root == "":
         return True
