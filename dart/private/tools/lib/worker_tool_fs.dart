@@ -6,8 +6,8 @@
 // `package:analyzer` resource providers with their own copy of each;
 // `builder_shim` carries the same wrapper shape. This library holds the
 // single copy. `analyzer_summary` and `format_runner` depend on the
-// `worker_protocol` target below; `builder_shim` (in `dart/ext`) depends on
-// it from `dart/ext/BUILD.bazel`.
+// `worker_tool_fs` target below (alongside `worker_protocol`); `builder_shim`
+// (in `dart/ext`) depends on it from `dart/ext/BUILD.bazel`.
 import 'dart:io';
 
 import 'package:analyzer/file_system/file_system.dart' as fs;

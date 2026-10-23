@@ -7,8 +7,9 @@
 // expansion; `web_compile_runner` shared the expansion too, and
 // `kernel_module` shared the path normalization and SHA-256. This library
 // holds the single copy. `kernel_module` compiles it through `srcs` (it takes
-// no `dart_library` dependency on purpose), every other tool depends on the
-// `worker_protocol` target below.
+// no `dart_library` dependency on purpose), `web_compile_runner` depends on
+// the `worker_protocol` target below, and `analyzer_summary` and
+// `format_runner` depend on it alongside the `worker_tool_fs` target.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';

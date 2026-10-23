@@ -33,14 +33,24 @@ exports_files(
 
 # The single persistent-worker protocol and staged-source plumbing
 # implementation shared by the build-action runners (see
-# `worker_protocol.dart` and `worker_tool_fs.dart`).
+# `worker_protocol.dart` and `worker_tool_fs.dart`). Two targets, not one:
+# `worker_protocol.dart` imports only dart: libraries, while
+# `worker_tool_fs.dart` needs package:analyzer and package:path, so one
+# target would hand every consumer a dependency on the side it does not use.
+# Both name the `rules_dart_worker` package: a package split across targets
+# is normal (see `merge_package_records` in dart/private/common.bzl), and the
+# shared `lib/` root means the compile still resolves all its files together.
 dart_library(
     name = "worker_protocol",
     package_name = "rules_dart_worker",
-    srcs = [
-        "lib/worker_protocol.dart",
-        "lib/worker_tool_fs.dart",
-    ],
+    srcs = ["lib/worker_protocol.dart"],
+    visibility = ["//dart:__subpackages__"],
+)
+
+dart_library(
+    name = "worker_tool_fs",
+    package_name = "rules_dart_worker",
+    srcs = ["lib/worker_tool_fs.dart"],
     visibility = ["//dart:__subpackages__"],
     deps = [
         "@ext_pub_deps//:analyzer",
@@ -57,6 +67,8 @@ dart_test(
     main = "worker_protocol_test.dart",
     deps = [
         ":worker_protocol",
+        ":worker_tool_fs",
+        "@ext_pub_deps//:path",
         "@ext_pub_deps//:test",
     ],
 )
@@ -96,6 +108,7 @@ dart_binary(
     visibility = ["//dart:__subpackages__"],
     deps = [
         ":worker_protocol",
+        ":worker_tool_fs",
         "//dart/guard:directive_guard",
         "//third_party/dart_linter:linter",
         "@ext_pub_deps//:analyzer",
@@ -205,6 +218,7 @@ dart_binary(
     visibility = ["//dart:__subpackages__"],
     deps = [
         ":worker_protocol",
+        ":worker_tool_fs",
         "@ext_pub_deps//:dart_style",
         "@ext_pub_deps//:package_config",
         "@ext_pub_deps//:path",
@@ -403,6 +417,7 @@ dart_test(
     main = "analyzer_summary_test.dart",
     deps = [
         ":worker_protocol",
+        ":worker_tool_fs",
         "//dart/guard:directive_guard",
         "//third_party/dart_linter:linter",
         "@ext_pub_deps//:analyzer",
@@ -503,6 +518,7 @@ dart_test(
     main = "format_runner_test.dart",
     deps = [
         ":worker_protocol",
+        ":worker_tool_fs",
         "//dart/runfiles",
         "@ext_pub_deps//:dart_style",
         "@ext_pub_deps//:package_config",

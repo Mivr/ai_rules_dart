@@ -41,7 +41,7 @@ dart_library(
     ],
     deps = [
         "//dart/guard:directive_guard",
-        "//dart/private/tools:worker_protocol",
+        "//dart/private/tools:worker_tool_fs",
         "@ext_pub_deps//:analyzer",
         "@ext_pub_deps//:args",
         "@ext_pub_deps//:bazel_worker",
