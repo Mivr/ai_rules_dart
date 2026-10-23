@@ -1029,19 +1029,30 @@ def _dev_record_file_roots(pkg, files, source_roots, generated_roots, generated_
                     rel = f.short_path[len(lib_prefix):],
                 ))
 
-def _dev_entry_uri(pkg, files, exec_roots, config_dir, scheme, source_roots, generated_roots, generated_source_paths, generated_source_uris):
-    """The rootUri for one package, recording assembled roots; None when it has no entry."""
+def _dev_entry_uri(pkg, files, ctx, out):
+    """The rootUri for one package, recording assembled roots; None when it has no entry.
+
+    Args:
+      pkg: The package's `DartPackageInfo`.
+      files: The package's files from `_dev_index_srcs`.
+      ctx: `struct(exec_roots, config_dir, scheme)`: the resolved exec roots,
+        the config file's directory, and the filesystem scheme, built once by
+        `generate_dev_package_config`.
+      out: `struct(source_roots, generated_roots, generated_source_paths,
+        generated_source_uris)`: the accumulating staging outputs, mutated in
+        place.
+    """
     if needs_source_assembly(files):
-        _dev_record_file_roots(pkg, files, source_roots, generated_roots, generated_source_paths, generated_source_uris)
+        _dev_record_file_roots(pkg, files, out.source_roots, out.generated_roots, out.generated_source_paths, out.generated_source_uris)
         return "{scheme}:///{lib_root}".format(
-            scheme = scheme,
+            scheme = ctx.scheme,
             lib_root = pkg.lib_root,
         )
-    exec_root = exec_roots.get(pkg.package_name)
+    exec_root = ctx.exec_roots.get(pkg.package_name)
     if exec_root != None:
-        return relative_path(config_dir, exec_root)
+        return relative_path(ctx.config_dir, exec_root)
     if not pkg.lib_root:
-        return relative_path(config_dir, "")
+        return relative_path(ctx.config_dir, "")
     return None
 
 def _dev_entry_text(pkg, root_uri):
@@ -1116,9 +1127,20 @@ def generate_dev_package_config(packages, all_srcs, config_file, scheme = "org-d
     generated_source_paths = []
     generated_source_uris = []
     entries = []
+    dev_ctx = struct(
+        exec_roots = exec_roots,
+        config_dir = config_dir,
+        scheme = scheme,
+    )
+    dev_out = struct(
+        source_roots = source_roots,
+        generated_roots = generated_roots,
+        generated_source_paths = generated_source_paths,
+        generated_source_uris = generated_source_uris,
+    )
     for pkg in packages:
         files = by_pkg.get(pkg.package_name, [])
-        root_uri = _dev_entry_uri(pkg, files, exec_roots, config_dir, scheme, source_roots, generated_roots, generated_source_paths, generated_source_uris)
+        root_uri = _dev_entry_uri(pkg, files, dev_ctx, dev_out)
         if root_uri == None:
             continue
         entries.append(_dev_entry_text(pkg, root_uri))
