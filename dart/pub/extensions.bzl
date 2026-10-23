@@ -15,6 +15,7 @@ load("//dart/pub/private:version.bzl", "semver_gt")
 _SPOKE_PREFIX = "dart_pub"
 
 _package = tag_class(
+    doc = "Declares one pub.dev package to download and materialize as a spoke repository, pinned by version and archive hash with its pub dependencies.",
     attrs = {
         "name": attr.string(
             doc = "The pub.dev package name (also used as the repository name).",
@@ -36,6 +37,7 @@ _package = tag_class(
 )
 
 _from_lock = tag_class(
+    doc = "Resolves a pubspec.lock file into one hub repository and its package spokes, joining the global version resolution unless isolated.",
     attrs = {
         "name": attr.string(
             doc = "Repository name for the resolved packages. The name is global to the " +
