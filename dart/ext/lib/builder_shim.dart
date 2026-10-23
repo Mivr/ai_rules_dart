@@ -50,6 +50,7 @@ import 'package:logging/logging.dart';
 import 'package:package_config/package_config.dart';
 import 'package:path/path.dart' as p;
 import 'package:rules_dart_guard/directive_guard.dart';
+import 'package:rules_dart_worker/worker_tool_fs.dart';
 
 /// Parsed shim CLI arguments.
 class ShimArgs {
@@ -737,7 +738,7 @@ Future<void> _runWithStaging(
     absOutputPaths,
   );
 
-  await _runBuilderPipeline(
+  await _runBuilderPipeline((
     builders: builders,
     inputId: inputId,
     reader: reader,
@@ -748,7 +749,7 @@ Future<void> _runWithStaging(
     collection: collection,
     allowedOutputs: allowedOutputs,
     writeDiagnostic: writeDiagnostic,
-  );
+  ));
   await _routeDeclaredOutputs(writer, allowedOutputs, inputId, absOutputPaths);
 }
 
@@ -862,18 +863,31 @@ Future<void> _refuseEscapingStagedEntries(Directory stagingDir) async {
 /// it is cancelled *after* disposal), and analyzer drivers, file-watching
 /// handles and thread-pool workers are released so a long-running worker
 /// doesn't accumulate drivers until it exhausts file descriptors.
-Future<void> _runBuilderPipeline({
-  required List<Builder> builders,
-  required AssetId inputId,
-  required _ShimAssetReader reader,
-  required _ShimAssetWriter writer,
-  required _ShimAnalyzerResolver resolver,
-  required PackageConfig packageConfig,
-  required ResourceManager resourceManager,
-  required AnalysisContextCollection collection,
-  required Iterable<AssetId> allowedOutputs,
-  required DiagnosticSink writeDiagnostic,
-}) async {
+/// One multi-stage builder pipeline invocation.
+typedef _PipelineRun = ({
+  List<Builder> builders,
+  AssetId inputId,
+  _ShimAssetReader reader,
+  _ShimAssetWriter writer,
+  _ShimAnalyzerResolver resolver,
+  PackageConfig packageConfig,
+  ResourceManager resourceManager,
+  AnalysisContextCollection collection,
+  Iterable<AssetId> allowedOutputs,
+  DiagnosticSink writeDiagnostic,
+});
+
+Future<void> _runBuilderPipeline(_PipelineRun run) async {
+  final builders = run.builders;
+  final inputId = run.inputId;
+  final reader = run.reader;
+  final writer = run.writer;
+  final resolver = run.resolver;
+  final packageConfig = run.packageConfig;
+  final resourceManager = run.resourceManager;
+  final collection = run.collection;
+  final allowedOutputs = run.allowedOutputs;
+  final writeDiagnostic = run.writeDiagnostic;
   final originalLevel = Logger.root.level;
   final logger = Logger('rules_dart_ext');
   final logSub = Logger.root.onRecord.listen((rec) {
@@ -1150,6 +1164,31 @@ String _serializePackageConfig(PackageConfig config) {
 // AssetReader implementation.
 // ---------------------------------------------------------------------------
 
+/// Returns the on-disk path for [id], either from the staged-asset map or
+/// (for third-party packages) by walking the package_config. `lib/` paths
+/// resolve against `packageUriRoot`; anything else resolves against the
+/// package root directory. Returns null only when neither lookup succeeds.
+String? _resolveAssetPath(
+  Map<AssetId, String> assetIdToPath,
+  PackageConfig packageConfig,
+  AssetId id,
+) {
+  final direct = assetIdToPath[id];
+  if (direct != null) return direct;
+  // Fall through: look up via the PackageConfig (e.g. for transitively-
+  // imported third-party files the analyzer queries). `lib/` paths resolve
+  // against `packageUriRoot` (which points at the package's `lib/`);
+  // anything else (`bin/`, `test/`, `web/`, top-level files like
+  // `pubspec.yaml`) resolves against the package root directory.
+  final pkg = packageConfig[id.package];
+  if (pkg == null) return null;
+  if (id.path.startsWith('lib/')) {
+    final rel = id.path.substring(4);
+    return p.fromUri(pkg.packageUriRoot.resolve(rel));
+  }
+  return p.fromUri(pkg.root.resolve(id.path));
+}
+
 /// AssetReader backed by a Map<AssetId, file path> plus the shim's
 /// in-memory writer (so multi-stage pipelines can read prior stages'
 /// outputs via `findAssets`/`readAsString`).
@@ -1160,22 +1199,8 @@ class _ShimAssetReader extends AssetReader {
   final PackageConfig _packageConfig;
   final _ShimAssetWriter _writer;
 
-  String? _pathFor(AssetId id) {
-    final direct = _assetIdToPath[id];
-    if (direct != null) return direct;
-    // Fall through: look up via the PackageConfig (e.g. for transitively-
-    // imported third-party files the analyzer queries). `lib/` paths resolve
-    // against `packageUriRoot` (which points at the package's `lib/`);
-    // anything else (`bin/`, `test/`, `web/`, top-level files like
-    // `pubspec.yaml`) resolves against the package root directory.
-    final pkg = _packageConfig[id.package];
-    if (pkg == null) return null;
-    if (id.path.startsWith('lib/')) {
-      final rel = id.path.substring(4);
-      return p.fromUri(pkg.packageUriRoot.resolve(rel));
-    }
-    return p.fromUri(pkg.root.resolve(id.path));
-  }
+  String? _pathFor(AssetId id) =>
+      _resolveAssetPath(_assetIdToPath, _packageConfig, id);
 
   @override
   Future<bool> canRead(AssetId id) async {
@@ -1379,17 +1404,8 @@ class _ShimAnalyzerResolver implements Resolver {
   /// (for third-party packages) by walking the package_config. `lib/` paths
   /// resolve against `packageUriRoot`; anything else resolves against the
   /// package root directory. Returns null only when neither lookup succeeds.
-  String? _pathFor(AssetId id) {
-    final direct = _assetIdToPath[id];
-    if (direct != null) return direct;
-    final pkg = _packageConfig[id.package];
-    if (pkg == null) return null;
-    if (id.path.startsWith('lib/')) {
-      final rel = id.path.substring(4);
-      return p.fromUri(pkg.packageUriRoot.resolve(rel));
-    }
-    return p.fromUri(pkg.root.resolve(id.path));
-  }
+  String? _pathFor(AssetId id) =>
+      _resolveAssetPath(_assetIdToPath, _packageConfig, id);
 
   @override
   Future<bool> isLibrary(AssetId id) async {
@@ -1803,11 +1819,26 @@ final class _StagingBoundedResourceProvider implements fs.ResourceProvider {
       _delegate.getStateLocation(pluginId);
 }
 
-final class _StagingBoundedFolder implements fs.Folder {
+final class _StagingBoundedFolder
+    with BoundedFolderForwards
+    implements fs.Folder {
   const _StagingBoundedFolder(this._provider, this._delegate);
 
   final _StagingBoundedResourceProvider _provider;
   final fs.Folder _delegate;
+
+  @override
+  fs.Folder get folderDelegate => _delegate;
+
+  @override
+  fs.ResourceProvider get folderProvider => _provider;
+
+  @override
+  fs.Folder wrapFolder(fs.Folder folder) =>
+      _StagingBoundedFolder(_provider, folder);
+
+  @override
+  fs.File wrapFile(fs.File file) => _StagingBoundedFile(_provider, file);
 
   String get _normPath => _provider.pathContext.normalize(
     _provider.pathContext.absolute(_delegate.path),
@@ -1817,56 +1848,10 @@ final class _StagingBoundedFolder implements fs.Folder {
   bool get isRoot => _provider.isBoundary(_normPath) || _delegate.isRoot;
 
   @override
-  fs.Folder get parent =>
-      isRoot ? this : _StagingBoundedFolder(_provider, _delegate.parent);
-
-  @override
   bool get exists => _delegate.exists;
 
   @override
-  String get path => _delegate.path;
-
-  @override
-  fs.ResourceProvider get provider => _provider;
-
-  @override
-  String get shortName => _delegate.shortName;
-
-  @override
-  String canonicalizePath(String relPath) => _provider.pathContext.normalize(
-    _provider.pathContext.join(path, relPath),
-  );
-
-  @override
   bool contains(String path) => _delegate.contains(path);
-
-  @override
-  fs.Folder copyTo(fs.Folder parentFolder) =>
-      _StagingBoundedFolder(_provider, _delegate.copyTo(parentFolder));
-
-  @override
-  void create() => _delegate.create();
-
-  @override
-  void delete() => _delegate.delete();
-
-  @override
-  fs.Resource getChild(String relPath) =>
-      _provider.getResource(canonicalizePath(relPath));
-
-  @override
-  fs.File getChildAssumingFile(String relPath) => getFile(relPath);
-
-  @override
-  fs.Folder getChildAssumingFolder(String relPath) => getFolder(relPath);
-
-  @override
-  fs.File getFile(String relPath) =>
-      _provider.getFile(canonicalizePath(relPath));
-
-  @override
-  fs.Folder getFolder(String relPath) =>
-      _provider.getFolder(canonicalizePath(relPath));
 
   @override
   List<fs.Resource> getChildren() => [
@@ -1881,34 +1866,23 @@ final class _StagingBoundedFolder implements fs.Folder {
 
   @override
   bool isOrContains(String path) => _delegate.isOrContains(path);
-
-  @override
-  fs.Resource resolveSymbolicLinksSync() {
-    final resolved = _delegate.resolveSymbolicLinksSync();
-    if (resolved is fs.Folder)
-      return _StagingBoundedFolder(_provider, resolved);
-    if (resolved is fs.File) return _StagingBoundedFile(_provider, resolved);
-    return resolved;
-  }
-
-  @override
-  Uri toUri() => _delegate.toUri();
-
-  @override
-  fs.ResourceWatcher watch() => _delegate.watch();
-
-  @override
-  bool operator ==(Object other) => other is fs.Folder && path == other.path;
-
-  @override
-  int get hashCode => path.hashCode;
 }
 
-final class _StagingBoundedFile implements fs.File {
+final class _StagingBoundedFile with BoundedFileForwards implements fs.File {
   const _StagingBoundedFile(this._provider, this._delegate);
 
   final _StagingBoundedResourceProvider _provider;
   final fs.File _delegate;
+
+  @override
+  fs.File get fileDelegate => _delegate;
+
+  @override
+  fs.Folder wrapFolder(fs.Folder folder) =>
+      _StagingBoundedFolder(_provider, folder);
+
+  @override
+  fs.File wrapFile(fs.File file) => _StagingBoundedFile(_provider, file);
 
   @override
   bool get exists => _delegate.exists;
@@ -1920,64 +1894,13 @@ final class _StagingBoundedFile implements fs.File {
   int get modificationStamp => _delegate.modificationStamp;
 
   @override
-  fs.Folder get parent => _StagingBoundedFolder(_provider, _delegate.parent);
-
-  @override
-  String get path => _delegate.path;
-
-  @override
   fs.ResourceProvider get provider => _provider;
-
-  @override
-  String get shortName => _delegate.shortName;
-
-  @override
-  fs.File copyTo(fs.Folder parentFolder) =>
-      _StagingBoundedFile(_provider, _delegate.copyTo(parentFolder));
-
-  @override
-  void delete() => _delegate.delete();
-
-  @override
-  bool isOrContains(String path) => _delegate.isOrContains(path);
 
   @override
   Uint8List readAsBytesSync() => _delegate.readAsBytesSync();
 
   @override
   String readAsStringSync() => _delegate.readAsStringSync();
-
-  @override
-  fs.File renameSync(String newPath) =>
-      _StagingBoundedFile(_provider, _delegate.renameSync(newPath));
-
-  @override
-  fs.Resource resolveSymbolicLinksSync() {
-    final resolved = _delegate.resolveSymbolicLinksSync();
-    if (resolved is fs.File) return _StagingBoundedFile(_provider, resolved);
-    if (resolved is fs.Folder)
-      return _StagingBoundedFolder(_provider, resolved);
-    return resolved;
-  }
-
-  @override
-  Uri toUri() => _delegate.toUri();
-
-  @override
-  fs.ResourceWatcher watch() => _delegate.watch();
-
-  @override
-  void writeAsBytesSync(List<int> bytes) => _delegate.writeAsBytesSync(bytes);
-
-  @override
-  void writeAsStringSync(String content) =>
-      _delegate.writeAsStringSync(content);
-
-  @override
-  bool operator ==(Object other) => other is fs.File && path == other.path;
-
-  @override
-  int get hashCode => path.hashCode;
 }
 
 // ---------------------------------------------------------------------------
