@@ -379,28 +379,22 @@ void main() {
       Directory('${projDir.path}/src/pkg').createSync(recursive: true);
       Directory('${projDir.path}/.dart_tool').createSync(recursive: true);
       Directory('${extDir.path}/orphan_pkg/lib').createSync(recursive: true);
-      File(
-        '${projDir.path}/src/pkg/pubspec.yaml',
-      ).writeAsStringSync('name: pkg\n');
-      File(
-        '${projDir.path}/src/pkg/main.dart',
-      ).writeAsStringSync('void main() {}\n');
-      File(
-        '${projDir.path}/src/pkg/orphan.dart',
-      ).writeAsStringSync('void orphan() {}\n');
-      File(
-        '${extDir.path}/orphan_pkg/lib/o.dart',
-      ).writeAsStringSync('void o() {}\n');
+      File('${projDir.path}/src/pkg/pubspec.yaml')
+          .writeAsStringSync('name: pkg\n');
+      File('${projDir.path}/src/pkg/main.dart')
+          .writeAsStringSync('void main() {}\n');
+      File('${projDir.path}/src/pkg/orphan.dart')
+          .writeAsStringSync('void orphan() {}\n');
+      File('${extDir.path}/orphan_pkg/lib/o.dart')
+          .writeAsStringSync('void o() {}\n');
       File('${projDir.path}/.dart_tool/src_manifest.txt')
           .writeAsStringSync('pkg/pubspec.yaml\npkg/main.dart\n');
       if (config == null) {
-        Directory(
-          '${projDir.path}/.dart_tool/package_config.json',
-        ).createSync();
+        Directory('${projDir.path}/.dart_tool/package_config.json')
+            .createSync();
       } else {
-        File(
-          '${projDir.path}/.dart_tool/package_config.json',
-        ).writeAsStringSync(config);
+        File('${projDir.path}/.dart_tool/package_config.json')
+            .writeAsStringSync(config);
       }
 
       final allowed = pruneOrphanedStagedFiles(projDir.path);
@@ -413,7 +407,8 @@ void main() {
       expect(
         File('${extDir.path}/orphan_pkg/lib/o.dart').existsSync(),
         isTrue,
-        reason: '$tag config names no referenced packages, so nothing '
+        reason:
+            '$tag config names no referenced packages, so nothing '
             'is pruned from extpkgs',
       );
     }
@@ -426,18 +421,14 @@ void main() {
     Directory('${projDir.path}/.dart_tool').createSync(recursive: true);
     Directory('${extDir.path}/kept_pkg/lib').createSync(recursive: true);
     Directory('${extDir.path}/orphan_pkg/lib').createSync(recursive: true);
-    File(
-      '${projDir.path}/src/pkg/pubspec.yaml',
-    ).writeAsStringSync('name: pkg\n');
-    File(
-      '${projDir.path}/src/pkg/main.dart',
-    ).writeAsStringSync('void main() {}\n');
-    File(
-      '${extDir.path}/kept_pkg/lib/k.dart',
-    ).writeAsStringSync('void k() {}\n');
-    File(
-      '${extDir.path}/orphan_pkg/lib/o.dart',
-    ).writeAsStringSync('void o() {}\n');
+    File('${projDir.path}/src/pkg/pubspec.yaml')
+        .writeAsStringSync('name: pkg\n');
+    File('${projDir.path}/src/pkg/main.dart')
+        .writeAsStringSync('void main() {}\n');
+    File('${extDir.path}/kept_pkg/lib/k.dart')
+        .writeAsStringSync('void k() {}\n');
+    File('${extDir.path}/orphan_pkg/lib/o.dart')
+        .writeAsStringSync('void o() {}\n');
     File('${projDir.path}/.dart_tool/src_manifest.txt')
         .writeAsStringSync('pkg/pubspec.yaml\npkg/main.dart\n');
     File('${projDir.path}/.dart_tool/package_config.json').writeAsStringSync(
@@ -455,10 +446,7 @@ void main() {
     );
 
     pruneOrphanedStagedFiles(projDir.path);
-    expect(
-      File('${extDir.path}/kept_pkg/lib/k.dart').existsSync(),
-      isTrue,
-    );
+    expect(File('${extDir.path}/kept_pkg/lib/k.dart').existsSync(), isTrue);
     expect(
       FileSystemEntity.typeSync(
         '${extDir.path}/orphan_pkg',

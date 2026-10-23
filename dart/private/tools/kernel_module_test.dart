@@ -3531,55 +3531,58 @@ void main(List<String> args) {
       );
     });
 
-    test('an undecodable used-inputs report falls back like a missing one', () async {
-      // Bytes that are not UTF-8 make `readAsLinesSync` throw
-      // `FileSystemException`; a line that is not a URI the planner
-      // understands makes `Uri.parse` throw `FormatException`. Both must
-      // read as no report, matching a worker that wrote none.
-      _write('pkg/lib/a.dart', "import 'package:dep/u.dart';\nclass A {}\n");
-      final used = _module('used', [
-        _Scc('u.dill', ['dep/lib/u.dart'], []),
-      ]);
-      final clean = _module('clean', [
-        _Scc('c.dill', ['dep/lib/c.dart'], []),
-      ]);
-      Future<List<String>> unusedLinesFor(
-        ModuleCompiler compiler,
-        String tag,
-      ) async {
-        final unusedPath = '${_root.path}/out/$tag.unused';
-        final result = await _compile(
-          tag,
-          ['pkg/lib/a.dart'],
-          inputKmods: [used, clean],
-          compiler: compiler,
-          unusedInputsList: unusedPath,
-        );
-        expect(result.code, 0, reason: result.log);
-        return File(unusedPath).readAsLinesSync();
-      }
+    test(
+      'an undecodable used-inputs report falls back like a missing one',
+      () async {
+        // Bytes that are not UTF-8 make `readAsLinesSync` throw
+        // `FileSystemException`; a line that is not a URI the planner
+        // understands makes `Uri.parse` throw `FormatException`. Both must
+        // read as no report, matching a worker that wrote none.
+        _write('pkg/lib/a.dart', "import 'package:dep/u.dart';\nclass A {}\n");
+        final used = _module('used', [
+          _Scc('u.dill', ['dep/lib/u.dart'], []),
+        ]);
+        final clean = _module('clean', [
+          _Scc('c.dill', ['dep/lib/c.dart'], []),
+        ]);
+        Future<List<String>> unusedLinesFor(
+          ModuleCompiler compiler,
+          String tag,
+        ) async {
+          final unusedPath = '${_root.path}/out/$tag.unused';
+          final result = await _compile(
+            tag,
+            ['pkg/lib/a.dart'],
+            inputKmods: [used, clean],
+            compiler: compiler,
+            unusedInputsList: unusedPath,
+          );
+          expect(result.code, 0, reason: result.log);
+          return File(unusedPath).readAsLinesSync();
+        }
 
-      final missing = await unusedLinesFor(
-        _ReportingCompiler(reported: null),
-        'm_unused_missing',
-      );
-      expect(
-        await unusedLinesFor(
-          _RawReportCompiler(const [0xff, 0xfe, 0x0a]),
-          'm_unused_badbytes',
-        ),
-        missing,
-        reason: 'malformed bytes read as no report',
-      );
-      expect(
-        await unusedLinesFor(
-          _RawReportCompiler(utf8.encode('file://[invalid\n')),
-          'm_unused_baduri',
-        ),
-        missing,
-        reason: 'an unparsable report line reads as no report',
-      );
-    });
+        final missing = await unusedLinesFor(
+          _ReportingCompiler(reported: null),
+          'm_unused_missing',
+        );
+        expect(
+          await unusedLinesFor(
+            _RawReportCompiler(const [0xff, 0xfe, 0x0a]),
+            'm_unused_badbytes',
+          ),
+          missing,
+          reason: 'malformed bytes read as no report',
+        );
+        expect(
+          await unusedLinesFor(
+            _RawReportCompiler(utf8.encode('file://[invalid\n')),
+            'm_unused_baduri',
+          ),
+          missing,
+          reason: 'an unparsable report line reads as no report',
+        );
+      },
+    );
 
     test('an entry lists dependency sources it never compiles', () async {
       _write(
@@ -5003,16 +5006,19 @@ void main(List<String> args) {
       expect(output, contains('Failed twice'));
     });
 
-    test('a worker that exits before reading fails the request after one retry', () async {
-      // The write to the dying child may fail or buffer; either way the
-      // read reports the exit and the request runs again on a fresh child.
-      if (_toolSnapshotPath.isEmpty) return;
-      final (code, output, requestId) = await garbageResponse('exit');
-      expect(requestId, 7);
-      expect(code, 1);
-      expect(output, contains('exited before responding'));
-      expect(output, contains('Failed twice'));
-    });
+    test(
+      'a worker that exits before reading fails the request after one retry',
+      () async {
+        // The write to the dying child may fail or buffer; either way the
+        // read reports the exit and the request runs again on a fresh child.
+        if (_toolSnapshotPath.isEmpty) return;
+        final (code, output, requestId) = await garbageResponse('exit');
+        expect(requestId, 7);
+        expect(code, 1);
+        expect(output, contains('exited before responding'));
+        expect(output, contains('Failed twice'));
+      },
+    );
   });
 
   group('patched snapshot startup selection (AOT subprocess)', () {

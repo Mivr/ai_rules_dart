@@ -319,9 +319,9 @@ void main(List<String> args) {
       // `package:` include stays unresolvable, formatting runs at stock
       // defaults, and no error escapes `runFormatRequest`.
       final dartBin = _sdkDartPaths.first;
-      final sdkVersion = File(
-        '${File(dartBin).parent.parent.path}/version',
-      ).readAsStringSync().trim();
+      final sdkVersion = File('${File(dartBin).parent.parent.path}/version')
+          .readAsStringSync()
+          .trim();
       expect(
         resolveFormatMode(sdkVersion, 'latest').inProcess,
         isTrue,
@@ -333,41 +333,41 @@ void main(List<String> args) {
         'empty': '{"configVersion": 2, "packages": []}',
       };
       for (final entry in configs.entries) {
-        final caseDir =
-            Directory('${_tmp.path}/bad_config_${entry.key}')
-              ..createSync(recursive: true);
+        final caseDir = Directory('${_tmp.path}/bad_config_${entry.key}')
+          ..createSync(recursive: true);
         final projDir = Directory('${caseDir.path}/proj')
           ..createSync(recursive: true);
         Directory('${projDir.path}/src/pkg/lib').createSync(recursive: true);
         Directory('${projDir.path}/.dart_tool').createSync(recursive: true);
-        File(
-          '${projDir.path}/.dart_tool/package_config.json',
-        ).writeAsStringSync(entry.value);
-        File(
-          '${projDir.path}/src/pkg/analysis_options.yaml',
-        ).writeAsStringSync('include: package:fake_pkg/options.yaml\n');
-        File(
-          '${projDir.path}/src/pkg/lib/a.dart',
-        ).writeAsStringSync("void main() {\n  print('hello');\n}\n");
+        File('${projDir.path}/.dart_tool/package_config.json')
+            .writeAsStringSync(entry.value);
+        File('${projDir.path}/src/pkg/analysis_options.yaml')
+            .writeAsStringSync('include: package:fake_pkg/options.yaml\n');
+        File('${projDir.path}/src/pkg/lib/a.dart')
+            .writeAsStringSync("void main() {\n  print('hello');\n}\n");
         final manifest = File('${caseDir.path}/manifest.txt')
           ..writeAsStringSync('src/pkg/lib/a.dart\n');
         final stamp = File('${caseDir.path}/stamp');
         final outBuf = StringBuffer();
         final errBuf = StringBuffer();
-        final exit = await runFormatRequest([
-          '--dart',
-          dartBin,
-          '--sdk-version',
-          sdkVersion,
-          '--project',
-          projDir.path,
-          '--manifest',
-          manifest.path,
-          '--stamp',
-          stamp.path,
-          '--language-version',
-          'latest',
-        ], outSink: outBuf, errSink: errBuf);
+        final exit = await runFormatRequest(
+          [
+            '--dart',
+            dartBin,
+            '--sdk-version',
+            sdkVersion,
+            '--project',
+            projDir.path,
+            '--manifest',
+            manifest.path,
+            '--stamp',
+            stamp.path,
+            '--language-version',
+            'latest',
+          ],
+          outSink: outBuf,
+          errSink: errBuf,
+        );
         expect(
           exit,
           1,
@@ -378,7 +378,8 @@ void main(List<String> args) {
         expect(
           errBuf.toString(),
           contains('Package resolution error'),
-          reason: '${entry.key}: the config failure must surface as a '
+          reason:
+              '${entry.key}: the config failure must surface as a '
               'resolution warning, not an escape\n$outBuf\n$errBuf',
         );
         expect(stamp.existsSync(), isFalse);
@@ -386,30 +387,32 @@ void main(List<String> args) {
     },
   );
 
-  test('persistent worker answers a failing request and logs to stderr', () async {
-    if (_toolDillPath.isEmpty) return;
-    final dartBin = _sdkDartPaths.first;
-    final proc = await Process.start(dartBin, [
-      _toolDillPath,
-      '--persistent_worker',
-    ]);
-    final stderrFuture = proc.stderr.transform(utf8.decoder).join();
-    // A `@`-file that does not exist: param expansion throws before any
-    // formatting runs, exercising the worker's top-level handler.
-    proc.stdin.add(
-      _requestFrameForTest(['@${_tmp.path}/no-such-param-file.txt'], 3),
-    );
-    await proc.stdin.flush();
-    final (code, output, requestId) = await _readResponseForTest(
-      proc.stdout,
-    ).timeout(const Duration(minutes: 2));
-    expect(requestId, 3);
-    expect(code, 1);
-    expect(output, contains('unhandled exception'));
-    await proc.stdin.close();
-    expect(await proc.exitCode, 0);
-    expect(await stderrFuture, contains('unhandled exception'));
-  });
+  test(
+    'persistent worker answers a failing request and logs to stderr',
+    () async {
+      if (_toolDillPath.isEmpty) return;
+      final dartBin = _sdkDartPaths.first;
+      final proc = await Process.start(dartBin, [
+        _toolDillPath,
+        '--persistent_worker',
+      ]);
+      final stderrFuture = proc.stderr.transform(utf8.decoder).join();
+      // A `@`-file that does not exist: param expansion throws before any
+      // formatting runs, exercising the worker's top-level handler.
+      proc.stdin.add(
+        _requestFrameForTest(['@${_tmp.path}/no-such-param-file.txt'], 3),
+      );
+      await proc.stdin.flush();
+      final (code, output, requestId) = await _readResponseForTest(proc.stdout)
+          .timeout(const Duration(minutes: 2));
+      expect(requestId, 3);
+      expect(code, 1);
+      expect(output, contains('unhandled exception'));
+      await proc.stdin.close();
+      expect(await proc.exitCode, 0);
+      expect(await stderrFuture, contains('unhandled exception'));
+    },
+  );
 }
 
 void _writeVarintForTest(BytesBuilder out, int value) {

@@ -33,29 +33,31 @@ void main(List<String> args) {
     _tmp.deleteSync(recursive: true);
   });
 
-  test('persistent worker answers a failing request and logs to stderr', () async {
-    if (_toolDillPath.isEmpty) return;
-    final proc = await Process.start(_dartBin, [
-      _toolDillPath,
-      '--persistent_worker',
-    ]);
-    final stderrFuture = proc.stderr.transform(utf8.decoder).join();
-    // A `@`-file that does not exist: param expansion throws before any
-    // linking runs, exercising the worker's top-level handler.
-    proc.stdin.add(
-      _requestFrameForTest(['@${_tmp.path}/no-such-param-file.txt'], 5),
-    );
-    await proc.stdin.flush();
-    final (code, output, requestId) = await _readResponseForTest(
-      proc.stdout,
-    ).timeout(const Duration(minutes: 2));
-    expect(requestId, 5);
-    expect(code, 1);
-    expect(output, contains('unhandled exception'));
-    await proc.stdin.close();
-    expect(await proc.exitCode, 0);
-    expect(await stderrFuture, contains('unhandled exception'));
-  });
+  test(
+    'persistent worker answers a failing request and logs to stderr',
+    () async {
+      if (_toolDillPath.isEmpty) return;
+      final proc = await Process.start(_dartBin, [
+        _toolDillPath,
+        '--persistent_worker',
+      ]);
+      final stderrFuture = proc.stderr.transform(utf8.decoder).join();
+      // A `@`-file that does not exist: param expansion throws before any
+      // linking runs, exercising the worker's top-level handler.
+      proc.stdin.add(
+        _requestFrameForTest(['@${_tmp.path}/no-such-param-file.txt'], 5),
+      );
+      await proc.stdin.flush();
+      final (code, output, requestId) = await _readResponseForTest(proc.stdout)
+          .timeout(const Duration(minutes: 2));
+      expect(requestId, 5);
+      expect(code, 1);
+      expect(output, contains('unhandled exception'));
+      await proc.stdin.close();
+      expect(await proc.exitCode, 0);
+      expect(await stderrFuture, contains('unhandled exception'));
+    },
+  );
 }
 
 void _writeVarintForTest(BytesBuilder out, int value) {
