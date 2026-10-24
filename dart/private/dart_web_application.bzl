@@ -82,6 +82,12 @@ def _dart_web_compile(ctx, compile_mode):
     output_groups = {}
     if compile_mode == "js":
         output = ctx.actions.declare_file(ctx.label.name + ".js")
+
+        # `dart compile js` writes a source map next to the output unless told
+        # not to. Declared in the `source_map` group, as `dart_wasm_binary`
+        # does, so sandboxed builds keep it instead of discarding it.
+        if "--no-source-maps" not in ctx.attr.dart_compile_flags:
+            output_groups["source_map"] = ctx.actions.declare_file(ctx.label.name + ".js.map")
     else:
         output = ctx.actions.declare_file(ctx.label.name + ".wasm")
         output_groups["mjs"] = ctx.actions.declare_file(ctx.label.name + ".mjs")

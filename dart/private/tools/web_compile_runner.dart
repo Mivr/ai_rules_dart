@@ -282,6 +282,9 @@ int _runCompiler({
     }
     return result.exitCode;
   }
+  if (outputPath != null) {
+    return _deleteUndeclaredSidecars(outputPath, errSink);
+  }
   return 0;
 }
 
@@ -535,6 +538,42 @@ void _deleteOutputs(String outputPath) {
       _tryDelete(file);
     }
   }
+}
+
+/// Removes compiler sidecars beside [outputPath] that no action declares.
+///
+/// `dart compile js` writes `<output>.deps` (absolute `file:` paths into the
+/// exec root and the SDK) and `dart compile wasm` may leave `<base>.unopt.wasm`
+/// beside every output. Left behind they are undeclared action outputs:
+/// discarded under sandboxing and stale under `--spawn_strategy=local`.
+/// Declared outputs (`.js` and its `.js.map`, `.wasm` with its `.mjs`,
+/// `.support.js` and `.wasm.map`) are never touched.
+///
+/// Returns 0 when every sidecar is gone. A sidecar that cannot be removed is
+/// a loud failure: the message names the path and the return is non-zero, so
+/// a stray file can never survive silently. Only an already-gone sidecar is
+/// tolerated.
+int _deleteUndeclaredSidecars(String outputPath, StringSink errSink) {
+  final sidecars = <String>[
+    '$outputPath.deps',
+    if (outputPath.endsWith('.wasm'))
+      '${outputPath.substring(0, outputPath.length - '.wasm'.length)}.unopt.wasm',
+  ];
+  var code = 0;
+  for (final path in sidecars) {
+    try {
+      File(path).deleteSync();
+    } on FileSystemException catch (e) {
+      if (FileSystemEntity.typeSync(path) == FileSystemEntityType.notFound) {
+        continue;
+      }
+      errSink.writeln(
+        'web_compile_runner: cannot remove undeclared sidecar file $path: ${e.message}',
+      );
+      code = 1;
+    }
+  }
+  return code;
 }
 
 String _trimTrailingSlash(String raw) {

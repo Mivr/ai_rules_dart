@@ -189,6 +189,130 @@ void main() {
     expect(outJs.existsSync(), isFalse);
   });
 
+  test('deletes the undeclared .deps sidecar while keeping the map', () {
+    // Drives `runWebCompileRequest` with a stub compiler (a Dart script run
+    // through the real `dart` binary) that writes the `<output>.js`,
+    // `<output>.js.map` and `<output>.js.deps` sidecars a real `dart compile
+    // js` writes. The `.deps` file carries absolute `file:` paths, so it is
+    // never a declared output: the runner removes it before it exits while
+    // the declared `.js` and `.js.map` stay.
+    final projDir = Directory('${tmp.path}/sidecar.proj');
+    Directory('${projDir.path}/src/pkg').createSync(recursive: true);
+    Directory('${projDir.path}/.dart_tool').createSync(recursive: true);
+    File('${projDir.path}/src/pkg/main.dart')
+        .writeAsStringSync('void main() {}\n');
+    File('${projDir.path}/.dart_tool/src_manifest.txt')
+        .writeAsStringSync('pkg/main.dart\n');
+    File('${projDir.path}/.dart_tool/package_config.json').writeAsStringSync(
+      jsonEncode({
+        'configVersion': 2,
+        'packages': [
+          {'name': 'pkg', 'rootUri': '../src/pkg', 'packageUri': 'lib/'},
+        ],
+      }),
+    );
+
+    final stub = File('${tmp.path}/stub_compiler.dart')
+      ..writeAsStringSync(
+        "import 'dart:io';\n"
+        'void main(List<String> args) {\n'
+        '  final out = args[args.indexOf("-o") + 1];\n'
+        "  File(out).writeAsStringSync('js');\n"
+        "  File('\$out.map').writeAsStringSync('map');\n"
+        "  File('\$out.deps').writeAsStringSync('deps');\n"
+        '}\n',
+      );
+    final outJs = File('${tmp.path}/sidecar.js');
+    final outBuf = StringBuffer();
+    final errBuf = StringBuffer();
+    final code = runWebCompileRequest(
+      [
+        '--dart=${Platform.resolvedExecutable}',
+        '--project=sidecar.proj',
+        stub.path,
+        '-o',
+        outJs.path,
+        'sidecar.proj/src/pkg/main.dart',
+      ],
+      outSink: outBuf,
+      errSink: errBuf,
+      workingDirectory: tmp.path,
+    );
+    expect(code, 0, reason: '$outBuf\n$errBuf');
+    expect(outJs.existsSync(), isTrue, reason: 'the declared .js stays');
+    expect(
+      File('${outJs.path}.map').existsSync(),
+      isTrue,
+      reason: 'the declared .js.map stays',
+    );
+    expect(
+      File('${outJs.path}.deps').existsSync(),
+      isFalse,
+      reason: 'the undeclared .deps sidecar is removed before exit',
+    );
+  });
+
+  test('a sidecar that cannot be removed fails loudly', () {
+    // Drives `runWebCompileRequest` with a stub compiler that leaves an
+    // undeletable `<output>.js.deps` behind (a non-empty directory, which
+    // `deleteSync` refuses). The runner must fail with a message naming the
+    // path, never let the stray file survive silently.
+    final projDir = Directory('${tmp.path}/stuck.proj');
+    Directory('${projDir.path}/src/pkg').createSync(recursive: true);
+    Directory('${projDir.path}/.dart_tool').createSync(recursive: true);
+    File('${projDir.path}/src/pkg/main.dart')
+        .writeAsStringSync('void main() {}\n');
+    File('${projDir.path}/.dart_tool/src_manifest.txt')
+        .writeAsStringSync('pkg/main.dart\n');
+    File('${projDir.path}/.dart_tool/package_config.json').writeAsStringSync(
+      jsonEncode({
+        'configVersion': 2,
+        'packages': [
+          {'name': 'pkg', 'rootUri': '../src/pkg', 'packageUri': 'lib/'},
+        ],
+      }),
+    );
+
+    final stub = File('${tmp.path}/stuck_compiler.dart')
+      ..writeAsStringSync(
+        "import 'dart:io';\n"
+        'void main(List<String> args) {\n'
+        '  final out = args[args.indexOf("-o") + 1];\n'
+        "  File(out).writeAsStringSync('js');\n"
+        "  File('\$out.map').writeAsStringSync('map');\n"
+        "  Directory('\$out.deps').createSync();\n"
+        "  File('\$out.deps/stale.txt').writeAsStringSync('stale');\n"
+        '}\n',
+      );
+    final outJs = File('${tmp.path}/stuck.js');
+    final outBuf = StringBuffer();
+    final errBuf = StringBuffer();
+    final code = runWebCompileRequest(
+      [
+        '--dart=${Platform.resolvedExecutable}',
+        '--project=stuck.proj',
+        stub.path,
+        '-o',
+        outJs.path,
+        'stuck.proj/src/pkg/main.dart',
+      ],
+      outSink: outBuf,
+      errSink: errBuf,
+      workingDirectory: tmp.path,
+    );
+    expect(code, isNonZero, reason: '$outBuf\n$errBuf');
+    expect(
+      errBuf.toString(),
+      contains('${outJs.path}.deps'),
+      reason: 'the message names the leftover sidecar',
+    );
+    expect(
+      Directory('${outJs.path}.deps').existsSync(),
+      isTrue,
+      reason: 'the leftover sidecar is reported, not hidden',
+    );
+  });
+
   test('never prunes without a manifest or when manifest is wildcard *', () {
     final projDir = Directory('${tmp.path}/nomani.proj');
     Directory('${projDir.path}/src/pkg').createSync(recursive: true);
