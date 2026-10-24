@@ -2,6 +2,7 @@ load("@rules_dart//dart:defs.bzl", "dart_binary")
 load(":symlink_contract.bzl", "check_pub_symlink_contract")
 
 exports_files(["pubspec.lock"])
+
 # Pins the guard's decision procedure: fails at load time when an
 # in-package target is rejected or an escaping one is allowed.
 check_pub_symlink_contract()
@@ -35,11 +36,12 @@ dart_binary(
 # clean and materialise. Each hostile hub must fail its fetch before
 # extraction instead — `@eh_out//:evil_hard_out` and `@eh_in//:evil_hard_in`
 # on hard-link entries, `@eabs//:evil_abs` on the absolute target,
-# `@eesc//:evil_esc` on the escaping target — with a diagnostic naming the
-# package, the entry path, the entry kind and the raw target. The evil cycle
-# member lives in the nested `cycle/` workspace: it fails cycle planning,
-# which would poison this workspace's other hubs. The CI step drives each
-# hub and greps its message.
+# `@eesc//:evil_esc` on the escaping target, `@ep_abs//:evil_path_abs` on
+# the absolute entry path, `@ep_dotdot//:evil_path_dotdot` on the climbing
+# entry path — with a diagnostic naming the package, the entry path, the
+# entry kind and the raw target. The evil cycle member lives in the nested
+# `cycle/` workspace: it fails cycle planning, which would poison this
+# workspace's other hubs. The CI step drives each hub and greps its message.
 dart_binary(
     name = "ok_app",
     main = "main_ok.dart",
@@ -75,4 +77,16 @@ dart_binary(
     name = "evil_esc_app",
     main = "main.dart",
     deps = ["@eesc//:evil_esc"],
+)
+
+dart_binary(
+    name = "evil_path_abs_app",
+    main = "main.dart",
+    deps = ["@ep_abs//:evil_path_abs"],
+)
+
+dart_binary(
+    name = "evil_path_dotdot_app",
+    main = "main.dart",
+    deps = ["@ep_dotdot//:evil_path_dotdot"],
 )

@@ -22,7 +22,13 @@ pub.from_lock(
 # Header-scan e2e over the local registry in fixtures/ (served over file://;
 # the locks' FIXTURES_ROOT placeholder is rewritten to the absolute path by
 # the CI step). Clean packages share one hub; each hostile package gets its
-# own isolated hub so its refusal is asserted independently.
+# own isolated hub so its refusal is asserted independently. The two path
+# hubs cover entry paths that escape the root themselves: absolute
+# (`ep_abs`) and climbing (`ep_dotdot`). Every hub fetch below runs the
+# shared `dart_pub_scanner` executable, which the `dart` module extension
+# builds once per output base through `pub_scanner_repo`
+# (`//dart/pub:pub_scanner.bzl`): a hostile tarball fails its fetch before
+# extraction, so this workspace exercises that rule on every red hub.
 pub.from_lock(
     name = "ok_deps",
     isolated = True,
@@ -48,4 +54,14 @@ pub.from_lock(
     isolated = True,
     lock = "//:pubspec.evil_esc.lock",
 )
-use_repo(pub, "pub_deps", "ok_deps", "eh_out", "eh_in", "eabs", "eesc")
+pub.from_lock(
+    name = "ep_abs",
+    isolated = True,
+    lock = "//:pubspec.evil_path_abs.lock",
+)
+pub.from_lock(
+    name = "ep_dotdot",
+    isolated = True,
+    lock = "//:pubspec.evil_path_dotdot.lock",
+)
+use_repo(pub, "eabs", "eesc", "eh_in", "eh_out", "ep_abs", "ep_dotdot", "ok_deps", "pub_deps")

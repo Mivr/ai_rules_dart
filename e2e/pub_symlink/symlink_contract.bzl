@@ -17,10 +17,10 @@ naming the package, the link, and the word "symlink".
 """
 
 # buildifier: disable=bzl-visibility
-load("@rules_dart//dart/pub/private:pub_symlink.bzl", "is_absolute_symlink_target", "pub_symlink_error", "symlink_escapes_package")
+load("@rules_dart//dart/pub/private:pub_archive_scan.bzl", "archive_entry_error", "archive_path_error", "classify_archive_entry")
 
 # buildifier: disable=bzl-visibility
-load("@rules_dart//dart/pub/private:pub_archive_scan.bzl", "archive_entry_error", "classify_archive_entry")
+load("@rules_dart//dart/pub/private:pub_symlink.bzl", "is_absolute_symlink_target", "pub_symlink_error", "symlink_escapes_package")
 
 def check_pub_symlink_contract():
     """Fails at load time when the symlink guard misclassifies a link target."""
@@ -45,6 +45,7 @@ def check_pub_symlink_contract():
     err = pub_symlink_error("evil_pkg", "lib/secret.dart", "../../evil.txt")
     if "evil_pkg" not in err or "lib/secret.dart" not in err or "symlink" not in err:
         fail("pub_symlink_error must name the package and the link: %r" % err)
+
     # The header scan shares the walk's lexical rule: every hard-link entry
     # is refused whatever its target, symlinks only when they escape.
     r = classify_archive_entry("lib/evil.dart", "1", "lib/ok.dart")
@@ -66,3 +67,15 @@ def check_pub_symlink_contract():
     serr = archive_entry_error("evil_esc", "lib/evil.dart", "symlink", "../../outside.txt")
     if not serr.startswith('pub package "evil_esc": symlink "lib/evil.dart" escapes the package'):
         fail("archive_entry_error symlink shape must share the walk diagnostic's prefix: %r" % serr)
+
+    # Entries whose own path escapes the root are refused before any link
+    # check: absolute paths and climbs on every OS reading.
+    r = classify_archive_entry("/abs.dart", "0", "")
+    if r == None or r.kind != "path" or r.path != "/abs.dart":
+        fail("classify_archive_entry must refuse an absolute entry path")
+    r = classify_archive_entry("../outside.dart", "0", "")
+    if r == None or r.kind != "path" or r.path != "../outside.dart":
+        fail("classify_archive_entry must refuse a climbing entry path")
+    perr = archive_path_error("evil_path_abs", "/abs.dart")
+    if not perr.startswith('pub package "evil_path_abs": entry "/abs.dart" escapes the package'):
+        fail("archive_path_error must name the package and the path: %r" % perr)

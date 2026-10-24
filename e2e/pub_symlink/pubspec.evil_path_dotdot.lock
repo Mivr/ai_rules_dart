@@ -1,0 +1,14 @@
+# Local-registry lock for the header-scan e2e: an entry path climbing above
+# the package root must fail the fetch before extraction. See
+# pubspec.ok.lock for the url placeholder.
+packages:
+  evil_path_dotdot:
+    dependency: "direct main"
+    description:
+      name: evil_path_dotdot
+      sha256: "ccc6b3e984bcdf3beb33b2b7f5eda267caf08f4fb9455cc77e058d794441679d"
+      url: "file://FIXTURES_ROOT"
+    source: hosted
+    version: "1.0.0"
+sdks:
+  dart: ">=3.0.0 <4.0.0"

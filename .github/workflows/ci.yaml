@@ -753,19 +753,20 @@ jobs:
       # smuggles a symlink above its root, then expects: the clean hub to
       # stay green, the git fetch to fail on the escaping symlink, and each
       # hostile hosted hub to fail its fetch before extraction with the
-      # refusal naming package, entry path, entry kind and raw target. All
-      # locks are restored on exit.
+      # refusal naming package, entry path, entry kind and raw target (entry
+      # paths that escape the root themselves fail with the path diagnostic
+      # naming package and path instead). All locks are restored on exit.
       - name: pub_symlink — header scan stays green on clean packages, refuses hostile entries
         working-directory: e2e/pub_symlink
         run: |
-          trap 'git checkout -- pubspec.lock pubspec.ok.lock pubspec.evil_hard_out.lock pubspec.evil_hard_in.lock pubspec.evil_abs.lock pubspec.evil_esc.lock' EXIT
+          trap 'git checkout -- pubspec.lock pubspec.ok.lock pubspec.evil_hard_out.lock pubspec.evil_hard_in.lock pubspec.evil_abs.lock pubspec.evil_esc.lock pubspec.evil_path_abs.lock pubspec.evil_path_dotdot.lock' EXIT
           rm -rf /tmp/pub_symlink_evil /tmp/pub_symlink_outside.txt
           mkdir -p /tmp/pub_symlink_evil/evil_pkg/lib
           ( cd /tmp/pub_symlink_evil && git init -q . && git config user.email t@t.t && git config user.name t && printf 'name: evil_pkg\nversion: 1.0.0\nenvironment:\n  sdk: ">=3.0.0 <4.0.0"\n' > evil_pkg/pubspec.yaml && echo 'OUTSIDE-SECRET' > /tmp/pub_symlink_outside.txt && ln -s ../../outside.txt evil_pkg/lib/evil.dart && printf 'String get ok => "ok";\n' > evil_pkg/lib/ok.dart && git add -A && git commit -qm init )
           ref=$(git -C /tmp/pub_symlink_evil rev-parse HEAD)
           sed -i "s/0000000000000000000000000000000000000000/$ref/" pubspec.lock
           fixtures="$PWD/fixtures"
-          sed -i "s|file://FIXTURES_ROOT|file://$fixtures|" pubspec.ok.lock pubspec.evil_hard_out.lock pubspec.evil_hard_in.lock pubspec.evil_abs.lock pubspec.evil_esc.lock
+          sed -i "s|file://FIXTURES_ROOT|file://$fixtures|" pubspec.ok.lock pubspec.evil_hard_out.lock pubspec.evil_hard_in.lock pubspec.evil_abs.lock pubspec.evil_esc.lock pubspec.evil_path_abs.lock pubspec.evil_path_dotdot.lock
           bazel build //:ok_app
           echo "OK: clean hosted packages with an in-package symlink stay green"
           if bazel build //:app 2>/dev/null; then
@@ -798,6 +799,18 @@ jobs:
           fi
           bazel build //:evil_esc_app 2>&1 | grep -F -q 'pub package "evil_esc": symlink "lib/evil.dart" escapes the package (points at "../../outside.txt")'
           echo "OK: expected hosted symlink-escape error detected"
+          if bazel build //:evil_path_abs_app 2>/dev/null; then
+            echo "ERROR: build should have failed on the absolute entry path"
+            exit 1
+          fi
+          bazel build //:evil_path_abs_app 2>&1 | grep -F -q 'pub package "evil_path_abs": entry "/abs.dart" escapes the package'
+          echo "OK: expected absolute-path error detected"
+          if bazel build //:evil_path_dotdot_app 2>/dev/null; then
+            echo "ERROR: build should have failed on the climbing entry path"
+            exit 1
+          fi
+          bazel build //:evil_path_dotdot_app 2>&1 | grep -F -q 'pub package "evil_path_dotdot": entry "../outside.dart" escapes the package'
+          echo "OK: expected climbing-path error detected"
       # `e2e/pub_symlink/cycle` is a nested red-by-design workspace: the
       # two packages form a dependency cycle, so planning merges them — but
       # cycle_b_evil's tarball carries a hard-link entry, and the header
