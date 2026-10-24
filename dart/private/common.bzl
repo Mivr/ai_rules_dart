@@ -1,6 +1,6 @@
 """Shared utilities for Dart rules."""
 
-load("//dart:providers.bzl", "CODE_ASSET_LINK_MODES", "DartAnalyzableInfo", "DartCompileInfo", "DartInfo", "DartPackageMetadataInfo")
+load("//dart:providers.bzl", "CODE_ASSET_LINK_MODES", "DartCompileInfo", "DartInfo", "DartPackageMetadataInfo")
 load("//dart/private:dart_info.bzl", "derived_package_info", "package_lib_prefix")
 load("//dart/private:source_set.bzl", "needs_source_assembly", "package_for_index", "package_index")
 
@@ -1277,18 +1277,17 @@ def _synth_index_srcs(transitive_srcs, transitive_resources, pkg_index):
     return by_pkg
 
 def _synth_stage_package(ctx, pkg, pfiles, stage_name, stage_root):
-    """Stages one package's files under the stage root. Returns (root, staged outputs, staged relative paths)."""
+    """Stages one package's files under the stage root. Returns (root, staged outputs)."""
     dep_mangled = pkg.package_name.replace("_", "__").replace("/", "_s")
     if not pfiles:
-        return stage_root + "/" + dep_mangled, [], []
+        return stage_root + "/" + dep_mangled, []
     if len(pfiles) == 1 and pfiles[0].is_directory:
         dir_link = ctx.actions.declare_directory(stage_name + "/" + dep_mangled)
         ctx.actions.symlink(output = dir_link, target_file = pfiles[0])
-        return stage_root + "/" + dep_mangled, [dir_link], [dep_mangled]
+        return stage_root + "/" + dep_mangled, [dir_link]
     dep_prefix = (pkg.lib_root + "/lib/") if pkg.lib_root else "lib/"
     occupied = {}
     staged = []
-    rels = []
     for f in pfiles:
         if f.is_directory or not f.short_path.startswith(dep_prefix):
             continue
@@ -1296,39 +1295,10 @@ def _synth_stage_package(ctx, pkg, pfiles, stage_name, stage_root):
         if rel in occupied:
             continue
         occupied[rel] = True
-        rels.append(dep_mangled + "/lib/" + rel)
         link = ctx.actions.declare_file(stage_name + "/" + dep_mangled + "/lib/" + rel)
         ctx.actions.symlink(output = link, target_file = f)
         staged.append(link)
-    return stage_root + "/" + dep_mangled, staged, rels
-
-# The shim library every `dart/ext` shim binary is built on. A generator whose
-# closure holds it parses the `--summary` and `--sdk-summary` flags; a
-# generator that does not may reject them as unknown.
-_BUILDER_SHIM_SOURCE = "dart/ext/lib/builder_shim.dart"
-
-def is_builder_shim_generator(generator):
-    """Returns whether a `generator_bin` is built on the rules_dart builder shim.
-
-    The shim's source is in the executable's closure. That is the one fact that
-    says the binary parses the shim-only flags, whatever its own sources are, and
-    it holds for every `dart/ext` shim and for a user binary that uses the shim
-    library directly. A binary with no Dart closure (a Go or C++ tool) is not.
-
-    Args:
-      generator: The `generator_bin` target, or `None`.
-
-    Returns:
-      A bool.
-    """
-    if generator == None:
-        return False
-    if DartAnalyzableInfo not in generator:
-        return False
-    for f in generator[DartAnalyzableInfo].dart_info.transitive_srcs.to_list():
-        if f.short_path == _BUILDER_SHIM_SOURCE or f.short_path.endswith("/" + _BUILDER_SHIM_SOURCE):
-            return True
-    return False
+    return stage_root + "/" + dep_mangled, staged
 
 def pkg_roots_stage_digest(packages, by_pkg):
     """Digests the declared staged set for a `<name>.pkg_roots` stage root.
@@ -1410,7 +1380,7 @@ def synth_package_config(ctx, library_deps):
         pkg_name = pkg.package_name
         if not pkg_name or pkg_name in roots:
             continue
-        root, new_staged, _new_rels = _synth_stage_package(ctx, pkg, by_pkg.get(pkg_name, []), stage_name, stage_root)
+        root, new_staged = _synth_stage_package(ctx, pkg, by_pkg.get(pkg_name, []), stage_name, stage_root)
         roots[pkg_name] = root
         staged.extend(new_staged)
 

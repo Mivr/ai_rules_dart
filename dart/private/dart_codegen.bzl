@@ -61,7 +61,7 @@ cost is amortised across the worker's lifetime.
 """
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
-load("//dart:providers.bzl", "DartCompileInfo", "DartInfo", "DartPackageMetadataInfo")
+load("//dart:providers.bzl", "DartAnalyzableInfo", "DartCompileInfo", "DartInfo", "DartPackageMetadataInfo")
 load(
     "//dart/private:common.bzl",
     "DEFAULT_ROOT_LANGUAGE_VERSION",
@@ -69,7 +69,6 @@ load(
     "add_shim_contract_args",
     "asset_path_for",
     "dart_lib_root_for_package",
-    "is_builder_shim_generator",
     "kernel_sdk_mismatch_error",
     "resolve_package_identity",
     "same_package_library_dep_files",
@@ -86,8 +85,32 @@ load(
     "package_key",
 )
 
-# `is_builder_shim_generator` (the summaries' shim gate) lives in `common.bzl`;
-# it is re-exported here through the load above for existing importers.
+# The shim library every `dart/ext` shim binary is built on. A generator whose
+# closure holds it parses the `--summary` and `--sdk-summary` flags; a generator
+# that does not may reject them as unknown.
+_BUILDER_SHIM_SOURCE = "dart/ext/lib/builder_shim.dart"
+
+def is_builder_shim_generator(generator):
+    """Returns whether a `generator_bin` is built on the rules_dart builder shim.
+
+    The shim's source is in the executable's closure. That is the one fact that
+    says the binary parses the summary flags, whatever its own sources are, and
+    it holds for every `dart/ext` shim and for a user binary that uses the shim
+    library directly. A binary with no Dart closure (a Go or C++ tool) is not.
+
+    Args:
+      generator: The `generator_bin` target.
+
+    Returns:
+      A bool.
+    """
+    if DartAnalyzableInfo not in generator:
+        return False
+    for f in generator[DartAnalyzableInfo].dart_info.transitive_srcs.to_list():
+        if f.short_path == _BUILDER_SHIM_SOURCE or f.short_path.endswith("/" + _BUILDER_SHIM_SOURCE):
+            return True
+    return False
+
 def _summaries_flag_eligible(ctx):
     """Returns whether summary passing is enabled by flag, SDK, and generator kind."""
     if not ctx.attr._analyzer_summaries[BuildSettingInfo].value:
@@ -245,9 +268,19 @@ def _codegen_providers(identity, outputs):
         ),
     ]
 
-def _codegen_worker_inputs(ctx, args, cg):
-    """Builds the worker args and `--dep`/`--part` direct inputs. Returns the direct inputs list."""
+def _codegen_run_worker(ctx, cg):
+    """Runs the `generator_bin` worker action.
+
+    Args:
+      ctx: The `dart_codegen` rule context.
+      cg: The codegen `struct` built by `_dart_codegen_impl` (`toolchain`,
+        `dart`, `sdk_files`, `script_sdk_files`, `synth_pc`,
+        `library_dep_srcs`, `lib_root`, `auto_staged`, `src`, `outputs`,
+        `identity`).
+    """
+    args = ctx.actions.args()
     direct_inputs = [cg.src] + list(ctx.files.data)
+    data_runfiles = [dep[DefaultInfo].default_runfiles.files for dep in ctx.attr.data]
 
     # Worker mode requires a single `@flagfile` / `--flagfile=` arg; the
     # `use_param_file` + `multiline` format produces exactly that and
@@ -268,21 +301,6 @@ def _codegen_worker_inputs(ctx, args, cg):
         lib_root = cg.lib_root,
     ))
     args.add_all(ctx.attr.generator_args)
-    return direct_inputs
-
-def _codegen_run_worker(ctx, cg):
-    """Runs the `generator_bin` worker action.
-
-    Args:
-      ctx: The `dart_codegen` rule context.
-      cg: The codegen `struct` built by `_dart_codegen_impl` (`toolchain`,
-        `dart`, `sdk_files`, `script_sdk_files`, `synth_pc`,
-        `library_dep_srcs`, `lib_root`, `auto_staged`, `src`, `outputs`,
-        `identity`).
-    """
-    args = ctx.actions.args()
-    direct_inputs = _codegen_worker_inputs(ctx, args, cg)
-    data_runfiles = [dep[DefaultInfo].default_runfiles.files for dep in ctx.attr.data]
 
     # Under `//dart:analyzer_summaries` only: the other packages of `deps`
     # resolve from their summaries. The script branch below takes no
@@ -352,8 +370,8 @@ def _codegen_run_script(ctx, cg):
     Args:
       ctx: The `dart_codegen` rule context.
       cg: The codegen `struct` built by `_dart_codegen_impl`; only `dart`,
-        `script_sdk_files`, `synth_pc`, `library_dep_srcs`,
-        `lib_root`, `auto_staged`, `src` and `outputs` are read.
+        `script_sdk_files`, `synth_pc`, `library_dep_srcs`, `lib_root`,
+        `auto_staged`, `src` and `outputs` are read.
     """
 
     # Run generator as a Dart script via the SDK's dart executable.
