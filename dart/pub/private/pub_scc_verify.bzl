@@ -25,6 +25,35 @@ load("//dart/pub/private:scc.bzl", "compute_sccs")
 # wrong plan and fails again.
 _RECOVERY_STEP = "remove the pub extension's `facts` entry and its `moduleExtensions` entry from MODULE.bazel.lock, delete the `MODULE.bazel.lock` inside Bazel's output base (`bazel info output_base` shows the directory), then run the build again"
 
+def scc_planned_deps_error(repo_name, member_name, planned):
+    """Decides whether one merged member's entry carries usable planned names.
+
+    Args:
+      repo_name: The merged repository's name, for diagnostics.
+      member_name: The member package being checked.
+      planned: The member entry's `planned_deps` value (None when the entry
+        carries none).
+
+    Returns:
+      An error string naming the repository and the member when the entry
+      carries no planned names, or names that are not a list of strings; None
+      when planning named a list of strings (possibly empty).
+    """
+    if type(planned) != "list":
+        return (
+            'pub_lock_scc_package "%s": member "%s" has no usable cycle-planning names ' +
+            "(its entry carries no `planned_deps` list of strings). The lockfile's pub cycle-planning facts disagree with the packages. " +
+            "To recover, %s."
+        ) % (repo_name, member_name, _RECOVERY_STEP)
+    for dep in planned:
+        if type(dep) != "string":
+            return (
+                'pub_lock_scc_package "%s": member "%s" has no usable cycle-planning names ' +
+                "(its entry's `planned_deps` holds a non-string). The lockfile's pub cycle-planning facts disagree with the packages. " +
+                "To recover, %s."
+            ) % (repo_name, member_name, _RECOVERY_STEP)
+    return None
+
 def scc_member_deps_error(repo_name, member_name, planned_deps, real_deps):
     """Decides whether one merged member's real pubspec matches the plan.
 

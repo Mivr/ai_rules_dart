@@ -8,7 +8,8 @@ fetches one, no facts fetch everything), that the merge plan from recorded
 names equals the plan from freshly parsed pubspecs on a cyclic graph, that
 foreign-schema facts are ignored while a malformed current-schema fact fails
 naming its key and stale entries are dropped, the merged-repository
-verification decisions (names match, members connected), and the narrowed
+verification decisions (names match, members connected, an entry without
+usable planned names fails), and the narrowed
 scratch check's five decisions.
 """
 
@@ -21,7 +22,7 @@ load("//dart/pub:extensions.bzl", "plan_scope_sccs")
 load("//dart/pub/private:pub_scc_facts.bzl", "fact_deps_error", "git_fact_key", "hosted_fact_key", "lookup_fact_deps", "parser_schema", "parser_texts_digest", "record_scope_facts", "scratch_pubspec_error", "split_scope_facts")
 
 # buildifier: disable=bzl-visibility
-load("//dart/pub/private:pub_scc_verify.bzl", "scc_member_deps_error", "scc_members_connectivity_error")
+load("//dart/pub/private:pub_scc_verify.bzl", "scc_member_deps_error", "scc_members_connectivity_error", "scc_planned_deps_error")
 load("//dart/tests:small_suite.bzl", "small_unittest_suite")
 
 _SHA = "fb0f1107cac15a5ea6ef0a6ef71a807b9e4267c713bb93e00e92d737cc8dbd8a"
@@ -249,6 +250,16 @@ def _verify_backward_disconnected_test_impl(ctx):
     asserts.true(env, "facts" in err and "MODULE.bazel.lock" in err, "the error gives the lockfile recovery: %s" % err)
     return unittest.end(env)
 
+def _verify_missing_plan_test_impl(ctx):
+    env = unittest.begin(ctx)
+    for bad in [None, "aaa", 42, ["aaa", 42]]:
+        err = scc_planned_deps_error("my_repo", "aaa", bad)
+        asserts.true(env, err != None, "unusable planned names %r fail" % (bad,))
+        asserts.true(env, "my_repo" in err and "aaa" in err, "the error names the repository and the member: %s" % err)
+    asserts.equals(env, None, scc_planned_deps_error("my_repo", "aaa", ["bbb"]), "a list of strings is usable")
+    asserts.equals(env, None, scc_planned_deps_error("my_repo", "aaa", []), "an empty plan is usable")
+    return unittest.end(env)
+
 def _check(package_name = "charcode", root = "/root/pkg", real = "/root/pkg/pubspec.yaml", exists = True, listed = False):
     return struct(
         package_name = package_name,
@@ -326,6 +337,7 @@ _t17_test = unittest.make(_scratch_escaping_test_impl)
 _t18_test = unittest.make(_scratch_dangling_test_impl)
 _t19_test = unittest.make(_scratch_missing_test_impl)
 _t20_test = unittest.make(_scratch_root_link_test_impl)
+_t21_test = unittest.make(_verify_missing_plan_test_impl)
 
 def pub_scc_facts_test_suite(name):
     small_unittest_suite(
@@ -351,4 +363,5 @@ def pub_scc_facts_test_suite(name):
         _t18_test,
         _t19_test,
         _t20_test,
+        _t21_test,
     )
