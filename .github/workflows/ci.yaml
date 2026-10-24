@@ -775,8 +775,9 @@ jobs:
           sed -i "s|file://FIXTURES_ROOT|file://$fixtures|" pubspec.ok.lock pubspec.evil_hard_out.lock pubspec.evil_hard_in.lock pubspec.evil_abs.lock pubspec.evil_esc.lock pubspec.evil_path_abs.lock pubspec.evil_path_dotdot.lock
           bazel build //:ok_app
           echo "OK: clean hosted packages with an in-package symlink stay green"
-          grep -F -q 'pub.scc.v1/hosted/ok_clean' MODULE.bazel.lock
-          grep -F -q 'pub.scc.v1/hosted/ok_inlink' MODULE.bazel.lock
+          grep -E -q 'pub\.scc\.v2\.[0-9a-f]{24}/hosted/ok_clean/' MODULE.bazel.lock
+          grep -E -q 'pub\.scc\.v2\.[0-9a-f]{24}/hosted/ok_inlink/' MODULE.bazel.lock
+          test "$(grep -c -F 'pub.scc.v1/' MODULE.bazel.lock)" = 0
           echo "OK: planning runs on the committed facts while hostile spokes still refuse"
           if bazel build //:app 2>/dev/null; then
             echo "ERROR: build should have failed on the escaping symlink"
