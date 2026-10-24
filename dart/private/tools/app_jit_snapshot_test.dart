@@ -2244,22 +2244,23 @@ void main(List<String> args) {
   });
 
   test('jitLinuxStatOffsets pins the 64-bit struct stat layout per ABI', () {
-    // x86_64, arm64 and 64-bit RISC-V share one layout for these fields (the
-    // link count a u64 at 16, the mode a u32 at 24, the uid a u32 at 28), so
-    // the `fstat` fallback decodes them identically there. A 32-bit ABI has no
-    // pinned layout (i386 and 32-bit ARM differ, and glibc's large-file
-    // redirection moves the fields): the fallback fails closed instead of
-    // decoding guessed offsets.
-    for (final abi in [
-      ffi.Abi.linuxX64,
-      ffi.Abi.linuxArm64,
-      ffi.Abi.linuxRiscv64,
-    ]) {
+    // x86_64 lays the fields out as a u64 link count at 16, a u32 mode at 24
+    // and a u32 uid at 28; aarch64 and 64-bit RISC-V follow the asm-generic
+    // layout instead (a u32 mode at 16, a u32 link count at 20, a u32 uid at
+    // 24). A 32-bit ABI has no pinned layout (i386 and 32-bit ARM differ, and
+    // glibc's large-file redirection moves the fields): the fallback fails
+    // closed instead of decoding guessed offsets.
+    expect(locks.jitLinuxStatOffsets(abi: ffi.Abi.linuxX64), (
+      nlink: 16,
+      mode: 24,
+      uid: 28,
+    ), reason: 'x86_64 uses its own layout');
+    for (final abi in [ffi.Abi.linuxArm64, ffi.Abi.linuxRiscv64]) {
       expect(locks.jitLinuxStatOffsets(abi: abi), (
-        nlink: 16,
-        mode: 24,
-        uid: 28,
-      ), reason: '$abi shares the 64-bit layout');
+        nlink: 20,
+        mode: 16,
+        uid: 24,
+      ), reason: '$abi uses the asm-generic layout');
     }
     for (final abi in [
       ffi.Abi.linuxIA32,
@@ -2274,21 +2275,72 @@ void main(List<String> args) {
     }
   });
 
-  test('jitDecodeLinuxStat reads the 64-bit layout from raw bytes', () {
-    // Synthetic `struct stat` bytes pin the decoder without the syscall: link
-    // count 3, a 0666 regular file, owner 1001. A 32-bit ABI decodes nothing.
-    final bytes = List<int>.filled(64, 0);
-    bytes[16] = 3; // st_nlink low half.
-    bytes[24] = 0xb6; // st_mode low byte of 0100666.
-    bytes[25] = 0x81; // st_mode high byte: 0100000 is a regular file.
-    bytes[28] = 0xe9; // st_uid low byte of 1001.
-    bytes[29] = 0x03;
-    final stat = locks.jitDecodeLinuxStat(bytes, abi: ffi.Abi.linuxX64);
-    expect(stat?.kind, 'regular file');
-    expect(stat?.mode, 0x81b6);
-    expect(stat?.uid, 1001);
-    expect(stat?.nlink, 3);
-    expect(locks.jitDecodeLinuxStat(bytes, abi: ffi.Abi.linuxIA32), isNull);
+  test('jitLinuxStat64Calls pins the old-glibc calls per ABI', () {
+    // Plain `fstat`/`lstat` are real symbols only since glibc 2.33 (older
+    // glibc inlines them), so the fallback calls `__fxstat64`/`__lxstat64`
+    // with `_STAT_VER`: 1 on x86_64, 0 on aarch64 and 64-bit RISC-V. A
+    // 32-bit ABI has no pinned call (`stat64` is not `stat` there): the
+    // fallback fails closed instead of decoding a guessed layout.
+    expect(locks.jitLinuxStat64Calls(abi: ffi.Abi.linuxX64), (
+      fstat: '__fxstat64',
+      lstat: '__lxstat64',
+      ver: 1,
+    ), reason: 'x86_64 passes _STAT_VER_LINUX');
+    for (final abi in [ffi.Abi.linuxArm64, ffi.Abi.linuxRiscv64]) {
+      expect(locks.jitLinuxStat64Calls(abi: abi), (
+        fstat: '__fxstat64',
+        lstat: '__lxstat64',
+        ver: 0,
+      ), reason: '$abi passes the generic _STAT_VER');
+    }
+    for (final abi in [
+      ffi.Abi.linuxIA32,
+      ffi.Abi.linuxArm,
+      ffi.Abi.linuxRiscv32,
+    ]) {
+      expect(
+        locks.jitLinuxStat64Calls(abi: abi),
+        isNull,
+        reason: '$abi fails the fallback closed',
+      );
+    }
+  });
+
+  test('jitDecodeLinuxStat reads each ABI layout from raw bytes', () {
+    // Synthetic `struct stat` bytes pin the decoder without the syscall. On
+    // x86_64 the link count is a u64 whose high half is ignored (7 links with
+    // garbage above); on aarch64 and 64-bit RISC-V the mode, link count and
+    // uid sit at the asm-generic offsets. A 32-bit ABI decodes nothing.
+    final x64 = List<int>.filled(64, 0);
+    x64[16] = 7; // st_nlink low half.
+    x64[20] = 0x34; // st_nlink high half: ignored.
+    x64[21] = 0x12;
+    x64[24] = 0xb6; // st_mode low byte of 0100666.
+    x64[25] = 0x81; // st_mode high byte: 0100000 is a regular file.
+    x64[28] = 0xe9; // st_uid low byte of 1001.
+    x64[29] = 0x03;
+    final x64stat = locks.jitDecodeLinuxStat(x64, abi: ffi.Abi.linuxX64);
+    expect(x64stat?.kind, 'regular file');
+    expect(x64stat?.mode, 0x81b6);
+    expect(x64stat?.uid, 1001);
+    expect(x64stat?.nlink, 7);
+    for (final entry in [
+      (abi: ffi.Abi.linuxArm64, mode: 0x81b6, nlink: 5, uid: 1001),
+      (abi: ffi.Abi.linuxRiscv64, mode: 0x81a4, nlink: 2, uid: 502),
+    ]) {
+      final bytes = List<int>.filled(64, 0);
+      bytes[16] = entry.mode & 0xff; // st_mode.
+      bytes[17] = (entry.mode >> 8) & 0xff;
+      bytes[20] = entry.nlink; // st_nlink.
+      bytes[24] = entry.uid & 0xff; // st_uid.
+      bytes[25] = (entry.uid >> 8) & 0xff;
+      final stat = locks.jitDecodeLinuxStat(bytes, abi: entry.abi);
+      expect(stat?.kind, 'regular file', reason: '${entry.abi} kind');
+      expect(stat?.mode, entry.mode, reason: '${entry.abi} mode');
+      expect(stat?.uid, entry.uid, reason: '${entry.abi} uid');
+      expect(stat?.nlink, entry.nlink, reason: '${entry.abi} nlink');
+    }
+    expect(locks.jitDecodeLinuxStat(x64, abi: ffi.Abi.linuxIA32), isNull);
   });
 
   test('jitOpenFlags pins O_* per OS and ABI', () {

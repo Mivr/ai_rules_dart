@@ -127,6 +127,22 @@ typedef _LstatDart = int Function(
   ffi.Pointer<ffi.Uint8>,
   ffi.Pointer<ffi.Uint8>,
 );
+typedef _Fxstat64Native = ffi.Int Function(
+  ffi.Int,
+  ffi.Int,
+  ffi.Pointer<ffi.Uint8>,
+);
+typedef _Fxstat64Dart = int Function(int, int, ffi.Pointer<ffi.Uint8>);
+typedef _Lxstat64Native = ffi.Int Function(
+  ffi.Int,
+  ffi.Pointer<ffi.Uint8>,
+  ffi.Pointer<ffi.Uint8>,
+);
+typedef _Lxstat64Dart = int Function(
+  int,
+  ffi.Pointer<ffi.Uint8>,
+  ffi.Pointer<ffi.Uint8>,
+);
 typedef _GeteuidNative = ffi.Uint32 Function();
 typedef _GeteuidDart = int Function();
 typedef _ErrnoNative = ffi.Pointer<ffi.Int> Function();
@@ -159,18 +175,22 @@ String jitFstatSymbol({required bool isMacOS, required bool isX64}) {
 }
 
 /// Offsets of the link count, mode and owner uid in the Linux 64-bit `struct
-/// stat` (see [_jitFstatFd]): a pure function of the architecture. The 64-bit
-/// Linux ABIs (x86_64, arm64, 64-bit RISC-V) share one layout for these fields
-/// (the link count a little-endian u64 at 16, the mode a little-endian u32 at
-/// 24, the uid a little-endian u32 at 28); a 32-bit ABI returns null, and the
-/// caller fails closed rather than decoding a layout that differs per ABI and
-/// per glibc large-file redirection. All supported hosts are little-endian.
+/// stat` (see [_jitFstatFd]): a pure function of the architecture. x86_64 lays
+/// them out as a little-endian u64 link count at 16, a little-endian u32 mode
+/// at 24 and a little-endian u32 uid at 28; aarch64 and 64-bit RISC-V follow
+/// the asm-generic layout instead (a little-endian u32 mode at 16, a
+/// little-endian u32 link count at 20, a little-endian u32 uid at 24). The
+/// device (u64 at 0) and inode (u64 at 8) match in both. A 32-bit ABI returns
+/// null, and the caller fails closed rather than decoding a layout that
+/// differs per ABI and per glibc large-file redirection. All supported hosts
+/// are little-endian.
 ({int nlink, int mode, int uid})? jitLinuxStatOffsets({required ffi.Abi abi}) {
   switch (abi) {
     case ffi.Abi.linuxX64:
+      return (nlink: 16, mode: 24, uid: 28);
     case ffi.Abi.linuxArm64:
     case ffi.Abi.linuxRiscv64:
-      return (nlink: 16, mode: 24, uid: 28);
+      return (nlink: 20, mode: 16, uid: 24);
     default:
       return null;
   }
@@ -178,10 +198,11 @@ String jitFstatSymbol({required bool isMacOS, required bool isX64}) {
 
 /// Decodes 64 bytes of Linux 64-bit `struct stat` (see [jitLinuxStatOffsets]):
 /// a pure function of the bytes and the ABI, so tests pin the layout without
-/// the syscall. The link count is 64 bits wide; only its low half is kept (no
-/// host links a file more than 2^32 times). The identity is the device
-/// number's halves (u64 at 0) with the inode (u64 at 8). Null on a 32-bit ABI
-/// (see [jitLinuxStatOffsets]).
+/// the syscall. On x86_64 the link count is 64 bits wide and only its low half
+/// is kept (no host links a file more than 2^32 times); on aarch64 and 64-bit
+/// RISC-V it is 32 bits wide. The identity is the device number's halves (u64
+/// at 0) with the inode (u64 at 8). Null on a 32-bit ABI (see
+/// [jitLinuxStatOffsets]).
 JitStat? jitDecodeLinuxStat(List<int> bytes, {required ffi.Abi abi}) {
   final offsets = jitLinuxStatOffsets(abi: abi);
   if (offsets == null) return null;
@@ -198,6 +219,29 @@ JitStat? jitDecodeLinuxStat(List<int> bytes, {required ffi.Abi abi}) {
       inoHi: _jitU32(bytes, 12),
     ),
   );
+}
+
+/// The versioned 64-bit stat calls for a glibc without plain `fstat`/`lstat`
+/// (see [_jitLinuxFstatFd] and [_jitLinuxStatPath]): a pure function of the
+/// ABI. Plain `fstat`/`lstat` are real symbols only since glibc 2.33 (older
+/// glibc inlines them), while `statx` needs 2.28 — so where both are missing
+/// the callers fall back to `__fxstat64`/`__lxstat64` (GLIBC_2.2.5) with
+/// glibc's `_STAT_VER`: 1 on x86_64 (`_STAT_VER_LINUX`), 0 on aarch64 and
+/// 64-bit RISC-V (generic). Their buffer layout is the 64-bit `struct stat`
+/// (see [jitLinuxStatOffsets]). Null on a 32-bit ABI, where `stat64` is not
+/// `stat` and the caller fails closed.
+({String fstat, String lstat, int ver})? jitLinuxStat64Calls({
+  required ffi.Abi abi,
+}) {
+  switch (abi) {
+    case ffi.Abi.linuxX64:
+      return (fstat: '__fxstat64', lstat: '__lxstat64', ver: 1);
+    case ffi.Abi.linuxArm64:
+    case ffi.Abi.linuxRiscv64:
+      return (fstat: '__fxstat64', lstat: '__lxstat64', ver: 0);
+    default:
+      return null;
+  }
 }
 
 /// O_CLOEXEC for the lock and every temporary descriptor (see [jitOpenFlags]
@@ -351,7 +395,8 @@ String? jitUserName(int uid) {
 /// every architecture (the link count is a little-endian u32 at offset 16, the
 /// uid a little-endian u32 at offset 20, the mode a little-endian u16 at offset
 /// 28), falling back to `lstat(2)` with the 64-bit `struct stat` layout where
-/// `statx` is unavailable (see [jitLinuxStatOffsets]); on macOS it is `lstat(2)`
+/// `statx` is unavailable (see [jitLinuxStatOffsets]), and to `__lxstat64`
+/// where the plain symbol is missing (see [jitLinuxStat64Calls]); on macOS it is `lstat(2)`
 /// with the 64-bit `struct stat` layout (the mode at offset 4, the link count
 /// at offset 6, the uid at offset 16; see [jitLstatSymbol]). All supported
 /// hosts are little-endian. Metadata only: the entry's content is never read.
@@ -390,10 +435,33 @@ JitStat? jitStatEntry(String path) {
   }
 }
 
+/// Stats through the 64-bit `struct stat` fallback on old glibc (see
+/// [jitLinuxStat64Calls]): [plain] (`fstat`/`lstat`) first, [versioned]
+/// (`__fxstat64`/`__lxstat64` with `_STAT_VER`) where the plain symbol is
+/// missing (glibc older than 2.33 inlines it). True when either call statted
+/// the entry; the caller then decodes the buffer (see [jitDecodeLinuxStat]).
+bool _jitStat64Fallback({
+  required int Function() plain,
+  required int Function() versioned,
+}) {
+  try {
+    return plain() == 0;
+  } on ArgumentError {
+    // The plain symbol is missing: fall back to the versioned call.
+    try {
+      return versioned() == 0;
+    } on ArgumentError {
+      // Neither call exists on this libc: nothing statted.
+      return false;
+    }
+  }
+}
+
 /// Stats [pathPtr] on Linux (see [jitStatEntry]): `statx(2)` first, `lstat(2)`
 /// with the 64-bit `struct stat` layout where `statx` is unavailable or
-/// refuses the entry (see [jitLinuxStatOffsets]). Null when neither stats the
-/// entry.
+/// refuses the entry (see [jitLinuxStatOffsets]), `__lxstat64` with
+/// `_STAT_VER` where the plain symbol is missing (see [jitLinuxStat64Calls]).
+/// Null when none stats the entry.
 JitStat? _jitLinuxStatPath(
   ffi.DynamicLibrary lib,
   ffi.Pointer<ffi.Uint8> pathPtr,
@@ -410,13 +478,16 @@ JitStat? _jitLinuxStatPath(
   } on ArgumentError {
     // No `statx` in this libc (glibc older than 2.28): fall through to lstat.
   }
-  try {
-    final lstat = lib.lookupFunction<_LstatNative, _LstatDart>('lstat');
-    if (lstat(pathPtr, buf) != 0) return null;
-  } on ArgumentError {
-    // Neither call exists on this libc: nothing statted.
-    return null;
-  }
+  final calls = jitLinuxStat64Calls(abi: ffi.Abi.current());
+  if (calls == null) return null;
+  final statted = _jitStat64Fallback(
+    plain: () =>
+        lib.lookupFunction<_LstatNative, _LstatDart>('lstat')(pathPtr, buf),
+    versioned: () => lib.lookupFunction<_Lxstat64Native, _Lxstat64Dart>(
+      calls.lstat,
+    )(calls.ver, pathPtr, buf),
+  );
+  if (!statted) return null;
   return jitDecodeLinuxStat(buf.asTypedList(64), abi: ffi.Abi.current());
 }
 
@@ -945,7 +1016,8 @@ bool jitFdMatchesPath(int fd, String path) {
 /// (whose `struct statx` layout is architecture-independent), falling back to
 /// `fstat` with the 64-bit `struct stat` layout where `statx` is unavailable
 /// or refuses the descriptor (glibc older than 2.28; see
-/// [jitLinuxStatOffsets]); on macOS `fstat` with the 64-bit `struct stat`
+/// [jitLinuxStatOffsets]), and to `__fxstat64` where the plain symbol is
+/// missing (see [jitLinuxStat64Calls]); on macOS `fstat` with the 64-bit `struct stat`
 /// layout (see [jitFstatSymbol]). Null when the descriptor cannot be statted.
 JitStat? _jitFstatFd(ffi.DynamicLibrary lib, int fd) {
   final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
@@ -972,8 +1044,9 @@ JitStat? _jitFstatFd(ffi.DynamicLibrary lib, int fd) {
 
 /// Stats [fd] on Linux (see [_jitFstatFd]): `statx` with `AT_EMPTY_PATH`
 /// first, `fstat` with the 64-bit `struct stat` layout where `statx` is
-/// unavailable or refuses the descriptor (see [jitLinuxStatOffsets]). Null
-/// when neither stats the descriptor.
+/// unavailable or refuses the descriptor (see [jitLinuxStatOffsets]),
+/// `__fxstat64` with `_STAT_VER` where the plain symbol is missing (see
+/// [jitLinuxStat64Calls]). Null when none stats the descriptor.
 JitStat? _jitLinuxFstatFd(
   ffi.DynamicLibrary lib,
   int fd,
@@ -998,13 +1071,15 @@ JitStat? _jitLinuxFstatFd(
   } on ArgumentError {
     // No `statx` in this libc (glibc older than 2.28): fall through to fstat.
   }
-  try {
-    final fstat = lib.lookupFunction<_FstatNative, _FstatDart>('fstat');
-    if (fstat(fd, buf) != 0) return null;
-  } on ArgumentError {
-    // Neither call exists on this libc: nothing statted.
-    return null;
-  }
+  final calls = jitLinuxStat64Calls(abi: ffi.Abi.current());
+  if (calls == null) return null;
+  final statted = _jitStat64Fallback(
+    plain: () => lib.lookupFunction<_FstatNative, _FstatDart>('fstat')(fd, buf),
+    versioned: () => lib.lookupFunction<_Fxstat64Native, _Fxstat64Dart>(
+      calls.fstat,
+    )(calls.ver, fd, buf),
+  );
+  if (!statted) return null;
   return jitDecodeLinuxStat(buf.asTypedList(64), abi: ffi.Abi.current());
 }
 
