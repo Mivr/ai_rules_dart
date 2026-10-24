@@ -830,12 +830,15 @@ def _parse_pubspec_docmarker_test_impl(ctx):
 def _parse_pubspec_unsupported_test_impl(ctx):
     env = unittest.begin(ctx)
 
-    # A flow collection that spans lines fails naming the pubspec, the line
-    # where the collection opens, and the form.
+    # A flow collection that starts on its key's line folds its deeper lines
+    # and reads as one value when the folded text parses, as pub reads it
+    # (package:yaml 3.1.4 with the pinned SDK 3.13.5 reads ["premium",
+    # "free"] below). A spanning flow that does not fold still fails naming
+    # the pubspec, the line where the collection opens, and the form; see
+    # the rejected span test.
     flow = "name: multiflow\nenvironment:\n  sdk: ^3.0.0\ndependencies:\n  bar:\n    path: ../stubbar\nflutter:\n  assets:\n    - path: assets/x.png\n      flavors: [premium,\n        free]\n"
-    err = parse_pubspec_document_error(flow, "//:pubspec.yaml")
-    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 10" in err)
-    asserts.true(env, "not supported" in err and "flow" in err)
+    asserts.equals(env, ["premium", "free"], parse_pubspec_document(flow)["flutter"]["assets"][0]["flavors"])
+    asserts.equals(env, None, parse_pubspec_document_error(flow))
 
     # An explicit key fails naming the pubspec, the `?` line, and the form.
     expl = "name: expl\nenvironment:\n  sdk: ^3.0.0\n? dependencies\n: {}\n"
@@ -986,6 +989,11 @@ def _parse_pubspec_flow_document_test_impl(ctx):
     asserts.equals(env, "one\ntwo", parse_pubspec_document("{description: one\n\ntwo}\n")["description"])
     asserts.equals(env, "one\ntwo", parse_pubspec_document("{description: one\n\n\ntwo}\n")["description"])
     asserts.equals(env, "one\n\ntwo", parse_pubspec_document("{description: \"one\n\n\ntwo\"}\n")["description"])
+
+    # Comment-only lines before the opening bracket are skipped, as pub
+    # skips them.
+    asserts.equals(env, 1, parse_pubspec_document("# c\n{a: 1,\n b: 2}\n")["a"])
+    asserts.equals(env, 2, parse_pubspec_document("# c\n{a: 1,\n b: 2}\n")["b"])
     return unittest.end(env)
 
 def _parse_pubspec_json_document_test_impl(ctx):
@@ -1011,11 +1019,10 @@ def _parse_pubspec_rejected_span_test_impl(ctx):
     asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 5" in err)
     asserts.true(env, "not supported" in err and "flow" in err)
 
-    # `- key: [a,` and `- [a,` spanning lines fail the same way.
-    err = parse_pubspec_document_error("name: p1\nitems:\n  - key: [a,\n    b]\n", "//:pubspec.yaml")
-    asserts.true(env, err != None and "line 3" in err and "not supported" in err and "flow" in err)
-    err = parse_pubspec_document_error("name: p1\nitems:\n  - [a,\n    b]\n", "//:pubspec.yaml")
-    asserts.true(env, err != None and "line 3" in err and "not supported" in err and "flow" in err)
+    # `- key: [a,` and `- [a,` spanning lines fold and read as one value, as
+    # pub reads them.
+    asserts.equals(env, [{"key": ["a", "b"]}], parse_pubspec_document("name: p1\nitems:\n  - key: [a,\n    b]\n")["items"])
+    asserts.equals(env, [["a", "b"]], parse_pubspec_document("name: p1\nitems:\n  - [a,\n    b]\n")["items"])
 
     # A `:` line that continues a plain scalar is an explicit key, which pub
     # rejects: it fails naming the line and the form.
@@ -1104,6 +1111,11 @@ def _parse_pubspec_flow_quote_test_impl(ctx):
         ["foo\nbar"],
         parse_pubspec_document("name: p1\ntags:\n  [\"foo\\\n\n   bar\"]\n")["tags"],
     )
+    asserts.equals(
+        env,
+        ["foo\n   bar\n   baz"],
+        parse_pubspec_document("name: p1\ntags:\n  ['foo\\\n   bar\\\n   baz']\n")["tags"],
+    )
 
     # An apostrophe inside a plain scalar never opens a quote: `[don't,
     # stop]` reads whole, as pub reads it (see the flow apostrophe test).
@@ -1157,6 +1169,15 @@ def _parse_pubspec_flow_comment_test_impl(ctx):
     doc = "name: x\nenvironment:\n  sdk: ^3.0.0\nkeywords:\n  [red # c\n   , green]\n"
     asserts.equals(env, ["red", "green"], parse_pubspec_document(doc)["keywords"])
     asserts.equals(env, "^3.0.0", parse_pubspec_sdk_constraint(doc))
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+
+    # The same comment on the key's own line reads too: the head line folds
+    # with its deeper lines, as pub folds it.
+    doc = "keywords: [\"red\" # c\n   , green]\nname: x\nenvironment:\n  sdk: ^3.0.0\n"
+    asserts.equals(env, ["red", "green"], parse_pubspec_document(doc)["keywords"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "keywords: [red # c\n   , green]\nname: x\nenvironment:\n  sdk: ^3.0.0\n"
+    asserts.equals(env, ["red", "green"], parse_pubspec_document(doc)["keywords"])
     asserts.equals(env, None, parse_pubspec_document_error(doc))
     return unittest.end(env)
 

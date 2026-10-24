@@ -561,19 +561,17 @@ def _indented_marker_test_impl(ctx):
 def _multiline_flow_test_impl(ctx):
     env = unittest.begin(ctx)
 
-    # A flow collection that spans lines is not supported: it fails naming
-    # the line where the collection opens, instead of reading partially.
+    # A flow collection that starts on its key's line folds its deeper lines
+    # and reads as one value when the folded text parses, as pub reads it.
     text = "name: multiflow\nenvironment:\n  sdk: ^3.0.0\ndependencies:\n  bar:\n    path: ../stubbar\nflutter:\n  assets:\n    - path: assets/x.png\n      flavors: [premium,\n        free]\n"
     value, problems = document_value_and_problems(text, True)
     asserts.equals(env, "multiflow", value["name"])
-    asserts.equals(env, 1, len(problems))
-    if len(problems) == 1:
-        asserts.true(env, "line 10" in problems[0] and "not supported" in problems[0] and "flow" in problems[0])
+    asserts.equals(env, ["premium", "free"], value["flutter"]["assets"][0]["flavors"])
+    asserts.equals(env, [], problems)
     value, problems = document_value_and_problems(text, False)
     asserts.equals(env, "multiflow", value["name"])
-    asserts.equals(env, 1, len(problems))
-    if len(problems) == 1:
-        asserts.true(env, "line 10" in problems[0] and "not supported" in problems[0])
+    asserts.equals(env, ["premium", "free"], value["flutter"]["assets"][0]["flavors"])
+    asserts.equals(env, [], problems)
 
     # A flow value broken on one line stays an unreadable flow value.
     asserts.equals(

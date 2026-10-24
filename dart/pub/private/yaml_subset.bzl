@@ -46,12 +46,14 @@ Supported:
   blank line is one "\n" inside quotes while a blank run outside quotes
   is one "\n", and comment-only lines are skipped outside quotes. A quote
   opens only where a scalar starts, so an apostrophe in a plain scalar
-  never opens one; `#` starts a comment only between tokens or in a plain
-  scalar after separation, otherwise it is content; a backslash at a
-  double-quoted line's end continues the scalar with no space. A comment
-  that ends a line inside a plain scalar, a `#` after a complete value, a
-  `%` outside quotes and plain scalars, a blank line after a backslash
-  continuation, and trailing space after a backslash continuation are not
+  never opens one and `''` in single quotes is one escaped quote; `#`
+  outside quotes starts a comment to the end of the line, whether the
+  value before it is complete or not, so pub only fails where the comment
+  swallows a token the flow needs; a backslash at a double-quoted line's
+  end continues the scalar with no space while a backslash at a
+  single-quoted line's end continues on the next line verbatim, and a
+  backslash with trailing space stays literal. A comment that ends a line
+  inside a plain scalar and a `%` outside quotes and plain scalars are not
   supported, and fail naming the line.
 - block scalars `|` and `>` with chomping and indentation indicators
 - plain scalars continued on more-indented lines, including `?` lines,
@@ -64,20 +66,19 @@ testing, so the projections are unaffected on real pubspec files:
 - explicit keys (`? key` with `: value`) are not supported; yaml.bzl reads
   both. They fail naming the line, even a `:` line that continues a plain
   scalar: pub rejects that line, while yaml.bzl folds it, so failing closed
-  matches pub. A `:` continuation is the one form this parser fails that an
-  older revision read (by folding it); every other form it fails, older
-  revisions failed too.
+  matches pub. Failing closed is new for three forms an older revision
+  read: a `:` continuation (folded before), a `%`-leading flow scalar
+  (read as plain before), and a flow-looking document that reads as no
+  collection (read as empty before).
 - flow collections that span lines are not supported, unless the folded
   lines read as one flow collection as pub reads them; yaml.bzl reads all
   spanning flows. The supported fold matches pub on the oracle-checked
   shapes (plain, single- and double-quoted scalars, flow mapping values,
   blank and comment-only lines between the folded lines, backslash
-  continuations in double-quoted scalars, `#` lines and ` # ` text inside
-  quotes, and `---` content lines); a comment that ends a line
-  inside a plain scalar, a `#` after a complete value, a `%` outside
-  quotes and plain scalars, a blank line after a backslash continuation,
-  and trailing space after a backslash continuation fail naming the line
-  instead of misreading.
+  continuations, `#` lines and ` # ` text inside quotes, comments after
+  complete values, and `---` content lines); a comment that ends a line
+  inside a plain scalar and a `%` outside quotes and plain scalars fail
+  naming the line instead of misreading.
 - merge keys (`<<`) are ordinary keys; yaml.bzl merges them into the mapping.
   YAML 1.2 defines no merge keys.
 - `%TAG` handles are ignored, so a tag written through one reads as untagged;
@@ -151,10 +152,12 @@ def document_value_and_problems(content, strict_lines = False):
 def document_problems(content, strict_lines = False):
     """Reports duplicate keys and, with strict lines, skipped lines.
 
-    Duplicate keys are always reported. Lines the parser cannot place (wrong
-    indentation, explicit keys, lines without a colon, a `- ` line where a
-    mapping entry is expected, unreadable flow values) are reported only with
-    strict lines, for lock files that must fail closed. Blank lines,
+    Duplicate keys are always reported, as are the unsupported forms: a
+    spanning flow that does not fold, an explicit key, and a flow-looking
+    document that reads as no collection. Other lines the parser cannot
+    place (wrong indentation, lines without a colon, a `- ` line where a
+    mapping entry is expected, unreadable flow values) are reported only
+    with strict lines, for lock files that must fail closed. Blank lines,
     comments, directives and document markers are never problems.
 
     Args:
@@ -171,14 +174,61 @@ def _parse_document(content, strict_lines):
     """Parses one document. Returns (value, problems) without failing."""
     state = struct(problems = [], strict_lines = strict_lines)
     lines = _first_document_lines(_strip_bom(content))
-    text = "\n".join(lines).strip()
-    if text[:1] in ["{", "["]:
-        folded, problem = _fold_flow_document(text)
+    first = _first_content(lines)
+    if first.text[:1] in ["{", "["] and _allows_flow_doc(lines, first.index):
+        items = []
+        for i in range(len(lines)):
+            items.append((i + 1, lines[i]))
+        folded, problem = _flow_fold_lines(items, _flow_scan_start())
         if problem != None:
             state.problems.append(_flow_fold_problem(problem[0], problem[1]))
             return None, state.problems
-        return _parse_flow(folded, {}, state, 1), state.problems
+        value = _parse_flow(folded, {}, state, 1)
+        if value == None:
+            state.problems.append(_flow_doc_problem(lines))
+            return None, state.problems
+        return value, state.problems
     return _parse_block(lines, state), state.problems
+
+def _first_content(lines):
+    """Returns the first line with block content as struct(index, text).
+
+    Blank lines, `#` comments, `%` directives and document markers carry no
+    block content. Returns index -1 and text "" when no line has content.
+    """
+    for i in range(len(lines)):
+        _indent, text = _block_line_text(lines[i])
+        if text != None:
+            return struct(index = i, text = text)
+    return struct(index = -1, text = "")
+
+def _allows_flow_doc(lines, index):
+    """Returns whether a flow document may open at `index`.
+
+    Every line before `index` must be blank or a comment: a `%` directive or
+    a kept `---` line means the bracket opens a block value, as pub reads it
+    there.
+    """
+    for i in range(index):
+        stripped = lines[i].strip()
+        if stripped != "" and not stripped.startswith("#"):
+            return False
+    return True
+
+def _flow_doc_problem(lines):
+    """The problem for a flow-looking document that reads as no collection.
+
+    The fold succeeded but the folded text is not one complete collection:
+    pub rejects these shapes (an unclosed collection, text or a comment past
+    the closing bracket), so the reader fails closed naming the last content
+    line instead of reading an empty document.
+    """
+    last = 1
+    for i in range(len(lines)):
+        _indent, text = _block_line_text(lines[i])
+        if text != None:
+            last = i + 1
+    return "flow document ending at line %d is not supported" % last
 
 def _strip_bom(content):
     """Strips a leading UTF-8 byte-order mark, which pub accepts."""
@@ -401,32 +451,23 @@ def _flow_scan_quoted(ch, nxt, scan, res):
         res["kept"].append(ch)
 
 def _flow_scan_hash(ch, prev, scan, res):
-    """Handles `#` outside quotes: a comment, or content pub rejects.
+    """Handles `#` outside quotes: a comment, or content pub reads as one.
 
-    Between tokens a `#` after a separator or after separation with no
-    value yet is a comment; after a complete value it is content pub
-    rejects, flagged to fail closed. In a plain scalar it is a comment
-    after separation (or at the line start) and content otherwise, so an
-    apostrophe line such as `don't` never opens a quote. Past the closing
-    bracket a `#` after separation is a trailing comment.
+    Between tokens a `#` starts a comment that runs to the end of the line,
+    whether the value before it is complete or not: pub reads `["red" # c,
+    green]` as two values and only fails where the comment swallows a token
+    the flow needs. In a plain scalar `#` is a comment after separation (or
+    at the line start) and content otherwise, so an apostrophe line such as
+    `don't` never opens a quote. Past the closing bracket a `#` after
+    separation is a trailing comment.
     """
-    if scan["depth"] <= 0:
-        if prev in [" ", "\t"]:
-            res["stopped"] = True
-        else:
-            res["kept"].append(ch)
-    elif scan["plain"]:
+    if scan["plain"]:
         if prev in [" ", "\t"]:
             res["plain_comment"] = True
             res["stopped"] = True
         else:
             res["kept"].append(ch)
-    elif prev in [",", "{", "[", ":"]:
-        res["stopped"] = True
-    elif prev in [" ", "\t"] and not scan["have"]:
-        res["stopped"] = True
     else:
-        res["hash_flag"] = True
         res["stopped"] = True
 
 def _flow_scan_struct(ch, nxt, scan, res):
@@ -474,10 +515,10 @@ def _flow_scan_text(text, scan, res):
     """Scans one fold line, updating `scan` and collecting into `res`.
 
     `res` holds the kept characters and the line flags: `plain_comment`
-    when a comment starts inside a plain scalar, `hash_flag` when `#`
-    follows a value without separation, `pct_flag` on a `%` outside quotes
-    and plain scalars. A quote opens only where a scalar starts. Scanning
-    stops at a comment or a flag; the caller fails closed on the flags.
+    when a comment starts inside a plain scalar, `pct_flag` on a `%`
+    outside quotes and plain scalars. A quote opens only where a scalar
+    starts. Scanning stops at a comment or a flag; the caller fails closed
+    on the flags.
     """
     prev = " "
     for i in range(len(text) + 1):
@@ -507,16 +548,19 @@ def _flow_fold_join(out, kept, cont):
         return out + " " + kept
     return out + kept
 
-def _flow_fold_backslash(out, kept, had_trailing, scan):
-    """Handles a line end in a double-quoted scalar. Returns (out, cont, problem).
+def _flow_fold_backslash(out, kept, trailing, scan):
+    """Folds a quoted line's end into `out`. Returns (out, mode).
 
-    A backslash at the line's end continues the scalar with no space, as
-    pub continues it; the backslash is dropped and the next content line
-    joins directly. Trailing space after the backslash, and a blank line
-    after it, are problems: pub reads a value this fold cannot spell.
+    `kept` is the rstripped scanned line and `trailing` its trailing
+    whitespace. A `\\` at the line's end inside quotes continues the scalar:
+    in double quotes the backslash is dropped and the next line joins
+    directly, in single quotes the backslash is dropped and the next line
+    joins verbatim with its indentation kept, as pub keeps it. A `\\` with
+    trailing space stays literal in both, as pub keeps it, and the next
+    line joins with one space. `mode` is "direct", "verbatim" or "space".
     """
-    if not scan["double"]:
-        return out, False, None
+    if not scan["single"] and not scan["double"]:
+        return out, "space"
     bs = 0
     for _ in range(len(kept) + 1):
         if bs < len(kept) and kept[len(kept) - 1 - bs] == "\\":
@@ -524,21 +568,27 @@ def _flow_fold_backslash(out, kept, had_trailing, scan):
         else:
             break
     if bs == 0 or bs % 2 == 0:
-        return out, False, None
-    if had_trailing:
-        return out, False, "bs-space"
-    scan["escaped"] = False
-    return out[:len(out) - 1], True, None
+        return out, "space"
+    if trailing != "":
+        if scan["double"]:
+            return out[:len(out) - 1] + trailing[:1], "space"
+        return out, "space"
+    if scan["double"]:
+        scan["escaped"] = False
+        return out[:len(out) - 1], "direct"
+    return out[:len(out) - 1], "verbatim"
 
 def _flow_fold_blank(scan, st):
-    """Folds one blank line into `st`. Returns a problem kind, or None to continue."""
-    if st["cont"]:
-        return "bs-blank"
+    """Folds one blank line into `st`, ending any backslash continuation."""
+    if st["cont"] or st["verbatim"]:
+        st["cont"] = False
+        st["verbatim"] = False
+        st["out"] += "\n"
+        return
     if scan["single"] or scan["double"]:
         st["out"] += "\n"
     elif st["out"] != "" and not st["out"].endswith("\n"):
         st["out"] += "\n"
-    return None
 
 def _flow_fold_closer(kept):
     """Whether a content line after a plain-scalar comment closes the collection."""
@@ -547,7 +597,7 @@ def _flow_fold_closer(kept):
         return True
     return first == ":" and (len(kept) == 1 or kept[1:2] in [" ", "\t"])
 
-def _flow_fold_kept(scan, st, res, raw_kept, line):
+def _flow_fold_kept(scan, st, indent, res, raw_kept, line):
     """Folds one scanned content line into `st`. Returns a problem pair, or None."""
     kept = raw_kept.rstrip()
     if kept == "":
@@ -560,44 +610,50 @@ def _flow_fold_kept(scan, st, res, raw_kept, line):
     st["comment_pending"] = res["plain_comment"]
     if res["plain_comment"]:
         st["pending_line"] = line
-    st["out"] = _flow_fold_join(st["out"], kept, st["cont"])
+    if st["verbatim"]:
+        st["verbatim"] = False
+        st["out"] += "\n" + indent + kept
+    else:
+        st["out"] = _flow_fold_join(st["out"], kept, st["cont"])
     st["cont"] = False
-    had_trailing = kept != raw_kept
-    out, cont, bs_problem = _flow_fold_backslash(st["out"], kept, had_trailing, scan)
+    trailing = raw_kept[len(kept):]
+    out, mode = _flow_fold_backslash(st["out"], kept, trailing, scan)
     st["out"] = out
-    st["cont"] = cont
-    if bs_problem != None:
-        return (bs_problem, line)
+    if mode == "direct":
+        st["cont"] = True
+    elif mode == "verbatim":
+        st["verbatim"] = True
     return None
 
 def _flow_fold_lines(items, scan):
     """Folds raw flow lines as pub folds them. Returns (folded, problem).
 
     `items` holds (1-based line, raw line) pairs with "" for blank lines;
-    leading indentation is dropped. A break between content lines is one
-    space, except after a backslash continuation, which joins with no
-    space; each blank line is one "\\n" inside quotes, while outside quotes
-    a blank run is one "\\n". A comment that ends a line inside a plain
-    scalar poisons the fold: the next content must close the collection
-    (`,`, `]`, `}` or a separating `:`) or pub rejects the flow. `problem`
-    is None, or a (kind, line) pair the caller reports.
+    leading indentation is dropped, except that a line after a
+    single-quoted backslash continuation keeps its indentation verbatim, as
+    pub keeps it. A break between content lines is one space, except after
+    a double-quoted backslash continuation, which joins with no space; a
+    blank line after a continuation, and each blank line inside quotes, is
+    one "\\n", while outside quotes a blank run is one "\\n". A `#` outside
+    quotes is a comment to the end of the line, whether the value before it
+    is complete or not: pub only fails where the comment swallows a token
+    the flow needs. A comment that ends a line inside a plain scalar poisons
+    the fold: the next content must close the collection (`,`, `]`, `}` or
+    a separating `:`) or pub rejects the flow. `problem` is None, or a
+    (kind, line) pair the caller reports.
     """
-    st = {"out": "", "cont": False, "comment_pending": False, "pending_line": 0}
+    st = {"out": "", "cont": False, "verbatim": False, "comment_pending": False, "pending_line": 0}
     for item in items:
         line = item[0]
         content = item[1].lstrip(" \t")
         if content.strip() == "":
-            blank = _flow_fold_blank(scan, st)
-            if blank != None:
-                return "", (blank, line)
+            _flow_fold_blank(scan, st)
             continue
-        res = {"kept": [], "plain_comment": False, "hash_flag": False, "pct_flag": False, "stopped": False, "skip": False}
+        res = {"kept": [], "plain_comment": False, "pct_flag": False, "stopped": False, "skip": False}
         _flow_scan_text(content, scan, res)
-        if res["hash_flag"]:
-            return "", ("hash", line)
         if res["pct_flag"]:
             return "", ("directive", line)
-        problem = _flow_fold_kept(scan, st, res, "".join(res["kept"]), line)
+        problem = _flow_fold_kept(scan, st, item[1][:len(item[1]) - len(content)], res, "".join(res["kept"]), line)
         if problem != None:
             return "", problem
     return st["out"], None
@@ -606,27 +662,27 @@ def _flow_fold_problem(kind, line):
     """The problem for a folded-flow line this reader cannot spell as pub reads it."""
     if kind == "plain-comment":
         return "comment inside a plain scalar of a flow that spans lines at line %d is not supported" % line
-    if kind == "hash":
-        return "\"#\" after a value in a flow that spans lines at line %d is not supported" % line
     if kind == "directive":
         return "\"%%\" directive in a flow that spans lines at line %d is not supported" % line
-    if kind == "bs-space":
-        return "trailing space after a backslash continuation in a flow that spans lines at line %d is not supported" % line
-    return "blank line after a backslash continuation in a flow that spans lines at line %d is not supported" % line
+    return "flow collection that spans lines starting at line %d is not supported" % line
 
-def _fold_flow_document(text):
-    """Folds a multi-line flow document's breaks as pub folds them.
+def _folded_head_flow(head_raw, head_line, lines, idx, parent_indent, anchors, state):
+    """Folds a same-line flow head with its deeper lines. Returns (value, next index, read).
 
-    Returns (folded, problem): the folded text, or a (kind, document line)
-    pair when a line cannot fold as pub reads it. Content lines drop
-    indentation and join as `_flow_fold_lines` joins them; a single-line
-    document folds to itself.
+    `head_raw` is the raw value text on `lines[idx]` at 1-based `head_line`,
+    comment intact; deeper content lines come from `_pending_flow_raws`.
+    When the fold reads as one flow collection as pub reads it, value is
+    that collection. Otherwise read is False and the caller fails the span
+    as today.
     """
-    raw_lines = text.split("\n")
-    items = []
-    for i in range(len(raw_lines)):
-        items.append((i + 1, raw_lines[i]))
-    return _flow_fold_lines(items, _flow_scan_start())
+    if _unclosed_flow_head(head_raw, anchors) == None:
+        return None, idx + 1, False
+    raws, next_idx = _pending_flow_raws(lines, idx + 1, parent_indent)
+    items = [(head_line, head_raw)] + raws
+    folded, problem = _flow_fold_lines(items, _flow_scan_start())
+    if problem != None or not _folded_flow_ok(folded, anchors):
+        return None, next_idx, False
+    return _parse_scalar(folded, anchors, state, head_line), next_idx, True
 
 def _folded_flow_ok(joined, anchors):
     """Returns whether the folded `joined` text reads as one flow collection.
@@ -879,6 +935,13 @@ def _map_line(lines, idx, indent, text, frame, anchors, state):
         mapping[key] = parsed
         return next_idx, None
 
+    head = lines[idx][indent + _find_colon(text) + 1:]
+    flow_value, flow_next, flow_read = _folded_head_flow(head, line, lines, idx, indent, anchors, state)
+    if flow_read:
+        if _is_duplicate(mapping, key, line, state):
+            return flow_next, None
+        mapping[key] = flow_value
+        return flow_next, None
     end = _spanning_flow_end(lines, idx + 1, indent, value_text, anchors)
     if end != None:
         state.problems.append(_span_flow_problem(line))
@@ -911,6 +974,15 @@ def _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state):
     key_text, value_text, _ok = _split_key_value(rest)
     item = {}
     key = _key(_parse_scalar(key_text, anchors, state, line))
+    after_dash = lines[idx][indent + 1:]
+    gap = len(after_dash) - len(after_dash.lstrip(" \t"))
+    head = after_dash[gap + _find_colon(rest) + 1:]
+    flow_value, flow_next, flow_read = _folded_head_flow(head, line, lines, idx, indent, anchors, state)
+    if flow_read:
+        item[key] = flow_value
+        items.append(item)
+        stack.append({"kind": "map", "indent": indent, "value": item, "entry": None})
+        return flow_next, None
     end = _spanning_flow_end(lines, idx + 1, indent, value_text, anchors)
     if end != None:
         state.problems.append(_span_flow_problem(line))
@@ -969,6 +1041,13 @@ def _seq_line(lines, idx, indent, text, frame, anchors, stack, state):
             items.append(None)
         return next_idx, None
 
+    after_dash = lines[idx][indent + 1:]
+    gap = len(after_dash) - len(after_dash.lstrip(" \t"))
+    head = after_dash[gap + _find_colon(rest) + 1:]
+    flow_value, flow_next, flow_read = _folded_head_flow(head, line, lines, idx, indent, anchors, state)
+    if flow_read:
+        items.append(flow_value)
+        return flow_next, None
     end = _spanning_flow_end(lines, idx + 1, indent, rest, anchors)
     if end != None:
         state.problems.append(_span_flow_problem(line))
@@ -1209,12 +1288,19 @@ def _indent_width(raw):
     return len(raw) - len(raw.lstrip(" \t"))
 
 def _strip_comment(text):
-    """Removes a trailing `#` comment, ignoring `#` inside quotes."""
+    """Removes a trailing `#` comment, ignoring `#` inside quotes.
+
+    A quote opens only where a scalar starts (the line start, or after `[`,
+    `{`, `,`, a separating colon, a `- ` dash or an anchor or tag word), so
+    an apostrophe in a plain scalar never hides a comment.
+    """
     if "#" not in text:
         return text.rstrip()
     in_single = False
     in_double = False
     escaped = False
+    at_start = True
+    in_affix = False
     for i in range(len(text)):
         ch = text[i]
         if escaped:
@@ -1222,24 +1308,60 @@ def _strip_comment(text):
         elif in_double and ch == "\\":
             escaped = True
         elif ch == "'" and not in_double:
-            in_single = not in_single
+            if in_single:
+                in_single = False
+                at_start = False
+            elif at_start:
+                in_single = True
+            in_affix = False
         elif ch == '"' and not in_single:
-            in_double = not in_double
+            if in_double:
+                in_double = False
+                at_start = False
+            elif at_start:
+                in_double = True
+            in_affix = False
         elif ch == "#" and not in_single and not in_double:
             if i == 0 or text[i - 1] in [" ", "\t"]:
                 return text[:i].rstrip()
+        elif ch in ["&", "!"] and not in_single and not in_double:
+            in_affix = True
+            at_start = False
+        elif ch in ["[", "{", ","]:
+            at_start = True
+            in_affix = False
+        elif ch == ":" and text[i + 1:i + 2] in [" ", "\t", ""]:
+            at_start = True
+            in_affix = False
+        elif ch == "-" and text[i + 1:i + 2] in [" ", "\t", ""]:
+            at_start = True
+            in_affix = False
+        elif ch in [" ", "\t"]:
+            if in_affix:
+                in_affix = False
+                at_start = True
+        elif ch == ":":
+            at_start = False
+            in_affix = False
+        else:
+            at_start = False
+            in_affix = False
     return text.rstrip()
 
 def _find_colon(text):
     """Returns the index of the first top-level `: ` in `text`, or -1.
 
-    A colon inside quotes or brackets does not count, and a trailing colon does.
+    A colon inside quotes or brackets does not count, and a trailing colon
+    does. A quote opens only where a scalar starts, so an apostrophe in a
+    plain scalar never hides a colon.
     """
     if ":" not in text:
         return -1
     in_single = False
     in_double = False
     escaped = False
+    at_start = True
+    in_affix = False
     braces = 0
     brackets = 0
     for i in range(len(text)):
@@ -1249,27 +1371,64 @@ def _find_colon(text):
         elif in_double and ch == "\\":
             escaped = True
         elif ch == "'" and not in_double:
-            in_single = not in_single
+            if in_single:
+                in_single = False
+                at_start = False
+            elif at_start:
+                in_single = True
+            in_affix = False
         elif ch == '"' and not in_single:
-            in_double = not in_double
+            if in_double:
+                in_double = False
+                at_start = False
+            elif at_start:
+                in_double = True
+            in_affix = False
         elif in_single or in_double:
             continue
+        elif ch in ["&", "!"]:
+            in_affix = True
+            at_start = False
         elif ch == "{":
             braces += 1
+            at_start = True
+            in_affix = False
         elif ch == "}":
             braces -= 1
         elif ch == "[":
             brackets += 1
+            at_start = True
+            in_affix = False
         elif ch == "]":
             brackets -= 1
+        elif ch == ",":
+            at_start = True
+            in_affix = False
         elif ch == ":" and braces == 0 and brackets == 0 and (i + 1 == len(text) or text[i + 1] in [" ", "\t"]):
             return i
+        elif ch == ":":
+            at_start = False
+            in_affix = False
+        elif ch in [" ", "\t"]:
+            if in_affix:
+                in_affix = False
+                at_start = True
+        elif ch == "-":
+            if text[i + 1:i + 2] in [" ", "\t", ""]:
+                at_start = True
+            else:
+                at_start = False
+            in_affix = False
+        else:
+            at_start = False
+            in_affix = False
     return -1
 
 def find_colon(text):
     """Returns the index of the first top-level `: ` in `text`, or -1.
 
-    A colon inside quotes or brackets does not count, and a trailing colon does.
+    A colon inside quotes or brackets does not count, and a trailing colon
+    does. A quote opens only where a scalar starts.
     Shared with the `//dart/pub:yaml_parser.bzl` lock checks so both read a
     `key: value` line the same way.
     """
@@ -1278,6 +1437,7 @@ def find_colon(text):
 def strip_comment(text):
     """Removes a trailing `#` comment, ignoring `#` inside quotes.
 
+    A quote opens only where a scalar starts.
     Shared with the `//dart/pub:yaml_parser.bzl` lock checks so both skip
     the same comment text.
     """
@@ -1688,7 +1848,8 @@ def _flow_close_step(stack, s, i, frame, state, line):
     stack.pop()
     i += 1
     if not stack:
-        if _skip_flow_space(s, i) == len(s):
+        rest = s[i:].lstrip(_FLOW_SPACE)
+        if rest == "" or rest.startswith("#"):
             return True, frame["value"], i
         return True, None, i
     _flow_add(stack[-1], frame["value"], state, line)
@@ -1697,7 +1858,7 @@ def _flow_close_step(stack, s, i, frame, state, line):
 def _flow_key_step(s, i, frame, anchors):
     """Reads one flow map key up to its colon. Returns (next_i, ok)."""
     token, i = _flow_token(s, i, [":", frame["close"], ","])
-    if token == "":
+    if token == "" or not _flow_scalar_ok(token):
         return i, False
     frame["key"] = _key(_parse_nonflow(token, anchors))
     i = _skip_flow_space(s, i)
@@ -1712,7 +1873,7 @@ def _flow_item_step(s, i, frame, anchors, stack, state, line):
         stack.append(_flow_frame(s[i]))
         return i + 1, True
     token, next_i = _flow_token(s, i, [",", frame["close"]])
-    if token == "":
+    if token == "" or not _flow_scalar_ok(token):
         return next_i, False
     _flow_add(frame, _flow_token_value(token, anchors), state, line)
     return next_i, True
@@ -1780,24 +1941,91 @@ def _flow_add(frame, value, parse_state, line):
     frame["state"] = "after"
 
 def _flow_token_value(token, anchors):
-    """A flow token is a scalar, or a one-pair mapping when it contains `: `."""
-    key_text, value_text, is_pair = _split_key_value(token)
+    """A flow token is a scalar, or a one-pair mapping when it holds a key and a colon."""
+    key_text, value_text, is_pair = _flow_pair_split(token)
     if not is_pair:
         return _parse_nonflow(token, anchors)
     pair = {}
     pair[_key(_parse_nonflow(key_text, anchors))] = _parse_nonflow(value_text, anchors)
     return pair
 
+def _flow_quoted_end(s):
+    """Returns the index of the quote closing the scalar at `s[0]`, or -1.
+
+    `s` starts with `'` or `"`. `''` inside single quotes is one escaped
+    quote and a backslash escapes the next character in double quotes, as
+    pub reads them. Returns -1 when the quote never closes.
+    """
+    quote = s[0]
+    i = 1
+    for _ in range(len(s) + 1):
+        if i >= len(s):
+            return -1
+        ch = s[i]
+        if quote == '"' and ch == "\\":
+            i += 2
+            continue
+        if ch == quote:
+            if quote == "'" and s[i + 1:i + 2] == "'":
+                i += 2
+                continue
+            return i
+        i += 1
+    return -1
+
+def _flow_scalar_ok(token):
+    """Returns whether a flow scalar token is shaped as pub reads it.
+
+    A token starting with `%` is a directive pub rejects anywhere but a
+    line start. A token starting with a quote must be exactly one quoted
+    scalar: text glued after its closing quote (`"a" "b"`) is a second value
+    pub rejects, while a colon glued after it (`"a":1`) is a pair the token
+    splitter handles. Anything else reads as one scalar here.
+    """
+    if token == "" or token[:1] == "%":
+        return False
+    if token[:1] not in ["'", '"']:
+        return True
+    end = _flow_quoted_end(token)
+    if end < 0:
+        return False
+    rest = token[end + 1:].strip()
+    return rest == "" or rest.startswith(":")
+
+def _flow_pair_split(token):
+    """Splits a flow `key: value` token. Returns (key, value, found).
+
+    Besides a top-level `: ` split, a quoted key followed at once by a colon
+    (`"a":1`) is one pair, as pub reads it; a colon glued into a plain
+    scalar (`a:b`) is not.
+    """
+    key_text, value_text, ok = _split_key_value(token)
+    if ok:
+        return key_text, value_text, True
+    if len(token) < 3 or token[:1] not in ["'", '"']:
+        return "", "", False
+    end = _flow_quoted_end(token)
+    if end < 0:
+        return "", "", False
+    rest = token[end + 1:].strip()
+    if not rest.startswith(":"):
+        return "", "", False
+    return token[:end + 1], rest[1:].strip(), True
+
 def _flow_token(s, start, stops):
     """Reads one flow token from `start` up to a stop character.
 
     Quotes are tracked so that stop characters inside them do not end the
-    token. Returns (stripped token, index of the stop character).
+    token: a quote opens only where the scalar starts, so an apostrophe in a
+    plain scalar such as `don't` stays content, and `''` inside single
+    quotes is one escaped quote, as pub reads it. Returns (stripped token,
+    index of the stop character).
     """
     i = start
     in_single = False
     in_double = False
     escaped = False
+    at_start = True
     for _ in range(len(s) + 1):
         if i >= len(s):
             break
@@ -1807,11 +2035,24 @@ def _flow_token(s, start, stops):
         elif in_double and ch == "\\":
             escaped = True
         elif ch == "'" and not in_double:
-            in_single = not in_single
+            if in_single:
+                if s[i + 1:i + 2] == "'":
+                    i += 1
+                else:
+                    in_single = False
+                    at_start = False
+            elif at_start:
+                in_single = True
         elif ch == '"' and not in_single:
-            in_double = not in_double
+            if in_double:
+                in_double = False
+                at_start = False
+            elif at_start:
+                in_double = True
         elif not in_single and not in_double and ch in stops:
             break
+        elif ch not in [" ", "\t"]:
+            at_start = False
         i += 1
     return s[start:i].strip(), i
 
