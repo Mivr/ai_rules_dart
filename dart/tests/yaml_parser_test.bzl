@@ -1037,10 +1037,10 @@ def _parse_pubspec_flow_quote_test_impl(ctx):
 
     # A backslash at a double-quoted folded line's end continues the scalar
     # with no space, as pub reads it (package:yaml 3.1.4 with the pinned
-    # SDK 3.13.5 reads "foobar" below). A backslash in a plain scalar stays
-    # literal, as pub keeps it; in a single-quoted scalar a `\` at the
-    # line's end continues on the next line verbatim, while a `\` with
-    # trailing space stays literal.
+    # SDK 3.13.5 reads "foobar" below). Elsewhere a backslash is an
+    # ordinary character, as pub keeps it: in a plain or single-quoted
+    # scalar the break folds to one space, while a `\` with trailing space
+    # stays literal.
     bs = "name: p1\nenvironment:\n  sdk: ^3.0.0\ntags:\n  [\"foo\\\n   bar\", plain]\n"
     asserts.equals(env, ["foobar", "plain"], parse_pubspec_document(bs)["tags"])
     asserts.equals(env, "^3.0.0", parse_pubspec_sdk_constraint(bs))
@@ -1048,7 +1048,7 @@ def _parse_pubspec_flow_quote_test_impl(ctx):
     asserts.equals(env, ["foobar"], parse_pubspec_document("{\"tags\": [\"foo\\\n bar\"]}\n")["tags"])
     asserts.equals(
         env,
-        ["foo\n   bar"],
+        ["foo\\ bar"],
         parse_pubspec_document("name: p1\ntags:\n  ['foo\\\n   bar']\n")["tags"],
     )
     asserts.equals(
@@ -1108,12 +1108,22 @@ def _parse_pubspec_flow_quote_test_impl(ctx):
     )
     asserts.equals(
         env,
+        ["foo\\ bar"],
+        parse_pubspec_document("name: p1\ntags:\n  ['foo\\   \n   bar']\n")["tags"],
+    )
+    asserts.equals(
+        env,
         ["foo\nbar"],
         parse_pubspec_document("name: p1\ntags:\n  [\"foo\\\n\n   bar\"]\n")["tags"],
     )
     asserts.equals(
         env,
-        ["foo\n   bar\n   baz"],
+        ["foo\\\nbar"],
+        parse_pubspec_document("name: p1\ntags:\n  ['foo\\\n\n   bar']\n")["tags"],
+    )
+    asserts.equals(
+        env,
+        ["foo\\ bar\\ baz"],
         parse_pubspec_document("name: p1\ntags:\n  ['foo\\\n   bar\\\n   baz']\n")["tags"],
     )
 
@@ -1219,6 +1229,28 @@ def _parse_pubspec_flow_apos_test_impl(ctx):
     asserts.equals(env, None, parse_pubspec_document_error(doc))
     return unittest.end(env)
 
+def _parse_pubspec_flow_backslash_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A backslash is an ordinary character outside double quotes, as pub
+    # reads it (package:yaml 3.1.4 with the pinned SDK 3.13.5 reads the
+    # values below): the break after one folds to one space and the next
+    # line's indentation is dropped, in both flow paths.
+    head = "name: x\nenvironment:\n  sdk: ^3.0.0\n"
+    doc = head + "keywords:\n  ['x\\\n  y']\n"
+    asserts.equals(env, ["x\\ y"], parse_pubspec_document(doc)["keywords"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = head + "description: 'x\\\n  y'\n"
+    asserts.equals(env, "x\\ y", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = head + "keywords:\n  [x\\\n  y]\n"
+    asserts.equals(env, ["x\\ y"], parse_pubspec_document(doc)["keywords"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = head + "keywords:\n  -\n    ['x\\\n    y']\n"
+    asserts.equals(env, [["x\\ y"]], parse_pubspec_document(doc)["keywords"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    return unittest.end(env)
+
 def _trim_gzip_trailing_nulls_test_impl(ctx):
     env = unittest.begin(ctx)
 
@@ -1310,6 +1342,7 @@ _t41_test = unittest.make(_parse_pubspec_flow_quote_test_impl)
 _t42_test = unittest.make(_parse_pubspec_flow_comment_test_impl)
 _t43_test = unittest.make(_parse_pubspec_flow_document_error_test_impl)
 _t44_test = unittest.make(_parse_pubspec_flow_apos_test_impl)
+_t45_test = unittest.make(_parse_pubspec_flow_backslash_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -1364,6 +1397,7 @@ def yaml_parser_test_suite(name):
         _t42_test,
         _t43_test,
         _t44_test,
+        _t45_test,
     )
     native.test_suite(
         name = name,
