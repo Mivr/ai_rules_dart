@@ -16,8 +16,12 @@ the wrong source or version. Any line it cannot place, including a `- ` line
 where a mapping entry is expected and an unreadable flow value, is a problem
 naming its 1-based line. Two unsupported forms are always problems, in
 strict and lenient modes alike, so no read returns partial data for them: a
-flow collection that spans lines, and an explicit key (`? key` with
-`: value`). `parse_document` fails on the first problem instead
+flow collection that spans lines without folding to one value, and an
+explicit key (`? key` with `: value`, including a `:` line that continues a
+plain scalar). A flow whose lines fold with single spaces to one flow
+collection is read as pub reads it, whether it starts on its key's line, on
+the line after `key:` or `-`, or not. A `?` line that continues a plain
+scalar folds into it, as pub folds it. `parse_document` fails on the first problem instead
 of returning partial data. `document_problems` with strict lines reports every
 such problem so lock files can fail closed; without strict lines it reports
 duplicate keys and the unsupported forms. A leading byte-order mark is
@@ -34,17 +38,27 @@ Supported:
   including scalars that start on the line after `key:` and fold with single
   spaces
 - flow collections `[...]` and `{...}`, nested; on a line of their own they
-  are read within that line, and a document that starts with one may span
-  lines (JSON documents)
+  are read within that line, a document that starts with one may span
+  lines (JSON documents), and one that starts after `key:` or `-` folds
+  its deeper lines with single spaces and reads as one value when the
+  folded text parses, exactly as pub reads it
 - block scalars `|` and `>` with chomping and indentation indicators
-- plain scalars continued on more-indented lines
+- plain scalars continued on more-indented lines, including `?` lines,
+  which pub folds into the scalar
 - anchors and aliases, copied shallowly as yaml.bzl copies them
 - the tags !!str, !!int, !!float, !!bool, !!null, !!seq and !!map
 
 Divergences from yaml.bzl. None occurs in the pubspec corpus used for parity
 testing, so the projections are unaffected on real pubspec files:
-- explicit keys (`? key` with `: value`) and flow collections that span
-  lines are not supported; yaml.bzl reads both. They fail naming the line.
+- explicit keys (`? key` with `: value`) are not supported; yaml.bzl reads
+  both. They fail naming the line, even a `:` line that continues a plain
+  scalar: pub rejects that line, while yaml.bzl folds it, so failing closed
+  matches pub. A `:` continuation is the one form this parser fails that an
+  older revision read (by folding it); every other form it fails, older
+  revisions failed too.
+- flow collections that span lines are not supported, unless the folded
+  lines read as one flow collection as pub reads them; yaml.bzl reads all
+  spanning flows. The supported fold is exactly what older revisions read.
 - merge keys (`<<`) are ordinary keys; yaml.bzl merges them into the mapping.
   YAML 1.2 defines no merge keys.
 - `%TAG` handles are ignored, so a tag written through one reads as untagged;
@@ -262,6 +276,45 @@ def _attach_compact_seq(pending, anchors, stack):
         "compact": True,
     })
 
+def _pending_fold_parts(lines, idx, parent_indent):
+    """Collects the lines a value after `key:` or `-` folds with. Returns (parts, next index).
+
+    The first part is the value's own line; deeper lines that open no block
+    entry join it with single spaces, as pub folds them. Blank lines, comments
+    and other lines without content are skipped; a dedent or a line that opens
+    an entry ends the fold.
+    """
+    parts = []
+    next_idx = idx
+    for _ in range(len(lines) + 1):
+        if next_idx >= len(lines):
+            break
+        raw = lines[next_idx]
+        indent, text = _block_line_text(raw)
+        if indent == None:
+            next_idx += 1
+            continue
+        if indent <= parent_indent:
+            break
+        if _is_dash(text) or text.startswith("? ") or text.startswith(": ") or _is_mapping_start(text):
+            break
+        parts.append(text)
+        next_idx += 1
+    return parts, next_idx
+
+def _folded_flow_ok(joined, anchors):
+    """Returns whether the folded `joined` text reads as one flow collection.
+
+    Anchor and tag prefixes are stripped first, so `&a [x,` folding with `y]`
+    probes as `[x, y]`, the value pub reads. `anchors` resolves aliases while
+    probing, read-only.
+    """
+    head = _flow_head_text(joined)
+    if head[:1] not in ["[", "{"]:
+        return False
+    probe = struct(problems = [], strict_lines = False)
+    return _parse_flow(head, anchors, probe, 0) != None
+
 def _consume_pending_scalar(cursor, pending, env):
     """Folds a scalar starting after `key:` with single spaces. Returns next index."""
     lines = cursor.lines
@@ -286,24 +339,18 @@ def _consume_pending_scalar(cursor, pending, env):
     if text0 != None:
         end = _spanning_flow_end(lines, idx + 1, parent_indent, text0, anchors)
         if end != None:
+            parts, next_idx = _pending_fold_parts(lines, idx, parent_indent)
+            if _folded_flow_ok(" ".join(parts), anchors):
+                # The folded lines read as one flow collection, as pub reads
+                # them: keep the value, as revisions before the span check did.
+                value = _parse_scalar(" ".join(parts), anchors, state, idx + 1)
+                parent[slot] = value
+                if pending["anchor"] != None:
+                    anchors[pending["anchor"]] = _clone(value)
+                return next_idx
             state.problems.append(_span_flow_problem(idx + 1))
             return end
-    parts = []
-    next_idx = idx
-    for _ in range(len(lines) + 1):
-        if next_idx >= len(lines):
-            break
-        raw = lines[next_idx]
-        indent, text = _block_line_text(raw)
-        if indent == None:
-            next_idx += 1
-            continue
-        if indent <= parent_indent:
-            break
-        if _is_dash(text) or text.startswith("? ") or text.startswith(": ") or _is_mapping_start(text):
-            break
-        parts.append(text)
-        next_idx += 1
+    parts, next_idx = _pending_fold_parts(lines, idx, parent_indent)
     if not parts:
         return next_idx + 1 if next_idx < len(lines) else next_idx
     joined = " ".join(parts)
@@ -466,16 +513,18 @@ def _span_flow_problem(line):
 
 def _map_line(lines, idx, indent, text, frame, anchors, state):
     """Reads one line of a block mapping. Returns (next index, pending)."""
+    if _is_explicit_key_text(text):
+        # Explicit keys are not supported (see the module docstring). They fail
+        # naming the line even where an entry is not expected, so a `:`
+        # continuation of a plain scalar fails closed instead of vanishing.
+        _record_unreadable(state, idx, text)
+        return idx + 1, None
     if not _entry_indent_ok(frame, indent):
         _record_unreadable(state, idx, text)
         return idx + 1, None
     if _is_dash(text):
         # A sequence entry never belongs to a mapping; it is unreadable here
         # rather than a key named "- ...".
-        _record_unreadable(state, idx, text)
-        return idx + 1, None
-    if text.startswith("? "):
-        # Explicit keys are not supported (see the module docstring).
         _record_unreadable(state, idx, text)
         return idx + 1, None
     key_text, value_text, ok = _split_key_value(text)
@@ -638,6 +687,18 @@ def _is_explicit_key_text(text):
         return False
     return text[0] in ["?", ":"] and text[1] in [" ", "\t"]
 
+def _is_colon_key_text(text):
+    """Returns whether `text` is a `:` explicit-key line: `:` or `: ` with separation.
+
+    A `?` line folds into a plain scalar, as pub folds it, so only a `:` line
+    ends the scalar here. Pub rejects a `:` line where a mapping entry belongs,
+    so ending the scalar fails closed downstream as an unsupported explicit key
+    instead of folding a value pub never reads.
+    """
+    if text == ":":
+        return True
+    return len(text) >= 2 and text[0] == ":" and text[1] in [" ", "\t"]
+
 def _record_unreadable(state, idx, text):
     """Records a skipped line when strict. Lenient parsing ignores it.
 
@@ -683,7 +744,7 @@ def _consume_plain(lines, start, parent_indent, first):
             blank_run += 1
             idx += 1
             continue
-        if text == "-" or text.startswith("- ") or _is_explicit_key_text(text):
+        if text == "-" or text.startswith("- ") or _is_colon_key_text(text):
             break
         key_text, _value_text, ok = _split_key_value(text)
         if ok and key_text != "":
