@@ -810,6 +810,40 @@ packages:
 
     return unittest.end(env)
 
+def _parse_pubspec_docmarker_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # An indented `---` inside a `description: |` block is content: the
+    # pubspec reads exactly like its marker-free twin, apart from the
+    # description text, with deps and SDK constraint intact.
+    bad = "name: docmark\ndescription: |\n  line one\n  ---\n  line two\nenvironment:\n  sdk: ^3.0.0\ndependencies:\n  bar:\n    path: ../stubbar\nflutter:\n  assets:\n    - assets/a.png\n"
+    good = "name: docmark\ndescription: |\n  line one\n  continued\n  line two\nenvironment:\n  sdk: ^3.0.0\ndependencies:\n  bar:\n    path: ../stubbar\nflutter:\n  assets:\n    - assets/a.png\n"
+    bad_doc = parse_pubspec_document(bad)
+    good_doc = parse_pubspec_document(good)
+    asserts.equals(env, sorted(good_doc.keys()), sorted(bad_doc.keys()))
+    asserts.equals(env, ["bar"], parse_pubspec_deps(bad))
+    asserts.equals(env, "^3.0.0", parse_pubspec_sdk_constraint(bad))
+    asserts.equals(env, None, parse_pubspec_document_error(bad))
+    asserts.true(env, "---" in bad_doc["description"])
+    return unittest.end(env)
+
+def _parse_pubspec_unsupported_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A flow collection that spans lines fails naming the pubspec, the line
+    # where the collection opens, and the form.
+    flow = "name: multiflow\nenvironment:\n  sdk: ^3.0.0\ndependencies:\n  bar:\n    path: ../stubbar\nflutter:\n  assets:\n    - path: assets/x.png\n      flavors: [premium,\n        free]\n"
+    err = parse_pubspec_document_error(flow, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 10" in err)
+    asserts.true(env, "not supported" in err and "flow" in err)
+
+    # An explicit key fails naming the pubspec, the `?` line, and the form.
+    expl = "name: expl\nenvironment:\n  sdk: ^3.0.0\n? dependencies\n: {}\n"
+    err = parse_pubspec_document_error(expl, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
+    asserts.true(env, "not supported" in err and "explicit" in err)
+    return unittest.end(env)
+
 def _trim_gzip_trailing_nulls_test_impl(ctx):
     env = unittest.begin(ctx)
 
@@ -888,6 +922,8 @@ _t28_test = unittest.make(_parse_lock_entry_name_test_impl)
 _t29_test = unittest.make(_parse_lock_entry_case_test_impl)
 _t30_test = unittest.make(_parse_lock_entry_source_test_impl)
 _t31_test = unittest.make(_parse_lock_entry_version_test_impl)
+_t32_test = unittest.make(_parse_pubspec_docmarker_test_impl)
+_t33_test = unittest.make(_parse_pubspec_unsupported_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -929,6 +965,8 @@ def yaml_parser_test_suite(name):
         _t29_test,
         _t30_test,
         _t31_test,
+        _t32_test,
+        _t33_test,
     )
     native.test_suite(
         name = name,

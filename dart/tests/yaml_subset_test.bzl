@@ -342,10 +342,14 @@ def _strict_lines_test_impl(ctx):
     # Lenient parsing skips what it cannot place; strict lines report it.
     asserts.equals(env, [], document_problems("a:\n    b: 1\n  c: 2\n"))
     asserts.equals(env, ["unreadable line 3: \"c: 2\""], document_problems("a:\n    b: 1\n  c: 2\n", True))
-    asserts.equals(env, [], document_problems("? a\n: 1\nb: 2\n"))
     asserts.equals(
         env,
-        ["unreadable line 1: \"? a\"", "unreadable line 2: \": 1\""],
+        ["explicit key at line 1 is not supported: \"? a\"", "explicit key at line 2 is not supported: \": 1\""],
+        document_problems("? a\n: 1\nb: 2\n"),
+    )
+    asserts.equals(
+        env,
+        ["explicit key at line 1 is not supported: \"? a\"", "explicit key at line 2 is not supported: \": 1\""],
         document_problems("? a\n: 1\nb: 2\n", True),
     )
     asserts.equals(env, [], document_problems("a: 1\nno colon here\n"))
@@ -384,15 +388,20 @@ def _indentation_test_impl(ctx):
 def _explicit_key_and_merge_test_impl(ctx):
     env = unittest.begin(ctx)
 
-    # Divergences from yaml.bzl, recorded in the module docstring.
+    # Explicit keys are not supported: they fail naming the line instead of
+    # resolving silently, in strict and lenient modes alike.
     asserts.equals(
         env,
-        ["unreadable line 1: \"? a\"", "unreadable line 2: \": 1\""],
+        ["explicit key at line 1 is not supported: \"? a\"", "explicit key at line 2 is not supported: \": 1\""],
         document_problems("? a\n: 1\nb: 2\n", True),
     )
     value, problems = document_value_and_problems("? a\n: 1\nb: 2\n", False)
     asserts.equals(env, {"b": 2}, value)
-    asserts.equals(env, [], problems)
+    asserts.equals(
+        env,
+        ["explicit key at line 1 is not supported: \"? a\"", "explicit key at line 2 is not supported: \": 1\""],
+        problems,
+    )
     asserts.equals(
         env,
         {"base": {"x": 1}, "child": {"<<": {"x": 1}, "y": 2}},
@@ -461,6 +470,89 @@ def _unreadable_lines_test_impl(ctx):
     asserts.true(env, len(problems) == 1 and "line 2" in problems[0])
     return unittest.end(env)
 
+def _docmarker_scalar_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # An indented `---` inside a `|` block scalar is content, not a document
+    # marker: only a column-0 `---` ends the document. The keys after the
+    # scalar read exactly as in the marker-free twin.
+    bad = "name: docmark\ndescription: |\n  line one\n  ---\n  line two\nenvironment:\n  sdk: ^3.0.0\ndependencies:\n  bar:\n    path: ../stubbar\n"
+    good = "name: docmark\ndescription: |\n  line one\n  continued\n  line two\nenvironment:\n  sdk: ^3.0.0\ndependencies:\n  bar:\n    path: ../stubbar\n"
+    bad_doc = parse_document(bad)
+    good_doc = parse_document(good)
+    asserts.equals(env, sorted(good_doc.keys()), sorted(bad_doc.keys()))
+    asserts.equals(env, good_doc["environment"], bad_doc.get("environment"))
+    asserts.equals(env, good_doc["dependencies"], bad_doc.get("dependencies"))
+    asserts.equals(env, "line one\n---\nline two\n", bad_doc.get("description"))
+    asserts.equals(env, [], document_problems(bad, True))
+
+    # The same holds for a `>` scalar and for an indented `...`.
+    folded_bad = parse_document("name: x\ndescription: >\n  line one\n  ---\n  line two\nenvironment:\n  sdk: ^3.0.0\n")
+    asserts.equals(env, "line one --- line two\n", folded_bad.get("description"))
+    asserts.equals(env, {"sdk": "^3.0.0"}, folded_bad.get("environment"))
+    dots_bad = parse_document("name: x\ndescription: |\n  line one\n  ...\n  line two\nenvironment:\n  sdk: ^3.0.0\n")
+    asserts.equals(env, "line one\n...\nline two\n", dots_bad.get("description"))
+    asserts.equals(env, {"sdk": "^3.0.0"}, dots_bad.get("environment"))
+    dots_folded = parse_document("name: x\ndescription: >\n  line one\n  ...\n  line two\nenvironment:\n  sdk: ^3.0.0\n")
+    asserts.equals(env, "line one ... line two\n", dots_folded.get("description"))
+    asserts.equals(env, {"sdk": "^3.0.0"}, dots_folded.get("environment"))
+    return unittest.end(env)
+
+def _indented_marker_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # An indented marker outside a block scalar is an ordinary line: strict
+    # lines report it naming the line, lenient parsing skips it.
+    asserts.equals(env, ["unreadable line 2: \"---\""], document_problems("a: 1\n  ---\nb: 2\n", True))
+    value, problems = document_value_and_problems("a: 1\n  ---\nb: 2\n", False)
+    asserts.equals(env, {"a": 1, "b": 2}, value)
+    asserts.equals(env, [], problems)
+    asserts.equals(env, ["unreadable line 2: \"...\""], document_problems("a: 1\n  ...\nb: 2\n", True))
+    value, problems = document_value_and_problems("a: 1\n  ...\nb: 2\n", False)
+    asserts.equals(env, {"a": 1, "b": 2}, value)
+    asserts.equals(env, [], problems)
+
+    # The column-0 controls keep ending the document.
+    asserts.equals(env, {"a": 1}, parse_document("a: 1\n---\nb: 2\n"))
+    asserts.equals(env, {"a": 1}, parse_document("a: 1\n...\nb: 2\n"))
+    asserts.equals(env, {"a": 1}, parse_document("a: 1\n---   \nb: 2\n"))
+    return unittest.end(env)
+
+def _multiline_flow_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A flow collection that spans lines is not supported: it fails naming
+    # the line where the collection opens, instead of reading partially.
+    text = "name: multiflow\nenvironment:\n  sdk: ^3.0.0\ndependencies:\n  bar:\n    path: ../stubbar\nflutter:\n  assets:\n    - path: assets/x.png\n      flavors: [premium,\n        free]\n"
+    value, problems = document_value_and_problems(text, True)
+    asserts.equals(env, 1, len(problems))
+    if len(problems) == 1:
+        asserts.true(env, "line 10" in problems[0] and "not supported" in problems[0] and "flow" in problems[0])
+    value, problems = document_value_and_problems(text, False)
+    asserts.equals(env, 1, len(problems))
+    if len(problems) == 1:
+        asserts.true(env, "line 10" in problems[0] and "not supported" in problems[0])
+
+    # A flow value broken on one line stays an unreadable flow value.
+    asserts.equals(
+        env,
+        ["unreadable flow value at line 1: \"[1, 2\""],
+        document_problems("a: [1, 2\nb: 2\n", True),
+    )
+    return unittest.end(env)
+
+def _explicit_key_error_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # The finding's explicit-key form fails naming the `?` line and the form.
+    text = "name: expl\nenvironment:\n  sdk: ^3.0.0\n? dependencies\n: {}\n"
+    value, problems = document_value_and_problems(text, True)
+    asserts.true(env, len(problems) >= 1)
+    asserts.true(env, "line 4" in problems[0] and "not supported" in problems[0] and "explicit" in problems[0])
+    value, problems = document_value_and_problems(text, False)
+    asserts.true(env, len(problems) >= 1 and "not supported" in problems[0])
+    return unittest.end(env)
+
 _t0_test = unittest.make(_block_mapping_test_impl)
 _t1_test = unittest.make(_block_sequence_test_impl)
 _t2_test = unittest.make(_same_indent_sequence_test_impl)
@@ -487,6 +579,10 @@ _t22_test = unittest.make(_compact_sequence_test_impl)
 _t23_test = unittest.make(_folded_scalar_test_impl)
 _t24_test = unittest.make(_unreadable_lines_test_impl)
 _t25_test = unittest.make(_quoted_multiline_test_impl)
+_t26_test = unittest.make(_docmarker_scalar_test_impl)
+_t27_test = unittest.make(_indented_marker_test_impl)
+_t28_test = unittest.make(_multiline_flow_test_impl)
+_t29_test = unittest.make(_explicit_key_error_test_impl)
 
 def yaml_subset_test_suite(name):
     small_unittest_suite(
@@ -517,4 +613,8 @@ def yaml_subset_test_suite(name):
         _t23_test,
         _t24_test,
         _t25_test,
+        _t26_test,
+        _t27_test,
+        _t28_test,
+        _t29_test,
     )
