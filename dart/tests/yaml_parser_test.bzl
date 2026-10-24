@@ -1030,8 +1030,10 @@ def _parse_pubspec_flow_quote_test_impl(ctx):
 
     # A backslash at a double-quoted folded line's end continues the scalar
     # with no space, as pub reads it (package:yaml 3.1.4 with the pinned
-    # SDK 3.13.5 reads "foobar" below). A backslash in single-quoted and
-    # plain scalars stays literal, as pub keeps it.
+    # SDK 3.13.5 reads "foobar" below). A backslash in a plain scalar stays
+    # literal, as pub keeps it; in a single-quoted scalar a `\` at the
+    # line's end continues on the next line verbatim, while a `\` with
+    # trailing space stays literal.
     bs = "name: p1\nenvironment:\n  sdk: ^3.0.0\ntags:\n  [\"foo\\\n   bar\", plain]\n"
     asserts.equals(env, ["foobar", "plain"], parse_pubspec_document(bs)["tags"])
     asserts.equals(env, "^3.0.0", parse_pubspec_sdk_constraint(bs))
@@ -1039,7 +1041,7 @@ def _parse_pubspec_flow_quote_test_impl(ctx):
     asserts.equals(env, ["foobar"], parse_pubspec_document("{\"tags\": [\"foo\\\n bar\"]}\n")["tags"])
     asserts.equals(
         env,
-        ["foo\\ bar"],
+        ["foo\n   bar"],
         parse_pubspec_document("name: p1\ntags:\n  ['foo\\\n   bar']\n")["tags"],
     )
     asserts.equals(
@@ -1079,22 +1081,37 @@ def _parse_pubspec_flow_quote_test_impl(ctx):
     asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 5" in err)
     asserts.true(env, "not supported" in err and "comment" in err)
 
-    # A `#` after a complete value, a `%` line, trailing space after a
-    # backslash continuation, and a blank line after one all fail naming
-    # the line: pub rejects each of these flows.
+    # A `#` after a complete value still fails when the comment swallows the
+    # token the flow needs (`]` above): pub rejects the flow, so reading on
+    # would misread. A comment before a `,` separator reads instead; see the
+    # flow comment test below.
     err = parse_pubspec_document_error("name: p1\ntags:\n  ['a' #c,\n   b]\n", "//:pubspec.yaml")
     asserts.true(env, err != None and "line 3" in err and "not supported" in err)
+
+    # A `%` line inside a flow fails closed, as pub rejects the directive.
     err = parse_pubspec_document_error("name: p1\ntags:\n  [a,\n   %x\n   b]\n", "//:pubspec.yaml")
     asserts.true(env, err != None and "line 4" in err and "not supported" in err)
-    err = parse_pubspec_document_error("name: p1\ntags:\n  [\"foo\\   \n   bar\"]\n", "//:pubspec.yaml")
-    asserts.true(env, err != None and "line 3" in err and "not supported" in err)
-    err = parse_pubspec_document_error("name: p1\ntags:\n  [\"foo\\\n\n   bar\"]\n", "//:pubspec.yaml")
-    asserts.true(env, err != None and "line 4" in err and "not supported" in err)
 
-    # An apostrophe never opens a quote: the fold keeps `[don't, stop]`
-    # whole, which fails closed with the spanning-flow error.
-    err = parse_pubspec_document_error("name: p1\ntags:\n  [don't,\n   stop]\n", "//:pubspec.yaml")
-    asserts.true(env, err != None and "line 3" in err and "not supported" in err and "flow" in err)
+    # Trailing space after a backslash continuation folds the break to that
+    # space, and a blank line after one is one "\n", as pub reads them.
+    asserts.equals(
+        env,
+        ["foo  bar"],
+        parse_pubspec_document("name: p1\ntags:\n  [\"foo\\   \n   bar\"]\n")["tags"],
+    )
+    asserts.equals(
+        env,
+        ["foo\nbar"],
+        parse_pubspec_document("name: p1\ntags:\n  [\"foo\\\n\n   bar\"]\n")["tags"],
+    )
+
+    # An apostrophe inside a plain scalar never opens a quote: `[don't,
+    # stop]` reads whole, as pub reads it (see the flow apostrophe test).
+    asserts.equals(
+        env,
+        ["don't", "stop"],
+        parse_pubspec_document("name: p1\ntags:\n  [don't,\n   stop]\n")["tags"],
+    )
 
     # `---` content lines fold as pub folds them, and comments after a
     # complete value stay separation, as pub skips them.
@@ -1124,6 +1141,61 @@ def _parse_pubspec_flow_quote_test_impl(ctx):
         parse_pubspec_document("name: p1\ntags:\n  [foo # c\n   ]\n")["tags"],
     )
     asserts.equals(env, "x", parse_pubspec_document("{name: x} # trailing\n")["name"])
+    return unittest.end(env)
+
+def _parse_pubspec_flow_comment_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A `#` comment after a complete flow value is separation, as pub reads
+    # it (package:yaml 3.1.4 with the pinned SDK 3.13.5 reads ["red",
+    # "green"] below): the comment runs to the end of the line whether the
+    # value before it is quoted or plain.
+    doc = "name: x\nenvironment:\n  sdk: ^3.0.0\nkeywords:\n  [\"red\" # c\n   , green]\n"
+    asserts.equals(env, ["red", "green"], parse_pubspec_document(doc)["keywords"])
+    asserts.equals(env, "^3.0.0", parse_pubspec_sdk_constraint(doc))
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "name: x\nenvironment:\n  sdk: ^3.0.0\nkeywords:\n  [red # c\n   , green]\n"
+    asserts.equals(env, ["red", "green"], parse_pubspec_document(doc)["keywords"])
+    asserts.equals(env, "^3.0.0", parse_pubspec_sdk_constraint(doc))
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    return unittest.end(env)
+
+def _parse_pubspec_flow_document_error_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A document that starts with `{` or `[` but does not parse as one
+    # complete collection fails naming the pubspec and the line, as pub
+    # rejects each shape below (package:yaml 3.1.4 with the pinned SDK
+    # 3.13.5): the reader never reads an empty or partial document.
+    cases = [
+        ["{name: x\n", "line 1"],
+        ["{name: x,\n environment: {sdk: ^3.0.0}\n", "line 2"],
+        ["{name: x} trailing\n", "line 1"],
+        ["{name: x #c}\n", "line 1"],
+        ["[a, b\n", "line 1"],
+        ["[\n a,\n b\n", "line 3"],
+        ["[a] trailing\n", "line 1"],
+        ["[\"a\" #c]\n", "line 1"],
+    ]
+    for case in cases:
+        err = parse_pubspec_document_error(case[0], "//:pubspec.yaml")
+        asserts.true(env, err != None and "//:pubspec.yaml" in err and case[1] in err)
+        asserts.true(env, "not supported" in err and "flow document" in err)
+    return unittest.end(env)
+
+def _parse_pubspec_flow_apos_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # An apostrophe inside a plain scalar never opens a quote, as pub reads
+    # it (package:yaml 3.1.4 with the pinned SDK 3.13.5 reads ["don't",
+    # "stop"] below): the tokenizer only opens a quote where a scalar
+    # starts, on one line or across the fold.
+    doc = "name: p1\ntags:\n  [don't, stop]\n"
+    asserts.equals(env, ["don't", "stop"], parse_pubspec_document(doc)["tags"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "name: p1\ntags:\n  [don't,\n   stop]\n"
+    asserts.equals(env, ["don't", "stop"], parse_pubspec_document(doc)["tags"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
     return unittest.end(env)
 
 def _trim_gzip_trailing_nulls_test_impl(ctx):
@@ -1214,6 +1286,9 @@ _t38_test = unittest.make(_parse_pubspec_flow_blank_test_impl)
 _t39_test = unittest.make(_parse_pubspec_flow_document_test_impl)
 _t40_test = unittest.make(_parse_pubspec_json_document_test_impl)
 _t41_test = unittest.make(_parse_pubspec_flow_quote_test_impl)
+_t42_test = unittest.make(_parse_pubspec_flow_comment_test_impl)
+_t43_test = unittest.make(_parse_pubspec_flow_document_error_test_impl)
+_t44_test = unittest.make(_parse_pubspec_flow_apos_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -1265,6 +1340,9 @@ def yaml_parser_test_suite(name):
         _t39_test,
         _t40_test,
         _t41_test,
+        _t42_test,
+        _t43_test,
+        _t44_test,
     )
     native.test_suite(
         name = name,

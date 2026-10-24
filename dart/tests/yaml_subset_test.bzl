@@ -202,6 +202,46 @@ def _flow_collection_test_impl(ctx):
     asserts.equals(env, [], problems)
     return unittest.end(env)
 
+def _flow_quote_start_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # An apostrophe inside a plain scalar never opens a quote: only a quote
+    # where a scalar starts opens one, as pub reads each form below
+    # (package:yaml 3.1.4 with the pinned SDK 3.13.5).
+    asserts.equals(env, {"don't": 1}, parse_document("don't: 1\n"))
+    asserts.equals(env, {"don't": 1}, parse_document("don't: 1 # c\n"))
+    asserts.equals(env, ["don't", "stop"], parse_document("key: [don't, stop]\n")["key"])
+    asserts.equals(env, ["don't", "x"], parse_document("key: ['don''t', x]\n")["key"])
+
+    # A quoted key glued to its colon is one pair, and a `#` comment past
+    # the closing bracket is separation, as pub reads them.
+    asserts.equals(env, [{"a": 1}], parse_document("key: [\"a\": 1]\n")["key"])
+    asserts.equals(env, ["a"], parse_document("key: [a]#c\n")["key"])
+    asserts.equals(env, {"a": 1}, parse_document("key: {a: 1}#c\n")["key"])
+
+    # Text glued after a closing quote and a `%`-leading scalar are
+    # unreadable, as pub rejects them.
+    problems = document_problems("key: [\"a\" \"b\"]\n", True)
+    asserts.equals(env, 1, len(problems))
+    asserts.true(env, "unreadable flow value at line 1" in problems[0])
+    problems = document_problems("key: [%x]\n", True)
+    asserts.equals(env, 1, len(problems))
+    asserts.true(env, "unreadable flow value at line 1" in problems[0])
+
+    # A document that starts like a flow collection but reads as none fails
+    # naming the line, as pub rejects it.
+    asserts.equals(
+        env,
+        ["flow document ending at line 1 is not supported"],
+        document_problems("{name: x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["flow document ending at line 2 is not supported"],
+        document_problems("{name: x,\n environment: {sdk: ^3.0.0}\n", True),
+    )
+    return unittest.end(env)
+
 def _block_scalar_test_impl(ctx):
     env = unittest.begin(ctx)
     parsed = parse_document(
@@ -587,6 +627,7 @@ _t26_test = unittest.make(_docmarker_scalar_test_impl)
 _t27_test = unittest.make(_indented_marker_test_impl)
 _t28_test = unittest.make(_multiline_flow_test_impl)
 _t29_test = unittest.make(_explicit_key_error_test_impl)
+_t30_test = unittest.make(_flow_quote_start_test_impl)
 
 def yaml_subset_test_suite(name):
     small_unittest_suite(
@@ -621,4 +662,5 @@ def yaml_subset_test_suite(name):
         _t27_test,
         _t28_test,
         _t29_test,
+        _t30_test,
     )
