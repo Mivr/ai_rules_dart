@@ -127,7 +127,8 @@ def _jit_snapshot_run_kwargs(fallback):
     training, with no front-end action first.
 
     Args:
-      fallback: The `jit_snapshot_fallback` value the compile sees. The build
+      fallback: The `jit_snapshot_fallback` value the compile sees, or `None`
+        for the unset default. The build
         setting defaults to `False`, so the default and explicit `False` take
         this same path.
 
@@ -177,7 +178,8 @@ def _runner_snapshot_run_kwargs(fallback):
     their `dart` paths agree and the snapshot action is declared.
 
     Args:
-      fallback: The `//dart:jit_snapshot_fallback` value the rule sees. The
+      fallback: The `//dart:jit_snapshot_fallback` value the rule sees, or
+        `None` for the unset default. The
         build setting defaults to `False`, so the default and explicit `False`
         take this same path.
 
@@ -245,7 +247,8 @@ def _assert_snapshot_requirements(env, mnemonic, run_kwargs):
     Args:
       env: The unittest environment.
       mnemonic: The snapshot action mnemonic, for failure messages.
-      run_kwargs: Takes a fallback bool and returns the action's `run` kwargs.
+      run_kwargs: Takes a fallback bool (or `None` for the unset default) and
+        returns the action's `run` kwargs.
     """
     on_reqs = run_kwargs(True).get("execution_requirements") or {}
     asserts.true(
@@ -268,6 +271,17 @@ def _assert_snapshot_requirements(env, mnemonic, run_kwargs):
         env,
         _NO_REMOTE_CACHE in off_reqs,
         "%s must not carry %s with //dart:jit_snapshot_fallback=false: %s" % (mnemonic, _NO_REMOTE_CACHE, off_reqs),
+    )
+    default_reqs = run_kwargs(None).get("execution_requirements") or {}
+    asserts.false(
+        env,
+        _NO_CACHE in default_reqs,
+        "%s must not carry %s by default: %s" % (mnemonic, _NO_CACHE, default_reqs),
+    )
+    asserts.false(
+        env,
+        _NO_REMOTE_CACHE in default_reqs,
+        "%s must not carry %s by default: %s" % (mnemonic, _NO_REMOTE_CACHE, default_reqs),
     )
 
 def _jit_snapshot_requirements_test_impl(ctx):
