@@ -1034,9 +1034,11 @@ void _writeUnavailableError() {
 /// no padding is needed (an empty pad component once trained a stray `//`
 /// into snapshots).
 /// `exit` is not called in here: it would skip the cleanup. Any exception the
-/// training throws is fail-closed: the training directory is still deleted,
-/// the lock still released, and the tool reports the cause and returns 1
-/// rather than a raw stack trace (see [_failTraining]).
+/// constant-dir training throws falls back to the private scratch where
+/// allowed (see [_trainInFallback]); otherwise the run fails closed: the
+/// training directory is still deleted, the lock still released, and the tool
+/// reports the cause and returns 1 rather than a raw stack trace (see
+/// [_failTraining]).
 int _trainInScratch({required _TrainingJob job, required File out}) {
   out.parent.createSync(recursive: true);
   final ({Directory dir, int lock})? constant;
@@ -1051,23 +1053,16 @@ int _trainInScratch({required _TrainingJob job, required File out}) {
     try {
       return _runTraining(trainDir: constant.dir, job: job, out: out);
     } catch (error) {
-      // Any training failure (a ProcessException when the copied training VM
-      // cannot run, say) still cleans up below: fail closed with the cause.
+      // The constant-dir training itself threw (a ProcessException when the
+      // copied training VM cannot run, say): where the fallback is allowed,
+      // warn and retry in the private scratch instead of failing closed.
+      if (job.fallbackAllowed) {
+        _warnFallback();
+        return _trainInFallback(job: job, out: out);
+      }
       return _failTraining(constantTrainDir, error);
     } finally {
-      // The constant directory holds only what this training put there, but it
-      // is shared by path: delete it only when it is still a real directory,
-      // never when it became a link, and before releasing the lock, also on
-      // failure (see [_acquireConstantDir]).
-      try {
-        if (!FileSystemEntity.isLinkSync(constantTrainDir) &&
-            constant.dir.existsSync()) {
-          constant.dir.deleteSync(recursive: true);
-        }
-      } on FileSystemException {
-        // Ignore cleanup errors.
-      }
-      jitUnlockAndClose(constant.lock);
+      _discardConstant(constant);
     }
   }
   if (!Platform.isWindows && !job.fallbackAllowed) {
@@ -1075,6 +1070,36 @@ int _trainInScratch({required _TrainingJob job, required File out}) {
     return 1;
   }
   _warnFallback();
+  return _trainInFallback(job: job, out: out);
+}
+
+/// Deletes the constant training directory this training claimed and releases
+/// its lock (see [_trainInScratch]): the directory holds only what this
+/// training put there, but it is shared by path, so it is deleted only when it
+/// is still a real directory, never when it became a link, and before the lock
+/// is released, also on failure. Cleanup errors are ignored.
+void _discardConstant(({Directory dir, int lock}) constant) {
+  // The constant directory holds only what this training put there, but it
+  // is shared by path: delete it only when it is still a real directory,
+  // never when it became a link, and before releasing the lock, also on
+  // failure (see [_acquireConstantDir]).
+  try {
+    if (!FileSystemEntity.isLinkSync(constantTrainDir) &&
+        constant.dir.existsSync()) {
+      constant.dir.deleteSync(recursive: true);
+    }
+  } on FileSystemException {
+    // Ignore cleanup errors.
+  }
+  jitUnlockAndClose(constant.lock);
+}
+
+/// Trains in a private directory per run under the declared output's directory
+/// (see [_trainInScratch]): the caller warns first (see [_warnFallback]), and
+/// the bytes are not reproducible. Any exception the training throws fails
+/// closed with the cause while the scratch below is deleted. Returns the
+/// training run's exit code.
+int _trainInFallback({required _TrainingJob job, required File out}) {
   final scratch = out.parent.createTempSync('rules_dart_snapshot.');
   final trainDir = Directory('${scratch.path}/t')..createSync();
   try {

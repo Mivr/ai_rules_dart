@@ -2379,6 +2379,61 @@ void main(List<String> args) {
     expect(File(allowedOut).existsSync(), isTrue);
   }, skip: Platform.isWindows ? posixOnlyReason : false);
 
+  test('constant-dir training that throws falls back where allowed', () {
+    // A missing `--dart` makes the constant-dir training itself throw (rather
+    // than returning an exit code) when the training VM is staged: with the
+    // fallback allowed the tool warns and retries in the private scratch
+    // (which throws too, naming the scratch), without it the constant-dir
+    // cause fails closed with no warning. Either way the constant directory
+    // is still deleted. The tool exits on failure, so it runs in a
+    // subprocess.
+    final tool = stageTool();
+    final dill = compileDill(
+      'void main(List<String> args) {\n  print(10000);\n}\n',
+      'throw_train',
+    );
+    final missingDart = '${tmp.path}/no-such-dart';
+    List<String> toolArgs(String snapshotOut, {bool fallback = false}) => [
+      tool,
+      '--dart=$missingDart',
+      '--snapshot=$snapshotOut',
+      if (fallback) '--fallback-allowed',
+      '--copy=input.dill=$dill',
+      '--',
+      'input.dill',
+    ];
+    final outJit = '${tmp.path}/throw_out/app.jit';
+    final denied = Process.runSync(
+      Platform.resolvedExecutable,
+      toolArgs(outJit),
+      environment: constantTrainEnv(),
+    );
+    expect(denied.exitCode, isNot(0), reason: 'throwing training must fail');
+    expect(File(outJit).existsSync(), isFalse);
+    final deniedErr = denied.stderr as String;
+    expect(
+      deniedErr,
+      contains('training in ${snapshot.constantTrainDir} failed'),
+    );
+    expect(deniedErr, isNot(contains('may not be reproducible')));
+    final allowedOut = '${tmp.path}/throw_allowed/app.jit';
+    final allowed = Process.runSync(
+      Platform.resolvedExecutable,
+      toolArgs(allowedOut, fallback: true),
+      environment: constantTrainEnv(),
+    );
+    expect(allowed.exitCode, isNot(0), reason: 'scratch training throws too');
+    expect(File(allowedOut).existsSync(), isFalse);
+    final allowedErr = allowed.stderr as String;
+    expect(allowedErr, contains('may not be reproducible'));
+    expect(allowedErr, contains('rules_dart_snapshot.'));
+    expect(
+      FileSystemEntity.typeSync(snapshot.constantTrainDir, followLinks: false),
+      FileSystemEntityType.notFound,
+      reason: 'constant directory still deleted',
+    );
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
   test('racy claim at the constant training path fails closed', () {
     // Another local user creating the training directory in the
     // delete-to-create window must not hand us a directory they own: the
