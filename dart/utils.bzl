@@ -16,7 +16,6 @@ load(
     _collect_packages = "collect_packages",
     _collect_transitive_resources = "collect_transitive_resources",
     _collect_transitive_srcs = "collect_transitive_srcs",
-    _gen_kernel_args = "gen_kernel_args",
     _generate_dev_package_config = "generate_dev_package_config",
     _generate_package_config = "generate_package_config",
     _generate_package_config_content = "generate_package_config_content",
@@ -178,7 +177,6 @@ kernel_uri = _kernel_uri
 stable_path = _stable_path
 stable_entry_path = _stable_entry_path
 generate_stable_package_config = _generate_stable_package_config
-gen_kernel_args = _gen_kernel_args
 
 # Modular kernel compilation and linking (`dart/private/dart_kernel.bzl`,
 # with parameter objects from `dart/private/kernel_params.bzl`).
