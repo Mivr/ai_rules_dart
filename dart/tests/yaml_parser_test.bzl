@@ -897,6 +897,111 @@ def _parse_pubspec_plain_question_space_test_impl(ctx):
     asserts.equals(env, None, parse_pubspec_document_error("name: p1\ndescription: some text\n  ? more text\nenvironment:\n  sdk: ^3.0.0\n"))
     return unittest.end(env)
 
+def _parse_pubspec_flow_blank_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A blank line inside a folded flow is one "\n" in the scalar, as pub
+    # reads it: plain, single- and double-quoted alike.
+    blank = "name: p1\nenvironment:\n  sdk: ^3.0.0\ntags:\n  [alpha\n\n   beta, gamma]\n"
+    asserts.equals(env, ["alpha\nbeta", "gamma"], parse_pubspec_document(blank)["tags"])
+    asserts.equals(env, "^3.0.0", parse_pubspec_sdk_constraint(blank))
+    asserts.equals(env, None, parse_pubspec_document_error(blank))
+    asserts.equals(
+        env,
+        ["alpha\nbeta", "gamma"],
+        parse_pubspec_document("name: p1\ntags:\n  ['alpha\n\n   beta', gamma]\n")["tags"],
+    )
+    asserts.equals(
+        env,
+        ["alpha\nbeta", "gamma"],
+        parse_pubspec_document("name: p1\ntags:\n  [\"alpha\n\n   beta\", gamma]\n")["tags"],
+    )
+
+    # The same fold applies to a flow mapping value, after a bare `-`, and to
+    # a blank line that holds only spaces.
+    asserts.equals(
+        env,
+        {"a": "x\ny"},
+        parse_pubspec_document("name: p1\nkey:\n  {a: x\n\n   y}\n")["key"],
+    )
+    asserts.equals(
+        env,
+        [["alpha\nbeta", "gamma"]],
+        parse_pubspec_document("name: p1\nitems:\n  -\n    [alpha\n\n     beta, gamma]\n")["items"],
+    )
+    asserts.equals(
+        env,
+        ["alpha\nbeta", "gamma"],
+        parse_pubspec_document("name: p1\ntags:\n  [alpha\n   \n   beta, gamma]\n")["tags"],
+    )
+
+    # Outside quotes a blank run is one "\n"; inside quotes each blank line is
+    # one "\n", as the oracle reads them.
+    asserts.equals(
+        env,
+        ["alpha\nbeta", "gamma"],
+        parse_pubspec_document("name: p1\ntags:\n  [alpha\n\n\n   beta, gamma]\n")["tags"],
+    )
+    asserts.equals(
+        env,
+        ["alpha\n\nbeta", "gamma"],
+        parse_pubspec_document("name: p1\ntags:\n  [\"alpha\n\n\n   beta\", gamma]\n")["tags"],
+    )
+
+    # A blank or comment-only line between entries is harmless separation.
+    asserts.equals(
+        env,
+        ["alpha", "beta"],
+        parse_pubspec_document("name: p1\ntags:\n  [alpha,\n\n   beta]\n")["tags"],
+    )
+    asserts.equals(
+        env,
+        ["alpha", "beta", "gamma"],
+        parse_pubspec_document("name: p1\ntags:\n  [alpha,\n# comment\n   beta, gamma]\n")["tags"],
+    )
+    return unittest.end(env)
+
+def _parse_pubspec_flow_document_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A scalar that spans lines in a flow document folds its break to one
+    # space and drops the indentation, as pub reads it.
+    doc = "{name: x, environment: {sdk: ^3.0.0},\n description: one\n  two}\n"
+    asserts.equals(env, "one two", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, "^3.0.0", parse_pubspec_sdk_constraint(doc))
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    asserts.equals(
+        env,
+        "one two",
+        parse_pubspec_document("{description: \"one\n  two\"}\n")["description"],
+    )
+    asserts.equals(
+        env,
+        "one two",
+        parse_pubspec_document("{description: 'one\n  two'}\n")["description"],
+    )
+
+    # A blank line between the lines is one "\n" outside quotes; inside
+    # quotes each blank line is one "\n", as the oracle reads them.
+    asserts.equals(env, "one\ntwo", parse_pubspec_document("{description: one\n\ntwo}\n")["description"])
+    asserts.equals(env, "one\ntwo", parse_pubspec_document("{description: one\n\n\ntwo}\n")["description"])
+    asserts.equals(env, "one\n\ntwo", parse_pubspec_document("{description: \"one\n\n\ntwo\"}\n")["description"])
+    return unittest.end(env)
+
+def _parse_pubspec_json_document_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A multi-line flow document whose strings stay on one line reads on main
+    # and on this head: breaks fold to separation with identical values.
+    doc = "{\nname: jsontest,\nenvironment: {sdk: ^3.0.0},\ndependencies: {bar: {path: ../stubbar}},\ntopics: [\"a\", \"b\"]\n}\n"
+    parsed = parse_pubspec_document(doc)
+    asserts.equals(env, "jsontest", parsed["name"])
+    asserts.equals(env, ["a", "b"], parsed["topics"])
+    asserts.equals(env, ["bar"], parse_pubspec_deps(doc))
+    asserts.equals(env, "^3.0.0", parse_pubspec_sdk_constraint(doc))
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    return unittest.end(env)
+
 def _parse_pubspec_rejected_span_test_impl(ctx):
     env = unittest.begin(ctx)
 
@@ -1004,6 +1109,9 @@ _t34_test = unittest.make(_parse_pubspec_folded_flow_test_impl)
 _t35_test = unittest.make(_parse_pubspec_plain_question_test_impl)
 _t36_test = unittest.make(_parse_pubspec_rejected_span_test_impl)
 _t37_test = unittest.make(_parse_pubspec_plain_question_space_test_impl)
+_t38_test = unittest.make(_parse_pubspec_flow_blank_test_impl)
+_t39_test = unittest.make(_parse_pubspec_flow_document_test_impl)
+_t40_test = unittest.make(_parse_pubspec_json_document_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -1051,6 +1159,9 @@ def yaml_parser_test_suite(name):
         _t35_test,
         _t36_test,
         _t37_test,
+        _t38_test,
+        _t39_test,
+        _t40_test,
     )
     native.test_suite(
         name = name,
