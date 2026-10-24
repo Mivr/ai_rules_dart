@@ -26,7 +26,8 @@ change the extracted bytes nor run host code, while transport configuration
    required, because older git ignores the config-file replacements below),
    resolves the fetch URL with `git ls-remote --get-url` (which applies the
    host's `url.<base>.insteadOf` rewrites without contacting the remote),
-   then runs `git fetch -- <resolved-url> <sha>`, falling
+   then runs `git fetch` with the pinned SHA (the lock URL unchanged for a
+   remote resolution, the resolved URL only for a local one), falling
    back to fetching all refs on servers that reject a bare SHA. Skipping
    `init` removes the host template surface by construction (no template
    is ever copied, so no template `info/attributes` or `hooks/` can reach
@@ -79,7 +80,9 @@ change the extracted bytes nor run host code, while transport configuration
    unset — so a host-global `uploadpack.packObjectsHook` (which runs on
    every local fetch, where `-c` pins cannot reach it) stays unread
    however the local repository was named; local fetches need no
-   credentials. `GIT_ALLOW_PROTOCOL`
+   credentials, and only they fetch the resolved URL — a remote resolution
+   keeps the lock URL on the fetch commands, so the inherited rewrites
+   apply to it once, exactly as before. `GIT_ALLOW_PROTOCOL`
    is pinned to a fixed transport-only list so host state cannot widen
    the fetch to a command-executing helper. The `--` before the URL keeps
    a lock URL from being read as an option.
@@ -612,10 +615,13 @@ def _resolve_fetch_url(ctx, env, bare_abs, url, what):
     `git ls-remote --get-url` applies the host's rewrites — from the config
     files and the inline-config channel carried in `env` — without
     contacting the remote, so the local/remote isolation decision sees the
-    same URL the fetch will use. A host rewrite of a remote lock URL to a
-    local repository is exactly what this is for: the fetch below runs
-    against the returned URL, because the isolated local environment no
-    longer carries the rewrite that produced it.
+    same URL the fetch would use. A host rewrite of a remote lock URL to a
+    local repository is exactly what this is for: only a fetch that resolves
+    to a local repository runs against the returned URL, because the isolated
+    local environment no longer carries the rewrite that produced it. A
+    remote resolution keeps the lock URL on the fetch commands below — the
+    inheriting fetch environment still carries the host's rewrites, so git
+    applies them to the lock URL once, as it always has.
 
     Args:
         ctx: A repository or module-extension context.
@@ -720,10 +726,14 @@ def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
     skeleton (`HEAD`, `config`, `objects/`, `refs/`) is written with
     `ctx.file`, the lock URL is resolved with `git ls-remote --get-url`
     (which applies the host's `url.<base>.insteadOf` rewrites without
-    contacting the remote), and `git fetch -- <resolved-url> <sha>` runs
+    contacting the remote), and `git fetch` runs with the pinned SHA
     (falling back to fetching all refs on servers that reject a bare SHA,
-    such as some corporate mirrors). The `--` keeps a lock URL from being
-    read as an option. Whether the fetch is local is decided on the
+    such as some corporate mirrors): the lock URL unchanged when the
+    resolution is remote — the inheriting fetch environment still carries
+    the host's rewrites, so git applies them to the lock URL once, as it
+    always has — and the resolved URL only when the resolution is local,
+    where the isolated environment no longer carries the rewrite that
+    produced it. The `--` keeps a lock URL from being read as an option. Whether the fetch is local is decided on the
     resolved URL: a remote lock URL that the host rewrites to a local
     repository fetches with the same isolation as a lock URL that is local
     to begin with — no host config file is read, the inline-config channel
@@ -795,12 +805,22 @@ def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
     local = _is_local_url(effective)
     fetch_env = _transport_env(ctx, bare_abs, empty, local)
 
+    # Only a fetch that resolved to a local repository uses the resolved
+    # URL: the isolated local environment no longer carries the rewrite
+    # that produced it. A remote resolution keeps the lock URL on both
+    # fetch commands — the inheriting environment still carries the host's
+    # `insteadOf` rewrites, so git applies them to the lock URL once, as
+    # it always has. Fetching the resolved URL there would apply a chained
+    # rewrite a second time (lock URL A resolving to B, then B rewritten
+    # to C at fetch time) and land somewhere the lock URL never named.
+    fetch_url = effective if local else url
+
     res = ctx.execute(
         ["git", "--no-replace-objects", "--git-dir=" + bare_abs] +
         _transport_config_args(empty_dir) + [
             "fetch",
             "--",
-            effective,
+            fetch_url,
             resolved_ref,
         ],
         environment = fetch_env,
@@ -814,7 +834,7 @@ def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
             _transport_config_args(empty_dir) + [
                 "fetch",
                 "--",
-                effective,
+                fetch_url,
                 "+refs/*:refs/origin/*",
             ],
             environment = fetch_env,
