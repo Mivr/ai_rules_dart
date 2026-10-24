@@ -7,12 +7,17 @@
 // opens without O_CREAT (read-write, O_NOFOLLOW), and only a missing lock is
 // published: a uniquely named temporary in the same directory is created
 // (O_CREAT|O_EXCL|O_NOFOLLOW), made 0666 through its descriptor whatever the
-// umask, and hard-linked over the lock path, so the lock appears at its final
-// 0666 mode atomically and never at a mode another user cannot open. Losing
+// umask, and renamed over the lock path without replacing an existing entry,
+// so the lock appears at its final 0666 mode atomically and never at a mode
+// another user cannot open. Where the atomic rename is unavailable the
+// temporary is hard-linked over the lock path instead, and a peer observing
+// the momentary second link adopts it only while a sibling matching the
+// temporary scheme stats to the same entry. Losing
 // the publish race falls back to the no-create open. After opening, the
 // descriptor is statted and kept only when it is a regular file with link count
-// 1: a hard link planted at the lock path has another entry pointing at the
-// same file, so adopting it would serialize nothing and, worse, the adopted
+// 1, or link count 2 with such a same-entry temporary sibling still beside
+// it: a hard link planted at the lock path has no such sibling, so adopting
+// it would serialize nothing and, worse, the adopted
 // lock's permissions could be relaxed through the descriptor onto a victim's
 // private file. Permissions change only on the temporary the publisher created
 // itself with O_EXCL, never on an adopted lock. No path-based check precedes
@@ -29,23 +34,9 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
-/// A path-based stat result: the entry kind (see [jitEntryKind]), its owner
-/// uid, its full POSIX mode, its hard-link count and its file identity (see
-/// [JitFileId]), without following symlinks.
-typedef JitStat = ({String kind, int uid, int mode, int nlink, JitFileId id});
+import 'jit_policy.dart';
 
-/// A file identity for the held-lock re-check (see [jitFdMatchesPath]): the
-/// device and inode the stat layouts report, without following symlinks. The
-/// halves' meaning is layout-specific (`statx` reports the device major and
-/// minor numbers, the `struct stat` layouts the device number's low and high
-/// halves), so an id only ever compares against one from the same call family
-/// on the same host; any divergence fails closed.
-typedef JitFileId = ({int devA, int devB, int inoLo, int inoHi});
-
-/// The flags opening the lock: without O_CREAT for an existing lock, with
-/// O_CREAT|O_EXCL to create a missing one. Both carry O_NOFOLLOW, O_NONBLOCK
-/// and O_CLOEXEC and never follow the final component.
-typedef JitOpenFlags = ({int noCreate, int create});
+export 'jit_policy.dart';
 
 /// The result of opening the lock: a held descriptor [fd] (nonnegative), or a
 /// fail-closed [detail] naming the entry plus which remedy applies.
@@ -55,12 +46,16 @@ typedef JitOpenFlags = ({int noCreate, int create});
 /// is ours to chmod ourselves. [publishFailed] is true only when the publish
 /// itself failed (see [_jitPublishFailure]): there may be no entry at all, so
 /// neither the `chmod 0666` remedy nor an owner-removal remedy applies.
+/// [linkRefused] is true only when the entry was refused for its hard links
+/// (see [_jitAdoptFd]): the detail names the count, and the remedy names
+/// removing the extra links.
 typedef JitLockOpen = ({
   int fd,
   String detail,
   bool chmodRemedy,
   bool ownEntry,
   bool publishFailed,
+  bool linkRefused,
 });
 
 /// Runs between the temporary's chmod and its publish (see
@@ -123,6 +118,30 @@ typedef _LinkDart = int Function(
 );
 typedef _UnlinkNative = ffi.Int Function(ffi.Pointer<ffi.Uint8>);
 typedef _UnlinkDart = int Function(ffi.Pointer<ffi.Uint8>);
+typedef _Renameat2Native = ffi.Int Function(
+  ffi.Int,
+  ffi.Pointer<ffi.Uint8>,
+  ffi.Int,
+  ffi.Pointer<ffi.Uint8>,
+  ffi.UnsignedInt,
+);
+typedef _Renameat2Dart = int Function(
+  int,
+  ffi.Pointer<ffi.Uint8>,
+  int,
+  ffi.Pointer<ffi.Uint8>,
+  int,
+);
+typedef _RenamexNative = ffi.Int Function(
+  ffi.Pointer<ffi.Uint8>,
+  ffi.Pointer<ffi.Uint8>,
+  ffi.UnsignedInt,
+);
+typedef _RenamexDart = int Function(
+  ffi.Pointer<ffi.Uint8>,
+  ffi.Pointer<ffi.Uint8>,
+  int,
+);
 typedef _LstatDart = int Function(
   ffi.Pointer<ffi.Uint8>,
   ffi.Pointer<ffi.Uint8>,
@@ -153,164 +172,6 @@ final class _Passwd extends ffi.Opaque {}
 typedef _GetpwuidNative = ffi.Pointer<_Passwd> Function(ffi.Uint32);
 typedef _GetpwuidDart = ffi.Pointer<_Passwd> Function(int);
 
-/// The `lstat` symbol reading the 64-bit `struct stat` layout (see
-/// [jitStatEntry]): a pure function of OS and architecture. On Intel macOS the
-/// plain `lstat` symbol is the legacy 32-bit-inode variant (whose owner and
-/// type fields sit elsewhere), so the 64-bit one is bound explicitly; every
-/// other host reads the 64-bit layout through the plain symbol.
-String jitLstatSymbol({required bool isMacOS, required bool isX64}) {
-  if (isMacOS && isX64) return 'lstat\$INODE64';
-  return 'lstat';
-}
-
-/// The `fstat` symbol reading the 64-bit `struct stat` layout (see
-/// [_jitFstatFd]): a pure function of OS and architecture, the same choice as
-/// [jitLstatSymbol]. On Intel macOS the plain `fstat` symbol is the legacy
-/// 32-bit-inode variant (whose owner and type fields sit elsewhere), so the
-/// 64-bit one is bound explicitly; every other host reads the 64-bit layout
-/// through the plain symbol.
-String jitFstatSymbol({required bool isMacOS, required bool isX64}) {
-  if (isMacOS && isX64) return 'fstat\$INODE64';
-  return 'fstat';
-}
-
-/// Offsets of the link count, mode and owner uid in the Linux 64-bit `struct
-/// stat` (see [_jitFstatFd]): a pure function of the architecture. x86_64 lays
-/// them out as a little-endian u64 link count at 16, a little-endian u32 mode
-/// at 24 and a little-endian u32 uid at 28; aarch64 and 64-bit RISC-V follow
-/// the asm-generic layout instead (a little-endian u32 mode at 16, a
-/// little-endian u32 link count at 20, a little-endian u32 uid at 24). The
-/// device (u64 at 0) and inode (u64 at 8) match in both. A 32-bit ABI returns
-/// null, and the caller fails closed rather than decoding a layout that
-/// differs per ABI and per glibc large-file redirection. All supported hosts
-/// are little-endian.
-({int nlink, int mode, int uid})? jitLinuxStatOffsets({required ffi.Abi abi}) {
-  switch (abi) {
-    case ffi.Abi.linuxX64:
-      return (nlink: 16, mode: 24, uid: 28);
-    case ffi.Abi.linuxArm64:
-    case ffi.Abi.linuxRiscv64:
-      return (nlink: 20, mode: 16, uid: 24);
-    default:
-      return null;
-  }
-}
-
-/// Decodes 64 bytes of Linux 64-bit `struct stat` (see [jitLinuxStatOffsets]):
-/// a pure function of the bytes and the ABI, so tests pin the layout without
-/// the syscall. On x86_64 the link count is 64 bits wide and only its low half
-/// is kept (no host links a file more than 2^32 times); on aarch64 and 64-bit
-/// RISC-V it is 32 bits wide. The identity is the device number's halves (u64
-/// at 0) with the inode (u64 at 8). Null on a 32-bit ABI (see
-/// [jitLinuxStatOffsets]).
-JitStat? jitDecodeLinuxStat(List<int> bytes, {required ffi.Abi abi}) {
-  final offsets = jitLinuxStatOffsets(abi: abi);
-  if (offsets == null) return null;
-  final mode = _jitU32(bytes, offsets.mode);
-  return (
-    kind: jitEntryKind(mode),
-    uid: _jitU32(bytes, offsets.uid),
-    mode: mode,
-    nlink: _jitU32(bytes, offsets.nlink),
-    id: (
-      devA: _jitU32(bytes, 0),
-      devB: _jitU32(bytes, 4),
-      inoLo: _jitU32(bytes, 8),
-      inoHi: _jitU32(bytes, 12),
-    ),
-  );
-}
-
-/// The versioned 64-bit stat calls for a glibc without plain `fstat`/`lstat`
-/// (see [_jitLinuxFstatFd] and [_jitLinuxStatPath]): a pure function of the
-/// ABI. Plain `fstat`/`lstat` are real symbols only since glibc 2.33 (older
-/// glibc inlines them), while `statx` needs 2.28 — so where both are missing
-/// the callers fall back to `__fxstat64`/`__lxstat64` (GLIBC_2.2.5) with
-/// glibc's `_STAT_VER`: 1 on x86_64 (`_STAT_VER_LINUX`), 0 on aarch64 and
-/// 64-bit RISC-V (generic). Their buffer layout is the 64-bit `struct stat`
-/// (see [jitLinuxStatOffsets]). Null on a 32-bit ABI, where `stat64` is not
-/// `stat` and the caller fails closed.
-({String fstat, String lstat, int ver})? jitLinuxStat64Calls({
-  required ffi.Abi abi,
-}) => switch (abi) {
-  ffi.Abi.linuxX64 => (fstat: '__fxstat64', lstat: '__lxstat64', ver: 1),
-  ffi.Abi.linuxArm64 ||
-  ffi.Abi.linuxRiscv64 => (fstat: '__fxstat64', lstat: '__lxstat64', ver: 0),
-  _ => null,
-};
-
-/// O_CLOEXEC for the lock and every temporary descriptor (see [jitOpenFlags]
-/// and [jitReadFlags]): a pure function of the OS. The value is 0x80000 on
-/// Linux (02000000, the same on every ABI) and 0x1000000 on macOS. Without it
-/// a spawned training subprocess would inherit the lock descriptor, keeping
-/// the file description open in the child past our close.
-int jitCloexecFlag({required bool isMacOS}) => isMacOS ? 0x1000000 : 0x80000;
-
-/// The flags opening the lock (see [JitOpenFlags]): a pure function of the OS
-/// and ABI. O_RDWR is 2, O_CREAT is 0x40 (Linux) or 0x200 (macOS), O_EXCL is
-/// 0x80 (Linux) or 0x800 (macOS), and O_NONBLOCK is 0x800 (Linux) or 0x4
-/// (macOS). O_CLOEXEC rides on both (see [jitCloexecFlag]), so no spawned
-/// training subprocess inherits the lock or a temporary. O_NOFOLLOW is 0x100
-/// on macOS but architecture-specific on Linux:
-/// 0x20000 on x86_64, IA-32 and RISC-V (asm-generic), 0x8000 on 32-bit ARM and
-/// arm64, whose headers keep the 32-bit numbering for compat (0x20000 there is
-/// O_LARGEFILE, which would follow symlinks). A Linux ABI whose values are not
-/// pinned here throws [UnsupportedError]: the caller fails closed rather than
-/// opening with guessed flags (0x40000 would be O_NOATIME, which the kernel
-/// refuses with EPERM on a file the caller does not own, locking a second
-/// user out of the first user's lock again).
-JitOpenFlags jitOpenFlags({required bool isMacOS, required ffi.Abi abi}) {
-  final cloexec = jitCloexecFlag(isMacOS: isMacOS);
-  if (isMacOS) {
-    // O_RDWR|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC, plus O_CREAT|O_EXCL to create.
-    return (
-      noCreate: 0x2 | 0x100 | 0x4 | cloexec,
-      create: 0x2 | 0x100 | 0x4 | 0x200 | 0x800 | cloexec,
-    );
-  }
-  final nofollow = _linuxNoFollow(abi);
-  // O_RDWR|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC, plus O_CREAT|O_EXCL to create.
-  return (
-    noCreate: 0x2 | nofollow | 0x800 | cloexec,
-    create: 0x2 | nofollow | 0x800 | 0x40 | 0x80 | cloexec,
-  );
-}
-
-/// Linux O_NOFOLLOW by ABI (see [jitOpenFlags]). Throws [UnsupportedError] for
-/// a Linux ABI whose headers are not pinned here: opening with guessed flags
-/// is worse than failing closed.
-int _linuxNoFollow(ffi.Abi abi) {
-  switch (abi) {
-    case ffi.Abi.linuxX64:
-    case ffi.Abi.linuxIA32:
-    case ffi.Abi.linuxRiscv32:
-    case ffi.Abi.linuxRiscv64:
-      // asm-generic headers number O_NOFOLLOW 0400000.
-      return 0x20000;
-    case ffi.Abi.linuxArm:
-    case ffi.Abi.linuxArm64:
-      // 32-bit ARM headers number O_NOFOLLOW 0100000, and arm64 keeps that
-      // numbering for compat (its 0400000 is O_LARGEFILE).
-      return 0x8000;
-    default:
-      throw UnsupportedError(
-        'app_jit_snapshot: no pinned O_NOFOLLOW for Linux ABI $abi, '
-        'refusing to open the training lock',
-      );
-  }
-}
-
-/// The read-only flags for the holder-PID lookup (see [jitLockHolderPid]):
-/// O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC without O_CREAT, so a symlink or FIFO at
-/// the path reports no holder instead of blocking or being followed, and no
-/// spawned training subprocess inherits the lookup descriptor. Throws as
-/// [jitOpenFlags] on a Linux ABI whose values are not pinned.
-int jitReadFlags({required bool isMacOS, required ffi.Abi abi}) {
-  final cloexec = jitCloexecFlag(isMacOS: isMacOS);
-  if (isMacOS) return 0x0 | 0x100 | 0x4 | cloexec;
-  return _linuxNoFollow(abi) | 0x800 | cloexec;
-}
-
 /// Our uid, for telling our own entries from another user's: only our own
 /// lock gets the `chmod 0666` remedy, and only our own stale directories get
 /// removed.
@@ -319,28 +180,6 @@ int jitOwnUid() {
   final lib = ffi.DynamicLibrary.process();
   final geteuid = lib.lookupFunction<_GeteuidNative, _GeteuidDart>('geteuid');
   return geteuid();
-}
-
-/// Names a POSIX file-type bit pattern for the fail-closed error.
-String jitEntryKind(int mode) {
-  switch (mode & 0xf000) {
-    case 0x4000:
-      return 'directory';
-    case 0x8000:
-      return 'regular file';
-    case 0xa000:
-      return 'symlink';
-    case 0x1000:
-      return 'FIFO';
-    case 0xc000:
-      return 'socket';
-    case 0x2000:
-      return 'character device';
-    case 0x6000:
-      return 'block device';
-    default:
-      return 'entry of unknown type';
-  }
 }
 
 /// Names the entry currently at [path] for the fail-closed error: its type
@@ -397,35 +236,57 @@ String? jitUserName(int uid) {
 /// hosts are little-endian. Metadata only: the entry's content is never read.
 JitStat? jitStatEntry(String path) {
   if (Platform.isWindows) return null;
+  final lib = ffi.DynamicLibrary.process();
+  final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
+  final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
+  final pathPtr = _jitCString(malloc, path);
   try {
-    final lib = ffi.DynamicLibrary.process();
-    final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
-    final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
-    final pathPtr = _jitCString(malloc, path);
+    final buf = malloc(256);
+    if (buf == ffi.nullptr) return null;
     try {
-      final buf = malloc(256);
-      if (buf == ffi.nullptr) return null;
-      try {
-        buf.asTypedList(256).fillRange(0, 256, 0);
-        if (Platform.isLinux) return _jitLinuxStatPath(lib, pathPtr, buf);
-        if (Platform.isMacOS) {
-          final symbol = jitLstatSymbol(
-            isMacOS: true,
-            isX64: ffi.Abi.current() == ffi.Abi.macosX64,
-          );
-          final lstat = lib.lookupFunction<_LstatNative, _LstatDart>(symbol);
-          if (lstat(pathPtr, buf) != 0) return null;
-          return _jitDecodeMacStat(buf.asTypedList(64));
-        }
-        return null;
-      } finally {
-        free(buf);
+      buf.asTypedList(256).fillRange(0, 256, 0);
+      if (Platform.isLinux) return _jitLinuxStatPath(lib, pathPtr, buf);
+      if (Platform.isMacOS) {
+        final lstat = _jitBindMacLstat(lib);
+        if (lstat == null) return null;
+        if (lstat(pathPtr, buf) != 0) return null;
+        return jitDecodeMacStat(buf.asTypedList(64));
       }
+      return null;
     } finally {
-      free(pathPtr);
+      free(buf);
     }
+  } finally {
+    free(pathPtr);
+  }
+}
+
+/// Binds the macOS `lstat` reading the 64-bit layout (see [jitLstatSymbol]),
+/// or null where the symbol is missing: the guard wraps only the lookup, so a
+/// decoder out-of-range error can never read as a missing call.
+_LstatDart? _jitBindMacLstat(ffi.DynamicLibrary lib) {
+  final symbol = jitLstatSymbol(
+    isMacOS: true,
+    isX64: ffi.Abi.current() == ffi.Abi.macosX64,
+  );
+  try {
+    return lib.lookupFunction<_LstatNative, _LstatDart>(symbol);
   } on ArgumentError {
-    // The stat call is missing from this libc: no description available.
+    // This libc has no such `lstat`: no description available.
+    return null;
+  }
+}
+
+/// Binds `statx` (see [_jitLinuxStatPath] and [_jitLinuxFstatFd]), or null
+/// where the symbol is missing (glibc older than 2.28): the guard wraps only
+/// the lookup, so a short-buffer decode error can never read as "old libc"
+/// again.
+_StatxDart? _jitBindStatx(ffi.DynamicLibrary lib) {
+  try {
+    return lib.lookupFunction<_StatxNative, _StatxDart>('statx');
+  } on ArgumentError {
+    // No `statx` in this libc: the callers fall through to the `struct stat`
+    // calls.
     return null;
   }
 }
@@ -462,16 +323,14 @@ JitStat? _jitLinuxStatPath(
   ffi.Pointer<ffi.Uint8> pathPtr,
   ffi.Pointer<ffi.Uint8> buf,
 ) {
-  try {
-    final statx = lib.lookupFunction<_StatxNative, _StatxDart>('statx');
+  final statx = _jitBindStatx(lib);
+  if (statx != null) {
     const atFdcwd = -100;
     const nofollow = 0x100;
     const basicStats = 0x7ff;
     if (statx(atFdcwd, pathPtr, nofollow, basicStats, buf) == 0) {
-      return _jitDecodeStatx(buf.asTypedList(64));
+      return jitDecodeStatx(buf.asTypedList(256));
     }
-  } on ArgumentError {
-    // No `statx` in this libc (glibc older than 2.28): fall through to lstat.
   }
   final calls = jitLinuxStat64Calls(abi: ffi.Abi.current());
   if (calls == null) return null;
@@ -486,59 +345,22 @@ JitStat? _jitLinuxStatPath(
   return jitDecodeLinuxStat(buf.asTypedList(64), abi: ffi.Abi.current());
 }
 
-/// Decodes 64 bytes of `struct statx` (Linux, architecture-independent; see
-/// [jitStatEntry]): a pure function of the bytes, shared by the path and
-/// descriptor stats. The identity is the device major and minor (u32 at 136
-/// and 140) with the inode (u64 at 32).
-JitStat _jitDecodeStatx(List<int> bytes) {
-  final mode = _jitU16(bytes, 28);
-  return (
-    kind: jitEntryKind(mode),
-    uid: _jitU32(bytes, 20),
-    mode: mode,
-    nlink: _jitU32(bytes, 16),
-    id: (
-      devA: _jitU32(bytes, 136),
-      devB: _jitU32(bytes, 140),
-      inoLo: _jitU32(bytes, 32),
-      inoHi: _jitU32(bytes, 36),
-    ),
-  );
-}
-
-/// Decodes 64 bytes of macOS 64-bit `struct stat` (see [jitStatEntry]): a pure
-/// function of the bytes, shared by the path and descriptor stats. The
-/// identity is the device number's halves (u64 at 0; read unsigned, compared
-/// as bits) with the inode (u64 at 8).
-JitStat _jitDecodeMacStat(List<int> bytes) {
-  final mode = _jitU16(bytes, 4);
-  return (
-    kind: jitEntryKind(mode),
-    uid: _jitU32(bytes, 16),
-    mode: mode,
-    nlink: _jitU16(bytes, 6),
-    id: (
-      devA: _jitU32(bytes, 0),
-      devB: _jitU32(bytes, 4),
-      inoLo: _jitU32(bytes, 8),
-      inoHi: _jitU32(bytes, 12),
-    ),
-  );
-}
-
 /// Opens the lock at [path] by file descriptor, for the caller to take with
 /// [jitTryExclusiveLock] and release with [jitUnlockAndClose].
 ///
 /// An existing lock opens read-write with O_NOFOLLOW and without O_CREAT and
-/// is kept only when it is a regular file with link count 1; a missing lock is
-/// published at 0666 through a uniquely named temporary linked over the lock
-/// path (see [jitCreateAndPublishLock]), so the lock never exists at a mode
+/// is kept only when it is a regular file with link count 1, or link count 2
+/// with a same-entry temporary sibling still beside it (see [_jitAdoptFd]); a
+/// missing lock is published at 0666 through a uniquely named temporary
+/// renamed over the lock path without replacing (see
+/// [jitCreateAndPublishLock]), so the lock never exists at a mode
 /// another user cannot open, whatever the umask or the scheduling. Losing the
 /// publish race falls back to the no-create open. An adopted lock is never
 /// chmodded: only the temporary the publisher created itself with O_EXCL ever
 /// has its permissions changed. Nothing is followed and nothing is created
 /// through: a symlink, directory, FIFO, hard link or other non-regular entry
-/// fails closed with its path, type and owner in [JitLockOpen.detail].
+/// fails closed with its path, type, owner and link count in
+/// [JitLockOpen.detail].
 JitLockOpen jitOpenLock(String path) {
   final ready = _jitBackendFor(path);
   final backend = ready.backend;
@@ -556,9 +378,12 @@ JitLockOpen jitOpenLock(String path) {
 ///
 /// The lock never exists at a narrower mode: a uniquely named temporary in the
 /// same directory is created with O_CREAT|O_EXCL|O_NOFOLLOW, made 0666 through
-/// its descriptor whatever the umask, then hard-linked over [path], which
-/// fails with EEXIST when another process published first (then that lock
-/// opens without O_CREAT, as today). The temporary is unlinked on every path,
+/// its descriptor whatever the umask, then renamed over [path] without
+/// replacing an existing entry (see [jitRenameCall]), which fails with EEXIST
+/// when another process published first (then that lock
+/// opens without O_CREAT, as today). Where the atomic rename is unavailable
+/// the temporary is hard-linked over [path] instead (see [_jitPublishLink]).
+/// The temporary is unlinked on every path but the publish,
 /// and its name starts with the lock's file name, so a leftover from a killed
 /// process is recognisable; such a leftover never blocks a later run (names
 /// are unique per call) and is never taken for the lock (only [path] opens).
@@ -587,6 +412,7 @@ JitLockOpen jitCreateAndPublishLock(String path, {JitTempReady? onTempReady}) {
         chmodRemedy: false,
         ownEntry: false,
         publishFailed: false,
+        linkRefused: false,
       ),
     );
   }
@@ -608,6 +434,7 @@ JitLockOpen jitCreateAndPublishLock(String path, {JitTempReady? onTempReady}) {
         chmodRemedy: false,
         ownEntry: false,
         publishFailed: false,
+        linkRefused: false,
       ),
     );
   }
@@ -631,11 +458,11 @@ JitLockOpen _jitCreateAndPublish(
 }
 
 /// One publish attempt (see [_jitCreateAndPublish]): creates a fresh temporary,
-/// makes it 0666, links it over [path] and unlinks it, keeping the linked
-/// descriptor. [retry] is true only when the temporary's own name was taken.
-/// A temporary that cannot be created, or a `link` the kernel refuses for any
-/// reason but a lost race, reports the publish itself (see
-/// [_jitPublishFailure]), never an entry that may not be there.
+/// makes it 0666 and publishes it at [path], keeping the published descriptor.
+/// [retry] is true only when the temporary's own name was taken. A temporary
+/// that cannot be created, or a publish the kernel refuses for any reason but
+/// a lost race, reports the publish itself (see [_jitPublishFailure]), never
+/// an entry that may not be there.
 ({JitLockOpen result, bool retry}) _jitPublishOnce(
   ffi.DynamicLibrary lib,
   String path,
@@ -657,6 +484,44 @@ JitLockOpen _jitCreateAndPublish(
   final fd = created.fd;
   _jitFchmod(lib, fd, 0x1b6);
   onTempReady?.call(temp, fd);
+  int renameErrno;
+  try {
+    renameErrno = _jitRenameOnce(lib, temp, path);
+  } on UnsupportedError {
+    // This host's Linux ABI has no pinned no-replace rename: the link path
+    // below publishes instead.
+    renameErrno = -1;
+  }
+  if (renameErrno == 0) {
+    // Renamed over the lock path atomically: the temporary is the lock now,
+    // so its descriptor is adopted without unlinking anything.
+    return (result: _jitAdoptFd(lib, path, fd), retry: false);
+  }
+  if (renameErrno < 0) {
+    // No atomic rename on this host: the legacy link path publishes instead.
+    return _jitPublishLink(lib, path, temp, fd, flags);
+  }
+  _jitUnlink(lib, temp);
+  _jitClose(lib, fd);
+  if (renameErrno != _eexist) {
+    return (result: _jitPublishFailure(path, errno: renameErrno), retry: false);
+  }
+  // Lost the publish race: open the winner's lock without creating.
+  return _jitOpenWinner(lib, path, flags);
+}
+
+/// The legacy publish where the atomic rename is unavailable (see
+/// [_jitPublishOnce]): hard-links [temp] over [path] and unlinks it, keeping
+/// the linked descriptor. A peer can observe the lock with link count 2
+/// between the two calls, and adopts it then only while a same-entry temporary
+/// sibling is still beside it (see [_jitAdoptFd]).
+({JitLockOpen result, bool retry}) _jitPublishLink(
+  ffi.DynamicLibrary lib,
+  String path,
+  String temp,
+  int fd,
+  JitOpenFlags flags,
+) {
   int linkErrno;
   try {
     linkErrno = _jitLink(lib, temp, path);
@@ -674,6 +539,17 @@ JitLockOpen _jitCreateAndPublish(
     return (result: _jitPublishFailure(path, errno: linkErrno), retry: false);
   }
   // Lost the publish race: open the winner's lock without creating.
+  return _jitOpenWinner(lib, path, flags);
+}
+
+/// Opens the race winner's lock after a lost publish race (see
+/// [_jitPublishOnce] and [_jitPublishLink]): the winner's lock opens without
+/// creating, as today.
+({JitLockOpen result, bool retry}) _jitOpenWinner(
+  ffi.DynamicLibrary lib,
+  String path,
+  JitOpenFlags flags,
+) {
   final winner = _jitOpen(lib, path, flags.noCreate, 0);
   if (winner.fd >= 0) {
     return (result: _jitAdoptFd(lib, path, winner.fd), retry: false);
@@ -682,6 +558,68 @@ JitLockOpen _jitCreateAndPublish(
     result: _jitLockFailure(path, accessDenied: winner.errno == _eacces),
     retry: false,
   );
+}
+
+/// Renames [temp] over [path] without replacing an existing entry (see
+/// [jitRenameCall]): 0 when the lock is now published at [path], -1 when the
+/// rename is unavailable on this host (an unpinned ABI, a missing symbol,
+/// ENOSYS or EINVAL — the kernel or libc predates it) and the caller falls
+/// back to the link path, otherwise the refusal `errno` (EEXIST when another
+/// publisher won). The caller unlinks the temporary on every path but the
+/// publish.
+int _jitRenameOnce(ffi.DynamicLibrary lib, String temp, String path) {
+  final rename = _jitBindRename(
+    lib,
+    jitRenameCall(isMacOS: Platform.isMacOS, abi: ffi.Abi.current()),
+  );
+  if (rename == null) return -1;
+  final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
+  final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
+  final tempPtr = _jitCString(malloc, temp);
+  try {
+    final pathPtr = _jitCString(malloc, path);
+    try {
+      if (rename(tempPtr, pathPtr) == 0) return 0;
+      // Read `errno` before any other libc call: freeing comes after.
+      final errno = _jitErrno(lib);
+      return errno == _enosys || errno == _einval ? -1 : errno;
+    } finally {
+      free(pathPtr);
+    }
+  } finally {
+    free(tempPtr);
+  }
+}
+
+/// Binds the no-replace rename (see [jitRenameCall]): a closure renaming a
+/// temporary over the lock path and returning the raw result, or null where
+/// the symbol is missing. Each missing-symbol guard wraps only its lookup,
+/// never a rename.
+int Function(ffi.Pointer<ffi.Uint8>, ffi.Pointer<ffi.Uint8>)? _jitBindRename(
+  ffi.DynamicLibrary lib,
+  ({String symbol, int noReplace}) call,
+) {
+  if (Platform.isMacOS) {
+    try {
+      final rename = lib.lookupFunction<_RenamexNative, _RenamexDart>(
+        call.symbol,
+      );
+      return (temp, path) => rename(temp, path, call.noReplace);
+    } on ArgumentError {
+      // This libc has no `renamex_np`: the caller takes the link path.
+      return null;
+    }
+  }
+  try {
+    final rename = lib.lookupFunction<_Renameat2Native, _Renameat2Dart>(
+      call.symbol,
+    );
+    // AT_FDCWD for both sides.
+    return (temp, path) => rename(-100, temp, -100, path, call.noReplace);
+  } on ArgumentError {
+    // This libc has no `renameat2`: the caller takes the link path.
+    return null;
+  }
 }
 
 /// Disambiguates temporary lock names within this process (see [_jitTempPath]).
@@ -802,32 +740,6 @@ void jitUnlockAndClose(int fd) {
   }
 }
 
-/// The `l_pid` offset in `struct flock` for the holder-PID lookup (see
-/// [jitLockHolderPid]): a pure function of the OS and ABI. On macOS the PID is
-/// a little-endian i32 at 16; on Linux a little-endian i32 at 24 on the 64-bit
-/// ABIs, where `l_start`/`l_len` are 64 bits wide, and at 12 on the 32-bit
-/// ones, where they are 32 bits wide (reading at the 64-bit offset there would
-/// return padding as the PID). Throws [UnsupportedError] for a Linux ABI whose
-/// layout is not pinned here, and the caller reports no holder.
-int jitFlockPidOffset({required bool isMacOS, required ffi.Abi abi}) {
-  if (isMacOS) return 16;
-  switch (abi) {
-    case ffi.Abi.linuxX64:
-    case ffi.Abi.linuxArm64:
-    case ffi.Abi.linuxRiscv64:
-      return 24;
-    case ffi.Abi.linuxIA32:
-    case ffi.Abi.linuxArm:
-    case ffi.Abi.linuxRiscv32:
-      return 12;
-    default:
-      throw UnsupportedError(
-        'app_jit_snapshot: no pinned struct flock layout for Linux ABI $abi, '
-        'refusing to read the training lock holder',
-      );
-  }
-}
-
 /// The PID holding an exclusive `fcntl` lock on [path], for the lock-wait
 /// notices and the deadline error. Null where no process holds one, where the
 /// path cannot be opened, or where the platform has no suitable call: the
@@ -913,10 +825,13 @@ int? jitLockHolderPid(String path) {
 
 // `errno` values distinguishing the open failures (see [jitOpenLock]):
 // EACCES for a mode-denied open, ENOENT for a missing lock, EEXIST for a
-// lost create race. All three read the same on Linux and macOS.
+// lost create race; ENOSYS and EINVAL for a rename the host predates (see
+// [_jitRenameOnce]). All five read the same on Linux and macOS.
 const _eacces = 13;
 const _enoent = 2;
 const _eexist = 17;
+const _enosys = 38;
+const _einval = 22;
 
 /// The current thread's `errno` from libc: `__errno_location` on Linux,
 /// `__error` on macOS. Callers read it before any other libc call.
@@ -955,29 +870,63 @@ int _jitErrno(ffi.DynamicLibrary lib) {
 }
 
 /// Keeps an opened lock descriptor only when it is a regular file with link
-/// count 1. Anything else is closed and fails closed with its path, type and
-/// owner: a hard link planted at the lock path names another entry pointing at
-/// the same file, so the descriptor is dropped without touching permissions
-/// (relaxing them would widen the linked-to file for its owner).
+/// count 1 — or link count 2 while a same-entry temporary sibling shows the
+/// publish is still in flight (see [_jitIsPublishWindow]). Anything else is
+/// closed and fails closed with its path, type, owner and link count: a hard
+/// link planted at the lock path names another entry pointing at the same
+/// file, so the descriptor is dropped without touching permissions (relaxing
+/// them would widen the linked-to file for its owner).
 JitLockOpen _jitAdoptFd(ffi.DynamicLibrary lib, String path, int fd) {
   JitStat? info;
   try {
     info = _jitFstatFd(lib, fd);
-  } on ArgumentError {
+  } on ArgumentError catch (error) {
+    // A decoder out-of-range error is a RangeError (an ArgumentError): never
+    // swallow it as a missing call. Only a missing lookup lands here.
+    if (error is RangeError) rethrow;
     // This libc has no stat call for a descriptor: nothing to keep.
     info = null;
   }
-  if (info == null || info.kind != 'regular file' || info.nlink != 1) {
+  if (info == null || info.kind != 'regular file') {
     _jitClose(lib, fd);
     return _jitLockFailure(path, accessDenied: false);
   }
-  return (
-    fd: fd,
-    detail: '',
-    chmodRemedy: false,
-    ownEntry: true,
-    publishFailed: false,
-  );
+  if (info.nlink == 1 ||
+      (info.nlink == 2 && _jitIsPublishWindow(path, info.id))) {
+    return (
+      fd: fd,
+      detail: '',
+      chmodRemedy: false,
+      ownEntry: true,
+      publishFailed: false,
+      linkRefused: false,
+    );
+  }
+  _jitClose(lib, fd);
+  return _jitLockFailure(path, accessDenied: false, linkCount: info.nlink);
+}
+
+/// Whether the lock at [path] with identity [id] is mid-publish (see
+/// [_jitAdoptFd]): a directory sibling fits the temporary scheme (see
+/// [jitIsTempSibling]) and stats to the same identity. Both sides consult the
+/// same call family (see [_jitFstatFd] and [jitStatEntry]), so equal ids name
+/// the same entry; a planted link has no such sibling and stays refused.
+/// False where the directory cannot be listed: the caller fails closed.
+bool _jitIsPublishWindow(String path, JitFileId id) {
+  final sep = Platform.pathSeparator;
+  final cut = path.lastIndexOf(sep);
+  final dir = cut < 0 ? '.' : path.substring(0, cut);
+  final lockName = cut < 0 ? path : path.substring(cut + 1);
+  try {
+    for (final entry in Directory(dir).listSync(followLinks: false)) {
+      if (!jitIsTempSibling(entry.path.split(sep).last, lockName)) continue;
+      if (jitStatEntry(entry.path)?.id == id) return true;
+    }
+  } on FileSystemException {
+    // The directory cannot be listed: not a recognizable window.
+    return false;
+  }
+  return false;
 }
 
 /// Whether [fd] still names the entry at [path]: the descriptor's own device
@@ -992,7 +941,10 @@ bool jitFdMatchesPath(int fd, String path) {
   JitStat? held;
   try {
     held = _jitFstatFd(lib, fd);
-  } on ArgumentError {
+  } on ArgumentError catch (error) {
+    // As in [_jitAdoptFd]: a decoder out-of-range error must propagate, never
+    // read as a missing call.
+    if (error is RangeError) rethrow;
     // This libc has no stat call for a descriptor: nothing verified.
     held = null;
   }
@@ -1020,17 +972,30 @@ JitStat? _jitFstatFd(ffi.DynamicLibrary lib, int fd) {
     buf.asTypedList(256).fillRange(0, 256, 0);
     if (Platform.isLinux) return _jitLinuxFstatFd(lib, fd, buf);
     if (Platform.isMacOS) {
-      final symbol = jitFstatSymbol(
-        isMacOS: true,
-        isX64: ffi.Abi.current() == ffi.Abi.macosX64,
-      );
-      final fstat = lib.lookupFunction<_FstatNative, _FstatDart>(symbol);
+      final fstat = _jitBindMacFstat(lib);
+      if (fstat == null) return null;
       if (fstat(fd, buf) != 0) return null;
-      return _jitDecodeMacStat(buf.asTypedList(64));
+      return jitDecodeMacStat(buf.asTypedList(64));
     }
     return null;
   } finally {
     free(buf);
+  }
+}
+
+/// Binds the macOS `fstat` reading the 64-bit layout (see [jitFstatSymbol]),
+/// or null where the symbol is missing: the guard wraps only the lookup, so a
+/// decoder out-of-range error can never read as a missing call.
+_FstatDart? _jitBindMacFstat(ffi.DynamicLibrary lib) {
+  final symbol = jitFstatSymbol(
+    isMacOS: true,
+    isX64: ffi.Abi.current() == ffi.Abi.macosX64,
+  );
+  try {
+    return lib.lookupFunction<_FstatNative, _FstatDart>(symbol);
+  } on ArgumentError {
+    // This libc has no such `fstat`: the descriptor cannot be statted.
+    return null;
   }
 }
 
@@ -1044,10 +1009,10 @@ JitStat? _jitLinuxFstatFd(
   int fd,
   ffi.Pointer<ffi.Uint8> buf,
 ) {
-  try {
+  final statx = _jitBindStatx(lib);
+  if (statx != null) {
     final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
     final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
-    final statx = lib.lookupFunction<_StatxNative, _StatxDart>('statx');
     final empty = malloc(1);
     if (empty == ffi.nullptr) return null;
     try {
@@ -1055,13 +1020,11 @@ JitStat? _jitLinuxFstatFd(
       const emptyPath = 0x1000;
       const basicStats = 0x7ff;
       if (statx(fd, empty, emptyPath, basicStats, buf) == 0) {
-        return _jitDecodeStatx(buf.asTypedList(64));
+        return jitDecodeStatx(buf.asTypedList(256));
       }
     } finally {
       free(empty);
     }
-  } on ArgumentError {
-    // No `statx` in this libc (glibc older than 2.28): fall through to fstat.
   }
   final calls = jitLinuxStat64Calls(abi: ffi.Abi.current());
   if (calls == null) return null;
@@ -1079,8 +1042,15 @@ JitStat? _jitLinuxFstatFd(
 /// whether the `chmod 0666` remedy applies. That remedy applies only when the
 /// lock's own mode is what denies us access (a regular file the open refused
 /// for writing); a symlink, directory, FIFO or other entry, or any other
-/// failure, wants its owner (or root) to remove it instead.
-JitLockOpen _jitLockFailure(String path, {required bool accessDenied}) {
+/// failure, wants its owner (or root) to remove it instead. [linkCount] is
+/// the entry's hard-link count where a link was refused (see [_jitAdoptFd]),
+/// else 0: a refused entry names its count in the detail, and the error names
+/// removing the extra links instead of opening for writing.
+JitLockOpen _jitLockFailure(
+  String path, {
+  required bool accessDenied,
+  int linkCount = 0,
+}) {
   final info = jitStatEntry(path);
   if (info == null) {
     return (
@@ -1089,22 +1059,28 @@ JitLockOpen _jitLockFailure(String path, {required bool accessDenied}) {
       chmodRemedy: false,
       ownEntry: false,
       publishFailed: false,
+      linkRefused: false,
     );
   }
   final owner = jitUserName(info.uid);
   final who = owner == null ? 'uid ${info.uid}' : 'uid ${info.uid} ($owner)';
+  final refused = linkCount > 1;
   return (
     fd: -1,
-    detail: '${info.kind} at $path owned by $who',
+    detail: refused
+        ? '${info.kind} at $path owned by $who with $linkCount hard links'
+        : '${info.kind} at $path owned by $who',
     chmodRemedy: accessDenied && info.kind == 'regular file',
     ownEntry: info.uid == jitOwnUid(),
     publishFailed: false,
+    linkRefused: refused,
   );
 }
 
 /// The fail-closed opening where the publish itself failed (see
-/// [_jitPublishOnce]): the temporary could not be created, or `link` refused
-/// it for any reason but a lost race. Where an entry is now at [path] it is
+/// [_jitPublishOnce]): the temporary could not be created, or the rename (or
+/// `link` where rename is unavailable) refused it for any reason but a lost
+/// race. Where an entry is now at [path] it is
 /// described as in [_jitLockFailure] (a directory refusing the link still
 /// wants removal); where nothing is there the detail says the lock could not
 /// be published, with the `errno`, rather than inventing an entry of unknown
@@ -1119,6 +1095,7 @@ JitLockOpen _jitPublishFailure(String path, {required int errno}) {
       chmodRemedy: false,
       ownEntry: false,
       publishFailed: true,
+      linkRefused: false,
     );
   }
   final owner = jitUserName(info.uid);
@@ -1131,6 +1108,7 @@ JitLockOpen _jitPublishFailure(String path, {required int errno}) {
     chmodRemedy: false,
     ownEntry: info.uid == jitOwnUid(),
     publishFailed: true,
+    linkRefused: false,
   );
 }
 
@@ -1160,12 +1138,3 @@ ffi.Pointer<ffi.Uint8> _jitCString(
     ..[bytes.length] = 0;
   return ptr;
 }
-
-int _jitU32(List<int> bytes, int offset) =>
-    bytes[offset] |
-    (bytes[offset + 1] << 8) |
-    (bytes[offset + 2] << 16) |
-    (bytes[offset + 3] << 24);
-
-int _jitU16(List<int> bytes, int offset) =>
-    bytes[offset] | (bytes[offset + 1] << 8);

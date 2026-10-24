@@ -700,6 +700,12 @@ bool _lockOwnEntry = false;
 /// publish instead (see [_writeUnavailableError]).
 bool _lockPublishFailed = false;
 
+/// Whether the last [_openConstantLock] failure refused the lock for its hard
+/// links (see [_jitAdoptFd]): the entry's link count is in [_lockDetail], and
+/// the error names removing the extra links instead of opening for writing
+/// (see [_writeUnavailableError]).
+bool _lockLinkRefused = false;
+
 /// How many times [_openConstantLock] opens the lock per call: the first open
 /// plus reopenings when the held lock no longer names the lock path (see
 /// [jitFdMatchesPath]). A mismatch is all but impossible (only a concurrent
@@ -719,8 +725,9 @@ const _lockOpenAttempts = 3;
 /// file with link count 1 is kept (never written and never chmodded: a
 /// pre-existing lock keeps its content and its mode). Null when the
 /// lock cannot be opened or is not a regular file; the failure detail and its
-/// remedy stay in [_lockDetail], [_lockChmodRemedy], [_lockOwnEntry] and
-/// [_lockPublishFailed] for the fail-closed error (see [_acquireConstantDir]).
+/// remedy stay in [_lockDetail], [_lockChmodRemedy], [_lockOwnEntry],
+/// [_lockPublishFailed] and [_lockLinkRefused] for the fail-closed error (see
+/// [_acquireConstantDir]).
 ///
 /// A taken lock is re-checked against its path before it is trusted (see
 /// [jitFdMatchesPath]): the lock may have been deleted or replaced while it
@@ -745,6 +752,7 @@ int? _openConstantLock() {
   _lockChmodRemedy = false;
   _lockOwnEntry = false;
   _lockPublishFailed = false;
+  _lockLinkRefused = false;
   for (var attempt = 0; attempt < _lockOpenAttempts; attempt++) {
     final opened = jitOpenLock(constantTrainLock);
     if (opened.fd < 0) {
@@ -752,6 +760,7 @@ int? _openConstantLock() {
       _lockChmodRemedy = opened.chmodRemedy;
       _lockOwnEntry = opened.ownEntry;
       _lockPublishFailed = opened.publishFailed;
+      _lockLinkRefused = opened.linkRefused;
       return null;
     }
     final fd = opened.fd;
@@ -772,6 +781,7 @@ int? _openConstantLock() {
   _lockChmodRemedy = false;
   _lockOwnEntry = false;
   _lockPublishFailed = false;
+  _lockLinkRefused = false;
   return null;
 }
 
@@ -929,6 +939,9 @@ void _deleteTreeNoFollow(String path) {
       _constantDirUnavailable =
           'the lock file $constantTrainLock is still held by $holder '
           'after waiting $_lockDeadlineSecs seconds';
+    } else if (_lockLinkRefused) {
+      _constantDirUnavailable =
+          'the lock file $_lockDetail cannot be used while it has extra hard links';
     } else {
       _constantDirUnavailable =
           'the lock file $_lockDetail cannot be opened for writing';
@@ -987,7 +1000,9 @@ void _deleteTreeNoFollow(String path) {
 /// other blocked lock names the lock's own remedies: where the lock's own
 /// mode is what denies us access the owner makes it world-writable or removes
 /// it, where the publish itself failed the error names fixing the publish
-/// (there may be no entry and no owner to remove), and where anything else
+/// (there may be no entry and no owner to remove), where the entry has extra
+/// hard links its owner (or root) removes the extra links, and where anything
+/// else
 /// blocks it — a symlink, directory, FIFO or other entry — its owner (or
 /// root) must remove it, since we cannot remove another user's lock. A blocked
 /// training directory of our own names removing
@@ -1009,6 +1024,8 @@ void _writeUnavailableError() {
     // [_lockPublishFailed]); anything else wants the entry removed.
     if (_lockPublishFailed) {
       remedy = 'Remove any blocking entry or fix the lock directory, or pass ';
+    } else if (_lockLinkRefused) {
+      remedy = 'Have its owner (or root) remove the extra hard links, leaving one, or pass ';
     } else {
       remedy = _lockChmodRemedy
           ? (_lockOwnEntry

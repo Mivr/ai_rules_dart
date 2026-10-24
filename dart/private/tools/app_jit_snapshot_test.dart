@@ -25,6 +25,24 @@ import 'dill_reader.dart'
 
 typedef _UmaskNative = ffi.Int Function(ffi.Uint32);
 typedef _UmaskDart = int Function(int);
+typedef _TestMallocNative = ffi.Pointer<ffi.Uint8> Function(ffi.Size);
+typedef _TestMallocDart = ffi.Pointer<ffi.Uint8> Function(int);
+typedef _TestFreeNative = ffi.Void Function(ffi.Pointer<ffi.Uint8>);
+typedef _TestFreeDart = void Function(ffi.Pointer<ffi.Uint8>);
+typedef _TestStatxNative = ffi.Int Function(
+  ffi.Int,
+  ffi.Pointer<ffi.Uint8>,
+  ffi.Int,
+  ffi.Uint32,
+  ffi.Pointer<ffi.Uint8>,
+);
+typedef _TestStatxDart = int Function(
+  int,
+  ffi.Pointer<ffi.Uint8>,
+  int,
+  int,
+  ffi.Pointer<ffi.Uint8>,
+);
 
 /// Sets the process umask to [mask], returning the previous mask.
 int _setUmask(int mask) {
@@ -95,6 +113,10 @@ void main(List<String> args) {
         sibling: 'dill_reader.dart',
       ),
       (staged: 'dart/private/tools/jit_lock.dart', sibling: 'jit_lock.dart'),
+      (
+        staged: 'dart/private/tools/jit_policy.dart',
+        sibling: 'jit_policy.dart',
+      ),
       (
         staged: 'dart/guard/lib/directive_guard.dart',
         sibling: '../../guard/lib/directive_guard.dart',
@@ -2047,6 +2069,30 @@ void main(List<String> args) {
     }
   }, skip: Platform.isWindows ? posixOnlyReason : false);
 
+  test('published lock opens with link count 1 through the rename', () {
+    // The atomic publish moves the temporary to the lock path without
+    // replacing: the adopted descriptor already names the path, with no
+    // second link left behind for a peer to trip over.
+    final lockPath = '${tmp.path}/renamed.lock';
+    final opened = locks.jitCreateAndPublishLock(lockPath);
+    try {
+      expect(opened.fd, greaterThanOrEqualTo(0), reason: 'publish opens it');
+      expect(
+        locks.jitFdMatchesPath(opened.fd, lockPath),
+        isTrue,
+        reason: 'renamed temporary names its path',
+      );
+      expect(
+        locks.jitStatEntry(lockPath)?.nlink,
+        1,
+        reason: 'no second link left',
+      );
+      expect(lockTemps(lockPath), isEmpty, reason: 'no temporary left');
+    } finally {
+      locks.jitUnlockAndClose(opened.fd);
+    }
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
   test('failed publish leaves no temporary', () {
     // A directory at the lock path refuses both the link and the open: the
     // publish fails closed naming the directory, and the temporary is still
@@ -2223,6 +2269,48 @@ void main(List<String> args) {
     ]);
   }, skip: Platform.isWindows ? posixOnlyReason : false);
 
+  test('planted hard link names the extra links and their removal', () {
+    // End to end through the staged tool: a hard link planted at the lock
+    // path fails the action naming the entry's two hard links and their
+    // removal, never "cannot be opened for writing" (which applies only when
+    // the lock's own mode denies us). Same-uid (see the file header).
+    final tool = stageTool();
+    final dill = compileDill(
+      'void main(List<String> args) {\n  print(10000);\n}\n',
+      'plantedlink_train',
+    );
+    final victim = File('${tmp.path}/plantedlink_victim')
+      ..writeAsStringSync('private');
+    final ln = Process.runSync('ln', [victim.path, snapshot.constantTrainLock]);
+    expect(ln.exitCode, 0, reason: '${ln.stderr}');
+    final outJit = '${tmp.path}/plantedlink_out/app.jit';
+    final res = Process.runSync(Platform.resolvedExecutable, [
+      tool,
+      '--dart=${Platform.resolvedExecutable}',
+      '--snapshot=$outJit',
+      '--copy=input.dill=$dill',
+      '--',
+      'input.dill',
+    ], environment: constantTrainEnv());
+    expect(res.exitCode, isNot(0), reason: 'planted link must fail');
+    expect(File(outJit).existsSync(), isFalse);
+    final err = res.stderr as String;
+    expect(err, contains('cannot train in ${snapshot.constantTrainDir}'));
+    expect(err, contains(snapshot.constantTrainLock));
+    expect(err, contains('regular file'));
+    expect(err, contains('with 2 hard links'));
+    expect(err, contains('extra hard links'));
+    expect(
+      err,
+      contains('Have its owner (or root) remove the extra hard links'),
+    );
+    expect(err, isNot(contains('cannot be opened for writing')));
+    expect(err, isNot(contains('chmod 0666')));
+    expect(err, contains('jit_snapshot_fallback=true'));
+    expect(snapshot.removeStaleEntry(snapshot.constantTrainLock), isTrue);
+    expect(victim.readAsStringSync(), 'private', reason: 'victim untouched');
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
   test('jitLstatSymbol binds the 64-bit variant on Intel macOS only', () {
     // On Intel macOS the plain `lstat` symbol reads the legacy 32-bit-inode
     // layout (wrong owner and type); the 64-bit one is `lstat$INODE64`.
@@ -2342,6 +2430,66 @@ void main(List<String> args) {
     }
     expect(locks.jitDecodeLinuxStat(x64, abi: ffi.Abi.linuxIA32), isNull);
   });
+
+  test('lock stat reads the statx device identity on Linux', () {
+    // `jitStatEntry` must take the statx route, not the struct-stat fallback:
+    // an independent in-test statx call decodes the same device major/minor
+    // and inode the entry reports. With the 64-byte buffer the statx decode
+    // threw out of range, the guard read it as "old libc", and the fallback's
+    // device halves read instead.
+    final file = File('${tmp.path}/statx_route')..writeAsStringSync('x');
+    final info = locks.jitStatEntry(file.path);
+    expect(info, isNotNull, reason: 'entry stats');
+    expect(info!.kind, 'regular file');
+    final lib = ffi.DynamicLibrary.process();
+    final malloc = lib.lookupFunction<_TestMallocNative, _TestMallocDart>(
+      'malloc',
+    );
+    final free = lib.lookupFunction<_TestFreeNative, _TestFreeDart>('free');
+    final statx = lib.lookupFunction<_TestStatxNative, _TestStatxDart>('statx');
+    final pathBytes = utf8.encode(file.path);
+    final pathPtr = malloc(pathBytes.length + 1);
+    pathPtr.asTypedList(pathBytes.length + 1)
+      ..setAll(0, pathBytes)
+      ..[pathBytes.length] = 0;
+    try {
+      final buf = malloc(256);
+      expect(buf == ffi.nullptr, isFalse, reason: 'statx buffer allocated');
+      try {
+        buf.asTypedList(256).fillRange(0, 256, 0);
+        expect(
+          statx(-100, pathPtr, 0x100, 0x7ff, buf),
+          0,
+          reason: 'in-test statx stats',
+        );
+        final view = ByteData.sublistView(buf.asTypedList(256));
+        expect(
+          info.id.devA,
+          view.getUint32(136, Endian.little),
+          reason: 'statx device major',
+        );
+        expect(
+          info.id.devB,
+          view.getUint32(140, Endian.little),
+          reason: 'statx device minor',
+        );
+        expect(
+          info.id.inoLo,
+          view.getUint32(32, Endian.little),
+          reason: 'statx inode low',
+        );
+        expect(
+          info.id.inoHi,
+          view.getUint32(36, Endian.little),
+          reason: 'statx inode high',
+        );
+      } finally {
+        free(buf);
+      }
+    } finally {
+      free(pathPtr);
+    }
+  }, skip: Platform.isLinux ? false : 'statx(2) is Linux-only');
 
   test('jitOpenFlags pins O_* per OS and ABI', () {
     // Linux O_NOFOLLOW is architecture-specific: x86_64, IA-32 and RISC-V
@@ -2529,6 +2677,49 @@ void main(List<String> args) {
       reason: 'victim mode never relaxed',
     );
     expect(victim.readAsStringSync(), 'private');
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('lock with a publish-window sibling adopts', () {
+    // A peer observing the legacy link publish between the link and the unlink
+    // sees link count 2: with a sibling matching the temporary scheme statting
+    // to the same entry the publish is still in flight, so the open adopts
+    // instead of refusing. Same-uid (see the file header).
+    final lockPath = '${tmp.path}/window.lock';
+    File(lockPath).writeAsStringSync('publishing');
+    final sibling = '$lockPath.$pid.81818.4242.7.tmp';
+    final ln = Process.runSync('ln', [lockPath, sibling]);
+    expect(ln.exitCode, 0, reason: '${ln.stderr}');
+    final opened = locks.jitOpenLock(lockPath);
+    try {
+      expect(opened.fd, greaterThanOrEqualTo(0), reason: 'window adopts');
+      expect(
+        File(lockPath).readAsStringSync(),
+        'publishing',
+        reason: 'lock content kept',
+      );
+    } finally {
+      locks.jitUnlockAndClose(opened.fd);
+    }
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('planted link without a window sibling names the extra links', () {
+    // A hard link planted at the lock path has no sibling matching the
+    // temporary scheme, so the open still refuses it — but the error must say
+    // the entry has extra hard links and name their removal, not say the lock
+    // cannot be opened for writing. Same-uid (see the file header).
+    final victim = File('${tmp.path}/planted_victim')
+      ..writeAsStringSync('private');
+    final link = '${tmp.path}/planted.lock';
+    final ln = Process.runSync('ln', [victim.path, link]);
+    expect(ln.exitCode, 0, reason: '${ln.stderr}');
+    final opened = locks.jitOpenLock(link);
+    expect(opened.fd, -1, reason: 'planted link refused');
+    expect(opened.detail, contains('regular file'));
+    expect(opened.detail, contains(link));
+    expect(opened.detail, contains('owned by uid'));
+    expect(opened.detail, contains('with 2 hard links'));
+    expect(opened.chmodRemedy, isFalse, reason: 'no mode to chmod');
+    expect(victim.readAsStringSync(), 'private', reason: 'victim untouched');
   }, skip: Platform.isWindows ? posixOnlyReason : false);
 
   test('jitFdMatchesPath trusts only a descriptor naming the lock path', () {

@@ -24,10 +24,14 @@ exports_files(
 )
 
 # The shared-host lock handling `app_jit_snapshot.dart` opens its training
-# lock through (see `jit_lock.dart`): exported for the unit test's staged tool
-# bundle, which resolves it beside the entry by relative import.
+# lock through (see `jit_lock.dart`, whose pure host facts live in
+# `jit_policy.dart`): exported for the unit test's staged tool bundle, which
+# resolves them beside the entry by relative import.
 exports_files(
-    ["jit_lock.dart"],
+    [
+        "jit_lock.dart",
+        "jit_policy.dart",
+    ],
     visibility = ["//dart:__subpackages__"],
 )
 
@@ -50,6 +54,7 @@ filegroup(
         "app_jit_snapshot.dart",
         "dill_reader.dart",
         "jit_lock.dart",
+        "jit_policy.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
     visibility = ["//dart:__subpackages__"],
@@ -387,6 +392,7 @@ dart_test(
         "dill_outline.dart",
         "dill_reader.dart",
         "jit_lock.dart",
+        "jit_policy.dart",
         "kernel_link.dart",
         "kernel_module.dart",
         "lib/worker_protocol.dart",
@@ -482,6 +488,7 @@ dart_test(
         "comma_patch.dart",
         "dill_reader.dart",
         "jit_lock.dart",
+        "jit_policy.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
     args = [
@@ -489,6 +496,7 @@ dart_test(
         "$(rlocationpath :comma_patch.dart)",
         "$(rlocationpath :dill_reader.dart)",
         "$(rlocationpath :jit_lock.dart)",
+        "$(rlocationpath :jit_policy.dart)",
         "$(rlocationpath //dart/guard:lib/directive_guard.dart)",
     ],
     data = [
@@ -496,12 +504,26 @@ dart_test(
         ":comma_patch.dart",
         ":dill_reader.dart",
         ":jit_lock.dart",
+        ":jit_policy.dart",
         "//dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
     main = "app_jit_snapshot_test.dart",
     deps = [
         "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# The lock policy's unit tests: the pinned rename call, the temporary-sibling
+# shape and the statx and macOS struct stat decoders, all as pure functions of
+# synthetic inputs, without syscalls or SDK fixtures.
+dart_test(
+    name = "jit_policy_test",
+    size = "small",
+    srcs = ["jit_policy.dart"],
+    main = "jit_policy_test.dart",
+    deps = [
         "@ext_pub_deps//:test",
     ],
 )
