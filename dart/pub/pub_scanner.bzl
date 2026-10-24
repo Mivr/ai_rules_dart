@@ -24,13 +24,5 @@ pub_scanner_repo = repository_rule(
             doc = "The SDK version the scanner compiles from. A toolchain change recompiles it.",
             mandatory = True,
         ),
-        "sdk_repo": attr.string(
-            doc = "Apparent name of the host SDK repository (e.g. `dart_linux-x64`), addressed by canonical label.",
-            mandatory = True,
-        ),
-        "sdk_repo_owner": attr.string(
-            doc = "Local name of the module owning the extension evaluation (empty for the main module). Picks the canonical label's module part.",
-            mandatory = True,
-        ),
     },
 )

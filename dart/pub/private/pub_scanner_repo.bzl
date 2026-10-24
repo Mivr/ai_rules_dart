@@ -18,29 +18,74 @@ directories are byte-identical. The Starlark half of the scan
 (`//dart/pub:pub_scan.bzl`) runs that executable over each fetched archive
 before `ctx.extract` sees it.
 
-Attrs carry the scanner source as text (so editing the source recompiles),
-the SDK version (so a toolchain change recompiles too), the host SDK
-repository's name, and the module that owns the extension evaluation, whose
-tools the compile addresses by canonical label. Nothing is written outside
-this repository's directory, and no host tool beyond the SDK itself is
-consulted.
+Attrs carry the scanner source as text (so editing the source recompiles)
+and the SDK version (so a toolchain change recompiles too). The compile
+tools come from the default toolchain's host SDK repository, addressed by
+apparent label (`@dart_<platform>`, resolved through this module's own repo
+mapping — the same way `PUB_SCANNER_LABEL` in `//dart/pub:pub_scan.bzl`
+resolves `@dart_pub_scanner`): this module's `MODULE.bazel` imports every
+host SDK repository from the `dart` extension, and its own non-dev
+`dart.toolchain` tag guarantees the `dart` registration that creates them,
+so the labels resolve in every consumer build without spelling any canonical
+name by hand. Nothing is written outside this repository's directory, and no
+host tool beyond the SDK itself is consulted.
 """
 
-def _sdk_label(sdk_repo, path, owner):
-    """Builds the canonical label of one SDK tool file.
+load("//dart/private:toolchains_repo.bzl", "PLATFORMS")
 
-    Extension-created repositories are invisible under `@` names outside the
-    module mapping that imports them, so the compile addresses the SDK by
-    canonical label: `@@<owner>++dart+<repo>` when this module is a
-    dependency (the owner is the local name of the module carrying the
-    toolchain tags — `rules_dart++dart+...` for a renamed consumer, not just
-    `ai_rules_dart++dart+...`), and `@@+dart+<repo>` with an empty module
-    part when this module is the main module. `ctx.path` reads the file
-    without `exports_files` getting in the way; the paths stay inputs to
-    this repository's compile, never bytes in its output.
+def _platform_key(os):
+    """Maps the fetch host to the host SDK repository's platform key.
+
+    `dart_register_toolchains` names SDK repositories `<base>_<platform>`
+    with keys like `linux-x64`; the scanner compiles and runs on the fetch
+    host, so it comes from the host's SDK.
+
+    Args:
+      os: The host `os` struct (`ctx.os`).
+
+    Returns:
+      The platform key (e.g. `"linux-x64"`), failing closed on a host with
+      no SDK repository.
     """
-    prefix = owner + "++" if owner else "+"
-    return Label("@@%sdart+%s//:%s" % (prefix, sdk_repo, path))
+    name = os.name.lower()
+    arch = os.arch.lower()
+    if name.startswith("linux"):
+        os_part = "linux"
+    elif name.startswith("mac") or name.startswith("darwin"):
+        os_part = "macos"
+    elif name.startswith("windows"):
+        os_part = "windows"
+    else:
+        fail("the pub archive scanner needs a Linux, macOS or Windows fetch host, got os %r" % os.name)
+    if arch == "amd64" or arch == "x86_64":
+        arch_part = "x64"
+    elif arch == "aarch64" or arch == "arm64":
+        arch_part = "arm64"
+    else:
+        fail("the pub archive scanner needs an x64 or arm64 fetch host, got arch %r" % os.arch)
+    platform = os_part + "-" + arch_part
+    if platform not in PLATFORMS:
+        fail("the pub archive scanner needs a host SDK repository, and there is none for fetch host %r" % platform)
+    return platform
+
+def _sdk_file(platform, path):
+    """Labels one SDK tool file inside the host SDK repository.
+
+    The apparent label resolves through this module's own repo mapping, which
+    imports every `@dart_<platform>` repository from the `dart` extension, so
+    it keeps working whatever local name a consumer gives this module and
+    whatever canonical name version overrides assign it. `ctx.path` reads the
+    file without `exports_files` getting in the way; the paths stay inputs to
+    this repository's compile, never bytes in its output.
+
+    Args:
+      platform: The host platform key from `_platform_key`.
+      path: The file's path inside the SDK repository.
+
+    Returns:
+      The apparent label of the SDK file.
+    """
+    return Label("@dart_%s//:%s" % (platform, path))
 
 def _fail_result(ctx, what, result):
     """Fails the fetch with the tail of a failed compile step's output."""
@@ -66,14 +111,15 @@ def pub_scanner_repo_impl(ctx):
     See the module docstring for the compile layout.
 
     Args:
-      ctx: The scanner repository context; the attrs carry the source text,
-        the SDK version, and the SDK repository address.
+      ctx: The scanner repository context; the attrs carry the source text
+        and the SDK version, and the host SDK comes from this module's own
+        repo mapping.
     """
     ctx.file("pub_scan.dart", ctx.attr.scanner_src)
     exe_suffix = ".exe" if ctx.os.name.lower().startswith("windows") else ""
     exe_name = "scanner" + exe_suffix
-    owner = ctx.attr.sdk_repo_owner
-    sdk_dart = str(ctx.path(_sdk_label(ctx.attr.sdk_repo, "bin/dart" + exe_suffix, owner)))
+    platform = _platform_key(ctx.os)
+    sdk_dart = str(ctx.path(_sdk_file(platform, "bin/dart" + exe_suffix)))
     repo_dir = str(ctx.path("pub_scan.dart").dirname)
     dill_path = repo_dir + "/scan.dill"
     exe_path = repo_dir + "/" + exe_name
@@ -85,10 +131,10 @@ def pub_scanner_repo_impl(ctx):
     # Flags mirror the `exe` front end in `//dart/private:dart_compile.bzl`.
     front = ctx.execute(
         [
-            str(ctx.path(_sdk_label(ctx.attr.sdk_repo, "bin/dartaotruntime" + exe_suffix, owner))),
-            str(ctx.path(_sdk_label(ctx.attr.sdk_repo, "bin/snapshots/gen_kernel_aot.dart.snapshot", owner))),
+            str(ctx.path(_sdk_file(platform, "bin/dartaotruntime" + exe_suffix))),
+            str(ctx.path(_sdk_file(platform, "bin/snapshots/gen_kernel_aot.dart.snapshot"))),
             "--platform",
-            str(ctx.path(_sdk_label(ctx.attr.sdk_repo, "lib/_internal/vm_platform_product.dill", owner))),
+            str(ctx.path(_sdk_file(platform, "lib/_internal/vm_platform_product.dill"))),
             "--filesystem-scheme",
             "org-dartlang-root",
             "--filesystem-root",
