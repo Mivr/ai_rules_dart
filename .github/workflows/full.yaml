@@ -35,6 +35,11 @@ jobs:
   # ci.yaml, in 2 shards sharing one Bazel disk cache per shard on cached
   # (manual dispatch) runs. The repository and bazelisk caches keep their
   # shared keys.
+  # Each folder runs under its own Bazel server (`--output_base` under
+  # RUNNER_TEMP): the folders of a shard otherwise share the output base
+  # setup-bazel pins, so concurrent folders wait on its lock, kill each
+  # other's servers and flake with exit 1. The disk and repository caches
+  # stay shared, so cache warmth is unaffected.
   # Red-by-design workspaces (ci.yaml's `expected-failure` job) and the
   # pub-fetch Powershell/PATH steps are push-CI-only and not repeated here:
   # on a tag push, ci.yaml itself runs uncached, so the release gate still
@@ -139,6 +144,12 @@ jobs:
           logdir="${RUNNER_TEMP}/shard-logs"
           rm -rf "$logdir"
           mkdir -p "$logdir"
+          # One Bazel server per folder (see run_one below): without this the
+          # folders of a shard share the output base setup-bazel pins, so
+          # each folder waits on "Another command holds the output base
+          # lock" and kills the previous folder's server. The disk and
+          # repository caches stay shared, so cache warmth is unaffected.
+          outbasedir="${RUNNER_TEMP}/bazel-servers"
           # Pin the Bazel version in every folder of this shard, as the old
           # per-folder Configure step did.
           while IFS= read -r folder; do
@@ -147,9 +158,12 @@ jobs:
           done <<< "$FOLDERS"
           run_one() {
             slug="$(printf '%s' "$1" | tr '/.' '_')"
-            # Same command and flags as the old per-folder Test step.
+            # Same command and flags as the old per-folder Test step, plus
+            # a per-folder --output_base so the folder gets its own Bazel
+            # server. The disk and repository caches stay shared, so warmth
+            # is unaffected.
             # Exit code 4 means "build succeeded but no test targets found".
-            if ( cd "$ws/$1" && bash -c 'bazel test --test_output=errors //... || [ $? -eq 4 ]' ) >"$logdir/$slug.log" 2>&1; then
+            if ( cd "$ws/$1" && bazel --output_base="$outbasedir/$slug" test --test_output=errors //... || [ $? -eq 4 ] ) >"$logdir/$slug.log" 2>&1; then
               echo 0 >"$logdir/$slug.status"
             else
               echo 1 >"$logdir/$slug.status"

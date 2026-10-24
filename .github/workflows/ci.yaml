@@ -53,7 +53,8 @@ jobs:
   # Coverage map: every directory under e2e/ with a MODULE.bazel is built and
   # tested by some job in this workflow. Green workspaces run
   # `bazel test //...` in the `test` shards above (and in `full.yaml` on
-  # macOS): every e2e/ folder a shard lists. Red-by-design workspaces run in
+  # macOS, each folder under its own Bazel server there too): every e2e/
+  # folder a shard lists. Red-by-design workspaces run in
   # `expected-failure` below: e2e/pub_lock_conflict, e2e/pub_lock_unpinned,
   # e2e/pub_package_unpinned, e2e/pub_spoke_blank_sha,
   # e2e/pub_spoke_malformed_sha, e2e/pub_git_unpinned_ref,
