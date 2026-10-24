@@ -75,7 +75,7 @@ register_toolchains(
 
 dart = use_extension("//dart:extensions.bzl", "dart")
 dart.toolchain(dart_version = "3.13.5")
-use_repo(dart, "dart_toolchains")
+use_repo(dart, "dart_pub_scanner", "dart_toolchains")
 
 register_toolchains("@dart_toolchains//:all")
 

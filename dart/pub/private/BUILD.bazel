@@ -66,6 +66,15 @@ bzl_library(
     visibility = ["//dart/pub:__subpackages__"],
 )
 
+# Bare scanner sources for `//dart/pub:pub_scan_test`, which imports the
+# scanner and drives its verdict function over inline-built archives.
+exports_files(
+    [
+        "pub_scan.dart",
+        "pub_scan_test.dart",
+    ],
+)
+
 # Bare sources for `//dart/pub:pinned_sources_guard_test`, which reads every
 # Starlark file in `//dart/pub` and fails when a fetch call site stops going
 # through the shared pinned-source validation.

@@ -1,99 +1,45 @@
-"""Unit tests for the pub archive header scan (`dart/pub/private/pub_archive_scan.bzl`)."""
+"""Unit tests for the pub archive header scan's pure Starlark half."""
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
+load(
+    "//dart/pub:pub_lock_package.bzl",
+    _public_run = "run_pub_archive_scan",
+)
+
+# The spoke-facing names live on the public `pub_scan` module so
+# `rules_flutter` reuses the same scan and walk; pin them here.
+load(
+    "//dart/pub:pub_scan.bzl",
+    _public_check = "check_package_symlinks",
+    _public_scanner = "PUB_SCANNER_LABEL",
+    _public_scanner_windows = "PUB_SCANNER_WINDOWS_LABEL",
+    _scan_run = "run_pub_archive_scan",
+)
 
 # buildifier: disable=bzl-visibility
 load(
     "//dart/pub/private:pub_archive_scan.bzl",
     "archive_entry_error",
+    "archive_entry_path_escapes",
+    "archive_path_error",
     "classify_archive_entry",
-    "scan_archive_bytes",
+    "scan_error",
 )
-# The spoke-facing re-exports live on the public `pub_lock_package` module so
-# `rules_flutter` can reuse the same scan; pin them to the scanner functions.
-load(
-    "//dart/pub:pub_lock_package.bzl",
-    _public_refuse_archive_bytes = "refuse_archive_bytes",
-    _public_scan_archive_bytes = "scan_archive_bytes",
-)
-load(
-    ":pub_archive_fixtures.bzl",
-    "CLEAN_BASE256",
-    "CLEAN_DEVICES",
-    "CLEAN_FIXED",
-    "CLEAN_FNAME",
-    "CLEAN_GNU_LONGNAME",
-    "CLEAN_MULTI",
-    "CLEAN_NULPAD",
-    "CLEAN_NULTYPE",
-    "CLEAN_PAX",
-    "CLEAN_PLAIN",
-    "CLEAN_PLAIN_PAX",
-    "CLEAN_PREFIX",
-    "CLEAN_STORED",
-    "CLEAN_USTAR",
-    "EVIL_ABS",
-    "EVIL_ESC",
-    "EVIL_ESC_PLAIN",
-    "EVIL_GNU_TARGET",
-    "EVIL_HARD_ABS",
-    "EVIL_HARD_IN",
-    "EVIL_HARD_OUT",
-    "EVIL_HARD_PLAIN",
-    "EVIL_PAX_GLOBAL",
-    "EVIL_PAX_TARGET",
-)
+
+# buildifier: disable=bzl-visibility
+load("//dart/pub/private:pub_symlink.bzl", _walk_check = "check_package_symlinks")
 load(":small_suite.bzl", "small_unittest_suite")
 
-_CLEANS = {
-    "ustar": CLEAN_USTAR,
-    "prefix": CLEAN_PREFIX,
-    "gnu-longname": CLEAN_GNU_LONGNAME,
-    "pax": CLEAN_PAX,
-    "stored-deflate": CLEAN_STORED,
-    "fixed-huffman": CLEAN_FIXED,
-    "multi-member": CLEAN_MULTI,
-    "fname-header": CLEAN_FNAME,
-    "nul-padded": CLEAN_NULPAD,
-    "plain-tar": CLEAN_PLAIN,
-    "nul-typeflag": CLEAN_NULTYPE,
-    "base256-size": CLEAN_BASE256,
-    "devices": CLEAN_DEVICES,
-    "plain-pax": CLEAN_PLAIN_PAX,
+_PATH_CASES = {
+    "/abs.dart": True,
+    "../outside.dart": True,
+    "lib/../../outside.dart": True,
+    "..\\outside.dart": True,
+    "lib/ok.dart": False,
+    "lib/../lib/ok.dart": False,
+    "lib/": False,
+    "./lib/ok.dart": False,
 }
-
-_EVILS = {
-    "hard-link-out": (EVIL_HARD_OUT, ("hard-link", "lib/evil.dart", "../outside.txt")),
-    "hard-link-in": (EVIL_HARD_IN, ("hard-link", "lib/evil.dart", "lib/ok.dart")),
-    "hard-link-abs": (EVIL_HARD_ABS, ("hard-link", "lib/evil.dart", "/etc/passwd")),
-    "abs-symlink": (EVIL_ABS, ("symlink", "lib/evil.dart", "/etc/passwd")),
-    "escaping-symlink": (EVIL_ESC, ("symlink", "lib/evil.dart", "../../outside.txt")),
-    "gnu-longlink": (EVIL_GNU_TARGET, ("symlink", "lib/evil.dart", "../../outside.txt")),
-    "pax-linkpath": (EVIL_PAX_TARGET, ("symlink", "lib/evil.dart", "../../outside.txt")),
-    "pax-global-linkpath": (EVIL_PAX_GLOBAL, ("symlink", "lib/evil.dart", "/etc/global")),
-    "plain-hard-link": (EVIL_HARD_PLAIN, ("hard-link", "pkg/lib/evil.dart", "../outside.txt")),
-    "plain-escaping-symlink": (EVIL_ESC_PLAIN, ("symlink", "pkg/lib/evil.dart", "../../../outside.txt")),
-}
-
-def _clean_test_impl(ctx):
-    env = unittest.begin(ctx)
-    for name in sorted(_CLEANS.keys()):
-        asserts.true(
-            env,
-            scan_archive_bytes(_CLEANS[name], "test_pkg") == None,
-            "clean %s archive scans clean" % name,
-        )
-    return unittest.end(env)
-
-def _evil_test_impl(ctx):
-    env = unittest.begin(ctx)
-    for name in sorted(_EVILS.keys()):
-        data, want = _EVILS[name]
-        got = scan_archive_bytes(data, "test_pkg")
-        asserts.true(env, got != None, "evil %s archive is refused" % name)
-        if got != None:
-            asserts.equals(env, want, (got.kind, got.path, got.target), "evil %s refusal names kind, path and target" % name)
-    return unittest.end(env)
 
 def _classify_test_impl(ctx):
     env = unittest.begin(ctx)
@@ -102,11 +48,15 @@ def _classify_test_impl(ctx):
         classify_archive_entry("lib/evil.dart", "1", "lib/ok.dart") != None,
         "a hard link is refused even when its target stays inside",
     )
+    hard = classify_archive_entry("lib/evil.dart", "1", "../outside.txt")
+    asserts.equals(env, ("hard-link", "lib/evil.dart", "../outside.txt"), (hard.kind, hard.path, hard.target), "a hard-link refusal names kind, path and target")
     asserts.true(
         env,
-        scan_archive_bytes(CLEAN_PLAIN, "test_pkg") == None,
-        "an in-package symlink through a plain tar scans clean",
+        classify_archive_entry("lib/evil.dart", "2", "/etc/passwd") != None,
+        "an absolute symlink is refused",
     )
+    link = classify_archive_entry("lib/evil.dart", "2", "../../outside.txt")
+    asserts.equals(env, ("symlink", "lib/evil.dart", "../../outside.txt"), (link.kind, link.path, link.target), "a symlink refusal names kind, path and target")
     asserts.true(
         env,
         classify_archive_entry("lib/a.dart", "2", "b.dart") == None,
@@ -122,6 +72,16 @@ def _classify_test_impl(ctx):
         classify_archive_entry("dev/null", "3", "") == None,
         "a device entry classifies clean",
     )
+    for name in sorted(_PATH_CASES.keys()):
+        want = _PATH_CASES[name]
+        got = classify_archive_entry(name, "0", "")
+        asserts.equals(env, want, got != None and got.kind == "path", "entry path %r escapes: %s" % (name, want))
+    return unittest.end(env)
+
+def _escapes_test_impl(ctx):
+    env = unittest.begin(ctx)
+    for name in sorted(_PATH_CASES.keys()):
+        asserts.equals(env, _PATH_CASES[name], archive_entry_path_escapes(name), "path escape %r" % name)
     return unittest.end(env)
 
 def _error_test_impl(ctx):
@@ -139,23 +99,29 @@ def _error_test_impl(ctx):
         link.startswith('pub package "evil_pkg": symlink "lib/evil.dart" escapes the package'),
         "symlink diagnostic shares the walk diagnostic's prefix so one grep matches either guard: %s" % link,
     )
+    path = archive_path_error("evil_pkg", "../outside.dart")
+    asserts.true(env, "evil_pkg" in path and "../outside.dart" in path, "path diagnostic names the package and path: %s" % path)
+    asserts.true(
+        env,
+        path.startswith('pub package "evil_pkg": entry "../outside.dart" escapes the package'),
+        "path diagnostic shares the walk diagnostic's vocabulary: %s" % path,
+    )
+    scan = scan_error("evil_pkg", "the tar archive is truncated")
+    asserts.true(env, "evil_pkg" in scan and "the tar archive is truncated" in scan, "scan diagnostic names the package and detail: %s" % scan)
     return unittest.end(env)
 
 def _reexport_test_impl(ctx):
     env = unittest.begin(ctx)
-    asserts.equals(env, _public_scan_archive_bytes, scan_archive_bytes, "the public scan re-export is the scanner function")
-    asserts.true(
-        env,
-        _public_refuse_archive_bytes(CLEAN_PLAIN, "test_pkg") == None,
-        "the public refuse wrapper stays silent on a clean archive",
-    )
+    asserts.equals(env, _walk_check, _public_check, "the public walk re-export is the walk function")
+    asserts.equals(env, _scan_run, _public_run, "the spoke-facing scan re-export is the scanner call")
+    asserts.equals(env, Label("@dart_pub_scanner//:scanner"), _public_scanner, "the scanner label names the shared repository")
+    asserts.equals(env, Label("@dart_pub_scanner//:scanner.exe"), _public_scanner_windows, "the Windows scanner label names the shared repository")
     return unittest.end(env)
 
-_t0_test = unittest.make(_clean_test_impl)
-_t1_test = unittest.make(_evil_test_impl)
-_t2_test = unittest.make(_classify_test_impl)
-_t3_test = unittest.make(_error_test_impl)
-_t4_test = unittest.make(_reexport_test_impl)
+_t0_test = unittest.make(_classify_test_impl)
+_t1_test = unittest.make(_escapes_test_impl)
+_t2_test = unittest.make(_error_test_impl)
+_t3_test = unittest.make(_reexport_test_impl)
 
 def pub_archive_scan_test_suite(name):
     small_unittest_suite(
@@ -164,5 +130,4 @@ def pub_archive_scan_test_suite(name):
         _t1_test,
         _t2_test,
         _t3_test,
-        _t4_test,
     )

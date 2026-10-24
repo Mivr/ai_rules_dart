@@ -19,10 +19,12 @@ Every extraction site calls `check_package_symlinks` right after unpacking:
   so later reads cannot observe the link at all.
 
 Before any of that, every fetch site runs the archive header scan
-(`pub_archive_scan.bzl`'s `refuse_archive_bytes`) over the downloaded bytes:
-it refuses every hard-link entry whatever its target, and every symlink
-entry whose target is absolute or climbs out of the package root, using this
-module's lexical rule so the two guards never disagree. The walk above stays
+(`pub_scan.bzl`'s `run_pub_archive_scan`, executed by the AOT-compiled
+`dart_pub_scanner`) over the archive file: it refuses every hard-link entry
+whatever its target, every symlink entry whose target is absolute or climbs
+out of the package root, and every entry whose own path is absolute or
+climbs out of the root, using this module's lexical rule so the two guards
+never disagree. The walk above stays
 in place behind it — headers can lie about what the extractor writes, and
 only the extracted tree shows what actually landed.
 

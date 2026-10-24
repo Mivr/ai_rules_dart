@@ -75,6 +75,16 @@ exports_files(
 )
 
 dart_test(
+    name = "pub_scan_test",
+    size = "small",
+    srcs = ["//dart/pub/private:pub_scan.dart"],
+    main = "//dart/pub/private:pub_scan_test.dart",
+    deps = [
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_test(
     name = "pinned_sources_guard_test",
     size = "small",
     args = [

@@ -2,10 +2,10 @@
 
 load("//dart/private:download.bzl", "pinned_download")
 load("//dart/pub:pinned_sources.bzl", "pinned_source_error")
+load("//dart/pub:pub_scan.bzl", "run_pub_archive_scan")
 load("//dart/pub:yaml_parser.bzl", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", "make_dart_library_build_content")
 load("//dart/pub/private:language_version.bzl", "derive_language_version")
-load("//dart/pub/private:pub_archive_scan.bzl", "refuse_archive_bytes")
 load("//dart/pub/private:pub_symlink.bzl", "check_package_symlinks")
 
 def pub_package_sha256_error(package_name, version, sha256):
@@ -51,7 +51,7 @@ def _pub_package_impl(ctx):
         output = "_archive.tar.gz",
         sha256 = ctx.attr.sha256.strip(),
     )
-    refuse_archive_bytes(ctx.read("_archive.tar.gz", watch = "no"), ctx.attr.package_name)
+    run_pub_archive_scan(ctx, "_archive.tar.gz", ctx.attr.package_name)
     ctx.extract("_archive.tar.gz")
     ctx.delete("_archive.tar.gz")
     check_package_symlinks(ctx, ctx.attr.package_name)
