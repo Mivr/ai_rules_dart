@@ -1340,8 +1340,8 @@ def git_host_config_test_suite(name):
 # lock URL the host rewrites to a local repository via `insteadof_to_origin`)
 # additionally stage a hostile host-global `uploadpack.packObjectsHook`
 # that writes a marker: the helpers must never run it, while a raw-git
-# control fetch under the same hostile host must (outside Windows, where
-# an extensionless hook may not execute).
+# control fetch with only the hook's config channel must (outside
+# Windows, where an extensionless hook may not execute).
 #
 # Every instance fails the fetch loudly on any deviation and writes a
 # `marker.txt` (`expect`/`mode`/`clean`/`hostile`) that
@@ -1609,31 +1609,46 @@ def _pack_hook_setup(ctx, hostile, what):
     return marker
 
 def _pack_hook_control(ctx, hostile, url, sha, what):
-    """Positive control: a raw fetch under the hostile host runs the hook.
+    """Positive control: a raw fetch with the staged hook config runs the hook.
 
     The production helpers must never run the hook (asserted by the
     caller); this control shows the hook would have run without them, or
-    the silence proves nothing. The ran-assertion is skipped on Windows,
-    where an extensionless hook may not execute. The marker path is the
-    `"hook.marker"` file `_pack_hook_setup` writes the hook script against.
+    the silence proves nothing. The fetch runs under the scrubbed setup
+    environment — never the case's hostile overlay, whose variables would
+    fail the fetch for reasons unrelated to the hook (a
+    `GIT_QUARANTINE_PATH` in particular: newer git refuses ref updates
+    under quarantine). Only the hook's config channel travels, plus the
+    inline `insteadOf` channel the probe built when the fetch URL needs
+    the rewrite to reach the local origin. The ran-assertion is skipped on
+    Windows, where an extensionless hook may not execute. The marker path
+    is the `"hook.marker"` file `_pack_hook_setup` writes the hook script
+    against.
 
     Args:
         ctx: The repository context.
-        hostile: The hostile environment overlay dict (with the hook).
+        hostile: The hostile environment overlay dict (carrying the staged
+            hook config, and the inline rewrite channel for
+            `insteadof_to_origin`).
         url: The fetch URL string.
         sha: The pinned commit SHA string.
         what: Human-readable label, for diagnostics.
     """
+    control_env = _probe_setup_env({
+        "GIT_CONFIG_GLOBAL": hostile["GIT_CONFIG_GLOBAL"],
+    })
+    if ctx.attr.insteadof_to_origin:
+        for var in ["GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0"]:
+            control_env[var] = hostile[var]
     hook_bare = _probe_empty_bare(ctx, "_hook_bare")
     res = ctx.execute(
         ["git", "--no-replace-objects", "--git-dir=" + hook_bare, "fetch", "--", url, sha],
-        environment = hostile,
+        environment = control_env,
     )
     if res.return_code != 0:
         fail("%s: hook control fetch failed: %s" % (what, res.stderr))
     if ctx.os.name != "windows" and not ctx.path("hook.marker").exists:
         fail(
-            "%s: control vacuous: a raw fetch under the hostile host " % what +
+            "%s: control vacuous: a raw fetch with the staged hook config " % what +
             "did not run uploadpack.packObjectsHook, so the helpers' " +
             "silence proves nothing.",
         )
@@ -1772,8 +1787,9 @@ def _hostile_probe_impl(ctx):
     if ctx.attr.exercise_fallback and mode == "sha":
         mode = _hostile_fallback_replay(ctx, shim.execute, hostile_bare, url, recorded, what)
     if hook_marker != "":
-        # The hook the helpers must not run: a raw fetch under the same
-        # hostile host must run it, or their silence proves nothing.
+        # The hook the helpers must not run: a raw fetch with only the
+        # hook's config channel must run it, or their silence proves
+        # nothing.
         _pack_hook_control(ctx, hostile, url, sha, what)
     if mode != ctx.attr.expect_fetch_mode:
         fail(
