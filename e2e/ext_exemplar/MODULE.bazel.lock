@@ -233,9 +233,10 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "GzXATm5/CTU/3ULqmbjItnv1HxOj4fxI/jG7f4KD2Po=",
+        "bzlTransitiveDigest": "YfuwN5mUhg0gti4WNo0c+oTOnu+YWds4qe6mNG4pOeE=",
         "usagesDigest": "86kcqdNtNgWi7bSqvxG2LTISzFJALPccp9c4Kl7we/c=",
         "recordedInputs": [
+          "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
           "FILE:@@//pubspec.lock 3e87ae6877571ca926689b57d2f0c7cd2e9e46bcfad0383fe552aee84f74995e",
           "FILE:@@ai_rules_dart+//dart/ext/pubspec.lock ae866f3a1d4ebad9a74f9b9efab33c74dfbf904ae0d69dfe94192029d4955188"
         ],
