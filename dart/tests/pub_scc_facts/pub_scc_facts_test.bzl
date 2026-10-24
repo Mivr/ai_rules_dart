@@ -14,10 +14,10 @@ load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 
 # buildifier: disable=bzl-visibility
 load("//dart/pub:extensions.bzl", "plan_scope_sccs")
+load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps")
 
 # buildifier: disable=bzl-visibility
 load("//dart/pub/private:pub_scc_facts.bzl", "contents_from_fact_deps", "fact_deps_error", "git_fact_key", "hosted_fact_key", "lookup_fact_deps", "record_scope_facts", "scratch_pubspec_error", "split_scope_facts")
-load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps")
 load("//dart/tests:small_suite.bzl", "small_unittest_suite")
 
 _SHA = "fb0f1107cac15a5ea6ef0a6ef71a807b9e4267c713bb93e00e92d737cc8dbd8a"
