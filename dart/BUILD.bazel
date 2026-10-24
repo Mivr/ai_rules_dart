@@ -40,7 +40,7 @@ bool_flag(
 # fallback-trained snapshot stays cached under the same action key (in the local
 # action cache and the output tree) until `bazel clean`, so a build after the
 # host is fixed keeps the fallback bytes. With the flag on, both snapshot
-# actions carry `no-remote-cache`, so they are never uploaded to or served from
+# actions carry `no-cache`, so they are never uploaded to or served from
 # a disk or remote cache.
 bool_flag(
     name = "jit_snapshot_fallback",

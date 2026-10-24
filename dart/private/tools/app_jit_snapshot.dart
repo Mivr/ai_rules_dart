@@ -62,9 +62,9 @@
 // derives heap strings from the training run's own paths at startup, but at
 // the keyed path those read the same on every build, so the runner
 // snapshot is byte-identical across builds too, and with the fallback off its
-// action carries no `no-remote-cache` requirement: the first machine's
+// action carries no `no-cache` requirement: the first machine's
 // snapshot is reused, and every dependant keeps one action key. With the
-// fallback allowed both snapshot actions carry `no-remote-cache` instead, so
+// fallback allowed both snapshot actions carry `no-cache` instead, so
 // a fallback-trained snapshot is never uploaded to or served from a disk or
 // remote cache — though it stays cached under the same action key in the
 // local action cache and the output tree until `bazel clean`.

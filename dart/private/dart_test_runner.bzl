@@ -55,8 +55,8 @@ command line, so builds that allow it and builds that do not have different
 action keys. A fallback-trained snapshot stays cached under the same action
 key (in the local action cache and the output tree) until `bazel clean`, so a
 build after the host is fixed keeps the fallback bytes. With the flag on, both
-snapshot actions carry `no-remote-cache`, so they are never uploaded to or
-served from a disk or remote cache.
+snapshot actions carry `no-cache`, so they are never uploaded to or served
+from a disk or remote cache.
 """
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
@@ -176,7 +176,19 @@ dart_test_package = rule(
     doc = "`package:test` as a dependency, carrying the runner built from it.",
 )
 
-def _dart_test_runner_snapshot_impl(ctx):
+def dart_test_runner_snapshot_impl(ctx):
+    """Builds the `package:test` runner snapshot, or none where it cannot be built.
+
+    Public so the execution-requirement unit tests can drive it with a
+    capturing context; the `dart_test_runner_snapshot` rule runs it. See the
+    module docstring for the training and caching behaviour.
+
+    Args:
+      ctx: The rule context.
+
+    Returns:
+      The `DefaultInfo` and `DartTestRunnerSnapshotInfo` the rule provides.
+    """
     target_sdk = ctx.toolchains["//dart:toolchain_type"].dart_sdk_info
     exec_sdk = ctx.toolchains["//dart:exec_tools_toolchain_type"].dart_sdk_info
 
@@ -221,7 +233,7 @@ def _dart_test_runner_snapshot_impl(ctx):
     # on. The training sees no path naming the build (see the module
     # docstring), so the snapshot is byte-identical across builds and remote
     # caching stays on for this action with the fallback off; with the fallback
-    # allowed the action carries `no-remote-cache` instead (see below), so a
+    # allowed the action carries `no-cache` instead (see below), so a
     # fallback-trained snapshot is never uploaded to or served from a disk or
     # remote cache.
     dartvm = sdk_dartvm(exec_sdk)
@@ -243,7 +255,7 @@ def _dart_test_runner_snapshot_impl(ctx):
     args.add("--enable-asserts")
 
     # With the fallback allowed the trained bytes may be this host's
-    # private-scratch ones, so the action carries `no-remote-cache` and never
+    # private-scratch ones, so the action carries `no-cache` and never
     # reaches a shared cache. Without it no dict is built and the action is as
     # before.
     fallback_allowed = ctx.attr._fallback[BuildSettingInfo].value
@@ -270,7 +282,7 @@ def _dart_test_runner_snapshot_impl(ctx):
         mnemonic = "DartTestRunnerSnapshot",
         progress_message = "Snapshotting the test runner %{label}",
         env = writable_home_env(exec_sdk.dart, snapshot),
-        execution_requirements = {"no-remote-cache": "1"} if fallback_allowed else None,
+        execution_requirements = {"no-cache": "1"} if fallback_allowed else None,
     )
     return [
         DefaultInfo(files = depset([snapshot])),
@@ -278,7 +290,7 @@ def _dart_test_runner_snapshot_impl(ctx):
     ]
 
 dart_test_runner_snapshot = rule(
-    implementation = _dart_test_runner_snapshot_impl,
+    implementation = dart_test_runner_snapshot_impl,
     attrs = {
         "runner": attr.label(
             doc = "A kernel-mode `dart_binary` built from `library`, as `dart_test_package`'s `runner`.",
