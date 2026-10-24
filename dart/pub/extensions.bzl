@@ -9,7 +9,7 @@ load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
 load("//dart/pub:pub_scan.bzl", "run_pub_archive_scans")
 load("//dart/pub:yaml_parser.bzl", "lock_package_error", "parse_pubspec_deps", "parse_pubspec_lock")
 load("//dart/pub/private:pub_repository.bzl", "pub_package")
-load("//dart/pub/private:pub_root_pin.bzl", "best_entry", "decl_lock_sha_conflict", "git_ref_conflict", "git_version_error", "hosted_sha_conflict", "hosted_version_error", "select_all_explicit")
+load("//dart/pub/private:pub_root_pin.bzl", "best_entry", "decl_lock_sha_conflict", "git_path_conflict", "git_ref_conflict", "git_version_error", "hosted_sha_conflict", "hosted_version_error", "select_all_explicit")
 load("//dart/pub/private:pub_scanner_sdk.bzl", "scanner_runtime_label")
 load("//dart/pub/private:pub_scc_facts.bzl", "parser_schema", "read_scope_pubspec", "record_scope_facts", "split_scope_facts")
 load("//dart/pub/private:scc.bzl", "compute_sccs", "package_dep_graph", "rewrite_vanished_spoke", "scc_repo_name")
@@ -582,6 +582,9 @@ def _resolve_git_versions(state):
     resolved_git = {}
     for name, pkg in state["git_registry"].items():
         err = git_ref_conflict(name, pkg.entries)
+        if err:
+            return {}, err
+        err = git_path_conflict(name, pkg.entries)
         if err:
             return {}, err
         if len(pkg.entries) == 1:

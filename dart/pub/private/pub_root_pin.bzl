@@ -111,6 +111,38 @@ def git_ref_conflict(name, entries):
             )
     return None
 
+def git_path_conflict(name, entries):
+    """Returns the cross-lock git path conflict error, or None.
+
+    Two entries for the same package version and resolved ref that point at
+    different `path` values inside the repository resolve different sources,
+    so they are an error naming the package, both paths, and both locks'
+    hub name and lock label, in either lock order. Entries that agree on the
+    version, resolved ref and path still deduplicate silently.
+
+    Args:
+      name: The package name the entries resolve.
+      entries: The lock entry structs with `(version, resolved_ref, path,
+        hub_name, lock_label)`.
+
+    Returns:
+      The conflict error string, or None when no version and ref carries
+      two paths.
+    """
+    by_version = {}
+    for e in entries:
+        key = (e.version, e.resolved_ref)
+        if key not in by_version:
+            by_version[key] = e
+        elif str(by_version[key].path) != str(e.path):
+            first = by_version[key]
+            return (
+                "Package \"%s\" (%s) has conflicting git paths across lock files:\n" % (name, e.version) +
+                "  - %s (from \"%s\", %s)\n" % (first.path, first.hub_name, first.lock_label) +
+                "  - %s (from \"%s\", %s)" % (e.path, e.hub_name, e.lock_label)
+            )
+    return None
+
 def git_version_error(name, entries):
     """Returns the version-conflict error for git packages."""
     return (

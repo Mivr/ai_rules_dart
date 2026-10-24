@@ -64,3 +64,32 @@ declaration applies, and disagreeing non-root declarations fail. Inside the
 root nothing changes either: the root's own `pub.package()` still overrides
 the root's own locks, disagreeing root declarations still fail, and the
 root's own locks settle through the usual cross-lock rules first.
+
+## What a lock may not contain
+
+`pubspec_lock_error` fails closed on every shape below, naming the lock.
+`parse_pubspec_lock` fails with that error, so an unreadable lock never
+becomes a silently empty hub:
+
+- Content after a `...` line fails, naming the content's 1-based line; so
+  does content after a second `---`, while a bare second `---` fails naming
+  the marker's own line. A `---` before any content stays allowed, and so
+  does a final `...`. Blank and `#` comment lines do not count as content.
+- A tab in a content line's indentation fails, naming the line. A tab after
+  the indentation stays allowed.
+- Text after a quoted scalar's closing quote fails, naming the line. A
+  trailing `#` comment after the closing quote stays allowed.
+- A package name pub could never write (anything but letters, digits and
+  underscores, or starting with a digit) fails, naming the name. Two names
+  equal ignoring case fail, naming both.
+- A package entry without a `source` fails; it is an error, never only a
+  warning. A non-string `source` fails too.
+- A package entry without a `version` fails. A non-string `version` (an
+  unquoted float such as `1.10`, an int such as `3`) fails naming the
+  entry's line, never showing the re-spelled value. A string that is not a
+  semantic version as pub writes it (`MAJOR.MINOR.PATCH` with optional
+  `-prerelease` and `+build`) fails as well.
+- Two locks that pin the same git package version at the same resolved ref
+  but different `path` values fail, naming the package, both paths, and
+  both locks' hub name and lock label, in either lock order. Locks that
+  agree on URL, ref and path still deduplicate silently.

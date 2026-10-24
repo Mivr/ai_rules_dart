@@ -95,13 +95,441 @@ def _lock_entry_shape_error(name, info, lock_label):
         return "%s: package %r entry is not a mapping" % (lock_label, name)
     return None
 
+# Characters a Dart package name may start with, and contain.
+_LOCK_NAME_FIRST = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
+_LOCK_NAME_CHARS = _LOCK_NAME_FIRST + "0123456789"
+_LOCK_DIGITS = "0123456789"
+_LOCK_IDENT_CHARS = _LOCK_DIGITS + "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-"
+
+def _lock_text_lines(content):
+    """Splits lock text into lines with newlines normalized and the BOM stripped."""
+    text = content.replace("\r\n", "\n").replace("\r", "\n")
+    if text.startswith("\357\273\277"):
+        text = text[len("\357\273\277"):]
+    return text.split("\n")
+
+def _lock_tail_content_error(lines, start, lock_label, marker):
+    """Returns the error for the first content line at or after `start`, or None.
+
+    Blank lines, `#` comment lines and further `...` lines are not content;
+    anything else (including a `---` line, which opens a second document)
+    ends the single-document lock.
+    """
+    for j in range(start, len(lines)):
+        stripped = lines[j].strip()
+        if stripped == "" or stripped.startswith("#") or stripped == "...":
+            continue
+        return "%s: content after document end (%s) at line %d" % (lock_label, marker, j + 1)
+    return None
+
+def _lock_second_doc_error(lines, marker_idx, lock_label):
+    """Returns the error for a second `---` document marker, or None when absent."""
+    err = _lock_tail_content_error(lines, marker_idx + 1, lock_label, "---")
+    if err:
+        return err
+    return "%s: second document marker (---) at line %d" % (lock_label, marker_idx + 1)
+
+def _lock_doc_tail_error(content, lock_label):
+    """Returns the trailing-document error for lock text, or None.
+
+    A lock is one YAML document: a `---` before any content stays allowed,
+    and so does a final `...`. Any content after a `...` line is an error
+    naming its 1-based line, and so is any content after a second `---`.
+    Blank lines and `#` comment lines do not count as content.
+    """
+    lines = _lock_text_lines(content)
+    saw_content = False
+    saw_directive = False
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped == "...":
+            return _lock_tail_content_error(lines, i + 1, lock_label, "...")
+        if stripped == "---":
+            if saw_content:
+                return _lock_second_doc_error(lines, i, lock_label)
+            if saw_directive:
+                saw_content = True
+            continue
+        if stripped == "" or stripped.startswith("#"):
+            continue
+        if stripped.startswith("%"):
+            saw_directive = True
+            continue
+        saw_content = True
+    return None
+
+def _lock_tab_error(content, lock_label):
+    """Returns the tab-indentation error for lock text, or None.
+
+    A tab anywhere in a content line's indentation is an error naming the
+    line, as YAML forbids tabs in indentation. A tab after the indentation
+    (between `key:` and its value, say) stays allowed, as YAML allows it.
+    """
+    for i, line in enumerate(_lock_text_lines(content)):
+        stripped = line.strip()
+        if stripped == "" or stripped.startswith("#"):
+            continue
+        leading = line[:len(line) - len(line.lstrip(" \t"))]
+        if "\t" in leading:
+            return "%s: tab in indentation at line %d" % (lock_label, i + 1)
+    return None
+
+def _lock_comment_stripped(text):
+    """Removes a trailing `#` comment, ignoring `#` inside quotes."""
+    in_single = False
+    in_double = False
+    escaped = False
+    for i in range(len(text)):
+        ch = text[i]
+        if escaped:
+            escaped = False
+        elif in_double and ch == "\\":
+            escaped = True
+        elif ch == "'" and not in_double:
+            in_single = not in_single
+        elif ch == '"' and not in_single:
+            in_double = not in_double
+        elif ch == "#" and not in_single and not in_double:
+            if i == 0 or text[i - 1] in [" ", "\t"]:
+                return text[:i].rstrip()
+    return text.rstrip()
+
+def _lock_top_colon(text):
+    """Returns the index of the first top-level colon in `text`, or -1.
+
+    A colon inside quotes or flow brackets does not count; a trailing colon
+    and a colon followed by a space or tab do.
+    """
+    in_single = False
+    in_double = False
+    escaped = False
+    depth = 0
+    for i in range(len(text)):
+        ch = text[i]
+        if escaped:
+            escaped = False
+        elif in_double and ch == "\\":
+            escaped = True
+        elif ch == "'" and not in_double:
+            in_single = not in_single
+        elif ch == '"' and not in_single:
+            in_double = not in_double
+        elif in_single or in_double:
+            continue
+        elif ch in ["{", "["]:
+            depth += 1
+        elif ch in ["}", "]"]:
+            depth -= 1
+        elif ch == ":" and depth == 0 and (i + 1 == len(text) or text[i + 1] in [" ", "\t"]):
+            return i
+    return -1
+
+def _lock_quoted_tail(value):
+    """Returns the text after a quoted scalar's same-line closing quote.
+
+    Returns None when `value` is unquoted or its closing quote is on a later
+    line (a multiline scalar the parser folds); the parser reports an
+    unclosed scalar itself.
+    """
+    if len(value) == 0 or (value[0] != '"' and value[0] != "'"):
+        return None
+    quote = value[0]
+    i = 1
+    for _ in range(len(value)):
+        if i >= len(value):
+            return None
+        ch = value[i]
+        if quote == '"' and ch == "\\":
+            i += 2
+            continue
+        if ch == quote:
+            if quote == "'" and i + 1 < len(value) and value[i + 1] == "'":
+                i += 2
+                continue
+            return value[i + 1:]
+        i += 1
+    return None
+
+def _lock_flow_quote_error(flow):
+    """Returns the quote-trailer problem inside a flow value, or None.
+
+    After a quoted scalar's closing quote only `,`, `:`, `]` or `}` may
+    follow. Anything else (another scalar directly after the quote) ends up
+    folded into the value, so it is an error.
+    """
+    in_single = False
+    in_double = False
+    i = 0
+    for _ in range(len(flow) + 1):
+        if i >= len(flow):
+            return None
+        ch = flow[i]
+        if in_double:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == '"':
+                in_double = False
+                i += 1
+                j = i
+                for _ in range(len(flow) + 1):
+                    if j >= len(flow) or flow[j] not in [" ", "\t"]:
+                        break
+                    j += 1
+                if j < len(flow) and flow[j] not in [",", ":", "]", "}"]:
+                    return "unexpected text after closing quote"
+                continue
+            i += 1
+            continue
+        if in_single:
+            if ch == "'" and i + 1 < len(flow) and flow[i + 1] == "'":
+                i += 2
+                continue
+            if ch == "'":
+                in_single = False
+                i += 1
+                j = i
+                for _ in range(len(flow) + 1):
+                    if j >= len(flow) or flow[j] not in [" ", "\t"]:
+                        break
+                    j += 1
+                if j < len(flow) and flow[j] not in [",", ":", "]", "}"]:
+                    return "unexpected text after closing quote"
+                continue
+            i += 1
+            continue
+        if ch == '"':
+            in_double = True
+        elif ch == "'":
+            in_single = True
+        i += 1
+    return None
+
+def _lock_line_quote_error(body):
+    """Returns the quote-trailer problem for one comment-free line, or None."""
+    text = body
+    if text.startswith("- "):
+        text = text[2:].strip()
+        if text == "":
+            return None
+    elif text == "-":
+        return None
+    if text.startswith("? ") or text.startswith(": "):
+        return None
+    value = text
+    c = _lock_top_colon(text)
+    if c >= 0:
+        value = text[c + 1:].strip()
+    if value == "":
+        return None
+    if value[0] in ["[", "{"]:
+        return _lock_flow_quote_error(value)
+    if value[0] not in ['"', "'"]:
+        return None
+    tail = _lock_quoted_tail(value)
+    if tail == None:
+        return None
+    if tail.strip() != "":
+        return "unexpected text after closing quote"
+    return None
+
+def _lock_quote_error(content, lock_label):
+    """Returns the quoted-scalar trailer error for lock text, or None.
+
+    After the closing quote of a quoted scalar only whitespace and an
+    optional `#` comment may follow on that line. Anything else is an error
+    naming the line. Quoted scalars closed on a later line are left to the
+    parser; non-strict parsing keeps today's behaviour.
+    """
+    for i, line in enumerate(_lock_text_lines(content)):
+        stripped = line.strip()
+        if stripped == "" or stripped.startswith("#") or stripped.startswith("%"):
+            continue
+        if stripped == "---" or stripped == "...":
+            continue
+        body = _lock_comment_stripped(line).strip()
+        if body == "" or body == "---" or body == "...":
+            continue
+        err = _lock_line_quote_error(body)
+        if err:
+            return "%s: %s at line %d" % (lock_label, err, i + 1)
+    return None
+
+def _is_lock_package_name(name):
+    """Returns whether `name` is a valid Dart package name.
+
+    Letters, digits and underscores, not starting with a digit.
+    """
+    if type(name) != "string" or name == "":
+        return False
+    if name[0] not in _LOCK_NAME_FIRST:
+        return False
+    for ch in name.elems():
+        if ch not in _LOCK_NAME_CHARS:
+            return False
+    return True
+
+def _lock_unquote(key):
+    """Removes one pair of matching quotes from a mapping key, or returns it."""
+    if len(key) >= 2 and key[0] == '"' and key[-1] == '"':
+        return key[1:-1]
+    if len(key) >= 2 and key[0] == "'" and key[-1] == "'":
+        return key[1:-1].replace("''", "'")
+    return key
+
+def _lock_entry_lines(content):
+    """Maps each block `packages` entry key to its 1-based line.
+
+    Keys are unquoted to match the parsed mapping. Returns {} when
+    `packages` is a flow value or is missing; the shape check reports those.
+    """
+    found = {}
+    lines = _lock_text_lines(content)
+    pkg_indent = -1
+    entry_indent = -1
+    for i, line in enumerate(lines):
+        body = _lock_comment_stripped(line).strip()
+        if body == "" or body.startswith("#") or body.startswith("%"):
+            continue
+        if body == "---" or body == "...":
+            continue
+        indent = len(line) - len(line.lstrip(" \t"))
+        if pkg_indent < 0:
+            if body == "packages:":
+                pkg_indent = indent
+            continue
+        if indent <= pkg_indent:
+            break
+        if entry_indent < 0:
+            entry_indent = indent
+        if indent != entry_indent:
+            continue
+        c = _lock_top_colon(body)
+        if c <= 0:
+            continue
+        key = _lock_unquote(body[:c].strip())
+        if key not in found:
+            found[key] = i + 1
+    return found
+
+def _is_lock_digits(part):
+    """Returns whether `part` is a non-empty run of ASCII digits."""
+    if part == "":
+        return False
+    for ch in part.elems():
+        if ch not in _LOCK_DIGITS:
+            return False
+    return True
+
+def _is_lock_version_number(part):
+    """Returns whether `part` is a numeric core part: digits, no leading zeros."""
+    return _is_lock_digits(part) and (len(part) == 1 or part[0] != "0")
+
+def _is_lock_version_ident(seg, prerelease):
+    """Returns whether `seg` is a prerelease or build identifier.
+
+    Non-empty runs of letters, digits and hyphens; a numeric prerelease
+    identifier keeps no leading zeros.
+    """
+    if seg == "":
+        return False
+    for ch in seg.elems():
+        if ch not in _LOCK_IDENT_CHARS:
+            return False
+    if prerelease and _is_lock_digits(seg) and len(seg) > 1 and seg[0] == "0":
+        return False
+    return True
+
+def _is_lock_version(version):
+    """Returns whether `version` is a semantic version as pub writes it.
+
+    MAJOR.MINOR.PATCH with numeric parts without leading zeros, plus
+    optional `-prerelease` and `+build` dot-separated identifiers. Anything
+    else (a float such as `1.10`, an int such as `3`, folded continuation
+    text) is not a version pub writes. Non-strings are never versions: the
+    caller reports those without showing the re-spelled value.
+    """
+    if type(version) != "string":
+        return False
+    core, plus, build = version.partition("+")
+    if plus:
+        if build == "":
+            return False
+        for seg in build.split("."):
+            if not _is_lock_version_ident(seg, False):
+                return False
+    release, dash, pre = core.partition("-")
+    parts = release.split(".")
+    if len(parts) != 3:
+        return False
+    for part in parts:
+        if not _is_lock_version_number(part):
+            return False
+    if dash:
+        if pre == "":
+            return False
+        for seg in pre.split("."):
+            if not _is_lock_version_ident(seg, True):
+                return False
+    return True
+
+def _lock_entry_error(name, info, entry_lines, lock_label):
+    """Returns the package entry shape error, or None.
+
+    Every entry needs a valid Dart package name and a `source` and a
+    `version` that are YAML strings; a missing `source` is an error, never
+    only a warning. The `version` must be a semantic version as pub writes
+    it. Non-string versions name the entry's line, never the re-spelled
+    value.
+    """
+    if not _is_lock_package_name(name):
+        return "%s: package %r is not a valid package name" % (lock_label, name)
+    key = name if type(name) == "string" else str(name)
+    at = ""
+    if key in entry_lines:
+        at = " at line %d" % entry_lines[key]
+    source = info.get("source", None)
+    if source == None:
+        return "%s: package %r has no 'source'%s" % (lock_label, name, at)
+    if type(source) != "string":
+        return "%s: package %r has non-string 'source'%s" % (lock_label, name, at)
+    version = info.get("version", None)
+    if version == None:
+        return "%s: package %r has no 'version'%s" % (lock_label, name, at)
+    if type(version) != "string":
+        return "%s: package %r has non-string 'version'%s" % (lock_label, name, at)
+    if not _is_lock_version(version):
+        return "%s: package %r has invalid version %r%s" % (lock_label, name, version, at)
+    return None
+
+def _lock_case_error(packages, lock_label):
+    """Returns the case-collision error naming both packages, or None.
+
+    Two names equal ignoring case collide on case-insensitive filesystems,
+    where their repositories and paths are the same entry.
+    """
+    seen = {}
+    for name in packages.keys():
+        if type(name) != "string":
+            continue
+        folded = name.lower()
+        if folded in seen and seen[folded] != name:
+            return "%s: packages %r and %r differ only in case" % (lock_label, seen[folded], name)
+        if folded not in seen:
+            seen[folded] = name
+    return None
+
 def pubspec_lock_error(content, lock_label = "pubspec.lock"):
     """Returns why a pubspec.lock is unreadable, or None when it is clean.
 
     Duplicate keys, lines the parser cannot read (other than blank and
-    comment lines), a missing or non-mapping `packages`, and package entries
-    that are not mappings are all errors. `packages: {}` with valid `sdks`
-    stays a valid, empty lock.
+    comment lines), content after a `...` line or a second `---` (naming its
+    line), tab indentation, and text after a quoted scalar's closing quote
+    are all errors. A missing or non-mapping `packages`, package entries
+    that are not mappings, invalid package names, names equal ignoring
+    case, a missing or non-string `source` (never only a warning), and a
+    missing, non-string or non-semantic `version` are errors too.
+    `packages: {}` with valid `sdks` stays a valid, empty lock.
 
     Args:
         content: String contents of a pubspec.lock file.
@@ -113,23 +541,39 @@ def pubspec_lock_error(content, lock_label = "pubspec.lock"):
     err = _lock_syntax_error(content, lock_label)
     if err:
         return err
+    err = _lock_doc_tail_error(content, lock_label)
+    if err:
+        return err
+    err = _lock_tab_error(content, lock_label)
+    if err:
+        return err
+    err = _lock_quote_error(content, lock_label)
+    if err:
+        return err
     data = parse_document(content)
     err = _lock_shape_error(data, lock_label)
     if err:
         return err
+    entry_lines = _lock_entry_lines(content)
     for name, info in data["packages"].items():
         err = _lock_entry_shape_error(name, info, lock_label)
         if err:
             return err
-    return None
+        err = _lock_entry_error(name, info, entry_lines, lock_label)
+        if err:
+            return err
+    return _lock_case_error(data["packages"], lock_label)
 
 def parse_pubspec_lock(content, lock_label = "pubspec.lock"):
     """Parse a pubspec.lock file into a dict of package info.
 
-    Fails when the lock has duplicate keys, lines the parser cannot read, a
-    missing or non-mapping `packages`, or a package entry that is not a
-    mapping, so a lock the parser cannot read never becomes a silently
-    empty hub.
+    Fails when the lock has duplicate keys, lines the parser cannot read,
+    content after a `...` line or a second `---`, tab indentation, text
+    after a quoted scalar's closing quote, a missing or non-mapping
+    `packages`, a package entry that is not a mapping, an invalid package
+    name, case-colliding names, or a missing, non-string or non-semantic
+    `source` or `version`, so a lock the parser cannot read never becomes a
+    silently empty hub.
 
     Args:
         content: String contents of a pubspec.lock file.

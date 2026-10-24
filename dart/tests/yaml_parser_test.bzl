@@ -104,9 +104,9 @@ def _parse_lock_bom_test_impl(ctx):
     env = unittest.begin(ctx)
 
     # A leading byte-order mark parses normally instead of emptying the hub.
-    content = "\357\273\277packages:\n  a:\n    version: '1'\n"
+    content = "\357\273\277packages:\n  a:\n    source: hosted\n    version: '1.2.3'\n"
     asserts.equals(env, None, pubspec_lock_error(content, "//:pubspec.lock"))
-    asserts.equals(env, "1", parse_pubspec_lock(content, "//:pubspec.lock")["a"]["version"])
+    asserts.equals(env, "1.2.3", parse_pubspec_lock(content, "//:pubspec.lock")["a"]["version"])
     return unittest.end(env)
 
 def _parse_lock_packages_test_impl(ctx):
@@ -176,7 +176,7 @@ def _parse_pubspec_sdk_constraint_test_impl(ctx):
 
 def _parse_lock_flow_description_test_impl(ctx):
     env = unittest.begin(ctx)
-    result = parse_pubspec_lock("packages:\n  git_dep:\n    description: {name: git_dep, url: \"https://x\"}\n    version: \"1.0.0\"\n")
+    result = parse_pubspec_lock("packages:\n  git_dep:\n    description: {name: git_dep, url: \"https://x\"}\n    source: git\n    version: \"1.0.0\"\n")
     asserts.equals(env, {"name": "git_dep", "url": "https://x"}, result["git_dep"]["description"])
     asserts.equals(env, "1.0.0", result["git_dep"]["version"])
     return unittest.end(env)
@@ -184,9 +184,127 @@ def _parse_lock_flow_description_test_impl(ctx):
 def _parse_lock_unquoted_version_test_impl(ctx):
     env = unittest.begin(ctx)
 
-    # An unquoted `1.10` is a float, so str() gives "1.1", as it does with yaml.bzl.
-    result = parse_pubspec_lock("packages:\n  p:\n    version: 1.10\n")
-    asserts.equals(env, "1.1", result["p"]["version"])
+    # An unquoted `1.10` is a float, not a version pub writes: it fails
+    # naming the lock and the entry's line, never showing the re-spelled "1.1".
+    err = pubspec_lock_error("packages:\n  p:\n    source: hosted\n    version: 1.10\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 2" in err)
+    asserts.true(env, "1.1" not in err)
+    return unittest.end(env)
+
+def _parse_lock_doc_end_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Content after a `...` line fails, naming its 1-based line.
+    err = pubspec_lock_error("packages:\n  a:\n    source: hosted\n    version: \"1.0.0\"\n...\npackages:\n  b:\n    source: hosted\n    version: \"2.0.0\"\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 6" in err)
+
+    # A final `...` stays allowed, as does a leading `---`.
+    asserts.equals(env, None, pubspec_lock_error("packages:\n  a:\n    source: hosted\n    version: \"1.0.0\"\n...\n", "//:pubspec.lock"))
+    asserts.equals(env, None, pubspec_lock_error("---\npackages:\n  a:\n    source: hosted\n    version: \"1.0.0\"\n", "//:pubspec.lock"))
+    return unittest.end(env)
+
+def _parse_lock_second_doc_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Content after a second `---` fails, naming the content's line.
+    err = pubspec_lock_error("packages:\n  a:\n    source: hosted\n    version: \"1.0.0\"\n---\npackages:\n  b:\n    source: hosted\n    version: \"2.0.0\"\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 6" in err)
+
+    # A bare second `---` still fails, naming the marker's own line.
+    err = pubspec_lock_error("packages:\n  a:\n    source: hosted\n    version: \"1.0.0\"\n---\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 5" in err)
+    return unittest.end(env)
+
+def _parse_lock_tab_indent_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A tab in a content line's indentation fails, naming the line.
+    err = pubspec_lock_error("packages:\n\ta:\n    source: hosted\n    version: \"1.0.0\"\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 2" in err)
+
+    # A tab after the indentation stays allowed.
+    asserts.equals(env, None, pubspec_lock_error("packages:\n  a:\n    source: hosted\n    version:\t\"1.0.0\"\n", "//:pubspec.lock"))
+    return unittest.end(env)
+
+def _parse_lock_quote_trailer_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Text after a quoted scalar's closing quote fails, naming the line.
+    err = pubspec_lock_error("packages:\n  a:\n    source: hosted\n    version: \"1.0.0\" junk\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 4" in err)
+
+    # The same junk inside a flow value fails at the description's line.
+    err = pubspec_lock_error("packages:\n  a:\n    source: hosted\n    version: \"1.0.0\"\n    description: {url: \"https://x\" \"junk\"}\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 5" in err)
+
+    # A trailing `#` comment after the closing quote stays allowed.
+    asserts.equals(env, None, pubspec_lock_error("packages:\n  a:\n    source: hosted\n    version: \"1.0.0\" # comment\n", "//:pubspec.lock"))
+    return unittest.end(env)
+
+def _parse_lock_entry_name_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A name pub could never write fails, naming it.
+    err = pubspec_lock_error("packages:\n  9lives:\n    source: hosted\n    version: \"1.0.0\"\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "9lives" in err)
+    err = pubspec_lock_error("packages:\n  has-dash:\n    source: hosted\n    version: \"1.0.0\"\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "has-dash" in err)
+
+    # Leading underscores and capitals stay valid.
+    result = parse_pubspec_lock("packages:\n  _ok:\n    source: hosted\n    version: \"1.0.0\"\n  CamelCase:\n    source: sdk\n    version: \"0.0.0\"\n", "//:pubspec.lock")
+    asserts.true(env, "_ok" in result and "CamelCase" in result)
+    return unittest.end(env)
+
+def _parse_lock_entry_case_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Names equal ignoring case collide, naming both.
+    err = pubspec_lock_error("packages:\n  Foo:\n    source: hosted\n    version: \"1.0.0\"\n  foo:\n    source: hosted\n    version: \"2.0.0\"\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "Foo" in err and "foo" in err)
+
+    # One capitalised name alone stays valid.
+    asserts.equals(env, None, pubspec_lock_error("packages:\n  Foo:\n    source: hosted\n    version: \"1.0.0\"\n", "//:pubspec.lock"))
+    return unittest.end(env)
+
+def _parse_lock_entry_source_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A missing `source` is an error, never only a warning.
+    err = pubspec_lock_error("packages:\n  a:\n    version: \"1.0.0\"\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "source" in err)
+
+    # A non-string `source` fails, naming the entry's line.
+    err = pubspec_lock_error("packages:\n  a:\n    source: 3\n    version: \"1.0.0\"\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 2" in err)
+
+    # Hosted, git, path and sdk entries parse, including a scalar description.
+    result = parse_pubspec_lock("packages:\n  h:\n    source: hosted\n    version: \"1.0.0\"\n  g:\n    source: git\n    version: \"1.0.0\"\n  p:\n    source: path\n    version: \"0.0.0\"\n  s:\n    description: flutter\n    source: sdk\n    version: \"0.0.0\"\n", "//:pubspec.lock")
+    asserts.equals(env, {"name": "flutter"}, result["s"]["description"])
+    asserts.equals(env, "git", result["g"]["source"])
+    return unittest.end(env)
+
+def _parse_lock_entry_version_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # An int version fails naming the entry's line, never showing a value.
+    err = pubspec_lock_error("packages:\n  a:\n    source: hosted\n    version: 3\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 2" in err)
+    asserts.true(env, " 3" not in err)
+
+    # A non-semantic string version fails; a missing version fails too.
+    err = pubspec_lock_error("packages:\n  a:\n    source: hosted\n    version: \"1\"\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 2" in err)
+    err = pubspec_lock_error("packages:\n  a:\n    source: hosted\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "version" in err and "line 2" in err)
+
+    # Folded continuation text is not a version either.
+    err = pubspec_lock_error("packages:\n  a:\n    source: hosted\n    version: \"1.0.0\n      plus junk\"\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err)
+
+    # Prerelease and build versions parse as pub writes them.
+    result = parse_pubspec_lock("packages:\n  a:\n    source: hosted\n    version: \"1.2.3-dev.4+5\"\n  b:\n    source: hosted\n    version: \"0.0.0\"\n", "//:pubspec.lock")
+    asserts.equals(env, "1.2.3-dev.4+5", result["a"]["version"])
+    asserts.equals(env, "0.0.0", result["b"]["version"])
     return unittest.end(env)
 
 def _parse_pubspec_deps_flow_test_impl(ctx):
@@ -762,6 +880,14 @@ _t20_test = unittest.make(_parse_lock_duplicate_key_test_impl)
 _t21_test = unittest.make(_parse_lock_bom_test_impl)
 _t22_test = unittest.make(_parse_pubspec_document_test_impl)
 _t23_test = unittest.make(_parse_pubspec_document_error_test_impl)
+_t24_test = unittest.make(_parse_lock_doc_end_test_impl)
+_t25_test = unittest.make(_parse_lock_second_doc_test_impl)
+_t26_test = unittest.make(_parse_lock_tab_indent_test_impl)
+_t27_test = unittest.make(_parse_lock_quote_trailer_test_impl)
+_t28_test = unittest.make(_parse_lock_entry_name_test_impl)
+_t29_test = unittest.make(_parse_lock_entry_case_test_impl)
+_t30_test = unittest.make(_parse_lock_entry_source_test_impl)
+_t31_test = unittest.make(_parse_lock_entry_version_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -795,6 +921,14 @@ def yaml_parser_test_suite(name):
         _t21_test,
         _t22_test,
         _t23_test,
+        _t24_test,
+        _t25_test,
+        _t26_test,
+        _t27_test,
+        _t28_test,
+        _t29_test,
+        _t30_test,
+        _t31_test,
     )
     native.test_suite(
         name = name,

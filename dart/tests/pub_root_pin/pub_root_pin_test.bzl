@@ -312,6 +312,9 @@ def _hosted_pkg(version, sha256):
 def _git_pkg(version, ref):
     return {"source": "git", "version": version, "description": {"url": "file:///srv/gp.git", "resolved-ref": ref, "path": "."}}
 
+def _git_pkg_at(version, ref, path):
+    return {"source": "git", "version": version, "description": {"url": "file:///srv/gp.git", "resolved-ref": ref, "path": path}}
+
 def _mod_lock(hub, pkgs, module = "root", is_root = True, on_version_conflict = "error", isolated = False):
     return struct(name = hub, lock = "//" + module + ":pubspec.lock", packages = pkgs, on_version_conflict = on_version_conflict, isolated = isolated, is_root = is_root, module = module)
 
@@ -443,6 +446,60 @@ def _root_pin_hides_no_decl_sha_conflict_test_impl(ctx):
     asserts.true(env, _V190 in r.error and _ALT in r.error, "names both values: %s" % r.error)
     return unittest.end(env)
 
+def _git_path_conflict_fails_test_impl(ctx):
+    env = unittest.begin(ctx)
+    r = resolve_pub_packages(
+        [],
+        [
+            _mod_lock("pub_deps", {"path": _git_pkg_at("1.4.0", _REF, "a")}),
+            _mod_lock("dep_deps", {"path": _git_pkg_at("1.4.0", _REF, "b")}, module = "depmod2", is_root = False),
+        ],
+    )
+    asserts.true(env, r.error != None)
+    asserts.true(env, "conflicting git paths" in r.error, "names the conflict: %s" % r.error)
+    asserts.true(env, "\"path\"" in r.error and "1.4.0" in r.error, "names the package: %s" % r.error)
+    asserts.true(env, "a" in r.error and "b" in r.error, "names both paths: %s" % r.error)
+    asserts.true(env, "pub_deps" in r.error and "dep_deps" in r.error, "names both hubs: %s" % r.error)
+    asserts.true(env, "//root:pubspec.lock" in r.error and "//depmod2:pubspec.lock" in r.error, "names both locks: %s" % r.error)
+    return unittest.end(env)
+
+def _git_path_conflict_order_independent_test_impl(ctx):
+    env = unittest.begin(ctx)
+    first = resolve_pub_packages(
+        [],
+        [
+            _mod_lock("pub_deps", {"path": _git_pkg_at("1.4.0", _REF, "a")}),
+            _mod_lock("dep_deps", {"path": _git_pkg_at("1.4.0", _REF, "b")}, module = "depmod2", is_root = False),
+        ],
+    )
+    second = resolve_pub_packages(
+        [],
+        [
+            _mod_lock("dep_deps", {"path": _git_pkg_at("1.4.0", _REF, "b")}, module = "depmod2", is_root = False),
+            _mod_lock("pub_deps", {"path": _git_pkg_at("1.4.0", _REF, "a")}),
+        ],
+    )
+    for r in [first, second]:
+        asserts.true(env, r.error != None)
+        asserts.true(env, "conflicting git paths" in r.error, "fails in both lock orders: %s" % r.error)
+        asserts.true(env, "//root:pubspec.lock" in r.error and "//depmod2:pubspec.lock" in r.error, "names both locks: %s" % r.error)
+    return unittest.end(env)
+
+def _agreeing_git_path_is_silent_test_impl(ctx):
+    env = unittest.begin(ctx)
+    r = resolve_pub_packages(
+        [],
+        [
+            _mod_lock("pub_deps", {"path": _git_pkg_at("1.4.0", _REF, "a")}),
+            _mod_lock("dep_deps", {"path": _git_pkg_at("1.4.0", _REF, "a")}, module = "depmod2", is_root = False),
+        ],
+    )
+    asserts.equals(env, None, r.error)
+    asserts.equals(env, "1.4.0", r.resolved_git["path"].version)
+    asserts.equals(env, _REF, r.resolved_git["path"].resolved_ref)
+    asserts.equals(env, "a", r.resolved_git["path"].path)
+    return unittest.end(env)
+
 _t0_test = unittest.make(_root_explicit_beats_dep_test_impl)
 _t1_test = unittest.make(_root_lock_beats_dep_test_impl)
 _t2_test = unittest.make(_root_older_than_dep_still_wins_test_impl)
@@ -474,6 +531,9 @@ _t27_test = unittest.make(_root_decl_still_beats_root_git_lock_test_impl)
 _t28_test = unittest.make(_upgrade_note_names_resolved_version_test_impl)
 _t29_test = unittest.make(_root_pin_hides_no_lock_sha_conflict_test_impl)
 _t30_test = unittest.make(_root_pin_hides_no_decl_sha_conflict_test_impl)
+_t31_test = unittest.make(_git_path_conflict_fails_test_impl)
+_t32_test = unittest.make(_git_path_conflict_order_independent_test_impl)
+_t33_test = unittest.make(_agreeing_git_path_is_silent_test_impl)
 
 def pub_root_pin_test_suite(name):
     small_unittest_suite(
@@ -509,4 +569,7 @@ def pub_root_pin_test_suite(name):
         _t28_test,
         _t29_test,
         _t30_test,
+        _t31_test,
+        _t32_test,
+        _t33_test,
     )
