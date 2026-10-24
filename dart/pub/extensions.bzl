@@ -10,10 +10,20 @@ load("//dart/pub:pub_scan.bzl", "run_pub_archive_scans")
 load("//dart/pub:yaml_parser.bzl", "lock_package_error", "parse_pubspec_deps", "parse_pubspec_lock")
 load("//dart/pub/private:pub_repository.bzl", "pub_package")
 load("//dart/pub/private:pub_root_pin.bzl", "best_entry", "hosted_sha_conflict", "hosted_version_error", "select_all_explicit")
-load("//dart/pub/private:pub_scc_facts.bzl", "read_scope_pubspec", "record_scope_facts", "split_scope_facts")
+load("//dart/pub/private:pub_scc_facts.bzl", "parser_schema", "read_scope_pubspec", "record_scope_facts", "split_scope_facts")
 load("//dart/pub/private:scc.bzl", "compute_sccs", "package_dep_graph", "rewrite_vanished_spoke", "scc_repo_name")
 
 _SPOKE_PREFIX = "dart_pub"
+
+# Labels of the pubspec parser sources whose bytes key the cycle-planning
+# facts (see `parser_schema` in `//dart/pub/private:pub_scc_facts.bzl`). A
+# bare `//` label resolves in this extension's own repository, whatever module
+# name it is known by. The `parser files` guard test asserts this list matches
+# `yaml_parser.bzl`'s load closure, so a new load there cannot be missed here.
+_PARSER_SOURCE_LABELS = [
+    Label("//dart/pub:yaml_parser.bzl"),
+    Label("//dart/pub/private:yaml_subset.bzl"),
+]
 
 _package = tag_class(
     doc = "Declares one pub.dev package to download and materialize as a spoke repository, pinned by version and archive hash with its pub dependencies. A `package` tag from the root module wins over `package` tags for the same package from dependencies: a dependency's different version is dropped with a NOTE naming both versions.",
@@ -82,6 +92,21 @@ _from_lock = tag_class(
         ),
     },
 )
+
+def _parser_schema(ctx):
+    """Builds this evaluation's fact-key schema from the parser sources' bytes.
+
+    Reads the parser files with `watch = "no"`: no new recorded input is
+    needed, because the extension's own `bzlTransitiveDigest` already
+    re-evaluates it when they change.
+
+    Args:
+      ctx: The module extension context.
+
+    Returns:
+      The schema prefix every fact key of this evaluation carries.
+    """
+    return parser_schema([ctx.read(label, watch = "no") for label in _PARSER_SOURCE_LABELS])
 
 def _scope_pubspec_deps(ctx, scope_dir, hosted, git_pkgs):
     """Downloads each in-scope package and returns its sorted dependency names.
@@ -174,7 +199,8 @@ def _scope_pubspec_deps(ctx, scope_dir, hosted, git_pkgs):
 
 def _scope_deps_with_facts(ctx, scope_dir, hosted, git_pkgs, recorded):
     """Resolves one scope's dependency names, reusing lockfile facts for unchanged packages. Returns deps."""
-    split = split_scope_facts(ctx.facts, hosted, git_pkgs)
+    schema = _parser_schema(ctx)
+    split = split_scope_facts(ctx.facts, hosted, git_pkgs, schema)
     miss_deps = {}
     if split.hosted_miss or split.git_miss:
         miss_deps = _scope_pubspec_deps(ctx, scope_dir, split.hosted_miss, split.git_miss)
@@ -199,11 +225,14 @@ def plan_scope_sccs(scope_names, explicit_deps, hub_names, spoke_prefix, package
         into several.
 
     Returns:
-      `struct(members, merged)`: `members` maps every merged package name to
-      its merged repository name; `merged` maps each merged repository name
-      to its sorted member names. Cycles touching an explicit `pub.package()`
-      are left alone — that repository is user-managed, so nothing can be
-      merged into it, and the target cycle fails as it does today.
+      `struct(members, merged, package_deps)`: `members` maps every merged
+      package name to its merged repository name; `merged` maps each merged
+      repository name to its sorted member names; `package_deps` carries the
+      sorted names planning used, so merged member entries record what was
+      planned for later verification against the real pubspecs. Cycles
+      touching an explicit `pub.package()` are left alone — that repository
+      is user-managed, so nothing can be merged into it, and the target cycle
+      fails as it does today.
     """
     graph = package_dep_graph(
         package_deps,
@@ -226,14 +255,18 @@ def plan_scope_sccs(scope_names, explicit_deps, hub_names, spoke_prefix, package
     return struct(
         members = members,
         merged = merged,
+        package_deps = {name: sorted(package_deps[name]) for name in package_deps.keys()},
     )
 
-def scc_member_entries(members, hosted, git_pkgs):
+def scc_member_entries(members, hosted, git_pkgs, package_deps):
     """Builds the merged repository's member entries for `members_json`.
 
     Pure given the resolved packages: hosted members carry their tarball
     coordinates, git members their remote, resolved ref and in-repo path, so
-    the merged repository fetches each member the way its spoke would.
+    the merged repository fetches each member the way its spoke would. Each
+    entry also carries the sorted dependency names planning used for that
+    member — the same unfiltered names the facts record — so the merged
+    repository verifies the plan against the real pubspecs.
 
     Args:
       members: Sorted member package names.
@@ -241,13 +274,16 @@ def scc_member_entries(members, hosted, git_pkgs):
         `struct(version, sha256, url)`.
       git_pkgs: Dict of git package name to
         `struct(version, url, resolved_ref, path)`.
+      package_deps: Dict of package name to the sorted dependency names
+        planning used.
 
     Returns:
-      List of structs, each with `source` (`"hosted"` or `"git"`) plus the
-      coordinates the merged repository rule reads.
+      List of structs, each with `source` (`"hosted"` or `"git"`), the
+      coordinates the merged repository rule reads, and `planned_deps`.
     """
     entries = []
     for member in members:
+        planned = sorted(package_deps[member])
         if member in hosted:
             pkg = hosted[member]
             entries.append(struct(
@@ -257,6 +293,7 @@ def scc_member_entries(members, hosted, git_pkgs):
                 sha256 = pkg.sha256,
                 url = pkg.url,
                 code_assets = curated_code_assets(member, pkg.version),
+                planned_deps = planned,
             ))
         else:
             pkg = git_pkgs[member]
@@ -268,6 +305,7 @@ def scc_member_entries(members, hosted, git_pkgs):
                 resolved_ref = pkg.resolved_ref,
                 path = pkg.path,
                 code_assets = curated_code_assets(member, pkg.version),
+                planned_deps = planned,
             ))
     return entries
 
@@ -890,7 +928,7 @@ def _pub_emit_shared_spokes(resolved, shared_sccs, all_package_names, explicit_p
 def _pub_emit_shared_merged(shared_sccs, resolved, resolved_git, all_package_names, explicit_package_names, shared_scc_targets, ignore_hooks):
     """Creates one merged repository per shared dependency cycle."""
     for repo, members in shared_sccs.merged.items():
-        entries = scc_member_entries(members, resolved, resolved_git)
+        entries = scc_member_entries(members, resolved, resolved_git, shared_sccs.package_deps)
         pub_lock_scc_package(
             name = repo,
             repo_name = repo,
@@ -947,7 +985,7 @@ def _pub_emit_isolated_spokes(hub_name, hosted, hub_sccs, package_names, hub_exp
 def _pub_emit_isolated_merged(hub_name, hub_sccs, hosted, git_pkgs, package_names, hub_explicit, hub_scc_targets, ignore_hooks):
     """Creates one merged repository per isolated dependency cycle."""
     for repo, members in hub_sccs.merged.items():
-        entries = scc_member_entries(members, hosted, git_pkgs)
+        entries = scc_member_entries(members, hosted, git_pkgs, hub_sccs.package_deps)
         pub_lock_scc_package(
             name = repo,
             repo_name = repo,

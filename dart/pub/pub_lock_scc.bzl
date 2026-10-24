@@ -9,7 +9,12 @@ hosted tarballs and git checkouts alike — extracts each into its own
 subdirectory (so each keeps its own `lib/` root), and generates one merged
 `dart_library` carrying all member packages, plus an alias per member so
 `@hub//:<member>` keeps working. Edges inside the cycle disappear; edges
-leaving it become the merged target's `deps`.
+leaving it become the merged target's `deps`. Before generating anything it
+verifies the plan it was given: each member entry carries the dependency
+names planning used, and the fetch fails when a member's real pubspec lists
+other names or when the members are not strongly connected through their
+real dependencies (the lockfile's cycle-planning facts are hints, and a
+wrong one must not plan a bogus merge).
 """
 
 load("//dart/private:download.bzl", "pinned_download")
@@ -19,6 +24,7 @@ load("//dart/pub:pub_scan.bzl", _run_pub_archive_scan = "run_pub_archive_scan")
 load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_package_member_build_content = "make_dart_package_member_build_content", _make_scc_merged_build_content = "make_scc_merged_build_content")
 load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
+load("//dart/pub/private:pub_scc_verify.bzl", "scc_member_deps_error", "scc_members_connectivity_error")
 load("//dart/pub/private:pub_symlink.bzl", _check_package_symlinks = "check_package_symlinks")
 
 # Re-exported for rule sets outside //dart/pub that reuse the merged shape.
@@ -92,6 +98,7 @@ def _pub_lock_scc_package_impl(ctx):
     available = {p: True for p in ctx.attr.lock_packages + ctx.attr.explicit_packages}
 
     merged_deps = {}
+    real_deps = {}
     for member in members:
         name = member["name"]
         if member.get("source", "hosted") == "git":
@@ -104,6 +111,15 @@ def _pub_lock_scc_package_impl(ctx):
         # languageVersion behaviour.
         pubspec = ctx.read(name + "/pubspec.yaml") if ctx.path(name + "/pubspec.yaml").exists else ""
         all_deps = parse_pubspec_deps(pubspec)
+
+        # Facts are hints: the plan that merged these members named the deps
+        # it used, and the fetch fails when the real pubspec disagrees.
+        planned = member.get("planned_deps", None)
+        if planned != None:
+            err = scc_member_deps_error(ctx.attr.repo_name, name, planned, sorted(all_deps))
+            if err:
+                fail(err)
+        real_deps[name] = sorted(all_deps)
         bazel_deps = sorted([
             d
             for d in all_deps
@@ -141,6 +157,9 @@ def _pub_lock_scc_package_impl(ctx):
         dep_labels = sorted(merged_deps.keys()),
         repo_name = ctx.attr.repo_name,
     ))
+    err = scc_members_connectivity_error(ctx.attr.repo_name, real_deps)
+    if err:
+        fail(err)
 
 pub_lock_scc_package = repository_rule(
     implementation = _pub_lock_scc_package_impl,
@@ -155,7 +174,10 @@ pub_lock_scc_package = repository_rule(
             doc = "JSON list of member packages. Hosted members carry `{source: \"hosted\", name, version, " +
                   "sha256, url, code_assets}`; git members carry `{source: \"git\", name, version, url, " +
                   "resolved_ref, path, code_assets}`. A git member's `resolved_ref` must be a full 40-hex " +
-                  "commit SHA; anything else fails the build. Encoded by the `pub` extension; decoded here.",
+                  "commit SHA; anything else fails the build. Every member also carries `planned_deps`, the " +
+                  "sorted dependency names cycle planning used for it: the fetch fails when a member's real " +
+                  "pubspec lists other names, or when the members are not strongly connected through their " +
+                  "real dependencies. Encoded by the `pub` extension; decoded here.",
             mandatory = True,
         ),
         "hub_name": attr.string(

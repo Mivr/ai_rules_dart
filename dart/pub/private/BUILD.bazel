@@ -46,6 +46,18 @@ bzl_library(
 )
 
 bzl_library(
+    name = "pub_scc_verify",
+    srcs = ["pub_scc_verify.bzl"],
+    visibility = [
+        "//dart/pub:__subpackages__",
+        "//dart/tests:__subpackages__",
+    ],
+    deps = [
+        ":scc",
+    ],
+)
+
+bzl_library(
     name = "pub_repository",
     srcs = ["pub_repository.bzl"],
     visibility = ["//dart/pub:__subpackages__"],

@@ -18,19 +18,19 @@ recorded names directly: each name is one edge, never rendered back into
 pubspec text, so a name carrying quotes, newlines or colons cannot split
 into several names.
 
-Facts are keyed by what identifies the package's bytes: a hosted package by
-name, version, and the lock's archive sha256; a git package by name,
-resolved ref, and in-repo path. Every key carries the schema version
-(`pub.scc.v1/`), so facts written by another version of the extension never
-collide: they are simply never looked up, and the returned facts — built
-fresh each evaluation holding exactly the packages it planned — drop them.
-A fact whose key matches but whose value is malformed (not a list of
-strings) fails the evaluation naming the key, rather than planning from
-invented edges.
+Facts are hints, not pins. Every key carries the schema version plus a digest
+of the pubspec parser's sources (`pub.scc.v2.<digest>/`), so facts written by
+another version of the extension or another parser never collide: they are
+simply never looked up, and the returned facts — built fresh each evaluation
+holding exactly the packages it planned — drop them. A fact whose key matches
+but whose value is malformed (not a list of strings) fails the evaluation
+naming the key, rather than planning from invented edges. A fact whose names
+disagree with the package's real pubspec fails the merged repository that
+fetches it (see `//dart/pub/private:pub_scc_verify.bzl`).
 
-This module holds the pure facts logic (key building, lookup, validation,
-the split into hits and misses, and the returned dict) plus the narrowed
-scratch check, so Starlark unit tests cover them without a context.
+This module holds the pure facts logic (parser digest, key building, lookup,
+validation, the split into hits and misses, and the returned dict) plus the
+narrowed scratch check, so Starlark unit tests cover them without a context.
 The context-touching halves — the fetch orchestration in
 `//dart/pub:extensions.bzl` and `read_scope_pubspec` below — stay thin
 wrappers over these.
@@ -43,38 +43,98 @@ full `check_package_symlinks` walk.
 
 load("//dart/pub/private:pub_symlink.bzl", "pub_symlink_error", "realpath_escapes_root")
 
-# Schema version carried in every fact key. Keys from another schema are never
-# looked up, so Bazel shallow-merging facts dicts across extension versions
-# cannot mix values: a key uniquely determines its value within one schema.
-_PUB_SCC_FACTS_SCHEMA = "pub.scc.v1"
+# Fixed schema version carried in every fact key alongside the parser digest.
+# Keys from another schema are never looked up, so Bazel shallow-merging facts
+# dicts across extension versions cannot mix values: a key uniquely determines
+# its value within one schema.
+_PUB_SCC_FACTS_SCHEMA_VERSION = "pub.scc.v2"
 
-def hosted_fact_key(package_name, version, sha256):
+_HEX_DIGITS = "0123456789abcdef"
+
+def _normalize_parser_text(text):
+    """Normalises parser source bytes before hashing, so CRLF and LF checkouts key alike."""
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+def _hex8(value):
+    """Formats the low 32 bits of `value` as 8 lowercase hex digits."""
+    v = value % 4294967296
+    if v < 0:
+        v += 4294967296
+    out = ""
+    for _ in range(8):
+        out = _HEX_DIGITS[v % 16] + out
+        v = v // 16
+    return out
+
+def parser_texts_digest(parser_texts):
+    """Digests parser source texts to a hex string of at least 64 bits.
+
+    The normalised texts are length-prefixed and joined, then hashed twice:
+    once directly and once over a domain-separated transform, plus the
+    combined length. Any one-byte change in any text changes the digest, so
+    every fact key changes; anything but the parser sources leaves it alone.
+
+    Args:
+      parser_texts: The parser source files' contents, in canonical order
+        (the extension passes its parser labels' bytes in label order).
+
+    Returns:
+      24 lowercase hex digits.
+    """
+    combined = ""
+    for text in parser_texts:
+        normalized = _normalize_parser_text(text)
+        combined += str(len(normalized)) + "\n" + normalized + "\n"
+    first = hash(combined)
+    second = hash("pub.scc.parser\n" + combined)
+    return _hex8(first) + _hex8(second) + _hex8(len(combined))
+
+def parser_schema(parser_texts):
+    """Builds this evaluation's fact-key schema from the parser sources' bytes.
+
+    The fixed version keeps facts from another extension generation apart;
+    the digest re-derives every fact when the pubspec parser changes, so
+    facts the old parser recorded are never reused.
+
+    Args:
+      parser_texts: The parser source files' contents, in canonical order.
+
+    Returns:
+      The schema prefix every fact key of this evaluation carries.
+    """
+    return _PUB_SCC_FACTS_SCHEMA_VERSION + "." + parser_texts_digest(parser_texts)
+
+def hosted_fact_key(package_name, version, sha256, schema):
     """Builds the fact key for a hosted package's recorded pubspec deps.
 
     Args:
       package_name: The pub package name.
       version: The resolved version planning used.
       sha256: The lock's archive sha256 planning pinned.
+      schema: This evaluation's `parser_schema`, binding the key to the
+        pubspec parser's sources.
 
     Returns:
-      The opaque fact key. Any change of version or sha256 is another key,
-      hence a miss that falls back to a fetch.
+      The opaque fact key. Any change of version, sha256, or parser sources
+      is another key, hence a miss that falls back to a fetch.
     """
-    return _PUB_SCC_FACTS_SCHEMA + "/hosted/" + package_name + "/" + version + "/" + sha256
+    return schema + "/hosted/" + package_name + "/" + version + "/" + sha256
 
-def git_fact_key(package_name, resolved_ref, path):
+def git_fact_key(package_name, resolved_ref, path, schema):
     """Builds the fact key for a git package's recorded pubspec deps.
 
     Args:
       package_name: The pub package name.
       resolved_ref: The resolved commit ref planning pinned.
       path: The in-repo path holding the package.
+      schema: This evaluation's `parser_schema`, binding the key to the
+        pubspec parser's sources.
 
     Returns:
-      The opaque fact key. Any change of ref or path is another key, hence
-      a miss that falls back to a fetch.
+      The opaque fact key. Any change of ref, path, or parser sources is
+      another key, hence a miss that falls back to a fetch.
     """
-    return _PUB_SCC_FACTS_SCHEMA + "/git/" + package_name + "/" + resolved_ref + "/" + path
+    return schema + "/git/" + package_name + "/" + resolved_ref + "/" + path
 
 def fact_deps_error(key, value):
     """Validates one fact value read back from the lockfile.
@@ -118,7 +178,7 @@ def lookup_fact_deps(facts, key):
         fail(err)
     return sorted(value)
 
-def split_scope_facts(facts, hosted, git_pkgs):
+def split_scope_facts(facts, hosted, git_pkgs, schema):
     """Splits one scope's packages into fact hits and fetch misses.
 
     Args:
@@ -127,6 +187,8 @@ def split_scope_facts(facts, hosted, git_pkgs):
         `struct(version, sha256, url)`.
       git_pkgs: Dict of git package name to
         `struct(version, url, resolved_ref, path)`.
+      schema: This evaluation's `parser_schema`, binding every key to the
+        pubspec parser's sources.
 
     Returns:
       `struct(deps, keys, hosted_miss, git_miss)`: `deps` maps every hit
@@ -138,10 +200,10 @@ def split_scope_facts(facts, hosted, git_pkgs):
     wanted = {}
     for name in sorted(hosted.keys()):
         pkg = hosted[name]
-        wanted[name] = hosted_fact_key(name, pkg.version, pkg.sha256)
+        wanted[name] = hosted_fact_key(name, pkg.version, pkg.sha256, schema)
     for name in sorted(git_pkgs.keys()):
         pkg = git_pkgs[name]
-        wanted[name] = git_fact_key(name, pkg.resolved_ref, pkg.path)
+        wanted[name] = git_fact_key(name, pkg.resolved_ref, pkg.path, schema)
     deps = {}
     miss = []
     for name in sorted(wanted.keys()):
