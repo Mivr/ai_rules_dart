@@ -17,8 +17,13 @@ load("//dart/pub/private:scc.bzl", "compute_sccs")
 
 # How a lockfile with wrong cycle-planning facts recovers: dropping the
 # extension's facts and its recorded repositories re-evaluates the extension
-# from the packages' real pubspecs.
-_RECOVERY_STEP = "remove the pub extension's `facts` entry and its `moduleExtensions` entry from MODULE.bazel.lock, then run the build again"
+# from the packages' real pubspecs. The workspace lockfile alone is not
+# enough: Bazel also keeps the last evaluation's facts in the `MODULE.bazel.lock`
+# inside its output base (`bazel info output_base` shows the directory), and
+# those fill in for deleted workspace entries. Proven on a scratch workspace:
+# removing the workspace entries without deleting that file rebuilds the same
+# wrong plan and fails again.
+_RECOVERY_STEP = "remove the pub extension's `facts` entry and its `moduleExtensions` entry from MODULE.bazel.lock, delete the `MODULE.bazel.lock` inside Bazel's output base (`bazel info output_base` shows the directory), then run the build again"
 
 def scc_member_deps_error(repo_name, member_name, planned_deps, real_deps):
     """Decides whether one merged member's real pubspec matches the plan.
