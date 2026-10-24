@@ -9,7 +9,8 @@ names equals the plan from freshly parsed pubspecs on a cyclic graph, that
 foreign-schema facts are ignored while a malformed current-schema fact fails
 naming its key and stale entries are dropped, the merged-repository
 verification decisions (names match, members connected, an entry without
-usable planned names fails), and the narrowed
+usable planned names fails), that same-length texts sharing a Java hashCode
+still digest apart, and the narrowed
 scratch check's five decisions.
 """
 
@@ -260,6 +261,15 @@ def _verify_missing_plan_test_impl(ctx):
     asserts.equals(env, None, scc_planned_deps_error("my_repo", "aaa", []), "an empty plan is usable")
     return unittest.end(env)
 
+def _digest_position_weights_test_impl(ctx):
+    env = unittest.begin(ctx)
+    asserts.true(
+        env,
+        parser_texts_digest(["xAay"]) != parser_texts_digest(["xBBy"]),
+        "same-length texts sharing a Java hashCode still digest apart",
+    )
+    return unittest.end(env)
+
 def _check(package_name = "charcode", root = "/root/pkg", real = "/root/pkg/pubspec.yaml", exists = True, listed = False):
     return struct(
         package_name = package_name,
@@ -338,6 +348,7 @@ _t18_test = unittest.make(_scratch_dangling_test_impl)
 _t19_test = unittest.make(_scratch_missing_test_impl)
 _t20_test = unittest.make(_scratch_root_link_test_impl)
 _t21_test = unittest.make(_verify_missing_plan_test_impl)
+_t22_test = unittest.make(_digest_position_weights_test_impl)
 
 def pub_scc_facts_test_suite(name):
     small_unittest_suite(
@@ -364,4 +375,5 @@ def pub_scc_facts_test_suite(name):
         _t19_test,
         _t20_test,
         _t21_test,
+        _t22_test,
     )

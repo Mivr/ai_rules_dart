@@ -70,9 +70,14 @@ def parser_texts_digest(parser_texts):
     """Digests parser source texts to a hex string of at least 64 bits.
 
     The normalised texts are length-prefixed and joined, then hashed twice:
-    once directly and once over a domain-separated transform, plus the
-    combined length. Any one-byte change in any text changes the digest, so
-    every fact key changes; anything but the parser sources leaves it alone.
+    once directly and once over the reversed text, plus the combined length.
+    Starlark's `hash()` is Java's 32-bit `String.hashCode`, a polynomial hash
+    where a fixed prefix only multiplies by a power of 31, so hashing a
+    domain-prefixed copy would add no entropy beyond the first hash and the
+    length. Reversing re-weights every position instead, so two texts sharing
+    a hash (like "xAay" and "xBBy") still digest apart. Any one-byte change in
+    any text changes the digest, so every fact key changes; anything but the
+    parser sources leaves it alone.
 
     Args:
       parser_texts: The parser source files' contents, in canonical order
@@ -86,7 +91,7 @@ def parser_texts_digest(parser_texts):
         normalized = _normalize_parser_text(text)
         combined += str(len(normalized)) + "\n" + normalized + "\n"
     first = hash(combined)
-    second = hash("pub.scc.parser\n" + combined)
+    second = hash(combined[::-1])
     return _hex8(first) + _hex8(second) + _hex8(len(combined))
 
 def parser_schema(parser_texts):
