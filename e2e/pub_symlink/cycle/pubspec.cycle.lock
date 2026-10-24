@@ -1,0 +1,23 @@
+# Local-registry lock for the header-scan e2e: the pair depends on each
+# other, so cycle planning merges them into one repository; the evil
+# member's hard-link entry must fail the fetch. See pubspec.ok.lock for the
+# url placeholder.
+packages:
+  cycle_a:
+    dependency: "direct main"
+    description:
+      name: cycle_a
+      sha256: "c21fa0e7c583469e6cc2c7d9efb10b9196f0251eb4fd4081c4c75659bc507bf4"
+      url: "file://FIXTURES_ROOT"
+    source: hosted
+    version: "1.0.0"
+  cycle_b_evil:
+    dependency: "direct main"
+    description:
+      name: cycle_b_evil
+      sha256: "6504f96209f332617e791befe5c2f7efdd460ec1f28d8431eae260ad89c6281f"
+      url: "file://FIXTURES_ROOT"
+    source: hosted
+    version: "1.0.0"
+sdks:
+  dart: ">=3.0.0 <4.0.0"

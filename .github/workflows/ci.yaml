@@ -57,8 +57,8 @@ jobs:
   # `expected-failure` below: e2e/pub_lock_conflict, e2e/pub_lock_unpinned,
   # e2e/pub_package_unpinned, e2e/pub_spoke_blank_sha,
   # e2e/pub_spoke_malformed_sha, e2e/pub_git_unpinned_ref,
-  # e2e/pub_scc_unpinned_member, e2e/sdk_unknown_version, e2e/pub_symlink,
-  # e2e/kernel_dep_shape.
+  # e2e/pub_scc_unpinned_member, e2e/sdk_unknown_version, e2e/pub_symlink
+  # (plus its nested red-by-design `cycle` workspace), e2e/kernel_dep_shape.
   # e2e/pub_fetch_powershell runs in the shard-3-only steps below;
   # e2e/analysis_failure and e2e/analyze_composition also run in
   # `expected-failure` and `format-hermeticity`, and e2e/dart_test also in
@@ -745,25 +745,78 @@ jobs:
           fi
           bazel build //:app 2>&1 | grep -F -q "instead of '9.9.9'"
           echo "OK: expected unknown-SDK-version error detected"
-      # `e2e/pub_symlink` fails at fetch only against a live git remote whose
-      # package smuggles a symlink above its root. The step builds that
-      # scratch remote, points the lock's placeholder resolved-ref at it,
-      # expects the escape refusal, and restores the lock on exit.
-      - name: pub_symlink — expect an escaping symlink to fail the fetch
+      # `e2e/pub_symlink` exercises the tar header scan
+      # (`dart/pub/private/pub_archive_scan.bzl`) over a local file://
+      # registry plus a live git remote. The step points the hosted locks'
+      # FIXTURES_ROOT placeholder at the fixtures directory and the git
+      # lock's placeholder resolved-ref at a scratch remote whose package
+      # smuggles a symlink above its root, then expects: the clean hub to
+      # stay green, the git fetch to fail on the escaping symlink, and each
+      # hostile hosted hub to fail its fetch before extraction with the
+      # refusal naming package, entry path, entry kind and raw target. All
+      # locks are restored on exit.
+      - name: pub_symlink — header scan stays green on clean packages, refuses hostile entries
         working-directory: e2e/pub_symlink
         run: |
-          trap 'git checkout -- pubspec.lock' EXIT
+          trap 'git checkout -- pubspec.lock pubspec.ok.lock pubspec.evil_hard_out.lock pubspec.evil_hard_in.lock pubspec.evil_abs.lock pubspec.evil_esc.lock' EXIT
           rm -rf /tmp/pub_symlink_evil /tmp/pub_symlink_outside.txt
           mkdir -p /tmp/pub_symlink_evil/evil_pkg/lib
           ( cd /tmp/pub_symlink_evil && git init -q . && git config user.email t@t.t && git config user.name t && printf 'name: evil_pkg\nversion: 1.0.0\nenvironment:\n  sdk: ">=3.0.0 <4.0.0"\n' > evil_pkg/pubspec.yaml && echo 'OUTSIDE-SECRET' > /tmp/pub_symlink_outside.txt && ln -s ../../outside.txt evil_pkg/lib/evil.dart && printf 'String get ok => "ok";\n' > evil_pkg/lib/ok.dart && git add -A && git commit -qm init )
           ref=$(git -C /tmp/pub_symlink_evil rev-parse HEAD)
           sed -i "s/0000000000000000000000000000000000000000/$ref/" pubspec.lock
+          fixtures="$PWD/fixtures"
+          sed -i "s|file://FIXTURES_ROOT|file://$fixtures|" pubspec.ok.lock pubspec.evil_hard_out.lock pubspec.evil_hard_in.lock pubspec.evil_abs.lock pubspec.evil_esc.lock
+          bazel build //:ok_app
+          echo "OK: clean hosted packages with an in-package symlink stay green"
           if bazel build //:app 2>/dev/null; then
             echo "ERROR: build should have failed on the escaping symlink"
             exit 1
           fi
           bazel build //:app 2>&1 | grep -F -q 'pub package "evil_pkg": symlink "lib/evil.dart" escapes the package'
-          echo "OK: expected symlink-escape error detected"
+          echo "OK: expected git symlink-escape error detected"
+          if bazel build //:evil_hard_out_app 2>/dev/null; then
+            echo "ERROR: build should have failed on the escaping hard-link"
+            exit 1
+          fi
+          bazel build //:evil_hard_out_app 2>&1 | grep -F -q 'pub package "evil_hard_out": hard-link "lib/evil.dart" points at "../../outside.txt"'
+          echo "OK: expected hard-link error detected"
+          if bazel build //:evil_hard_in_app 2>/dev/null; then
+            echo "ERROR: build should have failed on the in-package hard-link"
+            exit 1
+          fi
+          bazel build //:evil_hard_in_app 2>&1 | grep -F -q 'pub package "evil_hard_in": hard-link "lib/evil.dart" points at "lib/ok.dart"'
+          echo "OK: expected in-package hard-link error detected"
+          if bazel build //:evil_abs_app 2>/dev/null; then
+            echo "ERROR: build should have failed on the absolute symlink target"
+            exit 1
+          fi
+          bazel build //:evil_abs_app 2>&1 | grep -F -q 'pub package "evil_abs": symlink "lib/evil.dart" escapes the package (points at "/etc/passwd")'
+          echo "OK: expected absolute-symlink error detected"
+          if bazel build //:evil_esc_app 2>/dev/null; then
+            echo "ERROR: build should have failed on the escaping symlink"
+            exit 1
+          fi
+          bazel build //:evil_esc_app 2>&1 | grep -F -q 'pub package "evil_esc": symlink "lib/evil.dart" escapes the package (points at "../../outside.txt")'
+          echo "OK: expected hosted symlink-escape error detected"
+      # `e2e/pub_symlink/cycle` is a nested red-by-design workspace: the
+      # two packages form a dependency cycle, so planning merges them — but
+      # cycle_b_evil's tarball carries a hard-link entry, and the header
+      # scan refuses it while the plan fetches the member archives. The step
+      # points the lock's FIXTURES_ROOT placeholder at the parent
+      # fixtures directory, expects the planning failure, and restores the
+      # lock on exit.
+      - name: pub_symlink_scc — expect a hostile cycle member to fail planning
+        working-directory: e2e/pub_symlink/cycle
+        run: |
+          trap 'git checkout -- pubspec.cycle.lock' EXIT
+          fixtures="$(cd ../fixtures && pwd)"
+          sed -i "s|file://FIXTURES_ROOT|file://$fixtures|" pubspec.cycle.lock
+          if bazel build //:app 2>/dev/null; then
+            echo "ERROR: build should have failed on the hostile cycle member"
+            exit 1
+          fi
+          bazel build //:app 2>&1 | grep -F -q 'pub package "cycle_b_evil": hard-link "lib/evil.dart" points at "../outside.txt"'
+          echo "OK: expected cycle hard-link error detected"
       # A link hook that refuses the program's recorded uses fails the build,
       # and its own message reaches the user.
       - name: link_hook — expect a hook's refusal to fail the build, with its message

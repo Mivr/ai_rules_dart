@@ -15,6 +15,37 @@ register_toolchains("@dart_toolchains//:all")
 pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub", dev_dependency = True)
 pub.from_lock(
     name = "pub_deps",
+    isolated = True,
     lock = "//:pubspec.lock",
 )
-use_repo(pub, "pub_deps")
+
+# Header-scan e2e over the local registry in fixtures/ (served over file://;
+# the locks' FIXTURES_ROOT placeholder is rewritten to the absolute path by
+# the CI step). Clean packages share one hub; each hostile package gets its
+# own isolated hub so its refusal is asserted independently.
+pub.from_lock(
+    name = "ok_deps",
+    isolated = True,
+    lock = "//:pubspec.ok.lock",
+)
+pub.from_lock(
+    name = "eh_out",
+    isolated = True,
+    lock = "//:pubspec.evil_hard_out.lock",
+)
+pub.from_lock(
+    name = "eh_in",
+    isolated = True,
+    lock = "//:pubspec.evil_hard_in.lock",
+)
+pub.from_lock(
+    name = "eabs",
+    isolated = True,
+    lock = "//:pubspec.evil_abs.lock",
+)
+pub.from_lock(
+    name = "eesc",
+    isolated = True,
+    lock = "//:pubspec.evil_esc.lock",
+)
+use_repo(pub, "pub_deps", "ok_deps", "eh_out", "eh_in", "eabs", "eesc")

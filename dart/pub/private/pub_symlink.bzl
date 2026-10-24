@@ -10,7 +10,6 @@ any change to `deps()`, breaking hermeticity and letting a compromised
 dependency exfiltrate host files at build time.
 
 Every extraction site calls `check_package_symlinks` right after unpacking:
-
 - a link that is dangling (including a link loop, which never resolves)
   fails the fetch with a diagnostic naming the package, the link, and the
   word "symlink";
@@ -18,6 +17,14 @@ Every extraction site calls `check_package_symlinks` right after unpacking:
   way;
 - links that resolve inside are materialised as regular files/directories
   so later reads cannot observe the link at all.
+
+Before any of that, every fetch site runs the archive header scan
+(`pub_archive_scan.bzl`'s `refuse_archive_bytes`) over the downloaded bytes:
+it refuses every hard-link entry whatever its target, and every symlink
+entry whose target is absolute or climbs out of the package root, using this
+module's lexical rule so the two guards never disagree. The walk above stays
+in place behind it — headers can lie about what the extractor writes, and
+only the extracted tree shows what actually landed.
 
 The guard uses Bazel's own repository APIs only (`path.readdir`,
 `path.realpath`, `path.exists`/`is_dir`, `repository_ctx.read`/`file`/

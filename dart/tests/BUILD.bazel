@@ -20,6 +20,7 @@ load(":pinned_sources_test.bzl", "pinned_sources_test_suite")
 load(":project_staging_test.bzl", "project_staging_test_suite")
 load(":propagation_test.bzl", "propagation_test_suite")
 load(":provider_shape_test.bzl", "provider_shape_probe")
+load(":pub_archive_scan_test.bzl", "pub_archive_scan_test_suite")
 load(":pub_scc_test.bzl", "pub_scc_test_suite")
 load(":pub_symlink_test.bzl", "pub_symlink_test_suite")
 load(":registry_test.bzl", "registry_test_suite")
@@ -70,6 +71,8 @@ git_host_config_test_suite(name = "git_host_config_test")
 code_asset_test_suite(name = "code_asset_test")
 
 propagation_test_suite(name = "propagation_test")
+
+pub_archive_scan_test_suite(name = "pub_archive_scan_test")
 
 pub_scc_test_suite(name = "pub_scc_test")
 

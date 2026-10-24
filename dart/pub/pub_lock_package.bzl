@@ -13,14 +13,21 @@ load("//dart/private:download.bzl", "pinned_download")
 load("//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "pinned_source_error")
 load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_library_build_content = "make_dart_library_build_content")
+load("//dart/pub/private:pub_archive_scan.bzl", _refuse_archive_bytes = "refuse_archive_bytes", _scan_archive_bytes = "scan_archive_bytes")
 load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
 load("//dart/pub/private:pub_symlink.bzl", _check_package_symlinks = "check_package_symlinks")
 
 # Re-export for consumers outside //dart/pub (rules_flutter's
-# flutter_pub_package). Loading the private bzl directly would trip
+# `flutter_pub_package`). Loading the private bzl directly would trip
 # buildifier's bzl-visibility check, so we expose it via this public file.
 derive_language_version = _derive_language_version
 make_dart_library_build_content = _make_dart_library_build_content
+
+# Same re-export for the archive header scan: `refuse_archive_bytes` fails a
+# fetch whose tar headers already smuggle a hard link or an escaping symlink,
+# and `scan_archive_bytes` is its pure over-the-bytes half for unit tests.
+refuse_archive_bytes = _refuse_archive_bytes
+scan_archive_bytes = _scan_archive_bytes
 
 def pub_lock_package_sha256_error(package_name, version, sha256):
     """Validates `sha256` for a `pub_lock_package` target.
@@ -204,6 +211,11 @@ def _pub_lock_package_impl(ctx):
     if trimmed_archive != raw_archive:
         ctx.delete("_archive.tar.gz")
         ctx.file("_archive.tar.gz", trimmed_archive, executable = False)
+
+    # Refuse hard-link entries and absolute or package-escaping symlink
+    # entries from the archive headers before the extractor trusts them: a
+    # hostile tarball must fail here, not after its links hit the filesystem.
+    _refuse_archive_bytes(trimmed_archive, ctx.attr.package_name)
     ctx.extract("_archive.tar.gz")
     ctx.delete("_archive.tar.gz")
     _check_package_symlinks(ctx, ctx.attr.package_name)
@@ -300,6 +312,9 @@ def _pub_lock_git_package_impl(ctx):
         'pub_lock_git_package "%s"' % ctx.attr.package_name,
     )
 
+    # `git archive` output is a plain tar: refuse hostile entries from its
+    # headers before the extractor trusts them, the same check as hosted.
+    _refuse_archive_bytes(ctx.read(archive_path, watch = "no"), ctx.attr.package_name)
     ctx.extract(archive_path)
     ctx.delete(archive_path)
     ctx.delete(ctx.path(clone_rel))

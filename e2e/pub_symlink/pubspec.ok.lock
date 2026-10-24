@@ -1,0 +1,23 @@
+# Local-registry lock for the header-scan e2e: clean packages served from
+# fixtures/ over file://. The url placeholder is rewritten to the absolute
+# fixtures path by the CI step (see the `expected-failure` job), mirroring
+# how the git case rewrites its placeholder resolved-ref.
+packages:
+  ok_clean:
+    dependency: "direct main"
+    description:
+      name: ok_clean
+      sha256: "b5d76cc485e22b1166cb9f96d888136be451cf85cb2ae24f7d91b8f0656d8b84"
+      url: "file://FIXTURES_ROOT"
+    source: hosted
+    version: "1.0.0"
+  ok_inlink:
+    dependency: "direct main"
+    description:
+      name: ok_inlink
+      sha256: "dbfd44760097f648f4f2285455709346e25226d475b5f98c3c3dd9ecb198b9d9"
+      url: "file://FIXTURES_ROOT"
+    source: hosted
+    version: "1.0.0"
+sdks:
+  dart: ">=3.0.0 <4.0.0"

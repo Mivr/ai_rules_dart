@@ -1,0 +1,14 @@
+# Local-registry lock for the header-scan e2e: an absolute symlink target
+# must fail the fetch before extraction. See pubspec.ok.lock for the url
+# placeholder.
+packages:
+  evil_abs:
+    dependency: "direct main"
+    description:
+      name: evil_abs
+      sha256: "816fd32a0376e24bc133d48610d763dc336140309512d4976ee229be27320307"
+      url: "file://FIXTURES_ROOT"
+    source: hosted
+    version: "1.0.0"
+sdks:
+  dart: ">=3.0.0 <4.0.0"

@@ -1,10 +1,11 @@
 """Repository rule for downloading a single pub.dev package."""
 
-load("//dart/private:download.bzl", "pinned_download_and_extract")
+load("//dart/private:download.bzl", "pinned_download")
 load("//dart/pub:pinned_sources.bzl", "pinned_source_error")
 load("//dart/pub:yaml_parser.bzl", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", "make_dart_library_build_content")
 load("//dart/pub/private:language_version.bzl", "derive_language_version")
+load("//dart/pub/private:pub_archive_scan.bzl", "refuse_archive_bytes")
 load("//dart/pub/private:pub_symlink.bzl", "check_package_symlinks")
 
 def pub_package_sha256_error(package_name, version, sha256):
@@ -41,12 +42,18 @@ def _pub_package_impl(ctx):
         version = ctx.attr.version,
     )
 
-    pinned_download_and_extract(
+    # Download first so the archive headers can be refused before the
+    # extractor trusts them; a hard-link entry or an absolute or
+    # package-escaping symlink entry fails the fetch here.
+    pinned_download(
         ctx,
         url = url,
+        output = "_archive.tar.gz",
         sha256 = ctx.attr.sha256.strip(),
-        type = "tar.gz",
     )
+    refuse_archive_bytes(ctx.read("_archive.tar.gz", watch = "no"), ctx.attr.package_name)
+    ctx.extract("_archive.tar.gz")
+    ctx.delete("_archive.tar.gz")
     check_package_symlinks(ctx, ctx.attr.package_name)
 
     # Read the package's pubspec.yaml so we can mirror pub's per-package

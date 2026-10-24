@@ -7,6 +7,7 @@ load("//dart/pub:pub_lock_hub.bzl", "pub_lock_hub")
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_git_package", "pub_lock_package", "pub_lock_package_sha256_error", "trim_gzip_trailing_nulls")
 load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
 load("//dart/pub:yaml_parser.bzl", "lock_package_error", "parse_pubspec_lock")
+load("//dart/pub/private:pub_archive_scan.bzl", "refuse_archive_bytes")
 load("//dart/pub/private:pub_repository.bzl", "pub_package")
 load("//dart/pub/private:pub_root_pin.bzl", "best_entry", "hosted_sha_conflict", "hosted_version_error", "select_all_explicit")
 load("//dart/pub/private:pub_scc_facts.bzl", "contents_from_fact_deps", "read_scope_pubspec", "record_scope_facts", "split_scope_facts")
@@ -130,6 +131,10 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
         trimmed = trim_gzip_trailing_nulls(raw)
         if trimmed != raw:
             ctx.file(archive, trimmed, executable = False)
+
+        # Scratch is check-only, but the check still runs before extraction:
+        # a hostile tarball fails planning here, not after its links land.
+        refuse_archive_bytes(trimmed, name)
         ctx.extract(archive, output = out)
         contents[name] = read_scope_pubspec(ctx, name, out)
     for name in sorted(git_pkgs.keys()):
@@ -152,6 +157,7 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
         archive = str(ctx.path("{dir}/{name}.tar".format(dir = scope_dir, name = name)))
         spec = pkg.resolved_ref if pkg.path == "." else pkg.resolved_ref + ":" + pkg.path
         git_materialize(ctx, bare_rel, pkg.resolved_ref, archive, spec, 'pub.from_lock "%s"' % name)
+        refuse_archive_bytes(ctx.read(archive), name)
         ctx.extract(archive, output = out)
         contents[name] = read_scope_pubspec(ctx, name, out)
     return contents

@@ -18,6 +18,7 @@ load("//dart/pub:pub_lock_package.bzl", "pub_lock_spoke_dep_labels", "trim_gzip_
 load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_package_member_build_content = "make_dart_package_member_build_content", _make_scc_merged_build_content = "make_scc_merged_build_content")
 load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
+load("//dart/pub/private:pub_archive_scan.bzl", _refuse_archive_bytes = "refuse_archive_bytes")
 load("//dart/pub/private:pub_symlink.bzl", _check_package_symlinks = "check_package_symlinks")
 
 # Re-exported for rule sets outside //dart/pub that reuse the merged shape.
@@ -58,6 +59,7 @@ def _fetch_hosted_member(ctx, member, name):
     if trimmed_archive != raw_archive:
         ctx.delete(archive)
         ctx.file(archive, trimmed_archive, executable = False)
+    _refuse_archive_bytes(trimmed_archive, name)
     ctx.extract(archive, output = name)
     ctx.delete(archive)
     _check_package_symlinks(ctx, name, name)
@@ -78,6 +80,7 @@ def _fetch_git_member(ctx, member, name):
     archive_path = ctx.path("_" + name + ".tar")
     spec = member["resolved_ref"] if member["path"] == "." else member["resolved_ref"] + ":" + member["path"]
     git_materialize(ctx, bare_rel, member["resolved_ref"], archive_path, spec, "pub_lock_scc_package %s" % name)
+    _refuse_archive_bytes(ctx.read(archive_path, watch = "no"), name)
     ctx.extract(archive_path, output = name)
     ctx.delete(archive_path)
     ctx.delete(ctx.path(bare_rel))

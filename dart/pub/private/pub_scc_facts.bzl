@@ -33,8 +33,9 @@ fetch orchestration in `//dart/pub:extensions.bzl` and `read_scope_pubspec`
 below — stay thin wrappers over these.
 
 Facts only change the extension's own planning input. The spokes (hosted,
-git, and merged-cycle repositories) still fetch by the lock's sha256 or ref
-and still run the full `check_package_symlinks` walk.
+git, and merged-cycle repositories) still fetch by the lock's sha256 or ref,
+still refuse hostile archive headers before extracting, and still run the
+full `check_package_symlinks` walk.
 """
 
 load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps")
