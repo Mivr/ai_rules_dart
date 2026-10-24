@@ -429,6 +429,47 @@ def _flow_scan_hash(ch, prev, scan, res):
         res["hash_flag"] = True
         res["stopped"] = True
 
+def _flow_scan_struct(ch, nxt, scan, res):
+    """Scans one bracket, separator or value character outside quotes."""
+    if ch in ["[", "{"]:
+        scan["depth"] += 1
+        _flow_scan_sep(scan)
+    elif ch in ["]", "}"]:
+        if scan["depth"] > 0:
+            scan["depth"] -= 1
+        _flow_scan_sep(scan)
+        scan["have"] = True
+    elif ch == ",":
+        _flow_scan_sep(scan)
+    elif ch == ":" and (nxt in [" ", "\t"] or nxt == ""):
+        _flow_scan_sep(scan)
+    else:
+        scan["plain"] = True
+        scan["have"] = True
+    res["kept"].append(ch)
+
+def _flow_scan_open(ch, nxt, prev, scan, res):
+    """Scans one character where a scalar may start. Returns the new previous character."""
+    if ch == "'" and not scan["plain"]:
+        scan["single"] = True
+        res["kept"].append(ch)
+    elif ch == '"' and not scan["plain"]:
+        scan["double"] = True
+        res["kept"].append(ch)
+    elif ch == "#":
+        _flow_scan_hash(ch, prev, scan, res)
+        if res["stopped"]:
+            return prev
+    elif ch == "%" and not scan["plain"]:
+        res["pct_flag"] = True
+        res["stopped"] = True
+        return prev
+    elif ch in [" ", "\t"]:
+        res["kept"].append(ch)
+    else:
+        _flow_scan_struct(ch, nxt, scan, res)
+    return ch
+
 def _flow_scan_text(text, scan, res):
     """Scans one fold line, updating `scan` and collecting into `res`.
 
@@ -455,47 +496,8 @@ def _flow_scan_text(text, scan, res):
         elif scan["single"] or scan["double"]:
             _flow_scan_quoted(ch, nxt, scan, res)
             prev = ch
-        elif ch == "'" and not scan["plain"]:
-            scan["single"] = True
-            res["kept"].append(ch)
-            prev = ch
-        elif ch == '"' and not scan["plain"]:
-            scan["double"] = True
-            res["kept"].append(ch)
-            prev = ch
-        elif ch == "#":
-            _flow_scan_hash(ch, prev, scan, res)
-        elif ch == "%" and not scan["plain"]:
-            res["pct_flag"] = True
-            res["stopped"] = True
-        elif ch in [" ", "\t"]:
-            res["kept"].append(ch)
-            prev = ch
-        elif ch in ["[", "{"]:
-            scan["depth"] += 1
-            _flow_scan_sep(scan)
-            res["kept"].append(ch)
-            prev = ch
-        elif ch in ["]", "}"]:
-            if scan["depth"] > 0:
-                scan["depth"] -= 1
-            _flow_scan_sep(scan)
-            scan["have"] = True
-            res["kept"].append(ch)
-            prev = ch
-        elif ch == ",":
-            _flow_scan_sep(scan)
-            res["kept"].append(ch)
-            prev = ch
-        elif ch == ":" and (nxt in [" ", "\t"] or nxt == ""):
-            _flow_scan_sep(scan)
-            res["kept"].append(ch)
-            prev = ch
         else:
-            scan["plain"] = True
-            scan["have"] = True
-            res["kept"].append(ch)
-            prev = ch
+            prev = _flow_scan_open(ch, nxt, prev, scan, res)
 
 def _flow_fold_join(out, kept, cont):
     """Joins one kept line onto `out`: directly after a backslash continuation, else with one space."""
