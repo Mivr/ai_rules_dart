@@ -234,3 +234,4 @@ jobs:
           name: shard-logs-macos-shard-${{ matrix.shard }}
           path: ${{ runner.temp }}/shard-logs
           if-no-files-found: warn
+          retention-days: 3

@@ -342,6 +342,7 @@ jobs:
           name: shard-logs-${{ matrix.os }}-shard-${{ matrix.shard }}
           path: ${{ runner.temp }}/shard-logs
           if-no-files-found: warn
+          retention-days: 3
       # The pub symlink guard (`dart/pub/private/pub_symlink.bzl`) must not
       # depend on host tools or PATH. Every step above runs Bazel under bash
       # (see the Test step's `shell: bash`), where Git Bash's GNU
