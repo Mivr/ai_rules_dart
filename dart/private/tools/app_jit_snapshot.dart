@@ -78,11 +78,15 @@
 // without O_CREAT, so a second user opens the first user's 0666 lock even
 // under `fs.protected_regular`; a missing lock is published at 0666 through a
 // uniquely named temporary linked over the lock path, so it never exists at a
-// narrower mode whatever the umask or the scheduling. A symlink, directory,
-// FIFO or other non-regular entry at the lock path is never followed and
-// never created through, and fails the action instead — a shared lock would
-// let two trainings hold it at once, and the second would delete the first's
-// live training directory as its own. A lock held past the deadline fails the
+// narrower mode whatever the umask or the scheduling. Only a regular file with
+// link count 1 is kept (never written and never chmodded); a symlink,
+// directory, FIFO, hard link or other entry at the lock path is never followed
+// and never created through, and fails the action instead — a shared lock
+// would let two trainings hold it at once, and the second would delete the
+// first's live training directory as its own. A taken lock is re-checked
+// against its path before it is trusted (a /tmp cleaner may have deleted or
+// replaced it while it was taken) and reopened on a mismatch. A lock held
+// past the deadline fails the
 // action the same way (see [_openConstantLock]): the failure names the lock,
 // the holder's PID, the deadline, and the remedies. Either failure names the path, the
 // entry's type and its owner (the uid, plus the user name where the host
@@ -689,6 +693,13 @@ bool _lockChmodRemedy = false;
 /// the mode-denied remedy names us rather than "its owner".
 bool _lockOwnEntry = false;
 
+/// How many times [_openConstantLock] opens the lock per call: the first open
+/// plus reopenings when the held lock no longer names the lock path (see
+/// [jitFdMatchesPath]). A mismatch is all but impossible (only a concurrent
+/// delete-and-recreate of the lock path causes one); giving up still fails
+/// closed.
+const _lockOpenAttempts = 3;
+
 /// Opens the lock serializing trainings at [constantTrainDir] and takes it
 /// exclusively, returning the held lock's file descriptor.
 ///
@@ -698,11 +709,18 @@ bool _lockOwnEntry = false;
 /// opens the first user's 0666 lock; a missing lock is published at 0666
 /// through a uniquely named temporary linked over the lock path, whatever the
 /// umask or the scheduling. Only a regular
-/// file is kept (never written: a pre-existing lock keeps its content), and a
-/// lock of our own is repaired to 0666 through the descriptor. Null when the
+/// file with link count 1 is kept (never written and never chmodded: a
+/// pre-existing lock keeps its content and its mode). Null when the
 /// lock cannot be opened or is not a regular file; the failure detail and its
 /// remedy stay in [_lockDetail], [_lockChmodRemedy] and [_lockOwnEntry] for
 /// the fail-closed error (see [_acquireConstantDir]).
+///
+/// A taken lock is re-checked against its path before it is trusted (see
+/// [jitFdMatchesPath]): the lock may have been deleted or replaced while it
+/// was taken (a /tmp cleaner, another publisher), and a descriptor that no
+/// longer names the entry at the path serializes nothing. On a mismatch the
+/// descriptor is dropped and the lock reopened, up to [_lockOpenAttempts]
+/// opens; giving up fails closed with the entry the path names then.
 ///
 /// A contended lock never blocks forever: the exclusive take is a
 /// non-blocking `fcntl` try-lock (see [jitTryExclusiveLock]), polled with
@@ -719,28 +737,54 @@ int? _openConstantLock() {
   _lockDetail = '';
   _lockChmodRemedy = false;
   _lockOwnEntry = false;
-  final opened = jitOpenLock(constantTrainLock);
-  if (opened.fd < 0) {
-    _lockDetail = opened.detail;
-    _lockChmodRemedy = opened.chmodRemedy;
-    _lockOwnEntry = opened.ownEntry;
-    return null;
+  for (var attempt = 0; attempt < _lockOpenAttempts; attempt++) {
+    final opened = jitOpenLock(constantTrainLock);
+    if (opened.fd < 0) {
+      _lockDetail = opened.detail;
+      _lockChmodRemedy = opened.chmodRemedy;
+      _lockOwnEntry = opened.ownEntry;
+      return null;
+    }
+    final fd = opened.fd;
+    if (!_waitExclusive(fd)) {
+      _lockWaitTimedOut = true;
+      _lockHolderPidAtDeadline = jitLockHolderPid(constantTrainLock);
+      jitUnlockAndClose(fd);
+      return null;
+    }
+    // The lock may have been deleted or replaced while it was taken: a
+    // descriptor that no longer names the entry at the path serializes
+    // nothing, and the directory claimed under it could be another training's
+    // live one. Drop it and reopen on a mismatch.
+    if (jitFdMatchesPath(fd, constantTrainLock)) return fd;
+    jitUnlockAndClose(fd);
   }
-  final fd = opened.fd;
-  if (jitTryExclusiveLock(fd)) return fd;
+  _lockDetail = jitDescribeEntry(constantTrainLock);
+  _lockChmodRemedy = false;
+  _lockOwnEntry = false;
+  return null;
+}
+
+/// Takes the exclusive lock on [fd] (see [_openConstantLock]): a non-blocking
+/// `fcntl` try-lock polled with sleeps backing off from 50 ms to 1 s until
+/// [lockTimeoutSecs] seconds pass. After 10 s of waiting, and then every 60 s,
+/// one notice names the lock path and the holder's PID (or "unknown" where it
+/// cannot be read). True when [fd] now holds the lock.
+bool _waitExclusive(int fd) {
+  if (jitTryExclusiveLock(fd)) return true;
   final stopwatch = Stopwatch()..start();
   final deadline = Duration(seconds: lockTimeoutSecs);
   var sleepMs = 50;
   var nextNotice = const Duration(seconds: 10);
   for (;;) {
     final remaining = deadline - stopwatch.elapsed;
-    if (remaining <= Duration.zero) break;
+    if (remaining <= Duration.zero) return false;
     sleep(
       remaining < Duration(milliseconds: sleepMs)
           ? remaining
           : Duration(milliseconds: sleepMs),
     );
-    if (jitTryExclusiveLock(fd)) return fd;
+    if (jitTryExclusiveLock(fd)) return true;
     sleepMs = sleepMs >= 500 ? 1000 : sleepMs * 2;
     if (stopwatch.elapsed >= nextNotice) {
       final holder = jitLockHolderPid(constantTrainLock);
@@ -751,10 +795,6 @@ int? _openConstantLock() {
       nextNotice += const Duration(seconds: 60);
     }
   }
-  _lockWaitTimedOut = true;
-  _lockHolderPidAtDeadline = jitLockHolderPid(constantTrainLock);
-  jitUnlockAndClose(fd);
-  return null;
 }
 
 /// Deletes any stale entry at [path] without reading its content or following

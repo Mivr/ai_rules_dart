@@ -30,9 +30,17 @@ import 'dart:math';
 import 'dart:typed_data';
 
 /// A path-based stat result: the entry kind (see [jitEntryKind]), its owner
-/// uid, its full POSIX mode and its hard-link count, without following
-/// symlinks.
-typedef JitStat = ({String kind, int uid, int mode, int nlink});
+/// uid, its full POSIX mode, its hard-link count and its file identity (see
+/// [JitFileId]), without following symlinks.
+typedef JitStat = ({String kind, int uid, int mode, int nlink, JitFileId id});
+
+/// A file identity for the held-lock re-check (see [jitFdMatchesPath]): the
+/// device and inode the stat layouts report, without following symlinks. The
+/// halves' meaning is layout-specific (`statx` reports the device major and
+/// minor numbers, the `struct stat` layouts the device number's low and high
+/// halves), so an id only ever compares against one from the same call family
+/// on the same host; any divergence fails closed.
+typedef JitFileId = ({int devA, int devB, int inoLo, int inoHi});
 
 /// The flags opening the lock: without O_CREAT for an existing lock, with
 /// O_CREAT|O_EXCL to create a missing one. Both carry O_NOFOLLOW and
@@ -168,8 +176,9 @@ String jitFstatSymbol({required bool isMacOS, required bool isX64}) {
 /// Decodes 64 bytes of Linux 64-bit `struct stat` (see [jitLinuxStatOffsets]):
 /// a pure function of the bytes and the ABI, so tests pin the layout without
 /// the syscall. The link count is 64 bits wide; only its low half is kept (no
-/// host links a file more than 2^32 times). Null on a 32-bit ABI (see
-/// [jitLinuxStatOffsets]).
+/// host links a file more than 2^32 times). The identity is the device
+/// number's halves (u64 at 0) with the inode (u64 at 8). Null on a 32-bit ABI
+/// (see [jitLinuxStatOffsets]).
 JitStat? jitDecodeLinuxStat(List<int> bytes, {required ffi.Abi abi}) {
   final offsets = jitLinuxStatOffsets(abi: abi);
   if (offsets == null) return null;
@@ -179,6 +188,12 @@ JitStat? jitDecodeLinuxStat(List<int> bytes, {required ffi.Abi abi}) {
     uid: _jitU32(bytes, offsets.uid),
     mode: mode,
     nlink: _jitU32(bytes, offsets.nlink),
+    id: (
+      devA: _jitU32(bytes, 0),
+      devB: _jitU32(bytes, 4),
+      inoLo: _jitU32(bytes, 8),
+      inoHi: _jitU32(bytes, 12),
+    ),
   );
 }
 
@@ -391,7 +406,8 @@ JitStat? _jitLinuxStatPath(
 
 /// Decodes 64 bytes of `struct statx` (Linux, architecture-independent; see
 /// [jitStatEntry]): a pure function of the bytes, shared by the path and
-/// descriptor stats.
+/// descriptor stats. The identity is the device major and minor (u32 at 136
+/// and 140) with the inode (u64 at 32).
 JitStat _jitDecodeStatx(List<int> bytes) {
   final mode = _jitU16(bytes, 28);
   return (
@@ -399,11 +415,19 @@ JitStat _jitDecodeStatx(List<int> bytes) {
     uid: _jitU32(bytes, 20),
     mode: mode,
     nlink: _jitU32(bytes, 16),
+    id: (
+      devA: _jitU32(bytes, 136),
+      devB: _jitU32(bytes, 140),
+      inoLo: _jitU32(bytes, 32),
+      inoHi: _jitU32(bytes, 36),
+    ),
   );
 }
 
 /// Decodes 64 bytes of macOS 64-bit `struct stat` (see [jitStatEntry]): a pure
-/// function of the bytes, shared by the path and descriptor stats.
+/// function of the bytes, shared by the path and descriptor stats. The
+/// identity is the device number's halves (u64 at 0; read unsigned, compared
+/// as bits) with the inode (u64 at 8).
 JitStat _jitDecodeMacStat(List<int> bytes) {
   final mode = _jitU16(bytes, 4);
   return (
@@ -411,6 +435,12 @@ JitStat _jitDecodeMacStat(List<int> bytes) {
     uid: _jitU32(bytes, 16),
     mode: mode,
     nlink: _jitU16(bytes, 6),
+    id: (
+      devA: _jitU32(bytes, 0),
+      devB: _jitU32(bytes, 4),
+      inoLo: _jitU32(bytes, 8),
+      inoHi: _jitU32(bytes, 12),
+    ),
   );
 }
 
@@ -827,6 +857,33 @@ JitLockOpen _jitAdoptFd(ffi.DynamicLibrary lib, String path, int fd) {
     return _jitLockFailure(path, accessDenied: false);
   }
   return (fd: fd, detail: '', chmodRemedy: false, ownEntry: true);
+}
+
+/// Whether [fd] still names the entry at [path]: the descriptor's own device
+/// and inode against the path's, without following symlinks on either side.
+/// False where either side cannot be statted: the caller reopens rather than
+/// trusting an unverified lock. Both sides consult the same call family on any
+/// host (see [_jitFstatFd] and [jitStatEntry]), so equal ids name the same
+/// entry; any divergence fails closed.
+bool jitFdMatchesPath(int fd, String path) {
+  if (Platform.isWindows || fd < 0) return false;
+  final lib = ffi.DynamicLibrary.process();
+  JitStat? held;
+  try {
+    held = _jitFstatFd(lib, fd);
+  } on ArgumentError {
+    // This libc has no stat call for a descriptor: nothing verified.
+    held = null;
+  }
+  if (held == null) return false;
+  final current = jitStatEntry(path);
+  if (current == null) return false;
+  final a = held.id;
+  final b = current.id;
+  return a.devA == b.devA &&
+      a.devB == b.devB &&
+      a.inoLo == b.inoLo &&
+      a.inoHi == b.inoHi;
 }
 
 /// Stats an open descriptor itself: `statx` with `AT_EMPTY_PATH` on Linux

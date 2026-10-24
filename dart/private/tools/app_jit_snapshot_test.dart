@@ -2301,6 +2301,84 @@ void main(List<String> args) {
     expect(victim.readAsStringSync(), 'private');
   }, skip: Platform.isWindows ? posixOnlyReason : false);
 
+  test('jitFdMatchesPath trusts only a descriptor naming the lock path', () {
+    // A held lock may have been deleted or replaced while it was taken (a /tmp
+    // cleaner): a descriptor that no longer names the entry at the path
+    // serializes nothing, so the caller reopens instead of trusting it. The
+    // replacement arrives by rename, so both inodes live at once and the ids
+    // cannot alias. Same-uid (see the file header).
+    final lockPath = '${tmp.path}/match.lock';
+    final opened = locks.jitCreateAndPublishLock(lockPath);
+    try {
+      expect(opened.fd, greaterThanOrEqualTo(0), reason: 'lock opens');
+      expect(
+        locks.jitFdMatchesPath(opened.fd, lockPath),
+        isTrue,
+        reason: 'held lock names its path',
+      );
+      File(lockPath).deleteSync();
+      expect(
+        locks.jitFdMatchesPath(opened.fd, lockPath),
+        isFalse,
+        reason: 'deleted lock no longer matches',
+      );
+      final replacement = File('${tmp.path}/match_replacement')
+        ..writeAsStringSync('replacement');
+      replacement.renameSync(lockPath);
+      expect(
+        locks.jitFdMatchesPath(opened.fd, lockPath),
+        isFalse,
+        reason: 'replaced lock no longer matches',
+      );
+    } finally {
+      locks.jitUnlockAndClose(opened.fd);
+    }
+    expect(locks.jitFdMatchesPath(-1, lockPath), isFalse);
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('held lock that stops matching its path fails closed', () {
+    // Forcing the held-lock re-check to fail pins the wiring: every opened
+    // lock is dropped and reopened, and giving up fails the action instead of
+    // training in a directory another training owns (the tool exits on
+    // failure, so it runs in a subprocess).
+    final tool = stagePatchedTool(
+      'if (jitFdMatchesPath(fd, constantTrainLock)) return fd;',
+      'if (false) return fd;',
+    );
+    final dill = compileDill(
+      'void main(List<String> args) {\n  print(10000);\n}\n',
+      'rematch_train',
+    );
+    List<String> toolArgs(String snapshotOut, {bool fallback = false}) => [
+      tool,
+      '--dart=${Platform.resolvedExecutable}',
+      '--snapshot=$snapshotOut',
+      if (fallback) '--fallback-allowed',
+      '--copy=input.dill=$dill',
+      '--',
+      'input.dill',
+    ];
+    final outJit = '${tmp.path}/rematch_out/app.jit';
+    final denied = Process.runSync(
+      Platform.resolvedExecutable,
+      toolArgs(outJit),
+      environment: constantTrainEnv(),
+    );
+    expect(denied.exitCode, isNot(0), reason: 'unmatched lock must fail');
+    expect(File(outJit).existsSync(), isFalse);
+    final err = denied.stderr as String;
+    expect(err, contains('cannot train in ${snapshot.constantTrainDir}'));
+    expect(err, contains(snapshot.constantTrainLock));
+    final allowedOut = '${tmp.path}/rematch_allowed/app.jit';
+    final allowed = Process.runSync(
+      Platform.resolvedExecutable,
+      toolArgs(allowedOut, fallback: true),
+      environment: constantTrainEnv(),
+    );
+    expect(allowed.exitCode, 0, reason: '${allowed.stderr}');
+    expect(File(allowedOut).existsSync(), isTrue);
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
   test('racy claim at the constant training path fails closed', () {
     // Another local user creating the training directory in the
     // delete-to-create window must not hand us a directory they own: the
