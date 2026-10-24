@@ -50,9 +50,9 @@ Supported:
   outside quotes starts a comment to the end of the line, whether the
   value before it is complete or not, so pub only fails where the comment
   swallows a token the flow needs; a backslash at a double-quoted line's
-  end continues the scalar with no space while a backslash at a
-  single-quoted line's end continues on the next line verbatim, and a
-  backslash with trailing space stays literal. A comment that ends a line
+  end continues the scalar with no space while elsewhere a backslash is
+  an ordinary character, and a backslash with trailing space stays
+  literal. A comment that ends a line
   inside a plain scalar and a `%` outside quotes and plain scalars are not
   supported, and fail naming the line.
 - block scalars `|` and `>` with chomping and indentation indicators
@@ -552,12 +552,12 @@ def _flow_fold_backslash(out, kept, trailing, scan):
     """Folds a quoted line's end into `out`. Returns (out, mode).
 
     `kept` is the rstripped scanned line and `trailing` its trailing
-    whitespace. A `\\` at the line's end inside quotes continues the scalar:
-    in double quotes the backslash is dropped and the next line joins
-    directly, in single quotes the backslash is dropped and the next line
-    joins verbatim with its indentation kept, as pub keeps it. A `\\` with
-    trailing space stays literal in both, as pub keeps it, and the next
-    line joins with one space. `mode` is "direct", "verbatim" or "space".
+    whitespace. A `\\` at the line's end inside double quotes continues the
+    scalar: the backslash is dropped and the next line joins directly.
+    Elsewhere a backslash is an ordinary character, as pub keeps it, and
+    the break folds to one space. A `\\` with trailing space stays literal
+    in both, as pub keeps it, and the next line joins with one space.
+    `mode` is "direct" or "space".
     """
     if not scan["single"] and not scan["double"]:
         return out, "space"
@@ -576,13 +576,12 @@ def _flow_fold_backslash(out, kept, trailing, scan):
     if scan["double"]:
         scan["escaped"] = False
         return out[:len(out) - 1], "direct"
-    return out[:len(out) - 1], "verbatim"
+    return out, "space"
 
 def _flow_fold_blank(scan, st):
     """Folds one blank line into `st`, ending any backslash continuation."""
-    if st["cont"] or st["verbatim"]:
+    if st["cont"]:
         st["cont"] = False
-        st["verbatim"] = False
         st["out"] += "\n"
         return
     if scan["single"] or scan["double"]:
@@ -597,7 +596,7 @@ def _flow_fold_closer(kept):
         return True
     return first == ":" and (len(kept) == 1 or kept[1:2] in [" ", "\t"])
 
-def _flow_fold_kept(scan, st, indent, res, raw_kept, line):
+def _flow_fold_kept(scan, st, res, raw_kept, line):
     """Folds one scanned content line into `st`. Returns a problem pair, or None."""
     kept = raw_kept.rstrip()
     if kept == "":
@@ -610,31 +609,24 @@ def _flow_fold_kept(scan, st, indent, res, raw_kept, line):
     st["comment_pending"] = res["plain_comment"]
     if res["plain_comment"]:
         st["pending_line"] = line
-    if st["verbatim"]:
-        st["verbatim"] = False
-        st["out"] += "\n" + indent + kept
-    else:
-        st["out"] = _flow_fold_join(st["out"], kept, st["cont"])
+    st["out"] = _flow_fold_join(st["out"], kept, st["cont"])
     st["cont"] = False
     trailing = raw_kept[len(kept):]
     out, mode = _flow_fold_backslash(st["out"], kept, trailing, scan)
     st["out"] = out
     if mode == "direct":
         st["cont"] = True
-    elif mode == "verbatim":
-        st["verbatim"] = True
     return None
 
 def _flow_fold_lines(items, scan):
     """Folds raw flow lines as pub folds them. Returns (folded, problem).
 
     `items` holds (1-based line, raw line) pairs with "" for blank lines;
-    leading indentation is dropped, except that a line after a
-    single-quoted backslash continuation keeps its indentation verbatim, as
-    pub keeps it. A break between content lines is one space, except after
-    a double-quoted backslash continuation, which joins with no space; a
-    blank line after a continuation, and each blank line inside quotes, is
-    one "\\n", while outside quotes a blank run is one "\\n". A `#` outside
+    leading indentation is dropped. A break between content lines is one
+    space, except after a double-quoted backslash continuation, which joins
+    with no space; a blank line after a continuation, and each blank line
+    inside quotes, is one "\\n", while outside quotes a blank run is one
+    "\\n". A `#` outside
     quotes is a comment to the end of the line, whether the value before it
     is complete or not: pub only fails where the comment swallows a token
     the flow needs. A comment that ends a line inside a plain scalar poisons
@@ -642,7 +634,7 @@ def _flow_fold_lines(items, scan):
     a separating `:`) or pub rejects the flow. `problem` is None, or a
     (kind, line) pair the caller reports.
     """
-    st = {"out": "", "cont": False, "verbatim": False, "comment_pending": False, "pending_line": 0}
+    st = {"out": "", "cont": False, "comment_pending": False, "pending_line": 0}
     for item in items:
         line = item[0]
         content = item[1].lstrip(" \t")
@@ -653,7 +645,7 @@ def _flow_fold_lines(items, scan):
         _flow_scan_text(content, scan, res)
         if res["pct_flag"]:
             return "", ("directive", line)
-        problem = _flow_fold_kept(scan, st, item[1][:len(item[1]) - len(content)], res, "".join(res["kept"]), line)
+        problem = _flow_fold_kept(scan, st, res, "".join(res["kept"]), line)
         if problem != None:
             return "", problem
     return st["out"], None
