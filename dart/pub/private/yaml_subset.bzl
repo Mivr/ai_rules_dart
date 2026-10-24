@@ -1326,6 +1326,26 @@ def _quote_track(ch, st):
         return True
     return False
 
+def _depth_track(ch, counts):
+    """Counts one bracket character into `counts`, doing nothing when None.
+
+    `counts` carries the brace and bracket depth.
+    """
+    if counts == None:
+        return
+    if ch == "{":
+        counts["braces"] += 1
+    elif ch == "}":
+        counts["braces"] -= 1
+    elif ch == "[":
+        counts["brackets"] += 1
+    elif ch == "]":
+        counts["brackets"] -= 1
+
+def _depth_top(counts):
+    """Returns whether `counts` is None or both depths are zero."""
+    return counts == None or (counts["braces"] == 0 and counts["brackets"] == 0)
+
 def _sep_track(ch, nxt, st, counts):
     """Tracks scalar-start state for a character outside quotes.
 
@@ -1338,21 +1358,14 @@ def _sep_track(ch, nxt, st, counts):
         st["affix"] = True
         st["at_start"] = False
     elif ch in ["[", "{", ","]:
-        if counts != None and ch == "{":
-            counts["braces"] += 1
-        if counts != None and ch == "[":
-            counts["brackets"] += 1
+        _depth_track(ch, counts)
         st["at_start"] = True
         st["affix"] = False
     elif ch in ["}", "]"]:
-        if counts != None and ch == "}":
-            counts["braces"] -= 1
-        if counts != None and ch == "]":
-            counts["brackets"] -= 1
-    elif ch == ":" and nxt in [" ", "\t", ""]:
-        if counts == None or (counts["braces"] == 0 and counts["brackets"] == 0):
-            st["at_start"] = True
-            st["affix"] = False
+        _depth_track(ch, counts)
+    elif ch == ":" and nxt in [" ", "\t", ""] and _depth_top(counts):
+        st["at_start"] = True
+        st["affix"] = False
     elif ch == "-" and nxt in [" ", "\t", ""]:
         st["at_start"] = True
         st["affix"] = False
