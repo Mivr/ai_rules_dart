@@ -8,7 +8,7 @@ documents; these cases pin the constructs it covers.
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 
 # buildifier: disable=bzl-visibility
-load("//dart/pub/private:yaml_subset.bzl", "document_problems", "parse_document")
+load("//dart/pub/private:yaml_subset.bzl", "document_problems", "document_value_and_problems", "parse_document")
 load(":small_suite.bzl", "small_unittest_suite")
 
 def _block_mapping_test_impl(ctx):
@@ -32,9 +32,65 @@ def _block_sequence_test_impl(ctx):
 def _same_indent_sequence_test_impl(ctx):
     env = unittest.begin(ctx)
 
-    # A sequence under a key at the key's own indent is dropped, as yaml.bzl
-    # drops it: the dash line is not an entry of the mapping.
-    asserts.equals(env, {"a": None, "b": 1}, parse_document("a:\n- x\nb: 1\n"))
+    # A sequence at its key's own column is the key's value (M-12).
+    asserts.equals(env, {"a": ["x"], "b": 1}, parse_document("a:\n- x\nb: 1\n"))
+    return unittest.end(env)
+
+def _compact_sequence_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Compact sequences equal their indented twins at three depths (M-12).
+    asserts.equals(
+        env,
+        parse_document("topics:\n  - a\n  - b\n"),
+        parse_document("topics:\n- a\n- b\n"),
+    )
+    asserts.equals(
+        env,
+        parse_document("flutter:\n  assets:\n    - a.png\n    - b.png\n"),
+        parse_document("flutter:\n  assets:\n  - a.png\n  - b.png\n"),
+    )
+    asserts.equals(
+        env,
+        parse_document("fonts:\n  - family: F\n    fonts:\n      - asset: f.ttf\n      - asset: g.ttf\n"),
+        parse_document("fonts:\n  - family: F\n    fonts:\n    - asset: f.ttf\n    - asset: g.ttf\n"),
+    )
+
+    # Blank and comment lines inside the run change nothing.
+    asserts.equals(
+        env,
+        parse_document("topics:\n  - a\n  - b\n"),
+        parse_document("topics:\n\n- a\n# note\n- b\n\n"),
+    )
+    asserts.equals(env, {"topics": ["a", "b"]}, parse_document("topics:\n- a\n- b\n"))
+    return unittest.end(env)
+
+def _folded_scalar_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Scalars starting after `key:` fold with single spaces (M-12).
+    asserts.equals(env, {"d": "a long description continued"}, parse_document("d:\n  a long description\n  continued\n"))
+    asserts.equals(env, {"d": "foo bar"}, parse_document("d: foo\n  bar\n"))
+    asserts.equals(env, {"d": "quoted value"}, parse_document("d:\n  'quoted value'\n"))
+    asserts.equals(env, {"d": "quoted value"}, parse_document('d:\n  "quoted value"\n'))
+    asserts.equals(env, {"d": "next line scalar"}, parse_document("d:\n  next line scalar\n"))
+    return unittest.end(env)
+
+def _quoted_multiline_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A quoted scalar whose closing quote is on a later, more-indented line
+    # folds the break to one space, then unquotes as on one line (M-12).
+    asserts.equals(env, {"a": "foo bar"}, parse_document("a: \"foo\n  bar\"\n"))
+    asserts.equals(env, {"a": "foo bar"}, parse_document("a: 'foo\n  bar'\n"))
+    asserts.equals(env, {"a": "a\tb c"}, parse_document("a: \"a\\tb\n  c\"\n"))
+    asserts.equals(env, {"a": "one two three"}, parse_document("a: \"one\n  two\n  three\"\n"))
+    asserts.equals(env, {"d": "foo bar"}, parse_document("d:\n  \"foo\n  bar\"\n"))
+
+    # A quoted scalar that is never closed is a problem naming its line.
+    value, problems = document_value_and_problems("a: \"foo\n  bar\n", True)
+    asserts.equals(env, None, value["a"])
+    asserts.true(env, len(problems) == 1 and "line 1" in problems[0])
     return unittest.end(env)
 
 def _comment_test_impl(ctx):
@@ -121,7 +177,6 @@ def _flow_collection_test_impl(ctx):
             "d": {},
             "e": ["a"],
             "f": ["q", "r"],
-            "g": None,
             "h": 1,
         },
         parse_document(
@@ -131,10 +186,20 @@ def _flow_collection_test_impl(ctx):
             "d: {}\n" +
             "e: [a,]\n" +
             "f: [\"q\", 'r']\n" +
-            "g: [1, 2\n" +
             "h: 1\n",
         ),
     )
+
+    # An unreadable flow value is a problem naming the line; leniently it
+    # reads as None (M-12).
+    asserts.equals(
+        env,
+        ["unreadable flow value at line 1: \"[1, 2\""],
+        document_problems("a: [1, 2\nb: 2\n", True),
+    )
+    value, problems = document_value_and_problems("a: [1, 2\nb: 2\n", False)
+    asserts.equals(env, {"a": None, "b": 2}, value)
+    asserts.equals(env, [], problems)
     return unittest.end(env)
 
 def _block_scalar_test_impl(ctx):
@@ -161,12 +226,18 @@ def _block_scalar_test_impl(ctx):
 def _plain_continuation_test_impl(ctx):
     env = unittest.begin(ctx)
 
-    # A continuation line that looks like a mapping entry ends the scalar. The
-    # entry itself is then at the wrong indent and is skipped, as in yaml.bzl.
     asserts.equals(
         env,
         {"a": "one two", "b": "y"},
-        parse_document("a: one\n  two\n  three: x\nb: y\n"),
+        parse_document("a: one\n  two\nb: y\n"),
+    )
+
+    # A continuation line that looks like a mapping entry ends the scalar and
+    # is a problem naming the line (M-12).
+    asserts.equals(
+        env,
+        ["unreadable line 3: \"three: x\""],
+        document_problems("a: one\n  two\n  three: x\nb: y\n", True),
     )
     asserts.equals(env, {"a": "plain\ntext"}, parse_document("a: plain\n\n  text\n"))
     return unittest.end(env)
@@ -231,10 +302,10 @@ def _duplicate_key_test_impl(ctx):
 def _duplicate_flow_key_test_impl(ctx):
     env = unittest.begin(ctx)
 
-    # Flow mappings fail on duplicates too; the parser knows no line there.
-    asserts.equals(env, ["duplicate key \"x\" in flow mapping"], document_problems("a: {x: 1, x: 2}\n"))
-    asserts.equals(env, ["duplicate key \"y\" in flow mapping"], document_problems("a: {x: {y: 1, y: 2}}\n"))
-    asserts.equals(env, ["duplicate key \"a\" in flow mapping"], document_problems("{\"a\": 1, \"a\": 2}"))
+    # Flow mappings fail on duplicates too, naming the line (M-12).
+    asserts.equals(env, ["duplicate key \"x\" in flow mapping at line 1"], document_problems("a: {x: 1, x: 2}\n"))
+    asserts.equals(env, ["duplicate key \"y\" in flow mapping at line 1"], document_problems("a: {x: {y: 1, y: 2}}\n"))
+    asserts.equals(env, ["duplicate key \"a\" in flow mapping at line 1"], document_problems("{\"a\": 1, \"a\": 2}"))
     asserts.equals(env, [], document_problems("a: {x: 1, y: 2}\n"))
     return unittest.end(env)
 
@@ -258,6 +329,11 @@ def _bom_test_impl(ctx):
         ["duplicate key \"a\" at line 2"],
         document_problems("\357\273\277a: 1\na: 2\n"),
     )
+
+    # A byte-order mark and CRLF line ends keep working (M-12).
+    asserts.equals(env, {"a": 1, "b": 2}, parse_document("\357\273\277a: 1\r\nb: 2\r\n"))
+    asserts.equals(env, [], document_problems("\357\273\277a: 1\r\nb: 2\r\n", True))
+    asserts.equals(env, {"t": ["a", "b"]}, parse_document("\357\273\277t:\r\n- a\r\n- b\r\n"))
     return unittest.end(env)
 
 def _strict_lines_test_impl(ctx):
@@ -292,8 +368,15 @@ def _strict_lines_test_impl(ctx):
 def _indentation_test_impl(ctx):
     env = unittest.begin(ctx)
 
-    # Entries at a different indent from the first entry are skipped.
-    asserts.equals(env, {"a": {"b": 1}}, parse_document("a:\n    b: 1\n  c: 2\n"))
+    # Entries at a different indent from the first entry are problems (M-12).
+    asserts.equals(
+        env,
+        ["unreadable line 3: \"c: 2\""],
+        document_problems("a:\n    b: 1\n  c: 2\n", True),
+    )
+    value, problems = document_value_and_problems("a:\n    b: 1\n  c: 2\n", False)
+    asserts.equals(env, {"a": {"b": 1}}, value)
+    asserts.equals(env, [], problems)
     asserts.equals(env, {"a": {"b": 1}}, parse_document("a:\n\tb: 1\n"))
     asserts.equals(env, {"a": 1, "b": 2}, parse_document("a: 1\r\nb: 2\r\n"))
     return unittest.end(env)
@@ -302,7 +385,14 @@ def _explicit_key_and_merge_test_impl(ctx):
     env = unittest.begin(ctx)
 
     # Divergences from yaml.bzl, recorded in the module docstring.
-    asserts.equals(env, {"b": 2}, parse_document("? a\n: 1\nb: 2\n"))
+    asserts.equals(
+        env,
+        ["unreadable line 1: \"? a\"", "unreadable line 2: \": 1\""],
+        document_problems("? a\n: 1\nb: 2\n", True),
+    )
+    value, problems = document_value_and_problems("? a\n: 1\nb: 2\n", False)
+    asserts.equals(env, {"b": 2}, value)
+    asserts.equals(env, [], problems)
     asserts.equals(
         env,
         {"base": {"x": 1}, "child": {"<<": {"x": 1}, "y": 2}},
@@ -313,7 +403,7 @@ def _explicit_key_and_merge_test_impl(ctx):
 def _malformed_input_test_impl(ctx):
     env = unittest.begin(ctx)
 
-    # Malformed input must not fail the build, whatever it returns.
+    # Malformed input never crashes the build; problems carry the line (M-12).
     for text in [
         "[",
         "{",
@@ -336,8 +426,39 @@ def _malformed_input_test_impl(ctx):
         "[1, 2] trailing",
         "{\"a\": 1",
     ]:
-        parse_document(text)
+        document_value_and_problems(text, True)
+        document_problems(text, True)
     asserts.true(env, True)
+    return unittest.end(env)
+
+def _unreadable_lines_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Every unreadable line is a problem naming its line; a dash in mapping
+    # position is never a key (M-12).
+    asserts.equals(
+        env,
+        ["duplicate key \"a\" at line 3"],
+        document_problems("name: x\na: 1\na: 2\n", True),
+    )
+    asserts.equals(
+        env,
+        ["unreadable line 2: \"no colon here\""],
+        document_problems("name: x\nno colon here\n", True),
+    )
+    asserts.equals(
+        env,
+        ["unreadable line 2: \"- stray\""],
+        document_problems("name: x\n- stray\n", True),
+    )
+    asserts.equals(
+        env,
+        ["unreadable line 2: \"- key: v\""],
+        document_problems("name: x\n- key: v\n", True),
+    )
+    value, problems = document_value_and_problems("name: x\n- stray\n", True)
+    asserts.equals(env, {"name": "x"}, value)
+    asserts.true(env, len(problems) == 1 and "line 2" in problems[0])
     return unittest.end(env)
 
 _t0_test = unittest.make(_block_mapping_test_impl)
@@ -362,6 +483,10 @@ _t18_test = unittest.make(_duplicate_flow_key_test_impl)
 _t19_test = unittest.make(_duplicate_sequence_key_test_impl)
 _t20_test = unittest.make(_bom_test_impl)
 _t21_test = unittest.make(_strict_lines_test_impl)
+_t22_test = unittest.make(_compact_sequence_test_impl)
+_t23_test = unittest.make(_folded_scalar_test_impl)
+_t24_test = unittest.make(_unreadable_lines_test_impl)
+_t25_test = unittest.make(_quoted_multiline_test_impl)
 
 def yaml_subset_test_suite(name):
     small_unittest_suite(
@@ -388,4 +513,8 @@ def yaml_subset_test_suite(name):
         _t19_test,
         _t20_test,
         _t21_test,
+        _t22_test,
+        _t23_test,
+        _t24_test,
+        _t25_test,
     )

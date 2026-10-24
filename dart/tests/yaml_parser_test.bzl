@@ -4,7 +4,7 @@ load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load("//dart:providers.bzl", "DartInfo")
 load("//dart/pub:extensions.bzl", "resolve_pub_packages")
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_package_sha256_error", "trim_gzip_trailing_nulls")
-load("//dart/pub:yaml_parser.bzl", "is_valid_sha256", "lock_package_error", "parse_pubspec_deps", "parse_pubspec_lock", "parse_pubspec_sdk_constraint", "pubspec_lock_error")
+load("//dart/pub:yaml_parser.bzl", "is_valid_sha256", "lock_package_error", "parse_pubspec_deps", "parse_pubspec_document", "parse_pubspec_document_error", "parse_pubspec_lock", "parse_pubspec_sdk_constraint", "pubspec_lock_error")
 
 # buildifier: disable=bzl-visibility
 load("//dart/pub/private:pub_repository.bzl", "pub_package_sha256_error")
@@ -196,8 +196,60 @@ def _parse_pubspec_deps_flow_test_impl(ctx):
         ["a", "b"],
         parse_pubspec_deps("name: x\ndependencies: {a: ^1.0.0, b: any}\n"),
     )
-    asserts.equals(env, [], parse_pubspec_deps("dependencies: []\n"))
-    asserts.equals(env, [], parse_pubspec_deps("- not a mapping\n"))
+    asserts.equals(env, [], parse_pubspec_deps("name: x\ndependencies: []\n"))
+
+    # A non-mapping root is an error naming the label and the line (M-12).
+    err = parse_pubspec_document_error("- not a mapping\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 1" in err)
+    return unittest.end(env)
+
+def _parse_pubspec_document_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Compact sequences and folded scalars read through the public entry (M-12).
+    asserts.equals(
+        env,
+        {"name": "x", "topics": ["a", "b"]},
+        parse_pubspec_document("name: x\ntopics:\n- a\n- b\n"),
+    )
+    asserts.equals(
+        env,
+        parse_pubspec_document("name: x\ntopics:\n  - a\n  - b\n"),
+        parse_pubspec_document("name: x\ntopics:\n- a\n- b\n"),
+    )
+    asserts.equals(
+        env,
+        "a long description continued",
+        parse_pubspec_document("name: x\ndescription:\n  a long description\n  continued\n")["description"],
+    )
+    asserts.equals(env, {}, parse_pubspec_document(""))
+    asserts.equals(env, {}, parse_pubspec_document("# only a comment\n"))
+
+    # A byte-order mark and CRLF line ends keep working.
+    asserts.equals(
+        env,
+        {"name": "x", "topics": ["a"]},
+        parse_pubspec_document("\357\273\277name: x\r\ntopics:\r\n- a\r\n"),
+    )
+    asserts.equals(env, None, parse_pubspec_document_error("name: x\ntopics:\n- a\n"))
+    return unittest.end(env)
+
+def _parse_pubspec_document_error_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Every failure names the package (or label) and the line (M-12).
+    err = parse_pubspec_document_error("name: x\na: 1\na: 2\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "x" in err and "//:pubspec.yaml" in err and "line 3" in err)
+    err = parse_pubspec_document_error("name: x\nno colon here\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "x" in err and "//:pubspec.yaml" in err and "line 2" in err)
+    err = parse_pubspec_document_error("name: x\n- stray\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "x" in err and "//:pubspec.yaml" in err and "line 2" in err)
+
+    # Without `name:` the message names the label.
+    err = parse_pubspec_document_error("a: 1\na: 2\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 2" in err)
+    err = parse_pubspec_document_error("- just\n- a\n- list\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 1" in err)
     return unittest.end(env)
 
 def _parse_pubspec_sdk_numeric_test_impl(ctx):
@@ -708,6 +760,8 @@ _t18_test = unittest.make(_parse_lock_non_mapping_entry_test_impl)
 _t19_test = unittest.make(_parse_lock_unreadable_line_test_impl)
 _t20_test = unittest.make(_parse_lock_duplicate_key_test_impl)
 _t21_test = unittest.make(_parse_lock_bom_test_impl)
+_t22_test = unittest.make(_parse_pubspec_document_test_impl)
+_t23_test = unittest.make(_parse_pubspec_document_error_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -739,6 +793,8 @@ def yaml_parser_test_suite(name):
         _t19_test,
         _t20_test,
         _t21_test,
+        _t22_test,
+        _t23_test,
     )
     native.test_suite(
         name = name,

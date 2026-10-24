@@ -11,19 +11,23 @@ lock-file output.
 Starlark has no recursion and no `while`, so the parser keeps an explicit
 stack of open containers and runs bounded `for` loops. Like pub's own YAML
 loader, it fails on duplicate keys in any mapping (block or flow, at any
-depth), naming the key and the line where known: a silently resolved
-duplicate would pin the wrong source or version. Other malformed input stays
-lenient as in yaml.bzl's default non-strict mode: `parse_document` skips
-lines it cannot place and reads an unreadable flow collection as None, while
-`document_problems` with strict lines reports every skipped line so lock
-files can fail closed. A leading byte-order mark is stripped, as pub accepts
+depth), naming the key and the line: a silently resolved duplicate would pin
+the wrong source or version. Any line it cannot place, including a `- ` line
+where a mapping entry is expected and an unreadable flow value, is a problem
+naming its 1-based line. `parse_document` fails on the first problem instead
+of returning partial data. `document_problems` with strict lines reports every
+such problem so lock files can fail closed; without strict lines it reports
+only duplicate keys. A leading byte-order mark is stripped, as pub accepts
 it.
 
 Supported:
 - block mappings and sequences nested by indentation, including `- key: v`
-  items, and children that start on the lines after `key:` or `-`
+  items, children that start on the lines after `key:` or `-`, and compact
+  sequences where `- ` entries sit at their key's own column
 - `#` comments, `---` and `...` markers, `%` directive lines (skipped)
-- plain, single-quoted and double-quoted scalars, with yaml.bzl's escapes
+- plain, single-quoted and double-quoted scalars, with yaml.bzl's escapes,
+  including scalars that start on the line after `key:` and fold with single
+  spaces
 - flow collections `[...]` and `{...}`, nested; on a line of their own they
   are read within that line, and a document that starts with one may span
   lines (JSON documents)
@@ -77,10 +81,9 @@ _YAML_TAG_PREFIX = "tag:yaml.org,2002:"
 def parse_document(content):
     """Returns the value of the first YAML document in `content`.
 
-    Fails on duplicate keys in any mapping, naming the key and the line
-    where known. Other malformed input is skipped as in yaml.bzl's default
-    non-strict mode; lock files that must fail on it use
-    `document_problems` with strict lines instead.
+    Fails on the first problem: duplicate keys, lines the parser cannot
+    place, and unreadable flow values, each naming its 1-based line. It
+    never returns partial data.
 
     Args:
         content: The text of a YAML stream. A leading byte-order mark is
@@ -89,19 +92,31 @@ def parse_document(content):
     Returns:
         The document's value, or None when the document is empty.
     """
-    value, problems = _parse_document(content, False)
+    value, problems = _parse_document(content, True)
     if problems:
         fail(problems[0])
     return value
 
-def document_problems(content, strict_lines = False):
-    """Reports what `parse_document` would skip or resolve silently.
+def document_value_and_problems(content, strict_lines = False):
+    """Parses one document without failing. Returns (value, problems).
 
-    Duplicate keys are always reported. Skipped lines (wrong indentation,
-    explicit keys, lines without a colon, unreadable flow values) are
-    reported only with strict lines, for lock files that must fail closed.
-    Blank lines, comments, directives and document markers are never
-    problems.
+    Args:
+        content: The text of a YAML stream.
+        strict_lines: Also report lines the parser cannot place.
+
+    Returns:
+        A tuple of the document value and the problem list.
+    """
+    return _parse_document(content, strict_lines)
+
+def document_problems(content, strict_lines = False):
+    """Reports duplicate keys and, with strict lines, skipped lines.
+
+    Duplicate keys are always reported. Lines the parser cannot place (wrong
+    indentation, explicit keys, lines without a colon, a `- ` line where a
+    mapping entry is expected, unreadable flow values) are reported only with
+    strict lines, for lock files that must fail closed. Blank lines,
+    comments, directives and document markers are never problems.
 
     Args:
         content: The text of a YAML stream.
@@ -119,7 +134,7 @@ def _parse_document(content, strict_lines):
     lines = _first_document_lines(_strip_bom(content))
     text = "\n".join(lines).strip()
     if text[:1] in ["{", "["]:
-        return _parse_flow(text, {}, state), state.problems
+        return _parse_flow(text, {}, state, 1), state.problems
     return _parse_block(lines, state), state.problems
 
 def _strip_bom(content):
@@ -175,10 +190,29 @@ def _block_line_text(raw):
         return None, None
     return indent, text
 
-def _close_block_containers(stack, indent):
-    """Pops the containers that the line at `indent` is not nested into."""
+def _is_dash(text):
+    """Returns whether `text` opens a block sequence entry."""
+    return text == "-" or text.startswith("- ")
+
+def _is_mapping_start(text):
+    """Returns whether `text` opens a block mapping entry."""
+    return text.startswith("? ") or text.startswith(": ") or _find_colon(text) >= 0
+
+def _is_compact_seq(pending, indent, text):
+    """Returns whether `text` is a compact entry of a pending mapping key."""
+    return type(pending["parent"]) == "dict" and indent == pending["indent"] and _is_dash(text)
+
+def _close_block_containers(stack, indent, text):
+    """Pops the containers that the line at `indent` is not nested into.
+
+    A compact sequence keeps its entries at its key's own column, so a dash
+    at the entry column stays inside it while any other line closes it.
+    """
     for _ in range(len(stack)):
         if not stack or indent > stack[-1]["indent"]:
+            break
+        top = stack[-1]
+        if top.get("compact", False) and top.get("entry", None) == indent and _is_dash(text):
             break
         stack.pop()
 
@@ -194,17 +228,97 @@ def _attach_pending_child(pending, indent, text, anchors, stack):
             "indent": pending["indent"],
             "value": child,
             "entry": None,
+            "compact": False,
         })
+
+def _attach_compact_seq(pending, anchors, stack):
+    """Attaches a compact sequence at its key's own column."""
+    seq = []
+    pending["parent"][pending["slot"]] = seq
+    if pending["anchor"] != None:
+        anchors[pending["anchor"]] = seq
+    stack.append({
+        "kind": "seq",
+        "indent": pending["indent"],
+        "value": seq,
+        "entry": None,
+        "compact": True,
+    })
+
+def _consume_pending_scalar(cursor, pending, env):
+    """Folds a scalar starting after `key:` with single spaces. Returns next index."""
+    lines = cursor.lines
+    idx = cursor.idx
+    anchors = env.anchors
+    state = env.state
+    parent = pending["parent"]
+    slot = pending["slot"]
+    parent_indent = pending["indent"]
+    _indent0, text0 = _block_line_text(lines[idx])
+    if text0 != None and _quote_opener(text0) != None:
+        joined, next_idx, closed = _collect_quoted(lines, idx + 1, parent_indent, text0)
+        if closed:
+            value = _parse_scalar(joined, anchors, state, idx + 1)
+        else:
+            _record_unreadable(state, idx, text0)
+            value = None
+        parent[slot] = value
+        if pending["anchor"] != None:
+            anchors[pending["anchor"]] = _clone(value)
+        return next_idx
+    parts = []
+    next_idx = idx
+    for _ in range(len(lines) + 1):
+        if next_idx >= len(lines):
+            break
+        raw = lines[next_idx]
+        indent, text = _block_line_text(raw)
+        if indent == None:
+            next_idx += 1
+            continue
+        if indent <= parent_indent:
+            break
+        if _is_dash(text) or text.startswith("? ") or text.startswith(": ") or _is_mapping_start(text):
+            break
+        parts.append(text)
+        next_idx += 1
+    if not parts:
+        return next_idx + 1 if next_idx < len(lines) else next_idx
+    joined = " ".join(parts)
+    value = _parse_scalar(joined, anchors, state, idx + 1)
+    parent[slot] = value
+    if pending["anchor"] != None:
+        anchors[pending["anchor"]] = _clone(value)
+    return next_idx
+
+def _resolve_pending(pending, cursor, env):
+    """Resolves a pending key or dash against the current line.
+
+    Returns (next index, consumed): consumed is True when deeper scalar lines
+    were folded into the pending value and the caller must continue.
+    """
+    indent = cursor.indent
+    text = cursor.text
+    if _is_compact_seq(pending, indent, text):
+        _attach_compact_seq(pending, env.anchors, env.stack)
+        return cursor.idx, False
+    if indent > pending["indent"]:
+        if _is_dash(text) or _is_mapping_start(text):
+            _attach_pending_child(pending, indent, text, env.anchors, env.stack)
+            return cursor.idx, False
+        next_idx = _consume_pending_scalar(struct(lines = cursor.lines, idx = cursor.idx), pending, struct(anchors = env.anchors, state = env.state))
+        return next_idx, True
+    return cursor.idx, False
 
 def _init_block_root(text, indent, anchors, stack, state, line):
     """Creates the root container or scalar. Returns (root, is_scalar)."""
-    if text == "-" or text.startswith("- "):
+    if _is_dash(text):
         root = []
-        stack.append({"kind": "seq", "indent": indent - 1, "value": root, "entry": None})
+        stack.append({"kind": "seq", "indent": indent - 1, "value": root, "entry": None, "compact": False})
         return root, False
     if _find_colon(text) >= 0 or text.startswith("? "):
         root = {}
-        stack.append({"kind": "map", "indent": indent - 1, "value": root, "entry": None})
+        stack.append({"kind": "map", "indent": indent - 1, "value": root, "entry": None, "compact": False})
         return root, False
     return _parse_scalar(text, anchors, state, line), True
 
@@ -214,11 +328,13 @@ def _parse_block(lines, state):
     An open container is a frame, a dict {kind, indent, value, entry}. `kind`
     is "map" or "seq", `indent` is the column its entries must be nested
     beyond, and `entry` is the column of its first entry, which later entries
-    must match.
+    must match. A compact sequence frame also carries `compact` True.
 
     `pending` describes a key or dash whose value is on the following lines:
-    the next line indented deeper than it becomes the child container.
-    `state` collects duplicate-key and (when strict) unreadable-line problems.
+    a dash at its own column becomes a compact sequence, a deeper mapping or
+    sequence line becomes the child container, and deeper scalar lines fold
+    into the value with single spaces. `state` collects duplicate-key and
+    (when strict) unreadable-line problems.
     """
     anchors = {}
     root = None
@@ -235,11 +351,13 @@ def _parse_block(lines, state):
             continue
 
         # Close the containers that this line is not indented into.
-        _close_block_containers(stack, indent)
+        _close_block_containers(stack, indent, text)
 
         if pending != None:
-            _attach_pending_child(pending, indent, text, anchors, stack)
+            idx, skip = _resolve_pending(pending, struct(lines = lines, idx = idx, indent = indent, text = text), struct(anchors = anchors, stack = stack, state = state))
             pending = None
+            if skip:
+                continue
 
         if root == None and not stack:
             root, is_scalar = _init_block_root(text, indent, anchors, stack, state, idx + 1)
@@ -262,6 +380,11 @@ def _parse_block(lines, state):
 def _map_line(lines, idx, indent, text, frame, anchors, state):
     """Reads one line of a block mapping. Returns (next index, pending)."""
     if not _entry_indent_ok(frame, indent):
+        _record_unreadable(state, idx, text)
+        return idx + 1, None
+    if _is_dash(text):
+        # A sequence entry never belongs to a mapping; it is unreadable here
+        # rather than a key named "- ...".
         _record_unreadable(state, idx, text)
         return idx + 1, None
     if text.startswith("? "):
@@ -290,10 +413,18 @@ def _map_line(lines, idx, indent, text, frame, anchors, state):
         mapping[key] = parsed
         return next_idx, None
 
-    value = _parse_scalar(value_text, anchors, state, line)
+    value = None
     next_idx = idx + 1
-    if type(value) == "string" and not _is_quoted(value_text):
-        value, next_idx = _consume_plain(lines, idx + 1, indent, value)
+    if _quote_opener(value_text) != None:
+        joined, next_idx, closed = _collect_quoted(lines, idx + 1, indent, value_text)
+        if closed:
+            value = _parse_scalar(joined, anchors, state, line)
+        else:
+            _record_unreadable(state, idx, text)
+    else:
+        value = _parse_scalar(value_text, anchors, state, line)
+        if type(value) == "string" and not _is_quoted(value_text):
+            value, next_idx = _consume_plain(lines, idx + 1, indent, value)
     if _is_duplicate(mapping, key, line, state):
         return next_idx, None
     mapping[key] = value
@@ -304,7 +435,7 @@ def _seq_line(lines, idx, indent, text, frame, anchors, stack, state):
     if not _entry_indent_ok(frame, indent):
         _record_unreadable(state, idx, text)
         return idx + 1, None
-    if not (text == "-" or text.startswith("- ")):
+    if not _is_dash(text):
         _record_unreadable(state, idx, text)
         return idx + 1, None
 
@@ -320,6 +451,16 @@ def _seq_line(lines, idx, indent, text, frame, anchors, stack, state):
         key_text, value_text, _ok = _split_key_value(rest)
         item = {}
         key = _key(_parse_scalar(key_text, anchors, state, line))
+        if value_text != "" and _quote_opener(value_text) != None:
+            joined, next_idx, closed = _collect_quoted(lines, idx + 1, indent, value_text)
+            if closed:
+                item[key] = _parse_scalar(joined, anchors, state, line)
+            else:
+                _record_unreadable(state, idx, text)
+                item[key] = None
+            items.append(item)
+            stack.append({"kind": "map", "indent": indent, "value": item, "entry": None})
+            return next_idx, None
         item[key] = _parse_scalar(value_text, anchors, state, line) if value_text else None
         items.append(item)
         stack.append({"kind": "map", "indent": indent, "value": item, "entry": None})
@@ -332,6 +473,15 @@ def _seq_line(lines, idx, indent, text, frame, anchors, stack, state):
         items.append(parsed)
         return next_idx, None
 
+    if _quote_opener(rest) != None:
+        joined, next_idx, closed = _collect_quoted(lines, idx + 1, indent, rest)
+        if closed:
+            items.append(_parse_scalar(joined, anchors, state, line))
+        else:
+            _record_unreadable(state, idx, text)
+            items.append(None)
+        return next_idx, None
+
     value = _parse_scalar(rest, anchors, state, line)
     next_idx = idx + 1
     if type(value) == "string" and not _is_quoted(rest):
@@ -341,7 +491,7 @@ def _seq_line(lines, idx, indent, text, frame, anchors, stack, state):
 
 def _new_block(text):
     """The container for a child block, chosen by the first line of the block."""
-    return [] if (text == "-" or text.startswith("- ")) else {}
+    return [] if _is_dash(text) else {}
 
 def _entry_indent_ok(frame, indent):
     """Records the column of a container's first entry, then checks `indent`."""
@@ -603,6 +753,39 @@ def _split_key_value(text):
 def _is_quoted(text):
     return len(text) >= 2 and ((text[0] == '"' and text[-1] == '"') or (text[0] == "'" and text[-1] == "'"))
 
+def _quote_opener(text):
+    """The quote opening an unclosed quoted scalar, or None when closed."""
+    if len(text) > 0 and text[0] in ["\"", "'"] and not _is_quoted(text):
+        return text[0]
+    return None
+
+def _collect_quoted(lines, start, parent_indent, first):
+    """Folds a quoted scalar whose closing quote is on a later line.
+
+    YAML folds the line break and indentation to one space, so the collected
+    lines join with a single space. Lines inside the scalar are content, not
+    block entries, so only a dedent ends the collection. Returns
+    (joined, next index, closed).
+    """
+    parts = [first]
+    idx = start
+    for _ in range(len(lines) + 1):
+        if _is_quoted(" ".join(parts)):
+            break
+        if idx >= len(lines):
+            break
+        raw = lines[idx]
+        indent, text = _block_line_text(raw)
+        if indent == None:
+            idx += 1
+            continue
+        if indent <= parent_indent:
+            break
+        parts.append(text)
+        idx += 1
+    joined = " ".join(parts)
+    return joined, idx, _is_quoted(joined)
+
 # ---------------------------------------------------------------------------
 # Scalars
 # ---------------------------------------------------------------------------
@@ -634,13 +817,13 @@ def _parse_scalar(text, anchors, state, line):
             break
 
     if s[:1] in ["[", "{"]:
-        value = _parse_flow(s, anchors, state)
+        value = _parse_flow(s, anchors, state, line)
         if value == None and state.strict_lines:
             state.problems.append("unreadable flow value at line %d: %r" % (line, s))
     else:
         value = _parse_nonflow(s, anchors)
     if tag != None:
-        value = _apply_tag(tag, s, value, anchors, state)
+        value = _apply_tag(tag, s, value, anchors, state, line)
     if anchor:
         anchors[anchor] = _clone(value)
     return value
@@ -654,12 +837,12 @@ def _clone(value):
         return dict(value)
     return value
 
-def _apply_seq_map_tag(name, raw, value, anchors, state):
+def _apply_seq_map_tag(name, raw, value, anchors, state, line):
     """Applies a `!!seq` or `!!map` tag, converting or emptying as yaml.bzl does."""
     want = "list" if name == "seq" else "dict"
     if type(value) == want:
         return value
-    parsed = _parse_flow(raw, anchors, state) if raw[:1] in ["[", "{"] else None
+    parsed = _parse_flow(raw, anchors, state, line) if raw[:1] in ["[", "{"] else None
     if type(parsed) == want:
         return parsed
     return [] if name == "seq" else {}
@@ -684,7 +867,7 @@ def _apply_bool_tag(value, raw):
         return value
     return (value if type(value) == "string" else raw).strip().lower() in ["true", "yes", "on"]
 
-def _apply_tag(tag, raw, value, anchors, state):
+def _apply_tag(tag, raw, value, anchors, state, line):
     """Applies a supported tag to a parsed value. `raw` is the untagged text.
 
     A tag that names a type the value does not have converts it where yaml.bzl
@@ -692,7 +875,7 @@ def _apply_tag(tag, raw, value, anchors, state):
     """
     name = _tag_name(tag)
     if name == "seq" or name == "map":
-        return _apply_seq_map_tag(name, raw, value, anchors, state)
+        return _apply_seq_map_tag(name, raw, value, anchors, state, line)
     if name == "str":
         return value if type(value) == "string" else raw
     if name == "int":
@@ -960,7 +1143,7 @@ def _hex4(value):
 # Flow collections
 # ---------------------------------------------------------------------------
 
-def _flow_close_step(stack, s, i, frame, state):
+def _flow_close_step(stack, s, i, frame, state, line):
     """Pops a closed flow frame. Returns (done, value, next_i)."""
     stack.pop()
     i += 1
@@ -968,7 +1151,7 @@ def _flow_close_step(stack, s, i, frame, state):
         if _skip_flow_space(s, i) == len(s):
             return True, frame["value"], i
         return True, None, i
-    _flow_add(stack[-1], frame["value"], state)
+    _flow_add(stack[-1], frame["value"], state, line)
     return False, None, i
 
 def _flow_key_step(s, i, frame, anchors):
@@ -983,7 +1166,7 @@ def _flow_key_step(s, i, frame, anchors):
     frame["state"] = "value"
     return i + 1, True
 
-def _flow_item_step(s, i, frame, anchors, stack, state):
+def _flow_item_step(s, i, frame, anchors, stack, state, line):
     """Reads one nested collection or scalar flow token. Returns (next_i, ok)."""
     if s[i] in ["[", "{"]:
         stack.append(_flow_frame(s[i]))
@@ -991,16 +1174,16 @@ def _flow_item_step(s, i, frame, anchors, stack, state):
     token, next_i = _flow_token(s, i, [",", frame["close"]])
     if token == "":
         return next_i, False
-    _flow_add(frame, _flow_token_value(token, anchors), state)
+    _flow_add(frame, _flow_token_value(token, anchors), state, line)
     return next_i, True
 
-def _parse_flow(text, anchors, parse_state):
+def _parse_flow(text, anchors, parse_state, line):
     """Parses the flow collection that starts `text`, or returns None.
 
     A flow frame is a dict {kind, close, value, state, key}. The frame's
     `state` is "item" or "value" where a value may start, "after" once a
     value is complete, and "key" where a map key is read. Duplicate map keys
-    are recorded on `parse_state`.
+    are recorded on `parse_state` with `line`.
     """
     s = text.strip()
     stack = [_flow_frame(s[:1])]
@@ -1014,7 +1197,7 @@ def _parse_flow(text, anchors, parse_state):
         state = frame["state"]
 
         if ch == frame["close"] and state != "value":
-            done, value, i = _flow_close_step(stack, s, i, frame, parse_state)
+            done, value, i = _flow_close_step(stack, s, i, frame, parse_state, line)
             if done:
                 return value
             continue
@@ -1032,7 +1215,7 @@ def _parse_flow(text, anchors, parse_state):
                 return None
             continue
 
-        i, ok = _flow_item_step(s, i, frame, anchors, stack, parse_state)
+        i, ok = _flow_item_step(s, i, frame, anchors, stack, parse_state, line)
         if not ok:
             return None
     return None
@@ -1042,7 +1225,7 @@ def _flow_frame(opener):
         return {"kind": "seq", "close": "]", "value": [], "state": "item", "key": None}
     return {"kind": "map", "close": "}", "value": {}, "state": "key", "key": None}
 
-def _flow_add(frame, value, parse_state):
+def _flow_add(frame, value, parse_state, line):
     """Stores a completed value and expects `,` or the close.
 
     A duplicate map key is recorded on the parse state instead of being
@@ -1051,7 +1234,7 @@ def _flow_add(frame, value, parse_state):
     if frame["kind"] == "seq":
         frame["value"].append(value)
     elif frame["key"] in frame["value"]:
-        parse_state.problems.append("duplicate key %r in flow mapping" % (frame["key"],))
+        parse_state.problems.append("duplicate key %r in flow mapping at line %d" % (frame["key"], line))
     else:
         frame["value"][frame["key"]] = value
     frame["state"] = "after"

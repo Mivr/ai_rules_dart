@@ -5,12 +5,53 @@ module just projects the parsed value down to the exact shapes the rules_dart
 pub extension and repository rules consume.
 """
 
-load("//dart/pub/private:yaml_subset.bzl", "document_problems", "parse_document")
+load("//dart/pub/private:yaml_subset.bzl", "document_problems", "document_value_and_problems", "parse_document")
 
-def _load(content):
-    """Parse YAML content into a top-level dict, or None if not a mapping."""
-    data = parse_document(content)
-    return data if type(data) == "dict" else None
+def _pubspec_parse(content, pubspec_label):
+    """Parses a pubspec into (mapping, error) without failing."""
+    data, problems = document_value_and_problems(content, True)
+    if problems:
+        package = pubspec_label
+        if type(data) == "dict" and "name" in data and data["name"] != None:
+            package = str(data["name"])
+        return None, "%s in %s: %s" % (package, pubspec_label, problems[0])
+    if data == None:
+        return {}, None
+    if type(data) != "dict":
+        return None, "%s: expected a mapping at line 1" % pubspec_label
+    return data, None
+
+def parse_pubspec_document_error(content, pubspec_label = "pubspec.yaml"):
+    """Returns why a pubspec.yaml is unreadable, or None when it is clean.
+
+    Args:
+        content: String contents of a pubspec.yaml file.
+        pubspec_label: Label naming the pubspec file for diagnostics.
+
+    Returns:
+        An error string naming the package, the label and the line, or None.
+    """
+    _data, err = _pubspec_parse(content, pubspec_label)
+    return err
+
+def parse_pubspec_document(content, pubspec_label = "pubspec.yaml"):
+    """Parses a pubspec.yaml file into its top-level mapping.
+
+    Fails on any problem or a non-mapping root with a message naming the
+    package (its top-level `name:` value, or the label when there is none),
+    the label and the line. An empty document returns `{}`.
+
+    Args:
+        content: String contents of a pubspec.yaml file.
+        pubspec_label: Label naming the pubspec file for diagnostics.
+
+    Returns:
+        The document's top-level mapping.
+    """
+    data, err = _pubspec_parse(content, pubspec_label)
+    if err:
+        fail(err)
+    return data
 
 def _lock_description(value):
     """Normalises a lock `description` value to a dict of strings."""
@@ -229,9 +270,7 @@ def parse_pubspec_deps(content):
     Returns:
         List of dependency package names.
     """
-    data = _load(content)
-    if data == None:
-        return []
+    data = parse_pubspec_document(content)
     deps = data.get("dependencies")
     if type(deps) != "dict":
         return []
@@ -249,9 +288,7 @@ def parse_pubspec_sdk_constraint(content):
     Returns:
         The SDK version constraint string, e.g. `^3.5.0` or `>=2.12.0 <4.0.0`.
     """
-    data = _load(content)
-    if data == None:
-        return ""
+    data = parse_pubspec_document(content)
     env = data.get("environment")
     if type(env) != "dict":
         return ""
