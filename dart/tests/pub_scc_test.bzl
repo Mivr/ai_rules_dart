@@ -12,12 +12,13 @@ components.
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("//dart/pub:extensions.bzl", "plan_scope_sccs", "resolve_pub_packages", "scc_member_entries")
 load("//dart/pub:pub_lock_hub.bzl", "pub_lock_hub_content")
+load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps")
 
 # buildifier: disable=bzl-visibility
 load("//dart/pub/private:build_content.bzl", "make_dart_package_member_build_content", "make_scc_merged_build_content")
 
 # buildifier: disable=bzl-visibility
-load("//dart/pub/private:scc.bzl", "compute_sccs", "normalize_pub_dep", "pubspec_dep_graph", "rewrite_vanished_spoke", "scc_repo_name")
+load("//dart/pub/private:scc.bzl", "compute_sccs", "normalize_pub_dep", "package_dep_graph", "rewrite_vanished_spoke", "scc_repo_name")
 load(":small_suite.bzl", "small_unittest_suite")
 
 def _two_node_cycle_test_impl(ctx):
@@ -155,32 +156,17 @@ def _normalize_pub_dep_test_impl(ctx):
     asserts.equals(env, "other_repo", normalize_pub_dep("other_repo", hubs, prefixes))
     return unittest.end(env)
 
-_DIO_PUBSPEC = """\
-name: dio
-environment:
-  sdk: ">=2.18.0 <4.0.0"
-dependencies:
-  async: ^2.8.2
-  dio_web_adapter: ">=1.1.0 <3.0.0"
-  meta: ^1.5.0
-"""
+_DIO_DEPS = ["async", "dio_web_adapter", "meta"]
 
-_ADAPTER_PUBSPEC = """\
-name: dio_web_adapter
-environment:
-  sdk: ^3.3.0
-dependencies:
-  dio: ^5.8.0
-  meta: ^1.5.0
-"""
+_ADAPTER_DEPS = ["dio", "meta"]
 
-def _pubspec_dep_graph_test_impl(ctx):
+def _package_dep_graph_test_impl(ctx):
     env = unittest.begin(ctx)
-    graph = pubspec_dep_graph(
+    graph = package_dep_graph(
         {
-            "dio": _DIO_PUBSPEC,
-            "dio_web_adapter": _ADAPTER_PUBSPEC,
-            "meta": "name: meta\n",
+            "dio": _DIO_DEPS,
+            "dio_web_adapter": _ADAPTER_DEPS,
+            "meta": [],
         },
         {},
         ["dio", "dio_web_adapter", "meta"],
@@ -199,8 +185,8 @@ def _pubspec_dep_graph_test_impl(ctx):
 
     # Unknown and SDK-only deps never enter the graph, and explicit deps are
     # normalized from repo names.
-    explicit_graph = pubspec_dep_graph(
-        {"aaa": "name: aaa\ndependencies:\n  flutter: sdk\n  bbb: any\n"},
+    explicit_graph = package_dep_graph(
+        {"aaa": ["flutter", "bbb"]},
         {"exp": ["dart_pub__aaa", "@pub_deps//:exp"]},
         ["aaa", "bbb", "exp"],
         ["pub_deps"],
@@ -210,6 +196,21 @@ def _pubspec_dep_graph_test_impl(ctx):
         env,
         {"aaa": ["bbb"], "exp": ["aaa"]},
         explicit_graph,
+    )
+
+    # Each name is one edge, however it would read as pubspec text: quotes,
+    # newlines and colons in a name cannot split it into several names.
+    tricky = package_dep_graph(
+        {"aaa": ['x"y: z\nw', "bbb"], "bbb": []},
+        {},
+        ["aaa", "bbb", 'x"y: z\nw'],
+        ["pub_deps"],
+        ["dart_pub"],
+    )
+    asserts.equals(
+        env,
+        {"aaa": ["bbb", 'x"y: z\nw'], "bbb": []},
+        tricky,
     )
     return unittest.end(env)
 
@@ -379,10 +380,10 @@ def _plan_scope_sccs_test_impl(ctx):
         ["pub_deps"],
         "dart_pub",
         {
-            "dio": _DIO_PUBSPEC,
-            "dio_web_adapter": _ADAPTER_PUBSPEC,
-            "meta": "name: meta\n",
-            "my_app": "name: my_app\ndependencies:\n  dio: any\n",
+            "dio": _DIO_DEPS,
+            "dio_web_adapter": _ADAPTER_DEPS,
+            "meta": [],
+            "my_app": ["dio"],
         },
     )
     asserts.equals(
@@ -405,8 +406,8 @@ def _plan_scope_sccs_isolated_test_impl(ctx):
         ["tool_deps"],
         "tool_deps",
         {
-            "aaa": "name: aaa\ndependencies:\n  bbb: any\n",
-            "bbb": "name: bbb\ndependencies:\n  aaa: any\n",
+            "aaa": ["bbb"],
+            "bbb": ["aaa"],
         },
     )
     asserts.equals(
@@ -424,19 +425,64 @@ def _plan_scope_sccs_explicit_left_alone_test_impl(ctx):
         ["pub_deps"],
         "dart_pub",
         {
-            "aaa": "name: aaa\ndependencies:\n  exp: any\n",
+            "aaa": ["exp"],
         },
     )
     asserts.equals(env, {}, plan.members)
     asserts.equals(env, {}, plan.merged)
     return unittest.end(env)
 
+# Dependency names `parse_pubspec_deps` legitimately returns, carrying a
+# double quote, a colon and a newline (`_TRICKY_B`) and a `#` and a space
+# (`_TRICKY_C`). Planning consumes names directly, so each stays one edge;
+# rendering them back into pubspec text and parsing again used to split them
+# into several names and corrupted the cycle plan.
+_TRICKY_A = 'a"x'
+_TRICKY_B = "b:y\nz"
+_TRICKY_C = "h#i j"
+
+_TRICKY_A_PUBSPEC = "name: \"a\\\"x\"\ndependencies:\n  \"b:y\\nz\": any\n  \"h#i j\": any\n"
+_TRICKY_B_PUBSPEC = "name: \"b:y\\nz\"\ndependencies:\n  \"a\\\"x\": any\n"
+_TRICKY_C_PUBSPEC = "name: \"h#i j\"\n"
+
+def _tricky_names_cycle_test_impl(ctx):
+    env = unittest.begin(ctx)
+    names = {
+        _TRICKY_A: parse_pubspec_deps(_TRICKY_A_PUBSPEC),
+        _TRICKY_B: parse_pubspec_deps(_TRICKY_B_PUBSPEC),
+        _TRICKY_C: parse_pubspec_deps(_TRICKY_C_PUBSPEC),
+    }
+    asserts.equals(env, [_TRICKY_B, _TRICKY_C], sorted(names[_TRICKY_A]), "quoted, colon and hash names parse back whole")
+    asserts.equals(env, [_TRICKY_A], names[_TRICKY_B], "the quoted name parses back whole")
+    asserts.equals(env, [], names[_TRICKY_C], "a name-only pubspec has no deps")
+    plan = plan_scope_sccs(
+        [_TRICKY_A, _TRICKY_B, _TRICKY_C],
+        {},
+        ["pub_deps"],
+        "dart_pub",
+        {name: sorted(names[name]) for name in names.keys()},
+    )
+    asserts.equals(
+        env,
+        {_TRICKY_A: plan.members[_TRICKY_A], _TRICKY_B: plan.members[_TRICKY_A]},
+        plan.members,
+        "the tricky cycle merges and the hash-named package stays a spoke",
+    )
+    asserts.equals(env, 1, len(plan.merged), "one merged repository: %s" % plan.merged)
+    asserts.equals(
+        env,
+        sorted([_TRICKY_A, _TRICKY_B]),
+        plan.merged[plan.members[_TRICKY_A]],
+    )
+    asserts.equals(env, [_TRICKY_B, _TRICKY_C], plan.package_deps[_TRICKY_A], "the plan records the whole names")
+    return unittest.end(env)
+
 def _git_cycle_in_graph_test_impl(ctx):
     env = unittest.begin(ctx)
-    graph = pubspec_dep_graph(
+    graph = package_dep_graph(
         {
-            "hosted_a": "name: hosted_a\ndependencies:\n  git_b: any\n",
-            "git_b": "name: git_b\ndependencies:\n  hosted_a: any\n",
+            "hosted_a": ["git_b"],
+            "git_b": ["hosted_a"],
         },
         {},
         ["hosted_a", "git_b"],
@@ -456,6 +502,7 @@ def _scc_member_entries_test_impl(ctx):
         ["git_b", "hosted_a"],
         {"hosted_a": struct(version = "1.0.0", sha256 = "s", url = "https://pub.dev")},
         {"git_b": struct(version = "1.0.0", url = "https://example.com/repo.git", resolved_ref = "deadbeef", path = "pkgs/git_b")},
+        {"hosted_a": ["git_b"], "git_b": ["hosted_a"]},
     )
     asserts.equals(env, 2, len(entries))
     asserts.equals(env, "git", entries[0].source)
@@ -587,8 +634,8 @@ def _git_shadows_hosted_cycle_test_impl(ctx):
         ["git_hub"],
         "dart_pub",
         {
-            "charcode": "name: charcode\ndependencies:\n  myapp: any\n",
-            "myapp": "name: myapp\ndependencies:\n  charcode: any\n",
+            "charcode": ["myapp"],
+            "myapp": ["charcode"],
         },
     )
     asserts.equals(env, plan.members["charcode"], plan.members["myapp"])
@@ -596,6 +643,7 @@ def _git_shadows_hosted_cycle_test_impl(ctx):
         plan.merged[plan.members["charcode"]],
         result.resolved,
         result.resolved_git,
+        plan.package_deps,
     )
     by_name = {entry.name: entry for entry in entries}
     asserts.equals(env, "git", by_name["charcode"].source)
@@ -640,7 +688,7 @@ _t6_test = unittest.make(_unknown_dep_ignored_test_impl)
 _t7_test = unittest.make(_empty_graph_test_impl)
 _t8_test = unittest.make(_deterministic_test_impl)
 _t9_test = unittest.make(_normalize_pub_dep_test_impl)
-_t10_test = unittest.make(_pubspec_dep_graph_test_impl)
+_t10_test = unittest.make(_package_dep_graph_test_impl)
 _t11_test = unittest.make(_scc_repo_name_test_impl)
 _t12_test = unittest.make(_rewrite_vanished_spoke_test_impl)
 _t13_test = unittest.make(_hub_content_acyclic_test_impl)
@@ -657,6 +705,7 @@ _t23_test = unittest.make(_scc_member_entries_test_impl)
 _t24_test = unittest.make(_git_shadows_hosted_test_impl)
 _t25_test = unittest.make(_git_shadows_hosted_cycle_test_impl)
 _t26_test = unittest.make(_git_shadows_hosted_isolated_test_impl)
+_t27_test = unittest.make(_tricky_names_cycle_test_impl)
 
 def pub_scc_test_suite(name):
     small_unittest_suite(
@@ -688,4 +737,5 @@ def pub_scc_test_suite(name):
         _t24_test,
         _t25_test,
         _t26_test,
+        _t27_test,
     )
