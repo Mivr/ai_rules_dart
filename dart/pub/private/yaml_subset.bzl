@@ -41,9 +41,18 @@ Supported:
   are read within that line, a document that starts with one may span
   lines (JSON documents), and one that starts after `key:` or `-` folds
   its deeper lines and reads as one value when the folded text parses.
-  Folding follows pub: a break between content lines is one space,
-  indentation is dropped, a blank line is one "\n" inside quotes while a
-  blank run outside quotes is one "\n", and comment-only lines are skipped
+  Folding follows pub through one quote-aware pass over the raw lines: a
+  break between content lines is one space, indentation is dropped, a
+  blank line is one "\n" inside quotes while a blank run outside quotes
+  is one "\n", and comment-only lines are skipped outside quotes. A quote
+  opens only where a scalar starts, so an apostrophe in a plain scalar
+  never opens one; `#` starts a comment only between tokens or in a plain
+  scalar after separation, otherwise it is content; a backslash at a
+  double-quoted line's end continues the scalar with no space. A comment
+  that ends a line inside a plain scalar, a `#` after a complete value, a
+  `%` outside quotes and plain scalars, a blank line after a backslash
+  continuation, and trailing space after a backslash continuation are not
+  supported, and fail naming the line.
 - block scalars `|` and `>` with chomping and indentation indicators
 - plain scalars continued on more-indented lines, including `?` lines,
   which pub folds into the scalar
@@ -62,8 +71,13 @@ testing, so the projections are unaffected on real pubspec files:
   lines read as one flow collection as pub reads them; yaml.bzl reads all
   spanning flows. The supported fold matches pub on the oracle-checked
   shapes (plain, single- and double-quoted scalars, flow mapping values,
-  blank and comment-only lines between the folded lines); a backslash at
-  a folded line's end is not a continuation, unlike pub.
+  blank and comment-only lines between the folded lines, backslash
+  continuations in double-quoted scalars, `#` lines and ` # ` text inside
+  quotes, and `---` content lines); a comment that ends a line
+  inside a plain scalar, a `#` after a complete value, a `%` outside
+  quotes and plain scalars, a blank line after a backslash continuation,
+  and trailing space after a backslash continuation fail naming the line
+  instead of misreading.
 - merge keys (`<<`) are ordinary keys; yaml.bzl merges them into the mapping.
   YAML 1.2 defines no merge keys.
 - `%TAG` handles are ignored, so a tag written through one reads as untagged;
@@ -159,7 +173,11 @@ def _parse_document(content, strict_lines):
     lines = _first_document_lines(_strip_bom(content))
     text = "\n".join(lines).strip()
     if text[:1] in ["{", "["]:
-        return _parse_flow(_fold_flow_document(text), {}, state, 1), state.problems
+        folded, problem = _fold_flow_document(text)
+        if problem != None:
+            state.problems.append(_flow_fold_problem(problem[0], problem[1]))
+            return None, state.problems
+        return _parse_flow(folded, {}, state, 1), state.problems
     return _parse_block(lines, state), state.problems
 
 def _strip_bom(content):
@@ -312,57 +330,288 @@ def _pending_flow_texts(lines, idx, parent_indent):
         next_idx += 1
     return texts, next_idx
 
-def _fold_flow_texts(texts):
-    """Folds flow lines as pub folds them. Returns the folded text.
+def _pending_flow_raws(lines, idx, parent_indent):
+    """Collects the raw lines a value after `key:` or `-` folds with. Returns (items, next index).
 
-    A break between two content lines is one space; each blank line is one
-    "\\n" inside quotes, while outside quotes a blank run is one "\\n";
-    continuation indentation is already dropped from the texts. Without blank
-    lines this is a single-space join, exactly the older fold. Quote marks
-    inside the other quote kind are content; a backslash escapes the next
-    character, across lines too.
+    Each item is a (1-based line, raw line) pair, with "" for each blank
+    line. Unlike `_pending_flow_texts`, lines without block content (such
+    as `#` comment lines) are kept raw: inside quotes they are scalar
+    content, as pub reads them, and the quote-aware fold decides. A dedent
+    or a line that opens an entry ends the fold.
     """
-    out = []
-    single = False
-    double = False
-    escaped = False
-    for text in texts:
-        if text == "":
-            if single or double:
-                out.append("\n")
-            elif out and not out[-1].endswith("\n"):
-                out.append("\n")
+    items = []
+    next_idx = idx
+    for _ in range(len(lines) + 1):
+        if next_idx >= len(lines):
+            break
+        raw = lines[next_idx]
+        if not raw.strip():
+            items.append((next_idx + 1, ""))
+            next_idx += 1
             continue
-        if out and not out[-1].endswith("\n"):
-            out.append(" ")
-        out.append(text)
-        for i in range(len(text)):
-            ch = text[i]
-            if escaped:
-                escaped = False
-            elif double and ch == "\\":
-                escaped = True
-            elif ch == "'" and not double:
-                single = not single
-            elif ch == '"' and not single:
-                double = not double
-    return "".join(out)
+        indent, text = _block_line_text(raw)
+        if indent == None:
+            items.append((next_idx + 1, raw))
+            next_idx += 1
+            continue
+        if indent <= parent_indent:
+            break
+        if _is_dash(text) or text.startswith("? ") or text.startswith(": ") or _is_mapping_start(text):
+            break
+        items.append((next_idx + 1, raw))
+        next_idx += 1
+    return items, next_idx
+
+def _flow_scan_start():
+    """A fresh quote-aware scan state for one folded flow."""
+    return {"single": False, "double": False, "escaped": False, "plain": False, "have": False, "depth": 0}
+
+def _flow_scan_sep(scan):
+    """A separator ends any plain scalar and opens a fresh value slot."""
+    scan["plain"] = False
+    scan["have"] = False
+
+def _flow_scan_quoted(ch, nxt, scan, res):
+    """Scans one character inside a quoted scalar, updating `scan` and `res`.
+
+    `''` inside single quotes is one escaped quote; a backslash escapes the
+    next character in double quotes, across lines too. Anything else,
+    including `#`, brackets and the other quote kind, is content.
+    """
+    if scan["single"]:
+        if ch == "'":
+            if nxt == "'":
+                res["kept"].append(ch)
+                res["kept"].append(nxt)
+                res["skip"] = True
+            else:
+                scan["single"] = False
+                scan["have"] = True
+                res["kept"].append(ch)
+        else:
+            res["kept"].append(ch)
+    elif ch == "\\":
+        scan["escaped"] = True
+        res["kept"].append(ch)
+    elif ch == '"':
+        scan["double"] = False
+        scan["have"] = True
+        res["kept"].append(ch)
+    else:
+        res["kept"].append(ch)
+
+def _flow_scan_hash(ch, prev, scan, res):
+    """Handles `#` outside quotes: a comment, or content pub rejects.
+
+    Between tokens a `#` after a separator or after separation with no
+    value yet is a comment; after a complete value it is content pub
+    rejects, flagged to fail closed. In a plain scalar it is a comment
+    after separation (or at the line start) and content otherwise, so an
+    apostrophe line such as `don't` never opens a quote. Past the closing
+    bracket a `#` after separation is a trailing comment.
+    """
+    if scan["depth"] <= 0:
+        if prev in [" ", "\t"]:
+            res["stopped"] = True
+        else:
+            res["kept"].append(ch)
+    elif scan["plain"]:
+        if prev in [" ", "\t"]:
+            res["plain_comment"] = True
+            res["stopped"] = True
+        else:
+            res["kept"].append(ch)
+    elif prev in [",", "{", "[", ":"]:
+        res["stopped"] = True
+    elif prev in [" ", "\t"] and not scan["have"]:
+        res["stopped"] = True
+    else:
+        res["hash_flag"] = True
+        res["stopped"] = True
+
+def _flow_scan_text(text, scan, res):
+    """Scans one fold line, updating `scan` and collecting into `res`.
+
+    `res` holds the kept characters and the line flags: `plain_comment`
+    when a comment starts inside a plain scalar, `hash_flag` when `#`
+    follows a value without separation, `pct_flag` on a `%` outside quotes
+    and plain scalars. A quote opens only where a scalar starts. Scanning
+    stops at a comment or a flag; the caller fails closed on the flags.
+    """
+    prev = " "
+    for i in range(len(text) + 1):
+        if i >= len(text) or res["stopped"]:
+            break
+        ch = text[i]
+        if res["skip"]:
+            res["skip"] = False
+            prev = ch
+            continue
+        nxt = text[i + 1] if i + 1 < len(text) else ""
+        if scan["escaped"]:
+            scan["escaped"] = False
+            res["kept"].append(ch)
+            prev = ch
+        elif scan["single"] or scan["double"]:
+            _flow_scan_quoted(ch, nxt, scan, res)
+            prev = ch
+        elif ch == "'" and not scan["plain"]:
+            scan["single"] = True
+            res["kept"].append(ch)
+            prev = ch
+        elif ch == '"' and not scan["plain"]:
+            scan["double"] = True
+            res["kept"].append(ch)
+            prev = ch
+        elif ch == "#":
+            _flow_scan_hash(ch, prev, scan, res)
+        elif ch == "%" and not scan["plain"]:
+            res["pct_flag"] = True
+            res["stopped"] = True
+        elif ch in [" ", "\t"]:
+            res["kept"].append(ch)
+            prev = ch
+        elif ch in ["[", "{"]:
+            scan["depth"] += 1
+            _flow_scan_sep(scan)
+            res["kept"].append(ch)
+            prev = ch
+        elif ch in ["]", "}"]:
+            if scan["depth"] > 0:
+                scan["depth"] -= 1
+            _flow_scan_sep(scan)
+            scan["have"] = True
+            res["kept"].append(ch)
+            prev = ch
+        elif ch == ",":
+            _flow_scan_sep(scan)
+            res["kept"].append(ch)
+            prev = ch
+        elif ch == ":" and (nxt in [" ", "\t"] or nxt == ""):
+            _flow_scan_sep(scan)
+            res["kept"].append(ch)
+            prev = ch
+        else:
+            scan["plain"] = True
+            scan["have"] = True
+            res["kept"].append(ch)
+            prev = ch
+
+def _flow_fold_join(out, kept, cont):
+    """Joins one kept line onto `out`: directly after a backslash continuation, else with one space."""
+    if cont:
+        return out + kept
+    if out != "" and not out.endswith("\n"):
+        return out + " " + kept
+    return out + kept
+
+def _flow_fold_backslash(out, kept, had_trailing, scan):
+    """Handles a line end in a double-quoted scalar. Returns (out, cont, problem).
+
+    A backslash at the line's end continues the scalar with no space, as
+    pub continues it; the backslash is dropped and the next content line
+    joins directly. Trailing space after the backslash, and a blank line
+    after it, are problems: pub reads a value this fold cannot spell.
+    """
+    if not scan["double"]:
+        return out, False, None
+    bs = 0
+    for _ in range(len(kept) + 1):
+        if bs < len(kept) and kept[len(kept) - 1 - bs] == "\\":
+            bs += 1
+        else:
+            break
+    if bs == 0 or bs % 2 == 0:
+        return out, False, None
+    if had_trailing:
+        return out, False, "bs-space"
+    scan["escaped"] = False
+    return out[:len(out) - 1], True, None
+
+def _flow_fold_lines(items, scan):
+    """Folds raw flow lines as pub folds them. Returns (folded, problem).
+
+    `items` holds (1-based line, raw line) pairs with "" for blank lines;
+    leading indentation is dropped. A break between content lines is one
+    space, except after a backslash continuation, which joins with no
+    space; each blank line is one "\\n" inside quotes, while outside quotes
+    a blank run is one "\\n". A comment that ends a line inside a plain
+    scalar poisons the fold: the next content must close the collection
+    (`,`, `]`, `}` or a separating `:`) or pub rejects the flow. `problem`
+    is None, or a (kind, line) pair the caller reports.
+    """
+    out = ""
+    cont = False
+    comment_pending = False
+    pending_line = 0
+    for item in items:
+        line = item[0]
+        content = item[1].lstrip(" \t")
+        if content.strip() == "":
+            if cont:
+                return "", ("bs-blank", line)
+            if scan["single"] or scan["double"]:
+                out += "\n"
+            elif out != "" and not out.endswith("\n"):
+                out += "\n"
+            continue
+        res = {"kept": [], "plain_comment": False, "hash_flag": False, "pct_flag": False, "stopped": False, "skip": False}
+        _flow_scan_text(content, scan, res)
+        if res["hash_flag"]:
+            return "", ("hash", line)
+        if res["pct_flag"]:
+            return "", ("directive", line)
+        raw_kept = "".join(res["kept"])
+        kept = raw_kept.rstrip()
+        if kept == "":
+            if res["plain_comment"]:
+                comment_pending = True
+                pending_line = line
+            continue
+        if comment_pending:
+            first = kept[:1]
+            if first in [",", "]", "}"]:
+                comment_pending = False
+            elif first == ":" and (len(kept) == 1 or kept[1:2] in [" ", "\t"]):
+                comment_pending = False
+            else:
+                return "", ("plain-comment", pending_line)
+        if res["plain_comment"]:
+            comment_pending = True
+            pending_line = line
+        out = _flow_fold_join(out, kept, cont)
+        cont = False
+        had_trailing = kept != raw_kept
+        out, cont, bs_problem = _flow_fold_backslash(out, kept, had_trailing, scan)
+        if bs_problem != None:
+            return "", (bs_problem, line)
+    return out, None
+
+def _flow_fold_problem(kind, line):
+    """The problem for a folded-flow line this reader cannot spell as pub reads it."""
+    if kind == "plain-comment":
+        return "comment inside a plain scalar of a flow that spans lines at line %d is not supported" % line
+    if kind == "hash":
+        return "\"#\" after a value in a flow that spans lines at line %d is not supported" % line
+    if kind == "directive":
+        return "\"%%\" directive in a flow that spans lines at line %d is not supported" % line
+    if kind == "bs-space":
+        return "trailing space after a backslash continuation in a flow that spans lines at line %d is not supported" % line
+    return "blank line after a backslash continuation in a flow that spans lines at line %d is not supported" % line
 
 def _fold_flow_document(text):
     """Folds a multi-line flow document's breaks as pub folds them.
 
-    Content lines strip indentation and trailing space and join as
-    `_fold_flow_texts` folds them; comment-only lines are skipped, as
-    separation. A single-line document folds to itself.
+    Returns (folded, problem): the folded text, or a (kind, document line)
+    pair when a line cannot fold as pub reads it. Content lines drop
+    indentation and join as `_flow_fold_lines` joins them; a single-line
+    document folds to itself.
     """
-    texts = []
-    for line in text.split("\n"):
-        stripped = line.strip()
-        if stripped == "":
-            texts.append("")
-        elif not stripped.startswith("#"):
-            texts.append(stripped)
-    return _fold_flow_texts(texts)
+    raw_lines = text.split("\n")
+    items = []
+    for i in range(len(raw_lines)):
+        items.append((i + 1, raw_lines[i]))
+    return _flow_fold_lines(items, _flow_scan_start())
 
 def _folded_flow_ok(joined, anchors):
     """Returns whether the folded `joined` text reads as one flow collection.
@@ -398,21 +647,23 @@ def _consume_pending_scalar(cursor, pending, env):
         if pending["anchor"] != None:
             anchors[pending["anchor"]] = _clone(value)
         return next_idx
-    if text0 != None:
-        end = _spanning_flow_end(lines, idx + 1, parent_indent, text0, anchors)
-        if end != None:
-            texts, next_idx = _pending_flow_texts(lines, idx, parent_indent)
-            folded = _fold_flow_texts(texts)
-            if _folded_flow_ok(folded, anchors):
-                # The folded lines read as one flow collection, as pub reads
-                # them: keep the value, as revisions before the span check did.
-                value = _parse_scalar(folded, anchors, state, idx + 1)
-                parent[slot] = value
-                if pending["anchor"] != None:
-                    anchors[pending["anchor"]] = _clone(value)
-                return next_idx
+    if text0 != None and _unclosed_flow_head(text0, anchors) != None:
+        raws, next_idx = _pending_flow_raws(lines, idx, parent_indent)
+        folded, problem = _flow_fold_lines(raws, _flow_scan_start())
+        if problem == None and _folded_flow_ok(folded, anchors):
+            # The folded lines read as one flow collection, as pub reads
+            # them: keep the value, as revisions before the span check did.
+            value = _parse_scalar(folded, anchors, state, idx + 1)
+            parent[slot] = value
+            if pending["anchor"] != None:
+                anchors[pending["anchor"]] = _clone(value)
+            return next_idx
+        if problem != None:
+            state.problems.append(_flow_fold_problem(problem[0], problem[1]))
+        else:
             state.problems.append(_span_flow_problem(idx + 1))
-            return end
+        end = _spanning_flow_end(lines, idx + 1, parent_indent, text0, anchors)
+        return end if end != None else next_idx
     texts, next_idx = _pending_flow_texts(lines, idx, parent_indent)
     parts = [text for text in texts if text != ""]
     if not parts:
