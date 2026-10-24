@@ -25,10 +25,14 @@ pub.from_lock(
 # own isolated hub so its refusal is asserted independently. The two path
 # hubs cover entry paths that escape the root themselves: absolute
 # (`ep_abs`) and climbing (`ep_dotdot`). Every hub fetch below runs the
-# shared `dart_pub_scanner` executable, which the `dart` module extension
-# builds once per output base through `pub_scanner_repo`
-# (`//dart/pub:pub_scanner.bzl`): a hostile tarball fails its fetch before
-# extraction, so this workspace exercises that rule on every red hub.
+# shared `dart_pub_scanner` snapshot through the fetch host SDK's
+# `dartaotruntime`, which the `dart` module extension builds once per output
+# base through `pub_scanner_repo` (`//dart/pub:pub_scanner.bzl`): a hostile
+# tarball fails its fetch before extraction, so this workspace exercises
+# that rule on every red hub. The committed lock carries the clean hub's
+# planning facts, so these runs exercise planning on the hit path while
+# every hostile spoke still scans its own archive: no planning verdict ever
+# reaches a spoke.
 pub.from_lock(
     name = "ok_deps",
     isolated = True,

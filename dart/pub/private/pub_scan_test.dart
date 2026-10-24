@@ -441,5 +441,27 @@ void main() {
         },
       });
     });
+    test('sequential scans keep no state between archives', () async {
+      // The batch entrypoint scans archives back to back in one process, so
+      // a refusal, a short-circuit, or an inflate-failure fallback in one
+      // archive must not change the next archive's verdict.
+      final clean = _gz(_tar([_entry('lib/ok.dart', '0')]));
+      final hostile = _gz(
+        _tar([_entry('lib/evil.dart', '1', linkname: 'lib/a.dart')]),
+      );
+      final cleanFile = File('${dir.path}/clean.tar.gz')
+        ..writeAsBytesSync(clean);
+      final hostileFile = File('${dir.path}/hostile.tar.gz')
+        ..writeAsBytesSync(hostile);
+      expect(await scan.scanArchiveFile(cleanFile.path), {'ok': true});
+      expect(await scan.scanArchiveFile(hostileFile.path), {
+        'refusal': {
+          'kind': 'hard-link',
+          'path': 'lib/evil.dart',
+          'target': 'lib/a.dart',
+        },
+      });
+      expect(await scan.scanArchiveFile(cleanFile.path), {'ok': true});
+    });
   });
 }

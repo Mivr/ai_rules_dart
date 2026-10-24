@@ -1,8 +1,8 @@
-"""Compile of the pub archive header scanner to a native executable.
+"""Compile of the pub archive header scanner to a native AOT snapshot.
 
 `pub_scanner_repo_impl` is the implementation behind the one shared
 `dart_pub_scanner` repository holding the `pub_scan.dart` header scanner
-compiled to a native executable. The repository rule itself lives in the
+compiled to a native AOT snapshot. The repository rule itself lives in the
 public `//dart/pub:pub_scanner.bzl` entrypoint, which the `dart` module
 extension calls once beside `dart_register_toolchains` for the
 default-toolchain SDK (a repository rule cannot be imported across files
@@ -11,12 +11,14 @@ The compile runs once per output base from the default-toolchain SDK
 the `dart` module extension selected: the front end (`dartaotruntime`
 running `gen_kernel_aot.dart.snapshot` against the product platform)
 compiles the source with stable `org-dartlang-root` URIs rooted at this
-repository, so no absolute host path lands in the kernel, and `dart compile
-exe` then links the kernel the same way `dart_binary` links an `exe` —
-kernels and executables built from the same source in different absolute
-directories are byte-identical. The Starlark half of the scan
-(`//dart/pub:pub_scan.bzl`) runs that executable over each fetched archive
-before `ctx.extract` sees it.
+repository, so no absolute host path lands in the kernel, and `gen_snapshot`
+then links the kernel straight to an `app-aot-elf` snapshot — skipping the
+`dart compile exe` wrapper, which would boot the whole `dartdev` JIT just to
+invoke the same `gen_snapshot` and link a self-contained executable around
+the snapshot. The snapshot holds no absolute host path either, so snapshots
+linked from the same source in different absolute directories are
+byte-identical, and the fetch host's `dartaotruntime` runs the snapshot over
+each archive (see `//dart/pub:pub_scan.bzl`).
 
 Attrs carry the scanner source as text (so editing the source recompiles)
 and the SDK version (so a toolchain change recompiles too). The compile
@@ -31,61 +33,7 @@ name by hand. Nothing is written outside this repository's directory, and no
 host tool beyond the SDK itself is consulted.
 """
 
-load("//dart/private:toolchains_repo.bzl", "PLATFORMS")
-
-def _platform_key(os):
-    """Maps the fetch host to the host SDK repository's platform key.
-
-    `dart_register_toolchains` names SDK repositories `<base>_<platform>`
-    with keys like `linux-x64`; the scanner compiles and runs on the fetch
-    host, so it comes from the host's SDK.
-
-    Args:
-      os: The host `os` struct (`ctx.os`).
-
-    Returns:
-      The platform key (e.g. `"linux-x64"`), failing closed on a host with
-      no SDK repository.
-    """
-    name = os.name.lower()
-    arch = os.arch.lower()
-    if name.startswith("linux"):
-        os_part = "linux"
-    elif name.startswith("mac") or name.startswith("darwin"):
-        os_part = "macos"
-    elif name.startswith("windows"):
-        os_part = "windows"
-    else:
-        fail("the pub archive scanner needs a Linux, macOS or Windows fetch host, got os %r" % os.name)
-    if arch == "amd64" or arch == "x86_64":
-        arch_part = "x64"
-    elif arch == "aarch64" or arch == "arm64":
-        arch_part = "arm64"
-    else:
-        fail("the pub archive scanner needs an x64 or arm64 fetch host, got arch %r" % os.arch)
-    platform = os_part + "-" + arch_part
-    if platform not in PLATFORMS:
-        fail("the pub archive scanner needs a host SDK repository, and there is none for fetch host %r" % platform)
-    return platform
-
-def _sdk_file(platform, path):
-    """Labels one SDK tool file inside the host SDK repository.
-
-    The apparent label resolves through this module's own repo mapping, which
-    imports every `@dart_<platform>` repository from the `dart` extension, so
-    it keeps working whatever local name a consumer gives this module and
-    whatever canonical name version overrides assign it. `ctx.path` reads the
-    file without `exports_files` getting in the way; the paths stay inputs to
-    this repository's compile, never bytes in its output.
-
-    Args:
-      platform: The host platform key from `_platform_key`.
-      path: The file's path inside the SDK repository.
-
-    Returns:
-      The apparent label of the SDK file.
-    """
-    return Label("@dart_%s//:%s" % (platform, path))
+load("//dart/pub/private:pub_scanner_sdk.bzl", _platform_key = "scanner_platform_key", _sdk_file = "scanner_sdk_file")
 
 def _fail_result(ctx, what, result):
     """Fails the fetch with the tail of a failed compile step's output."""
@@ -106,7 +54,7 @@ def _home_env(dart_exe):
     return {"HOME": ""}
 
 def pub_scanner_repo_impl(ctx):
-    """Compiles the scanner source to the native executable.
+    """Compiles the scanner source to the native AOT snapshot.
 
     See the module docstring for the compile layout.
 
@@ -157,16 +105,26 @@ def pub_scanner_repo_impl(ctx):
     if front.return_code != 0:
         _fail_result(ctx, "the scanner front-end compile", front)
 
-    # Link the kernel the way `dart compile exe` links a `dart_binary` `exe`:
-    # from the kernel, so nothing about this machine leaks into the output.
+    # Link the kernel straight with the SDK's `gen_snapshot`: `dart compile
+    # exe` would boot the `dartdev` JIT only to invoke this same tool and
+    # then link a self-contained executable around the snapshot. The fetch
+    # host's `dartaotruntime` runs the snapshot directly, so the executable
+    # wrapper is pure overhead. The snapshot records no host path (the kernel
+    # carries stable `org-dartlang-root` URIs), keeping it byte-identical
+    # across output bases.
     link = ctx.execute(
-        [sdk_dart, "compile", "exe", "-o", exe_path, dill_path],
+        [
+            str(ctx.path(_sdk_file(platform, "bin/utils/gen_snapshot" + exe_suffix))),
+            "--snapshot_kind=app-aot-elf",
+            "--elf=" + exe_path,
+            dill_path,
+        ],
         environment = env,
         quiet = True,
         timeout = 600,
     )
     if link.return_code != 0:
-        _fail_result(ctx, "the scanner exe link", link)
+        _fail_result(ctx, "the scanner snapshot link", link)
     ctx.delete(dill_path)
     ctx.file(
         "BUILD.bazel",

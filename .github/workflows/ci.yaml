@@ -757,7 +757,11 @@ jobs:
       # hostile hosted hub to fail its fetch before extraction with the
       # refusal naming package, entry path, entry kind and raw target (entry
       # paths that escape the root themselves fail with the path diagnostic
-      # naming package and path instead). All locks are restored on exit.
+      # naming package and path instead). The fixture lock commits the clean
+      # hub's planning facts, so these runs exercise planning on the hit path
+      # while every hostile spoke still scans its own archive and refuses: no
+      # planning verdict ever reaches a spoke, so no lockfile entry can weaken
+      # the spoke scan. All locks are restored on exit.
       - name: pub_symlink — header scan stays green on clean packages, refuses hostile entries
         working-directory: e2e/pub_symlink
         run: |
@@ -771,6 +775,9 @@ jobs:
           sed -i "s|file://FIXTURES_ROOT|file://$fixtures|" pubspec.ok.lock pubspec.evil_hard_out.lock pubspec.evil_hard_in.lock pubspec.evil_abs.lock pubspec.evil_esc.lock pubspec.evil_path_abs.lock pubspec.evil_path_dotdot.lock
           bazel build //:ok_app
           echo "OK: clean hosted packages with an in-package symlink stay green"
+          grep -F -q 'pub.scc.v1/hosted/ok_clean' MODULE.bazel.lock
+          grep -F -q 'pub.scc.v1/hosted/ok_inlink' MODULE.bazel.lock
+          echo "OK: planning runs on the committed facts while hostile spokes still refuse"
           if bazel build //:app 2>/dev/null; then
             echo "ERROR: build should have failed on the escaping symlink"
             exit 1

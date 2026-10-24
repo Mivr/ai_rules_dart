@@ -233,11 +233,12 @@
   "moduleExtensions": {
     "//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "5SIClk0Cyl+RpHMEl/1vJ0VoZSpVMWDtzdvITq5YqpE=",
+        "bzlTransitiveDigest": "b47P9KAB19lBPcALwLe1Lu847IMqkP0/j76kJIA6MPk=",
         "usagesDigest": "cKio2jMvxLkO40BuRK9HRaNaw0GxLh5CP9VktlNJaGU=",
         "recordedInputs": [
           "REPO_MAPPING:,dart_pub_scanner +dart+dart_pub_scanner",
-          "FILE:@@//dart/ext/pubspec.lock ae866f3a1d4ebad9a74f9b9efab33c74dfbf904ae0d69dfe94192029d4955188"
+          "FILE:@@//dart/ext/pubspec.lock ae866f3a1d4ebad9a74f9b9efab33c74dfbf904ae0d69dfe94192029d4955188",
+          "REPO_MAPPING:,dart_linux-x64 +dart+dart_linux-x64"
         ],
         "generatedRepoSpecs": {
           "dart_pub___fe_analyzer_shared": {

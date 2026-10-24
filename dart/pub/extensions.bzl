@@ -6,7 +6,7 @@ load("//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch", 
 load("//dart/pub:pub_lock_hub.bzl", "pub_lock_hub")
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_git_package", "pub_lock_package", "pub_lock_package_sha256_error", "trim_gzip_trailing_nulls")
 load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
-load("//dart/pub:pub_scan.bzl", "run_pub_archive_scan")
+load("//dart/pub:pub_scan.bzl", "run_pub_archive_scans")
 load("//dart/pub:yaml_parser.bzl", "lock_package_error", "parse_pubspec_lock")
 load("//dart/pub/private:pub_repository.bzl", "pub_package")
 load("//dart/pub/private:pub_root_pin.bzl", "best_entry", "hosted_sha_conflict", "hosted_version_error", "select_all_explicit")
@@ -94,6 +94,14 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
     (`trim_gzip_trailing_nulls`): some pub.dev archives end past the gzip
     trailer, which Bazel's extractor rejects.
 
+    Every archive is scanned before the first extraction: all packages
+    download first, one snapshot invocation scans the batch in hosted
+    (sorted) then git (sorted) order — the order the old per-package scans
+    refused in — and only then is anything extracted. Every spoke still
+    scans its own downloaded archive before extracting it: the planning
+    verdict never travels to the spokes, so no lockfile entry can weaken
+    their scan.
+
     Args:
       ctx: The module extension context.
       scope_dir: Scratch directory for this scope's downloads, unique per
@@ -108,6 +116,7 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
     """
     contents = {}
     ctx.file(scope_dir + "/.scc_scope", "pub dependency-cycle scope scratch")
+    pending = []
     for name in sorted(hosted.keys()):
         pkg = hosted[name]
         err = pinned_source_error(
@@ -131,12 +140,7 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
         trimmed = trim_gzip_trailing_nulls(raw)
         if trimmed != raw:
             ctx.file(archive, trimmed, executable = False)
-
-        # Scratch is check-only, but the check still runs before extraction:
-        # a hostile tarball fails planning here, not after its links land.
-        run_pub_archive_scan(ctx, archive, name)
-        ctx.extract(archive, output = out)
-        contents[name] = read_scope_pubspec(ctx, name, out)
+        pending.append(struct(archive = archive, name = name, out = out))
     for name in sorted(git_pkgs.keys()):
         pkg = git_pkgs[name]
         err = pinned_source_error(
@@ -157,9 +161,14 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
         archive = str(ctx.path("{dir}/{name}.tar".format(dir = scope_dir, name = name)))
         spec = pkg.resolved_ref if pkg.path == "." else pkg.resolved_ref + ":" + pkg.path
         git_materialize(ctx, bare_rel, pkg.resolved_ref, archive, spec, 'pub.from_lock "%s"' % name)
-        run_pub_archive_scan(ctx, archive, name)
-        ctx.extract(archive, output = out)
-        contents[name] = read_scope_pubspec(ctx, name, out)
+        pending.append(struct(archive = archive, name = name, out = out))
+    if pending:
+        # Scratch is check-only, but the check still runs before extraction:
+        # a hostile tarball fails planning here, not after its links land.
+        run_pub_archive_scans(ctx, [struct(archive = p.archive, name = p.name) for p in pending])
+    for p in pending:
+        ctx.extract(p.archive, output = p.out)
+        contents[p.name] = read_scope_pubspec(ctx, p.name, p.out)
     return contents
 
 def _scope_contents_with_facts(ctx, scope_dir, hosted, git_pkgs, recorded):

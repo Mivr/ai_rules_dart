@@ -669,15 +669,23 @@ Future<Map<String, Object?>> _scanFile(
   }
 }
 
-/// CLI entrypoint: reads the archive file, scans its headers, and prints
-/// the one JSON verdict to stdout, always exiting zero.
+/// CLI entrypoint: scans each archive file in argument order and prints one
+/// JSON verdict per line, always exiting zero. A single archive prints the
+/// same one line the old single-archive entrypoint printed; each archive is
+/// scanned independently (no state carries between scans), so batching only
+/// saves process starts, never changes a verdict.
 void main(List<String> args) async {
-  Map<String, Object?> verdict;
-  try {
-    if (args.isEmpty) _unscannable('no archive path was given');
-    verdict = await scanArchiveFile(args[0]);
-  } on _Unscannable catch (e) {
-    verdict = {'unscannable': e.detail};
+  if (args.isEmpty) {
+    print(jsonEncode({'unscannable': 'no archive path was given'}));
+    return;
   }
-  print(jsonEncode(verdict));
+  for (final path in args) {
+    Map<String, Object?> verdict;
+    try {
+      verdict = await scanArchiveFile(path);
+    } on _Unscannable catch (e) {
+      verdict = {'unscannable': e.detail};
+    }
+    print(jsonEncode(verdict));
+  }
 }

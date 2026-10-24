@@ -10,6 +10,7 @@ load(
 # `rules_flutter` reuses the same scan and walk; pin them here.
 load(
     "//dart/pub:pub_scan.bzl",
+    _batch_run = "run_pub_archive_scans",
     _public_check = "check_package_symlinks",
     _public_scanner = "PUB_SCANNER_LABEL",
     _public_scanner_windows = "PUB_SCANNER_WINDOWS_LABEL",
@@ -114,6 +115,7 @@ def _reexport_test_impl(ctx):
     env = unittest.begin(ctx)
     asserts.equals(env, _walk_check, _public_check, "the public walk re-export is the walk function")
     asserts.equals(env, _scan_run, _public_run, "the spoke-facing scan re-export is the scanner call")
+    asserts.true(env, _batch_run != _scan_run, "the planning batch entry point is distinct from the single-archive scan")
     asserts.equals(env, Label("@dart_pub_scanner//:scanner"), _public_scanner, "the scanner label names the shared repository")
     asserts.equals(env, Label("@dart_pub_scanner//:scanner.exe"), _public_scanner_windows, "the Windows scanner label names the shared repository")
     return unittest.end(env)

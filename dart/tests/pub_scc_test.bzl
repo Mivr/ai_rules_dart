@@ -464,6 +464,12 @@ def _scc_member_entries_test_impl(ctx):
     asserts.equals(env, "pkgs/git_b", entries[0].path)
     asserts.equals(env, "hosted", entries[1].source)
     asserts.equals(env, "hosted_a", entries[1].name)
+    asserts.false(
+        env,
+        hasattr(entries[1], "scanned_sha256"),
+        "a hosted member entry carries no planning verdict: the merged " +
+        "repository always scans the member archive it downloads",
+    )
     return unittest.end(env)
 
 _HOSTED_CHARCODE = {
