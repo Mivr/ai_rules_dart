@@ -10,6 +10,7 @@ load("//dart/pub:pub_scan.bzl", "run_pub_archive_scans")
 load("//dart/pub:yaml_parser.bzl", "lock_package_error", "parse_pubspec_deps", "parse_pubspec_lock")
 load("//dart/pub/private:pub_repository.bzl", "pub_package")
 load("//dart/pub/private:pub_root_pin.bzl", "best_entry", "hosted_sha_conflict", "hosted_version_error", "select_all_explicit")
+load("//dart/pub/private:pub_scanner_sdk.bzl", "scanner_runtime_label")
 load("//dart/pub/private:pub_scc_facts.bzl", "parser_schema", "read_scope_pubspec", "record_scope_facts", "split_scope_facts")
 load("//dart/pub/private:scc.bzl", "compute_sccs", "package_dep_graph", "rewrite_vanished_spoke", "scc_repo_name")
 
@@ -197,8 +198,34 @@ def _scope_pubspec_deps(ctx, scope_dir, hosted, git_pkgs):
         deps[p.name] = sorted(parse_pubspec_deps(read_scope_pubspec(ctx, p.name, p.out)))
     return deps
 
+def touch_scanner_runtime_label(ctx):
+    """Resolves the scanner runtime label so cold and warm lockfiles stay byte-identical.
+
+    `run_pub_archive_scans` resolves `scanner_runtime_label(ctx.os)` through
+    this module's repo mapping, which the lockfile records as a
+    `REPO_MAPPING` input — but only on evaluations that actually scan. A warm
+    evaluation whose facts hit for every package scans nothing, so without
+    this touch its recorded inputs miss that line. Resolving the same label
+    here, for every scope that holds hosted or git packages whether or not
+    anything misses the facts, records the identical input on both paths.
+    Label construction only: no `ctx.path` and no download, so a warm
+    evaluation still fetches nothing. The scanner snapshot label needs no
+    touch: it is a module-level `Label` in `pub_scan.bzl`, resolved at load
+    on every evaluation already.
+
+    Args:
+      ctx: The module extension context.
+
+    Returns:
+      The scanner runtime label, so tests can pin that it names the same
+      label the scan resolves.
+    """
+    return scanner_runtime_label(ctx.os)
+
 def _scope_deps_with_facts(ctx, scope_dir, hosted, git_pkgs, recorded):
     """Resolves one scope's dependency names, reusing lockfile facts for unchanged packages. Returns deps."""
+    if hosted or git_pkgs:
+        touch_scanner_runtime_label(ctx)
     schema = _parser_schema(ctx)
     split = split_scope_facts(ctx.facts, hosted, git_pkgs, schema)
     miss_deps = {}

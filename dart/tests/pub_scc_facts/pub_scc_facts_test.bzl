@@ -10,14 +10,15 @@ foreign-schema facts are ignored while a malformed current-schema fact fails
 naming its key and stale entries are dropped, the merged-repository
 verification decisions (names match, members connected, an entry without
 usable planned names fails), that same-length texts sharing a Java hashCode
-still digest apart, and the narrowed
+still digest apart, that the scanner-runtime touch names the runtime label
+the archive scan resolves on Linux, macOS and Windows, and the narrowed
 scratch check's five decisions.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 
 # buildifier: disable=bzl-visibility
-load("//dart/pub:extensions.bzl", "plan_scope_sccs")
+load("//dart/pub:extensions.bzl", "plan_scope_sccs", "touch_scanner_runtime_label")
 
 # buildifier: disable=bzl-visibility
 load("//dart/pub/private:pub_scc_facts.bzl", "fact_deps_error", "git_fact_key", "hosted_fact_key", "lookup_fact_deps", "parser_schema", "parser_texts_digest", "record_scope_facts", "scratch_pubspec_error", "split_scope_facts")
@@ -326,6 +327,13 @@ def _scratch_root_link_test_impl(ctx):
     asserts.true(env, "charcode" in err and "symlink" in err, "the diagnostic names the package and says symlink: %s" % err)
     return unittest.end(env)
 
+def _scanner_label_touch_test_impl(ctx):
+    env = unittest.begin(ctx)
+    asserts.equals(env, Label("@dart_linux-x64//:bin/dartaotruntime"), touch_scanner_runtime_label(struct(os = struct(name = "Linux", arch = "x86_64"))), "the touch names the Linux runtime the scan resolves")
+    asserts.equals(env, Label("@dart_macos-arm64//:bin/dartaotruntime"), touch_scanner_runtime_label(struct(os = struct(name = "Darwin", arch = "arm64"))), "the touch names the macOS runtime the scan resolves")
+    asserts.equals(env, Label("@dart_windows-x64//:bin/dartaotruntime.exe"), touch_scanner_runtime_label(struct(os = struct(name = "Windows", arch = "AMD64"))), "the touch names the Windows runtime the scan resolves")
+    return unittest.end(env)
+
 _t0_test = unittest.make(_hosted_key_test_impl)
 _t1_test = unittest.make(_git_key_test_impl)
 _t2_test = unittest.make(_key_binding_test_impl)
@@ -349,6 +357,7 @@ _t19_test = unittest.make(_scratch_missing_test_impl)
 _t20_test = unittest.make(_scratch_root_link_test_impl)
 _t21_test = unittest.make(_verify_missing_plan_test_impl)
 _t22_test = unittest.make(_digest_position_weights_test_impl)
+_t23_test = unittest.make(_scanner_label_touch_test_impl)
 
 def pub_scc_facts_test_suite(name):
     small_unittest_suite(
@@ -376,4 +385,5 @@ def pub_scc_facts_test_suite(name):
         _t20_test,
         _t21_test,
         _t22_test,
+        _t23_test,
     )
