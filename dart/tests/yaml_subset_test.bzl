@@ -525,10 +525,12 @@ def _multiline_flow_test_impl(ctx):
     # the line where the collection opens, instead of reading partially.
     text = "name: multiflow\nenvironment:\n  sdk: ^3.0.0\ndependencies:\n  bar:\n    path: ../stubbar\nflutter:\n  assets:\n    - path: assets/x.png\n      flavors: [premium,\n        free]\n"
     value, problems = document_value_and_problems(text, True)
+    asserts.equals(env, "multiflow", value["name"])
     asserts.equals(env, 1, len(problems))
     if len(problems) == 1:
         asserts.true(env, "line 10" in problems[0] and "not supported" in problems[0] and "flow" in problems[0])
     value, problems = document_value_and_problems(text, False)
+    asserts.equals(env, "multiflow", value["name"])
     asserts.equals(env, 1, len(problems))
     if len(problems) == 1:
         asserts.true(env, "line 10" in problems[0] and "not supported" in problems[0])
@@ -547,9 +549,11 @@ def _explicit_key_error_test_impl(ctx):
     # The finding's explicit-key form fails naming the `?` line and the form.
     text = "name: expl\nenvironment:\n  sdk: ^3.0.0\n? dependencies\n: {}\n"
     value, problems = document_value_and_problems(text, True)
+    asserts.equals(env, "expl", value["name"])
     asserts.true(env, len(problems) >= 1)
     asserts.true(env, "line 4" in problems[0] and "not supported" in problems[0] and "explicit" in problems[0])
     value, problems = document_value_and_problems(text, False)
+    asserts.equals(env, "expl", value["name"])
     asserts.true(env, len(problems) >= 1 and "not supported" in problems[0])
     return unittest.end(env)
 

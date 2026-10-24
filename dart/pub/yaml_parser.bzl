@@ -108,6 +108,16 @@ def _lock_text_lines(content):
         text = text[len("\357\273\277"):]
     return text.split("\n")
 
+def _is_lock_marker_line(line, marker):
+    """Returns whether `line` is a document marker: the marker at column 0 with only whitespace after it.
+
+    An indented marker is never a document marker, so one inside a block
+    scalar stays content and one elsewhere is an ordinary line.
+    """
+    if not line.startswith(marker):
+        return False
+    return line[len(marker):].strip() == ""
+
 def _lock_tail_content_error(lines, start, lock_label, marker):
     """Returns the error for the first content line at or after `start`, or None.
 
@@ -117,7 +127,7 @@ def _lock_tail_content_error(lines, start, lock_label, marker):
     """
     for j in range(start, len(lines)):
         stripped = lines[j].strip()
-        if stripped == "" or stripped.startswith("#") or stripped == "...":
+        if stripped == "" or stripped.startswith("#") or _is_lock_marker_line(lines[j], "..."):
             continue
         return "%s: content after document end (%s) at line %d" % (lock_label, marker, j + 1)
     return None
@@ -142,9 +152,9 @@ def _lock_doc_tail_error(content, lock_label):
     saw_directive = False
     for i, line in enumerate(lines):
         stripped = line.strip()
-        if stripped == "...":
+        if _is_lock_marker_line(line, "..."):
             return _lock_tail_content_error(lines, i + 1, lock_label, "...")
-        if stripped == "---":
+        if _is_lock_marker_line(line, "---"):
             if saw_content:
                 return _lock_second_doc_error(lines, i, lock_label)
             if saw_directive:
@@ -294,10 +304,10 @@ def _lock_quote_error(content, lock_label):
         stripped = line.strip()
         if stripped == "" or stripped.startswith("#") or stripped.startswith("%"):
             continue
-        if stripped == "---" or stripped == "...":
+        if _is_lock_marker_line(line, "---") or _is_lock_marker_line(line, "..."):
             continue
         body = strip_comment(line).strip()
-        if body == "" or body == "---" or body == "...":
+        if body == "" or _is_lock_marker_line(line, "---") or _is_lock_marker_line(line, "..."):
             continue
         err = _lock_line_quote_error(body)
         if err:
@@ -340,7 +350,7 @@ def _lock_entry_lines(content):
         body = strip_comment(line).strip()
         if body == "" or body.startswith("#") or body.startswith("%"):
             continue
-        if body == "---" or body == "...":
+        if _is_lock_marker_line(line, "---") or _is_lock_marker_line(line, "..."):
             continue
         indent = len(line) - len(line.lstrip(" \t"))
         if pkg_indent < 0:
