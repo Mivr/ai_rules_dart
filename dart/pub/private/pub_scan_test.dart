@@ -88,6 +88,21 @@ List<int> _gz(List<int> tar) => GZipCodec().encode(tar);
 Map<String, Object?> _verdict(List<int> archive) =>
     scan.scanArchiveVerdict(archive);
 
+Future<Map<String, Object?>> _verdictChunked(
+  List<int> archive,
+  int chunkSize,
+) => scan.scanArchiveChunked(archive, chunkSize);
+
+Future<Map<String, Object?>> _verdictFile(
+  Directory dir,
+  String name,
+  List<int> archive,
+) async {
+  final file = File('${dir.path}/$name');
+  await file.writeAsBytes(archive);
+  return scan.scanArchiveFile(file.path);
+}
+
 void _expectOk(List<int> archive) {
   expect(_verdict(archive), {'ok': true});
 }
@@ -109,6 +124,50 @@ void _expectUnscannable(List<int> archive, String detail) {
 
 List<int> _file(String name, {String prefix = ''}) =>
     _entry(name, '0', data: [1, 2, 3], prefix: prefix);
+
+/// A battery of archives covering every verdict shape: clean gzipped and
+/// plain tars, each refusal kind, each truncation shape, and the gzip
+/// framing variants (multi-member, trailing padding, trailing junk).
+List<List<int>> _battery() => [
+  _gz(_tar([_file('lib/a.dart')])),
+  _tar([_file('lib/a.dart')]),
+  _gz(_tar([_entry('lib/evil.dart', '1', linkname: '../outside.txt')])),
+  _gz(_tar([_entry('lib/evil.dart', '2', linkname: '/etc/passwd')])),
+  _gz(_tar([_file('/abs.dart')])),
+  _gz(
+    _tar([
+      _entry('././@LongLink', 'L', data: [...latin1.encode('lib/ok.dart'), 0]),
+      _file('lib/short.dart'),
+    ]),
+  ),
+  _gz(_pax([_file('lib/a.dart')], _paxRecord('path', 'lib/pax.dart'))),
+  _gz(_tar([_entry('lib/a.dart', 'Z')])),
+  _gz(_tar([_file('lib/a.dart'), _file('lib/b.dart')])),
+  [
+    ..._gz(_tar([_file('lib/a.dart')])),
+    ..._gz(_tar([_file('lib/b.dart')])),
+  ],
+  [
+    ..._gz(_tar([_file('lib/a.dart')])),
+    ...List<int>.filled(100, 0),
+  ],
+  [
+    ..._gz(_tar([_file('lib/a.dart')])),
+    1,
+    2,
+    3,
+  ],
+  _header('lib/a.dart', '0', size: 100),
+  [1, 2, 3],
+  <int>[],
+  _gz(
+    _tar([
+      _file('lib/a.dart'),
+      _entry('lib/big.dart', '0', data: List<int>.filled(200000, 7)),
+      _entry('lib/evil.dart', '1', linkname: 'lib/a.dart'),
+    ]),
+  ),
+];
 
 void main() {
   group('clean archives scan clean', () {
@@ -292,6 +351,95 @@ void main() {
         _gz(_tar([_entry('lib/a.dart', 'S')])),
         'a sparse entry cannot be scanned',
       );
+    });
+  });
+
+  group('gzip framing variants keep their verdicts', () {
+    test('concatenated gzip members scan clean', () {
+      _expectOk([
+        ..._gz(_tar([_file('lib/a.dart')])),
+        ..._gz(_tar([_file('lib/b.dart')])),
+      ]);
+    });
+    test('a hostile entry split across gzip members is refused', () {
+      final tar = _tar([
+        _entry('lib/evil.dart', '1', linkname: '../outside.txt'),
+      ]);
+      final cut = tar.length ~/ 2;
+      _expectRefusal(
+        [..._gz(tar.sublist(0, cut)), ..._gz(tar.sublist(cut))],
+        'hard-link',
+        'lib/evil.dart',
+        '../outside.txt',
+      );
+    });
+    test('trailing NUL padding scans clean', () {
+      _expectOk([
+        ..._gz(_tar([_file('lib/a.dart')])),
+        ...List<int>.filled(100, 0),
+      ]);
+    });
+    test('trailing junk fails the inflate', () {
+      _expectUnscannable([
+        ..._gz(_tar([_file('lib/a.dart')])),
+        1,
+        2,
+        3,
+      ], 'the deflate stream cannot be decoded');
+    });
+  });
+
+  group('the streaming walk matches the in-memory verdicts', () {
+    for (final chunkSize in [1, 2, 3, 7, 511, 512, 513, 1024, 65536]) {
+      test('chunk size $chunkSize', () async {
+        for (final archive in _battery()) {
+          expect(
+            await _verdictChunked(archive, chunkSize),
+            _verdict(archive),
+            reason: 'archive of ${archive.length} bytes at chunk $chunkSize',
+          );
+        }
+      });
+    }
+  });
+
+  group('scanArchiveFile reads real files', () {
+    late Directory dir;
+    setUp(() async {
+      dir = await Directory.systemTemp.createTemp('pub_scan_test');
+    });
+    tearDown(() async {
+      await dir.delete(recursive: true);
+    });
+    test('every battery verdict matches over real files', () async {
+      var i = 0;
+      for (final archive in _battery()) {
+        expect(
+          await _verdictFile(dir, 'a${i++}.tar.gz', archive),
+          _verdict(archive),
+          reason: 'archive of ${archive.length} bytes',
+        );
+      }
+    });
+    test('a missing file cannot be read', () async {
+      expect(await scan.scanArchiveFile('${dir.path}/missing.tar.gz'), {
+        'unscannable': 'the archive cannot be read',
+      });
+    });
+    test('a refusal after a large entry short-circuits', () async {
+      final archive = _gz(
+        _tar([
+          _entry('lib/big.dart', '0', data: List<int>.filled(200000, 7)),
+          _entry('lib/evil.dart', '1', linkname: 'lib/a.dart'),
+        ]),
+      );
+      expect(await _verdictFile(dir, 'evil.tar.gz', archive), {
+        'refusal': {
+          'kind': 'hard-link',
+          'path': 'lib/evil.dart',
+          'target': 'lib/a.dart',
+        },
+      });
     });
   });
 }

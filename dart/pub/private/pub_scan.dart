@@ -36,6 +36,16 @@
 /// rules use the strictest reading on every OS (backslash counts as a
 /// separator everywhere), so verdicts are identical on Linux, macOS and
 /// Windows. Field text decodes as Latin-1, preserving byte values one to one.
+///
+/// Streaming: [scanArchiveFile] reads the archive as a stream
+/// (`File.openRead()` through a gzip decoder), walks the tar headers chunk by
+/// chunk, and skips entry data without keeping it — consumed input is dropped,
+/// so a streamed scan holds only its undecided window (plus at most one
+/// capped name record), never the archive. Any inflate failure (a multi-member
+/// boundary the streaming decoder cannot cross, trailing pad bytes, a corrupt
+/// body) falls back to re-reading the file with the exact in-memory logic, so
+/// multi-member gzip, trailing-NUL padding, pax and GNU long-name handling
+/// keep byte-identical verdicts on every path.
 import 'dart:convert';
 import 'dart:io';
 
@@ -66,6 +76,61 @@ class _Refusal {
   final String kind;
   final String path;
   final String target;
+}
+
+/// Control signal: the streaming walk needs more input. Caught in [_TarScan.pump];
+/// never escapes at end of input (the cursor fails closed instead).
+class _NeedMore implements Exception {
+  const _NeedMore();
+}
+
+/// A byte cursor over the tar stream: preloaded whole (in-memory scan) or fed
+/// chunk by chunk (file scan). Positions past the buffered bytes suspend the
+/// walk until more input arrives, or fail it closed at end of input. Consumed
+/// input is compacted away, so skipped entry data is never kept.
+class _Cursor {
+  _Cursor(this._buf, {this.eof = false});
+  List<int> _buf;
+  bool eof;
+  int _pos = 0;
+
+  /// True when [n] bytes are readable at the cursor.
+  bool ready(int n) => _pos + n <= _buf.length;
+
+  /// Requires [n] readable bytes at the cursor: suspends the walk when more
+  /// input may still arrive, or fails it closed at end of input with the same
+  /// truncation detail the whole-buffer scan reports.
+  void ensure(int n) {
+    if (!ready(n)) {
+      if (eof) _unscannable('the tar archive is truncated');
+      throw const _NeedMore();
+    }
+  }
+
+  /// Reads one byte at [offset] past the cursor. Callers ensure readiness.
+  int byte(int offset) => _buf[_pos + offset];
+
+  /// Copies [n] bytes at [offset] past the cursor. Callers ensure readiness.
+  List<int> slice(int offset, int n) =>
+      _buf.sublist(_pos + offset, _pos + offset + n);
+
+  /// Advances past [n] bytes. Consumed input is dropped by the next [add],
+  /// so skipped entry data is never kept.
+  void advance(int n) {
+    _pos += n;
+  }
+
+  /// Appends streamed input, dropping consumed bytes first. The cursor may
+  /// stand past the buffered bytes (entry data is skipped, never fetched),
+  /// so only buffered bytes are dropped and the cursor keeps its offset.
+  void add(List<int> chunk) {
+    if (_pos >= 65536) {
+      final drop = _pos < _buf.length ? _pos : _buf.length;
+      _buf = _buf.sublist(drop);
+      _pos -= drop;
+    }
+    _buf.addAll(chunk);
+  }
 }
 
 /// Returns true for absolute paths on any OS: POSIX (`/etc/passwd`) and
@@ -127,16 +192,17 @@ bool _symlinkEscapes(String linkPath, String target) {
   return false;
 }
 
-/// Cuts [bytes] at its first NUL pad byte, decoding the kept part Latin-1.
-String _cutNulAt(List<int> bytes, int start, int end) {
+/// Cuts the cursor's bytes at the first NUL pad byte, decoding the kept part
+/// Latin-1. Reads [start] through [end] past the cursor; callers ensure.
+String _cutNulAt(_Cursor cursor, int start, int end) {
   var cut = end;
   for (var i = start; i < end; i++) {
-    if (bytes[i] == 0) {
+    if (cursor.byte(i) == 0) {
       cut = i;
       break;
     }
   }
-  return latin1.decode(bytes.sublist(start, cut), allowInvalid: false);
+  return latin1.decode(cursor.slice(start, cut - start), allowInvalid: false);
 }
 
 /// Parses a tar numeric field: octal, or base-256 when flagged by the top bit
@@ -174,18 +240,19 @@ class _Header {
   final String linkname;
 }
 
-/// Parses one 512-byte header at [pos]. Joins `prefix` and `name` the way the
-/// extractor does, so over-long paths classify under their full name.
-_Header _parseHeader(List<int> bytes, int pos) {
-  var name = _cutNulAt(bytes, pos, pos + 100);
-  final prefix = _cutNulAt(bytes, pos + 345, pos + 500);
+/// Parses one 512-byte header at the cursor. Joins `prefix` and `name` the way
+/// the extractor does, so over-long paths classify under their full name.
+/// Callers ensure the 512 bytes first.
+_Header _parseHeader(_Cursor cursor) {
+  var name = _cutNulAt(cursor, 0, 100);
+  final prefix = _cutNulAt(cursor, 345, 500);
   if (prefix != '') name = '$prefix/$name';
   if (name == '') _unscannable('an entry has no name');
   return _Header(
     name,
-    _parseNumber(bytes.sublist(pos + 124, pos + 136), 'size'),
-    String.fromCharCode(bytes[pos + 156]),
-    _cutNulAt(bytes, pos + 157, pos + 257),
+    _parseNumber(cursor.slice(124, 12), 'size'),
+    String.fromCharCode(cursor.byte(156)),
+    _cutNulAt(cursor, 157, 257),
   );
 }
 
@@ -225,12 +292,20 @@ _PaxRecords _parsePaxRecords(String text) {
   return (path: path, linkpath: linkpath, size: size);
 }
 
-/// The offset-walk tar scan state: the input bytes, the header cursor, and
-/// the pending and global name records. One instance scans one tar stream.
+/// The offset-walk tar scan state: the input cursor, and the pending and
+/// global name records. One instance scans one tar stream. The default
+/// constructor preloads whole bytes (end of input from the start, exactly the
+/// old whole-buffer scan); [_TarScan.streaming] starts empty and suspends
+/// until fed.
 class _TarScan {
-  _TarScan(this._bytes);
-  final List<int> _bytes;
-  int _pos = 0;
+  _TarScan(List<int> bytes)
+    : _cursor = _Cursor(bytes, eof: true),
+      _limit = bytes.length ~/ 512 + 2;
+  _TarScan.streaming() : _cursor = _Cursor(<int>[]), _limit = null;
+  final _Cursor _cursor;
+  final int? _limit;
+  int _steps = 0;
+  bool _finished = false;
   String? _pname;
   String? _plink;
   String? _ppath;
@@ -238,6 +313,25 @@ class _TarScan {
   int? _psize;
   String? _gpath;
   String? _glinkpath;
+
+  /// True once the walk has seen the end-of-archive marker.
+  bool get finished => _finished;
+
+  /// Feeds one streamed chunk and walks as far as possible.
+  _Refusal? pumpAfter(List<int> chunk) {
+    _cursor.add(chunk);
+    return pump();
+  }
+
+  /// Ends streamed input and runs the walk to a verdict: the first refusal,
+  /// or null for a clean archive. Short input fails closed, as before.
+  _Refusal? finish() {
+    _cursor.eof = true;
+    final refusal = pump();
+    if (refusal != null) return refusal;
+    if (!_finished) _unscannable('the tar archive is truncated');
+    return null;
+  }
 
   /// Drops this entry's name records after it is classified, so they never
   /// leak into the next entry. A pax `size=` override survives: the next
@@ -274,18 +368,24 @@ class _TarScan {
   /// Stores a GNU long-name/long-link or pax record into the pending state.
   /// Global records (`g`) persist for every later entry; extended records
   /// (`x`) apply to the next entry only, with `size=` replacing its data
-  /// length.
-  void _storeNameRecord(String kind, int size, int dataPos) {
-    if (dataPos + size > _bytes.length)
-      _unscannable('the tar archive is truncated');
-    if (size > _maxCollectBytes)
+  /// length. Record data sits 512 bytes past the cursor.
+  void _storeNameRecord(String kind, int size) {
+    // At end of input the check order matches the old scan exactly
+    // (truncation first, then the length cap); while streaming, an over-cap
+    // claim fails fast instead of buffering unbounded input.
+    if (!_cursor.ready(512 + size)) {
+      if (_cursor.eof) _unscannable('the tar archive is truncated');
+      if (size > _maxCollectBytes) {
+        _unscannable('a name record is too long to scan');
+      }
+      throw const _NeedMore();
+    }
+    if (size > _maxCollectBytes) {
       _unscannable('a name record is too long to scan');
+    }
     final text = size == 0
         ? ''
-        : latin1.decode(
-            _bytes.sublist(dataPos, dataPos + size),
-            allowInvalid: false,
-          );
+        : latin1.decode(_cursor.slice(512, size), allowInvalid: false);
     if (kind == 'L') {
       _pname = text.split('\x00').first;
     } else if (kind == 'K') {
@@ -304,29 +404,30 @@ class _TarScan {
   }
 
   /// Classifies the header at the cursor and advances past the entry. Returns
-  /// the refusal, or null when the entry is benign.
+  /// the refusal, or null when the entry is benign. Callers ensure the 512
+  /// header bytes; record data suspends until buffered.
   _Refusal? _entry() {
-    final header = _parseHeader(_bytes, _pos);
+    final header = _parseHeader(_cursor);
     var kind = header.typeflag;
     if (kind == '\x00') kind = '0';
     // A pax `size=` override replaces the header size for the next entry.
     final size = _psize ?? header.size;
     _psize = null;
-    final dataPos = _pos + 512;
+    final skip = 512 + size + (-size) % 512;
     if (kind == '1' || kind == '2') {
       final refusal = _classifyLink(header, kind);
-      _pos = dataPos + size + (-size) % 512;
+      _cursor.advance(skip);
       return refusal;
     }
     // Every other entry carries a path too: an absolute or climbing file,
     // directory, or name-record path escapes the root the same way.
     final name = _resolve(header.name, _ppath ?? _pname, _gpath);
     if (_entryPathEscapes(name)) {
-      _pos = dataPos + size + (-size) % 512;
+      _cursor.advance(skip);
       return _Refusal('path', name, '');
     }
     if (kind == 'L' || kind == 'K' || kind == 'x' || kind == 'g') {
-      _storeNameRecord(kind, size, dataPos);
+      _storeNameRecord(kind, size);
     } else if (kind == '0' ||
         kind == '5' ||
         kind == 'D' ||
@@ -339,31 +440,41 @@ class _TarScan {
     } else {
       _unscannable("an entry has kind '$kind', which cannot be scanned");
     }
-    _pos = dataPos + size + (-size) % 512;
+    _cursor.advance(skip);
     return null;
   }
 
   /// Walks the tar stream header to header without touching file data and
-  /// returns the first refusal, or null for a clean archive. The walk stops
-  /// at the first zero block and ignores whatever follows it, the way the
-  /// extractor does; a stream with no end marker fails closed.
-  _Refusal? scan() {
-    final n = _bytes.length;
-    final limit = n ~/ 512 + 2;
-    for (var i = 0; i < limit; i++) {
-      if (_pos + 512 > n) _unscannable('the tar archive is truncated');
-      var zero = true;
-      for (var j = 0; j < _zeroBlockLength; j++) {
-        if (_bytes[_pos + j] != 0) {
-          zero = false;
-          break;
+  /// returns the first refusal, a clean end, or — streaming only — a
+  /// suspension (null with [finished] false) when the buffered input runs
+  /// out. The walk stops at the first zero block and ignores whatever follows
+  /// it, the way the extractor does; a stream with no end marker fails
+  /// closed. The whole-buffer scan keeps its exact step bound.
+  _Refusal? pump() {
+    try {
+      for (;;) {
+        if (_limit != null && _steps >= _limit) {
+          _unscannable('the tar archive never terminates');
         }
+        _steps++;
+        _cursor.ensure(512);
+        var zero = true;
+        for (var j = 0; j < _zeroBlockLength; j++) {
+          if (_cursor.byte(j) != 0) {
+            zero = false;
+            break;
+          }
+        }
+        if (zero) {
+          _finished = true;
+          return null;
+        }
+        final refusal = _entry();
+        if (refusal != null) return refusal;
       }
-      if (zero) return null;
-      final refusal = _entry();
-      if (refusal != null) return refusal;
+    } on _NeedMore {
+      return null;
     }
-    _unscannable('the tar archive never terminates');
   }
 }
 
@@ -422,9 +533,9 @@ _Refusal? _scanArchive(List<int> bytes) {
     } on FormatException {
       _unscannable('the deflate stream cannot be decoded');
     }
-    return _TarScan(inflated).scan();
+    return _TarScan(inflated).finish();
   }
-  return _TarScan(bytes).scan();
+  return _TarScan(bytes).finish();
 }
 
 /// Scans archive bytes and returns the JSON verdict map: `{'ok': true}` for
@@ -435,34 +546,136 @@ _Refusal? _scanArchive(List<int> bytes) {
 /// read and the stdout print around it.
 Map<String, Object?> scanArchiveVerdict(List<int> bytes) {
   try {
-    final refusal = _scanArchive(bytes);
-    return refusal == null
-        ? {'ok': true}
-        : {
-            'refusal': {
-              'kind': refusal.kind,
-              'path': refusal.path,
-              'target': refusal.target,
-            },
-          };
+    return _verdictFor(_scanArchive(bytes));
   } on _Unscannable catch (e) {
     return {'unscannable': e.detail};
   }
 }
 
+/// Formats one walk outcome as the JSON verdict map.
+Map<String, Object?> _verdictFor(_Refusal? refusal) => refusal == null
+    ? {'ok': true}
+    : {
+        'refusal': {
+          'kind': refusal.kind,
+          'path': refusal.path,
+          'target': refusal.target,
+        },
+      };
+
+/// Streams [compressed] through the shared tar walker and returns the walk
+/// outcome: the first refusal, or null for a clean archive. When [gzipped],
+/// the bytes pass through one gzip decoder first; a clean walk then drains
+/// the decoder to its end, so trailing junk still fails the inflate exactly
+/// as the in-memory scan reports it (a plain tar's tail is ignored, as
+/// before). A decoder failure throws [FormatException] for the caller to
+/// re-scan from disk with the exact in-memory logic.
+Future<_Refusal?> _scanStream(
+  Stream<List<int>> compressed,
+  bool gzipped,
+) async {
+  final walk = _TarScan.streaming();
+  Stream<List<int>> source = compressed;
+  if (gzipped) source = source.transform(gzip.decoder);
+  await for (final chunk in source) {
+    if (walk.finished) continue;
+    final refusal = walk.pumpAfter(chunk);
+    if (refusal != null) return refusal;
+    if (walk.finished && !gzipped) return null;
+  }
+  return walk.finish();
+}
+
+/// Scans the archive file at [path] and returns the JSON verdict map, in the
+/// same shape as [scanArchiveVerdict]. Reads the file as a stream
+/// (`File.openRead()` through a gzip decoder), walks the tar headers chunk by
+/// chunk, and skips entry data without keeping it. Refusals short-circuit:
+/// the rest of the file is never read. Any inflate failure re-scans the file
+/// with the exact in-memory logic, so multi-member gzip, trailing-NUL
+/// padding, and corrupt bodies keep byte-identical verdicts.
+Future<Map<String, Object?>> scanArchiveFile(String path) {
+  final file = File(path);
+  return _scanFile(file, file.readAsBytes);
+}
+
+/// Scans [bytes] with the streaming walk, fed in [chunkSize] pieces, and
+/// returns the JSON verdict map. Public so the `pub_scan_test` unit test
+/// proves the streaming walk gives the same verdicts as [scanArchiveVerdict]
+/// at every chunking, including splits mid-header and mid-record.
+Future<Map<String, Object?>> scanArchiveChunked(
+  List<int> bytes,
+  int chunkSize,
+) {
+  final chunks = <List<int>>[];
+  for (var i = 0; i < bytes.length; i += chunkSize) {
+    chunks.add(
+      bytes.sublist(
+        i,
+        i + chunkSize > bytes.length ? bytes.length : i + chunkSize,
+      ),
+    );
+  }
+  return _scanSniffed(
+    Stream.fromIterable(chunks),
+    bytes.isEmpty ? null : _sniffGzip(bytes),
+    () async => bytes,
+  );
+}
+
+/// Reads the first two bytes of [file] to sniff the framing: gzip magic, or
+/// plain tar. Returns null for an empty file.
+Future<bool?> _sniffFile(File file) async {
+  final head = <int>[];
+  await for (final chunk in file.openRead(0, 2)) {
+    head.addAll(chunk);
+  }
+  if (head.isEmpty) return null;
+  return _sniffGzip(head);
+}
+
+/// Sniffs the framing off [head]: true for the gzip magic, else plain tar.
+bool _sniffGzip(List<int> head) =>
+    head.length >= 2 && head[0] == 31 && head[1] == 139;
+
+/// Shared file/chunk driver: sniffs [gzipped] (null for empty input), runs
+/// the streaming walk, and re-scans whole bytes from [reread] with the exact
+/// in-memory logic when the streaming inflate fails.
+Future<Map<String, Object?>> _scanSniffed(
+  Stream<List<int>> compressed,
+  bool? gzipped,
+  Future<List<int>> Function() reread,
+) async {
+  try {
+    if (gzipped == null) return {'unscannable': 'the archive is empty'};
+    return _verdictFor(await _scanStream(compressed, gzipped));
+  } on FormatException {
+    return scanArchiveVerdict(await reread());
+  } on _Unscannable catch (e) {
+    return {'unscannable': e.detail};
+  }
+}
+
+/// File driver: sniffs the framing off the file's head, then streams the
+/// whole file through [_scanSniffed]. A file that cannot be opened or read
+/// reports the same detail the old whole-file read did.
+Future<Map<String, Object?>> _scanFile(
+  File file,
+  Future<List<int>> Function() reread,
+) async {
+  try {
+    return await _scanSniffed(file.openRead(), await _sniffFile(file), reread);
+  } on FileSystemException {
+    return {'unscannable': 'the archive cannot be read'};
+  }
+}
+
 /// CLI entrypoint: reads the archive file, scans its headers, and prints
 /// the one JSON verdict to stdout, always exiting zero.
-void main(List<String> args) {
+void main(List<String> args) async {
   Map<String, Object?> verdict;
   try {
     if (args.isEmpty) _unscannable('no archive path was given');
-    late List<int> bytes;
-    try {
-      bytes = File(args[0]).readAsBytesSync();
-    } on FileSystemException {
-      _unscannable('the archive cannot be read');
-    }
-    verdict = scanArchiveVerdict(bytes);
+    verdict = await scanArchiveFile(args[0]);
   } on _Unscannable catch (e) {
     verdict = {'unscannable': e.detail};
   }
