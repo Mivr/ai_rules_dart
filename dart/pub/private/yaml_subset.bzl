@@ -530,6 +530,46 @@ def _flow_fold_backslash(out, kept, had_trailing, scan):
     scan["escaped"] = False
     return out[:len(out) - 1], True, None
 
+def _flow_fold_blank(scan, st, line):
+    """Folds one blank line into `st`. Returns a problem kind, or None to continue."""
+    if st["cont"]:
+        return "bs-blank"
+    if scan["single"] or scan["double"]:
+        st["out"] += "\n"
+    elif st["out"] != "" and not st["out"].endswith("\n"):
+        st["out"] += "\n"
+    return None
+
+def _flow_fold_closer(kept):
+    """Whether a content line after a plain-scalar comment closes the collection."""
+    first = kept[:1]
+    if first in [",", "]", "}"]:
+        return True
+    return first == ":" and (len(kept) == 1 or kept[1:2] in [" ", "\t"])
+
+def _flow_fold_kept(scan, st, res, raw_kept, line):
+    """Folds one scanned content line into `st`. Returns a problem pair, or None."""
+    kept = raw_kept.rstrip()
+    if kept == "":
+        if res["plain_comment"]:
+            st["comment_pending"] = True
+            st["pending_line"] = line
+        return None
+    if st["comment_pending"] and not _flow_fold_closer(kept):
+        return ("plain-comment", st["pending_line"])
+    st["comment_pending"] = res["plain_comment"]
+    if res["plain_comment"]:
+        st["pending_line"] = line
+    st["out"] = _flow_fold_join(st["out"], kept, st["cont"])
+    st["cont"] = False
+    had_trailing = kept != raw_kept
+    out, cont, bs_problem = _flow_fold_backslash(st["out"], kept, had_trailing, scan)
+    st["out"] = out
+    st["cont"] = cont
+    if bs_problem != None:
+        return (bs_problem, line)
+    return None
+
 def _flow_fold_lines(items, scan):
     """Folds raw flow lines as pub folds them. Returns (folded, problem).
 
@@ -542,20 +582,14 @@ def _flow_fold_lines(items, scan):
     (`,`, `]`, `}` or a separating `:`) or pub rejects the flow. `problem`
     is None, or a (kind, line) pair the caller reports.
     """
-    out = ""
-    cont = False
-    comment_pending = False
-    pending_line = 0
+    st = {"out": "", "cont": False, "comment_pending": False, "pending_line": 0}
     for item in items:
         line = item[0]
         content = item[1].lstrip(" \t")
         if content.strip() == "":
-            if cont:
-                return "", ("bs-blank", line)
-            if scan["single"] or scan["double"]:
-                out += "\n"
-            elif out != "" and not out.endswith("\n"):
-                out += "\n"
+            blank = _flow_fold_blank(scan, st, line)
+            if blank != None:
+                return "", (blank, line)
             continue
         res = {"kept": [], "plain_comment": False, "hash_flag": False, "pct_flag": False, "stopped": False, "skip": False}
         _flow_scan_text(content, scan, res)
@@ -563,31 +597,10 @@ def _flow_fold_lines(items, scan):
             return "", ("hash", line)
         if res["pct_flag"]:
             return "", ("directive", line)
-        raw_kept = "".join(res["kept"])
-        kept = raw_kept.rstrip()
-        if kept == "":
-            if res["plain_comment"]:
-                comment_pending = True
-                pending_line = line
-            continue
-        if comment_pending:
-            first = kept[:1]
-            if first in [",", "]", "}"]:
-                comment_pending = False
-            elif first == ":" and (len(kept) == 1 or kept[1:2] in [" ", "\t"]):
-                comment_pending = False
-            else:
-                return "", ("plain-comment", pending_line)
-        if res["plain_comment"]:
-            comment_pending = True
-            pending_line = line
-        out = _flow_fold_join(out, kept, cont)
-        cont = False
-        had_trailing = kept != raw_kept
-        out, cont, bs_problem = _flow_fold_backslash(out, kept, had_trailing, scan)
-        if bs_problem != None:
-            return "", (bs_problem, line)
-    return out, None
+        problem = _flow_fold_kept(scan, st, res, "".join(res["kept"]), line)
+        if problem != None:
+            return "", problem
+    return st["out"], None
 
 def _flow_fold_problem(kind, line):
     """The problem for a folded-flow line this reader cannot spell as pub reads it."""
