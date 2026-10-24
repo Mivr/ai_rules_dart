@@ -40,8 +40,10 @@ Supported:
 - flow collections `[...]` and `{...}`, nested; on a line of their own they
   are read within that line, a document that starts with one may span
   lines (JSON documents), and one that starts after `key:` or `-` folds
-  its deeper lines with single spaces and reads as one value when the
-  folded text parses, exactly as pub reads it
+  its deeper lines and reads as one value when the folded text parses.
+  Folding follows pub: a break between content lines is one space,
+  indentation is dropped, a blank line is one "\n" inside quotes while a
+  blank run outside quotes is one "\n", and comment-only lines are skipped
 - block scalars `|` and `>` with chomping and indentation indicators
 - plain scalars continued on more-indented lines, including `?` lines,
   which pub folds into the scalar
@@ -58,7 +60,10 @@ testing, so the projections are unaffected on real pubspec files:
   revisions failed too.
 - flow collections that span lines are not supported, unless the folded
   lines read as one flow collection as pub reads them; yaml.bzl reads all
-  spanning flows. The supported fold is exactly what older revisions read.
+  spanning flows. The supported fold matches pub on the oracle-checked
+  shapes (plain, single- and double-quoted scalars, flow mapping values,
+  blank and comment-only lines between the folded lines); a backslash at
+  a folded line's end is not a continuation, unlike pub.
 - merge keys (`<<`) are ordinary keys; yaml.bzl merges them into the mapping.
   YAML 1.2 defines no merge keys.
 - `%TAG` handles are ignored, so a tag written through one reads as untagged;
@@ -154,7 +159,7 @@ def _parse_document(content, strict_lines):
     lines = _first_document_lines(_strip_bom(content))
     text = "\n".join(lines).strip()
     if text[:1] in ["{", "["]:
-        return _parse_flow(text, {}, state, 1), state.problems
+        return _parse_flow(_fold_flow_document(text), {}, state, 1), state.problems
     return _parse_block(lines, state), state.problems
 
 def _strip_bom(content):
@@ -276,20 +281,25 @@ def _attach_compact_seq(pending, anchors, stack):
         "compact": True,
     })
 
-def _pending_fold_parts(lines, idx, parent_indent):
-    """Collects the lines a value after `key:` or `-` folds with. Returns (parts, next index).
+def _pending_flow_texts(lines, idx, parent_indent):
+    """Collects the lines a value after `key:` or `-` folds with. Returns (texts, next index).
 
-    The first part is the value's own line; deeper lines that open no block
-    entry join it with single spaces, as pub folds them. Blank lines, comments
-    and other lines without content are skipped; a dedent or a line that opens
-    an entry ends the fold.
+    `texts` holds each deeper content line in block form, plus "" for each
+    blank line (empty or spaces-only), so the fold can place pub's line
+    breaks. Comment-only and other content-free lines are skipped, as the
+    plain fold skips them; a dedent or a line that opens an entry ends the
+    fold.
     """
-    parts = []
+    texts = []
     next_idx = idx
     for _ in range(len(lines) + 1):
         if next_idx >= len(lines):
             break
         raw = lines[next_idx]
+        if not raw.strip():
+            texts.append("")
+            next_idx += 1
+            continue
         indent, text = _block_line_text(raw)
         if indent == None:
             next_idx += 1
@@ -298,9 +308,61 @@ def _pending_fold_parts(lines, idx, parent_indent):
             break
         if _is_dash(text) or text.startswith("? ") or text.startswith(": ") or _is_mapping_start(text):
             break
-        parts.append(text)
+        texts.append(text)
         next_idx += 1
-    return parts, next_idx
+    return texts, next_idx
+
+def _fold_flow_texts(texts):
+    """Folds flow lines as pub folds them. Returns the folded text.
+
+    A break between two content lines is one space; each blank line is one
+    "\\n" inside quotes, while outside quotes a blank run is one "\\n";
+    continuation indentation is already dropped from the texts. Without blank
+    lines this is a single-space join, exactly the older fold. Quote marks
+    inside the other quote kind are content; a backslash escapes the next
+    character, across lines too.
+    """
+    out = []
+    single = False
+    double = False
+    escaped = False
+    for text in texts:
+        if text == "":
+            if single or double:
+                out.append("\n")
+            elif out and not out[-1].endswith("\n"):
+                out.append("\n")
+            continue
+        if out and not out[-1].endswith("\n"):
+            out.append(" ")
+        out.append(text)
+        for i in range(len(text)):
+            ch = text[i]
+            if escaped:
+                escaped = False
+            elif double and ch == "\\":
+                escaped = True
+            elif ch == "'" and not double:
+                single = not single
+            elif ch == '"' and not single:
+                double = not double
+    return "".join(out)
+
+def _fold_flow_document(text):
+    """Folds a multi-line flow document's breaks as pub folds them.
+
+    Content lines strip indentation and trailing space and join as
+    `_fold_flow_texts` folds them; comment-only lines are skipped, as
+    separation. A single-line document folds to itself.
+    """
+    texts = []
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if stripped == "":
+            texts.append("")
+        elif not stripped.startswith("#"):
+            texts.append(stripped)
+    return _fold_flow_texts(texts)
 
 def _folded_flow_ok(joined, anchors):
     """Returns whether the folded `joined` text reads as one flow collection.
@@ -339,18 +401,20 @@ def _consume_pending_scalar(cursor, pending, env):
     if text0 != None:
         end = _spanning_flow_end(lines, idx + 1, parent_indent, text0, anchors)
         if end != None:
-            parts, next_idx = _pending_fold_parts(lines, idx, parent_indent)
-            if _folded_flow_ok(" ".join(parts), anchors):
+            texts, next_idx = _pending_flow_texts(lines, idx, parent_indent)
+            folded = _fold_flow_texts(texts)
+            if _folded_flow_ok(folded, anchors):
                 # The folded lines read as one flow collection, as pub reads
                 # them: keep the value, as revisions before the span check did.
-                value = _parse_scalar(" ".join(parts), anchors, state, idx + 1)
+                value = _parse_scalar(folded, anchors, state, idx + 1)
                 parent[slot] = value
                 if pending["anchor"] != None:
                     anchors[pending["anchor"]] = _clone(value)
                 return next_idx
             state.problems.append(_span_flow_problem(idx + 1))
             return end
-    parts, next_idx = _pending_fold_parts(lines, idx, parent_indent)
+    texts, next_idx = _pending_flow_texts(lines, idx, parent_indent)
+    parts = [text for text in texts if text != ""]
     if not parts:
         return next_idx + 1 if next_idx < len(lines) else next_idx
     joined = " ".join(parts)
