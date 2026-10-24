@@ -232,17 +232,12 @@ JitStat? jitDecodeLinuxStat(List<int> bytes, {required ffi.Abi abi}) {
 /// `stat` and the caller fails closed.
 ({String fstat, String lstat, int ver})? jitLinuxStat64Calls({
   required ffi.Abi abi,
-}) {
-  switch (abi) {
-    case ffi.Abi.linuxX64:
-      return (fstat: '__fxstat64', lstat: '__lxstat64', ver: 1);
-    case ffi.Abi.linuxArm64:
-    case ffi.Abi.linuxRiscv64:
-      return (fstat: '__fxstat64', lstat: '__lxstat64', ver: 0);
-    default:
-      return null;
-  }
-}
+}) => switch (abi) {
+  ffi.Abi.linuxX64 => (fstat: '__fxstat64', lstat: '__lxstat64', ver: 1),
+  ffi.Abi.linuxArm64 ||
+  ffi.Abi.linuxRiscv64 => (fstat: '__fxstat64', lstat: '__lxstat64', ver: 0),
+  _ => null,
+};
 
 /// O_CLOEXEC for the lock and every temporary descriptor (see [jitOpenFlags]
 /// and [jitReadFlags]): a pure function of the OS. The value is 0x80000 on
@@ -1004,12 +999,9 @@ bool jitFdMatchesPath(int fd, String path) {
   if (held == null) return false;
   final current = jitStatEntry(path);
   if (current == null) return false;
-  final a = held.id;
-  final b = current.id;
-  return a.devA == b.devA &&
-      a.devB == b.devB &&
-      a.inoLo == b.inoLo &&
-      a.inoHi == b.inoHi;
+  // Record equality compares every identity field: any divergence fails
+  // closed, so only the exact same entry still matches the held descriptor.
+  return held.id == current.id;
 }
 
 /// Stats an open descriptor itself: `statx` with `AT_EMPTY_PATH` on Linux
