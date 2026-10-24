@@ -11,7 +11,9 @@ git binary:
   newer), assembles a bare repository skeleton without running
   `git init`, resolves `insteadOf` rewrites with `git ls-remote
   --get-url`, then fetches the pinned SHA (falling back
-  to all refs), all while inheriting only the allowlisted transport
+  to all refs) — remote resolutions keep the lock URL on both fetch
+  commands so the inherited rewrites apply once, while only local
+  resolutions fetch the resolved URL — all while inheriting only the allowlisted transport
   variables and unsetting every other `GIT_*` selector to `None` — one
   hostile-value test per variable below, plus sweep tests for
   undocumented `GIT_*` names and a regression test that no value is ever
@@ -497,6 +499,44 @@ def _transport_resolved_local_test_impl(ctx):
         ["git", "--no-replace-objects", "--git-dir=" + _BARE] + _transport_pins() + ["fetch", "--", rewritten, _SHA],
         calls[2].args,
     )
+    return unittest.end(env)
+
+# A remote resolution keeps the lock URL on both fetch commands, while a
+# local resolution fetches the resolved URL on both: the inheriting remote
+# environment still carries the host's `insteadOf` rewrites, so git
+# applies them to the lock URL once, exactly as before the
+# resolve-then-isolate change — fetching the resolved URL there would
+# apply a chained rewrite a second time. Each case runs the SHA fetch and
+# the all-refs fallback (the SHA fetch failing once).
+def _transport_resolved_fetch_url_test_impl(ctx):
+    env = unittest.begin(ctx)
+    for rewritten, want_url, want_env in [
+        ("https://mirror.example.com/r.git", _URL, _transport_env()),
+        ("/srv/repos/local-r.git", "/srv/repos/local-r.git", _transport_env(local = True)),
+    ]:
+        for fetch_results in [
+            [struct(return_code = 0, stdout = "", stderr = "")],
+            [
+                struct(return_code = 128, stdout = "", stderr = "couldn't find remote ref"),
+                struct(return_code = 0, stdout = "", stderr = ""),
+            ],
+        ]:
+            record = []
+            git_transport_fetch(
+                _fake_ctx(record, [_VERSION_RESULT, _resolve_result(rewritten)] + fetch_results),
+                _URL,
+                "_git_bare",
+                _SHA,
+                "test",
+            )
+            fetch = _executes(record)[-1]
+            want_ref = _SHA if len(fetch_results) == 1 else "+refs/*:refs/origin/*"
+            asserts.equals(
+                env,
+                ["git", "--no-replace-objects", "--git-dir=" + _BARE] + _transport_pins() + ["fetch", "--", want_url, want_ref],
+                fetch.args,
+            )
+            asserts.equals(env, want_env, fetch.environment)
     return unittest.end(env)
 
 def _version_accepted_test_impl(ctx):
@@ -1239,6 +1279,7 @@ _t16_test = unittest.make(_transport_resolved_local_test_impl)
 _t17_test = unittest.make(_version_accepted_test_impl)
 _t18_test = unittest.make(_version_refused_test_impl)
 _t19_test = unittest.make(_version_unparsable_test_impl)
+_t20_test = unittest.make(_transport_resolved_fetch_url_test_impl)
 
 def git_host_config_test_suite(name):
     small_unittest_suite(
@@ -1263,6 +1304,7 @@ def git_host_config_test_suite(name):
         _t17_test,
         _t18_test,
         _t19_test,
+        _t20_test,
         *_clears_var_tests
     )
 
