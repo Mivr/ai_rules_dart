@@ -1,6 +1,7 @@
 """Unit tests for root-wins `pub.package()` precedence in `pub_root_pin.bzl`."""
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
+load("//dart/pub:extensions.bzl", "resolve_pub_packages")
 
 # buildifier: disable=bzl-visibility
 load("//dart/pub/private:pub_root_pin.bzl", "select_all_explicit", "select_pub_package")
@@ -9,6 +10,7 @@ load("//dart/tests:small_suite.bzl", "small_unittest_suite")
 _V191 = "75cca69d1490965be98c73ceaea117e8a04dd21217b37b292c9ddbec0d955bc5"
 _V190 = "087ce49c3f0dc39180befefc60fdb4acd8f8620e5682fe2476afd0b3688bb4af"
 _ALT = "0000000000000000000000000000000000000000000000000000000000000000"
+_REF = "1111111111111111111111111111111111111111"
 
 def _decl(version, sha256, is_root = False, module = "dep_a", deps = []):
     return struct(is_root = is_root, module = module, name = "path", version = version, sha256 = sha256, deps = deps)
@@ -301,6 +303,146 @@ def _all_explicit_lock_pin_leaves_locks_test_impl(ctx):
     asserts.equals(env, _V191, aliases["path"].sha256)
     return unittest.end(env)
 
+def _mod_pkg(version, sha256, module = "depmod", is_root = False, deps = []):
+    return struct(name = "path", version = version, sha256 = sha256, deps = deps, is_root = is_root, module = module)
+
+def _hosted_pkg(version, sha256):
+    return {"source": "hosted", "version": version, "description": {"sha256": sha256, "url": "https://pub.dev"}}
+
+def _git_pkg(version, ref):
+    return {"source": "git", "version": version, "description": {"url": "file:///srv/gp.git", "resolved-ref": ref, "path": "."}}
+
+def _mod_lock(hub, pkgs, module = "root", is_root = True, on_version_conflict = "error", isolated = False):
+    return struct(name = hub, lock = "//" + module + ":pubspec.lock", packages = pkgs, on_version_conflict = on_version_conflict, isolated = isolated, is_root = is_root, module = module)
+
+def _check_git_pinned(env, r, version, ref, note):
+    asserts.equals(env, None, r.error)
+    asserts.equals(env, {}, r.explicit)
+    asserts.true(env, "path" in r.aliases)
+    asserts.equals(env, version, r.aliases["path"].version)
+    asserts.equals(env, ref, r.aliases["path"].resolved_ref)
+    asserts.equals(env, version, r.resolved_git["path"].version)
+    asserts.equals(env, ref, r.resolved_git["path"].resolved_ref)
+    asserts.equals(env, [note], r.notes)
+
+def _root_git_pin_drops_dep_decl_test_impl(ctx):
+    env = unittest.begin(ctx)
+    r = resolve_pub_packages(
+        [_mod_pkg("1.9.0", _V190)],
+        [_mod_lock("pub_deps", {"path": _git_pkg("1.4.0", _REF)})],
+    )
+    _check_git_pinned(
+        env,
+        r,
+        "1.4.0",
+        _REF,
+        "Pub package \"path\" uses 1.4.0 from git %s in //root:pubspec.lock, not 1.9.0 declared by module \"depmod\"." % _REF,
+    )
+    return unittest.end(env)
+
+def _root_git_pin_drops_two_dep_decls_test_impl(ctx):
+    env = unittest.begin(ctx)
+    r = resolve_pub_packages(
+        [_mod_pkg("1.9.0", _V190), _mod_pkg("1.8.0", _ALT, module = "depmod2")],
+        [_mod_lock("pub_deps", {"path": _git_pkg("1.4.0", _REF)})],
+    )
+    _check_git_pinned(
+        env,
+        r,
+        "1.4.0",
+        _REF,
+        "Pub package \"path\" uses 1.4.0 from git %s in //root:pubspec.lock, not 1.9.0 declared by module \"depmod\"; 1.8.0 declared by module \"depmod2\"." % _REF,
+    )
+    return unittest.end(env)
+
+def _root_git_pin_beats_same_version_decl_test_impl(ctx):
+    env = unittest.begin(ctx)
+    r = resolve_pub_packages(
+        [_mod_pkg("1.4.0", _V190)],
+        [_mod_lock("pub_deps", {"path": _git_pkg("1.4.0", _REF)})],
+    )
+    _check_git_pinned(
+        env,
+        r,
+        "1.4.0",
+        _REF,
+        "Pub package \"path\" uses 1.4.0 from git %s in //root:pubspec.lock, not 1.4.0 declared by module \"depmod\"." % _REF,
+    )
+    return unittest.end(env)
+
+def _isolated_root_git_entry_does_not_pin_test_impl(ctx):
+    env = unittest.begin(ctx)
+    r = resolve_pub_packages(
+        [_mod_pkg("1.9.0", _V190)],
+        [_mod_lock("tool_deps", {"path": _git_pkg("1.4.0", _REF)}, isolated = True)],
+    )
+    asserts.equals(env, None, r.error)
+    asserts.equals(env, "1.9.0", r.explicit["path"].version)
+    asserts.equals(env, {}, r.aliases)
+    asserts.equals(env, [], r.notes)
+    asserts.equals(env, "1.4.0", r.isolated_git_packages["tool_deps"]["path"].version)
+    return unittest.end(env)
+
+def _root_decl_still_beats_root_git_lock_test_impl(ctx):
+    env = unittest.begin(ctx)
+    r = resolve_pub_packages(
+        [_mod_pkg("1.9.0", _V190, module = "myapp", is_root = True)],
+        [_mod_lock("pub_deps", {"path": _git_pkg("1.4.0", _REF)})],
+    )
+    asserts.equals(env, None, r.error)
+    asserts.equals(env, "1.9.0", r.explicit["path"].version)
+    asserts.equals(env, {}, r.aliases)
+    asserts.equals(env, [], r.notes)
+    return unittest.end(env)
+
+def _upgrade_note_names_resolved_version_test_impl(ctx):
+    env = unittest.begin(ctx)
+    r = resolve_pub_packages(
+        [_mod_pkg("2.0.0", _ALT)],
+        [
+            _mod_lock("pub_deps", {"path": _hosted_pkg("1.9.0", _V190)}, on_version_conflict = "upgrade"),
+            _mod_lock("dep_deps", {"path": _hosted_pkg("1.9.1", _V191)}, module = "depmod2", is_root = False),
+        ],
+    )
+    asserts.equals(env, None, r.error)
+    asserts.equals(env, {}, r.explicit)
+    asserts.equals(env, "1.9.1", r.resolved["path"].version)
+    asserts.equals(env, _V191, r.resolved["path"].sha256)
+    asserts.equals(env, "1.9.1", r.aliases["path"].version)
+    asserts.equals(env, _V191, r.aliases["path"].sha256)
+    asserts.equals(
+        env,
+        ["Pub package \"path\" uses 1.9.1 from //depmod2:pubspec.lock, not 2.0.0 declared by module \"depmod\"."],
+        r.notes,
+    )
+    return unittest.end(env)
+
+def _root_pin_hides_no_lock_sha_conflict_test_impl(ctx):
+    env = unittest.begin(ctx)
+    r = resolve_pub_packages(
+        [_mod_pkg("1.9.0", _ALT)],
+        [
+            _mod_lock("pub_deps", {"path": _hosted_pkg("1.9.1", _V191)}),
+            _mod_lock("dep_deps", {"path": _hosted_pkg("1.9.0", _V190)}, module = "depmod2", is_root = False),
+        ],
+    )
+    asserts.true(env, r.error != None)
+    asserts.true(env, "conflicting sha256 checksums between pub.package()" in r.error, "keeps lock wording: %s" % r.error)
+    asserts.true(env, _ALT in r.error and _V190 in r.error, "names both values: %s" % r.error)
+    asserts.true(env, "//depmod2:pubspec.lock" in r.error, "names the lock: %s" % r.error)
+    return unittest.end(env)
+
+def _root_pin_hides_no_decl_sha_conflict_test_impl(ctx):
+    env = unittest.begin(ctx)
+    r = resolve_pub_packages(
+        [_mod_pkg("1.9.0", _V190), _mod_pkg("1.9.0", _ALT, module = "depmod2")],
+        [_mod_lock("pub_deps", {"path": _hosted_pkg("1.9.1", _V191)})],
+    )
+    asserts.true(env, r.error != None)
+    asserts.true(env, "conflicting sha256 checksums across pub.package() declarations" in r.error, "keeps decl wording: %s" % r.error)
+    asserts.true(env, _V190 in r.error and _ALT in r.error, "names both values: %s" % r.error)
+    return unittest.end(env)
+
 _t0_test = unittest.make(_root_explicit_beats_dep_test_impl)
 _t1_test = unittest.make(_root_lock_beats_dep_test_impl)
 _t2_test = unittest.make(_root_older_than_dep_still_wins_test_impl)
@@ -324,6 +466,14 @@ _t19_test = unittest.make(_root_locks_upgrade_test_impl)
 _t20_test = unittest.make(_bad_sha_reports_sha_shape_test_impl)
 _t21_test = unittest.make(_all_explicit_wires_pins_test_impl)
 _t22_test = unittest.make(_all_explicit_lock_pin_leaves_locks_test_impl)
+_t23_test = unittest.make(_root_git_pin_drops_dep_decl_test_impl)
+_t24_test = unittest.make(_root_git_pin_drops_two_dep_decls_test_impl)
+_t25_test = unittest.make(_root_git_pin_beats_same_version_decl_test_impl)
+_t26_test = unittest.make(_isolated_root_git_entry_does_not_pin_test_impl)
+_t27_test = unittest.make(_root_decl_still_beats_root_git_lock_test_impl)
+_t28_test = unittest.make(_upgrade_note_names_resolved_version_test_impl)
+_t29_test = unittest.make(_root_pin_hides_no_lock_sha_conflict_test_impl)
+_t30_test = unittest.make(_root_pin_hides_no_decl_sha_conflict_test_impl)
 
 def pub_root_pin_test_suite(name):
     small_unittest_suite(
@@ -351,4 +501,12 @@ def pub_root_pin_test_suite(name):
         _t20_test,
         _t21_test,
         _t22_test,
+        _t23_test,
+        _t24_test,
+        _t25_test,
+        _t26_test,
+        _t27_test,
+        _t28_test,
+        _t29_test,
+        _t30_test,
     )

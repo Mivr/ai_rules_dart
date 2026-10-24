@@ -9,7 +9,7 @@ load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
 load("//dart/pub:pub_scan.bzl", "run_pub_archive_scans")
 load("//dart/pub:yaml_parser.bzl", "lock_package_error", "parse_pubspec_deps", "parse_pubspec_lock")
 load("//dart/pub/private:pub_repository.bzl", "pub_package")
-load("//dart/pub/private:pub_root_pin.bzl", "best_entry", "hosted_sha_conflict", "hosted_version_error", "select_all_explicit")
+load("//dart/pub/private:pub_root_pin.bzl", "best_entry", "decl_lock_sha_conflict", "git_ref_conflict", "git_version_error", "hosted_sha_conflict", "hosted_version_error", "select_all_explicit")
 load("//dart/pub/private:pub_scanner_sdk.bzl", "scanner_runtime_label")
 load("//dart/pub/private:pub_scc_facts.bzl", "parser_schema", "read_scope_pubspec", "record_scope_facts", "split_scope_facts")
 load("//dart/pub/private:scc.bzl", "compute_sccs", "package_dep_graph", "rewrite_vanished_spoke", "scc_repo_name")
@@ -27,7 +27,7 @@ _PARSER_SOURCE_LABELS = [
 ]
 
 _package = tag_class(
-    doc = "Declares one pub.dev package to download and materialize as a spoke repository, pinned by version and archive hash with its pub dependencies. A `package` tag from the root module wins over `package` tags for the same package from dependencies: a dependency's different version is dropped with a NOTE naming both versions.",
+    doc = "Declares one pub.dev package to download and materialize as a spoke repository, pinned by version and archive hash with its pub dependencies. A `package` tag from the root module wins over `package` tags for the same package from dependencies: a dependency's different version is dropped with a NOTE naming both versions. A root lock's git entry pins like a hosted one, and a root pin never hides a same-version sha256 conflict.",
     attrs = {
         "name": attr.string(
             doc = "The pub.dev package name (also used as the repository name).",
@@ -49,7 +49,7 @@ _package = tag_class(
 )
 
 _from_lock = tag_class(
-    doc = "Resolves a pubspec.lock file into one hub repository and its package spokes, joining the global version resolution unless isolated. A package pinned by a lock the root module reads keeps the root's version when a dependency declares another version with `pub.package()`: the dependency's version is dropped with a NOTE naming both versions.",
+    doc = "Resolves a pubspec.lock file into one hub repository and its package spokes, joining the global version resolution unless isolated. A package pinned by a lock the root module reads keeps the resolved version when a dependency declares another version with `pub.package()`: the dependency's version is dropped with a NOTE naming the resolved version. A root lock's git entry pins like a hosted one, and a root pin never hides a same-version sha256 conflict.",
     attrs = {
         "name": attr.string(
             doc = "Repository name for the resolved packages. The name is global to the " +
@@ -452,11 +452,7 @@ def _register_hosted_package(state, explicit, name, info, lock_tag, hub_name, is
     if name in explicit:
         exp = explicit[name]
         if exp.version == version and exp.sha256 != sha256:
-            return (
-                "Package \"%s\" (%s) has conflicting sha256 checksums between pub.package() and %s:\n" % (name, version, lock_tag.lock) +
-                "  - %s (from pub.package)\n" % exp.sha256 +
-                "  - %s (from \"%s\", %s)" % (sha256, hub_name, lock_tag.lock)
-            )
+            return decl_lock_sha_conflict(name, version, exp.sha256, hub_name, str(lock_tag.lock), sha256)
 
     entry = struct(
         version = version,
@@ -581,36 +577,11 @@ def _resolve_hosted(state, explicit):
             resolved[name] = entry
     return resolved, None
 
-def _check_git_refs(name, pkg):
-    """Returns the cross-lock resolved-ref conflict error, or None."""
-    by_version = {}
-    for e in pkg.entries:
-        if e.version not in by_version:
-            by_version[e.version] = e
-        elif by_version[e.version].resolved_ref != e.resolved_ref:
-            first = by_version[e.version]
-            return (
-                "Package \"%s\" (%s) has conflicting resolved-ref values across lock files:\n" % (name, e.version) +
-                "  - %s (from \"%s\", %s)\n" % (first.resolved_ref, first.hub_name, first.lock_label) +
-                "  - %s (from \"%s\", %s)" % (e.resolved_ref, e.hub_name, e.lock_label)
-            )
-    return None
-
-def _git_version_error(name, pkg):
-    """Returns the version-conflict error for git packages."""
-    return (
-        "Package \"%s\" has conflicting versions across lock files:\n" % name +
-        "".join([
-            "  - %s (from \"%s\", %s)\n" % (entry.version, entry.hub_name, entry.lock_label)
-            for entry in pkg.entries
-        ])
-    )
-
 def _resolve_git_versions(state):
     """Resolves every git package to one version. Returns (resolved_git, error)."""
     resolved_git = {}
     for name, pkg in state["git_registry"].items():
-        err = _check_git_refs(name, pkg)
+        err = git_ref_conflict(name, pkg.entries)
         if err:
             return {}, err
         if len(pkg.entries) == 1:
@@ -620,7 +591,7 @@ def _resolve_git_versions(state):
         best = best_entry(pkg.entries)
         for e in pkg.entries:
             if e.version != best.version and e.on_version_conflict == "error":
-                return {}, _git_version_error(name, pkg)
+                return {}, git_version_error(name, pkg.entries)
         resolved_git[name] = struct(version = best.version, url = pkg.url, resolved_ref = best.resolved_ref, path = best.path)
     return resolved_git, None
 
@@ -726,7 +697,8 @@ def resolve_pub_packages(package_tags, lock_tags):
     The root module wins over dependencies: its `pub.package()` pin, or the
     version its non-isolated `pub.from_lock` locks settle on, resolves when a
     non-root `pub.package()` declares another version, with an informational
-    NOTE naming both versions. A non-root declaration at the root's version
+    NOTE naming the resolved version. A root lock's git entry pins like a
+    hosted one. A non-root declaration at the resolved version
     with a different sha256 is an integrity conflict and fails.
 
     Args:
@@ -1168,5 +1140,5 @@ pub = module_extension(
         "package": _package,
         "from_lock": _from_lock,
     },
-    doc = "Declares pub.dev package dependencies for download and use as dart_library targets. The root module wins over dependencies: its `pub.package()` pin, or the version its `from_lock` locks settle on, resolves when a dependency declares another version with `pub.package()`, with a NOTE naming both versions.",
+    doc = "Declares pub.dev package dependencies for download and use as dart_library targets. The root module wins over dependencies: its `pub.package()` pin, or the version its `from_lock` locks settle on, resolves when a dependency declares another version with `pub.package()`, with a NOTE naming the resolved version. A root lock's git entry pins like a hosted one.",
 )
