@@ -1,0 +1,5 @@
+"""Suites for the hermeticity lows fixed together (see `lows_b_a_test.bzl`)."""
+
+load(":lows_b_a_test.bzl", "lows_b_a_suite")
+
+lows_b_a_suite(name = "lows_b_a")

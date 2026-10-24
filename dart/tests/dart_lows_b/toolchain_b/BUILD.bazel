@@ -1,0 +1,32 @@
+"""Synthetic SDK layout with no `dartvm`, for the launcher-input tests."""
+
+load("//dart:toolchain.bzl", "dart_toolchain")
+
+# Synthetic SDK layout with no `dartvm`: `bin/dart` is the VM itself. Own
+# Bazel package so its `DartPatchSnapshot` outputs do not collide with the
+# `dartvm`-carrying toolchain's.
+filegroup(
+    name = "lows_b_b_root",
+    srcs = glob(["lows_b_sdk_b/**"]),
+)
+
+filegroup(
+    name = "lows_b_b_compile",
+    srcs = [
+        "lows_b_sdk_b/bin/dart",
+        "lows_b_sdk_b/bin/snapshots/gen_kernel_aot.dart.snapshot",
+        "lows_b_sdk_b/bin/snapshots/kernel_worker_aot.dart.snapshot",
+    ],
+)
+
+dart_toolchain(
+    name = "lows_b_b_toolchain",
+    analyze_files = ":lows_b_b_compile",
+    compile_files = ":lows_b_b_compile",
+    dart = "lows_b_sdk_b/bin/dart",
+    runtime_files = ":lows_b_b_compile",
+    sdk_root = ":lows_b_b_root",
+    tags = ["manual"],
+    version = "3.13.5",
+    visibility = ["//dart/tests/dart_lows_b:__pkg__"],
+)

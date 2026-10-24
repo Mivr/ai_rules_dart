@@ -1,0 +1,33 @@
+"""Synthetic SDK whose root carries `dartvm`, for the launcher-input tests."""
+
+load("//dart:toolchain.bzl", "dart_toolchain")
+
+# Synthetic SDK whose root carries `dartvm`. The compile subset omits it, as a
+# user toolchain's subsets may, while the launcher still reads it. This
+# toolchain lives in its own Bazel package because its `DartPatchSnapshot`
+# outputs would otherwise collide with the no-`dartvm` toolchain's.
+filegroup(
+    name = "lows_b_a_root",
+    srcs = glob(["lows_b_sdk_a/**"]),
+)
+
+filegroup(
+    name = "lows_b_a_compile",
+    srcs = [
+        "lows_b_sdk_a/bin/dart",
+        "lows_b_sdk_a/bin/snapshots/gen_kernel_aot.dart.snapshot",
+        "lows_b_sdk_a/bin/snapshots/kernel_worker_aot.dart.snapshot",
+    ],
+)
+
+dart_toolchain(
+    name = "lows_b_a_toolchain",
+    analyze_files = ":lows_b_a_compile",
+    compile_files = ":lows_b_a_compile",
+    dart = "lows_b_sdk_a/bin/dart",
+    runtime_files = ":lows_b_a_compile",
+    sdk_root = ":lows_b_a_root",
+    tags = ["manual"],
+    version = "3.13.5",
+    visibility = ["//dart/tests/dart_lows_b:__pkg__"],
+)

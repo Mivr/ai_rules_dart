@@ -634,7 +634,11 @@ def sdk_dartvm(dart_sdk_info):
 
     The app-JIT training runs from a copy of `dart` and `dartvm`, and the
     compile and runtime file sets both carry `bin/dartvm*` (see
-    `dart/repositories.bzl`), so the file is an action input already.
+    `dart/repositories.bzl`), so the file is an action input already. A custom
+    toolchain whose subsets omit `dartvm` gets it added back by the
+    `dart_toolchain` implementation (see `dart/toolchain.bzl`), so the compile
+    subset carries the file whenever the SDK layout has one: this lookup reads
+    that subset only.
 
     Args:
       dart_sdk_info: The `DartSdkInfo` of the toolchain.

@@ -26,6 +26,40 @@ _SUPPORTED_CROSS_TARGET_PAIRS = {
     ("linux", "arm"): True,
 }
 
+def _sdk_dartvm_file(tool_files):
+    """Returns the SDK's `dartvm` File in the full SDK set, or None.
+
+    Args:
+      tool_files: Depset of every file in the SDK (`sdk_root`).
+
+    Returns:
+      The `dartvm` (or `dartvm.exe`) File, or None for an SDK layout without
+      one, where `bin/dart` is the VM itself.
+    """
+    for f in tool_files.to_list():
+        if f.basename in ("dartvm", "dartvm.exe"):
+            return f
+    return None
+
+def _subset_with_dartvm(subset, dartvm):
+    """Returns `subset` carrying `dartvm`, for an action that runs the launcher.
+
+    The `dart` launcher finds its sibling `dartvm` by following its own path,
+    so an action that runs the launcher reads `dartvm` whether or not the
+    subset it declares names it. Carrying the file keeps that read declared.
+
+    Args:
+      subset: A depset of SDK files (one of the toolchain's subsets).
+      dartvm: The SDK's `dartvm` File, from `_sdk_dartvm_file`.
+
+    Returns:
+      `subset` unchanged when it already holds the file, else the union.
+    """
+    for f in subset.to_list():
+        if f == dartvm:
+            return subset
+    return depset(direct = [dartvm], transitive = [subset])
+
 def _patched_snapshot(ctx, sdk_files, dart, snapshot_suffix, out_name, kind):
     """Declares the comma-patch action for one SDK AOT snapshot, or None.
 
@@ -41,7 +75,11 @@ def _patched_snapshot(ctx, sdk_files, dart, snapshot_suffix, out_name, kind):
 
     Args:
       ctx: The `dart_toolchain` rule context.
-      sdk_files: Depset of the SDK files to search for the snapshot.
+      sdk_files: Depset of the full SDK file set (`sdk_root`) to search for
+          the snapshot and the `dartvm` runner. The snapshot is found wherever
+          the SDK carries it, and the runner wherever the launcher's sibling
+          lookup would find it, so a subset that omits either still yields a
+          declared action.
       dart: The SDK's `dart` File, which runs the patch tool from source when
           the SDK names no `dartvm`.
       snapshot_suffix: The `bin/snapshots/...` suffix naming the snapshot.
@@ -53,12 +91,9 @@ def _patched_snapshot(ctx, sdk_files, dart, snapshot_suffix, out_name, kind):
       (an older SDK without a `kernel_worker` snapshot compiles no module).
     """
     snapshot = None
-    dartvm = None
     for f in sdk_files.to_list():
         if snapshot == None and f.path.endswith("/" + snapshot_suffix):
             snapshot = f
-        if dartvm == None and f.basename in ("dartvm", "dartvm.exe"):
-            dartvm = f
     if snapshot == None:
         return None
 
@@ -66,9 +101,12 @@ def _patched_snapshot(ctx, sdk_files, dart, snapshot_suffix, out_name, kind):
     # `dart` launcher finds its sibling `dartvm` by following its own path,
     # which works only when the sandbox lays the SDK out as siblings: under
     # remote execution (and the referee's twin) the launcher cannot find it,
-    # so the action runs `dartvm` directly, declared as an input like every
-    # other file it reads. An SDK layout without `dartvm` keeps the launcher.
-    runner = dartvm if dartvm != None else dart
+    # so the action runs the `dartvm` from the full SDK set directly, declared
+    # as an input like every other file it reads. An SDK layout without
+    # `dartvm` keeps the launcher.
+    runner = _sdk_dartvm_file(sdk_files)
+    if runner == None:
+        runner = dart
     patched = ctx.actions.declare_file(out_name)
     patch_tool = ctx.file._comma_patch
     args = ctx.actions.args()
@@ -118,6 +156,20 @@ def _dart_toolchain_impl(ctx):
     else:
         analyze_files = tool_files
 
+    # The `dart` launcher finds its sibling `dartvm` by following its own
+    # path, reading a file no subset names when a custom toolchain omits it.
+    # The compile and runtime subsets carry the file, so every action that
+    # runs the launcher declares what it reads, on every strategy. The
+    # analyze subset keeps its shape: no launcher action declares it alone —
+    # each one pairs it with the runtime subset (see the analyze aspect, the
+    # summary rules and the codegen script branches) — so the file stays
+    # declared there without listing it twice. An SDK layout without `dartvm`
+    # keeps its subsets as they are and keeps running the launcher.
+    dartvm = _sdk_dartvm_file(tool_files)
+    if dartvm != None:
+        compile_files = _subset_with_dartvm(compile_files, dartvm)
+        runtime_files = _subset_with_dartvm(runtime_files, dartvm)
+
     dart_sdk_info = DartSdkInfo(
         dart = ctx.file.dart,
         sdk_root = sdk_root,
@@ -132,7 +184,7 @@ def _dart_toolchain_impl(ctx):
         cross_dartaotruntime = ctx.file.cross_dartaotruntime,
         patched_kernel_worker = _patched_snapshot(
             ctx,
-            compile_files,
+            tool_files,
             ctx.file.dart,
             "bin/snapshots/kernel_worker_aot.dart.snapshot",
             "kernel_worker_nocomma.snapshot",
@@ -140,7 +192,7 @@ def _dart_toolchain_impl(ctx):
         ),
         patched_gen_kernel = _patched_snapshot(
             ctx,
-            compile_files,
+            tool_files,
             ctx.file.dart,
             "bin/snapshots/gen_kernel_aot.dart.snapshot",
             "gen_kernel_nocomma.snapshot",
