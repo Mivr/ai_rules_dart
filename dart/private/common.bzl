@@ -599,11 +599,36 @@ def noop_test_executable(ctx, tool):
 # non-default deadline. The tool's own default matches; keep the two equal.
 JIT_SNAPSHOT_LOCK_TIMEOUT_DEFAULT = 300
 
-def _hex16(h, lo):
-    """Renders two 32-bit digests as 16 lowercase hex characters."""
+# Mask keeping digests in 64 bits (Starlark integers are arbitrary precision).
+_MASK64 = 18446744073709551615
+
+def _digest64(seed, s):
+    """A deterministic 64-bit digest of a string: FNV-1a over its characters,
+    finished with murmur3's 64-bit finalizer for avalanche.
+
+    Each character contributes its single-character `hash()` code. For one
+    code unit the Java `String.hashCode` is the code unit itself, so this
+    mixes a code-unit stream into a full 64 bits of state — not the
+    linearly-related whole-string hashes two `hash()` calls produce (where the
+    second half is derivable from the first, leaving about 32 bits). A pure
+    function of its inputs (identical across machines, output bases and
+    strategies): each key pairs a distinct seed with a distinct domain prefix,
+    so the keys are independent of each other.
+    """
+    h = seed & _MASK64
+    for i in range(len(s)):
+        h = ((h ^ (hash(s[i]) & _MASK64)) * 1099511628211) & _MASK64
+    h = (h ^ (h >> 33)) & _MASK64
+    h = (h * 0xff51afd7ed558ccd) & _MASK64
+    h = (h ^ (h >> 33)) & _MASK64
+    h = (h * 0xc4ceb9fe1a85ec53) & _MASK64
+    h = (h ^ (h >> 33)) & _MASK64
+    return h
+
+def _hex64(v):
+    """Renders a 64-bit digest as 16 lowercase hex characters."""
     digits = "0123456789abcdef"
     key = ""
-    v = h * 4294967296 + lo
     for _i in range(16):
         key = digits[v % 16] + key
         v = v // 16
@@ -612,12 +637,12 @@ def _hex16(h, lo):
 def jit_train_key(short_path):
     """The keyed-training key for a declared snapshot output.
 
-    16 lowercase hex characters from two 32-bit digests of the output's
-    root-relative path (`File.short_path`). The key depends only on that
-    path, so it is identical across output bases, strategies and machines,
-    and two different targets hold different keys (so their trainings run in
-    parallel) while concurrent trainings of one output contend for one lock.
-    See `app_jit_snapshot.dart`.
+    16 lowercase hex characters of a 64-bit digest of the output's
+    root-relative path (`File.short_path`; see `_digest64`). The key depends
+    only on that path, so it is identical across output bases, strategies and
+    machines, and two different targets hold different keys (so their trainings
+    run in parallel) while concurrent trainings of one output contend for one
+    lock. See `app_jit_snapshot.dart`.
 
     Args:
         short_path: The declared output's root-relative path.
@@ -625,9 +650,7 @@ def jit_train_key(short_path):
     Returns:
         The 16-character key both snapshot actions pass as `--train-key=`.
     """
-    h = hash(short_path) % 4294967296
-    lo = hash("rules_dart_jit:" + short_path) % 4294967296
-    return _hex16(h, lo)
+    return _hex64(_digest64(0x9e3779b97f4a7c15, "rules_dart_jit_train:" + short_path))
 
 def sdk_dartvm(dart_sdk_info):
     """Returns the SDK's `dartvm` executable File, or None if the SDK has none.
@@ -1342,7 +1365,7 @@ def pkg_roots_stage_digest(packages, by_pkg):
         ])
         parts.append(name + "\n" + (pkg.lib_root or "") + "\n" + "\n".join(members))
     blob = "\n".join(sorted(parts))
-    return _hex16(hash(blob) % 4294967296, hash("rules_dart_pkg_roots:" + blob) % 4294967296)
+    return _hex64(_digest64(0xbf58476d1ce4e5b9, "rules_dart_pkg_roots:" + blob))
 
 def synth_package_config(ctx, library_deps):
     """Synthesises a `package_config.json` from `dart_library` targets.

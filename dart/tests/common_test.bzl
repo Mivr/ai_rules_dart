@@ -10,6 +10,7 @@ load(
     "generate_dev_package_config",
     "generate_package_config",
     "generate_package_config_content",
+    "jit_train_key",
     "kernel_sdk_mismatch_error",
     "relative_path",
     "resolve_package_roots",
@@ -624,6 +625,33 @@ def _same_package_library_dep_files_includes_resources_test_impl(ctx):
     )
     return unittest.end(env)
 
+def _jit_train_key_shape_test_impl(ctx):
+    # The key stays 16 lowercase hex characters (the keyed training paths and
+    # `--train-key=` validation depend on the shape, not the value).
+    env = unittest.begin(ctx)
+    for path in ["pkg/app.jit", "pkg/deep/nested/app.jit", ""]:
+        key = jit_train_key(path)
+        asserts.equals(env, 16, len(key), "key shape for %r" % path)
+        for i in range(len(key)):
+            asserts.true(env, key[i] in "0123456789abcdef", "hex only in %r" % key)
+    return unittest.end(env)
+
+def _jit_train_key_deterministic_test_impl(ctx):
+    # A pure function of the input: the same path keys the same lock on every
+    # machine and strategy.
+    env = unittest.begin(ctx)
+    asserts.equals(env, jit_train_key("pkg/app.jit"), jit_train_key("pkg/app.jit"))
+    return unittest.end(env)
+
+def _jit_train_key_sensitive_test_impl(ctx):
+    # Different outputs contend for different locks: near-identical paths key
+    # differently, so a collision cannot reuse a stale training.
+    env = unittest.begin(ctx)
+    asserts.true(env, jit_train_key("pkg/app_a.jit") != jit_train_key("pkg/app_b.jit"))
+    asserts.true(env, jit_train_key("pkg/app.jit") != jit_train_key("pkg/app.jit "))
+    asserts.true(env, jit_train_key("") != jit_train_key("pkg/app.jit"))
+    return unittest.end(env)
+
 _t0_test = unittest.make(_empty_packages_test_impl)
 _t1_test = unittest.make(_single_package_test_impl)
 _t2_test = unittest.make(_multiple_packages_test_impl)
@@ -665,6 +693,9 @@ _t40_test = unittest.make(_writable_home_env_posix_test_impl)
 _t41_test = unittest.make(_writable_home_env_windows_test_impl)
 _t42_test = unittest.make(_cross_target_error_test_impl)
 _t43_test = unittest.make(_same_package_library_dep_files_includes_resources_test_impl)
+_t44_test = unittest.make(_jit_train_key_shape_test_impl)
+_t45_test = unittest.make(_jit_train_key_deterministic_test_impl)
+_t46_test = unittest.make(_jit_train_key_sensitive_test_impl)
 
 def common_test_suite(name):
     small_unittest_suite(
@@ -710,4 +741,7 @@ def common_test_suite(name):
         _t41_test,
         _t42_test,
         _t43_test,
+        _t44_test,
+        _t45_test,
+        _t46_test,
     )
