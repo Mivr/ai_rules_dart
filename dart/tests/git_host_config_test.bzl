@@ -7,15 +7,19 @@ Starlark tests below drive them with a fake context that records every
 call, so the host-independence contract is pinned without needing a real
 git binary:
 
-- transport (`git_transport_fetch`) assembles a bare repository skeleton
-  without running `git init`, then fetches the pinned SHA (falling back
+- transport (`git_transport_fetch`) checks the host git version (2.32 or
+  newer), assembles a bare repository skeleton without running
+  `git init`, resolves `insteadOf` rewrites with `git ls-remote
+  --get-url`, then fetches the pinned SHA (falling back
   to all refs), all while inheriting only the allowlisted transport
   variables and unsetting every other `GIT_*` selector to `None` — one
   hostile-value test per variable below, plus sweep tests for
   undocumented `GIT_*` names and a regression test that no value is ever
   the empty string (git treats set-but-empty as set). The fetch pins
   `protocol.version=2`, separates the URL with `--`, and replaces the
-  host's global and system config with the empty file for local URLs;
+  host's global and system config with the empty file for fetches that
+  resolve to a local repository — unsetting the inline-config channel
+  there too — with the local/remote decision made on the resolved URL;
 - materialization (`git_materialize`) refuses alternates, verifies the
   commit id, its type and its tree, and archives the pinned spec, every
   command with an explicit `--git-dir`, `--no-replace-objects` and an
@@ -48,7 +52,7 @@ to a naive control proving the fixture is sensitive.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
-load("//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch")
+load("//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "git_version_error", "parse_git_version")
 load(":small_suite.bzl", "small_unittest_suite")
 
 _SHA = "08a084d50090f0e6ca907fc627ae335c6ac4fd88"
@@ -98,6 +102,16 @@ def _executes(record):
 
 def _files(record):
     return [call for call in record if hasattr(call, "content")]
+
+# Fake `git version` and `git ls-remote --get-url` results consumed by every
+# transport test before the fetch results: production `git_transport_fetch`
+# checks the host git version, then resolves `insteadOf` rewrites, then
+# fetches. The resolve echoes its input (no rewrite), so the fetch argv in
+# the older tests below is unchanged.
+_VERSION_RESULT = struct(return_code = 0, stdout = "git version 2.39.5\n", stderr = "")
+
+def _resolve_result(url):
+    return struct(return_code = 0, stdout = url + "\n", stderr = "")
 
 def _transport_pins():
     return [
@@ -203,6 +217,8 @@ def _transport_env(extra = {}, local = False):
     if local:
         env["GIT_CONFIG_GLOBAL"] = _EMPTY_FILE
         env["GIT_CONFIG_SYSTEM"] = _EMPTY_FILE
+        env["GIT_CONFIG_COUNT"] = None
+        env["GIT_CONFIG_PARAMETERS"] = None
     env.update(extra)
     return env
 
@@ -260,6 +276,8 @@ def _transport_skeleton_test_impl(ctx):
     record = []
     git_transport_fetch(
         _fake_ctx(record, [
+            _VERSION_RESULT,
+            _resolve_result(_URL),
             struct(return_code = 0, stdout = "", stderr = ""),
         ]),
         _URL,
@@ -272,16 +290,28 @@ def _transport_skeleton_test_impl(ctx):
     # No `git init` runs: the bare repository is assembled with `ctx.file`,
     # so a stray `GIT_WORK_TREE` (which makes git refuse `init`) and host
     # templates (which only `init` copies) cannot reach the fetch. The
-    # first and only `execute` calls are the SHA fetch, with `--` keeping
-    # the URL from being read as an option and `protocol.version=2` keeping
-    # a hostile host off the all-refs fallback.
-    asserts.equals(env, 1, len(calls))
+    # version gate runs before any other git command, the resolve expands
+    # `insteadOf` rewrites without contacting the remote, and only then does
+    # the SHA fetch run, with `--` keeping the URL from being read as an
+    # option and `protocol.version=2` keeping a hostile host off the
+    # all-refs fallback.
+    asserts.equals(env, 3, len(calls))
+    asserts.equals(
+        env,
+        ["git", "--no-replace-objects", "version"],
+        calls[0].args,
+    )
+    asserts.equals(
+        env,
+        ["git", "--no-replace-objects", "--git-dir=" + _BARE, "ls-remote", "--get-url", "--", _URL],
+        calls[1].args,
+    )
     asserts.equals(
         env,
         ["git", "--no-replace-objects", "--git-dir=" + _BARE] + _transport_pins() + ["fetch", "--", _URL, _SHA],
-        calls[0].args,
+        calls[2].args,
     )
-    asserts.equals(env, _transport_env(), calls[0].environment)
+    asserts.equals(env, _transport_env(), calls[2].environment)
     return unittest.end(env)
 
 def _transport_precreates_dirs_test_impl(ctx):
@@ -289,6 +319,8 @@ def _transport_precreates_dirs_test_impl(ctx):
     record = []
     git_transport_fetch(
         _fake_ctx(record, [
+            _VERSION_RESULT,
+            _resolve_result(_URL),
             struct(return_code = 0, stdout = "", stderr = ""),
         ]),
         _URL,
@@ -319,6 +351,8 @@ def _transport_fetch_test_impl(ctx):
     record = []
     git_transport_fetch(
         _fake_ctx(record, [
+            _VERSION_RESULT,
+            _resolve_result(_URL),
             struct(return_code = 0, stdout = "", stderr = ""),
         ]),
         _URL,
@@ -330,16 +364,16 @@ def _transport_fetch_test_impl(ctx):
     asserts.equals(
         env,
         ["git", "--no-replace-objects", "--git-dir=" + _BARE] + _transport_pins() + ["fetch", "--", _URL, _SHA],
-        calls[0].args,
+        calls[2].args,
     )
-    asserts.equals(env, _transport_env(), calls[0].environment)
+    asserts.equals(env, _transport_env(), calls[2].environment)
 
     # Transport inherits the host's transport configuration: the global
     # and system file selectors stay readable, so `insteadOf` rewrites and
     # credential helpers keep working.
-    asserts.false(env, "GIT_CONFIG_GLOBAL" in calls[0].environment)
-    asserts.false(env, "GIT_CONFIG_SYSTEM" in calls[0].environment)
-    asserts.false(env, "GIT_CONFIG_NOSYSTEM" in calls[0].environment)
+    asserts.false(env, "GIT_CONFIG_GLOBAL" in calls[2].environment)
+    asserts.false(env, "GIT_CONFIG_SYSTEM" in calls[2].environment)
+    asserts.false(env, "GIT_CONFIG_NOSYSTEM" in calls[2].environment)
     return unittest.end(env)
 
 def _transport_local_config_test_impl(ctx):
@@ -356,10 +390,14 @@ def _transport_local_config_test_impl(ctx):
         git_transport_fetch(
             _fake_ctx(
                 record,
-                [struct(return_code = 0, stdout = "", stderr = "")],
+                [_VERSION_RESULT, _resolve_result(url), struct(return_code = 0, stdout = "", stderr = "")],
                 os_environ = {
                     "GIT_CONFIG_GLOBAL": "/hostile/global.gitconfig",
                     "GIT_CONFIG_SYSTEM": "/hostile/system.gitconfig",
+                    "GIT_CONFIG_COUNT": "1",
+                    "GIT_CONFIG_KEY_0": "uploadpack.packObjectsHook",
+                    "GIT_CONFIG_VALUE_0": "/hostile/hook.sh",
+                    "GIT_CONFIG_PARAMETERS": "'uploadpack.packObjectsHook=/hostile/hook.sh'",
                 },
             ),
             url,
@@ -367,18 +405,24 @@ def _transport_local_config_test_impl(ctx):
             _SHA,
             "test",
         )
-        fetch_env = _executes(record)[0].environment
+        fetch_env = _executes(record)[2].environment
 
         # Local transports need no credentials: the host's global and system
         # files stay unread (a host-global `uploadpack.packObjectsHook`
         # would otherwise run on the fetch, where `-c` pins cannot reach
-        # it), and the fetch URL is still separated with `--`.
+        # it), and so does the inline-config channel — the hook cannot
+        # arrive through `GIT_CONFIG_COUNT` / `GIT_CONFIG_PARAMETERS`
+        # either. The fetch URL is still separated with `--`.
         asserts.equals(env, _EMPTY_FILE, fetch_env["GIT_CONFIG_GLOBAL"])
         asserts.equals(env, _EMPTY_FILE, fetch_env["GIT_CONFIG_SYSTEM"])
+        asserts.equals(env, None, fetch_env["GIT_CONFIG_COUNT"])
+        asserts.equals(env, None, fetch_env["GIT_CONFIG_PARAMETERS"])
+        asserts.equals(env, None, fetch_env["GIT_CONFIG_KEY_0"])
+        asserts.equals(env, None, fetch_env["GIT_CONFIG_VALUE_0"])
         asserts.equals(
             env,
             ["git", "--no-replace-objects", "--git-dir=" + _BARE] + _transport_pins() + ["fetch", "--", url, _SHA],
-            _executes(record)[0].args,
+            _executes(record)[2].args,
         )
     for url in [
         "https://example.com/r.git",
@@ -390,7 +434,7 @@ def _transport_local_config_test_impl(ctx):
         git_transport_fetch(
             _fake_ctx(
                 record,
-                [struct(return_code = 0, stdout = "", stderr = "")],
+                [_VERSION_RESULT, _resolve_result(url), struct(return_code = 0, stdout = "", stderr = "")],
                 os_environ = {
                     "GIT_CONFIG_GLOBAL": "/host/global.gitconfig",
                     "GIT_CONFIG_SYSTEM": "/host/system.gitconfig",
@@ -401,7 +445,7 @@ def _transport_local_config_test_impl(ctx):
             _SHA,
             "test",
         )
-        fetch_env = _executes(record)[0].environment
+        fetch_env = _executes(record)[2].environment
 
         # Remote transports keep the host's config files (credentials and
         # `insteadOf` rewrites); only local ones are replaced.
@@ -409,11 +453,102 @@ def _transport_local_config_test_impl(ctx):
         asserts.false(env, "GIT_CONFIG_SYSTEM" in fetch_env)
     return unittest.end(env)
 
+def _transport_resolved_local_test_impl(ctx):
+    env = unittest.begin(ctx)
+    rewritten = "/srv/repos/local-r.git"
+    record = []
+    git_transport_fetch(
+        _fake_ctx(
+            record,
+            [_VERSION_RESULT, _resolve_result(rewritten), struct(return_code = 0, stdout = "", stderr = "")],
+            os_environ = {
+                "GIT_CONFIG_GLOBAL": "/hostile/global.gitconfig",
+                "GIT_CONFIG_SYSTEM": "/hostile/system.gitconfig",
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": "uploadpack.packObjectsHook",
+                "GIT_CONFIG_VALUE_0": "/hostile/hook.sh",
+            },
+        ),
+        _URL,
+        "_git_bare",
+        _SHA,
+        "test",
+    )
+    calls = _executes(record)
+    asserts.equals(env, 3, len(calls))
+
+    # The resolve runs under the inheriting transport environment, so the
+    # host's rewrite channels reach it.
+    asserts.equals(env, "1", calls[1].environment["GIT_CONFIG_COUNT"])
+    asserts.equals(env, "uploadpack.packObjectsHook", calls[1].environment["GIT_CONFIG_KEY_0"])
+
+    # The local/remote decision sees the resolved URL: the remote lock URL
+    # rewrote to a local repository, so the fetch is isolated exactly like
+    # a lock URL that is local to begin with — and it fetches the resolved
+    # URL, because the isolated environment no longer carries the rewrite.
+    fetch_env = calls[2].environment
+    asserts.equals(env, _EMPTY_FILE, fetch_env["GIT_CONFIG_GLOBAL"])
+    asserts.equals(env, _EMPTY_FILE, fetch_env["GIT_CONFIG_SYSTEM"])
+    asserts.equals(env, None, fetch_env["GIT_CONFIG_COUNT"])
+    asserts.equals(env, None, fetch_env["GIT_CONFIG_KEY_0"])
+    asserts.equals(env, None, fetch_env["GIT_CONFIG_VALUE_0"])
+    asserts.equals(
+        env,
+        ["git", "--no-replace-objects", "--git-dir=" + _BARE] + _transport_pins() + ["fetch", "--", rewritten, _SHA],
+        calls[2].args,
+    )
+    return unittest.end(env)
+
+def _version_accepted_test_impl(ctx):
+    env = unittest.begin(ctx)
+    for output in [
+        "git version 2.32.0\n",
+        "git version 2.39.5\n",
+        "git version 2.39.5 (Apple Git-154)\n",
+        "git version 2.45.1.windows.1\n",
+        "git version 3.0.0\n",
+    ]:
+        asserts.equals(env, None, git_version_error(output, "test"))
+    asserts.equals(env, [2, 39], parse_git_version("git version 2.39.5 (Apple Git-154)\n"))
+    asserts.equals(env, [2, 45], parse_git_version("git version 2.45.1.windows.1\n"))
+    return unittest.end(env)
+
+def _version_refused_test_impl(ctx):
+    env = unittest.begin(ctx)
+    for output, found in [
+        ("git version 2.31.9\n", "2.31"),
+        ("git version 2.7.4\n", "2.7"),
+        ("git version 1.8.3\n", "1.8"),
+    ]:
+        err = git_version_error(output, "test")
+        asserts.true(env, err != None)
+        asserts.true(env, "2.32" in err)
+        asserts.true(env, found in err)
+    return unittest.end(env)
+
+def _version_unparsable_test_impl(ctx):
+    env = unittest.begin(ctx)
+    for output in [
+        "",
+        "2.39.5\n",
+        "git version two\n",
+        "git version 2\n",
+        "git version 2.x\n",
+    ]:
+        err = git_version_error(output, "test")
+        asserts.equals(env, None, parse_git_version(output))
+        asserts.true(env, err != None)
+        asserts.true(env, "could not determine" in err)
+        asserts.true(env, "2.32" in err)
+    return unittest.end(env)
+
 def _transport_fallback_test_impl(ctx):
     env = unittest.begin(ctx)
     record = []
     git_transport_fetch(
         _fake_ctx(record, [
+            _VERSION_RESULT,
+            _resolve_result(_URL),
             struct(return_code = 128, stdout = "", stderr = "couldn't find remote ref"),
             struct(return_code = 0, stdout = "", stderr = ""),
         ]),
@@ -423,13 +558,13 @@ def _transport_fallback_test_impl(ctx):
         "test",
     )
     calls = _executes(record)
-    asserts.equals(env, 2, len(calls))
+    asserts.equals(env, 4, len(calls))
     asserts.equals(
         env,
         ["git", "--no-replace-objects", "--git-dir=" + _BARE] + _transport_pins() + ["fetch", "--", _URL, "+refs/*:refs/origin/*"],
-        calls[1].args,
+        calls[3].args,
     )
-    asserts.equals(env, _transport_env(), calls[1].environment)
+    asserts.equals(env, _transport_env(), calls[3].environment)
     return unittest.end(env)
 
 # One hostile value per unset transport variable. Each generated test sets
@@ -447,7 +582,7 @@ def _clears_var_test_impl(ctx):
     git_transport_fetch(
         _fake_ctx(
             record,
-            [struct(return_code = 0, stdout = "", stderr = "")],
+            [_VERSION_RESULT, _resolve_result(_URL), struct(return_code = 0, stdout = "", stderr = "")],
             os_environ = {ctx.attr.var: ctx.attr.hostile},
         ),
         _URL,
@@ -659,7 +794,7 @@ def _transport_no_empty_values_test_impl(ctx):
     git_transport_fetch(
         _fake_ctx(
             record,
-            [struct(return_code = 0, stdout = "", stderr = "")],
+            [_VERSION_RESULT, _resolve_result(_URL), struct(return_code = 0, stdout = "", stderr = "")],
             os_environ = host,
         ),
         _URL,
@@ -667,7 +802,7 @@ def _transport_no_empty_values_test_impl(ctx):
         _SHA,
         "test",
     )
-    fetch_env = _executes(record)[0].environment
+    fetch_env = _executes(record)[2].environment
 
     # No value is ever the empty string: git checks `getenv(...) != NULL`,
     # so a set-but-empty variable stays set — unsets must be `None`.
@@ -681,7 +816,7 @@ def _transport_unknown_vars_test_impl(ctx):
     git_transport_fetch(
         _fake_ctx(
             record,
-            [struct(return_code = 0, stdout = "", stderr = "")],
+            [_VERSION_RESULT, _resolve_result(_URL), struct(return_code = 0, stdout = "", stderr = "")],
             os_environ = {
                 "GIT_FUTURE_TRANSPORT_XYZ": "hostile",
                 "GIT_SOME_NEW_THING": "",
@@ -709,7 +844,7 @@ def _transport_empty_hostile_test_impl(ctx):
     git_transport_fetch(
         _fake_ctx(
             record,
-            [struct(return_code = 0, stdout = "", stderr = "")],
+            [_VERSION_RESULT, _resolve_result(_URL), struct(return_code = 0, stdout = "", stderr = "")],
             os_environ = {
                 "GIT_QUARANTINE_PATH": "",
                 "GIT_WORK_TREE": "",
@@ -746,7 +881,7 @@ def _transport_pins_dirs_test_impl(ctx):
     git_transport_fetch(
         _fake_ctx(
             record,
-            [struct(return_code = 0, stdout = "", stderr = "")],
+            [_VERSION_RESULT, _resolve_result(_URL), struct(return_code = 0, stdout = "", stderr = "")],
             os_environ = {
                 "GIT_OBJECT_DIRECTORY": "/hostile/objects",
                 "GIT_COMMON_DIR": "/hostile/common",
@@ -777,7 +912,7 @@ def _transport_config_count_test_impl(ctx):
     git_transport_fetch(
         _fake_ctx(
             record,
-            [struct(return_code = 0, stdout = "", stderr = "")],
+            [_VERSION_RESULT, _resolve_result(_URL), struct(return_code = 0, stdout = "", stderr = "")],
             os_environ = {
                 "GIT_CONFIG_COUNT": "1",
                 "GIT_CONFIG_KEY_0": "url.https://host/r.git.insteadOf",
@@ -816,7 +951,7 @@ def _transport_passthrough_test_impl(ctx):
     git_transport_fetch(
         _fake_ctx(
             record,
-            [struct(return_code = 0, stdout = "", stderr = "")],
+            [_VERSION_RESULT, _resolve_result(_URL), struct(return_code = 0, stdout = "", stderr = "")],
             os_environ = host,
         ),
         _URL,
@@ -1029,12 +1164,18 @@ def _materialize_truncates_attributes_test_impl(ctx):
 def _materialize_subpath_spec_test_impl(ctx):
     env = unittest.begin(ctx)
     record = []
+    tree = "2e81171448eb9f2ee3821e3d447aa6b2fe3ddba1"
+    syn = "63d2b5b571b0315e7e928f4be77cda908e9216cc"
+    date = "2020-05-06T07:08:09+02:00"
     git_materialize(
         _fake_ctx(record, [
             struct(return_code = 0, stdout = "", stderr = ""),
             struct(return_code = 0, stdout = _SHA + "\n", stderr = ""),
             struct(return_code = 0, stdout = "commit\n", stderr = ""),
             struct(return_code = 0, stdout = "4b825dc642cb6eb9a060e54bf8d69288fbee4904\n", stderr = ""),
+            struct(return_code = 0, stdout = tree + "\n", stderr = ""),
+            struct(return_code = 0, stdout = date + "\n", stderr = ""),
+            struct(return_code = 0, stdout = syn + "\n", stderr = ""),
             struct(return_code = 0, stdout = "", stderr = ""),
         ]),
         "_git_bare",
@@ -1044,7 +1185,38 @@ def _materialize_subpath_spec_test_impl(ctx):
         "test",
     )
     calls = _executes(record)
-    asserts.equals(env, _SHA + ":pkgs/foo", calls[4].args[len(calls[4].args) - 1])
+
+    # A subdirectory spec archives a synthetic commit of the subdirectory
+    # tree, dated with the pinned commit's committer time — never the
+    # `<commit>:<path>` tree directly, whose entries `git archive` would
+    # stamp with the fetch's wall-clock time.
+    asserts.equals(env, 8, len(calls))
+    asserts.equals(
+        env,
+        ["git", "--no-replace-objects"] + _materialize_pins() + ["rev-parse", _SHA + ":pkgs/foo"],
+        calls[4].args,
+    )
+    asserts.equals(
+        env,
+        ["git", "--no-replace-objects"] + _materialize_pins() + ["log", "-1", "--format=%cI", _SHA],
+        calls[5].args,
+    )
+    asserts.equals(
+        env,
+        ["git", "--no-replace-objects"] + _materialize_pins() + ["commit-tree", tree, "-m", "rules-dart subdirectory archive"],
+        calls[6].args,
+    )
+    commit_env = dict(_materialize_env())
+    commit_env.update({
+        "GIT_AUTHOR_NAME": "rules-dart",
+        "GIT_AUTHOR_EMAIL": "rules-dart@example.invalid",
+        "GIT_AUTHOR_DATE": date,
+        "GIT_COMMITTER_NAME": "rules-dart",
+        "GIT_COMMITTER_EMAIL": "rules-dart@example.invalid",
+        "GIT_COMMITTER_DATE": date,
+    })
+    asserts.equals(env, commit_env, calls[6].environment)
+    asserts.equals(env, syn, calls[7].args[len(calls[7].args) - 1])
     return unittest.end(env)
 
 _t0_test = unittest.make(_transport_skeleton_test_impl)
@@ -1063,6 +1235,10 @@ _t11_test = unittest.make(_transport_no_empty_values_test_impl)
 _t12_test = unittest.make(_transport_unknown_vars_test_impl)
 _t13_test = unittest.make(_transport_empty_hostile_test_impl)
 _t15_test = unittest.make(_transport_local_config_test_impl)
+_t16_test = unittest.make(_transport_resolved_local_test_impl)
+_t17_test = unittest.make(_version_accepted_test_impl)
+_t18_test = unittest.make(_version_refused_test_impl)
+_t19_test = unittest.make(_version_unparsable_test_impl)
 
 def git_host_config_test_suite(name):
     small_unittest_suite(
@@ -1083,6 +1259,10 @@ def git_host_config_test_suite(name):
         _t13_test,
         _t14_test,
         _t15_test,
+        _t16_test,
+        _t17_test,
+        _t18_test,
+        _t19_test,
         *_clears_var_tests
     )
 
@@ -1113,6 +1293,13 @@ def git_host_config_test_suite(name):
 # `GIT_QUARANTINE_PATH` forbids on every git version) under the hostile
 # host and requires the refs to land. On git versions whose file transport
 # negotiates, the helper falls back by itself and the replay is skipped.
+#
+# The hook cases (`pack_objects_hook`, on a local lock URL and on a remote
+# lock URL the host rewrites to a local repository via `insteadof_to_origin`)
+# additionally stage a hostile host-global `uploadpack.packObjectsHook`
+# that writes a marker: the helpers must never run it, while a raw-git
+# control fetch under the same hostile host must (outside Windows, where
+# an extensionless hook may not execute).
 #
 # Every instance fails the fetch loudly on any deviation and writes a
 # `marker.txt` (`expect`/`mode`/`clean`/`hostile`) that
@@ -1155,7 +1342,8 @@ def _probe_rev_parse(execute, git_dir, rev, env, what):
 def _probe_archive_digest(execute, archive, what):
     """Digests one materialized archive with the real git binary.
 
-    `git hash-object` hashes the raw file bytes, so equal digests mean
+    `git hash-object --no-filters` hashes the raw file bytes (no clean or
+    smudge filters, no attribute conversion), so equal digests mean
     byte-identical archives. It runs everywhere the probes run (git is
     already required) without a platform-specific checksum program.
 
@@ -1167,7 +1355,7 @@ def _probe_archive_digest(execute, archive, what):
     Returns:
         The hex digest string.
     """
-    res = execute(["git", "hash-object", str(archive)])
+    res = execute(["git", "hash-object", "--no-filters", str(archive)])
     if res.return_code != 0:
         fail("%s: hashing the materialized archive failed: %s" % (what, res.stderr))
     return res.stdout.strip()
@@ -1180,6 +1368,234 @@ def _probe_origin_refs(execute, git_dir, env, what):
     if res.return_code != 0:
         fail("%s: listing fetched refs failed: %s" % (what, res.stderr))
     return [line for line in res.stdout.splitlines() if line != ""]
+
+def _probe_count_objects(execute, git_dir, env, what):
+    """Reads `git count-objects -v` into a `{key: value}` dict.
+
+    Used as a positive control for storage-layout settings (such as
+    `transfer.unpackLimit`) whose effect never reaches the archived bytes:
+    the dict shows whether fetched objects stayed packed or unpacked loose.
+
+    Args:
+        execute: A `ctx.execute`-compatible callable.
+        git_dir: The bare repository's `.git` path string to count in.
+        env: The `environment` dict for the count command.
+        what: Human-readable label, for diagnostics.
+
+    Returns:
+        The `count-objects -v` output as a string dict.
+    """
+    res = execute(
+        ["git", "--git-dir=" + git_dir, "count-objects", "-v"],
+        environment = env,
+    )
+    if res.return_code != 0:
+        fail("%s: counting fetched objects failed: %s" % (what, res.stderr))
+    counts = {}
+    for line in res.stdout.splitlines():
+        if ": " in line:
+            key, _, value = line.partition(": ")
+            counts[key] = value
+    return counts
+
+def _probe_empty_bare(ctx, name):
+    """Writes an empty bare-repository skeleton for a raw control fetch.
+
+    `git init` would copy the host's template directory into the new
+    repository; the controls assemble the skeleton with `ctx.file` instead,
+    like the production transport, so host templates cannot reach them.
+
+    Args:
+        ctx: The repository context.
+        name: The repository-relative bare directory (for example `"_naive_bare"`).
+
+    Returns:
+        The bare repository's absolute path string.
+    """
+    ctx.file(name + "/objects/keep", "", executable = False)
+    ctx.file(name + "/HEAD", "ref: refs/heads/main\n", executable = False)
+    ctx.file(
+        name + "/config",
+        "[core]\n\trepositoryformatversion = 0\n\tbare = true\n",
+        executable = False,
+    )
+    ctx.file(name + "/refs/.keep", "", executable = False)
+    return str(ctx.path(name))
+
+def _probe_hostile_shim(ctx, hostile, recorded):
+    """Builds the shim context driving the helpers under the hostile host.
+
+    The shim's `execute` merges exactly like production `ctx.execute` does
+    (the helper-built dict over the hostile host), so helper `None` entries
+    unset hostile variables and pins and passthrough flow through
+    identically; `file`, `path` and `os.environ` pass through to the real
+    context and the hostile overlay respectively. Fetches record their
+    environment for the fallback replay.
+
+    Args:
+        ctx: The repository context.
+        hostile: The hostile environment overlay dict.
+        recorded: The list recording helper-built fetch environments.
+
+    Returns:
+        A struct with the repository-context surface the helpers use.
+    """
+
+    def _shim_execute(args, environment = None):
+        merged = dict(hostile)
+        if environment != None:
+            merged.update(environment)
+            recorded.append(environment)
+        return ctx.execute(args, environment = merged)
+
+    def _shim_file(path, content, executable = True):
+        ctx.file(path, content, executable = executable)
+
+    def _shim_path(path):
+        return ctx.path(path)
+
+    return struct(
+        execute = _shim_execute,
+        file = _shim_file,
+        path = _shim_path,
+        os = struct(environ = hostile),
+    )
+
+def _hostile_fallback_replay(ctx, shim_execute, hostile_bare, url, recorded, what):
+    """Replays the helper's exact fallback command under the hostile host.
+
+    The command is argv-identical to `git_transport_fetch` (whose
+    `_transport_fallback_test_impl` unit test pins it): local transports
+    serve any SHA directly, so the helper's SHA fetch above succeeded
+    without touching refs, and the all-refs ref transaction still needs
+    exercising under the hostile host. The environment is the exact dict
+    the helper built.
+
+    Args:
+        ctx: The repository context.
+        shim_execute: The shim's `execute` callable (hostile-merging).
+        hostile_bare: The hostile bare repository's absolute path string.
+        url: The fetch URL string.
+        recorded: The helper-built fetch environments the shim recorded.
+        what: Human-readable label, for diagnostics.
+
+    Returns:
+        The `"all-refs"` fetch mode string the replay lands.
+    """
+    if len(recorded) == 0:
+        fail("%s: no recorded fetch environment to replay the fallback with." % what)
+    res = shim_execute(
+        ["git", "--no-replace-objects"] + [
+            "--git-dir=" + hostile_bare,
+            "-c",
+            "core.hooksPath=" + str(ctx.path("_git_empty")),
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.untrackedCache=false",
+            "-c",
+            "transfer.fsckObjects=false",
+            "-c",
+            "fetch.fsckObjects=false",
+            "-c",
+            "gc.auto=0",
+            "-c",
+            "maintenance.auto=false",
+            "-c",
+            "fetch.writeCommitGraph=false",
+            "-c",
+            "fetch.recurseSubmodules=false",
+            "-c",
+            "submodule.recurse=false",
+            "-c",
+            "fetch.prune=false",
+            "-c",
+            "fetch.pruneTags=false",
+            "-c",
+            "protocol.version=2",
+            "fetch",
+            "--",
+            url,
+            "+refs/*:refs/origin/*",
+        ],
+        environment = recorded[0],
+    )
+    if res.return_code != 0:
+        fail("%s: fallback all-refs fetch failed under the hostile host: %s" % (what, res.stderr))
+    if len(_probe_origin_refs(shim_execute, hostile_bare, _probe_setup_env(), what)) == 0:
+        fail("%s: fallback all-refs fetch landed no refs." % what)
+    return "all-refs"
+
+def _pack_hook_setup(ctx, hostile, what):
+    """Stages a hostile host-global `uploadpack.packObjectsHook`, if requested.
+
+    Writes a delegating hook script (it appends to its marker, then `exec`s
+    the real `pack-objects`) and a hostile global config file enabling it,
+    overlaid on the hostile run's environment. The clean control never sees
+    the overlay. Only a `file://` origin spawns a local `upload-pack` for
+    the hook to run in, so the attribute needs `make_origin`.
+
+    Args:
+        ctx: The repository context.
+        hostile: The hostile environment overlay dict, updated in place.
+        what: Human-readable label, for diagnostics.
+
+    Returns:
+        The hook marker's absolute path string, or `""` when the probe
+        instance does not request the hook.
+    """
+    if not ctx.attr.pack_objects_hook:
+        return ""
+    if not ctx.attr.make_origin:
+        fail(
+            "%s: pack_objects_hook needs make_origin: the hook runs in " % what +
+            "the fetched origin's upload-pack, and only a file:// origin " +
+            "spawns one.",
+        )
+    marker = str(ctx.path("hook.marker"))
+    ctx.file(
+        "pack-objects-hook.sh",
+        "#!/bin/sh\necho hook-ran >> \"" + marker + "\"\nexec \"$@\"\n",
+        executable = True,
+    )
+    ctx.file(
+        "hook-hostile.gitconfig",
+        "[uploadpack]\n\tpackObjectsHook = " + str(ctx.path("pack-objects-hook.sh")) + "\n",
+        executable = False,
+    )
+    hostile["GIT_CONFIG_GLOBAL"] = str(ctx.path("hook-hostile.gitconfig"))
+    return marker
+
+def _pack_hook_control(ctx, hostile, url, sha, what):
+    """Positive control: a raw fetch under the hostile host runs the hook.
+
+    The production helpers must never run the hook (asserted by the
+    caller); this control shows the hook would have run without them, or
+    the silence proves nothing. The ran-assertion is skipped on Windows,
+    where an extensionless hook may not execute. The marker path is the
+    `"hook.marker"` file `_pack_hook_setup` writes the hook script against.
+
+    Args:
+        ctx: The repository context.
+        hostile: The hostile environment overlay dict (with the hook).
+        url: The fetch URL string.
+        sha: The pinned commit SHA string.
+        what: Human-readable label, for diagnostics.
+    """
+    hook_bare = _probe_empty_bare(ctx, "_hook_bare")
+    res = ctx.execute(
+        ["git", "--no-replace-objects", "--git-dir=" + hook_bare, "fetch", "--", url, sha],
+        environment = hostile,
+    )
+    if res.return_code != 0:
+        fail("%s: hook control fetch failed: %s" % (what, res.stderr))
+    if ctx.os.name != "windows" and not ctx.path("hook.marker").exists:
+        fail(
+            "%s: control vacuous: a raw fetch under the hostile host " % what +
+            "did not run uploadpack.packObjectsHook, so the helpers' " +
+            "silence proves nothing.",
+        )
+    ctx.delete(ctx.path("_hook_bare"))
 
 def _probe_make_origin(ctx, bundle, what):
     """Clones the bundle and appends a deterministic second commit.
@@ -1246,28 +1662,7 @@ def _hostile_probe_impl(ctx):
 
     hostile = dict(ctx.os.environ)
     hostile.update(ctx.attr.hostile_env)
-
     recorded = []
-
-    def _shim_execute(args, environment = None):
-        merged = dict(hostile)
-        if environment != None:
-            merged.update(environment)
-            recorded.append(environment)
-        return ctx.execute(args, environment = merged)
-
-    def _shim_file(path, content, executable = True):
-        ctx.file(path, content, executable = executable)
-
-    def _shim_path(path):
-        return ctx.path(path)
-
-    shim = struct(
-        execute = _shim_execute,
-        file = _shim_file,
-        path = _shim_path,
-        os = struct(environ = hostile),
-    )
 
     url = ctx.attr.url
     control_url = ctx.attr.control_url if ctx.attr.control_url != "" else url
@@ -1280,6 +1675,23 @@ def _hostile_probe_impl(ctx):
         control_url = url
     if url == "" or sha == "":
         fail("%s: needs url and resolved_ref (or make_origin)." % what)
+    if ctx.attr.insteadof_to_origin:
+        # A remote lock URL the host rewrites to the runtime origin: the
+        # rewrite arrives through the inline-config channel, like the
+        # extension-declared `hostile_insteadof` case, but the target must
+        # be the runtime origin (only known here), so the probe builds the
+        # channel itself.
+        if not ctx.attr.make_origin:
+            fail(
+                "%s: insteadof_to_origin needs make_origin: the rewrite " % what +
+                "target is the runtime origin.",
+            )
+        hostile["GIT_CONFIG_COUNT"] = "1"
+        hostile["GIT_CONFIG_KEY_0"] = "url." + url + ".insteadOf"
+        hostile["GIT_CONFIG_VALUE_0"] = ctx.attr.url
+        url = ctx.attr.url
+    hook_marker = _pack_hook_setup(ctx, hostile, what)
+    shim = _probe_hostile_shim(ctx, hostile, recorded)
 
     git_transport_fetch(ctx, control_url, "_clean_bare", sha, what + " control")
     clean_archive = ctx.path("_clean.tar")
@@ -1290,6 +1702,15 @@ def _hostile_probe_impl(ctx):
     hostile_archive = ctx.path("_hostile.tar")
     git_materialize(shim, "_hostile_bare", sha, hostile_archive, sha, what + " hostile")
     hostile_bare = str(ctx.path("_hostile_bare"))
+    if hook_marker != "" and ctx.path("hook.marker").exists:
+        # `"hook.marker"` is the marker `_pack_hook_setup` writes the
+        # hostile hook script against: the helpers just fetched locally
+        # under a host-global `uploadpack.packObjectsHook`, which must
+        # never run.
+        fail(
+            "%s: the production helpers ran the hostile " % what +
+            "uploadpack.packObjectsHook.",
+        )
 
     # The digests compare the materialized archive bytes, not the tree ids:
     # the pinned SHA fixes the tree by construction, so only the bytes can
@@ -1304,59 +1725,14 @@ def _hostile_probe_impl(ctx):
         )
 
     mode = "sha"
-    if len(_probe_origin_refs(_shim_execute, hostile_bare, _probe_setup_env(), what)) > 0:
+    if len(_probe_origin_refs(shim.execute, hostile_bare, _probe_setup_env(), what)) > 0:
         mode = "all-refs"
     if ctx.attr.exercise_fallback and mode == "sha":
-        if len(recorded) == 0:
-            fail("%s: no recorded fetch environment to replay the fallback with." % what)
-
-        # The helper's fallback command, argv-identical to
-        # `git_transport_fetch` (whose `_transport_fallback_test_impl` unit
-        # test pins it): local transports serve any SHA directly, so the
-        # helper's SHA fetch above succeeded without touching refs, and the
-        # all-refs ref transaction still needs exercising under the hostile
-        # host. The environment is the exact dict the helper built.
-        res = _shim_execute(
-            ["git", "--no-replace-objects"] + [
-                "--git-dir=" + hostile_bare,
-                "-c",
-                "core.hooksPath=" + str(ctx.path("_git_empty")),
-                "-c",
-                "core.fsmonitor=false",
-                "-c",
-                "core.untrackedCache=false",
-                "-c",
-                "transfer.fsckObjects=false",
-                "-c",
-                "fetch.fsckObjects=false",
-                "-c",
-                "gc.auto=0",
-                "-c",
-                "maintenance.auto=false",
-                "-c",
-                "fetch.writeCommitGraph=false",
-                "-c",
-                "fetch.recurseSubmodules=false",
-                "-c",
-                "submodule.recurse=false",
-                "-c",
-                "fetch.prune=false",
-                "-c",
-                "fetch.pruneTags=false",
-                "-c",
-                "protocol.version=2",
-                "fetch",
-                "--",
-                url,
-                "+refs/*:refs/origin/*",
-            ],
-            environment = recorded[0],
-        )
-        if res.return_code != 0:
-            fail("%s: fallback all-refs fetch failed under the hostile host: %s" % (what, res.stderr))
-        if len(_probe_origin_refs(_shim_execute, hostile_bare, _probe_setup_env(), what)) == 0:
-            fail("%s: fallback all-refs fetch landed no refs." % what)
-        mode = "all-refs"
+        mode = _hostile_fallback_replay(ctx, shim.execute, hostile_bare, url, recorded, what)
+    if hook_marker != "":
+        # The hook the helpers must not run: a raw fetch under the same
+        # hostile host must run it, or their silence proves nothing.
+        _pack_hook_control(ctx, hostile, url, sha, what)
     if mode != ctx.attr.expect_fetch_mode:
         fail(
             "%s: expected fetch mode %r but observed %r." % (what, ctx.attr.expect_fetch_mode, mode),
@@ -1407,6 +1783,14 @@ git_hostile_fetch_probe = repository_rule(
         ),
         "exercise_fallback": attr.bool(
             doc = "Replay the helper's exact fallback command when the SHA fetch took no refs.",
+            default = False,
+        ),
+        "insteadof_to_origin": attr.bool(
+            doc = "Fetch url (a remote lock URL) with a host insteadOf rewrite to the runtime origin delivered through the inline-config channel; needs make_origin.",
+            default = False,
+        ),
+        "pack_objects_hook": attr.bool(
+            doc = "Stage a hostile host-global uploadpack.packObjectsHook: the helpers must never run it while a raw control fetch must (outside Windows); needs make_origin.",
             default = False,
         ),
     },
@@ -1665,7 +2049,7 @@ git_fsck_fetch_probe = repository_rule(
 # branch tip moved past the pin (so the pin is advertised by no ref). It
 # then fetches the pin twice through the production helpers — clean and
 # under one hostile config (`protocol.version=0` or
-# `transfer.unpackLimit=1000000` via `GIT_CONFIG_GLOBAL`) — and requires
+# `transfer.unpackLimit = 1` via `GIT_CONFIG_GLOBAL`) — and requires
 # byte-identical archives, the SHA fetch path (no refs land, proving the
 # `protocol.version=2` pin holds), literal placeholders and the kept
 # ignored file in the extracted helper bytes.
@@ -1714,6 +2098,111 @@ def _export_subst_commit(ctx, origin, message, what, allow_empty = False):
     }))
     if res.return_code != 0:
         fail("%s: committing %r failed: %s" % (what, message, res.stderr))
+
+def _export_naive_control(ctx, url, pinned, hostile, channel, what):
+    """Fetches the pin with raw git under the hostile config: the control half.
+
+    The asserted half of the probe must keep the helper bytes pristine
+    while the setting spreads nowhere; this fetch — the unpatched
+    production path, without the attributes override (empty
+    `info/attributes`, the old behavior) and without `-c` pins — must
+    spread the setting into the archived bytes, or the comparison proves
+    nothing.
+
+    Args:
+        ctx: The repository context.
+        url: The file URL of the probe fixture's origin.
+        pinned: The fixture commit SHA to fetch.
+        hostile: The hostile environment overlay dict.
+        channel: The hostile channel name (`"protocol0"` or `"unpacklimit"`).
+        what: Human-readable label, for diagnostics.
+
+    Returns:
+        The naive bare repository's absolute path string (the unpacklimit
+        positive control re-inspects its object store).
+    """
+    naive_bare = _probe_empty_bare(ctx, "_naive_bare")
+    ctx.file("_naive_bare/info/attributes", "", executable = False)
+    naive_env = dict(hostile)
+    naive_env.update(_probe_setup_env())
+    naive_env["GIT_OBJECT_DIRECTORY"] = naive_bare + "/objects"
+    naive_env["GIT_COMMON_DIR"] = naive_bare
+    res = ctx.execute(
+        ["git", "--no-replace-objects", "--git-dir=" + naive_bare, "fetch", "--", url, pinned],
+        environment = naive_env,
+    )
+    sha_ok = res.return_code == 0
+    if not sha_ok:
+        res = ctx.execute(
+            ["git", "--no-replace-objects", "--git-dir=" + naive_bare, "fetch", "--", url, "+refs/*:refs/origin/*"],
+            environment = naive_env,
+        )
+    if res.return_code != 0:
+        fail("%s: naive control fetch failed: %s" % (what, res.stderr))
+    if channel == "protocol0":
+        # The hostile protocol version refuses the unadvertised pin and
+        # pushes raw git onto the all-refs fallback: the tag lands, and
+        # `%(describe)` below expands through it. (Observed on git 2.39.5;
+        # a loud failure here means re-examining local negotiation.)
+        if sha_ok:
+            fail("%s: control vacuous: raw git fetched the unadvertised pin under protocol.version=0." % what)
+        if len(_probe_origin_refs(ctx.execute, naive_bare, _probe_setup_env(), what)) == 0:
+            fail("%s: control vacuous: the naive fallback landed no refs." % what)
+    res = ctx.execute(
+        ["git", "--git-dir=" + naive_bare, "archive", "--format=tar", "-o", str(ctx.path("_raw.tar")), pinned],
+        environment = naive_env,
+    )
+    if res.return_code != 0:
+        fail("%s: naive control archive failed: %s" % (what, res.stderr))
+    ctx.extract(ctx.path("_raw.tar"), output = "raw")
+    raw_src = ctx.read("raw/v.dart")
+    if "$Format:%H$" in raw_src or pinned not in raw_src:
+        fail("%s: control vacuous: raw git did not expand %%H: %r." % (what, raw_src))
+    if channel == "protocol0" and "v1.0.0" not in raw_src:
+        fail("%s: control vacuous: raw git did not expand %%(describe) through the fetched tag: %r." % (what, raw_src))
+    if ctx.path("raw/ignored.txt").exists:
+        fail("%s: control vacuous: raw git kept the export-ignored file." % what)
+    return naive_bare
+
+def _export_unpacklimit_control(ctx, url, pinned, naive_bare, what):
+    """Positive control: the hostile `transfer.unpackLimit` reached the fetch.
+
+    Storage layout never leaks into the archived bytes, so the byte
+    comparison cannot show the setting's delivery. The object store can:
+    under the hostile `unpackLimit = 1` the naive control's fetch keeps
+    every object packed, while a default-configured fetch of the same pin
+    unpacks the small fixture loose. Both halves must show their layout,
+    or the control is vacuous.
+
+    Args:
+        ctx: The repository context.
+        url: The file URL of the probe fixture's origin.
+        pinned: The fixture commit SHA the controls fetched.
+        naive_bare: The naive control's bare repository path string.
+        what: Human-readable label, for diagnostics.
+    """
+    hostile_counts = _probe_count_objects(ctx.execute, naive_bare, _probe_setup_env(), what + " unpacklimit control")
+    if hostile_counts.get("in-pack", "0") == "0":
+        fail(
+            "%s: control vacuous: the naive fetch under hostile " % what +
+            "transfer.unpackLimit stored no packed objects, so the " +
+            "helper comparison proves nothing about the setting.",
+        )
+    plain_bare = _probe_empty_bare(ctx, "_plain_bare")
+    res = ctx.execute(
+        ["git", "--no-replace-objects", "--git-dir=" + plain_bare, "fetch", "--", url, pinned],
+        environment = _probe_setup_env(),
+    )
+    if res.return_code != 0:
+        fail("%s: plain control fetch failed: %s" % (what, res.stderr))
+    plain_counts = _probe_count_objects(ctx.execute, plain_bare, _probe_setup_env(), what + " plain control")
+    if plain_counts.get("count", "0") == "0":
+        fail(
+            "%s: control vacuous: a default-configured fetch stored no " % what +
+            "loose objects, so the packed store above proves nothing " +
+            "about the hostile setting.",
+        )
+    ctx.delete(ctx.path("_plain_bare"))
 
 def _export_subst_probe_impl(ctx):
     what = "git_export_subst_probe \"%s\"" % ctx.name
@@ -1768,7 +2257,10 @@ def _export_subst_probe_impl(ctx):
     if ctx.attr.channel == "protocol0":
         ctx.file("export-hostile.gitconfig", "[protocol]\n\tversion = 0\n", executable = False)
     else:
-        ctx.file("export-hostile.gitconfig", "[transfer]\n\tunpackLimit = 1000000\n", executable = False)
+        # `unpackLimit = 1` (not the default 100): every fetched object
+        # stays packed, which `count-objects` observes — the positive
+        # control below needs a value whose effect is visible.
+        ctx.file("export-hostile.gitconfig", "[transfer]\n\tunpackLimit = 1\n", executable = False)
     hostile = dict(ctx.os.environ)
     hostile["GIT_CONFIG_GLOBAL"] = str(ctx.path("export-hostile.gitconfig"))
 
@@ -1835,55 +2327,11 @@ def _export_subst_probe_impl(ctx):
     # attributes override (empty `info/attributes`, the old behavior) and
     # without `-c` pins. The committed `export-subst` must expand there, or
     # the comparison above proves nothing.
-    ctx.file("_naive_bare/objects/keep", "", executable = False)
-    ctx.file("_naive_bare/HEAD", "ref: refs/heads/main\n", executable = False)
-    ctx.file(
-        "_naive_bare/config",
-        "[core]\n\trepositoryformatversion = 0\n\tbare = true\n",
-        executable = False,
-    )
-    ctx.file("_naive_bare/refs/.keep", "", executable = False)
-    ctx.file("_naive_bare/info/attributes", "", executable = False)
-    naive_bare = str(ctx.path("_naive_bare"))
-    naive_env = dict(hostile)
-    naive_env.update(_probe_setup_env())
-    naive_env["GIT_OBJECT_DIRECTORY"] = naive_bare + "/objects"
-    naive_env["GIT_COMMON_DIR"] = naive_bare
-    res = ctx.execute(
-        ["git", "--no-replace-objects", "--git-dir=" + naive_bare, "fetch", "--", url, pinned],
-        environment = naive_env,
-    )
-    sha_ok = res.return_code == 0
-    if not sha_ok:
-        res = ctx.execute(
-            ["git", "--no-replace-objects", "--git-dir=" + naive_bare, "fetch", "--", url, "+refs/*:refs/origin/*"],
-            environment = naive_env,
-        )
-    if res.return_code != 0:
-        fail("%s: naive control fetch failed: %s" % (what, res.stderr))
-    if ctx.attr.channel == "protocol0":
-        # The hostile protocol version refuses the unadvertised pin and
-        # pushes raw git onto the all-refs fallback: the tag lands, and
-        # `%(describe)` below expands through it. (Observed on git 2.39.5;
-        # a loud failure here means re-examining local negotiation.)
-        if sha_ok:
-            fail("%s: control vacuous: raw git fetched the unadvertised pin under protocol.version=0." % what)
-        if len(_probe_origin_refs(ctx.execute, naive_bare, _probe_setup_env(), what)) == 0:
-            fail("%s: control vacuous: the naive fallback landed no refs." % what)
-    res = ctx.execute(
-        ["git", "--git-dir=" + naive_bare, "archive", "--format=tar", "-o", str(ctx.path("_raw.tar")), pinned],
-        environment = naive_env,
-    )
-    if res.return_code != 0:
-        fail("%s: naive control archive failed: %s" % (what, res.stderr))
-    ctx.extract(ctx.path("_raw.tar"), output = "raw")
-    raw_src = ctx.read("raw/v.dart")
-    if "$Format:%H$" in raw_src or pinned not in raw_src:
-        fail("%s: control vacuous: raw git did not expand %%H: %r." % (what, raw_src))
-    if ctx.attr.channel == "protocol0" and "v1.0.0" not in raw_src:
-        fail("%s: control vacuous: raw git did not expand %%(describe) through the fetched tag: %r." % (what, raw_src))
-    if ctx.path("raw/ignored.txt").exists:
-        fail("%s: control vacuous: raw git kept the export-ignored file." % what)
+    naive_bare = _export_naive_control(ctx, url, pinned, hostile, ctx.attr.channel, what)
+    if ctx.attr.channel == "unpacklimit":
+        # Storage layout never reaches the archived bytes: the positive
+        # control observes the hostile setting in the object store instead.
+        _export_unpacklimit_control(ctx, url, pinned, naive_bare, what)
 
     ctx.file(
         "marker.txt",

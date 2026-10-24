@@ -22,7 +22,11 @@ change the extracted bytes nor run host code, while transport configuration
 1. Transport (`git_transport_fetch`): the pinned commit is fetched into a
    fresh BARE repository that is assembled without running `git init` at
    all — the helper writes the skeleton (`HEAD`, `config`, `objects/`,
-   `refs/`) with `ctx.file`, then runs `git fetch -- <url> <sha>`, falling
+   `refs/`) with `ctx.file`, checks the host git version (2.32 or newer is
+   required, because older git ignores the config-file replacements below),
+   resolves the fetch URL with `git ls-remote --get-url` (which applies the
+   host's `url.<base>.insteadOf` rewrites without contacting the remote),
+   then runs `git fetch -- <resolved-url> <sha>`, falling
    back to fetching all refs on servers that reject a bare SHA. Skipping
    `init` removes the host template surface by construction (no template
    is ever copied, so no template `info/attributes` or `hooks/` can reach
@@ -66,12 +70,16 @@ change the extracted bytes nor run host code, while transport configuration
    deliberately
    inherited is only transport: the host's config files (which may carry
    `insteadOf` rewrites) and the SSH, TLS, proxy and credential-helper
-   variables allowlisted in `_TRANSPORT_PASSTHROUGH`. For local URLs
-   (`file://`, plain paths, bundles) even the config files are replaced:
-   the global and system selectors point at the shared empty file, so a
-   host-global `uploadpack.packObjectsHook` (which runs on every local
-   fetch, where `-c` pins cannot reach it) stays unread; local fetches
-   need no credentials. `GIT_ALLOW_PROTOCOL`
+   variables allowlisted in `_TRANSPORT_PASSTHROUGH`. Whether a fetch is
+   local is decided on the resolved URL, after the host's `insteadOf`
+   rewriting: for a fetch that resolves to a local repository (`file://`,
+   plain paths, bundles) even the config files are replaced — the global
+   and system selectors point at the shared empty file, and the
+   `GIT_CONFIG_COUNT` / `GIT_CONFIG_PARAMETERS` inline-config channel is
+   unset — so a host-global `uploadpack.packObjectsHook` (which runs on
+   every local fetch, where `-c` pins cannot reach it) stays unread
+   however the local repository was named; local fetches need no
+   credentials. `GIT_ALLOW_PROTOCOL`
    is pinned to a fixed transport-only list so host state cannot widen
    the fetch to a command-executing helper. The `--` before the URL keeps
    a lock URL from being read as an option.
@@ -94,7 +102,11 @@ change the extracted bytes nor run host code, while transport configuration
    tree written out is by construction the verified commit's tree — no host
    channel can make the two commands resolve the same SHA differently once
    replacements, alternates, templates, hooks, fsmonitor and every config
-   source are pinned or removed. The archive additionally pins the byte
+   source are pinned or removed. For a subdirectory package
+   (`<commit>:<path>`) the archived spec is a synthetic commit of that
+   tree with the pinned commit's committer date, so every entry carries
+   the pinned time instead of the fetch's wall-clock time. The archive
+   additionally pins the byte
    conversion knobs (`core.autocrlf=false`, `core.eol=lf`,
    `core.attributesFile` at the empty file, `tar.umask=002`), and the
    repository-local `info/attributes` holds the override below, written
@@ -217,6 +229,11 @@ _GIT_ATTRIBUTES_OVERRIDE = "* -export-subst -export-ignore -working-tree-encodin
 def _is_local_url(url):
     """Whether a git URL is served from the local machine.
 
+    The input is the resolved fetch URL (after the host's `insteadOf`
+    rewriting): a remote lock URL that the host rewrites to a local path
+    fetches locally, so it is classified here exactly like a lock URL that
+    is local to begin with.
+
     Local transports (`file://`, plain paths, bundles) need no credentials,
     so their fetch environment replaces the host's global and system config
     files with the empty file — closing, among others, a host-global
@@ -245,6 +262,98 @@ def _is_local_url(url):
     if not seps:
         return False
     return colon > min(seps)
+
+# Minimum host git version. Git older than 2.32 ignores the
+# `GIT_CONFIG_GLOBAL` / `GIT_CONFIG_SYSTEM` replacements (environment
+# support for them landed in 2.32), silently reading the host's files
+# instead — so every fetch checks `git version` before running any other
+# git command and fails below this floor.
+_GIT_MIN_MAJOR = 2
+_GIT_MIN_MINOR = 32
+
+def _is_digits(text):
+    """Whether a string is a non-empty run of ASCII digits.
+
+    Args:
+        text: The string to check.
+
+    Returns:
+        True for `"0"`, `"32"`, `"45"`; False for `""`, `"2x"`, `" 2"`.
+    """
+    if not text:
+        return False
+    for char in text.elems():
+        if char not in "0123456789":
+            return False
+    return True
+
+def parse_git_version(output):
+    """Parses `git version` output into a `[major, minor]` version pair.
+
+    Accepts the shapes git prints, such as `"git version 2.39.5"`,
+    `"git version 2.39.5 (Apple Git-154)"` and
+    `"git version 2.45.1.windows.1"`: only the leading `major.minor`
+    matters, and anything after the patch release is platform decoration.
+
+    Args:
+        output: The stdout string of `git version`.
+
+    Returns:
+        A two-element `[major, minor]` int list, or None when the output
+        does not start with a `git version <digits>.<digits>` prefix.
+    """
+    text = output.strip()
+    prefix = "git version "
+    if not text.startswith(prefix):
+        return None
+    dotted = text[len(prefix):].split(" ")[0].split(".")
+    if len(dotted) < 2:
+        return None
+    if not _is_digits(dotted[0]) or not _is_digits(dotted[1]):
+        return None
+    return [int(dotted[0]), int(dotted[1])]
+
+def git_version_error(output, what):
+    """Checks `git version` output against the minimum supported git.
+
+    Args:
+        output: The stdout string of `git version`.
+        what: Human-readable label of the fetching rule, for diagnostics.
+
+    Returns:
+        None when the host git is supported; otherwise an error string
+        naming the minimum supported version and the version found (or the
+        unparsable output, which fails closed).
+    """
+    parsed = parse_git_version(output)
+    if parsed == None:
+        return "%s: could not determine the host git version (git %d.%d or newer is required), got %r." % (what, _GIT_MIN_MAJOR, _GIT_MIN_MINOR, output.strip())
+    if parsed[0] < _GIT_MIN_MAJOR or (parsed[0] == _GIT_MIN_MAJOR and parsed[1] < _GIT_MIN_MINOR):
+        return "%s: host git version %d.%d is below the minimum supported version %d.%d." % (what, parsed[0], parsed[1], _GIT_MIN_MAJOR, _GIT_MIN_MINOR)
+    return None
+
+def _require_git_version(ctx, env, what):
+    """Fails unless the host git reports version 2.32 or newer.
+
+    Runs before any other git command of the fetch: older git silently
+    ignores the config-file replacements, so an unparsable version, a
+    failing `git version`, and a version below the floor all fail the
+    fetch loudly instead of fetching under host configuration.
+
+    Args:
+        ctx: A repository or module-extension context.
+        env: The `environment` dict for the version check.
+        what: Human-readable label of the fetching rule, for diagnostics.
+    """
+    res = ctx.execute(
+        ["git", "--no-replace-objects", "version"],
+        environment = env,
+    )
+    if res.return_code != 0:
+        fail("%s: checking the host git version failed (git %d.%d or newer is required): %s" % (what, _GIT_MIN_MAJOR, _GIT_MIN_MINOR, res.stderr.strip()))
+    err = git_version_error(res.stdout, what)
+    if err:
+        fail(err)
 
 def _transport_config_args(empty_dir):
     """`-c` pins shared by every transport fetch command line (SHA and all-refs fallback).
@@ -328,6 +437,37 @@ _TRANSPORT_PASSTHROUGH_PREFIXES = [
     "GIT_CONFIG_VALUE_",
 ]
 
+# The inline-config channel slots. Carried verbatim for remote fetches (a
+# host-provided `insteadOf` rewrite keeps working there), unset for fetches
+# that resolve to a local repository (no local fetch needs host
+# configuration, and the channel would otherwise reach the fetch even with
+# the config files replaced).
+_INLINE_CONFIG_VARS = [
+    "GIT_CONFIG_COUNT",
+    "GIT_CONFIG_PARAMETERS",
+]
+_INLINE_CONFIG_PREFIXES = [
+    "GIT_CONFIG_KEY_",
+    "GIT_CONFIG_VALUE_",
+]
+
+def _is_inline_config_variable(var):
+    """Whether a host `GIT_*` variable belongs to the inline-config channel.
+
+    Args:
+        var: The variable name.
+
+    Returns:
+        True for the count and parameters entries and the numbered key and
+        value slots (`_INLINE_CONFIG_VARS`, `_INLINE_CONFIG_PREFIXES`).
+    """
+    if var in _INLINE_CONFIG_VARS:
+        return True
+    for prefix in _INLINE_CONFIG_PREFIXES:
+        if var.startswith(prefix):
+            return True
+    return False
+
 # Config-file selectors inherited verbatim by staying out of the environment
 # dict: transport file configuration (which may carry `insteadOf` rewrites,
 # credentials and proxies) needs the host's global and system files
@@ -377,17 +517,20 @@ def _transport_env(ctx, bare_abs, empty, local):
     verbatim on purpose — a host-provided `insteadOf` rewrite keeps working
     — while the `-c` pins on every transport command line override it, so it
     cannot redirect repository resolution or re-enable hooks, fsmonitor,
-    templates or replacements. For local URLs the global and system config
+    templates or replacements. For a fetch that resolves to a local
+    repository the global and system config
     selectors point at the shared empty file instead of staying inherited:
     local fetches need no credentials, and a host-global
     `uploadpack.packObjectsHook` (which git runs on every local fetch
-    without consulting `-c` pins) stays unread.
+    without consulting `-c` pins) stays unread — and the inline-config
+    channel is unset too, so the same hook cannot arrive through
+    `GIT_CONFIG_COUNT` / `GIT_CONFIG_PARAMETERS` either.
 
     Args:
         ctx: A repository or module-extension context (for `os.environ`).
         bare_abs: The bare repository's absolute path string.
         empty: The shared empty file's path string (local config replacement).
-        local: Whether the fetch URL is local (see `_is_local_url`).
+        local: Whether the resolved fetch URL is local (see `_is_local_url`).
 
     Returns:
         The `environment` dict for one transport `ctx.execute` call. It
@@ -437,26 +580,64 @@ def _transport_env(ctx, bare_abs, empty, local):
     if local:
         env["GIT_CONFIG_GLOBAL"] = empty
         env["GIT_CONFIG_SYSTEM"] = empty
+        env["GIT_CONFIG_COUNT"] = None
+        env["GIT_CONFIG_PARAMETERS"] = None
     host = ctx.os.environ
     for var in host:
         if var in env:
             # Scrubbed (`None`), pinned, or already passed through below.
-            # The local config replacement above wins over inheritance:
+            # The local replacements above win over inheritance:
             # `GIT_CONFIG_GLOBAL` / `GIT_CONFIG_SYSTEM` stay pointed at the
-            # empty file instead of the host's files.
+            # empty file instead of the host's files, and the inline-config
+            # channel stays unset instead of carrying host configuration.
             continue
         if var in _TRANSPORT_INHERITED:
             # Inherited verbatim: left out of the dict, which `ctx.execute`
             # merges over the host environment.
             continue
-        if _is_transport_variable(var):
+        if local and _is_inline_config_variable(var):
+            env[var] = None
+        elif _is_transport_variable(var):
             env[var] = host[var]
         elif var.startswith("GIT_"):
             env[var] = None
     for var in _TRANSPORT_PASSTHROUGH:
-        if var in host:
+        if var in host and not (local and _is_inline_config_variable(var)):
             env[var] = host[var]
     return env
+
+def _resolve_fetch_url(ctx, env, bare_abs, url, what):
+    """Expands `url.<base>.insteadOf` rewrites to the URL git will fetch.
+
+    `git ls-remote --get-url` applies the host's rewrites — from the config
+    files and the inline-config channel carried in `env` — without
+    contacting the remote, so the local/remote isolation decision sees the
+    same URL the fetch will use. A host rewrite of a remote lock URL to a
+    local repository is exactly what this is for: the fetch below runs
+    against the returned URL, because the isolated local environment no
+    longer carries the rewrite that produced it.
+
+    Args:
+        ctx: A repository or module-extension context.
+        env: The inheriting transport `environment` dict, so rewrites apply.
+        bare_abs: The bare repository's absolute path string (pins repo
+            discovery instead of walking up from the execution root).
+        url: The lock URL to resolve.
+        what: Human-readable label of the fetching rule, for diagnostics.
+
+    Returns:
+        The effective fetch URL string.
+    """
+    res = ctx.execute(
+        ["git", "--no-replace-objects", "--git-dir=" + bare_abs, "ls-remote", "--get-url", "--", url],
+        environment = env,
+    )
+    if res.return_code != 0:
+        fail("%s: resolving the fetch URL %r failed: %s" % (what, url, res.stderr))
+    effective = res.stdout.strip()
+    if not effective:
+        fail("%s: resolving the fetch URL %r produced an empty URL." % (what, url))
+    return effective
 
 def _materialize_env(ctx, empty, empty_dir, bare_abs):
     """Environment for one materialization command: nothing but PATH and a scratch HOME.
@@ -534,15 +715,23 @@ def _materialize_env(ctx, empty, empty_dir, bare_abs):
 def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
     """Fetches the pinned commit into a fresh bare repository (phase 1: transport).
 
-    The bare repository is assembled without running `git init`: the
+    The host git version is checked first (2.32 or newer is required), then
+    the bare repository is assembled without running `git init`: the
     skeleton (`HEAD`, `config`, `objects/`, `refs/`) is written with
-    `ctx.file`, then `git fetch -- <url> <sha>` runs (falling back to
-    fetching all refs on servers that reject a bare SHA, such as some
-    corporate mirrors). The `--` keeps a lock URL from being read as an
-    option. Skipping `init` removes the host template surface by
-    construction — no template is ever copied, so no template
-    `info/attributes` or `hooks/` can reach the clone — and every
-    non-transport host `GIT_*` variable (including `GIT_WORK_TREE`,
+    `ctx.file`, the lock URL is resolved with `git ls-remote --get-url`
+    (which applies the host's `url.<base>.insteadOf` rewrites without
+    contacting the remote), and `git fetch -- <resolved-url> <sha>` runs
+    (falling back to fetching all refs on servers that reject a bare SHA,
+    such as some corporate mirrors). The `--` keeps a lock URL from being
+    read as an option. Whether the fetch is local is decided on the
+    resolved URL: a remote lock URL that the host rewrites to a local
+    repository fetches with the same isolation as a lock URL that is local
+    to begin with — no host config file is read, the inline-config channel
+    is unset, and no host hook of any kind runs — while remote fetches keep
+    inheriting the host's transport configuration. Skipping `init` removes
+    the host template surface by construction — no template is ever copied,
+    so no template `info/attributes` or `hooks/` can reach the clone — and
+    every non-transport host `GIT_*` variable (including `GIT_WORK_TREE`,
     `GIT_QUARANTINE_PATH` and any undocumented or future `GIT_*` entry) is
     unset in the fetch environment rather than inherited. Nothing is ever
     checked out: with no working tree, host hooks, `core.fsmonitor` and
@@ -554,10 +743,7 @@ def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
     `fetch.pruneTags` and `protocol.version=2` fetch-time switches,
     `--no-replace-objects`) keep
     them off even where host configuration is deliberately inherited for
-    transport. For local URLs (`file://`, plain paths, bundles) the global
-    and system config selectors point at the shared empty file instead:
-    local fetches need no credentials, and a host-global
-    `uploadpack.packObjectsHook` stays unread. The repository-local
+    transport. The repository-local
     `info/attributes` holds `* -export-subst -export-ignore
     -working-tree-encoding` (nothing legitimate writes it; that file
     outranks the package's own committed `.gitattributes`, so placeholders
@@ -577,7 +763,7 @@ def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
     empty_dir = _git_empty_dir(ctx)
     empty = _git_empty_file(ctx)
     bare_abs = str(ctx.path(bare_rel))
-    local = _is_local_url(url)
+    _require_git_version(ctx, _transport_env(ctx, bare_abs, empty, False), what)
 
     # Assemble the skeleton of a bare repository with `ctx.file` (which
     # creates parents but not empty directories, so `keep` files stand
@@ -604,15 +790,20 @@ def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
     # entries stay inert and the archive matches `dart pub get`.
     ctx.file(bare_rel + "/info/attributes", _GIT_ATTRIBUTES_OVERRIDE, executable = False)
 
+    resolve_env = _transport_env(ctx, bare_abs, empty, False)
+    effective = _resolve_fetch_url(ctx, resolve_env, bare_abs, url, what)
+    local = _is_local_url(effective)
+    fetch_env = _transport_env(ctx, bare_abs, empty, local)
+
     res = ctx.execute(
         ["git", "--no-replace-objects", "--git-dir=" + bare_abs] +
         _transport_config_args(empty_dir) + [
             "fetch",
             "--",
-            url,
+            effective,
             resolved_ref,
         ],
-        environment = _transport_env(ctx, bare_abs, empty, local),
+        environment = fetch_env,
     )
     if res.return_code != 0:
         # Servers that reject fetching a bare SHA still serve the commit on
@@ -623,10 +814,10 @@ def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
             _transport_config_args(empty_dir) + [
                 "fetch",
                 "--",
-                url,
+                effective,
                 "+refs/*:refs/origin/*",
             ],
-            environment = _transport_env(ctx, bare_abs, empty, local),
+            environment = fetch_env,
         )
     if res.return_code != 0:
         fail("%s: git fetch failed for %s at %s: %s" % (what, url, resolved_ref, res.stderr))
@@ -707,6 +898,122 @@ def _verify_commit_tree(ctx, bare_abs, empty, empty_dir, resolved_ref, what):
     if res.return_code != 0:
         fail("%s: could not read the tree of %r: %s" % (what, resolved_ref, res.stderr))
 
+# Identity pinned on the synthetic subdirectory-archive commit below. Fixed
+# (never the host's identity) so the commit — and the archive streamed from
+# it — depends only on the pinned tree and date.
+_ARCHIVE_COMMIT_NAME = "rules-dart"
+_ARCHIVE_COMMIT_EMAIL = "rules-dart@example.invalid"
+_ARCHIVE_COMMIT_MESSAGE = "rules-dart subdirectory archive"
+
+def _read_committer_date(ctx, bare_abs, empty, empty_dir, resolved_ref, what):
+    """Reads the pinned commit's committer date in strict ISO format.
+
+    Args:
+        ctx: A repository or module-extension context.
+        bare_abs: The bare repository's absolute path string.
+        empty: The shared empty file's path string.
+        empty_dir: The shared empty directory's path string.
+        resolved_ref: The pinned full 40-hex commit SHA.
+        what: Human-readable label of the fetching rule, for diagnostics.
+
+    Returns:
+        The committer date string (for example
+        `"2020-05-06T07:08:09+02:00"`), re-parseable as a commit date.
+    """
+    res = ctx.execute(
+        ["git", "--no-replace-objects", "--git-dir=" + bare_abs] +
+        _materialize_config_args(empty_dir) + [
+            "log",
+            "-1",
+            "--format=%cI",
+            str(resolved_ref),
+        ],
+        environment = _materialize_env(ctx, empty, empty_dir, bare_abs),
+    )
+    if res.return_code != 0:
+        fail("%s: could not read the committer date of %r: %s" % (what, resolved_ref, res.stderr))
+    date = res.stdout.strip()
+    if not date:
+        fail("%s: could not read the committer date of %r: empty output." % (what, resolved_ref))
+    return date
+
+def _read_spec_tree(ctx, bare_abs, empty, empty_dir, spec, what):
+    """Reads the tree id of a `<commit>:<path>` subdirectory archive spec.
+
+    Args:
+        ctx: A repository or module-extension context.
+        bare_abs: The bare repository's absolute path string.
+        empty: The shared empty file's path string.
+        empty_dir: The shared empty directory's path string.
+        spec: The subdirectory archive spec (`<commit>:<path>`).
+        what: Human-readable label of the fetching rule, for diagnostics.
+
+    Returns:
+        The subdirectory tree's object id string.
+    """
+    res = ctx.execute(
+        ["git", "--no-replace-objects", "--git-dir=" + bare_abs] +
+        _materialize_config_args(empty_dir) + [
+            "rev-parse",
+            spec,
+        ],
+        environment = _materialize_env(ctx, empty, empty_dir, bare_abs),
+    )
+    if res.return_code != 0:
+        fail("%s: could not read the tree of %r: %s" % (what, spec, res.stderr))
+    tree = res.stdout.strip()
+    if not tree:
+        fail("%s: could not read the tree of %r: empty output." % (what, spec))
+    return tree
+
+def _commit_spec_tree(ctx, bare_abs, empty, empty_dir, tree, date, what):
+    """Commits a subdirectory tree with the pinned commit's committer date.
+
+    The synthetic commit has no parent, a fixed message and a fixed
+    identity; only the pinned tree and the pinned date vary. Archiving this
+    commit stamps every entry with the pinned committer time — the same
+    mtimes a root package's archive carries — instead of the fetch's
+    wall-clock time. `git archive` has no `--mtime` switch on the supported
+    versions, hence the commit.
+
+    Args:
+        ctx: A repository or module-extension context.
+        bare_abs: The bare repository's absolute path string.
+        empty: The shared empty file's path string.
+        empty_dir: The shared empty directory's path string.
+        tree: The subdirectory tree's object id string.
+        date: The pinned commit's committer date string.
+        what: Human-readable label of the fetching rule, for diagnostics.
+
+    Returns:
+        The synthetic commit's object id string.
+    """
+    env = _materialize_env(ctx, empty, empty_dir, bare_abs)
+    env.update({
+        "GIT_AUTHOR_NAME": _ARCHIVE_COMMIT_NAME,
+        "GIT_AUTHOR_EMAIL": _ARCHIVE_COMMIT_EMAIL,
+        "GIT_AUTHOR_DATE": date,
+        "GIT_COMMITTER_NAME": _ARCHIVE_COMMIT_NAME,
+        "GIT_COMMITTER_EMAIL": _ARCHIVE_COMMIT_EMAIL,
+        "GIT_COMMITTER_DATE": date,
+    })
+    res = ctx.execute(
+        ["git", "--no-replace-objects", "--git-dir=" + bare_abs] +
+        _materialize_config_args(empty_dir) + [
+            "commit-tree",
+            tree,
+            "-m",
+            _ARCHIVE_COMMIT_MESSAGE,
+        ],
+        environment = env,
+    )
+    if res.return_code != 0:
+        fail("%s: could not commit the subdirectory tree %r: %s" % (what, tree, res.stderr))
+    commit = res.stdout.strip()
+    if not commit:
+        fail("%s: could not commit the subdirectory tree %r: empty output." % (what, tree))
+    return commit
+
 def _archive_verified_tree(ctx, bare_abs, empty, empty_dir, output, spec, what):
     """Streams `git archive` of the verified spec under the scrubbed environment."""
     res = ctx.execute(
@@ -753,7 +1060,11 @@ def git_materialize(ctx, bare_rel, resolved_ref, output, spec, what):
     from the same repository under the same environment: the tree written
     out is by construction the verified commit's tree, because no remaining
     host channel can make the verification and the archive resolve the same
-    SHA differently. The archive pins the byte conversion knobs
+    SHA differently. For a subdirectory package (`<commit>:<path>`) the
+    archived spec is a synthetic commit of that tree, written with the
+    pinned commit's committer date under a fixed identity: every entry
+    carries the pinned time, the same as a root package's archive, instead
+    of the fetch's wall-clock time. The archive pins the byte conversion knobs
     (`core.autocrlf=false`, `core.eol=lf`, an empty `core.attributesFile`,
     `tar.umask=002`) so the bytes depend only on the pinned commit: the
     repository-local `info/attributes` override (rewritten below, so
@@ -783,4 +1094,20 @@ def git_materialize(ctx, bare_rel, resolved_ref, output, spec, what):
     _verify_commit_id(ctx, bare_abs, empty, empty_dir, resolved_ref, what)
     _verify_commit_type(ctx, bare_abs, empty, empty_dir, resolved_ref, what)
     _verify_commit_tree(ctx, bare_abs, empty, empty_dir, resolved_ref, what)
+    if ":" in spec:
+        # A subdirectory package's archive (`<commit>:<path>`) is of a tree,
+        # whose entries `git archive` would stamp with the fetch's
+        # wall-clock time. Archive a synthetic commit of that tree instead,
+        # dated with the pinned commit's committer time: same paths, modes
+        # and file bytes, with the same mtimes a root package's archive
+        # carries.
+        spec = _commit_spec_tree(
+            ctx,
+            bare_abs,
+            empty,
+            empty_dir,
+            _read_spec_tree(ctx, bare_abs, empty, empty_dir, spec, what),
+            _read_committer_date(ctx, bare_abs, empty, empty_dir, resolved_ref, what),
+            what,
+        )
     _archive_verified_tree(ctx, bare_abs, empty, empty_dir, output, spec, what)
