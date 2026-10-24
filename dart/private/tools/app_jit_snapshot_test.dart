@@ -1420,6 +1420,43 @@ void main(List<String> args) {
     expect(File(allowedOut).existsSync(), isTrue);
   }, skip: Platform.isWindows ? posixOnlyReason : false);
 
+  test('fallback notice says the snapshot stays cached until bazel clean', () {
+    // A fallback-trained snapshot keeps the fallback bytes under the same
+    // action key until `bazel clean`, so the one fallback notice must say so.
+    // Same locked-out setup as the test above: the tool runs in a subprocess
+    // (it exits on failure), with the lock path pointed at an unopenable file
+    // through the environment.
+    final tool = stageTool();
+    final dill = compileDill(
+      'void main(List<String> args) {\n  print(10000);\n}\n',
+      'cleannotice_train',
+    );
+    final lock = File('${tmp.path}/cleannotice.lock')
+      ..writeAsStringSync('not ours to open');
+    snapshot.chmodFile(lock.path, 0x124); // 0444.
+    final res = Process.runSync(
+      Platform.resolvedExecutable,
+      [
+        tool,
+        '--dart=${Platform.resolvedExecutable}',
+        '--snapshot=${tmp.path}/cleannotice_out/app.jit',
+        '--fallback-allowed',
+        '--copy=input.dill=$dill',
+        '--',
+        'input.dill',
+      ],
+      environment: {
+        'RULES_DART_JIT_TRAIN_DIR': snapshot.constantTrainDir,
+        'RULES_DART_JIT_TRAIN_LOCK': lock.path,
+      },
+    );
+    expect(res.exitCode, 0, reason: '${res.stderr}');
+    expect(File('${tmp.path}/cleannotice_out/app.jit').existsSync(), isTrue);
+    final err = res.stderr as String;
+    expect(err, contains('may not be reproducible'));
+    expect(err, contains('bazel clean'));
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
   test('failed publish names fixing the publish, not a phantom owner', () {
     // Nothing is at the lock path but the lock directory is read-only, so the
     // publish fails: the error must say the lock could not be published and

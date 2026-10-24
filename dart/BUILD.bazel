@@ -30,13 +30,18 @@ bool_flag(
 # and the `package:test` runner snapshot) may fall back to a private scratch
 # directory when the keyed training path is unavailable (see
 # `app_jit_snapshot.dart`). Off by default: the fallback trains different bytes
-# under the same action key, and both actions are remote-cacheable, so one host's
-# state would leak into shared outputs. When the path is blocked, the action fails
-# and names the blocker instead; remove the entry, or pass this flag to allow the
-# fallback whose bytes are not reproducible:
+# under the same action key, so one host's state would leak into shared outputs.
+# When the path is blocked, the action fails and names the blocker instead;
+# remove the entry, or pass this flag to allow the fallback whose bytes are not
+# reproducible:
 #   bazel build //... --@rules_dart//dart:jit_snapshot_fallback=true
 # The flag is part of both snapshot actions' command lines, so builds that allow
-# the fallback and builds that do not have different action keys.
+# the fallback and builds that do not have different action keys. A
+# fallback-trained snapshot stays cached under the same action key (in the local
+# action cache and the output tree) until `bazel clean`, so a build after the
+# host is fixed keeps the fallback bytes. With the flag on, both snapshot
+# actions carry `no-remote-cache`, so they are never uploaded to or served from
+# a disk or remote cache.
 bool_flag(
     name = "jit_snapshot_fallback",
     build_setting_default = False,

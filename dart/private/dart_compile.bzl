@@ -218,7 +218,11 @@ def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asse
             scratch directory when the keyed training path is unavailable
             (from `//dart:jit_snapshot_fallback`). Passed on the command line,
             so builds that allow the fallback and builds that do not have
-            different action keys.
+            different action keys. With the fallback allowed the action also
+            carries the `no-remote-cache` execution requirement, so a
+            fallback-trained snapshot is never uploaded to or served from a
+            disk or remote cache; without it the action carries no execution
+            requirements, as before.
     """
     lock_setting = getattr(ctx.attr, "_jit_lock_timeout", None)
     lock_timeout_secs = lock_setting[BuildSettingInfo].value if lock_setting != None else JIT_SNAPSHOT_LOCK_TIMEOUT_DEFAULT
@@ -261,6 +265,10 @@ def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asse
         mnemonic = "DartJitSnapshot",
         progress_message = "Compiling Dart jit-snapshot %s" % ctx.label,
         env = writable_home_env(dart_bin, output),
+        # With the fallback allowed the trained bytes may be this host's
+        # private-scratch ones, so the action must never reach a shared cache.
+        # Without it no dict is built and the action is as before.
+        execution_requirements = {"no-remote-cache": "1"} if fallback_allowed else None,
     )
 
 def _kernel_comma_snapshot(ctx, dart_sdk_info, tools, defines, extra_flags, jit_tool):

@@ -61,14 +61,17 @@
 // directory, so the working directory must hold the staged test. `package:test`
 // derives heap strings from the training run's own paths at startup, but at
 // the keyed path those read the same on every build, so the runner
-// snapshot is byte-identical across builds too, and its action carries no
-// `no-remote-cache` requirement: the first machine's snapshot is reused, and
-// every dependant keeps one action key.
+// snapshot is byte-identical across builds too, and with the fallback off its
+// action carries no `no-remote-cache` requirement: the first machine's
+// snapshot is reused, and every dependant keeps one action key. With the
+// fallback allowed both snapshot actions carry `no-remote-cache` instead, so
+// a fallback-trained snapshot is never uploaded to or served from a disk or
+// remote cache — though it stays cached under the same action key in the
+// local action cache and the output tree until `bazel clean`.
 //
 // Where the keyed directory is unavailable the action fails instead of
 // training elsewhere: a private-scratch training emits different bytes under
-// the same action key, and both actions are remote-cacheable, so one host's
-// state would leak into shared outputs. A stale entry of our own is removed
+// the same action key, so one host's state would leak into shared outputs. A stale entry of our own is removed
 // first, whatever its type (a regular file, a symlink, a FIFO, a socket, or a
 // directory, removed recursively): nothing that was there is ever read or
 // followed, so a symlink's target is untouched. A directory we own is made
@@ -95,7 +98,9 @@
 // anything else, pass
 // `--@rules_dart//dart:jit_snapshot_fallback=true` to allow the
 // private-scratch fallback (whose bytes are not reproducible, so builds that
-// allow it and builds that do not have different action keys), or, for the
+// allow it and builds that do not have different action keys; a
+// fallback-trained snapshot stays cached under the same action key until
+// `bazel clean`), or, for the
 // runner snapshot, `--@rules_dart//dart:test_runner_snapshot=false` to run
 // the kernel instead. Windows keeps the private scratch directory beside the
 // output with the one notice below. Under linux-sandbox with a hermetic
@@ -637,13 +642,15 @@ String get constantTrainLock =>
 bool _fallbackWarned = false;
 
 /// Prints the one fallback notice: without the constant training directory
-/// the snapshot may name this build's paths.
+/// the snapshot may name this build's paths, and it stays cached under the
+/// same action key until `bazel clean`.
 void _warnFallback() {
   if (_fallbackWarned) return;
   _fallbackWarned = true;
   stderr.writeln(
     'app_jit_snapshot: cannot train in $constantTrainDir on this host; '
-    'the snapshot may not be reproducible',
+    'the snapshot may not be reproducible, and it stays cached until '
+    '`bazel clean`',
   );
 }
 
