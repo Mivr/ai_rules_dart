@@ -844,6 +844,82 @@ def _parse_pubspec_unsupported_test_impl(ctx):
     asserts.true(env, "not supported" in err and "explicit" in err)
     return unittest.end(env)
 
+def _parse_pubspec_folded_flow_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A flow collection that starts on the line after `key:` folds its deeper
+    # lines with single spaces and reads as one value, as pub reads it.
+    flow_key = "name: p1\nenvironment:\n  sdk: ^3.0.0\ndependencies:\n  bar:\n    path: ../stubbar\nflutter:\n  assets:\n    [a.txt,\n     b.txt]\n"
+    asserts.equals(env, {"assets": ["a.txt", "b.txt"]}, parse_pubspec_document(flow_key)["flutter"])
+    asserts.equals(env, ["bar"], parse_pubspec_deps(flow_key))
+    asserts.equals(env, "^3.0.0", parse_pubspec_sdk_constraint(flow_key))
+    asserts.equals(env, None, parse_pubspec_document_error(flow_key))
+
+    # The same fold applies after a bare `-`: the flow is the entry's child.
+    flow_dash = "name: p1\nenvironment:\n  sdk: ^3.0.0\nitems:\n  -\n    [a.txt,\n     b.txt]\n"
+    asserts.equals(env, [["a.txt", "b.txt"]], parse_pubspec_document(flow_dash)["items"])
+    asserts.equals(env, None, parse_pubspec_document_error(flow_dash))
+    return unittest.end(env)
+
+def _parse_pubspec_plain_question_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A `?` line that continues a plain scalar folds into it, as pub folds it.
+    # The bare and tab-separated forms below read on main and on this head;
+    # the space-separated form is covered head-only by
+    # `_parse_pubspec_plain_question_space_test_impl`.
+    asserts.equals(
+        env,
+        "some text ?\tmore text",
+        parse_pubspec_document("name: p1\ndescription: some text\n  ?\tmore text\nenvironment:\n  sdk: ^3.0.0\n")["description"],
+    )
+    asserts.equals(
+        env,
+        "some text ?",
+        parse_pubspec_document("name: p1\ndescription: some text\n  ?\nenvironment:\n  sdk: ^3.0.0\n")["description"],
+    )
+    asserts.equals(env, None, parse_pubspec_document_error("name: p1\ndescription: some text\n  ?\tmore text\nenvironment:\n  sdk: ^3.0.0\n"))
+    asserts.equals(env, None, parse_pubspec_document_error("name: p1\ndescription: some text\n  ?\nenvironment:\n  sdk: ^3.0.0\n"))
+    return unittest.end(env)
+
+def _parse_pubspec_plain_question_space_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Head-only: a `? ` continuation folds into the scalar, as pub folds it.
+    # Main stopped the scalar here and failed strict, so this form reads only
+    # on this head; the oracle (package:yaml 3.1.4, `dart pub get --offline`
+    # accepts the equivalent pubspec) reads "some text ? more text".
+    asserts.equals(
+        env,
+        "some text ? more text",
+        parse_pubspec_document("name: p1\ndescription: some text\n  ? more text\nenvironment:\n  sdk: ^3.0.0\n")["description"],
+    )
+    asserts.equals(env, None, parse_pubspec_document_error("name: p1\ndescription: some text\n  ? more text\nenvironment:\n  sdk: ^3.0.0\n"))
+    return unittest.end(env)
+
+def _parse_pubspec_rejected_span_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A spanning flow broken by a mapping entry fails naming its opening line.
+    broken = "name: p1\nenvironment:\n  sdk: ^3.0.0\nkey:\n  [a,\n  b: c]\n"
+    err = parse_pubspec_document_error(broken, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 5" in err)
+    asserts.true(env, "not supported" in err and "flow" in err)
+
+    # `- key: [a,` and `- [a,` spanning lines fail the same way.
+    err = parse_pubspec_document_error("name: p1\nitems:\n  - key: [a,\n    b]\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "line 3" in err and "not supported" in err and "flow" in err)
+    err = parse_pubspec_document_error("name: p1\nitems:\n  - [a,\n    b]\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "line 3" in err and "not supported" in err and "flow" in err)
+
+    # A `:` line that continues a plain scalar is an explicit key, which pub
+    # rejects: it fails naming the line and the form.
+    err = parse_pubspec_document_error("name: p1\ndescription: some text\n  : more text\nenvironment:\n  sdk: ^3.0.0\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "line 3" in err and "not supported" in err and "explicit" in err)
+    err = parse_pubspec_document_error("name: p1\ndescription: some text\n  :\nenvironment:\n  sdk: ^3.0.0\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "line 3" in err and "not supported" in err and "explicit" in err)
+    return unittest.end(env)
+
 def _trim_gzip_trailing_nulls_test_impl(ctx):
     env = unittest.begin(ctx)
 
@@ -924,6 +1000,10 @@ _t30_test = unittest.make(_parse_lock_entry_source_test_impl)
 _t31_test = unittest.make(_parse_lock_entry_version_test_impl)
 _t32_test = unittest.make(_parse_pubspec_docmarker_test_impl)
 _t33_test = unittest.make(_parse_pubspec_unsupported_test_impl)
+_t34_test = unittest.make(_parse_pubspec_folded_flow_test_impl)
+_t35_test = unittest.make(_parse_pubspec_plain_question_test_impl)
+_t36_test = unittest.make(_parse_pubspec_rejected_span_test_impl)
+_t37_test = unittest.make(_parse_pubspec_plain_question_space_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -967,6 +1047,10 @@ def yaml_parser_test_suite(name):
         _t31_test,
         _t32_test,
         _t33_test,
+        _t34_test,
+        _t35_test,
+        _t36_test,
+        _t37_test,
     )
     native.test_suite(
         name = name,
