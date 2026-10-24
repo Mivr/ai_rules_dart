@@ -136,6 +136,52 @@ String jitLstatSymbol({required bool isMacOS, required bool isX64}) {
   return 'lstat';
 }
 
+/// The `fstat` symbol reading the 64-bit `struct stat` layout (see
+/// [_jitFstatFd]): a pure function of OS and architecture, the same choice as
+/// [jitLstatSymbol]. On Intel macOS the plain `fstat` symbol is the legacy
+/// 32-bit-inode variant (whose owner and type fields sit elsewhere), so the
+/// 64-bit one is bound explicitly; every other host reads the 64-bit layout
+/// through the plain symbol.
+String jitFstatSymbol({required bool isMacOS, required bool isX64}) {
+  if (isMacOS && isX64) return 'fstat\$INODE64';
+  return 'fstat';
+}
+
+/// Offsets of the link count, mode and owner uid in the Linux 64-bit `struct
+/// stat` (see [_jitFstatFd]): a pure function of the architecture. The 64-bit
+/// Linux ABIs (x86_64, arm64, 64-bit RISC-V) share one layout for these fields
+/// (the link count a little-endian u64 at 16, the mode a little-endian u32 at
+/// 24, the uid a little-endian u32 at 28); a 32-bit ABI returns null, and the
+/// caller fails closed rather than decoding a layout that differs per ABI and
+/// per glibc large-file redirection. All supported hosts are little-endian.
+({int nlink, int mode, int uid})? jitLinuxStatOffsets({required ffi.Abi abi}) {
+  switch (abi) {
+    case ffi.Abi.linuxX64:
+    case ffi.Abi.linuxArm64:
+    case ffi.Abi.linuxRiscv64:
+      return (nlink: 16, mode: 24, uid: 28);
+    default:
+      return null;
+  }
+}
+
+/// Decodes 64 bytes of Linux 64-bit `struct stat` (see [jitLinuxStatOffsets]):
+/// a pure function of the bytes and the ABI, so tests pin the layout without
+/// the syscall. The link count is 64 bits wide; only its low half is kept (no
+/// host links a file more than 2^32 times). Null on a 32-bit ABI (see
+/// [jitLinuxStatOffsets]).
+JitStat? jitDecodeLinuxStat(List<int> bytes, {required ffi.Abi abi}) {
+  final offsets = jitLinuxStatOffsets(abi: abi);
+  if (offsets == null) return null;
+  final mode = _jitU32(bytes, offsets.mode);
+  return (
+    kind: jitEntryKind(mode),
+    uid: _jitU32(bytes, offsets.uid),
+    mode: mode,
+    nlink: _jitU32(bytes, offsets.nlink),
+  );
+}
+
 /// The flags opening the lock (see [JitOpenFlags]): a pure function of the OS
 /// and ABI. O_RDWR is 2, O_CREAT is 0x40 (Linux) or 0x200 (macOS), O_EXCL is
 /// 0x80 (Linux) or 0x800 (macOS), and O_NONBLOCK is 0x800 (Linux) or 0x4
@@ -273,10 +319,11 @@ String? jitUserName(int uid) {
 /// On Linux this is `statx(2)`, whose `struct statx` layout is the same on
 /// every architecture (the link count is a little-endian u32 at offset 16, the
 /// uid a little-endian u32 at offset 20, the mode a little-endian u16 at offset
-/// 28); on macOS it is `lstat(2)` with the 64-bit `struct stat` layout (the
-/// mode at offset 4, the link count at offset 6, the uid at offset 16; see
-/// [jitLstatSymbol]). All supported hosts are little-endian. Metadata only: the
-/// entry's content is never read.
+/// 28), falling back to `lstat(2)` with the 64-bit `struct stat` layout where
+/// `statx` is unavailable (see [jitLinuxStatOffsets]); on macOS it is `lstat(2)`
+/// with the 64-bit `struct stat` layout (the mode at offset 4, the link count
+/// at offset 6, the uid at offset 16; see [jitLstatSymbol]). All supported
+/// hosts are little-endian. Metadata only: the entry's content is never read.
 JitStat? jitStatEntry(String path) {
   if (Platform.isWindows) return null;
   try {
@@ -289,23 +336,7 @@ JitStat? jitStatEntry(String path) {
       if (buf == ffi.nullptr) return null;
       try {
         buf.asTypedList(256).fillRange(0, 256, 0);
-        if (Platform.isLinux) {
-          final statx = lib.lookupFunction<_StatxNative, _StatxDart>('statx');
-          const atFdcwd = -100;
-          const nofollow = 0x100;
-          const basicStats = 0x7ff;
-          if (statx(atFdcwd, pathPtr, nofollow, basicStats, buf) != 0) {
-            return null;
-          }
-          final bytes = buf.asTypedList(64);
-          final mode = _jitU16(bytes, 28);
-          return (
-            kind: jitEntryKind(mode),
-            uid: _jitU32(bytes, 20),
-            mode: mode,
-            nlink: _jitU32(bytes, 16),
-          );
-        }
+        if (Platform.isLinux) return _jitLinuxStatPath(lib, pathPtr, buf);
         if (Platform.isMacOS) {
           final symbol = jitLstatSymbol(
             isMacOS: true,
@@ -313,14 +344,7 @@ JitStat? jitStatEntry(String path) {
           );
           final lstat = lib.lookupFunction<_LstatNative, _LstatDart>(symbol);
           if (lstat(pathPtr, buf) != 0) return null;
-          final bytes = buf.asTypedList(64);
-          final mode = _jitU16(bytes, 4);
-          return (
-            kind: jitEntryKind(mode),
-            uid: _jitU32(bytes, 16),
-            mode: mode,
-            nlink: _jitU16(bytes, 6),
-          );
+          return _jitDecodeMacStat(buf.asTypedList(64));
         }
         return null;
       } finally {
@@ -333,6 +357,61 @@ JitStat? jitStatEntry(String path) {
     // The stat call is missing from this libc: no description available.
     return null;
   }
+}
+
+/// Stats [pathPtr] on Linux (see [jitStatEntry]): `statx(2)` first, `lstat(2)`
+/// with the 64-bit `struct stat` layout where `statx` is unavailable or
+/// refuses the entry (see [jitLinuxStatOffsets]). Null when neither stats the
+/// entry.
+JitStat? _jitLinuxStatPath(
+  ffi.DynamicLibrary lib,
+  ffi.Pointer<ffi.Uint8> pathPtr,
+  ffi.Pointer<ffi.Uint8> buf,
+) {
+  try {
+    final statx = lib.lookupFunction<_StatxNative, _StatxDart>('statx');
+    const atFdcwd = -100;
+    const nofollow = 0x100;
+    const basicStats = 0x7ff;
+    if (statx(atFdcwd, pathPtr, nofollow, basicStats, buf) == 0) {
+      return _jitDecodeStatx(buf.asTypedList(64));
+    }
+  } on ArgumentError {
+    // No `statx` in this libc (glibc older than 2.28): fall through to lstat.
+  }
+  try {
+    final lstat = lib.lookupFunction<_LstatNative, _LstatDart>('lstat');
+    if (lstat(pathPtr, buf) != 0) return null;
+  } on ArgumentError {
+    // Neither call exists on this libc: nothing statted.
+    return null;
+  }
+  return jitDecodeLinuxStat(buf.asTypedList(64), abi: ffi.Abi.current());
+}
+
+/// Decodes 64 bytes of `struct statx` (Linux, architecture-independent; see
+/// [jitStatEntry]): a pure function of the bytes, shared by the path and
+/// descriptor stats.
+JitStat _jitDecodeStatx(List<int> bytes) {
+  final mode = _jitU16(bytes, 28);
+  return (
+    kind: jitEntryKind(mode),
+    uid: _jitU32(bytes, 20),
+    mode: mode,
+    nlink: _jitU32(bytes, 16),
+  );
+}
+
+/// Decodes 64 bytes of macOS 64-bit `struct stat` (see [jitStatEntry]): a pure
+/// function of the bytes, shared by the path and descriptor stats.
+JitStat _jitDecodeMacStat(List<int> bytes) {
+  final mode = _jitU16(bytes, 4);
+  return (
+    kind: jitEntryKind(mode),
+    uid: _jitU32(bytes, 16),
+    mode: mode,
+    nlink: _jitU16(bytes, 6),
+  );
 }
 
 /// Opens the lock at [path] by file descriptor, for the caller to take with
@@ -751,9 +830,11 @@ JitLockOpen _jitAdoptFd(ffi.DynamicLibrary lib, String path, int fd) {
 }
 
 /// Stats an open descriptor itself: `statx` with `AT_EMPTY_PATH` on Linux
-/// (whose `struct statx` layout is architecture-independent), `fstat` on
-/// macOS (one 64-bit `struct stat` layout on both architectures). Null when
-/// the descriptor cannot be statted.
+/// (whose `struct statx` layout is architecture-independent), falling back to
+/// `fstat` with the 64-bit `struct stat` layout where `statx` is unavailable
+/// or refuses the descriptor (glibc older than 2.28; see
+/// [jitLinuxStatOffsets]); on macOS `fstat` with the 64-bit `struct stat`
+/// layout (see [jitFstatSymbol]). Null when the descriptor cannot be statted.
 JitStat? _jitFstatFd(ffi.DynamicLibrary lib, int fd) {
   final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
   final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
@@ -761,43 +842,58 @@ JitStat? _jitFstatFd(ffi.DynamicLibrary lib, int fd) {
   if (buf == ffi.nullptr) return null;
   try {
     buf.asTypedList(256).fillRange(0, 256, 0);
-    if (Platform.isLinux) {
-      final statx = lib.lookupFunction<_StatxNative, _StatxDart>('statx');
-      final empty = malloc(1);
-      if (empty == ffi.nullptr) return null;
-      try {
-        empty.asTypedList(1)[0] = 0;
-        const emptyPath = 0x1000;
-        const basicStats = 0x7ff;
-        if (statx(fd, empty, emptyPath, basicStats, buf) != 0) return null;
-      } finally {
-        free(empty);
-      }
-      final bytes = buf.asTypedList(64);
-      final mode = _jitU16(bytes, 28);
-      return (
-        kind: jitEntryKind(mode),
-        uid: _jitU32(bytes, 20),
-        mode: mode,
-        nlink: _jitU32(bytes, 16),
-      );
-    }
+    if (Platform.isLinux) return _jitLinuxFstatFd(lib, fd, buf);
     if (Platform.isMacOS) {
-      final fstat = lib.lookupFunction<_FstatNative, _FstatDart>('fstat');
-      if (fstat(fd, buf) != 0) return null;
-      final bytes = buf.asTypedList(64);
-      final mode = _jitU16(bytes, 4);
-      return (
-        kind: jitEntryKind(mode),
-        uid: _jitU32(bytes, 16),
-        mode: mode,
-        nlink: _jitU16(bytes, 6),
+      final symbol = jitFstatSymbol(
+        isMacOS: true,
+        isX64: ffi.Abi.current() == ffi.Abi.macosX64,
       );
+      final fstat = lib.lookupFunction<_FstatNative, _FstatDart>(symbol);
+      if (fstat(fd, buf) != 0) return null;
+      return _jitDecodeMacStat(buf.asTypedList(64));
     }
     return null;
   } finally {
     free(buf);
   }
+}
+
+/// Stats [fd] on Linux (see [_jitFstatFd]): `statx` with `AT_EMPTY_PATH`
+/// first, `fstat` with the 64-bit `struct stat` layout where `statx` is
+/// unavailable or refuses the descriptor (see [jitLinuxStatOffsets]). Null
+/// when neither stats the descriptor.
+JitStat? _jitLinuxFstatFd(
+  ffi.DynamicLibrary lib,
+  int fd,
+  ffi.Pointer<ffi.Uint8> buf,
+) {
+  try {
+    final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
+    final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
+    final statx = lib.lookupFunction<_StatxNative, _StatxDart>('statx');
+    final empty = malloc(1);
+    if (empty == ffi.nullptr) return null;
+    try {
+      empty.asTypedList(1)[0] = 0;
+      const emptyPath = 0x1000;
+      const basicStats = 0x7ff;
+      if (statx(fd, empty, emptyPath, basicStats, buf) == 0) {
+        return _jitDecodeStatx(buf.asTypedList(64));
+      }
+    } finally {
+      free(empty);
+    }
+  } on ArgumentError {
+    // No `statx` in this libc (glibc older than 2.28): fall through to fstat.
+  }
+  try {
+    final fstat = lib.lookupFunction<_FstatNative, _FstatDart>('fstat');
+    if (fstat(fd, buf) != 0) return null;
+  } on ArgumentError {
+    // Neither call exists on this libc: nothing statted.
+    return null;
+  }
+  return jitDecodeLinuxStat(buf.asTypedList(64), abi: ffi.Abi.current());
 }
 
 /// The fail-closed opening for [path]: its type and owner for the error, and

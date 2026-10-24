@@ -2126,6 +2126,64 @@ void main(List<String> args) {
     expect(locks.jitLstatSymbol(isMacOS: false, isX64: false), 'lstat');
   });
 
+  test('jitFstatSymbol binds the 64-bit variant on Intel macOS only', () {
+    // On Intel macOS the plain `fstat` symbol reads the legacy 32-bit-inode
+    // layout (wrong owner and type); the 64-bit one is `fstat$INODE64`.
+    // Every other host reads the 64-bit layout through the plain symbol.
+    expect(locks.jitFstatSymbol(isMacOS: true, isX64: true), 'fstat\$INODE64');
+    expect(locks.jitFstatSymbol(isMacOS: true, isX64: false), 'fstat');
+    expect(locks.jitFstatSymbol(isMacOS: false, isX64: true), 'fstat');
+    expect(locks.jitFstatSymbol(isMacOS: false, isX64: false), 'fstat');
+  });
+
+  test('jitLinuxStatOffsets pins the 64-bit struct stat layout per ABI', () {
+    // x86_64, arm64 and 64-bit RISC-V share one layout for these fields (the
+    // link count a u64 at 16, the mode a u32 at 24, the uid a u32 at 28), so
+    // the `fstat` fallback decodes them identically there. A 32-bit ABI has no
+    // pinned layout (i386 and 32-bit ARM differ, and glibc's large-file
+    // redirection moves the fields): the fallback fails closed instead of
+    // decoding guessed offsets.
+    for (final abi in [
+      ffi.Abi.linuxX64,
+      ffi.Abi.linuxArm64,
+      ffi.Abi.linuxRiscv64,
+    ]) {
+      expect(locks.jitLinuxStatOffsets(abi: abi), (
+        nlink: 16,
+        mode: 24,
+        uid: 28,
+      ), reason: '$abi shares the 64-bit layout');
+    }
+    for (final abi in [
+      ffi.Abi.linuxIA32,
+      ffi.Abi.linuxArm,
+      ffi.Abi.linuxRiscv32,
+    ]) {
+      expect(
+        locks.jitLinuxStatOffsets(abi: abi),
+        isNull,
+        reason: '$abi fails the fallback closed',
+      );
+    }
+  });
+
+  test('jitDecodeLinuxStat reads the 64-bit layout from raw bytes', () {
+    // Synthetic `struct stat` bytes pin the decoder without the syscall: link
+    // count 3, a 0666 regular file, owner 1001. A 32-bit ABI decodes nothing.
+    final bytes = List<int>.filled(64, 0);
+    bytes[16] = 3; // st_nlink low half.
+    bytes[24] = 0xb6; // st_mode low byte of 0100666.
+    bytes[25] = 0x81; // st_mode high byte: 0100000 is a regular file.
+    bytes[28] = 0xe9; // st_uid low byte of 1001.
+    bytes[29] = 0x03;
+    final stat = locks.jitDecodeLinuxStat(bytes, abi: ffi.Abi.linuxX64);
+    expect(stat?.kind, 'regular file');
+    expect(stat?.mode, 0x81b6);
+    expect(stat?.uid, 1001);
+    expect(stat?.nlink, 3);
+    expect(locks.jitDecodeLinuxStat(bytes, abi: ffi.Abi.linuxIA32), isNull);
+  });
+
   test('jitOpenFlags pins O_* per OS and ABI', () {
     // Linux O_NOFOLLOW is architecture-specific: x86_64, IA-32 and RISC-V
     // number it 0400000 (asm-generic), while 32-bit ARM and arm64 number it
