@@ -7,12 +7,10 @@ target graph and analysis fails — before any action runs.
 
 The fix merges every dependency cycle into one `dart_library` that carries all
 of the cycle's packages. Finding the cycles is Tarjan's algorithm over the
-graph the extension builds from the lock's packages and their pubspecs'
-`dependencies:` sections (see `//dart/pub:extensions.bzl`). This module holds
+graph the extension builds from the lock's packages and their `dependencies:`
+names (see `//dart/pub:extensions.bzl`). This module holds
 that one pure function so it can be unit tested without downloading anything.
 """
-
-load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps")
 
 def _successor_map(names, dep_map, in_graph):
     """Successors filtered to in-graph edges and sorted, for determinism."""
@@ -184,16 +182,18 @@ def normalize_pub_dep(dep, hub_names, spoke_prefixes):
             return dep[len(prefix) + 2:]
     return dep
 
-def pubspec_dep_graph(package_pubspecs, explicit_deps, scope_names, hub_names, spoke_prefixes):
+def package_dep_graph(package_deps, explicit_deps, scope_names, hub_names, spoke_prefixes):
     """Builds the package dependency graph of one lock scope.
 
-    Pure given the pubspec contents: the extension downloads each hosted
-    package once and calls this to plan the merges, so the shape is unit
-    tested without any download.
+    Pure given the dependency names: the extension resolves each package's
+    names once (from the lockfile facts or one pubspec parse) and calls this
+    to plan the merges, so the shape is unit tested without any download.
+    Each name is one edge: names are never rendered back into pubspec text,
+    so a name carrying quotes, newlines or colons cannot split into several
+    names.
 
     Args:
-      package_pubspecs: Dict of hosted package name to its `pubspec.yaml`
-        contents.
+      package_deps: Dict of package name to its dependency names.
       explicit_deps: Dict of explicit `pub.package()` name to its
         user-declared deps.
       scope_names: Every package name in scope (hosted plus explicit).
@@ -206,8 +206,7 @@ def pubspec_dep_graph(package_pubspecs, explicit_deps, scope_names, hub_names, s
     """
     in_scope = {name: True for name in scope_names}
     graph = {}
-    for name, content in package_pubspecs.items():
-        deps = parse_pubspec_deps(content)
+    for name, deps in package_deps.items():
         graph[name] = sorted([d for d in deps if d in in_scope and d != name])
     for name, user_deps in explicit_deps.items():
         normalized = [

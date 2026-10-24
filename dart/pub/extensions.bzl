@@ -7,11 +7,11 @@ load("//dart/pub:pub_lock_hub.bzl", "pub_lock_hub")
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_git_package", "pub_lock_package", "pub_lock_package_sha256_error", "trim_gzip_trailing_nulls")
 load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
 load("//dart/pub:pub_scan.bzl", "run_pub_archive_scans")
-load("//dart/pub:yaml_parser.bzl", "lock_package_error", "parse_pubspec_lock")
+load("//dart/pub:yaml_parser.bzl", "lock_package_error", "parse_pubspec_deps", "parse_pubspec_lock")
 load("//dart/pub/private:pub_repository.bzl", "pub_package")
 load("//dart/pub/private:pub_root_pin.bzl", "best_entry", "hosted_sha_conflict", "hosted_version_error", "select_all_explicit")
-load("//dart/pub/private:pub_scc_facts.bzl", "contents_from_fact_deps", "read_scope_pubspec", "record_scope_facts", "split_scope_facts")
-load("//dart/pub/private:scc.bzl", "compute_sccs", "pubspec_dep_graph", "rewrite_vanished_spoke", "scc_repo_name")
+load("//dart/pub/private:pub_scc_facts.bzl", "read_scope_pubspec", "record_scope_facts", "split_scope_facts")
+load("//dart/pub/private:scc.bzl", "compute_sccs", "package_dep_graph", "rewrite_vanished_spoke", "scc_repo_name")
 
 _SPOKE_PREFIX = "dart_pub"
 
@@ -83,8 +83,8 @@ _from_lock = tag_class(
     },
 )
 
-def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
-    """Downloads each in-scope package and returns its `pubspec.yaml` contents.
+def _scope_pubspec_deps(ctx, scope_dir, hosted, git_pkgs):
+    """Downloads each in-scope package and returns its sorted dependency names.
 
     The extension needs every package's `dependencies:` to find dependency
     cycles before any repository is generated, so it downloads the same
@@ -92,7 +92,8 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
     the same git revisions the git spokes will, reading the one file it needs
     from each. The padded-tarball workaround is the spokes'
     (`trim_gzip_trailing_nulls`): some pub.dev archives end past the gzip
-    trailer, which Bazel's extractor rejects.
+    trailer, which Bazel's extractor rejects. Each pubspec is parsed once;
+    the one result is what facts record and what planning consumes.
 
     Every archive is scanned before the first extraction: all packages
     download first, one snapshot invocation scans the batch in hosted
@@ -111,10 +112,10 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
         `struct(version, url, resolved_ref, path)`.
 
     Returns:
-      Dict of package name to its `pubspec.yaml` contents ("" when the
-      package ships none).
+      Dict of package name to its sorted `dependencies:` names ([] when the
+      package ships no pubspec).
     """
-    contents = {}
+    deps = {}
     ctx.file(scope_dir + "/.scc_scope", "pub dependency-cycle scope scratch")
     pending = []
     for name in sorted(hosted.keys()):
@@ -168,42 +169,44 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
         run_pub_archive_scans(ctx, [struct(archive = p.archive, name = p.name) for p in pending])
     for p in pending:
         ctx.extract(p.archive, output = p.out)
-        contents[p.name] = read_scope_pubspec(ctx, p.name, p.out)
-    return contents
+        deps[p.name] = sorted(parse_pubspec_deps(read_scope_pubspec(ctx, p.name, p.out)))
+    return deps
 
-def _scope_contents_with_facts(ctx, scope_dir, hosted, git_pkgs, recorded):
-    """Splits one scope into fact hits and misses, fetches the misses, and records the scope's facts. Returns contents."""
+def _scope_deps_with_facts(ctx, scope_dir, hosted, git_pkgs, recorded):
+    """Resolves one scope's dependency names, reusing lockfile facts for unchanged packages. Returns deps."""
     split = split_scope_facts(ctx.facts, hosted, git_pkgs)
-    miss_contents = {}
+    miss_deps = {}
     if split.hosted_miss or split.git_miss:
-        miss_contents = _scope_pubspec_contents(ctx, scope_dir, split.hosted_miss, split.git_miss)
-    record_scope_facts(recorded, split, miss_contents)
-    contents = contents_from_fact_deps(split.deps)
-    for name, text in miss_contents.items():
-        contents[name] = text
-    return contents
+        miss_deps = _scope_pubspec_deps(ctx, scope_dir, split.hosted_miss, split.git_miss)
+    record_scope_facts(recorded, split, miss_deps)
+    deps = dict(split.deps)
+    for name in miss_deps.keys():
+        deps[name] = miss_deps[name]
+    return deps
 
-def plan_scope_sccs(scope_names, explicit_deps, hub_names, spoke_prefix, pubspec_contents):
-    """Plans the merges of one lock scope from its dependency graph.
+def plan_scope_sccs(scope_names, explicit_deps, hub_names, spoke_prefix, package_deps):
+    """Plans the merges of one lock scope from its packages' dependency names.
 
     Args:
       scope_names: Every package name in scope (hosted plus explicit).
       explicit_deps: Dict of explicit package name to user-declared deps.
       hub_names: All hub repository names in scope.
       spoke_prefix: The scope's spoke repo name prefix.
-      pubspec_contents: Dict of hosted package name to `pubspec.yaml`
-        contents.
+      package_deps: Dict of package name to its sorted dependency names — the
+        names planning consumes, from the lockfile facts or one pubspec parse
+        each. Each name is one edge: names are never rendered back into
+        pubspec text, so quotes, newlines or colons in a name cannot split it
+        into several.
 
     Returns:
       `struct(members, merged)`: `members` maps every merged package name to
       its merged repository name; `merged` maps each merged repository name
-      to its sorted member names. Cycles touching an explicit
-      `pub.package()` are left alone — that repository is user-managed, so
-      nothing can be merged into it, and the target cycle fails as it does
-      today.
+      to its sorted member names. Cycles touching an explicit `pub.package()`
+      are left alone — that repository is user-managed, so nothing can be
+      merged into it, and the target cycle fails as it does today.
     """
-    graph = pubspec_dep_graph(
-        pubspec_contents,
+    graph = package_dep_graph(
+        package_deps,
         explicit_deps,
         scope_names,
         hub_names,
@@ -220,7 +223,10 @@ def plan_scope_sccs(scope_names, explicit_deps, hub_names, spoke_prefix, pubspec
         merged[repo] = component
         for member in component:
             members[member] = repo
-    return struct(members = members, merged = merged)
+    return struct(
+        members = members,
+        merged = merged,
+    )
 
 def scc_member_entries(members, hosted, git_pkgs):
     """Builds the merged repository's member entries for `members_json`.
@@ -763,12 +769,12 @@ def _pub_collect_tags(ctx):
             ))
     return package_tags, lock_tags, ignore_hooks, root_repos
 
-def _pub_scope_contents(ctx, scope_dir, scope_names, explicit_package_names, explicit_deps, hosted, git_pkgs, recorded):
-    """Reads one scope's pubspecs when cycle planning needs them, reusing lockfile facts for unchanged packages. Returns contents."""
-    contents = {}
+def _pub_scope_deps(ctx, scope_dir, scope_names, explicit_package_names, explicit_deps, hosted, git_pkgs, recorded):
+    """Resolves one scope's dependency names when cycle planning needs them, reusing lockfile facts for unchanged packages. Returns deps."""
+    deps = {}
     if len(scope_names) > len(explicit_package_names) + 1 or (scope_names != explicit_package_names and any([explicit_deps[name] for name in explicit_deps])):
-        contents = _scope_contents_with_facts(ctx, scope_dir, hosted, git_pkgs, recorded)
-    return contents
+        deps = _scope_deps_with_facts(ctx, scope_dir, hosted, git_pkgs, recorded)
+    return deps
 
 def _pub_plan_shared_sccs(ctx, resolution, explicit_package_names, recorded):
     """Plans the shared scope's merges. Returns (shared_sccs, vanished_spokes)."""
@@ -784,13 +790,13 @@ def _pub_plan_shared_sccs(ctx, resolution, explicit_package_names, recorded):
         if hub_name not in isolated_packages and hub_name not in isolated_git_packages
     ])
     shared_names = sorted(set(resolved.keys()) | set(resolved_git.keys())) + explicit_package_names
-    shared_contents = _pub_scope_contents(ctx, "_scc_shared", shared_names, explicit_package_names, explicit_deps, resolved, resolved_git, recorded)
+    shared_deps = _pub_scope_deps(ctx, "_scc_shared", shared_names, explicit_package_names, explicit_deps, resolved, resolved_git, recorded)
     shared_sccs = plan_scope_sccs(
         shared_names,
         explicit_deps,
         shared_hubs,
         _SPOKE_PREFIX,
-        shared_contents,
+        shared_deps,
     )
 
     # Merged-away spokes vanish, so an explicit `pub.package()` naming one
@@ -810,13 +816,13 @@ def _pub_plan_isolated_sccs(ctx, hub_name, resolution, explicit_package_names, v
     git_pkgs = isolated_git_packages.get(hub_name, {})
     hub_names = [hub_name]
     scope_names = sorted(set(hosted.keys()) | set(git_pkgs.keys())) + explicit_package_names
-    contents = _pub_scope_contents(ctx, "_scc_" + hub_name, scope_names, explicit_package_names, explicit_deps, hosted, git_pkgs, recorded)
+    deps = _pub_scope_deps(ctx, "_scc_" + hub_name, scope_names, explicit_package_names, explicit_deps, hosted, git_pkgs, recorded)
     sccs = plan_scope_sccs(
         scope_names,
         explicit_deps,
         hub_names,
         hub_name,
-        contents,
+        deps,
     )
     for member, repo in sccs.members.items():
         vanished_spokes[hub_name + "__" + member] = repo

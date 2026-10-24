@@ -13,7 +13,10 @@ sorted dependency names planning took from that package's `pubspec.yaml` —
 exactly what `parse_pubspec_deps` returns, unfiltered — as extension facts.
 Bazel stores them in the lockfile and hands them back as `module_ctx.facts`
 on the next evaluation, so a package whose fact still applies is neither
-downloaded nor cloned, extracted, walked, nor parsed.
+downloaded nor cloned, extracted, walked, nor parsed. Planning consumes the
+recorded names directly: each name is one edge, never rendered back into
+pubspec text, so a name carrying quotes, newlines or colons cannot split
+into several names.
 
 Facts are keyed by what identifies the package's bytes: a hosted package by
 name, version, and the lock's archive sha256; a git package by name,
@@ -26,11 +29,11 @@ strings) fails the evaluation naming the key, rather than planning from
 invented edges.
 
 This module holds the pure facts logic (key building, lookup, validation,
-the split into hits and misses, the returned dict, and synthesising planning
-input back from recorded deps) plus the narrowed scratch check, so Starlark
-unit tests cover them without a context. The context-touching halves — the
-fetch orchestration in `//dart/pub:extensions.bzl` and `read_scope_pubspec`
-below — stay thin wrappers over these.
+the split into hits and misses, and the returned dict) plus the narrowed
+scratch check, so Starlark unit tests cover them without a context.
+The context-touching halves — the fetch orchestration in
+`//dart/pub:extensions.bzl` and `read_scope_pubspec` below — stay thin
+wrappers over these.
 
 Facts only change the extension's own planning input. The spokes (hosted,
 git, and merged-cycle repositories) still fetch by the lock's sha256 or ref,
@@ -38,7 +41,6 @@ still refuse hostile archive headers before extracting, and still run the
 full `check_package_symlinks` walk.
 """
 
-load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps")
 load("//dart/pub/private:pub_symlink.bzl", "pub_symlink_error", "realpath_escapes_root")
 
 # Schema version carried in every fact key. Keys from another schema are never
@@ -155,12 +157,12 @@ def split_scope_facts(facts, hosted, git_pkgs):
         git_miss = {name: git_pkgs[name] for name in miss if name in git_pkgs},
     )
 
-def record_scope_facts(recorded, split, miss_contents):
+def record_scope_facts(recorded, split, miss_deps):
     """Records one scope's planned packages into the facts to return.
 
-    Hits re-record what the lockfile said; misses record the sorted names the
-    strict parse of the freshly fetched pubspec took, so a pubspec that fails
-    `parse_pubspec_deps` still fails the evaluation and records nothing.
+    Hits re-record what the lockfile said; misses record the sorted names one
+    pubspec parse took — the same result planning consumes — so a pubspec that
+    fails `parse_pubspec_deps` still fails the evaluation and records nothing.
     Building the dict fresh each evaluation — exactly the packages planned,
     nothing else — drops foreign-schema and stale entries.
 
@@ -168,46 +170,14 @@ def record_scope_facts(recorded, split, miss_contents):
       recorded: Dict receiving fact key to sorted dep names. Mutated in
         place, shared across the evaluation's scopes.
       split: The `split_scope_facts` result for this scope.
-      miss_contents: Dict of missed package name to its fetched
-        `pubspec.yaml` contents.
+      miss_deps: Dict of missed package name to its sorted dependency names,
+        parsed once from the freshly fetched pubspec.
     """
     for name in sorted(split.keys.keys()):
         if name in split.deps:
             recorded[split.keys[name]] = split.deps[name]
         else:
-            recorded[split.keys[name]] = sorted(parse_pubspec_deps(miss_contents[name]))
-
-def _synthesized_pubspec(package_name, deps):
-    """Synthesises planning input for recorded deps.
-
-    The merge planner reads pubspec contents, so hits re-enter planning as a
-    minimal `pubspec.yaml` carrying exactly the recorded dependency names.
-    Keys are always double-quoted, so any recorded name round-trips through
-    the strict parse back to itself.
-
-    Args:
-      package_name: The package the contents stand in for.
-      deps: The recorded dependency names.
-
-    Returns:
-      A `pubspec.yaml` string whose `parse_pubspec_deps` is the deps.
-    """
-    lines = ['name: "%s"' % package_name, "dependencies:"]
-    for dep in sorted(deps):
-        lines.append('  "%s": any' % dep)
-    return "\n".join(lines) + "\n"
-
-def contents_from_fact_deps(package_deps):
-    """Synthesises planning input for every fact-hit package.
-
-    Args:
-      package_deps: Dict of package name to recorded dep names.
-
-    Returns:
-      Dict of package name to `pubspec.yaml` contents planning reads
-      exactly as if fetched.
-    """
-    return {name: _synthesized_pubspec(name, package_deps[name]) for name in package_deps.keys()}
+            recorded[split.keys[name]] = miss_deps[name]
 
 def scratch_pubspec_error(check):
     """Decides one scope-scratch `pubspec.yaml` read without touching the tree.
