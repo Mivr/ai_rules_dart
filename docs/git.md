@@ -10,10 +10,14 @@ those environment selectors landed in git 2.32. Older git silently ignores
 them and reads the host's files instead, so fetching there would run under
 host configuration — including a host-global `uploadpack.packObjectsHook`.
 
-Whether a fetch is local is decided on the URL git will actually fetch,
-after the host's `url.<base>.insteadOf` rewrites: a remote lock URL the
-host rewrites to a local repository fetches with the same isolation as a
-lock URL that is local to begin with — no host config file is read, the
-inline-config channel is unset, and no host hook of any kind runs. Remote
-fetches keep inheriting the host's transport configuration (credentials,
-`insteadOf` rewrites, proxies) on purpose.
+Whether a fetch is local is decided on the URL the host's
+`url.<base>.insteadOf` rewrites resolve to (seen via `git ls-remote
+--get-url`): a remote lock URL the host rewrites to a local repository
+fetches with the same isolation as a lock URL that is local to begin
+with — no host config file is read, the inline-config channel is unset,
+and no host hook of any kind runs — and only that local case fetches the
+resolved URL, since the isolated environment no longer carries the
+rewrite. Remote fetches keep the lock URL on the fetch commands and keep
+inheriting the host's transport configuration (credentials, `insteadOf`
+rewrites, proxies) on purpose, so git applies the rewrites to the lock
+URL once, exactly as before.
