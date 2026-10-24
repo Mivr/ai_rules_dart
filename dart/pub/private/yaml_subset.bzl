@@ -743,6 +743,23 @@ def _find_colon(text):
             return i
     return -1
 
+def find_colon(text):
+    """Returns the index of the first top-level `: ` in `text`, or -1.
+
+    A colon inside quotes or brackets does not count, and a trailing colon does.
+    Shared with the `//dart/pub:yaml_parser.bzl` lock checks so both read a
+    `key: value` line the same way.
+    """
+    return _find_colon(text)
+
+def strip_comment(text):
+    """Removes a trailing `#` comment, ignoring `#` inside quotes.
+
+    Shared with the `//dart/pub:yaml_parser.bzl` lock checks so both skip
+    the same comment text.
+    """
+    return _strip_comment(text)
+
 def _split_key_value(text):
     """Splits `key: value` at the top-level colon. Returns (key, value, found)."""
     c = _find_colon(text)

@@ -5,7 +5,7 @@ module just projects the parsed value down to the exact shapes the rules_dart
 pub extension and repository rules consume.
 """
 
-load("//dart/pub/private:yaml_subset.bzl", "document_problems", "document_value_and_problems", "parse_document")
+load("//dart/pub/private:yaml_subset.bzl", "document_problems", "document_value_and_problems", "find_colon", "parse_document", "strip_comment")
 
 def _pubspec_parse(content, pubspec_label):
     """Parses a pubspec into (mapping, error) without failing."""
@@ -174,56 +174,6 @@ def _lock_tab_error(content, lock_label):
             return "%s: tab in indentation at line %d" % (lock_label, i + 1)
     return None
 
-def _lock_comment_stripped(text):
-    """Removes a trailing `#` comment, ignoring `#` inside quotes."""
-    in_single = False
-    in_double = False
-    escaped = False
-    for i in range(len(text)):
-        ch = text[i]
-        if escaped:
-            escaped = False
-        elif in_double and ch == "\\":
-            escaped = True
-        elif ch == "'" and not in_double:
-            in_single = not in_single
-        elif ch == '"' and not in_single:
-            in_double = not in_double
-        elif ch == "#" and not in_single and not in_double:
-            if i == 0 or text[i - 1] in [" ", "\t"]:
-                return text[:i].rstrip()
-    return text.rstrip()
-
-def _lock_top_colon(text):
-    """Returns the index of the first top-level colon in `text`, or -1.
-
-    A colon inside quotes or flow brackets does not count; a trailing colon
-    and a colon followed by a space or tab do.
-    """
-    in_single = False
-    in_double = False
-    escaped = False
-    depth = 0
-    for i in range(len(text)):
-        ch = text[i]
-        if escaped:
-            escaped = False
-        elif in_double and ch == "\\":
-            escaped = True
-        elif ch == "'" and not in_double:
-            in_single = not in_single
-        elif ch == '"' and not in_single:
-            in_double = not in_double
-        elif in_single or in_double:
-            continue
-        elif ch in ["{", "["]:
-            depth += 1
-        elif ch in ["}", "]"]:
-            depth -= 1
-        elif ch == ":" and depth == 0 and (i + 1 == len(text) or text[i + 1] in [" ", "\t"]):
-            return i
-    return -1
-
 def _lock_quoted_tail(value):
     """Returns the text after a quoted scalar's same-line closing quote.
 
@@ -250,6 +200,37 @@ def _lock_quoted_tail(value):
         i += 1
     return None
 
+def _lock_flow_quoted_end(flow, i, quote):
+    """Returns the index just after the quoted scalar opened before `i`, or -1.
+
+    `i` is the index just after the opening quote. A missing closing quote
+    returns -1, leaving the value to the parser.
+    """
+    for _ in range(len(flow) + 1):
+        if i >= len(flow):
+            return -1
+        ch = flow[i]
+        if quote == '"' and ch == "\\":
+            i += 2
+            continue
+        if ch == quote:
+            if quote == "'" and i + 1 < len(flow) and flow[i + 1] == "'":
+                i += 2
+                continue
+            return i + 1
+        i += 1
+    return -1
+
+def _lock_flow_follower_ok(flow, i):
+    """Returns whether only `,`, `:`, `]` or `}` follows index `i` after spaces."""
+    for _ in range(len(flow) + 1):
+        if i >= len(flow):
+            return True
+        if flow[i] not in [" ", "\t"]:
+            return flow[i] in [",", ":", "]", "}"]
+        i += 1
+    return True
+
 def _lock_flow_quote_error(flow):
     """Returns the quote-trailer problem inside a flow value, or None.
 
@@ -257,51 +238,19 @@ def _lock_flow_quote_error(flow):
     follow. Anything else (another scalar directly after the quote) ends up
     folded into the value, so it is an error.
     """
-    in_single = False
-    in_double = False
     i = 0
     for _ in range(len(flow) + 1):
         if i >= len(flow):
             return None
         ch = flow[i]
-        if in_double:
-            if ch == "\\":
-                i += 2
-                continue
-            if ch == '"':
-                in_double = False
-                i += 1
-                j = i
-                for _ in range(len(flow) + 1):
-                    if j >= len(flow) or flow[j] not in [" ", "\t"]:
-                        break
-                    j += 1
-                if j < len(flow) and flow[j] not in [",", ":", "]", "}"]:
-                    return "unexpected text after closing quote"
-                continue
-            i += 1
+        if ch == '"' or ch == "'":
+            end = _lock_flow_quoted_end(flow, i + 1, ch)
+            if end < 0:
+                return None
+            if not _lock_flow_follower_ok(flow, end):
+                return "unexpected text after closing quote"
+            i = end
             continue
-        if in_single:
-            if ch == "'" and i + 1 < len(flow) and flow[i + 1] == "'":
-                i += 2
-                continue
-            if ch == "'":
-                in_single = False
-                i += 1
-                j = i
-                for _ in range(len(flow) + 1):
-                    if j >= len(flow) or flow[j] not in [" ", "\t"]:
-                        break
-                    j += 1
-                if j < len(flow) and flow[j] not in [",", ":", "]", "}"]:
-                    return "unexpected text after closing quote"
-                continue
-            i += 1
-            continue
-        if ch == '"':
-            in_double = True
-        elif ch == "'":
-            in_single = True
         i += 1
     return None
 
@@ -317,7 +266,7 @@ def _lock_line_quote_error(body):
     if text.startswith("? ") or text.startswith(": "):
         return None
     value = text
-    c = _lock_top_colon(text)
+    c = find_colon(text)
     if c >= 0:
         value = text[c + 1:].strip()
     if value == "":
@@ -347,7 +296,7 @@ def _lock_quote_error(content, lock_label):
             continue
         if stripped == "---" or stripped == "...":
             continue
-        body = _lock_comment_stripped(line).strip()
+        body = strip_comment(line).strip()
         if body == "" or body == "---" or body == "...":
             continue
         err = _lock_line_quote_error(body)
@@ -388,7 +337,7 @@ def _lock_entry_lines(content):
     pkg_indent = -1
     entry_indent = -1
     for i, line in enumerate(lines):
-        body = _lock_comment_stripped(line).strip()
+        body = strip_comment(line).strip()
         if body == "" or body.startswith("#") or body.startswith("%"):
             continue
         if body == "---" or body == "...":
@@ -404,7 +353,7 @@ def _lock_entry_lines(content):
             entry_indent = indent
         if indent != entry_indent:
             continue
-        c = _lock_top_colon(body)
+        c = find_colon(body)
         if c <= 0:
             continue
         key = _lock_unquote(body[:c].strip())
