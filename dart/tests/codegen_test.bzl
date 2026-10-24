@@ -329,9 +329,11 @@ def codegen_test_suite(name):
     ]
     expected_dep_res_input_suffixes = expected_runfile_suffixes + [
         "res_only_subpkg/lib/schema/dep_res.yaml",
-        ".pkg_roots/res__only__dep__pkg/lib/schema/dep_res.yaml",
+        # The mangled package dir exists only under the digest-named stage,
+        # whose `<name>.pkg_roots.<digest>` prefix the stage-root tests pin.
+        "/res__only__dep__pkg/lib/schema/dep_res.yaml",
         "lib/local_config.json",
-        ".pkg_roots/codegen__fixture/lib/local_config.json",
+        "/codegen__fixture/lib/local_config.json",
     ]
 
     dart_codegen(

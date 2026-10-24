@@ -17,6 +17,19 @@ load("//dart/private:dart_analyzer_summary.bzl", "dart_analyzer_summary")
 
 _FLAG = str(Label("//dart:analyzer_summaries"))
 
+def _is_staged_root_uri(line):
+    """Returns whether a `rootUri` line resolves inside a digest-named stage root."""
+    parts = line.split(".pkg_roots.")
+    if len(parts) < 2:
+        return False
+    tail = parts[1]
+    if len(tail) < 17 or tail[16] != "/":
+        return False
+    for i in range(16):
+        if tail[i] not in "0123456789abcdef":
+            return False
+    return True
+
 def _has_input(actions, suffix):
     for action in actions:
         if action.mnemonic != "DartCodegen":
@@ -53,8 +66,8 @@ def _codegen_inputs_test_impl(ctx):
             if '"rootUri":' in line:
                 asserts.true(
                     env,
-                    ".pkg_roots/" in line,
-                    "%s: synth_package_config rootUri must resolve inside .pkg_roots, got: %s" % (target.label, line),
+                    _is_staged_root_uri(line),
+                    "%s: synth_package_config rootUri must resolve inside a <name>.pkg_roots.<digest> stage, got: %s" % (target.label, line),
                 )
     files = target[DefaultInfo].files
     return analysistest.end(env) + [OutputGroupInfo(_validation = files, dart_analyze = files)]

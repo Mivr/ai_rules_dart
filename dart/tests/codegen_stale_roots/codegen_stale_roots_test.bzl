@@ -1,9 +1,19 @@
-"""Analysis tests: every codegen rule passes its pkg-roots manifest as a declared input."""
+"""Analysis tests: every codegen action stages under a digest-named pkg-roots root."""
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 load("//dart:defs.bzl", "dart_aggregate_codegen", "dart_codegen", "dart_library", "dart_sqlcodegen")
+load(":pkg_roots_digest_test.bzl", "pkg_roots_digest_suite")
 
-def _pkg_roots_manifest_test_impl(ctx):
+def _stage_segments(input_paths):
+    """Returns the path components that name a `<name>.pkg_roots.<digest>` stage."""
+    segments = []
+    for p in input_paths:
+        for part in p.split("/"):
+            if ".pkg_roots." in part:
+                segments.append(part)
+    return segments
+
+def _stage_root_test_impl(ctx):
     env = analysistest.begin(ctx)
     matching = [
         a
@@ -12,38 +22,52 @@ def _pkg_roots_manifest_test_impl(ctx):
     ]
     asserts.equals(env, 1, len(matching), "expected exactly one %s action" % ctx.attr.mnemonic)
     action = matching[0]
+    target_name = analysistest.target_under_test(env).label.name
     input_paths = [f.path for f in action.inputs.to_list()]
-    manifests = [
-        p
-        for p in input_paths
-        if p.endswith(".pkg_roots_manifest.txt")
-    ]
+
+    # The declared set stages under one digest-named directory, whatever runs
+    # the generator: worker binary, user binary, or script. A changed declared
+    # set stages under a directory no earlier build wrote to, so the action
+    # can never resolve a `package:` URI through a stale staged link.
+    segments = _stage_segments(input_paths)
+    asserts.true(
+        env,
+        len(segments) > 0,
+        "expected a <name>.pkg_roots.<digest> stage in %s inputs" % ctx.attr.mnemonic,
+    )
+    prefix = target_name + ".pkg_roots."
+    digests = {}
+    for segment in segments:
+        asserts.true(
+            env,
+            segment.startswith(prefix),
+            "stage %s must start with %s" % (segment, prefix),
+        )
+        digest = segment[len(prefix):]
+        asserts.equals(env, 16, len(digest), "stage digest in %s must be 16 hex chars" % segment)
+        int(digest, 16)  # aborts the test unless every char is hex
+        digests[digest] = True
     asserts.equals(
         env,
         1,
-        len(manifests),
-        "expected the <name>.pkg_roots_manifest.txt in %s inputs: %s" % (ctx.attr.mnemonic, input_paths),
+        len(digests.keys()),
+        "expected one stage directory per %s action, got %s" % (ctx.attr.mnemonic, digests.keys()),
     )
-    if ctx.attr.expect_prune_flags:
-        for flag in ["--pkg-roots-dir", "--pkg-roots-manifest"]:
-            asserts.true(
-                env,
-                flag in action.argv,
-                "expected %s in %s argv: %s" % (flag, ctx.attr.mnemonic, action.argv),
-            )
-    else:
+
+    # No generator kind takes prune flags: user binaries and scripts never
+    # parsed the shim contract, and the digest-named stage needs no pruning.
+    for arg in action.argv:
         asserts.false(
             env,
-            "--pkg-roots-manifest" in action.argv,
-            "a generator outside the builder shim must not see prune flags in %s argv: %s" % (ctx.attr.mnemonic, action.argv),
+            arg.startswith("--pkg-roots"),
+            "no generator takes pkg-roots flags in %s argv: %s" % (ctx.attr.mnemonic, action.argv),
         )
     return analysistest.end(env)
 
-_pkg_roots_manifest_test = analysistest.make(
-    _pkg_roots_manifest_test_impl,
+_stage_root_test = analysistest.make(
+    _stage_root_test_impl,
     attrs = {
         "mnemonic": attr.string(mandatory = True),
-        "expect_prune_flags": attr.bool(default = True),
     },
 )
 
@@ -71,7 +95,7 @@ _dummy_staged_file = rule(
 )
 
 def codegen_stale_roots_suite(name):
-    """Declares fixtures with deps plus manifest analysis tests for all three codegen rules.
+    """Declares fixtures with deps plus stage-root analysis tests for all three codegen rules.
 
     Args:
       name: Name of the generated `test_suite`; fixture names derive from it.
@@ -103,15 +127,15 @@ def codegen_stale_roots_suite(name):
         deps = [":" + name + "_dep_lib"],
         tags = ["manual"],
     )
-    _pkg_roots_manifest_test(
+    _stage_root_test(
         name = name + "_bin_test",
         size = "small",
-        expect_prune_flags = False,
         mnemonic = "DartCodegen",
         target_under_test = ":" + name + "_bin_fixture",
     )
 
-    # A worker generator built on the builder shim takes the prune flags.
+    # A worker generator built on the builder shim stages under the same
+    # digest-named root; the guarantee is per rule call site, not per kind.
     dart_codegen(
         name = name + "_shim_fixture",
         src = ":" + name + "_src",
@@ -121,7 +145,7 @@ def codegen_stale_roots_suite(name):
         deps = [":" + name + "_dep_lib"],
         tags = ["manual"],
     )
-    _pkg_roots_manifest_test(
+    _stage_root_test(
         name = name + "_shim_test",
         size = "small",
         mnemonic = "DartCodegen",
@@ -137,10 +161,9 @@ def codegen_stale_roots_suite(name):
         deps = [":" + name + "_dep_lib"],
         tags = ["manual"],
     )
-    _pkg_roots_manifest_test(
+    _stage_root_test(
         name = name + "_script_test",
         size = "small",
-        expect_prune_flags = False,
         mnemonic = "DartCodegen",
         target_under_test = ":" + name + "_script_fixture",
     )
@@ -154,15 +177,14 @@ def codegen_stale_roots_suite(name):
         deps = [":" + name + "_dep_lib"],
         tags = ["manual"],
     )
-    _pkg_roots_manifest_test(
+    _stage_root_test(
         name = name + "_agg_bin_test",
         size = "small",
-        expect_prune_flags = False,
         mnemonic = "DartAggregateCodegen",
         target_under_test = ":" + name + "_agg_bin_fixture",
     )
 
-    # The flag path is per rule call site, so it needs a shim-closure
+    # The stage wiring is per rule call site, so it needs a shim-closure
     # generator here too. Any builder-shim binary exercises it at analysis
     # time; the rule never runs it under `analysistest`.
     dart_aggregate_codegen(
@@ -174,7 +196,7 @@ def codegen_stale_roots_suite(name):
         deps = [":" + name + "_dep_lib"],
         tags = ["manual"],
     )
-    _pkg_roots_manifest_test(
+    _stage_root_test(
         name = name + "_agg_shim_test",
         size = "small",
         mnemonic = "DartAggregateCodegen",
@@ -190,10 +212,9 @@ def codegen_stale_roots_suite(name):
         deps = [":" + name + "_dep_lib"],
         tags = ["manual"],
     )
-    _pkg_roots_manifest_test(
+    _stage_root_test(
         name = name + "_agg_script_test",
         size = "small",
-        expect_prune_flags = False,
         mnemonic = "DartAggregateCodegen",
         target_under_test = ":" + name + "_agg_script_fixture",
     )
@@ -207,10 +228,9 @@ def codegen_stale_roots_suite(name):
         deps = [":" + name + "_dep_lib"],
         tags = ["manual"],
     )
-    _pkg_roots_manifest_test(
+    _stage_root_test(
         name = name + "_sql_test",
         size = "small",
-        expect_prune_flags = False,
         mnemonic = "DartSqlCodegen",
         target_under_test = ":" + name + "_sql_fixture",
     )
@@ -224,7 +244,7 @@ def codegen_stale_roots_suite(name):
         deps = [":" + name + "_dep_lib"],
         tags = ["manual"],
     )
-    _pkg_roots_manifest_test(
+    _stage_root_test(
         name = name + "_sql_shim_test",
         size = "small",
         mnemonic = "DartSqlCodegen",
@@ -242,5 +262,5 @@ def codegen_stale_roots_suite(name):
             ":" + name + "_agg_script_test",
             ":" + name + "_sql_test",
             ":" + name + "_sql_shim_test",
-        ],
+        ] + pkg_roots_digest_suite(name + "_digest"),
     )

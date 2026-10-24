@@ -27,7 +27,6 @@ load(
     "//dart/private:common.bzl",
     "DEFAULT_ROOT_LANGUAGE_VERSION",
     "PACKAGE_IDENTITY_ATTRS",
-    "add_pkg_roots_prune_args",
     "add_shim_contract_args",
     "asset_path_for",
     "dart_lib_root_for_package",
@@ -134,7 +133,7 @@ def _dart_sqlcodegen_impl(ctx):
         fail(mismatch)
 
     src = ctx.file.src
-    synth_pc, lib_dep_srcs, manifest = synth_package_config(ctx, ctx.attr.deps)
+    synth_pc, lib_dep_srcs = synth_package_config(ctx, ctx.attr.deps)
 
     lib_root_from_deps = dart_lib_root_for_package(
         ctx.attr.deps,
@@ -152,7 +151,6 @@ def _dart_sqlcodegen_impl(ctx):
 
     args = ctx.actions.args()
     direct = _sqlcodegen_action_inputs(ctx, args, src, synth_pc, toolchain.dart_sdk_info.dart, lib_root, auto_staged, outputs)
-    direct.extend(add_pkg_roots_prune_args(args, ctx, synth_pc, manifest))
 
     generator_runfiles = ctx.attr.generator_bin[DefaultInfo].default_runfiles.files
     data_runfiles = [dep[DefaultInfo].default_runfiles.files for dep in ctx.attr.data]
