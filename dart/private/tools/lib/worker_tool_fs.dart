@@ -48,19 +48,90 @@ Set<String>? pruneStagedSrcFiles(String project) {
 /// Deletes every file under [dirPath] (recursively) whose normalized absolute
 /// path is not in [allowedPaths]. Directories themselves are left in place.
 void pruneUnlistedUnder(String dirPath, Set<String> allowedPaths) {
+  _deleteUnlisted(
+    dirPath,
+    allowedPaths,
+    (entityPath) => p.normalize(entityPath),
+    _ignoreDeleteFailure,
+  );
+}
+
+/// Ignores a prune deletion failure: the entry was read-only or already
+/// removed by a concurrent action.
+void _ignoreDeleteFailure(String entryPath, FileSystemException e) {}
+
+/// Deletes every non-directory entry under [dirPath] (recursively, without
+/// following links) whose [keyOf] key is not in [allowed], routing deletion
+/// failures to [onDeleteFailure]. Symlinked directories surface as links
+/// (never as `Directory`), so the traversal neither descends through them
+/// nor deletes their targets: deleting a link removes the link itself.
+void _deleteUnlisted(
+  String dirPath,
+  Set<String> allowed,
+  String Function(String entityPath) keyOf,
+  void Function(String entryPath, FileSystemException e) onDeleteFailure,
+) {
   final dir = Directory(dirPath);
   if (!dir.existsSync()) return;
   for (final entity in dir.listSync(recursive: true, followLinks: false)) {
     if (entity is Directory) continue;
-    final normPath = p.normalize(entity.absolute.path);
-    if (!allowedPaths.contains(normPath)) {
-      try {
-        entity.deleteSync();
-      } on FileSystemException {
-        // Ignore if read-only or already removed.
-      }
+    final entryPath = entity.absolute.path;
+    if (allowed.contains(keyOf(entryPath))) continue;
+    try {
+      entity.deleteSync();
+    } on FileSystemException catch (e) {
+      onDeleteFailure(entryPath, e);
     }
   }
+}
+
+/// Deletes every file or link under [stageDir] (recursively, without
+/// following links) whose stage-relative path is not in [allowedEntries].
+///
+/// [stageDir] must be the action's own `<name>.pkg_roots` stage root: only
+/// entries below it are ever touched, declared files (the allow-set) are
+/// never deleted, and symlinked directories are removed as links without
+/// descending into them or deleting their targets. A deletion failure throws
+/// a [FileSystemException] naming the entry, so a stuck stale file fails the
+/// action loudly instead of silently poisoning later builds.
+void prunePkgRootsEntries(String stageDir, Set<String> allowedEntries) {
+  final root = p.normalize(p.absolute(stageDir));
+  final allowed = {
+    for (final entry in allowedEntries)
+      if (entry.trim().isNotEmpty) p.joinAll(entry.trim().split('/')),
+  };
+  _deleteUnlisted(
+    root,
+    allowed,
+    (entityPath) => p.joinAll(p.split(p.relative(entityPath, from: root))),
+    (entryPath, e) => throw FileSystemException(
+      'Failed to prune stale staged file',
+      entryPath,
+      e.osError,
+    ),
+  );
+}
+
+/// Prunes the `<name>.pkg_roots` stage at [stageDir] down to the
+/// stage-relative entries listed in the manifest at [manifestPath], one per
+/// line. A null or empty [stageDir] or [manifestPath] prunes nothing, so
+/// actions built before the manifest existed behave as before. A missing
+/// manifest file throws a [FileSystemException] naming its path: the manifest
+/// is a declared action input, so its absence means the build is
+/// misconfigured, never a reason to skip pruning.
+void prunePkgRootsFromManifest({String? stageDir, String? manifestPath}) {
+  if (stageDir == null || stageDir.isEmpty) return;
+  if (manifestPath == null || manifestPath.isEmpty) return;
+  final manifest = File(manifestPath);
+  if (!manifest.existsSync()) {
+    throw FileSystemException(
+      'pkg-roots manifest declared as an action input is missing',
+      manifestPath,
+    );
+  }
+  prunePkgRootsEntries(stageDir, {
+    for (final line in manifest.readAsLinesSync()) line,
+  });
 }
 
 void _pruneExtpkgs(String project) {

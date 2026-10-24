@@ -66,6 +66,8 @@ class ShimArgs {
     this.sdkPath,
     this.summaryPaths = const [],
     this.sdkSummaryPath,
+    this.pkgRootsDir,
+    this.pkgRootsManifest,
   });
 
   final String inputPath;
@@ -99,6 +101,17 @@ class ShimArgs {
   /// The analyzer summary of the SDK's own libraries (`--sdk-summary`), read
   /// alongside [summaryPaths]. Null when not given.
   final String? sdkSummaryPath;
+
+  /// Exec path of the target's own `<name>.pkg_roots` stage: the symlinks
+  /// `synth_package_config` staged for this target's dependency sources, which
+  /// the upstream `package_config.json` resolves `package:` URIs through. Null
+  /// when the flag was not passed; then no pruning happens.
+  final String? pkgRootsDir;
+
+  /// Exec path of the stage manifest listing the stage-relative entries the
+  /// current build declares. Null when the flag was not passed; then no
+  /// pruning happens.
+  final String? pkgRootsManifest;
 
   final LanguageVersion rootLanguageVersion;
 
@@ -202,6 +215,27 @@ class ShimArgs {
       );
   }
 
+  static void _addPkgRootsOptions(ArgParser parser) {
+    parser
+      ..addOption(
+        'pkg-roots-dir',
+        help:
+            'Exec path of the target\'s own `<name>.pkg_roots` stage. '
+            'Entries the stage manifest does not list are pruned before '
+            'analysis so `package:` URIs cannot resolve through stale '
+            'symlinks an earlier build staged. Empty (the default) prunes '
+            'nothing.',
+        defaultsTo: '',
+      )
+      ..addOption(
+        'pkg-roots-manifest',
+        help:
+            'Exec path of the stage manifest: one stage-relative entry per '
+            'line. Empty (the default) prunes nothing.',
+        defaultsTo: '',
+      );
+  }
+
   static ArgParser _buildParser() {
     final parser = ArgParser()
       ..addFlag(
@@ -214,6 +248,7 @@ class ShimArgs {
     _addDepOptions(parser);
     _addConfigOptions(parser);
     _addSummaryOptions(parser);
+    _addPkgRootsOptions(parser);
     return parser;
   }
 
@@ -337,6 +372,8 @@ class ShimArgs {
     final sdkPath = parsed['sdk-path'] as String;
     final summaries = (parsed['summary'] as List).cast<String>();
     final sdkSummary = parsed['sdk-summary'] as String;
+    final pkgRootsDir = parsed['pkg-roots-dir'] as String;
+    final pkgRootsManifest = parsed['pkg-roots-manifest'] as String;
 
     return ShimArgs(
       inputPath: input,
@@ -349,6 +386,8 @@ class ShimArgs {
       sdkPath: sdkPath.isEmpty ? null : sdkPath,
       summaryPaths: summaries,
       sdkSummaryPath: sdkSummary.isEmpty ? null : sdkSummary,
+      pkgRootsDir: pkgRootsDir.isEmpty ? null : pkgRootsDir,
+      pkgRootsManifest: pkgRootsManifest.isEmpty ? null : pkgRootsManifest,
       rootLanguageVersion: _parseRootLanguageVersion(rootLvRaw),
     );
   }
@@ -588,6 +627,10 @@ ShimArgs _absoluteArgs(ShimArgs a) => ShimArgs(
   sdkSummaryPath: a.sdkSummaryPath != null
       ? _absAndNormalize(a.sdkSummaryPath!)
       : null,
+  pkgRootsDir: a.pkgRootsDir != null ? _absAndNormalize(a.pkgRootsDir!) : null,
+  pkgRootsManifest: a.pkgRootsManifest != null
+      ? _absAndNormalize(a.pkgRootsManifest!)
+      : null,
   rootLanguageVersion: a.rootLanguageVersion,
 );
 
@@ -660,9 +703,11 @@ Future<void> _runWithStaging(
   // Build a PackageConfig that maps the synthetic root package to the
   // staging dir, and merges in every package from the upstream config so
   // third-party `package:` imports resolve.
-  final packageConfig = await _buildPackageConfig(args, canonicalStagingDir);
-  await _writeStagingSupportFiles(stagingPath, packageConfig, args.packageName);
-  await _refuseEscapingStagedEntries(canonicalStagingDir);
+  final packageConfig = await _prepareStagingConfig(
+    args,
+    canonicalStagingDir,
+    stagingPath,
+  );
 
   // Include ONLY the staging dir. Cross-package imports (`package:drift/...`,
   // `package:json_annotation/...`, …) are resolved through the
@@ -1074,6 +1119,28 @@ Iterable<AssetId> _expectedOutputsFor(
     }
   }
   return outputs;
+}
+
+/// Prunes the target's own `<name>.pkg_roots` stage down to the manifest's
+/// entries, then builds the staging package config and support files.
+///
+/// Pruning runs before any analysis so a `package:` URI the upstream config
+/// resolves through the stage can only reach a declared input — never a
+/// symlink an earlier build staged and the current build dropped. With
+/// neither flag passed this only builds the config, exactly as before.
+Future<PackageConfig> _prepareStagingConfig(
+  ShimArgs args,
+  Directory canonicalStagingDir,
+  String stagingPath,
+) async {
+  prunePkgRootsFromManifest(
+    stageDir: args.pkgRootsDir,
+    manifestPath: args.pkgRootsManifest,
+  );
+  final packageConfig = await _buildPackageConfig(args, canonicalStagingDir);
+  await _writeStagingSupportFiles(stagingPath, packageConfig, args.packageName);
+  await _refuseEscapingStagedEntries(canonicalStagingDir);
+  return packageConfig;
 }
 
 Future<PackageConfig> _buildPackageConfig(

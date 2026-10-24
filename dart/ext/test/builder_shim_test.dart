@@ -55,6 +55,8 @@ ShimArgs _shimArgs({
   Map<String, dynamic> config = const {},
   LanguageVersion? rootLanguageVersion,
   String? packageConfigPath,
+  String? pkgRootsDir,
+  String? pkgRootsManifest,
 }) => ShimArgs(
   inputPath: inputPath,
   inputAssetPath: inputAssetPath,
@@ -64,6 +66,8 @@ ShimArgs _shimArgs({
   config: config,
   rootLanguageVersion: rootLanguageVersion ?? LanguageVersion(3, 11),
   packageConfigUri: packageConfigPath,
+  pkgRootsDir: pkgRootsDir,
+  pkgRootsManifest: pkgRootsManifest,
 );
 
 /// Writes a fake foreign Dart package under [root] named [name] with a
@@ -303,6 +307,24 @@ void main() {
         throwsA(isA<FormatException>()),
       );
     });
+
+    test('pkg-roots flags default to null (no pruning)', () {
+      final args = ShimArgs.parse(_baseArgs());
+      expect(args.pkgRootsDir, isNull);
+      expect(args.pkgRootsManifest, isNull);
+    });
+
+    test('parses --pkg-roots-dir and --pkg-roots-manifest', () {
+      final args = ShimArgs.parse([
+        ..._baseArgs(),
+        '--pkg-roots-dir',
+        'bazel-out/bin/t.pkg_roots',
+        '--pkg-roots-manifest',
+        'bazel-out/bin/t.pkg_roots_manifest.txt',
+      ]);
+      expect(args.pkgRootsDir, 'bazel-out/bin/t.pkg_roots');
+      expect(args.pkgRootsManifest, 'bazel-out/bin/t.pkg_roots_manifest.txt');
+    });
   });
 
   group('runShimWithArgs', () {
@@ -332,6 +354,36 @@ void main() {
 
       expect(output.existsSync(), isTrue);
       expect(output.readAsStringSync(), isEmpty);
+    });
+
+    test('prunes stale pkg-roots entries before the Builder runs', () async {
+      final input = File(p.join(tmp.path, 'src.dart'))
+        ..writeAsStringSync('class Foo {}');
+      final output = File(p.join(tmp.path, 'src.g.dart'));
+      final stage = Directory(p.join(tmp.path, 't.pkg_roots'))
+        ..createSync(recursive: true);
+      final keep = File(p.join(stage.path, 'foo', 'lib', 'keep.dart'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('class Keep {}');
+      final stale = File(p.join(stage.path, 'foo', 'lib', 'stale.dart'))
+        ..writeAsStringSync('class Stale {}');
+      final manifest = File(p.join(tmp.path, 't.pkg_roots_manifest.txt'))
+        ..writeAsStringSync('foo/lib/keep.dart\n');
+
+      await runShimWithArgs(
+        _shimArgs(
+          inputPath: input.path,
+          inputAssetPath: 'lib/src.dart',
+          outputPath: output.path,
+          pkgRootsDir: stage.path,
+          pkgRootsManifest: manifest.path,
+        ),
+        (_) => _NoopBuilder(),
+      );
+
+      expect(keep.existsSync(), isTrue);
+      expect(stale.existsSync(), isFalse);
+      expect(output.existsSync(), isTrue);
     });
 
     test('a fixed-output Builder writes its emitted contents', () async {

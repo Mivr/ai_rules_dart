@@ -1,6 +1,6 @@
 """Shared utilities for Dart rules."""
 
-load("//dart:providers.bzl", "CODE_ASSET_LINK_MODES", "DartCompileInfo", "DartInfo", "DartPackageMetadataInfo")
+load("//dart:providers.bzl", "CODE_ASSET_LINK_MODES", "DartAnalyzableInfo", "DartCompileInfo", "DartInfo", "DartPackageMetadataInfo")
 load("//dart/private:dart_info.bzl", "derived_package_info", "package_lib_prefix")
 load("//dart/private:source_set.bzl", "needs_source_assembly", "package_for_index", "package_index")
 
@@ -1273,17 +1273,18 @@ def _synth_index_srcs(transitive_srcs, transitive_resources, pkg_index):
     return by_pkg
 
 def _synth_stage_package(ctx, pkg, pfiles, stage_name, stage_root):
-    """Stages one package's files under the stage root. Returns (root, staged outputs)."""
+    """Stages one package's files under the stage root. Returns (root, staged outputs, staged relative paths)."""
     dep_mangled = pkg.package_name.replace("_", "__").replace("/", "_s")
     if not pfiles:
-        return stage_root + "/" + dep_mangled, []
+        return stage_root + "/" + dep_mangled, [], []
     if len(pfiles) == 1 and pfiles[0].is_directory:
         dir_link = ctx.actions.declare_directory(stage_name + "/" + dep_mangled)
         ctx.actions.symlink(output = dir_link, target_file = pfiles[0])
-        return stage_root + "/" + dep_mangled, [dir_link]
+        return stage_root + "/" + dep_mangled, [dir_link], [dep_mangled]
     dep_prefix = (pkg.lib_root + "/lib/") if pkg.lib_root else "lib/"
     occupied = {}
     staged = []
+    rels = []
     for f in pfiles:
         if f.is_directory or not f.short_path.startswith(dep_prefix):
             continue
@@ -1291,25 +1292,59 @@ def _synth_stage_package(ctx, pkg, pfiles, stage_name, stage_root):
         if rel in occupied:
             continue
         occupied[rel] = True
+        rels.append(dep_mangled + "/lib/" + rel)
         link = ctx.actions.declare_file(stage_name + "/" + dep_mangled + "/lib/" + rel)
         ctx.actions.symlink(output = link, target_file = f)
         staged.append(link)
-    return stage_root + "/" + dep_mangled, staged
+    return stage_root + "/" + dep_mangled, staged, rels
+
+# The shim library every `dart/ext` shim binary is built on. A generator whose
+# closure holds it parses the `--summary`, `--sdk-summary`, and pkg-roots prune
+# flags; a generator that does not may reject them as unknown.
+_BUILDER_SHIM_SOURCE = "dart/ext/lib/builder_shim.dart"
+
+def is_builder_shim_generator(generator):
+    """Returns whether a `generator_bin` is built on the rules_dart builder shim.
+
+    The shim's source is in the executable's closure. That is the one fact that
+    says the binary parses the shim-only flags, whatever its own sources are, and
+    it holds for every `dart/ext` shim and for a user binary that uses the shim
+    library directly. A binary with no Dart closure (a Go or C++ tool) is not.
+
+    Args:
+      generator: The `generator_bin` target, or `None`.
+
+    Returns:
+      A bool.
+    """
+    if generator == None:
+        return False
+    if DartAnalyzableInfo not in generator:
+        return False
+    for f in generator[DartAnalyzableInfo].dart_info.transitive_srcs.to_list():
+        if f.short_path == _BUILDER_SHIM_SOURCE or f.short_path.endswith("/" + _BUILDER_SHIM_SOURCE):
+            return True
+    return False
 
 def synth_package_config(ctx, library_deps):
     """Synthesises a `package_config.json` from `dart_library` targets.
+
+    Also writes a `<name>.pkg_roots_manifest.txt` listing every staged entry
+    (stage-relative, one per line), so a codegen action can prune staged links
+    an earlier build left behind that the current build no longer declares.
 
     Args:
       ctx: The rule context (used to declare the output file).
       library_deps: List of `dart_library` targets to merge.
 
     Returns:
-      `(package_config_file, transitive_srcs_depset)`, or `(None, None)`
-      when `library_deps` is empty. The caller is expected to add both to
-      the action's `inputs` (the depset flattens lazily at execution time).
+      `(package_config_file, transitive_srcs_depset, pkg_roots_manifest)`, or
+      `(None, None, None)` when `library_deps` is empty. The caller is expected
+      to add all three to the action's `inputs` (the depset flattens lazily at
+      execution time) and to pass the manifest via `add_pkg_roots_prune_args`.
     """
     if not library_deps:
-        return None, None
+        return None, None, None
     packages = collect_packages(library_deps)
     transitive_srcs = collect_transitive_srcs(library_deps)
     transitive_resources = collect_transitive_resources(library_deps)
@@ -1324,13 +1359,21 @@ def synth_package_config(ctx, library_deps):
 
     roots = {}
     staged = []
+    manifest_entries = []
     for pkg in packages:
         pkg_name = pkg.package_name
         if not pkg_name or pkg_name in roots:
             continue
-        root, new_staged = _synth_stage_package(ctx, pkg, by_pkg.get(pkg_name, []), stage_name, stage_root)
+        root, new_staged, new_rels = _synth_stage_package(ctx, pkg, by_pkg.get(pkg_name, []), stage_name, stage_root)
         roots[pkg_name] = root
         staged.extend(new_staged)
+        manifest_entries.extend(new_rels)
+
+    manifest = ctx.actions.declare_file(ctx.label.name + ".pkg_roots_manifest.txt")
+    ctx.actions.write(
+        output = manifest,
+        content = "".join([entry + "\n" for entry in sorted(manifest_entries)]),
+    )
 
     content = generate_package_config(
         packages,
@@ -1339,7 +1382,42 @@ def synth_package_config(ctx, library_deps):
         roots = roots,
     )
     ctx.actions.write(output = package_config, content = content)
-    return package_config, depset(staged, transitive = [transitive_srcs, transitive_resources])
+    return package_config, depset(staged, transitive = [transitive_srcs, transitive_resources]), manifest
+
+def add_pkg_roots_prune_args(args, ctx, synth_pc, manifest):
+    """Appends the staged-roots prune flags for a codegen action.
+
+    The shim prunes every entry under the target's own `<name>.pkg_roots`
+    stage root that `manifest` does not list before analysis, so an
+    incremental worker or local build never reads a staged link an earlier
+    build left behind. The manifest is always a declared input; the flags are
+    added only when `ctx.attr.generator_bin` is built on the builder shim
+    (`is_builder_shim_generator`). A user's own generator binary or script
+    does not parse the shim contract and may reject unknown flags (see
+    `plain_gen` in `dart/tests/analyzer_summary_fixture/codegen`), so it runs
+    with the unchanged command line. Script branches should add `manifest` to
+    their inputs directly instead of calling this.
+
+    Args:
+      args: The `ctx.actions.args()` object to append flags to.
+      ctx: The rule context (reads `label.name` for the stage directory name
+        and `attr.generator_bin` for the shim gate).
+      synth_pc: The synthesised `package_config.json` File from
+        `synth_package_config` (its dirname holds the stage root), or `None`
+        when `manifest` is `None`.
+      manifest: The `<name>.pkg_roots_manifest.txt` File from
+        `synth_package_config`, or `None` for targets without `library_deps`.
+
+    Returns:
+      `[manifest]` for the action's `inputs`, or `[]` when `manifest` is
+      `None` (no flags are added then either).
+    """
+    if manifest == None:
+        return []
+    if is_builder_shim_generator(getattr(ctx.attr, "generator_bin", None)):
+        args.add("--pkg-roots-dir", synth_pc.dirname + "/" + ctx.label.name + ".pkg_roots")
+        args.add("--pkg-roots-manifest", manifest)
+    return [manifest]
 
 # --- Native code-asset (gen_kernel --native-assets) helpers ---
 #

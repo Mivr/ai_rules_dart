@@ -281,6 +281,122 @@ void main() {
       expect(drop.existsSync(), isFalse);
     });
   });
+
+  group('pkg-roots pruning', () {
+    test('prunePkgRootsEntries removes stale links, keeps declared files', () {
+      final stage = Directory('${_tmp.path}/t.pkg_roots')
+        ..createSync(recursive: true);
+      Directory('${stage.path}/foo/lib').createSync(recursive: true);
+      final keep = File('${stage.path}/foo/lib/keep.dart')
+        ..writeAsStringSync('class Keep {}');
+      final target = File('${_tmp.path}/elsewhere.dart')
+        ..writeAsStringSync('class Elsewhere {}');
+      final stale = Link('${stage.path}/foo/lib/stale.dart')
+        ..createSync(target.path);
+      prunePkgRootsEntries(stage.path, {'foo/lib/keep.dart'});
+      expect(keep.existsSync(), isTrue);
+      expect(stale.existsSync(), isFalse);
+      expect(target.existsSync(), isTrue);
+    });
+
+    test('prunePkgRootsEntries removes symlinked dirs without descending', () {
+      final victimDir = Directory('${_tmp.path}/victim')..createSync();
+      final victim = File('${victimDir.path}/victim.dart')
+        ..writeAsStringSync('class Victim {}\n');
+      final stage = Directory('${_tmp.path}/t.pkg_roots')
+        ..createSync(recursive: true);
+      final dirLink = Link('${stage.path}/foo')..createSync(victimDir.path);
+      prunePkgRootsEntries(stage.path, <String>{});
+      expect(dirLink.existsSync(), isFalse);
+      expect(victim.existsSync(), isTrue);
+      expect(victim.readAsStringSync(), 'class Victim {}\n');
+    });
+
+    test('prunePkgRootsEntries fails loudly on deletion failure', () {
+      if (Platform.isWindows) {
+        markTestSkipped('POSIX permission bits are not enforced on Windows.');
+      }
+      // Probe in a scratch dir: root ignores permission bits, so the
+      // deletion below can only fail for an unprivileged user.
+      final probeDir = Directory('${_tmp.path}/probe')..createSync();
+      final probeFile = File('${probeDir.path}/probe.dart')
+        ..writeAsStringSync('');
+      Process.runSync('chmod', ['555', probeDir.path]);
+      var enforced = false;
+      try {
+        probeFile.deleteSync();
+      } on FileSystemException {
+        enforced = true;
+      }
+      Process.runSync('chmod', ['755', probeDir.path]);
+      if (!enforced) {
+        markTestSkipped('running as root: permission bits are not enforced.');
+      }
+      final stage = Directory('${_tmp.path}/t.pkg_roots')
+        ..createSync(recursive: true);
+      Directory('${stage.path}/foo/lib').createSync(recursive: true);
+      final victim = File('${stage.path}/foo/lib/stale.dart')
+        ..writeAsStringSync('class Stale {}');
+      final parent = Directory('${stage.path}/foo/lib');
+      Process.runSync('chmod', ['555', parent.path]);
+      try {
+        expect(
+          () => prunePkgRootsEntries(stage.path, <String>{}),
+          throwsA(
+            isA<FileSystemException>().having(
+              (e) => e.path,
+              'path',
+              victim.absolute.path,
+            ),
+          ),
+        );
+      } finally {
+        Process.runSync('chmod', ['755', parent.path]);
+      }
+    });
+
+    test('prunePkgRootsFromManifest without flags deletes nothing', () {
+      final stage = Directory('${_tmp.path}/t.pkg_roots')
+        ..createSync(recursive: true);
+      final kept = File('${stage.path}/stale.dart')..writeAsStringSync('');
+      prunePkgRootsFromManifest();
+      prunePkgRootsFromManifest(stageDir: '', manifestPath: '');
+      expect(kept.existsSync(), isTrue);
+    });
+
+    test('prunePkgRootsFromManifest with a missing manifest throws', () {
+      final stage = Directory('${_tmp.path}/t.pkg_roots')
+        ..createSync(recursive: true);
+      final missing = '${_tmp.path}/t.pkg_roots_manifest.txt';
+      expect(
+        () => prunePkgRootsFromManifest(
+          stageDir: stage.path,
+          manifestPath: missing,
+        ),
+        throwsA(
+          isA<FileSystemException>().having((e) => e.path, 'path', missing),
+        ),
+      );
+    });
+
+    test('prunePkgRootsFromManifest prunes entries outside the manifest', () {
+      final stage = Directory('${_tmp.path}/t.pkg_roots')
+        ..createSync(recursive: true);
+      Directory('${stage.path}/foo/lib').createSync(recursive: true);
+      final keep = File('${stage.path}/foo/lib/keep.dart')
+        ..writeAsStringSync('class Keep {}');
+      final stale = File('${stage.path}/foo/lib/stale.dart')
+        ..writeAsStringSync('class Stale {}');
+      final manifest = File('${_tmp.path}/t.pkg_roots_manifest.txt')
+        ..writeAsStringSync('foo/lib/keep.dart\n');
+      prunePkgRootsFromManifest(
+        stageDir: stage.path,
+        manifestPath: manifest.path,
+      );
+      expect(keep.existsSync(), isTrue);
+      expect(stale.existsSync(), isFalse);
+    });
+  });
 }
 
 String _hexOf(String input) {

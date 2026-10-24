@@ -20,6 +20,11 @@ The generator (`generator` binary or `generator_script`) receives:
   - `--package-config <path>`: synthesised from `deps`.
   - `--root-language-version <major.minor>`.
   - `--sdk-path <path>`.
+  - `--pkg-roots-dir <path>` + `--pkg-roots-manifest <path>`: the target's
+    own `<name>.pkg_roots` stage and the manifest of entries the build
+    declares, so the shim prunes stale staged links before analysis. Passed
+    only to a `generator_bin` built on the builder shim; a user's own
+    generator runs with the unchanged command line.
 
 Usage:
 
@@ -48,6 +53,7 @@ load(
     "//dart/private:common.bzl",
     "DEFAULT_ROOT_LANGUAGE_VERSION",
     "PACKAGE_IDENTITY_ATTRS",
+    "add_pkg_roots_prune_args",
     "add_shim_contract_args",
     "asset_path_for",
     "dart_lib_root_for_package",
@@ -206,7 +212,7 @@ def _dart_aggregate_codegen_impl(ctx):
     _aggregate_validate(ctx, dart_sdk_info)
 
     outputs = [ctx.actions.declare_file(path) for path in ctx.attr.outputs]
-    synth_pc, transitive_srcs = synth_package_config(ctx, ctx.attr.deps)
+    synth_pc, transitive_srcs, manifest = synth_package_config(ctx, ctx.attr.deps)
 
     lib_root = _aggregate_lib_root(ctx, identity)
 
@@ -226,8 +232,13 @@ def _dart_aggregate_codegen_impl(ctx):
     transitive.append(dart_sdk_info.analyze_files)
 
     if ctx.executable.generator_bin:
+        direct_inputs.extend(add_pkg_roots_prune_args(args, ctx, synth_pc, manifest))
         _aggregate_run_worker(ctx, args, dart_sdk_info, outputs, direct_inputs, transitive)
     else:
+        # The manifest rides along as a declared input (no prune flags: a
+        # user-supplied script does not parse the shim contract).
+        if manifest != None:
+            direct_inputs.append(manifest)
         _aggregate_run_script(ctx, args, dart_sdk_info, synth_pc, outputs, direct_inputs, transitive)
 
     return [

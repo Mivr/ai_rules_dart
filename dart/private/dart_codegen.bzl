@@ -24,6 +24,11 @@ The generator (`generator` script or `generator_bin` binary) receives:
     language version (propagated through the synthesised PackageConfig).
   - `--sdk-path <path>`: the Dart SDK root (the analyzer's AOT shim can't
     auto-detect it).
+  - `--pkg-roots-dir <path>` + `--pkg-roots-manifest <path>`: the target's
+    own `<name>.pkg_roots` stage and the manifest of entries the build
+    declares, so the shim prunes stale staged links before analysis. Passed
+    only to a `generator_bin` built on the builder shim; a user's own
+    generator runs with the unchanged command line.
   - Anything in `generator_args` (escape hatch — prefer the typed attrs).
 
 Usage:
@@ -59,14 +64,16 @@ cost is amortised across the worker's lifetime.
 """
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
-load("//dart:providers.bzl", "DartAnalyzableInfo", "DartCompileInfo", "DartInfo", "DartPackageMetadataInfo")
+load("//dart:providers.bzl", "DartCompileInfo", "DartInfo", "DartPackageMetadataInfo")
 load(
     "//dart/private:common.bzl",
     "DEFAULT_ROOT_LANGUAGE_VERSION",
     "PACKAGE_IDENTITY_ATTRS",
+    "add_pkg_roots_prune_args",
     "add_shim_contract_args",
     "asset_path_for",
     "dart_lib_root_for_package",
+    "is_builder_shim_generator",
     "kernel_sdk_mismatch_error",
     "resolve_package_identity",
     "same_package_library_dep_files",
@@ -83,32 +90,9 @@ load(
     "package_key",
 )
 
-# The shim library every `dart/ext` shim binary is built on. A generator whose
-# closure holds it parses the `--summary` and `--sdk-summary` flags; a generator
-# that does not may reject them as unknown.
-_BUILDER_SHIM_SOURCE = "dart/ext/lib/builder_shim.dart"
-
-def is_builder_shim_generator(generator):
-    """Returns whether a `generator_bin` is built on the rules_dart builder shim.
-
-    The shim's source is in the executable's closure. That is the one fact that
-    says the binary parses the summary flags, whatever its own sources are, and
-    it holds for every `dart/ext` shim and for a user binary that uses the shim
-    library directly. A binary with no Dart closure (a Go or C++ tool) is not.
-
-    Args:
-      generator: The `generator_bin` target.
-
-    Returns:
-      A bool.
-    """
-    if DartAnalyzableInfo not in generator:
-        return False
-    for f in generator[DartAnalyzableInfo].dart_info.transitive_srcs.to_list():
-        if f.short_path == _BUILDER_SHIM_SOURCE or f.short_path.endswith("/" + _BUILDER_SHIM_SOURCE):
-            return True
-    return False
-
+# `is_builder_shim_generator` (the worker generator's shim gate) lives in
+# `common.bzl` beside `add_pkg_roots_prune_args`, which uses it; it is
+# re-exported here through the load above for existing importers.
 def _summaries_flag_eligible(ctx):
     """Returns whether summary passing is enabled by flag, SDK, and generator kind."""
     if not ctx.attr._analyzer_summaries[BuildSettingInfo].value:
@@ -266,19 +250,9 @@ def _codegen_providers(identity, outputs):
         ),
     ]
 
-def _codegen_run_worker(ctx, cg):
-    """Runs the `generator_bin` worker action.
-
-    Args:
-      ctx: The `dart_codegen` rule context.
-      cg: The codegen `struct` built by `_dart_codegen_impl` (`toolchain`,
-        `dart`, `sdk_files`, `script_sdk_files`, `synth_pc`,
-        `library_dep_srcs`, `lib_root`, `auto_staged`, `src`, `outputs`,
-        `identity`).
-    """
-    args = ctx.actions.args()
+def _codegen_worker_inputs(ctx, args, cg):
+    """Builds the worker args and `--dep`/`--part` direct inputs. Returns the direct inputs list."""
     direct_inputs = [cg.src] + list(ctx.files.data)
-    data_runfiles = [dep[DefaultInfo].default_runfiles.files for dep in ctx.attr.data]
 
     # Worker mode requires a single `@flagfile` / `--flagfile=` arg; the
     # `use_param_file` + `multiline` format produces exactly that and
@@ -299,6 +273,22 @@ def _codegen_run_worker(ctx, cg):
         lib_root = cg.lib_root,
     ))
     args.add_all(ctx.attr.generator_args)
+    return direct_inputs
+
+def _codegen_run_worker(ctx, cg):
+    """Runs the `generator_bin` worker action.
+
+    Args:
+      ctx: The `dart_codegen` rule context.
+      cg: The codegen `struct` built by `_dart_codegen_impl` (`toolchain`,
+        `dart`, `sdk_files`, `script_sdk_files`, `synth_pc`, `manifest`,
+        `library_dep_srcs`, `lib_root`, `auto_staged`, `src`, `outputs`,
+        `identity`).
+    """
+    args = ctx.actions.args()
+    direct_inputs = _codegen_worker_inputs(ctx, args, cg)
+    direct_inputs.extend(add_pkg_roots_prune_args(args, ctx, cg.synth_pc, cg.manifest))
+    data_runfiles = [dep[DefaultInfo].default_runfiles.files for dep in ctx.attr.data]
 
     # Under `//dart:analyzer_summaries` only: the other packages of `deps`
     # resolve from their summaries. The script branch below takes no
@@ -368,8 +358,8 @@ def _codegen_run_script(ctx, cg):
     Args:
       ctx: The `dart_codegen` rule context.
       cg: The codegen `struct` built by `_dart_codegen_impl`; only `dart`,
-        `script_sdk_files`, `synth_pc`, `library_dep_srcs`, `lib_root`,
-        `auto_staged`, `src` and `outputs` are read.
+        `script_sdk_files`, `synth_pc`, `manifest`, `library_dep_srcs`,
+        `lib_root`, `auto_staged`, `src` and `outputs` are read.
     """
 
     # Run generator as a Dart script via the SDK's dart executable.
@@ -404,6 +394,11 @@ def _codegen_run_script(ctx, cg):
     args.add_all(ctx.attr.generator_args)
     direct_inputs.append(ctx.file.generator)
 
+    # The manifest rides along as a declared input (no prune flags: a
+    # user-supplied script does not parse the shim contract).
+    if cg.manifest != None:
+        direct_inputs.append(cg.manifest)
+
     ctx.actions.run(
         executable = cg.dart,
         arguments = [args],
@@ -432,7 +427,7 @@ def _dart_codegen_impl(ctx):
         fail(mismatch)
 
     src = ctx.file.src
-    synth_pc, library_dep_srcs = synth_package_config(ctx, ctx.attr.deps)
+    synth_pc, library_dep_srcs, manifest = synth_package_config(ctx, ctx.attr.deps)
 
     # Derive the Dart package's lib_root from deps' DartInfo — works even
     # when the codegen rule's Bazel package path doesn't match the Dart
@@ -461,6 +456,7 @@ def _dart_codegen_impl(ctx):
         sdk_files = sdk_files,
         script_sdk_files = script_sdk_files,
         synth_pc = synth_pc,
+        manifest = manifest,
         library_dep_srcs = library_dep_srcs,
         lib_root = lib_root,
         auto_staged = auto_staged,
