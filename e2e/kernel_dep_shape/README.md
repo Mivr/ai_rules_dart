@@ -1,12 +1,18 @@
 # `kernel_dep_shape`: red workspace for the modular kernel import-shape refusal
 
-A modular kernel compile must reject an import shape where an entry or
-library source reaches a dependency-defined source through a relative or
-multi-root URI: the front end would read the file from source while the
-plan links the dependency's outline, so the linked kernel lacks the
-library. The refusal fires in every execution strategy (persistent worker
-and local), at the earliest point (before the compiler runs), and names
-the importing file, the URI as written, and the `package:` URI to use.
+A modular kernel compile must reject an import shape where a library
+source reaches a dependency-defined source through a multi-root URI:
+the front end would read the file from source while the plan links the
+dependency's outline, so the linked kernel lacks the library. The same
+refusal covers an entry source that reaches a dependency-defined source
+through a relative or multi-root URI once the entry itself compiles from
+a non-`package:` URI, even though that edge used to build and run: it
+compiled the dependency's file from source into the entry instead of
+linking the dependency's outline, so the refusal keeps the entry on the
+`package:` spelling every other consumer links. The refusal fires in
+every execution strategy (persistent worker and local), at the earliest
+point (before the compiler runs), and names the importing file, the URI
+as written, and the `package:` URI to use.
 
 ## Cases
 
