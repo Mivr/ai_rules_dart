@@ -24,6 +24,19 @@ bzl_library(
 )
 
 bzl_library(
+    name = "pub_scc_facts",
+    srcs = ["pub_scc_facts.bzl"],
+    visibility = [
+        "//dart/pub:__subpackages__",
+        "//dart/tests:__subpackages__",
+    ],
+    deps = [
+        ":pub_symlink",
+        "//dart/pub:yaml_parser",
+    ],
+)
+
+bzl_library(
     name = "pub_repository",
     srcs = ["pub_repository.bzl"],
     visibility = ["//dart/pub:__subpackages__"],
@@ -61,6 +74,7 @@ exports_files(
         "build_content.bzl",
         "language_version.bzl",
         "pub_repository.bzl",
+        "pub_scc_facts.bzl",
         "pub_symlink.bzl",
         "scc.bzl",
         "version.bzl",

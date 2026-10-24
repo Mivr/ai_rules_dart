@@ -47,6 +47,7 @@ bzl_library(
         "//dart/private:download",
         "//dart/pub/private:pub_repository",
         "//dart/pub/private:pub_root_pin",
+        "//dart/pub/private:pub_scc_facts",
         "//dart/pub/private:pub_symlink",
         "//dart/pub/private:version",
     ],

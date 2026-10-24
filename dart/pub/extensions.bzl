@@ -9,7 +9,7 @@ load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
 load("//dart/pub:yaml_parser.bzl", "lock_package_error", "parse_pubspec_lock")
 load("//dart/pub/private:pub_repository.bzl", "pub_package")
 load("//dart/pub/private:pub_root_pin.bzl", "best_entry", "hosted_sha_conflict", "hosted_version_error", "select_all_explicit")
-load("//dart/pub/private:pub_symlink.bzl", "check_package_symlinks")
+load("//dart/pub/private:pub_scc_facts.bzl", "contents_from_fact_deps", "read_scope_pubspec", "record_scope_facts", "split_scope_facts")
 load("//dart/pub/private:scc.bzl", "compute_sccs", "pubspec_dep_graph", "rewrite_vanished_spoke", "scc_repo_name")
 
 _SPOKE_PREFIX = "dart_pub"
@@ -131,9 +131,7 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
         if trimmed != raw:
             ctx.file(archive, trimmed, executable = False)
         ctx.extract(archive, output = out)
-        check_package_symlinks(ctx, name, out)
-        pubspec = out + "/pubspec.yaml"
-        contents[name] = ctx.read(pubspec) if ctx.path(pubspec).exists else ""
+        contents[name] = read_scope_pubspec(ctx, name, out)
     for name in sorted(git_pkgs.keys()):
         pkg = git_pkgs[name]
         err = pinned_source_error(
@@ -155,9 +153,19 @@ def _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs):
         spec = pkg.resolved_ref if pkg.path == "." else pkg.resolved_ref + ":" + pkg.path
         git_materialize(ctx, bare_rel, pkg.resolved_ref, archive, spec, 'pub.from_lock "%s"' % name)
         ctx.extract(archive, output = out)
-        check_package_symlinks(ctx, name, out)
-        pubspec = out + "/pubspec.yaml"
-        contents[name] = ctx.read(pubspec) if ctx.path(pubspec).exists else ""
+        contents[name] = read_scope_pubspec(ctx, name, out)
+    return contents
+
+def _scope_contents_with_facts(ctx, scope_dir, hosted, git_pkgs, recorded):
+    """Splits one scope into fact hits and misses, fetches the misses, and records the scope's facts. Returns contents."""
+    split = split_scope_facts(ctx.facts, hosted, git_pkgs)
+    miss_contents = {}
+    if split.hosted_miss or split.git_miss:
+        miss_contents = _scope_pubspec_contents(ctx, scope_dir, split.hosted_miss, split.git_miss)
+    record_scope_facts(recorded, split, miss_contents)
+    contents = contents_from_fact_deps(split.deps)
+    for name, text in miss_contents.items():
+        contents[name] = text
     return contents
 
 def plan_scope_sccs(scope_names, explicit_deps, hub_names, spoke_prefix, pubspec_contents):
@@ -740,22 +748,28 @@ def _pub_collect_tags(ctx):
             ))
     return package_tags, lock_tags, ignore_hooks, root_repos
 
-def _pub_scope_contents(ctx, scope_dir, scope_names, explicit_package_names, explicit_deps, hosted, git_pkgs):
-    """Downloads one scope's pubspecs when cycle planning needs them. Returns contents."""
+def _pub_scope_contents(ctx, scope_dir, scope_names, explicit_package_names, explicit_deps, hosted, git_pkgs, recorded):
+    """Reads one scope's pubspecs when cycle planning needs them, reusing lockfile facts for unchanged packages. Returns contents."""
     contents = {}
     if len(scope_names) > len(explicit_package_names) + 1 or (scope_names != explicit_package_names and any([explicit_deps[name] for name in explicit_deps])):
-        contents = _scope_pubspec_contents(ctx, scope_dir, hosted, git_pkgs)
+        contents = _scope_contents_with_facts(ctx, scope_dir, hosted, git_pkgs, recorded)
     return contents
 
-def _pub_plan_shared_sccs(ctx, resolved, resolved_git, hub_packages, isolated_packages, isolated_git_packages, explicit_deps, explicit_package_names):
+def _pub_plan_shared_sccs(ctx, resolution, explicit_package_names, recorded):
     """Plans the shared scope's merges. Returns (shared_sccs, vanished_spokes)."""
+    resolved = resolution.resolved
+    resolved_git = resolution.resolved_git
+    hub_packages = resolution.hub_packages
+    isolated_packages = resolution.isolated_packages
+    isolated_git_packages = resolution.isolated_git_packages
+    explicit_deps = {name: pkg.deps for name, pkg in resolution.explicit.items()}
     shared_hubs = sorted([
         hub_name
         for hub_name in hub_packages.keys()
         if hub_name not in isolated_packages and hub_name not in isolated_git_packages
     ])
     shared_names = sorted(set(resolved.keys()) | set(resolved_git.keys())) + explicit_package_names
-    shared_contents = _pub_scope_contents(ctx, "_scc_shared", shared_names, explicit_package_names, explicit_deps, resolved, resolved_git)
+    shared_contents = _pub_scope_contents(ctx, "_scc_shared", shared_names, explicit_package_names, explicit_deps, resolved, resolved_git, recorded)
     shared_sccs = plan_scope_sccs(
         shared_names,
         explicit_deps,
@@ -772,13 +786,16 @@ def _pub_plan_shared_sccs(ctx, resolved, resolved_git, hub_packages, isolated_pa
         vanished_spokes[_SPOKE_PREFIX + "__" + member] = repo
     return shared_sccs, vanished_spokes
 
-def _pub_plan_isolated_sccs(ctx, hub_name, isolated_packages, isolated_git_packages, explicit_deps, explicit_package_names, vanished_spokes):
+def _pub_plan_isolated_sccs(ctx, hub_name, resolution, explicit_package_names, vanished_spokes, recorded):
     """Plans one isolated hub's merges. Returns the hub's sccs struct."""
+    isolated_packages = resolution.isolated_packages
+    isolated_git_packages = resolution.isolated_git_packages
+    explicit_deps = {name: pkg.deps for name, pkg in resolution.explicit.items()}
     hosted = isolated_packages.get(hub_name, {})
     git_pkgs = isolated_git_packages.get(hub_name, {})
     hub_names = [hub_name]
     scope_names = sorted(set(hosted.keys()) | set(git_pkgs.keys())) + explicit_package_names
-    contents = _pub_scope_contents(ctx, "_scc_" + hub_name, scope_names, explicit_package_names, explicit_deps, hosted, git_pkgs)
+    contents = _pub_scope_contents(ctx, "_scc_" + hub_name, scope_names, explicit_package_names, explicit_deps, hosted, git_pkgs, recorded)
     sccs = plan_scope_sccs(
         scope_names,
         explicit_deps,
@@ -989,6 +1006,14 @@ def _pub_emit_hubs(hub_packages, isolated_hub_names, isolated_sccs, shared_sccs,
             scc_targets = hub_scc_targets,
         )
 
+def _pub_extension_metadata(ctx, root_repos, recorded):
+    """Returns this evaluation's metadata: the root's direct deps plus the cycle-planning facts for the lockfile."""
+    return ctx.extension_metadata(
+        root_module_direct_deps = [name for name, dev in root_repos.items() if not dev],
+        root_module_direct_dev_deps = [name for name, dev in root_repos.items() if dev],
+        facts = recorded,
+    )
+
 def _pub_impl(ctx):
     package_tags, lock_tags, ignore_hooks, root_repos = _pub_collect_tags(ctx)
 
@@ -1014,17 +1039,18 @@ def _pub_impl(ctx):
 
     # Dependency cycles in the pubspec graph become one merged repository per
     # cycle. The graph needs every hosted package's pubspec, so the extension
-    # downloads each package once here; the spokes download the same tarballs
+    # reads each package once here — from the lockfile facts when unchanged,
+    # by downloading it otherwise; the spokes download the same tarballs
     # again (through the shared download cache) when they materialise.
-    explicit_deps = {name: pkg.deps for name, pkg in explicit.items()}
     explicit_package_names = sorted(explicit.keys())
+    plan_facts = {}
 
-    shared_sccs, vanished_spokes = _pub_plan_shared_sccs(ctx, resolved, resolved_git, hub_packages, isolated_packages, isolated_git_packages, explicit_deps, explicit_package_names)
+    shared_sccs, vanished_spokes = _pub_plan_shared_sccs(ctx, resolution, explicit_package_names, plan_facts)
 
     isolated_hub_names = sorted(set(isolated_packages.keys()) | set(isolated_git_packages.keys()))
     isolated_sccs = {}
     for hub_name in isolated_hub_names:
-        isolated_sccs[hub_name] = _pub_plan_isolated_sccs(ctx, hub_name, isolated_packages, isolated_git_packages, explicit_deps, explicit_package_names, vanished_spokes)
+        isolated_sccs[hub_name] = _pub_plan_isolated_sccs(ctx, hub_name, resolution, explicit_package_names, vanished_spokes, plan_facts)
 
     # Labels spokes and hubs point at for merged members, per scope.
     shared_scc_targets = {
@@ -1048,10 +1074,7 @@ def _pub_impl(ctx):
 
     _pub_emit_hubs(hub_packages, isolated_hub_names, isolated_sccs, shared_sccs, explicit)
 
-    return ctx.extension_metadata(
-        root_module_direct_deps = [name for name, dev in root_repos.items() if not dev],
-        root_module_direct_dev_deps = [name for name, dev in root_repos.items() if dev],
-    )
+    return _pub_extension_metadata(ctx, root_repos, plan_facts)
 
 pub = module_extension(
     implementation = _pub_impl,
