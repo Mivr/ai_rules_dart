@@ -933,6 +933,89 @@ def _scan_gzip_member(s, package_name):
         return
     _gzip_member_trailer(s, package_name)
 
+def _plain_clear_names(st):
+    """Clears the entry-scoped pending name records of a plain-tar scan."""
+    st["pname"] = None
+    st["plink"] = None
+    st["ppath"] = None
+    st["plinkpath"] = None
+
+def _plain_link_refusal(st, header, kind):
+    """Classifies a hard-link/symlink entry against the pending name records.
+
+    Returns the `classify_archive_entry` refusal, or None when benign, and
+    clears the entry-scoped records either way so they never leak into the
+    next entry.
+    """
+    refusal = classify_archive_entry(
+        _pending_value(header.name, st["pname"] if st["ppath"] == None else st["ppath"], st["gpath"]),
+        kind,
+        _pending_value(header.linkname, st["plink"] if st["plinkpath"] == None else st["plinkpath"], st["glinkpath"]),
+    )
+    _plain_clear_names(st)
+    return refusal
+
+def _plain_name_record(st, kind, size, pos, package_name):
+    """Stores a GNU long-name/long-link or pax record into the pending state."""
+    if pos + size > st["n"]:
+        fail(_scan_error(package_name, "the tar archive is truncated"))
+    if size > _MAX_COLLECT_BYTES:
+        fail(_scan_error(package_name, "a name record is too long to scan"))
+    text = st["data"][pos:pos + size] if size > 0 else ""
+    if kind == "L":
+        st["pname"] = _cut_nul(text)
+    elif kind == "K":
+        st["plink"] = _cut_nul(text)
+    else:
+        recs = _parse_pax_records(text, package_name)
+        if kind == "g":
+            if recs.path != None:
+                st["gpath"] = recs.path
+            if recs.linkpath != None:
+                st["glinkpath"] = recs.linkpath
+        else:
+            st["ppath"] = recs.path
+            st["plinkpath"] = recs.linkpath
+            st["psize"] = recs.size
+
+def _plain_other_kind(st, kind, package_name):
+    """Handles an inert entry kind, failing closed on what cannot be scanned."""
+    if kind == "0" or kind == "5" or kind == "D" or kind == "3" or kind == "4" or kind == "6":
+        _plain_clear_names(st)
+    elif kind == "S":
+        fail(_scan_error(package_name, "a sparse entry cannot be scanned"))
+    else:
+        fail(_scan_error(package_name, "an entry has kind %r, which cannot be scanned" % kind))
+
+def _plain_entry(st, block, package_name):
+    """Classifies the header in `block` and advances past the entry.
+
+    Resolves the entry size (a pax `size=` overrides the header), dispatches
+    link entries to classification, name records to storage and every other
+    kind to `_plain_other_kind`, then skips the file data by offset. Returns
+    the refusal struct, or None when the entry is benign.
+    """
+    header = _parse_tar_header(block, package_name)
+    kind = header.typeflag
+    if kind == "\0":
+        kind = "0"
+    if st["psize"] != None:
+        size = st["psize"]
+        st["psize"] = None
+    else:
+        size = header.size
+    pos = st["pos"] + 512
+    if kind == "1" or kind == "2":
+        refusal = _plain_link_refusal(st, header, kind)
+        st["pos"] = pos + size + ((-size) % 512)
+        return refusal
+    if kind == "L" or kind == "K" or kind == "x" or kind == "g":
+        _plain_name_record(st, kind, size, pos, package_name)
+    else:
+        _plain_other_kind(st, kind, package_name)
+    st["pos"] = pos + size + ((-size) % 512)
+    return None
+
 def _scan_plain_tar(data, package_name):
     """Scans an uncompressed tar archive by header offsets. Pure.
 
@@ -940,7 +1023,8 @@ def _scan_plain_tar(data, package_name):
     walk jumps from header to header and never touches file data — unlike
     the streaming path, which decodes every byte. Name records slice out of
     the input and apply through the same pending state the streamed path
-    threads through its scan state.
+    threads through its scan state; the loop below only finds the headers
+    and `_plain_entry` classifies each one.
 
     Args:
       data: Raw tar bytes as an ISO-8859-1 Starlark string.
@@ -949,9 +1033,11 @@ def _scan_plain_tar(data, package_name):
     Returns:
       A `struct(kind, path, target)` refusal, or None when clean.
     """
-    pos = 0
     n = len(data)
-    pending = {
+    st = {
+        "data": data,
+        "n": n,
+        "pos": 0,
         "pname": None,
         "plink": None,
         "ppath": None,
@@ -961,64 +1047,14 @@ def _scan_plain_tar(data, package_name):
         "glinkpath": None,
     }
     for _ in range(n // 512 + 2):
-        if pos + 512 > n:
+        if st["pos"] + 512 > n:
             fail(_scan_error(package_name, "the tar archive is truncated"))
-        block = data[pos:pos + 512]
+        block = data[st["pos"]:st["pos"] + 512]
         if block == _ZERO_BLOCK:
             return None
-        header = _parse_tar_header(block, package_name)
-        kind = header.typeflag
-        if kind == "\0":
-            kind = "0"
-        if pending["psize"] != None:
-            size = pending["psize"]
-            pending["psize"] = None
-        else:
-            size = header.size
-        pos = pos + 512
-        if kind == "1" or kind == "2":
-            refusal = classify_archive_entry(
-                _pending_value(header.name, pending["pname"] if pending["ppath"] == None else pending["ppath"], pending["gpath"]),
-                kind,
-                _pending_value(header.linkname, pending["plink"] if pending["plinkpath"] == None else pending["plinkpath"], pending["glinkpath"]),
-            )
-            pending["pname"] = None
-            pending["plink"] = None
-            pending["ppath"] = None
-            pending["plinkpath"] = None
-            if refusal != None:
-                return refusal
-        elif kind == "L" or kind == "K" or kind == "x" or kind == "g":
-            if pos + size > n:
-                fail(_scan_error(package_name, "the tar archive is truncated"))
-            if size > _MAX_COLLECT_BYTES:
-                fail(_scan_error(package_name, "a name record is too long to scan"))
-            text = data[pos:pos + size] if size > 0 else ""
-            if kind == "L":
-                pending["pname"] = _cut_nul(text)
-            elif kind == "K":
-                pending["plink"] = _cut_nul(text)
-            else:
-                recs = _parse_pax_records(text, package_name)
-                if kind == "g":
-                    if recs.path != None:
-                        pending["gpath"] = recs.path
-                    if recs.linkpath != None:
-                        pending["glinkpath"] = recs.linkpath
-                else:
-                    pending["ppath"] = recs.path
-                    pending["plinkpath"] = recs.linkpath
-                    pending["psize"] = recs.size
-        elif kind == "0" or kind == "5" or kind == "D" or kind == "3" or kind == "4" or kind == "6":
-            pending["pname"] = None
-            pending["plink"] = None
-            pending["ppath"] = None
-            pending["plinkpath"] = None
-        elif kind == "S":
-            fail(_scan_error(package_name, "a sparse entry cannot be scanned"))
-        else:
-            fail(_scan_error(package_name, "an entry has kind %r, which cannot be scanned" % kind))
-        pos = pos + size + ((-size) % 512)
+        refusal = _plain_entry(st, block, package_name)
+        if refusal != None:
+            return refusal
     fail(_scan_error(package_name, "the tar archive never terminates"))
 
 def scan_archive_bytes(data, package_name):

@@ -9,6 +9,13 @@ load(
     "classify_archive_entry",
     "scan_archive_bytes",
 )
+# The spoke-facing re-exports live on the public `pub_lock_package` module so
+# `rules_flutter` can reuse the same scan; pin them to the scanner functions.
+load(
+    "//dart/pub:pub_lock_package.bzl",
+    _public_refuse_archive_bytes = "refuse_archive_bytes",
+    _public_scan_archive_bytes = "scan_archive_bytes",
+)
 load(
     ":pub_archive_fixtures.bzl",
     "CLEAN_BASE256",
@@ -134,10 +141,21 @@ def _error_test_impl(ctx):
     )
     return unittest.end(env)
 
+def _reexport_test_impl(ctx):
+    env = unittest.begin(ctx)
+    asserts.equals(env, _public_scan_archive_bytes, scan_archive_bytes, "the public scan re-export is the scanner function")
+    asserts.true(
+        env,
+        _public_refuse_archive_bytes(CLEAN_PLAIN, "test_pkg") == None,
+        "the public refuse wrapper stays silent on a clean archive",
+    )
+    return unittest.end(env)
+
 _t0_test = unittest.make(_clean_test_impl)
 _t1_test = unittest.make(_evil_test_impl)
 _t2_test = unittest.make(_classify_test_impl)
 _t3_test = unittest.make(_error_test_impl)
+_t4_test = unittest.make(_reexport_test_impl)
 
 def pub_archive_scan_test_suite(name):
     small_unittest_suite(
@@ -146,4 +164,5 @@ def pub_archive_scan_test_suite(name):
         _t1_test,
         _t2_test,
         _t3_test,
+        _t4_test,
     )
