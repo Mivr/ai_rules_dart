@@ -897,6 +897,31 @@ def _span_flow_problem(line):
     """The problem for a flow collection that opens at 1-based `line` and spans lines."""
     return "flow collection that spans lines starting at line %d is not supported" % line
 
+def _map_store(mapping, key, value, next_idx, line, state):
+    """Stores a mapping value, recording a duplicate key. Returns (next index, None)."""
+    if _is_duplicate(mapping, key, line, state):
+        return next_idx, None
+    mapping[key] = value
+    return next_idx, None
+
+def _map_flow_value(lines, idx, indent, text, value_text, anchors, state, line):
+    """Reads a same-line flow value that may span lines. Returns (value, next index, done).
+
+    When `value_text` opens a flow collection, the raw head line folds with
+    its deeper lines; done is True with the collection, or with None and the
+    next index past the span when the fold does not read. Otherwise done is
+    False and the caller reads `value_text` itself.
+    """
+    head = lines[idx][indent + _find_colon(text) + 1:]
+    value, next_idx, read = _folded_head_flow(head, line, lines, idx, indent, anchors, state)
+    if read:
+        return value, next_idx, True
+    end = _spanning_flow_end(lines, idx + 1, indent, value_text, anchors)
+    if end != None:
+        state.problems.append(_span_flow_problem(line))
+        return None, end, True
+    return None, idx + 1, False
+
 def _map_line(lines, idx, indent, text, frame, anchors, state):
     """Reads one line of a block mapping. Returns (next index, pending)."""
     if _is_explicit_key_text(text):
@@ -930,25 +955,11 @@ def _map_line(lines, idx, indent, text, frame, anchors, state):
 
     if value_text.startswith("|") or value_text.startswith(">"):
         parsed, next_idx = _parse_block_scalar(lines, idx + 1, indent, value_text)
-        if _is_duplicate(mapping, key, line, state):
-            return next_idx, None
-        mapping[key] = parsed
-        return next_idx, None
+        return _map_store(mapping, key, parsed, next_idx, line, state)
 
-    head = lines[idx][indent + _find_colon(text) + 1:]
-    flow_value, flow_next, flow_read = _folded_head_flow(head, line, lines, idx, indent, anchors, state)
-    if flow_read:
-        if _is_duplicate(mapping, key, line, state):
-            return flow_next, None
-        mapping[key] = flow_value
-        return flow_next, None
-    end = _spanning_flow_end(lines, idx + 1, indent, value_text, anchors)
-    if end != None:
-        state.problems.append(_span_flow_problem(line))
-        if _is_duplicate(mapping, key, line, state):
-            return end, None
-        mapping[key] = None
-        return end, None
+    flow_value, flow_next, flow_done = _map_flow_value(lines, idx, indent, text, value_text, anchors, state, line)
+    if flow_done:
+        return _map_store(mapping, key, flow_value, flow_next, line, state)
 
     value = None
     next_idx = idx + 1
@@ -962,10 +973,7 @@ def _map_line(lines, idx, indent, text, frame, anchors, state):
         value = _parse_scalar(value_text, anchors, state, line)
         if type(value) == "string" and not _is_quoted(value_text):
             value, next_idx = _consume_plain(lines, idx + 1, indent, value)
-    if _is_duplicate(mapping, key, line, state):
-        return next_idx, None
-    mapping[key] = value
-    return next_idx, None
+    return _map_store(mapping, key, value, next_idx, line, state)
 
 def _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state):
     """Reads a `- key: value` line, starting a mapping for the sequence item. Returns (next index, pending)."""
@@ -1287,6 +1295,78 @@ def _indent_width(raw):
     """Counts the leading spaces and tabs, each as one column, as yaml.bzl does."""
     return len(raw) - len(raw.lstrip(" \t"))
 
+def _quote_track(ch, st):
+    """Tracks quote state for `ch`, updating `st` in place. Returns whether `ch` was consumed.
+
+    `st` carries single, double, escaped, at_start and affix. A quote opens
+    only where a scalar starts, so an apostrophe in a plain scalar stays
+    content; a backslash escapes the next character in double quotes.
+    """
+    if st["escaped"]:
+        st["escaped"] = False
+        return True
+    if st["double"] and ch == "\\":
+        st["escaped"] = True
+        return True
+    if ch == "'" and not st["double"]:
+        if st["single"]:
+            st["single"] = False
+            st["at_start"] = False
+        elif st["at_start"]:
+            st["single"] = True
+        st["affix"] = False
+        return True
+    if ch == '"' and not st["single"]:
+        if st["double"]:
+            st["double"] = False
+            st["at_start"] = False
+        elif st["at_start"]:
+            st["double"] = True
+        st["affix"] = False
+        return True
+    return False
+
+def _sep_track(ch, nxt, st, counts):
+    """Tracks scalar-start state for a character outside quotes.
+
+    `st` carries at_start and affix; `counts`, when not None, carries the
+    brace and bracket depth. A `-` or `:` starts a fresh scalar with
+    separation after it, as do `[`, `{` and `,`; an `&` or `!` word does once
+    a space ends it. A nested colon changes nothing.
+    """
+    if ch in ["&", "!"]:
+        st["affix"] = True
+        st["at_start"] = False
+    elif ch in ["[", "{", ","]:
+        if counts != None and ch == "{":
+            counts["braces"] += 1
+        if counts != None and ch == "[":
+            counts["brackets"] += 1
+        st["at_start"] = True
+        st["affix"] = False
+    elif ch in ["}", "]"]:
+        if counts != None and ch == "}":
+            counts["braces"] -= 1
+        if counts != None and ch == "]":
+            counts["brackets"] -= 1
+    elif ch == ":" and nxt in [" ", "\t", ""]:
+        if counts == None or (counts["braces"] == 0 and counts["brackets"] == 0):
+            st["at_start"] = True
+            st["affix"] = False
+    elif ch == "-" and nxt in [" ", "\t", ""]:
+        st["at_start"] = True
+        st["affix"] = False
+    elif ch in [" ", "\t"]:
+        if st["affix"]:
+            st["affix"] = False
+            st["at_start"] = True
+    elif ch == ":":
+        st["at_start"] = False
+        st["affix"] = False
+    else:
+        st["at_start"] = False
+        st["affix"] = False
+
 def _strip_comment(text):
     """Removes a trailing `#` comment, ignoring `#` inside quotes.
 
@@ -1296,56 +1376,17 @@ def _strip_comment(text):
     """
     if "#" not in text:
         return text.rstrip()
-    in_single = False
-    in_double = False
-    escaped = False
-    at_start = True
-    in_affix = False
+    st = {"single": False, "double": False, "escaped": False, "at_start": True, "affix": False}
     for i in range(len(text)):
         ch = text[i]
-        if escaped:
-            escaped = False
-        elif in_double and ch == "\\":
-            escaped = True
-        elif ch == "'" and not in_double:
-            if in_single:
-                in_single = False
-                at_start = False
-            elif at_start:
-                in_single = True
-            in_affix = False
-        elif ch == '"' and not in_single:
-            if in_double:
-                in_double = False
-                at_start = False
-            elif at_start:
-                in_double = True
-            in_affix = False
-        elif ch == "#" and not in_single and not in_double:
-            if i == 0 or text[i - 1] in [" ", "\t"]:
-                return text[:i].rstrip()
-        elif ch in ["&", "!"] and not in_single and not in_double:
-            in_affix = True
-            at_start = False
-        elif ch in ["[", "{", ","]:
-            at_start = True
-            in_affix = False
-        elif ch == ":" and text[i + 1:i + 2] in [" ", "\t", ""]:
-            at_start = True
-            in_affix = False
-        elif ch == "-" and text[i + 1:i + 2] in [" ", "\t", ""]:
-            at_start = True
-            in_affix = False
-        elif ch in [" ", "\t"]:
-            if in_affix:
-                in_affix = False
-                at_start = True
-        elif ch == ":":
-            at_start = False
-            in_affix = False
-        else:
-            at_start = False
-            in_affix = False
+        if _quote_track(ch, st):
+            continue
+        if ch == "#":
+            if not st["single"] and not st["double"]:
+                if i == 0 or text[i - 1] in [" ", "\t"]:
+                    return text[:i].rstrip()
+            continue
+        _sep_track(ch, text[i + 1:i + 2], st, None)
     return text.rstrip()
 
 def _find_colon(text):
@@ -1357,71 +1398,17 @@ def _find_colon(text):
     """
     if ":" not in text:
         return -1
-    in_single = False
-    in_double = False
-    escaped = False
-    at_start = True
-    in_affix = False
-    braces = 0
-    brackets = 0
+    st = {"single": False, "double": False, "escaped": False, "at_start": True, "affix": False}
+    counts = {"braces": 0, "brackets": 0}
     for i in range(len(text)):
         ch = text[i]
-        if escaped:
-            escaped = False
-        elif in_double and ch == "\\":
-            escaped = True
-        elif ch == "'" and not in_double:
-            if in_single:
-                in_single = False
-                at_start = False
-            elif at_start:
-                in_single = True
-            in_affix = False
-        elif ch == '"' and not in_single:
-            if in_double:
-                in_double = False
-                at_start = False
-            elif at_start:
-                in_double = True
-            in_affix = False
-        elif in_single or in_double:
+        if _quote_track(ch, st):
             continue
-        elif ch in ["&", "!"]:
-            in_affix = True
-            at_start = False
-        elif ch == "{":
-            braces += 1
-            at_start = True
-            in_affix = False
-        elif ch == "}":
-            braces -= 1
-        elif ch == "[":
-            brackets += 1
-            at_start = True
-            in_affix = False
-        elif ch == "]":
-            brackets -= 1
-        elif ch == ",":
-            at_start = True
-            in_affix = False
-        elif ch == ":" and braces == 0 and brackets == 0 and (i + 1 == len(text) or text[i + 1] in [" ", "\t"]):
+        if st["single"] or st["double"]:
+            continue
+        if ch == ":" and counts["braces"] == 0 and counts["brackets"] == 0 and (i + 1 == len(text) or text[i + 1] in [" ", "\t"]):
             return i
-        elif ch == ":":
-            at_start = False
-            in_affix = False
-        elif ch in [" ", "\t"]:
-            if in_affix:
-                in_affix = False
-                at_start = True
-        elif ch == "-":
-            if text[i + 1:i + 2] in [" ", "\t", ""]:
-                at_start = True
-            else:
-                at_start = False
-            in_affix = False
-        else:
-            at_start = False
-            in_affix = False
+        _sep_track(ch, text[i + 1:i + 2], st, counts)
     return -1
 
 def find_colon(text):
@@ -2022,37 +2009,21 @@ def _flow_token(s, start, stops):
     index of the stop character).
     """
     i = start
-    in_single = False
-    in_double = False
-    escaped = False
-    at_start = True
+    st = {"single": False, "double": False, "escaped": False, "at_start": True, "affix": False}
     for _ in range(len(s) + 1):
         if i >= len(s):
             break
         ch = s[i]
-        if escaped:
-            escaped = False
-        elif in_double and ch == "\\":
-            escaped = True
-        elif ch == "'" and not in_double:
-            if in_single:
-                if s[i + 1:i + 2] == "'":
-                    i += 1
-                else:
-                    in_single = False
-                    at_start = False
-            elif at_start:
-                in_single = True
-        elif ch == '"' and not in_single:
-            if in_double:
-                in_double = False
-                at_start = False
-            elif at_start:
-                in_double = True
-        elif not in_single and not in_double and ch in stops:
+        if st["single"] and ch == "'" and s[i + 1:i + 2] == "'":
+            i += 2
+            continue
+        if _quote_track(ch, st):
+            i += 1
+            continue
+        if not st["single"] and not st["double"] and ch in stops:
             break
-        elif ch not in [" ", "\t"]:
-            at_start = False
+        if ch not in [" ", "\t"]:
+            st["at_start"] = False
         i += 1
     return s[start:i].strip(), i
 
