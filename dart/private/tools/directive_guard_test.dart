@@ -320,6 +320,22 @@ void main(List<String> args) {
         ],
       );
     });
+
+    test('a directive without its semicolon swallows no directive', () {
+      // A missing `;` once let the tail skip swallow the next directive
+      // unchecked: the swallowed URI never reached the checks. The skip now
+      // stops at the directive boundary, so the next directive is scanned
+      // and its disallowed URI reported.
+      expect(
+        findDisallowedDirectives({
+          'm.dart': "import 'a.dart' import 'file:///etc/hosts';\n",
+        }, tool: 'guard-test'),
+        [
+          "guard-test: m.dart import 'file:///etc/hosts' "
+              'is not a declared input.',
+        ],
+      );
+    });
   });
 
   group('projectStagedRoots', () {
@@ -662,6 +678,16 @@ void main(List<String> args) {
         'import r\'a.dart\';\n': ['a.dart'],
         'import \'a.dart\' \'b.dart\';\n': ['a.dartb.dart'],
         'import \'\'\'a.dart\'\'\';\n': ['a.dart'],
+        // A directive without its `;` ends at the next directive boundary:
+        // the tail skip stops instead of swallowing the next directive.
+        'import \'a.dart\' import \'b.dart\';\n': ['a.dart', 'b.dart'],
+        'export \'a.dart\' export \'b.dart\';\n': ['a.dart', 'b.dart'],
+        'import \'a.dart\' @A import \'b.dart\';\n': ['a.dart', 'b.dart'],
+        'import \'a.dart\' if (dart.library.io) \'b.dart\' export \'c.dart\';\n':
+            ['a.dart', 'b.dart', 'c.dart'],
+        'import \'a.dart\' show library;\n': ['a.dart'],
+        'import \'a.dart\' as part;\n': ['a.dart'],
+        'import \'a.dart\' hide export;\n': ['a.dart'],
         'part \'p.dart\';\npart of \'l.dart\';\n': ['p.dart', 'l.dart'],
         'part of my.lib;\n': [],
         '// c\n/* d */ import /* e */ \'a.dart\' /* f */ ; // g\n': ['a.dart'],

@@ -1398,6 +1398,53 @@ void main(List<String> args) {
     expect(File(allowedOut).existsSync(), isTrue);
   }, skip: Platform.isWindows ? posixOnlyReason : false);
 
+  test('failed publish names fixing the publish, not a phantom owner', () {
+    // Nothing is at the lock path but the lock directory is read-only, so the
+    // publish fails: the error must say the lock could not be published and
+    // name fixing the publish, never an entry of unknown ownership with an
+    // owner to remove it. The tool runs in a subprocess (it exits on
+    // failure), with the lock path pointed under the read-only directory
+    // through the environment. Same-uid (see the file header).
+    final lockDir = Directory('${tmp.path}/pubfail_dir')..createSync();
+    final lock = '${lockDir.path}/train.lock';
+    snapshot.chmodFile(lockDir.path, 0x155); // 0555.
+    try {
+      final tool = stageTool();
+      final dill = compileDill(
+        'void main(List<String> args) {\n  print(10000);\n}\n',
+        'pubfail_train',
+      );
+      final trainDir = '${tmp.path}/pubfail_jit';
+      final denied = Process.runSync(
+        Platform.resolvedExecutable,
+        [
+          tool,
+          '--dart=${Platform.resolvedExecutable}',
+          '--snapshot=${tmp.path}/pubfail_out/app.jit',
+          '--copy=input.dill=$dill',
+          '--',
+          'input.dill',
+        ],
+        environment: {
+          'RULES_DART_JIT_TRAIN_DIR': trainDir,
+          'RULES_DART_JIT_TRAIN_LOCK': lock,
+        },
+      );
+      expect(denied.exitCode, isNot(0), reason: 'failed publish must fail');
+      expect(File('${tmp.path}/pubfail_out/app.jit').existsSync(), isFalse);
+      final err = denied.stderr as String;
+      expect(err, contains('cannot train in $trainDir'));
+      expect(err, contains('could not be published there'));
+      expect(err, contains(lock));
+      expect(err, isNot(contains('unknown ownership')));
+      expect(err, contains('blocking entry or fix the lock directory'));
+      expect(err, contains('jit_snapshot_fallback=true'));
+      expect(err, contains('test_runner_snapshot=false'));
+    } finally {
+      snapshot.chmodFile(lockDir.path, 0x1c0); // 0700.
+    }
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
   test('libc variadic calls bind through VarArgs', () {
     // `fcntl` and `open` are variadic in libc (`int fcntl(int, int, ...)`).
     // On Apple arm64 variadic arguments travel on the stack, so a fixed
@@ -2014,6 +2061,66 @@ void main(List<String> args) {
     expect(lockTemps(lockPath), isEmpty, reason: 'no temporary left');
   }, skip: Platform.isWindows ? posixOnlyReason : false);
 
+  test('uncreatable temporary reports the publish, not a phantom entry', () {
+    // Nothing is at the lock path but the temporary cannot be created (the
+    // lock directory is read-only): the failure must say the lock could not
+    // be published, with the errno, rather than inventing an entry of unknown
+    // ownership with an owner to remove it. Same-uid (see the file header).
+    final dir = Directory('${tmp.path}/pubrodir')..createSync();
+    final lockPath = '${dir.path}/publish.lock';
+    snapshot.chmodFile(dir.path, 0x155); // 0555.
+    try {
+      final opened = locks.jitCreateAndPublishLock(lockPath);
+      expect(opened.fd, -1, reason: 'publish fails closed');
+      expect(
+        opened.detail,
+        'the lock at $lockPath could not be published there (errno 13)',
+      );
+      expect(opened.chmodRemedy, isFalse, reason: 'no mode to chmod');
+      expect(opened.ownEntry, isFalse, reason: 'no entry to own');
+      expect(opened.publishFailed, isTrue, reason: 'publish remedy applies');
+      expect(lockTemps(lockPath), isEmpty, reason: 'no temporary left');
+    } finally {
+      snapshot.chmodFile(dir.path, 0x1c0); // 0700.
+    }
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('refused link reports the publish, not a phantom entry', () {
+    // The temporary is created, then the lock directory goes read-only before
+    // the link: the refused `link()` must say the lock could not be
+    // published, with the errno, rather than inventing an entry of unknown
+    // ownership with an owner to remove it. Same-uid (see the file header).
+    final dir = Directory('${tmp.path}/pubrolink')..createSync();
+    final lockPath = '${dir.path}/publish.lock';
+    final opened = locks.jitCreateAndPublishLock(
+      lockPath,
+      onTempReady: (temp, _) {
+        expect(
+          FileSystemEntity.typeSync(lockPath, followLinks: false),
+          FileSystemEntityType.notFound,
+          reason: 'nothing at the lock path when the link runs',
+        );
+        snapshot.chmodFile(dir.path, 0x155); // 0555.
+      },
+    );
+    try {
+      expect(opened.fd, -1, reason: 'refused link fails closed');
+      expect(
+        opened.detail,
+        'the lock at $lockPath could not be published there (errno 13)',
+      );
+      expect(opened.chmodRemedy, isFalse, reason: 'no mode to chmod');
+      expect(opened.publishFailed, isTrue, reason: 'publish remedy applies');
+    } finally {
+      // The tool cannot unlink its temporary while the directory is
+      // read-only: restore the mode first, then clear it.
+      snapshot.chmodFile(dir.path, 0x1c0); // 0700.
+      for (final temp in lockTemps(lockPath)) {
+        File(temp).deleteSync();
+      }
+    }
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
   test('leftover temporary neither blocks nor passes for the lock', () {
     // A killed publish leaves its temporary behind: the next run ignores it,
     // publishes under a new name, and never opens the leftover as the lock.
@@ -2192,7 +2299,10 @@ void main(List<String> args) {
     // which the kernel refuses with EPERM on a file the caller does not own,
     // locking a second user out of the first user's lock again. O_RDWR,
     // O_CREAT, O_EXCL and O_NONBLOCK are the same on x86_64 and arm64.
+    // O_CLOEXEC is 0x80000 on every Linux ABI: without it a spawned training
+    // subprocess would inherit the lock descriptor.
     const noAtime = 0x40000;
+    const cloexec = 0x80000;
     const creat = 0x40;
     const excl = 0x80;
     void checkNoFollow(ffi.Abi abi, int nofollow) {
@@ -2208,6 +2318,16 @@ void main(List<String> args) {
         reason: '$abi create carries O_NOFOLLOW',
       );
       expect(
+        flags.noCreate & cloexec,
+        cloexec,
+        reason: '$abi no-create carries O_CLOEXEC',
+      );
+      expect(
+        flags.create & cloexec,
+        cloexec,
+        reason: '$abi create carries O_CLOEXEC',
+      );
+      expect(
         flags.noCreate & (creat | noAtime),
         0,
         reason: '$abi no-create opens with neither O_CREAT nor O_NOATIME',
@@ -2218,6 +2338,11 @@ void main(List<String> args) {
         read & nofollow,
         nofollow,
         reason: '$abi holder lookup carries O_NOFOLLOW',
+      );
+      expect(
+        read & cloexec,
+        cloexec,
+        reason: '$abi holder lookup carries O_CLOEXEC',
       );
       expect(read & (creat | noAtime), 0);
     }
@@ -2233,12 +2358,15 @@ void main(List<String> args) {
     for (final abi in [ffi.Abi.linuxArm, ffi.Abi.linuxArm64]) {
       checkNoFollow(abi, 0x8000);
     }
-    // macOS values are unchanged and ABI-independent.
+    // macOS values are unchanged and ABI-independent, with O_CLOEXEC set.
     for (final abi in [ffi.Abi.macosX64, ffi.Abi.macosArm64]) {
       final flags = locks.jitOpenFlags(isMacOS: true, abi: abi);
-      expect(flags.noCreate, 0x2 | 0x100 | 0x4);
-      expect(flags.create, 0x2 | 0x100 | 0x4 | 0x200 | 0x800);
-      expect(locks.jitReadFlags(isMacOS: true, abi: abi), 0x0 | 0x100 | 0x4);
+      expect(flags.noCreate, 0x2 | 0x100 | 0x4 | 0x1000000);
+      expect(flags.create, 0x2 | 0x100 | 0x4 | 0x200 | 0x800 | 0x1000000);
+      expect(
+        locks.jitReadFlags(isMacOS: true, abi: abi),
+        0x0 | 0x100 | 0x4 | 0x1000000,
+      );
     }
     // A Linux ABI with no pinned values fails closed instead of guessing.
     expect(
@@ -2249,6 +2377,56 @@ void main(List<String> args) {
     expect(
       () => locks.jitReadFlags(isMacOS: false, abi: ffi.Abi.androidArm64),
       throwsUnsupportedError,
+    );
+  });
+
+  test('jitCloexecFlag pins O_CLOEXEC per OS', () {
+    // The lock and every temporary descriptor must not leak into a spawned
+    // training subprocess: Linux numbers O_CLOEXEC 02000000 on every ABI,
+    // macOS 0x1000000.
+    expect(locks.jitCloexecFlag(isMacOS: false), 0x80000);
+    expect(locks.jitCloexecFlag(isMacOS: true), 0x1000000);
+  });
+
+  test('jitFlockPidOffset pins the F_GETLK PID field per OS and ABI', () {
+    // The holder-PID lookup reads the PID as a little-endian i32 at this
+    // offset: 24 on the 64-bit Linux ABIs, where `l_start`/`l_len` are 64
+    // bits wide, and 12 on the 32-bit ones, where they are 32 bits wide
+    // (reading at 24 there would return padding as the PID). macOS reads it
+    // at 16 on both architectures.
+    for (final abi in [
+      ffi.Abi.linuxX64,
+      ffi.Abi.linuxArm64,
+      ffi.Abi.linuxRiscv64,
+    ]) {
+      expect(
+        locks.jitFlockPidOffset(isMacOS: false, abi: abi),
+        24,
+        reason: '$abi reads the PID at 24',
+      );
+    }
+    for (final abi in [
+      ffi.Abi.linuxIA32,
+      ffi.Abi.linuxArm,
+      ffi.Abi.linuxRiscv32,
+    ]) {
+      expect(
+        locks.jitFlockPidOffset(isMacOS: false, abi: abi),
+        12,
+        reason: '$abi reads the PID at 12',
+      );
+    }
+    for (final abi in [ffi.Abi.macosX64, ffi.Abi.macosArm64]) {
+      expect(
+        locks.jitFlockPidOffset(isMacOS: true, abi: abi),
+        16,
+        reason: '$abi reads the PID at 16',
+      );
+    }
+    expect(
+      () => locks.jitFlockPidOffset(isMacOS: false, abi: ffi.Abi.androidArm64),
+      throwsUnsupportedError,
+      reason: 'unpinned ABI stands in for an unknown Linux ABI',
     );
   });
 

@@ -693,6 +693,13 @@ bool _lockChmodRemedy = false;
 /// the mode-denied remedy names us rather than "its owner".
 bool _lockOwnEntry = false;
 
+/// Whether the last [_openConstantLock] failure is a failed publish: the lock
+/// could not be created or linked over its path (see [_jitPublishFailure]).
+/// The `chmod 0666` and owner-removal remedies do not apply — where nothing is
+/// at the path there is no entry and no owner — so the error names fixing the
+/// publish instead (see [_writeUnavailableError]).
+bool _lockPublishFailed = false;
+
 /// How many times [_openConstantLock] opens the lock per call: the first open
 /// plus reopenings when the held lock no longer names the lock path (see
 /// [jitFdMatchesPath]). A mismatch is all but impossible (only a concurrent
@@ -712,8 +719,8 @@ const _lockOpenAttempts = 3;
 /// file with link count 1 is kept (never written and never chmodded: a
 /// pre-existing lock keeps its content and its mode). Null when the
 /// lock cannot be opened or is not a regular file; the failure detail and its
-/// remedy stay in [_lockDetail], [_lockChmodRemedy] and [_lockOwnEntry] for
-/// the fail-closed error (see [_acquireConstantDir]).
+/// remedy stay in [_lockDetail], [_lockChmodRemedy], [_lockOwnEntry] and
+/// [_lockPublishFailed] for the fail-closed error (see [_acquireConstantDir]).
 ///
 /// A taken lock is re-checked against its path before it is trusted (see
 /// [jitFdMatchesPath]): the lock may have been deleted or replaced while it
@@ -737,12 +744,14 @@ int? _openConstantLock() {
   _lockDetail = '';
   _lockChmodRemedy = false;
   _lockOwnEntry = false;
+  _lockPublishFailed = false;
   for (var attempt = 0; attempt < _lockOpenAttempts; attempt++) {
     final opened = jitOpenLock(constantTrainLock);
     if (opened.fd < 0) {
       _lockDetail = opened.detail;
       _lockChmodRemedy = opened.chmodRemedy;
       _lockOwnEntry = opened.ownEntry;
+      _lockPublishFailed = opened.publishFailed;
       return null;
     }
     final fd = opened.fd;
@@ -762,6 +771,7 @@ int? _openConstantLock() {
   _lockDetail = jitDescribeEntry(constantTrainLock);
   _lockChmodRemedy = false;
   _lockOwnEntry = false;
+  _lockPublishFailed = false;
   return null;
 }
 
@@ -976,9 +986,11 @@ void _deleteTreeNoFollow(String path) {
 /// held past its deadline names stopping the holder and waiting longer. Any
 /// other blocked lock names the lock's own remedies: where the lock's own
 /// mode is what denies us access the owner makes it world-writable or removes
-/// it, and where anything else blocks it — a symlink, directory, FIFO or
-/// other entry — its owner (or root) must remove it, since we cannot remove
-/// another user's lock. A blocked training directory of our own names removing
+/// it, where the publish itself failed the error names fixing the publish
+/// (there may be no entry and no owner to remove), and where anything else
+/// blocks it — a symlink, directory, FIFO or other entry — its owner (or
+/// root) must remove it, since we cannot remove another user's lock. A blocked
+/// training directory of our own names removing
 /// the entry; another user's names its owner (or root) removing it, since we
 /// cannot under `/tmp`'s sticky bit.
 void _writeUnavailableError() {
@@ -992,12 +1004,18 @@ void _writeUnavailableError() {
         'above $_lockDeadlineSecs, or pass ';
   } else if (_constantLockUnavailable) {
     // The `chmod 0666` remedy only where the lock's own mode denies us (see
-    // [_lockChmodRemedy]); anything else wants the entry removed.
-    remedy = _lockChmodRemedy
-        ? (_lockOwnEntry
-              ? 'Run `chmod 0666 $constantTrainLock` or remove it, or pass '
-              : 'Have its owner run `chmod 0666 $constantTrainLock` or remove it, or pass ')
-        : 'Have its owner (or root) remove it, or pass ';
+    // [_lockChmodRemedy]); a failed publish names fixing the publish instead,
+    // since nothing describes an entry that may not exist (see
+    // [_lockPublishFailed]); anything else wants the entry removed.
+    if (_lockPublishFailed) {
+      remedy = 'Remove any blocking entry or fix the lock directory, or pass ';
+    } else {
+      remedy = _lockChmodRemedy
+          ? (_lockOwnEntry
+                ? 'Run `chmod 0666 $constantTrainLock` or remove it, or pass '
+                : 'Have its owner run `chmod 0666 $constantTrainLock` or remove it, or pass ')
+          : 'Have its owner (or root) remove it, or pass ';
+    }
   } else {
     remedy = _constantDirOwnEntry
         ? 'Remove the entry, or pass '

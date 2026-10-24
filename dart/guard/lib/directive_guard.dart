@@ -904,12 +904,40 @@ class _Prologue {
     _lexer.take();
   }
 
-  /// Consumes up to and including `text`.
+  /// Consumes up to and including `text`. A directive keyword (`library`,
+  /// `import`, `export`, `part`) or an annotation where only an `import` or
+  /// `export` tail can appear — right after the URI string or an `if`
+  /// condition — opens a new directive on a missing `;`: consuming it would
+  /// swallow that directive unchecked, so the skip stops at the boundary and
+  /// the main loop parses the next directive from there. A keyword anywhere
+  /// else in the tail (a `show`/`hide` name, an `as` prefix) is consumed as
+  /// before: only a keyword right after the URI or a condition can open one.
+  /// The tail always starts right after the URI string or an `if` alternative,
+  /// so the stop is armed from the first token.
   void _skipPast(String text) {
+    var afterOperand = true;
     while (!_punct(text)) {
-      _take();
+      final token = _peek();
+      if (token != null && afterOperand && _isDirectiveStart(token)) {
+        return;
+      }
+      final consumed = _take();
+      afterOperand =
+          consumed.kind == _stringKind ||
+          (consumed.kind == _punctKind && consumed.text == ')');
     }
     _lexer.take();
+  }
+
+  /// Whether [token] can open a new directive: a directive keyword or an
+  /// annotation (see [_skipPast]).
+  bool _isDirectiveStart(_Token token) {
+    if (token.kind == _punctKind && token.text == '@') return true;
+    return token.kind == _identKind &&
+        (token.text == 'library' ||
+            token.text == 'import' ||
+            token.text == 'export' ||
+            token.text == 'part');
   }
 
   void _identToken() {

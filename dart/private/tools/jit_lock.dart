@@ -43,8 +43,8 @@ typedef JitStat = ({String kind, int uid, int mode, int nlink, JitFileId id});
 typedef JitFileId = ({int devA, int devB, int inoLo, int inoHi});
 
 /// The flags opening the lock: without O_CREAT for an existing lock, with
-/// O_CREAT|O_EXCL to create a missing one. Both carry O_NOFOLLOW and
-/// O_NONBLOCK and never follow the final component.
+/// O_CREAT|O_EXCL to create a missing one. Both carry O_NOFOLLOW, O_NONBLOCK
+/// and O_CLOEXEC and never follow the final component.
 typedef JitOpenFlags = ({int noCreate, int create});
 
 /// The result of opening the lock: a held descriptor [fd] (nonnegative), or a
@@ -52,12 +52,15 @@ typedef JitOpenFlags = ({int noCreate, int create});
 /// [chmodRemedy] is true only when the lock's own mode is what denies us
 /// access (a regular file we cannot open for writing); anything else wants
 /// the entry removed. [ownEntry] tells a mode-denied remedy whether the entry
-/// is ours to chmod ourselves.
+/// is ours to chmod ourselves. [publishFailed] is true only when the publish
+/// itself failed (see [_jitPublishFailure]): there may be no entry at all, so
+/// neither the `chmod 0666` remedy nor an owner-removal remedy applies.
 typedef JitLockOpen = ({
   int fd,
   String detail,
   bool chmodRemedy,
   bool ownEntry,
+  bool publishFailed,
 });
 
 /// Runs between the temporary's chmod and its publish (see
@@ -197,10 +200,19 @@ JitStat? jitDecodeLinuxStat(List<int> bytes, {required ffi.Abi abi}) {
   );
 }
 
+/// O_CLOEXEC for the lock and every temporary descriptor (see [jitOpenFlags]
+/// and [jitReadFlags]): a pure function of the OS. The value is 0x80000 on
+/// Linux (02000000, the same on every ABI) and 0x1000000 on macOS. Without it
+/// a spawned training subprocess would inherit the lock descriptor, keeping
+/// the file description open in the child past our close.
+int jitCloexecFlag({required bool isMacOS}) => isMacOS ? 0x1000000 : 0x80000;
+
 /// The flags opening the lock (see [JitOpenFlags]): a pure function of the OS
 /// and ABI. O_RDWR is 2, O_CREAT is 0x40 (Linux) or 0x200 (macOS), O_EXCL is
 /// 0x80 (Linux) or 0x800 (macOS), and O_NONBLOCK is 0x800 (Linux) or 0x4
-/// (macOS). O_NOFOLLOW is 0x100 on macOS but architecture-specific on Linux:
+/// (macOS). O_CLOEXEC rides on both (see [jitCloexecFlag]), so no spawned
+/// training subprocess inherits the lock or a temporary. O_NOFOLLOW is 0x100
+/// on macOS but architecture-specific on Linux:
 /// 0x20000 on x86_64, IA-32 and RISC-V (asm-generic), 0x8000 on 32-bit ARM and
 /// arm64, whose headers keep the 32-bit numbering for compat (0x20000 there is
 /// O_LARGEFILE, which would follow symlinks). A Linux ABI whose values are not
@@ -209,18 +221,19 @@ JitStat? jitDecodeLinuxStat(List<int> bytes, {required ffi.Abi abi}) {
 /// refuses with EPERM on a file the caller does not own, locking a second
 /// user out of the first user's lock again).
 JitOpenFlags jitOpenFlags({required bool isMacOS, required ffi.Abi abi}) {
+  final cloexec = jitCloexecFlag(isMacOS: isMacOS);
   if (isMacOS) {
-    // O_RDWR|O_NOFOLLOW|O_NONBLOCK, plus O_CREAT|O_EXCL to create.
+    // O_RDWR|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC, plus O_CREAT|O_EXCL to create.
     return (
-      noCreate: 0x2 | 0x100 | 0x4,
-      create: 0x2 | 0x100 | 0x4 | 0x200 | 0x800,
+      noCreate: 0x2 | 0x100 | 0x4 | cloexec,
+      create: 0x2 | 0x100 | 0x4 | 0x200 | 0x800 | cloexec,
     );
   }
   final nofollow = _linuxNoFollow(abi);
-  // O_RDWR|O_NOFOLLOW|O_NONBLOCK, plus O_CREAT|O_EXCL to create.
+  // O_RDWR|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC, plus O_CREAT|O_EXCL to create.
   return (
-    noCreate: 0x2 | nofollow | 0x800,
-    create: 0x2 | nofollow | 0x800 | 0x40 | 0x80,
+    noCreate: 0x2 | nofollow | 0x800 | cloexec,
+    create: 0x2 | nofollow | 0x800 | 0x40 | 0x80 | cloexec,
   );
 }
 
@@ -249,16 +262,19 @@ int _linuxNoFollow(ffi.Abi abi) {
 }
 
 /// The read-only flags for the holder-PID lookup (see [jitLockHolderPid]):
-/// O_NOFOLLOW|O_NONBLOCK without O_CREAT, so a symlink or FIFO at the path
-/// reports no holder instead of blocking or being followed. Throws as
+/// O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC without O_CREAT, so a symlink or FIFO at
+/// the path reports no holder instead of blocking or being followed, and no
+/// spawned training subprocess inherits the lookup descriptor. Throws as
 /// [jitOpenFlags] on a Linux ABI whose values are not pinned.
 int jitReadFlags({required bool isMacOS, required ffi.Abi abi}) {
-  if (isMacOS) return 0x0 | 0x100 | 0x4;
-  return _linuxNoFollow(abi) | 0x800;
+  final cloexec = jitCloexecFlag(isMacOS: isMacOS);
+  if (isMacOS) return 0x0 | 0x100 | 0x4 | cloexec;
+  return _linuxNoFollow(abi) | 0x800 | cloexec;
 }
 
-/// Our uid, for telling our own lock (whose mode we repair) from another
-/// user's, and our own stale directories from theirs.
+/// Our uid, for telling our own entries from another user's: only our own
+/// lock gets the `chmod 0666` remedy, and only our own stale directories get
+/// removed.
 int jitOwnUid() {
   if (Platform.isWindows) return -1;
   final lib = ffi.DynamicLibrary.process();
@@ -504,6 +520,7 @@ JitLockOpen jitCreateAndPublishLock(String path, {JitTempReady? onTempReady}) {
         detail: 'entry at $path of unknown ownership',
         chmodRemedy: false,
         ownEntry: false,
+        publishFailed: false,
       ),
     );
   }
@@ -524,6 +541,7 @@ JitLockOpen jitCreateAndPublishLock(String path, {JitTempReady? onTempReady}) {
         detail: 'entry at $path ($error)',
         chmodRemedy: false,
         ownEntry: false,
+        publishFailed: false,
       ),
     );
   }
@@ -549,6 +567,9 @@ JitLockOpen _jitCreateAndPublish(
 /// One publish attempt (see [_jitCreateAndPublish]): creates a fresh temporary,
 /// makes it 0666, links it over [path] and unlinks it, keeping the linked
 /// descriptor. [retry] is true only when the temporary's own name was taken.
+/// A temporary that cannot be created, or a `link` the kernel refuses for any
+/// reason but a lost race, reports the publish itself (see
+/// [_jitPublishFailure]), never an entry that may not be there.
 ({JitLockOpen result, bool retry}) _jitPublishOnce(
   ffi.DynamicLibrary lib,
   String path,
@@ -563,7 +584,7 @@ JitLockOpen _jitCreateAndPublish(
       return (result: _jitLockFailure(path, accessDenied: false), retry: true);
     }
     return (
-      result: _jitLockFailure(path, accessDenied: created.errno == _eacces),
+      result: _jitPublishFailure(path, errno: created.errno),
       retry: false,
     );
   }
@@ -575,7 +596,7 @@ JitLockOpen _jitCreateAndPublish(
     linkErrno = _jitLink(lib, temp, path);
   } on ArgumentError {
     // This libc has no `link`: nothing was published, so close the temporary
-    // and fail closed with the lock undescribed.
+    // and fail closed describing the lock as found.
     _jitClose(lib, fd);
     _jitUnlink(lib, temp);
     return (result: _jitLockFailure(path, accessDenied: false), retry: false);
@@ -584,10 +605,7 @@ JitLockOpen _jitCreateAndPublish(
   if (linkErrno == 0) return (result: _jitAdoptFd(lib, path, fd), retry: false);
   _jitClose(lib, fd);
   if (linkErrno != _eexist) {
-    return (
-      result: _jitLockFailure(path, accessDenied: linkErrno == _eacces),
-      retry: false,
-    );
+    return (result: _jitPublishFailure(path, errno: linkErrno), retry: false);
   }
   // Lost the publish race: open the winner's lock without creating.
   final winner = _jitOpen(lib, path, flags.noCreate, 0);
@@ -718,6 +736,32 @@ void jitUnlockAndClose(int fd) {
   }
 }
 
+/// The `l_pid` offset in `struct flock` for the holder-PID lookup (see
+/// [jitLockHolderPid]): a pure function of the OS and ABI. On macOS the PID is
+/// a little-endian i32 at 16; on Linux a little-endian i32 at 24 on the 64-bit
+/// ABIs, where `l_start`/`l_len` are 64 bits wide, and at 12 on the 32-bit
+/// ones, where they are 32 bits wide (reading at the 64-bit offset there would
+/// return padding as the PID). Throws [UnsupportedError] for a Linux ABI whose
+/// layout is not pinned here, and the caller reports no holder.
+int jitFlockPidOffset({required bool isMacOS, required ffi.Abi abi}) {
+  if (isMacOS) return 16;
+  switch (abi) {
+    case ffi.Abi.linuxX64:
+    case ffi.Abi.linuxArm64:
+    case ffi.Abi.linuxRiscv64:
+      return 24;
+    case ffi.Abi.linuxIA32:
+    case ffi.Abi.linuxArm:
+    case ffi.Abi.linuxRiscv32:
+      return 12;
+    default:
+      throw UnsupportedError(
+        'app_jit_snapshot: no pinned struct flock layout for Linux ABI $abi, '
+        'refusing to read the training lock holder',
+      );
+  }
+}
+
 /// The PID holding an exclusive `fcntl` lock on [path], for the lock-wait
 /// notices and the deadline error. Null where no process holds one, where the
 /// path cannot be opened, or where the platform has no suitable call: the
@@ -727,8 +771,9 @@ void jitUnlockAndClose(int fd) {
 /// whole file: the kernel reports the lock the training's own try-lock
 /// refuses, with the holder's PID. The `struct flock` layout differs by OS:
 /// on Linux the type is a little-endian i16 at offset 0 and the PID a
-/// little-endian i32 at offset 20+4, on macOS the start/len are two i64 at
-/// offsets 0/8, the PID an i32 at offset 16 and the type an i16 at offset 20.
+/// little-endian i32 at the offset [jitFlockPidOffset] pins, on macOS the
+/// start/len are two i64 at offsets 0/8, the PID an i32 at offset 16 and the
+/// type an i16 at offset 20.
 /// All supported hosts are little-endian. Metadata only: the file opens
 /// read-only with O_NOFOLLOW (a symlink or FIFO at the path reports no holder
 /// instead of blocking) and is never read.
@@ -773,9 +818,13 @@ int? jitLockHolderPid(String path) {
               ? view.getInt16(20, Endian.little)
               : view.getInt16(0, Endian.little);
           if (type == 2) return null;
-          final holderPid = Platform.isMacOS
-              ? view.getInt32(16, Endian.little)
-              : view.getInt32(24, Endian.little);
+          final holderPid = view.getInt32(
+            jitFlockPidOffset(
+              isMacOS: Platform.isMacOS,
+              abi: ffi.Abi.current(),
+            ),
+            Endian.little,
+          );
           return holderPid > 0 ? holderPid : null;
         } finally {
           close(fd);
@@ -790,8 +839,8 @@ int? jitLockHolderPid(String path) {
     // A libc call this host lacks (`fcntl`, `open`): no holder available.
     return null;
   } on UnsupportedError {
-    // This host's Linux ABI has no pinned O_* values: no holder available,
-    // and the callers then say "unknown".
+    // This host's Linux ABI has no pinned O_* values or `struct flock`
+    // layout: no holder available, and the callers then say "unknown".
     return null;
   }
 }
@@ -856,7 +905,13 @@ JitLockOpen _jitAdoptFd(ffi.DynamicLibrary lib, String path, int fd) {
     _jitClose(lib, fd);
     return _jitLockFailure(path, accessDenied: false);
   }
-  return (fd: fd, detail: '', chmodRemedy: false, ownEntry: true);
+  return (
+    fd: fd,
+    detail: '',
+    chmodRemedy: false,
+    ownEntry: true,
+    publishFailed: false,
+  );
 }
 
 /// Whether [fd] still names the entry at [path]: the descriptor's own device
@@ -966,6 +1021,7 @@ JitLockOpen _jitLockFailure(String path, {required bool accessDenied}) {
       detail: 'entry at $path of unknown ownership',
       chmodRemedy: false,
       ownEntry: false,
+      publishFailed: false,
     );
   }
   final owner = jitUserName(info.uid);
@@ -975,6 +1031,39 @@ JitLockOpen _jitLockFailure(String path, {required bool accessDenied}) {
     detail: '${info.kind} at $path owned by $who',
     chmodRemedy: accessDenied && info.kind == 'regular file',
     ownEntry: info.uid == jitOwnUid(),
+    publishFailed: false,
+  );
+}
+
+/// The fail-closed opening where the publish itself failed (see
+/// [_jitPublishOnce]): the temporary could not be created, or `link` refused
+/// it for any reason but a lost race. Where an entry is now at [path] it is
+/// described as in [_jitLockFailure] (a directory refusing the link still
+/// wants removal); where nothing is there the detail says the lock could not
+/// be published, with the `errno`, rather than inventing an entry of unknown
+/// ownership with an owner to remove it. The `chmod 0666` remedy never
+/// applies: a mode-denied winner surfaces through the open, not the publish.
+JitLockOpen _jitPublishFailure(String path, {required int errno}) {
+  final info = jitStatEntry(path);
+  if (info == null) {
+    return (
+      fd: -1,
+      detail: 'the lock at $path could not be published there (errno $errno)',
+      chmodRemedy: false,
+      ownEntry: false,
+      publishFailed: true,
+    );
+  }
+  final owner = jitUserName(info.uid);
+  final who = owner == null ? 'uid ${info.uid}' : 'uid ${info.uid} ($owner)';
+  return (
+    fd: -1,
+    detail:
+        'the ${info.kind} at $path owned by $who blocks the lock publish '
+        '(errno $errno)',
+    chmodRemedy: false,
+    ownEntry: info.uid == jitOwnUid(),
+    publishFailed: true,
   );
 }
 
