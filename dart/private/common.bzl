@@ -603,8 +603,10 @@ JIT_SNAPSHOT_LOCK_TIMEOUT_DEFAULT = 300
 _MASK64 = 18446744073709551615
 
 def _digest64(seed, s):
-    """A deterministic 64-bit digest of a string: FNV-1a over its characters,
-    finished with murmur3's 64-bit finalizer for avalanche.
+    """Digests a string deterministically into 64 bits.
+
+    FNV-1a over its characters, finished with murmur3's 64-bit finalizer for
+    avalanche.
 
     Each character contributes its single-character `hash()` code. For one
     code unit the Java `String.hashCode` is the code unit itself, so this
