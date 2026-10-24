@@ -1,0 +1,27 @@
+# Regression test for the scanner SDK resolution: `toolchain_intruder` is a
+# non-root module that tags `dart.toolchain` and is listed ahead of
+# rules_dart, so any owner-by-module-order logic addresses the SDK through
+# the intruder's extension namespace, which does not exist, and fails the
+# scanner fetch. Building `@dart_pub_scanner//:scanner` forces the scanner
+# repository to materialize (building `:hello` alone does not: nothing
+# resolves the scanner then); the mapping-based SDK resolution keeps both
+# builds green whatever the module order.
+module(name = "pub_scanner_intruder_e2e")
+
+bazel_dep(name = "toolchain_intruder", version = "0.0.0")
+local_path_override(
+    module_name = "toolchain_intruder",
+    path = "intruder",
+)
+
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
+local_path_override(
+    module_name = "ai_rules_dart",
+    path = "../..",
+)
+
+dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
+dart.toolchain(dart_version = "3.13.5")
+use_repo(dart, "dart_pub_scanner", "dart_toolchains")
+
+register_toolchains("@dart_toolchains//:all")

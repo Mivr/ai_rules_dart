@@ -1,0 +1,10 @@
+# A non-root module that only tags the `dart` toolchain: it puts a
+# toolchain-tagging module ahead of rules_dart in the consumer graph. It
+# requests the same SDK version the root does, so toolchain selection is
+# unaffected and the only thing under test is the scanner's SDK address.
+module(name = "toolchain_intruder")
+
+bazel_dep(name = "ai_rules_dart", version = "0.0.0", repo_name = "rules_dart")
+
+dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
+dart.toolchain(dart_version = "3.13.5")

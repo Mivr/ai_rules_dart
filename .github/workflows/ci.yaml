@@ -59,6 +59,8 @@ jobs:
   # e2e/pub_spoke_malformed_sha, e2e/pub_git_unpinned_ref,
   # e2e/pub_scc_unpinned_member, e2e/sdk_unknown_version, e2e/pub_symlink
   # (plus its nested red-by-design `cycle` workspace), e2e/kernel_dep_shape.
+  # e2e/pub_scanner_intruder is green but needs its scanner built explicitly,
+  # so it runs in a step there too.
   # e2e/pub_fetch_powershell runs in the shard-3-only steps below;
   # e2e/analysis_failure and e2e/analyze_composition also run in
   # `expected-failure` and `format-hermeticity`, and e2e/dart_test also in
@@ -830,6 +832,19 @@ jobs:
           fi
           bazel build //:app 2>&1 | grep -F -q 'pub package "cycle_b_evil": hard-link "lib/evil.dart" points at "../outside.txt"'
           echo "OK: expected cycle hard-link error detected"
+      # `e2e/pub_scanner_intruder` pins the scanner's SDK address: the
+      # `toolchain_intruder` module tags `dart.toolchain` and is listed ahead
+      # of rules_dart, so resolving the SDK by module order would fetch it
+      # from a repository that does not exist. The step builds the app (the
+      # toolchain works in an intruder graph) and the scanner itself (the
+      # scanner repository materializes from the mapping-based SDK address).
+      - name: pub_scanner_intruder — scanner SDK resolution survives an intruder module
+        working-directory: e2e/pub_scanner_intruder
+        run: |
+          bazel build //:hello
+          echo "OK: toolchain build stays green with an intruder module ahead of rules_dart"
+          bazel build @dart_pub_scanner//:scanner
+          echo "OK: scanner repository materializes with an intruder module ahead of rules_dart"
       # A link hook that refuses the program's recorded uses fails the build,
       # and its own message reaches the user.
       - name: link_hook — expect a hook's refusal to fail the build, with its message
