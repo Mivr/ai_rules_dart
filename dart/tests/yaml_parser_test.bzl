@@ -1025,6 +1025,107 @@ def _parse_pubspec_rejected_span_test_impl(ctx):
     asserts.true(env, err != None and "line 3" in err and "not supported" in err and "explicit" in err)
     return unittest.end(env)
 
+def _parse_pubspec_flow_quote_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A backslash at a double-quoted folded line's end continues the scalar
+    # with no space, as pub reads it (package:yaml 3.1.4 with the pinned
+    # SDK 3.13.5 reads "foobar" below). A backslash in single-quoted and
+    # plain scalars stays literal, as pub keeps it.
+    bs = "name: p1\nenvironment:\n  sdk: ^3.0.0\ntags:\n  [\"foo\\\n   bar\", plain]\n"
+    asserts.equals(env, ["foobar", "plain"], parse_pubspec_document(bs)["tags"])
+    asserts.equals(env, "^3.0.0", parse_pubspec_sdk_constraint(bs))
+    asserts.equals(env, None, parse_pubspec_document_error(bs))
+    asserts.equals(env, ["foobar"], parse_pubspec_document("{\"tags\": [\"foo\\\n bar\"]}\n")["tags"])
+    asserts.equals(
+        env,
+        ["foo\\ bar"],
+        parse_pubspec_document("name: p1\ntags:\n  ['foo\\\n   bar']\n")["tags"],
+    )
+    asserts.equals(
+        env,
+        ["foo\\ bar"],
+        parse_pubspec_document("name: p1\ntags:\n  [foo\\\n   bar]\n")["tags"],
+    )
+
+    # A `#`-leading continuation line inside quotes is content, as pub
+    # reads it; a ` # ` inside a quoted continuation is content too.
+    asserts.equals(
+        env,
+        ["foo # bar baz"],
+        parse_pubspec_document("name: p1\ntags:\n  ['foo\n   # bar\n   baz']\n")["tags"],
+    )
+    asserts.equals(env, ["foo # bar baz"], parse_pubspec_document("{tags: ['foo\n # bar\n baz']}\n")["tags"])
+    asserts.equals(
+        env,
+        ["foo # bar"],
+        parse_pubspec_document("name: p1\ntags:\n  [\"foo\n   # bar\"]\n")["tags"],
+    )
+    asserts.equals(
+        env,
+        ["foo bar # baz"],
+        parse_pubspec_document("name: p1\ntags:\n  ['foo\n   bar # baz']\n")["tags"],
+    )
+    asserts.equals(env, ["foo bar # baz"], parse_pubspec_document("{tags: ['foo\n bar # baz']}\n")["tags"])
+    asserts.equals(
+        env,
+        ["foo bar # baz"],
+        parse_pubspec_document("name: p1\ntags:\n  [\"foo\n   bar # baz\"]\n")["tags"],
+    )
+
+    # A comment that ends a line inside a plain scalar fails naming the
+    # line: pub rejects the flow, so reading on would misread.
+    err = parse_pubspec_document_error("name: p1\nenvironment:\n  sdk: ^3.0.0\ntags:\n  [foo # comment\n   bar]\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 5" in err)
+    asserts.true(env, "not supported" in err and "comment" in err)
+
+    # A `#` after a complete value, a `%` line, trailing space after a
+    # backslash continuation, and a blank line after one all fail naming
+    # the line: pub rejects each of these flows.
+    err = parse_pubspec_document_error("name: p1\ntags:\n  ['a' #c,\n   b]\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "line 3" in err and "not supported" in err)
+    err = parse_pubspec_document_error("name: p1\ntags:\n  [a,\n   %x\n   b]\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "line 4" in err and "not supported" in err)
+    err = parse_pubspec_document_error("name: p1\ntags:\n  [\"foo\\   \n   bar\"]\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "line 3" in err and "not supported" in err)
+    err = parse_pubspec_document_error("name: p1\ntags:\n  [\"foo\\\n\n   bar\"]\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "line 4" in err and "not supported" in err)
+
+    # An apostrophe never opens a quote: the fold keeps `[don't, stop]`
+    # whole, which fails closed with the spanning-flow error.
+    err = parse_pubspec_document_error("name: p1\ntags:\n  [don't,\n   stop]\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "line 3" in err and "not supported" in err and "flow" in err)
+
+    # `---` content lines fold as pub folds them, and comments after a
+    # complete value stay separation, as pub skips them.
+    asserts.equals(
+        env,
+        ["foo --- bar"],
+        parse_pubspec_document("name: p1\ntags:\n  [foo\n   ---\n   bar]\n")["tags"],
+    )
+    asserts.equals(
+        env,
+        ["a", "--- b"],
+        parse_pubspec_document("name: p1\ntags:\n  [a,\n   ---\n   b]\n")["tags"],
+    )
+    asserts.equals(
+        env,
+        ["a", "b"],
+        parse_pubspec_document("name: p1\ntags:\n  [a, # c\n   b]\n")["tags"],
+    )
+    asserts.equals(
+        env,
+        ["foo", "bar"],
+        parse_pubspec_document("name: p1\ntags:\n  [foo # c\n   , bar]\n")["tags"],
+    )
+    asserts.equals(
+        env,
+        ["foo"],
+        parse_pubspec_document("name: p1\ntags:\n  [foo # c\n   ]\n")["tags"],
+    )
+    asserts.equals(env, "x", parse_pubspec_document("{name: x} # trailing\n")["name"])
+    return unittest.end(env)
+
 def _trim_gzip_trailing_nulls_test_impl(ctx):
     env = unittest.begin(ctx)
 
@@ -1112,6 +1213,7 @@ _t37_test = unittest.make(_parse_pubspec_plain_question_space_test_impl)
 _t38_test = unittest.make(_parse_pubspec_flow_blank_test_impl)
 _t39_test = unittest.make(_parse_pubspec_flow_document_test_impl)
 _t40_test = unittest.make(_parse_pubspec_json_document_test_impl)
+_t41_test = unittest.make(_parse_pubspec_flow_quote_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -1162,6 +1264,7 @@ def yaml_parser_test_suite(name):
         _t38_test,
         _t39_test,
         _t40_test,
+        _t41_test,
     )
     native.test_suite(
         name = name,
