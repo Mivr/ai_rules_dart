@@ -10,11 +10,15 @@
 // umask, and hard-linked over the lock path, so the lock appears at its final
 // 0666 mode atomically and never at a mode another user cannot open. Losing
 // the publish race falls back to the no-create open. After opening, the
-// descriptor is statted and anything but a regular file is refused; a lock of
-// our own is repaired to 0666 through the descriptor. No path-based check precedes the open and no chmod by path
-// touches the lock, so a symlink, directory, FIFO or other non-regular entry
-// at the lock path is never followed and never created through: the open
-// fails closed instead.
+// descriptor is statted and kept only when it is a regular file with link count
+// 1: a hard link planted at the lock path has another entry pointing at the
+// same file, so adopting it would serialize nothing and, worse, the adopted
+// lock's permissions could be relaxed through the descriptor onto a victim's
+// private file. Permissions change only on the temporary the publisher created
+// itself with O_EXCL, never on an adopted lock. No path-based check precedes
+// the open and no chmod by path touches the lock, so a symlink, directory,
+// FIFO or other non-regular entry at the lock path is never followed and never
+// created through: the open fails closed instead.
 //
 // The exclusive lock is an `fcntl` whole-file write lock on the descriptor,
 // the same domain `File.lockSync` takes, so trainings using either contend.
@@ -26,8 +30,9 @@ import 'dart:math';
 import 'dart:typed_data';
 
 /// A path-based stat result: the entry kind (see [jitEntryKind]), its owner
-/// uid and its full POSIX mode, without following symlinks.
-typedef JitStat = ({String kind, int uid, int mode});
+/// uid, its full POSIX mode and its hard-link count, without following
+/// symlinks.
+typedef JitStat = ({String kind, int uid, int mode, int nlink});
 
 /// The flags opening the lock: without O_CREAT for an existing lock, with
 /// O_CREAT|O_EXCL to create a missing one. Both carry O_NOFOLLOW and
@@ -261,16 +266,17 @@ String? jitUserName(int uid) {
 }
 
 /// Stats [path] without following symlinks, returning its kind (see
-/// [jitEntryKind]), its owner uid and its full mode for the fail-closed
-/// error. Null when the entry cannot be statted or the platform has no
-/// suitable call.
+/// [jitEntryKind]), its owner uid, its full mode and its hard-link count for
+/// the fail-closed error. Null when the entry cannot be statted or the platform
+/// has no suitable call.
 ///
 /// On Linux this is `statx(2)`, whose `struct statx` layout is the same on
-/// every architecture (the uid is a little-endian u32 at offset 20, the mode
-/// a little-endian u16 at offset 28); on macOS it is `lstat(2)` with the
-/// 64-bit `struct stat` layout (the mode at offset 4, the uid at offset 16;
-/// see [jitLstatSymbol]). All supported hosts are little-endian. Metadata
-/// only: the entry's content is never read.
+/// every architecture (the link count is a little-endian u32 at offset 16, the
+/// uid a little-endian u32 at offset 20, the mode a little-endian u16 at offset
+/// 28); on macOS it is `lstat(2)` with the 64-bit `struct stat` layout (the
+/// mode at offset 4, the link count at offset 6, the uid at offset 16; see
+/// [jitLstatSymbol]). All supported hosts are little-endian. Metadata only: the
+/// entry's content is never read.
 JitStat? jitStatEntry(String path) {
   if (Platform.isWindows) return null;
   try {
@@ -297,6 +303,7 @@ JitStat? jitStatEntry(String path) {
             kind: jitEntryKind(mode),
             uid: _jitU32(bytes, 20),
             mode: mode,
+            nlink: _jitU32(bytes, 16),
           );
         }
         if (Platform.isMacOS) {
@@ -312,6 +319,7 @@ JitStat? jitStatEntry(String path) {
             kind: jitEntryKind(mode),
             uid: _jitU32(bytes, 16),
             mode: mode,
+            nlink: _jitU16(bytes, 6),
           );
         }
         return null;
@@ -331,14 +339,15 @@ JitStat? jitStatEntry(String path) {
 /// [jitTryExclusiveLock] and release with [jitUnlockAndClose].
 ///
 /// An existing lock opens read-write with O_NOFOLLOW and without O_CREAT and
-/// is kept only when it is a regular file; a missing lock is published at 0666
-/// through a uniquely named temporary linked over the lock path (see
-/// [jitCreateAndPublishLock]), so the lock never exists at a mode another user
-/// cannot open, whatever the umask or the scheduling. Losing the publish race
-/// falls back to the no-create open. A lock of our own is repaired to 0666
-/// through the descriptor. Nothing is followed and nothing is created through:
-/// a symlink, directory, FIFO or other non-regular entry fails closed with its
-/// path, type and owner in [JitLockOpen.detail].
+/// is kept only when it is a regular file with link count 1; a missing lock is
+/// published at 0666 through a uniquely named temporary linked over the lock
+/// path (see [jitCreateAndPublishLock]), so the lock never exists at a mode
+/// another user cannot open, whatever the umask or the scheduling. Losing the
+/// publish race falls back to the no-create open. An adopted lock is never
+/// chmodded: only the temporary the publisher created itself with O_EXCL ever
+/// has its permissions changed. Nothing is followed and nothing is created
+/// through: a symlink, directory, FIFO, hard link or other non-regular entry
+/// fails closed with its path, type and owner in [JitLockOpen.detail].
 JitLockOpen jitOpenLock(String path) {
   final ready = _jitBackendFor(path);
   final backend = ready.backend;
@@ -721,9 +730,11 @@ int _jitErrno(ffi.DynamicLibrary lib) {
   }
 }
 
-/// Keeps an opened lock descriptor only when it is a regular file, repairing
-/// a lock of our own to 0666 through it. Anything else is closed and fails
-/// closed with its path, type and owner.
+/// Keeps an opened lock descriptor only when it is a regular file with link
+/// count 1. Anything else is closed and fails closed with its path, type and
+/// owner: a hard link planted at the lock path names another entry pointing at
+/// the same file, so the descriptor is dropped without touching permissions
+/// (relaxing them would widen the linked-to file for its owner).
 JitLockOpen _jitAdoptFd(ffi.DynamicLibrary lib, String path, int fd) {
   JitStat? info;
   try {
@@ -732,12 +743,9 @@ JitLockOpen _jitAdoptFd(ffi.DynamicLibrary lib, String path, int fd) {
     // This libc has no stat call for a descriptor: nothing to keep.
     info = null;
   }
-  if (info == null || info.kind != 'regular file') {
+  if (info == null || info.kind != 'regular file' || info.nlink != 1) {
     _jitClose(lib, fd);
     return _jitLockFailure(path, accessDenied: false);
-  }
-  if (info.uid == jitOwnUid()) {
-    _jitFchmod(lib, fd, 0x1b6);
   }
   return (fd: fd, detail: '', chmodRemedy: false, ownEntry: true);
 }
@@ -767,14 +775,24 @@ JitStat? _jitFstatFd(ffi.DynamicLibrary lib, int fd) {
       }
       final bytes = buf.asTypedList(64);
       final mode = _jitU16(bytes, 28);
-      return (kind: jitEntryKind(mode), uid: _jitU32(bytes, 20), mode: mode);
+      return (
+        kind: jitEntryKind(mode),
+        uid: _jitU32(bytes, 20),
+        mode: mode,
+        nlink: _jitU32(bytes, 16),
+      );
     }
     if (Platform.isMacOS) {
       final fstat = lib.lookupFunction<_FstatNative, _FstatDart>('fstat');
       if (fstat(fd, buf) != 0) return null;
       final bytes = buf.asTypedList(64);
       final mode = _jitU16(bytes, 4);
-      return (kind: jitEntryKind(mode), uid: _jitU32(bytes, 16), mode: mode);
+      return (
+        kind: jitEntryKind(mode),
+        uid: _jitU32(bytes, 16),
+        mode: mode,
+        nlink: _jitU16(bytes, 6),
+      );
     }
     return null;
   } finally {

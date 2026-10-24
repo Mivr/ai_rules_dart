@@ -1316,11 +1316,12 @@ void main(List<String> args) {
     }
   }, skip: Platform.isWindows ? posixOnlyReason : false);
 
-  test('lock file without group/other write bits is fixed to 0666', () {
-    // A lock of our own left with a restrictive umask's bits still opens
-    // append-only (we own it), and the open fixes the missing group/other
-    // write bits umask-proof, so every user on a shared host can open it.
-    // The lock file is never written.
+  test('pre-existing lock file keeps its mode after a training run', () {
+    // A pre-existing lock of our own opens append-only (we own it) and trains
+    // under its flock, but its permissions are never relaxed through the
+    // descriptor: only a temporary the publisher created itself with O_EXCL
+    // ever has its mode changed, so a hard link planted at the lock path
+    // cannot widen the linked-to file. The lock file is never written.
     final lock = File(snapshot.constantTrainLock);
     lock.writeAsStringSync('seed');
     snapshot.chmodFile(lock.path, 0x180); // 0600.
@@ -1329,7 +1330,7 @@ void main(List<String> args) {
       'lockbits_train',
     );
     trainAtConstant(dill: dill, out: '${tmp.path}/lockbits/app.jit');
-    expect(lock.statSync().mode & 0x1ff, 0x1b6);
+    expect(lock.statSync().mode & 0x1ff, 0x180, reason: 'mode never relaxed');
     expect(lock.readAsStringSync(), 'seed');
   }, skip: Platform.isWindows ? posixOnlyReason : false);
 
@@ -1870,6 +1871,8 @@ void main(List<String> args) {
     ]);
     expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
     File(lock).writeAsStringSync('not-ours');
+    snapshot.chmodFile(lock, 0x180); // 0600.
+    final modeBefore = File(lock).statSync().mode & 0x1ff;
     final outJit = File('${tmp.path}/lock_content/app.jit');
     snapshot.main([
       '--dart=${Platform.resolvedExecutable}',
@@ -1888,8 +1891,9 @@ void main(List<String> args) {
     );
     expect(
       File(lock).statSync().mode & 0x1ff,
-      0x1b6,
-      reason: 'lock of our own repaired to 0666 through its descriptor',
+      modeBefore,
+      reason:
+          'lock of our own keeps its mode: adopted locks are never chmodded',
     );
     expect(
       FileSystemEntity.typeSync(constant, followLinks: false),
@@ -2038,11 +2042,11 @@ void main(List<String> args) {
   }, skip: Platform.isWindows ? posixOnlyReason : false);
 
   test('non-regular entries at the lock path fail closed without being followed', () {
-    // A symlink, FIFO or directory at the lock path is never followed and
-    // never created through: the action fails closed naming the lock path,
-    // the entry's type and its owner, with the removal remedy (never the
-    // `chmod 0666` remedy, which applies only when a regular lock's own mode
-    // denies us). Same-uid variants (see the file header).
+    // A symlink, FIFO, directory or hard link at the lock path is never
+    // followed and never created through: the action fails closed naming the
+    // lock path, the entry's type and its owner, with the removal remedy (never
+    // the `chmod 0666` remedy, which applies only when a regular lock's own
+    // mode denies us). Same-uid variants (see the file header).
     final tool = stageTool();
     final dill = compileDill(
       'void main(List<String> args) {\n  print(10000);\n}\n',
@@ -2052,16 +2056,37 @@ void main(List<String> args) {
     File('${victim.path}/sentinel').writeAsStringSync('untouched');
     final user = currentUserName();
     final lockPath = snapshot.constantTrainLock;
-    final cases = <String, void Function()>{
-      'symlink': () => Link(lockPath).createSync(victim.path),
-      'FIFO': () {
-        final mkfifo = Process.runSync('mkfifo', [lockPath]);
-        expect(mkfifo.exitCode, 0, reason: '${mkfifo.stderr}');
-      },
-      'directory': () => Directory(lockPath).createSync(),
+    final cases = <String, ({void Function() plant, String kind})>{
+      'symlink': (
+        plant: () => Link(lockPath).createSync(victim.path),
+        kind: 'symlink',
+      ),
+      'FIFO': (
+        plant: () {
+          final mkfifo = Process.runSync('mkfifo', [lockPath]);
+          expect(mkfifo.exitCode, 0, reason: '${mkfifo.stderr}');
+        },
+        kind: 'FIFO',
+      ),
+      'directory': (
+        plant: () => Directory(lockPath).createSync(),
+        kind: 'directory',
+      ),
+      'hard link': (
+        plant: () {
+          final ln = Process.runSync('ln', [
+            '${victim.path}/sentinel',
+            lockPath,
+          ]);
+          expect(ln.exitCode, 0, reason: '${ln.stderr}');
+        },
+        // A planted hard link opens as a regular file: only its link count
+        // refuses it, and the error still names it a regular file.
+        kind: 'regular file',
+      ),
     };
     for (final entry in cases.entries) {
-      entry.value();
+      entry.value.plant();
       final outJit = '${tmp.path}/lockentry_${entry.key}_out/app.jit';
       final res = Process.runSync(Platform.resolvedExecutable, [
         tool,
@@ -2076,7 +2101,7 @@ void main(List<String> args) {
       final err = res.stderr as String;
       expect(err, contains('cannot train in ${snapshot.constantTrainDir}'));
       expect(err, contains(lockPath));
-      expect(err, contains(entry.key));
+      expect(err, contains(entry.value.kind));
       expect(err, contains('owned by uid'));
       expect(err, contains('($user)'));
       expect(err, contains('or root'));
@@ -2189,6 +2214,33 @@ void main(List<String> args) {
       'follow me',
       reason: 'link target never touched',
     );
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('lock open refuses a hard link without touching the linked file', () {
+    // A hard link planted at the lock path opens as a regular file we own, so
+    // only the link count gives it away: adopting it would relax the linked-to
+    // file's permissions through the descriptor onto a victim's private file
+    // (on hosts with `protected_hardlinks` off). The open fails closed
+    // instead, leaving the target's mode and bytes untouched. Same-uid (see
+    // the file header).
+    final victim = File('${tmp.path}/hardlink_victim')
+      ..writeAsStringSync('private');
+    snapshot.chmodFile(victim.path, 0x180); // 0600.
+    final link = '${tmp.path}/hardlink.lock';
+    final ln = Process.runSync('ln', [victim.path, link]);
+    expect(ln.exitCode, 0, reason: '${ln.stderr}');
+    final opened = locks.jitOpenLock(link);
+    expect(opened.fd, -1, reason: 'hard link refused by link count');
+    expect(opened.detail, contains('regular file'));
+    expect(opened.detail, contains(link));
+    expect(opened.detail, contains('owned by uid'));
+    expect(opened.chmodRemedy, isFalse);
+    expect(
+      victim.statSync().mode & 0x1ff,
+      0x180,
+      reason: 'victim mode never relaxed',
+    );
+    expect(victim.readAsStringSync(), 'private');
   }, skip: Platform.isWindows ? posixOnlyReason : false);
 
   test('racy claim at the constant training path fails closed', () {
