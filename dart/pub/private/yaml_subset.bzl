@@ -530,7 +530,7 @@ def _flow_fold_backslash(out, kept, had_trailing, scan):
     scan["escaped"] = False
     return out[:len(out) - 1], True, None
 
-def _flow_fold_blank(scan, st, line):
+def _flow_fold_blank(scan, st):
     """Folds one blank line into `st`. Returns a problem kind, or None to continue."""
     if st["cont"]:
         return "bs-blank"
@@ -587,7 +587,7 @@ def _flow_fold_lines(items, scan):
         line = item[0]
         content = item[1].lstrip(" \t")
         if content.strip() == "":
-            blank = _flow_fold_blank(scan, st, line)
+            blank = _flow_fold_blank(scan, st)
             if blank != None:
                 return "", (blank, line)
             continue
