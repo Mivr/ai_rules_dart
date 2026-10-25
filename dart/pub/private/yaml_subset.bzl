@@ -434,7 +434,7 @@ def _parse_document(content, strict_lines):
     bad_line = _first_bad_utf8_line(stripped)
     if bad_line > 0:
         state.problems.append("invalid UTF-8 at line %d is not supported" % bad_line)
-    lines, tag_prefixes = _first_document_lines(stripped, state)
+    lines, tag_prefixes, dropped_marker = _first_document_lines(stripped, state)
     state = struct(problems = state.problems, strict_lines = strict_lines, tag_prefixes = tag_prefixes)
     first = _first_content(lines)
     if first.text[:1] in ["{", "["] and _allows_flow_doc(lines, first.index):
@@ -450,7 +450,7 @@ def _parse_document(content, strict_lines):
             state.problems.append(_flow_doc_problem(lines))
             return None, state.problems
         return value, state.problems
-    return _parse_block(lines, state), state.problems
+    return _parse_block(lines, state, not dropped_marker), state.problems
 
 def _first_content(lines):
     """Returns the first line with block content as struct(index, text).
@@ -651,8 +651,10 @@ def _marker_rest_problem(rest, idx):
 def _first_document_lines(content, state):
     """Returns the lines of the first document with its `%TAG` prefixes.
 
-    Returns (lines, tag_prefixes), where lines splits as yaml.bzl splits
-    them and tag_prefixes maps each declared `%TAG` handle to its prefix.
+    Returns (lines, tag_prefixes, dropped_marker), where lines splits as
+    yaml.bzl splits them, tag_prefixes maps each declared `%TAG` handle to
+    its prefix, and dropped_marker tells whether a pre-content `---` was
+    consumed, so lines[0] is not the file's first line.
     One stream carries one document, as pub reads it: a second column-0
     `---` line is a problem naming its line, even before any content and
     even with only comments after it, and so is any content after a
@@ -673,7 +675,7 @@ def _first_document_lines(content, state):
         idx += 1
         if line.startswith("---") and line[3:4] in ["", " ", "\t"]:
             if _doc_dash_line(line, idx, current, doc, state):
-                return current, doc["tags"]
+                return current, doc["tags"], doc["marker"]
             continue
         if line.startswith("..."):
             if _doc_dots_line(line, idx, current, doc, state):
@@ -682,7 +684,7 @@ def _first_document_lines(content, state):
         if doc["ended"]:
             if _doc_tail_content(line):
                 state.problems.append("content after document end (...) at line %d" % idx)
-                return current, doc["tags"]
+                return current, doc["tags"], doc["marker"]
             continue
         if not doc["content"] and not doc["marker"] and not doc["ended"] and line.strip().startswith("%"):
             if line.startswith("%"):
@@ -699,7 +701,7 @@ def _first_document_lines(content, state):
             doc["content"] = True
     if doc["pending"]:
         state.problems.append("directive without document start at line %d" % len(raw_lines))
-    return current, doc["tags"]
+    return current, doc["tags"], doc["marker"]
 
 def _yaml_version_ok(version):
     """Returns whether a `%YAML` version reads as pub reads it: major 1 with minor 1 or more.
@@ -1829,8 +1831,13 @@ def _init_block_root(text, indent, anchors, stack, state, line):
         return root, False
     return _parse_scalar(text, anchors, state, line), True
 
-def _parse_block(lines, state):
+def _parse_block(lines, state, first_line):
     """Parses the block-structured lines of one document into a value.
+
+    `first_line` tells whether lines[0] is the file's first line: there
+    tabs and spaces before the first token are separation, not indentation,
+    as pub reads them. A consumed pre-content `---` shifts every line down,
+    so only an unshifted first line is exempt.
 
     An open container is a frame, a dict {kind, indent, value, entry}. `kind`
     is "map" or "seq", `indent` is the column its entries must be nested
@@ -1860,12 +1867,16 @@ def _parse_block(lines, state):
                 state.problems.append("byte-order mark at line %d is not supported" % (idx + 1))
             idx += 1
             continue
-        if raw.startswith("\t") or (raw.strip(" \t") != "" and "\t" in raw[:_indent_width(raw)]):
+        first_sep = idx == 0 and first_line
+        if not first_sep and (raw.startswith("\t") or (raw.strip(" \t") != "" and "\t" in raw[:_indent_width(raw)])):
             # A tab never indents: a line starting with a tab, and a content
             # line with a tab in its leading whitespace, are problems naming
-            # the line, as pub rejects them. A whitespace-only line starting
-            # with spaces stays blank, as pub skips it, and deeper lines of a
-            # folded scalar never reach here, as the fold consumes them.
+            # the line, as pub rejects them. On the file's first line they
+            # are separation before the first token, as pub reads them, so
+            # the first line of an unshifted document stays exempt. A
+            # whitespace-only line starting with spaces stays blank, as pub
+            # skips it, and deeper lines of a folded scalar never reach
+            # here, as the fold consumes them.
             state.problems.append("tab indentation at line %d is not supported" % (idx + 1))
             idx += 1
             continue

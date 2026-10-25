@@ -815,6 +815,47 @@ def _tab_indent_test_impl(ctx):
     asserts.equals(env, {"a": "x\n\t\ny\n"}, parse_document("a: >\n  x\n  \t\n  y\n"))
     asserts.equals(env, {"a": "x\n\n\t\ny\n"}, parse_document("a: >\n  x\n\n  \t\n  y\n"))
 
+    # On the file's first line tabs and spaces before the first token are
+    # separation, not indentation, as pub reads them (package:yaml 3.1.4
+    # with the pinned SDK 3.13.5). A tab-indented first line still sets
+    # the indent, so a column-0 second line ends the document there, and a
+    # consumed `---`, a blank line or a comment first line keeps later tabs
+    # failing, as pub rejects them.
+    asserts.equals(env, {"a": "b"}, parse_document("\t# c\na: b\n"))
+    asserts.equals(env, {"a": "b"}, parse_document("\ta: b\n"))
+    asserts.equals(env, {"a": "b"}, parse_document(" \ta: b\n"))
+    asserts.equals(env, {"a": "b"}, parse_document("\t\ta: b\n"))
+    asserts.equals(env, ["x"], parse_document("\t- x\n"))
+    asserts.equals(env, {"a": "b"}, parse_document("\t{a: b}\n"))
+    asserts.equals(
+        env,
+        ["unreadable line 2: \"c: d\""],
+        document_problems("\ta: b\nc: d\n", True),
+    )
+    asserts.equals(
+        env,
+        # A consumed `---` shifts later lines up one in block problems:
+        # that numbering predates this change, as the marker line never
+        # reaches the parser. This names the branch's line 1, physical 2.
+        ["tab indentation at line 1 is not supported"],
+        document_problems("---\n\ta: b\n", True),
+    )
+    asserts.equals(
+        env,
+        ["tab indentation at line 2 is not supported"],
+        document_problems("\n\ta: b\n", True),
+    )
+    asserts.equals(
+        env,
+        ["tab indentation at line 2 is not supported"],
+        document_problems("# c\n\ta: b\n", True),
+    )
+    asserts.equals(
+        env,
+        ["tab indentation at line 2 is not supported"],
+        document_problems("\ta: b\n\tc: d\n", True),
+    )
+
     # A leading blank line with spaces past the content still fails, as pub
     # rejects it; only spaces count, so the tab past them is content.
     value, problems = document_value_and_problems("description: >\n   \t\n  x\n", True)
