@@ -396,52 +396,70 @@ def _pending_flow_raws(lines, idx, parent_indent):
         next_idx += 1
     return items, next_idx
 
-def _block_head_quotes(core):
-    """Counts the quotes `core` opens and closes. Returns (opened, closed).
+def _block_quote_single(core, i, st):
+    """Steps an index inside single quotes. Returns the next index.
 
-    A quote opens only where a scalar starts, as in `_flow_scan_open`, so an
-    apostrophe in a plain scalar never opens one; `''` in single quotes is
-    one escaped quote and a backslash escapes the next character in double
-    quotes, as in `_flow_scan_quoted`.
+    `''` is one escaped quote; any other `'` closes, as in
+    `_flow_scan_quoted`.
     """
-    single = False
-    double = False
-    escaped = False
-    plain = False
-    opened = 0
-    closed = 0
+    if core[i] != "'":
+        return i + 1
+    if i + 1 < len(core) and core[i + 1] == "'":
+        return i + 2
+    st["single"] = False
+    st["closed"] += 1
+    return i + 1
+
+def _block_quote_double(core, i, st):
+    """Steps an index inside double quotes. Returns the next index.
+
+    A backslash escapes the next character, as in `_flow_scan_quoted`.
+    """
+    if core[i] == "\\":
+        st["escaped"] = True
+    elif core[i] == '"':
+        st["double"] = False
+        st["closed"] += 1
+    return i + 1
+
+def _block_quote_plain(core, i, st):
+    """Steps an index outside quotes. Returns the next index.
+
+    A quote opens only where a scalar starts, as in `_flow_scan_open`, so
+    an apostrophe in a plain scalar never opens one.
+    """
+    ch = core[i]
+    if ch == "'" or ch == '"':
+        if not st["plain"]:
+            st["opened"] += 1
+            if ch == "'":
+                st["single"] = True
+            else:
+                st["double"] = True
+    elif ch not in [" ", "\t"]:
+        st["plain"] = True
+    return i + 1
+
+def _block_quote_char(core, i, st):
+    """Steps one quote-counting character. Returns the next index."""
+    if st["escaped"]:
+        st["escaped"] = False
+        return i + 1
+    if st["single"]:
+        return _block_quote_single(core, i, st)
+    if st["double"]:
+        return _block_quote_double(core, i, st)
+    return _block_quote_plain(core, i, st)
+
+def _block_head_quotes(core):
+    """Counts the quotes `core` opens and closes. Returns (opened, closed)."""
+    st = {"single": False, "double": False, "escaped": False, "plain": False, "opened": 0, "closed": 0}
     i = 0
     for _ in range(len(core) + 1):
         if i >= len(core):
             break
-        ch = core[i]
-        nxt = core[i + 1] if i + 1 < len(core) else ""
-        if escaped:
-            escaped = False
-        elif single:
-            if ch == "'":
-                if nxt == "'":
-                    i += 1
-                else:
-                    single = False
-                    closed += 1
-        elif double:
-            if ch == "\\":
-                escaped = True
-            elif ch == '"':
-                double = False
-                closed += 1
-        elif ch == "'" or ch == '"':
-            if not plain:
-                opened += 1
-                if ch == "'":
-                    single = True
-                else:
-                    double = True
-        elif ch not in [" ", "\t"]:
-            plain = True
-        i += 1
-    return (opened, closed)
+        i = _block_quote_char(core, i, st)
+    return (st["opened"], st["closed"])
 
 def _block_fail_text(lines, fail, head_idx, entry_text):
     """The display text for a block scalar problem at 0-based `fail`.
@@ -465,58 +483,99 @@ def _block_dash_colon(rest):
     """
     return ": " in rest or ":\t" in rest or rest.endswith(":")
 
-def _block_fold_scalar(lines, start, parent_indent, head_text, raw_head, head_idx, entry_text, question_stops, anchors, state):
-    """Folds a block scalar head with its continuation lines. Returns (value, next index, read).
+def _flow_fresh_res():
+    """A fresh per-line scan result for `_flow_scan_text`."""
+    return {"kept": [], "plain_comment": False, "pct_flag": False, "stopped": False, "skip": False}
 
-    `head_text` is the same-line value after `key:` or `- `, comment-free as
-    `_block_line_text` strips it, or "" when the value starts on a later
-    line; `raw_head` is the same slice with its comment intact, "" when
-    pending. `head_idx` is the head's 0-based line, `entry_text` the whole
-    entry for head problems, and `question_stops` whether a `?` line ends
-    the scalar instead of folding into it. When read is False, value is None
-    and a problem names the failing line.
+def _block_fold_begin(head, core, scan):
+    """Initializes one block fold. Returns the mutable fold dict.
 
-    The head folds with its deeper lines through the same quote-aware pass
-    the flow fold uses (`_flow_scan_text` with `_flow_fold_lines`), so a
-    break folds to one space, blanks fold quote-aware, and comments and `%`
-    behave as pub reads them. Anchor and tag prefixes are stripped before
-    scanning, so a quote after `&a ` still opens, and re-attached before
-    parsing, so `&a one` folding with `two` reads the anchor `one two`.
-    Checked against package:yaml 3.1.4, a `?` line without a colon folds
-    into an open scalar except in a nested mapping, where it opens an
-    explicit key; a `- ` line without a colon folds into an open scalar at
-    any depth, while one with a colon ends it. A comment-only or
-    trailing-comment line ends a plain scalar silently; a tab-indented line
-    is a problem naming the line. Text after a same-line closing quote, a
-    second quoted scalar on the head line, and a continuation of an alias
-    are problems naming the head line, as pub rejects them.
+    `head` carries the head line as {text, raw, idx, entry}: `text` is the
+    same-line value after `key:` or `- `, comment-free as `_block_line_text`
+    strips it, or "" when the value starts on a later line; `raw` is the
+    same slice with its comment intact, "" when pending; `idx` is the head's
+    0-based line and `entry` the whole entry for head problems.
+
+    The head scans through the quote-aware pass, and a head comment poisons
+    the scalar, ending it silently as pub ends it. Anchor and tag prefixes
+    are stripped before scanning, so a quote after `&a ` still opens, and
+    re-attached before parsing, so `&a one` folding with `two` reads the
+    anchor `one two`.
     """
-    core = _flow_head_text(head_text)
-    if core[:1] in ["[", "{"]:
-        # A flow collection closed on its own line reads within that line,
-        # as before: deeper lines are placed downstream, and a broken flow
-        # stays an unreadable flow value naming the line.
-        return _parse_scalar(head_text, anchors, state, head_idx + 1), start, True
     if core:
-        prefix = head_text[:len(head_text) - len(core)]
-    elif head_text:
-        prefix = head_text + " "
+        prefix = head["text"][:len(head["text"]) - len(core)]
+    elif head["text"]:
+        prefix = head["text"] + " "
     else:
         prefix = ""
-    scan = _flow_scan_start()
     if core:
-        _flow_scan_text(core, scan, {"kept": [], "plain_comment": False, "pct_flag": False, "stopped": False, "skip": False})
+        _flow_scan_text(core, scan, _flow_fresh_res())
     poison = False
-    if raw_head:
+    if head["raw"]:
         probe = _flow_scan_start()
-        raw_res = {"kept": [], "plain_comment": False, "pct_flag": False, "stopped": False, "skip": False}
-        _flow_scan_text(raw_head, probe, raw_res)
+        raw_res = _flow_fresh_res()
+        _flow_scan_text(head["raw"], probe, raw_res)
         poison = raw_res["plain_comment"] or (raw_res["stopped"] and not raw_res["pct_flag"])
     opened, closed = _block_head_quotes(core)
     head_complete = core != "" and core[:1] in ["'", '"'] and not scan["single"] and not scan["double"]
-    seen = core != ""
-    items = [(head_idx + 1, head_text)] if head_text != "" else []
-    consumed = 0
+    items = [(head["idx"] + 1, head["text"])] if head["text"] != "" else []
+    return {"prefix": prefix, "poison": poison, "opened": opened, "closed": closed, "head_complete": head_complete, "seen": core != "", "items": items, "consumed": 0}
+
+def _block_fold_quoted(raw, idx, scan, fold):
+    """Takes a line inside open quotes at any indent.
+
+    Inside quotes every line is content, as pub reads it, including
+    markers, entries and `%` lines.
+    """
+    fold["items"].append((idx + 1, raw))
+    _flow_scan_text(raw.lstrip(" \t"), scan, _flow_fresh_res())
+    fold["consumed"] += 1
+    fold["seen"] = True
+
+def _block_fold_plain(raw, scan, fold, question_stops):
+    """Decides one deeper plain line. Returns take, break, fail or comment.
+
+    Checked against package:yaml 3.1.4, a `?` line without a colon folds
+    into an open scalar except in a nested mapping, where it opens an
+    explicit key; a `- ` line without a colon folds into an open scalar at
+    any depth, while one with a colon ends it. A `:` line never continues a
+    scalar: pub rejects it where an entry belongs, so ending the scalar
+    fails closed downstream. An indented `%` line is content once the scalar
+    is open, as pub folds it, and a problem where pub rejects it otherwise.
+    A comment-only or trailing-comment line ends a plain scalar, as pub ends
+    it; the comment line itself is silent, as pub places it.
+    """
+    text = raw.lstrip(" \t")
+    res = _flow_fresh_res()
+    _flow_scan_text(text, scan, res)
+    if res["pct_flag"]:
+        return "take" if fold["seen"] else "fail"
+    if res["plain_comment"] or res["stopped"]:
+        return "comment"
+    if fold["poison"]:
+        return "break"
+    if text == ":" or text[:2] == ": " or text[:2] == ":\t":
+        return "break"
+    if text[:1] == "?":
+        if _find_colon(text) >= 0 or not fold["seen"] or question_stops:
+            return "break"
+        return "take"
+    if _is_dash(text):
+        if not fold["seen"] or text == "-":
+            return "break"
+        if _block_dash_colon(text[1:]):
+            return "break"
+        return "take"
+    if _is_mapping_start(text) or _is_explicit_key_text(text):
+        return "break"
+    return "take"
+
+def _block_fold_gather(lines, start, parent_indent, scan, fold, question_stops):
+    """Gathers a scalar's continuation lines. Returns (next index, fail).
+
+    `fail` is the 0-based failing line, or -1: a tab-indented line is a
+    problem naming the line, as pub rejects it.
+    """
     idx = start
     fail = -1
     for _ in range(len(lines) + 1):
@@ -524,74 +583,43 @@ def _block_fold_scalar(lines, start, parent_indent, head_text, raw_head, head_id
             break
         raw = lines[idx]
         if raw.strip() == "":
-            if not poison:
-                items.append((idx + 1, ""))
+            if not fold["poison"]:
+                fold["items"].append((idx + 1, ""))
             idx += 1
             continue
         if scan["single"] or scan["double"]:
-            # Inside quotes every line is content at any indent, as pub
-            # reads it, including markers, entries and `%` lines.
-            items.append((idx + 1, raw))
-            res = {"kept": [], "plain_comment": False, "pct_flag": False, "stopped": False, "skip": False}
-            _flow_scan_text(raw.lstrip(" \t"), scan, res)
-            consumed += 1
-            seen = True
+            _block_fold_quoted(raw, idx, scan, fold)
             idx += 1
             continue
-        indent = _indent_width(raw)
-        if indent <= parent_indent:
+        if _indent_width(raw) <= parent_indent:
             break
-        if "\t" in raw[:indent]:
+        if "\t" in raw[:_indent_width(raw)]:
             fail = idx
             break
-        text = raw.lstrip(" \t")
-        res = {"kept": [], "plain_comment": False, "pct_flag": False, "stopped": False, "skip": False}
-        _flow_scan_text(text, scan, res)
-        if res["pct_flag"]:
-            # An indented `%` line is content once the scalar is open, as
-            # pub folds it, and a problem where pub rejects it otherwise.
-            if not seen:
-                fail = idx
-                break
-            items.append((idx + 1, raw))
-            consumed += 1
-            seen = True
-            idx += 1
-            continue
-        if res["plain_comment"] or res["stopped"]:
-            # A comment-only or trailing-comment line ends a plain scalar,
-            # as pub ends it. The comment line itself is silent, as pub
-            # places it: it is consumed, and what follows the comments is
-            # placed downstream.
-            poison = True
-            idx += 1
-            continue
-        if poison:
+        action = _block_fold_plain(raw, scan, fold, question_stops)
+        if action == "take":
+            fold["items"].append((idx + 1, raw))
+            fold["consumed"] += 1
+            fold["seen"] = True
+        elif action == "comment":
+            fold["poison"] = True
+        elif action == "fail":
+            fail = idx
             break
-        if text == ":" or text[:2] == ": " or text[:2] == ":\t":
-            # A `:` line never continues a scalar: pub rejects it where an
-            # entry belongs, so ending the scalar fails closed downstream.
+        else:
             break
-        if text[:1] == "?":
-            # A `?` line without a colon folds into an open scalar, as pub
-            # folds it, except in a nested mapping, where it opens an
-            # explicit key instead.
-            if _find_colon(text) >= 0 or not seen or question_stops:
-                break
-        elif _is_dash(text):
-            if not seen or text == "-":
-                break
-            if _block_dash_colon(text[1:]):
-                break
-        elif _is_mapping_start(text) or _is_explicit_key_text(text):
-            break
-        items.append((idx + 1, raw))
-        consumed += 1
-        seen = True
         idx += 1
-    if fail >= 0:
-        _record_unreadable(state, fail, _block_fail_text(lines, fail, head_idx, entry_text))
-        return None, idx + 1, False
+    return (idx, fail)
+
+def _block_fold_finish(fold, core, lines, idx, head, anchors, state, scan):
+    """Folds and validates the gathered lines. Returns (value, next, read).
+
+    When read is False, value is None and a problem names the failing line.
+    Text after a same-line closing quote, a second quoted scalar on the head
+    line, and a continuation of an alias are problems naming the head line,
+    as pub rejects them.
+    """
+    items = fold["items"]
     for _ in range(len(items) + 1):
         if not items or items[-1][1] != "":
             break
@@ -599,18 +627,42 @@ def _block_fold_scalar(lines, start, parent_indent, head_text, raw_head, head_id
     folded, problem = _flow_fold_lines(items, _flow_scan_start())
     if problem != None:
         line = problem[1] - 1
-        _record_unreadable(state, line, _block_fail_text(lines, line, head_idx, entry_text))
+        _record_unreadable(state, line, _block_fail_text(lines, line, head["idx"], head["entry"]))
         return None, idx, False
     if scan["single"] or scan["double"]:
-        _record_unreadable(state, head_idx, entry_text or head_text)
+        _record_unreadable(state, head["idx"], head["entry"] or head["text"])
         return None, idx, False
-    if head_complete and (opened != 1 or closed != 1 or not _is_quoted(core) or consumed > 0):
-        _record_unreadable(state, head_idx, entry_text or head_text)
+    if fold["head_complete"] and (fold["opened"] != 1 or fold["closed"] != 1 or not _is_quoted(core) or fold["consumed"] > 0):
+        _record_unreadable(state, head["idx"], head["entry"] or head["text"])
         return None, idx, False
-    if core[:1] == "*" and consumed > 0:
-        _record_unreadable(state, head_idx, entry_text or head_text)
+    if core[:1] == "*" and fold["consumed"] > 0:
+        _record_unreadable(state, head["idx"], head["entry"] or head["text"])
         return None, idx, False
-    return _parse_scalar(prefix + folded, anchors, state, head_idx + 1), idx, True
+    return _parse_scalar(fold["prefix"] + folded, anchors, state, head["idx"] + 1), idx, True
+
+def _block_fold_scalar(lines, start, parent_indent, head, question_stops, anchors, state):
+    """Folds a block scalar head with its continuation lines. Returns (value, next index, read).
+
+    `head` carries the head line as {text, raw, idx, entry}; see
+    `_block_fold_begin`. The head folds with its deeper lines through the
+    same quote-aware pass the flow fold uses (`_flow_scan_text` with
+    `_flow_fold_lines`), so a break folds to one space, blanks fold
+    quote-aware, and comments and `%` behave as pub reads them. A
+    tab-indented line is a problem naming the line.
+    """
+    core = _flow_head_text(head["text"])
+    if core[:1] in ["[", "{"]:
+        # A flow collection closed on its own line reads within that line,
+        # as before: deeper lines are placed downstream, and a broken flow
+        # stays an unreadable flow value naming the line.
+        return _parse_scalar(head["text"], anchors, state, head["idx"] + 1), start, True
+    scan = _flow_scan_start()
+    fold = _block_fold_begin(head, core, scan)
+    idx, fail = _block_fold_gather(lines, start, parent_indent, scan, fold, question_stops)
+    if fail >= 0:
+        _record_unreadable(state, fail, _block_fail_text(lines, fail, head["idx"], head["entry"]))
+        return None, idx + 1, False
+    return _block_fold_finish(fold, core, lines, idx, head, anchors, state, scan)
 
 def _flow_scan_start():
     """A fresh quote-aware scan state for one folded flow."""
@@ -916,7 +968,7 @@ def _consume_pending_scalar(cursor, pending, env):
             state.problems.append(_span_flow_problem(idx + 1))
         end = _spanning_flow_end(lines, idx + 1, parent_indent, text0, anchors)
         return end if end != None else next_idx
-    value, next_idx, _read = _block_fold_scalar(lines, idx, parent_indent, "", "", idx, "", type(parent) == "dict" and parent_indent > 0, anchors, state)
+    value, next_idx, _read = _block_fold_scalar(lines, idx, parent_indent, {"text": "", "raw": "", "idx": idx, "entry": ""}, type(parent) == "dict" and parent_indent > 0, anchors, state)
     parent[slot] = value
     if pending["anchor"] != None:
         anchors[pending["anchor"]] = _clone(value)
@@ -1144,7 +1196,7 @@ def _map_line(lines, idx, indent, text, frame, anchors, state):
         return _map_store(mapping, key, flow_value, flow_next, line, state)
 
     raw_head = lines[idx][indent + _find_colon(text) + 1:]
-    value, next_idx, _read = _block_fold_scalar(lines, idx + 1, indent, value_text, raw_head, idx, text, indent > 0, anchors, state)
+    value, next_idx, _read = _block_fold_scalar(lines, idx + 1, indent, {"text": value_text, "raw": raw_head, "idx": idx, "entry": text}, indent > 0, anchors, state)
     return _map_store(mapping, key, value, next_idx, line, state)
 
 def _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state):
@@ -1174,7 +1226,7 @@ def _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state):
         items.append(item)
         stack.append({"kind": "map", "indent": indent, "value": item, "entry": None})
         return idx + 1, {"parent": item, "slot": key, "indent": indent, "anchor": None}
-    value, next_idx, _read = _block_fold_scalar(lines, idx + 1, indent, value_text, head, idx, text, True, anchors, state)
+    value, next_idx, _read = _block_fold_scalar(lines, idx + 1, indent, {"text": value_text, "raw": head, "idx": idx, "entry": text}, True, anchors, state)
     item[key] = value
     items.append(item)
     stack.append({"kind": "map", "indent": indent, "value": item, "entry": None})
@@ -1217,7 +1269,7 @@ def _seq_line(lines, idx, indent, text, frame, anchors, stack, state):
         state.problems.append(_span_flow_problem(line))
         items.append(None)
         return end, None
-    value, next_idx, _read = _block_fold_scalar(lines, idx + 1, indent, rest, after_dash, idx, text, False, anchors, state)
+    value, next_idx, _read = _block_fold_scalar(lines, idx + 1, indent, {"text": rest, "raw": after_dash, "idx": idx, "entry": text}, False, anchors, state)
     items.append(value)
     return next_idx, None
 
