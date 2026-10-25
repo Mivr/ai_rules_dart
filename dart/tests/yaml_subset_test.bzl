@@ -254,9 +254,10 @@ def _block_scalar_test_impl(ctx):
     )
     asserts.equals(env, "one\ntwo\n", parsed["a"])
 
-    # yaml.bzl turns a blank line in a folded scalar into two newlines, where
-    # YAML 1.2 specifies one. The parity check requires yaml.bzl's output.
-    asserts.equals(env, "folded text\n\nnext\n", parsed["b"])
+    # A blank line in a folded scalar is one break: the break after the
+    # content line drops and the blank line adds one, as pub folds it
+    # (package:yaml 3.1.4 with the pinned SDK 3.13.5).
+    asserts.equals(env, "folded text\nnext\n", parsed["b"])
     asserts.equals(env, "strip", parsed["c"])
     asserts.equals(env, "keep\n\n", parsed["d"])
     asserts.equals(env, "  indented\n", parsed["e"])

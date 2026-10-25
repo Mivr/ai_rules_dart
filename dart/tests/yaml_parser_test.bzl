@@ -1326,6 +1326,41 @@ def _parse_pubspec_block_fold_test_impl(ctx):
     asserts.true(env, err != None and "x" in err and "//:pubspec.yaml" in err and "line 4" in err)
     return unittest.end(env)
 
+def _parse_pubspec_literal_fold_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Folded (`>`) and literal (`|`) block scalars read as pub reads them
+    # (package:yaml 3.1.4 with the pinned SDK 3.13.5): a break between two
+    # content lines folds to one space, a break after a content line is
+    # dropped when blank lines follow it, each blank line becomes one "\n",
+    # leading blanks are kept, breaks around more-indented lines are kept,
+    # and spaces beyond the indentation on a blank line are content.
+    h = "name: x\nenvironment:\n  sdk: ^3.0.0\n"
+    asserts.equals(env, "alpha\nbeta\n", parse_pubspec_document(h + "notes: >\n  alpha\n\n  beta\n")["notes"])
+    asserts.equals(env, "alpha\n\nbeta\n", parse_pubspec_document(h + "notes: >\n  alpha\n\n\n  beta\n")["notes"])
+    asserts.equals(env, "\nalpha\n", parse_pubspec_document(h + "notes: >\n\n  alpha\n")["notes"])
+    asserts.equals(env, ["alpha\nbeta\n"], parse_pubspec_document(h + "tags:\n  - >\n    alpha\n\n    beta\n")["tags"])
+    asserts.equals(env, "alpha\n \nbeta", parse_pubspec_document(h + "notes: >-\n  alpha\n   \n  beta\n")["notes"])
+    asserts.equals(env, "", parse_pubspec_document(h + "notes: >\nnext: 1\n")["notes"])
+    asserts.equals(env, "\n\n", parse_pubspec_document(h + "notes: >+\n\n\nnext: 1\n")["notes"])
+    asserts.equals(env, "", parse_pubspec_document(h + "notes: |\n\n\nnext: 1\n")["notes"])
+    asserts.equals(env, [{"k": "x y\n"}], parse_pubspec_document(h + "tags:\n  - k: >\n      x\n      y\n")["tags"])
+    asserts.equals(env, [{"k": "x\n\ny\n"}], parse_pubspec_document(h + "tags:\n  - k: |\n      x\n\n      y\n")["tags"])
+
+    # A header with text after the indicator, and a line less indented than
+    # the scalar, end in failure naming the package and the line, as pub
+    # rejects every one of these documents.
+    for bad in [
+        h + "notes: > foo\n  bar\n",
+        h + "notes: >x\n  alpha\n",
+        h + "notes: >\n  alpha\n beta\n",
+        h + "notes: >\n    beta\n  gamma\n",
+        h + "notes: >2\n x\n",
+    ]:
+        err = parse_pubspec_document_error(bad, "//:pubspec.yaml")
+        asserts.true(env, err != None and "x" in err and "//:pubspec.yaml" in err, "rejected block scalar reads an error: %r" % bad)
+    return unittest.end(env)
+
 _pub_lock_package_extracted_test = analysistest.make(_pub_lock_package_extracted_test_impl)
 
 _t0_test = unittest.make(_parse_lock_packages_test_impl)
@@ -1375,6 +1410,7 @@ _t43_test = unittest.make(_parse_pubspec_flow_document_error_test_impl)
 _t44_test = unittest.make(_parse_pubspec_flow_apos_test_impl)
 _t45_test = unittest.make(_parse_pubspec_flow_backslash_test_impl)
 _t46_test = unittest.make(_parse_pubspec_block_fold_test_impl)
+_t47_test = unittest.make(_parse_pubspec_literal_fold_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -1431,6 +1467,7 @@ def yaml_parser_test_suite(name):
         _t44_test,
         _t45_test,
         _t46_test,
+        _t47_test,
     )
     native.test_suite(
         name = name,

@@ -59,7 +59,17 @@ Supported:
   after `key:` or `-` fold through this same pass; see below. A comment that ends a line
   inside a plain scalar and a `%` outside quotes and plain scalars are not
   supported, and fail naming the line.
-- block scalars `|` and `>` with chomping and indentation indicators
+- block scalars `|` and `>` with chomping and indentation indicators: `|`
+  joins lines with breaks and `>` folds them, as pub folds them. A break
+  between base-indented lines is one space, the break after a base line
+  drops where blank lines follow it, each blank line is one break, leading
+  blanks are kept, breaks around more-indented lines are kept, and spaces
+  beyond the indentation on a blank line are content. Clip keeps one final
+  break only when anything was read, keep adds the final break and every
+  trailing blank, and strip drops them, including empty scalars. A header
+  with other text fails naming the line, as pub rejects it, and without
+  an explicit indicator so does a leading blank line deeper than the
+  content; with one such a line strips to content instead.
 - plain, quoted, typed and anchored scalars continued on more-indented
   lines, folded through the same quote-aware pass: a break between content
   lines is one space, quotes close at any indent, and indented markers read
@@ -86,6 +96,12 @@ testing, so the projections are unaffected on real pubspec files:
   skipped before), a tab-indented continuation (folded before), a stray
   line after a comment-ended scalar (folded before), and an indented marker
   after a same-line scalar (reported before, pub folds it into the scalar).
+  A folded `>` scalar with blank lines read an extra break before, an
+  all-blank clip or keep scalar added a break before, a `|`/`>` header with
+  trailing text read as a scalar before, a `- key: >` or `|` value read as
+  plain before, and a block scalar ended by a less-indented line folded
+  that line in before; pub rejects the header and ending forms and folds
+  the rest as read now.
 - flow collections that span lines are not supported, unless the folded
   lines read as one flow collection as pub reads them; yaml.bzl reads all
   spanning flows. The supported fold matches pub on the oracle-checked
@@ -1188,7 +1204,7 @@ def _map_line(lines, idx, indent, text, frame, anchors, state):
         return idx + 1, {"parent": mapping, "slot": key, "indent": indent, "anchor": anchor}
 
     if value_text.startswith("|") or value_text.startswith(">"):
-        parsed, next_idx = _parse_block_scalar(lines, idx + 1, indent, value_text)
+        parsed, next_idx, _ok = _parse_block_scalar(lines, idx + 1, indent, indent, value_text, idx, text, state)
         return _map_store(mapping, key, parsed, next_idx, line, state)
 
     flow_value, flow_next, flow_done = _map_flow_value(lines, idx, indent, text, value_text, anchors, state, line)
@@ -1209,6 +1225,14 @@ def _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state):
     after_dash = lines[idx][indent + 1:]
     gap = len(after_dash) - len(after_dash.lstrip(" \t"))
     head = after_dash[gap + _find_colon(rest) + 1:]
+    if value_text.startswith("|") or value_text.startswith(">"):
+        # A block scalar after `- key:` reads as pub reads it; an
+        # indentation indicator counts from the key's own column.
+        parsed, next_idx, _ok = _parse_block_scalar(lines, idx + 1, indent, indent + 1 + gap, value_text, idx, text, state)
+        item[key] = parsed
+        items.append(item)
+        stack.append({"kind": "map", "indent": indent, "value": item, "entry": None})
+        return next_idx, None
     flow_value, flow_next, flow_read = _folded_head_flow(head, line, lines, idx, indent, anchors, state)
     if flow_read:
         item[key] = flow_value
@@ -1253,7 +1277,7 @@ def _seq_line(lines, idx, indent, text, frame, anchors, stack, state):
         return _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state)
 
     if rest.startswith("|") or rest.startswith(">"):
-        parsed, next_idx = _parse_block_scalar(lines, idx + 1, indent, rest)
+        parsed, next_idx, _ok = _parse_block_scalar(lines, idx + 1, indent, indent, rest, idx, text, state)
         items.append(parsed)
         return next_idx, None
 
@@ -1347,92 +1371,181 @@ def _block_scalar_header(header):
             explicit_indent = int(ch)
     return style, chomping, explicit_indent
 
+def _block_scalar_header_ok(header):
+    """Returns whether `header` is a valid `|` or `>` indicator.
+
+    After the style comes at most one chomping indicator and at most one
+    digit, in either order. Anything else is rejected, as pub rejects text
+    after the indicator where it expects a comment or line break.
+    """
+    if len(header) < 1 or len(header) > 3:
+        return False
+    if header[0] != "|" and header[0] != ">":
+        return False
+    chomping = False
+    digit = False
+    for i in range(1, len(header)):
+        ch = header[i]
+        if (ch == "+" or ch == "-") and not chomping:
+            chomping = True
+        elif ch.isdigit() and not digit:
+            digit = True
+        else:
+            return False
+    return True
+
 def _block_scalar_raw_lines(lines, start, parent_indent):
-    """Collects the scalar content lines. Returns (raw_lines, min_indent, next index)."""
+    """Collects the scalar lines. Returns (items, next index).
+
+    Each item is [raw, indent], with indent -1 for a blank line, which is
+    kept verbatim: spaces beyond the content indentation are content, as
+    pub reads them. Collection stops before the first line at or above
+    `parent_indent`.
+    """
     idx = start
-    raw_lines = []
-    min_indent = -1
+    items = []
     for _ in range(len(lines) + 1):
         if idx >= len(lines):
             break
         raw = lines[idx]
         if not raw.strip():
-            raw_lines.append("")
+            items.append([raw, -1])
             idx += 1
             continue
         indent = _indent_width(raw)
         if indent <= parent_indent:
             break
-        if min_indent < 0 or indent < min_indent:
-            min_indent = indent
-        raw_lines.append(raw)
+        items.append([raw, indent])
         idx += 1
-    return raw_lines, min_indent, idx
+    return items, idx
+
+def _block_scalar_indent(items, explicit_base, explicit_indent):
+    """Reads the content indent. Returns (indent, putback, bad_lead).
+
+    With an explicit indicator the content sits `explicit_indent` past
+    `explicit_base`, the key's own column. Otherwise it sits at the first
+    content line. `putback` is the first item the scalar does not cover: a
+    line less indented than the content ends the scalar, as pub ends it,
+    and the driver re-reads it downstream. `bad_lead` is the first content
+    item when, without an explicit indicator, a leading blank line runs
+    deeper than it, which pub rejects; with an explicit indicator such a
+    line strips to content instead.
+    """
+    first = -1
+    for i in range(len(items)):
+        if items[i][1] >= 0:
+            first = i
+            break
+    if explicit_indent > 0:
+        indent = explicit_base + explicit_indent
+    elif first < 0:
+        indent = -1
+    else:
+        indent = items[first][1]
+    putback = len(items)
+    bad_lead = -1
+    if first >= 0:
+        if explicit_indent == 0:
+            for i in range(first):
+                if _indent_width(items[i][0]) > indent:
+                    bad_lead = first
+                    break
+        for i in range(first, len(items)):
+            if items[i][1] >= 0 and items[i][1] < indent:
+                putback = i
+                break
+    return (indent, putback, bad_lead)
+
+def _block_scalar_values(items, kept, indent):
+    """Strips the content indent. What strips to nothing stays blank.
+
+    A line without content of its own still contributes when it runs past
+    the content indent, as pub reads those spaces as content.
+    """
+    values = []
+    for i in range(kept):
+        values.append(items[i][0][indent:])
+    return values
+
+def _fold_flowed_line(line, state, pieces):
+    """Appends one folded `>` line. Returns the next state.
+
+    `state` is start, blank, base or more, describing the previous line. A
+    blank line becomes one break, with a second one after a more-indented
+    line whose breaks around it are kept. The break after a base-indented
+    line is dropped where blank lines follow it, so a blank run resumes
+    with the bare line; a break between two base lines is one space.
+    """
+    if line == "":
+        pieces.append("\n")
+        if state == "more":
+            pieces.append("\n")
+        return "blank"
+    more = line.startswith(" ")
+    if state == "start" or state == "blank":
+        pieces.append(line)
+    elif state == "base" and not more:
+        pieces.append(" ")
+        pieces.append(line)
+    else:
+        pieces.append("\n")
+        pieces.append(line)
+    return "more" if more else "base"
+
+def _fold_flowed(values):
+    """Folds `>` lines as pub folds them. Checked against package:yaml 3.1.4."""
+    pieces = []
+    state = "start"
+    for line in values:
+        state = _fold_flowed_line(line, state, pieces)
+    return "".join(pieces)
 
 def _block_scalar_chomp(style, values, chomping):
-    """Folds a `>` scalar and applies the chomping indicator."""
-    if style == "|":
-        text = "\n".join(values)
-    else:
-        text = _fold_lines(values)
+    """Joins a block scalar and applies the chomping indicator, as pub does.
 
-    trailing_blank_lines = 0
+    `|` joins lines with breaks and `>` folds them with `_fold_flowed`.
+    Clip keeps one final break only when anything was read, keep adds the
+    final break and every trailing blank, and strip drops them.
+    """
+    if style == "|":
+        folded = "\n".join(values)
+    else:
+        folded = _fold_flowed(values)
+    trailing = 0
     for value in reversed(values):
         if value != "":
             break
-        trailing_blank_lines += 1
-
-    text = text.rstrip("\n")
+        trailing += 1
+    text = folded.rstrip("\n")
+    if chomping == "-":
+        return text
     if chomping == "+":
-        text += "\n" * (1 + trailing_blank_lines)
-    elif chomping == "":
-        text += "\n"
-    return text
+        return text + "\n" * (1 + trailing) if text else "\n" * trailing
+    return text + "\n" if text else ""
 
-def _parse_block_scalar(lines, start, parent_indent, header):
-    """Reads a `|` or `>` block scalar. Returns (text, next index).
+def _parse_block_scalar(lines, start, parent_indent, explicit_base, header, head_idx, head_text, state):
+    """Reads a `|` or `>` block scalar. Returns (text, next index, ok).
 
     `header` is the indicator text after the key or dash, such as `|-` or
-    `>2`. The content is every following line indented deeper than
-    `parent_indent`, plus the blank lines between them.
+    `>2`; `explicit_base` is the key's own column, which an indentation
+    indicator counts from. The content is every following line indented
+    deeper than `parent_indent`, minus any lines put back past a
+    less-indented line. A header with other text, and without an explicit
+    indicator a leading blank line deeper than the content, are problems
+    naming the line, as pub rejects them; then text is None and the driver
+    re-reads from next index.
     """
+    if not _block_scalar_header_ok(header):
+        _record_unreadable(state, head_idx, head_text)
+        return None, start, False
     style, chomping, explicit_indent = _block_scalar_header(header)
-
-    raw_lines, min_indent, idx = _block_scalar_raw_lines(lines, start, parent_indent)
-
-    if explicit_indent > 0:
-        content_indent = parent_indent + explicit_indent
-    elif min_indent >= 0:
-        content_indent = min_indent
-    else:
-        content_indent = parent_indent + 1
-
-    values = [raw[content_indent:] if raw != "" else "" for raw in raw_lines]
-
-    return _block_scalar_chomp(style, values, chomping), idx
-
-def _fold_lines(values):
-    """Folds `>` scalar lines: a single newline becomes a space, blanks stay."""
-    pieces = []
-    prev_blank = False
-    has_text = False
-    prev_line = ""
-    for line in values:
-        if line == "":
-            if has_text:
-                pieces.append("\n")
-            prev_blank = True
-            continue
-        if has_text:
-            if prev_blank or line.startswith(" ") or prev_line.startswith(" "):
-                pieces.append("\n")
-            else:
-                pieces.append(" ")
-        pieces.append(line)
-        prev_blank = False
-        has_text = True
-        prev_line = line
-    return "".join(pieces)
+    items, _idx = _block_scalar_raw_lines(lines, start, parent_indent)
+    indent, putback, bad_lead = _block_scalar_indent(items, explicit_base, explicit_indent)
+    if bad_lead >= 0:
+        _record_unreadable(state, start + bad_lead, lines[start + bad_lead].strip())
+        return None, start + bad_lead, False
+    values = _block_scalar_values(items, putback, indent)
+    return _block_scalar_chomp(style, values, chomping), start + putback, True
 
 # ---------------------------------------------------------------------------
 # Lines
