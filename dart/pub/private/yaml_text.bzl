@@ -27,6 +27,14 @@ def quote_track(ch, st):
     `st` carries single, double, escaped, at_start and affix. A quote opens
     only where a scalar starts, so an apostrophe in a plain scalar stays
     content; a backslash escapes the next character in double quotes.
+
+
+    Args:
+      ch: the character to track.
+      st: the quote state updated in place.
+
+    Returns:
+      Whether `ch` was consumed.
     """
     if st["escaped"]:
         st["escaped"] = False
@@ -112,6 +120,13 @@ def strip_trailing_comment(text):
     A quote opens only where a scalar starts (the line start, or after `[`,
     `{`, `,`, a separating colon, a `- ` dash or an anchor or tag word), so
     an apostrophe in a plain scalar never hides a comment.
+
+
+    Args:
+      text: the line to strip.
+
+    Returns:
+      The line without its trailing comment.
     """
     if "#" not in text:
         return text.rstrip()
@@ -135,6 +150,13 @@ def bad_blank_index(text):
     starts, so an apostrophe in a plain scalar never shields a blank, and a
     `#` at the start or after a space or tab opens a comment hiding the
     rest, as pub scans them.
+
+
+    Args:
+      text: the line to scan.
+
+    Returns:
+      The index of the first bad blank, or -1.
     """
     st = {"single": False, "double": False, "escaped": False, "at_start": True, "affix": False}
     for i in range(len(text)):
@@ -158,6 +180,13 @@ def find_top_colon(text):
     A colon inside quotes or brackets does not count, and a trailing colon
     does. A quote opens only where a scalar starts, so an apostrophe in a
     plain scalar never hides a colon.
+
+
+    Args:
+      text: the line to scan.
+
+    Returns:
+      The index of the first top-level colon, or -1.
     """
     if ":" not in text:
         return -1
@@ -175,7 +204,14 @@ def find_top_colon(text):
     return -1
 
 def split_key_value(text):
-    """Splits `key: value` at the top-level colon. Returns (key, value, found)."""
+    """Splits `key: value` at the top-level colon. Returns (key, value, found).
+
+    Args:
+      text: the `key: value` line to split.
+
+    Returns:
+      The (key, value, found) triple.
+    """
     c = find_top_colon(text)
     if c < 0:
         return "", "", False
@@ -223,6 +259,13 @@ def is_flow_seq_entry(token):
     A `- ` entry fails, as does an explicit `?` key holding an entry; a
     `-: ` pair reads as a one-pair mapping and a `?` key reads, as pub
     reads them.
+
+
+    Args:
+      token: the flow sequence item token.
+
+    Returns:
+      Whether the token is a block entry.
     """
     if is_dash(token):
         return True
@@ -244,6 +287,13 @@ def is_explicit_key_text(text):
 
     A bare `?` or `:` counts too. Without a following space, tab or
     end-of-line the mark is a plain scalar, not an explicit key.
+
+
+    Args:
+      text: the line to test.
+
+    Returns:
+      Whether `text` is an explicit-key line.
     """
     if text == "?" or text == ":":
         return True
@@ -252,7 +302,14 @@ def is_explicit_key_text(text):
     return text[0] in ["?", ":"] and text[1] in [" ", "\t"]
 
 def dict_key(value):
-    """Converts a parsed value to a dict key, as yaml.bzl does."""
+    """Converts a parsed value to a dict key, as yaml.bzl does.
+
+    Args:
+      value: the parsed value.
+
+    Returns:
+      The value as a dict key.
+    """
     t = type(value)
     if t in ["string", "int", "float", "bool", "NoneType"]:
         return value
@@ -265,7 +322,14 @@ def dict_key(value):
 # ---------------------------------------------------------------------------
 
 def clone(value):
-    """A shallow copy of a container, as yaml.bzl makes for aliases."""
+    """A shallow copy of a container, as yaml.bzl makes for aliases.
+
+    Args:
+      value: the value to copy.
+
+    Returns:
+      A shallow copy of a list or dict value, or the value itself.
+    """
     t = type(value)
     if t == "list":
         return list(value)
@@ -279,6 +343,15 @@ def quoted_end_at(s, quote, i):
     `''` inside single quotes is one escaped quote and a backslash escapes
     the next character in double quotes, as pub reads them. Returns -1 when
     the quote never closes.
+
+
+    Args:
+      s: the text to scan.
+      quote: the closing quote to find.
+      i: the index to start at.
+
+    Returns:
+      The index of the closing quote, or -1.
     """
     for _ in range(len(s) + 1):
         if i >= len(s):
@@ -300,6 +373,12 @@ def record_unreadable(state, idx, text):
 
     An explicit key is never skipped silently: it is not supported, so it is
     always a problem naming the line, in strict and lenient modes alike.
+
+
+    Args:
+      state: the parse state collecting problems.
+      idx: the 0-based index of the skipped line.
+      text: the skipped line text.
     """
     if is_explicit_key_text(text):
         state.problems.append("explicit key at line %d is not supported: %r" % (idx + 1, text))
@@ -308,7 +387,15 @@ def record_unreadable(state, idx, text):
         state.problems.append("unreadable line %d: %r" % (idx + 1, text))
 
 def block_line_text(raw):
-    """Returns (indent, comment-stripped text) of a block line, or (None, None) when it carries no content."""
+    """Returns (indent, comment-stripped text) of a block line, or (None, None) when it carries no content.
+
+    Args:
+      raw: the raw source line.
+
+    Returns:
+      The (indent, comment-stripped text) pair, or (None, None) when the line carries
+      no content.
+    """
     stripped = raw.strip()
     if not stripped or stripped.startswith("#") or stripped.startswith("%") or is_marker_line(raw, "---") or is_marker_line(raw, "..."):
         return None, None
@@ -319,7 +406,14 @@ def block_line_text(raw):
     return indent, text
 
 def flow_head_text(value_text):
-    """Strips anchor and tag prefixes from `value_text`, returning the value head."""
+    """Strips anchor and tag prefixes from `value_text`, returning the value head.
+
+    Args:
+      value_text: the scalar text with anchor and tag prefixes.
+
+    Returns:
+      The value head.
+    """
     s = value_text.strip()
     for _ in range(4):
         if not s:

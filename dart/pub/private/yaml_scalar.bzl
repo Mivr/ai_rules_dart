@@ -37,6 +37,15 @@ def parse_nonflow(s, anchors, state, line):
     problem naming the line, as pub rejects it: nothing but the closing
     quote itself may end the scalar, since a comment never reaches here, as
     block lines strip it first.
+
+    Args:
+      s: the scalar text.
+      anchors: the anchor names bound so far.
+      state: the parse state collecting problems.
+      line: the 1-based line number naming failures.
+
+    Returns:
+      The parsed value.
     """
     if s.startswith("*"):
         return parse_alias(s, anchors, state, line)
@@ -76,6 +85,15 @@ def parse_alias(s, anchors, state, line):
 
     Text after the alias name is a problem naming the line, as pub rejects
     it; a comment never reaches here, as block lines strip it first.
+
+    Args:
+      s: the text starting with the alias.
+      anchors: the anchor names bound so far.
+      state: the parse state collecting problems.
+      line: the 1-based line number naming failures.
+
+    Returns:
+      The aliased value, or None with a problem.
     """
     end = alias_name_end(s)
     ok, value = resolve_alias(s[1:end], anchors, state, line)
@@ -92,6 +110,15 @@ def resolve_alias(name, anchors, state, line):
     An empty, undefined or self-referential alias is an always-on problem
     naming the line, as pub rejects it; a use after its collection closes
     reads the value cloned shallowly, as yaml.bzl copies it.
+
+    Args:
+      name: the alias name.
+      anchors: the anchor names bound so far.
+      state: the parse state collecting problems.
+      line: the 1-based line number naming failures.
+
+    Returns:
+      The (ok, value) pair.
     """
     if name == "":
         state.problems.append("empty alias at line %d is not supported" % line)
@@ -110,6 +137,12 @@ def alias_name_end(s):
 
     The name runs to whitespace or `,[]{}`, as pub scans it, so a glued
     colon or hash is part of the name.
+
+    Args:
+      s: the text starting with `*`.
+
+    Returns:
+      The end index of the alias name.
     """
     i = 1
     for _ in range(len(s) + 1):
@@ -125,6 +158,15 @@ def split_value_text(value_text, anchors, state, line):
     alias after an anchor or tag reads `None`, and the anchor binds `None`
     too, so parsing continues past it. Otherwise `rest` is the value after
     the prefix, "" when the value is on the following lines.
+
+    Args:
+      value_text: the same-line value text.
+      anchors: the anchor names bound so far.
+      state: the parse state collecting problems.
+      line: the 1-based line number naming failures.
+
+    Returns:
+      The (anchor, tag, rest, failed) tuple.
     """
     anchor, tag, rest, bad = strip_value_prefix(value_text)
     record_prefix_problems(bad, state, line)
@@ -149,6 +191,12 @@ def strip_value_prefix(s):
     them; `bad` is "" or the first rejected shape: an empty anchor name, a
     repeated anchor or a repeated tag. A `!` word alone is a non-specific
     tag, as pub reads it.
+
+    Args:
+      s: the text starting with the value.
+
+    Returns:
+      The (anchor, tag, rest, bad) tuple, where bad is "" or the first rejected shape.
     """
     anchor = None
     tag = None
@@ -204,7 +252,13 @@ def _split_prefix_word(s):
     return s, ""
 
 def record_prefix_problems(bad, state, line):
-    """Records a rejected anchor or tag prefix naming the line, as pub rejects it."""
+    """Records a rejected anchor or tag prefix naming the line, as pub rejects it.
+
+    Args:
+      bad: the first rejected prefix shape, or "".
+      state: the parse state collecting problems.
+      line: the 1-based line number naming failures.
+    """
     if bad == "empty-anchor":
         state.problems.append("empty anchor at line %d is not supported" % line)
     elif bad == "repeat-anchor":
@@ -556,6 +610,13 @@ def undefined_tag_problem(word, line):
 
     The display is the full tag URI, as pub names it; a verbatim tag shows
     its inner text.
+
+    Args:
+      word: the tag word.
+      line: the 1-based line number naming failures.
+
+    Returns:
+      The problem text.
     """
     if word.startswith("!<") and word.endswith(">"):
         display = word[2:-1]
@@ -574,6 +635,15 @@ def apply_child_collection_tag(word, value, state, line):
     verbatim tag is an undefined-handle problem, while a local tag rides
     through as the same-line tags do. A problem still reads the child
     untagged, so parsing continues past it.
+
+    Args:
+      word: the tag word, or None.
+      value: the collection child.
+      state: the parse state collecting problems.
+      line: the 1-based line number naming failures.
+
+    Returns:
+      The value.
     """
     if word == None:
         return value
@@ -601,6 +671,14 @@ def drop_tag_value(word, line, state):
     pub crashes on it, a dropped named handle or verbatim tag is an
     undefined-handle problem, and any other dropped `!!` tag is an undefined
     tag problem, as pub reports them.
+
+    Args:
+      word: the tag word, or None.
+      line: the 1-based line number naming failures.
+      state: the parse state collecting problems.
+
+    Returns:
+      The value.
     """
     if word == None:
         return None
@@ -633,6 +711,16 @@ def apply_key_tag(word, key, raw, state, line):
     as the same-line tags do, and a local tag reads a string key as is and
     any other key as its raw text, as pub reads them. A problem still reads
     the key untagged, so parsing continues past it.
+
+    Args:
+      word: the tag word.
+      key: the parsed key.
+      raw: the raw key text.
+      state: the parse state collecting problems.
+      line: the 1-based line number naming failures.
+
+    Returns:
+      The key.
     """
     word = resolve_handle(word, state, line)
     if word == None:
@@ -709,6 +797,15 @@ def apply_bool_tag(value, raw, state, line):
     pub reads them; anything else is an invalid bool scalar problem naming
     the line, as pub rejects it. A resolved bool reads through its raw
     spelling, so a wider untagged spelling still fails here as pub fails it.
+
+    Args:
+      value: the parsed value.
+      raw: the raw scalar text.
+      state: the parse state collecting problems.
+      line: the 1-based line number naming failures.
+
+    Returns:
+      The value, or None with a problem.
     """
     if type(value) == "string":
         text = value
@@ -731,6 +828,14 @@ def resolve_handle(word, state, line):
     naming the use line, as pub rejects it. A `%TAG` remap of the `!` handle
     changes no use: a local or non-specific tag still reads as without it,
     as pub reads them. A problem returns None.
+
+    Args:
+      word: the tag word.
+      state: the parse state collecting problems.
+      line: the 1-based line number naming failures.
+
+    Returns:
+      The resolved word, or None with a problem.
     """
     if word == None or state.tag_prefixes == {}:
         return word
@@ -765,6 +870,12 @@ def is_unknown_tag_handle(tag):
     undefined tag handle, and any other `!` word with a second `!` is a
     named handle pub rejects the same way; any other `!` word is a local
     tag, which reads below.
+
+    Args:
+      tag: the tag word.
+
+    Returns:
+      Whether the tag is a named handle or a verbatim tag.
     """
     if tag == "!" or tag.startswith("!!"):
         return False
@@ -823,6 +934,16 @@ def apply_tag(tag, raw, value, state, line):
     for its kind, as pub reports them. A problem still reads the value
     untagged, so parsing continues past it. Scalar conversions fail naming
     the line where the value does not resolve, as pub rejects them.
+
+    Args:
+      tag: the tag word.
+      raw: the raw scalar text.
+      value: the parsed value.
+      state: the parse state collecting problems.
+      line: the 1-based line number naming failures.
+
+    Returns:
+      The value.
     """
     tag = resolve_handle(tag, state, line)
     if tag == None:
@@ -847,7 +968,14 @@ def apply_tag(tag, raw, value, state, line):
     return _apply_scalar_tag(name, tag, raw, value, state, line)
 
 def tag_name(tag):
-    """The short name of a tag written as `!!x`, `!x` or `!<tag:yaml.org,2002:x>`."""
+    """The short name of a tag written as `!!x`, `!x` or `!<tag:yaml.org,2002:x>`.
+
+    Args:
+      tag: the tag word.
+
+    Returns:
+      The short tag name, or None.
+    """
     if tag.startswith("!<") and tag.endswith(">"):
         uri = tag[2:-1]
         return uri[len(_YAML_TAG_PREFIX):] if uri.startswith(_YAML_TAG_PREFIX) else None
@@ -873,6 +1001,14 @@ def is_flow_key_entry(token, raw, next_ch):
     pub reads `{-: 1}` but rejects `{ - : 1}`; an anchored or tagged dash
     fails even so, as pub rejects `{&x - : 1}`. An explicit `?` key holding
     an entry fails too, while a plain `?` key reads, as pub reads it.
+
+    Args:
+      token: the scanned flow map key token.
+      raw: the raw source span of the token.
+      next_ch: the character following the token.
+
+    Returns:
+      Whether the token is a block entry.
     """
     _anchor, _tag, rest, _bad = strip_value_prefix(token)
     if is_dash(rest):
@@ -887,6 +1023,14 @@ def flow_value_entry_problem(value_text, state, line):
 
     The anchor and tag prefixes are stripped first, as pub still rejects
     the entry under them.
+
+    Args:
+      value_text: the flow pair value text.
+      state: the parse state collecting problems.
+      line: the 1-based line number naming failures.
+
+    Returns:
+      True when one fails.
     """
     _anchor, _tag, rest, _bad = strip_value_prefix(value_text)
     if is_flow_value_entry(rest):

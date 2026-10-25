@@ -14,6 +14,12 @@ def first_content(lines):
 
     Blank lines, `#` comments, `%` directives and document markers carry no
     block content. Returns index -1 and text "" when no line has content.
+
+    Args:
+      lines: the document lines.
+
+    Returns:
+      The first line with block content as struct(index, text).
     """
     for i in range(len(lines)):
         _indent, text = block_line_text(lines[i])
@@ -27,6 +33,13 @@ def allows_flow_doc(lines, index):
     Every line before `index` must be blank or a comment: a `%` directive or
     a kept `---` line means the bracket opens a block value, as pub reads it
     there.
+
+    Args:
+      lines: the document lines.
+      index: the 0-based index where a flow document may open.
+
+    Returns:
+      Whether a flow document may open there.
     """
     for i in range(index):
         stripped = lines[i].strip()
@@ -41,6 +54,12 @@ def flow_doc_problem(lines):
     pub rejects these shapes (an unclosed collection, text or a comment past
     the closing bracket), so the reader fails closed naming the last content
     line instead of reading an empty document.
+
+    Args:
+      lines: the document lines.
+
+    Returns:
+      The problem text.
     """
     last = 1
     for i in range(len(lines)):
@@ -143,7 +162,7 @@ def _marker_rest_problem(rest, idx):
         return "Block sequence entries are not allowed here at line %d" % idx
     if is_question_entry(s):
         return "Mapping keys are not allowed here at line %d" % idx
-    dict_key, _value, found = split_key_value(s)
+    _dict_key, _value, found = split_key_value(s)
     if found:
         return "Mapping values are not allowed here at line %d" % idx
     return None
@@ -192,6 +211,15 @@ def first_document_lines(content, state):
     case it is kept as an ordinary line; inline text after a pre-content
     marker reads as the document, as pub reads `--- foo` as "foo" and
     `... text` as "text". A trailing `...` alone stays allowed.
+
+    Args:
+      content: the file content.
+      state: the parse state collecting problems.
+
+    Returns:
+      The (lines, tag_prefixes, dropped_marker) triple: the first document lines, each
+      declared `%TAG` handle with its prefix, and whether a pre-content `---` was
+      consumed.
     """
     normalized = content.replace("\r\n", "\n").replace("\r", "\n")
     current = []
@@ -345,6 +373,14 @@ def parse_block(lines, state, first_line):
     waits as `lone` for the problem the next line reports, as pub names that
     line. `state` collects duplicate-key and
     (when strict) unreadable-line problems.
+
+    Args:
+      lines: the block-structured lines of one document.
+      state: the parse state collecting problems.
+      first_line: whether lines[0] is the file's first line.
+
+    Returns:
+      The parsed value.
     """
     anchors = {}
     root = None

@@ -64,6 +64,13 @@ def first_bad_utf8_line(content):
     F0 start, an ED start of a surrogate half, and an F4 start past
     U+10FFFF all fail, as none decodes; anything else reads, including a
     4-byte start and the U+10FFFF sequence itself.
+
+
+    Args:
+      content: the file content to scan.
+
+    Returns:
+      The 1-based line of the first byte that breaks UTF-8, or 0 when the content decodes.
     """
     line = 1
     i = 0
@@ -92,7 +99,14 @@ def first_bad_utf8_line(content):
     return 0
 
 def strip_bom(content):
-    """Strips every leading UTF-8 byte-order mark, which pub accepts at the start."""
+    """Strips every leading UTF-8 byte-order mark, which pub accepts at the start.
+
+    Args:
+      content: the text to strip.
+
+    Returns:
+      The text without its leading byte-order marks.
+    """
     for _ in range(len(content) + 1):
         if content.startswith(BOM):
             content = content[len(BOM):]
@@ -132,6 +146,14 @@ def is_clean_marker_line(raw, marker):
     A `#` after separation is a comment, as pub reads `... # c` as a clean
     document end; text glued to the marker or after a space is content the
     document handlers place.
+
+
+    Args:
+      raw: the raw source line.
+      marker: the `---` or `...` marker text.
+
+    Returns:
+      True when `raw` is the marker with only whitespace or a `#` comment after it.
     """
     if not raw.startswith(marker):
         return False

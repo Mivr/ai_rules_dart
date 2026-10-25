@@ -20,6 +20,12 @@ def close_block_containers(stack, indent, text, anchors):
     container that closes with an open anchor binds its value then, as pub
     reads an alias after the collection closes; rebinding replaces any
     older binding.
+
+    Args:
+      stack: the open container frames.
+      indent: the column of the current line.
+      text: the current line text.
+      anchors: the anchor names bound so far.
     """
     for _ in range(len(stack)):
         if not stack or indent > stack[-1]["indent"]:
@@ -36,6 +42,14 @@ def drop_pending_value(pending, anchors, state):
 
     The slot and a pending anchor read the dropped value, so parsing
     continues past it.
+
+    Args:
+      pending: the pending key or dash.
+      anchors: the anchor names bound so far.
+      state: the parse state collecting problems.
+
+    Returns:
+      The value.
     """
     value = drop_tag_value(pending["tag"], pending.get("tag_line", pending["line"]), state)
     pending["parent"][pending["slot"]] = value
@@ -176,6 +190,16 @@ def take_lone_line(slot, text, line, anchors, state):
 
     A repeated anchor or tag still counts as taken: the line is skipped after
     its problem, as pub rejects it, and the slot keeps its first properties.
+
+    Args:
+      slot: the pending slot merging the properties.
+      text: the lone property line.
+      line: the 1-based line number naming failures.
+      anchors: the anchor names bound so far.
+      state: the parse state collecting problems.
+
+    Returns:
+      True when taken.
     """
     anchor, tag = _lone_affix(text)
     if anchor == None and tag == None:
@@ -188,6 +212,14 @@ def record_dangling(lone, text, line):
 
     The line reads like a key there, as pub parses it, so the open container
     keeps the line for the problem the next line reports.
+
+    Args:
+      lone: the dangling-line keeper.
+      text: the lone property line.
+      line: the 1-based line number naming failures.
+
+    Returns:
+      True when kept.
     """
     anchor, tag = _lone_affix(text)
     if anchor == None and tag == None:
@@ -229,6 +261,19 @@ def resolve_affix_root(affix, lines, idx, indent, text, anchors, stack, state):
     closed, as pub rejects it. A flow collection reads closed where a scalar
     reads, as a folded pending value does, so the anchor binds it at once.
     Rebinding replaces any older binding.
+
+    Args:
+      affix: the waiting anchor and tag properties.
+      lines: the document lines.
+      idx: the 0-based index of the affix line.
+      indent: the column of the affix line.
+      text: the affix line text.
+      anchors: the anchor names bound so far.
+      stack: the open container frames.
+      state: the parse state collecting problems.
+
+    Returns:
+      The (root, next index) pair.
     """
     line = idx + 1
     if text.startswith("|") or text.startswith(">"):
@@ -258,6 +303,15 @@ def resolve_pending(pending, cursor, env):
 
     Returns (next index, consumed): consumed is True when deeper scalar lines
     were folded into the pending value and the caller must continue.
+
+    Args:
+      pending: the pending key or dash.
+      cursor: the current line as {lines, idx, indent, text}.
+      env: the parse environment as {anchors, stack, state}.
+
+    Returns:
+      The (next index, consumed) pair: consumed is True when deeper scalar lines were
+      folded into the pending value and the caller must continue.
     """
     indent = cursor.indent
     text = cursor.text
@@ -274,7 +328,19 @@ def resolve_pending(pending, cursor, env):
     return cursor.idx, False
 
 def init_block_root(text, indent, anchors, stack, state, line):
-    """Creates the root container or scalar. Returns (root, is_scalar)."""
+    """Creates the root container or scalar. Returns (root, is_scalar).
+
+    Args:
+      text: the line text.
+      indent: the column of the line.
+      anchors: the anchor names bound so far.
+      stack: the open container frames.
+      state: the parse state collecting problems.
+      line: the 1-based line number naming failures.
+
+    Returns:
+      The (root, is_scalar) pair.
+    """
     if is_dash(text):
         root = []
         stack.append({"kind": "seq", "indent": indent - 1, "value": root, "entry": None, "compact": False})
@@ -350,7 +416,20 @@ def _map_flow_value(lines, idx, indent, text, value_text, anchors, state, line):
     return None, idx + 1, False
 
 def map_line(lines, idx, indent, text, frame, anchors, state):
-    """Reads one line of a block mapping. Returns (next index, pending)."""
+    """Reads one line of a block mapping. Returns (next index, pending).
+
+    Args:
+      lines: the document lines.
+      idx: the 0-based index of the line being read.
+      indent: the column of the line.
+      text: the line text.
+      frame: the mapping frame.
+      anchors: the anchor names bound so far.
+      state: the parse state collecting problems.
+
+    Returns:
+      The (next index, pending) pair: pending is the key awaiting its value, or None.
+    """
     if is_explicit_key_text(text):
         # Explicit keys are not supported (see the module docstring). They fail
         # naming the line even where an entry is not expected, so a `:`
@@ -471,7 +550,21 @@ def _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state):
     return next_idx, None
 
 def seq_line(lines, idx, indent, text, frame, anchors, stack, state):
-    """Reads one line of a block sequence. Returns (next index, pending)."""
+    """Reads one line of a block sequence. Returns (next index, pending).
+
+    Args:
+      lines: the document lines.
+      idx: the 0-based index of the line being read.
+      indent: the column of the line.
+      text: the line text.
+      frame: the sequence frame.
+      anchors: the anchor names bound so far.
+      stack: the open container frames.
+      state: the parse state collecting problems.
+
+    Returns:
+      The (next index, pending) pair: pending is the dash awaiting its value, or None.
+    """
     if not _entry_indent_ok(frame, indent):
         record_unreadable(state, idx, text)
         return idx + 1, None

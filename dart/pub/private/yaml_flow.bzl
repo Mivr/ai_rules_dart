@@ -139,6 +139,15 @@ def parse_flow(text, anchors, parse_state, line):
     `state` is "item" or "value" where a value may start, "after" once a
     value is complete, and "key" where a map key is read. Duplicate map keys
     are recorded on `parse_state` with `line`.
+
+    Args:
+      text: the flow collection text.
+      anchors: the anchor names bound so far.
+      parse_state: the parse state collecting problems and duplicate keys.
+      line: the 1-based line number naming failures.
+
+    Returns:
+      The parsed collection, or None.
     """
     s = text.strip()
     stack = [_flow_frame(s[:1])]
@@ -534,6 +543,17 @@ def parse_scalar(text, anchors, state, line, record_prefix = True):
     strict-lines problem; lenient parsing reads it as None. The fold sets
     `record_prefix` False for a head its caller already split, so one shape
     reads as one problem.
+
+    Args:
+      text: the text after a key, dash or flow separator.
+      anchors: the anchor names bound so far.
+      state: the parse state collecting problems.
+      line: the 1-based line number naming failures.
+      record_prefix: whether to record prefix shape problems; the fold passes False
+      for a head its caller already split.
+
+    Returns:
+      The parsed value.
     """
     s = text.strip()
     if s == "":
@@ -680,6 +700,11 @@ def flow_scan_text(text, scan, res):
     outside quotes and plain scalars. A quote opens only where a scalar
     starts. Scanning stops at a comment or a flag; the caller fails closed
     on the flags.
+
+    Args:
+      text: the fold line to scan.
+      scan: the quote state updated in place.
+      res: the result collecting kept characters and line flags.
     """
     prev = " "
     for i in range(len(text) + 1):
@@ -814,6 +839,15 @@ def flow_fold_lines(items, scan, skip_first):
     the fold: the next content must close the collection (`,`, `]`, `}` or
     a separating `:`) or pub rejects the flow. `problem` is None, or a
     (kind, line) pair the caller reports.
+
+    Args:
+      items: the (1-based line, raw line) pairs to fold.
+      scan: the quote state updated in place.
+      skip_first: whether to skip the head item.
+
+    Returns:
+      The (folded, problem) pair: the folded text, and None or a (kind, line) pair
+      the caller reports.
     """
     st = {"out": "", "cont": False, "comment_pending": False, "pending_line": 0}
     for n in range(len(items)):
@@ -836,7 +870,15 @@ def flow_fold_lines(items, scan, skip_first):
     return st["out"], None
 
 def flow_fold_problem(kind, line):
-    """The problem for a folded-flow line this reader cannot spell as pub reads it."""
+    """The problem for a folded-flow line this reader cannot spell as pub reads it.
+
+    Args:
+      kind: the fold failure kind.
+      line: the 1-based line number naming failures.
+
+    Returns:
+      The problem text.
+    """
     if kind == "control":
         return "control character at line %d is not supported" % line
     if kind == "plain-comment":

@@ -314,6 +314,20 @@ def block_fold_scalar(lines, start, parent_indent, head, question_stops, anchors
     quote-aware, and comments and `%` behave as pub reads them. A line
     starting with a tab is a problem naming the line, while a deeper line
     with spaces before its tab folds, as pub reads them.
+
+
+    Args:
+      lines: the document lines.
+      start: the 0-based index of the first continuation line.
+      parent_indent: the column continuations must be nested beyond.
+      head: the head line as {text, raw, idx, entry}.
+      question_stops: whether a `?` line ends the scalar instead of folding into it.
+      anchors: the anchor names bound so far.
+      state: the parse state collecting problems.
+
+    Returns:
+      The (value, next index, read) triple: the folded value, the 0-based index to
+      resume at, and whether a value was read.
     """
     core = flow_head_text(head["text"])
     if core[:1] in ["[", "{"]:

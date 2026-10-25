@@ -59,6 +59,15 @@ def unescape_double(text, state, line):
     Returns the decoded text, or None with a problem naming the line: an
     unknown escape and a malformed hex, Unicode or surrogate escape are
     rejected, as pub rejects them.
+
+
+    Args:
+      text: the scalar body between the quotes.
+      state: the parse state collecting problems.
+      line: the 1-based line number naming failures.
+
+    Returns:
+      The decoded text, or None when an escape is rejected.
     """
     out = []
     i = 0

@@ -206,6 +206,20 @@ def parse_block_scalar(lines, start, parent_indent, explicit_base, header, head_
     indicator a leading blank line deeper than the content, are problems
     naming the line, as pub rejects them; then text is None and the driver
     re-reads from next index.
+
+
+    Args:
+      lines: the document lines.
+      start: the 0-based index of the first content line.
+      parent_indent: the column content must be nested beyond.
+      explicit_base: the key's own column, which an indentation indicator counts from.
+      header: the indicator text after the key or dash.
+      head_idx: the 0-based index of the header line, naming failures.
+      head_text: the header line text for problems.
+      state: the parse state collecting problems.
+
+    Returns:
+      The (text, next index, ok) triple.
     """
     if not _block_scalar_header_ok(header):
         record_unreadable(state, head_idx, head_text)
