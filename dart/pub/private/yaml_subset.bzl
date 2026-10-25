@@ -2843,6 +2843,45 @@ def _is_unknown_tag_handle(tag):
         return True
     return tag.startswith("!") and "!" in tag[1:]
 
+def _apply_collection_tag(name, tag, value, state, line):
+    """Tells whether a `!!seq` or `!!map` tag is decided. Returns True when done.
+
+    A matching collection reads, and any other non-collection node fails as
+    an undefined tag, as pub reports them. A non-matching collection is left
+    for the invalid-tag failure below. A problem still reads the value
+    untagged.
+    """
+    want = "list" if name == "seq" else "dict"
+    if type(value) == want:
+        return True
+    if type(value) != "list" and type(value) != "dict":
+        state.problems.append(_undefined_tag_problem(tag, line))
+        return True
+    return False
+
+def _apply_scalar_tag(name, tag, raw, value, state, line):
+    """Applies a scalar type tag. Returns the value.
+
+    Conversions fail naming the line where the value does not resolve, as
+    pub rejects them; an unknown name is an undefined tag. A problem still
+    reads the value untagged, so parsing continues past it.
+    """
+    if name == "str":
+        return value if type(value) == "string" else raw
+    if name == "int":
+        return _apply_int_tag(value, raw, state, line)
+    if name == "float":
+        return _apply_float_tag(value, raw, state, line)
+    if name == "bool":
+        return _apply_bool_tag(value, raw, state, line)
+    if name == "null":
+        if value == None or value == "":
+            return None
+        state.problems.append("Invalid null scalar at line %d" % line)
+        return None
+    state.problems.append(_undefined_tag_problem(tag, line))
+    return value
+
 def _apply_tag(tag, raw, value, state, line):
     """Applies a tag to a parsed value. Returns the value.
 
@@ -2870,31 +2909,13 @@ def _apply_tag(tag, raw, value, state, line):
     if name == None:
         return value
     if name == "seq" or name == "map":
-        want = "list" if name == "seq" else "dict"
-        if type(value) == want:
-            return value
-        if type(value) != "list" and type(value) != "dict":
-            state.problems.append(_undefined_tag_problem(tag, line))
+        if _apply_collection_tag(name, tag, value, state, line):
             return value
     if type(value) == "list" or type(value) == "dict":
         kind = "sequence" if type(value) == "list" else "mapping"
         state.problems.append("Invalid tag for %s at line %d" % (kind, line))
         return value
-    if name == "str":
-        return value if type(value) == "string" else raw
-    if name == "int":
-        return _apply_int_tag(value, raw, state, line)
-    if name == "float":
-        return _apply_float_tag(value, raw, state, line)
-    if name == "bool":
-        return _apply_bool_tag(value, raw, state, line)
-    if name == "null":
-        if value == None or value == "":
-            return None
-        state.problems.append("Invalid null scalar at line %d" % line)
-        return None
-    state.problems.append(_undefined_tag_problem(tag, line))
-    return value
+    return _apply_scalar_tag(name, tag, raw, value, state, line)
 
 def _tag_name(tag):
     """The short name of a tag written as `!!x`, `!x` or `!<tag:yaml.org,2002:x>`."""
@@ -2906,6 +2927,31 @@ def _tag_name(tag):
     if tag.startswith("!") and len(tag) > 1 and tag.count("!") == 1:
         return tag[1:]
     return None
+
+def _parse_based_prefix(s, num, prefix, base):
+    """Parses a `prefix`-based int, or returns `s` unchanged.
+
+    A `_` separator keeps the text a string, as pub reads it, while an
+    over-range number without one stays a string through the reader below.
+    """
+    if len(num) > 2 and num[0:2].lower() == prefix:
+        if "_" in s:
+            return s
+        parsed = _parse_based_int(num, base)
+        return parsed if parsed != None else s
+    return None
+
+def _parse_dotted_float(s, num):
+    """Parses a dotted decimal as a float, or returns `s` unchanged.
+
+    Only one dot with decimal parts on both sides reads; `1.` and `.5`
+    stay strings, as read before.
+    """
+    if num.count(".") == 1:
+        left, right = num.split(".")
+        if _is_decimal_part(left) and right.isdigit():
+            return _safe_float(num)
+    return s
 
 def _parse_numeric_text(s, num):
     """Parses an int, based int, infinity, NaN or float, or returns `s` unchanged.
@@ -2926,16 +2972,12 @@ def _parse_numeric_text(s, num):
         if "_" in s:
             return s
         return _safe_float(num)
-    if len(num) > 2 and num[0:2].lower() == "0x":
-        if "_" in s:
-            return s
-        parsed = _parse_based_int(num, 16)
-        return parsed if parsed != None else s
-    if len(num) > 2 and num[0:2].lower() == "0o":
-        if "_" in s:
-            return s
-        parsed = _parse_based_int(num, 8)
-        return parsed if parsed != None else s
+    based = _parse_based_prefix(s, num, "0x", 16)
+    if based != None:
+        return based
+    based = _parse_based_prefix(s, num, "0o", 8)
+    if based != None:
+        return based
     if s in [".inf", ".Inf", ".INF", "+.inf", "+.Inf", "+.INF", "-.inf", "-.Inf", "-.INF"]:
         return float("-inf") if s[0] == "-" else float("inf")
     if s in [".nan", ".NaN", ".NAN"]:
@@ -2943,11 +2985,7 @@ def _parse_numeric_text(s, num):
     scientific = _parse_scientific_float(s)
     if scientific != None:
         return scientific
-    if num.count(".") == 1:
-        left, right = num.split(".")
-        if _is_decimal_part(left) and right.isdigit():
-            return _safe_float(num)
-    return s
+    return _parse_dotted_float(s, num)
 
 # An anchor name whose collection is still open: an alias to it fails
 # closed instead of reading a partial value, as pub rejects self-reference.
@@ -2959,6 +2997,35 @@ def _split_prefix_word(s):
         if s[i] in [" ", "\t"]:
             return s[:i], s[i + 1:].lstrip(" \t")
     return s, ""
+
+def _strip_anchor_word(word, anchor, bad):
+    """Reads an `&name` word. Returns (anchor, bad).
+
+    An empty name and a repeated anchor are the first rejected shape, as
+    pub reads at most one anchor.
+    """
+    name = word[1:]
+    if name == "":
+        if bad == "":
+            bad = "empty-anchor"
+    elif anchor != None:
+        if bad == "":
+            bad = "repeat-anchor"
+    else:
+        anchor = name
+    return (anchor, bad)
+
+def _strip_tag_word(word, tag, bad):
+    """Reads a `!tag` word. Returns (tag, bad).
+
+    A repeated tag is the first rejected shape, as pub reads at most one.
+    """
+    if tag != None:
+        if bad == "":
+            bad = "repeat-tag"
+    else:
+        tag = word
+    return (tag, bad)
 
 def _strip_value_prefix(s):
     """Splits leading `&anchor` and `!tag` words. Returns (anchor, tag, rest, bad).
@@ -2977,22 +3044,10 @@ def _strip_value_prefix(s):
             break
         if rest.startswith("&"):
             word, rest = _split_prefix_word(rest)
-            name = word[1:]
-            if name == "":
-                if bad == "":
-                    bad = "empty-anchor"
-            elif anchor != None:
-                if bad == "":
-                    bad = "repeat-anchor"
-            else:
-                anchor = name
+            anchor, bad = _strip_anchor_word(word, anchor, bad)
         elif rest.startswith("!"):
             word, rest = _split_prefix_word(rest)
-            if tag != None:
-                if bad == "":
-                    bad = "repeat-tag"
-            else:
-                tag = word
+            tag, bad = _strip_tag_word(word, tag, bad)
         else:
             break
     return (anchor, tag, rest, bad)
@@ -3639,6 +3694,27 @@ def _flow_item_step(s, i, frame, anchors, stack, state, line):
     _flow_add(frame, _flow_scalar_value(token, anchors, state, line), state, line)
     return next_i, True
 
+def _flow_comment_end(s, i):
+    """Returns the index after the `#` comment starting at `s[i]`.
+
+    A `#` where a flow token starts is a comment running to the end of the
+    line, as pub scans it, even glued to `[`, `{` or `,`; a `#` glued into
+    a token stays content, as the tokenizer never stops for it. The flow
+    left open fails downstream as an unclosed one does.
+    """
+    nl = s.find("\n", i)
+    return len(s) if nl < 0 else nl + 1
+
+def _flow_after_comma(frame, ch):
+    """Reads the `,` after a completed flow value. Returns whether one follows.
+
+    After the comma a mapping reads a key and a sequence reads an item.
+    """
+    if ch != ",":
+        return False
+    frame["state"] = "key" if frame["kind"] == "map" else "item"
+    return True
+
 def _parse_flow(text, anchors, parse_state, line):
     """Parses the flow collection that starts `text`, or returns None.
 
@@ -3656,13 +3732,7 @@ def _parse_flow(text, anchors, parse_state, line):
         if i >= len(s):
             return None
         if s[i] == "#":
-            # A `#` where a flow token starts is a comment running to the
-            # end of the line, as pub scans it, even glued to `[`, `{` or
-            # `,`; a `#` glued into a token stays content, as the tokenizer
-            # never stops for it. The flow left open fails downstream as an
-            # unclosed one does.
-            nl = s.find("\n", i)
-            i = len(s) if nl < 0 else nl + 1
+            i = _flow_comment_end(s, i)
             continue
         frame = stack[-1]
         ch = s[i]
@@ -3675,9 +3745,8 @@ def _parse_flow(text, anchors, parse_state, line):
             continue
 
         if state == "after":
-            if ch != ",":
+            if not _flow_after_comma(frame, ch):
                 return None
-            frame["state"] = "key" if frame["kind"] == "map" else "item"
             i += 1
             continue
 
@@ -3725,6 +3794,38 @@ def _flow_block_scalar_problem(rest, state, line):
         return True
     return False
 
+def _flow_alias_token(token, anchors, state, line):
+    """Value of a flow item token starting with `*`.
+
+    A glued colon or hash joins the alias name, as pub scans it, so only a
+    name without a colon followed by a spaced colon pairs with a value, as
+    pub reads it.
+    """
+    end = _alias_name_end(token)
+    if ":" not in token[1:end] and token[end:].strip().startswith(":"):
+        key_text, value_text, _ok = _flow_pair_split(token)
+        return _flow_pair(key_text, value_text, None, None, anchors, state, line)
+    return _parse_alias(token, anchors, state, line)
+
+def _flow_lone_colon_pair(tag, anchor, rest, anchors, state, line):
+    """Value of a flow item where the value starts with `:`.
+
+    A colon where the value starts pairs the anchor or tag on its own with
+    the value, as pub reads it. A problem still reads `None`, so parsing
+    continues past it.
+    """
+    key = _drop_tag_value(tag, line, state) if tag != None else None
+    if anchor != None:
+        anchors[anchor] = _clone(key)
+    value_text = rest[1:].strip()
+    if value_text == "" or _flow_value_entry_problem(value_text, state, line):
+        value = None
+    else:
+        value = _flow_atom(value_text, anchors, state, line)
+    pair = {}
+    pair[_key(key)] = value
+    return pair
+
 def _flow_scalar_value(token, anchors, state, line):
     """Value of a flow item token with alias, anchor or tag prefixes.
 
@@ -3740,11 +3841,7 @@ def _flow_scalar_value(token, anchors, state, line):
     continues past it.
     """
     if token.startswith("*"):
-        end = _alias_name_end(token)
-        if ":" not in token[1:end] and token[end:].strip().startswith(":"):
-            key_text, value_text, _ok = _flow_pair_split(token)
-            return _flow_pair(key_text, value_text, None, None, anchors, state, line)
-        return _parse_alias(token, anchors, state, line)
+        return _flow_alias_token(token, anchors, state, line)
     anchor, tag, rest, bad = _strip_value_prefix(token)
     _record_prefix_problems(bad, state, line)
     if anchor != None and rest.startswith("*"):
@@ -3764,17 +3861,7 @@ def _flow_scalar_value(token, anchors, state, line):
             anchors[anchor] = None
         return None
     if rest.startswith(":"):
-        key = _drop_tag_value(tag, line, state) if tag != None else None
-        if anchor != None:
-            anchors[anchor] = _clone(key)
-        value_text = rest[1:].strip()
-        if value_text == "" or _flow_value_entry_problem(value_text, state, line):
-            value = None
-        else:
-            value = _flow_atom(value_text, anchors, state, line)
-        pair = {}
-        pair[_key(key)] = value
-        return pair
+        return _flow_lone_colon_pair(tag, anchor, rest, anchors, state, line)
     if rest == "":
         return _flow_bare_affix(anchor, tag, state, line, anchors)
     key_text, value_text, is_pair = _flow_pair_split(rest)
@@ -3894,6 +3981,28 @@ def _flow_key_value(token, anchors, state, line):
         anchors[anchor] = _clone(key)
     return _key(key)
 
+def _flow_prefix_word(word, anchor, tag, bad):
+    """Reads an anchor or tag word before a flow collection. Returns (anchor, tag, bad).
+
+    An empty anchor, a repeated anchor and a repeated tag are the first
+    rejected shape, as pub reads at most one of each.
+    """
+    if word.startswith("&"):
+        if word == "&":
+            if bad == "":
+                bad = "empty-anchor"
+        elif anchor != None:
+            if bad == "":
+                bad = "repeat-anchor"
+        else:
+            anchor = word[1:]
+    elif tag != None:
+        if bad == "":
+            bad = "repeat-tag"
+    else:
+        tag = word
+    return (anchor, tag, bad)
+
 def _flow_prefixed_collection(s, i, anchors, stack, state, line):
     """Pushes the flow collection an anchor or tag prefix opens. Returns (pushed, next_i).
 
@@ -3912,20 +4021,7 @@ def _flow_prefixed_collection(s, i, anchors, stack, state, line):
         word = s[j:end]
         if not word.startswith("&") and not word.startswith("!"):
             break
-        if word.startswith("&"):
-            if word == "&":
-                if bad == "":
-                    bad = "empty-anchor"
-            elif anchor != None:
-                if bad == "":
-                    bad = "repeat-anchor"
-            else:
-                anchor = word[1:]
-        elif tag != None:
-            if bad == "":
-                bad = "repeat-tag"
-        else:
-            tag = word
+        anchor, tag, bad = _flow_prefix_word(word, anchor, tag, bad)
         j = end + len(s[end:]) - len(s[end:].lstrip(" \t"))
     if j >= len(s) or s[j] not in ["[", "{"]:
         return False, i
