@@ -1563,6 +1563,40 @@ def _parse_lock_refused_test_impl(ctx):
     asserts.true(env, err != None and "//:pubspec.lock" in err and "line 7" in err)
     return unittest.end(env)
 
+def _parse_pubspec_flow_entry_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A block entry inside a flow fails naming the pubspec and the line, as
+    # pub rejects it (package:yaml 3.1.4 with the pinned SDK 3.13.5); glued
+    # dashes and `-: ` pairs as items read on.
+    head = "name: x\nenvironment:\n  sdk: ^3.0.0\n"
+    doc = head + "tags: [- a]\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
+    doc = head + "tags: [a, - b]\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
+    doc = head + "tags: {a: - b}\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
+    doc = head + "tags: [-a, -b]\n"
+    asserts.equals(env, ["-a", "-b"], parse_pubspec_document(doc)["tags"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = head + "tags: [-: 1]\n"
+    asserts.equals(env, [{"-": 1}], parse_pubspec_document(doc)["tags"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    return unittest.end(env)
+
+def _parse_lock_flow_entry_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A block entry inside a flow fails naming the lock and the line, as pub
+    # rejects it.
+    content = "packages:\n  a:\n    source: hosted\n    version: [- 1.0.0]\n"
+    err = pubspec_lock_error(content, "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 4" in err)
+    return unittest.end(env)
+
 _pub_lock_package_extracted_test = analysistest.make(_pub_lock_package_extracted_test_impl)
 
 _t0_test = unittest.make(_parse_lock_packages_test_impl)
@@ -1622,6 +1656,8 @@ _t53_test = unittest.make(_parse_pubspec_tag_test_impl)
 _t54_test = unittest.make(_parse_lock_tag_test_impl)
 _t55_test = unittest.make(_parse_pubspec_refused_test_impl)
 _t56_test = unittest.make(_parse_lock_refused_test_impl)
+_t57_test = unittest.make(_parse_pubspec_flow_entry_test_impl)
+_t58_test = unittest.make(_parse_lock_flow_entry_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -1688,6 +1724,8 @@ def yaml_parser_test_suite(name):
         _t54_test,
         _t55_test,
         _t56_test,
+        _t57_test,
+        _t58_test,
     )
     native.test_suite(
         name = name,

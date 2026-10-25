@@ -1437,6 +1437,64 @@ def _refused_character_test_impl(ctx):
     )
     return unittest.end(env)
 
+def _flow_entry_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A block entry inside a flow fails naming the line: pub rejects
+    # `key: [- a]`, which an older revision read as ["- a"]
+    # (package:yaml 3.1.4 with the pinned SDK 3.13.5).
+    for doc in [
+        "key: [- a]\n",
+        "key: [a, - b]\n",
+        "key: {a: - b}\n",
+        "key: [-]\n",
+        "key: [-, a]\n",
+        "key: [ - a ]\n",
+        "key: [a: - b]\n",
+        "key: { - : 1}\n",
+        "key: {-, a}\n",
+        "key: [a: -: 1]\n",
+        "key: [a: ? b]\n",
+        "key: [a: ?]\n",
+        "key: {a: ? b}\n",
+        "key: {a: ?}\n",
+        "key: [&x - a]\n",
+        "key: [!foo - a]\n",
+        "key: [a: &x - b]\n",
+        "key: [a: &x -: 1]\n",
+        "key: {a: &x -: 1}\n",
+        "key: [: - a]\n",
+        "key: [: -: 1]\n",
+        "key: [: ? b]\n",
+        "key: [? - a : b]\n",
+        "key: {? - a : b}\n",
+        "key: [&x ? b]\n",
+        "key: [a: &x ? b]\n",
+    ]:
+        asserts.equals(
+            env,
+            ["block entry inside flow at line 1 is not supported"],
+            document_problems(doc, True),
+        )
+
+    # Glued dashes, `-: ` pairs as items, `?` keys and `-:x` without a space
+    # read as pub reads them.
+    asserts.equals(env, {"key": ["-a"]}, parse_document("key: [-a]\n"))
+    asserts.equals(env, {"key": ["a", "-b"]}, parse_document("key: [a, -b]\n"))
+    asserts.equals(env, {"key": [{"-": 1}]}, parse_document("key: [-: 1]\n"))
+    asserts.equals(env, {"key": {"-": 1}}, parse_document("key: {-: 1}\n"))
+    asserts.equals(env, {"key": [{"a": "-b"}]}, parse_document("key: [a: -b]\n"))
+    asserts.equals(env, {"key": [{"a": "-:x"}]}, parse_document("key: [a: -:x]\n"))
+    asserts.equals(env, {"key": {"a": "-:x"}}, parse_document("key: {a: -:x}\n"))
+    asserts.equals(env, {"key": {"a": "?b"}}, parse_document("key: {a: ?b}\n"))
+    asserts.equals(env, {"key": [{"a": "?b"}]}, parse_document("key: [a: ?b]\n"))
+    asserts.equals(env, {"key": [{"-": 1}]}, parse_document("key: [&x -: 1]\n"))
+    asserts.equals(env, {"key": [{"-": 1}]}, parse_document("key: [!foo -: 1]\n"))
+    asserts.equals(env, {"key": ["?a"]}, parse_document("key: [?a]\n"))
+    asserts.equals(env, {"key": ["?a"]}, parse_document("key: [&x ?a]\n"))
+    asserts.equals(env, {"key": [{"a": "?b"}]}, parse_document("key: [a: &x ?b]\n"))
+    return unittest.end(env)
+
 _t0_test = unittest.make(_block_mapping_test_impl)
 _t1_test = unittest.make(_block_sequence_test_impl)
 _t2_test = unittest.make(_same_indent_sequence_test_impl)
@@ -1476,6 +1534,7 @@ _t35_test = unittest.make(_flow_self_anchor_test_impl)
 _t36_test = unittest.make(_double_escape_test_impl)
 _t37_test = unittest.make(_tab_indent_test_impl)
 _t38_test = unittest.make(_refused_character_test_impl)
+_t39_test = unittest.make(_flow_entry_test_impl)
 
 def yaml_subset_test_suite(name):
     small_unittest_suite(
@@ -1519,4 +1578,5 @@ def yaml_subset_test_suite(name):
         _t36_test,
         _t37_test,
         _t38_test,
+        _t39_test,
     )

@@ -76,7 +76,12 @@ Supported:
   space, while in single quotes the backslash stays literal. Block scalars
   after `key:` or `-` fold through this same pass; see below. A comment that ends a line
   inside a plain scalar and a `%` outside quotes and plain scalars are not
-  supported, and fail naming the line.
+  supported, and fail naming the line. A block entry inside a flow fails
+  naming the line, as pub rejects it: a `- ` entry, a `-: ` pair and a `?`
+  marker where a flow value starts, and a `- ` entry as a flow map key
+  unless a bare dash pairs at once with its colon, as pub reads `{-: 1}`.
+  A `-: ` pair as a sequence item reads as a one-pair mapping, and a `?`
+  key and `-:x` without a space read, as pub reads them.
 - block scalars `|` and `>` with chomping and indentation indicators: `|`
   joins lines with breaks and `>` folds them, as pub folds them. A break
   between base-indented lines is one space, the break after a base line
@@ -182,7 +187,9 @@ testing, so the projections are unaffected on real pubspec files:
   rejects the first and decodes the rest, as read now. A plain scalar
   starting with `@` or a backtick, and one holding a control character or
   DEL, read as plain before; pub refuses them, so they fail naming the
-  line. A flow alias
+  line. A block entry inside a flow read as plain before: `[- a]`,
+  `[a, - b]`, `{a: - b}`, `[a: - b]` and `{ - : 1}` read `"- a"`, `"- b"`
+  and `"-"` before; pub rejects them, so they fail naming the line. A flow alias
   with a glued colon resolved the short name before, a flow anchor or tag
   word ended its key at a glued colon before, a key with no pair colon
   failed its flow before, and a colon after a bare flow anchor or tag
@@ -548,6 +555,69 @@ def _is_dash(text):
     `-\tx` as `x`.
     """
     return text == "-" or text.startswith("- ") or text.startswith("-\t")
+
+def _is_question_entry(text):
+    """Returns whether `text` is an explicit-key marker, as pub rejects it where a value starts.
+
+    A bare `?`, or `?` with a space or a tab after it, opens an explicit
+    key; `?a` stays a plain scalar, as pub reads it.
+    """
+    return text == "?" or text.startswith("? ") or text.startswith("?\t")
+
+def _is_dash_pair(text):
+    """Returns whether `text` pairs a bare dash key with a spaced colon, as pub reads `[-: 1]`."""
+    return len(text) > 2 and text[0] == "-" and text[1] == ":" and text[2] in [" ", "\t"]
+
+def _is_flow_value_entry(text):
+    """Returns whether `text` is a block entry where a flow value starts, as pub rejects it.
+
+    A `- ` entry, a `-: ` pair and a `?` marker all fail as a flow mapping
+    value or pair value; `-:x` without a space stays a plain scalar, as pub
+    reads it.
+    """
+    return _is_dash(text) or _is_dash_pair(text) or _is_question_entry(text)
+
+def _is_flow_seq_entry(token):
+    """Returns whether a flow sequence item token is a block entry, as pub rejects it.
+
+    A `- ` entry fails, as does an explicit `?` key holding an entry; a
+    `-: ` pair reads as a one-pair mapping and a `?` key reads, as pub
+    reads them.
+    """
+    if _is_dash(token):
+        return True
+    for prefix in ["? ", "?\t"]:
+        if token.startswith(prefix) and _is_flow_value_entry(token[2:]):
+            return True
+    return False
+
+def _is_flow_key_entry(token, raw, next_ch):
+    """Returns whether a flow map key token is a block entry, as pub rejects it.
+
+    A `- ` entry fails unless a bare dash pairs at once with its colon, as
+    pub reads `{-: 1}` but rejects `{ - : 1}`; an anchored or tagged dash
+    fails even so, as pub rejects `{&x - : 1}`. An explicit `?` key holding
+    an entry fails too, while a plain `?` key reads, as pub reads it.
+    """
+    _anchor, _tag, rest, _bad = _strip_value_prefix(token)
+    if _is_dash(rest):
+        return rest != "-" or _anchor != None or _tag != None or raw != "-" or next_ch != ":"
+    for prefix in ["? ", "?\t"]:
+        if rest.startswith(prefix) and _is_flow_value_entry(rest[2:]):
+            return True
+    return False
+
+def _flow_value_entry_problem(value_text, state, line):
+    """Records a block entry where a flow pair value starts. Returns True when one fails.
+
+    The anchor and tag prefixes are stripped first, as pub still rejects
+    the entry under them.
+    """
+    _anchor, _tag, rest, _bad = _strip_value_prefix(value_text)
+    if _is_flow_value_entry(rest):
+        state.problems.append("block entry inside flow at line %d is not supported" % line)
+        return True
+    return False
 
 def _is_mapping_start(text):
     """Returns whether `text` opens a block mapping entry."""
@@ -2900,9 +2970,19 @@ def _flow_key_step(s, i, frame, anchors, state, line):
     A key token that runs to `,` or the close, as an anchor or tag word with
     a glued colon does, reads with a null value, as pub reads it.
     """
+    tok_start = i
     token, i = _flow_token(s, i, [":", frame["close"], ","])
     if token == "" or not _flow_scalar_ok(token):
         return i, False
+    if _is_flow_key_entry(token, s[tok_start:i], s[i:i + 1]):
+        state.problems.append("block entry inside flow at line %d is not supported" % line)
+        frame["key"] = _key(None)
+        i = _skip_flow_space(s, i)
+        if i >= len(s) or s[i] != ":":
+            _flow_add(frame, None, state, line)
+            return i, True
+        frame["state"] = "value"
+        return i + 1, True
     frame["key"] = _flow_key_value(token, anchors, state, line)
     i = _skip_flow_space(s, i)
     if i >= len(s) or s[i] != ":":
@@ -2923,6 +3003,15 @@ def _flow_item_step(s, i, frame, anchors, stack, state, line):
     token, next_i = _flow_token(s, i, [",", frame["close"]])
     if token == "" or not _flow_scalar_ok(token):
         return next_i, False
+    if frame["kind"] == "map":
+        _ianchor, _itag, irest, _ibad = _strip_value_prefix(token)
+        entry = _is_flow_value_entry(irest)
+    else:
+        entry = _is_flow_seq_entry(token)
+    if entry:
+        state.problems.append("block entry inside flow at line %d is not supported" % line)
+        _flow_add(frame, None, state, line)
+        return next_i, True
     _flow_add(frame, _flow_scalar_value(token, anchors, state, line), state, line)
     return next_i, True
 
@@ -2996,7 +3085,8 @@ def _flow_scalar_value(token, anchors, state, line):
     joins the alias name, as pub scans it, so only a name without a colon
     followed by a spaced colon pairs with a value, as pub reads it. Any
     other token strips one anchor and tag first: an alias after them is a
-    problem naming the line, as pub rejects it; a colon where the value
+    problem naming the line, as pub rejects it, as is a `- ` entry or `?`
+    marker after them, while a `-: ` pair reads on; a colon where the value
     starts pairs the anchor or tag on its own with the value, as pub reads
     it; any other `:` pair reads with the tag on a string key and the anchor
     on the key, as pub reads them. A problem still reads `None`, so parsing
@@ -3017,12 +3107,20 @@ def _flow_scalar_value(token, anchors, state, line):
     if tag != None and rest.startswith("*"):
         state.problems.append("alias after tag at line %d is not supported" % line)
         return None
+    if (anchor != None or tag != None) and (_is_dash(rest) or _is_question_entry(rest)):
+        state.problems.append("block entry inside flow at line %d is not supported" % line)
+        if anchor != None:
+            anchors[anchor] = None
+        return None
     if rest.startswith(":"):
         key = _drop_tag_value(tag, line, state) if tag != None else None
         if anchor != None:
             anchors[anchor] = _clone(key)
         value_text = rest[1:].strip()
-        value = _flow_atom(value_text, anchors, state, line) if value_text != "" else None
+        if value_text == "" or _flow_value_entry_problem(value_text, state, line):
+            value = None
+        else:
+            value = _flow_atom(value_text, anchors, state, line)
         pair = {}
         pair[_key(key)] = value
         return pair
@@ -3091,7 +3189,10 @@ def _flow_pair(key_text, value_text, anchor, tag, anchors, state, line):
     drops it, and the anchor binds the key, as pub reads them.
     """
     key = _flow_atom(key_text, anchors, state, line)
-    value = _flow_atom(value_text, anchors, state, line)
+    if _flow_value_entry_problem(value_text, state, line):
+        value = None
+    else:
+        value = _flow_atom(value_text, anchors, state, line)
     if tag != None:
         key = _apply_key_tag(tag, key, key_text, anchors, state, line)
     if anchor != None:
