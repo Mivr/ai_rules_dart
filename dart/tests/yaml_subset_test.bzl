@@ -168,13 +168,22 @@ def _document_marker_test_impl(ctx):
 
     # Text glued to a marker is an ordinary line, not a marker, as pub
     # reads `---x: 1` as a key: only `---` plus a space, a tab or the end
-    # of the line marks, and glued `...` text fails once content came first.
+    # of the line marks. The same holds for `...`: pub reads `....: 2`
+    # and `...: 2` as keys and `...x` as content failing for its missing
+    # colon, while glued text after the end still ends the document there.
     asserts.equals(env, {"a": 1, "---x": 1}, parse_document("a: 1\n---x: 1\n"))
     asserts.equals(env, {"a": 1, "---x": 1}, parse_document("---x: 1\na: 1\n"))
+    asserts.equals(env, {"a": 1, "....": 2}, parse_document("a: 1\n....: 2\n"))
+    asserts.equals(env, {"a": 1, "...": 2}, parse_document("a: 1\n...: 2\n"))
     asserts.equals(
         env,
-        ["content after document end (...) at line 2"],
+        ["unreadable line 2: \"...x\""],
         document_problems("a: 1\n...x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["content after document end (...) at line 3"],
+        document_problems("a: 1\n...\n...x\n", True),
     )
 
     # Block content on the `---` line fails naming the line, while a scalar
