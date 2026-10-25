@@ -1,0 +1,75 @@
+"""Runnable fixtures for the `run_home` hermeticity test.
+
+Every public rule whose target `bazel run` accepts has one instance here
+(see `registry.sh` for the full inventory, including the `@rules_dart`
+pass-through). `dart_js_binary` and `dart_wasm_binary` have instances too,
+although their targets are not runnable: the script asserts `bazel run`
+refuses them, so making them runnable without registering a HOME policy
+fails the test.
+"""
+
+load("@rules_dart//dart:defs.bzl", "dart_analysis_test", "dart_binary", "dart_fix", "dart_format", "dart_js_binary", "dart_library", "dart_test", "dart_wasm_binary")
+
+dart_binary(
+    name = "bin_exe",
+    main = "hello.dart",
+)
+
+dart_binary(
+    name = "bin_aot",
+    compile_mode = "aot-snapshot",
+    main = "hello.dart",
+)
+
+dart_binary(
+    name = "bin_kernel",
+    compile_mode = "kernel",
+    main = "hello.dart",
+)
+
+dart_binary(
+    name = "bin_kernel_launcher",
+    compile_mode = "kernel",
+    launcher = True,
+    main = "hello.dart",
+)
+
+dart_binary(
+    name = "bin_jit",
+    compile_mode = "jit-snapshot",
+    main = "hello.dart",
+)
+
+dart_test(
+    name = "plain_test",
+    main = "hello_test.dart",
+)
+
+dart_format(
+    name = "fmt",
+)
+
+dart_library(
+    name = "fix_lib",
+    srcs = ["lib/fix_lib.dart"],
+)
+
+dart_fix(
+    name = "fix_it",
+    target = ":fix_lib",
+)
+
+dart_js_binary(
+    name = "web_js",
+    main = "hello.dart",
+)
+
+dart_wasm_binary(
+    name = "web_wasm",
+    main = "hello.dart",
+)
+
+dart_analysis_test(
+    name = "analysis_test",
+    targets = [":fix_lib"],
+)
