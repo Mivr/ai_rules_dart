@@ -23,6 +23,7 @@ _SPOKE_PREFIX = "dart_pub"
 # `yaml_parser.bzl`'s load closure, so a new load there cannot be missed here.
 _PARSER_SOURCE_LABELS = [
     Label("//dart/pub:yaml_parser.bzl"),
+    Label("//dart/pub/private:yaml_chars.bzl"),
     Label("//dart/pub/private:yaml_subset.bzl"),
 ]
 
