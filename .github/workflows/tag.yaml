@@ -25,7 +25,7 @@ jobs:
           fetch-depth: 0
       - name: Bump tag if necessary
         id: ccv
-        uses: smlx/ccv@v0.10.0
+        uses: smlx/ccv@7318e2f25a52dcd550e75384b84983973251a1f8 # v0.10.0
   release:
     needs: tag
     # No timeout-minutes here: GitHub rejects it on jobs that call a reusable
