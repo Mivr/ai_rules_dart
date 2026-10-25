@@ -3480,10 +3480,25 @@ def _flow_key_step(s, i, frame, anchors, state, line):
     """Reads one flow map key up to its colon. Returns (next_i, ok).
 
     A key token that runs to `,` or the close, as an anchor or tag word with
-    a glued colon does, reads with a null value, as pub reads it.
+    a glued colon does, reads with a null value, as pub reads it; a colon
+    glued into a plain key stays content too, while a spaced colon later
+    still pairs, and a quoted key pairs at its glued colon, as pub reads
+    them.
     """
     tok_start = i
     token, i = _flow_token(s, i, [":", frame["close"], ","])
+    for _ in range(len(s) + 1):
+        # A colon glued into a plain key stays content, as pub scans it, so
+        # the key runs on to a separating colon, a comma or the close; a
+        # quoted key pairs at once, as pub reads `"a":1` as one pair.
+        if s[i:i + 1] != ":" or s[i + 1:i + 2] in [" ", "\t", "\n", "\r", ",", frame["close"]]:
+            break
+        if len(token) > 1 and token[:1] in ["'", '"'] and token[-1:] == token[:1]:
+            break
+        more, i = _flow_token(s, i + 1, [":", frame["close"], ","])
+        if more == "":
+            break
+        token += ":" + more
     if token == "" or not _flow_scalar_ok(token):
         return i, False
     if _is_flow_key_entry(token, s[tok_start:i], s[i:i + 1]):
@@ -3541,7 +3556,8 @@ def _flow_item_step(s, i, frame, anchors, stack, state, line):
 def _parse_flow(text, anchors, parse_state, line):
     """Parses the flow collection that starts `text`, or returns None.
 
-    A flow frame is a dict {kind, close, value, state, key}. The frame's
+    A `#` where a token starts opens a comment to the end of the line, as
+    pub scans it, even glued to an opener or a comma. A flow frame is a dict {kind, close, value, state, key}. The frame's
     `state` is "item" or "value" where a value may start, "after" once a
     value is complete, and "key" where a map key is read. Duplicate map keys
     are recorded on `parse_state` with `line`.
@@ -3553,6 +3569,15 @@ def _parse_flow(text, anchors, parse_state, line):
         i = _skip_flow_space(s, i)
         if i >= len(s):
             return None
+        if s[i] == "#":
+            # A `#` where a flow token starts is a comment running to the
+            # end of the line, as pub scans it, even glued to `[`, `{` or
+            # `,`; a `#` glued into a token stays content, as the tokenizer
+            # never stops for it. The flow left open fails downstream as an
+            # unclosed one does.
+            nl = s.find("\n", i)
+            i = len(s) if nl < 0 else nl + 1
+            continue
         frame = stack[-1]
         ch = s[i]
         state = frame["state"]

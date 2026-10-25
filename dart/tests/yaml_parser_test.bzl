@@ -1633,6 +1633,12 @@ def _parse_pubspec_flow_entry_test_impl(ctx):
     doc = head + "tags: [-: 1]\n"
     asserts.equals(env, [{"-": 1}], parse_pubspec_document(doc)["tags"])
     asserts.equals(env, None, parse_pubspec_document_error(doc))
+
+    # A `#` where a flow token starts is a comment, so the flow left open
+    # fails naming the pubspec and the line, as pub rejects it.
+    doc = head + "tags: [a,#b]\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
     return unittest.end(env)
 
 def _parse_lock_flow_entry_test_impl(ctx):

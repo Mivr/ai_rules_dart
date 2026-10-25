@@ -367,6 +367,43 @@ def _flow_collection_test_impl(ctx):
     asserts.equals(env, {"a": {"p": "q :r"}}, parse_document("a: {p: q :r}\n"))
     asserts.equals(env, {"a": {"p": "q: r"}}, parse_document("a: {p: \"q: r\"}\n"))
     asserts.equals(env, {"a": [{"b": "c"}]}, parse_document("a: [b: c]\n"))
+
+    # A `#` where a flow token starts is a comment to the end of the line,
+    # even glued to an opener or a comma, so the flow left open fails; a
+    # `#` glued into a token stays content, as pub scans them (package:yaml
+    # 3.1.4 with the pinned SDK 3.13.5). An unclosed flow names its opening
+    # line, as every other unclosed flow does.
+    asserts.equals(
+        env,
+        ["unreadable flow value at line 1: \"[x,#y]\""],
+        document_problems("a: [x,#y]\n", True),
+    )
+    asserts.equals(
+        env,
+        ["unreadable flow value at line 1: \"{k: v,#c}\""],
+        document_problems("a: {k: v,#c}\n", True),
+    )
+    asserts.equals(
+        env,
+        ["unreadable flow value at line 1: \"[#]\""],
+        document_problems("a: [#]\n", True),
+    )
+    asserts.equals(env, {"a": ["x"]}, parse_document("a: [x, #y\n  ]\n"))
+    asserts.equals(env, {"a": ["x"]}, parse_document("a: [#c\n  x]\n"))
+    asserts.equals(env, {"a": ["x"]}, parse_document("a: [x]#c\n"))
+    asserts.equals(env, {"a": ["#y"]}, parse_document("a: [\"#y\"]\n"))
+    asserts.equals(env, {"a": ["x#y"]}, parse_document("a: [x#y]\n"))
+    asserts.equals(env, {"a": {"k": "v#w"}}, parse_document("a: {k: v#w}\n"))
+    asserts.equals(env, {"a": {"k:#v": None}}, parse_document("a: {k:#v}\n"))
+
+    # A colon glued into a plain flow key stays content: the key runs to a
+    # separating colon, a comma or the close, as pub scans them; a quoted
+    # key still pairs at its glued colon, as pub reads it.
+    asserts.equals(env, {"a": {"b:c": None}}, parse_document("a: {b:c}\n"))
+    asserts.equals(env, {"a": {"k:v": "w"}}, parse_document("a: {k:v: w}\n"))
+    asserts.equals(env, {"a": {"a": 1}}, parse_document("a: {\"a\":1}\n"))
+    asserts.equals(env, {"a": {"http://x": 1}}, parse_document("a: {http://x: 1}\n"))
+    asserts.equals(env, {"a": {}}, parse_document("a: { #c\n  }\n"))
     return unittest.end(env)
 
 def _flow_quote_start_test_impl(ctx):
