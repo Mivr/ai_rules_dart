@@ -100,10 +100,10 @@ testing, so the projections are unaffected on real pubspec files:
   A folded `>` scalar with blank lines read an extra break before, an
   all-blank clip or keep scalar added a break before, a `|`/`>` header with
   trailing text read as a scalar before, a `- key: >` or `|` value read as
-  plain before, and a block scalar ended by a less-indented line folded
-  that line in before; pub rejects the header and ending forms and folds
-  the rest as read now. A blank line before a more-indented line lost its
-  break before, where pub keeps the break after the content line.
+  plain before, a block scalar ended by a less-indented line folded
+  that line in before, and a keep scalar at the end of the file read one
+  break too many before; pub rejects the header and ending forms and folds
+  the rest as read now.
 - flow collections that span lines are not supported, unless the folded
   lines read as one flow collection as pub reads them; yaml.bzl reads all
   spanning flows. The supported fold matches pub on the oracle-checked
@@ -1559,6 +1559,11 @@ def _parse_block_scalar(lines, start, parent_indent, explicit_base, header, head
         _record_unreadable(state, start + bad_lead, lines[start + bad_lead].strip())
         return None, start + bad_lead, False
     values = _block_scalar_values(items, putback, indent)
+    if _idx >= len(lines) and values and values[-1] == "":
+        # The file ends with a newline, so the split left one artifact blank
+        # line after the scalar: keep chomping must not count it as a
+        # trailing blank line, as pub does not count it.
+        values = values[:-1]
     return _block_scalar_chomp(style, values, chomping), start + putback, True
 
 # ---------------------------------------------------------------------------
