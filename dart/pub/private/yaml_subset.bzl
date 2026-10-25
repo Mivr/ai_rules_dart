@@ -29,7 +29,9 @@ duplicate keys and the unsupported forms. Leading byte-order marks are
 stripped, as pub accepts them at the stream start; a mark anywhere else is
 a problem naming the line, as pub rejects it, except a bare mark line at
 column 0, which is blank-like and skipped, and marks inside quoted and
-block scalars, which stay content as pub reads them.
+block scalars, which stay content as pub reads them. A byte sequence that
+is not UTF-8 is a problem naming its line, as pub fails reading the file:
+`ctx.read` keeps the file's bytes verbatim.
 
 Supported:
 - block mappings and sequences nested by indentation, including `- key: v`
@@ -219,7 +221,11 @@ testing, so the projections are unaffected on real pubspec files:
   pub rejects both, so they fail naming the line. A `0` indentation
   indicator read as an indicator before (`key: |0` read the content); pub
   rejects it, so it fails naming the line, while other digits read as pub
-  reads them.
+  reads them. A byte sequence that is not UTF-8 read as content before; pub
+  fails reading the file, so it fails naming the line. A `%YAML` or `%TAG`
+  without a later `---`, a duplicate or malformed directive and an indented
+  `%` line read the document before; pub rejects them, so they fail naming
+  the line, while `%YAML 1.3` and unknown directives read as pub reads them.
 - flow collections that span lines are not supported, unless the folded
   lines read as one flow collection as pub reads them; yaml.bzl reads all
   spanning flows. The supported fold matches pub on the oracle-checked
@@ -350,10 +356,79 @@ def document_problems(content, strict_lines = False):
     _value, problems = _parse_document(content, strict_lines)
     return problems
 
+def _is_utf8_trail(byte):
+    """Returns whether a one-byte string is a UTF-8 continuation byte."""
+    return "\200" <= byte and byte <= "\277"
+
+def _first_bad_utf8_line(content):
+    """Returns the 1-based line of the first byte that breaks UTF-8, or 0.
+
+    `ctx.read` keeps the file's bytes verbatim, so a byte sequence that is
+    not UTF-8 reaches the reader where pub fails reading the file (its
+    decoder throws). Line breaks count as the collector counts them.
+    A lead byte with missing or bad continuation bytes, a stray
+    continuation byte, a C0 or C1 lead, a lead past F4, an overlong E0 or
+    F0 start, an ED start of a surrogate half, and an F4 start past
+    U+10FFFF all fail, as none decodes; anything else reads, including a
+    4-byte start and the U+10FFFF sequence itself.
+    """
+    line = 1
+    i = 0
+    n = len(content)
+    for _ in range(n + 1):
+        if i >= n:
+            return 0
+        byte = content[i]
+        if byte == "\n":
+            line += 1
+            i += 1
+        elif byte == "\r":
+            line += 1
+            i += 1
+            if i < n and content[i] == "\n":
+                i += 1
+        elif byte < "\200":
+            i += 1
+        elif byte < "\300":
+            return line
+        elif byte < "\302":
+            return line
+        else:
+            size = 0
+            if byte < "\340":
+                size = 1
+            elif byte < "\360":
+                size = 2
+            elif byte < "\365":
+                size = 3
+            else:
+                return line
+            bad = i + size >= n
+            for k in range(1, size + 1):
+                if not bad and not _is_utf8_trail(content[i + k]):
+                    bad = True
+            if bad:
+                return line
+            second = content[i + 1]
+            if byte == "\340" and second < "\240":
+                return line
+            if byte == "\360" and second < "\220":
+                return line
+            if byte == "\355" and "\240" <= second and second <= "\277":
+                return line
+            if byte == "\364" and "\217" < second:
+                return line
+            i += size + 1
+    return 0
+
 def _parse_document(content, strict_lines):
     """Parses one document. Returns (value, problems) without failing."""
     state = struct(problems = [], strict_lines = strict_lines)
-    lines = _first_document_lines(_strip_bom(content), state)
+    stripped = _strip_bom(content)
+    bad_line = _first_bad_utf8_line(stripped)
+    if bad_line > 0:
+        state.problems.append("invalid UTF-8 at line %d is not supported" % bad_line)
+    lines = _first_document_lines(stripped, state)
     first = _first_content(lines)
     if first.text[:1] in ["{", "["] and _allows_flow_doc(lines, first.index):
         items = []

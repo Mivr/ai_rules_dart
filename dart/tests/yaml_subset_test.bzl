@@ -2368,6 +2368,88 @@ _t43_test = unittest.make(_block_scalar_indicator_test_impl)
 _t44_test = unittest.make(_directive_test_impl)
 _t45_test = unittest.make(_tag_remainder_test_impl)
 
+def _encoding_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A byte sequence that is not UTF-8 fails naming its line: pub fails
+    # reading the file (its decoder throws), while `ctx.read` keeps the
+    # bytes verbatim. Stray and bad lead bytes, truncated and bad
+    # continuations, overlong starts, surrogate halves and past-max starts
+    # all fail.
+    asserts.equals(
+        env,
+        ["invalid UTF-8 at line 1 is not supported"],
+        document_problems("d: x\377\n", True),
+    )
+    asserts.equals(
+        env,
+        ["invalid UTF-8 at line 1 is not supported"],
+        document_problems("d: x\200\n", True),
+    )
+    asserts.equals(
+        env,
+        ["invalid UTF-8 at line 1 is not supported"],
+        document_problems("d: x\301\277\n", True),
+    )
+    asserts.equals(
+        env,
+        ["invalid UTF-8 at line 1 is not supported"],
+        document_problems("d: x\342\202\n", True),
+    )
+    asserts.equals(
+        env,
+        ["invalid UTF-8 at line 1 is not supported"],
+        document_problems("d: x\360\200a\n", True),
+    )
+    asserts.equals(
+        env,
+        ["invalid UTF-8 at line 1 is not supported"],
+        document_problems("d: x\340\200\200\n", True),
+    )
+    asserts.equals(
+        env,
+        ["invalid UTF-8 at line 1 is not supported"],
+        document_problems("d: x\355\240\200\n", True),
+    )
+    asserts.equals(
+        env,
+        ["invalid UTF-8 at line 1 is not supported"],
+        document_problems("d: x\364\220\200\200\n", True),
+    )
+    asserts.equals(
+        env,
+        ["invalid UTF-8 at line 1 is not supported"],
+        document_problems("d: x\303", True),
+    )
+    asserts.equals(
+        env,
+        ["invalid UTF-8 at line 2 is not supported"],
+        document_problems("a: 1\nd: x\377\n", True),
+    )
+    asserts.equals(
+        env,
+        ["invalid UTF-8 at line 2 is not supported"],
+        document_problems("a: 1\r\nd: x\377\r\n", True),
+    )
+    asserts.equals(
+        env,
+        ["invalid UTF-8 at line 1 is not supported"],
+        document_problems("d: x\377\n", False),
+    )
+
+    # Valid multibyte sequences read through, including the boundary starts
+    # and the U+10FFFF sequence itself.
+    asserts.equals(env, {"d": "na\303\257ve \342\202\254"}, parse_document("d: na\303\257ve \342\202\254\n"))
+    asserts.equals(env, {"d": "a\360\237\230\200b"}, parse_document("d: a\360\237\230\200b\n"))
+    asserts.equals(env, {"d": "\340\240\200"}, parse_document("d: \340\240\200\n"))
+    asserts.equals(env, {"d": "\360\220\200\200"}, parse_document("d: \360\220\200\200\n"))
+    asserts.equals(env, {"d": "\355\237\277"}, parse_document("d: \355\237\277\n"))
+    asserts.equals(env, {"d": "\364\217\277\277"}, parse_document("d: \364\217\277\277\n"))
+    asserts.equals(env, {"d": "\335\240"}, parse_document("d: \335\240\n"))
+    return unittest.end(env)
+
+_t46_test = unittest.make(_encoding_test_impl)
+
 def yaml_subset_test_suite(name):
     small_unittest_suite(
         name,
@@ -2417,4 +2499,5 @@ def yaml_subset_test_suite(name):
         _t43_test,
         _t44_test,
         _t45_test,
+        _t46_test,
     )

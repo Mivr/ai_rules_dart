@@ -1976,6 +1976,37 @@ def _parse_lock_tag_remainder_test_impl(ctx):
 _t69_test = unittest.make(_parse_pubspec_tag_remainder_test_impl)
 _t70_test = unittest.make(_parse_lock_tag_remainder_test_impl)
 
+def _parse_pubspec_encoding_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A byte sequence that is not UTF-8 fails naming the pubspec and the
+    # line, as pub fails reading the file; valid multibyte text reads.
+    head = "name: x\nenvironment:\n  sdk: ^3.0.0\n"
+    doc = head + "description: x\377\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
+    doc = head + "description: na\303\257ve\n"
+    asserts.equals(env, "na\303\257ve", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    return unittest.end(env)
+
+def _parse_lock_encoding_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A byte sequence that is not UTF-8 fails naming the lock and the line,
+    # as pub fails reading the file.
+    content = (
+        "packages:\n  a:\n    dependency: transitive\n    description:\n" +
+        "      name: a\n      sha256: abc\n      url: x\377\n" +
+        "    source: hosted\n    version: \"1.0.0\"\n"
+    )
+    err = pubspec_lock_error(content, "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 7" in err)
+    return unittest.end(env)
+
+_t71_test = unittest.make(_parse_pubspec_encoding_test_impl)
+_t72_test = unittest.make(_parse_lock_encoding_test_impl)
+
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
         name = name + "_pub_lock_package_extracted_test",
@@ -2055,6 +2086,8 @@ def yaml_parser_test_suite(name):
         _t68_test,
         _t69_test,
         _t70_test,
+        _t71_test,
+        _t72_test,
     )
     native.test_suite(
         name = name,
