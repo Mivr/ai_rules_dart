@@ -23,6 +23,7 @@ load(":provider_shape_test.bzl", "provider_shape_probe")
 load(":pub_archive_scan_test.bzl", "pub_archive_scan_test_suite")
 load(":pub_scc_test.bzl", "pub_scc_test_suite")
 load(":pub_symlink_test.bzl", "pub_symlink_test_suite")
+load(":pubspec_guard_test.bzl", "pubspec_guard_test_suite")
 load(":registry_test.bzl", "registry_test_suite")
 load(":semver_test.bzl", "semver_test_suite")
 load(":snapshot_patch_test.bzl", "snapshot_patch_test_suite")
@@ -75,6 +76,8 @@ propagation_test_suite(name = "propagation_test")
 pub_archive_scan_test_suite(name = "pub_archive_scan_test")
 
 pub_scc_test_suite(name = "pub_scc_test")
+
+pubspec_guard_test_suite(name = "pubspec_guard_test")
 
 pub_symlink_test_suite(name = "pub_symlink_test")
 

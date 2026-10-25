@@ -213,7 +213,14 @@ def _collect_doc_line(line, idx, current, doc, state):
         return _doc_dots_line(line, idx, current, doc, state)
     if doc["ended"]:
         if line.startswith("%"):
-            # A trailing directive reads past, as pub only warns about it.
+            if not is_unknown_directive(line) and getattr(state, "refuse_tail_directives", False):
+                # A known trailing directive is invalid, as pub rejects it there.
+                state.problems.append("directive after document end (...) at line %d" % idx)
+                current.append("")
+                return False
+
+            # Otherwise the directive reads past: an unknown one, as pub
+            # only warns about it, or a known one in a lock, as before.
             current.append("")
             return False
         if _doc_tail_content(line):

@@ -21,7 +21,7 @@ load("//dart/private:download.bzl", "pinned_download")
 load("//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "pinned_source_error")
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_spoke_dep_labels", "trim_gzip_trailing_nulls")
 load("//dart/pub:pub_scan.bzl", _run_pub_archive_scan = "run_pub_archive_scan")
-load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
+load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint", "pubspec_sdk_constraint_error")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_package_member_build_content = "make_dart_package_member_build_content", _make_scc_merged_build_content = "make_scc_merged_build_content")
 load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
 load("//dart/pub/private:pub_scc_verify.bzl", "scc_member_deps_error", "scc_members_connectivity_error", "scc_planned_deps_error")
@@ -119,6 +119,9 @@ def _parsed_scc_member(ctx, member, name):
     # latter so the merged library mirrors pub's per-package
     # languageVersion behaviour.
     pubspec = ctx.read(name + "/pubspec.yaml") if ctx.path(name + "/pubspec.yaml").exists else ""
+    sdk_err = pubspec_sdk_constraint_error(pubspec, name + "/pubspec.yaml")
+    if sdk_err:
+        fail(sdk_err)
     return struct(
         name = name,
         version = member["version"],

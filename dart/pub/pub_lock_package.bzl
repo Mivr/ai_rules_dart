@@ -12,7 +12,7 @@ the `flutter pub get` analog) reuse this helper to emit the same
 load("//dart/private:download.bzl", "pinned_download")
 load("//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "pinned_source_error")
 load("//dart/pub:pub_scan.bzl", _run_pub_archive_scan = "run_pub_archive_scan")
-load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
+load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint", "pubspec_sdk_constraint_error")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_library_build_content = "make_dart_library_build_content")
 load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
 load("//dart/pub/private:pub_scc_verify.bzl", "spoke_planned_deps_error")
@@ -148,6 +148,9 @@ def _pub_lock_write_build(ctx, rule_name):
     pubspec_path = ctx.path("pubspec.yaml")
     if pubspec_path.exists:
         pubspec_content = ctx.read(pubspec_path)
+        sdk_err = pubspec_sdk_constraint_error(pubspec_content, ctx.attr.package_name + "/pubspec.yaml")
+        if sdk_err:
+            fail(sdk_err)
         all_deps = parse_pubspec_deps(pubspec_content)
         real_deps = sorted(all_deps)
         available = {p: True for p in ctx.attr.lock_packages + ctx.attr.explicit_packages}

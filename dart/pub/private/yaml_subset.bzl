@@ -302,17 +302,20 @@ def parse_document(content):
         fail(problems[0])
     return value
 
-def document_value_and_problems(content, strict_lines = False):
+def document_value_and_problems(content, strict_lines = False, refuse_tail_directives = False):
     """Parses one document without failing. Returns (value, problems).
 
     Args:
         content: The text of a YAML stream.
         strict_lines: Also report lines the parser cannot place.
+        refuse_tail_directives: Also refuse a known directive after `...`,
+            as pub rejects it there. Locks leave this off, reading exactly
+            as before.
 
     Returns:
         A tuple of the document value and the problem list.
     """
-    return _parse_document(content, strict_lines)
+    return _parse_document(content, strict_lines, refuse_tail_directives)
 
 def document_problems(content, strict_lines = False):
     """Reports duplicate keys and, with strict lines, skipped lines.
@@ -335,9 +338,18 @@ def document_problems(content, strict_lines = False):
     _value, problems = _parse_document(content, strict_lines)
     return problems
 
-def _parse_document(content, strict_lines):
-    """Parses one document. Returns (value, problems) without failing."""
-    state = struct(problems = [], strict_lines = strict_lines)
+def _parse_document(content, strict_lines, refuse_tail_directives = False):
+    """Parses one document. Returns (value, problems) without failing.
+
+    Args:
+        content: The text of a YAML stream.
+        strict_lines: Also report lines the parser cannot place.
+        refuse_tail_directives: Also refuse a known directive after `...`.
+
+    Returns:
+        A tuple of the document value and the problem list.
+    """
+    state = struct(problems = [], strict_lines = strict_lines, refuse_tail_directives = refuse_tail_directives)
     stripped = strip_bom(content)
     bad_line = first_bad_utf8_line(stripped)
     if bad_line > 0:
