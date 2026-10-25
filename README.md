@@ -20,7 +20,13 @@ Bazel rule set for building Dart applications and libraries.
 Add to your `MODULE.bazel`:
 
 ```starlark
-bazel_dep(name = "ai_rules_dart", version = "0.14.0", repo_name = "rules_dart")
+bazel_dep(name = "ai_rules_dart", version = "0.18.0", repo_name = "rules_dart")
+archive_override(
+    module_name = "ai_rules_dart",
+    urls = ["https://github.com/Mivr/rules_dart/releases/download/v0.18.0/rules_dart-v0.18.0.tar.gz"],
+    integrity = "sha256-9sFt975mhYbFlKNUJ0F9dExQzCu6yv9Dc+WEGsxVuO0=",
+    strip_prefix = "rules_dart-0.18.0",
+)
 
 dart = use_extension("@rules_dart//dart:extensions.bzl", "dart")
 dart.toolchain(dart_version = "3.13.5")
@@ -35,8 +41,6 @@ A `dart.toolchain(...)` request from the root module takes precedence over
 requests from dependencies (rules_dart's included), even when the root's version
 is older; with no root request, the highest requested version is selected.
 
-````
-
 ## Usage
 
 ### Running the Dart SDK
@@ -48,7 +52,7 @@ automatically. To run the `dart` CLI directly:
 bazel run @rules_dart//dart -- --version
 bazel run @rules_dart//dart -- analyze lib/
 bazel run @rules_dart//dart -- format lib/
-````
+```
 
 > **Tip**: Consider using [`bazel_env`](https://github.com/buildbuddy-io/bazel_env.bzl)
 > to put Bazel-managed tool binaries on your `PATH` for IDE and shell use.
