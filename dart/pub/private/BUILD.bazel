@@ -87,7 +87,7 @@ bzl_library(
     visibility = ["//dart/pub:__subpackages__"],
     deps = [
         ":yaml_chars",
-        ":yaml_escape",
+        ":yaml_scalar",
         ":yaml_text",
     ],
 )
@@ -97,6 +97,7 @@ bzl_library(
     srcs = ["yaml_chars.bzl"],
     visibility = ["//dart/pub:__subpackages__"],
 )
+
 bzl_library(
     name = "yaml_text",
     srcs = ["yaml_text.bzl"],
@@ -105,10 +106,22 @@ bzl_library(
         ":yaml_chars",
     ],
 )
+
 bzl_library(
     name = "yaml_escape",
     srcs = ["yaml_escape.bzl"],
     visibility = ["//dart/pub:__subpackages__"],
+)
+
+bzl_library(
+    name = "yaml_scalar",
+    srcs = ["yaml_scalar.bzl"],
+    visibility = ["//dart/pub:__subpackages__"],
+    deps = [
+        ":yaml_chars",
+        ":yaml_escape",
+        ":yaml_text",
+    ],
 )
 
 # Bare scanner sources for `//dart/pub:pub_scan_test`, which imports the
