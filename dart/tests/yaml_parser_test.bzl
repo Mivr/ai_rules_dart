@@ -1475,6 +1475,43 @@ def _parse_pubspec_tab_indent_test_impl(ctx):
     asserts.equals(env, None, parse_pubspec_document_error(doc))
     return unittest.end(env)
 
+def _parse_pubspec_tag_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A core-schema tag whose value does not resolve fails naming the pubspec
+    # and the line, as pub rejects it (package:yaml 3.1.4 with the pinned SDK
+    # 3.13.5); a tag that resolves reads pub's exact value.
+    head = "name: x\nenvironment:\n  sdk: ^3.0.0\n"
+    doc = head + "description: !!int abc\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
+    doc = head + "description: !!bool yes\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
+    doc = head + "description: !e!foo x\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
+    doc = head + "description: !!int '12'\n"
+    asserts.equals(env, 12, parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = head + "description: !foo 3\n"
+    asserts.equals(env, "3", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    return unittest.end(env)
+
+def _parse_lock_tag_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A tag that does not resolve fails naming the lock and the line, as pub
+    # rejects it; a tag that resolves reads on.
+    content = "packages:\n  a:\n    source: hosted\n    version: !!int abc\n"
+    err = pubspec_lock_error(content, "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 4" in err)
+    content = "packages:\n  a:\n    source: hosted\n    version: !!str 1.18.0\n"
+    asserts.equals(env, None, pubspec_lock_error(content, "//:pubspec.lock"))
+    asserts.equals(env, "1.18.0", parse_pubspec_lock(content, "//:pubspec.lock")["a"]["version"])
+    return unittest.end(env)
+
 _pub_lock_package_extracted_test = analysistest.make(_pub_lock_package_extracted_test_impl)
 
 _t0_test = unittest.make(_parse_lock_packages_test_impl)
@@ -1530,6 +1567,8 @@ _t49_test = unittest.make(_parse_pubspec_keep_eof_test_impl)
 _t50_test = unittest.make(_parse_pubspec_double_escape_test_impl)
 _t51_test = unittest.make(_parse_lock_double_escape_test_impl)
 _t52_test = unittest.make(_parse_pubspec_tab_indent_test_impl)
+_t53_test = unittest.make(_parse_pubspec_tag_test_impl)
+_t54_test = unittest.make(_parse_lock_tag_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -1592,6 +1631,8 @@ def yaml_parser_test_suite(name):
         _t50_test,
         _t51_test,
         _t52_test,
+        _t53_test,
+        _t54_test,
     )
     native.test_suite(
         name = name,

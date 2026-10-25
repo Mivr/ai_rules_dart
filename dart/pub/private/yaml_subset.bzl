@@ -115,11 +115,23 @@ Supported:
   name, so the key after it reads plainly and an anchor binds that key, as
   pub reads them. A bare flow anchor reads a null key and a bare flow tag
   its dropped value, and a colon where the value starts pairs that key
-  with the value, as pub reads them. A `!!` or verbatim flow key tag with
-  no scalar to convert is an undefined tag problem naming the line, as pub
-  reports it; any other flow key tag reads a string key as the same-line
-  tags do and drops off a key of any other type, as pub reads them.
-- the tags !!str, !!int, !!float, !!bool, !!null, !!seq and !!map
+  with the value, as pub reads them. A `!!` flow key tag with no scalar to
+  convert is an undefined tag problem naming the line, as pub reports it;
+  any other `!!` flow key tag converts the key as the same-line tags do,
+  and a local flow key tag reads a string key as is and any other key as
+  its raw text, as pub reads them.
+- the tags !!str, !!int, !!float, !!bool, !!null, !!seq and !!map, which
+  convert as pub converts them: a value that does not resolve fails naming
+  the line, as pub rejects it. Only true, True, TRUE, false, False and
+  FALSE convert under `!!bool`, and an empty scalar reads null under
+  `!!null`, as pub reads them. A `!!seq` or `!!map` tag reads a matching
+  collection, fails another collection as an invalid tag for its kind, and
+  fails any other node as an undefined tag; any other `!!` tag is an
+  undefined tag, and a named handle and a verbatim tag are undefined-handle
+  problems, as pub reports them. A `!` alone and any other `!` word is a
+  local tag, which reads a scalar as its string and a collection as is, as
+  pub reads them. A problem still reads the value untagged, so parsing
+  continues past it.
 
 Divergences from yaml.bzl. None occurs in the pubspec corpus used for parity
 testing, so the projections are unaffected on real pubspec files:
@@ -155,7 +167,11 @@ testing, so the projections are unaffected on real pubspec files:
   one column too early before, so a same-column line folded in as a child
   before; pub reads it as a sibling, as read now. A same-line value's
   anchor and tag prefixes folded twice before, so a tagged scalar read its
-  tag as a repeated tag; pub reads one prefix, as read now. An unknown or
+  tag as a repeated tag; pub reads one prefix, as read now. A tag whose
+  value does not resolve read the type's empty value before, a `!!seq` or
+  `!!map` tag off its kind read an empty collection before, and any other
+  `!!` tag, named handle or verbatim tag read untagged before; pub rejects
+  them, so they fail naming the line. An unknown or
   malformed double-quoted escape read kept before, and `\\N`, `\\_`, `\\L`,
   `\\P` and a backslash with a space or tab read literally before; pub
   rejects the first and decodes the rest, as read now. A flow alias
@@ -561,12 +577,16 @@ def _apply_child_collection_tag(word, value, anchors, state, line):
     """Applies a pending or flow-close tag to a collection child. Returns the value.
 
     A `!!seq` or `!!map` tag reads a matching collection as the same-line
-    tags do; any other `!!` or verbatim tag on a collection is a problem
-    naming the tag's line, as pub rejects it, while a local tag rides
+    tags do; any other `!!` tag on a collection is a problem
+    naming the tag's line, as pub rejects it, and a named handle or
+    verbatim tag is an undefined-handle problem, while a local tag rides
     through as the same-line tags do. A problem still reads the child
     untagged, so parsing continues past it.
     """
     if word == None:
+        return value
+    if _is_unknown_tag_handle(word):
+        state.problems.append("Undefined tag handle at line %d" % line)
         return value
     if word.startswith("!!") or word.startswith("!<"):
         name = _tag_name(word)
@@ -580,27 +600,25 @@ def _apply_child_collection_tag(word, value, anchors, state, line):
 def _apply_pending_scalar_tag(word, value, raw, anchors, state, line):
     """Applies a pending tag to a folded scalar child. Returns the value.
 
-    Scalar type tags convert as the same-line tags do, except `!!bool`,
-    which reads only canonical spellings, and `!!null`, which reads only a
-    null child, as pub rejects the rest. A `!!seq` or `!!map` tag, or any
-    other `!!` or verbatim tag, has no scalar to convert and is an undefined
-    tag problem naming the tag's line, as pub reports it, while a local tag
-    rides through. A problem still reads the child untagged, so parsing
-    continues past it.
+    Scalar type tags convert as the same-line tags do, through the shared
+    bool, null, int, float and str readers, as pub reads them. A `!!seq` or
+    `!!map` tag, or any other `!!` tag, has no scalar to convert and is an
+    undefined tag problem naming the tag's line, as pub reports it; a named
+    handle or verbatim tag is an undefined-handle problem, while a local tag
+    reads a scalar as its string, as pub reads them. A problem still reads
+    the child untagged, so parsing continues past it.
     """
     if word == None:
         return value
-    if word.startswith("!!") or word.startswith("!<"):
+    if _is_unknown_tag_handle(word):
+        state.problems.append("Undefined tag handle at line %d" % line)
+        return value
+    if word.startswith("!!"):
         name = _tag_name(word)
         if name == "bool":
-            if type(value) == "bool":
-                return value
-            if type(value) == "string" and value.lower() in ["true", "false"]:
-                return value.lower() == "true"
-            state.problems.append("Invalid bool scalar at line %d" % line)
-            return None
+            return _apply_bool_tag(value, raw, state, line)
         if name == "null":
-            if value == None:
+            if value == None or value == "":
                 return None
             state.problems.append("Invalid null scalar at line %d" % line)
             return None
@@ -608,7 +626,9 @@ def _apply_pending_scalar_tag(word, value, raw, anchors, state, line):
             return _apply_tag(word, raw, value, anchors, state, line)
         state.problems.append(_undefined_tag_problem(word, line))
         return value
-    return value
+    if type(value) == "list" or type(value) == "dict":
+        return value
+    return value if type(value) == "string" else raw
 
 def _drop_tag_value(word, line, state):
     """Reads a tag closed with no node. Returns the value.
@@ -616,10 +636,14 @@ def _drop_tag_value(word, line, state):
     A dropped `!!str` or local tag reads an empty scalar, as pub reads it,
     and a dropped `!!null` reads null; a dropped `!!bool` is an invalid bool
     problem, a dropped `!!int` or `!!float` is a problem naming the line, as
-    pub crashes on it, and any other dropped `!!` or verbatim tag is an
-    undefined tag problem, as pub reports it.
+    pub crashes on it, a dropped named handle or verbatim tag is an
+    undefined-handle problem, and any other dropped `!!` tag is an undefined
+    tag problem, as pub reports them.
     """
     if word == None:
+        return None
+    if _is_unknown_tag_handle(word):
+        state.problems.append("Undefined tag handle at line %d" % line)
         return None
     name = _tag_name(word)
     if name == "str" or (word.startswith("!") and not word.startswith("!!") and not word.startswith("!<")):
@@ -638,19 +662,27 @@ def _drop_tag_value(word, line, state):
 def _apply_key_tag(word, key, raw, anchors, state, line):
     """Applies a flow key tag. Returns the key.
 
-    A `!!` or verbatim tag with no scalar to convert is an undefined tag
-    problem naming the tag's line, as pub reports it; any other tag reads a
-    string key as the same-line tags do and drops off a key of any other
-    type, as pub reads them. A problem still reads the key untagged, so
-    parsing continues past it.
+    A named handle or verbatim tag is an undefined-handle problem, and a
+    `!!` tag with no scalar to convert is an undefined tag problem, naming
+    the tag's line, as pub reports them; any other `!!` tag converts the key
+    as the same-line tags do, and a local tag reads a string key as is and
+    any other key as its raw text, as pub reads them. A problem still reads
+    the key untagged, so parsing continues past it.
     """
-    if word.startswith("!!") or word.startswith("!<"):
-        if _tag_name(word) not in ["str", "int", "float", "bool", "null", "seq", "map"]:
+    if _is_unknown_tag_handle(word):
+        state.problems.append("Undefined tag handle at line %d" % line)
+        return key
+    if word.startswith("!!"):
+        name = _tag_name(word)
+        if name not in ["str", "int", "float", "bool", "null", "seq", "map"]:
             state.problems.append(_undefined_tag_problem(word, line))
             return key
+        if name in ["seq", "map"]:
+            return key
+        return _apply_tag(word, raw, key, anchors, state, line)
     if type(key) == "string":
         return _apply_tag(word, raw, key, anchors, state, line)
-    return key
+    return raw
 
 def _drop_pending_value(pending, anchors, state):
     """Reads a pending key or dash closed with no child. Returns the value.
@@ -2219,55 +2251,120 @@ def _clone(value):
         return dict(value)
     return value
 
-def _apply_seq_map_tag(name, raw, value, anchors, state, line):
-    """Applies a `!!seq` or `!!map` tag, converting or emptying as yaml.bzl does."""
-    want = "list" if name == "seq" else "dict"
-    if type(value) == want:
-        return value
-    parsed = _parse_flow(raw, anchors, state, line) if raw[:1] in ["[", "{"] else None
-    if type(parsed) == want:
-        return parsed
-    return [] if name == "seq" else {}
+def _apply_int_tag(value, raw, state, line):
+    """Applies a `!!int` tag. Returns the value, or None with a problem naming the line.
 
-def _apply_int_tag(value, raw):
-    """Applies a `!!int` tag; a failed conversion gives 0, as yaml.bzl does."""
+    An int reads as is and a string naming one converts, as pub reads them;
+    anything else is an invalid int scalar problem naming the line, as pub
+    rejects it.
+    """
     if type(value) == "int":
         return value
-    parsed = _parse_int_text(value if type(value) == "string" else raw)
-    return parsed if parsed != None else 0
+    if type(value) == "string":
+        parsed = _parse_int_text(value)
+        if parsed != None:
+            return parsed
+    state.problems.append("Invalid int scalar at line %d" % line)
+    return None
 
-def _apply_float_tag(value, raw):
-    """Applies a `!!float` tag; a failed conversion gives 0.0, as yaml.bzl does."""
+def _apply_float_tag(value, raw, state, line):
+    """Applies a `!!float` tag. Returns the value, or None with a problem naming the line.
+
+    A float reads as is and a float-shaped string converts, as pub reads
+    them; an int node or an int-shaped string is an invalid float scalar
+    problem naming the line, as pub rejects it (package:yaml crashes on it).
+    """
     if type(value) == "float":
         return value
-    parsed = _parse_float_text(value if type(value) == "string" else raw)
-    return parsed if parsed != None else 0.0
+    if type(value) == "string":
+        parsed = _parse_float_text(value)
+        if parsed != None:
+            return parsed
+    state.problems.append("Invalid float scalar at line %d" % line)
+    return None
 
-def _apply_bool_tag(value, raw):
-    """Applies a `!!bool` tag; only true/yes/on spell true, as yaml.bzl does."""
-    if type(value) == "bool":
-        return value
-    return (value if type(value) == "string" else raw).strip().lower() in ["true", "yes", "on"]
+def _apply_bool_tag(value, raw, state, line):
+    """Applies a `!!bool` tag. Returns the value, or None with a problem naming the line.
+
+    Only `true`, `True`, `TRUE`, `false`, `False` and `FALSE` convert, as
+    pub reads them; anything else is an invalid bool scalar problem naming
+    the line, as pub rejects it. A resolved bool reads through its raw
+    spelling, so a wider untagged spelling still fails here as pub fails it.
+    """
+    if type(value) == "string":
+        text = value
+    elif type(value) == "bool" and type(raw) == "string":
+        text = raw.strip()
+    else:
+        text = ""
+    if text in ["true", "True", "TRUE", "false", "False", "FALSE"]:
+        return text.lower() == "true"
+    state.problems.append("Invalid bool scalar at line %d" % line)
+    return None
+
+def _is_unknown_tag_handle(tag):
+    """Whether `tag` is a named handle or a verbatim tag.
+
+    A `!` alone is the non-specific tag and `!!x` the default handle, which
+    resolve below. A verbatim tag never resolves, as pub rejects it with an
+    undefined tag handle, and any other `!` word with a second `!` is a
+    named handle pub rejects the same way; any other `!` word is a local
+    tag, which reads below.
+    """
+    if tag == "!" or tag.startswith("!!"):
+        return False
+    if tag.startswith("!<"):
+        return True
+    return tag.startswith("!") and "!" in tag[1:]
 
 def _apply_tag(tag, raw, value, anchors, state, line):
-    """Applies a supported tag to a parsed value. `raw` is the untagged text.
+    """Applies a tag to a parsed value. Returns the value.
 
-    A tag that names a type the value does not have converts it where yaml.bzl
-    does; a conversion that fails gives the type's empty value.
+    A named handle or verbatim tag is an undefined handle problem naming
+    the line, as pub rejects it. A local or non-specific (`!`) tag reads a
+    scalar as its string and a collection as is, as pub reads them. A
+    `!!seq` or `!!map` tag reads a matching collection, fails another
+    collection as an invalid tag for its kind, and fails any other node as
+    an undefined tag; a scalar type tag fails a collection as an invalid tag
+    for its kind, as pub reports them. A problem still reads the value
+    untagged, so parsing continues past it. Scalar conversions fail naming
+    the line where the value does not resolve, as pub rejects them.
     """
+    if _is_unknown_tag_handle(tag):
+        state.problems.append("Undefined tag handle at line %d" % line)
+        return value
+    if not tag.startswith("!!"):
+        if type(value) == "list" or type(value) == "dict":
+            return value
+        return value if type(value) == "string" else raw
     name = _tag_name(tag)
+    if name == None:
+        return value
     if name == "seq" or name == "map":
-        return _apply_seq_map_tag(name, raw, value, anchors, state, line)
+        want = "list" if name == "seq" else "dict"
+        if type(value) == want:
+            return value
+        if type(value) != "list" and type(value) != "dict":
+            state.problems.append(_undefined_tag_problem(tag, line))
+            return value
+    if type(value) == "list" or type(value) == "dict":
+        kind = "sequence" if type(value) == "list" else "mapping"
+        state.problems.append("Invalid tag for %s at line %d" % (kind, line))
+        return value
     if name == "str":
         return value if type(value) == "string" else raw
     if name == "int":
-        return _apply_int_tag(value, raw)
+        return _apply_int_tag(value, raw, state, line)
     if name == "float":
-        return _apply_float_tag(value, raw)
+        return _apply_float_tag(value, raw, state, line)
     if name == "bool":
-        return _apply_bool_tag(value, raw)
+        return _apply_bool_tag(value, raw, state, line)
     if name == "null":
+        if value == None or value == "":
+            return None
+        state.problems.append("Invalid null scalar at line %d" % line)
         return None
+    state.problems.append(_undefined_tag_problem(tag, line))
     return value
 
 def _tag_name(tag):

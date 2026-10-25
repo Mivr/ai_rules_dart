@@ -401,10 +401,11 @@ def _flow_affix_key_test_impl(ctx):
     asserts.equals(env, {"s": "VIC", "k": {"VIC": 1}}, parse_document("s: &v VIC\nk: {*v : 1}\n"))
 
     # An anchor or tag word takes a glued colon into its name, as pub scans
-    # it, so the key after it reads plainly and the anchor binds the key.
+    # it. An anchor binds the key after it, which reads plainly; a tag word
+    # reads the key after it as its string, as pub reads them.
     asserts.equals(env, {"k": {1: None}}, parse_document("k: {&v: 1}\n"))
     asserts.equals(env, {"k": [{1: None}, 1]}, parse_document("k: [{&v: 1}, *v:]\n"))
-    asserts.equals(env, {"k": {1: None}}, parse_document("k: {!foo: 1}\n"))
+    asserts.equals(env, {"k": {"1": None}}, parse_document("k: {!foo: 1}\n"))
     asserts.equals(env, {"k": {"bar": None}}, parse_document("k: {!foo: bar}\n"))
 
     # A `!!` tag with a glued colon has no scalar to convert, as pub reports.
@@ -468,7 +469,7 @@ def _flow_self_anchor_test_impl(ctx):
     asserts.equals(env, {"k": 1}, value)
     asserts.equals(env, ["repeated anchor at line 1 is not supported"], problems)
     value, problems = document_value_and_problems("k: !a !b 1\n", True)
-    asserts.equals(env, {"k": 1}, value)
+    asserts.equals(env, {"k": "1"}, value)
     asserts.equals(env, ["repeated tag at line 1 is not supported"], problems)
 
     # A tab ends an anchor word, as pub reads it.
@@ -658,29 +659,178 @@ def _tab_indent_test_impl(ctx):
 def _tag_test_impl(ctx):
     env = unittest.begin(ctx)
     parsed = parse_document(
-        "a: !!str 1.10\nb: !!int '12'\nc: !!float 3\nd: !!bool yes\n" +
-        "e: !!null x\nf: !!int 1.5\ng: !!bool maybe\n" +
-        "h: !<tag:yaml.org,2002:str> 2.0\ni: !str 3.0\n",
+        "a: !!str 1.10\nb: !!int '12'\nc: !!float 3.5\nd: !!bool TRUE\n" +
+        "e: !!null ~\nf: !!int '0o17'\ng: !!float '3e5'\n" +
+        "h: !!null \"\"\ni: !str 3.0\nj: ! x\n",
     )
     asserts.equals(env, "1.10", parsed["a"])
     asserts.equals(env, 12, parsed["b"])
-
-    # yaml.bzl reads `!!float 3` as 0.0: its float reader wants a decimal point.
-    asserts.equals(env, 0.0, parsed["c"])
+    asserts.equals(env, 3.5, parsed["c"])
     asserts.equals(env, True, parsed["d"])
     asserts.equals(env, None, parsed["e"])
-    asserts.equals(env, 0, parsed["f"])
-    asserts.equals(env, False, parsed["g"])
-    asserts.equals(env, "2.0", parsed["h"])
+    asserts.equals(env, 15, parsed["f"])
+    asserts.equals(env, 300000.0, parsed["g"])
+    asserts.equals(env, None, parsed["h"])
     asserts.equals(env, "3.0", parsed["i"])
+    asserts.equals(env, "x", parsed["j"])
+
+    # A local or non-specific tag reads a scalar as its string, as pub reads
+    # it (package:yaml 3.1.4 with the pinned SDK 3.13.5): an older revision
+    # resolved the scalar instead.
+    asserts.equals(env, {"d": "3"}, parse_document("d: !foo 3\n"))
+    asserts.equals(env, {"d": "3.0"}, parse_document("d: !foo 3.0\n"))
+    asserts.equals(env, {"d": "+12"}, parse_document("d: !foo +12\n"))
+    asserts.equals(env, {"d": "007"}, parse_document("d: !foo 007\n"))
+    asserts.equals(env, {"d": "true"}, parse_document("d: !bar true\n"))
+    asserts.equals(env, {"d": "null"}, parse_document("d: !foo null\n"))
+    asserts.equals(env, {"d": "1"}, parse_document("d: ! 1\n"))
+    asserts.equals(env, {"d": "a'b"}, parse_document("d: !foo 'a''b'\n"))
+    asserts.equals(env, {"d": ["", "bar"]}, parse_document("d: [!foo,bar]\n"))
+    asserts.equals(env, {"d": ["12"]}, parse_document("d: [!foo 12]\n"))
+    asserts.equals(env, {"d": "12"}, parse_document("d: !foo\n  12\n"))
+    asserts.equals(env, {"d": "12"}, parse_document("d: !foo 12 # c\n"))
+    asserts.equals(env, {"d": {"1": "v"}}, parse_document("d: {!foo 1: v}\n"))
+    asserts.equals(env, {"d": {"1": None}}, parse_document("d: {!foo: 1}\n"))
+    asserts.equals(env, {"d": {"": None}}, parse_document("d: {!foo:1}\n"))
+    asserts.equals(env, {"d": {"": 1}}, parse_document("d: {!foo : 1}\n"))
+    asserts.equals(env, {"d": {"1": "v"}}, parse_document("d: {!!str 1: v}\n"))
+    asserts.equals(env, {"d": {12: "v"}}, parse_document("d: {!!int '12': v}\n"))
+
+    # A local tag rides a collection, as pub reads it.
+    asserts.equals(env, {"d": [1, 2]}, parse_document("d: !foo [1, 2]\n"))
+    asserts.equals(env, {"d": {"a": "b"}}, parse_document("d: !foo {a: b}\n"))
+    asserts.equals(env, {"d": {"a": "b"}}, parse_document("d: !foo\n  a: b\n"))
+    asserts.equals(env, {"d": [1]}, parse_document("d: !foo\n  - 1\n"))
+
+    # A core-schema tag whose value does not resolve fails naming the line,
+    # as pub rejects it (package:yaml 3.1.4 with the pinned SDK 3.13.5):
+    # an older revision read the type's empty value instead.
+    asserts.equals(
+        env,
+        ["Invalid int scalar at line 1"],
+        document_problems("d: !!int abc\n", True),
+    )
+    value, problems = document_value_and_problems("d: !!int 1.5\n", True)
+    asserts.equals(env, {"d": None}, value)
+    asserts.equals(env, ["Invalid int scalar at line 1"], problems)
+    asserts.equals(
+        env,
+        ["Invalid bool scalar at line 1"],
+        document_problems("d: !!bool maybe\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Invalid bool scalar at line 1"],
+        document_problems("d: !!bool tRuE\n", True),
+    )
+    asserts.equals(env, {"d": True}, parse_document("d: !!bool 'TRUE'\n"))
+    asserts.equals(
+        env,
+        ["Invalid bool scalar at line 1"],
+        document_problems("d: !!bool yes\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Invalid float scalar at line 1"],
+        document_problems("d: !!float 3\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Invalid float scalar at line 1"],
+        document_problems("d: !!float abc\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Invalid null scalar at line 1"],
+        document_problems("d: !!null x\n", True),
+    )
+
+    # A scalar type tag on a collection fails naming the kind, and a `!!seq`
+    # or `!!map` tag off its kind fails as an undefined tag, as pub reports
+    # them; any other `!!` tag is an undefined tag too. The value still reads
+    # untagged, so parsing continues past it.
+    value, problems = document_value_and_problems("d: !!str [a]\n", True)
+    asserts.equals(env, {"d": ["a"]}, value)
+    asserts.equals(env, ["Invalid tag for sequence at line 1"], problems)
+    asserts.equals(
+        env,
+        ["Invalid tag for mapping at line 1"],
+        document_problems("d: !!str {a: b}\n", True),
+    )
+    value, problems = document_value_and_problems("d: !!seq 3\n", True)
+    asserts.equals(env, {"d": 3}, value)
+    asserts.equals(env, ["Undefined tag: tag:yaml.org,2002:seq at line 1"], problems)
+    asserts.equals(
+        env,
+        ["Undefined tag: tag:yaml.org,2002:map at line 1"],
+        document_problems("d: !!map x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Undefined tag: tag:yaml.org,2002:binary at line 1"],
+        document_problems("d: !!binary x\n", True),
+    )
+
+    # A named handle and a verbatim tag fail as undefined handles, as pub
+    # rejects them: an older revision resolved known verbatim tags instead.
+    value, problems = document_value_and_problems("d: !e!foo x\n", True)
+    asserts.equals(env, {"d": "x"}, value)
+    asserts.equals(env, ["Undefined tag handle at line 1"], problems)
+    asserts.equals(
+        env,
+        ["Undefined tag handle at line 1"],
+        document_problems("d: !<tag:yaml.org,2002:str> x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Undefined tag handle at line 1"],
+        document_problems("d: !<tag:yaml.org,2002:foo> x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Undefined tag handle at line 1"],
+        document_problems("d: !<tag:yaml.org,2002:str\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Undefined tag handle at line 1"],
+        document_problems("d: !<foo\n", True),
+    )
     return unittest.end(env)
 
 def _collection_tag_test_impl(ctx):
     env = unittest.begin(ctx)
     asserts.equals(
         env,
-        {"a": [1, 2], "b": {"x": 1}, "c": [], "d": {}},
-        parse_document("a: !!seq [1, 2]\nb: !!map {x: 1}\nc: !!seq 3\nd: !!map []\n"),
+        {"a": [1, 2], "b": {"x": 1}},
+        parse_document("a: !!seq [1, 2]\nb: !!map {x: 1}\n"),
+    )
+
+    # A `!!seq` or `!!map` tag off its kind fails as an undefined tag, as pub
+    # reports it; an older revision read an empty collection instead.
+    value, problems = document_value_and_problems("c: !!seq 3\nd: !!map []\n", True)
+    asserts.equals(env, {"c": 3, "d": []}, value)
+    asserts.equals(
+        env,
+        ["Undefined tag: tag:yaml.org,2002:seq at line 1", "Invalid tag for sequence at line 2"],
+        problems,
+    )
+
+    # A pending `!!` tag converts a next-line scalar, and a pending verbatim
+    # tag fails, as pub reads them; a pending local tag reads the scalar as
+    # its string and rides a collection.
+    asserts.equals(env, {"k": 12}, parse_document("k: !!int\n  12\n"))
+    asserts.equals(env, {"k": "12"}, parse_document("k: !foo\n  12\n"))
+    asserts.equals(env, {"k": [1]}, parse_document("k: !foo\n  - 1\n"))
+    asserts.equals(
+        env,
+        ["Undefined tag handle at line 1"],
+        document_problems("k: !<tag:yaml.org,2002:int>\n  12\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Invalid bool scalar at line 1"],
+        document_problems("k: !!bool\n  yes\n", True),
     )
     return unittest.end(env)
 
