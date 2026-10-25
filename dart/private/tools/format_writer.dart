@@ -102,25 +102,9 @@ int _format(
   String languageVersion,
   String cwd,
 ) {
-  File(_join(scratch.path, 'analysis_options.yaml'))
-      .writeAsBytesSync(File(config.rootOptions).readAsBytesSync());
-  File(_join(scratch.path, '.dart_tool/package_config.json'))
-    ..createSync(recursive: true)
-    ..writeAsStringSync(_absolutePackageConfig(config.packageConfig));
-
-  final src = _join(scratch.path, 'src');
-  config.options.forEach((relative, source) {
-    File(_join(src, relative))
-      ..createSync(recursive: true)
-      ..writeAsBytesSync(File(source).readAsBytesSync());
-  });
-  final copies = <File, File>{};
-  files.forEach((relative, file) {
-    final copy = File(_join(src, relative))
-      ..createSync(recursive: true)
-      ..writeAsBytesSync(file.readAsBytesSync());
-    copies[file] = copy;
-  });
+  final staged = _stageFormatProject(config, files, scratch);
+  final src = staged.src;
+  final copies = staged.copies;
   if (copies.isEmpty) {
     stdout.writeln('dart_format: no Dart files found');
     return 0;
@@ -190,6 +174,37 @@ int _format(
   final noun = copies.length == 1 ? 'file' : 'files';
   stdout.writeln('Formatted ${copies.length} $noun ($changed changed)');
   return result.exitCode;
+}
+
+/// Copies the root options file, the package config, every listed options
+/// file and each named file into the scratch project, at the layout the
+/// format check stages. Returns the staged `src/` directory and each
+/// workspace file's scratch copy.
+({String src, Map<File, File> copies}) _stageFormatProject(
+  _Config config,
+  Map<String, File> files,
+  Directory scratch,
+) {
+  File(_join(scratch.path, 'analysis_options.yaml'))
+      .writeAsBytesSync(File(config.rootOptions).readAsBytesSync());
+  File(_join(scratch.path, '.dart_tool/package_config.json'))
+    ..createSync(recursive: true)
+    ..writeAsStringSync(_absolutePackageConfig(config.packageConfig));
+
+  final src = _join(scratch.path, 'src');
+  config.options.forEach((relative, source) {
+    File(_join(src, relative))
+      ..createSync(recursive: true)
+      ..writeAsBytesSync(File(source).readAsBytesSync());
+  });
+  final copies = <File, File>{};
+  files.forEach((relative, file) {
+    final copy = File(_join(src, relative))
+      ..createSync(recursive: true)
+      ..writeAsBytesSync(file.readAsBytesSync());
+    copies[file] = copy;
+  });
+  return (src: src, copies: copies);
 }
 
 class _Config {
