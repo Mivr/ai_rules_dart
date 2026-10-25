@@ -244,6 +244,10 @@ def _parse_lock_quote_trailer_test_impl(ctx):
     # A single-quoted trailer fails the same way, naming the line.
     err = pubspec_lock_error("packages:\n  a:\n    source: hosted\n    version: '1.0.0' junk\n", "//:pubspec.lock")
     asserts.true(env, err != None and "//:pubspec.lock" in err and "line 4" in err)
+
+    # A block scalar header never reads as a key, as pub rejects it there.
+    err = pubspec_lock_error("packages:\n  | :\n    source: hosted\n    version: \"1.0.0\"\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 2" in err)
     return unittest.end(env)
 
 def _parse_lock_entry_name_test_impl(ctx):
@@ -394,6 +398,10 @@ def _parse_pubspec_document_error_test_impl(ctx):
     # Text glued after a quoted scalar's closing quote fails naming the
     # pubspec and the line, as pub rejects it.
     err = parse_pubspec_document_error("name: x\ndescription: 'long' junk\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "x" in err and "//:pubspec.yaml" in err and "line 2" in err)
+
+    # A block scalar header never reads as a key, as pub rejects it there.
+    err = parse_pubspec_document_error("name: x\n| : v\n", "//:pubspec.yaml")
     asserts.true(env, err != None and "x" in err and "//:pubspec.yaml" in err and "line 2" in err)
     return unittest.end(env)
 

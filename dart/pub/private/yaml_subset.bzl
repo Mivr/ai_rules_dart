@@ -2894,13 +2894,20 @@ def _map_key_value(text, key_text, anchors, state, line):
     A colon glued to an alias (`*x: 2`) joins the alias name, as pub scans
     it, and never reads as a pair, as pub rejects it; an unresolvable name
     reports its alias problem, and a resolvable one is still a problem
-    naming the line. Any other key reads as before.
+    naming the line. A block scalar header (`|`, `>` with any indicators)
+    never reads as a key, as pub rejects a block scalar there; anything
+    starting with `|` or `>` is one, since a plain scalar never starts with
+    a reserved indicator, as pub scans it. Any other key reads as before.
     """
     if key_text.startswith("*") and text[len(key_text):len(key_text) + 1] == ":":
         ok, _value = _resolve_alias(key_text[1:] + ":", anchors, state, line)
         if not ok:
             return None
         state.problems.append("glued alias key at line %d is not supported" % line)
+        return None
+    _anchor, _tag, key_rest, _bad = _strip_value_prefix(key_text)
+    if key_rest[:1] in ["|", ">"]:
+        state.problems.append("block scalar as key at line %d is not supported" % line)
         return None
     return _key(_parse_scalar(key_text, anchors, state, line))
 

@@ -388,6 +388,41 @@ def _anchor_alias_test_impl(ctx):
     value, problems = document_value_and_problems("s: &v: 1\n*v: 1\n", True)
     asserts.equals(env, {"s": 1, None: 1}, value)
     asserts.equals(env, ["glued alias key at line 2 is not supported"], problems)
+
+    # A block scalar header never reads as a key, as pub rejects a block
+    # scalar there: any key starting with `|` or `>` fails naming the line,
+    # with any chomping or indentation indicators, glued text, or an anchor
+    # prefix, in mappings, dash mappings and flows alike.
+    value, problems = document_value_and_problems("| : v\n", True)
+    asserts.equals(env, {None: "v"}, value)
+    asserts.equals(env, ["block scalar as key at line 1 is not supported"], problems)
+    value, problems = document_value_and_problems("| foo: bar\n", True)
+    asserts.equals(env, {None: "bar"}, value)
+    asserts.equals(env, ["block scalar as key at line 1 is not supported"], problems)
+    value, problems = document_value_and_problems(">+- : v\n", True)
+    asserts.equals(env, {None: "v"}, value)
+    asserts.equals(env, ["block scalar as key at line 1 is not supported"], problems)
+    value, problems = document_value_and_problems("|x: v\n", True)
+    asserts.equals(env, {None: "v"}, value)
+    asserts.equals(env, ["block scalar as key at line 1 is not supported"], problems)
+    value, problems = document_value_and_problems("&a | : v\n", True)
+    asserts.equals(env, {None: "v"}, value)
+    asserts.equals(env, ["block scalar as key at line 1 is not supported"], problems)
+    value, problems = document_value_and_problems("- | : v\n", True)
+    asserts.equals(env, [{None: "v"}], value)
+    asserts.equals(env, ["block scalar as key at line 1 is not supported"], problems)
+    value, problems = document_value_and_problems("a: b\n| : v\n", True)
+    asserts.equals(env, {"a": "b", None: "v"}, value)
+    asserts.equals(env, ["block scalar as key at line 2 is not supported"], problems)
+    value, problems = document_value_and_problems("a: {| : v}\n", True)
+    asserts.equals(env, {None: "v"}, value["a"])
+    asserts.equals(env, ["block scalar inside flow at line 1 is not supported"], problems)
+
+    # A block scalar stays a value after `key:` and `- `, and a quoted `|`
+    # stays a key, as pub reads them.
+    asserts.equals(env, {"a": "foo\n"}, parse_document("a: |\n  foo\n"))
+    asserts.equals(env, ["foo\n"], parse_document("- |\n  foo\n"))
+    asserts.equals(env, {"|": "v"}, parse_document("'|': v\n"))
     return unittest.end(env)
 
 def _flow_affix_key_test_impl(ctx):
