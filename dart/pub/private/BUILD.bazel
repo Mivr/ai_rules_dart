@@ -193,6 +193,25 @@ bzl_library(
     ],
 )
 
+bzl_library(
+    name = "yaml_lock_fast",
+    srcs = ["yaml_lock_fast.bzl"],
+    visibility = ["//dart/pub:__subpackages__"],
+    deps = [
+        ":yaml_chars",
+    ],
+)
+
+bzl_library(
+    name = "yaml_lock",
+    srcs = ["yaml_lock.bzl"],
+    visibility = ["//dart/pub:__subpackages__"],
+    deps = [
+        ":yaml_lock_fast",
+        ":yaml_subset",
+    ],
+)
+
 # Bare scanner sources for `//dart/pub:pub_scan_test`, which imports the
 # scanner and drives its verdict function over inline-built archives.
 exports_files(
