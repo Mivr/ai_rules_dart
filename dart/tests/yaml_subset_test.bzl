@@ -217,6 +217,7 @@ def _document_marker_test_impl(ctx):
         ["Block sequence entries are not allowed here at line 1"],
         document_problems("--- -\n", True),
     )
+
     # An explicit key on the marker line fails twice, naming the line both
     # times: once for the marker position and once for the key itself.
     asserts.equals(

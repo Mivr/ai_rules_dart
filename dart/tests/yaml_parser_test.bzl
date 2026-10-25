@@ -1589,7 +1589,7 @@ def _parse_pubspec_refused_test_impl(ctx):
     doc = head + "description: \014x\n"
     err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
     asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
-    doc = head + "descriptio\037n: x\n"
+    doc = head + "description\037n: x\n"
     err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
     asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
     doc = head + "description: x\302\205\n"
@@ -1624,7 +1624,7 @@ def _parse_lock_refused_test_impl(ctx):
     content = "packages:\n  a:\n    source: hosted\n    version: 1.0.0\013\n"
     err = pubspec_lock_error(content, "//:pubspec.lock")
     asserts.true(env, err != None and "//:pubspec.lock" in err and "line 4" in err)
-    content = "packages:\n  a:\n    source: hosted\n    versio\014n: 1.0.0\n"
+    content = "packages:\n  a:\n    source: hosted\n    version\014n: 1.0.0\n"
     err = pubspec_lock_error(content, "//:pubspec.lock")
     asserts.true(env, err != None and "//:pubspec.lock" in err and "line 4" in err)
     content = (
