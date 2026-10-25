@@ -1376,6 +1376,24 @@ def _parse_pubspec_more_indented_blank_test_impl(ctx):
     asserts.equals(env, "a\n\n  b\n\nc\n", parse_pubspec_document(h + "notes: >\n  a\n\n    b\n\n  c\n")["notes"])
     return unittest.end(env)
 
+def _parse_pubspec_keep_eof_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A keep (`+`) scalar that runs to the end of the file keeps the final
+    # break and every trailing blank line, but not the file's own final
+    # newline, as pub reads each form below (package:yaml 3.1.4 with the
+    # pinned SDK 3.13.5).
+    h = "name: x\nenvironment:\n  sdk: ^3.0.0\n"
+    asserts.equals(env, "red\n\n", parse_pubspec_document(h + "summary: |+\n  red\n\n")["summary"])
+    asserts.equals(env, "red\n", parse_pubspec_document(h + "summary: |+\n  red\n")["summary"])
+    asserts.equals(env, "red\n\n\n", parse_pubspec_document(h + "summary: |+\n  red\n\n\n")["summary"])
+    asserts.equals(env, "\n", parse_pubspec_document(h + "summary: |+\n\n")["summary"])
+    asserts.equals(env, "", parse_pubspec_document(h + "summary: |+\n")["summary"])
+    asserts.equals(env, "red\n\n", parse_pubspec_document(h + "summary: >+\n  red\n\n")["summary"])
+    asserts.equals(env, "red\n\n", parse_pubspec_document(h + "summary: |+\n  red\n  \n")["summary"])
+    asserts.equals(env, "red\n\n", parse_pubspec_document(h + "summary: |+\n  red\n\nnext: 1\n")["summary"])
+    return unittest.end(env)
+
 _pub_lock_package_extracted_test = analysistest.make(_pub_lock_package_extracted_test_impl)
 
 _t0_test = unittest.make(_parse_lock_packages_test_impl)
@@ -1427,6 +1445,7 @@ _t45_test = unittest.make(_parse_pubspec_flow_backslash_test_impl)
 _t46_test = unittest.make(_parse_pubspec_block_fold_test_impl)
 _t47_test = unittest.make(_parse_pubspec_literal_fold_test_impl)
 _t48_test = unittest.make(_parse_pubspec_more_indented_blank_test_impl)
+_t49_test = unittest.make(_parse_pubspec_keep_eof_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -1485,6 +1504,7 @@ def yaml_parser_test_suite(name):
         _t46_test,
         _t47_test,
         _t48_test,
+        _t49_test,
     )
     native.test_suite(
         name = name,
