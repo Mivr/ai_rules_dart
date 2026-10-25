@@ -62,9 +62,10 @@ Supported:
 - block scalars `|` and `>` with chomping and indentation indicators: `|`
   joins lines with breaks and `>` folds them, as pub folds them. A break
   between base-indented lines is one space, the break after a base line
-  drops where blank lines follow it, each blank line is one break, leading
-  blanks are kept, breaks around more-indented lines are kept, and spaces
-  beyond the indentation on a blank line are content. Clip keeps one final
+  drops only where the next non-blank line is a base line it folds into;
+  where a more-indented line follows, the break stays and each blank line
+  is one break. Leading blanks are kept, breaks around more-indented lines
+  are kept, and spaces beyond the indentation on a blank line are content. Clip keeps one final
   break only when anything was read, keep adds the final break and every
   trailing blank, and strip drops them, including empty scalars. A header
   with other text fails naming the line, as pub rejects it, and without
@@ -101,7 +102,8 @@ testing, so the projections are unaffected on real pubspec files:
   trailing text read as a scalar before, a `- key: >` or `|` value read as
   plain before, and a block scalar ended by a less-indented line folded
   that line in before; pub rejects the header and ending forms and folds
-  the rest as read now.
+  the rest as read now. A blank line before a more-indented line lost its
+  break before, where pub keeps the break after the content line.
 - flow collections that span lines are not supported, unless the folded
   lines read as one flow collection as pub reads them; yaml.bzl reads all
   spanning flows. The supported fold matches pub on the oracle-checked
@@ -1467,18 +1469,30 @@ def _block_scalar_values(items, kept, indent):
         values.append(items[i][0][indent:])
     return values
 
-def _fold_flowed_line(line, state, pieces):
-    """Appends one folded `>` line. Returns the next state.
+def _fold_next_is_more(values, i):
+    """Returns whether the next non-blank line after `i` is more-indented.
+
+    With no non-blank line after `i`, the break stays, so this returns True.
+    """
+    for j in range(i + 1, len(values)):
+        if values[j] != "":
+            return values[j].startswith(" ")
+    return True
+
+def _fold_flowed_line(values, i, state, pieces):
+    """Appends folded `>` line `i`. Returns the next state.
 
     `state` is start, blank, base or more, describing the previous line. A
     blank line becomes one break, with a second one after a more-indented
     line whose breaks around it are kept. The break after a base-indented
-    line is dropped where blank lines follow it, so a blank run resumes
-    with the bare line; a break between two base lines is one space.
+    line drops only when the next non-blank line is a base line it folds
+    into; when a more-indented line follows, the break stays and each blank
+    line adds one break. A break between two base lines is one space.
     """
+    line = values[i]
     if line == "":
         pieces.append("\n")
-        if state == "more":
+        if state == "more" or (state == "base" and _fold_next_is_more(values, i)):
             pieces.append("\n")
         return "blank"
     more = line.startswith(" ")
@@ -1496,8 +1510,8 @@ def _fold_flowed(values):
     """Folds `>` lines as pub folds them. Checked against package:yaml 3.1.4."""
     pieces = []
     state = "start"
-    for line in values:
-        state = _fold_flowed_line(line, state, pieces)
+    for i in range(len(values)):
+        state = _fold_flowed_line(values, i, state, pieces)
     return "".join(pieces)
 
 def _block_scalar_chomp(style, values, chomping):
