@@ -1,8 +1,10 @@
 """Unit tests for dart/pub/private/yaml_subset.bzl, the pubspec YAML parser.
 
-Expected values match what yaml.bzl returns for the same text. The parity
-check against yaml.bzl ran over a corpus of real pubspec files and generated
-documents; these cases pin the constructs it covers.
+Expected values match what yaml.bzl returns for the same text, except the
+folded (`>`) block scalar cases, whose blank-line folding follows pub
+(package:yaml 3.1.4) rather than yaml.bzl. The parity check against
+yaml.bzl ran over a corpus of real pubspec files and generated documents;
+these cases pin the constructs it covers.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
