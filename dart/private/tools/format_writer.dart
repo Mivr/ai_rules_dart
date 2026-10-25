@@ -137,11 +137,11 @@ int _format(
   // `include:` — is named by its workspace path, which is where the user
   // would look for it: forward-slashed, like every workspace path Bazel
   // prints, whatever the host.
-  final staged = RegExp(
+  final stagedPath = RegExp(
     '${RegExp.escape('$src${Platform.pathSeparator}')}[^"\\s]+',
   );
   err = err.replaceAllMapped(
-    staged,
+    stagedPath,
     (m) => m[0]!.substring(src.length + 1).replaceAll(r'\', '/'),
   );
   stdout.write(out);
