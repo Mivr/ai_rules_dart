@@ -1,5 +1,7 @@
 /// Unit tests for `tool/refresh_locks_walk.dart`: the workspace and package
-/// finders on a fixture tree, plus the relative-path helper.
+/// finders on a fixture tree, the relative-path helper, and the symlink cases
+/// (links out of the root, loop pairs, self links, in-root links, dangling
+/// links and symlinked marker files) on fixture trees of their own.
 ///
 /// Run with the pinned SDK (no VM, no Bazel, no pubspec needed):
 ///   dart run tool/test/refresh_locks_walk_test.dart
@@ -27,6 +29,11 @@ String _touch(String root, String rel, [String contents = '']) {
   File(path).parent.createSync(recursive: true);
   File(path).writeAsStringSync(contents);
   return path;
+}
+
+/// Creates a symbolic link `link` under [root] pointing at [target].
+void _link(String root, String link, String target) {
+  Link('$root/$link').createSync(target);
 }
 
 /// Fixture tree covering every exclusion of both queries.
@@ -121,10 +128,158 @@ void _testRelativePath() {
   stdout.writeln('ok relative path');
 }
 
+void _testLinkOutOfRoot() {
+  final root = Directory.systemTemp.createTempSync('locks_link_out').path;
+  final outside = Directory.systemTemp.createTempSync('locks_outside').path;
+  try {
+    _touch(root, 'MODULE.bazel');
+    _touch(root, 'inner/MODULE.bazel');
+    _touch(outside, 'MODULE.bazel');
+    _touch(outside, 'sub/MODULE.bazel');
+    _link(root, 'link_out', outside);
+    final found = findMarkedDirs(root, workspaceQuery(const {}));
+    _check(
+      _sameElements(found, [root, '$root/inner']),
+      'link out of root is not walked, got $found',
+    );
+  } finally {
+    Directory(root).deleteSync(recursive: true);
+    Directory(outside).deleteSync(recursive: true);
+  }
+  stdout.writeln('ok link out of root');
+}
+
+void _testLoopPair() {
+  final root = Directory.systemTemp.createTempSync('locks_loop').path;
+  try {
+    _touch(root, 'MODULE.bazel');
+    _touch(root, 'a_ws/MODULE.bazel');
+    _touch(root, 'b_ws/MODULE.bazel');
+    _link(root, 'a_ws/l', '../b_ws');
+    _link(root, 'b_ws/l', '../a_ws');
+    final found = findMarkedDirs(root, workspaceQuery(const {}));
+    _check(
+      _sameElements(found, [root, '$root/a_ws', '$root/b_ws']),
+      'loop pair is walked once, got ${found.length} entries: $found',
+    );
+  } finally {
+    Directory(root).deleteSync(recursive: true);
+  }
+  stdout.writeln('ok loop pair');
+}
+
+void _testSelfLink() {
+  final root = Directory.systemTemp.createTempSync('locks_self').path;
+  try {
+    _touch(root, 'MODULE.bazel');
+    _touch(root, 'ws/MODULE.bazel');
+    _link(root, 'ws/self', '.');
+    final found = findMarkedDirs(root, workspaceQuery(const {}));
+    _check(
+      _sameElements(found, [root, '$root/ws']),
+      'self link is not walked, got $found',
+    );
+  } finally {
+    Directory(root).deleteSync(recursive: true);
+  }
+  stdout.writeln('ok self link');
+}
+
+void _testLinkInsideRoot() {
+  final root = Directory.systemTemp.createTempSync('locks_inroot').path;
+  try {
+    _touch(root, 'MODULE.bazel');
+    _touch(root, 'real/MODULE.bazel');
+    _link(root, 'link_to_real', 'real');
+    final found = findMarkedDirs(root, workspaceQuery(const {}));
+    _check(
+      _sameElements(found, [root, '$root/real']),
+      'link inside root adds no duplicate, got $found',
+    );
+  } finally {
+    Directory(root).deleteSync(recursive: true);
+  }
+  stdout.writeln('ok link inside root');
+}
+
+void _testDanglingLink() {
+  final root = Directory.systemTemp.createTempSync('locks_dangling').path;
+  try {
+    _touch(root, 'MODULE.bazel');
+    _touch(root, 'ws/MODULE.bazel');
+    _link(root, 'dangling', 'nowhere-target');
+    final found = findMarkedDirs(root, workspaceQuery(const {}));
+    _check(
+      _sameElements(found, [root, '$root/ws']),
+      'dangling link is not walked, got $found',
+    );
+  } finally {
+    Directory(root).deleteSync(recursive: true);
+  }
+  stdout.writeln('ok dangling link');
+}
+
+void _testSymlinkedMarker() {
+  final root = Directory.systemTemp.createTempSync('locks_marker').path;
+  try {
+    _touch(root, 'MODULE.bazel');
+    _touch(root, 'realmod/MODULE.bazel');
+    Directory('$root/viamarker').createSync();
+    _link(root, 'viamarker/MODULE.bazel', '../realmod/MODULE.bazel');
+    final found = findMarkedDirs(root, workspaceQuery(const {}));
+    _check(
+      _sameElements(found, [root, '$root/realmod', '$root/viamarker']),
+      'symlinked marker still marks, got $found',
+    );
+  } finally {
+    Directory(root).deleteSync(recursive: true);
+  }
+  stdout.writeln('ok symlinked marker');
+}
+
+void _testDeterministicOrder() {
+  List<String> buildTree(List<String> names) {
+    final root = Directory.systemTemp.createTempSync('locks_order').path;
+    _touch(root, 'MODULE.bazel');
+    for (final name in names) {
+      _touch(root, '$name/MODULE.bazel');
+    }
+    return findMarkedDirs(root, workspaceQuery(const {}));
+  }
+
+  List<String> relativeToRoot(List<String> found) => [
+    for (final path in found) path.substring(found[0].length),
+  ];
+
+  final first = buildTree(['aaa', 'mmm', 'zzz']);
+  final second = buildTree(['zzz', 'mmm', 'aaa']);
+  try {
+    _check(
+      _sameElements(relativeToRoot(first), ['', '/aaa', '/mmm', '/zzz']),
+      'ordered result, got $first',
+    );
+    _check(
+      _sameElements(relativeToRoot(first), relativeToRoot(second)),
+      'order is stable whatever the listing order, got $first vs $second',
+    );
+  } finally {
+    Directory(first[0]).deleteSync(recursive: true);
+    Directory(second[0]).deleteSync(recursive: true);
+  }
+  stdout.writeln('ok deterministic order');
+}
+
 void main() {
   _testWorkspaces();
   _testPubPackages();
   _testQueryHelpers();
   _testRelativePath();
+  _testLinkOutOfRoot();
+  _testLoopPair();
+  _testSelfLink();
+  _testLinkInsideRoot();
+  _testDanglingLink();
+  _testSymlinkedMarker();
+  _testDeterministicOrder();
   stdout.writeln('All refresh_locks_walk tests passed.');
 }

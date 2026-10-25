@@ -75,28 +75,56 @@ const FindQuery pubPackageQuery = FindQuery(
 );
 
 /// Finds every directory under [root] matching [query], in [query]'s order.
+///
+/// Symbolic links to directories are never descended into: a link pointing
+/// outside [root], into a loop, at itself, at another directory inside [root],
+/// or nowhere contributes no entries and raises nothing. A real directory that
+/// a link also points at is still found once, by its real path. Every returned
+/// path is inside [root] and appears exactly once, regardless of the order the
+/// file system lists entries in. A marker file that is itself a symbolic link
+/// still marks its directory.
 List<String> findMarkedDirs(String root, FindQuery query) {
-  final found = <String>[];
-  _collectMarked(root, query, found, root);
-  found.sort((a, b) => query.compare(root, a, b));
-  return found;
+  final walk = _MarkedWalk(root, query);
+  walk.collect(root);
+  walk.found.sort((a, b) => query.compare(root, a, b));
+  return walk.found;
 }
 
-/// Depth-first walk collecting the directories that hold the query's marker.
-void _collectMarked(
-  String root,
-  FindQuery query,
-  List<String> out,
-  String dirPath,
-) {
-  if (query.prunes(dirPath)) return;
-  if (query.skippedPaths.contains(relativePath(root, dirPath))) return;
-  if (File('$dirPath/${query.markerFile}').existsSync()) {
-    out.add(dirPath);
-  }
-  for (final entity in Directory(dirPath).listSync()) {
-    if (entity is Directory && _isWalkable(entity)) {
-      _collectMarked(root, query, out, entity.path);
+/// Depth-first walk collecting the directories that hold a query's marker.
+///
+/// The [root], [query], [found] and [seen] values travel together through the
+/// recursion, so they live in one object instead of a long parameter list.
+final class _MarkedWalk {
+  _MarkedWalk(this.root, this.query);
+
+  /// The repository root the walk started from.
+  final String root;
+
+  /// What marker file, pruning and exclusions to apply.
+  final FindQuery query;
+
+  /// Matches in walk order; sorted by [findMarkedDirs] before returning.
+  final List<String> found = [];
+
+  /// Directories already visited, so each is processed exactly once.
+  final Set<String> seen = {};
+
+  /// Collects the marked directories under [dirPath] into [found].
+  void collect(String dirPath) {
+    if (!_isInsideRoot(root, dirPath)) return;
+    if (!seen.add(dirPath)) return;
+    if (query.prunes(dirPath)) return;
+    if (query.skippedPaths.contains(relativePath(root, dirPath))) return;
+    if (File('$dirPath/${query.markerFile}').existsSync()) {
+      found.add(dirPath);
+    }
+    // With followLinks false a link to a directory lists as a Link, never as
+    // a Directory, so links are neither descended into nor followed. The
+    // explicit link check below keeps that true even if listing ever follows.
+    for (final entity in Directory(dirPath).listSync(followLinks: false)) {
+      if (entity is! Directory || !_isWalkable(entity)) continue;
+      if (FileSystemEntity.isLinkSync(entity.path)) continue;
+      collect(entity.path);
     }
   }
 }
@@ -108,6 +136,11 @@ bool _isWalkable(Directory dir) {
   return !name.startsWith('.') &&
       !name.startsWith('bazel-') &&
       name != 'references';
+}
+
+/// Whether [path] is [root] itself or nested under it.
+bool _isInsideRoot(String root, String path) {
+  return path == root || path.startsWith('$root/');
 }
 
 /// Path of [path] relative to [root]: `.` for the root itself.
