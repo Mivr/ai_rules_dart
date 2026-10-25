@@ -798,6 +798,102 @@ def _tag_test_impl(ctx):
     )
     return unittest.end(env)
 
+def _tag_remainder_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A one-character text under `!!float` fails naming the line: pub
+    # crashes on it (a RangeError), so it rejects the document, while two
+    # characters read (package:yaml 3.1.4 with the pinned SDK 3.13.5).
+    value, problems = document_value_and_problems("d: !!float 1\n", True)
+    asserts.equals(env, {"d": None}, value)
+    asserts.equals(env, ["Invalid float scalar at line 1"], problems)
+    asserts.equals(
+        env,
+        ["Invalid float scalar at line 1"],
+        document_problems("d: !!float 0\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Invalid float scalar at line 1"],
+        document_problems("d: !!float 9\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Invalid float scalar at line 1"],
+        document_problems("d: !!float \"1\"\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Invalid float scalar at line 1"],
+        document_problems("k: !!float\n  1\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Invalid float scalar at line 1"],
+        document_problems("d: !!float 1\n", False),
+    )
+    asserts.equals(env, {"d": 0.0}, parse_document("d: !!float 00\n"))
+    asserts.equals(env, {"d": 12.0}, parse_document("d: !!float 12\n"))
+
+    # `!!timestamp` on a scalar fails as an undefined tag, as pub reports
+    # it; any other `!!` tag already behaved this way.
+    asserts.equals(
+        env,
+        ["Undefined tag: tag:yaml.org,2002:timestamp at line 1"],
+        document_problems("d: !!timestamp x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Undefined tag: tag:yaml.org,2002:timestamp at line 1"],
+        document_problems("d: !!timestamp 2001-02-03\n", True),
+    )
+
+    # A verbatim tag with a space inside fails, an empty named handle fails,
+    # and dropped named-handle, verbatim and `!!float` tags fail, as pub
+    # rejects them all.
+    asserts.equals(
+        env,
+        ["Undefined tag handle at line 1"],
+        document_problems("d: !<a b> x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Undefined tag handle at line 1"],
+        document_problems("d: !e! x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Undefined tag handle at line 1"],
+        document_problems("d: !e!foo\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Undefined tag handle at line 1"],
+        document_problems("d: !<foo>\n", True),
+    )
+    asserts.equals(
+        env,
+        ["tag !!float with no value at line 1 is not supported"],
+        document_problems("d: !!float\n", True),
+    )
+
+    # A mid-word handle and a `>` inside a verbatim tag fail as undefined
+    # handles, while a dropped local or non-specific tag reads an empty
+    # scalar, as pub reads them.
+    asserts.equals(
+        env,
+        ["Undefined tag handle at line 1"],
+        document_problems("d: !foo!bar x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Undefined tag handle at line 1"],
+        document_problems("d: !<a>b> x\n", True),
+    )
+    asserts.equals(env, {"d": ""}, parse_document("d: !foo\n"))
+    asserts.equals(env, {"d": ""}, parse_document("d: !\n"))
+    return unittest.end(env)
+
 def _collection_tag_test_impl(ctx):
     env = unittest.begin(ctx)
     asserts.equals(
@@ -2270,6 +2366,7 @@ _t41_test = unittest.make(_block_structure_test_impl)
 _t42_test = unittest.make(_flow_indicator_test_impl)
 _t43_test = unittest.make(_block_scalar_indicator_test_impl)
 _t44_test = unittest.make(_directive_test_impl)
+_t45_test = unittest.make(_tag_remainder_test_impl)
 
 def yaml_subset_test_suite(name):
     small_unittest_suite(
@@ -2319,4 +2416,5 @@ def yaml_subset_test_suite(name):
         _t42_test,
         _t43_test,
         _t44_test,
+        _t45_test,
     )

@@ -1935,6 +1935,47 @@ _t66_test = unittest.make(_parse_lock_block_scalar_test_impl)
 _t67_test = unittest.make(_parse_pubspec_directive_test_impl)
 _t68_test = unittest.make(_parse_lock_directive_test_impl)
 
+def _parse_pubspec_tag_remainder_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A one-character text under `!!float` fails naming the pubspec and the
+    # line: pub crashes on it, so it rejects the document. `!!timestamp` on
+    # a scalar fails too, as pub reports it undefined.
+    head = "name: x\nenvironment:\n  sdk: ^3.0.0\n"
+    doc = head + "description: !!float 1\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
+    doc = head + "description: !!float 00\n"
+    asserts.equals(env, 0.0, parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = head + "description: !!timestamp x\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
+    return unittest.end(env)
+
+def _parse_lock_tag_remainder_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A one-character text under `!!float` fails naming the lock and the
+    # line, as pub rejects it.
+    content = (
+        "packages:\n  a:\n    dependency: transitive\n    description:\n" +
+        "      name: a\n      sha256: abc\n      url: !!float 1\n" +
+        "    source: hosted\n    version: \"1.0.0\"\n"
+    )
+    err = pubspec_lock_error(content, "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 7" in err)
+    content = (
+        "packages:\n  a:\n    dependency: transitive\n    description:\n" +
+        "      name: a\n      sha256: abc\n      url: !!float 00\n" +
+        "    source: hosted\n    version: \"1.0.0\"\n"
+    )
+    asserts.equals(env, None, pubspec_lock_error(content, "//:pubspec.lock"))
+    return unittest.end(env)
+
+_t69_test = unittest.make(_parse_pubspec_tag_remainder_test_impl)
+_t70_test = unittest.make(_parse_lock_tag_remainder_test_impl)
+
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
         name = name + "_pub_lock_package_extracted_test",
@@ -2012,6 +2053,8 @@ def yaml_parser_test_suite(name):
         _t66_test,
         _t67_test,
         _t68_test,
+        _t69_test,
+        _t70_test,
     )
     native.test_suite(
         name = name,
