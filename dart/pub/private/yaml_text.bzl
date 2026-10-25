@@ -194,9 +194,13 @@ def _find_colon(text, counts):
     """Scans for a separating colon, optionally tracking brackets.
 
     `counts` carries the brace and bracket depth, or None to read brackets
-    as content; quotes hide the colon either way, as pub scans them. A
-    quote opens only where a scalar starts, so an apostrophe in a plain
-    scalar never hides a colon.
+    as content; quotes hide the colon either way, as pub scans them, and a
+    `#` comment ends the scan either way, as pub strips it before reading
+    the line as a key or a value. The comment starts at the line start,
+    after a space or tab, or glued past a closing quote, as pub ends the
+    scalar there. A quote opens only where a scalar starts, so an apostrophe
+    in a plain scalar never hides a colon; its close is quote-aware, so an
+    escaped quote never ends the scalar early.
 
     Args:
       text: the line to scan.
@@ -213,19 +217,41 @@ def _find_colon(text, counts):
         track = False
     else:
         track = True
+    close_pos = -1
     for i in range(len(text)):
-        ch = text[i]
-        if quote_track(ch, st):
-            continue
-        if st["single"] or st["double"]:
-            continue
-        if ch == ":" and (not track or (counts["braces"] == 0 and counts["brackets"] == 0)) and (i + 1 == len(text) or text[i + 1] in [" ", "\t"]):
-            return i
-        if track:
-            _sep_track(ch, text[i + 1:i + 2], st, counts)
-        else:
-            _sep_track(ch, text[i + 1:i + 2], st, None)
+        found, close_pos = _find_colon_char(text, i, st, track, counts, close_pos)
+        if found != None:
+            return found
     return -1
+
+def _find_colon_char(text, i, st, track, counts, close_pos):
+    """Scans the character at `i` for a separating colon.
+
+    Returns (found, close_pos): `found` is the colon index or -1 to stop
+    the scan with, or None to keep scanning; `close_pos` is the updated
+    glued-quote position, as a `#` past a closing quote ends the scan.
+    Quotes hide the colon, as pub scans them, and a `#` comment ends the
+    scan, as pub strips it before reading the line as a key or a value.
+    """
+    ch = text[i]
+    was_open = st["single"] or st["double"]
+    if quote_track(ch, st):
+        if not was_open and (st["single"] or st["double"]):
+            close_pos = quoted_end_at(text, ch, i + 1)
+        return None, close_pos
+    if st["single"] or st["double"]:
+        return None, close_pos
+    if ch == "#":
+        if i == 0 or text[i - 1] in [" ", "\t"] or i - 1 == close_pos:
+            return -1, close_pos
+        return None, close_pos
+    if ch == ":" and (not track or (counts["braces"] == 0 and counts["brackets"] == 0)) and (i + 1 == len(text) or text[i + 1] in [" ", "\t"]):
+        return i, close_pos
+    if track:
+        _sep_track(ch, text[i + 1:i + 2], st, counts)
+    else:
+        _sep_track(ch, text[i + 1:i + 2], st, None)
+    return None, close_pos
 
 def _block_affix_rest(text):
     """Skips leading `&anchor` and `!tag` words. Returns the rest."""
@@ -323,6 +349,47 @@ def is_block_collection_key(text):
 
 def is_quoted(text):
     return len(text) >= 2 and ((text[0] == '"' and text[-1] == '"') or (text[0] == "'" and text[-1] == "'"))
+
+def is_unknown_directive(line):
+    """Returns whether `line` is an unknown `%` directive line, as pub only warns about it.
+
+    The `%` sits at column 0 with a glued name that is neither empty nor a
+    known directive (`YAML`, `TAG`), as pub rejects those where it rejects
+    them. An indented `%` line is no directive, as pub reads it as content.
+
+    Args:
+      line: the raw source line.
+
+    Returns:
+      Whether the line is an unknown directive.
+    """
+    if not line.startswith("%"):
+        return False
+    word = line[1:].replace("\t", " ").split(" ")[0]
+    return word != "" and word != "YAML" and word != "TAG"
+
+def quoted_scalar_rest(s):
+    """Returns the text past the leading quoted scalar in `s`, or None.
+
+    `s` must open with `'` or `"`: the close is quote-aware, so `''`
+    inside single quotes is one escaped quote and a backslash escapes the
+    next character in double quotes, as pub reads them. A `#` comment glued
+    past the close stays in the rest, so the caller reads the scalar
+    without it, as pub ends the scalar there. None when `s` opens with no
+    closing quote, or opens with no quote at all.
+
+    Args:
+      s: the scalar text opening with a quote.
+
+    Returns:
+      The text after the closing quote, or None.
+    """
+    if s[:1] not in ["'", '"']:
+        return None
+    end = quoted_end_at(s, s[0], 1)
+    if end < 0:
+        return None
+    return s[end + 1:]
 
 # ---------------------------------------------------------------------------
 # Scalars

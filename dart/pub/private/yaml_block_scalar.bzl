@@ -23,10 +23,12 @@ def _block_scalar_header_ok(header):
     """Returns whether `header` is a valid `|` or `>` indicator.
 
     After the style comes at most one chomping indicator and at most one
-    digit, in either order. Anything else is rejected, as pub rejects text
-    after the indicator where it expects a comment or line break.
+    digit, in either order. A `#` comment ends the indicators, glued or
+    spaced, as pub reads it there; anything else is rejected, as pub
+    rejects text after the indicator where it expects a comment or line
+    break.
     """
-    if len(header) < 1 or len(header) > 3:
+    if len(header) < 1:
         return False
     if header[0] != "|" and header[0] != ">":
         return False
@@ -34,6 +36,11 @@ def _block_scalar_header_ok(header):
     digit = False
     for i in range(1, len(header)):
         ch = header[i]
+        if ch == "#":
+            return True
+        if ch in [" ", "\t"]:
+            rest = header[i:].strip(" \t")
+            return rest == "" or rest.startswith("#")
         if (ch == "+" or ch == "-") and not chomping:
             chomping = True
         elif ch in "123456789" and not digit:

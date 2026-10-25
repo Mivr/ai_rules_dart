@@ -11,7 +11,7 @@ load(":yaml_flow.bzl", "parse_flow", "parse_scalar")
 load(":yaml_flow_scan.bzl", "flow_fold_lines", "flow_fold_problem", "flow_scan_start")
 load(":yaml_fold.bzl", "block_fold_scalar")
 load(":yaml_scalar.bzl", "OPEN_ANCHOR", "apply_bool_tag", "apply_child_collection_tag", "apply_tag", "drop_tag_value", "is_unknown_tag_handle", "resolve_alias", "resolve_handle", "split_value_text", "strip_value_prefix", "tag_name", "undefined_tag_problem")
-load(":yaml_text.bzl", "bad_blank_index", "block_line_text", "clone", "dict_key", "find_block_colon", "flow_head_text", "is_block_collection_key", "is_block_mapping_start", "is_compact_seq", "is_dash", "is_explicit_key_text", "is_mapping_start", "is_question_entry", "record_unreadable", "split_block_key_value")
+load(":yaml_text.bzl", "bad_blank_index", "block_line_text", "clone", "dict_key", "find_block_colon", "flow_head_text", "is_block_collection_key", "is_block_mapping_start", "is_compact_seq", "is_dash", "is_explicit_key_text", "is_mapping_start", "is_question_entry", "is_unknown_directive", "record_unreadable", "split_block_key_value")
 
 def close_block_containers(stack, indent, text, anchors):
     """Pops the containers that the line at `indent` is not nested into.
@@ -117,23 +117,53 @@ def _consume_pending_scalar(cursor, pending, env):
     parent_indent = pending["indent"]
     _indent0, text0 = block_line_text(lines[idx])
     if text0 != None and _unclosed_flow_head(text0, anchors) != None:
-        raws, next_idx = _pending_flow_raws(lines, idx, parent_indent)
-        folded, problem = flow_fold_lines(raws, flow_scan_start(), True)
-        if problem == None and _folded_flow_ok(folded, anchors):
-            # The folded lines read as one flow collection, as pub reads
-            # them: keep the value, as revisions before the span check did.
-            value = parse_scalar(folded, anchors, state, idx + 1)
-            _store_pending_value(pending, value, "", anchors, state)
-            return next_idx
-        if problem != None:
-            state.problems.append(flow_fold_problem(problem[0], problem[1]))
-        else:
-            state.problems.append(_span_flow_problem(idx + 1))
-        end = _spanning_flow_end(lines, idx + 1, parent_indent, text0, anchors)
-        return end if end != None else next_idx
+        return _consume_pending_flow(lines, idx, parent_indent, text0, pending, anchors, state)
     value, next_idx, _read = block_fold_scalar(lines, idx, parent_indent, {"text": "", "raw": "", "idx": idx, "entry": ""}, type(parent) == "dict" and parent_indent > 0, anchors, state)
     _store_pending_value(pending, value, text0, anchors, state)
     return next_idx
+
+def _consume_pending_flow(lines, idx, parent_indent, text0, pending, anchors, state):
+    """Folds a pending flow head with its deeper lines. Returns next index.
+
+    When the fold reads as one flow collection as pub reads it, the value is
+    that collection. A close dedented to the key's column or past it reads
+    too, as pub closes it there: the extended lines fold shortest-first, so
+    a sibling past the close never joins it. An unknown column-0 `%` line
+    reads past, as pub only warns about it; any other `%` outside quotes
+    and plain scalars refuses the flow naming the line, as pub rejects a
+    known or indented directive there. A head that never closes refuses
+    naming its opening line in strict mode, as pub rejects it there, and
+    reads None leniently, as an unreadable flow value does.
+    """
+    raws, next_idx = _pending_flow_raws(lines, idx, parent_indent)
+    folded, problem = flow_fold_lines(raws, flow_scan_start(), True)
+    if problem == None and _folded_flow_ok(folded, anchors):
+        # The folded lines read as one flow collection, as pub reads
+        # them: keep the value, as revisions before the span check did.
+        value = parse_scalar(folded, anchors, state, idx + 1)
+        _store_pending_value(pending, value, "", anchors, state)
+        return next_idx
+    if problem == None or problem[0] == "plain-comment":
+        # The close may sit past the bounded lines, dedented to the
+        # key's column or past it, as pub closes it there.
+        full = raws + _extended_flow_raws(lines, next_idx)
+        count, folded, xproblem = _spanning_prefix(full, anchors)
+        if count > 0:
+            value = parse_scalar(folded, anchors, state, idx + 1)
+            _store_pending_value(pending, value, "", anchors, state)
+            return full[count - 1][0]
+        if xproblem != None and xproblem[0] == "directive":
+            problem = xproblem
+    if problem != None and problem[0] == "directive":
+        state.problems.append(flow_fold_problem("directive", problem[1]))
+        resume = _flow_resume_index(raws + _extended_flow_raws(lines, next_idx), anchors)
+        return resume if resume != None else next_idx
+    if problem != None:
+        state.problems.append(flow_fold_problem(problem[0], problem[1]))
+    else:
+        state.problems.append(_span_flow_problem(idx + 1))
+    end = _spanning_flow_end(lines, idx + 1, parent_indent, text0, anchors)
+    return end if end != None else next_idx
 
 def _store_pending_value(pending, value, raw, anchors, state):
     """Stores a folded pending child, reading it through a pending tag.
@@ -406,8 +436,8 @@ def _span_end_or_close(lines, start, parent_indent, value_text, anchors):
     return None
 
 def _span_flow_problem(line):
-    """The problem for a flow collection that opens at 1-based `line` and spans lines."""
-    return "flow collection that spans lines starting at line %d is not supported" % line
+    """The problem for a flow collection that opens at 1-based `line` and never reads as one value."""
+    return "flow collection starting at line %d is not supported" % line
 
 def _map_store(mapping, key, value, next_idx, line, state):
     """Stores a mapping value, recording a duplicate key. Returns (next index, None)."""
@@ -714,18 +744,100 @@ def _folded_head_flow(head_raw, head_line, lines, idx, parent_indent, anchors, s
     `head_raw` is the raw value text on `lines[idx]` at 1-based `head_line`,
     comment intact; deeper content lines come from `_pending_flow_raws`.
     When the fold reads as one flow collection as pub reads it, value is
-    that collection. Otherwise read is False and the caller fails the span
-    as today. Every caller already split the head's prefixes, so the parse
-    reads them without recording again.
+    that collection. A close dedented to the key's column or past it reads
+    too, as pub closes it there: the extended lines fold shortest-first, so
+    a sibling past the close never joins it. An unknown column-0 `%` line
+    reads past, as pub only warns about it; any other `%` outside quotes
+    and plain scalars refuses the flow naming the line, as pub rejects a
+    known or indented directive there. A head that never closes refuses
+    naming its opening line in strict mode, as pub rejects it there, and
+    reads None leniently, as an unreadable flow value does. Every caller
+    already split the head's prefixes, so the parse reads them without
+    recording again.
     """
     if _unclosed_flow_head(head_raw, anchors) == None:
         return None, idx + 1, False
     raws, next_idx = _pending_flow_raws(lines, idx + 1, parent_indent)
     items = [(head_line, head_raw)] + raws
     folded, problem = flow_fold_lines(items, flow_scan_start(), True)
-    if problem != None or not _folded_flow_ok(folded, anchors):
+    if problem == None and _folded_flow_ok(folded, anchors):
+        return parse_scalar(folded, anchors, state, head_line, False), next_idx, True
+    full = items + _extended_flow_raws(lines, next_idx)
+    count, folded, problem = _spanning_prefix(full, anchors)
+    if count > 0:
+        return parse_scalar(folded, anchors, state, head_line, False), full[count - 1][0], True
+    if problem != None and problem[0] == "directive":
+        if not state.strict_lines:
+            return None, next_idx, False
+        state.problems.append(flow_fold_problem("directive", problem[1]))
+        resume = _flow_resume_index(full, anchors)
+        return None, (resume if resume != None else next_idx), True
+    if not state.strict_lines:
         return None, next_idx, False
-    return parse_scalar(folded, anchors, state, head_line, False), next_idx, True
+    state.problems.append(_span_flow_problem(head_line))
+    return None, next_idx, True
+
+def _extended_flow_raws(lines, start):
+    """Collects the raw lines past `start` a spanning flow may close on. Returns items.
+
+    Each item is a (1-based line, raw line) pair. Unlike `_pending_flow_raws`
+    no indent or entry rule stops the walk, as pub closes the flow wherever
+    its brackets balance; only a column-0 document marker or the end of the
+    file does, as pub ends the flow there. The fold decides every line, as
+    pub scans it.
+    """
+    items = []
+    idx = start
+    for _ in range(len(lines) + 1):
+        if idx >= len(lines):
+            break
+        raw = lines[idx]
+        if is_marker_line(raw, "---") or is_marker_line(raw, "..."):
+            break
+        items.append((idx + 1, raw))
+        idx += 1
+    return items
+
+def _spanning_prefix(items, anchors):
+    """Probes leading runs of `items` for one flow collection. Returns (count, folded, problem).
+
+    The shortest run that folds without a problem and parses as one flow
+    collection wins, as pub closes the flow at the first point its token
+    stream completes; a later sibling never joins it. An unknown column-0
+    `%` line is no run member, as pub only warns about it and reads past
+    it, so the probe skips those items while still consuming them. A
+    "control" problem, or a `%` anywhere else (a known directive, an
+    indented one, or one opening a scalar mid-line), stops the search with
+    (0, "", problem), as pub rejects the flow there; a plain-scalar comment
+    or an unparsable fold continues it, as a later line may close. `count`
+    spans the consumed original items through the close, so the caller
+    resumes past any skipped directive. `anchors` resolves aliases while
+    probing, read-only.
+    """
+    kept = [(0, items[0])] + [(n, items[n]) for n in range(1, len(items)) if not is_unknown_directive(items[n][1])]
+    for k in range(1, len(kept) + 1):
+        folded, problem = flow_fold_lines([item for _n, item in kept[:k]], flow_scan_start(), True)
+        if problem != None:
+            if problem[0] in ["control", "directive"]:
+                return 0, "", problem
+            continue
+        if _folded_flow_ok(folded, anchors):
+            return kept[k - 1][0] + 1, folded, None
+    return 0, "", None
+
+def _flow_resume_index(items, anchors):
+    """Returns the 0-based index past a refused flow's close, or None.
+
+    Unknown column-0 `%` lines are skipped only to find the close, as pub
+    warns about them and reads past them; the refusal itself stands, as pub
+    rejects a known or indented directive there. None when no leading run
+    closes, and the caller resumes where the bounded walk ended.
+    """
+    kept = [items[0]] + [item for item in items[1:] if not is_unknown_directive(item[1])]
+    count, _folded, _problem = _spanning_prefix(kept, anchors)
+    if count > 0:
+        return kept[count - 1][0]
+    return None
 
 def _folded_flow_ok(joined, anchors):
     """Returns whether the folded `joined` text reads as one flow collection.

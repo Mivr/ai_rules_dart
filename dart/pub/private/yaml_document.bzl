@@ -7,7 +7,7 @@ walk. Loaded by the `yaml_subset.bzl` entry point.
 load(":yaml_block.bzl", "close_block_containers", "drop_affix", "drop_pending_value", "emit_dangling", "init_block_root", "map_line", "record_dangling", "resolve_affix_root", "resolve_pending", "seq_line", "take_lone_line")
 load(":yaml_chars.bzl", "BOM", "is_bom_only_line", "is_clean_marker_line")
 load(":yaml_scalar.bzl", "strip_value_prefix")
-load(":yaml_text.bzl", "bad_blank_index", "block_line_text", "clone", "indent_width", "is_dash", "is_question_entry", "record_unreadable", "split_block_key_value", "strip_trailing_comment")
+load(":yaml_text.bzl", "bad_blank_index", "block_line_text", "clone", "indent_width", "is_dash", "is_question_entry", "is_unknown_directive", "record_unreadable", "split_block_key_value", "strip_trailing_comment")
 
 def first_content(lines):
     """Returns the first line with block content as struct(index, text).
@@ -30,9 +30,9 @@ def first_content(lines):
 def allows_flow_doc(lines, index):
     """Returns whether a flow document may open at `index`.
 
-    Every line before `index` must be blank or a comment: a `%` directive or
-    a kept `---` line means the bracket opens a block value, as pub reads it
-    there.
+    Every line before `index` must be blank or a comment: a `%` line (from
+    inline marker text) means the bracket does not open a flow document, as
+    pub rejects `%` text there.
 
     Args:
       lines: the document lines.
@@ -95,12 +95,14 @@ def _doc_dash_line(line, idx, current, doc, state):
         if doc["ended"] or doc["content"] or doc["marker"]:
             state.problems.append("second document marker (---) at line %d" % idx)
             return True
-        if _has_directive(current):
-            current.append(line)
-            doc["content"] = True
-            doc["pending"] = False
-        else:
-            doc["marker"] = True
+
+        # A `---` after directives still starts the document, as pub reads
+        # `%YAML 1.1\n---\nkey: 1`: the directives were already processed,
+        # so the marker only clears the pending directive state, leaving a
+        # blank so later lines keep their numbers.
+        current.append("")
+        doc["marker"] = True
+        doc["pending"] = False
         return False
     if line[3:4] in [" ", "\t"]:
         if doc["ended"] or doc["content"]:
@@ -142,6 +144,10 @@ def _doc_dots_line(line, idx, current, doc, state):
     if doc["ended"] or doc["content"]:
         state.problems.append("content after document end (...) at line %d" % idx)
         return True
+    if text.startswith("%"):
+        # Inline `%` text after `...` is no content, as pub rejects it there.
+        state.problems.append("directive after document marker at line %d is not supported" % idx)
+        return False
     if doc["pending"]:
         state.problems.append("directive without document start at line %d" % idx)
         doc["pending"] = False
@@ -157,9 +163,13 @@ def _marker_rest_problem(rest, idx):
     tag prefixes do not shield the entry, as pub still rejects
     `--- &x a: 1`; an alias or a block scalar header reads as before. A
     `te[st: 1` mapping fails too, as pub rejects it there, and so does a
-    list or map key, as pub rejects `--- [a]: v` without it.
+    list or map key, as pub rejects `--- [a]: v` without it. Inline `%`
+    text fails too, as pub rejects `--- %foo` there.
     """
     _anchor, _tag, s, _bad = strip_value_prefix(strip_trailing_comment(rest).strip())
+    if s.startswith("%"):
+        # Inline `%` text after `---` is no document, as pub rejects it there.
+        return "directive after document marker at line %d is not supported" % idx
     if is_dash(s):
         return "Block sequence entries are not allowed here at line %d" % idx
     if is_question_entry(s):
@@ -169,6 +179,32 @@ def _marker_rest_problem(rest, idx):
         return "Mapping values are not allowed here at line %d" % idx
     return None
 
+def _collect_percent_line(line, idx, current, doc, state):
+    """Collects a column-0 `%` line. Returns False, as collection never stops here.
+
+    Every raw line keeps its collected slot, so later lines keep their
+    numbers: a pre-content directive stays verbatim for the block walk,
+    which reads past it, as pub reads past it. An unknown directive reads
+    past before any content and after the document end, as pub only warns
+    about it; past content it stays verbatim, as an open flow folds past
+    it and the block walk places it. A known directive processes before
+    any content or marker through `_directive_line`, and fails past them,
+    as pub rejects directives after the document or its start.
+    """
+    if is_unknown_directive(line):
+        current.append(line)
+        return False
+    if not doc["content"] and not doc["marker"]:
+        _directive_line(line, idx, doc, state)
+        current.append(line)
+        return False
+    if doc["content"]:
+        state.problems.append("directive after document content at line %d is not supported" % idx)
+    else:
+        state.problems.append("directive after document start at line %d is not supported" % idx)
+    current.append("")
+    return False
+
 def _collect_doc_line(line, idx, current, doc, state):
     """Collects one raw line into the first document. Returns True when collection stops here."""
     if line.startswith("---") and line[3:4] in ["", " ", "\t"]:
@@ -176,15 +212,18 @@ def _collect_doc_line(line, idx, current, doc, state):
     if line.startswith("...") and line[3:4] in ["", " ", "\t"]:
         return _doc_dots_line(line, idx, current, doc, state)
     if doc["ended"]:
+        if line.startswith("%"):
+            # A trailing directive reads past, as pub only warns about it.
+            current.append("")
+            return False
         if _doc_tail_content(line):
             state.problems.append("content after document end (...) at line %d" % idx)
             return True
         return False
-    if not doc["content"] and not doc["marker"] and not doc["ended"] and line.strip().startswith("%"):
-        if line.startswith("%"):
-            _directive_line(line, idx, doc, state)
-        else:
-            state.problems.append("indented directive at line %d" % idx)
+    if line.startswith("%"):
+        return _collect_percent_line(line, idx, current, doc, state)
+    if not doc["content"] and not doc["marker"] and line.strip().startswith("%"):
+        state.problems.append("indented directive at line %d" % idx)
         current.append(line)
         return False
     current.append(line)
@@ -201,7 +240,9 @@ def first_document_lines(content, state):
     Returns (lines, tag_prefixes, dropped_marker), where lines splits as
     yaml.bzl splits them, tag_prefixes maps each declared `%TAG` handle to
     its prefix, and dropped_marker tells whether a pre-content `---` was
-    consumed, so lines[0] is not the file's first line.
+    consumed. Every raw line keeps its collected slot: a processed
+    directive and a consumed marker each leave a blank, so later lines keep
+    their numbers.
     One stream carries one document, as pub reads it: a second column-0
     `---` line is a problem naming its line, even before any content and
     even with only comments after it, and so is any content after a
@@ -221,7 +262,8 @@ def first_document_lines(content, state):
     Returns:
       The (lines, tag_prefixes, dropped_marker) triple: the first document lines, each
       declared `%TAG` handle with its prefix, and whether a pre-content `---` was
-      consumed.
+      consumed. A consumed marker leaves a blank slot, so later lines keep
+      their numbers.
     """
     normalized = content.replace("\r\n", "\n").replace("\r", "\n")
     current = []
@@ -319,12 +361,6 @@ def _directive_line(line, idx, doc, state):
         doc["pending"] = True
         return
 
-def _has_directive(lines):
-    for line in lines:
-        if line.strip().startswith("%"):
-            return True
-    return False
-
 # ---------------------------------------------------------------------------
 # Block structure
 # ---------------------------------------------------------------------------
@@ -353,13 +389,48 @@ def _block_skip_line(raw, idx, first_line, state):
         return True
     return False
 
+def _later_doc_content(lines, start):
+    """Returns the 1-based line of the next content line at or past `start`, or 0.
+
+    Blank, `#` comment, `%` directive and clean document marker lines are
+    no content: only a line the block walk would place counts, as only past
+    one does pub read a second document.
+    """
+    for n in range(start, len(lines)):
+        stripped = lines[n].strip()
+        if stripped == "" or stripped.startswith("#") or stripped.startswith("%"):
+            continue
+        if is_clean_marker_line(lines[n], "---") or is_clean_marker_line(lines[n], "..."):
+            continue
+        return n + 1
+    return 0
+
+def _block_directive_line(lines, idx, saw_content, state):
+    """Consumes a column-0 `%` line. Returns the next index.
+
+    Only pre-content directives and unknown ones reach the block walk:
+    known ones past content fail at collection. Before any content the
+    line reads past, as pub reads past it (a known one was already
+    processed at collection, and pub only warns about an unknown one).
+    Past content a trailing directive reads past, as pub only warns about
+    it, while one with content after it fails naming that line, as pub
+    reads a second document there.
+    """
+    if not saw_content:
+        return idx + 1
+    later = _later_doc_content(lines, idx + 1)
+    if later > 0:
+        state.problems.append("content after directive at line %d is not supported" % later)
+    return idx + 1
+
 def parse_block(lines, state, first_line):
     """Parses the block-structured lines of one document into a value.
 
     `first_line` tells whether lines[0] is the file's first line: there
     tabs and spaces before the first token are separation, not indentation,
-    as pub reads them. A consumed pre-content `---` shifts every line down,
-    so only an unshifted first line is exempt.
+    as pub reads them. A consumed pre-content `---` leaves a blank slot, so
+    every later line keeps its number; only an unshifted first line, one
+    with no consumed marker before it, is exempt.
 
     An open container is a frame, a dict {kind, indent, value, entry}. `kind`
     is "map" or "seq", `indent` is the column its entries must be nested
@@ -401,9 +472,12 @@ def parse_block(lines, state, first_line):
             continue
         indent, text = block_line_text(raw)
         if indent == None:
+            if raw.startswith("%"):
+                idx = _block_directive_line(lines, idx, saw_content, state)
+                continue
             if saw_content and raw.strip().startswith("%"):
-                # A `%` line after content is no directive: pub rejects it,
-                # so it is a problem naming the line, as the oracle reads it.
+                # An indented `%` line after content is no directive: pub
+                # rejects it, so it is a problem naming the line.
                 record_unreadable(state, idx, raw.strip())
             idx += 1
             continue

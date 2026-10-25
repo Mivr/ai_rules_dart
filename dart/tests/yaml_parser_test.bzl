@@ -1065,11 +1065,12 @@ def _parse_pubspec_json_document_test_impl(ctx):
 def _parse_pubspec_rejected_span_test_impl(ctx):
     env = unittest.begin(ctx)
 
-    # A spanning flow broken by a mapping entry fails naming its opening line.
-    broken = "name: p1\nenvironment:\n  sdk: ^3.0.0\nkey:\n  [a,\n  b: c]\n"
-    err = parse_pubspec_document_error(broken, "//:pubspec.yaml")
-    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 5" in err)
-    asserts.true(env, "not supported" in err and "flow" in err)
+    # A single-pair mapping inside a spanning flow reads as an implicit
+    # mapping entry, as pub reads it (package:yaml 3.1.4 with the pinned
+    # SDK 3.13.5 reads `[a, {b: c}]` for the document below).
+    read = "name: p1\nenvironment:\n  sdk: ^3.0.0\nkey:\n  [a,\n  b: c]\n"
+    asserts.equals(env, ["a", {"b": "c"}], parse_pubspec_document(read)["key"])
+    asserts.equals(env, None, parse_pubspec_document_error(read))
 
     # `- key: [a,` and `- [a,` spanning lines fold and read as one value, as
     # pub reads them.
@@ -2301,10 +2302,196 @@ def _parse_pubspec_flow_shape_test_impl(ctx):
         )
     return unittest.end(env)
 
+def _parse_pubspec_comment_colon_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A `: ` inside a trailing comment never classifies the line: the
+    # comment is stripped before the line is read as a key or a value, as
+    # pub reads each (package:yaml 3.1.4 with the pinned SDK 3.13.5).
+    doc = "description:\n  A package # see: docs\n"
+    asserts.equals(env, "A package", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "description: x\n  A package # see: docs\n"
+    asserts.equals(env, "x A package", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "key:\n  sub # see: docs\n"
+    asserts.equals(env, "sub", parse_pubspec_document(doc)["key"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "key: [a, b] # x: y\n"
+    asserts.equals(env, ["a", "b"], parse_pubspec_document(doc)["key"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    return unittest.end(env)
+
 _t73_test = unittest.make(_parse_pubspec_comment_fold_test_impl)
 _t74_test = unittest.make(_parse_pubspec_bracket_key_test_impl)
 _t75_test = unittest.make(_parse_pubspec_nested_entry_test_impl)
 _t76_test = unittest.make(_parse_pubspec_flow_shape_test_impl)
+_t77_test = unittest.make(_parse_pubspec_comment_colon_test_impl)
+
+def _parse_pubspec_spanning_directive_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A flow close dedented to the key's column or past it reads, as pub
+    # closes the flow there; an unknown `%` line inside reads past, as pub
+    # only warns about it (package:yaml 3.1.4 with the pinned SDK 3.13.5).
+    doc = "name: p1\ntags: [a,\nb]\nmore: 2\n"
+    asserts.equals(env, ["a", "b"], parse_pubspec_document(doc)["tags"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "name: p1\ntags:\n  [a,\nb]\nmore: 2\n"
+    asserts.equals(env, ["a", "b"], parse_pubspec_document(doc)["tags"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "name: p1\nouter:\n  key: [a,\n b]\n  more: 2\n"
+    asserts.equals(env, {"key": ["a", "b"], "more": 2}, parse_pubspec_document(doc)["outer"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "name: p1\ntags: [a,\n# c\nb]\nmore: 2\n"
+    asserts.equals(env, ["a", "b"], parse_pubspec_document(doc)["tags"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "name: p1\ntags:\n  - [a,\n%foo bar\nb]\n  - c\n"
+    asserts.equals(env, [["a", "b"], "c"], parse_pubspec_document(doc)["tags"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "name: p1\ntags: [a,\n%bad!\nb]\nmore: 1\n"
+    asserts.equals(env, ["a", "b"], parse_pubspec_document(doc)["tags"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "name: p1\ntags: [a,\n%foo bar\nb]\n"
+    asserts.equals(env, ["a", "b"], parse_pubspec_document(doc)["tags"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "name: p1\ntags:\n  - [a,\n    b]\n  - c\n"
+    asserts.equals(env, [["a", "b"], "c"], parse_pubspec_document(doc)["tags"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+
+    # A spanning flow that never closes fails naming its opening line, as
+    # pub rejects it there.
+    err = parse_pubspec_document_error("name: p1\ntags: [a],\n[b]\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 2" in err and "not supported" in err)
+    err = parse_pubspec_document_error("name: p1\ntags: [a\nmore: 1\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 2" in err and "not supported" in err)
+    err = parse_pubspec_document_error("name: p1\ntags: [a,\n%foo bar\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 2" in err and "not supported" in err)
+    err = parse_pubspec_document_error("name: p1\ntags: [a, %foo, b]\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "line 2" in err and "not supported" in err)
+    err = parse_pubspec_document_error("name: p1\ntags: [a,\n  %foo\n  b]\nmore: 2\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "line 3" in err and "not supported" in err)
+    err = parse_pubspec_document_error("name: p1\ntags: [a,\n%YAML 1.1\nb]\nmore: 1\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "line 3" in err)
+    return unittest.end(env)
+
+def _parse_pubspec_doc_directive_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # An unknown directive reads past before content, after `---` and
+    # after `...`, as pub only warns about it (package:yaml 3.1.4 with the
+    # pinned SDK 3.13.5).
+    doc = "---\n%foo x\nname: p1\n"
+    asserts.equals(env, "p1", parse_pubspec_document(doc)["name"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "%foo x\n---\nname: p1\n"
+    asserts.equals(env, "p1", parse_pubspec_document(doc)["name"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "%foo x\nname: p1\n"
+    asserts.equals(env, "p1", parse_pubspec_document(doc)["name"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "name: p1\n%foo bar\n"
+    asserts.equals(env, "p1", parse_pubspec_document(doc)["name"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "%foo x\n"
+    asserts.equals(env, {}, parse_pubspec_document(doc))
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "name: p1\n%foo\n%bar\n"
+    asserts.equals(env, "p1", parse_pubspec_document(doc)["name"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "%foo x\n%bar y\n---\nname: p1\n"
+    asserts.equals(env, "p1", parse_pubspec_document(doc)["name"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "name: p1\n%foo\n...\n"
+    asserts.equals(env, "p1", parse_pubspec_document(doc)["name"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "name: p1\n...\n%foo x\n"
+    asserts.equals(env, "p1", parse_pubspec_document(doc)["name"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "%YAML 1.1\n---\nname: p1\n"
+    asserts.equals(env, "p1", parse_pubspec_document(doc)["name"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "%YAML 1.9\n---\nname: p1\n"
+    asserts.equals(env, "p1", parse_pubspec_document(doc)["name"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "%TAG ! t:x\n---\nname: p1\n"
+    asserts.equals(env, "p1", parse_pubspec_document(doc)["name"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "%YAML 1.1\n%foo x\n---\nname: p1\n"
+    asserts.equals(env, "p1", parse_pubspec_document(doc)["name"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+
+    # A `%` line with content after it fails naming that line, and a known
+    # directive past the start or past content fails naming its line, as
+    # pub reads a second document or expects the document start there.
+    err = parse_pubspec_document_error("name: p1\n%foo bar\nmore: 2\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "content after directive at line 3" in err)
+    err = parse_pubspec_document_error("name: p1\ntags: [a,\nb]\n%foo x\nmore: 2\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "content after directive at line 5" in err)
+    err = parse_pubspec_document_error("name: p1\nm:\n  a: 1\n%foo bar\nb: 2\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "content after directive at line 5" in err)
+    err = parse_pubspec_document_error("name: p1\ndescription:\n  text\n%foo\nmore: 2\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "content after directive at line 5" in err)
+    doc = "name: p1\ndescription:\n  text\n%foo\n"
+    asserts.equals(env, "text", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    err = parse_pubspec_document_error("name: p1\n%YAML 1.1\nmore: 2\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "directive after document content at line 2" in err)
+    err = parse_pubspec_document_error("---\n%YAML 1.1\nname: p1\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "directive after document start at line 2" in err)
+    err = parse_pubspec_document_error("name: p1\n%foo\n---\nmore: 2\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "second document marker (---) at line 3" in err)
+    err = parse_pubspec_document_error("name: p1\n%foo\n...x\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "content after directive at line 3" in err)
+    err = parse_pubspec_document_error("--- %foo\nname: p1\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "directive after document marker at line 1" in err)
+    err = parse_pubspec_document_error("... %foo\nname: p1\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "directive after document marker at line 1" in err)
+    err = parse_pubspec_document_error("%YAML 1.1\n%foo x\nname: p1\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "directive without document start at line 3" in err)
+    err = parse_pubspec_document_error("%YAML 1.1\nname: p1\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "directive without document start at line 2" in err)
+    err = parse_pubspec_document_error("name: p1\ndescription: |\n  half\n%foo\n  more\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "content after directive at line 5" in err)
+    return unittest.end(env)
+
+def _parse_pubspec_percent_scalar_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # An indented `%` continuation past an open scalar reads, as pub folds
+    # it (package:yaml 3.1.4 with the pinned SDK 3.13.5).
+    doc = "name: p1\ndescription: 1\n  %foo\nmore: 2\n"
+    asserts.equals(env, "1 %foo", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "name: p1\ndescription: a,\n  %foo\n"
+    asserts.equals(env, "a, %foo", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "name: p1\ndescription: a,\n  %foo # c\nmore: 2\n"
+    asserts.equals(env, "a, %foo", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "name: p1\ndescription: a\n  %foo # c\nmore: 2\n"
+    asserts.equals(env, "a %foo", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "name: p1\nkey:\n  a\n  %foo\nmore: 2\n"
+    asserts.equals(env, "a %foo", parse_pubspec_document(doc)["key"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+
+    # A `%` continuation with no open scalar fails, as pub rejects it there.
+    err = parse_pubspec_document_error("name: p1\nkey:\n  %foo\n  bar\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 3" in err)
+
+    # A flow document reads past an unknown directive, as pub only warns
+    # about it; a known one fails naming its line, as pub rejects it.
+    err = parse_pubspec_document_error("[a,\n%foo bar\nb]\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "expected a mapping" in err)
+    asserts.true(env, "unreadable" not in err and "not supported" not in err)
+    err = parse_pubspec_document_error("[a,\n%YAML 1.1\nb]\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 2" in err)
+    return unittest.end(env)
+
+_t78_test = unittest.make(_parse_pubspec_spanning_directive_test_impl)
+_t79_test = unittest.make(_parse_pubspec_doc_directive_test_impl)
+_t80_test = unittest.make(_parse_pubspec_percent_scalar_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -2391,6 +2578,10 @@ def yaml_parser_test_suite(name):
         _t74_test,
         _t75_test,
         _t76_test,
+        _t77_test,
+        _t78_test,
+        _t79_test,
+        _t80_test,
     )
     native.test_suite(
         name = name,

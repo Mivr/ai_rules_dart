@@ -40,16 +40,20 @@ Supported:
 - `#` comments, `%` directives before any content or marker, and `---`
   and `...` document markers at column 0 only: an indented marker is never
   a marker, so one inside a `|` or `>` block scalar stays scalar content.
-  A `%` line after content is a problem naming the line, as pub rejects it.
-  A column-0 `%YAML` with a missing, malformed or incompatible version, a
-  duplicate `%YAML`, a `%TAG` without a valid handle and prefix, a second
-  `%TAG` with the same handle, and an indented `%` line before any content
-  all fail naming the line, as pub rejects them; an unknown directive reads
-  on, as pub only warns about it. A `%YAML` or `%TAG` without a later `---`
-  fails at the first content line, or past the end when the document has no
-  content, as pub expects the document start; a `---` with inline text
-  starts the document, as pub reads `--- foo` as "foo". A `%` line after a
-  `---` marker or `...` end keeps the old behavior.
+  A trailing `%` directive reads past, as pub only warns about it, while a
+  `%` line with content after it fails naming that line, as pub reads a
+  second document there. A column-0 `%YAML` with a missing, malformed or
+  incompatible version, a duplicate `%YAML`, a `%TAG` without a valid
+  handle and prefix, a second `%TAG` with the same handle, a `%YAML` or
+  `%TAG` past the document start or past content, and an indented `%` line
+  before any content all fail naming the line, as pub rejects them; an
+  unknown directive reads on, as pub only warns about it. A `%YAML` or
+  `%TAG` without a later `---` fails at the first content line, or past
+  the end when the document has no content, as pub expects the document
+  start; a `---` with inline text starts the document, as pub reads
+  `--- foo` as "foo", while inline `%` text fails, as pub rejects it. A
+  `%` line after a `---` marker or `...` end reads past when unknown, as
+  pub only warns about it, and fails when known, as pub rejects it there.
   One stream carries one document, as pub reads it: a second `---` fails
   naming its line, even before any content and even with only comments
   after it, and so does any content after a `...` line, naming the
@@ -80,7 +84,10 @@ Supported:
   never opens one and `''` in single quotes is one escaped quote; `#`
   outside quotes starts a comment to the end of the line, whether the
   value before it is complete or not, so pub only fails where the comment
-  swallows a token the flow needs; a backslash at a double-quoted line's
+  swallows a token the flow needs; an unknown `%` line reads past, as pub
+  only warns about it, while a known or indented `%` outside quotes and
+  plain scalars is not supported, and fails naming the line, as pub
+  rejects it there; a backslash at a double-quoted line's
   end continues the scalar with no space while elsewhere a backslash is
   an ordinary character, and a backslash with trailing space in double
   quotes is an escaped space (the backslash is dropped) plus the folded
@@ -119,7 +126,8 @@ Supported:
   a colon folds into an open scalar at any depth, while one with a colon
   ends it. A comment-only line ends a plain scalar silently, while a
   trailing-comment continuation keeps the text before the `#`, as pub
-  keeps it; text after a same-line closing quote, a tab-indented line and
+  keeps it; an indented `%` continuation past an open scalar reads, as pub
+  folds it. Text after a same-line closing quote, a tab-indented line and
   a `%` line where pub rejects it are problems naming the line. These
   shapes read as package:yaml 3.1.4 reads them.
 - anchors and aliases: an alias reads the anchor's value cloned shallowly
@@ -227,14 +235,16 @@ testing, so the projections are unaffected on real pubspec files:
   without a later `---`, a duplicate or malformed directive and an indented
   `%` line read the document before; pub rejects them, so they fail naming
   the line, while `%YAML 1.3` and unknown directives read as pub reads them.
-- flow collections that span lines are not supported, unless the folded
-  lines read as one flow collection as pub reads them; yaml.bzl reads all
-  spanning flows. The supported fold matches pub on the oracle-checked
-  shapes (plain, single- and double-quoted scalars, flow mapping values,
+- flow collections that span lines read when the folded lines read as one
+  flow collection as pub reads them: the close may sit dedented to the
+  key's column or past it, and the shortest folded run that parses wins, so
+  a sibling past the close never joins it; yaml.bzl reads all spanning
+  flows. The supported fold matches pub on the oracle-checked shapes
+  (plain, single- and double-quoted scalars, flow mapping values,
   blank and comment-only lines between the folded lines, backslash
   continuations, `#` lines and ` # ` text inside quotes, comments after
-  complete values, and `---` content lines); a comment that ends a line
-  inside a plain scalar and a `%` outside quotes and plain scalars fail
+  complete values, unknown `%` lines, and `---` content lines); a comment
+  that ends a line inside a plain scalar and a known or indented `%` fail
   naming the line instead of misreading.
 - merge keys (`<<`) are ordinary keys; yaml.bzl merges them into the mapping.
   YAML 1.2 defines no merge keys.
@@ -271,7 +281,7 @@ load(":yaml_chars.bzl", "first_bad_utf8_line", "strip_bom")
 load(":yaml_document.bzl", "allows_flow_doc", "first_content", "first_document_lines", "flow_doc_problem", "parse_block")
 load(":yaml_flow.bzl", "parse_flow")
 load(":yaml_flow_scan.bzl", "flow_fold_lines", "flow_fold_problem", "flow_scan_start")
-load(":yaml_text.bzl", "find_top_colon", "strip_trailing_comment")
+load(":yaml_text.bzl", "find_top_colon", "is_unknown_directive", "strip_trailing_comment")
 
 def parse_document(content):
     """Returns the value of the first YAML document in `content`.
@@ -336,9 +346,9 @@ def _parse_document(content, strict_lines):
     state = struct(problems = state.problems, strict_lines = strict_lines, tag_prefixes = tag_prefixes)
     first = first_content(lines)
     if first.text[:1] in ["{", "["] and allows_flow_doc(lines, first.index):
-        items = []
-        for i in range(len(lines)):
-            items.append((i + 1, lines[i]))
+        # Unknown directives read past, as pub only warns about them; any
+        # other `%` fails in the fold, as pub rejects it there.
+        items = [(i + 1, lines[i]) for i in range(len(lines)) if not is_unknown_directive(lines[i])]
         folded, problem = flow_fold_lines(items, flow_scan_start(), False)
         if problem != None:
             state.problems.append(flow_fold_problem(problem[0], problem[1]))

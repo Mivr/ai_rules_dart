@@ -7,7 +7,7 @@ line with its deeper continuation lines. Loaded by the block module.
 load(":yaml_chars.bzl", "BOM")
 load(":yaml_flow.bzl", "parse_scalar")
 load(":yaml_flow_scan.bzl", "flow_fold_lines", "flow_scan_start", "flow_scan_text")
-load(":yaml_text.bzl", "bad_blank_index", "block_line_text", "find_block_colon", "flow_head_text", "indent_width", "is_block_mapping_start", "is_dash", "is_explicit_key_text", "is_quoted", "quoted_end_at", "record_unreadable")
+load(":yaml_text.bzl", "bad_blank_index", "block_line_text", "find_block_colon", "flow_head_text", "indent_width", "is_block_mapping_start", "is_dash", "is_explicit_key_text", "is_quoted", "quoted_end_at", "quoted_scalar_rest", "record_unreadable")
 
 def _block_quote_single(core, i, st):
     """Steps an index inside single quotes. Returns the next index.
@@ -304,13 +304,86 @@ def _block_fold_gather(lines, start, parent_indent, scan, fold, question_stops, 
         idx += 1
     return (idx, fail)
 
+def _glued_comment_tail(core):
+    """Returns whether `core` closes a quote with only a `#` comment after it.
+
+    A `#` comment glued past the closing quote ends the head, as pub ends
+    the scalar there; any other trailing text fails downstream, as pub
+    rejects it, and a head that opens with no closing quote fails too.
+    """
+    rest = quoted_scalar_rest(core)
+    return rest != None and rest[:1] == "#"
+
+def _block_fold_percent_item(item):
+    """Returns whether `item` is an indented `%` line that reads as content.
+
+    The scan flags a `%` outside quotes and plain scalars, but an indented
+    `%` continuation past an open scalar is content, as pub folds it: only
+    a column-0 `%` is a directive. The gatherer took the raw line, so the
+    fold splices its kept text back in.
+    """
+    return item[1][:1] in [" ", "\t"] and item[1].lstrip(" \t").startswith("%")
+
+def _block_fold_percent_kept(raw):
+    """Returns the kept text of an indented `%` continuation, as pub folds it.
+
+    The scalar is open past the head, so the scan runs seeded open: the
+    `%` is content, while a `#` after separation still comments the line,
+    as pub reads `  %foo # c` as `%foo`.
+    """
+    scan = flow_scan_start()
+    scan["plain"] = True
+    res = _flow_fresh_res()
+    flow_scan_text(raw.lstrip(" \t"), scan, res)
+    return "".join(res["kept"]).rstrip()
+
+def _splice_join(out, kept):
+    """Joins one kept line onto `out` with one space, as the fold joins them.
+
+    A flagged `%` line never leaves quotes open, so the join past one is
+    always the space join; the blank join stays, as blank runs fold to it.
+    """
+    if out != "" and not out.endswith("\n"):
+        return out + " " + kept
+    return out + kept
+
+def _block_fold_spliced(items):
+    """Folds `items` around indented `%` lines. Returns (folded, problem).
+
+    Each run between the flagged lines folds through a fresh scan, as the
+    single fold would fold it, and the flagged lines splice their kept
+    text back in. A problem in any run fails, as the single fold fails it.
+    """
+    out = ""
+    run = []
+    first = True
+    for item in items:
+        if _block_fold_percent_item(item):
+            folded, problem = flow_fold_lines(run, flow_scan_start(), first)
+            if problem != None:
+                return "", problem
+            if folded != "":
+                out = _splice_join(out, folded)
+            out = _splice_join(out, _block_fold_percent_kept(item[1]))
+            run = []
+            first = False
+        else:
+            run.append(item)
+    folded, problem = flow_fold_lines(run, flow_scan_start(), first)
+    if problem != None:
+        return "", problem
+    if folded != "":
+        out = _splice_join(out, folded)
+    return out, None
+
 def _block_fold_finish(fold, core, lines, idx, head, anchors, state, scan):
     """Folds and validates the gathered lines. Returns (value, next, read).
 
     When read is False, value is None and a problem names the failing line.
     Text after a same-line closing quote, a second quoted scalar on the head
     line, and a continuation of an alias are problems naming the head line,
-    as pub rejects them.
+    as pub rejects them; a `#` comment glued past the closing quote ends
+    the head, as pub ends the scalar there.
     """
     items = fold["items"]
     for _ in range(len(items) + 1):
@@ -318,6 +391,13 @@ def _block_fold_finish(fold, core, lines, idx, head, anchors, state, scan):
             break
         items.pop()
     folded, problem = flow_fold_lines(items, flow_scan_start(), True)
+    if problem != None and problem[0] == "directive":
+        # An indented `%` continuation past an open scalar reads, as pub
+        # folds it: splice its kept text back into the fold. Any other
+        # flagged line fails below, as pub rejects it there.
+        spliced, spliced_problem = _block_fold_spliced(items)
+        if spliced_problem == None:
+            folded, problem = spliced, None
     if problem != None:
         line = problem[1] - 1
         if problem[0] == "control":
@@ -328,7 +408,8 @@ def _block_fold_finish(fold, core, lines, idx, head, anchors, state, scan):
     if scan["single"] or scan["double"]:
         record_unreadable(state, head["idx"], head["entry"] or head["text"])
         return None, idx, False
-    if fold["head_complete"] and (fold["opened"] != 1 or fold["closed"] != 1 or not is_quoted(core) or fold["consumed"] > 0):
+    quoted_ok = is_quoted(core) or _glued_comment_tail(core)
+    if fold["head_complete"] and (fold["opened"] != 1 or fold["closed"] != 1 or fold["consumed"] > 0 or not quoted_ok):
         record_unreadable(state, head["idx"], head["entry"] or head["text"])
         return None, idx, False
     if core[:1] == "*" and fold["consumed"] > 0:

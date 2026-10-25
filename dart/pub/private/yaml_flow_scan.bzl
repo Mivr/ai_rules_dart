@@ -297,7 +297,7 @@ def flow_fold_problem(kind, line):
     if kind == "control":
         return "control character at line %d is not supported" % line
     if kind == "plain-comment":
-        return "comment inside a plain scalar of a flow that spans lines at line %d is not supported" % line
+        return "comment inside a plain scalar of a flow at line %d is not supported" % line
     if kind == "directive":
-        return "\"%%\" directive in a flow that spans lines at line %d is not supported" % line
-    return "flow collection that spans lines starting at line %d is not supported" % line
+        return "\"%%\" directive in a flow at line %d is not supported" % line
+    return "flow collection starting at line %d is not supported" % line

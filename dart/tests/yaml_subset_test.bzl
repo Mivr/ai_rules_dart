@@ -331,11 +331,11 @@ def _flow_collection_test_impl(ctx):
         ),
     )
 
-    # An unreadable flow value is a problem naming the line; leniently it
+    # An unclosed flow value fails naming its opening line; leniently it
     # reads as None (M-12).
     asserts.equals(
         env,
-        ["unreadable flow value at line 1: \"[1, 2\""],
+        ["flow collection starting at line 1 is not supported"],
         document_problems("a: [1, 2\nb: 2\n", True),
     )
     value, problems = document_value_and_problems("a: [1, 2\nb: 2\n", False)
@@ -386,17 +386,17 @@ def _flow_collection_test_impl(ctx):
     # line, as every other unclosed flow does.
     asserts.equals(
         env,
-        ["unreadable flow value at line 1: \"[x,#y]\""],
+        ["flow collection starting at line 1 is not supported"],
         document_problems("a: [x,#y]\n", True),
     )
     asserts.equals(
         env,
-        ["unreadable flow value at line 1: \"{k: v,#c}\""],
+        ["flow collection starting at line 1 is not supported"],
         document_problems("a: {k: v,#c}\n", True),
     )
     asserts.equals(
         env,
-        ["unreadable flow value at line 1: \"[#]\""],
+        ["flow collection starting at line 1 is not supported"],
         document_problems("a: [#]\n", True),
     )
     asserts.equals(env, {"a": ["x"]}, parse_document("a: [x, #y\n  ]\n"))
@@ -434,14 +434,18 @@ def _flow_quote_start_test_impl(ctx):
     asserts.equals(env, ["a"], parse_document("key: [a]#c\n")["key"])
     asserts.equals(env, {"a": 1}, parse_document("key: {a: 1}#c\n")["key"])
 
-    # Text glued after a closing quote and a `%`-leading scalar are
-    # unreadable, as pub rejects them.
-    problems = document_problems("key: [\"a\" \"b\"]\n", True)
-    asserts.equals(env, 1, len(problems))
-    asserts.true(env, "unreadable flow value at line 1" in problems[0])
-    problems = document_problems("key: [%x]\n", True)
-    asserts.equals(env, 1, len(problems))
-    asserts.true(env, "unreadable flow value at line 1" in problems[0])
+    # Text glued after a closing quote and a `%`-leading scalar fail
+    # naming the line, as pub rejects them.
+    asserts.equals(
+        env,
+        ["flow collection starting at line 1 is not supported"],
+        document_problems("key: [\"a\" \"b\"]\n", True),
+    )
+    asserts.equals(
+        env,
+        ["\"%\" directive in a flow at line 1 is not supported"],
+        document_problems("key: [%x]\n", True),
+    )
 
     # A document that starts like a flow collection but reads as none fails
     # naming the line, as pub rejects it.
@@ -929,10 +933,10 @@ def _tab_indent_test_impl(ctx):
     )
     asserts.equals(
         env,
-        # A consumed `---` shifts later lines up one in block problems:
-        # that numbering predates this change, as the marker line never
-        # reaches the parser. This names the branch's line 1, physical 2.
-        ["tab indentation at line 1 is not supported"],
+        # A consumed `---` leaves a blank slot, so later lines keep their
+        # physical numbers in block problems. This names the branch's
+        # physical line 2.
+        ["tab indentation at line 2 is not supported"],
         document_problems("---\n\ta: b\n", True),
     )
     asserts.equals(
@@ -1486,7 +1490,7 @@ def _strict_lines_test_impl(ctx):
     asserts.equals(env, [], document_problems("a: {x: 1}\nb: 2\n", True))
     asserts.equals(
         env,
-        ["unreadable flow value at line 1: \"[1, 2\""],
+        ["flow collection starting at line 1 is not supported"],
         document_problems("a: [1, 2\nb: 2\n", True),
     )
 
@@ -1691,10 +1695,11 @@ def _multiline_flow_test_impl(ctx):
     asserts.equals(env, ["premium", "free"], value["flutter"]["assets"][0]["flavors"])
     asserts.equals(env, [], problems)
 
-    # A flow value broken on one line stays an unreadable flow value.
+    # A flow value broken on one line fails naming its opening line, as
+    # pub rejects it there.
     asserts.equals(
         env,
-        ["unreadable flow value at line 1: \"[1, 2\""],
+        ["flow collection starting at line 1 is not supported"],
         document_problems("a: [1, 2\nb: 2\n", True),
     )
 
@@ -1792,7 +1797,7 @@ def _block_fold_test_impl(ctx):
     asserts.equals(env, ["unreadable line 1: \"a: %x\""], document_problems("a: %x\n", True))
     value, problems = document_value_and_problems("a:\n%x\nb: 2\n", True)
     asserts.equals(env, {"a": None, "b": 2}, value)
-    asserts.equals(env, ["unreadable line 2: \"%x\""], problems)
+    asserts.equals(env, ["content after directive at line 3 is not supported"], problems)
 
     # A comment-only line ends a plain scalar, as pub ends it; what follows
     # is placed downstream.
@@ -1873,7 +1878,7 @@ def _block_fold_test_impl(ctx):
     # pub rejects it.
     value, problems = document_value_and_problems("a: ['x'y']\n", True)
     asserts.equals(env, None, value["a"])
-    asserts.equals(env, ["unreadable flow value at line 1: \"['x'y']\""], problems)
+    asserts.equals(env, ["flow collection starting at line 1 is not supported"], problems)
 
     # What pub reads around a closing quote keeps reading: a comment after
     # it, an escaped quote inside it, and a multi-line close with a comment
