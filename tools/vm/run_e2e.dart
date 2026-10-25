@@ -19,62 +19,22 @@ import 'dart:async';
 import 'dart:io';
 
 import 'gcloud.dart';
-
-/// The `folders` matrix from `.github/workflows/ci.yaml` (the `test` job).
-const _ciFolders = [
-  '.',
-  'e2e/smoke',
-  'e2e/hello_world',
-  'e2e/library_deps',
-  'e2e/analysis',
-  'e2e/dart_test',
-  'e2e/dart_test_pkg',
-  'e2e/codegen',
-  'e2e/pub_deps',
-  'e2e/pub_lock',
-  'e2e/web_app',
-  'e2e/gazelle',
-  'e2e/cross_compile',
-  'e2e/pub_lock_cross_module',
-  'e2e/pub_lock_dedup',
-  'e2e/pub_lock_upgrade',
-  'e2e/ext_exemplar',
-  'e2e/dual_build',
-  'e2e/fix',
-  'e2e/analyze_composition',
-  'e2e/link_hook',
-];
+import 'run_e2e_options.dart';
 
 /// Per-folder timeout. The first folder pays for the hermetic Dart SDK
 /// download + dependency fetch; later folders re-fetch (separate output bases).
 const _folderTimeout = Duration(minutes: 30);
 
-class _FolderResult {
-  _FolderResult(this.folder, this.exitCode, this.pass, this.tail);
-  final String folder;
-  final int exitCode;
-  final bool pass;
-  final String tail;
-}
-
 Future<void> main(List<String> args) async {
-  final positional = args.where((a) => !a.startsWith('--')).toList();
-  if (positional.isEmpty) {
-    stderr.writeln(
-      'Usage: dart run tools/vm/run_e2e.dart <vm-name> [--windows] '
-      '[--folders=a,b,c] [--keep-going]',
-    );
+  final options = parseE2eOptions(args);
+  if (options == null) {
+    stderr.writeln(e2eUsage);
     exit(2);
   }
-  final vmName = positional.first;
-  final isWindows = args.contains('--windows');
-  final keepGoing = args.contains('--keep-going');
-  final foldersArg = args
-      .firstWhere((a) => a.startsWith('--folders='), orElse: () => '')
-      .replaceFirst('--folders=', '');
-  final folders = foldersArg.isEmpty
-      ? _ciFolders
-      : foldersArg.split(',').map((s) => s.trim()).toList();
+  final vmName = options.vmName;
+  final isWindows = options.isWindows;
+  final keepGoing = options.keepGoing;
+  final folders = options.folders;
 
   final repoRoot = _repoRoot();
   _warnIfDirty(repoRoot);
@@ -114,7 +74,7 @@ Future<void> main(List<String> args) async {
   }
 
   // 3. Run each folder.
-  final results = <_FolderResult>[];
+  final results = <FolderResult>[];
   for (final folder in folders) {
     stdout.writeln('\n=== $folder ===');
     final result = await _runFolder(vmName, folder, isWindows: isWindows);
@@ -129,8 +89,8 @@ Future<void> main(List<String> args) async {
   }
 
   // 4. Expected-failure checks (Linux only, mirrors ci.yaml).
-  final expectedFailures = <_FolderResult>[];
-  if (!isWindows && foldersArg.isEmpty) {
+  final expectedFailures = <FolderResult>[];
+  if (!isWindows && options.usesDefaultFolders) {
     for (final check in _expectedFailureChecks) {
       stdout.writeln('\n=== ${check.folder} (expected failure) ===');
       final r = await _runExpectedFailure(vmName, check);
@@ -144,28 +104,13 @@ Future<void> main(List<String> args) async {
 
   // 5. Summary.
   final all = [...results, ...expectedFailures];
-  stdout.writeln(
-    '\n========== SUMMARY (${isWindows ? "windows" : "linux"}) ==========',
-  );
-  for (final r in all) {
-    stdout.writeln('  ${r.pass ? "PASS" : "FAIL"}  ${r.folder}');
-  }
-  final failed = all.where((r) => !r.pass).toList();
-  if (failed.isEmpty) {
-    stdout.writeln('\nAll ${all.length} folders passed.');
-    exit(0);
-  }
-  stdout.writeln('\n${failed.length} folder(s) FAILED:');
-  for (final r in failed) {
-    stdout.writeln('\n----- ${r.folder} (exit ${r.exitCode}) -----');
-    stdout.writeln(r.tail);
-  }
-  exit(1);
+  stdout.write(formatSummary(all, isWindows));
+  exit(all.any((r) => !r.pass) ? 1 : 0);
 }
 
 /// Runs `bazel test //...` in [folder] and maps the exit code: 0 (success) and
 /// 4 (no test targets) pass; anything else fails.
-Future<_FolderResult> _runFolder(
+Future<FolderResult> _runFolder(
   String vmName,
   String folder, {
   required bool isWindows,
@@ -194,13 +139,13 @@ Future<_FolderResult> _runFolder(
   try {
     result = await sshExec(vmName, command).timeout(_folderTimeout);
   } on TimeoutException {
-    return _FolderResult(folder, -2, false, 'TIMEOUT after $_folderTimeout');
+    return FolderResult(folder, -2, false, 'TIMEOUT after $_folderTimeout');
   }
 
   final combined = '${result.stdout}\n${result.stderr}';
   final exitCode = _parseRdExit(result.stdout.toString());
-  final pass = exitCode == 0 || exitCode == 4;
-  return _FolderResult(folder, exitCode, pass, _tail(combined));
+  final pass = folderPass(exitCode);
+  return FolderResult(folder, exitCode, pass, _tail(combined));
 }
 
 /// A workspace that must FAIL to build with a specific error message.
@@ -270,7 +215,7 @@ const _expectedFailureChecks = [
 /// build means the error path regressed, e.g. a swallowed exit code) AND its
 /// output must carry the expected error (mirrors the `expected-failure` job
 /// in ci.yaml).
-Future<_FolderResult> _runExpectedFailure(
+Future<FolderResult> _runExpectedFailure(
   String vmName,
   _ExpectedFailure check,
 ) async {
@@ -287,7 +232,7 @@ Future<_FolderResult> _runExpectedFailure(
   try {
     result = await sshExec(vmName, command).timeout(_folderTimeout);
   } on TimeoutException {
-    return _FolderResult(
+    return FolderResult(
       check.folder,
       -2,
       false,
@@ -295,7 +240,7 @@ Future<_FolderResult> _runExpectedFailure(
     );
   }
   final exitCode = _parseRdExit(result.stdout.toString());
-  return _FolderResult(
+  return FolderResult(
     check.folder,
     exitCode,
     exitCode == 0,
