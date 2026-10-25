@@ -218,7 +218,6 @@ def _quoted_scalar_test_impl(ctx):
             "a": "it's",
             "b": "x\ty\n\"q\" \\ /",
             "c": "Aé",
-            "d": "\\q",
             "e": "1.10",
             "f": "# not a comment",
         },
@@ -226,10 +225,17 @@ def _quoted_scalar_test_impl(ctx):
             "a: 'it''s'\n" +
             "b: \"x\\ty\\n\\\"q\\\" \\\\ \\/\"\n" +
             "c: \"\\x41\\u00e9\"\n" +
-            "d: \"\\q\"\n" +
             "e: '1.10'\n" +
             "f: '# not a comment'\n",
         ),
+    )
+
+    # An unknown escape fails naming the line: pub rejects `d: "\q"`, which
+    # an older revision read with the backslash kept.
+    asserts.equals(
+        env,
+        ["unknown escape at line 1 is not supported"],
+        document_problems("d: \"\\q\"\n", True),
     )
     return unittest.end(env)
 
@@ -467,6 +473,91 @@ def _flow_self_anchor_test_impl(ctx):
 
     # A tab ends an anchor word, as pub reads it.
     asserts.equals(env, {"k": "v"}, parse_document("k: &x\tv\n"))
+    return unittest.end(env)
+
+def _double_escape_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Double-quoted escapes decode as pub decodes them (package:yaml 3.1.4
+    # with the pinned SDK 3.13.5): the YAML line and paragraph escapes, a
+    # backslash with a space or tab, and hex and astral escapes.
+    asserts.equals(env, {"d": json.decode('"\\u0085"')}, parse_document("d: \"\\N\"\n"))
+    asserts.equals(env, {"d": json.decode('"\\u00a0"')}, parse_document("d: \"\\_\"\n"))
+    asserts.equals(env, {"d": json.decode('"\\u2028"')}, parse_document("d: \"\\L\"\n"))
+    asserts.equals(env, {"d": json.decode('"\\u2029"')}, parse_document("d: \"\\P\"\n"))
+    asserts.equals(env, {"d": "a b"}, parse_document("d: \"a\\ b\"\n"))
+    asserts.equals(env, {"d": "a\tb"}, parse_document("d: \"a\\\tb\"\n"))
+    asserts.equals(env, {"d": "a" + json.decode('"\\u001b"') + "b"}, parse_document("d: \"a\\eb\"\n"))
+    asserts.equals(env, {"d": "a\0b"}, parse_document("d: \"a\\0b\"\n"))
+    asserts.equals(env, {"d": "AAA"}, parse_document("d: \"\\x41\\u0041\\U00000041\"\n"))
+    asserts.equals(env, {"d": json.decode('"\\ud83d\\ude00"')}, parse_document("d: \"\\U0001F600\"\n"))
+    asserts.equals(env, {"d": "abcdef"}, parse_document("d: \"abc\\\n   def\"\n"))
+    asserts.equals(env, {"d": ["a\tb", json.decode('"\\u0085"')]}, parse_document("d: [\"a\\tb\", \"\\N\"]\n"))
+
+    # An unknown escape fails naming the line, as pub rejects it.
+    value, problems = document_value_and_problems("d: \"a\\qb\"\n", True)
+    asserts.equals(env, {"d": None}, value)
+    asserts.equals(env, ["unknown escape at line 1 is not supported"], problems)
+    asserts.equals(
+        env,
+        ["unknown escape at line 1 is not supported"],
+        document_problems("d: \"a\\X41\"\n", True),
+    )
+    asserts.equals(
+        env,
+        ["unknown escape at line 1 is not supported"],
+        document_problems("d: \"a\\\302\240b\"\n", True),
+    )
+    asserts.equals(
+        env,
+        ["unknown escape at line 1 is not supported"],
+        document_problems("d: [\"a\\qb\"]\n", True),
+    )
+
+    # A short or non-hex escape fails naming the line, as pub rejects it.
+    asserts.equals(
+        env,
+        ["short x escape at line 1 is not supported"],
+        document_problems("d: \"a\\x4\"\n", True),
+    )
+    asserts.equals(
+        env,
+        ["bad x escape at line 1 is not supported"],
+        document_problems("d: \"a\\x4z\"\n", True),
+    )
+    asserts.equals(
+        env,
+        ["short u escape at line 1 is not supported"],
+        document_problems("d: \"a\\u123\"\n", True),
+    )
+    asserts.equals(
+        env,
+        ["bad u escape at line 1 is not supported"],
+        document_problems("d: \"a\\u00zz\"\n", True),
+    )
+
+    # A surrogate fails even in a well-formed pair, and a code point past
+    # U+10FFFF fails, as pub rejects them.
+    asserts.equals(
+        env,
+        ["bad u escape at line 1 is not supported"],
+        document_problems("d: \"a\\ud800b\"\n", True),
+    )
+    asserts.equals(
+        env,
+        ["bad u escape at line 1 is not supported"],
+        document_problems("d: \"a\\ud800\\udc00b\"\n", True),
+    )
+    asserts.equals(
+        env,
+        ["bad U escape at line 1 is not supported"],
+        document_problems("d: \"a\\U0011FFFF\"\n", True),
+    )
+    asserts.equals(
+        env,
+        ["bad U escape at line 1 is not supported"],
+        document_problems("d: \"a\\U0000D800\"\n", True),
+    )
     return unittest.end(env)
 
 def _tag_test_impl(ctx):
@@ -1029,6 +1120,7 @@ _t32_test = unittest.make(_float_overflow_test_impl)
 _t33_test = unittest.make(_flow_affix_key_test_impl)
 _t34_test = unittest.make(_flow_affix_item_test_impl)
 _t35_test = unittest.make(_flow_self_anchor_test_impl)
+_t36_test = unittest.make(_double_escape_test_impl)
 
 def yaml_subset_test_suite(name):
     small_unittest_suite(
@@ -1069,4 +1161,5 @@ def yaml_subset_test_suite(name):
         _t33_test,
         _t34_test,
         _t35_test,
+        _t36_test,
     )

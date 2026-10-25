@@ -47,7 +47,11 @@ Supported:
   as "foo" and `... text` as "text".
 - plain, single-quoted and double-quoted scalars, with yaml.bzl's escapes,
   including scalars that start on the line after `key:` or continue on
-  deeper lines, which fold through the same quote-aware pass as flow lines
+  deeper lines, which fold through the same quote-aware pass as flow lines.
+  Double-quoted escapes decode as pub decodes them, including `\\N`, `\\_`,
+  `\\L`, `\\P` and a backslash with a space or tab; an unknown escape, a
+  short or non-hex escape, a surrogate, and a code point past U+10FFFF
+  fail naming the line, as pub rejects them.
 - flow collections `[...]` and `{...}`, nested; on a line of their own they
   are read within that line, a document that starts with one may span
   lines (JSON documents), and one that starts after `key:` or `-` folds
@@ -141,7 +145,10 @@ testing, so the projections are unaffected on real pubspec files:
   one column too early before, so a same-column line folded in as a child
   before; pub reads it as a sibling, as read now. A same-line value's
   anchor and tag prefixes folded twice before, so a tagged scalar read its
-  tag as a repeated tag; pub reads one prefix, as read now. A flow alias
+  tag as a repeated tag; pub reads one prefix, as read now. An unknown or
+  malformed double-quoted escape read kept before, and `\\N`, `\\_`, `\\L`,
+  `\\P` and a backslash with a space or tab read literally before; pub
+  rejects the first and decodes the rest, as read now. A flow alias
   with a glued colon resolved the short name before, a flow anchor or tag
   word ended its key at a glued colon before, a key with no pair colon
   failed its flow before, and a colon after a bare flow anchor or tag
@@ -167,7 +174,11 @@ testing, so the projections are unaffected on real pubspec files:
   keeps the first scalar and replaces a nested block with a later one.
 """
 
-# Escapes allowed in double-quoted scalars, as yaml.bzl maps them.
+# Escapes allowed in double-quoted scalars, as yaml.bzl maps them: the
+# single-character escapes, backslash with a space or tab (which pub reads
+# as the space or tab), and the YAML line/paragraph escapes N, _, L and P.
+# Any other escape, a short or non-hex hex escape, a surrogate, or a code
+# point past U+10FFFF is a problem naming the line, as pub rejects it.
 _ESCAPES = {
     "0": "\0",
     "a": "\a",
@@ -178,9 +189,14 @@ _ESCAPES = {
     "f": "\f",
     "r": "\r",
     " ": " ",
+    "\t": "\t",
     '"': '"',
     "/": "/",
     "\\": "\\",
+    "N": json.decode('"\\u0085"'),
+    "_": json.decode('"\\u00a0"'),
+    "L": json.decode('"\\u2028"'),
+    "P": json.decode('"\\u2029"'),
 }
 
 _HEX_DIGITS = "0123456789abcdef"
@@ -2397,7 +2413,7 @@ def _parse_nonflow(s, anchors, state, line):
         return _parse_alias(s, anchors, state, line)
     if _is_quoted(s):
         if s[0] == '"':
-            return _unescape_double(s[1:-1])
+            return _unescape_double(s[1:-1], state, line)
         return s[1:-1].replace("''", "'")
     if _BOM in s:
         state.problems.append("byte-order mark at line %d is not supported" % line)
@@ -2596,23 +2612,33 @@ def _safe_float(text):
 # Double-quoted escapes
 # ---------------------------------------------------------------------------
 
-def _unescape_code_point(text, i, nxt):
-    """Decodes a `\\x`, `\\u` or `\\U` escape at `i`. Returns (decoded, next index)."""
+def _unescape_code_point(text, i, nxt, state, line):
+    """Decodes a `\\x`, `\\u` or `\\U` escape at `i`. Returns (decoded, next index, ok).
+
+    Fewer digits than the width needs, a non-hex digit, a surrogate, and a
+    code point past U+10FFFF are problems naming the line, as pub rejects
+    them; pub rejects even a well-formed surrogate pair.
+    """
     width = 2 if nxt == "x" else (4 if nxt == "u" else 8)
-    if i + 1 + width >= len(text):
-        # Too few characters left for the digits: keep the escape letter.
-        return "\\" + nxt, i + 2
+    if i + 2 + width > len(text):
+        state.problems.append("short %s escape at line %d is not supported" % (nxt, line))
+        return "", len(text), False
     digits = text[i + 2:i + 2 + width]
     code_point = _parse_hex(digits)
-    converted = _code_point_text(code_point) if code_point != None else None
-    if converted == None:
-        return "\\" + nxt + digits, i + 2 + width
-    return converted, i + 2 + width
+    if code_point == None:
+        state.problems.append("bad %s escape at line %d is not supported" % (nxt, line))
+        return "", i + 2 + width, False
+    if code_point > 0x10ffff or (code_point >= 0xd800 and code_point <= 0xdfff):
+        state.problems.append("bad %s escape at line %d is not supported" % (nxt, line))
+        return "", i + 2 + width, False
+    return _code_point_text(code_point), i + 2 + width, True
 
-def _unescape_double(text):
+def _unescape_double(text, state, line):
     """Decodes the escapes in the body of a double-quoted scalar.
 
-    An unknown or malformed escape is kept as written, as yaml.bzl keeps it.
+    Returns the decoded text, or None with a problem naming the line: an
+    unknown escape and a malformed hex, Unicode or surrogate escape are
+    rejected, as pub rejects them.
     """
     out = []
     i = 0
@@ -2632,11 +2658,13 @@ def _unescape_double(text):
             out.append(_code_point_text(0x1b))
             i += 2
         elif nxt in ["x", "u", "U"]:
-            decoded, i = _unescape_code_point(text, i, nxt)
+            decoded, i, ok = _unescape_code_point(text, i, nxt, state, line)
+            if not ok:
+                return None
             out.append(decoded)
         else:
-            out.append("\\" + nxt)
-            i += 2
+            state.problems.append("unknown escape at line %d is not supported" % line)
+            return None
     return "".join(out)
 
 def _parse_hex(text):
