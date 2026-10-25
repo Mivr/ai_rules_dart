@@ -1579,6 +1579,22 @@ def _parse_pubspec_refused_test_impl(ctx):
     doc = head + "description: a\0b\n"
     err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
     asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
+
+    # A bad blank at the end or start of a value, or in a key, fails naming
+    # the pubspec and the line, as pub rejects it; NEL stays in the value,
+    # as pub reads it.
+    doc = head + "description: x\013\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
+    doc = head + "description: \014x\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
+    doc = head + "descriptio\037n: x\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
+    doc = head + "description: x\302\205\n"
+    asserts.equals(env, "x\302\205", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
     doc = head + "description: a@b\n"
     asserts.equals(env, "a@b", parse_pubspec_document(doc)["description"])
     asserts.equals(env, None, parse_pubspec_document_error(doc))
@@ -1600,6 +1616,15 @@ def _parse_lock_refused_test_impl(ctx):
     asserts.equals(env, None, pubspec_lock_error(content, "//:pubspec.lock"))
     asserts.equals(env, "@x", parse_pubspec_lock(content, "//:pubspec.lock")["a"]["description"]["url"])
     content = "packages:\n  a:\n    source: hosted\n    version: @x\n"
+    err = pubspec_lock_error(content, "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 4" in err)
+
+    # A bad blank at the end of a value, or in a key, fails naming the lock
+    # and the line, as pub rejects it.
+    content = "packages:\n  a:\n    source: hosted\n    version: 1.0.0\013\n"
+    err = pubspec_lock_error(content, "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 4" in err)
+    content = "packages:\n  a:\n    source: hosted\n    versio\014n: 1.0.0\n"
     err = pubspec_lock_error(content, "//:pubspec.lock")
     asserts.true(env, err != None and "//:pubspec.lock" in err and "line 4" in err)
     content = (

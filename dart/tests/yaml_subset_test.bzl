@@ -2755,6 +2755,149 @@ def _encoding_test_impl(ctx):
 
 _t46_test = unittest.make(_encoding_test_impl)
 
+def _bad_blank_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Only space and tab are blanks: a vertical tab, form feed or U+001C to
+    # U+001F fails naming the line at the end or start of a value and before
+    # a key, as pub rejects them (package:yaml 3.1.4 with the pinned SDK
+    # 3.13.5); inside a value they already failed as control characters.
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("d: x\013\n", True),
+    )
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("d: \013x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("d\013: 1\n", True),
+    )
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("\013d: 1\n", True),
+    )
+    asserts.equals(
+        env,
+        ["control character at line 2 is not supported"],
+        document_problems("a: 1\n\013\nb: 2\n", True),
+    )
+    asserts.equals(
+        env,
+        ["control character at line 2 is not supported"],
+        document_problems("a: 1\n  \013\nb: 2\n", True),
+    )
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("d: x\014\n", True),
+    )
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("d\014: 1\n", True),
+    )
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("d: x\034\n", True),
+    )
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("d: \035x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("d\036: 1\n", True),
+    )
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("d: x\037\n", True),
+    )
+
+    # A failure drops only its line: siblings still read around it.
+    value, problems = document_value_and_problems("a: 1\nd: x\013\nb: 2\n", True)
+    asserts.equals(env, {"a": 1, "b": 2}, value)
+    asserts.equals(env, ["control character at line 2 is not supported"], problems)
+
+    # Sequence entries fail at the same positions, dropping the entry.
+    value, problems = document_value_and_problems("a:\n- x\013\n- y\n", True)
+    asserts.equals(env, {"a": ["y"]}, value)
+    asserts.equals(env, ["control character at line 2 is not supported"], problems)
+    value, problems = document_value_and_problems("a:\n- \013\n- y\n", True)
+    asserts.equals(env, {"a": ["y"]}, value)
+    asserts.equals(env, ["control character at line 2 is not supported"], problems)
+
+    # Flow collections fail too: brackets never shield a bad blank, while
+    # quotes and comments do, as pub scans them.
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("a: [x\013]\n", True),
+    )
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("a: {k\013: v}\n", True),
+    )
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("a: {k: v\013}\n", True),
+    )
+    asserts.equals(env, {"a": ["x\013y"]}, parse_document("a: [\"x\013y\"]\n"))
+    asserts.equals(env, {"a": "x"}, parse_document("a: x # c\013d\n"))
+
+    # A flow document fails the same way naming its line, as pub rejects it.
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("[x\013]\n", True),
+    )
+
+    # A bad blank before a comment still fails, as pub scans it first.
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("a: x\013 # c\n", True),
+    )
+    asserts.equals(
+        env,
+        ["control character at line 2 is not supported"],
+        document_problems("a: 1\n\013 # c\nb: 2\n", True),
+    )
+
+    # A bad blank in a continuation line fails naming that line, as pub
+    # reads it.
+    asserts.equals(
+        env,
+        ["control character at line 2 is not supported"],
+        document_problems("d: x\n  y\013z\n", True),
+    )
+
+    # NEL, NBSP and U+3000 stay in the value, as pub reads them.
+    asserts.equals(env, {"d": "x\302\205"}, parse_document("d: x\302\205\n"))
+    asserts.equals(env, {"d": "\302\205x"}, parse_document("d: \302\205x\n"))
+    asserts.equals(env, {"d": "x\302\205y"}, parse_document("d: x\302\205y\n"))
+    asserts.equals(env, {"d": "x\302\240y"}, parse_document("d: x\302\240y\n"))
+    asserts.equals(env, {"d": "x\302\240"}, parse_document("d: x\302\240\n"))
+    asserts.equals(env, {"d": "\302\240x"}, parse_document("d: \302\240x\n"))
+    asserts.equals(env, {"d": "x\343\200\200y"}, parse_document("d: x\343\200\200y\n"))
+    asserts.equals(env, {"d": "x\343\200\200"}, parse_document("d: x\343\200\200\n"))
+    asserts.equals(env, {"d\302\240": 1}, parse_document("d\302\240: 1\n"))
+    asserts.equals(env, {"d": "x\302\205y"}, parse_document("d: \"x\302\205y\"\n"))
+    return unittest.end(env)
+
+_t47_test = unittest.make(_bad_blank_test_impl)
+
 def yaml_subset_test_suite(name):
     small_unittest_suite(
         name,
@@ -2805,4 +2948,5 @@ def yaml_subset_test_suite(name):
         _t44_test,
         _t45_test,
         _t46_test,
+        _t47_test,
     )

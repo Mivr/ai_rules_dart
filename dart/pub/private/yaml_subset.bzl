@@ -296,6 +296,12 @@ _REFUSED_CONTROLS = (
     "\024\025\026\027\030\031\032\033\034\035\036\037\177"
 )
 
+# The bytes that are never blanks to pub, written as octal escapes so the
+# source stays ASCII: vertical tab, form feed and U+001C to U+001F. Only
+# space and tab separate tokens outside quotes and comments; these fail
+# wherever a blank may sit, while NEL, NBSP and U+3000 stay content.
+_BAD_BLANKS = "\013\014\034\035\036\037"
+
 _FLOW_SPACE = " \t\n\r"
 
 _YAML_TAG_PREFIX = "tag:yaml.org,2002:"
@@ -435,7 +441,7 @@ def _parse_document(content, strict_lines):
         items = []
         for i in range(len(lines)):
             items.append((i + 1, lines[i]))
-        folded, problem = _flow_fold_lines(items, _flow_scan_start())
+        folded, problem = _flow_fold_lines(items, _flow_scan_start(), False)
         if problem != None:
             state.problems.append(_flow_fold_problem(problem[0], problem[1]))
             return None, state.problems
@@ -1105,7 +1111,13 @@ def _pending_flow_raws(lines, idx, parent_indent):
             break
         raw = lines[next_idx]
         if not raw.strip():
-            items.append((next_idx + 1, ""))
+            if _bad_blank_index(raw) >= 0:
+                # A blank-looking line with a bad blank survives as raw, as
+                # in `_block_fold_gather`: the fold reports it naming the
+                # line, as pub rejects it.
+                items.append((next_idx + 1, raw))
+            else:
+                items.append((next_idx + 1, ""))
             next_idx += 1
             continue
         indent, text = _block_line_text(raw)
@@ -1330,7 +1342,13 @@ def _block_fold_gather(lines, start, parent_indent, scan, fold, question_stops, 
                 fail = idx
                 break
             if not fold["poison"]:
-                fold["items"].append((idx + 1, ""))
+                if _bad_blank_index(raw) >= 0:
+                    # A blank-looking line with a bad blank survives as raw:
+                    # the fold reports it naming the line, as pub rejects
+                    # it, instead of folding it as a blank line.
+                    fold["items"].append((idx + 1, raw))
+                else:
+                    fold["items"].append((idx + 1, ""))
             idx += 1
             continue
         if scan["single"] or scan["double"]:
@@ -1378,10 +1396,13 @@ def _block_fold_finish(fold, core, lines, idx, head, anchors, state, scan):
         if not items or items[-1][1] != "":
             break
         items.pop()
-    folded, problem = _flow_fold_lines(items, _flow_scan_start())
+    folded, problem = _flow_fold_lines(items, _flow_scan_start(), True)
     if problem != None:
         line = problem[1] - 1
-        _record_unreadable(state, line, _block_fail_text(lines, line, head["idx"], head["entry"]))
+        if problem[0] == "control":
+            state.problems.append("control character at line %d is not supported" % problem[1])
+        else:
+            _record_unreadable(state, line, _block_fail_text(lines, line, head["idx"], head["entry"]))
         return None, idx, False
     if scan["single"] or scan["double"]:
         _record_unreadable(state, head["idx"], head["entry"] or head["text"])
@@ -1629,11 +1650,31 @@ def _flow_fold_kept(scan, st, res, raw_kept, line):
         st["cont"] = True
     return None
 
-def _flow_fold_lines(items, scan):
+def _flow_fold_control(item, n, skip_first, scan):
+    """Returns the item's line when it hides a bad blank outside quotes, else 0.
+
+    The head item reads through its own line's check, so folds skip it; any
+    other line trips on a vertical tab, form feed or U+001C to U+001F
+    outside quotes and comments, as pub rejects them. A line inside open
+    quotes stays content, as pub reads it.
+    """
+    if n == 0 and skip_first:
+        return 0
+    if scan["single"] or scan["double"]:
+        return 0
+    if _bad_blank_index(item[1]) < 0:
+        return 0
+    return item[0]
+
+def _flow_fold_lines(items, scan, skip_first):
     """Folds raw flow lines as pub folds them. Returns (folded, problem).
 
-    `items` holds (1-based line, raw line) pairs with "" for blank lines;
-    leading indentation is dropped. A break between content lines is one
+    `items` holds (1-based line, raw line) pairs with "" for blank lines,
+    except blank-looking lines with a bad blank, which survive as raw;
+    leading indentation is dropped. `skip_first` skips the head item, which
+    reads through its own line's check, while a flow document checks every
+    line. A bad blank outside quotes and comments is a ("control", line)
+    problem, as pub rejects it. A break between content lines is one
     space, except after a double-quoted backslash continuation, which joins
     with no space; a blank line after a continuation, and each blank line
     inside quotes, is one "\\n", while outside quotes a blank run is one
@@ -1646,8 +1687,12 @@ def _flow_fold_lines(items, scan):
     (kind, line) pair the caller reports.
     """
     st = {"out": "", "cont": False, "comment_pending": False, "pending_line": 0}
-    for item in items:
+    for n in range(len(items)):
+        item = items[n]
         line = item[0]
+        bad_line = _flow_fold_control(item, n, skip_first, scan)
+        if bad_line:
+            return "", ("control", bad_line)
         content = item[1].lstrip(" \t")
         if content.strip() == "":
             _flow_fold_blank(scan, st)
@@ -1663,6 +1708,8 @@ def _flow_fold_lines(items, scan):
 
 def _flow_fold_problem(kind, line):
     """The problem for a folded-flow line this reader cannot spell as pub reads it."""
+    if kind == "control":
+        return "control character at line %d is not supported" % line
     if kind == "plain-comment":
         return "comment inside a plain scalar of a flow that spans lines at line %d is not supported" % line
     if kind == "directive":
@@ -1683,7 +1730,7 @@ def _folded_head_flow(head_raw, head_line, lines, idx, parent_indent, anchors, s
         return None, idx + 1, False
     raws, next_idx = _pending_flow_raws(lines, idx + 1, parent_indent)
     items = [(head_line, head_raw)] + raws
-    folded, problem = _flow_fold_lines(items, _flow_scan_start())
+    folded, problem = _flow_fold_lines(items, _flow_scan_start(), True)
     if problem != None or not _folded_flow_ok(folded, anchors):
         return None, next_idx, False
     return _parse_scalar(folded, anchors, state, head_line, False), next_idx, True
@@ -1717,7 +1764,7 @@ def _consume_pending_scalar(cursor, pending, env):
     _indent0, text0 = _block_line_text(lines[idx])
     if text0 != None and _unclosed_flow_head(text0, anchors) != None:
         raws, next_idx = _pending_flow_raws(lines, idx, parent_indent)
-        folded, problem = _flow_fold_lines(raws, _flow_scan_start())
+        folded, problem = _flow_fold_lines(raws, _flow_scan_start(), True)
         if problem == None and _folded_flow_ok(folded, anchors):
             # The folded lines read as one flow collection, as pub reads
             # them: keep the value, as revisions before the span check did.
@@ -1820,6 +1867,17 @@ def _parse_block(lines, state):
             # with spaces stays blank, as pub skips it, and deeper lines of a
             # folded scalar never reach here, as the fold consumes them.
             state.problems.append("tab indentation at line %d is not supported" % (idx + 1))
+            idx += 1
+            continue
+        if _bad_blank_index(raw) >= 0:
+            # Only space and tab are blanks: a vertical tab, form feed or
+            # U+001C to U+001F outside quotes and comments is a problem
+            # naming the line, as pub rejects it, at the end or start of a
+            # value, before a key, or on its own. Quoted scalars keep them
+            # as content, and comments hide them, as pub reads them.
+            # Deeper lines of a folded scalar never reach here, as the fold
+            # consumes them.
+            state.problems.append("control character at line %d is not supported" % (idx + 1))
             idx += 1
             continue
         indent, text = _block_line_text(raw)
@@ -2520,6 +2578,30 @@ def _strip_comment(text):
             continue
         _sep_track(ch, text[i + 1:i + 2], st, None)
     return text.rstrip()
+
+def _bad_blank_index(text):
+    """Returns the index of the first bad blank outside quotes and comments, or -1.
+
+    The walk mirrors `_strip_comment`: a quote opens only where a scalar
+    starts, so an apostrophe in a plain scalar never shields a blank, and a
+    `#` at the start or after a space or tab opens a comment hiding the
+    rest, as pub scans them.
+    """
+    st = {"single": False, "double": False, "escaped": False, "at_start": True, "affix": False}
+    for i in range(len(text)):
+        ch = text[i]
+        if _quote_track(ch, st):
+            continue
+        if st["single"] or st["double"]:
+            continue
+        if ch in _BAD_BLANKS:
+            return i
+        if ch == "#":
+            if i == 0 or text[i - 1] in [" ", "\t"]:
+                return -1
+            continue
+        _sep_track(ch, text[i + 1:i + 2], st, None)
+    return -1
 
 def _find_colon(text):
     """Returns the index of the first top-level `: ` in `text`, or -1.
