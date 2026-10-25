@@ -25,8 +25,13 @@ simply never looked up, and the returned facts — built fresh each evaluation
 holding exactly the packages it planned — drop them. A fact whose key matches
 but whose value is malformed (not a list of strings) fails the evaluation
 naming the key, rather than planning from invented edges. A fact whose names
-disagree with the package's real pubspec fails the merged repository that
-fetches it (see `//dart/pub/private:pub_scc_verify.bzl`).
+disagree with the package's real pubspec fails the repository that fetches
+it — the package's spoke, or the merged repository when planning merged it
+into a cycle (see `//dart/pub/private:pub_scc_verify.bzl`). A spoke whose
+names differ fails its fetch naming the package, listing the planned and the
+real names and giving the lockfile recovery step, so a dropped edge fails at
+fetch time instead of failing analysis with a bare target cycle, and a fake
+edge fails instead of passing silently.
 
 This module holds the pure facts logic (parser digest, key building, lookup,
 validation, the split into hits and misses, and the returned dict) plus the

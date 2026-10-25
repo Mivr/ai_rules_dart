@@ -1,0 +1,42 @@
+# Local-registry lock for the spoke-facts e2e: `spoke_a` depends on
+# `spoke_b`, while `spoke_b`, `spoke_c`, and `spoke_d` have no dependencies.
+# The committed MODULE.bazel.lock wrongs the recorded facts for `spoke_a`
+# (dropped edge) and `spoke_d` (fake edge); see MODULE.bazel. The fixtures
+# live in e2e/pub_lock_scc/fixtures/ (served over file://; the url's
+# FIXTURES_ROOT placeholder is rewritten to the absolute path before
+# building, and restored afterwards).
+packages:
+  spoke_a:
+    dependency: "direct main"
+    description:
+      name: spoke_a
+      sha256: "26a4cd7fe1698e652cc0b66e2fd99df428243065e2e2da2a843005e3daf5b61a"
+      url: "file://FIXTURES_ROOT"
+    source: hosted
+    version: "1.0.0"
+  spoke_b:
+    dependency: "direct main"
+    description:
+      name: spoke_b
+      sha256: "dcd83139844dbda357ff5ad531cc28ff641d4507559bd9db72f2f3ab523a1c33"
+      url: "file://FIXTURES_ROOT"
+    source: hosted
+    version: "1.0.0"
+  spoke_c:
+    dependency: "direct main"
+    description:
+      name: spoke_c
+      sha256: "8a8c2efb4e740ec60e23b1a8faa16c91a6fd4756445fddc9d25fd178d79edad6"
+      url: "file://FIXTURES_ROOT"
+    source: hosted
+    version: "1.0.0"
+  spoke_d:
+    dependency: "direct main"
+    description:
+      name: spoke_d
+      sha256: "7c0db56cdfd2f151a68e6610a95008ce1648cceebfbbb5415ef4471530176268"
+      url: "file://FIXTURES_ROOT"
+    source: hosted
+    version: "1.0.0"
+sdks:
+  dart: ">=3.0.0 <4.0.0"

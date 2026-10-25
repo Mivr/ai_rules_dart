@@ -15,6 +15,7 @@ load("//dart/pub:pub_scan.bzl", _run_pub_archive_scan = "run_pub_archive_scan")
 load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps", "parse_pubspec_sdk_constraint")
 load("//dart/pub/private:build_content.bzl", _classify_pub_hooks = "classify_pub_hooks", _make_dart_library_build_content = "make_dart_library_build_content")
 load("//dart/pub/private:language_version.bzl", _derive_language_version = "derive_language_version")
+load("//dart/pub/private:pub_scc_verify.bzl", "spoke_planned_deps_error")
 load("//dart/pub/private:pub_symlink.bzl", _check_package_symlinks = "check_package_symlinks")
 
 # Re-export for consumers outside //dart/pub (rules_flutter's
@@ -119,7 +120,7 @@ def pub_lock_spoke_dep_labels(bazel_deps, hub_name, explicit_packages, scc_targe
             labels.append("@{hub}__{dep}//:{dep}".format(hub = hub_name, dep = dep))
     return labels
 
-def _pub_lock_write_build(ctx):
+def _pub_lock_write_build(ctx, rule_name):
     """Reads the staged `pubspec.yaml` and writes the spoke `BUILD.bazel`.
 
     Shared by the hosted and git spokes: both lay out the package's files and
@@ -128,20 +129,37 @@ def _pub_lock_write_build(ctx):
     constraint (as the Dart language version), and its hooks (recorded for
     the consuming binary to complain about, or for `dart_link_hook` to run).
 
+    Before writing anything it checks the unfiltered dependency names the
+    fetched pubspec lists against the sorted names cycle planning used (the
+    spoke's `planned_deps` attribute, when `plan_covers_package` says planning
+    covered the package): a fact that drops a real edge would otherwise hide
+    a cycle that then fails analysis bare, and a fact that gains a fake edge
+    would pass silently. A mismatch fails the fetch naming the package, so
+    the failure surfaces here and never as a target cycle.
+
     Args:
       ctx: The repository rule context.
+      rule_name: The spoke rule (`"pub_lock_package"` or
+        `"pub_lock_git_package"`), for diagnostics.
     """
     bazel_deps = []
     language_version = ""
+    real_deps = []
     pubspec_path = ctx.path("pubspec.yaml")
     if pubspec_path.exists:
         pubspec_content = ctx.read(pubspec_path)
         all_deps = parse_pubspec_deps(pubspec_content)
+        real_deps = sorted(all_deps)
         available = {p: True for p in ctx.attr.lock_packages + ctx.attr.explicit_packages}
         bazel_deps = sorted([d for d in all_deps if d in available and d != ctx.attr.package_name])
         language_version = _derive_language_version(
             parse_pubspec_sdk_constraint(pubspec_content),
         )
+
+    planned = ctx.attr.planned_deps if ctx.attr.plan_covers_package else None
+    err = spoke_planned_deps_error(rule_name, ctx.name, ctx.attr.package_name, planned, real_deps)
+    if err:
+        fail(err)
 
     # Build full label strings for sibling repos: a dependency on a cycle
     # member points at the merged repository holding the cycle; a dependency
@@ -221,7 +239,7 @@ def _pub_lock_package_impl(ctx):
     ctx.delete("_archive.tar.gz")
     _check_package_symlinks(ctx, ctx.attr.package_name)
 
-    _pub_lock_write_build(ctx)
+    _pub_lock_write_build(ctx, "pub_lock_package")
 
 pub_lock_package = repository_rule(
     implementation = _pub_lock_package_impl,
@@ -261,6 +279,18 @@ pub_lock_package = repository_rule(
                   "dependency cycle. A dependency on a cycle member points at the merged " +
                   "repository instead of a spoke. Empty when nothing is merged.",
             default = {},
+        ),
+        "planned_deps": attr.string_list(
+            doc = "The sorted dependency names cycle planning used for this package, " +
+                  "recorded by the `pub` extension from the lockfile's cycle-planning facts. " +
+                  "Checked against the fetched pubspec when `plan_covers_package` is True.",
+            default = [],
+        ),
+        "plan_covers_package": attr.bool(
+            doc = "True when cycle planning covered this package, so `planned_deps` carries " +
+                  "the names planning used and the fetch fails when the fetched pubspec " +
+                  "lists other names. False when planning did not cover it, skipping the check.",
+            default = False,
         ),
         "ignore_hook": attr.bool(
             doc = "Suppress the unreplaced-hook diagnostic for this package. Set by " +
@@ -321,7 +351,7 @@ def _pub_lock_git_package_impl(ctx):
     ctx.delete(ctx.path(clone_rel))
     _check_package_symlinks(ctx, ctx.attr.package_name)
 
-    _pub_lock_write_build(ctx)
+    _pub_lock_write_build(ctx, "pub_lock_git_package")
 
 pub_lock_git_package = repository_rule(
     implementation = _pub_lock_git_package_impl,
@@ -363,6 +393,18 @@ pub_lock_git_package = repository_rule(
                   "dependency cycle. A dependency on a cycle member points at the merged " +
                   "repository instead of a spoke. Empty when nothing is merged.",
             default = {},
+        ),
+        "planned_deps": attr.string_list(
+            doc = "The sorted dependency names cycle planning used for this package, " +
+                  "recorded by the `pub` extension from the lockfile's cycle-planning facts. " +
+                  "Checked against the fetched pubspec when `plan_covers_package` is True.",
+            default = [],
+        ),
+        "plan_covers_package": attr.bool(
+            doc = "True when cycle planning covered this package, so `planned_deps` carries " +
+                  "the names planning used and the fetch fails when the fetched pubspec " +
+                  "lists other names. False when planning did not cover it, skipping the check.",
+            default = False,
         ),
         "ignore_hook": attr.bool(
             doc = "Suppress the unreplaced-hook diagnostic for this package.",

@@ -925,6 +925,8 @@ def _pub_emit_shared_spokes(resolved, shared_sccs, all_package_names, explicit_p
             code_assets = curated_code_assets(name, pkg.version),
             ignore_hook = name in ignore_hooks,
             scc_targets = shared_scc_targets,
+            planned_deps = shared_sccs.package_deps.get(name, []),
+            plan_covers_package = name in shared_sccs.package_deps,
         )
 
 def _pub_emit_shared_merged(shared_sccs, resolved, resolved_git, all_package_names, explicit_package_names, shared_scc_targets, ignore_hooks):
@@ -960,6 +962,8 @@ def _pub_emit_shared_git(resolved_git, shared_sccs, all_package_names, explicit_
             code_assets = curated_code_assets(name, pkg.version),
             ignore_hook = name in ignore_hooks,
             scc_targets = shared_scc_targets,
+            planned_deps = shared_sccs.package_deps.get(name, []),
+            plan_covers_package = name in shared_sccs.package_deps,
         )
 
 def _pub_emit_isolated_spokes(hub_name, hosted, hub_sccs, package_names, hub_explicit, hub_scc_targets, ignore_hooks):
@@ -982,6 +986,8 @@ def _pub_emit_isolated_spokes(hub_name, hosted, hub_sccs, package_names, hub_exp
             code_assets = curated_code_assets(pkg_name, pkg.version),
             ignore_hook = pkg_name in ignore_hooks,
             scc_targets = hub_scc_targets,
+            planned_deps = hub_sccs.package_deps.get(pkg_name, []),
+            plan_covers_package = pkg_name in hub_sccs.package_deps,
         )
 
 def _pub_emit_isolated_merged(hub_name, hub_sccs, hosted, git_pkgs, package_names, hub_explicit, hub_scc_targets, ignore_hooks):
@@ -1017,6 +1023,8 @@ def _pub_emit_isolated_git(hub_name, git_pkgs, hub_sccs, package_names, hub_expl
             code_assets = curated_code_assets(pkg_name, pkg.version),
             ignore_hook = pkg_name in ignore_hooks,
             scc_targets = hub_scc_targets,
+            planned_deps = hub_sccs.package_deps.get(pkg_name, []),
+            plan_covers_package = pkg_name in hub_sccs.package_deps,
         )
 
 def _pub_emit_isolated_hub(hub_name, isolated_packages, isolated_git_packages, isolated_sccs, explicit_package_names, ignore_hooks):

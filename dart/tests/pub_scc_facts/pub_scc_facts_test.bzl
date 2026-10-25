@@ -9,7 +9,10 @@ names equals the plan from freshly parsed pubspecs on a cyclic graph, that
 foreign-schema facts are ignored while a malformed current-schema fact fails
 naming its key and stale entries are dropped, the merged-repository
 verification decisions (names match, members connected, an entry without
-usable planned names fails), that same-length texts sharing a Java hashCode
+usable planned names fails), the spoke verification decision the hosted and
+git spokes call (a match passes, a dropped or fake planned edge fails naming
+the package with the lockfile recovery, an uncovered package skips, an
+unusable plan fails), that same-length texts sharing a Java hashCode
 still digest apart, that the scanner-runtime touch names the runtime label
 the archive scan resolves on Linux, macOS and Windows, and the narrowed
 scratch check's five decisions.
@@ -24,7 +27,7 @@ load("//dart/pub:extensions.bzl", "plan_scope_sccs", "touch_scanner_runtime_labe
 load("//dart/pub/private:pub_scc_facts.bzl", "fact_deps_error", "git_fact_key", "hosted_fact_key", "lookup_fact_deps", "parser_schema", "parser_texts_digest", "record_scope_facts", "scratch_pubspec_error", "split_scope_facts")
 
 # buildifier: disable=bzl-visibility
-load("//dart/pub/private:pub_scc_verify.bzl", "scc_member_deps_error", "scc_members_connectivity_error", "scc_planned_deps_error")
+load("//dart/pub/private:pub_scc_verify.bzl", "scc_member_deps_error", "scc_members_connectivity_error", "scc_planned_deps_error", "spoke_planned_deps_error")
 load("//dart/tests:small_suite.bzl", "small_unittest_suite")
 
 _SHA = "fb0f1107cac15a5ea6ef0a6ef71a807b9e4267c713bb93e00e92d737cc8dbd8a"
@@ -262,6 +265,60 @@ def _verify_missing_plan_test_impl(ctx):
     asserts.equals(env, None, scc_planned_deps_error("my_repo", "aaa", []), "an empty plan is usable")
     return unittest.end(env)
 
+def _spoke_match_test_impl(ctx):
+    env = unittest.begin(ctx)
+    asserts.equals(env, None, spoke_planned_deps_error("pub_lock_package", "dart_pub__aaa", "aaa", ["bbb", "ccc"], ["ccc", "bbb"]), "order does not matter")
+    asserts.equals(env, None, spoke_planned_deps_error("pub_lock_package", "dart_pub__aaa", "aaa", [], []), "no deps matches no deps")
+    asserts.equals(env, None, spoke_planned_deps_error("pub_lock_git_package", "tool__myapp", "myapp", ["charcode"], ["charcode"]), "the git spoke matches the same way")
+    asserts.equals(env, None, spoke_planned_deps_error("pub_lock_package", "dart_pub__aaa", "aaa", None, ["bbb"]), "a package planning did not cover skips the check")
+    asserts.equals(env, None, spoke_planned_deps_error("pub_lock_package", "dart_pub__aaa", "aaa", None, []), "an uncovered package with no deps skips too")
+    return unittest.end(env)
+
+def _spoke_dropped_edge_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # `spoke_a` really depends on `spoke_b`, but its fact says []. Planning
+    # sees no cycle and leaves two spokes; the spoke's fetch must fail naming
+    # the package instead of failing analysis with a bare target cycle.
+    err = spoke_planned_deps_error("pub_lock_package", "dart_pub__spoke_a", "spoke_a", [], ["spoke_b"])
+    asserts.true(env, err != None, "a dropped planned edge fails")
+    asserts.true(env, "pub_lock_package" in err and "dart_pub__spoke_a" in err and "spoke_a" in err, "the error names the rule, the repository and the package: %s" % err)
+    asserts.true(env, "planned []" in err and "spoke_b" in err, "the error lists the planned and the real names: %s" % err)
+    asserts.true(env, "facts" in err and "MODULE.bazel.lock" in err, "the error gives the lockfile recovery: %s" % err)
+    missing = spoke_planned_deps_error("pub_lock_package", "dart_pub__bbb", "bbb", ["aaa"], ["aaa", "fresh"])
+    asserts.true(env, missing != None, "a missing planned edge fails too")
+    asserts.true(env, "dart_pub__bbb" in missing and "fresh" in missing and "aaa" in missing, "the error lists the planned and the real names: %s" % missing)
+    asserts.true(env, "facts" in missing and "MODULE.bazel.lock" in missing, "the error gives the lockfile recovery: %s" % missing)
+    return unittest.end(env)
+
+def _spoke_fake_edge_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # `spoke_d` really has no dependencies, but its fact says [`spoke_c`]
+    # with no cycle resulting. The build would pass with the fake fact
+    # re-recorded; the spoke's fetch must fail naming the package instead.
+    err = spoke_planned_deps_error("pub_lock_package", "dart_pub__spoke_d", "spoke_d", ["spoke_c"], [])
+    asserts.true(env, err != None, "a fake planned edge fails")
+    asserts.true(env, "pub_lock_package" in err and "dart_pub__spoke_d" in err and "spoke_d" in err, "the error names the rule, the repository and the package: %s" % err)
+    asserts.true(env, "spoke_c" in err and "pubspec []" in err, "the error lists the planned and the real names: %s" % err)
+    asserts.true(env, "facts" in err and "MODULE.bazel.lock" in err, "the error gives the lockfile recovery: %s" % err)
+    git_err = spoke_planned_deps_error("pub_lock_git_package", "tool__myapp", "myapp", ["charcode"], [])
+    asserts.true(env, git_err != None, "a fake planned edge fails the git spoke too")
+    asserts.true(env, "pub_lock_git_package" in git_err and "myapp" in git_err, "the error names the git rule and the package: %s" % git_err)
+    asserts.true(env, "facts" in git_err and "MODULE.bazel.lock" in git_err, "the error gives the lockfile recovery: %s" % git_err)
+    return unittest.end(env)
+
+def _spoke_unusable_plan_test_impl(ctx):
+    env = unittest.begin(ctx)
+    for bad in ["aaa", 42, ["aaa", 42]]:
+        err = spoke_planned_deps_error("pub_lock_package", "dart_pub__aaa", "aaa", bad, ["aaa"])
+        asserts.true(env, err != None, "unusable planned names %r fail" % (bad,))
+        asserts.true(env, "dart_pub__aaa" in err and "aaa" in err, "the error names the repository and the package: %s" % err)
+        asserts.true(env, "facts" in err and "MODULE.bazel.lock" in err, "the error gives the lockfile recovery: %s" % err)
+    asserts.equals(env, None, spoke_planned_deps_error("pub_lock_package", "dart_pub__aaa", "aaa", ["bbb"], ["bbb"]), "a list of strings is usable")
+    asserts.equals(env, None, spoke_planned_deps_error("pub_lock_package", "dart_pub__aaa", "aaa", [], []), "an empty plan is usable")
+    return unittest.end(env)
+
 def _digest_position_weights_test_impl(ctx):
     env = unittest.begin(ctx)
     asserts.true(
@@ -358,6 +415,10 @@ _t20_test = unittest.make(_scratch_root_link_test_impl)
 _t21_test = unittest.make(_verify_missing_plan_test_impl)
 _t22_test = unittest.make(_digest_position_weights_test_impl)
 _t23_test = unittest.make(_scanner_label_touch_test_impl)
+_t24_test = unittest.make(_spoke_match_test_impl)
+_t25_test = unittest.make(_spoke_dropped_edge_test_impl)
+_t26_test = unittest.make(_spoke_fake_edge_test_impl)
+_t27_test = unittest.make(_spoke_unusable_plan_test_impl)
 
 def pub_scc_facts_test_suite(name):
     small_unittest_suite(
@@ -386,4 +447,8 @@ def pub_scc_facts_test_suite(name):
         _t21_test,
         _t22_test,
         _t23_test,
+        _t24_test,
+        _t25_test,
+        _t26_test,
+        _t27_test,
     )
