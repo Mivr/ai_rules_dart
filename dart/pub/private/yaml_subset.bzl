@@ -1208,15 +1208,28 @@ def _block_fold_begin(head, core, scan):
     return {"prefix": prefix, "poison": poison, "opened": opened, "closed": closed, "head_complete": head_complete, "seen": core != "", "items": items, "consumed": 0, "bom": False, "tab": False}
 
 def _block_fold_quoted(raw, idx, scan, fold):
-    """Takes a line inside open quotes at any indent.
+    """Takes a line inside open quotes at any indent. Returns the fail line, or -1.
 
     Inside quotes every line is content, as pub reads it, including
-    markers, entries and `%` lines.
+    markers, entries and `%` lines. But the line that closes the quote ends
+    the scalar: text glued after its closing quote is a problem naming this
+    line, as pub rejects it, and so is a `%` past the close, as pub rejects
+    a directive there; a `#` comment past the close stays allowed, as the
+    scan already stops before it and pub reads the scalar.
     """
     fold["items"].append((idx + 1, raw))
-    _flow_scan_text(raw.lstrip(" \t"), scan, _flow_fresh_res())
+    quote = "'" if scan["single"] else '"'
+    res = _flow_fresh_res()
+    _flow_scan_text(raw.lstrip(" \t"), scan, res)
     fold["consumed"] += 1
     fold["seen"] = True
+    if res["pct_flag"]:
+        return idx
+    kept = "".join(res["kept"])
+    end = _quoted_end_at(kept, quote, 0)
+    if end >= 0 and kept[end + 1:].strip() != "":
+        return idx
+    return -1
 
 def _block_fold_plain(raw, scan, fold, question_stops):
     """Decides one deeper plain line. Returns take, break, fail or comment.
@@ -1261,7 +1274,8 @@ def _block_fold_gather(lines, start, parent_indent, scan, fold, question_stops, 
 
     `fail` is the 0-based failing line, or -1: a line starting with a tab is
     a problem naming the line, as pub rejects it, while a line with spaces
-    before its tab folds, as pub folds it. A byte-order mark outside
+    before its tab folds, as pub folds it. Text glued after the closing
+    quote's line is a problem naming that line too, as pub rejects it. A byte-order mark outside
     quotes is an always-on problem naming its own line, as pub rejects it;
     inside quotes every line stays content.
     """
@@ -1281,7 +1295,9 @@ def _block_fold_gather(lines, start, parent_indent, scan, fold, question_stops, 
             idx += 1
             continue
         if scan["single"] or scan["double"]:
-            _block_fold_quoted(raw, idx, scan, fold)
+            fail = _block_fold_quoted(raw, idx, scan, fold)
+            if fail >= 0:
+                break
             idx += 1
             continue
         if _indent_width(raw) <= parent_indent:
@@ -2944,14 +2960,22 @@ def _parse_nonflow(s, anchors, state, line):
     pub rejects its reserved indicator, and so is one holding a control
     character or DEL anywhere, as pub refuses them; quoted scalars keep them
     as content, as pub reads them. A tab inside a plain scalar stays content,
-    as pub reads it.
+    as pub reads it. Text glued after a quoted scalar's closing quote is a
+    problem naming the line, as pub rejects it: nothing but the closing
+    quote itself may end the scalar, since a comment never reaches here, as
+    block lines strip it first.
     """
     if s.startswith("*"):
         return _parse_alias(s, anchors, state, line)
-    if _is_quoted(s):
-        if s[0] == '"':
-            return _unescape_double(s[1:-1], state, line)
-        return s[1:-1].replace("''", "'")
+    if s[:1] in ["'", '"']:
+        end = _flow_quoted_end(s)
+        if end >= 0 and s[end + 1:].strip() != "":
+            state.problems.append("trailing text after quoted scalar at line %d is not supported" % line)
+            return None
+        if _is_quoted(s):
+            if s[0] == '"':
+                return _unescape_double(s[1:-1], state, line)
+            return s[1:-1].replace("''", "'")
     if _BOM in s:
         state.problems.append("byte-order mark at line %d is not supported" % line)
         return None
@@ -3702,15 +3726,13 @@ def _flow_prefixed_collection(s, i, anchors, stack, state, line):
     stack.append(_flow_frame(s[j], anchor, tag))
     return True, j + 1
 
-def _flow_quoted_end(s):
-    """Returns the index of the quote closing the scalar at `s[0]`, or -1.
+def _quoted_end_at(s, quote, i):
+    """Returns the index of the `quote` closing at or after `i`, or -1.
 
-    `s` starts with `'` or `"`. `''` inside single quotes is one escaped
-    quote and a backslash escapes the next character in double quotes, as
-    pub reads them. Returns -1 when the quote never closes.
+    `''` inside single quotes is one escaped quote and a backslash escapes
+    the next character in double quotes, as pub reads them. Returns -1 when
+    the quote never closes.
     """
-    quote = s[0]
-    i = 1
     for _ in range(len(s) + 1):
         if i >= len(s):
             return -1
@@ -3725,6 +3747,15 @@ def _flow_quoted_end(s):
             return i
         i += 1
     return -1
+
+def _flow_quoted_end(s):
+    """Returns the index of the quote closing the scalar at `s[0]`, or -1.
+
+    `s` starts with `'` or `"`. `''` inside single quotes is one escaped
+    quote and a backslash escapes the next character in double quotes, as
+    pub reads them. Returns -1 when the quote never closes.
+    """
+    return _quoted_end_at(s, s[0], 1)
 
 def _flow_scalar_ok(token):
     """Returns whether a flow scalar token is shaped as pub reads it.

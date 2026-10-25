@@ -1396,6 +1396,73 @@ def _block_fold_test_impl(ctx):
     asserts.equals(env, None, value["a"])
     asserts.equals(env, ["unreadable line 1: \"a: \\\"x\\\"\\\"y\\\"\""], problems)
 
+    # Text glued after a quoted scalar's closing quote fails naming the
+    # line, as pub rejects it: the scalar ends at its first closing quote,
+    # with `''` and `\"` as escapes, and only the quote itself may end it.
+    value, problems = document_value_and_problems("a: 'x'y'\n", True)
+    asserts.equals(env, None, value["a"])
+    asserts.equals(env, ["trailing text after quoted scalar at line 1 is not supported"], problems)
+    value, problems = document_value_and_problems("a: \"x\"y\"\n", True)
+    asserts.equals(env, None, value["a"])
+    asserts.equals(env, ["trailing text after quoted scalar at line 1 is not supported"], problems)
+    value, problems = document_value_and_problems("a: 'x' y\n", True)
+    asserts.equals(env, None, value["a"])
+    asserts.equals(env, ["unreadable line 1: \"a: 'x' y\""], problems)
+    value, problems = document_value_and_problems("a: 'x': y\n", True)
+    asserts.equals(env, None, value["a"])
+    asserts.equals(env, ["unreadable line 1: \"a: 'x': y\""], problems)
+    value, problems = document_value_and_problems("a: 'x'\ty\n", True)
+    asserts.equals(env, None, value["a"])
+    asserts.true(env, len(problems) == 1 and "line 1" in problems[0])
+    value, problems = document_value_and_problems("a: 'x' 'y'\n", True)
+    asserts.equals(env, None, value["a"])
+    asserts.equals(env, ["unreadable line 1: \"a: 'x' 'y'\""], problems)
+
+    # The same trailer after a multi-line closing quote fails naming the
+    # closing line, as pub rejects it there.
+    value, problems = document_value_and_problems("a: 'x\n  y' z\n", True)
+    asserts.equals(env, None, value["a"])
+    asserts.equals(env, ["unreadable line 2: \"y' z\""], problems)
+    value, problems = document_value_and_problems("a: \"x\n  y\"z\n", True)
+    asserts.equals(env, None, value["a"])
+    asserts.equals(env, ["unreadable line 2: \"y\\\"z\""], problems)
+    value, problems = document_value_and_problems("a: 'x\n  y': z\n", True)
+    asserts.equals(env, None, value["a"])
+    asserts.equals(env, ["unreadable line 2: \"y': z\""], problems)
+    value, problems = document_value_and_problems("a: 'x\n  y'z'\n", True)
+    asserts.equals(env, None, value["a"])
+    asserts.equals(env, ["unreadable line 2: \"y'z'\""], problems)
+    value, problems = document_value_and_problems("a: 'x\n  y' %x\n", True)
+    asserts.equals(env, None, value["a"])
+    asserts.equals(env, ["unreadable line 2: \"y' %x\""], problems)
+    value, problems = document_value_and_problems("a: 'x\n  y' 'z'\n", True)
+    asserts.equals(env, None, value["a"])
+    asserts.equals(env, ["unreadable line 2: \"y' 'z'\""], problems)
+
+    # A quoted key with glued text fails naming the line, as pub rejects
+    # it, while a spaced colon still pairs the key, as pub reads it.
+    value, problems = document_value_and_problems("'k'x: v\n", True)
+    asserts.equals(env, {None: "v"}, value)
+    asserts.equals(env, ["trailing text after quoted scalar at line 1 is not supported"], problems)
+    asserts.equals(env, {"k": "v"}, parse_document("'k': v\n"))
+    asserts.equals(env, {"k": "v"}, parse_document("'k' : v\n"))
+
+    # A flow value glued after a closing quote fails naming the line, as
+    # pub rejects it.
+    value, problems = document_value_and_problems("a: ['x'y']\n", True)
+    asserts.equals(env, None, value["a"])
+    asserts.equals(env, ["unreadable flow value at line 1: \"['x'y']\""], problems)
+
+    # What pub reads around a closing quote keeps reading: a comment after
+    # it, an escaped quote inside it, and a multi-line close with a comment
+    # or nothing after it.
+    asserts.equals(env, {"a": "x"}, parse_document("a: 'x' # c\n"))
+    asserts.equals(env, {"a": "x"}, parse_document("a: \"x\" # c\n"))
+    asserts.equals(env, {"a": "x'y"}, parse_document("a: 'x''y'\n"))
+    asserts.equals(env, {"a": "x\"y"}, parse_document("a: \"x\\\"y\"\n"))
+    asserts.equals(env, {"a": "x y"}, parse_document("a: 'x\n  y'\n"))
+    asserts.equals(env, {"a": "x y"}, parse_document("a: 'x\n  y' # c\n"))
+
     # A tab-indented continuation is a problem naming its line, in strict
     # and lenient modes alike, as pub rejects it.
     asserts.equals(env, ["tab indentation at line 2 is not supported"], document_problems("a:\n\tbeta\n", True))
