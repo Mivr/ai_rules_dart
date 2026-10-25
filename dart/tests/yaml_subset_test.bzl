@@ -564,6 +564,90 @@ def _anchor_alias_test_impl(ctx):
     asserts.equals(env, {"a": "foo\n"}, parse_document("a: |\n  foo\n"))
     asserts.equals(env, ["foo\n"], parse_document("- |\n  foo\n"))
     asserts.equals(env, {"|": "v"}, parse_document("'|': v\n"))
+
+    # A lone anchor line applies to the node starting on the next line, as
+    # pub reads it (package:yaml 3.1.4 with the pinned SDK 3.13.5): the
+    # anchor binds the next block collection, scalar or flow value, on the
+    # first line, under a pending key, and across blank and comment lines.
+    # An older revision read the anchor on an empty scalar and skipped the
+    # next line as unreadable.
+    asserts.equals(env, {"b": 1}, parse_document("&a\nb: 1\n"))
+    asserts.equals(env, "b", parse_document("&a\nb\n"))
+    asserts.equals(env, {"x": 1}, parse_document("&a\n{x: 1}\n"))
+    asserts.equals(env, {"b": 1}, parse_document("&a !!map\nb: 1\n"))
+    asserts.equals(env, {"b": 1}, parse_document("--- &a\nb: 1\n"))
+    asserts.equals(env, [{"b": 1}], parse_document("- &a\n  b: 1\n"))
+    asserts.equals(env, ["x"], parse_document("&a\n- x\n"))
+    asserts.equals(env, ["x"], parse_document("&a\n  - x\n"))
+    asserts.equals(env, {"b": 1}, parse_document("&a\n  b: 1\n"))
+    asserts.equals(env, {"b": 1}, parse_document("  &a\nb: 1\n"))
+    asserts.equals(env, {"b": 1}, parse_document("&a\n# c\nb: 1\n"))
+    asserts.equals(env, {"b": 1}, parse_document("&a\n\nb: 1\n"))
+    asserts.equals(env, {"a": {"b": 1}}, parse_document("a:\n  &x\n  b: 1\n"))
+    asserts.equals(env, {"a": {"b": 1}}, parse_document("a:\n    &x\n  b: 1\n"))
+    asserts.equals(env, {"a": {"b": None, "c": 1}}, parse_document("a:\n  b:\n    &x\n  c: 1\n"))
+    asserts.equals(env, "text\n", parse_document("&a\n|\n  text\n"))
+    asserts.equals(env, "text", parse_document("&a\n>-\n  text\n"))
+    value, problems = document_value_and_problems("a:\n  &x\n", True)
+    asserts.equals(env, {"a": None}, value)
+    asserts.equals(env, [], problems)
+    value, problems = document_value_and_problems("&a\n", True)
+    asserts.equals(env, None, value)
+    asserts.equals(env, [], problems)
+
+    # A second anchor for one node fails naming the new line, as pub rejects
+    # it; the first anchor wins and parsing continues past it. Pub names the
+    # key line when a pending tag ends up with no node; the branch names the
+    # line it could not absorb instead.
+    value, problems = document_value_and_problems("&a\n&b\nc: 1\n", True)
+    asserts.equals(env, {"c": 1}, value)
+    asserts.equals(env, ["repeated anchor at line 2 is not supported"], problems)
+    value, problems = document_value_and_problems("a: &k\n  &x\n  b: 1\n", True)
+    asserts.equals(env, {"a": {"b": 1}}, value)
+    asserts.equals(env, ["repeated anchor at line 2 is not supported"], problems)
+    value, problems = document_value_and_problems("a:\n  &x\n  &y\n  b: 1\n", True)
+    asserts.equals(env, {"a": {"b": 1}}, value)
+    asserts.equals(env, ["repeated anchor at line 3 is not supported"], problems)
+
+    # A repeated anchor on its own line still fails naming the line, as pub
+    # rejects it, and parsing continues past it.
+    value, problems = document_value_and_problems("&a &b\nc: 1\n", True)
+    asserts.equals(env, "", value)
+    asserts.equals(env, ["repeated anchor at line 1 is not supported", "unreadable line 2: \"c: 1\""], problems)
+
+    # An alias into the anchored collection fails closed as a
+    # self-reference, as pub rejects it; an alias that does not resolve still
+    # names its line.
+    value, problems = document_value_and_problems("&a\nb: *a\n", True)
+    asserts.equals(env, {"b": None}, value)
+    asserts.equals(env, ["self-referential alias \"a\" at line 2 is not supported"], problems)
+    value, problems = document_value_and_problems("&a\n*b\n", True)
+    asserts.equals(env, None, value)
+    asserts.equals(env, ["undefined alias \"b\" at line 2"], problems)
+
+    # A lone anchor line inside an open container reads like a key there, as
+    # pub parses it, so the next line reports it: the problem names that
+    # line, as pub names it, quoting the line it could not place, and that
+    # line still reads.
+    value, problems = document_value_and_problems("a: 1\n&x\nb: 2\n", True)
+    asserts.equals(env, {"a": 1, "b": 2}, value)
+    asserts.equals(env, ["unreadable line 3: \"&x\""], problems)
+    value, problems = document_value_and_problems("- 1\n&x\n- 2\n", True)
+    asserts.equals(env, [1, 2], value)
+    asserts.equals(env, ["unreadable line 3: \"&x\""], problems)
+    value, problems = document_value_and_problems("&a\nb: 1\n&c\nd: 2\n", True)
+    asserts.equals(env, {"b": 1, "d": 2}, value)
+    asserts.equals(env, ["unreadable line 4: \"&c\""], problems)
+
+    # At the end of the file the lone line itself is named: without a
+    # trailing newline pub names it too, while with one pub names the empty
+    # line after it.
+    value, problems = document_value_and_problems("a: 1\n&x", True)
+    asserts.equals(env, {"a": 1}, value)
+    asserts.equals(env, ["unreadable line 2: \"&x\""], problems)
+    value, problems = document_value_and_problems("a: 1\n&x\n", True)
+    asserts.equals(env, {"a": 1}, value)
+    asserts.equals(env, ["unreadable line 2: \"&x\""], problems)
     return unittest.end(env)
 
 def _flow_affix_key_test_impl(ctx):
@@ -1188,6 +1272,50 @@ def _collection_tag_test_impl(ctx):
         ["Invalid bool scalar at line 1"],
         document_problems("k: !!bool\n  yes\n", True),
     )
+
+    # A lone tag line applies to the node starting on the next line, as pub
+    # reads it: a matching collection tag reads, and a mismatched one fails
+    # naming the tag's own line while still reading the value untagged. An
+    # older revision read the tag on an empty scalar and skipped the next
+    # line as unreadable.
+    asserts.equals(env, {"b": 1}, parse_document("--- !!map\nb: 1\n"))
+    asserts.equals(env, {"b": 1}, parse_document("!!map &a\nb: 1\n"))
+    asserts.equals(env, [1], parse_document("!!seq\n- 1\n"))
+    asserts.equals(env, {"a": [1]}, parse_document("a:\n  !!seq\n  - 1\n"))
+    asserts.equals(env, {"a": [1]}, parse_document("a: !!seq\n  &x\n  - 1\n"))
+    asserts.equals(env, {"a": [1]}, parse_document("a: &k\n  !!seq\n  - 1\n"))
+    asserts.equals(env, {"b": 1}, parse_document("&a\n!foo\nb: 1\n"))
+    asserts.equals(env, {"b": 1}, parse_document("!\nb: 1\n"))
+    asserts.equals(env, "b", parse_document("!!str\nb\n"))
+    asserts.equals(env, 5, parse_document("!!int\n5\n"))
+    asserts.equals(env, {"a": "b"}, parse_document("a:\n  !!str\n  b\n"))
+    value, problems = document_value_and_problems("!!seq\nb: 1\n", True)
+    asserts.equals(env, {"b": 1}, value)
+    asserts.equals(env, ["Invalid tag for mapping at line 1"], problems)
+    value, problems = document_value_and_problems("a:\n  !!seq\n  b: 1\n", True)
+    asserts.equals(env, {"a": {"b": 1}}, value)
+    asserts.equals(env, ["Invalid tag for mapping at line 2"], problems)
+    value, problems = document_value_and_problems("!!str\nb: 1\n", True)
+    asserts.equals(env, {"b": 1}, value)
+    asserts.equals(env, ["Invalid tag for mapping at line 1"], problems)
+    value, problems = document_value_and_problems("!!\nb: 1\n", True)
+    asserts.equals(env, {"b": 1}, value)
+    asserts.equals(env, ["Invalid tag for mapping at line 1"], problems)
+    value, problems = document_value_and_problems("!!int\nb\n", True)
+    asserts.equals(env, None, value)
+    asserts.equals(env, ["Invalid int scalar at line 1"], problems)
+
+    # A second tag for one node fails naming the new line, as pub rejects
+    # it; the first tag wins and parsing continues past it.
+    value, problems = document_value_and_problems("a: !!seq\n  !!str\n  b: 1\n", True)
+    asserts.equals(env, {"a": {"b": 1}}, value)
+    asserts.equals(env, ["repeated tag at line 2 is not supported", "Invalid tag for mapping at line 1"], problems)
+
+    # A lone tag closed with no node reads as a dropped pending tag does,
+    # naming the tag's own line, as pub reports it.
+    value, problems = document_value_and_problems("!!seq\n", True)
+    asserts.equals(env, None, value)
+    asserts.equals(env, ["Undefined tag: tag:yaml.org,2002:seq at line 1"], problems)
     return unittest.end(env)
 
 def _json_document_test_impl(ctx):

@@ -1059,7 +1059,7 @@ def _drop_pending_value(pending, anchors, state):
     The slot and a pending anchor read the dropped value, so parsing
     continues past it.
     """
-    value = _drop_tag_value(pending["tag"], pending["line"], state)
+    value = _drop_tag_value(pending["tag"], pending.get("tag_line", pending["line"]), state)
     pending["parent"][pending["slot"]] = value
     if pending["anchor"] != None:
         anchors[pending["anchor"]] = value
@@ -1076,7 +1076,7 @@ def _attach_pending_child(pending, indent, text, anchors, stack, state):
     """
     if indent > pending["indent"]:
         child = _new_block(text)
-        value = _apply_child_collection_tag(pending["tag"], child, state, pending["line"])
+        value = _apply_child_collection_tag(pending["tag"], child, state, pending.get("tag_line", pending["line"]))
         pending["parent"][pending["slot"]] = value
         if pending["anchor"] != None:
             anchors[pending["anchor"]] = _OPEN_ANCHOR
@@ -1096,7 +1096,7 @@ def _attach_compact_seq(pending, anchors, stack, state):
     self-reference rule as `_attach_pending_child`, and a pending tag reads
     it as the same-line tags do.
     """
-    seq = _apply_child_collection_tag(pending["tag"], [], state, pending["line"])
+    seq = _apply_child_collection_tag(pending["tag"], [], state, pending.get("tag_line", pending["line"]))
     pending["parent"][pending["slot"]] = seq
     if pending["anchor"] != None:
         anchors[pending["anchor"]] = _OPEN_ANCHOR
@@ -1817,12 +1817,129 @@ def _store_pending_value(pending, value, raw, anchors, state):
     """
     if pending["tag"] != None:
         if type(value) in ["list", "dict"]:
-            value = _apply_child_collection_tag(pending["tag"], value, state, pending["line"])
+            value = _apply_child_collection_tag(pending["tag"], value, state, pending.get("tag_line", pending["line"]))
         else:
-            value = _apply_pending_scalar_tag(pending["tag"], value, raw, state, pending["line"])
+            value = _apply_pending_scalar_tag(pending["tag"], value, raw, state, pending.get("tag_line", pending["line"]))
     pending["parent"][pending["slot"]] = value
     if pending["anchor"] != None:
         anchors[pending["anchor"]] = _clone(value)
+
+def _lone_affix(text):
+    """Splits a lone anchor/tag property line. Returns (anchor, tag).
+
+    Returns (None, None) unless the line holds only `&anchor` and `!tag`
+    words, as pub applies such a line to the node starting on the next
+    line; a line with anything else, or a rejected prefix, reads as before.
+    """
+    anchor, tag, rest, bad = _strip_value_prefix(text)
+    if rest != "" or bad != "" or (anchor == None and tag == None):
+        return None, None
+    return anchor, tag
+
+def _merge_affix(slot, anchor, tag, line, anchors, state):
+    """Merges lone-line properties into a pending slot. Returns True when merged.
+
+    `slot` is a pending key/dash dict or the root affix dict, each carrying
+    anchor and tag. A merged tag records its own line, as pub names the tag's
+    line. A repeated anchor or tag is an always-on problem naming the new
+    line, as pub rejects two of either on one node, and the first properties
+    win, so parsing continues past it.
+    """
+    if anchor != None and slot["anchor"] != None:
+        state.problems.append("repeated anchor at line %d is not supported" % line)
+        return False
+    if tag != None and slot["tag"] != None:
+        state.problems.append("repeated tag at line %d is not supported" % line)
+        return False
+    if anchor != None:
+        slot["anchor"] = anchor
+        anchors[anchor] = _OPEN_ANCHOR
+    if tag != None:
+        slot["tag"] = tag
+        slot["tag_line"] = line
+    return True
+
+def _take_lone_line(slot, text, line, anchors, state):
+    """Merges a lone property line into a pending slot. Returns True when taken.
+
+    A repeated anchor or tag still counts as taken: the line is skipped after
+    its problem, as pub rejects it, and the slot keeps its first properties.
+    """
+    anchor, tag = _lone_affix(text)
+    if anchor == None and tag == None:
+        return False
+    _merge_affix(slot, anchor, tag, line, anchors, state)
+    return True
+
+def _record_dangling(lone, text, line):
+    """Keeps a lone property line an open container cannot take. Returns True when kept.
+
+    The line reads like a key there, as pub parses it, so the open container
+    keeps the line for the problem the next line reports.
+    """
+    anchor, tag = _lone_affix(text)
+    if anchor == None and tag == None:
+        return False
+    lone["text"] = text
+    lone["line"] = line
+    return True
+
+def _emit_dangling(lone, state, idx):
+    """Reports a lone property line the previous line could not place.
+
+    The problem names the line where parsing breaks, as pub names the line
+    after the lone line, quoting the lone line it could not place; that line
+    still reads, so parsing continues past it.
+    """
+    if lone["text"] != None:
+        state.problems.append("unreadable line %d: %r" % (idx + 1, lone["text"]))
+        lone["text"] = None
+
+def _drop_affix(affix, anchors, state):
+    """Reads a root affix closed with no node.
+
+    A dropped tag reads as a dropped pending tag does, naming the tag's own
+    line, and a pending anchor binds the dropped value, as pub binds it to
+    the empty node, so parsing continues past it.
+    """
+    value = _drop_tag_value(affix["tag"], affix["tag_line"], state)
+    if affix["anchor"] != None:
+        anchors[affix["anchor"]] = value
+
+def _resolve_affix_root(affix, lines, idx, indent, text, anchors, stack, state):
+    """Creates the root node a lone anchor/tag line applies to. Returns (root, next index).
+
+    A block scalar header reads as under a same-line key, as pub reads it;
+    any other line reads as without the affix, then takes it. A tag reads a
+    collection as the same-line tags do and a scalar as a pending tag does,
+    naming the tag's own line, as pub names it; an anchor binds the closed
+    value, marking an open block collection so an alias inside it fails
+    closed, as pub rejects it. A flow collection reads closed where a scalar
+    reads, as a folded pending value does, so the anchor binds it at once.
+    Rebinding replaces any older binding.
+    """
+    line = idx + 1
+    if text.startswith("|") or text.startswith(">"):
+        parsed, next_idx, _ok = _parse_block_scalar(lines, idx + 1, indent, indent, text, idx, text, state)
+        root = _apply_pending_scalar_tag(affix["tag"], parsed, parsed, state, affix["tag_line"])
+        if affix["anchor"] != None:
+            anchors[affix["anchor"]] = _clone(root)
+    else:
+        root, is_scalar = _init_block_root(text, indent, anchors, stack, state, line)
+        if type(root) == "list" or type(root) == "dict":
+            root = _apply_child_collection_tag(affix["tag"], root, state, affix["tag_line"])
+        else:
+            root = _apply_pending_scalar_tag(affix["tag"], root, text, state, affix["tag_line"])
+        if affix["anchor"] != None:
+            if (type(root) == "list" or type(root) == "dict") and not is_scalar:
+                anchors[affix["anchor"]] = _OPEN_ANCHOR
+                stack[-1]["anchor"] = affix["anchor"]
+            else:
+                anchors[affix["anchor"]] = _clone(root)
+        next_idx = idx + 1 if is_scalar else idx
+    affix["anchor"] = None
+    affix["tag"] = None
+    return root, next_idx
 
 def _resolve_pending(pending, cursor, env):
     """Resolves a pending key or dash against the current line.
@@ -1884,24 +2001,37 @@ def _block_dispatch_line(cursor, env, root, pending):
     """Parses one content line into the open containers. Returns (root, pending, idx, done).
 
     `cursor` carries the line as {lines, idx, indent, text}; `env` carries
-    {anchors, stack, state}. `done` tells the caller to continue with the
+    {anchors, stack, state} plus the `lone` dangling line and the `affix`
+    root properties. `done` tells the caller to continue with the
     next line: the pending value resolved without a container line to
     place, the root scalar read, or the line stayed orphaned.
     """
     lines, idx, indent, text = cursor.lines, cursor.idx, cursor.indent, cursor.text
     anchors, stack, state = env.anchors, env.stack, env.state
     _close_block_containers(stack, indent, text, anchors)
+    _emit_dangling(env.lone, state, idx)
     if pending != None:
+        if _take_lone_line(pending, text, idx + 1, anchors, state):
+            return (root, pending, idx + 1, True)
         idx, skip = _resolve_pending(pending, struct(lines = lines, idx = idx, indent = indent, text = text), struct(anchors = anchors, stack = stack, state = state))
         pending = None
         if skip:
             return (root, pending, idx, True)
     if root == None and not stack:
-        root, is_scalar = _init_block_root(text, indent, anchors, stack, state, idx + 1)
-        if is_scalar:
+        if _take_lone_line(env.affix, text, idx + 1, anchors, state):
             return (root, pending, idx + 1, True)
+        if env.affix["anchor"] != None or env.affix["tag"] != None:
+            root, idx = _resolve_affix_root(env.affix, lines, idx, indent, text, anchors, stack, state)
+            if not stack:
+                return (root, pending, idx, True)
+        else:
+            root, is_scalar = _init_block_root(text, indent, anchors, stack, state, idx + 1)
+            if is_scalar:
+                return (root, pending, idx + 1, True)
     if not stack:
         _record_unreadable(state, idx, text)
+        return (root, pending, idx + 1, True)
+    if _record_dangling(env.lone, text, idx + 1):
         return (root, pending, idx + 1, True)
     frame = stack[-1]
     if frame["kind"] == "map":
@@ -1926,13 +2056,19 @@ def _parse_block(lines, state, first_line):
     `pending` describes a key or dash whose value is on the following lines:
     a dash at its own column becomes a compact sequence, a deeper mapping or
     sequence line becomes the child container, and deeper scalar lines fold
-    into the value with single spaces. `state` collects duplicate-key and
+    into the value with single spaces. A lone anchor/tag line merges into the
+    pending slot, or waits as the `affix` for the root node, as pub applies
+    it to the next line; in an open container with no pending slot the line
+    waits as `lone` for the problem the next line reports, as pub names that
+    line. `state` collects duplicate-key and
     (when strict) unreadable-line problems.
     """
     anchors = {}
     root = None
     stack = []
     pending = None
+    lone = {"text": None, "line": 0}
+    affix = {"anchor": None, "tag": None, "tag_line": 0}
     saw_content = False
     idx = 0
     for _ in range(len(lines) + 1):
@@ -1952,11 +2088,14 @@ def _parse_block(lines, state, first_line):
             continue
         saw_content = True
         cursor = struct(lines = lines, idx = idx, indent = indent, text = text)
-        root, pending, idx, done = _block_dispatch_line(cursor, struct(anchors = anchors, stack = stack, state = state), root, pending)
+        root, pending, idx, done = _block_dispatch_line(cursor, struct(anchors = anchors, stack = stack, state = state, lone = lone, affix = affix), root, pending)
         if done:
             continue
     if pending != None:
         _drop_pending_value(pending, anchors, state)
+    _drop_affix(affix, anchors, state)
+    if lone["text"] != None:
+        state.problems.append("unreadable line %d: %r" % (lone["line"], lone["text"]))
     for _ in range(len(stack) + 1):
         if not stack:
             break
