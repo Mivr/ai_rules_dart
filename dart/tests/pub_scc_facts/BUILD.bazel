@@ -4,8 +4,8 @@ load(":pub_scc_facts_test.bzl", "pub_scc_facts_test_suite")
 pub_scc_facts_test_suite(name = "pub_scc_facts_test")
 
 # Guards that the pub cycle-planning facts digest covers the pubspec parser:
-# `_PARSER_SOURCE_LABELS` in `//dart/pub:extensions.bzl` must match the load
-# closure of `//dart/pub:yaml_parser.bzl`. Unsandboxed over the live tree,
+# `PARSER_SOURCE_LABELS` in `//dart/pub/private:parser_sources.bzl` must match
+# the load closure of `//dart/pub:yaml_parser.bzl`. Unsandboxed over the live tree,
 # like `//dart/tests:download_digest_guard_test`.
 dart_test(
     name = "parser_files_test",

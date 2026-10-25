@@ -8,6 +8,7 @@ load("//dart/pub:pub_lock_package.bzl", "pub_lock_git_package", "pub_lock_packag
 load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
 load("//dart/pub:pub_scan.bzl", "run_pub_archive_scans")
 load("//dart/pub:yaml_parser.bzl", "lock_package_error", "parse_pubspec_deps", "parse_pubspec_lock")
+load("//dart/pub/private:parser_sources.bzl", "PARSER_SOURCE_LABELS")
 load("//dart/pub/private:pub_repository.bzl", "pub_package")
 load("//dart/pub/private:pub_root_pin.bzl", "best_entry", "decl_lock_sha_conflict", "git_path_conflict", "git_ref_conflict", "git_version_error", "hosted_sha_conflict", "hosted_version_error", "select_all_explicit")
 load("//dart/pub/private:pub_scanner_sdk.bzl", "scanner_runtime_label")
@@ -15,25 +16,6 @@ load("//dart/pub/private:pub_scc_facts.bzl", "parser_schema", "read_scope_pubspe
 load("//dart/pub/private:scc.bzl", "compute_sccs", "package_dep_graph", "rewrite_vanished_spoke", "scc_repo_name")
 
 _SPOKE_PREFIX = "dart_pub"
-
-# Labels of the pubspec parser sources whose bytes key the cycle-planning
-# facts (see `parser_schema` in `//dart/pub/private:pub_scc_facts.bzl`). A
-# bare `//` label resolves in this extension's own repository, whatever module
-# name it is known by. The `parser files` guard test asserts this list matches
-# `yaml_parser.bzl`'s load closure, so a new load there cannot be missed here.
-_PARSER_SOURCE_LABELS = [
-    Label("//dart/pub:yaml_parser.bzl"),
-    Label("//dart/pub/private:yaml_chars.bzl"),
-    Label("//dart/pub/private:yaml_subset.bzl"),
-    Label("//dart/pub/private:yaml_text.bzl"),
-    Label("//dart/pub/private:yaml_escape.bzl"),
-    Label("//dart/pub/private:yaml_scalar.bzl"),
-    Label("//dart/pub/private:yaml_flow.bzl"),
-    Label("//dart/pub/private:yaml_fold.bzl"),
-    Label("//dart/pub/private:yaml_block_scalar.bzl"),
-    Label("//dart/pub/private:yaml_block.bzl"),
-    Label("//dart/pub/private:yaml_document.bzl"),
-]
 
 _package = tag_class(
     doc = "Declares one pub.dev package to download and materialize as a spoke repository, pinned by version and archive hash with its pub dependencies. A `package` tag from the root module wins over `package` tags for the same package from dependencies: a dependency's different version is dropped with a NOTE naming both versions. A root lock's git entry pins like a hosted one, and a root pin never hides a same-version sha256 conflict.",
@@ -116,7 +98,7 @@ def _parser_schema(ctx):
     Returns:
       The schema prefix every fact key of this evaluation carries.
     """
-    return parser_schema([ctx.read(label, watch = "no") for label in _PARSER_SOURCE_LABELS])
+    return parser_schema([ctx.read(label, watch = "no") for label in PARSER_SOURCE_LABELS])
 
 def _scope_pubspec_deps(ctx, scope_dir, hosted, git_pkgs):
     """Downloads each in-scope package and returns its sorted dependency names.

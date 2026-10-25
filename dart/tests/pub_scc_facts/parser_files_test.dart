@@ -7,8 +7,8 @@ import 'package:test/test.dart';
 ///
 /// Fact keys embed a digest of `dart/pub/yaml_parser.bzl` and every `.bzl`
 /// file it loads, transitively (see `parser_schema` in
-/// `dart/pub/private/pub_scc_facts.bzl` and `_PARSER_SOURCE_LABELS` in
-/// `dart/pub/extensions.bzl`). A new `load` in `yaml_parser.bzl` that is not
+/// `dart/pub/private/pub_scc_facts.bzl` and `PARSER_SOURCE_LABELS` in
+/// `dart/pub/private/parser_sources.bzl`). A new `load` in `yaml_parser.bzl` that is not
 /// added to the digested inputs would silently reuse facts the old parser
 /// recorded, so this test fails when the label list differs from the actual
 /// load closure. It runs unsandboxed over the live tree like
@@ -25,7 +25,8 @@ void main(List<String> args) {
         labels,
         closure,
         reason:
-            'update _PARSER_SOURCE_LABELS in dart/pub/extensions.bzl to '
+            'update PARSER_SOURCE_LABELS in '
+            'dart/pub/private/parser_sources.bzl to '
             'match the load closure of dart/pub/yaml_parser.bzl; '
             'closure=$closure labels=$labels',
       );
@@ -59,11 +60,11 @@ void main(List<String> args) {
 
     test('a label outside the list block is not digested', () {
       const extensions =
-          '_PARSER_SOURCE_LABELS = [\n'
+          'PARSER_SOURCE_LABELS = [\n'
           '    Label(":yaml_parser.bzl"),\n'
           ']\n'
           'other = Label(":elsewhere.bzl")\n';
-      expect(_labelsInBlock(extensions), ['dart/pub/yaml_parser.bzl']);
+      expect(_labelsInBlock(extensions), ['dart/pub/private/yaml_parser.bzl']);
     });
   });
 }
@@ -80,26 +81,27 @@ Set<String> _loadClosure(String root, String entry) {
   return _closureOf(files, entry);
 }
 
-/// The workspace-relative paths `_PARSER_SOURCE_LABELS` in extensions.bzl digests.
+/// The workspace-relative paths `PARSER_SOURCE_LABELS` in parser_sources.bzl digests.
 Set<String> _digestedLabels(String root) {
-  final text = File('$root/dart/pub/extensions.bzl').readAsStringSync();
+  final text = File('$root/dart/pub/private/parser_sources.bzl')
+      .readAsStringSync();
   return _labelsInBlock(text).toSet();
 }
 
-/// The `Label("...")` strings inside the `_PARSER_SOURCE_LABELS` block,
-/// resolved against package `dart/pub`.
+/// The `Label("...")` strings inside the `PARSER_SOURCE_LABELS` block,
+/// resolved against package `dart/pub/private`.
 List<String> _labelsInBlock(String extensions) {
-  final start = extensions.indexOf('_PARSER_SOURCE_LABELS = [');
+  final start = extensions.indexOf('PARSER_SOURCE_LABELS = [');
   if (start == -1) {
-    fail('no _PARSER_SOURCE_LABELS list in dart/pub/extensions.bzl');
+    fail('no PARSER_SOURCE_LABELS list in dart/pub/private/parser_sources.bzl');
   }
   final open = extensions.indexOf('[', start);
   final close = _matchingBracket(extensions, open);
-  if (close == -1) fail('the _PARSER_SOURCE_LABELS list never closes');
+  if (close == -1) fail('the PARSER_SOURCE_LABELS list never closes');
   final block = extensions.substring(open, close + 1);
   return [
     for (final m in RegExp(r'Label\("([^"]+)"\)').allMatches(block))
-      _resolveIn('dart/pub/extensions.bzl', m.group(1)!),
+      _resolveIn('dart/pub/private/parser_sources.bzl', m.group(1)!),
   ];
 }
 
