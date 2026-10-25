@@ -366,6 +366,45 @@ def _is_utf8_trail(byte):
     """Returns whether a one-byte string is a UTF-8 continuation byte."""
     return "\200" <= byte and byte <= "\277"
 
+def _utf8_lead_size(byte):
+    """Returns the trail count for a lead byte, or -1 when no sequence starts.
+
+    A stray continuation byte, a C0 or C1 lead and a lead past F4 start no
+    sequence, as none decodes.
+    """
+    if byte < "\302":
+        return -1
+    if byte < "\340":
+        return 1
+    if byte < "\360":
+        return 2
+    if byte < "\365":
+        return 3
+    return -1
+
+def _utf8_sequence_bad(content, i, size, n, byte):
+    """Returns whether the sequence at `i` breaks UTF-8.
+
+    A lead with missing or bad continuation bytes, an overlong E0 or F0
+    start, an ED start of a surrogate half, and an F4 start past U+10FFFF
+    all fail, as none decodes.
+    """
+    if i + size >= n:
+        return True
+    for k in range(1, size + 1):
+        if not _is_utf8_trail(content[i + k]):
+            return True
+    second = content[i + 1]
+    if byte == "\340" and second < "\240":
+        return True
+    if byte == "\360" and second < "\220":
+        return True
+    if byte == "\355" and "\240" <= second and second <= "\277":
+        return True
+    if byte == "\364" and "\217" < second:
+        return True
+    return False
+
 def _first_bad_utf8_line(content):
     """Returns the 1-based line of the first byte that breaks UTF-8, or 0.
 
@@ -397,32 +436,9 @@ def _first_bad_utf8_line(content):
             i += 1
         elif byte < "\300":
             return line
-        elif byte < "\302":
-            return line
         else:
-            size = 0
-            if byte < "\340":
-                size = 1
-            elif byte < "\360":
-                size = 2
-            elif byte < "\365":
-                size = 3
-            else:
-                return line
-            bad = i + size >= n
-            for k in range(1, size + 1):
-                if not bad and not _is_utf8_trail(content[i + k]):
-                    bad = True
-            if bad:
-                return line
-            second = content[i + 1]
-            if byte == "\340" and second < "\240":
-                return line
-            if byte == "\360" and second < "\220":
-                return line
-            if byte == "\355" and "\240" <= second and second <= "\277":
-                return line
-            if byte == "\364" and "\217" < second:
+            size = _utf8_lead_size(byte)
+            if size < 0 or _utf8_sequence_bad(content, i, size, n, byte):
                 return line
             i += size + 1
     return 0
@@ -640,6 +656,32 @@ def _marker_rest_problem(rest, idx):
         return "Mapping values are not allowed here at line %d" % idx
     return None
 
+def _collect_doc_line(line, idx, current, doc, state):
+    """Collects one raw line into the first document. Returns True when collection stops here."""
+    if line.startswith("---") and line[3:4] in ["", " ", "\t"]:
+        return _doc_dash_line(line, idx, current, doc, state)
+    if line.startswith("...") and line[3:4] in ["", " ", "\t"]:
+        return _doc_dots_line(line, idx, current, doc, state)
+    if doc["ended"]:
+        if _doc_tail_content(line):
+            state.problems.append("content after document end (...) at line %d" % idx)
+            return True
+        return False
+    if not doc["content"] and not doc["marker"] and not doc["ended"] and line.strip().startswith("%"):
+        if line.startswith("%"):
+            _directive_line(line, idx, doc, state)
+        else:
+            state.problems.append("indented directive at line %d" % idx)
+        current.append(line)
+        return False
+    current.append(line)
+    if _doc_content_line(line):
+        if doc["pending"]:
+            state.problems.append("directive without document start at line %d" % idx)
+            doc["pending"] = False
+        doc["content"] = True
+    return False
+
 def _first_document_lines(content, state):
     """Returns the lines of the first document with its `%TAG` prefixes.
 
@@ -666,32 +708,8 @@ def _first_document_lines(content, state):
     idx = 0
     for line in raw_lines:
         idx += 1
-        if line.startswith("---") and line[3:4] in ["", " ", "\t"]:
-            if _doc_dash_line(line, idx, current, doc, state):
-                return current, doc["tags"], doc["marker"]
-            continue
-        if line.startswith("...") and line[3:4] in ["", " ", "\t"]:
-            if _doc_dots_line(line, idx, current, doc, state):
-                return current, doc["tags"], doc["marker"]
-            continue
-        if doc["ended"]:
-            if _doc_tail_content(line):
-                state.problems.append("content after document end (...) at line %d" % idx)
-                return current, doc["tags"], doc["marker"]
-            continue
-        if not doc["content"] and not doc["marker"] and not doc["ended"] and line.strip().startswith("%"):
-            if line.startswith("%"):
-                _directive_line(line, idx, doc, state)
-            else:
-                state.problems.append("indented directive at line %d" % idx)
-            current.append(line)
-            continue
-        current.append(line)
-        if _doc_content_line(line):
-            if doc["pending"]:
-                state.problems.append("directive without document start at line %d" % idx)
-                doc["pending"] = False
-            doc["content"] = True
+        if _collect_doc_line(line, idx, current, doc, state):
+            return current, doc["tags"], doc["marker"]
     if doc["pending"]:
         state.problems.append("directive without document start at line %d" % len(raw_lines))
     return current, doc["tags"], doc["marker"]
@@ -1315,6 +1333,46 @@ def _block_fold_plain(raw, scan, fold, question_stops):
         return "break"
     return "take"
 
+def _block_fold_blank(raw, idx, scan, fold):
+    """Folds a blank continuation line. Returns True when it fails.
+
+    A blank-looking line with a bad blank survives as raw: the fold reports
+    it naming the line, as pub rejects it, instead of folding it as blank.
+    """
+    if raw.startswith("\t") and not (scan["single"] or scan["double"]):
+        fold["tab"] = True
+        return True
+    if not fold["poison"]:
+        if _bad_blank_index(raw) >= 0:
+            fold["items"].append((idx + 1, raw))
+        else:
+            fold["items"].append((idx + 1, ""))
+    return False
+
+def _block_fold_line(raw, idx, parent_indent, scan, fold, question_stops, state):
+    """Processes one unfolding continuation line. Returns "more", "fail" or "stop"."""
+    if _indent_width(raw) <= parent_indent:
+        return "stop"
+    if raw.startswith("\t"):
+        fold["tab"] = True
+        return "fail"
+    if _BOM in raw:
+        state.problems.append("byte-order mark at line %d is not supported" % (idx + 1))
+        fold["bom"] = True
+        return "fail"
+    action = _block_fold_plain(raw, scan, fold, question_stops)
+    if action == "take":
+        fold["items"].append((idx + 1, raw))
+        fold["consumed"] += 1
+        fold["seen"] = True
+        return "more"
+    if action == "comment":
+        fold["poison"] = True
+        return "more"
+    if action == "fail":
+        return "fail"
+    return "stop"
+
 def _block_fold_gather(lines, start, parent_indent, scan, fold, question_stops, state):
     """Gathers a scalar's continuation lines. Returns (next index, fail).
 
@@ -1332,18 +1390,9 @@ def _block_fold_gather(lines, start, parent_indent, scan, fold, question_stops, 
             break
         raw = lines[idx]
         if raw.strip() == "":
-            if raw.startswith("\t") and not (scan["single"] or scan["double"]):
-                fold["tab"] = True
+            if _block_fold_blank(raw, idx, scan, fold):
                 fail = idx
                 break
-            if not fold["poison"]:
-                if _bad_blank_index(raw) >= 0:
-                    # A blank-looking line with a bad blank survives as raw:
-                    # the fold reports it naming the line, as pub rejects
-                    # it, instead of folding it as a blank line.
-                    fold["items"].append((idx + 1, raw))
-                else:
-                    fold["items"].append((idx + 1, ""))
             idx += 1
             continue
         if scan["single"] or scan["double"]:
@@ -1352,28 +1401,11 @@ def _block_fold_gather(lines, start, parent_indent, scan, fold, question_stops, 
                 break
             idx += 1
             continue
-        if _indent_width(raw) <= parent_indent:
-            break
-        if raw.startswith("\t"):
-            fold["tab"] = True
+        outcome = _block_fold_line(raw, idx, parent_indent, scan, fold, question_stops, state)
+        if outcome == "fail":
             fail = idx
             break
-        if _BOM in raw:
-            state.problems.append("byte-order mark at line %d is not supported" % (idx + 1))
-            fold["bom"] = True
-            fail = idx
-            break
-        action = _block_fold_plain(raw, scan, fold, question_stops)
-        if action == "take":
-            fold["items"].append((idx + 1, raw))
-            fold["consumed"] += 1
-            fold["seen"] = True
-        elif action == "comment":
-            fold["poison"] = True
-        elif action == "fail":
-            fail = idx
-            break
-        else:
+        if outcome == "stop":
             break
         idx += 1
     return (idx, fail)
@@ -1824,6 +1856,60 @@ def _init_block_root(text, indent, anchors, stack, state, line):
         return root, False
     return _parse_scalar(text, anchors, state, line), True
 
+def _block_skip_line(raw, idx, first_line, state):
+    """Consumes a non-content line. Returns True when the line is skipped.
+
+    A bare mark line is blank-like at column 0, as pub skips it, and a
+    problem naming the line anywhere else, as pub rejects it. A tab never
+    indents: a line starting with a tab, and a content line with a tab in
+    its leading whitespace, are problems naming the line, as pub rejects
+    them, except on the file's first line, where they are separation
+    before the first token, as pub reads them. Only space and tab are
+    blanks: a vertical tab, form feed or U+001C to U+001F outside quotes
+    and comments is a problem naming the line, as pub rejects it.
+    """
+    if _BOM in raw and _is_bom_only_line(raw):
+        if _indent_width(raw) > 0:
+            state.problems.append("byte-order mark at line %d is not supported" % (idx + 1))
+        return True
+    if not (idx == 0 and first_line) and (raw.startswith("\t") or (raw.strip(" \t") != "" and "\t" in raw[:_indent_width(raw)])):
+        state.problems.append("tab indentation at line %d is not supported" % (idx + 1))
+        return True
+    if _bad_blank_index(raw) >= 0:
+        state.problems.append("control character at line %d is not supported" % (idx + 1))
+        return True
+    return False
+
+def _block_dispatch_line(cursor, env, root, pending):
+    """Parses one content line into the open containers. Returns (root, pending, idx, done).
+
+    `cursor` carries the line as {lines, idx, indent, text}; `env` carries
+    {anchors, stack, state}. `done` tells the caller to continue with the
+    next line: the pending value resolved without a container line to
+    place, the root scalar read, or the line stayed orphaned.
+    """
+    lines, idx, indent, text = cursor.lines, cursor.idx, cursor.indent, cursor.text
+    anchors, stack, state = env.anchors, env.stack, env.state
+    _close_block_containers(stack, indent, text, anchors)
+    if pending != None:
+        idx, skip = _resolve_pending(pending, struct(lines = lines, idx = idx, indent = indent, text = text), struct(anchors = anchors, stack = stack, state = state))
+        pending = None
+        if skip:
+            return (root, pending, idx, True)
+    if root == None and not stack:
+        root, is_scalar = _init_block_root(text, indent, anchors, stack, state, idx + 1)
+        if is_scalar:
+            return (root, pending, idx + 1, True)
+    if not stack:
+        _record_unreadable(state, idx, text)
+        return (root, pending, idx + 1, True)
+    frame = stack[-1]
+    if frame["kind"] == "map":
+        idx, pending = _map_line(lines, idx, indent, text, frame, anchors, state)
+    else:
+        idx, pending = _seq_line(lines, idx, indent, text, frame, anchors, stack, state)
+    return (root, pending, idx, False)
+
 def _parse_block(lines, state, first_line):
     """Parses the block-structured lines of one document into a value.
 
@@ -1853,35 +1939,7 @@ def _parse_block(lines, state, first_line):
         if idx >= len(lines):
             break
         raw = lines[idx]
-        if _BOM in raw and _is_bom_only_line(raw):
-            # A bare mark line is blank-like at column 0, as pub skips it,
-            # and a problem naming the line anywhere else, as pub rejects it.
-            if _indent_width(raw) > 0:
-                state.problems.append("byte-order mark at line %d is not supported" % (idx + 1))
-            idx += 1
-            continue
-        first_sep = idx == 0 and first_line
-        if not first_sep and (raw.startswith("\t") or (raw.strip(" \t") != "" and "\t" in raw[:_indent_width(raw)])):
-            # A tab never indents: a line starting with a tab, and a content
-            # line with a tab in its leading whitespace, are problems naming
-            # the line, as pub rejects them. On the file's first line they
-            # are separation before the first token, as pub reads them, so
-            # the first line of an unshifted document stays exempt. A
-            # whitespace-only line starting with spaces stays blank, as pub
-            # skips it, and deeper lines of a folded scalar never reach
-            # here, as the fold consumes them.
-            state.problems.append("tab indentation at line %d is not supported" % (idx + 1))
-            idx += 1
-            continue
-        if _bad_blank_index(raw) >= 0:
-            # Only space and tab are blanks: a vertical tab, form feed or
-            # U+001C to U+001F outside quotes and comments is a problem
-            # naming the line, as pub rejects it, at the end or start of a
-            # value, before a key, or on its own. Quoted scalars keep them
-            # as content, and comments hide them, as pub reads them.
-            # Deeper lines of a folded scalar never reach here, as the fold
-            # consumes them.
-            state.problems.append("control character at line %d is not supported" % (idx + 1))
+        if _block_skip_line(raw, idx, first_line, state):
             idx += 1
             continue
         indent, text = _block_line_text(raw)
@@ -1893,32 +1951,10 @@ def _parse_block(lines, state, first_line):
             idx += 1
             continue
         saw_content = True
-
-        # Close the containers that this line is not indented into.
-        _close_block_containers(stack, indent, text, anchors)
-
-        if pending != None:
-            idx, skip = _resolve_pending(pending, struct(lines = lines, idx = idx, indent = indent, text = text), struct(anchors = anchors, stack = stack, state = state))
-            pending = None
-            if skip:
-                continue
-
-        if root == None and not stack:
-            root, is_scalar = _init_block_root(text, indent, anchors, stack, state, idx + 1)
-            if is_scalar:
-                idx += 1
-                continue
-
-        if not stack:
-            _record_unreadable(state, idx, text)
-            idx += 1
+        cursor = struct(lines = lines, idx = idx, indent = indent, text = text)
+        root, pending, idx, done = _block_dispatch_line(cursor, struct(anchors = anchors, stack = stack, state = state), root, pending)
+        if done:
             continue
-
-        frame = stack[-1]
-        if frame["kind"] == "map":
-            idx, pending = _map_line(lines, idx, indent, text, frame, anchors, state)
-        else:
-            idx, pending = _seq_line(lines, idx, indent, text, frame, anchors, stack, state)
     if pending != None:
         _drop_pending_value(pending, anchors, state)
     for _ in range(len(stack) + 1):
