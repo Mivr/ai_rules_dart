@@ -3504,7 +3504,12 @@ def _flow_key_step(s, i, frame, anchors, state, line):
     return i + 1, True
 
 def _flow_item_step(s, i, frame, anchors, stack, state, line):
-    """Reads one nested collection or scalar flow token. Returns (next_i, ok)."""
+    """Reads one nested collection or scalar flow token. Returns (next_i, ok).
+
+    A map value that is itself a pair fails, as pub expects `,` or `}` after
+    a flow mapping value; a pair as a sequence item still reads, as pub
+    reads it.
+    """
     if s[i] in ["[", "{"]:
         stack.append(_flow_frame(s[i]))
         return i + 1, True
@@ -3518,6 +3523,12 @@ def _flow_item_step(s, i, frame, anchors, stack, state, line):
     if frame["kind"] == "map":
         _ianchor, _itag, irest, _ibad = _strip_value_prefix(token)
         entry = _is_flow_value_entry(irest)
+        if not entry:
+            _vkey, _vvalue, nested = _flow_pair_split(irest)
+            if nested:
+                state.problems.append("While parsing a flow mapping, expected ',' or '}' at line %d" % line)
+                _flow_add(frame, None, state, line)
+                return next_i, True
     else:
         entry = _is_flow_seq_entry(token)
     if entry:

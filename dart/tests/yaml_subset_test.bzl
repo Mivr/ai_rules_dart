@@ -330,6 +330,43 @@ def _flow_collection_test_impl(ctx):
     value, problems = document_value_and_problems("a: [1, 2\nb: 2\n", False)
     asserts.equals(env, {"a": None, "b": 2}, value)
     asserts.equals(env, [], problems)
+
+    # A flow mapping value that is itself a pair fails, while a pair as a
+    # sequence item and a quoted or glued colon read, as pub reads them
+    # (package:yaml 3.1.4 with the pinned SDK 3.13.5).
+    value, problems = document_value_and_problems("a: {x: y, p: q: r}\n", True)
+    asserts.equals(env, {"a": {"x": "y", "p": None}}, value)
+    asserts.equals(env, ["While parsing a flow mapping, expected ',' or '}' at line 1"], problems)
+    asserts.equals(
+        env,
+        ["While parsing a flow mapping, expected ',' or '}' at line 1"],
+        document_problems("a: {p: q: r}\n", True),
+    )
+    asserts.equals(
+        env,
+        ["While parsing a flow mapping, expected ',' or '}' at line 1"],
+        document_problems("a: {p : q : r}\n", True),
+    )
+    asserts.equals(
+        env,
+        ["While parsing a flow mapping, expected ',' or '}' at line 1"],
+        document_problems("a: {p: \"a\":1}\n", True),
+    )
+    asserts.equals(
+        env,
+        ["While parsing a flow mapping, expected ',' or '}' at line 1"],
+        document_problems("a: {p: &x q: r}\n", True),
+    )
+    asserts.equals(
+        env,
+        ["While parsing a flow mapping, expected ',' or '}' at line 1"],
+        document_problems("{p: q: r}\n", True),
+    )
+    asserts.equals(env, {"a": [{"p": "q"}]}, parse_document("a: [{p: q}]\n"))
+    asserts.equals(env, {"a": {"p": "q:r"}}, parse_document("a: {p: q:r}\n"))
+    asserts.equals(env, {"a": {"p": "q :r"}}, parse_document("a: {p: q :r}\n"))
+    asserts.equals(env, {"a": {"p": "q: r"}}, parse_document("a: {p: \"q: r\"}\n"))
+    asserts.equals(env, {"a": [{"b": "c"}]}, parse_document("a: [b: c]\n"))
     return unittest.end(env)
 
 def _flow_quote_start_test_impl(ctx):

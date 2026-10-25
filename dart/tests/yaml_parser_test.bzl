@@ -891,6 +891,12 @@ def _parse_pubspec_unsupported_test_impl(ctx):
     err = parse_pubspec_document_error(expl, "//:pubspec.yaml")
     asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
     asserts.true(env, "not supported" in err and "explicit" in err)
+
+    # A flow mapping value that is itself a pair fails naming the pubspec
+    # and the line, as pub rejects it.
+    bad = "name: x\nenvironment:\n  sdk: ^3.0.0\ndescription: {a: b: c}\n"
+    err = parse_pubspec_document_error(bad, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
     return unittest.end(env)
 
 def _parse_pubspec_folded_flow_test_impl(ctx):
