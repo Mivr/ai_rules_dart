@@ -842,6 +842,54 @@ jobs:
           fi
           bazel build //:app 2>&1 | grep -F -q 'pub package "cycle_b_evil": hard-link "lib/evil.dart" points at "../outside.txt"'
           echo "OK: expected cycle hard-link error detected"
+      # `e2e/pub_lock_scc/spoke_facts` is a nested red-by-design workspace:
+      # the committed MODULE.bazel.lock carries wrong cycle-planning facts
+      # for two spokes (`spoke_a`'s fact drops its edge to `spoke_b`,
+      # `spoke_d`'s fact gains a fake edge to `spoke_c`), and the spoke
+      # repositories recorded beside them carry the same wrong
+      # `planned_deps`. The step points both locks' FIXTURES_ROOT placeholder
+      # at the fixtures directory, expects each spoke's fetch to fail naming
+      # the package with the planned and the real names, then applies the
+      # documented recovery (drop the pub extension's `facts` and
+      # `moduleExtensions` entries, delete the output-base lock) and builds
+      # the app green. Both locks are restored on exit.
+      # `--lockfile_mode=error` takes the lock as-is: with the fix each case
+      # fails at fetch, while on the base commit the lock is stale there, so
+      # the same commands fail without the package message.
+      - name: pub_lock_scc_spoke_facts — expect wrong planning facts to fail the spoke fetches
+        working-directory: e2e/pub_lock_scc/spoke_facts
+        run: |
+          trap 'git checkout -- pubspec.spoke.lock MODULE.bazel.lock' EXIT
+          fixtures="$(cd ../fixtures && pwd)"
+          sed -i "s|file://FIXTURES_ROOT|file://$fixtures|" pubspec.spoke.lock MODULE.bazel.lock
+          if bazel build @spokes//:spoke_a --lockfile_mode=error 2>/dev/null; then
+            echo "ERROR: build should have failed on the dropped planned edge"
+            exit 1
+          fi
+          bazel build @spokes//:spoke_a --lockfile_mode=error 2>&1 | grep -F -q 'package "spoke_a" lists different dependencies than cycle planning used (planned [], pubspec [spoke_b])'
+          echo "OK: expected dropped-edge spoke failure detected"
+          if bazel build @spokes//:spoke_d --lockfile_mode=error 2>/dev/null; then
+            echo "ERROR: build should have failed on the fake planned edge"
+            exit 1
+          fi
+          bazel build @spokes//:spoke_d --lockfile_mode=error 2>&1 | grep -F -q 'package "spoke_d" lists different dependencies than cycle planning used (planned [spoke_c], pubspec [])'
+          echo "OK: expected fake-edge spoke failure detected"
+          python3 - <<'EOF'
+          import json
+          lock = json.load(open('MODULE.bazel.lock'))
+          for section in ('facts', 'moduleExtensions'):
+              for key in [key for key in lock[section] if key.endswith('%pub')]:
+                  if 'spokes__' in json.dumps(lock[section][key]) or '/spoke_' in json.dumps(lock[section][key]):
+                      del lock[section][key]
+          json.dump(lock, open('MODULE.bazel.lock', 'w'), indent=2, sort_keys=True)
+          open('MODULE.bazel.lock', 'a').write('\n')
+          EOF
+          # The output-base copy exists only if a previous evaluation wrote
+          # one; the red builds above fail before writing it on a clean
+          # runner, so the removal must not fail when it is absent.
+          rm -f "$(bazel info output_base)/MODULE.bazel.lock"
+          bazel build //:app
+          echo "OK: documented recovery rebuilds green with the real names"
       # `e2e/pub_scanner_intruder` pins the scanner's SDK address: the
       # `toolchain_intruder` module tags `dart.toolchain` and is listed ahead
       # of rules_dart, so resolving the SDK by module order would fetch it
