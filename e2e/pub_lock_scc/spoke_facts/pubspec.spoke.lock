@@ -1,8 +1,8 @@
 # Local-registry lock for the spoke-facts e2e: `spoke_a` depends on
 # `spoke_b`, while `spoke_b`, `spoke_c`, and `spoke_d` have no dependencies.
-# The committed MODULE.bazel.lock wrongs the recorded facts for `spoke_a`
-# (dropped edge) and `spoke_d` (fake edge); see MODULE.bazel. The fixtures
-# live in e2e/pub_lock_scc/fixtures/ (served over file://; the url's
+# The committed MODULE.bazel.lock records these real facts; see MODULE.bazel
+# for how CI wrongs them in place to exercise the spoke-mismatch check. The
+# fixtures live in e2e/pub_lock_scc/fixtures/ (served over file://; the url's
 # FIXTURES_ROOT placeholder is rewritten to the absolute path before
 # building, and restored afterwards).
 packages:

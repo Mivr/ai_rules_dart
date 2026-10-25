@@ -396,12 +396,12 @@
         "path",
         "term_glyph"
       ],
-      "pub.scc.v2.10f8604e4ce6acce0001c30b/hosted/spoke_a/1.0.0/26a4cd7fe1698e652cc0b66e2fd99df428243065e2e2da2a843005e3daf5b61a": [],
+      "pub.scc.v2.10f8604e4ce6acce0001c30b/hosted/spoke_a/1.0.0/26a4cd7fe1698e652cc0b66e2fd99df428243065e2e2da2a843005e3daf5b61a": [
+        "spoke_b"
+      ],
       "pub.scc.v2.10f8604e4ce6acce0001c30b/hosted/spoke_b/1.0.0/dcd83139844dbda357ff5ad531cc28ff641d4507559bd9db72f2f3ab523a1c33": [],
       "pub.scc.v2.10f8604e4ce6acce0001c30b/hosted/spoke_c/1.0.0/8a8c2efb4e740ec60e23b1a8faa16c91a6fd4756445fddc9d25fd178d79edad6": [],
-      "pub.scc.v2.10f8604e4ce6acce0001c30b/hosted/spoke_d/1.0.0/7c0db56cdfd2f151a68e6610a95008ce1648cceebfbbb5415ef4471530176268": [
-        "spoke_c"
-      ],
+      "pub.scc.v2.10f8604e4ce6acce0001c30b/hosted/spoke_d/1.0.0/7c0db56cdfd2f151a68e6610a95008ce1648cceebfbbb5415ef4471530176268": [],
       "pub.scc.v2.10f8604e4ce6acce0001c30b/hosted/sqlite3/3.7.1/144132790ec1947fad9f3ddceffd0af2ab80a1f0d1e81a4d094ee6707ec3df0b": [
         "code_assets",
         "collection",
@@ -11411,7 +11411,9 @@
               ],
               "package_name": "spoke_a",
               "plan_covers_package": true,
-              "planned_deps": [],
+              "planned_deps": [
+                "spoke_b"
+              ],
               "scc_targets": {},
               "sha256": "26a4cd7fe1698e652cc0b66e2fd99df428243065e2e2da2a843005e3daf5b61a",
               "version": "1.0.0"
@@ -11477,9 +11479,7 @@
               ],
               "package_name": "spoke_d",
               "plan_covers_package": true,
-              "planned_deps": [
-                "spoke_c"
-              ],
+              "planned_deps": [],
               "scc_targets": {},
               "sha256": "7c0db56cdfd2f151a68e6610a95008ce1648cceebfbbb5415ef4471530176268",
               "version": "1.0.0"
@@ -11497,33 +11497,11 @@
         },
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
-          "FILE:@@//pubspec.spoke.lock 86e6bd18b105aa0a95a1f74c9ca4b1122352e527904b313308efccdc098e2903",
+          "FILE:@@//pubspec.spoke.lock f44f183e499ff07ced2e88a6aec3e9f6cb188c7baf9c8153effdc72f697a5e27",
           "FILE:@@ai_rules_dart+//dart/ext/pubspec.lock ae866f3a1d4ebad9a74f9b9efab33c74dfbf904ae0d69dfe94192029d4955188",
           "REPO_MAPPING:ai_rules_dart+,dart_linux-x64 ai_rules_dart++dart+dart_linux-x64"
         ],
         "usagesDigest": "ITYrmzHGm7ohGRiI8LtFRnnPjctIIkr3s5Pw/k1A1J4="
-      }
-    },
-    "@@pybind11_bazel+//:internal_configure.bzl%internal_configure_extension": {
-      "general": {
-        "bzlTransitiveDigest": "BsgERqYptkJeeC8wFaLj251IoTZTSy/58WA6kVp0q8I=",
-        "generatedRepoSpecs": {
-          "pybind11": {
-            "attributes": {
-              "build_file": "@@pybind11_bazel+//:pybind11-BUILD.bazel",
-              "strip_prefix": "pybind11-2.12.0",
-              "urls": [
-                "https://github.com/pybind/pybind11/archive/v2.12.0.zip"
-              ]
-            },
-            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive"
-          }
-        },
-        "recordedInputs": [
-          "REPO_MAPPING:pybind11_bazel+,bazel_tools bazel_tools",
-          "FILE:@@pybind11_bazel+//MODULE.bazel e6f4c20442eaa7c90d7190d8dc539d0ab422f95c65a57cc59562170c58ae3d34"
-        ],
-        "usagesDigest": "D1r3lfzMuUBFxgG8V6o0bQTLMk3GkaGOaPzw53wrwyw="
       }
     },
     "@@rules_kotlin+//src/main/starlark/core/repositories:bzlmod_setup.bzl%rules_kotlin_extensions": {

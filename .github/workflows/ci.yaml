@@ -842,37 +842,77 @@ jobs:
           fi
           bazel build //:app 2>&1 | grep -F -q 'pub package "cycle_b_evil": hard-link "lib/evil.dart" points at "../outside.txt"'
           echo "OK: expected cycle hard-link error detected"
-      # `e2e/pub_lock_scc/spoke_facts` is a nested red-by-design workspace:
-      # the committed MODULE.bazel.lock carries wrong cycle-planning facts
-      # for two spokes (`spoke_a`'s fact drops its edge to `spoke_b`,
-      # `spoke_d`'s fact gains a fake edge to `spoke_c`), and the spoke
-      # repositories recorded beside them carry the same wrong
-      # `planned_deps`. The step points both locks' FIXTURES_ROOT placeholder
-      # at the fixtures directory, expects each spoke's fetch to fail naming
-      # the package with the planned and the real names, then applies the
-      # documented recovery (drop the pub extension's `facts` and
+      # `e2e/pub_lock_scc/spoke_facts` is a nested green workspace with a
+      # file:// fixture registry: `spoke_a` depends on `spoke_b`, while
+      # `spoke_b`, `spoke_c` and `spoke_d` have no dependencies. The step
+      # points the pubspec lock's FIXTURES_ROOT placeholder at the fixtures
+      # directory, builds the app green so the lock records the real
+      # cycle-planning facts, then corrupts the recorded facts for two
+      # spokes (`spoke_a`'s fact drops its edge to `spoke_b`, `spoke_d`'s
+      # fact gains a fake edge to `spoke_c`) and reorders the pubspec lock
+      # entries so the extension evaluates again and reads the facts back.
+      # Planning then leaves spokes whose fetches must fail naming the
+      # package with the planned and the real names: a dropped edge fails
+      # here instead of failing analysis with a bare target cycle, and a
+      # fake edge fails instead of passing silently. The step finishes with
+      # the documented recovery (drop the pub extension's `facts` and
       # `moduleExtensions` entries, delete the output-base lock) and builds
-      # the app green. Both locks are restored on exit.
-      # `--lockfile_mode=error` takes the lock as-is: with the fix each case
-      # fails at fetch, while on the base commit the lock is stale there, so
-      # the same commands fail without the package message.
+      # the app green again. The pubspec lock and the lockfile are restored
+      # on exit. On the base commit the corrupted facts heal when the
+      # extension re-evaluates, so the red builds pass and the step fails
+      # there.
       - name: pub_lock_scc_spoke_facts — expect wrong planning facts to fail the spoke fetches
         working-directory: e2e/pub_lock_scc/spoke_facts
         run: |
+          fail_with_output() {
+            echo "ERROR: $1 not found; full output:"
+            printf '%s\n' "$out"
+            exit 1
+          }
           trap 'git checkout -- pubspec.spoke.lock MODULE.bazel.lock' EXIT
           fixtures="$(cd ../fixtures && pwd)"
-          sed -i "s|file://FIXTURES_ROOT|file://$fixtures|" pubspec.spoke.lock MODULE.bazel.lock
-          if bazel build @spokes//:spoke_a --lockfile_mode=error 2>/dev/null; then
+          sed -i "s|file://FIXTURES_ROOT|file://$fixtures|" pubspec.spoke.lock
+          bazel build //:app
+          echo "OK: app builds green with the real facts recorded"
+          python3 - <<'EOF'
+          import json, re
+          lock = json.load(open('MODULE.bazel.lock'))
+          ext = [k for k, v in lock['facts'].items() if any('/spoke_' in f for f in v)]
+          assert len(ext) == 1, ext
+          facts = lock['facts'][ext[0]]
+          for name, want in (('spoke_a', []), ('spoke_d', ['spoke_c'])):
+              keys = [k for k in facts if '/%s/' % name in k]
+              assert len(keys) == 1, (name, keys)
+              facts[keys[0]] = want
+          json.dump(lock, open('MODULE.bazel.lock', 'w'), indent=2, sort_keys=True)
+          open('MODULE.bazel.lock', 'a').write('\n')
+          text = open('pubspec.spoke.lock').read()
+          head, sep, rest = text.partition('packages:\n')
+          assert sep, 'packages block not found'
+          pkg_part, tail_sep, tail = rest.partition('\nsdks:')
+          assert tail_sep, 'sdks block not found'
+          stanzas = re.split(r'(?m)^(  spoke_[a-d]:)$', pkg_part)
+          assert len(stanzas) == 9, len(stanzas)
+          # The partition above consumed the newline ending the last stanza
+          # body, so normalize every body to exactly one trailing newline.
+          pairs = [(stanzas[i], stanzas[i + 1].rstrip('\n') + '\n') for i in range(1, 8, 2)]
+          pairs.reverse()
+          open('pubspec.spoke.lock', 'w').write(head + sep + ''.join(h + b for h, b in pairs) + '\n' + 'sdks:' + tail)
+          print('facts wronged and pubspec entries reordered')
+          EOF
+          if out=$(bazel build @spokes//:spoke_a 2>&1); then
             echo "ERROR: build should have failed on the dropped planned edge"
+            printf '%s\n' "$out"
             exit 1
           fi
-          bazel build @spokes//:spoke_a --lockfile_mode=error 2>&1 | grep -F -q 'package "spoke_a" lists different dependencies than cycle planning used (planned [], pubspec [spoke_b])'
+          printf '%s\n' "$out" | grep -F -q 'package "spoke_a" lists different dependencies than cycle planning used (planned [], pubspec [spoke_b])' || fail_with_output "dropped-edge error"
           echo "OK: expected dropped-edge spoke failure detected"
-          if bazel build @spokes//:spoke_d --lockfile_mode=error 2>/dev/null; then
+          if out=$(bazel build @spokes//:spoke_d 2>&1); then
             echo "ERROR: build should have failed on the fake planned edge"
+            printf '%s\n' "$out"
             exit 1
           fi
-          bazel build @spokes//:spoke_d --lockfile_mode=error 2>&1 | grep -F -q 'package "spoke_d" lists different dependencies than cycle planning used (planned [spoke_c], pubspec [])'
+          printf '%s\n' "$out" | grep -F -q 'package "spoke_d" lists different dependencies than cycle planning used (planned [spoke_c], pubspec [])' || fail_with_output "fake-edge error"
           echo "OK: expected fake-edge spoke failure detected"
           python3 - <<'EOF'
           import json

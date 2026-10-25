@@ -12,32 +12,30 @@ use_repo(dart, "dart_toolchains")
 
 register_toolchains("@dart_toolchains//:all")
 
-# Red-by-design: the committed MODULE.bazel.lock carries wrong
-# cycle-planning facts for two spokes, and the spoke repositories recorded
-# beside them carry the same wrong `planned_deps`. Exercise it with
-# `--lockfile_mode=error` so the lock is taken as-is: on the base commit the
-# build fails because the lock is stale there, while with the fix each case
-# below fails at fetch, naming the package, instead of failing analysis with
-# a bare target cycle (in default mode the base commit would instead heal the
-# lock and pass, which is why the flag matters).
+# Green workspace: the committed MODULE.bazel.lock carries the real
+# cycle-planning facts (`spoke_a` -> [`spoke_b`], the rest no dependencies),
+# so `bazel build //:app` (after rewriting the FIXTURES_ROOT placeholder, see
+# below) passes. The spoke-mismatch check is exercised by CI
+# (.github/workflows/ci.yaml, step `pub_lock_scc_spoke_facts`), which corrupts
+# the recorded facts in place and rebuilds: each case below must then fail at
+# fetch, naming the package, instead of failing analysis with a bare target
+# cycle (or, for the fake edge, passing silently with the fake fact
+# re-recorded).
 #
-# - `spoke_a` really depends on `spoke_b`, but `spoke_a`'s fact says [].
-#   Planning sees no cycle and leaves spokes; `spoke_a`'s fetch fails
-#   naming the package instead of failing analysis with a bare target cycle:
+# - `spoke_a` really depends on `spoke_b`: with its fact wronged to [], planning
+#   sees no cycle and leaves spokes; `spoke_a`'s fetch fails naming the package:
 #
-#     bazel build @spokes//:spoke_a --lockfile_mode=error
-#     # Error in fail: pub_lock_package "ai_rules_dart++pub+spokes__spoke_a":
-#     # package "spoke_a" lists different dependencies than cycle planning
-#     # used (planned [], pubspec [spoke_b]). ...
+#     Error in fail: pub_lock_package "ai_rules_dart++pub+spokes__spoke_a":
+#     package "spoke_a" lists different dependencies than cycle planning
+#     used (planned [], pubspec [spoke_b]). ...
 #
-# - `spoke_d` really has no dependencies, but its fact says [`spoke_c`] with
-#   no cycle resulting. The build would pass with the fake fact re-recorded;
-#   `spoke_d`'s fetch fails naming the package instead:
+# - `spoke_d` really has no dependencies: with its fact wronged to [`spoke_c`]
+#   (no cycle resulting) the build would pass with the fake fact re-recorded;
+#   instead `spoke_d`'s fetch fails naming the package:
 #
-#     bazel build @spokes//:spoke_d --lockfile_mode=error
-#     # Error in fail: pub_lock_package "ai_rules_dart++pub+spokes__spoke_d":
-#     # package "spoke_d" lists different dependencies than cycle planning
-#     # used (planned [spoke_c], pubspec []). ...
+#     Error in fail: pub_lock_package "ai_rules_dart++pub+spokes__spoke_d":
+#     package "spoke_d" lists different dependencies than cycle planning
+#     used (planned [spoke_c], pubspec []). ...
 #
 # Both failures name the package, list the planned and the real names, and
 # give the lockfile recovery step. Recovering (remove the pub extension's
