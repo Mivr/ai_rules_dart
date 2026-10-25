@@ -132,9 +132,12 @@ Supported:
   its raw text, as pub reads them.
 - the tags !!str, !!int, !!float, !!bool, !!null, !!seq and !!map, which
   convert as pub converts them: a value that does not resolve fails naming
-  the line, as pub rejects it. Only true, True, TRUE, false, False and
-  FALSE convert under `!!bool`, and an empty scalar reads null under
-  `!!null`, as pub reads them. A `!!seq` or `!!map` tag reads a matching
+  the line, as pub rejects it. `!!int` and `!!float` convert through the
+  scalar text rather than the resolved value, so an int node reads 12 under
+  `!!int` and 12.0 under `!!float` while `1_000`, `0X1F`, `0x10` under
+  `!!float` and a lone character under `!!float` fail, as pub reads them.
+  Only true, True, TRUE, false, False and FALSE convert under `!!bool`, and
+  an empty scalar reads null under `!!null`, as pub reads them. A `!!seq` or `!!map` tag reads a matching
   collection, fails another collection as an invalid tag for its kind, and
   fails any other node as an undefined tag; any other `!!` tag is an
   undefined tag, and a named handle and a verbatim tag are undefined-handle
@@ -208,7 +211,16 @@ testing, so the projections are unaffected on real pubspec files:
   YAML 1.2 defines no merge keys.
 - floats past the double range read as infinity, as pub reads them
   (package:yaml 3.1.4 with the pinned SDK 3.13.5): only a finite value
-  reaches the conversion, so finite values convert exactly as before.
+  reaches the conversion, so finite values convert exactly as before. A
+  decimal past the int64 range reads as a double, overflowing to infinity,
+  as pub reads it; a decimal with a `_` separator past the range stays a
+  string, as pub reads it. A hex value wraps modulo 2^64 into the signed
+  range and past 2^64-1 fails, and an octal past 2^63-1 fails, as pub reads
+  them; a hex or octal with a `_` separator stays a string, as pub reads
+  it. Only the exact `.inf` and `.nan` casings read, so other casings stay
+  strings now, as pub reads them. `1.e5` and `.5e5` read as doubles now, as
+  pub reads them. `1.` and `.5` stay strings and `1_000`, `0X1F` and `0O17`
+  read as before; pub reads some differently (out of scope: scalar typing).
 - `%TAG` handles are ignored, so a tag written through one reads as untagged;
   yaml.bzl resolves it. Other unknown tags read as untagged in both.
 - duplicate mapping keys fail; yaml.bzl's default non-strict mode silently
@@ -2341,30 +2353,48 @@ def _clone(value):
 def _apply_int_tag(value, raw, state, line):
     """Applies a `!!int` tag. Returns the value, or None with a problem naming the line.
 
-    An int reads as is and a string naming one converts, as pub reads them;
+    Pub parses the scalar text rather than the resolved value, so an int
+    node converts through its raw text: `!!int 12` reads 12 while `!!int
+    1_000`, `!!int 0x10` with a separator, or `!!int 0X1F` fail, as pub reads
+    them. A quoted scalar converts through its content, as pub reads it;
     anything else is an invalid int scalar problem naming the line, as pub
     rejects it.
     """
-    if type(value) == "int":
-        return value
+    text = None
     if type(value) == "string":
-        parsed = _parse_int_text(value)
+        text = value
+    elif type(value) == "int" and type(raw) == "string":
+        text = raw
+    if text != None:
+        parsed = _parse_int_text(text)
         if parsed != None:
             return parsed
+        state.problems.append("Invalid int scalar at line %d" % line)
+        return None
+    if type(value) == "int":
+        return value
     state.problems.append("Invalid int scalar at line %d" % line)
     return None
 
 def _apply_float_tag(value, raw, state, line):
     """Applies a `!!float` tag. Returns the value, or None with a problem naming the line.
 
-    A float reads as is and a float-shaped string converts, as pub reads
-    them; an int node or an int-shaped string is an invalid float scalar
-    problem naming the line, as pub rejects it (package:yaml crashes on it).
+    A float reads as is; pub parses any other scalar's text rather than its
+    resolved value, so an int node converts through its raw text: `!!float
+    12` reads 12.0 while `!!float 0x10` or `!!float 1_000` fail, as pub reads
+    them. A quoted scalar converts through its content, as pub reads it;
+    anything else is an invalid float scalar problem naming the line, as pub
+    rejects it (package:yaml crashes on it).
     """
     if type(value) == "float":
         return value
+    text = None
     if type(value) == "string":
-        parsed = _parse_float_text(value)
+        text = value
+    elif type(value) == "int" and type(raw) == "string":
+        text = raw
+    if text != None:
+        parsed = _parse_float_text(text)
         if parsed != None:
             return parsed
     state.problems.append("Invalid float scalar at line %d" % line)
@@ -2465,23 +2495,40 @@ def _tag_name(tag):
         return tag[1:]
     return None
 
-def _parse_numeric_text(s, lower, num):
-    """Parses an int, based int, infinity, NaN or float, or returns `s` unchanged."""
+def _parse_numeric_text(s, num):
+    """Parses an int, based int, infinity, NaN or float, or returns `s` unchanged.
+
+    A decimal past the int64 range reads as a double, overflowing to
+    infinity, as pub reads it (int.tryParse, then double.tryParse); a decimal
+    with a `_` separator past the range stays a string, as pub reads it. A
+    hex or octal with a `_` separator stays a string too, as pub reads it,
+    while an over-range hex or octal without one stays a string through the
+    reader below. Only the exact `.inf` and `.nan` casings read, as pub reads
+    them. The dotted shape is unchanged: `1.` and `.5` stay strings, as read
+    before.
+    """
     if _is_int_digits(num):
-        return int(num)
+        parsed = _capped_decimal_int(num)
+        if parsed != None:
+            return parsed
+        if "_" in s:
+            return s
+        return _safe_float(num)
     if len(num) > 2 and num[0:2].lower() == "0x":
+        if "_" in s:
+            return s
         parsed = _parse_based_int(num, 16)
         return parsed if parsed != None else s
     if len(num) > 2 and num[0:2].lower() == "0o":
+        if "_" in s:
+            return s
         parsed = _parse_based_int(num, 8)
         return parsed if parsed != None else s
-    if lower in [".inf", "+.inf"]:
-        return float("inf")
-    if lower == "-.inf":
-        return float("-inf")
-    if lower == ".nan":
+    if s in [".inf", ".Inf", ".INF", "+.inf", "+.Inf", "+.INF", "-.inf", "-.Inf", "-.INF"]:
+        return float("-inf") if s[0] == "-" else float("inf")
+    if s in [".nan", ".NaN", ".NAN"]:
         return float("nan")
-    scientific = _parse_scientific_float(num)
+    scientific = _parse_scientific_float(s)
     if scientific != None:
         return scientific
     if num.count(".") == 1:
@@ -2671,11 +2718,78 @@ def _parse_nonflow(s, anchors, state, line):
         return True
     if lower == "false":
         return False
-    return _parse_numeric_text(s, lower, num)
+    return _parse_numeric_text(s, num)
 
 def _is_int_digits(text):
     """True for `123`, `+123` and `-123`."""
     return text.isdigit() or (len(text) > 1 and text[0] in ["-", "+"] and text[1:].isdigit())
+
+# The int64 and uint64 bounds bounding number parsing, as pub parses into
+# 64-bit integers (package:yaml 3.1.4 with the pinned SDK 3.13.5).
+_INT64_MAX_TEXT = "9223372036854775807"
+_INT64_MIN_TEXT = "9223372036854775808"
+_INT64_MAX = 9223372036854775807
+_UINT64_MAX = 18446744073709551615
+_INT64_SPAN = 9223372036854775808
+_UINT64_SPAN = 18446744073709551616
+
+def _rstrip_scalar_ws(text):
+    """Removes trailing spaces, tabs and line breaks from a scalar text.
+
+    `double.tryParse` and `int.tryParse` tolerate that padding, so a tagged
+    scalar with trailing padding converts as pub converts it; a leading space
+    never reaches either, as pub rejects it before parsing.
+    """
+    end = len(text)
+    for _ in range(len(text)):
+        if end <= 0 or text[end - 1] not in [" ", "\t", "\n", "\r"]:
+            break
+        end -= 1
+    return text[:end]
+
+def _is_dotted_mantissa(whole, frac):
+    """True for a dotted mantissa with digits on at least one side of the point.
+
+    Either side may be empty and the whole side may be a bare sign, as pub
+    reads `1.`, `.5` and `+.5` through double.tryParse; both sides empty is
+    not a number, as pub reads it.
+    """
+    body = whole[1:] if whole[:1] in ["-", "+"] else whole
+    if body != "" and not body.isdigit():
+        return False
+    if frac != "" and not frac.isdigit():
+        return False
+    return body != "" or frac != ""
+
+def _canonical_dotted_float(whole, frac):
+    """Rewrites a dotted mantissa with digits on one side into `d.d` shape."""
+    body = whole[1:] if whole[:1] in ["-", "+"] else whole
+    if body == "":
+        body = "0"
+    if frac == "":
+        frac = "0"
+    if whole[:1] == "-":
+        return "-" + body + "." + frac
+    return body + "." + frac
+
+def _capped_decimal_int(s):
+    """The decimal int named by int-shaped `s`, or None past the int64 range.
+
+    The magnitude is compared as text so no unbounded conversion reads a
+    value pub refuses, as pub reads it (int.tryParse).
+    """
+    neg = s[:1] == "-"
+    digits = s[1:] if s[:1] in ["-", "+"] else s
+    digits = digits.lstrip("0")
+    if digits == "":
+        return 0
+    if len(digits) > 19:
+        return None
+    if len(digits) == 19:
+        limit = _INT64_MIN_TEXT if neg else _INT64_MAX_TEXT
+        if digits > limit:
+            return None
+    return int(s)
 
 def _is_decimal_part(text):
     """True for the part before a decimal point, which may be a bare sign."""
@@ -2700,11 +2814,13 @@ def _normalize_decimal_number(s):
     return "".join(out)
 
 def _parse_scientific_float(text):
-    """Parses `1e3`, `1.5E-3` and similar, or returns None."""
-    normalized = _normalize_decimal_number(text)
-    if normalized == None:
-        return None
-    s = normalized.lower()
+    """Parses `1e3`, `1.5E-3`, `1.e5` and `.5e5`, or returns None.
+
+    The mantissa is an int shape or a dotted shape with digits on at least
+    one side of the point, as pub reads it (double.tryParse); a `_`
+    separator is not a digit, as pub reads it.
+    """
+    s = text.lower()
     e = s.find("e")
     if e < 0:
         return None
@@ -2718,72 +2834,103 @@ def _parse_scientific_float(text):
     elif not right.isdigit():
         return None
     if _is_int_digits(left):
-        return _safe_float(normalized)
+        return _safe_float(text[1:] if text[:1] == "+" else text)
     if left.count(".") == 1:
         whole, frac = left.split(".")
-        if _is_decimal_part(whole) and frac.isdigit():
-            return _safe_float(normalized)
+        if _is_dotted_mantissa(whole, frac):
+            return _safe_float(text[1:] if text[:1] == "+" else text)
     return None
 
 def _parse_based_int(text, base):
-    """Parses `0x` (base 16) or `0o` (base 8) digits, with `_` separators."""
+    """Parses `0x` (base 16) or `0o` (base 8) digits, or returns None.
+
+    Only a lowercase prefix routes here and digits may be either case, as pub
+    reads them (int.tryParse); a `_` separator is not a digit, as pub reads
+    it. A hex value wraps modulo 2^64 into the signed range and past
+    2^64-1 fails, while an octal past 2^63-1 fails, as pub reads them.
+    """
     s = text.lower()[2:]
     if s == "":
         return None
-    normalized = []
-    prev_digit = False
-    for i in range(len(s)):
-        ch = s[i]
-        if ch == "_":
-            if i == 0 or i == len(s) - 1 or not prev_digit:
-                return None
-            nxt_pos = _HEX_DIGITS.find(s[i + 1])
-            if nxt_pos < 0 or nxt_pos >= base:
-                return None
-            prev_digit = False
-            continue
+    total = 0
+    for ch in s.elems():
         pos = _HEX_DIGITS.find(ch)
         if pos < 0 or pos >= base:
             return None
-        normalized.append(ch)
-        prev_digit = True
-    total = 0
-    for ch in normalized:
-        total = total * base + _HEX_DIGITS.find(ch)
+        total = total * base + pos
+        if total > _UINT64_MAX or (base == 8 and total > _INT64_MAX):
+            return None
+    if base == 16 and total >= _INT64_SPAN:
+        total -= _UINT64_SPAN
     return total
 
 def _parse_int_text(text):
-    """The integer named by a `!!int` value, or None."""
-    s = _normalize_decimal_number(text.strip())
-    if s == None:
+    """The integer named by a `!!int` value, or None.
+
+    Mirrors package:yaml number parsing with floats disallowed: trailing
+    padding reads through int.tryParse while a leading space never reaches
+    it, as pub reads them. Only a lowercase `0x` or `0o` prefix reads as hex
+    or octal, a `_` separator never reads, and a decimal past the int64 range
+    fails, as pub reads them.
+    """
+    s = _rstrip_scalar_ws(text)
+    if s == "":
         return None
-    if _is_int_digits(s):
-        return int(s)
-    if len(s) > 2 and s[0:2].lower() == "0x":
+    if len(s) == 1:
+        return int(s) if s.isdigit() else None
+    if s[0] == "0" and s[1] == "x":
         return _parse_based_int(s, 16)
-    if len(s) > 2 and s[0:2].lower() == "0o":
+    if s[0] == "0" and s[1] == "o":
         return _parse_based_int(s, 8)
+    if s[0].isdigit() or (s[0] in ["-", "+"] and s[1].isdigit()):
+        if _is_int_digits(s):
+            return _capped_decimal_int(s)
+        return None
     return None
 
-def _parse_float_text(text):
-    """The float named by a `!!float` value, or None."""
-    s = _normalize_decimal_number(text.strip())
-    if s == None:
-        return None
-    lower = s.lower()
-    if lower in [".inf", "+.inf"]:
-        return float("inf")
-    if lower == "-.inf":
-        return float("-inf")
-    if lower == ".nan":
-        return float("nan")
+def _parse_double_text(s):
+    """The float named by stripped float-shaped `s`, or None.
+
+    An int shape, a scientific shape and a dotted shape with digits on at
+    least one side of the point read, as pub reads them (double.tryParse).
+    """
+    if _is_int_digits(s):
+        return _safe_float(s[1:] if s[:1] == "+" else s)
     scientific = _parse_scientific_float(s)
     if scientific != None:
         return scientific
     if s.count(".") == 1:
-        left, right = s.split(".")
-        if _is_decimal_part(left) and right.isdigit():
-            return _safe_float(s)
+        whole, frac = s.split(".")
+        if _is_dotted_mantissa(whole, frac):
+            return _safe_float(_canonical_dotted_float(whole, frac))
+    return None
+
+def _parse_float_text(text):
+    """The float named by a `!!float` value, or None.
+
+    Mirrors package:yaml number parsing with integers disallowed: a lone
+    character fails as pub crashes on it, an int-shaped or padded scalar
+    reads through double.tryParse, and only the exact `.inf` and `.nan`
+    casings read, as pub reads them.
+    """
+    if len(text) < 2:
+        return None
+    first = text[0]
+    second = text[1]
+    if first.isdigit() or (first in ["-", "+"] and second.isdigit()):
+        return _parse_double_text(_rstrip_scalar_ws(text))
+    if (first == "." and second.isdigit()) or (first in ["-", "+"] and second == "."):
+        if len(text) == 5:
+            if text in ["+.inf", "+.Inf", "+.INF"]:
+                return float("inf")
+            if text in ["-.inf", "-.Inf", "-.INF"]:
+                return float("-inf")
+        return _parse_double_text(_rstrip_scalar_ws(text))
+    if len(text) == 4 and first == ".":
+        if text in [".inf", ".Inf", ".INF"]:
+            return float("inf")
+        if text in [".nan", ".NaN", ".NAN"]:
+            return float("nan")
     return None
 
 def _float_parts(text):

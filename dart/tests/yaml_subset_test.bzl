@@ -1495,6 +1495,152 @@ def _flow_entry_test_impl(ctx):
     asserts.equals(env, {"key": [{"a": "?b"}]}, parse_document("key: [a: &x ?b]\n"))
     return unittest.end(env)
 
+def _number_shape_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Numbers read as pub reads them (package:yaml 3.1.4 with the pinned SDK
+    # 3.13.5): a decimal past the int64 range reads as a double, overflowing
+    # to infinity, while one with a `_` separator past the range stays a
+    # string.
+    asserts.equals(env, 9223372036854775807, parse_document("key: 9223372036854775807\n")["key"])
+    value = parse_document("key: 9223372036854775808\n")["key"]
+    asserts.equals(env, "float", type(value))
+    asserts.equals(env, 9.223372036854776e18, value)
+    value = parse_document("key: -9223372036854775809\n")["key"]
+    asserts.equals(env, "float", type(value))
+    asserts.equals(env, -9.223372036854776e18, value)
+    value = parse_document("key: " + "9" * 400 + "\n")["key"]
+    asserts.equals(env, float("inf"), value)
+    asserts.equals(env, "9_9" * 200, parse_document("key: " + "9_9" * 200 + "\n")["key"])
+
+    # A hex value wraps modulo 2^64 into the signed range and past 2^64-1
+    # stays a string, while an octal past 2^63-1 stays a string, as pub reads
+    # them; a hex or octal with a `_` separator stays a string too. An older
+    # revision read all of these unbounded.
+    asserts.equals(env, -9223372036854775808, parse_document("key: 0x8000000000000000\n")["key"])
+    asserts.equals(env, -1, parse_document("key: 0xFFFFFFFFFFFFFFFF\n")["key"])
+    asserts.equals(env, 1, parse_document("key: 0x00000000000000000000000001\n")["key"])
+    asserts.equals(env, 9223372036854775807, parse_document("key: 0o777777777777777777777\n")["key"])
+    asserts.equals(env, "0x10000000000000000", parse_document("key: 0x10000000000000000\n")["key"])
+    asserts.equals(env, "0o2000000000000000000000", parse_document("key: 0o2000000000000000000000\n")["key"])
+    asserts.equals(env, "0x1_0", parse_document("key: 0x1_0\n")["key"])
+    asserts.equals(env, "0o1_7", parse_document("key: 0o1_7\n")["key"])
+
+    # Only the exact `.inf` and `.nan` casings read, as pub reads them; other
+    # casings, which an older revision lowercased into infinities, stay
+    # strings now.
+    asserts.equals(env, float("inf"), parse_document("key: .Inf\n")["key"])
+    asserts.equals(env, float("inf"), parse_document("key: +.INF\n")["key"])
+    asserts.equals(env, float("-inf"), parse_document("key: -.Inf\n")["key"])
+    asserts.equals(env, float("inf"), parse_document("key: .INF\n")["key"])
+    asserts.equals(env, float("nan"), parse_document("key: .NaN\n")["key"])
+    asserts.equals(env, ".iNf", parse_document("key: .iNf\n")["key"])
+    asserts.equals(env, "+.nan", parse_document("key: +.nan\n")["key"])
+    asserts.equals(env, "-.nan", parse_document("key: -.nan\n")["key"])
+
+    # `1.e5` and `.5e5` read as doubles, as pub reads them; an older revision
+    # read them as strings.
+    asserts.equals(env, 100000.0, parse_document("key: 1.e5\n")["key"])
+    asserts.equals(env, 50000.0, parse_document("key: .5e5\n")["key"])
+    asserts.equals(env, 5000.0, parse_document("key: 5.e3\n")["key"])
+    asserts.equals(env, 50000.0, parse_document("key: +.5e5\n")["key"])
+    asserts.equals(env, "1_0e3", parse_document("key: 1_0e3\n")["key"])
+    asserts.equals(env, "0x1_0", parse_document("key: 0x1_0\n")["key"])
+
+    # Out-of-scope scalar typing stays as read before: `1_000`, `1_2_3`,
+    # `.5`, `1.`, `0X1F` and `0O17` keep their older readings. A dotted
+    # decimal with a `_` separator keeps its older reading too.
+    asserts.equals(env, 1000, parse_document("key: 1_000\n")["key"])
+    asserts.equals(env, 123, parse_document("key: 1_2_3\n")["key"])
+    asserts.equals(env, ".5", parse_document("key: .5\n")["key"])
+    asserts.equals(env, "1.", parse_document("key: 1.\n")["key"])
+    asserts.equals(env, 31, parse_document("key: 0X1F\n")["key"])
+    asserts.equals(env, 15, parse_document("key: 0O17\n")["key"])
+    asserts.equals(env, 10.5, parse_document("key: 1_0.5\n")["key"])
+
+    # `!!int` converts through the scalar text, as pub parses it: plain and
+    # padded decimals, lowercase hex and octal read, while a `_` separator,
+    # an uppercase prefix, an over-range value and leading padding fail
+    # naming the line, as pub rejects them.
+    asserts.equals(env, {"key": 12}, parse_document("key: !!int 12\n"))
+    asserts.equals(env, {"key": 12}, parse_document("key: !!int '12'\n"))
+    asserts.equals(env, {"key": 12}, parse_document("key: !!int '12 '\n"))
+    asserts.equals(env, {"key": 1}, parse_document("key: !!int '1 '\n"))
+    asserts.equals(env, {"key": 12}, parse_document("key: !!int '+12'\n"))
+    asserts.equals(env, {"key": 7}, parse_document("key: !!int '007'\n"))
+    asserts.equals(env, {"key": 16}, parse_document("key: !!int 0x10\n"))
+    asserts.equals(env, {"key": 16}, parse_document("key: !!int '0x10 '\n"))
+    asserts.equals(env, {"key": 15}, parse_document("key: !!int '0o17 '\n"))
+    asserts.equals(env, {"key": -1}, parse_document("key: !!int 0xFFFFFFFFFFFFFFFF\n"))
+    asserts.equals(env, {"key": 9223372036854775807}, parse_document("key: !!int 0o777777777777777777777\n"))
+    asserts.equals(env, {"key": 12}, parse_document("key: !!int\n  12\n"))
+    for doc in [
+        "key: !!int 1_000\n",
+        "key: !!int 0X1F\n",
+        "key: !!int 0O17\n",
+        "key: !!int 0x1_0\n",
+        "key: !!int 0o1_7\n",
+        "key: !!int 0x10000000000000000\n",
+        "key: !!int 0o2000000000000000000000\n",
+        "key: !!int 9223372036854775808\n",
+        "key: !!int ' 12'\n",
+        "key: !!int '0x'\n",
+        "key: !!int ''\n",
+    ]:
+        asserts.equals(
+            env,
+            ["Invalid int scalar at line 1"],
+            document_problems(doc, True),
+        )
+
+    # `!!float` converts through the scalar text too: int shapes, `1.`, `.5`
+    # and padded scalars read, while `0x`/`0o` shapes, a `_` separator, a
+    # padded infinity and a lone character fail naming the line, as pub reads
+    # them. An older revision failed the int shapes.
+    for doc, want in [
+        ("key: !!float 12\n", 12.0),
+        ("key: !!float +12\n", 12.0),
+        ("key: !!float 007\n", 7.0),
+        ("key: !!float '1.'\n", 1.0),
+        ("key: !!float '.5'\n", 0.5),
+        ("key: !!float '+.5'\n", 0.5),
+        ("key: !!float '1.e5'\n", 100000.0),
+        ("key: !!float '.5e5'\n", 50000.0),
+        ("key: !!float '5.e3'\n", 5000.0),
+        ("key: !!float '12 '\n", 12.0),
+        ("key: !!float '12\t'\n", 12.0),
+        ("key: !!float '.5\t'\n", 0.5),
+        ("key: !!float '1e3 '\n", 1000.0),
+        ("key: !!float '+.inf'\n", float("inf")),
+        ("key: !!float '-.Inf'\n", float("-inf")),
+        ("key: !!float '.Inf'\n", float("inf")),
+    ]:
+        value = parse_document(doc)["key"]
+        asserts.equals(env, "float", type(value))
+        asserts.equals(env, want, value)
+    asserts.equals(env, float("nan"), parse_document("key: !!float '.NaN'\n")["key"])
+    asserts.equals(env, "float", type(parse_document("key: !!float '.NaN'\n")["key"]))
+    value = parse_document("key: !!float\n  12\n")["key"]
+    asserts.equals(env, "float", type(value))
+    asserts.equals(env, 12.0, value)
+    for doc in [
+        "key: !!float 0x10\n",
+        "key: !!float 0o17\n",
+        "key: !!float 1_000\n",
+        "key: !!float '.inf '\n",
+        "key: !!float '+.inf '\n",
+        "key: !!float '.nan '\n",
+        "key: !!float 5\n",
+        "key: !!float '5'\n",
+        "key: !!float ''\n",
+    ]:
+        asserts.equals(
+            env,
+            ["Invalid float scalar at line 1"],
+            document_problems(doc, True),
+        )
+    return unittest.end(env)
+
 _t0_test = unittest.make(_block_mapping_test_impl)
 _t1_test = unittest.make(_block_sequence_test_impl)
 _t2_test = unittest.make(_same_indent_sequence_test_impl)
@@ -1535,6 +1681,7 @@ _t36_test = unittest.make(_double_escape_test_impl)
 _t37_test = unittest.make(_tab_indent_test_impl)
 _t38_test = unittest.make(_refused_character_test_impl)
 _t39_test = unittest.make(_flow_entry_test_impl)
+_t40_test = unittest.make(_number_shape_test_impl)
 
 def yaml_subset_test_suite(name):
     small_unittest_suite(
@@ -1579,4 +1726,5 @@ def yaml_subset_test_suite(name):
         _t37_test,
         _t38_test,
         _t39_test,
+        _t40_test,
     )

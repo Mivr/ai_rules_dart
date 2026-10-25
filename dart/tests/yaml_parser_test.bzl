@@ -1597,6 +1597,70 @@ def _parse_lock_flow_entry_test_impl(ctx):
     asserts.true(env, err != None and "//:pubspec.lock" in err and "line 4" in err)
     return unittest.end(env)
 
+def _parse_pubspec_number_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Numbers read as pub reads them (package:yaml 3.1.4 with the pinned SDK
+    # 3.13.5): a `!!int` tag on a `_` separator or uppercase prefix fails
+    # naming the pubspec and the line, while over-range, wrapped and
+    # re-cased forms read through.
+    head = "name: x\nenvironment:\n  sdk: ^3.0.0\n"
+    doc = head + "description: !!int 1_000\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err and "Invalid int scalar" in err)
+    doc = head + "description: !!int 0X1F\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err and "Invalid int scalar" in err)
+    doc = head + "description: !!float 12\n"
+    asserts.equals(env, 12.0, parse_pubspec_document(doc)["description"])
+    asserts.equals(env, "float", type(parse_pubspec_document(doc)["description"]))
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = head + "description: 0x8000000000000000\n"
+    asserts.equals(env, -9223372036854775808, parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = head + "description: .iNf\n"
+    asserts.equals(env, ".iNf", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = head + "description: 1.e5\n"
+    asserts.equals(env, 100000.0, parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = head + "description: 1_000\n"
+    asserts.equals(env, 1000, parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    return unittest.end(env)
+
+def _parse_lock_number_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Numbers read as pub reads them; a `!!int` tag on a `_` separator fails
+    # naming the lock and the line, while over-range, wrapped and re-cased
+    # forms read through the string projection.
+    content = "packages:\n  a:\n    source: hosted\n    version: !!int 1_000\n"
+    err = pubspec_lock_error(content, "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 4" in err and "Invalid int scalar" in err)
+    content = (
+        "packages:\n  a:\n    dependency: transitive\n    description:\n" +
+        "      name: a\n      sha256: abc\n      url: 1.e5\n" +
+        "    source: hosted\n    version: \"1.0.0\"\n"
+    )
+    asserts.equals(env, None, pubspec_lock_error(content, "//:pubspec.lock"))
+    asserts.equals(env, "100000.0", parse_pubspec_lock(content, "//:pubspec.lock")["a"]["description"]["url"])
+    content = (
+        "packages:\n  a:\n    dependency: transitive\n    description:\n" +
+        "      name: a\n      sha256: abc\n      url: .iNf\n" +
+        "    source: hosted\n    version: \"1.0.0\"\n"
+    )
+    asserts.equals(env, None, pubspec_lock_error(content, "//:pubspec.lock"))
+    asserts.equals(env, ".iNf", parse_pubspec_lock(content, "//:pubspec.lock")["a"]["description"]["url"])
+    content = (
+        "packages:\n  a:\n    dependency: transitive\n    description:\n" +
+        "      name: a\n      sha256: abc\n      url: 0x8000000000000000\n" +
+        "    source: hosted\n    version: \"1.0.0\"\n"
+    )
+    asserts.equals(env, None, pubspec_lock_error(content, "//:pubspec.lock"))
+    asserts.equals(env, "-9223372036854775808", parse_pubspec_lock(content, "//:pubspec.lock")["a"]["description"]["url"])
+    return unittest.end(env)
+
 _pub_lock_package_extracted_test = analysistest.make(_pub_lock_package_extracted_test_impl)
 
 _t0_test = unittest.make(_parse_lock_packages_test_impl)
@@ -1658,6 +1722,8 @@ _t55_test = unittest.make(_parse_pubspec_refused_test_impl)
 _t56_test = unittest.make(_parse_lock_refused_test_impl)
 _t57_test = unittest.make(_parse_pubspec_flow_entry_test_impl)
 _t58_test = unittest.make(_parse_lock_flow_entry_test_impl)
+_t59_test = unittest.make(_parse_pubspec_number_test_impl)
+_t60_test = unittest.make(_parse_lock_number_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -1726,6 +1792,8 @@ def yaml_parser_test_suite(name):
         _t56_test,
         _t57_test,
         _t58_test,
+        _t59_test,
+        _t60_test,
     )
     native.test_suite(
         name = name,
