@@ -1641,6 +1641,192 @@ def _number_shape_test_impl(ctx):
         )
     return unittest.end(env)
 
+def _block_structure_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A `: ` inside a plain same-line value fails naming the line, as pub
+    # rejects a mapping value inside a plain scalar (package:yaml 3.1.4 with
+    # the pinned SDK 3.13.5); a trailing colon and a leading `:: ` fail the
+    # same way, even past mid-scalar quotes or brackets, in strict and
+    # lenient modes alike.
+    asserts.equals(
+        env,
+        ["mapping value at line 1 is not supported"],
+        document_problems("description: a: b\n", True),
+    )
+    asserts.equals(
+        env,
+        ["mapping value at line 1 is not supported"],
+        document_problems("description: a: b\n"),
+    )
+    asserts.equals(
+        env,
+        ["mapping value at line 1 is not supported"],
+        document_problems("description: a:\n", True),
+    )
+    asserts.equals(
+        env,
+        ["mapping value at line 1 is not supported"],
+        document_problems("description: :: foo\n", True),
+    )
+    asserts.equals(
+        env,
+        ["mapping value at line 1 is not supported"],
+        document_problems("description: a \"x: y\" b\n", True),
+    )
+    asserts.equals(
+        env,
+        ["mapping value at line 1 is not supported"],
+        document_problems("description: a [b: c]\n", True),
+    )
+    asserts.equals(
+        env,
+        ["mapping value at line 1 is not supported"],
+        document_problems("description: x {a: b}\n", True),
+    )
+    asserts.equals(
+        env,
+        ["mapping value at line 1 is not supported"],
+        document_problems("key: -a: b\n", True),
+    )
+    asserts.equals(
+        env,
+        ["mapping value at line 1 is not supported"],
+        document_problems("key: ?x: y\n", True),
+    )
+    asserts.equals(
+        env,
+        ["mapping value at line 1 is not supported"],
+        document_problems("key: -: 1\n", True),
+    )
+    asserts.equals(
+        env,
+        ["mapping value at line 1 is not supported"],
+        document_problems("key:\ta: b\n", True),
+    )
+    asserts.equals(
+        env,
+        ["mapping value at line 2 is not supported"],
+        document_problems("dependencies:\n - a: b: c\n", True),
+    )
+    asserts.equals(
+        env,
+        ["mapping value at line 2 is not supported"],
+        document_problems("dependencies:\n - a: -: 1\n", True),
+    )
+
+    # A `- ` entry where a value starts fails naming the line, as pub
+    # rejects a block sequence there, even under an anchor or a tab, in
+    # strict and lenient modes alike.
+    asserts.equals(
+        env,
+        ["block sequence entry at line 1 is not supported"],
+        document_problems("dependencies: - a\n", True),
+    )
+    asserts.equals(
+        env,
+        ["block sequence entry at line 1 is not supported"],
+        document_problems("dependencies: - a\n"),
+    )
+    asserts.equals(
+        env,
+        ["block sequence entry at line 1 is not supported"],
+        document_problems("dependencies: &x - a\n", True),
+    )
+    asserts.equals(
+        env,
+        ["block sequence entry at line 1 is not supported"],
+        document_problems("key: - # x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["block sequence entry at line 1 is not supported"],
+        document_problems("tags:\t- x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["block sequence entry at line 2 is not supported"],
+        document_problems("dependencies:\n - a: - b\n", True),
+    )
+
+    # A `? ` marker where a value starts fails naming the line, as pub
+    # rejects an explicit key there, in strict and lenient modes alike.
+    asserts.equals(
+        env,
+        ["explicit key at line 1 is not supported"],
+        document_problems("dependencies: ? bar\n", True),
+    )
+    asserts.equals(
+        env,
+        ["explicit key at line 1 is not supported"],
+        document_problems("dependencies: ? bar\n"),
+    )
+    asserts.equals(
+        env,
+        ["explicit key at line 1 is not supported"],
+        document_problems("key:\t? bar\n", True),
+    )
+
+    # Later keys of a `- key:` item must sit at the key's own column, as pub
+    # rejects them anywhere else; an aligned key still merges, a dedent still
+    # leaves the sequence, and a pending key still nests, as pub reads them.
+    asserts.equals(
+        env,
+        ["unreadable line 3: \"foo: any\""],
+        document_problems("dependencies:\n - meta: any\n  foo: any\n", True),
+    )
+    asserts.equals(
+        env,
+        ["unreadable line 3: \"foo: any\""],
+        document_problems("dependencies:\n - meta: any\n      foo: any\n", True),
+    )
+    asserts.equals(
+        env,
+        ["unreadable line 3: \"foo: any\""],
+        document_problems("dependencies:\n  - meta: any\n foo: any\n", True),
+    )
+    asserts.equals(
+        env,
+        ["unreadable line 3: \"foo: any\""],
+        document_problems("dependencies:\n- meta: any\n foo: any\n", True),
+    )
+    asserts.equals(
+        env,
+        {"dependencies": [{"meta": "any", "foo": "any"}]},
+        parse_document("dependencies:\n - meta: any\n   foo: any\n"),
+    )
+    asserts.equals(
+        env,
+        {"dependencies": [{"meta": "any"}], "foo": "any"},
+        parse_document("dependencies:\n - meta: any\nfoo: any\n"),
+    )
+    asserts.equals(
+        env,
+        {"dependencies": [{"meta": {"foo": "any"}}]},
+        parse_document("dependencies:\n - meta:\n     foo: any\n"),
+    )
+
+    # Everywhere else a colon reads as pub reads it: glued, in quotes, in a
+    # flow, or after a URL scheme; a glued dash or question mark reads too.
+    asserts.equals(env, {"description": "a:b"}, parse_document("description: a:b\n"))
+    asserts.equals(env, {"url": "http://x"}, parse_document("url: http://x\n"))
+    asserts.equals(env, {"description": ":foo"}, parse_document("description: :foo\n"))
+    asserts.equals(env, {"description": "::foo"}, parse_document("description: ::foo\n"))
+    asserts.equals(env, {"description": "a: b"}, parse_document("description: \"a: b\"\n"))
+    asserts.equals(
+        env,
+        {"description": [{"a": "b"}]},
+        parse_document("description: [a: b]\n"),
+    )
+    asserts.equals(env, {"dependencies": "-a"}, parse_document("dependencies: -a\n"))
+    asserts.equals(env, {"dependencies": "?bar"}, parse_document("dependencies: ?bar\n"))
+    asserts.equals(
+        env,
+        {"dependencies": [{"a": "b"}]},
+        parse_document("dependencies:\n - a: b\n"),
+    )
+    return unittest.end(env)
+
 _t0_test = unittest.make(_block_mapping_test_impl)
 _t1_test = unittest.make(_block_sequence_test_impl)
 _t2_test = unittest.make(_same_indent_sequence_test_impl)
@@ -1682,6 +1868,7 @@ _t37_test = unittest.make(_tab_indent_test_impl)
 _t38_test = unittest.make(_refused_character_test_impl)
 _t39_test = unittest.make(_flow_entry_test_impl)
 _t40_test = unittest.make(_number_shape_test_impl)
+_t41_test = unittest.make(_block_structure_test_impl)
 
 def yaml_subset_test_suite(name):
     small_unittest_suite(
@@ -1727,4 +1914,5 @@ def yaml_subset_test_suite(name):
         _t38_test,
         _t39_test,
         _t40_test,
+        _t41_test,
     )

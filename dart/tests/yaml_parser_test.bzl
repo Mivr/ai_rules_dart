@@ -1661,6 +1661,65 @@ def _parse_lock_number_test_impl(ctx):
     asserts.equals(env, "-9223372036854775808", parse_pubspec_lock(content, "//:pubspec.lock")["a"]["description"]["url"])
     return unittest.end(env)
 
+def _parse_pubspec_block_structure_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Block entries where a value starts fail naming the pubspec and the
+    # line, as pub rejects them (package:yaml 3.1.4 with the pinned SDK
+    # 3.13.5), while glued colons and quoted scalars read through.
+    head = "name: x\nenvironment:\n  sdk: ^3.0.0\n"
+    doc = head + "description: a: b\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err and "mapping value" in err)
+    doc = head + "dependencies: - a\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err and "block sequence entry" in err)
+    doc = head + "dependencies: ? bar\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err and "explicit key" in err)
+    doc = head + "description: a:b\n"
+    asserts.equals(env, "a:b", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = head + "description: \"a: b\"\n"
+    asserts.equals(env, "a: b", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    return unittest.end(env)
+
+def _parse_lock_block_structure_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Block entries where a value starts fail naming the lock and the line,
+    # while glued colons read through the string projection.
+    content = (
+        "packages:\n  a:\n    dependency: transitive\n    description:\n" +
+        "      name: a\n      sha256: abc\n      url: a: b\n" +
+        "    source: hosted\n    version: \"1.0.0\"\n"
+    )
+    err = pubspec_lock_error(content, "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 7" in err and "mapping value" in err)
+    content = (
+        "packages:\n  a:\n    dependency: transitive\n    description:\n" +
+        "      name: a\n      sha256: abc\n      url: - b\n" +
+        "    source: hosted\n    version: \"1.0.0\"\n"
+    )
+    err = pubspec_lock_error(content, "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 7" in err and "block sequence entry" in err)
+    content = (
+        "packages:\n  a:\n    dependency: transitive\n    description:\n" +
+        "      name: a\n      sha256: abc\n      url: a:b\n" +
+        "    source: hosted\n    version: \"1.0.0\"\n"
+    )
+    asserts.equals(env, None, pubspec_lock_error(content, "//:pubspec.lock"))
+    asserts.equals(env, "a:b", parse_pubspec_lock(content, "//:pubspec.lock")["a"]["description"]["url"])
+    content = (
+        "packages:\n  a:\n    dependency: transitive\n    description:\n" +
+        "      name: a\n      sha256: abc\n      url: \"a: b\"\n" +
+        "    source: hosted\n    version: \"1.0.0\"\n"
+    )
+    asserts.equals(env, None, pubspec_lock_error(content, "//:pubspec.lock"))
+    asserts.equals(env, "a: b", parse_pubspec_lock(content, "//:pubspec.lock")["a"]["description"]["url"])
+    return unittest.end(env)
+
 _pub_lock_package_extracted_test = analysistest.make(_pub_lock_package_extracted_test_impl)
 
 _t0_test = unittest.make(_parse_lock_packages_test_impl)
@@ -1724,6 +1783,8 @@ _t57_test = unittest.make(_parse_pubspec_flow_entry_test_impl)
 _t58_test = unittest.make(_parse_lock_flow_entry_test_impl)
 _t59_test = unittest.make(_parse_pubspec_number_test_impl)
 _t60_test = unittest.make(_parse_lock_number_test_impl)
+_t61_test = unittest.make(_parse_pubspec_block_structure_test_impl)
+_t62_test = unittest.make(_parse_lock_block_structure_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -1794,6 +1855,8 @@ def yaml_parser_test_suite(name):
         _t58_test,
         _t59_test,
         _t60_test,
+        _t61_test,
+        _t62_test,
     )
     native.test_suite(
         name = name,

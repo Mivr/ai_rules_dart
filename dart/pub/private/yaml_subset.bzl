@@ -197,7 +197,13 @@ testing, so the projections are unaffected on real pubspec files:
   word ended its key at a glued colon before, a key with no pair colon
   failed its flow before, and a colon after a bare flow anchor or tag
   misread before; pub scans the word through the colon and reads a lone
-  key with a null value, as read now.
+  key with a null value, as read now. A same-line `- ` entry read as a plain
+  scalar before (`key: - a` read `"- a"`), a same-line `? ` marker read as a
+  plain scalar before (`key: ? bar` read `"? bar"`), and a `: `, `:\t` or
+  trailing colon inside a plain same-line value read as content before
+  (`key: a: b` read `"a: b"`); pub rejects all three, so they fail naming
+  the line. Later keys of a `- key:` item merged at any deeper column
+  before; pub only merges them at the key's own column, as read now.
 - flow collections that span lines are not supported, unless the folded
   lines read as one flow collection as pub reads them; yaml.bzl reads all
   spanning flows. The supported fold matches pub on the oracle-checked
@@ -1717,6 +1723,8 @@ def _map_line(lines, idx, indent, text, frame, anchors, state):
     anchor, tag, rest, failed = _split_value_text(value_text, anchors, state, line)
     if failed:
         return _map_store(mapping, key, None, idx + 1, line, state)
+    if _block_value_entry_problem(rest, state, line):
+        return _map_store(mapping, key, None, idx + 1, line, state)
     if rest == "":
         if _is_duplicate(mapping, key, line, state):
             return idx + 1, None
@@ -1745,7 +1753,10 @@ def _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state):
     """Reads a `- key: value` line, starting a mapping for the sequence item. Returns (next index, pending).
 
     A pending value nests past the key's own column, as pub reads it, so a
-    dash at the key's column or shallower is a sibling, not a child.
+    dash at the key's column or shallower is a sibling, not a child. Later
+    keys must sit at the key's own column, as pub rejects them anywhere
+    else, so the frame records it up front instead of adopting the first
+    continuation's column.
     """
     line = idx + 1
     rest = text[1:].strip()
@@ -1760,7 +1771,12 @@ def _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state):
     if failed:
         item[key] = None
         items.append(item)
-        stack.append({"kind": "map", "indent": indent, "value": item, "entry": None})
+        stack.append({"kind": "map", "indent": indent, "value": item, "entry": key_indent})
+        return idx + 1, None
+    if _block_value_entry_problem(rest_value, state, line):
+        item[key] = None
+        items.append(item)
+        stack.append({"kind": "map", "indent": indent, "value": item, "entry": key_indent})
         return idx + 1, None
     if rest_value.startswith("|") or rest_value.startswith(">"):
         # A block scalar after `- key:` reads as pub reads it; an
@@ -1771,24 +1787,24 @@ def _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state):
             anchors[anchor] = _clone(value)
         item[key] = value
         items.append(item)
-        stack.append({"kind": "map", "indent": indent, "value": item, "entry": None})
+        stack.append({"kind": "map", "indent": indent, "value": item, "entry": key_indent})
         return next_idx, None
     flow_value, flow_next, flow_read = _folded_head_flow(head, line, lines, idx, indent, anchors, state)
     if flow_read:
         item[key] = flow_value
         items.append(item)
-        stack.append({"kind": "map", "indent": indent, "value": item, "entry": None})
+        stack.append({"kind": "map", "indent": indent, "value": item, "entry": key_indent})
         return flow_next, None
     end = _spanning_flow_end(lines, idx + 1, indent, value_text, anchors)
     if end != None:
         state.problems.append(_span_flow_problem(line))
         item[key] = None
         items.append(item)
-        stack.append({"kind": "map", "indent": indent, "value": item, "entry": None})
+        stack.append({"kind": "map", "indent": indent, "value": item, "entry": key_indent})
         return end, None
     if rest_value == "":
         items.append(item)
-        stack.append({"kind": "map", "indent": indent, "value": item, "entry": None})
+        stack.append({"kind": "map", "indent": indent, "value": item, "entry": key_indent})
         pending = {"parent": item, "slot": key, "indent": key_indent, "anchor": anchor, "tag": tag, "line": line}
         if anchor != None:
             anchors[anchor] = _OPEN_ANCHOR
@@ -1796,7 +1812,7 @@ def _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state):
     value, next_idx, _read = _block_fold_scalar(lines, idx + 1, indent, {"text": value_text, "raw": head, "idx": idx, "entry": text}, True, anchors, state)
     item[key] = value
     items.append(item)
-    stack.append({"kind": "map", "indent": indent, "value": item, "entry": None})
+    stack.append({"kind": "map", "indent": indent, "value": item, "entry": key_indent})
     return next_idx, None
 
 def _seq_line(lines, idx, indent, text, frame, anchors, stack, state):
@@ -2593,6 +2609,30 @@ def _record_prefix_problems(bad, state, line):
         state.problems.append("repeated anchor at line %d is not supported" % line)
     elif bad == "repeat-tag":
         state.problems.append("repeated tag at line %d is not supported" % line)
+
+def _block_value_entry_problem(rest, state, line):
+    """Records a block entry where a same-line mapping value starts. Returns True when one fails.
+
+    A `- ` entry fails, as pub rejects a block sequence where a value
+    starts, and a `? ` marker fails, as pub rejects an explicit key there;
+    the anchor and tag prefixes are already stripped, as pub still rejects
+    the entry under them. A `: `, `:\\t` or trailing colon inside a plain
+    value fails, as pub rejects a mapping value inside a plain scalar, even
+    past mid-scalar quotes or brackets; quoted, flow, block-scalar and alias
+    values read as before, as pub reads them.
+    """
+    if _is_dash(rest):
+        state.problems.append("block sequence entry at line %d is not supported" % line)
+        return True
+    if _is_question_entry(rest):
+        state.problems.append("explicit key at line %d is not supported" % line)
+        return True
+    if rest[:1] in ["", "\"", "'", "[", "{", "|", ">", "*"]:
+        return False
+    if ": " in rest or ":\t" in rest or ":\r" in rest or rest.endswith(":") or rest.endswith(":\r"):
+        state.problems.append("mapping value at line %d is not supported" % line)
+        return True
+    return False
 
 def _split_value_text(value_text, anchors, state, line):
     """Splits a same-line value into (anchor, tag, rest, failed).
