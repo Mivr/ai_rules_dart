@@ -290,20 +290,37 @@ def _compare_identifiers(text_a, text_b, missing_sorts_high):
             return -1
         if i >= len(parts_b):
             return 1
-        if parts_a[i] == parts_b[i]:
-            continue
-        num_a = _identifier_number(parts_a[i])
-        num_b = _identifier_number(parts_b[i])
-        if num_a != None and num_b != None:
-            if num_a == num_b:
-                continue
-            return -1 if num_a < num_b else 1
-        if num_a != None:
-            return -1
-        if num_b != None:
-            return 1
-        return -1 if parts_a[i] < parts_b[i] else 1
+        order = _compare_identifier_part(parts_a[i], parts_b[i])
+        if order != 0:
+            return order
     return 0
+
+def _compare_identifier_part(part_a, part_b):
+    """Compares two single pre-release or build identifiers.
+
+    Numeric identifiers compare numerically and come before alphanumeric
+    ones, which compare lexically.
+
+    Args:
+        part_a: First identifier.
+        part_b: Second identifier.
+
+    Returns:
+        -1, 0 or 1.
+    """
+    if part_a == part_b:
+        return 0
+    num_a = _identifier_number(part_a)
+    num_b = _identifier_number(part_b)
+    if num_a != None and num_b != None:
+        if num_a == num_b:
+            return 0
+        return -1 if num_a < num_b else 1
+    if num_a != None:
+        return -1
+    if num_b != None:
+        return 1
+    return -1 if part_a < part_b else 1
 
 # Largest identifier pub reads numerically: Dart ints are signed 64-bit,
 # so a longer run stays alphanumeric there, as `int.tryParse` misses it.
