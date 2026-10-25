@@ -203,7 +203,11 @@ testing, so the projections are unaffected on real pubspec files:
   trailing colon inside a plain same-line value read as content before
   (`key: a: b` read `"a: b"`); pub rejects all three, so they fail naming
   the line. Later keys of a `- key:` item merged at any deeper column
-  before; pub only merges them at the key's own column, as read now.
+  before; pub only merges them at the key's own column, as read now. A
+  block value starting with `]`, `}` or `,` read as a plain scalar before
+  (`key: ]x` read `"]x"`), and a `|` or `>` where a flow item, pair value
+  or key starts read as a plain scalar before (`[a, |b]` read `"|b"`);
+  pub rejects both, so they fail naming the line.
 - flow collections that span lines are not supported, unless the folded
   lines read as one flow collection as pub reads them; yaml.bzl reads all
   spanning flows. The supported fold matches pub on the oracle-checked
@@ -2342,6 +2346,12 @@ def _parse_scalar(text, anchors, state, line, record_prefix = True):
         # rejects it; a colon glued to content stays a plain scalar.
         state.problems.append("mapping value at line %d is not supported" % line)
         return None
+    if s[:1] in ["]", "}", ","]:
+        # A flow-closing indicator where a block value starts is rejected, as
+        # pub rejects it; past the first character it stays content, as pub
+        # reads it.
+        state.problems.append("flow indicator at line %d is not supported" % line)
+        return None
 
     if s[:1] in ["[", "{"]:
         if anchor != None:
@@ -3265,6 +3275,19 @@ def _flow_add(frame, value, parse_state, line):
         frame["value"][frame["key"]] = value
     frame["state"] = "after"
 
+def _flow_block_scalar_problem(rest, state, line):
+    """Records a block scalar header where a flow value starts. Returns True when one fails.
+
+    A `|` or `>` where a flow item, pair value or key starts fails, as pub
+    rejects a block scalar there; the anchor and tag prefixes are already
+    stripped, as pub still rejects it under them. A `|` or `>` past the
+    first character stays content, as pub reads it.
+    """
+    if rest[:1] in ["|", ">"]:
+        state.problems.append("block scalar inside flow at line %d is not supported" % line)
+        return True
+    return False
+
 def _flow_scalar_value(token, anchors, state, line):
     """Value of a flow item token with alias, anchor or tag prefixes.
 
@@ -3296,6 +3319,10 @@ def _flow_scalar_value(token, anchors, state, line):
         return None
     if (anchor != None or tag != None) and (_is_dash(rest) or _is_question_entry(rest)):
         state.problems.append("block entry inside flow at line %d is not supported" % line)
+        if anchor != None:
+            anchors[anchor] = None
+        return None
+    if _flow_block_scalar_problem(rest, state, line):
         if anchor != None:
             anchors[anchor] = None
         return None
@@ -3361,6 +3388,10 @@ def _flow_atom(text, anchors, state, line):
         if anchor != None:
             anchors[anchor] = None
         return None
+    if _flow_block_scalar_problem(rest, state, line):
+        if anchor != None:
+            anchors[anchor] = None
+        return None
     value = _parse_nonflow(rest, anchors, state, line)
     if tag != None:
         value = _apply_tag(tag, rest, value, anchors, state, line)
@@ -3415,6 +3446,10 @@ def _flow_key_value(token, anchors, state, line):
         if anchor != None:
             anchors[anchor] = _clone(key)
         return _key(key)
+    if _flow_block_scalar_problem(rest, state, line):
+        if anchor != None:
+            anchors[anchor] = None
+        return _key(None)
     key = _parse_nonflow(rest, anchors, state, line)
     if tag != None:
         key = _apply_key_tag(tag, key, rest, anchors, state, line)

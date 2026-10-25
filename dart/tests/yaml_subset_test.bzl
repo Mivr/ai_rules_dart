@@ -1827,6 +1827,134 @@ def _block_structure_test_impl(ctx):
     )
     return unittest.end(env)
 
+def _flow_indicator_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A block value starting with `]`, `}` or `,` fails naming the line, as
+    # pub rejects a flow-closing indicator where a node starts
+    # (package:yaml 3.1.4 with the pinned SDK 3.13.5); past the first
+    # character they stay content, in strict and lenient modes alike.
+    asserts.equals(
+        env,
+        ["flow indicator at line 1 is not supported"],
+        document_problems("description: ]x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["flow indicator at line 1 is not supported"],
+        document_problems("description: ]x\n"),
+    )
+    asserts.equals(
+        env,
+        ["flow indicator at line 1 is not supported"],
+        document_problems("description: }x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["flow indicator at line 1 is not supported"],
+        document_problems("description: ,x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["flow indicator at line 1 is not supported"],
+        document_problems("]x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["flow indicator at line 1 is not supported"],
+        document_problems("]x: 1\n", True),
+    )
+    asserts.equals(
+        env,
+        ["flow indicator at line 1 is not supported"],
+        document_problems("description: &x ]x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["flow indicator at line 2 is not supported"],
+        document_problems("tags:\n - ]x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["flow indicator at line 2 is not supported"],
+        document_problems("tags:\n - ,x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["flow indicator at line 2 is not supported"],
+        document_problems("tags:\n - }x\n", True),
+    )
+
+    # A `|` or `>` where a flow item, pair value or key starts fails naming
+    # the line, as pub rejects a block scalar there, even under an anchor or
+    # a tag; past the first character they stay content.
+    asserts.equals(
+        env,
+        ["block scalar inside flow at line 1 is not supported"],
+        document_problems("tags: [a, |b]\n", True),
+    )
+    asserts.equals(
+        env,
+        ["block scalar inside flow at line 1 is not supported"],
+        document_problems("tags: [a, |b]\n"),
+    )
+    asserts.equals(
+        env,
+        ["block scalar inside flow at line 1 is not supported"],
+        document_problems("tags: [|a]\n", True),
+    )
+    asserts.equals(
+        env,
+        ["block scalar inside flow at line 1 is not supported"],
+        document_problems("tags: [a, >b]\n", True),
+    )
+    asserts.equals(
+        env,
+        ["block scalar inside flow at line 1 is not supported"],
+        document_problems("tags: [|]\n", True),
+    )
+    asserts.equals(
+        env,
+        ["block scalar inside flow at line 1 is not supported"],
+        document_problems("tags: {a: |b}\n", True),
+    )
+    asserts.equals(
+        env,
+        ["block scalar inside flow at line 1 is not supported"],
+        document_problems("tags: {a: >b}\n", True),
+    )
+    asserts.equals(
+        env,
+        ["block scalar inside flow at line 1 is not supported"],
+        document_problems("tags: [&x |b]\n", True),
+    )
+    asserts.equals(
+        env,
+        ["block scalar inside flow at line 1 is not supported"],
+        document_problems("tags: [a: &x |b]\n", True),
+    )
+    asserts.equals(
+        env,
+        ["block scalar inside flow at line 1 is not supported"],
+        document_problems("tags: [!foo |b]\n", True),
+    )
+    asserts.equals(
+        env,
+        ["block scalar inside flow at line 1 is not supported"],
+        document_problems("tags: {|a: b}\n", True),
+    )
+
+    # Everywhere else these characters read as pub reads them: mid-scalar in
+    # a block or a flow, quoted, or as flow `?` and `:` scalars.
+    asserts.equals(env, {"description": "a ]x"}, parse_document("description: a ]x\n"))
+    asserts.equals(env, {"description": "a ]x"}, parse_document("description: a\n  ]x\n"))
+    asserts.equals(env, {"description": "|b"}, parse_document("description: \"|b\"\n"))
+    asserts.equals(env, {"tags": ["a |b"]}, parse_document("tags: [a |b]\n"))
+    asserts.equals(env, {"tags": ["a", "?b"]}, parse_document("tags: [a, ?b]\n"))
+    asserts.equals(env, {"tags": ["a", "b"]}, parse_document("tags: [a, b]\n"))
+    asserts.equals(env, {"key": "]x\n"}, parse_document("key: |\n  ]x\n"))
+    return unittest.end(env)
+
 _t0_test = unittest.make(_block_mapping_test_impl)
 _t1_test = unittest.make(_block_sequence_test_impl)
 _t2_test = unittest.make(_same_indent_sequence_test_impl)
@@ -1869,6 +1997,7 @@ _t38_test = unittest.make(_refused_character_test_impl)
 _t39_test = unittest.make(_flow_entry_test_impl)
 _t40_test = unittest.make(_number_shape_test_impl)
 _t41_test = unittest.make(_block_structure_test_impl)
+_t42_test = unittest.make(_flow_indicator_test_impl)
 
 def yaml_subset_test_suite(name):
     small_unittest_suite(
@@ -1915,4 +2044,5 @@ def yaml_subset_test_suite(name):
         _t39_test,
         _t40_test,
         _t41_test,
+        _t42_test,
     )
