@@ -165,6 +165,17 @@ def _document_marker_test_impl(ctx):
     asserts.equals(env, None, parse_document("...\n"))
     asserts.equals(env, None, parse_document("---\n"))
     asserts.equals(env, [], document_problems("a: 1\n...\n", True))
+
+    # Text glued to a marker is an ordinary line, not a marker, as pub
+    # reads `---x: 1` as a key: only `---` plus a space, a tab or the end
+    # of the line marks, and glued `...` text fails once content came first.
+    asserts.equals(env, {"a": 1, "---x": 1}, parse_document("a: 1\n---x: 1\n"))
+    asserts.equals(env, {"a": 1, "---x": 1}, parse_document("---x: 1\na: 1\n"))
+    asserts.equals(
+        env,
+        ["content after document end (...) at line 2"],
+        document_problems("a: 1\n...x\n", True),
+    )
     return unittest.end(env)
 
 def _plain_scalar_type_test_impl(ctx):

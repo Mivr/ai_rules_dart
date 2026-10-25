@@ -374,7 +374,12 @@ def _doc_tail_content(line):
     return stripped != "" and not stripped.startswith("#")
 
 def _doc_dash_line(line, idx, current, doc, state):
-    """Handles a column-0 `---` line. Returns whether collection stops."""
+    """Handles a column-0 `---` line. Returns whether collection stops.
+
+    Only `---` followed by a space, a tab or the end of the line reaches
+    here; anything glued to the marker (`---x: 1`) is an ordinary line, as
+    pub reads it as a key.
+    """
     if _is_clean_marker_line(line, "---"):
         if doc["ended"] or doc["content"] or doc["marker"]:
             state.problems.append("second document marker (---) at line %d" % idx)
@@ -394,7 +399,19 @@ def _doc_dash_line(line, idx, current, doc, state):
     return False
 
 def _doc_dots_line(line, idx, current, doc, state):
-    """Handles a column-0 `...` line. Returns whether collection stops."""
+    """Handles a column-0 `...` line. Returns whether collection stops.
+
+    Text glued to the end marker (`...x`) reads as an ordinary line where
+    the document has no content yet, as pub reads it, and fails where
+    content or the end came before, as pub rejects it.
+    """
+    if line[3:4] not in ["", " ", "\t"]:
+        if doc["ended"] or doc["content"]:
+            state.problems.append("content after document end (...) at line %d" % idx)
+            return True
+        current.append(line)
+        doc["content"] = True
+        return False
     if _is_clean_marker_line(line, "..."):
         doc["ended"] = True
         return False
@@ -412,7 +429,9 @@ def _first_document_lines(content, state):
     One stream carries one document, as pub reads it: a second column-0
     `---` line is a problem naming its line, even before any content and
     even with only comments after it, and so is any content after a
-    column-0 `...` line, naming the content's line. A `---` before any
+    column-0 `...` line, naming the content's line. A marker is the three
+    characters followed by a space, a tab or the end of the line: text
+    glued to it is an ordinary line, as pub reads `---x: 1` as a key. A `---` before any
     content starts the document, unless a directive precedes it, in which
     case it is kept as an ordinary line; inline text after a pre-content
     marker reads as the document, as pub reads `--- foo` as "foo" and
@@ -424,7 +443,7 @@ def _first_document_lines(content, state):
     idx = 0
     for line in normalized.split("\n"):
         idx += 1
-        if line.startswith("---"):
+        if line.startswith("---") and line[3:4] in ["", " ", "\t"]:
             if _doc_dash_line(line, idx, current, doc, state):
                 return current
             continue
