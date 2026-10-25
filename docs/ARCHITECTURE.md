@@ -205,3 +205,6 @@ One caveat, inherited from the Dart CLI and shared by the `defines` attribute: t
 | E2e integration tests | `e2e/*/`                    | Full build scenarios in isolated workspaces                |
 | CI                    | `.github/workflows/ci.yaml` | All e2e folders on Bazel 9.x                               |
 | BCR presubmit         | `.bcr/presubmit.yml`        | Multi-platform × Bazel 9.x                                 |
+
+The HOME policy every `bazel run` entry point follows, and the rule for
+adding a new one, is documented in [run_home.md](./run_home.md).
