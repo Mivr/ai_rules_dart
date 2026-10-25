@@ -517,7 +517,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: run_home canary sweep
         working-directory: e2e/run_home
-        run: BAZEL=bazel ./run_home_test.sh
+        run: ./run_home_test.sh
   # Workspaces that are expected to fail at module resolution.
   # Validates that rules_dart produces the correct error messages.
   expected-failure:

@@ -3,15 +3,24 @@
 # directories: fails naming the entries that write into a canary or that exit
 # other than their registry row expects.
 #
-# Usage: BAZEL=/path/to/bazel run_home_test.sh
-# The script passes no Bazel startup flags; $BAZEL may be a wrapper that adds
-# its own. It takes no arguments and reads nothing from the caller's HOME:
-# PUB_CACHE and BAZELISK_HOME live in a scratch directory outside the
-# canaries, and every canary is removed after its entry, on success and on
-# failure.
+# Usage: [BAZEL=/path/to/bazel] [RUN_HOME_SCRATCH=/path/to/scratch] run_home_test.sh
+# It takes Bazel from $BAZEL and passes no Bazel startup flags; when $BAZEL is
+# unset (CI) it uses `bazel --max_idle_secs=60`. It takes no arguments and reads
+# nothing from the caller's HOME: PUB_CACHE lives in the scratch directory
+# outside the canaries, BAZELISK_HOME is never redirected (Bazel and every
+# toolchain come from the existing pinned caches), and Bazel itself never runs
+# with the canary variables.
+#
+# Resource design: each entry is first built under the caller's environment
+# with `bazel run --script_path=<scratch>/<n>.sh <label>` (so Bazel's output
+# root and launcher cache never land in a canary), and only the generated
+# launcher script runs with the canary environment and the entry's arguments.
+# All scratch, the canaries included, lives under one directory the script
+# creates inside $RUN_HOME_SCRATCH (default a fresh directory under
+# e2e/run_home/.scratch/, which is git-ignored). A trap on EXIT shuts down the
+# Bazel server in every workspace used, then deletes the scratch.
 set -euo pipefail
 
-BAZEL="${BAZEL:?set BAZEL to the Bazel binary to test with}"
 WORKSPACE="$(cd "$(dirname "$0")" && pwd)"
 cd "$WORKSPACE"
 KINDS='dart_binary|dart_test|dart_fix|dart_format|dart_sdk_binary|dart_analysis_test|dart_js_binary|dart_wasm_binary|dart_library|alias'
@@ -19,14 +28,28 @@ KINDS='dart_binary|dart_test|dart_fix|dart_format|dart_sdk_binary|dart_analysis_
 # shellcheck source=registry.sh
 source "$WORKSPACE/registry.sh"
 
+if [[ -n "${BAZEL:-}" ]]; then
+  # shellcheck disable=SC2206
+  BAZEL_CMD=($BAZEL)
+else
+  BAZEL_CMD=(bazel --max_idle_secs=60)
+fi
+run_bazel() { "${BAZEL_CMD[@]}" "$@"; }
+
+RUN_HOME_SCRATCH="${RUN_HOME_SCRATCH:-$WORKSPACE/.scratch}"
+mkdir -p "$RUN_HOME_SCRATCH"
 # Absolute scratch paths: a relative HOME resolves against whatever cwd the
 # entry leaves its process in, so a relative canary would let writes land
 # outside the checked directory and escape the test.
-SHARED="$(mktemp -d)"
-trap 'rm -rf "$SHARED"' EXIT
-export PUB_CACHE="$SHARED/pubcache"
-export BAZELISK_HOME="$SHARED/bazelisk"
-mkdir -p "$PUB_CACHE" "$BAZELISK_HOME" "$SHARED/home"
+SCRATCH="$(mktemp -d "$RUN_HOME_SCRATCH/run.XXXXXX")"
+cleanup() {
+  (cd "$WORKSPACE" && run_bazel shutdown >/dev/null 2>&1) || true
+  rm -rf "$SCRATCH"
+}
+trap cleanup EXIT
+# PUB_CACHE lives in the scratch directory, outside the canaries below.
+export PUB_CACHE="$SCRATCH/pubcache"
+mkdir -p "$PUB_CACHE"
 ulimit -c 0
 
 pass=0
@@ -42,18 +65,13 @@ fail_entry() {
   printf '%s\n' "$out" | tail -8 | sed 's/^/  | /'
 }
 
-# Warm the Bazel server under the shared scratch HOME so its lifetime
-# environment never points at a canary; entry runs below only lend canaries
-# to the Bazel client and the binary it spawns.
-HOME="$SHARED/home" "$BAZEL" version >/dev/null 2>&1
-
 # --- 1. enumeration: the registry must match `bazel query` exactly ---
 mapfile -t repo_targets < <(
-  HOME="$SHARED/home" "$BAZEL" query \
+  run_bazel query \
     "visible(//..., kind(\"$KINDS\", @rules_dart//...))" 2>/dev/null | sort
 )
 mapfile -t ws_targets < <(
-  HOME="$SHARED/home" "$BAZEL" query "kind(\"$KINDS\", //...)" 2>/dev/null \
+  run_bazel query "kind(\"$KINDS\", //...)" 2>/dev/null \
     | sort
 )
 declare -A queried
@@ -101,16 +119,12 @@ snapshot() {
   (cd "$1" && find . -type f | sort | xargs md5sum 2>/dev/null || true)
 }
 
-# --- 2./3. run every entry under a canary HOME ---
+# --- 2./3. build each entry's launcher, then run it under a canary HOME ---
+n=0
 for row in "${RUN_HOME_ENTRIES[@]}"; do
   IFS='|' read -r label args _policy expect check <<<"$row"
   entry="$label${args:+ -- $args}"
   args="${args//\{WORKSPACE\}/$WORKSPACE}"
-  canary="$(mktemp -d "$SHARED/canary.XXXXXX")"
-  mkdir -p "$canary/home" "$canary/cfg" "$canary/cache" "$canary/xc" "$canary/xd"
-  for d in home cfg cache xc xd; do echo marker >"$canary/$d/MARKER"; done
-  plant_credentials "$canary/cfg"
-  before="$(snapshot "$canary")"
   # A `changed-file:` check names a workspace file the run must rewrite (so
   # the entry really exercises the tool) and that is restored afterwards, so
   # the test leaves the workspace as it found it.
@@ -118,18 +132,46 @@ for row in "${RUN_HOME_ENTRIES[@]}"; do
   restore_saved=""
   if [[ "${check:-}" == changed-file:* ]]; then
     restore_file="${check#changed-file:}"
-    restore_saved="$SHARED/restore_file.bak"
+    restore_saved="$SCRATCH/restore_file.bak"
     cp "$restore_file" "$restore_saved"
   fi
-  # shellcheck disable=SC2086
-  # The run is expected to fail for most rows; `||` keeps `set -e` from
-  # treating the entry's own exit code as the script's death.
+  n=$((n + 1))
+  launcher="$SCRATCH/$n.sh"
+  # Built under the caller's environment: Bazel's output root and launcher
+  # cache must never land in a canary. The build is expected to fail for
+  # `refuse` rows; `||` keeps `set -e` from treating that as this death.
   code=0
+  # shellcheck disable=SC2086
+  out="$(run_bazel run --script_path="$launcher" "$label" </dev/null 2>&1)" || code=$?
+  if [[ "$expect" == "refuse" ]]; then
+    if [[ $code -ne 0 && "$out" == *"ot executable"* ]]; then
+      note_pass "$entry"
+    else
+      fail_entry "$entry" "expected a run refusal, exited $code"
+    fi
+    if [[ -n "$restore_file" ]]; then cp "$restore_saved" "$restore_file"; fi
+    continue
+  fi
+  if [[ $code -ne 0 ]]; then
+    fail_entry "$entry" "building the run launcher failed, exited $code"
+    if [[ -n "$restore_file" ]]; then cp "$restore_saved" "$restore_file"; fi
+    continue
+  fi
+  canary="$(mktemp -d "$SCRATCH/canary.XXXXXX")"
+  mkdir -p "$canary/home" "$canary/cfg" "$canary/cache" "$canary/xc" "$canary/xd"
+  for d in home cfg cache xc xd; do echo marker >"$canary/$d/MARKER"; done
+  plant_credentials "$canary/cfg"
+  before="$(snapshot "$canary")"
+  # Only the generated launcher runs with the canary environment, with the
+  # entry's arguments. The run is expected to fail for most rows; `||` keeps
+  # `set -e` from treating the entry's own exit code as the script's death.
+  code=0
+  # shellcheck disable=SC2086
   out="$(
     env HOME="$canary/home" USERPROFILE="$canary/home" APPDATA="$canary/home" \
       LOCALAPPDATA="$canary/home" XDG_CONFIG_HOME="$canary/cfg" \
       XDG_CACHE_HOME="$canary/xc" XDG_DATA_HOME="$canary/xd" \
-      timeout 600 "$BAZEL" run "$label" ${args:+-- $args} </dev/null 2>&1
+      timeout 600 "$launcher" $args </dev/null 2>&1
   )" || code=$?
   after="$(snapshot "$canary")"
   # Restored before any verdict, so every path below leaves the workspace as
@@ -140,15 +182,6 @@ for row in "${RUN_HOME_ENTRIES[@]}"; do
       file_changed="no"
     fi
     cp "$restore_saved" "$restore_file"
-  fi
-  if [[ "$expect" == "refuse" ]]; then
-    if [[ $code -ne 0 && "$out" == *"Not executable"* ]]; then
-      note_pass "$entry"
-    else
-      fail_entry "$entry" "expected a run refusal, exited $code"
-    fi
-    rm -rf "$canary"
-    continue
   fi
   if [[ "$expect" == exit:* ]]; then
     wanted="${expect#exit:}"
