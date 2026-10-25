@@ -16,6 +16,10 @@ ARCHIVE="rules_dart-$TAG.tar.gz"
 # yields the same archive bytes (and the same sha256).
 git archive --format=tar --prefix=${PREFIX}/ ${TAG} | gzip -n > $ARCHIVE
 SHA=$(shasum -a 256 $ARCHIVE | awk '{print $1}')
+# SRI integrity for the `archive_override` snippet below: the base64 sha256
+# Bazel verifies on download. It is computed from the archive just built, so
+# the printed URL, integrity and strip_prefix always describe this release.
+INTEGRITY="sha256-$(openssl dgst -sha256 -binary "$ARCHIVE" | openssl base64 -A)"
 
 # Add generated API docs to the release, see https://github.com/bazelbuild/bazel-central-registry/issues/5593
 docs="$(mktemp -d)"; targets="$(mktemp)"
@@ -30,6 +34,12 @@ Add to your \`MODULE.bazel\` file:
 
 \`\`\`starlark
 bazel_dep(name = "ai_rules_dart", version = "${TAG:1}", repo_name = "rules_dart")
+archive_override(
+    module_name = "ai_rules_dart",
+    urls = ["https://github.com/Mivr/rules_dart/releases/download/${TAG}/${ARCHIVE}"],
+    integrity = "${INTEGRITY}",
+    strip_prefix = "${PREFIX}",
+)
 \`\`\`
 EOF
 
