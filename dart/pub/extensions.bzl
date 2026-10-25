@@ -30,6 +30,7 @@ _PARSER_SOURCE_LABELS = [
     Label("//dart/pub/private:yaml_scalar.bzl"),
     Label("//dart/pub/private:yaml_flow.bzl"),
     Label("//dart/pub/private:yaml_fold.bzl"),
+    Label("//dart/pub/private:yaml_block_scalar.bzl"),
 ]
 
 _package = tag_class(
