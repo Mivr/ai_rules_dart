@@ -541,15 +541,18 @@ def _docmarker_scalar_test_impl(ctx):
 def _indented_marker_test_impl(ctx):
     env = unittest.begin(ctx)
 
-    # An indented marker outside a block scalar is an ordinary line: strict
-    # lines report it naming the line, lenient parsing skips it.
-    asserts.equals(env, ["unreadable line 2: \"---\""], document_problems("a: 1\n  ---\nb: 2\n", True))
+    # An indented marker after a scalar is a continuation line, as pub folds
+    # it (package:yaml 3.1.4 with the pinned SDK 3.13.5): `a: 1` with `  ---`
+    # reads `1 ---`, leniently too.
+    asserts.equals(env, {"a": "1 ---", "b": 2}, parse_document("a: 1\n  ---\nb: 2\n"))
+    asserts.equals(env, [], document_problems("a: 1\n  ---\nb: 2\n", True))
     value, problems = document_value_and_problems("a: 1\n  ---\nb: 2\n", False)
-    asserts.equals(env, {"a": 1, "b": 2}, value)
+    asserts.equals(env, {"a": "1 ---", "b": 2}, value)
     asserts.equals(env, [], problems)
-    asserts.equals(env, ["unreadable line 2: \"...\""], document_problems("a: 1\n  ...\nb: 2\n", True))
+    asserts.equals(env, {"a": "1 ...", "b": 2}, parse_document("a: 1\n  ...\nb: 2\n"))
+    asserts.equals(env, [], document_problems("a: 1\n  ...\nb: 2\n", True))
     value, problems = document_value_and_problems("a: 1\n  ...\nb: 2\n", False)
-    asserts.equals(env, {"a": 1, "b": 2}, value)
+    asserts.equals(env, {"a": "1 ...", "b": 2}, value)
     asserts.equals(env, [], problems)
 
     # The column-0 controls keep ending the document.
@@ -595,6 +598,96 @@ def _explicit_key_error_test_impl(ctx):
     asserts.true(env, len(problems) >= 1 and "not supported" in problems[0])
     return unittest.end(env)
 
+def _block_fold_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A quoted scalar closes at any indent, even column 0, as pub reads it.
+    asserts.equals(env, {"a": "foo bar"}, parse_document("a: \"foo\nbar\"\n"))
+    asserts.equals(env, {"a": "foo bar"}, parse_document("a: 'foo\nbar'\n"))
+
+    # A pending value that is only a marker reads the marker, as pub does.
+    asserts.equals(env, {"a": "---"}, parse_document("a:\n  ---\n"))
+    asserts.equals(env, [], document_problems("a:\n  ---\n", True))
+
+    # Typed heads fold their continuations into strings, as pub reads them.
+    asserts.equals(env, {"a": "1 two"}, parse_document("a: 1\n  two\n"))
+    asserts.equals(env, [], document_problems("a: 1\n  two\n", True))
+    asserts.equals(env, {"a": "true North"}, parse_document("a: true\n  North\n"))
+
+    # A `- ` line without a colon folds into an open scalar at any depth, as
+    # pub reads it, while one with a colon ends the scalar and fails.
+    asserts.equals(env, {"a": "one - two"}, parse_document("a: one\n  - two\n"))
+    asserts.equals(env, {"tags": ["alpha - beta - gamma"]}, parse_document("tags:\n  - alpha\n    - beta\n    - gamma\n"))
+    asserts.equals(env, ["alpha - beta"], parse_document("- alpha\n  - beta\n"))
+    asserts.equals(
+        env,
+        ["unreadable line 2: \"- 'k: v'\""],
+        document_problems("notes: alpha\n  - 'k: v'\n", True),
+    )
+
+    # A `?` line without a colon folds into an open scalar outside a nested
+    # mapping, as pub reads it; in a nested mapping it opens an explicit
+    # key, which fails naming the line.
+    asserts.equals(env, {"a": "one ? x"}, parse_document("a: one\n  ? x\n"))
+    asserts.equals(env, {"a": "one ?"}, parse_document("a: one\n  ?\n"))
+    asserts.equals(env, ["alpha ? x"], parse_document("- alpha\n  ? x\n"))
+    value, problems = document_value_and_problems("outer:\n  b: 1\n  ? c\n", True)
+    asserts.equals(env, {"outer": {"b": 1}}, value)
+    asserts.equals(env, ["explicit key at line 3 is not supported: \"? c\""], problems)
+    asserts.equals(
+        env,
+        ["unreadable line 3: \"?x\""],
+        document_problems("outer:\n  b: alpha\n  ?x\n", True),
+    )
+
+    # An indented `%` line is content once the scalar is open, as pub folds
+    # it, and a problem where pub rejects it.
+    asserts.equals(env, {"a": "one %x"}, parse_document("a: one\n  %x\n"))
+    asserts.equals(env, {"a": "1 %x"}, parse_document("a: 1\n  %x\n"))
+    asserts.equals(env, ["unreadable line 2: \"%x\""], document_problems("a:\n  %x\n", True))
+    asserts.equals(env, ["unreadable line 1: \"a: %x\""], document_problems("a: %x\n", True))
+    value, problems = document_value_and_problems("a:\n%x\nb: 2\n", True)
+    asserts.equals(env, {"a": None, "b": 2}, value)
+    asserts.equals(env, ["unreadable line 2: \"%x\""], problems)
+
+    # A comment-only or trailing-comment line ends a plain scalar, as pub
+    # ends it; what follows is placed downstream.
+    value, problems = document_value_and_problems("a: one\n  # c\n  two\nb: y\n", True)
+    asserts.equals(env, {"a": "one", "b": "y"}, value)
+    asserts.equals(env, ["unreadable line 3: \"two\""], problems)
+    value, problems = document_value_and_problems("a: one\n  two # c\n  three\nb: y\n", True)
+    asserts.equals(env, {"a": "one", "b": "y"}, value)
+    asserts.equals(env, ["unreadable line 3: \"three\""], problems)
+    asserts.equals(env, {"a": "one", "b": 2}, parse_document("a: \"one\"\n  # c\nb: 2\n"))
+    asserts.equals(env, [], document_problems("a: \"one\"\n  # c\nb: 2\n", True))
+
+    # Text after a same-line closing quote and a second quoted scalar fail
+    # naming the head line, as pub rejects them.
+    value, problems = document_value_and_problems("a: \"one\"\n  two\n", True)
+    asserts.equals(env, None, value["a"])
+    asserts.equals(env, ["unreadable line 1: \"a: \\\"one\\\"\""], problems)
+    value, problems = document_value_and_problems("a: \"x\"\"y\"\n", True)
+    asserts.equals(env, None, value["a"])
+    asserts.equals(env, ["unreadable line 1: \"a: \\\"x\\\"\\\"y\\\"\""], problems)
+
+    # A tab-indented continuation is a problem naming its line.
+    asserts.equals(env, ["unreadable line 2: \"beta\""], document_problems("a:\n\tbeta\n", True))
+
+    # An anchor spreads over the folded scalar, as pub reads it.
+    asserts.equals(
+        env,
+        {"a": "one two", "b": "one two"},
+        parse_document("a: &v one\n  two\nb: *v\n"),
+    )
+
+    # Inside quotes every deeper line is content, as pub reads it.
+    asserts.equals(env, {"a": "foo %x bar"}, parse_document("a:\n  \"foo\n  %x\n  bar\"\n"))
+    asserts.equals(env, ["foo # c bar"], parse_document("- \n  \"foo\n  # c\n  bar\"\n"))
+
+    # A comment between a pending key and its sibling changes nothing.
+    asserts.equals(env, {"a": None, "b": 2}, parse_document("a:\n# c\nb: 2\n"))
+    return unittest.end(env)
+
 _t0_test = unittest.make(_block_mapping_test_impl)
 _t1_test = unittest.make(_block_sequence_test_impl)
 _t2_test = unittest.make(_same_indent_sequence_test_impl)
@@ -626,6 +719,7 @@ _t27_test = unittest.make(_indented_marker_test_impl)
 _t28_test = unittest.make(_multiline_flow_test_impl)
 _t29_test = unittest.make(_explicit_key_error_test_impl)
 _t30_test = unittest.make(_flow_quote_start_test_impl)
+_t31_test = unittest.make(_block_fold_test_impl)
 
 def yaml_subset_test_suite(name):
     small_unittest_suite(
@@ -661,4 +755,5 @@ def yaml_subset_test_suite(name):
         _t28_test,
         _t29_test,
         _t30_test,
+        _t31_test,
     )

@@ -1295,6 +1295,37 @@ def _pub_lock_package_extracted_test_impl(ctx):
     asserts.true(env, "collection" in pkgs, "collection package record is present")
     return analysistest.end(env)
 
+def _parse_pubspec_block_fold_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Block scalars fold through the public entries with their dependencies
+    # and SDK constraint, as pub reads each form below (package:yaml 3.1.4
+    # with the pinned SDK 3.13.5).
+    pubspec = "name: foldenv\ndescription: a long description\n  continued here\nenvironment:\n  sdk: ^3.0.0\ndependencies:\n  foo: ^1.0.0\n"
+    asserts.equals(env, "a long description continued here", parse_pubspec_document(pubspec)["description"])
+    asserts.equals(env, ["foo"], parse_pubspec_deps(pubspec))
+    asserts.equals(env, "^3.0.0", parse_pubspec_sdk_constraint(pubspec))
+    asserts.equals(env, None, parse_pubspec_document_error(pubspec, "//:pubspec.yaml"))
+
+    quoted = "name: q\ndescription: \"quoted\ncontinued\"\nenvironment:\n  sdk: ^3.0.0\ndependencies:\n  foo: ^1.0.0\n"
+    asserts.equals(env, "quoted continued", parse_pubspec_document(quoted)["description"])
+    asserts.equals(env, ["foo"], parse_pubspec_deps(quoted))
+    asserts.equals(env, "^3.0.0", parse_pubspec_sdk_constraint(quoted))
+
+    ranged = "name: r\nenvironment:\n  sdk: \">=3.0.0\n  <4.0.0\"\n"
+    asserts.equals(env, ">=3.0.0 <4.0.0", parse_pubspec_sdk_constraint(ranged))
+
+    typed = "name: t\nversion: 1\n  beta\n"
+    asserts.equals(env, "1 beta", parse_pubspec_document(typed)["version"])
+
+    # Text after a closing quote and a comment-ended scalar with a stray
+    # continuation fail naming the package and the line, as pub rejects them.
+    err = parse_pubspec_document_error("name: x\ndescription: \"oops\"\n  trailing\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "x" in err and "//:pubspec.yaml" in err and "line 2" in err)
+    err = parse_pubspec_document_error("name: x\ndescription: one\n  two # c\n  three\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "x" in err and "//:pubspec.yaml" in err and "line 4" in err)
+    return unittest.end(env)
+
 _pub_lock_package_extracted_test = analysistest.make(_pub_lock_package_extracted_test_impl)
 
 _t0_test = unittest.make(_parse_lock_packages_test_impl)
@@ -1343,6 +1374,7 @@ _t42_test = unittest.make(_parse_pubspec_flow_comment_test_impl)
 _t43_test = unittest.make(_parse_pubspec_flow_document_error_test_impl)
 _t44_test = unittest.make(_parse_pubspec_flow_apos_test_impl)
 _t45_test = unittest.make(_parse_pubspec_flow_backslash_test_impl)
+_t46_test = unittest.make(_parse_pubspec_block_fold_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -1398,6 +1430,7 @@ def yaml_parser_test_suite(name):
         _t43_test,
         _t44_test,
         _t45_test,
+        _t46_test,
     )
     native.test_suite(
         name = name,

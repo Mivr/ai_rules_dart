@@ -21,7 +21,8 @@ explicit key (`? key` with `: value`, including a `:` line that continues a
 plain scalar). A flow whose lines fold with single spaces to one flow
 collection is read as pub reads it, whether it starts on its key's line, on
 the line after `key:` or `-`, or not. A `?` line that continues a plain
-scalar folds into it, as pub folds it. `parse_document` fails on the first problem instead
+scalar folds into it outside a nested mapping, as pub folds it; in a
+nested mapping it opens an explicit key. `parse_document` fails on the first problem instead
 of returning partial data. `document_problems` with strict lines reports every
 such problem so lock files can fail closed; without strict lines it reports
 duplicate keys and the unsupported forms. A leading byte-order mark is
@@ -31,12 +32,13 @@ Supported:
 - block mappings and sequences nested by indentation, including `- key: v`
   items, children that start on the lines after `key:` or `-`, and compact
   sequences where `- ` entries sit at their key's own column
-- `#` comments, `%` directive lines (skipped), and `---` and `...` document
-  markers at column 0 only: an indented marker is never a marker, so one
-  inside a `|` or `>` block scalar stays scalar content
+- `#` comments, `%` directive lines before any content (skipped), and `---`
+  and `...` document markers at column 0 only: an indented marker is never
+  a marker, so one inside a `|` or `>` block scalar stays scalar content.
+  A `%` line after content is a problem naming the line, as pub rejects it.
 - plain, single-quoted and double-quoted scalars, with yaml.bzl's escapes,
-  including scalars that start on the line after `key:` and fold with single
-  spaces
+  including scalars that start on the line after `key:` or continue on
+  deeper lines, which fold through the same quote-aware pass as flow lines
 - flow collections `[...]` and `{...}`, nested; on a line of their own they
   are read within that line, a document that starts with one may span
   lines (JSON documents), and one that starts after `key:` or `-` folds
@@ -51,13 +53,23 @@ Supported:
   value before it is complete or not, so pub only fails where the comment
   swallows a token the flow needs; a backslash at a double-quoted line's
   end continues the scalar with no space while elsewhere a backslash is
-  an ordinary character, and a backslash with trailing space stays
-  literal. A comment that ends a line
+  an ordinary character, and a backslash with trailing space in double
+  quotes is an escaped space (the backslash is dropped) plus the folded
+  space, while in single quotes the backslash stays literal. Block scalars
+  after `key:` or `-` fold through this same pass; see below. A comment that ends a line
   inside a plain scalar and a `%` outside quotes and plain scalars are not
   supported, and fail naming the line.
 - block scalars `|` and `>` with chomping and indentation indicators
-- plain scalars continued on more-indented lines, including `?` lines,
-  which pub folds into the scalar
+- plain, quoted, typed and anchored scalars continued on more-indented
+  lines, folded through the same quote-aware pass: a break between content
+  lines is one space, quotes close at any indent, and indented markers read
+  as content. A `?` line without a colon folds into an open scalar except
+  in a nested mapping, where it opens an explicit key; a `- ` line without
+  a colon folds into an open scalar at any depth, while one with a colon
+  ends it. A comment-only or trailing-comment line ends a plain scalar
+  silently; text after a same-line closing quote, a tab-indented line and
+  a `%` line where pub rejects it are problems naming the line. These
+  shapes read as package:yaml 3.1.4 reads them.
 - anchors and aliases, copied shallowly as yaml.bzl copies them
 - the tags !!str, !!int, !!float, !!bool, !!null, !!seq and !!map
 
@@ -66,10 +78,14 @@ testing, so the projections are unaffected on real pubspec files:
 - explicit keys (`? key` with `: value`) are not supported; yaml.bzl reads
   both. They fail naming the line, even a `:` line that continues a plain
   scalar: pub rejects that line, while yaml.bzl folds it, so failing closed
-  matches pub. Failing closed is new for three forms an older revision
-  read: a `:` continuation (folded before), a `%`-leading flow scalar
-  (read as plain before), and a flow-looking document that reads as no
-  collection (read as empty before).
+  matches pub. Reading and failing closed changed for the forms an older
+  revision misread: a `:` continuation (folded before), a `%`-leading flow
+  scalar (read as plain before), a flow-looking document that reads as no
+  collection (read as empty before), text after a same-line closing quote
+  (kept before), a `%` line at a scalar's start or after content (folded or
+  skipped before), a tab-indented continuation (folded before), a stray
+  line after a comment-ended scalar (folded before), and an indented marker
+  after a same-line scalar (reported before, pub folds it into the scalar).
 - flow collections that span lines are not supported, unless the folded
   lines read as one flow collection as pub reads them; yaml.bzl reads all
   spanning flows. The supported fold matches pub on the oracle-checked
@@ -349,43 +365,11 @@ def _attach_compact_seq(pending, anchors, stack):
         "compact": True,
     })
 
-def _pending_flow_texts(lines, idx, parent_indent):
-    """Collects the lines a value after `key:` or `-` folds with. Returns (texts, next index).
-
-    `texts` holds each deeper content line in block form, plus "" for each
-    blank line (empty or spaces-only), so the fold can place pub's line
-    breaks. Comment-only and other content-free lines are skipped, as the
-    plain fold skips them; a dedent or a line that opens an entry ends the
-    fold.
-    """
-    texts = []
-    next_idx = idx
-    for _ in range(len(lines) + 1):
-        if next_idx >= len(lines):
-            break
-        raw = lines[next_idx]
-        if not raw.strip():
-            texts.append("")
-            next_idx += 1
-            continue
-        indent, text = _block_line_text(raw)
-        if indent == None:
-            next_idx += 1
-            continue
-        if indent <= parent_indent:
-            break
-        if _is_dash(text) or text.startswith("? ") or text.startswith(": ") or _is_mapping_start(text):
-            break
-        texts.append(text)
-        next_idx += 1
-    return texts, next_idx
-
 def _pending_flow_raws(lines, idx, parent_indent):
     """Collects the raw lines a value after `key:` or `-` folds with. Returns (items, next index).
 
     Each item is a (1-based line, raw line) pair, with "" for each blank
-    line. Unlike `_pending_flow_texts`, lines without block content (such
-    as `#` comment lines) are kept raw: inside quotes they are scalar
+    line. Lines without block content (such as `#` comment lines) are kept raw: inside quotes they are scalar
     content, as pub reads them, and the quote-aware fold decides. A dedent
     or a line that opens an entry ends the fold.
     """
@@ -411,6 +395,222 @@ def _pending_flow_raws(lines, idx, parent_indent):
         items.append((next_idx + 1, raw))
         next_idx += 1
     return items, next_idx
+
+def _block_head_quotes(core):
+    """Counts the quotes `core` opens and closes. Returns (opened, closed).
+
+    A quote opens only where a scalar starts, as in `_flow_scan_open`, so an
+    apostrophe in a plain scalar never opens one; `''` in single quotes is
+    one escaped quote and a backslash escapes the next character in double
+    quotes, as in `_flow_scan_quoted`.
+    """
+    single = False
+    double = False
+    escaped = False
+    plain = False
+    opened = 0
+    closed = 0
+    i = 0
+    for _ in range(len(core) + 1):
+        if i >= len(core):
+            break
+        ch = core[i]
+        nxt = core[i + 1] if i + 1 < len(core) else ""
+        if escaped:
+            escaped = False
+        elif single:
+            if ch == "'":
+                if nxt == "'":
+                    i += 1
+                else:
+                    single = False
+                    closed += 1
+        elif double:
+            if ch == "\\":
+                escaped = True
+            elif ch == '"':
+                double = False
+                closed += 1
+        elif ch == "'" or ch == '"':
+            if not plain:
+                opened += 1
+                if ch == "'":
+                    single = True
+                else:
+                    double = True
+        elif ch not in [" ", "\t"]:
+            plain = True
+        i += 1
+    return (opened, closed)
+
+def _block_fail_text(lines, fail, head_idx, entry_text):
+    """The display text for a block scalar problem at 0-based `fail`.
+
+    A problem on the head line names the whole entry, as the quoted-scalar
+    collection did; any other problem names its own line's text.
+    """
+    if fail == head_idx and entry_text:
+        return entry_text
+    _indent, text = _block_line_text(lines[fail])
+    if text != None:
+        return text
+    return lines[fail].strip()
+
+def _block_dash_colon(rest):
+    """Returns whether a `- ` continuation's `rest` carries a mapping colon.
+
+    The check is quote-unaware on purpose: pub reads `- 'k: v'` after an
+    open scalar as an entry line, rejecting the scalar, even though the
+    colon sits inside quotes.
+    """
+    return ": " in rest or ":\t" in rest or rest.endswith(":")
+
+def _block_fold_scalar(lines, start, parent_indent, head_text, raw_head, head_idx, entry_text, question_stops, anchors, state):
+    """Folds a block scalar head with its continuation lines. Returns (value, next index, read).
+
+    `head_text` is the same-line value after `key:` or `- `, comment-free as
+    `_block_line_text` strips it, or "" when the value starts on a later
+    line; `raw_head` is the same slice with its comment intact, "" when
+    pending. `head_idx` is the head's 0-based line, `entry_text` the whole
+    entry for head problems, and `question_stops` whether a `?` line ends
+    the scalar instead of folding into it. When read is False, value is None
+    and a problem names the failing line.
+
+    The head folds with its deeper lines through the same quote-aware pass
+    the flow fold uses (`_flow_scan_text` with `_flow_fold_lines`), so a
+    break folds to one space, blanks fold quote-aware, and comments and `%`
+    behave as pub reads them. Anchor and tag prefixes are stripped before
+    scanning, so a quote after `&a ` still opens, and re-attached before
+    parsing, so `&a one` folding with `two` reads the anchor `one two`.
+    Checked against package:yaml 3.1.4, a `?` line without a colon folds
+    into an open scalar except in a nested mapping, where it opens an
+    explicit key; a `- ` line without a colon folds into an open scalar at
+    any depth, while one with a colon ends it. A comment-only or
+    trailing-comment line ends a plain scalar silently; a tab-indented line
+    is a problem naming the line. Text after a same-line closing quote, a
+    second quoted scalar on the head line, and a continuation of an alias
+    are problems naming the head line, as pub rejects them.
+    """
+    core = _flow_head_text(head_text)
+    if core[:1] in ["[", "{"]:
+        # A flow collection closed on its own line reads within that line,
+        # as before: deeper lines are placed downstream, and a broken flow
+        # stays an unreadable flow value naming the line.
+        return _parse_scalar(head_text, anchors, state, head_idx + 1), start, True
+    if core:
+        prefix = head_text[:len(head_text) - len(core)]
+    elif head_text:
+        prefix = head_text + " "
+    else:
+        prefix = ""
+    scan = _flow_scan_start()
+    if core:
+        _flow_scan_text(core, scan, {"kept": [], "plain_comment": False, "pct_flag": False, "stopped": False, "skip": False})
+    poison = False
+    if raw_head:
+        probe = _flow_scan_start()
+        raw_res = {"kept": [], "plain_comment": False, "pct_flag": False, "stopped": False, "skip": False}
+        _flow_scan_text(raw_head, probe, raw_res)
+        poison = raw_res["plain_comment"] or (raw_res["stopped"] and not raw_res["pct_flag"])
+    opened, closed = _block_head_quotes(core)
+    head_complete = core != "" and core[:1] in ["'", '"'] and not scan["single"] and not scan["double"]
+    seen = core != ""
+    items = [(head_idx + 1, head_text)] if head_text != "" else []
+    consumed = 0
+    idx = start
+    fail = -1
+    for _ in range(len(lines) + 1):
+        if idx >= len(lines):
+            break
+        raw = lines[idx]
+        if raw.strip() == "":
+            if not poison:
+                items.append((idx + 1, ""))
+            idx += 1
+            continue
+        if scan["single"] or scan["double"]:
+            # Inside quotes every line is content at any indent, as pub
+            # reads it, including markers, entries and `%` lines.
+            items.append((idx + 1, raw))
+            res = {"kept": [], "plain_comment": False, "pct_flag": False, "stopped": False, "skip": False}
+            _flow_scan_text(raw.lstrip(" \t"), scan, res)
+            consumed += 1
+            seen = True
+            idx += 1
+            continue
+        indent = _indent_width(raw)
+        if indent <= parent_indent:
+            break
+        if "\t" in raw[:indent]:
+            fail = idx
+            break
+        text = raw.lstrip(" \t")
+        res = {"kept": [], "plain_comment": False, "pct_flag": False, "stopped": False, "skip": False}
+        _flow_scan_text(text, scan, res)
+        if res["pct_flag"]:
+            # An indented `%` line is content once the scalar is open, as
+            # pub folds it, and a problem where pub rejects it otherwise.
+            if not seen:
+                fail = idx
+                break
+            items.append((idx + 1, raw))
+            consumed += 1
+            seen = True
+            idx += 1
+            continue
+        if res["plain_comment"] or res["stopped"]:
+            # A comment-only or trailing-comment line ends a plain scalar,
+            # as pub ends it. The comment line itself is silent, as pub
+            # places it: it is consumed, and what follows the comments is
+            # placed downstream.
+            poison = True
+            idx += 1
+            continue
+        if poison:
+            break
+        if text == ":" or text[:2] == ": " or text[:2] == ":\t":
+            # A `:` line never continues a scalar: pub rejects it where an
+            # entry belongs, so ending the scalar fails closed downstream.
+            break
+        if text[:1] == "?":
+            # A `?` line without a colon folds into an open scalar, as pub
+            # folds it, except in a nested mapping, where it opens an
+            # explicit key instead.
+            if _find_colon(text) >= 0 or not seen or question_stops:
+                break
+        elif _is_dash(text):
+            if not seen or text == "-":
+                break
+            if _block_dash_colon(text[1:]):
+                break
+        elif _is_mapping_start(text) or _is_explicit_key_text(text):
+            break
+        items.append((idx + 1, raw))
+        consumed += 1
+        seen = True
+        idx += 1
+    if fail >= 0:
+        _record_unreadable(state, fail, _block_fail_text(lines, fail, head_idx, entry_text))
+        return None, idx + 1, False
+    for _ in range(len(items) + 1):
+        if not items or items[-1][1] != "":
+            break
+        items.pop()
+    folded, problem = _flow_fold_lines(items, _flow_scan_start())
+    if problem != None:
+        line = problem[1] - 1
+        _record_unreadable(state, line, _block_fail_text(lines, line, head_idx, entry_text))
+        return None, idx, False
+    if scan["single"] or scan["double"]:
+        _record_unreadable(state, head_idx, entry_text or head_text)
+        return None, idx, False
+    if head_complete and (opened != 1 or closed != 1 or not _is_quoted(core) or consumed > 0):
+        _record_unreadable(state, head_idx, entry_text or head_text)
+        return None, idx, False
+    if core[:1] == "*" and consumed > 0:
+        _record_unreadable(state, head_idx, entry_text or head_text)
+        return None, idx, False
+    return _parse_scalar(prefix + folded, anchors, state, head_idx + 1), idx, True
 
 def _flow_scan_start():
     """A fresh quote-aware scan state for one folded flow."""
@@ -699,17 +899,6 @@ def _consume_pending_scalar(cursor, pending, env):
     slot = pending["slot"]
     parent_indent = pending["indent"]
     _indent0, text0 = _block_line_text(lines[idx])
-    if text0 != None and _quote_opener(text0) != None:
-        joined, next_idx, closed = _collect_quoted(lines, idx + 1, parent_indent, text0)
-        if closed:
-            value = _parse_scalar(joined, anchors, state, idx + 1)
-        else:
-            _record_unreadable(state, idx, text0)
-            value = None
-        parent[slot] = value
-        if pending["anchor"] != None:
-            anchors[pending["anchor"]] = _clone(value)
-        return next_idx
     if text0 != None and _unclosed_flow_head(text0, anchors) != None:
         raws, next_idx = _pending_flow_raws(lines, idx, parent_indent)
         folded, problem = _flow_fold_lines(raws, _flow_scan_start())
@@ -727,12 +916,7 @@ def _consume_pending_scalar(cursor, pending, env):
             state.problems.append(_span_flow_problem(idx + 1))
         end = _spanning_flow_end(lines, idx + 1, parent_indent, text0, anchors)
         return end if end != None else next_idx
-    texts, next_idx = _pending_flow_texts(lines, idx, parent_indent)
-    parts = [text for text in texts if text != ""]
-    if not parts:
-        return next_idx + 1 if next_idx < len(lines) else next_idx
-    joined = " ".join(parts)
-    value = _parse_scalar(joined, anchors, state, idx + 1)
+    value, next_idx, _read = _block_fold_scalar(lines, idx, parent_indent, "", "", idx, "", type(parent) == "dict" and parent_indent > 0, anchors, state)
     parent[slot] = value
     if pending["anchor"] != None:
         anchors[pending["anchor"]] = _clone(value)
@@ -787,6 +971,7 @@ def _parse_block(lines, state):
     root = None
     stack = []
     pending = None
+    saw_content = False
     idx = 0
     for _ in range(len(lines) + 1):
         if idx >= len(lines):
@@ -794,8 +979,13 @@ def _parse_block(lines, state):
         raw = lines[idx]
         indent, text = _block_line_text(raw)
         if indent == None:
+            if saw_content and raw.strip().startswith("%"):
+                # A `%` line after content is no directive: pub rejects it,
+                # so it is a problem naming the line, as the oracle reads it.
+                _record_unreadable(state, idx, raw.strip())
             idx += 1
             continue
+        saw_content = True
 
         # Close the containers that this line is not indented into.
         _close_block_containers(stack, indent, text)
@@ -953,18 +1143,8 @@ def _map_line(lines, idx, indent, text, frame, anchors, state):
     if flow_done:
         return _map_store(mapping, key, flow_value, flow_next, line, state)
 
-    value = None
-    next_idx = idx + 1
-    if _quote_opener(value_text) != None:
-        joined, next_idx, closed = _collect_quoted(lines, idx + 1, indent, value_text)
-        if closed:
-            value = _parse_scalar(joined, anchors, state, line)
-        else:
-            _record_unreadable(state, idx, text)
-    else:
-        value = _parse_scalar(value_text, anchors, state, line)
-        if type(value) == "string" and not _is_quoted(value_text):
-            value, next_idx = _consume_plain(lines, idx + 1, indent, value)
+    raw_head = lines[idx][indent + _find_colon(text) + 1:]
+    value, next_idx, _read = _block_fold_scalar(lines, idx + 1, indent, value_text, raw_head, idx, text, indent > 0, anchors, state)
     return _map_store(mapping, key, value, next_idx, line, state)
 
 def _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state):
@@ -990,22 +1170,15 @@ def _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state):
         items.append(item)
         stack.append({"kind": "map", "indent": indent, "value": item, "entry": None})
         return end, None
-    if value_text != "" and _quote_opener(value_text) != None:
-        joined, next_idx, closed = _collect_quoted(lines, idx + 1, indent, value_text)
-        if closed:
-            item[key] = _parse_scalar(joined, anchors, state, line)
-        else:
-            _record_unreadable(state, idx, text)
-            item[key] = None
+    if value_text == "":
         items.append(item)
         stack.append({"kind": "map", "indent": indent, "value": item, "entry": None})
-        return next_idx, None
-    item[key] = _parse_scalar(value_text, anchors, state, line) if value_text else None
+        return idx + 1, {"parent": item, "slot": key, "indent": indent, "anchor": None}
+    value, next_idx, _read = _block_fold_scalar(lines, idx + 1, indent, value_text, head, idx, text, True, anchors, state)
+    item[key] = value
     items.append(item)
     stack.append({"kind": "map", "indent": indent, "value": item, "entry": None})
-    if value_text == "":
-        return idx + 1, {"parent": item, "slot": key, "indent": indent, "anchor": None}
-    return idx + 1, None
+    return next_idx, None
 
 def _seq_line(lines, idx, indent, text, frame, anchors, stack, state):
     """Reads one line of a block sequence. Returns (next index, pending)."""
@@ -1032,15 +1205,6 @@ def _seq_line(lines, idx, indent, text, frame, anchors, stack, state):
         items.append(parsed)
         return next_idx, None
 
-    if _quote_opener(rest) != None:
-        joined, next_idx, closed = _collect_quoted(lines, idx + 1, indent, rest)
-        if closed:
-            items.append(_parse_scalar(joined, anchors, state, line))
-        else:
-            _record_unreadable(state, idx, text)
-            items.append(None)
-        return next_idx, None
-
     after_dash = lines[idx][indent + 1:]
     gap = len(after_dash) - len(after_dash.lstrip(" \t"))
     head = after_dash[gap + _find_colon(rest) + 1:]
@@ -1053,10 +1217,7 @@ def _seq_line(lines, idx, indent, text, frame, anchors, stack, state):
         state.problems.append(_span_flow_problem(line))
         items.append(None)
         return end, None
-    value = _parse_scalar(rest, anchors, state, line)
-    next_idx = idx + 1
-    if type(value) == "string" and not _is_quoted(rest):
-        value, next_idx = _consume_plain(lines, idx + 1, indent, value)
+    value, next_idx, _read = _block_fold_scalar(lines, idx + 1, indent, rest, after_dash, idx, text, False, anchors, state)
     items.append(value)
     return next_idx, None
 
@@ -1096,18 +1257,6 @@ def _is_explicit_key_text(text):
         return False
     return text[0] in ["?", ":"] and text[1] in [" ", "\t"]
 
-def _is_colon_key_text(text):
-    """Returns whether `text` is a `:` explicit-key line: `:` or `: ` with separation.
-
-    A `?` line folds into a plain scalar, as pub folds it, so only a `:` line
-    ends the scalar here. Pub rejects a `:` line where a mapping entry belongs,
-    so ending the scalar fails closed downstream as an unsupported explicit key
-    instead of folding a value pub never reads.
-    """
-    if text == ":":
-        return True
-    return len(text) >= 2 and text[0] == ":" and text[1] in [" ", "\t"]
-
 def _record_unreadable(state, idx, text):
     """Records a skipped line when strict. Lenient parsing ignores it.
 
@@ -1128,52 +1277,6 @@ def _key(value):
     if t in ["list", "dict"]:
         return json.encode(value)
     return str(value)
-
-def _consume_plain(lines, start, parent_indent, first):
-    """Joins a plain scalar with the more-indented lines that continue it.
-
-    Continuation stops at a line that opens a block entry or a mapping entry.
-    Returns (scalar, index of the first line not consumed).
-    """
-    idx = start
-    parts = [first]
-    blank_run = 0
-    for _ in range(len(lines) + 1):
-        if idx >= len(lines):
-            break
-        raw = lines[idx]
-        if not raw.strip():
-            blank_run += 1
-            idx += 1
-            continue
-        if _indent_width(raw) <= parent_indent:
-            break
-        text = _strip_comment(raw[_indent_width(raw):])
-        if text == "":
-            blank_run += 1
-            idx += 1
-            continue
-        if text == "-" or text.startswith("- ") or _is_colon_key_text(text):
-            break
-        key_text, _value_text, ok = _split_key_value(text)
-        if ok and key_text != "":
-            break
-        for _ in range(blank_run):
-            parts.append("\n")
-        parts.append(text)
-        blank_run = 0
-        idx += 1
-
-    # Parts join with a space, except that a newline run is kept as-is.
-    result = ""
-    for part in parts:
-        if part == "\n":
-            result += "\n"
-            continue
-        if result != "" and not result.endswith("\n"):
-            result += " "
-        result += part
-    return result, idx
 
 # ---------------------------------------------------------------------------
 # Block scalars
@@ -1444,39 +1547,6 @@ def _split_key_value(text):
 
 def _is_quoted(text):
     return len(text) >= 2 and ((text[0] == '"' and text[-1] == '"') or (text[0] == "'" and text[-1] == "'"))
-
-def _quote_opener(text):
-    """The quote opening an unclosed quoted scalar, or None when closed."""
-    if len(text) > 0 and text[0] in ["\"", "'"] and not _is_quoted(text):
-        return text[0]
-    return None
-
-def _collect_quoted(lines, start, parent_indent, first):
-    """Folds a quoted scalar whose closing quote is on a later line.
-
-    YAML folds the line break and indentation to one space, so the collected
-    lines join with a single space. Lines inside the scalar are content, not
-    block entries, so only a dedent ends the collection. Returns
-    (joined, next index, closed).
-    """
-    parts = [first]
-    idx = start
-    for _ in range(len(lines) + 1):
-        if _is_quoted(" ".join(parts)):
-            break
-        if idx >= len(lines):
-            break
-        raw = lines[idx]
-        indent, text = _block_line_text(raw)
-        if indent == None:
-            idx += 1
-            continue
-        if indent <= parent_indent:
-            break
-        parts.append(text)
-        idx += 1
-    joined = " ".join(parts)
-    return joined, idx, _is_quoted(joined)
 
 # ---------------------------------------------------------------------------
 # Scalars
