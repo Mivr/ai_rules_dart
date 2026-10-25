@@ -343,9 +343,119 @@ def _anchor_alias_test_impl(ctx):
     env = unittest.begin(ctx)
     asserts.equals(
         env,
-        {"base": {"x": 1}, "child": {"x": 1}, "s": "hello", "t": "hello", "u": None},
-        parse_document("base: &b\n  x: 1\nchild: *b\ns: &v hello\nt: *v\nu: *none\n"),
+        {"base": {"x": 1}, "child": {"x": 1}, "s": "hello", "t": "hello"},
+        parse_document("base: &b\n  x: 1\nchild: *b\ns: &v hello\nt: *v\n"),
     )
+
+    # An undefined alias fails naming the line, as pub rejects it, and still
+    # reads None so parsing continues past it.
+    value, problems = document_value_and_problems("s: &v hello\nt: *v\nu: *none\n", True)
+    asserts.equals(env, {"s": "hello", "t": "hello", "u": None}, value)
+    asserts.equals(env, ["undefined alias \"none\" at line 3"], problems)
+
+    # An alias after an anchor or tag never reads, as pub rejects it, even
+    # when the alias resolves; the anchor still binds None.
+    value, problems = document_value_and_problems("s: &v VIC\nk: &x *v\n", True)
+    asserts.equals(env, {"s": "VIC", "k": None}, value)
+    asserts.equals(env, ["alias after anchor at line 2 is not supported"], problems)
+    value, problems = document_value_and_problems("s: &v VIC\nk: !foo *v\n", True)
+    asserts.equals(env, {"s": "VIC", "k": None}, value)
+    asserts.equals(env, ["alias after tag at line 2 is not supported"], problems)
+
+    # A colon glued to an alias joins the name, as pub scans it, so `*v: 1`
+    # never reads as a pair: an unresolvable name reports its alias problem,
+    # and a resolvable one is still a problem naming the line.
+    value, problems = document_value_and_problems("s: &v VIC\n*v: 1\n", True)
+    asserts.equals(env, {"s": "VIC", None: 1}, value)
+    asserts.equals(env, ["undefined alias \"v:\" at line 2"], problems)
+    value, problems = document_value_and_problems("s: &v: 1\n*v: 1\n", True)
+    asserts.equals(env, {"s": 1, None: 1}, value)
+    asserts.equals(env, ["glued alias key at line 2 is not supported"], problems)
+    return unittest.end(env)
+
+def _flow_affix_key_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A glued colon joins an alias name, as pub scans it: `{*v: 1}` fails on
+    # the `v:` name, while a spaced colon pairs the resolved alias.
+    value, problems = document_value_and_problems("s: &v VIC\nk: {*v: 1}\n", True)
+    asserts.equals(env, {"s": "VIC", "k": {None: None}}, value)
+    asserts.equals(env, ["undefined alias \"v:\" at line 2"], problems)
+    asserts.equals(env, {"s": "VIC", "k": {"VIC": 1}}, parse_document("s: &v VIC\nk: {*v : 1}\n"))
+
+    # An anchor or tag word takes a glued colon into its name, as pub scans
+    # it, so the key after it reads plainly and the anchor binds the key.
+    asserts.equals(env, {"k": {1: None}}, parse_document("k: {&v: 1}\n"))
+    asserts.equals(env, {"k": [{1: None}, 1]}, parse_document("k: [{&v: 1}, *v:]\n"))
+    asserts.equals(env, {"k": {1: None}}, parse_document("k: {!foo: 1}\n"))
+    asserts.equals(env, {"k": {"bar": None}}, parse_document("k: {!foo: bar}\n"))
+
+    # A `!!` tag with a glued colon has no scalar to convert, as pub reports.
+    value, problems = document_value_and_problems("k: {!!int: 1}\n", True)
+    asserts.equals(env, {"k": {1: None}}, value)
+    asserts.equals(env, ["Undefined tag: tag:yaml.org,2002:int: at line 1"], problems)
+
+    # A bare anchor reads a null key and a bare tag its dropped value, as pub
+    # reads them.
+    asserts.equals(env, {"k": {None: 1}}, parse_document("k: {&x : 1}\n"))
+    asserts.equals(env, {"k": {"": 1}}, parse_document("k: {!foo : 1}\n"))
+    asserts.equals(env, {"k": {"": 1}}, parse_document("k: {&x !foo : 1}\n"))
+
+    # A key with no pair colon at all reads with a null value, as pub reads it.
+    asserts.equals(env, {"k": {"a": None}}, parse_document("k: {a}\n"))
+    return unittest.end(env)
+
+def _flow_affix_item_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A colon where the value starts pairs the anchor or tag on its own with
+    # the value, as pub reads it.
+    asserts.equals(env, {"k": [{"": 1}]}, parse_document("k: [!foo : 1]\n"))
+    asserts.equals(env, {"k": [{None: 1}]}, parse_document("k: [&x : 1]\n"))
+    asserts.equals(env, {"k": [{None: 1}]}, parse_document("k: [: 1]\n"))
+
+    # A glued colon joins an alias name in items too; a spaced colon pairs it.
+    value, problems = document_value_and_problems("s: &v VIC\nk: [*v: 1]\n", True)
+    asserts.equals(env, {"s": "VIC", "k": [None]}, value)
+    asserts.equals(env, ["undefined alias \"v:\" at line 2"], problems)
+    asserts.equals(env, {"s": "VIC", "k": [{"VIC": 1}]}, parse_document("s: &v VIC\nk: [*v : 1]\n"))
+
+    # An anchor word takes a glued colon into its name and binds the value.
+    asserts.equals(env, {"k": [[1], 1]}, parse_document("k: [[&v: 1], *v:]\n"))
+    asserts.equals(env, {"k": ["bar"]}, parse_document("k: [!foo: bar]\n"))
+
+    # An alias after an anchor or tag never reads, as pub rejects it.
+    value, problems = document_value_and_problems("s: &v VIC\nk: [&x *v]\n", True)
+    asserts.equals(env, {"s": "VIC", "k": [None]}, value)
+    asserts.equals(env, ["alias after anchor at line 2 is not supported"], problems)
+
+    # A bare anchor reads null, and an alias to it reads back, as pub reads them.
+    asserts.equals(env, {"k": [None, None]}, parse_document("k: [&x, *x]\n"))
+    return unittest.end(env)
+
+def _flow_self_anchor_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # An anchor marks its collection open, so an alias inside it fails closed
+    # as a self-reference, as pub rejects it; after the close it reads back.
+    value, problems = document_value_and_problems("k: &x [*x]\n", True)
+    asserts.equals(env, {"k": [None]}, value)
+    asserts.equals(env, ["self-referential alias \"x\" at line 1 is not supported"], problems)
+    asserts.equals(env, {"k": [[1], [1]]}, parse_document("k: [&x [1], *x]\n"))
+
+    # An anchor on a pair binds the key, as pub reads it.
+    asserts.equals(env, {"k": [{"k": "v"}, "k"]}, parse_document("k: [&x k: v, *x]\n"))
+
+    # A repeated anchor or tag fails naming the line, as pub rejects it.
+    value, problems = document_value_and_problems("k: &x &y 1\n", True)
+    asserts.equals(env, {"k": 1}, value)
+    asserts.equals(env, ["repeated anchor at line 1 is not supported"], problems)
+    value, problems = document_value_and_problems("k: !a !b 1\n", True)
+    asserts.equals(env, {"k": 1}, value)
+    asserts.equals(env, ["repeated tag at line 1 is not supported"], problems)
+
+    # A tab ends an anchor word, as pub reads it.
+    asserts.equals(env, {"k": "v"}, parse_document("k: &x\tv\n"))
     return unittest.end(env)
 
 def _tag_test_impl(ctx):
@@ -905,6 +1015,9 @@ _t29_test = unittest.make(_explicit_key_error_test_impl)
 _t30_test = unittest.make(_flow_quote_start_test_impl)
 _t31_test = unittest.make(_block_fold_test_impl)
 _t32_test = unittest.make(_float_overflow_test_impl)
+_t33_test = unittest.make(_flow_affix_key_test_impl)
+_t34_test = unittest.make(_flow_affix_item_test_impl)
+_t35_test = unittest.make(_flow_self_anchor_test_impl)
 
 def yaml_subset_test_suite(name):
     small_unittest_suite(
@@ -942,4 +1055,7 @@ def yaml_subset_test_suite(name):
         _t30_test,
         _t31_test,
         _t32_test,
+        _t33_test,
+        _t34_test,
+        _t35_test,
     )
