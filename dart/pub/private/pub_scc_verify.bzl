@@ -61,6 +61,31 @@ def scc_planned_deps_error(repo_name, member_name, planned):
             ) % (repo_name, member_name, _RECOVERY_STEP)
     return None
 
+def _planned_deps_mismatch_error(rule_name, repo_name, subject_kind, subject_name, planned_deps, real_deps):
+    """Formats the fetch failure for names planning used that the pubspec contradicts.
+
+    The spoke and the merged checks share this formatter — with the rule kind
+    and the subject as parameters — so their messages can never drift apart.
+
+    Args:
+      rule_name: The repository rule (`"pub_lock_scc_package"`,
+        `"pub_lock_package"`, or `"pub_lock_git_package"`), for diagnostics.
+      repo_name: The repository's name, for diagnostics.
+      subject_kind: `"member"` for a merged member, `"package"` for a spoke.
+      subject_name: The member or package being checked.
+      planned_deps: The dependency names planning used for the subject.
+      real_deps: The dependency names its fetched pubspec lists.
+
+    Returns:
+      An error string naming the repository and the subject, listing the
+      planned and the real names and giving the lockfile recovery step.
+    """
+    return (
+        '%s "%s": %s "%s" lists different dependencies than cycle planning used ' +
+        "(planned [%s], pubspec [%s]). The lockfile's pub cycle-planning facts disagree with the package. " +
+        "To recover, %s."
+    ) % (rule_name, repo_name, subject_kind, subject_name, ", ".join(sorted(planned_deps)), ", ".join(sorted(real_deps)), _RECOVERY_STEP)
+
 def scc_member_deps_error(repo_name, member_name, planned_deps, real_deps):
     """Decides whether one merged member's real pubspec matches the plan.
 
@@ -78,11 +103,7 @@ def scc_member_deps_error(repo_name, member_name, planned_deps, real_deps):
     """
     if sorted(planned_deps) == sorted(real_deps):
         return None
-    return (
-        'pub_lock_scc_package "%s": member "%s" lists different dependencies than cycle planning used ' +
-        "(planned [%s], pubspec [%s]). The lockfile's pub cycle-planning facts disagree with the package. " +
-        "To recover, %s."
-    ) % (repo_name, member_name, ", ".join(sorted(planned_deps)), ", ".join(sorted(real_deps)), _RECOVERY_STEP)
+    return _planned_deps_mismatch_error("pub_lock_scc_package", repo_name, "member", member_name, planned_deps, real_deps)
 
 def spoke_planned_deps_error(rule_name, repo_name, package_name, planned, real_deps):
     """Decides whether one spoke's fetched pubspec matches the cycle-planning names.
@@ -102,38 +123,24 @@ def spoke_planned_deps_error(rule_name, repo_name, package_name, planned, real_d
       package_name: The pub package the spoke fetches.
       planned: The sorted dependency names planning used for the package (the
         spoke's `planned_deps` attribute), or None when planning did not
-        cover the package and there is nothing to check.
+        cover the package and there is nothing to check. The attribute is an
+        `attr.string_list`, so a covered package always carries a list of
+        strings; there is no unusable-names case to report.
       real_deps: The sorted dependency names its fetched pubspec lists.
 
     Returns:
       An error string naming the repository and the package, listing the
       planned and the real names and giving the lockfile recovery step, when
-      they differ or the planned names are unusable; None when they match or
-      planning did not cover the package. Reuses `_RECOVERY_STEP`, so a spoke
-      and a merged repository always give the same recovery.
+      they differ; None when they match or planning did not cover the
+      package. The mismatch shares its formatter with the merged check, and
+      both reuse `_RECOVERY_STEP`, so a spoke and a merged repository always
+      give the same message and the same recovery.
     """
     if planned == None:
         return None
-    if type(planned) != "list":
-        return (
-            '%s "%s": package "%s" has no usable cycle-planning names ' +
-            "(its `planned_deps` is not a list of strings). The lockfile's pub cycle-planning facts disagree with the package. " +
-            "To recover, %s."
-        ) % (rule_name, repo_name, package_name, _RECOVERY_STEP)
-    for dep in planned:
-        if type(dep) != "string":
-            return (
-                '%s "%s": package "%s" has no usable cycle-planning names ' +
-                "(its `planned_deps` holds a non-string). The lockfile's pub cycle-planning facts disagree with the package. " +
-                "To recover, %s."
-            ) % (rule_name, repo_name, package_name, _RECOVERY_STEP)
     if sorted(planned) == sorted(real_deps):
         return None
-    return (
-        '%s "%s": package "%s" lists different dependencies than cycle planning used ' +
-        "(planned [%s], pubspec [%s]). The lockfile's pub cycle-planning facts disagree with the package. " +
-        "To recover, %s."
-    ) % (rule_name, repo_name, package_name, ", ".join(sorted(planned)), ", ".join(sorted(real_deps)), _RECOVERY_STEP)
+    return _planned_deps_mismatch_error(rule_name, repo_name, "package", package_name, planned, real_deps)
 
 def scc_members_connectivity_error(repo_name, real_deps):
     """Decides whether the merged members form one cycle through their real deps.

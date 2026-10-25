@@ -710,7 +710,7 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "bA8uTAPu1riC5R0EjQ36z6SOqP0PnC9pWPFtuGtOW3w=",
+        "bzlTransitiveDigest": "hk1hi55VE9H+fzvevJA5zfTqYlz5qnRLaMOh6mDJDeM=",
         "generatedRepoSpecs": {
           "dart_pub___fe_analyzer_shared": {
             "attributes": {

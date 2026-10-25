@@ -11,8 +11,7 @@ naming its key and stale entries are dropped, the merged-repository
 verification decisions (names match, members connected, an entry without
 usable planned names fails), the spoke verification decision the hosted and
 git spokes call (a match passes, a dropped or fake planned edge fails naming
-the package with the lockfile recovery, an uncovered package skips, an
-unusable plan fails), that same-length texts sharing a Java hashCode
+the package with the lockfile recovery, an uncovered package skips), that same-length texts sharing a Java hashCode
 still digest apart, that the scanner-runtime touch names the runtime label
 the archive scan resolves on Linux, macOS and Windows, and the narrowed
 scratch check's five decisions.
@@ -308,17 +307,6 @@ def _spoke_fake_edge_test_impl(ctx):
     asserts.true(env, "facts" in git_err and "MODULE.bazel.lock" in git_err, "the error gives the lockfile recovery: %s" % git_err)
     return unittest.end(env)
 
-def _spoke_unusable_plan_test_impl(ctx):
-    env = unittest.begin(ctx)
-    for bad in ["aaa", 42, ["aaa", 42]]:
-        err = spoke_planned_deps_error("pub_lock_package", "dart_pub__aaa", "aaa", bad, ["aaa"])
-        asserts.true(env, err != None, "unusable planned names %r fail" % (bad,))
-        asserts.true(env, "dart_pub__aaa" in err and "aaa" in err, "the error names the repository and the package: %s" % err)
-        asserts.true(env, "facts" in err and "MODULE.bazel.lock" in err, "the error gives the lockfile recovery: %s" % err)
-    asserts.equals(env, None, spoke_planned_deps_error("pub_lock_package", "dart_pub__aaa", "aaa", ["bbb"], ["bbb"]), "a list of strings is usable")
-    asserts.equals(env, None, spoke_planned_deps_error("pub_lock_package", "dart_pub__aaa", "aaa", [], []), "an empty plan is usable")
-    return unittest.end(env)
-
 def _digest_position_weights_test_impl(ctx):
     env = unittest.begin(ctx)
     asserts.true(
@@ -418,7 +406,6 @@ _t23_test = unittest.make(_scanner_label_touch_test_impl)
 _t24_test = unittest.make(_spoke_match_test_impl)
 _t25_test = unittest.make(_spoke_dropped_edge_test_impl)
 _t26_test = unittest.make(_spoke_fake_edge_test_impl)
-_t27_test = unittest.make(_spoke_unusable_plan_test_impl)
 
 def pub_scc_facts_test_suite(name):
     small_unittest_suite(
@@ -450,5 +437,4 @@ def pub_scc_facts_test_suite(name):
         _t24_test,
         _t25_test,
         _t26_test,
-        _t27_test,
     )
