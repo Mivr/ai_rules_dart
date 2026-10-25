@@ -20,13 +20,15 @@ library;
 
 import 'dart:io';
 
+import 'refresh_locks_walk.dart';
+
 Future<void> main() async {
   final root = _findRepoRoot();
   final workspaces = _findWorkspaces(root);
 
   stdout.writeln('Found ${workspaces.length} workspaces:');
   for (final ws in workspaces) {
-    stdout.writeln('  ${_relativePath(root, ws)}');
+    stdout.writeln('  ${relativePath(root, ws)}');
   }
   stdout.writeln('');
 
@@ -34,7 +36,7 @@ Future<void> main() async {
   var failed = 0;
 
   for (final ws in workspaces) {
-    final rel = _relativePath(root, ws);
+    final rel = relativePath(root, ws);
     stdout.write('Refreshing $rel ... ');
 
     // Step 1: bazel mod tidy --lockfile_mode=refresh
@@ -81,13 +83,13 @@ Future<void> main() async {
     stdout.writeln('');
     stdout.writeln('Found ${pubPackages.length} Dart packages:');
     for (final pkg in pubPackages) {
-      stdout.writeln('  ${_relativePath(root, pkg)}');
+      stdout.writeln('  ${relativePath(root, pkg)}');
     }
     stdout.writeln('');
 
     final flutterRoot = _flutterRoot();
     for (final pkg in pubPackages) {
-      final rel = _relativePath(root, pkg);
+      final rel = relativePath(root, pkg);
       stdout.write('Refreshing $rel pubspec.lock ... ');
 
       // The pinned SDK rather than the `dart` on PATH, which can be older than
@@ -176,78 +178,10 @@ const _skipWorkspaces = {
 };
 
 /// Find all directories containing MODULE.bazel, excluding references/.
-List<String> _findWorkspaces(String root) {
-  final workspaces = <String>[];
-
-  void scan(Directory dir) {
-    if (dir.path.contains('/references/')) return;
-    if (dir.path.contains('/.git')) return;
-    if (dir.path.contains('/bazel-')) return;
-
-    final rel = _relativePath(root, dir.path);
-    if (_skipWorkspaces.contains(rel)) return;
-
-    if (File('${dir.path}/MODULE.bazel').existsSync()) {
-      workspaces.add(dir.path);
-    }
-
-    for (final entity in dir.listSync()) {
-      if (entity is Directory) {
-        final name = entity.path.split('/').last;
-        // Skip hidden dirs and bazel output dirs.
-        if (name.startsWith('.') || name.startsWith('bazel-')) continue;
-        if (name == 'references') continue;
-        scan(entity);
-      }
-    }
-  }
-
-  scan(Directory(root));
-
-  // Sort: root first, then alphabetically.
-  workspaces.sort((a, b) {
-    if (a == root) return -1;
-    if (b == root) return 1;
-    return a.compareTo(b);
-  });
-
-  return workspaces;
-}
+List<String> _findWorkspaces(String root) =>
+    findMarkedDirs(root, workspaceQuery(_skipWorkspaces));
 
 /// Find all directories containing pubspec.yaml, excluding references/,
 /// dev/testdata/, and e2e/.
-List<String> _findPubPackages(String root) {
-  final packages = <String>[];
-
-  void scan(Directory dir) {
-    if (dir.path.contains('/references/')) return;
-    if (dir.path.contains('/dev/testdata/')) return;
-    if (dir.path.contains('/e2e/')) return;
-    if (dir.path.contains('/.git')) return;
-    if (dir.path.contains('/bazel-')) return;
-    if (dir.path.contains('/.dart_tool')) return;
-
-    if (File('${dir.path}/pubspec.yaml').existsSync()) {
-      packages.add(dir.path);
-    }
-
-    for (final entity in dir.listSync()) {
-      if (entity is Directory) {
-        final name = entity.path.split('/').last;
-        if (name.startsWith('.') || name.startsWith('bazel-')) continue;
-        if (name == 'references') continue;
-        scan(entity);
-      }
-    }
-  }
-
-  scan(Directory(root));
-  packages.sort();
-  return packages;
-}
-
-String _relativePath(String root, String path) {
-  if (path == root) return '.';
-  if (path.startsWith('$root/')) return path.substring(root.length + 1);
-  return path;
-}
+List<String> _findPubPackages(String root) =>
+    findMarkedDirs(root, pubPackageQuery);
