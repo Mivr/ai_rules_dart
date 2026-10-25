@@ -73,6 +73,13 @@ bzl_library(
     name = "language_version",
     srcs = ["language_version.bzl"],
     visibility = ["//dart/pub:__subpackages__"],
+    deps = [":yaml_sdk_constraint"],
+)
+
+bzl_library(
+    name = "yaml_sdk_constraint",
+    srcs = ["yaml_sdk_constraint.bzl"],
+    visibility = ["//dart/pub:__subpackages__"],
 )
 
 bzl_library(

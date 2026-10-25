@@ -25,6 +25,8 @@ language versioning at. It is **not** the running SDK's language version. See
 the `defaultLanguageVersion` const in pub's source.
 """
 
+load(":yaml_sdk_constraint.bzl", "normalize_sdk_blanks")
+
 DEFAULT_LANGUAGE_VERSION = "2.7"
 
 def derive_language_version(sdk_constraint):
@@ -39,7 +41,7 @@ def derive_language_version(sdk_constraint):
     """
     if not sdk_constraint:
         return DEFAULT_LANGUAGE_VERSION
-    s = sdk_constraint.strip()
+    s = normalize_sdk_blanks(sdk_constraint).strip()
     if not s or s == "any" or s == "*":
         return DEFAULT_LANGUAGE_VERSION
 

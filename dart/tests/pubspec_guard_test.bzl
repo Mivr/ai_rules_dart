@@ -74,6 +74,152 @@ _ACCEPTED_CASES = [
     ("any", "2.7"),
 ]
 
+# The 26 blanks Dart's `String.trim` removes, as the UTF-8 byte sequences the
+# YAML layer carries them in (see `yaml_sdk_constraint.bzl`). The ASCII six
+# read on the base too; the other twenty fail every fetch there while pub
+# accepts them. Oracles: package:pub_semver 2.2.0 `VersionConstraint.parse`.
+_SDK_BLANKS = [
+    " ",
+    "\t",
+    "\n",
+    "\v",
+    "\f",
+    "\r",
+    "\302\205",
+    "\302\240",
+    "\341\232\200",
+    "\342\200\200",
+    "\342\200\201",
+    "\342\200\202",
+    "\342\200\203",
+    "\342\200\204",
+    "\342\200\205",
+    "\342\200\206",
+    "\342\200\207",
+    "\342\200\210",
+    "\342\200\211",
+    "\342\200\212",
+    "\342\200\250",
+    "\342\200\251",
+    "\342\200\257",
+    "\342\201\237",
+    "\343\200\200",
+    "\357\273\277",
+]
+
+# Characters Dart does not trim (U+200B, U+180E, U+2060): pub refuses them
+# wherever they stand.
+_SDK_NON_BLANKS = [
+    "\342\200\213",
+    "\341\240\216",
+    "\342\201\240",
+]
+
+# Caret constraints refused where `nextBreaking` overflows the int64 range.
+_CARET_REFUSED = [
+    "^9223372036854775807.0.0",
+    "^0.9223372036854775807.0",
+    "^9223372036854775807.0.0-alpha",
+    "^9223372036854775807.0.0+build",
+    "^9223372036854775807.0.0-alpha+build",
+    "^0.9223372036854775807.0-alpha",
+    "^0.9223372036854775807.0+build",
+    "^0.9223372036854775807.0-alpha+build",
+    "^0009223372036854775807.0.0",
+    "^0.0009223372036854775807.0",
+]
+
+# (constraint, language version) pairs at the overflow edge that pub reads:
+# one below the edge for each incremented component, every component pub
+# does not increment, and `>=`, `<` and bare versions at the int64 maximum,
+# which read as on the base.
+_CARET_ACCEPTED = [
+    ("^9223372036854775806.0.0", "9223372036854775806.0"),
+    ("^9223372036854775806.0.0-alpha+build", "9223372036854775806.0"),
+    ("^0.9223372036854775806.0", "0.9223372036854775806"),
+    ("^0.9223372036854775806.0-pre+build", "0.9223372036854775806"),
+    ("^0.0.9223372036854775807", "0.0"),
+    ("^0.0.9223372036854775807-alpha+build", "0.0"),
+    ("^1.9223372036854775807.0", "1.9223372036854775807"),
+    ("^1.9223372036854775807.0+build", "1.9223372036854775807"),
+    ("^00.01.02", "00.01"),
+    (">=9223372036854775807.0.0", "9223372036854775807.0"),
+    ("<9223372036854775807.0.0", "2.7"),
+    ("9223372036854775807.0.0", "9223372036854775807.0"),
+]
+
+def _blanks_test_impl(ctx):
+    env = unittest.begin(ctx)
+    for blank in _SDK_BLANKS:
+        for value, expected in [
+            (blank + "^3.0.0" + blank, "3.0"),
+            ("^" + blank + "3.0.0", "3.0"),
+            ("^3.0.0" + blank, "3.0"),
+            (blank + "2.12.0" + blank, "2.12"),
+            (">=2.12.0" + blank + "<4.0.0", "2.12"),
+            (">=" + blank + "2.12.0", "2.12"),
+            ("<" + blank + "4.0.0", "2.7"),
+        ]:
+            asserts.true(env, is_valid_sdk_constraint(value), "blank reads: %r" % value)
+            content = _sdk_pubspec("environment:\n  sdk: \"%s\"\n" % value)
+            asserts.true(
+                env,
+                pubspec_sdk_constraint_error(content, _LABEL) == None,
+                "blank reads: %r" % value,
+            )
+            asserts.equals(
+                env,
+                expected,
+                derive_language_version(parse_pubspec_sdk_constraint(content)),
+                "blank derives the ASCII twin's version: %r" % value,
+            )
+    return unittest.end(env)
+
+def _non_blanks_test_impl(ctx):
+    env = unittest.begin(ctx)
+    for mark in _SDK_NON_BLANKS:
+        for value in [
+            mark + "^3.0.0",
+            "^3.0.0" + mark,
+            "^" + mark + "3.0.0",
+            ">=2.12.0" + mark + "<4.0.0",
+            ">=" + mark + "2.12.0",
+        ]:
+            asserts.false(env, is_valid_sdk_constraint(value), "non-blank is refused: %r" % value)
+            content = _sdk_pubspec("environment:\n  sdk: \"%s\"\n" % value)
+            asserts.true(
+                env,
+                pubspec_sdk_constraint_error(content, _LABEL) != None,
+                "non-blank is refused: %r" % value,
+            )
+    return unittest.end(env)
+
+def _caret_edges_test_impl(ctx):
+    env = unittest.begin(ctx)
+    for value in _CARET_REFUSED:
+        asserts.false(env, is_valid_sdk_constraint(value), "overflowing caret is refused: %r" % value)
+        content = _sdk_pubspec("environment:\n  sdk: \"%s\"\n" % value)
+        asserts.true(
+            env,
+            pubspec_sdk_constraint_error(content, _LABEL) != None,
+            "overflowing caret is refused: %r" % value,
+        )
+    for value, expected in _CARET_ACCEPTED:
+        asserts.true(env, is_valid_sdk_constraint(value), "edge caret reads: %r" % value)
+        content = _sdk_pubspec("environment:\n  sdk: \"%s\"\n" % value)
+        asserts.true(
+            env,
+            pubspec_sdk_constraint_error(content, _LABEL) == None,
+            "edge caret reads: %r" % value,
+        )
+        asserts.equals(
+            env,
+            expected,
+            derive_language_version(parse_pubspec_sdk_constraint(content)),
+            "edge caret derives: %r" % value,
+        )
+    return unittest.end(env)
+
 def _refused_strings_test_impl(ctx):
     env = unittest.begin(ctx)
     for value in _REFUSED_STRINGS:
@@ -173,6 +319,9 @@ def _tail_reads_test_impl(ctx):
     return unittest.end(env)
 
 _refused_strings_test = unittest.make(_refused_strings_test_impl)
+_blanks_test = unittest.make(_blanks_test_impl)
+_non_blanks_test = unittest.make(_non_blanks_test_impl)
+_caret_edges_test = unittest.make(_caret_edges_test_impl)
 _refused_values_test = unittest.make(_refused_values_test_impl)
 _accepted_test = unittest.make(_accepted_test_impl)
 _absent_test = unittest.make(_absent_test_impl)
@@ -240,6 +389,9 @@ def pubspec_guard_test_suite(name):
     small_unittest_suite(
         name + "_unit",
         _refused_strings_test,
+        _blanks_test,
+        _non_blanks_test,
+        _caret_edges_test,
         _refused_values_test,
         _accepted_test,
         _absent_test,

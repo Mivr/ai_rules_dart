@@ -6,6 +6,7 @@ pub extension and repository rules consume.
 """
 
 load("//dart/pub/private:yaml_lock.bzl", _lock_error = "pubspec_lock_error", _parse_lock = "parse_pubspec_lock")
+load("//dart/pub/private:yaml_sdk_constraint.bzl", _sdk_constraint_ok = "is_valid_sdk_constraint")
 load("//dart/pub/private:yaml_subset.bzl", "document_value_and_problems")
 
 def _pubspec_parse(content, pubspec_label):
@@ -244,211 +245,6 @@ def parse_pubspec_sdk_constraint(content):
         return ""
     return str(sdk)
 
-# Blanks the pub_semver constraint scanner skips between comparisons: ASCII
-# space, tab, newline, vertical tab, form feed and carriage return.
-_SDK_BLANKS = " \t\n\v\f\r"
-
-_SDK_DIGITS = "0123456789"
-
-# Characters of a prerelease or build identifier: ASCII letters, digits and
-# `-`. Anything else ends the version there, as pub reads it there.
-_SDK_IDENT = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-"
-
-# Largest major, minor or patch pub reads: Dart ints are signed 64-bit, so
-# a longer run fails its `int.parse`.
-_SDK_INT64_MAX = "9223372036854775807"
-
-def _sdk_trim(s):
-    """Trims `_SDK_BLANKS` from both ends of `s`, as pub trims a constraint."""
-    start = 0
-    end = len(s)
-    for _ in range(len(s)):
-        if start < end and s[start] in _SDK_BLANKS:
-            start += 1
-        else:
-            break
-    for _ in range(len(s)):
-        if end > start and s[end - 1] in _SDK_BLANKS:
-            end -= 1
-        else:
-            break
-    return s[start:end]
-
-def _sdk_digits_end(s, pos):
-    """Returns the index past the digit run opening at `pos` (maybe `pos`)."""
-    end = pos
-    for _ in range(len(s)):
-        if end < len(s) and s[end] in _SDK_DIGITS:
-            end += 1
-        else:
-            break
-    return end
-
-def _sdk_uint_ok(s, start, end):
-    """Returns whether `s[start:end]` is a version number pub reads.
-
-    One or more ASCII digits fitting a signed 64-bit int. Leading zeroes
-    read, as pub keeps `02.12.0`; a longer run fails there.
-
-    Args:
-        s: The constraint text.
-        start: Index the number opens at.
-        end: Index past the digit run.
-
-    Returns:
-        Whether the run is a version number pub reads.
-    """
-    if end <= start:
-        return False
-    num = s[start:end]
-    for _ in range(len(num)):
-        if num[0] == "0":
-            num = num[1:]
-        else:
-            break
-    if num == "":
-        return True
-    if len(num) != len(_SDK_INT64_MAX):
-        return len(num) < len(_SDK_INT64_MAX)
-    return num <= _SDK_INT64_MAX
-
-def _sdk_suffix_end(s, pos):
-    """Returns the index past the identifiers opening at `pos`, or -1.
-
-    Identifiers are dot-separated runs of identifier characters, one or
-    more per identifier. An empty identifier fails, as pub rejects it
-    there, and so does a trailing or doubled dot.
-
-    Args:
-        s: The constraint text.
-        pos: Index the first identifier opens at.
-
-    Returns:
-        The index past the identifiers, or -1 when none reads there.
-    """
-    end = pos
-    for _ in range(len(s) + 1):
-        ident = end
-        for _ in range(len(s)):
-            if end < len(s) and s[end] in _SDK_IDENT:
-                end += 1
-            else:
-                break
-        if end == ident:
-            return -1
-        if end < len(s) and s[end] == ".":
-            if end + 1 >= len(s) or s[end + 1] not in _SDK_IDENT:
-                return -1
-            end += 1
-        else:
-            return end
-    return -1
-
-def _sdk_version_end(s, pos):
-    """Returns the index past the version opening at `pos`, or -1.
-
-    A version is `major.minor.patch` of version numbers with an optional
-    `-prerelease` and an optional `+build`, each dot-separated
-    identifiers. Anything else fails, as pub rejects it there.
-
-    Args:
-        s: The constraint text.
-        pos: Index the version opens at.
-
-    Returns:
-        The index past the version, or -1 when none reads there.
-    """
-    end = _sdk_digits_end(s, pos)
-    if not _sdk_uint_ok(s, pos, end):
-        return -1
-    if end >= len(s) or s[end] != ".":
-        return -1
-    minor = end + 1
-    end = _sdk_digits_end(s, minor)
-    if not _sdk_uint_ok(s, minor, end):
-        return -1
-    if end >= len(s) or s[end] != ".":
-        return -1
-    patch = end + 1
-    end = _sdk_digits_end(s, patch)
-    if not _sdk_uint_ok(s, patch, end):
-        return -1
-    if end < len(s) and s[end] == "-":
-        end = _sdk_suffix_end(s, end + 1)
-        if end == -1:
-            return -1
-    if end < len(s) and s[end] == "+":
-        end = _sdk_suffix_end(s, end + 1)
-        if end == -1:
-            return -1
-    return end
-
-def _sdk_skip_blanks(s, pos, n):
-    """Returns the index past the blanks opening at `pos`, as pub skips them.
-
-    Args:
-        s: The constraint text.
-        pos: Index the blanks open at.
-        n: Length of the constraint text.
-
-    Returns:
-        The index past the blanks.
-    """
-    end = pos
-    for _ in range(n):
-        if end < n and s[end] in _SDK_BLANKS:
-            end += 1
-        else:
-            break
-    return end
-
-def _sdk_operator_end(s, pos, n):
-    """Returns the index past the `<` or `>` comparison opening at `pos`.
-
-    Consumes an optional `=` and the blanks pub skips past the operator.
-
-    Args:
-        s: The constraint text.
-        pos: Index the `<` or `>` opens at.
-        n: Length of the constraint text.
-
-    Returns:
-        The index past the operator and its blanks.
-    """
-    pos += 1
-    if pos < n and s[pos] == "=":
-        pos += 1
-    return _sdk_skip_blanks(s, pos, n)
-
-def _sdk_terms_ok(s):
-    """Returns whether `s` holds comparisons or versions, as pub reads them.
-
-    Each term is a `>`, `>=`, `<` or `<=` comparison (with optional blanks
-    past the operator) or a bare version, glued or blank-separated. A term
-    pub cannot read fails the whole constraint there.
-
-    Args:
-        s: The trimmed constraint text, not starting with `^`.
-
-    Returns:
-        Whether pub reads the terms.
-    """
-    pos = 0
-    n = len(s)
-    terms = 0
-    for _ in range(n + 1):
-        pos = _sdk_skip_blanks(s, pos, n)
-        if pos >= n:
-            break
-        if s[pos] == "<" or s[pos] == ">":
-            pos = _sdk_operator_end(s, pos, n)
-        end = _sdk_version_end(s, pos)
-        if end == -1:
-            return False
-        pos = end
-        terms += 1
-    return terms > 0 and pos >= n
-
 def is_valid_sdk_constraint(sdk_constraint):
     """Returns whether `sdk_constraint` is a version constraint pub reads.
 
@@ -457,8 +253,9 @@ def is_valid_sdk_constraint(sdk_constraint):
     comparisons and bare versions, each a full `major.minor.patch` of
     ASCII digits fitting a signed 64-bit int with optional `-prerelease`
     and `+build` identifiers. Anything else — a partial version, `*`,
-    `=`, `||`, text past a `^` version, or an empty string — fails there,
-    so it fails here.
+    `=`, `||`, text past a `^` version, a `^` version whose `nextBreaking`
+    overflows the int64 range, or an empty string — fails there, so it
+    fails here.
 
     Args:
         sdk_constraint: Candidate constraint string.
@@ -466,24 +263,7 @@ def is_valid_sdk_constraint(sdk_constraint):
     Returns:
         True when pub reads the constraint, else False.
     """
-    if type(sdk_constraint) != "string":
-        return False
-    s = _sdk_trim(sdk_constraint)
-    if s == "":
-        return False
-    if s == "any":
-        return True
-    if s.startswith("^"):
-        rest = s[1:]
-        pos = 0
-        for _ in range(len(rest)):
-            if pos < len(rest) and rest[pos] in _SDK_BLANKS:
-                pos += 1
-            else:
-                break
-        end = _sdk_version_end(rest, pos)
-        return end != -1 and end == len(rest)
-    return _sdk_terms_ok(s)
+    return _sdk_constraint_ok(sdk_constraint)
 
 def pubspec_sdk_constraint_error(content, pubspec_label = "pubspec.yaml"):
     """Returns why a pubspec's `environment.sdk` is unreadable, or None when it is clean.

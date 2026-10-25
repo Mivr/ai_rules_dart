@@ -23,4 +23,5 @@ PARSER_SOURCE_LABELS = [
     Label("//dart/pub/private:yaml_document.bzl"),
     Label("//dart/pub/private:yaml_lock.bzl"),
     Label("//dart/pub/private:yaml_lock_fast.bzl"),
+    Label("//dart/pub/private:yaml_sdk_constraint.bzl"),
 ]
