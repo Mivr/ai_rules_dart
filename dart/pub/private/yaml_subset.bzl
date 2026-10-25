@@ -258,6 +258,7 @@ The reader is split across cohesive modules, each loaded in one direction
 only: `yaml_chars.bzl` holds the byte-level checks, `yaml_text.bzl` the line
 shapes, `yaml_escape.bzl` the double-quoted escapes, `yaml_scalar.bzl` the
 scalars, typing and tags, `yaml_flow.bzl` the flow collections,
+`yaml_flow_scan.bzl` the quote-aware scan and fold they share,
 `yaml_fold.bzl` the folded continuations, `yaml_block_scalar.bzl` the block
 scalars, `yaml_block.bzl` the block containers and `yaml_document.bzl` the
 document structure and container walk. Helpers a module shares with another
@@ -266,7 +267,8 @@ are public; file-local helpers keep their leading underscore.
 
 load(":yaml_chars.bzl", "first_bad_utf8_line", "strip_bom")
 load(":yaml_document.bzl", "allows_flow_doc", "first_content", "first_document_lines", "flow_doc_problem", "parse_block")
-load(":yaml_flow.bzl", "flow_fold_lines", "flow_fold_problem", "flow_scan_start", "parse_flow")
+load(":yaml_flow.bzl", "parse_flow")
+load(":yaml_flow_scan.bzl", "flow_fold_lines", "flow_fold_problem", "flow_scan_start")
 load(":yaml_text.bzl", "find_top_colon", "strip_trailing_comment")
 
 def parse_document(content):

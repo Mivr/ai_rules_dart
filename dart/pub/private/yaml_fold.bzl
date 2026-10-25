@@ -5,7 +5,8 @@ line with its deeper continuation lines. Loaded by the block module.
 """
 
 load(":yaml_chars.bzl", "BOM")
-load(":yaml_flow.bzl", "flow_fold_lines", "flow_scan_start", "flow_scan_text", "parse_scalar")
+load(":yaml_flow.bzl", "parse_scalar")
+load(":yaml_flow_scan.bzl", "flow_fold_lines", "flow_scan_start", "flow_scan_text")
 load(":yaml_text.bzl", "bad_blank_index", "block_line_text", "find_top_colon", "flow_head_text", "indent_width", "is_dash", "is_explicit_key_text", "is_mapping_start", "is_quoted", "quoted_end_at", "record_unreadable")
 
 def _block_quote_single(core, i, st):

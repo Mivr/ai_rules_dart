@@ -7,7 +7,8 @@ Loaded by the document module.
 
 load(":yaml_block_scalar.bzl", "parse_block_scalar")
 load(":yaml_chars.bzl", "is_marker_line")
-load(":yaml_flow.bzl", "flow_fold_lines", "flow_fold_problem", "flow_scan_start", "parse_flow", "parse_scalar")
+load(":yaml_flow.bzl", "parse_flow", "parse_scalar")
+load(":yaml_flow_scan.bzl", "flow_fold_lines", "flow_fold_problem", "flow_scan_start")
 load(":yaml_fold.bzl", "block_fold_scalar")
 load(":yaml_scalar.bzl", "OPEN_ANCHOR", "apply_bool_tag", "apply_child_collection_tag", "apply_tag", "drop_tag_value", "is_unknown_tag_handle", "resolve_alias", "resolve_handle", "split_value_text", "strip_value_prefix", "tag_name", "undefined_tag_problem")
 load(":yaml_text.bzl", "bad_blank_index", "block_line_text", "clone", "dict_key", "find_top_colon", "flow_head_text", "is_compact_seq", "is_dash", "is_explicit_key_text", "is_mapping_start", "is_question_entry", "record_unreadable", "split_key_value")
