@@ -25,6 +25,7 @@ _PARSER_SOURCE_LABELS = [
     Label("//dart/pub:yaml_parser.bzl"),
     Label("//dart/pub/private:yaml_chars.bzl"),
     Label("//dart/pub/private:yaml_subset.bzl"),
+    Label("//dart/pub/private:yaml_text.bzl"),
 ]
 
 _package = tag_class(
