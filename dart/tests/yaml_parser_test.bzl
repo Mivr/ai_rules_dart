@@ -1519,6 +1519,15 @@ def _parse_pubspec_tag_test_impl(ctx):
     doc = head + "description: !foo 3\n"
     asserts.equals(env, "3", parse_pubspec_document(doc)["description"])
     asserts.equals(env, None, parse_pubspec_document_error(doc))
+
+    # A `%TAG`-remapped handle fails at its use, as pub rejects it; an
+    # unremapped `!!` tag under another handle's remap reads on.
+    doc = "%TAG !! tag:x/\n---\n" + head + "description: !!str hi\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 6" in err)
+    doc = "%TAG !e! tag:a/\n---\n" + head + "description: !!str hi\n"
+    asserts.equals(env, "hi", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
     return unittest.end(env)
 
 def _parse_lock_tag_test_impl(ctx):
@@ -1532,6 +1541,11 @@ def _parse_lock_tag_test_impl(ctx):
     content = "packages:\n  a:\n    source: hosted\n    version: !!str 1.18.0\n"
     asserts.equals(env, None, pubspec_lock_error(content, "//:pubspec.lock"))
     asserts.equals(env, "1.18.0", parse_pubspec_lock(content, "//:pubspec.lock")["a"]["version"])
+
+    # A `%TAG`-remapped `!!` use fails naming the lock and the use line.
+    content = "%TAG !! tag:x/\n---\npackages:\n  a:\n    source: hosted\n    version: !!str 1.18.0\n"
+    err = pubspec_lock_error(content, "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 6" in err)
     return unittest.end(env)
 
 def _parse_pubspec_refused_test_impl(ctx):

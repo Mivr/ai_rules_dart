@@ -927,6 +927,49 @@ def _tag_remainder_test_impl(ctx):
     )
     asserts.equals(env, {"d": ""}, parse_document("d: !foo\n"))
     asserts.equals(env, {"d": ""}, parse_document("d: !\n"))
+
+    # A `%TAG`-remapped `!!` or `!name!` handle fails at its use, even for
+    # the standard prefix, while a `!` remap changes no local tag and an
+    # unremapped `!!` still reads, as pub reads them (package:yaml 3.1.4
+    # with the pinned SDK 3.13.5).
+    value, problems = document_value_and_problems("%TAG !! tag:example.com/\n--- !!str x\n", True)
+    asserts.equals(env, "x", value)
+    asserts.equals(env, ["Undefined tag: tag:example.com/str at line 2"], problems)
+    asserts.equals(
+        env,
+        ["Undefined tag: tag:a/foo at line 2"],
+        document_problems("%TAG !e! tag:a/\n--- !e!foo bar\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Undefined tag: tag:yaml.org,2002/str at line 2"],
+        document_problems("%TAG !e! tag:yaml.org,2002/\n--- !e!str x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Undefined tag: tag:yaml.org,2002/str at line 2"],
+        document_problems("%TAG !! tag:yaml.org,2002/\n--- !!str x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Undefined tag: tag:x/str at line 2"],
+        document_problems("%TAG !! tag:x/\n--- [!!str a]\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Undefined tag: tag:x/str at line 2"],
+        document_problems("%TAG !! tag:x/\n--- !!str\n", True),
+    )
+    asserts.equals(env, "x", parse_document("%TAG !e! tag:a/\n--- !!str x\n"))
+    asserts.equals(env, "bar", parse_document("%TAG ! tag:x/\n--- !foo bar\n"))
+
+    # A colon prefix resolves through the handle: a standard resolution
+    # reads as its `!!` tag, while any other fails at the use line, as pub
+    # reads them.
+    value, problems = document_value_and_problems("%TAG !! tag:example.com:\n---\na: !!int 1\n", True)
+    asserts.equals(env, {"a": 1}, value)
+    asserts.equals(env, ["Undefined tag: tag:example.com:int at line 3"], problems)
+    asserts.equals(env, {"a": "1"}, parse_document("%TAG !y! tag:yaml.org,2002:\n---\na: !y!str 1\n"))
     return unittest.end(env)
 
 def _collection_tag_test_impl(ctx):

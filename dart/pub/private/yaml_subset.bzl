@@ -428,7 +428,8 @@ def _parse_document(content, strict_lines):
     bad_line = _first_bad_utf8_line(stripped)
     if bad_line > 0:
         state.problems.append("invalid UTF-8 at line %d is not supported" % bad_line)
-    lines = _first_document_lines(stripped, state)
+    lines, tag_prefixes = _first_document_lines(stripped, state)
+    state = struct(problems = state.problems, strict_lines = strict_lines, tag_prefixes = tag_prefixes)
     first = _first_content(lines)
     if first.text[:1] in ["{", "["] and _allows_flow_doc(lines, first.index):
         items = []
@@ -619,8 +620,10 @@ def _doc_dots_line(line, idx, current, doc, state):
     return False
 
 def _first_document_lines(content, state):
-    """Returns the lines of the first document, split as yaml.bzl splits them.
+    """Returns the lines of the first document with its `%TAG` prefixes.
 
+    Returns (lines, tag_prefixes), where lines splits as yaml.bzl splits
+    them and tag_prefixes maps each declared `%TAG` handle to its prefix.
     One stream carries one document, as pub reads it: a second column-0
     `---` line is a problem naming its line, even before any content and
     even with only comments after it, and so is any content after a
@@ -641,16 +644,16 @@ def _first_document_lines(content, state):
         idx += 1
         if line.startswith("---") and line[3:4] in ["", " ", "\t"]:
             if _doc_dash_line(line, idx, current, doc, state):
-                return current
+                return current, doc["tags"]
             continue
         if line.startswith("..."):
             if _doc_dots_line(line, idx, current, doc, state):
-                return current
+                return current, doc["tags"]
             continue
         if doc["ended"]:
             if _doc_tail_content(line):
                 state.problems.append("content after document end (...) at line %d" % idx)
-                return current
+                return current, doc["tags"]
             continue
         if not doc["content"] and not doc["marker"] and not doc["ended"] and line.strip().startswith("%"):
             if line.startswith("%"):
@@ -667,7 +670,7 @@ def _first_document_lines(content, state):
             doc["content"] = True
     if doc["pending"]:
         state.problems.append("directive without document start at line %d" % len(raw_lines))
-    return current
+    return current, doc["tags"]
 
 def _yaml_version_ok(version):
     """Returns whether a `%YAML` version reads as pub reads it: major 1 with minor 1 or more.
@@ -719,7 +722,8 @@ def _directive_line(line, idx, doc, state):
     A duplicate `%YAML` fails, as does a second `%TAG` with the same
     handle; a `%YAML` whose version is missing, malformed or incompatible
     fails, as does a `%TAG` without a valid handle and prefix; an unknown
-    directive reads on, as pub only warns about it. A bad directive sets no
+    directive reads on, as pub only warns about it. A valid `%TAG` records
+    its handle prefix, so later uses resolve through it. A bad directive sets no
     state: the document is already rejected by its problem.
     """
     text = line.strip()
@@ -747,7 +751,7 @@ def _directive_line(line, idx, doc, state):
         if parts[1] in doc["tags"]:
             state.problems.append("duplicate TAG directive at line %d" % idx)
             return
-        doc["tags"][parts[1]] = True
+        doc["tags"][parts[1]] = parts[2]
         doc["pending"] = True
         return
 
@@ -896,6 +900,9 @@ def _apply_child_collection_tag(word, value, state, line):
     """
     if word == None:
         return value
+    word = _resolve_handle(word, state, line)
+    if word == None:
+        return value
     if _is_unknown_tag_handle(word):
         state.problems.append("Undefined tag handle at line %d" % line)
         return value
@@ -919,6 +926,9 @@ def _apply_pending_scalar_tag(word, value, raw, state, line):
     reads a scalar as its string, as pub reads them. A problem still reads
     the child untagged, so parsing continues past it.
     """
+    if word == None:
+        return value
+    word = _resolve_handle(word, state, line)
     if word == None:
         return value
     if _is_unknown_tag_handle(word):
@@ -953,6 +963,9 @@ def _drop_tag_value(word, line, state):
     """
     if word == None:
         return None
+    word = _resolve_handle(word, state, line)
+    if word == None:
+        return None
     if _is_unknown_tag_handle(word):
         state.problems.append("Undefined tag handle at line %d" % line)
         return None
@@ -980,6 +993,9 @@ def _apply_key_tag(word, key, raw, state, line):
     any other key as its raw text, as pub reads them. A problem still reads
     the key untagged, so parsing continues past it.
     """
+    word = _resolve_handle(word, state, line)
+    if word == None:
+        return key
     if _is_unknown_tag_handle(word):
         state.problems.append("Undefined tag handle at line %d" % line)
         return key
@@ -1659,7 +1675,7 @@ def _folded_flow_ok(joined, anchors):
     head = _flow_head_text(joined)
     if head[:1] not in ["[", "{"]:
         return False
-    probe = struct(problems = [], strict_lines = False)
+    probe = struct(problems = [], strict_lines = False, tag_prefixes = {})
     return _parse_flow(head, anchors, probe, 0) != None
 
 def _consume_pending_scalar(cursor, pending, env):
@@ -1849,7 +1865,7 @@ def _unclosed_flow_head(value_text, anchors):
     head = _flow_head_text(value_text)
     if head[:1] not in ["[", "{"]:
         return None
-    probe = struct(problems = [], strict_lines = False)
+    probe = struct(problems = [], strict_lines = False, tag_prefixes = {})
     if _parse_flow(head, anchors, probe, 0) != None:
         return None
     return head
@@ -1877,7 +1893,7 @@ def _flow_span_end(lines, start, parent_indent, head):
             break
         parts.append(text)
         idx += 1
-        probe = struct(problems = [], strict_lines = False)
+        probe = struct(problems = [], strict_lines = False, tag_prefixes = {})
         if _parse_flow("\n".join(parts), {}, probe, 0) != None:
             return idx
     return None
@@ -2667,6 +2683,42 @@ def _apply_bool_tag(value, raw, state, line):
     state.problems.append("Invalid bool scalar at line %d" % line)
     return None
 
+def _resolve_handle(word, state, line):
+    """Resolves a tag word through `%TAG` handle prefixes. Returns the word.
+
+    A `!!` or `!name!` handle the directives remapped resolves to its prefix
+    plus the suffix: when that is a standard `tag:yaml.org,2002:` scalar or
+    collection tag the word becomes its `!!` form and parsing continues, as
+    pub reads it, while any other resolved tag is an undefined-tag problem
+    naming the use line, as pub rejects it. A `%TAG` remap of the `!` handle
+    changes no use: a local or non-specific tag still reads as without it,
+    as pub reads them. A problem returns None.
+    """
+    if word == None or state.tag_prefixes == {}:
+        return word
+    if not word.startswith("!") or word.startswith("!<"):
+        return word
+    handle = "!"
+    suffix = word[1:]
+    if word.startswith("!!"):
+        handle = "!!"
+        suffix = word[2:]
+    else:
+        for i in range(1, len(word)):
+            if word[i] == "!":
+                handle = word[:i + 1]
+                suffix = word[i + 1:]
+                break
+    if handle == "!" or handle not in state.tag_prefixes:
+        return word
+    resolved = state.tag_prefixes[handle] + suffix
+    if resolved.startswith(_YAML_TAG_PREFIX):
+        short = resolved[len(_YAML_TAG_PREFIX):]
+        if short in ["str", "int", "float", "bool", "null", "seq", "map"]:
+            return "!!" + short
+    state.problems.append("Undefined tag: %s at line %d" % (resolved, line))
+    return None
+
 def _is_unknown_tag_handle(tag):
     """Whether `tag` is a named handle or a verbatim tag.
 
@@ -2695,6 +2747,9 @@ def _apply_tag(tag, raw, value, state, line):
     untagged, so parsing continues past it. Scalar conversions fail naming
     the line where the value does not resolve, as pub rejects them.
     """
+    tag = _resolve_handle(tag, state, line)
+    if tag == None:
+        return value
     if _is_unknown_tag_handle(tag):
         state.problems.append("Undefined tag handle at line %d" % line)
         return value
