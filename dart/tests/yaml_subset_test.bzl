@@ -2001,6 +2001,230 @@ def _block_scalar_indicator_test_impl(ctx):
     asserts.equals(env, {"description": " x"}, parse_document("description: |-1\n  x\n"))
     return unittest.end(env)
 
+def _directive_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Directive versions, tags and unknown directives read as pub reads
+    # them (package:yaml 3.1.4 with the pinned SDK 3.13.5): 1.1 through
+    # 1.10 (1.3 warns only), tab or space separation, trailing comments
+    # even glued to the version, either directive order, several tag
+    # handles, and ignored unknown directives with or without `---`.
+    asserts.equals(env, {"name": "x"}, parse_document("%YAML 1.2\n---\nname: x\n"))
+    asserts.equals(env, {"name": "x"}, parse_document("%YAML 1.1\n---\nname: x\n"))
+    asserts.equals(env, {"name": "x"}, parse_document("%YAML 1.3\n---\nname: x\n"))
+    asserts.equals(env, {"name": "x"}, parse_document("%YAML 1.9\n---\nname: x\n"))
+    asserts.equals(env, {"name": "x"}, parse_document("%YAML 1.10\n---\nname: x\n"))
+    asserts.equals(env, {"name": "x"}, parse_document("%YAML 1.01\n---\nname: x\n"))
+    asserts.equals(env, {"name": "x"}, parse_document("%YAML\t1.2\n---\nname: x\n"))
+    asserts.equals(env, {"name": "x"}, parse_document("%YAML 1.2 \n---\nname: x\n"))
+    asserts.equals(env, {"name": "x"}, parse_document("%YAML 1.2\t\n---\nname: x\n"))
+    asserts.equals(env, {"name": "x"}, parse_document("%YAML 1.2 # c\n---\nname: x\n"))
+    asserts.equals(env, {"name": "x"}, parse_document("%YAML 1.2#c\n---\nname: x\n"))
+    asserts.equals(env, {"name": "x"}, parse_document("%FOO bar\nname: x\n"))
+    asserts.equals(env, {"name": "x"}, parse_document("%FOO bar\n---\nname: x\n"))
+    asserts.equals(env, {"name": "x"}, parse_document("%123 x\nname: x\n"))
+    asserts.equals(env, {"name": "x"}, parse_document("%YAML 1.2\n%TAG ! t:x\n---\nname: x\n"))
+    asserts.equals(env, {"name": "x"}, parse_document("%TAG ! t:x\n%YAML 1.2\n---\nname: x\n"))
+    asserts.equals(env, {"name": "x"}, parse_document("%TAG ! t:x\n---\nname: x\n"))
+    asserts.equals(env, {"name": "x"}, parse_document("%TAG ! a:x\n%TAG !e! b:y\n---\nname: x\n"))
+    asserts.equals(env, {"name": "x"}, parse_document("%TAG !! p:\n---\nname: x\n"))
+    asserts.equals(env, {"name": "x"}, parse_document("%TAG !a! p:\n---\nname: x\n"))
+    asserts.equals(env, {"name": "x"}, parse_document("%TAG ! t:x # c\n---\nname: x\n"))
+    asserts.equals(env, None, parse_document("%YAML 1.2\n---\n"))
+    asserts.equals(env, "foo", parse_document("%YAML 1.2\n--- foo"))
+
+    # A duplicate `%YAML` fails naming its line, and the content then fails
+    # for the missing document start, as pub rejects the duplicate first.
+    asserts.equals(
+        env,
+        ["duplicate YAML directive at line 2", "directive without document start at line 3"],
+        document_problems("%YAML 1.2\n%YAML 1.2\nname: x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["duplicate YAML directive at line 3", "directive without document start at line 4"],
+        document_problems("%YAML 1.2\n# c\n%YAML 1.2\nname: x\n", True),
+    )
+
+    # A `%YAML` or `%TAG` without a later `---` fails at the first content
+    # line, or past the end when the document has no content.
+    asserts.equals(
+        env,
+        ["directive without document start at line 2"],
+        document_problems("%YAML 1.2\nname: x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["directive without document start at line 3"],
+        document_problems("%YAML 1.2\n# c\nname: x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["directive without document start at line 3"],
+        document_problems("%YAML 1.2\n%FOO x\nname: x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["directive without document start at line 3"],
+        document_problems("%FOO bar\n%YAML 1.2\nname: x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["directive without document start at line 2"],
+        document_problems("%TAG ! t:x\nname: x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["directive without document start at line 2"],
+        document_problems("%YAML 1.2\n", True),
+    )
+    asserts.equals(
+        env,
+        ["directive without document start at line 3"],
+        document_problems("%YAML 1.2\n# c\n", True),
+    )
+    asserts.equals(
+        env,
+        ["directive without document start at line 1"],
+        document_problems("%YAML 1.2", True),
+    )
+    asserts.equals(
+        env,
+        ["directive without document start at line 2"],
+        document_problems("%YAML 1.2\n[a]\n", True),
+    )
+    asserts.equals(
+        env,
+        ["directive without document start at line 2", "unreadable line 3: \"name: x\""],
+        document_problems("%YAML 1.2\n---x\nname: x\n", True),
+    )
+
+    # A missing, malformed or incompatible `%YAML` version fails naming its
+    # line, as pub rejects it.
+    for version in ["1.0", "0.9", "2.0", "1", "2", "x", "1.x", "1.2.3", "extra"]:
+        asserts.equals(
+            env,
+            ["invalid YAML directive at line 1"],
+            document_problems("%YAML " + version + "\n---\nname: x\n", True),
+        )
+    asserts.equals(
+        env,
+        ["invalid YAML directive at line 1"],
+        document_problems("%YAML\n---\nname: x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["invalid YAML directive at line 1"],
+        document_problems("%YAML # c\n---\nname: x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["invalid YAML directive at line 1"],
+        document_problems("%YAML 1.2 extra\n---\nname: x\n", True),
+    )
+
+    # A `%TAG` without a valid handle and prefix fails naming its line, and
+    # a second `%TAG` with the same handle fails as a duplicate.
+    asserts.equals(
+        env,
+        ["invalid TAG directive at line 1"],
+        document_problems("%TAG\n---\nname: x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["invalid TAG directive at line 1"],
+        document_problems("%TAG !\n---\nname: x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["invalid TAG directive at line 1"],
+        document_problems("%TAG !a p:\n---\nname: x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["invalid TAG directive at line 1"],
+        document_problems("%TAG ! t:x extra\n---\nname: x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["invalid TAG directive at line 1"],
+        document_problems("%TAG ! t:x#c\n---\nname: x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["duplicate TAG directive at line 2"],
+        document_problems("%TAG ! a:x\n%TAG ! a:y\n---\nname: x\n", True),
+    )
+
+    # A bare `%` fails, and an indented `%` line before any content fails,
+    # as pub rejects both where a directive goes.
+    asserts.equals(
+        env,
+        ["invalid directive at line 1"],
+        document_problems("%\nname: x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["indented directive at line 1"],
+        document_problems("  %FOO bar\nname: x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["indented directive at line 1"],
+        document_problems("  %YAML 1.2\nname: x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["indented directive at line 1"],
+        document_problems("  %TAG ! t:x\nname: x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["indented directive at line 2", "directive without document start at line 3"],
+        document_problems("%YAML 1.2\n  %FOO x\nname: x\n", True),
+    )
+
+    # A `...` line with a pending directive fails at the `...` line, and
+    # content glued to `...` fails as content without a document start.
+    asserts.equals(
+        env,
+        ["directive without document start at line 2"],
+        document_problems("%YAML 1.2\n...\n", True),
+    )
+    asserts.equals(
+        env,
+        ["directive without document start at line 2"],
+        document_problems("%YAML 1.2\n... text\n", True),
+    )
+    asserts.equals(
+        env,
+        ["directive without document start at line 2", "content after document end (...) at line 3"],
+        document_problems("%YAML 1.2\n...\nname: x\n", True),
+    )
+
+    # Directive shapes fail closed in lenient mode too.
+    asserts.equals(
+        env,
+        ["duplicate YAML directive at line 2", "directive without document start at line 3"],
+        document_problems("%YAML 1.2\n%YAML 1.2\nname: x\n", False),
+    )
+    asserts.equals(
+        env,
+        ["directive without document start at line 2"],
+        document_problems("%YAML 1.2\nname: x\n", False),
+    )
+    asserts.equals(
+        env,
+        ["invalid YAML directive at line 1"],
+        document_problems("%YAML 1.0\n---\nname: x\n", False),
+    )
+    asserts.equals(
+        env,
+        ["indented directive at line 1"],
+        document_problems("  %YAML 1.2\nname: x\n", False),
+    )
+    return unittest.end(env)
+
 _t0_test = unittest.make(_block_mapping_test_impl)
 _t1_test = unittest.make(_block_sequence_test_impl)
 _t2_test = unittest.make(_same_indent_sequence_test_impl)
@@ -2045,6 +2269,7 @@ _t40_test = unittest.make(_number_shape_test_impl)
 _t41_test = unittest.make(_block_structure_test_impl)
 _t42_test = unittest.make(_flow_indicator_test_impl)
 _t43_test = unittest.make(_block_scalar_indicator_test_impl)
+_t44_test = unittest.make(_directive_test_impl)
 
 def yaml_subset_test_suite(name):
     small_unittest_suite(
@@ -2093,4 +2318,5 @@ def yaml_subset_test_suite(name):
         _t41_test,
         _t42_test,
         _t43_test,
+        _t44_test,
     )

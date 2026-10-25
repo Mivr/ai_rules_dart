@@ -1870,8 +1870,70 @@ _t61_test = unittest.make(_parse_pubspec_block_structure_test_impl)
 _t62_test = unittest.make(_parse_lock_block_structure_test_impl)
 _t63_test = unittest.make(_parse_pubspec_flow_indicator_test_impl)
 _t64_test = unittest.make(_parse_lock_flow_indicator_test_impl)
+def _parse_pubspec_directive_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A `%YAML` directive with a `---` document start reads through the
+    # pubspec projection, as pub reads it.
+    head = "name: x\nenvironment:\n  sdk: ^3.0.0\n"
+    doc = "%YAML 1.2\n---\n" + head
+    asserts.equals(env, "x", parse_pubspec_document(doc)["name"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "%YAML 1.2\n%TAG ! t:x\n---\n" + head
+    asserts.equals(env, "x", parse_pubspec_document(doc)["name"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+
+    # A duplicate `%YAML`, a directive without `---`, and a bad version
+    # fail naming the pubspec and the line, as pub rejects them.
+    doc = "%YAML 1.2\n%YAML 1.2\n---\n" + head
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 2" in err)
+    doc = "%YAML 1.2\n" + head
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 2" in err)
+    doc = "%YAML 1.0\n---\n" + head
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 1" in err)
+    doc = "  %YAML 1.2\n---\n" + head
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 1" in err)
+    return unittest.end(env)
+
+def _parse_lock_directive_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A `%YAML` directive with a `---` document start reads through the
+    # lock projection, as pub reads it.
+    content = (
+        "%YAML 1.2\n---\npackages:\n  a:\n    dependency: transitive\n" +
+        "    description:\n      name: a\n      sha256: abc\n      url: u\n" +
+        "    source: hosted\n    version: \"1.0.0\"\n"
+    )
+    asserts.equals(env, None, pubspec_lock_error(content, "//:pubspec.lock"))
+    asserts.equals(env, "1.0.0", parse_pubspec_lock(content, "//:pubspec.lock")["a"]["version"])
+
+    # A duplicate `%YAML` and a directive without `---` fail naming the
+    # lock and the line, as pub rejects them.
+    content = (
+        "%YAML 1.2\n%YAML 1.2\n---\npackages:\n  a:\n    dependency: transitive\n" +
+        "    description:\n      name: a\n      sha256: abc\n      url: u\n" +
+        "    source: hosted\n    version: \"1.0.0\"\n"
+    )
+    err = pubspec_lock_error(content, "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 2" in err)
+    content = (
+        "%YAML 1.2\npackages:\n  a:\n    dependency: transitive\n" +
+        "    description:\n      name: a\n      sha256: abc\n      url: u\n" +
+        "    source: hosted\n    version: \"1.0.0\"\n"
+    )
+    err = pubspec_lock_error(content, "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 2" in err)
+    return unittest.end(env)
+
 _t65_test = unittest.make(_parse_pubspec_block_scalar_test_impl)
 _t66_test = unittest.make(_parse_lock_block_scalar_test_impl)
+_t67_test = unittest.make(_parse_pubspec_directive_test_impl)
+_t68_test = unittest.make(_parse_lock_directive_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -1948,6 +2010,8 @@ def yaml_parser_test_suite(name):
         _t64_test,
         _t65_test,
         _t66_test,
+        _t67_test,
+        _t68_test,
     )
     native.test_suite(
         name = name,

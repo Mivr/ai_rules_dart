@@ -35,10 +35,19 @@ Supported:
 - block mappings and sequences nested by indentation, including `- key: v`
   items, children that start on the lines after `key:` or `-`, and compact
   sequences where `- ` entries sit at their key's own column
-- `#` comments, `%` directive lines before any content (skipped), and `---`
+- `#` comments, `%` directives before any content or marker, and `---`
   and `...` document markers at column 0 only: an indented marker is never
   a marker, so one inside a `|` or `>` block scalar stays scalar content.
   A `%` line after content is a problem naming the line, as pub rejects it.
+  A column-0 `%YAML` with a missing, malformed or incompatible version, a
+  duplicate `%YAML`, a `%TAG` without a valid handle and prefix, a second
+  `%TAG` with the same handle, and an indented `%` line before any content
+  all fail naming the line, as pub rejects them; an unknown directive reads
+  on, as pub only warns about it. A `%YAML` or `%TAG` without a later `---`
+  fails at the first content line, or past the end when the document has no
+  content, as pub expects the document start; a `---` with inline text
+  starts the document, as pub reads `--- foo` as "foo". A `%` line after a
+  `---` marker or `...` end keeps the old behavior.
   One stream carries one document, as pub reads it: a second `---` fails
   naming its line, even before any content and even with only comments
   after it, and so does any content after a `...` line, naming the
@@ -478,14 +487,25 @@ def _doc_dash_line(line, idx, current, doc, state):
         if _has_directive(current):
             current.append(line)
             doc["content"] = True
+            doc["pending"] = False
         else:
             doc["marker"] = True
         return False
-    text = line[3:].strip() if line[3:4] in [" ", "\t"] else line
+    if line[3:4] in [" ", "\t"]:
+        if doc["ended"] or doc["content"]:
+            state.problems.append("second document marker (---) at line %d" % idx)
+            return True
+        current.append(line[3:].strip())
+        doc["content"] = True
+        doc["pending"] = False
+        return False
     if doc["ended"] or doc["content"]:
         state.problems.append("second document marker (---) at line %d" % idx)
         return True
-    current.append(text)
+    if doc["pending"]:
+        state.problems.append("directive without document start at line %d" % idx)
+        doc["pending"] = False
+    current.append(line)
     doc["content"] = True
     return False
 
@@ -500,16 +520,25 @@ def _doc_dots_line(line, idx, current, doc, state):
         if doc["ended"] or doc["content"]:
             state.problems.append("content after document end (...) at line %d" % idx)
             return True
+        if doc["pending"]:
+            state.problems.append("directive without document start at line %d" % idx)
+            doc["pending"] = False
         current.append(line)
         doc["content"] = True
         return False
     if _is_clean_marker_line(line, "..."):
+        if doc["pending"]:
+            state.problems.append("directive without document start at line %d" % idx)
+            doc["pending"] = False
         doc["ended"] = True
         return False
     text = line[3:].strip() if line[3:4] in [" ", "\t"] else line
     if doc["ended"] or doc["content"]:
         state.problems.append("content after document end (...) at line %d" % idx)
         return True
+    if doc["pending"]:
+        state.problems.append("directive without document start at line %d" % idx)
+        doc["pending"] = False
     current.append(text)
     doc["content"] = True
     return False
@@ -530,9 +559,10 @@ def _first_document_lines(content, state):
     """
     normalized = content.replace("\r\n", "\n").replace("\r", "\n")
     current = []
-    doc = {"content": False, "marker": False, "ended": False}
+    doc = {"content": False, "marker": False, "ended": False, "pending": False, "yaml": False, "tags": {}}
+    raw_lines = normalized.split("\n")
     idx = 0
-    for line in normalized.split("\n"):
+    for line in raw_lines:
         idx += 1
         if line.startswith("---") and line[3:4] in ["", " ", "\t"]:
             if _doc_dash_line(line, idx, current, doc, state):
@@ -547,10 +577,104 @@ def _first_document_lines(content, state):
                 state.problems.append("content after document end (...) at line %d" % idx)
                 return current
             continue
+        if not doc["content"] and not doc["marker"] and not doc["ended"] and line.strip().startswith("%"):
+            if line.startswith("%"):
+                _directive_line(line, idx, doc, state)
+            else:
+                state.problems.append("indented directive at line %d" % idx)
+            current.append(line)
+            continue
         current.append(line)
         if _doc_content_line(line):
+            if doc["pending"]:
+                state.problems.append("directive without document start at line %d" % idx)
+                doc["pending"] = False
             doc["content"] = True
+    if doc["pending"]:
+        state.problems.append("directive without document start at line %d" % len(raw_lines))
     return current
+
+def _yaml_version_ok(version):
+    """Returns whether a `%YAML` version reads as pub reads it: major 1 with minor 1 or more.
+
+    Oracle (package:yaml 3.1.4): `1.1` through `1.10` read (`1.3` with a
+    warning only), while `1.0`, `0.9` and `2.0` fail as incompatible, and
+    anything not shaped `digits.digits` fails as malformed.
+    """
+    parts = version.split(".")
+    if len(parts) != 2:
+        return False
+    for part in parts:
+        if not part or part.strip("0123456789") != "":
+            return False
+    return int(parts[0]) == 1 and int(parts[1]) >= 1
+
+def _tag_handle_ok(handle):
+    """Returns whether a `%TAG` handle reads as pub reads it: `!`, `!!` or `!name!`.
+
+    Oracle: `!` and `!a!` read, while `!a` fails expecting `!`.
+    """
+    if handle == "!":
+        return True
+    if len(handle) < 2 or not handle.startswith("!") or not handle.endswith("!") or "#" in handle:
+        return False
+    for ch in handle[1:-1].elems():
+        if ch == "!":
+            return False
+    return True
+
+def _directive_comment_cut(text):
+    """Cuts a `%TAG` line at a `#` comment, which starts only after whitespace.
+
+    A `#` glued to the prefix is no comment: pub rejects `%TAG ! t:x#c`
+    expecting whitespace, while `%TAG ! t:x # c` reads.
+    """
+    for i in range(len(text)):
+        if text[i] == "#" and text[i - 1] in [" ", "\t"]:
+            return text[:i]
+    return text
+
+def _directive_words(text):
+    """Splits directive text on spaces and tabs, dropping empty words."""
+    return [w for w in text.replace("\t", " ").split(" ") if w != ""]
+
+def _directive_line(line, idx, doc, state):
+    """Processes a column-0 `%` line before any content, marker or end.
+
+    A duplicate `%YAML` fails, as does a second `%TAG` with the same
+    handle; a `%YAML` whose version is missing, malformed or incompatible
+    fails, as does a `%TAG` without a valid handle and prefix; an unknown
+    directive reads on, as pub only warns about it. A bad directive sets no
+    state: the document is already rejected by its problem.
+    """
+    text = line.strip()
+    tokens = _directive_words(text)
+    name = tokens[0][1:]
+    if name == "":
+        state.problems.append("invalid directive at line %d" % idx)
+        return
+    if name == "YAML":
+        parts = _directive_words(text.split("#")[0])
+        if len(parts) != 2 or not _yaml_version_ok(parts[1]):
+            state.problems.append("invalid YAML directive at line %d" % idx)
+            return
+        if doc["yaml"]:
+            state.problems.append("duplicate YAML directive at line %d" % idx)
+            return
+        doc["yaml"] = True
+        doc["pending"] = True
+        return
+    if name == "TAG":
+        parts = _directive_words(_directive_comment_cut(text))
+        if len(parts) != 3 or not _tag_handle_ok(parts[1]) or "#" in parts[2]:
+            state.problems.append("invalid TAG directive at line %d" % idx)
+            return
+        if parts[1] in doc["tags"]:
+            state.problems.append("duplicate TAG directive at line %d" % idx)
+            return
+        doc["tags"][parts[1]] = True
+        doc["pending"] = True
+        return
 
 def _has_directive(lines):
     for line in lines:
