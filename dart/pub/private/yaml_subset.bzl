@@ -554,7 +554,9 @@ def _doc_dash_line(line, idx, current, doc, state):
 
     Only `---` followed by a space, a tab or the end of the line reaches
     here; anything glued to the marker (`---x: 1`) is an ordinary line, as
-    pub reads it as a key.
+    pub reads it as a key. Inline text after the marker reads as the
+    document, unless it starts a block mapping or sequence, which fails
+    naming the line, as pub rejects it.
     """
     if _is_clean_marker_line(line, "---"):
         if doc["ended"] or doc["content"] or doc["marker"]:
@@ -571,6 +573,9 @@ def _doc_dash_line(line, idx, current, doc, state):
         if doc["ended"] or doc["content"]:
             state.problems.append("second document marker (---) at line %d" % idx)
             return True
+        problem = _marker_rest_problem(line[3:], idx)
+        if problem != None:
+            state.problems.append(problem)
         current.append(line[3:].strip())
         doc["content"] = True
         doc["pending"] = False
@@ -618,6 +623,24 @@ def _doc_dots_line(line, idx, current, doc, state):
     current.append(text)
     doc["content"] = True
     return False
+
+def _marker_rest_problem(rest, idx):
+    """The problem for inline text after a `---` marker, else None.
+
+    A block mapping or sequence that starts on the marker line fails, as pub
+    rejects it there, while a scalar or a flow collection reads. Anchor and
+    tag prefixes do not shield the entry, as pub still rejects
+    `--- &x a: 1`; an alias or a block scalar header reads as before.
+    """
+    _anchor, _tag, s, _bad = _strip_value_prefix(_strip_comment(rest).strip())
+    if _is_dash(s):
+        return "Block sequence entries are not allowed here at line %d" % idx
+    if _is_question_entry(s):
+        return "Mapping keys are not allowed here at line %d" % idx
+    _key, _value, found = _split_key_value(s)
+    if found:
+        return "Mapping values are not allowed here at line %d" % idx
+    return None
 
 def _first_document_lines(content, state):
     """Returns the lines of the first document with its `%TAG` prefixes.

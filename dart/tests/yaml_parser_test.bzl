@@ -865,6 +865,12 @@ def _parse_pubspec_docmarker_test_impl(ctx):
     asserts.equals(env, "^3.0.0", parse_pubspec_sdk_constraint(bad))
     asserts.equals(env, None, parse_pubspec_document_error(bad))
     asserts.true(env, "---" in bad_doc["description"])
+
+    # Block content on the `---` line fails naming the pubspec and the line,
+    # as pub rejects it there.
+    doc = "--- name: x\nenvironment:\n  sdk: ^3.0.0\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 1" in err)
     return unittest.end(env)
 
 def _parse_pubspec_unsupported_test_impl(ctx):

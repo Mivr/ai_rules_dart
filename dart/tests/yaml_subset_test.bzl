@@ -176,6 +176,63 @@ def _document_marker_test_impl(ctx):
         ["content after document end (...) at line 2"],
         document_problems("a: 1\n...x\n", True),
     )
+
+    # Block content on the `---` line fails naming the line, while a scalar
+    # or a flow collection there reads, as pub reads them (package:yaml
+    # 3.1.4 with the pinned SDK 3.13.5).
+    value, problems = document_value_and_problems("--- &x a: 1\n", True)
+    asserts.equals(env, {"a": 1}, value)
+    asserts.equals(env, ["Mapping values are not allowed here at line 1"], problems)
+    asserts.equals(
+        env,
+        ["Mapping values are not allowed here at line 1"],
+        document_problems("--- a: 1\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Mapping values are not allowed here at line 1"],
+        document_problems("--- a:\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Mapping values are not allowed here at line 1"],
+        document_problems("--- a: 1 # c\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Block sequence entries are not allowed here at line 1"],
+        document_problems("--- - a\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Block sequence entries are not allowed here at line 1"],
+        document_problems("--- -\n", True),
+    )
+    # An explicit key on the marker line fails twice, naming the line both
+    # times: once for the marker position and once for the key itself.
+    asserts.equals(
+        env,
+        ["Mapping keys are not allowed here at line 1", "explicit key at line 1 is not supported: \"? a\""],
+        document_problems("--- ? a\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Mapping values are not allowed here at line 2"],
+        document_problems("%TAG !e! tag:a/\n--- a: 1\n", True),
+    )
+    asserts.equals(
+        env,
+        ["Block sequence entries are not allowed here at line 2"],
+        document_problems("%TAG !e! tag:a/\n--- - a\n", True),
+    )
+    asserts.equals(env, "-foo", parse_document("--- -foo\n"))
+    asserts.equals(env, "?foo", parse_document("--- ?foo\n"))
+    asserts.equals(env, "a: 1", parse_document("--- 'a: 1'\n"))
+    asserts.equals(env, [1, 2], parse_document("--- [1, 2]\n"))
+    asserts.equals(env, {"a": "b"}, parse_document("--- {a: b}\n"))
+    asserts.equals(env, "x", parse_document("--- !!str x\n"))
+    asserts.equals(env, [1], parse_document("--- &x [1]\n"))
+    asserts.equals(env, "a", parse_document("--- a # b: c\n"))
     return unittest.end(env)
 
 def _plain_scalar_type_test_impl(ctx):
