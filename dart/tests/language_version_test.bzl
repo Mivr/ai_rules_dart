@@ -33,6 +33,46 @@ _CASES = [
     ("<2.0.0 || ^3.0.0", "2.7", "union — first range (after sort) has no lower bound"),
     ("garbage", "2.7", "malformed"),
     ("12.34.56", "12.34", "two-digit major.minor"),
+    # Intersections: pub parses the terms and derives the tightest min,
+    # defaulting to 2.7 when the intersection is empty. Oracles:
+    # package:pub_semver 2.2.0 `VersionConstraint.parse` with pub's
+    # `LanguageVersion.fromSdkConstraint` at tag SDK-3.13.5.
+    (">2.0.0 <2.0.0", "2.7", "empty exclusive range"),
+    (">=2.0.0 <2.0.0", "2.7", "empty half-open range"),
+    (">2.0.0 <=2.0.0", "2.7", "empty half-open range, other side"),
+    (">=2.0.0 <=1.0.0", "2.7", "empty inverted range"),
+    ("1.0.0 2.0.0", "2.7", "empty disjoint bare versions"),
+    ("2.0.0 >2.0.0", "2.7", "empty bare version past exclusive min"),
+    (">1.2.3 1.2.3", "2.7", "empty bare version on exclusive min"),
+    (">=2.0.0 <=2.0.0", "2.0", "inclusive single-version range"),
+    ("2.0.0 2.0.0", "2.0", "repeated bare version"),
+    ("1.2.3 <2.0.0", "1.2", "bare version below upper bound"),
+    ("1.2.3 <1.0.0", "2.7", "bare version past upper bound"),
+    (">=1.0.0 1.2.3", "1.2", "bare version above lower bound"),
+    (">=2.0.0 >=1.0.0", "2.0", "tightest min is not the first term"),
+    ("<4.0.0 >=2.12.0", "2.12", "tightest min past the upper bound"),
+    (">=1.0.0 >1.0.0", "1.0", "exclusive min wins the tie"),
+    (">1.0.0 >=1.0.0", "1.0", "exclusive min wins the tie, other order"),
+    ("<=2.0.0", "2.7", "inclusive upper only"),
+    ("  any  ", "2.7", "any with blanks"),
+    # Pre-releases and builds order the way pub_semver orders versions.
+    (">2.0.0-1 <2.0.0-1", "2.7", "empty pre-release range"),
+    (">=2.0.0-1 <=2.0.0-1", "2.0", "inclusive pre-release single version"),
+    (">=2.0.0-0 <2.0.0-0", "2.7", "empty first-pre-release range"),
+    (">2.0.0 <2.0.0-0", "2.7", "empty range past pre-release max"),
+    (">=2.0.0-1 <2.0.0", "2.0", "pre-release min below release"),
+    (">2.0.0-alpha <2.0.0-beta", "2.0", "string pre-release order"),
+    (">=1.0.0-2 <1.0.0-10", "1.0", "numeric pre-release order"),
+    (">=1.0.0-1 <1.0.0-a", "1.0", "numeric pre-release before string"),
+    (">=1.0.0-a <1.0.0-1", "2.7", "string pre-release past numeric max"),
+    (">=1.0.0-a.b <1.0.0-a", "2.7", "longer pre-release past its prefix max"),
+    (">=1.0.0+2 <=1.0.0+1", "2.7", "empty build range"),
+    ("1.0.0+2 1.0.0+1", "2.7", "empty disjoint builds"),
+    (">1.0.0+1 <2.0.0", "1.0", "build min"),
+    # Leading zeroes read but derive canonical ints, as pub parses them.
+    ("02.12.0", "2.12", "bare version with leading zeroes"),
+    ("^02.12.0", "2.12", "caret with leading zeroes"),
+    (">=02.12.0 <4.0.0", "2.12", "range with leading zeroes"),
 ]
 
 def _table_driven_test_impl(ctx):

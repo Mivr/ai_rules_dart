@@ -142,7 +142,7 @@ _CARET_ACCEPTED = [
     ("^0.0.9223372036854775807-alpha+build", "0.0"),
     ("^1.9223372036854775807.0", "1.9223372036854775807"),
     ("^1.9223372036854775807.0+build", "1.9223372036854775807"),
-    ("^00.01.02", "00.01"),
+    ("^00.01.02", "0.1"),
     (">=9223372036854775807.0.0", "9223372036854775807.0"),
     ("<9223372036854775807.0.0", "2.7"),
     ("9223372036854775807.0.0", "9223372036854775807.0"),
@@ -272,7 +272,6 @@ def _absent_test_impl(ctx):
         "",
         "environment:\n",
         "environment:\n  sdk:\n",
-        "environment: 3\n",
     ]:
         content = _sdk_pubspec(sdk_line)
         asserts.true(
@@ -281,6 +280,78 @@ def _absent_test_impl(ctx):
             "block reads as before:\n%s" % sdk_line,
         )
         asserts.equals(env, "", parse_pubspec_sdk_constraint(content), "no constraint")
+    return unittest.end(env)
+
+# Environment shapes pub's `_parseEnvironment` refuses at tag SDK-3.13.5:
+# a present, non-null `environment` that is not a map, an SDK name that
+# is not a string, a key named `dart`, and a non-null constraint for any
+# SDK that is not a string pub_semver 2.2.0 parses. Each entry pairs the
+# `environment:` block lines with the reason the refusal names.
+_REFUSED_ENVIRONMENT = [
+    ("environment: 3\n", ["\"environment\" field must be a map."]),
+    ("environment: \"sdk\"\n", ["\"environment\" field must be a map."]),
+    ("environment: true\n", ["\"environment\" field must be a map."]),
+    ("environment:\n  - sdk\n", ["\"environment\" field must be a map."]),
+    ("environment:\n  3: \"^3.0.0\"\n", ["SDK names must be strings."]),
+    ("environment:\n  true: \"^3.0.0\"\n", ["SDK names must be strings."]),
+    ("environment:\n  dart: \"^3.0.0\"\n", ["Use \"sdk\" to for Dart SDK constraints."]),
+    (
+        "environment:\n  sdk: \"^3.0.0\"\n  dart: \"^3.0.0\"\n",
+        ["Use \"sdk\" to for Dart SDK constraints."],
+    ),
+    (
+        "environment:\n  sdk: \"foo\"\n  flutter: \"foo\"\n",
+        ["invalid environment.sdk constraint"],
+    ),
+    ("environment:\n  sdk: \"^3.0.0\"\n  flutter: 3\n", ["invalid environment.flutter constraint", "\"3\""]),
+    ("environment:\n  sdk: \"^3.0.0\"\n  flutter: true\n", ["invalid environment.flutter constraint", "\"True\""]),
+    (
+        "environment:\n  sdk: \"^3.0.0\"\n  flutter:\n    - \">=2.12.0\"\n",
+        ["invalid environment.flutter constraint", ">=2.12.0"],
+    ),
+    (
+        "environment:\n  sdk: \"^3.0.0\"\n  flutter:\n    min: 2.12.0\n",
+        ["invalid environment.flutter constraint", "environment.flutter"],
+    ),
+    ("environment:\n  sdk: \"^3.0.0\"\n  flutter: \"foo\"\n", ["invalid environment.flutter constraint", "\"foo\""]),
+    ("environment:\n  sdk: \"^3.0.0\"\n  flutter: \"*\"\n", ["invalid environment.flutter constraint", "\"*\""]),
+    ("environment:\n  sdk: \"^3.0.0\"\n  fuchsia: \"1.2.3.4\"\n", ["invalid environment.fuchsia constraint", "\"1.2.3.4\""]),
+    (
+        "environment:\n  sdk: \"^3.0.0\"\n  3: \"^3.0.0\"\n",
+        ["SDK names must be strings."],
+    ),
+]
+
+# Environment shapes that read as before: a null `environment`, a null
+# constraint for any SDK, and string constraints pub_semver parses.
+_ENVIRONMENT_READS = [
+    "environment:\n  sdk: \"^3.0.0\"\n  flutter:\n",
+    "environment:\n  sdk: \"^3.0.0\"\n  flutter: \"any\"\n",
+    "environment:\n  sdk: \"^3.0.0\"\n  flutter: \">=2.12.0 <4.0.0\"\n",
+    "environment:\n  sdk: \"^3.0.0\"\n  fuchsia: \"^1.0.0\"\n",
+    "environment:\n  flutter: \"^3.0.0\"\n",
+]
+
+def _refused_environment_test_impl(ctx):
+    env = unittest.begin(ctx)
+    for sdk_line, reasons in _REFUSED_ENVIRONMENT:
+        err = pubspec_sdk_constraint_error(_sdk_pubspec(sdk_line), _LABEL)
+        asserts.true(env, err != None, "environment block is refused:\n%s" % sdk_line)
+        asserts.true(env, "probe_pkg" in err, "refusal names the package: %s" % err)
+        asserts.true(env, "pubspec.yaml" in err, "refusal names pubspec.yaml: %s" % err)
+        for reason in reasons:
+            asserts.true(env, reason in err, "refusal names the reason: %s" % err)
+    return unittest.end(env)
+
+def _environment_reads_test_impl(ctx):
+    env = unittest.begin(ctx)
+    for sdk_line in _ENVIRONMENT_READS:
+        content = _sdk_pubspec(sdk_line)
+        asserts.true(
+            env,
+            pubspec_sdk_constraint_error(content, _LABEL) == None,
+            "environment block reads:\n%s" % sdk_line,
+        )
     return unittest.end(env)
 
 def _tail_fails_test_impl(ctx):
@@ -319,6 +390,8 @@ def _tail_reads_test_impl(ctx):
     return unittest.end(env)
 
 _refused_strings_test = unittest.make(_refused_strings_test_impl)
+_refused_environment_test = unittest.make(_refused_environment_test_impl)
+_environment_reads_test = unittest.make(_environment_reads_test_impl)
 _blanks_test = unittest.make(_blanks_test_impl)
 _non_blanks_test = unittest.make(_non_blanks_test_impl)
 _caret_edges_test = unittest.make(_caret_edges_test_impl)
@@ -380,6 +453,13 @@ def _tail_probe_impl(ctx):
 
 _tail_probe_test = analysistest.make(_tail_probe_impl, expect_failure = True)
 
+def _bad_env_probe_impl(ctx):
+    env = analysistest.begin(ctx)
+    asserts.expect_failure(env, "\"environment\" field must be a map.")
+    return analysistest.end(env)
+
+_bad_env_probe_test = analysistest.make(_bad_env_probe_impl, expect_failure = True)
+
 def pubspec_guard_test_suite(name):
     """Declares the pubspec-guard unit and fetch-level refusal tests.
 
@@ -389,6 +469,8 @@ def pubspec_guard_test_suite(name):
     small_unittest_suite(
         name + "_unit",
         _refused_strings_test,
+        _refused_environment_test,
+        _environment_reads_test,
         _blanks_test,
         _non_blanks_test,
         _caret_edges_test,
@@ -419,10 +501,20 @@ def pubspec_guard_test_suite(name):
         pubspec = "name: probe_pkg\n...\n%TAG ! e:\n",
         tags = ["manual"],
     )
+    _pubspec_probe(
+        name = name + "_bad_env_probe",
+        pubspec = "name: probe_pkg\nenvironment: 3\n",
+        tags = ["manual"],
+    )
     _bad_sdk_probe_test(
         name = name + "_bad_sdk_test",
         size = "small",
         target_under_test = ":" + name + "_bad_sdk_probe",
+    )
+    _bad_env_probe_test(
+        name = name + "_bad_env_test",
+        size = "small",
+        target_under_test = ":" + name + "_bad_env_probe",
     )
     _tail_probe_test(
         name = name + "_yaml_tail_test",
@@ -439,6 +531,7 @@ def pubspec_guard_test_suite(name):
         tests = [
             ":" + name + "_unit",
             ":" + name + "_bad_sdk_test",
+            ":" + name + "_bad_env_test",
             ":" + name + "_yaml_tail_test",
             ":" + name + "_tag_tail_test",
         ],

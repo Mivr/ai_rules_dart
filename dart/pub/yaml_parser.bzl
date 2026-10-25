@@ -266,20 +266,22 @@ def is_valid_sdk_constraint(sdk_constraint):
     return _sdk_constraint_ok(sdk_constraint)
 
 def pubspec_sdk_constraint_error(content, pubspec_label = "pubspec.yaml"):
-    """Returns why a pubspec's `environment.sdk` is unreadable, or None when it is clean.
+    """Returns why a pubspec's `environment` is unreadable, or None when it is clean.
 
-    A present, non-null `environment.sdk` must be a string pub reads (see
-    `is_valid_sdk_constraint`): anything else fails the fetch with a
-    message naming the package, the label and the quoted value. A missing
-    `environment`, a non-mapping one, a missing `sdk` key or a null value
-    reads as before, with no error.
+    Mirrors pub's `_parseEnvironment`: a present, non-null `environment`
+    must be a map; every SDK name must be a string other than `dart` (Dart
+    SDK constraints read as `sdk`); and every present, non-null constraint
+    must be a string pub reads (see `is_valid_sdk_constraint`). Anything
+    else fails the fetch with a message naming the package, the label and
+    the reason. A missing `environment`, a null one, a missing `sdk` key
+    or a null constraint reads as before, with no error.
 
     Args:
         content: String contents of a pubspec.yaml file.
         pubspec_label: Label naming the pubspec file for diagnostics.
 
     Returns:
-        An error string naming the package, the label and the value, or None.
+        An error string naming the package, the label and the reason, or None.
     """
     data, err = _pubspec_parse(content, pubspec_label)
     if err:
@@ -288,13 +290,25 @@ def pubspec_sdk_constraint_error(content, pubspec_label = "pubspec.yaml"):
     if "name" in data and data["name"] != None:
         package = str(data["name"])
     env = data.get("environment")
+    if env == None:
+        return None
     if type(env) != "dict":
-        return None
-    if "sdk" not in env:
-        return None
-    sdk = env["sdk"]
-    if sdk == None:
-        return None
-    if type(sdk) != "string" or not is_valid_sdk_constraint(sdk):
-        return "%s in %s: invalid environment.sdk constraint \"%s\": expected a version constraint pub reads, such as ^3.0.0 or >=2.12.0 <4.0.0" % (package, pubspec_label, str(sdk))
+        return "%s in %s: \"environment\" field must be a map." % (package, pubspec_label)
+    if "sdk" in env:
+        sdk = env["sdk"]
+        if sdk != None:
+            if type(sdk) != "string" or not is_valid_sdk_constraint(sdk):
+                return "%s in %s: invalid environment.sdk constraint \"%s\": expected a version constraint pub reads, such as ^3.0.0 or >=2.12.0 <4.0.0" % (package, pubspec_label, str(sdk))
+    for name in env.keys():
+        if type(name) != "string":
+            return "%s in %s: SDK names must be strings. Got \"%s\"." % (package, pubspec_label, str(name))
+        if name == "dart":
+            return "%s in %s: Use \"sdk\" to for Dart SDK constraints." % (package, pubspec_label)
+        if name == "sdk":
+            continue
+        constraint = env[name]
+        if constraint == None:
+            continue
+        if type(constraint) != "string" or not is_valid_sdk_constraint(constraint):
+            return "%s in %s: invalid environment.%s constraint \"%s\": expected a version constraint pub reads, such as ^3.0.0 or >=2.12.0 <4.0.0" % (package, pubspec_label, name, str(constraint))
     return None

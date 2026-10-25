@@ -223,6 +223,50 @@ def _sdk_version_end(s, pos):
             return -1
     return end
 
+def sdk_parse_version(s, pos):
+    """Parses the version opening at `pos` into its components.
+
+    Reads what `Version.parse` reads at the start of the remaining
+    constraint text: `major.minor.patch` of version numbers with an
+    optional `-prerelease` and an optional `+build`.
+
+    Args:
+        s: The constraint text.
+        pos: Index the version opens at.
+
+    Returns:
+        A struct with `end` (the index past the version), `major`,
+        `minor` and `patch` (ints), and `pre` and `build` (raw
+        identifier text, `""` when absent); or None when no version
+        opens at `pos`.
+    """
+    end = _sdk_version_end(s, pos)
+    if end == -1:
+        return None
+    major_end = _sdk_digits_end(s, pos)
+    minor_start = major_end + 1
+    minor_end = _sdk_digits_end(s, minor_start)
+    patch_start = minor_end + 1
+    patch_end = _sdk_digits_end(s, patch_start)
+    pre = ""
+    build = ""
+    rest = patch_end
+    if rest < end and s[rest] == "-":
+        pre_end = _sdk_suffix_end(s, rest + 1)
+        pre = s[rest + 1:pre_end]
+        rest = pre_end
+    if rest < end and s[rest] == "+":
+        build_end = _sdk_suffix_end(s, rest + 1)
+        build = s[rest + 1:build_end]
+    return struct(
+        end = end,
+        major = int(s[pos:major_end]),
+        minor = int(s[minor_start:minor_end]),
+        patch = int(s[patch_start:patch_end]),
+        pre = pre,
+        build = build,
+    )
+
 def _sdk_skip_blanks(s, pos, n):
     """Returns the index past the blanks opening at `pos`, as pub skips them.
 
