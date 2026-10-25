@@ -1870,6 +1870,7 @@ _t61_test = unittest.make(_parse_pubspec_block_structure_test_impl)
 _t62_test = unittest.make(_parse_lock_block_structure_test_impl)
 _t63_test = unittest.make(_parse_pubspec_flow_indicator_test_impl)
 _t64_test = unittest.make(_parse_lock_flow_indicator_test_impl)
+
 def _parse_pubspec_directive_test_impl(ctx):
     env = unittest.begin(ctx)
 

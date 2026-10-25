@@ -851,7 +851,7 @@ def _is_compact_seq(pending, indent, text):
     """Returns whether `text` is a compact entry of a pending mapping key."""
     return type(pending["parent"]) == "dict" and indent == pending["indent"] and _is_dash(text)
 
-def _close_block_containers(stack, indent, text, anchors, state):
+def _close_block_containers(stack, indent, text, anchors):
     """Pops the containers that the line at `indent` is not nested into.
 
     A compact sequence keeps its entries at its key's own column, so a dash
@@ -884,7 +884,7 @@ def _undefined_tag_problem(word, line):
         display = word
     return "Undefined tag: %s at line %d" % (display, line)
 
-def _apply_child_collection_tag(word, value, anchors, state, line):
+def _apply_child_collection_tag(word, value, state, line):
     """Applies a pending or flow-close tag to a collection child. Returns the value.
 
     A `!!seq` or `!!map` tag reads a matching collection as the same-line
@@ -908,7 +908,7 @@ def _apply_child_collection_tag(word, value, anchors, state, line):
         return value
     return value
 
-def _apply_pending_scalar_tag(word, value, raw, anchors, state, line):
+def _apply_pending_scalar_tag(word, value, raw, state, line):
     """Applies a pending tag to a folded scalar child. Returns the value.
 
     Scalar type tags convert as the same-line tags do, through the shared
@@ -934,7 +934,7 @@ def _apply_pending_scalar_tag(word, value, raw, anchors, state, line):
             state.problems.append("Invalid null scalar at line %d" % line)
             return None
         if name in ["str", "int", "float"]:
-            return _apply_tag(word, raw, value, anchors, state, line)
+            return _apply_tag(word, raw, value, state, line)
         state.problems.append(_undefined_tag_problem(word, line))
         return value
     if type(value) == "list" or type(value) == "dict":
@@ -970,7 +970,7 @@ def _drop_tag_value(word, line, state):
     state.problems.append(_undefined_tag_problem(word, line))
     return None
 
-def _apply_key_tag(word, key, raw, anchors, state, line):
+def _apply_key_tag(word, key, raw, state, line):
     """Applies a flow key tag. Returns the key.
 
     A named handle or verbatim tag is an undefined-handle problem, and a
@@ -990,9 +990,9 @@ def _apply_key_tag(word, key, raw, anchors, state, line):
             return key
         if name in ["seq", "map"]:
             return key
-        return _apply_tag(word, raw, key, anchors, state, line)
+        return _apply_tag(word, raw, key, state, line)
     if type(key) == "string":
-        return _apply_tag(word, raw, key, anchors, state, line)
+        return _apply_tag(word, raw, key, state, line)
     return raw
 
 def _drop_pending_value(pending, anchors, state):
@@ -1006,6 +1006,7 @@ def _drop_pending_value(pending, anchors, state):
     if pending["anchor"] != None:
         anchors[pending["anchor"]] = value
     return value
+
 def _attach_pending_child(pending, indent, text, anchors, stack, state):
     """Attaches the child container after a finished pending header line.
 
@@ -1017,7 +1018,7 @@ def _attach_pending_child(pending, indent, text, anchors, stack, state):
     """
     if indent > pending["indent"]:
         child = _new_block(text)
-        value = _apply_child_collection_tag(pending["tag"], child, anchors, state, pending["line"])
+        value = _apply_child_collection_tag(pending["tag"], child, state, pending["line"])
         pending["parent"][pending["slot"]] = value
         if pending["anchor"] != None:
             anchors[pending["anchor"]] = _OPEN_ANCHOR
@@ -1037,7 +1038,7 @@ def _attach_compact_seq(pending, anchors, stack, state):
     self-reference rule as `_attach_pending_child`, and a pending tag reads
     it as the same-line tags do.
     """
-    seq = _apply_child_collection_tag(pending["tag"], [], anchors, state, pending["line"])
+    seq = _apply_child_collection_tag(pending["tag"], [], state, pending["line"])
     pending["parent"][pending["slot"]] = seq
     if pending["anchor"] != None:
         anchors[pending["anchor"]] = _OPEN_ANCHOR
@@ -1657,7 +1658,6 @@ def _consume_pending_scalar(cursor, pending, env):
     anchors = env.anchors
     state = env.state
     parent = pending["parent"]
-    slot = pending["slot"]
     parent_indent = pending["indent"]
     _indent0, text0 = _block_line_text(lines[idx])
     if text0 != None and _unclosed_flow_head(text0, anchors) != None:
@@ -1688,9 +1688,9 @@ def _store_pending_value(pending, value, raw, anchors, state):
     """
     if pending["tag"] != None:
         if type(value) in ["list", "dict"]:
-            value = _apply_child_collection_tag(pending["tag"], value, anchors, state, pending["line"])
+            value = _apply_child_collection_tag(pending["tag"], value, state, pending["line"])
         else:
-            value = _apply_pending_scalar_tag(pending["tag"], value, raw, anchors, state, pending["line"])
+            value = _apply_pending_scalar_tag(pending["tag"], value, raw, state, pending["line"])
     pending["parent"][pending["slot"]] = value
     if pending["anchor"] != None:
         anchors[pending["anchor"]] = _clone(value)
@@ -1778,7 +1778,7 @@ def _parse_block(lines, state):
         saw_content = True
 
         # Close the containers that this line is not indented into.
-        _close_block_containers(stack, indent, text, anchors, state)
+        _close_block_containers(stack, indent, text, anchors)
 
         if pending != None:
             idx, skip = _resolve_pending(pending, struct(lines = lines, idx = idx, indent = indent, text = text), struct(anchors = anchors, stack = stack, state = state))
@@ -1942,7 +1942,7 @@ def _map_line(lines, idx, indent, text, frame, anchors, state):
 
     if rest.startswith("|") or rest.startswith(">"):
         parsed, next_idx, _ok = _parse_block_scalar(lines, idx + 1, indent, indent, rest, idx, text, state)
-        value = _apply_pending_scalar_tag(tag, parsed, parsed, anchors, state, line)
+        value = _apply_pending_scalar_tag(tag, parsed, parsed, state, line)
         if anchor != None:
             anchors[anchor] = _clone(value)
         return _map_store(mapping, key, value, next_idx, line, state)
@@ -1988,7 +1988,7 @@ def _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state):
         # A block scalar after `- key:` reads as pub reads it; an
         # indentation indicator counts from the key's own column.
         parsed, next_idx, _ok = _parse_block_scalar(lines, idx + 1, indent, key_indent, rest_value, idx, text, state)
-        value = _apply_pending_scalar_tag(tag, parsed, parsed, anchors, state, line)
+        value = _apply_pending_scalar_tag(tag, parsed, parsed, state, line)
         if anchor != None:
             anchors[anchor] = _clone(value)
         item[key] = value
@@ -2050,7 +2050,7 @@ def _seq_line(lines, idx, indent, text, frame, anchors, stack, state):
 
     if rest_value.startswith("|") or rest_value.startswith(">"):
         parsed, next_idx, _ok = _parse_block_scalar(lines, idx + 1, indent, indent, rest_value, idx, text, state)
-        value = _apply_pending_scalar_tag(tag, parsed, parsed, anchors, state, line)
+        value = _apply_pending_scalar_tag(tag, parsed, parsed, state, line)
         if anchor != None:
             anchors[anchor] = _clone(value)
         items.append(value)
@@ -2566,7 +2566,7 @@ def _parse_scalar(text, anchors, state, line, record_prefix = True):
     else:
         value = _parse_nonflow(s, anchors, state, line)
     if tag != None:
-        value = _apply_tag(tag, s, value, anchors, state, line)
+        value = _apply_tag(tag, s, value, state, line)
     if anchor:
         anchors[anchor] = _clone(value)
     return value
@@ -2664,7 +2664,7 @@ def _is_unknown_tag_handle(tag):
         return True
     return tag.startswith("!") and "!" in tag[1:]
 
-def _apply_tag(tag, raw, value, anchors, state, line):
+def _apply_tag(tag, raw, value, state, line):
     """Applies a tag to a parsed value. Returns the value.
 
     A named handle or verbatim tag is an undefined handle problem naming
@@ -3353,7 +3353,7 @@ def _flow_close_step(stack, s, i, frame, anchors, state, line):
     stack.pop()
     value = frame["value"]
     if frame["tag"] != None:
-        value = _apply_child_collection_tag(frame["tag"], value, anchors, state, line)
+        value = _apply_child_collection_tag(frame["tag"], value, state, line)
     if frame["anchor"] != None:
         anchors[frame["anchor"]] = _clone(value)
     i += 1
@@ -3549,7 +3549,7 @@ def _flow_scalar_value(token, anchors, state, line):
         return _flow_pair(key_text, value_text, anchor, tag, anchors, state, line)
     value = _parse_nonflow(rest, anchors, state, line)
     if tag != None:
-        value = _apply_tag(tag, rest, value, anchors, state, line)
+        value = _apply_tag(tag, rest, value, state, line)
     if anchor != None:
         anchors[anchor] = _clone(value)
     return value
@@ -3598,7 +3598,7 @@ def _flow_atom(text, anchors, state, line):
         return None
     value = _parse_nonflow(rest, anchors, state, line)
     if tag != None:
-        value = _apply_tag(tag, rest, value, anchors, state, line)
+        value = _apply_tag(tag, rest, value, state, line)
     if anchor != None:
         anchors[anchor] = _clone(value)
     return value
@@ -3616,7 +3616,7 @@ def _flow_pair(key_text, value_text, anchor, tag, anchors, state, line):
     else:
         value = _flow_atom(value_text, anchors, state, line)
     if tag != None:
-        key = _apply_key_tag(tag, key, key_text, anchors, state, line)
+        key = _apply_key_tag(tag, key, key_text, state, line)
     if anchor != None:
         anchors[anchor] = _clone(key)
     pair = {}
@@ -3656,7 +3656,7 @@ def _flow_key_value(token, anchors, state, line):
         return _key(None)
     key = _parse_nonflow(rest, anchors, state, line)
     if tag != None:
-        key = _apply_key_tag(tag, key, rest, anchors, state, line)
+        key = _apply_key_tag(tag, key, rest, state, line)
     if anchor != None:
         anchors[anchor] = _clone(key)
     return _key(key)
