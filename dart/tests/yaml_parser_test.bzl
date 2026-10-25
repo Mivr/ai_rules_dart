@@ -1361,6 +1361,21 @@ def _parse_pubspec_literal_fold_test_impl(ctx):
         asserts.true(env, err != None and "x" in err and "//:pubspec.yaml" in err, "rejected block scalar reads an error: %r" % bad)
     return unittest.end(env)
 
+def _parse_pubspec_more_indented_blank_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # The break after a content line drops only when the next non-blank
+    # line is a base-indented line it folds into. When a more-indented line
+    # follows, the break stays and each blank line adds one "\n", as pub
+    # reads each form below (package:yaml 3.1.4 with the pinned SDK 3.13.5).
+    h = "name: x\nenvironment:\n  sdk: ^3.0.0\n"
+    asserts.equals(env, "alpha\n\n  indented\n\nbeta\n", parse_pubspec_document(h + "notes: >\n  alpha\n\n    indented\n\n  beta\n")["notes"])
+    asserts.equals(env, "a\n\n  b\nc\n", parse_pubspec_document(h + "notes: >\n  a\n\n    b\n  c\n")["notes"])
+    asserts.equals(env, "a\n\n\n  b\nc\n", parse_pubspec_document(h + "notes: >\n  a\n\n\n    b\n  c\n")["notes"])
+    asserts.equals(env, "a\n  b\n\nc\n", parse_pubspec_document(h + "notes: >\n  a\n    b\n\n  c\n")["notes"])
+    asserts.equals(env, "a\n\n  b\n\nc\n", parse_pubspec_document(h + "notes: >\n  a\n\n    b\n\n  c\n")["notes"])
+    return unittest.end(env)
+
 _pub_lock_package_extracted_test = analysistest.make(_pub_lock_package_extracted_test_impl)
 
 _t0_test = unittest.make(_parse_lock_packages_test_impl)
@@ -1411,6 +1426,7 @@ _t44_test = unittest.make(_parse_pubspec_flow_apos_test_impl)
 _t45_test = unittest.make(_parse_pubspec_flow_backslash_test_impl)
 _t46_test = unittest.make(_parse_pubspec_block_fold_test_impl)
 _t47_test = unittest.make(_parse_pubspec_literal_fold_test_impl)
+_t48_test = unittest.make(_parse_pubspec_more_indented_blank_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -1468,6 +1484,7 @@ def yaml_parser_test_suite(name):
         _t45_test,
         _t46_test,
         _t47_test,
+        _t48_test,
     )
     native.test_suite(
         name = name,
