@@ -266,7 +266,8 @@ def _plain_scalar_type_test_impl(ctx):
     asserts.equals(env, None, parsed["g"])
     asserts.equals(env, 31, parsed["h"])
     asserts.equals(env, 15, parsed["i"])
-    asserts.equals(env, 1000, parsed["j"])
+    asserts.equals(env, "1_000", parsed["j"])
+    asserts.equals(env, "string", type(parsed["j"]))
     asserts.equals(env, "float", type(parsed["k"]))
     asserts.equals(env, "float", type(parsed["l"]))
     asserts.equals(env, "float", type(parsed["m"]))
@@ -1793,13 +1794,17 @@ def _block_fold_test_impl(ctx):
     asserts.equals(env, {"a": None, "b": 2}, value)
     asserts.equals(env, ["unreadable line 2: \"%x\""], problems)
 
-    # A comment-only or trailing-comment line ends a plain scalar, as pub
-    # ends it; what follows is placed downstream.
+    # A comment-only line ends a plain scalar, as pub ends it; what follows
+    # is placed downstream.
     value, problems = document_value_and_problems("a: one\n  # c\n  two\nb: y\n", True)
     asserts.equals(env, {"a": "one", "b": "y"}, value)
     asserts.equals(env, ["unreadable line 3: \"two\""], problems)
+
+    # A trailing-comment continuation keeps the text before the `#`, as pub
+    # folds it; the line after still fails downstream, as pub rejects it
+    # there.
     value, problems = document_value_and_problems("a: one\n  two # c\n  three\nb: y\n", True)
-    asserts.equals(env, {"a": "one", "b": "y"}, value)
+    asserts.equals(env, {"a": "one two", "b": "y"}, value)
     asserts.equals(env, ["unreadable line 3: \"three\""], problems)
     asserts.equals(env, {"a": "one", "b": 2}, parse_document("a: \"one\"\n  # c\nb: 2\n"))
     asserts.equals(env, [], document_problems("a: \"one\"\n  # c\nb: 2\n", True))
@@ -2048,7 +2053,6 @@ def _flow_entry_test_impl(ctx):
         "key: [: ? b]\n",
         "key: [? - a : b]\n",
         "key: {? - a : b}\n",
-        "key: [&x ? b]\n",
         "key: [a: &x ? b]\n",
     ]:
         asserts.equals(
@@ -2056,6 +2060,14 @@ def _flow_entry_test_impl(ctx):
             ["block entry inside flow at line 1 is not supported"],
             document_problems(doc, True),
         )
+
+    # An explicit key carrying an anchor or tag fails naming the line, as
+    # pub rejects `key: [&x ? b]`.
+    asserts.equals(
+        env,
+        ["explicit key with anchor or tag at line 1 is not supported"],
+        document_problems("key: [&x ? b]\n", True),
+    )
 
     # Glued dashes, `-: ` pairs as items, `?` keys and `-:x` without a space
     # read as pub reads them.
@@ -2105,6 +2117,12 @@ def _number_shape_test_impl(ctx):
     asserts.equals(env, "0o2000000000000000000000", parse_document("key: 0o2000000000000000000000\n")["key"])
     asserts.equals(env, "0x1_0", parse_document("key: 0x1_0\n")["key"])
     asserts.equals(env, "0o1_7", parse_document("key: 0o1_7\n")["key"])
+    asserts.equals(env, "-0o1000000000000000000000", parse_document("key: -0o1000000000000000000000\n")["key"])
+    asserts.equals(env, "-0o1000000000000000000001", parse_document("key: -0o1000000000000000000001\n")["key"])
+    asserts.equals(env, "0o1000000000000000000000", parse_document("key: 0o1000000000000000000000\n")["key"])
+    asserts.equals(env, "+0x1F", parse_document("key: +0x1F\n")["key"])
+    asserts.equals(env, "-0x1F", parse_document("key: -0x1F\n")["key"])
+    asserts.equals(env, "+0o17", parse_document("key: +0o17\n")["key"])
 
     # Only the exact `.inf` and `.nan` casings read, as pub reads them; other
     # casings, which an older revision lowercased into infinities, stay
@@ -2127,16 +2145,18 @@ def _number_shape_test_impl(ctx):
     asserts.equals(env, "1_0e3", parse_document("key: 1_0e3\n")["key"])
     asserts.equals(env, "0x1_0", parse_document("key: 0x1_0\n")["key"])
 
-    # Out-of-scope scalar typing stays as read before: `1_000`, `1_2_3`,
-    # `.5`, `1.`, `0X1F` and `0O17` keep their older readings. A dotted
-    # decimal with a `_` separator keeps its older reading too.
-    asserts.equals(env, 1000, parse_document("key: 1_000\n")["key"])
-    asserts.equals(env, 123, parse_document("key: 1_2_3\n")["key"])
-    asserts.equals(env, ".5", parse_document("key: .5\n")["key"])
-    asserts.equals(env, "1.", parse_document("key: 1.\n")["key"])
-    asserts.equals(env, 31, parse_document("key: 0X1F\n")["key"])
-    asserts.equals(env, 15, parse_document("key: 0O17\n")["key"])
-    asserts.equals(env, 10.5, parse_document("key: 1_0.5\n")["key"])
+    # A `_` separator never reads as a number, as pub reads it; `.5` and
+    # `1.` read as doubles and an uppercase `0X` or `0O` prefix stays a
+    # string, as pub reads them.
+    asserts.equals(env, "1_000", parse_document("key: 1_000\n")["key"])
+    asserts.equals(env, "1_2_3", parse_document("key: 1_2_3\n")["key"])
+    asserts.equals(env, 0.5, parse_document("key: .5\n")["key"])
+    asserts.equals(env, "float", type(parse_document("key: .5\n")["key"]))
+    asserts.equals(env, 1.0, parse_document("key: 1.\n")["key"])
+    asserts.equals(env, "float", type(parse_document("key: 1.\n")["key"]))
+    asserts.equals(env, "0X1F", parse_document("key: 0X1F\n")["key"])
+    asserts.equals(env, "0O17", parse_document("key: 0O17\n")["key"])
+    asserts.equals(env, "1_0.5", parse_document("key: 1_0.5\n")["key"])
 
     # `!!int` converts through the scalar text, as pub parses it: plain and
     # padded decimals, lowercase hex and octal read, while a `_` separator,
@@ -2162,6 +2182,7 @@ def _number_shape_test_impl(ctx):
         "key: !!int 0o1_7\n",
         "key: !!int 0x10000000000000000\n",
         "key: !!int 0o2000000000000000000000\n",
+        "key: !!int '-0o1000000000000000000000'\n",
         "key: !!int 9223372036854775808\n",
         "key: !!int ' 12'\n",
         "key: !!int '0x'\n",

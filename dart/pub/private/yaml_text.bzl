@@ -188,20 +188,91 @@ def find_top_colon(text):
     Returns:
       The index of the first top-level colon, or -1.
     """
+    return _find_colon(text, {"braces": 0, "brackets": 0})
+
+def _find_colon(text, counts):
+    """Scans for a separating colon, optionally tracking brackets.
+
+    `counts` carries the brace and bracket depth, or None to read brackets
+    as content; quotes hide the colon either way, as pub scans them. A
+    quote opens only where a scalar starts, so an apostrophe in a plain
+    scalar never hides a colon.
+
+    Args:
+      text: the line to scan.
+      counts: the bracket depths, or None.
+
+    Returns:
+      The index of the first separating colon, or -1.
+    """
     if ":" not in text:
         return -1
     st = {"single": False, "double": False, "escaped": False, "at_start": True, "affix": False}
-    counts = {"braces": 0, "brackets": 0}
+    if counts == None:
+        counts = {"braces": 0, "brackets": 0}
+        track = False
+    else:
+        track = True
     for i in range(len(text)):
         ch = text[i]
         if quote_track(ch, st):
             continue
         if st["single"] or st["double"]:
             continue
-        if ch == ":" and counts["braces"] == 0 and counts["brackets"] == 0 and (i + 1 == len(text) or text[i + 1] in [" ", "\t"]):
+        if ch == ":" and (not track or (counts["braces"] == 0 and counts["brackets"] == 0)) and (i + 1 == len(text) or text[i + 1] in [" ", "\t"]):
             return i
-        _sep_track(ch, text[i + 1:i + 2], st, counts)
+        if track:
+            _sep_track(ch, text[i + 1:i + 2], st, counts)
+        else:
+            _sep_track(ch, text[i + 1:i + 2], st, None)
     return -1
+
+def _block_affix_rest(text):
+    """Skips leading `&anchor` and `!tag` words. Returns the rest."""
+    s = text
+    for _ in range(4):
+        if not (s.startswith("&") or s.startswith("!")):
+            break
+        i = 0
+        for _ in range(len(s)):
+            if s[i] in [" ", "\t"]:
+                break
+            i += 1
+        s = s[i:].lstrip(" \t")
+    return s
+
+def find_block_colon(text):
+    """Returns the index of the first block `: ` in `text`, or -1.
+
+    Brackets past the first character are content, as pub scans a block
+    plain scalar, so `te[st: 1` splits; a leading `[` or `{` keeps bracket
+    tracking, as the line opens a flow node whose inner colons do not
+    count. Anchor and tag prefixes are skipped first, quotes hide the
+    colon either way, and a trailing colon counts, as pub scans them.
+
+    Args:
+      text: the line to scan.
+
+    Returns:
+      The index of the first block colon, or -1.
+    """
+    if _block_affix_rest(text)[:1] in ["[", "{"]:
+        return find_top_colon(text)
+    return _find_colon(text, None)
+
+def split_block_key_value(text):
+    """Splits `key: value` at the block colon. Returns (key, value, found).
+
+    Args:
+      text: the `key: value` line to split.
+
+    Returns:
+      The (key, value, found) triple.
+    """
+    c = find_block_colon(text)
+    if c < 0:
+        return "", "", False
+    return text[:c].strip(), text[c + 1:].strip(), True
 
 def split_key_value(text):
     """Splits `key: value` at the top-level colon. Returns (key, value, found).
@@ -216,6 +287,39 @@ def split_key_value(text):
     if c < 0:
         return "", "", False
     return text[:c].strip(), text[c + 1:].strip(), True
+
+def is_block_collection_key(text):
+    """Returns whether `text` opens a block entry with a list or map key.
+
+    Anchor and tag prefixes are skipped first, as pub still reads `[a]: v`
+    under them; quotes hide brackets, as pub scans them. After the matching
+    close a separating colon (`: `, a tab, a carriage return or the end of
+    the line) marks the collection a key, as pub reads `[a]: v`,
+    `&a [x]: v` and `{a: b}: v`; anything else, as in `{a:b}` or `[a], b`,
+    reads as before.
+
+    Args:
+      text: the block entry line to test.
+
+    Returns:
+      Whether the line keys on a flow collection.
+    """
+    rest = _block_affix_rest(text)
+    if rest[:1] not in ["[", "{"]:
+        return False
+    st = {"single": False, "double": False, "escaped": False, "at_start": True, "affix": False}
+    counts = {"braces": 0, "brackets": 0}
+    for i in range(len(rest)):
+        ch = rest[i]
+        if quote_track(ch, st):
+            continue
+        if st["single"] or st["double"]:
+            continue
+        _depth_track(ch, counts)
+        if ch in ["]", "}"] and counts["braces"] == 0 and counts["brackets"] == 0:
+            after = rest[i + 1:].strip(" \t")
+            return after == ":" or after.startswith(": ") or after.startswith(":\t") or after.startswith(":\r") or after.endswith(":") or after.endswith(":\r")
+    return False
 
 def is_quoted(text):
     return len(text) >= 2 and ((text[0] == '"' and text[-1] == '"') or (text[0] == "'" and text[-1] == "'"))
@@ -277,6 +381,15 @@ def is_flow_seq_entry(token):
 def is_mapping_start(text):
     """Returns whether `text` opens a block mapping entry."""
     return text.startswith("? ") or text.startswith(": ") or find_top_colon(text) >= 0
+
+def is_block_mapping_start(text):
+    """Returns whether `text` opens a block mapping entry in block context.
+
+    Brackets past the first character are content, as pub scans a block
+    plain scalar, so `te[st: 1` opens one; a leading `[` or `{` still hides
+    inner colons, as the line opens a flow node.
+    """
+    return text.startswith("? ") or text.startswith(": ") or find_block_colon(text) >= 0
 
 def is_compact_seq(pending, indent, text):
     """Returns whether `text` is a compact entry of a pending mapping key."""

@@ -69,16 +69,18 @@ def parse_nonflow(s, anchors, state, line):
             state.problems.append("control character at line %d is not supported" % line)
             return None
 
-    lower = s.lower()
-    normalized = _normalize_decimal_number(s)
-    num = normalized if normalized != None else s
-    if lower in ["null", "~"]:
+    if s == "":
+        # A consumed anchor or tag prefix with no value reads as the empty
+        # text, as read before; a bare "" never reaches here, as
+        # `parse_scalar` reads it as None first.
+        return ""
+    if s in ["null", "Null", "NULL", "~"]:
         return None
-    if lower == "true":
+    if s in ["true", "True", "TRUE"]:
         return True
-    if lower == "false":
+    if s in ["false", "False", "FALSE"]:
         return False
-    return _parse_numeric_text(s, num)
+    return _parse_plain_number(s)
 
 def parse_alias(s, anchors, state, line):
     """Parses an alias at the start of `s`, or returns None with a problem.
@@ -266,64 +268,124 @@ def record_prefix_problems(bad, state, line):
     elif bad == "repeat-tag":
         state.problems.append("repeated tag at line %d is not supported" % line)
 
-def _parse_numeric_text(s, num):
-    """Parses an int, based int, infinity, NaN or float, or returns `s` unchanged.
+def _parse_plain_dotted(s):
+    """Parses a dot-led plain scalar as a double or inf/nan, or returns `s`.
 
-    A decimal past the int64 range reads as a double, overflowing to
-    infinity, as pub reads it (int.tryParse, then double.tryParse); a decimal
-    with a `_` separator past the range stays a string, as pub reads it. A
-    hex or octal with a `_` separator stays a string too, as pub reads it,
-    while an over-range hex or octal without one stays a string through the
-    reader below. Only the exact `.inf` and `.nan` casings read, as pub reads
-    them. The dotted shape is unchanged: `1.` and `.5` stay strings, as read
-    before.
+    A dot glued to a digit, or a sign glued to a dot, reads the exact `.inf`
+    and `.nan` casings then double; anything else stays a string, as pub
+    reads it.
+
+    Args:
+      s: the plain scalar text starting with a dot or a sign glued to a dot.
+
+    Returns:
+      The double or inf/nan, or `s` unchanged.
     """
-    if _is_int_digits(num):
-        parsed = _capped_decimal_int(num)
-        if parsed != None:
-            return parsed
-        if "_" in s:
-            return s
-        return _safe_float(num)
-    based = _parse_based_prefix(s, num, "0x", 16)
-    if based != None:
-        return based
-    based = _parse_based_prefix(s, num, "0o", 8)
-    if based != None:
-        return based
-    if s in [".inf", ".Inf", ".INF", "+.inf", "+.Inf", "+.INF", "-.inf", "-.Inf", "-.INF"]:
-        return float("-inf") if s[0] == "-" else float("inf")
-    if s in [".nan", ".NaN", ".NAN"]:
-        return float("nan")
-    scientific = _parse_scientific_float(s)
-    if scientific != None:
-        return scientific
-    return _parse_dotted_float(s, num)
-
-def _parse_dotted_float(s, num):
-    """Parses a dotted decimal as a float, or returns `s` unchanged.
-
-    Only one dot with decimal parts on both sides reads; `1.` and `.5`
-    stay strings, as read before.
-    """
-    if num.count(".") == 1:
-        left, right = num.split(".")
-        if _is_decimal_part(left) and right.isdigit():
-            return _safe_float(num)
+    first = s[0]
+    if (first == "." and s[1].isdigit()) or (first in ["-", "+"] and s[1] == "."):
+        if len(s) == 5 and s in ["+.inf", "+.Inf", "+.INF", "-.inf", "-.Inf", "-.INF"]:
+            return float("-inf") if first == "-" else float("inf")
+        return _parse_double_or_text(s)
+    if len(s) == 4 and first == ".":
+        if s in [".inf", ".Inf", ".INF"]:
+            return float("inf")
+        if s in [".nan", ".NaN", ".NAN"]:
+            return float("nan")
     return s
 
-def _parse_based_prefix(s, num, prefix, base):
-    """Parses a `prefix`-based int, or returns `s` unchanged.
+def _parse_plain_based(s, second):
+    """Parses a `0`-led plain scalar with a based prefix. Returns (routed, value).
 
-    A `_` separator keeps the text a string, as pub reads it, while an
-    over-range number without one stays a string through the reader below.
+    A lowercase `0x` or `0o` prefix reads as hex or octal, else the scalar
+    stays a string; any other second character is not routed, as pub reads
+    them. A `_` separator never reads, as neither Dart conversion accepts
+    it.
     """
-    if len(num) > 2 and num[0:2].lower() == prefix:
-        if "_" in s:
+    if second == "x":
+        parsed = _parse_based_int(s, 16)
+        return True, (parsed if parsed != None else s)
+    if second == "o":
+        parsed = _parse_based_int(s, 8)
+        return True, (parsed if parsed != None else s)
+    return False, s
+
+def _parse_plain_number(s):
+    """Parses an untagged plain scalar as an int or a double, or returns `s`.
+
+    Mirrors package:yaml number parsing (loader.dart `_parseNumberValue`
+    reading both): a lone digit reads as an int; a `0`-led scalar reads
+    through its own based step; a digit start, or a sign glued to a digit,
+    reads through int then double; a dot glued to a digit, or a sign glued
+    to a dot, reads through its own step; anything else stays a string. A
+    `_` separator never reads, as neither Dart conversion accepts it.
+
+    Args:
+      s: the plain scalar text, never "".
+
+    Returns:
+      The int, the double, or `s` unchanged.
+    """
+    if len(s) == 1:
+        return int(s) if s.isdigit() else s
+    first = s[0]
+    second = s[1]
+    if first == "0":
+        routed, value = _parse_plain_based(s, second)
+        if routed:
+            return value
+    if first.isdigit() or (first in ["-", "+"] and second.isdigit()):
+        if _is_int_digits(s):
+            parsed = _capped_decimal_int(s)
+            if parsed != None:
+                return parsed
+        return _parse_double_or_text(s)
+    if first == "." or (first in ["-", "+"] and second == "."):
+        return _parse_plain_dotted(s)
+    return s
+
+def _parse_double_or_text(s):
+    """The double named by float-shaped `s`, or `s` unchanged.
+
+    Mirrors the double.tryParse fallback in package:yaml number parsing: an
+    optional sign, a mantissa of digits with at most one point, and an
+    optional exponent with an optional sign and digits. Either side of the
+    point may be empty, as pub reads `1.` and `.5`; anything else stays a
+    string, as pub reads it.
+
+    Args:
+      s: the scalar text starting with a digit, a sign glued to a digit, a
+        dot glued to a digit or a sign glued to a dot.
+
+    Returns:
+      The double, or `s` unchanged.
+    """
+    sign = s[:1] if s[:1] in ["-", "+"] else ""
+    text = s[1:] if sign != "" else s
+    mantissa = text
+    exponent = ""
+    e = text.lower().find("e")
+    if e >= 0:
+        mantissa = text[:e]
+        exponent = text[e + 1:]
+        digits = exponent[1:] if exponent[:1] in ["-", "+"] else exponent
+        if digits == "" or not digits.isdigit():
             return s
-        parsed = _parse_based_int(num, base)
-        return parsed if parsed != None else s
-    return None
+        exponent = "e" + exponent
+    if mantissa == "":
+        return s
+    if mantissa.count(".") == 1:
+        whole, frac = mantissa.split(".")
+        if whole != "" and not whole.isdigit():
+            return s
+        if frac != "" and not frac.isdigit():
+            return s
+        if whole == "" and frac == "":
+            return s
+        if whole == "" or frac == "":
+            return _safe_float(_canonical_dotted_float(sign + whole, frac) + exponent)
+    elif not mantissa.isdigit():
+        return s
+    return _safe_float(s)
 
 def _parse_int_text(text):
     """The integer named by a `!!int` value, or None.
@@ -355,9 +417,16 @@ def _parse_based_int(text, base):
     Only a lowercase prefix routes here and digits may be either case, as pub
     reads them (int.tryParse); a `_` separator is not a digit, as pub reads
     it. A hex value wraps modulo 2^64 into the signed range and past
-    2^64-1 fails, while an octal past 2^63-1 fails, as pub reads them.
+    2^64-1 fails, while an octal past 2^63-1 fails, as pub reads them. An
+    octal sign reads, as the radix-8 conversion takes it, but the magnitude
+    still caps at 2^63-1, as pub reads it; a hex sign never routes here,
+    as pub reads it.
     """
     s = text.lower()[2:]
+    neg = False
+    if base == 8 and s[:1] in ["-", "+"]:
+        neg = s[:1] == "-"
+        s = s[1:]
     if s == "":
         return None
     total = 0
@@ -370,29 +439,7 @@ def _parse_based_int(text, base):
             return None
     if base == 16 and total >= _INT64_SPAN:
         total -= _UINT64_SPAN
-    return total
-
-def _normalize_decimal_number(s):
-    """Removes `_` digit separators. Returns None when a separator is misplaced."""
-    if "_" not in s:
-        return s
-    if s.startswith("_") or s.endswith("_"):
-        return None
-    out = []
-    for i in range(len(s)):
-        ch = s[i]
-        if ch != "_":
-            out.append(ch)
-            continue
-        prev = s[i - 1] if i > 0 else ""
-        nxt = s[i + 1] if i + 1 < len(s) else ""
-        if not (prev.isdigit() and nxt.isdigit()):
-            return None
-    return "".join(out)
-
-def _is_decimal_part(text):
-    """True for the part before a decimal point, which may be a bare sign."""
-    return _is_int_digits(text) or text in ["-", "+"]
+    return -total if neg else total
 
 def _capped_decimal_int(s):
     """The decimal int named by int-shaped `s`, or None past the int64 range.

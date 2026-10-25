@@ -6,7 +6,7 @@ out of the flow collections module; loaded by the fold and block
 modules and by the ``yaml_subset.bzl`` entry point.
 """
 
-load(":yaml_text.bzl", "bad_blank_index", "quote_track")
+load(":yaml_text.bzl", "bad_blank_index")
 
 def flow_scan_start():
     """A fresh quote-aware scan state for one folded flow."""

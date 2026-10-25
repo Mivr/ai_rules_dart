@@ -33,6 +33,138 @@ def _flow_close_step(stack, s, i, frame, anchors, state, line):
     _flow_add(stack[-1], value, state, line)
     return False, None, i
 
+def _flow_key_collection_end(s, start):
+    """Returns the index past the flow collection opening at `start`, else None.
+
+    Quotes hide brackets, as pub scans them. None when the collection never
+    closes or a closer mismatches its opener, as pub rejects those.
+    """
+    depth = []
+    st = {"single": False, "double": False, "escaped": False, "at_start": True, "affix": False}
+    for j in range(start, len(s)):
+        ch = s[j]
+        if quote_track(ch, st):
+            continue
+        if st["single"] or st["double"]:
+            continue
+        if ch in ["[", "{"]:
+            depth.append(ch)
+        elif ch in ["]", "}"]:
+            if not depth or (ch == "]") != (depth[-1] == "["):
+                return None
+            depth.pop()
+            if not depth:
+                return j + 1
+    return None
+
+def _flow_item_end(s, start, close):
+    """Returns the index of the `,` or `close` ending the flow item at `start`.
+
+    Brackets nest and quotes hide them, as pub scans them; a `:` inside only
+    separates a pair the caller already refused. None when no separator
+    follows at the item depth, as pub rejects an unclosed flow.
+    """
+    depth = 0
+    st = {"single": False, "double": False, "escaped": False, "at_start": True, "affix": False}
+    for j in range(start, len(s)):
+        ch = s[j]
+        if quote_track(ch, st):
+            continue
+        if st["single"] or st["double"]:
+            continue
+        if ch in ["[", "{"]:
+            depth += 1
+        elif ch in ["]", "}"]:
+            if depth == 0:
+                if ch == close:
+                    return j
+                return None
+            depth -= 1
+        elif ch == "," and depth == 0:
+            return j
+    return None
+
+def _flow_key_token(s, i, close):
+    """Reads one flow map key token with glued colons. Returns (start, token, next_i).
+
+    A colon glued into a plain key stays content, as pub scans it, so the key
+    runs on to a separating colon, a comma or the close; a quoted key pairs
+    at once, as pub reads `"a":1` as one pair.
+    """
+    tok_start = i
+    token, i = _flow_token(s, i, [":", close, ","])
+    for _ in range(len(s) + 1):
+        if s[i:i + 1] != ":" or s[i + 1:i + 2] in [" ", "\t", "\n", "\r", ",", "[", "{", close]:
+            break
+        if len(token) > 1 and token[:1] in ["'", '"'] and token[-1:] == token[:1]:
+            break
+        more, i = _flow_token(s, i + 1, [":", close, ","])
+        if more == "":
+            break
+        token += ":" + more
+    return tok_start, token, i
+
+def _flow_key_collection(s, i, tok_start, frame, state, line):
+    """Reads a collection where a flow map key's colon belongs. Returns (next_i, ok).
+
+    A null key naming the line reads, as pub keys on the collection (`{[x]}`,
+    `{? [x]}`, `{&a [x]: b}`) or rejects the pair (`{a [b]: c}`), and parsing
+    continues past the collection, which the reader keeps no key for. False
+    when the collection never closes, as pub rejects it.
+    """
+    end = _flow_key_collection_end(s, i)
+    if end == None:
+        return i, False
+    _anchor, _tag, _crest, bad = strip_value_prefix(s[tok_start:i])
+    record_prefix_problems(bad, state, line)
+    state.problems.append("collection key inside flow at line %d is not supported" % line)
+    frame["key"] = dict_key(None)
+    i = _skip_flow_space(s, end)
+    if i >= len(s) or s[i] != ":":
+        _flow_add(frame, None, state, line)
+        return i, True
+    frame["state"] = "value"
+    return i + 1, True
+
+def _flow_key_explicit(token, s, i, tok_start, frame, anchors, state, line):
+    """Reads a flow map key token as an explicit key or plain key. Sets the frame key.
+
+    A `? ` or `?` tab marker opens an explicit key, as pub opens it: the rest
+    reads as the key, so `{? b: c}` pairs `b` with `c` and `{? &a b: c}`
+    binds the anchor, while a bare `?` before the close, a comma or a
+    separated colon reads a null key, as pub reads `{?}`, `{? }` and
+    `{? : c}`. A `?` glued to a colon stays content, as pub reads `{?:}`
+    and `{?: c}` with a `?` key, and so does a `?` glued to anything else,
+    as pub reads `{?b: c}`. An anchor or tag before the marker and a second
+    marker inside are problems naming the line, as pub rejects them, and
+    read a null key so parsing continues past them.
+    """
+    anchor, tag, rest, bad = strip_value_prefix(token)
+    if rest == "?":
+        if anchor != None or tag != None:
+            record_prefix_problems(bad, state, line)
+            state.problems.append("explicit key with anchor or tag at line %d is not supported" % line)
+            frame["key"] = dict_key(None)
+        elif s[i:i + 1] == ":" and s[tok_start:i] == "?":
+            frame["key"] = _flow_key_value(token, anchors, state, line)
+        else:
+            frame["key"] = dict_key(None)
+    elif rest.startswith("? ") or rest.startswith("?\t"):
+        if anchor != None or tag != None:
+            record_prefix_problems(bad, state, line)
+            state.problems.append("explicit key with anchor or tag at line %d is not supported" % line)
+            frame["key"] = dict_key(None)
+        else:
+            content = rest[2:]
+            _canchor, _ctag, ccrest, _cbad = strip_value_prefix(content)
+            if ccrest == "?" or ccrest.startswith("? ") or ccrest.startswith("?\t"):
+                state.problems.append("nested explicit key at line %d is not supported" % line)
+                frame["key"] = dict_key(None)
+            else:
+                frame["key"] = _flow_key_value(content, anchors, state, line)
+    else:
+        frame["key"] = _flow_key_value(token, anchors, state, line)
+
 def _flow_key_step(s, i, frame, anchors, state, line):
     """Reads one flow map key up to its colon. Returns (next_i, ok).
 
@@ -40,22 +172,16 @@ def _flow_key_step(s, i, frame, anchors, state, line):
     a glued colon does, reads with a null value, as pub reads it; a colon
     glued into a plain key stays content too, while a spaced colon later
     still pairs, and a quoted key pairs at its glued colon, as pub reads
-    them.
+    them. A colon followed by `[` or `{` separates at once, as pub opens
+    the collection there, so `{a:[b]}` pairs `a` with `["b"]`.
+
+    A `[` or `{` collection where the colon belongs, a `- ` entry and an
+    explicit marker each read through their own step, and anything else
+    pairs at a spaced colon or fails, as pub reads it.
     """
-    tok_start = i
-    token, i = _flow_token(s, i, [":", frame["close"], ","])
-    for _ in range(len(s) + 1):
-        # A colon glued into a plain key stays content, as pub scans it, so
-        # the key runs on to a separating colon, a comma or the close; a
-        # quoted key pairs at once, as pub reads `"a":1` as one pair.
-        if s[i:i + 1] != ":" or s[i + 1:i + 2] in [" ", "\t", "\n", "\r", ",", frame["close"]]:
-            break
-        if len(token) > 1 and token[:1] in ["'", '"'] and token[-1:] == token[:1]:
-            break
-        more, i = _flow_token(s, i + 1, [":", frame["close"], ","])
-        if more == "":
-            break
-        token += ":" + more
+    tok_start, token, i = _flow_key_token(s, i, frame["close"])
+    if s[i:i + 1] in ["[", "{"]:
+        return _flow_key_collection(s, i, tok_start, frame, state, line)
     if token == "" or not _flow_scalar_ok(token):
         return i, False
     if is_flow_key_entry(token, s[tok_start:i], s[i:i + 1]):
@@ -67,7 +193,7 @@ def _flow_key_step(s, i, frame, anchors, state, line):
             return i, True
         frame["state"] = "value"
         return i + 1, True
-    frame["key"] = _flow_key_value(token, anchors, state, line)
+    _flow_key_explicit(token, s, i, tok_start, frame, anchors, state, line)
     i = _skip_flow_space(s, i)
     if i >= len(s) or s[i] != ":":
         _flow_add(frame, None, state, line)
@@ -75,12 +201,54 @@ def _flow_key_step(s, i, frame, anchors, state, line):
     frame["state"] = "value"
     return i + 1, True
 
+def _flow_item_pair(token, next_i, s, frame, anchors, state, line):
+    """Reads one `?` explicit pair item. Returns (next_i, ok).
+
+    A collection as the pair key reads a null item naming the line, as pub
+    keys on it (`[? [x]]`), and parsing continues past the pair, which the
+    reader keeps no key for. An anchor or tag before the marker, a second
+    marker inside and a `- ` entry inside are problems naming the line, as
+    pub rejects them, and read null so parsing continues past them, while a
+    plain explicit key reads one pair, as pub reads `[? a]`, `[? a: b]` and
+    `[?]`.
+    """
+    _qanchor, _qtag, qrest, _qbad = strip_value_prefix(token)
+    after = _skip_flow_space(s, next_i)
+    if s[after:after + 1] in ["[", "{"]:
+        stop = _flow_item_end(s, after, frame["close"])
+        if stop == None:
+            return next_i, False
+        state.problems.append("collection key inside flow at line %d is not supported" % line)
+        _flow_add(frame, None, state, line)
+        return stop, True
+    content = "" if qrest == "?" else qrest[2:]
+    _canchor, _ctag, ccrest, _cbad = strip_value_prefix(content)
+    if _qanchor != None or _qtag != None:
+        state.problems.append("explicit key with anchor or tag at line %d is not supported" % line)
+        _flow_add(frame, None, state, line)
+    elif is_dash(ccrest):
+        state.problems.append("block entry inside flow at line %d is not supported" % line)
+        _flow_add(frame, None, state, line)
+    elif ccrest == "?" or ccrest.startswith("? ") or ccrest.startswith("?\t"):
+        state.problems.append("nested explicit key at line %d is not supported" % line)
+        _flow_add(frame, None, state, line)
+    else:
+        ckey, cval, found = _flow_pair_split(content)
+        if not found:
+            ckey = content
+            cval = ""
+        _flow_add(frame, _flow_pair(ckey, cval, None, None, anchors, state, line), state, line)
+    return next_i, True
+
 def _flow_item_step(s, i, frame, anchors, stack, state, line):
     """Reads one nested collection or scalar flow token. Returns (next_i, ok).
 
     A map value that is itself a pair fails, as pub expects `,` or `}` after
     a flow mapping value; a pair as a sequence item still reads, as pub
-    reads it.
+    reads it. An empty map value reads null, as pub reads `{k:}` and
+    `{k:, j: 1}`; an empty key or item still fails, as pub rejects `{,}`
+    and `[ , ]`. A `? ` or `?` tab item reads through its own step, as pub
+    reads `[? a]`, `[? a: b]` and `[?]`.
     """
     if s[i] in ["[", "{"]:
         stack.append(_flow_frame(s[i]))
@@ -90,7 +258,12 @@ def _flow_item_step(s, i, frame, anchors, stack, state, line):
         if nested:
             return next_i, True
     token, next_i = _flow_token(s, i, [",", frame["close"]])
-    if token == "" or not _flow_scalar_ok(token):
+    if token == "":
+        if frame["kind"] == "map" and frame["state"] == "value":
+            _flow_add(frame, None, state, line)
+            return next_i, True
+        return next_i, False
+    if not _flow_scalar_ok(token):
         return next_i, False
     if frame["kind"] == "map":
         _ianchor, _itag, irest, _ibad = strip_value_prefix(token)
@@ -102,6 +275,9 @@ def _flow_item_step(s, i, frame, anchors, stack, state, line):
                 _flow_add(frame, None, state, line)
                 return next_i, True
     else:
+        _qanchor, _qtag, qrest, _qbad = strip_value_prefix(token)
+        if qrest == "?" or qrest.startswith("? ") or qrest.startswith("?\t"):
+            return _flow_item_pair(token, next_i, s, frame, anchors, state, line)
         entry = is_flow_seq_entry(token)
     if entry:
         state.problems.append("block entry inside flow at line %d is not supported" % line)
@@ -135,7 +311,10 @@ def parse_flow(text, anchors, parse_state, line):
     """Parses the flow collection that starts `text`, or returns None.
 
     A `#` where a token starts opens a comment to the end of the line, as
-    pub scans it, even glued to an opener or a comma. A flow frame is a dict {kind, close, value, state, key}. The frame's
+    pub scans it, even glued to an opener or a comma. A close steps through
+    its own step: the single-line form never reaches the close, as the
+    comment eats it and the flow fails unclosed. A flow frame is a dict
+    {kind, close, value, state, key}. The frame's
     `state` is "item" or "value" where a value may start, "after" once a
     value is complete, and "key" where a map key is read. Duplicate map keys
     are recorded on `parse_state` with `line`.
@@ -163,8 +342,8 @@ def parse_flow(text, anchors, parse_state, line):
         ch = s[i]
         state = frame["state"]
 
-        if ch == frame["close"] and state != "value":
-            done, value, i = _flow_close_step(stack, s, i, frame, anchors, parse_state, line)
+        if ch == frame["close"]:
+            done, value, i = _flow_close_frame(s, i, stack, frame, anchors, parse_state, line)
             if done:
                 return value
             continue
@@ -185,6 +364,16 @@ def parse_flow(text, anchors, parse_state, line):
         if not ok:
             return None
     return None
+
+def _flow_close_frame(s, i, stack, frame, anchors, state, line):
+    """Steps the close at `s[i]`. Returns (done, value, next_i).
+
+    A close where a map value starts reads an empty value first, as pub
+    reads `{k: # c\n}` with null.
+    """
+    if frame["state"] == "value":
+        _flow_add(frame, None, state, line)
+    return _flow_close_step(stack, s, i, frame, anchors, state, line)
 
 def _flow_frame(opener, anchor = None, tag = None):
     """A flow frame, optionally carrying an anchor and tag for its collection."""
@@ -503,7 +692,10 @@ def _flow_token(s, start, stops):
     plain scalar such as `don't` stays content, and `''` inside single
     quotes is one escaped quote, as pub reads it. An alias, anchor or tag
     word runs to whitespace or `,[]{}`, as pub scans it, so a glued colon or
-    hash stays in the word instead of ending the token. Returns (stripped token,
+    hash stays in the word instead of ending the token. An unquoted `[` or
+    `{` ends the token without consuming it, as pub opens a collection
+    there: the token reads as the scalar before it and the opener fails
+    downstream, as pub rejects `[a[b]` and `{a[b: c}`. Returns (stripped token,
     index of the stop character).
     """
     i = start
@@ -521,6 +713,8 @@ def _flow_token(s, start, stops):
             i += 1
             continue
         if not st["single"] and not st["double"] and ch in stops:
+            break
+        if not st["single"] and not st["double"] and ch in ["[", "{"]:
             break
         if ch not in [" ", "\t"]:
             st["at_start"] = False

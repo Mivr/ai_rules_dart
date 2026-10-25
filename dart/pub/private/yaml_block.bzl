@@ -11,7 +11,7 @@ load(":yaml_flow.bzl", "parse_flow", "parse_scalar")
 load(":yaml_flow_scan.bzl", "flow_fold_lines", "flow_fold_problem", "flow_scan_start")
 load(":yaml_fold.bzl", "block_fold_scalar")
 load(":yaml_scalar.bzl", "OPEN_ANCHOR", "apply_bool_tag", "apply_child_collection_tag", "apply_tag", "drop_tag_value", "is_unknown_tag_handle", "resolve_alias", "resolve_handle", "split_value_text", "strip_value_prefix", "tag_name", "undefined_tag_problem")
-load(":yaml_text.bzl", "bad_blank_index", "block_line_text", "clone", "dict_key", "find_top_colon", "flow_head_text", "is_compact_seq", "is_dash", "is_explicit_key_text", "is_mapping_start", "is_question_entry", "record_unreadable", "split_key_value")
+load(":yaml_text.bzl", "bad_blank_index", "block_line_text", "clone", "dict_key", "find_block_colon", "flow_head_text", "is_block_collection_key", "is_block_mapping_start", "is_compact_seq", "is_dash", "is_explicit_key_text", "is_mapping_start", "is_question_entry", "record_unreadable", "split_block_key_value")
 
 def close_block_containers(stack, indent, text, anchors):
     """Pops the containers that the line at `indent` is not nested into.
@@ -320,7 +320,7 @@ def resolve_pending(pending, cursor, env):
         _attach_compact_seq(pending, env.anchors, env.stack, env.state)
         return cursor.idx, False
     if indent > pending["indent"]:
-        if is_dash(text) or is_mapping_start(text):
+        if is_dash(text) or is_block_mapping_start(text):
             _attach_pending_child(pending, indent, text, env.anchors, env.stack, env.state)
             return cursor.idx, False
         next_idx = _consume_pending_scalar(struct(lines = cursor.lines, idx = cursor.idx), pending, struct(anchors = env.anchors, state = env.state))
@@ -346,7 +346,7 @@ def init_block_root(text, indent, anchors, stack, state, line):
         root = []
         stack.append({"kind": "seq", "indent": indent - 1, "value": root, "entry": None, "compact": False})
         return root, False
-    if find_top_colon(text) >= 0 or text.startswith("? "):
+    if find_block_colon(text) >= 0 or is_block_collection_key(text) or text.startswith("? "):
         root = {}
         stack.append({"kind": "map", "indent": indent - 1, "value": root, "entry": None, "compact": False})
         return root, False
@@ -387,6 +387,24 @@ def _spanning_flow_end(lines, start, parent_indent, value_text, anchors):
         return None
     return _flow_span_end(lines, start, parent_indent, head)
 
+def _span_end_or_close(lines, start, parent_indent, value_text, anchors):
+    """Returns the index past a spanning flow, or None.
+
+    A flow that opens on the head line and closes on a later line spans
+    lines, as pub spans it; the close may dedent to a bare `]` or `}` line,
+    as pub closes it there, since the fold never reaches a dedented line.
+    Otherwise None and the caller reads the head itself.
+    """
+    end = _spanning_flow_end(lines, start, parent_indent, value_text, anchors)
+    if end != None:
+        return end
+    if _unclosed_flow_head(value_text, anchors) == None or start >= len(lines):
+        return None
+    _indent, text = block_line_text(lines[start])
+    if text != None and text.strip() in ["]", "}"]:
+        return start + 1
+    return None
+
 def _span_flow_problem(line):
     """The problem for a flow collection that opens at 1-based `line` and spans lines."""
     return "flow collection that spans lines starting at line %d is not supported" % line
@@ -406,11 +424,11 @@ def _map_flow_value(lines, idx, indent, text, value_text, anchors, state, line):
     next index past the span when the fold does not read. Otherwise done is
     False and the caller reads `value_text` itself.
     """
-    head = lines[idx][indent + find_top_colon(text) + 1:]
+    head = lines[idx][indent + find_block_colon(text) + 1:]
     value, next_idx, read = _folded_head_flow(head, line, lines, idx, indent, anchors, state)
     if read:
         return value, next_idx, True
-    end = _spanning_flow_end(lines, idx + 1, indent, value_text, anchors)
+    end = _span_end_or_close(lines, idx + 1, indent, value_text, anchors)
     if end != None:
         state.problems.append(_span_flow_problem(line))
         return None, end, True
@@ -445,8 +463,14 @@ def map_line(lines, idx, indent, text, frame, anchors, state):
         # rather than a key named "- ...".
         record_unreadable(state, idx, text)
         return idx + 1, None
-    key_text, value_text, ok = split_key_value(text)
-    if not ok or key_text == "":
+    key_text, value_text, ok = split_block_key_value(text)
+    if not ok:
+        if is_block_collection_key(text):
+            state.problems.append("collection key at line %d is not supported" % (idx + 1))
+        else:
+            record_unreadable(state, idx, text)
+        return idx + 1, None
+    if key_text == "":
         record_unreadable(state, idx, text)
         return idx + 1, None
 
@@ -478,7 +502,7 @@ def map_line(lines, idx, indent, text, frame, anchors, state):
     if flow_done:
         return _map_store(mapping, key, flow_value, flow_next, line, state)
 
-    raw_head = lines[idx][indent + find_top_colon(text) + 1:]
+    raw_head = lines[idx][indent + find_block_colon(text) + 1:]
     value, next_idx, _read = block_fold_scalar(lines, idx + 1, indent, {"text": value_text, "raw": raw_head, "idx": idx, "entry": text}, indent > 0, anchors, state)
     return _map_store(mapping, key, value, next_idx, line, state)
 
@@ -495,13 +519,17 @@ def _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state):
     """
     line = idx + 1
     rest = text[1:].strip()
-    key_text, value_text, _ok = split_key_value(rest)
+    if is_block_collection_key(rest):
+        state.problems.append("collection key at line %d is not supported" % line)
+        items.append(None)
+        return idx + 1, None
+    key_text, value_text, _ok = split_block_key_value(rest)
     item = {}
     key = _map_key_value(rest, key_text, anchors, state, line)
     after_dash = lines[idx][indent + 1:]
     gap = len(after_dash) - len(after_dash.lstrip(" \t"))
     key_indent = indent + 1 + gap
-    head = after_dash[gap + find_top_colon(rest) + 1:]
+    head = after_dash[gap + find_block_colon(rest) + 1:]
     anchor, tag, rest_value, failed = split_value_text(value_text, anchors, state, line)
     if failed:
         item[key] = None
@@ -530,7 +558,7 @@ def _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state):
         items.append(item)
         stack.append({"kind": "map", "indent": indent, "value": item, "entry": key_indent})
         return flow_next, None
-    end = _spanning_flow_end(lines, idx + 1, indent, value_text, anchors)
+    end = _span_end_or_close(lines, idx + 1, indent, value_text, anchors)
     if end != None:
         state.problems.append(_span_flow_problem(line))
         item[key] = None
@@ -550,6 +578,33 @@ def _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state):
     stack.append({"kind": "map", "indent": indent, "value": item, "entry": key_indent})
     return next_idx, None
 
+def _seq_question_item(rest_value, anchor, tag, text, items, anchors, state, idx):
+    """Reads a `- ? ...` line as one pair item. Returns (next index, None).
+
+    `- ?` reads one null pair, `- ? a` pairs `a` with null and `- ? "a"`
+    pairs the quoted key, as pub reads them, with an anchor in the content
+    bound as a same-line anchor binds it. An anchor or tag before the
+    marker fails, as pub rejects `- &a ? b`, and content holding a nested
+    mapping or a collection fails too, as pub keys it on a map or list the
+    reader keeps no key for; both name the line, as pub rejects them, and
+    read null so parsing continues past them.
+    """
+    line = idx + 1
+    content = "" if rest_value == "?" else rest_value[2:].strip(" \t")
+    if anchor != None or tag != None:
+        state.problems.append("explicit key with anchor or tag at line %d is not supported" % line)
+        items.append(None)
+        return idx + 1, None
+    _canchor, _ctag, crest, _cbad = strip_value_prefix(content)
+    if find_block_colon(content) >= 0 or crest[:1] in ["[", "{"]:
+        state.problems.append("compound explicit key at line %d is not supported" % line)
+        items.append(None)
+        return idx + 1, None
+    item = {}
+    item[_map_key_value(text, content, anchors, state, line)] = None
+    items.append(item)
+    return idx + 1, None
+
 def seq_line(lines, idx, indent, text, frame, anchors, stack, state):
     """Reads one line of a block sequence. Returns (next index, pending).
 
@@ -567,7 +622,12 @@ def seq_line(lines, idx, indent, text, frame, anchors, stack, state):
       The (next index, pending) pair: pending is the dash awaiting its value, or None.
     """
     if not _entry_indent_ok(frame, indent):
-        record_unreadable(state, idx, text)
+        if frame["kind"] == "seq" and frame.get("nested_refused", False) and indent > frame["indent"]:
+            # Lines stranded inside a refused nested sequence fail as part
+            # of it, as pub reads them there; anything else reads as before.
+            state.problems.append("nested sequence at line %d is not supported" % (idx + 1))
+        else:
+            record_unreadable(state, idx, text)
         return idx + 1, None
     if not is_dash(text):
         record_unreadable(state, idx, text)
@@ -587,7 +647,22 @@ def seq_line(lines, idx, indent, text, frame, anchors, stack, state):
             anchors[anchor] = OPEN_ANCHOR
         return idx + 1, pending
 
-    if find_top_colon(rest) >= 0:
+    if is_dash(rest_value):
+        # A `- ` entry under a dash nests a sequence, as pub nests it; the
+        # reader keeps no nested block sequences, so it fails naming the
+        # line, and deeper lines strand as part of it (see `seq_line`).
+        state.problems.append("nested sequence at line %d is not supported" % line)
+        items.append(None)
+        frame["nested_refused"] = True
+        return idx + 1, None
+    if rest_value == "?" or rest_value.startswith("? ") or rest_value.startswith("?\t"):
+        return _seq_question_item(rest_value, anchor, tag, text, items, anchors, state, idx)
+    if is_block_collection_key(rest_value):
+        state.problems.append("collection key at line %d is not supported" % line)
+        items.append(None)
+        return idx + 1, None
+
+    if find_block_colon(rest) >= 0:
         # `- key: value` starts a mapping whose first entry is on this line.
         return _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state)
 
@@ -601,12 +676,12 @@ def seq_line(lines, idx, indent, text, frame, anchors, stack, state):
 
     after_dash = lines[idx][indent + 1:]
     gap = len(after_dash) - len(after_dash.lstrip(" \t"))
-    head = after_dash[gap + find_top_colon(rest) + 1:]
+    head = after_dash[gap + find_block_colon(rest) + 1:]
     flow_value, flow_next, flow_read = _folded_head_flow(head, line, lines, idx, indent, anchors, state)
     if flow_read:
         items.append(flow_value)
         return flow_next, None
-    end = _spanning_flow_end(lines, idx + 1, indent, rest, anchors)
+    end = _span_end_or_close(lines, idx + 1, indent, rest, anchors)
     if end != None:
         state.problems.append(_span_flow_problem(line))
         items.append(None)
@@ -711,7 +786,10 @@ def _map_key_value(text, key_text, anchors, state, line):
     naming the line. A block scalar header (`|`, `>` with any indicators)
     never reads as a key, as pub rejects a block scalar there; anything
     starting with `|` or `>` is one, since a plain scalar never starts with
-    a reserved indicator, as pub scans it. Any other key reads as before.
+    a reserved indicator, as pub scans it. A flow collection key (`[` or
+    `{` past anchor and tag prefixes) fails too, as pub keys it on a list
+    or map the reader keeps no key for; a quoted one reads as before, as
+    pub reads it. Any other key reads as before.
     """
     if key_text.startswith("*") and text[len(key_text):len(key_text) + 1] == ":":
         ok, _value = resolve_alias(key_text[1:] + ":", anchors, state, line)
@@ -722,6 +800,9 @@ def _map_key_value(text, key_text, anchors, state, line):
     _anchor, _tag, key_rest, _bad = strip_value_prefix(key_text)
     if key_rest[:1] in ["|", ">"]:
         state.problems.append("block scalar as key at line %d is not supported" % line)
+        return None
+    if key_rest[:1] in ["[", "{"]:
+        state.problems.append("collection key at line %d is not supported" % line)
         return None
     return dict_key(parse_scalar(key_text, anchors, state, line))
 

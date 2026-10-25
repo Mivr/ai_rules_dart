@@ -1704,7 +1704,44 @@ def _parse_pubspec_number_test_impl(ctx):
     asserts.equals(env, 100000.0, parse_pubspec_document(doc)["description"])
     asserts.equals(env, None, parse_pubspec_document_error(doc))
     doc = head + "description: 1_000\n"
-    asserts.equals(env, 1000, parse_pubspec_document(doc)["description"])
+    asserts.equals(env, "1_000", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, "string", type(parse_pubspec_document(doc)["description"]))
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+
+    # Plain scalar typing reads as pub reads it too: `.5` and `1.` read as
+    # doubles, a `_` separator never reads, and an uppercase `0X` or `0O`
+    # prefix stays a string.
+    doc = head + "description: .5\n"
+    asserts.equals(env, 0.5, parse_pubspec_document(doc)["description"])
+    asserts.equals(env, "float", type(parse_pubspec_document(doc)["description"]))
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = head + "description: 1.\n"
+    asserts.equals(env, 1.0, parse_pubspec_document(doc)["description"])
+    asserts.equals(env, "float", type(parse_pubspec_document(doc)["description"]))
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = head + "description: 0X1F\n"
+    asserts.equals(env, "0X1F", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = head + "description: 0O17\n"
+    asserts.equals(env, "0O17", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = head + "description: 1_2_3\n"
+    asserts.equals(env, "1_2_3", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = head + "description: 1_0.5\n"
+    asserts.equals(env, "1_0.5", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+
+    # Hex wraps modulo 2^64 and octal caps at 2^63-1 even when negative, as
+    # pub reads them.
+    doc = head + "description: 0xFFFFFFFFFFFFFFFF\n"
+    asserts.equals(env, -1, parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = head + "description: 0o777777777777777777777\n"
+    asserts.equals(env, 9223372036854775807, parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = head + "description: -0o1000000000000000000000\n"
+    asserts.equals(env, "-0o1000000000000000000000", parse_pubspec_document(doc)["description"])
     asserts.equals(env, None, parse_pubspec_document_error(doc))
     return unittest.end(env)
 
@@ -2087,6 +2124,188 @@ def _parse_lock_encoding_test_impl(ctx):
 _t71_test = unittest.make(_parse_pubspec_encoding_test_impl)
 _t72_test = unittest.make(_parse_lock_encoding_test_impl)
 
+def _parse_pubspec_comment_fold_test_impl(ctx):
+    env = unittest.begin(ctx)
+    head = "name: x\nenvironment:\n  sdk: ^3.0.0\n"
+
+    # A trailing-comment continuation keeps the text before the `#`, as pub
+    # folds it (package:yaml 3.1.4 with the pinned SDK 3.13.5).
+    doc = head + "description: one\n  two # c\n"
+    asserts.equals(env, "one two", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+
+    # A line after a trailing-comment continuation fails naming the line,
+    # as pub rejects it there.
+    doc = head + "description: one\n  two # c\n  three\n"
+    asserts.equals(
+        env,
+        "x in pubspec.yaml: unreadable line 6: \"three\"",
+        parse_pubspec_document_error(doc),
+    )
+    return unittest.end(env)
+
+def _parse_pubspec_bracket_key_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # `[]`, `{}` and `,` past the first character of a block plain scalar
+    # are content in keys and values, as pub scans them.
+    doc = "te[st: 1\n"
+    asserts.equals(env, {"te[st": 1}, parse_pubspec_document(doc))
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "a]b: 1\n"
+    asserts.equals(env, {"a]b": 1}, parse_pubspec_document(doc))
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "a, b: 1\n"
+    asserts.equals(env, {"a, b": 1}, parse_pubspec_document(doc))
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "a{b: 1\n"
+    asserts.equals(env, {"a{b": 1}, parse_pubspec_document(doc))
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "name: x\ndescription: b[c\n"
+    asserts.equals(env, "b[c", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    asserts.equals(
+        env,
+        ["te[st"],
+        parse_pubspec_deps("name: x\ndependencies:\n  te[st: ^1.0.0\n"),
+    )
+    return unittest.end(env)
+
+def _parse_pubspec_nested_entry_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A block sequence nested in a sequence entry fails naming the line: the
+    # reader keeps no nested sequence there, so this stays a refusal (pub
+    # reads it).
+    doc = "name: x\nkey:\n  - - a\n"
+    asserts.equals(
+        env,
+        "x in pubspec.yaml: nested sequence at line 3 is not supported",
+        parse_pubspec_document_error(doc),
+    )
+
+    # A nested entry followed by a plain entry still fails on the nested
+    # line only (pub reads both).
+    doc = "name: x\nkey:\n  - - a\n  - b\n"
+    asserts.equals(
+        env,
+        "x in pubspec.yaml: nested sequence at line 3 is not supported",
+        parse_pubspec_document_error(doc),
+    )
+
+    # `- ? a` reads one null pair, as pub reads it.
+    doc = "name: x\nkey:\n  - ? a\n"
+    asserts.equals(env, [{"a": None}], parse_pubspec_document(doc)["key"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+
+    # A top-level explicit key fails naming the line, as pub rejects an
+    # explicit key the reader keeps no key for.
+    asserts.equals(
+        env,
+        "pubspec.yaml in pubspec.yaml: explicit key at line 1 is not supported: \"? a\"",
+        parse_pubspec_document_error("? a\n"),
+    )
+    return unittest.end(env)
+
+def _parse_pubspec_flow_shape_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Flow explicit keys, empty values and `?` shapes read as pub reads
+    # them (package:yaml 3.1.4 with the pinned SDK 3.13.5).
+    doc = "a: [?]\n"
+    asserts.equals(env, [{None: None}], parse_pubspec_document(doc)["a"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "a: [? a]\n"
+    asserts.equals(env, [{"a": None}], parse_pubspec_document(doc)["a"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "a: {k:}\n"
+    asserts.equals(env, {"k": None}, parse_pubspec_document(doc)["a"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "a: {k:,j:1}\n"
+    asserts.equals(env, {"k": None, "j:1": None}, parse_pubspec_document(doc)["a"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "a: [a:]\n"
+    asserts.equals(env, [{"a": None}], parse_pubspec_document(doc)["a"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "a: {?:}\n"
+    asserts.equals(env, {"?": None}, parse_pubspec_document(doc)["a"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = "a: [? : b]\n"
+    asserts.equals(env, [{None: "b"}], parse_pubspec_document(doc)["a"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+
+    # Flow values type as pub types them: `0X1F` and `nULL` stay strings
+    # while `.5`, `NULL` and `True` read through.
+    doc = "name: x\ntopics: [0X1F, .5, nULL, NULL, True]\n"
+    asserts.equals(env, ["0X1F", 0.5, "nULL", None, True], parse_pubspec_document(doc)["topics"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+
+    # An anchored explicit key fails naming the line, as pub rejects it.
+    asserts.equals(
+        env,
+        "pubspec.yaml in pubspec.yaml: explicit key with anchor or tag at line 1 is not supported",
+        parse_pubspec_document_error("key: [&x ? b]\n"),
+    )
+
+    # A collection key fails naming the line: pub keys it on a list or map
+    # the reader keeps no key for. A doc-marker mapping fails there too, as
+    # pub rejects it, and a block entry fails as one, as pub rejects it.
+    asserts.equals(
+        env,
+        "pubspec.yaml in pubspec.yaml: collection key at line 2 is not supported",
+        parse_pubspec_document_error("key:\n  [a]: v\n"),
+    )
+    asserts.equals(
+        env,
+        "pubspec.yaml in pubspec.yaml: collection key at line 1 is not supported",
+        parse_pubspec_document_error("&a [x]: v\n"),
+    )
+    asserts.equals(
+        env,
+        "pubspec.yaml in pubspec.yaml: Mapping values are not allowed here at line 1",
+        parse_pubspec_document_error("--- [a]: v\n"),
+    )
+    asserts.equals(
+        env,
+        "pubspec.yaml in pubspec.yaml: Mapping values are not allowed here at line 1",
+        parse_pubspec_document_error("--- te[st: 1\n"),
+    )
+    asserts.equals(
+        env,
+        "pubspec.yaml in pubspec.yaml: block entry inside flow at line 1 is not supported",
+        parse_pubspec_document_error("key: [? - a : b]\n"),
+    )
+
+    # A flow collection as the key fails naming the line: pub keys it on a
+    # list the reader keeps no key for, whether bare (`{[x]}`), explicit
+    # (`{? [x]}`), anchored or tagged (`{&a [x]: b}`), or a `?` pair item
+    # (`[? [x]: b]`). A scalar followed by a collection fails there too, as
+    # pub rejects it.
+    for doc in [
+        "key: {[x]: b}\n",
+        "key: {[x]}\n",
+        "key: {? [x]: b}\n",
+        "key: {? [x]}\n",
+        "key: {&a [x]: b}\n",
+        "key: {&a [x]}\n",
+        "key: {!t [x]: b}\n",
+        "key: [? [x]]\n",
+        "key: [? [x]: b]\n",
+        "key: {a [b]: c}\n",
+        "key: {a [b]}\n",
+    ]:
+        asserts.equals(
+            env,
+            "pubspec.yaml in pubspec.yaml: collection key inside flow at line 1 is not supported",
+            parse_pubspec_document_error(doc),
+        )
+    return unittest.end(env)
+
+_t73_test = unittest.make(_parse_pubspec_comment_fold_test_impl)
+_t74_test = unittest.make(_parse_pubspec_bracket_key_test_impl)
+_t75_test = unittest.make(_parse_pubspec_nested_entry_test_impl)
+_t76_test = unittest.make(_parse_pubspec_flow_shape_test_impl)
+
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
         name = name + "_pub_lock_package_extracted_test",
@@ -2168,6 +2387,10 @@ def yaml_parser_test_suite(name):
         _t70_test,
         _t71_test,
         _t72_test,
+        _t73_test,
+        _t74_test,
+        _t75_test,
+        _t76_test,
     )
     native.test_suite(
         name = name,

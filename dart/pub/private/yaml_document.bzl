@@ -7,7 +7,7 @@ walk. Loaded by the `yaml_subset.bzl` entry point.
 load(":yaml_block.bzl", "close_block_containers", "drop_affix", "drop_pending_value", "emit_dangling", "init_block_root", "map_line", "record_dangling", "resolve_affix_root", "resolve_pending", "seq_line", "take_lone_line")
 load(":yaml_chars.bzl", "BOM", "is_bom_only_line", "is_clean_marker_line")
 load(":yaml_scalar.bzl", "strip_value_prefix")
-load(":yaml_text.bzl", "bad_blank_index", "block_line_text", "clone", "indent_width", "is_dash", "is_question_entry", "record_unreadable", "split_key_value", "strip_trailing_comment")
+load(":yaml_text.bzl", "bad_blank_index", "block_line_text", "clone", "indent_width", "is_dash", "is_question_entry", "record_unreadable", "split_block_key_value", "strip_trailing_comment")
 
 def first_content(lines):
     """Returns the first line with block content as struct(index, text).
@@ -155,14 +155,16 @@ def _marker_rest_problem(rest, idx):
     A block mapping or sequence that starts on the marker line fails, as pub
     rejects it there, while a scalar or a flow collection reads. Anchor and
     tag prefixes do not shield the entry, as pub still rejects
-    `--- &x a: 1`; an alias or a block scalar header reads as before.
+    `--- &x a: 1`; an alias or a block scalar header reads as before. A
+    `te[st: 1` mapping fails too, as pub rejects it there, and so does a
+    list or map key, as pub rejects `--- [a]: v` without it.
     """
     _anchor, _tag, s, _bad = strip_value_prefix(strip_trailing_comment(rest).strip())
     if is_dash(s):
         return "Block sequence entries are not allowed here at line %d" % idx
     if is_question_entry(s):
         return "Mapping keys are not allowed here at line %d" % idx
-    _dict_key, _value, found = split_key_value(s)
+    _dict_key, _value, found = split_block_key_value(s)
     if found:
         return "Mapping values are not allowed here at line %d" % idx
     return None

@@ -7,7 +7,7 @@ line with its deeper continuation lines. Loaded by the block module.
 load(":yaml_chars.bzl", "BOM")
 load(":yaml_flow.bzl", "parse_scalar")
 load(":yaml_flow_scan.bzl", "flow_fold_lines", "flow_scan_start", "flow_scan_text")
-load(":yaml_text.bzl", "bad_blank_index", "block_line_text", "find_top_colon", "flow_head_text", "indent_width", "is_dash", "is_explicit_key_text", "is_mapping_start", "is_quoted", "quoted_end_at", "record_unreadable")
+load(":yaml_text.bzl", "bad_blank_index", "block_line_text", "find_block_colon", "flow_head_text", "indent_width", "is_block_mapping_start", "is_dash", "is_explicit_key_text", "is_quoted", "quoted_end_at", "record_unreadable")
 
 def _block_quote_single(core, i, st):
     """Steps an index inside single quotes. Returns the next index.
@@ -110,10 +110,11 @@ def _block_fold_begin(head, core, scan):
     0-based line and `entry` the whole entry for head problems.
 
     The head scans through the quote-aware pass, and a head comment poisons
-    the scalar, ending it silently as pub ends it. Anchor and tag prefixes
-    are stripped before scanning, so a quote after `&a ` still opens, and
-    re-attached before parsing, so `&a one` folding with `two` reads the
-    anchor `one two`.
+    the scalar when the head has content, ending it as pub ends it; a head
+    comment with no content yet poisons nothing, as pub reads past it. Anchor
+    and tag prefixes are stripped before scanning, so a quote after `&a `
+    still opens, and re-attached before parsing, so `&a one` folding with
+    `two` reads the anchor `one two`.
     """
     if core:
         prefix = head["text"][:len(head["text"]) - len(core)]
@@ -124,7 +125,7 @@ def _block_fold_begin(head, core, scan):
     if core:
         flow_scan_text(core, scan, _flow_fresh_res())
     poison = False
-    if head["raw"]:
+    if head["raw"] and core != "":
         probe = flow_scan_start()
         raw_res = _flow_fresh_res()
         flow_scan_text(head["raw"], probe, raw_res)
@@ -158,32 +159,23 @@ def _block_fold_quoted(raw, idx, scan, fold):
         return idx
     return -1
 
-def _block_fold_plain(raw, scan, fold, question_stops):
-    """Decides one deeper plain line. Returns take, break, fail or comment.
+def _block_fold_decide(text, fold, question_stops):
+    """Decides whether a deeper plain line continues the scalar. Returns the action.
 
-    Checked against package:yaml 3.1.4, a `?` line without a colon folds
-    into an open scalar except in a nested mapping, where it opens an
-    explicit key; a `- ` line without a colon folds into an open scalar at
-    any depth, while one with a colon ends it. A `:` line never continues a
-    scalar: pub rejects it where an entry belongs, so ending the scalar
-    fails closed downstream. An indented `%` line is content once the scalar
-    is open, as pub folds it, and a problem where pub rejects it otherwise.
-    A comment-only or trailing-comment line ends a plain scalar, as pub ends
-    it; the comment line itself is silent, as pub places it.
+    A `:` line never continues a scalar: pub rejects it where an entry
+    belongs, so ending the scalar fails closed downstream. A `?` line
+    without a colon folds into an open scalar except in a nested mapping,
+    where it opens an explicit key. A `- ` line without a colon folds into
+    an open scalar at any depth, while one with a colon ends it. A mapping
+    start or explicit key text ends it. A `[`, `{`, or `,` in a line past
+    its first character is content, as the block scanner does not track it,
+    so `te[st` and `a, b` fold, while `--- {a:b}` and `{a:b}` forms still
+    break, as the leading-`[{` check preserves tracking.
     """
-    text = raw.lstrip(" \t")
-    res = _flow_fresh_res()
-    flow_scan_text(text, scan, res)
-    if res["pct_flag"]:
-        return "take" if fold["seen"] else "fail"
-    if res["plain_comment"] or res["stopped"]:
-        return "comment"
-    if fold["poison"]:
-        return "break"
     if text == ":" or text[:2] == ": " or text[:2] == ":\t":
         return "break"
     if text[:1] == "?":
-        if find_top_colon(text) >= 0 or not fold["seen"] or question_stops:
+        if find_block_colon(text) >= 0 or not fold["seen"] or question_stops:
             return "break"
         return "take"
     if is_dash(text):
@@ -192,9 +184,41 @@ def _block_fold_plain(raw, scan, fold, question_stops):
         if _block_dash_colon(text[1:]):
             return "break"
         return "take"
-    if is_mapping_start(text) or is_explicit_key_text(text):
+    if is_block_mapping_start(text) or is_explicit_key_text(text):
         return "break"
     return "take"
+
+def _block_fold_plain(raw, scan, fold, question_stops):
+    """Decides one deeper plain line. Returns (action, kept).
+
+    Checked against package:yaml 3.1.4 loader comment handling: a
+    continuation line ending with a comment keeps the text before the `#`,
+    as pub keeps it, so a second such line keeps its own text too, and any
+    line after is unreadable, as pub rejects it. Once a comment has
+    poisoned the scalar nothing else folds: a later line breaks, as pub
+    rejects it, even a comment-only line, which the block walk then skips
+    silently. A `#` only matters outside quotes, as the quote-aware scan
+    decides, and a `#` without a preceding space ends the scalar only for
+    an anonymous nested sequence or a space before it, as the block
+    scanner decides. An indented `%` line is content once the scalar is
+    open, as pub folds it, and a problem where pub rejects it otherwise.
+    The take-or-break decision reads through its own step.
+    """
+    text = raw.lstrip(" \t")
+    res = _flow_fresh_res()
+    flow_scan_text(text, scan, res)
+    if res["pct_flag"]:
+        return ("take" if fold["seen"] else "fail", "")
+    if fold["poison"]:
+        return ("break", "")
+    action = _block_fold_decide(text, fold, question_stops)
+    if res["plain_comment"] or res["stopped"]:
+        if action == "take" and res["plain_comment"]:
+            kept = "".join(res["kept"]).strip(" \t")
+            if kept != "":
+                return ("take_kept", kept)
+        return ("comment", "")
+    return (action, "")
 
 def _block_fold_blank(raw, idx, scan, fold):
     """Folds a blank continuation line. Returns True when it fails.
@@ -223,14 +247,21 @@ def _block_fold_line(raw, idx, parent_indent, scan, fold, question_stops, state)
         state.problems.append("byte-order mark at line %d is not supported" % (idx + 1))
         fold["bom"] = True
         return "fail"
-    action = _block_fold_plain(raw, scan, fold, question_stops)
+    action, kept = _block_fold_plain(raw, scan, fold, question_stops)
     if action == "take":
         fold["items"].append((idx + 1, raw))
         fold["consumed"] += 1
         fold["seen"] = True
         return "more"
-    if action == "comment":
+    if action == "take_kept":
+        fold["items"].append((idx + 1, kept))
+        fold["consumed"] += 1
+        fold["seen"] = True
         fold["poison"] = True
+        return "more"
+    if action == "comment":
+        if fold["seen"]:
+            fold["poison"] = True
         return "more"
     if action == "fail":
         return "fail"

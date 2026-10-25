@@ -117,8 +117,9 @@ Supported:
   it, as pub reads `-\tx` as `x`. A `?` line without a colon folds into an open scalar except
   in a nested mapping, where it opens an explicit key; a `- ` line without
   a colon folds into an open scalar at any depth, while one with a colon
-  ends it. A comment-only or trailing-comment line ends a plain scalar
-  silently; text after a same-line closing quote, a tab-indented line and
+  ends it. A comment-only line ends a plain scalar silently, while a
+  trailing-comment continuation keeps the text before the `#`, as pub
+  keeps it; text after a same-line closing quote, a tab-indented line and
   a `%` line where pub rejects it are problems naming the line. These
   shapes read as package:yaml 3.1.4 reads them.
 - anchors and aliases: an alias reads the anchor's value cloned shallowly
@@ -247,8 +248,9 @@ testing, so the projections are unaffected on real pubspec files:
   them; a hex or octal with a `_` separator stays a string, as pub reads
   it. Only the exact `.inf` and `.nan` casings read, so other casings stay
   strings now, as pub reads them. `1.e5` and `.5e5` read as doubles now, as
-  pub reads them. `1.` and `.5` stay strings and `1_000`, `0X1F` and `0O17`
-  read as before; pub reads some differently (out of scope: scalar typing).
+  pub reads them, and so do `1.` and `.5`, as pub reads them; a `_`
+  separator never reads and an uppercase `0X` or `0O` prefix stays a
+  string, as pub reads them.
 - `%TAG` handles are ignored, so a tag written through one reads as untagged;
   yaml.bzl resolves it. Other unknown tags read as untagged in both.
 - duplicate mapping keys fail; yaml.bzl's default non-strict mode silently
