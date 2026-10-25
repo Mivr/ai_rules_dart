@@ -106,11 +106,65 @@ def _comment_test_impl(ctx):
 
 def _document_marker_test_impl(ctx):
     env = unittest.begin(ctx)
-    asserts.equals(env, {"a": 1}, parse_document("---\na: 1\n...\nb: 2\n"))
-    asserts.equals(env, {"a": 1}, parse_document("a: 1\n---\nb: 2\n"))
+
+    # One stream carries one document, as pub reads it: a second `---`
+    # fails naming its line, even before any content, and so does any
+    # content after a `...` line, naming the content's line.
+    asserts.equals(
+        env,
+        ["second document marker (---) at line 2"],
+        document_problems("a: 1\n---\nb: 2\n", True),
+    )
+    asserts.equals(
+        env,
+        ["second document marker (---) at line 2"],
+        document_problems("a: 1\n---\nb: 2\n", False),
+    )
+    asserts.equals(
+        env,
+        ["second document marker (---) at line 2"],
+        document_problems("---\n---\na: 1\n", True),
+    )
+    asserts.equals(
+        env,
+        ["second document marker (---) at line 2"],
+        document_problems("a: 1\n---\n# only a comment\n", True),
+    )
+    asserts.equals(
+        env,
+        ["content after document end (...) at line 4"],
+        document_problems("---\na: 1\n...\nb: 2\n", True),
+    )
+    asserts.equals(
+        env,
+        ["content after document end (...) at line 2"],
+        document_problems("a: 1\n... text\n", True),
+    )
+    asserts.equals(
+        env,
+        ["second document marker (---) at line 3"],
+        document_problems("a: 1\n...\n---\nb: 2\n", True),
+    )
+    value, problems = document_value_and_problems("a: 1\n---\nb: 2\n", True)
+    asserts.equals(env, {"a": 1}, value)
+    asserts.equals(env, 1, len(problems))
+
+    # A leading `---`, a trailing `...` and inline marker text read as pub
+    # reads them (package:yaml 3.1.4 with the pinned SDK 3.13.5).
+    asserts.equals(env, {"a": 1}, parse_document("---\na: 1\n"))
+    asserts.equals(env, {"a": 1}, parse_document("a: 1\n...\n"))
+    asserts.equals(env, {"a": 1}, parse_document("a: 1\n... # c\n"))
+    asserts.equals(env, "foo", parse_document("--- foo\n"))
+    asserts.equals(env, "text", parse_document("... text\n"))
+    asserts.equals(env, "...text", parse_document("...text\n"))
+    asserts.equals(env, "....", parse_document("....\n"))
+    asserts.equals(env, "---foo", parse_document("---foo\n"))
     asserts.equals(env, {"a": 1}, parse_document("%YAML 1.2\n---\na: 1\n"))
     asserts.equals(env, None, parse_document(""))
     asserts.equals(env, None, parse_document("# only a comment\n"))
+    asserts.equals(env, None, parse_document("...\n"))
+    asserts.equals(env, None, parse_document("---\n"))
+    asserts.equals(env, [], document_problems("a: 1\n...\n", True))
     return unittest.end(env)
 
 def _plain_scalar_type_test_impl(ctx):
@@ -558,10 +612,23 @@ def _indented_marker_test_impl(ctx):
     asserts.equals(env, {"a": "1 ...", "b": 2}, value)
     asserts.equals(env, [], problems)
 
-    # The column-0 controls keep ending the document.
-    asserts.equals(env, {"a": 1}, parse_document("a: 1\n---\nb: 2\n"))
-    asserts.equals(env, {"a": 1}, parse_document("a: 1\n...\nb: 2\n"))
-    asserts.equals(env, {"a": 1}, parse_document("a: 1\n---   \nb: 2\n"))
+    # The column-0 controls end the single document instead: a second `---`
+    # and content after `...` fail naming the line, as pub rejects them.
+    asserts.equals(
+        env,
+        ["second document marker (---) at line 2"],
+        document_problems("a: 1\n---\nb: 2\n", True),
+    )
+    asserts.equals(
+        env,
+        ["content after document end (...) at line 3"],
+        document_problems("a: 1\n...\nb: 2\n", True),
+    )
+    asserts.equals(
+        env,
+        ["second document marker (---) at line 2"],
+        document_problems("a: 1\n---   \nb: 2\n", True),
+    )
     return unittest.end(env)
 
 def _multiline_flow_test_impl(ctx):

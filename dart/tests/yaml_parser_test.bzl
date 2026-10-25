@@ -206,9 +206,10 @@ def _parse_lock_doc_end_test_impl(ctx):
 def _parse_lock_second_doc_test_impl(ctx):
     env = unittest.begin(ctx)
 
-    # Content after a second `---` fails, naming the content's line.
+    # A second `---` fails at the marker's line, as pub rejects the second
+    # document there; content after it never reads.
     err = pubspec_lock_error("packages:\n  a:\n    source: hosted\n    version: \"1.0.0\"\n---\npackages:\n  b:\n    source: hosted\n    version: \"2.0.0\"\n", "//:pubspec.lock")
-    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 6" in err)
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 5" in err)
 
     # A bare second `---` still fails, naming the marker's own line.
     err = pubspec_lock_error("packages:\n  a:\n    source: hosted\n    version: \"1.0.0\"\n---\n", "//:pubspec.lock")
@@ -373,6 +374,13 @@ def _parse_pubspec_document_error_test_impl(ctx):
     asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 2" in err)
     err = parse_pubspec_document_error("- just\n- a\n- list\n", "//:pubspec.yaml")
     asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 1" in err)
+
+    # A second document marker and content after `...` fail naming the
+    # pubspec and the line, as pub reads one document only.
+    err = parse_pubspec_document_error("name: x\n---\ndependencies:\n  a: any\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "x" in err and "//:pubspec.yaml" in err and "line 2" in err)
+    err = parse_pubspec_document_error("name: x\n...\ndependencies:\n  a: any\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "x" in err and "//:pubspec.yaml" in err and "line 3" in err)
     return unittest.end(env)
 
 def _parse_pubspec_sdk_numeric_test_impl(ctx):

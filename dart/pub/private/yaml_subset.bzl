@@ -36,6 +36,12 @@ Supported:
   and `...` document markers at column 0 only: an indented marker is never
   a marker, so one inside a `|` or `>` block scalar stays scalar content.
   A `%` line after content is a problem naming the line, as pub rejects it.
+  One stream carries one document, as pub reads it: a second `---` fails
+  naming its line, even before any content and even with only comments
+  after it, and so does any content after a `...` line, naming the
+  content's line, while a trailing `...` alone stays allowed. Inline text
+  after a pre-content marker reads as the document, as pub reads `--- foo`
+  as "foo" and `... text` as "text".
 - plain, single-quoted and double-quoted scalars, with yaml.bzl's escapes,
   including scalars that start on the line after `key:` or continue on
   deeper lines, which fold through the same quote-aware pass as flow lines
@@ -103,7 +109,10 @@ testing, so the projections are unaffected on real pubspec files:
   plain before, a block scalar ended by a less-indented line folded
   that line in before, and a keep scalar at the end of the file read one
   break too many before; pub rejects the header and ending forms and folds
-  the rest as read now.
+  the rest as read now. A second `---` after content read the first
+  document and dropped the second before, content after a `...` line was
+  dropped before, and a doubled pre-content `---` read the content before;
+  pub rejects all three, so they fail naming the line.
 - flow collections that span lines are not supported, unless the folded
   lines read as one flow collection as pub reads them; yaml.bzl reads all
   spanning flows. The supported fold matches pub on the oracle-checked
@@ -210,7 +219,7 @@ def document_problems(content, strict_lines = False):
 def _parse_document(content, strict_lines):
     """Parses one document. Returns (value, problems) without failing."""
     state = struct(problems = [], strict_lines = strict_lines)
-    lines = _first_document_lines(_strip_bom(content))
+    lines = _first_document_lines(_strip_bom(content), state)
     first = _first_content(lines)
     if first.text[:1] in ["{", "["] and _allows_flow_doc(lines, first.index):
         items = []
@@ -283,31 +292,101 @@ def _is_marker_line(raw, marker):
         return False
     return raw[len(marker):].strip() == ""
 
-def _first_document_lines(content):
+def _is_clean_marker_line(raw, marker):
+    """Returns whether `raw` is a document marker: the marker at column 0 with only whitespace or a `#` comment after it.
+
+    A `#` after separation is a comment, as pub reads `... # c` as a clean
+    document end; text glued to the marker or after a space is content the
+    document handlers place.
+    """
+    if not raw.startswith(marker):
+        return False
+    rest = raw[len(marker):]
+    if rest.strip() == "":
+        return True
+    return rest[:1] in [" ", "\t"] and rest.strip().startswith("#")
+
+def _doc_content_line(line):
+    """Returns whether `line` counts as document content."""
+    stripped = line.strip()
+    return stripped != "" and not stripped.startswith("#") and not stripped.startswith("%")
+
+def _doc_tail_content(line):
+    """Returns whether `line` is content after the document ended.
+
+    Blank and `#` comment lines are not content; anything else, including a
+    `%` line, ends the single document, as the lock tail check reads it.
+    """
+    stripped = line.strip()
+    return stripped != "" and not stripped.startswith("#")
+
+def _doc_dash_line(line, idx, current, doc, state):
+    """Handles a column-0 `---` line. Returns whether collection stops."""
+    if _is_clean_marker_line(line, "---"):
+        if doc["ended"] or doc["content"] or doc["marker"]:
+            state.problems.append("second document marker (---) at line %d" % idx)
+            return True
+        if _has_directive(current):
+            current.append(line)
+            doc["content"] = True
+        else:
+            doc["marker"] = True
+        return False
+    text = line[3:].strip() if line[3:4] in [" ", "\t"] else line
+    if doc["ended"] or doc["content"]:
+        state.problems.append("second document marker (---) at line %d" % idx)
+        return True
+    current.append(text)
+    doc["content"] = True
+    return False
+
+def _doc_dots_line(line, idx, current, doc, state):
+    """Handles a column-0 `...` line. Returns whether collection stops."""
+    if _is_clean_marker_line(line, "..."):
+        doc["ended"] = True
+        return False
+    text = line[3:].strip() if line[3:4] in [" ", "\t"] else line
+    if doc["ended"] or doc["content"]:
+        state.problems.append("content after document end (...) at line %d" % idx)
+        return True
+    current.append(text)
+    doc["content"] = True
+    return False
+
+def _first_document_lines(content, state):
     """Returns the lines of the first document, split as yaml.bzl splits them.
 
-    A column-0 `---` line ends the first document once content has been seen.
-    A column-0 `...` line ends it at any point. A `---` before any content is
-    dropped, unless a directive precedes it, in which case it is kept as an
-    ordinary line.
+    One stream carries one document, as pub reads it: a second column-0
+    `---` line is a problem naming its line, even before any content and
+    even with only comments after it, and so is any content after a
+    column-0 `...` line, naming the content's line. A `---` before any
+    content starts the document, unless a directive precedes it, in which
+    case it is kept as an ordinary line; inline text after a pre-content
+    marker reads as the document, as pub reads `--- foo` as "foo" and
+    `... text` as "text". A trailing `...` alone stays allowed.
     """
     normalized = content.replace("\r\n", "\n").replace("\r", "\n")
     current = []
-    saw_content = False
+    doc = {"content": False, "marker": False, "ended": False}
+    idx = 0
     for line in normalized.split("\n"):
-        stripped = line.strip()
-        if _is_marker_line(line, "---"):
-            if saw_content:
+        idx += 1
+        if line.startswith("---"):
+            if _doc_dash_line(line, idx, current, doc, state):
                 return current
-            if _has_directive(current):
-                current.append(line)
-                saw_content = True
             continue
-        if _is_marker_line(line, "..."):
-            return current
+        if line.startswith("..."):
+            if _doc_dots_line(line, idx, current, doc, state):
+                return current
+            continue
+        if doc["ended"]:
+            if _doc_tail_content(line):
+                state.problems.append("content after document end (...) at line %d" % idx)
+                return current
+            continue
         current.append(line)
-        if stripped and not stripped.startswith("#") and not stripped.startswith("%"):
-            saw_content = True
+        if _doc_content_line(line):
+            doc["content"] = True
     return current
 
 def _has_directive(lines):
