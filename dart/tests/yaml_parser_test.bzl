@@ -301,6 +301,11 @@ def _parse_lock_entry_version_test_impl(ctx):
     err = pubspec_lock_error("packages:\n  a:\n    source: hosted\n    version: \"1.0.0\n      plus junk\"\n", "//:pubspec.lock")
     asserts.true(env, err != None and "//:pubspec.lock" in err)
 
+    # An overflowing float version fails as a non-string version, naming the
+    # entry's line instead of crashing the evaluation.
+    err = pubspec_lock_error("packages:\n  a:\n    source: hosted\n    version: 1e999\n", "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 2" in err)
+
     # Prerelease and build versions parse as pub writes them.
     result = parse_pubspec_lock("packages:\n  a:\n    source: hosted\n    version: \"1.2.3-dev.4+5\"\n  b:\n    source: hosted\n    version: \"0.0.0\"\n", "//:pubspec.lock")
     asserts.equals(env, "1.2.3-dev.4+5", result["a"]["version"])

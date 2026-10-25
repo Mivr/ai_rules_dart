@@ -691,6 +691,30 @@ def _block_fold_test_impl(ctx):
     asserts.equals(env, {"a": None, "b": 2}, parse_document("a:\n# c\nb: 2\n"))
     return unittest.end(env)
 
+def _float_overflow_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Floats past the double range read as infinity, as pub reads them
+    # (package:yaml 3.1.4 with the pinned SDK 3.13.5); finite values convert
+    # exactly as before, and tiny values round to zero.
+    parsed = parse_document(
+        "a: 1e999\nb: -1e999\nc: 1e309\nd: 1e308\ne: 1e-400\nf: 0.0e999\n" +
+        "g: 17976931348623158e292\nh: 17976931348623156e292\n" +
+        "i: 1.7976931348623158e308\nj: !!float 1e999\n",
+    )
+    asserts.equals(env, float("inf"), parsed["a"])
+    asserts.equals(env, float("-inf"), parsed["b"])
+    asserts.equals(env, float("inf"), parsed["c"])
+    asserts.equals(env, 1e308, parsed["d"])
+    asserts.equals(env, 0.0, parsed["e"])
+    asserts.equals(env, 0.0, parsed["f"])
+    asserts.equals(env, float("inf"), parsed["g"])
+    asserts.equals(env, 17976931348623156e292, parsed["h"])
+    asserts.equals(env, float("inf"), parsed["i"])
+    asserts.equals(env, float("inf"), parsed["j"])
+    asserts.equals(env, [], document_problems("a: 1e999\n", True))
+    return unittest.end(env)
+
 _t0_test = unittest.make(_block_mapping_test_impl)
 _t1_test = unittest.make(_block_sequence_test_impl)
 _t2_test = unittest.make(_same_indent_sequence_test_impl)
@@ -723,6 +747,7 @@ _t28_test = unittest.make(_multiline_flow_test_impl)
 _t29_test = unittest.make(_explicit_key_error_test_impl)
 _t30_test = unittest.make(_flow_quote_start_test_impl)
 _t31_test = unittest.make(_block_fold_test_impl)
+_t32_test = unittest.make(_float_overflow_test_impl)
 
 def yaml_subset_test_suite(name):
     small_unittest_suite(
@@ -759,4 +784,5 @@ def yaml_subset_test_suite(name):
         _t29_test,
         _t30_test,
         _t31_test,
+        _t32_test,
     )

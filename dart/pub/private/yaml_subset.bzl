@@ -115,6 +115,9 @@ testing, so the projections are unaffected on real pubspec files:
   naming the line instead of misreading.
 - merge keys (`<<`) are ordinary keys; yaml.bzl merges them into the mapping.
   YAML 1.2 defines no merge keys.
+- floats past the double range read as infinity, as pub reads them
+  (package:yaml 3.1.4 with the pinned SDK 3.13.5): only a finite value
+  reaches the conversion, so finite values convert exactly as before.
 - `%TAG` handles are ignored, so a tag written through one reads as untagged;
   yaml.bzl resolves it. Other unknown tags read as untagged in both.
 - duplicate mapping keys fail; yaml.bzl's default non-strict mode silently
@@ -1867,7 +1870,7 @@ def _parse_numeric_text(s, lower, num):
     if num.count(".") == 1:
         left, right = num.split(".")
         if _is_decimal_part(left) and right.isdigit():
-            return float(num)
+            return _safe_float(num)
     return s
 
 def _parse_nonflow(s, anchors):
@@ -1940,11 +1943,11 @@ def _parse_scientific_float(text):
     elif not right.isdigit():
         return None
     if _is_int_digits(left):
-        return float(normalized)
+        return _safe_float(normalized)
     if left.count(".") == 1:
         whole, frac = left.split(".")
         if _is_decimal_part(whole) and frac.isdigit():
-            return float(normalized)
+            return _safe_float(normalized)
     return None
 
 def _parse_based_int(text, base):
@@ -2005,8 +2008,71 @@ def _parse_float_text(text):
     if s.count(".") == 1:
         left, right = s.split(".")
         if _is_decimal_part(left) and right.isdigit():
-            return float(s)
+            return _safe_float(s)
     return None
+
+def _float_parts(text):
+    """Splits a validated float text into (negative, adjusted, digits).
+
+    `text` has a validated shape: an optional sign, digits with at most one
+    point, and an optional `e` exponent with an optional sign and digits.
+    `adjusted` is the base-10 exponent of the first significant digit and
+    `digits` are the significant digits without the point, "" for a zero
+    mantissa.
+    """
+    s = text
+    neg = False
+    if s[:1] in ["-", "+"]:
+        neg = s[:1] == "-"
+        s = s[1:]
+    exp = 0
+    e = s.lower().find("e")
+    if e >= 0:
+        exp = int(s[e + 1:])
+        s = s[:e]
+    dot = s.find(".")
+    if dot < 0:
+        intpart, frac = s, ""
+    else:
+        intpart, frac = s[:dot], s[dot + 1:]
+    intpart = intpart.lstrip("0")
+    if intpart != "":
+        return (neg, exp + len(intpart) - 1, intpart + frac)
+    rest = frac.lstrip("0")
+    if rest == "":
+        return (neg, 0, "")
+    return (neg, exp - (len(frac) - len(rest)) - 1, rest)
+
+def _float_over_max(digits):
+    """Returns whether significant `digits` past 1e308 exceed the double range.
+
+    Called only for an adjusted exponent of 308, so the value sits in
+    [1e308, 1e309): it overflows past the leading digits of DBL_MAX
+    (1.7976931348623157e308), or past equal leading digits with any nonzero
+    digit after them.
+    """
+    head = (digits + "00000000000000000")[:17]
+    if head != "17976931348623157":
+        return head > "17976931348623157"
+    for ch in digits[17:].elems():
+        if ch != "0":
+            return True
+    return False
+
+def _safe_float(text):
+    """Converts a validated float text, overflowing to infinity as pub reads it.
+
+    Starlark `float()` fails on magnitudes past the double range, while pub
+    reads them as infinity, so the magnitude is compared first and only a
+    finite value reaches `float()`: the returned double is exactly the one a
+    direct conversion gives. Underflow reaches `float()`, which rounds to zero.
+    """
+    neg, adjusted, digits = _float_parts(text)
+    if digits == "":
+        return -0.0 if neg else 0.0
+    if adjusted > 308 or (adjusted == 308 and _float_over_max(digits)):
+        return float("-inf") if neg else float("inf")
+    return float(text)
 
 # ---------------------------------------------------------------------------
 # Double-quoted escapes
