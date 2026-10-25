@@ -87,7 +87,13 @@ Supported:
 - plain, quoted, typed and anchored scalars continued on more-indented
   lines, folded through the same quote-aware pass: a break between content
   lines is one space, quotes close at any indent, and indented markers read
-  as content. A `?` line without a colon folds into an open scalar except
+  as content. A tab never indents: a line starting with a tab, and a content
+  line with a tab in its leading whitespace, fail naming the line, while a
+  whitespace-only line starting with spaces stays blank and a deeper line
+  with spaces before its tab folds, as pub reads them. A block scalar ends
+  before a line starting with a tab, which then fails as a tab-indented
+  line, as pub rejects it. A `-` entry opens with a space or a tab after
+  it, as pub reads `-\tx` as `x`. A `?` line without a colon folds into an open scalar except
   in a nested mapping, where it opens an explicit key; a `- ` line without
   a colon folds into an open scalar at any depth, while one with a colon
   ends it. A comment-only or trailing-comment line ends a plain scalar
@@ -120,12 +126,16 @@ testing, so the projections are unaffected on real pubspec files:
 - explicit keys (`? key` with `: value`) are not supported; yaml.bzl reads
   both. They fail naming the line, even a `:` line that continues a plain
   scalar: pub rejects that line, while yaml.bzl folds it, so failing closed
-  matches pub. Reading and failing closed changed for the forms an older
+  matches pub. A tab-indented line fails naming the line: pub rejects it,
+  while yaml.bzl counts the tab as indentation. A tab-indented continuation
+  folded before; pub folds one with spaces before its tab but rejects one
+  starting with a tab, as read now. A `-\t` entry read as an unreadable line
+  before; pub reads it as the value, as read now. Reading and failing closed changed for the forms an older
   revision misread: a `:` continuation (folded before), a `%`-leading flow
   scalar (read as plain before), a flow-looking document that reads as no
   collection (read as empty before), text after a same-line closing quote
   (kept before), a `%` line at a scalar's start or after content (folded or
-  skipped before), a tab-indented continuation (folded before), a stray
+  skipped before), a stray
   line after a comment-ended scalar (folded before), and an indented marker
   after a same-line scalar (reported before, pub folds it into the scalar).
   A folded `>` scalar with blank lines read an extra break before, an
@@ -499,8 +509,12 @@ def _block_line_text(raw):
     return indent, text
 
 def _is_dash(text):
-    """Returns whether `text` opens a block sequence entry."""
-    return text == "-" or text.startswith("- ")
+    """Returns whether `text` opens a block sequence entry.
+
+    A dash opens an entry with a space or a tab after it, as pub reads
+    `-\tx` as `x`.
+    """
+    return text == "-" or text.startswith("- ") or text.startswith("-\t")
 
 def _is_mapping_start(text):
     """Returns whether `text` opens a block mapping entry."""
@@ -847,7 +861,7 @@ def _block_fold_begin(head, core, scan):
     opened, closed = _block_head_quotes(core)
     head_complete = core != "" and core[:1] in ["'", '"'] and not scan["single"] and not scan["double"]
     items = [(head["idx"] + 1, core)] if core != "" else []
-    return {"prefix": prefix, "poison": poison, "opened": opened, "closed": closed, "head_complete": head_complete, "seen": core != "", "items": items, "consumed": 0, "bom": False}
+    return {"prefix": prefix, "poison": poison, "opened": opened, "closed": closed, "head_complete": head_complete, "seen": core != "", "items": items, "consumed": 0, "bom": False, "tab": False}
 
 def _block_fold_quoted(raw, idx, scan, fold):
     """Takes a line inside open quotes at any indent.
@@ -901,8 +915,9 @@ def _block_fold_plain(raw, scan, fold, question_stops):
 def _block_fold_gather(lines, start, parent_indent, scan, fold, question_stops, state):
     """Gathers a scalar's continuation lines. Returns (next index, fail).
 
-    `fail` is the 0-based failing line, or -1: a tab-indented line is a
-    problem naming the line, as pub rejects it. A byte-order mark outside
+    `fail` is the 0-based failing line, or -1: a line starting with a tab is
+    a problem naming the line, as pub rejects it, while a line with spaces
+    before its tab folds, as pub folds it. A byte-order mark outside
     quotes is an always-on problem naming its own line, as pub rejects it;
     inside quotes every line stays content.
     """
@@ -913,6 +928,10 @@ def _block_fold_gather(lines, start, parent_indent, scan, fold, question_stops, 
             break
         raw = lines[idx]
         if raw.strip() == "":
+            if raw.startswith("\t") and not (scan["single"] or scan["double"]):
+                fold["tab"] = True
+                fail = idx
+                break
             if not fold["poison"]:
                 fold["items"].append((idx + 1, ""))
             idx += 1
@@ -923,7 +942,8 @@ def _block_fold_gather(lines, start, parent_indent, scan, fold, question_stops, 
             continue
         if _indent_width(raw) <= parent_indent:
             break
-        if "\t" in raw[:_indent_width(raw)]:
+        if raw.startswith("\t"):
+            fold["tab"] = True
             fail = idx
             break
         if _BOM in raw:
@@ -982,8 +1002,9 @@ def _block_fold_scalar(lines, start, parent_indent, head, question_stops, anchor
     `_block_fold_begin`. The head folds with its deeper lines through the
     same quote-aware pass the flow fold uses (`_flow_scan_text` with
     `_flow_fold_lines`), so a break folds to one space, blanks fold
-    quote-aware, and comments and `%` behave as pub reads them. A
-    tab-indented line is a problem naming the line.
+    quote-aware, and comments and `%` behave as pub reads them. A line
+    starting with a tab is a problem naming the line, while a deeper line
+    with spaces before its tab folds, as pub reads them.
     """
     core = _flow_head_text(head["text"])
     if core[:1] in ["[", "{"]:
@@ -996,7 +1017,10 @@ def _block_fold_scalar(lines, start, parent_indent, head, question_stops, anchor
     idx, fail = _block_fold_gather(lines, start, parent_indent, scan, fold, question_stops, state)
     if fail >= 0:
         if not fold["bom"]:
-            _record_unreadable(state, fail, _block_fail_text(lines, fail, head["idx"], head["entry"]))
+            if fold["tab"]:
+                state.problems.append("tab indentation at line %d is not supported" % (fail + 1))
+            else:
+                _record_unreadable(state, fail, _block_fail_text(lines, fail, head["idx"], head["entry"]))
         return None, idx + 1, False
     return _block_fold_finish(fold, core, lines, idx, head, anchors, state, scan)
 
@@ -1391,6 +1415,15 @@ def _parse_block(lines, state):
                 state.problems.append("byte-order mark at line %d is not supported" % (idx + 1))
             idx += 1
             continue
+        if raw.startswith("\t") or (raw.strip(" \t") != "" and "\t" in raw[:_indent_width(raw)]):
+            # A tab never indents: a line starting with a tab, and a content
+            # line with a tab in its leading whitespace, are problems naming
+            # the line, as pub rejects them. A whitespace-only line starting
+            # with spaces stays blank, as pub skips it, and deeper lines of a
+            # folded scalar never reach here, as the fold consumes them.
+            state.problems.append("tab indentation at line %d is not supported" % (idx + 1))
+            idx += 1
+            continue
         indent, text = _block_line_text(raw)
         if indent == None:
             if saw_content and raw.strip().startswith("%"):
@@ -1783,7 +1816,9 @@ def _block_scalar_raw_lines(lines, start, parent_indent):
     Each item is [raw, indent], with indent -1 for a blank line, which is
     kept verbatim: spaces beyond the content indentation are content, as
     pub reads them. Collection stops before the first line at or above
-    `parent_indent`.
+    `parent_indent`, and before a line starting with a tab, which pub never
+    reads as scalar content: the driver re-reads it downstream, where the
+    tab indentation fails naming the line, as pub rejects it.
     """
     idx = start
     items = []
@@ -1791,6 +1826,8 @@ def _block_scalar_raw_lines(lines, start, parent_indent):
         if idx >= len(lines):
             break
         raw = lines[idx]
+        if raw.startswith("\t"):
+            break
         if not raw.strip():
             items.append([raw, -1])
             idx += 1
@@ -1812,7 +1849,9 @@ def _block_scalar_indent(items, explicit_base, explicit_indent):
     and the driver re-reads it downstream. `bad_lead` is the first content
     item when, without an explicit indicator, a leading blank line runs
     deeper than it, which pub rejects; with an explicit indicator such a
-    line strips to content instead.
+    line strips to content instead. Only spaces count toward the depth: a
+    tab never indents, so a blank with spaces up to the content and a tab
+    past it strips to content, as pub reads it.
     """
     first = -1
     for i in range(len(items)):
@@ -1830,7 +1869,7 @@ def _block_scalar_indent(items, explicit_base, explicit_indent):
     if first >= 0:
         if explicit_indent == 0:
             for i in range(first):
-                if _indent_width(items[i][0]) > indent:
+                if _spaces_width(items[i][0]) > indent:
                     bad_lead = first
                     break
         for i in range(first, len(items)):
@@ -1854,10 +1893,12 @@ def _fold_next_is_more(values, i):
     """Returns whether the next non-blank line after `i` is more-indented.
 
     With no non-blank line after `i`, the break stays, so this returns True.
+    A line that is whitespace past the content indent counts as
+    more-indented, as pub keeps the break before it.
     """
     for j in range(i + 1, len(values)):
         if values[j] != "":
-            return values[j].startswith(" ")
+            return values[j].startswith(" ") or values[j].strip(" \t") == ""
     return True
 
 def _fold_flowed_line(values, i, state, pieces):
@@ -1868,7 +1909,9 @@ def _fold_flowed_line(values, i, state, pieces):
     line whose breaks around it are kept. The break after a base-indented
     line drops only when the next non-blank line is a base line it folds
     into; when a more-indented line follows, the break stays and each blank
-    line adds one break. A break between two base lines is one space.
+    line adds one break. A break between two base lines is one space. A line
+    that is whitespace past the content indent counts as more-indented, as
+    pub keeps its breaks around it.
     """
     line = values[i]
     if line == "":
@@ -1876,7 +1919,7 @@ def _fold_flowed_line(values, i, state, pieces):
         if state == "more" or (state == "base" and _fold_next_is_more(values, i)):
             pieces.append("\n")
         return "blank"
-    more = line.startswith(" ")
+    more = line.startswith(" ") or line.strip(" \t") == ""
     if state == "start" or state == "blank":
         pieces.append(line)
     elif state == "base" and not more:
@@ -1954,6 +1997,10 @@ def _parse_block_scalar(lines, start, parent_indent, explicit_base, header, head
 def _indent_width(raw):
     """Counts the leading spaces and tabs, each as one column, as yaml.bzl does."""
     return len(raw) - len(raw.lstrip(" \t"))
+
+def _spaces_width(raw):
+    """Counts the leading spaces, stopping at a tab, which never indents."""
+    return len(raw) - len(raw.lstrip(" "))
 
 def _quote_track(ch, st):
     """Tracks quote state for `ch`, updating `st` in place. Returns whether `ch` was consumed.

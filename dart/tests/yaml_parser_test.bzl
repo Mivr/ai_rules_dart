@@ -1452,6 +1452,29 @@ def _parse_lock_double_escape_test_impl(ctx):
     )
     return unittest.end(env)
 
+def _parse_pubspec_tab_indent_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A tab never indents: a tab-indented key and a tab-only line fail naming
+    # the pubspec and the line, as pub rejects them (package:yaml 3.1.4 with
+    # the pinned SDK 3.13.5).
+    head = "name: x\nenvironment:\n  sdk: ^3.0.0\n"
+    doc = head + "dependencies:\n\tbar: any\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 5" in err)
+    doc = head + "dependencies:\n  bar: any\n\t\n  foo: any\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 6" in err)
+
+    # A `-\t` entry and a tab after the colon read as pub reads them.
+    doc = head + "keywords:\n  -\tx\n"
+    asserts.equals(env, ["x"], parse_pubspec_document(doc)["keywords"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = head + "description:\tpub reads this\n"
+    asserts.equals(env, "pub reads this", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    return unittest.end(env)
+
 _pub_lock_package_extracted_test = analysistest.make(_pub_lock_package_extracted_test_impl)
 
 _t0_test = unittest.make(_parse_lock_packages_test_impl)
@@ -1506,6 +1529,7 @@ _t48_test = unittest.make(_parse_pubspec_more_indented_blank_test_impl)
 _t49_test = unittest.make(_parse_pubspec_keep_eof_test_impl)
 _t50_test = unittest.make(_parse_pubspec_double_escape_test_impl)
 _t51_test = unittest.make(_parse_lock_double_escape_test_impl)
+_t52_test = unittest.make(_parse_pubspec_tab_indent_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -1567,6 +1591,7 @@ def yaml_parser_test_suite(name):
         _t49_test,
         _t50_test,
         _t51_test,
+        _t52_test,
     )
     native.test_suite(
         name = name,

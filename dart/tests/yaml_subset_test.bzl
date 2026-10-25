@@ -560,6 +560,101 @@ def _double_escape_test_impl(ctx):
     )
     return unittest.end(env)
 
+def _tab_indent_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A tab never indents: a line starting with a tab, and a content line
+    # with a tab in its leading whitespace, fail naming the line, in strict
+    # and lenient modes alike, as pub rejects them (package:yaml 3.1.4 with
+    # the pinned SDK 3.13.5).
+    asserts.equals(
+        env,
+        ["tab indentation at line 2 is not supported"],
+        document_problems("dependencies:\n\tbar: any\n", True),
+    )
+    asserts.equals(
+        env,
+        ["tab indentation at line 2 is not supported"],
+        document_problems("a: 1\n\t\nb: 2\n", True),
+    )
+    asserts.equals(
+        env,
+        ["tab indentation at line 2 is not supported"],
+        document_problems("a: 1\n\t# c\nb: 2\n"),
+    )
+    asserts.equals(
+        env,
+        ["tab indentation at line 2 is not supported"],
+        document_problems("a: 1\n \t b: 2\n", True),
+    )
+    asserts.equals(
+        env,
+        ["tab indentation at line 2 is not supported"],
+        document_problems("a:\n\t- x\n", True),
+    )
+
+    # After a tab-indented line fails, the orphaned content stays unreadable;
+    # the tab problem comes first, so it names the failure.
+    asserts.equals(
+        env,
+        ["tab indentation at line 2 is not supported", "unreadable line 3: \"x\""],
+        document_problems("description: >\n\t\n  x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["tab indentation at line 3 is not supported", "unreadable line 4: \"y\""],
+        document_problems("description: |\n  x\n\t\n  y\n", True),
+    )
+    asserts.equals(
+        env,
+        ["tab indentation at line 2 is not supported"],
+        document_problems("d: foo\n\tbar\n", True),
+    )
+    asserts.equals(
+        env,
+        ["tab indentation at line 2 is not supported"],
+        document_problems("description: >\n\tx\n", True),
+    )
+    asserts.equals(
+        env,
+        ["tab indentation at line 2 is not supported", "unreadable line 3: \"bar\""],
+        document_problems("d: foo\n\t\n  bar\n", True),
+    )
+
+    # Everywhere else a tab reads as pub reads it: after a dash or a colon,
+    # inside a plain scalar, at a line's end, and in a key before its colon.
+    asserts.equals(env, {"tags": ["x"]}, parse_document("tags:\n  -\tx\n"))
+    asserts.equals(env, {"tags": ["a", "b"]}, parse_document("tags:\n-\ta\n-\tb\n"))
+    asserts.equals(env, {"tags": ["x"]}, parse_document("tags:\n  - \tx\n"))
+    asserts.equals(env, {"a": "x\ty"}, parse_document("a: x\ty\n"))
+    asserts.equals(env, {"a": 1}, parse_document("a: 1\t\n"))
+    asserts.equals(env, {"a": "b"}, parse_document("a:\tb\n"))
+    asserts.equals(env, {"a": "b"}, parse_document("a\t: b\n"))
+    asserts.equals(env, {"a": "b"}, parse_document("a :\tb\n"))
+    asserts.equals(env, {"a": [1, 2]}, parse_document("a: [1,\n\t2]\n"))
+    asserts.equals(env, {"a": [1, 2]}, parse_document("a: [1,\n\t\n  2]\n"))
+
+    # A whitespace-only line starting with spaces stays blank, a deeper line
+    # with spaces before its tab folds, and inside quotes every line stays
+    # content, as pub reads them.
+    asserts.equals(env, {"a": 1, "b": 2}, parse_document("a: 1\n  \t\nb: 2\n"))
+    asserts.equals(env, {"d": "foo bar"}, parse_document("d: foo\n  \tbar\n"))
+    asserts.equals(env, {"d": "foo\nbar"}, parse_document("d: foo\n  \t\n  bar\n"))
+    asserts.equals(env, {"d": "foo\nbar"}, parse_document("d: \"foo\n\t\n  bar\"\n"))
+    asserts.equals(env, {"d": "foo bar"}, parse_document("d: \"foo\n\tbar\"\n"))
+    asserts.equals(env, {"d": "foo bar"}, parse_document("d: \"foo\n  \tbar\"\n"))
+    asserts.equals(env, {"description": "\t\nx\n"}, parse_document("description: >\n  \t\n  x\n"))
+    asserts.equals(env, {"a": "x\n\t\ny\n"}, parse_document("a: |\n  x\n  \t\n  y\n"))
+    asserts.equals(env, {"a": "x\n\t\ny\n"}, parse_document("a: >\n  x\n  \t\n  y\n"))
+    asserts.equals(env, {"a": "x\n\n\t\ny\n"}, parse_document("a: >\n  x\n\n  \t\n  y\n"))
+
+    # A leading blank line with spaces past the content still fails, as pub
+    # rejects it; only spaces count, so the tab past them is content.
+    value, problems = document_value_and_problems("description: >\n   \t\n  x\n", True)
+    asserts.equals(env, None, value["description"])
+    asserts.true(env, len(problems) >= 1 and "line 3" in problems[0])
+    return unittest.end(env)
+
 def _tag_test_impl(ctx):
     env = unittest.begin(ctx)
     parsed = parse_document(
@@ -780,7 +875,20 @@ def _indentation_test_impl(ctx):
     value, problems = document_value_and_problems("a:\n    b: 1\n  c: 2\n", False)
     asserts.equals(env, {"a": {"b": 1}}, value)
     asserts.equals(env, [], problems)
-    asserts.equals(env, {"a": {"b": 1}}, parse_document("a:\n\tb: 1\n"))
+
+    # A tab-indented key fails naming the line, in strict and lenient modes
+    # alike: pub rejects the tab, which an older revision counted as one
+    # column of indentation.
+    asserts.equals(
+        env,
+        ["tab indentation at line 2 is not supported"],
+        document_problems("a:\n\tb: 1\n", True),
+    )
+    asserts.equals(
+        env,
+        ["tab indentation at line 2 is not supported"],
+        document_problems("a:\n\tb: 1\n"),
+    )
     asserts.equals(env, {"a": 1, "b": 2}, parse_document("a: 1\r\nb: 2\r\n"))
     return unittest.end(env)
 
@@ -1042,8 +1150,10 @@ def _block_fold_test_impl(ctx):
     asserts.equals(env, None, value["a"])
     asserts.equals(env, ["unreadable line 1: \"a: \\\"x\\\"\\\"y\\\"\""], problems)
 
-    # A tab-indented continuation is a problem naming its line.
-    asserts.equals(env, ["unreadable line 2: \"beta\""], document_problems("a:\n\tbeta\n", True))
+    # A tab-indented continuation is a problem naming its line, in strict
+    # and lenient modes alike, as pub rejects it.
+    asserts.equals(env, ["tab indentation at line 2 is not supported"], document_problems("a:\n\tbeta\n", True))
+    asserts.equals(env, ["tab indentation at line 2 is not supported"], document_problems("a:\n\tbeta\n"))
 
     # An anchor spreads over the folded scalar, as pub reads it.
     asserts.equals(
@@ -1121,6 +1231,7 @@ _t33_test = unittest.make(_flow_affix_key_test_impl)
 _t34_test = unittest.make(_flow_affix_item_test_impl)
 _t35_test = unittest.make(_flow_self_anchor_test_impl)
 _t36_test = unittest.make(_double_escape_test_impl)
+_t37_test = unittest.make(_tab_indent_test_impl)
 
 def yaml_subset_test_suite(name):
     small_unittest_suite(
@@ -1162,4 +1273,5 @@ def yaml_subset_test_suite(name):
         _t34_test,
         _t35_test,
         _t36_test,
+        _t37_test,
     )
