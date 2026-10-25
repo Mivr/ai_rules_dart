@@ -431,6 +431,96 @@ def _bom_test_impl(ctx):
     asserts.equals(env, {"a": 1, "b": 2}, parse_document("\357\273\277a: 1\r\nb: 2\r\n"))
     asserts.equals(env, [], document_problems("\357\273\277a: 1\r\nb: 2\r\n", True))
     asserts.equals(env, {"t": ["a", "b"]}, parse_document("\357\273\277t:\r\n- a\r\n- b\r\n"))
+
+    # Every leading mark strips, as pub accepts them at the stream start.
+    asserts.equals(env, {"a": 1}, parse_document("\357\273\277\357\273\277a: 1\n"))
+
+    # A bare mark line at column 0 is blank-like and skipped, as pub skips
+    # it (package:yaml 3.1.4 with the pinned SDK 3.13.5).
+    asserts.equals(env, {"a": 1, "b": 2}, parse_document("a: 1\n\357\273\277\nb: 2\n"))
+    asserts.equals(env, [], document_problems("a: 1\n\357\273\277\nb: 2\n", True))
+    asserts.equals(env, {"a": 1, "b": 2}, parse_document("a: 1\n\357\273\277# c\nb: 2\n"))
+    asserts.equals(env, [], document_problems("a: 1\n\357\273\277# c\nb: 2\n", True))
+
+    # A mark anywhere else is a problem naming its line, in strict and
+    # lenient modes alike, as pub rejects it.
+    asserts.equals(
+        env,
+        ["byte-order mark at line 2 is not supported"],
+        document_problems("a: 1\n  \357\273\277\nb: 2\n", True),
+    )
+    asserts.equals(
+        env,
+        ["byte-order mark at line 2 is not supported"],
+        document_problems("a: 1\n  \357\273\277\nb: 2\n", False),
+    )
+    asserts.equals(
+        env,
+        ["byte-order mark at line 2 is not supported"],
+        document_problems("a: 1\n  \357\273\277# c\nb: 2\n", True),
+    )
+    asserts.equals(
+        env,
+        ["byte-order mark at line 2 is not supported"],
+        document_problems("a: 1\n\357\273\277b: 2\n", True),
+    )
+    asserts.equals(
+        env,
+        ["byte-order mark at line 1 is not supported"],
+        document_problems("a: \357\273\2771\n", True),
+    )
+    asserts.equals(
+        env,
+        ["byte-order mark at line 1 is not supported"],
+        document_problems("a: 1\357\273\277\n", True),
+    )
+    asserts.equals(
+        env,
+        ["byte-order mark at line 2 is not supported"],
+        document_problems("name: x\na\357\273\277b: 1\n", True),
+    )
+    asserts.equals(
+        env,
+        ["byte-order mark at line 1 is not supported"],
+        document_problems("a: [\357\273\277b]\n", True),
+    )
+    asserts.equals(
+        env,
+        ["byte-order mark at line 1 is not supported"],
+        document_problems("a: {\357\273\277k: v}\n", True),
+    )
+
+    # A folded continuation names its own line, not the head line.
+    asserts.equals(
+        env,
+        ["byte-order mark at line 2 is not supported"],
+        document_problems("a: b\n  c\357\273\277d\n", True),
+    )
+    asserts.equals(
+        env,
+        ["byte-order mark at line 2 is not supported"],
+        document_problems("a:\n  \357\273\277\nb: 2\n", True),
+    )
+    value, problems = document_value_and_problems("a: 1\n  \357\273\277\nb: 2\n", True)
+    asserts.equals(env, {"a": None, "b": 2}, value)
+    asserts.equals(env, 1, len(problems))
+
+    # A spanning flow whose continuation carries a mark fails at the head
+    # line, as the folded text parses as the head value; pub names the
+    # continuation line instead, but either line fails closed.
+    asserts.equals(
+        env,
+        ["byte-order mark at line 3 is not supported"],
+        document_problems("name: x\ntags:\n  [a,\n    \357\273\277b]\n", True),
+    )
+
+    # Quoted, block-scalar and comment marks stay content, as pub reads them.
+    asserts.equals(env, {"a": "x\357\273\277y"}, parse_document("a: \"x\357\273\277y\"\n"))
+    asserts.equals(env, {"a": "x\357\273\277y"}, parse_document("a: 'x\357\273\277y'\n"))
+    asserts.equals(env, {"a": "x\357\273\277y\n"}, parse_document("a: |\n  x\357\273\277y\n"))
+    asserts.equals(env, {"a": "x \357\273\277y"}, parse_document("a: \"x\n  \357\273\277y\"\n"))
+    asserts.equals(env, {"a": 1}, parse_document("a: 1 # \357\273\277c\n"))
+    asserts.equals(env, [], document_problems("a: 1 # \357\273\277c\n", True))
     return unittest.end(env)
 
 def _strict_lines_test_impl(ctx):

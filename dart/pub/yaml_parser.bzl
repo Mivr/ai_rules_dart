@@ -102,10 +102,13 @@ _LOCK_DIGITS = "0123456789"
 _LOCK_IDENT_CHARS = _LOCK_DIGITS + "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-"
 
 def _lock_text_lines(content):
-    """Splits lock text into lines with newlines normalized and the BOM stripped."""
+    """Splits lock text into lines with newlines normalized and the BOMs stripped."""
     text = content.replace("\r\n", "\n").replace("\r", "\n")
-    if text.startswith("\357\273\277"):
-        text = text[len("\357\273\277"):]
+    for _ in range(len(text) + 1):
+        if text.startswith("\357\273\277"):
+            text = text[len("\357\273\277"):]
+        else:
+            break
     return text.split("\n")
 
 def _is_lock_marker_line(line, marker):

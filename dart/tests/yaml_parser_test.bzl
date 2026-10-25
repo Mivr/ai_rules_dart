@@ -381,6 +381,11 @@ def _parse_pubspec_document_error_test_impl(ctx):
     asserts.true(env, err != None and "x" in err and "//:pubspec.yaml" in err and "line 2" in err)
     err = parse_pubspec_document_error("name: x\n...\ndependencies:\n  a: any\n", "//:pubspec.yaml")
     asserts.true(env, err != None and "x" in err and "//:pubspec.yaml" in err and "line 3" in err)
+
+    # A byte-order mark past the stream start fails naming the pubspec and
+    # the line, as pub rejects it.
+    err = parse_pubspec_document_error("name: x\ndescription: \357\273\277long\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "x" in err and "//:pubspec.yaml" in err and "line 2" in err)
     return unittest.end(env)
 
 def _parse_pubspec_sdk_numeric_test_impl(ctx):

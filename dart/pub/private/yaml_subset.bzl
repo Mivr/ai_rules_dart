@@ -25,8 +25,11 @@ scalar folds into it outside a nested mapping, as pub folds it; in a
 nested mapping it opens an explicit key. `parse_document` fails on the first problem instead
 of returning partial data. `document_problems` with strict lines reports every
 such problem so lock files can fail closed; without strict lines it reports
-duplicate keys and the unsupported forms. A leading byte-order mark is
-stripped, as pub accepts it.
+duplicate keys and the unsupported forms. Leading byte-order marks are
+stripped, as pub accepts them at the stream start; a mark anywhere else is
+a problem naming the line, as pub rejects it, except a bare mark line at
+column 0, which is blank-like and skipped, and marks inside quoted and
+block scalars, which stay content as pub reads them.
 
 Supported:
 - block mappings and sequences nested by indentation, including `- key: v`
@@ -172,8 +175,8 @@ def parse_document(content):
     never returns partial data.
 
     Args:
-        content: The text of a YAML stream. A leading byte-order mark is
-            stripped, as pub accepts it.
+        content: The text of a YAML stream. Leading byte-order marks are
+            stripped, as pub accepts them at the stream start.
 
     Returns:
         The document's value, or None when the document is empty.
@@ -277,10 +280,29 @@ def _flow_doc_problem(lines):
     return "flow document ending at line %d is not supported" % last
 
 def _strip_bom(content):
-    """Strips a leading UTF-8 byte-order mark, which pub accepts."""
-    if content.startswith(_BOM):
-        return content[len(_BOM):]
+    """Strips every leading UTF-8 byte-order mark, which pub accepts at the start."""
+    for _ in range(len(content) + 1):
+        if content.startswith(_BOM):
+            content = content[len(_BOM):]
+        else:
+            break
     return content
+
+def _strip_bom_text(text):
+    """Strips leading whitespace and byte-order marks, returning the rest."""
+    s = text
+    for _ in range(len(s) + 1):
+        t = s.lstrip(" \t")
+        if t.startswith(_BOM):
+            s = t[len(_BOM):]
+        else:
+            return t
+    return ""
+
+def _is_bom_only_line(raw):
+    """Returns whether `raw` carries no content past byte-order marks: only BOMs, whitespace and a `#` comment."""
+    rest = _strip_bom_text(raw)
+    return rest == "" or rest.startswith("#")
 
 def _is_marker_line(raw, marker):
     """Returns whether `raw` is a document marker: the marker at column 0 with only whitespace after it.
@@ -619,7 +641,7 @@ def _block_fold_begin(head, core, scan):
     opened, closed = _block_head_quotes(core)
     head_complete = core != "" and core[:1] in ["'", '"'] and not scan["single"] and not scan["double"]
     items = [(head["idx"] + 1, head["text"])] if head["text"] != "" else []
-    return {"prefix": prefix, "poison": poison, "opened": opened, "closed": closed, "head_complete": head_complete, "seen": core != "", "items": items, "consumed": 0}
+    return {"prefix": prefix, "poison": poison, "opened": opened, "closed": closed, "head_complete": head_complete, "seen": core != "", "items": items, "consumed": 0, "bom": False}
 
 def _block_fold_quoted(raw, idx, scan, fold):
     """Takes a line inside open quotes at any indent.
@@ -670,11 +692,13 @@ def _block_fold_plain(raw, scan, fold, question_stops):
         return "break"
     return "take"
 
-def _block_fold_gather(lines, start, parent_indent, scan, fold, question_stops):
+def _block_fold_gather(lines, start, parent_indent, scan, fold, question_stops, state):
     """Gathers a scalar's continuation lines. Returns (next index, fail).
 
     `fail` is the 0-based failing line, or -1: a tab-indented line is a
-    problem naming the line, as pub rejects it.
+    problem naming the line, as pub rejects it. A byte-order mark outside
+    quotes is an always-on problem naming its own line, as pub rejects it;
+    inside quotes every line stays content.
     """
     idx = start
     fail = -1
@@ -694,6 +718,11 @@ def _block_fold_gather(lines, start, parent_indent, scan, fold, question_stops):
         if _indent_width(raw) <= parent_indent:
             break
         if "\t" in raw[:_indent_width(raw)]:
+            fail = idx
+            break
+        if _BOM in raw:
+            state.problems.append("byte-order mark at line %d is not supported" % (idx + 1))
+            fold["bom"] = True
             fail = idx
             break
         action = _block_fold_plain(raw, scan, fold, question_stops)
@@ -758,9 +787,10 @@ def _block_fold_scalar(lines, start, parent_indent, head, question_stops, anchor
         return _parse_scalar(head["text"], anchors, state, head["idx"] + 1), start, True
     scan = _flow_scan_start()
     fold = _block_fold_begin(head, core, scan)
-    idx, fail = _block_fold_gather(lines, start, parent_indent, scan, fold, question_stops)
+    idx, fail = _block_fold_gather(lines, start, parent_indent, scan, fold, question_stops, state)
     if fail >= 0:
-        _record_unreadable(state, fail, _block_fail_text(lines, fail, head["idx"], head["entry"]))
+        if not fold["bom"]:
+            _record_unreadable(state, fail, _block_fail_text(lines, fail, head["idx"], head["entry"]))
         return None, idx + 1, False
     return _block_fold_finish(fold, core, lines, idx, head, anchors, state, scan)
 
@@ -1129,6 +1159,13 @@ def _parse_block(lines, state):
         if idx >= len(lines):
             break
         raw = lines[idx]
+        if _BOM in raw and _is_bom_only_line(raw):
+            # A bare mark line is blank-like at column 0, as pub skips it,
+            # and a problem naming the line anywhere else, as pub rejects it.
+            if _indent_width(raw) > 0:
+                state.problems.append("byte-order mark at line %d is not supported" % (idx + 1))
+            idx += 1
+            continue
         indent, text = _block_line_text(raw)
         if indent == None:
             if saw_content and raw.strip().startswith("%"):
@@ -1849,7 +1886,7 @@ def _parse_scalar(text, anchors, state, line):
         if value == None and state.strict_lines:
             state.problems.append("unreadable flow value at line %d: %r" % (line, s))
     else:
-        value = _parse_nonflow(s, anchors)
+        value = _parse_nonflow(s, anchors, state, line)
     if tag != None:
         value = _apply_tag(tag, s, value, anchors, state, line)
     if anchor:
@@ -1952,8 +1989,12 @@ def _parse_numeric_text(s, lower, num):
             return _safe_float(num)
     return s
 
-def _parse_nonflow(s, anchors):
-    """Parses an alias, a quoted scalar or a plain scalar."""
+def _parse_nonflow(s, anchors, state, line):
+    """Parses an alias, a quoted scalar or a plain scalar.
+
+    A byte-order mark in a plain scalar is a problem naming the line, as pub
+    rejects it; quoted scalars keep it as content, as pub reads them.
+    """
     if s.startswith("*"):
         name = s[1:].strip()
         if name not in anchors:
@@ -1963,6 +2004,9 @@ def _parse_nonflow(s, anchors):
         if s[0] == '"':
             return _unescape_double(s[1:-1])
         return s[1:-1].replace("''", "'")
+    if _BOM in s:
+        state.problems.append("byte-order mark at line %d is not supported" % line)
+        return None
     if s[:1] in ["@", "`"]:
         return s
 
@@ -2246,12 +2290,12 @@ def _flow_close_step(stack, s, i, frame, state, line):
     _flow_add(stack[-1], frame["value"], state, line)
     return False, None, i
 
-def _flow_key_step(s, i, frame, anchors):
+def _flow_key_step(s, i, frame, anchors, state, line):
     """Reads one flow map key up to its colon. Returns (next_i, ok)."""
     token, i = _flow_token(s, i, [":", frame["close"], ","])
     if token == "" or not _flow_scalar_ok(token):
         return i, False
-    frame["key"] = _key(_parse_nonflow(token, anchors))
+    frame["key"] = _key(_parse_nonflow(token, anchors, state, line))
     i = _skip_flow_space(s, i)
     if i >= len(s) or s[i] != ":":
         return i, False
@@ -2266,7 +2310,7 @@ def _flow_item_step(s, i, frame, anchors, stack, state, line):
     token, next_i = _flow_token(s, i, [",", frame["close"]])
     if token == "" or not _flow_scalar_ok(token):
         return next_i, False
-    _flow_add(frame, _flow_token_value(token, anchors), state, line)
+    _flow_add(frame, _flow_token_value(token, anchors, state, line), state, line)
     return next_i, True
 
 def _parse_flow(text, anchors, parse_state, line):
@@ -2302,7 +2346,7 @@ def _parse_flow(text, anchors, parse_state, line):
             continue
 
         if state == "key":
-            i, ok = _flow_key_step(s, i, frame, anchors)
+            i, ok = _flow_key_step(s, i, frame, anchors, parse_state, line)
             if not ok:
                 return None
             continue
@@ -2331,13 +2375,13 @@ def _flow_add(frame, value, parse_state, line):
         frame["value"][frame["key"]] = value
     frame["state"] = "after"
 
-def _flow_token_value(token, anchors):
+def _flow_token_value(token, anchors, state, line):
     """A flow token is a scalar, or a one-pair mapping when it holds a key and a colon."""
     key_text, value_text, is_pair = _flow_pair_split(token)
     if not is_pair:
-        return _parse_nonflow(token, anchors)
+        return _parse_nonflow(token, anchors, state, line)
     pair = {}
-    pair[_key(_parse_nonflow(key_text, anchors))] = _parse_nonflow(value_text, anchors)
+    pair[_key(_parse_nonflow(key_text, anchors, state, line))] = _parse_nonflow(value_text, anchors, state, line)
     return pair
 
 def _flow_quoted_end(s):
