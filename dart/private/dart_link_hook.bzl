@@ -6,10 +6,13 @@ is the Bazel counterpart of the link step `dart build` runs: there, each
 package's link hook sees which of its `@RecordUse` definitions survived
 tree-shaking and decides what to ship.
 
-One action per package with a link hook, each hermetic: the hook runs on the
+One action per package with a link hook: the hook runs on the
 exec toolchain's `dart` against a `package_config.json` synthesised from the
 closure, with the recorded uses, the closure's sources and the package's own
-`lib/` files as its only inputs.
+`lib/` files as its declared inputs. The stage guard refuses hook sources
+whose directives reach outside the staged tree; at run time the hook is
+confined to its declared inputs only by Bazel's sandbox or remote execution,
+and an unsandboxed strategy (`--spawn_strategy=local`) does not confine it.
 
 Bazel declares every output before anything runs, so the data assets a hook
 will emit are named up front in `data_assets`, by asset id. A hook emitting

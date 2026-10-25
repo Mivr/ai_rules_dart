@@ -79,14 +79,17 @@ _HookArgs _parseHookArgs(List<String> arguments) {
   );
 }
 
-/// Stages the workspace and refuses a hook that reads outside its inputs.
+/// Stages the workspace and refuses hook sources whose directives reach
+/// outside the staged tree.
 ///
 /// No staged source may read the host: the hook runs with its staged
 /// package root as its working directory, so a `file:` URI, a `package:`
 /// URI climbing above its package, or a relative URI climbing out of the
 /// staged tree in the hook (or anything it reaches) would read an
 /// undeclared file. Refuse before running, through the one shared
-/// staged-source check.
+/// staged-source check. At run time the hook is confined to its declared
+/// inputs only by Bazel's sandbox or remote execution; an unsandboxed
+/// strategy (`--spawn_strategy=local`) does not confine it.
 ({File packages, Directory packageRoot, File hook}) _stageHook(
   _HookArgs parsed,
   Directory scratch,
