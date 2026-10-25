@@ -28,6 +28,7 @@ _PARSER_SOURCE_LABELS = [
     Label("//dart/pub/private:yaml_text.bzl"),
     Label("//dart/pub/private:yaml_escape.bzl"),
     Label("//dart/pub/private:yaml_scalar.bzl"),
+    Label("//dart/pub/private:yaml_flow.bzl"),
 ]
 
 _package = tag_class(
