@@ -3,10 +3,16 @@ import 'dart:io';
 
 import 'package:runfiles/runfiles.dart';
 
+import 'private_home.dart';
 import 'test_runner_workspace.dart' as staging;
 
 /// Runs a `dart_binary(compile_mode = "kernel", launcher = True)` kernel with
 /// the Dart VM that compiled it.
+///
+/// The kernel runs as a file-form `dart` execution, which never touches HOME,
+/// so the program keeps the caller's environment (only this ruleset's own
+/// control variables are stripped); the launcher itself writes nothing under
+/// HOME either.
 ///
 /// When a kernel-mode binary sets `launcher = True`, `DefaultInfo.executable`
 /// is a symlink to this native launcher and `<name>.kernel_launcher.json` sits
@@ -50,7 +56,12 @@ Future<void> main(List<String> args) async {
     }
   }
 
-  final childEnv = <String, String>{
+  // The program keeps the caller's environment: a file-form execution never
+  // touches HOME, while the program itself may need the caller's PATH, pub
+  // cache or credentials. The resolved runfiles locations still win over the
+  // inherited ones.
+  final childEnv = {
+    ...withoutRulesDartControls(env),
     if (runfilesDir != null) 'RUNFILES_DIR': runfilesDir,
     if (manifestFile != null) 'RUNFILES_MANIFEST_FILE': manifestFile,
   };

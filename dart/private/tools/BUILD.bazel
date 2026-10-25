@@ -189,7 +189,10 @@ dart_binary(
 
 dart_binary(
     name = "test_runner",
-    srcs = ["test_runner_workspace.dart"],
+    srcs = [
+        "private_home.dart",
+        "test_runner_workspace.dart",
+    ],
     code_assets_from_deps = False,
     compile_mode = "exe",
     main = "test_runner.dart",
@@ -199,7 +202,10 @@ dart_binary(
 
 dart_binary(
     name = "kernel_launcher",
-    srcs = ["test_runner_workspace.dart"],
+    srcs = [
+        "private_home.dart",
+        "test_runner_workspace.dart",
+    ],
     code_assets_from_deps = False,
     compile_mode = "exe",
     main = "kernel_launcher.dart",
@@ -237,6 +243,7 @@ dart_test(
     name = "test_runner_cleanup_test",
     size = "small",
     srcs = [
+        "private_home.dart",
         "test_runner.dart",
         "test_runner_workspace.dart",
     ],
@@ -298,6 +305,16 @@ dart_binary(
     code_assets_from_deps = False,
     compile_mode = "exe",
     main = "format_writer.dart",
+    visibility = ["//dart:__subpackages__"],
+    deps = ["//dart/runfiles"],
+)
+
+dart_binary(
+    name = "sdk_launcher",
+    srcs = ["private_home.dart"],
+    code_assets_from_deps = False,
+    compile_mode = "exe",
+    main = "sdk_launcher.dart",
     visibility = ["//dart:__subpackages__"],
     deps = ["//dart/runfiles"],
 )
@@ -682,6 +699,7 @@ dart_test(
     name = "kernel_launcher_test",
     srcs = [
         "kernel_launcher.dart",
+        "private_home.dart",
         "test_runner_workspace.dart",
     ],
     main = "kernel_launcher_test.dart",

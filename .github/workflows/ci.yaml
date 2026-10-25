@@ -65,7 +65,8 @@ jobs:
   # e2e/pub_fetch_powershell runs in the shard-3-only steps below;
   # e2e/analysis_failure and e2e/analyze_composition also run in
   # `expected-failure` and `format-hermeticity`, and e2e/dart_test also in
-  # `dbg-mode` and `expected-failure`. No e2e workspace is left without a job.
+  # `dbg-mode` and `expected-failure`. e2e/run_home runs in `run-home`.
+  # No e2e workspace is left without a job.
   # A tag push runs every job, matrix entry and step below, uncached: no job
   # skips work on a tag push that the nightly `schedule` run does.
   test:
@@ -502,6 +503,21 @@ jobs:
       - name: analysis_failure canary — ${{ matrix.name }}
         working-directory: e2e/analysis_failure
         run: bazel test ${{ matrix.flags }} //:clean_lib || [ $? -eq 4 ]
+  # Every runnable entry point (`bazel run` on every public target, plus one
+  # instance of every public rule whose target it accepts) keeps its HOME
+  # policy: `e2e/run_home/run_home_test.sh` checks the registry against
+  # `bazel query` both ways, runs every entry under a fresh canary HOME, and
+  # fails naming entries that write into a canary or exit other than
+  # expected. A new entry point must be registered in `e2e/run_home`
+  # (see `registry.sh`) or this job goes red.
+  run-home:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: run_home canary sweep
+        working-directory: e2e/run_home
+        run: BAZEL=bazel ./run_home_test.sh
   # Workspaces that are expected to fail at module resolution.
   # Validates that rules_dart produces the correct error messages.
   expected-failure:
@@ -1188,6 +1204,7 @@ jobs:
       - test
       - mac-smoke
       - format-hermeticity
+      - run-home
       - expected-failure
       - dbg-mode
       - pre-commit

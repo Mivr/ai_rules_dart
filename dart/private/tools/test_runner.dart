@@ -4,9 +4,15 @@ import 'dart:typed_data';
 
 import 'package:runfiles/runfiles.dart';
 
+import 'private_home.dart';
 import 'test_runner_workspace.dart' as staging;
 
 /// Runs a `dart_test`'s pre-compiled kernel with asserts enabled.
+///
+/// The suite runs as a file-form `dart` execution, which never touches HOME,
+/// so the program keeps the caller's environment (only this ruleset's own
+/// control variables are stripped); the launcher itself writes nothing under
+/// HOME either.
 ///
 /// `dart_test` compiles the test at build time, so this launcher only resolves
 /// files from runfiles and starts the VM — there is no package_config or source
@@ -145,7 +151,12 @@ Future<int> _runDirectly(
       into: scratch.path,
     );
   }
-  final childEnv = _childRunfilesEnv(env, manifest);
+  // The program keeps the caller's environment (see above); the resolved
+  // runfiles locations still win over the inherited ones.
+  final childEnv = {
+    ...withoutRulesDartControls(env),
+    ..._childRunfilesEnv(env, manifest),
+  };
   final vm = await Process.start(
     dart,
     ['--enable-asserts', dill, ...args],
@@ -222,6 +233,7 @@ Future<int> _runUnderRunner({
     ),
     workingDirectory: inPlace ? null : tmp.path,
     environment: {
+      ...withoutRulesDartControls(env),
       ..._childRunfilesEnv(env, workspace.manifest),
       'RULES_DART_TEST_ARGS': jsonEncode(args),
       // The runner reads a per-user config (`~/.dart_test.yaml`, or
