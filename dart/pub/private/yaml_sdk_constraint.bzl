@@ -378,6 +378,7 @@ def normalize_sdk_blanks(s):
     out = s
     for blank in _SDK_MULTIBYTE_BLANKS:
         out = out.replace(blank, " ")
+
     # Lone units last: replacing them first would split the two-byte forms.
     for unit in ["\205", "\240"]:
         out = out.replace(unit, " ")
