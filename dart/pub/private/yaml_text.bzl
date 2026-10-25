@@ -563,6 +563,12 @@ def record_unreadable(state, idx, text):
     if is_explicit_key_text(text):
         state.problems.append("explicit key at line %d is not supported: %r" % (idx + 1, text))
         return
+    if text[:1] == "?":
+        # A `?` glued to text with no colon is a key missing its colon, as
+        # pub rejects it there; a true marker returned above, and a colon
+        # form never reaches here, as the block walk places it as a key.
+        state.problems.append("key without colon at line %d is not supported: %r" % (idx + 1, text))
+        return
     if state.strict_lines:
         state.problems.append("unreadable line %d: %r" % (idx + 1, text))
 

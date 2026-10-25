@@ -7,7 +7,7 @@ line with its deeper continuation lines. Loaded by the block module.
 load(":yaml_chars.bzl", "BOM")
 load(":yaml_flow.bzl", "parse_scalar")
 load(":yaml_flow_scan.bzl", "flow_fold_lines", "flow_scan_start", "flow_scan_text")
-load(":yaml_text.bzl", "bad_blank_index", "block_line_text", "find_block_colon", "flow_head_text", "indent_width", "is_block_mapping_start", "is_dash", "is_explicit_key_text", "is_quoted", "quoted_end_at", "quoted_scalar_rest", "record_unreadable")
+load(":yaml_text.bzl", "bad_blank_index", "block_line_text", "find_block_colon", "flow_head_text", "indent_width", "is_block_mapping_start", "is_dash", "is_explicit_key_text", "is_question_entry", "is_quoted", "quoted_end_at", "quoted_scalar_rest", "record_unreadable")
 
 def _block_quote_single(core, i, st):
     """Steps an index inside single quotes. Returns the next index.
@@ -159,25 +159,39 @@ def _block_fold_quoted(raw, idx, scan, fold):
         return idx
     return -1
 
-def _block_fold_decide(text, fold, question_stops):
+def _block_fold_decide(text, indent, fold, question_stops):
     """Decides whether a deeper plain line continues the scalar. Returns the action.
 
     A `:` line never continues a scalar: pub rejects it where an entry
-    belongs, so ending the scalar fails closed downstream. A `?` line
+    belongs, so ending the scalar fails closed downstream. A `?` marker
     without a colon folds into an open scalar except in a nested mapping,
-    where it opens an explicit key. A `- ` line without a colon folds into
-    an open scalar at any depth, while one with a colon ends it. A mapping
-    start or explicit key text ends it. A `[`, `{`, or `,` in a line past
-    its first character is content, as the block scanner does not track it,
-    so `te[st` and `a, b` fold, while `--- {a:b}` and `{a:b}` forms still
-    break, as the leading-`[{` check preserves tracking.
+    where it opens an explicit key; a `?` glued to text is a plain scalar
+    start, as pub reads it, so only a true marker is decided here and any
+    other `?` line falls through to the mapping checks below. A `- ` line
+    without a colon folds into an open scalar at any depth, while one with
+    a colon ends it. A mapping start or explicit key text ends it. A `[`,
+    `{`, or `,` in a line past its first character is content, as the block
+    scanner does not track it, so `te[st` and `a, b` fold, while `--- {a:b}`
+    and `{a:b}` forms still break, as the leading-`[{` check preserves
+    tracking.
     """
     if text == ":" or text[:2] == ": " or text[:2] == ":\t":
         return "break"
-    if text[:1] == "?":
+    if is_question_entry(text):
         if find_block_colon(text) >= 0 or not fold["seen"] or question_stops:
             return "break"
         return "take"
+    if text[:1] == "?":
+        # A `?` glued to text starts a plain scalar, as pub reads it, but
+        # only past the key's column: at the key's column the line is a
+        # key missing its colon, as pub rejects it there, so it breaks to
+        # fail downstream.
+        if indent <= fold["head_indent"]:
+            return "break"
+
+        # Deeper glued lines fall through to the mapping checks: a colon
+        # form still breaks, as pub reads it as a nested mapping.
+
     if is_dash(text):
         if not fold["seen"] or text == "-":
             return "break"
@@ -211,7 +225,7 @@ def _block_fold_plain(raw, scan, fold, question_stops):
         return ("take" if fold["seen"] else "fail", "")
     if fold["poison"]:
         return ("break", "")
-    action = _block_fold_decide(text, fold, question_stops)
+    action = _block_fold_decide(text, indent_width(raw), fold, question_stops)
     if res["plain_comment"] or res["stopped"]:
         if action == "take" and res["plain_comment"]:
             kept = "".join(res["kept"]).strip(" \t")
@@ -450,6 +464,15 @@ def block_fold_scalar(lines, start, parent_indent, head, question_stops, anchors
         return parse_scalar(head["text"], anchors, state, head["idx"] + 1), start, True
     scan = flow_scan_start()
     fold = _block_fold_begin(head, core, scan)
+
+    # The oracle rule for a `?`-glued line compares against the key's
+    # column, which is the parent indent: the head line itself may be the
+    # first continuation (a pending key passes its value line as the
+    # head), so the head's own width would misread a deeper line as
+    # sitting at the head's column. The gatherer stops lines at or above
+    # the parent column first; the decider keeps the comparison so a
+    # caller that skips that check still fails closed.
+    fold["head_indent"] = parent_indent
     idx, fail = _block_fold_gather(lines, start, parent_indent, scan, fold, question_stops, state)
     if fail >= 0:
         if not fold["bom"]:

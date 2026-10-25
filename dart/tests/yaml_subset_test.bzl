@@ -1774,9 +1774,12 @@ def _block_fold_test_impl(ctx):
         document_problems("notes: alpha\n  - 'k: v'\n", True),
     )
 
-    # A `?` line without a colon folds into an open scalar outside a nested
-    # mapping, as pub reads it; in a nested mapping it opens an explicit
-    # key, which fails naming the line.
+    # A `?` marker without a colon folds into an open scalar, as pub reads
+    # it; after an open key it opens an explicit key, which fails naming
+    # the line. A `?` glued to text is a plain scalar past the key's
+    # column instead (see `_question_glued_test_impl`); at the key's
+    # column it is a key missing its colon, which fails naming the line,
+    # as pub rejects it there.
     asserts.equals(env, {"a": "one ? x"}, parse_document("a: one\n  ? x\n"))
     asserts.equals(env, {"a": "one ?"}, parse_document("a: one\n  ?\n"))
     asserts.equals(env, ["alpha ? x"], parse_document("- alpha\n  ? x\n"))
@@ -1785,7 +1788,7 @@ def _block_fold_test_impl(ctx):
     asserts.equals(env, ["explicit key at line 3 is not supported: \"? c\""], problems)
     asserts.equals(
         env,
-        ["unreadable line 3: \"?x\""],
+        ["key without colon at line 3 is not supported: \"?x\""],
         document_problems("outer:\n  b: alpha\n  ?x\n", True),
     )
 
@@ -1908,6 +1911,77 @@ def _block_fold_test_impl(ctx):
 
     # A comment between a pending key and its sibling changes nothing.
     asserts.equals(env, {"a": None, "b": 2}, parse_document("a:\n# c\nb: 2\n"))
+    return unittest.end(env)
+
+def _question_glued_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A `?` glued to text on the line after its key reads as the value
+    # when nested past the key's column, as pub reads it: after an open
+    # key, after an open nested key, after a closed entry, and across
+    # several lines, as a pubspec description folds them.
+    asserts.equals(env, {"description": "?x y"}, parse_document("description:\n  ?x y\n"))
+    asserts.equals(
+        env,
+        {"description": "?- one - two"},
+        parse_document("description:\n ?- one\n  - two\n"),
+    )
+    asserts.equals(env, {"outer": {"b": "?x y"}}, parse_document("outer:\n  b:\n    ?x y\n"))
+    asserts.equals(
+        env,
+        {"outer": {"inner": "?x"}},
+        parse_document("outer:\n  inner:\n    ?x\n"),
+    )
+    asserts.equals(env, {"a": "one ?x"}, parse_document("a: one\n  ?x\n"))
+    asserts.equals(
+        env,
+        {"name": "demo", "description": "A great package. ?really"},
+        parse_document("name: demo\ndescription:\n  A great package.\n  ?really\n"),
+    )
+
+    # At the key's column the glued line is a key missing its colon, as
+    # pub rejects it there: after an open or closed key, at the top
+    # level, in a sequence, and under a nested key alike.
+    asserts.equals(
+        env,
+        ["key without colon at line 2 is not supported: \"?x\""],
+        document_problems("a:\n?x\n", True),
+    )
+    value, problems = document_value_and_problems("a: 1\n?x\n", True)
+    asserts.equals(env, {"a": 1}, value)
+    asserts.equals(env, ["key without colon at line 2 is not supported: \"?x\""], problems)
+    value, problems = document_value_and_problems("outer:\n  b: 1\n  ?x\n", True)
+    asserts.equals(env, {"outer": {"b": 1}}, value)
+    asserts.equals(env, ["key without colon at line 3 is not supported: \"?x\""], problems)
+    value, problems = document_value_and_problems("outer:\n  b:\n  ?x y\n", True)
+    asserts.equals(env, {"outer": {"b": None}}, value)
+    asserts.equals(env, ["key without colon at line 3 is not supported: \"?x y\""], problems)
+    value, problems = document_value_and_problems("- a\n?x\n", True)
+    asserts.equals(env, ["a"], value)
+    asserts.equals(env, ["key without colon at line 2 is not supported: \"?x\""], problems)
+
+    # A true `?` marker after an open key still opens an explicit key,
+    # which fails naming the line, as pub rejects it there; a glued
+    # indicator on the key's own line and a `?`-led key still read.
+    value, problems = document_value_and_problems("a:\n  ? x\n", True)
+    asserts.equals(env, {"a": {}}, value)
+    asserts.equals(env, ["explicit key at line 2 is not supported: \"? x\""], problems)
+    value, problems = document_value_and_problems("a:\n  ?\n", True)
+    asserts.equals(env, {"a": None}, value)
+    asserts.equals(env, ["explicit key at line 2 is not supported: \"?\""], problems)
+    asserts.equals(env, {"description": "?x"}, parse_document("description: ?x\n"))
+    asserts.equals(env, {"?k": "v"}, parse_document("?k: v\n"))
+
+    # A `-` or `:` glued to text reads in the same next-line position,
+    # and a `?`-glued line with a colon still opens a nested mapping, as
+    # pub reads each of them.
+    asserts.equals(env, {"description": "-x y"}, parse_document("description:\n  -x y\n"))
+    asserts.equals(env, {"description": ":x y"}, parse_document("description:\n  :x y\n"))
+    asserts.equals(
+        env,
+        {"description": {"?x": 1}},
+        parse_document("description:\n  ?x: 1\n"),
+    )
     return unittest.end(env)
 
 def _float_overflow_test_impl(ctx):
@@ -3102,6 +3176,7 @@ def _bad_blank_test_impl(ctx):
     return unittest.end(env)
 
 _t47_test = unittest.make(_bad_blank_test_impl)
+_t48_test = unittest.make(_question_glued_test_impl)
 
 def yaml_subset_test_suite(name):
     small_unittest_suite(
@@ -3154,4 +3229,5 @@ def yaml_subset_test_suite(name):
         _t45_test,
         _t46_test,
         _t47_test,
+        _t48_test,
     )
