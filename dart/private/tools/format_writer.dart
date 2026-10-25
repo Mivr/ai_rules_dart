@@ -13,6 +13,8 @@ import 'dart:io';
 
 import 'package:runfiles/runfiles.dart';
 
+import 'private_home.dart';
+
 const _usage =
     'usage: bazel run <dart_format target> -- '
     '[--language-version=<major>.<minor>] <files or directories...>';
@@ -124,18 +126,22 @@ int _format(
     return 0;
   }
 
-  final result = Process.runSync(
-    config.dart,
-    [
-      'format',
-      '--output=write',
-      '--show=none',
-      '--summary=none',
-      '--language-version=$languageVersion',
-      src,
-    ],
-    stdoutEncoding: systemEncoding,
-    stderrEncoding: systemEncoding,
+  final result = withPrivateHome(
+    'rules_dart_format_home.',
+    (env) => Process.runSync(
+      config.dart,
+      [
+        'format',
+        '--output=write',
+        '--show=none',
+        '--summary=none',
+        '--language-version=$languageVersion',
+        src,
+      ],
+      environment: env,
+      stdoutEncoding: systemEncoding,
+      stderrEncoding: systemEncoding,
+    ),
   );
   var err = result.stderr as String;
   var out = result.stdout as String;

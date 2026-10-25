@@ -11,6 +11,7 @@ import 'dart:io';
 import 'package:rules_dart_guard/directive_guard.dart';
 
 import 'analyze_runner_staged_prune.dart';
+import 'private_home.dart';
 
 /// Recorded for every changed file outside the eligible set. One constant
 /// string: the manifest says *that* a fix was discarded, and the rule's
@@ -140,29 +141,10 @@ Map<String, String> _stageFixProject(_FixArgs parsed) {
 }
 
 /// Runs `dart fix --apply` over [scratch] with a hermetic home directory.
-ProcessResult _runDartFix(String dart, String scratch) {
-  final tempHome = Directory.systemTemp.createTempSync('rules_dart_fix_home.');
-  try {
-    return Process.runSync(
-      dart,
-      ['fix', '--apply', scratch],
-      environment: {
-        'HOME': tempHome.path,
-        'USERPROFILE': tempHome.path,
-        'LOCALAPPDATA': tempHome.path,
-        'APPDATA': tempHome.path,
-      },
-    );
-  } finally {
-    if (tempHome.existsSync()) {
-      try {
-        tempHome.deleteSync(recursive: true);
-      } on FileSystemException {
-        // Ignore cleanup errors.
-      }
-    }
-  }
-}
+ProcessResult _runDartFix(String dart, String scratch) => withPrivateHome(
+  'rules_dart_fix_home.',
+  (env) => Process.runSync(dart, ['fix', '--apply', scratch], environment: env),
+);
 
 /// Copies each changed write-back-eligible file into the fixes directory and
 /// writes the manifest of fixed and dropped files.

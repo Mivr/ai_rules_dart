@@ -112,7 +112,10 @@ dart_test(
 
 dart_binary(
     name = "analyze_runner",
-    srcs = ["analyze_runner_staged_prune.dart"],
+    srcs = [
+        "analyze_runner_staged_prune.dart",
+        "private_home.dart",
+    ],
     code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "analyze_runner.dart",
@@ -129,6 +132,7 @@ dart_test(
     srcs = [
         "analyze_runner.dart",
         "analyze_runner_staged_prune.dart",
+        "private_home.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
     args = ["$(rlocationpath :analyze_runner)"],
@@ -162,7 +166,10 @@ dart_binary(
 
 dart_binary(
     name = "fix_runner",
-    srcs = ["analyze_runner_staged_prune.dart"],
+    srcs = [
+        "analyze_runner_staged_prune.dart",
+        "private_home.dart",
+    ],
     code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "fix_runner.dart",
@@ -259,8 +266,17 @@ dart_test(
     deps = ["@ext_pub_deps//:test"],
 )
 
+dart_test(
+    name = "private_home_test",
+    size = "small",
+    srcs = ["private_home.dart"],
+    main = "private_home_test.dart",
+    deps = ["@ext_pub_deps//:test"],
+)
+
 dart_binary(
     name = "format_runner",
+    srcs = ["private_home.dart"],
     code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "format_runner.dart",
@@ -278,6 +294,7 @@ dart_binary(
 
 dart_binary(
     name = "format_writer",
+    srcs = ["private_home.dart"],
     code_assets_from_deps = False,
     compile_mode = "exe",
     main = "format_writer.dart",
@@ -570,6 +587,7 @@ dart_test(
     srcs = [
         "analyze_runner_staged_prune.dart",
         "fix_runner.dart",
+        "private_home.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
     main = "fix_runner_test.dart",
@@ -582,7 +600,10 @@ dart_test(
 dart_test(
     name = "format_runner_test",
     size = "small",
-    srcs = ["format_runner.dart"],
+    srcs = [
+        "format_runner.dart",
+        "private_home.dart",
+    ],
     args = [
         "$(rlocationpath :format_runner)",
         "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
@@ -610,6 +631,7 @@ dart_test(
 
 dart_binary(
     name = "web_compile_runner",
+    srcs = ["private_home.dart"],
     compile_mode = "kernel",
     main = "web_compile_runner.dart",
     modular_kernel = False,
@@ -623,7 +645,10 @@ dart_binary(
 dart_test(
     name = "web_compile_runner_test",
     size = "small",
-    srcs = ["web_compile_runner.dart"],
+    srcs = [
+        "private_home.dart",
+        "web_compile_runner.dart",
+    ],
     data = ["//dart"],
     main = "web_compile_runner_test.dart",
     deps = [

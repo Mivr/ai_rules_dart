@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:rules_dart_guard/directive_guard.dart';
 
 import 'analyze_runner_staged_prune.dart';
+import 'private_home.dart';
 
 void main(List<String> args) {
   final parsed = _parseAnalyzeArgs(args);
@@ -35,30 +36,14 @@ void main(List<String> args) {
     exit(1);
   }
 
-  final tempHome = Directory.systemTemp.createTempSync(
+  final ProcessResult result = withPrivateHome(
     'rules_dart_analyze_home.',
+    (env) => Process.runSync(parsed.dart, [
+      'analyze',
+      if (parsed.fatalInfos) '--fatal-infos',
+      project,
+    ], environment: env),
   );
-  final ProcessResult result;
-  try {
-    result = Process.runSync(
-      parsed.dart,
-      ['analyze', if (parsed.fatalInfos) '--fatal-infos', project],
-      environment: {
-        'HOME': tempHome.path,
-        'USERPROFILE': tempHome.path,
-        'LOCALAPPDATA': tempHome.path,
-        'APPDATA': tempHome.path,
-      },
-    );
-  } finally {
-    if (tempHome.existsSync()) {
-      try {
-        tempHome.deleteSync(recursive: true);
-      } on FileSystemException {
-        // Ignore cleanup errors.
-      }
-    }
-  }
   // Bazel echoes any action output, so a clean run stays silent rather than
   // printing the analyzer's "No issues found!" on every build.
   stderr.write(unstage(result.stderr as String, project));

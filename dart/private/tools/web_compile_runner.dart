@@ -14,6 +14,8 @@ import 'dart:io';
 import 'package:rules_dart_guard/directive_guard.dart';
 import 'package:rules_dart_worker/worker_protocol.dart';
 
+import 'private_home.dart';
+
 void main(List<String> rawArgs) {
   final code = runWebCompileRequest(
     expandParamFiles(rawArgs, skipEmptyLines: true, keepMissingArg: true),
@@ -249,31 +251,15 @@ int _runCompiler({
   required StringSink outSink,
   required StringSink errSink,
 }) {
-  final tempHome = Directory.systemTemp.createTempSync('rules_dart_web_home.');
-  final env = <String, String>{
-    'HOME': tempHome.path,
-    'USERPROFILE': tempHome.path,
-    'LOCALAPPDATA': tempHome.path,
-    'APPDATA': tempHome.path,
-  };
-
-  final ProcessResult result;
-  try {
-    result = Process.runSync(
+  final ProcessResult result = withPrivateHome(
+    'rules_dart_web_home.',
+    (env) => Process.runSync(
       dart,
       compileArgs,
       workingDirectory: workingDirectory,
       environment: env,
-    );
-  } finally {
-    if (tempHome.existsSync()) {
-      try {
-        tempHome.deleteSync(recursive: true);
-      } on FileSystemException {
-        // Ignore cleanup errors.
-      }
-    }
-  }
+    ),
+  );
   errSink.write(result.stderr);
   if (result.exitCode != 0) {
     outSink.write(result.stdout);

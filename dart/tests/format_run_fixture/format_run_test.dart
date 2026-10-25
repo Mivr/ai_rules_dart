@@ -56,6 +56,11 @@ void main(List<String> args) {
     ..createSync(recursive: true)
     ..writeAsStringSync(content);
 
+  List<String> snapshot(Directory root) => [
+    for (final entity in root.listSync(recursive: true, followLinks: false))
+      entity.path.substring(root.path.length),
+  ]..sort();
+
   test('formats each file under its nearest listed options', () {
     final governed = write(
       '$_governed/lib/a.dart',
@@ -122,5 +127,33 @@ void main(List<String> args) {
     expect(result.exitCode, 1);
     expect(result.stderr, contains('outside the workspace'));
     expect(file.readAsStringSync(), 'void  h( ){}\n');
+  });
+
+  test('leaves the caller home untouched', () {
+    final canary = Directory.systemTemp.createTempSync('canary.');
+    addTearDown(() {
+      if (canary.existsSync()) canary.deleteSync(recursive: true);
+    });
+    final before = snapshot(canary);
+    final file = write('$_governed/lib/a.dart', 'void  h( ){}\n');
+
+    final result = Process.runSync(
+      format,
+      ['$_governed/lib'],
+      environment: {
+        'BUILD_WORKSPACE_DIRECTORY': workspace.path,
+        'BUILD_WORKING_DIRECTORY': workspace.path,
+        'DART_FORMAT_CONFIG': config,
+        'HOME': canary.path,
+        'USERPROFILE': canary.path,
+        'LOCALAPPDATA': canary.path,
+        'APPDATA': canary.path,
+        'XDG_CONFIG_HOME': canary.path,
+      },
+    );
+
+    expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
+    expect(file.readAsStringSync(), 'void h() {}\n');
+    expect(snapshot(canary), before);
   });
 }

@@ -31,6 +31,8 @@ import 'package:pub_semver/pub_semver.dart';
 import 'package:rules_dart_worker/worker_protocol.dart';
 import 'package:rules_dart_worker/worker_tool_fs.dart';
 
+import 'private_home.dart';
+
 const _argvBudget = 8000;
 
 Future<void> main(List<String> rawArgs) async {
@@ -686,17 +688,8 @@ typedef _FallbackRequest = ({
 });
 
 int _runSubprocessFallback(_FallbackRequest request) {
-  final tempHome = Directory.systemTemp.createTempSync(
-    'rules_dart_format_home.',
-  );
-  final env = <String, String>{
-    'HOME': tempHome.path,
-    'USERPROFILE': tempHome.path,
-    'LOCALAPPDATA': tempHome.path,
-    'APPDATA': tempHome.path,
-  };
-  var failed = false;
-  try {
+  final failed = withPrivateHome('rules_dart_format_home.', (env) {
+    var chunkFailed = false;
     for (final chunk in _chunks(request.files)) {
       final result = Process.runSync(
         request.dart,
@@ -716,7 +709,7 @@ int _runSubprocessFallback(_FallbackRequest request) {
         request.outSink.write(
           _unstage(result.stdout as String, request.project),
         );
-        failed = true;
+        chunkFailed = true;
       }
       if (_warned(result.stderr as String)) {
         request.errSink.writeln(
@@ -724,18 +717,11 @@ int _runSubprocessFallback(_FallbackRequest request) {
           'so the check would have run at stock defaults rather than the '
           'configured ones. Fix the options file named above.',
         );
-        failed = true;
+        chunkFailed = true;
       }
     }
-  } finally {
-    if (tempHome.existsSync()) {
-      try {
-        tempHome.deleteSync(recursive: true);
-      } on FileSystemException {
-        // Ignore cleanup errors.
-      }
-    }
-  }
+    return chunkFailed;
+  });
   if (failed) return 1;
   File(request.stamp).writeAsStringSync('formatted\n');
   return 0;
