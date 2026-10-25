@@ -18,6 +18,12 @@ license(
     text = "LICENSE",
 )
 
+# Exported for //tool/readme_check, which reads the install block.
+exports_files(
+    ["README.md"],
+    visibility = ["//visibility:public"],
+)
+
 # Every `analysis_options.yaml` in this repository, for the `dart_analyze`
 # aspect `.bazelrc` applies under `bazel test`, and for `dart_format`.
 dart_analysis_options(

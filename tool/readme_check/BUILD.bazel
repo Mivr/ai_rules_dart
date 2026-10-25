@@ -1,0 +1,16 @@
+load("//dart:defs.bzl", "dart_test")
+
+# Fail-closed check over the README install block (M-7): the block must
+# resolve as written, and every fence must balance. Runs under the root
+# `bazel test //...` like every other `dart_test`.
+dart_test(
+    name = "readme_check_test",
+    size = "small",
+    args = ["$(rlocationpath //:README.md)"],
+    data = ["//:README.md"],
+    main = "readme_check_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
