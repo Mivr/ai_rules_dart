@@ -1512,6 +1512,57 @@ def _parse_lock_tag_test_impl(ctx):
     asserts.equals(env, "1.18.0", parse_pubspec_lock(content, "//:pubspec.lock")["a"]["version"])
     return unittest.end(env)
 
+def _parse_pubspec_refused_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Characters pub refuses fail naming the pubspec and the line, as pub
+    # rejects them (package:yaml 3.1.4 with the pinned SDK 3.13.5); the same
+    # marks past the start, and quoted, read on.
+    head = "name: x\nenvironment:\n  sdk: ^3.0.0\n"
+    doc = head + "description: @x\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
+    doc = head + "description: `x\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
+    doc = head + "tags:\n  - @x\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 5" in err)
+    doc = head + "description: a\0b\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
+    doc = head + "description: a@b\n"
+    asserts.equals(env, "a@b", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    doc = head + "description: \"@x\"\n"
+    asserts.equals(env, "@x", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    return unittest.end(env)
+
+def _parse_lock_refused_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # Characters pub refuses fail naming the lock and the line, as pub
+    # rejects them; quoted ones read on.
+    content = (
+        "packages:\n  a:\n    dependency: transitive\n    description:\n" +
+        "      name: a\n      sha256: abc\n      url: \"@x\"\n" +
+        "    source: hosted\n    version: \"1.0.0\"\n"
+    )
+    asserts.equals(env, None, pubspec_lock_error(content, "//:pubspec.lock"))
+    asserts.equals(env, "@x", parse_pubspec_lock(content, "//:pubspec.lock")["a"]["description"]["url"])
+    content = "packages:\n  a:\n    source: hosted\n    version: @x\n"
+    err = pubspec_lock_error(content, "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 4" in err)
+    content = (
+        "packages:\n  a:\n    dependency: transitive\n    description:\n" +
+        "      name: a\n      sha256: abc\n      url: `x\n" +
+        "    source: hosted\n    version: \"1.0.0\"\n"
+    )
+    err = pubspec_lock_error(content, "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 7" in err)
+    return unittest.end(env)
+
 _pub_lock_package_extracted_test = analysistest.make(_pub_lock_package_extracted_test_impl)
 
 _t0_test = unittest.make(_parse_lock_packages_test_impl)
@@ -1569,6 +1620,8 @@ _t51_test = unittest.make(_parse_lock_double_escape_test_impl)
 _t52_test = unittest.make(_parse_pubspec_tab_indent_test_impl)
 _t53_test = unittest.make(_parse_pubspec_tag_test_impl)
 _t54_test = unittest.make(_parse_lock_tag_test_impl)
+_t55_test = unittest.make(_parse_pubspec_refused_test_impl)
+_t56_test = unittest.make(_parse_lock_refused_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -1633,6 +1686,8 @@ def yaml_parser_test_suite(name):
         _t52_test,
         _t53_test,
         _t54_test,
+        _t55_test,
+        _t56_test,
     )
     native.test_suite(
         name = name,

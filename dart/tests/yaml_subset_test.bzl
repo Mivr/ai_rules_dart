@@ -1344,6 +1344,99 @@ def _float_overflow_test_impl(ctx):
     asserts.equals(env, [], document_problems("a: 1e999\n", True))
     return unittest.end(env)
 
+def _refused_character_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A plain scalar starting with `@` or a backtick fails naming the line:
+    # pub rejects `d: @x`, which an older revision read as "@x"
+    # (package:yaml 3.1.4 with the pinned SDK 3.13.5).
+    asserts.equals(
+        env,
+        ["reserved indicator at line 1 is not supported"],
+        document_problems("d: @x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["reserved indicator at line 1 is not supported"],
+        document_problems("d: `x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["reserved indicator at line 1 is not supported"],
+        document_problems("d: @\n", True),
+    )
+    asserts.equals(
+        env,
+        ["reserved indicator at line 1 is not supported"],
+        document_problems("@k: 1\n", True),
+    )
+    asserts.equals(
+        env,
+        ["reserved indicator at line 2 is not supported"],
+        document_problems("tags:\n  - @x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["reserved indicator at line 1 is not supported"],
+        document_problems("d: [@x]\n", True),
+    )
+
+    # A control character or DEL anywhere in a plain scalar fails naming the
+    # line, as pub refuses them; a tab inside one stays content, as pub
+    # reads it.
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("d: a\0b\n", True),
+    )
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("d: a\013b\n", True),
+    )
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("d: a\014b\n", True),
+    )
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("d: a\177b\n", True),
+    )
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("a\0b: 1\n", True),
+    )
+    asserts.equals(env, {"d": "a\tb"}, parse_document("d: a\tb\n"))
+
+    # Quoted scalars keep `@`, backticks, tabs and control characters as
+    # content, as pub reads them.
+    asserts.equals(env, {"d": "@x"}, parse_document("d: \"@x\"\n"))
+    asserts.equals(env, {"d": "@x"}, parse_document("d: '@x'\n"))
+    asserts.equals(env, {"d": "`x"}, parse_document("d: '`x'\n"))
+    asserts.equals(env, {"d": "a\0b"}, parse_document("d: \"a\0b\"\n"))
+    asserts.equals(env, {"d": "a\0b"}, parse_document("d: 'a\0b'\n"))
+    asserts.equals(env, {"d": "a\013b"}, parse_document("d: \"a\013b\"\n"))
+
+    # An `@` or backtick past the start, and a bare `&` or `*` aside, read
+    # or fail as pub reads them: mid-scalar marks stay content while a bare
+    # anchor or alias fails naming the line.
+    asserts.equals(env, {"d": "a@b"}, parse_document("d: a@b\n"))
+    asserts.equals(env, {"d": "a`b"}, parse_document("d: a`b\n"))
+    asserts.equals(
+        env,
+        ["empty anchor at line 1 is not supported"],
+        document_problems("d: &\n", True),
+    )
+    asserts.equals(
+        env,
+        ["empty alias at line 1 is not supported"],
+        document_problems("d: *\n", True),
+    )
+    return unittest.end(env)
+
 _t0_test = unittest.make(_block_mapping_test_impl)
 _t1_test = unittest.make(_block_sequence_test_impl)
 _t2_test = unittest.make(_same_indent_sequence_test_impl)
@@ -1382,6 +1475,7 @@ _t34_test = unittest.make(_flow_affix_item_test_impl)
 _t35_test = unittest.make(_flow_self_anchor_test_impl)
 _t36_test = unittest.make(_double_escape_test_impl)
 _t37_test = unittest.make(_tab_indent_test_impl)
+_t38_test = unittest.make(_refused_character_test_impl)
 
 def yaml_subset_test_suite(name):
     small_unittest_suite(
@@ -1424,4 +1518,5 @@ def yaml_subset_test_suite(name):
         _t35_test,
         _t36_test,
         _t37_test,
+        _t38_test,
     )

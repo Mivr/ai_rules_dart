@@ -51,7 +51,12 @@ Supported:
   Double-quoted escapes decode as pub decodes them, including `\\N`, `\\_`,
   `\\L`, `\\P` and a backslash with a space or tab; an unknown escape, a
   short or non-hex escape, a surrogate, and a code point past U+10FFFF
-  fail naming the line, as pub rejects them.
+  fail naming the line, as pub rejects them. A plain scalar starting with
+  `@` or a backtick, and one holding a control character or DEL, fail
+  naming the line, as pub refuses them; quoted scalars keep them as
+  content, as pub reads them, and a tab inside a plain scalar stays
+  content too. A bare `&` or `*` fails naming the line, as pub rejects an
+  empty anchor or alias.
 - flow collections `[...]` and `{...}`, nested; on a line of their own they
   are read within that line, a document that starts with one may span
   lines (JSON documents), and one that starts after `key:` or `-` folds
@@ -174,7 +179,10 @@ testing, so the projections are unaffected on real pubspec files:
   them, so they fail naming the line. An unknown or
   malformed double-quoted escape read kept before, and `\\N`, `\\_`, `\\L`,
   `\\P` and a backslash with a space or tab read literally before; pub
-  rejects the first and decodes the rest, as read now. A flow alias
+  rejects the first and decodes the rest, as read now. A plain scalar
+  starting with `@` or a backtick, and one holding a control character or
+  DEL, read as plain before; pub refuses them, so they fail naming the
+  line. A flow alias
   with a glued colon resolved the short name before, a flow anchor or tag
   word ended its key at a glued colon before, a key with no pair colon
   failed its flow before, and a colon after a bare flow anchor or tag
@@ -231,6 +239,15 @@ _HEX_DIGITS = "0123456789abcdef"
 # source stays ASCII. Pub accepts it; without stripping, the first key would
 # carry it and a lock would read as missing `packages`.
 _BOM = "\357\273\277"
+
+# Control characters package:yaml refuses in a plain scalar, written as
+# octal escapes so the source stays ASCII: the C0 controls except tab, LF
+# and CR, which structure lines, plus DEL. Tab, LF and CR stay content, as
+# pub reads them.
+_REFUSED_CONTROLS = (
+    "\000\001\002\003\004\005\006\007\010\013\014\016\017\020\021\022\023" +
+    "\024\025\026\027\030\031\032\033\034\035\036\037\177"
+)
 
 _FLOW_SPACE = " \t\n\r"
 
@@ -2551,7 +2568,12 @@ def _parse_nonflow(s, anchors, state, line):
     """Parses an alias, a quoted scalar or a plain scalar.
 
     A byte-order mark in a plain scalar is a problem naming the line, as pub
-    rejects it; quoted scalars keep it as content, as pub reads them.
+    rejects it; quoted scalars keep it as content, as pub reads them. A plain
+    scalar starting with `@` or a backtick is a problem naming the line, as
+    pub rejects its reserved indicator, and so is one holding a control
+    character or DEL anywhere, as pub refuses them; quoted scalars keep them
+    as content, as pub reads them. A tab inside a plain scalar stays content,
+    as pub reads it.
     """
     if s.startswith("*"):
         return _parse_alias(s, anchors, state, line)
@@ -2563,7 +2585,12 @@ def _parse_nonflow(s, anchors, state, line):
         state.problems.append("byte-order mark at line %d is not supported" % line)
         return None
     if s[:1] in ["@", "`"]:
-        return s
+        state.problems.append("reserved indicator at line %d is not supported" % line)
+        return None
+    for ch in s.elems():
+        if ch in _REFUSED_CONTROLS:
+            state.problems.append("control character at line %d is not supported" % line)
+            return None
 
     lower = s.lower()
     normalized = _normalize_decimal_number(s)
