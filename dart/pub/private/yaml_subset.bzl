@@ -1978,7 +1978,9 @@ def _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state):
     dash at the key's column or shallower is a sibling, not a child. Later
     keys must sit at the key's own column, as pub rejects them anywhere
     else, so the frame records it up front instead of adopting the first
-    continuation's column.
+    continuation's column. The same-line value folds only past that column
+    too, as pub ends it there: a `- ` or plain continuation at the key's
+    column or shallower never folds into it, as pub rejects it.
     """
     line = idx + 1
     rest = text[1:].strip()
@@ -2031,7 +2033,7 @@ def _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state):
         if anchor != None:
             anchors[anchor] = _OPEN_ANCHOR
         return idx + 1, pending
-    value, next_idx, _read = _block_fold_scalar(lines, idx + 1, indent, {"text": value_text, "raw": head, "idx": idx, "entry": text}, True, anchors, state)
+    value, next_idx, _read = _block_fold_scalar(lines, idx + 1, key_indent, {"text": value_text, "raw": head, "idx": idx, "entry": text}, True, anchors, state)
     item[key] = value
     items.append(item)
     stack.append({"kind": "map", "indent": indent, "value": item, "entry": key_indent})

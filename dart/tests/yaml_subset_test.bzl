@@ -1343,6 +1343,35 @@ def _multiline_flow_test_impl(ctx):
         ["unreadable flow value at line 1: \"[1, 2\""],
         document_problems("a: [1, 2\nb: 2\n", True),
     )
+
+    # A `- key: value` item's later keys sit at the key's own column, and
+    # its same-line value folds only past that column, as pub ends it
+    # there: a `- ` or plain continuation at the key's column or shallower
+    # fails naming its line, as pub rejects it.
+    value, problems = document_value_and_problems("- a: 1\n  - x\n", True)
+    asserts.equals(env, [{"a": 1}], value)
+    asserts.equals(env, ["unreadable line 2: \"- x\""], problems)
+    value, problems = document_value_and_problems("- a: 1\n - x\n", True)
+    asserts.equals(env, [{"a": 1}], value)
+    asserts.equals(env, ["unreadable line 2: \"- x\""], problems)
+    value, problems = document_value_and_problems("- a: 1\n b\n", True)
+    asserts.equals(env, [{"a": 1}], value)
+    asserts.equals(env, ["unreadable line 2: \"b\""], problems)
+    value, problems = document_value_and_problems("- a: 1\n  b\n", True)
+    asserts.equals(env, [{"a": 1}], value)
+    asserts.equals(env, ["unreadable line 2: \"b\""], problems)
+    value, problems = document_value_and_problems("- a: 1\n   b: 2\n", True)
+    asserts.equals(env, [{"a": 1}], value)
+    asserts.equals(env, ["unreadable line 2: \"b: 2\""], problems)
+    value, problems = document_value_and_problems("key:\n- a: 1\n  - x\n", True)
+    asserts.equals(env, {"key": [{"a": 1}]}, value)
+    asserts.equals(env, ["unreadable line 3: \"- x\""], problems)
+
+    # Deeper continuations without a colon still fold into the value, and
+    # keys at the key's column still read, as pub reads them.
+    asserts.equals(env, [{"a": 1, "b": 2}], parse_document("- a: 1\n  b: 2\n"))
+    asserts.equals(env, [{"a": "1 - x"}], parse_document("- a: 1\n   - x\n"))
+    asserts.equals(env, [{"a": "1 b"}], parse_document("- a: 1\n   b\n"))
     return unittest.end(env)
 
 def _explicit_key_error_test_impl(ctx):

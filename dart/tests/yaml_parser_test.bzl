@@ -403,6 +403,11 @@ def _parse_pubspec_document_error_test_impl(ctx):
     # A block scalar header never reads as a key, as pub rejects it there.
     err = parse_pubspec_document_error("name: x\n| : v\n", "//:pubspec.yaml")
     asserts.true(env, err != None and "x" in err and "//:pubspec.yaml" in err and "line 2" in err)
+
+    # A dash continuation at the dash-map key's column fails naming its
+    # line, as pub ends the value there.
+    err = parse_pubspec_document_error("name: x\ndependencies:\n  - a: 1\n    - x\n", "//:pubspec.yaml")
+    asserts.true(env, err != None and "x" in err and "//:pubspec.yaml" in err and "line 4" in err)
     return unittest.end(env)
 
 def _parse_pubspec_sdk_numeric_test_impl(ctx):
