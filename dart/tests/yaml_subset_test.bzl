@@ -1955,6 +1955,52 @@ def _flow_indicator_test_impl(ctx):
     asserts.equals(env, {"key": "]x\n"}, parse_document("key: |\n  ]x\n"))
     return unittest.end(env)
 
+def _block_scalar_indicator_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A `0` indentation indicator fails naming the line, as pub rejects it
+    # (package:yaml 3.1.4 with the pinned SDK 3.13.5), in any chomping
+    # combination and after a dash; other digits read as pub reads them.
+    asserts.equals(
+        env,
+        ["unreadable line 1: \"description: |0\"", "unreadable line 2: \"x\""],
+        document_problems("description: |0\n  x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["unreadable line 1: \"description: >0\"", "unreadable line 2: \"x\""],
+        document_problems("description: >0\n  x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["unreadable line 1: \"description: |+0\"", "unreadable line 2: \"x\""],
+        document_problems("description: |+0\n  x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["unreadable line 1: \"description: |-0\"", "unreadable line 2: \"x\""],
+        document_problems("description: |-0\n  x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["unreadable line 1: \"description: |0+\"", "unreadable line 2: \"x\""],
+        document_problems("description: |0+\n  x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["unreadable line 2: \"- |0\"", "unreadable line 3: \"x\""],
+        document_problems("tags:\n - |0\n   x\n", True),
+    )
+    asserts.equals(
+        env,
+        ["unreadable line 2: \"- a: |0\"", "unreadable line 3: \"x\""],
+        document_problems("dependencies:\n - a: |0\n   x\n", True),
+    )
+    asserts.equals(env, {"description": "x\n"}, parse_document("description: |2\n  x\n"))
+    asserts.equals(env, {"description": "x\n"}, parse_document("description: |+2\n  x\n"))
+    asserts.equals(env, {"description": " x"}, parse_document("description: |-1\n  x\n"))
+    return unittest.end(env)
+
 _t0_test = unittest.make(_block_mapping_test_impl)
 _t1_test = unittest.make(_block_sequence_test_impl)
 _t2_test = unittest.make(_same_indent_sequence_test_impl)
@@ -1998,6 +2044,7 @@ _t39_test = unittest.make(_flow_entry_test_impl)
 _t40_test = unittest.make(_number_shape_test_impl)
 _t41_test = unittest.make(_block_structure_test_impl)
 _t42_test = unittest.make(_flow_indicator_test_impl)
+_t43_test = unittest.make(_block_scalar_indicator_test_impl)
 
 def yaml_subset_test_suite(name):
     small_unittest_suite(
@@ -2045,4 +2092,5 @@ def yaml_subset_test_suite(name):
         _t40_test,
         _t41_test,
         _t42_test,
+        _t43_test,
     )

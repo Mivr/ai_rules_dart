@@ -1767,6 +1767,42 @@ def _parse_lock_flow_indicator_test_impl(ctx):
     asserts.equals(env, "a ]x", parse_pubspec_lock(content, "//:pubspec.lock")["a"]["description"]["url"])
     return unittest.end(env)
 
+def _parse_pubspec_block_scalar_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A `0` indentation indicator fails naming the pubspec and the line, as
+    # pub rejects it (package:yaml 3.1.4 with the pinned SDK 3.13.5), while
+    # other digits read through.
+    head = "name: x\nenvironment:\n  sdk: ^3.0.0\n"
+    doc = head + "description: |0\n  x\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err and "description: |0" in err)
+    doc = head + "description: |2\n  x\n"
+    asserts.equals(env, "x\n", parse_pubspec_document(doc)["description"])
+    asserts.equals(env, None, parse_pubspec_document_error(doc))
+    return unittest.end(env)
+
+def _parse_lock_block_scalar_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    # A `0` indentation indicator fails naming the lock and the line, while
+    # other digits read through the string projection.
+    content = (
+        "packages:\n  a:\n    dependency: transitive\n    description:\n" +
+        "      name: a\n      sha256: abc\n      url: |0\n        x\n" +
+        "    source: hosted\n    version: \"1.0.0\"\n"
+    )
+    err = pubspec_lock_error(content, "//:pubspec.lock")
+    asserts.true(env, err != None and "//:pubspec.lock" in err and "line 7" in err and "url: |0" in err)
+    content = (
+        "packages:\n  a:\n    dependency: transitive\n    description:\n" +
+        "      name: a\n      sha256: abc\n      url: |2\n        x\n" +
+        "    source: hosted\n    version: \"1.0.0\"\n"
+    )
+    asserts.equals(env, None, pubspec_lock_error(content, "//:pubspec.lock"))
+    asserts.equals(env, "x\n", parse_pubspec_lock(content, "//:pubspec.lock")["a"]["description"]["url"])
+    return unittest.end(env)
+
 _pub_lock_package_extracted_test = analysistest.make(_pub_lock_package_extracted_test_impl)
 
 _t0_test = unittest.make(_parse_lock_packages_test_impl)
@@ -1834,6 +1870,8 @@ _t61_test = unittest.make(_parse_pubspec_block_structure_test_impl)
 _t62_test = unittest.make(_parse_lock_block_structure_test_impl)
 _t63_test = unittest.make(_parse_pubspec_flow_indicator_test_impl)
 _t64_test = unittest.make(_parse_lock_flow_indicator_test_impl)
+_t65_test = unittest.make(_parse_pubspec_block_scalar_test_impl)
+_t66_test = unittest.make(_parse_lock_block_scalar_test_impl)
 
 def yaml_parser_test_suite(name):
     _pub_lock_package_extracted_test(
@@ -1908,6 +1946,8 @@ def yaml_parser_test_suite(name):
         _t62_test,
         _t63_test,
         _t64_test,
+        _t65_test,
+        _t66_test,
     )
     native.test_suite(
         name = name,

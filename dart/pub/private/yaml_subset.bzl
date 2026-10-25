@@ -207,7 +207,10 @@ testing, so the projections are unaffected on real pubspec files:
   block value starting with `]`, `}` or `,` read as a plain scalar before
   (`key: ]x` read `"]x"`), and a `|` or `>` where a flow item, pair value
   or key starts read as a plain scalar before (`[a, |b]` read `"|b"`);
-  pub rejects both, so they fail naming the line.
+  pub rejects both, so they fail naming the line. A `0` indentation
+  indicator read as an indicator before (`key: |0` read the content); pub
+  rejects it, so it fails naming the line, while other digits read as pub
+  reads them.
 - flow collections that span lines are not supported, unless the folded
   lines read as one flow collection as pub reads them; yaml.bzl reads all
   spanning flows. The supported fold matches pub on the oracle-checked
@@ -1955,7 +1958,9 @@ def _block_scalar_header_ok(header):
         ch = header[i]
         if (ch == "+" or ch == "-") and not chomping:
             chomping = True
-        elif ch.isdigit() and not digit:
+        elif ch in "123456789" and not digit:
+            # A `0` is no indentation indicator, as pub rejects it; any other
+            # digit reads as pub reads it.
             digit = True
         else:
             return False
