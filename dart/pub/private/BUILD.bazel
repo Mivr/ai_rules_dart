@@ -86,10 +86,9 @@ bzl_library(
     srcs = ["yaml_subset.bzl"],
     visibility = ["//dart/pub:__subpackages__"],
     deps = [
-        ":yaml_block_scalar",
+        ":yaml_block",
         ":yaml_chars",
         ":yaml_flow",
-        ":yaml_fold",
         ":yaml_scalar",
         ":yaml_text",
     ],
@@ -153,6 +152,20 @@ bzl_library(
     srcs = ["yaml_block_scalar.bzl"],
     visibility = ["//dart/pub:__subpackages__"],
     deps = [
+        ":yaml_text",
+    ],
+)
+
+bzl_library(
+    name = "yaml_block",
+    srcs = ["yaml_block.bzl"],
+    visibility = ["//dart/pub:__subpackages__"],
+    deps = [
+        ":yaml_block_scalar",
+        ":yaml_chars",
+        ":yaml_flow",
+        ":yaml_fold",
+        ":yaml_scalar",
         ":yaml_text",
     ],
 )
