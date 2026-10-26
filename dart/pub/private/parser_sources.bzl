@@ -15,6 +15,7 @@ PARSER_SOURCE_LABELS = [
     Label("//dart/pub/private:yaml_text.bzl"),
     Label("//dart/pub/private:yaml_escape.bzl"),
     Label("//dart/pub/private:yaml_scalar.bzl"),
+    Label("//dart/pub/private:yaml_printable.bzl"),
     Label("//dart/pub/private:yaml_flow.bzl"),
     Label("//dart/pub/private:yaml_flow_scan.bzl"),
     Label("//dart/pub/private:yaml_fold.bzl"),

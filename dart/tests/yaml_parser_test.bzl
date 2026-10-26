@@ -1610,6 +1610,19 @@ def _parse_pubspec_refused_test_impl(ctx):
     doc = head + "description: \"@x\"\n"
     asserts.equals(env, "@x", parse_pubspec_document(doc)["description"])
     asserts.equals(env, None, parse_pubspec_document_error(doc))
+
+    # Raw C1 controls, U+FFFE/U+FFFF, surrogates, and ? after anchor/tag fail.
+    doc = head + "description: a\302\220b\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
+
+    doc = head + "description: a\357\277\276b\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 4" in err)
+
+    doc = head + "dependencies:\n  &a ?  flutter:\n    sdk: flutter\n"
+    err = parse_pubspec_document_error(doc, "//:pubspec.yaml")
+    asserts.true(env, err != None and "//:pubspec.yaml" in err and "line 5" in err)
     return unittest.end(env)
 
 def _parse_lock_refused_test_impl(ctx):

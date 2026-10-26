@@ -2075,6 +2075,109 @@ def _refused_character_test_impl(ctx):
     )
     asserts.equals(env, {"d": "a\tb"}, parse_document("d: a\tb\n"))
 
+    # Raw C1 controls in plain scalars fail naming the line, as pub refuses them;
+    # U+0085 (NEL) and U+00A0 (NBSP) stay content, as pub reads them.
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("d: a\302\200b\n", True),
+    )
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("d: a\302\220b\n", True),
+    )
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("d: a\302\237b\n", True),
+    )
+    asserts.equals(
+        env,
+        ["control character at line 1 is not supported"],
+        document_problems("a\302\220b: 1\n", True),
+    )
+    asserts.equals(env, {"d": "a\302\205b"}, parse_document("d: a\302\205b\n"))
+    asserts.equals(env, {"d": "a\302\240b"}, parse_document("d: a\302\240b\n"))
+
+    # Non-printable characters (U+FFFE, U+FFFF, encoded surrogates) in plain
+    # scalars fail naming the line, as pub refuses them; U+FFFD stays content,
+    # as pub reads it.
+    asserts.equals(
+        env,
+        ["non-printable character at line 1 is not supported"],
+        document_problems("d: a\357\277\276b\n", True),
+    )
+    asserts.equals(
+        env,
+        ["non-printable character at line 1 is not supported"],
+        document_problems("d: a\357\277\277b\n", True),
+    )
+    asserts.equals(
+        env,
+        ["non-printable character at line 1 is not supported"],
+        document_problems("a\357\277\276b: 1\n", True),
+    )
+    asserts.equals(
+        env,
+        ["invalid UTF-8 at line 1 is not supported"],
+        document_problems("d: a\355\240\200b\n", True),
+    )
+    asserts.equals(env, {"d": "a\357\277\275b"}, parse_document("d: a\357\277\275b\n"))
+
+    # An explicit-key indicator after an anchor or tag in block context fails
+    # naming the line, as pub rejects it. Plain ? without whitespace stays content.
+    asserts.equals(
+        env,
+        ["explicit key with anchor or tag at line 2 is not supported"],
+        document_problems("dependencies:\n  &a ?  flutter:\n    sdk: flutter\n", True),
+    )
+    asserts.equals(
+        env,
+        ["explicit key with anchor or tag at line 2 is not supported"],
+        document_problems("dependencies:\n  !!str ?  flutter: any\n", True),
+    )
+    asserts.equals(
+        env,
+        ["explicit key with anchor or tag at line 1 is not supported"],
+        document_problems("&a ?  flutter: 1\n", True),
+    )
+    asserts.equals(
+        env,
+        ["explicit key with anchor or tag at line 1 is not supported"],
+        document_problems("!!str ?  flutter: 1\n", True),
+    )
+    asserts.equals(
+        env,
+        ["explicit key with anchor or tag at line 2 is not supported"],
+        document_problems("dependencies:\n  &a ? flutter\n", True),
+    )
+    asserts.equals(
+        env,
+        ["explicit key with anchor or tag at line 2 is not supported"],
+        document_problems("dependencies:\n  &a !tag ?  flutter: any\n", True),
+    )
+    asserts.equals(
+        env,
+        {"dependencies": {"?flutter": None}},
+        parse_document("dependencies:\n  ?flutter:\n"),
+    )
+    asserts.equals(
+        env,
+        {"dependencies": {"flutter": None}},
+        parse_document("dependencies:\n  &a flutter:\n"),
+    )
+    asserts.equals(
+        env,
+        {"dependencies": {"?flutter": 1}},
+        parse_document("dependencies:\n  &a ?flutter: 1\n"),
+    )
+    asserts.equals(
+        env,
+        {"d": "\302\220"},
+        parse_document("d: \"\\x90\"\n"),
+    )
+
     # Quoted scalars keep `@`, backticks, tabs and control characters as
     # content, as pub reads them.
     asserts.equals(env, {"d": "@x"}, parse_document("d: \"@x\"\n"))

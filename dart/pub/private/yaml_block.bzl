@@ -10,6 +10,7 @@ load(":yaml_chars.bzl", "is_marker_line")
 load(":yaml_flow.bzl", "parse_flow", "parse_scalar")
 load(":yaml_flow_scan.bzl", "flow_fold_lines", "flow_fold_problem", "flow_scan_start")
 load(":yaml_fold.bzl", "block_fold_scalar")
+load(":yaml_printable.bzl", "block_value_entry_problem", "has_explicit_key_affix")
 load(":yaml_scalar.bzl", "OPEN_ANCHOR", "apply_bool_tag", "apply_child_collection_tag", "apply_tag", "drop_tag_value", "is_unknown_tag_handle", "resolve_alias", "resolve_handle", "split_value_text", "strip_value_prefix", "tag_name", "undefined_tag_problem")
 load(":yaml_text.bzl", "bad_blank_index", "block_line_text", "clone", "dict_key", "find_block_colon", "flow_head_text", "is_block_collection_key", "is_block_mapping_start", "is_compact_seq", "is_dash", "is_explicit_key_text", "is_mapping_start", "is_question_entry", "is_unknown_directive", "record_unreadable", "split_block_key_value")
 
@@ -350,7 +351,7 @@ def resolve_pending(pending, cursor, env):
         _attach_compact_seq(pending, env.anchors, env.stack, env.state)
         return cursor.idx, False
     if indent > pending["indent"]:
-        if is_dash(text) or is_block_mapping_start(text):
+        if is_dash(text) or is_block_mapping_start(text) or has_explicit_key_affix(text):
             _attach_pending_child(pending, indent, text, env.anchors, env.stack, env.state)
             return cursor.idx, False
         next_idx = _consume_pending_scalar(struct(lines = cursor.lines, idx = cursor.idx), pending, struct(anchors = env.anchors, state = env.state))
@@ -372,6 +373,9 @@ def init_block_root(text, indent, anchors, stack, state, line):
     Returns:
       The (root, is_scalar) pair.
     """
+    if has_explicit_key_affix(text):
+        state.problems.append("explicit key with anchor or tag at line %d is not supported" % line)
+        return None, True
     if is_dash(text):
         root = []
         stack.append({"kind": "seq", "indent": indent - 1, "value": root, "entry": None, "compact": False})
@@ -485,6 +489,9 @@ def map_line(lines, idx, indent, text, frame, anchors, state):
         # continuation of a plain scalar fails closed instead of vanishing.
         record_unreadable(state, idx, text)
         return idx + 1, None
+    if has_explicit_key_affix(text):
+        state.problems.append("explicit key with anchor or tag at line %d is not supported" % (idx + 1))
+        return idx + 1, None
     if not _entry_indent_ok(frame, indent):
         record_unreadable(state, idx, text)
         return idx + 1, None
@@ -510,7 +517,7 @@ def map_line(lines, idx, indent, text, frame, anchors, state):
     anchor, tag, rest, failed = split_value_text(value_text, anchors, state, line)
     if failed:
         return _map_store(mapping, key, None, idx + 1, line, state)
-    if _block_value_entry_problem(rest, state, line):
+    if block_value_entry_problem(rest, state, line):
         return _map_store(mapping, key, None, idx + 1, line, state)
     if rest == "":
         if _is_duplicate(mapping, key, line, state):
@@ -566,7 +573,7 @@ def _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state):
         items.append(item)
         stack.append({"kind": "map", "indent": indent, "value": item, "entry": key_indent})
         return idx + 1, None
-    if _block_value_entry_problem(rest_value, state, line):
+    if block_value_entry_problem(rest_value, state, line):
         item[key] = None
         items.append(item)
         stack.append({"kind": "map", "indent": indent, "value": item, "entry": key_indent})
@@ -916,31 +923,10 @@ def _map_key_value(text, key_text, anchors, state, line):
     if key_rest[:1] in ["[", "{"]:
         state.problems.append("collection key at line %d is not supported" % line)
         return None
+    if (_anchor != None or _tag != None) and is_question_entry(key_rest):
+        state.problems.append("explicit key with anchor or tag at line %d is not supported" % line)
+        return None
     return dict_key(parse_scalar(key_text, anchors, state, line))
-
-def _block_value_entry_problem(rest, state, line):
-    """Records a block entry where a same-line mapping value starts. Returns True when one fails.
-
-    A `- ` entry fails, as pub rejects a block sequence where a value
-    starts, and a `? ` marker fails, as pub rejects an explicit key there;
-    the anchor and tag prefixes are already stripped, as pub still rejects
-    the entry under them. A `: `, `:\\t` or trailing colon inside a plain
-    value fails, as pub rejects a mapping value inside a plain scalar, even
-    past mid-scalar quotes or brackets; quoted, flow, block-scalar and alias
-    values read as before, as pub reads them.
-    """
-    if is_dash(rest):
-        state.problems.append("block sequence entry at line %d is not supported" % line)
-        return True
-    if is_question_entry(rest):
-        state.problems.append("explicit key at line %d is not supported" % line)
-        return True
-    if rest[:1] in ["", "\"", "'", "[", "{", "|", ">", "*"]:
-        return False
-    if ": " in rest or ":\t" in rest or ":\r" in rest or rest.endswith(":") or rest.endswith(":\r"):
-        state.problems.append("mapping value at line %d is not supported" % line)
-        return True
-    return False
 
 def _apply_pending_scalar_tag(word, value, raw, state, line):
     """Applies a pending tag to a folded scalar child. Returns the value.

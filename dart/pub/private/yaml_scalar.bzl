@@ -7,16 +7,12 @@ modules.
 
 load(":yaml_chars.bzl", "BOM")
 load(":yaml_escape.bzl", "HEX_DIGITS", "unescape_double")
+load(":yaml_printable.bzl", _check_scalar_unprintable = "check_scalar_unprintable", _record_prefix_problems = "record_prefix_problems", _strip_value_prefix = "strip_value_prefix")
 load(":yaml_text.bzl", "clone", "is_dash", "is_flow_value_entry", "is_quoted", "quoted_end_at")
 
-# Control characters package:yaml refuses in a plain scalar, written as
-# octal escapes so the source stays ASCII: the C0 controls except tab, LF
-# and CR, which structure lines, plus DEL. Tab, LF and CR stay content, as
-# pub reads them.
-_REFUSED_CONTROLS = (
-    "\000\001\002\003\004\005\006\007\010\013\014\016\017\020\021\022\023" +
-    "\024\025\026\027\030\031\032\033\034\035\036\037\177"
-)
+check_scalar_unprintable = _check_scalar_unprintable
+record_prefix_problems = _record_prefix_problems
+strip_value_prefix = _strip_value_prefix
 
 _YAML_TAG_PREFIX = "tag:yaml.org,2002:"
 
@@ -31,7 +27,8 @@ def parse_nonflow(s, anchors, state, line):
     rejects it; quoted scalars keep it as content, as pub reads them. A plain
     scalar starting with `@` or a backtick is a problem naming the line, as
     pub rejects its reserved indicator, and so is one holding a control
-    character or DEL anywhere, as pub refuses them; quoted scalars keep them
+    character (including raw C1 controls except U+0085), U+FFFE, U+FFFF or an
+    encoded surrogate anywhere, as pub refuses them; quoted scalars keep them
     as content, as pub reads them. A tab inside a plain scalar stays content,
     as pub reads it. Text glued after a quoted scalar's closing quote is a
     problem naming the line, as pub rejects it: nothing but the closing
@@ -64,10 +61,8 @@ def parse_nonflow(s, anchors, state, line):
     if s[:1] in ["@", "`"]:
         state.problems.append("reserved indicator at line %d is not supported" % line)
         return None
-    for ch in s.elems():
-        if ch in _REFUSED_CONTROLS:
-            state.problems.append("control character at line %d is not supported" % line)
-            return None
+    if check_scalar_unprintable(s, state, line):
+        return None
 
     if s == "":
         # A consumed anchor or tag prefix with no value reads as the empty
@@ -185,88 +180,6 @@ def split_value_text(value_text, anchors, state, line):
         state.problems.append("mapping value at line %d is not supported" % line)
         return None, None, "", True
     return anchor, tag, rest, False
-
-def strip_value_prefix(s):
-    """Splits leading `&anchor` and `!tag` words. Returns (anchor, tag, rest, bad).
-
-    At most one anchor and one tag read, in either order, as pub reads
-    them; `bad` is "" or the first rejected shape: an empty anchor name, a
-    repeated anchor or a repeated tag. A `!` word alone is a non-specific
-    tag, as pub reads it.
-
-    Args:
-      s: the text starting with the value.
-
-    Returns:
-      The (anchor, tag, rest, bad) tuple, where bad is "" or the first rejected shape.
-    """
-    anchor = None
-    tag = None
-    bad = ""
-    rest = s
-    for _ in range(4):
-        if rest == "":
-            break
-        if rest.startswith("&"):
-            word, rest = _split_prefix_word(rest)
-            anchor, bad = _strip_anchor_word(word, anchor, bad)
-        elif rest.startswith("!"):
-            word, rest = _split_prefix_word(rest)
-            tag, bad = _strip_tag_word(word, tag, bad)
-        else:
-            break
-    return (anchor, tag, rest, bad)
-
-def _strip_anchor_word(word, anchor, bad):
-    """Reads an `&name` word. Returns (anchor, bad).
-
-    An empty name and a repeated anchor are the first rejected shape, as
-    pub reads at most one anchor.
-    """
-    name = word[1:]
-    if name == "":
-        if bad == "":
-            bad = "empty-anchor"
-    elif anchor != None:
-        if bad == "":
-            bad = "repeat-anchor"
-    else:
-        anchor = name
-    return (anchor, bad)
-
-def _strip_tag_word(word, tag, bad):
-    """Reads a `!tag` word. Returns (tag, bad).
-
-    A repeated tag is the first rejected shape, as pub reads at most one.
-    """
-    if tag != None:
-        if bad == "":
-            bad = "repeat-tag"
-    else:
-        tag = word
-    return (tag, bad)
-
-def _split_prefix_word(s):
-    """Splits a leading `&`/`!` word at the first space or tab. Returns (word, rest)."""
-    for i in range(len(s)):
-        if s[i] in [" ", "\t"]:
-            return s[:i], s[i + 1:].lstrip(" \t")
-    return s, ""
-
-def record_prefix_problems(bad, state, line):
-    """Records a rejected anchor or tag prefix naming the line, as pub rejects it.
-
-    Args:
-      bad: the first rejected prefix shape, or "".
-      state: the parse state collecting problems.
-      line: the 1-based line number naming failures.
-    """
-    if bad == "empty-anchor":
-        state.problems.append("empty anchor at line %d is not supported" % line)
-    elif bad == "repeat-anchor":
-        state.problems.append("repeated anchor at line %d is not supported" % line)
-    elif bad == "repeat-tag":
-        state.problems.append("repeated tag at line %d is not supported" % line)
 
 def _parse_plain_dotted(s):
     """Parses a dot-led plain scalar as a double or inf/nan, or returns `s`.

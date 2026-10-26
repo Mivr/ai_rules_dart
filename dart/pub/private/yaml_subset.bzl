@@ -67,7 +67,8 @@ Supported:
   `\\L`, `\\P` and a backslash with a space or tab; an unknown escape, a
   short or non-hex escape, a surrogate, and a code point past U+10FFFF
   fail naming the line, as pub rejects them. A plain scalar starting with
-  `@` or a backtick, and one holding a control character or DEL, fail
+  `@` or a backtick, and one holding a control character (including raw C1
+  controls except U+0085), U+FFFE, U+FFFF or an encoded surrogate, fail
   naming the line, as pub refuses them; quoted scalars keep them as
   content, as pub reads them, and a tab inside a plain scalar stays
   content too. A bare `&` or `*` fails naming the line, as pub rejects an
@@ -208,9 +209,11 @@ testing, so the projections are unaffected on real pubspec files:
   malformed double-quoted escape read kept before, and `\\N`, `\\_`, `\\L`,
   `\\P` and a backslash with a space or tab read literally before; pub
   rejects the first and decodes the rest, as read now. A plain scalar
-  starting with `@` or a backtick, and one holding a control character or
-  DEL, read as plain before; pub refuses them, so they fail naming the
-  line. A block entry inside a flow read as plain before: `[- a]`,
+  starting with `@` or a backtick, and one holding a control character
+  (including raw C1 controls except U+0085), U+FFFE, U+FFFF or a surrogate,
+  read as plain before; pub refuses them, so they fail naming the
+  line. An explicit-key indicator after an anchor or tag in block context
+  read as a key before; pub rejects it, so it fails naming the line. A block entry inside a flow read as plain before: `[- a]`,
   `[a, - b]`, `{a: - b}`, `[a: - b]` and `{ - : 1}` read `"- a"`, `"- b"`
   and `"-"` before; pub rejects them, so they fail naming the line. A flow alias
   with a glued colon resolved the short name before, a flow anchor or tag
@@ -261,14 +264,16 @@ testing, so the projections are unaffected on real pubspec files:
   pub reads them, and so do `1.` and `.5`, as pub reads them; a `_`
   separator never reads and an uppercase `0X` or `0O` prefix stays a
   string, as pub reads them.
-- `%TAG` handles are ignored, so a tag written through one reads as untagged;
-  yaml.bzl resolves it. Other unknown tags read as untagged in both.
+- `%TAG` handles resolve through declared prefixes: standard YAML tags
+  convert to their `!!` form and undefined tags fail naming the line, as
+  pub resolves them. Other unknown tags read as untagged.
 - duplicate mapping keys fail; yaml.bzl's default non-strict mode silently
   keeps the first scalar and replaces a nested block with a later one.
 
 The reader is split across cohesive modules, each loaded in one direction
 only: `yaml_chars.bzl` holds the byte-level checks, `yaml_text.bzl` the line
-shapes, `yaml_escape.bzl` the double-quoted escapes, `yaml_scalar.bzl` the
+shapes, `yaml_escape.bzl` the double-quoted escapes, `yaml_printable.bzl` the
+printable and prefix checks, `yaml_scalar.bzl` the
 scalars, typing and tags, `yaml_flow.bzl` the flow collections,
 `yaml_flow_scan.bzl` the quote-aware scan and fold they share,
 `yaml_fold.bzl` the folded continuations, `yaml_block_scalar.bzl` the block
@@ -354,6 +359,7 @@ def _parse_document(content, strict_lines, refuse_tail_directives = False):
     bad_line = first_bad_utf8_line(stripped)
     if bad_line > 0:
         state.problems.append("invalid UTF-8 at line %d is not supported" % bad_line)
+        return None, state.problems
     lines, tag_prefixes, dropped_marker = first_document_lines(stripped, state)
     state = struct(problems = state.problems, strict_lines = strict_lines, tag_prefixes = tag_prefixes)
     first = first_content(lines)

@@ -123,12 +123,22 @@ bzl_library(
 )
 
 bzl_library(
+    name = "yaml_printable",
+    srcs = ["yaml_printable.bzl"],
+    visibility = ["//dart/pub:__subpackages__"],
+    deps = [
+        ":yaml_text",
+    ],
+)
+
+bzl_library(
     name = "yaml_scalar",
     srcs = ["yaml_scalar.bzl"],
     visibility = ["//dart/pub:__subpackages__"],
     deps = [
         ":yaml_chars",
         ":yaml_escape",
+        ":yaml_printable",
         ":yaml_text",
     ],
 )
@@ -183,6 +193,7 @@ bzl_library(
         ":yaml_flow",
         ":yaml_flow_scan",
         ":yaml_fold",
+        ":yaml_printable",
         ":yaml_scalar",
         ":yaml_text",
     ],
