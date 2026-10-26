@@ -34,7 +34,7 @@ jobs:
       # auto-approval. This is the default, made explicit for visibility.
       draft: true
       # GitHub repository which is a fork of the upstream where the Pull Request will be opened.
-      registry_fork: aran/bazel-central-registry
+      registry_fork: Mivr/bazel-central-registry
     permissions:
       attestations: write
       contents: write
