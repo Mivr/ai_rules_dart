@@ -58,18 +58,25 @@ T withPrivateHome<T>(
 
 /// Whether [args] to the `dart` CLI is a file-form execution.
 ///
-/// File-form is a program path (`program.dart`, `app.dill`, `app.aot`,
-/// `app.snapshot`, `app.jit`), an empty argument list, or global flags only
-/// (`--version`, `--verbose` with no command). Everything else names a
-/// command (`pub`, `format`, `analyze`, ...) whose run writes telemetry under
-/// HOME unless suppressed.
+/// Skips leading arguments starting with `-` (global flags such as
+/// `--verbose` or `--enable-asserts), then an empty remainder (a bare CLI or
+/// global flags only, such as `--version`) or a first remainder ending,
+/// case-insensitively, in a program suffix (`program.dart`, `app.dill`,
+/// `app.snapshot`, `app.aot`, `app.jit`) is file form. Everything else names
+/// a command (`pub`, `format`, `analyze`, ...) whose run writes telemetry
+/// under HOME unless suppressed. Mirrors the rules_flutter classification
+/// (`isFileForm` in `flutter/private/tools/run_home.dart`); the two state
+/// the same rule so both launchers agree.
 bool isFileExecution(List<String> args) {
-  if (args.isEmpty) return true;
-  final first = args.first;
-  if (first.startsWith('-')) return true;
+  var rest = args;
+  while (rest.isNotEmpty && rest.first.startsWith('-')) {
+    rest = rest.sublist(1);
+  }
+  if (rest.isEmpty) return true;
   const programSuffixes = ['.dart', '.dill', '.snapshot', '.aot', '.jit'];
+  final first = rest.first.toLowerCase();
   for (final suffix in programSuffixes) {
-    if (first.toLowerCase().endsWith(suffix)) return true;
+    if (first.endsWith(suffix)) return true;
   }
   return false;
 }
@@ -79,9 +86,11 @@ bool isFileExecution(List<String> args) {
 /// Inserts the global `--suppress-analytics` flag before the command, which
 /// stops that run's telemetry write while the process keeps the caller's
 /// environment — pub cache, credentials, proxy configuration. File-form
-/// executions pass through unchanged: the flag is rejected there, and they
-/// never touch HOME anyway. An [args] that already suppresses analytics is
-/// returned unchanged.
+/// executions ([isFileExecution]) pass through unchanged: the flag is
+/// rejected there, and they never touch HOME anyway. An [args] that already
+/// holds `--suppress-analytics` or `--no-suppress-analytics` already states
+/// its analytics policy and is returned unchanged, never duplicated; nothing
+/// else is ever reordered.
 List<String> suppressAnalyticsArgv(List<String> args) {
   if (isFileExecution(args)) return args;
   if (args.contains('--suppress-analytics') ||

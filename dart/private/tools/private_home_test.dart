@@ -45,71 +45,116 @@ void main() {
     expect(Directory(home).existsSync(), isFalse);
   });
 
+  // The shared classification table: every row states `dart` CLI arguments,
+  // whether they are file form, and the exact argv the launcher must exec.
+  // Command form behind leading flags (`--verbose pub get`) takes the flag:
+  // those rows fail while `isFileExecution` treats any leading `-` as file
+  // form (ledger row opus-2026-10-26:L-2).
+  const classificationTable =
+      <({List<String> args, bool fileForm, List<String> want})>[
+        // No args: file form, passes through unchanged.
+        (args: [], fileForm: true, want: []),
+        // Global flags only: file form, unchanged.
+        (args: ['--version'], fileForm: true, want: ['--version']),
+        (
+          args: ['--verbose', '--version'],
+          fileForm: true,
+          want: ['--verbose', '--version'],
+        ),
+        // Program files: file form, unchanged.
+        (args: ['program.dart'], fileForm: true, want: ['program.dart']),
+        (
+          args: ['--enable-asserts', 'hello.dart'],
+          fileForm: true,
+          want: ['--enable-asserts', 'hello.dart'],
+        ),
+        (args: ['HELLO.DART'], fileForm: true, want: ['HELLO.DART']),
+        (args: ['app.dill'], fileForm: true, want: ['app.dill']),
+        (args: ['OUT/APP.DILL'], fileForm: true, want: ['OUT/APP.DILL']),
+        (
+          args: ['out/app.snapshot'],
+          fileForm: true,
+          want: ['out/app.snapshot'],
+        ),
+        (args: ['out/app.aot'], fileForm: true, want: ['out/app.aot']),
+        (args: ['out/app.jit'], fileForm: true, want: ['out/app.jit']),
+        // Commands: the flag is prepended, nothing else reordered.
+        (
+          args: ['pub', 'get'],
+          fileForm: false,
+          want: ['--suppress-analytics', 'pub', 'get'],
+        ),
+        (
+          args: ['pub', 'token', 'list'],
+          fileForm: false,
+          want: ['--suppress-analytics', 'pub', 'token', 'list'],
+        ),
+        (
+          args: ['--verbose', 'pub', 'get'],
+          fileForm: false,
+          want: ['--suppress-analytics', '--verbose', 'pub', 'get'],
+        ),
+        (
+          args: ['-v', 'format', '.'],
+          fileForm: false,
+          want: ['--suppress-analytics', '-v', 'format', '.'],
+        ),
+        (
+          args: ['run', 'hello.dart'],
+          fileForm: false,
+          want: ['--suppress-analytics', 'run', 'hello.dart'],
+        ),
+        (
+          args: ['analyze'],
+          fileForm: false,
+          want: ['--suppress-analytics', 'analyze'],
+        ),
+        (
+          args: ['fix', '--apply'],
+          fileForm: false,
+          want: ['--suppress-analytics', 'fix', '--apply'],
+        ),
+        (
+          args: ['--enable-experiment=foo', 'pub', 'token', 'list'],
+          fileForm: false,
+          want: [
+            '--suppress-analytics',
+            '--enable-experiment=foo',
+            'pub',
+            'token',
+            'list',
+          ],
+        ),
+        // An already-held flag passes through, never duplicated.
+        (
+          args: ['--suppress-analytics', 'pub', 'get'],
+          fileForm: false,
+          want: ['--suppress-analytics', 'pub', 'get'],
+        ),
+        (
+          args: ['--no-suppress-analytics', 'pub', 'get'],
+          fileForm: false,
+          want: ['--no-suppress-analytics', 'pub', 'get'],
+        ),
+      ];
+
   group('isFileExecution', () {
-    test('treats program paths as file-form', () {
-      for (final args in [
-        ['program.dart'],
-        ['out/app.dill'],
-        ['out/app.snapshot'],
-        ['out/app.aot'],
-        ['out/app.jit'],
-        ['OUT/APP.DILL'],
-      ]) {
-        expect(isFileExecution(args), isTrue, reason: '$args');
-      }
-    });
-
-    test('treats empty and flag-only invocations as file-form', () {
-      expect(isFileExecution([]), isTrue);
-      expect(isFileExecution(['--version']), isTrue);
-      expect(isFileExecution(['--verbose', '--version']), isTrue);
-    });
-
-    test('treats commands as command-form', () {
-      for (final args in [
-        ['pub', 'token', 'list'],
-        ['format', '.'],
-        ['analyze'],
-        ['fix', '--apply'],
-        ['run', 'program.dart'],
-      ]) {
-        expect(isFileExecution(args), isFalse, reason: '$args');
+    test('classifies the shared table', () {
+      for (final row in classificationTable) {
+        expect(isFileExecution(row.args), row.fileForm, reason: '${row.args}');
       }
     });
   });
 
   group('suppressAnalyticsArgv', () {
-    test('places the flag before the command', () {
-      expect(suppressAnalyticsArgv(['pub', 'token', 'list']), [
-        '--suppress-analytics',
-        'pub',
-        'token',
-        'list',
-      ]);
-    });
-
-    test('leaves file-form executions unchanged', () {
-      for (final args in [
-        <String>[],
-        ['--version'],
-        ['program.dart'],
-        ['out/app.dill'],
-      ]) {
-        expect(suppressAnalyticsArgv(args), args, reason: '$args');
+    test('suppresses the shared table exactly once', () {
+      for (final row in classificationTable) {
+        expect(
+          suppressAnalyticsArgv(row.args),
+          row.want,
+          reason: '${row.args}',
+        );
       }
-    });
-
-    test('does not duplicate an explicit analytics flag', () {
-      expect(suppressAnalyticsArgv(['--suppress-analytics', 'pub', 'get']), [
-        '--suppress-analytics',
-        'pub',
-        'get',
-      ]);
-      expect(suppressAnalyticsArgv(['--no-suppress-analytics', 'pub', 'get']), [
-        '--no-suppress-analytics',
-        'pub',
-        'get',
-      ]);
     });
   });
 

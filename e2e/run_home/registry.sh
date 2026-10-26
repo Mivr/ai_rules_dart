@@ -52,6 +52,7 @@ RUN_HOME_ENTRIES=(
   # --- the SDK pass-through: caller env kept, analytics suppressed ---
   '@rules_dart//dart:dart|--version|caller-home|exit:0'
   '@rules_dart//dart:dart|pub token list|caller-home|exit:0|stdout:pub-cache-token.example.com'
+  '@rules_dart//dart:dart|--verbose pub token list|caller-home|exit:0|stdout:pub-cache-token.example.com'
   # --- codegen shims: `--help` parses arguments and exits, no work ---
   '@rules_dart//dart/ext/_shared/combining_shim:bin|--help|caller-home|exit:0'
   '@rules_dart//dart/ext/built_value:shim|--help|caller-home|exit:0'
