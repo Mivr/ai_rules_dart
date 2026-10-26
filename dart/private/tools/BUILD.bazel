@@ -281,6 +281,26 @@ dart_test(
     deps = ["@ext_pub_deps//:test"],
 )
 
+# Runs the `dart_sdk_binary` launcher as a data dependency — resolved through
+# runfiles and executed directly, with no `RunEnvironmentInfo` environment —
+# the way `e2e/smoke:dart_version_test` uses `@rules_dart//dart`. Fails while
+# the launcher needs `DART_SDK_CONFIG` to find its SDK.
+dart_test(
+    name = "sdk_launcher_data_test",
+    size = "small",
+    srcs = [
+        "private_home.dart",
+        "sdk_launcher.dart",
+    ],
+    args = ["$(rlocationpath //dart)"],
+    data = ["//dart"],
+    main = "sdk_launcher_data_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
 dart_binary(
     name = "format_runner",
     srcs = ["private_home.dart"],

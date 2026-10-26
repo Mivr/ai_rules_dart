@@ -17,6 +17,9 @@ def _dart_sdk_binary_impl(ctx):
     toolchain = ctx.toolchains["//dart:toolchain_type"]
     dart_sdk_info = toolchain.dart_sdk_info
 
+    # The config sits beside the executable on purpose: the launcher finds it
+    # there with no environment when another target runs it as a data
+    # dependency, so the two files must stay side by side.
     run_config = ctx.actions.declare_file(ctx.label.name + ".sdk_config.json")
     ctx.actions.write(
         output = run_config,
