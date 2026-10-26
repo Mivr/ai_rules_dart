@@ -34,6 +34,16 @@ dart_binary(
     main = "hello.dart",
 )
 
+# Probe for the `run_home` gate: exits 0 only when the kernel launcher
+# starts it without any `RULES_DART_*` variable and with the caller
+# environment intact.
+dart_binary(
+    name = "bin_env_probe",
+    compile_mode = "kernel",
+    launcher = True,
+    main = "env_probe.dart",
+)
+
 dart_binary(
     name = "bin_jit",
     compile_mode = "jit-snapshot",

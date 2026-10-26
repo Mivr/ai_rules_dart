@@ -7,19 +7,28 @@ import 'package:test/test.dart';
 
 /// Drives the `dart_test` launcher against `test_runner_fixture.dart`.
 ///
-/// Arguments are the runfiles paths of the launcher and the fixture's kernel.
-/// The launcher finds the VM through `RULES_DART_DART`, which this test
-/// inherits from its own launcher, and is pointed at the fixture through
-/// `RULES_DART_DILL`.
+/// Arguments are the runfiles paths of the launcher, the fixture's kernel,
+/// and the SDK `dart` binary. The launcher under test gets its VM through
+/// `RULES_DART_DART` holding the binary's runfiles path (this test's own
+/// environment no longer carries `RULES_DART_*`: the launcher strips them),
+/// and is pointed at the fixture through `RULES_DART_DILL`.
 void main(List<String> args) {
   final launcher = Runfiles.create().rlocation(args[0]);
 
-  Future<Process> start(List<String> fixtureArgs) => Process.start(
+  Future<Process> start(
+    List<String> fixtureArgs, {
+    Map<String, String> extraEnv = const {},
+  }) => Process.start(
     launcher,
     fixtureArgs,
     // This test itself runs under the `package:test` runner; the fixture is a
     // plain `main`, run directly.
-    environment: {'RULES_DART_DILL': args[1], 'RULES_DART_TEST_RUNNER': ''},
+    environment: {
+      'RULES_DART_DART': args[2],
+      'RULES_DART_DILL': args[1],
+      'RULES_DART_TEST_RUNNER': '',
+      ...extraEnv,
+    },
   );
 
   StreamIterator<String> lines(Stream<List<int>> stream) => StreamIterator(
@@ -78,6 +87,7 @@ void main(List<String> args) {
       launcher,
       ['stream'],
       environment: {
+        'RULES_DART_DART': args[2],
         'RULES_DART_DILL': args[1],
         'RULES_DART_TEST_RUNNER': '',
         'TESTBRIDGE_TEST_ONLY': 'anything',
@@ -112,7 +122,7 @@ void main(List<String> args) {
         'RUNFILES_MANIFEST_FILE': '',
         ' TEST_WORKSPACE': ws,
         'TEST_WORKSPACE': ws,
-        'RULES_DART_DART': Platform.resolvedExecutable,
+        'RULES_DART_DART': args[2],
         'RULES_DART_DILL': '$ws/pkg/my_test.dart.vm_test.vm.app.dill',
         'RULES_DART_TEST_RUNNER': '$ws/pkg/runner.dill',
         'RULES_DART_TEST_MAIN': '$ws/$testPath',
@@ -133,6 +143,7 @@ void main(List<String> args) {
         launcher,
         const [],
         environment: {
+          'RULES_DART_DART': args[2],
           'RULES_DART_DILL': args[1],
           'RULES_DART_TEST_RUNNER': args[1],
           'RULES_DART_TEST_MAIN': args[1],
@@ -143,6 +154,32 @@ void main(List<String> args) {
       await process.stdout.drain<void>();
       expect(await process.exitCode, 1);
       expect(err, contains('is not laid out for pkg/my_test.dart'));
+    },
+  );
+
+  test(
+    'a plain test sees no RULES_DART_* variable but keeps caller variables',
+    () async {
+      final process = await start(
+        ['env-probe'],
+        extraEnv: {
+          'RULES_DART_PROBE_LEAK': 'leaked',
+          'PROBE_CALLER_VAR': 'caller-ok',
+        },
+      );
+      final out = await process.stdout.transform(utf8.decoder).join();
+      await process.stderr.drain<void>();
+      expect(await process.exitCode, 0);
+      final seen = <String, String>{};
+      for (final line in const LineSplitter().convert(out)) {
+        final at = line.indexOf('=');
+        if (at > 0) seen[line.substring(0, at)] = line.substring(at + 1);
+      }
+      final leaked = seen.keys
+          .where((key) => key.startsWith('RULES_DART_'))
+          .toList();
+      expect(leaked, isEmpty, reason: 'the launcher leaked $leaked');
+      expect(seen['PROBE_CALLER_VAR'], 'caller-ok');
     },
   );
 

@@ -227,10 +227,13 @@ dart_test(
     args = [
         "$(rlocationpath :test_runner)",
         "$(rlocationpath :test_runner_fixture)",
+        "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
     ],
     data = [
         ":test_runner",
         ":test_runner_fixture",
+        "@dart_toolchains//sdk/3.13.5:compile_files",
+        "@dart_toolchains//sdk/3.13.5:dart",
     ],
     main = "test_runner_test.dart",
     deps = [

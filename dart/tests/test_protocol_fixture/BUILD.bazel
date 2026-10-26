@@ -1,4 +1,5 @@
 load("//dart:defs.bzl", "dart_test")
+load(":cases_env.bzl", "cases_env")
 
 # The test the protocol harness drives. `manual`: run on its own it fails
 # (`filtered_out` fails unless a filter excludes it), which is the point.
@@ -10,18 +11,27 @@ dart_test(
     deps = ["@ext_pub_deps//:test"],
 )
 
+cases_env(
+    name = "cases_env",
+    testonly = True,
+    target = ":cases",
+)
+
 # Runs `:cases` through its launcher the way Bazel would, with the filter,
-# sharding and XML variables set, and checks what ran.
+# sharding and XML variables set, and checks what ran. The launcher under test
+# no longer inherits `RULES_DART_*` from this test's own launcher, so
+# `:cases_env` captures `:cases`' real `RunEnvironmentInfo` and forwards
+# all runfiles `:cases` needs.
 dart_test(
     name = "protocol_test",
     size = "small",
     args = [
         "$(rlocationpath :cases)",
-        "$(rlocationpath :cases_test.dart)",
+        "$(rlocationpath :cases_env)",
     ],
     data = [
         ":cases",
-        ":cases_test.dart",
+        ":cases_env",
     ],
     main = "protocol_test.dart",
     deps = [

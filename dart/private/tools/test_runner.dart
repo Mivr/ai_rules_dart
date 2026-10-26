@@ -10,9 +10,11 @@ import 'test_runner_workspace.dart' as staging;
 /// Runs a `dart_test`'s pre-compiled kernel with asserts enabled.
 ///
 /// The suite runs as a file-form `dart` execution, which never touches HOME,
-/// so the program keeps the caller's environment (only this ruleset's own
-/// control variables are stripped); the launcher itself writes nothing under
-/// HOME either.
+/// so the program keeps the caller's environment minus this ruleset's own
+/// control variables: it starts with the complete filtered environment and
+/// the parent excluded, so no `RULES_DART_*` variable reaches it while PATH,
+/// HOME, the pub cache, credentials, TEST_* and the runfiles variables do;
+/// the launcher itself writes nothing under HOME either.
 ///
 /// `dart_test` compiles the test at build time, so this launcher only resolves
 /// files from runfiles and starts the VM — there is no package_config or source
@@ -151,8 +153,10 @@ Future<int> _runDirectly(
       into: scratch.path,
     );
   }
-  // The program keeps the caller's environment (see above); the resolved
-  // runfiles locations still win over the inherited ones.
+  // The program keeps the caller's environment (see above) with the parent
+  // excluded, so no `RULES_DART_*` control variable reaches it (Dart would
+  // otherwise merge the map over the parent); the resolved runfiles
+  // locations still win over the inherited ones.
   final childEnv = {
     ...withoutRulesDartControls(env),
     ..._childRunfilesEnv(env, manifest),
@@ -162,6 +166,7 @@ Future<int> _runDirectly(
     ['--enable-asserts', dill, ...args],
     workingDirectory: scratch?.path,
     environment: childEnv.isEmpty ? null : childEnv,
+    includeParentEnvironment: false,
     mode: ProcessStartMode.inheritStdio,
   );
   try {
@@ -246,6 +251,9 @@ Future<int> _runUnderRunner({
         'no_global_config/DartTest.yaml',
       ),
     },
+    // The map above is the complete filtered environment: the parent is
+    // excluded, so no `RULES_DART_*` control variable reaches the suite.
+    includeParentEnvironment: false,
     mode: ProcessStartMode.inheritStdio,
   );
   final code = await _waitForSuite(vmProcess, combined: precompiled.combined);

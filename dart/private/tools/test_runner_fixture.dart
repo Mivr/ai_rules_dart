@@ -6,6 +6,9 @@ import 'dart:io';
 /// - `stream`: announces itself on stdout and stderr, then echoes one line of
 ///   stdin. The driver sends that line only once it has seen both
 ///   announcements, so the echo proves they arrived while this was running.
+/// - `env-probe`: prints its whole environment, one `KEY=VALUE` line per
+///   variable, so the driver can check which variables the launcher passed
+///   through to the program it started.
 /// - `leak <release>`: starts a copy of itself in `linger` mode that shares
 ///   this process's stdio, then exits without waiting for it.
 /// - `linger <release>`: holds that stdio open until `<release>` exists.
@@ -32,6 +35,10 @@ Future<void> main(List<String> args) async {
       }
     case ['read-cwd', final relPath]:
       stdout.writeln(File(relPath).readAsStringSync().trim());
+    case ['env-probe']:
+      for (final entry in Platform.environment.entries) {
+        stdout.writeln('${entry.key}=${entry.value}');
+      }
     default:
       stderr.writeln(
         'usage: stream | leak <release> | linger <release> | read-cwd <path>',

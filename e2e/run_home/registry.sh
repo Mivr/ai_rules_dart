@@ -41,6 +41,7 @@ RUN_HOME_ENTRIES=(
   '//:bin_aot|--exit=7|caller-home|nonzero'
   '//:bin_kernel|--exit=7|caller-home|nonzero'
   '//:bin_kernel_launcher|--exit=7|caller-home|exit:7'
+  '//:bin_env_probe||caller-home|exit:0|stdout:caller_path='
   '//:bin_jit|--exit=7|caller-home|nonzero'
   '//:plain_test||caller-home|exit:0'
   '//:fmt|fmt_sample.dart|private|exit:0|changed-file:fmt_sample.dart'

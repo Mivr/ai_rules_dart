@@ -10,9 +10,11 @@ import 'test_runner_workspace.dart' as staging;
 /// the Dart VM that compiled it.
 ///
 /// The kernel runs as a file-form `dart` execution, which never touches HOME,
-/// so the program keeps the caller's environment (only this ruleset's own
-/// control variables are stripped); the launcher itself writes nothing under
-/// HOME either.
+/// so the program keeps the caller's environment minus this ruleset's own
+/// control variables: it starts with the complete filtered environment and
+/// the parent excluded, so no `RULES_DART_*` variable reaches it while PATH,
+/// HOME, the pub cache, credentials and the runfiles variables do; the
+/// launcher itself writes nothing under HOME either.
 ///
 /// When a kernel-mode binary sets `launcher = True`, `DefaultInfo.executable`
 /// is a symlink to this native launcher and `<name>.kernel_launcher.json` sits
@@ -58,8 +60,10 @@ Future<void> main(List<String> args) async {
 
   // The program keeps the caller's environment: a file-form execution never
   // touches HOME, while the program itself may need the caller's PATH, pub
-  // cache or credentials. The resolved runfiles locations still win over the
-  // inherited ones.
+  // cache or credentials. The map is the complete filtered environment and
+  // the parent is excluded, so no `RULES_DART_*` control variable reaches
+  // the child (Dart would otherwise merge the map over the parent). The
+  // resolved runfiles locations still win over the inherited ones.
   final childEnv = {
     ...withoutRulesDartControls(env),
     if (runfilesDir != null) 'RUNFILES_DIR': runfilesDir,
@@ -71,6 +75,7 @@ Future<void> main(List<String> args) async {
     [scratch == null ? dill : File(dill).absolute.path, ...args],
     workingDirectory: scratch?.path,
     environment: childEnv.isEmpty ? null : childEnv,
+    includeParentEnvironment: false,
     mode: ProcessStartMode.inheritStdio,
   );
   try {

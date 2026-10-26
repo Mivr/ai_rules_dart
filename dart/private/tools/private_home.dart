@@ -104,7 +104,10 @@ List<String> suppressAnalyticsArgv(List<String> args) {
 ///
 /// A launcher that keeps the caller's environment for the program it starts
 /// still strips these: a nested launcher would otherwise mistake the parent's
-/// config paths and runner settings for its own.
+/// config paths and runner settings for its own. Dart merges an
+/// `environment:` map over the parent environment, so the stripped variables
+/// reach the child anyway unless the spawn passes this map with
+/// `includeParentEnvironment: false`.
 Map<String, String> withoutRulesDartControls(Map<String, String> env) => {
   for (final entry in env.entries)
     if (!entry.key.startsWith('RULES_DART_')) entry.key: entry.value,
