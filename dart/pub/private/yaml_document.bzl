@@ -388,7 +388,8 @@ def _block_skip_line(raw, idx, first_line, state):
         if indent_width(raw) > 0:
             state.problems.append("byte-order mark at line %d is not supported" % (idx + 1))
         return True
-    if not (idx == 0 and first_line) and (raw.startswith("\t") or (raw.strip(" \t") != "" and "\t" in raw[:indent_width(raw)])):
+    tabbed = raw.startswith("\t") or (raw.strip(" \t") != "" and "\t" in raw[:indent_width(raw)])
+    if not (idx == 0 and first_line) and tabbed:
         state.problems.append("tab indentation at line %d is not supported" % (idx + 1))
         return True
     if bad_blank_index(raw) >= 0:
@@ -490,7 +491,12 @@ def parse_block(lines, state, first_line):
             continue
         saw_content = True
         cursor = struct(lines = lines, idx = idx, indent = indent, text = text)
-        root, pending, idx, done = _block_dispatch_line(cursor, struct(anchors = anchors, stack = stack, state = state, lone = lone, affix = affix), root, pending)
+        root, pending, idx, done = _block_dispatch_line(
+            cursor,
+            struct(anchors = anchors, stack = stack, state = state, lone = lone, affix = affix),
+            root,
+            pending,
+        )
         if done:
             continue
     if pending != None:
@@ -522,7 +528,11 @@ def _block_dispatch_line(cursor, env, root, pending):
     if pending != None:
         if take_lone_line(pending, text, idx + 1, anchors, state):
             return (root, pending, idx + 1, True)
-        idx, skip = resolve_pending(pending, struct(lines = lines, idx = idx, indent = indent, text = text), struct(anchors = anchors, stack = stack, state = state))
+        idx, skip = resolve_pending(
+            pending,
+            struct(lines = lines, idx = idx, indent = indent, text = text),
+            struct(anchors = anchors, stack = stack, state = state),
+        )
         pending = None
         if skip:
             return (root, pending, idx, True)

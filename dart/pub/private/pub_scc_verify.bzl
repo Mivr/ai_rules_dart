@@ -84,7 +84,15 @@ def _planned_deps_mismatch_error(rule_name, repo_name, subject_kind, subject_nam
         '%s "%s": %s "%s" lists different dependencies than cycle planning used ' +
         "(planned [%s], pubspec [%s]). The lockfile's pub cycle-planning facts disagree with the package. " +
         "To recover, %s."
-    ) % (rule_name, repo_name, subject_kind, subject_name, ", ".join(sorted(planned_deps)), ", ".join(sorted(real_deps)), _RECOVERY_STEP)
+    ) % (
+        rule_name,
+        repo_name,
+        subject_kind,
+        subject_name,
+        ", ".join(sorted(planned_deps)),
+        ", ".join(sorted(real_deps)),
+        _RECOVERY_STEP,
+    )
 
 def scc_member_deps_error(repo_name, member_name, planned_deps, real_deps):
     """Decides whether one merged member's real pubspec matches the plan.

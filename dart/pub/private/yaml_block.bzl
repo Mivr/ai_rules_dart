@@ -103,6 +103,20 @@ def _attach_compact_seq(pending, anchors, stack, state):
         "anchor": pending["anchor"],
     })
 
+def _scalar_source(idx, text, raw, entry):
+    """Builds the scalar source record `block_fold_scalar` reads.
+
+    Args:
+      idx: The line index the scalar starts on.
+      text: The value text from the line.
+      raw: The raw text after the key or dash.
+      entry: The whole entry line.
+
+    Returns:
+      The `{text, raw, idx, entry}` record.
+    """
+    return {"text": text, "raw": raw, "idx": idx, "entry": entry}
+
 def _consume_pending_scalar(cursor, pending, env):
     """Folds a scalar starting after `key:` with single spaces. Returns next index.
 
@@ -119,7 +133,9 @@ def _consume_pending_scalar(cursor, pending, env):
     _indent0, text0 = block_line_text(lines[idx])
     if text0 != None and _unclosed_flow_head(text0, anchors) != None:
         return _consume_pending_flow(lines, idx, parent_indent, text0, pending, anchors, state)
-    value, next_idx, _read = block_fold_scalar(lines, idx, parent_indent, {"text": "", "raw": "", "idx": idx, "entry": ""}, type(parent) == "dict" and parent_indent > 0, anchors, state)
+    fold = type(parent) == "dict" and parent_indent > 0
+    source = _scalar_source(idx, "", "", "")
+    value, next_idx, _read = block_fold_scalar(lines, idx, parent_indent, source, fold, anchors, state)
     _store_pending_value(pending, value, text0, anchors, state)
     return next_idx
 
@@ -354,7 +370,11 @@ def resolve_pending(pending, cursor, env):
         if is_dash(text) or is_block_mapping_start(text) or has_explicit_key_affix(text):
             _attach_pending_child(pending, indent, text, env.anchors, env.stack, env.state)
             return cursor.idx, False
-        next_idx = _consume_pending_scalar(struct(lines = cursor.lines, idx = cursor.idx), pending, struct(anchors = env.anchors, state = env.state))
+        next_idx = _consume_pending_scalar(
+            struct(lines = cursor.lines, idx = cursor.idx),
+            pending,
+            struct(anchors = env.anchors, state = env.state),
+        )
         return next_idx, True
     drop_pending_value(pending, env.anchors, env.state)
     return cursor.idx, False
@@ -540,7 +560,8 @@ def map_line(lines, idx, indent, text, frame, anchors, state):
         return _map_store(mapping, key, flow_value, flow_next, line, state)
 
     raw_head = lines[idx][indent + find_block_colon(text) + 1:]
-    value, next_idx, _read = block_fold_scalar(lines, idx + 1, indent, {"text": value_text, "raw": raw_head, "idx": idx, "entry": text}, indent > 0, anchors, state)
+    source = _scalar_source(idx, value_text, raw_head, text)
+    value, next_idx, _read = block_fold_scalar(lines, idx + 1, indent, source, indent > 0, anchors, state)
     return _map_store(mapping, key, value, next_idx, line, state)
 
 def _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state):
@@ -609,7 +630,8 @@ def _seq_dash_map(lines, idx, indent, text, items, anchors, stack, state):
         if anchor != None:
             anchors[anchor] = OPEN_ANCHOR
         return idx + 1, pending
-    value, next_idx, _read = block_fold_scalar(lines, idx + 1, key_indent, {"text": value_text, "raw": head, "idx": idx, "entry": text}, True, anchors, state)
+    source = _scalar_source(idx, value_text, head, text)
+    value, next_idx, _read = block_fold_scalar(lines, idx + 1, key_indent, source, True, anchors, state)
     item[key] = value
     items.append(item)
     stack.append({"kind": "map", "indent": indent, "value": item, "entry": key_indent})
@@ -723,7 +745,8 @@ def seq_line(lines, idx, indent, text, frame, anchors, stack, state):
         state.problems.append(_span_flow_problem(line))
         items.append(None)
         return end, None
-    value, next_idx, _read = block_fold_scalar(lines, idx + 1, indent, {"text": rest, "raw": after_dash, "idx": idx, "entry": text}, False, anchors, state)
+    source = _scalar_source(idx, rest, after_dash, text)
+    value, next_idx, _read = block_fold_scalar(lines, idx + 1, indent, source, False, anchors, state)
     items.append(value)
     return next_idx, None
 
