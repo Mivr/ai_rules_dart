@@ -30,6 +30,7 @@ load(
     "kernel_packages_consistent",
     "library_source_uri",
     "modular_executable_kernel",
+    "modular_executable_tools",
     "modular_kernel_conditions",
     "modular_kernel_eligible",
     "modular_kernel_mode",
@@ -379,6 +380,20 @@ def _eligible_test_impl(ctx):
     }
     for reason, conditions in fallbacks.items():
         asserts.false(env, modular_kernel_eligible(conditions), reason)
+    return unittest.end(env)
+
+def _modular_tools_off_test_impl(ctx):
+    env = unittest.begin(ctx)
+    tools = modular_executable_tools(
+        struct(attr = struct()),
+        [],
+        None,
+        kernel_mode = False,
+        resolved_assets = [],
+        own_defines = [],
+        compile_flags = [],
+    )
+    asserts.equals(env, None, tools, "a non-kernel compile takes the whole-program path")
     return unittest.end(env)
 
 def _custom_kernel_module_fixture_impl(ctx):
@@ -1294,6 +1309,7 @@ _packages_consistent_test = unittest.make(_packages_consistent_test_impl)
 _first_per_package_test = unittest.make(_first_per_package_test_impl)
 _duplicated_source_test = unittest.make(_duplicated_source_test_impl)
 _eligible_test = unittest.make(_eligible_test_impl)
+_modular_tools_off_test = unittest.make(_modular_tools_off_test_impl)
 _has_cross_pkg_cycle_test = unittest.make(_has_cross_pkg_cycle_test_impl)
 _unused_inputs_wiring_test = unittest.make(_unused_inputs_wiring_test_impl)
 _worker_execution_requirements_test = unittest.make(_worker_execution_requirements_test_impl)
@@ -1444,6 +1460,7 @@ def kernel_test_suite(name):
         _first_per_package_test,
         _duplicated_source_test,
         _eligible_test,
+        _modular_tools_off_test,
         _has_cross_pkg_cycle_test,
         _unused_inputs_wiring_test,
         _worker_execution_requirements_test,

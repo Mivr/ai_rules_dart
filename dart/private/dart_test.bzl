@@ -204,24 +204,7 @@ def _compile_test_kernel(ctx, own, bootstrap, use_base_dill = False):
     )
 
     dill = _test_kernel_output(ctx, bootstrap)
-    runtime_libs = []
-
-    native_assets_yaml = None
-    if resolved_assets:
-        # Embed the code-asset mapping in the kernel (`gen_kernel --native-assets`),
-        # with `relative` paths resolved against the dill at run time — the same
-        # build-time path `dart_binary` uses. The `.so` libraries ship in runfiles.
-        abi = target_dart_abi(ctx)
-        entries, runtime_libs = code_asset_entries(
-            ctx.label,
-            resolved_assets,
-            dill.dirname,
-        )
-        native_assets_yaml = ctx.actions.declare_file(ctx.label.name + ".native_assets.yaml")
-        ctx.actions.write(
-            output = native_assets_yaml,
-            content = generate_native_assets_yaml(abi, entries),
-        )
+    native_assets_yaml, runtime_libs = _test_native_assets(ctx, resolved_assets, dill)
     dart_compile_action(
         ctx = ctx,
         dart_sdk_info = dart_sdk_info,
@@ -245,6 +228,37 @@ def _compile_test_kernel(ctx, own, bootstrap, use_base_dill = False):
         ),
     )
     return struct(dill = dill, base_dill = None, runtime_libs = runtime_libs)
+
+def _test_native_assets(ctx, resolved_assets, dill):
+    """Writes the code-asset mapping a test's kernel embeds.
+
+    Embedding the mapping (`gen_kernel --native-assets`) resolves each
+    `relative` path against the dill at run time — the same build-time path
+    `dart_binary` uses. The `.so` libraries ship in runfiles.
+
+    Args:
+      ctx: The rule context.
+      resolved_assets: The code assets resolved for the test.
+      dill: The kernel `.dill` the mapping's relative paths resolve against.
+
+    Returns:
+      `(native_assets_yaml, runtime_libs)`: the mapping File (or `None` when
+      there are no code assets) and the code-asset libraries to ship.
+    """
+    if not resolved_assets:
+        return None, []
+    abi = target_dart_abi(ctx)
+    entries, runtime_libs = code_asset_entries(
+        ctx.label,
+        resolved_assets,
+        dill.dirname,
+    )
+    native_assets_yaml = ctx.actions.declare_file(ctx.label.name + ".native_assets.yaml")
+    ctx.actions.write(
+        output = native_assets_yaml,
+        content = generate_native_assets_yaml(abi, entries),
+    )
+    return native_assets_yaml, runtime_libs
 
 def _test_kernel_output(ctx, bootstrap):
     """Declares the kernel a test runs from, in the place its runner expects.
@@ -500,13 +514,24 @@ custom executor) without loading their native libraries at runtime.""",
         allow_files = True,
     ),
     "_comma_patch": attr.label(
+        doc = "The `comma_patch.dart` source staged beside the JIT tool's entry so comma-containing `-D` values survive the front end. Defaults to `//dart/private/tools:comma_patch.dart`.",
         default = "//dart/private/tools:comma_patch.dart",
         allow_single_file = True,
     ),
     "_allowlist_function_transition": attr.label(
+        doc = "Allowlist target permitting the Starlark function transition this rule applies. Defaults to `@bazel_tools//tools/allowlists/function_transition_allowlist`.",
         default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
     ),
-}, **dict(WINDOWS_CONSTRAINT_ATTR, **dict(DART_ABI_CONSTRAINT_ATTRS, **dict(EXTRA_DART_DEFINES_ATTR, **dict(MODULAR_KERNEL_ATTRS, **EXECUTABLE_PACKAGE_ATTRS)))))
+}, **dict(
+    WINDOWS_CONSTRAINT_ATTR,
+    **dict(
+        DART_ABI_CONSTRAINT_ATTRS,
+        **dict(
+            EXTRA_DART_DEFINES_ATTR,
+            **dict(MODULAR_KERNEL_ATTRS, **EXECUTABLE_PACKAGE_ATTRS)
+        )
+    )
+))
 
 dart_test = rule(
     implementation = _dart_test_impl,
@@ -526,6 +551,7 @@ told where a runfile is (resolve it with `Runfiles.rlocation()`).""",
             doc = "Names of environment variables passed through from the environment `bazel test` runs in.",
         ),
         _tool = attr.label(
+            doc = "Executable that launches the test's kernel with the SDK's VM. Defaults to `//dart/private/tools:test_runner`.",
             default = "//dart/private/tools:test_runner",
             executable = True,
             cfg = "exec",
