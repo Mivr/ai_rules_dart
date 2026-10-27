@@ -45,6 +45,7 @@ dart_analysis_test = rule(
             mandatory = True,
         ),
         "_tool": attr.label(
+            doc = "Executable the test runs: the do-nothing binary that carries the aspect's stamps. Defaults to `//dart/private/tools:noop`.",
             default = "//dart/private/tools:noop",
             executable = True,
             cfg = "exec",
