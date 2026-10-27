@@ -3,19 +3,16 @@
 load("//dart/ext:registry.bzl", "curated_code_assets")
 load("//dart/private:download.bzl", "pinned_download")
 load("//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "pinned_source_error")
-load("//dart/pub:pub_lock_hub.bzl", "pub_lock_hub")
-load("//dart/pub:pub_lock_package.bzl", "pub_lock_git_package", "pub_lock_package", "pub_lock_package_sha256_error", "trim_gzip_trailing_nulls")
+load("//dart/pub:pub_lock_package.bzl", "pub_lock_package_sha256_error", "trim_gzip_trailing_nulls")
 load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
 load("//dart/pub:pub_scan.bzl", "run_pub_archive_scans")
 load("//dart/pub:yaml_parser.bzl", "lock_package_error", "parse_pubspec_deps", "parse_pubspec_lock")
 load("//dart/pub/private:parser_sources.bzl", "PARSER_SOURCE_LABELS")
-load("//dart/pub/private:pub_repository.bzl", "pub_package")
+load("//dart/pub/private:pub_emit.bzl", "SPOKE_PREFIX", "pub_emit_aliased", "pub_emit_explicit", "pub_emit_hubs", "pub_emit_isolated_git", "pub_emit_isolated_spokes", "pub_emit_shared_git", "pub_emit_shared_spokes")
 load("//dart/pub/private:pub_root_pin.bzl", "best_entry", "decl_lock_sha_conflict", "git_path_conflict", "git_ref_conflict", "git_version_error", "hosted_sha_conflict", "hosted_version_error", "select_all_explicit")
 load("//dart/pub/private:pub_scanner_sdk.bzl", "scanner_runtime_label")
 load("//dart/pub/private:pub_scc_facts.bzl", "parser_schema", "read_scope_pubspec", "record_scope_facts", "split_scope_facts")
-load("//dart/pub/private:scc.bzl", "compute_sccs", "package_dep_graph", "rewrite_vanished_spoke", "scc_repo_name")
-
-_SPOKE_PREFIX = "dart_pub"
+load("//dart/pub/private:scc.bzl", "compute_sccs", "package_dep_graph", "scc_repo_name")
 
 _package = tag_class(
     doc = "Declares one pub.dev package to download and materialize as a spoke repository, pinned by version and archive hash with its pub dependencies. A `package` tag from the root module wins over `package` tags for the same package from dependencies: a dependency's different version is dropped with a NOTE naming both versions. A root lock's git entry pins like a hosted one, and a root pin never hides a same-version sha256 conflict.",
@@ -517,7 +514,16 @@ def _resolve_lock_tag(state, explicit, lock_tag):
 
     skipped_by_source = {}
     for name, info in lock_tag.packages.items():
-        err, shape = _register_lock_package(state, explicit, name, info, lock_tag, hub_name, isolated, skipped_by_source)
+        err, shape = _register_lock_package(
+            state,
+            explicit,
+            name,
+            info,
+            lock_tag,
+            hub_name,
+            isolated,
+            skipped_by_source,
+        )
         if err:
             return err, shape
 
@@ -580,13 +586,23 @@ def _resolve_git_versions(state):
             return {}, err
         if len(pkg.entries) == 1:
             e = pkg.entries[0]
-            resolved_git[name] = struct(version = e.version, url = pkg.url, resolved_ref = e.resolved_ref, path = e.path)
+            resolved_git[name] = struct(
+                version = e.version,
+                url = pkg.url,
+                resolved_ref = e.resolved_ref,
+                path = e.path,
+            )
             continue
         best = best_entry(pkg.entries)
         for e in pkg.entries:
             if e.version != best.version and e.on_version_conflict == "error":
                 return {}, git_version_error(name, pkg.entries)
-        resolved_git[name] = struct(version = best.version, url = pkg.url, resolved_ref = best.resolved_ref, path = best.path)
+        resolved_git[name] = struct(
+            version = best.version,
+            url = pkg.url,
+            resolved_ref = best.resolved_ref,
+            path = best.path,
+        )
     return resolved_git, None
 
 def _resolve_isolated_overlap(state):
@@ -803,7 +819,12 @@ def _pub_collect_tags(ctx):
 def _pub_scope_deps(ctx, scope_dir, scope_names, explicit_package_names, explicit_deps, hosted, git_pkgs, recorded):
     """Resolves one scope's dependency names when cycle planning needs them, reusing lockfile facts for unchanged packages. Returns deps."""
     deps = {}
-    if len(scope_names) > len(explicit_package_names) + 1 or (scope_names != explicit_package_names and any([explicit_deps[name] for name in explicit_deps])):
+    scope_count = len(scope_names)
+    explicit_count = len(explicit_package_names)
+    mixed_explicit = scope_names != explicit_package_names and any(
+        [explicit_deps[name] for name in explicit_deps],
+    )
+    if scope_count > explicit_count + 1 or mixed_explicit:
         deps = _scope_deps_with_facts(ctx, scope_dir, hosted, git_pkgs, recorded)
     return deps
 
@@ -821,12 +842,21 @@ def _pub_plan_shared_sccs(ctx, resolution, explicit_package_names, recorded):
         if hub_name not in isolated_packages and hub_name not in isolated_git_packages
     ])
     shared_names = sorted(set(resolved.keys()) | set(resolved_git.keys())) + explicit_package_names
-    shared_deps = _pub_scope_deps(ctx, "_scc_shared", shared_names, explicit_package_names, explicit_deps, resolved, resolved_git, recorded)
+    shared_deps = _pub_scope_deps(
+        ctx,
+        "_scc_shared",
+        shared_names,
+        explicit_package_names,
+        explicit_deps,
+        resolved,
+        resolved_git,
+        recorded,
+    )
     shared_sccs = plan_scope_sccs(
         shared_names,
         explicit_deps,
         shared_hubs,
-        _SPOKE_PREFIX,
+        SPOKE_PREFIX,
         shared_deps,
     )
 
@@ -835,7 +865,7 @@ def _pub_plan_shared_sccs(ctx, resolution, explicit_package_names, recorded):
     # working, but a spoke label would not resolve).
     vanished_spokes = {}
     for member, repo in shared_sccs.members.items():
-        vanished_spokes[_SPOKE_PREFIX + "__" + member] = repo
+        vanished_spokes[SPOKE_PREFIX + "__" + member] = repo
     return shared_sccs, vanished_spokes
 
 def _pub_plan_isolated_sccs(ctx, hub_name, resolution, explicit_package_names, vanished_spokes, recorded):
@@ -847,7 +877,16 @@ def _pub_plan_isolated_sccs(ctx, hub_name, resolution, explicit_package_names, v
     git_pkgs = isolated_git_packages.get(hub_name, {})
     hub_names = [hub_name]
     scope_names = sorted(set(hosted.keys()) | set(git_pkgs.keys())) + explicit_package_names
-    deps = _pub_scope_deps(ctx, "_scc_" + hub_name, scope_names, explicit_package_names, explicit_deps, hosted, git_pkgs, recorded)
+    deps = _pub_scope_deps(
+        ctx,
+        "_scc_" + hub_name,
+        scope_names,
+        explicit_package_names,
+        explicit_deps,
+        hosted,
+        git_pkgs,
+        recorded,
+    )
     sccs = plan_scope_sccs(
         scope_names,
         explicit_deps,
@@ -859,68 +898,14 @@ def _pub_plan_isolated_sccs(ctx, hub_name, resolution, explicit_package_names, v
         vanished_spokes[hub_name + "__" + member] = repo
     return sccs
 
-def _pub_emit_explicit(explicit, vanished_spokes):
-    """Creates the explicit `pub.package()` repositories."""
-    for name, pkg in explicit.items():
-        pub_package(
-            name = name,
-            package_name = name,
-            version = pkg.version,
-            sha256 = pkg.sha256,
-            deps = [rewrite_vanished_spoke(dep, vanished_spokes) for dep in pkg.deps],
-        )
-
-def _pub_emit_aliased(aliases, vanished_spokes):
-    """Creates one alias repository per lock-pinned `pub.package()` name.
-
-    A dependency may import the package by its `pub.package()` name even
-    when a root lock pin resolves it, so the name must exist as a
-    repository. The lock spoke stays the single materialization: the alias
-    names its spoke, or the merged repository holding the whole cycle when
-    the spoke merged away.
-    """
-    for name in sorted(aliases.keys()):
-        spoke = _SPOKE_PREFIX + "__" + name
-        scc_targets = {}
-        if spoke in vanished_spokes:
-            repo = vanished_spokes[spoke]
-            scc_targets = {name: "@{repo}//:{member}".format(repo = repo, member = name)}
-        pub_lock_hub(
-            name = name,
-            hub_name = _SPOKE_PREFIX,
-            spoke_prefix = _SPOKE_PREFIX,
-            packages = [name],
-            explicit_packages = [],
-            scc_targets = scc_targets,
-        )
-
-def _pub_emit_shared_spokes(resolved, shared_sccs, all_package_names, explicit_package_names, ignore_hooks, shared_scc_targets):
-    """Creates shared hosted spoke repos. Cycle members get no spoke of their own: the merged repository holds the whole cycle."""
-    for name, pkg in resolved.items():
-        if name in shared_sccs.members:
-            continue
-        err = pub_lock_package_sha256_error(name, pkg.version, pkg.sha256)
-        if err:
-            fail(err)
-        pub_lock_package(
-            name = _SPOKE_PREFIX + "__" + name,
-            package_name = name,
-            version = pkg.version,
-            sha256 = pkg.sha256,
-            base_url = pkg.url,
-            hub_name = _SPOKE_PREFIX,
-            lock_packages = all_package_names,
-            # A spoke whose pubspec depends on an explicit package depends on
-            # that package's repo, which is what every hub aliases it to.
-            explicit_packages = explicit_package_names,
-            code_assets = curated_code_assets(name, pkg.version),
-            ignore_hook = name in ignore_hooks,
-            scc_targets = shared_scc_targets,
-            planned_deps = shared_sccs.package_deps.get(name, []),
-            plan_covers_package = name in shared_sccs.package_deps,
-        )
-
-def _pub_emit_shared_merged(shared_sccs, resolved, resolved_git, all_package_names, explicit_package_names, shared_scc_targets, ignore_hooks):
+def _pub_emit_shared_merged(
+        shared_sccs,
+        resolved,
+        resolved_git,
+        all_package_names,
+        explicit_package_names,
+        shared_scc_targets,
+        ignore_hooks):
     """Creates one merged repository per shared dependency cycle."""
     for repo, members in shared_sccs.merged.items():
         entries = scc_member_entries(members, resolved, resolved_git, shared_sccs.package_deps)
@@ -928,60 +913,22 @@ def _pub_emit_shared_merged(shared_sccs, resolved, resolved_git, all_package_nam
             name = repo,
             repo_name = repo,
             members_json = json.encode(entries),
-            hub_name = _SPOKE_PREFIX,
+            hub_name = SPOKE_PREFIX,
             lock_packages = all_package_names,
             explicit_packages = explicit_package_names,
             scc_targets = shared_scc_targets,
             ignore_hooks = sorted(ignore_hooks.keys()),
         )
 
-def _pub_emit_shared_git(resolved_git, shared_sccs, all_package_names, explicit_package_names, ignore_hooks, shared_scc_targets):
-    """Creates shared git spoke repos."""
-    for name, pkg in resolved_git.items():
-        if name in shared_sccs.members:
-            continue
-        pub_lock_git_package(
-            name = _SPOKE_PREFIX + "__" + name,
-            package_name = name,
-            version = pkg.version,
-            url = pkg.url,
-            resolved_ref = pkg.resolved_ref,
-            path = pkg.path,
-            hub_name = _SPOKE_PREFIX,
-            lock_packages = all_package_names,
-            explicit_packages = explicit_package_names,
-            code_assets = curated_code_assets(name, pkg.version),
-            ignore_hook = name in ignore_hooks,
-            scc_targets = shared_scc_targets,
-            planned_deps = shared_sccs.package_deps.get(name, []),
-            plan_covers_package = name in shared_sccs.package_deps,
-        )
-
-def _pub_emit_isolated_spokes(hub_name, hosted, hub_sccs, package_names, hub_explicit, hub_scc_targets, ignore_hooks):
-    """Creates one isolated hub's hosted spoke repos."""
-    for pkg_name, pkg in hosted.items():
-        if pkg_name in hub_sccs.members:
-            continue
-        err = pub_lock_package_sha256_error(pkg_name, pkg.version, pkg.sha256)
-        if err:
-            fail(err)
-        pub_lock_package(
-            name = hub_name + "__" + pkg_name,
-            package_name = pkg_name,
-            version = pkg.version,
-            sha256 = pkg.sha256,
-            base_url = pkg.url,
-            hub_name = hub_name,
-            lock_packages = package_names,
-            explicit_packages = hub_explicit,
-            code_assets = curated_code_assets(pkg_name, pkg.version),
-            ignore_hook = pkg_name in ignore_hooks,
-            scc_targets = hub_scc_targets,
-            planned_deps = hub_sccs.package_deps.get(pkg_name, []),
-            plan_covers_package = pkg_name in hub_sccs.package_deps,
-        )
-
-def _pub_emit_isolated_merged(hub_name, hub_sccs, hosted, git_pkgs, package_names, hub_explicit, hub_scc_targets, ignore_hooks):
+def _pub_emit_isolated_merged(
+        hub_name,
+        hub_sccs,
+        hosted,
+        git_pkgs,
+        package_names,
+        hub_explicit,
+        hub_scc_targets,
+        ignore_hooks):
     """Creates one merged repository per isolated dependency cycle."""
     for repo, members in hub_sccs.merged.items():
         entries = scc_member_entries(members, hosted, git_pkgs, hub_sccs.package_deps)
@@ -996,29 +943,13 @@ def _pub_emit_isolated_merged(hub_name, hub_sccs, hosted, git_pkgs, package_name
             ignore_hooks = sorted(ignore_hooks.keys()),
         )
 
-def _pub_emit_isolated_git(hub_name, git_pkgs, hub_sccs, package_names, hub_explicit, hub_scc_targets, ignore_hooks):
-    """Creates one isolated hub's git spoke repos."""
-    for pkg_name, pkg in git_pkgs.items():
-        if pkg_name in hub_sccs.members:
-            continue
-        pub_lock_git_package(
-            name = hub_name + "__" + pkg_name,
-            package_name = pkg_name,
-            version = pkg.version,
-            url = pkg.url,
-            resolved_ref = pkg.resolved_ref,
-            path = pkg.path,
-            hub_name = hub_name,
-            lock_packages = package_names,
-            explicit_packages = hub_explicit,
-            code_assets = curated_code_assets(pkg_name, pkg.version),
-            ignore_hook = pkg_name in ignore_hooks,
-            scc_targets = hub_scc_targets,
-            planned_deps = hub_sccs.package_deps.get(pkg_name, []),
-            plan_covers_package = pkg_name in hub_sccs.package_deps,
-        )
-
-def _pub_emit_isolated_hub(hub_name, isolated_packages, isolated_git_packages, isolated_sccs, explicit_package_names, ignore_hooks):
+def _pub_emit_isolated_hub(
+        hub_name,
+        isolated_packages,
+        isolated_git_packages,
+        isolated_sccs,
+        explicit_package_names,
+        ignore_hooks):
     """Creates one isolated hub's spokes and merged repositories."""
 
     # Create isolated spoke repos (namespaced by hub, outside the global
@@ -1032,39 +963,34 @@ def _pub_emit_isolated_hub(hub_name, isolated_packages, isolated_git_packages, i
         member: "@{repo}//:{member}".format(repo = repo, member = member)
         for member, repo in isolated_sccs[hub_name].members.items()
     }
-    _pub_emit_isolated_spokes(hub_name, hosted, isolated_sccs[hub_name], package_names, hub_explicit, hub_scc_targets, ignore_hooks)
-    _pub_emit_isolated_merged(hub_name, isolated_sccs[hub_name], hosted, git_pkgs, package_names, hub_explicit, hub_scc_targets, ignore_hooks)
-    _pub_emit_isolated_git(hub_name, git_pkgs, isolated_sccs[hub_name], package_names, hub_explicit, hub_scc_targets, ignore_hooks)
-
-def _pub_emit_hubs(hub_packages, isolated_hub_names, isolated_sccs, shared_sccs, explicit):
-    """Creates the per-from_lock hub repos."""
-    for hub_name, packages in hub_packages.items():
-        package_names = sorted(packages)
-        isolated = hub_name in isolated_hub_names
-        if isolated:
-            spoke_prefix = hub_name
-            hub_explicit = []
-            hub_scc_targets = {
-                member: "@{repo}//:{member}".format(repo = repo, member = member)
-                for member, repo in isolated_sccs[hub_name].members.items()
-                if member in packages
-            }
-        else:
-            spoke_prefix = _SPOKE_PREFIX
-            hub_explicit = [n for n in package_names if n in explicit]
-            hub_scc_targets = {
-                member: "@{repo}//:{member}".format(repo = repo, member = member)
-                for member, repo in shared_sccs.members.items()
-                if member in packages
-            }
-        pub_lock_hub(
-            name = hub_name,
-            hub_name = hub_name,
-            spoke_prefix = spoke_prefix,
-            packages = package_names,
-            explicit_packages = hub_explicit,
-            scc_targets = hub_scc_targets,
-        )
+    pub_emit_isolated_spokes(
+        hub_name,
+        hosted,
+        isolated_sccs[hub_name],
+        package_names,
+        hub_explicit,
+        hub_scc_targets,
+        ignore_hooks,
+    )
+    _pub_emit_isolated_merged(
+        hub_name,
+        isolated_sccs[hub_name],
+        hosted,
+        git_pkgs,
+        package_names,
+        hub_explicit,
+        hub_scc_targets,
+        ignore_hooks,
+    )
+    pub_emit_isolated_git(
+        hub_name,
+        git_pkgs,
+        isolated_sccs[hub_name],
+        package_names,
+        hub_explicit,
+        hub_scc_targets,
+        ignore_hooks,
+    )
 
 def _pub_extension_metadata(ctx, root_repos, recorded):
     """Returns this evaluation's metadata: the root's direct deps plus the cycle-planning facts for the lockfile."""
@@ -1110,7 +1036,14 @@ def _pub_impl(ctx):
     isolated_hub_names = sorted(set(isolated_packages.keys()) | set(isolated_git_packages.keys()))
     isolated_sccs = {}
     for hub_name in isolated_hub_names:
-        isolated_sccs[hub_name] = _pub_plan_isolated_sccs(ctx, hub_name, resolution, explicit_package_names, vanished_spokes, plan_facts)
+        isolated_sccs[hub_name] = _pub_plan_isolated_sccs(
+            ctx,
+            hub_name,
+            resolution,
+            explicit_package_names,
+            vanished_spokes,
+            plan_facts,
+        )
 
     # Labels spokes and hubs point at for merged members, per scope.
     shared_scc_targets = {
@@ -1118,21 +1051,50 @@ def _pub_impl(ctx):
         for member, repo in shared_sccs.members.items()
     }
 
-    _pub_emit_explicit(explicit, vanished_spokes)
-    _pub_emit_aliased(aliases, vanished_spokes)
+    pub_emit_explicit(explicit, vanished_spokes)
+    pub_emit_aliased(aliases, vanished_spokes)
 
     # Create shared spoke repos. Cycle members get no spoke of their own: the
     # merged repository below holds the whole cycle, and every edge into it
     # (mapped through `scc_targets`) names the merged target instead.
     all_package_names = sorted(resolved.keys() + [n for n in resolved_git.keys() if n not in resolved])
-    _pub_emit_shared_spokes(resolved, shared_sccs, all_package_names, explicit_package_names, ignore_hooks, shared_scc_targets)
-    _pub_emit_shared_merged(shared_sccs, resolved, resolved_git, all_package_names, explicit_package_names, shared_scc_targets, ignore_hooks)
-    _pub_emit_shared_git(resolved_git, shared_sccs, all_package_names, explicit_package_names, ignore_hooks, shared_scc_targets)
+    pub_emit_shared_spokes(
+        resolved,
+        shared_sccs,
+        all_package_names,
+        explicit_package_names,
+        ignore_hooks,
+        shared_scc_targets,
+    )
+    _pub_emit_shared_merged(
+        shared_sccs,
+        resolved,
+        resolved_git,
+        all_package_names,
+        explicit_package_names,
+        shared_scc_targets,
+        ignore_hooks,
+    )
+    pub_emit_shared_git(
+        resolved_git,
+        shared_sccs,
+        all_package_names,
+        explicit_package_names,
+        ignore_hooks,
+        shared_scc_targets,
+    )
 
     for hub_name in isolated_hub_names:
-        _pub_emit_isolated_hub(hub_name, isolated_packages, isolated_git_packages, isolated_sccs, explicit_package_names, ignore_hooks)
+        _pub_emit_isolated_hub(
+            hub_name,
+            isolated_packages,
+            isolated_git_packages,
+            isolated_sccs,
+            explicit_package_names,
+            ignore_hooks,
+        )
 
-    _pub_emit_hubs(hub_packages, isolated_hub_names, isolated_sccs, shared_sccs, explicit)
+    pub_emit_hubs(hub_packages, isolated_hub_names, isolated_sccs, shared_sccs, explicit)
 
     return _pub_extension_metadata(ctx, root_repos, plan_facts)
 

@@ -229,7 +229,7 @@
   "moduleExtensions": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "HgYa67EIMf9B4KT2JaZJSwO2VkpzN97xvjrZL75Heo8=",
+        "bzlTransitiveDigest": "9UK1FGAqxnRxFfw1ydB1/mDQetnSiuQYF8s0xqgvbac=",
         "usagesDigest": "pIPr0VyDvDM5bStlfJ8PeBBDepDBms1EqLEzrDkz+X0=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
@@ -11195,10 +11195,10 @@
   },
   "facts": {
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/_fe_analyzer_shared/109.0.0/48e48f73a431eb269eec66d243a63a07ed90ef9417a74047a3b98d52338626ad": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/_fe_analyzer_shared/109.0.0/48e48f73a431eb269eec66d243a63a07ed90ef9417a74047a3b98d52338626ad": [
         "meta"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/analyzer/14.5.0/6d377901d198536b648172974d9d4f277910502cad92193466869cac0ff34990": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/analyzer/14.5.0/6d377901d198536b648172974d9d4f277910502cad92193466869cac0ff34990": [
         "_fe_analyzer_shared",
         "collection",
         "convert",
@@ -11212,27 +11212,27 @@
         "watcher",
         "yaml"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/analyzer_buffer/0.3.4/f890a2e708e38fbf4238ad2f9fd3d506538acdddb0cd8eb2c3e8c7bd17784b57": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/analyzer_buffer/0.3.4/f890a2e708e38fbf4238ad2f9fd3d506538acdddb0cd8eb2c3e8c7bd17784b57": [
         "analyzer",
         "collection",
         "meta",
         "path",
         "source_gen"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/args/2.7.0/d0481093c50b1da8910eb0bb301626d4d8eb7284aa739614d2b394ee09e3ea04": [],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/async/2.13.1/e2eb0491ba5ddb6177742d2da23904574082139b07c1e33b8503b9f46f3e1a37": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/args/2.7.0/d0481093c50b1da8910eb0bb301626d4d8eb7284aa739614d2b394ee09e3ea04": [],
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/async/2.13.1/e2eb0491ba5ddb6177742d2da23904574082139b07c1e33b8503b9f46f3e1a37": [
         "collection",
         "meta"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/bazel_worker/1.1.5/87cae9150fcf9942b8057e5f51c4848a3efde1289e97411e1c8f01e350120999": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/bazel_worker/1.1.5/87cae9150fcf9942b8057e5f51c4848a3efde1289e97411e1c8f01e350120999": [
         "async",
         "protobuf"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/boolean_selector/2.1.2/8aab1771e1243a5063b8b0ff68042d67334e3feab9e95b9490f9a6ebf73b42ea": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/boolean_selector/2.1.2/8aab1771e1243a5063b8b0ff68042d67334e3feab9e95b9490f9a6ebf73b42ea": [
         "source_span",
         "string_scanner"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/build/4.0.11/8a5c5761af8e31748bba3c82f68925ace40f3225c3eea25be9beb57eca7cd7a8": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/build/4.0.11/8a5c5761af8e31748bba3c82f68925ace40f3225c3eea25be9beb57eca7cd7a8": [
         "analyzer",
         "crypto",
         "glob",
@@ -11240,20 +11240,20 @@
         "package_config",
         "path"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/build_config/1.4.0/4703a785fbc3c266c5c7518589d0863f6a05078ee33f7ca5aa4b87a56f1cedd2": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/build_config/1.4.0/4703a785fbc3c266c5c7518589d0863f6a05078ee33f7ca5aa4b87a56f1cedd2": [
         "checked_yaml",
         "json_annotation",
         "path",
         "pubspec_parse"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/built_collection/5.1.2/44922ecebd8e3d0cef743dadd3b54df4e87e2a4c52a29465a1872aa9e192caa8": [],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/built_value/8.13.0/f87ea98192116f7093cb214551ce1929caae0681fdba282b3d8b4462adee7bb7": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/built_collection/5.1.2/44922ecebd8e3d0cef743dadd3b54df4e87e2a4c52a29465a1872aa9e192caa8": [],
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/built_value/8.13.0/f87ea98192116f7093cb214551ce1929caae0681fdba282b3d8b4462adee7bb7": [
         "built_collection",
         "collection",
         "fixnum",
         "meta"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/built_value_generator/8.13.0/68af3b1a6829c760f1c039c4302be60f35a65af5f93a9cfed5d65f681eca3757": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/built_value_generator/8.13.0/68af3b1a6829c760f1c039c4302be60f35a65af5f93a9cfed5d65f681eca3757": [
         "analyzer",
         "build",
         "build_config",
@@ -11262,49 +11262,49 @@
         "collection",
         "source_gen"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/charcode/1.4.0/fb0f1107cac15a5ea6ef0a6ef71a807b9e4267c713bb93e00e92d737cc8dbd8a": [],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/checked_yaml/2.0.4/959525d3162f249993882720d52b7e0c833978df229be20702b33d48d91de70f": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/charcode/1.4.0/fb0f1107cac15a5ea6ef0a6ef71a807b9e4267c713bb93e00e92d737cc8dbd8a": [],
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/checked_yaml/2.0.4/959525d3162f249993882720d52b7e0c833978df229be20702b33d48d91de70f": [
         "json_annotation",
         "source_span",
         "yaml"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/cli_config/0.2.0/ac20a183a07002b700f0c25e61b7ee46b23c309d76ab7b7640a028f18e4d99ec": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/cli_config/0.2.0/ac20a183a07002b700f0c25e61b7ee46b23c309d76ab7b7640a028f18e4d99ec": [
         "args",
         "yaml"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/cli_util/0.6.0/89b8801ba49f8b593fbf2d3e59efd0f566c46cd4ba6837ae2610c72b52a0f899": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/cli_util/0.6.0/89b8801ba49f8b593fbf2d3e59efd0f566c46cd4ba6837ae2610c72b52a0f899": [
         "ffi",
         "meta",
         "path"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/clock/1.1.3/e51d50bca3217c9a9fa2b41a30e4a38971133f5f9ec7a3d57bae095007f1d28e": [],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/code_assets/2.1.0/828110d598123b5ea96c00c9f3c72105bf79f8ee36c20a39b26209ade421ec57": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/clock/1.1.3/e51d50bca3217c9a9fa2b41a30e4a38971133f5f9ec7a3d57bae095007f1d28e": [],
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/code_assets/2.1.0/828110d598123b5ea96c00c9f3c72105bf79f8ee36c20a39b26209ade421ec57": [
         "collection",
         "hooks",
         "logging"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/code_builder/4.13.0/811709c1badd02fc054039a13f66e0db1961865f9a314175f68c3eaeebec786f": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/code_builder/4.13.0/811709c1badd02fc054039a13f66e0db1961865f9a314175f68c3eaeebec786f": [
         "built_collection",
         "built_value",
         "collection",
         "matcher",
         "meta"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/collection/1.19.1/2f5709ae4d3d59dd8f7cd309b4e023046b57d8a6c82130785d2b0e5868084e76": [],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/convert/3.1.2/b30acd5944035672bc15c6b7a8b47d773e41e2f17de064350988c5d02adb1c68": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/collection/1.19.1/2f5709ae4d3d59dd8f7cd309b4e023046b57d8a6c82130785d2b0e5868084e76": [],
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/convert/3.1.2/b30acd5944035672bc15c6b7a8b47d773e41e2f17de064350988c5d02adb1c68": [
         "typed_data"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/copy_with_extension/18.0.0/9a832fe40e5a5fcbe58e094d2c857ac6b185f34ec200241051daebe48b1b0403": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/copy_with_extension/18.0.0/9a832fe40e5a5fcbe58e094d2c857ac6b185f34ec200241051daebe48b1b0403": [
         "meta"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/copy_with_extension_gen/18.0.0/4475dfeaa67d41760e7f8b690cbbbbc0d71efb34797997478ae869c0933a5fe1": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/copy_with_extension_gen/18.0.0/4475dfeaa67d41760e7f8b690cbbbbc0d71efb34797997478ae869c0933a5fe1": [
         "analyzer",
         "build",
         "copy_with_extension",
         "meta",
         "source_gen"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/coverage/1.16.0/ff89e37c19355194e279d26dafe8e4bece46c9ea63a30be4dc68214f5bc290d3": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/coverage/1.16.0/ff89e37c19355194e279d26dafe8e4bece46c9ea63a30be4dc68214f5bc290d3": [
         "args",
         "cli_config",
         "cli_util",
@@ -11318,10 +11318,10 @@
         "vm_service",
         "yaml"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/crypto/3.0.7/c8ea0233063ba03258fbcf2ca4d6dadfefe14f02fab57702265467a19f27fadf": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/crypto/3.0.7/c8ea0233063ba03258fbcf2ca4d6dadfefe14f02fab57702265467a19f27fadf": [
         "typed_data"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/dart_style/3.1.14/a0e4f65339b31eb6a9e6a12e14b4682a48d46fbc54a82f4a702396fbdbac63a7": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/dart_style/3.1.14/a0e4f65339b31eb6a9e6a12e14b4682a48d46fbc54a82f4a702396fbdbac63a7": [
         "analyzer",
         "args",
         "collection",
@@ -11331,10 +11331,10 @@
         "source_span",
         "yaml"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/data_assets/0.20.0/8bfdbf25ec8a0f4b5a3c993042c4ab9996ba354f0b03d40f4e360f3730d71cae": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/data_assets/0.20.0/8bfdbf25ec8a0f4b5a3c993042c4ab9996ba354f0b03d40f4e360f3730d71cae": [
         "hooks"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/drift/2.35.2/ef9598e1785c18db37209e8554fc79aff94632209d384ec98984b9e3184af0f7": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/drift/2.35.2/ef9598e1785c18db37209e8554fc79aff94632209d384ec98984b9e3184af0f7": [
         "async",
         "collection",
         "convert",
@@ -11345,7 +11345,7 @@
         "stream_channel",
         "web"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/drift_dev/2.35.1/e0d16aaa21f3408cbe2dd4bfc56c36cea43e53a537e6613b91380c0924b3bd30": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/drift_dev/2.35.1/e0d16aaa21f3408cbe2dd4bfc56c36cea43e53a537e6613b91380c0924b3bd30": [
         "analyzer",
         "args",
         "build",
@@ -11372,13 +11372,13 @@
         "yaml",
         "yaml_edit"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/ffi/2.2.0/6d7fd89431262d8f3125e81b50d3847a091d846eafcd4fdb88dd06f36d705a45": [],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/file/7.0.1/a3b4f84adafef897088c160faf7dfffb7696046cb13ae90b508c2cbc95d3b8d4": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/ffi/2.2.0/6d7fd89431262d8f3125e81b50d3847a091d846eafcd4fdb88dd06f36d705a45": [],
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/file/7.0.1/a3b4f84adafef897088c160faf7dfffb7696046cb13ae90b508c2cbc95d3b8d4": [
         "meta",
         "path"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/fixnum/1.1.1/b6dc7065e46c974bc7c5f143080a6764ec7a4be6da1285ececdc37be96de53be": [],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/freezed/4.0.2/3af98c92d7d4dd182ea1393193e69a840fcbaee1f66f1158bd20504e5f3f6f4f": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/fixnum/1.1.1/b6dc7065e46c974bc7c5f143080a6764ec7a4be6da1285ececdc37be96de53be": [],
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/freezed/4.0.2/3af98c92d7d4dd182ea1393193e69a840fcbaee1f66f1158bd20504e5f3f6f4f": [
         "analyzer",
         "analyzer_buffer",
         "build",
@@ -11391,29 +11391,29 @@
         "pub_semver",
         "source_gen"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/freezed_annotation/3.1.0/7294967ff0a6d98638e7acb774aac3af2550777accd8149c90af5b014e6d44d8": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/freezed_annotation/3.1.0/7294967ff0a6d98638e7acb774aac3af2550777accd8149c90af5b014e6d44d8": [
         "collection",
         "json_annotation",
         "meta"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/frontend_server_client/4.1.0/404dbf9bce29beafbe9dcb19219447b6f7d49900cd42b8d3b7af102b24508e25": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/frontend_server_client/4.1.0/404dbf9bce29beafbe9dcb19219447b6f7d49900cd42b8d3b7af102b24508e25": [
         "async",
         "package_config",
         "path"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/get_it/8.3.0/ae78de7c3f2304b8d81f2bb6e320833e5e81de942188542328f074978cc0efa9": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/get_it/8.3.0/ae78de7c3f2304b8d81f2bb6e320833e5e81de942188542328f074978cc0efa9": [
         "async",
         "collection",
         "meta"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/glob/2.2.0/218aeb56050c714f62a3182775320dfa04602b55074873e24e31bbd39bda96fb": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/glob/2.2.0/218aeb56050c714f62a3182775320dfa04602b55074873e24e31bbd39bda96fb": [
         "async",
         "collection",
         "file",
         "path",
         "string_scanner"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/go_router_builder/4.5.0/fbadb18697941b5efaa90c6295e81335e59b97bde83d675b4251e91eac1d4882": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/go_router_builder/4.5.0/fbadb18697941b5efaa90c6295e81335e59b97bde83d675b4251e91eac1d4882": [
         "analyzer",
         "async",
         "build",
@@ -11424,7 +11424,7 @@
         "source_gen",
         "source_helper"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/hooks/2.2.0/eaac480a35ec0814146c2c48d96aaa829e0e44a7662c88ae84c9edf4bc35651f": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/hooks/2.2.0/eaac480a35ec0814146c2c48d96aaa829e0e44a7662c88ae84c9edf4bc35651f": [
         "collection",
         "crypto",
         "logging",
@@ -11432,24 +11432,24 @@
         "record_use",
         "yaml"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/http_multi_server/3.2.2/aa6199f908078bb1c5efb8d8638d4ae191aac11b311132c3ef48ce352fb52ef8": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/http_multi_server/3.2.2/aa6199f908078bb1c5efb8d8638d4ae191aac11b311132c3ef48ce352fb52ef8": [
         "async"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/http_parser/4.1.2/178d74305e7866013777bab2c3d8726205dc5a4dd935297175b19a23a2e66571": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/http_parser/4.1.2/178d74305e7866013777bab2c3d8726205dc5a4dd935297175b19a23a2e66571": [
         "collection",
         "source_span",
         "string_scanner",
         "typed_data"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/io/1.1.0/2635216ca6a737e60de577ffa1a48a0bec76ca8a62917cfc1bb88c14c570646f": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/io/1.1.0/2635216ca6a737e60de577ffa1a48a0bec76ca8a62917cfc1bb88c14c570646f": [
         "meta",
         "path",
         "string_scanner"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/json_annotation/4.12.0/2a743920d81b7910627f68ee2c9ac1fc0bfee32b9fc3403587d7c6791ca12f80": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/json_annotation/4.12.0/2a743920d81b7910627f68ee2c9ac1fc0bfee32b9fc3403587d7c6791ca12f80": [
         "meta"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/json_serializable/6.14.1/e45aefa0324f08c683caafbb94b72837aa6193c61822799c916e45f4a263113d": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/json_serializable/6.14.1/e45aefa0324f08c683caafbb94b72837aa6193c61822799c916e45f4a263113d": [
         "analyzer",
         "async",
         "build",
@@ -11463,21 +11463,21 @@
         "source_gen",
         "source_helper"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/logger/2.8.0/2a0dc097e7b01d942475bdd552356db2d0f768b05540bd4b2b53f1840f2239a7": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/logger/2.8.0/2a0dc097e7b01d942475bdd552356db2d0f768b05540bd4b2b53f1840f2239a7": [
         "clock",
         "meta"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/logging/1.3.0/c8245ada5f1717ed44271ed1c26b8ce85ca3228fd2ffdb75468ab01979309d61": [],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/matcher/0.12.20/31bd099b47c10cd1aeb55146a2d46ce0277630ecef3f7dae54ad7873f36696cd": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/logging/1.3.0/c8245ada5f1717ed44271ed1c26b8ce85ca3228fd2ffdb75468ab01979309d61": [],
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/matcher/0.12.20/31bd099b47c10cd1aeb55146a2d46ce0277630ecef3f7dae54ad7873f36696cd": [
         "async",
         "meta",
         "stack_trace",
         "term_glyph",
         "test_api"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/meta/1.19.0/307249ce4ff29d58a18e97f6345f539382eb9c9c29ecda628900f31de0443dd9": [],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/mime/2.1.0/bd47de35f07e27267e69c8c8b22edf9473bfee170a60d60fcc93730c5144b7f6": [],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/mockito/5.8.1/6c1970612452260366064d4df80fdb3eece1ec5e52610ae34a0e51f2f3d8e64f": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/meta/1.19.0/307249ce4ff29d58a18e97f6345f539382eb9c9c29ecda628900f31de0443dd9": [],
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/mime/2.1.0/bd47de35f07e27267e69c8c8b22edf9473bfee170a60d60fcc93730c5144b7f6": [],
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/mockito/5.8.1/6c1970612452260366064d4df80fdb3eece1ec5e52610ae34a0e51f2f3d8e64f": [
         "analyzer",
         "build",
         "code_builder",
@@ -11489,7 +11489,7 @@
         "source_gen",
         "test_api"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/native_toolchain_c/0.19.5/90eaad8059ebc2004a63810a4696ea9acdb02473e47ed3b6b3bafb100ac77e31": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/native_toolchain_c/0.19.5/90eaad8059ebc2004a63810a4696ea9acdb02473e47ed3b6b3bafb100ac77e31": [
         "code_assets",
         "file",
         "glob",
@@ -11499,45 +11499,45 @@
         "process",
         "pub_semver"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/node_preamble/2.0.2/6e7eac89047ab8a8d26cf16127b5ed26de65209847630400f9aefd7cd5c730db": [],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/package_config/3.0.0/ffcf4cf3d6c0b74ac43708d9f56625506e8a68aa935abe9d267a7330f320eb5d": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/node_preamble/2.0.2/6e7eac89047ab8a8d26cf16127b5ed26de65209847630400f9aefd7cd5c730db": [],
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/package_config/3.0.0/ffcf4cf3d6c0b74ac43708d9f56625506e8a68aa935abe9d267a7330f320eb5d": [
         "meta"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/path/1.9.1/75cca69d1490965be98c73ceaea117e8a04dd21217b37b292c9ddbec0d955bc5": [],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/platform/3.2.0/a36d119c13416516a7b5913fbe8af8531e11633d784c550b2125f76c758524ec": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/path/1.9.1/75cca69d1490965be98c73ceaea117e8a04dd21217b37b292c9ddbec0d955bc5": [],
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/platform/3.2.0/a36d119c13416516a7b5913fbe8af8531e11633d784c550b2125f76c758524ec": [
         "meta"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/pool/1.5.3/4177f68c237ea2128d1bee66ac17b2ce05ba3dbaafcbdd54c5d40a39d0b6b11c": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/pool/1.5.3/4177f68c237ea2128d1bee66ac17b2ce05ba3dbaafcbdd54c5d40a39d0b6b11c": [
         "async",
         "stack_trace"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/process/5.0.6/4242ba3508d37e01808bdf71ad1d5bb93a8d671bf2e7450e6b1b353fb0808891": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/process/5.0.6/4242ba3508d37e01808bdf71ad1d5bb93a8d671bf2e7450e6b1b353fb0808891": [
         "file",
         "path",
         "platform"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/protobuf/6.1.0/13b6717366aa7ec3792dd62c19c7d33a785708224365f2db23c5ca01f1c1a0f2": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/protobuf/6.1.0/13b6717366aa7ec3792dd62c19c7d33a785708224365f2db23c5ca01f1c1a0f2": [
         "collection",
         "fixnum",
         "meta"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/pub_semver/2.2.1/261236774e8b1d69cfc6b9eabbc96c40f25e7a2d6b171f3385d4f65d5734fb24": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/pub_semver/2.2.1/261236774e8b1d69cfc6b9eabbc96c40f25e7a2d6b171f3385d4f65d5734fb24": [
         "collection"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/pubspec_parse/1.6.0/c38b81cbf34450b67e0265d73433569d12e34782e30ed769c9cc99c9d5f2e796": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/pubspec_parse/1.6.0/c38b81cbf34450b67e0265d73433569d12e34782e30ed769c9cc99c9d5f2e796": [
         "checked_yaml",
         "collection",
         "json_annotation",
         "pub_semver",
         "yaml"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/recase/4.1.0/e4eb4ec2dcdee52dcf99cb4ceabaffc631d7424ee55e56f280bc039737f89213": [],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/record_use/1.1.1/1cb8564af8d43b464294411db9217f5ec04891c6f22ee2c32d73ae05e88a6bd2": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/recase/4.1.0/e4eb4ec2dcdee52dcf99cb4ceabaffc631d7424ee55e56f280bc039737f89213": [],
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/record_use/1.1.1/1cb8564af8d43b464294411db9217f5ec04891c6f22ee2c32d73ae05e88a6bd2": [
         "collection",
         "meta",
         "pub_semver"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/shelf/1.4.2/e7dd780a7ffb623c57850b33f43309312fc863fb6aa3d276a754bb299839ef12": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/shelf/1.4.2/e7dd780a7ffb623c57850b33f43309312fc863fb6aa3d276a754bb299839ef12": [
         "async",
         "collection",
         "http_parser",
@@ -11545,24 +11545,24 @@
         "stack_trace",
         "stream_channel"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/shelf_packages_handler/3.0.2/89f967eca29607c933ba9571d838be31d67f53f6e4ee15147d5dc2934fee1b1e": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/shelf_packages_handler/3.0.2/89f967eca29607c933ba9571d838be31d67f53f6e4ee15147d5dc2934fee1b1e": [
         "path",
         "shelf",
         "shelf_static"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/shelf_static/1.1.3/c87c3875f91262785dade62d135760c2c69cb217ac759485334c5857ad89f6e3": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/shelf_static/1.1.3/c87c3875f91262785dade62d135760c2c69cb217ac759485334c5857ad89f6e3": [
         "convert",
         "http_parser",
         "mime",
         "path",
         "shelf"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/shelf_web_socket/3.0.0/3632775c8e90d6c9712f883e633716432a27758216dfb61bd86a8321c0580925": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/shelf_web_socket/3.0.0/3632775c8e90d6c9712f883e633716432a27758216dfb61bd86a8321c0580925": [
         "shelf",
         "stream_channel",
         "web_socket_channel"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/source_gen/4.3.1/833ea7d15b5be79949d3d6c077da0267a0bd93c16897b36a771395a91e63086e": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/source_gen/4.3.1/833ea7d15b5be79949d3d6c077da0267a0bd93c16897b36a771395a91e63086e": [
         "analyzer",
         "async",
         "build",
@@ -11573,24 +11573,24 @@
         "source_span",
         "yaml"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/source_helper/1.3.13/5e6f216fdf6376c9f3852381ae037499797a3385377d388b011dac98d303c67c": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/source_helper/1.3.13/5e6f216fdf6376c9f3852381ae037499797a3385377d388b011dac98d303c67c": [
         "analyzer",
         "source_gen"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/source_map_stack_trace/2.1.2/c0713a43e323c3302c2abe2a1cc89aa057a387101ebd280371d6a6c9fa68516b": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/source_map_stack_trace/2.1.2/c0713a43e323c3302c2abe2a1cc89aa057a387101ebd280371d6a6c9fa68516b": [
         "path",
         "source_maps",
         "stack_trace"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/source_maps/0.10.14/14c2945847669b44089bb1222f66873d7ff7103c58911917f2a63c5a62327898": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/source_maps/0.10.14/14c2945847669b44089bb1222f66873d7ff7103c58911917f2a63c5a62327898": [
         "source_span"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/source_span/1.10.2/56a02f1f4cd1a2d96303c0144c93bd6d909eea6bee6bf5a0e0b685edbd4c47ab": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/source_span/1.10.2/56a02f1f4cd1a2d96303c0144c93bd6d909eea6bee6bf5a0e0b685edbd4c47ab": [
         "collection",
         "path",
         "term_glyph"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/sqlite3/3.7.1/144132790ec1947fad9f3ddceffd0af2ab80a1f0d1e81a4d094ee6707ec3df0b": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/sqlite3/3.7.1/144132790ec1947fad9f3ddceffd0af2ab80a1f0d1e81a4d094ee6707ec3df0b": [
         "code_assets",
         "collection",
         "crypto",
@@ -11602,16 +11602,16 @@
         "typed_data",
         "web"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/sqlparser/0.45.0/772bb2f6f5bce0631a60f26b57d6e8882e1105c22345b05c163ee6ee5d7ba32d": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/sqlparser/0.45.0/772bb2f6f5bce0631a60f26b57d6e8882e1105c22345b05c163ee6ee5d7ba32d": [
         "charcode",
         "collection",
         "meta",
         "source_span"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/stack_trace/1.12.2/277654b3034d17ac6f9f1cb5595db011b1d5d41e8806866db28e0abaa101c490": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/stack_trace/1.12.2/277654b3034d17ac6f9f1cb5595db011b1d5d41e8806866db28e0abaa101c490": [
         "path"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/stacked_generator/2.0.4/6e267e40c85111dca881538ef0404be3c6bcdc51dd206f2a3361d9f62f90a706": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/stacked_generator/2.0.4/6e267e40c85111dca881538ef0404be3c6bcdc51dd206f2a3361d9f62f90a706": [
         "analyzer",
         "build",
         "code_builder",
@@ -11626,18 +11626,18 @@
         "source_gen",
         "stacked_shared"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/stacked_shared/1.4.2/3d69b34d87422b78a7e5123681d3f4bcdd79757170454933f68795c54812d003": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/stacked_shared/1.4.2/3d69b34d87422b78a7e5123681d3f4bcdd79757170454933f68795c54812d003": [
         "get_it"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/stream_channel/2.1.4/969e04c80b8bcdf826f8f16579c7b14d780458bd97f56d107d3950fdbeef059d": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/stream_channel/2.1.4/969e04c80b8bcdf826f8f16579c7b14d780458bd97f56d107d3950fdbeef059d": [
         "async"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/stream_transform/2.1.2/a00e5f18bffc764f923e7dec1038527f7fe7a1791361a7117f0358193f13d53a": [],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/string_scanner/1.4.1/921cd31725b72fe181906c6a94d987c78e3b98c2e205b397ea399d4054872b43": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/stream_transform/2.1.2/a00e5f18bffc764f923e7dec1038527f7fe7a1791361a7117f0358193f13d53a": [],
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/string_scanner/1.4.1/921cd31725b72fe181906c6a94d987c78e3b98c2e205b397ea399d4054872b43": [
         "source_span"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/term_glyph/1.2.2/7f554798625ea768a7518313e58f83891c7f5024f88e46e7182a4558850a4b8e": [],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/test/1.33.0/44b2fccf4407bcdb5e105c064c5d6b5e2a640c87761f8b03cdce8cf532d98cfa": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/term_glyph/1.2.2/7f554798625ea768a7518313e58f83891c7f5024f88e46e7182a4558850a4b8e": [],
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/test/1.33.0/44b2fccf4407bcdb5e105c064c5d6b5e2a640c87761f8b03cdce8cf532d98cfa": [
         "analyzer",
         "async",
         "boolean_selector",
@@ -11664,7 +11664,7 @@
         "webkit_inspection_protocol",
         "yaml"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/test_api/0.7.15/47481c58bb92d0b1d218f0510ff5647e768f8e1256d07077a151fb520923b51d": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/test_api/0.7.15/47481c58bb92d0b1d218f0510ff5647e768f8e1256d07077a151fb520923b51d": [
         "async",
         "boolean_selector",
         "collection",
@@ -11675,7 +11675,7 @@
         "string_scanner",
         "term_glyph"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/test_core/0.6.21/9dec4c178bd61493e1cd2060ffe701fcb61c43da2493e99590fb1b0cc82eb4af": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/test_core/0.6.21/9dec4c178bd61493e1cd2060ffe701fcb61c43da2493e99590fb1b0cc82eb4af": [
         "analyzer",
         "args",
         "async",
@@ -11698,34 +11698,34 @@
         "vm_service",
         "yaml"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/typed_data/1.4.0/f9049c039ebfeb4cf7a7104a675823cd72dba8297f264b6637062516699fa006": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/typed_data/1.4.0/f9049c039ebfeb4cf7a7104a675823cd72dba8297f264b6637062516699fa006": [
         "collection"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/vm_service/15.4.0/89b11d62e1040ee681af3b4f1c97a803ecbf010c6e8b9c5896ee5b08c3bf7b78": [],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/watcher/1.2.1/1398c9f081a753f9226febe8900fce8f7d0a67163334e1c94a2438339d79d635": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/vm_service/15.4.0/89b11d62e1040ee681af3b4f1c97a803ecbf010c6e8b9c5896ee5b08c3bf7b78": [],
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/watcher/1.2.1/1398c9f081a753f9226febe8900fce8f7d0a67163334e1c94a2438339d79d635": [
         "async",
         "path"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/web/1.1.1/868d88a33d8a87b18ffc05f9f030ba328ffefba92d6c127917a2ba740f9cfe4a": [],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/web_socket/1.0.1/34d64019aa8e36bf9842ac014bb5d2f5586ca73df5e4d9bf5c936975cae6982c": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/web/1.1.1/868d88a33d8a87b18ffc05f9f030ba328ffefba92d6c127917a2ba740f9cfe4a": [],
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/web_socket/1.0.1/34d64019aa8e36bf9842ac014bb5d2f5586ca73df5e4d9bf5c936975cae6982c": [
         "web"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/web_socket_channel/3.0.3/d645757fb0f4773d602444000a8131ff5d48c9e47adfe9772652dd1a4f2d45c8": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/web_socket_channel/3.0.3/d645757fb0f4773d602444000a8131ff5d48c9e47adfe9772652dd1a4f2d45c8": [
         "async",
         "crypto",
         "stream_channel",
         "web",
         "web_socket"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/webkit_inspection_protocol/1.2.1/87d3f2333bb240704cd3f1c6b5b7acd8a10e7f0bc28c28dcf14e782014f4a572": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/webkit_inspection_protocol/1.2.1/87d3f2333bb240704cd3f1c6b5b7acd8a10e7f0bc28c28dcf14e782014f4a572": [
         "logging"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/yaml/3.1.4/f67cdd8e07d3c6329146aaef1ba043542b3134c12489f553ca9a7435d1068aea": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/yaml/3.1.4/f67cdd8e07d3c6329146aaef1ba043542b3134c12489f553ca9a7435d1068aea": [
         "collection",
         "source_span",
         "string_scanner"
       ],
-      "pub.scc.v2.d5756d6cdaf8fcd40004b81a/hosted/yaml_edit/2.2.4/07c9e63ba42519745182b88ca12264a7ba2484d8239958778dfe4d44fe760488": [
+      "pub.scc.v2.1b26e6d1a6ca208f0004bc28/hosted/yaml_edit/2.2.4/07c9e63ba42519745182b88ca12264a7ba2484d8239958778dfe4d44fe760488": [
         "collection",
         "meta",
         "source_span",

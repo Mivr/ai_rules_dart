@@ -81,7 +81,14 @@ def classify_pub_hooks(has_build_hook, has_link_hook, build_hook_handled):
         link_hook = "hook/link.dart" if has_link_hook else "",
     )
 
-def make_dart_library_build_content(name, deps, language_version, code_assets = [], has_unreplaced_hook = "", version = "", link_hook = ""):
+def make_dart_library_build_content(
+        name,
+        deps,
+        language_version,
+        code_assets = [],
+        has_unreplaced_hook = "",
+        version = "",
+        link_hook = ""):
     """Generate the BUILD.bazel content for a single `dart_library` spoke.
 
     The shape — `srcs = glob(["lib/**/*.dart"], allow_empty = True)`, the
@@ -232,7 +239,14 @@ dart_test_package(
 )
 """
 
-def make_dart_package_member_build_content(name, language_version, code_assets = [], has_unreplaced_hook = "", version = "", link_hook = "", merged_label = "//:merged"):
+def make_dart_package_member_build_content(
+        name,
+        language_version,
+        code_assets = [],
+        has_unreplaced_hook = "",
+        version = "",
+        link_hook = "",
+        merged_label = "//:merged"):
     """Generate the BUILD.bazel content for one member of a merged SCC repository.
 
     The member lives in its own subdirectory of the merged repository (so its

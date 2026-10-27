@@ -448,7 +448,13 @@ def _git_pin(name, entries):
     for e in entries:
         if e.version != best.version and e.on_version_conflict == "error":
             return None, git_version_error(name, entries)
-    return struct(kind = "git", version = best.version, resolved_ref = best.resolved_ref, path = best.path, source = best.lock_label), None
+    return struct(
+        kind = "git",
+        version = best.version,
+        resolved_ref = best.resolved_ref,
+        path = best.path,
+        source = best.lock_label,
+    ), None
 
 def global_best(entries):
     """Returns the version-resolution winner across every non-isolated lock, or None.
@@ -621,7 +627,12 @@ def _select_with_root_decl(name, root_decl, dep_decls, root_entries, all_hosted)
     if err:
         return struct(selected = None, alias = None, note = None, error = err, error_shape = "conflict")
     return struct(
-        selected = struct(version = root_decl.version, sha256 = root_decl.sha256, deps = root_decl.deps, source = pin.source),
+        selected = struct(
+            version = root_decl.version,
+            sha256 = root_decl.sha256,
+            deps = root_decl.deps,
+            source = pin.source,
+        ),
         alias = None,
         note = note,
         error = None,
@@ -655,7 +666,13 @@ def _select_with_git_pin(name, pin, dep_decls, all_hosted, all_git):
     if all_git != None:
         winner = global_best(all_git)
         if winner != None and winner.version != pin.version:
-            pin = struct(kind = "git", version = winner.version, resolved_ref = winner.resolved_ref, path = winner.path, source = winner.lock_label)
+            pin = struct(
+                kind = "git",
+                version = winner.version,
+                resolved_ref = winner.resolved_ref,
+                path = winner.path,
+                source = winner.lock_label,
+            )
     err = dep_decl_sha_conflicts(name, dep_decls)
     if err:
         return struct(selected = None, alias = None, note = None, error = err, error_shape = "conflict")
@@ -665,7 +682,13 @@ def _select_with_git_pin(name, pin, dep_decls, all_hosted, all_git):
             return struct(selected = None, alias = None, note = None, error = err, error_shape = "conflict")
     note, _kept = _drop_dep_decls_for_git(name, pin, dep_decls)
     if dep_decls:
-        alias = struct(version = pin.version, sha256 = "", resolved_ref = pin.resolved_ref, path = pin.path, source = pin.source)
+        alias = struct(
+            version = pin.version,
+            sha256 = "",
+            resolved_ref = pin.resolved_ref,
+            path = pin.path,
+            source = pin.source,
+        )
     else:
         alias = None
     return struct(selected = None, alias = alias, note = note, error = None, error_shape = "")
@@ -725,7 +748,13 @@ def select_all_explicit(package_tags, lock_tags):
             aliases[name] = sel.alias
     return explicit, aliases, notes, None, ""
 
-def select_pub_package(name, decls, root_entries, root_git_entries = [], all_hosted_entries = None, all_git_entries = None):
+def select_pub_package(
+        name,
+        decls,
+        root_entries,
+        root_git_entries = [],
+        all_hosted_entries = None,
+        all_git_entries = None):
     """Resolves the winning `pub.package()` declaration for one package.
 
     A root git pin counts like a hosted one: every non-root declaration is
@@ -790,7 +819,12 @@ def select_pub_package(name, decls, root_entries, root_git_entries = [], all_hos
     if winner == None:
         return struct(selected = None, alias = None, note = None, error = None, error_shape = "")
     return struct(
-        selected = struct(version = winner.version, sha256 = winner.sha256, deps = winner.deps, source = "pub.package() from module \"%s\"" % winner.module),
+        selected = struct(
+            version = winner.version,
+            sha256 = winner.sha256,
+            deps = winner.deps,
+            source = "pub.package() from module \"%s\"" % winner.module,
+        ),
         alias = None,
         note = None,
         error = None,

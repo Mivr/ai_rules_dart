@@ -400,7 +400,9 @@ def _transport_config_args(empty_dir):
         "-c",
         "fetch.pruneTags=false",  # Never prune tags; host cannot delete freshly fetched tags.
         "-c",
-        "protocol.version=2",  # Speak v2 even under a host protocol.version=0, which would otherwise refuse the bare-SHA fetch and push it onto the all-refs fallback (landing host-dependent refs and tags).
+        # Speak v2 even under a host protocol.version=0, which would otherwise refuse the bare-SHA fetch and push it
+        # onto the all-refs fallback (landing host-dependent refs and tags).
+        "protocol.version=2",
     ]
 
 # Transport variables inherited from the host environment, copied verbatim

@@ -227,6 +227,30 @@ def _lock_fast_split(line, indent):
         return None
     return struct(key = key, text = after.strip())
 
+def _lock_fast_state(st, phase, entry, desc, sdks, saw_sdks):
+    """Builds the fast-path state for `phase`, keeping the collected maps.
+
+    Args:
+      st: The fast-path state whose packages and folded names carry over.
+      phase: The next reader phase.
+      entry: The open package entry, or None.
+      desc: The open description block, or None.
+      sdks: The recorded `sdks:` names.
+      saw_sdks: Whether the `sdks:` mapping has been seen.
+
+    Returns:
+      The next fast-path state.
+    """
+    return struct(
+        phase = phase,
+        packages = st.packages,
+        folded = st.folded,
+        entry = entry,
+        desc = desc,
+        sdks = sdks,
+        saw_sdks = saw_sdks,
+    )
+
 def _lock_fast_close_desc(st):
     """Closes an open description block. Returns the updated state.
 
@@ -243,7 +267,7 @@ def _lock_fast_close_desc(st):
         return st
     desc = st.desc if len(st.desc) > 0 else {"name": ""}
     st.entry.fields["description"] = desc
-    return struct(phase = "pkgs", packages = st.packages, folded = st.folded, entry = st.entry, desc = None, sdks = st.sdks, saw_sdks = st.saw_sdks)
+    return _lock_fast_state(st, "pkgs", st.entry, None, st.sdks, st.saw_sdks)
 
 def _lock_fast_close_entry(st):
     """Closes an open package entry. Returns the updated state, or None.
@@ -261,7 +285,7 @@ def _lock_fast_close_entry(st):
     st = _lock_fast_close_desc(st)
     entry = st.entry
     if entry == None:
-        return struct(phase = "pkgs", packages = st.packages, folded = st.folded, entry = None, desc = None, sdks = st.sdks, saw_sdks = st.saw_sdks)
+        return _lock_fast_state(st, "pkgs", None, None, st.sdks, st.saw_sdks)
     fields = entry.fields
     if len(fields) != 4:
         return None
@@ -272,7 +296,7 @@ def _lock_fast_close_entry(st):
     if not is_lock_version(fields["version"]):
         return None
     st.packages[entry.name] = fields
-    return struct(phase = "pkgs", packages = st.packages, folded = st.folded, entry = None, desc = None, sdks = st.sdks, saw_sdks = st.saw_sdks)
+    return _lock_fast_state(st, "pkgs", None, None, st.sdks, st.saw_sdks)
 
 def _lock_fast_head(st, line):
     """Opens the `packages:` mapping. Returns the updated state, or None.
@@ -285,7 +309,7 @@ def _lock_fast_head(st, line):
       The state in the packages phase, or None to bail.
     """
     if line.startswith("packages:") and line[len("packages:"):].strip() == "":
-        return struct(phase = "pkgs", packages = st.packages, folded = st.folded, entry = None, desc = None, sdks = st.sdks, saw_sdks = st.saw_sdks)
+        return _lock_fast_state(st, "pkgs", None, None, st.sdks, st.saw_sdks)
     return None
 
 def _lock_fast_package(st, line):
@@ -316,7 +340,7 @@ def _lock_fast_package(st, line):
         return None
     st.folded[folded] = split.key
     entry = struct(name = split.key, fields = {})
-    return struct(phase = "pkgs", packages = st.packages, folded = st.folded, entry = entry, desc = None, sdks = st.sdks, saw_sdks = st.saw_sdks)
+    return _lock_fast_state(st, "pkgs", entry, None, st.sdks, st.saw_sdks)
 
 def _lock_fast_field(st, line):
     """Records one entry field. Returns the updated state, or None.
@@ -342,7 +366,7 @@ def _lock_fast_field(st, line):
         return None
     if split.key == "description":
         if split.text == "":
-            return struct(phase = "desc", packages = st.packages, folded = st.folded, entry = st.entry, desc = {}, sdks = st.sdks, saw_sdks = st.saw_sdks)
+            return _lock_fast_state(st, "desc", st.entry, {}, st.sdks, st.saw_sdks)
         scalar = _lock_fast_scalar(split.text)
         if scalar == None:
             return None
@@ -396,7 +420,7 @@ def _lock_fast_top(st, line):
     if st == None or st.phase != "pkgs" or st.saw_sdks:
         return None
     if line.startswith("sdks:") and line[len("sdks:"):].strip() == "":
-        return struct(phase = "sdks", packages = st.packages, folded = st.folded, entry = None, desc = None, sdks = st.sdks, saw_sdks = True)
+        return _lock_fast_state(st, "sdks", None, None, st.sdks, True)
     return None
 
 def _lock_fast_sdks_child(st, line):
@@ -441,7 +465,7 @@ def _lock_fast_step(st, line):
         if st.phase == "head":
             return st
         if st.phase == "sdks" or st.phase == "tail":
-            return struct(phase = "tail", packages = st.packages, folded = st.folded, entry = st.entry, desc = st.desc, sdks = st.sdks, saw_sdks = st.saw_sdks)
+            return _lock_fast_state(st, "tail", st.entry, st.desc, st.sdks, st.saw_sdks)
         return None
     if st.phase == "head":
         return _lock_fast_head(st, line)

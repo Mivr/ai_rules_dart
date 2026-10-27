@@ -133,7 +133,18 @@ def _block_fold_begin(head, core, scan):
     opened, closed = _block_head_quotes(core)
     head_complete = core != "" and core[:1] in ["'", '"'] and not scan["single"] and not scan["double"]
     items = [(head["idx"] + 1, core)] if core != "" else []
-    return {"prefix": prefix, "poison": poison, "opened": opened, "closed": closed, "head_complete": head_complete, "seen": core != "", "items": items, "consumed": 0, "bom": False, "tab": False}
+    return {
+        "prefix": prefix,
+        "poison": poison,
+        "opened": opened,
+        "closed": closed,
+        "head_complete": head_complete,
+        "seen": core != "",
+        "items": items,
+        "consumed": 0,
+        "bom": False,
+        "tab": False,
+    }
 
 def _block_fold_quoted(raw, idx, scan, fold):
     """Takes a line inside open quotes at any indent. Returns the fail line, or -1.

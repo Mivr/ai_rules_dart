@@ -245,7 +245,9 @@ def _find_colon_char(text, i, st, track, counts, close_pos):
         if i == 0 or text[i - 1] in [" ", "\t"] or i - 1 == close_pos:
             return -1, close_pos
         return None, close_pos
-    if ch == ":" and (not track or (counts["braces"] == 0 and counts["brackets"] == 0)) and (i + 1 == len(text) or text[i + 1] in [" ", "\t"]):
+    top_level = not track or (counts["braces"] == 0 and counts["brackets"] == 0)
+    at_separator = i + 1 == len(text) or text[i + 1] in [" ", "\t"]
+    if ch == ":" and top_level and at_separator:
         return i, close_pos
     if track:
         _sep_track(ch, text[i + 1:i + 2], st, counts)
@@ -344,7 +346,14 @@ def is_block_collection_key(text):
         _depth_track(ch, counts)
         if ch in ["]", "}"] and counts["braces"] == 0 and counts["brackets"] == 0:
             after = rest[i + 1:].strip(" \t")
-            return after == ":" or after.startswith(": ") or after.startswith(":\t") or after.startswith(":\r") or after.endswith(":") or after.endswith(":\r")
+            return (
+                after == ":" or
+                after.startswith(": ") or
+                after.startswith(":\t") or
+                after.startswith(":\r") or
+                after.endswith(":") or
+                after.endswith(":\r")
+            )
     return False
 
 def is_quoted(text):
@@ -583,7 +592,8 @@ def block_line_text(raw):
       no content.
     """
     stripped = raw.strip()
-    if not stripped or stripped.startswith("#") or stripped.startswith("%") or is_marker_line(raw, "---") or is_marker_line(raw, "..."):
+    marker = is_marker_line(raw, "---") or is_marker_line(raw, "...")
+    if not stripped or stripped.startswith("#") or stripped.startswith("%") or marker:
         return None, None
     indent = indent_width(raw)
     text = strip_trailing_comment(raw[indent:])
