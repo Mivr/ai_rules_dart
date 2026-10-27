@@ -1,13 +1,15 @@
 // The executable behind `dart_sdk_binary`: runs the toolchain's Dart SDK
 // binary with the caller's arguments.
 //
-// Caller-home policy (see `private_home.dart`): the child keeps the caller's
+// Home policy (see `private_home.dart`): a command form keeps the caller's
 // environment, so the pub cache, hosted credentials and proxy configuration
-// keep working, and command-form invocations gain the global
-// `--suppress-analytics` flag so the run writes no telemetry under HOME.
-// File-form executions pass through unchanged: they never touch HOME, and
-// the flag is rejected there. Arguments and the exit code pass through
-// untouched.
+// keep working, and gains the global `--suppress-analytics` flag so the run
+// writes no telemetry under HOME. A usage form that reaches dartdev without a
+// command (a bare run, `--help`, `-h`, `--verbose`, `help`) runs with a fresh
+// private HOME instead, because the flag alone does not stop the pinned SDK's
+// telemetry write for those. VM forms (a program file, `--version`) pass
+// through unchanged: they never touch HOME. Arguments and the exit code pass
+// through untouched.
 //
 // The rule writes `<name>.sdk_config.json` beside the launcher (see
 // `dart_sdk_binary.bzl`), so the SDK is found however the launcher starts:
@@ -32,12 +34,36 @@ Future<void> main(List<String> args) async {
     Directory.current = cwd;
   }
   final dart = _resolveDart();
+  final code = switch (dartCliPolicy(args)) {
+    DartCliPolicy.callerHome => await _runDart(dart, args),
+    DartCliPolicy.suppressAnalytics => await _runDart(
+      dart,
+      suppressAnalyticsArgv(args),
+    ),
+    DartCliPolicy.privateHome => await withPrivateHomeAsync(
+      'rules_dart_dart_home.',
+      (env) => _runDart(dart, args, env),
+    ),
+  };
+  exit(code);
+}
+
+/// Runs the SDK [dart] binary with [args] and returns its exit code.
+///
+/// [env] overlays the caller's environment with the private home entries; when
+/// omitted the child inherits the caller's environment unchanged.
+Future<int> _runDart(
+  String dart,
+  List<String> args, [
+  Map<String, String>? env,
+]) async {
   final child = await Process.start(
     dart,
-    suppressAnalyticsArgv(args),
+    args,
+    environment: env,
     mode: ProcessStartMode.inheritStdio,
   );
-  exit(await child.exitCode);
+  return child.exitCode;
 }
 
 /// The `<name>.sdk_config.json` file beside the launcher.

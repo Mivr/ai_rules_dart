@@ -158,8 +158,9 @@ for row in "${RUN_HOME_ENTRIES[@]}"; do
     continue
   fi
   canary="$(mktemp -d "$SCRATCH/canary.XXXXXX")"
-  mkdir -p "$canary/home" "$canary/cfg" "$canary/cache" "$canary/xc" "$canary/xd"
-  for d in home cfg cache xc xd; do echo marker >"$canary/$d/MARKER"; done
+  mkdir -p "$canary/home" "$canary/cfg" "$canary/cache" "$canary/xc" \
+    "$canary/xd" "$canary/xs"
+  for d in home cfg cache xc xd xs; do echo marker >"$canary/$d/MARKER"; done
   plant_credentials "$canary/cfg"
   before="$(snapshot "$canary")"
   # Only the generated launcher runs with the canary environment, with the
@@ -171,7 +172,7 @@ for row in "${RUN_HOME_ENTRIES[@]}"; do
     env HOME="$canary/home" USERPROFILE="$canary/home" APPDATA="$canary/home" \
       LOCALAPPDATA="$canary/home" XDG_CONFIG_HOME="$canary/cfg" \
       XDG_CACHE_HOME="$canary/xc" XDG_DATA_HOME="$canary/xd" \
-      timeout 600 "$launcher" $args </dev/null 2>&1
+      XDG_STATE_HOME="$canary/xs" timeout 600 "$launcher" $args </dev/null 2>&1
   )" || code=$?
   after="$(snapshot "$canary")"
   # Restored before any verdict, so every path below leaves the workspace as

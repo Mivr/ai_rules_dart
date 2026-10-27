@@ -50,8 +50,20 @@ RUN_HOME_ENTRIES=(
   '//:web_js||n/a|refuse'
   '//:web_wasm||n/a|refuse'
   '//:fix_lib||n/a|refuse'
-  # --- the SDK pass-through: caller env kept, analytics suppressed ---
+  # --- the SDK pass-through: commands keep the caller env and are
+  # suppressed; usage and help forms reach dartdev too, so the launcher gives
+  # them a private HOME; VM forms (`--version`, a program file) pass through
   '@rules_dart//dart:dart|--version|caller-home|exit:0'
+  '@rules_dart//dart:dart||caller-home|exit:0'
+  '@rules_dart//dart:dart|--help|caller-home|exit:0'
+  '@rules_dart//dart:dart|-h|caller-home|exit:0'
+  '@rules_dart//dart:dart|--verbose|caller-home|exit:0'
+  '@rules_dart//dart:dart|--verbose --help|caller-home|exit:0'
+  '@rules_dart//dart:dart|-h --verbose|caller-home|exit:0'
+  '@rules_dart//dart:dart|help|caller-home|exit:0'
+  '@rules_dart//dart:dart|help pub|caller-home|exit:0'
+  '@rules_dart//dart:dart|--suppress-analytics --verbose|caller-home|exit:0'
+  '@rules_dart//dart:dart|{WORKSPACE}/hello.dart|caller-home|exit:0|stdout:hello'
   '@rules_dart//dart:dart|pub token list|caller-home|exit:0|stdout:pub-cache-token.example.com'
   '@rules_dart//dart:dart|--verbose pub token list|caller-home|exit:0|stdout:pub-cache-token.example.com'
   # --- codegen shims: `--help` parses arguments and exits, no work ---

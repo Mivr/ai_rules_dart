@@ -5,10 +5,12 @@ Usage:
     bazel run @rules_dart//dart -- analyze lib/
 
 The executable is the `sdk_launcher` tool symlinked into place: it resolves
-the toolchain `dart` through runfiles, keeps the caller's environment so the
-pub cache and hosted credentials keep working, and places the global
-`--suppress-analytics` flag before command-form invocations so the run writes
-no telemetry under HOME. Arguments and the exit code pass through untouched.
+the toolchain `dart` through runfiles and keeps the caller's environment so
+the pub cache and hosted credentials keep working. A command form gains the
+global `--suppress-analytics` flag; a usage form (a bare run, help or verbose
+flags, the `help` command) runs with a private HOME, because the flag alone
+does not stop the pinned SDK's telemetry write for those. Arguments and the
+exit code pass through untouched.
 """
 
 load("//dart/private:common.bzl", "WINDOWS_CONSTRAINT_ATTR", "runfiles_path")
