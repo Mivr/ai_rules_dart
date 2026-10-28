@@ -1,11 +1,14 @@
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("//dart:defs.bzl", "dart_binary", "dart_code_asset")
 load(
     "//dart/tests:cross_target_test.bzl",
     "armv7_abi_test",
     "armv7_flags_test",
+    "armv7_jit_snapshot_cross_test",
     "native_has_no_target_flags_test",
     "riscv64_abi_test",
     "riscv64_flags_test",
+    "riscv64_jit_snapshot_cross_test",
 )
 
 # The two cross-only targets. `linux_arm` is armv7 hardfloat: note the
@@ -30,6 +33,36 @@ platform(
 dart_binary(
     name = "app",
     main = "main.dart",
+)
+
+# A JIT snapshot trains on the compiler's own machine, so this fixture is
+# native in the build test and must be refused under each cross platform below.
+dart_binary(
+    name = "app_jit_snapshot",
+    compile_mode = "jit-snapshot",
+    main = "main.dart",
+    tags = ["manual"],
+)
+
+build_test(
+    name = "native_jit_snapshot_build_test",
+    targets = [":app_jit_snapshot"],
+)
+
+riscv64_jit_snapshot_cross_test(
+    name = "riscv64_jit_snapshot_cross_test",
+    size = "small",
+    expected_reason = "targets (linux, riscv64)",
+    expected_target = "//dart/tests/cross_fixture:app_jit_snapshot",
+    target_under_test = ":app_jit_snapshot",
+)
+
+armv7_jit_snapshot_cross_test(
+    name = "armv7_jit_snapshot_cross_test",
+    size = "small",
+    expected_reason = "targets (linux, arm)",
+    expected_target = "//dart/tests/cross_fixture:app_jit_snapshot",
+    target_under_test = ":app_jit_snapshot",
 )
 
 riscv64_flags_test(
