@@ -52,7 +52,7 @@ build_test(
 riscv64_jit_snapshot_cross_test(
     name = "riscv64_jit_snapshot_cross_test",
     size = "small",
-    expected_reason = "targets (linux, riscv64)",
+    expected_reason = "is host-only, but it targets (linux, riscv64), which differs from the execution platform",
     expected_target = "//dart/tests/cross_fixture:app_jit_snapshot",
     target_under_test = ":app_jit_snapshot",
 )
@@ -60,7 +60,7 @@ riscv64_jit_snapshot_cross_test(
 armv7_jit_snapshot_cross_test(
     name = "armv7_jit_snapshot_cross_test",
     size = "small",
-    expected_reason = "targets (linux, arm)",
+    expected_reason = "is host-only, but it targets (linux, arm), which differs from the execution platform",
     expected_target = "//dart/tests/cross_fixture:app_jit_snapshot",
     target_under_test = ":app_jit_snapshot",
 )
