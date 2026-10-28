@@ -1,6 +1,7 @@
 // Tests for the lock policy's pure host facts (see `jit_policy.dart`): the
-// pinned rename call, the temporary-sibling shape and the statx and macOS
-// struct stat decoders, all from synthetic inputs, without syscalls.
+// pinned rename call, the temporary-sibling shape, the `struct flock`
+// write-lock type and type offset, and the statx and macOS struct stat
+// decoders, all from synthetic inputs, without syscalls.
 import 'dart:ffi' as ffi;
 
 import 'package:test/test.dart';
@@ -114,5 +115,45 @@ void main() {
     expect(stat.uid, 501);
     expect(stat.nlink, 3);
     expect(stat.id, (devA: 0x11, devB: 0x381a4, inoLo: 42, inoHi: 0));
+  });
+
+  test('jitFlockLockType and jitFlockTypeOffset pin the write lock', () {
+    // Darwin's `<sys/fcntl.h>` numbers F_RDLCK 1, F_UNLCK 2 and F_WRLCK 3,
+    // and its `struct flock` puts `l_type` at 20, after `l_start`/`l_len`
+    // (two i64 at 0/8) and `l_pid` (an i32 at 16). Linux numbers F_RDLCK 0,
+    // F_WRLCK 1 and F_UNLCK 2, with `l_type` first at 0 on every ABI. Writing
+    // Linux's 1 at Darwin's offset takes a shared read lock, so two
+    // trainings of one key would both proceed.
+    for (final abi in [ffi.Abi.macosX64, ffi.Abi.macosArm64]) {
+      expect(
+        jitFlockLockType(isMacOS: true, abi: abi),
+        3,
+        reason: '$abi asks for F_WRLCK',
+      );
+      expect(
+        jitFlockTypeOffset(isMacOS: true, abi: abi),
+        20,
+        reason: '$abi writes l_type at 20',
+      );
+    }
+    for (final abi in [
+      ffi.Abi.linuxX64,
+      ffi.Abi.linuxIA32,
+      ffi.Abi.linuxArm,
+      ffi.Abi.linuxArm64,
+      ffi.Abi.linuxRiscv32,
+      ffi.Abi.linuxRiscv64,
+    ]) {
+      expect(
+        jitFlockLockType(isMacOS: false, abi: abi),
+        1,
+        reason: '$abi asks for F_WRLCK',
+      );
+      expect(
+        jitFlockTypeOffset(isMacOS: false, abi: abi),
+        0,
+        reason: '$abi writes l_type first',
+      );
+    }
   });
 }

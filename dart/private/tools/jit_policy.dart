@@ -279,6 +279,25 @@ bool _jitDecimalDigits(String part) {
   return true;
 }
 
+/// The `l_type` value taking an exclusive whole-file `fcntl` lock (see
+/// `jitTryExclusiveLock` and `jitLockHolderPid`): a pure function of the OS.
+/// Darwin's `<sys/fcntl.h>` numbers `F_RDLCK` 1, `F_UNLCK` 2 and `F_WRLCK` 3,
+/// while Linux numbers `F_RDLCK` 0, `F_WRLCK` 1 and `F_UNLCK` 2. Writing
+/// Linux's 1 into a Darwin `struct flock` asks for a shared read lock, so
+/// concurrent trainings of one key would both proceed. [abi] is accepted for
+/// signature parity with [jitFlockPidOffset]: the write-lock value does not
+/// vary with the ABI.
+int jitFlockLockType({required bool isMacOS, ffi.Abi? abi}) => isMacOS ? 3 : 1;
+
+/// The `l_type` offset in `struct flock` (see [jitFlockLockType]): a pure
+/// function of the OS and ABI. On macOS the type is a little-endian i16 at 20,
+/// after `l_start`/`l_len` (two i64 at 0/8) and `l_pid` (an i32 at 16); on
+/// Linux it is the first field, a little-endian i16 at 0 on every ABI. [abi]
+/// is accepted for signature parity with [jitFlockPidOffset]: the Linux type
+/// offset does not vary with the ABI. All supported hosts are little-endian.
+int jitFlockTypeOffset({required bool isMacOS, ffi.Abi? abi}) =>
+    isMacOS ? 20 : 0;
+
 /// The `l_pid` offset in `struct flock` for the holder-PID lookup (see
 /// `jitLockHolderPid`): a pure function of the OS and ABI. On macOS the PID is
 /// a little-endian i32 at 16; on Linux a little-endian i32 at 24 on the 64-bit

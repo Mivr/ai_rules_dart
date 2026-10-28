@@ -573,8 +573,9 @@ dart_test(
 )
 
 # The lock policy's unit tests: the pinned rename call, the temporary-sibling
-# shape and the statx and macOS struct stat decoders, all as pure functions of
-# synthetic inputs, without syscalls or SDK fixtures.
+# shape, the struct flock write-lock type and type offset, and the statx and
+# macOS struct stat decoders, all as pure functions of synthetic inputs,
+# without syscalls or SDK fixtures.
 dart_test(
     name = "jit_policy_test",
     size = "small",

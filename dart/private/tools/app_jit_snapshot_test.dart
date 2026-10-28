@@ -188,16 +188,18 @@ void main(List<String> args) {
     return temps;
   }
 
-  /// Writes a lock-holder script under [tmp] that takes an exclusive lock on
-  /// its first argument, prints `held` once taken, and holds it for its
-  /// second argument's seconds. Returns its path.
-  String writeLockHolder() {
+  /// Writes a lock-holder script under [tmp] that takes a [shared] or
+  /// exclusive lock on its first argument, prints `held` once taken, and
+  /// holds it for its second argument's seconds. Returns its path.
+  String writeLockHolder({bool shared = false}) {
     final holder = File('${tmp.path}/lock_holder.dart')
       ..writeAsStringSync(
         "import 'dart:io';\n"
         'void main(List<String> args) {\n'
         '  final lock = File(args[0]).openSync(mode: FileMode.append);\n'
-        '  lock.lockSync(FileLock.blockingExclusive);\n'
+        '  lock.lockSync(\n'
+        '    ${shared ? 'FileLock.blockingShared' : 'FileLock.blockingExclusive'},\n'
+        '  );\n'
         "  stdout.writeln('held');\n"
         '  sleep(Duration(seconds: int.parse(args[1])));\n'
         '}\n',
@@ -1526,6 +1528,86 @@ void main(List<String> args) {
       reason: 'open binds its mode as a variadic argument',
     );
   });
+
+  test('two acquisitions of one training lock never both succeed', () async {
+    // Two trainings of one key share `/tmp/rules_dart_jit-<key>.lock`: the
+    // second must wait rather than share the first's live training directory.
+    // The parent holds the lock through the same `jitTryExclusiveLock` a
+    // training uses, and a child process takes the second acquisition. On
+    // macOS the base wrote Linux's F_WRLCK 1 as Darwin's F_RDLCK, so both
+    // acquisitions took shared read locks and both succeeded; on Linux 1 is
+    // F_WRLCK and already conflicted.
+    final staged = stageTool();
+    final script = File('${File(staged).parent.path}/try_lock.dart')
+      ..writeAsStringSync(
+        "import 'dart:io';\n"
+        "import 'jit_lock.dart';\n"
+        'void main(List<String> args) {\n'
+        '  final opened = jitOpenLock(args[0]);\n'
+        '  if (opened.fd < 0) {\n'
+        "    stdout.writeln('open-failed');\n"
+        '    exit(2);\n'
+        '  }\n'
+        '  final taken = jitTryExclusiveLock(opened.fd);\n'
+        "  stdout.writeln(taken ? 'taken' : 'busy');\n"
+        '  jitUnlockAndClose(opened.fd);\n'
+        '}\n',
+      );
+    final lock = '${tmp.path}/keyed.lock';
+    final opened = locks.jitCreateAndPublishLock(lock);
+    try {
+      expect(opened.fd, greaterThanOrEqualTo(0), reason: 'first opens');
+      expect(
+        locks.jitTryExclusiveLock(opened.fd),
+        isTrue,
+        reason: 'first takes the lock',
+      );
+      final contender = Process.runSync(Platform.resolvedExecutable, [
+        script.path,
+        lock,
+      ]);
+      expect(contender.exitCode, 0, reason: '${contender.stderr}');
+      expect(
+        (contender.stdout as String).trim(),
+        'busy',
+        reason: 'the second acquisition waits for the first',
+      );
+    } finally {
+      locks.jitUnlockAndClose(opened.fd);
+    }
+    final after = Process.runSync(Platform.resolvedExecutable, [
+      script.path,
+      lock,
+    ]);
+    expect(after.exitCode, 0, reason: '${after.stderr}');
+    expect(
+      (after.stdout as String).trim(),
+      'taken',
+      reason: 'a later training takes the released lock',
+    );
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
+
+  test('holder probe reports a competing reader', () async {
+    // `F_GETLK` asks for the same exclusive write conflict the training lock
+    // takes, so a blocking shared lock is a conflict too. Linux's F_WRLCK is
+    // 1 (the value the base wrote into Darwin's F_RDLCK), so this passes there
+    // on the base; on macOS the base asked for a read conflict, saw no
+    // holder and reported "unknown".
+    final holderScript = writeLockHolder(shared: true);
+    final lock = '${tmp.path}/reader.lock';
+    File(lock).writeAsStringSync('');
+    final holder = await startLockHolder(holderScript, lock, '30');
+    try {
+      expect(
+        locks.jitLockHolderPid(lock),
+        holder.pid,
+        reason: 'the probe reports the competing reader as the holder',
+      );
+    } finally {
+      holder.kill();
+      await holder.exitCode;
+    }
+  }, skip: Platform.isWindows ? posixOnlyReason : false);
 
   test('held lock fails after the deadline naming the holder', () async {
     // Another process holding the training lock must not hang the training

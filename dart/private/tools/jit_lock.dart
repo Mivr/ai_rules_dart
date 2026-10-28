@@ -685,22 +685,26 @@ bool jitTryExclusiveLock(int fd) {
   try {
     buf.asTypedList(32).fillRange(0, 32, 0);
     // A whole-file write lock: type F_WRLCK with start and length zero. The
-    // `struct flock` layout differs by OS: on Linux the type is a
-    // little-endian i16 at offset 0 (F_SETLK is 6), on macOS the start/len are
-    // two i64 at offsets 0/8, the PID an i32 at offset 16 and the type an i16
-    // at offset 20 (F_SETLK is 8). `fcntl` is variadic
+    // `struct flock` layout and constants differ by OS: on Linux the type is a
+    // little-endian i16 at offset 0 and F_WRLCK is 1 (F_SETLK is 6), while on
+    // macOS the start/len are two i64 at offsets 0/8, the PID an i32 at offset
+    // 16 and the type an i16 at offset 20, where F_WRLCK is 3 (F_SETLK is 8).
+    // Darwin numbers F_RDLCK 1, F_UNLCK 2, F_WRLCK 3; Linux numbers F_RDLCK 0,
+    // F_WRLCK 1, F_UNLCK 2, so Linux's 1 written on macOS would take a shared
+    // read lock and let two trainings share one key. [jitFlockLockType] and
+    // [jitFlockTypeOffset] pin the value and the field. `fcntl` is variadic
     // (`int fcntl(int, int, ...)`), so its `struct flock` pointer binds through
     // `ffi.VarArgs`: a fixed binding passes the pointer in a register that
     // `fcntl` never reads on Apple arm64. All supported hosts are little-endian.
     final view = ByteData.sublistView(buf.asTypedList(32));
-    final int cmd;
-    if (Platform.isMacOS) {
-      view.setInt16(20, 1, Endian.little);
-      cmd = 8;
-    } else {
-      view.setInt16(0, 1, Endian.little);
-      cmd = 6;
-    }
+    final isMacOS = Platform.isMacOS;
+    final abi = ffi.Abi.current();
+    view.setInt16(
+      jitFlockTypeOffset(isMacOS: isMacOS, abi: abi),
+      jitFlockLockType(isMacOS: isMacOS, abi: abi),
+      Endian.little,
+    );
+    final cmd = isMacOS ? 8 : 6;
     return fcntl(fd, cmd, buf) == 0;
   } finally {
     free(buf);
@@ -747,11 +751,15 @@ void jitUnlockAndClose(int fd) {
 ///
 /// Queries with `fcntl(2)` `F_GETLK` for a conflicting write lock over the
 /// whole file: the kernel reports the lock the training's own try-lock
-/// refuses, with the holder's PID. The `struct flock` layout differs by OS:
-/// on Linux the type is a little-endian i16 at offset 0 and the PID a
-/// little-endian i32 at the offset [jitFlockPidOffset] pins, on macOS the
-/// start/len are two i64 at offsets 0/8, the PID an i32 at offset 16 and the
-/// type an i16 at offset 20.
+/// refuses, with the holder's PID. Asking for [jitFlockLockType] (`F_WRLCK`)
+/// catches a competing reader as well as a writer; asking for Linux's value 1
+/// on Darwin would be `F_RDLCK` and miss another reader. An unconflicted
+/// lookup leaves `l_type` as `F_UNLCK` (2 on both OSes), which reports no
+/// holder. The `struct flock` layout differs by OS: on Linux the type is a
+/// little-endian i16 at offset 0 and the PID a little-endian i32 at the offset
+/// [jitFlockPidOffset] pins, on macOS the start/len are two i64 at offsets 0/8,
+/// the PID an i32 at offset 16 and the type an i16 at offset 20 (see
+/// [jitFlockTypeOffset]).
 /// All supported hosts are little-endian. Metadata only: the file opens
 /// read-only with O_NOFOLLOW (a symlink or FIFO at the path reports no holder
 /// instead of blocking) and is never read.
@@ -783,18 +791,17 @@ int? jitLockHolderPid(String path) {
         if (fd < 0) return null;
         try {
           final view = ByteData.sublistView(buf.asTypedList(32));
-          final int cmd;
-          if (Platform.isMacOS) {
-            view.setInt16(20, 1, Endian.little);
-            cmd = 7;
-          } else {
-            view.setInt16(0, 1, Endian.little);
-            cmd = 5;
-          }
+          final isMacOS = Platform.isMacOS;
+          final abi = ffi.Abi.current();
+          final typeOffset = jitFlockTypeOffset(isMacOS: isMacOS, abi: abi);
+          view.setInt16(
+            typeOffset,
+            jitFlockLockType(isMacOS: isMacOS, abi: abi),
+            Endian.little,
+          );
+          final cmd = isMacOS ? 7 : 5;
           if (fcntl(fd, cmd, buf) != 0) return null;
-          final type = Platform.isMacOS
-              ? view.getInt16(20, Endian.little)
-              : view.getInt16(0, Endian.little);
+          final type = view.getInt16(typeOffset, Endian.little);
           if (type == 2) return null;
           final holderPid = view.getInt32(
             jitFlockPidOffset(
