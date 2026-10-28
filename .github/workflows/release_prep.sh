@@ -36,7 +36,7 @@ Add to your \`MODULE.bazel\` file:
 bazel_dep(name = "ai_rules_dart", version = "${TAG:1}", repo_name = "rules_dart")
 archive_override(
     module_name = "ai_rules_dart",
-    urls = ["https://github.com/Mivr/rules_dart/releases/download/${TAG}/${ARCHIVE}"],
+    urls = ["https://github.com/Mivr/ai_rules_dart/releases/download/${TAG}/${ARCHIVE}"],
     integrity = "${INTEGRITY}",
     strip_prefix = "${PREFIX}",
 )

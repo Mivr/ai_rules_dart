@@ -8,8 +8,8 @@
 > The goal is a fully autonomous Bazel rules workforce that keeps improving these rules, until they beat the
 > hand-written alternatives.
 >
-> Security reports: [GitHub private advisory](https://github.com/Mivr/rules_dart/security/advisories/new), reviewed by the human owner [@Mivr](https://github.com/Mivr). Forked from [aran/rules_dart](https://github.com/aran/rules_dart), with
-> thanks.
+> Security reports: [GitHub private advisory](https://github.com/Mivr/ai_rules_dart/security/advisories/new), reviewed by the human owner [@Mivr](https://github.com/Mivr). Continues [aran/rules_dart](https://github.com/aran/rules_dart) by Aran Donohue,
+> with many thanks: see [History and thanks](#history-and-thanks).
 
 # Bazel rules for Dart
 
@@ -23,7 +23,7 @@ Add to your `MODULE.bazel`:
 bazel_dep(name = "ai_rules_dart", version = "0.18.0", repo_name = "rules_dart")
 archive_override(
     module_name = "ai_rules_dart",
-    urls = ["https://github.com/Mivr/rules_dart/releases/download/v0.18.0/rules_dart-v0.18.0.tar.gz"],
+    urls = ["https://github.com/Mivr/ai_rules_dart/releases/download/v0.18.0/rules_dart-v0.18.0.tar.gz"],
     integrity = "sha256-9sFt975mhYbFlKNUJ0F9dExQzCu6yv9Dc+WEGsxVuO0=",
     strip_prefix = "rules_dart-0.18.0",
 )
@@ -733,3 +733,17 @@ The [`e2e/`](e2e/) directory contains complete working examples:
 > `@platforms//cpu:armv7`), reachable from every supported host. Cross-compiling
 > fetches SDK artifacts at action time, so it needs network access. See
 > [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for details.
+
+## History and thanks
+
+`ai_rules_dart` started as [aran/rules_dart](https://github.com/aran/rules_dart), written by
+[Aran Donohue](https://github.com/aran). He designed this rule set and wrote 329 of its commits: the toolchain,
+the pub integration, the analyzer and the compile modes that everything here still builds on. Thank you, Aran. This
+project would not exist without your work, and its whole history is kept here with your name on every one of
+those commits. Thanks also to [Paul Cody](https://github.com/pcj) for his upstream fix.
+
+From October 15 to October 28, 2026 the rules were developed in the [Mivr/rules_dart](https://github.com/Mivr/rules_dart)
+fork. They continue here as a standalone project: every upstream and fork commit, every tag and every release is
+in this repository. The fork's closed issues stay where they are. New issues, releases and the BCR module
+`ai_rules_dart` live here. Upstream's own rules continue at [aran/rules_dart](https://github.com/aran/rules_dart)
+and on the BCR as `rules_dart`. We keep reading upstream and port its ideas with credit to their authors.

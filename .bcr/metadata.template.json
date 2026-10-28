@@ -1,5 +1,5 @@
 {
-  "homepage": "https://github.com/Mivr/rules_dart",
+  "homepage": "https://github.com/Mivr/ai_rules_dart",
   "maintainers": [
     {
       "name": "Mivr",
@@ -7,7 +7,7 @@
       "github_user_id": 19507580
     }
   ],
-  "repository": ["github:Mivr/rules_dart"],
+  "repository": ["github:Mivr/ai_rules_dart"],
   "versions": [],
   "yanked_versions": {}
 }
