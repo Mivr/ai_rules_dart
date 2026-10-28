@@ -1,18 +1,23 @@
 """Module extension for declaring pub.dev package dependencies."""
 
-load("//dart/ext:registry.bzl", "curated_code_assets")
 load("//dart/private:download.bzl", "pinned_download")
 load("//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "pinned_source_error")
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_package_sha256_error", "trim_gzip_trailing_nulls")
 load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
 load("//dart/pub:pub_scan.bzl", "run_pub_archive_scans")
 load("//dart/pub:yaml_parser.bzl", "lock_package_error", "parse_pubspec_deps", "parse_pubspec_lock")
+load("//dart/pub/private:build_content.bzl", "PACKAGE_FILES_ATTR_DOC")
 load("//dart/pub/private:parser_sources.bzl", "PARSER_SOURCE_LABELS")
 load("//dart/pub/private:pub_emit.bzl", "SPOKE_PREFIX", "pub_emit_aliased", "pub_emit_explicit", "pub_emit_hubs", "pub_emit_isolated_git", "pub_emit_isolated_spokes", "pub_emit_shared_git", "pub_emit_shared_spokes")
+load("//dart/pub/private:pub_resolution_warnings.bzl", _warn_skipped_sources = "warn_skipped_sources")
 load("//dart/pub/private:pub_root_pin.bzl", "best_entry", "decl_lock_sha_conflict", "git_path_conflict", "git_ref_conflict", "git_version_error", "hosted_sha_conflict", "hosted_version_error", "select_all_explicit")
 load("//dart/pub/private:pub_scanner_sdk.bzl", "scanner_runtime_label")
+load("//dart/pub/private:pub_scc_entries.bzl", _scc_member_entries = "scc_member_entries")
 load("//dart/pub/private:pub_scc_facts.bzl", "parser_schema", "read_scope_pubspec", "record_scope_facts", "split_scope_facts")
 load("//dart/pub/private:scc.bzl", "compute_sccs", "package_dep_graph", "scc_repo_name")
+
+# Re-exported for //dart/tests, which exercises the entry shape directly.
+scc_member_entries = _scc_member_entries
 
 _package = tag_class(
     doc = "Declares one pub.dev package to download and materialize as a spoke repository, pinned by version and archive hash with its pub dependencies. A `package` tag from the root module wins over `package` tags for the same package from dependencies: a dependency's different version is dropped with a NOTE naming both versions. A root lock's git entry pins like a hosted one, and a root pin never hides a same-version sha256 conflict.",
@@ -32,6 +37,10 @@ _package = tag_class(
         "deps": attr.string_list(
             doc = "Repository names of pub packages this package depends on.",
             default = [],
+        ),
+        "package_files": attr.string_list(
+            doc = PACKAGE_FILES_ATTR_DOC,
+            default = ["pubspec.yaml", "LICENSE*"],
         ),
     },
 )
@@ -78,6 +87,11 @@ _from_lock = tag_class(
                   "lock. Use for standalone tools that need a different version of a " +
                   "package than the rest of the build. Defaults to False.",
             default = False,
+        ),
+        "package_files": attr.string_list(
+            doc = "Applies to every package this lock materializes, including merged cycle " +
+                  "members. " + PACKAGE_FILES_ATTR_DOC,
+            default = ["pubspec.yaml", "LICENSE*"],
         ),
     },
 )
@@ -273,57 +287,6 @@ def plan_scope_sccs(scope_names, explicit_deps, hub_names, spoke_prefix, package
         package_deps = {name: sorted(package_deps[name]) for name in package_deps.keys()},
     )
 
-def scc_member_entries(members, hosted, git_pkgs, package_deps):
-    """Builds the merged repository's member entries for `members_json`.
-
-    Pure given the resolved packages: hosted members carry their tarball
-    coordinates, git members their remote, resolved ref and in-repo path, so
-    the merged repository fetches each member the way its spoke would. Each
-    entry also carries the sorted dependency names planning used for that
-    member — the same unfiltered names the facts record — so the merged
-    repository verifies the plan against the real pubspecs.
-
-    Args:
-      members: Sorted member package names.
-      hosted: Dict of hosted package name to
-        `struct(version, sha256, url)`.
-      git_pkgs: Dict of git package name to
-        `struct(version, url, resolved_ref, path)`.
-      package_deps: Dict of package name to the sorted dependency names
-        planning used.
-
-    Returns:
-      List of structs, each with `source` (`"hosted"` or `"git"`), the
-      coordinates the merged repository rule reads, and `planned_deps`.
-    """
-    entries = []
-    for member in members:
-        planned = sorted(package_deps[member])
-        if member in hosted:
-            pkg = hosted[member]
-            entries.append(struct(
-                source = "hosted",
-                name = member,
-                version = pkg.version,
-                sha256 = pkg.sha256,
-                url = pkg.url,
-                code_assets = curated_code_assets(member, pkg.version),
-                planned_deps = planned,
-            ))
-        else:
-            pkg = git_pkgs[member]
-            entries.append(struct(
-                source = "git",
-                name = member,
-                version = pkg.version,
-                url = pkg.url,
-                resolved_ref = pkg.resolved_ref,
-                path = pkg.path,
-                code_assets = curated_code_assets(member, pkg.version),
-                planned_deps = planned,
-            ))
-    return entries
-
 def _resolve_state():
     """Returns the mutable resolution state for lock collection."""
 
@@ -381,6 +344,7 @@ def _register_git_package(state, name, info, lock_tag, hub_name, isolated):
     path = desc.get("path", ".")
     if path == None or str(path).strip() == "":
         path = "."
+    package_files = getattr(lock_tag, "package_files", ["pubspec.yaml", "LICENSE*"])
 
     if not url:
         return 'pub package "%s" %s in %s has no url for its git source.' % (name, version, lock_tag.lock)
@@ -394,6 +358,7 @@ def _register_git_package(state, name, info, lock_tag, hub_name, isolated):
             url = url,
             resolved_ref = resolved_ref,
             path = path,
+            package_files = package_files,
         )
         return None
 
@@ -404,6 +369,7 @@ def _register_git_package(state, name, info, lock_tag, hub_name, isolated):
         hub_name = hub_name,
         lock_label = str(lock_tag.lock),
         on_version_conflict = lock_tag.on_version_conflict,
+        package_files = package_files,
     )
 
     git_registry = state["git_registry"]
@@ -428,12 +394,14 @@ def _register_hosted_package(state, explicit, name, info, lock_tag, hub_name, is
     url = desc.get("url", "https://pub.dev")
     version = info.get("version", "")
     sha256 = desc["sha256"].strip()
+    package_files = getattr(lock_tag, "package_files", ["pubspec.yaml", "LICENSE*"])
 
     if isolated:
         state["isolated_hub_packages"][hub_name][name] = struct(
             version = version,
             sha256 = sha256,
             url = url,
+            package_files = package_files,
         )
         return None
 
@@ -448,6 +416,7 @@ def _register_hosted_package(state, explicit, name, info, lock_tag, hub_name, is
         hub_name = hub_name,
         lock_label = str(lock_tag.lock),
         on_version_conflict = lock_tag.on_version_conflict,
+        package_files = package_files,
     )
 
     registry = state["registry"]
@@ -476,35 +445,6 @@ def _register_lock_package(state, explicit, name, info, lock_tag, hub_name, isol
         skipped_by_source.setdefault(source, []).append(name)
         return None, "lock"
     return _register_hosted_package(state, explicit, name, info, lock_tag, hub_name, isolated), "lock"
-
-def _warn_skipped_sources(state, lock_tag, hub_name, skipped_by_source):
-    """Warns once per lock file about non-hosted packages getting no repository."""
-
-    # Only hosted packages can be fetched from a pub registry. Collect
-    # every non-hosted package and report once per lock file.
-    if not skipped_by_source:
-        return
-    details = []
-    for source in sorted(skipped_by_source.keys()):
-        if source == "sdk":
-            remedy = "provided by the Dart/Flutter SDK, not fetched by pub"
-        else:
-            remedy = "declare via pub.package() or a local dart_library"
-        details.append("  - %s (%s): %s" % (
-            source,
-            remedy,
-            ", ".join(sorted(skipped_by_source[source])),
-        ))
-
-    state["warnings"].append(
-        ("pub.from_lock(%s): %s lists non-hosted packages; no repository " +
-         "is created for them, so `package:` imports of these packages " +
-         "will fail to resolve unless they are provided another way:\n%s") % (
-            hub_name,
-            lock_tag.lock,
-            "\n".join(details),
-        ),
-    )
 
 def _resolve_lock_tag(state, explicit, lock_tag):
     """Collects one lock file's entries into the state. Returns (error, error_shape)."""
@@ -555,12 +495,17 @@ def _resolve_hosted_package(name, pkg, explicit, git_registry, warnings):
         return None, "git", None
     if len(pkg.entries) == 1:
         e = pkg.entries[0]
-        return struct(version = e.version, sha256 = e.sha256, url = pkg.url), "", None
+        return struct(version = e.version, sha256 = e.sha256, url = pkg.url, package_files = e.package_files), "", None
     best = best_entry(pkg.entries)
     for e in pkg.entries:
         if e.version != best.version and e.on_version_conflict == "error":
             return None, "", hosted_version_error(name, pkg.entries, best)
-    return struct(version = best.version, sha256 = best.sha256, url = pkg.url), "", None
+    return struct(
+        version = best.version,
+        sha256 = best.sha256,
+        url = pkg.url,
+        package_files = best.package_files,
+    ), "", None
 
 def _resolve_hosted(state, explicit):
     """Resolves every hosted package to one version. Returns (resolved, error)."""
@@ -591,6 +536,7 @@ def _resolve_git_versions(state):
                 url = pkg.url,
                 resolved_ref = e.resolved_ref,
                 path = e.path,
+                package_files = e.package_files,
             )
             continue
         best = best_entry(pkg.entries)
@@ -602,6 +548,7 @@ def _resolve_git_versions(state):
             url = pkg.url,
             resolved_ref = best.resolved_ref,
             path = best.path,
+            package_files = best.package_files,
         )
     return resolved_git, None
 
@@ -793,6 +740,7 @@ def _pub_collect_tags(ctx):
                 version = pkg.version,
                 sha256 = pkg.sha256,
                 deps = pkg.deps,
+                package_files = pkg.package_files,
                 is_root = mod.is_root,
                 module = module_name,
             ))
@@ -811,6 +759,7 @@ def _pub_collect_tags(ctx):
                 packages = parse_pubspec_lock(lock_content, str(lock_tag.lock)),
                 on_version_conflict = lock_tag.on_version_conflict,
                 isolated = lock_tag.isolated,
+                package_files = lock_tag.package_files,
                 is_root = mod.is_root,
                 module = module_name,
             ))

@@ -22,6 +22,7 @@ def pub_emit_explicit(explicit, vanished_spokes):
             version = pkg.version,
             sha256 = pkg.sha256,
             deps = [rewrite_vanished_spoke(dep, vanished_spokes) for dep in pkg.deps],
+            package_files = pkg.package_files,
         )
 
 def pub_emit_aliased(aliases, vanished_spokes):
@@ -91,6 +92,7 @@ def pub_emit_shared_spokes(
             scc_targets = shared_scc_targets,
             planned_deps = shared_sccs.package_deps.get(name, []),
             plan_covers_package = name in shared_sccs.package_deps,
+            package_files = pkg.package_files,
         )
 
 def pub_emit_shared_git(
@@ -128,6 +130,7 @@ def pub_emit_shared_git(
             scc_targets = shared_scc_targets,
             planned_deps = shared_sccs.package_deps.get(name, []),
             plan_covers_package = name in shared_sccs.package_deps,
+            package_files = pkg.package_files,
         )
 
 def pub_emit_isolated_spokes(
@@ -169,6 +172,7 @@ def pub_emit_isolated_spokes(
             scc_targets = hub_scc_targets,
             planned_deps = hub_sccs.package_deps.get(pkg_name, []),
             plan_covers_package = pkg_name in hub_sccs.package_deps,
+            package_files = pkg.package_files,
         )
 
 def pub_emit_isolated_git(
@@ -208,6 +212,7 @@ def pub_emit_isolated_git(
             scc_targets = hub_scc_targets,
             planned_deps = hub_sccs.package_deps.get(pkg_name, []),
             plan_covers_package = pkg_name in hub_sccs.package_deps,
+            package_files = pkg.package_files,
         )
 
 def pub_emit_hubs(hub_packages, isolated_hub_names, isolated_sccs, shared_sccs, explicit):
