@@ -1,3 +1,4 @@
+# Mivr/ai_rules_dart workflow (moved from the frozen Mivr/rules_dart fork on 2026-10-28).
 # Publish new releases to Bazel Central Registry.
 name: Publish to BCR
 on:

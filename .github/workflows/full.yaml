@@ -1,3 +1,4 @@
+# Mivr/ai_rules_dart workflow (moved from the frozen Mivr/rules_dart fork on 2026-10-28).
 name: Full matrix
 # Pre-release coverage: the complete per-folder macOS matrix that push CI
 # (ci.yaml) no longer runs. Linux and Windows keep full coverage on every

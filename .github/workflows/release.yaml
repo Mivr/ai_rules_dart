@@ -1,3 +1,4 @@
+# Mivr/ai_rules_dart workflow (moved from the frozen Mivr/rules_dart fork on 2026-10-28).
 # Cut a release whenever a new tag is pushed to the repo.
 name: Release
 on:

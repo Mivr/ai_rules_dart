@@ -1,3 +1,4 @@
+# Mivr/ai_rules_dart workflow (moved from the frozen Mivr/rules_dart fork on 2026-10-28).
 # Tag a new release using https://github.com/marketplace/actions/conventional-commits-versioner-action
 #
 # This is easier than having to run manual `git` operations on a local clone.
