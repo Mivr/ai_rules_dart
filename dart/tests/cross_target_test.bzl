@@ -150,6 +150,41 @@ def _cross_flags_test_impl(ctx):
 def _platform_label(name):
     return str(Label("//dart/tests/cross_fixture:" + name))
 
+def _jit_snapshot_cross_failure_test_impl(ctx):
+    """Asserts a cross-configured `jit-snapshot` target fails analysis.
+
+    The target and the reason are asserted separately, so a message that
+    names only one of them still fails the test.
+    """
+    env = analysistest.begin(ctx)
+    asserts.expect_failure(env, ctx.attr.expected_target)
+    asserts.expect_failure(env, ctx.attr.expected_reason)
+    return analysistest.end(env)
+
+def _make_jit_snapshot_cross_failure_test(platform_name):
+    """Returns the host-only failure test for a cross target platform."""
+    return analysistest.make(
+        _jit_snapshot_cross_failure_test_impl,
+        attrs = {
+            "expected_target": attr.string(
+                doc = "Text the error must contain that names the target.",
+                mandatory = True,
+            ),
+            "expected_reason": attr.string(
+                doc = "Text the error must contain that names the target platform.",
+                mandatory = True,
+            ),
+        },
+        config_settings = {
+            "//command_line_option:platforms": [_platform_label(platform_name)],
+        },
+        expect_failure = True,
+    )
+
+riscv64_jit_snapshot_cross_test = _make_jit_snapshot_cross_failure_test("linux_riscv64")
+
+armv7_jit_snapshot_cross_test = _make_jit_snapshot_cross_failure_test("linux_arm")
+
 def _make_cross_flags_test(platform_name):
     return analysistest.make(
         _cross_flags_test_impl,
