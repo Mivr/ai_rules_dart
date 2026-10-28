@@ -817,8 +817,9 @@ The [`e2e/`](e2e/) directory contains complete working examples:
 
 > **Note**: Only the `exe` and `aot-snapshot` compile modes cross-compile via
 > `--platforms`. `kernel` is a VM format that ignores target flags, and a JIT
-> snapshot is host-only: it is trained and run on the machine that builds it.
-> `dart_test` always runs on the host. Linux targets are `linux-x64`,
+> snapshot is host-only, so a cross-configured `jit-snapshot` target fails
+> analysis: it is trained and run on the machine that builds it. `dart_test`
+> always runs on the host. Linux targets are `linux-x64`,
 > `linux-arm64`, `linux-riscv64` and `linux-arm` (armv7, selected by
 > `@platforms//cpu:armv7`), reachable from every supported host. Cross-compiling
 > fetches SDK artifacts at action time, so it needs network access. See
