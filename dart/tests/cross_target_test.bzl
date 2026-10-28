@@ -171,7 +171,7 @@ def _make_jit_snapshot_cross_failure_test(platform_name):
                 mandatory = True,
             ),
             "expected_reason": attr.string(
-                doc = "Text the error must contain that names the target platform.",
+                doc = "Text the error must contain that names the target platform and why it is refused.",
                 mandatory = True,
             ),
         },
