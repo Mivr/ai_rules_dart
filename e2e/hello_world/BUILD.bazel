@@ -1,4 +1,5 @@
-load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_binary")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_binary", "dart_test")
+load(":artifact.bzl", "launcher_bundle", "output_group_bundle")
 
 dart_analysis_config(
     name = "analysis_config",
@@ -39,4 +40,85 @@ dart_binary(
     name = "hello_jit",
     compile_mode = "jit-snapshot",
     main = "hello.dart",
+)
+
+# `split_debug_info` on an `exe` writes the separated DWARF symbols file and
+# exposes it through the `debug_info` output group.
+dart_binary(
+    name = "hello_exe",
+    main = "hello.dart",
+    split_debug_info = True,
+)
+
+# The same split on `aot-snapshot`: the raw `.aot` loses its embedded debug
+# info and `<name>.debug` carries it instead.
+dart_binary(
+    name = "hello_aot_debug",
+    compile_mode = "aot-snapshot",
+    main = "hello.dart",
+    split_debug_info = True,
+)
+
+# The helpers give a test one file each: the launcher `bazel run` starts, a
+# split symbols file, or the raw `.aot` from the `snapshot` output group.
+launcher_bundle(
+    name = "hello_aot_run",
+    target = ":hello_aot",
+)
+
+launcher_bundle(
+    name = "hello_jit_run",
+    target = ":hello_jit",
+)
+
+output_group_bundle(
+    name = "hello_exe_debug",
+    group = "debug_info",
+    target = ":hello_exe",
+)
+
+output_group_bundle(
+    name = "hello_aot_debug_info",
+    group = "debug_info",
+    target = ":hello_aot_debug",
+)
+
+output_group_bundle(
+    name = "hello_aot_snapshot",
+    group = "snapshot",
+    target = ":hello_aot",
+)
+
+# Runs both snapshot launchers with CLI arguments, the way `bazel run` does.
+dart_test(
+    name = "snapshot_run_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :hello_aot_run)",
+        "$(rlocationpath :hello_jit_run)",
+    ],
+    data = [
+        ":hello_aot_run",
+        ":hello_jit_run",
+    ],
+    main = "run_test.dart",
+    deps = ["@rules_dart//dart/runfiles"],
+)
+
+# Reads the separated symbols file and the raw snapshot output group.
+dart_test(
+    name = "debug_info_inspect_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :hello_exe_debug)",
+        "$(rlocationpath :hello_aot_debug_info)",
+        "$(rlocationpath :hello_aot_snapshot)",
+    ],
+    data = [
+        ":hello_aot_debug_info",
+        ":hello_aot_snapshot",
+        ":hello_exe_debug",
+    ],
+    main = "inspect_test.dart",
+    deps = ["@rules_dart//dart/runfiles"],
 )

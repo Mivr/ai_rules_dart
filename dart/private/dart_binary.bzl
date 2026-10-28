@@ -89,7 +89,7 @@ def _binary_recorded_uses(ctx, compile_mode):
         recorded_uses_info = [DartRecordedUsesInfo(file = recorded_uses, kind = kind)]
     return compile_recorded_uses, recorded_uses_info
 
-def _binary_source_compile(ctx, dart_sdk_info, own, packages, output, compile_mode, compile_recorded_uses, resolved_assets):
+def _binary_source_compile(ctx, dart_sdk_info, own, packages, output, compile_mode, optional_outputs, resolved_assets):
     """Compiles from source through `executable_inputs`. Returns (packages, code_asset_libs)."""
 
     # Nothing is copied: a package split between the source tree and `bazel-out`
@@ -146,7 +146,8 @@ def _binary_source_compile(ctx, dart_sdk_info, own, packages, output, compile_mo
             extra_flags = ctx.attr.dart_compile_flags,
             defines = merge_dart_defines(ctx),
             main_path = main_arg,
-            recorded_uses = compile_recorded_uses,
+            recorded_uses = optional_outputs.recorded_uses,
+            debug_info = optional_outputs.debug_info,
             jit_tool = ctx.files._jit_tool,
             comma_patch = ctx.file._comma_patch,
             native_assets_yaml = native_assets_yaml,
@@ -156,10 +157,179 @@ def _binary_source_compile(ctx, dart_sdk_info, own, packages, output, compile_mo
     )
     return packages, code_asset_libs
 
-def _binary_launcher_outputs(ctx, dart_sdk_info, output, is_windows, code_asset_libs, compile_mode, recorded_uses_info, own):
-    """The launcher-executable providers for `kernel` mode with `launcher = True`."""
+def _binary_optional_outputs(ctx, compile_mode):
+    """Declares the recorded-uses and split-debug outputs for a `dart_binary`.
+
+    Args:
+      ctx: The rule context.
+      compile_mode: The `dart compile` mode.
+
+    Returns:
+      A struct with `recorded_uses` (File or None), `recorded_uses_info`
+      (provider list) and `debug_info` (File or None).
+    """
+    compile_recorded_uses, recorded_uses_info = _binary_recorded_uses(ctx, compile_mode)
+    return struct(
+        recorded_uses = compile_recorded_uses,
+        recorded_uses_info = recorded_uses_info,
+        debug_info = _binary_debug_info(ctx, compile_mode),
+    )
+
+def _binary_debug_info(ctx, compile_mode):
+    """Declares the `<name>.debug` symbols file when `split_debug_info` is set.
+
+    Args:
+      ctx: The rule context.
+      compile_mode: The `dart compile` mode.
+
+    Returns:
+      The declared symbols File, or None when splitting is off.
+    """
+    if not ctx.attr.split_debug_info:
+        return None
+    if compile_mode not in ("exe", "aot-snapshot"):
+        fail(("dart_binary: `split_debug_info` is only valid with `compile_mode` " +
+              "\"exe\" or \"aot-snapshot\", but %s sets `compile_mode` = %r.") %
+             (ctx.label, compile_mode))
+    return ctx.actions.declare_file(ctx.label.name + ".debug")
+
+def _binary_compile_info(result):
+    """The `DartCompileInfo` provider for a compiled binary.
+
+    Args:
+      result: The struct describing the compiled binary.
+
+    Returns:
+      A `DartCompileInfo` carrying the raw compiled file and its mode.
+    """
+    return DartCompileInfo(
+        executable = result.output,
+        compile_mode = result.compile_mode,
+        sdk_version = result.dart_sdk_info.version,
+    )
+
+def _binary_output_groups(result):
+    """The documented `snapshot` and `debug_info` output groups.
+
+    Args:
+      result: The struct describing the compiled binary.
+
+    Returns:
+      `OutputGroupInfo` exposing the raw compiled file and, when it exists,
+      the split symbols file.
+    """
+    if result.debug_info == None:
+        return OutputGroupInfo(snapshot = depset([result.output]))
+    return OutputGroupInfo(
+        snapshot = depset([result.output]),
+        debug_info = depset([result.debug_info]),
+    )
+
+def _binary_declared_files(result):
+    """The `DefaultInfo.files` of a compiled binary.
+
+    The raw compile output is always present. A split symbols file joins it,
+    so a build-only consumer still gets the artifact it asked for.
+
+    Args:
+      result: The struct describing the compiled binary.
+
+    Returns:
+      A depset of files.
+    """
+    files = [result.output]
+    if result.debug_info != None:
+        files.append(result.debug_info)
+    return depset(files)
+
+def _snapshot_runner(result):
+    """The pinned-SDK VM that runs a snapshot output.
+
+    Args:
+      result: The struct describing the compiled binary.
+
+    Returns:
+      The `dart` File for `jit-snapshot`, or the `dartaotruntime` File for
+      `aot-snapshot` (including a cross target's own runtime).
+    """
+    if result.compile_mode == "jit-snapshot":
+        return result.dart_sdk_info.dart
+    cross_runtime = getattr(result.dart_sdk_info, "cross_dartaotruntime", None)
+    if cross_runtime != None:
+        return cross_runtime
+    for f in result.dart_sdk_info.compile_files.to_list():
+        if f.basename in ("dartaotruntime", "dartaotruntime.exe"):
+            return f
+    fail(("dart_binary: `compile_mode = \"aot-snapshot\"` needs a " +
+          "`dartaotruntime` in the pinned SDK %s, but the toolchain names none.") %
+         result.dart_sdk_info.version)
+
+def _binary_snapshot_outputs(ctx, result):
+    """The launcher-executable providers for `aot-snapshot` and `jit-snapshot`.
+
+    The launcher runs the target's own pinned-SDK VM on the raw snapshot in
+    runfiles, forwarding every argument. The raw snapshot stays in
+    `DefaultInfo.files` and the `snapshot` output group so build-only consumers
+    keep receiving the compiled artifact.
+
+    Args:
+      ctx: The rule context.
+      result: The struct describing the compiled binary.
+
+    Returns:
+      The providers for a snapshot-mode `dart_binary`.
+    """
+    runner = _snapshot_runner(result)
+    launcher = ctx.actions.declare_file(
+        ctx.label.name + (".bat" if result.is_windows else ".sh"),
+    )
+    template = ctx.file._snapshot_launcher_bat if result.is_windows else ctx.file._snapshot_launcher_sh
+    ctx.actions.expand_template(
+        template = template,
+        output = launcher,
+        substitutions = {
+            "@RULES_DART_RUNNER@": runfiles_path(runner, ctx.workspace_name),
+            "@RULES_DART_SNAPSHOT@": runfiles_path(result.output, ctx.workspace_name),
+        },
+        is_executable = True,
+    )
+    runfiles = ctx.runfiles(
+        files = ctx.files.data + result.code_asset_libs + [result.output, runner],
+        transitive_files = depset(
+            transitive = [
+                collect_transitive_resources(ctx.attr.deps),
+                result.dart_sdk_info.runtime_files,
+            ],
+        ),
+    ).merge_all(
+        [dep[DefaultInfo].default_runfiles for dep in ctx.attr.data],
+    )
+    return [
+        DefaultInfo(
+            files = _binary_declared_files(result),
+            executable = launcher,
+            runfiles = runfiles,
+        ),
+        _binary_compile_info(result),
+        _binary_output_groups(result),
+        # What makes the `dart_analyze` aspect and `dart_fix` reach this entrypoint
+        # without making this target a legal `deps` entry. Staging goes by
+        # `short_path`, which is the source file's own path.
+        result.own.analyzable,
+    ] + result.recorded_uses_info
+
+def _binary_launcher_outputs(ctx, result):
+    """The launcher-executable providers for `kernel` mode with `launcher = True`.
+
+    Args:
+      ctx: The rule context.
+      result: The struct describing the compiled binary.
+
+    Returns:
+      The providers for a kernel-mode `dart_binary` with a native launcher.
+    """
     launcher_exe = ctx.actions.declare_file(
-        ctx.label.name + (".exe" if is_windows else ""),
+        ctx.label.name + (".exe" if result.is_windows else ""),
     )
     ctx.actions.symlink(
         output = launcher_exe,
@@ -172,18 +342,18 @@ def _binary_launcher_outputs(ctx, dart_sdk_info, output, is_windows, code_asset_
     ctx.actions.write(
         output = config_file,
         content = json.encode({
-            "dart": runfiles_path(dart_sdk_info.dart, ctx.workspace_name),
-            "dill": runfiles_path(output, ctx.workspace_name),
-            "dart_exec": dart_sdk_info.dart.path,
-            "dill_exec": output.path,
+            "dart": runfiles_path(result.dart_sdk_info.dart, ctx.workspace_name),
+            "dill": runfiles_path(result.output, ctx.workspace_name),
+            "dart_exec": result.dart_sdk_info.dart.path,
+            "dill_exec": result.output.path,
         }),
     )
     runfiles = ctx.runfiles(
-        files = ctx.files.data + code_asset_libs + [output, config_file, dart_sdk_info.dart],
+        files = ctx.files.data + result.code_asset_libs + [result.output, config_file, result.dart_sdk_info.dart],
         transitive_files = depset(
             transitive = [
                 collect_transitive_resources(ctx.attr.deps),
-                dart_sdk_info.runtime_files,
+                result.dart_sdk_info.runtime_files,
             ],
         ),
     ).merge_all(
@@ -201,16 +371,21 @@ def _binary_launcher_outputs(ctx, dart_sdk_info, output, is_windows, code_asset_
                 "RULES_DART_KERNEL_CONFIG": runfiles_path(config_file, ctx.workspace_name),
             },
         ),
-        DartCompileInfo(
-            executable = output,
-            compile_mode = compile_mode,
-            sdk_version = dart_sdk_info.version,
-        ),
-        own.analyzable,
-    ] + recorded_uses_info
+        _binary_compile_info(result),
+        _binary_output_groups(result),
+        result.own.analyzable,
+    ] + result.recorded_uses_info
 
-def _binary_default_outputs(ctx, output, code_asset_libs, compile_mode, dart_sdk_info, recorded_uses_info, own):
-    """The standard executable providers, with package resources in runfiles."""
+def _binary_default_outputs(ctx, result):
+    """The standard executable providers, with package resources in runfiles.
+
+    Args:
+      ctx: The rule context.
+      result: The struct describing the compiled binary.
+
+    Returns:
+      The providers for a `dart_binary` without a launcher.
+    """
 
     # Resources ride the runfiles, not the compile. A dep's `lib/**` non-Dart
     # files are part of the package at run time under pub, and the compiled
@@ -219,7 +394,7 @@ def _binary_default_outputs(ctx, output, code_asset_libs, compile_mode, dart_sdk
     # package cannot read its own shipped files back out. Staging them here is
     # what makes `rlocation` work for them.
     runfiles = ctx.runfiles(
-        files = ctx.files.data + code_asset_libs,
+        files = ctx.files.data + result.code_asset_libs,
         transitive_files = collect_transitive_resources(ctx.attr.deps),
     ).merge_all(
         [dep[DefaultInfo].default_runfiles for dep in ctx.attr.data],
@@ -227,20 +402,66 @@ def _binary_default_outputs(ctx, output, code_asset_libs, compile_mode, dart_sdk
 
     return [
         DefaultInfo(
-            files = depset([output]),
-            executable = output,
+            files = _binary_declared_files(result),
+            executable = result.output,
             runfiles = runfiles,
         ),
-        DartCompileInfo(
-            executable = output,
-            compile_mode = compile_mode,
-            sdk_version = dart_sdk_info.version,
-        ),
+        _binary_compile_info(result),
+        _binary_output_groups(result),
         # What makes the `dart_analyze` aspect and `dart_fix` reach this entrypoint
         # without making this target a legal `deps` entry. Staging goes by
         # `short_path`, which is the source file's own path.
-        own.analyzable,
-    ] + recorded_uses_info
+        result.own.analyzable,
+    ] + result.recorded_uses_info
+
+def _binary_compile(ctx, dart_sdk_info, own, own_files, output, compile_mode, optional_outputs, resolved_assets):
+    """Compiles a binary, modularly when eligible. Returns the code-asset libs.
+
+    Args:
+      ctx: The rule context.
+      dart_sdk_info: The `DartSdkInfo` of the toolchain.
+      own: The `executable_package` record for this rule's own inputs.
+      own_files: The rule's main and source Files.
+      output: The declared raw compile output.
+      compile_mode: The `dart compile` mode.
+      optional_outputs: The declared recorded-uses and debug-info outputs.
+      resolved_assets: The resolved code assets.
+
+    Returns:
+      The list of code-asset library Files.
+    """
+    kernel_tools = modular_executable_tools(
+        ctx,
+        own_files,
+        own.record,
+        kernel_mode = (compile_mode == "kernel" and ctx.attr.modular_kernel),
+        resolved_assets = resolved_assets,
+        own_defines = ctx.attr.defines,
+        compile_flags = ctx.attr.dart_compile_flags,
+        target_sdk = dart_sdk_info,
+    )
+    if kernel_tools != None:
+        modular_executable_kernel(
+            ctx,
+            kernel_tools,
+            entry_sources(own_files),
+            own.packages,
+            [dep[DartKernelInfo] for dep in ctx.attr.deps],
+            output,
+            kernel_compile_settings(),
+        )
+        return []
+    _packages, code_asset_libs = _binary_source_compile(
+        ctx,
+        dart_sdk_info,
+        own,
+        own.packages,
+        output,
+        compile_mode,
+        optional_outputs,
+        resolved_assets,
+    )
+    return code_asset_libs
 
 def _dart_binary_impl(ctx):
     # A `dart_binary` evaluated in the execution configuration (`cfg = "exec"`)
@@ -252,10 +473,9 @@ def _dart_binary_impl(ctx):
 
     own_files = [ctx.file.main] + ctx.files.srcs
     own = executable_package(ctx, own_files)
-    packages = own.packages
 
     if ctx.attr.code_assets_from_deps:
-        hook_err = check_unreplaced_hooks(ctx.label, packages)
+        hook_err = check_unreplaced_hooks(ctx.label, own.packages)
         if hook_err != None:
             fail(hook_err)
 
@@ -282,46 +502,35 @@ def _dart_binary_impl(ctx):
     # The compiler records the uses of `@RecordUse` definitions only when it
     # tree-shakes, so the other modes get the file it writes when there is
     # nothing to record: a link hook then runs over no uses, as for a program
-    # that uses none.
-    compile_recorded_uses, recorded_uses_info = _binary_recorded_uses(ctx, compile_mode)
+    # that uses none. `split_debug_info` declares its symbols file in the same
+    # place, so the compile action can write both.
+    optional_outputs = _binary_optional_outputs(ctx, compile_mode)
 
-    code_asset_libs = []
-    kernel_tools = modular_executable_tools(
-        ctx,
-        own_files,
-        own.record,
-        kernel_mode = (compile_mode == "kernel" and ctx.attr.modular_kernel),
-        resolved_assets = resolved_assets,
-        own_defines = ctx.attr.defines,
-        compile_flags = ctx.attr.dart_compile_flags,
-        target_sdk = dart_sdk_info,
-    )
-    if kernel_tools != None:
-        modular_executable_kernel(
-            ctx,
-            kernel_tools,
-            entry_sources(own_files),
-            packages,
-            [dep[DartKernelInfo] for dep in ctx.attr.deps],
-            output,
-            kernel_compile_settings(),
-        )
-    else:
-        packages, code_asset_libs = _binary_source_compile(
+    result = struct(
+        output = output,
+        compile_mode = compile_mode,
+        dart_sdk_info = dart_sdk_info,
+        code_asset_libs = _binary_compile(
             ctx,
             dart_sdk_info,
             own,
-            packages,
+            own_files,
             output,
             compile_mode,
-            compile_recorded_uses,
+            optional_outputs,
             resolved_assets,
-        )
+        ),
+        recorded_uses_info = optional_outputs.recorded_uses_info,
+        debug_info = optional_outputs.debug_info,
+        own = own,
+        is_windows = is_windows,
+    )
 
     if compile_mode == "kernel" and ctx.attr.launcher:
-        return _binary_launcher_outputs(ctx, dart_sdk_info, output, is_windows, code_asset_libs, compile_mode, recorded_uses_info, own)
-
-    return _binary_default_outputs(ctx, output, code_asset_libs, compile_mode, dart_sdk_info, recorded_uses_info, own)
+        return _binary_launcher_outputs(ctx, result)
+    if compile_mode in ("aot-snapshot", "jit-snapshot") and ctx.attr.snapshot_launcher:
+        return _binary_snapshot_outputs(ctx, result)
+    return _binary_default_outputs(ctx, result)
 
 def _binary_code_assets_transition_impl(_settings, attr):
     return {
@@ -434,6 +643,35 @@ persistent-worker rules (`dart_codegen`, `dart_aggregate_codegen`, `dart_sqlcode
             executable = True,
             cfg = "target",
             doc = "The native launcher binary symlinked as `DefaultInfo.executable` when `compile_mode = \"kernel\"` and `launcher = True`.",
+        ),
+        "snapshot_launcher": attr.bool(
+            default = True,
+            doc = """Whether `aot-snapshot` and `jit-snapshot` also emit a run \
+launcher as `DefaultInfo.executable`.
+
+On by default. Turn it off only for a build-time tool that executes its raw snapshot \
+directly through `dartaotruntime` or `dart` (for example rules_dart's own `kernel_module` \
+worker), where the raw file must stay the executable.""",
+        ),
+        "split_debug_info": attr.bool(
+            default = False,
+            doc = """Whether to compile with `--save-debugging-info` and \
+`--dwarf-stack-traces` and declare a separate DWARF symbols file.
+
+Only `compile_mode = "exe"` and `compile_mode = "aot-snapshot"` support it; setting it on \
+`kernel` or `jit-snapshot` fails analysis naming `compile_mode`. The symbols file is \
+`<name>.debug` and is exposed through the `debug_info` output group (and `DefaultInfo.files`). \
+Off by default, so no extra file is produced.""",
+        ),
+        "_snapshot_launcher_sh": attr.label(
+            default = "//dart/private/tools:snapshot_launcher.sh.tpl",
+            allow_single_file = True,
+            doc = "The POSIX shell launcher template for `aot-snapshot` and `jit-snapshot` targets.",
+        ),
+        "_snapshot_launcher_bat": attr.label(
+            default = "//dart/private/tools:snapshot_launcher.bat.tpl",
+            allow_single_file = True,
+            doc = "The Windows batch launcher template for `aot-snapshot` and `jit-snapshot` targets.",
         ),
         "defines": attr.string_list(
             doc = "Dart environment declarations (`key=value`). Each entry becomes a `-Dkey=value` flag.",

@@ -139,6 +139,51 @@ on its own when `modular_kernel = False`, when its own `defines` or
 assets. The `//dart:extra_dart_defines` flag does not cause a fallback: every
 module takes the same flag values.
 
+### Running snapshots and split debug info
+
+A `dart_binary(compile_mode = "aot-snapshot")` or
+`dart_binary(compile_mode = "jit-snapshot")` target is runnable with
+`bazel run`, and `ctx.executable` consumers can start it the same way. The
+`DefaultInfo.executable` is a launcher, not the raw `.aot` or `.jit` file: on
+Unix it is `<name>.sh`, and on Windows it is `<name>.bat`. The launcher runs
+the target's own pinned-SDK `dartaotruntime` (AOT) or `dart` VM (JIT) on the
+snapshot in runfiles and forwards every command-line argument and the exit
+code. A snapshot runs as a VM file form, which keeps the caller's environment
+and writes nothing under `HOME`. The raw snapshot is still
+`DefaultInfo.files` and is also the `snapshot` output group, so a build-only
+consumer keeps receiving `<name>.aot` or `<name>.jit` at its usual path:
+
+```sh
+bazel build //app:app_aot
+bazel build //app:app_aot --output_groups=snapshot
+```
+
+Every compiled `dart_binary` exposes the `snapshot` output group: the raw
+`.aot`/`.jit` snapshot in those modes, the native executable in `exe`, and the
+`.dill` kernel in `kernel`.
+
+Set `split_debug_info = True` on an `exe` or `aot-snapshot` target to separate
+the DWARF symbols for crash symbolication. The compile runs with
+`--save-debugging-info` and `--dwarf-stack-traces`, writes `<name>.debug`, and
+exposes it through the `debug_info` output group (it is also in
+`DefaultInfo.files`):
+
+```starlark
+dart_binary(
+    name = "app",
+    main = "bin/main.dart",
+    split_debug_info = True,
+)
+```
+
+```sh
+bazel build //app:app --output_groups=debug_info
+```
+
+`split_debug_info` is off by default and then produces no extra file. Setting
+it on `kernel` or `jit-snapshot` fails analysis naming `compile_mode`, because
+those modes do not produce a separate DWARF container.
+
 ### Using pub.dev packages
 
 Declare individual packages with `pub.package()`:
@@ -727,8 +772,9 @@ The [`e2e/`](e2e/) directory contains complete working examples:
 | [`link_hook`](e2e/link_hook/)                         | `record_use` and a package's `hook/link.dart` emitting a data asset via `dart_link_hook` |
 
 > **Note**: Only the `exe` and `aot-snapshot` compile modes cross-compile via
-> `--platforms`. `kernel` and `jit-snapshot` are VM formats that ignore target
-> flags, and `dart_test` always runs on the host. Linux targets are `linux-x64`,
+> `--platforms`. `kernel` is a VM format that ignores target flags, and a JIT
+> snapshot is host-only: it is trained and run on the machine that builds it.
+> `dart_test` always runs on the host. Linux targets are `linux-x64`,
 > `linux-arm64`, `linux-riscv64` and `linux-arm` (armv7, selected by
 > `@platforms//cpu:armv7`), reachable from every supported host. Cross-compiling
 > fetches SDK artifacts at action time, so it needs network access. See

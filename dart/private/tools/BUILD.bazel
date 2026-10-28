@@ -16,6 +16,17 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 
+# The `aot-snapshot` and `jit-snapshot` launcher templates. `dart_binary`
+# expands the one for the target platform with the runfiles paths of the
+# pinned VM and the raw snapshot (see `dart/private/dart_binary.bzl`).
+exports_files(
+    [
+        "snapshot_launcher.bat.tpl",
+        "snapshot_launcher.sh.tpl",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 # Run from source by the exec SDK's `dart`, by `dart_binary` in `jit-snapshot`
 # mode and by `dart_test_runner_snapshot`. See dart/private/dart_compile.bzl.
 exports_files(
@@ -436,6 +447,9 @@ dart_binary(
     compile_mode = "aot-snapshot",
     main = "kernel_module.dart",
     modular_kernel = False,
+    # A persistent-worker tool: `dartaotruntime` runs the raw snapshot, so it
+    # must stay the executable rather than gaining a `bazel run` launcher.
+    snapshot_launcher = False,
     visibility = ["//visibility:public"],
 )
 

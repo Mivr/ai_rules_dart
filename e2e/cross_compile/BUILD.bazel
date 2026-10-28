@@ -6,6 +6,7 @@ load(
     "dart_test",
 )
 load("@rules_platform//platform_data:defs.bzl", "platform_data")
+load(":snapshot_data.bzl", "snapshot_data")
 
 dart_analysis_config(
     name = "analysis_config",
@@ -54,14 +55,16 @@ dart_binary(
 # --target-os/--target-arch for, so both are exercised against every target.
 # `dart_binary` is `executable = True` in every mode, which `platform_data`
 # requires; each symlink is named after its own target, so the runfiles paths
-# are `_main/app_<t>` and `_main/app_aot_<t>` with no extension.
+# are `_main/app_<t>` and `_main/app_aot_<t>` with no extension. The AOT
+# target's executable is its run launcher, so `snapshot_data` exposes the raw
+# `snapshot` output group for the ELF-header check below.
 [platform_data(
     name = "app_%s" % name,
     platform = ":%s" % name,
     target = ":app",
 ) for name in _TARGETS]
 
-[platform_data(
+[snapshot_data(
     name = "app_aot_%s" % name,
     platform = ":%s" % name,
     target = ":app_aot",

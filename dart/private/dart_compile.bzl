@@ -487,13 +487,18 @@ def cross_target_error(target_os, target_arch):
     return None
 
 def _compile_validate(ctx, cfg):
-    """Fails on invalid cross targets, late defines, unrecordable modes, and tool mismatches."""
+    """Fails on invalid cross targets, debug-info modes, late defines, and tool mismatches."""
     cross_err = cross_target_error(cfg.target_os, cfg.target_arch)
     if cross_err != None:
         fail(cross_err)
     stage_err = defines_stage_error(cfg.defines, cfg.package_config)
     if stage_err != None:
         fail(stage_err)
+    debug_info = getattr(cfg, "debug_info", None)
+    if debug_info != None and cfg.compile_mode not in ("exe", "aot-snapshot"):
+        fail(("dart_compile_action: `debug_info` requires `compile_mode` \"exe\" or " +
+              "\"aot-snapshot\", but %s has `compile_mode` = %r.") %
+             (ctx.label, cfg.compile_mode))
     if cfg.recorded_uses != None and cfg.compile_mode not in RECORDING_COMPILE_MODES:
         fail("dart_compile_action: `dart compile %s` records no uses." % cfg.compile_mode)
     if cfg.jit_tool and cfg.comma_patch == None:
@@ -513,6 +518,54 @@ def _compile_split_flags(extra_flags, package_config):
     if split.error != None:
         fail(split.error)
     return split.front_end, split.backend
+
+def _compile_common_args(args, st):
+    """Adds the flags every `dart compile` action shares and returns its outputs.
+
+    Both the isolated wrapper and the direct `dart compile` path emit the
+    compilation-mode flags, asserts, recorded uses, split debug info and the
+    caller's per-target flags in the same order; only their program and
+    cross-tool arguments differ.
+
+    Args:
+      args: The action's `Args` object.
+      st: The threaded compile struct.
+
+    Returns:
+      The action's output Files.
+    """
+    args.add_all(st.mode_flags)
+    if st.enable_asserts and "--enable-asserts" not in st.mode_flags and "--enable-asserts" not in st.backend_flags:
+        args.add("--enable-asserts")
+    outputs = [st.output]
+    if st.recorded_uses != None:
+        args.add(st.recorded_uses, format = "--recorded-uses=%s")
+        outputs.append(st.recorded_uses)
+    outputs = _add_debug_info_args(args, outputs, st.debug_info)
+    args.add_all(st.backend_flags)
+    return outputs
+
+def _add_debug_info_args(args, outputs, debug_info):
+    """Adds the split-DWARF flags and output when `split_debug_info` is set.
+
+    `--save-debugging-info` is a `gen_snapshot` output, so it travels as an
+    extra snapshot option: the isolated wrapper passes it straight to
+    `gen_snapshot`, and a delegated `dart compile` receives it inside
+    `--extra-gen-snapshot-options`. `--dwarf-stack-traces` takes the same path.
+
+    Args:
+      args: The action's `Args` object.
+      outputs: The action's output Files.
+      debug_info: The declared symbols File, or None.
+
+    Returns:
+      The output Files, with `debug_info` appended when present.
+    """
+    if debug_info == None:
+        return outputs
+    args.add(debug_info.path, format = "--extra-gen-snapshot-options=--save-debugging-info=%s")
+    args.add("--extra-gen-snapshot-options=--dwarf-stack-traces")
+    return outputs + [debug_info]
 
 def _compile_kernel_mode(ctx, dart_sdk_info, st):
     """Runs the `kernel` mode's lone `gen_kernel` step."""
@@ -592,14 +645,7 @@ def _compile_aot_wrapper(ctx, dart_sdk_info, st, compile_main, compile_main_path
     if st.cross_dartaotruntime != None:
         args.add(st.cross_dartaotruntime, format = "--dartaotruntime=%s")
     args.add_all(compile_quiet_flags(st.compile_mode))
-    args.add_all(st.mode_flags)
-    if st.enable_asserts and "--enable-asserts" not in st.mode_flags and "--enable-asserts" not in st.backend_flags:
-        args.add("--enable-asserts")
-    outputs = [st.output]
-    if st.recorded_uses != None:
-        args.add(st.recorded_uses, format = "--recorded-uses=%s")
-        outputs.append(st.recorded_uses)
-    args.add_all(st.backend_flags)
+    outputs = _compile_common_args(args, st)
     args.add("-o", st.output)
     args.add(compile_main)
     direct_inputs = st.jit_tool + [pkg_cfg, compile_main] + compile_srcs
@@ -637,18 +683,7 @@ def _compile_dart_compile(ctx, dart_sdk_info, st, compile_main, compile_main_pat
     if st.target_arch and (st.compile_mode == "exe" or st.compile_mode == "aot-snapshot"):
         args.add("--target-arch", st.target_arch)
 
-    # Compilation mode defaults
-    args.add_all(st.mode_flags)
-    if st.enable_asserts and "--enable-asserts" not in st.mode_flags and "--enable-asserts" not in st.backend_flags:
-        args.add("--enable-asserts")
-
-    outputs = [st.output]
-    if st.recorded_uses != None:
-        args.add(st.recorded_uses, format = "--recorded-uses=%s")
-        outputs.append(st.recorded_uses)
-
-    # Per-target extra flags (last, so they can override defaults)
-    args.add_all(st.backend_flags)
+    outputs = _compile_common_args(args, st)
 
     args.add("-o", st.output)
     args.add(compile_main_path if compile_main_path != None else compile_main)
@@ -672,6 +707,51 @@ def _compile_dart_compile(ctx, dart_sdk_info, st, compile_main, compile_main_pat
         mnemonic = "DartCompile",
         progress_message = "Compiling Dart %s %s" % (st.compile_mode, ctx.label),
         env = env,
+    )
+
+def _compile_state(ctx, dart_sdk_info, cfg, front_end_flags, backend_flags):
+    """Builds the compile struct threaded through the action helpers.
+
+    Args:
+      ctx: The rule context.
+      dart_sdk_info: The `DartSdkInfo` of the toolchain.
+      cfg: The compile inputs.
+      front_end_flags: Flags for the `gen_kernel` step.
+      backend_flags: Flags for the `dart compile` step.
+
+    Returns:
+      The `st` struct every compile helper reads.
+    """
+    mode_flags = get_compilation_mode_flags(ctx, cfg.compile_mode)
+    enable_asserts = (
+        "--enable-asserts" in mode_flags or
+        "--enable-asserts" in front_end_flags or
+        "--enable-asserts" in backend_flags
+    )
+    is_cross = bool(cfg.target_os) or bool(cfg.target_arch)
+    return struct(
+        main = cfg.main,
+        srcs = cfg.srcs,
+        package_config = cfg.package_config,
+        output = cfg.output,
+        compile_mode = cfg.compile_mode,
+        target_os = cfg.target_os,
+        target_arch = cfg.target_arch,
+        defines = cfg.defines,
+        main_path = cfg.main_path,
+        recorded_uses = cfg.recorded_uses,
+        debug_info = getattr(cfg, "debug_info", None),
+        jit_tool = cfg.jit_tool,
+        comma_patch = cfg.comma_patch,
+        native_assets_yaml = cfg.native_assets_yaml,
+        embed_sources = cfg.embed_sources,
+        jit_snapshot_fallback = cfg.jit_snapshot_fallback,
+        front_end_flags = front_end_flags,
+        backend_flags = backend_flags,
+        mode_flags = mode_flags,
+        enable_asserts = enable_asserts,
+        cross_gen_snapshot = getattr(dart_sdk_info, "cross_gen_snapshot", None) if is_cross else None,
+        cross_dartaotruntime = getattr(dart_sdk_info, "cross_dartaotruntime", None) if is_cross else None,
     )
 
 def dart_compile_action(ctx, dart_sdk_info, cfg):
@@ -714,7 +794,11 @@ def dart_compile_action(ctx, dart_sdk_info, cfg):
             of `main.path` (e.g. a path inside an assembled `main` directory).
             `recorded_uses` is the optional output File for the uses of
             `@RecordUse` definitions the compiler records (`--recorded-uses`);
-            only the `exe` and `aot-snapshot` modes record. `jit_tool` lists
+            only the `exe` and `aot-snapshot` modes record. `debug_info` is
+            the optional output File for the split DWARF symbols
+            (`--save-debugging-info`) and adds
+            `--extra-gen-snapshot-options=--dwarf-stack-traces`; only the
+            `exe` and `aot-snapshot` modes accept it. `jit_tool` lists
             the JIT tool sources: the `app_jit_snapshot.dart` entry and every
             source it imports. The `jit-snapshot` mode trains with the entry
             when given, so the snapshot is reproducible; without it, and on
@@ -734,41 +818,7 @@ def dart_compile_action(ctx, dart_sdk_info, cfg):
     _compile_validate(ctx, cfg)
 
     front_end_flags, backend_flags = _compile_split_flags(cfg.extra_flags, cfg.package_config)
-
-    mode_flags = get_compilation_mode_flags(ctx, cfg.compile_mode)
-    enable_asserts = (
-        "--enable-asserts" in mode_flags or
-        "--enable-asserts" in front_end_flags or
-        "--enable-asserts" in backend_flags
-    )
-
-    is_cross = bool(cfg.target_os) or bool(cfg.target_arch)
-    cross_gen_snapshot = getattr(dart_sdk_info, "cross_gen_snapshot", None) if is_cross else None
-    cross_dartaotruntime = getattr(dart_sdk_info, "cross_dartaotruntime", None) if is_cross else None
-
-    st = struct(
-        main = cfg.main,
-        srcs = cfg.srcs,
-        package_config = cfg.package_config,
-        output = cfg.output,
-        compile_mode = cfg.compile_mode,
-        target_os = cfg.target_os,
-        target_arch = cfg.target_arch,
-        defines = cfg.defines,
-        main_path = cfg.main_path,
-        recorded_uses = cfg.recorded_uses,
-        jit_tool = cfg.jit_tool,
-        comma_patch = cfg.comma_patch,
-        native_assets_yaml = cfg.native_assets_yaml,
-        embed_sources = cfg.embed_sources,
-        jit_snapshot_fallback = cfg.jit_snapshot_fallback,
-        front_end_flags = front_end_flags,
-        backend_flags = backend_flags,
-        mode_flags = mode_flags,
-        enable_asserts = enable_asserts,
-        cross_gen_snapshot = cross_gen_snapshot,
-        cross_dartaotruntime = cross_dartaotruntime,
-    )
+    st = _compile_state(ctx, dart_sdk_info, cfg, front_end_flags, backend_flags)
 
     compile_main = st.main
     compile_main_path = st.main_path

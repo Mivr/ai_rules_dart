@@ -133,6 +133,66 @@ def _kernel_launcher_binary_test_impl(ctx):
 
 _kernel_launcher_binary_test = analysistest.make(_kernel_launcher_binary_test_impl)
 
+def _snapshot_launcher_binary_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
+    default_exe = target[DefaultInfo].files_to_run.executable
+    default_names = [f.basename for f in target[DefaultInfo].files.to_list()]
+    snapshot_names = [f.basename for f in target[OutputGroupInfo].snapshot.to_list()]
+    asserts.true(
+        env,
+        default_exe.basename.endswith(".sh"),
+        "DefaultInfo.executable is the .sh snapshot launcher, got %s" % default_exe.basename,
+    )
+    asserts.true(
+        env,
+        ctx.attr.expected_snapshot in default_names,
+        "DefaultInfo.files keeps the raw snapshot %s, got %s" % (ctx.attr.expected_snapshot, default_names),
+    )
+    asserts.equals(
+        env,
+        [ctx.attr.expected_snapshot],
+        snapshot_names,
+        "the snapshot output group exposes the raw snapshot",
+    )
+    asserts.equals(env, ctx.attr.expected_mode, target[DartCompileInfo].compile_mode)
+    return analysistest.end(env)
+
+_snapshot_launcher_binary_test = analysistest.make(
+    _snapshot_launcher_binary_test_impl,
+    attrs = {
+        "expected_snapshot": attr.string(mandatory = True),
+        "expected_mode": attr.string(mandatory = True),
+    },
+)
+
+def _split_debug_info_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
+    groups = target[OutputGroupInfo]
+    asserts.true(env, hasattr(groups, "debug_info"), "split_debug_info declares a debug_info group")
+    debug = groups.debug_info.to_list()
+    asserts.equals(env, 1, len(debug), "the debug_info group holds one symbols file")
+    asserts.true(env, debug[0].basename.endswith(".debug"), "the symbols file is named <name>.debug")
+    asserts.true(
+        env,
+        debug[0] in target[DefaultInfo].files.to_list(),
+        "DefaultInfo.files carries the split symbols file",
+    )
+    return analysistest.end(env)
+
+_split_debug_info_test = analysistest.make(_split_debug_info_test_impl)
+
+def _split_debug_info_failure_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    asserts.expect_failure(env, "compile_mode")
+    return analysistest.end(env)
+
+_split_debug_info_failure_test = analysistest.make(
+    _split_debug_info_failure_test_impl,
+    expect_failure = True,
+)
+
 def _script_action_packages_test_impl(ctx):
     env = analysistest.begin(ctx)
     target = analysistest.target_under_test(env)
@@ -241,6 +301,61 @@ def dart_binary_test_suite(name):
         main = "//dart/private/tools:noop.dart",
         tags = ["manual"],
     )
+    dart_binary(
+        name = "split_debug_aot_fixture",
+        compile_mode = "aot-snapshot",
+        main = "//dart/private/tools:noop.dart",
+        tags = ["manual"],
+    )
+    dart_binary(
+        name = "split_debug_exe_fixture",
+        main = "//dart/private/tools:noop.dart",
+        split_debug_info = True,
+        tags = ["manual"],
+    )
+    dart_binary(
+        name = "split_debug_kernel_fixture",
+        compile_mode = "kernel",
+        main = "//dart/private/tools:noop.dart",
+        split_debug_info = True,
+        tags = ["manual"],
+    )
+    dart_binary(
+        name = "split_debug_jit_fixture",
+        compile_mode = "jit-snapshot",
+        main = "//dart/private/tools:noop.dart",
+        split_debug_info = True,
+        tags = ["manual"],
+    )
+    _snapshot_launcher_binary_test(
+        name = "dart_binary_aot_launcher_test",
+        size = "small",
+        expected_mode = "aot-snapshot",
+        expected_snapshot = "split_debug_aot_fixture.aot",
+        target_under_test = ":split_debug_aot_fixture",
+    )
+    _snapshot_launcher_binary_test(
+        name = "dart_binary_jit_launcher_test",
+        size = "small",
+        expected_mode = "jit-snapshot",
+        expected_snapshot = "jit_snapshot_fixture.jit",
+        target_under_test = ":jit_snapshot_fixture",
+    )
+    _split_debug_info_test(
+        name = "dart_binary_split_debug_info_test",
+        size = "small",
+        target_under_test = ":split_debug_exe_fixture",
+    )
+    _split_debug_info_failure_test(
+        name = "dart_binary_split_debug_kernel_failure_test",
+        size = "small",
+        target_under_test = ":split_debug_kernel_fixture",
+    )
+    _split_debug_info_failure_test(
+        name = "dart_binary_split_debug_jit_failure_test",
+        size = "small",
+        target_under_test = ":split_debug_jit_fixture",
+    )
     _script_action_packages_test(
         name = "dart_jit_snapshot_packages_test",
         size = "small",
@@ -280,6 +395,11 @@ def dart_binary_test_suite(name):
             ":dart_test_rule_kind_test",
             ":dart_codegen_kernel_sdk_mismatch_test",
             ":dart_binary_kernel_launcher_test",
+            ":dart_binary_aot_launcher_test",
+            ":dart_binary_jit_launcher_test",
+            ":dart_binary_split_debug_info_test",
+            ":dart_binary_split_debug_kernel_failure_test",
+            ":dart_binary_split_debug_jit_failure_test",
             ":dart_jit_snapshot_packages_test",
             ":dart_kernel_wrapper_packages_test",
             ":dart_test_runner_snapshot_packages_test",
