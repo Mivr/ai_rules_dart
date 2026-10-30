@@ -105,8 +105,8 @@ def package_lib_prefix(lib_root):
     """
     return (lib_root + "/lib/") if lib_root else "lib/"
 
-def check_code_asset_ownership(label, package_name, assets):
-    """Checks that every declared asset id is namespaced to this package.
+def check_code_asset_ownership(label, package_name, assets, code_assets_for = []):
+    """Checks that every declared asset id is namespaced to an owning package.
 
     Upstream requires `CodeAsset.id` to be `package:<package>/<name>` where
     `<package>` is the package that owns the asset — "Code assets are
@@ -114,25 +114,44 @@ def check_code_asset_ownership(label, package_name, assets):
     ride `DartPackageInfo`, an id belonging to some other package would
     propagate under the wrong owner and be impossible to trace back.
 
+    An asset may deliberately belong to another package: a prebuilt library
+    stands in for a dependency's build-hook output while this target declares
+    and packs it. `code_assets_for` states those package names, and their
+    prefixes are accepted exactly like the target's own. An unlisted package
+    is still rejected, so a typo cannot silently attach an asset to the wrong
+    owner.
+
     Args:
       label: The owning rule's label (included in the error message).
       package_name: The package name this library declares.
       assets: List of `DartCodeAssetInfo`.
+      code_assets_for: Package names this target may carry assets for besides
+        its own. Duplicates are harmless; an empty list reproduces the
+        pre-`code_assets_for` result exactly.
 
     Returns:
       An error message string on the first mismatch, else `None`.
     """
-    prefix = "package:%s/" % package_name
+    prefixes = ["package:%s/" % package_name]
+    for name in code_assets_for:
+        prefixes.append("package:%s/" % name)
     for asset in assets:
-        if not asset.asset_id.startswith(prefix):
-            return (
+        if not any([asset.asset_id.startswith(prefix) for prefix in prefixes]):
+            message = (
                 ("%s: code asset id `%s` is not namespaced to this package. " +
                  "Expected it to start with `%s`, because a code asset is " +
                  "owned by the package declaring it. Either set " +
                  "`package_name = \"…\"` to the owning package, or move the " +
                  "asset to that package's `dart_library`.") %
-                (label, asset.asset_id, prefix)
+                (label, asset.asset_id, prefixes[0])
             )
+            if code_assets_for:
+                message += (
+                    " If the asset deliberately stands in for another " +
+                    "package's build-hook output, name that package in " +
+                    "`code_assets_for`."
+                )
+            return message
     return None
 
 def dart_info(
@@ -142,8 +161,8 @@ def dart_info(
         srcs = [],
         resources = [],
         code_assets = [],
-        has_unreplaced_hook = "",
-        link_hook = None):
+        code_assets_for = [],
+        **legacy_hooks):
     """Builds a `DartInfo` for a library, merging its dependencies' closures.
 
     The caller supplies only what this target contributes itself; everything
@@ -166,15 +185,39 @@ def dart_info(
       srcs: This target's own Dart sources (or its source directory).
       resources: This target's own non-Dart files under `lib/`.
       code_assets: Targets providing `DartCodeAssetInfo` that this package owns.
-      has_unreplaced_hook: Path of a pub build hook with no Bazel replacement,
-        or "".
-      link_hook: The package's `hook/link.dart` File, or None.
+      code_assets_for: Pub package names this target may carry assets for
+        besides its own `package_name`. An asset id namespaced to any listed
+        package passes the ownership check exactly as the target's own prefix
+        does. Declaration only: the asset still rides this target's own
+        `DartPackageInfo`, and naming a package neither creates that package
+        nor requires it to be a dependency.
+      **legacy_hooks: `has_unreplaced_hook` (path of a pub build hook with no
+        Bazel replacement, or "") and `link_hook` (the package's
+        `hook/link.dart` File, or None). They stay keyword arguments so every
+        caller written before `code_assets_for` keeps working unchanged, while
+        the parameter list stays within the eight-parameter limit. Any other
+        name fails rather than being silently ignored.
 
     Returns:
       A `DartInfo`.
     """
+    has_unreplaced_hook = legacy_hooks.pop("has_unreplaced_hook", "")
+    link_hook = legacy_hooks.pop("link_hook", None)
+    if legacy_hooks:
+        fail(
+            ("%s: `dart_info()` got unsupported keyword argument(s): %s. " +
+             "Pass `code_assets_for` positionally or by name, and " +
+             "`has_unreplaced_hook` / `link_hook` by name.") %
+            (label, ", ".join(sorted(legacy_hooks.keys()))),
+        )
+
     own_assets = [dep[DartCodeAssetInfo] for dep in code_assets]
-    err = check_code_asset_ownership(label, package.package_name, own_assets)
+    err = check_code_asset_ownership(
+        label,
+        package.package_name,
+        own_assets,
+        code_assets_for,
+    )
     if err != None:
         fail(err)
 

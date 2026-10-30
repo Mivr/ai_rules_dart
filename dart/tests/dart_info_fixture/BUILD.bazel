@@ -1,7 +1,9 @@
-load("//dart:defs.bzl", "dart_code_asset", "dart_library")
+load("//dart:defs.bzl", "dart_code_asset", "dart_library", "dart_package_member")
 load(
     "//dart/tests:dart_info_test.bzl",
     "analyzable_with_package_test",
+    "code_assets_for_check_test",
+    "declared_code_asset_ownership_test",
     "facade_library",
     "forwards_closures_test",
     "language_version_passthrough_test",
@@ -9,6 +11,7 @@ load(
     "no_package_empty_test",
     "no_package_name_test",
     "no_package_test",
+    "ownership_failure_test",
     "wrapper_executable",
     "wrapper_library",
 )
@@ -163,4 +166,93 @@ misowned_asset_test(
     name = "misowned_asset_test",
     size = "small",
     target_under_test = ":misowned_wrapper",
+)
+
+# A pinned prebuilt asset namespaced to another package. `code_assets_for`
+# declares the exception, and the asset still rides `host`'s own record.
+dart_code_asset(
+    name = "other_asset",
+    asset_id = "package:other/thing",
+    shared_library = "//dart/tests/cc_fixture:empty_shared",
+)
+
+dart_library(
+    name = "host_declared",
+    package_name = "host",
+    srcs = ["lib/host.dart"],
+    code_assets = [":other_asset"],
+    code_assets_for = ["other"],
+)
+
+declared_code_asset_ownership_test(
+    name = "declared_code_asset_ownership_test",
+    size = "small",
+    target_under_test = ":host_declared",
+)
+
+# The same asset without the declaration: the ownership check still fails.
+dart_library(
+    name = "host_undeclared",
+    package_name = "host",
+    srcs = ["lib/host.dart"],
+    code_assets = [":other_asset"],
+    tags = ["manual"],
+)
+
+ownership_failure_test(
+    name = "undeclared_code_asset_ownership_test",
+    size = "small",
+    expected_message = "code asset id `package:other/thing` is not namespaced to this package",
+    target_under_test = ":host_undeclared",
+)
+
+# A declaration for `other` does not admit an asset for `third`.
+dart_code_asset(
+    name = "third_asset",
+    asset_id = "package:third/thing",
+    shared_library = "//dart/tests/cc_fixture:empty_shared",
+)
+
+dart_library(
+    name = "host_wrong_declared",
+    package_name = "host",
+    srcs = ["lib/host.dart"],
+    code_assets = [":third_asset"],
+    code_assets_for = ["other"],
+    tags = ["manual"],
+)
+
+ownership_failure_test(
+    name = "unlisted_code_asset_ownership_test",
+    size = "small",
+    expected_message = "code asset id `package:third/thing` is not namespaced to this package",
+    target_under_test = ":host_wrong_declared",
+)
+
+# The ownership check on its own, without a rule in the way.
+code_assets_for_check_test(
+    name = "code_assets_for_check_test",
+    size = "small",
+)
+
+# A multi-package library states every per-package fact on its members, so
+# `code_assets_for` is rejected there exactly like `code_assets`.
+dart_package_member(
+    name = "host_member",
+    package_name = "host_member",
+    srcs = ["lib/host.dart"],
+)
+
+dart_library(
+    name = "members_with_code_assets_for",
+    code_assets_for = ["other"],
+    members = [":host_member"],
+    tags = ["manual"],
+)
+
+ownership_failure_test(
+    name = "members_code_assets_for_test",
+    size = "small",
+    expected_message = "`members` and `code_assets_for` cannot both be set",
+    target_under_test = ":members_with_code_assets_for",
 )
