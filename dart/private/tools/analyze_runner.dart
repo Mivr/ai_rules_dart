@@ -7,6 +7,7 @@ import 'dart:io';
 
 import 'package:rules_dart_guard/directive_guard.dart';
 
+import 'analysis_baseline.dart';
 import 'analyze_runner_staged_prune.dart';
 import 'private_home.dart';
 
@@ -36,6 +37,11 @@ void main(List<String> args) {
     exit(1);
   }
 
+  if (parsed.baseline != null) {
+    _analyzeWithBaseline(parsed, project);
+    return;
+  }
+
   final ProcessResult result = withPrivateHome(
     'rules_dart_analyze_home.',
     (env) => Process.runSync(parsed.dart, [
@@ -54,6 +60,108 @@ void main(List<String> args) {
   File(parsed.stamp).writeAsStringSync('analyzed\n');
 }
 
+/// Runs `dart analyze --format=machine` and decides the verdict from the
+/// baseline ceilings instead of the analyzer's exit code.
+void _analyzeWithBaseline(_AnalyzeArgs parsed, String project) {
+  final baselinePath = parsed.baseline!;
+  final baselineFile = File(baselinePath);
+  if (!baselineFile.existsSync()) {
+    stderr.writeln('analyze_runner: missing baseline file $baselinePath');
+    exit(1);
+  }
+  final AnalysisBaseline baseline;
+  try {
+    baseline = AnalysisBaseline.parse(
+      baselineFile.readAsStringSync(),
+      source: baselinePath,
+    );
+  } on BaselineException catch (e) {
+    stderr.writeln('analyze_runner: $e');
+    exit(1);
+  }
+  final ProcessResult result = withPrivateHome(
+    'rules_dart_analyze_home.',
+    (env) => Process.runSync(parsed.dart, [
+      'analyze',
+      '--format=machine',
+      project,
+    ], environment: env),
+  );
+  final stdoutText = result.stdout as String;
+  final stderrText = result.stderr as String;
+  final diagnostics = _parseMachineDiagnostics(stdoutText, project);
+  if (diagnostics == null) exit(1);
+  final report = BaselineReport.of(diagnostics, baseline);
+  for (final diagnostic in diagnostics) {
+    final group = report.groupFor(diagnostic.path, diagnostic.code)!;
+    final marker = group.withinCeiling ? ' - ${baselinedMarker(group)}' : '';
+    stdout.writeln('${diagnostic.text}$marker');
+  }
+  for (final group in report.groups) {
+    if (!group.withinCeiling) stdout.writeln(baselineFailureLine(group));
+  }
+  stderr.write(unstage(stderrText, project));
+  if (diagnostics.isEmpty && result.exitCode != 0) {
+    stdout.write(unstage(stdoutText, project));
+    exit(1);
+  }
+  if (!report.passes) exit(1);
+  File(parsed.stamp).writeAsStringSync('analyzed\n');
+}
+
+/// The severities the analyzer's machine format may report.
+const _levels = {'error', 'warning', 'info'};
+
+/// Parses every machine-format diagnostic, or reports the first unparsable
+/// line and returns null.
+List<BaselineDiagnostic>? _parseMachineDiagnostics(String out, String project) {
+  final diagnostics = <BaselineDiagnostic>[];
+  for (final raw in out.split('\n')) {
+    final line = raw.trimRight();
+    if (line.trim().isEmpty) continue;
+    final diagnostic = _parseMachineLine(line, project);
+    if (diagnostic == null) {
+      stderr.writeln('analyze_runner: cannot parse analyzer diagnostic: $line');
+      return null;
+    }
+    diagnostics.add(diagnostic);
+  }
+  return diagnostics;
+}
+
+/// One machine-format line as `SEVERITY|TYPE|CODE|FILE|LINE|COL|LENGTH|MESSAGE`.
+BaselineDiagnostic? _parseMachineLine(String line, String project) {
+  final fields = line.split('|');
+  if (fields.length < 8) return null;
+  final level = fields[0].trim().toLowerCase();
+  final code = fields[2].trim().toLowerCase();
+  final lineNumber = int.tryParse(fields[4].trim());
+  final column = int.tryParse(fields[5].trim());
+  final length = int.tryParse(fields[6].trim());
+  if (!_levels.contains(level) ||
+      code.isEmpty ||
+      lineNumber == null ||
+      column == null ||
+      length == null) {
+    return null;
+  }
+  final path = _workspacePath(fields[3], project);
+  final message = unstage(fields.sublist(7).join('|'), project);
+  final text =
+      '${level.padLeft(7)} - $path:$lineNumber:$column - $message - $code';
+  return BaselineDiagnostic(path: path, code: code, level: level, text: text);
+}
+
+/// The workspace path of a machine-format file field.
+String _workspacePath(String raw, String project) {
+  var path = unstage(raw, project).replaceAll(r'\', '/');
+  while (path.startsWith('./')) {
+    path = path.substring(2);
+  }
+  if (path.startsWith('src/')) path = path.substring(4);
+  return path;
+}
+
 /// Parsed `analyze_runner` command line.
 typedef _AnalyzeArgs = ({
   String dart,
@@ -61,6 +169,7 @@ typedef _AnalyzeArgs = ({
   String stamp,
   bool fatalInfos,
   List<String> sources,
+  String? baseline,
 });
 
 /// Parses the command line, exiting 64 on an unknown or missing argument.
@@ -68,6 +177,7 @@ _AnalyzeArgs _parseAnalyzeArgs(List<String> args) {
   String? dart;
   String? project;
   String? stamp;
+  String? baseline;
   var fatalInfos = false;
   final sources = <String>[];
   for (var i = 0; i < args.length; i++) {
@@ -80,6 +190,8 @@ _AnalyzeArgs _parseAnalyzeArgs(List<String> args) {
         stamp = args[++i];
       case '--source':
         sources.add(args[++i]);
+      case '--baseline':
+        baseline = args[++i];
       case '--fatal-infos':
         fatalInfos = true;
       default:
@@ -99,6 +211,7 @@ _AnalyzeArgs _parseAnalyzeArgs(List<String> args) {
     stamp: stamp,
     fatalInfos: fatalInfos,
     sources: sources,
+    baseline: baseline,
   );
 }
 

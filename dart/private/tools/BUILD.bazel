@@ -113,6 +113,7 @@ dart_test(
 dart_binary(
     name = "analyze_runner",
     srcs = [
+        "analysis_baseline.dart",
         "analyze_runner_staged_prune.dart",
         "private_home.dart",
     ],
@@ -124,12 +125,24 @@ dart_binary(
     deps = ["//dart/guard:directive_guard"],
 )
 
+# Slices the whole analysis baseline to one target's files for the aspect.
+dart_binary(
+    name = "baseline_slice",
+    srcs = ["analysis_baseline.dart"],
+    code_assets_from_deps = False,
+    compile_mode = "kernel",
+    main = "baseline_slice.dart",
+    modular_kernel = False,
+    visibility = ["//dart:__subpackages__"],
+)
+
 # Drives the built `analyze_runner` as a subprocess (it exits rather than
 # returning) and refuses a triple-quoted import before `dart analyze` runs.
 dart_test(
     name = "analyze_runner_test",
     size = "small",
     srcs = [
+        "analysis_baseline.dart",
         "analyze_runner.dart",
         "analyze_runner_staged_prune.dart",
         "private_home.dart",
@@ -149,6 +162,10 @@ dart_test(
 # a staged project against summaries. See dart/private/dart_analyzer_summary.bzl.
 dart_binary(
     name = "analyzer_summary",
+    srcs = [
+        "analysis_baseline.dart",
+        "analysis_model.dart",
+    ],
     code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "analyzer_summary.dart",
@@ -524,7 +541,11 @@ dart_test(
 dart_test(
     name = "analyzer_summary_test",
     size = "small",
-    srcs = ["analyzer_summary.dart"],
+    srcs = [
+        "analysis_baseline.dart",
+        "analysis_model.dart",
+        "analyzer_summary.dart",
+    ],
     main = "analyzer_summary_test.dart",
     deps = [
         ":worker_protocol",
