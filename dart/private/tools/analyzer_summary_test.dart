@@ -26,6 +26,13 @@ import 'analyzer_summary.dart'
         resolveProjectSource,
         runSingleRequest;
 
+import 'analysis_baseline.dart'
+    show
+        AnalysisBaseline,
+        BaselineDiagnostic,
+        BaselineException,
+        BaselineReport;
+
 /// A collection whose tear-down raises a trappable failure.
 final class _ThrowingCollection extends AnalysisContextCollectionImpl {
   _ThrowingCollection() : super(includedPaths: const []);
@@ -1063,6 +1070,78 @@ int checkLoud() => loudValue();
         errSink.toString(),
         contains("import '   \n/secret/s.dart' is not a declared input"),
       );
+    });
+  });
+
+  group('analysis baseline verdict', () {
+    AnalysisBaseline parse(String json) =>
+        AnalysisBaseline.parse(json, source: 'baseline.json');
+
+    BaselineDiagnostic diagnostic(String path, String code) =>
+        BaselineDiagnostic(
+          path: path,
+          code: code,
+          level: 'info',
+          text: '$path $code',
+        );
+
+    test('passes a group at its ceiling and fails one above it', () {
+      final baseline = parse('{"lib/a.dart":{"avoid_print":2}}');
+      BaselineReport reportAt(int count) => BaselineReport.of([
+        for (var i = 0; i < count; i++) diagnostic('lib/a.dart', 'avoid_print'),
+      ], baseline);
+
+      final atCeiling = reportAt(2);
+      expect(atCeiling.passes, isTrue);
+      final group = atCeiling.groupFor('lib/a.dart', 'avoid_print')!;
+      expect(group.withinCeiling, isTrue);
+      expect(group.observed, 2);
+      expect(group.ceiling, 2);
+
+      final above = reportAt(3);
+      expect(above.passes, isFalse);
+      expect(
+        above.groupFor('lib/a.dart', 'avoid_print')!.withinCeiling,
+        isFalse,
+      );
+    });
+
+    test(
+      'an unkeyed code fails and an entry for another file does not apply',
+      () {
+        final baseline = parse('{"lib/a.dart":{"avoid_print":1}}');
+
+        final keyed = BaselineReport.of([
+          diagnostic('lib/a.dart', 'avoid_print'),
+        ], baseline);
+        expect(keyed.passes, isTrue);
+
+        final otherFile = BaselineReport.of([
+          diagnostic('lib/b.dart', 'avoid_print'),
+        ], baseline);
+        expect(otherFile.passes, isFalse);
+        expect(otherFile.groupFor('lib/b.dart', 'avoid_print')!.ceiling, 0);
+      },
+    );
+
+    test('names the baseline file and offending entry on a bad shape', () {
+      void expectRejected(String json, String entry) {
+        expect(
+          () => parse(json),
+          throwsA(
+            isA<BaselineException>().having(
+              (e) => e.message,
+              'message',
+              allOf(contains('baseline.json'), contains(entry)),
+            ),
+          ),
+          reason: json,
+        );
+      }
+
+      expectRejected('{"lib/a.dart":', 'lib/a.dart');
+      expectRejected('{"lib/a.dart":{"avoid_print":-1}}', 'avoid_print');
+      expectRejected('{"/tmp/a.dart":{"avoid_print":1}}', '/tmp/a.dart');
     });
   });
 }

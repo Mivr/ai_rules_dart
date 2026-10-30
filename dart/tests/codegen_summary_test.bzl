@@ -13,6 +13,7 @@ passed. The SDK summary is `analyzer_sdk_summary.sum`, and a dependency's is
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart/private:dart_analyzer_summary.bzl", "dart_analyzer_summary")
 
 _FLAG = str(Label("//dart:analyzer_summaries"))
@@ -43,15 +44,16 @@ def _codegen_inputs_test_impl(ctx):
     env = analysistest.begin(ctx)
     actions = analysistest.target_actions(env)
     target = analysistest.target_under_test(env)
+    expected = ctx.attr._summaries_flag[BuildSettingInfo].value if ctx.attr.use_flag else ctx.attr.expect_summaries
     asserts.equals(
         env,
-        ctx.attr.expect_summaries,
+        expected,
         _has_input(actions, "analyzer_sdk_summary.sum"),
         "%s: whether the codegen action takes the SDK summary" % target.label,
     )
     asserts.equals(
         env,
-        ctx.attr.expect_summaries,
+        expected,
         _has_input(actions, ".dart_analyzer_summary.sum"),
         "%s: whether the codegen action takes a dependency summary" % target.label,
     )
@@ -72,17 +74,30 @@ def _codegen_inputs_test_impl(ctx):
     files = target[DefaultInfo].files
     return analysistest.end(env) + [OutputGroupInfo(_validation = files, dart_analyze = files)]
 
-def _codegen_inputs_test(flag):
-    """Returns a codegen-inputs test whose `//dart:analyzer_summaries` is `flag`, or the default for None."""
+def _codegen_inputs_test(flag, use_flag = False):
+    """Returns a codegen-inputs test whose `//dart:analyzer_summaries` is `flag`.
+
+    With `use_flag` the test compares against the flag's effective value rather
+    than a fixed expectation, so a command-line override of the default is
+    tested too. Without it the test pins the value `config_settings` sets.
+    """
     return analysistest.make(
         _codegen_inputs_test_impl,
-        attrs = {"expect_summaries": attr.bool(mandatory = True)},
+        attrs = {
+            "expect_summaries": attr.bool(mandatory = True),
+            "use_flag": attr.bool(default = use_flag),
+            "_summaries_flag": attr.label(
+                default = Label("//dart:analyzer_summaries"),
+                providers = [BuildSettingInfo],
+            ),
+        },
         config_settings = {} if flag == None else {_FLAG: flag},
         extra_target_under_test_aspects = [dart_analyzer_summary],
     )
 
-# A shim generator with the flag at its default: it takes the summaries.
-shim_codegen_inputs_test = _codegen_inputs_test(None)
+# A shim generator with the flag at its default: it takes the summaries. When a
+# command line overrides the default, the test follows the effective value.
+shim_codegen_inputs_test = _codegen_inputs_test(None, use_flag = True)
 
 # A shim generator with the flag off: nothing is passed, as before the flag.
 shim_codegen_off_inputs_test = _codegen_inputs_test(False)

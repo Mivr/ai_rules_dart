@@ -5,6 +5,13 @@ import 'package:test/test.dart';
 
 import 'analyze_runner.dart' as analyze_runner;
 
+import 'analysis_baseline.dart'
+    show
+        AnalysisBaseline,
+        BaselineDiagnostic,
+        BaselineReport,
+        baselineFailureLine;
+
 /// The `analyze_runner`'s staged-source check refuses directives that would
 /// read undeclared host files before `dart analyze` runs.
 ///
@@ -104,6 +111,56 @@ void main(List<String> args) {
 
       expect(analyze_runner.pruneOrphanedStagedFiles(project.path), isNull);
       expect(File('${project.path}/src/pkg/any.dart').existsSync(), isTrue);
+    });
+  });
+
+  group('baseline verdict', () {
+    BaselineDiagnostic errorAt(String path, String code) => BaselineDiagnostic(
+      path: path,
+      code: code,
+      level: 'error',
+      text: '$path $code',
+    );
+
+    test('exempts a keyed error but never an unkeyed one', () {
+      final baseline = AnalysisBaseline.parse(
+        '{"lib/a.dart":{"undefined_identifier":1}}',
+        source: 'baseline.json',
+      );
+
+      expect(
+        BaselineReport.of([
+          errorAt('lib/a.dart', 'undefined_identifier'),
+        ], baseline).passes,
+        isTrue,
+      );
+      expect(
+        BaselineReport.of([
+          errorAt('lib/b.dart', 'undefined_identifier'),
+        ], baseline).passes,
+        isFalse,
+      );
+    });
+
+    test('fails above the ceiling and names the file, code and counts', () {
+      final baseline = AnalysisBaseline.parse(
+        '{"lib/a.dart":{"avoid_print":2}}',
+      );
+      final report = BaselineReport.of([
+        for (var i = 0; i < 3; i++)
+          BaselineDiagnostic(
+            path: 'lib/a.dart',
+            code: 'avoid_print',
+            level: 'info',
+            text: 'lib/a.dart $i',
+          ),
+      ], baseline);
+
+      expect(report.passes, isFalse);
+      final group = report.groupFor('lib/a.dart', 'avoid_print')!;
+      expect(group.observed, 3);
+      expect(group.ceiling, 2);
+      expect(baselineFailureLine(group), contains('observed 3, ceiling 2'));
     });
   });
 }
