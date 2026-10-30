@@ -51,6 +51,9 @@ import 'package:rules_dart_guard/directive_guard.dart';
 import 'package:rules_dart_worker/worker_protocol.dart';
 import 'package:rules_dart_worker/worker_tool_fs.dart';
 
+import 'analysis_baseline.dart';
+import 'analysis_model.dart';
+
 const _optionsBasename = 'analysis_options.yaml';
 const _packageConfig = '.dart_tool/package_config.json';
 
@@ -199,10 +202,10 @@ Future<int> runSingleRequest(
   if (args.isEmpty) {
     return _usageError(errSink, 'a mode is required: `summarize` or `analyze`');
   }
-  final _Args parsed;
+  final AnalyzerArgs parsed;
   try {
-    parsed = _Args.parse(args.sublist(1));
-  } on _UsageException catch (e) {
+    parsed = AnalyzerArgs.parse(args.sublist(1));
+  } on AnalyzerUsageException catch (e) {
     return _usageError(errSink, e.message);
   }
   try {
@@ -222,7 +225,7 @@ Future<int> runSingleRequest(
       ),
       _ => _usageError(errSink, 'unknown mode `${args.first}`'),
     };
-  } on _UsageException catch (e) {
+  } on AnalyzerUsageException catch (e) {
     return _usageError(errSink, e.message);
   }
 }
@@ -241,7 +244,7 @@ int _usageError(StringSink errSink, String message) {
 /// from `sky_engine`'s `lib/_embedder.yaml`) are built into the summary as
 /// well.
 Future<int> _sdk(
-  _Args args, {
+  AnalyzerArgs args, {
   required fs.ResourceProvider resourceProvider,
 }) async {
   final sdkPath = p.normalize(p.absolute(args.single('sdk')));
@@ -341,7 +344,7 @@ String? _reanchorThroughSymlink(String rootDir, String targetPath) {
 /// library resolves it, but it is not a library and has no URI in the bundle:
 /// naming it as one fails the bundle with "Missing library".
 Future<int> _summarize(
-  _Args args, {
+  AnalyzerArgs args, {
   required StringSink errSink,
   required fs.ResourceProvider resourceProvider,
 }) async {
@@ -647,7 +650,7 @@ String resolveProjectSource(
 
 /// Checks a staged project's own files, and writes the stamp if they pass.
 Future<int> _analyze(
-  _Args args, {
+  AnalyzerArgs args, {
   required StringSink outSink,
   required StringSink errSink,
   required fs.ResourceProvider resourceProvider,
@@ -660,6 +663,7 @@ Future<int> _analyze(
   final fatalInfos = prepared.fatalInfos;
   final explicitSources = prepared.explicitSources;
   final allowedSrcPaths = prepared.allowedSrcPaths;
+  final baseline = prepared.baseline;
   final sdkPath = p.normalize(p.absolute(args.single('sdk')));
   final sdkSummaryPath = p.normalize(p.absolute(args.single('sdk-summary')));
   final packagesPath = p.normalize(p.join(project, _packageConfig));
@@ -719,6 +723,7 @@ Future<int> _analyze(
       stamp: stamp,
       findings: findings,
       fatalInfos: fatalInfos,
+      baseline: baseline,
       outSink: outSink,
     );
   } finally {
@@ -757,12 +762,15 @@ AnalysisContextCollectionImpl _openAnalyzeCollection({
   bool fatalInfos,
   List<String> explicitSources,
   Set<String>? allowedSrcPaths,
+  AnalysisBaseline? baseline,
 })?
-_prepareAnalyzeProject(_Args args, {required StringSink errSink}) {
+_prepareAnalyzeProject(AnalyzerArgs args, {required StringSink errSink}) {
   final project = p.normalize(p.absolute(args.single('project')));
   final explicitSources = <String>[
     for (final s in args.all('source')) resolveProjectSource(project, s),
   ];
+  final baseline = _readBaseline(args, errSink: errSink);
+  if (baseline.failed) return null;
   final allowedSrcPaths = pruneStagedSrcFiles(project);
   // No staged source may read the host (see `_summarize`): the default
   // summary-mode analysis never ran the directive guard, so a climbing
@@ -789,7 +797,31 @@ _prepareAnalyzeProject(_Args args, {required StringSink errSink}) {
     fatalInfos: args.flag('fatal-infos'),
     explicitSources: explicitSources,
     allowedSrcPaths: allowedSrcPaths,
+    baseline: baseline.value,
   );
+}
+
+/// Reads the optional `--baseline` file, reporting a missing or malformed one.
+({AnalysisBaseline? value, bool failed}) _readBaseline(
+  AnalyzerArgs args, {
+  required StringSink errSink,
+}) {
+  final path = args.optional('baseline');
+  if (path == null) return (value: null, failed: false);
+  final file = File(path);
+  if (!file.existsSync()) {
+    errSink.writeln('analyzer_summary: missing baseline file $path');
+    return (value: null, failed: true);
+  }
+  try {
+    return (
+      value: AnalysisBaseline.parse(file.readAsStringSync(), source: path),
+      failed: false,
+    );
+  } on BaselineException catch (e) {
+    errSink.writeln('analyzer_summary: $e');
+    return (value: null, failed: true);
+  }
 }
 
 /// The staged sources one analyze request expects to find analyzed.
@@ -854,7 +886,7 @@ bool _checkExpectedSources(
 /// The diagnostics of every analyzed file, most severe first.
 ///
 /// Returns null after reporting a file the driver cannot analyze.
-Future<List<_Finding>?> _collectAnalyzeFindings({
+Future<List<AnalysisFinding>?> _collectAnalyzeFindings({
   required String project,
   required DriverBasedAnalysisContext context,
   required List<String> analyzed,
@@ -862,7 +894,7 @@ Future<List<_Finding>?> _collectAnalyzeFindings({
   required StringSink errSink,
 }) async {
   final driver = context.driver;
-  final findings = <_Finding>[];
+  final findings = <AnalysisFinding>[];
   for (final path in analyzed) {
     final options = context.getAnalysisOptionsForFile(
       boundedProvider.getFile(path),
@@ -894,30 +926,52 @@ Future<List<_Finding>?> _collectAnalyzeFindings({
 int _reportAnalyzeFindings({
   required String project,
   required String stamp,
-  required List<_Finding> findings,
+  required List<AnalysisFinding> findings,
   required bool fatalInfos,
   required StringSink outSink,
+  AnalysisBaseline? baseline,
 }) {
   final shown = [
     for (final f in findings)
       if (f.level != null) f,
   ];
+  final report = baseline == null
+      ? null
+      : BaselineReport.of([
+          for (final f in shown)
+            BaselineDiagnostic(
+              path: f.path,
+              code: f.code,
+              level: f.level!.name,
+              text: f.text,
+            ),
+        ], baseline);
   if (shown.isNotEmpty) {
     outSink.writeln();
     for (final f in shown) {
-      outSink.writeln(f.text);
+      final group = report?.groupFor(f.path, f.code);
+      final marker = group != null && group.withinCeiling
+          ? ' - ${baselinedMarker(group)}'
+          : '';
+      outSink.writeln('${f.text}$marker');
     }
     outSink.writeln();
     outSink.writeln(
       shown.length == 1 ? '1 issue found.' : '${shown.length} issues found.',
     );
+    if (report != null) {
+      for (final group in report.groups) {
+        if (!group.withinCeiling) outSink.writeln(baselineFailureLine(group));
+      }
+    }
   }
 
-  final failing =
-      shown.any(
-        (f) => f.level == Severity.error || f.level == Severity.warning,
-      ) ||
-      (fatalInfos && shown.any((f) => f.level == Severity.info));
+  final failing = report == null
+      ? shown.any(
+              (f) => f.level == Severity.error || f.level == Severity.warning,
+            ) ||
+            (fatalInfos && shown.any((f) => f.level == Severity.info))
+      : !report.passes;
   if (failing) {
     return _failed;
   }
@@ -956,7 +1010,7 @@ List<String> _analyzedPaths(
 
 /// The diagnostics of one options file: the `include:` and lint-name checks
 /// the analysis server runs on it, which the driver does not.
-List<_Finding> _optionsFindings(
+List<AnalysisFinding> _optionsFindings(
   String project,
   AnalysisDriver driver,
   String path,
@@ -983,7 +1037,7 @@ List<_Finding> _optionsFindings(
 /// apply error processors, so the overrides are applied here. A diagnostic an
 /// override sets to `ignore` gets a null level and is not printed. The driver
 /// already drops diagnostics suppressed by `// ignore:`.
-_Finding _finding(
+AnalysisFinding _finding(
   String project,
   String path,
   LineInfo lines,
@@ -1014,9 +1068,10 @@ _Finding _finding(
   final text =
       '${(level?.name ?? '').padLeft(7)} - $where:${location.lineNumber}:'
       '${location.columnNumber} - $message - ${d.diagnosticCode.lowerCaseName}';
-  return _Finding(
+  return AnalysisFinding(
     level: level,
     path: where,
+    code: d.diagnosticCode.lowerCaseName,
     line: location.lineNumber,
     column: location.columnNumber,
     text: text,
@@ -1043,89 +1098,9 @@ String _unstage(String text, String project) {
 }
 
 /// A diagnostic ready to print, ordered most severe first.
-final class _Finding implements Comparable<_Finding> {
-  const _Finding({
-    required this.level,
-    required this.path,
-    required this.line,
-    required this.column,
-    required this.text,
-  });
-
-  /// The severity after overrides; null when an override ignores it.
-  final Severity? level;
-  final String path;
-  final int line;
-  final int column;
-
-  /// The line as printed.
-  final String text;
-
-  @override
-  int compareTo(_Finding other) {
-    final byLevel = _rank(level).compareTo(_rank(other.level));
-    if (byLevel != 0) return byLevel;
-    final byPath = path.compareTo(other.path);
-    if (byPath != 0) return byPath;
-    final byLine = line.compareTo(other.line);
-    if (byLine != 0) return byLine;
-    return column.compareTo(other.column);
-  }
-
-  static int _rank(Severity? level) => switch (level) {
-    Severity.error => 0,
-    Severity.warning => 1,
-    Severity.info => 2,
-    null => 3,
-  };
-}
-
-final class _UsageException implements Exception {
-  const _UsageException(this.message);
-  final String message;
-}
 
 /// Parsed command-line arguments: repeatable `--name value` pairs, and bare
 /// `--flag`s.
-final class _Args {
-  _Args._(this._values, this._flags);
-
-  factory _Args.parse(List<String> args) {
-    final values = <String, List<String>>{};
-    final flags = <String>{};
-    for (var i = 0; i < args.length; i++) {
-      final arg = args[i];
-      if (!arg.startsWith('--')) {
-        throw _UsageException('unexpected argument `$arg`');
-      }
-      final name = arg.substring(2);
-      if (name == 'fatal-infos') {
-        flags.add(name);
-        continue;
-      }
-      if (i + 1 >= args.length) {
-        throw _UsageException('`$arg` needs a value');
-      }
-      values.putIfAbsent(name, () => []).add(args[++i]);
-    }
-    return _Args._(values, flags);
-  }
-
-  final Map<String, List<String>> _values;
-  final Set<String> _flags;
-
-  bool flag(String name) => _flags.contains(name);
-
-  List<String> all(String name) => _values[name] ?? const [];
-
-  String single(String name) {
-    final values = all(name);
-    if (values.length != 1) {
-      throw _UsageException('`--$name` is required exactly once');
-    }
-    return values.single;
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Bounded ResourceProvider confining upward ContextLocator directory walks.
