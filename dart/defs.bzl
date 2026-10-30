@@ -17,7 +17,7 @@ Load this file from your BUILD files to access the following rules:
 - `dart_codegen`: Runs a Dart code generator on source files, producing generated .dart outputs.
 - `dart_aggregate_codegen`: Runs a package-level aggregate code generator over all sources.
 - `dart_sqlcodegen`: Like `dart_codegen` but accepts non-Dart inputs (e.g. `.drift` files).
-- `dart_code_asset`: Binds a Bazel-built native dynamic library to a Dart code-asset id, for use in `dart_test`/`dart_binary` `code_assets`.
+- `dart_code_asset`: Binds a native dynamic library — a Bazel-built `cc_shared_library` or a pinned prebuilt file — to a Dart code-asset id, for use in `dart_test`/`dart_binary` `code_assets`.
 - `dart_link_hook`: Runs packages' `hook/link.dart` over a `dart_binary`'s recorded uses and collects the data assets they emit.
 """
 

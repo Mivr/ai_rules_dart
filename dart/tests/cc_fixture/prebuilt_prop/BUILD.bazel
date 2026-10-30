@@ -1,0 +1,27 @@
+load("//dart:defs.bzl", "dart_binary", "dart_code_asset", "dart_library")
+
+# A package whose bundled library is a pinned prebuilt file rather than a
+# `cc_shared_library`. The propagation test asserts its asset id reaches the
+# dependent binary's generated native-assets manifest.
+
+dart_code_asset(
+    name = "code_asset",
+    asset_id = "package:prebuilt_prop/ffi.g.dart",
+    prebuilt = "//dart/tests/cc_fixture:prebuilt_fixture",
+    visibility = ["//visibility:public"],
+)
+
+dart_library(
+    name = "prebuilt_prop",
+    package_name = "prebuilt_prop",
+    srcs = ["lib/prebuilt_prop.dart"],
+    code_assets = [":code_asset"],
+    visibility = ["//visibility:public"],
+)
+
+dart_binary(
+    name = "app",
+    main = "main.dart",
+    visibility = ["//visibility:public"],
+    deps = [":prebuilt_prop"],
+)
