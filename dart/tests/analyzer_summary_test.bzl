@@ -18,6 +18,7 @@ is itself tested. The version gate is a function, tested directly.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart/private:dart_analyze_aspect.bzl", "DartAnalysisModeInfo", "dart_analyze")
 load("//dart/private:dart_analyzer_summary.bzl", "DartAnalyzerSummaryInfo", "analyzer_summaries_supported", "dart_analyzer_summary")
 load(":small_suite.bzl", "small_unittest_suite")
@@ -77,9 +78,10 @@ summary_file_test = analysistest.make(
 def _analysis_mode_test_impl(ctx):
     env = analysistest.begin(ctx)
     target = analysistest.target_under_test(env)
+    expected = ctx.attr._summaries_flag[BuildSettingInfo].value if ctx.attr.use_flag else ctx.attr.expect_summaries
     asserts.equals(
         env,
-        ctx.attr.expect_summaries,
+        expected,
         target[DartAnalysisModeInfo].summaries,
         "%s: whether `dart_analyze` read dependency summaries" % target.label,
     )
@@ -91,18 +93,31 @@ def _analysis_mode_test_impl(ctx):
     ])
     return analysistest.end(env) + [OutputGroupInfo(_validation = checks, dart_analyze = checks)]
 
-def _analysis_mode_test(flag):
-    """Returns an analysis test whose `//dart:analyzer_summaries` is `flag`, or the default for None."""
+def _analysis_mode_test(flag, use_flag = False):
+    """Returns an analysis test whose `//dart:analyzer_summaries` is `flag`.
+
+    With `use_flag` the test compares against the flag's effective value rather
+    than a fixed expectation, so a command-line override of the default is
+    tested too. Without it the test pins the value `config_settings` sets.
+    """
     return analysistest.make(
         _analysis_mode_test_impl,
-        attrs = {"expect_summaries": attr.bool(mandatory = True)},
+        attrs = {
+            "expect_summaries": attr.bool(mandatory = True),
+            "use_flag": attr.bool(default = use_flag),
+            "_summaries_flag": attr.label(
+                default = Label("//dart:analyzer_summaries"),
+                providers = [BuildSettingInfo],
+            ),
+        },
         config_settings = {} if flag == None else {_FLAG: flag},
         extra_target_under_test_aspects = [dart_analyze],
     )
 
 # The mode `dart_analyze` checks a target in, with the flag at its default, on,
-# and off. The default is the one a user gets, so it is the one that must be on.
-default_mode_test = _analysis_mode_test(None)
+# and off. The default is the one a user gets, so it is the one that must be on;
+# when a command line overrides it, the test follows the effective value.
+default_mode_test = _analysis_mode_test(None, use_flag = True)
 summaries_on_mode_test = _analysis_mode_test(True)
 summaries_off_mode_test = _analysis_mode_test(False)
 
