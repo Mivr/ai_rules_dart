@@ -83,6 +83,19 @@ bzl_library(
 )
 
 bzl_library(
+    name = "pub_resolution_warnings",
+    srcs = ["pub_resolution_warnings.bzl"],
+    visibility = ["//dart/pub:__subpackages__"],
+)
+
+bzl_library(
+    name = "pub_scc_entries",
+    srcs = ["pub_scc_entries.bzl"],
+    visibility = ["//dart/pub:__subpackages__"],
+    deps = ["//dart/ext:registry"],
+)
+
+bzl_library(
     name = "language_version",
     srcs = ["language_version.bzl"],
     visibility = ["//dart/pub:__subpackages__"],

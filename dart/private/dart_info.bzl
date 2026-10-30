@@ -179,7 +179,7 @@ def dart_info(
         fail(err)
 
     dep_infos = [dep[DartInfo] for dep in deps]
-    own_package_files = tuple(getattr(package, "package_files", ()))
+    own_package_files = list(getattr(package, "package_files", []))
 
     this_pkg = DartPackageInfo(
         package_name = package.package_name,
@@ -509,7 +509,7 @@ def _merged_dart_info(
         # `transitive_srcs` beside `owned_packages`. Both are optional on a
         # dependency for the same reason `transitive_code_asset_files` is: a
         # producer built before the field existed legitimately omits it.
-        package_files = depset(direct = package_file_records),
+        package_files = list(package_file_records),
         transitive_package_files = depset(
             direct = [
                 f

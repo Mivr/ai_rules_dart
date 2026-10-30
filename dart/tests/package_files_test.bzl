@@ -83,7 +83,7 @@ def _assert_package_records(env, info, package_name, lib_root_suffix, package_fi
     """
     records = [
         record
-        for record in info.package_files.to_list()
+        for record in info.package_files
         if record.package_name == package_name
     ]
     asserts.equals(env, 1, len(records), "expected one %s record" % package_name)
@@ -271,7 +271,7 @@ def _dart_info_defaults_test_impl(ctx):
     asserts.equals(
         env,
         [],
-        getattr(info, "package_files", depset()).to_list(),
+        getattr(info, "package_files", []),
         "package_files must read empty through getattr",
     )
     asserts.equals(
@@ -289,17 +289,17 @@ def _dart_info_defaults_test_impl(ctx):
     asserts.equals(
         env,
         [],
-        getattr(partial, "package_files", depset()).to_list(),
+        getattr(partial, "package_files", []),
         "a bare producer reads empty package_files through getattr",
     )
 
     # A producer that does state the new fields sets both.
-    record = struct(package_name = "producer", lib_root = "", files = ())
+    record = struct(package_name = "producer", lib_root = "", files = [])
     stated = DartInfo(
-        package_files = depset([record]),
+        package_files = [record],
         transitive_package_files = depset(),
     )
-    asserts.equals(env, [record], stated.package_files.to_list(), "a stated package_files record must be kept")
+    asserts.equals(env, [record], stated.package_files, "a stated package_files record must be kept")
     return unittest.end(env)
 
 _dart_info_defaults_test = unittest.make(_dart_info_defaults_test_impl)

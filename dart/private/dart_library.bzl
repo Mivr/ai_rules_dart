@@ -287,7 +287,7 @@ def _multi_package_library_impl(ctx):
             package_file_records.append(struct(
                 package_name = inputs.record.package_name,
                 lib_root = inputs.record.lib_root,
-                files = tuple(inputs.package_files),
+                files = inputs.package_files,
             ))
 
     # A merged target can carry `data` of its own, but it owns no single
@@ -298,7 +298,7 @@ def _multi_package_library_impl(ctx):
         package_file_records.append(struct(
             package_name = "",
             lib_root = "",
-            files = tuple(own_data),
+            files = own_data,
         ))
 
     info = dart_info_multi(
