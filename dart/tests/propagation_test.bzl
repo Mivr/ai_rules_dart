@@ -514,11 +514,22 @@ def propagation_test_suite(name):
         expected_asset_ids = ["package:sqlite3/src/ffi/libsqlite3.g.dart"],
         target_under_test = "@ext_pub_deps//:sqlite3",
     )
+
+    # A `dart_library` whose bundled library is a prebuilt file, reached by a
+    # `dart_binary` that names no assets itself: the manifest must carry the
+    # asset id exactly as it does for a `cc_shared_library`-backed asset.
+    manifest_contains_test(
+        name = name + "_prebuilt_asset_in_manifest_test",
+        size = "small",
+        expected_asset_ids = ["package:prebuilt_prop/ffi.g.dart"],
+        target_under_test = "//dart/tests/cc_fixture/prebuilt_prop:app",
+    )
     native.test_suite(
         name = name,
         tests = [
             ":" + name + "_unit",
             ":" + name + "_pub_spoke_default_omits_code_assets_test",
             ":" + name + "_pub_spoke_enabled_attaches_code_assets_test",
+            ":" + name + "_prebuilt_asset_in_manifest_test",
         ],
     )

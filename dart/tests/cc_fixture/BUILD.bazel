@@ -33,3 +33,21 @@ cc_shared_library(
     visibility = ["//dart/tests:__subpackages__"],
     deps = [":empty"],
 )
+
+# A checked-in dynamic library for `dart_code_asset`'s `prebuilt` tests: one
+# file per platform extension, selected the same way a real consumer would
+# select its pinned download. Nothing links or loads these files, so their
+# contents are placeholders.
+filegroup(
+    name = "prebuilt_fixture",
+    srcs = select({
+        "@platforms//os:ios": ["libprebuilt_fixture.dylib"],
+        "@platforms//os:macos": ["libprebuilt_fixture.dylib"],
+        "@platforms//os:tvos": ["libprebuilt_fixture.dylib"],
+        "@platforms//os:visionos": ["libprebuilt_fixture.dylib"],
+        "@platforms//os:watchos": ["libprebuilt_fixture.dylib"],
+        "@platforms//os:windows": ["prebuilt_fixture.dll"],
+        "//conditions:default": ["libprebuilt_fixture.so"],
+    }),
+    visibility = ["//dart/tests:__subpackages__"],
+)
