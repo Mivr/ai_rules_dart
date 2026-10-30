@@ -25,11 +25,19 @@ void readPubspec(Runfiles runfiles, String path, String name) {
 void main() {
   final runfiles = Runfiles.create();
 
-  // A hosted lock spoke.
+  // A hosted lock spoke, listed directly in this test's `deps`.
   readPubspec(
     runfiles,
     'ai_rules_dart++pub+dart_pub__collection/pubspec.yaml',
     'collection',
+  );
+
+  // A transitive lock spoke: `file` depends on `meta`, and neither names it
+  // here, so this file reaches runfiles only through `deps`' merged closure.
+  readPubspec(
+    runfiles,
+    'ai_rules_dart++pub+dart_pub__meta/pubspec.yaml',
+    'meta',
   );
 
   // An explicit `pub.package()`, reached transitively through `file`'s
