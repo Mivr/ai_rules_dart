@@ -13,7 +13,9 @@ load(
 
 dart_analysis_config(
     name = "analysis_config",
+    baseline = "//baseline:baseline.json",
     options = [
+        "//baseline:options",
         "//fmt_unresolved:options",
         "//nested:loud_options",
         "//nested:options",
