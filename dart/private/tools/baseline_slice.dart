@@ -9,6 +9,7 @@ import 'dart:io';
 
 import 'analysis_baseline.dart';
 
+/// Reads the whole baseline and writes the slice for one target's own files.
 void main(List<String> args) {
   final parsed = _parseArgs(args);
   final baselineFile = File(parsed.baseline);

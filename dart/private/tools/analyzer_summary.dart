@@ -663,7 +663,6 @@ Future<int> _analyze(
   final fatalInfos = prepared.fatalInfos;
   final explicitSources = prepared.explicitSources;
   final allowedSrcPaths = prepared.allowedSrcPaths;
-  final baseline = prepared.baseline;
   final sdkPath = p.normalize(p.absolute(args.single('sdk')));
   final sdkSummaryPath = p.normalize(p.absolute(args.single('sdk-summary')));
   final packagesPath = p.normalize(p.join(project, _packageConfig));
@@ -723,7 +722,7 @@ Future<int> _analyze(
       stamp: stamp,
       findings: findings,
       fatalInfos: fatalInfos,
-      baseline: baseline,
+      baseline: prepared.baseline,
       outSink: outSink,
     );
   } finally {
@@ -935,48 +934,70 @@ int _reportAnalyzeFindings({
     for (final f in findings)
       if (f.level != null) f,
   ];
-  final report = baseline == null
-      ? null
-      : BaselineReport.of([
-          for (final f in shown)
-            BaselineDiagnostic(
-              path: f.path,
-              code: f.code,
-              level: f.level!.name,
-              text: f.text,
-            ),
-        ], baseline);
-  if (shown.isNotEmpty) {
-    outSink.writeln();
-    for (final f in shown) {
-      final group = report?.groupFor(f.path, f.code);
-      final marker = group != null && group.withinCeiling
-          ? ' - ${baselinedMarker(group)}'
-          : '';
-      outSink.writeln('${f.text}$marker');
-    }
-    outSink.writeln();
-    outSink.writeln(
-      shown.length == 1 ? '1 issue found.' : '${shown.length} issues found.',
-    );
-    if (report != null) {
-      for (final group in report.groups) {
-        if (!group.withinCeiling) outSink.writeln(baselineFailureLine(group));
-      }
-    }
-  }
-
-  final failing = report == null
-      ? shown.any(
-              (f) => f.level == Severity.error || f.level == Severity.warning,
-            ) ||
-            (fatalInfos && shown.any((f) => f.level == Severity.info))
-      : !report.passes;
-  if (failing) {
+  final report = _baselineReport(shown, baseline);
+  if (shown.isNotEmpty) _writeAnalyzeFindings(outSink, shown, report);
+  if (_findingsFail(shown, fatalInfos, report)) {
     return _failed;
   }
   File(stamp).writeAsStringSync('analyzed\n');
   return 0;
+}
+
+/// The baseline groups of [findings], or null when no baseline is set.
+BaselineReport? _baselineReport(
+  List<AnalysisFinding> findings,
+  AnalysisBaseline? baseline,
+) {
+  if (baseline == null) return null;
+  return BaselineReport.of([
+    for (final f in findings)
+      BaselineDiagnostic(
+        path: f.path,
+        code: f.code,
+        level: f.level!.name,
+        text: f.text,
+      ),
+  ], baseline);
+}
+
+/// Prints [shown], marking baselined groups and naming over-ceiling ones.
+void _writeAnalyzeFindings(
+  StringSink outSink,
+  List<AnalysisFinding> shown,
+  BaselineReport? report,
+) {
+  outSink.writeln();
+  for (final f in shown) {
+    final group = report?.groupFor(f.path, f.code);
+    final marker = group != null && group.withinCeiling
+        ? ' - ${baselinedMarker(group)}'
+        : '';
+    outSink.writeln('${f.text}$marker');
+  }
+  outSink.writeln();
+  outSink.writeln(
+    shown.length == 1 ? '1 issue found.' : '${shown.length} issues found.',
+  );
+  if (report != null) {
+    for (final group in report.groups) {
+      if (!group.withinCeiling) outSink.writeln(baselineFailureLine(group));
+    }
+  }
+}
+
+/// Whether the shown findings fail, with or without a baseline.
+bool _findingsFail(
+  List<AnalysisFinding> shown,
+  bool fatalInfos,
+  BaselineReport? report,
+) {
+  if (report != null) return !report.passes;
+  if (shown.any(
+    (f) => f.level == Severity.error || f.level == Severity.warning,
+  )) {
+    return true;
+  }
+  return fatalInfos && shown.any((f) => f.level == Severity.info);
 }
 
 /// Every Dart file and options file under the project that the analyzer
