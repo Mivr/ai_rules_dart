@@ -1,0 +1,14 @@
+{
+  "baseline/lib/baselined.dart": {
+    "avoid_print": 2
+  },
+  "baseline/lib/cache_a.dart": {
+    "avoid_print": 1
+  },
+  "baseline/lib/cache_b.dart": {
+    "avoid_print": 1
+  },
+  "baseline/lib/over_baseline.dart": {
+    "avoid_print": 2
+  }
+}

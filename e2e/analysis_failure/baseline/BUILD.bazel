@@ -1,0 +1,45 @@
+load("@rules_dart//dart:defs.bzl", "dart_analysis_options", "dart_library")
+
+# The baseline JSON is referenced from the workspace's `//:analysis_config`.
+exports_files(["baseline.json"])
+
+# The baseline fixture package. Its own options file enables `avoid_print` for
+# every file below, and `baseline.json` gives this package the per-file,
+# per-code ceilings. Both analysis modes are exercised by CI.
+
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    visibility = ["//:__pkg__"],
+)
+
+# Two `avoid_print` diagnostics, ceiling 2: this target passes.
+dart_library(
+    name = "baselined_lib",
+    srcs = ["lib/baselined.dart"],
+)
+
+# Three `avoid_print` diagnostics, ceiling 2: this target fails, naming the
+# code and the observed count above the ceiling.
+dart_library(
+    name = "over_baseline_lib",
+    srcs = ["lib/over_baseline.dart"],
+)
+
+# One `avoid_print` diagnostic and no entry: this target fails.
+dart_library(
+    name = "unbaselined_lib",
+    srcs = ["lib/unbaselined.dart"],
+)
+
+# One `avoid_print` each, ceiling 1. CI changes `cache_b`'s entry and proves
+# `cache_a`'s `DartAnalyze` action key does not move.
+dart_library(
+    name = "cache_a",
+    srcs = ["lib/cache_a.dart"],
+)
+
+dart_library(
+    name = "cache_b",
+    srcs = ["lib/cache_b.dart"],
+)

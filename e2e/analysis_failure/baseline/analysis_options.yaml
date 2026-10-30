@@ -1,0 +1,5 @@
+# Governs the baseline fixture package, whose target ceilings are in
+# `baseline.json`.
+linter:
+  rules:
+    - avoid_print

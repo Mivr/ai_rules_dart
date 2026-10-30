@@ -3,6 +3,9 @@
 test --aspects=@rules_dart//dart:analyze.bzl%dart_analyze
 test --output_groups=+dart_analyze
 test --output_groups=+dart_format
+# `bazel aquery` reads its own rc section, not the test one. Applying the
+# aspect here lets the baseline action-key check see the DartAnalyze action.
+aquery --aspects=@rules_dart//dart:analyze.bzl%dart_analyze
 common --@rules_dart//dart:analysis_config=//:analysis_config
 
 try-import %workspace%/.bazelrc.user
