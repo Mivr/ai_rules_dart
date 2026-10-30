@@ -78,7 +78,9 @@ summary_file_test = analysistest.make(
 def _analysis_mode_test_impl(ctx):
     env = analysistest.begin(ctx)
     target = analysistest.target_under_test(env)
-    expected = ctx.attr._summaries_flag[BuildSettingInfo].value if ctx.attr.use_flag else ctx.attr.expect_summaries
+    expected = (
+        ctx.attr.expect_summaries and ctx.attr._summaries_flag[BuildSettingInfo].value if ctx.attr.use_flag else ctx.attr.expect_summaries
+    )
     asserts.equals(
         env,
         expected,
@@ -96,9 +98,10 @@ def _analysis_mode_test_impl(ctx):
 def _analysis_mode_test(flag, use_flag = False):
     """Returns an analysis test whose `//dart:analyzer_summaries` is `flag`.
 
-    With `use_flag` the test compares against the flag's effective value rather
-    than a fixed expectation, so a command-line override of the default is
-    tested too. Without it the test pins the value `config_settings` sets.
+    With `use_flag` the test expects summaries only when the target's own
+    expectation and the flag's effective value both allow them, so a
+    command-line override of the default is tested too. Without it the test
+    pins the value `config_settings` sets.
     """
     return analysistest.make(
         _analysis_mode_test_impl,
