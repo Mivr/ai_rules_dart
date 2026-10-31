@@ -1,0 +1,756 @@
+{
+  "dart/ext/_shared/combining_shim/bin/main.dart": {
+    "avoid_catches_without_on_clauses": 1,
+    "avoid_catching_errors": 1,
+    "avoid_dynamic_calls": 3,
+    "omit_obvious_local_variable_types": 1,
+    "prefer_function_declarations_over_variables": 1,
+    "specify_nonobvious_local_variable_types": 7,
+    "unintended_html_in_doc_comment": 3,
+    "unnecessary_lambdas": 1
+  },
+  "dart/ext/_shared/combining_shim/test/combining_test.dart": {
+    "prefer_const_declarations": 3,
+    "specify_nonobvious_local_variable_types": 10,
+    "use_raw_strings": 1
+  },
+  "dart/ext/drift/shim_analyzer.dart": {
+    "dangling_library_doc_comments": 1
+  },
+  "dart/ext/drift/shim_discover.dart": {
+    "dangling_library_doc_comments": 1
+  },
+  "dart/ext/drift/shim_prep.dart": {
+    "dangling_library_doc_comments": 1
+  },
+  "dart/ext/lib/builder_shim.dart": {
+    "always_put_required_named_parameters_first": 2,
+    "async_return_with_no_await": 2,
+    "avoid_catches_without_on_clauses": 1,
+    "avoid_catching_errors": 8,
+    "avoid_escaping_inner_quotes": 2,
+    "avoid_slow_async_io": 7,
+    "document_ignores": 7,
+    "missing_whitespace_between_adjacent_strings": 1,
+    "prefer_single_quotes": 6,
+    "public_member_api_docs": 8,
+    "sort_constructors_first": 1,
+    "specify_nonobvious_local_variable_types": 147,
+    "unintended_html_in_doc_comment": 1,
+    "use_raw_strings": 2
+  },
+  "dart/ext/lib/worker_entry.dart": {
+    "always_use_package_imports": 1,
+    "avoid_catches_without_on_clauses": 1,
+    "avoid_slow_async_io": 1,
+    "omit_obvious_local_variable_types": 1,
+    "public_member_api_docs": 2,
+    "specify_nonobvious_local_variable_types": 3
+  },
+  "dart/ext/test/builder_shim_test.dart": {
+    "always_put_required_named_parameters_first": 4,
+    "avoid_catches_without_on_clauses": 1,
+    "avoid_escaping_inner_quotes": 1,
+    "avoid_slow_async_io": 10,
+    "inference_failure_on_untyped_parameter": 1,
+    "no_dynamic_casts": 1,
+    "only_throw_errors": 1,
+    "prefer_const_constructors": 1,
+    "prefer_foreach": 1,
+    "prefer_single_quotes": 4,
+    "specify_nonobvious_local_variable_types": 113,
+    "unnecessary_async": 3,
+    "unnecessary_lambdas": 1,
+    "use_raw_strings": 2
+  },
+  "dart/ext/tools/check_dual_build_collisions_test.dart": {
+    "avoid_slow_async_io": 1,
+    "specify_nonobvious_local_variable_types": 6,
+    "unnecessary_async": 1
+  },
+  "dart/ext/tools/lib/check_dual_build_collisions.dart": {
+    "avoid_print": 11,
+    "dangling_library_doc_comments": 1,
+    "prefer_foreach": 1,
+    "public_member_api_docs": 4,
+    "specify_nonobvious_local_variable_types": 10
+  },
+  "dart/guard/lib/directive_guard.dart": {
+    "comment_references": 2,
+    "parameter_assignments": 3,
+    "public_member_api_docs": 5,
+    "specify_nonobvious_local_variable_types": 132,
+    "unnecessary_type_name_in_constructor": 6,
+    "use_raw_strings": 3
+  },
+  "dart/private/tools/analysis_baseline.dart": {
+    "specify_nonobvious_local_variable_types": 9,
+    "unnecessary_raw_strings": 1,
+    "unnecessary_type_name_in_constructor": 6
+  },
+  "dart/private/tools/analysis_model.dart": {
+    "specify_nonobvious_local_variable_types": 7,
+    "unnecessary_type_name_in_constructor": 4
+  },
+  "dart/private/tools/analyze_runner.dart": {
+    "prefer_foreach": 1,
+    "specify_nonobvious_local_variable_types": 16
+  },
+  "dart/private/tools/analyze_runner_machine.dart": {
+    "specify_nonobvious_local_variable_types": 31,
+    "unnecessary_raw_strings": 1
+  },
+  "dart/private/tools/analyze_runner_staged_prune.dart": {
+    "specify_nonobvious_local_variable_types": 9
+  },
+  "dart/private/tools/analyze_runner_test.dart": {
+    "specify_nonobvious_local_variable_types": 9,
+    "use_raw_strings": 1
+  },
+  "dart/private/tools/analyze_runner_test_support.dart": {
+    "specify_nonobvious_local_variable_types": 15,
+    "unnecessary_type_name_in_constructor": 1
+  },
+  "dart/private/tools/analyzer_summary.dart": {
+    "avoid_catching_errors": 1,
+    "avoid_equals_and_hash_code_on_mutable_classes": 2,
+    "avoid_redundant_argument_values": 1,
+    "document_ignores": 8,
+    "prefer_foreach": 2,
+    "specify_nonobvious_local_variable_types": 119,
+    "unnecessary_ignore": 8,
+    "unnecessary_type_name_in_constructor": 8,
+    "unreachable_from_main": 5,
+    "use_null_aware_elements": 2
+  },
+  "dart/private/tools/analyzer_summary_test.dart": {
+    "avoid_redundant_argument_values": 4,
+    "noop_primitive_operations": 6,
+    "prefer_initializing_formals": 1,
+    "specify_nonobvious_local_variable_types": 34,
+    "unnecessary_type_name_in_constructor": 3
+  },
+  "dart/private/tools/analyzer_summary_test_support.dart": {
+    "avoid_redundant_argument_values": 1,
+    "document_ignores": 1,
+    "noop_primitive_operations": 2,
+    "specify_nonobvious_local_variable_types": 6,
+    "unnecessary_async": 2,
+    "unnecessary_ignore": 1,
+    "unnecessary_type_name_in_constructor": 2
+  },
+  "dart/private/tools/app_jit_snapshot.dart": {
+    "avoid_catches_without_on_clauses": 3,
+    "avoid_catching_errors": 2,
+    "avoid_redundant_argument_values": 1,
+    "avoid_relative_lib_imports": 1,
+    "comment_references": 11,
+    "join_return_with_assignment": 1,
+    "no_adjacent_strings_in_list": 1,
+    "parameter_assignments": 2,
+    "prefer_constructors_over_static_methods": 1,
+    "prefer_foreach": 2,
+    "specify_nonobvious_local_variable_types": 198,
+    "type_annotate_public_apis": 2,
+    "unnecessary_brace_in_string_interps": 2,
+    "unnecessary_raw_strings": 2,
+    "unnecessary_type_name_in_constructor": 3
+  },
+  "dart/private/tools/app_jit_snapshot_test.dart": {
+    "avoid_escaping_inner_quotes": 3,
+    "avoid_relative_lib_imports": 1,
+    "directives_ordering": 1,
+    "missing_whitespace_between_adjacent_strings": 2,
+    "no_adjacent_strings_in_list": 5,
+    "prefer_const_declarations": 1,
+    "prefer_foreach": 2,
+    "prefer_single_quotes": 3,
+    "specify_nonobvious_local_variable_types": 261,
+    "unnecessary_async": 1,
+    "use_raw_strings": 3
+  },
+  "dart/private/tools/baseline_json.dart": {
+    "specify_nonobvious_local_variable_types": 19,
+    "unnecessary_type_name_in_constructor": 2,
+    "use_null_aware_elements": 1
+  },
+  "dart/private/tools/baseline_slice.dart": {
+    "specify_nonobvious_local_variable_types": 5
+  },
+  "dart/private/tools/cli_flags.dart": {
+    "sort_constructors_first": 1,
+    "specify_nonobvious_local_variable_types": 2,
+    "unnecessary_type_name_in_constructor": 2
+  },
+  "dart/private/tools/comma_patch.dart": {
+    "specify_nonobvious_local_variable_types": 7,
+    "unintended_html_in_doc_comment": 4,
+    "unreachable_from_main": 2
+  },
+  "dart/private/tools/comma_patch_test.dart": {
+    "specify_nonobvious_local_variable_types": 13
+  },
+  "dart/private/tools/copy_tree.dart": {
+    "prefer_const_constructors": 1,
+    "specify_nonobvious_local_variable_types": 35,
+    "unnecessary_type_name_in_constructor": 5,
+    "use_raw_strings": 1
+  },
+  "dart/private/tools/copy_tree_test.dart": {
+    "always_put_required_named_parameters_first": 1,
+    "async_return_with_no_await": 1,
+    "specify_nonobvious_local_variable_types": 2,
+    "unnecessary_async": 1,
+    "use_raw_strings": 1
+  },
+  "dart/private/tools/dill_outline.dart": {
+    "constant_identifier_names": 179,
+    "omit_obvious_local_variable_types": 92,
+    "prefer_asserts_with_message": 4,
+    "sort_constructors_first": 1,
+    "specify_nonobvious_local_variable_types": 210,
+    "unnecessary_type_name_in_constructor": 1
+  },
+  "dart/private/tools/dill_reader.dart": {
+    "avoid_catching_errors": 1,
+    "avoid_relative_lib_imports": 1,
+    "comment_references": 4,
+    "specify_nonobvious_local_variable_types": 58,
+    "unnecessary_type_name_in_constructor": 1
+  },
+  "dart/private/tools/directive_guard_test.dart": {
+    "avoid_escaping_inner_quotes": 24,
+    "avoid_relative_lib_imports": 1,
+    "no_adjacent_strings_in_list": 34,
+    "prefer_function_declarations_over_variables": 2,
+    "specify_nonobvious_local_variable_types": 17
+  },
+  "dart/private/tools/fix_applier.dart": {
+    "avoid_catching_errors": 1,
+    "avoid_escaping_inner_quotes": 1,
+    "specify_nonobvious_local_variable_types": 27,
+    "unnecessary_type_name_in_constructor": 1
+  },
+  "dart/private/tools/fix_runner.dart": {
+    "no_leading_underscores_for_local_identifiers": 1,
+    "prefer_foreach": 1,
+    "specify_nonobvious_local_variable_types": 31
+  },
+  "dart/private/tools/fix_runner_test.dart": {
+    "avoid_relative_lib_imports": 1,
+    "cast_nullable_to_non_nullable": 2,
+    "no_adjacent_strings_in_list": 3,
+    "no_raw_types": 2,
+    "specify_nonobvious_local_variable_types": 18
+  },
+  "dart/private/tools/format_runner.dart": {
+    "async_return_with_no_await": 1,
+    "avoid_redundant_argument_values": 2,
+    "document_ignores": 3,
+    "leading_newlines_in_multiline_strings": 2,
+    "prefer_final_locals": 4,
+    "specify_nonobvious_local_variable_types": 65,
+    "unnecessary_ignore": 3,
+    "unnecessary_type_name_in_constructor": 3
+  },
+  "dart/private/tools/format_runner_test.dart": {
+    "specify_nonobvious_local_variable_types": 34
+  },
+  "dart/private/tools/format_writer.dart": {
+    "avoid_redundant_argument_values": 2,
+    "specify_nonobvious_local_variable_types": 21,
+    "unnecessary_type_name_in_constructor": 1
+  },
+  "dart/private/tools/jit_lock.dart": {
+    "avoid_catching_errors": 17,
+    "comment_references": 8,
+    "empty_container_bodies": 1,
+    "specify_nonobvious_local_variable_types": 101,
+    "unnecessary_brace_in_string_interps": 1
+  },
+  "dart/private/tools/jit_policy.dart": {
+    "specify_nonobvious_local_variable_types": 9,
+    "use_raw_strings": 2
+  },
+  "dart/private/tools/jit_policy_test.dart": {
+    "specify_nonobvious_local_variable_types": 6
+  },
+  "dart/private/tools/kernel_launcher.dart": {
+    "avoid_catching_errors": 4,
+    "prefer_if_elements_to_conditional_expressions": 1,
+    "specify_nonobvious_local_variable_types": 29,
+    "use_null_aware_elements": 2
+  },
+  "dart/private/tools/kernel_launcher_test.dart": {
+    "specify_nonobvious_local_variable_types": 6
+  },
+  "dart/private/tools/kernel_link.dart": {
+    "always_put_required_named_parameters_first": 1,
+    "comment_references": 2,
+    "library_private_types_in_public_api": 1,
+    "prefer_foreach": 1,
+    "specify_nonobvious_local_variable_types": 61,
+    "type_annotate_public_apis": 1,
+    "unnecessary_null_checks": 3,
+    "unnecessary_type_name_in_constructor": 4,
+    "unreachable_from_main": 7,
+    "use_null_aware_elements": 2
+  },
+  "dart/private/tools/kernel_link_test.dart": {
+    "specify_nonobvious_local_variable_types": 11
+  },
+  "dart/private/tools/kernel_module.dart": {
+    "async_return_with_no_await": 10,
+    "avoid_catches_without_on_clauses": 1,
+    "avoid_catching_errors": 3,
+    "avoid_positional_boolean_parameters": 1,
+    "avoid_relative_lib_imports": 1,
+    "avoid_slow_async_io": 10,
+    "comment_references": 15,
+    "curly_braces_in_flow_control_structures": 1,
+    "library_private_types_in_public_api": 1,
+    "no_raw_types": 1,
+    "parameter_assignments": 7,
+    "prefer_foreach": 3,
+    "prefer_initializing_formals": 7,
+    "specify_nonobvious_local_variable_types": 430,
+    "specify_nonobvious_property_types": 4,
+    "type_annotate_public_apis": 3,
+    "unnecessary_async": 2,
+    "unnecessary_brace_in_string_interps": 1,
+    "unnecessary_null_checks": 3,
+    "unnecessary_type_name_in_constructor": 33,
+    "unreachable_from_main": 6,
+    "use_null_aware_elements": 1
+  },
+  "dart/private/tools/kernel_module_test.dart": {
+    "async_return_with_no_await": 1,
+    "avoid_escaping_inner_quotes": 8,
+    "avoid_redundant_argument_values": 12,
+    "directives_ordering": 1,
+    "document_ignores": 2,
+    "inference_failure_on_collection_literal": 12,
+    "inference_failure_on_function_invocation": 1,
+    "omit_obvious_local_variable_types": 1,
+    "prefer_asserts_with_message": 2,
+    "prefer_const_declarations": 17,
+    "prefer_foreach": 3,
+    "prefer_single_quotes": 7,
+    "specify_nonobvious_local_variable_types": 418,
+    "unnecessary_async": 1,
+    "unnecessary_ignore": 2,
+    "unnecessary_parenthesis": 1,
+    "unnecessary_raw_strings": 1,
+    "unnecessary_type_name_in_constructor": 9,
+    "use_raw_strings": 6
+  },
+  "dart/private/tools/lib/worker_protocol.dart": {
+    "avoid_multiple_declarations_per_line": 2,
+    "public_member_api_docs": 20,
+    "specify_nonobvious_local_variable_types": 37,
+    "unnecessary_type_name_in_constructor": 5
+  },
+  "dart/private/tools/lib/worker_tool_fs.dart": {
+    "specify_nonobvious_local_variable_types": 11
+  },
+  "dart/private/tools/link_hook_runner.dart": {
+    "avoid_redundant_argument_values": 1,
+    "no_adjacent_strings_in_list": 2,
+    "specify_nonobvious_local_variable_types": 34,
+    "unnecessary_type_name_in_constructor": 1
+  },
+  "dart/private/tools/link_hook_runner_test.dart": {
+    "avoid_relative_lib_imports": 1,
+    "specify_nonobvious_local_variable_types": 3
+  },
+  "dart/private/tools/private_home.dart": {
+    "specify_nonobvious_local_variable_types": 8
+  },
+  "dart/private/tools/private_home_test.dart": {
+    "specify_nonobvious_local_variable_types": 4,
+    "unnecessary_async": 1
+  },
+  "dart/private/tools/sdk_launcher.dart": {
+    "async_return_with_no_await": 1,
+    "avoid_catching_errors": 3,
+    "specify_nonobvious_local_variable_types": 10
+  },
+  "dart/private/tools/sdk_launcher_data_test.dart": {
+    "specify_nonobvious_local_variable_types": 12,
+    "use_raw_strings": 1
+  },
+  "dart/private/tools/test_runner.dart": {
+    "avoid_catching_errors": 1,
+    "parameter_assignments": 1,
+    "specify_nonobvious_local_variable_types": 48,
+    "unnecessary_type_name_in_constructor": 1,
+    "unreachable_from_main": 1
+  },
+  "dart/private/tools/test_runner_cleanup_test.dart": {
+    "avoid_redundant_argument_values": 3,
+    "specify_nonobvious_local_variable_types": 7
+  },
+  "dart/private/tools/test_runner_fixture.dart": {
+    "specify_nonobvious_local_variable_types": 2
+  },
+  "dart/private/tools/test_runner_test.dart": {
+    "specify_nonobvious_local_variable_types": 25
+  },
+  "dart/private/tools/test_runner_workspace.dart": {
+    "avoid_redundant_argument_values": 1,
+    "specify_nonobvious_local_variable_types": 12
+  },
+  "dart/private/tools/update_cross_sdk_versions.dart": {
+    "prefer_const_declarations": 1,
+    "specify_nonobvious_local_variable_types": 41
+  },
+  "dart/private/tools/update_cross_sdk_versions_test.dart": {
+    "specify_nonobvious_local_variable_types": 2
+  },
+  "dart/private/tools/web_compile_runner.dart": {
+    "prefer_foreach": 1,
+    "specify_nonobvious_local_variable_types": 49
+  },
+  "dart/private/tools/web_compile_runner_test.dart": {
+    "prefer_single_quotes": 3,
+    "specify_nonobvious_local_variable_types": 8
+  },
+  "dart/private/tools/worker_protocol_test.dart": {
+    "prefer_foreach": 1,
+    "specify_nonobvious_local_variable_types": 15
+  },
+  "dart/private/tools/worker_test_encode.dart": {
+    "specify_nonobvious_local_variable_types": 4
+  },
+  "dart/pub/pinned_sources_guard_test.dart": {
+    "specify_nonobvious_local_variable_types": 36
+  },
+  "dart/pub/private/pub_scan.dart": {
+    "avoid_print": 2,
+    "dangling_library_doc_comments": 1,
+    "omit_obvious_local_variable_types": 1,
+    "parameter_assignments": 7,
+    "prefer_foreach": 1,
+    "specify_nonobvious_local_variable_types": 39,
+    "unnecessary_type_name_in_constructor": 7,
+    "unreachable_from_main": 1,
+    "use_raw_strings": 2
+  },
+  "dart/pub/private/pub_scan_test.dart": {
+    "async_return_with_no_await": 1,
+    "specify_nonobvious_local_variable_types": 14,
+    "use_raw_strings": 2
+  },
+  "dart/runfiles/example/example.dart": {
+    "avoid_print": 1,
+    "specify_nonobvious_local_variable_types": 2
+  },
+  "dart/runfiles/lib/runfiles.dart": {
+    "avoid_catching_errors": 1,
+    "prefer_initializing_formals": 3,
+    "sort_constructors_first": 2,
+    "specify_nonobvious_local_variable_types": 21,
+    "unnecessary_type_name_in_constructor": 2
+  },
+  "dart/runfiles/test/runfiles_test.dart": {
+    "specify_nonobvious_local_variable_types": 28
+  },
+  "dart/tests/analysis_test_fixture/bin/manual_main.dart": {
+    "avoid_print": 1
+  },
+  "dart/tests/analyzable_fixture/gen_main.dart": {
+    "avoid_print": 1
+  },
+  "dart/tests/analyzable_fixture/main.dart": {
+    "avoid_print": 1
+  },
+  "dart/tests/analyzable_pkg_fixture/gen_main.dart": {
+    "avoid_print": 1
+  },
+  "dart/tests/analyzable_pkg_fixture/lib/model.dart": {
+    "public_member_api_docs": 2
+  },
+  "dart/tests/analyzable_pkg_fixture/lib/view.dart": {
+    "dangling_library_doc_comments": 1,
+    "public_member_api_docs": 1
+  },
+  "dart/tests/analyzable_pkg_fixture/main.dart": {
+    "avoid_print": 1,
+    "dangling_library_doc_comments": 1
+  },
+  "dart/tests/analyzer_summary_fixture/codegen/kernel_codegen_test.dart": {
+    "specify_nonobvious_local_variable_types": 1
+  },
+  "dart/tests/analyzer_summary_fixture/codegen/plain_gen.dart": {
+    "specify_nonobvious_local_variable_types": 2
+  },
+  "dart/tests/analyzer_summary_fixture/codegen/readonly_root_config_codegen_test.dart": {
+    "missing_whitespace_between_adjacent_strings": 1,
+    "specify_nonobvious_local_variable_types": 3
+  },
+  "dart/tests/analyzer_summary_fixture/codegen/root_config_echo_shim.dart": {
+    "specify_nonobvious_local_variable_types": 5
+  },
+  "dart/tests/analyzer_summary_fixture/flutter/app/lib/app.dart": {
+    "public_member_api_docs": 1
+  },
+  "dart/tests/analyzer_summary_fixture/flutter/consumer/lib/consumer.dart": {
+    "public_member_api_docs": 1
+  },
+  "dart/tests/analyzer_summary_fixture/flutter/lib/async.dart": {
+    "empty_container_bodies": 3,
+    "public_member_api_docs": 3,
+    "unnecessary_library_directive": 1,
+    "unnecessary_library_name": 1
+  },
+  "dart/tests/analyzer_summary_fixture/flutter/lib/core.dart": {
+    "avoid_unused_constructor_parameters": 2,
+    "camel_case_types": 5,
+    "empty_container_bodies": 18,
+    "public_member_api_docs": 28,
+    "unnecessary_library_directive": 1,
+    "unnecessary_library_name": 1,
+    "unnecessary_type_name_in_constructor": 4
+  },
+  "dart/tests/analyzer_summary_fixture/flutter/lib/ui.dart": {
+    "public_member_api_docs": 2,
+    "unnecessary_library_directive": 1,
+    "unnecessary_library_name": 1,
+    "unnecessary_type_name_in_constructor": 1
+  },
+  "dart/tests/analyzer_summary_fixture/lib/user.dart": {
+    "public_member_api_docs": 1
+  },
+  "dart/tests/analyzer_summary_fixture/parts/lib/parted.dart": {
+    "public_member_api_docs": 1,
+    "unnecessary_library_name": 1
+  },
+  "dart/tests/analyzer_summary_fixture/parts/lib/parted_part.dart": {
+    "public_member_api_docs": 1
+  },
+  "dart/tests/analyzer_summary_fixture/testpkg/test/testpkg_gen_lib_test.dart": {
+    "avoid_print": 1
+  },
+  "dart/tests/analyzer_summary_fixture/testpkg/test/testpkg_rel_test.dart": {
+    "avoid_print": 1,
+    "avoid_relative_lib_imports": 1
+  },
+  "dart/tests/analyzer_summary_fixture/testpkg/test/testpkg_test.dart": {
+    "avoid_print": 1
+  },
+  "dart/tests/analyzer_summary_fixture/worker_hardening_test.dart": {
+    "prefer_single_quotes": 1,
+    "specify_nonobvious_local_variable_types": 41
+  },
+  "dart/tests/cc_fixture/prebuilt_prop/lib/prebuilt_prop.dart": {
+    "public_member_api_docs": 1
+  },
+  "dart/tests/cc_fixture/prebuilt_prop/main.dart": {
+    "avoid_print": 1
+  },
+  "dart/tests/colocate_fixture/lib/hand.dart": {
+    "public_member_api_docs": 1
+  },
+  "dart/tests/cross_fixture/main.dart": {
+    "avoid_print": 1
+  },
+  "dart/tests/cross_pkg_cycle_fixture/cross_pkg_cycle_test.dart": {
+    "async_return_with_no_await": 1,
+    "specify_nonobvious_local_variable_types": 21,
+    "unnecessary_async": 1
+  },
+  "dart/tests/cross_pkg_cycle_fixture/main.dart": {
+    "avoid_print": 1
+  },
+  "dart/tests/cross_pkg_cycle_fixture/pkg_a/lib/a_base.dart": {
+    "public_member_api_docs": 1
+  },
+  "dart/tests/cross_pkg_cycle_fixture/pkg_a/lib/a_top.dart": {
+    "public_member_api_docs": 2
+  },
+  "dart/tests/cross_pkg_cycle_fixture/pkg_leaf/lib/leaf.dart": {
+    "public_member_api_docs": 1
+  },
+  "dart/tests/defines_fixture/aot_asserts_test.dart": {
+    "specify_nonobvious_local_variable_types": 5
+  },
+  "dart/tests/defines_fixture/assert_channel.dart": {
+    "do_not_use_environment": 2
+  },
+  "dart/tests/defines_fixture/assert_enabled_main.dart": {
+    "prefer_asserts_with_message": 1
+  },
+  "dart/tests/defines_fixture/lib/comma_lib.dart": {
+    "do_not_use_environment": 1,
+    "public_member_api_docs": 1
+  },
+  "dart/tests/defines_fixture/main.dart": {
+    "avoid_print": 1,
+    "do_not_use_environment": 1
+  },
+  "dart/tests/defines_fixture/run_dill_test.dart": {
+    "specify_nonobvious_local_variable_types": 2
+  },
+  "dart/tests/download_digest_guard_test.dart": {
+    "avoid_catches_without_on_clauses": 1,
+    "avoid_escaping_inner_quotes": 1,
+    "no_adjacent_strings_in_list": 1,
+    "prefer_final_locals": 1,
+    "specify_nonobvious_local_variable_types": 62,
+    "type_annotate_public_apis": 1,
+    "use_raw_strings": 3
+  },
+  "dart/tests/exec_package_fixture/nested_example/bin/example.dart": {
+    "avoid_print": 1,
+    "no_wildcard_variable_uses": 1,
+    "specify_nonobvious_local_variable_types": 1
+  },
+  "dart/tests/format_fixture/short/bin/short_main.dart": {
+    "avoid_print": 1,
+    "require_trailing_commas": 2
+  },
+  "dart/tests/format_fixture/short/lib/short.dart": {
+    "public_member_api_docs": 1,
+    "require_trailing_commas": 1
+  },
+  "dart/tests/format_fixture/stated/bin/stated_main.dart": {
+    "avoid_print": 1,
+    "no_wildcard_variable_uses": 1,
+    "prefer_const_declarations": 1,
+    "require_trailing_commas": 2
+  },
+  "dart/tests/format_fixture/stated/test/meta_test.dart": {
+    "no_wildcard_variable_uses": 1,
+    "prefer_const_declarations": 1,
+    "require_trailing_commas": 1,
+    "specify_nonobvious_local_variable_types": 1
+  },
+  "dart/tests/format_fixture/stated/test/stated_test.dart": {
+    "no_wildcard_variable_uses": 1,
+    "prefer_const_declarations": 1,
+    "require_trailing_commas": 1,
+    "specify_nonobvious_local_variable_types": 1
+  },
+  "dart/tests/format_fixture/stated/web/stated_web.dart": {
+    "avoid_print": 1,
+    "no_wildcard_variable_uses": 1,
+    "prefer_const_declarations": 1,
+    "require_trailing_commas": 2
+  },
+  "dart/tests/format_run_fixture/format_run_test.dart": {
+    "specify_nonobvious_local_variable_types": 16
+  },
+  "dart/tests/kernel_uri_fixture/bin/probe.dart": {
+    "avoid_print": 3,
+    "avoid_relative_lib_imports": 1,
+    "do_not_use_environment": 1
+  },
+  "dart/tests/kernel_uri_fixture/kernel_uri_test.dart": {
+    "avoid_print": 1,
+    "do_not_use_environment": 1,
+    "specify_nonobvious_local_variable_types": 10
+  },
+  "dart/tests/legacy_mixin_fixture/bin/main.dart": {
+    "avoid_catches_without_on_clauses": 1,
+    "avoid_print": 3,
+    "empty_container_bodies": 2,
+    "prefer_mixin": 2,
+    "specify_nonobvious_local_variable_types": 1
+  },
+  "dart/tests/legacy_mixin_fixture/legacy/lib/legacy.dart": {
+    "avoid_setters_without_getters": 1,
+    "public_member_api_docs": 6
+  },
+  "dart/tests/legacy_mixin_fixture/legacy_mixin_test.dart": {
+    "avoid_catching_errors": 1,
+    "empty_container_bodies": 2,
+    "prefer_mixin": 2,
+    "specify_nonobvious_local_variable_types": 6
+  },
+  "dart/tests/legacy_mixin_fixture/mid/lib/mid.dart": {
+    "prefer_mixin": 2,
+    "public_member_api_docs": 4
+  },
+  "dart/tests/main_fixture/lib/cli.dart": {
+    "unreachable_from_main": 1
+  },
+  "dart/tests/no_lv_fixture/main.dart": {
+    "avoid_print": 1
+  },
+  "dart/tests/no_lv_fixture/test.dart": {
+    "avoid_print": 1,
+    "prefer_asserts_with_message": 1
+  },
+  "dart/tests/package_files_fixture/bin/app.dart": {
+    "avoid_print": 1
+  },
+  "dart/tests/package_files_fixture/lib/member.dart": {
+    "public_member_api_docs": 1
+  },
+  "dart/tests/package_files_fixture/lib/pkg.dart": {
+    "public_member_api_docs": 1
+  },
+  "dart/tests/part_sources_fixture/main.dart": {
+    "avoid_print": 1
+  },
+  "dart/tests/part_sources_fixture/part_sources_test.dart": {
+    "async_return_with_no_await": 1,
+    "prefer_single_quotes": 2,
+    "specify_nonobvious_local_variable_types": 32,
+    "unnecessary_async": 1
+  },
+  "dart/tests/part_sources_fixture/same_pkg/lib/named_part.dart": {
+    "public_member_api_docs": 1,
+    "use_string_in_part_of_directives": 1
+  },
+  "dart/tests/part_sources_fixture/same_pkg/lib/rev_parent.dart": {
+    "public_member_api_docs": 1,
+    "unnecessary_library_name": 1
+  },
+  "dart/tests/part_sources_fixture/same_pkg/lib/uri_part.dart": {
+    "public_member_api_docs": 1
+  },
+  "dart/tests/pc_fixture/bin/main.dart": {
+    "avoid_print": 1
+  },
+  "dart/tests/pc_fixture/lib/util.dart": {
+    "public_member_api_docs": 1
+  },
+  "dart/tests/pc_fixture/test/wasm_source_map_test.dart": {
+    "cast_nullable_to_non_nullable": 1,
+    "specify_nonobvious_local_variable_types": 3
+  },
+  "dart/tests/propagation_fixture/main.dart": {
+    "avoid_print": 1
+  },
+  "dart/tests/pub_scc_facts/parser_files_test.dart": {
+    "avoid_catches_without_on_clauses": 1,
+    "prefer_final_locals": 1,
+    "specify_nonobvious_local_variable_types": 31,
+    "use_raw_strings": 2
+  },
+  "dart/tests/resource_fixture/lib/marker.dart": {
+    "public_member_api_docs": 1
+  },
+  "dart/tests/shape_fixture/lib/shape.dart": {
+    "public_member_api_docs": 1
+  },
+  "dart/tests/source_set_tree/test/tree_test.dart": {
+    "use_raw_strings": 1
+  },
+  "dart/tests/test_cwd_fixture/env_test.dart": {
+    "specify_nonobvious_local_variable_types": 2
+  },
+  "dart/tests/test_protocol_fixture/protocol_test.dart": {
+    "specify_nonobvious_local_variable_types": 11,
+    "unnecessary_async": 1,
+    "unnecessary_raw_strings": 1
+  },
+  "tool/readme_check/readme_check_test.dart": {
+    "dangling_library_doc_comments": 1,
+    "prefer_single_quotes": 1,
+    "specify_nonobvious_local_variable_types": 21,
+    "unnecessary_raw_strings": 1,
+    "unnecessary_type_name_in_constructor": 2
+  }
+}

@@ -33,6 +33,7 @@ dart_analysis_options(
 
 dart_analysis_config(
     name = "analysis_config",
+    baseline = "analysis_baseline.json",
     options = [
         ":analysis_options",
         "//dart/tests/analyze_aspect_fixture:options",
