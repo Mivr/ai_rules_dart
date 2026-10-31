@@ -72,7 +72,7 @@ final class SpawnRecord {
 
   /// Whether this spawn represents the `TestRunner` action.
   bool get isTestRunner {
-    if (mnemonic == 'TestRunner') return true;
+    if (mnemonic.isNotEmpty) return mnemonic == 'TestRunner';
     if (declaredOutputs.any(
       (out) => out == 'test.log' || out.endsWith('/test.log'),
     )) {
@@ -80,8 +80,7 @@ final class SpawnRecord {
     }
     if (commandArgs.isEmpty) return false;
     final cmd = commandArgs.first;
-    return cmd.contains('test_runner') ||
-        cmd.contains('test-setup') ||
+    return cmd.contains('test-setup') ||
         commandArgs.any((arg) => arg.contains('TestRunner'));
   }
 }
@@ -171,24 +170,28 @@ List<String> _parsePathList(dynamic raw) {
 
 /// Parses a single spawn JSON map into a [SpawnRecord].
 SpawnRecord? parseSpawnMap(Map<String, dynamic> map) {
+  final commandArgs = _parseStringList(map['commandArgs']);
+  if (commandArgs.isEmpty) return null;
   final status = (map['status'] as String? ?? '').trim();
   var exitCode = (map['exitCode'] as num?)?.toInt();
   if (exitCode == null && status.isNotEmpty && status != 'SUCCESS') {
     exitCode = 1;
   }
+  final runner = (map['runner'] as String? ?? '').trim();
   return SpawnRecord(
-    commandArgs: _parseStringList(map['commandArgs']),
+    commandArgs: commandArgs,
     environmentVariables: _parseEnvMap(map['environmentVariables']),
     inputs: _parsePathList(map['inputs']),
     listedOutputs: _parsePathList(map['listedOutputs']),
     actualOutputs: _parsePathList(map['actualOutputs']),
-    runner: (map['runner'] as String? ?? '').trim(),
+    runner: runner,
     mnemonic: (map['mnemonic'] as String? ?? '').trim(),
     exitCode: exitCode,
     isCached:
         map['cachedLocally'] == true ||
         map['remoteCacheHit'] == true ||
-        map['cacheHit'] == true,
+        map['cacheHit'] == true ||
+        runner.toLowerCase().contains('cache hit'),
   );
 }
 
@@ -272,6 +275,15 @@ Iterable<String> _expandInputCandidates(String normInp) sync* {
   }
 }
 
+bool _isInputBlocked(String rawInp, Set<String> allBlocked) {
+  for (final candidate in _expandInputCandidates(_normalizePath(rawInp))) {
+    for (final blocked in allBlocked) {
+      if (_pathMatchesOrContained(candidate, blocked)) return true;
+    }
+  }
+  return false;
+}
+
 void _validateNoBlockedInputs(
   List<SpawnRecord> spawns,
   Set<String> blockedOutputs,
@@ -289,14 +301,8 @@ void _validateNoBlockedInputs(
 
   for (final spawn in spawns) {
     for (final inp in spawn.inputs) {
-      for (final candidate in _expandInputCandidates(_normalizePath(inp))) {
-        for (final blocked in allBlocked) {
-          if (_pathMatchesOrContained(candidate, blocked)) {
-            throw StateError(
-              'Spawn input $candidate is blocked by failed output',
-            );
-          }
-        }
+      if (_isInputBlocked(inp, allBlocked)) {
+        throw StateError('Spawn input $inp is blocked by failed output');
       }
     }
   }
