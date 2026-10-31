@@ -81,7 +81,13 @@ load("//dart/private:common.bzl", "kernel_sdk_mismatch_error", "merge_package_re
 load("//dart/private:dart_analyzer_summary.bzl", "CONFLICT_PREFIX", "DartAnalyzerSummaryInfo", "analyzer_summaries_supported", "closure_attrs", "dart_analyzer_summary", "own_lib_sources", "package_key", "sdk_root_path", "unbacked_embedder_in_closure")
 load("//dart/private:project_staging.bzl", "pubspec_stub", "stage_dart_project")
 load("//dart/private:source_set.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS")
-load("//dart/private/tools:analyze_targets.bzl", "analyze_own_files", "analyze_target_info")
+load(
+    "//dart/private/tools:analyze_targets.bzl",
+    "analyze_own_files",
+    "analyze_target_info",
+    "slice_target_baseline",
+    "validate_config_baseline",
+)
 load("//dart/private/tools:format_mode.bzl", _resolve_format_mode = "resolve_format_mode")
 
 # Analysis and formatting run on the build machine and produce nothing for the
@@ -106,7 +112,10 @@ DartAnalysisConfigInfo = provider(
         "options_files": "list[File]: every listed `analysis_options.yaml`, staged at its workspace path.",
         "packages": "list[DartPackageInfo]: packages the listed files `include:` by `package:` URI.",
         "files": "list[File]: those packages' sources and resources, staged for resolution only.",
-        "baseline": "File | None: the optional whole per-file, per-rule diagnostic baseline the aspect slices per target.",
+        "baseline": (
+            "File | None: the optional whole per-file, per-rule diagnostic " +
+            "baseline the aspect slices per target."
+        ),
     },
 )
 
@@ -127,6 +136,7 @@ DartFixOutputsInfo = provider(
 )
 
 def _dart_analysis_config_impl(ctx):
+    """Validates and collects a repository's options files and optional baseline."""
     options_files = []
     packages = []
     files = []
@@ -158,12 +168,16 @@ def _dart_analysis_config_impl(ctx):
         packages.extend(opts.packages)
         files.extend(opts.transitive_srcs.to_list() + opts.transitive_resources.to_list())
 
-    return [DartAnalysisConfigInfo(
+    validated = validate_config_baseline(ctx)
+    info = DartAnalysisConfigInfo(
         options_files = options_files,
         packages = packages,
         files = files,
         baseline = ctx.file.baseline,
-    )]
+    )
+    if validated != None:
+        return [DefaultInfo(files = depset([validated])), info]
+    return [info]
 
 dart_analysis_config = rule(
     implementation = _dart_analysis_config_impl,
@@ -188,7 +202,17 @@ dart_analysis_config = rule(
             ),
             allow_single_file = True,
         ),
+        "_baseline_tool": attr.label(
+            doc = (
+                "Executable validating the analysis baseline file. Defaults " +
+                "to `//dart/private/tools:baseline_slice`."
+            ),
+            default = "//dart/private/tools:baseline_slice",
+            executable = True,
+            cfg = "exec",
+        ),
     },
+    toolchains = [config_common.toolchain_type(_TOOLCHAIN, mandatory = False)],
     provides = [DartAnalysisConfigInfo],
     doc = (
         "Lists a repository's analysis options for the `dart_analyze` aspect, " +
@@ -298,42 +322,6 @@ def stage_config_project(ctx, config, packages, files, own, name, sdk_version, o
     staged.proj_files[_OPTIONS_BASENAME] = options_file
     return staged
 
-def _baseline_slice(ctx, name, config, own_paths):
-    """Declares the action slicing `config`'s baseline to `own_paths`; returns it, or None.
-
-    The slice is the only baseline input the analyze action reads. It depends
-    on the whole baseline, but its bytes hold only entries for the target's own
-    files, sorted by path and code, so an edit to another target's entry leaves
-    this target's analyze action key unchanged.
-    """
-    baseline = config.baseline
-    if baseline == None:
-        return None
-    dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
-    mismatch = kernel_sdk_mismatch_error(ctx.label, "_baseline_tool", ctx.attr._baseline_tool, dart_sdk_info.version)
-    if mismatch != None:
-        fail(mismatch)
-    slice = ctx.actions.declare_file(name + ".baseline.json")
-    args = ctx.actions.args()
-    args.add("--config", str(ctx.attr._config.label))
-    args.add("--baseline", baseline)
-    args.add("--out", slice)
-    args.add_all(own_paths, before_each = "--file")
-    ctx.actions.run(
-        executable = dart_sdk_info.dart,
-        arguments = [ctx.executable._baseline_tool.path, args],
-        inputs = depset(direct = [ctx.executable._baseline_tool, baseline]),
-        tools = depset(
-            direct = [ctx.executable._baseline_tool, dart_sdk_info.dart],
-            transitive = [dart_sdk_info.runtime_files],
-        ),
-        outputs = [slice],
-        mnemonic = "DartBaselineSlice",
-        progress_message = "Slicing Dart analysis baseline for %{label}",
-        env = writable_home_env(dart_sdk_info.dart, slice),
-    )
-    return slice
-
 def _analyze(ctx, name, staged, sdk_inputs, own_paths, baseline):
     """Declares the `dart analyze` action; returns the stamp it writes on success."""
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
@@ -345,9 +333,8 @@ def _analyze(ctx, name, staged, sdk_inputs, own_paths, baseline):
     args.add("--dart", dart_sdk_info.dart)
     args.add("--project", staged.proj_path)
     args.add("--stamp", stamp)
-    if baseline == None:
-        args.add("--fatal-infos")
-    else:
+    args.add("--fatal-infos")
+    if baseline != None:
         args.add("--baseline", baseline)
     args.add_all(own_paths, format_each = "src/%s", before_each = "--source")
     ctx.actions.run(
@@ -677,7 +664,7 @@ def _analyze_summary_or_source(ctx, info, srcs, opts):
     summary_files = srcs.own.values() + srcs.generated
     has_own_lib = bool(own_lib_sources(info, summary_files))
     summary_mode = ctx.attr._summaries[BuildSettingInfo].value and analyzer_summaries_supported(opts.sdk_version) and _summaries_ready(ctx, info, has_own_lib, summary_files)
-    baseline = _baseline_slice(ctx, srcs.name, opts.config, srcs.own_paths)
+    baseline = slice_target_baseline(ctx, srcs.name, opts.config, srcs.own_paths)
     if not summary_mode:
         return depset([_analyze(ctx, srcs.name, srcs.staged, opts.sdk_inputs, srcs.own_paths, baseline)]), False, None
 
@@ -932,7 +919,10 @@ dart_analyze = aspect(
             cfg = "exec",
         ),
         "_baseline_tool": attr.label(
-            doc = "Executable slicing the analysis baseline to one target's own files. Defaults to `//dart/private/tools:baseline_slice`.",
+            doc = (
+                "Executable slicing the analysis baseline to one target's " +
+                "own files. Defaults to `//dart/private/tools:baseline_slice`."
+            ),
             default = "//dart/private/tools:baseline_slice",
             executable = True,
             cfg = "exec",

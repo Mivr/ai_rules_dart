@@ -717,8 +717,7 @@ Future<int> _analyze(
       errSink: errSink,
     );
     if (findings == null) return _failed;
-    return _reportAnalyzeFindings(
-      project: project,
+    return reportAnalyzeFindings(
       stamp: stamp,
       findings: findings,
       fatalInfos: fatalInfos,
@@ -922,8 +921,7 @@ Future<List<AnalysisFinding>?> _collectAnalyzeFindings({
 }
 
 /// Prints the findings and writes the stamp, returning the exit code.
-int _reportAnalyzeFindings({
-  required String project,
+int reportAnalyzeFindings({
   required String stamp,
   required List<AnalysisFinding> findings,
   required bool fatalInfos,

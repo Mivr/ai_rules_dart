@@ -84,12 +84,14 @@ void _analyzeWithBaseline(_AnalyzeArgs parsed, String project) {
     (env) => Process.runSync(parsed.dart, [
       'analyze',
       '--format=machine',
+      if (parsed.fatalInfos) '--fatal-infos',
       project,
     ], environment: env),
   );
   final stdoutText = result.stdout as String;
   final stderrText = result.stderr as String;
-  final diagnostics = _parseMachineDiagnostics(stdoutText, project);
+  stderr.write(unstage(stderrText, project));
+  final diagnostics = parseMachineDiagnostics(stdoutText, project);
   if (diagnostics == null) exit(1);
   final report = BaselineReport.of(diagnostics, baseline);
   for (final diagnostic in diagnostics) {
@@ -100,7 +102,6 @@ void _analyzeWithBaseline(_AnalyzeArgs parsed, String project) {
   for (final group in report.groups) {
     if (!group.withinCeiling) stdout.writeln(baselineFailureLine(group));
   }
-  stderr.write(unstage(stderrText, project));
   if (diagnostics.isEmpty && result.exitCode != 0) {
     stdout.write(unstage(stdoutText, project));
     exit(1);
@@ -113,8 +114,8 @@ void _analyzeWithBaseline(_AnalyzeArgs parsed, String project) {
 const _levels = {'error', 'warning', 'info'};
 
 /// Parses every machine-format diagnostic, or reports the first unparsable
-/// line and returns null.
-List<BaselineDiagnostic>? _parseMachineDiagnostics(String out, String project) {
+/// line to stderr and returns null.
+List<BaselineDiagnostic>? parseMachineDiagnostics(String out, String project) {
   final diagnostics = <BaselineDiagnostic>[];
   for (final raw in out.split('\n')) {
     final line = raw.trimRight();
@@ -131,8 +132,8 @@ List<BaselineDiagnostic>? _parseMachineDiagnostics(String out, String project) {
 
 /// One machine-format line as `SEVERITY|TYPE|CODE|FILE|LINE|COL|LENGTH|MESSAGE`.
 BaselineDiagnostic? _parseMachineLine(String line, String project) {
-  final fields = line.split('|');
-  if (fields.length < 8) return null;
+  final fields = _splitMachineFields(line);
+  if (fields == null || fields.length < 8) return null;
   final level = fields[0].trim().toLowerCase();
   final code = fields[2].trim().toLowerCase();
   final lineNumber = int.tryParse(fields[4].trim());
@@ -150,6 +151,32 @@ BaselineDiagnostic? _parseMachineLine(String line, String project) {
   final text =
       '${level.padLeft(7)} - $path:$lineNumber:$column - $message - $code';
   return BaselineDiagnostic(path: path, code: code, level: level, text: text);
+}
+
+/// Splits a machine-format line on unescaped `|`, unescaping `\\` and `\|`.
+List<String>? _splitMachineFields(String line) {
+  final fields = <String>[];
+  final current = StringBuffer();
+  for (var i = 0; i < line.length; i++) {
+    final ch = line[i];
+    if (ch == r'\') {
+      if (i + 1 >= line.length) return null;
+      final next = line[i + 1];
+      if (next == r'\' || next == '|') {
+        current.write(next);
+        i++;
+        continue;
+      }
+    }
+    if (ch == '|') {
+      fields.add(current.toString());
+      current.clear();
+    } else {
+      current.write(ch);
+    }
+  }
+  fields.add(current.toString());
+  return fields;
 }
 
 /// The workspace path of a machine-format file field.
@@ -289,6 +316,45 @@ String _normRel(String raw) {
 String _relative(String root, String path) =>
     _normRel(path.substring(root.length));
 
+/// Normalized absolute and symlink-resolved prefixes for [project].
+Set<String> _projectRoots(String project) {
+  final isAbs =
+      project.startsWith('/') || RegExp(r'^[A-Za-z]:[\\/]').hasMatch(project);
+  final lexical = isAbs ? project : Directory(project).absolute.path;
+  final roots = <String>{_normalizeSlashPath(lexical)};
+  try {
+    roots.add(
+      _normalizeSlashPath(Directory(project).resolveSymbolicLinksSync()),
+    );
+  } on FileSystemException {
+    // Non-existent synthetic project paths in unit tests have no symlink target
+    // on disk; the normalized lexical absolute path above still unstages them.
+  }
+  return roots;
+}
+
+String _normalizeSlashPath(String raw) {
+  final slashed = raw.replaceAll(r'\', '/');
+  final prefix = slashed.startsWith('/')
+      ? '/'
+      : RegExp(r'^[A-Za-z]:').stringMatch(slashed) ?? '';
+  final body = slashed.substring(prefix.length);
+  final parts = <String>[];
+  for (final part in body.split('/')) {
+    if (part.isEmpty || part == '.') continue;
+    if (part == '..' && parts.isNotEmpty) {
+      parts.removeLast();
+    } else if (part != '..') {
+      parts.add(part);
+    }
+  }
+  if (prefix == '/') return '/${parts.join('/')}';
+  if (prefix.isNotEmpty) {
+    return parts.isEmpty ? prefix : '$prefix/${parts.join('/')}';
+  }
+  return parts.join('/');
+}
+
 /// Rewrites staged paths in the analyzer's output to the workspace paths they
 /// were copied from, so a diagnostic names a file the user can open.
 ///
@@ -298,10 +364,13 @@ String _relative(String root, String path) =>
 /// options file that holds it). Both forms lose their staging prefix. Only the
 /// `src/` tree is rewritten: nothing outside it has a workspace path.
 String unstage(String out, String project) {
-  final absolute = Directory(project).absolute.path.replaceAll(r'\', '/');
-  return out
-      .replaceAll('$absolute/src/', '')
-      .replaceAllMapped(_diagnosticPath, (m) => m[1]!);
+  var result = out;
+  for (final root in _projectRoots(project)) {
+    result = result
+        .replaceAll('$root/src/', '')
+        .replaceAll('${root.replaceAll('/', r'\')}\\src\\', '');
+  }
+  return result.replaceAllMapped(_diagnosticPath, (m) => m[1]!);
 }
 
 /// A diagnostic line's leading severity, up to its project-relative path.
