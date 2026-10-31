@@ -1,0 +1,108 @@
+name: Perf Linux
+
+on:
+  workflow_dispatch:
+    inputs:
+      head_ref:
+        description: "Git ref under measurement"
+        required: true
+        type: string
+      target_loc:
+        description: "Target lines of Dart code"
+        default: "500000"
+        type: string
+      repeats:
+        description: "Number of measured repeats"
+        default: "3"
+        type: string
+      seed:
+        description: "Deterministic random seed"
+        default: "1"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: Checkout bench tooling
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: tools-src
+
+      - name: Checkout rules under measurement
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.head_ref }}
+          path: rules-head
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-cache: true
+          disk-cache: false
+          external-cache: false
+          repository-cache: false
+          cache-save: false
+
+      - name: Generate pristine monorepo
+        run: |
+          ws="${RUNNER_TEMP}/pristine-ws"
+          tooling_base="${RUNNER_TEMP}/tooling-outbase"
+          mkdir -p "$ws"
+          (cd tools-src/tools && bazel --output_base="$tooling_base" run //perf:generate -- \
+            --target-loc="${{ inputs.target_loc }}" \
+            --seed="${{ inputs.seed }}" \
+            --rules-dart="$GITHUB_WORKSPACE/rules-head" \
+            --out="$ws")
+
+      - name: Commit lockfile via unmeasured analysis-only pass
+        run: |
+          ws="${RUNNER_TEMP}/pristine-ws"
+          scratch_base="${RUNNER_TEMP}/scratch-outbase"
+          leaf_tests=$(cd "$ws" && bazel --output_base="$scratch_base" query 'kind(dart_test, //...)' 2>/dev/null || true)
+          # shellcheck disable=SC2086
+          (cd "$ws" && bazel --output_base="$scratch_base" test --nobuild //app:app $leaf_tests)
+          bazel --output_base="$scratch_base" shutdown || true
+          rm -rf "$scratch_base"
+          test -f "$ws/MODULE.bazel.lock"
+
+      - name: Run speed-of-light runner repeats
+        run: |
+          ws="${RUNNER_TEMP}/pristine-ws"
+          tooling_base="${RUNNER_TEMP}/tooling-outbase"
+          results="${RUNNER_TEMP}/bench-results"
+          mkdir -p "$results"
+          for i in $(seq 1 "${{ inputs.repeats }}"); do
+            (cd tools-src/tools && bazel --output_base="$tooling_base" run //perf:runner -- \
+              --workspace="$ws" \
+              --repeat="$i" \
+              --out="$results/repeat-$i.json") || true
+          done
+
+      - name: Summarize speed-of-light results
+        if: ${{ !cancelled() }}
+        run: |
+          tooling_base="${RUNNER_TEMP}/tooling-outbase"
+          results="${RUNNER_TEMP}/bench-results"
+          sha="$(git -C "$GITHUB_WORKSPACE/rules-head" rev-parse HEAD)"
+          (cd tools-src/tools && bazel --output_base="$tooling_base" run //perf:summarize -- \
+            --results-dir="$results" \
+            --sha="$sha" \
+            --target-loc="${{ inputs.target_loc }}" \
+            --seed="${{ inputs.seed }}" \
+            --repeats="${{ inputs.repeats }}" \
+            --out="$GITHUB_WORKSPACE/dart-sol.json")
+          cat "$GITHUB_WORKSPACE/dart-sol.json" >> "$GITHUB_STEP_SUMMARY"
+          bazel --output_base="$tooling_base" shutdown || true
+
+      - name: Upload dart-sol artifact
+        if: ${{ !cancelled() && inputs.head_ref != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: dart-sol
+          path: dart-sol.json
+          retention-days: 3
