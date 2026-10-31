@@ -1,4 +1,4 @@
-"""Unit tests for the pub SCC computation (`dart/pub/private/scc.bzl`).
+"""Unit tests for the pub SCC computation (`dart/pub:pub_scc.bzl`).
 
 Each cycle shape the hub merge must handle gets a case: a two-node cycle
 (`dio` and `dio_web_adapter`), a three-node cycle, two disjoint cycles, and a
@@ -12,13 +12,14 @@ components.
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("//dart/pub:extensions.bzl", "plan_scope_sccs", "resolve_pub_packages", "scc_member_entries")
 load("//dart/pub:pub_lock_hub.bzl", "pub_lock_hub_content")
+load("//dart/pub:pub_scc.bzl", "compute_sccs", "package_dep_graph", "scc_repo_name")
 load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps")
 
 # buildifier: disable=bzl-visibility
 load("//dart/pub/private:build_content.bzl", "make_dart_package_member_build_content", "make_scc_merged_build_content")
 
 # buildifier: disable=bzl-visibility
-load("//dart/pub/private:scc.bzl", "compute_sccs", "normalize_pub_dep", "package_dep_graph", "rewrite_vanished_spoke", "scc_repo_name")
+load("//dart/pub/private:scc.bzl", "normalize_pub_dep", "rewrite_vanished_spoke")
 load(":small_suite.bzl", "small_unittest_suite")
 
 def _two_node_cycle_test_impl(ctx):
@@ -87,6 +88,31 @@ def _acyclic_graph_test_impl(ctx):
             "collection": [],
             "path": ["meta"],
             "meta": [],
+        }),
+    )
+    return unittest.end(env)
+
+def _self_contained_package_test_impl(ctx):
+    env = unittest.begin(ctx)
+    asserts.equals(
+        env,
+        [["solo"]],
+        compute_sccs({
+            "solo": [],
+        }),
+    )
+    return unittest.end(env)
+
+def _diamond_no_cycle_test_impl(ctx):
+    env = unittest.begin(ctx)
+    asserts.equals(
+        env,
+        [["aaa"], ["bbb"], ["ccc"], ["ddd"]],
+        compute_sccs({
+            "aaa": ["bbb", "ccc"],
+            "bbb": ["ddd"],
+            "ccc": ["ddd"],
+            "ddd": [],
         }),
     )
     return unittest.end(env)
@@ -706,6 +732,8 @@ _t24_test = unittest.make(_git_shadows_hosted_test_impl)
 _t25_test = unittest.make(_git_shadows_hosted_cycle_test_impl)
 _t26_test = unittest.make(_git_shadows_hosted_isolated_test_impl)
 _t27_test = unittest.make(_tricky_names_cycle_test_impl)
+_t28_test = unittest.make(_self_contained_package_test_impl)
+_t29_test = unittest.make(_diamond_no_cycle_test_impl)
 
 def pub_scc_test_suite(name):
     small_unittest_suite(
@@ -738,4 +766,6 @@ def pub_scc_test_suite(name):
         _t25_test,
         _t26_test,
         _t27_test,
+        _t28_test,
+        _t29_test,
     )

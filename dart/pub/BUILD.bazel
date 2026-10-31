@@ -20,6 +20,18 @@ bzl_library(
 )
 
 bzl_library(
+    name = "pub_scc",
+    srcs = ["pub_scc.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/pub/private:parser_sources",
+        "//dart/pub/private:pub_scc_facts",
+        "//dart/pub/private:pub_scc_verify",
+        "//dart/pub/private:scc",
+    ],
+)
+
+bzl_library(
     name = "pub_lock_package",
     srcs = ["pub_lock_package.bzl"],
     visibility = ["//visibility:public"],
@@ -47,6 +59,7 @@ bzl_library(
         ":pinned_sources",
         ":pub_lock_hub",
         ":pub_lock_package",
+        ":pub_scc",
         ":yaml_parser",
         "//dart/private:download",
         "//dart/pub/private:build_content",
@@ -55,7 +68,6 @@ bzl_library(
         "//dart/pub/private:pub_resolution_warnings",
         "//dart/pub/private:pub_root_pin",
         "//dart/pub/private:pub_scc_entries",
-        "//dart/pub/private:pub_scc_facts",
         "//dart/pub/private:pub_symlink",
         "//dart/pub/private:version",
     ],

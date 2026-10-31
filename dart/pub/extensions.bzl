@@ -5,16 +5,24 @@ load("//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch", 
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_package_sha256_error", "trim_gzip_trailing_nulls")
 load("//dart/pub:pub_lock_scc.bzl", "pub_lock_scc_package")
 load("//dart/pub:pub_scan.bzl", "run_pub_archive_scans")
+load(
+    "//dart/pub:pub_scc.bzl",
+    "PARSER_SOURCE_LABELS",
+    "compute_sccs",
+    "package_dep_graph",
+    "parser_schema",
+    "read_scope_pubspec",
+    "record_scope_facts",
+    "scc_repo_name",
+    "split_scope_facts",
+)
 load("//dart/pub:yaml_parser.bzl", "lock_package_error", "parse_pubspec_deps", "parse_pubspec_lock")
 load("//dart/pub/private:build_content.bzl", "PACKAGE_FILES_ATTR_DOC")
-load("//dart/pub/private:parser_sources.bzl", "PARSER_SOURCE_LABELS")
 load("//dart/pub/private:pub_emit.bzl", "SPOKE_PREFIX", "pub_emit_aliased", "pub_emit_explicit", "pub_emit_hubs", "pub_emit_isolated_git", "pub_emit_isolated_spokes", "pub_emit_shared_git", "pub_emit_shared_spokes")
 load("//dart/pub/private:pub_resolution_warnings.bzl", _warn_skipped_sources = "warn_skipped_sources")
 load("//dart/pub/private:pub_root_pin.bzl", "best_entry", "decl_lock_sha_conflict", "git_path_conflict", "git_ref_conflict", "git_version_error", "hosted_sha_conflict", "hosted_version_error", "select_all_explicit")
 load("//dart/pub/private:pub_scanner_sdk.bzl", "scanner_runtime_label")
 load("//dart/pub/private:pub_scc_entries.bzl", _scc_member_entries = "scc_member_entries")
-load("//dart/pub/private:pub_scc_facts.bzl", "parser_schema", "read_scope_pubspec", "record_scope_facts", "split_scope_facts")
-load("//dart/pub/private:scc.bzl", "compute_sccs", "package_dep_graph", "scc_repo_name")
 
 # Re-exported for //dart/tests, which exercises the entry shape directly.
 scc_member_entries = _scc_member_entries

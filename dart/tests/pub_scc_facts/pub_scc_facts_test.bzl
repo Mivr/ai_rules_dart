@@ -1,4 +1,4 @@
-"""Unit tests for the pub SCC facts cache (`dart/pub/private/pub_scc_facts.bzl`).
+"""Unit tests for the pub SCC facts cache (`dart/pub:pub_scc.bzl`).
 
 The extension records each planned package's pubspec deps as lockfile facts so
 re-evaluations fetch only changed packages. These tests pin the parser-bound
@@ -21,12 +21,23 @@ load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 
 # buildifier: disable=bzl-visibility
 load("//dart/pub:extensions.bzl", "plan_scope_sccs", "touch_scanner_runtime_label")
-
-# buildifier: disable=bzl-visibility
-load("//dart/pub/private:pub_scc_facts.bzl", "fact_deps_error", "git_fact_key", "hosted_fact_key", "lookup_fact_deps", "parser_schema", "parser_texts_digest", "record_scope_facts", "scratch_pubspec_error", "split_scope_facts")
-
-# buildifier: disable=bzl-visibility
-load("//dart/pub/private:pub_scc_verify.bzl", "scc_member_deps_error", "scc_members_connectivity_error", "scc_planned_deps_error", "spoke_planned_deps_error")
+load(
+    "//dart/pub:pub_scc.bzl",
+    "fact_deps_error",
+    "git_fact_key",
+    "hosted_fact_key",
+    "lookup_fact_deps",
+    "parser_schema",
+    "parser_texts_digest",
+    "read_scope_pubspec",
+    "record_scope_facts",
+    "scc_member_deps_error",
+    "scc_members_connectivity_error",
+    "scc_planned_deps_error",
+    "scratch_pubspec_error",
+    "split_scope_facts",
+    "spoke_planned_deps_error",
+)
 load("//dart/tests:small_suite.bzl", "small_unittest_suite")
 
 _SHA = "fb0f1107cac15a5ea6ef0a6ef71a807b9e4267c713bb93e00e92d737cc8dbd8a"
@@ -205,6 +216,55 @@ def _malformed_fact_test_impl(ctx):
     asserts.equals(env, None, fact_deps_error(key, []), "an empty list is valid")
     asserts.equals(env, ["myapp", "path"], lookup_fact_deps({key: ["path", "myapp"]}, key), "hits come back sorted")
     asserts.equals(env, None, lookup_fact_deps({}, key), "a missing key is a miss")
+    return unittest.end(env)
+
+def _record_split_lookup_round_trip_test_impl(ctx):
+    env = unittest.begin(ctx)
+    key = hosted_fact_key("charcode", "1.4.0", _SHA, _SCHEMA)
+    recorded = {}
+    miss = split_scope_facts({}, {"charcode": _hosted()}, {}, _SCHEMA)
+    record_scope_facts(recorded, miss, {"charcode": ["myapp", "path"]})
+    asserts.equals(env, {key: ["myapp", "path"]}, recorded, "the miss records the parsed names under its key")
+    hit = split_scope_facts(recorded, {"charcode": _hosted()}, {}, _SCHEMA)
+    asserts.equals(env, {}, hit.hosted_miss, "the recorded fact is a hit")
+    asserts.equals(env, ["myapp", "path"], hit.deps["charcode"], "the split returns the recorded names")
+    asserts.equals(env, ["myapp", "path"], lookup_fact_deps(recorded, key), "the public lookup reads the recorded fact back")
+    return unittest.end(env)
+
+def _verify_mismatch_message_test_impl(ctx):
+    env = unittest.begin(ctx)
+    expected = (
+        'pub_lock_scc_package "my_repo": member "aaa" lists different dependencies than cycle planning used ' +
+        "(planned [bbb], pubspec [ccc]). The lockfile's pub cycle-planning facts disagree with the package. " +
+        "To recover, remove the pub extension's `facts` entry and its `moduleExtensions` entry from MODULE.bazel.lock, " +
+        "delete the `MODULE.bazel.lock` inside Bazel's output base (`bazel info output_base` shows the directory), " +
+        "then run the build again."
+    )
+    asserts.equals(env, expected, scc_member_deps_error("my_repo", "aaa", ["bbb"], ["ccc"]))
+    return unittest.end(env)
+
+def _fake_path(path):
+    if path == "scratch":
+        return struct(exists = True, is_dir = True, realpath = "/scratch")
+    if path == "scratch/charcode/pubspec.yaml":
+        return struct(exists = True, is_dir = False, realpath = "/scratch/charcode/pubspec.yaml")
+    return struct(exists = True, is_dir = True, realpath = "/scratch/charcode", readdir = _empty_readdir)
+
+def _empty_readdir():
+    return []
+
+def _missing_path(_path):
+    return struct(exists = False, is_dir = False)
+
+def _fake_read(_path):
+    return "name: charcode\n"
+
+def _read_scope_pubspec_test_impl(ctx):
+    env = unittest.begin(ctx)
+    missing_ctx = struct(path = _missing_path)
+    asserts.equals(env, "", read_scope_pubspec(missing_ctx, "charcode", "scratch/charcode"), "a missing scratch root reads as empty")
+    fake_ctx = struct(path = _fake_path, read = _fake_read)
+    asserts.equals(env, "name: charcode\n", read_scope_pubspec(fake_ctx, "charcode", "scratch/charcode"), "a pubspec inside the package is read")
     return unittest.end(env)
 
 def _verify_match_test_impl(ctx):
@@ -406,6 +466,9 @@ _t23_test = unittest.make(_scanner_label_touch_test_impl)
 _t24_test = unittest.make(_spoke_match_test_impl)
 _t25_test = unittest.make(_spoke_dropped_edge_test_impl)
 _t26_test = unittest.make(_spoke_fake_edge_test_impl)
+_t27_test = unittest.make(_record_split_lookup_round_trip_test_impl)
+_t28_test = unittest.make(_verify_mismatch_message_test_impl)
+_t29_test = unittest.make(_read_scope_pubspec_test_impl)
 
 def pub_scc_facts_test_suite(name):
     small_unittest_suite(
@@ -437,4 +500,7 @@ def pub_scc_facts_test_suite(name):
         _t24_test,
         _t25_test,
         _t26_test,
+        _t27_test,
+        _t28_test,
+        _t29_test,
     )

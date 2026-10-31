@@ -24,6 +24,12 @@ bzl_library(
 )
 
 bzl_library(
+    name = "parser_sources",
+    srcs = ["parser_sources.bzl"],
+    visibility = ["//dart/pub:__subpackages__"],
+)
+
+bzl_library(
     name = "pub_scc_facts",
     srcs = ["pub_scc_facts.bzl"],
     visibility = [

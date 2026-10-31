@@ -1,3 +1,22 @@
+# Public pub cycle-planning API
+
+`//dart/pub:pub_scc.bzl` is the public entry point for the cycle planner, the
+lockfile facts cache and the verification decisions `pub.from_lock()` uses. A
+rule set with its own pub hub can load it instead of copying these modules:
+
+- planner: `compute_sccs`, `package_dep_graph`, `scc_repo_name`;
+- facts: `PARSER_SOURCE_LABELS`, `parser_schema`, `parser_texts_digest`,
+  `hosted_fact_key`, `git_fact_key`, `fact_deps_error`, `lookup_fact_deps`,
+  `split_scope_facts`, `record_scope_facts`, `scratch_pubspec_error`,
+  `read_scope_pubspec`;
+- verification: `scc_planned_deps_error`, `scc_member_deps_error`,
+  `spoke_planned_deps_error`, `scc_members_connectivity_error`.
+
+`compute_sccs` is deterministic and returns singletons; facts are hints keyed
+by schema plus parser digest and verified against the real pubspec. To share
+facts with rules_dart, read the bytes of every `PARSER_SOURCE_LABELS` label in
+order and pass them to `parser_schema`.
+
 # Runtime package files
 
 A pub package is more than its `lib/`: `pubspec.yaml`, `LICENSE`, a `hook/`
