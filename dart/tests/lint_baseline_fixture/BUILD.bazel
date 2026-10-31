@@ -1,0 +1,16 @@
+"""Fixtures for the lint baseline acceptance checks."""
+
+load("//dart:defs.bzl", "dart_library")
+
+# One `avoid_print` diagnostic, no entry in `analysis_baseline.json`: fails analysis.
+dart_library(
+    name = "unbaselined_lib",
+    srcs = ["lib/unbaselined.dart"],
+    tags = ["manual"],
+)
+
+# Two `avoid_print` diagnostics, ceiling 2 in `analysis_baseline.json`: passes analysis.
+dart_library(
+    name = "baselined_lib",
+    srcs = ["lib/baselined.dart"],
+)

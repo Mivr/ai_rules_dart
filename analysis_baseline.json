@@ -671,6 +671,9 @@
     "prefer_mixin": 2,
     "public_member_api_docs": 4
   },
+  "dart/tests/lint_baseline_fixture/lib/baselined.dart": {
+    "avoid_print": 2
+  },
   "dart/tests/main_fixture/lib/cli.dart": {
     "unreachable_from_main": 1
   },

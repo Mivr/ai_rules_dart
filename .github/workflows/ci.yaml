@@ -1249,6 +1249,19 @@ jobs:
           fi
           bazel test $flags //manual:manual_analysis_test 2>&1 | grep -q "manual/lib/manual_bad.dart:4:3 - Dead code"
           echo "OK: dart_analysis_test checked the manual target"
+      # A `manual` target is out of `//...`'s reach; the lint baseline fixture
+      # asserts that an unbaselined diagnostic fails the build under the root
+      # analysis options.
+      - name: lint_baseline_fixture — expect an unbaselined diagnostic to fail
+        run: |
+          if bazel test //dart/tests/lint_baseline_fixture:unbaselined_lib 2>/dev/null; then
+            echo "ERROR: build should have failed on an unbaselined diagnostic"
+            exit 1
+          fi
+          out=$(bazel test //dart/tests/lint_baseline_fixture:unbaselined_lib 2>&1 || true)
+          echo "$out" | grep -q "dart/tests/lint_baseline_fixture/lib/unbaselined.dart"
+          echo "$out" | grep -q "avoid_print"
+          echo "OK: expected unbaselined diagnostic detected"
       # A hung test is diagnosed from what it printed before Bazel killed it, so
       # that output has to be in test.log rather than held back by the launcher.
       - name: dart_test — expect a timed-out test's output in its log
