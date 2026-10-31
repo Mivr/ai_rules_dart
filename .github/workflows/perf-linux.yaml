@@ -8,14 +8,17 @@ on:
         type: string
       target_loc:
         description: "Target lines of Dart code"
+        required: false
         default: "500000"
         type: string
       repeats:
         description: "Number of measured repeats"
+        required: false
         default: "3"
         type: string
       seed:
         description: "Deterministic random seed"
+        required: false
         default: "1"
         type: string
 permissions:
@@ -37,38 +40,52 @@ jobs:
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
-          bazelisk-cache: true
+          bazelisk-cache: false
           disk-cache: false
           external-cache: false
           repository-cache: false
           cache-save: false
       - name: Generate pristine monorepo
+        env:
+          TARGET_LOC: ${{ inputs.target_loc }}
+          SEED: ${{ inputs.seed }}
         run: |
           ws="${RUNNER_TEMP}/pristine-ws"
           tooling_base="${RUNNER_TEMP}/tooling-outbase"
           mkdir -p "$ws"
+          if [ -f tools-src/.bazelversion ]; then
+            cp tools-src/.bazelversion tools-src/tools/.bazelversion
+          fi
           (cd tools-src/tools && bazel --output_base="$tooling_base" run //perf:generate -- \
-            --target-loc="${{ inputs.target_loc }}" \
-            --seed="${{ inputs.seed }}" \
+            --target-loc="$TARGET_LOC" \
+            --seed="$SEED" \
             --rules-dart="$GITHUB_WORKSPACE/rules-head" \
             --out="$ws")
       - name: Commit lockfile via unmeasured analysis-only pass
         run: |
           ws="${RUNNER_TEMP}/pristine-ws"
           scratch_base="${RUNNER_TEMP}/scratch-outbase"
-          leaf_tests=$(cd "$ws" && bazel --output_base="$scratch_base" query 'kind(dart_test, //...)' 2>/dev/null || true)
-          # shellcheck disable=SC2086
-          (cd "$ws" && bazel --output_base="$scratch_base" test --nobuild //app:app $leaf_tests)
-          bazel --output_base="$scratch_base" shutdown || true
-          rm -rf "$scratch_base"
+          cleanup_scratch() {
+            (cd "$ws" && bazel --output_base="$scratch_base" shutdown) || true
+            chmod -R u+w "$scratch_base" 2>/dev/null || true
+            rm -rf "$scratch_base"
+          }
+          trap cleanup_scratch EXIT
+          mapfile -t leaf_tests < <(cd "$ws" && bazel --output_base="$scratch_base" query 'kind(dart_test, //...)')
+          test "${#leaf_tests[@]}" -gt 0
+          (cd "$ws" && bazel --output_base="$scratch_base" build --nobuild //app:app "${leaf_tests[@]}")
+          cleanup_scratch
+          trap - EXIT
           test -f "$ws/MODULE.bazel.lock"
       - name: Run speed-of-light runner repeats
+        env:
+          REPEATS: ${{ inputs.repeats }}
         run: |
           ws="${RUNNER_TEMP}/pristine-ws"
           tooling_base="${RUNNER_TEMP}/tooling-outbase"
           results="${RUNNER_TEMP}/bench-results"
           mkdir -p "$results"
-          for i in $(seq 1 "${{ inputs.repeats }}"); do
+          for i in $(seq 1 "$REPEATS"); do
             (cd tools-src/tools && bazel --output_base="$tooling_base" run //perf:runner -- \
               --workspace="$ws" \
               --repeat="$i" \
@@ -76,6 +93,10 @@ jobs:
           done
       - name: Summarize speed-of-light results
         if: ${{ !cancelled() }}
+        env:
+          TARGET_LOC: ${{ inputs.target_loc }}
+          SEED: ${{ inputs.seed }}
+          REPEATS: ${{ inputs.repeats }}
         run: |
           tooling_base="${RUNNER_TEMP}/tooling-outbase"
           results="${RUNNER_TEMP}/bench-results"
@@ -83,12 +104,18 @@ jobs:
           (cd tools-src/tools && bazel --output_base="$tooling_base" run //perf:summarize -- \
             --results-dir="$results" \
             --sha="$sha" \
-            --target-loc="${{ inputs.target_loc }}" \
-            --seed="${{ inputs.seed }}" \
-            --repeats="${{ inputs.repeats }}" \
+            --target-loc="$TARGET_LOC" \
+            --seed="$SEED" \
+            --repeats="$REPEATS" \
             --out="$GITHUB_WORKSPACE/dart-sol.json")
           cat "$GITHUB_WORKSPACE/dart-sol.json" >> "$GITHUB_STEP_SUMMARY"
-          bazel --output_base="$tooling_base" shutdown || true
+      - name: Shut down tooling Bazel server
+        if: ${{ always() }}
+        run: |
+          tooling_base="${RUNNER_TEMP}/tooling-outbase"
+          if [ -d tools-src/tools ]; then
+            (cd tools-src/tools && bazel --output_base="$tooling_base" shutdown) || true
+          fi
       - name: Upload dart-sol artifact
         if: ${{ !cancelled() && inputs.head_ref != '' }}
         uses: actions/upload-artifact@v7
