@@ -6,7 +6,25 @@ import 'dart:io';
 
 import 'package:perf/result_writer.dart';
 
-void main(List<String> args) {
+final class _SummarizeArgs {
+  _SummarizeArgs({
+    this.resultsDir,
+    this.sha,
+    this.targetLoc = 500000,
+    this.seed = 1,
+    this.repeats = 3,
+    this.out,
+  });
+
+  final String? resultsDir;
+  final String? sha;
+  final int targetLoc;
+  final int seed;
+  final int repeats;
+  final String? out;
+}
+
+_SummarizeArgs _parseArgs(List<String> args) {
   String? resultsDir;
   String? sha;
   var targetLoc = 500000;
@@ -16,63 +34,92 @@ void main(List<String> args) {
 
   for (var i = 0; i < args.length; i++) {
     final arg = args[i];
-    if (arg.startsWith('--results-dir=')) {
-      resultsDir = arg.substring('--results-dir='.length);
-    } else if (arg == '--results-dir' && i + 1 < args.length) {
-      resultsDir = args[++i];
-    } else if (arg.startsWith('--sha=')) {
-      sha = arg.substring('--sha='.length);
-    } else if (arg == '--sha' && i + 1 < args.length) {
-      sha = args[++i];
-    } else if (arg.startsWith('--target-loc=')) {
-      targetLoc = int.parse(arg.substring('--target-loc='.length));
-    } else if (arg == '--target-loc' && i + 1 < args.length) {
-      targetLoc = int.parse(args[++i]);
-    } else if (arg.startsWith('--seed=')) {
-      seed = int.parse(arg.substring('--seed='.length));
-    } else if (arg == '--seed' && i + 1 < args.length) {
-      seed = int.parse(args[++i]);
-    } else if (arg.startsWith('--repeats=')) {
-      repeats = int.parse(arg.substring('--repeats='.length));
-    } else if (arg == '--repeats' && i + 1 < args.length) {
-      repeats = int.parse(args[++i]);
-    } else if (arg.startsWith('--out=')) {
-      out = arg.substring('--out='.length);
-    } else if (arg == '--out' && i + 1 < args.length) {
-      out = args[++i];
+    final (flag, val) = _extractFlagAndValue(arg, args, i);
+    if (flag == null) continue;
+    if (val != null && !arg.contains('=')) i++;
+
+    switch (flag) {
+      case 'results-dir':
+        resultsDir = val;
+      case 'sha':
+        sha = val;
+      case 'target-loc':
+        if (val != null) targetLoc = int.parse(val);
+      case 'seed':
+        if (val != null) seed = int.parse(val);
+      case 'repeats':
+        if (val != null) repeats = int.parse(val);
+      case 'out':
+        out = val;
     }
   }
 
-  if (resultsDir == null || sha == null || out == null) {
+  return _SummarizeArgs(
+    resultsDir: resultsDir,
+    sha: sha,
+    targetLoc: targetLoc,
+    seed: seed,
+    repeats: repeats,
+    out: out,
+  );
+}
+
+(String?, String?) _extractFlagAndValue(
+  String arg,
+  List<String> args,
+  int index,
+) {
+  if (arg.startsWith('--')) {
+    final eq = arg.indexOf('=');
+    if (eq != -1) {
+      return (arg.substring(2, eq), arg.substring(eq + 1));
+    }
+    final key = arg.substring(2);
+    final val = index + 1 < args.length ? args[index + 1] : null;
+    return (key, val);
+  }
+  return (null, null);
+}
+
+List<RepeatResult> _loadRepeatResults(String resultsDir) {
+  final repeatResults = <RepeatResult>[];
+  final dir = Directory(resultsDir);
+  if (!dir.existsSync()) return repeatResults;
+
+  final files = dir.listSync().whereType<File>().toList()
+    ..sort((a, b) => a.path.compareTo(b.path));
+
+  for (final file in files) {
+    if (!file.path.endsWith('.json')) continue;
+    try {
+      final content = file.readAsStringSync();
+      final decoded = jsonDecode(content) as Map<String, dynamic>;
+      repeatResults.add(RepeatResult.fromJson(decoded));
+    } on FormatException catch (e) {
+      stderr.writeln('Malformed JSON in repeat file ${file.path}: $e');
+    } on Exception catch (e) {
+      stderr.writeln('Error loading repeat file ${file.path}: $e');
+    }
+  }
+  return repeatResults;
+}
+
+void main(List<String> args) {
+  final parsed = _parseArgs(args);
+
+  if (parsed.resultsDir == null || parsed.sha == null || parsed.out == null) {
     stderr.writeln(
       'Usage: summarize --results-dir=<dir> --sha=<sha> --out=<dart-sol.json>',
     );
     exit(1);
   }
 
-  final repeatResults = <RepeatResult>[];
-  final dir = Directory(resultsDir);
-  if (dir.existsSync()) {
-    final files = dir.listSync().whereType<File>().toList()
-      ..sort((a, b) => a.path.compareTo(b.path));
-    for (final file in files) {
-      if (file.path.endsWith('.json')) {
-        try {
-          final content = file.readAsStringSync();
-          final decoded = jsonDecode(content) as Map<String, dynamic>;
-          repeatResults.add(RepeatResult.fromJson(decoded));
-        } catch (_) {
-          // Ignore unparseable repeat files.
-        }
-      }
-    }
-  }
-
+  final repeatResults = _loadRepeatResults(parsed.resultsDir!);
   final meta = SummaryMeta(
-    rulesDartSha: sha,
-    targetLoc: targetLoc,
-    seed: seed,
-    repeats: repeats,
+    rulesDartSha: parsed.sha!,
+    targetLoc: parsed.targetLoc,
+    seed: parsed.seed,
+    repeats: parsed.repeats,
   );
   final runner = RunnerInfo.detect();
 
@@ -82,6 +129,6 @@ void main(List<String> args) {
     runner: runner,
   );
 
-  File(out).writeAsStringSync(jsonOut);
-  stdout.writeln('Summary written to $out');
+  File(parsed.out!).writeAsStringSync(jsonOut);
+  stdout.writeln('Summary written to ${parsed.out}');
 }

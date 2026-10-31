@@ -66,8 +66,10 @@ final class RepeatContext {
         '--output_base=$outputBase',
         'shutdown',
       ], workingDirectory: repeatWorkspace);
-    } catch (_) {
-      // Ignore shutdown errors.
+    } on ProcessException catch (e) {
+      stderr.writeln('Bazel shutdown process error: $e');
+    } on Exception catch (e) {
+      stderr.writeln('Bazel shutdown failure: $e');
     }
   }
 
@@ -156,8 +158,10 @@ RepeatResult executeRepeat({
     try {
       if (outbaseDir.existsSync()) outbaseDir.deleteSync(recursive: true);
       if (repeatWsDir.existsSync()) repeatWsDir.deleteSync(recursive: true);
-    } catch (_) {
-      // Best-effort temp dir cleanup.
+    } on FileSystemException catch (e) {
+      stderr.writeln('Failed to clean repeat dirs: $e');
+    } on Exception catch (e) {
+      stderr.writeln('Cleanup error: $e');
     }
   }
 
@@ -201,7 +205,8 @@ FlowResult _measureFlowAppClean(RepeatContext ctx) {
       target: '//app:app',
       isTest: false,
     );
-  } catch (e) {
+  } on Exception catch (e) {
+    stderr.writeln('Flow dart-app-clean error: $e');
     return FlowResult(
       method: 'batch',
       bazelCpu: null,
@@ -216,14 +221,12 @@ FlowResult _measureFlowAppClean(RepeatContext ctx) {
 
 FlowResult _measureFlowAppBody(RepeatContext ctx) {
   try {
-    // Unmeasured warm-up build
     Process.runSync('bazel', [
       '--output_base=${ctx.outputBase}',
       'build',
       '//app:app',
     ], workingDirectory: ctx.repeatWorkspace);
 
-    // Apply method-body edit in layer-0 package (pkg0/lib/src/f0.dart)
     final f0 = File('${ctx.repeatWorkspace}/packages/pkg0/lib/src/f0.dart');
     if (!f0.existsSync()) throw StateError('Layer-0 f0.dart not found');
     final orig = f0.readAsStringSync();
@@ -274,7 +277,8 @@ FlowResult _measureFlowAppBody(RepeatContext ctx) {
       target: '//app:app',
       isTest: false,
     );
-  } catch (e) {
+  } on Exception catch (e) {
+    stderr.writeln('Flow dart-app-body error: $e');
     return FlowResult(
       method: 'warm-server',
       bazelCpu: null,
@@ -289,7 +293,6 @@ FlowResult _measureFlowAppBody(RepeatContext ctx) {
 
 FlowResult _measureFlowAppApi(RepeatContext ctx) {
   try {
-    // Apply public-API edit in layer-0 package entry point
     final entry = File('${ctx.repeatWorkspace}/packages/pkg0/lib/pkg0.dart');
     if (!entry.existsSync()) throw StateError('Layer-0 pkg0.dart not found');
     final orig = entry.readAsStringSync();
@@ -342,7 +345,8 @@ FlowResult _measureFlowAppApi(RepeatContext ctx) {
       target: '//app:app',
       isTest: false,
     );
-  } catch (e) {
+  } on Exception catch (e) {
+    stderr.writeln('Flow dart-app-api error: $e');
     return FlowResult(
       method: 'warm-server',
       bazelCpu: null,
@@ -357,7 +361,6 @@ FlowResult _measureFlowAppApi(RepeatContext ctx) {
 
 FlowResult _measureFlowTestLeaf(RepeatContext ctx) {
   try {
-    // Find a leaf test target
     final qRes = Process.runSync('bazel', [
       '--output_base=${ctx.outputBase}',
       'query',
@@ -371,14 +374,12 @@ FlowResult _measureFlowTestLeaf(RepeatContext ctx) {
     if (testTargets.isEmpty) throw StateError('No leaf test target found');
     final leafTarget = testTargets.first;
 
-    // Warm test unmeasured
     Process.runSync('bazel', [
       '--output_base=${ctx.outputBase}',
       'test',
       leafTarget,
     ], workingDirectory: ctx.repeatWorkspace);
 
-    // Apply method body edit in that leaf package
     final pkgName = leafTarget.split(':').first.replaceFirst('//packages/', '');
     final f0 = File('${ctx.repeatWorkspace}/packages/$pkgName/lib/src/f0.dart');
     if (f0.existsSync()) {
@@ -431,7 +432,8 @@ FlowResult _measureFlowTestLeaf(RepeatContext ctx) {
       target: leafTarget,
       isTest: true,
     );
-  } catch (e) {
+  } on Exception catch (e) {
+    stderr.writeln('Flow dart-test-leaf error: $e');
     return FlowResult(
       method: 'warm-server',
       bazelCpu: null,
@@ -480,7 +482,8 @@ FlowResult _replayAndVerifyFlow({
   List<SpawnRecord> ordered;
   try {
     ordered = orderChainSpawns(parsed.chainSpawns);
-  } catch (e) {
+  } on Exception catch (e) {
+    stderr.writeln('Chain spawn ordering failed: $e');
     return FlowResult(
       method: method,
       bazelCpu: bazelCpu,

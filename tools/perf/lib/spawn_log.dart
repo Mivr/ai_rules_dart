@@ -2,6 +2,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:io';
 
 /// A parsed Bazel spawn entry from the execution log.
 final class SpawnRecord {
@@ -93,87 +94,64 @@ Iterable<String> extractConcatenatedJsonObjects(String text) sync* {
 
 /// Checks whether an output path belongs to an exec configuration.
 bool isExecConfigPath(String path) {
-  // Matches bazel-out/*-exec*/*
   final normalized = path.replaceAll(r'\', '/');
   return RegExp(r'^bazel-out/[^/]+-exec[^/]*/').hasMatch(normalized);
 }
 
-/// Parses a single spawn JSON map into a [SpawnRecord].
-SpawnRecord? parseSpawnMap(Map<String, dynamic> map) {
-  final args = <String>[];
-  final rawArgs = map['commandArgs'];
-  if (rawArgs is List) {
-    for (final a in rawArgs) {
-      if (a != null) args.add(a.toString());
+List<String> _parseStringList(dynamic raw) {
+  final result = <String>[];
+  if (raw is List) {
+    for (final item in raw) {
+      if (item != null) result.add(item.toString());
     }
   }
+  return result;
+}
 
+Map<String, String> _parseEnvMap(dynamic raw) {
   final env = <String, String>{};
-  final rawEnv = map['environmentVariables'];
-  if (rawEnv is List) {
-    for (final e in rawEnv) {
-      if (e is Map && e['name'] != null && e['value'] != null) {
-        env[e['name'].toString()] = e['value'].toString();
+  if (raw is List) {
+    for (final item in raw) {
+      if (item is Map && item['name'] != null && item['value'] != null) {
+        env[item['name'].toString()] = item['value'].toString();
       }
     }
-  } else if (rawEnv is Map) {
-    for (final entry in rawEnv.entries) {
+  } else if (raw is Map) {
+    for (final entry in raw.entries) {
       env[entry.key.toString()] = entry.value.toString();
     }
   }
+  return env;
+}
 
-  final inputs = <String>[];
-  final rawInputs = map['inputs'];
-  if (rawInputs is List) {
-    for (final inp in rawInputs) {
-      if (inp is String) {
-        inputs.add(inp);
-      } else if (inp is Map && inp['path'] != null) {
-        inputs.add(inp['path'].toString());
+List<String> _parsePathList(dynamic raw) {
+  final paths = <String>[];
+  if (raw is List) {
+    for (final item in raw) {
+      if (item is String) {
+        paths.add(item);
+      } else if (item is Map && item['path'] != null) {
+        paths.add(item['path'].toString());
       }
     }
   }
+  return paths;
+}
 
-  final listed = <String>[];
-  final rawListed = map['listedOutputs'];
-  if (rawListed is List) {
-    for (final out in rawListed) {
-      if (out is String) {
-        listed.add(out);
-      } else if (out is Map && out['path'] != null) {
-        listed.add(out['path'].toString());
-      }
-    }
-  }
-
-  final actual = <String>[];
-  final rawActual = map['actualOutputs'];
-  if (rawActual is List) {
-    for (final out in rawActual) {
-      if (out is String) {
-        actual.add(out);
-      } else if (out is Map && out['path'] != null) {
-        actual.add(out['path'].toString());
-      }
-    }
-  }
-
-  final runner = (map['runner'] as String? ?? '').trim();
-  final exitCode = map['exitCode'] as int?;
-  final isCached =
-      map['cachedLocally'] == true ||
-      map['remoteCacheHit'] == true ||
-      map['cacheHit'] == true;
-
+/// Parses a single spawn JSON map into a [SpawnRecord].
+SpawnRecord? parseSpawnMap(Map<String, dynamic> map) {
   return SpawnRecord(
-    commandArgs: args,
-    environmentVariables: env,
-    inputs: inputs,
-    listedOutputs: listed,
-    actualOutputs: actual,
-    runner: runner,
-    exitCode: exitCode,
-    isCached: isCached,
+    commandArgs: _parseStringList(map['commandArgs']),
+    environmentVariables: _parseEnvMap(map['environmentVariables']),
+    inputs: _parsePathList(map['inputs']),
+    listedOutputs: _parsePathList(map['listedOutputs']),
+    actualOutputs: _parsePathList(map['actualOutputs']),
+    runner: (map['runner'] as String? ?? '').trim(),
+    exitCode: map['exitCode'] as int?,
+    isCached:
+        map['cachedLocally'] == true ||
+        map['remoteCacheHit'] == true ||
+        map['cacheHit'] == true,
   );
 }
 
@@ -212,20 +190,19 @@ ParsedExecutionLog parseExecutionLog(String text) {
       allSpawns.add(record);
       if (record.isWorker) workerSteps++;
 
-      // Non-zero exit code: exclude from chain
       if (record.exitCode != null && record.exitCode != 0) continue;
-      // Cached spawns: exclude from chain
       if (record.isCached) continue;
 
-      // Exec configuration check
       final declared = record.declaredOutputs;
       if (declared.isNotEmpty && declared.any(isExecConfigPath)) {
         continue;
       }
 
       chainSpawns.add(record);
-    } catch (_) {
-      // Ignore malformed JSON objects in log.
+    } on FormatException catch (e) {
+      stderr.writeln('Malformed JSON object in execution log: $e');
+    } on Exception catch (e) {
+      stderr.writeln('Error processing spawn JSON: $e');
     }
   }
 

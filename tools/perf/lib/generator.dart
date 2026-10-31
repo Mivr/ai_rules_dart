@@ -72,6 +72,80 @@ final class GeneratorOptions {
   final int fanout;
 }
 
+/// Configuration for writing a single package.
+final class PackageConfig {
+  /// Creates package configuration.
+  const PackageConfig({
+    required this.options,
+    required this.identity,
+    required this.layer,
+    required this.fanoutIndex,
+    required this.pkgId,
+    required this.deps,
+    required this.targetLines,
+    required this.isLeaf,
+  });
+
+  /// Generator options.
+  final GeneratorOptions options;
+
+  /// Module identity.
+  final ModuleIdentity identity;
+
+  /// Layer index (0..layers-1).
+  final int layer;
+
+  /// Fanout index within layer (0..fanout-1).
+  final int fanoutIndex;
+
+  /// Unique package id.
+  final int pkgId;
+
+  /// Direct package dependencies.
+  final List<int> deps;
+
+  /// Target lines of code for this package.
+  final int targetLines;
+
+  /// Whether this is a leaf-layer package.
+  final bool isLeaf;
+}
+
+/// Configuration for writing a single src file.
+final class SrcFileConfig {
+  /// Creates src file configuration.
+  const SrcFileConfig({
+    required this.srcDir,
+    required this.pkgId,
+    required this.fileIndex,
+    required this.layer,
+    required this.isLeaf,
+    required this.targetLines,
+    required this.seedVal,
+  });
+
+  /// Destination src directory.
+  final Directory srcDir;
+
+  /// Owning package id.
+  final int pkgId;
+
+  /// File index within package.
+  final int fileIndex;
+
+  /// Layer index.
+  final int layer;
+
+  /// Whether owning package is a leaf.
+  final bool isLeaf;
+
+  /// Target lines for this file.
+  final int targetLines;
+
+  /// Deterministic seed value for method bodies.
+  final int seedVal;
+}
+
 /// Generates a layered benchmark workspace.
 void generateWorkspace(GeneratorOptions options) {
   final outDir = Directory(options.outputPath);
@@ -153,8 +227,8 @@ void _generatePackagesAndApp(
   ModuleIdentity identity,
 ) {
   final totalPackages = options.layers * options.fanout;
-  final appFileLines = 25;
-  final testLinesPerLeaf = 16;
+  const appFileLines = 25;
+  const testLinesPerLeaf = 16;
   final totalTestLines = options.fanout * testLinesPerLeaf;
   final availableForPackages = max(
     100,
@@ -172,11 +246,9 @@ void _generatePackagesAndApp(
         packageDeps[pkgId] = const [];
       } else {
         final deps = <int>[];
-        // At least one dependency from l - 1
         final primary = (l - 1) * options.fanout + (f % options.fanout);
         deps.add(primary);
 
-        // Optional secondary dependency from any layer < l
         if (l > 1 && rng.nextBool()) {
           final maxLowerPkg = (l - 1) * options.fanout;
           final sec = rng.nextInt(maxLowerPkg);
@@ -190,8 +262,7 @@ void _generatePackagesAndApp(
   for (var l = 0; l < options.layers; l++) {
     for (var f = 0; f < options.fanout; f++) {
       final pkgId = l * options.fanout + f;
-      final isLeaf = l == options.layers - 1;
-      _writePackage(
+      final config = PackageConfig(
         options: options,
         identity: identity,
         layer: l,
@@ -199,38 +270,32 @@ void _generatePackagesAndApp(
         pkgId: pkgId,
         deps: packageDeps[pkgId]!,
         targetLines: linesPerPackage,
-        isLeaf: isLeaf,
-        rng: rng,
+        isLeaf: l == options.layers - 1,
       );
+      _writePackage(config, rng);
     }
   }
 
   _writeApp(options, identity);
 }
 
-void _writePackage({
-  required GeneratorOptions options,
-  required ModuleIdentity identity,
-  required int layer,
-  required int fanoutIndex,
-  required int pkgId,
-  required List<int> deps,
-  required int targetLines,
-  required bool isLeaf,
-  required Random rng,
-}) {
-  final pkgDir = Directory('${options.outputPath}/packages/pkg$pkgId');
+void _writePackage(PackageConfig config, Random rng) {
+  final pkgDir = Directory(
+    '${config.options.outputPath}/packages/pkg${config.pkgId}',
+  );
   pkgDir.createSync(recursive: true);
 
-  final depLabels = deps.map((d) => '        "//packages/pkg$d",').join('\n');
-  final testTarget = isLeaf
+  final depLabels = config.deps
+      .map((d) => '        "//packages/pkg$d",')
+      .join('\n');
+  final testTarget = config.isLeaf
       ? '''
 dart_test(
-    name = "pkg${pkgId}_test",
+    name = "pkg${config.pkgId}_test",
     size = "small",
-    main = "test/pkg${pkgId}_test.dart",
+    main = "test/pkg${config.pkgId}_test.dart",
     deps = [
-        ":pkg$pkgId",
+        ":pkg${config.pkgId}",
         "@pub_deps//:test",
     ],
 )
@@ -239,10 +304,10 @@ dart_test(
 
   final buildContent =
       '''
-load("@${identity.repoName}//dart:defs.bzl", "dart_library"${isLeaf ? ', "dart_test"' : ''})
+load("@${config.identity.repoName}//dart:defs.bzl", "dart_library"${config.isLeaf ? ', "dart_test"' : ''})
 
 dart_library(
-    name = "pkg$pkgId",
+    name = "pkg${config.pkgId}",
     srcs = glob(["lib/**/*.dart"]),
     visibility = ["//visibility:public"],
     deps = [
@@ -252,9 +317,8 @@ $depLabels
 $testTarget''';
   File('${pkgDir.path}/BUILD.bazel').writeAsStringSync(buildContent);
 
-  // Files per package
-  final srcFilesCount = max(1, min(10, targetLines ~/ 250));
-  final linesForSrc = max(15, targetLines - 25);
+  final srcFilesCount = max(1, min(10, config.targetLines ~/ 250));
+  final linesForSrc = max(15, config.targetLines - 25);
   final linesPerFile = max(15, linesForSrc ~/ srcFilesCount);
 
   final srcDir = Directory('${pkgDir.path}/lib/src');
@@ -262,17 +326,30 @@ $testTarget''';
 
   for (var f = 0; f < srcFilesCount; f++) {
     _writeSrcFile(
-      srcDir: srcDir,
-      pkgId: pkgId,
-      fileIndex: f,
-      layer: layer,
-      isLeaf: isLeaf,
-      targetLines: linesPerFile,
-      seedVal: rng.nextInt(1000),
+      SrcFileConfig(
+        srcDir: srcDir,
+        pkgId: config.pkgId,
+        fileIndex: f,
+        layer: config.layer,
+        isLeaf: config.isLeaf,
+        targetLines: linesPerFile,
+        seedVal: rng.nextInt(1000),
+      ),
     );
   }
 
-  // Write entry file
+  _writePackageEntryFile(pkgDir, config.pkgId, srcFilesCount, config.deps);
+  if (config.isLeaf) {
+    _writePackageTestFile(pkgDir, config.pkgId);
+  }
+}
+
+void _writePackageEntryFile(
+  Directory pkgDir,
+  int pkgId,
+  int srcFilesCount,
+  List<int> deps,
+) {
   final exports = List.generate(
     srcFilesCount,
     (i) => "export 'src/f$i.dart';",
@@ -306,12 +383,13 @@ int pkg${pkgId}_entry(int x) {
 }
 ''';
   File('${pkgDir.path}/lib/pkg$pkgId.dart').writeAsStringSync(entryContent);
+}
 
-  if (isLeaf) {
-    final testDir = Directory('${pkgDir.path}/test');
-    testDir.createSync(recursive: true);
-    final testContent =
-        '''
+void _writePackageTestFile(Directory pkgDir, int pkgId) {
+  final testDir = Directory('${pkgDir.path}/test');
+  testDir.createSync(recursive: true);
+  final testContent =
+      '''
 import 'package:pkg$pkgId/pkg$pkgId.dart';
 import 'package:test/test.dart';
 
@@ -321,42 +399,30 @@ void main() {
   });
 }
 ''';
-    File('${testDir.path}/pkg${pkgId}_test.dart')
-        .writeAsStringSync(testContent);
-  }
+  File('${testDir.path}/pkg${pkgId}_test.dart').writeAsStringSync(testContent);
 }
 
-void _writeSrcFile({
-  required Directory srcDir,
-  required int pkgId,
-  required int fileIndex,
-  required int layer,
-  required bool isLeaf,
-  required int targetLines,
-  required int seedVal,
-}) {
+void _writeSrcFile(SrcFileConfig config) {
   final buffer = StringBuffer();
-  buffer.writeln('/// Class for pkg $pkgId file $fileIndex.');
-  buffer.writeln('class C${pkgId}x$fileIndex {');
+  buffer.writeln('/// Class for pkg ${config.pkgId} file ${config.fileIndex}.');
+  buffer.writeln('class C${config.pkgId}x${config.fileIndex} {');
   buffer.writeln('  /// Constructor.');
-  buffer.writeln('  const C${pkgId}x$fileIndex(this.value);');
+  buffer.writeln('  const C${config.pkgId}x${config.fileIndex}(this.value);');
   buffer.writeln('');
   buffer.writeln('  /// Value field.');
   buffer.writeln('  final int value;');
   buffer.writeln('');
 
-  // Fixed overhead: 9 lines so far. Bottom helper adds 4 lines. Class close 1 line.
   var currentLines = 14;
 
-  // Insert deterministic hooks in layer 0 file 0 or leaf file 0
-  if (layer == 0 && fileIndex == 0) {
+  if (config.layer == 0 && config.fileIndex == 0) {
     buffer.writeln('  /// Hook for body edit.');
     buffer.writeln('  int bodyHook() {');
     buffer.writeln('    return 1;');
     buffer.writeln('  }');
     buffer.writeln('');
     currentLines += 5;
-  } else if (isLeaf && fileIndex == 0) {
+  } else if (config.isLeaf && config.fileIndex == 0) {
     buffer.writeln('  /// Hook for leaf test body edit.');
     buffer.writeln('  int leafTestHook() {');
     buffer.writeln('    return 10;');
@@ -366,10 +432,10 @@ void _writeSrcFile({
   }
 
   var methodIdx = 0;
-  while (currentLines + 9 <= targetLines) {
+  while (currentLines + 9 <= config.targetLines) {
     buffer.writeln('  /// Method $methodIdx.');
     buffer.writeln('  int m$methodIdx(int x) {');
-    buffer.writeln('    var acc = x + $methodIdx + $seedVal;');
+    buffer.writeln('    var acc = x + $methodIdx + ${config.seedVal};');
     buffer.writeln('    for (var j = 0; j < 3; j++) {');
     buffer.writeln('      acc += j;');
     buffer.writeln('    }');
@@ -380,19 +446,24 @@ void _writeSrcFile({
     methodIdx++;
   }
 
-  while (currentLines < targetLines) {
+  while (currentLines < config.targetLines) {
     buffer.writeln('  // Line filler $currentLines.');
     currentLines++;
   }
 
   buffer.writeln('}');
   buffer.writeln('');
-  buffer.writeln('/// Function for pkg $pkgId file $fileIndex.');
-  buffer.writeln('int fn${pkgId}x$fileIndex(int x) {');
-  buffer.writeln('  return const C${pkgId}x$fileIndex(0).value + x;');
+  buffer.writeln(
+    '/// Function for pkg ${config.pkgId} file ${config.fileIndex}.',
+  );
+  buffer.writeln('int fn${config.pkgId}x${config.fileIndex}(int x) {');
+  buffer.writeln(
+    '  return const C${config.pkgId}x${config.fileIndex}(0).value + x;',
+  );
   buffer.writeln('}');
 
-  File('${srcDir.path}/f$fileIndex.dart').writeAsStringSync(buffer.toString());
+  File('${config.srcDir.path}/f${config.fileIndex}.dart')
+      .writeAsStringSync(buffer.toString());
 }
 
 void _writeApp(GeneratorOptions options, ModuleIdentity identity) {

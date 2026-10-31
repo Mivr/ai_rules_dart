@@ -49,8 +49,10 @@ void main(List<String> args) {
   } finally {
     try {
       Directory(tempRoot).deleteSync(recursive: true);
-    } catch (_) {
-      // Best effort cleanup.
+    } on FileSystemException catch (e) {
+      stderr.writeln('Temp cleanup error: $e');
+    } on Exception catch (e) {
+      stderr.writeln('Error cleaning temp directory: $e');
     }
   }
 }

@@ -122,12 +122,16 @@ final class LinuxProcReader implements ProcReader {
             final stat = parseProcStat(content);
             if (stat != null) result[pid] = stat;
           }
-        } catch (_) {
-          // Process may exit concurrently during iteration.
+        } on FileSystemException catch (e) {
+          stderr.writeln('Proc stat read skipped: $e');
+        } on Exception catch (e) {
+          stderr.writeln('Proc stat error: $e');
         }
       }
-    } catch (_) {
-      // Ignore directory read errors if `/proc` is restricted.
+    } on FileSystemException catch (e) {
+      stderr.writeln('Proc dir list error: $e');
+    } on Exception catch (e) {
+      stderr.writeln('Proc traversal error: $e');
     }
     return result;
   }
