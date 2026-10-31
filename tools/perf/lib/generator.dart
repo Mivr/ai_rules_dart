@@ -79,11 +79,9 @@ final class PackageConfig {
     required this.options,
     required this.identity,
     required this.layer,
-    required this.fanoutIndex,
     required this.pkgId,
     required this.deps,
-    required this.targetLines,
-    required this.isLeaf,
+    required this.srcFilesCount,
   });
 
   /// Generator options.
@@ -95,55 +93,57 @@ final class PackageConfig {
   /// Layer index (0..layers-1).
   final int layer;
 
-  /// Fanout index within layer (0..fanout-1).
-  final int fanoutIndex;
-
   /// Unique package id.
   final int pkgId;
 
   /// Direct package dependencies.
   final List<int> deps;
 
-  /// Target lines of code for this package.
-  final int targetLines;
+  /// Number of src files in this package.
+  final int srcFilesCount;
+
+  /// Package root directory path.
+  String get pkgDir => '${options.outputPath}/packages/pkg$pkgId';
 
   /// Whether this is a leaf-layer package.
-  final bool isLeaf;
+  bool get isLeaf => layer == options.layers - 1;
 }
 
 /// Configuration for writing a single src file.
 final class SrcFileConfig {
   /// Creates src file configuration.
   const SrcFileConfig({
-    required this.srcDir,
-    required this.pkgId,
+    required this.packageConfig,
     required this.fileIndex,
-    required this.layer,
-    required this.isLeaf,
     required this.targetLines,
     required this.seedVal,
   });
 
-  /// Destination src directory.
-  final Directory srcDir;
-
-  /// Owning package id.
-  final int pkgId;
+  /// Owning package configuration.
+  final PackageConfig packageConfig;
 
   /// File index within package.
   final int fileIndex;
-
-  /// Layer index.
-  final int layer;
-
-  /// Whether owning package is a leaf.
-  final bool isLeaf;
 
   /// Target lines for this file.
   final int targetLines;
 
   /// Deterministic seed value for method bodies.
   final int seedVal;
+
+  /// Package directory.
+  String get pkgDir => packageConfig.pkgDir;
+
+  /// Package id.
+  int get pkgId => packageConfig.pkgId;
+
+  /// Whether this file carries an edit hook.
+  bool get hasHook =>
+      (packageConfig.layer == 0 && fileIndex == 0) ||
+      (packageConfig.isLeaf && fileIndex == 0);
+
+  /// Hook return value.
+  int get hookVal => packageConfig.layer == 0 ? 1 : 10;
 }
 
 /// Generates a layered benchmark workspace.
@@ -222,35 +222,20 @@ exports_files([
   File('${options.outputPath}/BUILD.bazel').writeAsStringSync(content);
 }
 
-void _generatePackagesAndApp(
-  GeneratorOptions options,
-  ModuleIdentity identity,
-) {
-  final totalPackages = options.layers * options.fanout;
-  const appFileLines = 25;
-  const testLinesPerLeaf = 16;
-  final totalTestLines = options.fanout * testLinesPerLeaf;
-  final availableForPackages = max(
-    100,
-    options.targetLoc - appFileLines - totalTestLines,
-  );
-  final linesPerPackage = max(20, availableForPackages ~/ totalPackages);
-
-  final rng = Random(options.seed);
+Map<int, List<int>> _computePackageDeps(int layers, int fanout, Random rng) {
   final packageDeps = <int, List<int>>{};
-
-  for (var l = 0; l < options.layers; l++) {
-    for (var f = 0; f < options.fanout; f++) {
-      final pkgId = l * options.fanout + f;
+  for (var l = 0; l < layers; l++) {
+    for (var f = 0; f < fanout; f++) {
+      final pkgId = l * fanout + f;
       if (l == 0) {
         packageDeps[pkgId] = const [];
       } else {
         final deps = <int>[];
-        final primary = (l - 1) * options.fanout + (f % options.fanout);
+        final primary = (l - 1) * fanout + (f % fanout);
         deps.add(primary);
 
         if (l > 1 && rng.nextBool()) {
-          final maxLowerPkg = (l - 1) * options.fanout;
+          final maxLowerPkg = (l - 1) * fanout;
           final sec = rng.nextInt(maxLowerPkg);
           if (!deps.contains(sec)) deps.add(sec);
         }
@@ -258,7 +243,48 @@ void _generatePackagesAndApp(
       }
     }
   }
+  return packageDeps;
+}
 
+int _computeBoilerplateLines({
+  required int fanout,
+  required int totalPackages,
+  required int srcCount,
+  required Map<int, List<int>> packageDeps,
+}) {
+  final appLines = 2 * fanout + 5;
+  final leafTestLines = 8 * fanout;
+  var entryLinesTotal = 0;
+  for (var p = 0; p < totalPackages; p++) {
+    final d = packageDeps[p]!;
+    entryLinesTotal += d.isEmpty
+        ? 3 * srcCount + 7
+        : 3 * srcCount + 2 * d.length + 8;
+  }
+  return appLines + leafTestLines + entryLinesTotal;
+}
+
+void _generatePackagesAndApp(
+  GeneratorOptions options,
+  ModuleIdentity identity,
+) {
+  final totalPackages = options.layers * options.fanout;
+  final srcCount = max(1, min(10, (options.targetLoc ~/ totalPackages) ~/ 250));
+  final rng = Random(options.seed);
+  final packageDeps = _computePackageDeps(options.layers, options.fanout, rng);
+
+  final boilerplate = _computeBoilerplateLines(
+    fanout: options.fanout,
+    totalPackages: totalPackages,
+    srcCount: srcCount,
+    packageDeps: packageDeps,
+  );
+  final totalSrcFiles = totalPackages * srcCount;
+  final remaining = max(totalSrcFiles * 13, options.targetLoc - boilerplate);
+  final basePerFile = remaining ~/ totalSrcFiles;
+  final remPerFile = remaining % totalSrcFiles;
+
+  var fileCounter = 0;
   for (var l = 0; l < options.layers; l++) {
     for (var f = 0; f < options.fanout; f++) {
       final pkgId = l * options.fanout + f;
@@ -266,25 +292,41 @@ void _generatePackagesAndApp(
         options: options,
         identity: identity,
         layer: l,
-        fanoutIndex: f,
         pkgId: pkgId,
         deps: packageDeps[pkgId]!,
-        targetLines: linesPerPackage,
-        isLeaf: l == options.layers - 1,
+        srcFilesCount: srcCount,
       );
-      _writePackage(config, rng);
+
+      _writePackageBuildFile(config);
+
+      for (var s = 0; s < srcCount; s++) {
+        final targetLines = basePerFile + (fileCounter < remPerFile ? 1 : 0);
+        fileCounter++;
+        final minLines = (l == 0 && s == 0) || (config.isLeaf && s == 0)
+            ? 18
+            : 13;
+        _writeSrcFile(
+          SrcFileConfig(
+            packageConfig: config,
+            fileIndex: s,
+            targetLines: max(minLines, targetLines),
+            seedVal: rng.nextInt(1000),
+          ),
+        );
+      }
+
+      _writePackageEntryFile(config);
+      if (config.isLeaf) {
+        _writePackageTestFile(config.pkgDir, pkgId);
+      }
     }
   }
 
   _writeApp(options, identity);
 }
 
-void _writePackage(PackageConfig config, Random rng) {
-  final pkgDir = Directory(
-    '${config.options.outputPath}/packages/pkg${config.pkgId}',
-  );
-  pkgDir.createSync(recursive: true);
-
+void _writePackageBuildFile(PackageConfig config) {
+  final pkgDir = Directory(config.pkgDir)..createSync(recursive: true);
   final depLabels = config.deps
       .map((d) => '        "//packages/pkg$d",')
       .join('\n');
@@ -316,78 +358,50 @@ $depLabels
 )
 $testTarget''';
   File('${pkgDir.path}/BUILD.bazel').writeAsStringSync(buildContent);
-
-  final srcFilesCount = max(1, min(10, config.targetLines ~/ 250));
-  final linesForSrc = max(15, config.targetLines - 25);
-  final linesPerFile = max(15, linesForSrc ~/ srcFilesCount);
-
-  final srcDir = Directory('${pkgDir.path}/lib/src');
-  srcDir.createSync(recursive: true);
-
-  for (var f = 0; f < srcFilesCount; f++) {
-    _writeSrcFile(
-      SrcFileConfig(
-        srcDir: srcDir,
-        pkgId: config.pkgId,
-        fileIndex: f,
-        layer: config.layer,
-        isLeaf: config.isLeaf,
-        targetLines: linesPerFile,
-        seedVal: rng.nextInt(1000),
-      ),
-    );
-  }
-
-  _writePackageEntryFile(pkgDir, config.pkgId, srcFilesCount, config.deps);
-  if (config.isLeaf) {
-    _writePackageTestFile(pkgDir, config.pkgId);
-  }
 }
 
-void _writePackageEntryFile(
-  Directory pkgDir,
-  int pkgId,
-  int srcFilesCount,
-  List<int> deps,
-) {
+void _writePackageEntryFile(PackageConfig config) {
   final exports = List.generate(
-    srcFilesCount,
+    config.srcFilesCount,
     (i) => "export 'src/f$i.dart';",
   ).join('\n');
   final imports = List.generate(
-    srcFilesCount,
+    config.srcFilesCount,
     (i) => "import 'src/f$i.dart';",
   ).join('\n');
-  final depImports = deps
+
+  final depImports = config.deps
       .map((d) => "import 'package:pkg$d/pkg$d.dart';")
       .join('\n');
-
-  final depSum = deps.isEmpty
-      ? 'x'
-      : deps.map((d) => 'pkg${d}_entry(x)').join(' + ');
+  final depSection = config.deps.isNotEmpty ? '$depImports\n\n' : '';
 
   final fileCalls = List.generate(
-    srcFilesCount,
-    (i) => 'fn${pkgId}x$i(x)',
-  ).join(' + ');
+    config.srcFilesCount,
+    (i) => '  acc += fn${config.pkgId}x$i(x);',
+  ).join('\n');
+  final depCalls = config.deps.isEmpty
+      ? ''
+      : '${config.deps.map((d) => '  acc += pkg${d}_entry(x);').join('\n')}\n';
 
   final entryContent =
       '''
 $exports
-$imports
-$depImports
 
-/// Entry function for package $pkgId.
-int pkg${pkgId}_entry(int x) {
-  return $fileCalls + $depSum;
+$depSection$imports
+
+/// Entry function for package ${config.pkgId}.
+int pkg${config.pkgId}_entry(int x) {
+  var acc = x;
+$fileCalls
+$depCalls  return acc;
 }
 ''';
-  File('${pkgDir.path}/lib/pkg$pkgId.dart').writeAsStringSync(entryContent);
+  File('${config.pkgDir}/lib/pkg${config.pkgId}.dart')
+      .writeAsStringSync(entryContent);
 }
 
-void _writePackageTestFile(Directory pkgDir, int pkgId) {
-  final testDir = Directory('${pkgDir.path}/test');
-  testDir.createSync(recursive: true);
+void _writePackageTestFile(String pkgDir, int pkgId) {
+  final testDir = Directory('$pkgDir/test')..createSync(recursive: true);
   final testContent =
       '''
 import 'package:pkg$pkgId/pkg$pkgId.dart';
@@ -403,72 +417,69 @@ void main() {
 }
 
 void _writeSrcFile(SrcFileConfig config) {
-  final buffer = StringBuffer();
-  buffer.writeln('/// Class for pkg ${config.pkgId} file ${config.fileIndex}.');
-  buffer.writeln('class C${config.pkgId}x${config.fileIndex} {');
-  buffer.writeln('  /// Constructor.');
-  buffer.writeln('  const C${config.pkgId}x${config.fileIndex}(this.value);');
-  buffer.writeln('');
-  buffer.writeln('  /// Value field.');
-  buffer.writeln('  final int value;');
-  buffer.writeln('');
-
-  var currentLines = 14;
-
-  if (config.layer == 0 && config.fileIndex == 0) {
-    buffer.writeln('  /// Hook for body edit.');
-    buffer.writeln('  int bodyHook() {');
-    buffer.writeln('    return 1;');
-    buffer.writeln('  }');
-    buffer.writeln('');
-    currentLines += 5;
-  } else if (config.isLeaf && config.fileIndex == 0) {
-    buffer.writeln('  /// Hook for leaf test body edit.');
-    buffer.writeln('  int leafTestHook() {');
-    buffer.writeln('    return 10;');
-    buffer.writeln('  }');
-    buffer.writeln('');
-    currentLines += 5;
+  final lines = <String>[
+    '/// Class for pkg ${config.pkgId} file ${config.fileIndex}.',
+    'class C${config.pkgId}x${config.fileIndex} {',
+    '  /// Constructor.',
+    '  const C${config.pkgId}x${config.fileIndex}(this.value);',
+    '',
+    '  /// Value field.',
+    '  final int value;',
+  ];
+  if (config.hasHook) {
+    final hookName = config.pkgId == 0 ? 'bodyHook' : 'leafTestHook';
+    lines.addAll([
+      '',
+      '  /// Hook for edit.',
+      '  int $hookName() {',
+      '    return ${config.hookVal};',
+      '  }',
+    ]);
   }
 
-  var methodIdx = 0;
-  while (currentLines + 9 <= config.targetLines) {
-    buffer.writeln('  /// Method $methodIdx.');
-    buffer.writeln('  int m$methodIdx(int x) {');
-    buffer.writeln('    var acc = x + $methodIdx + ${config.seedVal};');
-    buffer.writeln('    for (var j = 0; j < 3; j++) {');
-    buffer.writeln('      acc += j;');
-    buffer.writeln('    }');
-    buffer.writeln('    return acc;');
-    buffer.writeln('  }');
-    buffer.writeln('');
-    currentLines += 9;
-    methodIdx++;
+  final fixedSoFar = lines.length;
+  const footerLines = 6;
+  final neededExtra = max(0, config.targetLines - (fixedSoFar + footerLines));
+
+  final numMethods = neededExtra ~/ 9;
+  final remFillers = neededExtra % 9;
+
+  for (var m = 0; m < numMethods; m++) {
+    lines.addAll([
+      '',
+      '  /// Method $m.',
+      '  int m$m(int x) {',
+      '    var acc = x + $m + ${config.seedVal};',
+      '    for (var j = 0; j < 3; j++) {',
+      '      acc += j;',
+      '    }',
+      '    return acc;',
+      '  }',
+    ]);
   }
 
-  while (currentLines < config.targetLines) {
-    buffer.writeln('  // Line filler $currentLines.');
-    currentLines++;
+  for (var fill = 0; fill < remFillers; fill++) {
+    lines.add('  // Line filler $fill.');
   }
 
-  buffer.writeln('}');
-  buffer.writeln('');
-  buffer.writeln(
+  lines.addAll([
+    '}',
+    '',
     '/// Function for pkg ${config.pkgId} file ${config.fileIndex}.',
-  );
-  buffer.writeln('int fn${config.pkgId}x${config.fileIndex}(int x) {');
-  buffer.writeln(
+    'int fn${config.pkgId}x${config.fileIndex}(int x) {',
     '  return const C${config.pkgId}x${config.fileIndex}(0).value + x;',
-  );
-  buffer.writeln('}');
+    '}',
+  ]);
 
-  File('${config.srcDir.path}/f${config.fileIndex}.dart')
-      .writeAsStringSync(buffer.toString());
+  final srcDir = Directory('${config.pkgDir}/lib/src')
+    ..createSync(recursive: true);
+  File('${srcDir.path}/f${config.fileIndex}.dart')
+      .writeAsStringSync('${lines.join('\n')}\n');
 }
 
 void _writeApp(GeneratorOptions options, ModuleIdentity identity) {
-  final appDir = Directory('${options.outputPath}/app');
-  appDir.createSync(recursive: true);
+  final appDir = Directory('${options.outputPath}/app')
+    ..createSync(recursive: true);
 
   final leafPkgIds = List.generate(
     options.fanout,
@@ -492,20 +503,21 @@ $depLabels
 ''';
   File('${appDir.path}/BUILD.bazel').writeAsStringSync(buildContent);
 
-  final binDir = Directory('${appDir.path}/bin');
-  binDir.createSync(recursive: true);
-
+  final binDir = Directory('${appDir.path}/bin')..createSync(recursive: true);
   final imports = leafPkgIds
       .map((id) => "import 'package:pkg$id/pkg$id.dart';")
       .join('\n');
-  final sumCalls = leafPkgIds.map((id) => 'pkg${id}_entry(1)').join(' + ');
+  final sumLines = leafPkgIds
+      .map((id) => '  total += pkg${id}_entry(1);')
+      .join('\n');
 
   final mainContent =
       '''
 $imports
 
 void main() {
-  final total = $sumCalls;
+  var total = 0;
+$sumLines
   print('Result: \$total');
 }
 ''';

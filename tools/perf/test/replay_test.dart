@@ -20,18 +20,18 @@ void _testReplayIdenticalAndRestore() {
     final outFile = File('${outDir.path}/app.dill')
       ..writeAsStringSync('ORIGINAL_BYTES_123');
 
-    // Create a script or command to produce the same file
-    final script = File('$execroot/mock_compile.sh');
-    script.writeAsStringSync('''#!/bin/sh
-mkdir -p bazel-out
-printf "ORIGINAL_BYTES_123" > bazel-out/app.dill
+    final script = File('$execroot/mock_compile.dart');
+    script.writeAsStringSync('''
+import 'dart:io';
+
+void main() {
+  Directory('bazel-out').createSync(recursive: true);
+  File('bazel-out/app.dill').writeAsStringSync('ORIGINAL_BYTES_123');
+}
 ''');
-    if (Platform.isLinux || Platform.isMacOS) {
-      Process.runSync('chmod', ['+x', script.path]);
-    }
 
     final spawn = SpawnRecord(
-      commandArgs: ['/bin/sh', script.path],
+      commandArgs: [Platform.resolvedExecutable, script.path],
       environmentVariables: {},
       inputs: [],
       listedOutputs: ['bazel-out/app.dill'],
@@ -62,7 +62,7 @@ printf "ORIGINAL_BYTES_123" > bazel-out/app.dill
   } finally {
     try {
       tempDir.deleteSync(recursive: true);
-    } catch (_) {
+    } on FileSystemException catch (_) {
       // Best-effort cleanup.
     }
   }
@@ -76,17 +76,18 @@ void _testReplayMismatchAndFailure() {
       ..createSync(recursive: true);
     File('${outDir.path}/app.dill').writeAsStringSync('ORIGINAL');
 
-    final script = File('$execroot/mock_bad_compile.sh');
-    script.writeAsStringSync('''#!/bin/sh
-mkdir -p bazel-out
-printf "DIFFERENT" > bazel-out/app.dill
+    final script = File('$execroot/mock_bad_compile.dart');
+    script.writeAsStringSync('''
+import 'dart:io';
+
+void main() {
+  Directory('bazel-out').createSync(recursive: true);
+  File('bazel-out/app.dill').writeAsStringSync('DIFFERENT');
+}
 ''');
-    if (Platform.isLinux || Platform.isMacOS) {
-      Process.runSync('chmod', ['+x', script.path]);
-    }
 
     final spawn = SpawnRecord(
-      commandArgs: ['/bin/sh', script.path],
+      commandArgs: [Platform.resolvedExecutable, script.path],
       environmentVariables: {},
       inputs: [],
       listedOutputs: ['bazel-out/app.dill'],
@@ -113,7 +114,7 @@ printf "DIFFERENT" > bazel-out/app.dill
   } finally {
     try {
       tempDir.deleteSync(recursive: true);
-    } catch (_) {
+    } on FileSystemException catch (_) {
       // Best-effort cleanup.
     }
   }
@@ -123,16 +124,17 @@ void _testNonZeroTestRunnerFails() {
   final tempDir = Directory.systemTemp.createTempSync('rd_test_fail_');
   try {
     final execroot = tempDir.path;
-    final script = File('$execroot/failing_test.sh');
-    script.writeAsStringSync('''#!/bin/sh
-exit 1
+    final script = File('$execroot/failing_test.dart');
+    script.writeAsStringSync('''
+import 'dart:io';
+
+void main() {
+  exit(1);
+}
 ''');
-    if (Platform.isLinux || Platform.isMacOS) {
-      Process.runSync('chmod', ['+x', script.path]);
-    }
 
     final spawn = SpawnRecord(
-      commandArgs: ['/bin/sh', script.path, 'TestRunner'],
+      commandArgs: [Platform.resolvedExecutable, script.path, 'TestRunner'],
       environmentVariables: {},
       inputs: [],
       listedOutputs: ['bazel-out/testlogs/test.log'],
@@ -160,7 +162,7 @@ exit 1
   } finally {
     try {
       tempDir.deleteSync(recursive: true);
-    } catch (_) {
+    } on FileSystemException catch (_) {
       // Best-effort cleanup.
     }
   }

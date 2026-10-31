@@ -1,5 +1,4 @@
 name: Perf Linux
-
 on:
   workflow_dispatch:
     inputs:
@@ -19,10 +18,8 @@ on:
         description: "Deterministic random seed"
         default: "1"
         type: string
-
 permissions:
   contents: read
-
 jobs:
   bench:
     runs-on: ubuntu-latest
@@ -32,13 +29,11 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           path: tools-src
-
       - name: Checkout rules under measurement
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: ${{ inputs.head_ref }}
           path: rules-head
-
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
@@ -47,7 +42,6 @@ jobs:
           external-cache: false
           repository-cache: false
           cache-save: false
-
       - name: Generate pristine monorepo
         run: |
           ws="${RUNNER_TEMP}/pristine-ws"
@@ -58,7 +52,6 @@ jobs:
             --seed="${{ inputs.seed }}" \
             --rules-dart="$GITHUB_WORKSPACE/rules-head" \
             --out="$ws")
-
       - name: Commit lockfile via unmeasured analysis-only pass
         run: |
           ws="${RUNNER_TEMP}/pristine-ws"
@@ -69,7 +62,6 @@ jobs:
           bazel --output_base="$scratch_base" shutdown || true
           rm -rf "$scratch_base"
           test -f "$ws/MODULE.bazel.lock"
-
       - name: Run speed-of-light runner repeats
         run: |
           ws="${RUNNER_TEMP}/pristine-ws"
@@ -82,7 +74,6 @@ jobs:
               --repeat="$i" \
               --out="$results/repeat-$i.json") || true
           done
-
       - name: Summarize speed-of-light results
         if: ${{ !cancelled() }}
         run: |
@@ -98,7 +89,6 @@ jobs:
             --out="$GITHUB_WORKSPACE/dart-sol.json")
           cat "$GITHUB_WORKSPACE/dart-sol.json" >> "$GITHUB_STEP_SUMMARY"
           bazel --output_base="$tooling_base" shutdown || true
-
       - name: Upload dart-sol artifact
         if: ${{ !cancelled() && inputs.head_ref != '' }}
         uses: actions/upload-artifact@v7

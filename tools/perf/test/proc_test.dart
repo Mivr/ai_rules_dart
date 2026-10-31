@@ -138,7 +138,7 @@ void _testFailClosedCases() {
   var missingCaught = false;
   try {
     takeServerTreeSnapshot(emptyReader, 100);
-  } catch (_) {
+  } on StateError catch (_) {
     missingCaught = true;
   }
   _check(missingCaught, 'Fails closed when server PID is missing');
@@ -166,7 +166,7 @@ void _testFailClosedCases() {
       after: snapAfter,
       clockTicksPerSecond: 100,
     );
-  } catch (_) {
+  } on StateError catch (_) {
     mismatchCaught = true;
   }
   _check(mismatchCaught, 'Fails closed on server starttime mismatch');

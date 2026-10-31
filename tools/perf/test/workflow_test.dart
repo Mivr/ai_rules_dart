@@ -32,7 +32,9 @@ String? _anchorRoot(String arg) {
     final located = Runfiles.create().rlocation(arg);
     if (!File(located).existsSync()) return null;
     return _sourceRootAbove(Directory(located).parent.path);
-  } catch (_) {
+  } on Exception catch (_) {
+    return null;
+  } on ArgumentError catch (_) {
     return null;
   }
 }
