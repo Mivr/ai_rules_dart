@@ -4,6 +4,8 @@ library;
 import 'dart:io';
 import 'dart:math';
 
+import 'cli_args.dart';
+
 /// Parsed module identity from a Bazel MODULE.bazel file.
 final class ModuleIdentity {
   /// Creates a module identity.
@@ -23,20 +25,66 @@ final class ModuleIdentity {
   final String dartVersion;
 }
 
-/// Parses `module(name = "...", repo_name = "...")` from MODULE.bazel text.
-ModuleIdentity parseModuleHeader(String content) {
+String _stripStarlarkComments(String content) {
+  final out = StringBuffer();
+  String? quote;
+  var escaped = false;
+  for (var i = 0; i < content.length; i++) {
+    final ch = content[i];
+    if (quote != null) {
+      out.write(ch);
+      if (escaped) {
+        escaped = false;
+      } else if (ch == r'\') {
+        escaped = true;
+      } else if (ch == quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (ch == '"' || ch == "'") {
+      quote = ch;
+      out.write(ch);
+    } else if (ch == '#') {
+      while (i < content.length && content[i] != '\n') {
+        i++;
+      }
+      if (i < content.length) out.write('\n');
+    } else {
+      out.write(ch);
+    }
+  }
+  return out.toString();
+}
+
+String? _extractDartToolchainVersion(String cleanedContent) {
   final sdkMatch = RegExp(
-    r'''dart\.toolchain\s*\([^)]*dart_version\s*=\s*["']([^"']+)["']''',
+    r'''\bdart\.toolchain\s*\([^)]*?\bdart_version\s*=\s*["']([^"']+)["']''',
     multiLine: true,
     dotAll: true,
-  ).firstMatch(content);
-  final dartVersion = sdkMatch?.group(1) ?? '3.13.5';
+  ).firstMatch(cleanedContent);
+  return sdkMatch?.group(1);
+}
+
+/// Parses `module(name = "...", repo_name = "...")` from MODULE.bazel text.
+ModuleIdentity parseModuleHeader(
+  String content, {
+  String fallbackContent = '',
+}) {
+  final cleaned = _stripStarlarkComments(content);
+  final cleanedFallback = fallbackContent.isEmpty
+      ? ''
+      : _stripStarlarkComments(fallbackContent);
+  final dartVersion =
+      _extractDartToolchainVersion(cleaned) ??
+      _extractDartToolchainVersion(cleanedFallback) ??
+      '3.13.5';
 
   final match = RegExp(
-    r'module\s*\(([^)]*)\)',
+    r'\bmodule\s*\(([^)]*)\)',
     multiLine: true,
     dotAll: true,
-  ).firstMatch(content);
+  ).firstMatch(cleaned);
   if (match == null) {
     return ModuleIdentity(
       moduleName: 'rules_dart',
@@ -46,8 +94,9 @@ ModuleIdentity parseModuleHeader(String content) {
   }
 
   final body = match.group(1) ?? '';
-  final nameMatch = RegExp(r'''name\s*=\s*["']([^"']+)["']''').firstMatch(body);
-  final repoMatch = RegExp(r'''repo_name\s*=\s*["']([^"']+)["']''')
+  final nameMatch = RegExp(r'''\bname\s*=\s*["']([^"']+)["']''')
+      .firstMatch(body);
+  final repoMatch = RegExp(r'''\brepo_name\s*=\s*["']([^"']+)["']''')
       .firstMatch(body);
 
   final moduleName = nameMatch?.group(1) ?? 'rules_dart';
@@ -147,7 +196,7 @@ final class SrcFileConfig {
   /// Target lines for this file.
   final int targetLines;
 
-  /// Deterministic seed value for method bodies.
+  /// Deterministic positive seed offset for method bodies.
   final int seedVal;
 
   /// Package directory.
@@ -158,7 +207,7 @@ final class SrcFileConfig {
 
   /// Whether this file carries an edit hook.
   bool get hasHook =>
-      (packageConfig.layer == 0 && fileIndex == 0) ||
+      (pkgId == 0 && fileIndex == 0) ||
       (packageConfig.isLeaf && fileIndex == 0);
 
   /// Hook method name when [hasHook] is true.
@@ -187,27 +236,41 @@ void _validateOptions(GeneratorOptions options) {
 /// Generates a layered benchmark workspace.
 void generateWorkspace(GeneratorOptions options) {
   _validateOptions(options);
+  final resolvedRulesPath = resolveCliPath(options.rulesDartPath);
   final outDir = Directory(options.outputPath);
   if (outDir.existsSync()) outDir.deleteSync(recursive: true);
   outDir.createSync(recursive: true);
 
-  final moduleFile = File('${options.rulesDartPath}/MODULE.bazel');
+  final moduleFile = File('$resolvedRulesPath/MODULE.bazel');
   final moduleContent = moduleFile.existsSync()
       ? moduleFile.readAsStringSync()
       : '';
-  final identity = parseModuleHeader(moduleContent);
+  final e2eModuleFile = File(
+    '$resolvedRulesPath/e2e/dart_test_pkg/MODULE.bazel',
+  );
+  final fallbackContent = e2eModuleFile.existsSync()
+      ? e2eModuleFile.readAsStringSync()
+      : '';
+  final identity = parseModuleHeader(
+    moduleContent,
+    fallbackContent: fallbackContent,
+  );
 
-  _writeModuleBazel(options, identity);
-  _copyPristineFiles(options);
-  _writeRootBuild(options);
+  _writeModuleBazel(options.outputPath, identity, resolvedRulesPath);
+  _copyPristineFiles(options.outputPath, resolvedRulesPath);
+  _writeRootBuild(options.outputPath);
   _generatePackagesAndApp(options, identity);
 }
 
-void _writeModuleBazel(GeneratorOptions options, ModuleIdentity identity) {
+void _writeModuleBazel(
+  String outputPath,
+  ModuleIdentity identity,
+  String resolvedRulesPath,
+) {
   final repoArg = identity.repoName != identity.moduleName
       ? ', repo_name = "${identity.repoName}"'
       : '';
-  final normRulesPath = options.rulesDartPath.replaceAll(r'\', '/');
+  final normRulesPath = resolvedRulesPath.replaceAll(r'\', '/');
 
   final content =
       '''
@@ -232,38 +295,38 @@ pub.from_lock(
 use_repo(pub, "pub_deps")
 ''';
 
-  File('${options.outputPath}/MODULE.bazel').writeAsStringSync(content);
+  File('$outputPath/MODULE.bazel').writeAsStringSync(content);
 }
 
-void _copyPristineFiles(GeneratorOptions options) {
-  final lock = File('${options.rulesDartPath}/e2e/dart_test_pkg/pubspec.lock');
+void _copyPristineFiles(String outputPath, String resolvedRulesPath) {
+  final lock = File('$resolvedRulesPath/e2e/dart_test_pkg/pubspec.lock');
   if (lock.existsSync()) {
-    lock.copySync('${options.outputPath}/pubspec.lock');
+    lock.copySync('$outputPath/pubspec.lock');
   }
 
-  final yaml = File('${options.rulesDartPath}/e2e/dart_test_pkg/pubspec.yaml');
+  final yaml = File('$resolvedRulesPath/e2e/dart_test_pkg/pubspec.yaml');
   if (yaml.existsSync()) {
-    yaml.copySync('${options.outputPath}/pubspec.yaml');
+    yaml.copySync('$outputPath/pubspec.yaml');
   } else if (lock.existsSync()) {
-    File('${options.outputPath}/pubspec.yaml').writeAsStringSync(
+    File('$outputPath/pubspec.yaml').writeAsStringSync(
       'name: bench\nenvironment:\n  sdk: ^3.0.0\ndev_dependencies:\n  test: any\n',
     );
   }
 
-  final bazelver = File('${options.rulesDartPath}/.bazelversion');
+  final bazelver = File('$resolvedRulesPath/.bazelversion');
   if (bazelver.existsSync()) {
-    bazelver.copySync('${options.outputPath}/.bazelversion');
+    bazelver.copySync('$outputPath/.bazelversion');
   }
 }
 
-void _writeRootBuild(GeneratorOptions options) {
+void _writeRootBuild(String outputPath) {
   const content = '''
 exports_files([
     "pubspec.lock",
     "pubspec.yaml",
 ])
 ''';
-  File('${options.outputPath}/BUILD.bazel').writeAsStringSync(content);
+  File('$outputPath/BUILD.bazel').writeAsStringSync(content);
 }
 
 Map<int, List<int>> _computePackageDeps(int layers, int fanout, Random rng) {
@@ -291,22 +354,92 @@ Map<int, List<int>> _computePackageDeps(int layers, int fanout, Random rng) {
   return packageDeps;
 }
 
+int _entryFileLines(
+  int pkgId,
+  int srcCount,
+  int depCount, {
+  required bool compactEntry,
+}) {
+  if (compactEntry && pkgId != 0) {
+    return depCount == 0 ? 4 : depCount + 5;
+  }
+  return depCount == 0 ? 2 * srcCount + 6 : 2 * srcCount + 2 * depCount + 7;
+}
+
 int _computeBoilerplateLines({
   required int fanout,
   required int totalPackages,
   required int srcCount,
   required Map<int, List<int>> packageDeps,
+  required bool compactEntry,
 }) {
   final appLines = 2 * fanout + 7;
   final leafTestLines = 8 * fanout;
   var entryLinesTotal = 0;
   for (var p = 0; p < totalPackages; p++) {
     final d = packageDeps[p]!;
-    entryLinesTotal += d.isEmpty
-        ? 3 * srcCount + 7
-        : 3 * srcCount + 2 * d.length + 8;
+    entryLinesTotal += _entryFileLines(
+      p,
+      srcCount,
+      d.length,
+      compactEntry: compactEntry,
+    );
   }
   return appLines + leafTestLines + entryLinesTotal;
+}
+
+(bool, List<int>) _planSrcLineBudgets({
+  required GeneratorOptions options,
+  required int srcCount,
+  required Map<int, List<int>> packageDeps,
+}) {
+  final totalPackages = options.layers * options.fanout;
+  final isHookFile = <bool>[];
+  for (var l = 0; l < options.layers; l++) {
+    final isLeaf = l == options.layers - 1;
+    for (var f = 0; f < options.fanout; f++) {
+      final pkgId = l * options.fanout + f;
+      for (var s = 0; s < srcCount; s++) {
+        isHookFile.add((pkgId == 0 && s == 0) || (isLeaf && s == 0));
+      }
+    }
+  }
+
+  final stdBoilerplate = _computeBoilerplateLines(
+    fanout: options.fanout,
+    totalPackages: totalPackages,
+    srcCount: srcCount,
+    packageDeps: packageDeps,
+    compactEntry: false,
+  );
+  final stdMinSrc = isHookFile.fold<int>(0, (sum, h) => sum + (h ? 19 : 13));
+  final useCompact =
+      srcCount == 1 && options.targetLoc < (stdBoilerplate + stdMinSrc);
+
+  final boilerplate = useCompact
+      ? _computeBoilerplateLines(
+          fanout: options.fanout,
+          totalPackages: totalPackages,
+          srcCount: srcCount,
+          packageDeps: packageDeps,
+          compactEntry: true,
+        )
+      : stdBoilerplate;
+
+  final minLines = [
+    for (final h in isHookFile)
+      h ? (useCompact ? 13 : 19) : (useCompact ? 2 : 13),
+  ];
+  final minSum = minLines.fold<int>(0, (a, b) => a + b);
+  final extraTotal = max(0, options.targetLoc - boilerplate - minSum);
+  final baseExtra = extraTotal ~/ minLines.length;
+  final remExtra = extraTotal % minLines.length;
+
+  final budgets = List<int>.generate(
+    minLines.length,
+    (i) => minLines[i] + baseExtra + (i < remExtra ? 1 : 0),
+  );
+  return (useCompact, budgets);
 }
 
 void _generatePackagesAndApp(
@@ -317,17 +450,11 @@ void _generatePackagesAndApp(
   final srcCount = max(1, min(10, (options.targetLoc ~/ totalPackages) ~/ 250));
   final rng = Random(options.seed);
   final packageDeps = _computePackageDeps(options.layers, options.fanout, rng);
-
-  final boilerplate = _computeBoilerplateLines(
-    fanout: options.fanout,
-    totalPackages: totalPackages,
+  final (useCompact, budgets) = _planSrcLineBudgets(
+    options: options,
     srcCount: srcCount,
     packageDeps: packageDeps,
   );
-  final totalSrcFiles = totalPackages * srcCount;
-  final remaining = max(totalSrcFiles * 13, options.targetLoc - boilerplate);
-  final basePerFile = remaining ~/ totalSrcFiles;
-  final remPerFile = remaining % totalSrcFiles;
 
   var fileCounter = 0;
   for (var l = 0; l < options.layers; l++) {
@@ -345,22 +472,17 @@ void _generatePackagesAndApp(
       _writePackageBuildFile(config);
 
       for (var s = 0; s < srcCount; s++) {
-        final targetLines = basePerFile + (fileCounter < remPerFile ? 1 : 0);
-        fileCounter++;
-        final minLines = (l == 0 && s == 0) || (config.isLeaf && s == 0)
-            ? 19
-            : 13;
         _writeSrcFile(
           SrcFileConfig(
             packageConfig: config,
             fileIndex: s,
-            targetLines: max(minLines, targetLines),
-            seedVal: rng.nextInt(1000),
+            targetLines: budgets[fileCounter++],
+            seedVal: rng.nextInt(900) + 1,
           ),
         );
       }
 
-      _writePackageEntryFile(config);
+      _writePackageEntryFile(config, compactEntry: useCompact);
       if (config.isLeaf) {
         _writePackageTestFile(config.pkgDir, pkgId);
       }
@@ -408,7 +530,10 @@ $testTarget''';
   File('${pkgDir.path}/BUILD.bazel').writeAsStringSync(buildContent);
 }
 
-void _writePackageEntryFile(PackageConfig config) {
+void _writePackageEntryFile(
+  PackageConfig config, {
+  required bool compactEntry,
+}) {
   final depImports =
       config.deps.map((d) => "import 'package:pkg$d/pkg$d.dart';").toList()
         ..sort();
@@ -416,37 +541,41 @@ void _writePackageEntryFile(PackageConfig config) {
     config.srcFilesCount,
     (i) => "import 'src/f$i.dart';",
   )..sort();
-  final exports = List.generate(
-    config.srcFilesCount,
-    (i) => "export 'src/f$i.dart';",
-  )..sort();
 
   final depImportBlock = depImports.isNotEmpty
       ? '${depImports.join('\n')}\n\n'
       : '';
-  final fileCalls = List.generate(
-    config.srcFilesCount,
-    (i) => '  acc += fn${config.pkgId}x$i(x);',
-  ).join('\n');
-  final depCalls = config.deps.isEmpty
-      ? ''
-      : '${config.deps.map((d) => '  acc += pkg${d}Entry(x);').join('\n')}\n';
+  final header =
+      '$depImportBlock${relImports.join('\n')}\n\n'
+      '/// Entry function for package ${config.pkgId}.\n';
 
-  final entryContent =
-      '''
-$depImportBlock${relImports.join('\n')}
+  final String body;
+  if (compactEntry && config.pkgId != 0) {
+    final terms = <String>[
+      'x',
+      for (var i = 0; i < config.srcFilesCount; i++) 'fn${config.pkgId}x$i(x)',
+      for (final d in config.deps) 'pkg${d}Entry(x)',
+    ];
+    body = 'int pkg${config.pkgId}Entry(int x) => ${terms.join(' + ')};\n';
+  } else {
+    final fileCalls = List.generate(
+      config.srcFilesCount,
+      (i) => '  acc += fn${config.pkgId}x$i(x);',
+    ).join('\n');
+    final depCalls = config.deps.isEmpty
+        ? ''
+        : '${config.deps.map((d) => '  acc += pkg${d}Entry(x);').join('\n')}\n';
+    body =
+        'int pkg${config.pkgId}Entry(int x) {\n'
+        '  var acc = x;\n'
+        '$fileCalls\n'
+        '$depCalls'
+        '  return acc;\n'
+        '}\n';
+  }
 
-${exports.join('\n')}
-
-/// Entry function for package ${config.pkgId}.
-int pkg${config.pkgId}Entry(int x) {
-  var acc = x;
-$fileCalls
-$depCalls  return acc;
-}
-''';
   File('${config.pkgDir}/lib/pkg${config.pkgId}.dart')
-      .writeAsStringSync(entryContent);
+      .writeAsStringSync('$header$body');
 }
 
 void _writePackageTestFile(String pkgDir, int pkgId) {
@@ -465,12 +594,88 @@ void main() {
   File('${testDir.path}/pkg${pkgId}_test.dart').writeAsStringSync(testContent);
 }
 
-void _writeSrcFile(SrcFileConfig config) {
+List<String> _buildFnLines({
+  required int pkgId,
+  required int fileIndex,
+  required String baseExpr,
+  required int seedVal,
+  required int lineCount,
+}) {
+  final doc = '/// Function for pkg $pkgId file $fileIndex.';
+  final name = 'fn${pkgId}x$fileIndex';
+  if (lineCount <= 2) {
+    return [doc, 'int $name(int x) => $baseExpr + x;'];
+  }
+  if (lineCount == 3) {
+    return [
+      doc,
+      '/// Seed offset $seedVal.',
+      'int $name(int x) => $baseExpr + x;',
+    ];
+  }
+  if (lineCount == 4) {
+    return [doc, 'int $name(int x) {', '  return $baseExpr + x;', '}'];
+  }
+  if (lineCount == 5) {
+    return [
+      doc,
+      'int $name(int x) {',
+      '  final base = $baseExpr + x;',
+      '  return base;',
+      '}',
+    ];
+  }
+  return [
+    doc,
+    'int $name(int x) {',
+    '  var acc = $baseExpr + x;',
+    for (var k = 1; k <= lineCount - 5; k++) '  acc += $k;',
+    '  return acc;',
+    '}',
+  ];
+}
+
+List<String> _buildCompactSrcLines(SrcFileConfig config) {
+  if (!config.hasHook) {
+    return _buildFnLines(
+      pkgId: config.pkgId,
+      fileIndex: config.fileIndex,
+      baseExpr: '${config.seedVal}',
+      seedVal: config.seedVal,
+      lineCount: config.targetLines,
+    );
+  }
+
+  final cls = 'C${config.pkgId}x${config.fileIndex}';
+  return [
+    '/// Class for pkg ${config.pkgId} file ${config.fileIndex}.',
+    'class $cls {',
+    '  /// Constructor.',
+    '  const $cls();',
+    '',
+    '  /// Hook for edit.',
+    '  int ${config.hookName}() {',
+    '    return ${config.hookVal};',
+    '  }',
+    '}',
+    '',
+    ..._buildFnLines(
+      pkgId: config.pkgId,
+      fileIndex: config.fileIndex,
+      baseExpr: 'const $cls().${config.hookName}() + ${config.seedVal}',
+      seedVal: config.seedVal,
+      lineCount: config.targetLines - 11,
+    ),
+  ];
+}
+
+List<String> _buildStandardSrcLines(SrcFileConfig config) {
+  final cls = 'C${config.pkgId}x${config.fileIndex}';
   final lines = <String>[
     '/// Class for pkg ${config.pkgId} file ${config.fileIndex}.',
-    'class C${config.pkgId}x${config.fileIndex} {',
+    'class $cls {',
     '  /// Constructor.',
-    '  const C${config.pkgId}x${config.fileIndex}(this.value);',
+    '  const $cls(this.value);',
     '',
     '  /// Value field.',
     '  final int value;',
@@ -485,12 +690,10 @@ void _writeSrcFile(SrcFileConfig config) {
     ]);
   }
 
-  final fixedSoFar = lines.length;
-  const footerLines = 6;
-  final neededExtra = max(0, config.targetLines - (fixedSoFar + footerLines));
-
+  final minTotal = config.hasHook ? 19 : 13;
+  final neededExtra = max(0, config.targetLines - minTotal);
   final numMethods = neededExtra ~/ 9;
-  final remFillers = neededExtra % 9;
+  final remLines = neededExtra % 9;
 
   for (var m = 0; m < numMethods; m++) {
     lines.addAll([
@@ -506,19 +709,26 @@ void _writeSrcFile(SrcFileConfig config) {
     ]);
   }
 
-  for (var fill = 0; fill < remFillers; fill++) {
-    lines.add('  // Line filler $fill.');
-  }
-
   final memberExpr = config.hasHook ? '${config.hookName}()' : 'value';
   lines.addAll([
     '}',
     '',
-    '/// Function for pkg ${config.pkgId} file ${config.fileIndex}.',
-    'int fn${config.pkgId}x${config.fileIndex}(int x) {',
-    '  return const C${config.pkgId}x${config.fileIndex}(0).$memberExpr + x;',
-    '}',
+    ..._buildFnLines(
+      pkgId: config.pkgId,
+      fileIndex: config.fileIndex,
+      baseExpr: 'const $cls(${config.seedVal}).$memberExpr',
+      seedVal: config.seedVal,
+      lineCount: 4 + remLines,
+    ),
   ]);
+  return lines;
+}
+
+void _writeSrcFile(SrcFileConfig config) {
+  final minStd = config.hasHook ? 19 : 13;
+  final lines = config.targetLines < minStd
+      ? _buildCompactSrcLines(config)
+      : _buildStandardSrcLines(config);
 
   final srcDir = Directory('${config.pkgDir}/lib/src')
     ..createSync(recursive: true);

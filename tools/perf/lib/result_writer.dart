@@ -5,6 +5,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'cli_args.dart';
+
 /// Host runner system information.
 final class RunnerInfo {
   /// Creates a runner info record.
@@ -29,14 +31,19 @@ final class RunnerInfo {
 
   /// Detects runner info from the current environment.
   static RunnerInfo detect() {
-    var system = Platform.operatingSystem;
+    var system = Platform.operatingSystem.toLowerCase();
     var release = Platform.operatingSystemVersion;
     var machine = 'x86_64';
     final cpuCount = Platform.numberOfProcessors;
 
-    if (Platform.isLinux) {
+    if (Platform.isLinux || Platform.isMacOS) {
       try {
-        final unameRes = Process.runSync('uname', ['-s', '-r', '-m']);
+        final unameRes = Process.runSync(
+          'uname',
+          ['-s', '-r', '-m'],
+          environment: cleanProcessEnvironment(),
+          includeParentEnvironment: false,
+        );
         if (unameRes.exitCode == 0) {
           final parts = (unameRes.stdout as String).trim().split(
             RegExp(r'\s+'),
@@ -47,6 +54,13 @@ final class RunnerInfo {
         }
       } on ProcessException catch (e) {
         stderr.writeln('uname process error: $e');
+      }
+    } else if (Platform.isWindows) {
+      final arch = (Platform.environment['PROCESSOR_ARCHITECTURE'] ?? '')
+          .trim()
+          .toLowerCase();
+      if (arch.isNotEmpty && arch != 'amd64') {
+        machine = arch;
       }
     }
 
@@ -169,6 +183,8 @@ final class SummaryMeta {
     required this.targetLoc,
     required this.seed,
     required this.repeats,
+    this.bazelFlags = const [],
+    this.lockfile = 'committed',
   });
 
   /// Git commit 40-hex SHA of rules under measurement.
@@ -182,6 +198,52 @@ final class SummaryMeta {
 
   /// Expected repeats count.
   final int repeats;
+
+  /// Bazel flags recorded in `meta.bazel_flags`.
+  final List<String> bazelFlags;
+
+  /// Lockfile state recorded in `meta.lockfile`.
+  final String lockfile;
+}
+
+/// Loads valid [RepeatResult] JSON files from [resultsDir], sorted by index.
+List<RepeatResult> loadRepeatResults(
+  String resultsDir, {
+  String? excludeFilePath,
+}) {
+  final repeatResults = <RepeatResult>[];
+  final dir = Directory(resultsDir);
+  if (!dir.existsSync()) return repeatResults;
+
+  final excludedNorm = excludeFilePath != null && excludeFilePath.isNotEmpty
+      ? resolveCliPath(excludeFilePath)
+      : null;
+  final files = dir.listSync().whereType<File>().toList()
+    ..sort((a, b) => a.path.compareTo(b.path));
+
+  for (final file in files) {
+    if (!file.path.endsWith('.json')) continue;
+    if (excludedNorm != null && resolveCliPath(file.path) == excludedNorm) {
+      continue;
+    }
+    try {
+      final decoded = jsonDecode(file.readAsStringSync());
+      if (decoded is! Map<String, dynamic>) continue;
+      if (!decoded.containsKey('repeatIndex') ||
+          decoded['flows'] is! Map<String, dynamic>) {
+        continue;
+      }
+      repeatResults.add(RepeatResult.fromJson(decoded));
+    } on FormatException catch (e) {
+      stderr.writeln('Malformed JSON in repeat file ${file.path}: $e');
+    } on TypeError catch (e) {
+      stderr.writeln('Invalid schema in repeat file ${file.path}: $e');
+    } on FileSystemException catch (e) {
+      stderr.writeln('Error loading repeat file ${file.path}: $e');
+    }
+  }
+  repeatResults.sort((a, b) => a.repeatIndex.compareTo(b.repeatIndex));
+  return repeatResults;
 }
 
 /// Computes the median of a list of numbers.
@@ -195,7 +257,7 @@ double? calculateMedian(List<double> values) {
   return (sorted[mid - 1] + sorted[mid]) / 2.0;
 }
 
-double _round4(double value) => double.parse(value.toStringAsFixed(4));
+double _roundCpu(double value) => double.parse(value.toStringAsFixed(6));
 
 /// Recursively sorts map keys alphabetically.
 Object? _sortKeysRecursively(Object? value) {
@@ -278,20 +340,23 @@ Map<String, dynamic> _buildFlowEntry(
   final spreadBazel = acc.bazelVals.isEmpty
       ? null
       : [
-          _round4(acc.bazelVals.reduce(min)),
-          _round4(acc.bazelVals.reduce(max)),
+          _roundCpu(acc.bazelVals.reduce(min)),
+          _roundCpu(acc.bazelVals.reduce(max)),
         ];
   final spreadSol = (!isIdentical || acc.solVals.isEmpty)
       ? null
-      : [_round4(acc.solVals.reduce(min)), _round4(acc.solVals.reduce(max))];
+      : [
+          _roundCpu(acc.solVals.reduce(min)),
+          _roundCpu(acc.solVals.reduce(max)),
+        ];
 
   return {
-    'bazel': bazelMedian != null ? _round4(bazelMedian) : null,
+    'bazel': bazelMedian != null ? _roundCpu(bazelMedian) : null,
     'chain': acc.chainCount,
     'identical': isIdentical,
     'method': method,
     'reason': reason,
-    'sol': solMedian != null ? _round4(solMedian) : null,
+    'sol': solMedian != null ? _roundCpu(solMedian) : null,
     'spread': {
       'bazel': spreadBazel,
       'n': acc.bazelVals.length,
@@ -322,8 +387,8 @@ String formatDartSolJson({
   final topLevel = <String, dynamic>{
     'flows': flowsMap,
     'meta': {
-      'bazel_flags': <String>[],
-      'lockfile': 'committed',
+      'bazel_flags': List<String>.of(meta.bazelFlags),
+      'lockfile': meta.lockfile,
       'repeats': meta.repeats,
       'seed': meta.seed,
       'target_loc': meta.targetLoc,

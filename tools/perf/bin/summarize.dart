@@ -1,144 +1,94 @@
 /// Entrypoint binary for summarizing repeat results into `dart-sol.json`.
 library;
 
-import 'dart:convert';
 import 'dart:io';
 
+import 'package:perf/cli_args.dart';
 import 'package:perf/result_writer.dart';
 
-final class _SummarizeArgs {
-  _SummarizeArgs({
-    this.resultsDir,
-    this.sha,
-    this.targetLoc = 500000,
-    this.seed = 1,
-    this.repeats = 3,
-    this.out,
-  });
-
-  final String? resultsDir;
-  final String? sha;
-  final int targetLoc;
-  final int seed;
-  final int repeats;
-  final String? out;
-}
-
-_SummarizeArgs _parseArgs(List<String> args) {
-  String? resultsDir;
-  String? sha;
-  var targetLoc = 500000;
-  var seed = 1;
-  var repeats = 3;
-  String? out;
-
-  for (var i = 0; i < args.length; i++) {
-    final arg = args[i];
-    final (flag, val) = _extractFlagAndValue(arg, args, i);
-    if (flag == null) continue;
-    if (val != null && !arg.contains('=')) i++;
-
-    switch (flag) {
-      case 'results-dir':
-      case 'results_dir':
-      case 'results':
-        resultsDir = val;
-      case 'sha':
-      case 'head-ref':
-      case 'head_ref':
-      case 'rules-dart':
-      case 'rules_dart':
-        sha = val;
-      case 'target-loc':
-      case 'target_loc':
-      case 'loc':
-        if (val != null) targetLoc = int.parse(val);
-      case 'seed':
-        if (val != null) seed = int.parse(val);
-      case 'repeats':
-        if (val != null) repeats = int.parse(val);
-      case 'out':
-      case 'output':
-        out = val;
-    }
+String _resolveCommitSha(String rawSha) {
+  final trimmed = rawSha.trim();
+  if (RegExp(r'^[0-9a-fA-F]{40}$').hasMatch(trimmed)) {
+    return trimmed.toLowerCase();
   }
-
-  return _SummarizeArgs(
-    resultsDir: resultsDir,
-    sha: sha,
-    targetLoc: targetLoc,
-    seed: seed,
-    repeats: repeats,
-    out: out,
-  );
-}
-
-(String?, String?) _extractFlagAndValue(
-  String arg,
-  List<String> args,
-  int index,
-) {
-  if (arg.startsWith('--')) {
-    final eq = arg.indexOf('=');
-    if (eq != -1) {
-      return (arg.substring(2, eq), arg.substring(eq + 1));
-    }
-    final key = arg.substring(2);
-    final val = index + 1 < args.length ? args[index + 1] : null;
-    return (key, val);
-  }
-  return (null, null);
-}
-
-List<RepeatResult> _loadRepeatResults(String resultsDir) {
-  final repeatResults = <RepeatResult>[];
-  final dir = Directory(resultsDir);
-  if (!dir.existsSync()) return repeatResults;
-
-  final files = dir.listSync().whereType<File>().toList()
-    ..sort((a, b) => a.path.compareTo(b.path));
-
-  for (final file in files) {
-    if (!file.path.endsWith('.json')) continue;
+  final resolvedDir = resolveCliPath(trimmed);
+  if (Directory(resolvedDir).existsSync()) {
     try {
-      final content = file.readAsStringSync();
-      final decoded = jsonDecode(content) as Map<String, dynamic>;
-      repeatResults.add(RepeatResult.fromJson(decoded));
-    } on FormatException catch (e) {
-      stderr.writeln('Malformed JSON in repeat file ${file.path}: $e');
-    } on TypeError catch (e) {
-      stderr.writeln('Invalid schema in repeat file ${file.path}: $e');
-    } on FileSystemException catch (e) {
-      stderr.writeln('Error loading repeat file ${file.path}: $e');
+      final res = Process.runSync(
+        'git',
+        ['-C', resolvedDir, 'rev-parse', 'HEAD'],
+        environment: cleanProcessEnvironment(),
+        includeParentEnvironment: false,
+      );
+      if (res.exitCode == 0) {
+        final sha = (res.stdout as String).trim();
+        if (sha.isNotEmpty) return sha;
+      }
+    } on ProcessException catch (e) {
+      stderr.writeln('git rev-parse failed for $resolvedDir: $e');
     }
   }
-  return repeatResults;
+  return trimmed;
 }
 
 void main(List<String> args) {
-  final parsed = _parseArgs(args);
+  final flags = parseCliFlags(args);
+  final rawResultsDir = lastFlagValue(flags, const [
+    'results-dir',
+    'results_dir',
+    'results',
+  ]);
+  final rawSha = lastFlagValue(flags, const [
+    'sha',
+    'head-ref',
+    'head_ref',
+    'rules-dart',
+    'rules_dart',
+    'rules-head',
+    'rules_head',
+  ]);
+  final targetLoc = intFlagValue(flags, const [
+    'target-loc',
+    'target_loc',
+    'loc',
+  ], defaultValue: 500000);
+  final seed = intFlagValue(flags, const ['seed'], defaultValue: 1);
+  final repeats = intFlagValue(flags, const ['repeats'], defaultValue: 3);
+  final rawLockfile = lastFlagValue(flags, const ['lockfile']);
+  final rawOut = lastFlagValue(flags, const ['out', 'output']);
+  final bazelFlags = (flags['bazel-flag'] ?? const <String>[])
+      .where((f) => f.isNotEmpty)
+      .toList();
 
-  if (parsed.resultsDir == null || parsed.sha == null || parsed.out == null) {
+  if (rawResultsDir == null ||
+      rawResultsDir.isEmpty ||
+      rawSha == null ||
+      rawSha.isEmpty ||
+      rawOut == null ||
+      rawOut.isEmpty ||
+      targetLoc == null ||
+      seed == null ||
+      repeats == null) {
     stderr.writeln(
       'Usage: summarize --results-dir=<dir> --sha=<sha> --out=<dart-sol.json>',
     );
     exit(1);
   }
 
-  var sha = parsed.sha!;
-  if (Directory(sha).existsSync()) {
-    final res = Process.runSync('git', ['-C', sha, 'rev-parse', 'HEAD']);
-    if (res.exitCode == 0) {
-      sha = (res.stdout as String).trim();
-    }
-  }
+  final resultsDir = resolveCliPath(rawResultsDir);
+  final outPath = resolveCliPath(rawOut);
+  final sha = _resolveCommitSha(rawSha);
 
-  final repeatResults = _loadRepeatResults(parsed.resultsDir!);
+  final repeatResults = loadRepeatResults(resultsDir, excludeFilePath: outPath);
   final meta = SummaryMeta(
     rulesDartSha: sha,
-    targetLoc: parsed.targetLoc,
-    seed: parsed.seed,
-    repeats: parsed.repeats,
+    targetLoc: targetLoc,
+    seed: seed,
+    repeats: repeats,
+    bazelFlags: bazelFlags,
+    lockfile: rawLockfile != null && rawLockfile.isNotEmpty
+        ? rawLockfile
+        : 'committed',
   );
   final runner = RunnerInfo.detect();
 
@@ -148,8 +98,8 @@ void main(List<String> args) {
     runner: runner,
   );
 
-  final outFile = File(parsed.out!);
+  final outFile = File(outPath);
   outFile.parent.createSync(recursive: true);
   outFile.writeAsStringSync(jsonOut);
-  stdout.writeln('Summary written to ${parsed.out}');
+  stdout.writeln('Summary written to $outPath');
 }

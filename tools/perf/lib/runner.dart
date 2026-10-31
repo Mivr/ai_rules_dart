@@ -3,6 +3,7 @@ library;
 
 import 'dart:io';
 
+import 'cli_args.dart';
 import 'cpu.dart';
 import 'proc.dart';
 import 'replay.dart';
@@ -53,27 +54,13 @@ void applyLeafBodyEdit(String workspacePath, String pkgName) {
   );
 }
 
-Map<String, String> _cleanBazelEnv() {
-  final env = Map<String, String>.of(Platform.environment);
-  for (final key in const [
-    'BAZELISK_SKIP_WRAPPER',
-    'BUILD_WORKSPACE_DIRECTORY',
-    'BUILD_WORKING_DIRECTORY',
-    'RUNFILES_DIR',
-    'RUNFILES_MANIFEST_FILE',
-    'JAVA_RUNFILES',
-  ]) {
-    env.remove(key);
-  }
-  return env;
-}
-
 ProcessResult _runBazel(String workingDirectory, List<String> args) {
   return Process.runSync(
     'bazel',
-    ['--max_idle_secs=60', ...args],
+    ['--max_idle_secs=600', ...args],
     workingDirectory: workingDirectory,
-    environment: _cleanBazelEnv(),
+    environment: cleanProcessEnvironment(),
+    includeParentEnvironment: false,
   );
 }
 
@@ -92,7 +79,12 @@ void forceDeleteDirectorySync(Directory dir) {
   makeBazelOutWritable(dir.path);
   try {
     if (Platform.isLinux || Platform.isMacOS) {
-      Process.runSync('chmod', ['-R', 'u+w', dir.path]);
+      Process.runSync(
+        'chmod',
+        ['-R', 'u+w', dir.path],
+        environment: cleanProcessEnvironment(),
+        includeParentEnvironment: false,
+      );
     }
   } on ProcessException catch (e) {
     stderr.writeln('chmod before delete failed (${dir.path}): $e');
@@ -215,6 +207,8 @@ void copyDirectorySync(Directory source, Directory destination) {
     final destPath = '${destination.path}/$itemName';
     if (entity is Directory) {
       copyDirectorySync(entity, Directory(destPath));
+    } else if (entity is Link) {
+      Link(destPath).createSync(entity.targetSync());
     } else if (entity is File) {
       entity.copySync(destPath);
     }
@@ -243,16 +237,18 @@ RepeatResult executeRepeat({
 }) {
   final clock = clockOverride ?? const LinuxChildCpuClock();
   final procReader = procReaderOverride ?? const LinuxProcReader();
+  final resolvedPristine = resolveCliPath(pristineWorkspace);
+  final resolvedTemp = resolveCliPath(tempRoot);
 
-  final repeatWsDir = Directory('$tempRoot/repeat_${repeatIndex}_ws');
-  final outbaseDir = Directory('$tempRoot/repeat_${repeatIndex}_outbase');
-  final logsDir = Directory('$tempRoot/repeat_${repeatIndex}_logs');
+  final repeatWsDir = Directory('$resolvedTemp/repeat_${repeatIndex}_ws');
+  final outbaseDir = Directory('$resolvedTemp/repeat_${repeatIndex}_outbase');
+  final logsDir = Directory('$resolvedTemp/repeat_${repeatIndex}_logs');
 
   for (final dir in [repeatWsDir, outbaseDir, logsDir]) {
     forceDeleteDirectorySync(dir);
   }
   logsDir.createSync(recursive: true);
-  copyDirectorySync(Directory(pristineWorkspace), repeatWsDir);
+  copyDirectorySync(Directory(resolvedPristine), repeatWsDir);
 
   final ctx = RepeatContext(
     repeatWorkspace: repeatWsDir.path,

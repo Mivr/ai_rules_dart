@@ -3,6 +3,7 @@ library;
 
 import 'dart:io';
 
+import 'cli_args.dart';
 import 'cpu.dart';
 import 'spawn_log.dart';
 
@@ -77,9 +78,19 @@ void makeBazelOutWritable(String execroot) {
 
   try {
     if (Platform.isLinux || Platform.isMacOS) {
-      Process.runSync('chmod', ['-R', 'u+w', outDir.path]);
+      Process.runSync(
+        'chmod',
+        ['-R', 'u+w', outDir.path],
+        environment: cleanProcessEnvironment(),
+        includeParentEnvironment: false,
+      );
     } else if (Platform.isWindows) {
-      Process.runSync('attrib', ['-r', '${outDir.path}\\*', '/s', '/d']);
+      Process.runSync(
+        'attrib',
+        ['-r', '${outDir.path}\\*', '/s', '/d'],
+        environment: cleanProcessEnvironment(),
+        includeParentEnvironment: false,
+      );
     }
   } on ProcessException catch (e) {
     stderr.writeln('chmod/attrib on bazel-out failed: $e');
@@ -101,6 +112,28 @@ bool areFilesByteIdentical(File a, File b) {
   return true;
 }
 
+void _deleteEntityAtPath(String fullPath) {
+  final type = FileSystemEntity.typeSync(fullPath, followLinks: false);
+  if (type == FileSystemEntityType.notFound) return;
+  if (type == FileSystemEntityType.directory) {
+    Directory(fullPath).deleteSync(recursive: true);
+  } else if (type == FileSystemEntityType.link) {
+    Link(fullPath).deleteSync();
+  } else {
+    File(fullPath).deleteSync();
+  }
+}
+
+void _copyLeafEntity(FileSystemEntity src, String dstPath) {
+  _deleteEntityAtPath(dstPath);
+  File(dstPath).parent.createSync(recursive: true);
+  if (src is Link) {
+    Link(dstPath).createSync(src.targetSync());
+  } else if (src is File) {
+    src.copySync(dstPath);
+  }
+}
+
 void _copyEntityToBackup(String execroot, Directory backupDir, String relPath) {
   final fullPath = '$execroot/$relPath';
   final type = FileSystemEntity.typeSync(fullPath, followLinks: false);
@@ -114,28 +147,14 @@ void _copyEntityToBackup(String execroot, Directory backupDir, String relPath) {
       final subRel = _relPath(srcDir.path, child.path);
       if (child is Directory) {
         Directory('${dstDir.path}/$subRel').createSync(recursive: true);
-      } else if (child is File) {
-        final dstFile = File('${dstDir.path}/$subRel');
-        dstFile.parent.createSync(recursive: true);
-        child.copySync(dstFile.path);
+      } else {
+        _copyLeafEntity(child, '${dstDir.path}/$subRel');
       }
     }
-  } else if (type == FileSystemEntityType.file) {
-    final dstFile = File('${backupDir.path}/$relPath');
-    dstFile.parent.createSync(recursive: true);
-    File(fullPath).copySync(dstFile.path);
-  }
-}
-
-void _deleteEntityAtPath(String fullPath) {
-  final type = FileSystemEntity.typeSync(fullPath, followLinks: false);
-  if (type == FileSystemEntityType.notFound) return;
-  if (type == FileSystemEntityType.directory) {
-    Directory(fullPath).deleteSync(recursive: true);
   } else if (type == FileSystemEntityType.link) {
-    Link(fullPath).deleteSync();
-  } else {
-    File(fullPath).deleteSync();
+    _copyLeafEntity(Link(fullPath), '${backupDir.path}/$relPath');
+  } else if (type == FileSystemEntityType.file) {
+    _copyLeafEntity(File(fullPath), '${backupDir.path}/$relPath');
   }
 }
 
@@ -145,14 +164,22 @@ void _backupAndMoveOutputsAside({
   required Set<String> declaredOutputs,
   required Set<String> verifyPaths,
 }) {
-  for (final relPath in verifyPaths) {
+  final allToBackup = <String>{...verifyPaths, ...declaredOutputs}.toList()
+    ..sort((a, b) => a.length.compareTo(b.length));
+  for (final relPath in allToBackup) {
     _copyEntityToBackup(execroot, backupDir, relPath);
   }
+
   final sortedDeclared = declaredOutputs.toList()
     ..sort((a, b) => b.length.compareTo(a.length));
   for (final relPath in sortedDeclared) {
-    _copyEntityToBackup(execroot, backupDir, relPath);
     _deleteEntityAtPath('$execroot/$relPath');
+  }
+}
+
+void _ensureOutputParentDirs(String execroot, SpawnRecord spawn) {
+  for (final out in spawn.declaredOutputs) {
+    File('$execroot/$out').parent.createSync(recursive: true);
   }
 }
 
@@ -166,8 +193,8 @@ void _backupAndMoveOutputsAside({
   for (final spawn in orderedSpawns) {
     if (spawn.commandArgs.isEmpty) continue;
 
-    final env = Map<String, String>.of(Platform.environment)
-      ..addAll(spawn.environmentVariables);
+    _ensureOutputParentDirs(execroot, spawn);
+    final env = cleanProcessEnvironment(overlay: spawn.environmentVariables);
     final cmd = spawn.commandArgs.first;
     final args = spawn.commandArgs.sublist(1);
 
@@ -177,6 +204,7 @@ void _backupAndMoveOutputsAside({
       args,
       workingDirectory: execroot,
       environment: env,
+      includeParentEnvironment: false,
     );
     final afterCpu = clock.getChildCpuSeconds();
     final stepCpu = afterCpu - beforeCpu;
@@ -198,29 +226,61 @@ void _backupAndMoveOutputsAside({
   return (totalCpu, null);
 }
 
+String? _verifyLeafEntityIdentical(
+  String repPath,
+  String bakPath,
+  String displayPath,
+) {
+  final bakType = FileSystemEntity.typeSync(bakPath, followLinks: false);
+  final repType = FileSystemEntity.typeSync(repPath, followLinks: false);
+  if (repType == FileSystemEntityType.notFound) {
+    return 'Replayed output missing: $displayPath';
+  }
+  if (repType != bakType) {
+    return 'Output type mismatch in verified output: $displayPath';
+  }
+  if (bakType == FileSystemEntityType.link) {
+    if (Link(repPath).targetSync() != Link(bakPath).targetSync()) {
+      return 'Symlink target mismatch in verified output: $displayPath';
+    }
+    return null;
+  }
+  if (!areFilesByteIdentical(File(repPath), File(bakPath))) {
+    return 'Byte mismatch in verified output: $displayPath';
+  }
+  return null;
+}
+
+Map<String, String> _collectNonDirEntries(Directory dir) {
+  final entries = <String, String>{};
+  for (final e in dir.listSync(recursive: true, followLinks: false)) {
+    if (e is! Directory) {
+      entries[_relPath(dir.path, e.path)] = e.path;
+    }
+  }
+  return entries;
+}
+
 String? _verifyDirectoryIdentical(
   Directory replayed,
   Directory backup,
   String relPath,
 ) {
   if (!replayed.existsSync()) return 'Replayed directory missing: $relPath';
-  final repFiles = <String, File>{};
-  for (final e in replayed.listSync(recursive: true, followLinks: false)) {
-    if (e is File) repFiles[_relPath(replayed.path, e.path)] = e;
-  }
-  final bakFiles = <String, File>{};
-  for (final e in backup.listSync(recursive: true, followLinks: false)) {
-    if (e is File) bakFiles[_relPath(backup.path, e.path)] = e;
-  }
-  if (repFiles.length != bakFiles.length) {
+  final repEntries = _collectNonDirEntries(replayed);
+  final bakEntries = _collectNonDirEntries(backup);
+  if (repEntries.length != bakEntries.length) {
     return 'Directory entry count mismatch in $relPath';
   }
-  for (final entry in bakFiles.entries) {
-    final repFile = repFiles[entry.key];
-    if (repFile == null) return 'Missing file in $relPath: ${entry.key}';
-    if (!areFilesByteIdentical(repFile, entry.value)) {
-      return 'Byte mismatch in verified output: $relPath/${entry.key}';
-    }
+  for (final entry in bakEntries.entries) {
+    final repPath = repEntries[entry.key];
+    if (repPath == null) return 'Missing file in $relPath: ${entry.key}';
+    final err = _verifyLeafEntityIdentical(
+      repPath,
+      entry.value,
+      '$relPath/${entry.key}',
+    );
+    if (err != null) return err;
   }
   return null;
 }
@@ -245,13 +305,12 @@ String? _verifyOutputs(
       if (err != null) return err;
       continue;
     }
-    final replayedFile = File('$execroot/$relPath');
-    if (!replayedFile.existsSync()) {
-      return 'Replayed output missing: $relPath';
-    }
-    if (!areFilesByteIdentical(replayedFile, File(bakPath))) {
-      return 'Byte mismatch in verified output: $relPath';
-    }
+    final err = _verifyLeafEntityIdentical(
+      '$execroot/$relPath',
+      bakPath,
+      relPath,
+    );
+    if (err != null) return err;
   }
   return null;
 }
@@ -273,6 +332,30 @@ void _sweepUndeclaredSideEffects(String execroot, _ExecrootSnapshot before) {
   }
 }
 
+void _restoreBackupEntities(Directory backupDir, String execroot) {
+  if (!backupDir.existsSync()) return;
+  for (final entity in backupDir.listSync(
+    recursive: true,
+    followLinks: false,
+  )) {
+    final rel = _relPath(backupDir.path, entity.path);
+    if (entity is Directory) {
+      Directory('$execroot/$rel').createSync(recursive: true);
+    } else {
+      _copyLeafEntity(entity, '$execroot/$rel');
+    }
+  }
+  if (Platform.isLinux || Platform.isMacOS) {
+    Process.runSync(
+      'chmod',
+      ['-R', 'u+w', backupDir.path],
+      environment: cleanProcessEnvironment(),
+      includeParentEnvironment: false,
+    );
+  }
+  backupDir.deleteSync(recursive: true);
+}
+
 void _sweepAndRestore({
   required String execroot,
   required Directory backupDir,
@@ -287,26 +370,7 @@ void _sweepAndRestore({
       _deleteEntityAtPath('$execroot/$relPath');
     }
     _sweepUndeclaredSideEffects(execroot, snapshotBefore);
-
-    if (backupDir.existsSync()) {
-      for (final entity in backupDir.listSync(
-        recursive: true,
-        followLinks: false,
-      )) {
-        final rel = _relPath(backupDir.path, entity.path);
-        if (entity is Directory) {
-          Directory('$execroot/$rel').createSync(recursive: true);
-        } else if (entity is File) {
-          final target = File('$execroot/$rel');
-          target.parent.createSync(recursive: true);
-          entity.copySync(target.path);
-        }
-      }
-      if (Platform.isLinux || Platform.isMacOS) {
-        Process.runSync('chmod', ['-R', 'u+w', backupDir.path]);
-      }
-      backupDir.deleteSync(recursive: true);
-    }
+    _restoreBackupEntities(backupDir, execroot);
   } on ProcessException catch (e) {
     stderr.writeln('Error chmodding backup outputs: $e');
   } on FileSystemException catch (e) {
