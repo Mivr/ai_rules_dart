@@ -85,6 +85,7 @@ load(
     "//dart/private/tools:analyze_targets.bzl",
     "analyze_own_files",
     "analyze_target_info",
+    "closure_summary_outputs",
     "slice_target_baseline",
     "validate_config_baseline",
 )
@@ -223,6 +224,7 @@ dart_analysis_config = rule(
 )
 
 def _is_under(path, directory):
+    """Returns whether `path` is inside `directory` (or anywhere when empty)."""
     return directory == "" or path.startswith(directory + "/")
 
 def _wrapper_options(excluded):
@@ -635,17 +637,6 @@ def _format(ctx, name, staged, own_paths, language_version):
         env = env,
     )
 
-def _closure_summary_outputs(target, ctx):
-    sets = []
-    if DartAnalyzerSummaryInfo in target:
-        sets.append(target[DartAnalyzerSummaryInfo].transitive_summaries)
-        sets.append(target[DartAnalyzerSummaryInfo].embedder_sdk_summaries)
-    for d in closure_attrs(ctx):
-        if DartAnalyzerSummaryInfo in d:
-            sets.append(d[DartAnalyzerSummaryInfo].transitive_summaries)
-            sets.append(d[DartAnalyzerSummaryInfo].embedder_sdk_summaries)
-    return depset(transitive = sets)
-
 def _analyze_summary_or_source(ctx, info, srcs, opts):
     """Runs the summary-mode or source-mode analyze action. Returns (output, summary_mode, summary_staged).
 
@@ -663,7 +654,11 @@ def _analyze_summary_or_source(ctx, info, srcs, opts):
     # summary aspect and the codegen rules read.
     summary_files = srcs.own.values() + srcs.generated
     has_own_lib = bool(own_lib_sources(info, summary_files))
-    summary_mode = ctx.attr._summaries[BuildSettingInfo].value and analyzer_summaries_supported(opts.sdk_version) and _summaries_ready(ctx, info, has_own_lib, summary_files)
+    summary_mode = (
+        ctx.attr._summaries[BuildSettingInfo].value and
+        analyzer_summaries_supported(opts.sdk_version) and
+        _summaries_ready(ctx, info, has_own_lib, summary_files)
+    )
     baseline = slice_target_baseline(ctx, srcs.name, opts.config, srcs.own_paths)
     if not summary_mode:
         return depset([_analyze(ctx, srcs.name, srcs.staged, opts.sdk_inputs, srcs.own_paths, baseline)]), False, None
@@ -761,7 +756,10 @@ def _analyze_fix_outputs(ctx, name, staged, own_paths, sdk_inputs, dart_sdk_info
         executable = dart_sdk_info.dart,
         arguments = [ctx.executable._fix_tool.path, fix_args],
         inputs = depset(direct = [ctx.executable._fix_tool, eligible] + staged.inputs, transitive = [sdk_inputs]),
-        tools = depset(direct = [ctx.executable._fix_tool, dart_sdk_info.dart], transitive = [dart_sdk_info.runtime_files]),
+        tools = depset(
+            direct = [ctx.executable._fix_tool, dart_sdk_info.dart],
+            transitive = [dart_sdk_info.runtime_files],
+        ),
         outputs = [fixes, manifest, scratch],
         mnemonic = "DartFix",
         progress_message = "Computing Dart fixes for %{label}",
@@ -772,7 +770,8 @@ def _analyze_fix_outputs(ctx, name, staged, own_paths, sdk_inputs, dart_sdk_info
 def _analyze_stage_all(ctx, info, entry, own, generated, name, sdk_version, config):
     """Stages the full closure project. Returns (all_pkgs, is_leaf_own_only, staged)."""
     all_pkgs = info.transitive_packages.to_list()
-    all_closure_srcs = info.transitive_srcs.to_list() + info.transitive_resources.to_list() + entry + own.values() + generated
+    closure_files = info.transitive_srcs.to_list() + info.transitive_resources.to_list()
+    all_closure_srcs = closure_files + entry + own.values() + generated
     has_non_own_closure_srcs = any([f.path not in own for f in all_closure_srcs])
     has_non_own_pkgs = any([p.package_name != info.package_name for p in all_pkgs])
     is_leaf_own_only = not has_non_own_closure_srcs and not has_non_own_pkgs
@@ -789,6 +788,8 @@ def _analyze_stage_all(ctx, info, entry, own, generated, name, sdk_version, conf
     return all_pkgs, is_leaf_own_only, staged
 
 def _dart_analyze_aspect_impl(target, ctx):
+    """Applies analysis, format, and fix actions to a target's own Dart files."""
+
     # Checked here, not with `required_providers`: that matches only rules that
     # advertise the provider via `provides`, which dart_library and downstream
     # producers do not.
@@ -797,7 +798,7 @@ def _dart_analyze_aspect_impl(target, ctx):
     if ctx.label.repo_name:
         return []
 
-    default_outputs = _closure_summary_outputs(target, ctx)
+    default_outputs = closure_summary_outputs(target, ctx)
 
     # A target's own files are its `DefaultInfo` Dart files — a library's
     # sources, which for a `flutter_library` are its package's `lib/` — plus an

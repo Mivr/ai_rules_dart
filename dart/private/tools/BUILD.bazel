@@ -114,7 +114,10 @@ dart_binary(
     name = "analyze_runner",
     srcs = [
         "analysis_baseline.dart",
+        "analyze_runner_machine.dart",
         "analyze_runner_staged_prune.dart",
+        "baseline_json.dart",
+        "cli_flags.dart",
         "private_home.dart",
     ],
     code_assets_from_deps = False,
@@ -128,7 +131,11 @@ dart_binary(
 # Slices the whole analysis baseline to one target's files for the aspect.
 dart_binary(
     name = "baseline_slice",
-    srcs = ["analysis_baseline.dart"],
+    srcs = [
+        "analysis_baseline.dart",
+        "baseline_json.dart",
+        "cli_flags.dart",
+    ],
     code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "baseline_slice.dart",
@@ -144,7 +151,10 @@ dart_test(
     srcs = [
         "analysis_baseline.dart",
         "analyze_runner.dart",
+        "analyze_runner_machine.dart",
         "analyze_runner_staged_prune.dart",
+        "baseline_json.dart",
+        "cli_flags.dart",
         "private_home.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
@@ -173,6 +183,7 @@ dart_binary(
     srcs = [
         "analysis_baseline.dart",
         "analysis_model.dart",
+        "baseline_json.dart",
     ],
     code_assets_from_deps = False,
     compile_mode = "kernel",
@@ -554,6 +565,7 @@ dart_test(
         "analysis_model.dart",
         "analyzer_summary.dart",
         "analyzer_summary_test_support.dart",
+        "baseline_json.dart",
     ],
     main = "analyzer_summary_test.dart",
     deps = [

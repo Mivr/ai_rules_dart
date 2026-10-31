@@ -6,8 +6,41 @@ Kept apart from `dart_analyze_aspect.bzl`, which declares the aspect and
 
 load("//dart:providers.bzl", "DartAnalyzableInfo", "DartInfo")
 load("//dart/private:common.bzl", "kernel_sdk_mismatch_error", "writable_home_env")
+load("//dart/private:dart_analyzer_summary.bzl", "DartAnalyzerSummaryInfo", "closure_attrs")
 
 _TOOLCHAIN = "//dart:exec_tools_toolchain_type"
+
+def closure_summary_outputs(target, ctx):
+    """Collects transitive analyzer and embedder SDK summaries across the closure.
+
+    Args:
+      target: The target under the `dart_analyze` aspect.
+      ctx: The `dart_analyze` aspect context.
+
+    Returns:
+      A `depset` of transitive summary files across `target` and `closure_attrs(ctx)`.
+    """
+    sets = []
+    if DartAnalyzerSummaryInfo in target:
+        sets.append(target[DartAnalyzerSummaryInfo].transitive_summaries)
+        sets.append(target[DartAnalyzerSummaryInfo].embedder_sdk_summaries)
+    for d in closure_attrs(ctx):
+        if DartAnalyzerSummaryInfo in d:
+            sets.append(d[DartAnalyzerSummaryInfo].transitive_summaries)
+            sets.append(d[DartAnalyzerSummaryInfo].embedder_sdk_summaries)
+    return depset(transitive = sets)
+
+def _is_under_dir(path, directory):
+    """Returns whether `path` sits inside `directory` (or anywhere when empty)."""
+    return directory == "" or path.startswith(directory + "/")
+
+def governing_options_paths(config, own_paths):
+    """Returns `short_path`s of `config.options_files` governing any `own_paths`."""
+    return [
+        f.short_path
+        for f in config.options_files
+        if any([_is_under_dir(p, f.short_path.rpartition("/")[0]) for p in own_paths])
+    ]
 
 def analyze_own_files(target, entry, package_srcs):
     """Splits a target's checkable Dart files into own and generated.
@@ -24,8 +57,9 @@ def analyze_own_files(target, entry, package_srcs):
     """
     own = {}
     generated_by_path = {}
-    for f in [f for f in target[DefaultInfo].files.to_list() + entry + package_srcs if f.extension == "dart"]:
-        if f.short_path.startswith("../"):
+    candidates = target[DefaultInfo].files.to_list() + entry + package_srcs
+    for f in candidates:
+        if f.extension != "dart" or f.short_path.startswith("../"):
             continue
         if f.is_source:
             own[f.path] = f
@@ -107,6 +141,10 @@ def validate_config_baseline(ctx):
     validated = ctx.actions.declare_file(ctx.label.name + ".baseline.json")
     args = ctx.actions.args()
     args.add("--validate-only")
+    msg = "Validating Dart analysis baseline `%s` for %s" % (
+        baseline.short_path,
+        ctx.label,
+    )
     _run_baseline_tool(
         ctx,
         toolchain.dart_sdk_info,
@@ -114,10 +152,7 @@ def validate_config_baseline(ctx):
         baseline,
         validated,
         args,
-        struct(
-            mnemonic = "DartBaselineValidate",
-            progress_message = "Validating Dart analysis baseline for %{label}",
-        ),
+        struct(mnemonic = "DartBaselineValidate", progress_message = msg),
     )
     return validated
 
@@ -125,9 +160,9 @@ def slice_target_baseline(ctx, name, config, own_paths):
     """Declares the action slicing `config`'s baseline to `own_paths`; returns it, or None.
 
     The slice is the only baseline input the analyze action reads. Its bytes
-    hold only entries for the target's own files, sorted by path and code, so
-    an edit to another target's entry leaves this target's `DartAnalyze` action
-    key unchanged.
+    hold only entries for the target's checked files, sorted by path and code,
+    so an edit to another target's entry leaves this target's `DartAnalyze`
+    action key unchanged.
 
     Args:
       ctx: The `dart_analyze` aspect context.
@@ -142,8 +177,13 @@ def slice_target_baseline(ctx, name, config, own_paths):
     if baseline == None:
         return None
     slice = ctx.actions.declare_file(name + ".baseline.json")
+    checked = own_paths + governing_options_paths(config, own_paths)
     args = ctx.actions.args()
-    args.add_all(own_paths, before_each = "--file")
+    args.add_all(checked, before_each = "--file")
+    msg = "Slicing Dart analysis baseline `%s` (%s) for %%{label}" % (
+        baseline.short_path,
+        ctx.attr._config.label,
+    )
     _run_baseline_tool(
         ctx,
         ctx.toolchains[_TOOLCHAIN].dart_sdk_info,
@@ -151,9 +191,6 @@ def slice_target_baseline(ctx, name, config, own_paths):
         baseline,
         slice,
         args,
-        struct(
-            mnemonic = "DartBaselineSlice",
-            progress_message = "Slicing Dart analysis baseline for %{label}",
-        ),
+        struct(mnemonic = "DartBaselineSlice", progress_message = msg),
     )
     return slice

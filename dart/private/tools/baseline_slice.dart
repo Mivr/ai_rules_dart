@@ -10,6 +10,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'analysis_baseline.dart';
+import 'cli_flags.dart';
 
 /// Validates the baseline and writes either the normalized whole file or one
 /// target's slice.
@@ -51,49 +52,23 @@ typedef _SliceArgs = ({
 
 /// Parses the command line, exiting 64 on an unknown or missing argument.
 _SliceArgs _parseArgs(List<String> args) {
-  String? config;
-  String? baseline;
-  String? baselineDisplay;
-  String? out;
-  var validateOnly = false;
-  final files = <String>[];
-  for (var i = 0; i < args.length; i++) {
-    switch (args[i]) {
-      case '--config':
-        if (i + 1 >= args.length) _usage('--config requires a value');
-        config = args[++i];
-      case '--baseline':
-        if (i + 1 >= args.length) _usage('--baseline requires a value');
-        baseline = args[++i];
-      case '--baseline-display':
-        if (i + 1 >= args.length) _usage('--baseline-display requires a value');
-        baselineDisplay = args[++i];
-      case '--out':
-        if (i + 1 >= args.length) _usage('--out requires a value');
-        out = args[++i];
-      case '--file':
-        if (i + 1 >= args.length) _usage('--file requires a value');
-        files.add(args[++i]);
-      case '--validate-only':
-        validateOnly = true;
-      default:
-        _usage('unknown argument ${args[i]}');
-    }
-  }
-  if (config == null || baseline == null || out == null) {
-    _usage('--config, --baseline, and --out are required');
-  }
+  const requiredSummary = '--config, --baseline, and --out are required';
+  final flags = ToolFlags.parse(
+    'baseline_slice',
+    args,
+    valueFlags: {'--config', '--baseline', '--baseline-display', '--out'},
+    listFlags: {'--file'},
+    boolFlags: {'--validate-only'},
+  );
+  final config = flags.require('--config', requiredSummary);
+  final baseline = flags.require('--baseline', requiredSummary);
+  final out = flags.require('--out', requiredSummary);
   return (
     config: config,
     baseline: baseline,
-    baselineDisplay: baselineDisplay ?? baseline,
+    baselineDisplay: flags.optional('--baseline-display') ?? baseline,
     out: out,
-    validateOnly: validateOnly,
-    files: files,
+    validateOnly: flags.flag('--validate-only'),
+    files: flags.values('--file'),
   );
-}
-
-Never _usage(String message) {
-  stderr.writeln('baseline_slice: $message');
-  exit(64);
 }
