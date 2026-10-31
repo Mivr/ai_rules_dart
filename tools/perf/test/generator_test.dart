@@ -3,6 +3,7 @@ library;
 
 import 'dart:io';
 
+import 'package:perf/cli_args.dart';
 import 'package:perf/generator.dart';
 import 'package:perf/runner.dart';
 
@@ -78,16 +79,78 @@ module(
   _check(legacy.dartVersion == '3.13.5', 'default dartVersion');
 
   final current = parseModuleHeader('''
+# module(name = "commented_out", repo_name = "wrong")
+# dart.toolchain(dart_version = "0.0.0")
 module(
-    name = "ai_rules_dart",
-    bazel_compatibility = [">=9.0.0"],
     repo_name = "rules_dart",
+    bazel_compatibility = [">=9.0.0"],
+    name = "ai_rules_dart",
 )
-dart.toolchain(dart_version = "3.11.4")
-''');
-  _check(current.moduleName == 'ai_rules_dart', 'current moduleName');
+''', fallbackContent: 'dart.toolchain(dart_version = "3.11.4")\n');
+  _check(
+    current.moduleName == 'ai_rules_dart',
+    'repo_name before name still parses moduleName',
+  );
   _check(current.repoName == 'rules_dart', 'current repoName');
-  _check(current.dartVersion == '3.11.4', 'parsed dartVersion');
+  _check(current.dartVersion == '3.11.4', 'fallback dartVersion parsed');
+}
+
+void _testCliPathAndEnvHelpers() {
+  _check(
+    resolveCliPath(
+          '..',
+          environment: const {'BUILD_WORKING_DIRECTORY': '/work/repo/tools'},
+        ) ==
+        '/work/repo',
+    'POSIX relative parent resolved against BUILD_WORKING_DIRECTORY',
+  );
+  _check(
+    resolveCliPath(
+          r'..\out\ws',
+          environment: const {'BUILD_WORKING_DIRECTORY': r'C:\work\repo\tools'},
+        ) ==
+        'C:/work/repo/out/ws',
+    'Windows relative path resolved and normalized',
+  );
+
+  final flags = parseCliFlags([
+    '--target-loc=500',
+    '--rules-dart',
+    '..',
+    '--out',
+    'ws',
+  ]);
+  _check(
+    lastFlagValue(flags, const ['target-loc']) == '500',
+    'equals flag parsed',
+  );
+  _check(
+    lastFlagValue(flags, const ['rules-dart']) == '..',
+    'space-separated flag parsed',
+  );
+
+  final cleaned = cleanProcessEnvironment(
+    baseEnvironment: const {
+      'PATH': '/usr/bin',
+      'RUNFILES_DIR': '/bad/runfiles',
+      'RUNFILES_MANIFEST_FILE': '/bad/MANIFEST',
+      'BUILD_WORKING_DIRECTORY': '/bad/cwd',
+      'RULES_DART_DILL': 'leaked.dill',
+      'TEST_TMPDIR': '/bad/tmp',
+    },
+    overlay: const {'RUNFILES_DIR': '/spawn/runfiles'},
+  );
+  _check(cleaned['PATH'] == '/usr/bin', 'PATH preserved');
+  _check(
+    cleaned['RUNFILES_DIR'] == '/spawn/runfiles',
+    'spawn overlay applied cleanly',
+  );
+  _check(
+    !cleaned.containsKey('RUNFILES_MANIFEST_FILE') &&
+        !cleaned.containsKey('RULES_DART_DILL') &&
+        !cleaned.containsKey('TEST_TMPDIR'),
+    'outer runfiles/test/rules_dart vars stripped',
+  );
 }
 
 void _testInvalidOptionsValidation() {
@@ -232,6 +295,26 @@ void _verifyPackageLayerRules({
   }
 }
 
+void _verifySingleDartFileHygiene(File entity) {
+  final lines = entity.readAsLinesSync();
+  var seenExport = false;
+  String? prevImport;
+  for (final line in lines) {
+    _check(!line.contains('print('), 'No print() calls in ${entity.path}');
+    if (line.startsWith('export ')) seenExport = true;
+    if (line.startsWith('import ')) {
+      _check(!seenExport, 'import before export in ${entity.path}');
+      if (prevImport != null) {
+        _check(
+          prevImport.compareTo(line) <= 0,
+          'Sorted imports in ${entity.path}: $prevImport vs $line',
+        );
+      }
+      prevImport = line;
+    }
+  }
+}
+
 void _verifyTransitiveReachabilityAndHygiene(
   String out,
   int layers,
@@ -256,23 +339,8 @@ void _verifyTransitiveReachabilityAndHygiene(
   );
 
   for (final entity in Directory(out).listSync(recursive: true)) {
-    if (entity is! File || !entity.path.endsWith('.dart')) continue;
-    final lines = entity.readAsLinesSync();
-    var seenExport = false;
-    String? prevImport;
-    for (final line in lines) {
-      _check(!line.contains('print('), 'No print() calls in ${entity.path}');
-      if (line.startsWith('export ')) seenExport = true;
-      if (line.startsWith('import ')) {
-        _check(!seenExport, 'import before export in ${entity.path}');
-        if (prevImport != null) {
-          _check(
-            prevImport.compareTo(line) <= 0,
-            'Sorted imports in ${entity.path}: $prevImport vs $line',
-          );
-        }
-        prevImport = line;
-      }
+    if (entity is File && entity.path.endsWith('.dart')) {
+      _verifySingleDartFileHygiene(entity);
     }
   }
 }
@@ -347,7 +415,7 @@ void _testLineCountAccuracyAcrossScales() {
       moduleContent: 'module(name = "rules_dart")\n',
     );
 
-    for (final loc in [1000, 2000, 10000, 50000]) {
+    for (final loc in [400, 500, 800, 1000, 2000, 10000, 50000]) {
       final out = '${tempDir.path}/out_$loc';
       generateWorkspace(
         GeneratorOptions(
@@ -365,6 +433,26 @@ void _testLineCountAccuracyAcrossScales() {
         'Target $loc got $total lines (diff $diff, max allowed $maxAllowed)',
       );
     }
+
+    final compactSeed2 = '${tempDir.path}/out_500_s2';
+    generateWorkspace(
+      GeneratorOptions(
+        targetLoc: 500,
+        seed: 2,
+        rulesDartPath: rulesMock.path,
+        outputPath: compactSeed2,
+      ),
+    );
+    _check(
+      File('${tempDir.path}/out_500/packages/pkg0/lib/src/f0.dart')
+              .readAsStringSync() !=
+          File('$compactSeed2/packages/pkg0/lib/src/f0.dart')
+              .readAsStringSync(),
+      'Compact 500-LOC workspace is sensitive to seed in layer 0',
+    );
+    applyLayer0BodyEdit(compactSeed2);
+    applyLayer0ApiEdit(compactSeed2);
+    applyLeafBodyEdit(compactSeed2, 'pkg28');
   } finally {
     _deleteTemp(tempDir);
   }
@@ -372,6 +460,7 @@ void _testLineCountAccuracyAcrossScales() {
 
 void main() {
   _testModuleBazelParsing();
+  _testCliPathAndEnvHelpers();
   _testInvalidOptionsValidation();
   _testDeterminismAndModuleCompatibility();
   _testDefaultGraphAndEdits();

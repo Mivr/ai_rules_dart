@@ -46,6 +46,11 @@ void main() {
 import 'dart:io';
 
 void main() {
+  if (Platform.environment.containsKey('TEST_TMPDIR') ||
+      Platform.environment.containsKey('RUNFILES_MANIFEST_FILE')) {
+    stderr.writeln('Outer Bazel/test env leaked into replay step');
+    exit(42);
+  }
   final mod = File('bazel-out/pkg0.kmod/module.dill').readAsStringSync();
   final envTag = Platform.environment['REPLAY_TAG'] ?? '';
   File('bazel-out/app.dill').writeAsStringSync('\${mod}_\$envTag');
@@ -260,9 +265,45 @@ void _testLeafTestRunnerPassAndFail() {
   }
 }
 
+void _testSymlinkOutputReplay() {
+  if (Platform.isWindows) return;
+  final tempDir = Directory.systemTemp.createTempSync('rd_replay_link_');
+  try {
+    final execroot = tempDir.path;
+    Directory('$execroot/bazel-out').createSync(recursive: true);
+    File('$execroot/bazel-out/real_bin').writeAsStringSync('BIN');
+    Link('$execroot/bazel-out/app_launcher').createSync('real_bin');
+
+    final linkScript = File('$execroot/make_link.dart')
+      ..writeAsStringSync(
+        'import "dart:io"; void main() => '
+        'Link("bazel-out/app_launcher").createSync("real_bin");\n',
+      );
+    final spawn = _makeTestFlowSpawn(
+      mnemonic: 'Symlink',
+      scriptPath: linkScript.path,
+      output: 'bazel-out/app_launcher',
+    );
+    final res = replayChainAndVerify(
+      orderedSpawns: [spawn],
+      execroot: execroot,
+      verifyPaths: {'bazel-out/app_launcher'},
+      clock: FakeChildCpuClock([0.0, 0.01]),
+    );
+    _check(res.identical, 'Symlink declared output verified identical');
+    _check(
+      Link('$execroot/bazel-out/app_launcher').targetSync() == 'real_bin',
+      'Symlink output restored after replay',
+    );
+  } finally {
+    _cleanupDir(tempDir);
+  }
+}
+
 void main() {
   _testFileAndTreeReplayAndSideEffectSweep();
   _testMismatchRestoresOriginalOutputs();
   _testLeafTestRunnerPassAndFail();
+  _testSymlinkOutputReplay();
   stdout.writeln('All replay tests passed.');
 }

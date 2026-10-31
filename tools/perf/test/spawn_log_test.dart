@@ -117,8 +117,9 @@ void _testOrderingTreeArtifactsAndBlockedRefusal() {
     ordered[2].commandArgs.single == 'test-setup.sh',
     'Runfiles consumer TestRunner ordered 3rd',
   );
+}
 
-  // Refuse cyclic dependency
+void _testCycleAndBlockedInputRefusal() {
   final cycleA = parseSpawnMap({
     'commandArgs': ['ca'],
     'inputs': ['bazel-out/cb.out'],
@@ -134,7 +135,6 @@ void _testOrderingTreeArtifactsAndBlockedRefusal() {
     'Refuses cyclic dependency in chain spawns',
   );
 
-  // Refuse blocked input produced by a failed upstream spawn
   const blockedLog = '''
 {
   "commandArgs": ["broken_gen"],
@@ -184,15 +184,42 @@ void _testLeafTestVerifySetSelection() {
     'exitCode': 0,
   })!;
 
+  final snapshotSpawn = parseSpawnMap({
+    'mnemonic': 'DartTestRunnerSnapshot',
+    'commandArgs': ['dart', 'test_runner_snapshot_gen.dart'],
+    'listedOutputs': ['bazel-out/k8-fastbuild/bin/test_runner_snapshot.jit'],
+    'exitCode': 0,
+  })!;
+  _check(
+    !snapshotSpawn.isTestRunner,
+    'DartTestRunnerSnapshot compile action is not TestRunner',
+  );
+  _check(
+    parseSpawnMap({'metadata': 'header_only'}) == null,
+    'Non-spawn JSON object without commandArgs returns null',
+  );
+  final diskCacheSpawn = parseSpawnMap({
+    'commandArgs': ['compile'],
+    'runner': 'disk cache hit',
+    'listedOutputs': ['bazel-out/k8-fastbuild/bin/cached.dill'],
+    'exitCode': 0,
+  })!;
+  _check(diskCacheSpawn.isCached, 'disk cache hit runner marked cached');
+
   _check(testRunnerSpawn.isTestRunner, 'Detects TestRunner via mnemonic');
   final verifySet = selectLeafTestVerifyPaths([
     kmodSpawn,
     linkSpawn,
+    snapshotSpawn,
     testRunnerSpawn,
   ]);
   _check(
     verifySet.contains('bazel-out/k8-fastbuild/bin/pkg28_test.dill'),
     'Compiled .dill verified',
+  );
+  _check(
+    verifySet.contains('bazel-out/k8-fastbuild/bin/test_runner_snapshot.jit'),
+    'Compiled test runner snapshot verified',
   );
   _check(
     verifySet.contains('bazel-out/k8-fastbuild/bin/pkg28.kmod'),
@@ -208,6 +235,7 @@ void main() {
   _testConcatenatedJsonParsingAndWorkers();
   _testExecConfigAndWindowsPathFiltering();
   _testOrderingTreeArtifactsAndBlockedRefusal();
+  _testCycleAndBlockedInputRefusal();
   _testLeafTestVerifySetSelection();
   stdout.writeln('All spawn_log tests passed.');
 }

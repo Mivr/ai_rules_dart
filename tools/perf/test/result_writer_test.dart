@@ -218,8 +218,55 @@ void _testFailureMissingAndEmptyRepeats() {
   );
 }
 
+void _testLoadRepeatResultsFilteringAndOrder() {
+  final dir = Directory.systemTemp.createTempSync('rd_load_repeats_');
+  try {
+    final r10 = _makePassingRepeat(
+      index: 10,
+      cleanBazel: 9.0,
+      cleanSol: 3.0,
+      bodySol: 0.4,
+    );
+    final r2 = _makePassingRepeat(
+      index: 2,
+      cleanBazel: 8.0,
+      cleanSol: 2.5,
+      bodySol: 0.3,
+    );
+    File('${dir.path}/repeat-10.json')
+        .writeAsStringSync('${jsonEncode(r10.toJson())}\n');
+    File('${dir.path}/repeat-2.json')
+        .writeAsStringSync('${jsonEncode(r2.toJson())}\n');
+
+    final summaryPath = '${dir.path}/dart-sol.json';
+    File(summaryPath).writeAsStringSync(
+      formatDartSolJson(
+        repeats: [r2, r10],
+        meta: _sampleMeta,
+        runner: _sampleRunner,
+      ),
+    );
+    File('${dir.path}/other.json')
+        .writeAsStringSync('{"flows": {"dart-app-clean": {}}}\n');
+
+    final loaded = loadRepeatResults(dir.path, excludeFilePath: summaryPath);
+    _check(loaded.length == 2, 'Ignores dart-sol.json and non-repeat JSON');
+    _check(
+      loaded[0].repeatIndex == 2 && loaded[1].repeatIndex == 10,
+      'Sorts repeat files numerically by repeatIndex',
+    );
+  } finally {
+    try {
+      dir.deleteSync(recursive: true);
+    } on FileSystemException catch (e) {
+      stderr.writeln('Temp cleanup skipped: $e');
+    }
+  }
+}
+
 void main() {
   _testAllPassSummaryAndSortedSchema();
   _testFailureMissingAndEmptyRepeats();
+  _testLoadRepeatResultsFilteringAndOrder();
   stdout.writeln('All result_writer tests passed.');
 }
