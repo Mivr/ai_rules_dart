@@ -112,8 +112,64 @@ void _testDeterminismAndSensitivity() {
   } finally {
     try {
       tempDir.deleteSync(recursive: true);
-    } catch (_) {
+    } on FileSystemException catch (_) {
       // Best-effort cleanup.
+    }
+  }
+}
+
+void _verifyLayerDependencies({
+  required String out,
+  required int layers,
+  required int fanout,
+}) {
+  final totalPkgs = layers * fanout;
+  for (var l = 0; l < layers; l++) {
+    for (var f = 0; f < fanout; f++) {
+      final pkgId = l * fanout + f;
+      final buildFile = File('$out/packages/pkg$pkgId/BUILD.bazel');
+      _check(buildFile.existsSync(), 'Package $pkgId BUILD.bazel exists');
+      final content = buildFile.readAsStringSync();
+
+      if (l == 0) {
+        _check(
+          !content.contains('//packages/'),
+          'Layer 0 pkg$pkgId must have deps = []',
+        );
+      } else {
+        for (var p = l * fanout; p < totalPkgs; p++) {
+          _check(
+            !content.contains('"//packages/pkg$p"'),
+            'Layer $l pkg$pkgId cannot depend on higher/same layer pkg$p',
+          );
+        }
+        var hasLMinus1 = false;
+        for (var prevF = 0; prevF < fanout; prevF++) {
+          final prevId = (l - 1) * fanout + prevF;
+          if (content.contains('"//packages/pkg$prevId"')) {
+            hasLMinus1 = true;
+            break;
+          }
+        }
+        _check(hasLMinus1, 'Layer $l pkg$pkgId must depend on layer ${l - 1}');
+      }
+
+      if (l == layers - 1) {
+        _check(
+          content.contains('dart_test('),
+          'Leaf pkg$pkgId must declare dart_test',
+        );
+        _check(
+          File('$out/packages/pkg$pkgId/test/pkg${pkgId}_test.dart')
+              .existsSync(),
+          'Leaf pkg$pkgId must have test file',
+        );
+      } else {
+        _check(
+          !content.contains('dart_test('),
+          'Non-leaf pkg$pkgId should not declare dart_test',
+        );
+      }
     }
   }
 }
@@ -147,65 +203,10 @@ void _testLineCountAndAcyclicLayering() {
     final maxAllowedDiff = (targetLoc * 0.05).round();
     _check(
       diff <= maxAllowedDiff,
-      'Line count $totalLines is within 5% of $targetLoc (allowed diff $maxAllowedDiff, got $diff)',
+      'Line count $totalLines within 5% of $targetLoc (got diff $diff)',
     );
 
-    // Acyclic layering & dependency checks
-    final totalPkgs = layers * fanout;
-    for (var l = 0; l < layers; l++) {
-      for (var f = 0; f < fanout; f++) {
-        final pkgId = l * fanout + f;
-        final buildFile = File('$out/packages/pkg$pkgId/BUILD.bazel');
-        _check(buildFile.existsSync(), 'Package $pkgId BUILD.bazel exists');
-        final content = buildFile.readAsStringSync();
-
-        if (l == 0) {
-          _check(
-            !content.contains('//packages/'),
-            'Layer 0 pkg$pkgId must have deps = []',
-          );
-        } else {
-          // Must depend on lower layers only
-          for (var p = l * fanout; p < totalPkgs; p++) {
-            _check(
-              !content.contains('"//packages/pkg$p"'),
-              'Layer $l pkg$pkgId cannot depend on higher/same layer pkg$p',
-            );
-          }
-          // Must depend on at least one package in l - 1
-          var hasLMinus1 = false;
-          for (var prevF = 0; prevF < fanout; prevF++) {
-            final prevId = (l - 1) * fanout + prevF;
-            if (content.contains('"//packages/pkg$prevId"')) {
-              hasLMinus1 = true;
-              break;
-            }
-          }
-          _check(
-            hasLMinus1,
-            'Layer $l pkg$pkgId must depend on layer ${l - 1}',
-          );
-        }
-
-        // Leaf layer declares dart_test
-        if (l == layers - 1) {
-          _check(
-            content.contains('dart_test('),
-            'Leaf pkg$pkgId must declare dart_test',
-          );
-          _check(
-            File('$out/packages/pkg$pkgId/test/pkg${pkgId}_test.dart')
-                .existsSync(),
-            'Leaf pkg$pkgId must have test file',
-          );
-        } else {
-          _check(
-            !content.contains('dart_test('),
-            'Non-leaf pkg$pkgId should not declare dart_test',
-          );
-        }
-      }
-    }
+    _verifyLayerDependencies(out: out, layers: layers, fanout: fanout);
 
     // App reaches leaf layer
     final appBuild = File('$out/app/BUILD.bazel').readAsStringSync();
@@ -219,7 +220,42 @@ void _testLineCountAndAcyclicLayering() {
   } finally {
     try {
       tempDir.deleteSync(recursive: true);
-    } catch (_) {
+    } on FileSystemException catch (_) {
+      // Best-effort cleanup.
+    }
+  }
+}
+
+void _testVariousTargetLocSizes() {
+  final tempDir = Directory.systemTemp.createTempSync('rd_loc_test_');
+  try {
+    final rulesMock = Directory('${tempDir.path}/rules_mock')..createSync();
+    File('${rulesMock.path}/MODULE.bazel')
+        .writeAsStringSync('module(name = "rules_dart")\n');
+
+    for (final loc in [1000, 2000, 10000]) {
+      final out = '${tempDir.path}/out_$loc';
+      generateWorkspace(
+        GeneratorOptions(
+          targetLoc: loc,
+          seed: 1,
+          rulesDartPath: rulesMock.path,
+          outputPath: out,
+        ),
+      );
+
+      final total = _countDartLines(Directory(out));
+      final diff = (total - loc).abs();
+      final maxAllowed = (loc * 0.05).round();
+      _check(
+        diff <= maxAllowed,
+        'Target $loc got $total lines (diff $diff, max allowed $maxAllowed)',
+      );
+    }
+  } finally {
+    try {
+      tempDir.deleteSync(recursive: true);
+    } on FileSystemException catch (_) {
       // Best-effort cleanup.
     }
   }
@@ -229,5 +265,6 @@ void main() {
   _testModuleBazelParsing();
   _testDeterminismAndSensitivity();
   _testLineCountAndAcyclicLayering();
+  _testVariousTargetLocSizes();
   stdout.writeln('All generator tests passed.');
 }

@@ -93,7 +93,7 @@ void _testDependencyOrderingAndRefusal() {
   var cycleBlocked = false;
   try {
     orderChainSpawns([cycleA, cycleB]);
-  } catch (_) {
+  } on StateError catch (_) {
     cycleBlocked = true;
   }
   _check(cycleBlocked, 'Refuses cyclic dependency in chain spawns');

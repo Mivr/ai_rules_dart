@@ -37,6 +37,8 @@ void makeBazelOutWritable(String execroot) {
   try {
     if (Platform.isLinux || Platform.isMacOS) {
       Process.runSync('chmod', ['-R', 'u+w', outDir.path]);
+    } else if (Platform.isWindows) {
+      Process.runSync('attrib', ['-r', '${outDir.path}\\*', '/s', '/d']);
     }
   } on ProcessException catch (e) {
     stderr.writeln('chmod on bazel-out failed: $e');
