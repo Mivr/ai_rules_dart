@@ -34,45 +34,17 @@ final class AnalysisBaseline {
     }
     if (root is! Map<String, dynamic>) {
       throw BaselineException(
-        '$prefix: the root must be an object, not ${_jsonType(root)}',
+        '$prefix: entry `<root>`: the root must be an object, '
+        'not ${_jsonType(root)}',
       );
     }
     final entries = <String, Map<String, int>>{};
     for (final pathEntry in root.entries) {
-      final path = pathEntry.key;
-      _checkBaselinePath(prefix, path);
-      final rules = pathEntry.value;
-      if (rules is! Map<String, dynamic>) {
-        throw BaselineException(
-          '$prefix: entry `$path`: the value must be an object mapping '
-          'codes to ceilings',
-        );
-      }
-      final codes = <String, int>{};
-      for (final ruleEntry in rules.entries) {
-        final code = ruleEntry.key.toLowerCase();
-        final where = '$prefix: entry `$path` -> `${ruleEntry.key}`';
-        if (codes.containsKey(code)) {
-          throw BaselineException(
-            '$where: duplicate diagnostic code (codes compare '
-            'case-insensitively)',
-          );
-        }
-        final ceiling = ruleEntry.value;
-        if (ceiling is! int) {
-          throw BaselineException(
-            '$where: ceiling must be a non-negative integer, got '
-            '${_jsonType(ceiling)}',
-          );
-        }
-        if (ceiling < 0) {
-          throw BaselineException(
-            '$where: ceiling must be a non-negative integer, got $ceiling',
-          );
-        }
-        codes[code] = ceiling;
-      }
-      entries[path] = codes;
+      entries[pathEntry.key] = _parsePathRules(
+        prefix,
+        pathEntry.key,
+        pathEntry.value,
+      );
     }
     return AnalysisBaseline._(entries);
   }
@@ -82,6 +54,9 @@ final class AnalysisBaseline {
   /// The ceiling for [code] in [path], or 0 when the pair is not keyed.
   int ceilingFor(String path, String code) =>
       _entries[path]?[code.toLowerCase()] ?? 0;
+
+  /// Every entry in deterministic sorted order.
+  Map<String, Map<String, int>> toJson() => sliceFor(_entries.keys);
 
   /// The entries for [paths] alone, sorted by path and then by code.
   ///
@@ -98,6 +73,46 @@ final class AnalysisBaseline {
     }
     return slice;
   }
+}
+
+/// Validates and normalizes the rule-to-ceiling map for one file [path].
+Map<String, int> _parsePathRules(String prefix, String path, dynamic rules) {
+  _checkBaselinePath(prefix, path);
+  if (rules is! Map<String, dynamic>) {
+    throw BaselineException(
+      '$prefix: entry `$path`: the value must be an object mapping '
+      'codes to ceilings, not ${_jsonType(rules)}',
+    );
+  }
+  final codes = <String, int>{};
+  for (final ruleEntry in rules.entries) {
+    final rawCode = ruleEntry.key;
+    final where = '$prefix: entry `$path` -> `$rawCode`';
+    if (rawCode.isEmpty || rawCode.trim() != rawCode) {
+      throw BaselineException('$where: diagnostic code must be non-empty');
+    }
+    final code = rawCode.toLowerCase();
+    if (codes.containsKey(code)) {
+      throw BaselineException(
+        '$where: duplicate diagnostic code (codes compare '
+        'case-insensitively)',
+      );
+    }
+    final ceiling = ruleEntry.value;
+    if (ceiling is! int) {
+      throw BaselineException(
+        '$where: ceiling must be a non-negative integer, got '
+        '${_jsonType(ceiling)} ($ceiling)',
+      );
+    }
+    if (ceiling < 0) {
+      throw BaselineException(
+        '$where: ceiling must be a non-negative integer, got $ceiling',
+      );
+    }
+    codes[code] = ceiling;
+  }
+  return codes;
 }
 
 /// One diagnostic handed to the baseline verdict.
@@ -205,20 +220,26 @@ String baselinedMarker(BaselineGroup group) =>
 /// Rejects a key that is not a workspace-relative POSIX path.
 void _checkBaselinePath(String prefix, String path) {
   final where = '$prefix: entry `$path`';
-  if (path.isEmpty ||
-      path.startsWith('/') ||
-      path.startsWith(r'\\') ||
-      _windowsAbsolute.hasMatch(path)) {
-    throw BaselineException('$where: the path must be workspace-relative');
+  if (path.startsWith('/') ||
+      path.startsWith(r'\') ||
+      _windowsDrive.hasMatch(path)) {
+    throw BaselineException(
+      '$where: the path must be workspace-relative, not an absolute path',
+    );
   }
-  if (path.split('/').contains('..')) {
+  if (path.split('/').contains('..') || path.split(r'\').contains('..')) {
     throw BaselineException(
       '$where: the path must not contain a `..` component',
     );
   }
+  if (path.isEmpty || path.contains(r'\')) {
+    throw BaselineException(
+      '$where: the path must be a non-empty workspace-relative POSIX path',
+    );
+  }
 }
 
-final _windowsAbsolute = RegExp(r'^[A-Za-z]:[\\/]');
+final _windowsDrive = RegExp(r'^[A-Za-z]:');
 
 String _jsonType(dynamic value) {
   if (value == null) return 'null';
@@ -244,16 +265,21 @@ final class _JsonReader {
   _JsonReader(this._text);
 
   final String _text;
+  final List<String> _keyStack = <String>[];
   int _offset = 0;
 
   bool get atEnd => _offset >= _text.length;
 
-  /// An error naming what is wrong at the current offset.
-  BaselineException error(String reason) {
+  /// An error naming the enclosing entry (if any) and the current offset.
+  BaselineException error(String reason, {String? extraKey}) {
     final start = _offset < 20 ? 0 : _offset - 20;
     final end = _offset + 20 > _text.length ? _text.length : _offset + 20;
     final near = _text.substring(start, end).replaceAll('\n', ' ');
-    return BaselineException('$reason at offset $_offset near `$near`');
+    final keys = [..._keyStack, if (extraKey != null) extraKey];
+    final context = keys.isEmpty
+        ? ''
+        : 'entry ${keys.map((k) => '`$k`').join(' -> ')}: ';
+    return BaselineException('$context$reason at offset $_offset near `$near`');
   }
 
   void skipWhitespace() {
@@ -290,13 +316,17 @@ final class _JsonReader {
         throw error('an object key must be a string');
       }
       final key = readString();
-      if (result.containsKey(key)) throw error('duplicate key `$key`');
+      if (result.containsKey(key)) {
+        throw error('duplicate key `$key`', extraKey: key);
+      }
       skipWhitespace();
       if (atEnd || _text[_offset] != ':') {
-        throw error('expected `:` after key `$key`');
+        throw error('expected `:` after key `$key`', extraKey: key);
       }
       _offset++;
+      _keyStack.add(key);
       result[key] = readValue();
+      _keyStack.removeLast();
       skipWhitespace();
       if (atEnd) throw error('unterminated object');
       final separator = _text[_offset++];
@@ -364,7 +394,12 @@ final class _JsonReader {
       _consumeDigits();
     }
     final raw = _text.substring(start, _offset);
-    return integral ? int.parse(raw) : double.parse(raw);
+    try {
+      final decoded = jsonDecode(raw) as num;
+      return integral ? decoded as int : decoded.toDouble();
+    } on FormatException catch (e) {
+      throw error('invalid number `$raw`: ${e.message}');
+    }
   }
 
   void _consumeDigits() {
