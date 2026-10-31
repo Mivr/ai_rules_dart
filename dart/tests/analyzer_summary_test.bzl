@@ -1,4 +1,4 @@
-"""Tests of analyzer-summary mode: which packages are covered, which mode a target is checked in, and when summary mode is off.
+"""Tests of analyzer-summary mode: covered packages, mode selection, and gate.
 
 `dart_analyze`'s summary mode analyzes a target from summaries only when every
 package in its closure is covered (`_summaries_ready`). A package is covered
@@ -18,14 +18,23 @@ is itself tested. The version gate is a function, tested directly.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
-load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart/private:dart_analyze_aspect.bzl", "DartAnalysisModeInfo", "dart_analyze")
-load("//dart/private:dart_analyzer_summary.bzl", "DartAnalyzerSummaryInfo", "analyzer_summaries_supported", "dart_analyzer_summary")
+load(
+    "//dart/private:dart_analyzer_summary.bzl",
+    "DartAnalyzerSummaryInfo",
+    "analyzer_summaries_supported",
+    "dart_analyzer_summary",
+)
 load(":small_suite.bzl", "small_unittest_suite")
-
-_FLAG = str(Label("//dart:analyzer_summaries"))
+load(
+    ":summaries_flag_test_lib.bzl",
+    "SUMMARIES_FLAG",
+    "effective_summaries_expected",
+    "summaries_flag_test_kwargs",
+)
 
 def _summary_packages_test_impl(ctx):
+    """Checks which package names are covered by `DartAnalyzerSummaryInfo`."""
     env = analysistest.begin(ctx)
     target = analysistest.target_under_test(env)
     covered = [k.split("|")[0] for k in target[DartAnalyzerSummaryInfo].packages.to_list()]
@@ -46,14 +55,19 @@ def _summary_packages_test_impl(ctx):
 summary_packages_test = analysistest.make(
     _summary_packages_test_impl,
     attrs = {
-        "expect_covered": attr.string_list(),
-        "expect_uncovered": attr.string_list(),
+        "expect_covered": attr.string_list(
+            doc = "Package names expected in `DartAnalyzerSummaryInfo.packages`.",
+        ),
+        "expect_uncovered": attr.string_list(
+            doc = "Package names expected absent from `DartAnalyzerSummaryInfo.packages`.",
+        ),
     },
-    config_settings = {_FLAG: True},
+    config_settings = {SUMMARIES_FLAG: True},
     extra_target_under_test_aspects = [dart_analyzer_summary],
 )
 
 def _summary_file_test_impl(ctx):
+    """Checks whether `target_under_test` produces a summary of its own."""
     env = analysistest.begin(ctx)
     target = analysistest.target_under_test(env)
     summary = target[DartAnalyzerSummaryInfo].summary
@@ -70,17 +84,21 @@ def _summary_file_test_impl(ctx):
 # Whether a target builds a summary of its own.
 summary_file_test = analysistest.make(
     _summary_file_test_impl,
-    attrs = {"expect_summary": attr.bool(mandatory = True)},
-    config_settings = {_FLAG: True},
+    attrs = {
+        "expect_summary": attr.bool(
+            doc = "Whether `DartAnalyzerSummaryInfo.summary` must be non-None.",
+            mandatory = True,
+        ),
+    },
+    config_settings = {SUMMARIES_FLAG: True},
     extra_target_under_test_aspects = [dart_analyzer_summary],
 )
 
 def _analysis_mode_test_impl(ctx):
+    """Checks `DartAnalysisModeInfo.summaries` against the expected mode."""
     env = analysistest.begin(ctx)
     target = analysistest.target_under_test(env)
-    expected = (
-        ctx.attr.expect_summaries and ctx.attr._summaries_flag[BuildSettingInfo].value if ctx.attr.use_flag else ctx.attr.expect_summaries
-    )
+    expected = effective_summaries_expected(ctx)
     asserts.equals(
         env,
         expected,
@@ -96,25 +114,10 @@ def _analysis_mode_test_impl(ctx):
     return analysistest.end(env) + [OutputGroupInfo(_validation = checks, dart_analyze = checks)]
 
 def _analysis_mode_test(flag, use_flag = False):
-    """Returns an analysis test whose `//dart:analyzer_summaries` is `flag`.
-
-    With `use_flag` the test expects summaries only when the target's own
-    expectation and the flag's effective value both allow them, so a
-    command-line override of the default is tested too. Without it the test
-    pins the value `config_settings` sets.
-    """
+    """Returns an analysis-mode test whose `//dart:analyzer_summaries` is `flag`, or the default for None."""
     return analysistest.make(
         _analysis_mode_test_impl,
-        attrs = {
-            "expect_summaries": attr.bool(mandatory = True),
-            "use_flag": attr.bool(default = use_flag),
-            "_summaries_flag": attr.label(
-                default = Label("//dart:analyzer_summaries"),
-                providers = [BuildSettingInfo],
-            ),
-        },
-        config_settings = {} if flag == None else {_FLAG: flag},
-        extra_target_under_test_aspects = [dart_analyze],
+        **summaries_flag_test_kwargs(flag, dart_analyze, use_flag)
     )
 
 # The mode `dart_analyze` checks a target in, with the flag at its default, on,
@@ -125,6 +128,7 @@ summaries_on_mode_test = _analysis_mode_test(True)
 summaries_off_mode_test = _analysis_mode_test(False)
 
 def _version_gate_test_impl(ctx):
+    """Verifies `analyzer_summaries_supported` across SDK version strings."""
     env = unittest.begin(ctx)
     for version, expected in [
         ("3.11.0", True),

@@ -1,4 +1,4 @@
-"""Test-enabled dart_library wrapper for the baseline e2e fixture."""
+"""Test-runnable `dart_library` rule for the baseline e2e fixture."""
 
 load("@rules_dart//dart:providers.bzl", "DartInfo")
 load(
@@ -75,7 +75,16 @@ dart_library_test = rule(
 )
 
 def dart_library(name, srcs, deps = [], package_name = "", language_version = "", visibility = None):
-    """Declares a baseline `dart_library` target runnable directly under `bazel test`."""
+    """Declares a baseline `dart_library` target runnable directly under `bazel test`.
+
+    Args:
+      name: Target name.
+      srcs: Dart source files checked by the `dart_analyze` aspect.
+      deps: Dependencies providing `DartInfo`.
+      package_name: Explicit Dart package name.
+      language_version: Optional `<major>.<minor>` Dart language version.
+      visibility: Optional Bazel visibility list.
+    """
     dart_library_test(
         name = name,
         srcs = srcs,

@@ -153,6 +153,7 @@ dart_test(
         "analyze_runner.dart",
         "analyze_runner_machine.dart",
         "analyze_runner_staged_prune.dart",
+        "analyze_runner_test_support.dart",
         "baseline_json.dart",
         "cli_flags.dart",
         "private_home.dart",
@@ -489,6 +490,7 @@ dart_test(
         "kernel_link.dart",
         "kernel_module.dart",
         "lib/worker_protocol.dart",
+        "worker_test_encode.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
     args = [
@@ -566,6 +568,7 @@ dart_test(
         "analyzer_summary.dart",
         "analyzer_summary_test_support.dart",
         "baseline_json.dart",
+        "worker_test_encode.dart",
     ],
     main = "analyzer_summary_test.dart",
     deps = [
