@@ -71,7 +71,7 @@ Map<String, String> _cleanBazelEnv() {
 ProcessResult _runBazel(String workingDirectory, List<String> args) {
   return Process.runSync(
     'bazel',
-    args,
+    ['--max_idle_secs=60', ...args],
     workingDirectory: workingDirectory,
     environment: _cleanBazelEnv(),
   );
@@ -493,54 +493,74 @@ FlowResult _measureFlowTestLeaf(RepeatContext ctx) {
   }
 }
 
-FlowResult _replayAndVerifyFlow(
-  RepeatContext ctx,
+(List<SpawnRecord>?, int, FlowResult?) _resolveAndOrderSpawns(
   File logFile,
   _FlowReplaySpec spec,
 ) {
   if (!logFile.existsSync()) {
-    return FlowResult(
-      method: spec.method,
-      bazelCpu: spec.bazelCpu,
-      solCpu: null,
-      identical: false,
-      reason: 'Execution log not generated',
-      chain: 0,
-      workerSteps: 0,
+    return (
+      null,
+      0,
+      FlowResult(
+        method: spec.method,
+        bazelCpu: spec.bazelCpu,
+        solCpu: null,
+        identical: false,
+        reason: 'Execution log not generated',
+        chain: 0,
+        workerSteps: 0,
+      ),
     );
   }
 
   final parsed = parseExecutionLog(logFile.readAsStringSync());
   if (parsed.chainSpawns.isEmpty) {
-    return FlowResult(
-      method: spec.method,
-      bazelCpu: spec.bazelCpu,
-      solCpu: null,
-      identical: false,
-      reason: 'No chain spawns extracted from log',
-      chain: 0,
-      workerSteps: parsed.workerSteps,
+    return (
+      null,
+      parsed.workerSteps,
+      FlowResult(
+        method: spec.method,
+        bazelCpu: spec.bazelCpu,
+        solCpu: null,
+        identical: false,
+        reason: 'No chain spawns extracted from log',
+        chain: 0,
+        workerSteps: parsed.workerSteps,
+      ),
     );
   }
 
-  final List<SpawnRecord> ordered;
   try {
-    ordered = orderChainSpawns(
+    final ordered = orderChainSpawns(
       parsed.chainSpawns,
       blockedOutputs: parsed.blockedOutputs,
     );
+    return (ordered, parsed.workerSteps, null);
   } on Object catch (e) {
     stderr.writeln('Chain spawn ordering failed: $e');
-    return FlowResult(
-      method: spec.method,
-      bazelCpu: spec.bazelCpu,
-      solCpu: null,
-      identical: false,
-      reason: 'Spawn ordering failed: $e',
-      chain: parsed.chainSpawns.length,
-      workerSteps: parsed.workerSteps,
+    return (
+      null,
+      parsed.workerSteps,
+      FlowResult(
+        method: spec.method,
+        bazelCpu: spec.bazelCpu,
+        solCpu: null,
+        identical: false,
+        reason: 'Spawn ordering failed: $e',
+        chain: parsed.chainSpawns.length,
+        workerSteps: parsed.workerSteps,
+      ),
     );
   }
+}
+
+FlowResult _replayAndVerifyFlow(
+  RepeatContext ctx,
+  File logFile,
+  _FlowReplaySpec spec,
+) {
+  final (ordered, workerSteps, failure) = _resolveAndOrderSpawns(logFile, spec);
+  if (failure != null || ordered == null) return failure!;
 
   final execroot = ctx.getExecroot();
   final verifyPaths = spec.isTest
@@ -554,7 +574,7 @@ FlowResult _replayAndVerifyFlow(
       identical: false,
       reason: 'No declared outputs to verify for ${spec.target}',
       chain: ordered.length,
-      workerSteps: parsed.workerSteps,
+      workerSteps: workerSteps,
     );
   }
 
@@ -573,6 +593,6 @@ FlowResult _replayAndVerifyFlow(
     identical: replayRes.identical,
     reason: replayRes.reason,
     chain: ordered.length,
-    workerSteps: parsed.workerSteps,
+    workerSteps: workerSteps,
   );
 }

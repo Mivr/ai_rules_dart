@@ -56,7 +56,7 @@ jobs:
           if [ -f tools-src/.bazelversion ]; then
             cp tools-src/.bazelversion tools-src/tools/.bazelversion
           fi
-          (cd tools-src/tools && bazel --output_base="$tooling_base" run //perf:generate -- \
+          (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:generate -- \
             --target-loc="$TARGET_LOC" \
             --seed="$SEED" \
             --rules-dart="$GITHUB_WORKSPACE/rules-head" \
@@ -66,14 +66,15 @@ jobs:
           ws="${RUNNER_TEMP}/pristine-ws"
           scratch_base="${RUNNER_TEMP}/scratch-outbase"
           cleanup_scratch() {
-            (cd "$ws" && bazel --output_base="$scratch_base" shutdown) || true
+            (cd "$ws" && bazel --max_idle_secs=60 --output_base="$scratch_base" shutdown) || true
             chmod -R u+w "$scratch_base" 2>/dev/null || true
             rm -rf "$scratch_base"
           }
           trap cleanup_scratch EXIT
-          mapfile -t leaf_tests < <(cd "$ws" && bazel --output_base="$scratch_base" query 'kind(dart_test, //...)')
-          test "${#leaf_tests[@]}" -gt 0
-          (cd "$ws" && bazel --output_base="$scratch_base" build --nobuild //app:app "${leaf_tests[@]}")
+          leaf_tests=$(cd "$ws" && bazel --max_idle_secs=60 --output_base="$scratch_base" query 'kind(dart_test, //...)')
+          test -n "$leaf_tests"
+          # shellcheck disable=SC2086
+          (cd "$ws" && bazel --max_idle_secs=60 --output_base="$scratch_base" build --nobuild //app:app $leaf_tests)
           cleanup_scratch
           trap - EXIT
           test -f "$ws/MODULE.bazel.lock"
@@ -86,7 +87,7 @@ jobs:
           results="${RUNNER_TEMP}/bench-results"
           mkdir -p "$results"
           for i in $(seq 1 "$REPEATS"); do
-            (cd tools-src/tools && bazel --output_base="$tooling_base" run //perf:runner -- \
+            (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:runner -- \
               --workspace="$ws" \
               --repeat="$i" \
               --out="$results/repeat-$i.json") || true
@@ -101,7 +102,7 @@ jobs:
           tooling_base="${RUNNER_TEMP}/tooling-outbase"
           results="${RUNNER_TEMP}/bench-results"
           sha="$(git -C "$GITHUB_WORKSPACE/rules-head" rev-parse HEAD)"
-          (cd tools-src/tools && bazel --output_base="$tooling_base" run //perf:summarize -- \
+          (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:summarize -- \
             --results-dir="$results" \
             --sha="$sha" \
             --target-loc="$TARGET_LOC" \
@@ -114,7 +115,7 @@ jobs:
         run: |
           tooling_base="${RUNNER_TEMP}/tooling-outbase"
           if [ -d tools-src/tools ]; then
-            (cd tools-src/tools && bazel --output_base="$tooling_base" shutdown) || true
+            (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" shutdown) || true
           fi
       - name: Upload dart-sol artifact
         if: ${{ !cancelled() && inputs.head_ref != '' }}

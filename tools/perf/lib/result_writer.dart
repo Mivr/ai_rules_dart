@@ -219,31 +219,19 @@ String _resolveFailureReason(String? flowFailure, String? countFailure) {
   return flowFailure ?? countFailure ?? 'failed';
 }
 
-Map<String, dynamic> _buildFlowEntry(
-  String key,
-  List<RepeatResult> repeats,
-  int expectedRepeats,
-) {
-  final method = key == 'dart-app-clean' ? 'batch' : 'warm-server';
-  final bazelVals = <double>[];
-  final solVals = <double>[];
-  var allIdentical = expectedRepeats > 0 && repeats.length == expectedRepeats;
-  String? countFailure;
+final class _FlowAccumulator {
+  final List<double> bazelVals = [];
+  final List<double> solVals = [];
+  bool allIdentical = true;
   String? flowFailure;
-  var chainCount = 0;
-  var workerSteps = 0;
+  int chainCount = 0;
+  int workerSteps = 0;
 
-  if (expectedRepeats <= 0 || repeats.length != expectedRepeats) {
-    countFailure =
-        'missing repeats: expected $expectedRepeats, got ${repeats.length}';
-  }
-
-  for (final r in repeats) {
-    final f = r.flows[key];
+  void recordRepeat(FlowResult? f, int repeatIndex, String key) {
     if (f == null) {
       allIdentical = false;
-      flowFailure ??= 'flow $key missing in repeat ${r.repeatIndex}';
-      continue;
+      flowFailure ??= 'flow $key missing in repeat $repeatIndex';
+      return;
     }
 
     chainCount = max(chainCount, f.chain);
@@ -259,30 +247,57 @@ Map<String, dynamic> _buildFlowEntry(
       }
     }
   }
+}
 
-  final isIdentical = allIdentical && solVals.length == expectedRepeats;
-  final bazelMedian = calculateMedian(bazelVals);
-  final solMedian = isIdentical ? calculateMedian(solVals) : null;
+Map<String, dynamic> _buildFlowEntry(
+  String key,
+  List<RepeatResult> repeats,
+  int expectedRepeats,
+) {
+  final method = key == 'dart-app-clean' ? 'batch' : 'warm-server';
+  final acc = _FlowAccumulator();
+  if (expectedRepeats <= 0 || repeats.length != expectedRepeats) {
+    acc.allIdentical = false;
+  }
+
+  for (final r in repeats) {
+    acc.recordRepeat(r.flows[key], r.repeatIndex, key);
+  }
+
+  final countFailure =
+      (expectedRepeats <= 0 || repeats.length != expectedRepeats)
+      ? 'missing repeats: expected $expectedRepeats, got ${repeats.length}'
+      : null;
+  final isIdentical = acc.allIdentical && acc.solVals.length == expectedRepeats;
+  final bazelMedian = calculateMedian(acc.bazelVals);
+  final solMedian = isIdentical ? calculateMedian(acc.solVals) : null;
   final reason = isIdentical
       ? 'ok'
-      : _resolveFailureReason(flowFailure, countFailure);
+      : _resolveFailureReason(acc.flowFailure, countFailure);
 
-  final spreadBazel = bazelVals.isEmpty
+  final spreadBazel = acc.bazelVals.isEmpty
       ? null
-      : [_round4(bazelVals.reduce(min)), _round4(bazelVals.reduce(max))];
-  final spreadSol = (!isIdentical || solVals.isEmpty)
+      : [
+          _round4(acc.bazelVals.reduce(min)),
+          _round4(acc.bazelVals.reduce(max)),
+        ];
+  final spreadSol = (!isIdentical || acc.solVals.isEmpty)
       ? null
-      : [_round4(solVals.reduce(min)), _round4(solVals.reduce(max))];
+      : [_round4(acc.solVals.reduce(min)), _round4(acc.solVals.reduce(max))];
 
   return {
     'bazel': bazelMedian != null ? _round4(bazelMedian) : null,
-    'chain': chainCount,
+    'chain': acc.chainCount,
     'identical': isIdentical,
     'method': method,
     'reason': reason,
     'sol': solMedian != null ? _round4(solMedian) : null,
-    'spread': {'bazel': spreadBazel, 'n': bazelVals.length, 'sol': spreadSol},
-    'worker_steps': workerSteps,
+    'spread': {
+      'bazel': spreadBazel,
+      'n': acc.bazelVals.length,
+      'sol': spreadSol,
+    },
+    'worker_steps': acc.workerSteps,
   };
 }
 

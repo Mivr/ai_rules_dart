@@ -6,25 +6,40 @@ import 'dart:io';
 
 import 'package:perf/runner.dart';
 
+(String?, String?) _extractFlagAndValue(String arg, List<String> args, int i) {
+  if (arg.startsWith('--')) {
+    final eq = arg.indexOf('=');
+    if (eq != -1) {
+      return (arg.substring(2, eq), arg.substring(eq + 1));
+    }
+    final key = arg.substring(2);
+    final val = i + 1 < args.length ? args[i + 1] : null;
+    return (key, val);
+  }
+  return (null, null);
+}
+
 void main(List<String> args) {
   String? workspace;
   var repeat = 1;
   String? out;
 
   for (var i = 0; i < args.length; i++) {
-    final arg = args[i];
-    if (arg.startsWith('--workspace=')) {
-      workspace = arg.substring('--workspace='.length);
-    } else if (arg == '--workspace' && i + 1 < args.length) {
-      workspace = args[++i];
-    } else if (arg.startsWith('--repeat=')) {
-      repeat = int.parse(arg.substring('--repeat='.length));
-    } else if (arg == '--repeat' && i + 1 < args.length) {
-      repeat = int.parse(args[++i]);
-    } else if (arg.startsWith('--out=')) {
-      out = arg.substring('--out='.length);
-    } else if (arg == '--out' && i + 1 < args.length) {
-      out = args[++i];
+    final (flag, val) = _extractFlagAndValue(args[i], args, i);
+    if (flag == null) continue;
+    if (val != null && !args[i].contains('=')) i++;
+
+    switch (flag) {
+      case 'workspace':
+      case 'ws':
+        workspace = val;
+      case 'repeat':
+      case 'repeat-index':
+      case 'repeat_index':
+        if (val != null) repeat = int.parse(val);
+      case 'out':
+      case 'output':
+        out = val;
     }
   }
 

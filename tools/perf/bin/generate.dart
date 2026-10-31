@@ -5,6 +5,19 @@ import 'dart:io';
 
 import 'package:perf/generator.dart';
 
+(String?, String?) _extractFlagAndValue(String arg, List<String> args, int i) {
+  if (arg.startsWith('--')) {
+    final eq = arg.indexOf('=');
+    if (eq != -1) {
+      return (arg.substring(2, eq), arg.substring(eq + 1));
+    }
+    final key = arg.substring(2);
+    final val = i + 1 < args.length ? args[i + 1] : null;
+    return (key, val);
+  }
+  return (null, null);
+}
+
 void main(List<String> args) {
   var targetLoc = 500000;
   var seed = 1;
@@ -12,23 +25,25 @@ void main(List<String> args) {
   String? out;
 
   for (var i = 0; i < args.length; i++) {
-    final arg = args[i];
-    if (arg.startsWith('--target-loc=')) {
-      targetLoc = int.parse(arg.substring('--target-loc='.length));
-    } else if (arg == '--target-loc' && i + 1 < args.length) {
-      targetLoc = int.parse(args[++i]);
-    } else if (arg.startsWith('--seed=')) {
-      seed = int.parse(arg.substring('--seed='.length));
-    } else if (arg == '--seed' && i + 1 < args.length) {
-      seed = int.parse(args[++i]);
-    } else if (arg.startsWith('--rules-dart=')) {
-      rulesDart = arg.substring('--rules-dart='.length);
-    } else if (arg == '--rules-dart' && i + 1 < args.length) {
-      rulesDart = args[++i];
-    } else if (arg.startsWith('--out=')) {
-      out = arg.substring('--out='.length);
-    } else if (arg == '--out' && i + 1 < args.length) {
-      out = args[++i];
+    final (flag, val) = _extractFlagAndValue(args[i], args, i);
+    if (flag == null) continue;
+    if (val != null && !args[i].contains('=')) i++;
+
+    switch (flag) {
+      case 'target-loc':
+      case 'target_loc':
+      case 'loc':
+        if (val != null) targetLoc = int.parse(val);
+      case 'seed':
+        if (val != null) seed = int.parse(val);
+      case 'rules-dart':
+      case 'rules_dart':
+      case 'rules-head':
+      case 'rules_head':
+        rulesDart = val;
+      case 'out':
+      case 'output':
+        out = val;
     }
   }
 

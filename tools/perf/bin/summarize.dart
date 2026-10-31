@@ -40,16 +40,25 @@ _SummarizeArgs _parseArgs(List<String> args) {
 
     switch (flag) {
       case 'results-dir':
+      case 'results_dir':
+      case 'results':
         resultsDir = val;
       case 'sha':
+      case 'head-ref':
+      case 'head_ref':
+      case 'rules-dart':
+      case 'rules_dart':
         sha = val;
       case 'target-loc':
+      case 'target_loc':
+      case 'loc':
         if (val != null) targetLoc = int.parse(val);
       case 'seed':
         if (val != null) seed = int.parse(val);
       case 'repeats':
         if (val != null) repeats = int.parse(val);
       case 'out':
+      case 'output':
         out = val;
     }
   }
@@ -116,9 +125,17 @@ void main(List<String> args) {
     exit(1);
   }
 
+  var sha = parsed.sha!;
+  if (Directory(sha).existsSync()) {
+    final res = Process.runSync('git', ['-C', sha, 'rev-parse', 'HEAD']);
+    if (res.exitCode == 0) {
+      sha = (res.stdout as String).trim();
+    }
+  }
+
   final repeatResults = _loadRepeatResults(parsed.resultsDir!);
   final meta = SummaryMeta(
-    rulesDartSha: parsed.sha!,
+    rulesDartSha: sha,
     targetLoc: parsed.targetLoc,
     seed: parsed.seed,
     repeats: parsed.repeats,
