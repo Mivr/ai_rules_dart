@@ -1,0 +1,105 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
+
+dart_library(
+    name = "perf",
+    package_name = "perf",
+    srcs = glob(["lib/**/*.dart"]),
+    language_version = "3.13",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@rules_dart//dart/runfiles",
+    ],
+)
+
+dart_binary(
+    name = "generate",
+    main = "bin/generate.dart",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":perf",
+    ],
+)
+
+dart_binary(
+    name = "runner",
+    main = "bin/runner.dart",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":perf",
+    ],
+)
+
+dart_binary(
+    name = "summarize",
+    main = "bin/summarize.dart",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":perf",
+    ],
+)
+
+dart_test(
+    name = "generator_test",
+    size = "small",
+    main = "test/generator_test.dart",
+    deps = [
+        ":perf",
+    ],
+)
+
+dart_test(
+    name = "proc_test",
+    size = "small",
+    main = "test/proc_test.dart",
+    deps = [
+        ":perf",
+    ],
+)
+
+dart_test(
+    name = "spawn_log_test",
+    size = "small",
+    main = "test/spawn_log_test.dart",
+    deps = [
+        ":perf",
+    ],
+)
+
+dart_test(
+    name = "replay_test",
+    size = "small",
+    main = "test/replay_test.dart",
+    deps = [
+        ":perf",
+    ],
+)
+
+dart_test(
+    name = "result_writer_test",
+    size = "small",
+    main = "test/result_writer_test.dart",
+    deps = [
+        ":perf",
+    ],
+)
+
+dart_test(
+    name = "workflow_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :test/workflow_test.dart)",
+    ],
+    data = [
+        "test/workflow_test.dart",
+    ],
+    local = True,
+    main = "test/workflow_test.dart",
+    tags = [
+        "external",
+        "no-sandbox",
+    ],
+    deps = [
+        ":perf",
+        "@rules_dart//dart/runfiles",
+    ],
+)
