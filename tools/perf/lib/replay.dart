@@ -314,6 +314,47 @@ void _sweepAndRestore({
   }
 }
 
+ReplayResult _runReplayAndVerify({
+  required List<SpawnRecord> orderedSpawns,
+  required String execroot,
+  required Directory backupDir,
+  required Set<String> verifyPaths,
+  required ChildCpuClock clock,
+  required bool isTestFlow,
+}) {
+  final (cpu, failure) = _executeSpawns(
+    orderedSpawns: orderedSpawns,
+    execroot: execroot,
+    clock: clock,
+    isTestFlow: isTestFlow,
+  );
+  if (failure != null) {
+    return ReplayResult(
+      identical: false,
+      solCpuSeconds: null,
+      reason: failure,
+      replayedCount: orderedSpawns.length,
+    );
+  }
+
+  final verifyErr = _verifyOutputs(execroot, backupDir, verifyPaths);
+  if (verifyErr != null) {
+    return ReplayResult(
+      identical: false,
+      solCpuSeconds: null,
+      reason: verifyErr,
+      replayedCount: orderedSpawns.length,
+    );
+  }
+
+  return ReplayResult(
+    identical: true,
+    solCpuSeconds: cpu,
+    reason: 'ok',
+    replayedCount: orderedSpawns.length,
+  );
+}
+
 /// Replays ordered spawns in `execroot` and verifies byte-identical outputs.
 ReplayResult replayChainAndVerify({
   required List<SpawnRecord> orderedSpawns,
@@ -364,36 +405,13 @@ ReplayResult replayChainAndVerify({
   }
 
   try {
-    final (cpu, failure) = _executeSpawns(
+    return _runReplayAndVerify(
       orderedSpawns: orderedSpawns,
       execroot: execroot,
+      backupDir: backupDir,
+      verifyPaths: verifyPaths,
       clock: clock,
       isTestFlow: isTestFlow,
-    );
-    if (failure != null) {
-      return ReplayResult(
-        identical: false,
-        solCpuSeconds: null,
-        reason: failure,
-        replayedCount: orderedSpawns.length,
-      );
-    }
-
-    final verifyErr = _verifyOutputs(execroot, backupDir, verifyPaths);
-    if (verifyErr != null) {
-      return ReplayResult(
-        identical: false,
-        solCpuSeconds: null,
-        reason: verifyErr,
-        replayedCount: orderedSpawns.length,
-      );
-    }
-
-    return ReplayResult(
-      identical: true,
-      solCpuSeconds: cpu,
-      reason: 'ok',
-      replayedCount: orderedSpawns.length,
     );
   } finally {
     _sweepAndRestore(

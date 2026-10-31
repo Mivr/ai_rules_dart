@@ -394,8 +394,11 @@ Set<String> selectLeafTestVerifyPaths(List<SpawnRecord> chainSpawns) {
     if (spawn.isTestRunner) continue;
     for (final rawOut in spawn.declaredOutputs) {
       final out = _normalizePath(rawOut);
-      if (out.endsWith('/test.log') ||
+      if (out == 'test.log' ||
+          out.endsWith('/test.log') ||
+          out == 'test.xml' ||
           out.endsWith('/test.xml') ||
+          out == 'test.cache_status' ||
           out.endsWith('/test.cache_status') ||
           out.contains('/testlogs/')) {
         continue;
