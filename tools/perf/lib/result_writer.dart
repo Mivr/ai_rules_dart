@@ -45,8 +45,10 @@ final class RunnerInfo {
           if (parts.length > 1) release = parts[1];
           if (parts.length > 2) machine = parts[2];
         }
-      } catch (_) {
-        // Fallback to Platform fields.
+      } on ProcessException catch (e) {
+        stderr.writeln('uname process error: $e');
+      } on Exception catch (e) {
+        stderr.writeln('Platform runner detection error: $e');
       }
     }
 
@@ -210,6 +212,81 @@ Object? _sortKeysRecursively(Object? value) {
   return value;
 }
 
+Map<String, dynamic> _buildFlowEntry(
+  String key,
+  List<RepeatResult> repeats,
+  int expectedRepeats,
+) {
+  final method = key == 'dart-app-clean' ? 'batch' : 'warm-server';
+  final bazelVals = <double>[];
+  final solVals = <double>[];
+  var allIdentical = true;
+  String? failureReason;
+  var chainCount = 0;
+  var workerSteps = 0;
+
+  if (repeats.length < expectedRepeats) {
+    allIdentical = false;
+    failureReason =
+        'missing repeats: expected $expectedRepeats, got ${repeats.length}';
+  }
+
+  for (final r in repeats) {
+    final f = r.flows[key];
+    if (f == null) {
+      allIdentical = false;
+      failureReason ??= 'flow $key missing in repeat ${r.repeatIndex}';
+      continue;
+    }
+
+    chainCount = max(chainCount, f.chain);
+    workerSteps = max(workerSteps, f.workerSteps);
+    if (f.bazelCpu != null) bazelVals.add(f.bazelCpu!);
+
+    if (f.identical && f.solCpu != null) {
+      solVals.add(f.solCpu!);
+    } else {
+      allIdentical = false;
+      if (failureReason == null && f.reason != 'ok') {
+        failureReason = f.reason;
+      }
+    }
+  }
+
+  final isIdentical = allIdentical && repeats.length == expectedRepeats;
+  final bazelMedian = calculateMedian(bazelVals);
+  final solMedian = isIdentical ? calculateMedian(solVals) : null;
+  final reason = isIdentical ? 'ok' : (failureReason ?? 'failed');
+
+  final spreadBazel = bazelVals.isEmpty
+      ? null
+      : [
+          double.parse(bazelVals.reduce(min).toStringAsFixed(4)),
+          double.parse(bazelVals.reduce(max).toStringAsFixed(4)),
+        ];
+  final spreadSol = (!isIdentical || solVals.isEmpty)
+      ? null
+      : [
+          double.parse(solVals.reduce(min).toStringAsFixed(4)),
+          double.parse(solVals.reduce(max).toStringAsFixed(4)),
+        ];
+
+  return {
+    'bazel': bazelMedian != null
+        ? double.parse(bazelMedian.toStringAsFixed(4))
+        : null,
+    'chain': chainCount,
+    'identical': isIdentical,
+    'method': method,
+    'reason': reason,
+    'sol': solMedian != null
+        ? double.parse(solMedian.toStringAsFixed(4))
+        : null,
+    'spread': {'bazel': spreadBazel, 'n': bazelVals.length, 'sol': spreadSol},
+    'worker_steps': workerSteps,
+  };
+}
+
 /// Generates the `dart-sol.json` contents from repeat results.
 String formatDartSolJson({
   required List<RepeatResult> repeats,
@@ -224,84 +301,8 @@ String formatDartSolJson({
   ];
 
   final flowsMap = <String, dynamic>{};
-
   for (final key in flowKeys) {
-    final method = key == 'dart-app-clean' ? 'batch' : 'warm-server';
-    final bazelVals = <double>[];
-    final solVals = <double>[];
-    var allIdentical = true;
-    String? failureReason;
-    var chainCount = 0;
-    var workerSteps = 0;
-
-    if (repeats.length < meta.repeats) {
-      allIdentical = false;
-      failureReason =
-          'missing repeats: expected ${meta.repeats}, got ${repeats.length}';
-    }
-
-    for (final r in repeats) {
-      final f = r.flows[key];
-      if (f == null) {
-        allIdentical = false;
-        failureReason ??= 'flow $key missing in repeat ${r.repeatIndex}';
-        continue;
-      }
-
-      chainCount = max(chainCount, f.chain);
-      workerSteps = max(workerSteps, f.workerSteps);
-
-      if (f.bazelCpu != null) bazelVals.add(f.bazelCpu!);
-
-      if (f.identical && f.solCpu != null) {
-        solVals.add(f.solCpu!);
-      } else {
-        allIdentical = false;
-        if (failureReason == null && f.reason != 'ok') {
-          failureReason = f.reason;
-        }
-      }
-    }
-
-    final isFlowIdentical = allIdentical && repeats.length == meta.repeats;
-    final bazelMedian = calculateMedian(bazelVals);
-    final solMedian = isFlowIdentical ? calculateMedian(solVals) : null;
-    final reason = isFlowIdentical ? 'ok' : (failureReason ?? 'failed');
-
-    final spreadBazel = bazelVals.isEmpty
-        ? null
-        : [
-            double.parse(bazelVals.reduce(min).toStringAsFixed(4)),
-            double.parse(bazelVals.reduce(max).toStringAsFixed(4)),
-          ];
-
-    final spreadSol = (!isFlowIdentical || solVals.isEmpty)
-        ? null
-        : [
-            double.parse(solVals.reduce(min).toStringAsFixed(4)),
-            double.parse(solVals.reduce(max).toStringAsFixed(4)),
-          ];
-
-    final spread = <String, dynamic>{
-      'bazel': spreadBazel,
-      'n': bazelVals.length,
-      'sol': spreadSol,
-    };
-
-    flowsMap[key] = {
-      'bazel': bazelMedian != null
-          ? double.parse(bazelMedian.toStringAsFixed(4))
-          : null,
-      'chain': chainCount,
-      'identical': isFlowIdentical,
-      'method': method,
-      'reason': reason,
-      'sol': solMedian != null
-          ? double.parse(solMedian.toStringAsFixed(4))
-          : null,
-      'spread': spread,
-      'worker_steps': workerSteps,
-    };
+    flowsMap[key] = _buildFlowEntry(key, repeats, meta.repeats);
   }
 
   final topLevel = <String, dynamic>{
