@@ -32,9 +32,10 @@ void main(List<String> args) {
     }
   }
 
-  if (rulesDart == null || out == null) {
+  if (rulesDart == null || out == null || targetLoc <= 0) {
     stderr.writeln(
-      'Usage: generate --target-loc=<loc> --seed=<seed> --rules-dart=<path> --out=<path>',
+      'Usage: generate --target-loc=<positive-int> --seed=<int> '
+      '--rules-dart=<path> --out=<path>',
     );
     exit(1);
   }

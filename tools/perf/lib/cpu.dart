@@ -19,7 +19,7 @@ final class _Timeval extends Struct {
   external int tvUsec;
 }
 
-/// Linux `struct rusage` (160 bytes on x86_64 / arm64).
+/// Linux `struct rusage` (144 bytes on 64-bit Linux, padded for safety).
 final class _Rusage extends Struct {
   external _Timeval ruUtime;
   external _Timeval ruStime;
@@ -60,49 +60,48 @@ final class _Rusage extends Struct {
 
 typedef _GetrusageC = Int32 Function(Int32 who, Pointer<_Rusage> usage);
 typedef _GetrusageDart = int Function(int who, Pointer<_Rusage> usage);
+typedef _CallocC = Pointer<Void> Function(IntPtr count, IntPtr size);
+typedef _CallocDart = Pointer<Void> Function(int count, int size);
 
 /// Real Linux child CPU clock using `getrusage(RUSAGE_CHILDREN)`.
 final class LinuxChildCpuClock implements ChildCpuClock {
-  /// Initializes the FFI bindings.
-  LinuxChildCpuClock() {
-    if (Platform.isLinux) {
-      final lib = DynamicLibrary.process();
-      _getrusage = lib.lookupFunction<_GetrusageC, _GetrusageDart>('getrusage');
-      _ptr = _allocator<_Rusage>();
-    }
-  }
+  /// Creates a Linux child CPU clock.
+  const LinuxChildCpuClock();
 
   static const int _rusageChildren = -1;
-  _GetrusageDart? _getrusage;
-  Pointer<_Rusage>? _ptr;
 
-  static Pointer<T> _allocator<T extends Struct>() {
-    return Pointer<T>.fromAddress(
-      // Allocate 256 bytes for rusage struct
-      DynamicLibrary.process()
-          .lookupFunction<
-            Pointer<Void> Function(IntPtr),
-            Pointer<Void> Function(int)
-          >('malloc')(256)
-          .address,
-    );
+  static final (_GetrusageDart, Pointer<_Rusage>)? _ffiState = _initLinuxFfi();
+
+  static (_GetrusageDart, Pointer<_Rusage>)? _initLinuxFfi() {
+    if (!Platform.isLinux) return null;
+    try {
+      final lib = DynamicLibrary.process();
+      final fn = lib.lookupFunction<_GetrusageC, _GetrusageDart>('getrusage');
+      final calloc = lib.lookupFunction<_CallocC, _CallocDart>('calloc');
+      final raw = calloc(1, 256);
+      if (raw.address == 0) return null;
+      return (fn, Pointer<_Rusage>.fromAddress(raw.address));
+    } on ArgumentError catch (e) {
+      stderr.writeln('getrusage FFI lookup failed: $e');
+      return null;
+    }
   }
 
   @override
   double getChildCpuSeconds() {
-    final fn = _getrusage;
-    final ptr = _ptr;
-    if (fn == null || ptr == null) return 0.0;
-
+    final state = _ffiState;
+    if (state == null) return 0.0;
+    final (fn, ptr) = state;
     final ret = fn(_rusageChildren, ptr);
-    if (ret != 0) return 0.0;
+    if (ret != 0) {
+      throw StateError('getrusage(RUSAGE_CHILDREN) failed with code $ret');
+    }
 
     final uSec = ptr.ref.ruUtime.tvSec;
     final uUsec = ptr.ref.ruUtime.tvUsec;
     final sSec = ptr.ref.ruStime.tvSec;
     final sUsec = ptr.ref.ruStime.tvUsec;
-
-    return (uSec + uUsec / 1e6) + (sSec + sUsec / 1e6);
+    return (uSec + sSec) + (uUsec + sUsec) / 1e6;
   }
 }
 

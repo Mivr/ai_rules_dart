@@ -29,6 +29,47 @@ final class ReplayResult {
   final int replayedCount;
 }
 
+final class _ExecrootSnapshot {
+  const _ExecrootSnapshot({required this.files, required this.dirs});
+
+  final Set<String> files;
+  final Set<String> dirs;
+}
+
+String _relPath(String root, String fullPath) {
+  final normRoot = root.replaceAll(r'\', '/');
+  final normFull = fullPath.replaceAll(r'\', '/');
+  if (normFull.startsWith('$normRoot/')) {
+    return normFull.substring(normRoot.length + 1);
+  }
+  return normFull;
+}
+
+_ExecrootSnapshot _snapshotExecroot(String execroot) {
+  final files = <String>{};
+  final dirs = <String>{};
+  final rootDir = Directory(execroot);
+  if (!rootDir.existsSync()) {
+    return _ExecrootSnapshot(files: files, dirs: dirs);
+  }
+
+  void walk(Directory current, {required bool isRoot}) {
+    for (final entity in current.listSync(followLinks: false)) {
+      final rel = _relPath(execroot, entity.path);
+      if (isRoot && rel == 'external') continue;
+      if (entity is Directory) {
+        dirs.add(rel);
+        walk(entity, isRoot: false);
+      } else {
+        files.add(rel);
+      }
+    }
+  }
+
+  walk(rootDir, isRoot: true);
+  return _ExecrootSnapshot(files: files, dirs: dirs);
+}
+
 /// Makes files and directories in `bazel-out` writable.
 void makeBazelOutWritable(String execroot) {
   final outDir = Directory('$execroot/bazel-out');
@@ -41,18 +82,14 @@ void makeBazelOutWritable(String execroot) {
       Process.runSync('attrib', ['-r', '${outDir.path}\\*', '/s', '/d']);
     }
   } on ProcessException catch (e) {
-    stderr.writeln('chmod on bazel-out failed: $e');
-  } on Exception catch (e) {
-    stderr.writeln('Error making bazel-out writable: $e');
+    stderr.writeln('chmod/attrib on bazel-out failed: $e');
   }
 }
 
 /// Compares two files byte-by-byte for equality.
 bool areFilesByteIdentical(File a, File b) {
   if (!a.existsSync() || !b.existsSync()) return false;
-  final lengthA = a.lengthSync();
-  final lengthB = b.lengthSync();
-  if (lengthA != lengthB) return false;
+  if (a.lengthSync() != b.lengthSync()) return false;
 
   final bytesA = a.readAsBytesSync();
   final bytesB = b.readAsBytesSync();
@@ -64,23 +101,59 @@ bool areFilesByteIdentical(File a, File b) {
   return true;
 }
 
-List<String> _moveOutputsAside(
-  String execroot,
-  Directory backupDir,
-  Set<String> declaredOutputs,
-) {
-  final movedAside = <String>[];
-  for (final relPath in declaredOutputs) {
-    final srcFile = File('$execroot/$relPath');
-    if (srcFile.existsSync()) {
-      final backupFile = File('${backupDir.path}/$relPath');
-      backupFile.parent.createSync(recursive: true);
-      srcFile.copySync(backupFile.path);
-      srcFile.deleteSync();
-      movedAside.add(relPath);
+void _copyEntityToBackup(String execroot, Directory backupDir, String relPath) {
+  final fullPath = '$execroot/$relPath';
+  final type = FileSystemEntity.typeSync(fullPath, followLinks: false);
+  if (type == FileSystemEntityType.notFound) return;
+
+  if (type == FileSystemEntityType.directory) {
+    final srcDir = Directory(fullPath);
+    final dstDir = Directory('${backupDir.path}/$relPath')
+      ..createSync(recursive: true);
+    for (final child in srcDir.listSync(recursive: true, followLinks: false)) {
+      final subRel = _relPath(srcDir.path, child.path);
+      if (child is Directory) {
+        Directory('${dstDir.path}/$subRel').createSync(recursive: true);
+      } else if (child is File) {
+        final dstFile = File('${dstDir.path}/$subRel');
+        dstFile.parent.createSync(recursive: true);
+        child.copySync(dstFile.path);
+      }
     }
+  } else if (type == FileSystemEntityType.file) {
+    final dstFile = File('${backupDir.path}/$relPath');
+    dstFile.parent.createSync(recursive: true);
+    File(fullPath).copySync(dstFile.path);
   }
-  return movedAside;
+}
+
+void _deleteEntityAtPath(String fullPath) {
+  final type = FileSystemEntity.typeSync(fullPath, followLinks: false);
+  if (type == FileSystemEntityType.notFound) return;
+  if (type == FileSystemEntityType.directory) {
+    Directory(fullPath).deleteSync(recursive: true);
+  } else if (type == FileSystemEntityType.link) {
+    Link(fullPath).deleteSync();
+  } else {
+    File(fullPath).deleteSync();
+  }
+}
+
+void _backupAndMoveOutputsAside({
+  required String execroot,
+  required Directory backupDir,
+  required Set<String> declaredOutputs,
+  required Set<String> verifyPaths,
+}) {
+  for (final relPath in verifyPaths) {
+    _copyEntityToBackup(execroot, backupDir, relPath);
+  }
+  final sortedDeclared = declaredOutputs.toList()
+    ..sort((a, b) => b.length.compareTo(a.length));
+  for (final relPath in sortedDeclared) {
+    _copyEntityToBackup(execroot, backupDir, relPath);
+    _deleteEntityAtPath('$execroot/$relPath');
+  }
 }
 
 (double, String?) _executeSpawns({
@@ -93,9 +166,8 @@ List<String> _moveOutputsAside(
   for (final spawn in orderedSpawns) {
     if (spawn.commandArgs.isEmpty) continue;
 
-    final env = Map<String, String>.of(Platform.environment);
-    env.addAll(spawn.environmentVariables);
-
+    final env = Map<String, String>.of(Platform.environment)
+      ..addAll(spawn.environmentVariables);
     final cmd = spawn.commandArgs.first;
     final args = spawn.commandArgs.sublist(1);
 
@@ -126,27 +198,120 @@ List<String> _moveOutputsAside(
   return (totalCpu, null);
 }
 
+String? _verifyDirectoryIdentical(
+  Directory replayed,
+  Directory backup,
+  String relPath,
+) {
+  if (!replayed.existsSync()) return 'Replayed directory missing: $relPath';
+  final repFiles = <String, File>{};
+  for (final e in replayed.listSync(recursive: true, followLinks: false)) {
+    if (e is File) repFiles[_relPath(replayed.path, e.path)] = e;
+  }
+  final bakFiles = <String, File>{};
+  for (final e in backup.listSync(recursive: true, followLinks: false)) {
+    if (e is File) bakFiles[_relPath(backup.path, e.path)] = e;
+  }
+  if (repFiles.length != bakFiles.length) {
+    return 'Directory entry count mismatch in $relPath';
+  }
+  for (final entry in bakFiles.entries) {
+    final repFile = repFiles[entry.key];
+    if (repFile == null) return 'Missing file in $relPath: ${entry.key}';
+    if (!areFilesByteIdentical(repFile, entry.value)) {
+      return 'Byte mismatch in verified output: $relPath/${entry.key}';
+    }
+  }
+  return null;
+}
+
 String? _verifyOutputs(
   String execroot,
   Directory backupDir,
   Set<String> verifyPaths,
 ) {
   for (final relPath in verifyPaths) {
+    final bakPath = '${backupDir.path}/$relPath';
+    final bakType = FileSystemEntity.typeSync(bakPath, followLinks: false);
+    if (bakType == FileSystemEntityType.notFound) {
+      return 'Original output missing in backup: $relPath';
+    }
+    if (bakType == FileSystemEntityType.directory) {
+      final err = _verifyDirectoryIdentical(
+        Directory('$execroot/$relPath'),
+        Directory(bakPath),
+        relPath,
+      );
+      if (err != null) return err;
+      continue;
+    }
     final replayedFile = File('$execroot/$relPath');
-    final originalBackup = File('${backupDir.path}/$relPath');
-
     if (!replayedFile.existsSync()) {
       return 'Replayed output missing: $relPath';
     }
-    if (!originalBackup.existsSync()) {
-      return 'Original output missing in backup: $relPath';
-    }
-
-    if (!areFilesByteIdentical(replayedFile, originalBackup)) {
+    if (!areFilesByteIdentical(replayedFile, File(bakPath))) {
       return 'Byte mismatch in verified output: $relPath';
     }
   }
   return null;
+}
+
+void _sweepUndeclaredSideEffects(String execroot, _ExecrootSnapshot before) {
+  final after = _snapshotExecroot(execroot);
+  for (final relFile in after.files) {
+    if (!before.files.contains(relFile)) {
+      _deleteEntityAtPath('$execroot/$relFile');
+    }
+  }
+  final extraDirs = after.dirs.where((d) => !before.dirs.contains(d)).toList()
+    ..sort((a, b) => b.length.compareTo(a.length));
+  for (final relDir in extraDirs) {
+    final dir = Directory('$execroot/$relDir');
+    if (dir.existsSync() && dir.listSync(followLinks: false).isEmpty) {
+      dir.deleteSync();
+    }
+  }
+}
+
+void _sweepAndRestore({
+  required String execroot,
+  required Directory backupDir,
+  required Set<String> declaredOutputs,
+  required _ExecrootSnapshot snapshotBefore,
+}) {
+  try {
+    makeBazelOutWritable(execroot);
+    final sortedDeclared = declaredOutputs.toList()
+      ..sort((a, b) => b.length.compareTo(a.length));
+    for (final relPath in sortedDeclared) {
+      _deleteEntityAtPath('$execroot/$relPath');
+    }
+    _sweepUndeclaredSideEffects(execroot, snapshotBefore);
+
+    if (backupDir.existsSync()) {
+      for (final entity in backupDir.listSync(
+        recursive: true,
+        followLinks: false,
+      )) {
+        final rel = _relPath(backupDir.path, entity.path);
+        if (entity is Directory) {
+          Directory('$execroot/$rel').createSync(recursive: true);
+        } else if (entity is File) {
+          final target = File('$execroot/$rel');
+          target.parent.createSync(recursive: true);
+          entity.copySync(target.path);
+        }
+      }
+      if (Platform.isLinux || Platform.isMacOS) {
+        Process.runSync('chmod', ['-R', 'u+w', backupDir.path]);
+      }
+      backupDir.deleteSync(recursive: true);
+    }
+  } on ProcessException catch (e) {
+    stderr.writeln('Error chmodding backup outputs: $e');
+  } on FileSystemException catch (e) {
+    stderr.writeln('Error sweeping/restoring replay outputs: $e');
+  }
 }
 
 /// Replays ordered spawns in `execroot` and verifies byte-identical outputs.
@@ -167,29 +332,29 @@ ReplayResult replayChainAndVerify({
   }
 
   makeBazelOutWritable(execroot);
-  final backupDir = Directory(
-    '$execroot/_perf_replay_backup_${DateTime.now().microsecondsSinceEpoch}',
-  );
-  if (!backupDir.existsSync()) backupDir.createSync(recursive: true);
+  final snapshotBefore = _snapshotExecroot(execroot);
+  final backupDir = Directory.systemTemp.createTempSync('rd_perf_backup_');
 
   final declaredOutputs = <String>{};
   for (final spawn in orderedSpawns) {
     declaredOutputs.addAll(spawn.declaredOutputs);
   }
 
-  final List<String> movedAside;
   try {
-    movedAside = _moveOutputsAside(execroot, backupDir, declaredOutputs);
+    _backupAndMoveOutputsAside(
+      execroot: execroot,
+      backupDir: backupDir,
+      declaredOutputs: declaredOutputs,
+      verifyPaths: verifyPaths,
+    );
   } on FileSystemException catch (e) {
     stderr.writeln('Failed moving outputs aside: $e');
-    return ReplayResult(
-      identical: false,
-      solCpuSeconds: null,
-      reason: 'Failed moving outputs aside: $e',
-      replayedCount: 0,
+    _sweepAndRestore(
+      execroot: execroot,
+      backupDir: backupDir,
+      declaredOutputs: declaredOutputs,
+      snapshotBefore: snapshotBefore,
     );
-  } on Exception catch (e) {
-    stderr.writeln('Error during output backup: $e');
     return ReplayResult(
       identical: false,
       solCpuSeconds: null,
@@ -231,30 +396,11 @@ ReplayResult replayChainAndVerify({
       replayedCount: orderedSpawns.length,
     );
   } finally {
-    _restoreOutputs(execroot, backupDir, movedAside);
-  }
-}
-
-void _restoreOutputs(
-  String execroot,
-  Directory backupDir,
-  List<String> movedAside,
-) {
-  try {
-    for (final relPath in movedAside) {
-      final backupFile = File('${backupDir.path}/$relPath');
-      if (backupFile.existsSync()) {
-        final targetFile = File('$execroot/$relPath');
-        targetFile.parent.createSync(recursive: true);
-        backupFile.copySync(targetFile.path);
-      }
-    }
-    if (backupDir.existsSync()) {
-      backupDir.deleteSync(recursive: true);
-    }
-  } on FileSystemException catch (e) {
-    stderr.writeln('Error restoring backup files: $e');
-  } on Exception catch (e) {
-    stderr.writeln('Error during backup restoration: $e');
+    _sweepAndRestore(
+      execroot: execroot,
+      backupDir: backupDir,
+      declaredOutputs: declaredOutputs,
+      snapshotBefore: snapshotBefore,
+    );
   }
 }

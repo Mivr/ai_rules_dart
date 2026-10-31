@@ -47,8 +47,6 @@ final class RunnerInfo {
         }
       } on ProcessException catch (e) {
         stderr.writeln('uname process error: $e');
-      } on Exception catch (e) {
-        stderr.writeln('Platform runner detection error: $e');
       }
     }
 
@@ -191,11 +189,13 @@ double? calculateMedian(List<double> values) {
   if (values.isEmpty) return null;
   final sorted = List.of(values)..sort();
   final mid = sorted.length ~/ 2;
-  if (sorted.length % 2 == 1) {
+  if (sorted.length.isOdd) {
     return sorted[mid];
   }
   return (sorted[mid - 1] + sorted[mid]) / 2.0;
 }
+
+double _round4(double value) => double.parse(value.toStringAsFixed(4));
 
 /// Recursively sorts map keys alphabetically.
 Object? _sortKeysRecursively(Object? value) {
@@ -212,6 +212,13 @@ Object? _sortKeysRecursively(Object? value) {
   return value;
 }
 
+String _resolveFailureReason(String? flowFailure, String? countFailure) {
+  if (flowFailure != null && countFailure != null) {
+    return '$flowFailure ($countFailure)';
+  }
+  return flowFailure ?? countFailure ?? 'failed';
+}
+
 Map<String, dynamic> _buildFlowEntry(
   String key,
   List<RepeatResult> repeats,
@@ -220,14 +227,14 @@ Map<String, dynamic> _buildFlowEntry(
   final method = key == 'dart-app-clean' ? 'batch' : 'warm-server';
   final bazelVals = <double>[];
   final solVals = <double>[];
-  var allIdentical = true;
-  String? failureReason;
+  var allIdentical = expectedRepeats > 0 && repeats.length == expectedRepeats;
+  String? countFailure;
+  String? flowFailure;
   var chainCount = 0;
   var workerSteps = 0;
 
-  if (repeats.length < expectedRepeats) {
-    allIdentical = false;
-    failureReason =
+  if (expectedRepeats <= 0 || repeats.length != expectedRepeats) {
+    countFailure =
         'missing repeats: expected $expectedRepeats, got ${repeats.length}';
   }
 
@@ -235,7 +242,7 @@ Map<String, dynamic> _buildFlowEntry(
     final f = r.flows[key];
     if (f == null) {
       allIdentical = false;
-      failureReason ??= 'flow $key missing in repeat ${r.repeatIndex}';
+      flowFailure ??= 'flow $key missing in repeat ${r.repeatIndex}';
       continue;
     }
 
@@ -243,45 +250,37 @@ Map<String, dynamic> _buildFlowEntry(
     workerSteps = max(workerSteps, f.workerSteps);
     if (f.bazelCpu != null) bazelVals.add(f.bazelCpu!);
 
-    if (f.identical && f.solCpu != null) {
+    if (f.identical && f.solCpu != null && f.bazelCpu != null) {
       solVals.add(f.solCpu!);
     } else {
       allIdentical = false;
-      if (failureReason == null && f.reason != 'ok') {
-        failureReason = f.reason;
+      if (flowFailure == null && f.reason.isNotEmpty && f.reason != 'ok') {
+        flowFailure = f.reason;
       }
     }
   }
 
-  final isIdentical = allIdentical && repeats.length == expectedRepeats;
+  final isIdentical = allIdentical && solVals.length == expectedRepeats;
   final bazelMedian = calculateMedian(bazelVals);
   final solMedian = isIdentical ? calculateMedian(solVals) : null;
-  final reason = isIdentical ? 'ok' : (failureReason ?? 'failed');
+  final reason = isIdentical
+      ? 'ok'
+      : _resolveFailureReason(flowFailure, countFailure);
 
   final spreadBazel = bazelVals.isEmpty
       ? null
-      : [
-          double.parse(bazelVals.reduce(min).toStringAsFixed(4)),
-          double.parse(bazelVals.reduce(max).toStringAsFixed(4)),
-        ];
+      : [_round4(bazelVals.reduce(min)), _round4(bazelVals.reduce(max))];
   final spreadSol = (!isIdentical || solVals.isEmpty)
       ? null
-      : [
-          double.parse(solVals.reduce(min).toStringAsFixed(4)),
-          double.parse(solVals.reduce(max).toStringAsFixed(4)),
-        ];
+      : [_round4(solVals.reduce(min)), _round4(solVals.reduce(max))];
 
   return {
-    'bazel': bazelMedian != null
-        ? double.parse(bazelMedian.toStringAsFixed(4))
-        : null,
+    'bazel': bazelMedian != null ? _round4(bazelMedian) : null,
     'chain': chainCount,
     'identical': isIdentical,
     'method': method,
     'reason': reason,
-    'sol': solMedian != null
-        ? double.parse(solMedian.toStringAsFixed(4))
-        : null,
+    'sol': solMedian != null ? _round4(solMedian) : null,
     'spread': {'bazel': spreadBazel, 'n': bazelVals.length, 'sol': spreadSol},
     'worker_steps': workerSteps,
   };
@@ -314,7 +313,7 @@ String formatDartSolJson({
       'seed': meta.seed,
       'target_loc': meta.targetLoc,
     },
-    'rules_dart': meta.rulesDartSha,
+    'rules_dart': meta.rulesDartSha.trim(),
     'runner': runner.toJson(),
     'unit': 'cpu_seconds',
   };
