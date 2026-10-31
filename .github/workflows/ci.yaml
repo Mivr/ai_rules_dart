@@ -992,14 +992,14 @@ jobs:
       - name: analysis_failure — expect a baselined target to pass in both analysis modes
         working-directory: e2e/analysis_failure
         run: |
-          for flags in "" "--//dart:analyzer_summaries=false"; do
-            bazel test //baseline:baselined_lib $flags || [ $? -eq 4 ]
+          for flags in "" "--@rules_dart//dart:analyzer_summaries=false"; do
+            bazel test //baseline:baselined_lib $flags
           done
           echo "OK: baselined target passed in both analysis modes"
       - name: analysis_failure — expect an over-baseline target to fail in both analysis modes
         working-directory: e2e/analysis_failure
         run: |
-          for flags in "" "--//dart:analyzer_summaries=false"; do
+          for flags in "" "--@rules_dart//dart:analyzer_summaries=false"; do
             if bazel test //baseline:over_baseline_lib $flags 2>/dev/null; then
               echo "ERROR: build should have failed above the baseline ceiling"
               exit 1
@@ -1013,7 +1013,7 @@ jobs:
       - name: analysis_failure — expect an unkeyed target to fail in both analysis modes
         working-directory: e2e/analysis_failure
         run: |
-          for flags in "" "--//dart:analyzer_summaries=false"; do
+          for flags in "" "--@rules_dart//dart:analyzer_summaries=false"; do
             if bazel test //baseline:unbaselined_lib $flags 2>/dev/null; then
               echo "ERROR: build should have failed on an unkeyed diagnostic"
               exit 1
