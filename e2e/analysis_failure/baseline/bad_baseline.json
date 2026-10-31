@@ -1,0 +1,5 @@
+{
+  "baseline/lib/baselined.dart": {
+    "avoid_print": -1
+  }
+}
