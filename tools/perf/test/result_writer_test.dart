@@ -1,4 +1,4 @@
-/// Unit tests for result writer and summary JSON schema.
+/// Unit tests for `dart-sol.json` result writer and summary schema.
 library;
 
 import 'dart:convert';
@@ -10,120 +10,42 @@ void _check(bool condition, String message) {
   if (!condition) throw StateError('FAIL: $message');
 }
 
-void _testAllPassSummary() {
-  const runner = RunnerInfo(
-    system: 'linux',
-    release: '6.6.137',
-    machine: 'x86_64',
-    cpuCount: 4,
-  );
-  const meta = SummaryMeta(
-    rulesDartSha: '0123456789abcdef0123456789abcdef01234567',
-    targetLoc: 500000,
-    seed: 1,
-    repeats: 3,
-  );
+const _sampleRunner = RunnerInfo(
+  system: 'linux',
+  release: '6.6.137',
+  machine: 'x86_64',
+  cpuCount: 4,
+);
 
-  final r1 = RepeatResult(
-    repeatIndex: 1,
+const _sampleMeta = SummaryMeta(
+  rulesDartSha: '0123456789abcdef0123456789abcdef01234567',
+  targetLoc: 500000,
+  seed: 1,
+  repeats: 3,
+);
+
+RepeatResult _makePassingRepeat({
+  required int index,
+  required double cleanBazel,
+  required double cleanSol,
+  required double bodySol,
+}) {
+  return RepeatResult(
+    repeatIndex: index,
     flows: {
-      'dart-app-clean': const FlowResult(
+      'dart-app-clean': FlowResult(
         method: 'batch',
-        bazelCpu: 10.0,
-        solCpu: 4.0,
+        bazelCpu: cleanBazel,
+        solCpu: cleanSol,
         identical: true,
         reason: 'ok',
         chain: 12,
         workerSteps: 5,
       ),
-      'dart-app-body': const FlowResult(
+      'dart-app-body': FlowResult(
         method: 'warm-server',
-        bazelCpu: 2.0,
-        solCpu: 0.5,
-        identical: true,
-        reason: 'ok',
-        chain: 2,
-        workerSteps: 1,
-      ),
-      'dart-app-api': const FlowResult(
-        method: 'warm-server',
-        bazelCpu: 4.0,
-        solCpu: 1.0,
-        identical: true,
-        reason: 'ok',
-        chain: 6,
-        workerSteps: 2,
-      ),
-      'dart-test-leaf': const FlowResult(
-        method: 'warm-server',
-        bazelCpu: 3.0,
-        solCpu: 0.8,
-        identical: true,
-        reason: 'ok',
-        chain: 3,
-        workerSteps: 1,
-      ),
-    },
-  );
-
-  final r2 = RepeatResult(
-    repeatIndex: 2,
-    flows: {
-      'dart-app-clean': const FlowResult(
-        method: 'batch',
-        bazelCpu: 12.0,
-        solCpu: 4.2,
-        identical: true,
-        reason: 'ok',
-        chain: 12,
-        workerSteps: 5,
-      ),
-      'dart-app-body': const FlowResult(
-        method: 'warm-server',
-        bazelCpu: 2.2,
-        solCpu: 0.55,
-        identical: true,
-        reason: 'ok',
-        chain: 2,
-        workerSteps: 1,
-      ),
-      'dart-app-api': const FlowResult(
-        method: 'warm-server',
-        bazelCpu: 4.4,
-        solCpu: 1.1,
-        identical: true,
-        reason: 'ok',
-        chain: 6,
-        workerSteps: 2,
-      ),
-      'dart-test-leaf': const FlowResult(
-        method: 'warm-server',
-        bazelCpu: 3.2,
-        solCpu: 0.85,
-        identical: true,
-        reason: 'ok',
-        chain: 3,
-        workerSteps: 1,
-      ),
-    },
-  );
-
-  final r3 = RepeatResult(
-    repeatIndex: 3,
-    flows: {
-      'dart-app-clean': const FlowResult(
-        method: 'batch',
-        bazelCpu: 11.0,
-        solCpu: 4.1,
-        identical: true,
-        reason: 'ok',
-        chain: 12,
-        workerSteps: 5,
-      ),
-      'dart-app-body': const FlowResult(
-        method: 'warm-server',
-        bazelCpu: 2.1,
-        solCpu: 0.52,
+        bazelCpu: bodySol * 4,
+        solCpu: bodySol,
         identical: true,
         reason: 'ok',
         chain: 2,
@@ -149,70 +71,80 @@ void _testAllPassSummary() {
       ),
     },
   );
+}
+
+void _testAllPassSummaryAndSortedSchema() {
+  final r1 = _makePassingRepeat(
+    index: 1,
+    cleanBazel: 10.0,
+    cleanSol: 4.0,
+    bodySol: 0.50,
+  );
+  final r2 = _makePassingRepeat(
+    index: 2,
+    cleanBazel: 12.0,
+    cleanSol: 4.2,
+    bodySol: 0.55,
+  );
+  final r3 = _makePassingRepeat(
+    index: 3,
+    cleanBazel: 11.0,
+    cleanSol: 4.1,
+    bodySol: 0.52,
+  );
 
   final jsonStr = formatDartSolJson(
     repeats: [r1, r2, r3],
-    meta: meta,
-    runner: runner,
+    meta: _sampleMeta,
+    runner: _sampleRunner,
   );
 
-  _check(jsonStr.endsWith('\n'), 'Terminated by newline');
+  _check(jsonStr.endsWith('\n'), 'JSON ends with trailing newline');
   final decoded = jsonDecode(jsonStr) as Map<String, dynamic>;
-
-  // Top level keys
-  _check(decoded.containsKey('rules_dart'), 'top-level contains rules_dart');
-  _check(decoded.containsKey('unit'), 'top-level contains unit');
-  _check(decoded.containsKey('runner'), 'top-level contains runner');
-  _check(decoded.containsKey('meta'), 'top-level contains meta');
-  _check(decoded.containsKey('flows'), 'top-level contains flows');
+  final topKeys = decoded.keys.toList();
+  _check(
+    topKeys.join(',') == 'flows,meta,rules_dart,runner,unit',
+    'Top-level keys are sorted: $topKeys',
+  );
+  _check(
+    decoded['rules_dart'] == _sampleMeta.rulesDartSha,
+    'rules_dart SHA matches',
+  );
   _check(decoded['unit'] == 'cpu_seconds', 'unit is cpu_seconds');
 
   final metaMap = decoded['meta'] as Map<String, dynamic>;
   _check(metaMap['lockfile'] == 'committed', 'meta.lockfile == committed');
-  _check((metaMap['bazel_flags'] as List).isEmpty, 'meta.bazel_flags is empty');
+  _check((metaMap['bazel_flags'] as List).isEmpty, 'meta.bazel_flags == []');
   _check(metaMap['repeats'] == 3, 'meta.repeats == 3');
+  _check(metaMap['target_loc'] == 500000, 'meta.target_loc == 500000');
+  _check(metaMap['seed'] == 1, 'meta.seed == 1');
 
   final flows = decoded['flows'] as Map<String, dynamic>;
-  _check(flows.containsKey('dart-app-clean'), 'has dart-app-clean');
-  _check(flows.containsKey('dart-app-body'), 'has dart-app-body');
-  _check(flows.containsKey('dart-app-api'), 'has dart-app-api');
-  _check(flows.containsKey('dart-test-leaf'), 'has dart-test-leaf');
+  _check(
+    flows.keys.join(',') ==
+        'dart-app-api,dart-app-body,dart-app-clean,dart-test-leaf',
+    'Flow keys are sorted',
+  );
 
   final clean = flows['dart-app-clean'] as Map<String, dynamic>;
   _check(clean['identical'] == true, 'clean identical == true');
   _check(clean['method'] == 'batch', 'clean method == batch');
   _check(clean['reason'] == 'ok', 'clean reason == ok');
-  _check(clean['bazel'] == 11.0, 'clean bazel median 11.0');
-  _check(clean['sol'] == 4.1, 'clean sol median 4.1');
-  _check(clean['chain'] == 12, 'clean chain 12');
-  _check(clean['worker_steps'] == 5, 'clean worker_steps 5');
+  _check(clean['bazel'] == 11.0, 'clean bazel median == 11.0');
+  _check(clean['sol'] == 4.1, 'clean sol median == 4.1');
+  _check(clean['chain'] == 12, 'clean chain == 12');
+  _check(clean['worker_steps'] == 5, 'clean worker_steps == 5');
 
   final spread = clean['spread'] as Map<String, dynamic>;
-  _check(spread['n'] == 3, 'spread n == 3');
-  final spreadBazel = spread['bazel'] as List;
-  _check(spreadBazel[0] == 10.0, 'spread bazel min');
-  _check(spreadBazel[1] == 12.0, 'spread bazel max');
-  final spreadSol = spread['sol'] as List;
-  _check(spreadSol[0] == 4.0, 'spread sol min');
-  _check(spreadSol[1] == 4.2, 'spread sol max');
+  _check(spread['n'] == 3, 'spread.n == 3');
+  _check((spread['bazel'] as List)[0] == 10.0, 'spread.bazel min');
+  _check((spread['bazel'] as List)[1] == 12.0, 'spread.bazel max');
+  _check((spread['sol'] as List)[0] == 4.0, 'spread.sol min');
+  _check((spread['sol'] as List)[1] == 4.2, 'spread.sol max');
 }
 
-void _testFailureAndMissingRepeats() {
-  const runner = RunnerInfo(
-    system: 'linux',
-    release: '6.6.137',
-    machine: 'x86_64',
-    cpuCount: 4,
-  );
-  const meta = SummaryMeta(
-    rulesDartSha: '0123456789abcdef0123456789abcdef01234567',
-    targetLoc: 500000,
-    seed: 1,
-    repeats: 3,
-  );
-
-  // Only 1 repeat delivered out of 3 expected
-  final r1 = RepeatResult(
+void _testFailureMissingAndEmptyRepeats() {
+  final partial = RepeatResult(
     repeatIndex: 1,
     flows: {
       'dart-app-clean': const FlowResult(
@@ -224,29 +156,70 @@ void _testFailureAndMissingRepeats() {
         chain: 12,
         workerSteps: 5,
       ),
+      'dart-app-body': const FlowResult(
+        method: 'warm-server',
+        bazelCpu: 2.0,
+        solCpu: 0.5,
+        identical: true,
+        reason: 'ok',
+        chain: 2,
+        workerSteps: 1,
+      ),
     },
   );
 
-  final jsonStr = formatDartSolJson(repeats: [r1], meta: meta, runner: runner);
-  final decoded = jsonDecode(jsonStr) as Map<String, dynamic>;
-  final flows = decoded['flows'] as Map<String, dynamic>;
-  final clean = flows['dart-app-clean'] as Map<String, dynamic>;
+  final jsonMissing = formatDartSolJson(
+    repeats: [partial],
+    meta: _sampleMeta,
+    runner: _sampleRunner,
+  );
+  final flows =
+      (jsonDecode(jsonMissing) as Map<String, dynamic>)['flows']
+          as Map<String, dynamic>;
 
-  _check(clean['identical'] == false, 'identical is false');
-  _check(clean['sol'] == null, 'sol is null on failure');
-  _check(clean['reason'] != 'ok', 'non-empty failure reason');
+  final clean = flows['dart-app-clean'] as Map<String, dynamic>;
+  _check(clean['identical'] == false, 'Failed flow identical is false');
+  _check(clean['sol'] == null, 'Failed flow sol is null');
   _check(
-    (clean['reason'] as String).contains('Byte mismatch') ||
-        (clean['reason'] as String).contains('missing repeats'),
-    'failure reason described correctly',
+    (clean['reason'] as String).contains('Byte mismatch'),
+    'Failed flow preserves failure reason: ${clean['reason']}',
+  );
+  _check(
+    (clean['spread'] as Map<String, dynamic>)['sol'] == null,
+    'Failed flow spread.sol is null',
   );
 
-  final spread = clean['spread'] as Map<String, dynamic>;
-  _check(spread['sol'] == null, 'spread.sol is null when identical is false');
+  final body = flows['dart-app-body'] as Map<String, dynamic>;
+  _check(
+    body['identical'] == false,
+    'Flow with 1 of 3 expected repeats has identical == false',
+  );
+  _check(body['sol'] == null, 'Flow with missing repeats has sol == null');
+  _check(
+    (body['reason'] as String).contains('missing repeats'),
+    'Missing repeats reason reported: ${body['reason']}',
+  );
+
+  final jsonEmpty = formatDartSolJson(
+    repeats: const [],
+    meta: _sampleMeta,
+    runner: _sampleRunner,
+  );
+  final emptyFlows =
+      (jsonDecode(jsonEmpty) as Map<String, dynamic>)['flows']
+          as Map<String, dynamic>;
+  final emptyLeaf = emptyFlows['dart-test-leaf'] as Map<String, dynamic>;
+  _check(emptyLeaf['identical'] == false, 'Zero repeats identical == false');
+  _check(emptyLeaf['bazel'] == null, 'Zero repeats bazel == null');
+  _check(emptyLeaf['sol'] == null, 'Zero repeats sol == null');
+  _check(
+    (emptyLeaf['reason'] as String).isNotEmpty && emptyLeaf['reason'] != 'ok',
+    'Zero repeats has non-empty failure reason',
+  );
 }
 
 void main() {
-  _testAllPassSummary();
-  _testFailureAndMissingRepeats();
+  _testAllPassSummaryAndSortedSchema();
+  _testFailureMissingAndEmptyRepeats();
   stdout.writeln('All result_writer tests passed.');
 }

@@ -1,4 +1,4 @@
-/// Unit tests for /proc parsing and warm-server delta tracking.
+/// Unit tests for `/proc/<pid>/stat` parsing and warm-server CPU delta math.
 library;
 
 import 'dart:io';
@@ -9,10 +9,20 @@ void _check(bool condition, String message) {
   if (!condition) throw StateError('FAIL: $message');
 }
 
+void _expectStateError(void Function() action, String message) {
+  try {
+    action();
+  } on StateError catch (e) {
+    _check(e.message.isNotEmpty, message);
+    return;
+  }
+  throw StateError('FAIL: $message (expected StateError)');
+}
+
 void _testParseProcStat() {
   const sampleLine =
-      '12345 (bazel(server)) S 1000 12345 1000 0 -1 4194304 100 200 0 0 '
-      '500 250 100 50 20 0 1 0 98765 12345678 1000 18446744073709551615';
+      '12345 (bazel (jvm) server) S 1000 12345 1000 0 -1 4194304 100 200 0 0 '
+      '500 250 100 50 20 -5 1 0 98765 12345678 1000 18446744073709551615';
 
   final stat = parseProcStat(sampleLine);
   _check(stat != null, 'parseProcStat returned non-null');
@@ -25,11 +35,14 @@ void _testParseProcStat() {
   _check(stat.starttime == 98765, 'starttime == 98765');
   _check(stat.totalTicks == 900, 'totalTicks == 900');
 
-  // Invalid line
   _check(parseProcStat('invalid text') == null, 'invalid text returns null');
+  _check(
+    parseProcStat('123 (short) S 1 2 3') == null,
+    'truncated stat fields return null',
+  );
 }
 
-void _testServerTreeSnapshotAndDelta() {
+ServerTreeSnapshot _buildInitialServerSnapshot() {
   final procsBefore = <int, ProcStat>{
     100: const ProcStat(
       pid: 100,
@@ -40,7 +53,6 @@ void _testServerTreeSnapshotAndDelta() {
       cstime: 25,
       starttime: 1000,
     ),
-    // Worker 1: child of 100
     200: const ProcStat(
       pid: 200,
       ppid: 100,
@@ -50,7 +62,6 @@ void _testServerTreeSnapshotAndDelta() {
       cstime: 0,
       starttime: 1050,
     ),
-    // Grandchild of 100 (child of worker 200)
     300: const ProcStat(
       pid: 300,
       ppid: 200,
@@ -60,7 +71,6 @@ void _testServerTreeSnapshotAndDelta() {
       cstime: 0,
       starttime: 1100,
     ),
-    // Unrelated process
     999: const ProcStat(
       pid: 999,
       ppid: 1,
@@ -72,109 +82,125 @@ void _testServerTreeSnapshotAndDelta() {
     ),
   };
 
-  final readerBefore = FakeProcReader(procsBefore, clockTicksPerSecond: 100);
-  final snapBefore = takeServerTreeSnapshot(readerBefore, 100);
+  final readerBefore = FakeProcReader(procsBefore, clockTicksPerSecond: 250);
+  final snap = takeServerTreeSnapshot(readerBefore, 100);
+  _check(snap.serverPid == 100, 'serverPid');
+  _check(snap.serverStarttime == 1000, 'serverStarttime');
+  _check(snap.serverTicks == 375, 'serverTicks = 200+100+50+25');
+  _check(snap.descendantPids.contains(200), 'worker 200 is descendant');
+  _check(snap.descendantPids.contains(300), 'child 300 is descendant');
+  _check(!snap.descendantPids.contains(999), '999 excluded');
+  _check(snap.descendantTicks == 140, 'descendantTicks = 100 + 40');
+  _check(snap.totalTicks == 515, 'totalTicks = 375 + 140');
+  return snap;
+}
 
-  _check(snapBefore.serverPid == 100, 'serverPid');
-  _check(snapBefore.serverStarttime == 1000, 'serverStarttime');
-  _check(snapBefore.serverTicks == 375, 'serverTicks = 200+100+50+25');
-  _check(snapBefore.descendantPids.contains(200), 'worker 200 is descendant');
-  _check(
-    snapBefore.descendantPids.contains(300),
-    'grandchild 300 is descendant',
-  );
-  _check(!snapBefore.descendantPids.contains(999), '999 is not descendant');
-  _check(snapBefore.descendantTicks == 140, 'descendantTicks = 100 + 40');
-  _check(snapBefore.totalTicks == 515, 'totalTicks = 375 + 140');
-
-  // After run:
-  // Server ran 50 ticks, reaped grandchild 300 (cutime increased by 40),
-  // Worker 200 ran 40 ticks, grandchild 300 vanished.
+void _testVanishedDescendantDelta() {
+  final snapBefore = _buildInitialServerSnapshot();
   final procsAfter = <int, ProcStat>{
     100: const ProcStat(
       pid: 100,
       ppid: 1,
-      utime: 230,
-      stime: 120,
-      cutime: 90,
-      cstime: 25,
+      utime: 255,
+      stime: 130,
+      cutime: 80,
+      cstime: 35,
       starttime: 1000,
     ),
     200: const ProcStat(
       pid: 200,
       ppid: 100,
-      utime: 110,
-      stime: 30,
+      utime: 120,
+      stime: 45,
       cutime: 0,
       cstime: 0,
       starttime: 1050,
     ),
-    // 300 vanished
   };
 
-  final readerAfter = FakeProcReader(procsAfter, clockTicksPerSecond: 100);
+  final readerAfter = FakeProcReader(procsAfter, clockTicksPerSecond: 250);
   final snapAfter = takeServerTreeSnapshot(readerAfter, 100);
 
   _check(!snapAfter.descendantPids.contains(300), '300 vanished cleanly');
-  _check(snapAfter.serverTicks == 465, 'serverTicks after = 230+120+90+25');
-  _check(snapAfter.descendantTicks == 140, 'worker 200 ticks after = 110+30');
-  _check(snapAfter.totalTicks == 605, 'totalTicks after = 465 + 140');
+  _check(snapAfter.totalTicks == 665, 'totalTicks after = 500 + 165');
 
   final deltaCpu = computeWarmServerCpuDelta(
     before: snapBefore,
     after: snapAfter,
-    clockTicksPerSecond: 100,
+    clockTicksPerSecond: readerAfter.clockTicksPerSecond,
   );
-  // (605 - 515) / 100 = 0.90 seconds
   _check(
-    (deltaCpu - 0.90).abs() < 1e-4,
-    'deltaCpu matches expected 0.90s, got $deltaCpu',
+    (deltaCpu - 0.60).abs() < 1e-6,
+    'deltaCpu matches 0.60s at 250 Hz, got $deltaCpu',
   );
 }
 
 void _testFailClosedCases() {
-  // Case 1: Server PID missing
   final emptyReader = FakeProcReader(const {});
-  var missingCaught = false;
-  try {
-    takeServerTreeSnapshot(emptyReader, 100);
-  } on StateError catch (_) {
-    missingCaught = true;
-  }
-  _check(missingCaught, 'Fails closed when server PID is missing');
+  _expectStateError(
+    () => takeServerTreeSnapshot(emptyReader, 100),
+    'Fails closed when server PID is missing or vanished',
+  );
 
-  // Case 2: Starttime mismatch (server restarted under same PID)
-  final snapBefore = const ServerTreeSnapshot(
+  const snapBefore = ServerTreeSnapshot(
     serverPid: 100,
     serverStarttime: 1000,
     serverTicks: 200,
     descendantPids: {},
     descendantTicks: 0,
   );
-  final snapAfter = const ServerTreeSnapshot(
+  const snapRestarted = ServerTreeSnapshot(
     serverPid: 100,
-    serverStarttime: 2000, // changed!
-    serverTicks: 50,
+    serverStarttime: 2000,
+    serverTicks: 250,
     descendantPids: {},
     descendantTicks: 0,
   );
-
-  var mismatchCaught = false;
-  try {
-    computeWarmServerCpuDelta(
+  _expectStateError(
+    () => computeWarmServerCpuDelta(
       before: snapBefore,
-      after: snapAfter,
+      after: snapRestarted,
       clockTicksPerSecond: 100,
-    );
-  } on StateError catch (_) {
-    mismatchCaught = true;
-  }
-  _check(mismatchCaught, 'Fails closed on server starttime mismatch');
+    ),
+    'Fails closed on server starttime mismatch',
+  );
+
+  const snapDiffPid = ServerTreeSnapshot(
+    serverPid: 101,
+    serverStarttime: 1000,
+    serverTicks: 250,
+    descendantPids: {},
+    descendantTicks: 0,
+  );
+  _expectStateError(
+    () => computeWarmServerCpuDelta(
+      before: snapBefore,
+      after: snapDiffPid,
+      clockTicksPerSecond: 100,
+    ),
+    'Fails closed on server PID mismatch',
+  );
+
+  const snapNegative = ServerTreeSnapshot(
+    serverPid: 100,
+    serverStarttime: 1000,
+    serverTicks: 150,
+    descendantPids: {},
+    descendantTicks: 0,
+  );
+  _expectStateError(
+    () => computeWarmServerCpuDelta(
+      before: snapBefore,
+      after: snapNegative,
+      clockTicksPerSecond: 100,
+    ),
+    'Fails closed on negative tick delta',
+  );
 }
 
 void main() {
   _testParseProcStat();
-  _testServerTreeSnapshotAndDelta();
+  _testVanishedDescendantDelta();
   _testFailClosedCases();
   stdout.writeln('All proc tests passed.');
 }
