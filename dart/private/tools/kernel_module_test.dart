@@ -18,6 +18,8 @@ import 'dill_reader.dart'
     show dillCanonicalRoots, dillLibraryReferences, dillSourceUris;
 import 'kernel_link.dart'
     show KernelLinkCache, decodeKernelLinkWorkRequestInputs, linkOne;
+import 'worker_test_encode.dart'
+    show encodeInputForTest, encodeWorkRequestForTest;
 import 'kernel_module.dart'
     show
         KernelModuleCache,
@@ -6232,7 +6234,7 @@ void main(List<String> args) {
   test('KernelLinkCache enforces byte bounds across all maps, evicts globally by LRU, and unpins WorkRequest buffers', () {
     // Encode a WorkRequest protobuf payload inside a larger 64 KB buffer so
     // any sublistView slice would pin the 64 KB buffer unless copied.
-    final rawReq = _encodeWorkRequestForTest(
+    final rawReq = encodeWorkRequestForTest(
       arguments: ['out.dill', 'mod_a'],
       inputs: {
         'mod_a/0.dill': Uint8List.fromList([1, 2, 3, 4]),
@@ -6583,7 +6585,7 @@ void main(List<String> args) {
 
   test('KernelModuleCache enforces byte bounds, detects same-(size, mtime) mutations when digests are absent, and unpins WorkRequest inputs', () async {
     // Verify decodeKernelModuleWorkRequestInputs unpins slices from a larger frame buffer.
-    final rawReq = _encodeWorkRequestForTest(
+    final rawReq = encodeWorkRequestForTest(
       arguments: ['--output', 'out'],
       inputs: {
         'dep.koutline/index.json': Uint8List.fromList([1, 2, 3, 4]),
@@ -7727,30 +7729,8 @@ class _InputRecordingCompiler implements ModuleCompiler {
   Future<void> close() async {}
 }
 
-Uint8List _encodeVarintForTest(int value) {
-  final out = BytesBuilder();
-  var v = value;
-  while (v >= 0x80) {
-    out.addByte((v & 0x7f) | 0x80);
-    v >>= 7;
-  }
-  out.addByte(v);
-  return out.toBytes();
-}
-
-Uint8List _encodeInputForTest(String path, Uint8List digest) {
-  final out = BytesBuilder();
-  final pathBytes = utf8.encode(path);
-  out.add(_encodeVarintForTest((1 << 3) | 2));
-  out.add(_encodeVarintForTest(pathBytes.length));
-  out.add(pathBytes);
-  if (digest.isNotEmpty) {
-    out.add(_encodeVarintForTest((2 << 3) | 2));
-    out.add(_encodeVarintForTest(digest.length));
-    out.add(digest);
-  }
-  return out.toBytes();
-}
+Uint8List _encodeInputForTest(String path, Uint8List digest) =>
+    encodeInputForTest(path, digest);
 
 ({String path, Uint8List digest}) _decodeInputForTest(Uint8List bytes) {
   var pos = 0;
@@ -7785,26 +7765,6 @@ Uint8List _encodeInputForTest(String path, Uint8List digest) {
     }
   }
   return (path: path, digest: digest);
-}
-
-Uint8List _encodeWorkRequestForTest({
-  required List<String> arguments,
-  required Map<String, Uint8List> inputs,
-}) {
-  final out = BytesBuilder();
-  for (final arg in arguments) {
-    final argBytes = utf8.encode(arg);
-    out.add(_encodeVarintForTest((1 << 3) | 2));
-    out.add(_encodeVarintForTest(argBytes.length));
-    out.add(argBytes);
-  }
-  for (final entry in inputs.entries) {
-    final inputMsg = _encodeInputForTest(entry.key, entry.value);
-    out.add(_encodeVarintForTest((2 << 3) | 2));
-    out.add(_encodeVarintForTest(inputMsg.length));
-    out.add(inputMsg);
-  }
-  return out.toBytes();
 }
 
 Uint8List _buildMinimalDillWithSourceAndMetadata({required int srcLen}) {

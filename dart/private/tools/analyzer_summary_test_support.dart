@@ -1,13 +1,26 @@
-// Fakes and wire encoders shared by `analyzer_summary_test.dart`.
-import 'dart:convert';
+// Fakes and summary-cache / tear-down test helpers for `analyzer_summary_test`.
+import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:analyzer/file_system/file_system.dart' as fs;
 import 'package:analyzer/file_system/physical_file_system.dart';
 // ignore: implementation_imports
 import 'package:analyzer/src/dart/analysis/analysis_context_collection.dart'
     show AnalysisContextCollectionImpl;
 import 'package:path/path.dart' as p;
+import 'package:test/test.dart';
+
+import 'analyzer_summary.dart'
+    show
+        SummaryByteCache,
+        SummaryCachingResourceProvider,
+        decodeAnalyzerWorkRequestInputs,
+        disposeContextCollection,
+        disposedContextCollectionsCount,
+        onContextCollectionDisposed,
+        runSingleRequest;
+import 'worker_test_encode.dart' show encodeWorkRequestForTest;
+
+export 'worker_test_encode.dart' show encodeWorkRequestForTest;
 
 /// A collection whose tear-down raises a trappable failure.
 final class ThrowingCollection extends AnalysisContextCollectionImpl {
@@ -29,233 +42,200 @@ final class ErroringCollection extends AnalysisContextCollectionImpl {
   }
 }
 
-/// Recording wrapper around [PhysicalResourceProvider.INSTANCE] to verify that
-/// blocked ancestor probes never reach the underlying filesystem.
-final class RecordingResourceProvider implements fs.ResourceProvider {
-  RecordingResourceProvider(this._delegate, {p.Context? pathContext})
-    : _pathContext = pathContext;
-
-  final fs.ResourceProvider _delegate;
-  final p.Context? _pathContext;
-  final List<String> checkedPaths = <String>[];
-
-  @override
-  p.Context get pathContext => _pathContext ?? _delegate.pathContext;
-
-  @override
-  fs.File getFile(String path) => _RecordingFile(this, _delegate.getFile(path));
-
-  @override
-  fs.Folder getFolder(String path) =>
-      _RecordingFolder(this, _delegate.getFolder(path));
-
-  @override
-  fs.Link getLink(String path) => _delegate.getLink(path);
-
-  @override
-  fs.Resource getResource(String path) {
-    final r = _delegate.getResource(path);
-    if (r is fs.File) return _RecordingFile(this, r);
-    if (r is fs.Folder) return _RecordingFolder(this, r);
-    return r;
-  }
-
-  @override
-  fs.Folder? getStateLocation(String pluginId) =>
-      _delegate.getStateLocation(pluginId);
+/// Registers the `SummaryByteCache` unit test group.
+void defineSummaryByteCacheTests(Directory Function() currentTmp) {
+  group('SummaryByteCache', () {
+    _defineMutationWithoutDigestTest(currentTmp);
+    _defineBudgetAndEvictionTest(currentTmp);
+  });
 }
 
-final class _RecordingFolder implements fs.Folder {
-  const _RecordingFolder(this._provider, this._delegate);
+void _defineMutationWithoutDigestTest(Directory Function() currentTmp) {
+  test('detects in-place .sum mutation with identical size and mtime when digest is absent', () {
+    final sumFile = File(p.join(currentTmp().path, 'dep.sum'));
+    final fixedTime = DateTime.fromMillisecondsSinceEpoch(1700000000000);
 
-  final RecordingResourceProvider _provider;
-  final fs.Folder _delegate;
+    sumFile.writeAsBytesSync([1, 2, 3, 4, 5, 6, 7, 8]);
+    sumFile.setLastModifiedSync(fixedTime);
 
-  @override
-  bool get exists {
-    _provider.checkedPaths.add(
-      _provider.pathContext.normalize(
-        _provider.pathContext.absolute(_delegate.path),
-      ),
+    final cache = SummaryByteCache();
+    final provider = SummaryCachingResourceProvider(
+      PhysicalResourceProvider.INSTANCE,
+      cache,
     );
-    return _delegate.exists;
-  }
 
-  @override
-  bool get isRoot => _delegate.isRoot;
+    // Request 1 with no digest in WorkRequest.inputs.
+    cache.beginRequest(const {});
+    expect(provider.getFile(sumFile.path).readAsBytesSync(), [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+    ]);
 
-  @override
-  fs.Folder get parent => _RecordingFolder(_provider, _delegate.parent);
+    // Mutate `dep.sum` in-place to different bytes of the exact same length
+    // and restore the exact same modification timestamp.
+    sumFile.writeAsBytesSync([8, 7, 6, 5, 4, 3, 2, 1]);
+    sumFile.setLastModifiedSync(fixedTime);
+    expect(sumFile.statSync().size, 8);
+    expect(sumFile.statSync().modified, fixedTime);
 
-  @override
-  String get path => _delegate.path;
-
-  @override
-  fs.ResourceProvider get provider => _provider;
-
-  @override
-  String get shortName => _delegate.shortName;
-
-  @override
-  String canonicalizePath(String relPath) => _provider.pathContext.normalize(
-    _provider.pathContext.join(path, relPath),
-  );
-
-  @override
-  bool contains(String path) => _delegate.contains(path);
-
-  @override
-  fs.Folder copyTo(fs.Folder parentFolder) =>
-      _RecordingFolder(_provider, _delegate.copyTo(parentFolder));
-
-  @override
-  void create() => _delegate.create();
-
-  @override
-  void delete() => _delegate.delete();
-
-  @override
-  fs.Resource getChild(String relPath) =>
-      _provider.getResource(canonicalizePath(relPath));
-
-  @override
-  fs.File getChildAssumingFile(String relPath) => getFile(relPath);
-
-  @override
-  fs.Folder getChildAssumingFolder(String relPath) => getFolder(relPath);
-
-  @override
-  fs.File getFile(String relPath) =>
-      _provider.getFile(canonicalizePath(relPath));
-
-  @override
-  fs.Folder getFolder(String relPath) =>
-      _provider.getFolder(canonicalizePath(relPath));
-
-  @override
-  List<fs.Resource> getChildren() => _delegate.getChildren();
-
-  @override
-  bool isOrContains(String path) => _delegate.isOrContains(path);
-
-  @override
-  fs.Resource resolveSymbolicLinksSync() =>
-      _delegate.resolveSymbolicLinksSync();
-
-  @override
-  Uri toUri() => _delegate.toUri();
-
-  @override
-  fs.ResourceWatcher watch() => _delegate.watch();
+    // Request 2 with no digest in WorkRequest.inputs must NOT return stale bytes.
+    cache.beginRequest(const {});
+    expect(provider.getFile(sumFile.path).readAsBytesSync(), [
+      8,
+      7,
+      6,
+      5,
+      4,
+      3,
+      2,
+      1,
+    ]);
+  });
 }
 
-final class _RecordingFile implements fs.File {
-  const _RecordingFile(this._provider, this._delegate);
+void _defineBudgetAndEvictionTest(Directory Function() currentTmp) {
+  test('scales 256 MB total budget across worker instances, enforces strict byte bounds, and unpins WorkRequest buffers', () {
+    final defaultCache = SummaryByteCache();
+    expect(SummaryByteCache.defaultTotalBudgetBytes, 256 * 1024 * 1024);
+    expect(SummaryByteCache.defaultWorkerInstances, 4);
+    expect(defaultCache.maxCacheBytes, 64 * 1024 * 1024);
 
-  final RecordingResourceProvider _provider;
-  final fs.File _delegate;
+    final customScaled = SummaryByteCache(
+      totalBudgetBytes: 256 * 1024 * 1024,
+      workerInstances: 8,
+    );
+    expect(customScaled.maxCacheBytes, 32 * 1024 * 1024);
 
-  @override
-  bool get exists {
-    _provider.checkedPaths.add(p.normalize(p.absolute(_delegate.path)));
-    return _delegate.exists;
-  }
+    final rawReq = encodeWorkRequestForTest(
+      arguments: ['summarize'],
+      inputs: {
+        'dep.sum': Uint8List.fromList([1, 2, 3, 4]),
+      },
+    );
+    final bigFrame = Uint8List(64 * 1024)
+      ..setRange(100, 100 + rawReq.length, rawReq);
+    final slice = Uint8List.sublistView(bigFrame, 100, 100 + rawReq.length);
+    expect(slice.buffer.lengthInBytes, 64 * 1024);
 
-  @override
-  int get lengthSync => _delegate.lengthSync;
+    final decodedInputs = decodeAnalyzerWorkRequestInputs(slice);
+    expect(
+      decodedInputs['dep.sum']!.buffer.lengthInBytes,
+      decodedInputs['dep.sum']!.lengthInBytes,
+      reason: 'decoded digest must not pin the 64 KB WorkRequest buffer',
+    );
 
-  @override
-  int get modificationStamp => _delegate.modificationStamp;
+    final boundedCache = SummaryByteCache(maxCacheBytes: 100);
+    final provider = SummaryCachingResourceProvider(
+      PhysicalResourceProvider.INSTANCE,
+      boundedCache,
+    );
 
-  @override
-  fs.Folder get parent => _RecordingFolder(_provider, _delegate.parent);
+    final tmpPath = currentTmp().path;
+    final s1 = File(p.join(tmpPath, 's1.sum'))
+      ..writeAsBytesSync(List<int>.filled(40, 1));
+    final s2 = File(p.join(tmpPath, 's2.sum'))
+      ..writeAsBytesSync(List<int>.filled(40, 2));
+    final s3 = File(p.join(tmpPath, 's3.sum'))
+      ..writeAsBytesSync(List<int>.filled(40, 3));
+    final oversized = File(p.join(tmpPath, 'oversized.sum'))
+      ..writeAsBytesSync(List<int>.filled(120, 9));
 
-  @override
-  String get path => _delegate.path;
+    boundedCache.beginRequest({
+      s1.path: Uint8List.fromList([1]),
+      s2.path: Uint8List.fromList([2]),
+      s3.path: Uint8List.fromList([3]),
+      oversized.path: Uint8List.fromList([9]),
+    });
 
-  @override
-  fs.ResourceProvider get provider => _provider;
+    expect(provider.getFile(s1.path).readAsBytesSync().length, 40);
+    expect(provider.getFile(s2.path).readAsBytesSync().length, 40);
+    expect(boundedCache.totalBytes, 80);
+    expect(boundedCache.entryCount, 2);
 
-  @override
-  String get shortName => _delegate.shortName;
+    expect(provider.getFile(oversized.path).readAsBytesSync().length, 120);
+    expect(boundedCache.totalBytes, 80);
+    expect(boundedCache.entryCount, 2);
 
-  @override
-  fs.File copyTo(fs.Folder parentFolder) =>
-      _RecordingFile(_provider, _delegate.copyTo(parentFolder));
-
-  @override
-  void delete() => _delegate.delete();
-
-  @override
-  bool isOrContains(String path) => _delegate.isOrContains(path);
-
-  @override
-  Uint8List readAsBytesSync() => _delegate.readAsBytesSync();
-
-  @override
-  String readAsStringSync() => _delegate.readAsStringSync();
-
-  @override
-  fs.File renameSync(String newPath) =>
-      _RecordingFile(_provider, _delegate.renameSync(newPath));
-
-  @override
-  fs.Resource resolveSymbolicLinksSync() =>
-      _delegate.resolveSymbolicLinksSync();
-
-  @override
-  Uri toUri() => _delegate.toUri();
-
-  @override
-  fs.ResourceWatcher watch() => _delegate.watch();
-
-  @override
-  void writeAsBytesSync(List<int> bytes) => _delegate.writeAsBytesSync(bytes);
-
-  @override
-  void writeAsStringSync(String content) =>
-      _delegate.writeAsStringSync(content);
+    expect(provider.getFile(s1.path).readAsBytesSync().first, 1);
+    expect(provider.getFile(s3.path).readAsBytesSync().first, 3);
+    expect(boundedCache.totalBytes, 80);
+    expect(boundedCache.entryCount, 2);
+  });
 }
 
-/// Encodes a protobuf varint for worker-protocol test frames.
-Uint8List encodeVarintForTest(int value) {
-  final out = BytesBuilder();
-  var v = value;
-  while (v >= 0x80) {
-    out.addByte((v & 0x7f) | 0x80);
-    v >>= 7;
-  }
-  out.addByte(v);
-  return out.toBytes();
+/// Registers tear-down failure handling tests for `disposeContextCollection`.
+void defineDisposeTearDownTests() {
+  group('disposeContextCollection tear-down failures', () {
+    test('still releases a collection whose dispose throws', () async {
+      final beforeCount = disposedContextCollectionsCount;
+      final released = <AnalysisContextCollectionImpl>[];
+      final prevHook = onContextCollectionDisposed;
+      onContextCollectionDisposed = released.add;
+      try {
+        await disposeContextCollection(ThrowingCollection());
+        expect(disposedContextCollectionsCount, beforeCount + 1);
+        expect(released, hasLength(1));
+      } finally {
+        onContextCollectionDisposed = prevHook;
+      }
+    });
+
+    test('lets a programming error from dispose propagate', () {
+      expect(disposeContextCollection(ErroringCollection()), throwsStateError);
+    });
+  });
 }
 
-/// Encodes a Bazel `WorkRequest` protobuf frame for worker tests.
-Uint8List encodeWorkRequestForTest({
-  required List<String> arguments,
-  required Map<String, Uint8List> inputs,
-}) {
-  final out = BytesBuilder();
-  for (final arg in arguments) {
-    final argBytes = utf8.encode(arg);
-    out.add(encodeVarintForTest((1 << 3) | 2));
-    out.add(encodeVarintForTest(argBytes.length));
-    out.add(argBytes);
-  }
-  for (final entry in inputs.entries) {
-    final inputBuf = BytesBuilder();
-    final pathBytes = utf8.encode(entry.key);
-    inputBuf.add(encodeVarintForTest((1 << 3) | 2));
-    inputBuf.add(encodeVarintForTest(pathBytes.length));
-    inputBuf.add(pathBytes);
-    if (entry.value.isNotEmpty) {
-      inputBuf.add(encodeVarintForTest((2 << 3) | 2));
-      inputBuf.add(encodeVarintForTest(entry.value.length));
-      inputBuf.add(entry.value);
-    }
-    final inputBytes = inputBuf.toBytes();
-    out.add(encodeVarintForTest((2 << 3) | 2));
-    out.add(encodeVarintForTest(inputBytes.length));
-    out.add(inputBytes);
-  }
-  return out.toBytes();
+/// Registers the staged triple-quoted directive guard test on `analyze`.
+void defineSummaryTripleQuotedImportGuardTest(Directory Function() currentTmp) {
+  test('refuses a triple-quoted import before analyzing', () async {
+    // A multi-line first line the guard keeps but the front end drops
+    // would read an undeclared host file through the analyzer's working
+    // directory. The staged check refuses it before any SDK or summary is
+    // read, so this needs no summaries.
+    final tmpPath = currentTmp().path;
+    final stageAnalyze = Directory(p.join(tmpPath, 'tq.analyze'))
+      ..createSync(recursive: true);
+    final stagedMain =
+        File(p.join(stageAnalyze.path, 'src', 'pkg', 'main.dart'))
+          ..parent.createSync(recursive: true)
+          ..writeAsStringSync(
+            "import '''   \n/secret/s.dart''';\n"
+            'void main() => print(hostSecret);\n',
+          );
+    File(p.join(stageAnalyze.path, 'src', 'pkg', 'ok.dart'))
+        .writeAsStringSync('const ok = 1;\n');
+    final stamp = File(p.join(tmpPath, 'tq.analyzed'));
+    final outSink = StringBuffer();
+    final errSink = StringBuffer();
+    expect(
+      await runSingleRequest(
+        [
+          'analyze',
+          '--project',
+          stageAnalyze.path,
+          '--source',
+          stagedMain.path,
+          '--stamp',
+          stamp.path,
+        ],
+        outSink: outSink,
+        errSink: errSink,
+        resourceProvider: PhysicalResourceProvider.INSTANCE,
+      ),
+      1,
+      reason: '${outSink.toString()}\n${errSink.toString()}',
+    );
+    expect(stamp.existsSync(), isFalse);
+    expect(
+      errSink.toString(),
+      contains("import '   \n/secret/s.dart' is not a declared input"),
+    );
+  });
 }

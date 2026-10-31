@@ -13,10 +13,12 @@ passed. The SDK summary is `analyzer_sdk_summary.sum`, and a dependency's is
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
-load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart/private:dart_analyzer_summary.bzl", "dart_analyzer_summary")
-
-_FLAG = str(Label("//dart:analyzer_summaries"))
+load(
+    ":summaries_flag_test_lib.bzl",
+    "effective_summaries_expected",
+    "summaries_flag_test_kwargs",
+)
 
 def _is_staged_root_uri(line):
     """Returns whether a `rootUri` line resolves inside a digest-named stage root."""
@@ -32,6 +34,7 @@ def _is_staged_root_uri(line):
     return True
 
 def _has_input(actions, suffix):
+    """Returns whether any `DartCodegen` action has an input ending in `suffix`."""
     for action in actions:
         if action.mnemonic != "DartCodegen":
             continue
@@ -41,12 +44,11 @@ def _has_input(actions, suffix):
     return False
 
 def _codegen_inputs_test_impl(ctx):
+    """Checks summary inputs and staged `rootUri` entries on `DartCodegen`."""
     env = analysistest.begin(ctx)
     actions = analysistest.target_actions(env)
     target = analysistest.target_under_test(env)
-    expected = (
-        ctx.attr.expect_summaries and ctx.attr._summaries_flag[BuildSettingInfo].value if ctx.attr.use_flag else ctx.attr.expect_summaries
-    )
+    expected = effective_summaries_expected(ctx)
     asserts.equals(
         env,
         expected,
@@ -68,34 +70,19 @@ def _codegen_inputs_test_impl(ctx):
         for raw_line in action.content.splitlines():
             line = raw_line.strip()
             if '"rootUri":' in line:
-                asserts.true(
-                    env,
-                    _is_staged_root_uri(line),
-                    "%s: synth_package_config rootUri must resolve inside a <name>.pkg_roots.<digest> stage, got: %s" % (target.label, line),
-                )
+                msg = (
+                    "%s: synth_package_config rootUri must resolve inside a " +
+                    "<name>.pkg_roots.<digest> stage, got: %s"
+                ) % (target.label, line)
+                asserts.true(env, _is_staged_root_uri(line), msg)
     files = target[DefaultInfo].files
     return analysistest.end(env) + [OutputGroupInfo(_validation = files, dart_analyze = files)]
 
 def _codegen_inputs_test(flag, use_flag = False):
-    """Returns a codegen-inputs test whose `//dart:analyzer_summaries` is `flag`.
-
-    With `use_flag` the test expects summaries only when the target's own
-    expectation and the flag's effective value both allow them, so a
-    command-line override of the default is tested too. Without it the test
-    pins the value `config_settings` sets.
-    """
+    """Returns a codegen-inputs test whose `//dart:analyzer_summaries` is `flag`, or the default for None."""
     return analysistest.make(
         _codegen_inputs_test_impl,
-        attrs = {
-            "expect_summaries": attr.bool(mandatory = True),
-            "use_flag": attr.bool(default = use_flag),
-            "_summaries_flag": attr.label(
-                default = Label("//dart:analyzer_summaries"),
-                providers = [BuildSettingInfo],
-            ),
-        },
-        config_settings = {} if flag == None else {_FLAG: flag},
-        extra_target_under_test_aspects = [dart_analyzer_summary],
+        **summaries_flag_test_kwargs(flag, dart_analyzer_summary, use_flag)
     )
 
 # A shim generator with the flag at its default: it takes the summaries. When a
