@@ -1,4 +1,5 @@
-load("@rules_dart//dart:defs.bzl", "dart_analysis_options", "dart_library")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_options")
+load(":rules.bzl", "dart_library")
 
 # The baseline JSON is referenced from the workspace's `//:analysis_config`.
 exports_files(["baseline.json"])

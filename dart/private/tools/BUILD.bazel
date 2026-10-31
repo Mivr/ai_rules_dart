@@ -5,7 +5,7 @@ dart_binary(
     code_assets_from_deps = False,
     compile_mode = "exe",
     main = "noop.dart",
-    visibility = ["//dart:__subpackages__"],
+    visibility = ["//visibility:public"],
 )
 
 exports_files(
