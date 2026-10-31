@@ -4,7 +4,6 @@ dart_library(
     name = "perf",
     package_name = "perf",
     srcs = glob(["lib/**/*.dart"]),
-    language_version = "3.13",
     visibility = ["//visibility:public"],
     deps = [
         "@rules_dart//dart/runfiles",

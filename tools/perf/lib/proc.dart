@@ -1,7 +1,25 @@
 /// Process statistics and warm-server CPU delta tracking via Linux /proc.
 library;
 
+import 'dart:ffi';
 import 'dart:io';
+
+typedef _SysconfC = Long Function(Int32 name);
+typedef _SysconfDart = int Function(int name);
+
+int _detectClockTicksPerSecond() {
+  if (!Platform.isLinux) return 100;
+  try {
+    final sysconf = DynamicLibrary.process()
+        .lookupFunction<_SysconfC, _SysconfDart>('sysconf');
+    // _SC_CLK_TCK is 2 on Linux (glibc / musl).
+    final ticks = sysconf(2);
+    if (ticks > 0) return ticks;
+  } on ArgumentError catch (e) {
+    stderr.writeln('sysconf(_SC_CLK_TCK) lookup failed: $e');
+  }
+  return 100;
+}
 
 /// Parsed process stat fields from `/proc/<pid>/stat`.
 final class ProcStat {
@@ -89,17 +107,22 @@ abstract interface class ProcReader {
   /// Returns a snapshot of running processes mapped by PID.
   Map<int, ProcStat> readAllProcesses();
 
-  /// System clock ticks per second (typically 100 on Linux).
+  /// System clock ticks per second (`SC_CLK_TCK`).
   int get clockTicksPerSecond;
 }
 
 /// Linux `/proc` reader implementation.
 final class LinuxProcReader implements ProcReader {
   /// Creates a Linux `/proc` reader.
-  const LinuxProcReader({this.clockTicksPerSecond = 100});
+  const LinuxProcReader({int? clockTicksPerSecond})
+    : _clockTicksOverride = clockTicksPerSecond;
+
+  final int? _clockTicksOverride;
+
+  static final int _detectedClockTicks = _detectClockTicksPerSecond();
 
   @override
-  final int clockTicksPerSecond;
+  int get clockTicksPerSecond => _clockTicksOverride ?? _detectedClockTicks;
 
   @override
   Map<int, ProcStat> readAllProcesses() {
@@ -114,26 +137,24 @@ final class LinuxProcReader implements ProcReader {
         final name = entry.uri.pathSegments.reversed.skip(1).firstOrNull ?? '';
         final pid = int.tryParse(name);
         if (pid == null) continue;
-
-        final statFile = File('${entry.path}/stat');
-        try {
-          if (statFile.existsSync()) {
-            final content = statFile.readAsStringSync();
-            final stat = parseProcStat(content);
-            if (stat != null) result[pid] = stat;
-          }
-        } on FileSystemException catch (e) {
-          stderr.writeln('Proc stat read skipped: $e');
-        } on Exception catch (e) {
-          stderr.writeln('Proc stat error: $e');
-        }
+        final stat = _readSingleStat('${entry.path}/stat');
+        if (stat != null) result[pid] = stat;
       }
     } on FileSystemException catch (e) {
       stderr.writeln('Proc dir list error: $e');
-    } on Exception catch (e) {
-      stderr.writeln('Proc traversal error: $e');
     }
     return result;
+  }
+
+  ProcStat? _readSingleStat(String statPath) {
+    try {
+      final statFile = File(statPath);
+      if (!statFile.existsSync()) return null;
+      return parseProcStat(statFile.readAsStringSync());
+    } on FileSystemException catch (e) {
+      stderr.writeln('Transient /proc stat read skipped ($statPath): $e');
+      return null;
+    }
   }
 }
 
@@ -201,7 +222,7 @@ ServerTreeSnapshot takeServerTreeSnapshot(ProcReader reader, int serverPid) {
     final current = queue.removeLast();
     final children = childrenMap[current] ?? const <int>[];
     for (final child in children) {
-      if (descendants.add(child)) {
+      if (child != serverPid && descendants.add(child)) {
         queue.add(child);
       }
     }
@@ -230,6 +251,13 @@ double computeWarmServerCpuDelta({
   required ServerTreeSnapshot after,
   required int clockTicksPerSecond,
 }) {
+  if (clockTicksPerSecond <= 0) {
+    throw ArgumentError.value(
+      clockTicksPerSecond,
+      'clockTicksPerSecond',
+      'must be positive',
+    );
+  }
   if (before.serverPid != after.serverPid) {
     throw StateError(
       'Server PID mismatch: ${before.serverPid} != ${after.serverPid}',
@@ -243,6 +271,11 @@ double computeWarmServerCpuDelta({
   }
 
   final deltaTicks = after.totalTicks - before.totalTicks;
-  if (deltaTicks < 0) return 0.0;
+  if (deltaTicks < 0) {
+    throw StateError(
+      'Negative server CPU tick delta for PID ${before.serverPid}: '
+      '${before.totalTicks} -> ${after.totalTicks}',
+    );
+  }
   return deltaTicks / clockTicksPerSecond;
 }

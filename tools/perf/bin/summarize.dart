@@ -97,7 +97,9 @@ List<RepeatResult> _loadRepeatResults(String resultsDir) {
       repeatResults.add(RepeatResult.fromJson(decoded));
     } on FormatException catch (e) {
       stderr.writeln('Malformed JSON in repeat file ${file.path}: $e');
-    } on Exception catch (e) {
+    } on TypeError catch (e) {
+      stderr.writeln('Invalid schema in repeat file ${file.path}: $e');
+    } on FileSystemException catch (e) {
       stderr.writeln('Error loading repeat file ${file.path}: $e');
     }
   }
@@ -129,6 +131,8 @@ void main(List<String> args) {
     runner: runner,
   );
 
-  File(parsed.out!).writeAsStringSync(jsonOut);
+  final outFile = File(parsed.out!);
+  outFile.parent.createSync(recursive: true);
+  outFile.writeAsStringSync(jsonOut);
   stdout.writeln('Summary written to ${parsed.out}');
 }

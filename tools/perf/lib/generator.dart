@@ -7,26 +7,41 @@ import 'dart:math';
 /// Parsed module identity from a Bazel MODULE.bazel file.
 final class ModuleIdentity {
   /// Creates a module identity.
-  const ModuleIdentity({required this.moduleName, required this.repoName});
+  const ModuleIdentity({
+    required this.moduleName,
+    required this.repoName,
+    this.dartVersion = '3.13.5',
+  });
 
   /// The Bazel module name.
   final String moduleName;
 
   /// The Bazel repository name (defaults to moduleName).
   final String repoName;
+
+  /// The Dart SDK version from `dart.toolchain(...)` (defaults to 3.13.5).
+  final String dartVersion;
 }
 
 /// Parses `module(name = "...", repo_name = "...")` from MODULE.bazel text.
 ModuleIdentity parseModuleHeader(String content) {
+  final sdkMatch = RegExp(
+    r'''dart\.toolchain\s*\([^)]*dart_version\s*=\s*["']([^"']+)["']''',
+    multiLine: true,
+    dotAll: true,
+  ).firstMatch(content);
+  final dartVersion = sdkMatch?.group(1) ?? '3.13.5';
+
   final match = RegExp(
     r'module\s*\(([^)]*)\)',
     multiLine: true,
     dotAll: true,
   ).firstMatch(content);
   if (match == null) {
-    return const ModuleIdentity(
+    return ModuleIdentity(
       moduleName: 'rules_dart',
       repoName: 'rules_dart',
+      dartVersion: dartVersion,
     );
   }
 
@@ -38,7 +53,11 @@ ModuleIdentity parseModuleHeader(String content) {
   final moduleName = nameMatch?.group(1) ?? 'rules_dart';
   final repoName = repoMatch?.group(1) ?? moduleName;
 
-  return ModuleIdentity(moduleName: moduleName, repoName: repoName);
+  return ModuleIdentity(
+    moduleName: moduleName,
+    repoName: repoName,
+    dartVersion: dartVersion,
+  );
 }
 
 /// Configuration options for workspace generation.
@@ -142,12 +161,32 @@ final class SrcFileConfig {
       (packageConfig.layer == 0 && fileIndex == 0) ||
       (packageConfig.isLeaf && fileIndex == 0);
 
-  /// Hook return value.
+  /// Hook method name when [hasHook] is true.
+  String get hookName => packageConfig.layer == 0 ? 'bodyHook' : 'leafTestHook';
+
+  /// Hook initial return value.
   int get hookVal => packageConfig.layer == 0 ? 1 : 10;
+}
+
+void _validateOptions(GeneratorOptions options) {
+  if (options.targetLoc <= 0) {
+    throw ArgumentError.value(
+      options.targetLoc,
+      'targetLoc',
+      'must be positive',
+    );
+  }
+  if (options.layers < 2) {
+    throw ArgumentError.value(options.layers, 'layers', 'must be at least 2');
+  }
+  if (options.fanout < 1) {
+    throw ArgumentError.value(options.fanout, 'fanout', 'must be positive');
+  }
 }
 
 /// Generates a layered benchmark workspace.
 void generateWorkspace(GeneratorOptions options) {
+  _validateOptions(options);
   final outDir = Directory(options.outputPath);
   if (outDir.existsSync()) outDir.deleteSync(recursive: true);
   outDir.createSync(recursive: true);
@@ -168,6 +207,7 @@ void _writeModuleBazel(GeneratorOptions options, ModuleIdentity identity) {
   final repoArg = identity.repoName != identity.moduleName
       ? ', repo_name = "${identity.repoName}"'
       : '';
+  final normRulesPath = options.rulesDartPath.replaceAll(r'\', '/');
 
   final content =
       '''
@@ -176,11 +216,11 @@ module(name = "bench")
 bazel_dep(name = "${identity.moduleName}", version = "0.0.0"$repoArg)
 local_path_override(
     module_name = "${identity.moduleName}",
-    path = "${options.rulesDartPath}",
+    path = "$normRulesPath",
 )
 
 dart = use_extension("@${identity.repoName}//dart:extensions.bzl", "dart")
-dart.toolchain(dart_version = "3.13.5")
+dart.toolchain(dart_version = "${identity.dartVersion}")
 use_repo(dart, "dart_toolchains")
 register_toolchains("@dart_toolchains//:all")
 
@@ -204,6 +244,10 @@ void _copyPristineFiles(GeneratorOptions options) {
   final yaml = File('${options.rulesDartPath}/e2e/dart_test_pkg/pubspec.yaml');
   if (yaml.existsSync()) {
     yaml.copySync('${options.outputPath}/pubspec.yaml');
+  } else if (lock.existsSync()) {
+    File('${options.outputPath}/pubspec.yaml').writeAsStringSync(
+      'name: bench\nenvironment:\n  sdk: ^3.0.0\ndev_dependencies:\n  test: any\n',
+    );
   }
 
   final bazelver = File('${options.rulesDartPath}/.bazelversion');
@@ -239,6 +283,7 @@ Map<int, List<int>> _computePackageDeps(int layers, int fanout, Random rng) {
           final sec = rng.nextInt(maxLowerPkg);
           if (!deps.contains(sec)) deps.add(sec);
         }
+        deps.sort();
         packageDeps[pkgId] = deps;
       }
     }
@@ -252,7 +297,7 @@ int _computeBoilerplateLines({
   required int srcCount,
   required Map<int, List<int>> packageDeps,
 }) {
-  final appLines = 2 * fanout + 5;
+  final appLines = 2 * fanout + 7;
   final leafTestLines = 8 * fanout;
   var entryLinesTotal = 0;
   for (var p = 0; p < totalPackages; p++) {
@@ -303,7 +348,7 @@ void _generatePackagesAndApp(
         final targetLines = basePerFile + (fileCounter < remPerFile ? 1 : 0);
         fileCounter++;
         final minLines = (l == 0 && s == 0) || (config.isLeaf && s == 0)
-            ? 18
+            ? 19
             : 13;
         _writeSrcFile(
           SrcFileConfig(
@@ -332,6 +377,7 @@ void _writePackageBuildFile(PackageConfig config) {
       .join('\n');
   final testTarget = config.isLeaf
       ? '''
+
 dart_test(
     name = "pkg${config.pkgId}_test",
     size = "small",
@@ -344,6 +390,10 @@ dart_test(
 '''
       : '';
 
+  final depsBlock = config.deps.isEmpty
+      ? '    deps = [],'
+      : '    deps = [\n$depLabels\n    ],';
+
   final buildContent =
       '''
 load("@${config.identity.repoName}//dart:defs.bzl", "dart_library"${config.isLeaf ? ', "dart_test"' : ''})
@@ -352,45 +402,44 @@ dart_library(
     name = "pkg${config.pkgId}",
     srcs = glob(["lib/**/*.dart"]),
     visibility = ["//visibility:public"],
-    deps = [
-$depLabels
-    ],
+$depsBlock
 )
 $testTarget''';
   File('${pkgDir.path}/BUILD.bazel').writeAsStringSync(buildContent);
 }
 
 void _writePackageEntryFile(PackageConfig config) {
+  final depImports =
+      config.deps.map((d) => "import 'package:pkg$d/pkg$d.dart';").toList()
+        ..sort();
+  final relImports = List.generate(
+    config.srcFilesCount,
+    (i) => "import 'src/f$i.dart';",
+  )..sort();
   final exports = List.generate(
     config.srcFilesCount,
     (i) => "export 'src/f$i.dart';",
-  ).join('\n');
-  final imports = List.generate(
-    config.srcFilesCount,
-    (i) => "import 'src/f$i.dart';",
-  ).join('\n');
+  )..sort();
 
-  final depImports = config.deps
-      .map((d) => "import 'package:pkg$d/pkg$d.dart';")
-      .join('\n');
-  final depSection = config.deps.isNotEmpty ? '$depImports\n\n' : '';
-
+  final depImportBlock = depImports.isNotEmpty
+      ? '${depImports.join('\n')}\n\n'
+      : '';
   final fileCalls = List.generate(
     config.srcFilesCount,
     (i) => '  acc += fn${config.pkgId}x$i(x);',
   ).join('\n');
   final depCalls = config.deps.isEmpty
       ? ''
-      : '${config.deps.map((d) => '  acc += pkg${d}_entry(x);').join('\n')}\n';
+      : '${config.deps.map((d) => '  acc += pkg${d}Entry(x);').join('\n')}\n';
 
   final entryContent =
       '''
-$exports
+$depImportBlock${relImports.join('\n')}
 
-$depSection$imports
+${exports.join('\n')}
 
 /// Entry function for package ${config.pkgId}.
-int pkg${config.pkgId}_entry(int x) {
+int pkg${config.pkgId}Entry(int x) {
   var acc = x;
 $fileCalls
 $depCalls  return acc;
@@ -409,7 +458,7 @@ import 'package:test/test.dart';
 
 void main() {
   test('pkg$pkgId entry test', () {
-    expect(pkg${pkgId}_entry(1), isPositive);
+    expect(pkg${pkgId}Entry(1), isPositive);
   });
 }
 ''';
@@ -427,11 +476,10 @@ void _writeSrcFile(SrcFileConfig config) {
     '  final int value;',
   ];
   if (config.hasHook) {
-    final hookName = config.pkgId == 0 ? 'bodyHook' : 'leafTestHook';
     lines.addAll([
       '',
       '  /// Hook for edit.',
-      '  int $hookName() {',
+      '  int ${config.hookName}() {',
       '    return ${config.hookVal};',
       '  }',
     ]);
@@ -462,12 +510,13 @@ void _writeSrcFile(SrcFileConfig config) {
     lines.add('  // Line filler $fill.');
   }
 
+  final memberExpr = config.hasHook ? '${config.hookName}()' : 'value';
   lines.addAll([
     '}',
     '',
     '/// Function for pkg ${config.pkgId} file ${config.fileIndex}.',
     'int fn${config.pkgId}x${config.fileIndex}(int x) {',
-    '  return const C${config.pkgId}x${config.fileIndex}(0).value + x;',
+    '  return const C${config.pkgId}x${config.fileIndex}(0).$memberExpr + x;',
     '}',
   ]);
 
@@ -504,21 +553,23 @@ $depLabels
   File('${appDir.path}/BUILD.bazel').writeAsStringSync(buildContent);
 
   final binDir = Directory('${appDir.path}/bin')..createSync(recursive: true);
-  final imports = leafPkgIds
-      .map((id) => "import 'package:pkg$id/pkg$id.dart';")
-      .join('\n');
+  final imports =
+      leafPkgIds.map((id) => "import 'package:pkg$id/pkg$id.dart';").toList()
+        ..sort();
   final sumLines = leafPkgIds
-      .map((id) => '  total += pkg${id}_entry(1);')
+      .map((id) => '  total += pkg${id}Entry(1);')
       .join('\n');
 
   final mainContent =
       '''
-$imports
+import 'dart:io';
+
+${imports.join('\n')}
 
 void main() {
   var total = 0;
 $sumLines
-  print('Result: \$total');
+  stdout.writeln('Result: \$total');
 }
 ''';
   File('${binDir.path}/main.dart').writeAsStringSync(mainContent);

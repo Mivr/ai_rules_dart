@@ -43,12 +43,13 @@ void main(List<String> args) {
       tempRoot: tempRoot,
     );
 
-    final jsonStr = jsonEncode(result.toJson());
-    File(out).writeAsStringSync(jsonStr);
+    final outFile = File(out);
+    outFile.parent.createSync(recursive: true);
+    outFile.writeAsStringSync('${jsonEncode(result.toJson())}\n');
     stdout.writeln('Repeat $repeat finished, written to $out');
   } finally {
     try {
-      Directory(tempRoot).deleteSync(recursive: true);
+      forceDeleteDirectorySync(Directory(tempRoot));
     } on FileSystemException catch (e) {
       stderr.writeln('Temp cleanup error: $e');
     } on Exception catch (e) {
