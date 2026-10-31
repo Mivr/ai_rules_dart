@@ -1,8 +1,22 @@
-load("@rules_dart//dart:defs.bzl", "dart_analysis_options")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_binary")
 load(":rules.bzl", "dart_library")
 
 # The baseline JSON is referenced from the workspace's `//:analysis_config`.
 exports_files(["baseline.json"])
+
+# Do-nothing Dart executable backing the test-runnable `dart_library` targets
+# in this package.
+dart_binary(
+    name = "_noop",
+    code_assets_from_deps = False,
+    compile_mode = "exe",
+    main = "@rules_dart//dart/private/tools:noop.dart",
+    tags = [
+        "manual",
+        "no-dart-analyze",
+        "no-dart-format",
+    ],
+)
 
 # The baseline fixture package. Its own options file enables `avoid_print` for
 # every file below, and `baseline.json` gives this package the per-file,
@@ -43,4 +57,13 @@ dart_library(
 dart_library(
     name = "cache_b",
     srcs = ["lib/cache_b.dart"],
+)
+
+# A malformed baseline config (`manual` so wildcard builds skip it): CI builds
+# it directly to verify the error names the config label, the baseline file,
+# and the offending entry.
+dart_analysis_config(
+    name = "bad_baseline_config",
+    baseline = "bad_baseline.json",
+    tags = ["manual"],
 )

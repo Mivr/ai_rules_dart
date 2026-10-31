@@ -129,3 +129,22 @@ config_refused_test(
     message = "is listed twice",
     target_under_test = ":duplicate_config",
 )
+
+filegroup(
+    name = "no_baseline_files",
+    srcs = [],
+    tags = ["manual"],
+)
+
+dart_analysis_config(
+    name = "empty_baseline_config",
+    baseline = ":no_baseline_files",
+    tags = ["manual"],
+)
+
+config_refused_test(
+    name = "empty_baseline_refused_test",
+    size = "small",
+    message = "must produce a single file",
+    target_under_test = ":empty_baseline_config",
+)

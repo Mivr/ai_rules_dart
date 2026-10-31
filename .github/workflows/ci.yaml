@@ -992,19 +992,23 @@ jobs:
       - name: analysis_failure — expect a baselined target to pass in both analysis modes
         working-directory: e2e/analysis_failure
         run: |
-          for flags in "" "--@rules_dart//dart:analyzer_summaries=false"; do
-            bazel test //baseline:baselined_lib $flags
+          for mode in "" "--@rules_dart//dart:analyzer_summaries=false"; do
+            args=()
+            [ -n "$mode" ] && args+=("$mode")
+            bazel test "${args[@]}" //baseline:baselined_lib
           done
           echo "OK: baselined target passed in both analysis modes"
       - name: analysis_failure — expect an over-baseline target to fail in both analysis modes
         working-directory: e2e/analysis_failure
         run: |
-          for flags in "" "--@rules_dart//dart:analyzer_summaries=false"; do
-            if bazel test //baseline:over_baseline_lib $flags 2>/dev/null; then
+          for mode in "" "--@rules_dart//dart:analyzer_summaries=false"; do
+            args=()
+            [ -n "$mode" ] && args+=("$mode")
+            if bazel test "${args[@]}" //baseline:over_baseline_lib 2>/dev/null; then
               echo "ERROR: build should have failed above the baseline ceiling"
               exit 1
             fi
-            out=$(bazel test //baseline:over_baseline_lib $flags 2>&1 || true)
+            out=$(bazel test "${args[@]}" //baseline:over_baseline_lib 2>&1 || true)
             echo "$out" | grep -q "baseline/lib/over_baseline.dart"
             echo "$out" | grep -q "avoid_print"
             echo "$out" | grep -q "observed 3, ceiling 2"
@@ -1013,12 +1017,14 @@ jobs:
       - name: analysis_failure — expect an unkeyed target to fail in both analysis modes
         working-directory: e2e/analysis_failure
         run: |
-          for flags in "" "--@rules_dart//dart:analyzer_summaries=false"; do
-            if bazel test //baseline:unbaselined_lib $flags 2>/dev/null; then
+          for mode in "" "--@rules_dart//dart:analyzer_summaries=false"; do
+            args=()
+            [ -n "$mode" ] && args+=("$mode")
+            if bazel test "${args[@]}" //baseline:unbaselined_lib 2>/dev/null; then
               echo "ERROR: build should have failed on an unkeyed diagnostic"
               exit 1
             fi
-            out=$(bazel test //baseline:unbaselined_lib $flags 2>&1 || true)
+            out=$(bazel test "${args[@]}" //baseline:unbaselined_lib 2>&1 || true)
             echo "$out" | grep -q "baseline/lib/unbaselined.dart"
             echo "$out" | grep -q "avoid_print"
             echo "$out" | grep -q "observed 1, ceiling 0"
@@ -1027,14 +1033,19 @@ jobs:
       - name: analysis_failure — expect one target's baseline entry to leave another's action key alone
         working-directory: e2e/analysis_failure
         run: |
-          key() {
-            bazel aquery 'mnemonic("DartAnalyze", //baseline:cache_a)' --output=text 2>/dev/null \
-              | awk '/ActionKey:/ {print $2; exit}'
+          aquery_text() {
+            bazel aquery 'mnemonic("DartAnalyze", //baseline:cache_a)' --output=text 2>/dev/null
           }
           backup="$(mktemp)"
           trap 'cp "$backup" baseline/baseline.json; rm -f "$backup"' EXIT
           cp baseline/baseline.json "$backup"
-          before=$(key)
+          aq_before=$(aquery_text)
+          echo "$aq_before" | grep -q "cache_a.dart_analyze.baseline.json"
+          if echo "$aq_before" | grep -q "baseline/baseline.json"; then
+            echo "ERROR: whole baseline leaked into cache_a's DartAnalyze inputs"
+            exit 1
+          fi
+          before=$(echo "$aq_before" | awk '/ActionKey:/ {print $2; exit}')
           python3 - <<'PY'
           import json
           path = 'baseline/baseline.json'
@@ -1045,13 +1056,25 @@ jobs:
               json.dump(data, f, indent=2)
               f.write('\n')
           PY
-          after=$(key)
+          after=$(aquery_text | awk '/ActionKey:/ {print $2; exit}')
           if [ -z "$before" ] || [ "$before" != "$after" ]; then
             echo "ERROR: cache_a's DartAnalyze action key moved with cache_b's entry"
             echo "before=$before after=$after"
             exit 1
           fi
           echo "OK: cache_a's DartAnalyze action key is unchanged"
+      - name: analysis_failure — expect a malformed baseline config to fail naming config, file, and entry
+        working-directory: e2e/analysis_failure
+        run: |
+          if bazel build //baseline:bad_baseline_config 2>/dev/null; then
+            echo "ERROR: build should have failed on a malformed baseline"
+            exit 1
+          fi
+          out=$(bazel build //baseline:bad_baseline_config 2>&1 || true)
+          echo "$out" | grep -q "//baseline:bad_baseline_config"
+          echo "$out" | grep -q "baseline/bad_baseline.json"
+          echo "$out" | grep -q "avoid_print"
+          echo "OK: malformed baseline config failed naming config, file, and entry"
       - name: analysis_failure — expect a binary's entrypoint to be analyzed too
         working-directory: e2e/analysis_failure
         run: |

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:analyzer/file_system/file_system.dart' as fs;
+import 'package:analyzer/diagnostic/diagnostic.dart' show Severity;
 import 'package:analyzer/file_system/memory_file_system.dart';
 import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:analyzer/src/source/package_map_resolver.dart'
@@ -13,6 +13,8 @@ import 'package:analyzer/src/dart/analysis/analysis_context_collection.dart'
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
+import 'analysis_baseline.dart' show AnalysisBaseline, BaselineException;
+import 'analysis_model.dart' show AnalysisFinding;
 import 'analyzer_summary.dart'
     show
         BoundedResourceProvider,
@@ -23,223 +25,15 @@ import 'analyzer_summary.dart'
         disposedContextCollectionsCount,
         inferSummarizeRoot,
         onContextCollectionDisposed,
+        reportAnalyzeFindings,
         resolveProjectSource,
         runSingleRequest;
-
-import 'analysis_baseline.dart'
+import 'analyzer_summary_test_support.dart'
     show
-        AnalysisBaseline,
-        BaselineDiagnostic,
-        BaselineException,
-        BaselineReport;
-
-/// A collection whose tear-down raises a trappable failure.
-final class _ThrowingCollection extends AnalysisContextCollectionImpl {
-  _ThrowingCollection() : super(includedPaths: const []);
-
-  @override
-  Future<void> dispose({bool forTesting = false}) async {
-    throw const FormatException('simulated tear-down failure');
-  }
-}
-
-/// A collection whose tear-down raises a programming error.
-final class _ErroringCollection extends AnalysisContextCollectionImpl {
-  _ErroringCollection() : super(includedPaths: const []);
-
-  @override
-  Future<void> dispose({bool forTesting = false}) async {
-    throw StateError('simulated programming error');
-  }
-}
-
-/// Recording wrapper around [PhysicalResourceProvider.INSTANCE] to verify that
-/// blocked ancestor probes never reach the underlying filesystem.
-final class _RecordingResourceProvider implements fs.ResourceProvider {
-  _RecordingResourceProvider(this._delegate, {p.Context? pathContext})
-    : _pathContext = pathContext;
-
-  final fs.ResourceProvider _delegate;
-  final p.Context? _pathContext;
-  final List<String> checkedPaths = <String>[];
-
-  @override
-  p.Context get pathContext => _pathContext ?? _delegate.pathContext;
-
-  @override
-  fs.File getFile(String path) => _RecordingFile(this, _delegate.getFile(path));
-
-  @override
-  fs.Folder getFolder(String path) =>
-      _RecordingFolder(this, _delegate.getFolder(path));
-
-  @override
-  fs.Link getLink(String path) => _delegate.getLink(path);
-
-  @override
-  fs.Resource getResource(String path) {
-    final r = _delegate.getResource(path);
-    if (r is fs.File) return _RecordingFile(this, r);
-    if (r is fs.Folder) return _RecordingFolder(this, r);
-    return r;
-  }
-
-  @override
-  fs.Folder? getStateLocation(String pluginId) =>
-      _delegate.getStateLocation(pluginId);
-}
-
-final class _RecordingFolder implements fs.Folder {
-  const _RecordingFolder(this._provider, this._delegate);
-
-  final _RecordingResourceProvider _provider;
-  final fs.Folder _delegate;
-
-  @override
-  bool get exists {
-    _provider.checkedPaths.add(
-      _provider.pathContext.normalize(
-        _provider.pathContext.absolute(_delegate.path),
-      ),
-    );
-    return _delegate.exists;
-  }
-
-  @override
-  bool get isRoot => _delegate.isRoot;
-
-  @override
-  fs.Folder get parent => _RecordingFolder(_provider, _delegate.parent);
-
-  @override
-  String get path => _delegate.path;
-
-  @override
-  fs.ResourceProvider get provider => _provider;
-
-  @override
-  String get shortName => _delegate.shortName;
-
-  @override
-  String canonicalizePath(String relPath) => _provider.pathContext.normalize(
-    _provider.pathContext.join(path, relPath),
-  );
-
-  @override
-  bool contains(String path) => _delegate.contains(path);
-
-  @override
-  fs.Folder copyTo(fs.Folder parentFolder) =>
-      _RecordingFolder(_provider, _delegate.copyTo(parentFolder));
-
-  @override
-  void create() => _delegate.create();
-
-  @override
-  void delete() => _delegate.delete();
-
-  @override
-  fs.Resource getChild(String relPath) =>
-      _provider.getResource(canonicalizePath(relPath));
-
-  @override
-  fs.File getChildAssumingFile(String relPath) => getFile(relPath);
-
-  @override
-  fs.Folder getChildAssumingFolder(String relPath) => getFolder(relPath);
-
-  @override
-  fs.File getFile(String relPath) =>
-      _provider.getFile(canonicalizePath(relPath));
-
-  @override
-  fs.Folder getFolder(String relPath) =>
-      _provider.getFolder(canonicalizePath(relPath));
-
-  @override
-  List<fs.Resource> getChildren() => _delegate.getChildren();
-
-  @override
-  bool isOrContains(String path) => _delegate.isOrContains(path);
-
-  @override
-  fs.Resource resolveSymbolicLinksSync() =>
-      _delegate.resolveSymbolicLinksSync();
-
-  @override
-  Uri toUri() => _delegate.toUri();
-
-  @override
-  fs.ResourceWatcher watch() => _delegate.watch();
-}
-
-final class _RecordingFile implements fs.File {
-  const _RecordingFile(this._provider, this._delegate);
-
-  final _RecordingResourceProvider _provider;
-  final fs.File _delegate;
-
-  @override
-  bool get exists {
-    _provider.checkedPaths.add(p.normalize(p.absolute(_delegate.path)));
-    return _delegate.exists;
-  }
-
-  @override
-  int get lengthSync => _delegate.lengthSync;
-
-  @override
-  int get modificationStamp => _delegate.modificationStamp;
-
-  @override
-  fs.Folder get parent => _RecordingFolder(_provider, _delegate.parent);
-
-  @override
-  String get path => _delegate.path;
-
-  @override
-  fs.ResourceProvider get provider => _provider;
-
-  @override
-  String get shortName => _delegate.shortName;
-
-  @override
-  fs.File copyTo(fs.Folder parentFolder) =>
-      _RecordingFile(_provider, _delegate.copyTo(parentFolder));
-
-  @override
-  void delete() => _delegate.delete();
-
-  @override
-  bool isOrContains(String path) => _delegate.isOrContains(path);
-
-  @override
-  Uint8List readAsBytesSync() => _delegate.readAsBytesSync();
-
-  @override
-  String readAsStringSync() => _delegate.readAsStringSync();
-
-  @override
-  fs.File renameSync(String newPath) =>
-      _RecordingFile(_provider, _delegate.renameSync(newPath));
-
-  @override
-  fs.Resource resolveSymbolicLinksSync() =>
-      _delegate.resolveSymbolicLinksSync();
-
-  @override
-  Uri toUri() => _delegate.toUri();
-
-  @override
-  fs.ResourceWatcher watch() => _delegate.watch();
-
-  @override
-  void writeAsBytesSync(List<int> bytes) => _delegate.writeAsBytesSync(bytes);
-
-  @override
-  void writeAsStringSync(String content) =>
-      _delegate.writeAsStringSync(content);
-}
+        ErroringCollection,
+        RecordingResourceProvider,
+        ThrowingCollection,
+        encodeWorkRequestForTest;
 
 void main() {
   late Directory tempDir;
@@ -284,7 +78,7 @@ void main() {
       final srcFile = File(p.join(srcDir.path, 'a.dart'))
         ..writeAsStringSync('int x = 1;\n');
 
-      final recorder = _RecordingResourceProvider(
+      final recorder = RecordingResourceProvider(
         PhysicalResourceProvider.INSTANCE,
       );
       final bounded = BoundedResourceProvider(
@@ -526,7 +320,7 @@ void main() {
 
       // 2. Verify decodeAnalyzerWorkRequestInputs and SummaryByteCache unpin slices
       // from a larger WorkRequest buffer.
-      final rawReq = _encodeWorkRequestForTest(
+      final rawReq = encodeWorkRequestForTest(
         arguments: ['summarize'],
         inputs: {
           'dep.sum': Uint8List.fromList([1, 2, 3, 4]),
@@ -767,28 +561,7 @@ void main() {
       }
     });
 
-    group('disposeContextCollection tear-down failures', () {
-      test('still releases a collection whose dispose throws', () async {
-        final beforeCount = disposedContextCollectionsCount;
-        final released = <AnalysisContextCollectionImpl>[];
-        final prevHook = onContextCollectionDisposed;
-        onContextCollectionDisposed = released.add;
-        try {
-          await disposeContextCollection(_ThrowingCollection());
-          expect(disposedContextCollectionsCount, beforeCount + 1);
-          expect(released, hasLength(1));
-        } finally {
-          onContextCollectionDisposed = prevHook;
-        }
-      });
-
-      test('lets a programming error from dispose propagate', () {
-        expect(
-          disposeContextCollection(_ErroringCollection()),
-          throwsStateError,
-        );
-      });
-    });
+    _defineDisposeTearDownTests();
 
     test('handles symlinked staging roots for nested lib/ sources and fails closed with result type on NotPathOfUriResult', () async {
       final sdkDir = File(Platform.resolvedExecutable).parent.parent;
@@ -1073,116 +846,203 @@ int checkLoud() => loudValue();
     });
   });
 
-  group('analysis baseline verdict', () {
-    AnalysisBaseline parse(String json) =>
-        AnalysisBaseline.parse(json, source: 'baseline.json');
+  _defineSummaryBaselineVerdictTests();
+}
 
-    BaselineDiagnostic diagnostic(String path, String code) =>
-        BaselineDiagnostic(
-          path: path,
-          code: code,
-          level: 'info',
-          text: '$path $code',
-        );
+AnalysisBaseline _parseSummaryBaseline(String json) =>
+    AnalysisBaseline.parse(json, source: 'baseline.json');
 
-    test('passes a group at its ceiling and fails one above it', () {
-      final baseline = parse('{"lib/a.dart":{"avoid_print":2}}');
-      BaselineReport reportAt(int count) => BaselineReport.of([
-        for (var i = 0; i < count; i++) diagnostic('lib/a.dart', 'avoid_print'),
-      ], baseline);
+AnalysisFinding _summaryFinding(
+  String path,
+  String code, {
+  Severity level = Severity.info,
+  int line = 1,
+}) => AnalysisFinding(
+  level: level,
+  path: path,
+  code: code,
+  line: line,
+  column: 3,
+  text: '${level.name.padLeft(7)} - $path:$line:3 - msg - $code',
+);
 
-      final atCeiling = reportAt(2);
-      expect(atCeiling.passes, isTrue);
-      final group = atCeiling.groupFor('lib/a.dart', 'avoid_print')!;
-      expect(group.withinCeiling, isTrue);
-      expect(group.observed, 2);
-      expect(group.ceiling, 2);
+({int code, String output, bool stamped}) _runSummaryVerdict(
+  List<AnalysisFinding> findings,
+  AnalysisBaseline? baseline,
+) {
+  final dir = Directory.systemTemp.createTempSync('summary_baseline_test_');
+  try {
+    final stamp = File('${dir.path}/stamp.txt');
+    final out = StringBuffer();
+    final exitCode = reportAnalyzeFindings(
+      stamp: stamp.path,
+      findings: findings,
+      fatalInfos: true,
+      baseline: baseline,
+      outSink: out,
+    );
+    return (
+      code: exitCode,
+      output: out.toString(),
+      stamped: stamp.existsSync(),
+    );
+  } finally {
+    dir.deleteSync(recursive: true);
+  }
+}
 
-      final above = reportAt(3);
-      expect(above.passes, isFalse);
-      expect(
-        above.groupFor('lib/a.dart', 'avoid_print')!.withinCeiling,
-        isFalse,
-      );
+void _defineDisposeTearDownTests() {
+  group('disposeContextCollection tear-down failures', () {
+    test('still releases a collection whose dispose throws', () async {
+      final beforeCount = disposedContextCollectionsCount;
+      final released = <AnalysisContextCollectionImpl>[];
+      final prevHook = onContextCollectionDisposed;
+      onContextCollectionDisposed = released.add;
+      try {
+        await disposeContextCollection(ThrowingCollection());
+        expect(disposedContextCollectionsCount, beforeCount + 1);
+        expect(released, hasLength(1));
+      } finally {
+        onContextCollectionDisposed = prevHook;
+      }
     });
 
-    test(
-      'an unkeyed code fails and an entry for another file does not apply',
-      () {
-        final baseline = parse('{"lib/a.dart":{"avoid_print":1}}');
-
-        final keyed = BaselineReport.of([
-          diagnostic('lib/a.dart', 'avoid_print'),
-        ], baseline);
-        expect(keyed.passes, isTrue);
-
-        final otherFile = BaselineReport.of([
-          diagnostic('lib/b.dart', 'avoid_print'),
-        ], baseline);
-        expect(otherFile.passes, isFalse);
-        expect(otherFile.groupFor('lib/b.dart', 'avoid_print')!.ceiling, 0);
-      },
-    );
-
-    test('names the baseline file and offending entry on a bad shape', () {
-      void expectRejected(String json, String entry) {
-        expect(
-          () => parse(json),
-          throwsA(
-            isA<BaselineException>().having(
-              (e) => e.message,
-              'message',
-              allOf(contains('baseline.json'), contains(entry)),
-            ),
-          ),
-          reason: json,
-        );
-      }
-
-      expectRejected('{"lib/a.dart":', 'lib/a.dart');
-      expectRejected('{"lib/a.dart":{"avoid_print":-1}}', 'avoid_print');
-      expectRejected('{"/tmp/a.dart":{"avoid_print":1}}', '/tmp/a.dart');
+    test('lets a programming error from dispose propagate', () {
+      expect(disposeContextCollection(ErroringCollection()), throwsStateError);
     });
   });
 }
 
-Uint8List _encodeVarintForTest(int value) {
-  final out = BytesBuilder();
-  var v = value;
-  while (v >= 0x80) {
-    out.addByte((v & 0x7f) | 0x80);
-    v >>= 7;
-  }
-  out.addByte(v);
-  return out.toBytes();
+void _defineSummaryBaselineVerdictTests() {
+  group('analysis baseline verdict', () {
+    _defineSummaryCeilingTest();
+    _defineSummaryUnkeyedAndErrorTests();
+    _defineSummaryMalformedBaselineTests(_parseSummaryBaseline);
+  });
 }
 
-Uint8List _encodeWorkRequestForTest({
-  required List<String> arguments,
-  required Map<String, Uint8List> inputs,
-}) {
-  final out = BytesBuilder();
-  for (final arg in arguments) {
-    final argBytes = utf8.encode(arg);
-    out.add(_encodeVarintForTest((1 << 3) | 2));
-    out.add(_encodeVarintForTest(argBytes.length));
-    out.add(argBytes);
-  }
-  for (final entry in inputs.entries) {
-    final inputBuf = BytesBuilder();
-    final pathBytes = utf8.encode(entry.key);
-    inputBuf.add(_encodeVarintForTest((1 << 3) | 2));
-    inputBuf.add(_encodeVarintForTest(pathBytes.length));
-    inputBuf.add(pathBytes);
-    if (entry.value.isNotEmpty) {
-      inputBuf.add(_encodeVarintForTest((2 << 3) | 2));
-      inputBuf.add(_encodeVarintForTest(entry.value.length));
-      inputBuf.add(entry.value);
+void _defineSummaryCeilingTest() {
+  test('passes a group at its ceiling and fails one above it', () {
+    final baseline = _parseSummaryBaseline('{"lib/a.dart":{"AVOID_PRINT":2}}');
+
+    final atCeiling = _runSummaryVerdict([
+      _summaryFinding('lib/a.dart', 'avoid_print', line: 1),
+      _summaryFinding('lib/a.dart', 'avoid_print', line: 2),
+    ], baseline);
+    expect(atCeiling.code, 0);
+    expect(atCeiling.stamped, isTrue);
+    expect(atCeiling.output, contains('baselined (2/2)'));
+
+    final above = _runSummaryVerdict([
+      _summaryFinding('lib/a.dart', 'avoid_print', line: 1),
+      _summaryFinding('lib/a.dart', 'avoid_print', line: 2),
+      _summaryFinding('lib/a.dart', 'avoid_print', line: 3),
+    ], baseline);
+    expect(above.code, isNonZero);
+    expect(above.stamped, isFalse);
+    expect(
+      above.output,
+      contains('baseline: lib/a.dart avoid_print: observed 3, ceiling 2'),
+    );
+  });
+}
+
+void _defineSummaryUnkeyedAndErrorTests() {
+  test(
+    'an unkeyed code fails and an entry for another file does not apply',
+    () {
+      final baseline = _parseSummaryBaseline(
+        '{"lib/a.dart":{"avoid_print":1}}',
+      );
+
+      final unkeyedCode = _runSummaryVerdict([
+        _summaryFinding('lib/a.dart', 'unused_import'),
+      ], baseline);
+      expect(unkeyedCode.code, isNonZero);
+      expect(unkeyedCode.stamped, isFalse);
+      expect(unkeyedCode.output, contains('observed 1, ceiling 0'));
+
+      final otherFile = _runSummaryVerdict([
+        _summaryFinding('lib/b.dart', 'avoid_print'),
+      ], baseline);
+      expect(otherFile.code, isNonZero);
+      expect(otherFile.stamped, isFalse);
+      expect(
+        otherFile.output,
+        contains('baseline: lib/b.dart avoid_print: observed 1, ceiling 0'),
+      );
+      expect(baseline.sliceFor(['lib/b.dart']), isEmpty);
+    },
+  );
+
+  test('exempts a keyed error-level diagnostic but never an unkeyed one', () {
+    final baseline = _parseSummaryBaseline(
+      '{"lib/a.dart":{"undefined_identifier":1,"avoid_print":2},'
+      '"pkg/analysis_options.yaml":{"parse_error":1}}',
+    );
+
+    final keyedErrors = _runSummaryVerdict([
+      _summaryFinding(
+        'lib/a.dart',
+        'undefined_identifier',
+        level: Severity.error,
+      ),
+      _summaryFinding(
+        'pkg/analysis_options.yaml',
+        'parse_error',
+        level: Severity.error,
+      ),
+    ], baseline);
+    expect(keyedErrors.code, 0);
+    expect(keyedErrors.stamped, isTrue);
+    expect(keyedErrors.output, contains('baselined (1/1)'));
+
+    final unkeyedError = _runSummaryVerdict([
+      _summaryFinding(
+        'lib/a.dart',
+        'uri_does_not_exist',
+        level: Severity.error,
+      ),
+    ], baseline);
+    expect(unkeyedError.code, isNonZero);
+    expect(unkeyedError.stamped, isFalse);
+    expect(unkeyedError.output, contains('observed 1, ceiling 0'));
+  });
+}
+
+void _defineSummaryMalformedBaselineTests(
+  AnalysisBaseline Function(String) parse,
+) {
+  test('names the baseline file and offending entry on malformed inputs', () {
+    void expectRejected(String json, String entry) {
+      expect(
+        () => parse(json),
+        throwsA(
+          isA<BaselineException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('baseline.json'), contains(entry)),
+          ),
+        ),
+        reason: json,
+      );
     }
-    final inputBytes = inputBuf.toBytes();
-    out.add(_encodeVarintForTest((2 << 3) | 2));
-    out.add(_encodeVarintForTest(inputBytes.length));
-    out.add(inputBytes);
-  }
-  return out.toBytes();
+
+    expectRejected('{"lib/a.dart":', 'lib/a.dart');
+    expectRejected('{"lib/a.dart":{"avoid_print":01}}', 'avoid_print');
+    expectRejected('[]', '<root>');
+    expectRejected('{"lib/a.dart":[]}', 'lib/a.dart');
+    expectRejected('{"lib/a.dart":{"avoid_print":-1}}', 'avoid_print');
+    expectRejected('{"lib/a.dart":{"avoid_print":1.5}}', 'avoid_print');
+    expectRejected('{"lib/a.dart":{"avoid_print":"2"}}', 'avoid_print');
+    expectRejected('{"/tmp/a.dart":{"avoid_print":1}}', '/tmp/a.dart');
+    expectRejected('{"C:/tmp/a.dart":{"avoid_print":1}}', 'C:/tmp/a.dart');
+    expectRejected('{"lib/../a.dart":{"avoid_print":1}}', 'lib/../a.dart');
+    expectRejected(r'{"lib\\a.dart":{"avoid_print":1}}', r'lib\a.dart');
+    expectRejected('{"lib/a.dart":{},"lib/a.dart":{}}', 'lib/a.dart');
+    expectRejected(
+      '{"lib/a.dart":{"avoid_print":1,"AVOID_PRINT":2}}',
+      'AVOID_PRINT',
+    );
+  });
 }

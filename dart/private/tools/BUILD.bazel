@@ -5,7 +5,7 @@ dart_binary(
     code_assets_from_deps = False,
     compile_mode = "exe",
     main = "noop.dart",
-    visibility = ["//visibility:public"],
+    visibility = ["//dart:__subpackages__"],
 )
 
 exports_files(
@@ -148,8 +148,16 @@ dart_test(
         "private_home.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
-    args = ["$(rlocationpath :analyze_runner)"],
-    data = [":analyze_runner"],
+    args = [
+        "$(rlocationpath :analyze_runner)",
+        "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
+    ],
+    data = [
+        ":analyze_runner",
+        "@dart_toolchains//sdk/3.13.5:analyze_files",
+        "@dart_toolchains//sdk/3.13.5:dart",
+        "@dart_toolchains//sdk/3.13.5:runtime_files",
+    ],
     main = "analyze_runner_test.dart",
     deps = [
         "//dart/guard:directive_guard",
@@ -545,6 +553,7 @@ dart_test(
         "analysis_baseline.dart",
         "analysis_model.dart",
         "analyzer_summary.dart",
+        "analyzer_summary_test_support.dart",
     ],
     main = "analyzer_summary_test.dart",
     deps = [
