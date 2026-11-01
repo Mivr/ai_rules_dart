@@ -70,63 +70,280 @@ String _locateRepoRoot(List<String> args) {
   throw StateError('Unable to locate rules_dart repository root');
 }
 
-void _verifyTriggersAndInputs(String text) {
+void _verifyTriggers(String text) {
   _check(text.contains('workflow_dispatch:'), 'has workflow_dispatch trigger');
-  _check(!text.contains('push:'), 'no push trigger');
-  _check(!text.contains('pull_request:'), 'no pull_request trigger');
-  _check(!text.contains('schedule:'), 'no schedule trigger');
-  _check(!text.contains('workflow_run:'), 'no workflow_run trigger');
+  for (final trigger in [
+    'push:',
+    'pull_request:',
+    'pull_request_target:',
+    'schedule:',
+    'workflow_run:',
+    'workflow_call:',
+    'repository_dispatch:',
+    'release:',
+    'issues:',
+    'issue_comment:',
+  ]) {
+    _check(!text.contains(trigger), 'forbidden trigger: $trigger');
+  }
+}
 
-  _check(text.contains('head_ref:'), 'has head_ref input');
-  _check(text.contains('required: true'), 'head_ref is required');
-  _check(text.contains('type: string'), 'inputs use type: string');
-  _check(text.contains('target_loc:'), 'has target_loc input');
-  _check(text.contains('default: "500000"'), 'quoted default "500000"');
-  _check(text.contains('repeats:'), 'has repeats input');
-  _check(text.contains('default: "3"'), 'quoted default "3"');
-  _check(text.contains('seed:'), 'has seed input');
-  _check(text.contains('default: "1"'), 'quoted default "1"');
+void _verifyInputs(String text) {
+  final inputsMatch = RegExp(r'inputs:\s*\n((?:\s+.*\n)+)').firstMatch(text);
+  _check(inputsMatch != null, 'inputs block present');
+  final inputsBlock = inputsMatch!.group(1)!;
+
+  final inputNames = RegExp(
+    r'^\s{6}([a-zA-Z0-9_-]+):\s*$',
+    multiLine: true,
+  ).allMatches(inputsBlock).map((m) => m.group(1)!).toSet();
   _check(
-    RegExp(r'required:\s*true').allMatches(text).length == 1,
-    'Only head_ref is required: true',
+    inputNames.length == 4 &&
+        inputNames.contains('head_ref') &&
+        inputNames.contains('target_loc') &&
+        inputNames.contains('repeats') &&
+        inputNames.contains('seed'),
+    'inputs must contain exactly head_ref, target_loc, repeats, seed',
+  );
+
+  _check(
+    RegExp(r'head_ref:[\s\S]*?required:\s*true').hasMatch(inputsBlock),
+    'head_ref is required: true',
+  );
+  _check(
+    RegExp(r'required:\s*true').allMatches(inputsBlock).length == 1,
+    'only head_ref is required: true',
+  );
+  _check(
+    RegExp(r'type:\s*string').allMatches(inputsBlock).length == 4,
+    'all 4 inputs use type: string',
+  );
+  _check(
+    RegExp(r'target_loc:[\s\S]*?default:\s*"500000"').hasMatch(inputsBlock),
+    'target_loc default: "500000"',
+  );
+  _check(
+    RegExp(r'repeats:[\s\S]*?default:\s*"3"').hasMatch(inputsBlock),
+    'repeats default: "3"',
+  );
+  _check(
+    RegExp(r'seed:[\s\S]*?default:\s*"1"').hasMatch(inputsBlock),
+    'seed default: "1"',
+  );
+  _check(
+    !RegExp(r'default:\s*\d+\s*(?:$|#)', multiLine: true).hasMatch(inputsBlock),
+    'defaults must be quoted strings, not bare integers',
   );
 }
 
-void _verifyRunnerCachesAndSteps(String text) {
-  _check(text.contains('contents: read'), 'permissions: contents: read');
-  _check(text.contains('runs-on: ubuntu-latest'), 'runs-on: ubuntu-latest');
+void _verifyRunnerAndCost(String text) {
+  _check(
+    RegExp(r'permissions:\s*\n\s*contents:\s*read').hasMatch(text) ||
+        text.contains('permissions: contents: read'),
+    'permissions: contents: read',
+  );
+  _check(!text.contains('contents: write'), 'no contents: write');
+  _check(!text.contains('pull-requests: write'), 'no write permissions');
+
+  _check(
+    RegExp(r'runs-on:\s*ubuntu-latest\b').hasMatch(text),
+    'runs-on: ubuntu-latest',
+  );
+  _check(!text.contains('ubuntu-22.04'), 'runs-on must not be ubuntu-22.04');
+  _check(!text.contains('macos'), 'runs-on must not be macos');
+  _check(!text.contains('windows'), 'runs-on must not be windows');
 
   final timeoutMatch = RegExp(r'timeout-minutes:\s*(\d+)').firstMatch(text);
   _check(timeoutMatch != null, 'timeout-minutes declared');
   final timeout = int.parse(timeoutMatch!.group(1)!);
-  _check(timeout > 0 && timeout <= 300, 'timeout-minutes <= 300, got $timeout');
+  _check(timeout == 300, 'timeout-minutes must be exactly 300, got $timeout');
+}
 
-  _check(!text.contains('actions/cache'), 'no actions/cache step');
+void _verifyCaches(String text) {
+  _check(
+    !RegExp(r'uses:\s*actions/cache').hasMatch(text),
+    'no actions/cache step',
+  );
   for (final cacheKey in [
     'disk-cache',
     'repository-cache',
     'external-cache',
     'cache-save',
+    'bazelisk-cache',
   ]) {
-    _check(
-      !RegExp('$cacheKey:\\s*true').hasMatch(text),
-      '$cacheKey must not be enabled',
-    );
+    final match = RegExp('$cacheKey:\\s*([^\n\r#]+)').firstMatch(text);
+    if (match != null) {
+      final val = match
+          .group(1)!
+          .trim()
+          .replaceAll('"', '')
+          .replaceAll("'", '')
+          .toLowerCase();
+      _check(val == 'false', '$cacheKey must be absent or false, got $val');
+    }
   }
+  _check(
+    !RegExp(
+      r'[\w-]*cache[\w-]*:\s*(true|yes|1|"true"|\x27true\x27)',
+      caseSensitive: false,
+    ).hasMatch(text),
+    'no cache may be enabled',
+  );
+}
 
+void _verifyCheckoutsAndSteps(String text) {
   _check(text.contains('path: tools-src'), 'checks out tools-src');
   _check(text.contains('path: rules-head'), 'checks out rules-head');
-  _check(text.contains('//perf:generate'), 'invokes //perf:generate');
-  _check(text.contains('//perf:runner'), 'invokes //perf:runner');
-  _check(text.contains('//perf:summarize'), 'invokes //perf:summarize');
-  _check(text.contains('--nobuild'), 'runs unmeasured --nobuild lockfile pass');
-  _check(text.contains('MODULE.bazel.lock'), 'verifies MODULE.bazel.lock');
-  _check(text.contains('GITHUB_STEP_SUMMARY'), 'writes GITHUB_STEP_SUMMARY');
+  _check(
+    RegExp(r'ref:\s*(\$\{\{\s*inputs\.head_ref\s*\}\}|\$HEAD_REF)')
+        .hasMatch(text),
+    'rules-head checked out at head_ref',
+  );
 
+  _check(text.contains('//perf:generate'), 'invokes //perf:generate');
+  _check(text.contains('--target-loc'), 'generate passes --target-loc');
+  _check(text.contains('--seed'), 'generate passes --seed');
+  _check(text.contains('--rules-dart'), 'generate passes --rules-dart');
+  _check(text.contains('--out='), 'generate passes --out');
+
+  _check(text.contains('--nobuild'), 'runs unmeasured --nobuild lockfile pass');
+  _check(
+    text.contains('test -f ') && text.contains('MODULE.bazel.lock'),
+    'checks test -f ... MODULE.bazel.lock',
+  );
+
+  _check(text.contains('//perf:runner'), 'invokes //perf:runner');
+  _check(
+    RegExp(r'inputs\.repeats').hasMatch(text),
+    'workflow references inputs.repeats',
+  );
+  final hasRepeatsDynamic = RegExp(
+    r'(seq\s+1\s+["$({]*inputs\.repeats|--repeats=["$({]*inputs\.repeats|\$REPEATS)',
+  ).hasMatch(text);
+  _check(
+    hasRepeatsDynamic,
+    'runner repeats step takes count dynamically from inputs.repeats',
+  );
+  _check(
+    !RegExp(r'seq\s+1\s+\d+\b').hasMatch(text),
+    'runner loop must not use a hardcoded fixed number',
+  );
+  _check(
+    !RegExp(r'--repeats=\d+\b').hasMatch(text),
+    'runner --repeats must not use a hardcoded fixed number',
+  );
+
+  _check(text.contains('//perf:summarize'), 'invokes //perf:summarize');
+  _check(text.contains('GITHUB_STEP_SUMMARY'), 'writes GITHUB_STEP_SUMMARY');
+  _check(
+    text.contains('shutdown'),
+    'shuts down tooling / scratch Bazel server',
+  );
+}
+
+void _verifyArtifactUpload(String text) {
   _check(text.contains('name: dart-sol'), 'uploads artifact dart-sol');
-  _check(text.contains('path: dart-sol.json'), 'uploads path dart-sol.json');
-  _check(text.contains('retention-days: 3'), 'retention-days: 3');
-  _check(text.contains('!cancelled()'), 'summarize/upload guarded !cancelled');
+  _check(
+    RegExp(r'path:\s*dart-sol\.json\b').hasMatch(text),
+    'uploads path dart-sol.json',
+  );
+  final retentionMatch = RegExp(r'retention-days:\s*(\d+)').firstMatch(text);
+  _check(retentionMatch != null, 'retention-days declared');
+  _check(
+    retentionMatch!.group(1) == '3',
+    'retention-days must be exactly 3, got ${retentionMatch.group(1)}',
+  );
+  _check(
+    RegExp(r'retention-days:\s*3\b').allMatches(text).length == 1,
+    'retention-days is 3',
+  );
+  _check(
+    text.contains('!cancelled()') && text.contains("inputs.head_ref != ''"),
+    'upload step guarded with !cancelled() && inputs.head_ref != \'\'',
+  );
+  _check(!text.contains('bazel-bin'), 'no build outputs uploaded');
+  _check(!text.contains('bazel-out'), 'no build outputs uploaded');
+}
+
+/// Verifies all contract constraints against [text].
+void verifyWorkflowYaml(String text) {
+  _verifyTriggers(text);
+  _verifyInputs(text);
+  _verifyRunnerAndCost(text);
+  _verifyCaches(text);
+  _verifyCheckoutsAndSteps(text);
+  _verifyArtifactUpload(text);
+}
+
+void _expectStateError(void Function() action, String message) {
+  try {
+    action();
+  } on StateError catch (e) {
+    _check(e.message.isNotEmpty, message);
+    return;
+  }
+  throw StateError('FAIL: $message (expected StateError)');
+}
+
+void _testWorkflowMutations(String validText) {
+  _expectStateError(
+    () => verifyWorkflowYaml(
+      validText.replaceFirst('retention-days: 3', 'retention-days: 5'),
+    ),
+    'fails when retention-days is not 3',
+  );
+  _expectStateError(
+    () => verifyWorkflowYaml(
+      validText.replaceFirst('retention-days: 3', 'retention-days: 1'),
+    ),
+    'fails when retention-days is 1',
+  );
+  _expectStateError(
+    () => verifyWorkflowYaml(
+      validText.replaceFirst('disk-cache: false', 'disk-cache: true'),
+    ),
+    'fails when disk-cache is enabled',
+  );
+  _expectStateError(
+    () => verifyWorkflowYaml(
+      validText.replaceFirst('bazelisk-cache: false', 'bazelisk-cache: true'),
+    ),
+    'fails when bazelisk-cache is enabled',
+  );
+  _expectStateError(
+    () => verifyWorkflowYaml(
+      validText.replaceFirst('timeout-minutes: 300', 'timeout-minutes: 10'),
+    ),
+    'fails when timeout-minutes is not 300',
+  );
+  _expectStateError(
+    () => verifyWorkflowYaml(
+      validText.replaceFirst('runs-on: ubuntu-latest', 'runs-on: macos-latest'),
+    ),
+    'fails when runs-on is not ubuntu-latest',
+  );
+  _expectStateError(
+    () => verifyWorkflowYaml('push:\n$validText'),
+    'fails when push trigger is present',
+  );
+  _expectStateError(
+    () => verifyWorkflowYaml(
+      validText.replaceFirst('default: "3"', 'default: 3'),
+    ),
+    'fails when repeats default is unquoted integer',
+  );
+  _expectStateError(
+    () => verifyWorkflowYaml(
+      validText.replaceFirst('contents: read', 'contents: write'),
+    ),
+    'fails when contents: write is granted',
+  );
+  _expectStateError(
+    () => verifyWorkflowYaml(
+      validText.replaceFirst(RegExp(r'seq\s+1\s+.*'), 'seq 1 3; do'),
+    ),
+    'fails when runner repeats uses a hardcoded fixed number',
+  );
 }
 
 void main(List<String> args) {
@@ -137,7 +354,7 @@ void main(List<String> args) {
     'perf-linux.yaml exists at ${workflowFile.path}',
   );
   final text = workflowFile.readAsStringSync();
-  _verifyTriggersAndInputs(text);
-  _verifyRunnerCachesAndSteps(text);
+  verifyWorkflowYaml(text);
+  _testWorkflowMutations(text);
   stdout.writeln('All workflow tests passed.');
 }
