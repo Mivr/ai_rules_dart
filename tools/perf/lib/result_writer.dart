@@ -112,8 +112,8 @@ final class FlowResult {
   /// Count of chain spawns replayed.
   final int chain;
 
-  /// Count of persistent worker steps.
-  final int workerSteps;
+  /// Persistent worker spawn counts by mnemonic.
+  final Map<String, int> workerSteps;
 
   /// Serializes to JSON map.
   Map<String, dynamic> toJson() => {
@@ -128,6 +128,16 @@ final class FlowResult {
 
   /// Deserializes from JSON map.
   static FlowResult fromJson(Map<String, dynamic> json) {
+    final rawWorkerSteps = json['workerSteps'];
+    final workerSteps = <String, int>{};
+    if (rawWorkerSteps is Map) {
+      for (final entry in rawWorkerSteps.entries) {
+        final v = (entry.value as num?)?.toInt();
+        if (v != null) {
+          workerSteps[entry.key.toString()] = v;
+        }
+      }
+    }
     return FlowResult(
       method: json['method'] as String? ?? 'warm-server',
       bazelCpu: (json['bazelCpu'] as num?)?.toDouble(),
@@ -135,7 +145,7 @@ final class FlowResult {
       identical: json['identical'] as bool? ?? false,
       reason: json['reason'] as String? ?? 'missing',
       chain: (json['chain'] as num?)?.toInt() ?? 0,
-      workerSteps: (json['workerSteps'] as num?)?.toInt() ?? 0,
+      workerSteps: workerSteps,
     );
   }
 }
@@ -287,7 +297,7 @@ final class _FlowAccumulator {
   bool allIdentical = true;
   String? flowFailure;
   int chainCount = 0;
-  int workerSteps = 0;
+  final Map<String, int> workerSteps = {};
 
   void recordRepeat(FlowResult? f, int repeatIndex, String key) {
     if (f == null) {
@@ -297,7 +307,9 @@ final class _FlowAccumulator {
     }
 
     chainCount = max(chainCount, f.chain);
-    workerSteps = max(workerSteps, f.workerSteps);
+    for (final entry in f.workerSteps.entries) {
+      workerSteps[entry.key] = max(workerSteps[entry.key] ?? 0, entry.value);
+    }
     if (f.bazelCpu != null) bazelVals.add(f.bazelCpu!);
 
     if (f.identical && f.solCpu != null && f.bazelCpu != null) {
@@ -362,7 +374,7 @@ Map<String, dynamic> _buildFlowEntry(
       'n': acc.bazelVals.length,
       'sol': spreadSol,
     },
-    'worker_steps': acc.workerSteps,
+    'worker_steps': Map<String, int>.of(acc.workerSteps),
   };
 }
 
