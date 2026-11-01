@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'cli_args.dart';
+import 'spawn_log.dart';
 
 /// Host runner system information.
 final class RunnerInfo {
@@ -81,6 +82,47 @@ final class RunnerInfo {
   };
 }
 
+/// Converts ordered spawn records to the `steps` object in a chain description.
+Map<String, dynamic> chainStepsFromSpawns(List<SpawnRecord> spawns) {
+  final steps = <String, dynamic>{};
+  for (var i = 0; i < spawns.length; i++) {
+    final s = spawns[i];
+    final key = 'step_${i + 1}';
+    steps[key] = {
+      'command_args': List<String>.of(s.commandArgs),
+      'declared_outputs': s.declaredOutputs.toList()..sort(),
+      'mnemonic': s.mnemonic,
+      'runner': s.runner,
+    };
+  }
+  return steps;
+}
+
+/// Constructs a chain description map adhering to the `android-sol.json` schema.
+Map<String, dynamic> buildChainObject({
+  required bool identical,
+  required double? solCpu,
+  required String reason,
+  Map<String, dynamic> steps = const {},
+  String? orderingFailed,
+}) {
+  final failedList = identical
+      ? <String>[]
+      : (reason.isNotEmpty && reason != 'ok'
+            ? <String>[reason]
+            : <String>['failed']);
+  return {
+    'failed': failedList,
+    'ordering_failed': orderingFailed,
+    'output_drift': {'differ': <String>[], 'n': 0},
+    'skipped': <String, dynamic>{},
+    'sol_cpu_s': identical ? solCpu : null,
+    'status': identical ? 'ok' : 'error',
+    'steps': steps,
+    'verify_differ': {'differ': <String>[], 'n': 0},
+  };
+}
+
 /// Result of a single flow in a single repeat.
 final class FlowResult {
   /// Creates a flow result record.
@@ -109,8 +151,8 @@ final class FlowResult {
   /// Status reason ("ok" or failure description).
   final String reason;
 
-  /// Count of chain spawns replayed.
-  final int chain;
+  /// Chain description map with replayed steps.
+  final Map<String, dynamic> chain;
 
   /// Persistent worker spawn counts by mnemonic.
   final Map<String, int> workerSteps;
@@ -140,13 +182,28 @@ final class FlowResult {
     }
     final bazelNum = (json['bazelCpu'] ?? json['bazel']) as num?;
     final solNum = (json['solCpu'] ?? json['sol']) as num?;
+    final isIdentical = json['identical'] as bool? ?? false;
+    final reason = json['reason'] as String? ?? 'missing';
+    final rawChain = json['chain'];
+    final Map<String, dynamic> chain;
+    if (rawChain is Map<String, dynamic>) {
+      chain = rawChain;
+    } else if (rawChain is Map) {
+      chain = rawChain.cast<String, dynamic>();
+    } else {
+      chain = buildChainObject(
+        identical: isIdentical,
+        solCpu: solNum?.toDouble(),
+        reason: reason,
+      );
+    }
     return FlowResult(
       method: json['method'] as String? ?? 'warm-server',
       bazelCpu: bazelNum?.toDouble(),
       solCpu: solNum?.toDouble(),
-      identical: json['identical'] as bool? ?? false,
-      reason: json['reason'] as String? ?? 'missing',
-      chain: (json['chain'] as num?)?.toInt() ?? 0,
+      identical: isIdentical,
+      reason: reason,
+      chain: chain,
       workerSteps: workerSteps,
     );
   }
@@ -299,7 +356,7 @@ final class _FlowAccumulator {
   final List<double> solVals = [];
   bool allIdentical = true;
   String? flowFailure;
-  int chainCount = 0;
+  Map<String, dynamic>? chainMap;
   final Map<String, int> workerSteps = {};
 
   void recordRepeat(FlowResult? f, int repeatIndex, String key) {
@@ -309,7 +366,20 @@ final class _FlowAccumulator {
       return;
     }
 
-    chainCount = max(chainCount, f.chain);
+    if (f.chain.isNotEmpty) {
+      final steps = f.chain['steps'];
+      final hasSteps = steps is Map && steps.isNotEmpty;
+      if (chainMap == null) {
+        chainMap = f.chain;
+      } else if (hasSteps) {
+        final existingSteps = chainMap!['steps'];
+        if (existingSteps is! Map || existingSteps.isEmpty) {
+          chainMap = f.chain;
+        } else if (f.identical && chainMap!['status'] != 'ok') {
+          chainMap = f.chain;
+        }
+      }
+    }
     for (final entry in f.workerSteps.entries) {
       workerSteps[entry.key] = max(workerSteps[entry.key] ?? 0, entry.value);
     }
@@ -324,6 +394,32 @@ final class _FlowAccumulator {
       }
     }
   }
+}
+
+Map<String, dynamic> _resolveFlowChain(
+  _FlowAccumulator acc, {
+  required bool isIdentical,
+  required double? solMedian,
+  required String reason,
+}) {
+  if (acc.chainMap != null) {
+    final entry = Map<String, dynamic>.from(acc.chainMap!);
+    if (isIdentical) {
+      entry['status'] = 'ok';
+      entry['failed'] = <String>[];
+      entry['sol_cpu_s'] = solMedian != null ? _roundCpu(solMedian) : null;
+    } else {
+      entry['status'] = 'error';
+      entry['sol_cpu_s'] = null;
+      entry['failed'] = [reason];
+    }
+    return entry;
+  }
+  return buildChainObject(
+    identical: isIdentical,
+    solCpu: solMedian != null ? _roundCpu(solMedian) : null,
+    reason: reason,
+  );
 }
 
 Map<String, dynamic> _buildFlowEntry(
@@ -367,7 +463,12 @@ Map<String, dynamic> _buildFlowEntry(
 
   return {
     'bazel': bazelMedian != null ? _roundCpu(bazelMedian) : null,
-    'chain': acc.chainCount,
+    'chain': _resolveFlowChain(
+      acc,
+      isIdentical: isIdentical,
+      solMedian: solMedian,
+      reason: reason,
+    ),
     'identical': isIdentical,
     'method': method,
     'reason': reason,
