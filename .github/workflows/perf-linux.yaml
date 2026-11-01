@@ -32,12 +32,6 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           path: tools-src
-      - name: Checkout rules under measurement
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          ref: ${{ inputs.head_ref }}
-          path: rules-head
-          fetch-depth: 0
       - name: Set up Bazel
         uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
@@ -51,6 +45,12 @@ jobs:
           if [ -f tools-src/.bazelversion ]; then
             cp tools-src/.bazelversion tools-src/tools/.bazelversion
           fi
+      - name: Checkout rules under measurement
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.head_ref }}
+          path: rules-head
+          fetch-depth: 0
       - name: Generate pristine monorepo
         env:
           TARGET_LOC: ${{ inputs.target_loc }}
@@ -77,7 +77,7 @@ jobs:
           leaf_tests=$(cd "$ws" && bazel --max_idle_secs=60 --output_base="$scratch_base" query 'kind(dart_test, //...)')
           test -n "$leaf_tests"
           # shellcheck disable=SC2086
-          (cd "$ws" && bazel --max_idle_secs=60 --output_base="$scratch_base" build --nobuild //app:app $leaf_tests)
+          (cd "$ws" && bazel --max_idle_secs=60 --output_base="$scratch_base" build --nobuild --lockfile_mode=update //app:app $leaf_tests)
           cleanup_scratch
           trap - EXIT
           test -f "$ws/MODULE.bazel.lock"
@@ -89,11 +89,11 @@ jobs:
           tooling_base="${RUNNER_TEMP}/tooling-outbase"
           results="${RUNNER_TEMP}/bench-results"
           mkdir -p "$results"
-          for i in $(seq 1 "${{ inputs.repeats }}"); do
+          for i in $(seq 1 "$REPEATS"); do
             (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:runner -- \
               --workspace="$ws" \
               --repeat="$i" \
-              --repeats="${{ inputs.repeats }}" \
+              --repeats="$REPEATS" \
               --out="$results/repeat-$i.json") || true
           done
       - name: Summarize speed-of-light results
@@ -106,9 +106,8 @@ jobs:
         run: |
           tooling_base="${RUNNER_TEMP}/tooling-outbase"
           results="${RUNNER_TEMP}/bench-results"
-          if [ -d "$GITHUB_WORKSPACE/rules-head/.git" ]; then
-            sha="$(git -C "$GITHUB_WORKSPACE/rules-head" rev-parse HEAD)"
-          else
+          mkdir -p "$results"
+          if ! sha="$(git -C "$GITHUB_WORKSPACE/rules-head" rev-parse HEAD 2>/dev/null)"; then
             sha="$HEAD_REF"
           fi
           (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:summarize -- \
@@ -118,7 +117,9 @@ jobs:
             --seed="$SEED" \
             --repeats="$REPEATS" \
             --out="$GITHUB_WORKSPACE/dart-sol.json")
-          cat "$GITHUB_WORKSPACE/dart-sol.json" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            cat "$GITHUB_WORKSPACE/dart-sol.json" >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Shut down tooling Bazel server
         if: ${{ always() }}
         run: |
