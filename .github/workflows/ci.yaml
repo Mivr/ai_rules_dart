@@ -39,8 +39,9 @@ jobs:
   # one Bazelisk install per job instead of one per folder. Push CI runs a
   # single macOS smoke job (`mac-smoke`); the full per-folder macOS coverage
   # runs in the `full.yaml` pre-release workflow. Every folder still runs
-  # `bazel test //...` with the same flags on every OS it ran on before (exit
-  # code 4 still means "no test targets"). Folders in a shard run a few at a
+  # `bazel test //...` with the same flags on every OS it ran on before (or
+  # `bazel build //...` for explicit build-only folders with no non-manual
+  # test targets). Folders in a shard run a few at a
   # time (`parallelism` waves); each folder's full log is streamed under a
   # `===== <folder> =====` header the moment that folder finishes (not after
   # all waves), and uploaded as an artifact `if: always()`, so a killed job
@@ -254,13 +255,21 @@ jobs:
             [ -z "$folder" ] && continue
             echo "9.3.0" > "$ws/$folder/.bazelversion"
           done <<< "$FOLDERS"
+          # Build-only workspaces: .github/workflows has no tests and e2e/dual_build's sole test is manual and requires-network.
+          build_only_folders=".github/workflows e2e/dual_build"
           run_one() {
             slug="$(printf '%s' "$1" | tr '/.' '_')"
             # Same test command and flags as the old per-folder Test step, plus
             # a per-folder --output_base so the folder gets its own Bazel
             # server. The disk and repository caches stay shared, so warmth is
             # unaffected.
-            if ( cd "$ws/$1" && bazel --output_base="$outbasedir/$slug" test --test_output=errors //... ) >"$logdir/$slug.log" 2>&1; then
+            if (
+              cd "$ws/$1" &&
+              case " $build_only_folders " in
+                *" $1 "*) bazel --output_base="$outbasedir/$slug" build //... ;;
+                *) bazel --output_base="$outbasedir/$slug" test --test_output=errors //... ;;
+              esac
+            ) >"$logdir/$slug.log" 2>&1; then
               echo 0 >"$logdir/$slug.status"
             else
               echo 1 >"$logdir/$slug.status"

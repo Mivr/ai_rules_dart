@@ -1,4 +1,10 @@
-load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_analysis_test", "dart_library")
+load(
+    "@rules_dart//dart:defs.bzl",
+    "dart_analysis_config",
+    "dart_analysis_options",
+    "dart_analysis_test",
+    "dart_library",
+)
 
 dart_library(
     name = "good_lib",
