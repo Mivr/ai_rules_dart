@@ -211,8 +211,8 @@ final class ParsedExecutionLog {
   /// Selected non-exec, non-cached, exit-0 chain spawns.
   final List<SpawnRecord> chainSpawns;
 
-  /// Count of persistent worker spawns in the chain.
-  final int workerSteps;
+  /// Persistent worker spawn counts mapped by mnemonic.
+  final Map<String, int> workerSteps;
 
   /// Declared outputs of failed spawns in the log.
   final Set<String> blockedOutputs;
@@ -223,7 +223,7 @@ ParsedExecutionLog parseExecutionLog(String text) {
   final allSpawns = <SpawnRecord>[];
   final chainSpawns = <SpawnRecord>[];
   final blockedOutputs = <String>{};
-  var workerSteps = 0;
+  final workerSteps = <String, int>{};
 
   for (final jsonStr in extractConcatenatedJsonObjects(text)) {
     try {
@@ -242,7 +242,12 @@ ParsedExecutionLog parseExecutionLog(String text) {
       if (record.isCached) continue;
       if (declared.isNotEmpty && declared.any(isExecConfigPath)) continue;
 
-      if (record.isWorker) workerSteps++;
+      if (record.isWorker) {
+        final mnemonic = record.mnemonic.isNotEmpty
+            ? record.mnemonic
+            : (record.runner.isNotEmpty ? record.runner : 'worker');
+        workerSteps[mnemonic] = (workerSteps[mnemonic] ?? 0) + 1;
+      }
       chainSpawns.add(record);
     } on FormatException catch (e) {
       stderr.writeln('Malformed JSON object in execution log: $e');

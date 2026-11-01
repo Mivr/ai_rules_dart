@@ -45,18 +45,13 @@ void _executeRunnerJob({
   required String workspace,
   required int repeat,
   required int? repeatsCount,
+  required bool hasExplicitRepeat,
   required String? rawOut,
   required String? rawResultsDir,
 }) {
   final tempRoot = Directory.systemTemp.createTempSync('rd_perf_').path;
   try {
-    final singleJsonOut =
-        repeatsCount == 1 &&
-        rawResultsDir == null &&
-        rawOut != null &&
-        rawOut.endsWith('.json') &&
-        !Directory(resolveCliPath(rawOut)).existsSync();
-    if (repeatsCount != null && repeatsCount > 0 && !singleJsonOut) {
+    if (!hasExplicitRepeat && repeatsCount != null && repeatsCount > 0) {
       final outDir = resolveCliPath((rawResultsDir ?? rawOut)!);
       Directory(outDir).createSync(recursive: true);
       for (var i = 1; i <= repeatsCount; i++) {
@@ -69,15 +64,14 @@ void _executeRunnerJob({
       }
       return;
     }
-    final targetRepeat = repeatsCount == 1 ? 1 : repeat;
     final outPath = _resolveSingleOutFile(
       rawOut: rawOut,
       rawResultsDir: rawResultsDir,
-      repeat: targetRepeat,
+      repeat: repeat,
     );
     _runSingleRepeat(
       workspace: workspace,
-      repeat: targetRepeat,
+      repeat: repeat,
       outPath: outPath,
       tempRoot: tempRoot,
     );
@@ -95,6 +89,10 @@ void _executeRunnerJob({
 void main(List<String> args) {
   final flags = parseCliFlags(args);
   final rawWorkspace = lastFlagValue(flags, const ['workspace', 'ws']);
+  final hasExplicitRepeat =
+      flags.containsKey('repeat') ||
+      flags.containsKey('repeat-index') ||
+      flags.containsKey('repeat_index');
   final repeat = intFlagValue(flags, const [
     'repeat',
     'repeat-index',
@@ -121,6 +119,7 @@ void main(List<String> args) {
     workspace: resolveCliPath(rawWorkspace),
     repeat: repeat,
     repeatsCount: repeatsCount,
+    hasExplicitRepeat: hasExplicitRepeat,
     rawOut: rawOut,
     rawResultsDir: rawResultsDir,
   );

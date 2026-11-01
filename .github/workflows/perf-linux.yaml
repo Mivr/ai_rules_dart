@@ -89,10 +89,11 @@ jobs:
           tooling_base="${RUNNER_TEMP}/tooling-outbase"
           results="${RUNNER_TEMP}/bench-results"
           mkdir -p "$results"
-          for i in $(seq 1 "$REPEATS"); do
+          for i in $(seq 1 "${{ inputs.repeats }}"); do
             (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:runner -- \
               --workspace="$ws" \
               --repeat="$i" \
+              --repeats="${{ inputs.repeats }}" \
               --out="$results/repeat-$i.json") || true
           done
       - name: Summarize speed-of-light results

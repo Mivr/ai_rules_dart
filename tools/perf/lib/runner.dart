@@ -223,7 +223,7 @@ FlowResult _failedFlow(String method, String reason) {
     identical: false,
     reason: reason,
     chain: 0,
-    workerSteps: 0,
+    workerSteps: const {},
   );
 }
 
@@ -489,14 +489,14 @@ FlowResult _measureFlowTestLeaf(RepeatContext ctx) {
   }
 }
 
-(List<SpawnRecord>?, int, FlowResult?) _resolveAndOrderSpawns(
+(List<SpawnRecord>?, Map<String, int>, FlowResult?) _resolveAndOrderSpawns(
   File logFile,
   _FlowReplaySpec spec,
 ) {
   if (!logFile.existsSync()) {
     return (
       null,
-      0,
+      const {},
       FlowResult(
         method: spec.method,
         bazelCpu: spec.bazelCpu,
@@ -504,7 +504,7 @@ FlowResult _measureFlowTestLeaf(RepeatContext ctx) {
         identical: false,
         reason: 'Execution log not generated',
         chain: 0,
-        workerSteps: 0,
+        workerSteps: const {},
       ),
     );
   }
