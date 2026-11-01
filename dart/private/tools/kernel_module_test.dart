@@ -306,6 +306,43 @@ String _sidecar(String name, Map<String, String> excluded) {
   return '${_root.path}/$name.vm_excluded.txt';
 }
 
+typedef _SandboxExecrootFixture = ({
+  Directory execroot,
+  Directory sandbox,
+  List<String> physicalUris,
+});
+
+List<String> _sandboxArgsFor(String suffix) => [
+  '--source',
+  'org-dartlang-root:///pkg/lib/a.dart',
+  '--source',
+  'org-dartlang-root:///pkg/lib/a.g.dart',
+  '--own-source-file',
+  'pkg/lib/a.dart',
+  '--own-source-file',
+  'bazel-out/k8-fastbuild/bin/pkg/lib/a.g.dart',
+  '--output',
+  'bazel-out/k8-fastbuild/bin/pkg/a_mod_$suffix',
+  '--unused-inputs-list',
+  'bazel-out/k8-fastbuild/bin/pkg/a_mod_$suffix.unused_inputs',
+  '--excluded-output',
+  'bazel-out/k8-fastbuild/bin/pkg/a_mod_$suffix.vm_excluded.txt',
+  '--packages-file',
+  'package_config.json',
+  '--libraries-json',
+  'libraries.json',
+  '--multi-root',
+  '.',
+  '--multi-root',
+  'bazel-out/k8-fastbuild/bin',
+  '--multi-root-scheme',
+  'org-dartlang-root',
+  '--target',
+  'vm',
+  '--input-kmod',
+  'bazel-out/k8-fastbuild/bin/dep.koutline',
+];
+
 /// Plans and compiles one module named `name` from `sources`, which are keys under the
 /// test's root (`pkg/lib/a.dart`). Returns what it wrote and what it asked the compiler.
 Future<_Result> _compile(
@@ -4111,6 +4148,139 @@ void main(List<String> args) {
           expect(flag, isNot(startsWith('--used-inputs=file://')));
         }
         expect(File(unusedPath).readAsLinesSync(), [cleanDir]);
+      } finally {
+        Directory.current = previous;
+      }
+    });
+
+    _SandboxExecrootFixture createSandboxExecrootFixture(Directory root) {
+      final execroot = Directory('${root.path}/execroot')
+        ..createSync(recursive: true);
+      final sandbox = Directory('${root.path}/sandbox')
+        ..createSync(recursive: true);
+
+      final srcFile = File('${execroot.path}/pkg/lib/a.dart')
+        ..parent.createSync(recursive: true);
+      srcFile.writeAsStringSync('class A {}\n');
+
+      final genFile = File(
+        '${execroot.path}/bazel-out/k8-fastbuild/bin/pkg/lib/a.g.dart',
+      )..parent.createSync(recursive: true);
+      genFile.writeAsStringSync('// generated\n');
+
+      final koutlineDir = Directory(
+        '${execroot.path}/bazel-out/k8-fastbuild/bin/dep.koutline',
+      )..createSync(recursive: true);
+      File('${koutlineDir.path}/index.json').writeAsStringSync(
+        jsonEncode({
+          'version': 1,
+          'sccs': [
+            {
+              'dill': 'dep.dill',
+              'defines': ['dep/lib/dep.dart'],
+              'imports': <String>[],
+            },
+          ],
+        }),
+      );
+
+      File('${execroot.path}/package_config.json').writeAsStringSync(
+        jsonEncode({
+          'configVersion': 2,
+          'packages': [
+            {'name': 'pkg', 'rootUri': 'pkg', 'packageUri': 'lib/'},
+            {'name': 'dep', 'rootUri': 'dep', 'packageUri': 'lib/'},
+          ],
+        }),
+      );
+      File('${execroot.path}/libraries.json').writeAsStringSync(
+        jsonEncode({
+          'vm': {'libraries': <String, dynamic>{}},
+        }),
+      );
+
+      for (final FileSystemEntity entity in execroot.listSync()) {
+        final String name = entity.path.replaceAll(r'\', '/').split('/').last;
+        Link('${sandbox.path}/$name').createSync(entity.path);
+      }
+
+      return (
+        execroot: execroot,
+        sandbox: sandbox,
+        physicalUris: <String>[
+          Uri.file(srcFile.path).toString(),
+          Uri.file(genFile.path).toString(),
+        ],
+      );
+    }
+
+    test('unused inputs list is strategy-invariant between execroot and symlinked sandbox', () async {
+      final _SandboxExecrootFixture fixture = createSandboxExecrootFixture(
+        _root,
+      );
+      final compiler = _DillWritingCompiler(
+        () => _buildDillWithUris(fixture.physicalUris),
+      );
+      final Directory previous = Directory.current;
+      try {
+        Directory.current = fixture.execroot.path;
+        final int resExec = await compileModule(
+          _sandboxArgsFor('exec'),
+          compiler,
+          StringBuffer(),
+          const [],
+        );
+        expect(resExec, 0);
+        final List<String> execLines = File(
+          'bazel-out/k8-fastbuild/bin/pkg/a_mod_exec.unused_inputs',
+        ).readAsLinesSync();
+        expect(execLines, ['bazel-out/k8-fastbuild/bin/dep.koutline']);
+
+        Directory.current = fixture.sandbox.path;
+        final int resSand = await compileModule(
+          _sandboxArgsFor('sand'),
+          compiler,
+          StringBuffer(),
+          const [],
+        );
+        expect(resSand, 0);
+        final List<String> sandLines = File(
+          'bazel-out/k8-fastbuild/bin/pkg/a_mod_sand.unused_inputs',
+        ).readAsLinesSync();
+        expect(sandLines, execLines);
+      } finally {
+        Directory.current = previous;
+      }
+    });
+
+    test('undeclared source in kernel source table vetoes unused inputs list in symlinked sandbox', () async {
+      final _SandboxExecrootFixture fixture = createSandboxExecrootFixture(
+        _root,
+      );
+      final compiler = _DillWritingCompiler(
+        () => _buildDillWithUris([
+          ...fixture.physicalUris,
+          Uri.file('${fixture.execroot.path}/pkg/lib/undeclared.dart')
+              .toString(),
+        ]),
+      );
+      final Directory previous = Directory.current;
+      try {
+        Directory.current = fixture.sandbox.path;
+        final int resSand = await compileModule(
+          _sandboxArgsFor('undeclared'),
+          compiler,
+          StringBuffer(),
+          const [],
+        );
+        expect(resSand, isNot(0));
+        final unusedFile = File(
+          'bazel-out/k8-fastbuild/bin/pkg/a_mod_undeclared.unused_inputs',
+        );
+        final List<String> sandLines = unusedFile.existsSync()
+            ? unusedFile.readAsLinesSync()
+            : <String>[];
+        expect(sandLines, isEmpty);
       } finally {
         Directory.current = previous;
       }
