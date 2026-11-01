@@ -7,7 +7,6 @@ analyzer:
     - "dev/testdata/**"
     - "e2e/**/bazel-*/**"
     - "references/**"
-
 linter:
   rules:
     always_declare_return_types: true
