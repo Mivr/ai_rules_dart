@@ -25,7 +25,7 @@ dart_binary(
 # Regression check: depending on a source-less aggregate `dart_library`
 # (`//facade`, which re-exports `//utils`) used to fail at analysis with
 # `generate_package_config: no source files found …`. Build verifies the
-# fix; `bazel test //...` covers it via the `[ $? -eq 4 ]` build-only path.
+# fix; `bazel test //...` covers it via the workspace analysis aspect.
 # Analyzing the binary, not a library, is what puts `facade_main.dart` under the
 # ruleset at all — an entrypoint belongs to no package's `lib/`.
 dart_binary(

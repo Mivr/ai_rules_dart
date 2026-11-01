@@ -55,21 +55,6 @@ common --noexperimental_check_external_repository_files
 common --experimental_fetch_all_coverage_outputs
 # Docs: https://registry.build/flag/bazel?filter=experimental_fetch_all_coverage_outputs
 
-# Set this flag to enable re-tries of failed tests on CI.
-# When any test target fails, try one or more times. This applies regardless of whether the "flaky"
-# tag appears on the target definition.
-# This is a tradeoff: legitimately failing tests will take longer to report,
-# but we can "paper over" flaky tests that pass most of the time.
-#
-# An alternative is to mark every flaky test with the `flaky = True` attribute, but this requires
-# the buildcop to make frequent code edits.
-# This flag is not recommended for local builds: flakiness is more likely to get fixed if it is
-# observed during development.
-#
-# Note that when passing after the first attempt, Bazel will give a special "FLAKY" status rather than "PASSED".
-test:ci --flaky_test_attempts=2
-# Docs: https://registry.build/flag/bazel?filter=flaky_test_attempts
-
 # Fixes builds hanging on CI that get the TCP connection closed without sending RST packets.
 common:ci --grpc_keepalive_time="30s"
 # Docs: https://registry.build/flag/bazel?filter=grpc_keepalive_time

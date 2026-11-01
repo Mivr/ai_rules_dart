@@ -1,4 +1,4 @@
-load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_binary")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_analysis_test", "dart_binary")
 
 dart_analysis_config(
     name = "analysis_config",
@@ -39,4 +39,15 @@ dart_binary(
     name = "hello_jit",
     compile_mode = "jit-snapshot",
     main = "hello.dart",
+)
+
+dart_analysis_test(
+    name = "analysis_test",
+    size = "small",
+    targets = [
+        ":hello",
+        ":hello_aot",
+        ":hello_jit",
+        ":hello_kernel",
+    ],
 )

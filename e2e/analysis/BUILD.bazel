@@ -1,9 +1,15 @@
-load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_library")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_analysis_test", "dart_library")
 
 dart_library(
     name = "good_lib",
     srcs = glob(["lib/**/*.dart"]),
     deps = ["//mylib"],
+)
+
+dart_analysis_test(
+    name = "good_lib_analysis_test",
+    size = "small",
+    targets = [":good_lib"],
 )
 
 # The options the `dart_analyze` aspect applies to every package here. The

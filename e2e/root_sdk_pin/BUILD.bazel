@@ -1,6 +1,12 @@
-load("@rules_dart//dart:defs.bzl", "dart_binary")
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_test")
 
 dart_binary(
     name = "app",
     main = "bin/main.dart",
+)
+
+dart_test(
+    name = "version_test",
+    size = "small",
+    main = "test/version_test.dart",
 )

@@ -231,8 +231,7 @@ jobs:
           FOLDERS: ${{ matrix.folders }}
           PARALLELISM: ${{ matrix.parallelism }}
         # Explicit bash: the default shell is PowerShell on Windows, where the
-        # wave below is not valid. The per-folder command keeps the old
-        # `bash -c '... || [ $? -eq 4 ]'`, so Windows still runs it under bash.
+        # wave below is not valid; Windows still runs it under bash.
         shell: bash
         run: |
           ws="${GITHUB_WORKSPACE//\\//}"
@@ -260,8 +259,7 @@ jobs:
             # a per-folder --output_base so the folder gets its own Bazel
             # server. The disk and repository caches stay shared, so warmth is
             # unaffected.
-            # Exit code 4 means "build succeeded but no test targets found".
-            if ( cd "$ws/$1" && bazel --output_base="$outbasedir/$slug" test --test_output=errors //... || [ $? -eq 4 ] ) >"$logdir/$slug.log" 2>&1; then
+            if ( cd "$ws/$1" && bazel --output_base="$outbasedir/$slug" test --test_output=errors //... ) >"$logdir/$slug.log" 2>&1; then
               echo 0 >"$logdir/$slug.status"
             else
               echo 1 >"$logdir/$slug.status"
@@ -497,12 +495,10 @@ jobs:
       - uses: actions/checkout@v7
       - name: analysis — ${{ matrix.name }}
         working-directory: e2e/analysis
-        # Exit code 4: the workspace has no test targets, only the aspect's
-        # checks, which `bazel test` builds.
-        run: bazel test ${{ matrix.flags }} --test_output=errors //... || [ $? -eq 4 ]
+        run: bazel test ${{ matrix.flags }} --test_output=errors //...
       - name: analysis_failure canary — ${{ matrix.name }}
         working-directory: e2e/analysis_failure
-        run: bazel test ${{ matrix.flags }} //:clean_lib || [ $? -eq 4 ]
+        run: bazel build ${{ matrix.flags }} --aspects=@rules_dart//dart:analyze.bzl%dart_analyze --output_groups=+dart_analyze,+dart_format //:clean_lib
   # Every runnable entry point (`bazel run` on every public target, plus one
   # instance of every public rule whose target it accepts) keeps its HOME
   # policy: `e2e/run_home/run_home_test.sh` checks the registry against
@@ -1229,12 +1225,12 @@ jobs:
           done
           echo "OK: undeclared include refused by both checks, under every strategy"
       # The format check runs only when its output group is asked for: with
-      # `dart_format` removed from the groups `.bazelrc` requests, the
+      # `dart_format` removed from the groups requested, the
       # misformatted target builds green.
       - name: analysis_failure — expect the format check to run only when requested
         working-directory: e2e/analysis_failure
         run: |
-          bazel test --output_groups=-dart_format //fmt || [ $? -eq 4 ]
+          bazel build --aspects=@rules_dart//dart:analyze.bzl%dart_analyze --output_groups=+dart_analyze,-dart_format //fmt
           echo "OK: format check skipped when its output group is not requested"
       # A `manual` target is out of `//...`'s reach; `dart_analysis_test` names
       # it and must fail to build on its violation, whatever output groups the
