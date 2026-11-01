@@ -2,6 +2,7 @@ load(
     "@rules_dart//dart:defs.bzl",
     "dart_analysis_config",
     "dart_analysis_options",
+    "dart_analysis_test",
     "dart_binary",
 )
 
@@ -30,4 +31,10 @@ dart_analysis_options(
 dart_analysis_config(
     name = "analysis_config",
     options = [":options"],
+)
+
+dart_analysis_test(
+    name = "analysis_test",
+    size = "small",
+    targets = [":app"],
 )

@@ -3,6 +3,9 @@ load("@bazelrc-preset.bzl", "bazelrc_preset")
 bazelrc_preset(
     name = "preset",
     doc_link_template = "https://registry.build/flag/bazel?filter={flag}",
+    extra_presets = {
+        "flaky_test_attempts": [],
+    },
 )
 
 # The dual-build collision checker moved to //dart/ext/tools:check_dual_build_collisions

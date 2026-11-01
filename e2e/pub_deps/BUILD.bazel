@@ -1,9 +1,15 @@
-load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_binary")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_analysis_test", "dart_binary")
 
 dart_binary(
     name = "app",
     main = "main.dart",
     deps = ["@path"],
+)
+
+dart_analysis_test(
+    name = "analysis_test",
+    size = "small",
+    targets = [":app"],
 )
 
 # The ruleset is a lint input, not a program input: naming it here rather than

@@ -163,8 +163,7 @@ jobs:
             # a per-folder --output_base so the folder gets its own Bazel
             # server. The disk and repository caches stay shared, so warmth
             # is unaffected.
-            # Exit code 4 means "build succeeded but no test targets found".
-            if ( cd "$ws/$1" && bazel --output_base="$outbasedir/$slug" test --test_output=errors //... || [ $? -eq 4 ] ) >"$logdir/$slug.log" 2>&1; then
+            if ( cd "$ws/$1" && bazel --output_base="$outbasedir/$slug" test --test_output=errors //... ) >"$logdir/$slug.log" 2>&1; then
               echo 0 >"$logdir/$slug.status"
             else
               echo 1 >"$logdir/$slug.status"

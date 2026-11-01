@@ -1,4 +1,4 @@
-load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_test")
+load("@rules_dart//dart:defs.bzl", "dart_analysis_test", "dart_binary", "dart_test")
 
 exports_files([
     "lock_a.lock",
@@ -15,6 +15,15 @@ dart_binary(
     name = "tool",
     main = "main_tool.dart",
     deps = ["@tool_deps//:analyzer"],
+)
+
+dart_analysis_test(
+    name = "analysis_test",
+    size = "small",
+    targets = [
+        ":app",
+        ":tool",
+    ],
 )
 
 # An isolated hub's spokes ship their runtime files too; the hub's separate
