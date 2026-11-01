@@ -1,0 +1,22 @@
+load("//dart:defs.bzl", "dart_test")
+
+dart_test(
+    name = "flaky_guard_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :flaky_guard_test.dart)",
+    ],
+    data = [
+        "flaky_guard_test.dart",
+    ],
+    local = True,
+    main = "flaky_guard_test.dart",
+    tags = [
+        "external",
+        "no-sandbox",
+    ],
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
