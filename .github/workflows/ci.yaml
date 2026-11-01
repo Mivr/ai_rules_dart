@@ -485,7 +485,12 @@ jobs:
   # job can prove it: `//:clean_lib` there is formatted at the stock 80, so if
   # the walk ever escapes it reaches the canary and turns red. `e2e/analysis`
   # runs its whole suite beside it, so its configured widths, `package:`
-  # includes and language versions must agree across all four cells too.
+  # includes and language versions must agree across all eight cells too.
+  #
+  # The job has eight cells: the empty-flags and `--noenable_runfiles` cells run
+  # an unsandboxed persistent worker; `--worker_sandboxing` makes the persistent
+  # worker action run in the sandbox; `--strategy=DartAnalyze=sandboxed` runs
+  # the analyzer as a one-shot sandboxed action.
   format-hermeticity:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -493,14 +498,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: forest runfiles, sandboxed
+          - name: forest runfiles, unsandboxed worker
             flags: ""
-          - name: forest runfiles, local
+            compat: "format-hermeticity (forest runfiles, sandboxed)"
+          - name: forest runfiles, standalone
             flags: "--spawn_strategy=standalone"
-          - name: manifest runfiles, sandboxed
+            compat: "format-hermeticity (forest runfiles, local, --spawn_strategy=standalone)"
+          - name: forest runfiles, worker-sandboxed
+            flags: "--worker_sandboxing"
+          - name: forest runfiles, analyze sandboxed
+            flags: "--strategy=DartAnalyze=sandboxed"
+          - name: manifest runfiles, unsandboxed worker
             flags: "--noenable_runfiles"
-          - name: manifest runfiles, local
+            compat: "format-hermeticity (manifest runfiles, sandboxed, --noenable_runfiles)"
+          - name: manifest runfiles, standalone
             flags: "--noenable_runfiles --spawn_strategy=standalone"
+            compat: "format-hermeticity (manifest runfiles, local, --noenable_runfiles --spawn_strategy=standalone)"
+          - name: manifest runfiles, worker-sandboxed
+            flags: "--noenable_runfiles --worker_sandboxing"
+          - name: manifest runfiles, analyze sandboxed
+            flags: "--noenable_runfiles --strategy=DartAnalyze=sandboxed"
     steps:
       - uses: actions/checkout@v7
       - name: analysis — ${{ matrix.name }}
