@@ -85,9 +85,10 @@ void makeBazelOutWritable(String execroot) {
         includeParentEnvironment: false,
       );
     } else if (Platform.isWindows) {
+      final winOutPath = outDir.path.replaceAll('/', r'\');
       Process.runSync(
         'attrib',
-        ['-r', '${outDir.path}\\*', '/s', '/d'],
+        ['-r', '$winOutPath\\*', '/s', '/d'],
         environment: cleanProcessEnvironment(),
         includeParentEnvironment: false,
       );
@@ -177,15 +178,39 @@ void _backupAndMoveOutputsAside({
   }
 }
 
-void _ensureOutputParentDirs(String execroot, SpawnRecord spawn) {
-  for (final out in spawn.declaredOutputs) {
+void _ensureOutputParentDirs(
+  String execroot,
+  Directory backupDir,
+  SpawnRecord spawn,
+) {
+  final outputs = spawn.listedOutputs.isNotEmpty
+      ? spawn.listedOutputs
+      : spawn.actualOutputs;
+  for (final out in outputs) {
     File('$execroot/$out').parent.createSync(recursive: true);
+    final bakType = FileSystemEntity.typeSync(
+      '${backupDir.path}/$out',
+      followLinks: false,
+    );
+    if (bakType == FileSystemEntityType.directory) {
+      Directory('$execroot/$out').createSync(recursive: true);
+    }
   }
+}
+
+String _resolveReplayExecutable(String execroot, String cmd) {
+  if (!Platform.isWindows || isAbsoluteCliPath(cmd)) return cmd;
+  if (cmd.contains('/') || cmd.contains(r'\')) {
+    final candidate = File('$execroot/$cmd');
+    if (candidate.existsSync()) return candidate.path;
+  }
+  return cmd;
 }
 
 (double, String?) _executeSpawns({
   required List<SpawnRecord> orderedSpawns,
   required String execroot,
+  required Directory backupDir,
   required ChildCpuClock clock,
   required bool isTestFlow,
 }) {
@@ -193,19 +218,28 @@ void _ensureOutputParentDirs(String execroot, SpawnRecord spawn) {
   for (final spawn in orderedSpawns) {
     if (spawn.commandArgs.isEmpty) continue;
 
-    _ensureOutputParentDirs(execroot, spawn);
+    _ensureOutputParentDirs(execroot, backupDir, spawn);
     final env = cleanProcessEnvironment(overlay: spawn.environmentVariables);
     final cmd = spawn.commandArgs.first;
+    final executable = _resolveReplayExecutable(execroot, cmd);
     final args = spawn.commandArgs.sublist(1);
 
+    final ProcessResult result;
     final beforeCpu = clock.getChildCpuSeconds();
-    final result = Process.runSync(
-      cmd,
-      args,
-      workingDirectory: execroot,
-      environment: env,
-      includeParentEnvironment: false,
-    );
+    try {
+      result = Process.runSync(
+        executable,
+        args,
+        workingDirectory: execroot,
+        environment: env,
+        includeParentEnvironment: false,
+      );
+    } on ProcessException catch (e) {
+      final afterCpu = clock.getChildCpuSeconds();
+      final stepCpu = afterCpu - beforeCpu;
+      if (stepCpu > 0) totalCpu += stepCpu;
+      return (totalCpu, 'Spawn $cmd failed to start: $e');
+    }
     final afterCpu = clock.getChildCpuSeconds();
     final stepCpu = afterCpu - beforeCpu;
     if (stepCpu > 0) totalCpu += stepCpu;
@@ -386,37 +420,48 @@ ReplayResult _runReplayAndVerify({
   required ChildCpuClock clock,
   required bool isTestFlow,
 }) {
-  final (cpu, failure) = _executeSpawns(
-    orderedSpawns: orderedSpawns,
-    execroot: execroot,
-    clock: clock,
-    isTestFlow: isTestFlow,
-  );
-  if (failure != null) {
+  try {
+    final (cpu, failure) = _executeSpawns(
+      orderedSpawns: orderedSpawns,
+      execroot: execroot,
+      backupDir: backupDir,
+      clock: clock,
+      isTestFlow: isTestFlow,
+    );
+    if (failure != null) {
+      return ReplayResult(
+        identical: false,
+        solCpuSeconds: null,
+        reason: failure,
+        replayedCount: orderedSpawns.length,
+      );
+    }
+
+    final verifyErr = _verifyOutputs(execroot, backupDir, verifyPaths);
+    if (verifyErr != null) {
+      return ReplayResult(
+        identical: false,
+        solCpuSeconds: null,
+        reason: verifyErr,
+        replayedCount: orderedSpawns.length,
+      );
+    }
+
+    return ReplayResult(
+      identical: true,
+      solCpuSeconds: cpu,
+      reason: 'ok',
+      replayedCount: orderedSpawns.length,
+    );
+  } on FileSystemException catch (e) {
+    stderr.writeln('Replay filesystem error: $e');
     return ReplayResult(
       identical: false,
       solCpuSeconds: null,
-      reason: failure,
+      reason: 'Replay filesystem error: $e',
       replayedCount: orderedSpawns.length,
     );
   }
-
-  final verifyErr = _verifyOutputs(execroot, backupDir, verifyPaths);
-  if (verifyErr != null) {
-    return ReplayResult(
-      identical: false,
-      solCpuSeconds: null,
-      reason: verifyErr,
-      replayedCount: orderedSpawns.length,
-    );
-  }
-
-  return ReplayResult(
-    identical: true,
-    solCpuSeconds: cpu,
-    reason: 'ok',
-    replayedCount: orderedSpawns.length,
-  );
 }
 
 /// Replays ordered spawns in `execroot` and verifies byte-identical outputs.

@@ -24,57 +24,29 @@ void _runSingleRepeat({
   stdout.writeln('Repeat $repeat finished, written to $outPath');
 }
 
-String _resolveSingleOutFile({
-  required String? rawOut,
-  required String? rawResultsDir,
-  required int repeat,
-}) {
-  if (rawOut == null || rawOut.isEmpty) {
-    final outDir = resolveCliPath(rawResultsDir!);
-    Directory(outDir).createSync(recursive: true);
-    return '$outDir/repeat-$repeat.json';
-  }
-  final resolvedOut = resolveCliPath(rawOut);
-  if (Directory(resolvedOut).existsSync()) {
-    return '$resolvedOut/repeat-$repeat.json';
-  }
-  return resolvedOut;
-}
+void main(List<String> args) {
+  final flags = parseCliFlags(args);
+  final rawWorkspace = lastFlagValue(flags, const ['workspace', 'ws']);
+  final plannedOutputs = resolveRunnerOutputs(flags);
 
-void _executeRunnerJob({
-  required String workspace,
-  required int repeat,
-  required int? repeatsCount,
-  required bool hasExplicitRepeat,
-  required String? rawOut,
-  required String? rawResultsDir,
-}) {
+  if (rawWorkspace == null || rawWorkspace.isEmpty || plannedOutputs.isEmpty) {
+    stderr.writeln(
+      'Usage: runner --workspace=<ws> --repeat=<n> --out=<result.json>',
+    );
+    exit(1);
+  }
+
+  final workspace = resolveCliPath(rawWorkspace);
   final tempRoot = Directory.systemTemp.createTempSync('rd_perf_').path;
   try {
-    if (!hasExplicitRepeat && repeatsCount != null && repeatsCount > 0) {
-      final outDir = resolveCliPath((rawResultsDir ?? rawOut)!);
-      Directory(outDir).createSync(recursive: true);
-      for (var i = 1; i <= repeatsCount; i++) {
-        _runSingleRepeat(
-          workspace: workspace,
-          repeat: i,
-          outPath: '$outDir/repeat-$i.json',
-          tempRoot: tempRoot,
-        );
-      }
-      return;
+    for (final (repeatIndex, outPath) in plannedOutputs) {
+      _runSingleRepeat(
+        workspace: workspace,
+        repeat: repeatIndex,
+        outPath: outPath,
+        tempRoot: tempRoot,
+      );
     }
-    final outPath = _resolveSingleOutFile(
-      rawOut: rawOut,
-      rawResultsDir: rawResultsDir,
-      repeat: repeat,
-    );
-    _runSingleRepeat(
-      workspace: workspace,
-      repeat: repeat,
-      outPath: outPath,
-      tempRoot: tempRoot,
-    );
   } finally {
     try {
       forceDeleteDirectorySync(Directory(tempRoot));
@@ -84,43 +56,4 @@ void _executeRunnerJob({
       stderr.writeln('Error cleaning temp directory: $e');
     }
   }
-}
-
-void main(List<String> args) {
-  final flags = parseCliFlags(args);
-  final rawWorkspace = lastFlagValue(flags, const ['workspace', 'ws']);
-  final hasExplicitRepeat =
-      flags.containsKey('repeat') ||
-      flags.containsKey('repeat-index') ||
-      flags.containsKey('repeat_index');
-  final repeat = intFlagValue(flags, const [
-    'repeat',
-    'repeat-index',
-    'repeat_index',
-  ], defaultValue: 1);
-  final repeatsCount = intFlagValue(flags, const ['repeats']);
-  final rawResultsDir = lastFlagValue(flags, const [
-    'results-dir',
-    'results_dir',
-  ]);
-  final rawOut = lastFlagValue(flags, const ['out', 'output']);
-
-  if (rawWorkspace == null ||
-      rawWorkspace.isEmpty ||
-      repeat == null ||
-      (rawOut == null && rawResultsDir == null)) {
-    stderr.writeln(
-      'Usage: runner --workspace=<ws> --repeat=<n> --out=<result.json>',
-    );
-    exit(1);
-  }
-
-  _executeRunnerJob(
-    workspace: resolveCliPath(rawWorkspace),
-    repeat: repeat,
-    repeatsCount: repeatsCount,
-    hasExplicitRepeat: hasExplicitRepeat,
-    rawOut: rawOut,
-    rawResultsDir: rawResultsDir,
-  );
 }

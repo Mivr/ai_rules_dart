@@ -128,7 +128,7 @@ final class FlowResult {
 
   /// Deserializes from JSON map.
   static FlowResult fromJson(Map<String, dynamic> json) {
-    final rawWorkerSteps = json['workerSteps'];
+    final rawWorkerSteps = json['workerSteps'] ?? json['worker_steps'];
     final workerSteps = <String, int>{};
     if (rawWorkerSteps is Map) {
       for (final entry in rawWorkerSteps.entries) {
@@ -138,10 +138,12 @@ final class FlowResult {
         }
       }
     }
+    final bazelNum = (json['bazelCpu'] ?? json['bazel']) as num?;
+    final solNum = (json['solCpu'] ?? json['sol']) as num?;
     return FlowResult(
       method: json['method'] as String? ?? 'warm-server',
-      bazelCpu: (json['bazelCpu'] as num?)?.toDouble(),
-      solCpu: (json['solCpu'] as num?)?.toDouble(),
+      bazelCpu: bazelNum?.toDouble(),
+      solCpu: solNum?.toDouble(),
       identical: json['identical'] as bool? ?? false,
       reason: json['reason'] as String? ?? 'missing',
       chain: (json['chain'] as num?)?.toInt() ?? 0,
@@ -178,10 +180,8 @@ final class RepeatResult {
         );
       }
     }
-    return RepeatResult(
-      repeatIndex: (json['repeatIndex'] as num?)?.toInt() ?? 0,
-      flows: flows,
-    );
+    final idxNum = (json['repeatIndex'] ?? json['repeat']) as num?;
+    return RepeatResult(repeatIndex: idxNum?.toInt() ?? 0, flows: flows);
   }
 }
 
@@ -239,7 +239,10 @@ List<RepeatResult> loadRepeatResults(
     try {
       final decoded = jsonDecode(file.readAsStringSync());
       if (decoded is! Map<String, dynamic>) continue;
-      if (!decoded.containsKey('repeatIndex') ||
+      final hasIndex =
+          decoded.containsKey('repeatIndex') || decoded.containsKey('repeat');
+      if (!hasIndex ||
+          decoded.containsKey('rules_dart') ||
           decoded['flows'] is! Map<String, dynamic>) {
         continue;
       }

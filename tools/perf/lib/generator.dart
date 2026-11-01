@@ -5,6 +5,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'cli_args.dart';
+import 'generator_sources.dart';
 
 /// Parsed module identity from a Bazel MODULE.bazel file.
 final class ModuleIdentity {
@@ -25,33 +26,69 @@ final class ModuleIdentity {
   final String dartVersion;
 }
 
+int _scanTripleQuoted(
+  String content,
+  int start,
+  String delim,
+  StringBuffer out,
+) {
+  out.write('   ');
+  var i = start + 3;
+  var escaped = false;
+  while (i < content.length) {
+    if (!escaped && content.startsWith(delim, i)) {
+      out.write('   ');
+      return i + 3;
+    }
+    final ch = content[i];
+    out.write(ch == '\n' ? '\n' : ' ');
+    escaped = !escaped && ch == r'\';
+    i++;
+  }
+  return i;
+}
+
+int _scanSingleQuoted(
+  String content,
+  int start,
+  String quote,
+  StringBuffer out,
+) {
+  out.write(quote);
+  var i = start + 1;
+  var escaped = false;
+  while (i < content.length) {
+    final ch = content[i];
+    out.write(ch);
+    i++;
+    if (escaped) {
+      escaped = false;
+    } else if (ch == r'\') {
+      escaped = true;
+    } else if (ch == quote) {
+      break;
+    }
+  }
+  return i;
+}
+
 String _stripStarlarkComments(String content) {
   final out = StringBuffer();
-  String? quote;
-  var escaped = false;
-  for (var i = 0; i < content.length; i++) {
+  var i = 0;
+  while (i < content.length) {
     final ch = content[i];
-    if (quote != null) {
-      out.write(ch);
-      if (escaped) {
-        escaped = false;
-      } else if (ch == r'\') {
-        escaped = true;
-      } else if (ch == quote) {
-        quote = null;
-      }
-      continue;
-    }
     if (ch == '"' || ch == "'") {
-      quote = ch;
-      out.write(ch);
+      final triple = '$ch$ch$ch';
+      i = content.startsWith(triple, i)
+          ? _scanTripleQuoted(content, i, triple, out)
+          : _scanSingleQuoted(content, i, ch, out);
     } else if (ch == '#') {
       while (i < content.length && content[i] != '\n') {
         i++;
       }
-      if (i < content.length) out.write('\n');
     } else {
       out.write(ch);
+      i++;
     }
   }
   return out.toString();
@@ -81,7 +118,7 @@ ModuleIdentity parseModuleHeader(
       '3.13.5';
 
   final match = RegExp(
-    r'\bmodule\s*\(([^)]*)\)',
+    r'^\s*module\s*\(([^)]*)\)',
     multiLine: true,
     dotAll: true,
   ).firstMatch(cleaned);
@@ -138,83 +175,6 @@ final class GeneratorOptions {
 
   /// Number of packages per layer (default 4).
   final int fanout;
-}
-
-/// Configuration for writing a single package.
-final class PackageConfig {
-  /// Creates package configuration.
-  const PackageConfig({
-    required this.options,
-    required this.identity,
-    required this.layer,
-    required this.pkgId,
-    required this.deps,
-    required this.srcFilesCount,
-  });
-
-  /// Generator options.
-  final GeneratorOptions options;
-
-  /// Module identity.
-  final ModuleIdentity identity;
-
-  /// Layer index (0..layers-1).
-  final int layer;
-
-  /// Unique package id.
-  final int pkgId;
-
-  /// Direct package dependencies.
-  final List<int> deps;
-
-  /// Number of src files in this package.
-  final int srcFilesCount;
-
-  /// Package root directory path.
-  String get pkgDir => '${options.outputPath}/packages/pkg$pkgId';
-
-  /// Whether this is a leaf-layer package.
-  bool get isLeaf => layer == options.layers - 1;
-}
-
-/// Configuration for writing a single src file.
-final class SrcFileConfig {
-  /// Creates src file configuration.
-  const SrcFileConfig({
-    required this.packageConfig,
-    required this.fileIndex,
-    required this.targetLines,
-    required this.seedVal,
-  });
-
-  /// Owning package configuration.
-  final PackageConfig packageConfig;
-
-  /// File index within package.
-  final int fileIndex;
-
-  /// Target lines for this file.
-  final int targetLines;
-
-  /// Deterministic positive seed offset for method bodies.
-  final int seedVal;
-
-  /// Package directory.
-  String get pkgDir => packageConfig.pkgDir;
-
-  /// Package id.
-  int get pkgId => packageConfig.pkgId;
-
-  /// Whether this file carries an edit hook.
-  bool get hasHook =>
-      (pkgId == 0 && fileIndex == 0) ||
-      (packageConfig.isLeaf && fileIndex == 0);
-
-  /// Hook method name when [hasHook] is true.
-  String get hookName => packageConfig.layer == 0 ? 'bodyHook' : 'leafTestHook';
-
-  /// Hook initial return value.
-  int get hookVal => packageConfig.layer == 0 ? 1 : 10;
 }
 
 void _validateOptions(GeneratorOptions options) {
@@ -298,16 +258,31 @@ use_repo(pub, "pub_deps")
   File('$outputPath/MODULE.bazel').writeAsStringSync(content);
 }
 
+File? _findPristineLockFile(String resolvedRulesPath) {
+  const candidates = [
+    'e2e/dart_test_pkg/pubspec.lock',
+    'pubspec.lock',
+    'dart/ext/pubspec.lock',
+  ];
+  for (final rel in candidates) {
+    final candidate = File('$resolvedRulesPath/$rel');
+    if (candidate.existsSync()) return candidate;
+  }
+  return null;
+}
+
 void _copyPristineFiles(String outputPath, String resolvedRulesPath) {
-  final lock = File('$resolvedRulesPath/e2e/dart_test_pkg/pubspec.lock');
-  if (lock.existsSync()) {
+  final lock = _findPristineLockFile(resolvedRulesPath);
+  if (lock != null) {
     lock.copySync('$outputPath/pubspec.lock');
+  } else {
+    File('$outputPath/pubspec.lock').writeAsStringSync('packages: {}\n');
   }
 
   final yaml = File('$resolvedRulesPath/e2e/dart_test_pkg/pubspec.yaml');
   if (yaml.existsSync()) {
     yaml.copySync('$outputPath/pubspec.yaml');
-  } else if (lock.existsSync()) {
+  } else {
     File('$outputPath/pubspec.yaml').writeAsStringSync(
       'name: bench\nenvironment:\n  sdk: ^3.0.0\ndev_dependencies:\n  test: any\n',
     );
@@ -354,94 +329,6 @@ Map<int, List<int>> _computePackageDeps(int layers, int fanout, Random rng) {
   return packageDeps;
 }
 
-int _entryFileLines(
-  int pkgId,
-  int srcCount,
-  int depCount, {
-  required bool compactEntry,
-}) {
-  if (compactEntry && pkgId != 0) {
-    return depCount == 0 ? 4 : depCount + 5;
-  }
-  return depCount == 0 ? 2 * srcCount + 6 : 2 * srcCount + 2 * depCount + 7;
-}
-
-int _computeBoilerplateLines({
-  required int fanout,
-  required int totalPackages,
-  required int srcCount,
-  required Map<int, List<int>> packageDeps,
-  required bool compactEntry,
-}) {
-  final appLines = 2 * fanout + 7;
-  final leafTestLines = 8 * fanout;
-  var entryLinesTotal = 0;
-  for (var p = 0; p < totalPackages; p++) {
-    final d = packageDeps[p]!;
-    entryLinesTotal += _entryFileLines(
-      p,
-      srcCount,
-      d.length,
-      compactEntry: compactEntry,
-    );
-  }
-  return appLines + leafTestLines + entryLinesTotal;
-}
-
-(bool, List<int>) _planSrcLineBudgets({
-  required GeneratorOptions options,
-  required int srcCount,
-  required Map<int, List<int>> packageDeps,
-}) {
-  final totalPackages = options.layers * options.fanout;
-  final isHookFile = <bool>[];
-  for (var l = 0; l < options.layers; l++) {
-    final isLeaf = l == options.layers - 1;
-    for (var f = 0; f < options.fanout; f++) {
-      final pkgId = l * options.fanout + f;
-      for (var s = 0; s < srcCount; s++) {
-        isHookFile.add((pkgId == 0 && s == 0) || (isLeaf && s == 0));
-      }
-    }
-  }
-
-  final stdBoilerplate = _computeBoilerplateLines(
-    fanout: options.fanout,
-    totalPackages: totalPackages,
-    srcCount: srcCount,
-    packageDeps: packageDeps,
-    compactEntry: false,
-  );
-  final stdMinSrc = isHookFile.fold<int>(0, (sum, h) => sum + (h ? 19 : 13));
-  final useCompact =
-      srcCount == 1 && options.targetLoc < (stdBoilerplate + stdMinSrc);
-
-  final boilerplate = useCompact
-      ? _computeBoilerplateLines(
-          fanout: options.fanout,
-          totalPackages: totalPackages,
-          srcCount: srcCount,
-          packageDeps: packageDeps,
-          compactEntry: true,
-        )
-      : stdBoilerplate;
-
-  final minLines = [
-    for (final h in isHookFile)
-      h ? (useCompact ? 13 : 19) : (useCompact ? 2 : 13),
-  ];
-  final minSum = minLines.fold<int>(0, (a, b) => a + b);
-  final extraTotal = max(0, options.targetLoc - boilerplate - minSum);
-  final baseExtra = extraTotal ~/ minLines.length;
-  final remExtra = extraTotal % minLines.length;
-
-  final budgets = List<int>.generate(
-    minLines.length,
-    (i) => minLines[i] + baseExtra + (i < remExtra ? 1 : 0),
-  );
-  return (useCompact, budgets);
-}
-
 void _generatePackagesAndApp(
   GeneratorOptions options,
   ModuleIdentity identity,
@@ -450,41 +337,49 @@ void _generatePackagesAndApp(
   final srcCount = max(1, min(10, (options.targetLoc ~/ totalPackages) ~/ 250));
   final rng = Random(options.seed);
   final packageDeps = _computePackageDeps(options.layers, options.fanout, rng);
-  final (useCompact, budgets) = _planSrcLineBudgets(
-    options: options,
+  final (mode, budgets) = planSrcLineBudgets(
+    targetLoc: options.targetLoc,
+    layers: options.layers,
+    fanout: options.fanout,
     srcCount: srcCount,
     packageDeps: packageDeps,
   );
 
   var fileCounter = 0;
   for (var l = 0; l < options.layers; l++) {
+    final isLeaf = l == options.layers - 1;
     for (var f = 0; f < options.fanout; f++) {
       final pkgId = l * options.fanout + f;
-      final config = PackageConfig(
-        options: options,
-        identity: identity,
-        layer: l,
+      final isHookPkg = pkgId == 0 || isLeaf;
+      final pkgSrcCount = mode == LayoutMode.ultraCompact
+          ? (isHookPkg ? 1 : 0)
+          : srcCount;
+      final plan = PackagePlan(
+        pkgDir: '${options.outputPath}/packages/pkg$pkgId',
         pkgId: pkgId,
+        isLeaf: isLeaf,
         deps: packageDeps[pkgId]!,
-        srcFilesCount: srcCount,
+        srcFilesCount: pkgSrcCount,
+        inlineSeed: pkgSrcCount == 0 ? rng.nextInt(900) + 1 : 0,
       );
 
-      _writePackageBuildFile(config);
+      _writePackageBuildFile(plan, identity.repoName);
 
-      for (var s = 0; s < srcCount; s++) {
-        _writeSrcFile(
-          SrcFileConfig(
-            packageConfig: config,
+      for (var s = 0; s < pkgSrcCount; s++) {
+        writeSrcFile(
+          SrcFilePlan(
+            pkgPlan: plan,
             fileIndex: s,
             targetLines: budgets[fileCounter++],
             seedVal: rng.nextInt(900) + 1,
+            ultraCompact: mode == LayoutMode.ultraCompact,
           ),
         );
       }
 
-      _writePackageEntryFile(config, compactEntry: useCompact);
-      if (config.isLeaf) {
-        _writePackageTestFile(config.pkgDir, pkgId);
+      writePackageEntryFile(plan, mode);
+      if (isLeaf) {
+        writePackageTestFile(plan.pkgDir, pkgId);
       }
     }
   }
@@ -492,248 +387,42 @@ void _generatePackagesAndApp(
   _writeApp(options, identity);
 }
 
-void _writePackageBuildFile(PackageConfig config) {
-  final pkgDir = Directory(config.pkgDir)..createSync(recursive: true);
-  final depLabels = config.deps
+void _writePackageBuildFile(PackagePlan plan, String repoName) {
+  final pkgDir = Directory(plan.pkgDir)..createSync(recursive: true);
+  final depLabels = plan.deps
       .map((d) => '        "//packages/pkg$d",')
       .join('\n');
-  final testTarget = config.isLeaf
+  final testTarget = plan.isLeaf
       ? '''
 
 dart_test(
-    name = "pkg${config.pkgId}_test",
+    name = "pkg${plan.pkgId}_test",
     size = "small",
-    main = "test/pkg${config.pkgId}_test.dart",
+    main = "test/pkg${plan.pkgId}_test.dart",
     deps = [
-        ":pkg${config.pkgId}",
+        ":pkg${plan.pkgId}",
         "@pub_deps//:test",
     ],
 )
 '''
       : '';
 
-  final depsBlock = config.deps.isEmpty
+  final depsBlock = plan.deps.isEmpty
       ? '    deps = [],'
       : '    deps = [\n$depLabels\n    ],';
 
   final buildContent =
       '''
-load("@${config.identity.repoName}//dart:defs.bzl", "dart_library"${config.isLeaf ? ', "dart_test"' : ''})
+load("@$repoName//dart:defs.bzl", "dart_library"${plan.isLeaf ? ', "dart_test"' : ''})
 
 dart_library(
-    name = "pkg${config.pkgId}",
+    name = "pkg${plan.pkgId}",
     srcs = glob(["lib/**/*.dart"]),
     visibility = ["//visibility:public"],
 $depsBlock
 )
 $testTarget''';
   File('${pkgDir.path}/BUILD.bazel').writeAsStringSync(buildContent);
-}
-
-void _writePackageEntryFile(
-  PackageConfig config, {
-  required bool compactEntry,
-}) {
-  final depImports =
-      config.deps.map((d) => "import 'package:pkg$d/pkg$d.dart';").toList()
-        ..sort();
-  final relImports = List.generate(
-    config.srcFilesCount,
-    (i) => "import 'src/f$i.dart';",
-  )..sort();
-
-  final depImportBlock = depImports.isNotEmpty
-      ? '${depImports.join('\n')}\n\n'
-      : '';
-  final header =
-      '$depImportBlock${relImports.join('\n')}\n\n'
-      '/// Entry function for package ${config.pkgId}.\n';
-
-  final String body;
-  if (compactEntry && config.pkgId != 0) {
-    final terms = <String>[
-      'x',
-      for (var i = 0; i < config.srcFilesCount; i++) 'fn${config.pkgId}x$i(x)',
-      for (final d in config.deps) 'pkg${d}Entry(x)',
-    ];
-    body = 'int pkg${config.pkgId}Entry(int x) => ${terms.join(' + ')};\n';
-  } else {
-    final fileCalls = List.generate(
-      config.srcFilesCount,
-      (i) => '  acc += fn${config.pkgId}x$i(x);',
-    ).join('\n');
-    final depCalls = config.deps.isEmpty
-        ? ''
-        : '${config.deps.map((d) => '  acc += pkg${d}Entry(x);').join('\n')}\n';
-    body =
-        'int pkg${config.pkgId}Entry(int x) {\n'
-        '  var acc = x;\n'
-        '$fileCalls\n'
-        '$depCalls'
-        '  return acc;\n'
-        '}\n';
-  }
-
-  File('${config.pkgDir}/lib/pkg${config.pkgId}.dart')
-      .writeAsStringSync('$header$body');
-}
-
-void _writePackageTestFile(String pkgDir, int pkgId) {
-  final testDir = Directory('$pkgDir/test')..createSync(recursive: true);
-  final testContent =
-      '''
-import 'package:pkg$pkgId/pkg$pkgId.dart';
-import 'package:test/test.dart';
-
-void main() {
-  test('pkg$pkgId entry test', () {
-    expect(pkg${pkgId}Entry(1), isPositive);
-  });
-}
-''';
-  File('${testDir.path}/pkg${pkgId}_test.dart').writeAsStringSync(testContent);
-}
-
-List<String> _buildFnLines({
-  required int pkgId,
-  required int fileIndex,
-  required String baseExpr,
-  required int seedVal,
-  required int lineCount,
-}) {
-  final doc = '/// Function for pkg $pkgId file $fileIndex.';
-  final name = 'fn${pkgId}x$fileIndex';
-  if (lineCount <= 2) {
-    return [doc, 'int $name(int x) => $baseExpr + x;'];
-  }
-  if (lineCount == 3) {
-    return [
-      doc,
-      '/// Seed offset $seedVal.',
-      'int $name(int x) => $baseExpr + x;',
-    ];
-  }
-  if (lineCount == 4) {
-    return [doc, 'int $name(int x) {', '  return $baseExpr + x;', '}'];
-  }
-  if (lineCount == 5) {
-    return [
-      doc,
-      'int $name(int x) {',
-      '  final base = $baseExpr + x;',
-      '  return base;',
-      '}',
-    ];
-  }
-  return [
-    doc,
-    'int $name(int x) {',
-    '  var acc = $baseExpr + x;',
-    for (var k = 1; k <= lineCount - 5; k++) '  acc += $k;',
-    '  return acc;',
-    '}',
-  ];
-}
-
-List<String> _buildCompactSrcLines(SrcFileConfig config) {
-  if (!config.hasHook) {
-    return _buildFnLines(
-      pkgId: config.pkgId,
-      fileIndex: config.fileIndex,
-      baseExpr: '${config.seedVal}',
-      seedVal: config.seedVal,
-      lineCount: config.targetLines,
-    );
-  }
-
-  final cls = 'C${config.pkgId}x${config.fileIndex}';
-  return [
-    '/// Class for pkg ${config.pkgId} file ${config.fileIndex}.',
-    'class $cls {',
-    '  /// Constructor.',
-    '  const $cls();',
-    '',
-    '  /// Hook for edit.',
-    '  int ${config.hookName}() {',
-    '    return ${config.hookVal};',
-    '  }',
-    '}',
-    '',
-    ..._buildFnLines(
-      pkgId: config.pkgId,
-      fileIndex: config.fileIndex,
-      baseExpr: 'const $cls().${config.hookName}() + ${config.seedVal}',
-      seedVal: config.seedVal,
-      lineCount: config.targetLines - 11,
-    ),
-  ];
-}
-
-List<String> _buildStandardSrcLines(SrcFileConfig config) {
-  final cls = 'C${config.pkgId}x${config.fileIndex}';
-  final lines = <String>[
-    '/// Class for pkg ${config.pkgId} file ${config.fileIndex}.',
-    'class $cls {',
-    '  /// Constructor.',
-    '  const $cls(this.value);',
-    '',
-    '  /// Value field.',
-    '  final int value;',
-  ];
-  if (config.hasHook) {
-    lines.addAll([
-      '',
-      '  /// Hook for edit.',
-      '  int ${config.hookName}() {',
-      '    return ${config.hookVal};',
-      '  }',
-    ]);
-  }
-
-  final minTotal = config.hasHook ? 19 : 13;
-  final neededExtra = max(0, config.targetLines - minTotal);
-  final numMethods = neededExtra ~/ 9;
-  final remLines = neededExtra % 9;
-
-  for (var m = 0; m < numMethods; m++) {
-    lines.addAll([
-      '',
-      '  /// Method $m.',
-      '  int m$m(int x) {',
-      '    var acc = x + $m + ${config.seedVal};',
-      '    for (var j = 0; j < 3; j++) {',
-      '      acc += j;',
-      '    }',
-      '    return acc;',
-      '  }',
-    ]);
-  }
-
-  final memberExpr = config.hasHook ? '${config.hookName}()' : 'value';
-  lines.addAll([
-    '}',
-    '',
-    ..._buildFnLines(
-      pkgId: config.pkgId,
-      fileIndex: config.fileIndex,
-      baseExpr: 'const $cls(${config.seedVal}).$memberExpr',
-      seedVal: config.seedVal,
-      lineCount: 4 + remLines,
-    ),
-  ]);
-  return lines;
-}
-
-void _writeSrcFile(SrcFileConfig config) {
-  final minStd = config.hasHook ? 19 : 13;
-  final lines = config.targetLines < minStd
-      ? _buildCompactSrcLines(config)
-      : _buildStandardSrcLines(config);
-
-  final srcDir = Directory('${config.pkgDir}/lib/src')
-    ..createSync(recursive: true);
-  File('${srcDir.path}/f${config.fileIndex}.dart')
-      .writeAsStringSync('${lines.join('\n')}\n');
 }
 
 void _writeApp(GeneratorOptions options, ModuleIdentity identity) {

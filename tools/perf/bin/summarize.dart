@@ -6,27 +6,42 @@ import 'dart:io';
 import 'package:perf/cli_args.dart';
 import 'package:perf/result_writer.dart';
 
+String? _gitRevParseIn(String repoDir, String revExpr) {
+  if (!Directory(repoDir).existsSync()) return null;
+  try {
+    final res = Process.runSync(
+      'git',
+      ['-C', repoDir, 'rev-parse', '--verify', revExpr],
+      environment: cleanProcessEnvironment(),
+      includeParentEnvironment: false,
+    );
+    if (res.exitCode == 0) {
+      final sha = (res.stdout as String).trim().toLowerCase();
+      if (RegExp(r'^[0-9a-f]{40}$').hasMatch(sha)) return sha;
+    }
+  } on ProcessException catch (e) {
+    stderr.writeln('git rev-parse failed for $repoDir: $e');
+  }
+  return null;
+}
+
 String _resolveCommitSha(String rawSha) {
   final trimmed = rawSha.trim();
   if (RegExp(r'^[0-9a-fA-F]{40}$').hasMatch(trimmed)) {
     return trimmed.toLowerCase();
   }
   final resolvedDir = resolveCliPath(trimmed);
-  if (Directory(resolvedDir).existsSync()) {
-    try {
-      final res = Process.runSync(
-        'git',
-        ['-C', resolvedDir, 'rev-parse', 'HEAD'],
-        environment: cleanProcessEnvironment(),
-        includeParentEnvironment: false,
-      );
-      if (res.exitCode == 0) {
-        final sha = (res.stdout as String).trim();
-        if (sha.isNotEmpty) return sha;
-      }
-    } on ProcessException catch (e) {
-      stderr.writeln('git rev-parse failed for $resolvedDir: $e');
-    }
+  final fromDir = _gitRevParseIn(resolvedDir, 'HEAD');
+  if (fromDir != null) return fromDir;
+
+  final ghWs = Platform.environment['GITHUB_WORKSPACE'];
+  final candidateDirs = <String>[
+    if (ghWs != null && ghWs.trim().isNotEmpty) '${ghWs.trim()}/rules-head',
+    resolveCliPath('.'),
+  ];
+  for (final dir in candidateDirs) {
+    final resolvedRef = _gitRevParseIn(dir, '$trimmed^{commit}');
+    if (resolvedRef != null) return resolvedRef;
   }
   return trimmed;
 }

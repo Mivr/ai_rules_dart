@@ -10,17 +10,32 @@ import 'replay.dart';
 import 'result_writer.dart';
 import 'spawn_log.dart';
 
+void _replaceHookReturn(File file, int fromVal, int toVal, String label) {
+  if (!file.existsSync()) {
+    throw StateError('$label source file not found: ${file.path}');
+  }
+  final orig = file.readAsStringSync();
+  final pattern = RegExp('^( +)return $fromVal;\$', multiLine: true);
+  final match = pattern.firstMatch(orig);
+  if (match == null) {
+    throw StateError(
+      'Expected $label body hook marker not found in ${file.path}',
+    );
+  }
+  final indent = match.group(1)!;
+  file.writeAsStringSync(
+    orig.replaceFirst('${indent}return $fromVal;', '${indent}return $toVal;'),
+  );
+}
+
 /// Applies the deterministic layer-0 method-body edit in [workspacePath].
 void applyLayer0BodyEdit(String workspacePath) {
-  final f0 = File('$workspacePath/packages/pkg0/lib/src/f0.dart');
-  if (!f0.existsSync()) {
-    throw StateError('Layer-0 source file not found: ${f0.path}');
-  }
-  final orig = f0.readAsStringSync();
-  if (!orig.contains('    return 1;\n')) {
-    throw StateError('Expected layer-0 body hook marker not found in f0.dart');
-  }
-  f0.writeAsStringSync(orig.replaceFirst('    return 1;\n', '    return 2;\n'));
+  _replaceHookReturn(
+    File('$workspacePath/packages/pkg0/lib/src/f0.dart'),
+    1,
+    2,
+    'Layer-0',
+  );
 }
 
 /// Applies the deterministic layer-0 public-API edit in [workspacePath].
@@ -41,16 +56,11 @@ void applyLayer0ApiEdit(String workspacePath) {
 
 /// Applies the deterministic leaf method-body edit for [pkgName].
 void applyLeafBodyEdit(String workspacePath, String pkgName) {
-  final f0 = File('$workspacePath/packages/$pkgName/lib/src/f0.dart');
-  if (!f0.existsSync()) {
-    throw StateError('Leaf source file not found: ${f0.path}');
-  }
-  final orig = f0.readAsStringSync();
-  if (!orig.contains('    return 10;\n')) {
-    throw StateError('Expected leaf body hook marker not found in ${f0.path}');
-  }
-  f0.writeAsStringSync(
-    orig.replaceFirst('    return 10;\n', '    return 20;\n'),
+  _replaceHookReturn(
+    File('$workspacePath/packages/$pkgName/lib/src/f0.dart'),
+    10,
+    20,
+    'Leaf',
   );
 }
 
@@ -558,10 +568,25 @@ FlowResult _replayAndVerifyFlow(
   final (ordered, workerSteps, failure) = _resolveAndOrderSpawns(logFile, spec);
   if (failure != null || ordered == null) return failure!;
 
-  final execroot = ctx.getExecroot();
-  final verifyPaths = spec.isTest
-      ? selectLeafTestVerifyPaths(ordered)
-      : ctx.queryTargetOutputs(spec.target);
+  final String execroot;
+  final Set<String> verifyPaths;
+  try {
+    execroot = ctx.getExecroot();
+    verifyPaths = spec.isTest
+        ? selectLeafTestVerifyPaths(ordered)
+        : ctx.queryTargetOutputs(spec.target);
+  } on Object catch (e) {
+    stderr.writeln('Failed preparing replay verification: $e');
+    return FlowResult(
+      method: spec.method,
+      bazelCpu: spec.bazelCpu,
+      solCpu: null,
+      identical: false,
+      reason: e.toString(),
+      chain: ordered.length,
+      workerSteps: workerSteps,
+    );
+  }
   if (verifyPaths.isEmpty) {
     return FlowResult(
       method: spec.method,

@@ -71,7 +71,8 @@ int? intFlagValue(
   return int.tryParse(raw);
 }
 
-bool _isAbsolutePath(String path) {
+/// Returns whether [path] is an absolute POSIX, UNC or Windows drive path.
+bool isAbsoluteCliPath(String path) {
   if (path.startsWith('/') || path.startsWith(r'\\')) return true;
   return path.length >= 3 &&
       RegExp(r'^[a-zA-Z]:[\\/]').hasMatch(path.substring(0, 3));
@@ -116,7 +117,7 @@ String resolveCliPath(
 }) {
   final trimmed = path.trim();
   if (trimmed.isEmpty) return trimmed;
-  if (_isAbsolutePath(trimmed)) {
+  if (isAbsoluteCliPath(trimmed)) {
     return normalizeAbsolutePath(trimmed);
   }
 
@@ -146,4 +147,69 @@ Map<String, String> cleanProcessEnvironment({
   }
   env.addAll(overlay);
   return env;
+}
+
+/// Resolves `(repeatIndex, outputFilePath)` pairs from parsed `runner` [flags].
+List<(int, String)> resolveRunnerOutputs(
+  Map<String, List<String>> flags, {
+  Map<String, String>? environment,
+  String? currentDirectory,
+}) {
+  final hasExplicitRepeat =
+      flags.containsKey('repeat') ||
+      flags.containsKey('repeat-index') ||
+      flags.containsKey('repeat_index');
+  final repeat = intFlagValue(flags, const [
+    'repeat',
+    'repeat-index',
+    'repeat_index',
+  ], defaultValue: 1);
+  final repeatsCount = intFlagValue(flags, const ['repeats']);
+  final rawResultsDir = lastFlagValue(flags, const [
+    'results-dir',
+    'results_dir',
+  ]);
+  final rawOut = lastFlagValue(flags, const ['out', 'output']);
+  final hasOut =
+      (rawOut != null && rawOut.isNotEmpty) ||
+      (rawResultsDir != null && rawResultsDir.isNotEmpty);
+  if (repeat == null ||
+      repeat <= 0 ||
+      (repeatsCount != null && repeatsCount <= 0) ||
+      !hasOut) {
+    return const [];
+  }
+
+  String resolve(String p) => resolveCliPath(
+    p,
+    environment: environment,
+    currentDirectory: currentDirectory,
+  );
+
+  final singleJsonOut =
+      repeatsCount == 1 &&
+      (rawResultsDir == null || rawResultsDir.isEmpty) &&
+      rawOut != null &&
+      rawOut.endsWith('.json') &&
+      !Directory(resolve(rawOut)).existsSync();
+  if (!hasExplicitRepeat && repeatsCount != null && !singleJsonOut) {
+    final targetDir = (rawResultsDir != null && rawResultsDir.isNotEmpty)
+        ? rawResultsDir
+        : rawOut!;
+    final outDir = resolve(targetDir);
+    return [
+      for (var i = 1; i <= repeatsCount; i++) (i, '$outDir/repeat-$i.json'),
+    ];
+  }
+
+  final targetRepeat = (!hasExplicitRepeat && repeatsCount == 1) ? 1 : repeat;
+  if (rawOut == null || rawOut.isEmpty) {
+    final outDir = resolve(rawResultsDir!);
+    return [(targetRepeat, '$outDir/repeat-$targetRepeat.json')];
+  }
+  final resolvedOut = resolve(rawOut);
+  if (Directory(resolvedOut).existsSync()) {
+    return [(targetRepeat, '$resolvedOut/repeat-$targetRepeat.json')];
+  }
+  return [(targetRepeat, resolvedOut)];
 }
