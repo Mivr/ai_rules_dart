@@ -146,3 +146,24 @@ dart_test(
         "@ext_pub_deps//:test",
     ],
 )
+
+dart_test(
+    name = "repro_canary_guard_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :repro_canary_guard_test.dart)",
+    ],
+    data = [
+        "repro_canary_guard_test.dart",
+    ],
+    local = True,
+    main = "repro_canary_guard_test.dart",
+    tags = [
+        "external",
+        "no-sandbox",
+    ],
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
