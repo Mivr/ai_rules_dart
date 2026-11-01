@@ -139,8 +139,12 @@ BaselineReport _writeBaselineReport(
 ) {
   final report = BaselineReport.of(diagnostics, baseline);
   for (final diagnostic in diagnostics) {
-    final group = report.groupFor(diagnostic.path, diagnostic.code)!;
-    final marker = group.withinCeiling ? ' - ${baselinedMarker(group)}' : '';
+    final BaselineGroup? group = diagnostic.keyed
+        ? report.groupFor(diagnostic.path, diagnostic.code)
+        : null;
+    final marker = group != null && group.withinCeiling
+        ? ' - ${baselinedMarker(group)}'
+        : '';
     stdout.writeln('${diagnostic.text}$marker');
   }
   for (final group in report.groups) {
