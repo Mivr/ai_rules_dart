@@ -157,13 +157,21 @@ jobs:
             [ -z "$folder" ] && continue
             echo "9.3.0" > "$ws/$folder/.bazelversion"
           done <<< "$FOLDERS"
+          # Build-only workspaces: .github/workflows has no tests and e2e/dual_build's sole test is manual and requires-network.
+          build_only_folders=".github/workflows e2e/dual_build"
           run_one() {
             slug="$(printf '%s' "$1" | tr '/.' '_')"
             # Same command and flags as the old per-folder Test step, plus
             # a per-folder --output_base so the folder gets its own Bazel
             # server. The disk and repository caches stay shared, so warmth
             # is unaffected.
-            if ( cd "$ws/$1" && bazel --output_base="$outbasedir/$slug" test --test_output=errors //... ) >"$logdir/$slug.log" 2>&1; then
+            if (
+              cd "$ws/$1" &&
+              case " $build_only_folders " in
+                *" $1 "*) bazel --output_base="$outbasedir/$slug" build //... ;;
+                *) bazel --output_base="$outbasedir/$slug" test --test_output=errors //... ;;
+              esac
+            ) >"$logdir/$slug.log" 2>&1; then
               echo 0 >"$logdir/$slug.status"
             else
               echo 1 >"$logdir/$slug.status"
