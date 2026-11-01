@@ -1,4 +1,19 @@
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("//dart:defs.bzl", "dart_binary")
+
+exports_files(
+    ["defs.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "defs",
+    srcs = ["defs.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/ext/_shared:defs",
+    ],
+)
 
 # Shim binary for the json_serializable Builder. SharedPartBuilder; produces
 # .<prefix>.g.part shards (combining to .g.dart happens in a separate step).

@@ -1,0 +1,213 @@
+# Starlark documentation extraction targets for the rules_dart public API.
+
+_DOC_EXTRACTS = [
+    ":dart_analyze.doc_extract",
+    ":dart_defs.doc_extract",
+    ":dart_extensions.doc_extract",
+    ":dart_providers.doc_extract",
+    ":dart_repositories.doc_extract",
+    ":dart_toolchain.doc_extract",
+    ":dart_utils.doc_extract",
+    ":registry.doc_extract",
+    ":built_value_defs.doc_extract",
+    ":copy_with_extension_gen_defs.doc_extract",
+    ":drift_defs.doc_extract",
+    ":freezed_defs.doc_extract",
+    ":go_router_defs.doc_extract",
+    ":json_serializable_defs.doc_extract",
+    ":mockito_defs.doc_extract",
+    ":sqlite3_defs.doc_extract",
+    ":stacked_defs.doc_extract",
+    ":pub_defs.doc_extract",
+    ":pub_extensions.doc_extract",
+    ":pub_pinned_sources.doc_extract",
+    ":pub_lock_hub.doc_extract",
+    ":pub_lock_package.doc_extract",
+    ":pub_lock_scc.doc_extract",
+    ":pub_scan.doc_extract",
+    ":pub_scanner.doc_extract",
+    ":pub_scc.doc_extract",
+    ":pub_yaml_parser.doc_extract",
+]
+
+filegroup(
+    name = "all_doc_extracts",
+    srcs = _DOC_EXTRACTS,
+    visibility = ["//visibility:public"],
+)
+
+starlark_doc_extract(
+    name = "dart_analyze.doc_extract",
+    src = "//dart:analyze.bzl",
+    deps = ["//dart:analyze"],
+)
+
+starlark_doc_extract(
+    name = "dart_defs.doc_extract",
+    src = "//dart:defs.bzl",
+    deps = ["//dart:defs"],
+)
+
+starlark_doc_extract(
+    name = "dart_extensions.doc_extract",
+    src = "//dart:extensions.bzl",
+    deps = ["//dart:extensions"],
+)
+
+starlark_doc_extract(
+    name = "dart_providers.doc_extract",
+    src = "//dart:providers.bzl",
+    deps = ["//dart:providers"],
+)
+
+starlark_doc_extract(
+    name = "dart_repositories.doc_extract",
+    src = "//dart:repositories.bzl",
+    deps = ["//dart:repositories"],
+)
+
+starlark_doc_extract(
+    name = "dart_toolchain.doc_extract",
+    src = "//dart:toolchain.bzl",
+    deps = ["//dart:toolchain"],
+)
+
+starlark_doc_extract(
+    name = "dart_utils.doc_extract",
+    src = "//dart:utils.bzl",
+    deps = ["//dart:utils"],
+)
+
+starlark_doc_extract(
+    name = "registry.doc_extract",
+    src = "//dart/ext:registry.bzl",
+    deps = ["//dart/ext:registry"],
+)
+
+starlark_doc_extract(
+    name = "built_value_defs.doc_extract",
+    src = "//dart/ext/built_value:defs.bzl",
+    deps = ["//dart/ext/built_value:defs"],
+)
+
+starlark_doc_extract(
+    name = "copy_with_extension_gen_defs.doc_extract",
+    src = "//dart/ext/copy_with_extension_gen:defs.bzl",
+    deps = ["//dart/ext/copy_with_extension_gen:defs"],
+)
+
+starlark_doc_extract(
+    name = "drift_defs.doc_extract",
+    src = "//dart/ext/drift:defs.bzl",
+    deps = ["//dart/ext/drift:defs"],
+)
+
+starlark_doc_extract(
+    name = "freezed_defs.doc_extract",
+    src = "//dart/ext/freezed:defs.bzl",
+    deps = ["//dart/ext/freezed:defs"],
+)
+
+starlark_doc_extract(
+    name = "go_router_defs.doc_extract",
+    src = "//dart/ext/go_router:defs.bzl",
+    deps = ["//dart/ext/go_router:defs"],
+)
+
+starlark_doc_extract(
+    name = "json_serializable_defs.doc_extract",
+    src = "//dart/ext/json_serializable:defs.bzl",
+    deps = ["//dart/ext/json_serializable:defs"],
+)
+
+starlark_doc_extract(
+    name = "mockito_defs.doc_extract",
+    src = "//dart/ext/mockito:defs.bzl",
+    deps = ["//dart/ext/mockito:defs"],
+)
+
+starlark_doc_extract(
+    name = "sqlite3_defs.doc_extract",
+    src = "//dart/ext/sqlite3:defs.bzl",
+    deps = ["//dart/ext/sqlite3:defs"],
+)
+
+starlark_doc_extract(
+    name = "stacked_defs.doc_extract",
+    src = "//dart/ext/stacked:defs.bzl",
+    deps = ["//dart/ext/stacked:defs"],
+)
+
+starlark_doc_extract(
+    name = "pub_defs.doc_extract",
+    src = "//dart/pub:defs.bzl",
+    deps = ["//dart/pub:defs"],
+)
+
+starlark_doc_extract(
+    name = "pub_extensions.doc_extract",
+    src = "//dart/pub:extensions.bzl",
+    deps = ["//dart/pub:extensions"],
+)
+
+starlark_doc_extract(
+    name = "pub_pinned_sources.doc_extract",
+    src = "//dart/pub:pinned_sources.bzl",
+    deps = ["//dart/pub:pinned_sources"],
+)
+
+starlark_doc_extract(
+    name = "pub_lock_hub.doc_extract",
+    src = "//dart/pub:pub_lock_hub.bzl",
+    deps = ["//dart/pub:pub_lock_hub"],
+)
+
+starlark_doc_extract(
+    name = "pub_lock_package.doc_extract",
+    src = "//dart/pub:pub_lock_package.bzl",
+    deps = ["//dart/pub:pub_lock_package"],
+)
+
+starlark_doc_extract(
+    name = "pub_lock_scc.doc_extract",
+    src = "//dart/pub:pub_lock_scc.bzl",
+    deps = ["//dart/pub:pub_lock_scc"],
+)
+
+starlark_doc_extract(
+    name = "pub_scan.doc_extract",
+    src = "//dart/pub:pub_scan.bzl",
+    deps = ["//dart/pub:pub_scan"],
+)
+
+starlark_doc_extract(
+    name = "pub_scanner.doc_extract",
+    src = "//dart/pub:pub_scanner.bzl",
+    deps = ["//dart/pub:pub_scanner"],
+)
+
+starlark_doc_extract(
+    name = "pub_scc.doc_extract",
+    src = "//dart/pub:pub_scc.bzl",
+    deps = ["//dart/pub:pub_scc"],
+)
+
+starlark_doc_extract(
+    name = "pub_yaml_parser.doc_extract",
+    src = "//dart/pub:yaml_parser.bzl",
+    deps = ["//dart/pub:yaml_parser"],
+)
+
+_DECLARED_EXTRACTS = [
+    ":" + r["name"]
+    for r in existing_rules().values()
+    if r["kind"] == "starlark_doc_extract"
+]
+
+_ = (
+    None if len(_DECLARED_EXTRACTS) == 27 and sorted(_DECLARED_EXTRACTS) == sorted(_DOC_EXTRACTS) else fail(
+        "expected 27 starlark_doc_extract targets matching _DOC_EXTRACTS, found {}".format(
+            len(_DECLARED_EXTRACTS),
+        ),
+    )
+)

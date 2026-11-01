@@ -5,6 +5,19 @@ load("//dart/private:copy_toolchain.bzl", "copy_toolchain")
 load("//dart/private:dart_sdk_binary.bzl", "dart_sdk_binary")
 load("//dart/private:resolved_toolchain.bzl", "resolved_toolchain")
 
+exports_files(
+    [
+        "analyze.bzl",
+        "defs.bzl",
+        "extensions.bzl",
+        "providers.bzl",
+        "repositories.bzl",
+        "toolchain.bzl",
+        "utils.bzl",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 # Dart environment declarations folded into every Dart compile, after any
 # target-level `defines`. Repeatable — one define per occurrence:
 #   bazel build //app --@rules_dart//dart:extra_dart_defines=FOO=bar
@@ -178,18 +191,24 @@ bzl_library(
     srcs = ["defs.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        ":providers",
         "//dart/private:dart_aggregate_codegen",
         "//dart/private:dart_analysis_options",
         "//dart/private:dart_analysis_test",
         "//dart/private:dart_analyze_aspect",
         "//dart/private:dart_binary",
+        "//dart/private:dart_code_asset",
         "//dart/private:dart_codegen",
         "//dart/private:dart_fix",
         "//dart/private:dart_format",
         "//dart/private:dart_library",
         "//dart/private:dart_link_hook",
+        "//dart/private:dart_package_member",
+        "//dart/private:dart_package_metadata",
+        "//dart/private:dart_sqlcodegen",
         "//dart/private:dart_test",
         "//dart/private:dart_web_application",
+        "//dart/private:source_set",
     ],
 )
 
@@ -200,6 +219,7 @@ bzl_library(
     deps = [
         ":repositories",
         "//dart/private:toolchain_selection",
+        "//dart/pub:pub_scanner",
     ],
 )
 
@@ -257,5 +277,7 @@ bzl_library(
     name = "analyze",
     srcs = ["analyze.bzl"],
     visibility = ["//visibility:public"],
-    deps = ["//dart/private:dart_analyze_aspect"],
+    deps = [
+        "//dart/private:dart_analyze_aspect",
+    ],
 )

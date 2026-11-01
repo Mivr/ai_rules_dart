@@ -15,7 +15,6 @@ ignore_directories([
     "tools",
     ".github",
     "e2e",
-    "docs",
     "references",
     ".claude",
 ])
