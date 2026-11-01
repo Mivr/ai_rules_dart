@@ -7,7 +7,10 @@ load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("//dart:defs.bzl", "dart_library", "dart_test")
 
 exports_files(
-    ["pubspec.lock"],
+    [
+        "pubspec.lock",
+        "registry.bzl",
+    ],
     visibility = ["//visibility:public"],
 )
 

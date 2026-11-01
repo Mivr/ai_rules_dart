@@ -1,4 +1,19 @@
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("//dart:defs.bzl", "dart_binary")
+
+exports_files(
+    ["defs.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "defs",
+    srcs = ["defs.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart:defs",
+    ],
+)
 
 # drift_dev's modern path is a 4-stage pipeline:
 #   prep → discover → analyzer → driftBuilder (SharedPart) → combining

@@ -3,70 +3,37 @@ load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 bzl_library(
     name = "build_content",
     srcs = ["build_content.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
+    visibility = ["//visibility:public"],
 )
 
 bzl_library(
-    name = "pub_root_pin",
-    srcs = ["pub_root_pin.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
+    name = "language_version",
+    srcs = ["language_version.bzl"],
+    visibility = ["//visibility:public"],
     deps = [
-        ":pub_repository",
-        ":version",
-        "//dart/pub:yaml_parser",
+        ":yaml_sdk_constraint",
     ],
-)
-
-bzl_library(
-    name = "pub_symlink",
-    srcs = ["pub_symlink.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
 )
 
 bzl_library(
     name = "parser_sources",
     srcs = ["parser_sources.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
+    visibility = ["//visibility:public"],
 )
 
 bzl_library(
-    name = "pub_scc_facts",
-    srcs = ["pub_scc_facts.bzl"],
-    visibility = [
-        "//dart/pub:__subpackages__",
-        "//dart/tests:__subpackages__",
-    ],
+    name = "pub_archive_scan",
+    srcs = ["pub_archive_scan.bzl"],
+    visibility = ["//visibility:public"],
     deps = [
         ":pub_symlink",
-        "//dart/pub:yaml_parser",
-    ],
-)
-
-bzl_library(
-    name = "scc",
-    srcs = ["scc.bzl"],
-    visibility = [
-        "//dart/pub:__subpackages__",
-        "//dart/tests:__subpackages__",
-    ],
-)
-
-bzl_library(
-    name = "pub_scc_verify",
-    srcs = ["pub_scc_verify.bzl"],
-    visibility = [
-        "//dart/pub:__subpackages__",
-        "//dart/tests:__subpackages__",
-    ],
-    deps = [
-        ":scc",
     ],
 )
 
 bzl_library(
     name = "pub_emit",
     srcs = ["pub_emit.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":pub_repository",
         ":scc",
@@ -79,146 +46,102 @@ bzl_library(
 bzl_library(
     name = "pub_repository",
     srcs = ["pub_repository.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":build_content",
+        ":language_version",
         ":pub_symlink",
         "//dart/private:download",
         "//dart/pub:pinned_sources",
+        "//dart/pub:pub_scan",
+        "//dart/pub:yaml_parser",
     ],
 )
 
 bzl_library(
     name = "pub_resolution_warnings",
     srcs = ["pub_resolution_warnings.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "pub_root_pin",
+    srcs = ["pub_root_pin.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pub_repository",
+        ":version",
+        "//dart/pub:yaml_parser",
+    ],
+)
+
+bzl_library(
+    name = "pub_scanner_repo",
+    srcs = ["pub_scanner_repo.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pub_scanner_sdk",
+    ],
+)
+
+bzl_library(
+    name = "pub_scanner_sdk",
+    srcs = ["pub_scanner_sdk.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/private:toolchains_repo",
+    ],
 )
 
 bzl_library(
     name = "pub_scc_entries",
     srcs = ["pub_scc_entries.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
-    deps = ["//dart/ext:registry"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/ext:registry",
+    ],
 )
 
 bzl_library(
-    name = "language_version",
-    srcs = ["language_version.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
-    deps = [":yaml_sdk_constraint"],
+    name = "pub_scc_facts",
+    srcs = ["pub_scc_facts.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pub_symlink",
+    ],
 )
 
 bzl_library(
-    name = "yaml_sdk_constraint",
-    srcs = ["yaml_sdk_constraint.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
+    name = "pub_scc_verify",
+    srcs = ["pub_scc_verify.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":scc",
+    ],
+)
+
+bzl_library(
+    name = "pub_symlink",
+    srcs = ["pub_symlink.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "scc",
+    srcs = ["scc.bzl"],
+    visibility = ["//visibility:public"],
 )
 
 bzl_library(
     name = "version",
     srcs = ["version.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
-)
-
-bzl_library(
-    name = "yaml_subset",
-    srcs = ["yaml_subset.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
-    deps = [
-        ":yaml_chars",
-        ":yaml_document",
-        ":yaml_flow",
-        ":yaml_flow_scan",
-        ":yaml_text",
-    ],
-)
-
-bzl_library(
-    name = "yaml_chars",
-    srcs = ["yaml_chars.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
-)
-
-bzl_library(
-    name = "yaml_text",
-    srcs = ["yaml_text.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
-    deps = [
-        ":yaml_chars",
-    ],
-)
-
-bzl_library(
-    name = "yaml_escape",
-    srcs = ["yaml_escape.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
-)
-
-bzl_library(
-    name = "yaml_printable",
-    srcs = ["yaml_printable.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
-    deps = [
-        ":yaml_text",
-    ],
-)
-
-bzl_library(
-    name = "yaml_scalar",
-    srcs = ["yaml_scalar.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
-    deps = [
-        ":yaml_chars",
-        ":yaml_escape",
-        ":yaml_printable",
-        ":yaml_text",
-    ],
-)
-
-bzl_library(
-    name = "yaml_flow",
-    srcs = ["yaml_flow.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
-    deps = [
-        ":yaml_scalar",
-        ":yaml_text",
-    ],
-)
-
-bzl_library(
-    name = "yaml_flow_scan",
-    srcs = ["yaml_flow_scan.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
-    deps = [
-        ":yaml_text",
-    ],
-)
-
-bzl_library(
-    name = "yaml_fold",
-    srcs = ["yaml_fold.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
-    deps = [
-        ":yaml_chars",
-        ":yaml_flow",
-        ":yaml_flow_scan",
-        ":yaml_text",
-    ],
-)
-
-bzl_library(
-    name = "yaml_block_scalar",
-    srcs = ["yaml_block_scalar.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
-    deps = [
-        ":yaml_text",
-    ],
+    visibility = ["//visibility:public"],
 )
 
 bzl_library(
     name = "yaml_block",
     srcs = ["yaml_block.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":yaml_block_scalar",
         ":yaml_chars",
@@ -232,9 +155,24 @@ bzl_library(
 )
 
 bzl_library(
+    name = "yaml_block_scalar",
+    srcs = ["yaml_block_scalar.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":yaml_text",
+    ],
+)
+
+bzl_library(
+    name = "yaml_chars",
+    srcs = ["yaml_chars.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
     name = "yaml_document",
     srcs = ["yaml_document.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":yaml_block",
         ":yaml_chars",
@@ -244,21 +182,107 @@ bzl_library(
 )
 
 bzl_library(
-    name = "yaml_lock_fast",
-    srcs = ["yaml_lock_fast.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
+    name = "yaml_escape",
+    srcs = ["yaml_escape.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "yaml_flow",
+    srcs = ["yaml_flow.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":yaml_scalar",
+        ":yaml_text",
+    ],
+)
+
+bzl_library(
+    name = "yaml_flow_scan",
+    srcs = ["yaml_flow_scan.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":yaml_text",
+    ],
+)
+
+bzl_library(
+    name = "yaml_fold",
+    srcs = ["yaml_fold.bzl"],
+    visibility = ["//visibility:public"],
     deps = [
         ":yaml_chars",
+        ":yaml_flow",
+        ":yaml_flow_scan",
+        ":yaml_text",
     ],
 )
 
 bzl_library(
     name = "yaml_lock",
     srcs = ["yaml_lock.bzl"],
-    visibility = ["//dart/pub:__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":yaml_lock_fast",
         ":yaml_subset",
+    ],
+)
+
+bzl_library(
+    name = "yaml_lock_fast",
+    srcs = ["yaml_lock_fast.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":yaml_chars",
+    ],
+)
+
+bzl_library(
+    name = "yaml_printable",
+    srcs = ["yaml_printable.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":yaml_text",
+    ],
+)
+
+bzl_library(
+    name = "yaml_scalar",
+    srcs = ["yaml_scalar.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":yaml_chars",
+        ":yaml_escape",
+        ":yaml_printable",
+        ":yaml_text",
+    ],
+)
+
+bzl_library(
+    name = "yaml_sdk_constraint",
+    srcs = ["yaml_sdk_constraint.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "yaml_subset",
+    srcs = ["yaml_subset.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":yaml_chars",
+        ":yaml_document",
+        ":yaml_flow",
+        ":yaml_flow_scan",
+        ":yaml_text",
+    ],
+)
+
+bzl_library(
+    name = "yaml_text",
+    srcs = ["yaml_text.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":yaml_chars",
     ],
 )
 

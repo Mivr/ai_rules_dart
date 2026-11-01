@@ -1,4 +1,19 @@
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("//dart:defs.bzl", "dart_binary")
+
+exports_files(
+    ["defs.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "defs",
+    srcs = ["defs.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/ext/_shared:defs",
+    ],
+)
 
 # Shim binary for the freezed Builder. PartBuilder; produces .freezed.dart
 # directly (no .g.part / combining step needed for this builder).
