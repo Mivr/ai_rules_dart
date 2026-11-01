@@ -23,9 +23,9 @@ List<SpawnRecord> _setupMultiStepExecroot(String execroot) {
   Directory('$execroot/src').createSync(recursive: true);
   File('$execroot/src/keep.dart').writeAsStringSync('// keep\n');
 
-  final kmodDir = Directory('$execroot/bazel-out/pkg0.kmod')
+  final kmodSubDir = Directory('$execroot/bazel-out/pkg0.kmod/sub')
     ..createSync(recursive: true);
-  File('${kmodDir.path}/module.dill').writeAsStringSync('KMOD_BYTES_V1');
+  File('${kmodSubDir.path}/module.dill').writeAsStringSync('KMOD_BYTES_V1');
   File('$execroot/bazel-out/app.dill').writeAsStringSync('KMOD_BYTES_V1_OK');
 
   final step1Script = File('$execroot/src/step1.dart')
@@ -33,8 +33,12 @@ List<SpawnRecord> _setupMultiStepExecroot(String execroot) {
 import 'dart:io';
 
 void main() {
-  Directory('bazel-out/pkg0.kmod').createSync(recursive: true);
-  File('bazel-out/pkg0.kmod/module.dill').writeAsStringSync('KMOD_BYTES_V1');
+  if (Directory('bazel-out/pkg0.kmod/sub').existsSync()) {
+    stderr.writeln('Tree artifact child directory was pre-created');
+    exit(55);
+  }
+  Directory('bazel-out/pkg0.kmod/sub').createSync(recursive: true);
+  File('bazel-out/pkg0.kmod/sub/module.dill').writeAsStringSync('KMOD_BYTES_V1');
   File('bazel-out/undeclared.tmp').writeAsStringSync('LEAKED_FILE');
   Directory('undeclared_dir').createSync(recursive: true);
   File('undeclared_dir/leak.txt').writeAsStringSync('LEAKED_DIR_FILE');
@@ -51,7 +55,7 @@ void main() {
     stderr.writeln('Outer Bazel/test env leaked into replay step');
     exit(42);
   }
-  final mod = File('bazel-out/pkg0.kmod/module.dill').readAsStringSync();
+  final mod = File('bazel-out/pkg0.kmod/sub/module.dill').readAsStringSync();
   final envTag = Platform.environment['REPLAY_TAG'] ?? '';
   File('bazel-out/app.dill').writeAsStringSync('\${mod}_\$envTag');
 }
@@ -63,7 +67,7 @@ void main() {
       environmentVariables: const {},
       inputs: const ['src/keep.dart'],
       listedOutputs: const ['bazel-out/pkg0.kmod'],
-      actualOutputs: const [],
+      actualOutputs: const ['bazel-out/pkg0.kmod/sub/module.dill'],
       runner: 'local',
       exitCode: 0,
       isCached: false,
@@ -71,7 +75,7 @@ void main() {
     SpawnRecord(
       commandArgs: [Platform.resolvedExecutable, step2Script.path],
       environmentVariables: const {'REPLAY_TAG': 'OK'},
-      inputs: const ['bazel-out/pkg0.kmod/module.dill'],
+      inputs: const ['bazel-out/pkg0.kmod/sub/module.dill'],
       listedOutputs: const ['bazel-out/app.dill'],
       actualOutputs: const [],
       runner: 'worker',
@@ -118,7 +122,8 @@ void _testFileAndTreeReplayAndSideEffectSweep() {
       'Restored original app.dill output',
     );
     _check(
-      File('$execroot/bazel-out/pkg0.kmod/module.dill').readAsStringSync() ==
+      File('$execroot/bazel-out/pkg0.kmod/sub/module.dill')
+              .readAsStringSync() ==
           'KMOD_BYTES_V1',
       'Restored original tree artifact output',
     );
@@ -300,10 +305,50 @@ void _testSymlinkOutputReplay() {
   }
 }
 
+void _testMissingExecutableRecordsFailureAndRestores() {
+  final tempDir = Directory.systemTemp.createTempSync('rd_replay_nobin_');
+  try {
+    final execroot = tempDir.path;
+    Directory('$execroot/bazel-out').createSync(recursive: true);
+    final outFile = File('$execroot/bazel-out/app.dill')
+      ..writeAsStringSync('ORIGINAL_DILL_BYTES');
+
+    const spawn = SpawnRecord(
+      commandArgs: ['/nonexistent_dir_rd_perf/missing_tool_bin', '--arg'],
+      environmentVariables: {},
+      inputs: [],
+      listedOutputs: ['bazel-out/app.dill'],
+      actualOutputs: [],
+      runner: 'local',
+      exitCode: 0,
+      isCached: false,
+    );
+    final res = replayChainAndVerify(
+      orderedSpawns: const [spawn],
+      execroot: execroot,
+      verifyPaths: const {'bazel-out/app.dill'},
+      clock: FakeChildCpuClock([0.0, 0.0]),
+    );
+    _check(!res.identical, 'Missing executable returns identical == false');
+    _check(res.solCpuSeconds == null, 'Missing executable sets sol to null');
+    _check(
+      res.reason.contains('failed to start'),
+      'Reason explains process launch failure: ${res.reason}',
+    );
+    _check(
+      outFile.readAsStringSync() == 'ORIGINAL_DILL_BYTES',
+      'Original output restored after ProcessException',
+    );
+  } finally {
+    _cleanupDir(tempDir);
+  }
+}
+
 void main() {
   _testFileAndTreeReplayAndSideEffectSweep();
   _testMismatchRestoresOriginalOutputs();
   _testLeafTestRunnerPassAndFail();
   _testSymlinkOutputReplay();
+  _testMissingExecutableRecordsFailureAndRestores();
   stdout.writeln('All replay tests passed.');
 }

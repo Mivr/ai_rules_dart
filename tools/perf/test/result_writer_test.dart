@@ -256,14 +256,28 @@ void _testLoadRepeatResultsFilteringAndOrder() {
         runner: _sampleRunner,
       ),
     );
+    File('${dir.path}/repeat-5.json').writeAsStringSync(
+      '{"repeat":5,"flows":{"dart-app-clean":{"method":"batch","bazel":8.5,'
+      '"sol":2.8,"identical":true,"reason":"ok","chain":10,'
+      '"worker_steps":{"DartKernel":3}}}}\n',
+    );
     File('${dir.path}/other.json')
         .writeAsStringSync('{"flows": {"dart-app-clean": {}}}\n');
 
     final loaded = loadRepeatResults(dir.path, excludeFilePath: summaryPath);
-    _check(loaded.length == 2, 'Ignores dart-sol.json and non-repeat JSON');
+    _check(loaded.length == 3, 'Ignores dart-sol.json and non-repeat JSON');
     _check(
-      loaded[0].repeatIndex == 2 && loaded[1].repeatIndex == 10,
+      loaded[0].repeatIndex == 2 &&
+          loaded[1].repeatIndex == 5 &&
+          loaded[2].repeatIndex == 10,
       'Sorts repeat files numerically by repeatIndex',
+    );
+    final r5Clean = loaded[1].flows['dart-app-clean']!;
+    _check(
+      r5Clean.bazelCpu == 8.5 &&
+          r5Clean.solCpu == 2.8 &&
+          r5Clean.workerSteps['DartKernel'] == 3,
+      'Parses snake_case repeat JSON fields cleanly',
     );
   } finally {
     try {
