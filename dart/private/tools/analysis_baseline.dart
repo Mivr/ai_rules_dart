@@ -116,6 +116,7 @@ final class BaselineDiagnostic {
     required this.code,
     required this.level,
     required this.text,
+    this.keyed = true,
   });
 
   /// The workspace-relative POSIX path the diagnostic names.
@@ -129,6 +130,9 @@ final class BaselineDiagnostic {
 
   /// The line as printed.
   final String text;
+
+  /// Whether this diagnostic was matched under a project `src/` root.
+  final bool keyed;
 }
 
 /// The observed count and ceiling of one `(path, code)` group.
@@ -158,7 +162,7 @@ final class BaselineGroup {
 
 /// The groups of one analysis run, keyed by `(path, code)`.
 final class BaselineReport {
-  BaselineReport._(this.groups, this._byKey);
+  BaselineReport._(this.groups, this._byKey, {required this.hasUnkeyed});
 
   /// Groups [diagnostics] by `(path, code)` and looks up each ceiling.
   factory BaselineReport.of(
@@ -167,7 +171,12 @@ final class BaselineReport {
   ) {
     final counts = <String, int>{};
     final first = <String, BaselineDiagnostic>{};
+    var hasUnkeyed = false;
     for (final diagnostic in diagnostics) {
+      if (!diagnostic.keyed) {
+        hasUnkeyed = true;
+        continue;
+      }
       final key = _groupKey(diagnostic.path, diagnostic.code);
       counts[key] = (counts[key] ?? 0) + 1;
       first.putIfAbsent(key, () => diagnostic);
@@ -184,15 +193,19 @@ final class BaselineReport {
     ];
     return BaselineReport._(groups, {
       for (final group in groups) _groupKey(group.path, group.code): group,
-    });
+    }, hasUnkeyed: hasUnkeyed);
   }
 
   /// Every group, sorted by path and then by code.
   final List<BaselineGroup> groups;
   final Map<String, BaselineGroup> _byKey;
 
-  /// Whether no group exceeds its ceiling.
-  bool get passes => groups.every((group) => group.withinCeiling);
+  /// Whether any diagnostic in the run was unkeyed.
+  final bool hasUnkeyed;
+
+  /// Whether no group exceeds its ceiling and no unkeyed diagnostics exist.
+  bool get passes =>
+      !hasUnkeyed && groups.every((group) => group.withinCeiling);
 
   /// The group for [path] and [code], if the run reported either.
   BaselineGroup? groupFor(String path, String code) =>
