@@ -13,9 +13,15 @@ import 'analysis_baseline.dart';
 /// The severities the analyzer's machine format may report.
 const _levels = {'error', 'warning', 'info'};
 
+const _absUnstageBoundary = '(?<![A-Za-z0-9_.-])';
+const _relUnstageBoundary = r'(?<![A-Za-z0-9_.\-/\\])';
+
 final _windowsAbs = RegExp(r'^[A-Za-z]:[\\/]');
-final _windowsDrive = RegExp(r'^[A-Za-z]:');
-final _diagnosticPath = RegExp(r'^(\s*\w+ - )src/', multiLine: true);
+final _windowsExtendedPrefix = RegExp(
+  r'^(?:[\\/]{2}\?[\\/]|[\\/]\?\?[\\/])(?=[A-Za-z]:[\\/])',
+);
+final _windowsDrive = RegExp('^[A-Za-z]:');
+final _diagnosticPath = RegExp(r'^(\s*\w+ - )src[\\/]', multiLine: true);
 final _defaultContextLine = RegExp(
   r'^\s*(error|warning|info) - (.+):(\d+):(\d+) - (.+) - ([a-z0-9_]+)$',
 );
@@ -78,7 +84,10 @@ List<BaselineDiagnostic> parseContextDiagnostics(String out, String project) {
     );
     final String lineNum = match[3]!;
     final String colNum = match[4]!;
-    final String message = unstage(match[5]!, project);
+    final String message = _unstageWithPatterns(
+      match[5]!,
+      roots.unstagePatterns,
+    );
     final String code = match[6]!;
     final text =
         '${level.padLeft(7)} - ${resolved.path}:$lineNum:$colNum - $message - $code';
@@ -120,7 +129,10 @@ BaselineDiagnostic? _parseMachineLine(
     project,
     roots,
   );
-  final String message = unstage(fields.sublist(7).join('|'), project);
+  final String message = _unstageWithPatterns(
+    fields.sublist(7).join('|'),
+    roots.unstagePatterns,
+  );
   final text =
       '${level.padLeft(7)} - ${resolved.path}:$lineNumber:$column - $message - $code';
   return BaselineDiagnostic(
@@ -158,19 +170,28 @@ List<String>? _splitMachineFields(String line) {
   return fields;
 }
 
-typedef _Roots = ({List<String> projectRoots, List<String> srcRoots});
+typedef _Roots = ({
+  List<String> projectRoots,
+  List<String> srcRoots,
+  List<RegExp> unstagePatterns,
+  bool projectExists,
+});
 
 typedef _ResolvedFile = ({String path, bool keyed});
 
+bool _isAbsolutePath(String path) =>
+    path.startsWith('/') ||
+    _windowsAbs.hasMatch(path) ||
+    _windowsExtendedPrefix.hasMatch(path);
+
 _Roots _collectRoots(String project) {
-  final bool isAbs = project.startsWith('/') || _windowsAbs.hasMatch(project);
   final dir = Directory(project);
-  final String lexical = isAbs ? project : dir.absolute.path;
-  final projRootsSet = <String>{
-    _normalizeSlashPath(project),
-    _normalizeSlashPath(lexical),
-  };
-  if (dir.existsSync()) {
+  final bool exists = dir.existsSync();
+  final String lexical = _isAbsolutePath(project) ? project : dir.absolute.path;
+  final String normLexical = _normalizeSlashPath(lexical);
+  final projRootsSet = <String>{normLexical};
+  _addLinkTargets(projRootsSet, normLexical);
+  if (exists) {
     try {
       projRootsSet.add(_normalizeSlashPath(dir.resolveSymbolicLinksSync()));
     } on FileSystemException catch (e) {
@@ -179,10 +200,12 @@ _Roots _collectRoots(String project) {
     }
   }
 
-  final srcRootsSet = <String>{};
-  for (final root in projRootsSet) {
-    srcRootsSet.add('$root/src');
-  }
+  final srcRootsSet = <String>{
+    for (final root in projRootsSet)
+      if (root == '/') '/src' else '$root/src',
+  };
+  final lexicalSrc = normLexical == '/' ? '/src' : '$normLexical/src';
+  _addLinkTargets(srcRootsSet, lexicalSrc);
 
   final srcDir = Directory('$project/src');
   if (srcDir.existsSync()) {
@@ -196,21 +219,51 @@ _Roots _collectRoots(String project) {
     }
   }
 
-  int byLengthDesc(String a, String b) {
-    final int diff = b.length.compareTo(a.length);
-    return diff != 0 ? diff : a.compareTo(b);
+  final List<String> sortedProjRoots = _sortByLengthDesc(projRootsSet);
+  final List<String> sortedSrcRoots = _sortByLengthDesc(srcRootsSet);
+  final List<RegExp> unstagePatterns = _buildUnstagePatterns(
+    project,
+    sortedSrcRoots,
+  );
+
+  return (
+    projectRoots: sortedProjRoots,
+    srcRoots: sortedSrcRoots,
+    unstagePatterns: unstagePatterns,
+    projectExists: exists,
+  );
+}
+
+void _addLinkTargets(Set<String> roots, String startPath) {
+  var current = startPath;
+  for (var hop = 0; hop < 16; hop++) {
+    if (!FileSystemEntity.isLinkSync(current)) return;
+    try {
+      final String target = Link(current).targetSync();
+      final next = _isAbsolutePath(target)
+          ? target
+          : '${File(current).parent.path}/$target';
+      final String normNext = _normalizeSlashPath(next);
+      if (!roots.add(normNext)) return;
+      current = normNext;
+    } on FileSystemException catch (e) {
+      stderr.writeln('analyze_runner: cannot read link $current: ${e.message}');
+      return;
+    }
   }
+}
 
-  final List<String> sortedProjRoots = projRootsSet.toList()
-    ..sort(byLengthDesc);
-  final List<String> sortedSrcRoots = srcRootsSet.toList()..sort(byLengthDesc);
-
-  return (projectRoots: sortedProjRoots, srcRoots: sortedSrcRoots);
+List<String> _sortByLengthDesc(Iterable<String> items) {
+  final List<String> sorted = items.toList()
+    ..sort((String a, String b) {
+      final int diff = b.length.compareTo(a.length);
+      return diff != 0 ? diff : a.compareTo(b);
+    });
+  return sorted;
 }
 
 _ResolvedFile _resolveDiagnosticFile(String raw, String project, _Roots roots) {
-  final bool isAbs = raw.startsWith('/') || _windowsAbs.hasMatch(raw);
-  if (isAbs) {
+  if (_isAbsolutePath(raw)) {
     return _resolveAbsoluteFile(raw, roots);
   }
   return _resolveRelativeFile(raw, project);
@@ -220,16 +273,23 @@ _ResolvedFile _resolveAbsoluteFile(String raw, _Roots roots) {
   final String norm = _normalizeSlashPath(raw);
   for (final String srcRoot in roots.srcRoots) {
     final prefix = '$srcRoot/';
-    if (norm.startsWith(prefix)) {
+    if (_startsWithRootPrefix(norm, prefix)) {
       final String remainder = norm.substring(prefix.length);
       if (remainder.isNotEmpty) {
         return (path: remainder, keyed: true);
       }
     }
   }
+  if (roots.projectExists) {
+    final String? aliased = _resolveExistingSrcAlias(norm, roots.srcRoots);
+    if (aliased != null) {
+      return (path: aliased, keyed: true);
+    }
+  }
   for (final String projectRoot in roots.projectRoots) {
+    if (projectRoot == '/') continue;
     final prefix = '$projectRoot/';
-    if (norm.startsWith(prefix)) {
+    if (_startsWithRootPrefix(norm, prefix)) {
       final String remainder = norm.substring(prefix.length);
       if (remainder.isNotEmpty &&
           remainder != 'src' &&
@@ -241,17 +301,58 @@ _ResolvedFile _resolveAbsoluteFile(String raw, _Roots roots) {
   return (path: raw, keyed: false);
 }
 
+bool _startsWithRootPrefix(String path, String prefix) {
+  if (path.startsWith(prefix)) return true;
+  if (_windowsDrive.hasMatch(prefix) && path.length >= prefix.length) {
+    return path.substring(0, prefix.length).toLowerCase() ==
+        prefix.toLowerCase();
+  }
+  return false;
+}
+
+bool _matchesSrcRoot(String resolved, List<String> srcRoots) {
+  for (final srcRoot in srcRoots) {
+    if (resolved == srcRoot) return true;
+    if (_windowsDrive.hasMatch(srcRoot) &&
+        resolved.toLowerCase() == srcRoot.toLowerCase()) {
+      return true;
+    }
+  }
+  return false;
+}
+
+String? _resolveExistingSrcAlias(String norm, List<String> srcRoots) {
+  var searchFrom = 0;
+  while (true) {
+    final int idx = norm.indexOf('/src/', searchFrom);
+    if (idx < 0) return null;
+    searchFrom = idx + 4;
+    final String remainder = norm.substring(idx + 5);
+    if (remainder.isEmpty) continue;
+    final dir = Directory(norm.substring(0, idx + 4));
+    if (!dir.existsSync()) continue;
+    try {
+      final String resolved = _normalizeSlashPath(
+        dir.resolveSymbolicLinksSync(),
+      );
+      if (_matchesSrcRoot(resolved, srcRoots)) return remainder;
+    } on FileSystemException catch (e) {
+      stderr.writeln(
+        'analyze_runner: cannot resolve ${dir.path}: ${e.message}',
+      );
+    }
+  }
+}
+
 _ResolvedFile _resolveRelativeFile(String raw, String project) {
-  String rel = raw.replaceAll(r'\', '/');
+  var rel = raw.replaceAll(r'\', '/');
   while (rel.startsWith('./')) {
     rel = rel.substring(2);
   }
 
-  final bool isProjectRel =
-      !project.startsWith('/') && !_windowsAbs.hasMatch(project);
-  if (isProjectRel) {
+  if (!_isAbsolutePath(project)) {
     final String normProj = _normalizeSlashPath(project);
-    if (normProj.isNotEmpty && normProj != '.') {
+    if (normProj.isNotEmpty) {
       final prefix = '$normProj/';
       if (rel.startsWith(prefix)) {
         rel = rel.substring(prefix.length);
@@ -264,7 +365,7 @@ _ResolvedFile _resolveRelativeFile(String raw, String project) {
 
   final List<String> segments = rel.split('/');
   final bool hasInvalidSegment = segments.any(
-    (String s) => s.isEmpty || s == '..',
+    (String s) => s.isEmpty || s == '.' || s == '..',
   );
   if (!hasInvalidSegment && rel.startsWith('src/')) {
     final String remainder = rel.substring(4);
@@ -280,37 +381,57 @@ _ResolvedFile _resolveRelativeFile(String raw, String project) {
   return (path: rel, keyed: false);
 }
 
-List<String> _candidateSrcPrefixes(String project) {
-  final _Roots roots = _collectRoots(project);
-  final prefixes = <String>{};
-  for (final String root in roots.projectRoots) {
-    prefixes.add('$root/src/');
-    prefixes.add('${root.replaceAll('/', r'\')}\\src\\');
+List<RegExp> _buildUnstagePatterns(String project, List<String> srcRoots) {
+  const sep = r'[\\/]';
+  final patterns = <RegExp>[];
+  for (final srcRoot in srcRoots) {
+    if (srcRoot.startsWith('/')) {
+      final String body = srcRoot
+          .substring(1)
+          .split('/')
+          .map(RegExp.escape)
+          .join('/');
+      patterns.add(RegExp('$_absUnstageBoundary/$body/'));
+    } else if (_windowsDrive.hasMatch(srcRoot)) {
+      final String body = srcRoot.split('/').map(RegExp.escape).join(sep);
+      patterns.add(
+        RegExp('$_absUnstageBoundary$body$sep', caseSensitive: false),
+      );
+    }
   }
-  for (final String srcRoot in roots.srcRoots) {
-    prefixes.add('$srcRoot/');
-    prefixes.add('${srcRoot.replaceAll('/', r'\')}\\');
+  if (!_isAbsolutePath(project)) {
+    final String normRel = _normalizeSlashPath(project);
+    if (normRel.isNotEmpty && !normRel.startsWith('..')) {
+      final String body = normRel.split('/').map(RegExp.escape).join(sep);
+      patterns.add(
+        RegExp(
+          '$_relUnstageBoundary$body${sep}src$sep',
+          caseSensitive: !_windowsDrive.hasMatch(Directory.current.path),
+        ),
+      );
+    }
   }
-  final List<String> sorted = prefixes.toList()
-    ..sort((String a, String b) {
-      final int diff = b.length.compareTo(a.length);
-      return diff != 0 ? diff : a.compareTo(b);
-    });
-  return sorted;
+  return patterns;
 }
 
 String _normalizeSlashPath(String raw) {
-  final String slashed = raw.replaceAll(r'\', '/');
+  final String stripped = raw.replaceFirst(_windowsExtendedPrefix, '');
+  final String slashed = stripped.replaceAll(r'\', '/');
+  final String? drive = _windowsDrive.stringMatch(slashed);
   final String prefix = slashed.startsWith('/')
       ? '/'
-      : _windowsDrive.stringMatch(slashed) ?? '';
+      : (drive?.toUpperCase() ?? '');
   final String body = slashed.substring(prefix.length);
   final parts = <String>[];
   for (final String part in body.split('/')) {
     if (part.isEmpty || part == '.') continue;
-    if (part == '..' && parts.isNotEmpty) {
-      parts.removeLast();
-    } else if (part != '..') {
+    if (part == '..') {
+      if (parts.isNotEmpty && parts.last != '..') {
+        parts.removeLast();
+      } else if (prefix.isEmpty) {
+        parts.add('..');
+      }
+    } else {
       parts.add(part);
     }
   }
@@ -321,6 +442,14 @@ String _normalizeSlashPath(String raw) {
   return parts.join('/');
 }
 
+String _unstageWithPatterns(String out, List<RegExp> patterns) {
+  var result = out;
+  for (final pattern in patterns) {
+    result = result.replaceAll(pattern, '');
+  }
+  return result.replaceAllMapped(_diagnosticPath, (Match m) => m[1]!);
+}
+
 /// Rewrites staged paths in the analyzer's output to the workspace paths they
 /// were copied from, so a diagnostic names a file the user can open.
 ///
@@ -329,11 +458,5 @@ String _normalizeSlashPath(String raw) {
 /// absolute paths inside some messages (an unresolvable `include:` names the
 /// options file that holds it). Both forms lose their staging prefix. Only the
 /// `src/` tree is rewritten: nothing outside it has a workspace path.
-String unstage(String out, String project) {
-  var result = out;
-  for (final String prefix in _candidateSrcPrefixes(project)) {
-    final pattern = RegExp('(?<![A-Za-z0-9_.-])${RegExp.escape(prefix)}');
-    result = result.replaceAll(pattern, '');
-  }
-  return result.replaceAllMapped(_diagnosticPath, (Match m) => m[1]!);
-}
+String unstage(String out, String project) =>
+    _unstageWithPatterns(out, _collectRoots(project).unstagePatterns);

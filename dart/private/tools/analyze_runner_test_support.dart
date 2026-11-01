@@ -18,6 +18,7 @@ void defineRunnerSubprocessBaselineTests(
     _defineRunnerOptionsParseErrorSubprocessTest(args, currentTmp);
     _defineRunnerZeroDiagnosticsCrashTest(args, currentTmp);
     _defineRunnerSymlinkSubprocessTest(args, currentTmp);
+    _defineRunnerUnkeyedWrapperSubprocessTest(args, currentTmp);
   });
   group(
     'analyze_runner whole-path prefix matching and unkeyed diagnostics',
@@ -62,9 +63,20 @@ final class _RunnerHarness {
     String relPath,
     String body, {
     String optionsBody = 'linter:\n  rules:\n    - avoid_print\n',
+  }) => stageProjectAt(
+    Directory('${tmp.path}/$name.proj'),
+    relPath,
+    body,
+    optionsBody: optionsBody,
+  );
+
+  Directory stageProjectAt(
+    Directory project,
+    String relPath,
+    String body, {
+    String optionsBody = 'linter:\n  rules:\n    - avoid_print\n',
   }) {
-    final project = Directory('${tmp.path}/$name.proj')
-      ..createSync(recursive: true);
+    project.createSync(recursive: true);
     File('${project.path}/analysis_options.yaml')
         .writeAsStringSync(optionsBody);
     File('${project.path}/pubspec.yaml')
@@ -242,19 +254,15 @@ void _defineRunnerSymlinkSubprocessTest(
       final _RunnerHarness harness = _RunnerHarness.resolve(args, currentTmp)!;
       final String realTmp = Directory(currentTmp().path)
           .resolveSymbolicLinksSync();
-      final realDir = Directory('$realTmp/private$realTmp/sym_ceil.proj')
-        ..createSync(recursive: true);
-      File('${realDir.path}/analysis_options.yaml')
-          .writeAsStringSync('linter:\n  rules:\n    - avoid_print\n');
-      File('${realDir.path}/pubspec.yaml')
-          .writeAsStringSync('name: demo\nenvironment:\n  sdk: ^3.11.0\n');
-      Directory('${realDir.path}/.dart_tool').createSync(recursive: true);
-      File('${realDir.path}/.dart_tool/package_config.json')
-          .writeAsStringSync('{"configVersion":2,"packages":[]}\n');
-
-      final sampleFile = File('${realDir.path}/src/lib/sample.dart')
-        ..parent.createSync(recursive: true);
-      sampleFile.writeAsStringSync(
+      final String sep = Platform.pathSeparator;
+      final privateSegment = Platform.isWindows
+          ? 'private_sym_root'
+          : 'private$realTmp';
+      final Directory realDir = harness.stageProjectAt(
+        Directory(
+          '$realTmp/$privateSegment/sym_ceil.proj'.replaceAll('/', sep),
+        ),
+        'lib/sample.dart',
         "void f() {\n  print('1');\n  print('2');\n}\n",
       );
 
@@ -265,9 +273,8 @@ void _defineRunnerSymlinkSubprocessTest(
         ..parent.createSync(recursive: true)
         ..writeAsStringSync('const a = 1;\n');
 
-      final symlink = Link('$realTmp/sym_ceil.proj');
-      symlink.createSync(realDir.path);
-
+      final symlink = Link('$realTmp/sym_ceil.proj'.replaceAll('/', sep))
+        ..createSync(realDir.path);
       final symlinkProject = Directory(symlink.path);
 
       final _RunnerOutcome ok = harness.run(
@@ -284,7 +291,7 @@ void _defineRunnerSymlinkSubprocessTest(
       expect(ok.stdout, contains('baselined (2/2)'));
       expect(ok.stdout, contains('baselined (1/1)'));
       expect(ok.stdout, isNot(contains('privatelib')));
-      expect(ok.stdout, isNot(contains('private$realTmp')));
+      expect(ok.stdout, isNot(contains(privateSegment)));
 
       final _RunnerOutcome low = harness.run(
         symlinkProject,
@@ -305,98 +312,219 @@ void _defineRunnerSymlinkSubprocessTest(
   );
 }
 
+String _escapeMachineField(String value) => value.replaceAll(r'\', r'\\');
+
+void _defineRunnerUnkeyedWrapperSubprocessTest(
+  List<String> args,
+  Directory Function() currentTmp,
+) {
+  test(
+    'reports wrapper-root diagnostics outside src as unkeyed failures',
+    skip: args.length < 2
+        ? 'requires analyze_runner and dart runfiles paths'
+        : null,
+    () {
+      final _RunnerHarness harness = _RunnerHarness.resolve(args, currentTmp)!;
+      final Directory project = harness.stageProject(
+        'wrap_err',
+        'lib/sample.dart',
+        'const x = 1;\n',
+        optionsBody: 'analyzer: [\ninvalid: yaml: :\n',
+      );
+      final _RunnerOutcome outcome = harness.run(
+        project,
+        'src/lib/sample.dart',
+        baselineJson: '{"analysis_options.yaml":{"parse_error":5}}',
+      );
+      expect(
+        outcome.exitCode,
+        1,
+        reason: '${outcome.stdout}\n${outcome.stderr}',
+      );
+      expect(outcome.stamped, isFalse);
+      expect(outcome.stdout, contains('analysis_options.yaml'));
+      expect(outcome.stdout, contains('parse_error'));
+      expect(outcome.stdout, isNot(contains('baselined')));
+      expect(outcome.stdout, isNot(contains('baseline:')));
+    },
+  );
+}
+
 void _defineRunnerPrefixMatchingUnitTests(Directory Function() currentTmp) {
   _defineRunnerPrefixMatchingKeyedTest(currentTmp);
+  _defineRunnerUnstageAndWindowsUnitTest();
   _defineRunnerPrefixMatchingUnkeyedTest();
   _defineRunnerBaselineReportUnkeyedTest();
 }
 
 void _defineRunnerPrefixMatchingKeyedTest(Directory Function() currentTmp) {
-  test(
-    'resolves diagnostics under lexical and symlink-resolved roots as keyed',
-    () {
-      final realDir = Directory('${currentTmp().path}/real_proj')
-        ..createSync(recursive: true);
-      Directory('${realDir.path}/src/lib').createSync(recursive: true);
-      final link = Link('${currentTmp().path}/link_proj')
-        ..createSync(realDir.path);
+  test('resolves diagnostics under lexical and symlink-resolved roots as keyed', () {
+    final String sep = Platform.pathSeparator;
+    final String realTmp = Directory(currentTmp().path)
+        .resolveSymbolicLinksSync();
+    final privateSegment = Platform.isWindows
+        ? 'private_sym_unit'
+        : 'private$realTmp';
+    final symTarget = Directory(
+      '$realTmp/$privateSegment/sym_unit.proj'.replaceAll('/', sep),
+    )..createSync(recursive: true);
+    Directory('${symTarget.path}${sep}src${sep}lib')
+        .createSync(recursive: true);
+    final symLink = Link('$realTmp/sym_unit.proj'.replaceAll('/', sep))
+      ..createSync(symTarget.path);
 
-      final List<BaselineDiagnostic>? lexicalDiag = parseMachineDiagnostics(
-        'INFO|LINT|AVOID_PRINT|${link.path}/src/lib/a.dart|1|1|1|msg\n',
-        link.path,
-      );
-      expect(lexicalDiag, isNotNull);
-      expect(lexicalDiag!.single.path, 'lib/a.dart');
-      expect(lexicalDiag.single.keyed, isTrue);
+    final List<BaselineDiagnostic>? lexicalDiag = parseMachineDiagnostics(
+      'INFO|LINT|AVOID_PRINT|${_escapeMachineField(symLink.path)}/src/lib/a.dart|1|1|1|msg\n',
+      symLink.path,
+    );
+    expect(lexicalDiag!.single.path, 'lib/a.dart');
+    expect(lexicalDiag.single.keyed, isTrue);
 
-      final List<BaselineDiagnostic>? resolvedDiag = parseMachineDiagnostics(
-        'INFO|LINT|AVOID_PRINT|${realDir.path}/src/lib/a.dart|1|1|1|msg\n',
-        link.path,
-      );
-      expect(resolvedDiag, isNotNull);
-      expect(resolvedDiag!.single.path, 'lib/a.dart');
-      expect(resolvedDiag.single.keyed, isTrue);
+    final List<BaselineDiagnostic>? resolvedDiag = parseMachineDiagnostics(
+      'INFO|LINT|AVOID_PRINT|${_escapeMachineField(symTarget.path)}/src/lib/a.dart|1|1|1|msg\n',
+      symLink.path,
+    );
+    expect(resolvedDiag!.single.path, 'lib/a.dart');
+    expect(resolvedDiag.single.keyed, isTrue);
 
-      final List<BaselineDiagnostic> contextDiag = parseContextDiagnostics(
-        '   info - ${realDir.path}/src/lib/a.dart:1:1 - msg - avoid_print\n',
-        link.path,
-      );
-      expect(contextDiag, hasLength(1));
-      expect(contextDiag.single.path, 'lib/a.dart');
-      expect(contextDiag.single.keyed, isTrue);
-    },
-  );
+    final List<BaselineDiagnostic> contextDiag = parseContextDiagnostics(
+      '   info - ${symTarget.path}/src/lib/a.dart:1:1 - msg - avoid_print\n',
+      symLink.path,
+    );
+    expect(contextDiag.single.path, 'lib/a.dart');
+    expect(contextDiag.single.keyed, isTrue);
+
+    // Also cover an unexpanded temp directory (e.g. Windows 8.3 `RUNNER~1`
+    // or macOS `/var/folders`) where `Link.targetSync()` and
+    // `resolveSymbolicLinksSync()` differ in ancestor spelling.
+    final rawReal = Directory('${currentTmp().path}${sep}real_proj')
+      ..createSync(recursive: true);
+    Directory('${rawReal.path}${sep}src${sep}lib').createSync(recursive: true);
+    final rawLink = Link('${currentTmp().path}${sep}link_proj')
+      ..createSync(rawReal.path);
+    final List<BaselineDiagnostic>? rawTargetDiag = parseMachineDiagnostics(
+      'INFO|LINT|AVOID_PRINT|${_escapeMachineField(rawReal.path)}/src/lib/a.dart|1|1|1|msg\n',
+      rawLink.path,
+    );
+    expect(rawTargetDiag!.single.path, 'lib/a.dart');
+    expect(rawTargetDiag.single.keyed, isTrue);
+
+    final List<BaselineDiagnostic>? relProjDiag = parseMachineDiagnostics(
+      'INFO|LINT|AVOID_PRINT|rel.proj/src/lib/a.dart|1|1|1|msg\n',
+      './rel.proj',
+    );
+    expect(relProjDiag!.single.path, 'lib/a.dart');
+    expect(relProjDiag.single.keyed, isTrue);
+
+    final String unstaged = unstage(
+      "See '${symTarget.path}/src/lib/a.dart' and '/other${symLink.path}/src/lib/b.dart'",
+      symLink.path,
+    );
+    expect(unstaged, contains("'lib/a.dart'"));
+    expect(unstaged, contains("'/other${symLink.path}/src/lib/b.dart'"));
+  });
+}
+
+void _defineRunnerUnstageAndWindowsUnitTest() {
+  test('handles Windows drive prefixes, extended paths, and file URIs', () {
+    final List<BaselineDiagnostic>? winCaseDiag = parseMachineDiagnostics(
+      r'INFO|LINT|AVOID_PRINT|c:\\WORK\\demo.proj\\src\\lib\\Sample.dart|1|1|1|msg'
+          '\n',
+      r'C:\work\demo.proj',
+    );
+    expect(winCaseDiag!.single.path, 'lib/Sample.dart');
+    expect(winCaseDiag.single.keyed, isTrue);
+
+    final List<BaselineDiagnostic>? winExtDiag = parseMachineDiagnostics(
+      r'INFO|LINT|AVOID_PRINT|\\\\?\\C:\\work\\demo.proj\\src\\lib\\a.dart|1|1|1|msg'
+          '\n',
+      r'C:\work\demo.proj',
+    );
+    expect(winExtDiag!.single.path, 'lib/a.dart');
+    expect(winExtDiag.single.keyed, isTrue);
+
+    final String winUnstaged = unstage(
+      r'Cannot include file:///C:/work/demo.proj/src/pkg/opts.yaml or C:\WORK\demo.proj/src/lib\a.dart',
+      r'C:\work\demo.proj',
+    );
+    expect(winUnstaged, r'Cannot include file:///pkg/opts.yaml or lib\a.dart');
+
+    final String relUnstaged = unstage(
+      "See 'rel.proj/src/lib/a.dart' and '/other/rel.proj/src/lib/b.dart'",
+      './rel.proj',
+    );
+    expect(
+      relUnstaged,
+      "See 'lib/a.dart' and '/other/rel.proj/src/lib/b.dart'",
+    );
+  });
 }
 
 void _defineRunnerPrefixMatchingUnkeyedTest() {
-  test(
-    'marks non-root, superstring, and wrapper files as unkeyed display paths',
-    () {
-      const project = '/work/stage.proj';
-      final List<BaselineDiagnostic>? superstring = parseMachineDiagnostics(
-        'INFO|LINT|AVOID_PRINT|/prefix/work/stage.proj/src/lib/a.dart|1|1|1|msg\n',
-        project,
-      );
-      expect(superstring, isNotNull);
-      expect(
-        superstring!.single.path,
-        '/prefix/work/stage.proj/src/lib/a.dart',
-      );
-      expect(superstring.single.keyed, isFalse);
+  test('marks non-root, superstring, and wrapper files as unkeyed display paths', () {
+    const project = '/work/stage.proj';
+    final List<BaselineDiagnostic>? superstring = parseMachineDiagnostics(
+      'INFO|LINT|AVOID_PRINT|/prefix/work/stage.proj/src/lib/a.dart|1|1|1|msg\n',
+      project,
+    );
+    expect(superstring, isNotNull);
+    expect(superstring!.single.path, '/prefix/work/stage.proj/src/lib/a.dart');
+    expect(superstring.single.keyed, isFalse);
 
-      final List<BaselineDiagnostic>? sibling = parseMachineDiagnostics(
-        'INFO|LINT|AVOID_PRINT|/work/stage.proj2/src/lib/a.dart|1|1|1|msg\n',
-        project,
-      );
-      expect(sibling, isNotNull);
-      expect(sibling!.single.path, '/work/stage.proj2/src/lib/a.dart');
-      expect(sibling.single.keyed, isFalse);
+    final List<BaselineDiagnostic>? sibling = parseMachineDiagnostics(
+      'INFO|LINT|AVOID_PRINT|/work/stage.proj2/src/lib/a.dart|1|1|1|msg\n',
+      project,
+    );
+    expect(sibling, isNotNull);
+    expect(sibling!.single.path, '/work/stage.proj2/src/lib/a.dart');
+    expect(sibling.single.keyed, isFalse);
 
-      final List<BaselineDiagnostic>? outside = parseMachineDiagnostics(
-        'INFO|LINT|AVOID_PRINT|/outside/lib/a.dart|1|1|1|msg\n',
-        project,
-      );
-      expect(outside, isNotNull);
-      expect(outside!.single.path, '/outside/lib/a.dart');
-      expect(outside.single.keyed, isFalse);
+    final List<BaselineDiagnostic>? outside = parseMachineDiagnostics(
+      'INFO|LINT|AVOID_PRINT|/outside/lib/a.dart|1|1|1|msg\n',
+      project,
+    );
+    expect(outside, isNotNull);
+    expect(outside!.single.path, '/outside/lib/a.dart');
+    expect(outside.single.keyed, isFalse);
 
-      final List<BaselineDiagnostic>? wrapperAbs = parseMachineDiagnostics(
-        'ERROR|LINT|PARSE_ERROR|/work/stage.proj/pubspec.yaml|1|1|1|msg\n',
-        project,
-      );
-      expect(wrapperAbs, isNotNull);
-      expect(wrapperAbs!.single.path, 'pubspec.yaml');
-      expect(wrapperAbs.single.keyed, isFalse);
+    final List<BaselineDiagnostic>? climbing = parseMachineDiagnostics(
+      'ERROR|LINT|PARSE_ERROR|src/../pubspec.yaml|1|1|1|msg\n',
+      project,
+    );
+    expect(climbing!.single.path, 'src/../pubspec.yaml');
+    expect(climbing.single.keyed, isFalse);
 
-      final List<BaselineDiagnostic>? wrapperRel = parseMachineDiagnostics(
-        'ERROR|LINT|PARSE_ERROR|pubspec.yaml|1|1|1|msg\n',
-        project,
-      );
-      expect(wrapperRel, isNotNull);
-      expect(wrapperRel!.single.path, 'pubspec.yaml');
-      expect(wrapperRel.single.keyed, isFalse);
-    },
-  );
+    final List<BaselineDiagnostic>? wrapperAbs = parseMachineDiagnostics(
+      'ERROR|LINT|PARSE_ERROR|/work/stage.proj/pubspec.yaml|1|1|1|msg\n',
+      project,
+    );
+    expect(wrapperAbs, isNotNull);
+    expect(wrapperAbs!.single.path, 'pubspec.yaml');
+    expect(wrapperAbs.single.keyed, isFalse);
+
+    final List<BaselineDiagnostic>? wrapperRel = parseMachineDiagnostics(
+      'ERROR|LINT|PARSE_ERROR|pubspec.yaml|1|1|1|msg\n',
+      project,
+    );
+    expect(wrapperRel, isNotNull);
+    expect(wrapperRel!.single.path, 'pubspec.yaml');
+    expect(wrapperRel.single.keyed, isFalse);
+
+    final List<BaselineDiagnostic> wrapperCtx = parseContextDiagnostics(
+      '  error - /work/stage.proj/pubspec.yaml:1:1 - bad yaml - parse_error\n',
+      project,
+    );
+    expect(wrapperCtx.single.path, 'pubspec.yaml');
+    expect(wrapperCtx.single.keyed, isFalse);
+
+    final List<BaselineDiagnostic>? winWrapper = parseMachineDiagnostics(
+      r'ERROR|LINT|PARSE_ERROR|C:\\work\\stage.proj\\pubspec.yaml|1|1|1|msg'
+          '\n',
+      r'C:\work\stage.proj',
+    );
+    expect(winWrapper!.single.path, 'pubspec.yaml');
+    expect(winWrapper.single.keyed, isFalse);
+  });
 }
 
 void _defineRunnerBaselineReportUnkeyedTest() {
