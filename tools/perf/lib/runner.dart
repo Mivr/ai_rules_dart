@@ -232,7 +232,7 @@ FlowResult _failedFlow(String method, String reason) {
     solCpu: null,
     identical: false,
     reason: reason,
-    chain: 0,
+    chain: buildChainObject(identical: false, solCpu: null, reason: reason),
     workerSteps: const {},
   );
 }
@@ -513,7 +513,11 @@ FlowResult _measureFlowTestLeaf(RepeatContext ctx) {
         solCpu: null,
         identical: false,
         reason: 'Execution log not generated',
-        chain: 0,
+        chain: buildChainObject(
+          identical: false,
+          solCpu: null,
+          reason: 'Execution log not generated',
+        ),
         workerSteps: const {},
       ),
     );
@@ -530,7 +534,11 @@ FlowResult _measureFlowTestLeaf(RepeatContext ctx) {
         solCpu: null,
         identical: false,
         reason: 'No chain spawns extracted from log',
-        chain: 0,
+        chain: buildChainObject(
+          identical: false,
+          solCpu: null,
+          reason: 'No chain spawns extracted from log',
+        ),
         workerSteps: parsed.workerSteps,
       ),
     );
@@ -553,7 +561,13 @@ FlowResult _measureFlowTestLeaf(RepeatContext ctx) {
         solCpu: null,
         identical: false,
         reason: 'Spawn ordering failed: $e',
-        chain: parsed.chainSpawns.length,
+        chain: buildChainObject(
+          identical: false,
+          solCpu: null,
+          reason: 'Spawn ordering failed: $e',
+          orderingFailed: e.toString(),
+          steps: chainStepsFromSpawns(parsed.chainSpawns),
+        ),
         workerSteps: parsed.workerSteps,
       ),
     );
@@ -583,7 +597,12 @@ FlowResult _replayAndVerifyFlow(
       solCpu: null,
       identical: false,
       reason: e.toString(),
-      chain: ordered.length,
+      chain: buildChainObject(
+        identical: false,
+        solCpu: null,
+        reason: e.toString(),
+        steps: chainStepsFromSpawns(ordered),
+      ),
       workerSteps: workerSteps,
     );
   }
@@ -594,7 +613,12 @@ FlowResult _replayAndVerifyFlow(
       solCpu: null,
       identical: false,
       reason: 'No declared outputs to verify for ${spec.target}',
-      chain: ordered.length,
+      chain: buildChainObject(
+        identical: false,
+        solCpu: null,
+        reason: 'No declared outputs to verify for ${spec.target}',
+        steps: chainStepsFromSpawns(ordered),
+      ),
       workerSteps: workerSteps,
     );
   }
@@ -613,7 +637,12 @@ FlowResult _replayAndVerifyFlow(
     solCpu: replayRes.solCpuSeconds,
     identical: replayRes.identical,
     reason: replayRes.reason,
-    chain: ordered.length,
+    chain: buildChainObject(
+      identical: replayRes.identical,
+      solCpu: replayRes.solCpuSeconds,
+      reason: replayRes.reason,
+      steps: chainStepsFromSpawns(ordered),
+    ),
     workerSteps: workerSteps,
   );
 }

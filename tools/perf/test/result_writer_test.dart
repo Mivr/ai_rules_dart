@@ -24,6 +24,30 @@ const _sampleMeta = SummaryMeta(
   repeats: 3,
 );
 
+Map<String, dynamic> _mockChain({
+  required int stepCount,
+  required double? solCpu,
+  required bool identical,
+  required String reason,
+  String mnemonic = 'DartKernel',
+}) {
+  final steps = <String, dynamic>{};
+  for (var i = 1; i <= stepCount; i++) {
+    steps['step_$i'] = {
+      'command_args': ['tool', 'arg$i'],
+      'declared_outputs': ['out/file$i.dill'],
+      'mnemonic': mnemonic,
+      'runner': 'worker',
+    };
+  }
+  return buildChainObject(
+    identical: identical,
+    solCpu: solCpu,
+    reason: reason,
+    steps: steps,
+  );
+}
+
 RepeatResult _makePassingRepeat({
   required int index,
   required double cleanBazel,
@@ -39,7 +63,12 @@ RepeatResult _makePassingRepeat({
         solCpu: cleanSol,
         identical: true,
         reason: 'ok',
-        chain: 12,
+        chain: _mockChain(
+          stepCount: 12,
+          solCpu: cleanSol,
+          identical: true,
+          reason: 'ok',
+        ),
         workerSteps: const {'DartKernel': 5},
       ),
       'dart-app-body': FlowResult(
@@ -48,26 +77,42 @@ RepeatResult _makePassingRepeat({
         solCpu: bodySol,
         identical: true,
         reason: 'ok',
-        chain: 2,
+        chain: _mockChain(
+          stepCount: 2,
+          solCpu: bodySol,
+          identical: true,
+          reason: 'ok',
+        ),
         workerSteps: const {'DartKernel': 1},
       ),
-      'dart-app-api': const FlowResult(
+      'dart-app-api': FlowResult(
         method: 'warm-server',
         bazelCpu: 4.2,
         solCpu: 1.05,
         identical: true,
         reason: 'ok',
-        chain: 6,
-        workerSteps: {'DartKernel': 2},
+        chain: _mockChain(
+          stepCount: 6,
+          solCpu: 1.05,
+          identical: true,
+          reason: 'ok',
+        ),
+        workerSteps: const {'DartKernel': 2},
       ),
-      'dart-test-leaf': const FlowResult(
+      'dart-test-leaf': FlowResult(
         method: 'warm-server',
         bazelCpu: 3.1,
         solCpu: 0.82,
         identical: true,
         reason: 'ok',
-        chain: 3,
-        workerSteps: {'DartKernel': 1},
+        chain: _mockChain(
+          stepCount: 3,
+          solCpu: 0.82,
+          identical: true,
+          reason: 'ok',
+          mnemonic: 'TestRunner',
+        ),
+        workerSteps: const {'DartKernel': 1},
       ),
     },
   );
@@ -132,7 +177,16 @@ void _testAllPassSummaryAndSortedSchema() {
   _check(clean['reason'] == 'ok', 'clean reason == ok');
   _check(clean['bazel'] == 11.0, 'clean bazel median == 11.0');
   _check(clean['sol'] == 4.1, 'clean sol median == 4.1');
-  _check(clean['chain'] == 12, 'clean chain == 12');
+
+  final cleanChain = clean['chain'] as Map<String, dynamic>;
+  _check(cleanChain['status'] == 'ok', 'clean chain.status == ok');
+  _check(cleanChain['sol_cpu_s'] == 4.1, 'clean chain.sol_cpu_s == 4.1');
+  _check((cleanChain['failed'] as List).isEmpty, 'clean chain.failed is empty');
+  final cleanSteps = cleanChain['steps'] as Map<String, dynamic>;
+  _check(cleanSteps.length == 12, 'clean chain.steps length == 12');
+  final step1 = cleanSteps['step_1'] as Map<String, dynamic>;
+  _check(step1['mnemonic'] == 'DartKernel', 'step_1 mnemonic == DartKernel');
+
   final cleanWorkerSteps = clean['worker_steps'] as Map<String, dynamic>;
   _check(
     cleanWorkerSteps['DartKernel'] == 5,
@@ -151,23 +205,33 @@ void _testFailureAndMissingRepeats() {
   final partial = RepeatResult(
     repeatIndex: 1,
     flows: {
-      'dart-app-clean': const FlowResult(
+      'dart-app-clean': FlowResult(
         method: 'batch',
         bazelCpu: 10.0,
         solCpu: null,
         identical: false,
         reason: 'Byte mismatch in output',
-        chain: 12,
-        workerSteps: {'DartKernel': 5},
+        chain: _mockChain(
+          stepCount: 12,
+          solCpu: null,
+          identical: false,
+          reason: 'Byte mismatch in output',
+        ),
+        workerSteps: const {'DartKernel': 5},
       ),
-      'dart-app-body': const FlowResult(
+      'dart-app-body': FlowResult(
         method: 'warm-server',
         bazelCpu: 2.0,
         solCpu: 0.5,
         identical: true,
         reason: 'ok',
-        chain: 2,
-        workerSteps: {'DartKernel': 1},
+        chain: _mockChain(
+          stepCount: 2,
+          solCpu: 0.5,
+          identical: true,
+          reason: 'ok',
+        ),
+        workerSteps: const {'DartKernel': 1},
       ),
     },
   );
@@ -191,6 +255,22 @@ void _testFailureAndMissingRepeats() {
   _check(
     (clean['spread'] as Map<String, dynamic>)['sol'] == null,
     'Failed flow spread.sol is null',
+  );
+  final failedChain = clean['chain'] as Map<String, dynamic>;
+  _check(failedChain['status'] == 'error', 'Failed flow chain.status is error');
+  _check(
+    failedChain['sol_cpu_s'] == null,
+    'Failed flow chain.sol_cpu_s is null',
+  );
+  _check(
+    (failedChain['failed'] as List).any(
+      (e) => e.toString().contains('Byte mismatch'),
+    ),
+    'Failed flow chain.failed contains reason',
+  );
+  _check(
+    (failedChain['steps'] as Map).isNotEmpty,
+    'Failed flow chain preserves replayed steps',
   );
 
   final body = flows['dart-app-body'] as Map<String, dynamic>;
@@ -218,6 +298,16 @@ void _testEmptyRepeatsSummary() {
   _check(emptyLeaf['identical'] == false, 'Zero repeats identical == false');
   _check(emptyLeaf['bazel'] == null, 'Zero repeats bazel == null');
   _check(emptyLeaf['sol'] == null, 'Zero repeats sol == null');
+  final emptyChain = emptyLeaf['chain'] as Map<String, dynamic>;
+  _check(emptyChain['status'] == 'error', 'Zero repeats chain.status is error');
+  _check(
+    emptyChain['sol_cpu_s'] == null,
+    'Zero repeats chain.sol_cpu_s is null',
+  );
+  _check(
+    (emptyChain['failed'] as List).isNotEmpty,
+    'Zero repeats chain.failed is non-empty',
+  );
   _check(
     (emptyLeaf['worker_steps'] as Map).isEmpty,
     'Zero repeats worker_steps is empty object',
@@ -276,7 +366,8 @@ void _testLoadRepeatResultsFilteringAndOrder() {
     _check(
       r5Clean.bazelCpu == 8.5 &&
           r5Clean.solCpu == 2.8 &&
-          r5Clean.workerSteps['DartKernel'] == 3,
+          r5Clean.workerSteps['DartKernel'] == 3 &&
+          r5Clean.chain['status'] == 'ok',
       'Parses snake_case repeat JSON fields cleanly',
     );
   } finally {
