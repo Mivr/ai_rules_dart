@@ -1251,16 +1251,23 @@ jobs:
           echo "OK: dart_analysis_test checked the manual target"
       # A `manual` target is out of `//...`'s reach; the lint baseline fixture
       # asserts that an unbaselined diagnostic fails the build under the root
-      # analysis options.
+      # analysis options in both analysis modes.
       - name: lint_baseline_fixture — expect an unbaselined diagnostic to fail
         run: |
-          if bazel test //dart/tests/lint_baseline_fixture:unbaselined_lib 2>/dev/null; then
-            echo "ERROR: build should have failed on an unbaselined diagnostic"
-            exit 1
-          fi
-          out=$(bazel test //dart/tests/lint_baseline_fixture:unbaselined_lib 2>&1 || true)
-          echo "$out" | grep -q "dart/tests/lint_baseline_fixture/lib/unbaselined.dart"
-          echo "$out" | grep -q "avoid_print"
+          for mode in "" "--//dart:analyzer_summaries=false"; do
+            args=()
+            [ -n "$mode" ] && args+=("$mode")
+            rc=0
+            out=$(bazel test "${args[@]}" //dart/tests/lint_baseline_fixture:unbaselined_lib 2>&1) || rc=$?
+            if [ "$rc" -eq 0 ] || [ "$rc" -eq 4 ]; then
+              echo "ERROR: build should have failed on an unbaselined diagnostic (exit $rc)"
+              printf '%s\n' "$out"
+              exit 1
+            fi
+            grep -F -q "dart/tests/lint_baseline_fixture/lib/unbaselined.dart" <<<"$out"
+            grep -F -q "avoid_print" <<<"$out"
+            grep -F -q "observed 1, ceiling 0" <<<"$out"
+          done
           echo "OK: expected unbaselined diagnostic detected"
       # A hung test is diagnosed from what it printed before Bazel killed it, so
       # that output has to be in test.log rather than held back by the launcher.
