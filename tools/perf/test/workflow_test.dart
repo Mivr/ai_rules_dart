@@ -265,6 +265,35 @@ void _verifyArtifactUpload(String text) {
   _check(!text.contains('bazel-out'), 'no build outputs uploaded');
 }
 
+void _verifyShellSafety(String text) {
+  final lines = text.split('\n');
+  var inRunBlock = false;
+  var runIndent = 0;
+  for (final line in lines) {
+    final runStart = RegExp(r'^(\s*)(?:-\s+)?run:\s*\|').firstMatch(line);
+    if (runStart != null) {
+      inRunBlock = true;
+      runIndent = runStart.group(1)!.length;
+      continue;
+    }
+    if (!inRunBlock) continue;
+    if (line.trim().isEmpty) continue;
+    final indent = RegExp(r'^\s*').firstMatch(line)!.group(0)!.length;
+    if (indent <= runIndent) {
+      inRunBlock = false;
+      continue;
+    }
+    _check(
+      !line.contains(r'${{ inputs.'),
+      'run: block must read env vars rather than interpolating inputs: $line',
+    );
+  }
+  _check(
+    !RegExp(r'\[\s+-d\s+[^\]]*rules-head/\.git').hasMatch(text),
+    'rev-parse HEAD must not require rules-head/.git to be a directory',
+  );
+}
+
 /// Verifies all contract constraints against [text].
 void verifyWorkflowYaml(String text) {
   _verifyTriggers(text);
@@ -273,6 +302,7 @@ void verifyWorkflowYaml(String text) {
   _verifyCaches(text);
   _verifyCheckoutsAndSteps(text);
   _verifyArtifactUpload(text);
+  _verifyShellSafety(text);
 }
 
 void _expectStateError(void Function() action, String message) {
@@ -343,6 +373,12 @@ void _testWorkflowMutations(String validText) {
       validText.replaceFirst(RegExp(r'seq\s+1\s+.*'), 'seq 1 3; do'),
     ),
     'fails when runner repeats uses a hardcoded fixed number',
+  );
+  _expectStateError(
+    () => verifyWorkflowYaml(
+      validText.replaceFirst(r'"$REPEATS"', r'"${{ inputs.repeats }}"'),
+    ),
+    'fails when run: block interpolates inputs.repeats directly',
   );
 }
 

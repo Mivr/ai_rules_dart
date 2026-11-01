@@ -79,6 +79,10 @@ module(
   _check(legacy.dartVersion == '3.13.5', 'default dartVersion');
 
   final current = parseModuleHeader('''
+"""
+Example docstring:
+module(name = "wrong_docstring", repo_name = "bad_repo")
+"""
 # module(name = "commented_out", repo_name = "wrong")
 # dart.toolchain(dart_version = "0.0.0")
 module(
@@ -150,6 +154,38 @@ void _testCliPathAndEnvHelpers() {
         !cleaned.containsKey('RULES_DART_DILL') &&
         !cleaned.containsKey('TEST_TMPDIR'),
     'outer runfiles/test/rules_dart vars stripped',
+  );
+}
+
+void _testRunnerOutputResolution() {
+  final single1 = resolveRunnerOutputs(
+    parseCliFlags(['--repeats=1', '--out=/tmp/nonexistent_r1.json']),
+    environment: const {},
+    currentDirectory: '/work',
+  );
+  _check(
+    single1.length == 1 && single1.first == (1, '/tmp/nonexistent_r1.json'),
+    'repeats=1 with .json --out writes single file',
+  );
+  final single2 = resolveRunnerOutputs(
+    parseCliFlags(['--repeat=2', '--repeats=3', '--out=/tmp/repeat-2.json']),
+    environment: const {},
+    currentDirectory: '/work',
+  );
+  _check(
+    single2.length == 1 && single2.first == (2, '/tmp/repeat-2.json'),
+    'explicit --repeat with .json --out writes single file',
+  );
+  final multi = resolveRunnerOutputs(
+    parseCliFlags(['--repeats=3', '--out=/tmp/results']),
+    environment: const {},
+    currentDirectory: '/work',
+  );
+  _check(
+    multi.length == 3 &&
+        multi[0] == (1, '/tmp/results/repeat-1.json') &&
+        multi[2] == (3, '/tmp/results/repeat-3.json'),
+    'multi-repeat directory --out resolves per-repeat files',
   );
 }
 
@@ -415,7 +451,18 @@ void _testLineCountAccuracyAcrossScales() {
       moduleContent: 'module(name = "rules_dart")\n',
     );
 
-    for (final loc in [400, 500, 800, 1000, 2000, 10000, 50000]) {
+    for (final loc in [
+      200,
+      250,
+      300,
+      400,
+      500,
+      800,
+      1000,
+      2000,
+      10000,
+      50000,
+    ]) {
       final out = '${tempDir.path}/out_$loc';
       generateWorkspace(
         GeneratorOptions(
@@ -433,6 +480,10 @@ void _testLineCountAccuracyAcrossScales() {
         'Target $loc got $total lines (diff $diff, max allowed $maxAllowed)',
       );
     }
+
+    applyLayer0BodyEdit('${tempDir.path}/out_200');
+    applyLayer0ApiEdit('${tempDir.path}/out_200');
+    applyLeafBodyEdit('${tempDir.path}/out_200', 'pkg28');
 
     final compactSeed2 = '${tempDir.path}/out_500_s2';
     generateWorkspace(
@@ -458,12 +509,40 @@ void _testLineCountAccuracyAcrossScales() {
   }
 }
 
+void _testFallbackLockFiles() {
+  final tempDir = Directory.systemTemp.createTempSync('rd_fallback_lock_');
+  try {
+    final bareRules = Directory('${tempDir.path}/bare_rules')
+      ..createSync(recursive: true);
+    File('${bareRules.path}/MODULE.bazel')
+        .writeAsStringSync('module(name = "rules_dart")\n');
+    final bareOut = '${tempDir.path}/out_bare';
+    generateWorkspace(
+      GeneratorOptions(
+        targetLoc: 250,
+        seed: 1,
+        rulesDartPath: bareRules.path,
+        outputPath: bareOut,
+      ),
+    );
+    _check(
+      File('$bareOut/pubspec.lock').existsSync() &&
+          File('$bareOut/pubspec.yaml').existsSync(),
+      'Fallback pubspec.lock and pubspec.yaml written when absent in rules',
+    );
+  } finally {
+    _deleteTemp(tempDir);
+  }
+}
+
 void main() {
   _testModuleBazelParsing();
   _testCliPathAndEnvHelpers();
+  _testRunnerOutputResolution();
   _testInvalidOptionsValidation();
   _testDeterminismAndModuleCompatibility();
   _testDefaultGraphAndEdits();
   _testLineCountAccuracyAcrossScales();
+  _testFallbackLockFiles();
   stdout.writeln('All generator tests passed.');
 }
