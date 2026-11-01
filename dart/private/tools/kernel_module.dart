@@ -242,9 +242,7 @@ List<String> kernelWorkerArgs(List<String> args) {
         break;
       }
     }
-    if (!matchedEq) {
-      out.add(arg);
-    }
+    if (!matchedEq) out.add(arg);
   }
   return out;
 }
@@ -302,9 +300,7 @@ Future<void> main(List<String> argv) async {
     log,
     const [],
   );
-  if (code != 0) {
-    stderr.write(log);
-  }
+  if (code != 0) stderr.write(log);
   await stderr.flush();
   exit(code);
 }
@@ -519,9 +515,7 @@ void _parseBaseArg(List<String> rawArgs, int i, _ModuleOptions options) {
 /// The worker input paths and their digests, or nulls when [inputs] is empty.
 ({Set<String>? workerInputPaths, Map<String, Uint8List>? inputDigests})
 _decodeWorkerInputs(List<Uint8List> inputs) {
-  if (inputs.isEmpty) {
-    return (workerInputPaths: null, inputDigests: null);
-  }
+  if (inputs.isEmpty) return (workerInputPaths: null, inputDigests: null);
   final paths = <String>{};
   final digests = <String, Uint8List>{};
   for (final raw in inputs) {
@@ -530,9 +524,7 @@ _decodeWorkerInputs(List<Uint8List> inputs) {
     if (rawPath.isEmpty) continue;
     if (_isNormalizedRelative(rawPath)) {
       paths.add(rawPath);
-      if (decoded.digest.isNotEmpty) {
-        digests[rawPath] = decoded.digest;
-      }
+      if (decoded.digest.isNotEmpty) digests[rawPath] = decoded.digest;
     } else {
       paths.add(rawPath);
       final norm = _normalize(rawPath);
@@ -629,9 +621,7 @@ _compileAndVerify(
 Future<void> _cleanIsolated(_IsolatedRoot? isolated) async {
   if (isolated == null) return;
   final dir = Directory(_filePathOf(isolated.rootDir));
-  if (await dir.exists()) {
-    await dir.delete(recursive: true);
-  }
+  if (await dir.exists()) await dir.delete(recursive: true);
 }
 
 /// The VM libraries for the module's platform and extra libraries.
@@ -1301,9 +1291,7 @@ class _ModuleBuild {
     if (inputs.isNotEmpty || compiler is _Persistent) {
       for (final node in summaryNodes) {
         final encoded = node.encodedInput;
-        if (encoded != null) {
-          summaryInputs.add(encoded);
-        }
+        if (encoded != null) summaryInputs.add(encoded);
       }
     }
     final sccBase = staged != null
@@ -2514,9 +2502,7 @@ Future<_ScannedImports> _scanImportDirectives(
     for (final ref in scan.refs) {
       if (!ref.isPart || ref.uri.startsWith('dart:')) continue;
       final target = _resolveUri(ref.uri, key, roots, multiRootPrefix);
-      if (target != null) {
-        (declaredPartsOf[key] ??= {}).add(target);
-      }
+      if (target != null) (declaredPartsOf[key] ??= {}).add(target);
     }
   }
   return (
@@ -3469,9 +3455,7 @@ class _Files {
   /// `--input-source`.
   bool isExplicitlyDeclaredInRoot(String root, String key) {
     final workerPaths = _workerInputPaths;
-    if (workerPaths != null) {
-      return _matchesPathSet(workerPaths, root, key);
-    }
+    if (workerPaths != null) return _matchesPathSet(workerPaths, root, key);
     if (_declaredRootPaths.isNotEmpty) {
       return _matchesPathSet(_declaredRootPaths, root, key);
     }
@@ -3482,9 +3466,7 @@ class _Files {
   bool isDeclaredInRoot(String root, String key) {
     if (!_declaredKeys.contains(key)) return false;
     final workerPaths = _workerInputPaths;
-    if (workerPaths != null) {
-      return _matchesPathSet(workerPaths, root, key);
-    }
+    if (workerPaths != null) return _matchesPathSet(workerPaths, root, key);
     if (_declaredRootPaths.isNotEmpty) {
       var anyRootDeclared = false;
       for (final candidateRoot in _roots) {
@@ -3533,9 +3515,7 @@ class _Files {
         if (!isDeclaredInRoot(root, key)) continue;
         firstDeclared ??= root;
         final path = _filePathOf(root == '.' ? key : '$root/$key');
-        if (File(path).existsSync()) {
-          return root;
-        }
+        if (File(path).existsSync()) return root;
       }
       return firstDeclared;
     }
@@ -3664,9 +3644,7 @@ Map<String, ({bool explicit, bool conflict})> _classifyMultiRoots(
       explicit = true;
     } else if (!files.isDeclaredInRoot(root, key)) {
       final f = File(root == '.' ? key : '$root/$key');
-      if (f.existsSync()) {
-        conflict = true;
-      }
+      if (f.existsSync()) conflict = true;
     }
   }
   return (explicit: explicit, conflict: conflict);
@@ -3850,9 +3828,7 @@ _stageIsolatedMultiRoot(
 }) async {
   final rootDir = '$output/.isolated_root';
   final dir = Directory(_filePathOf(rootDir));
-  if (await dir.exists()) {
-    await dir.delete(recursive: true);
-  }
+  if (await dir.exists()) await dir.delete(recursive: true);
   await dir.create(recursive: true);
   final stagedInputs = <Uint8List>[];
   final covered = <String, Uint8List>{};
@@ -3900,19 +3876,13 @@ void _addCovered(
     }
   }
   final normFile = normalizePath(origin);
-  if (normFile != origin) {
-    covered.putIfAbsent(normFile, () => digest);
-  }
+  if (normFile != origin) covered.putIfAbsent(normFile, () => digest);
   // Staged inputs are encoded as `file:///` URIs on Windows, while worker
   // requests may spell the same origin as a filesystem path (or vice versa).
   final uri = kernelWorkerUri(origin);
-  if (uri != origin) {
-    covered.putIfAbsent(uri, () => digest);
-  }
+  if (uri != origin) covered.putIfAbsent(uri, () => digest);
   final uriNorm = kernelWorkerUri(normFile);
-  if (uriNorm != normFile) {
-    covered.putIfAbsent(uriNorm, () => digest);
-  }
+  if (uriNorm != normFile) covered.putIfAbsent(uriNorm, () => digest);
 }
 
 /// The entries of [inputs] whose paths are not staged isolated origins in
@@ -3926,9 +3896,7 @@ List<Uint8List> _uncoveredInputs(
   final out = <Uint8List>[];
   for (final raw in inputs) {
     final path = _decodeInputView(raw).path;
-    if (path.isEmpty || _lookupDigest(path, covered) == null) {
-      out.add(raw);
-    }
+    if (path.isEmpty || _lookupDigest(path, covered) == null) out.add(raw);
   }
   return out;
 }
@@ -4223,8 +4191,77 @@ class _UsedInputsReporter implements ModuleCompiler {
 /// drive-letter paths resolve to one physical spelling too, with separators
 /// and drive-letter case normalized. Compares `--used-inputs` report lines
 /// with the paths this action passed to `kernel_worker`.
+/// Resolves a worker sandbox or test sandbox directory [dir] to the execution
+/// root it mirrors, so working-directory-relative paths resolve to the same
+/// physical spelling whether running in the execroot or under a sandbox.
+String _resolveSandboxExecroot(String dir) {
+  if (dir.contains('/execroot/')) return dir;
+  try {
+    for (final FileSystemEntity entity in Directory(
+      dir,
+    ).listSync(followLinks: false)) {
+      if (!FileSystemEntity.isLinkSync(entity.path)) continue;
+      try {
+        final String target = File(entity.path)
+            .resolveSymbolicLinksSync()
+            .replaceAll(r'\', '/');
+        final String name = entity.path.replaceAll(r'\', '/').split('/').last;
+        if (target.endsWith('/$name')) {
+          final String cand = target.substring(
+            0,
+            target.length - name.length - 1,
+          );
+          if (cand.isNotEmpty && cand != dir) return cand;
+        }
+      } on FileSystemException {
+        continue;
+      }
+    }
+  } on FileSystemException {
+    // Directory could not be listed: keep dir.
+  }
+  return dir;
+}
+
+String? _cachedCurrentWorkingDir;
+String? _cachedCanonicalWorkingDir;
+
+/// The canonical execution root of [Directory.current].
+String _canonicalWorkingDirectory() {
+  final String current = Directory.current.path;
+  if (current == _cachedCurrentWorkingDir &&
+      _cachedCanonicalWorkingDir != null) {
+    return _cachedCanonicalWorkingDir!;
+  }
+  final String rawCwd = current.replaceAll(r'\', '/');
+  final String resolved = _resolveActionPathSymlinks(
+    isWindowsDrivePath(rawCwd)
+        ? _normalizeDrivePath(_normalize(rawCwd))
+        : (rawCwd.startsWith('//')
+              ? '//$rawCwd'
+              : (rawCwd.startsWith('/')
+                    ? '/${_normalize(rawCwd)}'
+                    : _normalize(rawCwd))),
+  );
+  final String canonical = _resolveSandboxExecroot(resolved);
+  _cachedCurrentWorkingDir = current;
+  _cachedCanonicalWorkingDir = canonical;
+  return canonical;
+}
+
+/// A path or `file:` URI in one canonical physical spelling, with `.` and `..`
+/// resolved, symlinks traversed over the longest existing prefix, and any
+/// working-directory base resolved the same way.
+///
+/// On macOS, actions run under `/var`, which is a symlink to `/private/var`
+/// (`/var/...`). Without it the same file has two spellings and the
+/// foreign-report tripwire fires on every precise report. The same holds on
+/// Windows, where the working directory may sit behind a symlink or junction:
+/// drive-letter paths resolve to one physical spelling too, with separators
+/// and drive-letter case normalized. Compares `--used-inputs` report lines
+/// with the paths this action passed to `kernel_worker`.
 String _canonicalActionPath(String pathOrUri) {
-  final slash = _filePathOf(pathOrUri).replaceAll(r'\', '/');
+  final String slash = _filePathOf(pathOrUri).replaceAll(r'\', '/');
   if (isWindowsDrivePath(slash)) {
     return _resolveActionPathSymlinks(_normalizeDrivePath(_normalize(slash)));
   }
@@ -4232,10 +4269,11 @@ String _canonicalActionPath(String pathOrUri) {
   // root, so an absolute path stays absolute. A relative tmp or report path
   // would otherwise resolve against whatever directory the caller runs in
   // instead of the execution root.
-  if (slash.startsWith('/'))
+  if (slash.startsWith('/')) {
     return _resolveActionPathSymlinks('/${_normalize(slash)}');
-  final cwd = Directory.current.path.replaceAll(r'\', '/');
-  final joined = _normalize('$cwd/$slash');
+  }
+  final String cwd = _canonicalWorkingDirectory();
+  final String joined = _normalize('$cwd/$slash');
   // `_normalize` drops the leading segment too: a posix absolute working
   // directory must stay absolute (a Windows drive letter survives as a segment,
   // so only posix needs the root restored). Without this, a relative action
@@ -4244,7 +4282,7 @@ String _canonicalActionPath(String pathOrUri) {
   // precise report.
   // A UNC working directory keeps its double-slash root, so an absolute
   // report spelling still matches a relative action path through it.
-  if (cwd.startsWith('//')) return _resolveActionPathSymlinks('//${joined}');
+  if (cwd.startsWith('//')) return _resolveActionPathSymlinks('//$joined');
   if (cwd.startsWith('/')) return _resolveActionPathSymlinks('/$joined');
   if (isWindowsDrivePath(cwd)) {
     return _resolveActionPathSymlinks(_normalizeDrivePath(joined));
@@ -4501,9 +4539,7 @@ class _UnusedInputs {
         continue;
       }
       for (final path in reported) {
-        if (!report.passed.contains(path) && !_isOwnOutput(path)) {
-          return false;
-        }
+        if (!report.passed.contains(path) && !_isOwnOutput(path)) return false;
       }
       _used.addAll(reported);
     }
@@ -4614,12 +4650,9 @@ class _UnusedInputs {
       for (final key in entry.value) {
         defines = true;
         if (_referenced.contains(key)) definesReferenced = true;
-        if (_ownPackages.contains(_packageOfKey(key))) {
-          sharesOwnPackage = true;
-        }
-        if (_consultedPackages.contains(_packageOfKey(key))) {
+        if (_ownPackages.contains(_packageOfKey(key))) sharesOwnPackage = true;
+        if (_consultedPackages.contains(_packageOfKey(key)))
           sharesConsultedPackage = true;
-        }
       }
     }
     // A module directory that defines nothing has no summary to use, but its
@@ -5517,9 +5550,7 @@ final class _U30Reader {
   int read() {
     final b0 = _data[_pos++];
     if ((b0 & 0x80) == 0) return b0;
-    if ((b0 & 0x40) == 0) {
-      return ((b0 & 0x3f) << 8) | _data[_pos++];
-    }
+    if ((b0 & 0x40) == 0) return ((b0 & 0x3f) << 8) | _data[_pos++];
     final b1 = _data[_pos++];
     final b2 = _data[_pos++];
     final b3 = _data[_pos++];
@@ -5617,9 +5648,7 @@ Uint8List _reassembleStripped(
   // Kernel requires binaryOffsetForMetadataPayloads (fields[4]) to be 8-byte
   // aligned (ComponentFile.metadataPayloadsAlignment = 8).
   final metaPad = (8 - (out.length % 8)) % 8;
-  if (metaPad > 0) {
-    out.add(Uint8List(metaPad));
-  }
+  if (metaPad > 0) out.add(Uint8List(metaPad));
   final newOffMetadataPayloads = out.length;
   final metaDelta = newOffMetadataPayloads - index.offMetadataPayloads;
 
@@ -5634,9 +5663,7 @@ Uint8List _reassembleStripped(
   final newOffComponentIndex = out.length;
   final totalUnpadded = out.length + index.idxBytes;
   final pad = (8 - (totalUnpadded % 8)) % 8;
-  if (pad > 0) {
-    out.add(Uint8List(pad));
-  }
+  if (pad > 0) out.add(Uint8List(pad));
 
   for (var i = 1; i <= 3; i++) {
     fields[i] += delta;
@@ -5690,28 +5717,22 @@ String _keyOfDillFileUri(String uri, List<String> multiRoots) {
     // no workspace file.
     return '';
   }
-  final normPath = path.contains(r'\') ? path.replaceAll(r'\', '/') : path;
-  final cwd = Directory.current.path.replaceAll(r'\', '/');
-  for (final root in multiRoots) {
-    final key = _keyUnderRoot(normPath, root, cwd);
+  final String normPath = _canonicalActionPath(path);
+  final sortedRoots = List<String>.from(multiRoots)
+    ..sort((a, b) => b.length.compareTo(a.length));
+  for (final root in sortedRoots) {
+    final String? key = _keyUnderRoot(normPath, root);
     if (key != null) return key;
   }
   return '';
 }
 
 /// The key of [normPath] under [root], or null when it lives elsewhere.
-String? _keyUnderRoot(String normPath, String root, String cwd) {
-  var rootFile = root.contains(r'\') ? root.replaceAll(r'\', '/') : root;
-  rootFile = rootFile.replaceFirst(RegExp(r'/+$'), '');
-  final candidates = rootFile.isEmpty || rootFile == '.'
-      ? [cwd]
-      : rootFile.startsWith('/') || isWindowsDrivePath(rootFile)
-      ? [rootFile]
-      : ['$cwd/$rootFile', rootFile];
-  for (final base in candidates) {
-    if (normPath == base || normPath.startsWith('$base/')) {
-      return normPath == base ? '' : normPath.substring(base.length + 1);
-    }
+String? _keyUnderRoot(String normPath, String root) {
+  final String canonicalRoot = _canonicalActionPath(root);
+  if (normPath == canonicalRoot) return '';
+  if (normPath.startsWith('$canonicalRoot/')) {
+    return normPath.substring(canonicalRoot.length + 1);
   }
   return null;
 }
@@ -5780,9 +5801,7 @@ Future<bool> _unstagedReadsAreDeclared(
   final dillFile = File(verify.dillPath);
   if (!await dillFile.exists()) return true;
   final bytes = await dillFile.readAsBytes();
-  if (!_dillSourcesAreDeclared(bytes, verify, consequence)) {
-    return false;
-  }
+  if (!_dillSourcesAreDeclared(bytes, verify, consequence)) return false;
   final checker = _ReferenceChecker(
     verify.dillPath,
     verify.files,
