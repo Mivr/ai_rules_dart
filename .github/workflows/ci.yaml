@@ -65,7 +65,8 @@ jobs:
   # e2e/pub_fetch_powershell runs in the shard-3-only steps below;
   # e2e/analysis_failure and e2e/analyze_composition also run in
   # `expected-failure` and `format-hermeticity`, and e2e/dart_test also in
-  # `dbg-mode` and `expected-failure`. e2e/run_home runs in `run-home`.
+  # `dbg-mode` and `expected-failure`. e2e/run_home runs in `run-home`,
+  # and e2e/repro_canary runs in `reproducibility`.
   # No e2e workspace is left without a job.
   # A tag push runs every job, matrix entry and step below, uncached: no job
   # skips work on a tag push that the nightly `schedule` run does.
@@ -1297,6 +1298,27 @@ jobs:
       - name: dart_test — run tests under -c dbg
         working-directory: e2e/dart_test
         run: bazel test -c dbg --test_output=errors //...
+  reproducibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: e2e/repro_canary — verify non-deterministic outputs differ across distinct output bases
+        working-directory: e2e/repro_canary
+        run: |
+          bazel --output_base=/tmp/repro_canary_a build //:canary
+          sha_a=$(sha256sum bazel-bin/canary | awk '{print $1}')
+          bazel --output_base=/tmp/repro_canary_b build //:canary
+          sha_b=$(sha256sum bazel-bin/canary | awk '{print $1}')
+          if [ -z "$sha_a" ] || [ -z "$sha_b" ]; then
+            echo "ERROR: e2e/repro_canary sha256sum missing or empty (a='$sha_a', b='$sha_b')"
+            exit 1
+          fi
+          if [ "$sha_a" = "$sha_b" ]; then
+            echo "ERROR: e2e/repro_canary outputs are identical ($sha_a); expected non-deterministic builds"
+            exit 1
+          fi
+          echo "OK: e2e/repro_canary outputs differ across distinct output bases ($sha_a != $sha_b)"
   pre-commit:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -1317,6 +1339,7 @@ jobs:
       - expected-failure
       - dbg-mode
       - pre-commit
+      - reproducibility
     runs-on: ubuntu-latest
     timeout-minutes: 5
     if: always()

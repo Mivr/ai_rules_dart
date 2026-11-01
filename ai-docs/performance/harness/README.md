@@ -50,15 +50,8 @@ with `https://bcr.bazel.build/` in each lock, and check that every
 
 ## Reproducibility check
 
-Not scripted. Run in a workspace:
-
-```
-bazel clean && bazel build //... && find -L bazel-bin -type f \( -name '*.dill' -o -name '*.jit' -o -name '*.aot' -o -name app \) -not -path '*.runfiles/*' | sort | xargs sha256sum > a.sha
-bazel clean && bazel build //... && (same) > b.sha
-diff a.sha b.sha
-```
-
-Then check one output with `strings -n 8 <file> | grep -c -e linux-sandbox -e /.cache/bazel -e execroot`; a hermetic output gives 0.
+The `reproducibility` CI job runs the canary self-test; the full `gates repro`
+A/B + Run C matrix runs in the private merge gate.
 
 ## `ext_exemplar` is part of verification
 
