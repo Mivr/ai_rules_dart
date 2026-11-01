@@ -33,8 +33,9 @@ Two checks were added to that list after something slipped through:
   extension loads changes its recorded `bzlTransitiveDigest`. Every
   `MODULE.bazel.lock` must then be refreshed, or `--lockfile_mode=error` fails.
   See `decisions.md`, 2026-10-14, "lockfile regression".
-- **Reproducibility**: every new or changed build output must be byte-identical
-  across two clean builds. See `findings.md`, "Reproducibility audit".
+- **Reproducibility**: the `reproducibility` CI job runs the canary self-test,
+  and the full `gates repro` A/B + Run C matrix runs in the private merge gate.
+  See `findings.md`, "Reproducibility audit".
 
 ## Status: concluded 2026-10-15, released as v0.8.0
 
