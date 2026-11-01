@@ -33,7 +33,7 @@ void _testConcatenatedJsonParsingAndWorkers() {
   _check(parsed.allSpawns.length == 4, 'Parsed all 4 spawn records');
   _check(parsed.chainSpawns.length == 2, 'Excluded cached and failed spawns');
   _check(
-    parsed.workerSteps == 1,
+    parsed.workerSteps['worker'] == 1,
     'workerSteps counts only non-cached target chain worker spawns',
   );
   _check(
@@ -68,7 +68,7 @@ void _testExecConfigAndWindowsPathFiltering() {
     parsed.chainSpawns.length == 1,
     'Filtered both Unix and Windows exec-config spawns',
   );
-  _check(parsed.workerSteps == 0, 'Exec-config worker not counted in chain');
+  _check(parsed.workerSteps.isEmpty, 'Exec-config worker not counted in chain');
   _check(
     parsed.chainSpawns.single.declaredOutputs.single ==
         'bazel-out/k8-fastbuild/bin/app.dill',

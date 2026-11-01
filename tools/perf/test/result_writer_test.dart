@@ -40,7 +40,7 @@ RepeatResult _makePassingRepeat({
         identical: true,
         reason: 'ok',
         chain: 12,
-        workerSteps: 5,
+        workerSteps: const {'DartKernel': 5},
       ),
       'dart-app-body': FlowResult(
         method: 'warm-server',
@@ -49,7 +49,7 @@ RepeatResult _makePassingRepeat({
         identical: true,
         reason: 'ok',
         chain: 2,
-        workerSteps: 1,
+        workerSteps: const {'DartKernel': 1},
       ),
       'dart-app-api': const FlowResult(
         method: 'warm-server',
@@ -58,7 +58,7 @@ RepeatResult _makePassingRepeat({
         identical: true,
         reason: 'ok',
         chain: 6,
-        workerSteps: 2,
+        workerSteps: {'DartKernel': 2},
       ),
       'dart-test-leaf': const FlowResult(
         method: 'warm-server',
@@ -67,7 +67,7 @@ RepeatResult _makePassingRepeat({
         identical: true,
         reason: 'ok',
         chain: 3,
-        workerSteps: 1,
+        workerSteps: {'DartKernel': 1},
       ),
     },
   );
@@ -133,7 +133,11 @@ void _testAllPassSummaryAndSortedSchema() {
   _check(clean['bazel'] == 11.0, 'clean bazel median == 11.0');
   _check(clean['sol'] == 4.1, 'clean sol median == 4.1');
   _check(clean['chain'] == 12, 'clean chain == 12');
-  _check(clean['worker_steps'] == 5, 'clean worker_steps == 5');
+  final cleanWorkerSteps = clean['worker_steps'] as Map<String, dynamic>;
+  _check(
+    cleanWorkerSteps['DartKernel'] == 5,
+    'clean worker_steps == {DartKernel: 5}',
+  );
 
   final spread = clean['spread'] as Map<String, dynamic>;
   _check(spread['n'] == 3, 'spread.n == 3');
@@ -143,7 +147,7 @@ void _testAllPassSummaryAndSortedSchema() {
   _check((spread['sol'] as List)[1] == 4.2, 'spread.sol max');
 }
 
-void _testFailureMissingAndEmptyRepeats() {
+void _testFailureAndMissingRepeats() {
   final partial = RepeatResult(
     repeatIndex: 1,
     flows: {
@@ -154,7 +158,7 @@ void _testFailureMissingAndEmptyRepeats() {
         identical: false,
         reason: 'Byte mismatch in output',
         chain: 12,
-        workerSteps: 5,
+        workerSteps: {'DartKernel': 5},
       ),
       'dart-app-body': const FlowResult(
         method: 'warm-server',
@@ -163,7 +167,7 @@ void _testFailureMissingAndEmptyRepeats() {
         identical: true,
         reason: 'ok',
         chain: 2,
-        workerSteps: 1,
+        workerSteps: {'DartKernel': 1},
       ),
     },
   );
@@ -199,7 +203,9 @@ void _testFailureMissingAndEmptyRepeats() {
     (body['reason'] as String).contains('missing repeats'),
     'Missing repeats reason reported: ${body['reason']}',
   );
+}
 
+void _testEmptyRepeatsSummary() {
   final jsonEmpty = formatDartSolJson(
     repeats: const [],
     meta: _sampleMeta,
@@ -212,6 +218,10 @@ void _testFailureMissingAndEmptyRepeats() {
   _check(emptyLeaf['identical'] == false, 'Zero repeats identical == false');
   _check(emptyLeaf['bazel'] == null, 'Zero repeats bazel == null');
   _check(emptyLeaf['sol'] == null, 'Zero repeats sol == null');
+  _check(
+    (emptyLeaf['worker_steps'] as Map).isEmpty,
+    'Zero repeats worker_steps is empty object',
+  );
   _check(
     (emptyLeaf['reason'] as String).isNotEmpty && emptyLeaf['reason'] != 'ok',
     'Zero repeats has non-empty failure reason',
@@ -266,7 +276,8 @@ void _testLoadRepeatResultsFilteringAndOrder() {
 
 void main() {
   _testAllPassSummaryAndSortedSchema();
-  _testFailureMissingAndEmptyRepeats();
+  _testFailureAndMissingRepeats();
+  _testEmptyRepeatsSummary();
   _testLoadRepeatResultsFilteringAndOrder();
   stdout.writeln('All result_writer tests passed.');
 }
