@@ -163,4 +163,39 @@ void main() {
       expect(packagesToCollect(map, parseManifest([])), isEmpty);
     });
   });
+
+  group('needsEveryLibrary', () {
+    test('a file outside a package needs the unfiltered collection', () {
+      expect(needsEveryLibrary(_uriMap, null), isTrue);
+      expect(
+        needsEveryLibrary(_uriMap, parseManifest(['pkg/lib/b.dart'])),
+        isTrue,
+      );
+    });
+
+    test('a map of package files stays scoped', () {
+      const packaged = {
+        'package:pkg/a.dart': 'pkg/lib/a.dart',
+        'file:///abs/pkg/lib/a.dart': 'pkg/lib/a.dart',
+        'org-dartlang-root:///pkg/lib/a.dart': 'pkg/lib/a.dart',
+      };
+      expect(needsEveryLibrary(packaged, null), isFalse);
+      expect(
+        needsEveryLibrary(packaged, parseManifest(['pkg/lib/a.dart'])),
+        isFalse,
+      );
+    });
+
+    test('the manifest decides which files count', () {
+      const mixed = {
+        'package:pkg/a.dart': 'pkg/lib/a.dart',
+        'org-dartlang-root:///t/test.dart': 't/test.dart',
+      };
+      expect(
+        needsEveryLibrary(mixed, parseManifest(['pkg/lib/a.dart'])),
+        isFalse,
+      );
+      expect(needsEveryLibrary(mixed, parseManifest(['t/test.dart'])), isTrue);
+    });
+  });
 }
