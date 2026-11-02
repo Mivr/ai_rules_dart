@@ -1,6 +1,10 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load(
     "@rules_dart//dart:defs.bzl",
     "dart_binary",
+    "dart_code_asset",
+    "dart_library",
     "dart_test",
 )
 load("@rules_dart//dart/ext/sqlite3:defs.bzl", "sqlite3_code_asset")
@@ -44,6 +48,59 @@ dart_test(
     main = "test/direct_test.dart",
     deps = [
         "@pub_deps//:sqlite3",
+        "@pub_deps//:test",
+    ],
+)
+
+# Exemplar of the public `dart_code_asset` rule over a library this package
+# builds itself, rather than the curated sqlite3 one above. `package:native_answer`
+# declares `@DefaultAsset('package:native_answer/native_answer.dart')` and binds
+# one C symbol; the asset ties that id to a Bazel-built `cc_shared_library`, the
+# library carries the asset, and the test calls through it.
+cc_library(
+    name = "native_answer_c",
+    srcs = ["native/native_answer.c"],
+)
+
+cc_shared_library(
+    name = "libnative_answer",
+    # A DLL exports nothing unless told to; see `//dart/ext/sqlite3:libsqlite3`.
+    features = select({
+        "@platforms//os:windows": ["windows_export_all_symbols"],
+        "//conditions:default": [],
+    }),
+    shared_lib_name = select({
+        "@platforms//os:ios": "libnative_answer.dylib",
+        "@platforms//os:macos": "libnative_answer.dylib",
+        "@platforms//os:tvos": "libnative_answer.dylib",
+        "@platforms//os:visionos": "libnative_answer.dylib",
+        "@platforms//os:watchos": "libnative_answer.dylib",
+        "@platforms//os:windows": "native_answer.dll",
+        "//conditions:default": "libnative_answer.so",
+    }),
+    deps = [":native_answer_c"],
+)
+
+dart_code_asset(
+    name = "native_answer_asset",
+    asset_id = "package:native_answer/native_answer.dart",
+    shared_library = ":libnative_answer",
+)
+
+dart_library(
+    name = "native_answer",
+    package_name = "native_answer",
+    srcs = ["lib/native_answer.dart"],
+    code_assets = [":native_answer_asset"],
+    language_version = "3.11",
+)
+
+dart_test(
+    name = "native_answer_test",
+    size = "small",
+    main = "test/native_answer_test.dart",
+    deps = [
+        ":native_answer",
         "@pub_deps//:test",
     ],
 )

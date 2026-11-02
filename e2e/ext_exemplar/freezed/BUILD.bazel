@@ -2,6 +2,7 @@ load(
     "@rules_dart//dart:defs.bzl",
     "dart_test",
 )
+load("@rules_dart//dart/ext/_shared:defs.bzl", "library_builder_library")
 load("@rules_dart//dart/ext/freezed:defs.bzl", "freezed_library")
 
 # Comprehensive e2e for freezed_library:
@@ -36,6 +37,30 @@ dart_test(
     main = "test/network_result_test.dart",
     deps = [
         ":freezed_fixture",
+        "@pub_deps//:test",
+    ],
+)
+
+# The public `library_builder_library` macro that `freezed_library` wraps, called
+# with the freezed shim and its output suffix itself: one codegen action per
+# source emits `point.freezed.dart` straight into the package.
+library_builder_library(
+    name = "point_library",
+    package_name = "freezed_fixture",
+    srcs = ["lib/point.dart"],
+    annotation_dep = "@pub_deps//:freezed_annotation",
+    language_version = "3.11",
+    output_suffixes = [".freezed.dart"],
+    shim = "@rules_dart//dart/ext/freezed:shim",
+    visibility = ["//visibility:public"],
+)
+
+dart_test(
+    name = "point_test",
+    size = "small",
+    main = "test/point_test.dart",
+    deps = [
+        ":point_library",
         "@pub_deps//:test",
     ],
 )
