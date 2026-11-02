@@ -500,20 +500,16 @@ jobs:
         include:
           - name: forest runfiles, unsandboxed worker
             flags: ""
-            compat: "format-hermeticity (forest runfiles, sandboxed)"
           - name: forest runfiles, standalone
             flags: "--spawn_strategy=standalone"
-            compat: "format-hermeticity (forest runfiles, local, --spawn_strategy=standalone)"
           - name: forest runfiles, worker-sandboxed
             flags: "--worker_sandboxing"
           - name: forest runfiles, analyze sandboxed
             flags: "--strategy=DartAnalyze=sandboxed"
           - name: manifest runfiles, unsandboxed worker
             flags: "--noenable_runfiles"
-            compat: "format-hermeticity (manifest runfiles, sandboxed, --noenable_runfiles)"
           - name: manifest runfiles, standalone
             flags: "--noenable_runfiles --spawn_strategy=standalone"
-            compat: "format-hermeticity (manifest runfiles, local, --noenable_runfiles --spawn_strategy=standalone)"
           - name: manifest runfiles, worker-sandboxed
             flags: "--noenable_runfiles --worker_sandboxing"
           - name: manifest runfiles, analyze sandboxed
