@@ -27,6 +27,7 @@ load(
     "target_dart_abi",
 )
 load("//dart/private:dart_compile.bzl", "dart_compile_action")
+load("//dart/private:dart_info.bzl", "package_lib_prefix")
 load(
     "//dart/private:dart_kernel.bzl",
     "DartKernelInfo",
@@ -37,6 +38,7 @@ load(
     "entry_sources",
     "modular_executable_kernel",
     "modular_executable_tools",
+    "multi_root_uri",
 )
 load("//dart/private:dart_test_runner.bzl", "DartTestKernelInfo", "DartTestRunnerInfo")
 load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "executable_package")
@@ -63,6 +65,8 @@ def _dart_test_impl(ctx):
         "RULES_DART_DART": runfiles_path(dart_sdk_info.dart, workspace_name),
         "RULES_DART_DILL": runfiles_path(dill, workspace_name),
     }
+    coverage_map = _write_coverage_map(ctx, own.packages)
+    env["RULES_DART_COVERAGE_MAP"] = runfiles_path(coverage_map, workspace_name)
     runner_files = []
     if runner:
         # The runner reads the test file for its annotations (`@TestOn`,
@@ -99,7 +103,7 @@ def _dart_test_impl(ctx):
     # `dart compile`) declares `@rules_dart//dart` in `data`, which brings the
     # whole SDK.
     runfiles = ctx.runfiles(
-        files = [dill] + kernel.runtime_libs + runner_files + ctx.files.data,
+        files = [dill, coverage_map] + kernel.runtime_libs + runner_files + ctx.files.data,
         transitive_files = depset(
             transitive = [
                 dart_sdk_info.runtime_files,
@@ -119,7 +123,72 @@ def _dart_test_impl(ctx):
         # `deps` entry. The analyze/fix rules stage by `short_path`, which is the
         # source file's own path.
         own.analyzable,
+        # `bazel coverage` instruments the Dart sources this test and its deps
+        # own; the launcher collects the LCOV (see `test_runner.dart`).
+        coverage_common.instrumented_files_info(
+            ctx,
+            source_attributes = ["srcs", "main"],
+            dependency_attributes = ["deps", "data"],
+            extensions = ["dart"],
+        ),
     ]
+
+def _write_coverage_map(ctx, packages):
+    """Writes the map from the source URIs the VM reports to workspace-relative paths.
+
+    The launcher turns the VM's coverage into LCOV with it: every `SF:` is the
+    file's `short_path`. A Dart source is reported by the VM under the URI the
+    compile embeds: `package:<name>/<path under lib/>` for a file in a package's
+    `lib/`, the multi-root `org-dartlang-root:///<path>` URI for any file (a
+    test's own, or one outside `lib/`), and the build-time `file://` URI of the
+    source when the kernel keeps that absolute path. All are written, from the
+    same package list the compile resolves against, for the test's own files and
+    for every source its `deps` reach. A test with no Dart source to map gets `{}`.
+
+    Args:
+      ctx: The `dart_test` rule context.
+      packages: The `DartPackageInfo` records the compile resolves against.
+
+    Returns:
+      The `<name>.coverage_map.json` File.
+    """
+    sources = collect_transitive_srcs(ctx.attr.deps).to_list() + [ctx.file.main] + ctx.files.srcs
+    entries = {}
+    for f in sources:
+        if f.extension != "dart" or f.is_directory:
+            continue
+        path = f.short_path
+        entries[multi_root_uri(path)] = path
+        file_path = f.path.replace("\\", "/")
+        if not file_path.startswith("/"):
+            file_path = "/" + file_path
+        entries["file://" + file_path] = path
+        owner = _owning_package(path, packages)
+        if owner != None:
+            prefix = package_lib_prefix(owner.lib_root)
+            entries["package:%s/%s" % (owner.package_name, path[len(prefix):])] = path
+    coverage_map = ctx.actions.declare_file(ctx.label.name + ".coverage_map.json")
+    ctx.actions.write(output = coverage_map, content = json.encode(entries))
+    return coverage_map
+
+def _owning_package(short_path, packages):
+    """The package whose `lib/` is the deepest to contain a file, or `None`.
+
+    Args:
+      short_path: The source's `File.short_path`.
+      packages: `DartPackageInfo` records.
+
+    Returns:
+      The matching `DartPackageInfo`, or `None`.
+    """
+    owner = None
+    owner_len = -1
+    for pkg in packages:
+        prefix = package_lib_prefix(pkg.lib_root)
+        if short_path.startswith(prefix) and len(prefix) > owner_len:
+            owner = pkg
+            owner_len = len(prefix)
+    return owner
 
 def _compile_test_kernel(ctx, own, bootstrap, use_base_dill = False):
     """Compiles a test's `main` to the kernel that a test runs from.

@@ -179,6 +179,15 @@ def _runtime_package_files(ctx):
         return depset()
     return collect_transitive_package_files(ctx.attr.deps)
 
+def _instrumented_files(ctx):
+    """The `bazel coverage` provider: the binary's Dart sources, its deps' and its data's."""
+    return coverage_common.instrumented_files_info(
+        ctx,
+        source_attributes = ["srcs", "main"],
+        dependency_attributes = ["deps", "data"],
+        extensions = ["dart"],
+    )
+
 def _binary_launcher_outputs(ctx, dart_sdk_info, output, is_windows, code_asset_libs, compile_mode, recorded_uses_info, own):
     """The launcher-executable providers for `kernel` mode with `launcher = True`."""
     launcher_exe = ctx.actions.declare_file(
@@ -231,6 +240,7 @@ def _binary_launcher_outputs(ctx, dart_sdk_info, output, is_windows, code_asset_
             sdk_version = dart_sdk_info.version,
         ),
         own.analyzable,
+        _instrumented_files(ctx),
     ] + recorded_uses_info
 
 def _binary_default_outputs(ctx, output, code_asset_libs, compile_mode, dart_sdk_info, recorded_uses_info, own):
@@ -269,6 +279,7 @@ def _binary_default_outputs(ctx, output, code_asset_libs, compile_mode, dart_sdk
         # without making this target a legal `deps` entry. Staging goes by
         # `short_path`, which is the source file's own path.
         own.analyzable,
+        _instrumented_files(ctx),
     ] + recorded_uses_info
 
 def _dart_binary_impl(ctx):

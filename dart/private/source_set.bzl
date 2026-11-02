@@ -350,10 +350,18 @@ def _dart_source_set_impl(ctx):
         root_paths = ctx.attr.root_paths,
         replace_prefixes = ctx.attr.replace_prefixes,
     )
-    return [DefaultInfo(
-        files = depset([dst]),
-        runfiles = ctx.runfiles(files = [dst]),
-    )]
+    return [
+        DefaultInfo(
+            files = depset([dst]),
+            runfiles = ctx.runfiles(files = [dst]),
+        ),
+        # `bazel coverage` instruments the Dart sources this target assembles.
+        coverage_common.instrumented_files_info(
+            ctx,
+            source_attributes = ["srcs"],
+            extensions = ["dart"],
+        ),
+    ]
 
 dart_source_set = rule(
     implementation = _dart_source_set_impl,

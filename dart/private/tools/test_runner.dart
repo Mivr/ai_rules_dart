@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:runfiles/runfiles.dart';
 
 import 'private_home.dart';
+import 'test_runner_coverage.dart';
 import 'test_runner_workspace.dart' as staging;
 
 /// Runs a `dart_test`'s pre-compiled kernel with asserts enabled.
@@ -29,6 +30,11 @@ import 'test_runner_workspace.dart' as staging;
 /// refuses a filter or sharding it cannot honour rather than quietly running
 /// everything.
 ///
+/// Under `bazel coverage` (`COVERAGE_OUTPUT_FILE` set) the VM is started so
+/// that its isolates can be collected, and the LCOV is written when it exits;
+/// a collection that fails or is partial fails the run (see
+/// `test_runner_coverage.dart`).
+///
 /// The VM writes straight to this process's stdio rather than through it, so a
 /// test that hangs until Bazel kills it still leaves what it printed in
 /// test.log, and the launcher exits with the VM even if the test leaked a
@@ -50,6 +56,7 @@ Future<void> main(List<String> args) async {
   final dill = File(r.rlocation(dillKey)).absolute.path;
   final manifest = _findManifestFile(env);
   final workspace = _workspaceName(env, dillKey);
+  final CoverageConfig? coverage = _coverageConfig(env, r);
 
   // Empty counts as unset, so a test that starts another `dart_test` binary
   // can keep its own runner settings from leaking into the child.
@@ -62,6 +69,7 @@ Future<void> main(List<String> args) async {
         args,
         manifest: manifest,
         workspace: workspace,
+        coverage: coverage,
       ),
     );
   }
@@ -91,8 +99,24 @@ Future<void> main(List<String> args) async {
       source: suiteSource,
       workspace: (manifest: manifest, workspace: workspace),
       args: args,
+      coverage: coverage,
     ),
   );
+}
+
+/// The coverage settings for this run, or null when Bazel asked for none.
+///
+/// Exits when coverage was asked for and cannot be set up.
+CoverageConfig? _coverageConfig(Map<String, String> env, Runfiles r) {
+  try {
+    return CoverageConfig.fromEnvironment(
+      env,
+      locate: (key) => File(r.rlocation(key)).absolute.path,
+    );
+  } on CoverageFailure catch (e) {
+    stderr.writeln('dart_test: coverage failed: $e');
+    exit(1);
+  }
 }
 
 /// The runner's default per-case timeout: Bazel's own for this test, which
@@ -120,6 +144,7 @@ Future<int> _runDirectly(
   List<String> args, {
   required String? manifest,
   required String? workspace,
+  required CoverageConfig? coverage,
 }) async {
   final env = Platform.environment;
   // A plain `main` has no notion of test cases, so there is nothing to filter
@@ -163,14 +188,18 @@ Future<int> _runDirectly(
   };
   final vm = await Process.start(
     dart,
-    ['--enable-asserts', dill, ...args],
+    [...?coverage?.vmFlags, '--enable-asserts', dill, ...args],
     workingDirectory: scratch?.path,
     environment: childEnv.isEmpty ? null : childEnv,
     includeParentEnvironment: false,
     mode: ProcessStartMode.inheritStdio,
   );
+  final CoverageSession? session = coverage == null
+      ? null
+      : CoverageSession.attach(coverage, vm);
   try {
-    return await vm.exitCode;
+    final int code = await vm.exitCode;
+    return session == null ? code : await session.finish(code);
   } finally {
     if (scratch != null && !env.containsKey('TEST_TMPDIR')) {
       deleteScratchQuietly(scratch);
@@ -200,6 +229,7 @@ Future<int> _runUnderRunner({
   required _SuiteSource source,
   required _SuiteWorkspace workspace,
   required List<String> args,
+  required CoverageConfig? coverage,
 }) async {
   final env = Platform.environment;
 
@@ -229,13 +259,16 @@ Future<int> _runUnderRunner({
 
   final vmProcess = await Process.start(
     vm.dart,
-    _suiteCommand(
-      runner: vm.runner,
-      precompiled: precompiled.precompiled,
-      testPath: source.testPath,
-      report: report,
-      env: env,
-    ),
+    [
+      ...?coverage?.vmFlags,
+      ..._suiteCommand(
+        runner: vm.runner,
+        precompiled: precompiled.precompiled,
+        testPath: source.testPath,
+        report: report,
+        env: env,
+      ),
+    ],
     workingDirectory: inPlace ? null : tmp.path,
     environment: {
       ...withoutRulesDartControls(env),
@@ -256,13 +289,22 @@ Future<int> _runUnderRunner({
     includeParentEnvironment: false,
     mode: ProcessStartMode.inheritStdio,
   );
-  final code = await _waitForSuite(vmProcess, combined: precompiled.combined);
-  return _finishSuiteRun(
-    code: code,
+  final CoverageSession? session = coverage == null
+      ? null
+      : CoverageSession.attach(coverage, vmProcess);
+  final int suiteCode = await _waitForSuite(
+    vmProcess,
+    combined: precompiled.combined,
+  );
+  // The suite's code is mapped onto Bazel's first, so a coverage failure is
+  // never hidden by the "no test ran" tolerance.
+  final int code = _finishSuiteRun(
+    code: suiteCode,
     report: report,
     testPath: source.testPath,
     env: env,
   );
+  return session == null ? code : await session.finish(code);
 }
 
 /// Whether the dill is laid out where the runner loads it from.
