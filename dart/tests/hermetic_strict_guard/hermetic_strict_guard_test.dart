@@ -28,62 +28,72 @@ void _checkCanary(String root) {
     test('layout matches the red-by-design contract', () {
       final dir = Directory('$root/e2e/hermetic_canary');
       expect(dir.existsSync(), isTrue, reason: 'missing e2e/hermetic_canary');
-
-      final build = File('${dir.path}/BUILD.bazel');
-      _expectFile(build, 'e2e/hermetic_canary/BUILD.bazel');
-      final String buildText = build.readAsStringSync();
-      expect(buildText.trim(), isNotEmpty, reason: 'BUILD.bazel is empty');
-      for (final String needle in _buildNeedles) {
-        _expectContains(buildText, needle, 'BUILD.bazel must declare $needle');
-      }
-
-      final module = File('${dir.path}/MODULE.bazel');
-      _expectFile(module, 'e2e/hermetic_canary/MODULE.bazel');
-      final String moduleText = module.readAsStringSync();
-      for (final String needle in _moduleNeedles) {
-        _expectContains(
-          moduleText,
-          needle,
-          'MODULE.bazel must contain $needle',
-        );
-      }
-
-      final version = File('${dir.path}/.bazelversion');
-      _expectFile(version, 'e2e/hermetic_canary/.bazelversion');
-      expect(
-        version.readAsStringSync().trim(),
-        equals('9.3.0'),
-        reason: '.bazelversion must pin 9.3.0',
-      );
-
-      final lock = File('${dir.path}/MODULE.bazel.lock');
-      _expectFile(lock, 'e2e/hermetic_canary/MODULE.bazel.lock');
-      expect(
-        lock.readAsStringSync().trim(),
-        isNotEmpty,
-        reason: 'MODULE.bazel.lock must be generated, not empty',
-      );
-
-      final rule = File('${dir.path}/canary.bzl');
-      _expectFile(rule, 'e2e/hermetic_canary/canary.bzl');
-      final String ruleText = rule.readAsStringSync();
-      for (final String needle in _ruleNeedles) {
-        _expectContains(ruleText, needle, 'canary.bzl must contain $needle');
-      }
-      _expectNotContains(
-        ruleText,
-        '/usr/bin/env',
-        'the rule must not declare the undeclared host path in inputs',
-      );
-
-      final tool = File('${dir.path}/tool.dart');
-      _expectFile(tool, 'e2e/hermetic_canary/tool.dart');
-      final String toolText = tool.readAsStringSync();
-      for (final String needle in _toolNeedles) {
-        _expectContains(toolText, needle, 'tool.dart must contain $needle');
-      }
+      _checkCanaryBuild(dir);
+      _checkCanaryModule(dir);
+      _checkCanaryRule(dir);
+      _checkCanaryTool(dir);
     });
   });
+}
+
+/// Checks the canary `BUILD.bazel` declares the tool and `//:canary`.
+void _checkCanaryBuild(Directory dir) {
+  final build = File('${dir.path}/BUILD.bazel');
+  _expectFile(build, 'e2e/hermetic_canary/BUILD.bazel');
+  final String buildText = build.readAsStringSync();
+  expect(buildText.trim(), isNotEmpty, reason: 'BUILD.bazel is empty');
+  for (final String needle in _buildNeedles) {
+    _expectContains(buildText, needle, 'BUILD.bazel must declare $needle');
+  }
+}
+
+/// Checks the canary `MODULE.bazel`, its version pin and its lockfile.
+void _checkCanaryModule(Directory dir) {
+  final module = File('${dir.path}/MODULE.bazel');
+  _expectFile(module, 'e2e/hermetic_canary/MODULE.bazel');
+  final String moduleText = module.readAsStringSync();
+  for (final String needle in _moduleNeedles) {
+    _expectContains(moduleText, needle, 'MODULE.bazel must contain $needle');
+  }
+  final version = File('${dir.path}/.bazelversion');
+  _expectFile(version, 'e2e/hermetic_canary/.bazelversion');
+  expect(
+    version.readAsStringSync().trim(),
+    equals('9.3.0'),
+    reason: '.bazelversion must pin 9.3.0',
+  );
+  final lock = File('${dir.path}/MODULE.bazel.lock');
+  _expectFile(lock, 'e2e/hermetic_canary/MODULE.bazel.lock');
+  expect(
+    lock.readAsStringSync().trim(),
+    isNotEmpty,
+    reason: 'MODULE.bazel.lock must be generated, not empty',
+  );
+}
+
+/// Checks the canary rule's documented action and undeclared host read.
+void _checkCanaryRule(Directory dir) {
+  final rule = File('${dir.path}/canary.bzl');
+  _expectFile(rule, 'e2e/hermetic_canary/canary.bzl');
+  final String ruleText = rule.readAsStringSync();
+  for (final String needle in _ruleNeedles) {
+    _expectContains(ruleText, needle, 'canary.bzl must contain $needle');
+  }
+  _expectNotContains(
+    ruleText,
+    '/usr/bin/env',
+    'the rule must not declare the undeclared host path in inputs',
+  );
+}
+
+/// Checks the Dart entry point reads `/usr/bin/env` and reports its absence.
+void _checkCanaryTool(Directory dir) {
+  final tool = File('${dir.path}/tool.dart');
+  _expectFile(tool, 'e2e/hermetic_canary/tool.dart');
+  final String toolText = tool.readAsStringSync();
+  for (final String needle in _toolNeedles) {
+    _expectContains(toolText, needle, 'tool.dart must contain $needle');
+  }
 }
 
 /// Every declaration the canary `BUILD.bazel` must keep.
@@ -131,103 +141,119 @@ void _checkStrictJob(String workflow) {
   group('strict job', () {
     test('block keeps every H1 flag, mount and BEP file', () {
       final String block = _jobBlock(workflow, 'hermetic-strict');
-      _expectContains(block, 'runs-on: ubuntu-latest', 'strict job runner');
-      _expectContains(block, 'timeout-minutes:', 'strict job timeout');
-      _expectContains(block, 'actions/checkout@', 'strict job checkout');
-      _expectContains(
-        block,
-        'for tool in curl python3 find cp tar unzip',
-        'blocked-tool shim list',
-      );
-      _expectContains(
-        block,
-        r'test ! -e "$SHIM_DIR/git"',
-        'git is not shimmed',
-      );
-      _expectContains(block, 'test -x /usr/bin/git', 'git stays in /usr/bin');
-      _expectContains(
-        block,
-        r'--repo_env=PATH="$SHIM_DIR:/usr/bin:/bin"',
-        'the shim directory comes first on the repository PATH',
-      );
-      for (final String flag in _strictFlags) {
-        _expectContains(block, flag, 'hermetic-strict must keep $flag');
-      }
-      for (final String mount in _mounts) {
-        _expectContains(block, mount, 'hermetic-strict must mount $mount');
-      }
-      _expectAtLeast(block, '--build_event_json_file=', 4, 'BEP files');
-      _expectAtLeast(
-        block,
-        '--experimental_use_hermetic_linux_sandbox',
-        2,
-        'strict Phase 1 builds',
-      );
-      _expectContains(
-        block,
-        'working-directory: e2e/hello_world',
-        'hello_world workspace',
-      );
-      _expectContains(
-        block,
-        'working-directory: e2e/codegen',
-        'codegen workspace',
-      );
-      _expectContains(
-        block,
-        "bazel query '//... except attr(generator_function, build_test, //...)'",
-        'codegen resolves the underlying build targets',
-      );
-      _expectContains(
-        block,
-        '--skip_incompatible_explicit_targets',
-        'codegen skips incompatible explicit targets',
-      );
-      _expectContains(block, "bazel query 'tests(//...)'", 'test discovery');
-      _expectContains(block, 'bazel test //...', 'Phase 2 test runs');
-      _expectNotContains(block, '|| true', 'the strict job tolerates nothing');
-      _expectNotContains(block, 'exit 4', 'the strict job tolerates no exit 4');
-      _expectNotContains(
-        block,
-        'continue-on-error',
-        'the strict job tolerates no failure',
-      );
-      _expectExactly(
-        block,
-        '--sandbox_add_mount_pair=',
-        16,
-        'the strict job mounts only the four minimal pairs in four phases',
-      );
-      _expectContains(block, 'canonical', 'BEP canonical command line');
-      _expectContains(block, 'original', 'BEP original command line');
-      _expectContains(block, '--action_env', 'BEP action-env assertion');
-
-      final String helloBuild = _stepBlock(block, 'Phase 1 hello_world');
-      final String codegenBuild = _stepBlock(block, 'Phase 1 codegen');
-      final String helloTest = _stepBlock(block, 'Phase 2 hello_world');
-      final String codegenTest = _stepBlock(block, 'Phase 2 codegen');
-      _expectContains(
-        helloBuild,
-        '--experimental_use_hermetic_linux_sandbox',
-        'hello_world Phase 1 is strict',
-      );
-      _expectContains(
-        codegenBuild,
-        '--experimental_use_hermetic_linux_sandbox',
-        'codegen Phase 1 is strict',
-      );
-      _expectNotContains(
-        helloTest,
-        '--experimental_use_hermetic_linux_sandbox',
-        'hello_world Phase 2 omits the hermetic sandbox flag',
-      );
-      _expectNotContains(
-        codegenTest,
-        '--experimental_use_hermetic_linux_sandbox',
-        'codegen Phase 2 omits the hermetic sandbox flag',
-      );
+      _checkStrictSetup(block);
+      _checkStrictFlags(block);
+      _checkStrictWorkspaces(block);
+      _checkStrictPhases(block);
+      _checkStrictBep(block);
     });
   });
+}
+
+/// Checks the strict job's runner, checkout and blocked-tool shims.
+void _checkStrictSetup(String block) {
+  _expectContains(block, 'runs-on: ubuntu-latest', 'strict job runner');
+  _expectContains(block, 'timeout-minutes:', 'strict job timeout');
+  _expectContains(block, 'actions/checkout@', 'strict job checkout');
+  _expectContains(
+    block,
+    'for tool in curl python3 find cp tar unzip',
+    'blocked-tool shim list',
+  );
+  _expectContains(block, r'test ! -e "$SHIM_DIR/git"', 'git is not shimmed');
+  _expectContains(block, 'test -x /usr/bin/git', 'git stays in /usr/bin');
+  _expectContains(
+    block,
+    r'--repo_env=PATH="$SHIM_DIR:/usr/bin:/bin"',
+    'the shim directory comes first on the repository PATH',
+  );
+}
+
+/// Checks every strict flag, mount and BEP file, and no tolerated failure.
+void _checkStrictFlags(String block) {
+  for (final String flag in _strictFlags) {
+    _expectContains(block, flag, 'hermetic-strict must keep $flag');
+  }
+  for (final String mount in _mounts) {
+    _expectContains(block, mount, 'hermetic-strict must mount $mount');
+  }
+  _expectAtLeast(block, '--build_event_json_file=', 4, 'BEP files');
+  _expectAtLeast(
+    block,
+    '--experimental_use_hermetic_linux_sandbox',
+    2,
+    'strict Phase 1 builds',
+  );
+  _expectNotContains(block, '|| true', 'the strict job tolerates nothing');
+  _expectNotContains(block, 'exit 4', 'the strict job tolerates no exit 4');
+  _expectNotContains(
+    block,
+    'continue-on-error',
+    'the strict job tolerates no failure',
+  );
+  _expectExactly(
+    block,
+    '--sandbox_add_mount_pair=',
+    16,
+    'the strict job mounts only the four minimal pairs in four phases',
+  );
+}
+
+/// Checks both workspaces, the codegen query and the Phase 2 test runs.
+void _checkStrictWorkspaces(String block) {
+  _expectContains(
+    block,
+    'working-directory: e2e/hello_world',
+    'hello_world workspace',
+  );
+  _expectContains(block, 'working-directory: e2e/codegen', 'codegen workspace');
+  _expectContains(
+    block,
+    "bazel query '//... except attr(generator_function, build_test, //...)'",
+    'codegen resolves the underlying build targets',
+  );
+  _expectContains(
+    block,
+    '--skip_incompatible_explicit_targets',
+    'codegen skips incompatible explicit targets',
+  );
+  _expectContains(block, "bazel query 'tests(//...)'", 'test discovery');
+  _expectContains(block, 'bazel test //...', 'Phase 2 test runs');
+}
+
+/// Checks the hermetic flag is in Phase 1 and absent from Phase 2.
+void _checkStrictPhases(String block) {
+  final String helloBuild = _stepBlock(block, 'Phase 1 hello_world');
+  final String codegenBuild = _stepBlock(block, 'Phase 1 codegen');
+  final String helloTest = _stepBlock(block, 'Phase 2 hello_world');
+  final String codegenTest = _stepBlock(block, 'Phase 2 codegen');
+  _expectContains(
+    helloBuild,
+    '--experimental_use_hermetic_linux_sandbox',
+    'hello_world Phase 1 is strict',
+  );
+  _expectContains(
+    codegenBuild,
+    '--experimental_use_hermetic_linux_sandbox',
+    'codegen Phase 1 is strict',
+  );
+  _expectNotContains(
+    helloTest,
+    '--experimental_use_hermetic_linux_sandbox',
+    'hello_world Phase 2 omits the hermetic sandbox flag',
+  );
+  _expectNotContains(
+    codegenTest,
+    '--experimental_use_hermetic_linux_sandbox',
+    'codegen Phase 2 omits the hermetic sandbox flag',
+  );
+}
+
+/// Checks the BEP assertion reads both command-line labels and the flag.
+void _checkStrictBep(String block) {
+  _expectContains(block, 'canonical', 'BEP canonical command line');
+  _expectContains(block, 'original', 'BEP original command line');
+  _expectContains(block, '--action_env', 'BEP action-env assertion');
 }
 
 /// Every flag the strict phases must keep passing to Bazel.
