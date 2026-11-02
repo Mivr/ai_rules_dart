@@ -11,6 +11,8 @@ digests differently, and neither package nor file order leaks in.
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("//dart/private:common.bzl", "pkg_roots_stage_digest")
 
+visibility(["//dart/..."])
+
 def _pkg(package_name, lib_root):
     return struct(package_name = package_name, lib_root = lib_root)
 

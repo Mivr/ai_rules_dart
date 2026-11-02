@@ -5,8 +5,9 @@ The repository rule must refuse to fetch before any download: an explicit
 fails the build instead of downloading unverified.
 """
 
-# buildifier: disable=bzl-visibility
-load("@rules_dart//dart/pub/private:pub_repository.bzl", "pub_package")
+load("@rules_dart//dart/pub:defs.bzl", "pub_package")
+
+visibility("private")
 
 def _red_impl(_ctx):
     pub_package(

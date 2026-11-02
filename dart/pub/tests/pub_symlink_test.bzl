@@ -1,8 +1,6 @@
 """Unit tests for the pub symlink guard (`dart/pub/private/pub_symlink.bzl`)."""
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
-
-# buildifier: disable=bzl-visibility
 load(
     "//dart/pub/private:pub_symlink.bzl",
     "is_absolute_symlink_target",
@@ -12,7 +10,9 @@ load(
     "symlink_escapes_package",
     "walk_symlink_entries",
 )
-load(":small_suite.bzl", "small_unittest_suite")
+load("//dart/tests:small_suite.bzl", "small_unittest_suite")
+
+visibility(["//dart/..."])
 
 def _in_package_test_impl(ctx):
     env = unittest.begin(ctx)

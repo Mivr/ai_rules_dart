@@ -1,5 +1,7 @@
 """Reproducibility canary rule producing non-deterministic action outputs."""
 
+visibility("private")
+
 def _repro_canary_impl(ctx):
     """Executes an action reading /dev/urandom into the declared output.
 

@@ -56,6 +56,8 @@ mkdir, and empty dirs carry no build inputs); executable bits are not
 preserved (package sources run through the Dart toolchain, never directly).
 """
 
+visibility(["//dart/..."])
+
 def is_absolute_symlink_target(target):
     """Returns True when a symlink target is absolute.
 

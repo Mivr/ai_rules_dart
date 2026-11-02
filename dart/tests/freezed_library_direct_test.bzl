@@ -9,6 +9,8 @@ load("@rules_testing//lib:analysis_test.bzl", "analysis_test")
 load("//dart/ext/freezed:defs.bzl", "freezed_library")
 load(":ext_direct_helpers.bzl", "ANNOTATIONS", "LANGUAGE_VERSION", "PACKAGE", "expect_library_builder", "library_builder_targets", "source_of")
 
+visibility(["//dart/..."])
+
 def _freezed_library_test(env, targets):
     """Asserts the providers and the codegen action `freezed_library` declares."""
     expect_library_builder(env, targets, "freezed", [".freezed.dart"], "*freezed/shim*")

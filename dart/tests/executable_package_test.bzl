@@ -11,6 +11,8 @@ load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 load("//dart:providers.bzl", "DartAnalyzableInfo")
 load("//dart/private:common.bzl", "own_package_record")
 
+visibility(["//dart/..."])
+
 def _package_config_probe_test_impl(ctx):
     env = analysistest.begin(ctx)
     target = analysistest.target_under_test(env)

@@ -33,6 +33,8 @@ load(
 )
 load("//dart/private:source_set.bzl", "package_index")
 
+visibility(["//dart/..."])
+
 def _match_package_file(short_path, index):
     """Returns `(package_name, lib_rel_path)` for `short_path`, or `(None, None)`.
 

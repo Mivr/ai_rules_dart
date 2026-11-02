@@ -13,6 +13,8 @@ executable this repository holds, so the end-to-end header-scan coverage in
 
 load("//dart/pub/private:pub_scanner_repo.bzl", "pub_scanner_repo_impl")
 
+visibility("public")
+
 pub_scanner_repo = repository_rule(
     implementation = pub_scanner_repo_impl,
     doc = "Compiles pub_scan.dart to the native scanner snapshot run over every fetched pub archive before extraction.",

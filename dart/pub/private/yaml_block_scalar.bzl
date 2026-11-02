@@ -6,6 +6,8 @@ module.
 
 load(":yaml_text.bzl", "indent_width", "record_unreadable", "spaces_width")
 
+visibility(["//dart/..."])
+
 def _block_scalar_header(header):
     """Reads a `|` or `>` header into (style, chomping, explicit_indent)."""
     style = header[0]

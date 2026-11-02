@@ -10,7 +10,10 @@ merging any matching shards into `<src>.g.dart`, and a wrapping
 that emits `<src>.<ext>.dart` straight into the source tree (no combining).
 """
 
-load("@rules_dart//dart:defs.bzl", "dart_codegen", "dart_library")
+load("//dart/private:dart_codegen.bzl", "dart_codegen")
+load("//dart/private:dart_library.bzl", "dart_library")
+
+visibility(["//dart/..."])
 
 def _src_token(src_label):
     """Reduce a Bazel label / filename to a valid target-name token.

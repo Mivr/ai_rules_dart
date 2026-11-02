@@ -16,6 +16,8 @@ load("//dart/private:toolchain_selection.bzl", "select_toolchain_version", "tool
 load("//dart/pub:pub_scanner.bzl", "pub_scanner_repo")
 load(":repositories.bzl", "dart_register_toolchains")
 
+visibility("public")
+
 _DEFAULT_NAME = "dart"
 
 dart_toolchain = tag_class(

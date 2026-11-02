@@ -11,6 +11,8 @@ would change both.
 
 load("@rules_dart//dart/pub:pub_lock_package.bzl", "pub_lock_git_package")
 
+visibility("private")
+
 def _impl(mctx):
     pub_lock_git_package(
         name = "fmtpkg",

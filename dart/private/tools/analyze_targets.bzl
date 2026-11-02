@@ -8,6 +8,8 @@ load("//dart:providers.bzl", "DartAnalyzableInfo", "DartInfo")
 load("//dart/private:common.bzl", "kernel_sdk_mismatch_error", "writable_home_env")
 load("//dart/private:dart_analyzer_summary.bzl", "DartAnalyzerSummaryInfo", "closure_attrs")
 
+visibility(["//dart/..."])
+
 _TOOLCHAIN = "//dart:exec_tools_toolchain_type"
 
 def closure_summary_outputs(target, ctx):

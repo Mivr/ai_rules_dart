@@ -13,6 +13,8 @@ load("//dart/private:build_settings.bzl", "dart_define_error")
 load("//dart/private:dart_compile.bzl", "defines_stage_error")
 load(":small_suite.bzl", "small_unittest_suite")
 
+visibility(["//dart/..."])
+
 _KERNEL = "DartKernel"
 _DART_COMPILE = "DartCompile"
 

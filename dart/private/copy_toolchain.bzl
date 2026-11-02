@@ -7,6 +7,8 @@ Dart SDK toolchain.
 
 load("//dart/private:common.bzl", "kernel_sdk_mismatch_error")
 
+visibility(["//dart/..."])
+
 def _copy_toolchain_impl(ctx):
     exec_sdk = ctx.toolchains["//dart:exec_tools_toolchain_type"].dart_sdk_info
     mismatch = kernel_sdk_mismatch_error(ctx.label, "tool", ctx.attr.tool, exec_sdk.version)

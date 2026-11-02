@@ -1,7 +1,7 @@
 """Hostile-host fetch probes: the production git helpers under hostile `GIT_*` environments.
 
 Each `git_hostile_fetch_probe` repository (see
-`@rules_dart//dart/tests:git_host_config_test.bzl`) fetches one commit
+`git_probes.bzl`) fetches one commit
 twice — once with the true host environment and once with the case's
 hostile `GIT_*` entries overlaid — and fails the fetch unless the hostile
 bytes are identical to the clean control's. The cases below cover every
@@ -25,7 +25,9 @@ helpers must never run it (a local fetch resolves to the same isolated
 environment either way), while a raw-git control fetch must.
 """
 
-load("@rules_dart//dart/tests:git_host_config_test.bzl", "git_export_subst_probe", "git_fsck_fetch_probe", "git_hostile_fetch_probe")
+load(":git_probes.bzl", "git_export_subst_probe", "git_fsck_fetch_probe", "git_hostile_fetch_probe")
+
+visibility("private")
 
 _FMTPKG_SHA = "08da52a5f5ee8530fcffaa7b4a6aecdc09a0e9cc"
 _REWRITTEN_URL = "https://rewritten.example.invalid/r.git"

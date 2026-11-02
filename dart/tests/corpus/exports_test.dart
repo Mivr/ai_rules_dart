@@ -8,7 +8,9 @@ void main(List<String> args) {
   final String root = _workspaceRoot(args);
   final Map<String, String> sources = _readSources(root);
   final Set<String> exports = _extractExports(sources);
-  final Set<String> rulesAndMacros = _rulesAndMacros(sources);
+  final Set<String> repositoryRules = _repositoryRuleExports(root, sources);
+  final Set<String> rulesAndMacros = _rulesAndMacros(sources)
+    ..removeAll(repositoryRules);
   final Map<String, String> listed = _parseNonInstantiable(
     File('$root/dart/tests/corpus/non_instantiable.txt').readAsLinesSync(),
   );
@@ -49,7 +51,7 @@ void main(List<String> args) {
       );
     });
 
-    test('no rule or macro is listed as non-instantiable', () {
+    test('no build rule or macro is listed as non-instantiable', () {
       final List<String> refused = [
         for (final name in listed.keys)
           if (rulesAndMacros.contains(name)) name,
@@ -58,8 +60,8 @@ void main(List<String> args) {
         refused,
         isEmpty,
         reason:
-            'non_instantiable.txt may hold providers and constants, never rules '
-            'or macros: $refused',
+            'non_instantiable.txt may hold providers, constants and repository '
+            'rules, never build rules or macros: $refused',
       );
     });
 
@@ -249,6 +251,55 @@ bool _isProviderOrConstant(String name, String rhs) {
   return RegExp(r'^(?:True|False|None|-?\d|["\x27\[\{]|struct\()')
       .hasMatch(rhs);
 }
+
+Set<String> _repositoryRuleExports(String root, Map<String, String> sources) {
+  // A repository rule is re-exported like a macro (`pub_package = _pub_package`)
+  // but cannot be instantiated in a BUILD file, so the corpus lists it in
+  // `non_instantiable.txt`. Follow each facade's re-export through its `load`
+  // to the underlying definition and mark the names that resolve to
+  // `repository_rule(...)`, so the "no build rule or macro is listed" check
+  // below leaves them alone.
+  final repositoryRules = <String>{};
+  for (final String text in sources.values) {
+    final Map<String, ({String path, String symbol})> aliases = {};
+    for (final RegExpMatch match in RegExp(
+      r'load\(\s*"([^"]+)"\s*,\s*([^)]*)\)',
+    ).allMatches(text)) {
+      final String label = match.group(1)!;
+      if (!label.startsWith('//')) continue;
+      for (final RegExpMatch alias in RegExp(
+        r'([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"([^"]+)"',
+      ).allMatches(match.group(2)!)) {
+        aliases[alias.group(1)!] = (
+          path: _labelToPath(label),
+          symbol: alias.group(2)!,
+        );
+      }
+    }
+    final String code = _blankLiteralsAndComments(text);
+    for (final RegExpMatch match in RegExp(
+      r'^([A-Za-z][A-Za-z0-9_]*)\s*=\s*(_[A-Za-z_][A-Za-z0-9_]*)',
+      multiLine: true,
+    ).allMatches(code)) {
+      final String name = match.group(1)!;
+      final String alias = match.group(2)!;
+      final ({String path, String symbol})? target = aliases[alias];
+      if (target == null) continue;
+      final file = File('$root/${target.path}');
+      if (!file.existsSync()) continue;
+      if (RegExp(
+        '^${RegExp.escape(target.symbol)}\\s*=\\s*repository_rule\\(',
+        multiLine: true,
+      ).hasMatch(file.readAsStringSync())) {
+        repositoryRules.add(name);
+      }
+    }
+  }
+  return repositoryRules;
+}
+
+String _labelToPath(String label) =>
+    label.replaceFirst('//', '').replaceFirst(':', '/');
 
 Map<String, String> _parseNonInstantiable(List<String> lines) {
   final entries = <String, String>{};

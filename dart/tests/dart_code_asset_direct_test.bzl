@@ -11,6 +11,8 @@ load("//dart:defs.bzl", "dart_code_asset")
 load("//dart:providers.bzl", "DartCodeAssetInfo")
 load(":truth_helpers.bzl", "provider_of", "short_path_subject")
 
+visibility(["//dart/..."])
+
 _PREBUILT = "//dart/tests/cc_fixture:prebuilt_fixture"
 _ATTRS = {
     "asset_id": subjects.str,

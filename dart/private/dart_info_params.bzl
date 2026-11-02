@@ -6,6 +6,8 @@ its resolved version. One struct names that identity once, so the two
 constructors cannot disagree about what a package is.
 """
 
+visibility(["//dart/..."])
+
 def dart_package_identity(
         package_name,
         lib_root,

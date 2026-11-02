@@ -5,6 +5,8 @@ load("//dart/private:project_staging.bzl", "external_package_placement", "main_p
 load("//dart/private:source_set.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS")
 load(":small_suite.bzl", "small_unittest_suite")
 
+visibility(["//dart/..."])
+
 def _pkg(name, language_version = ""):
     return struct(package_name = name, language_version = language_version)
 

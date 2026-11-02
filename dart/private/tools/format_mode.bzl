@@ -6,6 +6,8 @@ that file holds the analysis plumbing rather than the formatter's version table.
 `dart/tests/analyze_test.bzl` loads from it.
 """
 
+visibility(["//dart/..."])
+
 # The SDK `<major>.<minor>` series whose `dart format` rules match the
 # vendored `package:dart_style` in `dart/ext/pubspec.lock`, and the minimum
 # patch within that series. When the toolchain's SDK is outside this series or

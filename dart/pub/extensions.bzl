@@ -14,6 +14,8 @@ load("//dart/pub/private:pub_root_pin.bzl", "best_entry", "decl_lock_sha_conflic
 load("//dart/pub/private:pub_scanner_sdk.bzl", "scanner_runtime_label")
 load("//dart/pub/private:pub_scc_entries.bzl", _scc_member_entries = "scc_member_entries")
 
+visibility("public")
+
 # Re-exported for //dart/tests, which exercises the entry shape directly.
 scc_member_entries = _scc_member_entries
 
@@ -768,9 +770,7 @@ def _pub_scope_deps(ctx, scope_dir, scope_names, explicit_package_names, explici
     deps = {}
     scope_count = len(scope_names)
     explicit_count = len(explicit_package_names)
-    mixed_explicit = scope_names != explicit_package_names and any(
-        [explicit_deps[name] for name in explicit_deps],
-    )
+    mixed_explicit = scope_names != explicit_package_names and any([explicit_deps[name] for name in explicit_deps])
     if scope_count > explicit_count + 1 or mixed_explicit:
         deps = _scope_deps_with_facts(ctx, scope_dir, hosted, git_pkgs, recorded)
     return deps

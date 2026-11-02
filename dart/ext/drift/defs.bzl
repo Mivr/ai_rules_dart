@@ -30,6 +30,8 @@ load(
     "dart_sqlcodegen",
 )
 
+visibility("public")
+
 def _token(s):
     t = s
     if t.startswith("//"):

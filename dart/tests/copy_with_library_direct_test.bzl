@@ -10,6 +10,8 @@ load("@rules_testing//lib:analysis_test.bzl", "analysis_test")
 load("//dart/ext/copy_with_extension_gen:defs.bzl", "copy_with_library")
 load(":ext_direct_helpers.bzl", "ANNOTATIONS", "LANGUAGE_VERSION", "PACKAGE", "expect_shared_part", "shared_part_targets", "source_of")
 
+visibility(["//dart/..."])
+
 def _copy_with_library_test(env, targets):
     """Asserts the providers and the codegen actions `copy_with_library` declares."""
     expect_shared_part(env, targets, "copy_with", ".copy_with_extension_gen.g.part", "*copy_with_extension_gen/shim*")

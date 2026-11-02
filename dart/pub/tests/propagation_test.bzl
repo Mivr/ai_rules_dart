@@ -9,10 +9,10 @@ gets you its assets with no opt-in.
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load("//dart:providers.bzl", "DartCodeAssetInfo", "DartInfo", "DartPackageInfo")
 load("//dart/private:common.bzl", "merge_package_records", "package_agreement_error", "package_code_assets", "resolve_code_assets")
-
-# buildifier: disable=bzl-visibility
 load("//dart/pub/private:build_content.bzl", "make_dart_library_build_content")
-load(":small_suite.bzl", "small_unittest_suite")
+load("//dart/tests:small_suite.bzl", "small_unittest_suite")
+
+visibility(["//dart/..."])
 
 _L = "//pkg:consumer"
 

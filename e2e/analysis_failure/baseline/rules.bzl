@@ -9,6 +9,8 @@ load(
     "derive_package_name",
 )
 
+visibility("private")
+
 def _dart_library_test_impl(ctx):
     """Implements a test-runnable `dart_library` target for `bazel test`."""
     tool_exe = ctx.executable._noop

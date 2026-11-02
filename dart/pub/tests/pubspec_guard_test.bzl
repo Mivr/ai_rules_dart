@@ -19,10 +19,10 @@ load(
     "pubspec_lock_error",
     "pubspec_sdk_constraint_error",
 )
-
-# buildifier: disable=bzl-visibility
 load("//dart/pub/private:language_version.bzl", "derive_language_version")
-load(":small_suite.bzl", "small_unittest_suite")
+load("//dart/tests:small_suite.bzl", "small_unittest_suite")
+
+visibility(["//dart/..."])
 
 _LABEL = "probe_pkg/pubspec.yaml"
 

@@ -57,6 +57,8 @@ above each file, never from a pubspec's position.
 load("//dart/private:common.bzl", "package_exec_root", "relative_path")
 load("//dart/private:source_set.bzl", "assemble_source_dir", "package_for_index", "package_index")
 
+visibility(["//dart/..."])
+
 def mangle_package_dir(name):
     """Returns `name` with path-hostile characters replaced for use as a dir name.
 

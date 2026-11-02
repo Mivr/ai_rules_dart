@@ -26,7 +26,7 @@ bzl_library(
     name = "registry",
     srcs = ["registry.bzl"],
     visibility = ["//visibility:public"],
-    deps = ["//dart/pub:defs"],
+    deps = ["//dart/private:curated_registry"],
 )
 
 # Shim-runner library — used by every per-builder shim binary in dart/ext/<*>/.

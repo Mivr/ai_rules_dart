@@ -91,6 +91,8 @@ load(
 )
 load("//dart/private/tools:format_mode.bzl", _resolve_format_mode = "resolve_format_mode")
 
+visibility(["//dart/..."])
+
 # Analysis and formatting run on the build machine and produce nothing for the
 # target, so the SDK is chosen by the execution platform alone — the type the
 # codegen rules use, for the same reason. With the target-platform type, a
@@ -631,12 +633,7 @@ def _format(ctx, name, staged, own_paths, language_version):
             "requires-worker-protocol": "proto",
         },
     )
-    return struct(
-        stamp = stamp,
-        mode = mode,
-        sdk_inputs = sdk_inputs,
-        env = env,
-    )
+    return struct(stamp = stamp, mode = mode, sdk_inputs = sdk_inputs, env = env)
 
 def _analyze_summary_or_source(ctx, info, srcs, opts):
     """Runs the summary-mode or source-mode analyze action. Returns (output, summary_mode, summary_staged).

@@ -7,6 +7,8 @@ markers). Loaded by every other parser module.
 
 load(":yaml_chars.bzl", "is_marker_line")
 
+visibility(["//dart/..."])
+
 # The bytes that are never blanks to pub, written as octal escapes so the
 # source stays ASCII: vertical tab, form feed and U+001C to U+001F. Only
 # space and tab separate tokens outside quotes and comments; these fail

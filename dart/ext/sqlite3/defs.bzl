@@ -13,6 +13,8 @@ or transitively, e.g. via `drift`'s `NativeDatabase`):
     )
 """
 
+visibility("public")
+
 def sqlite3_code_asset():
     """Returns the label of the rules_dart-provided sqlite3 code asset."""
     return "@rules_dart//dart/ext/sqlite3:code_asset"

@@ -10,6 +10,8 @@ load("@rules_testing//lib:analysis_test.bzl", "analysis_test")
 load("//dart/ext/json_serializable:defs.bzl", "json_serializable_library")
 load(":ext_direct_helpers.bzl", "ANNOTATIONS", "LANGUAGE_VERSION", "PACKAGE", "expect_shared_part", "shared_part_targets", "source_of")
 
+visibility(["//dart/..."])
+
 def _json_serializable_library_test(env, targets):
     """Asserts the providers and the codegen actions `json_serializable_library` declares."""
     expect_shared_part(env, targets, "json_serializable", ".json_serializable.g.part", "*json_serializable/shim*")

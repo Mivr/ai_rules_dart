@@ -22,6 +22,8 @@ eligibility list is decided from Bazel's record of what each file is
 load("//dart/private:common.bzl", "WINDOWS_CONSTRAINT_ATTR", "runfiles_path")
 load("//dart/private:dart_analyze_aspect.bzl", "DartFixOutputsInfo", "dart_analyze")
 
+visibility(["//dart/..."])
+
 def _dart_fix_impl(ctx):
     target = ctx.attr.target
     if DartFixOutputsInfo not in target:

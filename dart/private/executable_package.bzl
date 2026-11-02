@@ -25,6 +25,8 @@ load("//dart/private:dart_info.bzl", "dart_analyzable_info", "dart_analyzable_in
 load("//dart/private:dart_info_params.bzl", "dart_package_identity")
 load("//dart/private:dart_library.bzl", "derive_lib_root", "derive_package_name")
 
+visibility(["//dart/..."])
+
 # The identity attributes of every executable rule: `package` from
 # `PACKAGE_IDENTITY_ATTRS`, and the inline pair it excludes.
 EXECUTABLE_PACKAGE_ATTRS = PACKAGE_IDENTITY_ATTRS | {

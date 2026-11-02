@@ -85,6 +85,8 @@ load(
     "package_key",
 )
 
+visibility(["//dart/..."])
+
 # The shim library every `dart/ext` shim binary is built on. A generator whose
 # closure holds it parses the `--summary` and `--sdk-summary` flags; a generator
 # that does not may reject them as unknown.

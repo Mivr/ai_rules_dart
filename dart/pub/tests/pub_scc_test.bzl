@@ -14,13 +14,11 @@ load("//dart/pub:extensions.bzl", "plan_scope_sccs", "resolve_pub_packages", "sc
 load("//dart/pub:pub_lock_hub.bzl", "pub_lock_hub_content")
 load("//dart/pub:pub_scc.bzl", "compute_sccs", "package_dep_graph", "scc_repo_name")
 load("//dart/pub:yaml_parser.bzl", "parse_pubspec_deps")
-
-# buildifier: disable=bzl-visibility
 load("//dart/pub/private:build_content.bzl", "make_dart_package_member_build_content", "make_scc_merged_build_content")
-
-# buildifier: disable=bzl-visibility
 load("//dart/pub/private:scc.bzl", "normalize_pub_dep", "rewrite_vanished_spoke")
-load(":small_suite.bzl", "small_unittest_suite")
+load("//dart/tests:small_suite.bzl", "small_unittest_suite")
+
+visibility(["//dart/..."])
 
 def _two_node_cycle_test_impl(ctx):
     env = unittest.begin(ctx)

@@ -78,6 +78,21 @@ load(
     _parse_data_asset_ids = "parse_data_asset_ids",
 )
 load(
+    "//dart/private:dart_test.bzl",
+    _dart_test_kernel = "dart_test_kernel",
+)
+load(
+    "//dart/private:dart_test_runner.bzl",
+    _dart_test_package = "dart_test_package",
+    _dart_test_runner_main = "dart_test_runner_main",
+    _dart_test_runner_snapshot = "dart_test_runner_snapshot",
+)
+load(
+    "//dart/private:download.bzl",
+    _pinned_download = "pinned_download",
+    _pinned_download_and_extract = "pinned_download_and_extract",
+)
+load(
     "//dart/private:kernel_params.bzl",
     _kernel_compile_settings = "kernel_compile_settings",
     _kernel_module_inputs = "kernel_module_inputs",
@@ -94,6 +109,8 @@ load(
     _colocate_entrypoint = "colocate_entrypoint",
     _colocate_packages = "colocate_packages",
 )
+
+visibility("public")
 
 # Build a `DartInfo` from what a target contributes itself, merging every
 # dependency's closure internally. Any rule set that wraps Dart libraries should
@@ -233,3 +250,12 @@ COPY_TO_DIRECTORY_TOOLCHAINS = _COPY_TO_DIRECTORY_TOOLCHAINS
 dart_link_hook_actions = _dart_link_hook_actions
 link_hook_runner_attr = _link_hook_runner_attr
 parse_data_asset_ids = _parse_data_asset_ids
+
+# Test-runner rules and pinned-download helpers that generated pub spoke
+# repositories and other module's repository rules load from here.
+dart_test_kernel = _dart_test_kernel
+dart_test_package = _dart_test_package
+dart_test_runner_main = _dart_test_runner_main
+dart_test_runner_snapshot = _dart_test_runner_snapshot
+pinned_download = _pinned_download
+pinned_download_and_extract = _pinned_download_and_extract

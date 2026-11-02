@@ -14,6 +14,8 @@ load("@rules_testing//lib:truth.bzl", "matching", "subjects")
 load("//dart:providers.bzl", "DartInfo", "DartPackageMetadataInfo")
 load(":truth_helpers.bzl", "action_of", "expect_default_outputs", "expect_inputs", "package_names", "provider_of")
 
+visibility(["//dart/..."])
+
 PACKAGE = "direct_ext_pkg"
 LANGUAGE_VERSION = "3.11"
 ANNOTATIONS = "//dart/tests/direct_annotation:annotations"

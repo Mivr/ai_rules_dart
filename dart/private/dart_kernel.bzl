@@ -70,6 +70,8 @@ load(
     "modular_kernel_mode",
 )
 
+visibility(["//dart/..."])
+
 # The `org-dartlang-root` scheme `--multi-root` maps onto the exec root (`.`) and
 # the output directory (`ctx.bin_dir`). Its URIs are the exec-root-relative paths
 # a `File.short_path` already gives, so no path is copied or rewritten to make a
@@ -691,10 +693,7 @@ def no_kernel_module():
 def _kmod_declare_outputs(ctx, output, packages, scheme, unused_inputs):
     """Declares and writes the module's package config. Returns (package_config, excluded, unused_inputs_list)."""
     package_config = ctx.actions.declare_file(output.basename + ".package_config.json")
-    ctx.actions.write(
-        output = package_config,
-        content = kernel_package_config(packages, scheme = scheme),
-    )
+    ctx.actions.write(output = package_config, content = kernel_package_config(packages, scheme = scheme))
     excluded = ctx.actions.declare_file(output.basename + ".vm_excluded.txt")
     if unused_inputs:
         # Written by `kernel_module` alongside the module. Declared here, where

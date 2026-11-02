@@ -10,6 +10,8 @@ load("@rules_testing//lib:analysis_test.bzl", "analysis_test")
 load("//dart/ext/built_value:defs.bzl", "built_value_library")
 load(":ext_direct_helpers.bzl", "ANNOTATIONS", "LANGUAGE_VERSION", "PACKAGE", "expect_shared_part", "shared_part_targets", "source_of")
 
+visibility(["//dart/..."])
+
 def _built_value_library_test(env, targets):
     """Asserts the providers and the codegen actions `built_value_library` declares."""
     expect_shared_part(env, targets, "built_value", ".built_value.g.part", "*built_value/shim*")

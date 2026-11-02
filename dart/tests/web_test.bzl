@@ -7,6 +7,8 @@ empty-lib_root root package) present in the staged package_config.
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 
+visibility(["//dart/..."])
+
 def _find_action(env, mnemonic):
     for action in analysistest.target_actions(env):
         if action.mnemonic == mnemonic:

@@ -1,4 +1,4 @@
-"""Fixtures for the `analysistest`s in `//dart/tests:link_hook_test.bzl`.
+"""Fixtures for the `analysistest`s in `//dart/pub/tests:link_hook_test.bzl`.
 
 Nothing here is built — every target an assertion reads is tagged `manual` —
 so the hook is never run and no binary is compiled. The behaviour the hooks
@@ -8,7 +8,7 @@ produce is `e2e/link_hook`'s to show.
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("//dart:defs.bzl", "dart_binary", "dart_code_asset", "dart_library", "dart_link_hook")
 load(
-    "//dart/tests:link_hook_test.bzl",
+    "//dart/pub/tests:link_hook_test.bzl",
     "asset_without_hook_test",
     "empty_recording_binary_test",
     "library_records_link_hook_test",

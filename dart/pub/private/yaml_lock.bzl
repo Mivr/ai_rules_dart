@@ -15,6 +15,8 @@ twice.
 load("//dart/pub/private:yaml_lock_fast.bzl", "is_lock_package_name", "is_lock_version", "lock_fast_packages")
 load("//dart/pub/private:yaml_subset.bzl", "document_value_and_problems", "find_colon", "strip_comment")
 
+visibility(["//dart/..."])
+
 def _lock_description(value):
     """Normalises a lock `description` value to a dict of strings."""
     if type(value) == "dict":

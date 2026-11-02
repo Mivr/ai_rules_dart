@@ -5,18 +5,16 @@ load("//dart:providers.bzl", "DartInfo")
 load("//dart/pub:extensions.bzl", "resolve_pub_packages")
 load("//dart/pub:pub_lock_package.bzl", "pub_lock_package_sha256_error", "trim_gzip_trailing_nulls")
 load("//dart/pub:yaml_parser.bzl", "is_valid_sha256", "lock_package_error", "parse_pubspec_deps", "parse_pubspec_document", "parse_pubspec_document_error", "parse_pubspec_lock", "parse_pubspec_sdk_constraint", "pubspec_lock_error")
-
-# buildifier: disable=bzl-visibility
 load("//dart/pub/private:pub_repository.bzl", "pub_package_sha256_error")
 
 # Tests compare the private lock readers against each other directly.
-# buildifier: disable=bzl-visibility
 load("//dart/pub/private:yaml_lock.bzl", "lock_general_packages")
 
 # (Same reason as above: the dedicated reader lives in private sources.)
-# buildifier: disable=bzl-visibility
 load("//dart/pub/private:yaml_lock_fast.bzl", "lock_fast_packages")
-load(":small_suite.bzl", "small_unittest_suite")
+load("//dart/tests:small_suite.bzl", "small_unittest_suite")
+
+visibility(["//dart/..."])
 
 _COLLECTION_SHA = "ee67cb0715911d28db6bf4af1026078bd6f0128b07a5f66fb2ed94ef6783c09a"
 _PATH_190_SHA = "087ce49c3f0dc39180befefc60fdb4acd8f8620e5682fe2476afd0b3688bb4af"

@@ -8,6 +8,8 @@ Resolver can read them.
 
 load("@rules_dart//dart/ext/_shared:defs.bzl", "library_builder_library")
 
+visibility("public")
+
 def mockito_library(
         name,
         srcs,

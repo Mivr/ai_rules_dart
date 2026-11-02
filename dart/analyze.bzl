@@ -23,4 +23,6 @@ its format check. To check a target `bazel test //...` cannot reach (tagged
 
 load("//dart/private:dart_analyze_aspect.bzl", _dart_analyze = "dart_analyze")
 
+visibility("public")
+
 dart_analyze = _dart_analyze

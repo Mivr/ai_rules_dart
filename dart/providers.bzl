@@ -1,5 +1,18 @@
 """Providers for Dart rules."""
 
+load(
+    "//dart/private:test_runner_info.bzl",
+    _DartTestRunnerInfo = "DartTestRunnerInfo",
+    _DartTestRunnerSnapshotInfo = "DartTestRunnerSnapshotInfo",
+)
+
+visibility("public")
+
+# Re-exported so generated `package:test` spoke repositories and other rule sets
+# name the runner providers without loading from `//dart/private`.
+DartTestRunnerInfo = _DartTestRunnerInfo
+DartTestRunnerSnapshotInfo = _DartTestRunnerSnapshotInfo
+
 # The upstream `code_assets` link-mode vocabulary, verbatim (see
 # `code_assets/lib/src/code_assets/syntax.g.dart`). Declared here, next to the
 # provider whose field carries it, so that consumers in other rule sets —

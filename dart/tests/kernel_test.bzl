@@ -44,6 +44,8 @@ load("//dart/private:dart_test_runner.bzl", "dart_test_runner_main")
 load(":pruned_inputs.bzl", "pruned_inputs_settings")
 load(":small_suite.bzl", "small_unittest_suite")
 
+visibility(["//dart/..."])
+
 def _pkg(package_name, lib_root, language_version = ""):
     """A stand-in for `DartPackageInfo`, carrying the fields these functions read."""
     return struct(

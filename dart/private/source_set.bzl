@@ -24,6 +24,8 @@ Copies remain where a consumer needs one real directory tree:
 
 load("//dart/private:dart_info.bzl", "derived_package_info")
 
+visibility(["//dart/..."])
+
 _COPY_TOOLCHAIN_TYPE = Label("//dart:copy_toolchain_type")
 
 # The toolchain that provides the `copy_tree` tool. Rules that copy files list it

@@ -6,6 +6,8 @@ load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("//dart/private:versions.bzl", "TOOL_VERSIONS")
 load(":small_suite.bzl", "small_unittest_suite")
 
+visibility(["//dart/..."])
+
 def _smoke_test_impl(ctx):
     env = unittest.begin(ctx)
     asserts.equals(env, "3.13.5", TOOL_VERSIONS.keys()[0])

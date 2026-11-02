@@ -33,6 +33,8 @@ load("//dart/private:common.bzl", "generate_package_config", "kernel_sdk_mismatc
 load("//dart/private:project_staging.bzl", "mangle_package_dir")
 load("//dart/private:source_set.bzl", "package_for_index", "package_index")
 
+visibility(["//dart/..."])
+
 # Summaries are built on the build machine, with the exec tools SDK, the type
 # the codegen rules and `dart_analyze` use for the same reason.
 _TOOLCHAIN = "//dart:exec_tools_toolchain_type"

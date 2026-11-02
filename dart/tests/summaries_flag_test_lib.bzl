@@ -2,6 +2,8 @@
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 
+visibility(["//dart/..."])
+
 SUMMARIES_FLAG = str(Label("//dart:analyzer_summaries"))
 
 def effective_summaries_expected(ctx):

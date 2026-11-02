@@ -20,6 +20,8 @@ load(
     "summaries_flag_test_kwargs",
 )
 
+visibility(["//dart/..."])
+
 def _is_staged_root_uri(line):
     """Returns whether a `rootUri` line resolves inside a digest-named stage root."""
     parts = line.split(".pkg_roots.")

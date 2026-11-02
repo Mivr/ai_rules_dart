@@ -14,6 +14,8 @@ load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "execu
 load("//dart/private:project_staging.bzl", "stage_dart_project")
 load("//dart/private:source_set.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS")
 
+visibility(["//dart/..."])
+
 def _get_web_compilation_mode_flags(ctx, compile_mode):
     """Returns compiler flags for the current Bazel compilation mode (web targets).
 

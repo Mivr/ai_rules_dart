@@ -4,6 +4,8 @@ load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("//dart/ext:registry.bzl", "curated_code_assets", "curated_packages")
 load(":small_suite.bzl", "small_unittest_suite")
 
+visibility(["//dart/..."])
+
 def _known_package_in_range_test_impl(ctx):
     env = unittest.begin(ctx)
     labels = curated_code_assets("sqlite3", "2.9.0")

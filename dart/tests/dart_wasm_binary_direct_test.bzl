@@ -14,6 +14,8 @@ load("//dart:defs.bzl", "dart_wasm_binary")
 load("//dart:providers.bzl", "DartAnalyzableInfo")
 load(":truth_helpers.bzl", "action_of", "expect_default_outputs", "expect_inputs", "provider_of")
 
+visibility(["//dart/..."])
+
 _OUTPUT_DIR = "dart/tests/"
 _OUTPUT_GROUPS = {
     "mjs": ".mjs",

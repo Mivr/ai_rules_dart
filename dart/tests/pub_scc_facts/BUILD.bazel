@@ -1,5 +1,5 @@
 load("//dart:defs.bzl", "dart_test")
-load(":pub_scc_facts_test.bzl", "pub_scc_facts_test_suite")
+load("//dart/pub/tests:pub_scc_facts_test.bzl", "pub_scc_facts_test_suite")
 
 pub_scc_facts_test_suite(name = "pub_scc_facts_test")
 

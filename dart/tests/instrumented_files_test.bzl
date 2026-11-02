@@ -10,6 +10,8 @@ a non-Dart file that must stay out.
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 
+visibility(["//dart/..."])
+
 def _instrumented_files_test_impl(ctx):
     env = analysistest.begin(ctx)
     target = analysistest.target_under_test(env)

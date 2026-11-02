@@ -30,58 +30,13 @@ moved would be silently wrong. `min_version` is inclusive, `max_version`
 exclusive; either may be empty for an open bound.
 """
 
-load("//dart/pub:defs.bzl", "parse_semver")
+load(
+    "//dart/private:curated_registry.bzl",
+    _curated_code_assets = "curated_code_assets",
+    _curated_packages = "curated_packages",
+)
 
-_ENTRIES = {
-    "sqlite3": [
-        struct(
-            min_version = "2.0.0",
-            max_version = "",
-            labels = ["@rules_dart//dart/ext/sqlite3:code_asset"],
-        ),
-    ],
-    # The native library is built from the 0.6.1 archive itself, and its symbol
-    # table must match the Dart side index for index: one version only.
-    "webcrypto": [
-        struct(
-            min_version = "0.6.1",
-            max_version = "0.6.2",
-            labels = ["@rules_dart//dart/ext/webcrypto:code_asset"],
-        ),
-    ],
-}
+visibility("public")
 
-def curated_code_assets(package_name, version):
-    """Returns curated `dart_code_asset` labels for a locked pub package.
-
-    Args:
-      package_name: The pub package name.
-      version: The exact version resolved from the lock file.
-
-    Returns:
-      List of label strings; empty when rules_dart curates nothing for this
-      package at this version.
-    """
-    entries = _ENTRIES.get(package_name)
-    if not entries:
-        return []
-
-    parsed = parse_semver(version)
-    for entry in entries:
-        if entry.min_version and parsed < parse_semver(entry.min_version):
-            continue
-        if entry.max_version and parsed >= parse_semver(entry.max_version):
-            continue
-        return list(entry.labels)
-    return []
-
-def curated_packages():
-    """Returns the pub package names rules_dart curates assets for.
-
-    Used to tell a user which packages have a replacement available when their
-    lock pins an unsupported version.
-
-    Returns:
-      Sorted list of package names.
-    """
-    return sorted(_ENTRIES.keys())
+curated_code_assets = _curated_code_assets
+curated_packages = _curated_packages

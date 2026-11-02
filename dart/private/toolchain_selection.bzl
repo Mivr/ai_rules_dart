@@ -1,5 +1,7 @@
 """Picks one Dart SDK version per toolchain name from the versions modules request."""
 
+visibility(["//dart/..."])
+
 def toolchain_name_override_error(name, is_root, default_name):
     """Error when a module overrides the default toolchain name, else None.
 

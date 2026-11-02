@@ -7,6 +7,8 @@ that says so, split out of the extension file because that file is over its
 size limit and a new feature must not make it grow.
 """
 
+visibility(["//dart/..."])
+
 def warn_skipped_sources(state, lock_tag, hub_name, skipped_by_source):
     """Warns once per lock file about non-hosted packages getting no repository.
 

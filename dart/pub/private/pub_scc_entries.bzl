@@ -7,7 +7,9 @@ than beside the extension's state machine: the extension file is already over
 its size limit, and a new field on each entry should not make it grow.
 """
 
-load("//dart/ext:registry.bzl", "curated_code_assets")
+load("//dart/private:curated_registry.bzl", "curated_code_assets")
+
+visibility(["//dart/..."])
 
 def scc_member_entries(members, hosted, git_pkgs, package_deps):
     """Builds the merged repository's member entries for `members_json`.

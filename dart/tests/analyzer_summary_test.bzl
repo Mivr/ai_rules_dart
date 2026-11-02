@@ -33,6 +33,8 @@ load(
     "summaries_flag_test_kwargs",
 )
 
+visibility(["//dart/..."])
+
 def _summary_packages_test_impl(ctx):
     """Checks which package names are covered by `DartAnalyzerSummaryInfo`."""
     env = analysistest.begin(ctx)

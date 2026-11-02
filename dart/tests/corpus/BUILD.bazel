@@ -48,11 +48,14 @@ load(
     "stacked_logger_library",
     "stacked_router_library",
 )
-load("//dart/pub:defs.bzl", "parse_semver")
+load("//dart/pub:defs.bzl", "parse_semver", "semver_gt")
 
-# `parse_semver` and `sqlite3_code_asset` are functions, not rules: calling
-# them is how the corpus instantiates them. They declare no target.
+# `parse_semver`, `semver_gt` and `sqlite3_code_asset` are functions, not
+# rules: calling them is how the corpus instantiates them. They declare no
+# target.
 parse_semver("1.0.0")
+
+semver_gt("1.0.0", "0.9.0")
 
 sqlite3_code_asset()
 

@@ -1,5 +1,7 @@
 """A non-Dart rule that builds for a platform no Dart SDK is registered for."""
 
+visibility(["//dart/..."])
+
 def _to_android(_settings, _attr):
     return {"//command_line_option:platforms": str(Label("//dart/tests/foreign_platform_fixture:android"))}
 

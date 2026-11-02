@@ -2,6 +2,8 @@
 
 load("//dart:providers.bzl", "DartPackageMetadataInfo")
 
+visibility(["//dart/..."])
+
 def _dart_package_impl(ctx):
     return [DartPackageMetadataInfo(
         package_name = ctx.attr.package_name,
