@@ -1,3 +1,4 @@
+// @dart=3.11
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -28,9 +29,6 @@ const _connectTimeout = Duration(seconds: 30);
 
 /// How long collection may take to finish once the VM has exited.
 const _finishTimeout = Duration(seconds: 60);
-
-/// A package name no package has, scoping a collection to nothing.
-const _noPackage = 'rules_dart_no_package_to_collect';
 
 /// The failure of a coverage run, with the message that names what failed.
 class CoverageFailure implements Exception {
@@ -177,6 +175,25 @@ Set<String> packagesToCollect(
     packages.add(entry.key.substring(8).split('/').first);
   }
   return packages;
+}
+
+/// Whether the files to report include one that no package owns.
+///
+/// A collection filtered by package name only reports libraries that belong to
+/// one. The test's own entry file, and any source outside a package's `lib/`,
+/// is such a library without a package, so the collection must be left
+/// unfiltered when the manifest (or, without one, the map) names one.
+bool needsEveryLibrary(Map<String, String> uriMap, Set<String>? manifest) {
+  final packagedPaths = <String>{
+    for (final MapEntry<String, String> entry in uriMap.entries)
+      if (entry.key.startsWith('package:')) _normalized(entry.value),
+  };
+  for (final MapEntry<String, String> entry in uriMap.entries) {
+    final String path = _normalized(entry.value);
+    if (manifest != null && !manifest.contains(path)) continue;
+    if (!packagedPaths.contains(path)) return true;
+  }
+  return false;
 }
 
 /// The paths a `COVERAGE_MANIFEST` lists, normalised for comparison.
@@ -374,8 +391,13 @@ Future<_Collected> _collectFrom(
 ) async {
   try {
     final _Inputs inputs = _readInputs(config);
-    // `collect` treats an empty scope as "everything", the slow case.
-    final Set<String> scope = packagesToCollect(inputs.uriMap, inputs.manifest);
+    // `collect` filters by package name. A source outside every package (the
+    // test's own entry file, say) is only reported when the collection is left
+    // unfiltered, and an empty set does that; the URI map and the manifest
+    // still decide what reaches the report.
+    final Set<String> scope = needsEveryLibrary(inputs.uriMap, inputs.manifest)
+        ? <String>{}
+        : packagesToCollect(inputs.uriMap, inputs.manifest);
     final Uri uri = await _awaitServiceUri(
       File(config.serviceInfoPath),
       exited,
@@ -388,7 +410,7 @@ Future<_Collected> _collectFrom(
         true,
         true,
         false,
-        scope.isEmpty ? {_noPackage} : scope,
+        scope,
         functionCoverage: true,
         branchCoverage: true,
         timeout: _connectTimeout,
