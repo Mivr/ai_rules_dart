@@ -1,0 +1,11 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary")
+load(":canary.bzl", "hermetic_canary")
+
+dart_binary(
+    name = "tool",
+    main = "tool.dart",
+)
+
+hermetic_canary(
+    name = "canary",
+)
