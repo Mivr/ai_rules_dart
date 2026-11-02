@@ -27,7 +27,6 @@ load(
     "target_dart_abi",
 )
 load("//dart/private:dart_compile.bzl", "dart_compile_action")
-load("//dart/private:dart_info.bzl", "package_lib_prefix")
 load(
     "//dart/private:dart_kernel.bzl",
     "DartKernelInfo",
@@ -36,9 +35,11 @@ load(
     "dart_kernel_module_aspect",
     "entry_source_uri",
     "entry_sources",
+    "library_source_uri",
     "modular_executable_kernel",
     "modular_executable_tools",
     "multi_root_uri",
+    "package_of_source",
 )
 load("//dart/private:dart_test_runner.bzl", "DartTestKernelInfo", "DartTestRunnerInfo")
 load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "executable_package")
@@ -153,6 +154,7 @@ def _write_coverage_map(ctx, packages):
       The `<name>.coverage_map.json` File.
     """
     sources = collect_transitive_srcs(ctx.attr.deps).to_list() + [ctx.file.main] + ctx.files.srcs
+    by_name = {pkg.package_name: pkg for pkg in packages}
     entries = {}
     for f in sources:
         if f.extension != "dart" or f.is_directory:
@@ -163,32 +165,13 @@ def _write_coverage_map(ctx, packages):
         if not file_path.startswith("/"):
             file_path = "/" + file_path
         entries["file://" + file_path] = path
-        owner = _owning_package(path, packages)
-        if owner != None:
-            prefix = package_lib_prefix(owner.lib_root)
-            entries["package:%s/%s" % (owner.package_name, path[len(prefix):])] = path
+        owner_name = package_of_source(path, packages)
+        if owner_name != None:
+            owner = by_name[owner_name]
+            entries[library_source_uri(owner.package_name, owner.lib_root, path)] = path
     coverage_map = ctx.actions.declare_file(ctx.label.name + ".coverage_map.json")
     ctx.actions.write(output = coverage_map, content = json.encode(entries))
     return coverage_map
-
-def _owning_package(short_path, packages):
-    """The package whose `lib/` is the deepest to contain a file, or `None`.
-
-    Args:
-      short_path: The source's `File.short_path`.
-      packages: `DartPackageInfo` records.
-
-    Returns:
-      The matching `DartPackageInfo`, or `None`.
-    """
-    owner = None
-    owner_len = -1
-    for pkg in packages:
-        prefix = package_lib_prefix(pkg.lib_root)
-        if short_path.startswith(prefix) and len(prefix) > owner_len:
-            owner = pkg
-            owner_len = len(prefix)
-    return owner
 
 def _compile_test_kernel(ctx, own, bootstrap, use_base_dill = False):
     """Compiles a test's `main` to the kernel that a test runs from.
