@@ -10,6 +10,27 @@ pattern.
 
 load("@rules_testing//lib:truth.bzl", "matching", "subjects")
 
+WINDOWS_ATTR = {
+    "_windows": attr.label(
+        doc = "Platform constraint probed to match `.exe` executable suffixes on Windows.",
+        default = Label("@platforms//os:windows"),
+    ),
+}
+
+def exe_extension(env):
+    """Returns `".exe"` when the test target platform is Windows, else `""`.
+
+    Args:
+      env: The `analysis_test` environment (from a test declaring `WINDOWS_ATTR`).
+
+    Returns:
+      `".exe"` on Windows, `""` elsewhere.
+    """
+    is_windows = env.ctx.target_platform_has_constraint(
+        env.ctx.attr._windows[platform_common.ConstraintValueInfo],
+    )
+    return ".exe" if is_windows else ""
+
 def provider_subject(attrs):
     """Builds the subject factory `TargetSubject.provider` needs for a struct provider.
 
