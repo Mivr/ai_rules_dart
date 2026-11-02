@@ -1,0 +1,70 @@
+load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_package_member", "dart_source_set", "dart_test")
+
+# Inputs of `//dart/tests:instrumented_files_*_test`, which read what each rule
+# returns for `bazel coverage`. Nothing here is built or run on its own.
+package(default_visibility = ["//dart/tests:__pkg__"])
+
+dart_library(
+    name = "dep",
+    package_name = "instrumented_files_fixture",
+    srcs = ["lib/dep.dart"],
+    tags = ["manual"],
+)
+
+dart_library(
+    name = "data_lib",
+    package_name = "instrumented_files_fixture",
+    srcs = ["lib/data_lib.dart"],
+    tags = ["manual"],
+)
+
+dart_library(
+    name = "lib",
+    package_name = "instrumented_files_fixture",
+    srcs = ["lib/own.dart"],
+    tags = ["manual"],
+    deps = [":dep"],
+)
+
+dart_package_member(
+    name = "member",
+    package_name = "instrumented_files_fixture",
+    srcs = ["lib/member.dart"],
+    tags = ["manual"],
+)
+
+dart_library(
+    name = "merged",
+    members = [":member"],
+    tags = ["manual"],
+    deps = [":dep"],
+)
+
+dart_binary(
+    name = "bin",
+    package_name = "instrumented_files_fixture",
+    srcs = ["bin/extra.dart"],
+    data = [":data_lib"],
+    main = "bin/main.dart",
+    tags = ["manual"],
+    deps = [":lib"],
+)
+
+dart_source_set(
+    name = "set",
+    srcs = [
+        "lib/notes.txt",
+        "lib/set.dart",
+    ],
+    tags = ["manual"],
+)
+
+dart_test(
+    name = "test",
+    package_name = "instrumented_files_fixture",
+    srcs = ["test/extra_test.dart"],
+    data = [":data_lib"],
+    main = "test/main_test.dart",
+    tags = ["manual"],
+    deps = [":lib"],
+)

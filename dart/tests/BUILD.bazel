@@ -25,6 +25,7 @@ load(":drift_library_direct_test.bzl", "drift_library_direct_test_suite")
 load(":freezed_library_direct_test.bzl", "freezed_library_direct_test_suite")
 load(":git_host_config_test.bzl", "git_host_config_test_suite")
 load(":go_router_library_direct_test.bzl", "go_router_library_direct_test_suite")
+load(":instrumented_files_test.bzl", "instrumented_files_test")
 load(":jit_fallback_test.bzl", "jit_fallback_test_suite")
 load(":jit_lock_timeout_test.bzl", "jit_lock_timeout_test_suite")
 load(":json_serializable_library_direct_test.bzl", "json_serializable_library_direct_test_suite")
@@ -244,4 +245,56 @@ dart_test(
         "//dart/runfiles",
         "@ext_pub_deps//:test",
     ],
+)
+
+# `bazel coverage` support: each rule that owns Dart sources returns
+# `InstrumentedFilesInfo` over them and their `deps`.
+instrumented_files_test(
+    name = "instrumented_files_library_test",
+    absent = ["notes.txt"],
+    expected = [
+        "own.dart",
+        "dep.dart",
+    ],
+    target_under_test = "//dart/tests/instrumented_files_fixture:lib",
+)
+
+instrumented_files_test(
+    name = "instrumented_files_merged_library_test",
+    expected = [
+        "member.dart",
+        "dep.dart",
+    ],
+    target_under_test = "//dart/tests/instrumented_files_fixture:merged",
+)
+
+instrumented_files_test(
+    name = "instrumented_files_binary_test",
+    expected = [
+        "main.dart",
+        "extra.dart",
+        "own.dart",
+        "dep.dart",
+        "data_lib.dart",
+    ],
+    target_under_test = "//dart/tests/instrumented_files_fixture:bin",
+)
+
+instrumented_files_test(
+    name = "instrumented_files_source_set_test",
+    absent = ["notes.txt"],
+    expected = ["set.dart"],
+    target_under_test = "//dart/tests/instrumented_files_fixture:set",
+)
+
+instrumented_files_test(
+    name = "instrumented_files_test_test",
+    expected = [
+        "main_test.dart",
+        "extra_test.dart",
+        "own.dart",
+        "dep.dart",
+        "data_lib.dart",
+    ],
+    target_under_test = "//dart/tests/instrumented_files_fixture:test",
 )
