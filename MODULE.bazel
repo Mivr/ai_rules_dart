@@ -61,9 +61,11 @@ bazel_dep(name = "apple_support", version = "2.10.1", dev_dependency = True)
 bazel_dep(name = "hermetic_cc_toolchain", version = "4.3.0", dev_dependency = True)
 
 # The direct analysis tests under //dart/tests load
-# `@rules_testing//lib:analysis_test.bzl`. Dev-only: the library is never loaded
-# by a rule a consuming module can use.
-bazel_dep(name = "rules_testing", version = "0.9.0", dev_dependency = True)
+# `@rules_testing//lib:analysis_test.bzl`. It cannot be a dev-only dependency:
+# `@rules_dart//...` includes dart/tests, and a consumer query must be able to
+# load every one of those packages, which is where a dev dependency is not
+# visible. The dependency is only fetched when the test packages are built.
+bazel_dep(name = "rules_testing", version = "0.9.0")
 
 cc_toolchains = use_extension(
     "@hermetic_cc_toolchain//toolchain:ext.bzl",

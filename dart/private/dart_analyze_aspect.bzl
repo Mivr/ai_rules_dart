@@ -180,6 +180,7 @@ def _dart_analysis_config_impl(ctx):
         return [DefaultInfo(files = depset([validated])), info]
     return [info]
 
+# rule_test_coverage: no-actions
 dart_analysis_config = rule(
     implementation = _dart_analysis_config_impl,
     attrs = {
