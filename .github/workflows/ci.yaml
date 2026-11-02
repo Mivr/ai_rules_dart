@@ -60,7 +60,8 @@ jobs:
   # e2e/pub_package_unpinned, e2e/pub_spoke_blank_sha,
   # e2e/pub_spoke_malformed_sha, e2e/pub_git_unpinned_ref,
   # e2e/pub_scc_unpinned_member, e2e/sdk_unknown_version, e2e/pub_symlink
-  # (plus its nested red-by-design `cycle` workspace), e2e/kernel_dep_shape.
+  # (plus its nested red-by-design `cycle` workspace), e2e/kernel_dep_shape,
+  # e2e/hermetic_canary.
   # e2e/pub_scanner_intruder is green but needs its scanner built explicitly,
   # so it runs in a step there too.
   # e2e/pub_fetch_powershell runs in the shard-3-only steps below;
@@ -68,6 +69,9 @@ jobs:
   # `expected-failure` and `format-hermeticity`, and e2e/dart_test also in
   # `dbg-mode` and `expected-failure`. e2e/run_home runs in `run-home`,
   # and e2e/repro_canary runs in `reproducibility`.
+  # e2e/hermetic_canary is Linux-only and red by design, so it runs in
+  # `expected-failure` only and never in a positive sweep; e2e/hello_world
+  # and e2e/codegen also run in `hermetic-strict` under the H1 flag set.
   # No e2e workspace is left without a job.
   # A tag push runs every job, matrix entry and step below, uncached: no job
   # skips work on a tag push that the nightly `schedule` run does.
@@ -1302,6 +1306,24 @@ jobs:
           grep -q "printed before hanging" "$log"
           grep -q "written to stderr before hanging" "$log"
           echo "OK: timed-out test's output reached its log"
+      # The hermeticity canary reads an undeclared host file: it builds with
+      # the default sandbox (where `/` stays readable) and must fail under
+      # the strict hermetic Linux sandbox with the minimal mount set. The
+      # strict build uses a distinct output base so the default build's
+      # cached success cannot satisfy it: Bazel keys the action on declared
+      # inputs only, so a shared base would make this self-test useless.
+      - name: e2e/hermetic_canary — expect the undeclared /usr/bin/env read to fail under the strict sandbox
+        working-directory: e2e/hermetic_canary
+        run: |
+          bazel build //:canary || { echo "ERROR: default build should succeed"; exit 1; }
+          echo "OK: default build succeeded"
+          if out=$(bazel --output_base=/tmp/hermetic_canary_strict build //:canary --experimental_use_hermetic_linux_sandbox --sandbox_add_mount_pair=/lib64 --sandbox_add_mount_pair=/lib/x86_64-linux-gnu --sandbox_add_mount_pair=/usr/lib/x86_64-linux-gnu --sandbox_add_mount_pair=/etc/ld.so.cache 2>&1); then
+            echo "ERROR: strict build should have failed"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          printf '%s\n' "$out" | grep -F -q "/usr/bin/env" || { echo "ERROR: strict output must name /usr/bin/env"; printf '%s\n' "$out"; exit 1; }
+          echo "OK: strict build failed naming /usr/bin/env"
   # `dart compile kernel` rejects `--enable-asserts`, so dbg-mode flags are
   # chosen per compile mode. hello_world builds all four dart_binary modes;
   # dart_test exercises the kernel test path end-to-end.
@@ -1337,6 +1359,164 @@ jobs:
             exit 1
           fi
           echo "OK: e2e/repro_canary outputs differ across distinct output bases ($sha_a != $sha_b)"
+  hermetic-strict:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Create blocked-tool shims
+        run: |
+          SHIM_DIR="${RUNNER_TEMP}/hermetic_shims"
+          mkdir -p "$SHIM_DIR"
+          for tool in curl python3 find cp tar unzip; do
+            {
+              echo '#!/bin/sh'
+              echo "echo \"$tool: blocked by hermetic-strict\" >&2"
+              echo 'exit 1'
+            } > "$SHIM_DIR/$tool"
+            chmod +x "$SHIM_DIR/$tool"
+          done
+          test ! -e "$SHIM_DIR/git"
+          test -x /usr/bin/git
+          echo "OK: shims ready in $SHIM_DIR"
+      - name: Phase 1 hello_world — build under the strict H1 flags
+        working-directory: e2e/hello_world
+        run: |
+          SHIM_DIR="${RUNNER_TEMP}/hermetic_shims"
+          bazel build //... \
+            --worker_sandboxing \
+            --experimental_worker_sandbox_hardening \
+            --experimental_worker_strict_flagfiles \
+            --experimental_use_hermetic_linux_sandbox \
+            --sandbox_add_mount_pair=/lib64 \
+            --sandbox_add_mount_pair=/lib/x86_64-linux-gnu \
+            --sandbox_add_mount_pair=/usr/lib/x86_64-linux-gnu \
+            --sandbox_add_mount_pair=/etc/ld.so.cache \
+            --nosandbox_default_allow_network \
+            --sandbox_fake_username \
+            --sandbox_fake_hostname \
+            --experimental_strict_repo_env \
+            --repo_env=PATH="$SHIM_DIR:/usr/bin:/bin" \
+            --build_event_json_file="$RUNNER_TEMP/bep_hello_build.json"
+      - name: Phase 1 codegen — build resolved targets under the strict H1 flags
+        working-directory: e2e/codegen
+        run: |
+          SHIM_DIR="${RUNNER_TEMP}/hermetic_shims"
+          TARGETS=$(bazel query '//... except attr(generator_function, build_test, //...)') || { echo "ERROR: bazel query failed"; exit 1; }
+          [ -n "$TARGETS" ] || { echo "ERROR: bazel query resolved nothing"; exit 1; }
+          # shellcheck disable=SC2086
+          bazel build $TARGETS \
+            --worker_sandboxing \
+            --experimental_worker_sandbox_hardening \
+            --experimental_worker_strict_flagfiles \
+            --experimental_use_hermetic_linux_sandbox \
+            --sandbox_add_mount_pair=/lib64 \
+            --sandbox_add_mount_pair=/lib/x86_64-linux-gnu \
+            --sandbox_add_mount_pair=/usr/lib/x86_64-linux-gnu \
+            --sandbox_add_mount_pair=/etc/ld.so.cache \
+            --nosandbox_default_allow_network \
+            --sandbox_fake_username \
+            --sandbox_fake_hostname \
+            --experimental_strict_repo_env \
+            --repo_env=PATH="$SHIM_DIR:/usr/bin:/bin" \
+            --skip_incompatible_explicit_targets \
+            --build_event_json_file="$RUNNER_TEMP/bep_codegen_build.json"
+      - name: Phase 2 hello_world — test with the worker H1 flags
+        working-directory: e2e/hello_world
+        run: |
+          SHIM_DIR="${RUNNER_TEMP}/hermetic_shims"
+          TESTS=$(bazel query 'tests(//...)') || { echo "ERROR: bazel query tests failed"; exit 1; }
+          if [ -z "$TESTS" ]; then
+            echo "no test targets in e2e/hello_world, skipping"
+          else
+            bazel test //... \
+              --worker_sandboxing \
+              --experimental_worker_sandbox_hardening \
+              --experimental_worker_strict_flagfiles \
+              --sandbox_add_mount_pair=/lib64 \
+              --sandbox_add_mount_pair=/lib/x86_64-linux-gnu \
+              --sandbox_add_mount_pair=/usr/lib/x86_64-linux-gnu \
+              --sandbox_add_mount_pair=/etc/ld.so.cache \
+              --nosandbox_default_allow_network \
+              --sandbox_fake_username \
+              --sandbox_fake_hostname \
+              --experimental_strict_repo_env \
+              --repo_env=PATH="$SHIM_DIR:/usr/bin:/bin" \
+              --build_event_json_file="$RUNNER_TEMP/bep_hello_test.json"
+          fi
+      - name: Phase 2 codegen — test with the worker H1 flags
+        working-directory: e2e/codegen
+        run: |
+          SHIM_DIR="${RUNNER_TEMP}/hermetic_shims"
+          TESTS=$(bazel query 'tests(//...)') || { echo "ERROR: bazel query tests failed"; exit 1; }
+          if [ -z "$TESTS" ]; then
+            echo "no test targets in e2e/codegen, skipping"
+          else
+            bazel test //... \
+              --worker_sandboxing \
+              --experimental_worker_sandbox_hardening \
+              --experimental_worker_strict_flagfiles \
+              --sandbox_add_mount_pair=/lib64 \
+              --sandbox_add_mount_pair=/lib/x86_64-linux-gnu \
+              --sandbox_add_mount_pair=/usr/lib/x86_64-linux-gnu \
+              --sandbox_add_mount_pair=/etc/ld.so.cache \
+              --nosandbox_default_allow_network \
+              --sandbox_fake_username \
+              --sandbox_fake_hostname \
+              --experimental_strict_repo_env \
+              --repo_env=PATH="$SHIM_DIR:/usr/bin:/bin" \
+              --skip_incompatible_explicit_targets \
+              --build_event_json_file="$RUNNER_TEMP/bep_codegen_test.json"
+          fi
+      - name: Assert no --action_env in the strict command lines
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          run_temp = os.environ.get("RUNNER_TEMP", "/tmp")
+          paths = [
+              os.path.join(run_temp, "bep_hello_build.json"),
+              os.path.join(run_temp, "bep_codegen_build.json"),
+              os.path.join(run_temp, "bep_hello_test.json"),
+              os.path.join(run_temp, "bep_codegen_test.json"),
+          ]
+          bad = []
+          for path in paths:
+              try:
+                  lines = open(path, encoding="utf-8").read().splitlines()
+              except FileNotFoundError:
+                  print("ERROR: missing BEP file " + path)
+                  sys.exit(1)
+              for line in lines:
+                  line = line.strip()
+                  if not line:
+                      continue
+                  try:
+                      event = json.loads(line)
+                  except ValueError:
+                      continue
+                  scl = event.get("structuredCommandLine")
+                  if not isinstance(scl, dict):
+                      continue
+                  if scl.get("commandLineLabel") not in ("canonical", "original"):
+                      continue
+                  for section in scl.get("sections", []):
+                      chunks = section.get("chunkList", {}).get("chunk", [])
+                      for chunk in chunks:
+                          if chunk == "--action_env" or chunk.startswith("--action_env="):
+                              bad.append(path + ": " + chunk)
+                      for option in section.get("optionList", {}).get("option", []):
+                          combined = option.get("combinedForm", "")
+                          if combined == "--action_env" or combined.startswith("--action_env="):
+                              bad.append(path + ": " + combined)
+          if bad:
+              print("ERROR: --action_env in BEP command lines:")
+              for entry in bad:
+                  print(entry)
+              sys.exit(1)
+          print("OK: no --action_env in the strict command lines")
+          PY
   pre-commit:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -1356,6 +1536,7 @@ jobs:
       - run-home
       - expected-failure
       - dbg-mode
+      - hermetic-strict
       - pre-commit
       - reproducibility
     runs-on: ubuntu-latest
