@@ -1,0 +1,186 @@
+{
+  "artifacts": [
+    {
+      "id": 1,
+      "pathFragmentId": 5
+    },
+    {
+      "id": 2,
+      "pathFragmentId": 8
+    },
+    {
+      "id": 3,
+      "pathFragmentId": 11
+    },
+    {
+      "id": 4,
+      "pathFragmentId": 16
+    },
+    {
+      "id": 5,
+      "pathFragmentId": 17
+    },
+    {
+      "id": 6,
+      "pathFragmentId": 8
+    },
+    {
+      "id": 7,
+      "pathFragmentId": 16
+    }
+  ],
+  "actions": [
+    {
+      "targetId": 1,
+      "mnemonic": "DartCompile",
+      "arguments": [
+        "dart",
+        "bazel-out/k8-fastbuild/bin/pkg/main.dart",
+        "--output",
+        "bazel-out/k8-fastbuild/bin/pkg/main.o"
+      ],
+      "inputDepSetIds": [
+        1
+      ],
+      "outputIds": [
+        1
+      ],
+      "primaryOutputId": 1
+    },
+    {
+      "targetId": 1,
+      "aspect": "//dart:analyze.bzl%dart_analyze",
+      "mnemonic": "DartAnalyze",
+      "arguments": [
+        "bazel-out/k8-fastbuild/genfiles/pkg/a.txt"
+      ],
+      "inputDepSetIds": [
+        1
+      ],
+      "outputIds": [
+        2
+      ],
+      "primaryOutputId": 2
+    },
+    {
+      "targetId": 2,
+      "mnemonic": "DartTest",
+      "arguments": [
+        "bazel-out/k8-fastbuild/testlogs/pkg/test.log"
+      ],
+      "inputDepSetIds": [
+        1
+      ],
+      "outputIds": [
+        3
+      ],
+      "primaryOutputId": 3,
+      "environmentVariables": [
+        {
+          "key": "ZED",
+          "value": "bazel-out/k8-fastbuild/bin/z"
+        },
+        {
+          "key": "ALPHA",
+          "value": "plain"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "id": 1,
+      "label": "//pkg:lib"
+    },
+    {
+      "id": 2,
+      "label": "//pkg:test"
+    }
+  ],
+  "depSetOfFiles": [
+    {
+      "id": 1,
+      "directArtifactIds": [
+        5,
+        6,
+        7
+      ]
+    }
+  ],
+  "pathFragments": [
+    {
+      "id": 1,
+      "label": "bazel-out"
+    },
+    {
+      "id": 2,
+      "label": "k8-fastbuild",
+      "parentId": 1
+    },
+    {
+      "id": 3,
+      "label": "bin",
+      "parentId": 2
+    },
+    {
+      "id": 4,
+      "label": "pkg",
+      "parentId": 3
+    },
+    {
+      "id": 5,
+      "label": "main.dart",
+      "parentId": 4
+    },
+    {
+      "id": 6,
+      "label": "genfiles",
+      "parentId": 2
+    },
+    {
+      "id": 7,
+      "label": "pkg",
+      "parentId": 6
+    },
+    {
+      "id": 8,
+      "label": "a.txt",
+      "parentId": 7
+    },
+    {
+      "id": 9,
+      "label": "testlogs",
+      "parentId": 2
+    },
+    {
+      "id": 10,
+      "label": "pkg",
+      "parentId": 9
+    },
+    {
+      "id": 11,
+      "label": "test.log",
+      "parentId": 10
+    },
+    {
+      "id": 12,
+      "label": "k8-opt-exec",
+      "parentId": 1
+    },
+    {
+      "id": 15,
+      "label": "foo",
+      "parentId": 12
+    },
+    {
+      "id": 16,
+      "label": "tool",
+      "parentId": 15
+    },
+    {
+      "id": 17,
+      "label": "lib.dart",
+      "parentId": 4
+    }
+  ]
+}

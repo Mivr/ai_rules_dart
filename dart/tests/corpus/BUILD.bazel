@@ -342,7 +342,14 @@ stacked_bottomsheet_library(
     package_name = "corpus",
 )
 
-# --- the export coverage test ----------------------------------------------
+# --- the golden updater and its tests --------------------------------------
+
+dart_binary(
+    name = "actions_golden",
+    data = [":actions.golden.json"],
+    main = "actions_golden.dart",
+    deps = ["//dart/runfiles"],
+)
 
 dart_test(
     name = "exports_test",
@@ -361,11 +368,30 @@ dart_test(
     ],
 )
 
+dart_test(
+    name = "actions_golden_test",
+    size = "small",
+    args = ["$(rlocationpath :actions_golden_test.dart)"],
+    data = ["actions_golden_test.dart"],
+    local = True,
+    main = "actions_golden_test.dart",
+    srcs = ["actions_golden.dart"],
+    tags = [
+        "external",
+        "no-sandbox",
+    ],
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
 # `bazel test //dart/tests/corpus:...` names this suite in the acceptance
 # command; Bazel treats the label after `:` as a literal target name.
 test_suite(
     name = "...",
     tests = [
+        ":actions_golden_test",
         ":analysis_test",
         ":corpus_test",
         ":exports_test",
