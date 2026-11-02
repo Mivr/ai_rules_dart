@@ -186,6 +186,7 @@ def _dart_code_asset_impl(ctx):
         ),
     ]
 
+# rule_test_coverage: no-actions
 dart_code_asset = rule(
     implementation = _dart_code_asset_impl,
     attrs = {

@@ -1,0 +1,12 @@
+load("//dart:defs.bzl", "dart_library")
+
+# Stands in for the runtime annotation package (`json_annotation`, `freezed_annotation`, ...)
+# of the extension macros that the direct tests under //dart/tests instantiate. It lives in its own
+# package because a library's package and every package it depends on must not share a root.
+dart_library(
+    name = "annotations",
+    package_name = "direct_annotations",
+    srcs = ["lib/annotations.dart"],
+    tags = ["manual"],
+    visibility = ["//dart/tests:__pkg__"],
+)

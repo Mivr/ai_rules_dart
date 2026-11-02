@@ -2,19 +2,38 @@ load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("//dart:defs.bzl", "dart_test")
 load(":analyzer_summary_test.bzl", "analyzer_summary_test_suite")
+load(":built_value_library_direct_test.bzl", "built_value_library_direct_test_suite")
 load(":code_asset_test.bzl", "code_asset_test_suite")
+load(":codegen_direct_test.bzl", "codegen_direct_test_suite")
 load(":codegen_test.bzl", "codegen_test_suite")
 load(":common_test.bzl", "common_test_suite")
 load(":compile_flags_test.bzl", "compile_flags_test_suite")
+load(":copy_with_library_direct_test.bzl", "copy_with_library_direct_test_suite")
+load(":dart_analysis_config_direct_test.bzl", "dart_analysis_config_direct_test_suite")
+load(":dart_analysis_options_direct_test.bzl", "dart_analysis_options_direct_test_suite")
+load(":dart_analysis_test_direct_test.bzl", "dart_analysis_test_direct_test_suite")
 load(":dart_binary_test.bzl", "dart_binary_test_suite")
+load(":dart_code_asset_direct_test.bzl", "dart_code_asset_direct_test_suite")
+load(":dart_fix_direct_test.bzl", "dart_fix_direct_test_suite")
+load(":dart_format_direct_test.bzl", "dart_format_direct_test_suite")
+load(":dart_package_member_direct_test.bzl", "dart_package_member_direct_test_suite")
+load(":dart_package_metadata_direct_test.bzl", "dart_package_metadata_direct_test_suite")
+load(":dart_source_set_direct_test.bzl", "dart_source_set_direct_test_suite")
+load(":dart_wasm_binary_direct_test.bzl", "dart_wasm_binary_direct_test_suite")
 load(":defines_test.bzl", "defines_test_suite")
+load(":drift_library_direct_test.bzl", "drift_library_direct_test_suite")
+load(":freezed_library_direct_test.bzl", "freezed_library_direct_test_suite")
 load(":git_host_config_test.bzl", "git_host_config_test_suite")
+load(":go_router_library_direct_test.bzl", "go_router_library_direct_test_suite")
 load(":jit_fallback_test.bzl", "jit_fallback_test_suite")
 load(":jit_lock_timeout_test.bzl", "jit_lock_timeout_test_suite")
+load(":json_serializable_library_direct_test.bzl", "json_serializable_library_direct_test_suite")
 load(":kernel_test.bzl", "kernel_test_suite")
 load(":language_version_test.bzl", "language_version_test_suite")
+load(":library_builder_library_direct_test.bzl", "library_builder_library_direct_test_suite")
 load(":library_test.bzl", "library_test_suite")
 load(":link_hook_test.bzl", "link_hook_test_suite")
+load(":mockito_library_direct_test.bzl", "mockito_library_direct_test_suite")
 load(":native_assets_test.bzl", "native_assets_test_suite")
 load(":pinned_sources_test.bzl", "pinned_sources_test_suite")
 load(":project_staging_test.bzl", "project_staging_test_suite")
@@ -26,8 +45,15 @@ load(":pub_symlink_test.bzl", "pub_symlink_test_suite")
 load(":pubspec_guard_test.bzl", "pubspec_guard_test_suite")
 load(":registry_test.bzl", "registry_test_suite")
 load(":semver_test.bzl", "semver_test_suite")
+load(":shared_part_library_direct_test.bzl", "shared_part_library_direct_test_suite")
 load(":snapshot_patch_test.bzl", "snapshot_patch_test_suite")
 load(":source_set_test.bzl", "source_set_test_suite")
+load(":stacked_bottomsheet_library_direct_test.bzl", "stacked_bottomsheet_library_direct_test_suite")
+load(":stacked_dialog_library_direct_test.bzl", "stacked_dialog_library_direct_test_suite")
+load(":stacked_form_library_direct_test.bzl", "stacked_form_library_direct_test_suite")
+load(":stacked_locator_library_direct_test.bzl", "stacked_locator_library_direct_test_suite")
+load(":stacked_logger_library_direct_test.bzl", "stacked_logger_library_direct_test_suite")
+load(":stacked_router_library_direct_test.bzl", "stacked_router_library_direct_test_suite")
 load(":toolchain_selection_test.bzl", "toolchain_selection_test_suite")
 load(":toolchains_test.bzl", "toolchains_test_suite")
 load(":versions_test.bzl", "versions_test_suite")
@@ -106,6 +132,58 @@ semver_test_suite(name = "semver_test")
 snapshot_patch_test_suite(name = "snapshot_patch_test")
 
 analyzer_summary_test_suite(name = "analyzer_summary_version_test")
+
+built_value_library_direct_test_suite(name = "built_value_library_direct")
+
+codegen_direct_test_suite(name = "codegen_direct")
+
+copy_with_library_direct_test_suite(name = "copy_with_library_direct")
+
+dart_analysis_config_direct_test_suite(name = "dart_analysis_config_direct")
+
+dart_analysis_options_direct_test_suite(name = "dart_analysis_options_direct")
+
+dart_analysis_test_direct_test_suite(name = "dart_analysis_test_direct")
+
+dart_code_asset_direct_test_suite(name = "dart_code_asset_direct")
+
+dart_fix_direct_test_suite(name = "dart_fix_direct")
+
+dart_format_direct_test_suite(name = "dart_format_direct")
+
+dart_package_member_direct_test_suite(name = "dart_package_member_direct")
+
+dart_package_metadata_direct_test_suite(name = "dart_package_metadata_direct")
+
+dart_source_set_direct_test_suite(name = "dart_source_set_direct")
+
+dart_wasm_binary_direct_test_suite(name = "dart_wasm_binary_direct")
+
+drift_library_direct_test_suite(name = "drift_library_direct")
+
+freezed_library_direct_test_suite(name = "freezed_library_direct")
+
+go_router_library_direct_test_suite(name = "go_router_library_direct")
+
+json_serializable_library_direct_test_suite(name = "json_serializable_library_direct")
+
+library_builder_library_direct_test_suite(name = "library_builder_library_direct")
+
+mockito_library_direct_test_suite(name = "mockito_library_direct")
+
+shared_part_library_direct_test_suite(name = "shared_part_library_direct")
+
+stacked_bottomsheet_library_direct_test_suite(name = "stacked_bottomsheet_library_direct")
+
+stacked_dialog_library_direct_test_suite(name = "stacked_dialog_library_direct")
+
+stacked_form_library_direct_test_suite(name = "stacked_form_library_direct")
+
+stacked_locator_library_direct_test_suite(name = "stacked_locator_library_direct")
+
+stacked_logger_library_direct_test_suite(name = "stacked_logger_library_direct")
+
+stacked_router_library_direct_test_suite(name = "stacked_router_library_direct")
 
 provider_shape_probe(
     name = "provider_shape_probe_target",

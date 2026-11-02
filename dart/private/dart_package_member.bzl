@@ -131,6 +131,7 @@ def _dart_package_member_impl(ctx):
         record,
     ]
 
+# rule_test_coverage: no-actions
 dart_package_member = rule(
     implementation = _dart_package_member_impl,
     attrs = {

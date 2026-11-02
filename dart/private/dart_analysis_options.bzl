@@ -40,6 +40,7 @@ def _dart_analysis_options_impl(ctx):
         ),
     ]
 
+# rule_test_coverage: no-actions
 dart_analysis_options = rule(
     implementation = _dart_analysis_options_impl,
     attrs = {
