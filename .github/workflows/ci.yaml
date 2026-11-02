@@ -1299,12 +1299,28 @@ jobs:
       # strict build uses a distinct output base so the default build's
       # cached success cannot satisfy it: Bazel keys the action on declared
       # inputs only, so a shared base would make this self-test useless.
+      # Ubuntu 24.04 runners block unprivileged user namespaces for unprofiled
+      # binaries via AppArmor, which makes Bazel silently fall back from
+      # `linux-sandbox` to `processwrapper-sandbox`; enable user namespaces and
+      # keep `--output_base` under `RUNNER_TEMP` (not `/tmp`, which `-w /tmp`
+      # bind-mounts over before `pivot_root`).
       - name: e2e/hermetic_canary — expect the undeclared /usr/bin/env read to fail under the strict sandbox
         working-directory: e2e/hermetic_canary
         run: |
+          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ] && [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" != 0 ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          if [ -f /proc/sys/kernel/unprivileged_userns_clone ] && [ "$(cat /proc/sys/kernel/unprivileged_userns_clone)" = 0 ]; then
+            sudo sysctl -w kernel.unprivileged_userns_clone=1
+          fi
+          probe="${RUNNER_TEMP}/userns_probe"
+          cp /usr/bin/unshare "$probe"
+          chmod +x "$probe"
+          "$probe" --user --map-root-user --mount --pid --ipc --uts --net --fork --mount-proc /bin/true
+          rm -f "$probe"
           bazel build //:canary || { echo "ERROR: default build should succeed"; exit 1; }
           echo "OK: default build succeeded"
-          if out=$(bazel --output_base=/tmp/hermetic_canary_strict build //:canary --experimental_use_hermetic_linux_sandbox --sandbox_add_mount_pair=/lib64 --sandbox_add_mount_pair=/lib/x86_64-linux-gnu --sandbox_add_mount_pair=/usr/lib/x86_64-linux-gnu --sandbox_add_mount_pair=/etc/ld.so.cache 2>&1); then
+          if out=$(bazel --output_base="$RUNNER_TEMP/hermetic_canary_strict" build //:canary --experimental_use_hermetic_linux_sandbox --sandbox_add_mount_pair=/lib64 --sandbox_add_mount_pair=/lib/x86_64-linux-gnu --sandbox_add_mount_pair=/usr/lib/x86_64-linux-gnu --sandbox_add_mount_pair=/etc/ld.so.cache 2>&1); then
             echo "ERROR: strict build should have failed"
             printf '%s\n' "$out"
             exit 1
@@ -1353,6 +1369,17 @@ jobs:
       - uses: actions/checkout@v7
       - name: Create blocked-tool shims
         run: |
+          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ] && [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" != 0 ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          if [ -f /proc/sys/kernel/unprivileged_userns_clone ] && [ "$(cat /proc/sys/kernel/unprivileged_userns_clone)" = 0 ]; then
+            sudo sysctl -w kernel.unprivileged_userns_clone=1
+          fi
+          probe="${RUNNER_TEMP}/userns_probe"
+          cp /usr/bin/unshare "$probe"
+          chmod +x "$probe"
+          "$probe" --user --map-root-user --mount --pid --ipc --uts --net --fork --mount-proc /bin/true
+          rm -f "$probe"
           SHIM_DIR="${RUNNER_TEMP}/hermetic_shims"
           mkdir -p "$SHIM_DIR"
           for tool in curl python3 find cp tar unzip; do
