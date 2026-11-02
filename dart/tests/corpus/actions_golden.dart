@@ -8,51 +8,71 @@ const String goldenRelativePath = 'dart/tests/corpus/actions.golden.json';
 
 /// The outcome of one updater run, with its streams captured for the tests.
 final class GoldenResult {
+  /// Creates a result with [exitCode] and captured [output] and [error] text.
   const new(this.exitCode, {this.output = '', this.error = ''});
 
+  /// Process exit status (`0` on success, `1` on golden diff, `2` on usage or input failure).
   final int exitCode;
+
+  /// Captured standard output text.
   final String output;
+
+  /// Captured standard error text.
   final String error;
 }
 
-/// Runs the updater with injectable runfiles and paths, so the tests never
-/// need a second Bazel server.
+/// Runs the updater with injectable runfiles, streams, and paths so the tests
+/// never need a second Bazel server.
 final class GoldenRunner {
-  new({this.runfiles, this.workspaceRoot, this.goldenPath});
+  /// Creates an updater runner with optional test overrides.
+  const new({
+    this.runfiles,
+    this.workspaceRoot,
+    this.workingDirectory,
+    this.goldenPath,
+    this.readStdin,
+  });
 
+  /// Optional runfiles override for locating the checked-in golden.
   final Runfiles? runfiles;
+
+  /// Optional workspace root override for writing [goldenRelativePath].
   final String? workspaceRoot;
+
+  /// Optional caller working directory override for relative aquery paths.
+  final String? workingDirectory;
+
+  /// Optional explicit golden file path override.
   final String? goldenPath;
+
+  /// Optional standard input reader override when no positional path is passed.
+  final String Function()? readStdin;
 
   /// Parses `--check`, reads the aquery text, and either writes the golden or
   /// compares it. A usage or input error exits 2; a stale golden exits 1.
   GoldenResult run(List<String> args) {
     final _ParsedArgs parsed = _parseArgs(args);
-    final String? argsError = parsed.error;
-    if (argsError != null) {
-      return GoldenResult(2, error: argsError);
+    if (parsed.error != null) {
+      return GoldenResult(2, error: parsed.error!);
     }
     final _TextResult text = _readAquery(parsed.queryPath);
-    final String? textError = text.error;
-    if (textError != null) {
-      return GoldenResult(2, error: textError);
+    if (text.error != null) {
+      return GoldenResult(2, error: text.error!);
     }
     final _MapResult parsedQuery = _parseJson(
       text.text!,
       text.source!,
       'jsonproto',
     );
-    final String? queryError = parsedQuery.error;
-    if (queryError != null) {
-      return GoldenResult(2, error: queryError);
+    if (parsedQuery.error != null) {
+      return GoldenResult(2, error: parsedQuery.error!);
     }
-    if (parsedQuery.value!['actions'] is! List) {
-      return GoldenResult(
-        2,
-        error:
-            'actions_golden: malformed jsonproto in ${text.source!}: '
-            '"actions" is not a list.\n',
-      );
+    final String? listError = _validateActionsList(
+      parsedQuery.value!['actions'],
+      text.source!,
+    );
+    if (listError != null) {
+      return GoldenResult(2, error: listError);
     }
     final List<Map<String, Object?>> current = normaliseAquery(
       parsedQuery.value!,
@@ -84,9 +104,8 @@ final class GoldenRunner {
       expectedFile.readAsStringSync(),
       path,
     );
-    final String? goldenError = expected.error;
-    if (goldenError != null) {
-      return GoldenResult(2, error: goldenError);
+    if (expected.error != null) {
+      return GoldenResult(2, error: expected.error!);
     }
     final List<String> diffs = _diff(current, expected.value!);
     if (diffs.isEmpty) {
@@ -112,26 +131,95 @@ final class GoldenRunner {
     return GoldenResult(0, output: 'actions_golden: wrote $path\n');
   }
 
-  String? _locateGolden() {
-    final Runfiles? source = runfiles ?? _createRunfiles();
-    if (source == null) return null;
-    for (final prefix in const ['rules_dart', 'ai_rules_dart', '_main', '']) {
-      final String candidate = prefix.isEmpty
-          ? goldenRelativePath
-          : '$prefix/$goldenRelativePath';
-      final String resolved = source.rlocation(candidate);
-      if (File(resolved).existsSync()) return resolved;
+  _TextResult _readAquery(String? path) {
+    if (path == null) {
+      final String content = readStdin != null ? readStdin!() : _readAllStdin();
+      return _TextResult(content, 'stdin');
     }
-    return null;
+    final file = File(_resolveCallerPath(path));
+    if (!file.existsSync()) {
+      return _TextResult(
+        null,
+        path,
+        error: 'actions_golden: aquery file $path does not exist.\n',
+      );
+    }
+    return _TextResult(file.readAsStringSync(), path);
   }
 
-  Runfiles? _createRunfiles() {
+  String _resolveCallerPath(String path) {
+    if (_isAbsolutePath(path)) return path;
+    final String base =
+        workingDirectory ??
+        Platform.environment['BUILD_WORKING_DIRECTORY'] ??
+        Directory.current.path;
+    return '$base/$path';
+  }
+
+  String? _locateGolden() =>
+      locateCorpusRunfile(goldenRelativePath, runfiles: runfiles);
+}
+
+/// Resolves [workspaceRelativePath] against Bazel [runfiles], or returns `null`
+/// when runfiles are unavailable or do not contain the file.
+String? locateCorpusRunfile(
+  String workspaceRelativePath, {
+  Runfiles? runfiles,
+}) {
+  final Runfiles? source = runfiles ?? _createRunfiles();
+  if (source == null) return null;
+  for (final prefix in const ['_main', 'rules_dart', 'ai_rules_dart', '']) {
+    final candidate = prefix.isEmpty
+        ? workspaceRelativePath
+        : '$prefix/$workspaceRelativePath';
     try {
-      return Runfiles.create();
+      final String resolved = source.rlocation(candidate);
+      if (File(resolved).existsSync()) return resolved;
     } on Object {
-      return null;
+      // Manifest-only runfiles throw StateError when a candidate repo prefix is unmapped.
     }
   }
+  return null;
+}
+
+Runfiles? _createRunfiles() {
+  try {
+    return Runfiles.create();
+  } on Object {
+    // Direct `dart` invocations outside Bazel have no runfiles tree or manifest.
+    return null;
+  }
+}
+
+bool _isAbsolutePath(String path) =>
+    path.startsWith('/') ||
+    path.startsWith(r'\\') ||
+    RegExp(r'^[A-Za-z]:[\\/]').hasMatch(path);
+
+String _readAllStdin() {
+  final lines = <String>[];
+  for (
+    String? line = stdin.readLineSync(encoding: utf8);
+    line != null;
+    line = stdin.readLineSync(encoding: utf8)
+  ) {
+    lines.add(line);
+  }
+  return lines.join('\n');
+}
+
+String? _validateActionsList(Object? actions, String source) {
+  if (actions is! List) {
+    return 'actions_golden: malformed jsonproto in $source: '
+        '"actions" is not a list.\n';
+  }
+  for (final Object? entry in actions) {
+    if (entry is! Map) {
+      return 'actions_golden: malformed jsonproto in $source: '
+          'action entry is not a JSON object.\n';
+    }
+  }
+  return null;
 }
 
 final class _ParsedArgs {
@@ -175,29 +263,6 @@ final class _TextResult {
   final String? error;
 }
 
-_TextResult _readAquery(String? path) {
-  if (path == null) {
-    final lines = <String>[];
-    for (
-      String? line = stdin.readLineSync();
-      line != null;
-      line = stdin.readLineSync()
-    ) {
-      lines.add(line);
-    }
-    return _TextResult(lines.join('\n'), 'stdin');
-  }
-  final file = File(path);
-  if (!file.existsSync()) {
-    return _TextResult(
-      null,
-      path,
-      error: 'actions_golden: aquery file $path does not exist.\n',
-    );
-  }
-  return _TextResult(file.readAsStringSync(), path);
-}
-
 final class _MapResult {
   const new(this.value, {this.error});
 
@@ -211,7 +276,9 @@ _MapResult _parseJson(String text, String source, String what) {
     if (decoded is! Map) {
       return _MapResult(
         null,
-        error: 'actions_golden: $what in $source is not a JSON object.\n',
+        error:
+            'actions_golden: malformed $what in $source: '
+            'top-level value is not a JSON object.\n',
       );
     }
     return _MapResult(Map<String, Object?>.from(decoded));
@@ -253,13 +320,26 @@ _ActionsResult _parseGolden(String text, String path) {
   return _ActionsResult(value);
 }
 
-/// Replaces configuration-specific output directories with stable names.
+/// Replaces configuration-specific output directories and host SDK repositories
+/// with stable placeholders.
 String normalisePath(String value) {
-  String out = value.replaceAll(RegExp(r'\+dart\+dart_[^/]+'), '{dart-sdk}');
-  out = out.replaceAll(RegExp('bazel-out/[^/]+/bin'), '{bindir}');
-  out = out.replaceAll(RegExp('bazel-out/[^/]+/genfiles'), '{genfilesdir}');
-  out = out.replaceAll(RegExp('bazel-out/[^/]+/testlogs'), '{testlogsdir}');
-  return out.replaceAll(RegExp('bazel-out/[^/]+'), '{bazel-out}');
+  String out = value.replaceAll(
+    RegExp(r'\+dart\+dart_[^/\s"|,;:]+'),
+    '{dart-sdk}',
+  );
+  out = out.replaceAll(
+    RegExp(r'bazel-out/[^/\s"|,;:]+/bin(?=/|$|[\s"|,;:])'),
+    '{bindir}',
+  );
+  out = out.replaceAll(
+    RegExp(r'bazel-out/[^/\s"|,;:]+/genfiles(?=/|$|[\s"|,;:])'),
+    '{genfilesdir}',
+  );
+  out = out.replaceAll(
+    RegExp(r'bazel-out/[^/\s"|,;:]+/testlogs(?=/|$|[\s"|,;:])'),
+    '{testlogsdir}',
+  );
+  return out.replaceAll(RegExp(r'bazel-out/[^/\s"|,;:]+'), '{bazel-out}');
 }
 
 /// Turns a jsonproto action graph into the stable actions the golden holds.
@@ -362,6 +442,11 @@ final class _AqueryIndex {
     for (final Map<String, Object?> target in _objectList(query['targets'])) {
       _targets[_int(target['id'])] = '${target['label'] ?? ''}';
     }
+    for (final Map<String, Object?> aspect in _objectList(
+      query['aspectDescriptors'],
+    )) {
+      _aspects[_int(aspect['id'])] = '${aspect['name'] ?? ''}';
+    }
     for (final Map<String, Object?> artifact in _objectList(
       query['artifacts'],
     )) {
@@ -376,6 +461,7 @@ final class _AqueryIndex {
 
   final Map<String, Object?> query;
   final Map<int?, String> _targets = {};
+  final Map<int?, String> _aspects = {};
   final Map<int?, String> _artifacts = {};
   final Map<int?, ({String label, int? parent})> _fragments = {};
   final Map<int?, Map<String, Object?>> _depSets = {};
@@ -384,7 +470,7 @@ final class _AqueryIndex {
     final List<String> outputs = _paths(raw['outputIds']);
     return {
       'target': _targets[_int(raw['targetId'])] ?? '',
-      'aspect': '${raw['aspect'] ?? ''}',
+      'aspect': _aspect(raw),
       'mnemonic': '${raw['mnemonic'] ?? ''}',
       'primaryOutput': _artifacts[_int(raw['primaryOutputId'])] ?? '',
       'arguments': [
@@ -394,6 +480,16 @@ final class _AqueryIndex {
       'outputs': outputs,
       'environmentVariables': _environment(raw['environmentVariables']),
     };
+  }
+
+  String _aspect(Map<String, Object?> raw) {
+    final direct = '${raw['aspect'] ?? ''}';
+    if (direct.isNotEmpty) return direct;
+    final List<String> names = [
+      for (final int id in _ints(raw['aspectDescriptorIds']))
+        if ((_aspects[id] ?? '').isNotEmpty) _aspects[id]!,
+    ];
+    return names.join(',');
   }
 
   String _artifactPath(Map<String, Object?> artifact) {
@@ -442,12 +538,17 @@ final class _AqueryIndex {
   }
 }
 
-int? _int(Object? value) => value is int ? value : null;
+int? _int(Object? value) {
+  if (value is int) return value;
+  if (value is String) return int.tryParse(value);
+  return null;
+}
 
 Iterable<int> _ints(Object? value) sync* {
   if (value is! List) return;
   for (final Object? item in value) {
-    if (item is int) yield item;
+    final int? parsed = _int(item);
+    if (parsed != null) yield parsed;
   }
 }
 
@@ -458,8 +559,25 @@ Iterable<String> _strings(Object? value) sync* {
   }
 }
 
-void main(List<String> args) {
-  final GoldenResult result = GoldenRunner().run(args);
+bool _readsStdin(List<String> args) => args.every((arg) => arg == '--check');
+
+/// CLI entry point for `bazel run //dart/tests/corpus:actions_golden`.
+Future<void> main(List<String> args) async {
+  String? piped;
+  if (_readsStdin(args)) {
+    try {
+      piped = await utf8.decoder.bind(stdin).join();
+    } on FormatException catch (error) {
+      stderr.write(
+        'actions_golden: malformed jsonproto in stdin: ${error.message}.\n',
+      );
+      exitCode = 2;
+      return;
+    }
+  }
+  final GoldenResult result = GoldenRunner(
+    readStdin: piped == null ? null : () => piped!,
+  ).run(args);
   stdout.write(result.output);
   stderr.write(result.error);
   if (result.exitCode != 0) exitCode = result.exitCode;

@@ -3,7 +3,7 @@
     {
       "files": "actions.golden.json",
       "options": {
-        "printWidth": 100000
+        "printWidth": 1000000
       }
     }
   ]

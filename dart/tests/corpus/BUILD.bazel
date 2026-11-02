@@ -83,7 +83,10 @@ dart_binary(
     name = "app_bin",
     code_assets = [":code_asset"],
     main = "bin/main.dart",
-    deps = [":corpus_lib"],
+    deps = [
+        ":corpus_lib",
+        ":source_set_lib",
+    ],
 )
 
 dart_test(
@@ -103,7 +106,8 @@ dart_source_set(
 
 dart_library(
     name = "source_set_lib",
-    package_name = "corpus",
+    package_name = "corpus_source_set",
+    language_version = "3.11",
     srcs_dir = ":source_set",
 )
 
@@ -135,9 +139,30 @@ dart_analysis_test(
     name = "analysis_test",
     size = "small",
     targets = [
+        ":_drift_siblings",
+        ":actions_golden",
+        ":actions_golden_test",
         ":app_bin",
+        ":builder_library",
+        ":built_value",
+        ":copy_with",
         ":corpus_lib",
         ":corpus_test",
+        ":drift",
+        ":exports_test",
+        ":freezed",
+        ":gen_shim",
+        ":go_router",
+        ":json_serializable",
+        ":merged",
+        ":mockito",
+        ":shared_part",
+        ":stacked_bottomsheet",
+        ":stacked_dialog",
+        ":stacked_form",
+        ":stacked_locator",
+        ":stacked_logger",
+        ":stacked_router",
         ":web_js",
         ":web_wasm",
     ],
@@ -166,6 +191,7 @@ dart_wasm_binary(
 
 dart_binary(
     name = "gen_shim",
+    compile_mode = "kernel",
     main = "gen_shim.dart",
     deps = [
         "//dart/ext:builder_shim",
@@ -357,6 +383,7 @@ dart_test(
     size = "small",
     args = ["$(rlocationpath :exports_test.dart)"],
     data = ["exports_test.dart"],
+    env_inherit = ["BUILD_WORKSPACE_DIRECTORY"],
     local = True,
     main = "exports_test.dart",
     tags = [
@@ -373,14 +400,8 @@ dart_test(
     name = "actions_golden_test",
     size = "small",
     srcs = ["actions_golden.dart"],
-    args = ["$(rlocationpath :actions_golden_test.dart)"],
-    data = ["actions_golden_test.dart"],
-    local = True,
+    data = glob(["testdata/*.json"]),
     main = "actions_golden_test.dart",
-    tags = [
-        "external",
-        "no-sandbox",
-    ],
     deps = [
         "//dart/runfiles",
         "@ext_pub_deps//:test",
