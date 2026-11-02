@@ -155,6 +155,7 @@ void _checkStrictSetup(String block) {
   _expectContains(block, 'runs-on: ubuntu-latest', 'strict job runner');
   _expectContains(block, 'timeout-minutes:', 'strict job timeout');
   _expectContains(block, 'actions/checkout@', 'strict job checkout');
+  _checkUserns(block, 'strict job');
   _expectContains(
     block,
     'for tool in curl python3 find cp tar unzip',
@@ -166,6 +167,24 @@ void _checkStrictSetup(String block) {
     block,
     r'--repo_env=PATH="$SHIM_DIR:/usr/bin:/bin"',
     'the shim directory comes first on the repository PATH',
+  );
+}
+
+/// Checks [text] enables unprofiled user namespaces before starting Bazel.
+void _checkUserns(String text, String scope) {
+  const sysctl = 'kernel.apparmor_restrict_unprivileged_userns=0';
+  _expectContains(text, sysctl, '$scope enables Ubuntu user namespaces');
+  _expectNotContains(
+    text,
+    'if ! unshare',
+    '$scope must not gate sysctl behind profiled /usr/bin/unshare',
+  );
+  _expectContains(text, 'userns_probe', '$scope probes via unprofiled binary');
+  _expectContains(text, '--mount-proc', '$scope verifies /proc mount in pidns');
+  expect(
+    text.indexOf(sysctl),
+    lessThan(text.indexOf('bazel build')),
+    reason: '$scope must enable user namespaces before starting Bazel',
   );
 }
 
@@ -307,6 +326,7 @@ void _checkSelfTest(String workflow) {
         'working-directory: e2e/hermetic_canary',
         'the canary step runs in its workspace',
       );
+      _checkUserns(step, 'canary self-test');
       _expectContains(
         step,
         'bazel build //:canary ||',
@@ -319,8 +339,13 @@ void _checkSelfTest(String workflow) {
       );
       _expectContains(
         step,
-        '--output_base=',
-        'the self-test isolates its base',
+        r'--output_base="$RUNNER_TEMP/hermetic_canary_strict"',
+        'the self-test isolates its base under RUNNER_TEMP',
+      );
+      _expectNotContains(
+        step,
+        '--output_base=/tmp',
+        'output_base must not sit under /tmp, which -w /tmp bind-mounts over',
       );
       _expectContains(
         step,
