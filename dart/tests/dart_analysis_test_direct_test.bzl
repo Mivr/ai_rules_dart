@@ -10,18 +10,19 @@ rule registers is the executable's symlink to the do-nothing tool.
 load("@rules_testing//lib:analysis_test.bzl", "analysis_test")
 load("@rules_testing//lib:truth.bzl", "matching")
 load("//dart:defs.bzl", "dart_analysis_test", "dart_library")
-load(":truth_helpers.bzl", "expect_executable_symlink")
+load(":truth_helpers.bzl", "WINDOWS_ATTR", "exe_extension", "expect_executable_symlink")
 
 def _dart_analysis_test_test(env, target):
     """Asserts the providers and the executable symlink of `dart_analysis_test`."""
+    ext = exe_extension(env)
     subject = env.expect.that_target(target)
-    subject.executable().short_path_equals("dart/tests/dart_analysis_test_direct_subject")
+    subject.executable().short_path_equals("dart/tests/dart_analysis_test_direct_subject" + ext)
     subject.runfiles().contains_at_least_predicates([
         matching.str_endswith("dart_analysis_test_direct_library.dart_analyze.analyzed"),
         matching.str_endswith("dart_analysis_test_direct_library.dart_analyze.formatted"),
-        matching.str_endswith("dart/private/tools/noop"),
+        matching.str_endswith("dart/private/tools/noop" + ext),
     ])
-    expect_executable_symlink(env, target, "*dart/private/tools/noop")
+    expect_executable_symlink(env, target, "*dart/private/tools/noop" + ext)
 
 def dart_analysis_test_direct_test_suite(name):
     """Declares the direct test of `dart_analysis_test`.
@@ -44,6 +45,7 @@ def dart_analysis_test_direct_test_suite(name):
     analysis_test(
         name = name + "_test",
         attr_values = {"size": "small"},
+        attrs = WINDOWS_ATTR,
         impl = _dart_analysis_test_test,
         target = ":" + name + "_subject",
     )

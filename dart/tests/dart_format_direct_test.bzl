@@ -12,7 +12,14 @@ reads).
 load("@rules_testing//lib:analysis_test.bzl", "analysis_test")
 load("@rules_testing//lib:truth.bzl", "matching")
 load("//dart:defs.bzl", "dart_format")
-load(":truth_helpers.bzl", "action_of", "expect_executable_symlink", "expect_inputs")
+load(
+    ":truth_helpers.bzl",
+    "WINDOWS_ATTR",
+    "action_of",
+    "exe_extension",
+    "expect_executable_symlink",
+    "expect_inputs",
+)
 
 def _expect_config_file(env, target):
     """Asserts the runner configuration the output group and the environment name."""
@@ -29,15 +36,16 @@ def _expect_config_file(env, target):
 
 def _dart_format_test(env, target):
     """Asserts the providers and the actions of `dart_format`."""
+    ext = exe_extension(env)
     subject = env.expect.that_target(target)
-    subject.executable().short_path_equals("dart/tests/dart_format_direct_subject")
+    subject.executable().short_path_equals("dart/tests/dart_format_direct_subject" + ext)
     subject.runfiles().contains_at_least_predicates([
         matching.str_endswith("dart/tests/dart_format_direct_subject.format_config.json"),
-        matching.str_endswith("dart/private/tools/format_writer"),
+        matching.str_endswith("dart/private/tools/format_writer" + ext),
     ])
     subject.provider(RunEnvironmentInfo).environment().keys().contains_exactly(["DART_FORMAT_CONFIG"])
     _expect_config_file(env, target)
-    expect_executable_symlink(env, target, "*dart/private/tools/format_writer")
+    expect_executable_symlink(env, target, "*dart/private/tools/format_writer" + ext)
     copy = action_of(env, target, "DartCopyTree")
     copy.argv().contains_at_least(["--workspace", "--file"])
     copy.argv().contains_predicate(matching.str_endswith("dart_format_direct_subject.proj/src"))
@@ -57,6 +65,7 @@ def dart_format_direct_test_suite(name):
     analysis_test(
         name = name + "_test",
         attr_values = {"size": "small"},
+        attrs = WINDOWS_ATTR,
         impl = _dart_format_test,
         target = ":" + name + "_subject",
     )

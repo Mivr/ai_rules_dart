@@ -10,12 +10,13 @@ action the rule registers is the executable's symlink to the applier tool.
 load("@rules_testing//lib:analysis_test.bzl", "analysis_test")
 load("@rules_testing//lib:truth.bzl", "matching")
 load("//dart:defs.bzl", "dart_fix", "dart_library")
-load(":truth_helpers.bzl", "expect_executable_symlink")
+load(":truth_helpers.bzl", "WINDOWS_ATTR", "exe_extension", "expect_executable_symlink")
 
 def _dart_fix_test(env, target):
     """Asserts the providers and the executable symlink of `dart_fix`."""
+    ext = exe_extension(env)
     subject = env.expect.that_target(target)
-    subject.executable().short_path_equals("dart/tests/dart_fix_direct_subject")
+    subject.executable().short_path_equals("dart/tests/dart_fix_direct_subject" + ext)
     subject.output_group("dart_fix_fixes").contains_predicate(matching.file_basename_contains(".dart_analyze.fixes"))
     subject.output_group("dart_fix_manifest").contains_predicate(
         matching.file_basename_contains(".dart_analyze.fix_manifest.json"),
@@ -23,13 +24,13 @@ def _dart_fix_test(env, target):
     subject.runfiles().contains_at_least_predicates([
         matching.str_endswith(".dart_analyze.fixes"),
         matching.str_endswith(".dart_analyze.fix_manifest.json"),
-        matching.str_endswith("dart/private/tools/fix_applier"),
+        matching.str_endswith("dart/private/tools/fix_applier" + ext),
     ])
     environment = subject.provider(RunEnvironmentInfo).environment()
     environment.keys().contains_exactly(["DART_FIX_FIXES", "DART_FIX_MANIFEST"])
     env.expect.that_str(target[RunEnvironmentInfo].environment["DART_FIX_FIXES"]).contains(".dart_analyze.fixes")
     env.expect.that_str(target[RunEnvironmentInfo].environment["DART_FIX_MANIFEST"]).contains(".fix_manifest.json")
-    expect_executable_symlink(env, target, "*dart/private/tools/fix_applier")
+    expect_executable_symlink(env, target, "*dart/private/tools/fix_applier" + ext)
 
 def dart_fix_direct_test_suite(name):
     """Declares the direct test of `dart_fix`.
@@ -52,6 +53,7 @@ def dart_fix_direct_test_suite(name):
     analysis_test(
         name = name + "_test",
         attr_values = {"size": "small"},
+        attrs = WINDOWS_ATTR,
         impl = _dart_fix_test,
         target = ":" + name + "_subject",
     )
