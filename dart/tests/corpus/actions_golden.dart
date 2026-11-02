@@ -46,6 +46,14 @@ final class GoldenRunner {
     if (queryError != null) {
       return GoldenResult(2, error: queryError);
     }
+    if (parsedQuery.value!['actions'] is! List) {
+      return GoldenResult(
+        2,
+        error:
+            'actions_golden: malformed jsonproto in ${text.source!}: '
+            '"actions" is not a list.\n',
+      );
+    }
     final List<Map<String, Object?>> current = normaliseAquery(
       parsedQuery.value!,
     );
@@ -247,7 +255,8 @@ _ActionsResult _parseGolden(String text, String path) {
 
 /// Replaces configuration-specific output directories with stable names.
 String normalisePath(String value) {
-  String out = value.replaceAll(RegExp('bazel-out/[^/]+/bin'), '{bindir}');
+  String out = value.replaceAll(RegExp(r'\+dart\+dart_[^/]+'), '{dart-sdk}');
+  out = out.replaceAll(RegExp('bazel-out/[^/]+/bin'), '{bindir}');
   out = out.replaceAll(RegExp('bazel-out/[^/]+/genfiles'), '{genfilesdir}');
   out = out.replaceAll(RegExp('bazel-out/[^/]+/testlogs'), '{testlogsdir}');
   return out.replaceAll(RegExp('bazel-out/[^/]+'), '{bazel-out}');
@@ -272,9 +281,25 @@ List<Map<String, Object?>> normaliseAquery(Map<String, Object?> query) {
 String encodeGolden(List<Map<String, Object?>> actions) {
   if (actions.isEmpty) return '{\n  "actions": []\n}\n';
   final List<String> lines = [
-    for (final action in actions) '    ${jsonEncode(_sorted(action))}',
+    for (final action in actions) '    ${_inline(action)}',
   ];
   return '{\n  "actions": [\n${lines.join(',\n')}\n  ]\n}\n';
+}
+
+String _inline(Object? value) {
+  if (value is Map) {
+    final List<String> keys = value.keys.map((key) => '$key').toList()..sort();
+    if (keys.isEmpty) return '{}';
+    final List<String> fields = [
+      for (final key in keys) '${jsonEncode(key)}: ${_inline(value[key])}',
+    ];
+    return '{ ${fields.join(', ')} }';
+  }
+  if (value is List) {
+    if (value.isEmpty) return '[]';
+    return '[${value.map(_inline).join(', ')}]';
+  }
+  return jsonEncode(value);
 }
 
 int _compareActions(Map<String, Object?> a, Map<String, Object?> b) {

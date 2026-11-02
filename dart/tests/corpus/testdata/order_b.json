@@ -33,29 +33,17 @@
     {
       "targetId": 1,
       "mnemonic": "DartCopyTree",
-      "arguments": [
-        "bazel-out/k8-opt-exec/foo/tool"
-      ],
-      "inputDepSetIds": [
-        1
-      ],
-      "outputIds": [
-        4
-      ],
+      "arguments": ["bazel-out/k8-opt-exec/foo/tool"],
+      "inputDepSetIds": [1],
+      "outputIds": [4],
       "primaryOutputId": 4
     },
     {
       "targetId": 2,
       "mnemonic": "DartTest",
-      "arguments": [
-        "bazel-out/k8-fastbuild/testlogs/pkg/test.log"
-      ],
-      "inputDepSetIds": [
-        1
-      ],
-      "outputIds": [
-        3
-      ],
+      "arguments": ["bazel-out/k8-fastbuild/testlogs/pkg/test.log"],
+      "inputDepSetIds": [1],
+      "outputIds": [3],
       "primaryOutputId": 3,
       "environmentVariables": [
         {
@@ -72,15 +60,9 @@
       "targetId": 1,
       "aspect": "//dart:analyze.bzl%dart_analyze",
       "mnemonic": "DartAnalyze",
-      "arguments": [
-        "bazel-out/k8-fastbuild/genfiles/pkg/a.txt"
-      ],
-      "inputDepSetIds": [
-        1
-      ],
-      "outputIds": [
-        2
-      ],
+      "arguments": ["bazel-out/k8-fastbuild/genfiles/pkg/a.txt"],
+      "inputDepSetIds": [1],
+      "outputIds": [2],
       "primaryOutputId": 2
     },
     {
@@ -92,12 +74,8 @@
         "--output",
         "bazel-out/k8-fastbuild/bin/pkg/main.o"
       ],
-      "inputDepSetIds": [
-        1
-      ],
-      "outputIds": [
-        1
-      ],
+      "inputDepSetIds": [1],
+      "outputIds": [1],
       "primaryOutputId": 1
     }
   ],
@@ -114,11 +92,7 @@
   "depSetOfFiles": [
     {
       "id": 1,
-      "directArtifactIds": [
-        5,
-        6,
-        7
-      ]
+      "directArtifactIds": [5, 6, 7]
     }
   ],
   "pathFragments": [

@@ -49,6 +49,13 @@ void main(List<String> args) {
         '--out={bindir}/a',
       );
     });
+
+    test('replaces the host-specific SDK repository', () {
+      expect(
+        normalisePath('external/+dart+dart_linux-x64/bin/dart'),
+        'external/{dart-sdk}/bin/dart',
+      );
+    });
   });
 
   test('normalises arguments, inputs and outputs from the fixture', () {
@@ -72,7 +79,7 @@ void main(List<String> args) {
   test('writes one action per line', () {
     final List<String> lines = goldenOf('base.json').split('\n');
     final Iterable<String> actions = lines.where(
-      (line) => line.trimLeft().startsWith('{"'),
+      (line) => line.trimLeft().startsWith('{ '),
     );
     expect(actions, hasLength(4));
   });

@@ -52,15 +52,16 @@ load("//dart/pub:defs.bzl", "parse_semver")
 
 # `parse_semver` and `sqlite3_code_asset` are functions, not rules: calling
 # them is how the corpus instantiates them. They declare no target.
-_SEMVER = parse_semver("1.0.0")
-_SQLITE3_ASSET = sqlite3_code_asset()
+parse_semver("1.0.0")
+
+sqlite3_code_asset()
 
 # --- the package facts, declared once ---------------------------------------
 
 dart_package_metadata(
     name = "pkg",
-    language_version = "3.11",
     package_name = "corpus",
+    language_version = "3.11",
 )
 
 # --- library, binary, test, source set, member ------------------------------
@@ -108,9 +109,9 @@ dart_library(
 
 dart_package_member(
     name = "member",
-    language_version = "3.11",
     package_name = "corpus_member",
     srcs = ["lib/member.dart"],
+    language_version = "3.11",
 )
 
 dart_library(
@@ -174,26 +175,26 @@ dart_binary(
 
 dart_codegen(
     name = "model_codegen",
+    src = "lib/codegen_fixture.dart",
     generator_bin = ":gen_shim",
     output_suffixes = [".g.dart"],
     package = ":pkg",
-    src = "lib/codegen_fixture.dart",
 )
 
 dart_aggregate_codegen(
     name = "aggregate_codegen",
+    srcs = ["lib/aggregate_fixture.dart"],
     generator_bin = ":gen_shim",
     outputs = ["lib/aggregate_fixture.agg.dart"],
     package = ":pkg",
-    srcs = ["lib/aggregate_fixture.dart"],
 )
 
 dart_sqlcodegen(
     name = "sql_codegen",
+    src = "lib/sql_fixture.drift",
     generator_bin = ":gen_shim",
     output_suffixes = [".drift.dart"],
     package = ":pkg",
-    src = "lib/sql_fixture.drift",
 )
 
 # --- code asset and link hook ----------------------------------------------
@@ -212,134 +213,134 @@ dart_code_asset(
 
 dart_link_hook(
     name = "link_hook",
-    deps = [":corpus_lib"],
     recorded_uses = "uses.json",
+    deps = [":corpus_lib"],
 )
 
 # --- extension macros -------------------------------------------------------
 
 shared_part_library(
     name = "shared_part",
+    package_name = "corpus",
     srcs = ["lib/shared_part_fixture.dart"],
     annotation_dep = "@ext_pub_deps//:json_annotation",
     language_version = "3.11",
-    package_name = "corpus",
     part_suffix = ".json_serializable.g.part",
     shim = "@rules_dart//dart/ext/json_serializable:shim",
 )
 
 library_builder_library(
     name = "builder_library",
+    package_name = "corpus",
     srcs = ["lib/builder_fixture.dart"],
     annotation_dep = "@ext_pub_deps//:freezed_annotation",
     language_version = "3.11",
     output_suffixes = [".freezed.dart"],
-    package_name = "corpus",
     shim = "@rules_dart//dart/ext/freezed:shim",
 )
 
 built_value_library(
     name = "built_value",
+    package_name = "corpus",
     srcs = ["lib/built_value_fixture.dart"],
     annotation_dep = "@ext_pub_deps//:built_value",
     language_version = "3.11",
-    package_name = "corpus",
 )
 
 copy_with_library(
     name = "copy_with",
+    package_name = "corpus",
     srcs = ["lib/copy_with_fixture.dart"],
     annotation_dep = "@ext_pub_deps//:copy_with_extension",
     language_version = "3.11",
-    package_name = "corpus",
 )
 
 drift_library(
     name = "drift",
+    package_name = "corpus",
     srcs = ["lib/drift_fixture.dart"],
     annotation_dep = "@ext_pub_deps//:drift",
     language_version = "3.11",
-    package_name = "corpus",
 )
 
 freezed_library(
     name = "freezed",
+    package_name = "corpus",
     srcs = ["lib/freezed_fixture.dart"],
     annotation_dep = "@ext_pub_deps//:freezed_annotation",
     language_version = "3.11",
-    package_name = "corpus",
 )
 
 go_router_library(
     name = "go_router",
+    package_name = "corpus",
     srcs = ["lib/go_router_fixture.dart"],
     annotation_dep = "@ext_pub_deps//:go_router_builder",
     language_version = "3.11",
-    package_name = "corpus",
 )
 
 json_serializable_library(
     name = "json_serializable",
+    package_name = "corpus",
     srcs = ["lib/json_serializable_fixture.dart"],
     annotation_dep = "@ext_pub_deps//:json_annotation",
     language_version = "3.11",
-    package_name = "corpus",
 )
 
 mockito_library(
     name = "mockito",
+    package_name = "corpus",
     srcs = ["lib/mockito_fixture.dart"],
     annotation_dep = "@ext_pub_deps//:mockito",
     language_version = "3.11",
-    package_name = "corpus",
 )
 
 stacked_router_library(
     name = "stacked_router",
+    package_name = "corpus",
     srcs = ["lib/stacked_router_fixture.dart"],
     annotation_dep = "@ext_pub_deps//:stacked_generator",
     language_version = "3.11",
-    package_name = "corpus",
 )
 
 stacked_locator_library(
     name = "stacked_locator",
+    package_name = "corpus",
     srcs = ["lib/stacked_locator_fixture.dart"],
     annotation_dep = "@ext_pub_deps//:stacked_generator",
     language_version = "3.11",
-    package_name = "corpus",
 )
 
 stacked_form_library(
     name = "stacked_form",
+    package_name = "corpus",
     srcs = ["lib/stacked_form_fixture.dart"],
     annotation_dep = "@ext_pub_deps//:stacked_generator",
     language_version = "3.11",
-    package_name = "corpus",
 )
 
 stacked_logger_library(
     name = "stacked_logger",
+    package_name = "corpus",
     srcs = ["lib/stacked_logger_fixture.dart"],
     annotation_dep = "@ext_pub_deps//:stacked_generator",
     language_version = "3.11",
-    package_name = "corpus",
 )
 
 stacked_dialog_library(
     name = "stacked_dialog",
+    package_name = "corpus",
     srcs = ["lib/stacked_dialog_fixture.dart"],
     annotation_dep = "@ext_pub_deps//:stacked_generator",
     language_version = "3.11",
-    package_name = "corpus",
 )
 
 stacked_bottomsheet_library(
     name = "stacked_bottomsheet",
+    package_name = "corpus",
     srcs = ["lib/stacked_bottomsheet_fixture.dart"],
     annotation_dep = "@ext_pub_deps//:stacked_generator",
     language_version = "3.11",
-    package_name = "corpus",
 )
 
 # --- the golden updater and its tests --------------------------------------
@@ -371,11 +372,11 @@ dart_test(
 dart_test(
     name = "actions_golden_test",
     size = "small",
+    srcs = ["actions_golden.dart"],
     args = ["$(rlocationpath :actions_golden_test.dart)"],
     data = ["actions_golden_test.dart"],
     local = True,
     main = "actions_golden_test.dart",
-    srcs = ["actions_golden.dart"],
     tags = [
         "external",
         "no-sandbox",
