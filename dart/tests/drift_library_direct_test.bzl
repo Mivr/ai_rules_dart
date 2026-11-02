@@ -10,21 +10,24 @@ step.
 
 load("@rules_testing//lib:analysis_test.bzl", "analysis_test")
 load("//dart/ext/drift:defs.bzl", "drift_library")
-load(":ext_direct_helpers.bzl", "ANNOTATIONS", "ANNOTATION_INPUT", "LANGUAGE_VERSION", "PACKAGE", "expect_generator", "expect_library", "generator_spec", "shared_part_targets", "source_of")
+load(":ext_direct_helpers.bzl", "LANGUAGE_VERSION", "PACKAGE", "expect_generator", "expect_library", "generator_spec", "shared_part_targets", "source_of")
 
+# The drift shims resolve `package:drift`, so a stand-in annotation library will not do.
+_ANNOTATIONS = "@ext_pub_deps//:drift"
+_ANNOTATION_INPUT = "*dart_pub__drift/lib/drift.dart"
 _SCHEMA = "lib/ext/drift_schema.drift"
 _SOURCE = "lib/ext/drift.dart"
 
 def _expect_prep(env, prep):
     """Asserts the schema's preprocessing stage, a `dart_sqlcodegen` target."""
     outputs = ["lib/ext/drift_schema.drift_prep.json", "lib/ext/drift_schema.expr.temp.dart"]
-    spec = generator_spec(_SCHEMA, outputs, "*drift/shim_prep*", "DartSqlCodegen", [ANNOTATION_INPUT])
+    spec = generator_spec(_SCHEMA, outputs, "*drift/shim_prep*", "DartSqlCodegen", [_ANNOTATION_INPUT])
     expect_generator(env, prep, spec)
 
 def _expect_shard(env, part):
     """Asserts the shard reads the schema stages' outputs besides its own source."""
     reads = [
-        ANNOTATION_INPUT,
+        _ANNOTATION_INPUT,
         "*" + _SCHEMA,
         "*lib/ext/drift_schema.drift_prep.json",
         "*lib/ext/drift_schema.drift.drift_elements.json",
@@ -33,7 +36,7 @@ def _expect_shard(env, part):
 
 def _drift_library_test(env, targets):
     """Asserts the providers and the codegen actions `drift_library` declares."""
-    expect_library(env, targets.library, "drift", [".g.dart"])
+    expect_library(env, targets.library, "drift", [".g.dart"], "drift")
     _expect_prep(env, targets.prep)
     _expect_shard(env, targets.part)
     combined = generator_spec(_SOURCE, ["lib/ext/drift.g.dart"], "*combining_shim/bin*", inputs = ["*lib/ext/drift.drift.g.part"])
@@ -48,7 +51,7 @@ def drift_library_direct_test_suite(name):
     drift_library(
         name = name + "_subject",
         srcs = [source_of("drift")],
-        annotation_dep = ANNOTATIONS,
+        annotation_dep = _ANNOTATIONS,
         drift_srcs = [":" + _SCHEMA],
         language_version = LANGUAGE_VERSION,
         package_name = PACKAGE,
