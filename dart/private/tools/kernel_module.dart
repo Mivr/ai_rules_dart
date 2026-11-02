@@ -242,7 +242,9 @@ List<String> kernelWorkerArgs(List<String> args) {
         break;
       }
     }
-    if (!matchedEq) out.add(arg);
+    if (!matchedEq) {
+      out.add(arg);
+    }
   }
   return out;
 }
@@ -300,7 +302,9 @@ Future<void> main(List<String> argv) async {
     log,
     const [],
   );
-  if (code != 0) stderr.write(log);
+  if (code != 0) {
+    stderr.write(log);
+  }
   await stderr.flush();
   exit(code);
 }
@@ -515,7 +519,9 @@ void _parseBaseArg(List<String> rawArgs, int i, _ModuleOptions options) {
 /// The worker input paths and their digests, or nulls when [inputs] is empty.
 ({Set<String>? workerInputPaths, Map<String, Uint8List>? inputDigests})
 _decodeWorkerInputs(List<Uint8List> inputs) {
-  if (inputs.isEmpty) return (workerInputPaths: null, inputDigests: null);
+  if (inputs.isEmpty) {
+    return (workerInputPaths: null, inputDigests: null);
+  }
   final paths = <String>{};
   final digests = <String, Uint8List>{};
   for (final raw in inputs) {
@@ -524,7 +530,9 @@ _decodeWorkerInputs(List<Uint8List> inputs) {
     if (rawPath.isEmpty) continue;
     if (_isNormalizedRelative(rawPath)) {
       paths.add(rawPath);
-      if (decoded.digest.isNotEmpty) digests[rawPath] = decoded.digest;
+      if (decoded.digest.isNotEmpty) {
+        digests[rawPath] = decoded.digest;
+      }
     } else {
       paths.add(rawPath);
       final norm = _normalize(rawPath);
@@ -621,7 +629,9 @@ _compileAndVerify(
 Future<void> _cleanIsolated(_IsolatedRoot? isolated) async {
   if (isolated == null) return;
   final dir = Directory(_filePathOf(isolated.rootDir));
-  if (await dir.exists()) await dir.delete(recursive: true);
+  if (await dir.exists()) {
+    await dir.delete(recursive: true);
+  }
 }
 
 /// The VM libraries for the module's platform and extra libraries.
@@ -1291,7 +1301,9 @@ class _ModuleBuild {
     if (inputs.isNotEmpty || compiler is _Persistent) {
       for (final node in summaryNodes) {
         final encoded = node.encodedInput;
-        if (encoded != null) summaryInputs.add(encoded);
+        if (encoded != null) {
+          summaryInputs.add(encoded);
+        }
       }
     }
     final sccBase = staged != null
@@ -1519,6 +1531,24 @@ class _ParsedIndex {
   final List<String> excluded;
 }
 
+_ParsedIndex _decodeParsedIndex(String text) {
+  final json = jsonDecode(text) as Map<String, dynamic>;
+  return _ParsedIndex(
+    sccs: [
+      for (final Map<String, dynamic> scc
+          in (json['sccs'] as List).cast<Map<String, dynamic>>())
+        _IndexedScc(
+          dill: scc['dill'] as String,
+          defines: (scc['defines'] as List).cast<String>(),
+          imports: (scc['imports'] as List).cast<String>(),
+        ),
+    ],
+    excluded: json['excluded'] is List
+        ? (json['excluded'] as List).cast<String>()
+        : const <String>[],
+  );
+}
+
 class _ModuleCacheEntry<T> {
   _ModuleCacheEntry({
     required this.value,
@@ -1710,28 +1740,31 @@ class KernelModuleCache {
     }
   }
 
-  Future<_ModuleCacheEntry<Map<String, dynamic>>> _librariesEntryOf(
+  Future<_ModuleCacheEntry<T>> _cachedEntryOf<T>(
+    Map<String, _ModuleCacheEntry<T>> store,
+    void Function(int delta) addBytes,
     String path,
     Map<String, Uint8List>? inputDigests,
+    T Function(Uint8List bytes) decode,
   ) async {
-    final key = normalizePath(path);
-    final digest = _lookupDigest(path, inputDigests);
-    final hasDigest = digest != null && digest.isNotEmpty;
-    final cached = _librariesCache.remove(key);
+    final String key = normalizePath(path);
+    final Uint8List? digest = _lookupDigest(path, inputDigests);
+    final bool hasDigest = digest != null && digest.isNotEmpty;
+    final _ModuleCacheEntry<T>? cached = store.remove(key);
     if (cached != null) {
       if (hasDigest &&
           cached.inputDigest != null &&
           _sameBytes(digest, cached.inputDigest!)) {
         cached.tick = ++_clock;
-        _librariesCache[key] = cached;
+        store[key] = cached;
         return cached;
       }
-      _librariesBytesTotal -= cached.byteSize;
+      addBytes(-cached.byteSize);
     }
 
-    final bytes = await File(path).readAsBytes();
-    final entryBytes = bytes.length;
-    final contentSha256 = hasDigest ? null : sha256Of(bytes);
+    final Uint8List bytes = await File(path).readAsBytes();
+    final int entryBytes = bytes.length;
+    final Uint8List? contentSha256 = hasDigest ? null : sha256Of(bytes);
     if (!hasDigest &&
         cached != null &&
         cached.byteSize == entryBytes &&
@@ -1740,15 +1773,14 @@ class KernelModuleCache {
       if (entryBytes <= maxCacheBytes) {
         _evictForBudget(entryBytes);
         cached.tick = ++_clock;
-        _librariesCache[key] = cached;
-        _librariesBytesTotal += entryBytes;
+        store[key] = cached;
+        addBytes(entryBytes);
       }
       return cached;
     }
 
-    final parsed = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
-    final entry = _ModuleCacheEntry(
-      value: parsed,
+    final entry = _ModuleCacheEntry<T>(
+      value: decode(bytes),
       inputDigest: hasDigest ? _unpin(digest) : null,
       contentSha256: contentSha256,
       byteSize: entryBytes,
@@ -1756,11 +1788,22 @@ class KernelModuleCache {
     );
     if (entryBytes <= maxCacheBytes) {
       _evictForBudget(entryBytes);
-      _librariesCache[key] = entry;
-      _librariesBytesTotal += entryBytes;
+      store[key] = entry;
+      addBytes(entryBytes);
     }
     return entry;
   }
+
+  Future<_ModuleCacheEntry<Map<String, dynamic>>> _librariesEntryOf(
+    String path,
+    Map<String, Uint8List>? inputDigests,
+  ) => _cachedEntryOf(
+    _librariesCache,
+    (delta) => _librariesBytesTotal += delta,
+    path,
+    inputDigests,
+    (bytes) => jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>,
+  );
 
   Future<Map<String, dynamic>> librariesJsonOf(
     String path,
@@ -1772,133 +1815,52 @@ class KernelModuleCache {
     Map<String, Uint8List>? inputDigests, {
     required String platform,
   }) async {
-    final entry = await _librariesEntryOf(path, inputDigests);
-    final map = entry.vmByPlatform ??= <String, Set<String>>{};
+    final _ModuleCacheEntry<Map<String, dynamic>> entry =
+        await _librariesEntryOf(path, inputDigests);
+    final Map<String, Set<String>> map = entry.vmByPlatform ??=
+        <String, Set<String>>{};
     return map[platform] ??= vmLibraries(entry.value, platform: platform);
   }
 
   Future<List<String>> excludedLinesOf(
     String path,
     Map<String, Uint8List>? inputDigests,
-  ) async {
-    final key = normalizePath(path);
-    final digest = _lookupDigest(path, inputDigests);
-    final hasDigest = digest != null && digest.isNotEmpty;
-    final cached = _excludedCache.remove(key);
-    if (cached != null) {
-      if (hasDigest &&
-          cached.inputDigest != null &&
-          _sameBytes(digest, cached.inputDigest!)) {
-        cached.tick = ++_clock;
-        _excludedCache[key] = cached;
-        return cached.value;
-      }
-      _excludedBytesTotal -= cached.byteSize;
-    }
+  ) async => (await _cachedEntryOf(
+    _excludedCache,
+    (delta) => _excludedBytesTotal += delta,
+    path,
+    inputDigests,
+    _decodeExcludedLines,
+  )).value;
 
-    final bytes = await File(path).readAsBytes();
-    final entryBytes = bytes.length;
-    final contentSha256 = hasDigest ? null : sha256Of(bytes);
-    if (!hasDigest &&
-        cached != null &&
-        cached.byteSize == entryBytes &&
-        cached.contentSha256 != null &&
-        _sameBytes(contentSha256!, cached.contentSha256!)) {
-      if (entryBytes <= maxCacheBytes) {
-        _evictForBudget(entryBytes);
-        cached.tick = ++_clock;
-        _excludedCache[key] = cached;
-        _excludedBytesTotal += entryBytes;
-      }
-      return cached.value;
-    }
-
-    final text = utf8.decode(bytes);
+  static List<String> _decodeExcludedLines(Uint8List bytes) {
     final uris = <String>[];
-    for (final line in const LineSplitter().convert(text)) {
+    for (final String line in const LineSplitter().convert(
+      utf8.decode(bytes),
+    )) {
       if (line.isEmpty || line.codeUnitAt(0) == 0x23) continue;
-      final tab = line.indexOf('\t');
+      final int tab = line.indexOf('\t');
       uris.add(tab < 0 ? line : line.substring(0, tab));
     }
-    final stored = uris.isEmpty ? const <String>[] : uris;
-    if (entryBytes <= maxCacheBytes) {
-      _evictForBudget(entryBytes);
-      _excludedCache[key] = _ModuleCacheEntry(
-        value: stored,
-        inputDigest: hasDigest ? _unpin(digest) : null,
-        contentSha256: contentSha256,
-        byteSize: entryBytes,
-        tick: ++_clock,
-      );
-      _excludedBytesTotal += entryBytes;
-    }
-    return stored;
+    return uris.isEmpty ? const <String>[] : uris;
   }
 
   Future<_ParsedIndex?> _indexOf(
     String dir,
     Map<String, Uint8List>? inputDigests,
   ) async {
-    final indexPath = '$dir/$_indexName';
-    final key = normalizePath(indexPath);
-    final digest = _lookupDigest(indexPath, inputDigests);
-    final hasDigest = digest != null && digest.isNotEmpty;
-    final cached = _indexCache.remove(key);
-    if (cached != null) {
-      if (hasDigest &&
-          cached.inputDigest != null &&
-          _sameBytes(digest, cached.inputDigest!)) {
-        cached.tick = ++_clock;
-        _indexCache[key] = cached;
-        return cached.value;
-      }
-      _indexBytesTotal -= cached.byteSize;
+    try {
+      return (await _cachedEntryOf(
+        _indexCache,
+        (delta) => _indexBytesTotal += delta,
+        '$dir/$_indexName',
+        inputDigests,
+        (bytes) => _decodeParsedIndex(utf8.decode(bytes)),
+      )).value;
+    } on PathNotFoundException {
+      // A missing module index returns null so `_readIndex` reports why.
+      return null;
     }
-
-    final file = File(indexPath);
-    if (!await file.exists()) return null;
-    final bytes = await file.readAsBytes();
-    final entryBytes = bytes.length;
-    final contentSha256 = hasDigest ? null : sha256Of(bytes);
-    if (!hasDigest &&
-        cached != null &&
-        cached.byteSize == entryBytes &&
-        cached.contentSha256 != null &&
-        _sameBytes(contentSha256!, cached.contentSha256!)) {
-      if (entryBytes <= maxCacheBytes) {
-        _evictForBudget(entryBytes);
-        cached.tick = ++_clock;
-        _indexCache[key] = cached;
-        _indexBytesTotal += entryBytes;
-      }
-      return cached.value;
-    }
-
-    final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
-    final sccs = [
-      for (final scc in (json['sccs'] as List).cast<Map<String, dynamic>>())
-        _IndexedScc(
-          dill: scc['dill'] as String,
-          defines: (scc['defines'] as List).cast<String>(),
-          imports: (scc['imports'] as List).cast<String>(),
-        ),
-    ];
-    final excluded = json['excluded'] is List
-        ? (json['excluded'] as List).cast<String>()
-        : const <String>[];
-    final parsed = _ParsedIndex(sccs: sccs, excluded: excluded);
-    if (entryBytes <= maxCacheBytes) {
-      _evictForBudget(entryBytes);
-      _indexCache[key] = _ModuleCacheEntry(
-        value: parsed,
-        inputDigest: hasDigest ? _unpin(digest) : null,
-        contentSha256: contentSha256,
-        byteSize: entryBytes,
-        tick: ++_clock,
-      );
-      _indexBytesTotal += entryBytes;
-    }
-    return parsed;
   }
 }
 
@@ -2025,42 +1987,27 @@ Future<bool> _readIndex(
   KernelModuleCache? cache,
   Map<String, Uint8List>? inputDigests,
 }) async {
+  final _ParsedIndex? parsed;
   if (cache != null) {
-    final parsed = await cache._indexOf(dir, inputDigests);
-    if (parsed == null) {
-      log.writeln('kernel_module: $dir has no $_indexName.');
-      return false;
-    }
-    for (final scc in parsed.sccs) {
-      final node = _Node('$dir/${scc.dill}', scc.imports);
-      for (final key in scc.defines) {
-        graph.putIfAbsent(key, () => node);
-      }
-    }
-    if (stagedSources != null && parsed.excluded.isNotEmpty) {
-      for (final key in parsed.excluded) {
-        stagedSources.putIfAbsent(key, () => '$dir/sources');
-      }
-    }
-    return true;
+    parsed = await cache._indexOf(dir, inputDigests);
+  } else {
+    final file = File('$dir/$_indexName');
+    parsed = await file.exists()
+        ? _decodeParsedIndex(await file.readAsString())
+        : null;
   }
-  final file = File('$dir/$_indexName');
-  if (!await file.exists()) {
+  if (parsed == null) {
     log.writeln('kernel_module: $dir has no $_indexName.');
     return false;
   }
-  final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-  for (final scc in (json['sccs'] as List).cast<Map<String, dynamic>>()) {
-    final node = _Node(
-      '$dir/${scc['dill']}',
-      (scc['imports'] as List).cast<String>(),
-    );
-    for (final key in (scc['defines'] as List).cast<String>()) {
+  for (final _IndexedScc scc in parsed.sccs) {
+    final node = _Node('$dir/${scc.dill}', scc.imports);
+    for (final String key in scc.defines) {
       graph.putIfAbsent(key, () => node);
     }
   }
-  if (stagedSources != null && json['excluded'] is List) {
-    for (final key in (json['excluded'] as List).cast<String>()) {
+  if (stagedSources != null && parsed.excluded.isNotEmpty) {
+    for (final String key in parsed.excluded) {
       stagedSources.putIfAbsent(key, () => '$dir/sources');
     }
   }
@@ -2502,7 +2449,9 @@ Future<_ScannedImports> _scanImportDirectives(
     for (final ref in scan.refs) {
       if (!ref.isPart || ref.uri.startsWith('dart:')) continue;
       final target = _resolveUri(ref.uri, key, roots, multiRootPrefix);
-      if (target != null) (declaredPartsOf[key] ??= {}).add(target);
+      if (target != null) {
+        (declaredPartsOf[key] ??= {}).add(target);
+      }
     }
   }
   return (
@@ -3455,7 +3404,9 @@ class _Files {
   /// `--input-source`.
   bool isExplicitlyDeclaredInRoot(String root, String key) {
     final workerPaths = _workerInputPaths;
-    if (workerPaths != null) return _matchesPathSet(workerPaths, root, key);
+    if (workerPaths != null) {
+      return _matchesPathSet(workerPaths, root, key);
+    }
     if (_declaredRootPaths.isNotEmpty) {
       return _matchesPathSet(_declaredRootPaths, root, key);
     }
@@ -3466,7 +3417,9 @@ class _Files {
   bool isDeclaredInRoot(String root, String key) {
     if (!_declaredKeys.contains(key)) return false;
     final workerPaths = _workerInputPaths;
-    if (workerPaths != null) return _matchesPathSet(workerPaths, root, key);
+    if (workerPaths != null) {
+      return _matchesPathSet(workerPaths, root, key);
+    }
     if (_declaredRootPaths.isNotEmpty) {
       var anyRootDeclared = false;
       for (final candidateRoot in _roots) {
@@ -3515,7 +3468,9 @@ class _Files {
         if (!isDeclaredInRoot(root, key)) continue;
         firstDeclared ??= root;
         final path = _filePathOf(root == '.' ? key : '$root/$key');
-        if (File(path).existsSync()) return root;
+        if (File(path).existsSync()) {
+          return root;
+        }
       }
       return firstDeclared;
     }
@@ -3644,7 +3599,9 @@ Map<String, ({bool explicit, bool conflict})> _classifyMultiRoots(
       explicit = true;
     } else if (!files.isDeclaredInRoot(root, key)) {
       final f = File(root == '.' ? key : '$root/$key');
-      if (f.existsSync()) conflict = true;
+      if (f.existsSync()) {
+        conflict = true;
+      }
     }
   }
   return (explicit: explicit, conflict: conflict);
@@ -3828,7 +3785,9 @@ _stageIsolatedMultiRoot(
 }) async {
   final rootDir = '$output/.isolated_root';
   final dir = Directory(_filePathOf(rootDir));
-  if (await dir.exists()) await dir.delete(recursive: true);
+  if (await dir.exists()) {
+    await dir.delete(recursive: true);
+  }
   await dir.create(recursive: true);
   final stagedInputs = <Uint8List>[];
   final covered = <String, Uint8List>{};
@@ -3876,13 +3835,19 @@ void _addCovered(
     }
   }
   final normFile = normalizePath(origin);
-  if (normFile != origin) covered.putIfAbsent(normFile, () => digest);
+  if (normFile != origin) {
+    covered.putIfAbsent(normFile, () => digest);
+  }
   // Staged inputs are encoded as `file:///` URIs on Windows, while worker
   // requests may spell the same origin as a filesystem path (or vice versa).
   final uri = kernelWorkerUri(origin);
-  if (uri != origin) covered.putIfAbsent(uri, () => digest);
+  if (uri != origin) {
+    covered.putIfAbsent(uri, () => digest);
+  }
   final uriNorm = kernelWorkerUri(normFile);
-  if (uriNorm != normFile) covered.putIfAbsent(uriNorm, () => digest);
+  if (uriNorm != normFile) {
+    covered.putIfAbsent(uriNorm, () => digest);
+  }
 }
 
 /// The entries of [inputs] whose paths are not staged isolated origins in
@@ -3896,7 +3861,9 @@ List<Uint8List> _uncoveredInputs(
   final out = <Uint8List>[];
   for (final raw in inputs) {
     final path = _decodeInputView(raw).path;
-    if (path.isEmpty || _lookupDigest(path, covered) == null) out.add(raw);
+    if (path.isEmpty || _lookupDigest(path, covered) == null) {
+      out.add(raw);
+    }
   }
   return out;
 }
@@ -4189,102 +4156,23 @@ class _UsedInputsReporter implements ModuleCompiler {
 /// foreign-report tripwire fires on every precise report. The same holds on
 /// Windows, where the working directory may sit behind a symlink or junction:
 /// drive-letter paths resolve to one physical spelling too, with separators
-/// and drive-letter case normalized. Compares `--used-inputs` report lines
-/// with the paths this action passed to `kernel_worker`.
-/// Resolves a worker sandbox or test sandbox directory [dir] to the execution
-/// root it mirrors, so working-directory-relative paths resolve to the same
-/// physical spelling whether running in the execroot or under a sandbox.
-String _resolveSandboxExecroot(String dir) {
-  if (dir.contains('/execroot/')) return dir;
-  try {
-    for (final FileSystemEntity entity in Directory(
-      dir,
-    ).listSync(followLinks: false)) {
-      if (!FileSystemEntity.isLinkSync(entity.path)) continue;
-      try {
-        final String target = File(entity.path)
-            .resolveSymbolicLinksSync()
-            .replaceAll(r'\', '/');
-        final String name = entity.path.replaceAll(r'\', '/').split('/').last;
-        if (target.endsWith('/$name')) {
-          final String cand = target.substring(
-            0,
-            target.length - name.length - 1,
-          );
-          if (cand.isNotEmpty && cand != dir) return cand;
-        }
-      } on FileSystemException {
-        continue;
-      }
-    }
-  } on FileSystemException {
-    // Directory could not be listed: keep dir.
-  }
-  return dir;
-}
-
-String? _cachedCurrentWorkingDir;
-String? _cachedCanonicalWorkingDir;
-
-/// The canonical execution root of [Directory.current].
-String _canonicalWorkingDirectory() {
-  final String current = Directory.current.path;
-  if (current == _cachedCurrentWorkingDir &&
-      _cachedCanonicalWorkingDir != null) {
-    return _cachedCanonicalWorkingDir!;
-  }
-  final String rawCwd = current.replaceAll(r'\', '/');
-  final String resolved = _resolveActionPathSymlinks(
-    isWindowsDrivePath(rawCwd)
-        ? _normalizeDrivePath(_normalize(rawCwd))
-        : (rawCwd.startsWith('//')
-              ? '//$rawCwd'
-              : (rawCwd.startsWith('/')
-                    ? '/${_normalize(rawCwd)}'
-                    : _normalize(rawCwd))),
-  );
-  final String canonical = _resolveSandboxExecroot(resolved);
-  _cachedCurrentWorkingDir = current;
-  _cachedCanonicalWorkingDir = canonical;
-  return canonical;
-}
-
-/// A path or `file:` URI in one canonical physical spelling, with `.` and `..`
-/// resolved, symlinks traversed over the longest existing prefix, and any
-/// working-directory base resolved the same way.
-///
-/// On macOS, actions run under `/var`, which is a symlink to `/private/var`
-/// (`/var/...`). Without it the same file has two spellings and the
-/// foreign-report tripwire fires on every precise report. The same holds on
-/// Windows, where the working directory may sit behind a symlink or junction:
-/// drive-letter paths resolve to one physical spelling too, with separators
-/// and drive-letter case normalized. Compares `--used-inputs` report lines
-/// with the paths this action passed to `kernel_worker`.
+/// and drive-letter case normalized. Compares `--used-inputs` report lines,
+/// kernel source-table `file:` URIs, module roots, and paths this action passed
+/// to `kernel_worker` in one physical spelling.
 String _canonicalActionPath(String pathOrUri) {
   final String slash = _filePathOf(pathOrUri).replaceAll(r'\', '/');
-  if (isWindowsDrivePath(slash)) {
-    return _resolveActionPathSymlinks(_normalizeDrivePath(_normalize(slash)));
-  }
-  // `_normalize` drops empty segments, including the leading one: restore the
-  // root, so an absolute path stays absolute. A relative tmp or report path
-  // would otherwise resolve against whatever directory the caller runs in
-  // instead of the execution root.
-  if (slash.startsWith('/')) {
-    return _resolveActionPathSymlinks('/${_normalize(slash)}');
-  }
-  final String cwd = _canonicalWorkingDirectory();
-  final String joined = _normalize('$cwd/$slash');
-  // `_normalize` drops the leading segment too: a posix absolute working
-  // directory must stay absolute (a Windows drive letter survives as a segment,
-  // so only posix needs the root restored). Without this, a relative action
-  // path canonicalizes differently from the absolute `file://` URI the worker
-  // reports for the same file, and the foreign-report tripwire fires on every
-  // precise report.
-  // A UNC working directory keeps its double-slash root, so an absolute
-  // report spelling still matches a relative action path through it.
-  if (cwd.startsWith('//')) return _resolveActionPathSymlinks('//$joined');
-  if (cwd.startsWith('/')) return _resolveActionPathSymlinks('/$joined');
-  if (isWindowsDrivePath(cwd)) {
+  // Resolve relative action paths against `Directory.current` before applying
+  // `.`/`..` and symlink resolution, and restore leading `/` or UNC `//` roots
+  // that `_normalize` strips (a Windows drive letter survives as a segment).
+  // Without this, a relative action path canonicalizes differently from the
+  // absolute `file://` URI `kernel_worker` or a kernel source table records.
+  final raw = isWindowsDrivePath(slash) || slash.startsWith('/')
+      ? slash
+      : '${Directory.current.path.replaceAll(r'\', '/')}/$slash';
+  final String joined = _normalize(raw);
+  if (raw.startsWith('//')) return _resolveActionPathSymlinks('//$joined');
+  if (raw.startsWith('/')) return _resolveActionPathSymlinks('/$joined');
+  if (isWindowsDrivePath(raw)) {
     return _resolveActionPathSymlinks(_normalizeDrivePath(joined));
   }
   return joined;
@@ -4501,8 +4389,8 @@ class _UnusedInputs {
     if (outputOutline != null) _canonicalActionPath(outputOutline!),
   };
   late final _keysOfDill = _indexKeysOfDill(graph);
-  late final _canonicalKmods = <String, String>{
-    for (final dir in inputKmods) dir: _canonicalActionPath(dir),
+  late final _kmodRoots = <String, Set<String>>{
+    for (final String dir in inputKmods) dir: _kmodRootsOf(dir, graph),
   };
   late final _ownPackages = {for (final key in ownKeys) _packageOfKey(key)};
 
@@ -4539,23 +4427,26 @@ class _UnusedInputs {
         continue;
       }
       for (final path in reported) {
-        if (!report.passed.contains(path) && !_isOwnOutput(path)) return false;
+        if (!report.passed.contains(path) && !_isOwnOutput(path)) {
+          return false;
+        }
       }
       _used.addAll(reported);
     }
     return true;
   }
 
+  bool _inKmod(String path, String dir) =>
+      _kmodRoots[dir]!.any((root) => path == root || path.startsWith('$root/'));
+
   /// Marks the summaries the invocations used as referenced, with their trees.
   void _markUsedTrees() {
-    for (final path in _used) {
-      final keys = _keysOfDill[path];
+    for (final String path in _used) {
+      final Set<String>? keys = _keysOfDill[path];
       if (keys == null) continue;
       _referenced.addAll(keys);
-      for (final entry in _canonicalKmods.entries) {
-        if (path == entry.value || path.startsWith('${entry.value}/')) {
-          _usedTrees.add(entry.value);
-        }
+      for (final String dir in inputKmods) {
+        if (_inKmod(path, dir)) _usedTrees.add(dir);
       }
     }
   }
@@ -4616,11 +4507,9 @@ class _UnusedInputs {
 
   /// The module directory whose summary defines [key], if any.
   String? _ownerDefining(String key) {
-    final dill = _canonicalActionPath(graph[key]!.dill);
-    for (final entry in _canonicalKmods.entries) {
-      if (dill == entry.value || dill.startsWith('${entry.value}/')) {
-        return entry.key;
-      }
+    final String dill = _canonicalActionPath(graph[key]!.dill);
+    for (final String dir in inputKmods) {
+      if (_inKmod(dill, dir)) return dir;
     }
     return null;
   }
@@ -4637,22 +4526,22 @@ class _UnusedInputs {
 
   /// Whether [dir] is used, referenced, package-shared, or stages inheritance.
   bool _isModuleUsed(String dir) {
-    final canonical = _canonicalKmods[dir]!;
-    if (_usedTrees.contains(canonical)) return true;
-    if (_keepTrees.contains(dir)) return true;
+    if (_usedTrees.contains(dir) || _keepTrees.contains(dir)) return true;
     var defines = false;
     var definesReferenced = false;
     var sharesOwnPackage = false;
     var sharesConsultedPackage = false;
-    for (final entry in _keysOfDill.entries) {
-      final dill = entry.key;
-      if (dill != canonical && !dill.startsWith('$canonical/')) continue;
-      for (final key in entry.value) {
+    for (final MapEntry<String, Set<String>> entry in _keysOfDill.entries) {
+      if (!_inKmod(entry.key, dir)) continue;
+      for (final String key in entry.value) {
         defines = true;
         if (_referenced.contains(key)) definesReferenced = true;
-        if (_ownPackages.contains(_packageOfKey(key))) sharesOwnPackage = true;
-        if (_consultedPackages.contains(_packageOfKey(key)))
+        if (_ownPackages.contains(_packageOfKey(key))) {
+          sharesOwnPackage = true;
+        }
+        if (_consultedPackages.contains(_packageOfKey(key))) {
           sharesConsultedPackage = true;
+        }
       }
     }
     // A module directory that defines nothing has no summary to use, but its
@@ -4713,6 +4602,20 @@ Map<String, Set<String>> _indexKeysOfDill(Map<String, _Node> graph) {
         .add(entry.key);
   }
   return keysOfDill;
+}
+
+/// Canonical directory and summary paths belonging to the module at [dir],
+/// including leaf-symlinked `.koutline` / `.kmod` entries in Bazel sandboxes.
+Set<String> _kmodRootsOf(String dir, Map<String, _Node> graph) {
+  final String index = _canonicalActionPath('$dir/$_indexName');
+  const suffix = '/$_indexName';
+  return <String>{
+    _canonicalActionPath(dir),
+    if (index.endsWith(suffix))
+      index.substring(0, index.length - suffix.length),
+    for (final _Node node in graph.values)
+      if (node.dill.startsWith('$dir/')) _canonicalActionPath(node.dill),
+  };
 }
 
 /// One `kernel_worker` process per compile.
@@ -4961,22 +4864,8 @@ Uint8List _encodeInput(String path, Uint8List digest) {
 /// Decodes the `path` (field 1) and `digest` (field 2) of a protobuf `Input`
 /// message, copying `digest` out of `bytes` so the message buffer is not pinned.
 ({String path, Uint8List digest}) _decodeInput(Uint8List bytes) {
-  final reader = _Reader(bytes);
-  var path = '';
-  var digest = Uint8List(0);
-  while (!reader.done) {
-    final key = reader.varint();
-    final field = key >> 3;
-    final wire = key & 7;
-    if (field == 1 && wire == 2) {
-      path = utf8.decode(reader.bytes(), allowMalformed: true);
-    } else if (field == 2 && wire == 2) {
-      digest = Uint8List.fromList(reader.bytes());
-    } else {
-      reader.skip(wire);
-    }
-  }
-  return (path: path, digest: digest);
+  final ({Uint8List digest, String path}) view = _decodeInputView(bytes);
+  return (path: view.path, digest: Uint8List.fromList(view.digest));
 }
 
 /// Decodes `path` and a view of `digest` from a single `Input` message without
@@ -5550,7 +5439,9 @@ final class _U30Reader {
   int read() {
     final b0 = _data[_pos++];
     if ((b0 & 0x80) == 0) return b0;
-    if ((b0 & 0x40) == 0) return ((b0 & 0x3f) << 8) | _data[_pos++];
+    if ((b0 & 0x40) == 0) {
+      return ((b0 & 0x3f) << 8) | _data[_pos++];
+    }
     final b1 = _data[_pos++];
     final b2 = _data[_pos++];
     final b3 = _data[_pos++];
@@ -5648,7 +5539,9 @@ Uint8List _reassembleStripped(
   // Kernel requires binaryOffsetForMetadataPayloads (fields[4]) to be 8-byte
   // aligned (ComponentFile.metadataPayloadsAlignment = 8).
   final metaPad = (8 - (out.length % 8)) % 8;
-  if (metaPad > 0) out.add(Uint8List(metaPad));
+  if (metaPad > 0) {
+    out.add(Uint8List(metaPad));
+  }
   final newOffMetadataPayloads = out.length;
   final metaDelta = newOffMetadataPayloads - index.offMetadataPayloads;
 
@@ -5663,7 +5556,9 @@ Uint8List _reassembleStripped(
   final newOffComponentIndex = out.length;
   final totalUnpadded = out.length + index.idxBytes;
   final pad = (8 - (totalUnpadded % 8)) % 8;
-  if (pad > 0) out.add(Uint8List(pad));
+  if (pad > 0) {
+    out.add(Uint8List(pad));
+  }
 
   for (var i = 1; i <= 3; i++) {
     fields[i] += delta;
@@ -5705,6 +5600,11 @@ String? _keyOfDillSourceUri(
 /// names no workspace file. The empty string marks a file no root names —
 /// outside every root, or an unknown scheme — which is never a declared
 /// input, so such reads fail closed.
+///
+/// Canonicalizes both [uri] and every candidate [multiRoots] entry through
+/// [_canonicalActionPath] so physical `file:` URIs match relative or symlinked
+/// sandbox roots identically across execution strategies, preferring the most
+/// specific (shortest) workspace-relative key when roots nest.
 String _keyOfDillFileUri(String uri, List<String> multiRoots) {
   String path;
   try {
@@ -5718,21 +5618,70 @@ String _keyOfDillFileUri(String uri, List<String> multiRoots) {
     return '';
   }
   final String normPath = _canonicalActionPath(path);
-  final sortedRoots = List<String>.from(multiRoots)
-    ..sort((a, b) => b.length.compareTo(a.length));
-  for (final root in sortedRoots) {
+  String? best;
+  for (final root in multiRoots) {
     final String? key = _keyUnderRoot(normPath, root);
-    if (key != null) return key;
+    if (key != null &&
+        key.isNotEmpty &&
+        (best == null || key.length < best.length)) {
+      best = key;
+    }
   }
-  return '';
+  return best ?? '';
 }
 
-/// The key of [normPath] under [root], or null when it lives elsewhere.
+/// The key of canonical [normPath] under [root], or null when it lives
+/// elsewhere. Checks direct prefix containment first, then suffix resolution
+/// for entries symlinked below [root] (such as per-worker or standalone
+/// sandbox symlinks), and finally renamed top-level symlinks inside [root].
 String? _keyUnderRoot(String normPath, String root) {
-  final String canonicalRoot = _canonicalActionPath(root);
-  if (normPath == canonicalRoot) return '';
-  if (normPath.startsWith('$canonicalRoot/')) {
-    return normPath.substring(canonicalRoot.length + 1);
+  final String? direct = _stripRootPrefix(normPath, _canonicalActionPath(root));
+  if (direct != null) return direct;
+  final String rootSlash = _filePathOf(root)
+      .replaceAll(r'\', '/')
+      .replaceFirst(RegExp(r'(?<=.)/+$'), '');
+  final prefix = rootSlash.isEmpty || rootSlash == '.'
+      ? './'
+      : (rootSlash == '/' ? '/' : '$rootSlash/');
+  for (
+    var slash = normPath.indexOf('/');
+    slash >= 0;
+    slash = normPath.indexOf('/', slash + 1)
+  ) {
+    final String candidate = normPath.substring(slash + 1);
+    if (candidate.isEmpty || candidate.startsWith('/')) continue;
+    if (_canonicalActionPath('$prefix$candidate') == normPath) return candidate;
+  }
+  return _keyUnderLinkedEntry(normPath, rootSlash, prefix);
+}
+
+/// The relative path of [path] inside [root], `''` when equal, or null.
+String? _stripRootPrefix(String path, String root) {
+  if (path == root) return '';
+  if (root == '/') return path.startsWith('//') ? null : path.substring(1);
+  return path.startsWith('$root/') ? path.substring(root.length + 1) : null;
+}
+
+/// Resolves immediate `Link` entries of [rootSlash] whose target directory or
+/// file name differs from the link name inside the root.
+String? _keyUnderLinkedEntry(String normPath, String rootSlash, String prefix) {
+  final dirPath = rootSlash.isEmpty ? '.' : rootSlash;
+  try {
+    for (final FileSystemEntity entry in Directory(
+      dirPath,
+    ).listSync(followLinks: false)) {
+      if (entry is! Link) continue;
+      final String name = entry.path.replaceAll(r'\', '/').split('/').last;
+      if (name.isEmpty) continue;
+      final String? sub = _stripRootPrefix(
+        normPath,
+        _canonicalActionPath('$prefix$name'),
+      );
+      if (sub != null) return sub.isEmpty ? name : '$name/$sub';
+    }
+  } on FileSystemException {
+    // A missing or unreadable root holds no symlinked entries to follow.
+    return null;
   }
   return null;
 }
@@ -5801,7 +5750,9 @@ Future<bool> _unstagedReadsAreDeclared(
   final dillFile = File(verify.dillPath);
   if (!await dillFile.exists()) return true;
   final bytes = await dillFile.readAsBytes();
-  if (!_dillSourcesAreDeclared(bytes, verify, consequence)) return false;
+  if (!_dillSourcesAreDeclared(bytes, verify, consequence)) {
+    return false;
+  }
   final checker = _ReferenceChecker(
     verify.dillPath,
     verify.files,

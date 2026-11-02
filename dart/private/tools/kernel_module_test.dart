@@ -306,42 +306,185 @@ String _sidecar(String name, Map<String, String> excluded) {
   return '${_root.path}/$name.vm_excluded.txt';
 }
 
-typedef _SandboxExecrootFixture = ({
+typedef _SandboxFixture = ({
   Directory execroot,
-  Directory sandbox,
-  List<String> physicalUris,
+  Directory dirSandbox,
+  Directory leafSandbox,
+  File outsideFile,
+  List<String> ownPhysicalUris,
 });
 
-List<String> _sandboxArgsFor(String suffix) => [
-  '--source',
-  'org-dartlang-root:///pkg/lib/a.dart',
-  '--source',
-  'org-dartlang-root:///pkg/lib/a.g.dart',
-  '--own-source-file',
-  'pkg/lib/a.dart',
-  '--own-source-file',
-  'bazel-out/k8-fastbuild/bin/pkg/lib/a.g.dart',
-  '--output',
-  'bazel-out/k8-fastbuild/bin/pkg/a_mod_$suffix',
-  '--unused-inputs-list',
-  'bazel-out/k8-fastbuild/bin/pkg/a_mod_$suffix.unused_inputs',
-  '--excluded-output',
-  'bazel-out/k8-fastbuild/bin/pkg/a_mod_$suffix.vm_excluded.txt',
-  '--packages-file',
-  'package_config.json',
-  '--libraries-json',
-  'libraries.json',
-  '--multi-root',
-  '.',
-  '--multi-root',
-  'bazel-out/k8-fastbuild/bin',
-  '--multi-root-scheme',
-  'org-dartlang-root',
-  '--target',
-  'vm',
-  '--input-kmod',
-  'bazel-out/k8-fastbuild/bin/dep.koutline',
-];
+typedef _SandboxRun = ({
+  Directory cwd,
+  String tag,
+  List<String> dillUris,
+  List<String> kmods,
+  List<String> inputSources,
+  bool noDrop,
+});
+
+void _writeExecFile(Directory root, String rel, String content) {
+  final file = File('${root.path}/$rel');
+  file.parent.createSync(recursive: true);
+  file.writeAsStringSync(content);
+}
+
+void _writeExecKoutline(Directory execroot, String name, String key) {
+  final dir = 'bazel-out/k8-fastbuild/bin/$name.koutline';
+  _writeExecFile(
+    execroot,
+    '$dir/index.json',
+    jsonEncode(<String, Object>{
+      'version': 1,
+      'sccs': <Map<String, Object>>[
+        <String, Object>{
+          'dill': '$name.dill',
+          'defines': <String>[key],
+          'imports': <String>[],
+        },
+      ],
+    }),
+  );
+  _writeExecFile(execroot, '$dir/$name.dill', '');
+}
+
+void _mirrorLeafLinks(Directory src, Directory dst, [String rel = '']) {
+  for (final FileSystemEntity entity in src.listSync(followLinks: false)) {
+    final String name = entity.path.replaceAll(r'\', '/').split('/').last;
+    final childRel = rel.isEmpty ? name : '$rel/$name';
+    if (entity is Directory) {
+      Directory('${dst.path}/$childRel').createSync(recursive: true);
+      _mirrorLeafLinks(entity, dst, childRel);
+    } else if (entity is File) {
+      final link = Link('${dst.path}/$childRel');
+      link.parent.createSync(recursive: true);
+      link.createSync(entity.path);
+    }
+  }
+}
+
+_SandboxFixture _createSandboxFixture(Directory root) {
+  final String realRoot = root.resolveSymbolicLinksSync();
+  final execroot = Directory('$realRoot/execroot')..createSync(recursive: true);
+  final dirSandbox = Directory('$realRoot/dir_sandbox')
+    ..createSync(recursive: true);
+  final leafSandbox = Directory('$realRoot/leaf_sandbox')
+    ..createSync(recursive: true);
+  final outsideFile = File('$realRoot/outside/foreign.dart')
+    ..parent.createSync(recursive: true)
+    ..writeAsStringSync('class Foreign {}\n');
+
+  _writeExecFile(execroot, 'pkg/lib/a.dart', 'class A {}\n');
+  _writeExecFile(
+    execroot,
+    'bazel-out/k8-fastbuild/bin/pkg/lib/a.g.dart',
+    '// generated\nclass AGen {}\n',
+  );
+  _writeExecFile(execroot, 'dep/lib/dep.dart', 'class Dep {}\n');
+  _writeExecFile(execroot, 'emb/lib/e.dart', 'const int kEmb = 1;\n');
+  _writeExecKoutline(execroot, 'dep', 'dep/lib/dep.dart');
+  _writeExecKoutline(execroot, 'embedded', 'emb/lib/e.dart');
+  _writeExecFile(
+    execroot,
+    'package_config.json',
+    jsonEncode(<String, Object>{
+      'configVersion': 2,
+      'packages': <Map<String, String>>[
+        for (final pkg in <String>['pkg', 'dep', 'emb'])
+          <String, String>{'name': pkg, 'rootUri': pkg, 'packageUri': 'lib/'},
+      ],
+    }),
+  );
+  _writeExecFile(
+    execroot,
+    'libraries.json',
+    jsonEncode(<String, Object>{
+      'vm': <String, Object>{'libraries': <String, Object>{}},
+    }),
+  );
+
+  for (final FileSystemEntity entity in execroot.listSync(followLinks: false)) {
+    final String name = entity.path.replaceAll(r'\', '/').split('/').last;
+    Link('${dirSandbox.path}/$name').createSync(entity.path);
+  }
+  _mirrorLeafLinks(execroot, leafSandbox);
+
+  return (
+    execroot: execroot,
+    dirSandbox: dirSandbox,
+    leafSandbox: leafSandbox,
+    outsideFile: outsideFile,
+    ownPhysicalUris: <String>[
+      Uri.file('${execroot.path}/pkg/lib/a.dart').toString(),
+      Uri.file('${execroot.path}/bazel-out/k8-fastbuild/bin/pkg/lib/a.g.dart')
+          .toString(),
+    ],
+  );
+}
+
+Future<({int code, List<String>? unusedLines})> _runInSandboxDir(
+  _SandboxRun run,
+) async {
+  final compiler = _ReportingCompiler(
+    reported: const <String>{},
+    dillBytes: () => _buildDillWithUris(run.dillUris),
+  );
+  final outPrefix = 'bazel-out/k8-fastbuild/bin/pkg/mod_${run.tag}';
+  final unusedRel = '$outPrefix.unused_inputs';
+  final Directory previous = Directory.current;
+  Directory.current = run.cwd.path;
+  try {
+    final int code = await compileModule(
+      <String>[
+        '--source',
+        'org-dartlang-root:///pkg/lib/a.dart',
+        '--input-source',
+        'pkg/lib/a.dart',
+        '--own-source-file',
+        'pkg/lib/a.dart',
+        '--source',
+        'org-dartlang-root:///pkg/lib/a.g.dart',
+        '--input-source',
+        'bazel-out/k8-fastbuild/bin/pkg/lib/a.g.dart',
+        '--own-source-file',
+        'bazel-out/k8-fastbuild/bin/pkg/lib/a.g.dart',
+        for (final src in run.inputSources) ...<String>['--input-source', src],
+        '--output',
+        outPrefix,
+        '--unused-inputs-list',
+        unusedRel,
+        '--excluded-output',
+        '$outPrefix.vm_excluded.txt',
+        '--packages-file',
+        'package_config.json',
+        '--libraries-json',
+        'libraries.json',
+        '--multi-root',
+        '.',
+        '--multi-root',
+        'bazel-out/k8-fastbuild/bin',
+        '--multi-root-scheme',
+        'org-dartlang-root',
+        '--target',
+        'vm',
+        if (run.noDrop) '--no-drop',
+        for (final kmod in run.kmods) ...<String>['--input-kmod', kmod],
+      ],
+      compiler,
+      StringBuffer(),
+      const <Uint8List>[],
+    );
+    final unusedFile = File(unusedRel);
+    return (
+      code: code,
+      unusedLines: unusedFile.existsSync()
+          ? unusedFile.readAsLinesSync()
+          : null,
+    );
+  } finally {
+    Directory.current = previous;
+  }
+}
 
 /// Plans and compiles one module named `name` from `sources`, which are keys under the
 /// test's root (`pkg/lib/a.dart`). Returns what it wrote and what it asked the compiler.
@@ -4153,136 +4296,109 @@ void main(List<String> args) {
       }
     });
 
-    _SandboxExecrootFixture createSandboxExecrootFixture(Directory root) {
-      final execroot = Directory('${root.path}/execroot')
-        ..createSync(recursive: true);
-      final sandbox = Directory('${root.path}/sandbox')
-        ..createSync(recursive: true);
+    test('physical file: source-table URIs produce identical unused inputs in execroot and symlinked sandboxes', () async {
+      final _SandboxFixture fixture = _createSandboxFixture(_root);
+      const kmods = <String>['bazel-out/k8-fastbuild/bin/dep.koutline'];
+      final ({int code, List<String>? unusedLines}) execRun =
+          await _runInSandboxDir((
+            cwd: fixture.execroot,
+            tag: 'exec',
+            dillUris: fixture.ownPhysicalUris,
+            kmods: kmods,
+            inputSources: const <String>[],
+            noDrop: false,
+          ));
+      final ({int code, List<String>? unusedLines}) dirRun =
+          await _runInSandboxDir((
+            cwd: fixture.dirSandbox,
+            tag: 'dir_sand',
+            dillUris: fixture.ownPhysicalUris,
+            kmods: kmods,
+            inputSources: const <String>[],
+            noDrop: false,
+          ));
+      final ({int code, List<String>? unusedLines}) leafRun =
+          await _runInSandboxDir((
+            cwd: fixture.leafSandbox,
+            tag: 'leaf_sand',
+            dillUris: fixture.ownPhysicalUris,
+            kmods: kmods,
+            inputSources: const <String>[],
+            noDrop: false,
+          ));
 
-      final srcFile = File('${execroot.path}/pkg/lib/a.dart')
-        ..parent.createSync(recursive: true);
-      srcFile.writeAsStringSync('class A {}\n');
-
-      final genFile = File(
-        '${execroot.path}/bazel-out/k8-fastbuild/bin/pkg/lib/a.g.dart',
-      )..parent.createSync(recursive: true);
-      genFile.writeAsStringSync('// generated\n');
-
-      final koutlineDir = Directory(
-        '${execroot.path}/bazel-out/k8-fastbuild/bin/dep.koutline',
-      )..createSync(recursive: true);
-      File('${koutlineDir.path}/index.json').writeAsStringSync(
-        jsonEncode({
-          'version': 1,
-          'sccs': [
-            {
-              'dill': 'dep.dill',
-              'defines': ['dep/lib/dep.dart'],
-              'imports': <String>[],
-            },
-          ],
-        }),
-      );
-
-      File('${execroot.path}/package_config.json').writeAsStringSync(
-        jsonEncode({
-          'configVersion': 2,
-          'packages': [
-            {'name': 'pkg', 'rootUri': 'pkg', 'packageUri': 'lib/'},
-            {'name': 'dep', 'rootUri': 'dep', 'packageUri': 'lib/'},
-          ],
-        }),
-      );
-      File('${execroot.path}/libraries.json').writeAsStringSync(
-        jsonEncode({
-          'vm': {'libraries': <String, dynamic>{}},
-        }),
-      );
-
-      for (final FileSystemEntity entity in execroot.listSync()) {
-        final String name = entity.path.replaceAll(r'\', '/').split('/').last;
-        Link('${sandbox.path}/$name').createSync(entity.path);
-      }
-
-      return (
-        execroot: execroot,
-        sandbox: sandbox,
-        physicalUris: <String>[
-          Uri.file(srcFile.path).toString(),
-          Uri.file(genFile.path).toString(),
-        ],
-      );
-    }
-
-    test('unused inputs list is strategy-invariant between execroot and symlinked sandbox', () async {
-      final _SandboxExecrootFixture fixture = createSandboxExecrootFixture(
-        _root,
-      );
-      final compiler = _DillWritingCompiler(
-        () => _buildDillWithUris(fixture.physicalUris),
-      );
-      final Directory previous = Directory.current;
-      try {
-        Directory.current = fixture.execroot.path;
-        final int resExec = await compileModule(
-          _sandboxArgsFor('exec'),
-          compiler,
-          StringBuffer(),
-          const [],
-        );
-        expect(resExec, 0);
-        final List<String> execLines = File(
-          'bazel-out/k8-fastbuild/bin/pkg/a_mod_exec.unused_inputs',
-        ).readAsLinesSync();
-        expect(execLines, ['bazel-out/k8-fastbuild/bin/dep.koutline']);
-
-        Directory.current = fixture.sandbox.path;
-        final int resSand = await compileModule(
-          _sandboxArgsFor('sand'),
-          compiler,
-          StringBuffer(),
-          const [],
-        );
-        expect(resSand, 0);
-        final List<String> sandLines = File(
-          'bazel-out/k8-fastbuild/bin/pkg/a_mod_sand.unused_inputs',
-        ).readAsLinesSync();
-        expect(sandLines, execLines);
-      } finally {
-        Directory.current = previous;
-      }
+      expect(execRun.code, 0);
+      expect(dirRun.code, 0);
+      expect(leafRun.code, 0);
+      expect(execRun.unusedLines, kmods);
+      expect(dirRun.unusedLines, execRun.unusedLines);
+      expect(leafRun.unusedLines, execRun.unusedLines);
     });
 
-    test('undeclared source in kernel source table vetoes unused inputs list in symlinked sandbox', () async {
-      final _SandboxExecrootFixture fixture = createSandboxExecrootFixture(
-        _root,
-      );
-      final compiler = _DillWritingCompiler(
-        () => _buildDillWithUris([
-          ...fixture.physicalUris,
+    test('undeclared and unmapped physical file: URIs still veto unused inputs under a symlinked working directory', () async {
+      final _SandboxFixture fixture = _createSandboxFixture(_root);
+      const bothKmods = <String>[
+        'bazel-out/k8-fastbuild/bin/embedded.koutline',
+        'bazel-out/k8-fastbuild/bin/dep.koutline',
+      ];
+      // Positive control in the leaf-symlinked sandbox: an embedded physical
+      // `file:` URI keeps its defining `.koutline` while the untouched
+      // `.koutline` is still listed. Fails on the base, and fails if the
+      // source-table evidence veto is dropped.
+      final ({int code, List<String>? unusedLines}) embeddedKeep =
+          await _runInSandboxDir((
+            cwd: fixture.leafSandbox,
+            tag: 'ctrl_keep',
+            dillUris: <String>[
+              ...fixture.ownPhysicalUris,
+              Uri.file('${fixture.execroot.path}/emb/lib/e.dart').toString(),
+            ],
+            kmods: bothKmods,
+            inputSources: const <String>[],
+            noDrop: false,
+          ));
+      expect(embeddedKeep.code, 0);
+      expect(embeddedKeep.unusedLines, <String>[
+        'bazel-out/k8-fastbuild/bin/dep.koutline',
+      ]);
+
+      // Entry control: an unplanned dependency `file:` URI vetoes listing
+      // `--input-source` dependency files (0-byte unused list, exit 0).
+      final ({int code, List<String>? unusedLines}) unplannedEntry =
+          await _runInSandboxDir((
+            cwd: fixture.dirSandbox,
+            tag: 'ctrl_entry',
+            dillUris: <String>[
+              ...fixture.ownPhysicalUris,
+              Uri.file('${fixture.execroot.path}/dep/lib/dep.dart').toString(),
+            ],
+            kmods: const <String>['bazel-out/k8-fastbuild/bin/dep.koutline'],
+            inputSources: const <String>['dep/lib/dep.dart', 'emb/lib/e.dart'],
+            noDrop: true,
+          ));
+      expect(unplannedEntry.code, 0);
+      expect(unplannedEntry.unusedLines, isEmpty);
+
+      // Undeclared workspace source and outside-all-roots source both veto.
+      for (final (String tag, String badUri) in <(String, String)>[
+        (
+          'ctrl_undeclared',
           Uri.file('${fixture.execroot.path}/pkg/lib/undeclared.dart')
               .toString(),
-        ]),
-      );
-      final Directory previous = Directory.current;
-      try {
-        Directory.current = fixture.sandbox.path;
-        final int resSand = await compileModule(
-          _sandboxArgsFor('undeclared'),
-          compiler,
-          StringBuffer(),
-          const [],
-        );
-        expect(resSand, isNot(0));
-        final unusedFile = File(
-          'bazel-out/k8-fastbuild/bin/pkg/a_mod_undeclared.unused_inputs',
-        );
-        final List<String> sandLines = unusedFile.existsSync()
-            ? unusedFile.readAsLinesSync()
-            : <String>[];
-        expect(sandLines, isEmpty);
-      } finally {
-        Directory.current = previous;
+        ),
+        ('ctrl_outside', Uri.file(fixture.outsideFile.path).toString()),
+      ]) {
+        final ({int code, List<String>? unusedLines}) vetoed =
+            await _runInSandboxDir((
+              cwd: fixture.dirSandbox,
+              tag: tag,
+              dillUris: <String>[...fixture.ownPhysicalUris, badUri],
+              kmods: bothKmods,
+              inputSources: const <String>[],
+              noDrop: false,
+            ));
+        expect(vetoed.code, isNot(0), reason: tag);
+        expect(vetoed.unusedLines ?? const <String>[], isEmpty, reason: tag);
       }
     });
   });
