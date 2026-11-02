@@ -1,0 +1,6 @@
+# The corpus package's analysis options fixture. It is not in the repository's
+# root `//:analysis_config`; `:options` and `:analysis_config` exist so the
+# corpus instantiates both rules.
+analyzer:
+  language:
+    strict-inference: true

@@ -1,0 +1,373 @@
+# One fixture per public rule and macro, in one package, so a change that
+# alters the action graph shows up in `actions.golden.json`. The exports test
+# below fails when a public export of `//dart:defs.bzl`, `//dart/pub:defs.bzl`
+# or a `//dart/ext/*/defs.bzl` file is neither instantiated here nor listed in
+# `non_instantiable.txt`.
+
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load(
+    "//dart:defs.bzl",
+    "dart_aggregate_codegen",
+    "dart_analysis_config",
+    "dart_analysis_options",
+    "dart_analysis_test",
+    "dart_binary",
+    "dart_code_asset",
+    "dart_codegen",
+    "dart_fix",
+    "dart_format",
+    "dart_js_binary",
+    "dart_library",
+    "dart_link_hook",
+    "dart_package_member",
+    "dart_package_metadata",
+    "dart_source_set",
+    "dart_sqlcodegen",
+    "dart_test",
+    "dart_wasm_binary",
+)
+load(
+    "//dart/ext/_shared:defs.bzl",
+    "library_builder_library",
+    "shared_part_library",
+)
+load("//dart/ext/built_value:defs.bzl", "built_value_library")
+load("//dart/ext/copy_with_extension_gen:defs.bzl", "copy_with_library")
+load("//dart/ext/drift:defs.bzl", "drift_library")
+load("//dart/ext/freezed:defs.bzl", "freezed_library")
+load("//dart/ext/go_router:defs.bzl", "go_router_library")
+load("//dart/ext/json_serializable:defs.bzl", "json_serializable_library")
+load("//dart/ext/mockito:defs.bzl", "mockito_library")
+load("//dart/ext/sqlite3:defs.bzl", "sqlite3_code_asset")
+load(
+    "//dart/ext/stacked:defs.bzl",
+    "stacked_bottomsheet_library",
+    "stacked_dialog_library",
+    "stacked_form_library",
+    "stacked_locator_library",
+    "stacked_logger_library",
+    "stacked_router_library",
+)
+load("//dart/pub:defs.bzl", "parse_semver")
+
+# `parse_semver` and `sqlite3_code_asset` are functions, not rules: calling
+# them is how the corpus instantiates them. They declare no target.
+_SEMVER = parse_semver("1.0.0")
+_SQLITE3_ASSET = sqlite3_code_asset()
+
+# --- the package facts, declared once ---------------------------------------
+
+dart_package_metadata(
+    name = "pkg",
+    language_version = "3.11",
+    package_name = "corpus",
+)
+
+# --- library, binary, test, source set, member ------------------------------
+
+dart_library(
+    name = "corpus_lib",
+    srcs = [
+        "lib/corpus.dart",
+        ":aggregate_codegen",
+        ":model_codegen",
+        ":sql_codegen",
+    ],
+    link_hook = "hook/link.dart",
+    package = ":pkg",
+    deps = ["@ext_pub_deps//:hooks"],
+)
+
+dart_binary(
+    name = "app_bin",
+    code_assets = [":code_asset"],
+    main = "bin/main.dart",
+    deps = [":corpus_lib"],
+)
+
+dart_test(
+    name = "corpus_test",
+    size = "small",
+    main = "test/smoke_test.dart",
+    deps = [
+        ":corpus_lib",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_source_set(
+    name = "source_set",
+    srcs = ["lib/source_set_fixture.dart"],
+)
+
+dart_library(
+    name = "source_set_lib",
+    package_name = "corpus",
+    srcs_dir = ":source_set",
+)
+
+dart_package_member(
+    name = "member",
+    language_version = "3.11",
+    package_name = "corpus_member",
+    srcs = ["lib/member.dart"],
+)
+
+dart_library(
+    name = "merged",
+    members = [":member"],
+)
+
+# --- analysis ---------------------------------------------------------------
+
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+)
+
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
+
+dart_analysis_test(
+    name = "analysis_test",
+    size = "small",
+    targets = [
+        ":app_bin",
+        ":corpus_lib",
+        ":corpus_test",
+        ":web_js",
+        ":web_wasm",
+    ],
+)
+
+dart_fix(
+    name = "fix",
+    target = ":corpus_lib",
+)
+
+dart_format(name = "format")
+
+# --- web --------------------------------------------------------------------
+
+dart_js_binary(
+    name = "web_js",
+    main = "bin/web_main.dart",
+)
+
+dart_wasm_binary(
+    name = "web_wasm",
+    main = "bin/web_main.dart",
+)
+
+# --- code generation --------------------------------------------------------
+
+dart_binary(
+    name = "gen_shim",
+    main = "gen_shim.dart",
+    deps = [
+        "//dart/ext:builder_shim",
+        "@ext_pub_deps//:build",
+    ],
+)
+
+dart_codegen(
+    name = "model_codegen",
+    generator_bin = ":gen_shim",
+    output_suffixes = [".g.dart"],
+    package = ":pkg",
+    src = "lib/codegen_fixture.dart",
+)
+
+dart_aggregate_codegen(
+    name = "aggregate_codegen",
+    generator_bin = ":gen_shim",
+    outputs = ["lib/aggregate_fixture.agg.dart"],
+    package = ":pkg",
+    srcs = ["lib/aggregate_fixture.dart"],
+)
+
+dart_sqlcodegen(
+    name = "sql_codegen",
+    generator_bin = ":gen_shim",
+    output_suffixes = [".drift.dart"],
+    package = ":pkg",
+    src = "lib/sql_fixture.drift",
+)
+
+# --- code asset and link hook ----------------------------------------------
+
+write_file(
+    name = "prebuilt_library",
+    out = "libcorpus.so",
+    content = [],
+)
+
+dart_code_asset(
+    name = "code_asset",
+    asset_id = "package:corpus/libcorpus.so",
+    prebuilt = ":prebuilt_library",
+)
+
+dart_link_hook(
+    name = "link_hook",
+    deps = [":corpus_lib"],
+    recorded_uses = "uses.json",
+)
+
+# --- extension macros -------------------------------------------------------
+
+shared_part_library(
+    name = "shared_part",
+    srcs = ["lib/shared_part_fixture.dart"],
+    annotation_dep = "@ext_pub_deps//:json_annotation",
+    language_version = "3.11",
+    package_name = "corpus",
+    part_suffix = ".json_serializable.g.part",
+    shim = "@rules_dart//dart/ext/json_serializable:shim",
+)
+
+library_builder_library(
+    name = "builder_library",
+    srcs = ["lib/builder_fixture.dart"],
+    annotation_dep = "@ext_pub_deps//:freezed_annotation",
+    language_version = "3.11",
+    output_suffixes = [".freezed.dart"],
+    package_name = "corpus",
+    shim = "@rules_dart//dart/ext/freezed:shim",
+)
+
+built_value_library(
+    name = "built_value",
+    srcs = ["lib/built_value_fixture.dart"],
+    annotation_dep = "@ext_pub_deps//:built_value",
+    language_version = "3.11",
+    package_name = "corpus",
+)
+
+copy_with_library(
+    name = "copy_with",
+    srcs = ["lib/copy_with_fixture.dart"],
+    annotation_dep = "@ext_pub_deps//:copy_with_extension",
+    language_version = "3.11",
+    package_name = "corpus",
+)
+
+drift_library(
+    name = "drift",
+    srcs = ["lib/drift_fixture.dart"],
+    annotation_dep = "@ext_pub_deps//:drift",
+    language_version = "3.11",
+    package_name = "corpus",
+)
+
+freezed_library(
+    name = "freezed",
+    srcs = ["lib/freezed_fixture.dart"],
+    annotation_dep = "@ext_pub_deps//:freezed_annotation",
+    language_version = "3.11",
+    package_name = "corpus",
+)
+
+go_router_library(
+    name = "go_router",
+    srcs = ["lib/go_router_fixture.dart"],
+    annotation_dep = "@ext_pub_deps//:go_router_builder",
+    language_version = "3.11",
+    package_name = "corpus",
+)
+
+json_serializable_library(
+    name = "json_serializable",
+    srcs = ["lib/json_serializable_fixture.dart"],
+    annotation_dep = "@ext_pub_deps//:json_annotation",
+    language_version = "3.11",
+    package_name = "corpus",
+)
+
+mockito_library(
+    name = "mockito",
+    srcs = ["lib/mockito_fixture.dart"],
+    annotation_dep = "@ext_pub_deps//:mockito",
+    language_version = "3.11",
+    package_name = "corpus",
+)
+
+stacked_router_library(
+    name = "stacked_router",
+    srcs = ["lib/stacked_router_fixture.dart"],
+    annotation_dep = "@ext_pub_deps//:stacked_generator",
+    language_version = "3.11",
+    package_name = "corpus",
+)
+
+stacked_locator_library(
+    name = "stacked_locator",
+    srcs = ["lib/stacked_locator_fixture.dart"],
+    annotation_dep = "@ext_pub_deps//:stacked_generator",
+    language_version = "3.11",
+    package_name = "corpus",
+)
+
+stacked_form_library(
+    name = "stacked_form",
+    srcs = ["lib/stacked_form_fixture.dart"],
+    annotation_dep = "@ext_pub_deps//:stacked_generator",
+    language_version = "3.11",
+    package_name = "corpus",
+)
+
+stacked_logger_library(
+    name = "stacked_logger",
+    srcs = ["lib/stacked_logger_fixture.dart"],
+    annotation_dep = "@ext_pub_deps//:stacked_generator",
+    language_version = "3.11",
+    package_name = "corpus",
+)
+
+stacked_dialog_library(
+    name = "stacked_dialog",
+    srcs = ["lib/stacked_dialog_fixture.dart"],
+    annotation_dep = "@ext_pub_deps//:stacked_generator",
+    language_version = "3.11",
+    package_name = "corpus",
+)
+
+stacked_bottomsheet_library(
+    name = "stacked_bottomsheet",
+    srcs = ["lib/stacked_bottomsheet_fixture.dart"],
+    annotation_dep = "@ext_pub_deps//:stacked_generator",
+    language_version = "3.11",
+    package_name = "corpus",
+)
+
+# --- the export coverage test ----------------------------------------------
+
+dart_test(
+    name = "exports_test",
+    size = "small",
+    args = ["$(rlocationpath :exports_test.dart)"],
+    data = ["exports_test.dart"],
+    local = True,
+    main = "exports_test.dart",
+    tags = [
+        "external",
+        "no-sandbox",
+    ],
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# `bazel test //dart/tests/corpus:...` names this suite in the acceptance
+# command; Bazel treats the label after `:` as a literal target name.
+test_suite(
+    name = "...",
+    tests = [
+        ":analysis_test",
+        ":corpus_test",
+        ":exports_test",
+    ],
+)
