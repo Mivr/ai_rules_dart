@@ -1474,6 +1474,7 @@ jobs:
           import json
           import os
           import sys
+
           run_temp = os.environ.get("RUNNER_TEMP", "/tmp")
           paths = [
               os.path.join(run_temp, "bep_hello_build.json"),
@@ -1481,35 +1482,55 @@ jobs:
               os.path.join(run_temp, "bep_hello_test.json"),
               os.path.join(run_temp, "bep_codegen_test.json"),
           ]
+
+
+          def bad_action_env(value):
+              """True when one command-line chunk/option is the banned flag."""
+              return value == "--action_env" or value.startswith("--action_env=")
+
+
+          def check_event(path, event, seen):
+              """Collect banned chunks and record a canonical/original event."""
+              scl = event.get("structuredCommandLine")
+              if not isinstance(scl, dict):
+                  return []
+              label = scl.get("commandLineLabel")
+              if label not in ("canonical", "original"):
+                  return []
+              seen.add(label)
+              bad = []
+              for section in scl.get("sections", []):
+                  for chunk in section.get("chunkList", {}).get("chunk", []):
+                      if bad_action_env(chunk):
+                          bad.append(path + ": " + chunk)
+                  for option in section.get("optionList", {}).get("option", []):
+                      for value in (option.get("combinedForm", ""), option.get("optionName", "")):
+                          if bad_action_env(value):
+                              bad.append(path + ": " + value)
+              return bad
+
+
           bad = []
           for path in paths:
               try:
-                  lines = open(path, encoding="utf-8").read().splitlines()
-              except FileNotFoundError:
-                  print("ERROR: missing BEP file " + path)
+                  with open(path, encoding="utf-8") as handle:
+                      lines = handle.read().splitlines()
+              except OSError as error:
+                  print("ERROR: cannot read BEP file " + path + ": " + str(error))
                   sys.exit(1)
+              seen = set()
               for line in lines:
-                  line = line.strip()
-                  if not line:
+                  if not line.strip():
                       continue
                   try:
                       event = json.loads(line)
-                  except ValueError:
-                      continue
-                  scl = event.get("structuredCommandLine")
-                  if not isinstance(scl, dict):
-                      continue
-                  if scl.get("commandLineLabel") not in ("canonical", "original"):
-                      continue
-                  for section in scl.get("sections", []):
-                      chunks = section.get("chunkList", {}).get("chunk", [])
-                      for chunk in chunks:
-                          if chunk == "--action_env" or chunk.startswith("--action_env="):
-                              bad.append(path + ": " + chunk)
-                      for option in section.get("optionList", {}).get("option", []):
-                          combined = option.get("combinedForm", "")
-                          if combined == "--action_env" or combined.startswith("--action_env="):
-                              bad.append(path + ": " + combined)
+                  except ValueError as error:
+                      print("ERROR: malformed BEP line in " + path + ": " + str(error))
+                      sys.exit(1)
+                  bad.extend(check_event(path, event, seen))
+              if not seen:
+                  print("ERROR: " + path + " has no canonical or original structured command line")
+                  sys.exit(1)
           if bad:
               print("ERROR: --action_env in BEP command lines:")
               for entry in bad:
