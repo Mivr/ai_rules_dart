@@ -8,6 +8,7 @@ def _dart_package_impl(ctx):
         language_version = ctx.attr.language_version,
     )]
 
+# rule_test_coverage: no-actions
 dart_package_metadata = rule(
     implementation = _dart_package_impl,
     attrs = {
