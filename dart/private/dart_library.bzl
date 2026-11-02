@@ -322,7 +322,25 @@ def _multi_package_library_impl(ctx):
             ]),
         ),
         info,
+        _instrumented_files(ctx, ["srcs", "members"]),
     ] + kernel_providers
+
+def _instrumented_files(ctx, source_attributes):
+    """The `bazel coverage` provider of a library: its Dart sources and its deps'.
+
+    Args:
+      ctx: The `dart_library` rule context.
+      source_attributes: The attributes that hold this library's own sources.
+
+    Returns:
+      An `InstrumentedFilesInfo`.
+    """
+    return coverage_common.instrumented_files_info(
+        ctx,
+        source_attributes = source_attributes,
+        dependency_attributes = ["deps"],
+        extensions = ["dart"],
+    )
 
 def _library_own_sources(ctx):
     """Resolves one library's sources, `lib/` resources and runtime files.
@@ -459,6 +477,7 @@ def _dart_library_impl(ctx):
             ),
         ),
         info,
+        _instrumented_files(ctx, ["srcs"]),
     ] + _own_kernel_providers(ctx, info)
 
 dart_library = rule(

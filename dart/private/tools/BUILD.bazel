@@ -229,13 +229,17 @@ dart_binary(
     name = "test_runner",
     srcs = [
         "private_home.dart",
+        "test_runner_coverage.dart",
         "test_runner_workspace.dart",
     ],
     code_assets_from_deps = False,
     compile_mode = "exe",
     main = "test_runner.dart",
     visibility = ["//dart:__subpackages__"],
-    deps = ["//dart/runfiles"],
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:coverage",
+    ],
 )
 
 dart_binary(
@@ -286,11 +290,24 @@ dart_test(
     srcs = [
         "private_home.dart",
         "test_runner.dart",
+        "test_runner_coverage.dart",
         "test_runner_workspace.dart",
     ],
     main = "test_runner_cleanup_test.dart",
     deps = [
         "//dart/runfiles",
+        "@ext_pub_deps//:coverage",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "test_runner_coverage_test",
+    size = "small",
+    srcs = ["test_runner_coverage.dart"],
+    main = "test_runner_coverage_test.dart",
+    deps = [
+        "@ext_pub_deps//:coverage",
         "@ext_pub_deps//:test",
     ],
 )
