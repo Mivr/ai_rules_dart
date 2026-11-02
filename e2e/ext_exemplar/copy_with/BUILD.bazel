@@ -2,6 +2,7 @@ load(
     "@rules_dart//dart:defs.bzl",
     "dart_test",
 )
+load("@rules_dart//dart/ext/_shared:defs.bzl", "shared_part_library")
 load("@rules_dart//dart/ext/copy_with_extension_gen:defs.bzl", "copy_with_library")
 
 copy_with_library(
@@ -18,6 +19,31 @@ dart_test(
     main = "test/user_test.dart",
     deps = [
         ":copy_with",
+        "@pub_deps//:test",
+    ],
+)
+
+# The public `shared_part_library` macro that `copy_with_library` wraps, called
+# with the builder's shim and part suffix itself: a per-source codegen action
+# emits the `point.copy_with_extension_gen.g.part` shard, a second one merges it
+# into `point.g.dart`, and the library collects the combined file.
+shared_part_library(
+    name = "point",
+    package_name = "copy_with",
+    srcs = ["lib/point.dart"],
+    annotation_dep = "@pub_deps//:copy_with_extension",
+    language_version = "3.11",
+    part_suffix = ".copy_with_extension_gen.g.part",
+    shim = "@rules_dart//dart/ext/copy_with_extension_gen:shim",
+    visibility = ["//visibility:public"],
+)
+
+dart_test(
+    name = "point_test",
+    size = "small",
+    main = "test/point_test.dart",
+    deps = [
+        ":point",
         "@pub_deps//:test",
     ],
 )

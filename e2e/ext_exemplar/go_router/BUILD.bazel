@@ -1,8 +1,8 @@
 load(
     "@rules_dart//dart:defs.bzl",
-    "dart_codegen",
     "dart_test",
 )
+load("@rules_dart//dart/ext/go_router:defs.bzl", "go_router_library")
 
 # End-to-end test for go_router_builder. go_router's published package
 # depends on Flutter (package:flutter/widgets.dart), so we can't bring it
@@ -13,34 +13,26 @@ load(
 # needs at annotation-match time.
 #
 # The generated .g.dart output imports package:flutter/material.dart and
-# therefore cannot be compiled in pure-Dart. It is NOT wrapped in a
-# dart_library; the test reads it as a string via runfiles and asserts
-# the builder emitted the expected structure.
+# therefore cannot be compiled in pure-Dart. `go_router_library` wraps it in a
+# dart_library that nothing compiles; the test reads the generated file as a
+# string via the library's runfiles and asserts the builder emitted the
+# expected structure.
 
-dart_codegen(
-    name = "_app_router_part",
+go_router_library(
+    name = "app_router",
     package_name = "go_router_routes",
-    src = "lib/app_router.dart",
-    generator_bin = "@rules_dart//dart/ext/go_router:shim",
+    srcs = ["lib/app_router.dart"],
+    annotation_dep = "//go_router/_go_router_stub:go_router_stub",
     language_version = "3.11",
-    output_suffixes = [".go_router.g.part"],
-    deps = ["//go_router/_go_router_stub:go_router_stub"],
-)
-
-dart_codegen(
-    name = "_app_router_combined",
-    package_name = "go_router_routes",
-    src = "lib/app_router.dart",
-    generator_bin = "@rules_dart//dart/ext/_shared/combining_shim:bin",
-    language_version = "3.11",
-    output_suffixes = [".g.dart"],
-    parts = [":_app_router_part"],
+    # Never compiled: its generated part imports Flutter. Tagged `manual` so a
+    # wildcard build leaves it alone; the test below reads its files by `data`.
+    tags = ["manual"],
 )
 
 dart_test(
     name = "app_router_test",
     size = "small",
-    data = [":_app_router_combined"],
+    data = [":app_router"],
     main = "test/app_router_test.dart",
     deps = [
         "@pub_deps//:test",

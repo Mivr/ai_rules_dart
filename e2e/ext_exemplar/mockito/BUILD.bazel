@@ -14,6 +14,7 @@ load(
     "dart_library",
     "dart_test",
 )
+load("@rules_dart//dart/ext/mockito:defs.bzl", "mockito_library")
 
 dart_library(
     name = "api",
@@ -76,6 +77,31 @@ dart_test(
     main = "test/nice_mock_test.dart",
     deps = [
         ":clock",
+        "@pub_deps//:mockito",
+        "@pub_deps//:test",
+    ],
+)
+
+# The public `mockito_library` macro: the annotation lives in a `lib/` file
+# here, so the mocks are generated beside it into one library that a test
+# imports as `package:mockito_fixture/mock_targets.mocks.dart`. The mocked
+# interface sits in `:api`, which the Resolver reads through `deps`.
+mockito_library(
+    name = "mock_targets",
+    package_name = "mockito_fixture",
+    srcs = ["lib/mock_targets.dart"],
+    annotation_dep = "@pub_deps//:mockito",
+    language_version = "3.11",
+    visibility = ["//visibility:public"],
+    deps = [":api"],
+)
+
+dart_test(
+    name = "mock_targets_test",
+    size = "small",
+    main = "test/mock_targets_test.dart",
+    deps = [
+        ":mock_targets",
         "@pub_deps//:mockito",
         "@pub_deps//:test",
     ],
