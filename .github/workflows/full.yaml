@@ -235,10 +235,11 @@ jobs:
           exit "$fail"
       # Same corpus action-graph check as ci.yaml, on the macOS matrix.
       - name: Corpus action graph
+        if: matrix.shard == 1
         shell: bash
         run: |
-          bazel --max_idle_secs=60 aquery --output=jsonproto //dart/tests/corpus:all > "$RUNNER_TEMP/dart_corpus_aquery.json"
-          bazel --max_idle_secs=60 run //dart/tests/corpus:actions_golden -- --check "$RUNNER_TEMP/dart_corpus_aquery.json"
+          bazel aquery --output=jsonproto //dart/tests/corpus:all > "$RUNNER_TEMP/dart_corpus_aquery.json"
+          bazel run //dart/tests/corpus:actions_golden -- --check "$RUNNER_TEMP/dart_corpus_aquery.json"
       # Ship the per-folder logs even when the Test step fails or the job is
       # killed, so a dead shard still leaves its evidence for diagnosis.
       - name: Upload shard logs

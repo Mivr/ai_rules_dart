@@ -349,13 +349,16 @@ jobs:
       # The corpus instantiates every public rule and macro in one package;
       # its checked-in golden records the action graph they produce. A stale
       # golden fails here, so an action change reaches review as a diff.
+      - name: Corpus tests
+        if: matrix.os == 'ubuntu-latest' && matrix.shard == 1
+        shell: bash
+        run: bazel test //dart/tests/corpus:...
       - name: Corpus action graph
         if: matrix.os == 'ubuntu-latest' && matrix.shard == 1
         shell: bash
         run: |
-          bazel --max_idle_secs=60 test //dart/tests/corpus:...
-          bazel --max_idle_secs=60 aquery --output=jsonproto //dart/tests/corpus:all > "$RUNNER_TEMP/dart_corpus_aquery.json"
-          bazel --max_idle_secs=60 run //dart/tests/corpus:actions_golden -- --check "$RUNNER_TEMP/dart_corpus_aquery.json"
+          bazel aquery --output=jsonproto //dart/tests/corpus:all > "$RUNNER_TEMP/dart_corpus_aquery.json"
+          bazel run //dart/tests/corpus:actions_golden -- --check "$RUNNER_TEMP/dart_corpus_aquery.json"
       # Ship the per-folder logs even when the Test step fails or the job is
       # killed, so a dead shard still leaves its evidence for diagnosis.
       - name: Upload shard logs
