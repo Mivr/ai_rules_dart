@@ -59,7 +59,7 @@ def shared_part_targets(name, key):
         "combined": ":%s_combined" % stem,
     }
 
-def expect_library(env, library, key, generated):
+def expect_library(env, library, key, generated, annotation = "direct_annotations"):
     """Asserts a macro's wrapping library carries the sources and the generated files.
 
     Args:
@@ -68,6 +68,7 @@ def expect_library(env, library, key, generated):
       key: The test's source key, see `source_of`.
       generated: `list[str]`: suffixes of the files the macro generates for the
         source, for example `[".freezed.dart"]`.
+      annotation: Package name of the `annotation_dep` the macro was given.
     """
     source = "dart/tests/lib/ext/%s.dart" % key
     outputs = [source] + ["dart/tests/lib/ext/%s%s" % (key, suffix) for suffix in generated]
@@ -79,7 +80,7 @@ def expect_library(env, library, key, generated):
     })
     info.package_name().equals(PACKAGE)
     info.transitive_srcs().contains_at_least(outputs)
-    info.transitive_packages().contains_at_least([PACKAGE, "direct_annotations"])
+    info.transitive_packages().contains_at_least([PACKAGE, annotation])
 
 def expect_generator(env, generator, spec):
     """Asserts one codegen target a macro declared: its providers and its action.
