@@ -1,0 +1,22 @@
+load("//dart:defs.bzl", "dart_test")
+
+dart_test(
+    name = "bzl_library_guard_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :bzl_library_guard_test.dart)",
+    ],
+    data = [
+        "bzl_library_guard_test.dart",
+    ],
+    local = True,
+    main = "bzl_library_guard_test.dart",
+    tags = [
+        "external",
+        "no-sandbox",
+    ],
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
