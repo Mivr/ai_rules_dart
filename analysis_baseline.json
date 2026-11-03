@@ -32,6 +32,7 @@
     "avoid_slow_async_io": 7,
     "document_ignores": 7,
     "missing_whitespace_between_adjacent_strings": 1,
+    "no_wall_clock_in_actions": 2,
     "prefer_single_quotes": 6,
     "public_member_api_docs": 8,
     "sort_constructors_first": 1,
@@ -93,7 +94,9 @@
     "unnecessary_type_name_in_constructor": 4
   },
   "dart/private/tools/analyze_runner.dart": {
+    "no_wall_clock_in_actions": 1,
     "prefer_foreach": 1,
+    "process_requires_environment": 1,
     "specify_nonobvious_local_variable_types": 16
   },
   "dart/private/tools/analyze_runner_machine.dart": {
@@ -108,6 +111,7 @@
     "use_raw_strings": 1
   },
   "dart/private/tools/analyze_runner_test_support.dart": {
+    "process_requires_environment": 1,
     "specify_nonobvious_local_variable_types": 15,
     "unnecessary_type_name_in_constructor": 1
   },
@@ -147,6 +151,7 @@
     "comment_references": 11,
     "join_return_with_assignment": 1,
     "no_adjacent_strings_in_list": 1,
+    "no_wall_clock_in_actions": 1,
     "parameter_assignments": 2,
     "prefer_constructors_over_static_methods": 1,
     "prefer_foreach": 2,
@@ -234,6 +239,7 @@
   "dart/private/tools/fix_runner.dart": {
     "no_leading_underscores_for_local_identifiers": 1,
     "prefer_foreach": 1,
+    "process_requires_environment": 1,
     "specify_nonobvious_local_variable_types": 31
   },
   "dart/private/tools/fix_runner_test.dart": {
@@ -249,6 +255,7 @@
     "document_ignores": 3,
     "leading_newlines_in_multiline_strings": 2,
     "prefer_final_locals": 4,
+    "process_requires_environment": 1,
     "specify_nonobvious_local_variable_types": 65,
     "unnecessary_ignore": 3,
     "unnecessary_type_name_in_constructor": 3
@@ -258,6 +265,8 @@
   },
   "dart/private/tools/format_writer.dart": {
     "avoid_redundant_argument_values": 2,
+    "no_wall_clock_in_actions": 1,
+    "process_requires_environment": 1,
     "specify_nonobvious_local_variable_types": 21,
     "unnecessary_type_name_in_constructor": 1
   },
@@ -265,6 +274,7 @@
     "avoid_catching_errors": 17,
     "comment_references": 8,
     "empty_container_bodies": 1,
+    "no_wall_clock_in_actions": 2,
     "specify_nonobvious_local_variable_types": 101,
     "unnecessary_brace_in_string_interps": 1
   },
@@ -277,6 +287,7 @@
   },
   "dart/private/tools/kernel_launcher.dart": {
     "avoid_catching_errors": 4,
+    "no_wall_clock_in_actions": 1,
     "prefer_if_elements_to_conditional_expressions": 1,
     "specify_nonobvious_local_variable_types": 29,
     "use_null_aware_elements": 2
@@ -313,6 +324,7 @@
     "parameter_assignments": 7,
     "prefer_foreach": 3,
     "prefer_initializing_formals": 7,
+    "process_requires_environment": 2,
     "specify_nonobvious_local_variable_types": 430,
     "specify_nonobvious_property_types": 4,
     "type_annotate_public_apis": 3,
@@ -356,6 +368,8 @@
   "dart/private/tools/link_hook_runner.dart": {
     "avoid_redundant_argument_values": 1,
     "no_adjacent_strings_in_list": 2,
+    "no_wall_clock_in_actions": 1,
+    "process_requires_environment": 1,
     "specify_nonobvious_local_variable_types": 34,
     "unnecessary_type_name_in_constructor": 1
   },
@@ -364,6 +378,7 @@
     "specify_nonobvious_local_variable_types": 3
   },
   "dart/private/tools/private_home.dart": {
+    "no_wall_clock_in_actions": 2,
     "specify_nonobvious_local_variable_types": 8
   },
   "dart/private/tools/private_home_test.dart": {
@@ -373,6 +388,7 @@
   "dart/private/tools/sdk_launcher.dart": {
     "async_return_with_no_await": 1,
     "avoid_catching_errors": 3,
+    "process_requires_environment": 1,
     "specify_nonobvious_local_variable_types": 10
   },
   "dart/private/tools/sdk_launcher_data_test.dart": {
@@ -381,6 +397,7 @@
   },
   "dart/private/tools/test_runner.dart": {
     "avoid_catching_errors": 1,
+    "no_wall_clock_in_actions": 2,
     "parameter_assignments": 1,
     "specify_nonobvious_local_variable_types": 48,
     "unnecessary_type_name_in_constructor": 1,
@@ -390,7 +407,11 @@
     "avoid_redundant_argument_values": 3,
     "specify_nonobvious_local_variable_types": 7
   },
+  "dart/private/tools/test_runner_coverage.dart": {
+    "no_wall_clock_in_actions": 3
+  },
   "dart/private/tools/test_runner_fixture.dart": {
+    "process_requires_environment": 1,
     "specify_nonobvious_local_variable_types": 2
   },
   "dart/private/tools/test_runner_test.dart": {
@@ -409,6 +430,7 @@
   },
   "dart/private/tools/web_compile_runner.dart": {
     "prefer_foreach": 1,
+    "process_requires_environment": 1,
     "specify_nonobvious_local_variable_types": 49
   },
   "dart/private/tools/web_compile_runner_test.dart": {
