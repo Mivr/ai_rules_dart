@@ -12,6 +12,7 @@ load("//dart/pub/tests:semver_test.bzl", "semver_test_suite")
 load("//dart/pub/tests:yaml_parser_test.bzl", "yaml_parser_test_suite")
 load("//dart/pub/tests:yaml_subset_test.bzl", "yaml_subset_test_suite")
 load(":analyzer_summary_test.bzl", "analyzer_summary_test_suite")
+load(":analyzer_summary_tool_test.bzl", "analyzer_summary_tool_test_suite")
 load(":architecture_invariants_test.bzl", "architecture_invariants_test_suite")
 load(":built_value_library_direct_test.bzl", "built_value_library_direct_test_suite")
 load(":code_asset_test.bzl", "code_asset_test_suite")
@@ -143,6 +144,8 @@ ruleset_api_reexports_test_suite(name = "ruleset_api_reexports_test")
 snapshot_patch_test_suite(name = "snapshot_patch_test")
 
 analyzer_summary_test_suite(name = "analyzer_summary_version_test")
+
+analyzer_summary_tool_test_suite(name = "analyzer_summary_tool")
 
 built_value_library_direct_test_suite(name = "built_value_library_direct")
 
