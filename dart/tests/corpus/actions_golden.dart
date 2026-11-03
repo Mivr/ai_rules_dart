@@ -343,15 +343,16 @@ String normalisePath(String value) {
 }
 
 /// Turns a jsonproto action graph into the stable actions the golden holds.
+///
+/// Every action in the query is kept, in `(target, aspect, mnemonic,
+/// primaryOutput)` order; the golden records the whole action graph so a
+/// change that adds or removes any action, including the runfiles-tree
+/// `Symlink` actions, shows up in `--check`.
 List<Map<String, Object?>> normaliseAquery(Map<String, Object?> query) {
   final index = _AqueryIndex(query);
   final actions = <Map<String, Object?>>[];
   for (final Map<String, Object?> raw in _objectList(query['actions'])) {
-    final Map<String, Object?> action = index.action(raw);
-    // Every staged input is its own symlink action; they describe the
-    // staging tree, not the rule's action, and would drown the golden.
-    if (action['mnemonic'] == 'Symlink') continue;
-    actions.add(action);
+    actions.add(index.action(raw));
   }
   actions.sort(_compareActions);
   return actions;

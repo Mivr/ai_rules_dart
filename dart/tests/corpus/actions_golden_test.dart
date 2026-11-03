@@ -135,6 +135,16 @@ void _registerActionOrderingTests(_TestHarness h) {
     expect(h.goldenOf('order_b.json'), h.goldenOf('order_a.json'));
   });
 
+  test('keeps Symlink staging actions rather than dropping them', () {
+    final List<Map<String, Object?>> actions = normaliseAquery(
+      _readJson(h.query('symlink.json')),
+    );
+    expect(actions.map((action) => action['mnemonic']).toList(), [
+      'DartCompile',
+      'Symlink',
+    ]);
+  });
+
   test('writes one action per line', () {
     final List<String> lines = h.goldenOf('base.json').split('\n');
     final Iterable<String> actions = lines.where(
@@ -163,6 +173,15 @@ void _registerCheckTests(_TestHarness h) {
     );
     expect(result.exitCode, 1);
     expect(result.error, contains('DartCopyTree'));
+  });
+
+  test('--check rejects a removed Symlink action', () {
+    final GoldenResult result = h.check(
+      'base.json',
+      h.goldenOf('symlink.json'),
+    );
+    expect(result.exitCode, 1);
+    expect(result.error, contains('Symlink'));
   });
 
   test('--check rejects a changed mnemonic', () {
