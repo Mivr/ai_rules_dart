@@ -1,7 +1,13 @@
 """Unit tests for dart_library.bzl helpers."""
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
-load("//dart/private:dart_library.bzl", "check_files_under_lib_root", "check_no_duplicate_srcs")
+load(
+    "//dart/private:dart_library.bzl",
+    "DartPackageMemberInfo",
+    "check_files_under_lib_root",
+    "check_no_duplicate_srcs",
+    "member_package_inputs",
+)
 
 def _stray_src_rejected_test_impl(ctx):
     # The helper is unit-tested below; this asserts `dart_library` actually
@@ -133,6 +139,44 @@ def _lib_root_rejects_foreign_codegen_output_test_impl(ctx):
     asserts.true(env, "codegen" in err, "should hint at the codegen case: %s" % err)
     return unittest.end(env)
 
+def member_package_inputs_round_trip_test_impl(ctx):
+    """`member_package_inputs` reads `DartPackageMemberInfo`, never `DefaultInfo`.
+
+    Args:
+      ctx: The unit-test context.
+
+    Returns:
+      The unit-test result.
+    """
+    env = unittest.begin(ctx)
+    record = struct(package_name = "member_pkg", lib_root = "member_pkg/lib")
+    src = _fake_file("b/lib/a.dart", "member_pkg/lib/a.dart")
+    resource = _fake_file("b/lib/a.txt", "member_pkg/lib/a.txt")
+    late = _fake_file("b/z.yaml", "member_pkg/z.yaml")
+    early = _fake_file("b/LICENSE", "member_pkg/LICENSE")
+
+    # The fake target holds no `DefaultInfo`: indexing it would fail the test.
+    member = {
+        DartPackageMemberInfo: DartPackageMemberInfo(
+            record = record,
+            srcs = [src],
+            resources = [resource],
+            package_files = [early, late],
+        ),
+    }
+    inputs = member_package_inputs(member)
+    asserts.equals(env, record, inputs.record)
+    asserts.equals(env, [src], inputs.srcs)
+    asserts.equals(env, [resource], inputs.resources)
+    asserts.equals(env, "list", type(inputs.package_files))
+    asserts.equals(env, [early, late], inputs.package_files)
+    asserts.equals(
+        env,
+        sorted([f.short_path for f in inputs.package_files]),
+        [f.short_path for f in inputs.package_files],
+    )
+    return unittest.end(env)
+
 _clean_srcs_test = unittest.make(_clean_srcs_no_error_test_impl)
 _lib_root_ok_test = unittest.make(_lib_root_accepts_lib_sources_test_impl)
 _lib_root_root_pkg_test = unittest.make(_lib_root_accepts_root_package_test_impl)
@@ -141,6 +185,7 @@ _lib_root_outside_test = unittest.make(_lib_root_rejects_source_outside_lib_test
 _lib_root_codegen_test = unittest.make(_lib_root_rejects_foreign_codegen_output_test_impl)
 _identical_file_test = unittest.make(_identical_file_listed_twice_no_error_test_impl)
 _collision_test = unittest.make(_source_tree_vs_declared_output_collision_test_impl)
+_member_inputs_test = unittest.make(member_package_inputs_round_trip_test_impl)
 
 def library_test_suite(name):
     """Declares the `dart_library.bzl` helper unit tests.
@@ -159,6 +204,7 @@ def library_test_suite(name):
     _lib_root_external_test(name = "library_lib_root_external_test", size = "small")
     _lib_root_outside_test(name = "library_lib_root_outside_test", size = "small")
     _lib_root_codegen_test(name = "library_lib_root_codegen_test", size = "small")
+    _member_inputs_test(name = "library_member_inputs_test", size = "small")
     native.test_suite(
         name = name,
         tests = [
@@ -170,5 +216,6 @@ def library_test_suite(name):
             ":library_lib_root_external_test",
             ":library_lib_root_outside_test",
             ":library_lib_root_codegen_test",
+            ":library_member_inputs_test",
         ],
     )

@@ -24,6 +24,7 @@ dart_package_member(
     package_name = "package_files_member",
     srcs = ["lib/member.dart"],
     data = [":pubspec.yaml"],
+    resources = ["lib/member_resource.txt"],
 )
 
 # One member is enough: the merged library's job here is to carry the

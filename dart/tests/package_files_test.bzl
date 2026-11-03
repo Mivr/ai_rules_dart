@@ -9,7 +9,8 @@ inputs — plus the generated pub-spoke glob that supplies the default.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
-load("//dart:providers.bzl", "DartInfo")
+load("//dart:providers.bzl", "DartInfo", "DartPackageInfo")
+load("//dart/private:dart_library.bzl", "DartPackageMemberInfo")
 
 # This suite asserts the generated BUILD shape through the public re-export,
 # which is what rules_flutter consumes; it never reaches into pub/private.
@@ -124,12 +125,48 @@ library_data_test = analysistest.make(
     attrs = {"package_files": attr.label_list(allow_files = True)},
 )
 
+_MEMBER_SRC = "dart/tests/package_files_fixture/lib/member.dart"
+_MEMBER_RESOURCE = "dart/tests/package_files_fixture/lib/member_resource.txt"
+
+def _assert_member_info(env, target, package_files):
+    """Asserts a member states its direct files on `DartPackageMemberInfo`.
+
+    Args:
+      env: The analysis-test environment.
+      target: The `dart_package_member` target under test.
+      package_files: The runtime `File`s the member's `data` must carry.
+    """
+    asserts.true(env, DartPackageMemberInfo in target, "a member must provide DartPackageMemberInfo")
+    info = target[DartPackageMemberInfo]
+    asserts.equals(env, target[DartPackageInfo], info.record)
+    asserts.equals(env, [_MEMBER_SRC], _short_paths(info.srcs))
+    asserts.equals(env, [_MEMBER_RESOURCE], _short_paths(info.resources))
+    asserts.equals(env, "list", type(info.package_files))
+    asserts.equals(env, _short_paths(package_files), [f.short_path for f in info.package_files])
+
+def _assert_merged_sources(env, target, package_files):
+    """Asserts a merged library carries its member's sources and resources.
+
+    Args:
+      env: The analysis-test environment.
+      target: The merged `dart_library` target under test.
+      package_files: The runtime `File`s that must stay out of every file set.
+    """
+    info = target[DartInfo]
+    asserts.equals(env, [_MEMBER_SRC, _MEMBER_RESOURCE], _short_paths(target[DefaultInfo].files.to_list()))
+    asserts.equals(env, [_MEMBER_SRC], _short_paths(info.transitive_srcs.to_list()))
+    asserts.equals(env, [_MEMBER_RESOURCE], _short_paths(info.transitive_resources.to_list()))
+    for path in _short_paths(package_files):
+        asserts.false(env, path in _short_paths(info.transitive_resources.to_list()), "%s leaked into resources" % path)
+    asserts.equals(env, "list", type(info.package_files[0].files))
+
 def _member_data_test_impl(ctx):
     env = analysistest.begin(ctx)
     target = analysistest.target_under_test(env)
     package_files = ctx.files.package_files
 
-    _assert_runfiles_only(env, target, ["dart/tests/package_files_fixture/lib/member.dart"], package_files)
+    _assert_runfiles_only(env, target, [_MEMBER_SRC, _MEMBER_RESOURCE], package_files)
+    _assert_member_info(env, target, package_files)
     asserts.false(env, DartInfo in target, "a member must not become a legal deps entry")
     _assert_no_action_inputs(env, target, package_files)
     return analysistest.end(env)
@@ -144,7 +181,8 @@ def _merged_data_test_impl(ctx):
     target = analysistest.target_under_test(env)
     package_files = ctx.files.package_files
 
-    _assert_runfiles_only(env, target, ["dart/tests/package_files_fixture/lib/member.dart"], package_files)
+    _assert_runfiles_only(env, target, [_MEMBER_SRC, _MEMBER_RESOURCE], package_files)
+    _assert_merged_sources(env, target, package_files)
     _assert_package_records(
         env,
         target[DartInfo],
