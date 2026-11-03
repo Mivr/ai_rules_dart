@@ -7,6 +7,7 @@ load(":code_asset_test.bzl", "code_asset_test_suite")
 load(":codegen_direct_test.bzl", "codegen_direct_test_suite")
 load(":codegen_test.bzl", "codegen_test_suite")
 load(":common_test.bzl", "common_test_suite")
+load(":compile_action_direct_test.bzl", "compile_action_direct_test_suite")
 load(":compile_flags_test.bzl", "compile_flags_test_suite")
 load(":copy_with_library_direct_test.bzl", "copy_with_library_direct_test_suite")
 load(":dart_analysis_config_direct_test.bzl", "dart_analysis_config_direct_test_suite")
@@ -57,6 +58,7 @@ load(":stacked_logger_library_direct_test.bzl", "stacked_logger_library_direct_t
 load(":stacked_router_library_direct_test.bzl", "stacked_router_library_direct_test_suite")
 load(":toolchain_selection_test.bzl", "toolchain_selection_test_suite")
 load(":toolchains_test.bzl", "toolchains_test_suite")
+load(":unbacked_embedder_test.bzl", "unbacked_embedder_test_suite")
 load(":versions_test.bzl", "versions_test_suite")
 load(":yaml_parser_test.bzl", "yaml_parser_test_suite")
 load(":yaml_subset_test.bzl", "yaml_subset_test_suite")
@@ -147,6 +149,10 @@ dart_analysis_options_direct_test_suite(name = "dart_analysis_options_direct")
 dart_analysis_test_direct_test_suite(name = "dart_analysis_test_direct")
 
 dart_code_asset_direct_test_suite(name = "dart_code_asset_direct")
+
+compile_action_direct_test_suite(name = "compile_action_direct")
+
+unbacked_embedder_test_suite(name = "unbacked_embedder_test")
 
 dart_fix_direct_test_suite(name = "dart_fix_direct")
 
