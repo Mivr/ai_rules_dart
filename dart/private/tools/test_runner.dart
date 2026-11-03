@@ -30,6 +30,14 @@ import 'test_runner_workspace.dart' as staging;
 /// refuses a filter or sharding it cannot honour rather than quietly running
 /// everything.
 ///
+/// A `--test-randomize-ordering-seed=<value>` argument (passed with
+/// `bazel test --test_arg=...`, the value `random` or a decimal integer) is
+/// handed to `package:test`'s runner, once, rather than to the test's `main`:
+/// the runner shuffles the cases with it and prints the seed it used into the
+/// test log, so a failure in one shuffled order can be run again in the same
+/// order. A plain `main` has no cases to shuffle, so every such argument is
+/// taken out before it starts.
+///
 /// Under `bazel coverage` (`COVERAGE_OUTPUT_FILE` set) the VM is started so
 /// that its isolates can be collected, and the LCOV is written when it exits;
 /// a collection that fails or is partial fails the run (see
@@ -188,7 +196,12 @@ Future<int> _runDirectly(
   };
   final vm = await Process.start(
     dart,
-    [...?coverage?.vmFlags, '--enable-asserts', dill, ...args],
+    [
+      ...?coverage?.vmFlags,
+      '--enable-asserts',
+      dill,
+      ..._withoutSeedFlags(args),
+    ],
     workingDirectory: scratch?.path,
     environment: childEnv.isEmpty ? null : childEnv,
     includeParentEnvironment: false,
@@ -256,6 +269,7 @@ Future<int> _runUnderRunner({
     tmp: tmp,
   );
   final report = staging.joinPaths(tmp.path, 'results.json');
+  final _LauncherArgs launcherArgs = _splitSeed(args);
 
   final vmProcess = await Process.start(
     vm.dart,
@@ -267,13 +281,16 @@ Future<int> _runUnderRunner({
         testPath: source.testPath,
         report: report,
         env: env,
+        seed: launcherArgs.seed,
       ),
     ],
     workingDirectory: inPlace ? null : tmp.path,
     environment: {
       ...withoutRulesDartControls(env),
       ..._childRunfilesEnv(env, workspace.manifest),
-      'RULES_DART_TEST_ARGS': jsonEncode(args),
+      // The test's `main` gets the launcher's arguments less the seed, which
+      // went to the runner above.
+      'RULES_DART_TEST_ARGS': jsonEncode(launcherArgs.rest),
       // The runner reads a per-user config (`~/.dart_test.yaml`, or
       // `%LOCALAPPDATA%\DartTest.yaml`) unless this names one. A path that
       // does not exist means none: a developer's own settings must not change
@@ -400,13 +417,62 @@ bool _stageSuiteWorkspace({
   return inPlace;
 }
 
+/// The prefix of Bazel's `--test-randomize-ordering-seed=<value>` launcher
+/// argument, which is also the option `package:test`'s runner takes.
+const _seedFlag = '--test-randomize-ordering-seed=';
+
+/// The seed values `package:test`'s runner takes: `random`, or a decimal
+/// integer (which it reduces to 32 bits and prints back).
+final _seedValue = RegExp(r'^(?:random|[+-]?[0-9]+)$');
+
+/// The launcher's arguments, split into the ordering seed for
+/// `package:test`'s runner, if one was given, and the arguments the test's
+/// own `main` gets.
+typedef _LauncherArgs = ({String? seed, List<String> rest});
+
+/// The launcher's [args] split into the ordering seed for `package:test`'s
+/// runner and the arguments the test's own `main` gets.
+///
+/// Every `--test-randomize-ordering-seed=<value>` whose value the runner takes
+/// is taken out of [args]. The last one wins, as a repeated flag does on any
+/// command line, so a seed given with `--test_arg` overrides one in the
+/// target's own `args`. Every other argument, a seed flag with a value the
+/// runner would not take among them, stays where it was.
+_LauncherArgs _splitSeed(List<String> args) {
+  String? seed;
+  final rest = <String>[];
+  for (final arg in args) {
+    final String? value = arg.startsWith(_seedFlag)
+        ? arg.substring(_seedFlag.length)
+        : null;
+    if (value != null && _seedValue.hasMatch(value)) {
+      seed = value;
+    } else {
+      rest.add(arg);
+    }
+  }
+  return (seed: seed, rest: rest);
+}
+
+/// [args] without any `--test-randomize-ordering-seed=...` argument.
+///
+/// A plain `main` has no cases to shuffle, and must not be handed an option
+/// meant for `package:test`'s runner that it would read as its own argument.
+List<String> _withoutSeedFlags(List<String> args) => [
+  for (final arg in args)
+    if (!arg.startsWith(_seedFlag)) arg,
+];
+
 /// The runner command line for one suite run.
+///
+/// A [seed] goes to the runner as its one `--test-randomize-ordering-seed`.
 List<String> _suiteCommand({
   required String runner,
   required String precompiled,
   required String testPath,
   required String report,
   required Map<String, String> env,
+  required String? seed,
 }) {
   final filter = env['TESTBRIDGE_TEST_ONLY'];
   final totalShards = env['TEST_TOTAL_SHARDS'];
@@ -435,6 +501,9 @@ List<String> _suiteCommand({
       '--shard-index',
       shardIndex,
     ],
+    // The runner prints the seed it shuffled with, a concrete one for
+    // `random` too, straight into the test log.
+    if (seed != null) '$_seedFlag$seed',
     testPath,
   ];
 }
