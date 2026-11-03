@@ -7,11 +7,14 @@ load("//dart/private:dart_info.bzl", "dart_info", "dart_info_multi", "package_li
 load("//dart/private:dart_info_params.bzl", "dart_package_identity")
 load(
     "//dart/private:dart_kernel.bzl",
-    "DartKernelCycleInfo",
     "KERNEL_MODULE_ATTRS",
     "MODULAR_KERNEL_TOOLCHAINS",
-    "lib_has_cross",
     "library_kernel_info",
+)
+load(
+    "//dart/private:kernel_library_state.bzl",
+    "DartKernelCycleInfo",
+    "lib_has_cross",
     "library_module_inputs",
 )
 load(
