@@ -5,6 +5,7 @@ load(
     "aspect_applies_test",
     "format_action_test",
     "formatted_test",
+    "governing_options_paths_test",
     "resolve_format_mode_test",
     "worker_action_env_shared_test",
 )
@@ -118,6 +119,11 @@ aspect_applies_test(
 
 resolve_format_mode_test(
     name = "resolve_format_mode_test",
+    size = "small",
+)
+
+governing_options_paths_test(
+    name = "governing_options_paths_test",
     size = "small",
 )
 
