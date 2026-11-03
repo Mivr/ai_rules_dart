@@ -47,7 +47,7 @@ alias(
 alias(
     name = "analyzer_summary_tool",
     actual = select({
-        ":analyzer_summaries_on": "//dart/private/tools:analyzer_summary",
+        ":analyzer_summaries_on": "//dart:analyzer_summary_tool",
         "//conditions:default": "//dart/private/tools:noop",
     }),
     tags = ["manual"],
