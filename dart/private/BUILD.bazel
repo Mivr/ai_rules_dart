@@ -160,10 +160,22 @@ bzl_library(
     deps = [
         ":analyze_targets",
         ":common",
+        ":dart_analyze_summary_fallback",
         ":dart_analyzer_summary",
         ":format_mode",
         ":source_set",
         "//dart:providers",
+        "@bazel_skylib//rules:common_settings",
+    ],
+)
+
+bzl_library(
+    name = "dart_analyze_summary_fallback",
+    srcs = ["dart_analyze_summary_fallback.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":dart_analyzer_summary",
         "@bazel_skylib//rules:common_settings",
     ],
 )
