@@ -94,7 +94,6 @@
     "unnecessary_type_name_in_constructor": 4
   },
   "dart/private/tools/analyze_runner.dart": {
-    "no_wall_clock_in_actions": 1,
     "prefer_foreach": 1,
     "process_requires_environment": 1,
     "specify_nonobvious_local_variable_types": 16

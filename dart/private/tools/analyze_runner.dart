@@ -80,9 +80,17 @@ String? stageStrippedProjectCopy(String project, Set<String>? allowed) {
   if (findStagedProjectLintOptions(project).isEmpty) {
     return null;
   }
-  final Directory scratch = Directory.systemTemp.createTempSync(
-    'rules_dart_analyze_stripped.',
-  );
+  final String normProject = project.endsWith('/') || project.endsWith(r'\')
+      ? project.substring(0, project.length - 1)
+      : project;
+  final scratch = Directory('$normProject.stripped');
+  if (scratch.existsSync()) {
+    try {
+      scratch.deleteSync(recursive: true);
+    } on FileSystemException {
+      // Best-effort cleanup of previous scratch directory.
+    }
+  }
   copyStagedTree(
     project,
     scratch.path,
@@ -99,8 +107,7 @@ String? stageStrippedProjectCopy(String project, Set<String>? allowed) {
 /// Deletes a staging copy created by [stageStrippedProjectCopy].
 ///
 /// A failed recursive delete on Windows (a child still holds the directory)
-/// must not mask the analysis' own result; the directory lives under the
-/// system temp directory, so the OS reclaims it later.
+/// must not mask the analysis' own result.
 void _removeStagingCopy(String scratch) {
   final dir = Directory(scratch);
   if (!dir.existsSync()) return;
