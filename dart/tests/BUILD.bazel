@@ -37,6 +37,7 @@ load(":library_builder_library_direct_test.bzl", "library_builder_library_direct
 load(":library_test.bzl", "library_test_suite")
 load(":link_hook_test.bzl", "link_hook_test_suite")
 load(":mockito_library_direct_test.bzl", "mockito_library_direct_test_suite")
+load(":modular_chain_test.bzl", "modular_chain_test_suite")
 load(":native_assets_test.bzl", "native_assets_test_suite")
 load(":pinned_sources_test.bzl", "pinned_sources_test_suite")
 load(":project_staging_test.bzl", "project_staging_test_suite")
@@ -124,6 +125,8 @@ codegen_test_suite(name = "codegen_test")
 source_set_test_suite(name = "source_set_test")
 
 kernel_test_suite(name = "kernel_test")
+
+modular_chain_test_suite(name = "modular_chain_test")
 
 language_version_test_suite(name = "language_version_test")
 
