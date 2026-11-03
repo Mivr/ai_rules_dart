@@ -23,3 +23,18 @@ dart.toolchain(dart_version = "3.13.5")
 use_repo(dart, "dart_toolchains")
 
 register_toolchains("@dart_toolchains//:all")
+
+# Dev-only pub deps for the tools' own `dart_test` targets (`package:test`) and
+# the `package:yaml` parser the e2e spec and coverage tools share. Pinned by
+# //e2e_runner:pubspec.lock; resolved into @pub_deps so a `dart_test` here can
+# depend on `test` and the binaries can depend on `yaml`.
+pub = use_extension("@rules_dart//dart/pub:extensions.bzl", "pub")
+pub.from_lock(
+    name = "pub_deps",
+    # Isolated: the root module's `ext_pub_deps` pins `analyzer` and friends at
+    # older versions than a fresh `test` resolution would choose; keeping this
+    # hub out of the shared version resolution stops those upgrades.
+    isolated = True,
+    lock = "//e2e_runner:pubspec.lock",
+)
+use_repo(pub, "pub_deps")
