@@ -31,6 +31,19 @@ def analyze_summaries(ctx, name, staged, summaries, sdk_summary, sdk_inputs, own
     `staged` holds the target's own files and the options alone, and
     `summaries` the summaries of everything they import, which take the place
     of the closure's source the `dart analyze` action reads.
+
+    Args:
+      ctx: The aspect context.
+      name: Action output name prefix for this target.
+      staged: The staged project holding the target's own files and options.
+      summaries: The dependency summaries the target is checked against.
+      sdk_summary: The SDK summary every summary-mode action reads.
+      sdk_inputs: The analyzing SDK's input files.
+      own_paths: The target's own `src/`-relative file paths being checked.
+      baseline: The sliced per-target baseline, or None.
+
+    Returns:
+      The stamp the analyze action writes on success.
     """
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
     mismatch = kernel_sdk_mismatch_error(ctx.label, "_summary_tool", ctx.attr._summary_tool, dart_sdk_info.version)

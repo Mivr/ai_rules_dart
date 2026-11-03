@@ -7,6 +7,7 @@ load("//dart:defs.bzl", "dart_library", "dart_test")
 # alongside the vendored SDK lints.
 dart_library(
     name = "rules_dart_project_lints",
+    package_name = "rules_dart_project_lints",
     srcs = [
         "lib/no_home_env_reads.dart",
         "lib/no_stdout_in_worker.dart",
@@ -16,7 +17,6 @@ dart_library(
         "lib/rules_dart_project_lints.dart",
     ],
     language_version = "3.13",
-    package_name = "rules_dart_project_lints",
     visibility = ["//visibility:public"],
     deps = ["@ext_pub_deps//:analyzer"],
 )
