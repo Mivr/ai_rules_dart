@@ -783,6 +783,7 @@ dart_test(
 
 dart_test(
     name = "kernel_launcher_test",
+    size = "small",
     srcs = [
         "kernel_launcher.dart",
         "private_home.dart",

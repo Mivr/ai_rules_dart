@@ -52,6 +52,7 @@ dart_binary(
 
 dart_test(
     name = "plain_test",
+    size = "small",
     main = "hello_test.dart",
 )
 
@@ -81,5 +82,6 @@ dart_wasm_binary(
 
 dart_analysis_test(
     name = "analysis_test",
+    size = "small",
     targets = [":fix_lib"],
 )
