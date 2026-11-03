@@ -3,7 +3,7 @@
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load("//dart:defs.bzl", "dart_binary", "dart_codegen", "dart_test")
 load("//dart:providers.bzl", "DartCompileInfo")
-load("//dart/private:dart_binary.bzl", "binary_output_basename")
+load("//dart/private:dart_binary.bzl", "binary_output_basename", "is_tool_bin_path")
 load("//dart/private:dart_compile.bzl", "compile_quiet_flags")
 load("//dart/private:dart_test.bzl", "dart_test_kernel")
 load("//dart/private:dart_test_runner.bzl", "DartTestRunnerSnapshotInfo", "dart_test_runner_snapshot")
@@ -94,6 +94,27 @@ def _snapshot_modes_fixed_extensions_test_impl(ctx):
     asserts.equals(env, "app.aot", binary_output_basename("app", "aot-snapshot", False))
     return unittest.end(env)
 
+def _exec_bin_path_test_impl(ctx):
+    """Regression: exec output roots are tool configurations, ordinary roots are not.
+
+    The rule once asked Bazel for its private tool-configuration check, which
+    Bazel 9.0.0 rejects at analysis. The exec decision now reads the output root
+    name. Each failure message names the path that was misclassified, and the
+    paths are plain strings, so no host OS matters.
+    """
+    env = unittest.begin(ctx)
+    for path in [
+        "bazel-out/k8-opt-exec-2B5C4A8F/bin",
+        "bazel-out/darwin-fastbuild-exec-0123456789/bin",
+    ]:
+        asserts.true(env, is_tool_bin_path(path), "exec output path not classified as a tool configuration: %s" % path)
+    for path in [
+        "bazel-out/k8-opt/bin",
+        "bazel-out/darwin-fastbuild/bin",
+    ]:
+        asserts.false(env, is_tool_bin_path(path), "ordinary output path classified as a tool configuration: %s" % path)
+    return unittest.end(env)
+
 def _aot_modes_compile_quietly_test_impl(ctx):
     # Regression: `dart compile exe|aot-snapshot` prints `Generated: <path>` on
     # stdout, and Bazel echoes any action output, so every build that compiled
@@ -178,6 +199,7 @@ _exe_windows_test = unittest.make(_exe_gets_dot_exe_on_windows_test_impl)
 _exe_other_test = unittest.make(_exe_bare_off_windows_test_impl)
 _snapshot_test = unittest.make(_snapshot_modes_fixed_extensions_test_impl)
 _quiet_test = unittest.make(_aot_modes_compile_quietly_test_impl)
+_exec_bin_path_test = unittest.make(_exec_bin_path_test_impl)
 
 def dart_binary_test_suite(name):
     """Registers the dart_binary.bzl helper unit tests.
@@ -189,6 +211,7 @@ def dart_binary_test_suite(name):
     _exe_other_test(name = "dart_binary_exe_other_test", size = "small")
     _snapshot_test(name = "dart_binary_snapshot_test", size = "small")
     _quiet_test(name = "dart_binary_quiet_test", size = "small")
+    _exec_bin_path_test(name = "dart_binary_exec_bin_path_test", size = "small")
     _rule_kind_test(
         name = "dart_binary_exe_rule_kind_test",
         size = "small",
@@ -274,6 +297,7 @@ def dart_binary_test_suite(name):
             ":dart_binary_exe_other_test",
             ":dart_binary_snapshot_test",
             ":dart_binary_quiet_test",
+            ":dart_binary_exec_bin_path_test",
             ":dart_binary_exe_rule_kind_test",
             ":dart_binary_modular_kernel_rule_kind_test",
             ":dart_binary_whole_kernel_rule_kind_test",
