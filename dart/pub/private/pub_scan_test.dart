@@ -85,6 +85,62 @@ List<int> _pax(List<List<int>> entries, String records) =>
 
 List<int> _gz(List<int> tar) => GZipCodec().encode(tar);
 
+/// CRC-32, the checksum a gzip trailer carries and whose low 16 bits an
+/// `FHCRC` header carries. Computed bitwise so the test never shares the
+/// scanner's lookup table.
+int _crc32Of(List<int> bytes) {
+  var c = 0xFFFFFFFF;
+  for (final b in bytes) {
+    c ^= b;
+    for (var i = 0; i < 8; i++) {
+      c = (c & 1) != 0 ? (c >>> 1) ^ 0xEDB88320 : c >>> 1;
+    }
+  }
+  return ~c & 0xFFFFFFFF;
+}
+
+/// A hand-built RFC 1952 member header. A non-null [extra] sets `FEXTRA` (its
+/// length goes in `XLEN`), a non-null [name] sets `FNAME`, a non-null
+/// [comment] sets `FCOMMENT`, and [hcrc] appends the header CRC16. The CRC16
+/// covers every header byte before it, `XLEN` included.
+List<int> _gzHeader({
+  List<int>? extra,
+  String? name,
+  String? comment,
+  bool hcrc = false,
+  bool corruptHcrc = false,
+}) {
+  var flg = 0;
+  if (extra != null) flg |= 4;
+  if (name != null) flg |= 8;
+  if (comment != null) flg |= 16;
+  if (hcrc) flg |= 2;
+  final header = <int>[31, 139, 8, flg, 0, 0, 0, 0, 0, 3];
+  if (extra != null) {
+    header
+      ..add(extra.length & 0xFF)
+      ..add((extra.length >> 8) & 0xFF)
+      ..addAll(extra);
+  }
+  if (name != null) header.addAll(<int>[...latin1.encode(name), 0]);
+  if (comment != null) header.addAll(<int>[...latin1.encode(comment), 0]);
+  if (hcrc) {
+    final int crc16 = (_crc32Of(header) + (corruptHcrc ? 1 : 0)) & 0xFFFF;
+    header
+      ..add(crc16 & 0xFF)
+      ..add((crc16 >> 8) & 0xFF);
+  }
+  return header;
+}
+
+/// A gzip member with [header] in place of the 10-byte header [GZipCodec]
+/// wrote around [gz]'s deflate body and trailer. The body and trailer do not
+/// depend on the header, so they stay valid.
+List<int> _gzWithHeader(List<int> gz, List<int> header) => <int>[
+  ...header,
+  ...gz.sublist(10),
+];
+
 Map<String, Object?> _verdict(List<int> archive) =>
     scan.scanArchiveVerdict(archive);
 
@@ -101,6 +157,20 @@ Future<Map<String, Object?>> _verdictFile(
   final file = File('${dir.path}/$name');
   await file.writeAsBytes(archive);
   return scan.scanArchiveFile(file.path);
+}
+
+Future<void> _expectMatchesAll(
+  Directory dir,
+  String name,
+  List<int> archive,
+  Map<String, Object?> expected,
+) async {
+  expect(_verdict(archive), expected);
+  expect(await _verdictChunked(archive, 7), expected);
+  expect(await _verdictChunked(archive, 1), expected);
+  final chunks = <List<int>>[archive];
+  expect(await scan.scanArchiveChunks(chunks), expected);
+  expect(await _verdictFile(dir, name, archive), expected);
 }
 
 void _expectOk(List<int> archive) {
@@ -147,6 +217,10 @@ List<List<int>> _battery() => [
     ..._gz(_tar([_file('lib/a.dart')])),
     ..._gz(_tar([_file('lib/b.dart')])),
   ],
+  _gzWithHeader(
+    _gz(_tar([_file('lib/a.dart')])),
+    _gzHeader(extra: [1, 2, 3, 4], hcrc: true),
+  ),
   [
     ..._gz(_tar([_file('lib/a.dart')])),
     ...List<int>.filled(100, 0),
@@ -340,6 +414,26 @@ void main() {
         ...List<int>.filled(512, 0),
       ], "an entry's size is not a number");
     });
+    test('a negative or overflowing base-256 size fails closed', () {
+      final List<int> h = _header('lib/a.dart', '0');
+      h[124] = 0xFF;
+      _expectUnscannable([
+        ...h,
+        ...List<int>.filled(512, 0),
+      ], "an entry's size is not a number");
+    });
+    test('an overflowing pax size fails closed', () {
+      const records = '35 size=99999999999999999999\n';
+      _expectUnscannable(
+        _gz(
+          _tar([
+            _entry('x', 'x', data: latin1.encode(records)),
+            _file('lib/a.dart'),
+          ]),
+        ),
+        'a pax size is not a number',
+      );
+    });
     test('an unknown entry kind', () {
       _expectUnscannable(
         _gz(_tar([_entry('lib/a.dart', 'Z')])),
@@ -401,6 +495,274 @@ void main() {
         }
       });
     }
+  });
+
+  group('repeat determinism across chunk sizes and iterations', () {
+    test('200 iterations of full battery at chunk size 7', () async {
+      for (var iter = 0; iter < 200; iter++) {
+        for (final List<int> archive in _battery()) {
+          expect(
+            await _verdictChunked(archive, 7),
+            _verdict(archive),
+            reason: 'iter $iter: archive of ${archive.length} bytes at chunk 7',
+          );
+        }
+      }
+    });
+
+    test('repeated passes across multiple chunk sizes', () async {
+      for (var pass = 0; pass < 5; pass++) {
+        for (final chunkSize in [1, 2, 3, 5, 7, 16, 511, 512, 1024]) {
+          for (final List<int> archive in _battery()) {
+            expect(
+              await _verdictChunked(archive, chunkSize),
+              _verdict(archive),
+              reason:
+                  'pass $pass: archive of ${archive.length} bytes at chunk $chunkSize',
+            );
+          }
+        }
+      }
+    });
+  });
+
+  group('gzip member framing and tail verification', () {
+    late Directory dir;
+    setUp(() async {
+      dir = await Directory.systemTemp.createTemp('pub_scan_framing_test');
+    });
+    tearDown(() async {
+      await dir.delete(recursive: true);
+    });
+
+    test('trailing junk at chunk boundaries fails closed', () async {
+      final List<int> cleanGz = _gz(_tar([_file('lib/a.dart')]));
+      const expected = <String, Object?>{
+        'unscannable': 'the deflate stream cannot be decoded',
+      };
+      final List<int> chunkA1 = cleanGz.sublist(0, cleanGz.length - 4);
+      final chunkA2 = <int>[...cleanGz.sublist(cleanGz.length - 4), 1, 2, 3];
+      expect(
+        await scan.scanArchiveChunks(<List<int>>[chunkA1, chunkA2]),
+        expected,
+      );
+
+      expect(
+        await scan.scanArchiveChunks(<List<int>>[
+          cleanGz,
+          <int>[1, 2, 3],
+        ]),
+        expected,
+      );
+
+      final junkArchive = <int>[...cleanGz, 1, 2, 3];
+      expect(await _verdictChunked(junkArchive, 1), expected);
+      expect(_verdict(junkArchive), expected);
+      expect(await _verdictFile(dir, 'junk.tar.gz', junkArchive), expected);
+    });
+
+    test(
+      'trailing NUL padding followed by non-zero byte fails closed',
+      () async {
+        final List<int> cleanGz = _gz(_tar([_file('lib/a.dart')]));
+        final badPadding = <int>[...cleanGz, 0, 0, 0, 1];
+        const expected = <String, Object?>{
+          'unscannable': 'the deflate stream cannot be decoded',
+        };
+        await _expectMatchesAll(dir, 'bad_pad.tar.gz', badPadding, expected);
+      },
+    );
+
+    test('trailing incomplete second member bytes fail closed', () async {
+      final List<int> cleanGz = _gz(_tar([_file('lib/a.dart')]));
+      const badDeflate = <String, Object?>{
+        'unscannable': 'the deflate stream cannot be decoded',
+      };
+      const badMember = <String, Object?>{
+        'unscannable': 'a gzip member is truncated',
+      };
+      await _expectMatchesAll(dir, 'tail_31.tar.gz', <int>[
+        ...cleanGz,
+        31,
+      ], badDeflate);
+      await _expectMatchesAll(dir, 'tail_31_139.tar.gz', <int>[
+        ...cleanGz,
+        31,
+        139,
+      ], badMember);
+      await _expectMatchesAll(dir, 'tail_partial_hdr.tar.gz', <int>[
+        ...cleanGz,
+        31,
+        139,
+        8,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3,
+      ], badDeflate);
+    });
+
+    test('truncated and corrupted 8-byte trailers fail closed', () async {
+      final List<int> cleanGz = _gz(_tar([_file('lib/a.dart')]));
+      const badDeflate = <String, Object?>{
+        'unscannable': 'the deflate stream cannot be decoded',
+      };
+      await _expectMatchesAll(
+        dir,
+        'trunc_trailer.tar.gz',
+        cleanGz.sublist(0, cleanGz.length - 4),
+        badDeflate,
+      );
+      final corruptCrc = <int>[...cleanGz];
+      corruptCrc[corruptCrc.length - 8] ^= 1;
+      await _expectMatchesAll(dir, 'bad_crc.tar.gz', corruptCrc, badDeflate);
+      final corruptIsize = <int>[...cleanGz];
+      corruptIsize[corruptIsize.length - 4] ^= 1;
+      await _expectMatchesAll(
+        dir,
+        'bad_isize.tar.gz',
+        corruptIsize,
+        badDeflate,
+      );
+    });
+
+    test('valid optional gzip header fields scan clean', () async {
+      final List<int> tarGz = _gz(_tar([_file('lib/a.dart')]));
+      const okVerdict = <String, Object?>{'ok': true};
+      // A correct FHCRC covers the FEXTRA length bytes too, so this member is
+      // clean only when XLEN is part of the header checksum.
+      final List<int> extra = _gzWithHeader(
+        tarGz,
+        _gzHeader(extra: [1, 2, 3, 4], hcrc: true),
+      );
+      await _expectMatchesAll(dir, 'extra_hcrc.tar.gz', extra, okVerdict);
+      final List<int> named = _gzWithHeader(
+        tarGz,
+        _gzHeader(name: 'pkg.tar', comment: 'built', hcrc: true),
+      );
+      await _expectMatchesAll(dir, 'named_hcrc.tar.gz', named, okVerdict);
+      final List<int> all = _gzWithHeader(
+        tarGz,
+        _gzHeader(extra: const <int>[], name: 'n', comment: 'c', hcrc: true),
+      );
+      await _expectMatchesAll(dir, 'all_fields.tar.gz', all, okVerdict);
+    });
+
+    test('a gzip header split across chunks keeps one verdict', () async {
+      final List<int> tarGz = _gz(_tar([_file('lib/a.dart')]));
+      final List<int> header = _gzHeader(
+        extra: [1, 2, 3, 4],
+        name: 'n',
+        comment: 'c',
+        hcrc: true,
+      );
+      final List<int> archive = _gzWithHeader(tarGz, header);
+      const okVerdict = <String, Object?>{'ok': true};
+      expect(
+        await scan.scanArchiveChunks(<List<int>>[
+          header.sublist(0, 5),
+          header.sublist(5),
+          archive.sublist(header.length),
+        ]),
+        okVerdict,
+      );
+      expect(
+        await scan.scanArchiveChunks(<List<int>>[
+          archive.sublist(0, header.length),
+          archive.sublist(header.length),
+        ]),
+        okVerdict,
+      );
+    });
+
+    test('truncated optional gzip header fields fail closed', () async {
+      const badHeader = <String, Object?>{
+        'unscannable': 'a gzip header is truncated',
+      };
+      final List<int> extraHeader = _gzHeader(extra: [1, 2, 3, 4]);
+      await _expectMatchesAll(
+        dir,
+        'trunc_extra_xlen.tar.gz',
+        extraHeader.sublist(0, 11),
+        badHeader,
+      );
+      await _expectMatchesAll(
+        dir,
+        'trunc_extra_data.tar.gz',
+        extraHeader.sublist(0, 13),
+        badHeader,
+      );
+      final List<int> nameHeader = _gzHeader(name: 'abc');
+      await _expectMatchesAll(
+        dir,
+        'trunc_name.tar.gz',
+        nameHeader.sublist(0, 12),
+        badHeader,
+      );
+      final List<int> commentHeader = _gzHeader(comment: 'abc');
+      await _expectMatchesAll(
+        dir,
+        'trunc_comment.tar.gz',
+        commentHeader.sublist(0, 12),
+        badHeader,
+      );
+      final List<int> hcrcHeader = _gzHeader(hcrc: true);
+      await _expectMatchesAll(
+        dir,
+        'trunc_hcrc.tar.gz',
+        hcrcHeader.sublist(0, hcrcHeader.length - 1),
+        badHeader,
+      );
+    });
+
+    test('a mismatched gzip header CRC fails closed', () async {
+      final List<int> tarGz = _gz(_tar([_file('lib/a.dart')]));
+      const badHeader = <String, Object?>{
+        'unscannable': 'a gzip member has a bad header',
+      };
+      final List<int> bad = _gzWithHeader(
+        tarGz,
+        _gzHeader(extra: [9, 8], hcrc: true, corruptHcrc: true),
+      );
+      await _expectMatchesAll(dir, 'bad_hcrc.tar.gz', bad, badHeader);
+    });
+
+    test('deflate block types and trailer ISIZE trailing zeros', () async {
+      const okVerdict = <String, Object?>{'ok': true};
+      final List<int> storedGz = ZLibEncoder(
+        gzip: true,
+        level: 0,
+      ).convert(_tar([_file('lib/a.dart')]));
+      await _expectMatchesAll(dir, 'stored.tar.gz', storedGz, okVerdict);
+
+      const badDeflate = <String, Object?>{
+        'unscannable': 'the deflate stream cannot be decoded',
+      };
+      await _expectMatchesAll(dir, 'stored_junk.tar.gz', <int>[
+        ...storedGz,
+        1,
+        2,
+        3,
+      ], badDeflate);
+
+      final multiGz = <int>[
+        ..._gz(_tar([_file('lib/a.dart')])),
+        ..._gz(_tar([_file('lib/b.dart')])),
+      ];
+      await _expectMatchesAll(dir, 'multi.tar.gz', multiGz, okVerdict);
+
+      final List<int> tarZero = _tar([_file('lib/a.dart')]);
+      final paddedTarZero = <int>[..._gz(tarZero), ...List<int>.filled(50, 0)];
+      await _expectMatchesAll(
+        dir,
+        'padded_zero.tar.gz',
+        paddedTarZero,
+        okVerdict,
+      );
+    });
   });
 
   group('scanArchiveFile reads real files', () {
