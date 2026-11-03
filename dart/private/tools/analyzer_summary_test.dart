@@ -27,6 +27,7 @@ import 'analyzer_summary.dart'
         reportAnalyzeFindings,
         resolveProjectSource,
         runSingleRequest;
+import 'analyzer_summary_lints.dart' show registerAllLintRules;
 import 'analyzer_summary_test_support.dart'
     show
         defineDisposeTearDownTests,
@@ -699,6 +700,7 @@ int checkLoud() => loudValue();
   });
 
   _defineSummaryBaselineVerdictTests();
+  _defineProjectLintTests(() => tempDir);
 }
 
 AnalysisBaseline _parseSummaryBaseline(String json) =>
@@ -979,6 +981,112 @@ void _defineSummaryMalformedBaselineTests(
     expectRejected(
       '{"lib/a.dart":{"avoid_print":1,"AVOID_PRINT":2}}',
       'AVOID_PRINT',
+    );
+  });
+}
+
+/// Stages a project enabling the wave-1 project rules with one violating
+/// source each, and checks `analyzer_summary` reports all four hosted rules.
+void _defineProjectLintTests(Directory Function() currentTemp) {
+  group('project lint rules', () {
+    test(
+      'reports the hosted wave-1 rules enabled in analysis_options.yaml',
+      () async {
+        registerAllLintRules();
+        final Directory sdkDir = File(Platform.resolvedExecutable)
+            .parent
+            .parent;
+        final base = Directory(p.join(currentTemp().path, 'project_lints'))
+          ..createSync(recursive: true);
+        final sdkSummary = File(p.join(base.path, 'sdk.sum'));
+        final outSink = StringBuffer();
+        final errSink = StringBuffer();
+        expect(
+          await runSingleRequest(
+            ['sdk', '--sdk', sdkDir.path, '--out', sdkSummary.path],
+            outSink: outSink,
+            errSink: errSink,
+            resourceProvider: PhysicalResourceProvider.INSTANCE,
+          ),
+          0,
+          reason: errSink.toString(),
+        );
+
+        final project = Directory(p.join(base.path, 'proj'))
+          ..createSync(recursive: true);
+        File(p.join(project.path, 'src', 'analysis_options.yaml'))
+          ..parent.createSync(recursive: true)
+          ..writeAsStringSync(
+            'linter:\n'
+            '  rules:\n'
+            '    no_home_env_reads: true\n'
+            '    no_stdout_in_worker: true\n'
+            '    no_wall_clock_in_actions: true\n'
+            '    process_requires_environment: true\n',
+          );
+        File(p.join(project.path, '.dart_tool', 'package_config.json'))
+          ..parent.createSync(recursive: true)
+          ..writeAsStringSync(
+            jsonEncode({
+              'configVersion': 2,
+              'packages': [
+                {
+                  'name': 'proj',
+                  'rootUri': '../src',
+                  'packageUri': 'lib/',
+                  'languageVersion': '3.0',
+                },
+              ],
+            }),
+          );
+        final staged = <String>[
+          for (final entry in {
+            'lib/tool_worker.dart': 'void run() {\n  print(1);\n}\n',
+            'lib/proc.dart':
+                "import 'dart:io';\n"
+                'void run() {\n'
+                "  Process.run('ls', []);\n"
+                '}\n',
+            'lib/clock.dart':
+                'int stamp() {\n  DateTime.now();\n  return 0;\n}\n',
+            'lib/env.dart':
+                "import 'dart:io';\n"
+                "String home() => Platform.environment['HOME'] ?? '';\n",
+          }.entries)
+            (File(p.join(project.path, 'src', entry.key))
+                  ..parent.createSync(recursive: true)
+                  ..writeAsStringSync(entry.value))
+                .path,
+        ];
+        final stamp = File(p.join(base.path, 'project_lints.analyzed'));
+        outSink.clear();
+        errSink.clear();
+        final int exitCode = await runSingleRequest(
+          [
+            'analyze',
+            '--sdk',
+            sdkDir.path,
+            '--sdk-summary',
+            sdkSummary.path,
+            '--project',
+            project.path,
+            '--stamp',
+            stamp.path,
+            '--fatal-infos',
+            for (final source in staged) ...['--source', source],
+          ],
+          outSink: outSink,
+          errSink: errSink,
+          resourceProvider: PhysicalResourceProvider.INSTANCE,
+        );
+        expect(exitCode, 1, reason: '$outSink\n$errSink');
+        expect(stamp.existsSync(), isFalse);
+        final out = outSink.toString();
+        expect(out, contains('no_home_env_reads'));
+        expect(out, contains('no_stdout_in_worker'));
+        expect(out, contains('no_wall_clock_in_actions'));
+        expect(out, contains('process_requires_environment'));
+      },
     );
   });
 }

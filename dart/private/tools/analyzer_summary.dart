@@ -44,8 +44,6 @@ import 'package:analyzer/src/generated/source.dart' show UriResolver;
 // ignore: implementation_imports
 import 'package:analyzer/src/summary/package_bundle_reader.dart'
     show InSummaryUriResolver;
-// ignore: implementation_imports
-import 'package:linter/src/rules.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:rules_dart_guard/directive_guard.dart';
@@ -54,6 +52,7 @@ import 'package:rules_dart_worker/worker_tool_fs.dart';
 
 import 'analysis_baseline.dart';
 import 'analysis_model.dart';
+import 'analyzer_summary_lints.dart';
 
 const _optionsBasename = 'analysis_options.yaml';
 const _packageConfig = '.dart_tool/package_config.json';
@@ -96,7 +95,7 @@ Future<void> disposeContextCollection(
 /// Registers the vendored lint rules once per process.
 void _ensureLintRulesRegistered() {
   if (!_lintRulesRegistered) {
-    registerLintRules();
+    registerAllLintRules();
     _lintRulesRegistered = true;
   }
 }
