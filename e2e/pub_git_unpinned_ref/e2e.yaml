@@ -1,0 +1,7 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: expect a branch resolved-ref to fail the git fetch
+    run: bazel build @bad_git//...
+    expect:
+      non_zero: true
+      stderr_contains: 'pub_lock_git_package "evil_pkg" (1.0.0) requires a full 40-hex resolved-ref, got "main".'

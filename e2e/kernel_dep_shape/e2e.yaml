@@ -1,0 +1,24 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: expect a multi-root import of a dep source to fail the library
+    run: bazel build //pkg:bad_lib_app
+    expect:
+      non_zero: true
+      output_contains: "cannot compile package:pkg/a.dart: import 'org-dartlang-root:///dep/lib/d.dart' reaches a source its dependencies define under 'package:dep/d.dart'; import that instead."
+  - name: expect a multi-root import of a dep source to fail under standalone
+    run: bazel build //pkg:bad_lib_app --spawn_strategy=standalone
+    expect:
+      non_zero: true
+      output_contains: "reaches a source its dependencies define under 'package:dep/d.dart'; import that instead."
+  - name: expect a relative import of a dep source to fail the entry
+    run: bazel build //pkg:bad_bin
+    expect:
+      non_zero: true
+      output_contains: "cannot compile org-dartlang-root:///pkg/bin/main.dart: import '../../dep/lib/d.dart' reaches a source its dependencies define under 'package:dep/d.dart'; import that instead."
+  - name: expect a relative import of a dep source to fail under standalone
+    run: bazel build //pkg:bad_bin --spawn_strategy=standalone
+    expect:
+      non_zero: true
+      output_contains: "reaches a source its dependencies define under 'package:dep/d.dart'; import that instead."
+  - name: package import of the dep source succeeds
+    run: bazel build //pkg:good_app

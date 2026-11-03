@@ -1,0 +1,40 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: expect an empty digest to fail the fetch
+    run: bazel build @bad_empty//...
+    expect:
+      non_zero: true
+      stderr_contains: "pinned_download: refusing to fetch"
+      output_contains: '"sha256" must be exactly 64 lowercase hex digits, got "".'
+  - name: expect a short digest to fail the fetch
+    run: bazel build @bad_short//...
+    expect:
+      non_zero: true
+      stderr_contains: "pinned_download: refusing to fetch"
+      output_contains: '"sha256" must be exactly 64 lowercase hex digits, got "86bea300d6701fb6c1fddc33b21235231d108b44a9793db9dcd48940fa46a6a".'
+  - name: expect an uppercase digest to fail the fetch
+    run: bazel build @bad_upper//...
+    expect:
+      non_zero: true
+      stderr_contains: "pinned_download: refusing to fetch"
+      output_contains: '"sha256" must be exactly 64 lowercase hex digits, got "86BEA300D6701FB6C1FDDC33B21235231D108B44A9793DB9DCD48940FA46A6A6".'
+  - name: expect an SRI digest to fail the fetch
+    run: bazel build @bad_sri//...
+    expect:
+      non_zero: true
+      stderr_contains: "pinned_download: refusing to fetch"
+      output_contains: '"sha256" must be exactly 64 lowercase hex digits, got "sha256-hr6jANZwH7bB/dwzshI1Ix0Qi0SpeT253NSJQPpGpqY=".'
+  - name: expect a conditional blank digest to fail the fetch
+    run: bazel build @bad_conditional//...
+    expect:
+      non_zero: true
+      stderr_contains: "pinned_download: refusing to fetch"
+      output_contains: '"sha256" must be exactly 64 lowercase hex digits, got "".'
+  - name: expect a wrong digest to fail the fetch
+    run: bazel build @bad_wrong//...
+    expect:
+      non_zero: true
+      stderr_contains: "Checksum was"
+      output_contains: "but wanted 86bea300d6701fb6c1fddc33b21235231d108b44a9793db9dcd48940fa46a6a7"
+  - name: a correct digest on the same fixture succeeds
+    run: bazel build @good//...

@@ -1,0 +1,16 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: test
+    run: bazel test --test_output=errors //...
+    min_tests_executed: 6
+  - name: dbg test
+    run: bazel test -c dbg --test_output=errors //...
+    min_tests_executed: 6
+  - name: expect a timed-out test's output in its log
+    run: bazel test --test_timeout=5 //:hangs_until_killed_test
+    expect:
+      non_zero: true
+      test_log_contains:
+        - "Test timed out"
+        - "printed before hanging"
+        - "written to stderr before hanging"

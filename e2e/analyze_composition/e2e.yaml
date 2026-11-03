@@ -1,0 +1,15 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: test
+    run: bazel test --test_output=errors //...
+    min_tests_executed: 1
+  - name: expect another module's ruleset to apply
+    run: bazel test //bad
+    expect:
+      non_zero: true
+      output_contains: "avoid_print"
+  - name: expect another repository's options to be refused
+    run: bazel build //:cross_repo_config
+    expect:
+      non_zero: true
+      stderr_contains: "is in another repository"

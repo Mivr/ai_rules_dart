@@ -1,0 +1,144 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: forest runfiles unsandboxed worker
+    run: bazel build --aspects=@rules_dart//dart:analyze.bzl%dart_analyze --output_groups=+dart_analyze,+dart_format //:clean_lib
+  - name: forest runfiles standalone
+    run: bazel build --spawn_strategy=standalone --aspects=@rules_dart//dart:analyze.bzl%dart_analyze --output_groups=+dart_analyze,+dart_format //:clean_lib
+  - name: forest runfiles worker-sandboxed
+    run: bazel build --worker_sandboxing --aspects=@rules_dart//dart:analyze.bzl%dart_analyze --output_groups=+dart_analyze,+dart_format //:clean_lib
+  - name: forest runfiles analyze sandboxed
+    run: bazel build --strategy=DartAnalyze=sandboxed --aspects=@rules_dart//dart:analyze.bzl%dart_analyze --output_groups=+dart_analyze,+dart_format //:clean_lib
+  - name: manifest runfiles unsandboxed worker
+    run: bazel build --noenable_runfiles --aspects=@rules_dart//dart:analyze.bzl%dart_analyze --output_groups=+dart_analyze,+dart_format //:clean_lib
+  - name: manifest runfiles standalone
+    run: bazel build --noenable_runfiles --spawn_strategy=standalone --aspects=@rules_dart//dart:analyze.bzl%dart_analyze --output_groups=+dart_analyze,+dart_format //:clean_lib
+  - name: manifest runfiles worker-sandboxed
+    run: bazel build --noenable_runfiles --worker_sandboxing --aspects=@rules_dart//dart:analyze.bzl%dart_analyze --output_groups=+dart_analyze,+dart_format //:clean_lib
+  - name: manifest runfiles analyze sandboxed
+    run: bazel build --noenable_runfiles --strategy=DartAnalyze=sandboxed --aspects=@rules_dart//dart:analyze.bzl%dart_analyze --output_groups=+dart_analyze,+dart_format //:clean_lib
+  - name: expect analyzer diagnostics to fail at workspace paths
+    run: bazel test //:bad_lib
+    expect:
+      non_zero: true
+      output_contains:
+        - "unused_local_variable"
+        - "- lib/bad.dart:4:7 -"
+  - name: baselined target passes in summary mode
+    run: bazel test //baseline:baselined_lib
+    min_tests_executed: 1
+  - name: baselined target passes without summaries
+    run: bazel test --@rules_dart//dart:analyzer_summaries=false //baseline:baselined_lib
+    min_tests_executed: 1
+  - name: over-baseline target fails in summary mode
+    run: bazel test //baseline:over_baseline_lib
+    expect:
+      non_zero: true
+      output_contains:
+        - "baseline/lib/over_baseline.dart"
+        - "avoid_print"
+        - "observed 3, ceiling 2"
+  - name: over-baseline target fails without summaries
+    run: bazel test --@rules_dart//dart:analyzer_summaries=false //baseline:over_baseline_lib
+    expect:
+      non_zero: true
+      output_contains:
+        - "baseline/lib/over_baseline.dart"
+        - "avoid_print"
+        - "observed 3, ceiling 2"
+  - name: unkeyed target fails in summary mode
+    run: bazel test //baseline:unbaselined_lib
+    expect:
+      non_zero: true
+      output_contains:
+        - "baseline/lib/unbaselined.dart"
+        - "avoid_print"
+        - "observed 1, ceiling 0"
+  - name: unkeyed target fails without summaries
+    run: bazel test --@rules_dart//dart:analyzer_summaries=false //baseline:unbaselined_lib
+    expect:
+      non_zero: true
+      output_contains:
+        - "baseline/lib/unbaselined.dart"
+        - "avoid_print"
+        - "observed 1, ceiling 0"
+  - name: malformed baseline config fails naming config file and entry
+    run: bazel build //baseline:bad_baseline_config
+    expect:
+      non_zero: true
+      output_contains:
+        - "//baseline:bad_baseline_config"
+        - "baseline/bad_baseline.json"
+        - "avoid_print"
+  - name: binary entrypoint is analyzed
+    run: bazel test //:bad_bin
+    expect:
+      non_zero: true
+      output_contains: "unused_import"
+  - name: flutter_library-shaped target is analyzed
+    run: bazel test //flutter_shaped
+    expect:
+      non_zero: true
+      output_contains: "unused_element"
+  - name: bundle-shaped target package sources are analyzed
+    run: bazel test //bundle_shaped
+    expect:
+      non_zero: true
+      output_regex: "bundle_shaped/lib/bundle.dart.*unused_element"
+  - name: nearest options file governs each file
+    run: bazel test //nested
+    expect:
+      non_zero: true
+      output_regex: "nested/lib/quiet.dart:5:3 .* avoid_print"
+      output_not_contains: "loud.dart"
+  - name: unresolvable ruleset include fails
+    run: bazel test //unresolved_ruleset:clean_lib
+    expect:
+      non_zero: true
+      output_contains: "include_file_not_found"
+  - name: included ruleset lints are applied
+    run: bazel test //vga:double_quoted_lib
+    expect:
+      non_zero: true
+      output_contains: "prefer_single_quotes"
+  - name: package-root-gated lints are applied
+    run: bazel test //vga:undocumented_lib
+    expect:
+      non_zero: true
+      output_contains: "public_member_api_docs"
+  - name: formatting violation fails
+    run: bazel test //fmt
+    expect:
+      non_zero: true
+      output_contains: "Changed fmt/lib/misformatted.dart"
+  - name: unresolvable format ruleset fails
+    run: bazel test //fmt_unresolved
+    expect:
+      non_zero: true
+      output_contains: "Failed to resolve package URI"
+  - name: undeclared relative include fails dart_analyze sandboxed
+    run: bazel test --output_groups=-dart_analyze,-dart_format,+dart_analyze //undeclared_include
+    expect:
+      non_zero: true
+      output_contains: "The URI 'shared.yaml' included in 'undeclared_include/analysis_options.yaml' can't be found"
+  - name: undeclared relative include fails dart_format sandboxed
+    run: bazel test --output_groups=-dart_analyze,-dart_format,+dart_format //undeclared_include
+    expect:
+      non_zero: true
+      output_contains: 'Couldn''t read file "undeclared_include/shared.yaml"'
+  - name: undeclared relative include fails dart_analyze standalone
+    run: bazel test --spawn_strategy=standalone --output_groups=-dart_analyze,-dart_format,+dart_analyze //undeclared_include
+    expect:
+      non_zero: true
+      output_contains: "The URI 'shared.yaml' included in 'undeclared_include/analysis_options.yaml' can't be found"
+  - name: undeclared relative include fails dart_format standalone
+    run: bazel test --spawn_strategy=standalone --output_groups=-dart_analyze,-dart_format,+dart_format //undeclared_include
+    expect:
+      non_zero: true
+      output_contains: 'Couldn''t read file "undeclared_include/shared.yaml"'
+  - name: format check skipped when not requested
+    run: bazel build --aspects=@rules_dart//dart:analyze.bzl%dart_analyze --output_groups=+dart_analyze,-dart_format //fmt
+  - name: dart_analysis_test fails on manual target violation
+    run: bazel test --output_groups=-dart_analyze,-dart_format //manual:manual_analysis_test
+    expect:
+      non_zero: true
+      output_contains: "manual/lib/manual_bad.dart:4:3 - Dead code"

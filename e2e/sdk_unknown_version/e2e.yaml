@@ -1,0 +1,7 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: expect an unpinned SDK version to fail resolution
+    run: bazel build //:app
+    expect:
+      non_zero: true
+      stderr_contains: "instead of '9.9.9'"

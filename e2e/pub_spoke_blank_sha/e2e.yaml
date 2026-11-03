@@ -1,0 +1,7 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: expect a blank sha256 to fail the spoke fetch
+    run: bazel build @bad_spoke//...
+    expect:
+      non_zero: true
+      stderr_contains: 'pub_lock_package "collection" (1.18.0) requires a non-empty sha256.'

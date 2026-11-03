@@ -1,0 +1,56 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: clean hosted packages stay green
+    run: bazel build //:ok_app
+    replace_in_files:
+      pubspec.ok.lock:
+        - find: "file://FIXTURES_ROOT"
+          replace: "file://${WORKSPACE}/fixtures"
+      pubspec.evil_hard_out.lock:
+        - find: "file://FIXTURES_ROOT"
+          replace: "file://${WORKSPACE}/fixtures"
+      pubspec.evil_hard_in.lock:
+        - find: "file://FIXTURES_ROOT"
+          replace: "file://${WORKSPACE}/fixtures"
+      pubspec.evil_abs.lock:
+        - find: "file://FIXTURES_ROOT"
+          replace: "file://${WORKSPACE}/fixtures"
+      pubspec.evil_esc.lock:
+        - find: "file://FIXTURES_ROOT"
+          replace: "file://${WORKSPACE}/fixtures"
+      pubspec.evil_path_abs.lock:
+        - find: "file://FIXTURES_ROOT"
+          replace: "file://${WORKSPACE}/fixtures"
+      pubspec.evil_path_dotdot.lock:
+        - find: "file://FIXTURES_ROOT"
+          replace: "file://${WORKSPACE}/fixtures"
+  - name: refuse escaping hard-link
+    run: bazel build //:evil_hard_out_app
+    expect:
+      non_zero: true
+      stderr_contains: 'pub package "evil_hard_out": hard-link "lib/evil.dart" points at "../../outside.txt"'
+  - name: refuse in-package hard-link
+    run: bazel build //:evil_hard_in_app
+    expect:
+      non_zero: true
+      stderr_contains: 'pub package "evil_hard_in": hard-link "lib/evil.dart" points at "lib/ok.dart"'
+  - name: refuse absolute symlink target
+    run: bazel build //:evil_abs_app
+    expect:
+      non_zero: true
+      stderr_contains: 'pub package "evil_abs": symlink "lib/evil.dart" escapes the package (points at "/etc/passwd")'
+  - name: refuse escaping symlink target
+    run: bazel build //:evil_esc_app
+    expect:
+      non_zero: true
+      stderr_contains: 'pub package "evil_esc": symlink "lib/evil.dart" escapes the package (points at "../../outside.txt")'
+  - name: refuse absolute entry path
+    run: bazel build //:evil_path_abs_app
+    expect:
+      non_zero: true
+      stderr_contains: 'pub package "evil_path_abs": entry "/abs.dart" escapes the package'
+  - name: refuse climbing entry path
+    run: bazel build //:evil_path_dotdot_app
+    expect:
+      non_zero: true
+      stderr_contains: 'pub package "evil_path_dotdot": entry "../outside.dart" escapes the package'

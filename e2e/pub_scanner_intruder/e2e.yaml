@@ -1,0 +1,6 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: build hello
+    run: bazel build //:hello
+  - name: build scanner
+    run: bazel build @dart_pub_scanner//:scanner

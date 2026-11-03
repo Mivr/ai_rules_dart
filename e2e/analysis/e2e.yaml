@@ -1,0 +1,26 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: test
+    run: bazel test --test_output=errors //...
+    min_tests_executed: 1
+  - name: forest runfiles standalone
+    run: bazel test --spawn_strategy=standalone --test_output=errors //...
+    min_tests_executed: 1
+  - name: forest runfiles worker-sandboxed
+    run: bazel test --worker_sandboxing --test_output=errors //...
+    min_tests_executed: 1
+  - name: forest runfiles analyze sandboxed
+    run: bazel test --strategy=DartAnalyze=sandboxed --test_output=errors //...
+    min_tests_executed: 1
+  - name: manifest runfiles unsandboxed worker
+    run: bazel test --noenable_runfiles --test_output=errors //...
+    min_tests_executed: 1
+  - name: manifest runfiles standalone
+    run: bazel test --noenable_runfiles --spawn_strategy=standalone --test_output=errors //...
+    min_tests_executed: 1
+  - name: manifest runfiles worker-sandboxed
+    run: bazel test --noenable_runfiles --worker_sandboxing --test_output=errors //...
+    min_tests_executed: 1
+  - name: manifest runfiles analyze sandboxed
+    run: bazel test --noenable_runfiles --strategy=DartAnalyze=sandboxed --test_output=errors //...
+    min_tests_executed: 1

@@ -38,22 +38,28 @@ jobs:
   # shard jobs sharing one Bazel disk cache per shard: one cache restore and
   # one Bazelisk install per job instead of one per folder. Push CI runs a
   # single macOS smoke job (`mac-smoke`); the full per-folder macOS coverage
-  # runs in the `full.yaml` pre-release workflow. Every folder still runs
-  # `bazel test //...` with the same flags on every OS it ran on before (or
-  # `bazel build //...` for explicit build-only folders with no non-manual
-  # test targets). Folders in a shard run a few at a
+  # runs in the `full.yaml` pre-release workflow. The non-e2e folders (`.`,
+  # `dev`, `tools`, `.github/workflows`) still run `bazel test //...` (or
+  # `bazel build //...` for build-only folders); every e2e/ folder a shard
+  # lists instead runs its `e2e.yaml` spec through the e2e_runner, which
+  # stages the workspace with its own Bazel server and fails on Bazel exit 4
+  # and on a green `bazel test` that executed fewer cases than its floor.
+  # Folders in a shard run a few at a
   # time (`parallelism` waves); each folder's full log is streamed under a
   # `===== <folder> =====` header the moment that folder finishes (not after
   # all waves), and uploaded as an artifact `if: always()`, so a killed job
   # still leaves its evidence and the executed-test counts stay auditable.
-  # Each folder runs under its own Bazel server (`--output_base`): the folders
-  # of a shard otherwise share the output base setup-bazel pins, so concurrent
-  # folders kill each other's servers and flake with exit 1.
+  # Each non-e2e folder runs under its own Bazel server (`--output_base`): the
+  # folders of a shard otherwise share the output base setup-bazel pins, so
+  # concurrent folders kill each other's servers and flake with exit 1. The
+  # e2e_runner's staged copy owns its own `--output_base`, so those folders
+  # need none here.
   # The per-shard `cache` name keys the shared disk cache; the repository,
   # external and bazelisk caches keep their shared keys.
   # Coverage map: every directory under e2e/ with a MODULE.bazel is built and
-  # tested by some job in this workflow. Green workspaces run
-  # `bazel test //...` in the `test` shards above (and in `full.yaml` on
+  # tested by some job in this workflow. Green workspaces run their
+  # `e2e/<name>/e2e.yaml` spec through the e2e_runner in the `test` shards
+  # above (and in `full.yaml` on
   # macOS, each folder under its own Bazel server there too): every e2e/
   # folder a shard lists. Red-by-design workspaces run in
   # `expected-failure` below: e2e/pub_lock_conflict, e2e/pub_lock_unpinned,
@@ -259,25 +265,44 @@ jobs:
             [ -z "$folder" ] && continue
             echo "9.3.0" > "$ws/$folder/.bazelversion"
           done <<< "$FOLDERS"
-          # Build-only workspaces: .github/workflows has no tests and e2e/dual_build's sole test is manual and requires-network.
+          # Build-only workspaces: .github/workflows has no tests and e2e/dual_build's
+          # sole test is manual and requires-network (run via e2e_runner below).
           build_only_folders=".github/workflows e2e/dual_build"
           run_one() {
             slug="$(printf '%s' "$1" | tr '/.' '_')"
-            # Same test command and flags as the old per-folder Test step, plus
-            # a per-folder --output_base so the folder gets its own Bazel
-            # server. The disk and repository caches stay shared, so warmth is
-            # unaffected.
-            if (
-              cd "$ws/$1" &&
-              case " $build_only_folders " in
-                *" $1 "*) bazel --output_base="$outbasedir/$slug" build //... ;;
-                *) bazel --output_base="$outbasedir/$slug" test --test_output=errors //... ;;
-              esac
-            ) >"$logdir/$slug.log" 2>&1; then
-              echo 0 >"$logdir/$slug.status"
-            else
-              echo 1 >"$logdir/$slug.status"
-            fi
+            case "$1" in
+              e2e/*)
+                # The e2e_runner stages the workspace into its own scratch
+                # --output_base and Bazel server, so the per-folder
+                # --output_base and Windows serial warm-up below apply only to
+                # the non-e2e folders.
+                if (
+                  cd "$ws/tools" &&
+                  bazel run //e2e_runner:e2e_runner -- --workspace="../$1" --bazel=bazel
+                ) >"$logdir/$slug.log" 2>&1; then
+                  echo 0 >"$logdir/$slug.status"
+                else
+                  echo 1 >"$logdir/$slug.status"
+                fi
+                ;;
+              *)
+                # Same test command and flags as the old per-folder Test step,
+                # plus a per-folder --output_base so the folder gets its own
+                # Bazel server. The disk and repository caches stay shared, so
+                # warmth is unaffected.
+                if (
+                  cd "$ws/$1" &&
+                  case " $build_only_folders " in
+                    *" $1 "*) bazel --output_base="$outbasedir/$slug" build //... ;;
+                    *) bazel --output_base="$outbasedir/$slug" test --test_output=errors //... ;;
+                  esac
+                ) >"$logdir/$slug.log" 2>&1; then
+                  echo 0 >"$logdir/$slug.status"
+                else
+                  echo 1 >"$logdir/$slug.status"
+                fi
+                ;;
+            esac
           }
           # Windows runners fail when the first Bazel servers start at once:
           # they race creating the shared base directory (error 183). Each
@@ -286,8 +311,11 @@ jobs:
           if [ "$RUNNER_OS" = "Windows" ]; then
             while IFS= read -r folder; do
               [ -z "$folder" ] && continue
+              case "$folder" in
+                e2e/*) continue ;;
+              esac
               slug="$(printf '%s' "$folder" | tr '/.' '_')"
-              ( cd "$ws/$folder" && bazel --output_base="$outbasedir/$slug" version ) >/dev/null 2>&1 || true
+              ( cd "$ws/$folder" && bazel --output_base="$outbasedir/$slug" version ) >/dev/null 2>&1
             done <<< "$FOLDERS"
           fi
           running=0
@@ -421,6 +449,9 @@ jobs:
         run: |
           echo "9.3.0" > .bazelversion
           bazel query "@rules_dart//..."
+      - name: check e2e coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.shard == 1
+        run: cd tools && bazel run //check_e2e_coverage:check_e2e_coverage
   # Push CI's only macOS job: a fast smoke test that always runs cold (no
   # cache restore or save), so it executes real compile actions under the
   # darwin sandbox on every run instead of replaying the disk cache. The
@@ -1355,18 +1386,18 @@ jobs:
           echo "OK: strict build failed naming /usr/bin/env"
   # `dart compile kernel` rejects `--enable-asserts`, so dbg-mode flags are
   # chosen per compile mode. hello_world builds all four dart_binary modes;
-  # dart_test exercises the kernel test path end-to-end.
+  # dart_test exercises the kernel test path end-to-end. Both run their
+  # e2e.yaml through the e2e_runner, whose specs carry the `-c dbg` command
+  # alongside the plain `bazel test //...`.
   dbg-mode:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - name: hello_world — build all compile modes under -c dbg
-        working-directory: e2e/hello_world
-        run: bazel build -c dbg //...
+        run: (cd tools && bazel run //e2e_runner:e2e_runner -- --workspace=../e2e/hello_world --bazel=bazel)
       - name: dart_test — run tests under -c dbg
-        working-directory: e2e/dart_test
-        run: bazel test -c dbg --test_output=errors //...
+        run: (cd tools && bazel run //e2e_runner:e2e_runner -- --workspace=../e2e/dart_test --bazel=bazel)
   reproducibility:
     runs-on: ubuntu-latest
     timeout-minutes: 15

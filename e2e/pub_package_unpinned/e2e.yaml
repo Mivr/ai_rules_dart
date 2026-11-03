@@ -1,0 +1,7 @@
+schema: mivr-e2e-spec/1
+commands:
+  - name: expect an explicit package without sha256 to fail its fetch
+    run: bazel build @bad_package//...
+    expect:
+      non_zero: true
+      stderr_contains: 'pub_package "collection" (1.18.0) requires a non-empty sha256.'
