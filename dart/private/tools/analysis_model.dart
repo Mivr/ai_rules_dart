@@ -114,3 +114,17 @@ final class AnalysisFinding implements Comparable<AnalysisFinding> {
     null => 3,
   };
 }
+
+/// The explicit sources as the allowed set when no summaries back the request.
+///
+/// Without summaries, staged non-own files are resolution-only: only the
+/// explicit sources are analyzed, as the `dart analyze` wrapper excludes do.
+/// An empty explicit list or any summaries keeps the manifest verdict (which
+/// may be null), preserving the analyze-everything behavior of direct
+/// no-`--source` invocations and of summary mode.
+Set<String>? explicitAllowedSources(
+  List<String> summaries,
+  List<String> explicitSources,
+) => summaries.isEmpty && explicitSources.isNotEmpty
+    ? explicitSources.toSet()
+    : null;
