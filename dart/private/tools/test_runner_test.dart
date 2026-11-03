@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
@@ -15,10 +16,12 @@ import 'package:test/test.dart';
 ///
 /// The arguments after those are for the runner path (see [_seedTests]): the
 /// fixture compiled as a `package:test` suite, the runner built from the same
-/// `package:test`, and the fixture's source.
+/// `package:test`, and the fixture's source. The last is this package's
+/// `BUILD.bazel` (see [_shardingTests]).
 void main(List<String> args) {
   final launcher = Runfiles.create().rlocation(args[0]);
   _seedTests(launcher, args);
+  _shardingTests(args[6]);
 
   Future<Process> start(
     List<String> fixtureArgs, {
@@ -402,5 +405,163 @@ void _plainSeedTest(String launcher, List<String> args) {
     );
     expect(run.exitCode, 0, reason: '${run.stdout}\n${run.stderr}');
     expect(_tagged(run.stdout, 'arg:'), ['first', 'second', 'third']);
+  });
+}
+
+/// The p95 of `kernel_module_test`'s slowest shard at each `shard_count` it was
+/// measured at, in seconds (`1` is the suite unsharded): ten runs each, run as
+/// the nightly flake sweep runs them, with `--local_test_jobs` at twice the
+/// host's CPUs and the cases in random order.
+const Map<int, double> _kernelModuleSlowestShard = {
+  1: 24.2,
+  2: 21.3,
+  4: 21.4,
+  8: 19.8,
+  16: 13.4,
+};
+
+/// Bazel's timeout in seconds for each test `size`, and for each `timeout`,
+/// which overrides the size's when a target states one.
+const Map<String, int> _timeoutSeconds = {
+  'small': 60,
+  'medium': 300,
+  'large': 900,
+  'enormous': 3600,
+  'short': 60,
+  'moderate': 300,
+  'long': 900,
+  'eternal': 3600,
+};
+
+/// The longest an unsharded test may take at p95, in seconds, before it has
+/// to be split into shards.
+const _unshardedCeiling = 120;
+
+/// [build] with every `#` comment taken out, so that a commented-out
+/// attribute does not count.
+String _withoutComments(String build) => [
+  for (final String line in const LineSplitter().convert(build))
+    line.replaceFirst(RegExp(r'#.*$'), ''),
+].join('\n');
+
+/// The call in [build] that declares [name], from its opening parenthesis to
+/// the one that closes it, or null when no call declares it.
+String? _declaration(String build, String name) {
+  final RegExpMatch? named = RegExp('name = "${RegExp.escape(name)}"')
+      .firstMatch(build);
+  if (named == null) return null;
+  final int open = build.lastIndexOf('(', named.start);
+  var depth = 0;
+  for (var i = open; i < build.length; i++) {
+    if (build[i] == '(') depth++;
+    if (build[i] == ')' && --depth == 0) return build.substring(open, i + 1);
+  }
+  return null;
+}
+
+/// The value [attribute] is given in [declaration], or null when it is not.
+String? _attribute(String declaration, String attribute) =>
+    RegExp('\\b$attribute = "?(\\w+)"?').firstMatch(declaration)?.group(1);
+
+/// What is wrong with how [build] shards and sizes `kernel_module_test`,
+/// against the [slowestShard] p95 measured at each shard count.
+///
+/// The test must be split into 2 to 50 shards, and the slowest shard expected
+/// at its count must take at most half of its timeout (as the nightly sweep
+/// checks), and at most [_unshardedCeiling]. A count between two measured
+/// ones is expected to be as slow as the lower one: more shards never make
+/// the slowest one slower.
+List<String> _shardingProblems(String build, Map<int, double> slowestShard) {
+  final String? declaration = _declaration(
+    _withoutComments(build),
+    'kernel_module_test',
+  );
+  if (declaration == null) return ['kernel_module_test is not declared'];
+  final int shards =
+      int.tryParse(_attribute(declaration, 'shard_count') ?? '') ?? 1;
+  if (shards < 2 || shards > 50) {
+    return ['kernel_module_test has shard_count $shards, not 2 to 50'];
+  }
+  // Bazel's default size is `medium`.
+  final String limit =
+      _attribute(declaration, 'timeout') ??
+      _attribute(declaration, 'size') ??
+      'medium';
+  final int? timeout = _timeoutSeconds[limit];
+  if (timeout == null) return ['kernel_module_test has unknown size $limit'];
+  final int measured = slowestShard.keys
+      .where((int count) => count <= shards)
+      .reduce(max);
+  final double slowest = slowestShard[measured]!;
+  final where =
+      'kernel_module_test at $shards shards: slowest shard ${slowest}s';
+  return [
+    if (slowest * 2 > timeout)
+      "$where is over half of $limit's ${timeout}s timeout",
+    if (slowest > _unshardedCeiling) '$where is over ${_unshardedCeiling}s',
+  ];
+}
+
+/// A `kernel_module_test` declaration with [attributes] in it.
+String _kernelModuleTest(String attributes) =>
+    'dart_test(\n    name = "kernel_module_test",\n$attributes'
+    '    main = "kernel_module_test.dart",\n)\n';
+
+/// The tests that hold `kernel_module_test`'s `shard_count` and `size`, read
+/// from the package's [build] file, to the shard times it was measured at.
+///
+/// They sit with the launcher's tests because the launcher is what splits a
+/// `package:test` suite into Bazel's shards.
+void _shardingTests(String build) {
+  group('kernel_module_test sharding', () {
+    test('is sharded and sized for the measured shard times', () {
+      final String text = File(Runfiles.create().rlocation(build))
+          .readAsStringSync();
+      expect(_shardingProblems(text, _kernelModuleSlowestShard), isEmpty);
+    });
+
+    test('refuses a missing, commented-out or out-of-range shard_count', () {
+      for (final attributes in [
+        '    size = "small",\n',
+        '    size = "small",\n    # shard_count = 16,\n',
+        '    size = "small",\n    shard_count = 1,\n',
+        '    size = "small",\n    shard_count = 51,\n',
+      ]) {
+        expect(
+          _shardingProblems(
+            _kernelModuleTest(attributes),
+            _kernelModuleSlowestShard,
+          ),
+          isNotEmpty,
+          reason: attributes,
+        );
+      }
+    });
+
+    test('refuses a size whose timeout the measured shards contradict', () {
+      // Measurements twice as slow as the real ones: 16 shards still fit
+      // `small`, 8 shards fit `medium` but not `small` or a `short` timeout.
+      final Map<int, double> slower = {
+        for (final MapEntry<int, double> entry
+            in _kernelModuleSlowestShard.entries)
+          entry.key: entry.value * 2,
+      };
+      String sized(String size, int shards) => _kernelModuleTest(
+        '    size = "$size",\n    shard_count = $shards,\n',
+      );
+      expect(_shardingProblems(sized('small', 16), slower), isEmpty);
+      expect(_shardingProblems(sized('small', 8), slower), isNotEmpty);
+      expect(_shardingProblems(sized('medium', 8), slower), isEmpty);
+      expect(
+        _shardingProblems(
+          _kernelModuleTest(
+            '    size = "medium",\n    shard_count = 8,\n'
+            '    timeout = "short",\n',
+          ),
+          slower,
+        ),
+        isNotEmpty,
+      );
+    });
   });
 }

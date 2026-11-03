@@ -304,8 +304,10 @@ dart_test(
         "$(rlocationpath :test_runner_suite_fixture)",
         "$(rlocationpath :test_runner_suite_runner)",
         "$(rlocationpath :test_runner_fixture.dart)",
+        "$(rlocationpath :BUILD.bazel)",
     ],
     data = [
+        "BUILD.bazel",
         ":test_runner",
         ":test_runner_fixture",
         ":test_runner_fixture.dart",
@@ -542,6 +544,17 @@ exports_files(
 )
 
 # The planner's and outline stripper's unit tests.
+#
+# Sharded because the suite is the slow one: it compiles from the SDK fixtures
+# twice. `package:test` hands each shard a contiguous block of cases, and the
+# heaviest cases sit together near the end of the file, so the slowest shard
+# only shrinks once that block splits. The p95 of the slowest shard over ten
+# runs each, run as the nightly flake sweep runs them (`--local_test_jobs` at
+# twice the host's CPUs, cases in random order): 24.2 s unsharded, 21.3 s at
+# 2 shards, 21.4 s at 4, 19.8 s at 8, 13.4 s at 16, near the floor set by the
+# single slowest case (about 7 s). At 16 that is under a quarter of `small`'s
+# 60 s timeout. `test_runner_test` holds the shard count and size to these
+# measurements.
 dart_test(
     name = "kernel_module_test",
     size = "medium",
@@ -572,6 +585,7 @@ dart_test(
         "@dart_toolchains//sdk/3.13.5:dart",
     ],
     main = "kernel_module_test.dart",
+    shard_count = 16,
     deps = [
         "//dart/runfiles",
         "@ext_pub_deps//:test",
