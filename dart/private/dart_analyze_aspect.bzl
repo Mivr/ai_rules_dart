@@ -85,7 +85,8 @@ load(
     _stage_config_project = "stage_config_project",
 )
 load("//dart/private:common.bzl", "kernel_sdk_mismatch_error", "owned_package_records", "writable_home_env")
-load("//dart/private:dart_analyzer_summary.bzl", "CONFLICT_PREFIX", "DartAnalyzerSummaryInfo", "analyzer_summaries_supported", "closure_attrs", "dart_analyzer_summary", "own_lib_sources", "package_key", "sdk_root_path", "unbacked_embedder_in_closure")
+load("//dart/private:dart_analyze_summary_fallback.bzl", "analyze_summaries", "fallback_summary_ready")
+load("//dart/private:dart_analyzer_summary.bzl", "CONFLICT_PREFIX", "DartAnalyzerSummaryInfo", "analyzer_summaries_supported", "closure_attrs", "dart_analyzer_summary", "own_lib_sources", "package_key", "unbacked_embedder_in_closure")
 load("//dart/private:format_mode.bzl", _resolve_format_mode = "resolve_format_mode")
 load("//dart/private:source_set.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS")
 
@@ -254,55 +255,6 @@ def _analyze(ctx, name, staged, sdk_inputs, own_paths, baseline):
         mnemonic = "DartAnalyze",
         progress_message = "Analyzing Dart sources of %{label}",
         env = writable_home_env(dart_sdk_info.dart, stamp),
-        toolchain = _TOOLCHAIN,
-    )
-    return stamp
-
-def _analyze_summaries(ctx, name, staged, summaries, sdk_summary, sdk_inputs, own_paths, baseline):
-    """Declares the summary-mode `dart analyze`; returns the stamp it writes on success.
-
-    `staged` holds the target's own files and the options alone, and
-    `summaries` the summaries of everything they import, which take the place
-    of the closure's source the `dart analyze` action reads.
-    """
-    dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
-    mismatch = kernel_sdk_mismatch_error(ctx.label, "_summary_tool", ctx.attr._summary_tool, dart_sdk_info.version)
-    if mismatch != None:
-        fail(mismatch)
-    stamp = ctx.actions.declare_file(name + ".analyzed")
-    args = ctx.actions.args()
-    args.use_param_file("@%s", use_always = True)
-    args.set_param_file_format("multiline")
-    args.add("analyze")
-    args.add("--sdk", sdk_root_path(dart_sdk_info))
-    args.add("--project", staged.proj_path)
-    args.add("--stamp", stamp)
-    args.add("--fatal-infos")
-    if baseline != None:
-        args.add("--baseline", baseline)
-    args.add("--sdk-summary", sdk_summary)
-    args.add_all(own_paths, format_each = "src/%s", before_each = "--source")
-    args.add_all(summaries, before_each = "--summary")
-    ctx.actions.run(
-        executable = dart_sdk_info.dart,
-        arguments = [ctx.executable._summary_tool.path, args],
-        inputs = depset(
-            direct = [ctx.executable._summary_tool, sdk_summary] + staged.inputs +
-                     ([baseline] if baseline != None else []),
-            transitive = [summaries, sdk_inputs],
-        ),
-        tools = depset(
-            direct = [ctx.executable._summary_tool, dart_sdk_info.dart],
-            transitive = [dart_sdk_info.runtime_files],
-        ),
-        outputs = [stamp],
-        mnemonic = "DartAnalyze",
-        progress_message = "Analyzing Dart sources of %{label} against summaries",
-        env = writable_home_env(dart_sdk_info.dart, stamp),
-        execution_requirements = {
-            "supports-workers": "1",
-            "requires-worker-protocol": "proto",
-        },
         toolchain = _TOOLCHAIN,
     )
     return stamp
@@ -568,7 +520,19 @@ def _analyze_summary_or_source(ctx, info, srcs, opts):
         _summaries_ready(ctx, info, has_own_lib, summary_files)
     )
     baseline = slice_target_baseline(ctx, srcs.name, opts.config, srcs.own_paths)
+    sdk_summary = _embedder_sdk_summary(ctx) or ctx.file._sdk_summary
     if not summary_mode:
+        if fallback_summary_ready(ctx, info, opts.sdk_version, _embedder_sdk_summary(ctx)):
+            return depset([analyze_summaries(
+                ctx,
+                srcs.name,
+                srcs.staged,
+                depset(),
+                sdk_summary,
+                opts.sdk_inputs,
+                srcs.own_paths,
+                baseline,
+            )]), False, None
         return depset([_analyze(ctx, srcs.name, srcs.staged, opts.sdk_inputs, srcs.own_paths, baseline)]), False, None
 
     # Only the target's own files are staged: its dependencies come from
@@ -592,7 +556,7 @@ def _analyze_summary_or_source(ctx, info, srcs, opts):
             struct(copy_external = False, all_packages_named = True),
         )
     sdk_summary = _embedder_sdk_summary(ctx) or ctx.file._sdk_summary
-    return depset([_analyze_summaries(
+    return depset([analyze_summaries(
         ctx,
         srcs.name,
         summary_staged,

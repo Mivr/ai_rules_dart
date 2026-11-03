@@ -358,7 +358,6 @@ Future<int> _summarize(
   }
   final String packagesPath = p.normalize(p.absolute(args.single('packages')));
   final String packagesDir = p.dirname(packagesPath);
-
   final List<String> normSources = _normSources(sources, packagesDir);
   final libUris = <String>[
     for (var i = 0; i < normSources.length; i++)
@@ -577,7 +576,6 @@ final class _FileAwareInSummaryUriResolver extends UriResolver {
     this._packageUriResolver,
     this._pathContext,
   );
-
   final InSummaryUriResolver _inSummaryResolver;
   final UriResolver _packageUriResolver;
   final p.Context _pathContext;
@@ -680,8 +678,7 @@ Future<int> _analyze(
       if (allowedSrcPaths != null) ...allowedSrcPaths,
     },
     restrictedRoot: allowedSrcPaths != null ? srcRoot : null,
-    allowedUnderRestrictedRoot: allowedSrcPaths,
-    blockAnalysisOptions: false,
+    allowedUnderRestrictedRoot: summaryPaths.isEmpty ? null : allowedSrcPaths,
   );
   final AnalysisContextCollectionImpl collection = _openAnalyzeCollection(
     boundedProvider: boundedProvider,
@@ -773,7 +770,11 @@ _Prepared? _prepareProject(AnalyzerArgs args, {required StringSink errSink}) {
   ];
   final _BaselineRead baseline = _readBaseline(args, errSink: errSink);
   if (baseline.failed) return null;
-  final Set<String>? allowedSrcPaths = pruneStagedSrcFiles(project);
+  final Set<String>? allowedSrcPaths =
+      pruneStagedSrcFiles(project) ??
+      (args.all('summary').isEmpty && explicitSources.isNotEmpty
+          ? explicitSources.toSet()
+          : null);
   // No staged source may read the host (see `_summarize`): the default
   // summary-mode analysis never ran the directive guard, so a climbing
   // relative import reached undeclared host files wherever the analyzer
@@ -788,9 +789,7 @@ _Prepared? _prepareProject(AnalyzerArgs args, {required StringSink errSink}) {
     requireTargetsExist: false,
   );
   if (stagedViolations.isNotEmpty) {
-    for (final violation in stagedViolations) {
-      errSink.writeln(violation);
-    }
+    stagedViolations.forEach(errSink.writeln);
     return null;
   }
   return (
