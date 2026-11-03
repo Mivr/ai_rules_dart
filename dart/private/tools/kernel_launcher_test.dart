@@ -48,9 +48,15 @@ void main() {
     });
 
     test('ignores a scratch directory that is already gone', () {
-      final tmp = Directory.systemTemp.createTempSync('kl_scratch');
+      final parent = Directory.systemTemp.createTempSync('kl_scratch_parent');
+      addTearDown(() => parent.deleteSync(recursive: true));
+      final tmp = Directory('${parent.path}/scratch')..createSync();
+      final sibling = File('${parent.path}/sibling')..writeAsStringSync('keep');
       tmp.deleteSync(recursive: true);
       expect(() => deleteScratchQuietly(tmp), returnsNormally);
+      expect(tmp.existsSync(), isFalse, reason: 'the directory stays absent');
+      expect(sibling.existsSync(), isTrue, reason: 'a sibling is untouched');
+      expect(sibling.readAsStringSync(), 'keep');
     });
   });
 }
