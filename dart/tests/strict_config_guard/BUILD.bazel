@@ -1,0 +1,28 @@
+load("//dart:defs.bzl", "dart_test")
+
+# Guards the strict incompatible-flag gate: the `common:strict` flags in
+# `tools/strict.bazelrc` and its import from `.bazelrc`, the `toolchain` every
+# action call under `dart/` names, the `[DefaultInfo].files` reads in
+# `dart/toolchain.bzl`, the `strict`, `last_rc` and `mod-tidy` CI jobs and the
+# BCR `rolling` leg. Unsandboxed over the live tree, like
+# `//dart/tests/pub_scc_facts:parser_files_test`.
+dart_test(
+    name = "strict_config_guard_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :strict_config_guard_test.dart)",
+    ],
+    data = [
+        "strict_config_guard_test.dart",
+    ],
+    local = True,
+    main = "strict_config_guard_test.dart",
+    tags = [
+        "external",
+        "no-sandbox",
+    ],
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
