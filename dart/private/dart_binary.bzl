@@ -69,10 +69,31 @@ def binary_output_basename(name, compile_mode, is_windows):
         return name + ".jit"
     fail("Unknown compile_mode: %s" % compile_mode)
 
+def is_tool_bin_path(bin_dir_path):
+    """Returns whether a `ctx.bin_dir.path` belongs to a tool (exec) configuration.
+
+    Bazel names an exec configuration's output root with an `exec` segment, as in
+    `bazel-out/k8-opt-exec-2B5C4A8F/bin`, while an ordinary configuration's root,
+    such as `bazel-out/k8-opt/bin`, has none. This is the public signal the rule
+    uses in place of the private `ctx.configuration` tool-configuration check.
+    An ordinary configuration must never return True: it would then take the
+    exec-tools SDK and drop its package runfiles.
+
+    Args:
+      bin_dir_path: The `ctx.bin_dir.path` string of the rule being analyzed.
+
+    Returns:
+      True when a path segment is an exec configuration name, else False.
+    """
+    for segment in bin_dir_path.split("/"):
+        if "-exec-" in segment or segment.endswith("-exec"):
+            return True
+    return False
+
 def _binary_sdk_info(ctx):
     """Selects the compiling SDK: the exec-tools SDK for tool configurations, else the target toolchain's."""
     exec_tc = ctx.toolchains[EXEC_TOOLS_TOOLCHAIN] if EXEC_TOOLS_TOOLCHAIN in ctx.toolchains else None
-    if ctx.configuration.is_tool_configuration() and exec_tc != None and exec_tc.dart_sdk_info != None:
+    if is_tool_bin_path(ctx.bin_dir.path) and exec_tc != None and exec_tc.dart_sdk_info != None:
         return exec_tc.dart_sdk_info
     return ctx.toolchains["//dart:toolchain_type"].dart_sdk_info
 
@@ -173,7 +194,7 @@ def _runtime_package_files(ctx):
     Returns:
       A depset of the dependency package files to add to runfiles.
     """
-    if ctx.configuration.is_tool_configuration():
+    if is_tool_bin_path(ctx.bin_dir.path):
         return depset()
     if DartTestRunnerMainInfo in ctx.attr.main:
         return depset()
