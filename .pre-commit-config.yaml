@@ -31,11 +31,18 @@ repos:
         exclude: ^third_party/dart_linter/|^e2e/pub_lock_git/fmtpkg\.bundle$
       - id: trailing-whitespace
         exclude: ^third_party/dart_linter/|^e2e/pub_lock_git/fmtpkg\.bundle$
-  # Check formatting and lint for starlark code
+  # Check formatting and lint for starlark code. This is the only buildifier
+  # entry point; both hooks read the warning set from the root
+  # `.buildifier.json`. The format hook runs with `-lint=off`, so formatting
+  # never rewrites a lint finding; the lint hook keeps its upstream
+  # `-lint=warn` default and reports findings against that warning set. Keep
+  # `rev` on the same buildifier version (first three components) as the
+  # `buildifier_prebuilt` dev dependency in `MODULE.bazel`.
   - repo: https://github.com/keith/pre-commit-buildifier
     rev: 10.1.0
     hooks:
       - id: buildifier
+        args: [-lint=off]
       - id: buildifier-lint
   # Lint the GitHub workflows with pinned actionlint and ShellCheck releases.
   # The hook downloads each platform's archive from its release only when the
