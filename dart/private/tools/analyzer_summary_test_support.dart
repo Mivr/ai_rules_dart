@@ -2,10 +2,9 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:analyzer/dart/analysis/analysis_context.dart';
+import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
 import 'package:analyzer/file_system/physical_file_system.dart';
-// ignore: implementation_imports
-import 'package:analyzer/src/dart/analysis/analysis_context_collection.dart'
-    show AnalysisContextCollectionImpl;
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -23,21 +22,31 @@ import 'worker_test_encode.dart' show encodeWorkRequestForTest;
 export 'worker_test_encode.dart' show encodeWorkRequestForTest;
 
 /// A collection whose tear-down raises a trappable failure.
-final class ThrowingCollection extends AnalysisContextCollectionImpl {
-  ThrowingCollection() : super(includedPaths: const []);
+final class _ThrowingCollection implements AnalysisContextCollection {
+  @override
+  List<AnalysisContext> get contexts => const [];
 
   @override
-  Future<void> dispose({bool forTesting = false}) async {
+  AnalysisContext contextFor(String path) =>
+      throw UnsupportedError('contextFor is not used by tear-down tests');
+
+  @override
+  Future<void> dispose() async {
     throw const FormatException('simulated tear-down failure');
   }
 }
 
 /// A collection whose tear-down raises a programming error.
-final class ErroringCollection extends AnalysisContextCollectionImpl {
-  ErroringCollection() : super(includedPaths: const []);
+final class _ErroringCollection implements AnalysisContextCollection {
+  @override
+  List<AnalysisContext> get contexts => const [];
 
   @override
-  Future<void> dispose({bool forTesting = false}) async {
+  AnalysisContext contextFor(String path) =>
+      throw UnsupportedError('contextFor is not used by tear-down tests');
+
+  @override
+  Future<void> dispose() async {
     throw StateError('simulated programming error');
   }
 }
@@ -174,11 +183,11 @@ void defineDisposeTearDownTests() {
   group('disposeContextCollection tear-down failures', () {
     test('still releases a collection whose dispose throws', () async {
       final beforeCount = disposedContextCollectionsCount;
-      final released = <AnalysisContextCollectionImpl>[];
+      final released = <AnalysisContextCollection>[];
       final prevHook = onContextCollectionDisposed;
       onContextCollectionDisposed = released.add;
       try {
-        await disposeContextCollection(ThrowingCollection());
+        await disposeContextCollection(_ThrowingCollection());
         expect(disposedContextCollectionsCount, beforeCount + 1);
         expect(released, hasLength(1));
       } finally {
@@ -187,7 +196,7 @@ void defineDisposeTearDownTests() {
     });
 
     test('lets a programming error from dispose propagate', () {
-      expect(disposeContextCollection(ErroringCollection()), throwsStateError);
+      expect(disposeContextCollection(_ErroringCollection()), throwsStateError);
     });
   });
 }

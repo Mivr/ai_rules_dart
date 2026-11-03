@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:analyzer/dart/analysis/analysis_context.dart';
+import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
 import 'package:analyzer/diagnostic/diagnostic.dart' show Severity;
 import 'package:analyzer/file_system/file_system.dart' as fs;
 import 'package:analyzer/file_system/memory_file_system.dart';
@@ -18,6 +20,7 @@ import 'analyzer_summary.dart'
         BoundedResourceProvider,
         SummaryByteCache,
         SummaryCachingResourceProvider,
+        disposeContextCollection,
         disposedContextCollectionsCount,
         inferSummarizeRoot,
         onContextCollectionDisposed,
@@ -437,6 +440,23 @@ void main() {
 
     defineDisposeTearDownTests();
 
+    test('disposeContextCollection accepts any AnalysisContextCollection and announces its release', () async {
+      final collection = _DisposeTrackingCollection();
+      final released = <AnalysisContextCollection>[];
+      final void Function(AnalysisContextCollection)? prevHook =
+          onContextCollectionDisposed;
+      final int beforeCount = disposedContextCollectionsCount;
+      onContextCollectionDisposed = released.add;
+      try {
+        await disposeContextCollection(collection);
+        expect(collection.disposed, isTrue);
+        expect(released, [same(collection)]);
+        expect(disposedContextCollectionsCount, beforeCount + 1);
+      } finally {
+        onContextCollectionDisposed = prevHook;
+      }
+    });
+
     test('handles symlinked staging roots for nested lib/ sources and fails closed with result type on NotPathOfUriResult', () async {
       final sdkDir = File(Platform.resolvedExecutable).parent.parent;
       final realBase = Directory(p.join(tempDir.path, 'real_execroot'))
@@ -809,6 +829,24 @@ final class _RecordingFile implements fs.File {
   @override
   Never noSuchMethod(Invocation invocation) =>
       throw UnsupportedError('${invocation.memberName}');
+}
+
+/// A test-local collection that records its disposal.
+final class _DisposeTrackingCollection implements AnalysisContextCollection {
+  bool disposed = false;
+
+  @override
+  List<AnalysisContext> get contexts => const [];
+
+  @override
+  AnalysisContext contextFor(String path) =>
+      throw UnsupportedError('contextFor is not used');
+
+  @override
+  Future<void> dispose() {
+    disposed = true;
+    return Future<void>.value();
+  }
 }
 
 void _defineSummaryBaselineVerdictTests() {

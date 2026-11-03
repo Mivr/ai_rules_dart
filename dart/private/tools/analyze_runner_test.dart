@@ -7,6 +7,7 @@ import 'analysis_baseline.dart'
     show
         AnalysisBaseline,
         BaselineException,
+        BaselineGroup,
         BaselineReport,
         baselineFailureLine;
 import 'analyze_runner.dart' as analyze_runner;
@@ -180,6 +181,15 @@ void _defineRunnerCeilingTests() {
       baseline,
     );
     expect(atCeiling.passes, isTrue);
+    final BaselineGroup atCeilingGroup = atCeiling.groupFor(
+      'lib/a.dart',
+      'avoid_print',
+    )!;
+    expect(atCeilingGroup.path, 'lib/a.dart');
+    expect(atCeilingGroup.code, 'avoid_print');
+    expect(atCeilingGroup.observed, 2);
+    expect(atCeilingGroup.ceiling, 2);
+    expect(atCeilingGroup.withinCeiling, isTrue);
 
     final overCeiling = BaselineReport.of(
       analyze_runner.parseMachineDiagnostics(
@@ -189,8 +199,17 @@ void _defineRunnerCeilingTests() {
       baseline,
     );
     expect(overCeiling.passes, isFalse);
+    final BaselineGroup overCeilingGroup = overCeiling.groupFor(
+      'lib/a.dart',
+      'avoid_print',
+    )!;
+    expect(overCeilingGroup.path, 'lib/a.dart');
+    expect(overCeilingGroup.code, 'avoid_print');
+    expect(overCeilingGroup.observed, 3);
+    expect(overCeilingGroup.ceiling, 2);
+    expect(overCeilingGroup.withinCeiling, isFalse);
     expect(
-      baselineFailureLine(overCeiling.groupFor('lib/a.dart', 'avoid_print')!),
+      baselineFailureLine(overCeilingGroup),
       contains('observed 3, ceiling 2'),
     );
 
