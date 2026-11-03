@@ -5585,36 +5585,42 @@ void main(List<String> args) {
       return response;
     }
 
-    test('undecodable bytes fail the request after one retry', () async {
-      if (_toolSnapshotPath.isEmpty) return;
-      final (code, output, requestId) = await garbageResponse('format');
-      expect(requestId, 7);
-      expect(code, 1);
-      expect(output, contains('not a WorkResponse'));
-      expect(output, contains('Failed twice'));
-    });
+    test(
+      'undecodable bytes fail the request after one retry',
+      () async {
+        final (code, output, requestId) = await garbageResponse('format');
+        expect(requestId, 7);
+        expect(code, 1);
+        expect(output, contains('not a WorkResponse'));
+        expect(output, contains('Failed twice'));
+      },
+      skip: _toolSnapshotPath.isEmpty ? 'no kernel_module AOT snapshot' : null,
+    );
 
-    test('a truncated frame fails the request after one retry', () async {
-      if (_toolSnapshotPath.isEmpty) return;
-      final (code, output, requestId) = await garbageResponse('range');
-      expect(requestId, 7);
-      expect(code, 1);
-      expect(output, contains('not a WorkResponse'));
-      expect(output, contains('Failed twice'));
-    });
+    test(
+      'a truncated frame fails the request after one retry',
+      () async {
+        final (code, output, requestId) = await garbageResponse('range');
+        expect(requestId, 7);
+        expect(code, 1);
+        expect(output, contains('not a WorkResponse'));
+        expect(output, contains('Failed twice'));
+      },
+      skip: _toolSnapshotPath.isEmpty ? 'no kernel_module AOT snapshot' : null,
+    );
 
     test(
       'a worker that exits before reading fails the request after one retry',
       () async {
         // The write to the dying child may fail or buffer; either way the
         // read reports the exit and the request runs again on a fresh child.
-        if (_toolSnapshotPath.isEmpty) return;
         final (code, output, requestId) = await garbageResponse('exit');
         expect(requestId, 7);
         expect(code, 1);
         expect(output, contains('exited before responding'));
         expect(output, contains('Failed twice'));
       },
+      skip: _toolSnapshotPath.isEmpty ? 'no kernel_module AOT snapshot' : null,
     );
   });
 
@@ -5695,128 +5701,146 @@ void main(List<String> args) {
       ], environment: environment);
     }
 
-    test('pristine snapshot with comma define fails loudly', () async {
-      if (_toolSnapshotPath.isEmpty) return;
-      final sdkDir = File(_sdkDartPaths.first).parent.parent;
-      final res = await runOneShot(
-        kernelWorker:
-            '${sdkDir.path}/bin/snapshots/kernel_worker_aot.dart.snapshot',
-        patchedMarker: false,
-      );
-      expect(res.exitCode, 1);
-      expect('${res.stdout}\n${res.stderr}', contains('comma'));
-    });
+    test(
+      'pristine snapshot with comma define fails loudly',
+      () async {
+        final sdkDir = File(_sdkDartPaths.first).parent.parent;
+        final res = await runOneShot(
+          kernelWorker:
+              '${sdkDir.path}/bin/snapshots/kernel_worker_aot.dart.snapshot',
+          patchedMarker: false,
+        );
+        expect(res.exitCode, 1);
+        expect('${res.stdout}\n${res.stderr}', contains('comma'));
+      },
+      skip: _toolSnapshotPath.isEmpty ? 'no kernel_module AOT snapshot' : null,
+    );
 
-    test('patched snapshot without marker still fails', () async {
-      if (_toolSnapshotPath.isEmpty) return;
-      final res = await runOneShot(
-        kernelWorker: await patchedSnapshot(_sdkDartPaths.first),
-        patchedMarker: false,
-      );
-      expect(res.exitCode, 1);
-      expect('${res.stdout}\n${res.stderr}', contains('comma'));
-    });
+    test(
+      'patched snapshot without marker still fails',
+      () async {
+        final res = await runOneShot(
+          kernelWorker: await patchedSnapshot(_sdkDartPaths.first),
+          patchedMarker: false,
+        );
+        expect(res.exitCode, 1);
+        expect('${res.stdout}\n${res.stderr}', contains('comma'));
+      },
+      skip: _toolSnapshotPath.isEmpty ? 'no kernel_module AOT snapshot' : null,
+    );
 
-    test('patched snapshot plus marker succeeds', () async {
-      if (_toolSnapshotPath.isEmpty) return;
-      final res = await runOneShot(
-        kernelWorker: await patchedSnapshot(_sdkDartPaths.first),
-        patchedMarker: true,
-      );
-      expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
-      expect(File('${_root.path}/selout/sel.kmod/0.dill').existsSync(), isTrue);
-    });
-
-    test('ignores planted shared-temp files', () async {
-      if (_toolSnapshotPath.isEmpty) return;
-      final tmp = Directory.systemTemp;
-
-      /// Basenames in the shared temp dir that look like the old fixed-path
-      /// cache: the `*nocomma.snapshot` files and `rules_dart_vm-*` dirs.
-      Set<String> sharedCacheNames() {
-        final names = <String>{};
-        for (final e in tmp.listSync()) {
-          final base = e.path.split(Platform.pathSeparator).last;
-          if (base.contains('nocomma.snapshot') ||
-              base.startsWith('rules_dart_vm-')) {
-            names.add(base);
-          }
-        }
-        return names;
-      }
-
-      // Whatever other builds left in shared temp stays: only files this run
-      // adds may appear below. Every plant carries a per-test tag: this
-      // suite's tests (and the app-JIT snapshot suite's) run concurrently,
-      // and shared fixed plant names would race between processes.
-      final before = sharedCacheNames();
-      final tag = 'kmod-test.$pid';
-      final plants = <String, String>{
-        'kernel_worker_nocomma.snapshot.$tag': 'planted',
-        'kernel_worker_nocomma.snapshot.version.$tag': 'planted',
-        'gen_kernel_nocomma.snapshot.$tag': 'planted',
-        'gen_kernel_nocomma.snapshot.version.$tag': 'planted',
-        'rules_dart_vm-planted-$tag': 'planted-dir',
-      };
-      for (final entry in plants.entries) {
-        final target = '${tmp.path}/${entry.key}';
-        if (entry.value == 'planted-dir') {
-          Directory(target).createSync(recursive: true);
-          File('$target/bin_dart${Platform.isWindows ? '.exe' : ''}')
-              .writeAsStringSync('planted');
-        } else {
-          File(target).writeAsStringSync(entry.value);
-        }
-      }
-      try {
+    test(
+      'patched snapshot plus marker succeeds',
+      () async {
         final res = await runOneShot(
           kernelWorker: await patchedSnapshot(_sdkDartPaths.first),
           patchedMarker: true,
         );
         expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
+        expect(
+          File('${_root.path}/selout/sel.kmod/0.dill').existsSync(),
+          isTrue,
+        );
+      },
+      skip: _toolSnapshotPath.isEmpty ? 'no kernel_module AOT snapshot' : null,
+    );
+
+    test(
+      'ignores planted shared-temp files',
+      () async {
+        final tmp = Directory.systemTemp;
+
+        /// Basenames in the shared temp dir that look like the old fixed-path
+        /// cache: the `*nocomma.snapshot` files and `rules_dart_vm-*` dirs.
+        Set<String> sharedCacheNames() {
+          final names = <String>{};
+          for (final e in tmp.listSync()) {
+            final base = e.path.split(Platform.pathSeparator).last;
+            if (base.contains('nocomma.snapshot') ||
+                base.startsWith('rules_dart_vm-')) {
+              names.add(base);
+            }
+          }
+          return names;
+        }
+
+        // Whatever other builds left in shared temp stays: only files this run
+        // adds may appear below. Every plant carries a per-test tag: this
+        // suite's tests (and the app-JIT snapshot suite's) run concurrently,
+        // and shared fixed plant names would race between processes.
+        final before = sharedCacheNames();
+        final tag = 'kmod-test.$pid';
+        final plants = <String, String>{
+          'kernel_worker_nocomma.snapshot.$tag': 'planted',
+          'kernel_worker_nocomma.snapshot.version.$tag': 'planted',
+          'gen_kernel_nocomma.snapshot.$tag': 'planted',
+          'gen_kernel_nocomma.snapshot.version.$tag': 'planted',
+          'rules_dart_vm-planted-$tag': 'planted-dir',
+        };
         for (final entry in plants.entries) {
           final target = '${tmp.path}/${entry.key}';
           if (entry.value == 'planted-dir') {
-            expect(
-              File('$target/bin_dart${Platform.isWindows ? '.exe' : ''}')
-                  .readAsStringSync(),
-              'planted',
-            );
+            Directory(target).createSync(recursive: true);
+            File('$target/bin_dart${Platform.isWindows ? '.exe' : ''}')
+                .writeAsStringSync('planted');
           } else {
-            expect(File(target).readAsStringSync(), 'planted');
+            File(target).writeAsStringSync(entry.value);
           }
         }
-        final leftovers = sharedCacheNames().difference(before);
-        // Only the plants this test wrote may have appeared.
-        leftovers.removeAll(plants.keys);
-        expect(leftovers, isEmpty, reason: '$leftovers');
-      } finally {
-        for (final key in plants.keys) {
-          final target = File('${tmp.path}/$key');
-          if (target.existsSync()) target.deleteSync();
-          final dir = Directory('${tmp.path}/$key');
-          if (dir.existsSync()) dir.deleteSync(recursive: true);
+        try {
+          final res = await runOneShot(
+            kernelWorker: await patchedSnapshot(_sdkDartPaths.first),
+            patchedMarker: true,
+          );
+          expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
+          for (final entry in plants.entries) {
+            final target = '${tmp.path}/${entry.key}';
+            if (entry.value == 'planted-dir') {
+              expect(
+                File('$target/bin_dart${Platform.isWindows ? '.exe' : ''}')
+                    .readAsStringSync(),
+                'planted',
+              );
+            } else {
+              expect(File(target).readAsStringSync(), 'planted');
+            }
+          }
+          final leftovers = sharedCacheNames().difference(before);
+          // Only the plants this test wrote may have appeared.
+          leftovers.removeAll(plants.keys);
+          expect(leftovers, isEmpty, reason: '$leftovers');
+        } finally {
+          for (final key in plants.keys) {
+            final target = File('${tmp.path}/$key');
+            if (target.existsSync()) target.deleteSync();
+            final dir = Directory('${tmp.path}/$key');
+            if (dir.existsSync()) dir.deleteSync(recursive: true);
+          }
         }
-      }
-    });
+      },
+      skip: _toolSnapshotPath.isEmpty ? 'no kernel_module AOT snapshot' : null,
+    );
 
-    test('leaves scratch TMPDIR empty', () async {
-      if (_toolSnapshotPath.isEmpty) return;
-      final scratch = Directory('${_root.path}/scratch-tmp')..createSync();
-      final home = Directory('${_root.path}/scratch-home')..createSync();
-      final env = Map<String, String>.from(Platform.environment)
-        ..['TMPDIR'] = scratch.path
-        ..['TMP'] = scratch.path
-        ..['TEMP'] = scratch.path
-        ..['HOME'] = home.path;
-      final res = await runOneShot(
-        kernelWorker: await patchedSnapshot(_sdkDartPaths.first),
-        patchedMarker: true,
-        environment: env,
-      );
-      expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
-      expect(scratch.listSync(recursive: true).toList(), isEmpty);
-    });
+    test(
+      'leaves scratch TMPDIR empty',
+      () async {
+        final scratch = Directory('${_root.path}/scratch-tmp')..createSync();
+        final home = Directory('${_root.path}/scratch-home')..createSync();
+        final env = Map<String, String>.from(Platform.environment)
+          ..['TMPDIR'] = scratch.path
+          ..['TMP'] = scratch.path
+          ..['TEMP'] = scratch.path
+          ..['HOME'] = home.path;
+        final res = await runOneShot(
+          kernelWorker: await patchedSnapshot(_sdkDartPaths.first),
+          patchedMarker: true,
+          environment: env,
+        );
+        expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
+        expect(scratch.listSync(recursive: true).toList(), isEmpty);
+      },
+      skip: _toolSnapshotPath.isEmpty ? 'no kernel_module AOT snapshot' : null,
+    );
   });
 
   test('whole-program and modular kernel compiles are byte-identical across clean builds and checkout paths', () async {
