@@ -530,6 +530,20 @@ dart_test(
     ],
 )
 
+# Generates one module's `package_config.json` from its closure's records.
+# It takes no `dart_library` dependency on purpose (like `kernel_module`
+# above): every `dart_library` names it as an implicit exec tool, so a
+# dependency would be a cycle. It reads the shared worker sources through
+# no `srcs`: it imports only `dart:` libraries.
+dart_binary(
+    name = "package_config",
+    code_assets_from_deps = False,
+    compile_mode = "aot-snapshot",
+    main = "package_config.dart",
+    modular_kernel = False,
+    visibility = ["//visibility:public"],
+)
+
 # Bare sources for `directive_guard_test`, which reads every Dart-reading tool
 # and fails when one stops enforcing the shared staged-source check.
 exports_files(

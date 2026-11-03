@@ -7,8 +7,10 @@ load("//dart/private:dart_info.bzl", "dart_info", "dart_info_multi", "package_li
 load("//dart/private:dart_info_params.bzl", "dart_package_identity")
 load(
     "//dart/private:dart_kernel.bzl",
+    "DartKernelCycleInfo",
     "KERNEL_MODULE_ATTRS",
     "MODULAR_KERNEL_TOOLCHAINS",
+    "lib_has_cross",
     "library_kernel_info",
     "library_module_inputs",
 )
@@ -218,7 +220,9 @@ def _own_kernel_providers(ctx, info):
     )
     if not kernel_info.modular:
         return []
-    return [kernel_info]
+    single = module_inputs.package_name if len(module_inputs.own_records) == 1 else ""
+    has_cross = lib_has_cross(single, module_inputs.rule_deps, False)
+    return [kernel_info, DartKernelCycleInfo(has_cross = has_cross)]
 
 DartPackageMemberInfo = provider(
     doc = """Direct analysis facts of one `dart_package_member`, for the merged `dart_library`.
