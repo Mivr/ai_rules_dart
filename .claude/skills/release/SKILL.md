@@ -417,7 +417,7 @@ not permitted with --lockfile_mode=error`;
    Linux VM for this; if a lock looks platform-specific, you left `.bazelrc.user` in place.
    Commit the lock updates (signed).
 
-4. Run the **full test surface** (its `ci.yaml` folders, then lint with `prek` as in Phase 1 step 4 — these repos have no
+4. Run the **full test surface** (its `ci.yaml` folders, then lint with `prek` as in Phase 1 step 4 — like rules_dart, these repos have no
    `//:buildifier.check` target) with **no
    override**, resolving the real published rules*dart. Remember this only proves \_your*
    cache resolves it — the lock verification in step 3 is what guards CI.

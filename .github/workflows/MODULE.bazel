@@ -1,3 +1,0 @@
-module(name = "rules_dart_workflows")
-
-bazel_dep(name = "buildifier_prebuilt", version = "10.1.0")
