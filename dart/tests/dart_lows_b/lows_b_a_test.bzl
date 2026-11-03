@@ -81,6 +81,8 @@ def _lows_b_runner_probe_impl(ctx):
         outputs = [out],
         mnemonic = "LowsBRunnerProbe",
         progress_message = "Probing the SDK runner %{label}",
+        # The SDK comes from the `sdk` attribute, not a resolved toolchain.
+        toolchain = None,
     )
     return [DefaultInfo(files = depset([out]))]
 

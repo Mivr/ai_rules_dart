@@ -156,6 +156,8 @@ def _dart_web_compile(ctx, compile_mode):
         mnemonic = "DartCompileWeb",
         progress_message = "Compiling Dart %s %s" % (compile_mode, ctx.label),
         env = env,
+        # The executable is the copy toolchain's `dart`.
+        toolchain = COPY_TO_DIRECTORY_TOOLCHAINS[0],
     )
 
     return [

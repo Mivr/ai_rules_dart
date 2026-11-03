@@ -362,6 +362,7 @@ def _codegen_run_worker(ctx, cg):
             # pools because Bazel keys on `(mnemonic, binary)`.
             "worker-key-mnemonic": "DartCodegen",
         },
+        toolchain = "//dart:exec_tools_toolchain_type",
     )
 
 def _codegen_run_script(ctx, cg):
@@ -417,6 +418,7 @@ def _codegen_run_script(ctx, cg):
         mnemonic = "DartCodegen",
         progress_message = "DartCodegen %s" % ctx.label,
         env = writable_home_env(cg.dart, cg.outputs[0]),
+        toolchain = "//dart:exec_tools_toolchain_type",
     )
 
 def _dart_codegen_impl(ctx):

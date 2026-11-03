@@ -209,6 +209,7 @@ def _run_baseline_tool(ctx, dart_sdk_info, config_label, baseline, out, args, ac
         mnemonic = action.mnemonic,
         progress_message = action.progress_message,
         env = writable_home_env(dart_sdk_info.dart, out),
+        toolchain = _TOOLCHAIN,
     )
 
 def validate_config_baseline(ctx):

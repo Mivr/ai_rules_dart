@@ -252,6 +252,7 @@ def _analyze(ctx, name, staged, sdk_inputs, own_paths, baseline):
         mnemonic = "DartAnalyze",
         progress_message = "Analyzing Dart sources of %{label}",
         env = writable_home_env(dart_sdk_info.dart, stamp),
+        toolchain = _TOOLCHAIN,
     )
     return stamp
 
@@ -300,6 +301,7 @@ def _analyze_summaries(ctx, name, staged, summaries, sdk_summary, sdk_inputs, ow
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
         },
+        toolchain = _TOOLCHAIN,
     )
     return stamp
 
@@ -529,6 +531,7 @@ def _format(ctx, name, staged, own_paths, language_version):
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
         },
+        toolchain = _TOOLCHAIN,
     )
     return struct(
         stamp = stamp,
@@ -664,6 +667,7 @@ def _analyze_fix_outputs(ctx, name, staged, own_paths, sdk_inputs, dart_sdk_info
         mnemonic = "DartFix",
         progress_message = "Computing Dart fixes for %{label}",
         env = writable_home_env(dart_sdk_info.dart, manifest),
+        toolchain = _TOOLCHAIN,
     )
     return fixes, manifest
 

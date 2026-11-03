@@ -764,7 +764,7 @@ def _unseeded_base_kmods_fixture_impl(ctx):
     crypto_koutline = ctx.actions.declare_directory(ctx.label.name + "_crypto.koutline")
     shelf_koutline = ctx.actions.declare_directory(ctx.label.name + "_shelf.koutline")
     for d in [base_kmod, crypto_kmod, shelf_kmod, base_koutline, crypto_koutline, shelf_koutline]:
-        ctx.actions.run_shell(outputs = [d], command = "mkdir -p " + d.path)
+        ctx.actions.run_shell(outputs = [d], command = "mkdir -p " + d.path, toolchain = None)
 
     all_kmods = depset([base_kmod, crypto_kmod, shelf_kmod], order = "postorder")
     all_koutlines = depset([base_koutline, crypto_koutline, shelf_koutline], order = "postorder")

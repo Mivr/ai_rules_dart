@@ -226,6 +226,7 @@ def _analyzer_sdk_summary_impl(ctx):
         mnemonic = "DartAnalyzerSdkSummary",
         progress_message = "Summarizing the Dart SDK for analysis",
         env = writable_home_env(dart_sdk_info.dart, summary),
+        toolchain = _TOOLCHAIN,
     )
     return [DefaultInfo(files = depset([summary]))]
 
@@ -434,6 +435,7 @@ def _summary_embedder_info(ctx, info, deps, files, sums, own):
         mnemonic = "DartAnalyzerSdkSummary",
         progress_message = "Summarizing Dart embedder SDK %{label}",
         env = writable_home_env(dart_sdk_info.dart, embedder_sdk),
+        toolchain = _TOOLCHAIN,
     )
     return DartAnalyzerSummaryInfo(
         summary = None,
@@ -671,6 +673,7 @@ def _summary_run_action(ctx, info, own_records, action, closure):
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
         },
+        toolchain = _TOOLCHAIN,
     )
     return DartAnalyzerSummaryInfo(
         summary = summary,
