@@ -1559,31 +1559,36 @@ def _malformed_input_test_impl(ctx):
     env = unittest.begin(ctx)
 
     # Malformed input never crashes the build; problems carry the line (M-12).
-    for text in [
-        "[",
-        "{",
-        "a: [",
-        "- :",
-        "&",
-        "*",
-        "!",
-        "a: !<",
-        "a: 'unterminated",
-        "a: \"\\u12\"",
-        "a: \"\\U00110000\"",
-        "a:\n\t- x",
-        "- - -",
-        "---\n---\n",
-        "...",
-        "%",
-        "a: {b: }",
-        "a: [1,,2]",
-        "[1, 2] trailing",
-        "{\"a\": 1",
+    # Each row is (text, parsed value, exact problems). The inputs the subset
+    # accepts have no problems and assert the value they parse to.
+    flow_doc = ["flow document ending at line 1 is not supported"]
+    flow_coll = ["flow collection starting at line 1 is not supported"]
+    for text, want_value, want_problems in [
+        ("[", None, flow_doc),
+        ("{", None, flow_doc),
+        ("a: [", {"a": None}, flow_coll),
+        ("- :", [None], ["mapping value at line 1 is not supported"]),
+        ("&", "", ["empty anchor at line 1 is not supported"]),
+        ("*", None, ["empty alias at line 1 is not supported"]),
+        ("!", None, []),
+        ("a: !<", {"a": None}, ["Undefined tag handle at line 1"]),
+        ("a: 'unterminated", {"a": None}, ["unreadable line 1: \"a: 'unterminated\""]),
+        ("a: \"\\u12\"", {"a": None}, ["short u escape at line 1 is not supported"]),
+        ("a: \"\\U00110000\"", {"a": None}, ["bad U escape at line 1 is not supported"]),
+        ("a:\n\t- x", {"a": None}, ["tab indentation at line 2 is not supported"]),
+        ("- - -", [None], ["nested sequence at line 1 is not supported"]),
+        ("---\n---\n", None, ["second document marker (---) at line 2"]),
+        ("...", None, []),
+        ("%", None, ["invalid directive at line 1"]),
+        ("a: {b: }", {"a": {"b": None}}, []),
+        ("a: [1,,2]", {"a": None}, flow_coll),
+        ("[1, 2] trailing", None, flow_doc),
+        ("{\"a\": 1", None, flow_doc),
     ]:
-        document_value_and_problems(text, True)
-        document_problems(text, True)
-    asserts.true(env, True)
+        value, problems = document_value_and_problems(text, True)
+        asserts.equals(env, want_value, value)
+        asserts.equals(env, want_problems, problems)
+        asserts.equals(env, want_problems, document_problems(text, True))
     return unittest.end(env)
 
 def _unreadable_lines_test_impl(ctx):

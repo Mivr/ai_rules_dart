@@ -21,8 +21,13 @@ void main() {
       addTearDown(() => deleteScratchQuietly(tmp));
       final file = File('${tmp.path}/combined.dill')
         ..writeAsBytesSync([0, 1, 2]);
+      final sibling = File('${tmp.path}/sibling.dill')
+        ..writeAsBytesSync([3, 4]);
       file.deleteSync();
       expect(() => deleteScratchQuietly(file), returnsNormally);
+      expect(file.existsSync(), isFalse, reason: 'the file stays absent');
+      expect(sibling.existsSync(), isTrue, reason: 'a sibling is untouched');
+      expect(sibling.readAsBytesSync(), [3, 4]);
     });
   });
 
