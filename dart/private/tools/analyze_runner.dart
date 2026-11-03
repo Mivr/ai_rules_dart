@@ -12,6 +12,8 @@ import 'analyze_runner_machine.dart';
 import 'analyze_runner_staged_prune.dart';
 import 'cli_flags.dart';
 import 'private_home.dart';
+import 'project_lint_options.dart';
+import 'staged_project_copy.dart';
 
 export 'analyze_runner_machine.dart' show parseMachineDiagnostics, unstage;
 
@@ -41,20 +43,72 @@ void main(List<String> args) {
     exit(1);
   }
 
-  if (parsed.baseline != null) {
-    _analyzeWithBaseline(parsed, project);
-    return;
-  }
+  // The stock SDK `dart analyze` does not know the project lint rules: when
+  // the staged options enable any, analyze a writable copy with those keys
+  // stripped instead of the read-only staged tree (never through its
+  // symlinks), and map the diagnostics back from the copy's paths.
+  final String? stripped = stageStrippedProjectCopy(project, allowed);
+  final String effective = stripped ?? project;
+  try {
+    if (parsed.baseline != null) {
+      _analyzeWithBaseline(parsed, effective);
+      return;
+    }
 
-  final result = _runDartAnalyze(parsed, project, machine: false);
-  // Bazel echoes any action output, so a clean run stays silent rather than
-  // printing the analyzer's "No issues found!" on every build.
-  stderr.write(unstage(result.stderr as String, project));
-  if (result.exitCode != 0) {
-    stdout.write(unstage(result.stdout as String, project));
-    exit(result.exitCode);
+    final result = _runDartAnalyze(parsed, effective, machine: false);
+    // Bazel echoes any action output, so a clean run stays silent rather than
+    // printing the analyzer's "No issues found!" on every build.
+    stderr.write(unstage(result.stderr as String, effective));
+    if (result.exitCode != 0) {
+      stdout.write(unstage(result.stdout as String, effective));
+      exit(result.exitCode);
+    }
+    File(parsed.stamp).writeAsStringSync('analyzed\n');
+  } finally {
+    if (stripped != null) {
+      _removeStagingCopy(stripped);
+    }
   }
-  File(parsed.stamp).writeAsStringSync('analyzed\n');
+}
+
+/// Copies the staged project into a scratch directory with the project lint
+/// rule keys stripped from its options copies, or returns null when the
+/// staged options enable none.
+///
+/// Returns the scratch directory holding the stripped copy.
+String? stageStrippedProjectCopy(String project, Set<String>? allowed) {
+  if (findStagedProjectLintOptions(project).isEmpty) {
+    return null;
+  }
+  final Directory scratch = Directory.systemTemp.createTempSync(
+    'rules_dart_analyze_stripped.',
+  );
+  copyStagedTree(
+    project,
+    scratch.path,
+    projectRoot: project,
+    allowedSrcPaths: allowed == null
+        ? null
+        : {for (final entry in allowed) 'src/$entry'},
+  );
+  stripStagedProjectLintOptions(scratch.path);
+  repointPackageConfig(project, scratch.path);
+  return scratch.path;
+}
+
+/// Deletes a staging copy created by [stageStrippedProjectCopy].
+///
+/// A failed recursive delete on Windows (a child still holds the directory)
+/// must not mask the analysis' own result; the directory lives under the
+/// system temp directory, so the OS reclaims it later.
+void _removeStagingCopy(String scratch) {
+  final dir = Directory(scratch);
+  if (!dir.existsSync()) return;
+  try {
+    dir.deleteSync(recursive: true);
+  } on FileSystemException {
+    // Ignore cleanup errors; see the documentation above.
+  }
 }
 
 ProcessResult _runDartAnalyze(

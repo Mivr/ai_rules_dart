@@ -5,6 +5,7 @@ import 'package:test/test.dart';
 
 import '../../guard/lib/directive_guard.dart';
 import 'fix_runner.dart' as fix_runner;
+import 'staged_project_copy.dart' as staged;
 
 void main() {
   late Directory tmp;
@@ -52,7 +53,7 @@ void main() {
           '${const JsonEncoder.withIndent('  ').convert(initialConfig)}\n',
         );
 
-      fix_runner.repointPackageConfig(project.path, scratch.path);
+      staged.repointPackageConfig(project.path, scratch.path);
 
       final raw = configFile.readAsStringSync();
       expect(raw, isNot(contains('file:')));
@@ -105,7 +106,7 @@ void main() {
         })}\n',
       );
 
-    fix_runner.repointPackageConfig(project.path, scratch.path);
+    staged.repointPackageConfig(project.path, scratch.path);
 
     final decoded =
         jsonDecode(configFile.readAsStringSync()) as Map<String, Object?>;

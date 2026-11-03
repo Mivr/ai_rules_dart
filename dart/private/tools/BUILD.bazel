@@ -119,6 +119,8 @@ dart_binary(
         "baseline_json.dart",
         "cli_flags.dart",
         "private_home.dart",
+        "project_lint_options.dart",
+        "staged_project_copy.dart",
     ],
     code_assets_from_deps = False,
     compile_mode = "kernel",
@@ -157,6 +159,8 @@ dart_test(
         "baseline_json.dart",
         "cli_flags.dart",
         "private_home.dart",
+        "project_lint_options.dart",
+        "staged_project_copy.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
     args = [
@@ -208,6 +212,8 @@ dart_binary(
     srcs = [
         "analyze_runner_staged_prune.dart",
         "private_home.dart",
+        "project_lint_options.dart",
+        "staged_project_copy.dart",
     ],
     code_assets_from_deps = False,
     compile_mode = "kernel",
@@ -695,6 +701,8 @@ dart_test(
         "analyze_runner_staged_prune.dart",
         "fix_runner.dart",
         "private_home.dart",
+        "project_lint_options.dart",
+        "staged_project_copy.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
     main = "fix_runner_test.dart",
@@ -702,6 +710,17 @@ dart_test(
         "//dart/guard:directive_guard",
         "@ext_pub_deps//:test",
     ],
+)
+
+dart_test(
+    name = "project_lint_options_test",
+    size = "small",
+    srcs = [
+        "project_lint_options.dart",
+        "staged_project_copy.dart",
+    ],
+    main = "project_lint_options_test.dart",
+    deps = ["@ext_pub_deps//:test"],
 )
 
 dart_test(
