@@ -2,6 +2,7 @@ load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("//dart:defs.bzl", "dart_test")
 load(":analyzer_summary_test.bzl", "analyzer_summary_test_suite")
+load(":analyzer_summary_tool_test.bzl", "analyzer_summary_tool_test_suite")
 load(":architecture_invariants_test.bzl", "architecture_invariants_test_suite")
 load(":built_value_library_direct_test.bzl", "built_value_library_direct_test_suite")
 load(":code_asset_test.bzl", "code_asset_test_suite")
@@ -136,6 +137,8 @@ semver_test_suite(name = "semver_test")
 snapshot_patch_test_suite(name = "snapshot_patch_test")
 
 analyzer_summary_test_suite(name = "analyzer_summary_version_test")
+
+analyzer_summary_tool_test_suite(name = "analyzer_summary_tool")
 
 built_value_library_direct_test_suite(name = "built_value_library_direct")
 

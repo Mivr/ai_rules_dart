@@ -104,6 +104,16 @@ bool_flag(
     visibility = ["//visibility:public"],
 )
 
+# The summary worker `dart_analyze` runs when `//dart:analyzer_summaries` is
+# on. A `label_flag` (rather than a direct label) so downstream rulesets can
+# swap in an extended worker with the hosted project rules they need:
+#   bazel test //... --@rules_dart//dart:analyzer_summary_tool=//my:worker
+label_flag(
+    name = "analyzer_summary_tool",
+    build_setting_default = "//dart/private/tools:analyzer_summary",
+    visibility = ["//visibility:public"],
+)
+
 # Whether kernel-mode executables (`dart_test` and `dart_binary(compile_mode = "kernel")`,
 # including `package:test`'s `test_runner`) compile modularly by default: each
 # `dart_library` compiles its own sources once into `.kmod`/`.koutline`, and the
