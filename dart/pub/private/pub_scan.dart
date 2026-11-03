@@ -26,11 +26,11 @@
 /// refused whatever its target; symlink entries are refused when their target
 /// is absolute or climbs out of the package root (the walk's lexical rule);
 /// any entry whose own path is absolute or climbs out of the root is refused
-/// too. Per-byte integrity (gzip CRC32, tar checksums) is deliberately not
-/// re-verified: the lock's sha256 already pins every byte. The gzip ISIZE
-/// size check is not repeated either: truncation past the sha256 pin is
-/// impossible, and the required tar end-of-archive marker catches a cut
-/// stream at the tar layer.
+/// too. Per-byte integrity is checked explicitly: every gzip member's CRC32
+/// and ISIZE trailer must match its inflated bytes, and the tar walk still
+/// requires its end-of-archive marker. Tar header checksums are not
+/// re-verified: the lock's sha256 already pins every byte, and the scanner's
+/// own framing checks catch a stream that cannot be read exactly.
 ///
 /// Determinism: the verdict is a pure function of the archive bytes. Path
 /// rules use the strictest reading on every OS (backslash counts as a
@@ -38,16 +38,19 @@
 /// Windows. Field text decodes as Latin-1, preserving byte values one to one.
 ///
 /// Streaming: [scanArchiveFile] reads the archive as a stream
-/// (`File.openRead()` through a gzip decoder), walks the tar headers chunk by
-/// chunk, and skips entry data without keeping it — consumed input is dropped,
-/// so a streamed scan holds only its undecided window (plus at most one
-/// capped name record), never the archive. Any inflate failure (a multi-member
-/// boundary the streaming decoder cannot cross, trailing pad bytes, a corrupt
-/// body) falls back to re-reading the file with the exact in-memory logic, so
-/// multi-member gzip, trailing-NUL padding, pax and GNU long-name handling
-/// keep byte-identical verdicts on every path.
+/// (`File.openRead()`), decodes the gzip members and walks the tar headers
+/// chunk by chunk, and skips entry data without keeping it — consumed input is
+/// dropped, so a streamed scan holds only its 32 KiB deflate window and its
+/// undecided tar window (plus at most one capped name record), never the
+/// archive. Gzip member framing, the deflate body and the CRC32/ISIZE trailer
+/// are decoded in pure Dart, so a member split across chunks, trailing pad
+/// bytes and multi-member streams keep byte-identical verdicts on every path
+/// and platform.
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
+
+const _badDeflate = 'the deflate stream cannot be decoded';
 
 /// Cap on collected GNU long-name, long-link and pax record data. Real names
 /// stay far below it; anything past it is hostile, not a package path.
@@ -89,9 +92,9 @@ class _NeedMore implements Exception {
 /// walk until more input arrives, or fail it closed at end of input. Consumed
 /// input is compacted away, so skipped entry data is never kept.
 class _Cursor {
-  _Cursor(this._buf, {this.eof = false});
+  _Cursor(this._buf);
   List<int> _buf;
-  bool eof;
+  bool eof = false;
   int _pos = 0;
 
   /// True when [n] bytes are readable at the cursor.
@@ -101,10 +104,9 @@ class _Cursor {
   /// input may still arrive, or fails it closed at end of input with the same
   /// truncation detail the whole-buffer scan reports.
   void ensure(int n) {
-    if (!ready(n)) {
-      if (eof) _unscannable('the tar archive is truncated');
-      throw const _NeedMore();
-    }
+    if (ready(n)) return;
+    if (eof) _unscannable('the tar archive is truncated');
+    throw const _NeedMore();
   }
 
   /// Reads one byte at [offset] past the cursor. Callers ensure readiness.
@@ -116,9 +118,7 @@ class _Cursor {
 
   /// Advances past [n] bytes. Consumed input is dropped by the next [add],
   /// so skipped entry data is never kept.
-  void advance(int n) {
-    _pos += n;
-  }
+  void advance(int n) => _pos += n;
 
   /// Appends streamed input, dropping consumed bytes first. The cursor may
   /// stand past the buffered bytes (entry data is skipped, never fetched),
@@ -136,11 +136,8 @@ class _Cursor {
 /// Returns true for absolute paths on any OS: POSIX (`/etc/passwd`) and
 /// Windows drive or UNC targets (`C:/secret`, `\\host\share`). The input is
 /// slash-normalized, so a leading backslash already reads as `/`.
-bool _isAbsolute(String path) {
-  if (path.startsWith('/')) return true;
-  if (path.length >= 2 && path[1] == ':') return true;
-  return false;
-}
+bool _isAbsolute(String path) =>
+    path.startsWith('/') || (path.length >= 2 && path[1] == ':');
 
 /// Returns true when a tar entry path escapes the package root: absolute
 /// paths, and relative paths whose `..` segments climb above the root.
@@ -210,9 +207,13 @@ String _cutNulAt(_Cursor cursor, int start, int end) {
 /// padding; anything unparsable fails the scan closed.
 int _parseNumber(List<int> field, String what) {
   if (field[0] >= 128) {
+    if (field[0] == 255) _unscannable("an entry's $what is not a number");
     var v = field[0] - 128;
     for (var i = 1; i < field.length; i++) {
       v = v * 256 + field[i];
+      if (v < 0 || v > 0x1FFFFFFFFFFFFF) {
+        _unscannable("an entry's $what is not a number");
+      }
     }
     return v;
   }
@@ -262,6 +263,20 @@ typedef _PaxRecords = ({String? path, String? linkpath, int? size});
 /// Parses pax record data into its scan-relevant records. Only `path=`,
 /// `linkpath=` and `size=` affect the scan; the rest are ignored. A malformed
 /// record fails the scan closed.
+int _parsePaxSize(String val) {
+  final text = val.trim();
+  if (text.isEmpty) _unscannable('a pax size is not a number');
+  var v = 0;
+  for (final int unit in text.codeUnits) {
+    final d = unit - 0x30;
+    v = v * 10 + d;
+    if (d < 0 || d > 9 || v < 0 || v > 0x1FFFFFFFFFFFFF) {
+      _unscannable('a pax size is not a number');
+    }
+  }
+  return v;
+}
+
 _PaxRecords _parsePaxRecords(String text) {
   String? path;
   String? linkpath;
@@ -275,19 +290,9 @@ _PaxRecords _parsePaxRecords(String text) {
     if (eq < 0) _unscannable('a pax record has no key');
     final key = record.substring(0, eq);
     final val = record.substring(eq + 1);
-    if (key == 'path') {
-      path = val;
-    } else if (key == 'linkpath') {
-      linkpath = val;
-    } else if (key == 'size') {
-      var v = 0;
-      for (final unit in val.trim().codeUnits) {
-        final d = unit - 0x30;
-        if (d < 0 || d > 9) _unscannable('a pax size is not a number');
-        v = v * 10 + d;
-      }
-      size = v;
-    }
+    if (key == 'path') path = val;
+    if (key == 'linkpath') linkpath = val;
+    if (key == 'size') size = _parsePaxSize(val);
   }
   return (path: path, linkpath: linkpath, size: size);
 }
@@ -298,13 +303,8 @@ _PaxRecords _parsePaxRecords(String text) {
 /// old whole-buffer scan); [_TarScan.streaming] starts empty and suspends
 /// until fed.
 class _TarScan {
-  _TarScan(List<int> bytes)
-    : _cursor = _Cursor(bytes, eof: true),
-      _limit = bytes.length ~/ 512 + 2;
-  _TarScan.streaming() : _cursor = _Cursor(<int>[]), _limit = null;
+  _TarScan.streaming() : _cursor = _Cursor(<int>[]);
   final _Cursor _cursor;
-  final int? _limit;
-  int _steps = 0;
   bool _finished = false;
   String? _pname;
   String? _plink;
@@ -337,21 +337,15 @@ class _TarScan {
   /// leak into the next entry. A pax `size=` override survives: the next
   /// entry's data length consumes it.
   void _clearPending() {
-    _pname = null;
-    _plink = null;
-    _ppath = null;
-    _plinkpath = null;
+    _pname = _plink = _ppath = _plinkpath = null;
   }
 
   /// Resolves one entry field across its override sources: a GNU
   /// long-name/long-link record or a pax `path=`/`linkpath=` record set for
   /// this entry wins; otherwise a pax global record wins; otherwise the
   /// header field stands.
-  String _resolve(String header, String? pending, String? global) {
-    if (pending != null) return pending;
-    if (global != null) return global;
-    return header;
-  }
+  String _resolve(String header, String? pending, String? global) =>
+      pending ?? global ?? header;
 
   /// Classifies a hard-link/symlink entry against the pending name records,
   /// refusing hostile entries. Returns the refusal, or null when benign.
@@ -390,16 +384,15 @@ class _TarScan {
       _pname = text.split('\x00').first;
     } else if (kind == 'K') {
       _plink = text.split('\x00').first;
+    } else if (kind == 'g') {
+      final recs = _parsePaxRecords(text);
+      _gpath = recs.path ?? _gpath;
+      _glinkpath = recs.linkpath ?? _glinkpath;
     } else {
       final recs = _parsePaxRecords(text);
-      if (kind == 'g') {
-        if (recs.path != null) _gpath = recs.path;
-        if (recs.linkpath != null) _glinkpath = recs.linkpath;
-      } else {
-        _ppath = recs.path;
-        _plinkpath = recs.linkpath;
-        _psize = recs.size;
-      }
+      _ppath = recs.path;
+      _plinkpath = recs.linkpath;
+      _psize = recs.size;
     }
   }
 
@@ -408,9 +401,7 @@ class _TarScan {
   /// header bytes; record data suspends until buffered.
   _Refusal? _entry() {
     final header = _parseHeader(_cursor);
-    var kind = header.typeflag;
-    if (kind == '\x00') kind = '0';
-    // A pax `size=` override replaces the header size for the next entry.
+    final kind = header.typeflag == '\x00' ? '0' : header.typeflag;
     final size = _psize ?? header.size;
     _psize = null;
     final skip = 512 + size + (-size) % 512;
@@ -419,21 +410,14 @@ class _TarScan {
       _cursor.advance(skip);
       return refusal;
     }
-    // Every other entry carries a path too: an absolute or climbing file,
-    // directory, or name-record path escapes the root the same way.
     final name = _resolve(header.name, _ppath ?? _pname, _gpath);
     if (_entryPathEscapes(name)) {
       _cursor.advance(skip);
       return _Refusal('path', name, '');
     }
-    if (kind == 'L' || kind == 'K' || kind == 'x' || kind == 'g') {
+    if ('LKxg'.contains(kind)) {
       _storeNameRecord(kind, size);
-    } else if (kind == '0' ||
-        kind == '5' ||
-        kind == 'D' ||
-        kind == '3' ||
-        kind == '4' ||
-        kind == '6') {
+    } else if ('05D346'.contains(kind)) {
       _clearPending();
     } else if (kind == 'S') {
       _unscannable('a sparse entry cannot be scanned');
@@ -453,10 +437,6 @@ class _TarScan {
   _Refusal? pump() {
     try {
       for (;;) {
-        if (_limit != null && _steps >= _limit) {
-          _unscannable('the tar archive never terminates');
-        }
-        _steps++;
         _cursor.ensure(512);
         var zero = true;
         for (var j = 0; j < _zeroBlockLength; j++) {
@@ -478,214 +458,572 @@ class _TarScan {
   }
 }
 
-/// Skips one NUL-terminated gzip header string (name or comment).
-int _skipGzipString(List<int> bytes, int pos) {
-  for (;;) {
-    if (pos >= bytes.length) _unscannable('a gzip header is truncated');
-    if (bytes[pos] == 0) return pos + 1;
-    pos++;
+final Uint32List _crcTable = () {
+  final t = Uint32List(256);
+  for (var i = 0; i < 256; i++) {
+    var c = i;
+    for (var j = 0; j < 8; j++) {
+      c = (c >>> 1) ^ ((c & 1) * 0xEDB88320);
+    }
+    t[i] = c;
+  }
+  return t;
+}();
+
+int _crc32(List<int> bytes) {
+  var c = 0xFFFFFFFF;
+  for (final b in bytes) {
+    c = _crcTable[(c ^ b) & 0xFF] ^ (c >>> 8);
+  }
+  return ~c;
+}
+
+final Uint8List _codeOrder = base64Decode('EBESAAgHCQYKBQsEDAMNAg4BDw==');
+
+class _HuffmanTree {
+  _HuffmanTree(this.table, this.maxBits);
+  final Uint32List table;
+  final int maxBits;
+
+  static _HuffmanTree? build(List<int> lens, int max, [bool isDist = false]) {
+    var maxBits = 0;
+    var totalSymbols = 0;
+    final count = Uint16List(max + 1);
+    for (final l in lens) {
+      if (l > max) return null;
+      if (l > 0) {
+        count[l]++;
+        if (l > maxBits) maxBits = l;
+        totalSymbols++;
+      }
+    }
+    if (totalSymbols == 0) {
+      return isDist ? _HuffmanTree(Uint32List(1), 0) : null;
+    }
+    if (isDist && totalSymbols == 1 && count[1] == 1) {
+      final t = Uint32List(2);
+      t[0] = t[1] = (lens.indexOf(1) << 8) | 1;
+      return _HuffmanTree(t, 1);
+    }
+    var left = 1;
+    for (var len = 1; len <= max; len++) {
+      left = (left << 1) - count[len];
+      if (left < 0) return null;
+    }
+    if (left != 0) return null;
+
+    final nextCode = Uint16List(maxBits + 1);
+    var code = 0;
+    for (var b = 1; b <= maxBits; b++) {
+      nextCode[b] = code = (code + count[b - 1]) << 1;
+    }
+
+    final table = Uint32List(1 << maxBits);
+    for (var sym = 0; sym < lens.length; sym++) {
+      final int len = lens[sym];
+      if (len == 0) continue;
+      final int c = nextCode[len]++;
+      var rev = 0;
+      for (var i = 0; i < len; i++) {
+        rev = (rev << 1) | ((c >> i) & 1);
+      }
+      final fill = 1 << (maxBits - len);
+      for (var k = 0; k < fill; k++) {
+        table[rev | (k << len)] = (sym << 8) | len;
+      }
+    }
+    return _HuffmanTree(table, maxBits);
+  }
+
+  int decode(int Function(int) peek, void Function(int) consume) {
+    // An empty distance tree is legal only while no length symbol refers to
+    // it; reaching a distance code through it is an invalid stream.
+    if (maxBits == 0) _unscannable(_badDeflate);
+    final int entry = table[peek(maxBits)];
+    consume(entry & 0xFF);
+    return entry >> 8;
   }
 }
 
-/// Parses one gzip member header at [pos] and returns the deflate-body start.
-/// Only the framing is parsed here; the body is inflated by the caller.
-int _parseGzipHeader(List<int> bytes, int pos) {
-  if (pos + 10 > bytes.length) _unscannable('a gzip member is truncated');
-  if (bytes[pos] != 31 || bytes[pos + 1] != 139 || bytes[pos + 2] != 8) {
-    _unscannable('a gzip member has a bad header');
-  }
-  final flags = bytes[pos + 3];
-  pos += 10;
-  if (flags & 4 != 0) {
-    if (pos + 2 > bytes.length) _unscannable('a gzip header is truncated');
-    final xlen = bytes[pos] + bytes[pos + 1] * 256;
-    pos += 2;
-    if (pos + xlen > bytes.length) _unscannable('a gzip header is truncated');
-    pos += xlen;
-  }
-  if (flags & 8 != 0) pos = _skipGzipString(bytes, pos);
-  if (flags & 16 != 0) pos = _skipGzipString(bytes, pos);
-  if (flags & 2 != 0) {
-    if (pos + 2 > bytes.length) _unscannable('a gzip header is truncated');
-    pos += 2;
-  }
-  return pos;
-}
+final _HuffmanTree _fixedLitTree = () {
+  final lengths = List<int>.filled(288, 8);
+  lengths.fillRange(144, 256, 9);
+  lengths.fillRange(256, 280, 7);
+  return _HuffmanTree.build(lengths, 9)!;
+}();
 
-/// Scans archive bytes for refused entries: the first hostile entry in
-/// archive order, or null for a clean archive. Sniffs the framing — gzip
-/// members (inflated, then walked by header offsets) or a plain tar (walked
-/// directly). Trailing NUL padding past the last gzip member is skipped, the
-/// way the old scan tolerated pub.dev's padded tarballs; any other trailing
-/// bytes fail the inflate closed.
-_Refusal? _scanArchive(List<int> bytes) {
-  if (bytes.isEmpty) _unscannable('the archive is empty');
-  if (bytes.length >= 2 && bytes[0] == 31 && bytes[1] == 139) {
-    var end = bytes.length;
-    while (end > 0 && bytes[end - 1] == 0) {
-      end--;
+final _HuffmanTree _fixedDistTree = _HuffmanTree.build(
+  List<int>.filled(32, 5),
+  5,
+  true,
+)!;
+
+enum _S { sniff, tar, hdr, blk, strd, dyn, huff, trlr, tail, done }
+
+class _ArchiveScanner {
+  List<int> _buf = <int>[];
+  int _pos = 0;
+  int _bitBuf = 0;
+  int _bitCount = 0;
+  bool _eof = false;
+  bool _tailNul = false;
+
+  _S _state = _S.sniff;
+  _TarScan? _walk;
+  _Refusal? _refusal;
+
+  final _window = Uint8List(32768);
+  int _windowPos = 0;
+  int _memberBytes = 0;
+  int _crc = 0xFFFFFFFF;
+
+  final _outBuf = Uint8List(8192);
+  int _outPos = 0;
+  int _bFinal = 0;
+  int _storedLen = -1;
+  _HuffmanTree? _litTree;
+  _HuffmanTree? _distTree;
+
+  final List<int> _dyn = List<int>.filled(4, 0);
+  List<int>? _codeLengths;
+  List<int>? _dynLengths;
+  _HuffmanTree? _clTree;
+
+  bool _needBits(int n) {
+    while (_bitCount < n) {
+      if (_pos >= _buf.length) {
+        if (_eof) _unscannable(_badDeflate);
+        return false;
+      }
+      _bitBuf |= _buf[_pos++] << _bitCount;
+      _bitCount += 8;
     }
-    final trimmed = bytes.sublist(0, end);
-    _parseGzipHeader(trimmed, 0);
-    late List<int> inflated;
-    try {
-      inflated = GZipCodec().decode(trimmed);
-    } on FormatException {
-      _unscannable('the deflate stream cannot be decoded');
-    }
-    return _TarScan(inflated).finish();
+    return true;
   }
-  return _TarScan(bytes).finish();
+
+  int _peek(int n) => _bitBuf & ((1 << n) - 1);
+
+  void _consume(int n) {
+    _bitBuf >>= n;
+    _bitCount -= n;
+  }
+
+  int _readBits(int n) {
+    final int val = _peek(n);
+    _consume(n);
+    return val;
+  }
+
+  void _align() => _consume(_bitCount % 8);
+
+  bool _needBytes(int n, [String msg = _badDeflate]) {
+    _align();
+    if (_buf.length - _pos >= n - (_bitCount ~/ 8)) return true;
+    if (_eof) _unscannable(msg);
+    return false;
+  }
+
+  int _readByte() {
+    if (_bitCount >= 8) return _readBits(8);
+    _align();
+    return _buf[_pos++];
+  }
+
+  int _readUint32() =>
+      _readByte() |
+      (_readByte() << 8) |
+      (_readByte() << 16) |
+      (_readByte() << 24);
+
+  int _byteAt(int offset) {
+    _align();
+    return _buf[_pos + offset];
+  }
+
+  _Refusal? _emitByte(int b) {
+    _outBuf[_outPos++] = b;
+    _window[_windowPos] = b;
+    _windowPos = (_windowPos + 1) & 0x7FFF;
+    _memberBytes++;
+    _crc = _crcTable[(_crc ^ b) & 0xFF] ^ (_crc >>> 8);
+    return _outPos == _outBuf.length ? _flushOut() : null;
+  }
+
+  _Refusal? _flushOut() {
+    if (_outPos == 0) return _refusal;
+    final int count = _outPos;
+    _outPos = 0;
+    if (_walk != null && !_walk!.finished) {
+      final _Refusal? r = _walk!.pumpAfter(_outBuf.sublist(0, count));
+      if (r != null) _refusal = r;
+    }
+    return _refusal;
+  }
+
+  bool _sniff() {
+    if (!_needBytes(1, 'the archive is empty')) return false;
+    _walk ??= _TarScan.streaming();
+    if (_byteAt(0) != 31) {
+      _state = _S.tar;
+    } else if (_buf.length - _pos < 2) {
+      if (!_eof) return false;
+      _state = _S.tar;
+    } else {
+      _state = _byteAt(1) == 139 ? _S.hdr : _S.tar;
+    }
+    return true;
+  }
+
+  /// Returns the offset just past the NUL ending the header text field at
+  /// [from], or -1 when the terminator has not arrived yet. Nothing is
+  /// consumed, so a header split across chunks resumes at the same position.
+  int _headerTextEnd(int from) {
+    final int nul = _buf.indexOf(0, _pos + from);
+    if (nul >= 0) return nul - _pos + 1;
+    if (_eof) _unscannable('a gzip header is truncated');
+    return -1;
+  }
+
+  /// Parses one RFC 1952 member header. Nothing is consumed until every
+  /// header byte is buffered, so a header split across chunks resumes at the
+  /// same position instead of being read as a fresh member. The optional
+  /// `FEXTRA` length counts as header bytes for `FHCRC`, per RFC 1952 §2.3.1.
+  bool _parseMemberHeader() {
+    if (!_needBytes(10, 'a gzip member is truncated')) return false;
+    final int m0 = _byteAt(0);
+    final int m1 = _byteAt(1);
+    final int cm = _byteAt(2);
+    final int flg = _byteAt(3);
+    if (m0 != 31 || m1 != 139 || cm != 8 || (flg & 0xE0) != 0) {
+      _unscannable('a gzip member has a bad header');
+    }
+    var end = 10;
+    if ((flg & 4) != 0) {
+      if (!_needBytes(end + 2, 'a gzip header is truncated')) return false;
+      end += 2 + (_byteAt(end) | (_byteAt(end + 1) << 8));
+      if (!_needBytes(end, 'a gzip header is truncated')) return false;
+    }
+    for (final int bit in const <int>[8, 16]) {
+      if ((flg & bit) == 0) continue;
+      end = _headerTextEnd(end);
+      if (end < 0) return false;
+    }
+    if ((flg & 2) != 0) {
+      if (!_needBytes(end + 2, 'a gzip header is truncated')) return false;
+      final int crc16 = _byteAt(end) | (_byteAt(end + 1) << 8);
+      if (crc16 != (_crc32(_buf.sublist(_pos, _pos + end)) & 0xFFFF)) {
+        _unscannable('a gzip member has a bad header');
+      }
+      end += 2;
+    }
+    _pos += end;
+    _memberBytes = 0;
+    _windowPos = 0;
+    _crc = 0xFFFFFFFF;
+    _state = _S.blk;
+    return true;
+  }
+
+  bool _readBlockHeader() {
+    if (!_needBits(3)) return false;
+    _bFinal = _readBits(1);
+    final int bType = _readBits(2);
+    if (bType == 1) {
+      _litTree = _fixedLitTree;
+      _distTree = _fixedDistTree;
+    }
+    _state = switch (bType) {
+      0 => _S.strd,
+      1 => _S.huff,
+      2 => _S.dyn,
+      _ => _unscannable(_badDeflate),
+    };
+    return true;
+  }
+
+  bool _readStored() {
+    if (_storedLen < 0) {
+      if (!_needBytes(4)) return false;
+      final int len = _readByte() | (_readByte() << 8);
+      if ((len ^ (_readByte() | (_readByte() << 8))) != 0xFFFF) {
+        _unscannable(_badDeflate);
+      }
+      _storedLen = len;
+    }
+    while (_storedLen > 0) {
+      if (!_needBytes(1) || _emitByte(_readByte()) != null) return false;
+      _storedLen--;
+    }
+    _storedLen = -1;
+    _state = _bFinal == 1 ? _S.trlr : _S.blk;
+    return true;
+  }
+
+  void _repeatDyn(int val, int count, int total) {
+    if (_dyn[3] + count > total) _unscannable(_badDeflate);
+    _dynLengths!.fillRange(_dyn[3], _dyn[3] + count, val);
+    _dyn[3] += count;
+  }
+
+  bool _decodeDynamicLengths(int total) {
+    while (_dyn[3] < total) {
+      if (!_needBits(14)) return false;
+      final int sym = _clTree!.decode(_peek, _consume);
+      if (sym < 16) {
+        _dynLengths![_dyn[3]++] = sym;
+      } else if (sym == 16) {
+        if (_dyn[3] == 0) _unscannable(_badDeflate);
+        _repeatDyn(_dynLengths![_dyn[3] - 1], 3 + _readBits(2), total);
+      } else if (sym <= 18) {
+        _repeatDyn(0, sym == 17 ? 3 + _readBits(3) : 11 + _readBits(7), total);
+      } else {
+        _unscannable(_badDeflate);
+      }
+    }
+    return true;
+  }
+
+  bool _readDynamicHeader() {
+    if (_dyn[0] == 0) {
+      if (!_needBits(14)) return false;
+      _dyn[0] = _readBits(5) + 257;
+      _dyn[1] = _readBits(5) + 1;
+      _dyn[2] = _readBits(4) + 4;
+      _codeLengths = List<int>.filled(19, 0);
+    }
+    if (_clTree == null) {
+      for (var i = _dyn[3]; i < _dyn[2]; i++) {
+        if (!_needBits(3)) {
+          _dyn[3] = i;
+          return false;
+        }
+        _codeLengths![_codeOrder[i]] = _readBits(3);
+      }
+      _dyn[3] = 0;
+      _clTree = _HuffmanTree.build(_codeLengths!, 7);
+      if (_clTree == null) _unscannable(_badDeflate);
+      _dynLengths = List<int>.filled(_dyn[0] + _dyn[1], 0);
+    }
+    final int total = _dyn[0] + _dyn[1];
+    if (!_decodeDynamicLengths(total)) return false;
+    final List<int> dyn = _dynLengths!;
+    _litTree = _HuffmanTree.build(dyn.sublist(0, _dyn[0]), 15);
+    _distTree = _HuffmanTree.build(dyn.sublist(_dyn[0]), 15, true);
+    if (_litTree == null || _distTree == null) _unscannable(_badDeflate);
+    _dyn.fillRange(0, 4, 0);
+    _codeLengths = _dynLengths = _clTree = null;
+    _state = _S.huff;
+    return true;
+  }
+
+  int _decodeLength(int sym) {
+    final int i = sym - 257;
+    if (i == 28) return 258;
+    if (i < 8) return i + 3;
+    final int extra = (i - 4) >> 2;
+    return (((4 | (i & 3)) << extra) + 3) + _readBits(extra);
+  }
+
+  int _decodeDistance(int sym) {
+    if (sym < 4) return sym + 1;
+    final int extra = (sym - 2) >> 1;
+    return (((2 | (sym & 1)) << extra) + 1) + _readBits(extra);
+  }
+
+  bool _copyWindow(int length, int distance) {
+    if (distance > _memberBytes || distance > 32768) _unscannable(_badDeflate);
+    var srcPos = (_windowPos - distance) & 0x7FFF;
+    for (var i = 0; i < length; i++) {
+      if (_emitByte(_window[srcPos]) != null) return false;
+      srcPos = (srcPos + 1) & 0x7FFF;
+    }
+    return true;
+  }
+
+  bool _readHuffman() {
+    while (true) {
+      if (!_needBits(48)) return false;
+      final int sym = _litTree!.decode(_peek, _consume);
+      if (sym < 256) {
+        if (_emitByte(sym) != null) return false;
+      } else if (sym == 256) {
+        _state = _bFinal == 1 ? _S.trlr : _S.blk;
+        return true;
+      } else if (sym <= 285) {
+        final int length = _decodeLength(sym);
+        final int distSym = _distTree!.decode(_peek, _consume);
+        if (distSym > 29) _unscannable(_badDeflate);
+        if (!_copyWindow(length, _decodeDistance(distSym))) return false;
+      } else {
+        _unscannable(_badDeflate);
+      }
+    }
+  }
+
+  bool _readTrailer() {
+    if (_flushOut() != null) return false;
+    if (!_needBytes(8)) return false;
+    if (_readUint32() != (~_crc & 0xFFFFFFFF) ||
+        _readUint32() != (_memberBytes & 0xFFFFFFFF)) {
+      _unscannable(_badDeflate);
+    }
+    _state = _S.tail;
+    return true;
+  }
+
+  bool _readTail() {
+    _align();
+    while (_pos < _buf.length) {
+      final int b = _byteAt(0);
+      if (_tailNul || b == 0) {
+        if (_readByte() != 0 && _tailNul) _unscannable(_badDeflate);
+        _tailNul = true;
+      } else if (b == 31) {
+        if (!_needBytes(2)) return false;
+        if (_byteAt(1) != 139) _unscannable(_badDeflate);
+        _state = _S.hdr;
+        return true;
+      } else {
+        _unscannable(_badDeflate);
+      }
+    }
+    if (_eof) _state = _S.done;
+    return _eof;
+  }
+
+  bool _stepTar() {
+    if (_pos < _buf.length) {
+      final List<int> chunk = _buf.sublist(_pos);
+      _pos = _buf.length;
+      final _Refusal? refusal = _walk!.pumpAfter(chunk);
+      if (refusal != null) {
+        _refusal = refusal;
+        return false;
+      }
+      if (_walk!.finished) _state = _S.done;
+    }
+    if (_eof) {
+      _state = _S.done;
+      _refusal = _walk!.finish();
+    }
+    return false;
+  }
+
+  _Refusal? _pump() {
+    while (_state != _S.done && _refusal == null) {
+      final bool ok = switch (_state) {
+        _S.sniff => _sniff(),
+        _S.tar => _stepTar(),
+        _S.hdr => _parseMemberHeader(),
+        _S.blk => _readBlockHeader(),
+        _S.strd => _readStored(),
+        _S.dyn => _readDynamicHeader(),
+        _S.huff => _readHuffman(),
+        _S.trlr => _readTrailer(),
+        _S.tail => _readTail(),
+        _ => false,
+      };
+      if (!ok) break;
+    }
+    return _refusal;
+  }
+
+  _Refusal? add(List<int> chunk) {
+    if (_pos >= 65536) {
+      _buf = _buf.sublist(_pos);
+      _pos = 0;
+    }
+    _buf.addAll(chunk);
+    return _pump();
+  }
+
+  _Refusal? finish() {
+    _eof = true;
+    final _Refusal? refusal = _pump() ?? _flushOut();
+    if (refusal != null) return refusal;
+    if (_state == _S.tail) _state = _S.done;
+    if (_state != _S.done) _unscannable(_badDeflate);
+    return _walk?.finish();
+  }
 }
 
 /// Scans archive bytes and returns the JSON verdict map: `{'ok': true}` for
 /// a clean archive, `{'refusal': {'kind', 'path', 'target'}}` for the first
 /// hostile entry in archive order, or `{'unscannable': '<detail>'}` for an
-/// archive that cannot be read exactly. Public so the `pub_scan_test` unit
-/// test drives the same code the executable runs; [main] only adds the file
-/// read and the stdout print around it.
+/// archive that cannot be read exactly.
 Map<String, Object?> scanArchiveVerdict(List<int> bytes) {
+  final scanner = _ArchiveScanner();
   try {
-    return _verdictFor(_scanArchive(bytes));
+    return _verdictFor(scanner.add(bytes) ?? scanner.finish());
   } on _Unscannable catch (e) {
-    return {'unscannable': e.detail};
+    return <String, Object?>{'unscannable': e.detail};
   }
 }
 
 /// Formats one walk outcome as the JSON verdict map.
-Map<String, Object?> _verdictFor(_Refusal? refusal) => refusal == null
-    ? {'ok': true}
-    : {
-        'refusal': {
-          'kind': refusal.kind,
-          'path': refusal.path,
-          'target': refusal.target,
-        },
+Map<String, Object?> _verdictFor(_Refusal? r) => r == null
+    ? const <String, Object?>{'ok': true}
+    : <String, Object?>{
+        'refusal': {'kind': r.kind, 'path': r.path, 'target': r.target},
       };
 
-/// Streams [compressed] through the shared tar walker and returns the walk
-/// outcome: the first refusal, or null for a clean archive. When [gzipped],
-/// the bytes pass through one gzip decoder first; a clean walk then drains
-/// the decoder to its end, so trailing junk still fails the inflate exactly
-/// as the in-memory scan reports it (a plain tar's tail is ignored, as
-/// before). A decoder failure throws [FormatException] for the caller to
-/// re-scan from disk with the exact in-memory logic.
-Future<_Refusal?> _scanStream(
-  Stream<List<int>> compressed,
-  bool gzipped,
-) async {
-  final walk = _TarScan.streaming();
-  Stream<List<int>> source = compressed;
-  if (gzipped) source = source.transform(gzip.decoder);
-  await for (final chunk in source) {
-    if (walk.finished) continue;
-    final refusal = walk.pumpAfter(chunk);
-    if (refusal != null) return refusal;
-    if (walk.finished && !gzipped) return null;
+/// Feeds arbitrary [chunks] through the streaming archive scanner and returns
+/// the JSON verdict map.
+Future<Map<String, Object?>> scanArchiveChunks(List<List<int>> chunks) async {
+  final scanner = _ArchiveScanner();
+  try {
+    for (final chunk in chunks) {
+      final _Refusal? refusal = scanner.add(chunk);
+      if (refusal != null) return _verdictFor(refusal);
+    }
+    return _verdictFor(scanner.finish());
+  } on _Unscannable catch (e) {
+    return <String, Object?>{'unscannable': e.detail};
   }
-  return walk.finish();
-}
-
-/// Scans the archive file at [path] and returns the JSON verdict map, in the
-/// same shape as [scanArchiveVerdict]. Reads the file as a stream
-/// (`File.openRead()` through a gzip decoder), walks the tar headers chunk by
-/// chunk, and skips entry data without keeping it. Refusals short-circuit:
-/// the rest of the file is never read. Any inflate failure re-scans the file
-/// with the exact in-memory logic, so multi-member gzip, trailing-NUL
-/// padding, and corrupt bodies keep byte-identical verdicts.
-Future<Map<String, Object?>> scanArchiveFile(String path) {
-  final file = File(path);
-  return _scanFile(file, file.readAsBytes);
 }
 
 /// Scans [bytes] with the streaming walk, fed in [chunkSize] pieces, and
-/// returns the JSON verdict map. Public so the `pub_scan_test` unit test
-/// proves the streaming walk gives the same verdicts as [scanArchiveVerdict]
-/// at every chunking, including splits mid-header and mid-record.
+/// returns the JSON verdict map.
 Future<Map<String, Object?>> scanArchiveChunked(
   List<int> bytes,
   int chunkSize,
 ) {
   final chunks = <List<int>>[];
   for (var i = 0; i < bytes.length; i += chunkSize) {
-    chunks.add(
-      bytes.sublist(
-        i,
-        i + chunkSize > bytes.length ? bytes.length : i + chunkSize,
-      ),
-    );
+    final int end = i + chunkSize < bytes.length ? i + chunkSize : bytes.length;
+    chunks.add(bytes.sublist(i, end));
   }
-  return _scanSniffed(
-    Stream.fromIterable(chunks),
-    bytes.isEmpty ? null : _sniffGzip(bytes),
-    () async => bytes,
-  );
+  return scanArchiveChunks(chunks);
 }
 
-/// Reads the first two bytes of [file] to sniff the framing: gzip magic, or
-/// plain tar. Returns null for an empty file.
-Future<bool?> _sniffFile(File file) async {
-  final head = <int>[];
-  await for (final chunk in file.openRead(0, 2)) {
-    head.addAll(chunk);
-  }
-  if (head.isEmpty) return null;
-  return _sniffGzip(head);
-}
-
-/// Sniffs the framing off [head]: true for the gzip magic, else plain tar.
-bool _sniffGzip(List<int> head) =>
-    head.length >= 2 && head[0] == 31 && head[1] == 139;
-
-/// Shared file/chunk driver: sniffs [gzipped] (null for empty input), runs
-/// the streaming walk, and re-scans whole bytes from [reread] with the exact
-/// in-memory logic when the streaming inflate fails.
-Future<Map<String, Object?>> _scanSniffed(
-  Stream<List<int>> compressed,
-  bool? gzipped,
-  Future<List<int>> Function() reread,
-) async {
+/// Scans the archive file at [path] and returns the JSON verdict map, in the
+/// same shape as [scanArchiveVerdict].
+Future<Map<String, Object?>> scanArchiveFile(String path) async {
+  if (path.isEmpty) return await scanArchiveChunks(<List<int>>[]);
+  final scanner = _ArchiveScanner();
   try {
-    if (gzipped == null) return {'unscannable': 'the archive is empty'};
-    return _verdictFor(await _scanStream(compressed, gzipped));
-  } on FormatException {
-    return scanArchiveVerdict(await reread());
-  } on _Unscannable catch (e) {
-    return {'unscannable': e.detail};
-  }
-}
-
-/// File driver: sniffs the framing off the file's head, then streams the
-/// whole file through [_scanSniffed]. A file that cannot be opened or read
-/// reports the same detail the old whole-file read did.
-Future<Map<String, Object?>> _scanFile(
-  File file,
-  Future<List<int>> Function() reread,
-) async {
-  try {
-    return await _scanSniffed(file.openRead(), await _sniffFile(file), reread);
+    await for (final chunk in File(path).openRead()) {
+      final _Refusal? refusal = scanner.add(chunk);
+      if (refusal != null) return _verdictFor(refusal);
+    }
+    return _verdictFor(scanner.finish());
   } on FileSystemException {
-    return {'unscannable': 'the archive cannot be read'};
+    return <String, Object?>{'unscannable': 'the archive cannot be read'};
+  } on _Unscannable catch (e) {
+    return <String, Object?>{'unscannable': e.detail};
   }
 }
 
 /// CLI entrypoint: scans each archive file in argument order and prints one
-/// JSON verdict per line, always exiting zero. A single archive prints the
-/// same one line the old single-archive entrypoint printed; each archive is
-/// scanned independently (no state carries between scans), so batching only
-/// saves process starts, never changes a verdict.
+/// JSON verdict per line, always exiting zero.
 void main(List<String> args) async {
   if (args.isEmpty) {
-    print(jsonEncode({'unscannable': 'no archive path was given'}));
+    print(
+      jsonEncode(<String, Object?>{'unscannable': 'no archive path was given'}),
+    );
     return;
   }
   for (final path in args) {
-    Map<String, Object?> verdict;
-    try {
-      verdict = await scanArchiveFile(path);
-    } on _Unscannable catch (e) {
-      verdict = {'unscannable': e.detail};
-    }
-    print(jsonEncode(verdict));
+    print(jsonEncode(await scanArchiveFile(path)));
   }
 }
