@@ -2,6 +2,7 @@ load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("//dart:defs.bzl", "dart_test")
 load(":analyzer_summary_test.bzl", "analyzer_summary_test_suite")
+load(":architecture_invariants_test.bzl", "architecture_invariants_test_suite")
 load(":built_value_library_direct_test.bzl", "built_value_library_direct_test_suite")
 load(":code_asset_test.bzl", "code_asset_test_suite")
 load(":codegen_direct_test.bzl", "codegen_direct_test_suite")
@@ -235,6 +236,41 @@ dart_test(
 exports_files(
     ["BUILD.bazel"],
     visibility = ["//dart/tests:__subpackages__"],
+)
+
+# The provider and rule invariants `docs/ARCHITECTURE.md` states, in one
+# command: the analysis tests in `architecture_invariants_test.bzl` (which
+# rule publishes `DartInfo`, and that every `deps` refuses a target without
+# it) and the source scan below.
+architecture_invariants_test_suite(
+    name = "architecture_invariants_test",
+    scan = ":architecture_invariants_scan_test",
+)
+
+# Source half of `architecture_invariants_test`: no platform field on
+# `DartInfo`, no hand-built `DartInfo(` outside `dart/private/dart_info.bzl`,
+# and `providers = [DartInfo]` on every label `deps` attribute. It discovers
+# every production .bzl from the live tree itself, so it runs unsandboxed and
+# local, and resolves the root from its own source as a runfiles anchor.
+dart_test(
+    name = "architecture_invariants_scan_test",
+    size = "medium",
+    args = [
+        "$(rlocationpath :architecture_invariants_scan_test.dart)",
+    ],
+    data = [
+        "architecture_invariants_scan_test.dart",
+    ],
+    local = True,
+    main = "architecture_invariants_scan_test.dart",
+    tags = [
+        "external",
+        "no-sandbox",
+    ],
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
 )
 
 dart_test(

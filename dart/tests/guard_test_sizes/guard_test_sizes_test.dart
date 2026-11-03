@@ -5,6 +5,7 @@ import 'package:test/test.dart';
 
 const List<String> _targets = [
   'repro_canary_guard_test',
+  'architecture_invariants_scan_test',
   'bzl_library_guard_test',
   'flaky_guard_test',
   'format_sandbox_cells_guard_test',
