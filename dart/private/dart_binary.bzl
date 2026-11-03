@@ -90,12 +90,16 @@ def is_tool_bin_path(bin_dir_path):
             return True
     return False
 
-def _binary_sdk_info(ctx):
-    """Selects the compiling SDK: the exec-tools SDK for tool configurations, else the target toolchain's."""
+def _binary_sdk_toolchain_type(ctx):
+    """The compiling SDK's toolchain type: exec tools for tool configurations, else the target toolchain."""
     exec_tc = ctx.toolchains[EXEC_TOOLS_TOOLCHAIN] if EXEC_TOOLS_TOOLCHAIN in ctx.toolchains else None
     if is_tool_bin_path(ctx.bin_dir.path) and exec_tc != None and exec_tc.dart_sdk_info != None:
-        return exec_tc.dart_sdk_info
-    return ctx.toolchains["//dart:toolchain_type"].dart_sdk_info
+        return EXEC_TOOLS_TOOLCHAIN
+    return "//dart:toolchain_type"
+
+def _binary_sdk_info(ctx):
+    """Selects the compiling SDK: the exec-tools SDK for tool configurations, else the target toolchain's."""
+    return ctx.toolchains[_binary_sdk_toolchain_type(ctx)].dart_sdk_info
 
 def _binary_recorded_uses(ctx, compile_mode):
     """Declares the recorded-uses file when `record_use` is set. Returns (compile_recorded_uses, recorded_uses_info)."""
@@ -175,6 +179,7 @@ def _binary_source_compile(ctx, dart_sdk_info, own, packages, output, compile_mo
             embed_sources = DartTestRunnerMainInfo not in ctx.attr.main,
             jit_snapshot_fallback = ctx.attr._jit_snapshot_fallback[BuildSettingInfo].value,
         ),
+        toolchain_type = _binary_sdk_toolchain_type(ctx),
     )
     return packages, code_asset_libs
 

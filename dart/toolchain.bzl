@@ -122,6 +122,8 @@ def _patched_snapshot(ctx, sdk_files, dart, snapshot_suffix, out_name, kind):
         outputs = [patched],
         mnemonic = "DartPatchSnapshot",
         progress_message = "Patching Dart SDK %s %s snapshot" % (ctx.attr.version, kind),
+        # The runner is a file of this rule's own `sdk_root`, not a toolchain's.
+        toolchain = None,
     )
     return patched
 
@@ -138,21 +140,21 @@ def _dart_toolchain_impl(ctx):
         ))
 
     sdk_root = ctx.attr.sdk_root
-    tool_files = ctx.attr.sdk_root.files
+    tool_files = ctx.attr.sdk_root[DefaultInfo].files
 
     # A toolchain that names no `compile_files` or `runtime_files` keeps the
     # whole SDK for those uses. That is always correct, if slower: a toolchain a
     # rule set declares itself may not know which SDK files the compiler reads.
     if ctx.attr.compile_files != None:
-        compile_files = ctx.attr.compile_files.files
+        compile_files = ctx.attr.compile_files[DefaultInfo].files
     else:
         compile_files = tool_files
     if ctx.attr.runtime_files != None:
-        runtime_files = ctx.attr.runtime_files.files
+        runtime_files = ctx.attr.runtime_files[DefaultInfo].files
     else:
         runtime_files = tool_files
     if ctx.attr.analyze_files != None:
-        analyze_files = ctx.attr.analyze_files.files
+        analyze_files = ctx.attr.analyze_files[DefaultInfo].files
     else:
         analyze_files = tool_files
 

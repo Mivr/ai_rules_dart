@@ -169,6 +169,7 @@ def _aggregate_run_worker(ctx, args, dart_sdk_info, outputs, direct_inputs, tran
             "requires-worker-protocol": "proto",
             "worker-key-mnemonic": "DartAggregateCodegen",
         },
+        toolchain = "//dart:exec_tools_toolchain_type",
     )
 
 def _aggregate_run_script(ctx, args, dart_sdk_info, synth_pc, outputs, direct_inputs, transitive):
@@ -198,6 +199,7 @@ def _aggregate_run_script(ctx, args, dart_sdk_info, synth_pc, outputs, direct_in
         mnemonic = "DartAggregateCodegen",
         progress_message = "DartAggregateCodegen %s" % ctx.label,
         env = writable_home_env(dart_sdk_info.dart, outputs[0]),
+        toolchain = "//dart:exec_tools_toolchain_type",
     )
 
 def _dart_aggregate_codegen_impl(ctx):

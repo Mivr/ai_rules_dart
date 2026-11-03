@@ -172,6 +172,7 @@ def _dart_sqlcodegen_impl(ctx):
             "requires-worker-protocol": "proto",
             "worker-key-mnemonic": "DartSqlCodegen",
         },
+        toolchain = "//dart:exec_tools_toolchain_type",
     )
 
     return [

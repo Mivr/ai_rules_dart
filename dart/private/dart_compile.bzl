@@ -190,7 +190,7 @@ def jit_tool_entry(jit_tool_files):
             return f
     fail("dart_compile_action: the `_jit_tool` bundle names no `app_jit_snapshot.dart` entry")
 
-def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asserts, comma_patch = None, fallback_allowed = False):
+def _jit_snapshot_action(ctx, dart_sdk_info, st, main):
     """Trains the app-JIT snapshot of a kernel at its keyed absolute path.
 
     `dart compile jit-snapshot` trains in the action's own directory, so the
@@ -204,28 +204,34 @@ def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asse
     Args:
         ctx: The rule context.
         dart_sdk_info: The `DartSdkInfo` of the toolchain.
-        jit_tool: The JIT tool sources: the `app_jit_snapshot.dart` entry and
-            every source it imports. The entry runs; the rest land beside it
-            in the sandbox, so the entry's relative imports resolve. Required
-            whenever `jit_tool` runs.
-        comma_patch: The `comma_patch.dart` File the tool imports. It lands
-            beside the tool in the sandbox, so the tool's relative import
-            resolves. Required whenever `jit_tool` runs.
-        main: The kernel File to train on, with no program arguments.
-        output: The `.jit` File to produce.
-        enable_asserts: Whether the training run enables asserts.
-        fallback_allowed: Whether the training may fall back to a private
-            scratch directory when the keyed training path is unavailable
-            (from `//dart:jit_snapshot_fallback`). Passed on the command line,
-            so builds that allow the fallback and builds that do not have
-            different action keys. With the fallback allowed the action also
-            carries the `no-cache` execution requirement, so a
-            fallback-trained snapshot is never uploaded to or served from a
+        st: The threaded compile struct (see `dart_compile_action`). Its
+            `jit_tool` holds the JIT tool sources: the `app_jit_snapshot.dart`
+            entry and every source it imports. The entry runs; the rest land
+            beside it in the sandbox, so the entry's relative imports
+            resolve. Its `comma_patch` is the `comma_patch.dart` File the tool
+            imports; it lands beside the tool in the sandbox, so the tool's
+            relative import resolves. Both are required whenever `jit_tool`
+            runs. Its `output` is the `.jit` File to produce,
+            `enable_asserts` whether the training run enables asserts, and
+            `toolchain_type` the toolchain type the action names. Its
+            `jit_snapshot_fallback` tells whether the training may fall back
+            to a private scratch directory when the keyed training path is
+            unavailable (from `//dart:jit_snapshot_fallback`). It is passed on
+            the command line, so builds that allow the fallback and builds
+            that do not have different action keys. With the fallback allowed
+            the action also carries the `no-cache` execution requirement, so
+            a fallback-trained snapshot is never uploaded to or served from a
             disk or remote cache; without it the action carries no execution
             requirements, as before. Either way a fallback-trained snapshot
             stays cached under the same action key (in the local action cache
             and the output tree) until `bazel clean`.
+        main: The kernel File to train on, with no program arguments.
     """
+    jit_tool = st.jit_tool
+    comma_patch = st.comma_patch
+    output = st.output
+    enable_asserts = st.enable_asserts
+    fallback_allowed = st.jit_snapshot_fallback
     lock_setting = getattr(ctx.attr, "_jit_lock_timeout", None)
     lock_timeout_secs = lock_setting[BuildSettingInfo].value if lock_setting != None else JIT_SNAPSHOT_LOCK_TIMEOUT_DEFAULT
     if lock_timeout_secs <= 0:
@@ -271,6 +277,7 @@ def _jit_snapshot_action(ctx, dart_sdk_info, jit_tool, main, output, enable_asse
         # private-scratch ones, so the action must never reach a shared cache.
         # Without it no dict is built and the action is as before.
         execution_requirements = {"no-cache": "1"} if fallback_allowed else None,
+        toolchain = st.toolchain_type,
     )
 
 def _kernel_comma_snapshot(ctx, dart_sdk_info, tools, defines, extra_flags, jit_tool):
@@ -388,10 +395,11 @@ def _kernel_run_wrapper(ctx, dart_sdk_info, st, tools, args, outputs, gen_snapsh
         mnemonic = "DartKernel",
         progress_message = "Compiling Dart kernel %s" % ctx.label,
         env = writable_home_env(dart_sdk_info.dart, outputs[0]),
+        toolchain = st.toolchain_type,
     )
 
-def _kernel_run_direct(ctx, dart_sdk_info, tools, args, direct, outputs):
-    """Runs `gen_kernel` directly via `dartaotruntime`."""
+def _kernel_run_direct(ctx, dart_sdk_info, tools, args, direct, outputs, toolchain_type):
+    """Runs `gen_kernel` directly via `dartaotruntime`; the action names `toolchain_type`."""
     ctx.actions.run(
         executable = tools.dartaotruntime,
         arguments = [args],
@@ -403,6 +411,7 @@ def _kernel_run_direct(ctx, dart_sdk_info, tools, args, direct, outputs):
         mnemonic = "DartKernel",
         progress_message = "Compiling Dart kernel %s" % ctx.label,
         env = writable_home_env(dart_sdk_info.dart, outputs[0]),
+        toolchain = toolchain_type,
     )
 
 def _kernel_action(ctx, dart_sdk_info, st, aot, enable_asserts, extra_flags, product, output):
@@ -455,7 +464,7 @@ def _kernel_action(ctx, dart_sdk_info, st, aot, enable_asserts, extra_flags, pro
     direct = [st.main, st.package_config] + st.srcs
     if st.native_assets_yaml != None:
         direct.append(st.native_assets_yaml)
-    _kernel_run_direct(ctx, dart_sdk_info, tools, args, direct, outputs)
+    _kernel_run_direct(ctx, dart_sdk_info, tools, args, direct, outputs, st.toolchain_type)
 
 _SUPPORTED_CROSS_TARGET_PAIRS = {
     ("linux", "x64"): True,
@@ -559,12 +568,8 @@ def _compile_jit_train(ctx, dart_sdk_info, st, compile_main, compile_main_path):
     _jit_snapshot_action(
         ctx = ctx,
         dart_sdk_info = dart_sdk_info,
-        jit_tool = st.jit_tool,
-        comma_patch = st.comma_patch,
+        st = st,
         main = compile_main,
-        output = st.output,
-        enable_asserts = st.enable_asserts,
-        fallback_allowed = st.jit_snapshot_fallback,
     )
     return True
 
@@ -620,6 +625,7 @@ def _compile_aot_wrapper(ctx, dart_sdk_info, st, compile_main, compile_main_path
         mnemonic = "DartCompile",
         progress_message = "Compiling Dart %s %s" % (st.compile_mode, ctx.label),
         env = writable_home_env(dart_bin, st.output),
+        toolchain = st.toolchain_type,
     )
     return True
 
@@ -672,9 +678,10 @@ def _compile_dart_compile(ctx, dart_sdk_info, st, compile_main, compile_main_pat
         mnemonic = "DartCompile",
         progress_message = "Compiling Dart %s %s" % (st.compile_mode, ctx.label),
         env = env,
+        toolchain = st.toolchain_type,
     )
 
-def dart_compile_action(ctx, dart_sdk_info, cfg):
+def dart_compile_action(ctx, dart_sdk_info, cfg, toolchain_type = None):
     """Creates the actions that compile a Dart entrypoint in `compile_mode`.
 
     A source entrypoint (one with a `package_config`) is first compiled to a
@@ -730,6 +737,9 @@ def dart_compile_action(ctx, dart_sdk_info, cfg):
             `//dart:jit_snapshot_fallback`); it reaches the snapshot action's
             command line, so builds that allow the fallback and builds that do
             not have different action keys.
+        toolchain_type: The toolchain type `dart_sdk_info` comes from, which
+            every action declared here names as its `toolchain`. None when the
+            SDK comes from no toolchain.
     """
     _compile_validate(ctx, cfg)
 
@@ -768,6 +778,7 @@ def dart_compile_action(ctx, dart_sdk_info, cfg):
         enable_asserts = enable_asserts,
         cross_gen_snapshot = cross_gen_snapshot,
         cross_dartaotruntime = cross_dartaotruntime,
+        toolchain_type = toolchain_type,
     )
 
     compile_main = st.main

@@ -317,6 +317,7 @@ def _link_hook_run_all(ctx, env, data):
             mnemonic = "DartLinkHook",
             progress_message = "Running link hook of %s for %s" % (package_name, ctx.label),
             env = writable_home_env(env.sdk.dart, link_output),
+            toolchain = Label("//dart:exec_tools_toolchain_type"),
         )
     return struct(assets = asset_infos, validation_outputs = link_outputs)
 

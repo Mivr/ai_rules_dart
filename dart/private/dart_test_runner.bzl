@@ -283,6 +283,7 @@ def dart_test_runner_snapshot_impl(ctx):
         progress_message = "Snapshotting the test runner %{label}",
         env = writable_home_env(exec_sdk.dart, snapshot),
         execution_requirements = {"no-cache": "1"} if fallback_allowed else None,
+        toolchain = "//dart:exec_tools_toolchain_type",
     )
     return [
         DefaultInfo(files = depset([snapshot])),

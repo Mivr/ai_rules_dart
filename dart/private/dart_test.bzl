@@ -283,6 +283,7 @@ def _compile_test_kernel(ctx, own, bootstrap, use_base_dill = False):
             embed_sources = True,
             jit_snapshot_fallback = False,
         ),
+        toolchain_type = "//dart:toolchain_type",
     )
     return struct(dill = dill, base_dill = None, runtime_libs = runtime_libs)
 

@@ -588,6 +588,20 @@ def find_kernel_module_tools(dart_sdk_info):
         patched_kernel_worker = getattr(dart_sdk_info, "patched_kernel_worker", None),
     )
 
+def _resolved_exec_tools(ctx):
+    """The exec tools toolchain `ctx` resolved, or None.
+
+    None when the rule or aspect declares no `EXEC_TOOLS_TOOLCHAIN`, or
+    declares it optionally and none is registered.
+
+    Args:
+      ctx: A rule or aspect context.
+
+    Returns:
+      The resolved `ToolchainInfo`, or None.
+    """
+    return ctx.toolchains[EXEC_TOOLS_TOOLCHAIN] if EXEC_TOOLS_TOOLCHAIN in ctx.toolchains else None
+
 def kernel_tools_for(ctx):
     """The exec SDK's kernel tools for a rule, or None when modular compile cannot run.
 
@@ -844,6 +858,9 @@ def _kmod_run_action(ctx, executable, arguments, request, direct_inputs, action_
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
         },
+        # `tools` come from the exec tools toolchain (`kernel_tools_for`). A rule
+        # that resolves none hands over tools of its own, from no toolchain.
+        toolchain = EXEC_TOOLS_TOOLCHAIN if _resolved_exec_tools(ctx) != None else None,
     )
 
 def kernel_module_action(ctx, tools, inputs, outputs, options, compile):
@@ -1027,7 +1044,7 @@ def kernel_link_action(
     if write_keys != None:
         outputs.append(write_keys)
 
-    exec_tc = ctx.toolchains[EXEC_TOOLS_TOOLCHAIN] if EXEC_TOOLS_TOOLCHAIN in ctx.toolchains else None
+    exec_tc = _resolved_exec_tools(ctx)
     exec_sdk = exec_tc.dart_sdk_info if exec_tc != None else None
     link_tools = [ctx.executable._kernel_link] + ([platform_dill] if platform_dill != None else [])
     if exec_sdk != None:
@@ -1064,6 +1081,8 @@ def kernel_link_action(
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
         },
+        # Without the exec SDK the executable is the implicit `_kernel_link`.
+        toolchain = EXEC_TOOLS_TOOLCHAIN if exec_sdk != None else None,
     )
 
 def entry_sources(files, scheme = STABLE_SCHEME):
