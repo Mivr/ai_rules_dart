@@ -1,8 +1,13 @@
 load("//dart:defs.bzl", "dart_test")
 
+exports_files(
+    ["BUILD.bazel"],
+    visibility = ["//dart/tests:__subpackages__"],
+)
+
 dart_test(
     name = "flaky_guard_test",
-    size = "small",
+    size = "medium",
     args = [
         "$(rlocationpath :flaky_guard_test.dart)",
     ],

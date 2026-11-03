@@ -1,0 +1,25 @@
+load("//dart:defs.bzl", "dart_test")
+
+# Hermetic regression test: the non-sandboxed repository guard tests must be
+# `size = "medium"`, never `small`.
+dart_test(
+    name = "guard_test_sizes_test",
+    size = "small",
+    args = [
+        "$(rlocationpath //dart/tests:BUILD.bazel)",
+        "$(rlocationpath //dart/tests/bzl_library_guard:BUILD.bazel)",
+        "$(rlocationpath //dart/tests/flaky_guard:BUILD.bazel)",
+        "$(rlocationpath //dart/tests/format_sandbox_cells_guard:BUILD.bazel)",
+    ],
+    data = [
+        "//dart/tests:BUILD.bazel",
+        "//dart/tests/bzl_library_guard:BUILD.bazel",
+        "//dart/tests/flaky_guard:BUILD.bazel",
+        "//dart/tests/format_sandbox_cells_guard:BUILD.bazel",
+    ],
+    main = "guard_test_sizes_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)

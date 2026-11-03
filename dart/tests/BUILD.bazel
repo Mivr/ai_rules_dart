@@ -226,9 +226,14 @@ dart_test(
     ],
 )
 
+exports_files(
+    ["BUILD.bazel"],
+    visibility = ["//dart/tests:__subpackages__"],
+)
+
 dart_test(
     name = "repro_canary_guard_test",
-    size = "small",
+    size = "medium",
     args = [
         "$(rlocationpath :repro_canary_guard_test.dart)",
     ],
