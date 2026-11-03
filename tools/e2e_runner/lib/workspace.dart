@@ -11,7 +11,9 @@ import 'dart:io';
 
 /// Whether [path] is an absolute POSIX or Windows path.
 bool isAbsoluteOverridePath(String path) =>
-    path.startsWith('/') || RegExp(r'^[A-Za-z]:[/\\]').hasMatch(path);
+    path.startsWith('/') ||
+    path.startsWith(r'\') ||
+    RegExp(r'^[A-Za-z]:[/\\]').hasMatch(path);
 
 /// Whether a `local_path_override` path escapes its workspace.
 ///
@@ -49,6 +51,8 @@ String absolutePath(String path, {String? base}) {
   return File('$baseDir/$path').absolute.path;
 }
 
+final RegExp _driveOnly = RegExp(r'^[A-Za-z]:$');
+
 /// Normalizes `.` and `..` components lexically, without touching the disk.
 String normalizePath(String path) {
   final absolute = File(path).absolute.path;
@@ -66,7 +70,11 @@ String normalizePath(String path) {
       parts.add(part);
     }
   }
+  if (parts.length == 1 && _driveOnly.hasMatch(parts.single)) {
+    return '${parts.single}$sep';
+  }
   final joined = parts.join(sep);
+  if (absolute.startsWith(r'\\')) return '\\\\$joined';
   return absolute.startsWith('/') ? '/$joined' : joined;
 }
 
@@ -124,10 +132,12 @@ bool _escapesStagedWorkspace(
     return pathEscapesWorkspace(path);
   }
   final target = normalizePath('$moduleDir/$path');
+  final cmpTarget = Platform.isWindows ? target.toLowerCase() : target;
+  final cmpStaged = Platform.isWindows ? stagedDir.toLowerCase() : stagedDir;
   final inside =
-      target.startsWith('$stagedDir/') ||
-      target.startsWith('$stagedDir${Platform.pathSeparator}');
-  return target == stagedDir || !inside;
+      cmpTarget.startsWith('$cmpStaged/') ||
+      cmpTarget.startsWith('$cmpStaged${Platform.pathSeparator}');
+  return cmpTarget == cmpStaged || !inside;
 }
 
 String _readText(File file, String what) {
@@ -171,14 +181,21 @@ void _makeWritableDir(String path) {
 }
 
 void _deleteEntity(String path) {
+  final isLink =
+      FileSystemEntity.typeSync(path, followLinks: false) ==
+      FileSystemEntityType.link;
   try {
-    if (FileSystemEntity.typeSync(path, followLinks: false) ==
-        FileSystemEntityType.link) {
+    if (isLink) {
       Link(path).deleteSync();
     } else {
       File(path).deleteSync();
     }
   } on FileSystemException catch (e) {
+    if (Platform.isWindows && !isLink) {
+      Process.runSync('attrib', ['-R', path]);
+      File(path).deleteSync();
+      return;
+    }
     throw FileSystemException('cannot delete $path: ${e.message}');
   }
 }
@@ -214,7 +231,7 @@ String _entryName(FileSystemEntity entry) {
 
 void _copyLink(Link link, String dest) {
   final target = link.targetSync();
-  if (target.startsWith('/') || target.startsWith('..')) return;
+  if (isAbsoluteOverridePath(target) || pathEscapesWorkspace(target)) return;
   Link(dest).createSync(target);
 }
 

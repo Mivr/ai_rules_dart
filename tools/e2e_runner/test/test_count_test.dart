@@ -33,26 +33,60 @@ void main() {
     });
   });
 
+  group('fileUriToPath', () {
+    test('converts POSIX and Windows file URIs cleanly', () {
+      expect(
+        fileUriToPath('file:///tmp/a/test.xml', windows: false),
+        '/tmp/a/test.xml',
+      );
+      expect(
+        fileUriToPath('file:///D:/a/test.xml', windows: true),
+        r'D:\a\test.xml',
+      );
+      expect(
+        fileUriToPath('file://D:/a/test.xml', windows: true),
+        r'D:\a\test.xml',
+      );
+      expect(
+        fileUriToPath(r'file://C:\Users\RUNNER~1\test.xml', windows: true),
+        r'C:\Users\RUNNER~1\test.xml',
+      );
+      expect(
+        fileUriToPath('file://host/share/test.xml', windows: false),
+        isNull,
+      );
+      expect(
+        fileUriToPath('file://host/share/test.xml', windows: true),
+        r'\\host\share\test.xml',
+      );
+      expect(fileUriToPath('https://example.com/test.xml'), isNull);
+    });
+  });
+
+  group('hasTimedOutTestInBep', () {
+    test('detects TIMEOUT testResult and ignores normal failures', () {
+      const timedOut =
+          '{"testResult":{"status":"TIMEOUT"}}\n'
+          '{"testSummary":{"overallStatus":"TIMEOUT"}}\n';
+      const failed = '{"testResult":{"status":"FAILED"}}\n';
+      expect(hasTimedOutTestInBep(timedOut), isTrue);
+      expect(hasTimedOutTestInBep(failed), isFalse);
+    });
+  });
+
   group('outputPathsFromBep', () {
     test('collects the named output URIs across testResult events', () {
+      final sep = Platform.pathSeparator;
+      final root = Platform.isWindows ? r'C:\tmp' : '/tmp';
+      final xmlA = '$root${sep}a${sep}test.xml';
+      final logA = '$root${sep}a${sep}test.log';
+      final xmlB = '$root${sep}b${sep}test.xml';
+      final logB = '$root${sep}b${sep}test.log';
       final bep =
-          _bepLine('//:a', [
-            'test.xml',
-            '/tmp/a/test.xml',
-            'test.log',
-            '/tmp/a/test.log',
-          ]) +
-          _bepLine('//:b', [
-            'test.xml',
-            '/tmp/b/test.xml',
-            'test.log',
-            '/tmp/b/test.log',
-          ]);
-      expect(testXmlPathsFromBep(bep), ['/tmp/a/test.xml', '/tmp/b/test.xml']);
-      expect(outputPathsFromBep(bep, 'test.log'), [
-        '/tmp/a/test.log',
-        '/tmp/b/test.log',
-      ]);
+          _bepLine('//:a', ['test.xml', xmlA, 'test.log', logA]) +
+          _bepLine('//:b', ['test.xml', xmlB, 'test.log', logB]);
+      expect(testXmlPathsFromBep(bep), [xmlA, xmlB]);
+      expect(outputPathsFromBep(bep, 'test.log'), [logA, logB]);
     });
 
     test('ignores non-testResult events', () {
@@ -94,7 +128,7 @@ void main() {
 String _bepLine(String label, List<String> outputs) {
   final files = <Map<String, String>>[];
   for (var i = 0; i < outputs.length; i += 2) {
-    files.add({'name': outputs[i], 'uri': 'file://${outputs[i + 1]}'});
+    files.add({'name': outputs[i], 'uri': Uri.file(outputs[i + 1]).toString()});
   }
   return '${jsonEncode({
     'id': {

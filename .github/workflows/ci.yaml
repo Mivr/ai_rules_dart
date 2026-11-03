@@ -242,6 +242,11 @@ jobs:
         env:
           FOLDERS: ${{ matrix.folders }}
           PARALLELISM: ${{ matrix.parallelism }}
+          # Git Bash (MSYS2) on Windows rewrites arguments starting with `//`
+          # (such as `//e2e_runner:e2e_runner`) into `/e2e_runner:e2e_runner`
+          # before handing them to bazel.exe unless conversion is disabled.
+          MSYS_NO_PATHCONV: "1"
+          MSYS2_ARG_CONV_EXCL: "*"
         # Explicit bash: the default shell is PowerShell on Windows, where the
         # wave below is not valid; Windows still runs it under bash.
         shell: bash
@@ -265,6 +270,9 @@ jobs:
             [ -z "$folder" ] && continue
             echo "9.3.0" > "$ws/$folder/.bazelversion"
           done <<< "$FOLDERS"
+          case "$FOLDERS" in
+            *e2e/*) echo "9.3.0" > "$ws/tools/.bazelversion" ;;
+          esac
           # Build-only workspaces: .github/workflows has no tests and e2e/dual_build's
           # sole test is manual and requires-network (run via e2e_runner below).
           build_only_folders=".github/workflows e2e/dual_build"
@@ -309,6 +317,9 @@ jobs:
           # folder has its own server directory now, but still start them
           # serially here; the waves below then attach to running servers.
           if [ "$RUNNER_OS" = "Windows" ]; then
+            case "$FOLDERS" in
+              *e2e/*) ( cd "$ws/tools" && bazel version ) >/dev/null 2>&1 ;;
+            esac
             while IFS= read -r folder; do
               [ -z "$folder" ] && continue
               case "$folder" in
@@ -1394,6 +1405,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+      - name: Configure Bazel version
+        working-directory: tools
+        run: echo "9.3.0" > .bazelversion
       - name: hello_world — build all compile modes under -c dbg
         run: (cd tools && bazel run //e2e_runner:e2e_runner -- --workspace=../e2e/hello_world --bazel=bazel)
       - name: dart_test — run tests under -c dbg

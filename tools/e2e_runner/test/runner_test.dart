@@ -73,6 +73,54 @@ void main() {
       expect(isBazelTestCommand(['bazel', 'build']), isFalse);
       expect(isBazelCommand(['./run.sh']), isFalse);
     });
+
+    test('identifies POSIX-only sandbox flags', () {
+      expect(
+        requiresPosixSandbox([
+          'bazel',
+          'test',
+          '--strategy=DartAnalyze=sandboxed',
+          '//...',
+        ]),
+        isTrue,
+      );
+      expect(
+        requiresPosixSandbox(['bazel', 'test', '--worker_sandboxing', '//...']),
+        isTrue,
+      );
+      expect(
+        requiresPosixSandbox([
+          'bazel',
+          'test',
+          '--spawn_strategy=standalone',
+          '//...',
+        ]),
+        isFalse,
+      );
+    });
+  });
+
+  group('collectTestLogs', () {
+    test('records timeout marker when BEP reports TIMEOUT without footer', () {
+      final dir = Directory.systemTemp.createTempSync('e2e_tlog_');
+      try {
+        final logFile = File('${dir.path}/test.log')
+          ..writeAsStringSync('printed before hanging\n');
+        final bep =
+            '{"testResult":{"status":"TIMEOUT","testActionOutput":'
+            '[{"name":"test.log","uri":"${Uri.file(logFile.path)}"}]}}\n';
+        final logs = collectTestLogs(
+          bep,
+          dir.path,
+          dir.path,
+          needFallback: true,
+        );
+        expect(logs, contains('printed before hanging'));
+        expect(logs, contains('Test timed out'));
+      } finally {
+        dir.deleteSync(recursive: true);
+      }
+    });
   });
 
   group('checkExpectations', () {

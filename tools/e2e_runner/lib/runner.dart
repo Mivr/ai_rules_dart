@@ -58,6 +58,16 @@ String? bazelSubcommand(List<String> argv) {
 /// Whether [argv] names `bazel test ...`.
 bool isBazelTestCommand(List<String> argv) => bazelSubcommand(argv) == 'test';
 
+final RegExp _sandboxStrategyFlag = RegExp(
+  r'^--(?:spawn_)?strategy=(?:[^=]+=)?sandboxed$',
+);
+
+/// Whether [argv] requests a POSIX-only Bazel sandbox flag (`--worker_sandboxing`
+/// or a `sandboxed` strategy) that Bazel on Windows rejects.
+bool requiresPosixSandbox(List<String> argv) => argv.any(
+  (arg) => arg == '--worker_sandboxing' || _sandboxStrategyFlag.hasMatch(arg),
+);
+
 /// Expands `${WORKSPACE}` placeholders in [text] for [stagedDir].
 String expandWorkspacePlaceholders(String text, String stagedDir) {
   final wsSlash = stagedDir.replaceAll(r'\', '/');
@@ -248,21 +258,32 @@ final class RunnerConfig {
   final Spec spec;
 }
 
+Directory _createScratchDir() {
+  if (!Platform.environment.containsKey('TEST_TMPDIR')) {
+    final runnerTemp = Platform.environment['RUNNER_TEMP'];
+    if (runnerTemp != null && runnerTemp.isNotEmpty) {
+      final dir = Directory(runnerTemp);
+      if (dir.existsSync()) return dir.createTempSync('e2e_');
+    }
+  }
+  return Directory.systemTemp.createTempSync('e2e_');
+}
+
 /// Stages [config]'s workspace and runs its commands in order.
 ///
 /// Returns 0 on success or 1 on failure; `bazel shutdown` runs on the staged
 /// `--output_base` on every exit path.
 int runSpec(RunnerConfig config) {
-  final scratch = Directory.systemTemp.createTempSync('e2e_runner_');
-  final stagedDir = '${scratch.path}/ws';
-  final outputBase = '${scratch.path}/output_base';
+  final scratch = _createScratchDir();
+  final stagedDir = normalizePath('${scratch.path}/ws');
+  final outputBase = normalizePath('${scratch.path}/ob');
   try {
     stageWorkspace(config.workspaceDir, stagedDir, config.repoRoot);
     final commands = config.spec.commands;
     for (var i = 0; i < commands.length; i++) {
       _runOne(
         commands[i],
-        bepPath: '${scratch.path}/bep_$i.json',
+        bepPath: normalizePath('${scratch.path}/bep_$i.json'),
         stagedDir: stagedDir,
         outputBase: outputBase,
         config: config,
@@ -273,7 +294,7 @@ int runSpec(RunnerConfig config) {
     stderr.writeln(e.message);
     return 1;
   } finally {
-    _shutdown(config.client, outputBase);
+    _shutdown(config.client, outputBase, stagedDir);
     _deleteScratch(scratch);
   }
 }
@@ -285,6 +306,15 @@ void _runOne(
   required String outputBase,
   required RunnerConfig config,
 }) {
+  if (Platform.isWindows &&
+      isBazelCommand(command.argv) &&
+      requiresPosixSandbox(command.argv)) {
+    stdout.writeln(
+      'skipping command "${command.name}" on Windows '
+      '(POSIX sandbox flag unsupported on Windows)',
+    );
+    return;
+  }
   applyWriteFiles(command, stagedDir);
   applyReplaceInFiles(command, stagedDir, config.specPath);
   final argv = resolveArgv(
@@ -371,7 +401,11 @@ void _scanTestLogs(String dirPath, StringBuffer buffer) {
   }
 }
 
-String _collectTestLogs(
+/// Reads `test.log` contents named by [bepText] (falling back to scanning
+/// [outputBase] and [workingDir] when [needFallback] is set), and records a
+/// timeout marker when BEP reports a `TIMEOUT` status on platforms whose test
+/// wrapper does not write one into `test.log`.
+String collectTestLogs(
   String bepText,
   String workingDir,
   String outputBase, {
@@ -394,6 +428,10 @@ String _collectTestLogs(
       }
     }
   }
+  if (hasTimedOutTestInBep(bepText) &&
+      !buffer.toString().contains('Test timed out')) {
+    buffer.writeln('-- Test timed out --');
+  }
   return buffer.toString();
 }
 
@@ -414,7 +452,7 @@ RunOutcome _runProcess(
       : '';
   final testLog = bepPath == null && !needTestLog
       ? ''
-      : _collectTestLogs(
+      : collectTestLogs(
           bepText,
           workingDir,
           outputBase,
@@ -436,9 +474,12 @@ RunOutcome _runProcess(
   );
 }
 
-void _shutdown(String client, String outputBase) {
+void _shutdown(String client, String outputBase, String stagedDir) {
   try {
-    Process.runSync(client, ['--output_base=$outputBase', 'shutdown']);
+    Process.runSync(client, [
+      '--output_base=$outputBase',
+      'shutdown',
+    ], workingDirectory: Directory(stagedDir).existsSync() ? stagedDir : null);
   } on ProcessException catch (e) {
     stderr.writeln('bazel shutdown failed: ${e.message}');
   }

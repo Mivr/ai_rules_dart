@@ -41,16 +41,28 @@ int countNonSkippedTestcases(String xml) {
   return count;
 }
 
+final RegExp _twoSlashDriveUri = RegExp(r'^file://([A-Za-z]:[/\\].*)$');
+
 /// Converts a `file://` URI to a local filesystem path.
-String? fileUriToPath(String uri) {
+String? fileUriToPath(String uri, {bool? windows}) {
   if (!uri.startsWith('file://')) return null;
-  return Uri.parse(uri).toFilePath();
+  final isWindows = windows ?? Platform.isWindows;
+  final driveMatch = _twoSlashDriveUri.firstMatch(uri);
+  final normalized = driveMatch != null
+      ? 'file:///${driveMatch.group(1)!.replaceAll(r'\', '/')}'
+      : uri.replaceAll(r'\', '/');
+  final parsed = Uri.tryParse(normalized);
+  if (parsed == null ||
+      parsed.scheme != 'file' ||
+      parsed.hasQuery ||
+      parsed.hasFragment ||
+      (!isWindows && parsed.authority.isNotEmpty)) {
+    return null;
+  }
+  return parsed.toFilePath(windows: isWindows);
 }
 
-/// The local paths of every file of the given [name] (`test.xml`, `test.log`)
-/// named by a `testResult` event in the newline-delimited BEP stream.
-List<String> outputPathsFromBep(String bepText, String name) {
-  final paths = <String>[];
+Iterable<Map<Object?, Object?>> _bepEvents(String bepText) sync* {
   for (final line in const LineSplitter().convert(bepText)) {
     final trimmed = line.trim();
     if (trimmed.isEmpty) continue;
@@ -61,7 +73,26 @@ List<String> outputPathsFromBep(String bepText, String name) {
       // Malformed BEP line; skip.
       continue;
     }
-    if (event is! Map) continue;
+    if (event is Map) yield event;
+  }
+}
+
+/// Whether any BEP `testResult` or `testSummary` event recorded a `TIMEOUT`.
+bool hasTimedOutTestInBep(String bepText) {
+  for (final event in _bepEvents(bepText)) {
+    final result = event['testResult'];
+    if (result is Map && result['status'] == 'TIMEOUT') return true;
+    final summary = event['testSummary'];
+    if (summary is Map && summary['overallStatus'] == 'TIMEOUT') return true;
+  }
+  return false;
+}
+
+/// The local paths of every file of the given [name] (`test.xml`, `test.log`)
+/// named by a `testResult` event in the newline-delimited BEP stream.
+List<String> outputPathsFromBep(String bepText, String name) {
+  final paths = <String>[];
+  for (final event in _bepEvents(bepText)) {
     final result = event['testResult'];
     if (result is! Map) continue;
     final outputs = result['testActionOutput'];

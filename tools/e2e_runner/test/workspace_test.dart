@@ -9,10 +9,12 @@ void main() {
       expect(pathEscapesWorkspace('../..'), isTrue);
       expect(pathEscapesWorkspace('..'), isTrue);
       expect(pathEscapesWorkspace('../foo'), isTrue);
+      expect(pathEscapesWorkspace(r'..\foo'), isTrue);
       expect(pathEscapesWorkspace('./dep_module'), isFalse);
       expect(pathEscapesWorkspace('dep_module'), isFalse);
       expect(pathEscapesWorkspace('intruder'), isFalse);
       expect(pathEscapesWorkspace('/abs/path'), isFalse);
+      expect(pathEscapesWorkspace(r'C:\abs\path'), isFalse);
     });
   });
 
@@ -98,7 +100,7 @@ local_path_override(
         '    path = "../..",\n'
         ')\n',
       );
-      expect(resolveRepoRoot(ws.path), '${tmp.path}/repo');
+      expect(resolveRepoRoot(ws.path), normalizePath('${tmp.path}/repo'));
     });
 
     test('throws when there is no escaping override', () {
@@ -135,10 +137,11 @@ local_path_override(
 
     test('copies sources, rewrites the override, and keeps bazelversion', () {
       final staged = '${tmp.path}/scratch/ws';
+      final starlarkRepo = repo.replaceAll(r'\', '/');
       stageWorkspace(ws, staged, repo);
       expect(File('$staged/hello.dart').existsSync(), isTrue);
       final module = File('$staged/MODULE.bazel').readAsStringSync();
-      expect(module, contains('path = "$repo"'));
+      expect(module, contains('path = "$starlarkRepo"'));
       expect(module, isNot(contains('"../.."')));
       expect(File('$staged/.bazelversion').readAsStringSync(), '9.3.0\n');
     });
@@ -165,10 +168,11 @@ local_path_override(
 )
 ''');
       final staged = '${tmp.path}/scratch3/ws';
+      final starlarkRepo = repo.replaceAll(r'\', '/');
       stageWorkspace(ws, staged, repo);
       final childModule = File('$staged/dep_module/MODULE.bazel')
           .readAsStringSync();
-      expect(childModule, contains('path = "$repo"'));
+      expect(childModule, contains('path = "$starlarkRepo"'));
       expect(childModule, isNot(contains('"../../.."')));
       expect(childModule, contains('path = "../peer"'));
     });
