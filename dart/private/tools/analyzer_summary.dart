@@ -767,9 +767,7 @@ _prepareAnalyzeProject(AnalyzerArgs args, {required StringSink errSink}) {
   if (baseline.failed) return null;
   final allowedSrcPaths =
       pruneStagedSrcFiles(project) ??
-      (args.all('summary').isEmpty && explicitSources.isNotEmpty
-          ? explicitSources.toSet()
-          : null);
+      explicitAllowedSources(args.all('summary'), explicitSources);
   // No staged source may read the host (see `_summarize`): the default
   // summary-mode analysis never ran the directive guard, so a climbing
   // relative import reached undeclared host files wherever the analyzer

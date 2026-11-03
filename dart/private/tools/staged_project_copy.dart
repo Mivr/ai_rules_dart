@@ -14,12 +14,12 @@ import 'dart:io';
 
 /// Copies the tree at [from] to [to], resolving symlinks to their contents.
 ///
-/// Only [projectRoot]-relative `src/<rel>` entries of [allowedSrcPaths] are
-/// copied from `src/`; every other file is copied. A null [allowedSrcPaths]
-/// copies everything. Reading flattens a staged symlink into a real file, so
-/// no write can follow one back out into the sandbox. Not `File.copySync`,
-/// which carries the source's read-only mode across, and the fixer has to be
-/// able to rewrite the copy.
+/// The allow-list selects which `src/` entries take part: [projectRoot]-relative
+/// `src/<rel>` entries of [allowedSrcPaths] are copied, as is everything outside
+/// `src/`. A null [allowedSrcPaths] copies everything. Reading flattens a staged
+/// symlink into a real file, so no write can follow one back out into the sandbox.
+/// Not `File.copySync`, which carries the source's read-only mode across, and the
+/// fixer has to be able to rewrite the copy.
 void copyStagedTree(
   String from,
   String to, {
