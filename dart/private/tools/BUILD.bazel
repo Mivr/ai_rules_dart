@@ -493,6 +493,11 @@ dart_binary(
     visibility = ["//visibility:public"],
 )
 
+exports_files(
+    ["kernel_module_test.dart"],
+    visibility = ["//dart/tests/early_return_kernel_module:__pkg__"],
+)
+
 # The planner's and outline stripper's unit tests.
 dart_test(
     name = "kernel_module_test",
