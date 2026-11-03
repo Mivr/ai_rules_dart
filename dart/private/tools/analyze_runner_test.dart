@@ -70,6 +70,7 @@ void main(List<String> args) {
   );
 
   _definePruneTests(() => tmp);
+  _defineStrippedCopyTests(() => tmp);
   _defineRunnerVerdictUnitTests();
   defineRunnerSubprocessBaselineTests(args, () => tmp);
 }
@@ -257,5 +258,71 @@ void _defineRunnerCeilingTests() {
         ),
       );
     }
+  });
+}
+
+/// Stages a `<name>.proj` tree whose `src/analysis_options.yaml` is a symlink
+/// into a read-only file enabling a project lint rule.
+void _defineStrippedCopyTests(Directory Function() currentTmp) {
+  group('stageStrippedProjectCopy', () {
+    ({Directory project, File target}) stageKeyedProject(String name) {
+      final project = Directory('${currentTmp().path}/$name.proj')
+        ..createSync(recursive: true);
+      Directory('${project.path}/src/lib').createSync(recursive: true);
+      Directory('${project.path}/.dart_tool').createSync(recursive: true);
+      File('${project.path}/src/lib/a.dart')
+          .writeAsStringSync('int a() => 1;\n');
+      File('${project.path}/src/lib/b.dart')
+          .writeAsStringSync('int b() => 2;\n');
+      File('${project.path}/.dart_tool/src_manifest.txt')
+          .writeAsStringSync('lib/a.dart\nlib/b.dart\nanalysis_options.yaml\n');
+      final target = File('${currentTmp().path}/$name.options.yaml')
+        ..writeAsStringSync(
+          'linter:\n  rules:\n    no_stdout_in_worker: true\n    avoid_print: true\n',
+        );
+      Link('${project.path}/src/analysis_options.yaml').createSync(target.path);
+      return (project: project, target: target);
+    }
+
+    test('copies and strips keyed options without touching the target', () {
+      final ({Directory project, File target}) keyed = stageKeyedProject(
+        'keyed',
+      );
+      final Set<String>? allowed = analyze_runner.pruneOrphanedStagedFiles(
+        keyed.project.path,
+      );
+
+      final String? scratch = analyze_runner.stageStrippedProjectCopy(
+        keyed.project.path,
+        allowed,
+      );
+
+      expect(scratch, isNotNull);
+      final stripped = File('$scratch/src/analysis_options.yaml');
+      expect(
+        stripped.readAsStringSync(),
+        isNot(contains('no_stdout_in_worker')),
+      );
+      expect(stripped.readAsStringSync(), contains('avoid_print'));
+      expect(
+        keyed.target.readAsStringSync(),
+        contains('no_stdout_in_worker: true'),
+      );
+      expect(File('$scratch/src/lib/a.dart').existsSync(), isTrue);
+      Directory(scratch!).deleteSync(recursive: true);
+    });
+
+    test('returns null when no project lint keys are enabled', () {
+      final project = Directory('${currentTmp().path}/plain.proj')
+        ..createSync(recursive: true);
+      Directory('${project.path}/src').createSync(recursive: true);
+      File('${project.path}/src/analysis_options.yaml')
+          .writeAsStringSync('linter:\n  rules:\n    avoid_print: true\n');
+
+      expect(
+        analyze_runner.stageStrippedProjectCopy(project.path, null),
+        isNull,
+      );
+    });
   });
 }
