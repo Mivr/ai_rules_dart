@@ -51,6 +51,12 @@ int _setUmask(int mask) {
   return umask(mask);
 }
 
+/// Why the POSIX-only cases skip on Windows: they drive `dartaotruntime`,
+/// `bin/dart` and the `app_jit_snapshot` wrapper through POSIX scratch
+/// layouts that the Windows toolchain does not provide.
+const _windowsSkip =
+    'POSIX-only: relies on POSIX scratch-directory and executable layouts';
+
 void main(List<String> args) {
   late Directory tmp;
   late int Function(String, int) realMkdir;
@@ -637,7 +643,6 @@ void main(List<String> args) {
   );
 
   test('--aot preserves --enable-asserts in exe and aot-snapshot modes with and without --recorded-uses', () {
-    if (Platform.isWindows) return;
     final sdkDir = File(Platform.resolvedExecutable).parent.parent;
     final dartBin = '${sdkDir.path}/bin/dart';
     final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime';
@@ -749,7 +754,7 @@ void main(List<String> args) {
     ]);
     expect(aotRecFail.exitCode, isNot(0));
     expect(aotRecFail.stderr as String, contains('aot_assert_triggered'));
-  });
+  }, skip: Platform.isWindows ? _windowsSkip : false);
 
   test('--gen-kernel preserves comma-containing defines during constant evaluation and isolates --filesystem-root to declared inputs', () {
     final dartBin = Platform.resolvedExecutable;
@@ -3560,7 +3565,6 @@ void main(List<String> args) {
   });
 
   test('--aot leaves scratch TMPDIR empty', () {
-    if (Platform.isWindows) return;
     final sdkDir = File(Platform.resolvedExecutable).parent.parent;
     final dartBin = '${sdkDir.path}/bin/dart';
     final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime';
@@ -3602,7 +3606,7 @@ void main(List<String> args) {
     expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
     expect(outExe.existsSync(), isTrue);
     expect(scratch.listSync(recursive: true).toList(), isEmpty);
-  });
+  }, skip: Platform.isWindows ? _windowsSkip : false);
 
   test('--gen-kernel refuses a schemeless authority without compiling', () {
     final ws = Directory('${tmp.path}/auth_ws')..createSync(recursive: true);
@@ -4097,7 +4101,6 @@ void main(List<String> args) {
   test(
     '--gen-kernel deletes an output whose read set names an undeclared file',
     () {
-      if (Platform.isWindows) return;
       final ws = Directory('${tmp.path}/readset_ws')
         ..createSync(recursive: true);
       final main = File('${ws.path}/main.dart')
@@ -4155,5 +4158,6 @@ void main(List<String> args) {
         reason: 'the dirty output is deleted',
       );
     },
+    skip: Platform.isWindows ? _windowsSkip : false,
   );
 }
