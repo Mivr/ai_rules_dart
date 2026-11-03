@@ -1,0 +1,11 @@
+load("//dart:defs.bzl", "dart_library")
+
+# The library lives here rather than in `//dart/tests` so that its `lib_root`
+# is this directory and `lib/leaf.dart` sits under it — the layout every real
+# Dart package has, and the one `check_srcs_under_lib_root` requires.
+dart_library(
+    name = "chain_leaf",
+    package_name = "chain_leaf",
+    srcs = ["lib/leaf.dart"],
+    visibility = ["//dart/tests:__subpackages__"],
+)

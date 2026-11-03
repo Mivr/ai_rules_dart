@@ -544,6 +544,17 @@ dart_binary(
     visibility = ["//visibility:public"],
 )
 
+# The config generator's unit tests.
+dart_test(
+    name = "package_config_test",
+    size = "small",
+    srcs = ["package_config.dart"],
+    main = "package_config_test.dart",
+    deps = [
+        "@ext_pub_deps//:test",
+    ],
+)
+
 # Bare sources for `directive_guard_test`, which reads every Dart-reading tool
 # and fails when one stops enforcing the shared staged-source check.
 exports_files(
