@@ -77,19 +77,17 @@ vendored in `//third_party/dart_linter`, so they can drift from `dart analyze`
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartAnalysisOptionsInfo", "DartAnalyzableInfo", "DartInfo")
-load("//dart/private:common.bzl", "kernel_sdk_mismatch_error", "merge_package_records", "owned_package_records", "writable_home_env")
-load("//dart/private:dart_analyzer_summary.bzl", "CONFLICT_PREFIX", "DartAnalyzerSummaryInfo", "analyzer_summaries_supported", "closure_attrs", "dart_analyzer_summary", "own_lib_sources", "package_key", "sdk_root_path", "unbacked_embedder_in_closure")
-load("//dart/private:project_staging.bzl", "pubspec_stub", "stage_dart_project")
-load("//dart/private:source_set.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS")
 load(
-    "//dart/private/tools:analyze_targets.bzl",
-    "analyze_own_files",
-    "analyze_target_info",
+    "//dart/private:analyze_targets.bzl",
     "closure_summary_outputs",
     "slice_target_baseline",
     "validate_config_baseline",
+    _stage_config_project = "stage_config_project",
 )
-load("//dart/private/tools:format_mode.bzl", _resolve_format_mode = "resolve_format_mode")
+load("//dart/private:common.bzl", "kernel_sdk_mismatch_error", "owned_package_records", "writable_home_env")
+load("//dart/private:dart_analyzer_summary.bzl", "CONFLICT_PREFIX", "DartAnalyzerSummaryInfo", "analyzer_summaries_supported", "closure_attrs", "dart_analyzer_summary", "own_lib_sources", "package_key", "sdk_root_path", "unbacked_embedder_in_closure")
+load("//dart/private:format_mode.bzl", _resolve_format_mode = "resolve_format_mode")
+load("//dart/private:source_set.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS")
 
 # Analysis and formatting run on the build machine and produce nothing for the
 # target, so the SDK is chosen by the execution platform alone — the type the
@@ -223,107 +221,6 @@ dart_analysis_config = rule(
         "`.bazelrc`."
     ),
 )
-
-def _is_under(path, directory):
-    """Returns whether `path` is inside `directory` (or anywhere when empty)."""
-    return directory == "" or path.startswith(directory + "/")
-
-def _wrapper_options(excluded):
-    """The `analysis_options.yaml` at the staged project root.
-
-    It governs nothing the user wrote: every checked file sits under `src/`,
-    where the nearest listed options file applies (or none, meaning the SDK
-    defaults — it has no `formatter:` section either). What it contributes is
-    its `exclude` list, which the analyzer applies across the nested options
-    files below it, and a stop for the analyzer's and the formatter's otherwise
-    unbounded walk up for options: without it, a file no listed options govern
-    would be judged by whatever `analysis_options.yaml` sits above the staged
-    project — nothing under a sandbox, the workspace's own in the execroot.
-    """
-    lines = ["# rules_dart: staged project root"]
-    if excluded:
-        lines.append("analyzer:")
-        lines.append("  exclude:")
-        for path in excluded:
-            lines.append('    - "%s"' % path)
-    return "\n".join(lines) + "\n"
-
-def stage_config_project(ctx, config, packages, files, own, name, sdk_version, opts = None):
-    """Stages a project holding every options file `config` lists.
-
-    The one place a project is laid out for options to be found in: the
-    `dart_analyze` aspect stages its target here, and `dart_format` stages the
-    same options here for `bazel run`, so a check and a run cannot see
-    different settings for the same file. Every listed `analysis_options.yaml`
-    sits at its workspace path under `src/`, with the packages its `include:`s
-    resolve against, and the wrapper above them all ends the walk up for
-    options inside the project.
-
-    Args:
-      ctx: The rule or aspect context (must carry `COPY_TO_DIRECTORY_TOOLCHAINS`).
-      config: The `DartAnalysisConfigInfo` to stage.
-      packages: `DartPackageInfo` records the staged files need, besides the
-        config's own.
-      files: Files to stage besides the config's.
-      own: The Files being checked; everything else staged is excluded from
-        analysis, but for the options files above one of them.
-      name: Prefix for the staged paths.
-      sdk_version: The toolchain SDK's version, the staged SDK constraint of a
-        package that states no `language_version`.
-      opts: `struct(copy_external, all_packages_named)` forwarded to
-        `stage_dart_project`. The aspect's actions pass
-        `(False, ...)`; `dart_format` keeps the `(True, False)` default by
-        passing None, since its project is read from runfiles. The
-        summary-mode analysis passes `all_packages_named = True`, whose
-        staged config must name every package of the closure even though
-        only the target's own files are staged.
-
-    Returns:
-      The `stage_dart_project` struct.
-    """
-    copy_external = opts.copy_external if opts else True
-    all_packages_named = opts.all_packages_named if opts else False
-    packages = merge_package_records(packages + config.packages)
-    staged_files = files + config.files + config.options_files
-    own_paths = [f.short_path for f in own]
-    own_set = {f.path: True for f in own}
-
-    staged = stage_dart_project(
-        ctx,
-        packages,
-        staged_files,
-        staging = struct(
-            extra_proj_files = {
-                "pubspec.yaml": pubspec_stub(packages, sdk_version = sdk_version),
-            },
-            name = name,
-            sdk_version = sdk_version,
-        ),
-        copy_external = copy_external,
-        all_packages_named = all_packages_named,
-    )
-
-    # Everything else under `src/` is there to resolve against, and excluded —
-    # except the options files above one of the own files. Their own
-    # diagnostics (an `include:` that does not resolve, an unknown lint)
-    # belong to every target whose files they may govern, and to no other.
-    governing = {
-        f.path: True
-        for f in config.options_files
-        if [p for p in own_paths if _is_under(p, f.short_path.rpartition("/")[0])]
-    }
-    excluded = {}
-    for f in staged.src_files:
-        if f.short_path.startswith("../") or f.path in own_set or f.path in governing:
-            continue
-        excluded["src/" + f.short_path] = True
-    excluded = sorted(excluded.keys()) + staged.stub_paths
-
-    options_file = ctx.actions.declare_file(name + ".proj/" + _OPTIONS_BASENAME)
-    ctx.actions.write(output = options_file, content = _wrapper_options(excluded))
-    staged.inputs.append(options_file)
-    staged.proj_files[_OPTIONS_BASENAME] = options_file
-    return staged
 
 def _analyze(ctx, name, staged, sdk_inputs, own_paths, baseline):
     """Declares the `dart analyze` action; returns the stamp it writes on success."""
@@ -567,9 +464,11 @@ def _format_language_versions(info, own_paths):
     ]
     return _closure_version_groups(roots, own_paths)
 
-# The formatter's version table lives in `dart/private/tools/format_mode.bzl`;
-# `resolve_format_mode` is re-exported here for `dart/tests/analyze_test.bzl`.
+# The formatter's version table lives in `dart/private/format_mode.bzl` and the
+# project staging in `dart/private/analyze_targets.bzl`; both are re-exported
+# here for callers that load them from the aspect.
 resolve_format_mode = _resolve_format_mode
+stage_config_project = _stage_config_project
 
 def _format(ctx, name, staged, own_paths, language_version):
     """Declares the `dart format` check; returns the stamp it writes on success.
@@ -788,6 +687,58 @@ def _analyze_stage_all(ctx, info, entry, own, generated, name, sdk_version, conf
     )
     return all_pkgs, is_leaf_own_only, staged
 
+def _analyze_own_files(target, entry, package_srcs):
+    """Splits a target's checkable Dart files into own and generated.
+
+    Args:
+      target: The target under the aspect.
+      entry: The target's `DartAnalyzableInfo.srcs`, or an empty list.
+      package_srcs: The target's `DartAnalyzableInfo.package_srcs`, or an
+        empty list.
+
+    Returns:
+      `(own, generated_by_path)`: dicts keyed by file path, or `(None, None)`
+      when the target has no source Dart file of its own to check.
+    """
+    own = {}
+    generated_by_path = {}
+    candidates = target[DefaultInfo].files.to_list() + entry + package_srcs
+    for f in candidates:
+        if f.extension != "dart" or f.short_path.startswith("../"):
+            continue
+        if f.is_source:
+            own[f.path] = f
+        else:
+            generated_by_path[f.path] = f
+    if not own:
+        return None, None
+    return own, generated_by_path
+
+def _analyze_target_info(target):
+    """Returns `(info, entry, package_srcs)` for an analyzable target.
+
+    Args:
+      target: The target under the aspect.
+
+    Returns:
+      The target's `DartInfo` closure, its `DartAnalyzableInfo.srcs` (empty
+      when the target is not analyzable), and its package's own `lib/` files
+      from `DartAnalyzableInfo.package_srcs` (empty too in that case).
+    """
+    if DartAnalyzableInfo in target:
+        info = target[DartAnalyzableInfo].dart_info
+        entry = target[DartAnalyzableInfo].srcs.to_list()
+
+        # A package's own `lib/` files, which a target's `DefaultInfo` (a web
+        # bundle, a test executable) need not list. Absent from records built
+        # against an older rules_dart.
+        package_srcs = getattr(target[DartAnalyzableInfo], "package_srcs", depset()).to_list()
+    else:
+        info = target[DartInfo]
+        entry = []
+        package_srcs = []
+    return info, entry, package_srcs
+
 def _dart_analyze_aspect_impl(target, ctx):
     """Applies analysis, format, and fix actions to a target's own Dart files."""
 
@@ -805,8 +756,8 @@ def _dart_analyze_aspect_impl(target, ctx):
     # sources, which for a `flutter_library` are its package's `lib/` — plus an
     # executable's entrypoints, which no package can name. Generated and
     # external files are never checked.
-    info, entry, package_srcs = analyze_target_info(target)
-    own, generated_by_path = analyze_own_files(target, entry, package_srcs)
+    info, entry, package_srcs = _analyze_target_info(target)
+    own, generated_by_path = _analyze_own_files(target, entry, package_srcs)
     if own == None:
         return [OutputGroupInfo(default = default_outputs)]
     own_paths = sorted([f.short_path for f in own.values()])

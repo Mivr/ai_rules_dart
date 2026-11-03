@@ -84,6 +84,17 @@ config_setting(
 )
 
 bzl_library(
+    name = "analyze_targets",
+    srcs = ["analyze_targets.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":dart_analyzer_summary",
+        ":project_staging",
+    ],
+)
+
+bzl_library(
     name = "build_settings",
     srcs = ["build_settings.bzl"],
     visibility = ["//visibility:public"],
@@ -147,13 +158,12 @@ bzl_library(
     srcs = ["dart_analyze_aspect.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        ":analyze_targets",
         ":common",
         ":dart_analyzer_summary",
-        ":project_staging",
+        ":format_mode",
         ":source_set",
         "//dart:providers",
-        "//dart/private/tools:analyze_targets",
-        "//dart/private/tools:format_mode",
         "@bazel_skylib//rules:common_settings",
     ],
 )
@@ -402,6 +412,12 @@ bzl_library(
         ":dart_library",
         "//dart:providers",
     ],
+)
+
+bzl_library(
+    name = "format_mode",
+    srcs = ["format_mode.bzl"],
+    visibility = ["//visibility:public"],
 )
 
 bzl_library(

@@ -1,4 +1,3 @@
-load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
 
 dart_binary(
@@ -794,25 +793,4 @@ dart_test(
         "//dart/runfiles",
         "@ext_pub_deps//:test",
     ],
-)
-
-bzl_library(
-    name = "analyze_targets",
-    srcs = [
-        "analyze_targets.bzl",
-    ],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//dart:providers",
-        "//dart/private:common",
-        "//dart/private:dart_analyzer_summary",
-    ],
-)
-
-bzl_library(
-    name = "format_mode",
-    srcs = [
-        "format_mode.bzl",
-    ],
-    visibility = ["//visibility:public"],
 )

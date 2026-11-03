@@ -2,9 +2,11 @@
 
 Kept apart from `dart_analyze_aspect.bzl`, which also declares the aspect, so
 that file holds the analysis plumbing rather than the formatter's version table.
-`dart_analyze_aspect.bzl` re-exports `resolve_format_mode`, which
-`dart/tests/analyze_test.bzl` loads from it.
+`dart_analyze_aspect.bzl` re-exports `resolve_format_mode` for callers that
+load it from the aspect.
 """
+
+visibility(["//dart/..."])
 
 # The SDK `<major>.<minor>` series whose `dart format` rules match the
 # vendored `package:dart_style` in `dart/ext/pubspec.lock`, and the minimum
@@ -18,7 +20,16 @@ FORMATTER_MIN_LANGUAGE_VERSION = (2, 12)
 FORMATTER_MAX_2X_MINOR = 19
 
 def _parse_sdk_version(version):
-    """Returns `(major, minor, patch)` of an SDK version string, or None."""
+    """Returns `(major, minor, patch)` of an SDK version string, or None.
+
+    Args:
+      version: The toolchain's SDK version string, such as `"3.13.5"` or
+        `"3.14.0-100.0.dev"`.
+
+    Returns:
+      A `(major, minor, patch)` tuple, or None when the string is not an SDK
+      version.
+    """
     core = version.split("-")[0].split("+")[0].split(".")
     if len(core) < 2 or not core[0].isdigit() or not core[1].isdigit():
         return None
@@ -30,7 +41,15 @@ def _parse_sdk_version(version):
     return (int(core[0]), int(core[1]), patch)
 
 def _parse_language_version(version):
-    """Returns `(major, minor)` of a `major.minor` language version, or None."""
+    """Returns `(major, minor)` of a `major.minor` language version, or None.
+
+    Args:
+      version: The language version string to parse, such as `"3.6"`.
+
+    Returns:
+      A `(major, minor)` tuple, or None when the string is not a
+      `major.minor` language version.
+    """
     parts = version.split(".")
     if len(parts) != 2 or not parts[0].isdigit() or not parts[1].isdigit():
         return None

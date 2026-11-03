@@ -15,8 +15,10 @@ provider carrying it is still not something `deps` will accept.
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load("//dart:providers.bzl", "DartAnalyzableInfo", "DartInfo")
+load("//dart/private:analyze_targets.bzl", "governing_options_paths")
 load("//dart/private:common.bzl", "WINDOWS_CONSTRAINT_ATTR", "noop_test_executable")
-load("//dart/private:dart_analyze_aspect.bzl", "DartAnalysisModeInfo", "DartFixOutputsInfo", "dart_analyze", "resolve_format_mode")
+load("//dart/private:dart_analyze_aspect.bzl", "DartAnalysisModeInfo", "DartFixOutputsInfo", "dart_analyze")
+load("//dart/private:format_mode.bzl", "resolve_format_mode")
 
 # The fixture's entrypoint and its dependency, by the suffix of their
 # `short_path`. Named here rather than passed in: these tests exist for one
@@ -229,6 +231,52 @@ def _resolve_format_mode_test_impl(ctx):
     return unittest.end(env)
 
 resolve_format_mode_test = unittest.make(_resolve_format_mode_test_impl)
+
+def _governing_options_paths_test_impl(ctx):
+    env = unittest.begin(ctx)
+
+    config = struct(options_files = [
+        struct(short_path = "analysis_options.yaml"),
+        struct(short_path = "lib/narrow/analysis_options.yaml"),
+        struct(short_path = "lib/wide/analysis_options.yaml"),
+    ])
+
+    # The root options file governs every file; the nested one governs only
+    # files below its own directory, including deeper descendants.
+    asserts.equals(
+        env,
+        ["analysis_options.yaml", "lib/wide/analysis_options.yaml"],
+        governing_options_paths(config, ["lib/wide/wide.dart", "lib/wide/sub/deep.dart"]),
+        "a nested options file governs the files below it and the root governs all",
+    )
+
+    # A sibling directory, and a path that shares the directory's prefix
+    # without a separator after it, are not under the directory.
+    asserts.equals(
+        env,
+        ["analysis_options.yaml"],
+        governing_options_paths(config, ["lib/wider/x.dart", "lib/wide.dart"]),
+        "a sibling and a prefix collision are not governed by lib/wide",
+    )
+
+    # The nearer options file still combines with the root, in config order.
+    asserts.equals(
+        env,
+        ["analysis_options.yaml", "lib/narrow/analysis_options.yaml"],
+        governing_options_paths(config, ["lib/narrow/narrow.dart"]),
+        "each governing options file is returned once",
+    )
+
+    asserts.equals(
+        env,
+        [],
+        governing_options_paths(config, []),
+        "no own paths means no governing options files",
+    )
+
+    return unittest.end(env)
+
+governing_options_paths_test = unittest.make(_governing_options_paths_test_impl)
 
 def _assert_no_shared_home_env(env, action_env, output_file):
     home_keys = [k for k in ("HOME", "USERPROFILE", "LOCALAPPDATA") if k in action_env]
