@@ -24,6 +24,17 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 
+# Exported for //dart/tests/buildifier_config, which pins the buildifier
+# warning list, the buildifier hooks and the `buildifier_prebuilt` version.
+exports_files(
+    [
+        ".buildifier.json",
+        ".pre-commit-config.yaml",
+        "MODULE.bazel",
+    ],
+    visibility = ["//dart/tests/buildifier_config:__pkg__"],
+)
+
 # Every `analysis_options.yaml` in this repository, for the `dart_analyze`
 # aspect `.bazelrc` applies under `bazel test`, and for `dart_format`.
 dart_analysis_options(
