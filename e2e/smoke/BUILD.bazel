@@ -1,9 +1,35 @@
-"""Provides a simple way to test your rules as an external workspace.
-Add a basic smoke-test target below.
+"""Consumer proof of the rules from an external module.
+
+Toolchain resolution, the SDK binary, and each consumer rule: `dart_library`,
+`dart_binary`, `dart_test` with `package:test`, and `dart_js_binary`.
 """
 
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
+load(
+    "@rules_dart//dart:defs.bzl",
+    "dart_analysis_config",
+    "dart_analysis_options",
+    "dart_binary",
+    "dart_js_binary",
+    "dart_library",
+    "dart_test",
+)
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+exports_files(["pubspec.lock"])
+
+# The lint ruleset is named here rather than in any target's deps: a lint
+# ruleset is not a dependency of the code it lints.
+dart_analysis_options(
+    name = "options",
+    src = "analysis_options.yaml",
+    deps = ["@very_good_analysis"],
+)
+
+dart_analysis_config(
+    name = "analysis_config",
+    options = [":options"],
+)
 
 # Verify toolchain resolution works
 build_test(
@@ -21,4 +47,55 @@ sh_test(
     args = ["$(rlocationpath @rules_dart//dart)"],
     data = ["@rules_dart//dart"],
     deps = ["@bazel_tools//tools/bash/runfiles"],
+)
+
+dart_library(
+    name = "greeting",
+    package_name = "smoke",
+    srcs = ["lib/greeting.dart"],
+    language_version = "3.11",
+)
+
+dart_binary(
+    name = "app",
+    main = "bin/main.dart",
+    deps = [":greeting"],
+)
+
+dart_js_binary(
+    name = "web_app",
+    main = "web/main.dart",
+    deps = [":greeting"],
+)
+
+dart_test(
+    name = "greeting_test",
+    size = "small",
+    main = "test/greeting_test.dart",
+    deps = [
+        ":greeting",
+        "@pub_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "binary_output_test",
+    size = "small",
+    data = [":app"],
+    main = "test/binary_output_test.dart",
+    deps = [
+        "@pub_deps//:test",
+        "@rules_dart//dart/runfiles",
+    ],
+)
+
+dart_test(
+    name = "js_output_test",
+    size = "small",
+    data = [":web_app"],
+    main = "test/js_output_test.dart",
+    deps = [
+        "@pub_deps//:test",
+        "@rules_dart//dart/runfiles",
+    ],
 )
