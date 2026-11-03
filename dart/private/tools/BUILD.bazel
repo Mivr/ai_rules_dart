@@ -1,4 +1,6 @@
 load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
+load("//dart/private:dart_test.bzl", "dart_test_kernel")
+load("//dart/private:dart_test_runner.bzl", "dart_test_runner_main")
 
 dart_binary(
     name = "noop",
@@ -265,6 +267,31 @@ dart_binary(
     code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "test_runner_fixture.dart",
+    deps = ["@ext_pub_deps//:test"],
+)
+
+# The same fixture compiled as a `package:test` suite, declared where the
+# runner's `--precompiled` layout loads it from, as `dart_test` compiles a
+# test that runs under the runner: `test_runner_test` drives the launcher's
+# runner path with it.
+dart_test_kernel(
+    name = "test_runner_suite_fixture",
+    main = "test_runner_fixture.dart",
+    deps = ["@ext_pub_deps//:test"],
+)
+
+# The `package:test` runner that `test_runner_test` runs the suite fixture
+# under, built from the same `package:test` as the suite (the two talk over a
+# protocol private to that version), as the pub spoke builds the runner every
+# `dart_test` gets.
+dart_test_runner_main(name = "test_runner_suite_runner_main")
+
+dart_binary(
+    name = "test_runner_suite_runner",
+    code_assets_from_deps = False,
+    compile_mode = "kernel",
+    main = ":test_runner_suite_runner_main",
+    deps = ["@ext_pub_deps//:test"],
 )
 
 dart_test(
@@ -274,10 +301,16 @@ dart_test(
         "$(rlocationpath :test_runner)",
         "$(rlocationpath :test_runner_fixture)",
         "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
+        "$(rlocationpath :test_runner_suite_fixture)",
+        "$(rlocationpath :test_runner_suite_runner)",
+        "$(rlocationpath :test_runner_fixture.dart)",
     ],
     data = [
         ":test_runner",
         ":test_runner_fixture",
+        ":test_runner_fixture.dart",
+        ":test_runner_suite_fixture",
+        ":test_runner_suite_runner",
         "@dart_toolchains//sdk/3.13.5:compile_files",
         "@dart_toolchains//sdk/3.13.5:dart",
     ],
