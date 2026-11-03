@@ -1,0 +1,37 @@
+load("//dart:defs.bzl", "dart_library", "dart_test")
+
+# The wave-1 project lint rules: custom `AnalysisRule`s enforcing
+# repository-wide invariants of the build-action workers and tools.
+# Public so downstream rulesets can reuse them; hosted in `analyzer_summary`
+# (see `//dart/private/tools:analyzer_summary`), which registers them
+# alongside the vendored SDK lints.
+dart_library(
+    name = "rules_dart_project_lints",
+    srcs = [
+        "lib/no_home_env_reads.dart",
+        "lib/no_stdout_in_worker.dart",
+        "lib/no_wall_clock_in_actions.dart",
+        "lib/process_requires_environment.dart",
+        "lib/project_lint_scope.dart",
+        "lib/rules_dart_project_lints.dart",
+    ],
+    language_version = "3.13",
+    package_name = "rules_dart_project_lints",
+    visibility = ["//visibility:public"],
+    deps = ["@ext_pub_deps//:analyzer"],
+)
+
+# Unit tests for the four rules: positive and negative cases for each rule,
+# including non-production `*_test.dart` and `test/` path skipping. Private so
+# `bazel run` refuses them and `e2e/run_home` needs no registry row.
+dart_test(
+    name = "project_lints_test",
+    size = "small",
+    srcs = ["test/project_lints_test.dart"],
+    main = "test/project_lints_test.dart",
+    deps = [
+        ":rules_dart_project_lints",
+        "@ext_pub_deps//:analyzer",
+        "@ext_pub_deps//:test",
+    ],
+)
