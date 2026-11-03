@@ -147,7 +147,7 @@ BaselineReport _writeBaselineReport(
         : '';
     stdout.writeln('${diagnostic.text}$marker');
   }
-  for (final group in report.groups) {
+  for (final BaselineGroup group in report.groups) {
     if (!group.withinCeiling) stdout.writeln(baselineFailureLine(group));
   }
   return report;

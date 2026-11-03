@@ -16,6 +16,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:analyzer/dart/analysis/analysis_context.dart';
+import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
 import 'package:analyzer/dart/analysis/analysis_options.dart';
 import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/dart/analysis/utilities.dart';
@@ -65,14 +66,13 @@ const _failed = 1;
 
 bool _lintRulesRegistered = false;
 
-/// Number of [AnalysisContextCollectionImpl] instances disposed across
+/// Number of [AnalysisContextCollection] instances disposed across
 /// `summarize` and `analyze` requests in this process.
 int disposedContextCollectionsCount = 0;
 
-/// Optional hook invoked after each [AnalysisContextCollectionImpl] is disposed
+/// Optional hook invoked after each [AnalysisContextCollection] is disposed
 /// (used by tests to verify driver / context release).
-void Function(AnalysisContextCollectionImpl collection)?
-onContextCollectionDisposed;
+void Function(AnalysisContextCollection)? onContextCollectionDisposed;
 
 /// Disposes [collection], counting and announcing the release.
 ///
@@ -80,7 +80,7 @@ onContextCollectionDisposed;
 /// failure to release the collection must not fail the request. Only
 /// [Exception]s are ignored; programming errors still propagate.
 Future<void> disposeContextCollection(
-  AnalysisContextCollectionImpl collection,
+  AnalysisContextCollection collection,
 ) async {
   try {
     await collection.dispose();
