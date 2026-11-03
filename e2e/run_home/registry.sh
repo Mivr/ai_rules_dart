@@ -105,6 +105,7 @@ RUN_HOME_ENTRIES=(
   '@rules_dart//dart/tests/sdk_toolchain_fixture:sdk_root||n/a|refuse'
   '@rules_dart//dart/ext/tools:check_dual_build_collisions_lib||n/a|refuse'
   '@rules_dart//dart/guard:directive_guard||n/a|refuse'
+  '@rules_dart//dart/lints:rules_dart_project_lints||n/a|refuse'
   '@rules_dart//dart/runfiles:runfiles||n/a|refuse'
   '@rules_dart//dart/tests/analyzer_summary_fixture/codegen/dep:dep||n/a|refuse'
   '@rules_dart//dart/tests/analyzer_summary_fixture/flutter:sky_engine||n/a|refuse'
