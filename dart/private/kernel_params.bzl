@@ -65,7 +65,9 @@ def kernel_module_inputs(
       sources: `struct(uri, file)` for each source the module compiles. The
         URI is the one the source is compiled under.
       packages: The `DartPackageInfo` records the module's package config
-        names.
+        names: either the deduplicated list (an executable's entry or a
+        fixture) or an `(own_records, transitive)` pair (a library module,
+        written by the config tool).
       dep_kmods: Postorder depset of the module directories it links against.
       extra_inputs: A depset of files the compile may read beyond `sources`,
         such as the closure's sources, which an entry module compiles from
