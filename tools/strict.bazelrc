@@ -1,0 +1,41 @@
+# Strict incompatible flags, enabled with `--config=strict`.
+#
+# Each flag below turns on a Bazel migration this repository already passes,
+# so `bazel test --config=strict //...` (the `strict` CI job) catches a change
+# that would break when a later Bazel release flips the default. `.bazelrc`
+# imports this file; a command without `--config=strict` sets none of them.
+#
+# `@bazelrc-preset.bzl//:strict` is not used: it gates every migration on
+# Bazel 8.x and emits no flag on Bazel 9.x.
+#
+# Two flags stay out because a dependency fails under them. Add each back once
+# the dependency that blocks it is fixed:
+#
+# - `--incompatible_no_rule_outputs_param`: `rules_cc` 0.2.26 fails while
+#   loading, at `cc/private/rules_impl/cc_binary.bzl:29`, a `rule()` that still
+#   passes `outputs` (`rules_java` does the same).
+# - `--incompatible_disable_target_default_provider_fields`: `rules_go`
+#   (`@io_bazel_rules_go`) fails in `go/private/rules/library.bzl:228`, which
+#   reaches `go/private/context.bzl:392,394`: rules_go 0.65.0, the current
+#   release, still reads `t.files` there. This root module's own
+#   `//gazelle/dart` `go_library` takes that path.
+common:strict --incompatible_auto_exec_groups
+common:strict --incompatible_check_external_repo_source_dir_package_boundary
+common:strict --incompatible_check_testonly_for_output_files
+common:strict --incompatible_config_setting_private_default_visibility
+common:strict --incompatible_default_to_explicit_init_py
+common:strict --incompatible_disable_native_android_rules
+common:strict --incompatible_disable_native_apple_binary_rule
+common:strict --incompatible_disable_non_executable_java_binary
+common:strict --incompatible_disable_starlark_host_transitions
+common:strict --incompatible_disallow_sdk_frameworks_attributes
+common:strict --incompatible_enable_apple_toolchain_resolution
+common:strict --incompatible_no_implicit_file_export
+common:strict --incompatible_objc_alwayslink_by_default
+common:strict --incompatible_python_disallow_native_rules
+common:strict --incompatible_remote_local_fallback_for_remote_cache
+common:strict --incompatible_resolve_select_keys_eagerly
+common:strict --incompatible_stop_exporting_build_file_path
+common:strict --incompatible_stop_exporting_language_modules
+common:strict --incompatible_strip_executable_safely
+common:strict --incompatible_use_cc_configure_from_rules_cc

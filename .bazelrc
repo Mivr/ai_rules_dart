@@ -2,6 +2,9 @@
 # Import bazelrc presets
 import %workspace%/tools/preset.bazelrc
 
+# `--config=strict`: the Bazel incompatible flags this repository passes.
+import %workspace%/tools/strict.bazelrc
+
 # Pin single-attempt test runs so retries cannot hide flaky failures.
 test --flaky_test_attempts=1
 
