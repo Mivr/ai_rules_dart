@@ -277,6 +277,7 @@ bzl_library(
         ":build_settings",
         ":common",
         ":dart_info",
+        ":kernel_library_state",
         ":kernel_params",
         "//dart:providers",
         "@bazel_skylib//rules:common_settings",
@@ -293,6 +294,7 @@ bzl_library(
         ":dart_info",
         ":dart_info_params",
         ":dart_kernel",
+        ":kernel_library_state",
         ":kernel_params",
         "//dart:providers",
     ],
@@ -418,6 +420,17 @@ bzl_library(
     name = "format_mode",
     srcs = ["format_mode.bzl"],
     visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "kernel_library_state",
+    srcs = ["kernel_library_state.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":dart_info",
+        "//dart:providers",
+    ],
 )
 
 bzl_library(
