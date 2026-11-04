@@ -97,6 +97,15 @@ repos:
         language: system
         files: ^\.github/workflows/[^/]+\.ya?ml$
         pass_filenames: false
+  # The release gate script's test: a fake gh on PATH, no network, seconds.
+  - repo: local
+    hooks:
+      - id: release-gate-test
+        name: release gate tests
+        entry: bash .github/workflows/release_gate_test.sh
+        language: system
+        files: ^\.github/workflows/release_gate(_test)?\.sh$
+        pass_filenames: false
   # Enforce the commit message policy in AGENTS.md: a conventional-commit
   # subject and the `Changelog:` trailer rules
   - repo: local

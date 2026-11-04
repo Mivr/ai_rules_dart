@@ -4,21 +4,19 @@ on:
   # Triggers the workflow on push or pull request events but only for the main branch
   push:
     branches: [main, "ci/**"]
-    # Tag pushes run the whole workflow UNCACHED (see the cache inputs
-    # below): the release gate (release.yaml) requires passing tag-push runs
-    # of this workflow and of full.yaml on the tagged commit.
-    tags: ["v*"]
   pull_request:
     branches: [main]
   # Nightly run to catch upstream breakage (new Dart SDK, Bazel, deps).
   # A `schedule` run never restores or saves any Bazel cache (see the
   # `schedule` branches on every cache input below), so this is the cold,
   # uncached run: every test job re-executes instead of replaying the disk
-  # cache. Tag pushes (`v*`) run the same cold shape minus the disk/external
-  # restore (see below); branch and PR pushes stay cached.
+  # cache. Tag runs (release dispatches) run the same cold shape minus the
+  # disk/external restore (see below); branch and PR pushes stay cached.
   schedule:
     - cron: "0 9 * * *"
-  # Allows you to run this workflow manually from the Actions tab
+  # Allows you to run this workflow manually from the Actions tab. The release
+  # gate (release.yaml) dispatches it on a tag with `uncached: true` when no
+  # passing nightly run exists.
   workflow_dispatch:
     inputs:
       uncached:
@@ -28,9 +26,10 @@ on:
         type: boolean
 concurrency:
   # Cancel previous actions from the same PR or branch except 'main' branch.
+  # Tag runs (release dispatches) are never cancelled.
   # See https://docs.github.com/en/actions/using-jobs/using-concurrency and https://docs.github.com/en/actions/learn-github-actions/contexts for more info.
   group: concurrency-group::${{ github.workflow }}::${{ github.event.pull_request.number > 0 && format('pr-{0}', github.event.pull_request.number) || github.ref_name }}${{ github.ref_name == 'main' && format('::{0}', github.run_id) || ''}}
-  cancel-in-progress: ${{ github.ref_name != 'main' }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' && github.ref_name != 'main' }}
 jobs:
   # The e2e workspaces (plus `.`, `dev`, `tools` and `.github/workflows`) used
   # to run as one CI job per (OS, folder): ~90 jobs whose macOS third queued
@@ -73,13 +72,13 @@ jobs:
   # `expected-failure` only and never in a positive sweep; e2e/hello_world
   # and e2e/codegen also run in `hermetic-strict` under the H1 flag set.
   # No e2e workspace is left without a job.
-  # A tag push runs every job, matrix entry and step below, uncached: no job
-  # skips work on a tag push that the nightly `schedule` run does.
+  # A tag run (release dispatch) runs every job, matrix entry and step below,
+  # uncached: no job skips work on a tag run that the nightly `schedule` run does.
   test:
     name: test (${{ matrix.os }}, shard ${{ matrix.shard }})
     runs-on: ${{ matrix.os }}
     # A hung folder fails fast instead of burning the runner for hours.
-    # Healthy shards finish well inside this; cold tag-push and nightly runs
+    # Healthy shards finish well inside this; cold tag and nightly runs
     # need the headroom. GitHub caps jobs at 6 h.
     timeout-minutes: 120
     strategy:
@@ -204,7 +203,7 @@ jobs:
         with:
           bazelisk-cache: true
           # Branch and PR pushes restore and save every cache below. Tag
-          # pushes (`github.ref_type == 'tag'`), `schedule` runs and
+          # runs (`github.ref_type == 'tag'`), `schedule` runs and
           # `uncached` dispatches restore neither the Bazel disk cache nor
           # the external cache and save nothing, so every test really
           # executes instead of replaying the disk cache. The
@@ -212,7 +211,7 @@ jobs:
           # restore (every fetch is sha256-pinned).
           disk-cache: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached && matrix.cache || false }}
           external-cache: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached }}
-          repository-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
+          repository-cache: ${{ github.event_name != 'schedule' && (github.ref_type == 'tag' || !inputs.uncached) }}
           # Only main saves: a branch restores main's keys, and the gate's ci/
           # candidate saves duplicated them (7 GB on 2026-11-04), evicting main's
           # under the 10 GB repository cache limit.

@@ -39,3 +39,5 @@ jobs:
       contents: write
       id-token: write
       attestations: write
+      # The release.yaml gate job dispatches and polls the CI and Full runs.
+      actions: write

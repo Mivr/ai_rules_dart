@@ -2,17 +2,19 @@
 name: Full matrix
 # Pre-release coverage: the complete per-folder macOS matrix that push CI
 # (ci.yaml) no longer runs. Linux and Windows keep full coverage on every
-# push, so they are not repeated here. Releases require passing tag-push runs
-# of this workflow AND of ci.yaml on the tagged commit (see release.yaml).
-# Triggers: tag pushes (`v*`), the nightly schedule, and manual dispatch.
-# Tag-push and `schedule` runs are UNCACHED (see the cache inputs below): no
+# push, so they are not repeated here. A release passes on a nightly run of
+# this workflow on the tagged commit, or on a dispatch of it on the tag (see
+# release.yaml).
+# Triggers: the nightly schedule and manual dispatch (the release gate
+# dispatches it on a tag with `uncached: true`).
+# Tag runs and `schedule` runs are UNCACHED (see the cache inputs below): no
 # Bazel disk cache and no external cache is restored and nothing is saved, so
 # every test really executes instead of replaying the disk cache; only the
 # content-addressed repository cache and the bazelisk cache restore (every
 # fetch is sha256-pinned). Branch pushes never trigger this workflow; pass
-# `uncached: true` to a manual dispatch for a cold run. A tag push runs every
-# job, matrix entry and step below, uncached: no job skips work on a tag push
-# that the nightly `schedule` run does. It has no 7-minute target, but its
+# `uncached: true` to a manual dispatch for a cold run. A tag run (release dispatch)
+# runs every job, matrix entry and step below, uncached: no job skips work on
+# a tag run that the nightly `schedule` run does. It has no 7-minute target, but its
 # macOS jobs run one at a time (`max-parallel: 1`) so a concurrent push run's
 # macOS smoke job keeps a slot.
 on:
@@ -23,14 +25,12 @@ on:
         required: false
         default: false
         type: boolean
-  push:
-    tags:
-      - "v*"
   schedule:
     - cron: "0 10 * * *"
 concurrency:
   group: concurrency-group::${{ github.workflow }}::${{ github.ref_name }}${{ github.ref_name == 'main' && format('::{0}', github.run_id) || ''}}
-  cancel-in-progress: ${{ github.ref_name != 'main' }}
+  # Tag runs (release dispatches) are never cancelled.
+  cancel-in-progress: ${{ github.ref_type != 'tag' && github.ref_name != 'main' }}
 jobs:
   # Same folders, commands and flags as the old per-folder macOS jobs from
   # ci.yaml, in 2 shards sharing one Bazel disk cache per shard on cached
@@ -43,7 +43,7 @@ jobs:
   # stay shared, so cache warmth is unaffected.
   # Red-by-design workspaces (ci.yaml's `expected-failure` job) and the
   # pub-fetch Powershell/PATH steps are push-CI-only and not repeated here:
-  # on a tag push, ci.yaml itself runs uncached, so the release gate still
+  # on a release tag, ci.yaml itself runs uncached, so the release gate still
   # proves them on the tagged commit.
   # Each folder's log is streamed under a `===== <folder> =====` header the
   # moment that folder finishes (not after all waves), and uploaded as an
@@ -51,7 +51,7 @@ jobs:
   test-macos:
     name: test-macos (shard ${{ matrix.shard }})
     runs-on: macos-latest
-    # Cold tag-push and nightly runs need the headroom. GitHub caps jobs at
+    # Cold tag and nightly runs need the headroom. GitHub caps jobs at
     # 6 h.
     timeout-minutes: 120
     strategy:
@@ -103,7 +103,7 @@ jobs:
         with:
           bazelisk-cache: true
           # Only manual dispatches without `uncached: true` restore and save
-          # caches. Tag pushes (`github.ref_type == 'tag'`) and `schedule`
+          # caches. Tag runs (`github.ref_type == 'tag'`) and `schedule`
           # runs restore neither the Bazel disk cache nor the external cache
           # and save nothing, so every test really executes instead of
           # replaying the disk cache. The content-addressed repository cache
@@ -111,7 +111,7 @@ jobs:
           # sha256-pinned).
           disk-cache: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached && matrix.cache || false }}
           external-cache: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached }}
-          repository-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
+          repository-cache: ${{ github.event_name != 'schedule' && (github.ref_type == 'tag' || !inputs.uncached) }}
           # Only main saves: a branch restores main's keys, and the gate's ci/
           # candidate saves duplicated them (7 GB on 2026-11-04), evicting main's
           # under the 10 GB repository cache limit.
