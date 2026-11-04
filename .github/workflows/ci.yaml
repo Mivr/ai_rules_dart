@@ -192,6 +192,14 @@ jobs:
               e2e/analysis
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      # An ubuntu-latest runner has about 14 GB free, and shard 1 restores the
+      # caches and then runs three Bazel servers. Drop the preinstalled
+      # toolchains this job never uses before Bazel starts. A path that is
+      # absent is named and skipped; one that cannot be removed fails the step.
+      - name: Free unused preinstalled toolchains
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: .github/scripts/ci_free_disk.sh
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           bazelisk-cache: true
@@ -232,6 +240,21 @@ jobs:
             startup --host_jvm_args=-Xmx2g
             build --local_resources=cpu=1
             build --local_resources=memory=HOST_RAM*.15
+            # Disk-cache garbage collection (flags checked against
+            # `bazel help build` at 9.3.0). Budget against the ~14 GB free on
+            # an ubuntu-latest runner: the cache is capped at 4G, leaving
+            # ~10 GB for the repository and external caches, three output
+            # bases and the checkout; the cleanup step above frees more than
+            # that again. Entries unused for 7d are dropped. GC runs when a
+            # server has been idle for 5m. The cache keys and `cache-version`
+            # are unchanged: an oversized restored cache is trimmed by GC.
+            build --experimental_disk_cache_gc_max_size=4G
+            build --experimental_disk_cache_gc_max_age=7d
+            build --experimental_disk_cache_gc_idle_delay=5m
+      - name: Disk report (after cache restore)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: .github/scripts/ci_disk_report.sh "after cache restore"
       - name: Test
         env:
           FOLDERS: ${{ matrix.folders }}
@@ -346,6 +369,10 @@ jobs:
             [ "$(cat "$logdir/$slug.status")" = 0 ] || fail=1
           done <<< "$FOLDERS"
           exit "$fail"
+      - name: Disk report (after Test)
+        if: always() && matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: .github/scripts/ci_disk_report.sh "after Test"
       # The corpus instantiates every public rule and macro in one package;
       # its checked-in golden records the action graph they produce. A stale
       # golden fails here, so an action change reaches review as a diff.
@@ -421,6 +448,10 @@ jobs:
         run: |
           echo "9.3.0" > .bazelversion
           bazel query "@rules_dart//..."
+      - name: Disk report (end of job)
+        if: always() && matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: .github/scripts/ci_disk_report.sh "end of job"
   # Push CI's only macOS job: a fast smoke test that always runs cold (no
   # cache restore or save), so it executes real compile actions under the
   # darwin sandbox on every run instead of replaying the disk cache. The
