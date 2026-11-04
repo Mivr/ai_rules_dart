@@ -2491,11 +2491,11 @@ void _planPartOfLibrary(
   }
 }
 
-/// Refuses a URI spanning lines or with an empty path segment, however it
-/// spells its target: the front end's multi-line first-line rule reads a
-/// different file than [_resolveUri] names, and an empty segment resolves
-/// differently in the front end than by skipping it (a `package:` doubled
-/// slash resolves absolutely). Reports whether the directive was refused.
+/// Refuses a URI spanning lines or with an empty path segment that the front
+/// end reads as a host file ([hasEmptyPathSegment]: directly after a package
+/// name, or in an absolute URI), however it spells its target: the front end's
+/// multi-line first-line rule reads a different file than [_resolveUri] names.
+/// Reports whether the directive was refused.
 bool _rejectMalformedRef(
   ScanRef ref,
   String key,

@@ -41,7 +41,11 @@ void main() {
     !isEscapingPackageUri('package:p/a.dart'),
     'URIs inside the package do not escape',
   );
-  _check(hasEmptyPathSegment('a//b.dart'), 'doubled slashes count');
+  _check(
+    hasEmptyPathSegment('package:p//a.dart'),
+    'doubled slashes after the package name count',
+  );
+  _check(!hasEmptyPathSegment('a//b.dart'), 'relative doubled slashes do not');
   _check(!hasEmptyPathSegment('a/b.dart'), 'single slashes do not');
   _check(
     isDisallowedDirectiveUri('file:///etc/hosts'),

@@ -186,6 +186,86 @@ void main(List<String> args) {
     });
   });
 
+  group('empty segments', () {
+    const dirs = {'demo': 'pkg/lib'};
+    const from = 'pkg/lib/a.dart';
+
+    test('resolveStagedRelativeTarget counts them like RFC 3986', () {
+      const file = '/r/pkg/lib/a.dart';
+      expect(
+        resolveStagedRelativeTarget('sibling//helper.dart', file),
+        '/r/pkg/lib/sibling/helper.dart',
+      );
+      expect(
+        resolveStagedRelativeTarget('../src//b.dart', file),
+        '/r/pkg/src/b.dart',
+      );
+      expect(
+        resolveStagedRelativeTarget('a///b.dart', file),
+        '/r/pkg/lib/a/b.dart',
+      );
+      expect(
+        resolveStagedRelativeTarget('src//../b.dart', file),
+        '/r/pkg/lib/src/b.dart',
+      );
+      expect(resolveStagedRelativeTarget('/a//b.dart', file), isNull);
+    });
+
+    test('resolveDirectiveUri accepts them after the first segment', () {
+      expect(
+        resolveDirectiveUri('package:demo/src//b.dart', from, dirs),
+        'pkg/lib/src/b.dart',
+      );
+      expect(
+        resolveDirectiveUri('package:demo/a//b//c.dart', from, dirs),
+        'pkg/lib/a/b/c.dart',
+      );
+      expect(
+        resolveDirectiveUri('package:demo/src//../b.dart', from, dirs),
+        'pkg/lib/src/b.dart',
+      );
+      expect(
+        resolveDirectiveUri('sibling//helper.dart', from, dirs),
+        'pkg/lib/sibling/helper.dart',
+      );
+      expect(
+        resolveDirectiveUri('../src//b.dart', from, dirs),
+        'pkg/lib/src/b.dart',
+      );
+      expect(
+        resolveDirectiveUri('src//../b.dart', from, dirs),
+        'pkg/lib/src/b.dart',
+      );
+    });
+
+    test('resolveDirectiveUri and resolveStagedRelativeTarget agree', () {
+      for (final uri in [
+        'sibling//helper.dart',
+        'a///b.dart',
+        'x//../y.dart',
+      ]) {
+        final String? staged = resolveStagedRelativeTarget(
+          uri,
+          '/r/pkg/lib/a.dart',
+        );
+        expect('/r/${resolveDirectiveUri(uri, from, dirs)}', staged);
+      }
+    });
+
+    test('resolveDirectiveUri still refuses the host-reading spellings', () {
+      for (final uri in [
+        'package:demo//b.dart',
+        'package:demo///b.dart',
+        '/a//b.dart',
+        '//host/b.dart',
+        'org-dartlang-root:///a//b.dart',
+        'package:demo/src//../../../b.dart',
+      ]) {
+        expect(resolveDirectiveUri(uri, from, dirs), isNull, reason: uri);
+      }
+    });
+  });
+
   group('isEscapingPackageUri', () {
     test('climbs above the package escape', () {
       expect(isEscapingPackageUri('package:p/sub/../../x.dart'), isTrue);
@@ -213,9 +293,20 @@ void main(List<String> args) {
       expect(isEscapingPackageUri('package:p/a%5Cb.dart'), isTrue);
     });
 
-    test('an empty segment escapes: the front end resolves it absolutely', () {
+    test('an empty segment right after the package name escapes', () {
       expect(isEscapingPackageUri('package:p//x.dart'), isTrue);
-      expect(isEscapingPackageUri('package:p/a//x.dart'), isTrue);
+      expect(isEscapingPackageUri('package:p///x.dart'), isTrue);
+      expect(isEscapingPackageUri(r'package:p\\x.dart'), isTrue);
+    });
+
+    test('a later empty segment stays inside and counts for `..`', () {
+      expect(isEscapingPackageUri('package:p/a//x.dart'), isFalse);
+      expect(isEscapingPackageUri('package:p/a/b//c//d.dart'), isFalse);
+      expect(isEscapingPackageUri('package:p/a//../x.dart'), isFalse);
+      expect(isEscapingPackageUri('package:p/a//../../x.dart'), isFalse);
+      // The empty segment is popped by the first `..`, the second pops `a`,
+      // the third leaves the package.
+      expect(isEscapingPackageUri('package:p/a//../../../x.dart'), isTrue);
     });
 
     test('URIs inside the package do not escape', () {
@@ -236,14 +327,21 @@ void main(List<String> args) {
   });
 
   group('hasEmptyPathSegment', () {
-    test('doubled slashes count, wherever they hide', () {
-      expect(hasEmptyPathSegment('a//b.dart'), isTrue);
+    test('doubled slashes count where the front end reads a host file', () {
       expect(hasEmptyPathSegment('/a//b.dart'), isTrue);
       expect(hasEmptyPathSegment('package:p//a.dart'), isTrue);
-      expect(hasEmptyPathSegment('package:p/a//b.dart'), isTrue);
+      expect(hasEmptyPathSegment('package:p///a.dart'), isTrue);
       expect(hasEmptyPathSegment('org-dartlang-root:////a.dart'), isTrue);
-      expect(hasEmptyPathSegment(r'a\\b.dart'), isTrue);
-      expect(hasEmptyPathSegment('a//b.dart?x=1'), isTrue);
+      expect(hasEmptyPathSegment('org-dartlang-root:///a//b.dart'), isTrue);
+    });
+
+    test('doubled slashes inside a package path or a relative do not', () {
+      expect(hasEmptyPathSegment('a//b.dart'), isFalse);
+      expect(hasEmptyPathSegment(r'a\\b.dart'), isFalse);
+      expect(hasEmptyPathSegment('a//b.dart?x=1'), isFalse);
+      expect(hasEmptyPathSegment('../src//b.dart'), isFalse);
+      expect(hasEmptyPathSegment('package:p/a//b.dart'), isFalse);
+      expect(hasEmptyPathSegment('package:p/a//b.dart?x=1'), isFalse);
     });
 
     test('single slashes and segment-free URIs do not', () {
@@ -399,6 +497,19 @@ void main(List<String> args) {
       stagedFile('lib/abs.dart', "import '/etc/hostname';\n");
       stagedFile('lib/empty.dart', "import 'a//b.dart';\n");
       stagedFile('lib/emptypkg.dart', "import 'package:demo//evil.dart';\n");
+      stagedFile('lib/emptypkg3.dart', "export 'package:demo///evil.dart';\n");
+      stagedFile('lib/emptyabs.dart', "import '/lib//b.dart';\n");
+      stagedFile('lib/sub/t.dart', 'library t;\n');
+      stagedFile(
+        'lib/doubled.dart',
+        "import 'package:demo/sub//t.dart';\n"
+            "export 'sub//t.dart';\n"
+            "import 'sub//../t.dart';\n"
+            "import '../lib//b.dart';\n"
+            "part 'sub///t.dart';\n"
+            "part of 'package:demo/sub//t.dart';\n"
+            "import 'package:demo/sub//../b.dart';\n",
+      );
       stagedFile('lib/part.dart', "part '../../evil_part.dart';\n");
       stagedFile('lib/partof.dart', "part of '../../evil_lib.dart';\n");
       stagedFile('lib/dart.dart', "import 'dart:core';\n");
@@ -454,8 +565,10 @@ void main(List<String> args) {
             'is not a declared input.',
         "guard-test: ${at('lib/empty.dart')} import 'a//b.dart' "
             'is not a declared input.',
+        "guard-test: ${at('lib/emptyabs.dart')} import '/lib//b.dart' is not a declared input.",
         "guard-test: ${at('lib/emptypkg.dart')} import 'package:demo//evil.dart' "
             'is not a declared input.',
+        "guard-test: ${at('lib/emptypkg3.dart')} export 'package:demo///evil.dart' is not a declared input.",
         "guard-test: ${at('lib/frag.dart')} import 'b.dart#frag' "
             'is not a declared input.',
         "guard-test: ${at('lib/malformed.dart')} import '../../evil.dart' "

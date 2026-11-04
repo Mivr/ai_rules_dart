@@ -1435,22 +1435,55 @@ void main(List<String> args) {
       );
     });
 
-    test('an empty path segment names no file', () {
-      expect(
-        resolveDirectiveUri('a//b.dart', 'pkg/lib/a.dart', dirs),
-        isNull,
-        reason: 'skipping it would not resolve like the front end',
-      );
+    test('an empty segment counts like the front end reads it', () {
       expect(resolveDirectiveUri('//b.dart', 'pkg/lib/a.dart', dirs), isNull);
       expect(resolveDirectiveUri('/a//b.dart', 'pkg/lib/a.dart', dirs), isNull);
       expect(
         resolveDirectiveUri('package:pkg//b.dart', 'pkg/lib/a.dart', dirs),
         isNull,
-        reason: 'the front end resolves the doubled slash absolutely',
+        reason: 'directly after the package name it reads a host file',
+      );
+      expect(
+        resolveDirectiveUri('package:pkg///b.dart', 'pkg/lib/a.dart', dirs),
+        isNull,
+      );
+      expect(
+        resolveDirectiveUri('a//b.dart', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/a/b.dart',
       );
       expect(
         resolveDirectiveUri('package:pkg/a//b.dart', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/a/b.dart',
+      );
+      expect(
+        resolveDirectiveUri('src//../b.dart', 'pkg/lib/a.dart', dirs),
+        'pkg/lib/src/b.dart',
+        reason: '`..` pops the empty segment',
+      );
+      expect(
+        resolveDirectiveUri(
+          'package:pkg/src//../b.dart',
+          'pkg/lib/a.dart',
+          dirs,
+        ),
+        'pkg/lib/src/b.dart',
+      );
+      expect(
+        resolveDirectiveUri(
+          'package:pkg/src//../../b.dart',
+          'pkg/lib/a.dart',
+          dirs,
+        ),
+        'pkg/lib/b.dart',
+      );
+      expect(
+        resolveDirectiveUri(
+          'package:pkg/src//../../../b.dart',
+          'pkg/lib/a.dart',
+          dirs,
+        ),
         isNull,
+        reason: 'it still climbs above the package',
       );
     });
 
@@ -2595,12 +2628,13 @@ void main(List<String> args) {
         'pkg/lib/a.dart',
         "import 'package:pkg//secret.dart';\nclass A {}\n",
       );
-      _write('pkg/lib/b.dart', "import 'sub//sibling.dart';\nclass B {}\n");
       _write('pkg/lib/c.dart', "import '/sub//root.dart';\nclass C {}\n");
-      _write('pkg/lib/d.dart', "part 'part//piece.dart';\nclass D {}\n");
+      _write(
+        'pkg/lib/d.dart',
+        "part 'org-dartlang-root:///part//piece.dart';\n",
+      );
       final result = await _compile('m_empty_segment', [
         'pkg/lib/a.dart',
-        'pkg/lib/b.dart',
         'pkg/lib/c.dart',
         'pkg/lib/d.dart',
       ]);
@@ -2614,17 +2648,35 @@ void main(List<String> args) {
       );
       expect(
         result.log,
-        contains("import 'sub//sibling.dart' is not a declared input"),
-      );
-      expect(
-        result.log,
         contains("import '/sub//root.dart' is not a declared input"),
       );
       expect(
         result.log,
-        contains("part 'part//piece.dart' is not a declared input"),
+        contains(
+          "part 'org-dartlang-root:///part//piece.dart' is not a declared input",
+        ),
       );
     });
+
+    test(
+      'a doubled slash after the first segment or in a relative compiles',
+      () async {
+        _write('pkg/lib/sub/target.dart', 'class Target {}\n');
+        _write(
+          'pkg/lib/a.dart',
+          "import 'package:pkg/sub//target.dart';\n"
+              "import 'sub//target.dart';\n"
+              "import 'sub//../sub/target.dart';\n"
+              'class A {}\n',
+        );
+        final _Result result = await _compile('m_empty_ok', [
+          'pkg/lib/a.dart',
+          'pkg/lib/sub/target.dart',
+        ]);
+        expect(result.code, 0);
+        expect(result.log, isNot(contains('is not a declared input')));
+      },
+    );
 
     test('an empty path segment fails the whole-program entry instead of compiling', () async {
       _write(

@@ -2066,8 +2066,8 @@ String? _shimRefViolation(
   if (hasLineBreak(uri)) {
     return "$tool: $key ${ref.kind} '$uri' is not a declared input.";
   }
-  // The resolvers below skip empty segments, but the front end resolves
-  // some such spellings absolutely: refuse them before resolving.
+  // An empty segment right after a package name, or in an absolute URI, reads
+  // a host file (see [hasEmptyPathSegment]): refuse it before resolving.
   if (hasEmptyPathSegment(uri)) {
     return "$tool: $key ${ref.kind} '$uri' is not a declared input.";
   }

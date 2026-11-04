@@ -3363,8 +3363,38 @@ void main(List<String> args) {
     );
   });
 
-  test('--gen-kernel refuses an empty path segment without compiling', () {
-    final ws = Directory('${tmp.path}/empty_ws')..createSync(recursive: true);
+  test(
+    '--gen-kernel refuses an absolute empty path segment without compiling',
+    () {
+      final ws = Directory('${tmp.path}/empty_ws')..createSync(recursive: true);
+      final main = File('${ws.path}/main.dart')
+        ..writeAsStringSync(
+          "import 'package:pkg//helper.dart';\n"
+          'void main() => print(helperValue);\n',
+        );
+      // End to end: the wrapper fails before running gen_kernel (which is never
+      // reached, so no SDK snapshot is needed): an empty segment directly after
+      // the package name makes the front end read a host file.
+      final toolPath = args.isNotEmpty
+          ? Runfiles.create().rlocation(args[0])
+          : File.fromUri(Platform.script.resolve('app_jit_snapshot.dart')).path;
+      final res = Process.runSync(Platform.resolvedExecutable, [
+        toolPath,
+        '--gen-kernel',
+        'never-reached-runtime',
+        '--input-source=${main.path}',
+      ]);
+      expect(res.exitCode, isNonZero);
+      expect(
+        res.stderr as String,
+        contains("import 'package:pkg//helper.dart' is not a declared input"),
+      );
+    },
+  );
+
+  test('--gen-kernel passes the guard for a relative doubled slash', () {
+    final ws = Directory('${tmp.path}/empty_rel_ws')
+      ..createSync(recursive: true);
     final main = File('${ws.path}/main.dart')
       ..writeAsStringSync(
         "import 'sibling//helper.dart';\n"
@@ -3373,24 +3403,17 @@ void main(List<String> args) {
     File('${ws.path}/sibling/helper.dart')
       ..createSync(recursive: true)
       ..writeAsStringSync('const helperValue = 1;\n');
-    // End to end: the wrapper fails before running gen_kernel (which is never
-    // reached, so no SDK snapshot is needed), even though skipping the empty
-    // segment would resolve inside the declared inputs: the front end need
-    // not resolve it the same way.
-    final toolPath = args.isNotEmpty
+    final String toolPath = args.isNotEmpty
         ? Runfiles.create().rlocation(args[0])
         : File.fromUri(Platform.script.resolve('app_jit_snapshot.dart')).path;
-    final res = Process.runSync(Platform.resolvedExecutable, [
+    final ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
       toolPath,
       '--gen-kernel',
       'never-reached-runtime',
       '--input-source=${main.path}',
+      '--input-source=${ws.path}/sibling/helper.dart',
     ]);
-    expect(res.exitCode, isNonZero);
-    expect(
-      res.stderr as String,
-      contains("import 'sibling//helper.dart' is not a declared input"),
-    );
+    expect(res.stderr as String, isNot(contains('is not a declared input')));
   });
 
   test('--gen-kernel with comma define and pristine snapshot fails loudly', () {

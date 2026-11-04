@@ -2129,8 +2129,8 @@ String? _disallowedDirectiveError(
   if (hasLineBreak(uri)) {
     return "app_jit_snapshot: $path ${ref.kind} '$uri' is not a declared input.";
   }
-  // The resolvers below skip empty segments, but the front end resolves
-  // some such spellings absolutely: refuse them before resolving.
+  // An empty segment right after a package name, or in an absolute URI, reads
+  // a host file (see [hasEmptyPathSegment]): refuse it before resolving.
   if (hasEmptyPathSegment(uri)) {
     return "app_jit_snapshot: $path ${ref.kind} '$uri' is not a declared input.";
   }
@@ -2222,30 +2222,11 @@ String? _resolveKeyRelativeTarget(String uri, String fromKey) {
   final query = text.indexOf('?');
   final path = query < 0 ? text : text.substring(0, query);
   if (path.contains(':')) return null;
-  if (path.startsWith('//') || path.startsWith('/')) return null;
+  if (path.startsWith('/')) return null;
   // An empty reference names the importing file itself (RFC 3986).
   if (path.isEmpty) return fromKey;
-  final stack = <String>[];
-  for (final part in fromKey.split('/')) {
-    if (part.isNotEmpty) stack.add(part);
-  }
-  // Drop the file name: the URI resolves against its directory.
-  if (stack.isNotEmpty) stack.removeLast();
-  for (final raw in path.split('/')) {
-    // An empty segment is not skipped: the front end resolves some such
-    // spellings absolutely, so the key lookup fails and the guard refuses the
-    // directive instead of confining the wrong file.
-    if (raw.isEmpty) return null;
-    final seg = decodeUriSegment(raw);
-    if (seg.isEmpty || seg == '.') continue;
-    if (seg == '..') {
-      if (stack.isNotEmpty) stack.removeLast();
-      continue;
-    }
-    if (seg.contains('/')) return null;
-    stack.add(seg);
-  }
-  return stack.join('/');
+  // An empty segment counts for `..` the way the front end resolves it.
+  return resolveDirectiveUri(path, fromKey, const {});
 }
 
 /// Links [dstPath] to [srcPath] (a file or directory), copying instead when

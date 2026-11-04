@@ -100,21 +100,29 @@ String decodeUriSegment(String segment) {
 
 /// Whether [uri] is a `package:` URI whose path climbs above its package
 /// directory (`package:pkg/sub/../../x.dart`), has an empty path segment
-/// (`package:pkg//x.dart`), or hides a separator in one decoded segment
-/// (`package:pkg/..%2F..%2Fx.dart`). The front end reports leaving the
-/// package, but a tool that resolves against the real filesystem reads a host
-/// file instead, so the staged-source check refuses it before they run. An
-/// empty segment is refused too: the front end resolves the doubled slash as
-/// an absolute path, so `package:pkg//x.dart` reads the workspace-root file,
-/// not the package's, which no empty-skipping resolver reproduces. A decoded
-/// `/` or `\` is refused as well: it climbs without counting, and a
-/// filesystem resolver may honour it. A query or fragment suffix is dropped
-/// before classifying (the front end reads the file the path part names), so
-/// an escaping path still escapes with one, while a path that stays inside
-/// its package is still false with one. False for any other URI, including a
-/// `package:` URI that stays inside its package (an unknown package name
-/// fails closed downstream, where the analyzer cannot resolve it, so it is
-/// not refused here).
+/// directly after the package name (`package:pkg//x.dart`), or hides a
+/// separator in one decoded segment (`package:pkg/..%2F..%2Fx.dart`). The front
+/// end reports leaving the package, but a tool that resolves against the real
+/// filesystem reads a host file instead, so the staged-source check refuses it
+/// before they run.
+///
+/// An empty segment is a real segment (RFC 3986), and only its position
+/// matters. Directly after the package name the front end resolves the doubled
+/// slash as an absolute path: `package:pkg//x.dart` reads the host file
+/// `/x.dart` and `package:pkg///x.dart` reads `//x.dart`, not the package's
+/// file, so that spelling is refused. After the first path segment the doubled
+/// slash stays inside the package: `package:pkg/src//b.dart` reads
+/// `lib/src/b.dart`, so it is accepted, and the empty segment counts for a
+/// later `..` (`package:pkg/src//../b.dart` reads `lib/src/b.dart`, not
+/// `lib/b.dart`), which the depth count below follows. A decoded `/` or `\`
+/// is refused as well: it climbs without counting, and a filesystem resolver
+/// may honour it. A query or fragment suffix is dropped before classifying
+/// (the front end reads the file the path part names), so an escaping path
+/// still escapes with one, while a path that stays inside its package is
+/// still false with one. False for any other URI, including a `package:` URI
+/// that stays inside its package (an unknown package name fails closed
+/// downstream, where the analyzer cannot resolve it, so it is not refused
+/// here).
 bool isEscapingPackageUri(String uri) {
   if (!uri.startsWith('package:')) return false;
   var rest = uri.substring('package:'.length);
@@ -132,12 +140,19 @@ bool isEscapingPackageUri(String uri) {
   if (sep.index <= 0) return true;
   final text = rest.substring(sep.index + sep.length).replaceAll(r'\', '/');
   var depth = 0;
-  for (final raw in text.split('/')) {
-    // An empty segment resolves absolutely in the front end, outside the
-    // package, so it escapes however the siblings resolve.
-    if (raw.isEmpty) return true;
+  final raws = text.split('/');
+  // An empty segment directly after the package name resolves absolutely in
+  // the front end, outside the package, so it escapes however the rest
+  // resolves.
+  if (raws.first.isEmpty) return true;
+  for (final raw in raws) {
+    // Any later empty segment is a real segment: it counts for a `..`.
+    if (raw.isEmpty) {
+      depth++;
+      continue;
+    }
     final seg = decodeUriSegment(raw);
-    if (seg.isEmpty || seg == '.') continue;
+    if (seg == '.') continue;
     if (seg == '..') {
       depth--;
       if (depth < 0) return true;
@@ -221,23 +236,43 @@ String normalizeStagedPath(String path) {
   return joined;
 }
 
-/// Applies each `/`-separated segment of the relative reference [queue] to
-/// the [base] directory stack: `.` and empty segments skip, `..` pops unless
-/// already at [floor], anything else appends. Returns the joined path, or null
-/// when a decoded segment still holds a `/`, which names no readable file.
-String? _applyStagedSegments(List<String> base, int floor, String queue) {
-  for (final raw in queue.split('/')) {
-    if (raw.isEmpty) continue;
+/// Applies the `/`-separated segments [raws] to the [base] directory stack the
+/// way RFC 3986 dot-segment removal does, with an empty segment counted as a
+/// segment: `.` skips, `..` pops the nearest earlier segment of [raws] (an
+/// empty one included) and otherwise pops [base] while deeper than [floor],
+/// anything else appends. Above [floor], `..` either fails ([failAboveFloor])
+/// or is dropped. Empty segments only count; the joined path leaves them out,
+/// so `a//b` names `a/b`. Null when a decoded segment still holds a `/`, which
+/// names no readable file, or on a failing `..`.
+String? _climbSegments(
+  List<String> base,
+  int floor,
+  Iterable<String> raws,
+  bool failAboveFloor,
+) {
+  final stack = base.toList();
+  final added = <String>[];
+  for (final raw in raws) {
+    if (raw.isEmpty) {
+      added.add(raw);
+      continue;
+    }
     final seg = decodeUriSegment(raw);
     if (seg.isEmpty || seg == '.') continue;
     if (seg == '..') {
-      if (base.length > floor) base.removeLast();
+      if (added.isNotEmpty) {
+        added.removeLast();
+      } else if (stack.length > floor) {
+        stack.removeLast();
+      } else if (failAboveFloor) {
+        return null;
+      }
       continue;
     }
     if (seg.contains('/')) return null;
-    base.add(seg);
+    added.add(seg);
   }
-  return base.join('/');
+  return [...stack, ...added.where((s) => s.isNotEmpty)].join('/');
 }
 
 /// The absolute `/`-separated path a schemeless relative or `/`-absolute
@@ -258,6 +293,13 @@ String? _applyStagedSegments(List<String> base, int floor, String queue) {
 /// so the compiler reports it and the guard has nothing to confine. Null means
 /// "no host file beyond what the scheme check already refuses", never "inside
 /// the declared inputs".
+///
+/// Empty segments follow RFC 3986: inside a relative reference they are real
+/// segments that a `..` pops (`src//../b.dart` from `pkg/lib/a.dart` is
+/// `pkg/lib/src/b.dart`) and that otherwise name the same file as without them
+/// (`sibling//helper.dart` is `sibling/helper.dart`). A `/`-absolute reference
+/// holding one yields null: the front end does not resolve it like the
+/// skipped spelling.
 String? resolveStagedRelativeTarget(String uri, String fromPath) {
   final text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
   // A fragment names no file: the front end reports a URI with one instead of
@@ -285,7 +327,8 @@ String? resolveStagedRelativeTarget(String uri, String fromPath) {
   final absolute = path.startsWith('/');
   final base = absolute ? stack.sublist(0, floor) : stack;
   final queue = absolute ? path.substring(1) : path;
-  final joined = _applyStagedSegments(base, floor, queue);
+  if (absolute && queue.contains('//')) return null;
+  final joined = _climbSegments(base, floor, queue.split('/'), false);
   if (joined == null) return null;
   // A rooted `from` splits with a leading empty segment, so the join already
   // starts with `/` (or `//` for a UNC share); only fill in a bare `/` when
@@ -351,33 +394,47 @@ bool isDisallowedDirectiveUri(
   return true;
 }
 
-/// Whether [uri] has an empty path segment (`a//b.dart`): the resolvers below
-/// skip empty segments, but the front end does not resolve every such spelling
-/// the same way — the doubled slash of a `package:` URI resolves as an
-/// absolute path, so `package:c//s/t.dart` reads the workspace-root file, not
-/// the package's. A directive the guard cannot resolve exactly like the front
-/// end is refused, so such URIs fail before the compiler runs. False for URIs
-/// with no path to resolve: an empty reference, a query or fragment alone, a
-/// `//` authority, or any scheme but `package:` and the multi-root scheme
-/// (those never reach a path resolver: their own checks refuse them).
+/// Whether [uri] has an empty path segment that the guard must refuse because
+/// the front end does not read the file the skipped spelling names. An empty
+/// segment is a real segment (RFC 3986); where it sits decides:
+///
+/// * `package:` URI: directly after the package name it is refused
+///   (`package:c//s/t.dart` and `package:c///s/t.dart` read the host files
+///   `/s/t.dart` and `//s/t.dart`, not the package's). After the first path
+///   segment it is not (`package:c/s//t.dart` reads `lib/s/t.dart`).
+/// * Multi-root (`org-dartlang-root:///`) and `/`-absolute URIs: any empty
+///   segment is refused.
+/// * Schemeless relative URI: never refused here. `sibling//helper.dart` reads
+///   the sibling file, so the resolvers ([resolveStagedRelativeTarget],
+///   [resolveDirectiveUri]) count the empty segment and the caller accepts the
+///   directive exactly when the target is a declared input.
+///
+/// False for URIs with no path to resolve: an empty reference, a query or
+/// fragment alone, a `//` authority, or any scheme but `package:` and the
+/// multi-root scheme (those never reach a path resolver: their own checks
+/// refuse them).
 bool hasEmptyPathSegment(String uri) {
   var text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
+  var packaged = false;
   if (text.startsWith(defaultMultiRootPrefix)) {
     text = text.substring(defaultMultiRootPrefix.length);
   } else if (text.startsWith('package:')) {
     final slash = text.indexOf('/', 'package:'.length);
     if (slash < 0) return false;
     text = text.substring(slash + 1);
+    packaged = true;
   } else {
     if (text.contains(':')) return false;
     if (text.startsWith('//')) return false;
-    if (text.startsWith('/')) text = text.substring(1);
+    if (!text.startsWith('/')) return false;
+    text = text.substring(1);
   }
   final query = text.indexOf('?');
   final path = query < 0 ? text : text.substring(0, query);
   final hash = path.indexOf('#');
   final clean = hash < 0 ? path : path.substring(0, hash);
-  return clean.startsWith('/') || clean.contains('//');
+  if (clean.startsWith('/')) return true;
+  return !packaged && clean.contains('//');
 }
 
 /// Whether [uri] spans lines: it holds a `\n` or `\r`.
@@ -408,41 +465,27 @@ List<String> _packageDirOf(String fromKey, Map<String, String> packageDirs) {
   return best;
 }
 
-/// Applies the segments of a directive path onto [base]: `.` segments are
-/// dropped, each `..` pops while deeper than [floor], and a decoded `/`
-/// (`%2F`) names no file, since no file can be read through it. An empty
-/// segment names no file either: the front end does not resolve every such
-/// spelling the way skipping it would (a `package:` doubled slash resolves
-/// absolutely), so the path fails and the caller refuses the directive.
-/// Above [floor], `..` either fails ([failAboveFloor], for `package:` URIs,
-/// where the front end reports leaving the package) or is dropped (relative
-/// and absolute URIs, which the front end clamps to the package directory or
-/// the multi-root).
+/// Applies the segments of a directive path onto [base] (see
+/// [_climbSegments]): `.` segments are dropped, each `..` pops while deeper
+/// than [floor], and a decoded `/` (`%2F`) names no file, since no file can be
+/// read through it. When [countEmpty] holds, an empty segment is a real
+/// segment that a later `..` pops (a schemeless relative or a `package:` path
+/// after its first segment); a trailing one names a directory, so the path
+/// fails. Otherwise any empty segment fails, since the front end resolves it
+/// absolutely. Above [floor], `..` either fails ([failAboveFloor], for
+/// `package:` URIs, where the front end reports leaving the package) or is
+/// dropped (relative and absolute URIs, which the front end clamps to the
+/// package directory or the multi-root).
 String? _resolveDirectivePath(
   String path,
   List<String> base,
   int floor,
-  bool failAboveFloor,
-) {
-  final stack = base.toList();
-  for (final raw in path.split('/')) {
-    // An empty segment is not skipped: no caller passes a leading `/`, so one
-    // here is a doubled slash the front end resolves differently.
-    if (raw.isEmpty) return null;
-    final seg = decodeUriSegment(raw);
-    if (seg.isEmpty || seg == '.') continue;
-    if (seg == '..') {
-      if (stack.length > floor) {
-        stack.removeLast();
-      } else if (failAboveFloor) {
-        return null;
-      }
-      continue;
-    }
-    if (seg.contains('/')) return null;
-    stack.add(seg);
-  }
-  return stack.join('/');
+  bool failAboveFloor, {
+  required bool countEmpty,
+}) {
+  final raws = path.split('/');
+  if (raws.last.isEmpty || (!countEmpty && raws.contains(''))) return null;
+  return _climbSegments(base, floor, raws, failAboveFloor);
 }
 
 /// The key a directive URI (`import`, `export`, `part`, `part of`) in the file
@@ -452,8 +495,8 @@ String? _resolveDirectivePath(
 /// [multiRootPrefix] is the scheme the absolute URIs of multi-root files start
 /// with (`org-dartlang-root:///`). Null when the URI names no workspace file:
 /// an unknown package or scheme, an escape above a `package:` directory, an
-/// empty path segment (which the front end resolves differently than skipping
-/// it would), a fragment, an authority, or a decoded `/`. A `?...` query is
+/// empty path segment the front end does not resolve like a skipped one (see
+/// [hasEmptyPathSegment]), a fragment, an authority, or a decoded `/`. A `?...` query is
 /// dropped and the path part resolved instead: an empty reference names the
 /// importing file itself.
 ///
@@ -471,7 +514,13 @@ String? resolveDirectiveUri(
   final text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
   final absolute = _stripPrefix(text, multiRootPrefix);
   if (absolute != null) {
-    return _resolveDirectivePath(absolute, const [], 0, false);
+    return _resolveDirectivePath(
+      absolute,
+      const [],
+      0,
+      false,
+      countEmpty: false,
+    );
   }
   if (text.startsWith('package:')) {
     final rest = text.substring('package:'.length);
@@ -481,11 +530,15 @@ String? resolveDirectiveUri(
     final dir = packageDirs[rest.substring(0, slash)];
     if (dir == null) return null;
     final base = dir.isEmpty ? const <String>[] : dir.split('/');
+    final inner = rest.substring(slash + 1);
+    // Directly after the package name an empty segment reads a host file.
+    if (inner.startsWith('/')) return null;
     return _resolveDirectivePath(
-      rest.substring(slash + 1),
+      inner,
       base,
       base.length,
       true,
+      countEmpty: true,
     );
   }
   // A fragment names no file: the front end reports a URI with one instead of
@@ -502,14 +555,20 @@ String? resolveDirectiveUri(
   if (path.startsWith('/')) {
     final base = _packageDirOf(fromKey, packageDirs);
     // The one leading `/` marks absoluteness; any further empty segment fails.
-    return _resolveDirectivePath(path.substring(1), base, base.length, false);
+    return _resolveDirectivePath(
+      path.substring(1),
+      base,
+      base.length,
+      false,
+      countEmpty: false,
+    );
   }
   final slash = fromKey.lastIndexOf('/');
   final base = slash < 0
       ? const <String>[]
       : fromKey.substring(0, slash).split('/');
   final floor = _packageDirOf(fromKey, packageDirs).length;
-  return _resolveDirectivePath(path, base, floor, false);
+  return _resolveDirectivePath(path, base, floor, false, countEmpty: true);
 }
 
 /// One URI-bearing directive of a source's prologue.
@@ -1426,8 +1485,8 @@ String? _stagedRefViolation(
   if (hasLineBreak(uri)) {
     return "$tool: $path ${ref.kind} '$uri' is not a declared input.";
   }
-  // The resolvers below skip empty segments, but the front end resolves
-  // some such spellings absolutely: refuse them before resolving.
+  // An empty segment right after a package name, or in an absolute URI, reads
+  // a host file (see [hasEmptyPathSegment]): refuse it before resolving.
   if (hasEmptyPathSegment(uri)) {
     return "$tool: $path ${ref.kind} '$uri' is not a declared input.";
   }
