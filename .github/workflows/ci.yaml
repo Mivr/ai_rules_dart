@@ -257,6 +257,10 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         shell: bash
         run: .github/scripts/ci_disk_report.sh "after cache restore"
+      - name: Memory report (before Test)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: .github/scripts/ci_mem_report.sh "before Test"
       - name: Test
         env:
           FOLDERS: ${{ matrix.folders }}
@@ -286,23 +290,36 @@ jobs:
           done <<< "$FOLDERS"
           # Build-only workspaces: .github/workflows has no tests and e2e/dual_build's sole test is manual and requires-network.
           build_only_folders=".github/workflows e2e/dual_build"
+          # On Linux every server exits after 60 idle seconds and is shut down
+          # as soon as its folder finishes, so one server at a time stays
+          # resident beside the running ones. Windows is unchanged.
+          idle=()
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            idle=(--max_idle_secs=60)
+          fi
           run_one() {
             slug="$(printf '%s' "$1" | tr '/.' '_')"
             # Same test command and flags as the old per-folder Test step, plus
             # a per-folder --output_base so the folder gets its own Bazel
             # server. The disk and repository caches stay shared, so warmth is
             # unaffected.
-            if (
+            rc=0
+            (
               cd "$ws/$1" &&
               case " $build_only_folders " in
-                *" $1 "*) bazel --output_base="$outbasedir/$slug" build //... ;;
-                *) bazel --output_base="$outbasedir/$slug" test --test_output=errors //... ;;
+                *" $1 "*) bazel "${idle[@]}" --output_base="$outbasedir/$slug" build //... ;;
+                *) bazel "${idle[@]}" --output_base="$outbasedir/$slug" test --test_output=errors //... ;;
               esac
-            ) >"$logdir/$slug.log" 2>&1; then
-              echo 0 >"$logdir/$slug.status"
-            else
-              echo 1 >"$logdir/$slug.status"
+            ) >"$logdir/$slug.log" 2>&1 || rc=1
+            # Shut the folder's server down before reporting it finished. The
+            # folder's status is the command's; a failed shutdown is logged
+            # as a warning in the folder's log and does not change it.
+            if [ "$RUNNER_OS" = "Linux" ]; then
+              if ! ( cd "$ws/$1" && bazel "${idle[@]}" --output_base="$outbasedir/$slug" shutdown ) >>"$logdir/$slug.log" 2>&1; then
+                echo "::warning::bazel shutdown failed for $1" >>"$logdir/$slug.log"
+              fi
             fi
+            echo "$rc" >"$logdir/$slug.status"
           }
           # Windows runners fail when the first Bazel servers start at once:
           # they race creating the shared base directory (error 183). Each
@@ -371,6 +388,10 @@ jobs:
             [ "$(cat "$logdir/$slug.status")" = 0 ] || fail=1
           done <<< "$FOLDERS"
           exit "$fail"
+      - name: Memory report (after Test)
+        if: always() && matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: .github/scripts/ci_mem_report.sh "after Test"
       - name: Disk report (after Test)
         if: always() && matrix.os == 'ubuntu-latest'
         shell: bash
@@ -378,16 +399,43 @@ jobs:
       # The corpus instantiates every public rule and macro in one package;
       # its checked-in golden records the action graph they produce. A stale
       # golden fails here, so an action change reaches review as a diff.
+      - name: Memory report (before Corpus tests)
+        if: matrix.os == 'ubuntu-latest' && matrix.shard == 1
+        shell: bash
+        run: .github/scripts/ci_mem_report.sh "before Corpus tests"
       - name: Corpus tests
         if: matrix.os == 'ubuntu-latest' && matrix.shard == 1
         shell: bash
-        run: bazel test //dart/tests/corpus:...
+        # This server runs alone: it may use 70% of host RAM. It is shut down
+        # when the command ends, whatever the command's status was.
+        run: |
+          status=0
+          bazel --max_idle_secs=60 test "--local_resources=memory=HOST_RAM*.7" //dart/tests/corpus:... || status=$?
+          bazel --max_idle_secs=60 shutdown || echo "::warning::bazel shutdown failed after Corpus tests"
+          exit "$status"
+      - name: Memory report (after Corpus tests)
+        if: always() && matrix.os == 'ubuntu-latest' && matrix.shard == 1
+        shell: bash
+        run: .github/scripts/ci_mem_report.sh "after Corpus tests"
+      - name: Memory report (before Corpus action graph)
+        if: matrix.os == 'ubuntu-latest' && matrix.shard == 1
+        shell: bash
+        run: .github/scripts/ci_mem_report.sh "before Corpus action graph"
       - name: Corpus action graph
         if: matrix.os == 'ubuntu-latest' && matrix.shard == 1
         shell: bash
         run: |
-          bazel aquery --output=jsonproto //dart/tests/corpus:all > "$RUNNER_TEMP/dart_corpus_aquery.json"
-          bazel run //dart/tests/corpus:actions_golden -- --check "$RUNNER_TEMP/dart_corpus_aquery.json"
+          status=0
+          {
+            bazel --max_idle_secs=60 aquery "--local_resources=memory=HOST_RAM*.7" --output=jsonproto //dart/tests/corpus:all > "$RUNNER_TEMP/dart_corpus_aquery.json" &&
+              bazel --max_idle_secs=60 run "--local_resources=memory=HOST_RAM*.7" //dart/tests/corpus:actions_golden -- --check "$RUNNER_TEMP/dart_corpus_aquery.json"
+          } || status=$?
+          bazel --max_idle_secs=60 shutdown || echo "::warning::bazel shutdown failed after Corpus action graph"
+          exit "$status"
+      - name: Memory report (after Corpus action graph)
+        if: always() && matrix.os == 'ubuntu-latest' && matrix.shard == 1
+        shell: bash
+        run: .github/scripts/ci_mem_report.sh "after Corpus action graph"
       # Ship the per-folder logs even when the Test step fails or the job is
       # killed, so a dead shard still leaves its evidence for diagnosis.
       - name: Upload shard logs
