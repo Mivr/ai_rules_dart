@@ -43,6 +43,13 @@ exports_files(
     visibility = ["//dart:__subpackages__"],
 )
 
+# The launcher's LCOV step, which `//dart/tests/coverage_map_fixture` feeds the
+# coverage map `dart_test` generated.
+exports_files(
+    ["test_runner_coverage.dart"],
+    visibility = ["//dart/tests/coverage_map_fixture:__pkg__"],
+)
+
 # The one bundle every action running the JIT tool from source stages: the
 # entry `app_jit_snapshot.dart` plus every source it imports, including the
 # guard library its reader helper resolves URIs through. The helpers pick
@@ -320,6 +327,7 @@ dart_test(
 # //dart:copy_toolchain_type. Only dart:io, so it names no pub dependencies.
 dart_binary(
     name = "copy_tree",
+    srcs = ["coverage_map_expand.dart"],
     code_assets_from_deps = False,
     compile_mode = "kernel",
     main = "copy_tree.dart",
@@ -330,8 +338,19 @@ dart_binary(
 dart_test(
     name = "copy_tree_test",
     size = "small",
-    srcs = ["copy_tree.dart"],
+    srcs = [
+        "copy_tree.dart",
+        "coverage_map_expand.dart",
+    ],
     main = "copy_tree_test.dart",
+    deps = ["@ext_pub_deps//:test"],
+)
+
+dart_test(
+    name = "coverage_map_expand_test",
+    size = "small",
+    srcs = ["coverage_map_expand.dart"],
+    main = "coverage_map_expand_test.dart",
     deps = ["@ext_pub_deps//:test"],
 )
 

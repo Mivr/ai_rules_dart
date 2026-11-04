@@ -26,6 +26,7 @@ load(
     "runfiles_path",
     "target_dart_abi",
 )
+load("//dart/private:coverage_map.bzl", "COVERAGE_MAP_TOOLCHAINS", "write_coverage_map")
 load("//dart/private:dart_compile.bzl", "dart_compile_action")
 load(
     "//dart/private:dart_kernel.bzl",
@@ -69,7 +70,7 @@ def _dart_test_impl(ctx):
         "RULES_DART_DART": runfiles_path(dart_sdk_info.dart, workspace_name),
         "RULES_DART_DILL": runfiles_path(dill, workspace_name),
     }
-    coverage_map = _write_coverage_map(ctx, own.packages)
+    coverage_map = _coverage_map(ctx, own.packages)
     env["RULES_DART_COVERAGE_MAP"] = runfiles_path(coverage_map, workspace_name)
     runner_files = []
     if runner:
@@ -137,17 +138,21 @@ def _dart_test_impl(ctx):
         ),
     ]
 
-def _write_coverage_map(ctx, packages):
-    """Writes the map from the source URIs the VM reports to workspace-relative paths.
+def _coverage_map(ctx, packages):
+    """Writes the map from the source URIs the VM reports to exec paths.
 
     The launcher turns the VM's coverage into LCOV with it: every `SF:` is the
-    file's `short_path`. A Dart source is reported by the VM under the URI the
-    compile embeds: `package:<name>/<path under lib/>` for a file in a package's
-    `lib/`, the multi-root `org-dartlang-root:///<path>` URI for any file (a
-    test's own, or one outside `lib/`), and the build-time `file://` URI of the
-    source when the kernel keeps that absolute path. All are written, from the
-    same package list the compile resolves against, for the test's own files and
-    for every source its `deps` reach. A test with no Dart source to map gets `{}`.
+    file's exec path, the spelling of Bazel's `COVERAGE_MANIFEST` (a generated
+    file's `bazel-out/<cfg>/bin/...`, an external file's `external/<repo>/...`).
+    A Dart source is reported by the VM under the URI the compile embeds:
+    `package:<name>/<path under lib/>` for a file in a package's `lib/`, and the
+    multi-root `org-dartlang-root:///<path>` URI for any file (a test's own, or
+    one outside `lib/`). The VM's `file://` URI of a source is resolved by the
+    launcher against the exec paths; no host path is written here. All are
+    written, from the same package list the compile resolves against, for the
+    test's own files and for every source its `deps` reach. A directory source
+    is completed by an action (see `write_coverage_map`). A test with no Dart
+    source to map gets `{}`.
 
     Args:
       ctx: The `dart_test` rule context.
@@ -159,22 +164,21 @@ def _write_coverage_map(ctx, packages):
     sources = collect_transitive_srcs(ctx.attr.deps).to_list() + [ctx.file.main] + ctx.files.srcs
     by_name = {pkg.package_name: pkg for pkg in packages}
     entries = {}
+    directories = []
     for f in sources:
-        if f.extension != "dart" or f.is_directory:
+        if f.is_directory:
+            directories.append(f)
+            continue
+        if f.extension != "dart":
             continue
         path = f.short_path
-        entries[multi_root_uri(path)] = path
-        file_path = f.path.replace("\\", "/")
-        if not file_path.startswith("/"):
-            file_path = "/" + file_path
-        entries["file://" + file_path] = path
+        exec_path = f.path.replace("\\", "/")
+        entries[multi_root_uri(path)] = exec_path
         owner_name = package_of_source(path, packages)
         if owner_name != None:
             owner = by_name[owner_name]
-            entries[library_source_uri(owner.package_name, owner.lib_root, path)] = path
-    coverage_map = ctx.actions.declare_file(ctx.label.name + ".coverage_map.json")
-    ctx.actions.write(output = coverage_map, content = json.encode(entries))
-    return coverage_map
+            entries[library_source_uri(owner.package_name, owner.lib_root, path)] = exec_path
+    return write_coverage_map(ctx, entries, directories, packages)
 
 def _compile_test_kernel(ctx, own, bootstrap, use_base_dill = False):
     """Compiles a test's `main` to the kernel that a test runs from.
@@ -619,7 +623,7 @@ told where a runfile is (resolve it with `Runfiles.rlocation()`).""",
         ),
     ),
     test = True,
-    toolchains = ["//dart:toolchain_type"] + MODULAR_KERNEL_TOOLCHAINS,
+    toolchains = ["//dart:toolchain_type"] + MODULAR_KERNEL_TOOLCHAINS + COVERAGE_MAP_TOOLCHAINS,
     doc = (
         "Compiles a Dart test to a kernel at build time and runs it with " +
         "asserts enabled. A test with `package:test` in `deps` runs under " +

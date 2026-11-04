@@ -18,6 +18,8 @@
 //   --replace <key> <value>                once per replace prefix
 //   --external <glob>                      once per include_external_repositories pattern
 //   --workspace <name>                     the target's workspace; "" for the main repository
+//   --origin-map <file>                    optional; where to write a JSON object of each
+//                                          copied file's destination to its input path
 //   --file <path> <short_path> <workspace> <workspace_path>
 //                                          once per input file, in order
 //
@@ -28,11 +30,18 @@
 // are not carried over, as with copy_to_directory's default settings. Symlinks are
 // followed. Copies run on ten concurrent workers, as the Go tool's do.
 //
+// A params file whose first line is `--coverage-map` is a different request:
+// `dart_test` asking for its coverage map to be completed with the files of the
+// directories it reads (see `coverage_map_expand.dart`).
+//
 // This is a `dart_binary` built for the exec platform with only `dart:io`, so
 // `dart_source_set` and the staging rules can name it as a toolchain tool.
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+
+import 'coverage_map_expand.dart' as coverage_map;
 
 /// The number of files copied at once, as the Go tool's copy workers.
 const int copyWorkers = 10;
@@ -71,6 +80,7 @@ class Request {
     required this.includeExternal,
     required this.targetWorkspace,
     required this.files,
+    this.originMap,
   });
 
   final String dst;
@@ -79,6 +89,9 @@ class Request {
   final List<String> includeExternal;
   final String targetWorkspace;
   final List<SourceFile> files;
+
+  /// Where to write each copied file's destination and input path, or `null`.
+  final String? originMap;
 }
 
 /// Parses the params file's lines. See the library's header for the layout.
@@ -96,6 +109,7 @@ Request parseRequest(List<String> lines) {
   final replace = <String, String>{};
   final external = <String>[];
   var target = '';
+  String? originMap;
   final files = <SourceFile>[];
   while (i < lines.length) {
     final tag = next();
@@ -109,6 +123,8 @@ Request parseRequest(List<String> lines) {
         external.add(next());
       case '--workspace':
         target = next();
+      case '--origin-map':
+        originMap = next();
       case '--file':
         files.add(
           SourceFile(
@@ -129,6 +145,7 @@ Request parseRequest(List<String> lines) {
     includeExternal: external,
     targetWorkspace: target,
     files: files,
+    originMap: originMap,
   );
 }
 
@@ -136,6 +153,13 @@ Request parseRequest(List<String> lines) {
 /// destination collision, before anything is copied.
 Future<void> copyTree(Request request) async {
   final copies = planCopies(request);
+  final String? originMap = request.originMap;
+  if (originMap != null) {
+    final Map<String, String> origins = {
+      for (final copy in copies) copy.dst: copy.src,
+    };
+    File(originMap).writeAsStringSync(jsonEncode(_sorted(origins)));
+  }
   var next = 0;
   Future<void> worker() async {
     while (next < copies.length) {
@@ -147,6 +171,10 @@ Future<void> copyTree(Request request) async {
 
   await Future.wait([for (var w = 0; w < copyWorkers; w++) worker()]);
 }
+
+Map<String, String> _sorted(Map<String, String> map) => {
+  for (final key in map.keys.toList()..sort()) key: map[key]!,
+};
 
 /// One planned copy.
 class PlannedCopy {
@@ -458,8 +486,15 @@ Future<void> main(List<String> args) async {
     }
   }
   try {
+    if (lines.isNotEmpty && lines.first == coverage_map.requestTag) {
+      coverage_map.writeCoverageMap(lines.skip(1).toList());
+      return;
+    }
     await copyTree(parseRequest(lines));
   } on CopyError catch (e) {
+    stderr.writeln('copy_tree: ${e.message}');
+    exitCode = 1;
+  } on coverage_map.CoverageMapError catch (e) {
     stderr.writeln('copy_tree: ${e.message}');
     exitCode = 1;
   }
