@@ -5,7 +5,7 @@ load("//dart:defs.bzl", "dart_library", "dart_source_set", "dart_test")
 # reads the map `dart_test` really generated for a test that reaches a generated
 # source, an external repository and a `dart_source_set` behind `srcs_dir`, and
 # feeds it to the launcher's LCOV step. `bazel coverage` over this package shows
-# the same files in a real report.
+# these files in a real report.
 
 genrule(
     name = "generate",

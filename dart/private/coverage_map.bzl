@@ -2,7 +2,7 @@
 
 The launcher turns the VM's coverage into LCOV with the map: a JSON object of the
 source URIs the VM reports to the **exec path** of the file (`File.path`), which
-is how Bazel's `COVERAGE_MANIFEST` and the report's `SF:` records spell it.
+is the form `COVERAGE_MANIFEST` and the report's `SF:` records use.
 
 A directory source (a `dart_library(srcs_dir = ...)` over a `dart_source_set`)
 holds files only the execution knows, so its entries come from an action. The
@@ -16,8 +16,8 @@ returns `CoverageOriginInfo`, so it must be loadable from there.
 
 _COPY_TOOLCHAIN_TYPE = Label("//dart:copy_toolchain_type")
 
-# The toolchain whose tool completes a map for directory sources: the same
-# `copy_tree` that assembles them.
+# The toolchain that supplies `copy_tree`, which also completes a map for
+# directory sources.
 COVERAGE_MAP_TOOLCHAINS = [_COPY_TOOLCHAIN_TYPE]
 
 CoverageOriginInfo = provider(
