@@ -115,7 +115,15 @@ def _binary_recorded_uses(ctx, compile_mode):
         recorded_uses_info = [DartRecordedUsesInfo(file = recorded_uses, kind = kind)]
     return compile_recorded_uses, recorded_uses_info
 
-def _binary_source_compile(ctx, dart_sdk_info, own, packages, output, compile_mode, compile_recorded_uses, resolved_assets):
+def _binary_source_compile(
+        ctx,
+        dart_sdk_info,
+        own,
+        packages,
+        output,
+        compile_mode,
+        compile_recorded_uses,
+        resolved_assets):
     """Compiles from source through `executable_inputs`. Returns (packages, code_asset_libs)."""
 
     # Nothing is copied: a package split between the source tree and `bazel-out`
@@ -214,7 +222,15 @@ def _instrumented_files(ctx):
         extensions = ["dart"],
     )
 
-def _binary_launcher_outputs(ctx, dart_sdk_info, output, is_windows, code_asset_libs, compile_mode, recorded_uses_info, own):
+def _binary_launcher_outputs(
+        ctx,
+        dart_sdk_info,
+        output,
+        is_windows,
+        code_asset_libs,
+        compile_mode,
+        recorded_uses_info,
+        own):
     """The launcher-executable providers for `kernel` mode with `launcher = True`."""
     launcher_exe = ctx.actions.declare_file(
         ctx.label.name + (".exe" if is_windows else ""),
@@ -385,7 +401,16 @@ def _dart_binary_impl(ctx):
         )
 
     if compile_mode == "kernel" and ctx.attr.launcher:
-        return _binary_launcher_outputs(ctx, dart_sdk_info, output, is_windows, code_asset_libs, compile_mode, recorded_uses_info, own)
+        return _binary_launcher_outputs(
+            ctx,
+            dart_sdk_info,
+            output,
+            is_windows,
+            code_asset_libs,
+            compile_mode,
+            recorded_uses_info,
+            own,
+        )
 
     return _binary_default_outputs(ctx, output, code_asset_libs, compile_mode, dart_sdk_info, recorded_uses_info, own)
 
@@ -398,6 +423,12 @@ _binary_code_assets_transition = transition(
     implementation = _binary_code_assets_transition_impl,
     inputs = [],
     outputs = ["//dart/private:code_assets_enabled"],
+)
+
+# The attributes `dart_binary` shares with the other executable rules, merged into one dict.
+_SHARED_BINARY_ATTRS = dict(
+    DART_ABI_CONSTRAINT_ATTRS,
+    **dict(EXTRA_DART_DEFINES_ATTR, **dict(EXECUTABLE_PACKAGE_ATTRS, **BINARY_MODULAR_KERNEL_ATTRS))
 )
 
 dart_binary = rule(
@@ -515,7 +546,7 @@ the empty JSON object `{}` (`kind = "empty"`).""",
             doc = "Allowlist target permitting the Starlark function transition this rule applies. Defaults to `@bazel_tools//tools/allowlists/function_transition_allowlist`.",
             default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
         ),
-    }, **dict(DART_ABI_CONSTRAINT_ATTRS, **dict(EXTRA_DART_DEFINES_ATTR, **dict(EXECUTABLE_PACKAGE_ATTRS, **BINARY_MODULAR_KERNEL_ATTRS)))),
+    }, **_SHARED_BINARY_ATTRS),
     executable = True,
     toolchains = ["//dart:toolchain_type"] + MODULAR_KERNEL_TOOLCHAINS,
     doc = "Compiles a Dart application using `dart compile`.",

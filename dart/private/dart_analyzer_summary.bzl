@@ -425,7 +425,12 @@ def _summary_embedder_info(ctx, info, deps, files, sums, own):
         arguments = [ctx.executable._tool.path, args],
         inputs = depset(
             direct = [ctx.executable._tool, dart_sdk_info.dart] + files,
-            transitive = [dart_sdk_info.analyze_files, dart_sdk_info.runtime_files, info.transitive_srcs, info.transitive_resources],
+            transitive = [
+                dart_sdk_info.analyze_files,
+                dart_sdk_info.runtime_files,
+                info.transitive_srcs,
+                info.transitive_resources,
+            ],
         ),
         tools = depset(
             direct = [ctx.executable._tool, dart_sdk_info.dart],
@@ -442,7 +447,7 @@ def _summary_embedder_info(ctx, info, deps, files, sums, own):
         transitive_summaries = sums.dependencies,
         packaged_summaries = sums.packaged,
         embedder_sdk_summaries = depset([embedder_sdk], transitive = [sums.inherited_embedder_sdks]),
-        packages = depset(own.own_keys, transitive = [d[DartAnalyzerSummaryInfo].packages for d in deps if DartAnalyzerSummaryInfo in d]),
+        packages = depset(own.own_keys, transitive = _dep_summary_packages(deps)),
         own_files = own.own_files,
     )
 
@@ -490,10 +495,7 @@ def _summary_split_state(deps, srcs, own_keys, lib_keys, inherited):
         # or a file listed by two targets). When every one is defined already,
         # the target re-lists its dependency's library (a `dart_test_package`
         # over its `test_library`, say) and adds nothing.
-        defined = {
-            k: True
-            for k in depset(transitive = [d[DartAnalyzerSummaryInfo].own_files for d in deps if DartAnalyzerSummaryInfo in d]).to_list()
-        }
+        defined = {k: True for k in depset(transitive = _dep_summary_own_files(deps)).to_list()}
         split = any([k not in defined for k in lib_keys])
         redundant = not split
     return split, redundant
@@ -630,9 +632,10 @@ def _summary_run_action(ctx, info, own_records, action, closure):
         ),
     )
 
-    summary_inputs = (
-        depset([s for (pname, s) in closure.packaged.to_list() if pname not in closure.conflicted_names]) if closure.conflicted_names else closure.dependencies
-    )
+    summary_inputs = closure.dependencies
+    if closure.conflicted_names:
+        packaged = closure.packaged.to_list()
+        summary_inputs = depset([s for (pname, s) in packaged if pname not in closure.conflicted_names])
 
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
     mismatch = kernel_sdk_mismatch_error(ctx.label, "_tool", ctx.attr._tool, dart_sdk_info.version)
@@ -658,7 +661,8 @@ def _summary_run_action(ctx, info, own_records, action, closure):
         executable = dart_sdk_info.dart,
         arguments = [ctx.executable._tool.path, args],
         inputs = depset(
-            direct = [ctx.executable._tool, dart_sdk_info.dart, action.config, sdk_summary] + action.srcs + action.staged + action.uncovered_inputs,
+            direct = [ctx.executable._tool, dart_sdk_info.dart, action.config, sdk_summary] +
+                     action.srcs + action.staged + action.uncovered_inputs,
             transitive = [dart_sdk_info.analyze_files, dart_sdk_info.runtime_files, summary_inputs],
         ),
         tools = depset(
@@ -698,13 +702,102 @@ def _summary_uncovered_info(dependencies, packaged, inherited_embedder_sdks, pac
         own_files = own_files,
     )
 
+def _dep_summary_own_files(deps):
+    """The `own_files` depsets of the dependencies that carry a `DartAnalyzerSummaryInfo`."""
+    return [d[DartAnalyzerSummaryInfo].own_files for d in deps if DartAnalyzerSummaryInfo in d]
+
+def _dep_summary_packages(deps):
+    """The `packages` depsets of the dependencies that carry a `DartAnalyzerSummaryInfo`."""
+    return [d[DartAnalyzerSummaryInfo].packages for d in deps if DartAnalyzerSummaryInfo in d]
+
+def _summary_own_names(own_keys, embedder, split, sibling_conflicts, redundant, covered):
+    """The package names this target contributes to `DartAnalyzerSummaryInfo.packages`.
+
+    Args:
+      own_keys: The target's own package keys.
+      embedder: Whether the closure holds an embedder SDK with no backing summary.
+      split: Whether a dependency covers one of the target's packages and it adds files.
+      sibling_conflicts: The conflict names inherited from sibling targets.
+      redundant: Whether the target only re-lists a dependency's library.
+      covered: Whether the target has sources, or has none and so nothing to cover.
+
+    Returns:
+      The package keys the target covers, or their conflict-prefixed forms when `split`,
+      followed by `sibling_conflicts`.
+    """
+    own = []
+    if not embedder and not split and not sibling_conflicts and not redundant and covered:
+        own = list(own_keys)
+    if split:
+        own = [CONFLICT_PREFIX + k for k in own_keys]
+    return own + sibling_conflicts
+
+def _summary_stage_all(ctx, info, own_records, srcs, target):
+    """Stages the target's own libraries and its uncovered dependency packages.
+
+    Args:
+      ctx: The aspect context.
+      info: The target's `DartInfo`.
+      own_records: The target's owned package records.
+      srcs: The target's own sources.
+      target: A struct with the summary `name`, the `config` file, and the `inherited` keys.
+
+    Returns:
+      A struct with `staged`, `all_pkgs`, `roots`, `conflicted_names`, `uncovered_inputs`,
+      and `uncovered_staged`.
+    """
+    name = target.name
+
+    # Always stage the package's own libraries under `.summary_root` so
+    # `package_config.json` never points at the real source tree where
+    # undeclared files might exist on disk. A merged library stages each
+    # member under its own directory: two members may ship the same
+    # `lib/`-relative path, and one shared `lib/` could hold only one of them.
+    own_staging = _summary_stage_own(ctx, info, own_records, srcs, name, target.config)
+    staged, own_root, own_staged_roots, stage_root, prefix = own_staging
+
+    # Covered dependency packages come from their `.sum` files, so their `rootUri`
+    # must not point at undeclared real execroot directories where unsandboxed
+    # workers could probe `pubspec.yaml` or `.dart` files. Uncovered dependency
+    # packages (e.g. `srcs_dir` or split packages) have no summary, so their
+    # declared files are staged under `.summary_root/_deps/` as well.
+    all_pkgs = info.transitive_packages.to_list()
+    roots, uncovered_pkgs, conflicted_names = _summary_dep_roots(
+        info,
+        all_pkgs,
+        own_records,
+        own_root,
+        own_staged_roots,
+        stage_root,
+        target.inherited,
+    )
+    uncovered_inputs, uncovered_staged = _summary_stage_uncovered(
+        ctx,
+        info,
+        own_records,
+        uncovered_pkgs,
+        name,
+        prefix,
+        stage_root,
+        roots,
+    )
+    return struct(
+        staged = staged,
+        all_pkgs = all_pkgs,
+        roots = roots,
+        conflicted_names = conflicted_names,
+        uncovered_inputs = uncovered_inputs,
+        uncovered_staged = uncovered_staged,
+    )
+
 def _dart_analyzer_summary_impl(target, ctx):
     if DartInfo not in target:
         return []
     deps = closure_attrs(ctx)
     dependencies, inherited_embedder_sdks, packaged = _summary_closure_sets(deps)
     info = target[DartInfo]
-    if not ctx.attr._enabled[BuildSettingInfo].value or not analyzer_summaries_supported(ctx.toolchains[_TOOLCHAIN].dart_sdk_info.version):
+    sdk_version = ctx.toolchains[_TOOLCHAIN].dart_sdk_info.version
+    if not ctx.attr._enabled[BuildSettingInfo].value or not analyzer_summaries_supported(sdk_version):
         return [_empty_summary_info()]
 
     # A target's own package is covered only by a summary that covers it. A
@@ -725,10 +818,7 @@ def _dart_analyzer_summary_impl(target, ctx):
     own_keys = [package_key(record) for record in own_records] or [package_key(info)]
     own_key_by_path = _summary_key_by_path(own_records, srcs)
     lib_keys = [own_key_by_path.get(f.short_path, own_keys[0]) + "|" + f.short_path for f in srcs]
-    own_files = depset(
-        lib_keys,
-        transitive = [d[DartAnalyzerSummaryInfo].own_files for d in deps if DartAnalyzerSummaryInfo in d],
-    )
+    own_files = depset(lib_keys, transitive = _dep_summary_own_files(deps))
 
     embedder_yaml = _own_embedder_yaml(info, files)
     if embedder_yaml != None:
@@ -760,36 +850,17 @@ def _dart_analyzer_summary_impl(target, ctx):
     inherited = _summary_inherited_keys(deps)
     sibling_conflicts = _summary_sibling_conflicts(deps)
     split, redundant = _summary_split_state(deps, srcs, own_keys, lib_keys, inherited)
-    own = list(own_keys) if (not embedder and not split and not sibling_conflicts and not redundant and (srcs or not _has_own_sources(files))) else []
-    if split:
-        own = [CONFLICT_PREFIX + k for k in own_keys]
-    own = own + sibling_conflicts
-    packages = depset(
-        own,
-        transitive = [d[DartAnalyzerSummaryInfo].packages for d in deps if DartAnalyzerSummaryInfo in d],
-    )
+    covered = bool(srcs) or not _has_own_sources(files)
+    own = _summary_own_names(own_keys, embedder, split, sibling_conflicts, redundant, covered)
+    packages = depset(own, transitive = _dep_summary_packages(deps))
     if not srcs or embedder or split or sibling_conflicts or redundant:
         return [_summary_uncovered_info(dependencies, packaged, inherited_embedder_sdks, packages, own_files)]
 
     name = ctx.label.name + ".dart_analyzer_summary"
     config = ctx.actions.declare_file(name + ".package_config.json")
 
-    # Always stage the package's own libraries under `.summary_root` so
-    # `package_config.json` never points at the real source tree where
-    # undeclared files might exist on disk. A merged library stages each
-    # member under its own directory: two members may ship the same
-    # `lib/`-relative path, and one shared `lib/` could hold only one of them.
-    staged, own_root, own_staged_roots, stage_root, prefix = _summary_stage_own(ctx, info, own_records, srcs, name, config)
-
-    # Covered dependency packages come from their `.sum` files, so their `rootUri`
-    # must not point at undeclared real execroot directories where unsandboxed
-    # workers could probe `pubspec.yaml` or `.dart` files. Uncovered dependency
-    # packages (e.g. `srcs_dir` or split packages) have no summary, so their
-    # declared files are staged under `.summary_root/_deps/` as well.
-    all_pkgs = info.transitive_packages.to_list()
-    roots, uncovered_pkgs, conflicted_names = _summary_dep_roots(info, all_pkgs, own_records, own_root, own_staged_roots, stage_root, inherited)
-
-    uncovered_inputs, uncovered_staged = _summary_stage_uncovered(ctx, info, own_records, uncovered_pkgs, name, prefix, stage_root, roots)
+    plan = struct(name = name, config = config, inherited = inherited)
+    stage = _summary_stage_all(ctx, info, own_records, srcs, plan)
 
     return [_summary_run_action(
         ctx,
@@ -797,18 +868,18 @@ def _dart_analyzer_summary_impl(target, ctx):
         own_records,
         struct(
             srcs = srcs,
-            staged = staged,
-            uncovered_inputs = uncovered_inputs,
-            uncovered_staged = uncovered_staged,
+            staged = stage.staged,
+            uncovered_inputs = stage.uncovered_inputs,
+            uncovered_staged = stage.uncovered_staged,
             name = name,
             config = config,
         ),
         struct(
-            all_pkgs = all_pkgs,
-            roots = roots,
+            all_pkgs = stage.all_pkgs,
+            roots = stage.roots,
             packaged = packaged,
             dependencies = dependencies,
-            conflicted_names = conflicted_names,
+            conflicted_names = stage.conflicted_names,
             inherited_embedder_sdks = inherited_embedder_sdks,
             embedder_sdk_summary = embedder_sdk_summary,
             packages = packages,

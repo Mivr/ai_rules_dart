@@ -835,7 +835,7 @@ def _kmod_run_action(ctx, executable, arguments, request, direct_inputs, action_
             direct = action_tools,
             transitive = [runtime_files] if runtime_files != None else [],
         ),
-        outputs = [request.output, request.excluded] + ([request.unused_inputs_list] if request.unused_inputs_list != None else []) + ([request.koutline] if request.koutline != None else []),
+        outputs = [request.output, request.excluded] + [f for f in [request.unused_inputs_list, request.koutline] if f],
         unused_inputs_list = request.unused_inputs_list,
         mnemonic = "DartKernel",
         progress_message = "Compiling Dart kernel module %s" % request.output.short_path,
@@ -1430,7 +1430,7 @@ def _lib_kernel_sources(package_name, lib_root, own_srcs, own_records, pkgs):
 
 def _lib_kernel_seed_base(ctx, dep_closure, kmod, package_name, own_records, target):
     """Links the shared test base dill. Returns a struct with `base_dill`, `base_keys`, `base_kmods`, and `unseeded_base_kmods`, or None."""
-    if (package_name == "test" or "test" in [record.package_name for record in own_records]) and target == "vm" and hasattr(ctx.executable, "_kernel_link"):
+    if target == "vm" and hasattr(ctx.executable, "_kernel_link") and "test" in [package_name] + [r.package_name for r in own_records]:
         base_dill = ctx.actions.declare_file(ctx.label.name + ".base.dill")
         base_keys = ctx.actions.declare_file(ctx.label.name + ".base.keys")
         seeded_dep_kmods = [

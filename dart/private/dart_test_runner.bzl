@@ -275,7 +275,14 @@ def dart_test_runner_snapshot_impl(ctx):
         executable = exec_sdk.dart,
         arguments = [args],
         inputs = depset(
-            direct = ctx.files._tool + [ctx.file._comma_patch, pkg_cfg, exec_sdk.dart, runner, training.dill, training.source] + ([dartvm] if dartvm != None else []),
+            direct = ctx.files._tool + [
+                ctx.file._comma_patch,
+                pkg_cfg,
+                exec_sdk.dart,
+                runner,
+                training.dill,
+                training.source,
+            ] + ([dartvm] if dartvm != None else []),
             transitive = [exec_sdk.compile_files, exec_sdk.runtime_files, runner_runfiles],
         ),
         outputs = [snapshot],

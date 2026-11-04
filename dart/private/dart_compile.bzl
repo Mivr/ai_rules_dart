@@ -233,7 +233,9 @@ def _jit_snapshot_action(ctx, dart_sdk_info, st, main):
     enable_asserts = st.enable_asserts
     fallback_allowed = st.jit_snapshot_fallback
     lock_setting = getattr(ctx.attr, "_jit_lock_timeout", None)
-    lock_timeout_secs = lock_setting[BuildSettingInfo].value if lock_setting != None else JIT_SNAPSHOT_LOCK_TIMEOUT_DEFAULT
+    lock_timeout_secs = (
+        lock_setting[BuildSettingInfo].value if lock_setting != None else JIT_SNAPSHOT_LOCK_TIMEOUT_DEFAULT
+    )
     if lock_timeout_secs <= 0:
         fail("dart_compile_action: `//dart:jit_snapshot_lock_timeout` must be above 0, got %r" % lock_timeout_secs)
     dart_bin = dart_sdk_info.dart
@@ -266,7 +268,9 @@ def _jit_snapshot_action(ctx, dart_sdk_info, st, main):
         executable = dart_bin,
         arguments = [args],
         inputs = depset(
-            direct = jit_tool + [pkg_cfg, dart_bin, main] + ([dartvm] if dartvm != None else []) + ([comma_patch] if comma_patch != None else []),
+            direct = jit_tool + [pkg_cfg, dart_bin, main] +
+                     ([dartvm] if dartvm != None else []) +
+                     ([comma_patch] if comma_patch != None else []),
             transitive = [dart_sdk_info.compile_files],
         ),
         outputs = [output],
@@ -326,7 +330,14 @@ def _kernel_front_args(ctx, dart_sdk_info, st, aot, enable_asserts, extra_flags,
     """
     tools = find_sdk_kernel_tools(dart_sdk_info)
     platform = tools.product_platform_dill if product else tools.platform_dill
-    gen_snapshot, comma_sources = _kernel_comma_snapshot(ctx, dart_sdk_info, tools, st.defines, extra_flags, st.jit_tool)
+    gen_snapshot, comma_sources = _kernel_comma_snapshot(
+        ctx,
+        dart_sdk_info,
+        tools,
+        st.defines,
+        extra_flags,
+        st.jit_tool,
+    )
     args = gen_kernel_args(ctx, tools, platform, st.package_config, gen_kernel_snapshot = gen_snapshot)
     args.add("-Ddart.vm.product=" + ("true" if product else "false"))
     args.add_all(["-Ddart.vm.asan=false", "-Ddart.vm.msan=false", "-Ddart.vm.tsan=false"])
@@ -561,7 +572,8 @@ def _compile_jit_train(ctx, dart_sdk_info, st, compile_main, compile_main_path):
     # The app-JIT snapshot is trained by the scratch-directory tool when it has
     # one, and on a POSIX host (on Windows the mode uses `dart compile
     # jit-snapshot`, so the snapshot keeps the sandbox path).
-    if st.compile_mode != "jit-snapshot" or not st.jit_tool or compile_main_path != None or dart_sdk_info.dart.basename.endswith(".exe"):
+    is_windows_sdk = dart_sdk_info.dart.basename.endswith(".exe")
+    if st.compile_mode != "jit-snapshot" or not st.jit_tool or compile_main_path != None or is_windows_sdk:
         return False
     if st.backend_flags:
         fail("dart_compile_flags %s do not apply to jit-snapshot" % st.backend_flags)

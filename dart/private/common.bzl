@@ -1038,24 +1038,24 @@ def _dev_source_packages(packages, by_pkg):
                 break
     return source_packages
 
-def _dev_record_file_roots(pkg, files, source_roots, generated_roots, generated_source_paths, generated_source_uris):
+def _dev_record_file_roots(pkg, files, out):
     """Records exec roots and generated path/URI pairs for one assembled package."""
     lib_prefix = package_lib_prefix(pkg.lib_root)
     for f in files:
         er = _exec_root_of(f)
         if f.is_source:
-            if er not in source_roots:
-                source_roots.append(er)
+            if er not in out.source_roots:
+                out.source_roots.append(er)
         else:
-            if er not in generated_roots:
-                generated_roots.append(er)
+            if er not in out.generated_roots:
+                out.generated_roots.append(er)
 
             # Pair each generated file's exec path with its `package:`
             # URI so the dev tool can invalidate it on reload after a
             # rebuild — no path→URI inference needed downstream.
             if f.short_path.startswith(lib_prefix):
-                generated_source_paths.append(f.path)
-                generated_source_uris.append("package:{name}/{rel}".format(
+                out.generated_source_paths.append(f.path)
+                out.generated_source_uris.append("package:{name}/{rel}".format(
                     name = pkg.package_name,
                     rel = f.short_path[len(lib_prefix):],
                 ))
@@ -1074,7 +1074,7 @@ def _dev_entry_uri(pkg, files, ctx, out):
         place.
     """
     if needs_source_assembly(files):
-        _dev_record_file_roots(pkg, files, out.source_roots, out.generated_roots, out.generated_source_paths, out.generated_source_uris)
+        _dev_record_file_roots(pkg, files, out)
         return "{scheme}:///{lib_root}".format(
             scheme = ctx.scheme,
             lib_root = pkg.lib_root,

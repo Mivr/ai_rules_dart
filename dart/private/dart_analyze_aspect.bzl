@@ -495,9 +495,10 @@ def _format(ctx, name, staged, own_paths, language_version):
     if mismatch != None:
         fail(mismatch)
     mode = resolve_format_mode(dart_sdk_info.version, language_version)
-    sdk_inputs = (
-        depset(direct = [dart_sdk_info.dart], transitive = [dart_sdk_info.runtime_files]) if mode.in_process else depset(direct = [dart_sdk_info.dart], transitive = [dart_sdk_info.compile_files, dart_sdk_info.runtime_files])
-    )
+    sdk_transitive = [dart_sdk_info.runtime_files]
+    if not mode.in_process:
+        sdk_transitive = [dart_sdk_info.compile_files, dart_sdk_info.runtime_files]
+    sdk_inputs = depset(direct = [dart_sdk_info.dart], transitive = sdk_transitive)
     manifest = ctx.actions.declare_file(name + ".format_manifest")
     ctx.actions.write(
         output = manifest,
@@ -522,7 +523,10 @@ def _format(ctx, name, staged, own_paths, language_version):
         executable = dart_sdk_info.dart,
         arguments = [ctx.executable._format_tool.path, args],
         inputs = depset(direct = [ctx.executable._format_tool, manifest] + staged.inputs, transitive = [sdk_inputs]),
-        tools = depset(direct = [ctx.executable._format_tool, dart_sdk_info.dart], transitive = [dart_sdk_info.runtime_files]),
+        tools = depset(
+            direct = [ctx.executable._format_tool, dart_sdk_info.dart],
+            transitive = [dart_sdk_info.runtime_files],
+        ),
         outputs = [stamp],
         mnemonic = "DartFormat",
         progress_message = "Checking Dart formatting of %{label}",
@@ -778,7 +782,10 @@ def _dart_analyze_aspect_impl(target, ctx):
     # and its `lib/` sources, which is the analyze subset, plus `runtime_files`
     # so the launcher can run the `.dill` runner tools (`analyze_runner`,
     # `analyzer_summary`, `fix_runner`).
-    sdk_inputs = depset(direct = [dart_sdk_info.dart], transitive = [dart_sdk_info.analyze_files, dart_sdk_info.runtime_files])
+    sdk_inputs = depset(
+        direct = [dart_sdk_info.dart],
+        transitive = [dart_sdk_info.analyze_files, dart_sdk_info.runtime_files],
+    )
 
     tags = getattr(ctx.rule.attr, "tags", [])
     groups = {}
