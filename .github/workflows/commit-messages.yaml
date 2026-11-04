@@ -16,6 +16,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
       - uses: bazel-contrib/setup-bazel@0.19.1
         with:
           bazelisk-cache: true

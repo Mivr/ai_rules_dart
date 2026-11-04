@@ -192,6 +192,9 @@ jobs:
               e2e/analysis
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Enable and verify Linux user namespaces
+        if: matrix.os == 'ubuntu-latest'
+        run: .github/scripts/enable_linux_sandbox.sh
       # An ubuntu-latest runner has about 14 GB free, and shard 1 restores the
       # caches and then runs three Bazel servers. Drop the preinstalled
       # toolchains this job never uses before Bazel starts. A path that is
@@ -567,6 +570,8 @@ jobs:
             flags: "--noenable_runfiles --strategy=DartAnalyze=sandboxed"
     steps:
       - uses: actions/checkout@v7
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
       - name: analysis — ${{ matrix.name }}
         working-directory: e2e/analysis
         run: bazel test ${{ matrix.flags }} --test_output=errors //...
@@ -585,6 +590,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
       - name: run_home canary sweep
         working-directory: e2e/run_home
         run: ./run_home_test.sh
@@ -595,6 +602,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
       - name: pub_lock_conflict — expect version conflict error
         working-directory: e2e/pub_lock_conflict
         run: |
@@ -1359,25 +1368,12 @@ jobs:
       # strict build uses a distinct output base so the default build's
       # cached success cannot satisfy it: Bazel keys the action on declared
       # inputs only, so a shared base would make this self-test useless.
-      # Ubuntu 24.04 runners block unprivileged user namespaces for unprofiled
-      # binaries via AppArmor, which makes Bazel silently fall back from
-      # `linux-sandbox` to `processwrapper-sandbox`; enable user namespaces and
-      # keep `--output_base` under `RUNNER_TEMP` (not `/tmp`, which `-w /tmp`
-      # bind-mounts over before `pivot_root`).
+      # The job-start step enables user namespaces so Bazel keeps
+      # `linux-sandbox`; keep `--output_base` under `RUNNER_TEMP` (not `/tmp`,
+      # which `-w /tmp` bind-mounts over before `pivot_root`).
       - name: e2e/hermetic_canary — expect the undeclared /usr/bin/env read to fail under the strict sandbox
         working-directory: e2e/hermetic_canary
         run: |
-          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ] && [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" != 0 ]; then
-            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          fi
-          if [ -f /proc/sys/kernel/unprivileged_userns_clone ] && [ "$(cat /proc/sys/kernel/unprivileged_userns_clone)" = 0 ]; then
-            sudo sysctl -w kernel.unprivileged_userns_clone=1
-          fi
-          probe="${RUNNER_TEMP}/userns_probe"
-          cp /usr/bin/unshare "$probe"
-          chmod +x "$probe"
-          "$probe" --user --map-root-user --mount --pid --ipc --uts --net --fork --mount-proc /bin/true
-          rm -f "$probe"
           bazel build //:canary || { echo "ERROR: default build should succeed"; exit 1; }
           echo "OK: default build succeeded"
           if out=$(bazel --output_base="$RUNNER_TEMP/hermetic_canary_strict" build //:canary --experimental_use_hermetic_linux_sandbox --sandbox_add_mount_pair=/lib64 --sandbox_add_mount_pair=/lib/x86_64-linux-gnu --sandbox_add_mount_pair=/usr/lib/x86_64-linux-gnu --sandbox_add_mount_pair=/etc/ld.so.cache 2>&1); then
@@ -1395,6 +1391,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
       - name: hello_world — build all compile modes under -c dbg
         working-directory: e2e/hello_world
         run: bazel build -c dbg //...
@@ -1406,12 +1404,15 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
       - name: e2e/repro_canary — verify non-deterministic outputs differ across distinct output bases
         working-directory: e2e/repro_canary
         run: |
-          bazel --output_base=/tmp/repro_canary_a build //:canary
+          trap 'bazel "--output_base=${RUNNER_TEMP}/repro_canary_a" shutdown; bazel "--output_base=${RUNNER_TEMP}/repro_canary_b" shutdown' EXIT
+          bazel "--output_base=${RUNNER_TEMP}/repro_canary_a" build //:canary
           sha_a=$(sha256sum bazel-bin/canary | awk '{print $1}')
-          bazel --output_base=/tmp/repro_canary_b build //:canary
+          bazel "--output_base=${RUNNER_TEMP}/repro_canary_b" build //:canary
           sha_b=$(sha256sum bazel-bin/canary | awk '{print $1}')
           if [ -z "$sha_a" ] || [ -z "$sha_b" ]; then
             echo "ERROR: e2e/repro_canary sha256sum missing or empty (a='$sha_a', b='$sha_b')"
@@ -1427,19 +1428,33 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      # Default strategy selection in the root workspace must pick
+      # `linux-sandbox`: an uncached sandboxed test run records no
+      # `processwrapper-sandbox` spawn and at least one `linux-sandbox` spawn.
+      - name: Prove linux-sandbox runs root-workspace actions
+        run: |
+          base="${RUNNER_TEMP}/linux_sandbox_proof"
+          bep="${RUNNER_TEMP}/linux_sandbox_proof.json"
+          trap 'bazel "--output_base=$base" shutdown' EXIT
+          bazel "--output_base=$base" test \
+            --disk_cache= \
+            --nocache_test_results \
+            --build_event_json_file="$bep" \
+            //dart/tests/ci_linux_sandbox_guard:ci_linux_sandbox_guard_unit_test
+          count() {
+            jq -s --arg n "$1" '[.[].buildMetrics.actionSummary.runnerCount[]? | select(.name == $n) | .count] | add // 0' "$bep"
+          }
+          linux=$(count linux-sandbox)
+          wrapper=$(count processwrapper-sandbox)
+          echo "linux-sandbox=$linux processwrapper-sandbox=$wrapper"
+          if [ "$wrapper" -ne 0 ] || [ "$linux" -lt 1 ]; then
+            echo "ERROR: expected processwrapper-sandbox == 0 and linux-sandbox >= 1"
+            exit 1
+          fi
       - name: Create blocked-tool shims
         run: |
-          if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ] && [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" != 0 ]; then
-            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          fi
-          if [ -f /proc/sys/kernel/unprivileged_userns_clone ] && [ "$(cat /proc/sys/kernel/unprivileged_userns_clone)" = 0 ]; then
-            sudo sysctl -w kernel.unprivileged_userns_clone=1
-          fi
-          probe="${RUNNER_TEMP}/userns_probe"
-          cp /usr/bin/unshare "$probe"
-          chmod +x "$probe"
-          "$probe" --user --map-root-user --mount --pid --ipc --uts --net --fork --mount-proc /bin/true
-          rm -f "$probe"
           SHIM_DIR="${RUNNER_TEMP}/hermetic_shims"
           mkdir -p "$SHIM_DIR"
           for tool in curl python3 find cp tar unzip; do
