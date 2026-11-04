@@ -304,19 +304,34 @@ dart_test(
 # `InstrumentedFilesInfo` over them and their `deps`.
 instrumented_files_test(
     name = "instrumented_files_library_test",
+    size = "small",
     absent = ["notes.txt"],
     expected = [
         "own.dart",
         "dep.dart",
+        "data_lib.dart",
     ],
     target_under_test = "//dart/tests/instrumented_files_fixture:lib",
 )
 
 instrumented_files_test(
+    name = "instrumented_files_srcs_dir_library_test",
+    size = "small",
+    absent = ["notes.txt"],
+    expected = [
+        "set.dart",
+        "dep.dart",
+    ],
+    target_under_test = "//dart/tests/instrumented_files_fixture:srcs_dir_lib",
+)
+
+instrumented_files_test(
     name = "instrumented_files_merged_library_test",
+    size = "small",
     expected = [
         "member.dart",
         "dep.dart",
+        "data_lib.dart",
     ],
     target_under_test = "//dart/tests/instrumented_files_fixture:merged",
 )

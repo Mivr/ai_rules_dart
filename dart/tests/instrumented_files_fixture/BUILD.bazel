@@ -11,9 +11,11 @@ dart_library(
     tags = ["manual"],
 )
 
-dart_library(
+# A `dart_source_set` rather than a `dart_library`: `dart_library(data = ...)`
+# refuses a `.dart` file among the files of a `data` target, and a source set's
+# files are one directory. The set still instruments its Dart source.
+dart_source_set(
     name = "data_lib",
-    package_name = "instrumented_files_fixture",
     srcs = ["lib/data_lib.dart"],
     tags = ["manual"],
 )
@@ -22,6 +24,7 @@ dart_library(
     name = "lib",
     package_name = "instrumented_files_fixture",
     srcs = ["lib/own.dart"],
+    data = [":data_lib"],
     tags = ["manual"],
     deps = [":dep"],
 )
@@ -35,6 +38,7 @@ dart_package_member(
 
 dart_library(
     name = "merged",
+    data = [":data_lib"],
     members = [":member"],
     tags = ["manual"],
     deps = [":dep"],
@@ -57,6 +61,14 @@ dart_source_set(
         "lib/set.dart",
     ],
     tags = ["manual"],
+)
+
+dart_library(
+    name = "srcs_dir_lib",
+    package_name = "instrumented_files_fixture",
+    srcs_dir = ":set",
+    tags = ["manual"],
+    deps = [":dep"],
 )
 
 dart_test(
