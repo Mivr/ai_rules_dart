@@ -60,7 +60,7 @@ jobs:
   # e2e/pub_spoke_malformed_sha, e2e/pub_git_unpinned_ref,
   # e2e/pub_scc_unpinned_member, e2e/sdk_unknown_version, e2e/pub_symlink
   # (plus its nested red-by-design `cycle` workspace), e2e/kernel_dep_shape,
-  # e2e/hermetic_canary.
+  # e2e/hermetic_canary, e2e/layering_check.
   # e2e/pub_scanner_intruder is green but needs its scanner built explicitly,
   # so it runs in a step there too.
   # e2e/pub_fetch_powershell runs in the shard-3-only steps below;
@@ -946,6 +946,37 @@ jobs:
         run: |
           bazel build //pkg:good_app || exit 1
           echo "OK: package: import of the dep source compiled"
+      # Strict layering: a target may import only the packages its own `deps`
+      # provide. `//:user` imports a package only `//:mid` depends on, so the
+      # default build fails naming the target, the file and the package; the
+      # `dart_layering_check` feature turns the check off, and adding the
+      # package's target to `deps` satisfies it. See e2e/layering_check/README.md.
+      - name: layering_check — expect a transitive-only import to fail, and the opt-out and the direct dep to pass
+        working-directory: e2e/layering_check
+        run: |
+          if out=$(bazel build //:user 2>&1); then
+            echo "ERROR: build should have failed with the layering refusal"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          printf '%s\n' "$out" | grep -F -q "//:user: user.dart imports 'package:leaf/leaf.dart', but package 'leaf' is not a direct dependency of //:user"
+          if out=$(bazel build //:conditional 2>&1); then
+            echo "ERROR: a conditional alternative should have been checked"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          printf '%s\n' "$out" | grep -F -q "package 'leaf' is not a direct dependency of //:conditional"
+          if ! out=$(bazel build --features=-dart_layering_check //:user 2>&1); then
+            echo "ERROR: --features=-dart_layering_check should turn the check off"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          if ! out=$(bazel build //:user_ok //:facade_user //:conditional_ok 2>&1); then
+            echo "ERROR: a direct dependency or a facade should satisfy the check"
+            printf '%s\n' "$out"
+            exit 1
+          fi
+          echo "OK: layering refusal detected, opt-out and direct deps build"
       # An SDK version outside the pinned toolchain table must fail instead
       # of downloading an SDK release with no recorded checksum.
       - name: sdk_unknown_version — expect an unpinned SDK version to fail resolution
