@@ -34,6 +34,8 @@ use_repo(
     "export_subst_protocol0",
     "export_subst_unpacklimit",
     "hostile_fallback_quarantine",
+    "hostile_file_url_insteadof",
+    "hostile_file_url_raw",
     "hostile_fsck_config_file",
     "hostile_fsck_includeif",
     "hostile_fsck_inline",

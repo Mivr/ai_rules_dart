@@ -29,6 +29,7 @@ load("@rules_dart//dart/tests:git_host_config_test.bzl", "git_export_subst_probe
 
 _FMTPKG_SHA = "08da52a5f5ee8530fcffaa7b4a6aecdc09a0e9cc"
 _REWRITTEN_URL = "https://rewritten.example.invalid/r.git"
+_MSYS_NO_CONVERSION = {"MSYS_NO_PATHCONV": "1", "MSYS2_ARG_CONV_EXCL": "*"}
 
 def _hostile_impl(mctx):
     bundle = str(mctx.path(Label("//:fmtpkg.bundle")))
@@ -93,6 +94,30 @@ def _hostile_impl(mctx):
         insteadof_to_origin = True,
         pack_objects_hook = True,
         hostile_env = {},
+        expect_fetch_mode = "sha",
+    )
+
+    # A raw RFC 8089 origin URL (`file:///<drive>:/...` on Windows) with MSYS2
+    # argument conversion off: the helpers must hand git the two-slash form,
+    # both for a local lock URL and for a remote one rewritten to the origin.
+    git_hostile_fetch_probe(
+        name = "hostile_file_url_raw",
+        make_origin = True,
+        bundle_path = bundle,
+        raw_file_url = True,
+        hostile_env = _MSYS_NO_CONVERSION,
+        expect_fetch_mode = "sha",
+    )
+    git_hostile_fetch_probe(
+        name = "hostile_file_url_insteadof",
+        url = _REWRITTEN_URL,
+        control_url = bundle,
+        resolved_ref = _FMTPKG_SHA,
+        make_origin = True,
+        bundle_path = bundle,
+        raw_file_url = True,
+        insteadof_to_origin = True,
+        hostile_env = _MSYS_NO_CONVERSION,
         expect_fetch_mode = "sha",
     )
     git_fsck_fetch_probe(

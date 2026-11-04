@@ -229,6 +229,41 @@ _GIT_ALLOW_PROTOCOL = "https:http:git:ssh:file"
 # programs), and `export-ignore` would drop files `dart pub get` keeps.
 _GIT_ATTRIBUTES_OVERRIDE = "* -export-subst -export-ignore -working-tree-encoding\n"
 
+_ASCII_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+def _starts_with_drive(text):
+    """Whether `text` begins with a Windows drive spec: letter, colon, then the end or a separator."""
+    if len(text) < 2 or text[1] != ":" or text[0] not in _ASCII_LETTERS:
+        return False
+    return len(text) == 2 or text[2] in "/\\"
+
+def normalize_git_file_url(url):
+    """Rewrites a `file://` URL naming a Windows drive path into git's two-slash form.
+
+    An RFC 8089 URL carries three slashes before the drive letter
+    (`file:///D:/repos/r.git`). Git's `parse_connect_url` strips only
+    `file://` and checks for a drive prefix on the rest, so the three-slash
+    form hands `git-upload-pack` the path `/D:/repos/r.git`, which fails
+    wherever MSYS2 argument conversion is off. The two-slash form
+    `file://D:/repos/r.git` reaches it as `D:/repos/r.git`. Backslashes
+    after the drive become forward slashes.
+
+    Every other input is returned unchanged: POSIX and UNC `file://` URLs
+    (a single-letter top-level directory has a slash, not a colon, after
+    the letter), plain local paths, bundle paths and remote URLs.
+
+    Args:
+        url: A git remote URL, local path or bundle path.
+
+    Returns:
+        The two-slash `file://<drive>:/...` form for a Windows drive
+        `file://` URL, else `url` itself.
+    """
+    for prefix in ("file:///", "file://"):
+        if url.startswith(prefix) and _starts_with_drive(url[len(prefix):]):
+            return "file://" + url[len(prefix):].replace("\\", "/")
+    return url
+
 def _is_local_url(url):
     """Whether a git URL is served from the local machine.
 
@@ -815,7 +850,7 @@ def git_transport_fetch(ctx, url, bare_rel, resolved_ref, what):
     # it always has. Fetching the resolved URL there would apply a chained
     # rewrite a second time (lock URL A resolving to B, then B rewritten
     # to C at fetch time) and land somewhere the lock URL never named.
-    fetch_url = effective if local else url
+    fetch_url = normalize_git_file_url(effective) if local else url
 
     res = ctx.execute(
         ["git", "--no-replace-objects", "--git-dir=" + bare_abs] +
