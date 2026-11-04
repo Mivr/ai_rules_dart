@@ -643,6 +643,38 @@ dart_binary(
     visibility = ["//visibility:public"],
 )
 
+# The strict-layering check (see `import_check.dart`): reads one target's
+# sources and fails when one imports a package its own `deps` do not provide.
+# Like `kernel_module` it takes no `dart_library` dependency, because every
+# `dart_binary` and `dart_library` aspect names it as an implicit exec tool, so
+# a dependency would be a cycle. It reads the shared guard through `srcs`: the
+# file compiles in place, so the relative import reaches it with no package edge.
+dart_binary(
+    name = "import_check",
+    srcs = [
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    code_assets_from_deps = False,
+    compile_mode = "aot-snapshot",
+    main = "import_check.dart",
+    modular_kernel = False,
+    visibility = ["//visibility:public"],
+)
+
+# The layering check's unit tests.
+dart_test(
+    name = "import_check_test",
+    size = "small",
+    srcs = [
+        "import_check.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    main = "import_check_test.dart",
+    deps = [
+        "@ext_pub_deps//:test",
+    ],
+)
+
 # The config generator's unit tests.
 dart_test(
     name = "package_config_test",
