@@ -148,11 +148,57 @@ LcovResult lcovFromCoverage({
     if (manifest != null && !manifest.contains(_normalized(path))) continue;
     byPath.merge({path: entry.value});
   }
-  return (
-    lcov: byPath.formatLcov(_IdentityResolver()),
-    exitCode: 0,
-    error: null,
-  );
+  return (lcov: _formatLcov(byPath), exitCode: 0, error: null);
+}
+
+/// LCOV text for [hits], one record per file in path order.
+///
+/// Unlike `package:coverage`'s formatter this writes `FNDA:0,<name>` for a
+/// function that never ran, so `FNF` and `FNH` agree with the records.
+String _formatLcov(Map<String, HitMap> hits) {
+  final buffer = StringBuffer();
+  for (final String path in hits.keys.toList()..sort()) {
+    buffer.writeln('SF:$path');
+    _writeFunctions(buffer, hits[path]!);
+    _writeLines(buffer, hits[path]!);
+    buffer.writeln('end_of_record');
+  }
+  return buffer.toString();
+}
+
+void _writeFunctions(StringBuffer buffer, HitMap map) {
+  final Map<int, String>? names = map.funcNames;
+  final Map<int, int>? counts = map.funcHits;
+  if (names == null || counts == null) return;
+  final List<int> lines = names.keys.toList()..sort();
+  var hitFunctions = 0;
+  for (final line in lines) {
+    buffer.writeln('FN:$line,${names[line]}');
+  }
+  for (final line in lines) {
+    final int count = counts[line] ?? 0;
+    if (count > 0) hitFunctions++;
+    buffer.writeln('FNDA:$count,${names[line]}');
+  }
+  buffer
+    ..writeln('FNF:${lines.length}')
+    ..writeln('FNH:$hitFunctions');
+}
+
+void _writeLines(StringBuffer buffer, HitMap map) {
+  final Map<int, int> lineHits = map.lineHits;
+  for (final int line in lineHits.keys.toList()..sort()) {
+    buffer.writeln('DA:$line,${lineHits[line]}');
+  }
+  final int hit = lineHits.values.where((count) => count > 0).length;
+  buffer
+    ..writeln('LF:${lineHits.length}')
+    ..writeln('LH:$hit');
+  final Map<int, int>? branches = map.branchHits;
+  if (branches == null) return;
+  for (final int line in branches.keys.toList()..sort()) {
+    buffer.writeln('BRDA:$line,0,0,${branches[line]}');
+  }
 }
 
 /// The packages worth collecting from the VM.
