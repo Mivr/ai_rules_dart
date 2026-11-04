@@ -4,7 +4,9 @@ import 'package:runfiles/runfiles.dart';
 
 void main() {
   final r = Runfiles.create();
-  final path = r.rlocation('_main/dart/runfiles/example/data/message.txt');
+  final String path = r.rlocation(
+    '_main/dart/runfiles/example/data/message.txt',
+  );
 
   final file = File(path);
   if (!file.existsSync()) {
@@ -12,7 +14,7 @@ void main() {
     exit(1);
   }
 
-  final content = file.readAsStringSync().trim();
+  final String content = file.readAsStringSync().trim();
   if (content == 'Hello from runfiles!') {
     print('PASS: read expected message via rlocation');
   } else {

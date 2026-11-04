@@ -15,7 +15,7 @@ import 'cli_flags.dart';
 /// Validates the baseline and writes either the normalized whole file or one
 /// target's slice.
 void main(List<String> args) {
-  final parsed = _parseArgs(args);
+  final _SliceArgs parsed = _parseArgs(args);
   final baselineFile = File(parsed.baseline);
   if (!baselineFile.existsSync()) {
     stderr.writeln(
@@ -34,7 +34,7 @@ void main(List<String> args) {
     stderr.writeln('baseline_slice: ${parsed.config}: $e');
     exit(1);
   }
-  final output = parsed.validateOnly
+  final Map<String, Map<String, int>> output = parsed.validateOnly
       ? baseline.toJson()
       : baseline.sliceFor(parsed.files);
   File(parsed.out).writeAsStringSync('${jsonEncode(output)}\n');
@@ -60,9 +60,9 @@ _SliceArgs _parseArgs(List<String> args) {
     listFlags: {'--file'},
     boolFlags: {'--validate-only'},
   );
-  final config = flags.require('--config', requiredSummary);
-  final baseline = flags.require('--baseline', requiredSummary);
-  final out = flags.require('--out', requiredSummary);
+  final String config = flags.require('--config', requiredSummary);
+  final String baseline = flags.require('--baseline', requiredSummary);
+  final String out = flags.require('--out', requiredSummary);
   return (
     config: config,
     baseline: baseline,

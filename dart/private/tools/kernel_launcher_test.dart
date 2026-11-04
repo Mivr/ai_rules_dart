@@ -8,7 +8,7 @@ import 'kernel_launcher.dart'
 void main() {
   group('kernel_launcher config lookup (Windows path form)', () {
     test('yields .exe-stripped config name', () {
-      final candidates = candidateConfigRlocations(
+      final List<String> candidates = candidateConfigRlocations(
         r'C:\Users\runner\bin\create_probe_kernel.exe',
       ).toList();
       expect(
@@ -18,7 +18,7 @@ void main() {
     });
 
     test('yields .exe-retaining config name', () {
-      final candidates = candidateConfigRlocations(
+      final List<String> candidates = candidateConfigRlocations(
         r'C:\Users\runner\bin\create_probe_kernel.exe',
       ).toList();
       expect(
@@ -28,12 +28,12 @@ void main() {
     });
 
     test('adjacent config finds existing .exe-stripped sidecar', () {
-      final tmp = Directory.systemTemp.createTempSync('kl_adjacent');
+      final Directory tmp = Directory.systemTemp.createTempSync('kl_adjacent');
       addTearDown(() => tmp.deleteSync(recursive: true));
       final exe = '${tmp.path}\\create_probe_kernel.exe';
       File('${tmp.path}\\create_probe_kernel.kernel_launcher.json')
           .writeAsStringSync('{}');
-      final file = adjacentConfigFile(exe);
+      final File? file = adjacentConfigFile(exe);
       expect(file, isNotNull);
       expect(file!.path, endsWith('create_probe_kernel.kernel_launcher.json'));
     });
@@ -41,14 +41,14 @@ void main() {
 
   group('deleteScratchQuietly', () {
     test('removes an existing scratch directory', () {
-      final tmp = Directory.systemTemp.createTempSync('kl_scratch');
+      final Directory tmp = Directory.systemTemp.createTempSync('kl_scratch');
       File('${tmp.path}/entry').writeAsStringSync('x');
       deleteScratchQuietly(tmp);
       expect(tmp.existsSync(), isFalse);
     });
 
     test('ignores a scratch directory that is already gone', () {
-      final parent = Directory.systemTemp.createTempSync('kl_scratch_parent');
+      final Directory parent = Directory.systemTemp.createTempSync('kl_scratch_parent');
       addTearDown(() => parent.deleteSync(recursive: true));
       final tmp = Directory('${parent.path}/scratch')..createSync();
       final sibling = File('${parent.path}/sibling')..writeAsStringSync('keep');

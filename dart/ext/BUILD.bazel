@@ -42,6 +42,7 @@ dart_library(
     package_name = "rules_dart_ext",
     srcs = [
         "lib/builder_shim.dart",
+        "lib/staging_bounded_provider.dart",
         "lib/worker_entry.dart",
     ],
     language_version = "3.11",
@@ -67,6 +68,7 @@ dart_library(
 dart_test(
     name = "builder_shim_test",
     size = "medium",
+    srcs = ["test/builder_shim_test_support.dart"],
     main = "test/builder_shim_test.dart",
     shard_count = 4,
     deps = [

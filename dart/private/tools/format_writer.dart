@@ -10,6 +10,7 @@
 // they changed.
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:runfiles/runfiles.dart';
 
@@ -23,7 +24,7 @@ void main(List<String> args) {
   var languageVersion = 'latest';
   final operands = <String>[];
   for (var i = 0; i < args.length; i++) {
-    final arg = args[i];
+    final String arg = args[i];
     if (arg == '--language-version') {
       if (++i >= args.length) _usageError('--language-version needs a value');
       languageVersion = args[i];
@@ -43,7 +44,7 @@ void main(List<String> args) {
   // Relative operands mean what they meant in the shell `bazel run` was typed
   // in. Without this there is no such directory, and resolving against the
   // runfiles cwd would format nothing the user named.
-  final cwd = Platform.environment['BUILD_WORKING_DIRECTORY'];
+  final String? cwd = Platform.environment['BUILD_WORKING_DIRECTORY'];
   if (cwd == null || cwd.isEmpty) {
     stderr.writeln(
       'dart_format: BUILD_WORKING_DIRECTORY is not set. Run this with '
@@ -55,7 +56,7 @@ void main(List<String> args) {
   // Each file is copied to its workspace path, so the nearest listed options
   // file above it is the one the check reads for it. A file outside the
   // workspace has no such path, and so no options the check could agree on.
-  final workspace = Platform.environment['BUILD_WORKSPACE_DIRECTORY'];
+  final String? workspace = Platform.environment['BUILD_WORKSPACE_DIRECTORY'];
   if (workspace == null || workspace.isEmpty) {
     stderr.writeln(
       'dart_format: BUILD_WORKSPACE_DIRECTORY is not set. Run this with '
@@ -63,16 +64,16 @@ void main(List<String> args) {
     );
     exit(1);
   }
-  final root = _canonical(workspace);
+  final String root = _canonical(workspace);
 
-  final config = _readConfig();
+  final _Config config = _readConfig();
   final files = <String, File>{};
   for (final operand in operands) {
     final path = _isAbsolute(operand)
         ? operand
         : '$cwd${Platform.pathSeparator}$operand';
-    for (final file in _dartFiles(path)) {
-      final relative = _workspacePath(file, root);
+    for (final File file in _dartFiles(path)) {
+      final String? relative = _workspacePath(file, root);
       if (relative == null) {
         stderr.writeln(
           'dart_format: ${file.path} is outside the workspace ($workspace), '
@@ -84,7 +85,7 @@ void main(List<String> args) {
     }
   }
 
-  final scratch = Directory.systemTemp.createTempSync('dart_format.');
+  final Directory scratch = Directory.systemTemp.createTempSync('dart_format.');
   final int code;
   try {
     code = _format(config, files, scratch, languageVersion, cwd);
@@ -95,6 +96,9 @@ void main(List<String> args) {
   exit(code);
 }
 
+/// The staged `src/` directory and each workspace file's scratch copy.
+typedef _Staged = ({String src, Map<File, File> copies});
+
 int _format(
   _Config config,
   Map<String, File> files,
@@ -102,15 +106,15 @@ int _format(
   String languageVersion,
   String cwd,
 ) {
-  final staged = _stageFormatProject(config, files, scratch);
-  final src = staged.src;
-  final copies = staged.copies;
+  final _Staged staged = _stageFormatProject(config, files, scratch);
+  final String src = staged.src;
+  final Map<File, File> copies = staged.copies;
   if (copies.isEmpty) {
     stdout.writeln('dart_format: no Dart files found');
     return 0;
   }
 
-  final result = withPrivateHome(
+  final ProcessResult result = withPrivateHome(
     'rules_dart_format_home.',
     (env) => Process.runSync(
       config.dart,
@@ -162,8 +166,8 @@ int _format(
   // written, as `dart format` itself does, and its exit code is kept.
   var changed = 0;
   copies.forEach((file, copy) {
-    final before = file.readAsBytesSync();
-    final after = copy.readAsBytesSync();
+    final Uint8List before = file.readAsBytesSync();
+    final Uint8List after = copy.readAsBytesSync();
     if (_sameBytes(before, after)) return;
     // Bytes rather than File.copySync, which could carry the scratch copy's
     // mode onto the user's source file.
@@ -180,7 +184,7 @@ int _format(
 /// file and each named file into the scratch project, at the layout the
 /// format check stages. Returns the staged `src/` directory and each
 /// workspace file's scratch copy.
-({String src, Map<File, File> copies}) _stageFormatProject(
+_Staged _stageFormatProject(
   _Config config,
   Map<String, File> files,
   Directory scratch,
@@ -191,7 +195,7 @@ int _format(
     ..createSync(recursive: true)
     ..writeAsStringSync(_absolutePackageConfig(config.packageConfig));
 
-  final src = _join(scratch.path, 'src');
+  final String src = _join(scratch.path, 'src');
   config.options.forEach((relative, source) {
     File(_join(src, relative))
       ..createSync(recursive: true)
@@ -219,7 +223,7 @@ class _Config {
 }
 
 _Config _readConfig() {
-  final key = Platform.environment['DART_FORMAT_CONFIG'];
+  final String? key = Platform.environment['DART_FORMAT_CONFIG'];
   if (key == null || key.isEmpty) {
     stderr.writeln('dart_format: DART_FORMAT_CONFIG is not set');
     exit(1);
@@ -258,7 +262,10 @@ String _absolutePackageConfig(String path) {
 /// The `.dart` files [path] names, walked the way `dart format` walks a
 /// directory: links are not followed and hidden directories are skipped.
 Iterable<File> _dartFiles(String path) sync* {
-  final type = FileSystemEntity.typeSync(path, followLinks: false);
+  final FileSystemEntityType type = FileSystemEntity.typeSync(
+    path,
+    followLinks: false,
+  );
   if (type == FileSystemEntityType.file) {
     yield File(path);
     return;
@@ -267,8 +274,9 @@ Iterable<File> _dartFiles(String path) sync* {
     stderr.writeln('dart_format: no such file or directory: $path');
     exit(1);
   }
-  final entries = Directory(path).listSync(followLinks: false)
-    ..sort((a, b) => a.path.compareTo(b.path));
+  final List<FileSystemEntity> entries = Directory(
+    path,
+  ).listSync(followLinks: false)..sort((a, b) => a.path.compareTo(b.path));
   for (final entry in entries) {
     if (_basename(entry.path).startsWith('.')) continue;
     if (entry is Directory) {
@@ -292,17 +300,20 @@ bool _sameBytes(List<int> a, List<int> b) {
 /// Only the directories: a workspace file may itself be a symlink, and its
 /// workspace path is where it sits, not what it points at.
 String _canonical(String path) {
-  final type = FileSystemEntity.typeSync(path, followLinks: false);
+  final FileSystemEntityType type = FileSystemEntity.typeSync(
+    path,
+    followLinks: false,
+  );
   if (type == FileSystemEntityType.directory) {
     return Directory(path).resolveSymbolicLinksSync().replaceAll(r'\', '/');
   }
-  final parent = File(path).parent.resolveSymbolicLinksSync();
+  final String parent = File(path).parent.resolveSymbolicLinksSync();
   return '$parent/${_basename(path)}'.replaceAll(r'\', '/');
 }
 
 /// [file]'s path relative to the workspace [root], or null outside it.
 String? _workspacePath(File file, String root) {
-  final path = _canonical(file.path);
+  final String path = _canonical(file.path);
   final prefix = root.endsWith('/') ? root : '$root/';
   return path.startsWith(prefix) ? path.substring(prefix.length) : null;
 }

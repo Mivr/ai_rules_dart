@@ -5,9 +5,9 @@ import 'package:test/test.dart';
 
 void main(List<String> args) {
   final r = Runfiles.create();
-  final codegenOut = File(r.rlocation(args[0])).readAsStringSync();
-  final aggOut = File(r.rlocation(args[1])).readAsStringSync();
-  final sqlOut = File(r.rlocation(args[2])).readAsStringSync();
+  final String codegenOut = File(r.rlocation(args[0])).readAsStringSync();
+  final String aggOut = File(r.rlocation(args[1])).readAsStringSync();
+  final String sqlOut = File(r.rlocation(args[2])).readAsStringSync();
 
   const expected =
       '// pubspec=name: codegen_fixture|version: 4.5.6|'

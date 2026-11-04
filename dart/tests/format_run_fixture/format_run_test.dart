@@ -35,8 +35,8 @@ void h() {}
 
 void main(List<String> args) {
   final r = Runfiles.create();
-  final format = r.rlocation(args[0]);
-  final config = args[1];
+  final String format = r.rlocation(args[0]);
+  final String config = args[1];
 
   late Directory workspace;
   setUp(() => workspace = Directory.systemTemp.createTempSync('ws.'));
@@ -62,19 +62,23 @@ void main(List<String> args) {
   ]..sort();
 
   test('formats each file under its nearest listed options', () {
-    final governed = write(
+    final File governed = write(
       '$_governed/lib/a.dart',
       _wide.replaceFirst('void h() {}', 'void  h( ){}'),
     );
     // Governed by `ws/sub/analysis_options.yaml`, which includes the parent
     // by relative path: it must get the parent's settings.
-    final nested = write(
+    final File nested = write(
       '$_governed/sub/lib/n.dart',
       _wide.replaceFirst('void h() {}', 'void  h( ){}'),
     );
-    final elsewhere = write('other/b.dart', _wide);
+    final File elsewhere = write('other/b.dart', _wide);
 
-    final result = run(['$_governed/lib', '$_governed/sub', 'other']);
+    final ProcessResult result = run([
+      '$_governed/lib',
+      '$_governed/sub',
+      'other',
+    ]);
 
     expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
     expect(result.stderr, isNot(contains('Warning')));
@@ -90,9 +94,12 @@ void main(List<String> args) {
       '$_governed/undeclared/shared.yaml',
       'formatter:\n  page_width: 20\n',
     );
-    final file = write('$_governed/undeclared/lib/u.dart', 'void  h( ){}\n');
+    final File file = write(
+      '$_governed/undeclared/lib/u.dart',
+      'void  h( ){}\n',
+    );
 
-    final result = run(['$_governed/undeclared/lib']);
+    final ProcessResult result = run(['$_governed/undeclared/lib']);
 
     expect(result.exitCode, 1);
     // Named at its workspace path, not the scratch copy's.
@@ -104,9 +111,11 @@ void main(List<String> args) {
   });
 
   test('resolves operands against the directory it was run from', () {
-    final file = write('$_governed/lib/a.dart', 'void  h( ){}\n');
+    final File file = write('$_governed/lib/a.dart', 'void  h( ){}\n');
 
-    final result = run(['lib'], cwd: '${workspace.path}/$_governed');
+    final ProcessResult result = run([
+      'lib',
+    ], cwd: '${workspace.path}/$_governed');
 
     expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
     expect(
@@ -117,12 +126,12 @@ void main(List<String> args) {
   });
 
   test('refuses a file outside the workspace', () {
-    final outside = Directory.systemTemp.createTempSync('outside.');
+    final Directory outside = Directory.systemTemp.createTempSync('outside.');
     addTearDown(() => outside.deleteSync(recursive: true));
     final file = File('${outside.path}/c.dart')
       ..writeAsStringSync('void  h( ){}\n');
 
-    final result = run([file.path]);
+    final ProcessResult result = run([file.path]);
 
     expect(result.exitCode, 1);
     expect(result.stderr, contains('outside the workspace'));
@@ -130,14 +139,14 @@ void main(List<String> args) {
   });
 
   test('leaves the caller home untouched', () {
-    final canary = Directory.systemTemp.createTempSync('canary.');
+    final Directory canary = Directory.systemTemp.createTempSync('canary.');
     addTearDown(() {
       if (canary.existsSync()) canary.deleteSync(recursive: true);
     });
-    final before = snapshot(canary);
-    final file = write('$_governed/lib/a.dart', 'void  h( ){}\n');
+    final List<String> before = snapshot(canary);
+    final File file = write('$_governed/lib/a.dart', 'void  h( ){}\n');
 
-    final result = Process.runSync(
+    final ProcessResult result = Process.runSync(
       format,
       ['$_governed/lib'],
       environment: {

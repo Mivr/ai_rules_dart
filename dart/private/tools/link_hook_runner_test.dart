@@ -84,12 +84,13 @@ void main() {
 
     final scratch = Directory('${tmp.path}/scratch')
       ..createSync(recursive: true);
-    final staged = runner.stageWorkspace(
-      packages: packageConfig,
-      packageRoot: pkgDir,
-      hook: stagedHook,
-      scratch: scratch,
-    );
+    final ({File hook, Directory packageRoot, File packages}) staged = runner
+        .stageWorkspace(
+          packages: packageConfig,
+          packageRoot: pkgDir,
+          hook: stagedHook,
+          scratch: scratch,
+        );
 
     expect(staged.packageRoot.path, startsWith(scratch.path));
     expect(staged.hook.path, '${staged.packageRoot.path}/hook/link.dart');
@@ -203,14 +204,15 @@ void main() {
 
     final scratch = Directory('${tmp.path}/scratch')
       ..createSync(recursive: true);
-    final staged = runner.stageWorkspace(
-      packages: packageConfig,
-      packageRoot: pkgDir,
-      hook: stagedHook,
-      scratch: scratch,
-    );
+    final ({File hook, Directory packageRoot, File packages}) staged = runner
+        .stageWorkspace(
+          packages: packageConfig,
+          packageRoot: pkgDir,
+          hook: stagedHook,
+          scratch: scratch,
+        );
 
-    final violations = findStagedDirectiveViolations([
+    final List<String> violations = findStagedDirectiveViolations([
       staged.packageRoot.path,
     ], tool: 'link_hook_runner');
     expect(violations, hasLength(1));

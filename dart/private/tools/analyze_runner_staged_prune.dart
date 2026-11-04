@@ -53,7 +53,7 @@ Set<String>? pruneStagedSrcTree(
   final manifestFile = File('$project/.dart_tool/src_manifest.txt');
   if (!manifestFile.existsSync()) return null;
 
-  final lines = [
+  final List<String> lines = [
     for (final line in manifestFile.readAsLinesSync())
       if (line.trim().isNotEmpty) line.trim(),
   ];
@@ -62,9 +62,12 @@ Set<String>? pruneStagedSrcTree(
   final allowed = <String>{
     for (final line in lines) spelling.manifestSrcEntry(line),
   };
-  for (final entity in srcDir.listSync(recursive: true, followLinks: false)) {
+  for (final FileSystemEntity entity in srcDir.listSync(
+    recursive: true,
+    followLinks: false,
+  )) {
     if (entity is Directory) continue;
-    final rel = spelling.relativeSrcPath(srcDir.path, entity.path);
+    final String rel = spelling.relativeSrcPath(srcDir.path, entity.path);
     if (!allowed.contains(rel)) {
       try {
         entity.deleteSync();
@@ -100,8 +103,8 @@ void pruneStagedExtpkgs(
 
   final allowedFiles = <String>{};
   final allowedDirPrefixes = <String>[];
-  for (final raw in extManifest.readAsLinesSync()) {
-    final trimmed = raw.trim();
+  for (final String raw in extManifest.readAsLinesSync()) {
+    final String trimmed = raw.trim();
     if (trimmed.isEmpty) continue;
     if (trimmed.endsWith('/')) {
       allowedDirPrefixes.add(manifestEntry(trimmed));
@@ -109,11 +112,14 @@ void pruneStagedExtpkgs(
       allowedFiles.add(manifestEntry(trimmed));
     }
   }
-  final rootPath = extDir.path;
-  for (final entity in extDir.listSync(recursive: true, followLinks: false)) {
+  final String rootPath = extDir.path;
+  for (final FileSystemEntity entity in extDir.listSync(
+    recursive: true,
+    followLinks: false,
+  )) {
     if (entity is Directory) continue;
-    final rel = relativePath(rootPath, entity.path);
-    final inAllowedDir = allowedDirPrefixes.any(rel.startsWith);
+    final String rel = relativePath(rootPath, entity.path);
+    final bool inAllowedDir = allowedDirPrefixes.any(rel.startsWith);
     if (!inAllowedDir && !allowedFiles.contains(rel)) {
       try {
         entity.deleteSync();

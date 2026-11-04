@@ -24,7 +24,7 @@ final class ToolFlags {
     final lists = <String, List<String>>{};
     final booleans = <String>{};
     for (var i = 0; i < args.length; i++) {
-      final flag = args[i];
+      final String flag = args[i];
       if (valueFlags.contains(flag)) {
         values[flag] = _nextValue(tool, args, ++i, flag);
       } else if (listFlags.contains(flag)) {
@@ -45,7 +45,7 @@ final class ToolFlags {
 
   /// Returns a required single-value flag, or exits 64 naming [requiredSummary].
   String require(String flag, String requiredSummary) {
-    final value = _values[flag];
+    final String? value = _values[flag];
     if (value == null) _exitUsage(_tool, requiredSummary);
     return value;
   }

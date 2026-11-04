@@ -15,7 +15,7 @@ const _entrypoint =
     'org-dartlang-root:///dart/tests/kernel_uri_fixture/bin/probe.dart';
 
 String _lineWithPrefix(String output, String prefix) {
-  for (final line in output.split('\n')) {
+  for (final String line in output.split('\n')) {
     if (line.startsWith(prefix)) return line;
   }
   throw StateError('missing `$prefix` line in output:\n$output');
@@ -24,10 +24,10 @@ String _lineWithPrefix(String output, String prefix) {
 void main() {
   final runfiles = Runfiles.create();
   for (final name in ['probe', 'probe_with_asset']) {
-    final exe = runfiles.rlocation(
+    final String exe = runfiles.rlocation(
       '_main/dart/tests/kernel_uri_fixture/$name${Platform.isWindows ? '.exe' : ''}',
     );
-    final result = Process.runSync(exe, []);
+    final ProcessResult result = Process.runSync(exe, []);
     if (result.exitCode != 0) {
       throw StateError('$name exited ${result.exitCode}: ${result.stderr}');
     }
@@ -38,7 +38,7 @@ void main() {
         '`dart compile exe` from source does. Output:\n$out',
       );
     }
-    final frameLine = _lineWithPrefix(out, 'frame=');
+    final String frameLine = _lineWithPrefix(out, 'frame=');
     if (!frameLine.contains('($_entrypoint:') ||
         frameLine.contains('file://') ||
         frameLine.contains('org-dartlang-bazel')) {
@@ -54,10 +54,12 @@ void main() {
     'probe_kernel_whole',
     'probe_kernel_with_asset',
   ]) {
-    final dill = runfiles.rlocation(
+    final String dill = runfiles.rlocation(
       '_main/dart/tests/kernel_uri_fixture/$name.dill',
     );
-    final result = Process.runSync(Platform.resolvedExecutable, [dill]);
+    final ProcessResult result = Process.runSync(Platform.resolvedExecutable, [
+      dill,
+    ]);
     if (result.exitCode != 0) {
       throw StateError('$name exited ${result.exitCode}: ${result.stderr}');
     }
@@ -68,15 +70,15 @@ void main() {
         '`dart compile kernel`. Output:\n$out',
       );
     }
-    final scriptLine = _lineWithPrefix(out, 'script=').trim();
-    final scriptUri = Uri.parse(scriptLine.substring('script='.length));
+    final String scriptLine = _lineWithPrefix(out, 'script=').trim();
+    final Uri scriptUri = Uri.parse(scriptLine.substring('script='.length));
     if (scriptUri.scheme != 'file' || !scriptUri.path.endsWith('/$name.dill')) {
       throw StateError(
         '$name: expected Platform.script to be a file: URI ending in '
         '/$name.dill, got $scriptLine',
       );
     }
-    final frameLine = _lineWithPrefix(out, 'frame=');
+    final String frameLine = _lineWithPrefix(out, 'frame=');
     if (!frameLine.contains('($_entrypoint:') ||
         frameLine.contains('file://') ||
         frameLine.contains('org-dartlang-bazel')) {
@@ -97,7 +99,7 @@ void main() {
       'dart_test expected file: .dill Platform.script, got ${Platform.script}',
     );
   }
-  final frame = StackTrace.current.toString().split('\n').first;
+  final String frame = StackTrace.current.toString().split('\n').first;
   if (!frame.contains(
         'org-dartlang-root:///dart/tests/kernel_uri_fixture/kernel_uri_test.dart',
       ) ||

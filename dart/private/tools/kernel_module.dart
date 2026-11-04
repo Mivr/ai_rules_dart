@@ -95,6 +95,7 @@ import '../../guard/lib/directive_guard.dart';
 import 'comma_patch.dart';
 import 'dill_outline.dart';
 import 'dill_reader.dart';
+import 'kernel_module_strip.dart';
 // Shared through `srcs`, like the guard import above: this binary takes no
 // `dart_library` dependency on purpose (see the `kernel_module` target).
 import 'lib/worker_protocol.dart';
@@ -111,6 +112,7 @@ export '../../guard/lib/directive_guard.dart'
         resolveDirectiveUri,
         scanAllDirectiveUris,
         scanDirectives;
+export 'kernel_module_strip.dart' show stripSourceCodeFromDill;
 export 'lib/worker_protocol.dart' show sha256Of;
 
 const _kernelWorkerFlag = '--kernel-worker';
@@ -193,7 +195,7 @@ String kernelWorkerUri(String pathOrUri) {
 
 String _filePathOf(String pathOrUri) {
   if (pathOrUri.startsWith('file:///')) {
-    final rest = pathOrUri.substring('file:///'.length);
+    final String rest = pathOrUri.substring('file:///'.length);
     if (isWindowsDrivePath(rest)) return rest;
   }
   if (pathOrUri.startsWith('file://')) {
@@ -203,7 +205,7 @@ String _filePathOf(String pathOrUri) {
 }
 
 String _rewriteRedirectUri(String value) {
-  final sep = value.indexOf('|');
+  final int sep = value.indexOf('|');
   if (sep < 0) return kernelWorkerUri(value);
   return '${kernelWorkerUri(value.substring(0, sep))}|'
       '${kernelWorkerUri(value.substring(sep + 1))}';
@@ -215,7 +217,7 @@ String _rewriteRedirectUri(String value) {
 List<String> kernelWorkerArgs(List<String> args) {
   final out = <String>[];
   for (var i = 0; i < args.length; i++) {
-    final arg = args[i];
+    final String arg = args[i];
     if (_kernelWorkerUriFlags.contains(arg) && i + 1 < args.length) {
       out
         ..add(arg)
@@ -229,12 +231,12 @@ List<String> kernelWorkerArgs(List<String> args) {
       continue;
     }
     if (arg.startsWith('--redirect=')) {
-      final raw = arg.substring('--redirect='.length);
+      final String raw = arg.substring('--redirect='.length);
       out.add('--redirect=${_rewriteRedirectUri(raw)}');
       continue;
     }
     var matchedEq = false;
-    for (final flag in _kernelWorkerUriFlags) {
+    for (final String flag in _kernelWorkerUriFlags) {
       final prefix = '$flag=';
       if (arg.startsWith(prefix)) {
         out.add('$flag=${kernelWorkerUri(arg.substring(prefix.length))}');
@@ -257,13 +259,15 @@ Future<void> main(List<String> argv) async {
   Duration? requestTimeout;
   final rest = <String>[];
   for (var i = 0; i < argv.length; i++) {
-    final arg = argv[i];
+    final String arg = argv[i];
     if (arg == _persistentFlag) {
       persistent = true;
     } else if (arg == _commaPatchedFlag) {
       snapshotPatched = true;
     } else if (arg.startsWith(_requestTimeoutFlag)) {
-      final seconds = int.tryParse(arg.substring(_requestTimeoutFlag.length));
+      final int? seconds = int.tryParse(
+        arg.substring(_requestTimeoutFlag.length),
+      );
       if (seconds == null || seconds <= 0) {
         stderr.writeln(
           'kernel_module: $arg is not a positive number of seconds.',
@@ -294,9 +298,9 @@ Future<void> main(List<String> argv) async {
     await stdout.flush();
     exit(0);
   }
-  final args = await _expandParamFiles(rest);
+  final List<String> args = await _expandParamFiles(rest);
   final log = StringBuffer();
-  final code = await compileModule(
+  final int code = await compileModule(
     args,
     _OneShot(dartaotruntime, kernelWorker, snapshotPatched: snapshotPatched),
     log,
@@ -326,7 +330,7 @@ Future<void> _serve(
   );
   try {
     while (true) {
-      final frame = await requests.next();
+      final Uint8List? frame = await requests.next();
       if (frame == null) break;
       // Every request is answered, even one that fails to decode or compile:
       // a worker that closes stdout without a `WorkResponse` fails the action
@@ -376,10 +380,11 @@ Future<int> compileModule(
   void Function(String linkPath, String target)? createLink,
 }) async {
   final options = _ModuleOptions();
-  final usage = _parseModuleArgs(rawArgs, options, log);
+  final int? usage = _parseModuleArgs(rawArgs, options, log);
   if (usage != null) return usage;
-  final decoded = _decodeWorkerInputs(inputs);
-  final build = await _ModuleBuild.load(
+  final ({Map<String, Uint8List>? inputDigests, Set<String>? workerInputPaths})
+  decoded = _decodeWorkerInputs(inputs);
+  final _ModuleBuild? build = await _ModuleBuild.load(
     options,
     compiler,
     log,
@@ -450,7 +455,7 @@ int _parseModuleArg(
   _ModuleOptions options,
   StringBuffer log,
 ) {
-  final arg = rawArgs[i];
+  final String arg = rawArgs[i];
   if (arg == '--source') {
     options.sources.add(rawArgs[++i]);
   } else if (arg == _inputSourceFlag) {
@@ -498,7 +503,7 @@ int _parseModuleArg(
 
 /// Parses a compiler pass-through argument at [i] into [options].
 void _parseBaseArg(List<String> rawArgs, int i, _ModuleOptions options) {
-  final arg = rawArgs[i];
+  final String arg = rawArgs[i];
   if (arg == _packagesFlag) {
     options.packagesFile = rawArgs[i + 1];
   } else if (arg.startsWith('$_packagesFlag=')) {
@@ -525,8 +530,8 @@ _decodeWorkerInputs(List<Uint8List> inputs) {
   final paths = <String>{};
   final digests = <String, Uint8List>{};
   for (final raw in inputs) {
-    final decoded = _decodeInputView(raw);
-    final rawPath = decoded.path;
+    final ({Uint8List digest, String path}) decoded = _decodeInputView(raw);
+    final String rawPath = decoded.path;
     if (rawPath.isEmpty) continue;
     if (_isNormalizedRelative(rawPath)) {
       paths.add(rawPath);
@@ -535,11 +540,11 @@ _decodeWorkerInputs(List<Uint8List> inputs) {
       }
     } else {
       paths.add(rawPath);
-      final norm = _normalize(rawPath);
+      final String norm = _normalize(rawPath);
       if (norm.isNotEmpty) paths.add(norm);
       if (decoded.digest.isNotEmpty) {
         digests[rawPath] = decoded.digest;
-        final normFile = normalizePath(rawPath);
+        final String normFile = normalizePath(rawPath);
         digests.putIfAbsent(normFile, () => decoded.digest);
         if (norm.isNotEmpty) {
           digests.putIfAbsent(norm, () => decoded.digest);
@@ -601,7 +606,7 @@ _compileAndVerify(
   _VerifyReads verify,
 ) async {
   var current = isolated;
-  var outcome = await runCompile(current);
+  ModuleOutcome outcome = await runCompile(current);
   var verified = false;
   if (outcome.exitCode == 0 && current == null) {
     if (await _unstagedReadsAreDeclared(verify)) {
@@ -638,17 +643,17 @@ Future<void> _cleanIsolated(_IsolatedRoot? isolated) async {
 Future<Set<String>> _loadVmLibraries(
   _ModuleOptions options,
   KernelModuleCache? cache,
-  Map<String, Uint8List>? inputDigests,
+  _WorkerInputs worker,
 ) async {
   if (cache != null && options.extraLibraries.isEmpty) {
     return cache.vmLibrariesOf(
       options.librariesJson!,
-      inputDigests,
+      worker.inputDigests,
       platform: options.librariesPlatform,
     );
   }
-  final librariesMap = cache != null
-      ? await cache.librariesJsonOf(options.librariesJson!, inputDigests)
+  final Map<String, dynamic> librariesMap = cache != null
+      ? await cache.librariesJsonOf(options.librariesJson!, worker.inputDigests)
       : jsonDecode(await File(options.librariesJson!).readAsString())
             as Map<String, dynamic>;
   return vmLibraries(
@@ -659,7 +664,7 @@ Future<Set<String>> _loadVmLibraries(
 }
 
 /// The declared keys and root paths of the entry and input sources.
-({Set<String> keys, Set<String> rootPaths}) _declareInputs(
+_DeclaredInputs _declareInputs(
   List<String> raws,
   Map<String, _PackageRoot> roots,
   List<String> multiRoots,
@@ -668,21 +673,42 @@ Future<Set<String>> _loadVmLibraries(
   final declaredKeys = <String>{};
   final declaredRootPaths = <String>{};
   for (final raw in raws) {
-    final key = _keyOfUri(raw, roots, multiRootPrefix);
+    final String? key = _keyOfUri(raw, roots, multiRootPrefix);
     if (key != null) declaredKeys.add(key);
-    for (final spelling in _inputSpellings(raw, multiRoots)) {
+    for (final String spelling in _inputSpellings(raw, multiRoots)) {
       declaredKeys.add(spelling);
     }
     if (!raw.contains(':') || isWindowsDrivePath(raw)) {
       declaredRootPaths.add(raw);
-      final norm = _normalize(raw);
+      final String norm = _normalize(raw);
       if (norm.isNotEmpty) declaredRootPaths.add(norm);
-      final normFile = normalizePath(raw);
+      final String normFile = normalizePath(raw);
       if (normFile.isNotEmpty) declaredRootPaths.add(normFile);
     }
   }
   return (keys: declaredKeys, rootPaths: declaredRootPaths);
 }
+
+/// The declared input keys and their root paths (see [_declareInputs]).
+typedef _DeclaredInputs = ({Set<String> keys, Set<String> rootPaths});
+
+/// One verified compile: its outcome, any isolated root it staged, and whether
+/// the verification refused it.
+typedef _CompileResult = ({
+  _IsolatedRoot? isolated,
+  ModuleOutcome outcome,
+  bool refused,
+});
+
+/// A planned library: the exit to stop with, its keys and its plan.
+typedef _PlannedLibrary = ({int? exit, Map<String, String> keys, _Plan plan});
+
+/// One compiled SCC step: whether to stop, the failure and the isolated root.
+typedef _SccStep = ({
+  bool stop,
+  ModuleOutcome? failure,
+  _IsolatedRoot? isolated,
+});
 
 /// The worker inputs one `compileModule` run decodes: the raw request
 /// inputs, the declared worker input paths and their digests. One record
@@ -722,7 +748,7 @@ final class _LoadedModule {
   final Set<String> vm;
   final Map<String, _Node> graph;
   final Map<String, String> stagedSources;
-  final ({Set<String> keys, Set<String> rootPaths}) declared;
+  final _DeclaredInputs declared;
   final KernelModuleCache? cache;
   final void Function(String linkPath, String target)? createLink;
 }
@@ -783,22 +809,22 @@ class _ModuleBuild {
     KernelModuleCache? cache,
     void Function(String linkPath, String target)? createLink,
   }) async {
-    final roots = await _packageRoots(
+    final Map<String, _PackageRoot> roots = await _packageRoots(
       options.packagesFile!,
       options.multiRootPrefix,
     );
-    final closure = await _readExcluded(
+    final Map<String, String> closure = await _readExcluded(
       options.closureExcluded,
       roots,
       options.multiRootPrefix,
       cache: cache,
       inputDigests: worker.inputDigests,
     );
-    final vm = await _loadVmLibraries(options, cache, worker.inputDigests);
+    final Set<String> vm = await _loadVmLibraries(options, cache, worker);
     // Every kernel the closure indexes, by the key of each library it defines.
     final graph = <String, _Node>{};
     final stagedSources = <String, String>{};
-    for (final dir in options.inputKmods) {
+    for (final String dir in options.inputKmods) {
       if (!await _readIndex(
         dir,
         graph,
@@ -810,7 +836,7 @@ class _ModuleBuild {
         return null;
       }
     }
-    final declared = _declareInputs(
+    final _DeclaredInputs declared = _declareInputs(
       [...options.sources, ...options.inputSources],
       roots,
       options.multiRoots,
@@ -836,9 +862,9 @@ class _ModuleBuild {
 
   /// Assembles the file view, outputs and plan inputs from the loaded parts.
   static Future<_ModuleBuild> _assemble(_LoadedModule loaded) async {
-    final options = loaded.options;
-    final declared = loaded.declared;
-    final worker = loaded.worker;
+    final _ModuleOptions options = loaded.options;
+    final _DeclaredInputs declared = loaded.declared;
+    final _WorkerInputs worker = loaded.worker;
     final files = _Files(
       options.multiRoots.isEmpty ? const ['.'] : options.multiRoots,
       declaredKeys: declared.keys,
@@ -906,9 +932,9 @@ class _ModuleBuild {
   List<String> _extraStagedRoots() {
     final extraMultiRoots = <String>[];
     final seenStagedRoots = <String>{};
-    for (final key in files.declaredKeys) {
+    for (final String key in files.declaredKeys) {
       if (!files.isDeclaredInRoots(key)) {
-        final stagedRoot = stagedSources[key];
+        final String? stagedRoot = stagedSources[key];
         if (stagedRoot != null && seenStagedRoots.add(stagedRoot)) {
           extraMultiRoots.add(stagedRoot);
         }
@@ -922,7 +948,7 @@ class _ModuleBuild {
     final stagedInputs = <Uint8List>[];
     for (final key in keys) {
       if (!files.isDeclaredInRoots(key)) {
-        final stagedRoot = stagedSources[key];
+        final String? stagedRoot = stagedSources[key];
         if (stagedRoot != null && inputs.isNotEmpty) {
           final stagedPath = '$stagedRoot/$key';
           if (_lookupDigest(stagedPath, inputDigests) == null) {
@@ -941,15 +967,15 @@ class _ModuleBuild {
 
   /// Compiles the entry module from source, verifying and staging as needed.
   Future<int> runEntry() async {
-    final entry = await _entrySources(
+    final _EntrySources entry = await _entrySources(
       options.sources,
       inherited,
       _resolveScope,
     );
-    final blocked = _checkEntry(entry);
+    final int? blocked = _checkEntry(entry);
     if (blocked != null) return blocked;
-    final extraMultiRoots = _extraStagedRoots();
-    final stagedInputs = await _stagedInputsFor(entry.keys);
+    final List<String> extraMultiRoots = _extraStagedRoots();
+    final List<Uint8List> stagedInputs = await _stagedInputsFor(entry.keys);
     _IsolatedRoot? isolated;
     try {
       if (await _needsIsolatedMultiRoot(
@@ -961,7 +987,7 @@ class _ModuleBuild {
       )) {
         isolated = await _stageIsolated();
       }
-      final result = await _compileAndVerify(
+      final _CompileResult result = await _compileAndVerify(
         (current) =>
             _compileEntry(current, extraMultiRoots, entry, stagedInputs),
         _stageIsolated,
@@ -996,13 +1022,13 @@ class _ModuleBuild {
   /// Reports the entry walk's failures, returning the exit code, or null.
   int? _checkEntry(_EntrySources entry) {
     if (entry.disallowed.isNotEmpty) {
-      for (final error in entry.disallowed) {
+      for (final String error in entry.disallowed) {
         log.writeln(error);
       }
       return 1;
     }
     if (entry.undeclared.isNotEmpty) {
-      for (final missing in entry.undeclared) {
+      for (final String missing in entry.undeclared) {
         log.writeln(
           'kernel_module: cannot compile $missing: '
           'source is not a declared input.',
@@ -1021,7 +1047,7 @@ class _ModuleBuild {
     List<Uint8List> stagedInputs,
   ) async {
     final staged = isolated;
-    final entryBase = staged != null
+    final List<String> entryBase = staged != null
         ? _baseWithSingleMultiRoot(options.base, staged.rootDir)
         : _baseWithOrderedMultiRoots(
             options.base,
@@ -1031,7 +1057,7 @@ class _ModuleBuild {
           );
     // The compiler reads each declared file through the isolated root, so
     // its origin inputs are withheld as duplicates.
-    final callInputs = staged != null
+    final List<Uint8List> callInputs = staged != null
         ? (staged.inputs.isEmpty
               ? inputs
               : [...staged.inputs, ..._uncoveredInputs(inputs, staged.covered)])
@@ -1057,7 +1083,7 @@ class _ModuleBuild {
 
   /// Writes the entry index, outline, sidecar and unused-inputs list.
   Future<void> _finishEntry(_EntrySources entry) async {
-    final output = options.output!;
+    final String output = options.output!;
     final entrySccs = [
       _Scc(
         dill: _entryDillName,
@@ -1070,8 +1096,8 @@ class _ModuleBuild {
     if (options.outputOutline != null) {
       final fullFile = File('$output/$_entryDillName');
       if (await fullFile.exists()) {
-        final rawBytes = await fullFile.readAsBytes();
-        final outlineBytes = stripDillToOutline(rawBytes);
+        final Uint8List rawBytes = await fullFile.readAsBytes();
+        final Uint8List outlineBytes = stripDillToOutline(rawBytes);
         await File('${options.outputOutline}/$_entryDillName')
             .writeAsBytes(outlineBytes);
       }
@@ -1113,16 +1139,15 @@ class _ModuleBuild {
 
   /// Plans, compiles and links the module's own sources component by component.
   Future<int> runLibrary() async {
-    final planned = await _planLibrary();
-    final plannedExit = planned.exit;
+    final _PlannedLibrary planned = await _planLibrary();
+    final int? plannedExit = planned.exit;
     if (plannedExit != null) return plannedExit;
-    final keys = planned.keys;
-    final plan = planned.plan;
-    var remaining = [
+    final Map<String, String> keys = planned.keys;
+    final _Plan plan = planned.plan;
+    List<String> remaining = [
       for (final uri in own)
         if (!plan.isExcluded(keys[uri])) uri,
     ];
-    final extraMultiRoots = _extraStagedRoots();
     var retried = false;
     _IsolatedRoot? isolated;
     var sccs = <_Scc>[];
@@ -1135,7 +1160,7 @@ class _ModuleBuild {
         ModuleOutcome? failure;
         var failedUris = const <String>[];
         for (final scc in sccs) {
-          final step = await _compileScc(scc, local, extraMultiRoots, isolated);
+          final _SccStep step = await _compileScc(scc, local, isolated);
           isolated = step.isolated;
           if (step.stop) return 1;
           if (step.failure != null) {
@@ -1147,7 +1172,7 @@ class _ModuleBuild {
         if (failure == null) break;
         // The one retry: drop the own sources that failed, and their
         // importers. The components are then formed again from what remains.
-        final verdict = _attribute(
+        final _Verdict verdict = _attribute(
           failure.output,
           failedUris,
           roots,
@@ -1192,8 +1217,8 @@ class _ModuleBuild {
   _planLibrary() async {
     final keys = <String, String>{};
     final plan = _Plan();
-    for (final uri in own) {
-      final key = _keyOfUri(uri, roots, options.multiRootPrefix);
+    for (final String uri in own) {
+      final String? key = _keyOfUri(uri, roots, options.multiRootPrefix);
       if (key == null) continue;
       if (!files.isDeclared(key)) {
         log.writeln(
@@ -1206,7 +1231,7 @@ class _ModuleBuild {
       plan.addOwn(key, uri);
     }
     await _adoptDeclaredPartPeers(own, keys, plan, inherited, _resolveScope);
-    final disallowed = await _planImports(
+    final List<String> disallowed = await _planImports(
       plan,
       keys,
       inherited,
@@ -1225,14 +1250,13 @@ class _ModuleBuild {
   /// Compiles one component and records its kernel node. Returns whether the
   /// build must stop, the outcome to attribute when the compile failed, and
   /// the isolated root (staged when an unstaged success proved unverified).
-  Future<({bool stop, ModuleOutcome? failure, _IsolatedRoot? isolated})>
-  _compileScc(
+  Future<_SccStep> _compileScc(
     _Scc scc,
     Map<String, _Node> local,
-    List<String> extraMultiRoots,
     _IsolatedRoot? isolated,
   ) async {
-    final stagedInputs = await _stagedInputsFor(scc.keys);
+    final List<String> extraMultiRoots = _extraStagedRoots();
+    final List<Uint8List> stagedInputs = await _stagedInputsFor(scc.keys);
     var current = isolated;
     if (current == null &&
         await _needsIsolatedMultiRoot(
@@ -1250,7 +1274,7 @@ class _ModuleBuild {
       current = await _stageIsolated();
     }
     final dillPath = '${options.output!}/${scc.dill}';
-    final result = await _compileAndVerify(
+    final _CompileResult result = await _compileAndVerify(
       (staged) => _compileSccOnce(
         scc,
         local,
@@ -1278,7 +1302,7 @@ class _ModuleBuild {
       log.write(result.outcome.output);
       return (stop: true, failure: null, isolated: result.isolated);
     }
-    final outcome = result.outcome;
+    final ModuleOutcome outcome = result.outcome;
     if (outcome.exitCode != 0) {
       return (stop: false, failure: outcome, isolated: result.isolated);
     }
@@ -1296,17 +1320,17 @@ class _ModuleBuild {
     String dillPath,
   ) async {
     final staged = isolated;
-    final summaryNodes = _neededNodes(scc.imports, local);
+    final List<_Node> summaryNodes = _neededNodes(scc.imports, local);
     final summaryInputs = <Uint8List>[];
     if (inputs.isNotEmpty || compiler is _Persistent) {
       for (final node in summaryNodes) {
-        final encoded = node.encodedInput;
+        final Uint8List? encoded = node.encodedInput;
         if (encoded != null) {
           summaryInputs.add(encoded);
         }
       }
     }
-    final sccBase = staged != null
+    final List<String> sccBase = staged != null
         ? _baseWithSingleMultiRoot(options.base, staged.rootDir)
         : _baseWithOrderedMultiRoots(
             options.base,
@@ -1314,7 +1338,7 @@ class _ModuleBuild {
             scc.keys,
             files,
           );
-    final extraInputs = [
+    final List<Uint8List> extraInputs = [
       if (staged != null) ...staged.inputs else ...stagedInputs,
       ...summaryInputs,
       if (staged != null) ..._uncoveredInputs(inputs, staged.covered),
@@ -1347,21 +1371,21 @@ class _ModuleBuild {
     Uint8List? nodeDillBytes;
     final dillFile = File(dillPath);
     if (await dillFile.exists()) {
-      final rawBytes = await dillFile.readAsBytes();
+      final Uint8List rawBytes = await dillFile.readAsBytes();
       if (options.outputOutline != null) {
-        final outlineBytes = stripDillToOutline(rawBytes);
+        final Uint8List outlineBytes = stripDillToOutline(rawBytes);
         nodeDill = '${options.outputOutline}/${scc.dill}';
         await File(nodeDill).writeAsBytes(outlineBytes);
         nodeDillBytes = outlineBytes;
-        await dillFile.writeAsBytes(_stripSourceCodeFromDill(rawBytes));
+        await dillFile.writeAsBytes(stripSourceCodeFromDill(rawBytes));
       } else {
-        final strippedBytes = _stripSourceCodeFromDill(rawBytes);
+        final Uint8List strippedBytes = stripSourceCodeFromDill(rawBytes);
         await dillFile.writeAsBytes(strippedBytes);
         nodeDillBytes = strippedBytes;
       }
     }
     final node = _Node(nodeDill, scc.imports, dillBytes: nodeDillBytes);
-    for (final key in scc.keys) {
+    for (final String key in scc.keys) {
       local[key] = node;
     }
   }
@@ -1422,15 +1446,15 @@ class _ModuleBuild {
     Map<String, String> keys,
     _Plan plan,
   ) async {
-    final output = options.output!;
-    final outputOutline = options.outputOutline;
+    final String output = options.output!;
+    final String? outputOutline = options.outputOutline;
     await _writeIndex(output, sccs);
     if (outputOutline == null) return;
     final excludedKeys = <String>[];
     for (final uri in own) {
-      final key = keys[uri];
+      final String? key = keys[uri];
       if (key == null || !plan.isExcluded(key)) continue;
-      final text = await files.read(key);
+      final String? text = await files.read(key);
       if (text == null) continue;
       final staged = File('$outputOutline/sources/$key');
       await staged.parent.create(recursive: true);
@@ -1455,9 +1479,9 @@ class _ModuleBuild {
         '# ${remaining.length} of ${own.length} sources compile; the others '
         'are excluded for the VM.',
       );
-    for (final uri in own) {
-      final key = keys[uri];
-      final reason = plan.reasonOf(key);
+    for (final String uri in own) {
+      final String? key = keys[uri];
+      final String? reason = plan.reasonOf(key);
       if (key == null || reason == null) continue;
       lines.writeln('$uri\t$reason');
       if (!uri.startsWith(options.multiRootPrefix)) {
@@ -1503,9 +1527,9 @@ class _Node {
   /// Encoded protobuf `Input` message for an intra-module SCC kernel written
   /// during this compile, computed lazily in memory without re-reading disk.
   Uint8List? get encodedInput {
-    final cached = _encodedInput;
+    final Uint8List? cached = _encodedInput;
     if (cached != null) return cached;
-    final bytes = _dillBytes;
+    final Uint8List? bytes = _dillBytes;
     if (bytes == null) return null;
     _dillBytes = null;
     return _encodedInput = _encodeInput(dill, sha256Of(bytes));
@@ -1567,7 +1591,7 @@ class _ModuleCacheEntry<T> {
 }
 
 bool _isNormalizedRelative(String path) {
-  final len = path.length;
+  final int len = path.length;
   if (len == 0) return false;
   if (isWindowsDrivePath(path)) return false;
   if (path.codeUnitAt(0) == 0x2f ||
@@ -1580,7 +1604,7 @@ bool _isNormalizedRelative(String path) {
   for (var i = 0; i <= len; i++) {
     if (i < len && path.codeUnitAt(i) == 0x5c) return false;
     if (i == len || path.codeUnitAt(i) == 0x2f) {
-      final segLen = i - segStart;
+      final int segLen = i - segStart;
       if (segLen == 0) return false;
       if (segLen == 1 && path.codeUnitAt(segStart) == 0x2e) return false;
       if (segLen == 2 &&
@@ -1596,16 +1620,16 @@ bool _isNormalizedRelative(String path) {
 
 Uint8List? _lookupDigest(String path, Map<String, Uint8List>? inputDigests) {
   if (inputDigests == null) return null;
-  final direct = _nonEmptyDigest(inputDigests[path]);
+  final Uint8List? direct = _nonEmptyDigest(inputDigests[path]);
   if (direct != null) return direct;
-  final alternate = _lookupAlternateSpelling(path, inputDigests);
+  final Uint8List? alternate = _lookupAlternateSpelling(path, inputDigests);
   if (alternate != null) return alternate;
   if (_isNormalizedRelative(path)) {
     return _nonEmptyDigest(inputDigests['./$path']);
   }
-  final normFile = normalizePath(path);
+  final String normFile = normalizePath(path);
   if (normFile != path) {
-    final hit = _nonEmptyDigest(inputDigests[normFile]);
+    final Uint8List? hit = _nonEmptyDigest(inputDigests[normFile]);
     if (hit != null) return hit;
   }
   return _lookupNormalizedRelative(path, inputDigests);
@@ -1624,11 +1648,11 @@ Uint8List? _lookupAlternateSpelling(
   Map<String, Uint8List> inputDigests,
 ) {
   if (path.startsWith('file://')) {
-    final filePath = _filePathOf(path);
+    final String filePath = _filePathOf(path);
     if (filePath != path) return _lookupDigest(filePath, inputDigests);
     return null;
   }
-  final uri = kernelWorkerUri(path);
+  final String uri = kernelWorkerUri(path);
   if (uri != path) return _nonEmptyDigest(inputDigests[uri]);
   return null;
 }
@@ -1639,9 +1663,9 @@ Uint8List? _lookupNormalizedRelative(
   String path,
   Map<String, Uint8List> inputDigests,
 ) {
-  final relNorm = _normalize(path);
+  final String relNorm = _normalize(path);
   if (relNorm.isEmpty) return null;
-  final relHit = _nonEmptyDigest(inputDigests[relNorm]);
+  final Uint8List? relHit = _nonEmptyDigest(inputDigests[relNorm]);
   if (relHit != null) return relHit;
   if (relNorm.startsWith('/')) return null;
   return _nonEmptyDigest(inputDigests['./$relNorm']);
@@ -1692,7 +1716,8 @@ class KernelModuleCache {
       String? oldestIndexKey;
       int? oldestIndexTick;
       if (_indexCache.isNotEmpty) {
-        final first = _indexCache.entries.first;
+        final MapEntry<String, _ModuleCacheEntry<_ParsedIndex>> first =
+            _indexCache.entries.first;
         oldestIndexKey = first.key;
         oldestIndexTick = first.value.tick;
       }
@@ -1700,7 +1725,8 @@ class KernelModuleCache {
       String? oldestLibKey;
       int? oldestLibTick;
       if (_librariesCache.isNotEmpty) {
-        final first = _librariesCache.entries.first;
+        final MapEntry<String, _ModuleCacheEntry<Map<String, dynamic>>> first =
+            _librariesCache.entries.first;
         oldestLibKey = first.key;
         oldestLibTick = first.value.tick;
       }
@@ -1708,7 +1734,8 @@ class KernelModuleCache {
       String? oldestExclKey;
       int? oldestExclTick;
       if (_excludedCache.isNotEmpty) {
-        final first = _excludedCache.entries.first;
+        final MapEntry<String, _ModuleCacheEntry<List<String>>> first =
+            _excludedCache.entries.first;
         oldestExclKey = first.key;
         oldestExclTick = first.value.tick;
       }
@@ -1719,7 +1746,7 @@ class KernelModuleCache {
         break;
       }
 
-      var minTick = oldestIndexTick ?? oldestLibTick ?? oldestExclTick!;
+      int minTick = oldestIndexTick ?? oldestLibTick ?? oldestExclTick!;
       if (oldestLibTick != null && oldestLibTick < minTick) {
         minTick = oldestLibTick;
       }
@@ -1728,13 +1755,18 @@ class KernelModuleCache {
       }
 
       if (oldestIndexTick != null && oldestIndexTick == minTick) {
-        final removed = _indexCache.remove(oldestIndexKey!)!;
+        final _ModuleCacheEntry<_ParsedIndex> removed = _indexCache.remove(
+          oldestIndexKey!,
+        )!;
         _indexBytesTotal -= removed.byteSize;
       } else if (oldestExclTick != null && oldestExclTick == minTick) {
-        final removed = _excludedCache.remove(oldestExclKey!)!;
+        final _ModuleCacheEntry<List<String>> removed = _excludedCache.remove(
+          oldestExclKey!,
+        )!;
         _excludedBytesTotal -= removed.byteSize;
       } else if (oldestLibTick != null) {
-        final removed = _librariesCache.remove(oldestLibKey!)!;
+        final _ModuleCacheEntry<Map<String, dynamic>> removed = _librariesCache
+            .remove(oldestLibKey!)!;
         _librariesBytesTotal -= removed.byteSize;
       }
     }
@@ -1876,12 +1908,12 @@ List<_Scc> _componentsOf(
   for (final uri in remaining) {
     uriOf.putIfAbsent(keys[uri] ?? 'uri:$uri', () => uri);
   }
-  final nodes = uriOf.keys.toList()..sort();
-  final members = uriOf.keys.toSet();
+  final List<String> nodes = uriOf.keys.toList()..sort();
+  final Set<String> members = uriOf.keys.toSet();
   Iterable<String> successors(String key) => plan
       .importsOf(key)
       .where((target) => target != key && members.contains(target));
-  final components = stronglyConnected(nodes, successors);
+  final List<List<String>> components = stronglyConnected(nodes, successors);
   return [
     for (var i = 0; i < components.length; i++)
       _sccOf('$i.dill', components[i], uriOf, plan),
@@ -1894,8 +1926,8 @@ _Scc _sccOf(
   Map<String, String> uriOf,
   _Plan plan,
 ) {
-  final own = keys.toSet();
-  final imports = <String>{
+  final Set<String> own = keys.toSet();
+  final List<String> imports = <String>{
     for (final key in keys) ...plan.importsOf(key),
   }.where((target) => !own.contains(target)).toList()..sort();
   return _Scc(
@@ -1924,13 +1956,13 @@ List<List<String>> stronglyConnected(
     index[v] = low[v] = index.length;
     stack.add(v);
     onStack.add(v);
-    for (final w in successors(v)) {
+    for (final String w in successors(v)) {
       if (!index.containsKey(w)) {
         visit(w);
-        final lowW = low[w]!;
+        final int lowW = low[w]!;
         if (lowW < low[v]!) low[v] = lowW;
       } else if (onStack.contains(w)) {
-        final indexW = index[w]!;
+        final int indexW = index[w]!;
         if (indexW < low[v]!) low[v] = indexW;
       }
     }
@@ -1964,16 +1996,16 @@ List<_Node> _neededNodes(Iterable<String> roots, Map<String, _Node> graph) {
   final visited = <String>{};
   final queue = Queue<String>.of(roots);
   while (queue.isNotEmpty) {
-    final key = queue.removeFirst();
+    final String key = queue.removeFirst();
     if (!visited.add(key)) continue;
-    final node = graph[key];
+    final _Node? node = graph[key];
     if (node == null) continue;
     if (!byDill.containsKey(node.dill)) {
       byDill[node.dill] = node;
       queue.addAll(node.imports);
     }
   }
-  final sortedDills = byDill.keys.toList()..sort();
+  final List<String> sortedDills = byDill.keys.toList()..sort();
   return [for (final dill in sortedDills) byDill[dill]!];
 }
 
@@ -2019,7 +2051,7 @@ Future<void> _writeIndex(
   List<_Scc> sccs, {
   List<String> excluded = const [],
 }) async {
-  final json = const JsonEncoder.withIndent('  ').convert({
+  final String json = const JsonEncoder.withIndent('  ').convert({
     'version': 1,
     'sccs': [
       for (final scc in sccs)
@@ -2064,7 +2096,7 @@ class _Plan {
 
   /// Records that `importer` imports or exports `imported`, an own source.
   void addImporter({required String imported, required String importer}) {
-    final list = _importers[imported] ??= [];
+    final List<String> list = _importers[imported] ??= [];
     if (!list.contains(importer)) list.add(importer);
   }
 
@@ -2091,8 +2123,8 @@ class _Plan {
       }
     });
     while (queue.isNotEmpty) {
-      final key = queue.removeFirst();
-      for (final importer in _importers[key] ?? const <String>[]) {
+      final String key = queue.removeFirst();
+      for (final String importer in _importers[key] ?? const <String>[]) {
         if (_excluded.containsKey(importer)) continue;
         _excluded[importer] = 'imports ${_uriOf[key]}, which is excluded';
         queue.add(importer);
@@ -2161,8 +2193,9 @@ Future<void> _adoptDeclaredPartPeers(
     for (final key in scope.files.declaredKeys)
       if (!scope.graph.containsKey(key)) key,
   };
-  final peers = await _scanPeerCandidates(candidates, scope.files, scope.vm);
-  final links = _linkPartDirectives(
+  final ({Map<String, String> libraryByName, Map<String, ScanResult> scans})
+  peers = await _scanPeerCandidates(candidates, scope.files, scope.vm);
+  final _PartLinks links = _linkPartDirectives(
     peers.scans,
     peers.libraryByName,
     scope.roots,
@@ -2173,10 +2206,15 @@ Future<void> _adoptDeclaredPartPeers(
     for (final entry in links.partsOf.entries)
       entry.key: {for (final target in entry.value) ?target},
   };
-  final sortedRoots = peers.scans.keys.toList()..sort();
+  final List<String> sortedRoots = peers.scans.keys.toList()..sort();
   for (final root in sortedRoots) {
     if (links.hasPartOf.contains(root)) continue;
-    final unit = _completeUnit(root, links, peers.scans, resolvedPartsOf);
+    final List<String>? unit = _completeUnit(
+      root,
+      links,
+      peers.scans,
+      resolvedPartsOf,
+    );
     if (unit == null ||
         !unit.any((m) => plan.isOwn(m) || inherited.containsKey(m))) {
       continue;
@@ -2192,7 +2230,7 @@ Future<bool> _usesPartDirectives(
   Set<String> vm,
 ) async {
   for (final key in keys) {
-    final scan = await files.scan(key, vm);
+    final ScanResult? scan = await files.scan(key, vm);
     if (scan == null) continue;
     if (scan.partOfLibrary != null ||
         scan.refs.any((r) => r.isPart || r.isPartOf)) {
@@ -2212,7 +2250,7 @@ _scanPeerCandidates(
   final scans = <String, ScanResult>{};
   final libraryByName = <String, String>{};
   for (final key in candidates) {
-    final scan = await files.scan(key, vm);
+    final ScanResult? scan = await files.scan(key, vm);
     if (scan == null) continue;
     scans[key] = scan;
     if (scan.libraryName != null) {
@@ -2244,9 +2282,9 @@ _PartLinks _linkPartDirectives(
       hasPartOf.add(key);
       parentOf[key] = libraryByName[scan.partOfLibrary!];
     }
-    for (final ref in scan.refs) {
+    for (final ScanRef ref in scan.refs) {
       if (ref.uri.startsWith('dart:')) continue;
-      final target = _resolveUri(ref.uri, key, roots, multiRootPrefix);
+      final String? target = _resolveUri(ref.uri, key, roots, multiRootPrefix);
       if (ref.isPart) {
         (partsOf[key] ??= []).add(target);
       } else if (ref.isPartOf) {
@@ -2266,20 +2304,20 @@ List<String>? _completeUnit(
   Map<String, ScanResult> scans,
   Map<String, Set<String>> resolvedPartsOf,
 ) {
-  final directParts = links.partsOf[root];
+  final List<String?>? directParts = links.partsOf[root];
   if (directParts == null || directParts.isEmpty) return null;
   final unit = <String>[root];
   final seen = <String>{root};
   final queue = Queue<String>()..add(root);
   while (queue.isNotEmpty) {
-    final current = queue.removeFirst();
-    for (final partKey in links.partsOf[current] ?? const <String?>[]) {
+    final String current = queue.removeFirst();
+    for (final String? partKey in links.partsOf[current] ?? const <String?>[]) {
       if (partKey == null ||
           !scans.containsKey(partKey) ||
           !links.hasPartOf.contains(partKey)) {
         return null;
       }
-      final parent = links.parentOf[partKey];
+      final String? parent = links.parentOf[partKey];
       if (parent == null ||
           !seen.contains(parent) ||
           !_reachesViaPart(parent, partKey, resolvedPartsOf)) {
@@ -2308,7 +2346,7 @@ void _adoptUnit(
     // The adoption decision read this peer: renaming a file into its name
     // recompiles the dependency, so its provider is never listed as unused.
     plan.addConsulted(member);
-    final uri = _packageUriOf(
+    final String uri = _packageUriOf(
       member,
       inherited[member] ?? '${scope.multiRootPrefix}$member',
       scope.roots,
@@ -2330,11 +2368,11 @@ bool _reachesViaPart(
   final visited = <String>{parent};
   final queue = Queue<String>()..add(parent);
   while (queue.isNotEmpty) {
-    final current = queue.removeFirst();
-    final parts = declaredPartsOf[current];
+    final String current = queue.removeFirst();
+    final Set<String>? parts = declaredPartsOf[current];
     if (parts == null) continue;
     if (parts.contains(partKey)) return true;
-    for (final next in parts) {
+    for (final String next in parts) {
       if (visited.add(next)) queue.add(next);
     }
   }
@@ -2367,7 +2405,7 @@ Future<List<String>> _planImports(
   final uriOfKey = <String, String>{
     for (final entry in keys.entries) entry.value: entry.key,
   };
-  final scanned = await _scanImportDirectives(
+  final _ScannedImports scanned = await _scanImportDirectives(
     keys,
     scope.files,
     scope.vm,
@@ -2376,9 +2414,9 @@ Future<List<String>> _planImports(
     log,
   );
   final direct = <String, String>{};
-  for (final entry in scanned.scans.entries) {
-    final key = entry.key;
-    final scan = entry.value;
+  for (final MapEntry<String, ScanResult> entry in scanned.scans.entries) {
+    final String key = entry.key;
+    final ScanResult scan = entry.value;
     if (scan.partOfLibrary != null) {
       _planPartOfLibrary(
         key,
@@ -2389,11 +2427,11 @@ Future<List<String>> _planImports(
         direct,
       );
     }
-    for (final ref in scan.refs) {
+    for (final ScanRef ref in scan.refs) {
       if (_rejectMalformedRef(ref, key, uriOfKey, disallowed)) continue;
       if (_planSdkRef(ref, key, scope.vm, direct)) continue;
       final at = _RefPlan(ref: ref, key: key, plan: plan, direct: direct);
-      final target = _resolveUri(
+      final String? target = _resolveUri(
         ref.uri,
         key,
         scope.roots,
@@ -2434,8 +2472,8 @@ Future<_ScannedImports> _scanImportDirectives(
   final scans = <String, ScanResult>{};
   final libraryKeyByName = <String, String>{};
   final declaredPartsOf = <String, Set<String>>{};
-  for (final key in keys.values) {
-    final scan = await files.scan(key, vm);
+  for (final String key in keys.values) {
+    final ScanResult? scan = await files.scan(key, vm);
     if (scan == null) {
       // Not readable here, or not a directive prologue the scanner can follow. The
       // compiler decides, and a failure in it is attributed or fails the action.
@@ -2446,9 +2484,9 @@ Future<_ScannedImports> _scanImportDirectives(
     if (scan.libraryName != null) {
       libraryKeyByName.putIfAbsent(scan.libraryName!, () => key);
     }
-    for (final ref in scan.refs) {
+    for (final ScanRef ref in scan.refs) {
       if (!ref.isPart || ref.uri.startsWith('dart:')) continue;
-      final target = _resolveUri(ref.uri, key, roots, multiRootPrefix);
+      final String? target = _resolveUri(ref.uri, key, roots, multiRootPrefix);
       if (target != null) {
         (declaredPartsOf[key] ??= {}).add(target);
       }
@@ -2471,8 +2509,8 @@ void _planPartOfLibrary(
   _Plan plan,
   Map<String, String> direct,
 ) {
-  final libName = scan.partOfLibrary!;
-  final parent = libraryKeyByName[libName];
+  final String libName = scan.partOfLibrary!;
+  final String? parent = libraryKeyByName[libName];
   if (parent == null ||
       !plan.isOwn(parent) ||
       !_reachesViaPart(parent, key, declaredPartsOf)) {
@@ -2534,8 +2572,8 @@ void _planUnresolvedRef(
   List<String> disallowed,
   _ResolveScope scope,
 ) {
-  final ref = at.ref;
-  final key = at.key;
+  final ScanRef ref = at.ref;
+  final String key = at.key;
   // A schemeless `//` authority (`\` separates like the front end, so a
   // leading `\\` counts too) reads above every root, outside the declared
   // inputs: it fails however the directive names it, parts included.
@@ -2548,7 +2586,7 @@ void _planUnresolvedRef(
   }
   // A directive URI outside the declared inputs fails the build (see the
   // doc comment): it would read the host, outside every multi-root.
-  final outsideInputs = ref.isPart || ref.isPartOf
+  final bool outsideInputs = ref.isPart || ref.isPartOf
       ? isFileSchemeDirectiveUri(ref.uri)
       : isDisallowedDirectiveUri(
           ref.uri,
@@ -2631,11 +2669,11 @@ void _planResolvedImport(
   Map<String, String> uriOfKey,
   List<String> disallowed,
 ) {
-  final ref = at.ref;
-  final key = at.key;
-  final plan = at.plan;
+  final ScanRef ref = at.ref;
+  final String key = at.key;
+  final _Plan plan = at.plan;
   if (ref.uri.startsWith(scope.multiRootPrefix)) {
-    final refused = _relativeDepImportError(
+    final String? refused = _relativeDepImportError(
       scope.graph,
       scope.roots,
       scope.multiRootPrefix,
@@ -2708,7 +2746,7 @@ String? _relativeDepImportError(
 ) {
   if (!graph.containsKey(seen.target)) return null;
   if (!_isNonPackageRef(seen.ref.uri, multiRootPrefix)) return null;
-  final packageUri = _packageUriOf(
+  final String packageUri = _packageUriOf(
     seen.target,
     '$multiRootPrefix${seen.target}',
     roots,
@@ -2727,7 +2765,7 @@ bool _definedBy(
   Map<String, _PackageRoot> roots,
   String multiRootPrefix,
 ) {
-  final key = _keyOfUri(uri, roots, multiRootPrefix);
+  final String? key = _keyOfUri(uri, roots, multiRootPrefix);
   return key != null && graph.containsKey(key);
 }
 
@@ -2810,14 +2848,14 @@ class _LibraryNameIndex {
   bool get wasBuilt => _map != null;
 
   Future<String?> find(String name) async {
-    var map = _map;
+    Map<String, String>? map = _map;
     if (map == null) {
       map = <String, String>{};
       for (final candidate in <String>{
         ..._closure.keys,
         ..._files.declaredKeys,
       }) {
-        final scan = await _files.scan(candidate, _vm);
+        final ScanResult? scan = await _files.scan(candidate, _vm);
         if (scan?.libraryName != null) {
           map.putIfAbsent(scan!.libraryName!, () => candidate);
         }
@@ -2865,7 +2903,7 @@ class _EntryWalk {
 
   void seed(List<String> sources) {
     for (final uri in sources) {
-      final key = _keyOfUri(uri, _roots, _multiRootPrefix);
+      final String? key = _keyOfUri(uri, _roots, _multiRootPrefix);
       if (key == null) {
         _out.add(uri);
       } else {
@@ -2888,9 +2926,9 @@ class _EntryWalk {
   /// the front end resolves from source rather than from a summary.
   void _refuseRawDepEdges(Set<String> usedAsRaw) {
     if (_refCandidates.isEmpty) return;
-    for (final cand in _refCandidates) {
+    for (final _ResolvedRef cand in _refCandidates) {
       if (!usedAsRaw.contains(cand.importer)) continue;
-      final refused = _relativeDepImportError(
+      final String? refused = _relativeDepImportError(
         _graph,
         _roots,
         _multiRootPrefix,
@@ -2905,7 +2943,12 @@ class _EntryWalk {
   }
 
   _EntrySources result() {
-    final shapes = _entryUriShapes(_ownUris, _edges, _roots, _multiRootPrefix);
+    final _EntryUriShapes shapes = _entryUriShapes(
+      _ownUris,
+      _edges,
+      _roots,
+      _multiRootPrefix,
+    );
     _refuseRawDepEdges(shapes.usedAsRaw);
     _emitEntryUris(
       _out,
@@ -2930,29 +2973,29 @@ class _EntryWalk {
       _undeclared.add('${_ownUris[key] ?? key} ($key)');
       return;
     }
-    final text = await _files.read(key);
+    final String? text = await _files.read(key);
     if (text == null) {
       _undeclared.add('${_ownUris[key] ?? key} ($key)');
       return;
     }
-    final scan = await _files.scan(key, _vm);
+    final ScanResult? scan = await _files.scan(key, _vm);
     if (scan == null) return;
     if (scan.partOfLibrary != null) {
       await _followPartOfName(key, scan.partOfLibrary!);
     }
-    for (final ref in scan.refs) {
+    for (final ScanRef ref in scan.refs) {
       if (ref.uri.startsWith('dart:')) continue;
       await _followRef(key, ref);
     }
   }
 
   Future<void> _followPartOfName(String key, String library) async {
-    final target = await _names.find(library);
+    final String? target = await _names.find(library);
     if (target == null) {
       _undeclared.add('${_ownUris[key] ?? key} (part of $library)');
       return;
     }
-    final uri =
+    final String uri =
         _closure[target] ??
         _packageUriOf(target, '$_multiRootPrefix$target', _roots);
     _edges.add(_EntryEdge(key, uri, target));
@@ -2965,7 +3008,7 @@ class _EntryWalk {
 
   Future<void> _followRef(String key, ScanRef ref) async {
     if (_rejectMalformedRef(ref, key, _ownUris, _disallowed)) return;
-    final target = _resolveUri(ref.uri, key, _roots, _multiRootPrefix);
+    final String? target = _resolveUri(ref.uri, key, _roots, _multiRootPrefix);
     if (target == null) {
       _followUnresolvedRef(key, ref);
       return;
@@ -2979,7 +3022,7 @@ class _EntryWalk {
     _edges.add(_EntryEdge(key, ref.uri, target));
     _imports.add(target);
     if (!_seen.add(target)) return;
-    final uri =
+    final String? uri =
         _closure[target] ??
         ((!_graph.containsKey(target) || ref.isPart || ref.isPartOf)
             ? _packageUriOf(target, '$_multiRootPrefix$target', _roots)
@@ -3001,7 +3044,7 @@ class _EntryWalk {
     }
     // A directive URI outside the declared inputs fails the build (see
     // [_planImports]): it would read the host, outside every multi-root.
-    final outsideInputs = ref.isPart || ref.isPartOf
+    final bool outsideInputs = ref.isPart || ref.isPartOf
         ? isFileSchemeDirectiveUri(ref.uri)
         : isDisallowedDirectiveUri(ref.uri, multiRootPrefix: _multiRootPrefix);
     if (outsideInputs) {
@@ -3037,7 +3080,7 @@ _EntryUriShapes _entryUriShapes(
   final usedAsRaw = <String>{};
   final usedAsPackage = <String>{};
   ownUris.forEach((key, uri) {
-    final pkgUri = _packageUriOf(key, uri, roots);
+    final String pkgUri = _packageUriOf(key, uri, roots);
     if (pkgUri == uri) {
       usedAsRaw.add(key);
     } else if (uri.startsWith('package:')) {
@@ -3096,7 +3139,7 @@ void _propagatePackageUse(
       if (!ownUris.containsKey(edge.target) || edge.uri.contains(':')) {
         continue;
       }
-      final targetUri = ownUris[edge.target]!;
+      final String targetUri = ownUris[edge.target]!;
       if (usedAsPackage.contains(edge.from) &&
           _packageUriOf(edge.target, targetUri, roots) != targetUri &&
           usedAsPackage.add(edge.target)) {
@@ -3116,7 +3159,7 @@ void _emitEntryUris(
   Set<String> usedAsPackage,
 ) {
   ownUris.forEach((key, uri) {
-    final pkgUri = _packageUriOf(key, uri, roots);
+    final String pkgUri = _packageUriOf(key, uri, roots);
     if (pkgUri == uri) {
       out.add(uri);
       return;
@@ -3176,25 +3219,29 @@ _Verdict _attribute(
 ) {
   final keyOfSpelling = <String, String>{};
   for (final uri in uris) {
-    final key = _keyOfUri(uri, roots, multiRootPrefix);
+    final String? key = _keyOfUri(uri, roots, multiRootPrefix);
     if (key == null) continue;
-    for (final spelling in _spellings(uri, key)) {
+    for (final String spelling in _spellings(uri, key)) {
       keyOfSpelling.putIfAbsent(spelling, () => key);
     }
   }
   final failing = <String, String>{};
   var outside = false;
   var located = 0;
-  for (final match in _errorLine.allMatches(output)) {
+  for (final RegExpMatch match in _errorLine.allMatches(output)) {
     located++;
-    final key = _lookup(keyOfSpelling, match.group(1)!, multiRootPrefix);
+    final String? key = _lookup(
+      keyOfSpelling,
+      match.group(1)!,
+      multiRootPrefix,
+    );
     if (key == null) {
       outside = true;
       continue;
     }
     failing.putIfAbsent(key, () => match.group(4)!);
   }
-  final errorLines = output
+  final int errorLines = output
       .split('\n')
       .where((line) => line.startsWith('Error: ') || line.contains(': Error: '))
       .length;
@@ -3213,8 +3260,10 @@ String? _lookup(
   String path,
   String multiRootPrefix,
 ) {
-  final slashPath = path.contains(r'\') ? path.replaceAll(r'\', '/') : path;
-  for (final spelling in [
+  final String slashPath = path.contains(r'\')
+      ? path.replaceAll(r'\', '/')
+      : path;
+  for (final String? spelling in [
     path,
     slashPath,
     stripMultiRootPrefix(path, multiRootPrefix),
@@ -3223,7 +3272,7 @@ String? _lookup(
     slashPath.replaceFirst(_isolatedRootPrefix, ''),
   ]) {
     if (spelling == null) continue;
-    final key = spellings[spelling];
+    final String? key = spellings[spelling];
     if (key != null) return key;
   }
   return null;
@@ -3241,27 +3290,29 @@ Iterable<String> _inputSpellings(
   List<String> multiRoots = const [],
 ]) sync* {
   if (raw == null || raw.isEmpty) return;
-  final norm = _normalize(raw);
+  final String norm = _normalize(raw);
   if (norm.isNotEmpty) yield norm;
   if (raw.startsWith('bazel-out/') || raw.startsWith('./bazel-out/')) {
-    final stripped = _normalize(raw.replaceFirst(_bazelOutPrefix, ''));
+    final String stripped = _normalize(raw.replaceFirst(_bazelOutPrefix, ''));
     if (stripped.isNotEmpty && stripped != norm) yield stripped;
   }
-  final rawSlash = _filePathOf(raw).replaceAll(r'\', '/');
+  final String rawSlash = _filePathOf(raw).replaceAll(r'\', '/');
   for (final r in multiRoots) {
-    final rootFile = _filePathOf(r)
+    final String rootFile = _filePathOf(r)
         .replaceAll(r'\', '/')
         .replaceFirst(RegExp(r'/+$'), '');
     if (rootFile.isEmpty || rootFile == '.') continue;
     if (rawSlash.startsWith('$rootFile/')) {
-      final stripped = _normalize(rawSlash.substring(rootFile.length + 1));
+      final String stripped = _normalize(
+        rawSlash.substring(rootFile.length + 1),
+      );
       if (stripped.isNotEmpty && stripped != norm) yield stripped;
     }
-    final normRoot = _normalize(rootFile);
+    final String normRoot = _normalize(rootFile);
     if (normRoot.isNotEmpty &&
         normRoot != '.' &&
         norm.startsWith('$normRoot/')) {
-      final stripped = _normalize(norm.substring(normRoot.length + 1));
+      final String stripped = _normalize(norm.substring(normRoot.length + 1));
       if (stripped.isNotEmpty && stripped != norm) yield stripped;
     }
   }
@@ -3282,13 +3333,13 @@ String? _keyOfUri(
   Map<String, _PackageRoot> roots,
   String multiRootPrefix,
 ) {
-  final stripped = stripMultiRootPrefix(uri, multiRootPrefix);
+  final String? stripped = stripMultiRootPrefix(uri, multiRootPrefix);
   if (stripped != null) return _normalize(stripped);
   if (!uri.startsWith('package:')) return null;
-  final rest = uri.substring('package:'.length);
-  final slash = rest.indexOf('/');
+  final String rest = uri.substring('package:'.length);
+  final int slash = rest.indexOf('/');
   if (slash <= 0) return null;
-  final root = roots[rest.substring(0, slash)];
+  final _PackageRoot? root = roots[rest.substring(0, slash)];
   if (root == null) return null;
   return _normalize(
     '${root.path}${root.packageUri}${rest.substring(slash + 1)}',
@@ -3300,7 +3351,7 @@ String? _keyOfUri(
 /// resolves such a reference above every multi-root, so it reads the host
 /// whatever the roots hold, and every resolver nulls it.
 bool _isSlashAuthorityUri(String uri) {
-  final text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
+  final String text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
   return text.startsWith('//');
 }
 
@@ -3330,9 +3381,11 @@ String? _resolveUri(
 /// `path` without empty and `.` segments, with each `..` applied.
 String _normalize(String path) {
   if (_isNormalizedRelative(path)) return path;
-  final slashPath = path.contains(r'\') ? path.replaceAll(r'\', '/') : path;
+  final String slashPath = path.contains(r'\')
+      ? path.replaceAll(r'\', '/')
+      : path;
   final parts = <String>[];
-  for (final part in slashPath.split('/')) {
+  for (final String part in slashPath.split('/')) {
     if (part.isEmpty || part == '.') continue;
     if (part == '..') {
       if (parts.isNotEmpty) parts.removeLast();
@@ -3370,23 +3423,23 @@ class _Files {
   final Map<String, ScanResult?> _scanCache = {};
 
   bool _matchesPathSet(Set<String> pathSet, String root, String key) {
-    final rootFile = _filePathOf(root);
-    final normRoot = rootFile.contains(r'\')
+    final String rootFile = _filePathOf(root);
+    final String normRoot = rootFile.contains(r'\')
         ? rootFile.replaceAll(r'\', '/')
         : rootFile;
     final raw = normRoot == '.' ? key : '$normRoot/$key';
     if (pathSet.contains(raw)) return true;
-    final norm = _normalize(raw);
+    final String norm = _normalize(raw);
     if (pathSet.contains(norm)) return true;
     if (raw.startsWith('/') || isWindowsDrivePath(raw)) {
       if (raw.startsWith('$_cwd/')) {
-        final rel = _normalize(raw.substring(_cwd.length + 1));
+        final String rel = _normalize(raw.substring(_cwd.length + 1));
         if (pathSet.contains(rel)) return true;
       }
-      final normFile = normalizePath(raw);
+      final String normFile = normalizePath(raw);
       if (pathSet.contains(normFile)) return true;
       if (normFile.startsWith('$_cwd/')) {
-        final rel = _normalize(normFile.substring(_cwd.length + 1));
+        final String rel = _normalize(normFile.substring(_cwd.length + 1));
         if (pathSet.contains(rel)) return true;
       }
     } else {
@@ -3403,7 +3456,7 @@ class _Files {
   /// Whether `(root, key)` was explicitly named in `WorkRequest.inputs` or
   /// `--input-source`.
   bool isExplicitlyDeclaredInRoot(String root, String key) {
-    final workerPaths = _workerInputPaths;
+    final Set<String>? workerPaths = _workerInputPaths;
     if (workerPaths != null) {
       return _matchesPathSet(workerPaths, root, key);
     }
@@ -3416,13 +3469,13 @@ class _Files {
   /// Whether `key` may be read from `root`.
   bool isDeclaredInRoot(String root, String key) {
     if (!_declaredKeys.contains(key)) return false;
-    final workerPaths = _workerInputPaths;
+    final Set<String>? workerPaths = _workerInputPaths;
     if (workerPaths != null) {
       return _matchesPathSet(workerPaths, root, key);
     }
     if (_declaredRootPaths.isNotEmpty) {
       var anyRootDeclared = false;
-      for (final candidateRoot in _roots) {
+      for (final String candidateRoot in _roots) {
         if (_matchesPathSet(_declaredRootPaths, candidateRoot, key)) {
           anyRootDeclared = true;
           break;
@@ -3439,7 +3492,7 @@ class _Files {
   /// in `WorkRequest.inputs` when active).
   bool isDeclaredInRoots(String key) {
     if (!_declaredKeys.contains(key)) return false;
-    for (final root in _roots) {
+    for (final String root in _roots) {
       if (isDeclaredInRoot(root, key)) return true;
     }
     return false;
@@ -3464,10 +3517,10 @@ class _Files {
   String? declaredRootOf(String key) {
     if (isDeclaredInRoots(key)) {
       String? firstDeclared;
-      for (final root in _roots) {
+      for (final String root in _roots) {
         if (!isDeclaredInRoot(root, key)) continue;
         firstDeclared ??= root;
-        final path = _filePathOf(root == '.' ? key : '$root/$key');
+        final String path = _filePathOf(root == '.' ? key : '$root/$key');
         if (File(path).existsSync()) {
           return root;
         }
@@ -3480,7 +3533,7 @@ class _Files {
   /// The file-system path of the single declared origin for [key], or `null`
   /// when [key] is not a declared input.
   String? declaredOriginOf(String key) {
-    final root = declaredRootOf(key);
+    final String? root = declaredRootOf(key);
     if (root == null) return null;
     return _filePathOf(root == '.' ? key : '$root/$key');
   }
@@ -3491,7 +3544,7 @@ class _Files {
     if (!isDeclared(key)) return null;
     if (_cache.containsKey(key)) return _cache[key];
     String? text;
-    final origin = declaredOriginOf(key);
+    final String? origin = declaredOriginOf(key);
     if (origin != null) {
       final file = File(origin);
       if (await file.exists()) {
@@ -3504,8 +3557,8 @@ class _Files {
   /// Cached directive scan of `key`.
   Future<ScanResult?> scan(String key, Set<String> vm) async {
     if (_scanCache.containsKey(key)) return _scanCache[key];
-    final text = await read(key);
-    final result = text == null ? null : scanDirectives(text, vm);
+    final String? text = await read(key);
+    final ScanResult? result = text == null ? null : scanDirectives(text, vm);
     return _scanCache[key] = result;
   }
 }
@@ -3516,7 +3569,7 @@ List<String> _baseWithSingleMultiRoot(List<String> base, String singleRoot) {
   final out = <String>[];
   var inserted = false;
   for (var i = 0; i < base.length; i++) {
-    final arg = base[i];
+    final String arg = base[i];
     if (arg == _multiRootFlag && i + 1 < base.length) {
       i++;
       if (!inserted) {
@@ -3555,10 +3608,11 @@ List<String> _orderedMultiRoots(
   _Files files,
 ) {
   if (multiRoots.length <= 1) return multiRoots;
-  final useKeys = _orderedCheckKeys(keys, files);
+  final List<String> useKeys = _orderedCheckKeys(keys, files);
   if (useKeys.isEmpty) return multiRoots;
-  final kinds = _classifyMultiRoots(multiRoots, useKeys, files);
-  final orderedRoots = _conflictLastOrder(multiRoots, kinds);
+  final Map<String, ({bool conflict, bool explicit})> kinds =
+      _classifyMultiRoots(multiRoots, useKeys, files);
+  final List<String> orderedRoots = _conflictLastOrder(multiRoots, kinds);
   if (_sameRootOrder(multiRoots, orderedRoots)) return multiRoots;
   return orderedRoots;
 }
@@ -3566,7 +3620,7 @@ List<String> _orderedMultiRoots(
 /// The keys whose resolution decides the root order: [keys], or every declared
 /// key when the compile names none.
 List<String> _orderedCheckKeys(Iterable<String> keys, _Files files) {
-  final checkKeys = keys.toList();
+  final List<String> checkKeys = keys.toList();
   if (checkKeys.isNotEmpty) return checkKeys;
   return files.declaredKeys.toList();
 }
@@ -3637,12 +3691,12 @@ List<String> _baseWithOrderedMultiRoots(
   Iterable<String> keys,
   _Files files,
 ) {
-  final orderedRoots = _orderedMultiRoots(multiRoots, keys, files);
+  final List<String> orderedRoots = _orderedMultiRoots(multiRoots, keys, files);
   if (identical(orderedRoots, multiRoots)) return base;
   final out = <String>[];
   var rootIdx = 0;
   for (var i = 0; i < base.length; i++) {
-    final arg = base[i];
+    final String arg = base[i];
     if (arg == _multiRootFlag && i + 1 < base.length) {
       out
         ..add(_multiRootFlag)
@@ -3676,7 +3730,7 @@ Future<bool> _needsIsolatedMultiRoot(
   _Files files,
   Set<String> vm,
 ) async {
-  final orderedBase = _orderedMultiRoots(multiRoots, keys, files);
+  final List<String> orderedBase = _orderedMultiRoots(multiRoots, keys, files);
   final finalOrder = <String>[...extraMultiRoots, ...orderedBase];
   // Staging can be skipped only when every declared input already lives under
   // one of the candidate roots (so the front end can resolve it without a
@@ -3692,8 +3746,8 @@ Future<bool> _needsIsolatedMultiRoot(
 
 /// Whether a declared input's origin lives outside every candidate root.
 bool _hasOriginOutsideRoots(_Files files, Set<String> candidateRoots) {
-  for (final key in files.declaredKeys) {
-    final origin = files.declaredOriginOf(key);
+  for (final String key in files.declaredKeys) {
+    final String? origin = files.declaredOriginOf(key);
     if (origin == null || !_originIsUnderRoots(origin, candidateRoots)) {
       return true;
     }
@@ -3703,9 +3757,9 @@ bool _hasOriginOutsideRoots(_Files files, Set<String> candidateRoots) {
 
 /// Whether [origin] lives under one of [candidateRoots].
 bool _originIsUnderRoots(String origin, Set<String> candidateRoots) {
-  final originNorm = origin.replaceAll(r'\', '/');
+  final String originNorm = origin.replaceAll(r'\', '/');
   for (final root in candidateRoots) {
-    final slashRoot = root
+    final String slashRoot = root
         .replaceAll(r'\', '/')
         .replaceFirst(RegExp(r'/+$'), '');
     final prefix = slashRoot == '.' ? '' : '$slashRoot/';
@@ -3727,7 +3781,7 @@ bool _hasShadowedKey(
 ) {
   final checkKeys = <String>{...keys, ...files.declaredKeys};
   for (final key in checkKeys) {
-    final origin = files.declaredOriginOf(key);
+    final String? origin = files.declaredOriginOf(key);
     if (origin == null ||
         _firstRootHolding(key, finalOrder) != _filePathOf(origin)) {
       return true;
@@ -3739,7 +3793,7 @@ bool _hasShadowedKey(
 /// The first root's path holding [key], or null when no root holds it.
 String? _firstRootHolding(String key, List<String> finalOrder) {
   for (final root in finalOrder) {
-    final path = _filePathOf(root == '.' ? key : '$root/$key');
+    final String path = _filePathOf(root == '.' ? key : '$root/$key');
     if (File(path).existsSync()) return path;
   }
   return null;
@@ -3792,22 +3846,22 @@ _stageIsolatedMultiRoot(
   final stagedInputs = <Uint8List>[];
   final covered = <String, Uint8List>{};
   final createdParents = <String>{};
-  final sortedKeys = files.declaredKeys.toList()..sort();
-  final cwd = Directory.current.path.replaceAll(r'\', '/');
+  final List<String> sortedKeys = files.declaredKeys.toList()..sort();
+  final String cwd = Directory.current.path.replaceAll(r'\', '/');
   for (final key in sortedKeys) {
-    final origin = files.declaredOriginOf(key);
+    final String? origin = files.declaredOriginOf(key);
     if (origin == null) continue;
     // A `File` view of a directory never exists, so directories are skipped
     // exactly as with the previous copying stage.
     if (!File(origin).existsSync()) continue;
-    final dstPath = _filePathOf('$rootDir/$key');
-    final dstParent = File(dstPath).parent;
+    final String dstPath = _filePathOf('$rootDir/$key');
+    final Directory dstParent = File(dstPath).parent;
     if (createdParents.add(dstParent.path)) {
       await dstParent.create(recursive: true);
     }
     if (!_linkOrCopy(origin, dstPath, cwd, createLink: createLink)) continue;
     if (includeInputDigests) {
-      final digest =
+      final Uint8List digest =
           _lookupDigest(origin, inputDigests) ??
           sha256Of(await File(origin).readAsBytes());
       _addCovered(covered, origin, digest);
@@ -3827,24 +3881,24 @@ void _addCovered(
   Uint8List digest,
 ) {
   covered[origin] = digest;
-  final norm = _normalize(origin);
+  final String norm = _normalize(origin);
   if (norm.isNotEmpty) {
     covered.putIfAbsent(norm, () => digest);
     if (!norm.startsWith('/')) {
       covered.putIfAbsent('./$norm', () => digest);
     }
   }
-  final normFile = normalizePath(origin);
+  final String normFile = normalizePath(origin);
   if (normFile != origin) {
     covered.putIfAbsent(normFile, () => digest);
   }
   // Staged inputs are encoded as `file:///` URIs on Windows, while worker
   // requests may spell the same origin as a filesystem path (or vice versa).
-  final uri = kernelWorkerUri(origin);
+  final String uri = kernelWorkerUri(origin);
   if (uri != origin) {
     covered.putIfAbsent(uri, () => digest);
   }
-  final uriNorm = kernelWorkerUri(normFile);
+  final String uriNorm = kernelWorkerUri(normFile);
   if (uriNorm != normFile) {
     covered.putIfAbsent(uriNorm, () => digest);
   }
@@ -3860,7 +3914,7 @@ List<Uint8List> _uncoveredInputs(
   if (covered.isEmpty) return inputs;
   final out = <Uint8List>[];
   for (final raw in inputs) {
-    final path = _decodeInputView(raw).path;
+    final String path = _decodeInputView(raw).path;
     if (path.isEmpty || _lookupDigest(path, covered) == null) {
       out.add(raw);
     }
@@ -3879,7 +3933,7 @@ bool _linkOrCopy(
   String cwd, {
   void Function(String linkPath, String target)? createLink,
 }) {
-  final slashOrigin = origin.replaceAll(r'\', '/');
+  final String slashOrigin = origin.replaceAll(r'\', '/');
   final target = slashOrigin.startsWith('/') || isWindowsDrivePath(slashOrigin)
       ? slashOrigin
       : '$cwd/$slashOrigin';
@@ -3918,16 +3972,16 @@ Future<Map<String, String>> _readExcluded(
       uris = await cache.excludedLinesOf(path, inputDigests);
     } else {
       final list = <String>[];
-      for (final line in await File(path).readAsLines()) {
+      for (final String line in await File(path).readAsLines()) {
         if (line.isEmpty || line.startsWith('#')) continue;
         list.add(line.split('\t').first);
       }
       uris = list;
     }
     for (final uri in uris) {
-      final key = _keyOfUri(uri, roots, multiRootPrefix);
+      final String? key = _keyOfUri(uri, roots, multiRootPrefix);
       if (key == null) continue;
-      final known = out[key];
+      final String? known = out[key];
       if (known == null ||
           (uri.startsWith('package:') && !known.startsWith('package:'))) {
         out[key] = uri;
@@ -3971,12 +4025,12 @@ void _collectVmPlatform(
   Set<String> names,
 ) {
   if (!seen.add(target)) return;
-  final entry = json[target];
+  final dynamic entry = json[target];
   if (entry is! Map) return;
   _addVmPlatformLibraries(entry['libraries'], names);
-  final includes = entry['include'];
+  final dynamic includes = entry['include'];
   if (includes is List) {
-    for (final include in includes) {
+    for (final Object? include in includes) {
       if (include is Map && include['target'] is String) {
         _collectVmPlatform(json, include['target'] as String, seen, names);
       }
@@ -3987,10 +4041,10 @@ void _collectVmPlatform(
 /// Adds every supported, non-private library of one platform entry to [names].
 void _addVmPlatformLibraries(Object? libraries, Set<String> names) {
   if (libraries is! Map) return;
-  for (final entry in libraries.entries) {
-    final spec = entry.value;
+  for (final MapEntry<dynamic, dynamic> entry in libraries.entries) {
+    final dynamic spec = entry.value;
     if (spec is Map && spec['supported'] == false) continue;
-    final bare = _bareDartLibraryName(entry.key.toString());
+    final String bare = _bareDartLibraryName(entry.key.toString());
     if (bare.startsWith('_')) continue;
     names.add(bare);
   }
@@ -4005,13 +4059,14 @@ Future<Map<String, _PackageRoot>> _packageRoots(
   final config =
       jsonDecode(await File(_filePathOf(packagesFile)).readAsString()) as Map;
   final roots = <String, _PackageRoot>{};
-  for (final entry in (config['packages'] as List).cast<Map>()) {
+  for (final Map<dynamic, dynamic> entry
+      in (config['packages'] as List).cast<Map>()) {
     var root = entry['rootUri'] as String;
     if (root.startsWith(multiRootPrefix)) {
       root = root.substring(multiRootPrefix.length);
     }
     if (root.isNotEmpty && !root.endsWith('/')) root = '$root/';
-    final packageUri = (entry['packageUri'] as String?) ?? 'lib/';
+    final String packageUri = (entry['packageUri'] as String?) ?? 'lib/';
     roots[entry['name'] as String] = _PackageRoot(root, packageUri);
   }
   return roots;
@@ -4032,7 +4087,7 @@ Future<List<String>> _expandParamFiles(List<String> args) async {
   final out = <String>[];
   for (final arg in args) {
     if (arg.startsWith('@') && File(arg.substring(1)).existsSync()) {
-      final lines = await File(arg.substring(1)).readAsLines();
+      final List<String> lines = await File(arg.substring(1)).readAsLines();
       out.addAll(lines);
     } else {
       out.add(arg);
@@ -4107,7 +4162,7 @@ class _UsedInputsReporter implements ModuleCompiler {
       records.add(_UsedReport(passed, null));
       return _inner.run(args, inputs);
     }
-    final tmp = _canonicalActionPath(
+    final String tmp = _canonicalActionPath(
       '$_outputDir/.used-inputs-${_invocations++}.tmp',
     );
     ModuleOutcome outcome;
@@ -4182,7 +4237,7 @@ String _canonicalActionPath(String pathOrUri) {
 /// so drive-letter spellings compare equal whatever case named them.
 String _normalizeDrivePath(String path) {
   if (isWindowsDrivePath(path)) {
-    final drive = path.codeUnitAt(0);
+    final int drive = path.codeUnitAt(0);
     if (drive >= 0x61 && drive <= 0x7a) {
       return '${String.fromCharCode(drive - 0x20)}${path.substring(1)}';
     }
@@ -4195,7 +4250,7 @@ String _normalizeDrivePath(String path) {
 /// `\\?\C:\...` path or a `\\?\UNC\...` device path) is removed, so a verbatim
 /// spelling compares equal with the plain one it names.
 String _normalizeResolvedPath(String resolved) {
-  var slash = resolved.contains(r'\')
+  String slash = resolved.contains(r'\')
       ? resolved.replaceAll(r'\', '/')
       : resolved;
   if (slash.startsWith('//?/')) {
@@ -4217,14 +4272,14 @@ String _normalizeResolvedPath(String resolved) {
 /// normalized spelling: still consistent for identical inputs, just not
 /// symlink-proof.
 String _resolveActionPathSymlinks(String normalized) {
-  final isDrive = isWindowsDrivePath(normalized);
+  final bool isDrive = isWindowsDrivePath(normalized);
   if (!isDrive && !normalized.startsWith('/')) return normalized;
-  final parts = normalized.split('/');
+  final List<String> parts = normalized.split('/');
   // A bare drive root (`C:`) names the drive's working directory, which
   // resolves elsewhere: only resolve prefixes below the root.
   final floor = isDrive ? 2 : 1;
-  for (var end = parts.length; end > floor; end--) {
-    final prefix = parts.sublist(0, end).join('/');
+  for (int end = parts.length; end > floor; end--) {
+    final String prefix = parts.sublist(0, end).join('/');
     String resolved;
     try {
       resolved = File(prefix.isEmpty ? '/' : prefix).resolveSymbolicLinksSync();
@@ -4232,7 +4287,7 @@ String _resolveActionPathSymlinks(String normalized) {
       continue;
     }
     resolved = _normalizeDrivePath(_normalizeResolvedPath(resolved));
-    final rest = parts.sublist(end).join('/');
+    final String rest = parts.sublist(end).join('/');
     final combined = rest.isEmpty ? resolved : '$resolved/$rest';
     if (isWindowsDrivePath(combined)) {
       return _normalizeDrivePath(_normalize(combined));
@@ -4251,8 +4306,8 @@ Set<String>? _readUsedInputs(String path) {
   if (!file.existsSync()) return null;
   try {
     final used = <String>{};
-    for (final line in file.readAsLinesSync()) {
-      final trimmed = line.trim();
+    for (final String line in file.readAsLinesSync()) {
+      final String trimmed = line.trim();
       if (trimmed.isNotEmpty) used.add(_canonicalActionPath(trimmed));
     }
     return used;
@@ -4269,7 +4324,7 @@ Set<String>? _readUsedInputs(String path) {
 
 /// The package (or bare first segment) of a module key.
 String _packageOfKey(String key) {
-  final slash = key.indexOf('/');
+  final int slash = key.indexOf('/');
   return slash < 0 ? key : key.substring(0, slash);
 }
 
@@ -4289,10 +4344,10 @@ Future<bool> _entryReadsArePlanned(
 ) async {
   final dillFile = File(entryDill);
   if (!await dillFile.exists()) return false;
-  final uris = dillSourceUris(await dillFile.readAsBytes());
+  final List<String>? uris = dillSourceUris(await dillFile.readAsBytes());
   if (uris == null) return false;
-  for (final uri in uris) {
-    final key = _keyOfDillSourceUri(uri, multiRoots, multiRootPrefix);
+  for (final String uri in uris) {
+    final String? key = _keyOfDillSourceUri(uri, multiRoots, multiRootPrefix);
     if (key != null && !planned.contains(key)) return false;
   }
   return true;
@@ -4326,7 +4381,7 @@ Future<void> _writeUnusedInputsList(
   String unusedInputsPath,
   _UnusedInputs unused,
 ) async {
-  final lines = await unused.compute() ?? const <String>[];
+  final List<String> lines = await unused.compute() ?? const <String>[];
   final file = File(unusedInputsPath);
   await file.parent.create(recursive: true);
   await file.writeAsString(lines.isEmpty ? '' : '${lines.join('\n')}\n');
@@ -4409,7 +4464,7 @@ class _UnusedInputs {
     if (!_collectUsedReports()) return null;
     _markUsedTrees();
     if (!await _collectEvidenceVeto()) return null;
-    final lines = _listUnusedModules();
+    final List<String> lines = _listUnusedModules();
     await _listUnusedEntrySources(lines);
     return lines;
   }
@@ -4420,13 +4475,13 @@ class _UnusedInputs {
   /// Folds every used report into [_used], failing closed when a reported
   /// file is neither a passed summary nor the action's own output.
   bool _collectUsedReports() {
-    for (final report in reports) {
-      final reported = report.reported;
+    for (final _UsedReport report in reports) {
+      final Set<String>? reported = report.reported;
       if (reported == null) {
         _used.addAll(report.passed);
         continue;
       }
-      for (final path in reported) {
+      for (final String path in reported) {
         if (!report.passed.contains(path) && !_isOwnOutput(path)) {
           return false;
         }
@@ -4460,13 +4515,13 @@ class _UnusedInputs {
   /// closed to no list. A missing output (a recording test compiler, which
   /// writes none) proves nothing, and the report and plan checks still apply.
   Future<bool> _collectEvidenceVeto() async {
-    final entry = entryDill;
-    for (final dillPath in [...outputDills, if (entry != null) entry]) {
+    final String? entry = entryDill;
+    for (final String dillPath in [...outputDills, if (entry != null) entry]) {
       final dillFile = File(dillPath);
       if (!await dillFile.exists()) continue;
-      final uris = dillSourceUris(await dillFile.readAsBytes());
+      final List<String>? uris = dillSourceUris(await dillFile.readAsBytes());
       if (uris == null) return false;
-      for (final uri in uris) {
+      for (final String uri in uris) {
         if (!_vetoEvidenceOwner(uri)) return false;
       }
     }
@@ -4475,20 +4530,20 @@ class _UnusedInputs {
 
   /// Keeps the owner of one embedded source. Reports whether it has one.
   bool _vetoEvidenceOwner(String uri) {
-    final key = _keyOfDillSourceUri(uri, multiRoots, multiRootPrefix);
+    final String? key = _keyOfDillSourceUri(uri, multiRoots, multiRootPrefix);
     if (key == null) return true;
     if (ownKeys.contains(key) || (entryKeys?.contains(key) ?? false)) {
       return true;
     }
-    final stagedRoot = stagedSources[key];
+    final String? stagedRoot = stagedSources[key];
     if (stagedRoot != null) {
-      final owner = _ownerStaging(inputKmods, stagedRoot);
+      final String? owner = _ownerStaging(inputKmods, stagedRoot);
       if (owner == null) return false;
       _keepTrees.add(owner);
       return true;
     }
     if (graph.containsKey(key)) {
-      final owner = _ownerDefining(key);
+      final String? owner = _ownerDefining(key);
       if (owner == null) return false;
       _keepTrees.add(owner);
       return true;
@@ -4509,7 +4564,7 @@ class _UnusedInputs {
   /// The input module directories no check keeps.
   List<String> _listUnusedModules() {
     final lines = <String>[];
-    for (final dir in inputKmods) {
+    for (final String dir in inputKmods) {
       if (_isModuleUsed(dir)) continue;
       lines.add(dir);
     }
@@ -4546,7 +4601,7 @@ class _UnusedInputs {
       return true;
     }
     final stagedPrefix = '$dir/sources';
-    for (final staged in stagedSources.entries) {
+    for (final MapEntry<String, String> staged in stagedSources.entries) {
       if (staged.value == stagedPrefix && inherited.containsKey(staged.key)) {
         return true;
       }
@@ -4570,7 +4625,7 @@ class _UnusedInputs {
       return;
     }
     final seen = <String>{};
-    for (final path in inputSources) {
+    for (final String path in inputSources) {
       if (!seen.add(path) || ownSourceFiles.contains(path)) continue;
       if (!_isEntryVisited(entryKeys!, path, multiRoots)) lines.add(path);
     }
@@ -4579,7 +4634,7 @@ class _UnusedInputs {
 
 /// The module directory in [inputKmods] whose staged sources hold [stagedRoot].
 String? _ownerStaging(List<String> inputKmods, String stagedRoot) {
-  for (final dir in inputKmods) {
+  for (final String dir in inputKmods) {
     if ('$dir/sources' == stagedRoot) return dir;
   }
   return null;
@@ -4587,7 +4642,7 @@ String? _ownerStaging(List<String> inputKmods, String stagedRoot) {
 
 /// Whether [entryKeys] visit [path] under any of its spellings.
 bool _isEntryVisited(Set<String> entryKeys, String path, List<String> roots) {
-  for (final spelling in _inputSpellings(path, roots)) {
+  for (final String spelling in _inputSpellings(path, roots)) {
     if (entryKeys.contains(spelling)) return true;
   }
   return false;
@@ -4596,7 +4651,7 @@ bool _isEntryVisited(Set<String> entryKeys, String path, List<String> roots) {
 /// Indexes closure keys by the canonical path of the summary defining them.
 Map<String, Set<String>> _indexKeysOfDill(Map<String, _Node> graph) {
   final keysOfDill = <String, Set<String>>{};
-  for (final entry in graph.entries) {
+  for (final MapEntry<String, _Node> entry in graph.entries) {
     keysOfDill
         .putIfAbsent(_canonicalActionPath(entry.value.dill), () => <String>{})
         .add(entry.key);
@@ -4635,15 +4690,15 @@ class _OneShot implements ModuleCompiler {
 
   @override
   Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
-    final workerArgs = kernelWorkerArgs(args);
-    final error = unpatchedCommaDefinesError(
+    final List<String> workerArgs = kernelWorkerArgs(args);
+    final String? error = unpatchedCommaDefinesError(
       workerArgs,
       snapshotPatched: _snapshotPatched,
       snapshotKind: 'kernel_worker',
       toolName: 'kernel_module',
     );
     if (error != null) return ModuleOutcome(1, '$error\n');
-    final result = await Process.run(_dartaotruntime, [
+    final ProcessResult result = await Process.run(_dartaotruntime, [
       _kernelWorker,
       ...workerArgs,
     ]);
@@ -4701,18 +4756,18 @@ class _Persistent implements ModuleCompiler {
   Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
     // Digested before the child is written to, so a file that cannot be read fails the
     // request with its reason, not as a child that died.
-    final workerArgs = kernelWorkerArgs(args);
-    final error = unpatchedCommaDefinesError(
+    final List<String> workerArgs = kernelWorkerArgs(args);
+    final String? error = unpatchedCommaDefinesError(
       workerArgs,
       snapshotPatched: _snapshotPatched,
       snapshotKind: 'kernel_worker',
       toolName: 'kernel_module',
     );
     if (error != null) return ModuleOutcome(1, '$error\n');
-    final withDigests = await _withDigests(workerArgs, inputs);
-    final first = await _attempt(workerArgs, withDigests);
+    final List<Uint8List> withDigests = await _withDigests(workerArgs, inputs);
+    final _Attempt first = await _attempt(workerArgs, withDigests);
     if (!first.lost) return first.outcome;
-    final second = await _attempt(workerArgs, withDigests);
+    final _Attempt second = await _attempt(workerArgs, withDigests);
     if (second.lost) {
       return ModuleOutcome(
         second.outcome.exitCode,
@@ -4726,7 +4781,7 @@ class _Persistent implements ModuleCompiler {
 
   /// Sends one request to the running child, or to a new one, and reads its answer.
   Future<_Attempt> _attempt(List<String> args, List<Uint8List> inputs) async {
-    final child = await _start();
+    final Process child = await _start();
     try {
       child.stdin.add(_frame(_encodeRequest(args, inputs, _requestId)));
       await child.stdin.flush();
@@ -4736,7 +4791,9 @@ class _Persistent implements ModuleCompiler {
       // A broken pipe to a dead child: the read below reports it too.
     }
     try {
-      final frame = await _responses!.next().timeout(_requestTimeout);
+      final Uint8List? frame = await _responses!.next().timeout(
+        _requestTimeout,
+      );
       if (frame == null) {
         await _reap();
         return _Attempt(
@@ -4751,7 +4808,7 @@ class _Persistent implements ModuleCompiler {
         );
       }
       final outcome = ModuleOutcome(response.exitCode, response.output);
-      final crashed =
+      final bool crashed =
           outcome.exitCode != 0 && outcome.output.contains(_crashMarker);
       if (crashed) await _reap();
       return _Attempt(outcome, lost: crashed);
@@ -4795,9 +4852,9 @@ class _Persistent implements ModuleCompiler {
   }
 
   Future<Process> _start() async {
-    final running = _child;
+    final Process? running = _child;
     if (running != null) return running;
-    final child = await Process.start(_dartaotruntime, [
+    final Process child = await Process.start(_dartaotruntime, [
       _kernelWorker,
       _persistentFlag,
     ]);
@@ -4812,7 +4869,7 @@ class _Persistent implements ModuleCompiler {
   /// does not act on SIGTERM until it is continued, so waiting after SIGTERM could wait
   /// forever.
   Future<void> _reap() async {
-    final child = _child;
+    final Process? child = _child;
     _child = null;
     if (child == null) return;
     child.kill(ProcessSignal.sigkill);
@@ -4873,11 +4930,11 @@ Uint8List _encodeInput(String path, Uint8List digest) {
 ({String path, Uint8List digest}) _decodeInputView(Uint8List bytes) {
   final reader = _Reader(bytes);
   var path = '';
-  var digest = _emptyBytes;
+  Uint8List digest = _emptyBytes;
   while (!reader.done) {
-    final key = reader.varint();
-    final field = key >> 3;
-    final wire = key & 7;
+    final int key = reader.varint();
+    final int field = key >> 3;
+    final int wire = key & 7;
     if (field == 1 && wire == 2) {
       path = utf8.decode(reader.bytes(), allowMalformed: true);
     } else if (field == 2 && wire == 2) {
@@ -4908,7 +4965,7 @@ Future<List<Uint8List>> _withDigests(
 ) async {
   if (!_takesSummaryInputs(args)) return inputs;
 
-  final exactWithDigest = _exactDigestedPaths(inputs);
+  final Set<String> exactWithDigest = _exactDigestedPaths(inputs);
   if (_summaryDigestsComplete(args, exactWithDigest)) return inputs;
 
   final emptyDigestIndices = <String, List<int>>{};
@@ -4919,11 +4976,15 @@ Future<List<Uint8List>> _withDigests(
   List<Uint8List>? out;
   for (var i = 0; i + 1 < args.length; i++) {
     if (args[i] != '--input-summary' && args[i] != '--input-linked') continue;
-    final rawPath = args[i + 1];
-    final targetPath = kernelWorkerUri(rawPath);
-    final filePath = _filePathOf(rawPath);
+    final String rawPath = args[i + 1];
+    final String targetPath = kernelWorkerUri(rawPath);
+    final String filePath = _filePathOf(rawPath);
     if (!exactWithDigest.add(targetPath)) continue;
-    final digest = await _resolveTargetDigest(targetPath, filePath, byPath);
+    final Uint8List digest = await _resolveTargetDigest(
+      targetPath,
+      filePath,
+      byPath,
+    );
     out ??= [...inputs];
     _placeDigest(out, targetPath, digest, filePath, emptyDigestIndices);
   }
@@ -4933,7 +4994,7 @@ Future<List<Uint8List>> _withDigests(
 /// Whether any `--input-summary` or `--input-linked` file is requested.
 bool _takesSummaryInputs(List<String> args) {
   for (var i = 0; i + 1 < args.length; i++) {
-    final arg = args[i];
+    final String arg = args[i];
     if (arg == '--input-summary' || arg == '--input-linked') return true;
   }
   return false;
@@ -4943,7 +5004,9 @@ bool _takesSummaryInputs(List<String> args) {
 Set<String> _exactDigestedPaths(List<Uint8List> inputs) {
   final exactWithDigest = <String>{};
   for (var idx = 0; idx < inputs.length; idx++) {
-    final decoded = _decodeInputView(inputs[idx]);
+    final ({Uint8List digest, String path}) decoded = _decodeInputView(
+      inputs[idx],
+    );
     if (decoded.path.isNotEmpty && decoded.digest.isNotEmpty) {
       exactWithDigest.add(decoded.path);
     }
@@ -4954,7 +5017,7 @@ Set<String> _exactDigestedPaths(List<Uint8List> inputs) {
 /// Whether every requested summary or linked file is already digested.
 bool _summaryDigestsComplete(List<String> args, Set<String> exactWithDigest) {
   for (var i = 0; i + 1 < args.length; i++) {
-    final arg = args[i];
+    final String arg = args[i];
     if (arg != '--input-summary' && arg != '--input-linked') continue;
     if (!exactWithDigest.contains(kernelWorkerUri(args[i + 1]))) return false;
   }
@@ -4969,14 +5032,14 @@ void _indexInputDigest(
   Uint8List input,
   int idx,
 ) {
-  final decoded = _decodeInput(input);
+  final ({Uint8List digest, String path}) decoded = _decodeInput(input);
   if (decoded.path.isEmpty) return;
   if (decoded.digest.isNotEmpty) {
     byPath[decoded.path] = decoded.digest;
     _indexDigestSpellings(byPath, decoded.path, decoded.digest);
   } else {
     (emptyDigestIndices[decoded.path] ??= <int>[]).add(idx);
-    final uriSpelling = kernelWorkerUri(decoded.path);
+    final String uriSpelling = kernelWorkerUri(decoded.path);
     if (uriSpelling != decoded.path) {
       (emptyDigestIndices[uriSpelling] ??= <int>[]).add(idx);
     }
@@ -4989,13 +5052,13 @@ void _indexDigestSpellings(
   String path,
   Uint8List digest,
 ) {
-  final fileSpelling = _filePathOf(path);
+  final String fileSpelling = _filePathOf(path);
   byPath.putIfAbsent(fileSpelling, () => digest);
   byPath.putIfAbsent(kernelWorkerUri(fileSpelling), () => digest);
-  final norm = normalizePath(fileSpelling);
+  final String norm = normalizePath(fileSpelling);
   byPath.putIfAbsent(norm, () => digest);
   byPath.putIfAbsent(kernelWorkerUri(norm), () => digest);
-  final relNorm = _normalize(fileSpelling);
+  final String relNorm = _normalize(fileSpelling);
   if (relNorm.isNotEmpty &&
       !isWindowsDrivePath(fileSpelling) &&
       !fileSpelling.startsWith('/')) {
@@ -5011,7 +5074,7 @@ Future<Uint8List> _resolveTargetDigest(
   String filePath,
   Map<String, Uint8List> byPath,
 ) async {
-  final digest =
+  final Uint8List digest =
       _lookupDigest(targetPath, byPath) ??
       _lookupDigest(filePath, byPath) ??
       await _digestOf(filePath);
@@ -5028,12 +5091,12 @@ void _placeDigest(
   String filePath,
   Map<String, List<int>> emptyDigestIndices,
 ) {
-  final replaceIndices =
+  final List<int>? replaceIndices =
       emptyDigestIndices.remove(targetPath) ??
       emptyDigestIndices.remove(filePath);
   if (replaceIndices != null && replaceIndices.isNotEmpty) {
-    final encoded = _encodeInput(targetPath, digest);
-    for (final idx in replaceIndices) {
+    final Uint8List encoded = _encodeInput(targetPath, digest);
+    for (final int idx in replaceIndices) {
       out[idx] = encoded;
     }
   } else {
@@ -5056,7 +5119,7 @@ class _Frames {
   Future<bool> _fill() async {
     while (true) {
       if (!await _iterator.moveNext()) return false;
-      final current = _iterator.current;
+      final List<int> current = _iterator.current;
       if (current.isEmpty) continue;
       _chunk = current is Uint8List ? current : Uint8List.fromList(current);
       _offset = 0;
@@ -5069,7 +5132,7 @@ class _Frames {
     var shift = 0;
     while (true) {
       if (_offset >= _chunk.length && !await _fill()) return null;
-      final byte = _chunk[_offset++];
+      final int byte = _chunk[_offset++];
       result |= (byte & 0x7f) << shift;
       if (byte < 0x80) return result;
       shift += 7;
@@ -5078,14 +5141,14 @@ class _Frames {
 
   /// The next frame's bytes, or null at end of stream.
   Future<Uint8List?> next() async {
-    final length = await _varint();
+    final int? length = await _varint();
     if (length == null) return null;
     final out = Uint8List(length);
     var written = 0;
     while (written < length) {
       if (_offset >= _chunk.length && !await _fill()) return null;
-      final available = _chunk.length - _offset;
-      final need = length - written;
+      final int available = _chunk.length - _offset;
+      final int need = length - written;
       final count = available < need ? available : need;
       out.setRange(written, written + count, _chunk, _offset);
       _offset += count;
@@ -5112,7 +5175,7 @@ class _Reader {
     var result = 0;
     var shift = 0;
     while (true) {
-      final byte = _bytes[_pos++];
+      final int byte = _bytes[_pos++];
       result |= (byte & 0x7f) << shift;
       if (byte < 0x80) return result;
       shift += 7;
@@ -5120,7 +5183,7 @@ class _Reader {
   }
 
   Uint8List bytes() {
-    final length = varint();
+    final int length = varint();
     final out = Uint8List.sublistView(_bytes, _pos, _pos + length);
     _pos += length;
     return out;
@@ -5200,9 +5263,9 @@ class _WorkRequest {
     final inputs = <Uint8List>[];
     var requestId = 0;
     while (!reader.done) {
-      final key = reader.varint();
-      final field = key >> 3;
-      final wire = key & 7;
+      final int key = reader.varint();
+      final int field = key >> 3;
+      final int wire = key & 7;
       if (field == 1 && wire == 2) {
         arguments.add(utf8.decode(reader.bytes()));
       } else if (field == 2 && wire == 2) {
@@ -5248,9 +5311,9 @@ class _WorkResponse {
     var output = '';
     var requestId = 0;
     while (!reader.done) {
-      final key = reader.varint();
-      final field = key >> 3;
-      final wire = key & 7;
+      final int key = reader.varint();
+      final int field = key >> 3;
+      final int wire = key & 7;
       if (field == 1 && wire == 0) {
         exitCode = reader.varint();
       } else if (field == 2 && wire == 2) {
@@ -5275,306 +5338,6 @@ Uint8List _encodeResponse(int exitCode, String output, int requestId) {
     ..stringField(2, output)
     ..varintField(3, requestId);
   return writer.toBytes();
-}
-
-/// Strips `Source.sourceCode` UTF-8 bytes from a compiled Kernel `.dill` while
-/// preserving `uri`, `lineStarts`, `importUri`, and `constantCoverageConstructors`.
-///
-/// `kernel_worker` has no `--no-embed-sources` flag, so it embeds the full source
-/// text of every `.dart` file in each module `.dill`'s `SourceTable` (~55% of all
-/// `.dill` bytes). The VM uses `lineStarts` (not `sourceCode`) for stack traces and
-/// `SourceReport` coverage, and downstream `--input-linked` compiles read only
-/// library outlines.
-///
-/// Format guard: reads the 32-bit kernel format version at byte offset 4 of the
-/// header and accepts only [supportedKernelFormatVersions] (version 138, Dart
-/// 3.13.x). On any other format version, writes a diagnostic to [errSink]
-/// (defaulting to [stderr]) and falls back to returning [data] unstripped,
-/// never emitting a malformed `.dill`.
-Uint8List stripSourceCodeFromDill(Uint8List data, {StringSink? errSink}) =>
-    _stripSourceCodeFromDill(data, errSink: errSink);
-
-Uint8List _stripSourceCodeFromDill(Uint8List data, {StringSink? errSink}) {
-  final sink = errSink ?? stderr;
-  if (data.length < 8) return data;
-  final bd = ByteData.sublistView(data);
-  if (bd.getUint32(0) != Tag.ComponentFile) return data;
-  final version = bd.getUint32(4);
-  if (!supportedKernelFormatVersions.contains(version)) {
-    sink.writeln(
-      'kernel_module: unsupported kernel format version $version '
-      '(supported: $supportedKernelFormatVersions); '
-      'falling back to unstripped dill.',
-    );
-    return data;
-  }
-  if (data.length < 48) return data;
-  final lastSize = bd.getUint32(data.length - 4);
-  if (lastSize == data.length) {
-    return _stripSingleComponentSourceCode(data, sink);
-  }
-  final ranges = <(int, int)>[];
-  var end = data.length;
-  while (end >= 48) {
-    final compSize = bd.getUint32(end - 4);
-    if (compSize < 48 || compSize > end) return data;
-    final start = end - compSize;
-    if (bd.getUint32(start) != Tag.ComponentFile) return data;
-    final compVersion = bd.getUint32(start + 4);
-    if (!supportedKernelFormatVersions.contains(compVersion)) {
-      sink.writeln(
-        'kernel_module: unsupported kernel format version $compVersion '
-        '(supported: $supportedKernelFormatVersions); '
-        'falling back to unstripped dill.',
-      );
-      return data;
-    }
-    ranges.add((start, end));
-    end = start;
-  }
-  if (end != 0 || ranges.isEmpty) return data;
-  final out = BytesBuilder(copy: false);
-  for (var i = ranges.length - 1; i >= 0; i--) {
-    final (s, e) = ranges[i];
-    out.add(
-      _stripSingleComponentSourceCode(Uint8List.sublistView(data, s, e), sink),
-    );
-  }
-  return out.takeBytes();
-}
-
-Uint8List _stripSingleComponentSourceCode(Uint8List data, StringSink sink) {
-  final index = _parseStripIndex(data);
-  if (index == null) return data;
-  final numSources = ByteData.sublistView(data).getUint32(index.offSourceTable);
-  if (numSources == 0) return data;
-  final rebuilt = _rebuildSourceTable(
-    data,
-    index.offSourceTable,
-    index.offConstantTable,
-    numSources,
-  );
-  final delta = rebuilt.bytes.length - rebuilt.replacedLength;
-  if (delta == 0) return data;
-  final linkTableEnd = _linkTableEnd(
-    data,
-    index.offLinkTable,
-    index.offMetadataPayloads,
-  );
-  return _reassembleStripped(data, index, rebuilt.bytes, delta, linkTableEnd);
-}
-
-/// A single component's table layout for source stripping.
-typedef _StripIndex = ({
-  List<int> fields,
-  int idxCount,
-  int idxBytes,
-  int offSourceTable,
-  int offConstantTable,
-  int offLinkTable,
-  int offMetadataPayloads,
-  int offComponentIndex,
-});
-
-/// Reads and validates the component index, or null when it is inconsistent.
-_StripIndex? _parseStripIndex(Uint8List data) {
-  final bd = ByteData.sublistView(data);
-  final libCount = bd.getUint32(data.length - 8);
-  final idxCount = libCount + 12;
-  final idxBytes = idxCount * 4;
-  if (idxBytes > data.length) return null;
-  final rawIdxStart = data.length - idxBytes;
-
-  final fields = List<int>.generate(
-    idxCount,
-    (i) => bd.getUint32(rawIdxStart + i * 4),
-  );
-  final offSourceTable = fields[0];
-  final offConstantTable = fields[1];
-  final offLinkTable = fields[3];
-  final offMetadataPayloads = fields[4];
-  final offMetadataMappings = fields[5];
-  final offStringTable = fields[6];
-  final offComponentIndex = fields[7];
-  if (offSourceTable + 4 > offConstantTable ||
-      offConstantTable > offLinkTable ||
-      offLinkTable > offMetadataPayloads ||
-      offMetadataPayloads > offMetadataMappings ||
-      offMetadataMappings > offStringTable ||
-      offStringTable > offComponentIndex ||
-      offComponentIndex > rawIdxStart) {
-    return null;
-  }
-  return (
-    fields: fields,
-    idxCount: idxCount,
-    idxBytes: idxBytes,
-    offSourceTable: offSourceTable,
-    offConstantTable: offConstantTable,
-    offLinkTable: offLinkTable,
-    offMetadataPayloads: offMetadataPayloads,
-    offComponentIndex: offComponentIndex,
-  );
-}
-
-/// Reads kernel UInt30 values from a component's bytes, tracking the offset.
-/// The source-table rewriter and the link-table scanner read the same
-/// encoding over trusted offsets (both fail closed before reading), so one
-/// cursor serves both.
-final class _U30Reader {
-  _U30Reader(this._data, int position) : _pos = position;
-
-  final Uint8List _data;
-  int _pos;
-
-  /// The current offset in [_data].
-  int get position => _pos;
-
-  /// Advances past [count] bytes.
-  void skip(int count) {
-    _pos += count;
-  }
-
-  /// The next UInt30 value.
-  int read() {
-    final b0 = _data[_pos++];
-    if ((b0 & 0x80) == 0) return b0;
-    if ((b0 & 0x40) == 0) {
-      return ((b0 & 0x3f) << 8) | _data[_pos++];
-    }
-    final b1 = _data[_pos++];
-    final b2 = _data[_pos++];
-    final b3 = _data[_pos++];
-    return ((b0 & 0x3f) << 24) | (b1 << 16) | (b2 << 8) | b3;
-  }
-}
-
-/// Rewrites the source table with every source body emptied, returning the new
-/// table and the length of the table it replaces.
-({Uint8List bytes, int replacedLength}) _rebuildSourceTable(
-  Uint8List data,
-  int offSourceTable,
-  int offConstantTable,
-  int numSources,
-) {
-  final u30 = _U30Reader(data, offSourceTable + 4);
-
-  final newSt = BytesBuilder(copy: false);
-  final header4 = ByteData(4)..setUint32(0, numSources);
-  newSt.add(header4.buffer.asUint8List());
-  final newSourceOffsets = List<int>.filled(numSources, 0);
-
-  for (var i = 0; i < numSources; i++) {
-    newSourceOffsets[i] = offSourceTable + newSt.length;
-
-    // 1. uri: UInt30 byteLength + UTF-8 bytes
-    final uStart = u30.position;
-    final uLen = u30.read();
-    u30.skip(uLen);
-    newSt.add(Uint8List.sublistView(data, uStart, u30.position));
-
-    // 2. sourceCode: UInt30 byteLength + UTF-8 bytes -> replace with empty (0x00)
-    final sLen = u30.read();
-    u30.skip(sLen);
-    newSt.addByte(0);
-
-    // 3. lineStarts: UInt30 count + count * UInt30 delta
-    final lsStart = u30.position;
-    final lineCount = u30.read();
-    for (var j = 0; j < lineCount; j++) {
-      u30.read();
-    }
-    // 4. importUri: UInt30 byteLength + UTF-8 bytes
-    final iuLen = u30.read();
-    u30.skip(iuLen);
-    // 5. constantCoverageConstructors: UInt30 count + count * UInt30
-    final ccCount = u30.read();
-    for (var j = 0; j < ccCount; j++) {
-      u30.read();
-    }
-    newSt.add(Uint8List.sublistView(data, lsStart, u30.position));
-  }
-
-  final offsetsBuf = ByteData(numSources * 4);
-  for (var i = 0; i < numSources; i++) {
-    offsetsBuf.setUint32(i * 4, newSourceOffsets[i]);
-  }
-  newSt.add(offsetsBuf.buffer.asUint8List());
-
-  return (
-    bytes: newSt.takeBytes(),
-    replacedLength: offConstantTable - offSourceTable,
-  );
-}
-
-/// The end of the link table's canonical entries, clamped to the metadata.
-int _linkTableEnd(Uint8List data, int offLinkTable, int offMetadataPayloads) {
-  final u30 = _U30Reader(data, offLinkTable);
-
-  final canonCount = u30.read();
-  for (var i = 0; i < canonCount; i++) {
-    u30.read();
-    u30.read();
-  }
-  return u30.position <= offMetadataPayloads
-      ? u30.position
-      : offMetadataPayloads;
-}
-
-/// Splices the rewritten source table back into the component, realigning the
-/// metadata payloads and rewriting the component index.
-Uint8List _reassembleStripped(
-  Uint8List data,
-  _StripIndex index,
-  Uint8List newStBytes,
-  int delta,
-  int linkTableEnd,
-) {
-  final fields = index.fields;
-  final out = BytesBuilder(copy: false);
-  out.add(Uint8List.sublistView(data, 0, index.offSourceTable));
-  out.add(newStBytes);
-  out.add(Uint8List.sublistView(data, index.offConstantTable, linkTableEnd));
-
-  // Kernel requires binaryOffsetForMetadataPayloads (fields[4]) to be 8-byte
-  // aligned (ComponentFile.metadataPayloadsAlignment = 8).
-  final metaPad = (8 - (out.length % 8)) % 8;
-  if (metaPad > 0) {
-    out.add(Uint8List(metaPad));
-  }
-  final newOffMetadataPayloads = out.length;
-  final metaDelta = newOffMetadataPayloads - index.offMetadataPayloads;
-
-  out.add(
-    Uint8List.sublistView(
-      data,
-      index.offMetadataPayloads,
-      index.offComponentIndex,
-    ),
-  );
-
-  final newOffComponentIndex = out.length;
-  final totalUnpadded = out.length + index.idxBytes;
-  final pad = (8 - (totalUnpadded % 8)) % 8;
-  if (pad > 0) {
-    out.add(Uint8List(pad));
-  }
-
-  for (var i = 1; i <= 3; i++) {
-    fields[i] += delta;
-  }
-  for (var i = 4; i <= 6; i++) {
-    fields[i] += metaDelta;
-  }
-  fields[7] = newOffComponentIndex;
-  fields[index.idxCount - 1] = out.length + index.idxBytes;
-
-  final idxBuf = ByteData(index.idxBytes);
-  for (var i = 0; i < index.idxCount; i++) {
-    idxBuf.setUint32(i * 4, fields[i]);
-  }
-  out.add(idxBuf.buffer.asUint8List());
-  return out.takeBytes();
 }
 
 /// The declared-input key the `.dill` source-table URI [uri] names, or null when
@@ -5644,7 +5407,7 @@ String? _keyUnderRoot(String normPath, String root) {
       ? './'
       : (rootSlash == '/' ? '/' : '$rootSlash/');
   for (
-    var slash = normPath.indexOf('/');
+    int slash = normPath.indexOf('/');
     slash >= 0;
     slash = normPath.indexOf('/', slash + 1)
   ) {
@@ -5749,7 +5512,7 @@ Future<bool> _unstagedReadsAreDeclared(
 }) async {
   final dillFile = File(verify.dillPath);
   if (!await dillFile.exists()) return true;
-  final bytes = await dillFile.readAsBytes();
+  final Uint8List bytes = await dillFile.readAsBytes();
   if (!_dillSourcesAreDeclared(bytes, verify, consequence)) {
     return false;
   }
@@ -5764,7 +5527,7 @@ Future<bool> _unstagedReadsAreDeclared(
     _depImportUris(verify.graph, verify.roots),
     consequence,
   );
-  final libraries = dillLibraryReferences(bytes);
+  final List<DillLibraryReference>? libraries = dillLibraryReferences(bytes);
   // Whether this check guards the unstaged compile (whose consequence is an
   // isolated recompile) rather than the isolated restage (whose consequence
   // is refusing the result).
@@ -5795,7 +5558,7 @@ Future<bool> _unstagedReadsAreDeclared(
     // unparsable table counts as unverified on the unstaged path, so the
     // isolated recompile runs; on the isolated path the source-table verdict
     // stands, since isolation already confines reads to declared inputs.
-    final canonicalRoots = dillCanonicalRoots(bytes);
+    final List<String>? canonicalRoots = dillCanonicalRoots(bytes);
     if (canonicalRoots == null) {
       if (unstaged) {
         verify.log.writeln(
@@ -5817,15 +5580,15 @@ bool _dillSourcesAreDeclared(
   _VerifyReads verify,
   String consequence,
 ) {
-  final uris = dillSourceUris(bytes);
+  final List<String>? uris = dillSourceUris(bytes);
   if (uris == null) {
     verify.log.writeln(
       'kernel_module: cannot read the sources of ${verify.dillPath}; $consequence.',
     );
     return false;
   }
-  for (final uri in uris) {
-    final key = _keyOfDillSourceUri(
+  for (final String uri in uris) {
+    final String? key = _keyOfDillSourceUri(
       uri,
       verify.multiRoots,
       verify.multiRootPrefix,
@@ -5925,12 +5688,12 @@ class _ReferenceChecker {
     // resolve exactly as the source-table check resolves them; the
     // package-URI mapping covers `package:` spellings, which the recorded
     // mapping leaves untranslated.
-    final recorded = _keyOfDillSourceUri(
+    final String? recorded = _keyOfDillSourceUri(
       reference,
       _multiRoots,
       _multiRootPrefix,
     );
-    final key = (recorded == null || recorded.isEmpty)
+    final String? key = (recorded == null || recorded.isEmpty)
         ? _keyOfUri(reference, _roots, _multiRootPrefix)
         : recorded;
     if (key == null || key.isEmpty) return false;

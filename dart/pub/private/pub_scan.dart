@@ -125,7 +125,7 @@ class _Cursor {
   /// so only buffered bytes are dropped and the cursor keeps its offset.
   void add(List<int> chunk) {
     if (_pos >= 65536) {
-      final drop = _pos < _buf.length ? _pos : _buf.length;
+      final int drop = _pos < _buf.length ? _pos : _buf.length;
       _buf = _buf.sublist(drop);
       _pos -= drop;
     }
@@ -145,10 +145,10 @@ bool _isAbsolute(String path) =>
 /// holding directory) to entry paths, so the header scan and the
 /// post-extraction walk never disagree.
 bool _entryPathEscapes(String name) {
-  final normalized = name.replaceAll('\\', '/');
+  final String normalized = name.replaceAll('\\', '/');
   if (_isAbsolute(normalized)) return true;
   var depth = 0;
-  for (final seg in normalized.split('/')) {
+  for (final String seg in normalized.split('/')) {
     if (seg == '' || seg == '.') continue;
     if (seg == '..') {
       if (depth == 0) return true;
@@ -167,17 +167,17 @@ bool _entryPathEscapes(String name) {
 /// treated as escaping.
 bool _symlinkEscapes(String linkPath, String target) {
   if (target == '') return true;
-  final normalized = target.replaceAll('\\', '/');
+  final String normalized = target.replaceAll('\\', '/');
   if (_isAbsolute(normalized)) return true;
   var depth = 0;
-  final holding = linkPath.split('/');
+  final List<String> holding = linkPath.split('/');
   // The link name itself is the last segment; only its directory holds it.
   for (var i = 0; i < holding.length - 1; i++) {
-    final seg = holding[i];
+    final String seg = holding[i];
     if (seg == '' || seg == '.') continue;
     depth++;
   }
-  for (final seg in normalized.split('/')) {
+  for (final String seg in normalized.split('/')) {
     if (seg == '' || seg == '.') continue;
     if (seg == '..') {
       if (depth <= 0) return true;
@@ -208,7 +208,7 @@ String _cutNulAt(_Cursor cursor, int start, int end) {
 int _parseNumber(List<int> field, String what) {
   if (field[0] >= 128) {
     if (field[0] == 255) _unscannable("an entry's $what is not a number");
-    var v = field[0] - 128;
+    int v = field[0] - 128;
     for (var i = 1; i < field.length; i++) {
       v = v * 256 + field[i];
       if (v < 0 || v > 0x1FFFFFFFFFFFFF) {
@@ -217,15 +217,15 @@ int _parseNumber(List<int> field, String what) {
     }
     return v;
   }
-  final text = latin1
+  final String text = latin1
       .decode(field, allowInvalid: false)
       .split('\x00')
       .first
       .trim();
   if (text == '') return 0;
   var v = 0;
-  for (final unit in text.codeUnits) {
-    final d = unit - 0x30;
+  for (final int unit in text.codeUnits) {
+    final int d = unit - 0x30;
     if (d < 0 || d > 7) _unscannable("an entry's $what is not a number");
     v = v * 8 + d;
   }
@@ -245,8 +245,8 @@ class _Header {
 /// the extractor does, so over-long paths classify under their full name.
 /// Callers ensure the 512 bytes first.
 _Header _parseHeader(_Cursor cursor) {
-  var name = _cutNulAt(cursor, 0, 100);
-  final prefix = _cutNulAt(cursor, 345, 500);
+  String name = _cutNulAt(cursor, 0, 100);
+  final String prefix = _cutNulAt(cursor, 345, 500);
   if (prefix != '') name = '$prefix/$name';
   if (name == '') _unscannable('an entry has no name');
   return _Header(
@@ -264,11 +264,11 @@ typedef _PaxRecords = ({String? path, String? linkpath, int? size});
 /// `linkpath=` and `size=` affect the scan; the rest are ignored. A malformed
 /// record fails the scan closed.
 int _parsePaxSize(String val) {
-  final text = val.trim();
+  final String text = val.trim();
   if (text.isEmpty) _unscannable('a pax size is not a number');
   var v = 0;
   for (final int unit in text.codeUnits) {
-    final d = unit - 0x30;
+    final int d = unit - 0x30;
     v = v * 10 + d;
     if (d < 0 || d > 9 || v < 0 || v > 0x1FFFFFFFFFFFFF) {
       _unscannable('a pax size is not a number');
@@ -281,15 +281,15 @@ _PaxRecords _parsePaxRecords(String text) {
   String? path;
   String? linkpath;
   int? size;
-  for (final line in text.split('\n')) {
+  for (final String line in text.split('\n')) {
     if (line == '') continue;
-    final space = line.indexOf(' ');
+    final int space = line.indexOf(' ');
     if (space < 0) _unscannable('a pax record has no length prefix');
-    final record = line.substring(space + 1);
-    final eq = record.indexOf('=');
+    final String record = line.substring(space + 1);
+    final int eq = record.indexOf('=');
     if (eq < 0) _unscannable('a pax record has no key');
-    final key = record.substring(0, eq);
-    final val = record.substring(eq + 1);
+    final String key = record.substring(0, eq);
+    final String val = record.substring(eq + 1);
     if (key == 'path') path = val;
     if (key == 'linkpath') linkpath = val;
     if (key == 'size') size = _parsePaxSize(val);
@@ -327,7 +327,7 @@ class _TarScan {
   /// or null for a clean archive. Short input fails closed, as before.
   _Refusal? finish() {
     _cursor.eof = true;
-    final refusal = pump();
+    final _Refusal? refusal = pump();
     if (refusal != null) return refusal;
     if (!_finished) _unscannable('the tar archive is truncated');
     return null;
@@ -349,13 +349,13 @@ class _TarScan {
 
   /// Classifies a hard-link/symlink entry against the pending name records,
   /// refusing hostile entries. Returns the refusal, or null when benign.
-  _Refusal? _classifyLink(_Header header, String kind) {
-    final name = _resolve(header.name, _ppath ?? _pname, _gpath);
-    final target = _resolve(header.linkname, _plinkpath ?? _plink, _glinkpath);
+  _Refusal? _classifyLink(_Header h, String kind) {
+    final String name = _resolve(h.name, _ppath ?? _pname, _gpath);
+    final String dest = _resolve(h.linkname, _plinkpath ?? _plink, _glinkpath);
     _clearPending();
-    if (_entryPathEscapes(name)) return _Refusal('path', name, target);
-    if (kind == '1') return _Refusal('hard-link', name, target);
-    if (_symlinkEscapes(name, target)) return _Refusal('symlink', name, target);
+    if (_entryPathEscapes(name)) return _Refusal('path', name, dest);
+    if (kind == '1') return _Refusal('hard-link', name, dest);
+    if (_symlinkEscapes(name, dest)) return _Refusal('symlink', name, dest);
     return null;
   }
 
@@ -377,7 +377,7 @@ class _TarScan {
     if (size > _maxCollectBytes) {
       _unscannable('a name record is too long to scan');
     }
-    final text = size == 0
+    final String text = size == 0
         ? ''
         : latin1.decode(_cursor.slice(512, size), allowInvalid: false);
     if (kind == 'L') {
@@ -385,11 +385,11 @@ class _TarScan {
     } else if (kind == 'K') {
       _plink = text.split('\x00').first;
     } else if (kind == 'g') {
-      final recs = _parsePaxRecords(text);
+      final _PaxRecords recs = _parsePaxRecords(text);
       _gpath = recs.path ?? _gpath;
       _glinkpath = recs.linkpath ?? _glinkpath;
     } else {
-      final recs = _parsePaxRecords(text);
+      final _PaxRecords recs = _parsePaxRecords(text);
       _ppath = recs.path;
       _plinkpath = recs.linkpath;
       _psize = recs.size;
@@ -400,17 +400,17 @@ class _TarScan {
   /// the refusal, or null when the entry is benign. Callers ensure the 512
   /// header bytes; record data suspends until buffered.
   _Refusal? _entry() {
-    final header = _parseHeader(_cursor);
-    final kind = header.typeflag == '\x00' ? '0' : header.typeflag;
-    final size = _psize ?? header.size;
+    final _Header header = _parseHeader(_cursor);
+    final String kind = header.typeflag == '\x00' ? '0' : header.typeflag;
+    final int size = _psize ?? header.size;
     _psize = null;
-    final skip = 512 + size + (-size) % 512;
+    final int skip = 512 + size + (-size) % 512;
     if (kind == '1' || kind == '2') {
-      final refusal = _classifyLink(header, kind);
+      final _Refusal? refusal = _classifyLink(header, kind);
       _cursor.advance(skip);
       return refusal;
     }
-    final name = _resolve(header.name, _ppath ?? _pname, _gpath);
+    final String name = _resolve(header.name, _ppath ?? _pname, _gpath);
     if (_entryPathEscapes(name)) {
       _cursor.advance(skip);
       return _Refusal('path', name, '');
@@ -449,7 +449,7 @@ class _TarScan {
           _finished = true;
           return null;
         }
-        final refusal = _entry();
+        final _Refusal? refusal = _entry();
         if (refusal != null) return refusal;
       }
     } on _NeedMore {
@@ -485,7 +485,7 @@ class _HuffmanTree {
   final Uint32List table;
   final int maxBits;
 
-  static _HuffmanTree? build(List<int> lens, int max, [bool isDist = false]) {
+  static _HuffmanTree? build(List<int> lens, int max, {bool isDist = false}) {
     var maxBits = 0;
     var totalSymbols = 0;
     final count = Uint16List(max + 1);
@@ -527,7 +527,7 @@ class _HuffmanTree {
       for (var i = 0; i < len; i++) {
         rev = (rev << 1) | ((c >> i) & 1);
       }
-      final fill = 1 << (maxBits - len);
+      final int fill = 1 << (maxBits - len);
       for (var k = 0; k < fill; k++) {
         table[rev | (k << len)] = (sym << 8) | len;
       }
@@ -555,7 +555,7 @@ final _HuffmanTree _fixedLitTree = () {
 final _HuffmanTree _fixedDistTree = _HuffmanTree.build(
   List<int>.filled(32, 5),
   5,
-  true,
+  isDist: true,
 )!;
 
 enum _S { sniff, tar, hdr, blk, strd, dyn, huff, trlr, tail, done }
@@ -792,7 +792,7 @@ class _ArchiveScanner {
       _codeLengths = List<int>.filled(19, 0);
     }
     if (_clTree == null) {
-      for (var i = _dyn[3]; i < _dyn[2]; i++) {
+      for (int i = _dyn[3]; i < _dyn[2]; i++) {
         if (!_needBits(3)) {
           _dyn[3] = i;
           return false;
@@ -808,7 +808,7 @@ class _ArchiveScanner {
     if (!_decodeDynamicLengths(total)) return false;
     final List<int> dyn = _dynLengths!;
     _litTree = _HuffmanTree.build(dyn.sublist(0, _dyn[0]), 15);
-    _distTree = _HuffmanTree.build(dyn.sublist(_dyn[0]), 15, true);
+    _distTree = _HuffmanTree.build(dyn.sublist(_dyn[0]), 15, isDist: true);
     if (_litTree == null || _distTree == null) _unscannable(_badDeflate);
     _dyn.fillRange(0, 4, 0);
     _codeLengths = _dynLengths = _clTree = null;
@@ -832,7 +832,7 @@ class _ArchiveScanner {
 
   bool _copyWindow(int length, int distance) {
     if (distance > _memberBytes || distance > 32768) _unscannable(_badDeflate);
-    var srcPos = (_windowPos - distance) & 0x7FFF;
+    int srcPos = (_windowPos - distance) & 0x7FFF;
     for (var i = 0; i < length; i++) {
       if (_emitByte(_window[srcPos]) != null) return false;
       srcPos = (srcPos + 1) & 0x7FFF;
@@ -1002,7 +1002,7 @@ Future<Map<String, Object?>> scanArchiveFile(String path) async {
   if (path.isEmpty) return await scanArchiveChunks(<List<int>>[]);
   final scanner = _ArchiveScanner();
   try {
-    await for (final chunk in File(path).openRead()) {
+    await for (final List<int> chunk in File(path).openRead()) {
       final _Refusal? refusal = scanner.add(chunk);
       if (refusal != null) return _verdictFor(refusal);
     }

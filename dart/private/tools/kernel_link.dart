@@ -142,15 +142,15 @@ class KernelLinkCache {
 
   static Uint8List? _lookupDigest(String path, Map<String, Uint8List>? inputs) {
     if (inputs == null) return null;
-    final direct = inputs[path];
+    final Uint8List? direct = inputs[path];
     if (direct != null && direct.isNotEmpty) return direct;
-    final norm = normalizePath(path);
+    final String norm = normalizePath(path);
     if (norm != path) {
-      final normHit = inputs[norm];
+      final Uint8List? normHit = inputs[norm];
       if (normHit != null && normHit.isNotEmpty) return normHit;
     }
     if (!norm.startsWith('/')) {
-      final dotHit = inputs['./$norm'];
+      final Uint8List? dotHit = inputs['./$norm'];
       if (dotHit != null && dotHit.isNotEmpty) return dotHit;
     }
     return null;
@@ -161,7 +161,8 @@ class KernelLinkCache {
       String? oldestIndexKey;
       int? oldestIndexTick;
       if (_indexCache.isNotEmpty) {
-        final first = _indexCache.entries.first;
+        final MapEntry<String, _CachedEntry<List<_Kernel>>> first =
+            _indexCache.entries.first;
         oldestIndexKey = first.key;
         oldestIndexTick = first.value.tick;
       }
@@ -169,7 +170,8 @@ class KernelLinkCache {
       String? oldestBaseKey;
       int? oldestBaseTick;
       if (_baseKeysCache.isNotEmpty) {
-        final first = _baseKeysCache.entries.first;
+        final MapEntry<String, _CachedEntry<Set<String>>> first =
+            _baseKeysCache.entries.first;
         oldestBaseKey = first.key;
         oldestBaseTick = first.value.tick;
       }
@@ -177,7 +179,8 @@ class KernelLinkCache {
       String? oldestDillKey;
       int? oldestDillTick;
       if (_dillCache.isNotEmpty) {
-        final first = _dillCache.entries.first;
+        final MapEntry<String, _CachedEntry<Uint8List>> first =
+            _dillCache.entries.first;
         oldestDillKey = first.key;
         oldestDillTick = first.value.tick;
       }
@@ -189,7 +192,7 @@ class KernelLinkCache {
       }
 
       // Evict the globally least-recently-used entry across all three maps.
-      var minTick = oldestDillTick ?? oldestIndexTick ?? oldestBaseTick!;
+      int minTick = oldestDillTick ?? oldestIndexTick ?? oldestBaseTick!;
       if (oldestIndexTick != null && oldestIndexTick < minTick) {
         minTick = oldestIndexTick;
       }
@@ -198,24 +201,42 @@ class KernelLinkCache {
       }
 
       if (oldestDillTick != null && oldestDillTick == minTick) {
-        final removed = _dillCache.remove(oldestDillKey!)!;
+        final _CachedEntry<Uint8List> removed = _dillCache.remove(
+          oldestDillKey!,
+        )!;
         _dillBytesTotal -= removed.byteSize;
       } else if (oldestIndexTick != null && oldestIndexTick == minTick) {
-        final removed = _indexCache.remove(oldestIndexKey!)!;
+        final _CachedEntry<List<_Kernel>> removed = _indexCache.remove(
+          oldestIndexKey!,
+        )!;
         _indexBytesTotal -= removed.byteSize;
       } else if (oldestBaseTick != null) {
-        final removed = _baseKeysCache.remove(oldestBaseKey!)!;
+        final _CachedEntry<Set<String>> removed = _baseKeysCache.remove(
+          oldestBaseKey!,
+        )!;
         _baseKeysBytesTotal -= removed.byteSize;
       }
     }
   }
 
+  /// Evicts index entries, then others, until [entryBytes] more fit.
+  void _makeRoomForIndex(int entryBytes) {
+    while (_indexBytesTotal + entryBytes > maxIndexCacheBytes &&
+        _indexCache.isNotEmpty) {
+      final _CachedEntry<List<_Kernel>> removed = _indexCache.remove(
+        _indexCache.keys.first,
+      )!;
+      _indexBytesTotal -= removed.byteSize;
+    }
+    _evictForTotalBudget(entryBytes);
+  }
+
   List<_Kernel> kernelsOf(String dir, Map<String, Uint8List>? inputs) {
-    final normDir = normalizePath(dir);
+    final String normDir = normalizePath(dir);
     final indexPath = '$dir/index.json';
-    final digest = _lookupDigest(indexPath, inputs);
-    final hasDigest = digest != null && digest.isNotEmpty;
-    final cached = _indexCache.remove(normDir);
+    final Uint8List? digest = _lookupDigest(indexPath, inputs);
+    final bool hasDigest = digest != null && digest.isNotEmpty;
+    final _CachedEntry<List<_Kernel>>? cached = _indexCache.remove(normDir);
     if (cached != null) {
       if (hasDigest &&
           cached.inputDigest != null &&
@@ -227,21 +248,16 @@ class KernelLinkCache {
       _indexBytesTotal -= cached.byteSize;
     }
 
-    final bytes = File(indexPath).readAsBytesSync();
-    final entryBytes = bytes.length;
-    final contentSha256 = hasDigest ? null : sha256Of(bytes);
+    final Uint8List bytes = File(indexPath).readAsBytesSync();
+    final int entryBytes = bytes.length;
+    final Uint8List? contentSha256 = hasDigest ? null : sha256Of(bytes);
     if (!hasDigest &&
         cached != null &&
         cached.byteSize == entryBytes &&
         cached.contentSha256 != null &&
         _sameBytes(contentSha256!, cached.contentSha256!)) {
       if (entryBytes <= maxIndexCacheBytes && entryBytes <= maxCacheBytes) {
-        while (_indexBytesTotal + entryBytes > maxIndexCacheBytes &&
-            _indexCache.isNotEmpty) {
-          final removed = _indexCache.remove(_indexCache.keys.first)!;
-          _indexBytesTotal -= removed.byteSize;
-        }
-        _evictForTotalBudget(entryBytes);
+        _makeRoomForIndex(entryBytes);
         cached.tick = ++_clock;
         _indexCache[normDir] = cached;
         _indexBytesTotal += entryBytes;
@@ -250,7 +266,7 @@ class KernelLinkCache {
     }
 
     final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
-    final kernels = [
+    final List<_Kernel> kernels = [
       for (final scc in (json['sccs'] as List).cast<Map<String, dynamic>>())
         _Kernel(
           '$dir/${scc['dill']}',
@@ -260,12 +276,7 @@ class KernelLinkCache {
         ),
     ];
     if (entryBytes <= maxIndexCacheBytes && entryBytes <= maxCacheBytes) {
-      while (_indexBytesTotal + entryBytes > maxIndexCacheBytes &&
-          _indexCache.isNotEmpty) {
-        final removed = _indexCache.remove(_indexCache.keys.first)!;
-        _indexBytesTotal -= removed.byteSize;
-      }
-      _evictForTotalBudget(entryBytes);
+      _makeRoomForIndex(entryBytes);
       _indexCache[normDir] = _CachedEntry(
         value: kernels,
         inputDigest: hasDigest ? _unpin(digest) : null,
@@ -278,11 +289,23 @@ class KernelLinkCache {
     return kernels;
   }
 
+  /// Evicts base-key entries, then others, until [entryBytes] more fit.
+  void _makeRoomForBaseKeys(int entryBytes) {
+    while (_baseKeysBytesTotal + entryBytes > maxBaseKeysCacheBytes &&
+        _baseKeysCache.isNotEmpty) {
+      final _CachedEntry<Set<String>> removed = _baseKeysCache.remove(
+        _baseKeysCache.keys.first,
+      )!;
+      _baseKeysBytesTotal -= removed.byteSize;
+    }
+    _evictForTotalBudget(entryBytes);
+  }
+
   Set<String> baseKeysOf(String path, Map<String, Uint8List>? inputs) {
-    final key = normalizePath(path);
-    final digest = _lookupDigest(path, inputs);
-    final hasDigest = digest != null && digest.isNotEmpty;
-    final cached = _baseKeysCache.remove(key);
+    final String key = normalizePath(path);
+    final Uint8List? digest = _lookupDigest(path, inputs);
+    final bool hasDigest = digest != null && digest.isNotEmpty;
+    final _CachedEntry<Set<String>>? cached = _baseKeysCache.remove(key);
     if (cached != null) {
       if (hasDigest &&
           cached.inputDigest != null &&
@@ -294,21 +317,16 @@ class KernelLinkCache {
       _baseKeysBytesTotal -= cached.byteSize;
     }
 
-    final bytes = File(path).readAsBytesSync();
-    final entryBytes = bytes.length;
-    final contentSha256 = hasDigest ? null : sha256Of(bytes);
+    final Uint8List bytes = File(path).readAsBytesSync();
+    final int entryBytes = bytes.length;
+    final Uint8List? contentSha256 = hasDigest ? null : sha256Of(bytes);
     if (!hasDigest &&
         cached != null &&
         cached.byteSize == entryBytes &&
         cached.contentSha256 != null &&
         _sameBytes(contentSha256!, cached.contentSha256!)) {
       if (entryBytes <= maxBaseKeysCacheBytes && entryBytes <= maxCacheBytes) {
-        while (_baseKeysBytesTotal + entryBytes > maxBaseKeysCacheBytes &&
-            _baseKeysCache.isNotEmpty) {
-          final removed = _baseKeysCache.remove(_baseKeysCache.keys.first)!;
-          _baseKeysBytesTotal -= removed.byteSize;
-        }
-        _evictForTotalBudget(entryBytes);
+        _makeRoomForBaseKeys(entryBytes);
         cached.tick = ++_clock;
         _baseKeysCache[key] = cached;
         _baseKeysBytesTotal += entryBytes;
@@ -317,17 +335,14 @@ class KernelLinkCache {
     }
 
     final keys = <String>{};
-    for (final line in const LineSplitter().convert(utf8.decode(bytes))) {
-      final trimmed = line.trim();
+    for (final String line in const LineSplitter().convert(
+      utf8.decode(bytes),
+    )) {
+      final String trimmed = line.trim();
       if (trimmed.isNotEmpty) keys.add(trimmed);
     }
     if (entryBytes <= maxBaseKeysCacheBytes && entryBytes <= maxCacheBytes) {
-      while (_baseKeysBytesTotal + entryBytes > maxBaseKeysCacheBytes &&
-          _baseKeysCache.isNotEmpty) {
-        final removed = _baseKeysCache.remove(_baseKeysCache.keys.first)!;
-        _baseKeysBytesTotal -= removed.byteSize;
-      }
-      _evictForTotalBudget(entryBytes);
+      _makeRoomForBaseKeys(entryBytes);
       _baseKeysCache[key] = _CachedEntry(
         value: keys,
         inputDigest: hasDigest ? _unpin(digest) : null,
@@ -341,10 +356,10 @@ class KernelLinkCache {
   }
 
   Uint8List dillBytesOf(String path, Map<String, Uint8List>? inputs) {
-    final key = normalizePath(path);
-    final digest = _lookupDigest(path, inputs);
-    final hasDigest = digest != null && digest.isNotEmpty;
-    final cached = _dillCache.remove(key);
+    final String key = normalizePath(path);
+    final Uint8List? digest = _lookupDigest(path, inputs);
+    final bool hasDigest = digest != null && digest.isNotEmpty;
+    final _CachedEntry<Uint8List>? cached = _dillCache.remove(key);
     if (cached != null) {
       if (hasDigest &&
           cached.inputDigest != null &&
@@ -356,13 +371,13 @@ class KernelLinkCache {
       _dillBytesTotal -= cached.byteSize;
     }
 
-    final bytes = _unpin(File(path).readAsBytesSync());
-    final entryBytes = bytes.length;
+    final Uint8List bytes = _unpin(File(path).readAsBytesSync());
+    final int entryBytes = bytes.length;
     if (entryBytes <= maxSingleDillBytes && entryBytes <= maxCacheBytes) {
       while (_dillBytesTotal + entryBytes > maxCacheBytes &&
           _dillCache.isNotEmpty) {
-        final oldestKey = _dillCache.keys.first;
-        final removed = _dillCache.remove(oldestKey)!;
+        final String oldestKey = _dillCache.keys.first;
+        final _CachedEntry<Uint8List> removed = _dillCache.remove(oldestKey)!;
         _dillBytesTotal -= removed.byteSize;
       }
       _evictForTotalBudget(entryBytes);
@@ -380,13 +395,13 @@ class KernelLinkCache {
 }
 
 Future<void> main(List<String> args) async {
-  final expanded = expandParamFiles(args);
+  final List<String> expanded = expandParamFiles(args);
   if (expanded.contains('--persistent_worker')) {
     await _runPersistentWorker();
     return;
   }
   final cache = KernelLinkCache();
-  final code = linkOne(expanded, cache: cache, errSink: stderr);
+  final int code = linkOne(expanded, cache: cache, errSink: stderr);
   if (code != 0) exit(code);
 }
 
@@ -398,7 +413,7 @@ Future<void> _runPersistentWorker() async {
     final output = StringBuffer();
     var code = 1;
     try {
-      final expanded = expandParamFiles(request.arguments);
+      final List<String> expanded = expandParamFiles(request.arguments);
       code = linkOne(
         expanded,
         cache: cache,
@@ -433,8 +448,8 @@ int linkOne(
   Map<String, Uint8List>? inputs,
   required StringSink errSink,
 }) {
-  final parsed = _parseLinkArgs(rawArgs);
-  final output = parsed.paths[0];
+  final _LinkArgs parsed = _parseLinkArgs(rawArgs);
+  final String output = parsed.paths[0];
   final _Kernel? entry;
   final Iterable<String> depDirs;
   if (parsed.seedModules.isEmpty) {
@@ -445,13 +460,14 @@ int linkOne(
     depDirs = parsed.paths.skip(1);
   }
 
-  final indexed = _indexKernels(
+  final ({Map<String, List<_Kernel>> kernelsByDir, Map<String, _Kernel> owner})
+  indexed = _indexKernels(
     cache,
     seedModules: parsed.seedModules,
     depDirs: depDirs,
     inputs: inputs,
   );
-  final baseKeys = parsed.baseKeysPath != null
+  final Set<String> baseKeys = parsed.baseKeysPath != null
       ? cache.baseKeysOf(parsed.baseKeysPath!, inputs)
       : const <String>{};
 
@@ -467,7 +483,7 @@ int linkOne(
   }
   if (walker.missingModule) return 1;
 
-  final linked = [if (entry != null) entry, ...walker.order];
+  final List<_Kernel> linked = [if (entry != null) entry, ...walker.order];
   if (!_checkDuplicateDefines(linked, errSink)) return 1;
 
   _emitLinked((
@@ -500,7 +516,7 @@ _LinkArgs _parseLinkArgs(List<String> rawArgs) {
   final seedModules = <String>[];
   final paths = <String>[];
   for (var i = 0; i < rawArgs.length; i++) {
-    final arg = rawArgs[i];
+    final String arg = rawArgs[i];
     if (arg.isEmpty) continue;
     if (arg == '--write-keys') {
       writeKeysPath = rawArgs[++i];
@@ -537,10 +553,10 @@ _indexKernels(
   final owner = <String, _Kernel>{};
   final kernelsByDir = <String, List<_Kernel>>{};
   for (final dir in <String>{...seedModules, ...depDirs}) {
-    final kernels = cache.kernelsOf(dir, inputs);
+    final List<_Kernel> kernels = cache.kernelsOf(dir, inputs);
     kernelsByDir[dir] = kernels;
     for (final kernel in kernels) {
-      for (final key in kernel.defines) {
+      for (final String key in kernel.defines) {
         owner.putIfAbsent(key, () => kernel);
       }
     }
@@ -573,7 +589,7 @@ class _LinkWalker {
   void visitImports(Iterable<String> imports, {required String importerPath}) {
     for (final key in imports) {
       if (baseKeys.contains(key)) continue;
-      final dependency = owner[key];
+      final _Kernel? dependency = owner[key];
       if (dependency != null) {
         visit(dependency);
       } else if (!key.startsWith('dart:')) {
@@ -591,8 +607,8 @@ class _LinkWalker {
     List<String> seedModules,
   ) {
     for (final seedDir in seedModules) {
-      final kernels = kernelsByDir[seedDir]!;
-      final isPackageTest = kernels.any(
+      final List<_Kernel> kernels = kernelsByDir[seedDir]!;
+      final bool isPackageTest = kernels.any(
         (k) => k.defines.any((d) => d.endsWith('/lib/bootstrap/vm.dart')),
       );
       for (final kernel in kernels) {
@@ -617,8 +633,8 @@ class _LinkWalker {
 bool _checkDuplicateDefines(List<_Kernel> linked, StringSink errSink) {
   final definedBy = <String, _Kernel>{};
   for (final kernel in linked) {
-    for (final key in kernel.defines) {
-      final other = definedBy[key];
+    for (final String key in kernel.defines) {
+      final _Kernel? other = definedBy[key];
       if (other != null) {
         errSink.writeln(
           'kernel_link: $key is defined by ${other.path} and ${kernel.path}.',
@@ -647,10 +663,10 @@ typedef _LinkedOutput = ({
 /// Concatenates the platform and linked kernels into [output], and records
 /// the emitted keys when asked.
 void _emitLinked(_LinkedOutput linked) {
-  final entry = linked.entry;
-  final platform = linked.platform;
-  final writeKeysPath = linked.writeKeysPath;
-  final emitted = [
+  final _Kernel? entry = linked.entry;
+  final String? platform = linked.platform;
+  final String? writeKeysPath = linked.writeKeysPath;
+  final List<_Kernel> emitted = [
     if (entry != null) entry,
     for (final kernel in linked.order)
       if (!linked.baseKeys.contains(kernel.key)) kernel,
@@ -669,7 +685,7 @@ void _emitLinked(_LinkedOutput linked) {
     final keysOut = StringBuffer();
     for (final k in emitted) {
       keysOut.writeln(k.key);
-      for (final def in k.defines) {
+      for (final String def in k.defines) {
         keysOut.writeln(def);
       }
     }

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:pkg_a/a_top.dart';
 import 'package:pkg_b/b.dart';
@@ -14,29 +15,37 @@ void main(List<String> args) {
     );
 
     final runfiles = Runfiles.create();
-    final modularDill = runfiles.rlocation(args[0]);
-    final wholeDill = runfiles.rlocation(args[1]);
+    final String modularDill = runfiles.rlocation(args[0]);
+    final String wholeDill = runfiles.rlocation(args[1]);
 
-    final modularRes = await Process.run(Platform.resolvedExecutable, [
-      modularDill,
-    ]);
+    final ProcessResult modularRes = await Process.run(
+      Platform.resolvedExecutable,
+      [modularDill],
+    );
     expect(
       modularRes.exitCode,
       0,
       reason: 'modular binary failed: ${modularRes.stderr}',
     );
 
-    final wholeRes = await Process.run(Platform.resolvedExecutable, [
-      wholeDill,
-    ]);
+    final ProcessResult wholeRes = await Process.run(
+      Platform.resolvedExecutable,
+      [wholeDill],
+    );
     expect(
       wholeRes.exitCode,
       0,
       reason: 'whole-program binary failed: ${wholeRes.stderr}',
     );
 
-    final modularOut = (modularRes.stdout as String).replaceAll('\r\n', '\n');
-    final wholeOut = (wholeRes.stdout as String).replaceAll('\r\n', '\n');
+    final String modularOut = (modularRes.stdout as String).replaceAll(
+      '\r\n',
+      '\n',
+    );
+    final String wholeOut = (wholeRes.stdout as String).replaceAll(
+      '\r\n',
+      '\n',
+    );
     expect(modularOut, equals(wholeOut));
     expect(
       modularOut,
@@ -47,9 +56,9 @@ void main(List<String> args) {
 
   test('editing an excluded dependency source changes the rebuilt entry and linked kernel output', () async {
     final runfiles = Runfiles.create();
-    final kernelModuleBin = runfiles.rlocation(args[2]);
-    final kernelLinkBin = runfiles.rlocation(args[3]);
-    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final String kernelModuleBin = runfiles.rlocation(args[2]);
+    final String kernelLinkBin = runfiles.rlocation(args[3]);
+    final Directory sdkDir = File(Platform.resolvedExecutable).parent.parent;
     final exeSuffix = Platform.isWindows ? '.exe' : '';
     final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
     final kernelWorker =
@@ -57,7 +66,9 @@ void main(List<String> args) {
     final platformDill = '${sdkDir.path}/lib/_internal/vm_platform_strong.dill';
     final librariesJson = '${sdkDir.path}/lib/libraries.json';
 
-    final tmp = Directory.systemTemp.createTempSync('cross_pkg_cycle_edit_');
+    final Directory tmp = Directory.systemTemp.createTempSync(
+      'cross_pkg_cycle_edit_',
+    );
     try {
       void write(String rel, String text) {
         final f = File('${tmp.path}/$rel');
@@ -147,7 +158,7 @@ void main(List<String> args) {
       }
 
       Future<String> buildAndRun({required bool passDeclaredInputs}) async {
-        for (final step in [
+        for (final ProcessResult step in [
           await runKernelModule(
             'leaf',
             sources: ['package:pkg_leaf/leaf.dart'],
@@ -188,7 +199,7 @@ void main(List<String> args) {
           expect(step.exitCode, 0, reason: '${step.stdout}\n${step.stderr}');
         }
 
-        final entryRes = await runKernelModule(
+        final ProcessResult entryRes = await runKernelModule(
           'entry',
           sources: ['${prefix}main.dart'],
           inputSources: passDeclaredInputs
@@ -223,24 +234,28 @@ void main(List<String> args) {
         );
 
         final linkedDill = '${tmp.path}/out/app.dill';
-        final linkRes = await Process.run(Platform.resolvedExecutable, [
-          kernelLinkBin,
-          linkedDill,
-          '${tmp.path}/out/entry.kmod',
-          '${tmp.path}/out/leaf.kmod',
-          '${tmp.path}/out/a_base.kmod',
-          '${tmp.path}/out/b.kmod',
-          '${tmp.path}/out/a_top.kmod',
-        ]);
+        final ProcessResult linkRes = await Process.run(
+          Platform.resolvedExecutable,
+          [
+            kernelLinkBin,
+            linkedDill,
+            '${tmp.path}/out/entry.kmod',
+            '${tmp.path}/out/leaf.kmod',
+            '${tmp.path}/out/a_base.kmod',
+            '${tmp.path}/out/b.kmod',
+            '${tmp.path}/out/a_top.kmod',
+          ],
+        );
         expect(
           linkRes.exitCode,
           0,
           reason: '${linkRes.stdout}\n${linkRes.stderr}',
         );
 
-        final runRes = await Process.run(Platform.resolvedExecutable, [
-          linkedDill,
-        ]);
+        final ProcessResult runRes = await Process.run(
+          Platform.resolvedExecutable,
+          [linkedDill],
+        );
         expect(
           runRes.exitCode,
           0,
@@ -250,18 +265,20 @@ void main(List<String> args) {
       }
 
       // 1. Without declared input sources (or staged outline inputs), entry module fails clearly.
-      final failLog = await buildAndRun(passDeclaredInputs: false);
+      final String failLog = await buildAndRun(passDeclaredInputs: false);
       expect(failLog, contains('source is not a declared input.'));
 
       // 2. With declared input sources, build and run succeeds (v1).
-      final outV1 = await buildAndRun(passDeclaredInputs: true);
+      final String outV1 = await buildAndRun(passDeclaredInputs: true);
       expect(
         outV1,
         'a_top(b-v1(a_base(leaf-v1),tag-v1),a_base(leaf-v1))|b-v1(a_base(leaf-v1),tag-v1)',
       );
-      final entryBytesV1 = File('${tmp.path}/out/entry.kmod/entry.dill')
+      final Uint8List entryBytesV1 = File(
+        '${tmp.path}/out/entry.kmod/entry.dill',
+      ).readAsBytesSync();
+      final Uint8List linkedBytesV1 = File('${tmp.path}/out/app.dill')
           .readAsBytesSync();
-      final linkedBytesV1 = File('${tmp.path}/out/app.dill').readAsBytesSync();
 
       // 3. Edit the excluded dependency file pkg_b/lib/b.dart and rebuild:
       // output bytes and runtime stdout must reflect the edit.
@@ -271,14 +288,16 @@ void main(List<String> args) {
             "import 'package:pkg_a/a_top.dart';\n"
             "String bValue() => 'b-v2-edited(\${aBaseValue()},\${aTopTag()})';\n",
       );
-      final outV2 = await buildAndRun(passDeclaredInputs: true);
+      final String outV2 = await buildAndRun(passDeclaredInputs: true);
       expect(
         outV2,
         'a_top(b-v2-edited(a_base(leaf-v1),tag-v1),a_base(leaf-v1))|b-v2-edited(a_base(leaf-v1),tag-v1)',
       );
-      final entryBytesV2 = File('${tmp.path}/out/entry.kmod/entry.dill')
+      final Uint8List entryBytesV2 = File(
+        '${tmp.path}/out/entry.kmod/entry.dill',
+      ).readAsBytesSync();
+      final Uint8List linkedBytesV2 = File('${tmp.path}/out/app.dill')
           .readAsBytesSync();
-      final linkedBytesV2 = File('${tmp.path}/out/app.dill').readAsBytesSync();
       expect(entryBytesV2, isNot(equals(entryBytesV1)));
       expect(linkedBytesV2, isNot(equals(linkedBytesV1)));
     } finally {

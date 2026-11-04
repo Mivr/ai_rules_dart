@@ -17,7 +17,7 @@ import 'package:rules_dart_worker/worker_protocol.dart';
 import 'private_home.dart';
 
 void main(List<String> rawArgs) {
-  final code = runWebCompileRequest(
+  final int code = runWebCompileRequest(
     expandParamFiles(rawArgs, skipEmptyLines: true, keepMissingArg: true),
     outSink: stdout,
     errSink: stderr,
@@ -32,10 +32,11 @@ int runWebCompileRequest(
   required StringSink errSink,
   String? workingDirectory,
 }) {
-  final parsed = _splitWebArgs(args, errSink: errSink);
+  final ({List<String> compileArgs, String? dart, String? project})? parsed =
+      _splitWebArgs(args, errSink: errSink);
   if (parsed == null) return 64;
-  var (dart, project) = (parsed.dart, parsed.project);
-  final compileArgs = parsed.compileArgs;
+  var (String? dart, String? project) = (parsed.dart, parsed.project);
+  final List<String> compileArgs = parsed.compileArgs;
 
   project ??= _inferProjectFromArgs(compileArgs);
 
@@ -50,7 +51,11 @@ int runWebCompileRequest(
     return 64;
   }
 
-  final (:outputPath, :normProject, :entrypointPath) = _resolveWebPaths(
+  final (
+    :String? outputPath,
+    :String normProject,
+    :String? entrypointPath,
+  ) = _resolveWebPaths(
     project: project,
     compileArgs: compileArgs,
     workingDirectory: workingDirectory,
@@ -59,7 +64,7 @@ int runWebCompileRequest(
     _deleteOutputs(outputPath);
   }
 
-  final allowedSrc = pruneOrphanedStagedFiles(normProject);
+  final Set<String>? allowedSrc = pruneOrphanedStagedFiles(normProject);
   if (!_checkStagedSources(normProject, allowedSrc, errSink)) return 1;
   if (!_checkExternalSources(normProject, errSink)) return 1;
   if (!_checkEntrypoint(normProject, allowedSrc, entrypointPath, errSink)) {
@@ -90,7 +95,7 @@ int runWebCompileRequest(
 
   var inCompileArgs = false;
   for (var i = 0; i < args.length; i++) {
-    final arg = args[i];
+    final String arg = args[i];
     if (inCompileArgs) {
       compileArgs.add(arg);
       continue;
@@ -141,8 +146,8 @@ _resolveWebPaths({
     return '${_trimTrailingSlash(workingDirectory)}/$path';
   }
 
-  final rawOutputPath = _extractOutputPath(compileArgs);
-  final rawEntrypointPath = _extractEntrypointPath(compileArgs);
+  final String? rawOutputPath = _extractOutputPath(compileArgs);
+  final String? rawEntrypointPath = _extractEntrypointPath(compileArgs);
   return (
     outputPath: rawOutputPath == null ? null : resolveInWorkDir(rawOutputPath),
     normProject: _trimTrailingSlash(resolveInWorkDir(project)),
@@ -165,7 +170,7 @@ bool _checkStagedSources(
     );
     return false;
   }
-  for (final rel in allowedSrc) {
+  for (final String rel in allowedSrc) {
     if (!FileSystemEntity.isFileSync('$normProject/src/$rel')) {
       errSink.writeln('web_compile_runner: expected source missing: $rel');
       return false;
@@ -177,12 +182,12 @@ bool _checkStagedSources(
 /// Refuses an `extpkgs_manifest.txt` the sibling tree does not satisfy.
 bool _checkExternalSources(String normProject, StringSink errSink) {
   final extManifest = File('$normProject/.dart_tool/extpkgs_manifest.txt');
-  final extDir = _siblingExtpkgsDir(normProject);
+  final Directory? extDir = _siblingExtpkgsDir(normProject);
   if (!extManifest.existsSync() || extDir == null) return true;
-  for (final raw in extManifest.readAsLinesSync()) {
-    final line = raw.trim();
+  for (final String raw in extManifest.readAsLinesSync()) {
+    final String line = raw.trim();
     if (line.isEmpty || line.endsWith('/')) continue;
-    final rel = _normRel(line);
+    final String rel = _normRel(line);
     if (!FileSystemEntity.isFileSync('${extDir.path}/$rel')) {
       errSink.writeln(
         'web_compile_runner: expected external source missing: $rel',
@@ -201,10 +206,10 @@ bool _checkEntrypoint(
   StringSink errSink,
 ) {
   if (entrypointPath == null) return true;
-  final normEntry = entrypointPath.replaceAll(r'\', '/');
+  final String normEntry = entrypointPath.replaceAll(r'\', '/');
   final srcPrefix = '${normProject.replaceAll(r'\', '/')}/src/';
   if (allowedSrc != null && normEntry.startsWith(srcPrefix)) {
-    final relEntry = _normRel(normEntry.substring(srcPrefix.length));
+    final String relEntry = _normRel(normEntry.substring(srcPrefix.length));
     if (!allowedSrc.contains(relEntry)) {
       errSink.writeln(
         'web_compile_runner: entrypoint not listed in src_manifest.txt: $relEntry',
@@ -227,9 +232,9 @@ bool _checkStagedDirectives(String normProject, StringSink errSink) {
   // would reach an undeclared file through the compiler's working directory.
   // Refuse before compiling, through the one shared staged-source check.
   final stagedRoots = <String>[normProject];
-  final siblingExtpkgs = _siblingExtpkgsDir(normProject);
+  final Directory? siblingExtpkgs = _siblingExtpkgsDir(normProject);
   if (siblingExtpkgs != null) stagedRoots.add(siblingExtpkgs.path);
-  final violations = findStagedDirectiveViolations(
+  final List<String> violations = findStagedDirectiveViolations(
     stagedRoots,
     tool: 'web_compile_runner',
   );
@@ -280,7 +285,7 @@ int _runCompiler({
 /// Returns the set of `/` relative paths allowed under `src/`, or `null` when
 /// no file-level `src_manifest.txt` is present. Never prunes without a manifest.
 Set<String>? pruneOrphanedStagedFiles(String project) {
-  final normProject = _trimTrailingSlash(project);
+  final String normProject = _trimTrailingSlash(project);
   _pruneExtpkgs(normProject);
 
   final srcDir = Directory('$normProject/src');
@@ -288,21 +293,24 @@ Set<String>? pruneOrphanedStagedFiles(String project) {
   final manifestFile = File('$normProject/.dart_tool/src_manifest.txt');
   if (!manifestFile.existsSync()) return null;
 
-  final lines = [
+  final List<String> lines = [
     for (final line in manifestFile.readAsLinesSync())
       if (line.trim().isNotEmpty) line.trim(),
   ];
   if (lines.contains('*')) return null;
 
   final allowed = <String>{for (final line in lines) _normRel(line)};
-  final rootPath = srcDir.path;
+  final String rootPath = srcDir.path;
   final dirs = <Directory>[];
-  for (final entity in srcDir.listSync(recursive: true, followLinks: false)) {
+  for (final FileSystemEntity entity in srcDir.listSync(
+    recursive: true,
+    followLinks: false,
+  )) {
     if (entity is Directory) {
       dirs.add(entity);
       continue;
     }
-    final rel = _relative(rootPath, entity.path);
+    final String rel = _relative(rootPath, entity.path);
     if (!allowed.contains(rel)) {
       _tryDelete(entity);
     }
@@ -312,7 +320,7 @@ Set<String>? pruneOrphanedStagedFiles(String project) {
 }
 
 void _pruneExtpkgs(String normProject) {
-  final extDir = _siblingExtpkgsDir(normProject);
+  final Directory? extDir = _siblingExtpkgsDir(normProject);
   if (extDir == null || !extDir.existsSync()) return;
 
   final extManifest = File('$normProject/.dart_tool/extpkgs_manifest.txt');
@@ -331,8 +339,8 @@ void _pruneExtpkgs(String normProject) {
 void _pruneExtpkgsFromManifest(Directory extDir, File extManifest) {
   final allowedFiles = <String>{};
   final allowedDirPrefixes = <String>[];
-  for (final raw in extManifest.readAsLinesSync()) {
-    final trimmed = raw.trim();
+  for (final String raw in extManifest.readAsLinesSync()) {
+    final String trimmed = raw.trim();
     if (trimmed.isEmpty) continue;
     if (trimmed.endsWith('/')) {
       allowedDirPrefixes.add(_normRel(trimmed));
@@ -340,15 +348,18 @@ void _pruneExtpkgsFromManifest(Directory extDir, File extManifest) {
       allowedFiles.add(_normRel(trimmed));
     }
   }
-  final rootPath = extDir.path;
+  final String rootPath = extDir.path;
   final dirs = <Directory>[];
-  for (final entity in extDir.listSync(recursive: true, followLinks: false)) {
+  for (final FileSystemEntity entity in extDir.listSync(
+    recursive: true,
+    followLinks: false,
+  )) {
     if (entity is Directory) {
       dirs.add(entity);
       continue;
     }
-    final rel = _relative(rootPath, entity.path);
-    final inAllowedDir = allowedDirPrefixes.any(rel.startsWith);
+    final String rel = _relative(rootPath, entity.path);
+    final bool inAllowedDir = allowedDirPrefixes.any(rel.startsWith);
     if (!inAllowedDir && !allowedFiles.contains(rel)) {
       _tryDelete(entity);
     }
@@ -362,10 +373,13 @@ void _pruneUnreferencedExtpkgs(
   Directory extDir,
   File pkgConfig,
 ) {
-  final referencedExtPkgs = _referencedExtPackages(normProject, pkgConfig);
+  final Set<String>? referencedExtPkgs = _referencedExtPackages(
+    normProject,
+    pkgConfig,
+  );
   if (referencedExtPkgs == null) return;
-  for (final entity in extDir.listSync(followLinks: false)) {
-    final name = _relative(extDir.path, entity.path);
+  for (final FileSystemEntity entity in extDir.listSync(followLinks: false)) {
+    final String name = _relative(extDir.path, entity.path);
     if (!referencedExtPkgs.contains(name)) {
       try {
         entity.deleteSync(recursive: true);
@@ -390,9 +404,9 @@ Set<String>? _referencedExtPackages(String normProject, File pkgConfig) {
     return null;
   }
   if (decoded is! Map || decoded['packages'] is! List) return null;
-  final extDir = _siblingExtpkgsDir(normProject);
+  final Directory? extDir = _siblingExtpkgsDir(normProject);
   if (extDir == null) return null;
-  final extBaseName = extDir.path
+  final String extBaseName = extDir.path
       .replaceAll(r'\', '/')
       .split('/')
       .where((s) => s.isNotEmpty)
@@ -401,12 +415,12 @@ Set<String>? _referencedExtPackages(String normProject, File pkgConfig) {
   final pkgs = <String>{};
   for (final entry in decoded['packages'] as List) {
     if (entry is! Map) continue;
-    final rootUri = entry['rootUri'];
+    final dynamic rootUri = entry['rootUri'];
     if (rootUri is! String) continue;
-    final idx = rootUri.indexOf(marker);
+    final int idx = rootUri.indexOf(marker);
     if (idx < 0) continue;
-    final rest = rootUri.substring(idx + marker.length);
-    final seg = rest
+    final String rest = rootUri.substring(idx + marker.length);
+    final String seg = rest
         .split('/')
         .firstWhere((s) => s.isNotEmpty, orElse: () => '');
     if (seg.isNotEmpty) {
@@ -457,9 +471,9 @@ String? _extractMultiRoot(List<String> compileArgs) {
 }
 
 String _resolveMultiRootUri(String rawUriOrPath, String? multiRoot) {
-  final schemeIdx = rawUriOrPath.indexOf(':///');
+  final int schemeIdx = rawUriOrPath.indexOf(':///');
   if (schemeIdx < 0) return rawUriOrPath;
-  final rel = rawUriOrPath.substring(schemeIdx + ':///'.length);
+  final String rel = rawUriOrPath.substring(schemeIdx + ':///'.length);
   if (multiRoot == null || multiRoot.isEmpty || multiRoot == '.') {
     return rel;
   }
@@ -468,10 +482,10 @@ String _resolveMultiRootUri(String rawUriOrPath, String? multiRoot) {
 
 String? _inferProjectFromArgs(List<String> compileArgs) {
   const pkgSuffix = '/.dart_tool/package_config.json';
-  final multiRoot = _extractMultiRoot(compileArgs);
+  final String? multiRoot = _extractMultiRoot(compileArgs);
   for (final arg in compileArgs) {
     if (!arg.startsWith('--packages=')) continue;
-    final val = _resolveMultiRootUri(
+    final String val = _resolveMultiRootUri(
       arg.substring('--packages='.length),
       multiRoot,
     );
@@ -484,7 +498,7 @@ String? _inferProjectFromArgs(List<String> compileArgs) {
 
 String? _extractOutputPath(List<String> compileArgs) {
   for (var i = 0; i < compileArgs.length; i++) {
-    final arg = compileArgs[i];
+    final String arg = compileArgs[i];
     if (arg == '-o' || arg == '--output') {
       if (i + 1 < compileArgs.length) {
         return compileArgs[i + 1];
@@ -502,7 +516,7 @@ String? _extractOutputPath(List<String> compileArgs) {
 
 String? _extractEntrypointPath(List<String> compileArgs) {
   if (compileArgs.isEmpty) return null;
-  final last = compileArgs.last;
+  final String last = compileArgs.last;
   if (last.startsWith('-')) return null;
   return _resolveMultiRootUri(last, _extractMultiRoot(compileArgs));
 }
@@ -571,7 +585,7 @@ String _trimTrailingSlash(String raw) {
 }
 
 String _normRel(String raw) {
-  var rel = raw.replaceAll(r'\', '/');
+  String rel = raw.replaceAll(r'\', '/');
   while (rel.startsWith('./')) {
     rel = rel.substring(2);
   }

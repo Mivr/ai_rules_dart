@@ -12,10 +12,10 @@ import 'package:test/test.dart';
 /// and forwards all runtime dependencies.
 void main(List<String> args) {
   final r = Runfiles.create();
-  final launcher = r.rlocation(args[0]);
-  final envJson = File(r.rlocation(args[1])).readAsStringSync();
-  final baseEnv = (jsonDecode(envJson) as Map<String, dynamic>)
-      .cast<String, String>();
+  final String launcher = r.rlocation(args[0]);
+  final String envJson = File(r.rlocation(args[1])).readAsStringSync();
+  final Map<String, String> baseEnv =
+      (jsonDecode(envJson) as Map<String, dynamic>).cast<String, String>();
   const selected = 'alpha|beta|gamma|no package:test';
   final all = {'alpha', 'beta', 'gamma', 'no package:test default timeout'};
 
@@ -38,7 +38,7 @@ void main(List<String> args) {
 
   test('--test_filter selects cases, and the 30 s default is off', () async {
     final xml = '${tmp.path}/filtered.xml';
-    final result = await run({
+    final ProcessResult result = await run({
       'TESTBRIDGE_TEST_ONLY': selected,
       'XML_OUTPUT_FILE': xml,
     });
@@ -48,9 +48,9 @@ void main(List<String> args) {
 
   test('without a filter every case runs, and a failure is reported', () async {
     final xml = '${tmp.path}/all.xml';
-    final result = await run({'XML_OUTPUT_FILE': xml});
+    final ProcessResult result = await run({'XML_OUTPUT_FILE': xml});
     expect(result.exitCode, isNot(0));
-    final report = File(xml).readAsStringSync();
+    final String report = File(xml).readAsStringSync();
     expect(ran(xml), {
       ...all,
       'filtered_out',
@@ -63,7 +63,9 @@ void main(List<String> args) {
   });
 
   test("a case's own timeout still applies", () async {
-    final result = await run({'TESTBRIDGE_TEST_ONLY': 'explicit timeout'});
+    final ProcessResult result = await run({
+      'TESTBRIDGE_TEST_ONLY': 'explicit timeout',
+    });
     expect(result.exitCode, isNot(0));
     expect('${result.stdout}', contains('Test timed out after 0.2 seconds'));
   });
@@ -74,7 +76,7 @@ void main(List<String> args) {
     for (var i = 0; i < shards; i++) {
       final xml = '${tmp.path}/shard$i.xml';
       final status = '${tmp.path}/status$i';
-      final result = await run({
+      final ProcessResult result = await run({
         'TESTBRIDGE_TEST_ONLY': selected,
         'TEST_TOTAL_SHARDS': '$shards',
         'TEST_SHARD_INDEX': '$i',
@@ -90,7 +92,7 @@ void main(List<String> args) {
   });
 
   test('a shard that draws no cases passes', () async {
-    final result = await run({
+    final ProcessResult result = await run({
       'TESTBRIDGE_TEST_ONLY': 'alpha',
       'TEST_TOTAL_SHARDS': '4',
       'TEST_SHARD_INDEX': '3',
@@ -99,7 +101,9 @@ void main(List<String> args) {
   });
 
   test('a filter that matches nothing in this target passes', () async {
-    final result = await run({'TESTBRIDGE_TEST_ONLY': 'no_such_case'});
+    final ProcessResult result = await run({
+      'TESTBRIDGE_TEST_ONLY': 'no_such_case',
+    });
     expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
   });
 
@@ -109,7 +113,7 @@ void main(List<String> args) {
     final home = Directory('${tmp.path}/home')..createSync();
     File('${home.path}/.dart_test.yaml')
         .writeAsStringSync('run_skipped: true\n');
-    final result = await run({
+    final ProcessResult result = await run({
       'TESTBRIDGE_TEST_ONLY': 'never runs',
       'HOME': home.path,
     });

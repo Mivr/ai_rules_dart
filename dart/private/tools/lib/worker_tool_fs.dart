@@ -31,7 +31,7 @@ Set<String>? pruneStagedSrcFiles(String project) {
   final manifestFile = File(p.join(project, '.dart_tool', 'src_manifest.txt'));
   if (!manifestFile.existsSync()) return null;
 
-  final lines = [
+  final List<String> lines = [
     for (final line in manifestFile.readAsLinesSync())
       if (line.trim().isNotEmpty) line.trim(),
   ];
@@ -50,9 +50,12 @@ Set<String>? pruneStagedSrcFiles(String project) {
 void pruneUnlistedUnder(String dirPath, Set<String> allowedPaths) {
   final dir = Directory(dirPath);
   if (!dir.existsSync()) return;
-  for (final entity in dir.listSync(recursive: true, followLinks: false)) {
+  for (final FileSystemEntity entity in dir.listSync(
+    recursive: true,
+    followLinks: false,
+  )) {
     if (entity is Directory) continue;
-    final normPath = p.normalize(entity.absolute.path);
+    final String normPath = p.normalize(entity.absolute.path);
     if (!allowedPaths.contains(normPath)) {
       try {
         entity.deleteSync();
@@ -64,7 +67,7 @@ void pruneUnlistedUnder(String dirPath, Set<String> allowedPaths) {
 }
 
 void _pruneExtpkgs(String project) {
-  final normProject = p.normalize(p.absolute(project));
+  final String normProject = p.normalize(p.absolute(project));
   if (!normProject.endsWith('.proj')) return;
   final extDir = Directory(
     '${normProject.substring(0, normProject.length - '.proj'.length)}.extpkgs',
@@ -77,8 +80,8 @@ void _pruneExtpkgs(String project) {
 
   final allowedFiles = <String>{};
   final allowedDirs = <String>[];
-  for (final raw in extManifest.readAsLinesSync()) {
-    final trimmed = raw.trim();
+  for (final String raw in extManifest.readAsLinesSync()) {
+    final String trimmed = raw.trim();
     if (trimmed.isEmpty) continue;
     if (trimmed.endsWith('/')) {
       allowedDirs.add(p.normalize(p.absolute(p.join(extDir.path, trimmed))));
@@ -86,10 +89,15 @@ void _pruneExtpkgs(String project) {
       allowedFiles.add(p.normalize(p.absolute(p.join(extDir.path, trimmed))));
     }
   }
-  for (final entity in extDir.listSync(recursive: true, followLinks: false)) {
+  for (final FileSystemEntity entity in extDir.listSync(
+    recursive: true,
+    followLinks: false,
+  )) {
     if (entity is Directory) continue;
-    final normPath = p.normalize(entity.absolute.path);
-    final inAllowedDir = allowedDirs.any((dir) => p.isWithin(dir, normPath));
+    final String normPath = p.normalize(entity.absolute.path);
+    final bool inAllowedDir = allowedDirs.any(
+      (dir) => p.isWithin(dir, normPath),
+    );
     if (!inAllowedDir && !allowedFiles.contains(normPath)) {
       try {
         entity.deleteSync();
@@ -166,7 +174,7 @@ mixin BoundedFolderForwards implements fs.Folder {
 
   @override
   fs.Resource resolveSymbolicLinksSync() {
-    final resolved = folderDelegate.resolveSymbolicLinksSync();
+    final fs.Resource resolved = folderDelegate.resolveSymbolicLinksSync();
     if (resolved is fs.Folder) return wrapFolder(resolved);
     if (resolved is fs.File) return wrapFile(resolved);
     return resolved;
@@ -227,7 +235,7 @@ mixin BoundedFileForwards implements fs.File {
 
   @override
   fs.Resource resolveSymbolicLinksSync() {
-    final resolved = fileDelegate.resolveSymbolicLinksSync();
+    final fs.Resource resolved = fileDelegate.resolveSymbolicLinksSync();
     if (resolved is fs.File) return wrapFile(resolved);
     if (resolved is fs.Folder) return wrapFolder(resolved);
     return resolved;

@@ -3,7 +3,7 @@ String describe(String alpha, String beta, String gamma) => '$alpha $gamma';
 
 void main() {
   final _ = 'wildcard';
-  final described = describe(
+  final String described = describe(
       'the first argument', 'the second argument', 'a variable named $_');
   if (!described.endsWith('wildcard')) {
     throw StateError('expected the wildcard, got: $described');

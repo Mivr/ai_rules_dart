@@ -26,7 +26,7 @@ void main() {
       ..createSync(recursive: true);
     Directory('${project.path}/pkgs/sub').createSync(recursive: true);
 
-    const initialConfig = {
+    const Map<String, Object> initialConfig = {
       'configVersion': 2,
       'packages': [
         {'name': 'demo', 'rootUri': '..', 'packageUri': 'lib/'},
@@ -54,17 +54,17 @@ void main() {
 
       fix_runner.repointPackageConfig(project.path, scratch.path);
 
-      final raw = configFile.readAsStringSync();
+      final String raw = configFile.readAsStringSync();
       expect(raw, isNot(contains('file:')));
       expect(raw, isNot(contains(tmp.path)));
 
       final decoded = jsonDecode(raw) as Map<String, Object?>;
-      final packages = {
+      final Map<String, String> packages = {
         for (final p in (decoded['packages'] as List).cast<Map>())
           p['name'] as String: p['rootUri'] as String,
       };
 
-      for (final uri in packages.values) {
+      for (final String uri in packages.values) {
         expect(Uri.parse(uri).hasScheme, isFalse);
         expect(uri.startsWith('/'), isFalse);
       }
@@ -109,7 +109,7 @@ void main() {
 
     final decoded =
         jsonDecode(configFile.readAsStringSync()) as Map<String, Object?>;
-    final packages = {
+    final Map<String, String> packages = {
       for (final p in (decoded['packages'] as List).cast<Map>())
         p['name'] as String: p['rootUri'] as String,
     };
@@ -135,12 +135,12 @@ void main() {
       );
     File('${project.path}/src/pkg/ok.dart')
         .writeAsStringSync('const ok = 1;\n');
-    final violations = findDisallowedStagedDirectives([
+    final List<String> violations = findDisallowedStagedDirectives([
       project.path,
     ], tool: 'fix_runner');
     // Staged-source keys use `/` separators on every platform; the listing
     // spells them with `\` on Windows.
-    final mainDisplay = main.path.replaceAll(r'\', '/');
+    final String mainDisplay = main.path.replaceAll(r'\', '/');
     expect(violations, [
       "fix_runner: $mainDisplay import 'file://localhost/secret.dart' "
           'is not a declared input.',
@@ -166,7 +166,7 @@ void main() {
           .createSync('${tmp.path}/real/evil.dart');
       Link('${project.path}/src/pkg/ok.dart')
           .createSync('${tmp.path}/real/ok.dart');
-      final violations = findDisallowedStagedDirectives([
+      final List<String> violations = findDisallowedStagedDirectives([
         project.path,
       ], tool: 'fix_runner');
       expect(violations, [
@@ -190,10 +190,10 @@ void main() {
       );
     File('${project.path}/src/pkg/ok.dart')
         .writeAsStringSync('const ok = 1;\n');
-    final violations = findDisallowedStagedDirectives([
+    final List<String> violations = findDisallowedStagedDirectives([
       project.path,
     ], tool: 'fix_runner');
-    final mainDisplay = main.path.replaceAll(r'\', '/');
+    final String mainDisplay = main.path.replaceAll(r'\', '/');
     expect(violations, [
       "fix_runner: $mainDisplay import '   \n/secret/s.dart' "
           'is not a declared input.',
@@ -215,14 +215,16 @@ void main() {
     }
 
     test('keys the allow-list project-relative and deletes unlisted files', () {
-      final project = stageSrc('demo');
+      final Directory project = stageSrc('demo');
       File('${project.path}/src/pkg/keep.dart')
           .writeAsStringSync('const keep = 1;\n');
       File('${project.path}/src/pkg/drop.dart')
           .writeAsStringSync('const drop = 1;\n');
       writeSrcManifest(project, ['pkg/keep.dart']);
 
-      final allowed = fix_runner.pruneOrphanedStagedFiles(project.path);
+      final Set<String>? allowed = fix_runner.pruneOrphanedStagedFiles(
+        project.path,
+      );
 
       expect(allowed, {'src/pkg/keep.dart'});
       expect(File('${project.path}/src/pkg/keep.dart').existsSync(), isTrue);
@@ -230,19 +232,21 @@ void main() {
     });
 
     test('a dot-slashed manifest line matches nothing project-relative', () {
-      final project = stageSrc('dotslash');
+      final Directory project = stageSrc('dotslash');
       File('${project.path}/src/pkg/keep.dart')
           .writeAsStringSync('const keep = 1;\n');
       writeSrcManifest(project, ['./pkg/keep.dart']);
 
-      final allowed = fix_runner.pruneOrphanedStagedFiles(project.path);
+      final Set<String>? allowed = fix_runner.pruneOrphanedStagedFiles(
+        project.path,
+      );
 
       expect(allowed, {'src/./pkg/keep.dart'});
       expect(File('${project.path}/src/pkg/keep.dart').existsSync(), isFalse);
     });
 
     test('a star manifest keeps everything and reports no allow-list', () {
-      final project = stageSrc('star');
+      final Directory project = stageSrc('star');
       File('${project.path}/src/pkg/any.dart')
           .writeAsStringSync('const any = 1;\n');
       writeSrcManifest(project, ['*']);
@@ -252,7 +256,7 @@ void main() {
     });
 
     test('without a manifest nothing is pruned', () {
-      final project = stageSrc('bare');
+      final Directory project = stageSrc('bare');
       File('${project.path}/src/pkg/any.dart')
           .writeAsStringSync('const any = 1;\n');
 
@@ -261,7 +265,7 @@ void main() {
     });
 
     test('prunes sibling extpkgs entries the manifest does not list', () {
-      final project = stageSrc('ext');
+      final Directory project = stageSrc('ext');
       writeSrcManifest(project, ['*']);
       final ext = Directory('${tmp.path}/ext.extpkgs/foo')
         ..createSync(recursive: true);
@@ -277,7 +281,7 @@ void main() {
     });
 
     test('an extpkgs directory prefix keeps the whole listed tree', () {
-      final project = stageSrc('extdir');
+      final Directory project = stageSrc('extdir');
       writeSrcManifest(project, ['*']);
       final ext = Directory('${tmp.path}/extdir.extpkgs/tree')
         ..createSync(recursive: true);

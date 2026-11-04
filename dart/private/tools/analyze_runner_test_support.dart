@@ -97,14 +97,14 @@ final class _RunnerHarness {
     String? baselinePath,
     String? dartOverride,
   }) {
-    final id = _counter++;
-    final resolvedBaseline =
+    final int id = _counter++;
+    final String resolvedBaseline =
         baselinePath ??
         (File(
           '${tmp.path}/b_$id.json',
         )..writeAsStringSync('$baselineJson\n')).path;
     final stamp = File('${tmp.path}/s_$id.stamp');
-    final res = Process.runSync(Platform.resolvedExecutable, [
+    final ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
       runner,
       '--dart',
       dartOverride ?? dartBin,
@@ -132,15 +132,15 @@ void _defineRunnerCeilingSubprocessTest(
   Directory Function() currentTmp,
 ) {
   test('enforces ceilings and fail-closed checks via dart analyze', () {
-    final harness = _RunnerHarness.resolve(args, currentTmp);
+    final _RunnerHarness? harness = _RunnerHarness.resolve(args, currentTmp);
     if (harness == null) return;
-    final project = harness.stageProject(
+    final Directory project = harness.stageProject(
       'ceil',
       'lib/sample.dart',
       "void f() {\n  print('1');\n  print('2');\n}\n",
     );
 
-    final ok = harness.run(
+    final _RunnerOutcome ok = harness.run(
       project,
       'src/lib/sample.dart',
       baselineJson: '{"lib/sample.dart":{"avoid_print":2}}',
@@ -150,7 +150,7 @@ void _defineRunnerCeilingSubprocessTest(
     expect(ok.stdout, contains('lib/sample.dart:2:3'));
     expect(ok.stdout, contains('baselined (2/2)'));
 
-    final low = harness.run(
+    final _RunnerOutcome low = harness.run(
       project,
       'src/lib/sample.dart',
       baselineJson: '{"lib/sample.dart":{"avoid_print":1}}',
@@ -159,7 +159,7 @@ void _defineRunnerCeilingSubprocessTest(
     expect(low.stamped, isFalse);
     expect(low.stdout, contains('observed 2, ceiling 1'));
 
-    final missing = harness.run(
+    final _RunnerOutcome missing = harness.run(
       project,
       'src/lib/sample.dart',
       baselinePath: '${harness.tmp.path}/does_not_exist.json',
@@ -176,9 +176,9 @@ void _defineRunnerOptionsParseErrorSubprocessTest(
   test(
     'never hides an unkeyed options parse_error and exempts a keyed one',
     () {
-      final harness = _RunnerHarness.resolve(args, currentTmp);
+      final _RunnerHarness? harness = _RunnerHarness.resolve(args, currentTmp);
       if (harness == null) return;
-      final project = harness.stageProject(
+      final Directory project = harness.stageProject(
         'opts_err',
         'sub/lib/b.dart',
         "void f() {\n  print('1');\n}\n",
@@ -190,7 +190,7 @@ void _defineRunnerOptionsParseErrorSubprocessTest(
         ..parent.createSync(recursive: true)
         ..writeAsStringSync('const a = 1;\n');
 
-      final unkeyed = harness.run(
+      final _RunnerOutcome unkeyed = harness.run(
         project,
         'src/sub/lib/b.dart',
         baselineJson: '{"sub/lib/b.dart":{"avoid_print":1}}',
@@ -200,7 +200,7 @@ void _defineRunnerOptionsParseErrorSubprocessTest(
       expect(unkeyed.stdout, contains('pkg/analysis_options.yaml'));
       expect(unkeyed.stdout, contains('parse_error'));
 
-      final keyed = harness.run(
+      final _RunnerOutcome keyed = harness.run(
         project,
         'src/sub/lib/b.dart',
         baselineJson:
@@ -218,19 +218,19 @@ void _defineRunnerZeroDiagnosticsCrashTest(
   Directory Function() currentTmp,
 ) {
   test('fails closed when analyzer exits non-zero with no diagnostics', () {
-    final harness = _RunnerHarness.resolve(args, currentTmp);
+    final _RunnerHarness? harness = _RunnerHarness.resolve(args, currentTmp);
     if (harness == null) return;
     final ext = Platform.isWindows ? '.exe' : '';
     final aotRuntime =
         '${File(harness.dartBin).parent.path}/dartaotruntime$ext';
-    final project = harness.stageProject(
+    final Directory project = harness.stageProject(
       'crash',
       'lib/sample.dart',
       'const x = 1;\n',
     );
     // `dartaotruntime` rejects the `analyze` subcommand with non-zero exit
     // and no machine diagnostics on stdout.
-    final crash = harness.run(
+    final _RunnerOutcome crash = harness.run(
       project,
       'src/lib/sample.dart',
       baselineJson: '{}',

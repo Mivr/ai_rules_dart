@@ -14,7 +14,7 @@ void main() {
     // every ABI); macOS with `renamex_np` and RENAME_EXCL (4). Both refuse
     // with EEXIST when another publisher won. An ABI with no pinned call
     // throws, and the publisher falls back to the link path.
-    for (final abi in [
+    for (final ffi.Abi abi in [
       ffi.Abi.linuxX64,
       ffi.Abi.linuxIA32,
       ffi.Abi.linuxArm,
@@ -27,7 +27,7 @@ void main() {
         noReplace: 1,
       ), reason: '$abi renames without replacing');
     }
-    for (final abi in [ffi.Abi.macosX64, ffi.Abi.macosArm64]) {
+    for (final ffi.Abi abi in [ffi.Abi.macosX64, ffi.Abi.macosArm64]) {
       expect(jitRenameCall(isMacOS: true, abi: abi), (
         symbol: 'renamex_np',
         noReplace: 4,
@@ -87,7 +87,7 @@ void main() {
     bytes[39] = 0x01;
     bytes[136] = 8; // stx_dev_major.
     bytes[140] = 3; // stx_dev_minor.
-    final stat = jitDecodeStatx(bytes);
+    final JitStat stat = jitDecodeStatx(bytes);
     expect(stat.kind, 'regular file');
     expect(stat.mode, 0x81a4);
     expect(stat.uid, 1001);
@@ -109,7 +109,7 @@ void main() {
     bytes[8] = 0x2a; // st_ino 42.
     bytes[16] = 0xf5; // st_uid low byte of 501.
     bytes[17] = 0x01;
-    final stat = jitDecodeMacStat(bytes);
+    final JitStat stat = jitDecodeMacStat(bytes);
     expect(stat.kind, 'regular file');
     expect(stat.mode, 0x81a4);
     expect(stat.uid, 501);
@@ -124,7 +124,7 @@ void main() {
     // F_WRLCK 1 and F_UNLCK 2, with `l_type` first at 0 on every ABI. Writing
     // Linux's 1 at Darwin's offset takes a shared read lock, so two
     // trainings of one key would both proceed.
-    for (final abi in [ffi.Abi.macosX64, ffi.Abi.macosArm64]) {
+    for (final ffi.Abi abi in [ffi.Abi.macosX64, ffi.Abi.macosArm64]) {
       expect(
         jitFlockLockType(isMacOS: true, abi: abi),
         3,
@@ -136,7 +136,7 @@ void main() {
         reason: '$abi writes l_type at 20',
       );
     }
-    for (final abi in [
+    for (final ffi.Abi abi in [
       ffi.Abi.linuxX64,
       ffi.Abi.linuxIA32,
       ffi.Abi.linuxArm,

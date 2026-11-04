@@ -57,7 +57,7 @@ Map<String, String> copied() {
   final out = <String, String>{};
   final root = Directory(dst);
   if (!root.existsSync()) return out;
-  for (final f in root.listSync(recursive: true).whereType<File>()) {
+  for (final File f in root.listSync(recursive: true).whereType<File>()) {
     out[f.path.substring(dst.length + 1).replaceAll('\\', '/')] = f
         .readAsStringSync();
   }
@@ -173,7 +173,7 @@ void main() {
     test(
       'an external file is excluded unless its repository matches',
       () async {
-        final files = [
+        final List<List<String>> files = [
           src(
             '../pub_x/lib/a.dart',
             'a'.codeUnits,

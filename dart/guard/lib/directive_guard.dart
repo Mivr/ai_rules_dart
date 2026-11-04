@@ -74,9 +74,9 @@ String decodeUriSegment(String segment) {
   }
 
   for (var i = 0; i < segment.length; i++) {
-    final c = segment.codeUnitAt(i);
+    final int c = segment.codeUnitAt(i);
     if (c == 0x25 && i + 2 < segment.length) {
-      final hex = int.tryParse(segment.substring(i + 1, i + 3), radix: 16);
+      final int? hex = int.tryParse(segment.substring(i + 1, i + 3), radix: 16);
       if (hex != null && hex >= 0 && hex <= 0xff) {
         bytes.add(hex);
         i += 2;
@@ -128,16 +128,18 @@ bool isEscapingPackageUri(String uri) {
   if (!uri.startsWith('package:')) return false;
   // A query or fragment names no file: the front end reads the file the path
   // part names, so the path part alone is classified below.
-  final rest = _stripLeadingDotSegments(
+  final String rest = _stripLeadingDotSegments(
     uri.substring('package:'.length).split(_queryOrFragment).first,
   );
   // The package name ends at the first separator: `/` or `\` (the front end
   // reads `\` like `/` everywhere), or either one percent-encoded in either
   // hex case. An empty package name escapes: it names no package file.
-  final sep = _firstPackageSeparator(rest);
+  final ({int index, int length})? sep = _firstPackageSeparator(rest);
   if (sep == null) return false;
   if (sep.index <= 0) return true;
-  final text = rest.substring(sep.index + sep.length).replaceAll(r'\', '/');
+  final String text = rest
+      .substring(sep.index + sep.length)
+      .replaceAll(r'\', '/');
   return _collapsesToEmpty(text) != false;
 }
 
@@ -188,8 +190,8 @@ bool _relativeReachesHostFile(String ref, List<String> dirSegments) {
 /// otherwise.
 bool? _collapsesToEmpty(String path, {bool dropSurplus = false}) {
   final out = <String>[];
-  for (final raw in path.split('/')) {
-    final seg = decodeUriSegment(raw);
+  for (final String raw in path.split('/')) {
+    final String seg = decodeUriSegment(raw);
     if (seg == '.') continue;
     if (seg == '..') {
       if (out.isNotEmpty) {
@@ -210,10 +212,10 @@ bool? _collapsesToEmpty(String path, {bool dropSurplus = false}) {
 /// the URI names no path.
 ({int index, int length})? _firstPackageSeparator(String rest) {
   for (var i = 0; i < rest.length; i++) {
-    final c = rest.codeUnitAt(i);
+    final int c = rest.codeUnitAt(i);
     if (c == 0x2f || c == 0x5c) return (index: i, length: 1);
     if (c == 0x25 && i + 2 < rest.length) {
-      final hex = int.tryParse(rest.substring(i + 1, i + 3), radix: 16);
+      final int? hex = int.tryParse(rest.substring(i + 1, i + 3), radix: 16);
       if (hex == 0x2f || hex == 0x5c) return (index: i, length: 3);
     }
   }
@@ -242,18 +244,18 @@ bool _isWindowsDriveSegment(String s) =>
 /// same way the guard does: normalize both sides with this before comparing,
 /// so a root passed with a trailing slash or backslashes still matches.
 String normalizeStagedPath(String path) {
-  final slashed = path.replaceAll(r'\', '/');
+  final String slashed = path.replaceAll(r'\', '/');
   final absolute = _isAbsoluteStagedPath(slashed)
       ? slashed
       : '${Directory.current.path.replaceAll(r'\', '/')}/$slashed';
-  final unc = absolute.startsWith('//');
+  final bool unc = absolute.startsWith('//');
   final parts = <String>[];
-  for (final part in absolute.split('/')) {
+  for (final String part in absolute.split('/')) {
     if (part.isEmpty || part == '.') continue;
     if (part == '..') {
       // `..` clamps at the filesystem root the way the analyzer clamps it:
       // past `/`, past a drive (`C:`), or past a UNC share's host.
-      final floor = unc
+      final int floor = unc
           ? (parts.length <= 2 ? parts.length : 2)
           : (parts.isNotEmpty && _isWindowsDriveSegment(parts.first) ? 1 : 0);
       if (parts.length > floor) parts.removeLast();
@@ -261,7 +263,7 @@ String normalizeStagedPath(String path) {
     }
     parts.add(part);
   }
-  final joined = parts.join('/');
+  final String joined = parts.join('/');
   if (unc) return '//$joined';
   if (absolute.startsWith('/')) return '/$joined';
   return joined;
@@ -281,10 +283,10 @@ String? _climbSegments(
   Iterable<String> raws,
   bool failAboveFloor,
 ) {
-  final stack = base.toList();
+  final List<String> stack = base.toList();
   final added = <String>[];
   for (final raw in raws) {
-    final seg = decodeUriSegment(raw);
+    final String seg = decodeUriSegment(raw);
     if (seg == '.') continue;
     if (seg == '..') {
       if (added.isNotEmpty) {
@@ -328,34 +330,34 @@ String? _climbSegments(
 /// holding one yields null: the front end does not resolve it like the
 /// skipped spelling.
 String? resolveStagedRelativeTarget(String uri, String fromPath) {
-  final text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
+  final String text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
   // A fragment names no file: the front end reports a URI with one instead of
   // reading through it, whatever path precedes it.
   if (text.contains('#')) return null;
   // A query names no file either: the front end reads the file the path part
   // names, so the path part alone is classified and resolved below. Cutting
   // here also keeps a `:` inside the query from looking like a scheme.
-  final query = text.indexOf('?');
-  final path = query < 0 ? text : text.substring(0, query);
+  final int query = text.indexOf('?');
+  final String path = query < 0 ? text : text.substring(0, query);
   if (path.contains(':')) return null;
   if (path.startsWith('//')) return null;
-  final from = normalizeStagedPath(fromPath);
+  final String from = normalizeStagedPath(fromPath);
   // An empty reference names the importing file itself (RFC 3986).
   if (path.isEmpty) return from;
-  final rooted = from.startsWith('/');
-  final drive =
+  final bool rooted = from.startsWith('/');
+  final bool drive =
       !rooted &&
       from.contains('/') &&
       _isWindowsDriveSegment(from.split('/').first);
-  final stack = from.split('/');
+  final List<String> stack = from.split('/');
   // Drop the file name: the URI resolves against its directory.
   if (stack.isNotEmpty) stack.removeLast();
   final floor = rooted || drive ? 1 : 0;
-  final absolute = path.startsWith('/');
-  final base = absolute ? stack.sublist(0, floor) : stack;
-  final queue = absolute ? path.substring(1) : path;
+  final bool absolute = path.startsWith('/');
+  final List<String> base = absolute ? stack.sublist(0, floor) : stack;
+  final String queue = absolute ? path.substring(1) : path;
   if (absolute && queue.contains('//')) return null;
-  final joined = _climbSegments(base, floor, queue.split('/'), false);
+  final String? joined = _climbSegments(base, floor, queue.split('/'), false);
   if (joined == null) return null;
   // A rooted `from` splits with a leading empty segment, so the join already
   // starts with `/` (or `//` for a UNC share); only fill in a bare `/` when
@@ -403,9 +405,9 @@ bool isDisallowedDirectiveUri(
   // A schemeless `//` authority names no declared file: the front end resolves
   // it above every root, so it reads the host whatever the roots hold. `\`
   // separates like the front end, so a leading `\\` counts too.
-  final text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
+  final String text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
   if (text.startsWith('//')) return true;
-  final colon = uri.indexOf(':');
+  final int colon = uri.indexOf(':');
   if (colon <= 0) return false;
   return _isSchemeStart(uri.codeUnitAt(0)) &&
       uri.substring(1, colon).codeUnits.every(_isSchemeChar);
@@ -432,13 +434,13 @@ bool isDisallowedDirectiveUri(
 /// multi-root scheme (those never reach a path resolver: their own checks
 /// refuse them).
 bool hasEmptyPathSegment(String uri) {
-  var text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
-  final packaged = uri.startsWith('package:');
+  String text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
+  final bool packaged = uri.startsWith('package:');
   if (text.startsWith(defaultMultiRootPrefix)) {
     text = text.substring(defaultMultiRootPrefix.length);
   } else if (text.startsWith('package:')) {
-    final rest = _stripLeadingDotSegments(text.substring('package:'.length));
-    final slash = rest.indexOf('/');
+    final String rest = _stripLeadingDotSegments(text.substring('package:'.length));
+    final int slash = rest.indexOf('/');
     if (slash < 0) return false;
     text = rest.substring(slash + 1);
   } else {
@@ -446,7 +448,7 @@ bool hasEmptyPathSegment(String uri) {
     if (!text.startsWith('/') || text.startsWith('//')) return false;
     text = text.substring(1);
   }
-  final clean = text.split(_queryOrFragment).first;
+  final String clean = text.split(_queryOrFragment).first;
   if (packaged) return _collapsesToEmpty(clean, dropSurplus: true) == true;
   return clean.startsWith('/') || clean.contains('//');
 }
@@ -469,10 +471,10 @@ bool hasLineBreak(String uri) => uri.contains('\n') || uri.contains('\r');
 /// the empty list when no package holds it (an unpackaged file).
 List<String> _packageDirOf(String fromKey, Map<String, String> packageDirs) {
   var best = const <String>[];
-  for (final dir in packageDirs.values) {
+  for (final String dir in packageDirs.values) {
     if (dir.isEmpty) continue;
     if (fromKey == dir || fromKey.startsWith('$dir/')) {
-      final segs = dir.split('/');
+      final List<String> segs = dir.split('/');
       if (segs.length > best.length) best = segs;
     }
   }
@@ -496,7 +498,7 @@ String? _resolvePath(
   int floor,
   _PathKind kind,
 ) {
-  final raws = path.split('/');
+  final List<String> raws = path.split('/');
   if (raws.last.isEmpty) return null;
   if (kind == _PathKind.root && raws.contains('')) return null;
   return _climbSegments(base, floor, raws, kind == _PathKind.package);
@@ -532,20 +534,20 @@ String? resolveDirectiveUri(
   Map<String, String> packageDirs, {
   String multiRootPrefix = defaultMultiRootPrefix,
 }) {
-  final text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
+  final String text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
   if (text.startsWith(multiRootPrefix)) {
-    final absolute = text.substring(multiRootPrefix.length);
+    final String absolute = text.substring(multiRootPrefix.length);
     return _resolvePath(absolute, const [], 0, _PathKind.root);
   }
   if (text.startsWith('package:')) {
-    final rest = _stripLeadingDotSegments(text.substring('package:'.length));
+    final String rest = _stripLeadingDotSegments(text.substring('package:'.length));
     if (rest.contains('?') || rest.contains('#')) return null;
-    final slash = rest.indexOf('/');
+    final int slash = rest.indexOf('/');
     if (slash <= 0) return null;
-    final dir = packageDirs[rest.substring(0, slash)];
+    final String? dir = packageDirs[rest.substring(0, slash)];
     if (dir == null) return null;
-    final base = dir.isEmpty ? const <String>[] : dir.split('/');
-    final inner = rest.substring(slash + 1);
+    final List<String> base = dir.isEmpty ? const <String>[] : dir.split('/');
+    final String inner = rest.substring(slash + 1);
     // Directly after the package name an empty segment reads a host file.
     if (_collapsesToEmpty(inner, dropSurplus: true) == true) return null;
     return _resolvePath(inner, base, base.length, _PathKind.package);
@@ -555,22 +557,22 @@ String? resolveDirectiveUri(
   // file the path part names, so the path part alone is classified and
   // resolved below.
   if (text.contains('#')) return null;
-  final query = text.indexOf('?');
-  final path = query < 0 ? text : text.substring(0, query);
+  final int query = text.indexOf('?');
+  final String path = query < 0 ? text : text.substring(0, query);
   if (path.contains(':')) return null;
   if (path.startsWith('//')) return null;
   // An empty reference names the importing file itself (RFC 3986).
   if (path.isEmpty) return fromKey;
   if (path.startsWith('/')) {
-    final base = _packageDirOf(fromKey, packageDirs);
+    final List<String> base = _packageDirOf(fromKey, packageDirs);
     // The one leading `/` marks absoluteness; any further empty segment fails.
     return _resolvePath(path.substring(1), base, base.length, _PathKind.root);
   }
-  final slash = fromKey.lastIndexOf('/');
-  final base = slash < 0
+  final int slash = fromKey.lastIndexOf('/');
+  final List<String> base = slash < 0
       ? const <String>[]
       : fromKey.substring(0, slash).split('/');
-  final floor = _packageDirOf(fromKey, packageDirs).length;
+  final int floor = _packageDirOf(fromKey, packageDirs).length;
   // The front end resolves it against the library's `package:` URI.
   if (floor > 0 &&
       base.length >= floor &&
@@ -680,7 +682,7 @@ String _unescape(String s) {
   final out = StringBuffer();
   var i = 0;
   while (i < s.length) {
-    final ch = s[i++];
+    final String ch = s[i++];
     if (ch != '\\') {
       out.write(ch);
       continue;
@@ -694,7 +696,7 @@ String _unescape(String s) {
 /// its value to [out], and returns the index just past it.
 int _unescapeOne(String s, int i, StringBuffer out) {
   if (i >= s.length) throw const _Unparsable();
-  final esc = s[i++];
+  final String esc = s[i++];
   switch (esc) {
     case 'n':
       out.write('\n');
@@ -709,18 +711,18 @@ int _unescapeOne(String s, int i, StringBuffer out) {
     case 'v':
       out.write('\v');
     case 'x':
-      final code = _unescapeHexCode(s, i, 2);
+      final int? code = _unescapeHexCode(s, i, 2);
       if (code == null) throw const _Unparsable();
       out.writeCharCode(code);
       return i + 2;
     case 'u':
       if (i < s.length && s[i] == '{') {
-        final braced = _unescapeBracedCode(s, i);
+        final (int, int)? braced = _unescapeBracedCode(s, i);
         if (braced == null) throw const _Unparsable();
         out.writeCharCode(braced.$1);
         return braced.$2;
       }
-      final code = _unescapeHexCode(s, i, 4);
+      final int? code = _unescapeHexCode(s, i, 4);
       if (code == null) throw const _Unparsable();
       out.writeCharCode(code);
       return i + 4;
@@ -740,9 +742,9 @@ int? _unescapeHexCode(String s, int i, int digits) {
 /// The (code point, next index) of the `\u{...}` escape at `s[i]`, or null
 /// when the brace never closes or the digits are not a valid code point.
 (int, int)? _unescapeBracedCode(String s, int i) {
-  final close = s.indexOf('}', i + 1);
+  final int close = s.indexOf('}', i + 1);
   if (close < 0) return null;
-  final code = int.tryParse(s.substring(i + 1, close), radix: 16);
+  final int? code = int.tryParse(s.substring(i + 1, close), radix: 16);
   if (code == null || code < 0 || code > 0x10FFFF) return null;
   return (code, close + 1);
 }
@@ -759,13 +761,13 @@ class _Lexer {
   _Token? peek() => _ahead ??= _scan();
 
   _Token? take() {
-    final token = peek();
+    final _Token? token = peek();
     _ahead = null;
     return token;
   }
 
   _Token? _scan() {
-    final src = _src;
+    final String src = _src;
     if (_at == 0) {
       if (src.startsWith('\uFEFF')) _at++;
       if (src.startsWith('#!', _at)) {
@@ -781,9 +783,9 @@ class _Lexer {
 
   /// Skips one whitespace run or comment; false when [_at] is at a real token.
   bool _skipGap() {
-    final src = _src;
-    final n = src.length;
-    final ch = src[_at];
+    final String src = _src;
+    final int n = src.length;
+    final String ch = src[_at];
     if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') {
       _at++;
       return true;
@@ -802,23 +804,23 @@ class _Lexer {
   /// The token starting at [_at]: an identifier (or raw-string prefix),
   /// a number, a string literal, or one punctuation character.
   _Token _scanToken() {
-    final src = _src;
-    final n = src.length;
-    final ch = src[_at];
-    final code = ch.codeUnitAt(0);
+    final String src = _src;
+    final int n = src.length;
+    final String ch = src[_at];
+    final int code = ch.codeUnitAt(0);
     if (_isIdentStart(code)) {
-      final start = _at;
+      final int start = _at;
       while (_at < n && _isIdentChar(src.codeUnitAt(_at))) {
         _at++;
       }
-      final word = src.substring(start, _at);
+      final String word = src.substring(start, _at);
       if (word == 'r' && _at < n && (src[_at] == "'" || src[_at] == '"')) {
         return _string(raw: true);
       }
       return _Token(_identKind, word);
     }
     if (_isDigit(code)) {
-      final start = _at;
+      final int start = _at;
       while (_at < n && _isIdentChar(src.codeUnitAt(_at))) {
         _at++;
       }
@@ -831,13 +833,13 @@ class _Lexer {
 
   /// The string literal at `_at`, with its quotes removed and its escapes kept.
   _Token _string({required bool raw}) {
-    final src = _src;
-    final quote = src[_at];
-    final triple = src.startsWith(quote * 3, _at);
-    final delim = triple ? quote * 3 : quote;
-    var contentStart = _at + delim.length;
-    final endQuote = _skipString(_at, raw: raw);
-    final contentEnd = endQuote - delim.length;
+    final String src = _src;
+    final String quote = src[_at];
+    final bool triple = src.startsWith(quote * 3, _at);
+    final String delim = triple ? quote * 3 : quote;
+    int contentStart = _at + delim.length;
+    final int endQuote = _skipString(_at, raw: raw);
+    final int contentEnd = endQuote - delim.length;
     if (triple && contentStart < contentEnd) {
       if (src.startsWith('\r\n', contentStart)) {
         contentStart += 2;
@@ -855,12 +857,12 @@ class _Lexer {
 
   /// The index just past the string literal that starts at `quoteAt`.
   int _skipString(int quoteAt, {required bool raw}) {
-    final src = _src;
-    final n = src.length;
-    final quote = src[quoteAt];
-    final triple = src.startsWith(quote * 3, quoteAt);
-    final delim = triple ? quote * 3 : quote;
-    var at = quoteAt + delim.length;
+    final String src = _src;
+    final int n = src.length;
+    final String quote = src[quoteAt];
+    final bool triple = src.startsWith(quote * 3, quoteAt);
+    final String delim = triple ? quote * 3 : quote;
+    int at = quoteAt + delim.length;
     while (true) {
       if (at >= n) throw const _Unparsable();
       if (!raw && src[at] == '\\') {
@@ -885,12 +887,12 @@ class _Lexer {
   /// The index just past the `}` that closes a `${...}` string interpolation
   /// whose body starts at `start`.
   int _skipInterpolation(int start) {
-    final src = _src;
-    final n = src.length;
+    final String src = _src;
+    final int n = src.length;
     var at = start;
     var depth = 1;
     while (at < n) {
-      final ch = src[at];
+      final String ch = src[at];
       if (ch == '/' && at + 1 < n && src[at + 1] == '/') {
         at = _skipLine(src, at + 2);
         continue;
@@ -899,7 +901,7 @@ class _Lexer {
         at = _skipBlockComment(src, at);
         continue;
       }
-      final code = ch.codeUnitAt(0);
+      final int code = ch.codeUnitAt(0);
       if (_isIdentStart(code) || _isDigit(code)) {
         at = _skipInterpolationWord(src, n, at);
         continue;
@@ -953,13 +955,13 @@ class _Prologue {
   _Token? _peek() => _lexer.peek();
 
   _Token _take() {
-    final token = _lexer.take();
+    final _Token? token = _lexer.take();
     if (token == null) throw const _Unparsable();
     return token;
   }
 
   bool _is(String text, int kind) {
-    final token = _peek();
+    final _Token? token = _peek();
     return token != null && token.kind == kind && token.text == text;
   }
 
@@ -985,11 +987,11 @@ class _Prologue {
   void _skipPast(String text) {
     var afterOperand = true;
     while (!_punct(text)) {
-      final token = _peek();
+      final _Token? token = _peek();
       if (token != null && afterOperand && _isDirectiveStart(token)) {
         return;
       }
-      final consumed = _take();
+      final _Token consumed = _take();
       afterOperand =
           consumed.kind == _stringKind ||
           (consumed.kind == _punctKind && consumed.text == ')');
@@ -1014,12 +1016,12 @@ class _Prologue {
 
   /// A dotted identifier such as `foo` or `foo.bar.baz`.
   String _dottedIdent() {
-    final first = _take();
+    final _Token first = _take();
     if (first.kind != _identKind) throw const _Unparsable();
     final out = StringBuffer(first.text);
     while (_punct('.')) {
       _lexer.take();
-      final next = _take();
+      final _Token next = _take();
       if (next.kind != _identKind) throw const _Unparsable();
       out
         ..write('.')
@@ -1030,11 +1032,11 @@ class _Prologue {
 
   /// Adjacent string literals are one URI.
   String _string() {
-    final token = _take();
+    final _Token token = _take();
     if (token.kind != _stringKind) throw const _Unparsable();
     final out = StringBuffer(token.raw ? token.text : _unescape(token.text));
     while (_peek()?.kind == _stringKind) {
-      final next = _take();
+      final _Token next = _take();
       out.write(next.raw ? next.text : _unescape(next.text));
     }
     return out.toString();
@@ -1051,7 +1053,7 @@ class _Prologue {
     if (_punct('<')) {
       var depth = 0;
       do {
-        final token = _take();
+        final _Token token = _take();
         if (token.kind == _punctKind && token.text == '<') depth++;
         if (token.kind == _punctKind && token.text == '>') depth--;
       } while (depth > 0);
@@ -1063,7 +1065,7 @@ class _Prologue {
     if (_punct('(')) {
       var depth = 0;
       do {
-        final token = _take();
+        final _Token token = _take();
         if (token.kind == _punctKind && token.text == '(') depth++;
         if (token.kind == _punctKind && token.text == ')') depth--;
       } while (depth > 0);
@@ -1075,7 +1077,7 @@ class _Prologue {
   /// available SDK libraries are mapped to `'true'` and all other names are
   /// unspecified (matching only `== ''`).
   bool _condition() {
-    final text = _dottedIdent();
+    final String text = _dottedIdent();
     String? value;
     if (_punct('=')) {
       _lexer.take();
@@ -1085,7 +1087,7 @@ class _Prologue {
     _expect(')');
     const prefix = 'dart.library.';
     if (text.startsWith(prefix)) {
-      final present = _vm.contains(text.substring(prefix.length));
+      final bool present = _vm.contains(text.substring(prefix.length));
       if (!present) return false;
       return value == null || value == 'true';
     }
@@ -1095,15 +1097,15 @@ class _Prologue {
   /// `import` or `export` after its keyword: the URI, then any `if`
   /// alternatives, then the rest of the directive, which names nothing to read.
   ScanRef _uriDirective(String kind, List<ScanRef> refs) {
-    final declared = _string();
+    final String declared = _string();
     if (collectAll) refs.add(ScanRef(kind, declared));
     var chosen = declared;
     var picked = false;
     while (_ident('if')) {
       _lexer.take();
       _expect('(');
-      final holds = _condition();
-      final alternative = _string();
+      final bool holds = _condition();
+      final String alternative = _string();
       if (collectAll) refs.add(ScanRef(kind, alternative));
       if (holds && !picked) {
         chosen = alternative;
@@ -1130,7 +1132,7 @@ class _Prologue {
   /// Parses one prologue directive into [refs]; false when the prologue ends
   /// here (end of input or the first non-directive token).
   bool _parseDirective(List<ScanRef> refs) {
-    final token = _peek();
+    final _Token? token = _peek();
     if (token == null) return false;
     if (token.kind == _punctKind && token.text == '@') {
       _annotation();
@@ -1181,7 +1183,7 @@ class _Prologue {
   bool _parseImportOrExport(String kind, List<ScanRef> refs) {
     _lexer.take();
     if (_peek()?.kind == _stringKind) {
-      final ref = _uriDirective(kind, refs);
+      final ScanRef ref = _uriDirective(kind, refs);
       if (!collectAll) refs.add(ref);
       return true;
     }
@@ -1226,6 +1228,9 @@ class _Prologue {
 List<ScanRef> scanAllDirectiveUris(String source) =>
     scanAllDirectiveUrisChecked(source).refs;
 
+/// The result type of [scanAllDirectiveUrisChecked], named for local variables.
+typedef _Checked = ({List<ScanRef> refs, bool unparsable});
+
 /// A prologue scan: the directives [scanAllDirectiveUris] would list, and
 /// whether the prologue did not scan at all. Checks that decide about inputs
 /// use this and refuse an unscannable source outright (see
@@ -1262,16 +1267,16 @@ List<String> findDisallowedDirectives(
   String multiRootPrefix = defaultMultiRootPrefix,
 }) {
   final errors = <String>[];
-  final paths = fileContents.keys.toList()..sort();
+  final List<String> paths = fileContents.keys.toList()..sort();
   for (final path in paths) {
-    final content = fileContents[path];
+    final String? content = fileContents[path];
     if (content == null) continue;
-    final checked = scanAllDirectiveUrisChecked(content);
+    final _Checked checked = scanAllDirectiveUrisChecked(content);
     if (checked.unparsable) {
       errors.add(unparsableDirectiveDiagnostic(tool, path));
       continue;
     }
-    for (final ref in checked.refs) {
+    for (final ScanRef ref in checked.refs) {
       // A URI spanning lines is refused however it spells its target: the
       // front end's multi-line first-line rule reads a different file than
       // the resolvers below see (see [hasLineBreak]).
@@ -1281,7 +1286,7 @@ List<String> findDisallowedDirectives(
         );
         continue;
       }
-      final disallowed = ref.isPart || ref.isPartOf
+      final bool disallowed = ref.isPart || ref.isPartOf
           ? isFileSchemeDirectiveUri(ref.uri)
           : isDisallowedDirectiveUri(ref.uri, multiRootPrefix: multiRootPrefix);
       if (disallowed) {
@@ -1311,16 +1316,13 @@ Map<String, String> readStagedDartSources(Iterable<String> roots) {
   for (final root in roots) {
     final dir = Directory(root);
     if (!dir.existsSync()) continue;
-    for (final entity in dir.listSync(recursive: true, followLinks: false)) {
-      final isDart = entity.path.endsWith('.dart');
-      if (entity is File) {
-        if (!isDart) continue;
-      } else if (entity is Link) {
-        if (!isDart) continue;
-      } else {
-        continue;
-      }
-      final key = entity.path.replaceAll(r'\', '/');
+    for (final FileSystemEntity entity in dir.listSync(
+      recursive: true,
+      followLinks: false,
+    )) {
+      if (entity is! File && entity is! Link) continue;
+      if (!entity.path.endsWith('.dart')) continue;
+      final String key = entity.path.replaceAll(r'\', '/');
       try {
         // Malformed sequences become U+FFFD, never a skipped file: the front
         // end accepts the file, so the guard scans what it can.
@@ -1376,7 +1378,7 @@ List<String> projectStagedRoots(String project) {
 /// a file under it. Both sides are normalized first, so a root passed with a
 /// trailing slash or backslashes still matches.
 bool _isWithinStagedRoot(String target, String root) {
-  final want = normalizeStagedPath(root);
+  final String want = normalizeStagedPath(root);
   if (target == want) return true;
   return target.startsWith('$want/');
 }
@@ -1387,7 +1389,7 @@ bool _isWithinStagedRoot(String target, String root) {
 Set<String> _stagedRootSpellings(String root) {
   final spellings = <String>{normalizeStagedPath(root)};
   try {
-    final resolved = Directory(root).resolveSymbolicLinksSync();
+    final String resolved = Directory(root).resolveSymbolicLinksSync();
     spellings.add(normalizeStagedPath(resolved));
   } on FileSystemException {
     // Vanished or unresolvable; the passed spelling still applies.
@@ -1436,19 +1438,19 @@ List<String> findStagedDirectiveViolations(
   bool declared(String target) =>
       allowed.any((root) => _isWithinStagedRoot(target, root));
   final errors = <String>[];
-  final contents = readStagedDartSources(roots);
-  final paths = contents.keys.toList()..sort();
+  final Map<String, String> contents = readStagedDartSources(roots);
+  final List<String> paths = contents.keys.toList()..sort();
   for (final path in paths) {
-    final content = contents[path];
+    final String? content = contents[path];
     if (content == null) continue;
-    final from = normalizeStagedPath(path.replaceAll(r'\', '/'));
-    final checked = scanAllDirectiveUrisChecked(content);
+    final String from = normalizeStagedPath(path.replaceAll(r'\', '/'));
+    final _Checked checked = scanAllDirectiveUrisChecked(content);
     if (checked.unparsable) {
       errors.add(unparsableDirectiveDiagnostic(tool, path));
       continue;
     }
-    for (final ref in checked.refs) {
-      final violation = _stagedRefViolation(
+    for (final ScanRef ref in checked.refs) {
+      final String? violation = _stagedRefViolation(
         (tool: tool, path: path, ref: ref, from: from),
         declared,
         multiRootPrefix,
@@ -1484,7 +1486,7 @@ String? _stagedRefViolation(
   bool requireTargetsExist,
 ) {
   final (:tool, :path, :ref, :from) = target;
-  final uri = ref.uri;
+  final String uri = ref.uri;
   final refused = "$tool: $path ${ref.kind} '$uri' is not a declared input.";
   // A URI spanning lines is refused however it spells its target: the
   // front end's multi-line first-line rule reads a different file than
@@ -1504,7 +1506,7 @@ String? _stagedRefViolation(
   // A relative reference from a library under `lib/` is resolved by the front
   // end against the library's `package:` URI (see [_relativeReachesHostFile]).
   if (_libRelativeReachesHostFile(uri, from)) return refused;
-  final resolved = resolveStagedRelativeTarget(uri, from);
+  final String? resolved = resolveStagedRelativeTarget(uri, from);
   // A null resolution names no declared file (a `//` authority, a
   // fragment, or a decoded `/`): it is refused, never passed. A resolved
   // target is refused unless the file exists in the staged tree (see

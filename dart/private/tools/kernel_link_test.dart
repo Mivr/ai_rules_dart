@@ -37,18 +37,24 @@ void main(List<String> args) {
     'persistent worker answers a failing request and logs to stderr',
     skip: _toolDillPath.isEmpty ? 'kernel_link worker not in runfiles' : null,
     () async {
-      final proc = await Process.start(_dartBin, [
+      final Process proc = await Process.start(_dartBin, [
         _toolDillPath,
         '--persistent_worker',
       ]);
-      final stderrFuture = proc.stderr.transform(utf8.decoder).join();
+      final Future<String> stderrFuture = proc.stderr
+          .transform(utf8.decoder)
+          .join();
       // A `@`-file that does not exist: param expansion throws before any
       // linking runs, exercising the worker's top-level handler.
       proc.stdin.add(
         _requestFrameForTest(['@${_tmp.path}/no-such-param-file.txt'], 5),
       );
       await proc.stdin.flush();
-      final (code, output, requestId) = await _readResponseForTest(proc.stdout)
+      final (
+        int code,
+        String output,
+        int requestId,
+      ) = await _readResponseForTest(proc.stdout)
           .timeout(const Duration(minutes: 2));
       expect(requestId, 5);
       expect(code, 1);
@@ -74,14 +80,14 @@ Uint8List _requestFrameForTest(List<String> arguments, int requestId) {
   final message = BytesBuilder();
   for (final argument in arguments) {
     message.addByte(0x0a);
-    final bytes = utf8.encode(argument);
+    final Uint8List bytes = utf8.encode(argument);
     _writeVarintForTest(message, bytes.length);
     message.add(bytes);
   }
   message.addByte(0x18);
   _writeVarintForTest(message, requestId);
   final frame = BytesBuilder();
-  final payload = message.toBytes();
+  final Uint8List payload = message.toBytes();
   _writeVarintForTest(frame, payload.length);
   frame.add(payload);
   return frame.toBytes();
@@ -108,7 +114,7 @@ Future<(int, String, int)> _readResponseForTest(
     var result = 0;
     var shift = 0;
     while (true) {
-      final b = await byte();
+      final int b = await byte();
       result |= (b & 0x7f) << shift;
       if (b < 0x80) return result;
       shift += 7;
@@ -123,7 +129,7 @@ Future<(int, String, int)> _readResponseForTest(
     return Uint8List.fromList(out);
   }
 
-  final payload = await bytes(await varint());
+  final Uint8List payload = await bytes(await varint());
   var exitCode = 0;
   var output = '';
   var requestId = 0;
@@ -132,7 +138,7 @@ Future<(int, String, int)> _readResponseForTest(
     var r = 0;
     var s = 0;
     while (true) {
-      final b = payload[p++];
+      final int b = payload[p++];
       r |= (b & 0x7f) << s;
       if (b < 0x80) return r;
       s += 7;
@@ -144,7 +150,7 @@ Future<(int, String, int)> _readResponseForTest(
       case 0x08:
         exitCode = v();
       case 0x12:
-        final n = v();
+        final int n = v();
         output = utf8.decode(payload.sublist(p, p + n));
         p += n;
       case 0x18:

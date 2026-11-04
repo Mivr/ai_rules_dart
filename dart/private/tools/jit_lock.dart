@@ -68,6 +68,11 @@ typedef JitTempReady = void Function(String tempPath, int tempFd);
 /// cannot open the lock at all.
 typedef _JitBackend = ({ffi.DynamicLibrary lib, JitOpenFlags flags});
 
+typedef _Bytes = ffi.Pointer<ffi.Uint8>;
+typedef _OpenResult = ({int errno, int fd});
+typedef _PublishStep = ({JitLockOpen result, bool retry});
+typedef _BackendReady = ({_JitBackend? backend, JitLockOpen? failure});
+typedef _Stat64Calls = ({String fstat, String lstat, int ver});
 typedef _MallocNative = ffi.Pointer<ffi.Uint8> Function(ffi.Size);
 typedef _MallocDart = ffi.Pointer<ffi.Uint8> Function(int);
 typedef _FreeNative = ffi.Void Function(ffi.Pointer<ffi.Uint8>);
@@ -178,7 +183,9 @@ typedef _GetpwuidDart = ffi.Pointer<_Passwd> Function(int);
 int jitOwnUid() {
   if (Platform.isWindows) return -1;
   final lib = ffi.DynamicLibrary.process();
-  final geteuid = lib.lookupFunction<_GeteuidNative, _GeteuidDart>('geteuid');
+  final _GeteuidDart geteuid = lib.lookupFunction<_GeteuidNative, _GeteuidDart>(
+    'geteuid',
+  );
   return geteuid();
 }
 
@@ -186,9 +193,9 @@ int jitOwnUid() {
 /// and its owner, never its content. The owner is the uid, plus the user name
 /// where the host resolves it.
 String jitDescribeEntry(String path) {
-  final info = jitStatEntry(path);
+  final JitStat? info = jitStatEntry(path);
   if (info == null) return 'entry at $path of unknown ownership';
-  final owner = jitUserName(info.uid);
+  final String? owner = jitUserName(info.uid);
   final who = owner == null ? 'uid ${info.uid}' : 'uid ${info.uid} ($owner)';
   return '${info.kind} at $path owned by $who';
 }
@@ -198,17 +205,16 @@ String? jitUserName(int uid) {
   if (Platform.isWindows) return null;
   try {
     final lib = ffi.DynamicLibrary.process();
-    final getpwuid = lib.lookupFunction<_GetpwuidNative, _GetpwuidDart>(
-      'getpwuid',
-    );
-    final pwd = getpwuid(uid);
+    final _GetpwuidDart getpwuid = lib
+        .lookupFunction<_GetpwuidNative, _GetpwuidDart>('getpwuid');
+    final ffi.Pointer<_Passwd> pwd = getpwuid(uid);
     if (pwd == ffi.nullptr) return null;
     // `pw_name` is the first field of `struct passwd` on Linux and macOS.
-    final name = pwd.cast<ffi.Pointer<ffi.Uint8>>().value;
+    final _Bytes name = pwd.cast<_Bytes>().value;
     if (name == ffi.nullptr) return null;
     final bytes = <int>[];
     for (var i = 0; i < 1024; i++) {
-      final byte = name[i];
+      final int byte = name[i];
       if (byte == 0) break;
       bytes.add(byte);
     }
@@ -237,17 +243,16 @@ String? jitUserName(int uid) {
 JitStat? jitStatEntry(String path) {
   if (Platform.isWindows) return null;
   final lib = ffi.DynamicLibrary.process();
-  final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
-  final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
-  final pathPtr = _jitCString(malloc, path);
+  final _FreeDart free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
+  final _Bytes pathPtr = _jitCString(lib, path);
   try {
-    final buf = malloc(256);
+    final _Bytes buf = _jitMalloc(lib)(256);
     if (buf == ffi.nullptr) return null;
     try {
       buf.asTypedList(256).fillRange(0, 256, 0);
       if (Platform.isLinux) return _jitLinuxStatPath(lib, pathPtr, buf);
       if (Platform.isMacOS) {
-        final lstat = _jitBindMacLstat(lib);
+        final _LstatDart? lstat = _jitBindMacLstat(lib);
         if (lstat == null) return null;
         if (lstat(pathPtr, buf) != 0) return null;
         return jitDecodeMacStat(buf.asTypedList(64));
@@ -265,7 +270,7 @@ JitStat? jitStatEntry(String path) {
 /// or null where the symbol is missing: the guard wraps only the lookup, so a
 /// decoder out-of-range error can never read as a missing call.
 _LstatDart? _jitBindMacLstat(ffi.DynamicLibrary lib) {
-  final symbol = jitLstatSymbol(
+  final String symbol = jitLstatSymbol(
     isMacOS: true,
     isX64: ffi.Abi.current() == ffi.Abi.macosX64,
   );
@@ -318,12 +323,8 @@ bool _jitStat64Fallback({
 /// refuses the entry (see [jitLinuxStatOffsets]), `__lxstat64` with
 /// `_STAT_VER` where the plain symbol is missing (see [jitLinuxStat64Calls]).
 /// Null when none stats the entry.
-JitStat? _jitLinuxStatPath(
-  ffi.DynamicLibrary lib,
-  ffi.Pointer<ffi.Uint8> pathPtr,
-  ffi.Pointer<ffi.Uint8> buf,
-) {
-  final statx = _jitBindStatx(lib);
+JitStat? _jitLinuxStatPath(ffi.DynamicLibrary lib, _Bytes pathPtr, _Bytes buf) {
+  final _StatxDart? statx = _jitBindStatx(lib);
   if (statx != null) {
     const atFdcwd = -100;
     const nofollow = 0x100;
@@ -332,9 +333,9 @@ JitStat? _jitLinuxStatPath(
       return jitDecodeStatx(buf.asTypedList(256));
     }
   }
-  final calls = jitLinuxStat64Calls(abi: ffi.Abi.current());
+  final _Stat64Calls? calls = jitLinuxStat64Calls(abi: ffi.Abi.current());
   if (calls == null) return null;
-  final statted = _jitStat64Fallback(
+  final bool statted = _jitStat64Fallback(
     plain: () =>
         lib.lookupFunction<_LstatNative, _LstatDart>('lstat')(pathPtr, buf),
     versioned: () => lib.lookupFunction<_Lxstat64Native, _Lxstat64Dart>(
@@ -362,10 +363,15 @@ JitStat? _jitLinuxStatPath(
 /// fails closed with its path, type, owner and link count in
 /// [JitLockOpen.detail].
 JitLockOpen jitOpenLock(String path) {
-  final ready = _jitBackendFor(path);
-  final backend = ready.backend;
+  final _BackendReady ready = _jitBackendFor(path);
+  final _JitBackend? backend = ready.backend;
   if (backend == null) return ready.failure!;
-  final first = _jitOpen(backend.lib, path, backend.flags.noCreate, 0);
+  final _OpenResult first = _jitOpen(
+    backend.lib,
+    path,
+    backend.flags.noCreate,
+    0,
+  );
   if (first.fd >= 0) return _jitAdoptFd(backend.lib, path, first.fd);
   if (first.errno != _enoent) {
     return _jitLockFailure(path, accessDenied: first.errno == _eacces);
@@ -392,8 +398,8 @@ JitLockOpen jitOpenLock(String path) {
 /// [onTempReady] runs after the temporary is 0666 and before it is published,
 /// so tests can inspect the paths between the steps; it must return normally.
 JitLockOpen jitCreateAndPublishLock(String path, {JitTempReady? onTempReady}) {
-  final ready = _jitBackendFor(path);
-  final backend = ready.backend;
+  final _BackendReady ready = _jitBackendFor(path);
+  final _JitBackend? backend = ready.backend;
   if (backend == null) return ready.failure!;
   return _jitCreateAndPublish(backend.lib, path, backend.flags, onTempReady);
 }
@@ -402,7 +408,7 @@ JitLockOpen jitCreateAndPublishLock(String path, {JitTempReady? onTempReady}) {
 /// the libc handle with the flags opening the lock, or a fail-closed opening
 /// where the platform cannot open the lock at all (Windows, or a Linux ABI
 /// with no pinned O_* values).
-({_JitBackend? backend, JitLockOpen? failure}) _jitBackendFor(String path) {
+_BackendReady _jitBackendFor(String path) {
   if (Platform.isWindows) {
     return (
       backend: null,
@@ -418,7 +424,7 @@ JitLockOpen jitCreateAndPublishLock(String path, {JitTempReady? onTempReady}) {
   }
   final lib = ffi.DynamicLibrary.process();
   try {
-    final flags = jitOpenFlags(
+    final JitOpenFlags flags = jitOpenFlags(
       isMacOS: Platform.isMacOS,
       abi: ffi.Abi.current(),
     );
@@ -450,7 +456,7 @@ JitLockOpen _jitCreateAndPublish(
   JitOpenFlags flags,
   JitTempReady? onTempReady,
 ) {
-  var published = _jitPublishOnce(lib, path, flags, onTempReady);
+  _PublishStep published = _jitPublishOnce(lib, path, flags, onTempReady);
   for (var attempt = 1; published.retry && attempt < 3; attempt++) {
     published = _jitPublishOnce(lib, path, flags, onTempReady);
   }
@@ -463,14 +469,14 @@ JitLockOpen _jitCreateAndPublish(
 /// that cannot be created, or a publish the kernel refuses for any reason but
 /// a lost race, reports the publish itself (see [_jitPublishFailure]), never
 /// an entry that may not be there.
-({JitLockOpen result, bool retry}) _jitPublishOnce(
+_PublishStep _jitPublishOnce(
   ffi.DynamicLibrary lib,
   String path,
   JitOpenFlags flags,
   JitTempReady? onTempReady,
 ) {
-  final temp = _jitTempPath(path);
-  final created = _jitOpen(lib, temp, flags.create, 0x1b6);
+  final String temp = _jitTempPath(path);
+  final _OpenResult created = _jitOpen(lib, temp, flags.create, 0x1b6);
   if (created.fd < 0) {
     if (created.errno == _eexist) {
       // Our temporary's own name is taken: retry with a new one.
@@ -481,7 +487,7 @@ JitLockOpen _jitCreateAndPublish(
       retry: false,
     );
   }
-  final fd = created.fd;
+  final int fd = created.fd;
   _jitFchmod(lib, fd, 0x1b6);
   onTempReady?.call(temp, fd);
   int renameErrno;
@@ -515,7 +521,7 @@ JitLockOpen _jitCreateAndPublish(
 /// the linked descriptor. A peer can observe the lock with link count 2
 /// between the two calls, and adopts it then only while a same-entry temporary
 /// sibling is still beside it (see [_jitAdoptFd]).
-({JitLockOpen result, bool retry}) _jitPublishLink(
+_PublishStep _jitPublishLink(
   ffi.DynamicLibrary lib,
   String path,
   String temp,
@@ -545,12 +551,12 @@ JitLockOpen _jitCreateAndPublish(
 /// Opens the race winner's lock after a lost publish race (see
 /// [_jitPublishOnce] and [_jitPublishLink]): the winner's lock opens without
 /// creating, as today.
-({JitLockOpen result, bool retry}) _jitOpenWinner(
+_PublishStep _jitOpenWinner(
   ffi.DynamicLibrary lib,
   String path,
   JitOpenFlags flags,
 ) {
-  final winner = _jitOpen(lib, path, flags.noCreate, 0);
+  final _OpenResult winner = _jitOpen(lib, path, flags.noCreate, 0);
   if (winner.fd >= 0) {
     return (result: _jitAdoptFd(lib, path, winner.fd), retry: false);
   }
@@ -568,20 +574,19 @@ JitLockOpen _jitCreateAndPublish(
 /// publisher won). The caller unlinks the temporary on every path but the
 /// publish.
 int _jitRenameOnce(ffi.DynamicLibrary lib, String temp, String path) {
-  final rename = _jitBindRename(
+  final int Function(_Bytes, _Bytes)? rename = _jitBindRename(
     lib,
     jitRenameCall(isMacOS: Platform.isMacOS, abi: ffi.Abi.current()),
   );
   if (rename == null) return -1;
-  final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
-  final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
-  final tempPtr = _jitCString(malloc, temp);
+  final _FreeDart free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
+  final _Bytes tempPtr = _jitCString(lib, temp);
   try {
-    final pathPtr = _jitCString(malloc, path);
+    final _Bytes pathPtr = _jitCString(lib, path);
     try {
       if (rename(tempPtr, pathPtr) == 0) return 0;
       // Read `errno` before any other libc call: freeing comes after.
-      final errno = _jitErrno(lib);
+      final int errno = _jitErrno(lib);
       return errno == _enosys || errno == _einval ? -1 : errno;
     } finally {
       free(pathPtr);
@@ -595,15 +600,14 @@ int _jitRenameOnce(ffi.DynamicLibrary lib, String temp, String path) {
 /// temporary over the lock path and returning the raw result, or null where
 /// the symbol is missing. Each missing-symbol guard wraps only its lookup,
 /// never a rename.
-int Function(ffi.Pointer<ffi.Uint8>, ffi.Pointer<ffi.Uint8>)? _jitBindRename(
+int Function(_Bytes, _Bytes)? _jitBindRename(
   ffi.DynamicLibrary lib,
   ({String symbol, int noReplace}) call,
 ) {
   if (Platform.isMacOS) {
     try {
-      final rename = lib.lookupFunction<_RenamexNative, _RenamexDart>(
-        call.symbol,
-      );
+      final _RenamexDart rename = lib
+          .lookupFunction<_RenamexNative, _RenamexDart>(call.symbol);
       return (temp, path) => rename(temp, path, call.noReplace);
     } on ArgumentError {
       // This libc has no `renamex_np`: the caller takes the link path.
@@ -611,9 +615,8 @@ int Function(ffi.Pointer<ffi.Uint8>, ffi.Pointer<ffi.Uint8>)? _jitBindRename(
     }
   }
   try {
-    final rename = lib.lookupFunction<_Renameat2Native, _Renameat2Dart>(
-      call.symbol,
-    );
+    final _Renameat2Dart rename = lib
+        .lookupFunction<_Renameat2Native, _Renameat2Dart>(call.symbol);
     // AT_FDCWD for both sides.
     return (temp, path) => rename(-100, temp, -100, path, call.noReplace);
   } on ArgumentError {
@@ -635,14 +638,13 @@ String _jitTempPath(String path) =>
 
 /// Hard-links [from] over [to], returning 0 or the `errno`.
 int _jitLink(ffi.DynamicLibrary lib, String from, String to) {
-  final link = lib.lookupFunction<_LinkNative, _LinkDart>('link');
-  final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
-  final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
-  final fromPtr = _jitCString(malloc, from);
+  final _LinkDart link = lib.lookupFunction<_LinkNative, _LinkDart>('link');
+  final _FreeDart free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
+  final _Bytes fromPtr = _jitCString(lib, from);
   try {
-    final toPtr = _jitCString(malloc, to);
+    final _Bytes toPtr = _jitCString(lib, to);
     try {
-      final rc = link(fromPtr, toPtr);
+      final int rc = link(fromPtr, toPtr);
       // Read `errno` before any other libc call: freeing comes after.
       return rc == 0 ? 0 : _jitErrno(lib);
     } finally {
@@ -656,10 +658,11 @@ int _jitLink(ffi.DynamicLibrary lib, String from, String to) {
 /// Removes [path] without following it, ignoring cleanup errors.
 void _jitUnlink(ffi.DynamicLibrary lib, String path) {
   try {
-    final unlink = lib.lookupFunction<_UnlinkNative, _UnlinkDart>('unlink');
-    final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
-    final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
-    final pathPtr = _jitCString(malloc, path);
+    final _UnlinkDart unlink = lib.lookupFunction<_UnlinkNative, _UnlinkDart>(
+      'unlink',
+    );
+    final _FreeDart free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
+    final _Bytes pathPtr = _jitCString(lib, path);
     try {
       unlink(pathPtr);
     } finally {
@@ -677,10 +680,9 @@ void _jitUnlink(ffi.DynamicLibrary lib, String path) {
 bool jitTryExclusiveLock(int fd) {
   if (Platform.isWindows || fd < 0) return false;
   final lib = ffi.DynamicLibrary.process();
-  final fcntl = lib.lookupFunction<_FcntlNative, _FcntlDart>('fcntl');
-  final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
-  final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
-  final buf = malloc(32);
+  final _FcntlDart fcntl = _jitFcntl(lib);
+  final _FreeDart free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
+  final _Bytes buf = _jitMalloc(lib)(32);
   if (buf == ffi.nullptr) return false;
   try {
     buf.asTypedList(32).fillRange(0, 32, 0);
@@ -697,7 +699,7 @@ bool jitTryExclusiveLock(int fd) {
     // `ffi.VarArgs`: a fixed binding passes the pointer in a register that
     // `fcntl` never reads on Apple arm64. All supported hosts are little-endian.
     final view = ByteData.sublistView(buf.asTypedList(32));
-    final isMacOS = Platform.isMacOS;
+    final bool isMacOS = Platform.isMacOS;
     final abi = ffi.Abi.current();
     view.setInt16(
       jitFlockTypeOffset(isMacOS: isMacOS, abi: abi),
@@ -717,11 +719,9 @@ void jitUnlockAndClose(int fd) {
   if (Platform.isWindows || fd < 0) return;
   try {
     final lib = ffi.DynamicLibrary.process();
-    final fcntl = lib.lookupFunction<_FcntlNative, _FcntlDart>('fcntl');
-    final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
-    final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
-    final close = lib.lookupFunction<_CloseNative, _CloseDart>('close');
-    final buf = malloc(32);
+    final _FcntlDart fcntl = _jitFcntl(lib);
+    final _FreeDart free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
+    final _Bytes buf = _jitMalloc(lib)(32);
     if (buf != ffi.nullptr) {
       try {
         buf.asTypedList(32).fillRange(0, 32, 0);
@@ -738,7 +738,7 @@ void jitUnlockAndClose(int fd) {
         free(buf);
       }
     }
-    close(fd);
+    _jitClose(lib, fd);
   } on ArgumentError {
     // Ignore cleanup errors.
   }
@@ -767,14 +767,12 @@ int? jitLockHolderPid(String path) {
   if (Platform.isWindows) return null;
   try {
     final lib = ffi.DynamicLibrary.process();
-    final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
-    final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
-    final open = lib.lookupFunction<_OpenNative, _OpenDart>('open');
-    final close = lib.lookupFunction<_CloseNative, _CloseDart>('close');
-    final fcntl = lib.lookupFunction<_FcntlNative, _FcntlDart>('fcntl');
-    final pathPtr = _jitCString(malloc, path);
+    final _FreeDart free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
+    final _OpenDart open = lib.lookupFunction<_OpenNative, _OpenDart>('open');
+    final _FcntlDart fcntl = _jitFcntl(lib);
+    final _Bytes pathPtr = _jitCString(lib, path);
     try {
-      final buf = malloc(32);
+      final _Bytes buf = _jitMalloc(lib)(32);
       if (buf == ffi.nullptr) return null;
       try {
         buf.asTypedList(32).fillRange(0, 32, 0);
@@ -783,7 +781,7 @@ int? jitLockHolderPid(String path) {
         // flags open read-only without `O_CREAT`, so the kernel ignores it;
         // O_NOFOLLOW never follows a final symlink and O_NONBLOCK never blocks
         // on a FIFO (see [jitReadFlags]).
-        final fd = open(
+        final int fd = open(
           pathPtr,
           jitReadFlags(isMacOS: Platform.isMacOS, abi: ffi.Abi.current()),
           0,
@@ -791,9 +789,9 @@ int? jitLockHolderPid(String path) {
         if (fd < 0) return null;
         try {
           final view = ByteData.sublistView(buf.asTypedList(32));
-          final isMacOS = Platform.isMacOS;
+          final bool isMacOS = Platform.isMacOS;
           final abi = ffi.Abi.current();
-          final typeOffset = jitFlockTypeOffset(isMacOS: isMacOS, abi: abi);
+          final int typeOffset = jitFlockTypeOffset(isMacOS: isMacOS, abi: abi);
           view.setInt16(
             typeOffset,
             jitFlockLockType(isMacOS: isMacOS, abi: abi),
@@ -801,18 +799,15 @@ int? jitLockHolderPid(String path) {
           );
           final cmd = isMacOS ? 7 : 5;
           if (fcntl(fd, cmd, buf) != 0) return null;
-          final type = view.getInt16(typeOffset, Endian.little);
+          final int type = view.getInt16(typeOffset, Endian.little);
           if (type == 2) return null;
-          final holderPid = view.getInt32(
-            jitFlockPidOffset(
-              isMacOS: Platform.isMacOS,
-              abi: ffi.Abi.current(),
-            ),
+          final int holderPid = view.getInt32(
+            jitFlockPidOffset(isMacOS: isMacOS, abi: abi),
             Endian.little,
           );
           return holderPid > 0 ? holderPid : null;
         } finally {
-          close(fd);
+          _jitClose(lib, fd);
         }
       } finally {
         free(buf);
@@ -844,10 +839,12 @@ const _einval = 22;
 /// `__error` on macOS. Callers read it before any other libc call.
 int _jitErrno(ffi.DynamicLibrary lib) {
   if (Platform.isMacOS) {
-    final error = lib.lookupFunction<_ErrnoNative, _ErrnoDart>('__error');
+    final _ErrnoDart error = lib.lookupFunction<_ErrnoNative, _ErrnoDart>(
+      '__error',
+    );
     return error().value;
   }
-  final error = lib.lookupFunction<_ErrnoNative, _ErrnoDart>(
+  final _ErrnoDart error = lib.lookupFunction<_ErrnoNative, _ErrnoDart>(
     '__errno_location',
   );
   return error().value;
@@ -862,14 +859,13 @@ int _jitErrno(ffi.DynamicLibrary lib) {
   int flags,
   int mode,
 ) {
-  final open = lib.lookupFunction<_OpenNative, _OpenDart>('open');
-  final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
-  final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
-  final pathPtr = _jitCString(malloc, path);
+  final _OpenDart open = lib.lookupFunction<_OpenNative, _OpenDart>('open');
+  final _FreeDart free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
+  final _Bytes pathPtr = _jitCString(lib, path);
   try {
-    final fd = open(pathPtr, flags, mode);
+    final int fd = open(pathPtr, flags, mode);
     // Read `errno` before any other libc call: freeing comes after.
-    final errno = fd < 0 ? _jitErrno(lib) : 0;
+    final int errno = fd < 0 ? _jitErrno(lib) : 0;
     return (fd: fd, errno: errno);
   } finally {
     free(pathPtr);
@@ -920,12 +916,14 @@ JitLockOpen _jitAdoptFd(ffi.DynamicLibrary lib, String path, int fd) {
 /// the same entry; a planted link has no such sibling and stays refused.
 /// False where the directory cannot be listed: the caller fails closed.
 bool _jitIsPublishWindow(String path, JitFileId id) {
-  final sep = Platform.pathSeparator;
-  final cut = path.lastIndexOf(sep);
-  final dir = cut < 0 ? '.' : path.substring(0, cut);
-  final lockName = cut < 0 ? path : path.substring(cut + 1);
+  final String sep = Platform.pathSeparator;
+  final int cut = path.lastIndexOf(sep);
+  final String dir = cut < 0 ? '.' : path.substring(0, cut);
+  final String lockName = cut < 0 ? path : path.substring(cut + 1);
   try {
-    for (final entry in Directory(dir).listSync(followLinks: false)) {
+    for (final FileSystemEntity entry in Directory(
+      dir,
+    ).listSync(followLinks: false)) {
       if (!jitIsTempSibling(entry.path.split(sep).last, lockName)) continue;
       if (jitStatEntry(entry.path)?.id == id) return true;
     }
@@ -956,7 +954,7 @@ bool jitFdMatchesPath(int fd, String path) {
     held = null;
   }
   if (held == null) return false;
-  final current = jitStatEntry(path);
+  final JitStat? current = jitStatEntry(path);
   if (current == null) return false;
   // Record equality compares every identity field: any divergence fails
   // closed, so only the exact same entry still matches the held descriptor.
@@ -971,15 +969,14 @@ bool jitFdMatchesPath(int fd, String path) {
 /// missing (see [jitLinuxStat64Calls]); on macOS `fstat` with the 64-bit `struct stat`
 /// layout (see [jitFstatSymbol]). Null when the descriptor cannot be statted.
 JitStat? _jitFstatFd(ffi.DynamicLibrary lib, int fd) {
-  final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
-  final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
-  final buf = malloc(256);
+  final _FreeDart free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
+  final _Bytes buf = _jitMalloc(lib)(256);
   if (buf == ffi.nullptr) return null;
   try {
     buf.asTypedList(256).fillRange(0, 256, 0);
     if (Platform.isLinux) return _jitLinuxFstatFd(lib, fd, buf);
     if (Platform.isMacOS) {
-      final fstat = _jitBindMacFstat(lib);
+      final _FstatDart? fstat = _jitBindMacFstat(lib);
       if (fstat == null) return null;
       if (fstat(fd, buf) != 0) return null;
       return jitDecodeMacStat(buf.asTypedList(64));
@@ -994,7 +991,7 @@ JitStat? _jitFstatFd(ffi.DynamicLibrary lib, int fd) {
 /// or null where the symbol is missing: the guard wraps only the lookup, so a
 /// decoder out-of-range error can never read as a missing call.
 _FstatDart? _jitBindMacFstat(ffi.DynamicLibrary lib) {
-  final symbol = jitFstatSymbol(
+  final String symbol = jitFstatSymbol(
     isMacOS: true,
     isX64: ffi.Abi.current() == ffi.Abi.macosX64,
   );
@@ -1011,16 +1008,11 @@ _FstatDart? _jitBindMacFstat(ffi.DynamicLibrary lib) {
 /// unavailable or refuses the descriptor (see [jitLinuxStatOffsets]),
 /// `__fxstat64` with `_STAT_VER` where the plain symbol is missing (see
 /// [jitLinuxStat64Calls]). Null when none stats the descriptor.
-JitStat? _jitLinuxFstatFd(
-  ffi.DynamicLibrary lib,
-  int fd,
-  ffi.Pointer<ffi.Uint8> buf,
-) {
-  final statx = _jitBindStatx(lib);
+JitStat? _jitLinuxFstatFd(ffi.DynamicLibrary lib, int fd, _Bytes buf) {
+  final _StatxDart? statx = _jitBindStatx(lib);
   if (statx != null) {
-    final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
-    final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
-    final empty = malloc(1);
+    final _FreeDart free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
+    final _Bytes empty = _jitMalloc(lib)(1);
     if (empty == ffi.nullptr) return null;
     try {
       empty.asTypedList(1)[0] = 0;
@@ -1033,9 +1025,9 @@ JitStat? _jitLinuxFstatFd(
       free(empty);
     }
   }
-  final calls = jitLinuxStat64Calls(abi: ffi.Abi.current());
+  final _Stat64Calls? calls = jitLinuxStat64Calls(abi: ffi.Abi.current());
   if (calls == null) return null;
-  final statted = _jitStat64Fallback(
+  final bool statted = _jitStat64Fallback(
     plain: () => lib.lookupFunction<_FstatNative, _FstatDart>('fstat')(fd, buf),
     versioned: () => lib.lookupFunction<_Fxstat64Native, _Fxstat64Dart>(
       calls.fstat,
@@ -1058,7 +1050,7 @@ JitLockOpen _jitLockFailure(
   required bool accessDenied,
   int linkCount = 0,
 }) {
-  final info = jitStatEntry(path);
+  final JitStat? info = jitStatEntry(path);
   if (info == null) {
     return (
       fd: -1,
@@ -1069,9 +1061,9 @@ JitLockOpen _jitLockFailure(
       linkRefused: false,
     );
   }
-  final owner = jitUserName(info.uid);
+  final String? owner = jitUserName(info.uid);
   final who = owner == null ? 'uid ${info.uid}' : 'uid ${info.uid} ($owner)';
-  final refused = linkCount > 1;
+  final bool refused = linkCount > 1;
   return (
     fd: -1,
     detail: refused
@@ -1094,7 +1086,7 @@ JitLockOpen _jitLockFailure(
 /// ownership with an owner to remove it. The `chmod 0666` remedy never
 /// applies: a mode-denied winner surfaces through the open, not the publish.
 JitLockOpen _jitPublishFailure(String path, {required int errno}) {
-  final info = jitStatEntry(path);
+  final JitStat? info = jitStatEntry(path);
   if (info == null) {
     return (
       fd: -1,
@@ -1105,7 +1097,7 @@ JitLockOpen _jitPublishFailure(String path, {required int errno}) {
       linkRefused: false,
     );
   }
-  final owner = jitUserName(info.uid);
+  final String? owner = jitUserName(info.uid);
   final who = owner == null ? 'uid ${info.uid}' : 'uid ${info.uid} ($owner)';
   return (
     fd: -1,
@@ -1120,23 +1112,27 @@ JitLockOpen _jitPublishFailure(String path, {required int errno}) {
 }
 
 void _jitFchmod(ffi.DynamicLibrary lib, int fd, int mode) {
-  final fchmod = lib.lookupFunction<_FchmodNative, _FchmodDart>('fchmod');
+  final _FchmodDart fchmod = lib.lookupFunction<_FchmodNative, _FchmodDart>(
+    'fchmod',
+  );
   fchmod(fd, mode);
 }
 
 void _jitClose(ffi.DynamicLibrary lib, int fd) {
-  final close = lib.lookupFunction<_CloseNative, _CloseDart>('close');
-  close(fd);
+  lib.lookupFunction<_CloseNative, _CloseDart>('close')(fd);
 }
+
+_MallocDart _jitMalloc(ffi.DynamicLibrary lib) =>
+    lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
+
+_FcntlDart _jitFcntl(ffi.DynamicLibrary lib) =>
+    lib.lookupFunction<_FcntlNative, _FcntlDart>('fcntl');
 
 /// Allocates a zero-terminated UTF-8 copy of [path] with libc `malloc`.
 /// The caller frees it with libc `free`.
-ffi.Pointer<ffi.Uint8> _jitCString(
-  ffi.Pointer<ffi.Uint8> Function(int) malloc,
-  String path,
-) {
-  final bytes = utf8.encode(path);
-  final ptr = malloc(bytes.length + 1);
+_Bytes _jitCString(ffi.DynamicLibrary lib, String path) {
+  final Uint8List bytes = utf8.encode(path);
+  final _Bytes ptr = _jitMalloc(lib)(bytes.length + 1);
   if (ptr == ffi.nullptr) {
     throw FileSystemException('malloc failed', path);
   }

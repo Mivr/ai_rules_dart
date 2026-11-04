@@ -142,28 +142,28 @@ bool _runsGit(String text) =>
 void main(List<String> args) {
   group('every fetch goes through the shared validation', () {
     test('the enumerated sources are exactly the tested files', () {
-      final sources = _bzlSources(args);
+      final Map<String, String> sources = _bzlSources(args);
       expect(sources.keys, unorderedEquals(_expectedSources));
     });
 
     test('the single entry point is defined once, in pinned_sources.bzl', () {
-      final sources = _bzlSources(args);
-      for (final entry in sources.entries) {
-        final text = File(entry.value).readAsStringSync();
+      final Map<String, String> sources = _bzlSources(args);
+      for (final MapEntry<String, String> entry in sources.entries) {
+        final String text = File(entry.value).readAsStringSync();
         if (entry.key == _pinnedSources) {
           expect(
             text.contains('def pinned_source_error('),
             isTrue,
             reason: 'pinned_sources.bzl must define $_validatorMarker',
           );
-          for (final helper in _gitHelpers) {
+          for (final String helper in _gitHelpers) {
             expect(
               text.contains('def $helper'),
               isTrue,
               reason: 'pinned_sources.bzl must define $helper',
             );
           }
-          for (final retired in _retiredHelpers) {
+          for (final String retired in _retiredHelpers) {
             expect(
               text.contains('def $retired'),
               isFalse,
@@ -180,7 +180,7 @@ void main(List<String> args) {
                 '${entry.key} must not redefine $_validatorMarker; '
                 'call the single entry point instead',
           );
-          for (final helper in [..._gitHelpers, ..._retiredHelpers]) {
+          for (final String helper in [..._gitHelpers, ..._retiredHelpers]) {
             expect(
               text.contains('def $helper'),
               isFalse,
@@ -194,10 +194,10 @@ void main(List<String> args) {
     });
 
     test('every download is validated before it fetches', () {
-      final sources = _bzlSources(args);
+      final Map<String, String> sources = _bzlSources(args);
       var gated = 0;
-      for (final entry in sources.entries) {
-        final text = File(entry.value).readAsStringSync();
+      for (final MapEntry<String, String> entry in sources.entries) {
+        final String text = File(entry.value).readAsStringSync();
         if (!_fetchesDownload(text)) continue;
         gated++;
         expect(
@@ -216,11 +216,11 @@ void main(List<String> args) {
     });
 
     test('every git checkout is validated and runs both phases', () {
-      final sources = _bzlSources(args);
+      final Map<String, String> sources = _bzlSources(args);
       var gated = 0;
-      for (final entry in sources.entries) {
+      for (final MapEntry<String, String> entry in sources.entries) {
         if (entry.key == _pinnedSources) continue;
-        final text = File(entry.value).readAsStringSync();
+        final String text = File(entry.value).readAsStringSync();
         if (!_runsGit(text)) continue;
         gated++;
         expect(
@@ -228,7 +228,7 @@ void main(List<String> args) {
           isTrue,
           reason: '${entry.key} runs git but never calls $_validatorMarker',
         );
-        for (final helper in _gitHelpers) {
+        for (final String helper in _gitHelpers) {
           expect(
             text.contains(helper),
             isTrue,
@@ -246,9 +246,9 @@ void main(List<String> args) {
     });
 
     test('only the shared helpers spell the git binary', () {
-      final sources = _bzlSources(args);
-      final spelling = [
-        for (final entry in sources.entries)
+      final Map<String, String> sources = _bzlSources(args);
+      final List<String> spelling = [
+        for (final MapEntry<String, String> entry in sources.entries)
           if (File(entry.value).readAsStringSync().contains(_gitMarker))
             entry.key,
       ];
@@ -263,14 +263,14 @@ void main(List<String> args) {
     });
 
     test('only the shared helpers run git commands', () {
-      final sources = _bzlSources(args);
+      final Map<String, String> sources = _bzlSources(args);
       // The phase boundary: every git subcommand, flag and executor lives
       // in the two helpers. A git call anywhere else — a new fetch path
       // that bypasses the phases, or a new operation inside a call site —
       // spells one of these markers outside pinned_sources.bzl and fails.
-      for (final marker in [..._phaseMarkers, 'ctx.execute(']) {
-        final spelling = [
-          for (final entry in sources.entries)
+      for (final String marker in [..._phaseMarkers, 'ctx.execute(']) {
+        final List<String> spelling = [
+          for (final MapEntry<String, String> entry in sources.entries)
             if (File(entry.value).readAsStringSync().contains(marker))
               entry.key,
         ];
@@ -295,9 +295,9 @@ void main(List<String> args) {
       // (not hidden in a shared list) so a new invocation without it fails
       // here: a host `refs/replace/*` ref must never change the archived
       // tree while verification still sees the pinned commit.
-      final sources = _bzlSources(args);
-      final text = File(sources[_pinnedSources]!).readAsStringSync();
-      final calls = text.split('ctx.execute(');
+      final Map<String, String> sources = _bzlSources(args);
+      final String text = File(sources[_pinnedSources]!).readAsStringSync();
+      final List<String> calls = text.split('ctx.execute(');
       expect(
         calls.length,
         greaterThan(1),
@@ -323,9 +323,9 @@ void main(List<String> args) {
         // so an invocation assembled from a helper without the flag fails
         // here: a host `refs/replace/*` ref must never change the archived
         // tree while verification still sees the pinned commit.
-        final sources = _bzlSources(args);
-        final text = File(sources[_pinnedSources]!).readAsStringSync();
-        final calls = text.split('ctx.execute(');
+        final Map<String, String> sources = _bzlSources(args);
+        final String text = File(sources[_pinnedSources]!).readAsStringSync();
+        final List<String> calls = text.split('ctx.execute(');
         expect(
           calls.length,
           greaterThan(1),
@@ -345,11 +345,11 @@ void main(List<String> args) {
     );
 
     test('every git call site uses the shared helpers', () {
-      final sources = _bzlSources(args);
+      final Map<String, String> sources = _bzlSources(args);
       var gated = 0;
-      for (final entry in sources.entries) {
+      for (final MapEntry<String, String> entry in sources.entries) {
         if (entry.key == _pinnedSources) continue;
-        final text = File(entry.value).readAsStringSync();
+        final String text = File(entry.value).readAsStringSync();
         if (!_gitHelpers.any(text.contains)) continue;
         gated++;
         expect(
@@ -368,8 +368,8 @@ void main(List<String> args) {
     });
 
     test('transport keeps working while hooks and fsmonitor stay off', () {
-      final sources = _bzlSources(args);
-      final text = File(sources[_pinnedSources]!).readAsStringSync();
+      final Map<String, String> sources = _bzlSources(args);
+      final String text = File(sources[_pinnedSources]!).readAsStringSync();
       // The transport phase inherits the host's transport configuration
       // (credentials, insteadOf, proxies) from its config files and the
       // allowlisted transport variables, while every code-executing and
@@ -408,9 +408,9 @@ void main(List<String> args) {
       // channel a host template enters through. Transport assembles the
       // bare skeleton with `ctx.file` instead; reintroducing an init
       // subcommand in any enumerated file fails here.
-      final sources = _bzlSources(args);
-      final spelling = [
-        for (final entry in sources.entries)
+      final Map<String, String> sources = _bzlSources(args);
+      final List<String> spelling = [
+        for (final MapEntry<String, String> entry in sources.entries)
           if (File(entry.value).readAsStringSync().contains('"init"'))
             entry.key,
       ];
@@ -424,8 +424,8 @@ void main(List<String> args) {
     });
 
     test('the materialization helper neutralizes host git configuration', () {
-      final sources = _bzlSources(args);
-      final text = File(sources[_pinnedSources]!).readAsStringSync();
+      final Map<String, String> sources = _bzlSources(args);
+      final String text = File(sources[_pinnedSources]!).readAsStringSync();
       // The conversion knobs pinned on the `git archive` command line: `-c`
       // beats both config files and environment on every git version.
       for (final pin in [
@@ -474,8 +474,8 @@ void main(List<String> args) {
     });
 
     test('no git step consults host templates', () {
-      final sources = _bzlSources(args);
-      final text = File(sources[_pinnedSources]!).readAsStringSync();
+      final Map<String, String> sources = _bzlSources(args);
+      final String text = File(sources[_pinnedSources]!).readAsStringSync();
       // No `init` runs and no `--template` flag is spelled anywhere, so a
       // hostile `init.templateDir` has nothing to act on; the template
       // directory variable is still scrubbed, and the hook pin and the

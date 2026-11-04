@@ -26,13 +26,13 @@ import 'dart:typed_data';
 ///
 /// Returns `true` if the pattern was found and patched in [bytes].
 bool patchSnapshotSplitCommasBytes(Uint8List bytes) {
-  final x64Idx = _findBytesPattern(bytes, _x64SplitCommasPattern);
+  final int x64Idx = _findBytesPattern(bytes, _x64SplitCommasPattern);
   if (x64Idx >= 0) {
     bytes[x64Idx + 11] = 0x90; // nop
     bytes[x64Idx + 12] = 0xe9; // jmp rel32 (+0x13a)
     return true;
   }
-  final arm64Idx = _findBytesPattern(bytes, _arm64SplitCommasPattern);
+  final int arm64Idx = _findBytesPattern(bytes, _arm64SplitCommasPattern);
   if (arm64Idx >= 0) {
     bytes[arm64Idx + 8] = 0x4e; // b +0x138
     bytes[arm64Idx + 9] = 0x00;
@@ -49,7 +49,7 @@ bool patchSnapshotSplitCommasBytes(Uint8List bytes) {
 /// ([patchSnapshotSplitCommasBytes]).
 bool hasCommaDefineArgs(List<String> args) {
   for (var i = 0; i < args.length; i++) {
-    final arg = args[i];
+    final String arg = args[i];
     if (arg == '-D' || arg == '--define') {
       if (i + 1 < args.length && args[i + 1].contains(',')) return true;
     } else if (arg.startsWith('-D') && arg.length > 2) {
@@ -156,7 +156,7 @@ int runPatchCli(List<String> argv) {
     _usage();
     return 2;
   }
-  final error = patchSnapshotFile(
+  final String? error = patchSnapshotFile(
     inputPath: input,
     outputPath: output,
     sdkVersion: sdkVersion,
@@ -198,10 +198,10 @@ const _arm64SplitCommasPattern = <int>[
 ];
 
 int _findBytesPattern(Uint8List haystack, List<int> needle) {
-  final nLen = needle.length;
-  final limit = haystack.length - nLen;
+  final int nLen = needle.length;
+  final int limit = haystack.length - nLen;
   if (limit < 0) return -1;
-  final first = needle[0];
+  final int first = needle[0];
   for (var i = 0; i <= limit; i++) {
     if (haystack[i] != first) continue;
     var match = true;

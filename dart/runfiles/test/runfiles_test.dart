@@ -12,17 +12,21 @@ void main() {
     });
 
     test('single row with empty source (main module)', () {
-      final m = Runfiles.parseRepoMapping(',baz,baz+1.0\n');
+      final Map<(String, String), String> m = Runfiles.parseRepoMapping(
+        ',baz,baz+1.0\n',
+      );
       expect(m, {('', 'baz'): 'baz+1.0'});
     });
 
     test('single row with non-empty source', () {
-      final m = Runfiles.parseRepoMapping('foo+,baz,baz+2.0\n');
+      final Map<(String, String), String> m = Runfiles.parseRepoMapping(
+        'foo+,baz,baz+2.0\n',
+      );
       expect(m, {('foo+', 'baz'): 'baz+2.0'});
     });
 
     test('multiple rows are all parsed', () {
-      final m = Runfiles.parseRepoMapping(
+      final Map<(String, String), String> m = Runfiles.parseRepoMapping(
         ',baz,baz+1.0\n'
         'foo+,baz,baz+2.0\n'
         ',foo,foo+\n',
@@ -35,12 +39,14 @@ void main() {
     });
 
     test('blank lines are skipped', () {
-      final m = Runfiles.parseRepoMapping('\n,baz,baz+\n\n');
+      final Map<(String, String), String> m = Runfiles.parseRepoMapping(
+        '\n,baz,baz+\n\n',
+      );
       expect(m, {('', 'baz'): 'baz+'});
     });
 
     test('lines with wrong column count are skipped', () {
-      final m = Runfiles.parseRepoMapping(
+      final Map<(String, String), String> m = Runfiles.parseRepoMapping(
         'too,few\n'
         ',baz,baz+\n'
         'too,many,fields,here\n',
@@ -49,7 +55,9 @@ void main() {
     });
 
     test('handles missing trailing newline', () {
-      final m = Runfiles.parseRepoMapping(',baz,baz+');
+      final Map<(String, String), String> m = Runfiles.parseRepoMapping(
+        ',baz,baz+',
+      );
       expect(m, {('', 'baz'): 'baz+'});
     });
   });
@@ -77,7 +85,7 @@ void main() {
         directory: '/runfiles',
         repoMapping: mapping,
       );
-      final libView = r.forRepo('foo+');
+      final Runfiles libView = r.forRepo('foo+');
       expect(
         libView.rlocation('baz/templates/index.html'),
         '/runfiles/baz+2.0/templates/index.html',
@@ -185,9 +193,11 @@ void main() {
     // next build in another configuration repoints. A Runfiles created
     // before that must still find its files afterwards.
     test('survives a symlink on the executable path being repointed', () async {
-      final sep = Platform.pathSeparator;
+      final String sep = Platform.pathSeparator;
       final exeName = Platform.isWindows ? 'create_probe.exe' : 'create_probe';
-      final tmp = Directory.systemTemp.createTempSync('runfiles_create');
+      final Directory tmp = Directory.systemTemp.createTempSync(
+        'runfiles_create',
+      );
       final current = '${tmp.path}${sep}current';
       addTearDown(() {
         if (FileSystemEntity.isLinkSync(current)) Link(current).deleteSync();
@@ -205,7 +215,7 @@ void main() {
         ..writeAsStringSync('found');
       _pointLink(current, a.path);
 
-      final process = await Process.start(
+      final Process process = await Process.start(
         '$current$sep$exeName',
         const [],
         environment: Map.of(Platform.environment)
@@ -214,8 +224,10 @@ void main() {
         includeParentEnvironment: false,
       );
       addTearDown(process.kill);
-      final stderr = process.stderr.transform(utf8.decoder).join();
-      final lines = StreamIterator(
+      final Future<String> stderr = process.stderr
+          .transform(utf8.decoder)
+          .join();
+      final StreamIterator<String> lines = StreamIterator(
         process.stdout.transform(utf8.decoder).transform(const LineSplitter()),
       );
 
@@ -236,16 +248,16 @@ void main() {
     test(
       'loads MANIFEST inside RUNFILES_DIR when RUNFILES_MANIFEST_FILE is unset',
       () async {
-        final sep = Platform.pathSeparator;
+        final String sep = Platform.pathSeparator;
         final exeName = Platform.isWindows
             ? 'create_probe.exe'
             : 'create_probe';
-        final tmp = Directory.systemTemp.createTempSync(
+        final Directory tmp = Directory.systemTemp.createTempSync(
           'runfiles_manifest_dir',
         );
         addTearDown(() => tmp.deleteSync(recursive: true));
 
-        final probeExe = Runfiles.create().rlocation(
+        final String probeExe = Runfiles.create().rlocation(
           '_main/dart/runfiles/$exeName',
         );
         final skeleton = Directory('${tmp.path}${sep}skeleton.runfiles')
@@ -255,7 +267,7 @@ void main() {
         File('${skeleton.path}${sep}MANIFEST')
             .writeAsStringSync('_main/data.txt ${realData.path}\n');
 
-        final process = await Process.start(
+        final Process process = await Process.start(
           probeExe,
           const [],
           environment: (Map.of(Platform.environment)
@@ -265,11 +277,11 @@ void main() {
         );
         addTearDown(process.kill);
         await process.stdin.close();
-        final out = await process.stdout
+        final List<String> out = await process.stdout
             .transform(utf8.decoder)
             .transform(const LineSplitter())
             .toList();
-        final err = await process.stderr.transform(utf8.decoder).join();
+        final String err = await process.stderr.transform(utf8.decoder).join();
         expect(await process.exitCode, 0, reason: err);
         expect(out, ['ready', 'from-manifest']);
       },
@@ -278,25 +290,25 @@ void main() {
     test(
       'kernel launcher propagates discovered runfiles to child VM',
       () async {
-        final sep = Platform.pathSeparator;
+        final String sep = Platform.pathSeparator;
         final exeName = Platform.isWindows
             ? 'create_probe_kernel.exe'
             : 'create_probe_kernel';
-        final tmp = Directory.systemTemp.createTempSync(
+        final Directory tmp = Directory.systemTemp.createTempSync(
           'runfiles_kernel_probe',
         );
         addTearDown(() => tmp.deleteSync(recursive: true));
 
         final r = Runfiles.create();
-        final kernelExe = r.rlocation('_main/dart/runfiles/$exeName');
-        final kernelConfig = r.rlocation(
+        final String kernelExe = r.rlocation('_main/dart/runfiles/$exeName');
+        final String kernelConfig = r.rlocation(
           '_main/dart/runfiles/create_probe_kernel.kernel_launcher.json',
         );
         final configJson = jsonDecode(
           File(kernelConfig).readAsStringSync(),
         ) as Map<String, dynamic>;
-        final dartPath = r.rlocation(configJson['dart'] as String);
-        final dillPath = r.rlocation(configJson['dill'] as String);
+        final String dartPath = r.rlocation(configJson['dart'] as String);
+        final String dillPath = r.rlocation(configJson['dill'] as String);
 
         final binDir = Directory('${tmp.path}${sep}bin')..createSync();
         final stagedExe = '${binDir.path}$sep$exeName';
@@ -314,7 +326,7 @@ void main() {
           '${configJson['dill']} $dillPath\n',
         );
 
-        final process = await Process.start(
+        final Process process = await Process.start(
           stagedExe,
           const [],
           workingDirectory: binDir.path,
@@ -326,11 +338,11 @@ void main() {
         );
         addTearDown(process.kill);
         await process.stdin.close();
-        final out = await process.stdout
+        final List<String> out = await process.stdout
             .transform(utf8.decoder)
             .transform(const LineSplitter())
             .toList();
-        final err = await process.stderr.transform(utf8.decoder).join();
+        final String err = await process.stderr.transform(utf8.decoder).join();
         expect(await process.exitCode, 0, reason: err);
         expect(out, ['ready', 'from-kernel-manifest']);
       },
@@ -347,7 +359,13 @@ void _pointLink(String link, String target) {
     Link(link).createSync(target);
     return;
   }
-  final result = Process.runSync('cmd', ['/c', 'mklink', '/J', link, target]);
+  final ProcessResult result = Process.runSync('cmd', [
+    '/c',
+    'mklink',
+    '/J',
+    link,
+    target,
+  ]);
   if (result.exitCode != 0) {
     throw StateError('mklink /J $link $target failed: ${result.stderr}');
   }

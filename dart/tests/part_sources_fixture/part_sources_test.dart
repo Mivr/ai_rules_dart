@@ -16,29 +16,37 @@ void main(List<String> args) {
     );
 
     final runfiles = Runfiles.create();
-    final modularDill = runfiles.rlocation(args[0]);
-    final wholeDill = runfiles.rlocation(args[1]);
+    final String modularDill = runfiles.rlocation(args[0]);
+    final String wholeDill = runfiles.rlocation(args[1]);
 
-    final modularRes = await Process.run(Platform.resolvedExecutable, [
-      modularDill,
-    ]);
+    final ProcessResult modularRes = await Process.run(
+      Platform.resolvedExecutable,
+      [modularDill],
+    );
     expect(
       modularRes.exitCode,
       0,
       reason: 'modular binary failed: ${modularRes.stderr}',
     );
 
-    final wholeRes = await Process.run(Platform.resolvedExecutable, [
-      wholeDill,
-    ]);
+    final ProcessResult wholeRes = await Process.run(
+      Platform.resolvedExecutable,
+      [wholeDill],
+    );
     expect(
       wholeRes.exitCode,
       0,
       reason: 'whole-program binary failed: ${wholeRes.stderr}',
     );
 
-    final modularOut = (modularRes.stdout as String).replaceAll('\r\n', '\n');
-    final wholeOut = (wholeRes.stdout as String).replaceAll('\r\n', '\n');
+    final String modularOut = (modularRes.stdout as String).replaceAll(
+      '\r\n',
+      '\n',
+    );
+    final String wholeOut = (wholeRes.stdout as String).replaceAll(
+      '\r\n',
+      '\n',
+    );
     expect(modularOut, equals(wholeOut));
     expect(
       modularOut,
@@ -50,9 +58,9 @@ void main(List<String> args) {
 
   test('sandboxed and unsandboxed module outputs are byte-identical and editing parent or part changes rebuilt output', () async {
     final runfiles = Runfiles.create();
-    final kernelModuleBin = runfiles.rlocation(args[2]);
-    final kernelLinkBin = runfiles.rlocation(args[3]);
-    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final String kernelModuleBin = runfiles.rlocation(args[2]);
+    final String kernelLinkBin = runfiles.rlocation(args[3]);
+    final Directory sdkDir = File(Platform.resolvedExecutable).parent.parent;
     final exeSuffix = Platform.isWindows ? '.exe' : '';
     final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
     final kernelWorker =
@@ -60,7 +68,9 @@ void main(List<String> args) {
     final platformDill = '${sdkDir.path}/lib/_internal/vm_platform_strong.dill';
     final librariesJson = '${sdkDir.path}/lib/libraries.json';
 
-    final tmp = Directory.systemTemp.createTempSync('part_sources_edit_');
+    final Directory tmp = Directory.systemTemp.createTempSync(
+      'part_sources_edit_',
+    );
     try {
       void writeTo(Directory root, String rel, String text) {
         final f = File('${root.path}/$rel');
@@ -69,7 +79,7 @@ void main(List<String> args) {
       }
 
       const prefix = 'org-dartlang-root:///';
-      final packageConfigJson = jsonEncode({
+      final String packageConfigJson = jsonEncode({
         'configVersion': 2,
         'packages': [
           {
@@ -134,14 +144,14 @@ void main(List<String> args) {
       Map<String, Uint8List> snapshotTree(Directory dir) {
         final result = <String, Uint8List>{};
         if (!dir.existsSync()) return result;
-        final entities =
+        final List<File> entities =
             dir.listSync(recursive: true).whereType<File>().toList()..sort(
               (a, b) => a.path
                   .replaceAll(r'\', '/')
                   .compareTo(b.path.replaceAll(r'\', '/')),
             );
         for (final file in entities) {
-          final rel = file.path
+          final String rel = file.path
               .substring(dir.path.length + 1)
               .replaceAll(r'\', '/');
           result[rel] = file.readAsBytesSync();
@@ -161,7 +171,7 @@ void main(List<String> args) {
           if (!sandboxed) {
             final shared = Directory('${tmp.path}/unsandboxed_src');
             if (shared.existsSync()) shared.deleteSync(recursive: true);
-            for (final e in allFiles.entries) {
+            for (final MapEntry<String, String> e in allFiles.entries) {
               writeTo(shared, e.key, e.value);
             }
             return shared;
@@ -175,7 +185,7 @@ void main(List<String> args) {
         }
 
         // 1. parent_lib: owns only parent.dart (parts are not declared).
-        final rParent = await runKernelModule(
+        final ProcessResult rParent = await runKernelModule(
           rootForStep('parent_lib', ['same_pkg/lib/parent.dart']),
           outDir,
           'parent_lib',
@@ -185,7 +195,7 @@ void main(List<String> args) {
 
         // 2. part_lib: owns uri_part.dart + named_part.dart, depends on parent_lib
         // (so parent.dart is a declared --input-source).
-        final rPart = await runKernelModule(
+        final ProcessResult rPart = await runKernelModule(
           rootForStep('part_lib', [
             'same_pkg/lib/parent.dart',
             'same_pkg/lib/uri_part.dart',
@@ -204,7 +214,7 @@ void main(List<String> args) {
         expect(rPart.exitCode, 0, reason: '${rPart.stderr}');
 
         // 3. rev_part_lib: owns only rev_part.dart (rev_parent.dart is not declared).
-        final rRevPart = await runKernelModule(
+        final ProcessResult rRevPart = await runKernelModule(
           rootForStep('rev_part_lib', ['same_pkg/lib/rev_part.dart']),
           outDir,
           'rev_part_lib',
@@ -214,7 +224,7 @@ void main(List<String> args) {
 
         // 4. rev_parent_lib: owns rev_parent.dart, depends on rev_part_lib
         // (so rev_part.dart is a declared --input-source).
-        final rRevParent = await runKernelModule(
+        final ProcessResult rRevParent = await runKernelModule(
           rootForStep('rev_parent_lib', [
             'same_pkg/lib/rev_parent.dart',
             'same_pkg/lib/rev_part.dart',
@@ -229,7 +239,7 @@ void main(List<String> args) {
         expect(rRevParent.exitCode, 0, reason: '${rRevParent.stderr}');
 
         // 5. entry: compiles main.dart against the library modules.
-        final rEntry = await runKernelModule(
+        final ProcessResult rEntry = await runKernelModule(
           rootForStep('entry', [
             'main.dart',
             'same_pkg/lib/parent.dart',
@@ -265,24 +275,28 @@ void main(List<String> args) {
         expect(rEntry.exitCode, 0, reason: '${rEntry.stderr}');
 
         final linkedDill = '${outDir.path}/app.dill';
-        final linkRes = await Process.run(Platform.resolvedExecutable, [
-          kernelLinkBin,
-          linkedDill,
-          '${outDir.path}/entry.kmod',
-          '${outDir.path}/parent_lib.kmod',
-          '${outDir.path}/part_lib.kmod',
-          '${outDir.path}/rev_part_lib.kmod',
-          '${outDir.path}/rev_parent_lib.kmod',
-        ]);
+        final ProcessResult linkRes = await Process.run(
+          Platform.resolvedExecutable,
+          [
+            kernelLinkBin,
+            linkedDill,
+            '${outDir.path}/entry.kmod',
+            '${outDir.path}/parent_lib.kmod',
+            '${outDir.path}/part_lib.kmod',
+            '${outDir.path}/rev_part_lib.kmod',
+            '${outDir.path}/rev_parent_lib.kmod',
+          ],
+        );
         expect(
           linkRes.exitCode,
           0,
           reason: '${linkRes.stdout}\n${linkRes.stderr}',
         );
 
-        final runRes = await Process.run(Platform.resolvedExecutable, [
-          linkedDill,
-        ]);
+        final ProcessResult runRes = await Process.run(
+          Platform.resolvedExecutable,
+          [linkedDill],
+        );
         expect(
           runRes.exitCode,
           0,
@@ -325,12 +339,12 @@ void main(List<String> args) {
       final sandboxedOut = Directory('${tmp.path}/out_sandboxed');
       final unsandboxedOut = Directory('${tmp.path}/out_unsandboxed');
 
-      final stdoutSandboxed = await buildAll(
+      final String stdoutSandboxed = await buildAll(
         filesV1(),
         sandboxed: true,
         outDir: sandboxedOut,
       );
-      final stdoutUnsandboxed = await buildAll(
+      final String stdoutUnsandboxed = await buildAll(
         filesV1(),
         sandboxed: false,
         outDir: unsandboxedOut,
@@ -342,10 +356,12 @@ void main(List<String> args) {
       expect(stdoutUnsandboxed, equals(stdoutSandboxed));
 
       // Verify byte-identical outputs between sandboxed and unsandboxed builds.
-      final sandboxedTree = snapshotTree(sandboxedOut);
-      final unsandboxedTree = snapshotTree(unsandboxedOut);
+      final Map<String, Uint8List> sandboxedTree = snapshotTree(sandboxedOut);
+      final Map<String, Uint8List> unsandboxedTree = snapshotTree(
+        unsandboxedOut,
+      );
       expect(unsandboxedTree.keys, equals(sandboxedTree.keys));
-      for (final key in sandboxedTree.keys) {
+      for (final String key in sandboxedTree.keys) {
         expect(
           unsandboxedTree[key],
           equals(sandboxedTree[key]),
@@ -360,13 +376,13 @@ void main(List<String> args) {
       expect(sandboxedTree.containsKey('rev_parent_lib.kmod/0.dill'), isTrue);
       expect(sandboxedTree.containsKey('rev_part_lib.kmod/0.dill'), isFalse);
 
-      final partLibDillV1 = sandboxedTree['part_lib.kmod/0.dill']!;
-      final appDillV1 = sandboxedTree['app.dill']!;
+      final Uint8List partLibDillV1 = sandboxedTree['part_lib.kmod/0.dill']!;
+      final Uint8List appDillV1 = sandboxedTree['app.dill']!;
 
       // Edit the parent library (`parent.dart`) and rebuild: `part_lib.kmod/0.dill`
       // and `app.dill` must change and reflect the edit.
       final editedParentOut = Directory('${tmp.path}/out_edited_parent');
-      final stdoutEditedParent = await buildAll(
+      final String stdoutEditedParent = await buildAll(
         filesV1(parentTag: 'parent-v2-edited'),
         sandboxed: true,
         outDir: editedParentOut,
@@ -375,7 +391,9 @@ void main(List<String> args) {
         stdoutEditedParent,
         'parent-v2-edited(uri-part-v1,named-part-v1)|rev-parent-v1(rev-part-v1)',
       );
-      final editedParentTree = snapshotTree(editedParentOut);
+      final Map<String, Uint8List> editedParentTree = snapshotTree(
+        editedParentOut,
+      );
       expect(
         editedParentTree['part_lib.kmod/0.dill'],
         isNot(equals(partLibDillV1)),
@@ -390,7 +408,7 @@ void main(List<String> args) {
       // Edit the part (`rev_part.dart`) and rebuild: `rev_parent_lib.kmod/0.dill`
       // and `app.dill` must change and reflect the edit.
       final editedPartOut = Directory('${tmp.path}/out_edited_part');
-      final stdoutEditedPart = await buildAll(
+      final String stdoutEditedPart = await buildAll(
         filesV1(revPart: 'rev-part-v2-edited'),
         sandboxed: true,
         outDir: editedPartOut,
@@ -399,7 +417,7 @@ void main(List<String> args) {
         stdoutEditedPart,
         'parent-v1(uri-part-v1,named-part-v1)|rev-parent-v1(rev-part-v2-edited)',
       );
-      final editedPartTree = snapshotTree(editedPartOut);
+      final Map<String, Uint8List> editedPartTree = snapshotTree(editedPartOut);
       expect(
         editedPartTree['rev_parent_lib.kmod/0.dill'],
         isNot(equals(sandboxedTree['rev_parent_lib.kmod/0.dill'])),
