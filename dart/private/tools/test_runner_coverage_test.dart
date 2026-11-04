@@ -3,18 +3,27 @@ import 'package:test/test.dart';
 import 'test_runner_coverage.dart';
 
 /// One source's entry in `package:coverage`'s collected JSON.
-Map<String, dynamic> _entry(String source) => {
+Map<String, dynamic> _entry(
+  String source, {
+  List<Object>? funcHits = const [3, 1],
+  List<Object>? funcNames = const [3, 'main'],
+}) => {
   'source': source,
   'script': {'type': '@Script', 'fixedId': true, 'id': 'x', 'uri': source},
   'hits': [3, 1, 4, 0, 5, 2],
-  'funcHits': [3, 1],
-  'funcNames': [3, 'main'],
+  'funcHits': ?funcHits,
+  'funcNames': ?funcNames,
   'branchHits': [4, 0, 5, 1],
 };
 
 Map<String, dynamic> _report(List<String> sources) => {
   'type': 'CodeCoverage',
   'coverage': [for (final s in sources) _entry(s)],
+};
+
+Map<String, dynamic> _entries(List<Map<String, dynamic>> entries) => {
+  'type': 'CodeCoverage',
+  'coverage': entries,
 };
 
 const _uriMap = {
@@ -53,6 +62,75 @@ void main() {
 
     test('ends the record', () {
       expect(result.lcov, endsWith('end_of_record\n'));
+    });
+  });
+
+  group('lcovFromCoverage function records', () {
+    const a = 'package:pkg/a.dart';
+    const abs = 'file:///abs/pkg/lib/a.dart';
+
+    test('writes FNDA:0 for an uncalled function', () {
+      final LcovResult result = lcovFromCoverage(
+        coverageJson: _entries([
+          _entry(
+            a,
+            funcNames: [3, 'main', 10, 'unusedHelper'],
+            funcHits: [3, 2, 10, 0],
+          ),
+        ]),
+        uriMap: _uriMap,
+      );
+      expect(result.lcov, contains('FN:3,main\nFN:10,unusedHelper\n'));
+      expect(result.lcov, contains('FNDA:2,main\nFNDA:0,unusedHelper\n'));
+      expect(result.lcov, contains('FNF:2\nFNH:1\n'));
+    });
+
+    test('merging two zero-hit URIs keeps the function uncounted', () {
+      final LcovResult result = lcovFromCoverage(
+        coverageJson: _entries([
+          _entry(a, funcNames: [10, 'f'], funcHits: [10, 0]),
+          _entry(abs, funcNames: [10, 'f'], funcHits: [10, 0]),
+        ]),
+        uriMap: _uriMap,
+      );
+      expect(result.lcov, contains('FNDA:0,f\n'));
+      expect(result.lcov, contains('FNF:1\nFNH:0\n'));
+    });
+
+    test('merging a zero-hit and a hit URI sums and counts it', () {
+      final LcovResult result = lcovFromCoverage(
+        coverageJson: _entries([
+          _entry(a, funcNames: [10, 'f'], funcHits: [10, 0]),
+          _entry(abs, funcNames: [10, 'f'], funcHits: [10, 4]),
+        ]),
+        uriMap: _uriMap,
+      );
+      expect(result.lcov, contains('FNDA:4,f\n'));
+      expect(result.lcov, contains('FNF:1\nFNH:1\n'));
+    });
+
+    test('a name missing from funcHits is FNDA:0, never dropped', () {
+      final LcovResult result = lcovFromCoverage(
+        coverageJson: _entries([
+          _entry(a, funcNames: [3, 'main', 10, 'gone'], funcHits: [3, 1]),
+        ]),
+        uriMap: _uriMap,
+      );
+      expect(result.lcov, contains('FNDA:0,gone\n'));
+      expect(result.lcov, isNot(contains('null')));
+      expect(result.lcov, contains('FNF:2\nFNH:1\n'));
+    });
+
+    test('without function coverage writes only line records', () {
+      final LcovResult result = lcovFromCoverage(
+        coverageJson: _entries([_entry(a, funcNames: null, funcHits: null)]),
+        uriMap: _uriMap,
+      );
+      expect(result.lcov, contains('DA:3,1\n'));
+      expect(result.lcov, contains('LF:3\nLH:2\n'));
+      for (final tag in ['FN:', 'FNDA:', 'FNF:', 'FNH:']) {
+        expect(result.lcov, isNot(contains(tag)));
+      }
     });
   });
 
