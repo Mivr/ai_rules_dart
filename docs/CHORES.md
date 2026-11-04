@@ -173,6 +173,8 @@ load to) anything in `dart/pub/extensions.bzl`'s closure invalidates the lock of
 - `e2e/fix`
 - `e2e/analyze_composition`
 - `e2e/link_hook`
+- `e2e/isolated_hub`
+- `e2e/root_sdk_pin`
 
 `e2e/pub_lock_cross_module`'s `module_b` and `module_c` are skipped by the
 tool (`_skipWorkspaces` in `tool/refresh_locks.dart`): they are consumed only
@@ -193,6 +195,19 @@ the host's `dart`, with `FLUTTER_ROOT` taken from the environment or the
 **Verification**: All workspaces and packages report success.
 
 **Automation**: `/refresh-locks` slash command.
+
+### Lockfile-off Exemptions
+
+Every `e2e/` workspace reads its committed `MODULE.bazel.lock`, and no
+`e2e/**/.bazelrc` may set `--lockfile_mode=off`: under that mode Bazel neither
+reads nor checks the lock, so registry hashes are skipped, the `pub` planner
+never takes its recorded-facts path, and stale locks go unnoticed. If an `e2e/`
+workspace ever genuinely must run without a lockfile, list it below as
+``- `e2e/<name>` — <reason>`` and remove its unused `MODULE.bazel.lock` rather
+than keeping it as dead data. The guard
+`//dart/tests/e2e_lockfile_guard:e2e_lockfile_guard_test` enforces this.
+
+(none)
 
 ---
 
