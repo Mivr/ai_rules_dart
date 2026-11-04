@@ -430,7 +430,7 @@ jobs:
         run: |
           status=0
           {
-            bazel --max_idle_secs=60 aquery "--local_resources=memory=HOST_RAM*.7" --output=jsonproto //dart/tests/corpus:all > "$RUNNER_TEMP/dart_corpus_aquery.json" &&
+            bazel --max_idle_secs=60 aquery "--local_resources=memory=HOST_RAM*.7" --output=jsonproto --include_file_write_contents //dart/tests/corpus:all > "$RUNNER_TEMP/dart_corpus_aquery.json" &&
               bazel --max_idle_secs=60 run "--local_resources=memory=HOST_RAM*.7" //dart/tests/corpus:actions_golden -- --check "$RUNNER_TEMP/dart_corpus_aquery.json"
           } || status=$?
           bazel --max_idle_secs=60 shutdown || echo "::warning::bazel shutdown failed after Corpus action graph"

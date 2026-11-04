@@ -117,6 +117,22 @@ def sample_macro(name):
       expect(_isInstantiated('dart_sample', buildText), isFalse);
       expect(_isInstantiated('sample_macro', buildText), isTrue);
     });
+
+    test('does not count a call whose value is thrown away', () {
+      final String bare = _blankLiteralsAndComments('helper("1.0.0")\n');
+      expect(_isInstantiated('helper', bare), isFalse);
+      final String used = _blankLiteralsAndComments(
+        'rule(\n    name = "x",\n    inputs = [helper()],\n)\n'
+        'value = helper("1")\n'
+        'rule(\n    name = "y",\n    inputs = [\n        helper(),\n    ],\n)\n',
+      );
+      expect(_isInstantiated('helper', used), isTrue);
+      expect(_isInstantiated('rule', used), isTrue);
+      final String multiline = _blankLiteralsAndComments(
+        'helper(\n    "1.0.0",\n)\n',
+      );
+      expect(_isInstantiated('helper', multiline), isFalse);
+    });
   });
 }
 
@@ -266,9 +282,72 @@ Map<String, String> _parseNonInstantiable(List<String> lines) {
   return entries;
 }
 
-bool _isInstantiated(String name, String blankedBuild) =>
-    RegExp('(^|[^A-Za-z0-9_])${RegExp.escape(name)}\\s*\\(')
-        .hasMatch(blankedBuild);
+/// Whether [blankedBuild] calls [name] and either uses the result or declares
+/// a target.
+///
+/// A call at the start of a statement that passes `name = ...` is a rule or
+/// macro declaring a target. Any other call counts only when its value is
+/// used, as an argument, an assignment, a list element and so on: a bare
+/// `fn(...)` statement throws the value away and instantiates nothing.
+bool _isInstantiated(String name, String blankedBuild) {
+  final calls = RegExp('(^|[^A-Za-z0-9_])${RegExp.escape(name)}\\s*\\(');
+  for (final RegExpMatch match in calls.allMatches(blankedBuild)) {
+    final int start = match.start + match.group(1)!.length;
+    final int open = match.end - 1;
+    final int close = _matchingParen(blankedBuild, open);
+    if (!_isBareStatement(blankedBuild, start, close)) return true;
+    if (_passesName(blankedBuild.substring(open + 1, close))) return true;
+  }
+  return false;
+}
+
+int _matchingParen(String text, int open) {
+  var depth = 0;
+  for (var i = open; i < text.length; i++) {
+    if (text[i] == '(') depth++;
+    if (text[i] == ')' && --depth == 0) return i;
+  }
+  return text.length;
+}
+
+bool _isBareStatement(String text, int start, int close) {
+  final int lineStart =
+      (start == 0 ? -1 : text.lastIndexOf('\n', start - 1)) + 1;
+  if (text.substring(lineStart, start).trim().isNotEmpty) return false;
+  if (_bracketDepth(text.substring(0, start)) != 0) return false;
+  final String before = text.substring(0, lineStart).trimRight();
+  if (before.isNotEmpty && '=+-*/%|&<>,'.contains(before[before.length - 1])) {
+    return false;
+  }
+  final int lineEnd = text.indexOf('\n', close);
+  final String after = text.substring(
+    close + 1,
+    lineEnd < 0 ? text.length : lineEnd,
+  );
+  return after.trim().isEmpty;
+}
+
+int _bracketDepth(String text) {
+  var depth = 0;
+  for (final String ch in text.split('')) {
+    if ('([{'.contains(ch)) depth++;
+    if (')]}'.contains(ch)) depth--;
+  }
+  return depth;
+}
+
+bool _passesName(String args) {
+  var depth = 0;
+  for (var i = 0; i < args.length; i++) {
+    if ('([{'.contains(args[i])) depth++;
+    if (')]}'.contains(args[i])) depth--;
+    if (depth == 0 &&
+        RegExp(r'(^|[\s,])name\s*=(?!=)').matchAsPrefix(args, i) != null) {
+      return true;
+    }
+  }
+  return false;
+}
 
 String _blankLiteralsAndComments(String text) {
   final out = StringBuffer();

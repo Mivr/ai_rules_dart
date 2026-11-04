@@ -241,7 +241,7 @@ jobs:
         if: matrix.shard == 1
         shell: bash
         run: |
-          bazel aquery --output=jsonproto //dart/tests/corpus:all > "$RUNNER_TEMP/dart_corpus_aquery.json"
+          bazel aquery --output=jsonproto --include_file_write_contents //dart/tests/corpus:all > "$RUNNER_TEMP/dart_corpus_aquery.json"
           bazel run //dart/tests/corpus:actions_golden -- --check "$RUNNER_TEMP/dart_corpus_aquery.json"
       # Ship the per-folder logs even when the Test step fails or the job is
       # killed, so a dead shard still leaves its evidence for diagnosis.
