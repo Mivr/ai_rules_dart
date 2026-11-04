@@ -1,0 +1,26 @@
+load("//dart:defs.bzl", "dart_test")
+
+# Pins the shard-1 disk fix in the `test` job of ci.yaml: measurement steps, the
+# preinstalled-toolchain cleanup, the bounded disk cache and the untouched
+# matrix and Test steps. Unsandboxed over the live tree, like
+# `//dart/tests/hermetic_strict_guard:hermetic_strict_guard_test`.
+dart_test(
+    name = "ci_disk_guard_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :ci_disk_guard_test.dart)",
+    ],
+    data = [
+        "ci_disk_guard_test.dart",
+    ],
+    local = True,
+    main = "ci_disk_guard_test.dart",
+    tags = [
+        "external",
+        "no-sandbox",
+    ],
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
