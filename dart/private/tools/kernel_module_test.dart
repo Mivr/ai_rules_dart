@@ -297,6 +297,17 @@ String _moduleAt(String dir, List<_Scc> sccs) {
   return dir;
 }
 
+/// Runs [body] with [dir] as the working directory, then restores the old one.
+Future<void> _withCwd(Object dir, Future<void> Function() body) async {
+  final previous = Directory.current;
+  Directory.current = dir;
+  try {
+    await body();
+  } finally {
+    Directory.current = previous;
+  }
+}
+
 /// Writes the `.vm_excluded.txt` sidecar of a module, with `excluded` as its sources.
 String _sidecar(String name, Map<String, String> excluded) {
   final lines = [
@@ -304,186 +315,6 @@ String _sidecar(String name, Map<String, String> excluded) {
   ];
   _write('$name.vm_excluded.txt', lines.map((line) => '$line\n').join());
   return '${_root.path}/$name.vm_excluded.txt';
-}
-
-typedef _SandboxFixture = ({
-  Directory execroot,
-  Directory dirSandbox,
-  Directory leafSandbox,
-  File outsideFile,
-  List<String> ownPhysicalUris,
-});
-
-typedef _SandboxRun = ({
-  Directory cwd,
-  String tag,
-  List<String> dillUris,
-  List<String> kmods,
-  List<String> inputSources,
-  bool noDrop,
-});
-
-void _writeExecFile(Directory root, String rel, String content) {
-  final file = File('${root.path}/$rel');
-  file.parent.createSync(recursive: true);
-  file.writeAsStringSync(content);
-}
-
-void _writeExecKoutline(Directory execroot, String name, String key) {
-  final dir = 'bazel-out/k8-fastbuild/bin/$name.koutline';
-  _writeExecFile(
-    execroot,
-    '$dir/index.json',
-    jsonEncode(<String, Object>{
-      'version': 1,
-      'sccs': <Map<String, Object>>[
-        <String, Object>{
-          'dill': '$name.dill',
-          'defines': <String>[key],
-          'imports': <String>[],
-        },
-      ],
-    }),
-  );
-  _writeExecFile(execroot, '$dir/$name.dill', '');
-}
-
-void _mirrorLeafLinks(Directory src, Directory dst, [String rel = '']) {
-  for (final FileSystemEntity entity in src.listSync(followLinks: false)) {
-    final String name = entity.path.replaceAll(r'\', '/').split('/').last;
-    final childRel = rel.isEmpty ? name : '$rel/$name';
-    if (entity is Directory) {
-      Directory('${dst.path}/$childRel').createSync(recursive: true);
-      _mirrorLeafLinks(entity, dst, childRel);
-    } else if (entity is File) {
-      final link = Link('${dst.path}/$childRel');
-      link.parent.createSync(recursive: true);
-      link.createSync(entity.path);
-    }
-  }
-}
-
-_SandboxFixture _createSandboxFixture(Directory root) {
-  final String realRoot = root.resolveSymbolicLinksSync();
-  final execroot = Directory('$realRoot/execroot')..createSync(recursive: true);
-  final dirSandbox = Directory('$realRoot/dir_sandbox')
-    ..createSync(recursive: true);
-  final leafSandbox = Directory('$realRoot/leaf_sandbox')
-    ..createSync(recursive: true);
-  final outsideFile = File('$realRoot/outside/foreign.dart')
-    ..parent.createSync(recursive: true)
-    ..writeAsStringSync('class Foreign {}\n');
-
-  _writeExecFile(execroot, 'pkg/lib/a.dart', 'class A {}\n');
-  _writeExecFile(
-    execroot,
-    'bazel-out/k8-fastbuild/bin/pkg/lib/a.g.dart',
-    '// generated\nclass AGen {}\n',
-  );
-  _writeExecFile(execroot, 'dep/lib/dep.dart', 'class Dep {}\n');
-  _writeExecFile(execroot, 'emb/lib/e.dart', 'const int kEmb = 1;\n');
-  _writeExecKoutline(execroot, 'dep', 'dep/lib/dep.dart');
-  _writeExecKoutline(execroot, 'embedded', 'emb/lib/e.dart');
-  _writeExecFile(
-    execroot,
-    'package_config.json',
-    jsonEncode(<String, Object>{
-      'configVersion': 2,
-      'packages': <Map<String, String>>[
-        for (final pkg in <String>['pkg', 'dep', 'emb'])
-          <String, String>{'name': pkg, 'rootUri': pkg, 'packageUri': 'lib/'},
-      ],
-    }),
-  );
-  _writeExecFile(
-    execroot,
-    'libraries.json',
-    jsonEncode(<String, Object>{
-      'vm': <String, Object>{'libraries': <String, Object>{}},
-    }),
-  );
-
-  for (final FileSystemEntity entity in execroot.listSync(followLinks: false)) {
-    final String name = entity.path.replaceAll(r'\', '/').split('/').last;
-    Link('${dirSandbox.path}/$name').createSync(entity.path);
-  }
-  _mirrorLeafLinks(execroot, leafSandbox);
-
-  return (
-    execroot: execroot,
-    dirSandbox: dirSandbox,
-    leafSandbox: leafSandbox,
-    outsideFile: outsideFile,
-    ownPhysicalUris: <String>[
-      Uri.file('${execroot.path}/pkg/lib/a.dart').toString(),
-      Uri.file('${execroot.path}/bazel-out/k8-fastbuild/bin/pkg/lib/a.g.dart')
-          .toString(),
-    ],
-  );
-}
-
-Future<({int code, List<String>? unusedLines})> _runInSandboxDir(
-  _SandboxRun run,
-) async {
-  final compiler = _ReportingCompiler(
-    reported: const <String>{},
-    dillBytes: () => _buildDillWithUris(run.dillUris),
-  );
-  final outPrefix = 'bazel-out/k8-fastbuild/bin/pkg/mod_${run.tag}';
-  final unusedRel = '$outPrefix.unused_inputs';
-  final Directory previous = Directory.current;
-  Directory.current = run.cwd.path;
-  try {
-    final int code = await compileModule(
-      <String>[
-        '--source',
-        'org-dartlang-root:///pkg/lib/a.dart',
-        '--input-source',
-        'pkg/lib/a.dart',
-        '--own-source-file',
-        'pkg/lib/a.dart',
-        '--source',
-        'org-dartlang-root:///pkg/lib/a.g.dart',
-        '--input-source',
-        'bazel-out/k8-fastbuild/bin/pkg/lib/a.g.dart',
-        '--own-source-file',
-        'bazel-out/k8-fastbuild/bin/pkg/lib/a.g.dart',
-        for (final src in run.inputSources) ...<String>['--input-source', src],
-        '--output',
-        outPrefix,
-        '--unused-inputs-list',
-        unusedRel,
-        '--excluded-output',
-        '$outPrefix.vm_excluded.txt',
-        '--packages-file',
-        'package_config.json',
-        '--libraries-json',
-        'libraries.json',
-        '--multi-root',
-        '.',
-        '--multi-root',
-        'bazel-out/k8-fastbuild/bin',
-        '--multi-root-scheme',
-        'org-dartlang-root',
-        '--target',
-        'vm',
-        if (run.noDrop) '--no-drop',
-        for (final kmod in run.kmods) ...<String>['--input-kmod', kmod],
-      ],
-      compiler,
-      StringBuffer(),
-      const <Uint8List>[],
-    );
-    final unusedFile = File(unusedRel);
-    return (
-      code: code,
-      unusedLines: unusedFile.existsSync()
-          ? unusedFile.readAsLinesSync()
-          : null,
-    );
-  } finally {
-    Directory.current = previous;
-  }
 }
 
 /// Plans and compiles one module named `name` from `sources`, which are keys under the
@@ -3034,9 +2865,7 @@ void main(List<String> args) {
       List<String> closureExcluded = const [],
     }) async {
       final log = StringBuffer();
-      final prevCwd = Directory.current;
-      Directory.current = ws;
-      try {
+      await _withCwd(ws, () async {
         final code = await compileModule(
           [
             for (final s in sources) ...['--source', '$_prefix$s'],
@@ -3069,9 +2898,7 @@ void main(List<String> args) {
           const <Uint8List>[],
         );
         expect(code, 0, reason: 'compileModule failed: $log');
-      } finally {
-        Directory.current = prevCwd;
-      }
+      });
     }
 
     void writeWorkspaceConfig(Directory ws) {
@@ -4215,9 +4042,7 @@ void main(List<String> args) {
         // Production passes exec-root-relative `--input-kmod` directories while
         // the worker reports absolute `file://` URIs: the same file under two
         // spellings must match, not trip the foreign-report wire.
-        final previous = Directory.current;
-        Directory.current = _root.path;
-        try {
+        await _withCwd(_root, () async {
           final compiler = _ReportingCompiler(reported: {'$usedDir/u.dill'});
           final unusedPath = '${_root.path}/out/m8.unused';
           final result = await _compile(
@@ -4229,9 +4054,7 @@ void main(List<String> args) {
           );
           expect(result.code, 0, reason: result.log);
           expect(File(unusedPath).readAsLinesSync(), ['clean']);
-        } finally {
-          Directory.current = previous;
-        }
+        });
       },
     );
 
@@ -4318,9 +4141,7 @@ void main(List<String> args) {
       // arrives as a `file://` URI. The used summary is spelled the way a
       // Windows worker reports the passed `D:/...` summary.
       final compiler = _ReportingCompiler(reported: {'$usedDir/u.dill'});
-      final previous = Directory.current;
-      try {
-        Directory.current = _root.path;
+      await _withCwd(_root, () async {
         final result = await _compile(
           'm_unused_win',
           ['pkg/lib/a.dart'],
@@ -4343,115 +4164,7 @@ void main(List<String> args) {
           expect(flag, isNot(startsWith('--used-inputs=file://')));
         }
         expect(File(unusedPath).readAsLinesSync(), [cleanDir]);
-      } finally {
-        Directory.current = previous;
-      }
-    });
-
-    test('physical file: source-table URIs produce identical unused inputs in execroot and symlinked sandboxes', () async {
-      final _SandboxFixture fixture = _createSandboxFixture(_root);
-      const kmods = <String>['bazel-out/k8-fastbuild/bin/dep.koutline'];
-      final ({int code, List<String>? unusedLines}) execRun =
-          await _runInSandboxDir((
-            cwd: fixture.execroot,
-            tag: 'exec',
-            dillUris: fixture.ownPhysicalUris,
-            kmods: kmods,
-            inputSources: const <String>[],
-            noDrop: false,
-          ));
-      final ({int code, List<String>? unusedLines}) dirRun =
-          await _runInSandboxDir((
-            cwd: fixture.dirSandbox,
-            tag: 'dir_sand',
-            dillUris: fixture.ownPhysicalUris,
-            kmods: kmods,
-            inputSources: const <String>[],
-            noDrop: false,
-          ));
-      final ({int code, List<String>? unusedLines}) leafRun =
-          await _runInSandboxDir((
-            cwd: fixture.leafSandbox,
-            tag: 'leaf_sand',
-            dillUris: fixture.ownPhysicalUris,
-            kmods: kmods,
-            inputSources: const <String>[],
-            noDrop: false,
-          ));
-
-      expect(execRun.code, 0);
-      expect(dirRun.code, 0);
-      expect(leafRun.code, 0);
-      expect(execRun.unusedLines, kmods);
-      expect(dirRun.unusedLines, execRun.unusedLines);
-      expect(leafRun.unusedLines, execRun.unusedLines);
-    });
-
-    test('undeclared and unmapped physical file: URIs still veto unused inputs under a symlinked working directory', () async {
-      final _SandboxFixture fixture = _createSandboxFixture(_root);
-      const bothKmods = <String>[
-        'bazel-out/k8-fastbuild/bin/embedded.koutline',
-        'bazel-out/k8-fastbuild/bin/dep.koutline',
-      ];
-      // Positive control in the leaf-symlinked sandbox: an embedded physical
-      // `file:` URI keeps its defining `.koutline` while the untouched
-      // `.koutline` is still listed. Fails on the base, and fails if the
-      // source-table evidence veto is dropped.
-      final ({int code, List<String>? unusedLines}) embeddedKeep =
-          await _runInSandboxDir((
-            cwd: fixture.leafSandbox,
-            tag: 'ctrl_keep',
-            dillUris: <String>[
-              ...fixture.ownPhysicalUris,
-              Uri.file('${fixture.execroot.path}/emb/lib/e.dart').toString(),
-            ],
-            kmods: bothKmods,
-            inputSources: const <String>[],
-            noDrop: false,
-          ));
-      expect(embeddedKeep.code, 0);
-      expect(embeddedKeep.unusedLines, <String>[
-        'bazel-out/k8-fastbuild/bin/dep.koutline',
-      ]);
-
-      // Entry control: an unplanned dependency `file:` URI vetoes listing
-      // `--input-source` dependency files (0-byte unused list, exit 0).
-      final ({int code, List<String>? unusedLines}) unplannedEntry =
-          await _runInSandboxDir((
-            cwd: fixture.dirSandbox,
-            tag: 'ctrl_entry',
-            dillUris: <String>[
-              ...fixture.ownPhysicalUris,
-              Uri.file('${fixture.execroot.path}/dep/lib/dep.dart').toString(),
-            ],
-            kmods: const <String>['bazel-out/k8-fastbuild/bin/dep.koutline'],
-            inputSources: const <String>['dep/lib/dep.dart', 'emb/lib/e.dart'],
-            noDrop: true,
-          ));
-      expect(unplannedEntry.code, 0);
-      expect(unplannedEntry.unusedLines, isEmpty);
-
-      // Undeclared workspace source and outside-all-roots source both veto.
-      for (final (String tag, String badUri) in <(String, String)>[
-        (
-          'ctrl_undeclared',
-          Uri.file('${fixture.execroot.path}/pkg/lib/undeclared.dart')
-              .toString(),
-        ),
-        ('ctrl_outside', Uri.file(fixture.outsideFile.path).toString()),
-      ]) {
-        final ({int code, List<String>? unusedLines}) vetoed =
-            await _runInSandboxDir((
-              cwd: fixture.dirSandbox,
-              tag: tag,
-              dillUris: <String>[...fixture.ownPhysicalUris, badUri],
-              kmods: bothKmods,
-              inputSources: const <String>[],
-              noDrop: false,
-            ));
-        expect(vetoed.code, isNot(0), reason: tag);
-        expect(vetoed.unusedLines ?? const <String>[], isEmpty, reason: tag);
-      }
+      });
     });
   });
 
@@ -4977,11 +4690,9 @@ void main(List<String> args) {
     );
   });
 
-  test('KernelLinkCache normalizes ./ prefixes when matching WorkRequest.inputs digests', () {
+  test('KernelLinkCache normalizes ./ prefixes when matching WorkRequest.inputs digests', () async {
     final cache = KernelLinkCache();
-    final prevCwd = Directory.current;
-    Directory.current = _root;
-    try {
+    await _withCwd(_root, () async {
       Directory('norm_mod').createSync(recursive: true);
       final dillFile = File('norm_mod/0.dill')..writeAsBytesSync([10, 20, 30]);
       final digest1 = Uint8List.fromList([1, 1, 1, 1]);
@@ -5005,9 +4716,7 @@ void main(List<String> args) {
         'norm_mod/0.dill': digest2,
       });
       expect(updated, [40, 50, 60]);
-    } finally {
-      Directory.current = prevCwd;
-    }
+    });
   });
 
   test('stripDillToOutline preserves member bodies and field initializers for legacy-class mixins compiled by kernel_worker', () async {
@@ -6767,9 +6476,7 @@ void main(List<String> args) {
 
     // Even if the file on disk is deleted, ensureSummaryDigests succeeds when
     // the digest is already present in inputs (under normalized path).
-    final prevCwd = Directory.current;
-    Directory.current = _root;
-    try {
+    await _withCwd(_root, () async {
       summaryFile.deleteSync();
       final resultInputs = await ensureSummaryDigests(
         ['--input-summary', './dep.koutline/0.dill'],
@@ -6797,9 +6504,7 @@ void main(List<String> args) {
         _decodeInputForTest(replacedInputs.single).digest,
         equals(expectedSha),
       );
-    } finally {
-      Directory.current = prevCwd;
-    }
+    });
 
     // 2. Verify compileModule reuses WorkRequest.inputs digest for staged tree-artifact
     // sources (<koutline>/sources/<key>) without re-hashing from disk, and computes
@@ -6838,9 +6543,7 @@ void main(List<String> args) {
     final excludedPath = '$outDir.vm_excluded.txt';
     final log = StringBuffer();
 
-    final prevCwd2 = Directory.current;
-    Directory.current = _root;
-    try {
+    await _withCwd(_root, () async {
       final code = await compileModule(
         [
           '--source',
@@ -6893,9 +6596,7 @@ void main(List<String> args) {
         cache: cache,
       );
       expect(code, 0, reason: log.toString());
-    } finally {
-      Directory.current = prevCwd2;
-    }
+    });
     expect(stagedFile.existsSync(), isTrue);
     expect(inputRecorder.calls.length, 3);
 
@@ -7289,9 +6990,7 @@ void main(List<String> args) {
             ]
           : const <Uint8List>[];
 
-      final prevCwd = Directory.current;
-      Directory.current = ws;
-      try {
+      await _withCwd(ws, () async {
         final code = await compileModule(
           [
             '--target',
@@ -7324,9 +7023,7 @@ void main(List<String> args) {
           workerInputs,
         );
         expect(code, 0, reason: '$mode failed: $log');
-      } finally {
-        Directory.current = prevCwd;
-      }
+      });
       return (
         kmodDill: File('${ws.path}/$kmod/1.dill').readAsBytesSync(),
         koutlineDill: File('${ws.path}/$koutline/1.dill').readAsBytesSync(),
@@ -7474,9 +7171,7 @@ void main(List<String> args) {
             ]
           : const <Uint8List>[];
 
-      final prevCwd = Directory.current;
-      Directory.current = ws;
-      try {
+      await _withCwd(ws, () async {
         final libLog = StringBuffer();
         final libCode = await compileModule(
           [
@@ -7567,9 +7262,7 @@ void main(List<String> args) {
           0,
           reason: linkErr.toString(),
         );
-      } finally {
-        Directory.current = prevCwd;
-      }
+      });
 
       final modularPath = '${ws.path}/bazel-out/k8-fastbuild/bin/modular.dill';
       final runRes = await Process.run(Platform.resolvedExecutable, [
@@ -7678,9 +7371,7 @@ void main(List<String> args) {
       kernelWorker,
       genWs.path,
     );
-    final prevCwd = Directory.current;
-    Directory.current = genWs;
-    try {
+    await _withCwd(genWs, () async {
       for (final reverseRoots in [false, true]) {
         for (final passInputs in [true, false]) {
           final outDir =
@@ -7773,9 +7464,7 @@ void main(List<String> args) {
           );
         }
       }
-    } finally {
-      Directory.current = prevCwd;
-    }
+    });
   });
 
   test('kernelWorkerUri, kernelWorkerArgs, ensureSummaryDigests, and compileModule convert Windows drive-letter paths to file:/// URIs without breaking --output or relative paths', () async {
@@ -7959,9 +7648,7 @@ void main(List<String> args) {
     final log = StringBuffer();
     FileSystemException linkError() =>
         const FileSystemException('symlinks refused', 'isolated_root');
-    final prevCwd = Directory.current;
-    Directory.current = _root;
-    try {
+    await _withCwd(_root, () async {
       final code = await compileModule(
         [
           '--source',
@@ -7992,9 +7679,7 @@ void main(List<String> args) {
         createLink: (_, _) => throw linkError(),
       );
       expect(code, 0, reason: log.toString());
-    } finally {
-      Directory.current = prevCwd;
-    }
+    });
     // The front end must still see a single isolated root on every call.
     expect(recorder.calls, isNotEmpty);
     for (final call in recorder.calls) {

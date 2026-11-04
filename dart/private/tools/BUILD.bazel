@@ -607,6 +607,53 @@ dart_test(
 )
 
 dart_test(
+    name = "kernel_module_unused_inputs_sandbox_test",
+    size = "small",
+    srcs = [
+        "comma_patch.dart",
+        "dill_outline.dart",
+        "dill_reader.dart",
+        "kernel_module.dart",
+        "lib/worker_protocol.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    main = "kernel_module_unused_inputs_sandbox_test.dart",
+    deps = ["@ext_pub_deps//:test"],
+)
+
+# Bare sources for `tools_size_guard_test`, which measures them.
+exports_files(
+    [
+        "analyze_runner_test_support.dart",
+        "kernel_module_test.dart",
+        "kernel_module_unused_inputs_sandbox_test.dart",
+    ],
+)
+
+# Keeps the oversized planner tests and tools within their size ceilings.
+dart_test(
+    name = "tools_size_guard_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :kernel_module_test.dart)",
+        "$(rlocationpath :kernel_module_unused_inputs_sandbox_test.dart)",
+        "$(rlocationpath :kernel_module.dart)",
+        "$(rlocationpath :analyze_runner_test_support.dart)",
+    ],
+    data = [
+        ":analyze_runner_test_support.dart",
+        ":kernel_module.dart",
+        ":kernel_module_test.dart",
+        ":kernel_module_unused_inputs_sandbox_test.dart",
+    ],
+    main = "tools_size_guard_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_test(
     name = "analyzer_summary_test",
     size = "small",
     srcs = [

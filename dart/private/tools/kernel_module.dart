@@ -4482,7 +4482,7 @@ class _UnusedInputs {
     }
     final stagedRoot = stagedSources[key];
     if (stagedRoot != null) {
-      final owner = _ownerStaging(stagedRoot);
+      final owner = _ownerStaging(inputKmods, stagedRoot);
       if (owner == null) return false;
       _keepTrees.add(owner);
       return true;
@@ -4495,14 +4495,6 @@ class _UnusedInputs {
     }
     if (declaredKeys.contains(key)) return true;
     return false;
-  }
-
-  /// The module directory whose staged sources hold [stagedRoot], if any.
-  String? _ownerStaging(String stagedRoot) {
-    for (final dir in inputKmods) {
-      if ('$dir/sources' == stagedRoot) return dir;
-    }
-    return null;
   }
 
   /// The module directory whose summary defines [key], if any.
@@ -4580,17 +4572,25 @@ class _UnusedInputs {
     final seen = <String>{};
     for (final path in inputSources) {
       if (!seen.add(path) || ownSourceFiles.contains(path)) continue;
-      if (!_isEntryVisited(path)) lines.add(path);
+      if (!_isEntryVisited(entryKeys!, path, multiRoots)) lines.add(path);
     }
   }
+}
 
-  /// Whether the entry's keys visit [path] under any of its spellings.
-  bool _isEntryVisited(String path) {
-    for (final spelling in _inputSpellings(path, multiRoots)) {
-      if (entryKeys!.contains(spelling)) return true;
-    }
-    return false;
+/// The module directory in [inputKmods] whose staged sources hold [stagedRoot].
+String? _ownerStaging(List<String> inputKmods, String stagedRoot) {
+  for (final dir in inputKmods) {
+    if ('$dir/sources' == stagedRoot) return dir;
   }
+  return null;
+}
+
+/// Whether [entryKeys] visit [path] under any of its spellings.
+bool _isEntryVisited(Set<String> entryKeys, String path, List<String> roots) {
+  for (final spelling in _inputSpellings(path, roots)) {
+    if (entryKeys.contains(spelling)) return true;
+  }
+  return false;
 }
 
 /// Indexes closure keys by the canonical path of the summary defining them.
