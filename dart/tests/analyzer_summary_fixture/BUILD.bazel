@@ -207,7 +207,7 @@ dart_analysis_test(
 
 dart_test(
     name = "worker_hardening_test",
-    size = "small",
+    size = "medium",
     args = [
         "$(rlocationpath //dart/private/tools:format_runner)",
         "$(rlocationpath //dart/private/tools:analyzer_summary)",
@@ -229,4 +229,9 @@ dart_test(
         "//dart/runfiles",
         "@ext_pub_deps//:test",
     ],
+)
+
+exports_files(
+    ["BUILD.bazel"],
+    visibility = ["//dart/tests:__subpackages__"],
 )

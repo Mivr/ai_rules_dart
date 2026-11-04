@@ -1,0 +1,21 @@
+load("//dart:defs.bzl", "dart_test")
+
+# Hermetic regression test: the slow subprocess-spawning tests must be sized
+# `medium`, never `small`.
+dart_test(
+    name = "slow_test_sizes_test",
+    size = "small",
+    args = [
+        "$(rlocationpath //dart/private/tools:BUILD.bazel)",
+        "$(rlocationpath //dart/tests/analyzer_summary_fixture:BUILD.bazel)",
+    ],
+    data = [
+        "//dart/private/tools:BUILD.bazel",
+        "//dart/tests/analyzer_summary_fixture:BUILD.bazel",
+    ],
+    main = "slow_test_sizes_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
