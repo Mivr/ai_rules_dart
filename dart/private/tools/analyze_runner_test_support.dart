@@ -241,6 +241,30 @@ void _defineRunnerZeroDiagnosticsCrashTest(
   });
 }
 
+/// Stages a real project under `$realTmp/$privateSegment`, with a broken
+/// `src/pkg/analysis_options.yaml`, and returns a symlink to it.
+Directory _stageSymlinkedProject(
+  _RunnerHarness harness,
+  String realTmp,
+  String privateSegment,
+) {
+  final String sep = Platform.pathSeparator;
+  final Directory realDir = harness.stageProjectAt(
+    Directory('$realTmp/$privateSegment/sym_ceil.proj'.replaceAll('/', sep)),
+    'lib/sample.dart',
+    "void f() {\n  print('1');\n  print('2');\n}\n",
+  );
+  File('${realDir.path}/src/pkg/analysis_options.yaml')
+    ..parent.createSync(recursive: true)
+    ..writeAsStringSync('analyzer: [\ninvalid: yaml: :\n');
+  File('${realDir.path}/src/pkg/lib/a.dart')
+    ..parent.createSync(recursive: true)
+    ..writeAsStringSync('const a = 1;\n');
+  final symlink = Link('$realTmp/sym_ceil.proj'.replaceAll('/', sep))
+    ..createSync(realDir.path);
+  return Directory(symlink.path);
+}
+
 void _defineRunnerSymlinkSubprocessTest(
   List<String> args,
   Directory Function() currentTmp,
@@ -254,28 +278,14 @@ void _defineRunnerSymlinkSubprocessTest(
       final _RunnerHarness harness = _RunnerHarness.resolve(args, currentTmp)!;
       final String realTmp = Directory(currentTmp().path)
           .resolveSymbolicLinksSync();
-      final String sep = Platform.pathSeparator;
       final privateSegment = Platform.isWindows
           ? 'private_sym_root'
           : 'private$realTmp';
-      final Directory realDir = harness.stageProjectAt(
-        Directory(
-          '$realTmp/$privateSegment/sym_ceil.proj'.replaceAll('/', sep),
-        ),
-        'lib/sample.dart',
-        "void f() {\n  print('1');\n  print('2');\n}\n",
+      final Directory symlinkProject = _stageSymlinkedProject(
+        harness,
+        realTmp,
+        privateSegment,
       );
-
-      final pkgOptions = File('${realDir.path}/src/pkg/analysis_options.yaml')
-        ..parent.createSync(recursive: true);
-      pkgOptions.writeAsStringSync('analyzer: [\ninvalid: yaml: :\n');
-      File('${realDir.path}/src/pkg/lib/a.dart')
-        ..parent.createSync(recursive: true)
-        ..writeAsStringSync('const a = 1;\n');
-
-      final symlink = Link('$realTmp/sym_ceil.proj'.replaceAll('/', sep))
-        ..createSync(realDir.path);
-      final symlinkProject = Directory(symlink.path);
 
       final _RunnerOutcome ok = harness.run(
         symlinkProject,
