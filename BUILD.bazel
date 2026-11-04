@@ -47,6 +47,13 @@ exports_files(
     ],
 )
 
+# Exported for //dart/tests/nonobvious_local_types_baseline, which guards the
+# baseline against the evicted `specify_nonobvious_local_variable_types` rule.
+exports_files(
+    ["analysis_baseline.json"],
+    visibility = ["//dart/tests:__subpackages__"],
+)
+
 # Every `analysis_options.yaml` in this repository, for the `dart_analyze`
 # aspect `.bazelrc` applies under `bazel test`, and for `dart_format`.
 dart_analysis_options(
