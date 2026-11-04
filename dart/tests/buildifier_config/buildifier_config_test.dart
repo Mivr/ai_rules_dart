@@ -338,9 +338,16 @@ List<String> _versionProblems(String rev, String version) {
 
 /// Runs `buildifier -config=example` and returns its `warningsList`.
 List<String> _exampleWarnings(String buildifier) {
+  // Run the binary directly: `cmd.exe` mangles the forward-slash runfiles
+  // path a manifest resolves to on Windows, and a `.exe` needs no shell.
+  expect(
+    File(buildifier).existsSync(),
+    isTrue,
+    reason: 'buildifier runfile $buildifier must exist',
+  );
   final ProcessResult result = Process.runSync(buildifier, const [
     '-config=example',
-  ], runInShell: Platform.isWindows);
+  ]);
   expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
   final Object? example = jsonDecode(result.stdout as String);
   if (example case {'warningsList': final List<Object?> warnings}) {
