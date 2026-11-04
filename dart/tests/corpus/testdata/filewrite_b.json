@@ -56,39 +56,25 @@
   "depSetOfFiles": [
     {
       "id": 1,
-      "directArtifactIds": [
-        1
-      ],
-      "transitiveDepSetIds": [
-        2
-      ]
+      "directArtifactIds": [1],
+      "transitiveDepSetIds": [2]
     },
     {
       "id": 2,
-      "directArtifactIds": [
-        2
-      ],
-      "transitiveDepSetIds": [
-        3
-      ]
+      "directArtifactIds": [2],
+      "transitiveDepSetIds": [3]
     },
     {
       "id": 3,
-      "directArtifactIds": [
-        3
-      ]
+      "directArtifactIds": [3]
     }
   ],
   "actions": [
     {
       "targetId": 1,
       "mnemonic": "FileWrite",
-      "inputDepSetIds": [
-        1
-      ],
-      "outputIds": [
-        5
-      ],
+      "inputDepSetIds": [1],
+      "outputIds": [5],
       "primaryOutputId": 5,
       "fileContents": "#!/bin/sh\nexec bazel-out/k8-fastbuild/bin/pkg/other\n"
     }

@@ -56,45 +56,27 @@
   "depSetOfFiles": [
     {
       "id": 1,
-      "directArtifactIds": [
-        1
-      ],
-      "transitiveDepSetIds": [
-        2
-      ]
+      "directArtifactIds": [1],
+      "transitiveDepSetIds": [2]
     },
     {
       "id": 2,
-      "directArtifactIds": [
-        2
-      ],
-      "transitiveDepSetIds": [
-        3
-      ]
+      "directArtifactIds": [2],
+      "transitiveDepSetIds": [3]
     },
     {
       "id": 3,
-      "directArtifactIds": [
-        3
-      ],
-      "transitiveDepSetIds": [
-        9
-      ]
+      "directArtifactIds": [3],
+      "transitiveDepSetIds": [9]
     }
   ],
   "actions": [
     {
       "targetId": 1,
       "mnemonic": "DartCompile",
-      "arguments": [
-        "dart"
-      ],
-      "inputDepSetIds": [
-        1
-      ],
-      "outputIds": [
-        5
-      ],
+      "arguments": ["dart"],
+      "inputDepSetIds": [1],
+      "outputIds": [5],
       "primaryOutputId": 5
     }
   ]
