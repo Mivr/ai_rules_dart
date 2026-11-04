@@ -1,0 +1,35 @@
+load("//dart:defs.bzl", "dart_test")
+
+# Verifies the Linux user-namespace setup in CI. The unit test runs the verifier
+# over synthetic inputs in the sandbox; the guard test runs it over the live
+# script and workflows, unsandboxed like
+# `//dart/tests/flaky_guard:flaky_guard_test`.
+dart_test(
+    name = "ci_linux_sandbox_guard_unit_test",
+    size = "small",
+    srcs = ["ci_linux_sandbox_verifier.dart"],
+    main = "ci_linux_sandbox_guard_unit_test.dart",
+    deps = ["@ext_pub_deps//:test"],
+)
+
+dart_test(
+    name = "ci_linux_sandbox_guard_test",
+    size = "medium",
+    srcs = ["ci_linux_sandbox_verifier.dart"],
+    args = [
+        "$(rlocationpath :ci_linux_sandbox_guard_test.dart)",
+    ],
+    data = [
+        "ci_linux_sandbox_guard_test.dart",
+    ],
+    local = True,
+    main = "ci_linux_sandbox_guard_test.dart",
+    tags = [
+        "external",
+        "no-sandbox",
+    ],
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)

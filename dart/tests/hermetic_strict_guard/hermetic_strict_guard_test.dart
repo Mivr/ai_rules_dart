@@ -15,6 +15,7 @@ void main(List<String> args) {
   final String workflow = File('$root/.github/workflows/ci.yaml')
       .readAsStringSync();
   _checkCanary(root);
+  _checkUsernsScript(root);
   _checkStrictJob(workflow);
   _checkConclusion(workflow);
   _checkSelfTest(workflow);
@@ -170,22 +171,49 @@ void _checkStrictSetup(String block) {
   );
 }
 
-/// Checks [text] enables unprofiled user namespaces before starting Bazel.
+/// Checks [text] runs the shared user-namespace script before any Bazel use.
 void _checkUserns(String text, String scope) {
-  const sysctl = 'kernel.apparmor_restrict_unprivileged_userns=0';
-  _expectContains(text, sysctl, '$scope enables Ubuntu user namespaces');
+  const script = '.github/scripts/enable_linux_sandbox.sh';
+  _expectContains(text, 'run: $script', '$scope runs the shared script');
+  _expectNotContains(text, 'sysctl', '$scope must not carry an inline sysctl');
   _expectNotContains(
     text,
-    'if ! unshare',
-    '$scope must not gate sysctl behind profiled /usr/bin/unshare',
+    'userns_probe',
+    '$scope must not carry a probe copy',
   );
-  _expectContains(text, 'userns_probe', '$scope probes via unprofiled binary');
-  _expectContains(text, '--mount-proc', '$scope verifies /proc mount in pidns');
   expect(
-    text.indexOf(sysctl),
-    lessThan(text.indexOf('bazel build')),
+    text.indexOf(script),
+    lessThan(text.indexOf(RegExp(r'\bbazel (build|test)\b'))),
     reason: '$scope must enable user namespaces before starting Bazel',
   );
+}
+
+/// Checks the shared script enables and verifies user namespaces.
+void _checkUsernsScript(String root) {
+  group('user-namespace script', () {
+    test('enables and verifies user namespaces unprofiled', () {
+      final file = File('$root/.github/scripts/enable_linux_sandbox.sh');
+      _expectFile(file, '.github/scripts/enable_linux_sandbox.sh');
+      final String text = file.readAsStringSync();
+      const sysctl = 'kernel.apparmor_restrict_unprivileged_userns=0';
+      _expectContains(text, sysctl, 'script enables Ubuntu user namespaces');
+      _expectNotContains(
+        text,
+        'if ! unshare',
+        'script must not gate sysctl behind profiled /usr/bin/unshare',
+      );
+      _expectContains(
+        text,
+        'userns_probe',
+        'script probes via unprofiled copy',
+      );
+      _expectContains(
+        text,
+        'unshare -U -r -m -p -f --mount-proc true',
+        'script verifies /proc mount in a pid namespace',
+      );
+    });
+  });
 }
 
 /// Checks every strict flag, mount and BEP file, and no tolerated failure.
@@ -326,7 +354,7 @@ void _checkSelfTest(String workflow) {
         'working-directory: e2e/hermetic_canary',
         'the canary step runs in its workspace',
       );
-      _checkUserns(step, 'canary self-test');
+      _checkUserns(block, 'expected-failure');
       _expectContains(
         step,
         'bazel build //:canary ||',
