@@ -1,0 +1,27 @@
+load("//dart:defs.bzl", "dart_test")
+
+# Pins the shard-1 server fix in the `test` job of ci.yaml: every Bazel server
+# the Test and corpus steps start is shut down and idles out after 60 s, the
+# corpus invocations are capped at 70% of host RAM, `free -m` is logged around
+# each step, and the matrix is unchanged. Unsandboxed over the live tree, like
+# `//dart/tests/ci_disk_guard:ci_disk_guard_test`.
+dart_test(
+    name = "ci_servers_guard_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :ci_servers_guard_test.dart)",
+    ],
+    data = [
+        "ci_servers_guard_test.dart",
+    ],
+    local = True,
+    main = "ci_servers_guard_test.dart",
+    tags = [
+        "external",
+        "no-sandbox",
+    ],
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
