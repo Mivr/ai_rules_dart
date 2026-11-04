@@ -18,8 +18,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:bazel_worker/bazel_worker.dart';
-
-import 'builder_shim.dart';
+import 'package:rules_dart_ext/builder_shim.dart';
 
 /// Runs the shim as a persistent worker. Diagnostics are captured via Zone
 /// so they land in `WorkResponse.output` rather than corrupting the

@@ -40,7 +40,6 @@
     "use_raw_strings": 2
   },
   "dart/ext/lib/worker_entry.dart": {
-    "always_use_package_imports": 1,
     "avoid_catches_without_on_clauses": 1,
     "avoid_slow_async_io": 1,
     "omit_obvious_local_variable_types": 1,
