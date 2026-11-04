@@ -6,6 +6,7 @@ import 'package:test/test.dart';
 import 'analysis_baseline.dart'
     show
         AnalysisBaseline,
+        BaselineDiagnostic,
         BaselineException,
         BaselineGroup,
         BaselineReport,
@@ -37,7 +38,7 @@ void main(List<String> args) {
     () {
       // A multi-line first line the guard keeps but the front end drops would
       // read an undeclared host file through the analyzer's working directory.
-      final runner = Runfiles.create().rlocation(args[0]);
+      final String runner = Runfiles.create().rlocation(args[0]);
       final project = Directory('${tmp.path}/demo.proj')
         ..createSync(recursive: true);
       Directory('${project.path}/src/pkg').createSync(recursive: true);
@@ -48,7 +49,7 @@ void main(List<String> args) {
       File('${project.path}/src/pkg/ok.dart')
           .writeAsStringSync('const ok = 1;\n');
       final stamp = File('${tmp.path}/analyzed.txt');
-      final res = Process.runSync(Platform.resolvedExecutable, [
+      final ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
         runner,
         '--dart',
         'never-reached-dart',
@@ -89,14 +90,16 @@ void _definePruneTests(Directory Function() currentTmp) {
     }
 
     test('keys the allow-list src-relative and deletes unlisted files', () {
-      final project = stageSrc('demo');
+      final Directory project = stageSrc('demo');
       File('${project.path}/src/pkg/keep.dart')
           .writeAsStringSync('const keep = 1;\n');
       File('${project.path}/src/pkg/drop.dart')
           .writeAsStringSync('const drop = 1;\n');
       writeSrcManifest(project, ['pkg/keep.dart']);
 
-      final allowed = analyze_runner.pruneOrphanedStagedFiles(project.path);
+      final Set<String>? allowed = analyze_runner.pruneOrphanedStagedFiles(
+        project.path,
+      );
 
       expect(allowed, {'pkg/keep.dart'});
       expect(File('${project.path}/src/pkg/keep.dart').existsSync(), isTrue);
@@ -104,19 +107,21 @@ void _definePruneTests(Directory Function() currentTmp) {
     });
 
     test('a dot-slashed manifest line names the same staged file', () {
-      final project = stageSrc('dotslash');
+      final Directory project = stageSrc('dotslash');
       File('${project.path}/src/pkg/keep.dart')
           .writeAsStringSync('const keep = 1;\n');
       writeSrcManifest(project, ['./pkg/keep.dart']);
 
-      final allowed = analyze_runner.pruneOrphanedStagedFiles(project.path);
+      final Set<String>? allowed = analyze_runner.pruneOrphanedStagedFiles(
+        project.path,
+      );
 
       expect(allowed, {'pkg/keep.dart'});
       expect(File('${project.path}/src/pkg/keep.dart').existsSync(), isTrue);
     });
 
     test('without a manifest nothing is pruned', () {
-      final project = stageSrc('bare');
+      final Directory project = stageSrc('bare');
       File('${project.path}/src/pkg/any.dart')
           .writeAsStringSync('const any = 1;\n');
 
@@ -140,10 +145,8 @@ void _defineRunnerEscapeParseTest() {
         r'INFO|LINT|AVOID_PRINT|C:\\work\\demo.proj\\src\\lib\\a.dart|4|3|5|'
         r'Use a \| b in C:\\work\\demo.proj\\src\\lib\\a.dart'
         '\n';
-    final parsed = analyze_runner.parseMachineDiagnostics(
-      machineOut,
-      winProject,
-    )!;
+    final List<BaselineDiagnostic> parsed = analyze_runner
+        .parseMachineDiagnostics(machineOut, winProject)!;
     expect(parsed, hasLength(1));
     expect(parsed.single.path, 'lib/a.dart');
     expect(parsed.single.code, 'avoid_print');
@@ -216,7 +219,7 @@ void _defineRunnerCeilingTests() {
       contains('observed 3, ceiling 2'),
     );
 
-    final unkeyedAndOtherFile = [
+    final List<String> unkeyedAndOtherFile = [
       line('INFO', 'UNUSED_IMPORT', 'lib/a.dart', 1),
       line('INFO', 'AVOID_PRINT', 'lib/other.dart', 1),
       line('ERROR', 'URI_DOES_NOT_EXIST', 'lib/a.dart', 2),

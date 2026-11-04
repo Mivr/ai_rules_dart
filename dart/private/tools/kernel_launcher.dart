@@ -24,9 +24,9 @@ import 'test_runner_workspace.dart' as staging;
 /// `bazel run` and generic `ctx.executable` consumers can invoke the target
 /// as a standalone executable.
 Future<void> main(List<String> args) async {
-  final env = Platform.environment;
-  final runfilesDir = _findRunfilesDir(env);
-  final manifestFile = _findManifestFile(env, runfilesDir);
+  final Map<String, String> env = Platform.environment;
+  final String? runfilesDir = _findRunfilesDir(env);
+  final String? manifestFile = _findManifestFile(env, runfilesDir);
   Runfiles? runfiles;
   try {
     runfiles = Runfiles.create();
@@ -34,15 +34,17 @@ Future<void> main(List<String> args) async {
     runfiles = null;
   }
 
-  final config = _readConfig(runfiles);
-  final dart = _resolvePath(config, 'dart', 'dart_exec', runfiles);
-  final dill = _resolvePath(config, 'dill', 'dill_exec', runfiles);
+  final Map<String, dynamic> config = _readConfig(runfiles);
+  final String dart = _resolvePath(config, 'dart', 'dart_exec', runfiles);
+  final String dill = _resolvePath(config, 'dill', 'dill_exec', runfiles);
 
   Directory? scratch;
-  final cwd = Directory.current;
+  final Directory cwd = Directory.current;
   if (manifestFile != null && cwd.parent.path.endsWith('.runfiles')) {
-    final segments = cwd.uri.pathSegments.where((s) => s.isNotEmpty).toList();
-    final workspace = segments.isEmpty ? null : segments.last;
+    final List<String> segments = cwd.uri.pathSegments
+        .where((s) => s.isNotEmpty)
+        .toList();
+    final String? workspace = segments.isEmpty ? null : segments.last;
     if (workspace != null &&
         !staging.workspaceInPlace(
           manifest: manifestFile,
@@ -64,13 +66,13 @@ Future<void> main(List<String> args) async {
   // the parent is excluded, so no `RULES_DART_*` control variable reaches
   // the child (Dart would otherwise merge the map over the parent). The
   // resolved runfiles locations still win over the inherited ones.
-  final childEnv = {
+  final Map<String, String> childEnv = {
     ...withoutRulesDartControls(env),
     if (runfilesDir != null) 'RUNFILES_DIR': runfilesDir,
     if (manifestFile != null) 'RUNFILES_MANIFEST_FILE': manifestFile,
   };
 
-  final vm = await Process.start(
+  final Process vm = await Process.start(
     scratch == null ? dart : File(dart).absolute.path,
     [scratch == null ? dill : File(dill).absolute.path, ...args],
     workingDirectory: scratch?.path,
@@ -97,13 +99,13 @@ void deleteScratchQuietly(FileSystemEntity entity) =>
     staging.deleteScratchQuietly(entity);
 
 String? _findRunfilesDir(Map<String, String> env) {
-  final fromEnv = env['RUNFILES_DIR'];
+  final String? fromEnv = env['RUNFILES_DIR'];
   if (fromEnv != null &&
       fromEnv.isNotEmpty &&
       Directory(fromEnv).existsSync()) {
     return Directory(fromEnv).resolveSymbolicLinksSync();
   }
-  final exe = Platform.executable;
+  final String exe = Platform.executable;
   for (final candidate in ['$exe.runfiles', '$exe.exe.runfiles']) {
     if (Directory(candidate).existsSync()) {
       return Directory(candidate).resolveSymbolicLinksSync();
@@ -113,12 +115,12 @@ String? _findRunfilesDir(Map<String, String> env) {
 }
 
 String? _findManifestFile(Map<String, String> env, String? runfilesDir) {
-  final fromEnv = env['RUNFILES_MANIFEST_FILE'];
+  final String? fromEnv = env['RUNFILES_MANIFEST_FILE'];
   if (fromEnv != null && fromEnv.isNotEmpty && File(fromEnv).existsSync()) {
     return File(fromEnv).absolute.path;
   }
-  final rawDir = env['RUNFILES_DIR'];
-  final exe = Platform.executable;
+  final String? rawDir = env['RUNFILES_DIR'];
+  final String exe = Platform.executable;
   for (final candidate in [
     if (rawDir != null && rawDir.isNotEmpty) ...[
       '$rawDir/MANIFEST',
@@ -141,12 +143,12 @@ String? _findManifestFile(Map<String, String> env, String? runfilesDir) {
 }
 
 Map<String, dynamic> _readConfig(Runfiles? runfiles) {
-  final adjacent = _adjacentConfigFile();
+  final File? adjacent = _adjacentConfigFile();
   if (adjacent != null && adjacent.existsSync()) {
     return jsonDecode(adjacent.readAsStringSync()) as Map<String, dynamic>;
   }
 
-  final key = Platform.environment['RULES_DART_KERNEL_CONFIG'];
+  final String? key = Platform.environment['RULES_DART_KERNEL_CONFIG'];
   if (key != null && key.isNotEmpty && runfiles != null) {
     try {
       final file = File(runfiles.rlocation(key));
@@ -159,7 +161,9 @@ Map<String, dynamic> _readConfig(Runfiles? runfiles) {
   }
 
   if (runfiles != null) {
-    for (final candidate in _candidateConfigRlocations(Platform.executable)) {
+    for (final String candidate in _candidateConfigRlocations(
+      Platform.executable,
+    )) {
       try {
         final file = File(runfiles.rlocation(candidate));
         if (file.existsSync()) {
@@ -179,7 +183,7 @@ Map<String, dynamic> _readConfig(Runfiles? runfiles) {
 }
 
 File? adjacentConfigFile([String? executable]) {
-  final exe = (executable == null || executable.isEmpty)
+  final String exe = (executable == null || executable.isEmpty)
       ? Platform.executable
       : executable;
   if (exe.isEmpty) return null;
@@ -210,7 +214,7 @@ Iterable<String> candidateConfigRlocations(String exe) sync* {
   // Normalize Windows separators so the path matching below works on every
   // host. Bazel may record the config under either the `.exe`-stripped name
   // (what it writes) or the executable's full name, so try both forms.
-  final normalized = exe.replaceAll(r'\', '/');
+  final String normalized = exe.replaceAll(r'\', '/');
   final bases = <String>{normalized};
   if (normalized.toLowerCase().endsWith('.exe')) {
     bases.add(normalized.substring(0, normalized.length - 4));
@@ -218,23 +222,23 @@ Iterable<String> candidateConfigRlocations(String exe) sync* {
     bases.add('$normalized.exe');
   }
 
-  final workspace = Platform.environment['TEST_WORKSPACE'];
+  final String? workspace = Platform.environment['TEST_WORKSPACE'];
   for (final base in bases) {
-    final runfilesIdx = base.lastIndexOf('.runfiles/');
+    final int runfilesIdx = base.lastIndexOf('.runfiles/');
     if (runfilesIdx >= 0) {
-      final rel = base.substring(runfilesIdx + '.runfiles/'.length);
+      final String rel = base.substring(runfilesIdx + '.runfiles/'.length);
       yield '$rel.kernel_launcher.json';
     }
     const binExternal = '/bin/external/';
-    final binExtIdx = base.lastIndexOf(binExternal);
+    final int binExtIdx = base.lastIndexOf(binExternal);
     if (binExtIdx >= 0) {
-      final rel = base.substring(binExtIdx + binExternal.length);
+      final String rel = base.substring(binExtIdx + binExternal.length);
       yield '$rel.kernel_launcher.json';
     } else {
       const bin = '/bin/';
-      final binIdx = base.lastIndexOf(bin);
+      final int binIdx = base.lastIndexOf(bin);
       if (binIdx >= 0) {
-        final rel = base.substring(binIdx + bin.length);
+        final String rel = base.substring(binIdx + bin.length);
         if (workspace != null && workspace.isNotEmpty) {
           yield '$workspace/$rel.kernel_launcher.json';
         }
@@ -259,7 +263,7 @@ String _resolvePath(
   final rloc = config[rlocationKey] as String?;
   if (runfiles != null && rloc != null) {
     try {
-      final resolved = runfiles.rlocation(rloc);
+      final String resolved = runfiles.rlocation(rloc);
       if (File(resolved).existsSync()) {
         return resolved;
       }

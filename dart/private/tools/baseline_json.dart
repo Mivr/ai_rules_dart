@@ -32,7 +32,7 @@ String jsonValueType(dynamic value) {
 /// Parses [text] as JSON, rejecting duplicate object keys and trailing tokens.
 dynamic parseBaselineJson(String text) {
   final reader = _JsonReader(text);
-  final value = reader.readValue();
+  final dynamic value = reader.readValue();
   reader.skipWhitespace();
   if (!reader.atEnd) throw reader.error('unexpected trailing content');
   return value;
@@ -49,10 +49,10 @@ final class _JsonReader {
 
   /// An error naming the enclosing entry (if any) and the current offset.
   BaselineException error(String reason, {String? extraKey}) {
-    final start = _offset < 20 ? 0 : _offset - 20;
-    final end = _offset + 20 > _text.length ? _text.length : _offset + 20;
-    final near = _text.substring(start, end).replaceAll('\n', ' ');
-    final keys = [..._keyStack, if (extraKey != null) extraKey];
+    final int start = _offset < 20 ? 0 : _offset - 20;
+    final int end = _offset + 20 > _text.length ? _text.length : _offset + 20;
+    final String near = _text.substring(start, end).replaceAll('\n', ' ');
+    final List<String> keys = [..._keyStack, if (extraKey != null) extraKey];
     final context = keys.isEmpty
         ? ''
         : 'entry ${keys.map((k) => '`$k`').join(' -> ')}: ';
@@ -68,7 +68,7 @@ final class _JsonReader {
   dynamic readValue() {
     skipWhitespace();
     if (atEnd) throw error('unexpected end of input');
-    final character = _text[_offset];
+    final String character = _text[_offset];
     if (character == '{') return _readObject();
     if (character == '[') return _readArray();
     if (character == '"') return readString();
@@ -88,13 +88,13 @@ final class _JsonReader {
       return result;
     }
     while (true) {
-      final key = _readMemberKey(result);
+      final String key = _readMemberKey(result);
       _keyStack.add(key);
       result[key] = readValue();
       _keyStack.removeLast();
       skipWhitespace();
       if (atEnd) throw error('unterminated object');
-      final separator = _text[_offset++];
+      final String separator = _text[_offset++];
       if (separator == '}') return result;
       if (separator != ',') throw error('expected `,` or `}`');
     }
@@ -105,7 +105,7 @@ final class _JsonReader {
     if (atEnd || _text[_offset] != '"') {
       throw error('an object key must be a string');
     }
-    final key = readString();
+    final String key = readString();
     if (existing.containsKey(key)) {
       throw error('duplicate key `$key`', extraKey: key);
     }
@@ -129,17 +129,17 @@ final class _JsonReader {
       result.add(readValue());
       skipWhitespace();
       if (atEnd) throw error('unterminated array');
-      final separator = _text[_offset++];
+      final String separator = _text[_offset++];
       if (separator == ']') return result;
       if (separator != ',') throw error('expected `,` or `]`');
     }
   }
 
   String readString() {
-    final start = _offset;
+    final int start = _offset;
     _offset++;
     while (!atEnd) {
-      final character = _text[_offset];
+      final String character = _text[_offset];
       if (character == '"') {
         _offset++;
         try {
@@ -158,12 +158,12 @@ final class _JsonReader {
   }
 
   num _readNumber() {
-    final start = _offset;
+    final int start = _offset;
     if (!atEnd && _text[_offset] == '-') _offset++;
     _consumeDigits();
-    final hasFraction = _consumeFraction();
-    final hasExponent = _consumeExponent();
-    final raw = _text.substring(start, _offset);
+    final bool hasFraction = _consumeFraction();
+    final bool hasExponent = _consumeExponent();
+    final String raw = _text.substring(start, _offset);
     final num decoded;
     try {
       decoded = jsonDecode(raw) as num;
@@ -171,7 +171,7 @@ final class _JsonReader {
       throw error('invalid number `$raw`: ${e.message}');
     }
     if (hasFraction || hasExponent) return decoded.toDouble();
-    final intVal = int.tryParse(raw);
+    final int? intVal = int.tryParse(raw);
     if (intVal == null) throw error('integer out of range `$raw`');
     return intVal;
   }
@@ -192,7 +192,7 @@ final class _JsonReader {
   }
 
   void _consumeDigits() {
-    final start = _offset;
+    final int start = _offset;
     while (!atEnd && _isDigit(_text[_offset])) {
       _offset++;
     }
@@ -207,6 +207,6 @@ final class _JsonReader {
 }
 
 bool _isDigit(String character) {
-  final code = character.codeUnitAt(0);
+  final int code = character.codeUnitAt(0);
   return code >= 0x30 && code <= 0x39;
 }

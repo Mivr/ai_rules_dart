@@ -18,9 +18,12 @@ import 'package:test/test.dart';
 void main(List<String> args) {
   group('parser files', () {
     test('the digested labels match the parser load closure', () {
-      final root = _workspaceRoot(args);
-      final closure = _loadClosure(root, 'dart/pub/yaml_parser.bzl');
-      final labels = _digestedLabels(root);
+      final String root = _workspaceRoot(args);
+      final Set<String> closure = _loadClosure(
+        root,
+        'dart/pub/yaml_parser.bzl',
+      );
+      final Set<String> labels = _digestedLabels(root);
       expect(
         labels,
         closure,
@@ -33,8 +36,8 @@ void main(List<String> args) {
     });
 
     test('every digested file exists', () {
-      final root = _workspaceRoot(args);
-      for (final rel in _digestedLabels(root)) {
+      final String root = _workspaceRoot(args);
+      for (final String rel in _digestedLabels(root)) {
         expect(
           File('$root/$rel').existsSync(),
           isTrue,
@@ -75,7 +78,7 @@ Set<String> _loadClosure(String root, String entry) {
   final found = <String>[];
   _walkForBzl(Directory('$root/dart/pub'), found);
   for (final path in found) {
-    final rel = _relative(root, File(path));
+    final String rel = _relative(root, File(path));
     files[rel] = File(path).readAsStringSync();
   }
   return _closureOf(files, entry);
@@ -83,7 +86,7 @@ Set<String> _loadClosure(String root, String entry) {
 
 /// The workspace-relative paths `PARSER_SOURCE_LABELS` in parser_sources.bzl digests.
 Set<String> _digestedLabels(String root) {
-  final text = File('$root/dart/pub/private/parser_sources.bzl')
+  final String text = File('$root/dart/pub/private/parser_sources.bzl')
       .readAsStringSync();
   return _labelsInBlock(text).toSet();
 }
@@ -91,14 +94,14 @@ Set<String> _digestedLabels(String root) {
 /// The `Label("...")` strings inside the `PARSER_SOURCE_LABELS` block,
 /// resolved against package `dart/pub/private`.
 List<String> _labelsInBlock(String extensions) {
-  final start = extensions.indexOf('PARSER_SOURCE_LABELS = [');
+  final int start = extensions.indexOf('PARSER_SOURCE_LABELS = [');
   if (start == -1) {
     fail('no PARSER_SOURCE_LABELS list in dart/pub/private/parser_sources.bzl');
   }
-  final open = extensions.indexOf('[', start);
-  final close = _matchingBracket(extensions, open);
+  final int open = extensions.indexOf('[', start);
+  final int close = _matchingBracket(extensions, open);
   if (close == -1) fail('the PARSER_SOURCE_LABELS list never closes');
-  final block = extensions.substring(open, close + 1);
+  final String block = extensions.substring(open, close + 1);
   return [
     for (final m in RegExp(r'Label\("([^"]+)"\)').allMatches(block))
       _resolveIn('dart/pub/private/parser_sources.bzl', m.group(1)!),
@@ -110,9 +113,9 @@ Set<String> _closureOf(Map<String, String> files, String entry) {
   final seen = {entry};
   final queue = [entry];
   while (queue.isNotEmpty) {
-    final current = queue.removeLast();
-    for (final label in _loadsOf(files[current] ?? '')) {
-      final resolved = _resolveIn(current, label);
+    final String current = queue.removeLast();
+    for (final String label in _loadsOf(files[current] ?? '')) {
+      final String resolved = _resolveIn(current, label);
       if (resolved.startsWith('@')) {
         fail(
           'load of $resolved from $current reaches outside the workspace; '
@@ -136,18 +139,18 @@ List<String> _loadsOf(String text) => [
 String _resolveIn(String from, String label) {
   if (label.startsWith('@')) return label;
   if (label.startsWith('//')) {
-    final path = label.substring(2);
-    final colon = path.indexOf(':');
+    final String path = label.substring(2);
+    final int colon = path.indexOf(':');
     if (colon == -1) return '$path/${path.split('/').last}';
     return '${path.substring(0, colon)}/${path.substring(colon + 1)}';
   }
-  final dir = from.contains('/')
+  final String dir = from.contains('/')
       ? from.substring(0, from.lastIndexOf('/'))
       : '';
-  final colon = label.indexOf(':');
+  final int colon = label.indexOf(':');
   if (colon == -1) return dir.isEmpty ? label : '$dir/$label';
-  final pkg = label.substring(0, colon);
-  final file = label.substring(colon + 1);
+  final String pkg = label.substring(0, colon);
+  final String file = label.substring(colon + 1);
   final base = pkg.isEmpty ? dir : '$dir/$pkg';
   return base.isEmpty ? file : '$base/$file';
 }
@@ -175,7 +178,7 @@ void _walkForBzl(Directory dir, List<String> found) {
   }
   entries.sort((a, b) => a.path.compareTo(b.path));
   for (final entry in entries) {
-    final name = entry.path.split(Platform.pathSeparator).last;
+    final String name = entry.path.split(Platform.pathSeparator).last;
     if (name.startsWith('.') || name.startsWith('bazel-')) continue;
     if (entry is File) {
       if (entry.path.endsWith('.bzl')) found.add(entry.path);
@@ -188,8 +191,8 @@ void _walkForBzl(Directory dir, List<String> found) {
 /// The `file:line`-style relative path of [file] under [root], always with
 /// forward slashes.
 String _relative(String root, File file) {
-  var base = root.replaceAll('\\', '/');
-  var rel = file.path.replaceAll('\\', '/');
+  String base = root.replaceAll('\\', '/');
+  String rel = file.path.replaceAll('\\', '/');
   if (rel.startsWith(base)) rel = rel.substring(base.length);
   while (rel.startsWith('/')) {
     rel = rel.substring(1);
@@ -202,20 +205,20 @@ String _relative(String root, File file) {
 String _workspaceRoot(List<String> args) {
   if (args.isNotEmpty) {
     try {
-      final located = Runfiles.create().rlocation(args.first);
+      final String located = Runfiles.create().rlocation(args.first);
       if (File(located).existsSync()) {
-        final root = _sourceRootAbove(Directory(located).parent.path);
+        final String? root = _sourceRootAbove(Directory(located).parent.path);
         if (root != null) return root;
       }
     } catch (_) {}
   }
-  final env = Platform.environment;
-  for (final start in [
+  final Map<String, String> env = Platform.environment;
+  for (final String? start in [
     env['BUILD_WORKSPACE_DIRECTORY'],
     env['BUILD_WORKING_DIRECTORY'],
     Directory.current.path,
   ]) {
-    final root = _sourceRootAbove(start);
+    final String? root = _sourceRootAbove(start);
     if (root != null) return root;
   }
   fail('cannot locate the workspace root; the guard must run unsandboxed');
@@ -223,17 +226,17 @@ String _workspaceRoot(List<String> args) {
 
 /// The source-tree workspace root at or above [start], or null when none.
 String? _sourceRootAbove(String? start) {
-  var dir = start == null ? null : Directory(start);
+  Directory? dir = start == null ? null : Directory(start);
   while (dir != null) {
     final module = File('${dir.path}/MODULE.bazel');
     if (module.existsSync()) {
-      final root = File(module.resolveSymbolicLinksSync()).parent.path;
+      final String root = File(module.resolveSymbolicLinksSync()).parent.path;
       if (FileSystemEntity.typeSync('$root/dart', followLinks: false) ==
           FileSystemEntityType.directory) {
         return root;
       }
     }
-    final parent = dir.parent;
+    final Directory parent = dir.parent;
     if (parent.path == dir.path) return null;
     dir = parent;
   }

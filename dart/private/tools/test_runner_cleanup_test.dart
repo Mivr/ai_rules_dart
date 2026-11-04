@@ -8,7 +8,7 @@ import 'test_runner_workspace.dart' show workspaceInPlace;
 void main() {
   group('deleteScratchQuietly', () {
     test('removes an existing scratch file', () {
-      final tmp = Directory.systemTemp.createTempSync('tr_scratch');
+      final Directory tmp = Directory.systemTemp.createTempSync('tr_scratch');
       addTearDown(() => deleteScratchQuietly(tmp));
       final file = File('${tmp.path}/combined.dill')
         ..writeAsBytesSync([0, 1, 2]);
@@ -17,7 +17,7 @@ void main() {
     });
 
     test('ignores a scratch file that is already gone', () {
-      final tmp = Directory.systemTemp.createTempSync('tr_scratch');
+      final Directory tmp = Directory.systemTemp.createTempSync('tr_scratch');
       addTearDown(() => deleteScratchQuietly(tmp));
       final file = File('${tmp.path}/combined.dill')
         ..writeAsBytesSync([0, 1, 2]);
@@ -33,9 +33,9 @@ void main() {
 
   group('materializeWorkspace', () {
     test('lays out listed files and copies listed directories whole', () {
-      final real = Directory.systemTemp.createTempSync('tr_real');
+      final Directory real = Directory.systemTemp.createTempSync('tr_real');
       addTearDown(() => real.deleteSync(recursive: true));
-      final into = Directory.systemTemp.createTempSync('tr_into');
+      final Directory into = Directory.systemTemp.createTempSync('tr_into');
       addTearDown(() => into.deleteSync(recursive: true));
       File('${real.path}/data.txt').writeAsStringSync('data');
       Directory('${real.path}/tree/sub').createSync(recursive: true);
@@ -59,9 +59,9 @@ void main() {
     });
 
     test('replaces a stale file already at the destination', () {
-      final real = Directory.systemTemp.createTempSync('tr_real');
+      final Directory real = Directory.systemTemp.createTempSync('tr_real');
       addTearDown(() => real.deleteSync(recursive: true));
-      final into = Directory.systemTemp.createTempSync('tr_into');
+      final Directory into = Directory.systemTemp.createTempSync('tr_into');
       addTearDown(() => into.deleteSync(recursive: true));
       File('${real.path}/data.txt').writeAsStringSync('fresh');
       File('${into.path}/data.txt').writeAsStringSync('stale');
@@ -95,7 +95,7 @@ void main() {
     });
 
     test('spots a workspace file missing from the directory', () {
-      final dir = Directory.systemTemp.createTempSync('tr_inplace');
+      final Directory dir = Directory.systemTemp.createTempSync('tr_inplace');
       addTearDown(() => dir.deleteSync(recursive: true));
       final real = File('${dir.path}/data.txt')..writeAsStringSync('data');
       final manifest = File('${dir.path}/MANIFEST')

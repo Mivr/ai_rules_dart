@@ -16,8 +16,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
-import 'dart:typed_data';
 
+import 'package:analyzer/dart/analysis/analysis_context.dart';
 import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
 import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/dart/analysis/session.dart';
@@ -49,8 +49,8 @@ import 'package:glob/glob.dart';
 import 'package:logging/logging.dart';
 import 'package:package_config/package_config.dart';
 import 'package:path/path.dart' as p;
+import 'package:rules_dart_ext/staging_bounded_provider.dart';
 import 'package:rules_dart_guard/directive_guard.dart';
-import 'package:rules_dart_worker/worker_tool_fs.dart';
 
 /// Parsed shim CLI arguments.
 class ShimArgs {
@@ -225,7 +225,7 @@ class ShimArgs {
   ) {
     final out = <({String exec, String asset})>[];
     for (final raw in raws) {
-      final sep = raw.indexOf('|');
+      final int sep = raw.indexOf('|');
       if (sep < 0) {
         throw FormatException(
           '$flag must be `<exec_path>|<asset_path>`; got "$raw"',
@@ -239,15 +239,15 @@ class ShimArgs {
   /// Parses `--root-language-version` (`<major>.<minor>`) the way the
   /// analyzer's [LanguageVersion] needs it.
   static LanguageVersion _parseRootLanguageVersion(String rootLvRaw) {
-    final rootLvParts = rootLvRaw.split('.');
+    final List<String> rootLvParts = rootLvRaw.split('.');
     if (rootLvParts.length != 2) {
       throw FormatException(
         '--root-language-version must be `<major>.<minor>`, got '
         '"$rootLvRaw"',
       );
     }
-    final rootLvMajor = int.tryParse(rootLvParts[0]);
-    final rootLvMinor = int.tryParse(rootLvParts[1]);
+    final int? rootLvMajor = int.tryParse(rootLvParts[0]);
+    final int? rootLvMinor = int.tryParse(rootLvParts[1]);
     if (rootLvMajor == null ||
         rootLvMinor == null ||
         rootLvMajor < 0 ||
@@ -263,7 +263,7 @@ class ShimArgs {
   /// Parses `--config` into builder options. Empty and `{}` mean no options;
   /// anything else must decode to a JSON object.
   static Map<String, dynamic> _parseConfig(String configJson) {
-    final trimmed = configJson.trim();
+    final String trimmed = configJson.trim();
     if (trimmed.isEmpty || trimmed == '{}') {
       return <String, dynamic>{};
     }
@@ -284,7 +284,7 @@ class ShimArgs {
   }
 
   factory ShimArgs.parse(List<String> argv) {
-    final parser = _buildParser();
+    final ArgParser parser = _buildParser();
 
     final ArgResults parsed;
     try {
@@ -325,7 +325,7 @@ class ShimArgs {
     }
     // Aggregate-codegen extras are staged identically to deps so the
     // Builder sees them via AssetReader / findAssets.
-    final deps = [
+    final List<({String asset, String exec})> deps = [
       ..._parsePipeList((parsed['dep'] as List).cast<String>(), '--dep'),
       ..._parsePipeList(
         (parsed['input-asset-extra'] as List).cast<String>(),
@@ -335,7 +335,7 @@ class ShimArgs {
     final configJson = parsed['config'] as String;
     final pkgConfig = parsed['package-config'] as String;
     final sdkPath = parsed['sdk-path'] as String;
-    final summaries = (parsed['summary'] as List).cast<String>();
+    final List<String> summaries = (parsed['summary'] as List).cast<String>();
     final sdkSummary = parsed['sdk-summary'] as String;
 
     return ShimArgs(
@@ -385,10 +385,10 @@ Future<void> runShim(
   AnalysisContextBuilder? buildAnalysisContext,
   DiagnosticSink? writeDiagnostic,
 }) async {
-  final sink = writeDiagnostic ?? _stderrSink;
+  final void Function(String message) sink = writeDiagnostic ?? _stderrSink;
   try {
-    final parser = ShimArgs._buildParser();
-    final parsed = parser.parse(argv);
+    final ArgParser parser = ShimArgs._buildParser();
+    final ArgResults parsed = parser.parse(argv);
     if (parsed['help'] as bool) {
       sink(parser.usage);
       return;
@@ -405,13 +405,12 @@ Future<void> runShim(
     return;
   }
   try {
-    final absArgs = _absoluteArgs(args);
-    final stagingDir = await (stagingRoot ?? Directory.systemTemp).createTemp(
-      'shim_${args.packageName}_',
-    );
-    final originalCwd = Directory.current;
+    final ShimArgs absArgs = _absoluteArgs(args);
+    final Directory stagingDir = await (stagingRoot ?? Directory.systemTemp)
+        .createTemp('shim_${args.packageName}_');
+    final Directory originalCwd = Directory.current;
     try {
-      final packageStagingDir = await prepareSourceGenCwd(
+      final Directory packageStagingDir = await prepareSourceGenCwd(
         baseDir: stagingDir,
         packageName: args.packageName,
       );
@@ -504,14 +503,16 @@ Future<Directory> prepareSourceGenCwd({
   required String packageName,
 }) async {
   await baseDir.create(recursive: true);
-  final canonicalBasePath = p.normalize(await baseDir.resolveSymbolicLinks());
+  final String canonicalBasePath = p.normalize(
+    await baseDir.resolveSymbolicLinks(),
+  );
   final canonicalBaseDir = Directory(canonicalBasePath);
   await File(
     p.join(canonicalBasePath, 'pubspec.yaml'),
   ).writeAsString('name: ""\nenvironment:\n  sdk: ^3.0.0\n');
   await File(p.join(canonicalBasePath, 'stacked.json')).writeAsString('{}\n');
   Directory.current = canonicalBaseDir;
-  final currentPath = p.normalize(Directory.current.path);
+  final String currentPath = p.normalize(Directory.current.path);
   final packageStagingDir = Directory(p.join(currentPath, packageName));
   await packageStagingDir.create(recursive: true);
   return packageStagingDir;
@@ -528,13 +529,12 @@ Future<void> runShimWithArgs(
   // chdir into the staging dir below for source_gen's benefit, so resolve
   // everything up-front here; after chdir, any still-relative path would
   // resolve against the staging dir and break.
-  final absArgs = _absoluteArgs(args);
-  final stagingDir = await (stagingRoot ?? Directory.systemTemp).createTemp(
-    'shim_${args.packageName}_',
-  );
-  final originalCwd = Directory.current;
+  final ShimArgs absArgs = _absoluteArgs(args);
+  final Directory stagingDir = await (stagingRoot ?? Directory.systemTemp)
+      .createTemp('shim_${args.packageName}_');
+  final Directory originalCwd = Directory.current;
   try {
-    final packageStagingDir = await prepareSourceGenCwd(
+    final Directory packageStagingDir = await prepareSourceGenCwd(
       baseDir: stagingDir,
       packageName: args.packageName,
     );
@@ -612,7 +612,7 @@ Future<AnalysisContextCollection> _defaultBuildAnalysisContext({
   String? sdkSummaryPath,
   required List<String> librarySummaryPaths,
 }) async {
-  final boundedProvider = _StagingBoundedResourceProvider(
+  final boundedProvider = StagingBoundedResourceProvider(
     PhysicalResourceProvider.INSTANCE,
     boundaryRoots: includedPaths,
   );
@@ -643,26 +643,9 @@ Future<void> _runWithStaging(
   // doesn't invalidate them. Resolve symbolic links (and Windows 8.3 short
   // names) on [stagingDir] so staged paths, package_config.json, library URIs,
   // and `Directory.current` all share one canonical spelling.
-  await stagingDir.create(recursive: true);
-  final stagingPath = p.normalize(await stagingDir.resolveSymbolicLinks());
-  final canonicalStagingDir = Directory(stagingPath);
-  final absOutputPaths = args.outputPaths;
-
-  final execByAsset = _dedupeExecByAsset(args);
-  final staged = await _stageExecAssets(
-    execByAsset,
-    stagingPath,
-    args.packageName,
-    p.posix.normalize(args.inputAssetPath),
-  );
-  final inputId = staged.inputId;
-
-  // Build a PackageConfig that maps the synthetic root package to the
-  // staging dir, and merges in every package from the upstream config so
-  // third-party `package:` imports resolve.
-  final packageConfig = await _buildPackageConfig(args, canonicalStagingDir);
-  await _writeStagingSupportFiles(stagingPath, packageConfig, args.packageName);
-  await _refuseEscapingStagedEntries(canonicalStagingDir);
+  final _StagingPrep prep = await _prepareStaging(args, stagingDir);
+  final String stagingPath = prep.stagingPath;
+  final PackageConfig packageConfig = prep.packageConfig;
 
   // Include ONLY the staging dir. Cross-package imports (`package:drift/...`,
   // `package:json_annotation/...`, …) are resolved through the
@@ -680,8 +663,9 @@ Future<void> _runWithStaging(
   // `TypeConverter` supertype was NOT identical to the `TypeConverter`
   // element drift loaded via `backend.readDart(drift2Uri)` (from the
   // drift pub-cache context). Forcing one context canonicalises them.
-  final contextBuilder = buildAnalysisContext ?? _defaultBuildAnalysisContext;
-  final collection = await contextBuilder(
+  final AnalysisContextBuilder contextBuilder =
+      buildAnalysisContext ?? _defaultBuildAnalysisContext;
+  final AnalysisContextCollection collection = await contextBuilder(
     includedPaths: [stagingPath],
     sdkPath: args.sdkPath != null ? p.absolute(args.sdkPath!) : null,
     sdkSummaryPath: args.sdkSummaryPath,
@@ -691,10 +675,10 @@ Future<void> _runWithStaging(
   // CWD must contain a valid pubspec before any Builder runs; the shim
   // entry pre-populates it via [prepareSourceGenCwd].
   final writer = _ShimAssetWriter();
-  final reader = _ShimAssetReader(staged.assetIdToPath, packageConfig, writer);
+  final reader = _ShimAssetReader(prep.assetIdToPath, packageConfig, writer);
   final resolver = _ShimAnalyzerResolver(
     collection,
-    staged.assetIdToPath,
+    prep.assetIdToPath,
     packageConfig,
   );
   // One ResourceManager per shim invocation, shared by every pipeline
@@ -717,17 +701,17 @@ Future<void> _runWithStaging(
   // Earlier Builders in multi-stage pipelines keep their own
   // `buildExtensions`-derived allowedOutputs so findAssets sees
   // intermediate writes.
-  final builders = builderFactories
+  final List<Builder> builders = builderFactories
       .map((f) => f(BuilderOptions(args.config)))
       .toList();
-  final allowedOutputs = _allowedOutputsFromDeclaredPaths(
-    inputId,
-    absOutputPaths,
+  final Iterable<AssetId> allowedOutputs = _allowedOutputsFromDeclaredPaths(
+    prep.inputId,
+    args.outputPaths,
   );
 
   await _runBuilderPipeline((
     builders: builders,
-    inputId: inputId,
+    inputId: prep.inputId,
     reader: reader,
     writer: writer,
     resolver: resolver,
@@ -737,7 +721,60 @@ Future<void> _runWithStaging(
     allowedOutputs: allowedOutputs,
     writeDiagnostic: writeDiagnostic,
   ));
-  await _routeDeclaredOutputs(writer, allowedOutputs, inputId, absOutputPaths);
+  await _routeDeclaredOutputs(
+    writer,
+    allowedOutputs,
+    prep.inputId,
+    args.outputPaths,
+  );
+}
+
+/// What [_prepareStaging] leaves behind: the canonical staging path, the
+/// staged input and its asset-to-path map, and the merged package config.
+typedef _StagingPrep = ({
+  String stagingPath,
+  AssetId inputId,
+  Map<AssetId, String> assetIdToPath,
+  PackageConfig packageConfig,
+});
+
+/// Creates and canonicalises [stagingDir], stages every exec asset into it,
+/// writes the package config and support files, and refuses escaping entries.
+Future<_StagingPrep> _prepareStaging(
+  ShimArgs args,
+  Directory stagingDir,
+) async {
+  await stagingDir.create(recursive: true);
+  final String stagingPath = p.normalize(
+    await stagingDir.resolveSymbolicLinks(),
+  );
+  final canonicalStagingDir = Directory(stagingPath);
+
+  final Map<String, String> execByAsset = _dedupeExecByAsset(args);
+  final ({Map<AssetId, String> assetIdToPath, AssetId inputId}) staged =
+      await _stageExecAssets(
+        execByAsset,
+        stagingPath,
+        args.packageName,
+        p.posix.normalize(args.inputAssetPath),
+      );
+  final AssetId inputId = staged.inputId;
+
+  // Build a PackageConfig that maps the synthetic root package to the
+  // staging dir, and merges in every package from the upstream config so
+  // third-party `package:` imports resolve.
+  final PackageConfig packageConfig = await _buildPackageConfig(
+    args,
+    canonicalStagingDir,
+  );
+  await _writeStagingSupportFiles(stagingPath, packageConfig, args.packageName);
+  await _refuseEscapingStagedEntries(canonicalStagingDir);
+  return (
+    stagingPath: stagingPath,
+    inputId: inputId,
+    assetIdToPath: staged.assetIdToPath,
+    packageConfig: packageConfig,
+  );
 }
 
 /// Dedupes staged inputs by asset path before staging. The same logical file
@@ -751,7 +788,7 @@ Map<String, String> _dedupeExecByAsset(ShimArgs args) {
   final execByAsset = <String, String>{
     p.posix.normalize(args.inputAssetPath): args.inputPath,
   };
-  for (final dep in args.depPaths) {
+  for (final ({String asset, String exec}) dep in args.depPaths) {
     execByAsset.putIfAbsent(p.posix.normalize(dep.asset), () => dep.exec);
   }
   return execByAsset;
@@ -773,7 +810,7 @@ _stageExecAssets(
   final assetIdToPath = <AssetId, String>{};
   await Future.wait(
     execByAsset.entries.map((entry) async {
-      final dest = stagedPath(p.context, stagingPath, entry.key);
+      final String dest = stagedPath(p.context, stagingPath, entry.key);
       await Directory(p.dirname(dest)).create(recursive: true);
       await File(dest).writeAsBytes(await File(entry.value).readAsBytes());
       assetIdToPath[AssetId(packageName, entry.key)] = dest;
@@ -830,7 +867,7 @@ Future<void> _writeStagingSupportFiles(
 /// `file:` or other foreign scheme, or a `package:` URI climbing above its
 /// package would read an undeclared host file.
 Future<void> _refuseEscapingStagedEntries(Directory stagingDir) async {
-  final stagedViolations = await findStagedShimViolations(
+  final List<String> stagedViolations = await findStagedShimViolations(
     stagingDir,
     tool: 'builder_shim',
   );
@@ -865,26 +902,23 @@ typedef _PipelineRun = ({
 });
 
 Future<void> _runBuilderPipeline(_PipelineRun run) async {
-  final builders = run.builders;
-  final inputId = run.inputId;
-  final reader = run.reader;
-  final writer = run.writer;
-  final resolver = run.resolver;
-  final packageConfig = run.packageConfig;
-  final resourceManager = run.resourceManager;
-  final collection = run.collection;
-  final allowedOutputs = run.allowedOutputs;
-  final writeDiagnostic = run.writeDiagnostic;
-  final originalLevel = Logger.root.level;
+  final List<Builder> builders = run.builders;
+  final AssetId inputId = run.inputId;
+  final ResourceManager resourceManager = run.resourceManager;
+  final AnalysisContextCollection collection = run.collection;
+  final DiagnosticSink writeDiagnostic = run.writeDiagnostic;
+  final Level originalLevel = Logger.root.level;
   final logger = Logger('rules_dart_ext');
-  final logSub = Logger.root.onRecord.listen((rec) {
+  final StreamSubscription<LogRecord> logSub = Logger.root.onRecord.listen((
+    rec,
+  ) {
     writeDiagnostic(
       '[${rec.level.name}] ${rec.loggerName}: ${rec.message}'
       '${rec.error != null ? " error=${rec.error}" : ""}'
       '${rec.stackTrace != null ? "\n${rec.stackTrace}" : ""}',
     );
   });
-  final lastIndex = builders.length - 1;
+  final int lastIndex = builders.length - 1;
   try {
     // Set the level inside the try so the `finally` below always
     // restores it — even if anything between here and the `for` loop
@@ -892,17 +926,17 @@ Future<void> _runBuilderPipeline(_PipelineRun run) async {
     // diagnostics) can't poison later worker requests.
     Logger.root.level = Level.WARNING;
     for (var i = 0; i < builders.length; i++) {
-      final builder = builders[i];
-      final allowedForThisStep = i == lastIndex
-          ? allowedOutputs
+      final Builder builder = builders[i];
+      final Iterable<AssetId> allowedForThisStep = i == lastIndex
+          ? run.allowedOutputs
           : _expectedOutputsFor(inputId, builder.buildExtensions);
       final step = _ShimBuildStep(
         inputId: inputId,
-        reader: reader,
-        writer: writer,
-        resolver: resolver,
+        reader: run.reader,
+        writer: run.writer,
+        resolver: run.resolver,
         allowedOutputsValue: allowedForThisStep,
-        packageConfig: packageConfig,
+        packageConfig: run.packageConfig,
         resourceManager: resourceManager,
       );
       // Run each Builder in a zone where `package:build`'s `log` resolves
@@ -964,7 +998,7 @@ Future<void> _routeDeclaredOutputs(
   AssetId inputId,
   List<String> absOutputPaths,
 ) async {
-  final allowedSet = allowedOutputs.toSet();
+  final Set<AssetId> allowedSet = allowedOutputs.toSet();
   final emitted = <AssetId, List<int>>{
     for (final e in writer.assets.entries)
       if (allowedSet.contains(e.key)) e.key: e.value,
@@ -972,7 +1006,12 @@ Future<void> _routeDeclaredOutputs(
 
   final claimed = <AssetId>{};
   for (final outPath in absOutputPaths) {
-    final match = _matchEmittedAssetFor(outPath, inputId, emitted, claimed);
+    final AssetId? match = _matchEmittedAssetFor(
+      outPath,
+      inputId,
+      emitted,
+      claimed,
+    );
     // No matching emission (the builder saw no relevant annotations):
     // write an empty file, since Bazel still requires the declared output.
     if (match != null) claimed.add(match);
@@ -1001,11 +1040,11 @@ AssetId? _matchEmittedAssetFor(
   Map<AssetId, List<int>> emitted,
   Set<AssetId> claimed,
 ) {
-  final declaredBasename = p.basename(declaredPath);
-  final inputStem = p.basenameWithoutExtension(inputId.path);
+  final String declaredBasename = p.basename(declaredPath);
+  final String inputStem = p.basenameWithoutExtension(inputId.path);
   if (declaredBasename.startsWith('$inputStem.')) {
-    final suffix = declaredBasename.substring(inputStem.length);
-    final inputPathStem = inputId.path.substring(
+    final String suffix = declaredBasename.substring(inputStem.length);
+    final String inputPathStem = inputId.path.substring(
       0,
       inputId.path.length - p.extension(inputId.path).length,
     );
@@ -1014,7 +1053,7 @@ AssetId? _matchEmittedAssetFor(
       return candidate;
     }
   }
-  for (final id in emitted.keys) {
+  for (final AssetId id in emitted.keys) {
     if (claimed.contains(id)) continue;
     if (p.basename(id.path) == declaredBasename) return id;
   }
@@ -1031,7 +1070,7 @@ Iterable<AssetId> _allowedOutputsFromDeclaredPaths(
   AssetId inputId,
   List<String> declaredPaths,
 ) {
-  final dir = p.posix.dirname(inputId.path);
+  final String dir = p.posix.dirname(inputId.path);
   return [
     for (final path in declaredPaths)
       AssetId(
@@ -1053,8 +1092,8 @@ Iterable<AssetId> _expectedOutputsFor(
   Map<String, List<String>> buildExtensions,
 ) {
   final outputs = <AssetId>[];
-  for (final entry in buildExtensions.entries) {
-    final inputExt = entry.key;
+  for (final MapEntry<String, List<String>> entry in buildExtensions.entries) {
+    final String inputExt = entry.key;
     if (inputExt.isEmpty || inputExt.contains(r'$')) {
       throw StateError(
         'buildExtensions key "$inputExt" is unsupported for intermediate '
@@ -1065,11 +1104,11 @@ Iterable<AssetId> _expectedOutputsFor(
       );
     }
     if (!inputId.path.endsWith(inputExt)) continue;
-    final stem = inputId.path.substring(
+    final String stem = inputId.path.substring(
       0,
       inputId.path.length - inputExt.length,
     );
-    for (final outExt in entry.value) {
+    for (final String outExt in entry.value) {
       outputs.add(AssetId(inputId.package, '$stem$outExt'));
     }
   }
@@ -1082,7 +1121,7 @@ Future<PackageConfig> _buildPackageConfig(
 ) async {
   // packageConfigUri may be relative to Bazel's exec root; resolve while
   // we still have the original CWD.
-  final upstreamUri = args.packageConfigUri != null
+  final Uri? upstreamUri = args.packageConfigUri != null
       ? Uri.file(p.absolute(args.packageConfigUri!))
       : await Isolate.packageConfig;
   // If neither the caller nor the running isolate provides a package_config,
@@ -1098,8 +1137,8 @@ Future<PackageConfig> _buildPackageConfig(
   // sources, not our staging dir). Fall back to the explicit
   // --root-language-version flag.
   final rootDir = Uri.directory(stagingDir.absolute.path);
-  final upstreamRoot = upstream[args.packageName];
-  final rootLanguageVersion =
+  final Package? upstreamRoot = upstream[args.packageName];
+  final LanguageVersion rootLanguageVersion =
       upstreamRoot?.languageVersion ?? args.rootLanguageVersion;
   final synthetic = Package(
     args.packageName,
@@ -1117,7 +1156,7 @@ Future<PackageConfig> _buildPackageConfig(
 
 String _serializePackageConfig(PackageConfig config) {
   final entries = <Map<String, dynamic>>[];
-  for (final pkg in config.packages) {
+  for (final Package pkg in config.packages) {
     // `packageUri` is the `packageUriRoot` expressed as a URI relative to
     // `rootUri`. Almost every pub package uses `lib/`, but some workspace
     // layouts (or the synthetic root for the shim's own staging dir) set
@@ -1136,7 +1175,7 @@ String _serializePackageConfig(PackageConfig config) {
       'rootUri': rootUri,
       'packageUri': packageUri,
     };
-    final lv = pkg.languageVersion;
+    final LanguageVersion? lv = pkg.languageVersion;
     if (lv != null) {
       entry['languageVersion'] = '${lv.major}.${lv.minor}';
     }
@@ -1160,17 +1199,17 @@ String? _resolveAssetPath(
   PackageConfig packageConfig,
   AssetId id,
 ) {
-  final direct = assetIdToPath[id];
+  final String? direct = assetIdToPath[id];
   if (direct != null) return direct;
   // Fall through: look up via the PackageConfig (e.g. for transitively-
   // imported third-party files the analyzer queries). `lib/` paths resolve
   // against `packageUriRoot` (which points at the package's `lib/`);
   // anything else (`bin/`, `test/`, `web/`, top-level files like
   // `pubspec.yaml`) resolves against the package root directory.
-  final pkg = packageConfig[id.package];
+  final Package? pkg = packageConfig[id.package];
   if (pkg == null) return null;
   if (id.path.startsWith('lib/')) {
-    final rel = id.path.substring(4);
+    final String rel = id.path.substring(4);
     return p.fromUri(pkg.packageUriRoot.resolve(rel));
   }
   return p.fromUri(pkg.root.resolve(id.path));
@@ -1192,15 +1231,15 @@ class _ShimAssetReader extends AssetReader {
   @override
   Future<bool> canRead(AssetId id) async {
     if (_writer.assets.containsKey(id)) return true;
-    final path = _pathFor(id);
+    final String? path = _pathFor(id);
     return path != null && await File(path).exists();
   }
 
   @override
   Future<List<int>> readAsBytes(AssetId id) async {
-    final fromWriter = _writer.assets[id];
+    final List<int>? fromWriter = _writer.assets[id];
     if (fromWriter != null) return fromWriter;
-    final path = _pathFor(id);
+    final String? path = _pathFor(id);
     if (path == null) throw AssetNotFoundException(id);
     final f = File(path);
     if (!await f.exists()) throw AssetNotFoundException(id);
@@ -1209,9 +1248,9 @@ class _ShimAssetReader extends AssetReader {
 
   @override
   Future<String> readAsString(AssetId id, {Encoding encoding = utf8}) async {
-    final fromWriter = _writer.assets[id];
+    final List<int>? fromWriter = _writer.assets[id];
     if (fromWriter != null) return encoding.decode(fromWriter);
-    final path = _pathFor(id);
+    final String? path = _pathFor(id);
     if (path == null) throw AssetNotFoundException(id);
     final f = File(path);
     if (!await f.exists()) throw AssetNotFoundException(id);
@@ -1221,10 +1260,10 @@ class _ShimAssetReader extends AssetReader {
   @override
   Stream<AssetId> findAssets(Glob glob) async* {
     final seen = <AssetId>{};
-    for (final id in _assetIdToPath.keys) {
+    for (final AssetId id in _assetIdToPath.keys) {
       if (glob.matches(id.path) && seen.add(id)) yield id;
     }
-    for (final id in _writer.assets.keys) {
+    for (final AssetId id in _writer.assets.keys) {
       if (glob.matches(id.path) && seen.add(id)) yield id;
     }
   }
@@ -1396,14 +1435,16 @@ class _ShimAnalyzerResolver implements Resolver {
 
   @override
   Future<bool> isLibrary(AssetId id) async {
-    final path = _pathFor(id);
+    final String? path = _pathFor(id);
     if (path == null) return false;
-    final session = _sessionFor(path);
-    final parsed = session.getParsedUnit(path);
+    final AnalysisSession session = _sessionFor(path);
+    final SomeParsedUnitResult parsed = session.getParsedUnit(path);
     if (parsed is! ParsedUnitResult || parsed.isPart) {
       return false;
     }
-    final libResult = await session.getLibraryByUri(id.uri.toString());
+    final SomeLibraryElementResult libResult = await session.getLibraryByUri(
+      id.uri.toString(),
+    );
     return libResult is LibraryElementResult;
   }
 
@@ -1412,12 +1453,12 @@ class _ShimAnalyzerResolver implements Resolver {
     AssetId id, {
     bool allowSyntaxErrors = false,
   }) async {
-    final path = _pathFor(id);
+    final String? path = _pathFor(id);
     if (path == null) {
       throw NonLibraryAssetException(id);
     }
-    final session = _sessionFor(path);
-    final parsed = session.getParsedUnit(path);
+    final AnalysisSession session = _sessionFor(path);
+    final SomeParsedUnitResult parsed = session.getParsedUnit(path);
     if (parsed is! ParsedUnitResult || parsed.isPart) {
       throw NonLibraryAssetException(id);
     }
@@ -1425,7 +1466,9 @@ class _ShimAnalyzerResolver implements Resolver {
     // (non-`lib/`) URI via [_ShimAssetUriResolver] so the returned
     // LibraryElement and its fragments carry package/asset URIs rather than
     // physical `file://` staging paths, matching `build_runner`.
-    final libResult = await session.getLibraryByUri(id.uri.toString());
+    final SomeLibraryElementResult libResult = await session.getLibraryByUri(
+      id.uri.toString(),
+    );
     if (libResult is! LibraryElementResult) {
       throw NonLibraryAssetException(id);
     }
@@ -1437,11 +1480,11 @@ class _ShimAnalyzerResolver implements Resolver {
     AssetId id, {
     bool allowSyntaxErrors = false,
   }) async {
-    final path = _pathFor(id);
+    final String? path = _pathFor(id);
     if (path == null) {
       throw NonLibraryAssetException(id);
     }
-    final result = _sessionFor(path).getParsedUnit(path);
+    final SomeParsedUnitResult result = _sessionFor(path).getParsedUnit(path);
     if (result is! ParsedUnitResult) {
       throw NonLibraryAssetException(id);
     }
@@ -1454,7 +1497,7 @@ class _ShimAnalyzerResolver implements Resolver {
     // `--dep` file the shim copies into the staging dir. These appear
     // directly in _assetIdToPath.
     final yielded = <Uri>{};
-    for (final id in _assetIdToPath.keys) {
+    for (final AssetId id in _assetIdToPath.keys) {
       // Filter by extension rather than relying on `libraryFor` to reject
       // non-Dart assets: it does not. The analyzer parses whatever bytes it
       // is handed, so a staged `lib/data.txt` comes back as a real (empty,
@@ -1462,7 +1505,7 @@ class _ShimAnalyzerResolver implements Resolver {
       // type promises Dart libraries.
       if (!id.path.endsWith('.dart')) continue;
       try {
-        final lib = await libraryFor(id);
+        final LibraryElement lib = await libraryFor(id);
         if (yielded.add(lib.firstFragment.source.uri)) yield lib;
       } on NonLibraryAssetException {
         // A `.dart` asset that is a `part of`, or that fails to resolve.
@@ -1484,10 +1527,10 @@ class _ShimAnalyzerResolver implements Resolver {
     // Enumerating each package's conventional main library covers the
     // re-export use case at negligible cost (libraryFor lazily materializes
     // only the packages the consumer iterates).
-    for (final pkg in _packageConfig.packages) {
+    for (final Package pkg in _packageConfig.packages) {
       final id = AssetId(pkg.name, 'lib/${pkg.name}.dart');
       try {
-        final lib = await libraryFor(id);
+        final LibraryElement lib = await libraryFor(id);
         if (yielded.add(lib.firstFragment.source.uri)) yield lib;
       } on NonLibraryAssetException {
         // The file at the conventional path is a `part of`, or the URI does
@@ -1511,8 +1554,11 @@ class _ShimAnalyzerResolver implements Resolver {
       final uri = 'dart:${libraryName.substring(5)}';
       try {
         // Use any context's session — they all share the SDK.
-        final session = _collection.contexts.first.currentSession;
-        final result = await session.getLibraryByUri(uri);
+        final AnalysisSession session =
+            _collection.contexts.first.currentSession;
+        final SomeLibraryElementResult result = await session.getLibraryByUri(
+          uri,
+        );
         if (result is LibraryElementResult) return result.element;
       } on ArgumentError {
         // Malformed URI — fall through to the library scan below.
@@ -1523,7 +1569,7 @@ class _ShimAnalyzerResolver implements Resolver {
       // signals a stale analysis session) propagates — silently masking
       // those would let drift et al. produce silently-wrong code.
     }
-    await for (final lib in libraries) {
+    await for (final LibraryElement lib in libraries) {
       if (lib.name == libraryName) return lib;
     }
     return null;
@@ -1531,27 +1577,27 @@ class _ShimAnalyzerResolver implements Resolver {
 
   @override
   Future<AssetId> assetIdForElement(Element element) async {
-    final source = element.library?.firstFragment.source;
+    final Source? source = element.library?.firstFragment.source;
     if (source == null) {
       throw UnresolvableAssetException(element.toString());
     }
-    final uri = source.uri;
+    final Uri uri = source.uri;
     if (uri.scheme == 'package') {
-      final segments = uri.pathSegments;
+      final List<String> segments = uri.pathSegments;
       if (segments.isEmpty) {
         throw UnresolvableAssetException(uri.toString());
       }
-      final pkg = segments.first;
-      final relPath = p.posix.joinAll(['lib', ...segments.skip(1)]);
+      final String pkg = segments.first;
+      final String relPath = p.posix.joinAll(['lib', ...segments.skip(1)]);
       return AssetId(pkg, relPath);
     }
     if (uri.scheme == 'asset') {
-      final segments = uri.pathSegments;
+      final List<String> segments = uri.pathSegments;
       if (segments.length < 2) {
         throw UnresolvableAssetException(uri.toString());
       }
-      final pkg = segments.first;
-      final relPath = p.posix.joinAll(segments.skip(1));
+      final String pkg = segments.first;
+      final String relPath = p.posix.joinAll(segments.skip(1));
       return AssetId(pkg, relPath);
     }
     if (uri.scheme == 'file') {
@@ -1561,18 +1607,18 @@ class _ShimAnalyzerResolver implements Resolver {
       // (the primary `libraryFor` path resolves `lib/` inputs via `package:`
       // URIs specifically to avoid this, but elements discovered transitively
       // can still carry `file://` URIs).
-      final filePath = p.normalize(p.fromUri(uri));
-      for (final pkg in _packageConfig.packages) {
-        final libRoot = p.normalize(p.fromUri(pkg.packageUriRoot));
-        final rootDir = p.normalize(p.fromUri(pkg.root));
+      final String filePath = p.normalize(p.fromUri(uri));
+      for (final Package pkg in _packageConfig.packages) {
+        final String libRoot = p.normalize(p.fromUri(pkg.packageUriRoot));
+        final String rootDir = p.normalize(p.fromUri(pkg.root));
         if (p.isWithin(libRoot, filePath) || p.equals(libRoot, filePath)) {
-          final rel = p.posix.joinAll(
+          final String rel = p.posix.joinAll(
             p.split(p.relative(filePath, from: libRoot)),
           );
           return AssetId(pkg.name, p.posix.join('lib', rel));
         }
         if (p.isWithin(rootDir, filePath) || p.equals(rootDir, filePath)) {
-          final rel = p.posix.joinAll(
+          final String rel = p.posix.joinAll(
             p.split(p.relative(filePath, from: rootDir)),
           );
           return AssetId(pkg.name, rel);
@@ -1601,28 +1647,29 @@ class _ShimAnalyzerResolver implements Resolver {
     // drift_dev's `readTypeConverter` reporting "Not a type converter" on a
     // `.map(const MyConverter())` argument because the Expression's
     // `staticType` comes back null. Matches drift's own `TestBackend`.
-    final libFragment = fragment.libraryFragment;
+    final LibraryFragment? libFragment = fragment.libraryFragment;
     if (libFragment == null) return null;
-    final library = libFragment.element;
+    final LibraryElement library = libFragment.element;
     if (resolve) {
-      final libResult = await library.session.getResolvedLibraryByElement(
-        library,
-      );
+      final SomeResolvedLibraryResult libResult = await library.session
+          .getResolvedLibraryByElement(library);
       if (libResult is! ResolvedLibraryResult) return null;
       if (identical(fragment, libFragment)) {
-        final path = libFragment.source.fullName;
-        for (final u in libResult.units) {
+        final String path = libFragment.source.fullName;
+        for (final ResolvedUnitResult u in libResult.units) {
           if (u.path == path) return u.unit;
         }
         return null;
       }
       return libResult.getFragmentDeclaration(fragment)?.node;
     }
-    final path = libFragment.source.fullName;
-    final parsedLib = _sessionFor(path).getParsedLibrary(path);
+    final String path = libFragment.source.fullName;
+    final SomeParsedLibraryResult parsedLib = _sessionFor(
+      path,
+    ).getParsedLibrary(path);
     if (parsedLib is! ParsedLibraryResult) return null;
     if (identical(fragment, libFragment)) {
-      for (final u in parsedLib.units) {
+      for (final ParsedUnitResult u in parsedLib.units) {
         if (u.path == path) return u.unit;
       }
       return null;
@@ -1636,18 +1683,18 @@ void _installAssetUriResolver(
   PackageConfig packageConfig,
   Map<AssetId, String> assetIdToPath,
 ) {
-  for (final context in collection.contexts) {
+  for (final AnalysisContext context in collection.contexts) {
     if (context is! DriverBasedAnalysisContext) continue;
-    final sourceFactory = context.driver.sourceFactory;
+    final SourceFactory sourceFactory = context.driver.sourceFactory;
     if (sourceFactory is! SourceFactoryImpl) continue;
-    final resolvers = sourceFactory.resolvers;
+    final List<UriResolver> resolvers = sourceFactory.resolvers;
     if (resolvers.any((r) => r is _ShimAssetUriResolver)) continue;
     final resolver = _ShimAssetUriResolver(
       context.resourceProvider,
       packageConfig,
       assetIdToPath,
     );
-    final pkgIdx = resolvers.indexWhere(
+    final int pkgIdx = resolvers.indexWhere(
       (r) => r is PackageConfigPackageUriResolver || r is PackageMapUriResolver,
     );
     if (pkgIdx >= 0) {
@@ -1686,20 +1733,20 @@ final class _ShimAssetUriResolver extends UriResolver {
 
   @override
   Uri? pathToUri(String path) {
-    final pathContext = resourceProvider.pathContext;
+    final p.Context pathContext = resourceProvider.pathContext;
     Uri? bestUri;
     var bestLength = -1;
-    for (final entry in _packageRoots.entries) {
-      final pkgName = entry.key;
-      final pkgFolderPath = entry.value.path;
+    for (final MapEntry<String, fs.Folder> entry in _packageRoots.entries) {
+      final String pkgName = entry.key;
+      final String pkgFolderPath = entry.value.path;
       if (path.length >= pkgFolderPath.length + pathContext.separator.length &&
           path.startsWith(pkgFolderPath) &&
           path.startsWith(pathContext.separator, pkgFolderPath.length)) {
         if (pkgFolderPath.length > bestLength) {
-          final relPath = path.substring(
+          final String relPath = path.substring(
             pkgFolderPath.length + pathContext.separator.length,
           );
-          final relPathComponents = pathContext.split(relPath);
+          final List<String> relPathComponents = pathContext.split(relPath);
           final candidate = Uri(
             scheme: 'asset',
             pathSegments: [pkgName, ...relPathComponents],
@@ -1717,17 +1764,17 @@ final class _ShimAssetUriResolver extends UriResolver {
     if (!uri.isScheme('asset')) {
       return null;
     }
-    final pathSegments = uri.pathSegments;
+    final List<String> pathSegments = uri.pathSegments;
     if (pathSegments.length < 2) {
       return null;
     }
-    final pkgName = pathSegments.first;
-    final relSegments = pathSegments.skip(1).toList();
+    final String pkgName = pathSegments.first;
+    final List<String> relSegments = pathSegments.skip(1).toList();
     if (relSegments.any((s) => s.isEmpty || s == '.' || s == '..')) {
       return null;
     }
-    final relPosixPath = p.posix.joinAll(relSegments);
-    final pathContext = resourceProvider.pathContext;
+    final String relPosixPath = p.posix.joinAll(relSegments);
+    final p.Context pathContext = resourceProvider.pathContext;
     String? filePath;
     try {
       filePath = _assetIdToPath[AssetId(pkgName, relPosixPath)];
@@ -1735,12 +1782,12 @@ final class _ShimAssetUriResolver extends UriResolver {
       return null;
     }
     if (filePath == null) {
-      final pkg = _packageConfig[pkgName];
+      final Package? pkg = _packageConfig[pkgName];
       if (pkg == null) {
         return null;
       }
       if (relPosixPath.startsWith('lib/')) {
-        final rel = relPosixPath.substring(4);
+        final String rel = relPosixPath.substring(4);
         filePath = pathContext.normalize(
           pathContext.fromUri(pkg.packageUriRoot.resolve(rel)),
         );
@@ -1750,144 +1797,9 @@ final class _ShimAssetUriResolver extends UriResolver {
         );
       }
     }
-    final file = resourceProvider.getFile(filePath);
+    final fs.File file = resourceProvider.getFile(filePath);
     return FileSource(file, uri);
   }
-}
-
-// ---------------------------------------------------------------------------
-// Bounded ResourceProvider confining ContextLocator upward walks at staging.
-// ---------------------------------------------------------------------------
-
-final class _StagingBoundedResourceProvider implements fs.ResourceProvider {
-  _StagingBoundedResourceProvider(
-    this._delegate, {
-    required Iterable<String> boundaryRoots,
-  }) : _boundaryRoots = {
-         for (final r in boundaryRoots)
-           _delegate.pathContext.normalize(_delegate.pathContext.absolute(r)),
-       };
-
-  final fs.ResourceProvider _delegate;
-  final Set<String> _boundaryRoots;
-
-  bool isBoundary(String normPath) {
-    if (_boundaryRoots.contains(normPath)) return true;
-    for (final root in _boundaryRoots) {
-      if (_delegate.pathContext.isWithin(normPath, root)) return true;
-    }
-    return false;
-  }
-
-  @override
-  p.Context get pathContext => _delegate.pathContext;
-
-  @override
-  fs.File getFile(String path) =>
-      _StagingBoundedFile(this, _delegate.getFile(path));
-
-  @override
-  fs.Folder getFolder(String path) =>
-      _StagingBoundedFolder(this, _delegate.getFolder(path));
-
-  @override
-  fs.Link getLink(String path) => _delegate.getLink(path);
-
-  @override
-  fs.Resource getResource(String path) {
-    final res = _delegate.getResource(path);
-    if (res is fs.Folder) return _StagingBoundedFolder(this, res);
-    if (res is fs.File) return _StagingBoundedFile(this, res);
-    return res;
-  }
-
-  @override
-  fs.Folder? getStateLocation(String pluginId) =>
-      _delegate.getStateLocation(pluginId);
-}
-
-final class _StagingBoundedFolder
-    with BoundedFolderForwards
-    implements fs.Folder {
-  const _StagingBoundedFolder(this._provider, this._delegate);
-
-  final _StagingBoundedResourceProvider _provider;
-  final fs.Folder _delegate;
-
-  @override
-  fs.Folder get folderDelegate => _delegate;
-
-  @override
-  fs.ResourceProvider get folderProvider => _provider;
-
-  @override
-  fs.Folder wrapFolder(fs.Folder folder) =>
-      _StagingBoundedFolder(_provider, folder);
-
-  @override
-  fs.File wrapFile(fs.File file) => _StagingBoundedFile(_provider, file);
-
-  String get _normPath => _provider.pathContext.normalize(
-    _provider.pathContext.absolute(_delegate.path),
-  );
-
-  @override
-  bool get isRoot => _provider.isBoundary(_normPath) || _delegate.isRoot;
-
-  @override
-  bool get exists => _delegate.exists;
-
-  @override
-  bool contains(String path) => _delegate.contains(path);
-
-  @override
-  List<fs.Resource> getChildren() => [
-    for (final child in _delegate.getChildren())
-      if (child is fs.Folder)
-        _StagingBoundedFolder(_provider, child)
-      else if (child is fs.File)
-        _StagingBoundedFile(_provider, child)
-      else
-        child,
-  ];
-
-  @override
-  bool isOrContains(String path) => _delegate.isOrContains(path);
-}
-
-final class _StagingBoundedFile with BoundedFileForwards implements fs.File {
-  const _StagingBoundedFile(this._provider, this._delegate);
-
-  final _StagingBoundedResourceProvider _provider;
-  final fs.File _delegate;
-
-  @override
-  fs.File get fileDelegate => _delegate;
-
-  @override
-  fs.Folder wrapFolder(fs.Folder folder) =>
-      _StagingBoundedFolder(_provider, folder);
-
-  @override
-  fs.File wrapFile(fs.File file) => _StagingBoundedFile(_provider, file);
-
-  @override
-  bool get exists => _delegate.exists;
-
-  @override
-  int get lengthSync => _delegate.lengthSync;
-
-  @override
-  int get modificationStamp => _delegate.modificationStamp;
-
-  @override
-  fs.ResourceProvider get provider => _provider;
-
-  @override
-  Uint8List readAsBytesSync() => _delegate.readAsBytesSync();
-
-  @override
-  String readAsStringSync() => _delegate.readAsStringSync();
 }
 
 // ---------------------------------------------------------------------------
@@ -1941,21 +1853,21 @@ List<_ShimDirectiveRef> _parseShimDirectives(String source, String file) {
       "$file could not be parsed, so its directives cannot be checked.",
     );
   }
-  for (final directive in parsed.unit.directives) {
+  for (final Directive directive in parsed.unit.directives) {
     if (directive is ImportDirective) {
       add('import', directive.uri.stringValue, directive.uri.toSource());
-      for (final alternative in directive.configurations) {
+      for (final Configuration alternative in directive.configurations) {
         add('import', alternative.uri.stringValue, alternative.uri.toSource());
       }
     } else if (directive is ExportDirective) {
       add('export', directive.uri.stringValue, directive.uri.toSource());
-      for (final alternative in directive.configurations) {
+      for (final Configuration alternative in directive.configurations) {
         add('export', alternative.uri.stringValue, alternative.uri.toSource());
       }
     } else if (directive is PartDirective) {
       add('part', directive.uri.stringValue, directive.uri.toSource());
     } else if (directive is PartOfDirective) {
-      final uri = directive.uri;
+      final StringLiteral? uri = directive.uri;
       if (uri != null) add('part of', uri.stringValue, uri.toSource());
     }
   }
@@ -1990,12 +1902,12 @@ Future<List<String>> findStagedShimViolations(
   bool declared(String target) =>
       allowed.any((root) => target == root || target.startsWith('$root/'));
   final errors = <String>[];
-  for (final path in await _collectStagedDartPaths(stagingDir)) {
-    final content = await _readStagedText(path);
+  for (final String path in await _collectStagedDartPaths(stagingDir)) {
+    final String? content = await _readStagedText(path);
     // Gone between listing and reading; the analyzer reports it.
     if (content == null) continue;
-    final key = path.replaceAll(r'\', '/');
-    final from = normalizeStagedPath(key);
+    final String key = path.replaceAll(r'\', '/');
+    final String from = normalizeStagedPath(key);
     // A source whose directives cannot be listed (it does not parse, or a
     // directive URI has no static value) is refused before any Builder runs:
     // an unchecked directive could read outside the staging dir.
@@ -2007,7 +1919,13 @@ Future<List<String>> findStagedShimViolations(
       continue;
     }
     for (final ref in refs) {
-      final violation = _shimRefViolation(tool, key, ref, from, declared);
+      final String? violation = _shimRefViolation(
+        tool,
+        key,
+        ref,
+        from,
+        declared,
+      );
       if (violation != null) errors.add(violation);
     }
   }
@@ -2017,7 +1935,7 @@ Future<List<String>> findStagedShimViolations(
 /// Every `.dart` file under [stagingDir] in path order.
 Future<List<String>> _collectStagedDartPaths(Directory stagingDir) async {
   final paths = <String>[];
-  await for (final entity in stagingDir.list(
+  await for (final FileSystemEntity entity in stagingDir.list(
     recursive: true,
     followLinks: false,
   )) {
@@ -2059,7 +1977,7 @@ String? _shimRefViolation(
   String from,
   bool Function(String) declared,
 ) {
-  final uri = ref.uri;
+  final String uri = ref.uri;
   // A URI spanning lines is refused however it spells its target: the
   // front end's multi-line first-line rule reads a different file than
   // the resolvers below see (see [hasLineBreak]).
@@ -2081,7 +1999,7 @@ String? _shimRefViolation(
   if (isFileSchemeDirectiveUri(uri) || isDisallowedDirectiveUri(uri)) {
     return "$tool: $key ${ref.kind} '$uri' is not a declared input.";
   }
-  final target = resolveStagedRelativeTarget(uri, from);
+  final String? target = resolveStagedRelativeTarget(uri, from);
   // A null resolution names no declared file (a `//` authority, a
   // fragment, or a decoded `/`): it is refused, never passed. The staging
   // dir holds every entry the builders may read, so a resolved target

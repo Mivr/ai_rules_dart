@@ -29,12 +29,12 @@ import 'private_home.dart';
 Future<void> main(List<String> args) async {
   // `bazel run` starts the launcher in the runfiles tree; relative user
   // arguments mean what they meant in the shell the command was typed in.
-  final cwd = Platform.environment['BUILD_WORKING_DIRECTORY'];
+  final String? cwd = Platform.environment['BUILD_WORKING_DIRECTORY'];
   if (cwd != null && cwd.isNotEmpty) {
     Directory.current = cwd;
   }
-  final dart = _resolveDart();
-  final code = switch (dartCliPolicy(args)) {
+  final String dart = _resolveDart();
+  final int code = switch (dartCliPolicy(args)) {
     DartCliPolicy.callerHome => await _runDart(dart, args),
     DartCliPolicy.suppressAnalytics => await _runDart(
       dart,
@@ -57,7 +57,7 @@ Future<int> _runDart(
   List<String> args, [
   Map<String, String>? env,
 ]) async {
-  final child = await Process.start(
+  final Process child = await Process.start(
     dart,
     args,
     environment: env,
@@ -74,7 +74,7 @@ Future<int> _runDart(
 /// back to the current executable. Whether the file exists is for the caller
 /// to check.
 File? adjacentSdkConfigFile([String? executable]) {
-  final exe = (executable == null || executable.isEmpty)
+  final String exe = (executable == null || executable.isEmpty)
       ? Platform.executable
       : executable;
   if (exe.isEmpty) return null;
@@ -100,12 +100,12 @@ Runfiles? _currentRunfiles() {
 
 /// The toolchain `dart` binary this launcher passes through to.
 String _resolveDart() {
-  final config = _readSdkConfig();
+  final Map<String, dynamic> config = _readSdkConfig();
   final dart = config['dart'] as String;
   if (File(dart).existsSync()) {
     return dart;
   }
-  final runfiles = _currentRunfiles();
+  final Runfiles? runfiles = _currentRunfiles();
   if (runfiles == null) {
     stderr.writeln(
       'dart_sdk: could not resolve the SDK binary "$dart" outside runfiles.',
@@ -126,16 +126,16 @@ String _resolveDart() {
 /// from `RunEnvironmentInfo` (`bazel run` use), as a path and through
 /// runfiles. Exits naming the lookup when nothing answers.
 Map<String, dynamic> _readSdkConfig() {
-  final adjacent = adjacentSdkConfigFile();
+  final File? adjacent = adjacentSdkConfigFile();
   if (adjacent != null && adjacent.existsSync()) {
     return _parseSdkConfig(adjacent);
   }
-  final key = Platform.environment['DART_SDK_CONFIG'];
+  final String? key = Platform.environment['DART_SDK_CONFIG'];
   if (key != null && key.isNotEmpty) {
     if (File(key).existsSync()) {
       return _parseSdkConfig(File(key));
     }
-    final runfiles = _currentRunfiles();
+    final Runfiles? runfiles = _currentRunfiles();
     if (runfiles != null) {
       try {
         final file = File(runfiles.rlocation(key));

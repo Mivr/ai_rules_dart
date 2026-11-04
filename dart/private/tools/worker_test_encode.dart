@@ -17,7 +17,7 @@ Uint8List encodeVarintForTest(int value) {
 /// Encodes one `blaze.worker.Input` submessage (`path` and optional `digest`).
 Uint8List encodeInputForTest(String path, Uint8List digest) {
   final out = BytesBuilder();
-  final pathBytes = utf8.encode(path);
+  final Uint8List pathBytes = utf8.encode(path);
   out.add(encodeVarintForTest((1 << 3) | 2));
   out.add(encodeVarintForTest(pathBytes.length));
   out.add(pathBytes);
@@ -36,13 +36,13 @@ Uint8List encodeWorkRequestForTest({
 }) {
   final out = BytesBuilder();
   for (final arg in arguments) {
-    final argBytes = utf8.encode(arg);
+    final Uint8List argBytes = utf8.encode(arg);
     out.add(encodeVarintForTest((1 << 3) | 2));
     out.add(encodeVarintForTest(argBytes.length));
     out.add(argBytes);
   }
-  for (final entry in inputs.entries) {
-    final inputBytes = encodeInputForTest(entry.key, entry.value);
+  for (final MapEntry<String, Uint8List> entry in inputs.entries) {
+    final Uint8List inputBytes = encodeInputForTest(entry.key, entry.value);
     out.add(encodeVarintForTest((2 << 3) | 2));
     out.add(encodeVarintForTest(inputBytes.length));
     out.add(inputBytes);

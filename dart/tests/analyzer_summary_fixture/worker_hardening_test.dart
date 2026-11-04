@@ -22,13 +22,13 @@ Uint8List _encodeWorkRequest({
   }
 
   for (final arg in arguments) {
-    final bytes = utf8.encode(arg);
+    final Uint8List bytes = utf8.encode(arg);
     writeVarint(body, (1 << 3) | 2);
     writeVarint(body, bytes.length);
     body.add(bytes);
   }
   inputs.forEach((path, digest) {
-    final pathBytes = utf8.encode(path);
+    final Uint8List pathBytes = utf8.encode(path);
     final nested = BytesBuilder(copy: false);
     writeVarint(nested, (1 << 3) | 2);
     writeVarint(nested, pathBytes.length);
@@ -38,7 +38,7 @@ Uint8List _encodeWorkRequest({
       writeVarint(nested, digest.length);
       nested.add(digest);
     }
-    final nestedBytes = nested.takeBytes();
+    final Uint8List nestedBytes = nested.takeBytes();
     writeVarint(body, (2 << 3) | 2);
     writeVarint(body, nestedBytes.length);
     body.add(nestedBytes);
@@ -47,7 +47,7 @@ Uint8List _encodeWorkRequest({
     writeVarint(body, (3 << 3) | 0);
     writeVarint(body, requestId);
   }
-  final payload = body.takeBytes();
+  final Uint8List payload = body.takeBytes();
   final frame = BytesBuilder(copy: false);
   writeVarint(frame, payload.length);
   frame.add(payload);
@@ -69,7 +69,7 @@ Stream<Uint8List> _frameStream(Stream<List<int>> source) {
         var pos = 0;
         while (true) {
           if (pos >= buf.length) return;
-          final b = buf[pos++];
+          final int b = buf[pos++];
           len |= (b & 0x7f) << shift;
           if ((b & 0x80) == 0) break;
           shift += 7;
@@ -91,7 +91,7 @@ Stream<Uint8List> _frameStream(Stream<List<int>> source) {
     var result = 0;
     var shift = 0;
     while (true) {
-      final b = payload[pos++];
+      final int b = payload[pos++];
       result |= (b & 0x7f) << shift;
       if ((b & 0x80) == 0) return result;
       shift += 7;
@@ -101,12 +101,12 @@ Stream<Uint8List> _frameStream(Stream<List<int>> source) {
   var exitCode = 0;
   var output = '';
   while (pos < payload.length) {
-    final tag = readVarint();
+    final int tag = readVarint();
     switch (tag >> 3) {
       case 1:
         exitCode = readVarint();
       case 2:
-        final len = readVarint();
+        final int len = readVarint();
         output = utf8.decode(Uint8List.sublistView(payload, pos, pos + len));
         pos += len;
       case 3:
@@ -120,13 +120,13 @@ Stream<Uint8List> _frameStream(Stream<List<int>> source) {
 
 void main(List<String> args) {
   final r = Runfiles.create();
-  final formatRunnerDill = r.rlocation(args[0]);
-  final analyzerSummaryDill = r.rlocation(args[1]);
-  final sdkSummaryPath = r.rlocation(args[2]);
-  final analyzeRunnerDill = r.rlocation(args[3]);
-  final fixRunnerDill = r.rlocation(args[4]);
-  final webCompileRunnerDill = r.rlocation(args[5]);
-  final sdkRoot = File(Platform.resolvedExecutable).parent.parent.path;
+  final String formatRunnerDill = r.rlocation(args[0]);
+  final String analyzerSummaryDill = r.rlocation(args[1]);
+  final String sdkSummaryPath = r.rlocation(args[2]);
+  final String analyzeRunnerDill = r.rlocation(args[3]);
+  final String fixRunnerDill = r.rlocation(args[4]);
+  final String webCompileRunnerDill = r.rlocation(args[5]);
+  final String sdkRoot = File(Platform.resolvedExecutable).parent.parent.path;
 
   late Directory tmp;
   setUp(() {
@@ -193,7 +193,7 @@ void main(List<String> args) {
       "import 'package:pkg_dep/dep.dart';\nint callBar() => bar();\n",
     );
 
-    final proc = await Process.start(Platform.resolvedExecutable, [
+    final Process proc = await Process.start(Platform.resolvedExecutable, [
       analyzerSummaryDill,
       '--persistent_worker',
     ], workingDirectory: tmp.path);
@@ -201,7 +201,9 @@ void main(List<String> args) {
       proc.kill();
       await proc.exitCode;
     });
-    final responses = StreamIterator(_frameStream(proc.stdout));
+    final StreamIterator<Uint8List> responses = StreamIterator(
+      _frameStream(proc.stdout),
+    );
 
     Future<({int exitCode, String output})> send(
       List<String> arguments, {
@@ -214,7 +216,7 @@ void main(List<String> args) {
     }
 
     // 1. Summarize V1 of pkg_dep (without bar())
-    var res = await send([
+    ({int exitCode, String output}) res = await send([
       'summarize',
       '--sdk',
       sdkRoot,
@@ -354,7 +356,7 @@ void main(List<String> args) {
     File('${execroot.path}/manifest.txt')
         .writeAsStringSync('src/pkg/lib/clean.dart\n');
 
-    final proc = await Process.start(Platform.resolvedExecutable, [
+    final Process proc = await Process.start(Platform.resolvedExecutable, [
       formatRunnerDill,
       '--persistent_worker',
     ], workingDirectory: execroot.path);
@@ -362,7 +364,9 @@ void main(List<String> args) {
       proc.kill();
       await proc.exitCode;
     });
-    final responses = StreamIterator(_frameStream(proc.stdout));
+    final StreamIterator<Uint8List> responses = StreamIterator(
+      _frameStream(proc.stdout),
+    );
 
     proc.stdin.add(
       _encodeWorkRequest(
@@ -380,7 +384,9 @@ void main(List<String> args) {
     );
     await proc.stdin.flush();
     expect(await responses.moveNext(), isTrue);
-    final resp = _decodeWorkResponse(responses.current);
+    final ({int exitCode, String output}) resp = _decodeWorkResponse(
+      responses.current,
+    );
     expect(resp.exitCode, 0, reason: resp.output);
     expect(resp.output, isEmpty);
     expect(
@@ -424,7 +430,7 @@ void main(List<String> args) {
 
     // Without a manifest, `analyzer_summary analyze` must NOT prune the symlink
     // and must analyze it (catching the type error).
-    var res = Process.runSync(Platform.resolvedExecutable, [
+    ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
       analyzerSummaryDill,
       'analyze',
       '--sdk',
@@ -538,7 +544,7 @@ void main(List<String> args) {
       }),
     );
     final baseSum = '${tmp.path}/dep_base.sum';
-    final baseRes = Process.runSync(Platform.resolvedExecutable, [
+    final ProcessResult baseRes = Process.runSync(Platform.resolvedExecutable, [
       analyzerSummaryDill,
       'summarize',
       '--sdk',
@@ -597,24 +603,28 @@ void main(List<String> args) {
       }),
     );
 
-    final localRes = Process.runSync(Platform.resolvedExecutable, [
-      analyzerSummaryDill,
-      'summarize',
-      '--sdk',
-      sdkRoot,
-      '--packages',
-      'packages.json',
-      '--out',
-      'local.sum',
-      '--sdk-summary',
-      sdkSummaryPath,
-      '--summary',
-      baseSum,
-      '--source',
-      'pkg/lib/sub.dart',
-      '--uri',
-      'package:pkg/sub.dart',
-    ], workingDirectory: localDir.path);
+    final ProcessResult localRes = Process.runSync(
+      Platform.resolvedExecutable,
+      [
+        analyzerSummaryDill,
+        'summarize',
+        '--sdk',
+        sdkRoot,
+        '--packages',
+        'packages.json',
+        '--out',
+        'local.sum',
+        '--sdk-summary',
+        sdkSummaryPath,
+        '--summary',
+        baseSum,
+        '--source',
+        'pkg/lib/sub.dart',
+        '--uri',
+        'package:pkg/sub.dart',
+      ],
+      workingDirectory: localDir.path,
+    );
     expect(
       localRes.exitCode,
       0,
@@ -632,24 +642,28 @@ void main(List<String> args) {
       File('${localDir.path}/packages.json').readAsStringSync(),
     );
 
-    final sandboxRes = Process.runSync(Platform.resolvedExecutable, [
-      analyzerSummaryDill,
-      'summarize',
-      '--sdk',
-      sdkRoot,
-      '--packages',
-      'packages.json',
-      '--out',
-      'sandbox.sum',
-      '--sdk-summary',
-      sdkSummaryPath,
-      '--summary',
-      baseSum,
-      '--source',
-      'pkg/lib/sub.dart',
-      '--uri',
-      'package:pkg/sub.dart',
-    ], workingDirectory: sandboxDir.path);
+    final ProcessResult sandboxRes = Process.runSync(
+      Platform.resolvedExecutable,
+      [
+        analyzerSummaryDill,
+        'summarize',
+        '--sdk',
+        sdkRoot,
+        '--packages',
+        'packages.json',
+        '--out',
+        'sandbox.sum',
+        '--sdk-summary',
+        sdkSummaryPath,
+        '--summary',
+        baseSum,
+        '--source',
+        'pkg/lib/sub.dart',
+        '--uri',
+        'package:pkg/sub.dart',
+      ],
+      workingDirectory: sandboxDir.path,
+    );
     expect(
       sandboxRes.exitCode,
       0,
@@ -659,7 +673,7 @@ void main(List<String> args) {
     // 3. Persistent worker execution in the dirty local directory.
     File('${localDir.path}/pkg/lib/unlisted_ambient.dart')
         .writeAsStringSync('int ambientExtra = 99;\n');
-    final proc = await Process.start(Platform.resolvedExecutable, [
+    final Process proc = await Process.start(Platform.resolvedExecutable, [
       analyzerSummaryDill,
       '--persistent_worker',
     ], workingDirectory: localDir.path);
@@ -667,7 +681,9 @@ void main(List<String> args) {
       proc.kill();
       await proc.exitCode;
     });
-    final responses = StreamIterator(_frameStream(proc.stdout));
+    final StreamIterator<Uint8List> responses = StreamIterator(
+      _frameStream(proc.stdout),
+    );
     proc.stdin.add(
       _encodeWorkRequest(
         arguments: [
@@ -691,16 +707,20 @@ void main(List<String> args) {
     );
     await proc.stdin.flush();
     expect(await responses.moveNext(), isTrue);
-    final workerRes = _decodeWorkResponse(responses.current);
+    final ({int exitCode, String output}) workerRes = _decodeWorkResponse(
+      responses.current,
+    );
     expect(workerRes.exitCode, 0, reason: workerRes.output);
     await responses.cancel();
     await proc.stdin.close();
     await proc.exitCode;
 
-    final localBytes = File('${localDir.path}/local.sum').readAsBytesSync();
-    final sandboxBytes = File('${sandboxDir.path}/sandbox.sum')
+    final Uint8List localBytes = File('${localDir.path}/local.sum')
         .readAsBytesSync();
-    final workerBytes = File('${localDir.path}/worker.sum').readAsBytesSync();
+    final Uint8List sandboxBytes = File('${sandboxDir.path}/sandbox.sum')
+        .readAsBytesSync();
+    final Uint8List workerBytes = File('${localDir.path}/worker.sum')
+        .readAsBytesSync();
 
     expect(localBytes, isNotEmpty);
     expect(localBytes, equals(sandboxBytes));
@@ -745,7 +765,7 @@ void main(List<String> args) {
     plantStaleDeletedFile();
     File('${projDir.path}/.dart_tool/src_manifest.txt')
         .writeAsStringSync('lib/keep.dart\nlib/deleted.dart\n');
-    var res = Process.runSync(Platform.resolvedExecutable, [
+    ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
       analyzeRunnerDill,
       '--dart',
       Platform.resolvedExecutable,
@@ -949,41 +969,49 @@ void main(List<String> args) {
         .createSync(realHidden.path);
 
     final localLStamp = File('${tmp.path}/local_L.analyzed');
-    final localLRes = Process.runSync(Platform.resolvedExecutable, [
-      analyzeRunnerDill,
-      '--dart',
+    final ProcessResult localLRes = Process.runSync(
       Platform.resolvedExecutable,
-      '--project',
-      localLProj.path,
-      '--stamp',
-      localLStamp.path,
-      '--fatal-infos',
-      '--source',
-      'src/P/lib/l.dart',
-    ], workingDirectory: realDir.path);
+      [
+        analyzeRunnerDill,
+        '--dart',
+        Platform.resolvedExecutable,
+        '--project',
+        localLProj.path,
+        '--stamp',
+        localLStamp.path,
+        '--fatal-infos',
+        '--source',
+        'src/P/lib/l.dart',
+      ],
+      workingDirectory: realDir.path,
+    );
 
     final sandboxLProj = Directory('${tmp.path}/sandbox_L/L.proj');
     stageFromSourceProject(sandboxLProj, includeT: false);
     final sandboxLStamp = File('${tmp.path}/sandbox_L.analyzed');
-    final sandboxLRes = Process.runSync(Platform.resolvedExecutable, [
-      analyzeRunnerDill,
-      '--dart',
+    final ProcessResult sandboxLRes = Process.runSync(
       Platform.resolvedExecutable,
-      '--project',
-      sandboxLProj.path,
-      '--stamp',
-      sandboxLStamp.path,
-      '--fatal-infos',
-      '--source',
-      'src/P/lib/l.dart',
-    ], workingDirectory: tmp.path);
+      [
+        analyzeRunnerDill,
+        '--dart',
+        Platform.resolvedExecutable,
+        '--project',
+        sandboxLProj.path,
+        '--stamp',
+        sandboxLStamp.path,
+        '--fatal-infos',
+        '--source',
+        'src/P/lib/l.dart',
+      ],
+      workingDirectory: tmp.path,
+    );
 
     final workerLProj = Directory('${realDir.path}/worker_L.proj');
     stageFromSourceProject(workerLProj, includeT: false);
     Link('${workerLProj.path}/src/P/lib/src/hidden.dart')
         .createSync(realHidden.path);
     final workerLStamp = File('${tmp.path}/worker_L.analyzed');
-    final proc = await Process.start(Platform.resolvedExecutable, [
+    final Process proc = await Process.start(Platform.resolvedExecutable, [
       analyzerSummaryDill,
       '--persistent_worker',
     ], workingDirectory: realDir.path);
@@ -991,7 +1019,9 @@ void main(List<String> args) {
       proc.kill();
       await proc.exitCode;
     });
-    final responses = StreamIterator(_frameStream(proc.stdout));
+    final StreamIterator<Uint8List> responses = StreamIterator(
+      _frameStream(proc.stdout),
+    );
     proc.stdin.add(
       _encodeWorkRequest(
         arguments: [
@@ -1012,7 +1042,9 @@ void main(List<String> args) {
     );
     await proc.stdin.flush();
     expect(await responses.moveNext(), isTrue);
-    final workerLRes = _decodeWorkResponse(responses.current);
+    final ({int exitCode, String output}) workerLRes = _decodeWorkResponse(
+      responses.current,
+    );
 
     expect(localLRes.exitCode, isNonZero);
     expect(sandboxLRes.exitCode, isNonZero);
@@ -1038,34 +1070,42 @@ void main(List<String> args) {
     final localTProj = Directory('${realDir.path}/local_T.proj');
     stageFromSourceProject(localTProj, includeT: true);
     final localTStamp = File('${tmp.path}/local_T.analyzed');
-    final localTRes = Process.runSync(Platform.resolvedExecutable, [
-      analyzeRunnerDill,
-      '--dart',
+    final ProcessResult localTRes = Process.runSync(
       Platform.resolvedExecutable,
-      '--project',
-      localTProj.path,
-      '--stamp',
-      localTStamp.path,
-      '--fatal-infos',
-      '--source',
-      'src/Q/lib/t.dart',
-    ], workingDirectory: realDir.path);
+      [
+        analyzeRunnerDill,
+        '--dart',
+        Platform.resolvedExecutable,
+        '--project',
+        localTProj.path,
+        '--stamp',
+        localTStamp.path,
+        '--fatal-infos',
+        '--source',
+        'src/Q/lib/t.dart',
+      ],
+      workingDirectory: realDir.path,
+    );
 
     final sandboxTProj = Directory('${tmp.path}/sandbox_T/T.proj');
     stageFromSourceProject(sandboxTProj, includeT: true);
     final sandboxTStamp = File('${tmp.path}/sandbox_T.analyzed');
-    final sandboxTRes = Process.runSync(Platform.resolvedExecutable, [
-      analyzeRunnerDill,
-      '--dart',
+    final ProcessResult sandboxTRes = Process.runSync(
       Platform.resolvedExecutable,
-      '--project',
-      sandboxTProj.path,
-      '--stamp',
-      sandboxTStamp.path,
-      '--fatal-infos',
-      '--source',
-      'src/Q/lib/t.dart',
-    ], workingDirectory: tmp.path);
+      [
+        analyzeRunnerDill,
+        '--dart',
+        Platform.resolvedExecutable,
+        '--project',
+        sandboxTProj.path,
+        '--stamp',
+        sandboxTStamp.path,
+        '--fatal-infos',
+        '--source',
+        'src/Q/lib/t.dart',
+      ],
+      workingDirectory: tmp.path,
+    );
 
     final workerTProj = Directory('${realDir.path}/worker_T.proj');
     stageFromSourceProject(workerTProj, includeT: true);
@@ -1090,7 +1130,9 @@ void main(List<String> args) {
     );
     await proc.stdin.flush();
     expect(await responses.moveNext(), isTrue);
-    final workerTRes = _decodeWorkResponse(responses.current);
+    final ({int exitCode, String output}) workerTRes = _decodeWorkResponse(
+      responses.current,
+    );
     await responses.cancel();
     await proc.stdin.close();
     await proc.exitCode;
@@ -1173,7 +1215,7 @@ void main(List<String> args) {
         .writeAsStringSync('ext_dep/lib/ext.dart\n');
 
     final outJs = File('${tmp.path}/web_app.js');
-    final res = Process.runSync(
+    final ProcessResult res = Process.runSync(
       Platform.resolvedExecutable,
       [
         webCompileRunnerDill,

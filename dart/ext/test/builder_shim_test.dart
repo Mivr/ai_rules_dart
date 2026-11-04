@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:analyzer/dart/analysis/analysis_context.dart';
 import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
@@ -16,6 +17,8 @@ import 'package:path/path.dart' as p;
 import 'package:rules_dart_ext/builder_shim.dart';
 import 'package:rules_dart_ext/worker_entry.dart';
 import 'package:test/test.dart';
+
+import 'builder_shim_test_support.dart';
 
 /// Minimum set of args any valid shim invocation must supply. Per-test
 /// overrides are appended; omit an arg by not including it in `overrides`
@@ -96,8 +99,8 @@ String _writePackageConfig({
   for (final pkg in packages) {
     // Strip the trailing marker only — `replaceAll` would also eat it out of
     // the middle of a package name that happens to contain `_pkg`.
-    final dirName = p.basename(pkg.path);
-    final name = dirName.endsWith('_pkg')
+    final String dirName = p.basename(pkg.path);
+    final String name = dirName.endsWith('_pkg')
         ? dirName.substring(0, dirName.length - '_pkg'.length)
         : dirName;
     entries.add({
@@ -129,7 +132,7 @@ void main() {
     test(
       'joins a POSIX asset under a native Windows dir, no mixed separators',
       () {
-        final dest = stagedPath(
+        final String dest = stagedPath(
           p.windows,
           r'C:\tmp\shim_x',
           'test/nice_mock_test.dart',
@@ -339,7 +342,7 @@ void main() {
           inputAssetPath: "lib/src.dart",
           outputPath: output.path,
         ),
-        (_) => _NoopBuilder(),
+        (_) => NoopBuilder(),
       );
 
       expect(output.existsSync(), isTrue);
@@ -357,7 +360,7 @@ void main() {
           inputAssetPath: "lib/src.dart",
           outputPath: output.path,
         ),
-        (_) => _FixedOutputBuilder('// emitted by fixed builder\n'),
+        (_) => FixedOutputBuilder('// emitted by fixed builder\n'),
       );
 
       expect(output.readAsStringSync(), '// emitted by fixed builder\n');
@@ -375,7 +378,7 @@ void main() {
             inputAssetPath: "lib/src.dart",
             outputPath: output.path,
           ),
-          (_) => _ThrowingBuilder(),
+          (_) => ThrowingBuilder(),
         ),
         throwsA(isA<StateError>()),
       );
@@ -396,7 +399,7 @@ void main() {
           outputPath: output.path,
           depPaths: [(exec: dep.path, asset: 'lib/sibling.dart')],
         ),
-        (_) => _CapturingBuilder((step) async {
+        (_) => CapturingBuilder((step) async {
           final id = AssetId('fixture', 'lib/sibling.dart');
           siblingContent = await step.readAsString(id);
         }),
@@ -421,7 +424,7 @@ void main() {
           outputPath: configOut.path,
           outputPaths: [configOut.path, moduleOut.path],
         ),
-        (_) => _MultiOutputBuilder({
+        (_) => MultiOutputBuilder({
           '.config.dart': '// config body\n',
           '.module.dart': '// module body\n',
         }),
@@ -446,7 +449,7 @@ void main() {
             outputPath: configOut.path,
             outputPaths: [configOut.path, moduleOut.path],
           ),
-          (_) => _MultiOutputBuilder({'.config.dart': '// only config\n'}),
+          (_) => MultiOutputBuilder({'.config.dart': '// only config\n'}),
         );
 
         expect(configOut.readAsStringSync(), '// only config\n');
@@ -467,7 +470,7 @@ void main() {
           inputAssetPath: "lib/src.dart",
           outputPath: output.path,
         ),
-        (_) => _CapturingBuilder((step) async {
+        (_) => CapturingBuilder((step) async {
           try {
             await step.readAsString(AssetId('fixture', 'lib/missing.dart'));
           } catch (e) {
@@ -508,8 +511,9 @@ void main() {
           outputPath: output.path,
           depPaths: [(exec: dep.path, asset: 'lib/sibling.dart')],
         ),
-        (_) => _CapturingBuilder((step) async {
-          final libs = await step.resolver.libraries.toList();
+        (_) => CapturingBuilder((step) async {
+          final List<LibraryElement> libs = await step.resolver.libraries
+              .toList();
           uris = libs.map(_libUriString).toSet();
         }),
       );
@@ -534,8 +538,11 @@ void main() {
         // A third-party package whose conventional main library exists
         // (`package:<name>/<name>.dart`) is yielded even though it never
         // appears in _assetIdToPath.
-        final fooPkg = _writeForeignPackage(root: tmp, name: 'foo');
-        final pkgConfig = _writePackageConfig(root: tmp, packages: [fooPkg]);
+        final Directory fooPkg = _writeForeignPackage(root: tmp, name: 'foo');
+        final String pkgConfig = _writePackageConfig(
+          root: tmp,
+          packages: [fooPkg],
+        );
 
         final input = File(p.join(tmp.path, 'src.dart'))
           ..writeAsStringSync(
@@ -551,8 +558,9 @@ void main() {
             outputPath: output.path,
             packageConfigPath: pkgConfig,
           ),
-          (_) => _CapturingBuilder((step) async {
-            final libs = await step.resolver.libraries.toList();
+          (_) => CapturingBuilder((step) async {
+            final List<LibraryElement> libs = await step.resolver.libraries
+                .toList();
             uris = libs.map(_libUriString).toSet();
           }),
         );
@@ -588,7 +596,7 @@ void main() {
           outputPath: output.path,
           depPaths: [(exec: data.path, asset: 'lib/data.txt')],
         ),
-        (_) => _CapturingBuilder((step) async {
+        (_) => CapturingBuilder((step) async {
           uris = (await step.resolver.libraries.toList())
               .map(_libUriString)
               .toSet();
@@ -614,8 +622,11 @@ void main() {
       // Staging a `--dep` at exactly that asset path is what makes one library
       // reachable both ways; without it the two loops cover disjoint URIs and
       // this test passes whether or not the dedup exists.
-      final fooPkg = _writeForeignPackage(root: tmp, name: 'foo');
-      final pkgConfig = _writePackageConfig(root: tmp, packages: [fooPkg]);
+      final Directory fooPkg = _writeForeignPackage(root: tmp, name: 'foo');
+      final String pkgConfig = _writePackageConfig(
+        root: tmp,
+        packages: [fooPkg],
+      );
 
       final input = File(p.join(tmp.path, 'src.dart'))
         ..writeAsStringSync("import 'package:foo/foo.dart';\nclass Bar {}\n");
@@ -632,8 +643,9 @@ void main() {
           depPaths: [(exec: collide.path, asset: 'lib/fixture.dart')],
           packageConfigPath: pkgConfig,
         ),
-        (_) => _CapturingBuilder((step) async {
-          final libs = await step.resolver.libraries.toList();
+        (_) => CapturingBuilder((step) async {
+          final List<LibraryElement> libs = await step.resolver.libraries
+              .toList();
           uriList = libs.map(_libUriString).toList();
         }),
       );
@@ -673,8 +685,8 @@ void main() {
         File(
           p.join(partPkg.path, 'lib', 'partpkg.dart'),
         ).writeAsStringSync("part of 'somewhere.dart';\n");
-        final zfooPkg = _writeForeignPackage(root: tmp, name: 'zfoo');
-        final pkgConfig = _writePackageConfig(
+        final Directory zfooPkg = _writeForeignPackage(root: tmp, name: 'zfoo');
+        final String pkgConfig = _writePackageConfig(
           root: tmp,
           packages: [partPkg, zfooPkg],
         );
@@ -691,7 +703,7 @@ void main() {
             outputPath: output.path,
             packageConfigPath: pkgConfig,
           ),
-          (_) => _CapturingBuilder((step) async {
+          (_) => CapturingBuilder((step) async {
             uris = (await step.resolver.libraries.toList())
                 .map(_libUriString)
                 .toSet();
@@ -724,7 +736,7 @@ void main() {
         final emptyPkgDir = Directory(p.join(tmp.path, 'empty_pkg'))
           ..createSync(recursive: true);
         Directory(p.join(emptyPkgDir.path, 'lib')).createSync(recursive: true);
-        final pkgConfig = _writePackageConfig(
+        final String pkgConfig = _writePackageConfig(
           root: tmp,
           packages: [emptyPkgDir],
         );
@@ -741,7 +753,7 @@ void main() {
             outputPath: output.path,
             packageConfigPath: pkgConfig,
           ),
-          (_) => _CapturingBuilder((step) async {
+          (_) => CapturingBuilder((step) async {
             uris = (await step.resolver.libraries.toList())
                 .map(_libUriString)
                 .toSet();
@@ -767,7 +779,7 @@ void main() {
       final captured = <String>[];
       await runShim(
         const [],
-        (_) => _NoopBuilder(),
+        (_) => NoopBuilder(),
         writeDiagnostic: captured.add,
       );
       expect(exitCode, 2);
@@ -784,14 +796,16 @@ void main() {
       //
       // `exclude: '**'` is planted above deliberately: it is the ancestor
       // setting most likely to change generation if it were ever consulted.
-      final stage = await Directory(p.join(tmp.path, 'stage')).create();
+      final Directory stage = await Directory(
+        p.join(tmp.path, 'stage'),
+      ).create();
       File(
         p.join(tmp.path, 'analysis_options.yaml'),
       ).writeAsStringSync('analyzer:\n  exclude:\n    - "**"\n');
 
       final input = File(p.join(tmp.path, 'a.dart'))
         ..writeAsStringSync('class Foo {}');
-      final out = p.join(tmp.path, 'a.g.dart');
+      final String out = p.join(tmp.path, 'a.g.dart');
 
       var stagedOptions = false;
       await runShim(
@@ -807,7 +821,7 @@ void main() {
           '--root-language-version',
           '3.11',
         ],
-        (_) => _FixedOutputBuilder('// generated'),
+        (_) => FixedOutputBuilder('// generated'),
         stagingRoot: stage,
         buildAnalysisContext:
             ({
@@ -842,8 +856,10 @@ void main() {
     test('builder throw routes message + stack trace to sink', () async {
       final input = File(p.join(tmp.path, 'a.dart'))
         ..writeAsStringSync('class Foo {}');
-      final out = p.join(tmp.path, 'a.g.dart');
-      final stage = await Directory(p.join(tmp.path, 'stage')).create();
+      final String out = p.join(tmp.path, 'a.g.dart');
+      final Directory stage = await Directory(
+        p.join(tmp.path, 'stage'),
+      ).create();
       final captured = <String>[];
       await runShim(
         [
@@ -858,12 +874,12 @@ void main() {
           '--root-language-version',
           '3.11',
         ],
-        (_) => _ThrowingBuilder(),
+        (_) => ThrowingBuilder(),
         stagingRoot: stage,
         writeDiagnostic: captured.add,
       );
       expect(exitCode, 1);
-      final combined = captured.join('\n');
+      final String combined = captured.join('\n');
       expect(combined, contains('Builder failed for'));
       expect(combined, contains('intentional failure'));
     });
@@ -873,8 +889,10 @@ void main() {
       // `on Error` ones; only non-error throws escape.
       final input = File(p.join(tmp.path, 'a.dart'))
         ..writeAsStringSync('class Foo {}');
-      final out = p.join(tmp.path, 'a.g.dart');
-      final stage = await Directory(p.join(tmp.path, 'stage')).create();
+      final String out = p.join(tmp.path, 'a.g.dart');
+      final Directory stage = await Directory(
+        p.join(tmp.path, 'stage'),
+      ).create();
       final captured = <String>[];
       await runShim(
         [
@@ -889,12 +907,12 @@ void main() {
           '--root-language-version',
           '3.11',
         ],
-        (_) => _ThrowingExceptionBuilder(),
+        (_) => ThrowingExceptionBuilder(),
         stagingRoot: stage,
         writeDiagnostic: captured.add,
       );
       expect(exitCode, 1);
-      final combined = captured.join('\n');
+      final String combined = captured.join('\n');
       expect(combined, contains('Builder failed for'));
       expect(combined, contains('intentional checked failure'));
     });
@@ -905,8 +923,10 @@ void main() {
       // reports it instead of being masked as a builder diagnostic.
       final input = File(p.join(tmp.path, 'a.dart'))
         ..writeAsStringSync('class Foo {}');
-      final out = p.join(tmp.path, 'a.g.dart');
-      final stage = await Directory(p.join(tmp.path, 'stage')).create();
+      final String out = p.join(tmp.path, 'a.g.dart');
+      final Directory stage = await Directory(
+        p.join(tmp.path, 'stage'),
+      ).create();
       final captured = <String>[];
       await expectLater(
         runShim(
@@ -922,7 +942,7 @@ void main() {
             '--root-language-version',
             '3.11',
           ],
-          (_) => _ThrowingStringBuilder(),
+          (_) => ThrowingStringBuilder(),
           stagingRoot: stage,
           writeDiagnostic: captured.add,
         ),
@@ -947,7 +967,7 @@ void main() {
           outputPath: output.path,
           config: jsonDecode(configJson) as Map<String, dynamic>,
         ),
-        (options) => _ConfigEchoBuilder(options),
+        (options) => ConfigEchoBuilder(options),
       );
       final got = jsonDecode(output.readAsStringSync()) as Map<String, dynamic>;
       expect(got['foo'], 'bar');
@@ -970,7 +990,7 @@ void main() {
             inputAssetPath: 'lib/x.dart',
             outputPath: output.path,
           ),
-          (_) => _MultiDotExtensionBuilder(),
+          (_) => MultiDotExtensionBuilder(),
         );
         expect(output.existsSync(), isTrue);
         expect(output.readAsStringSync(), '// multi-dot payload\n');
@@ -986,8 +1006,10 @@ void main() {
         // Builders vanish.
         final input = File(p.join(tmp.path, 'a.dart'))
           ..writeAsStringSync('class Foo {}');
-        final out = p.join(tmp.path, 'a.g.dart');
-        final stage = await Directory(p.join(tmp.path, 'stage')).create();
+        final String out = p.join(tmp.path, 'a.g.dart');
+        final Directory stage = await Directory(
+          p.join(tmp.path, 'stage'),
+        ).create();
         final captured = <String>[];
         await runShim(
           [
@@ -1002,11 +1024,11 @@ void main() {
             '--root-language-version',
             '3.11',
           ],
-          (_) => _LoggingBuilder(),
+          (_) => LoggingBuilder(),
           stagingRoot: stage,
           writeDiagnostic: captured.add,
         );
-        final combined = captured.join('\n');
+        final String combined = captured.join('\n');
         expect(combined, contains('[WARNING]'));
         expect(combined, contains('builder-emitted warning'));
         expect(combined, contains('[SEVERE]'));
@@ -1036,7 +1058,7 @@ void main() {
     test('@<path> expands one-arg-per-line', () {
       final ff = File(p.join(tmp.path, 'args'))
         ..writeAsStringSync('--input\nsrc.dart\n--output\nsrc.g.dart\n');
-      final expanded = expandFlagFiles(['@${ff.path}']);
+      final List<String> expanded = expandFlagFiles(['@${ff.path}']);
       expect(expanded, ['--input', 'src.dart', '--output', 'src.g.dart']);
     });
 
@@ -1054,7 +1076,7 @@ void main() {
       // `--input\r` as an unknown flag.
       final ff = File(p.join(tmp.path, 'args'))
         ..writeAsStringSync('--input\r\nsrc.dart\r\n');
-      final expanded = expandFlagFiles(['@${ff.path}']);
+      final List<String> expanded = expandFlagFiles(['@${ff.path}']);
       expect(expanded, ['--input', 'src.dart']);
       for (final t in expanded) {
         expect(t, isNot(endsWith('\r')));
@@ -1129,8 +1151,8 @@ void main() {
             outputPaths: [firstOut.path, secondOut.path],
           ),
           [
-            (_) => _FixedExtensionBuilder('.first.g.dart', '// first\n'),
-            (_) => _FixedExtensionBuilder('.second.g.dart', '// second\n'),
+            (_) => FixedExtensionBuilder('.first.g.dart', '// first\n'),
+            (_) => FixedExtensionBuilder('.second.g.dart', '// second\n'),
           ],
         );
 
@@ -1162,7 +1184,7 @@ void main() {
             inputAssetPath: 'lib/src.dart',
             outputPath: output.path,
           ),
-          (_) => _NoopBuilder(),
+          (_) => NoopBuilder(),
         );
 
         expect(output.readAsStringSync(), isEmpty);
@@ -1200,11 +1222,11 @@ void main() {
           outputPath: output.path,
         ),
         [
-          (_) => _CapturingBuilder((step) async {
+          (_) => CapturingBuilder((step) async {
             stage1Instance = await step.fetchResource(resource);
             stage1Instance!.add('stage1');
           }),
-          (_) => _CapturingBuilder((step) async {
+          (_) => CapturingBuilder((step) async {
             stage2Instance = await step.fetchResource(resource);
           }),
         ],
@@ -1238,10 +1260,10 @@ void main() {
           outputPath: output.path,
         ),
         [
-          (_) => _CapturingBuilder((step) async {
+          (_) => CapturingBuilder((step) async {
             await step.fetchResource(resource);
           }),
-          (_) => _CapturingBuilder((step) async {
+          (_) => CapturingBuilder((step) async {
             await step.fetchResource(resource);
           }),
         ],
@@ -1282,10 +1304,10 @@ void main() {
             outputPath: output.path,
           ),
           [
-            (_) => _ExtensionMapBuilder(const {
+            (_) => ExtensionMapBuilder(const {
               '': ['.meta'],
             }),
-            (_) => _NoopBuilder(),
+            (_) => NoopBuilder(),
           ],
         ),
         throwsA(
@@ -1311,10 +1333,10 @@ void main() {
             outputPath: output.path,
           ),
           [
-            (_) => _ExtensionMapBuilder(const {
+            (_) => ExtensionMapBuilder(const {
               r'$lib$': ['lib/gen.dart'],
             }),
-            (_) => _NoopBuilder(),
+            (_) => NoopBuilder(),
           ],
         ),
         throwsA(
@@ -1343,7 +1365,7 @@ void main() {
             inputAssetPath: 'lib/src.dart',
             outputPath: output.path,
           ),
-          (_) => _ExtensionMapBuilder(
+          (_) => ExtensionMapBuilder(
             const {
               '': ['.meta'],
             },
@@ -1391,12 +1413,14 @@ void main() {
         );
 
     test('happy path: exitCode 0, output captured is empty', () async {
-      final loop = ShimWorkerLoop(factoryOrFactories: (_) => _NoopBuilder());
+      final loop = ShimWorkerLoop(factoryOrFactories: (_) => NoopBuilder());
       final input = File(p.join(tmp.path, 'src.dart'))
         ..writeAsStringSync('class Foo {}');
       final output = File(p.join(tmp.path, 'src.g.dart'));
 
-      final resp = await loop.performRequest(requestFor(input, output));
+      final WorkResponse resp = await loop.performRequest(
+        requestFor(input, output),
+      );
 
       expect(resp.exitCode, 0);
       expect(resp.output, isEmpty);
@@ -1407,13 +1431,15 @@ void main() {
       'builder throw: exitCode non-zero, stack trace in WorkResponse.output',
       () async {
         final loop = ShimWorkerLoop(
-          factoryOrFactories: (_) => _ThrowingBuilder(),
+          factoryOrFactories: (_) => ThrowingBuilder(),
         );
         final input = File(p.join(tmp.path, 'src.dart'))
           ..writeAsStringSync('class Foo {}');
         final output = File(p.join(tmp.path, 'src.g.dart'));
 
-        final resp = await loop.performRequest(requestFor(input, output));
+        final WorkResponse resp = await loop.performRequest(
+          requestFor(input, output),
+        );
 
         expect(resp.exitCode, isNonZero);
         // Builder throw surfaces through runShim's own sink, which here is
@@ -1425,17 +1451,19 @@ void main() {
     );
 
     test('sandboxDir is honoured when Bazel populates it', () async {
-      final sandbox = await Directory.systemTemp.createTemp('wr_sandbox_');
+      final Directory sandbox = await Directory.systemTemp.createTemp(
+        'wr_sandbox_',
+      );
       addTearDown(() async {
         if (await sandbox.exists()) await sandbox.delete(recursive: true);
       });
 
-      final loop = ShimWorkerLoop(factoryOrFactories: (_) => _NoopBuilder());
+      final loop = ShimWorkerLoop(factoryOrFactories: (_) => NoopBuilder());
       final input = File(p.join(tmp.path, 'src.dart'))
         ..writeAsStringSync('class Foo {}');
       final output = File(p.join(tmp.path, 'src.g.dart'));
 
-      final resp = await loop.performRequest(
+      final WorkResponse resp = await loop.performRequest(
         requestFor(input, output, sandboxDir: sandbox.path),
       );
 
@@ -1451,20 +1479,24 @@ void main() {
       var call = 0;
       Builder factory(BuilderOptions _) {
         call++;
-        return call == 1 ? _ThrowingBuilder() : _NoopBuilder();
+        return call == 1 ? ThrowingBuilder() : NoopBuilder();
       }
 
       final loop = ShimWorkerLoop(factoryOrFactories: factory);
       final input1 = File(p.join(tmp.path, 'a.dart'))
         ..writeAsStringSync('class A {}');
       final output1 = File(p.join(tmp.path, 'a.g.dart'));
-      final respFail = await loop.performRequest(requestFor(input1, output1));
+      final WorkResponse respFail = await loop.performRequest(
+        requestFor(input1, output1),
+      );
       expect(respFail.exitCode, isNonZero);
 
       final input2 = File(p.join(tmp.path, 'b.dart'))
         ..writeAsStringSync('class B {}');
       final output2 = File(p.join(tmp.path, 'b.g.dart'));
-      final respOk = await loop.performRequest(requestFor(input2, output2));
+      final WorkResponse respOk = await loop.performRequest(
+        requestFor(input2, output2),
+      );
       expect(
         respOk.exitCode,
         0,
@@ -1479,25 +1511,29 @@ void main() {
         String? cachedRootPackageName;
 
         final loop = ShimWorkerLoop(
-          factoryOrFactories: (_) => _CapturingBuilder((step) async {
-            final lib = await step.resolver.libraryFor(step.inputId);
-            final libUri = lib.firstFragment.source.uri;
-            final cls = lib.classes.first;
-            final assetId = await step.resolver.assetIdForElement(cls);
-            final isLib = await step.resolver.isLibrary(step.inputId);
+          factoryOrFactories: (_) => CapturingBuilder((step) async {
+            final LibraryElement lib = await step.resolver.libraryFor(
+              step.inputId,
+            );
+            final Uri libUri = lib.firstFragment.source.uri;
+            final ClassElement cls = lib.classes.first;
+            final AssetId assetId = await step.resolver.assetIdForElement(cls);
+            final bool isLib = await step.resolver.isLibrary(step.inputId);
 
             // Simulate source_gen's top-level `final String rootPackageName`
             // (which reads CWD's `pubspec.yaml` only on the first request) and
             // `_fileToAssetUrl`'s `p.join(rootPackageName, p.relative(url.path))`.
             if (cachedRootPackageName == null) {
-              final pubspecText = File('pubspec.yaml').readAsStringSync();
-              final match = RegExp(
+              final String pubspecText = File(
+                'pubspec.yaml',
+              ).readAsStringSync();
+              final RegExpMatch? match = RegExp(
                 r'^name:\s*"?([^"\n]*)"?',
                 multiLine: true,
               ).firstMatch(pubspecText);
               cachedRootPackageName = match?.group(1) ?? '';
             }
-            final sourceGenAssetPath = libUri.scheme == 'file'
+            final String sourceGenAssetPath = libUri.scheme == 'file'
                 ? p.posix.joinAll(
                     p.split(
                       p.join(
@@ -1522,7 +1558,7 @@ void main() {
         final testA = File(p.join(tmp.path, 'a_test.dart'))
           ..writeAsStringSync('class MockA {}\n');
         final outA = File(p.join(tmp.path, 'a_test.mocks.dart'));
-        final respA = await loop.performRequest(
+        final WorkResponse respA = await loop.performRequest(
           WorkRequest(
             arguments: [
               '--input',
@@ -1543,7 +1579,7 @@ void main() {
         final testB = File(p.join(tmp.path, 'b_test.dart'))
           ..writeAsStringSync('class MockB {}\n');
         final outB = File(p.join(tmp.path, 'b_test.mocks.dart'));
-        final respB = await loop.performRequest(
+        final WorkResponse respB = await loop.performRequest(
           WorkRequest(
             arguments: [
               '--input',
@@ -1587,7 +1623,7 @@ void main() {
       () async {
         final input = File(p.join(tmp.path, 'a.dart'))
           ..writeAsStringSync('class Foo {}');
-        final out = p.join(tmp.path, 'a.g.dart');
+        final String out = p.join(tmp.path, 'a.g.dart');
         final sdkSum = File(p.join(tmp.path, 'sdk.sum'))..writeAsBytesSync([]);
         final pkgSum = File(p.join(tmp.path, 'pkg.sum'))..writeAsBytesSync([]);
 
@@ -1612,7 +1648,7 @@ void main() {
             '--sdk-summary',
             sdkSum.path,
           ],
-          (_) => _FixedOutputBuilder('// generated'),
+          (_) => FixedOutputBuilder('// generated'),
           buildAnalysisContext:
               ({
                 required List<String> includedPaths,
@@ -1658,7 +1694,7 @@ void main() {
     ) async {
       final input = File(p.join(tmp.path, 'a.dart'))
         ..writeAsStringSync('class Foo {}');
-      final out = p.join(tmp.path, 'a.g.dart');
+      final String out = p.join(tmp.path, 'a.g.dart');
       final captured = <String>[];
 
       await runShim(
@@ -1674,7 +1710,7 @@ void main() {
           '--root-language-version',
           '3.11',
         ],
-        (_) => _FixedOutputBuilder('// generated'),
+        (_) => FixedOutputBuilder('// generated'),
         writeDiagnostic: captured.add,
         buildAnalysisContext:
             ({
@@ -1731,9 +1767,11 @@ void main() {
     test(
       'drives several codegen requests with real sdk and library summaries through the same ShimWorkerLoop instance and disposes contexts cleanly',
       () async {
-        final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+        final Directory sdkDir = File(
+          Platform.resolvedExecutable,
+        ).parent.parent;
         final sdkSummaryFile = File(p.join(tmp.path, 'sdk.sum'));
-        final sdkSummaryBytes = await buildSdkSummary(
+        final Uint8List sdkSummaryBytes = await buildSdkSummary(
           resourceProvider: PhysicalResourceProvider.INSTANCE,
           sdkPath: sdkDir.path,
         );
@@ -1744,17 +1782,17 @@ void main() {
         final depPackages = <Directory>[];
         for (var i = 0; i < 3; i++) {
           final depName = 'dep_$i';
-          final depPkg = _writeForeignPackage(
+          final Directory depPkg = _writeForeignPackage(
             root: tmp,
             name: depName,
             libBody: 'class Base$i {\n  int get tag$i => $i;\n}\n',
           );
           depPackages.add(depPkg);
-          final depConfig = _writePackageConfig(
+          final String depConfig = _writePackageConfig(
             root: depPkg,
             packages: [depPkg],
           );
-          final depSrc = p.normalize(
+          final String depSrc = p.normalize(
             p.absolute(p.join(depPkg.path, 'lib', '$depName.dart')),
           );
           final depCollection = AnalysisContextCollectionImpl(
@@ -1766,10 +1804,13 @@ void main() {
             librarySummaryPaths: const [],
           );
           try {
-            final driver = depCollection.contexts.single.driver;
-            final bundleBytes = await driver.buildPackageBundle(
-              uriList: [Uri.parse('package:$depName/$depName.dart')],
-            );
+            final Uint8List bundleBytes = await depCollection
+                .contexts
+                .single
+                .driver
+                .buildPackageBundle(
+                  uriList: [Uri.parse('package:$depName/$depName.dart')],
+                );
             final sumFile = File(p.join(tmp.path, '$depName.sum'))
               ..writeAsBytesSync(bundleBytes);
             depSummaryFiles.add(sumFile);
@@ -1781,16 +1822,18 @@ void main() {
           File(depSrc).deleteSync();
         }
 
-        final sharedPkgConfig = _writePackageConfig(
+        final String sharedPkgConfig = _writePackageConfig(
           root: tmp,
           packages: depPackages,
         );
 
         final loop = ShimWorkerLoop(
-          factoryOrFactories: (_) => _CapturingBuilder((step) async {
-            final lib = await step.resolver.libraryFor(step.inputId);
-            final cls = lib.classes.single;
-            final superName = cls.supertype?.element.name ?? 'none';
+          factoryOrFactories: (_) => CapturingBuilder((step) async {
+            final LibraryElement lib = await step.resolver.libraryFor(
+              step.inputId,
+            );
+            final ClassElement cls = lib.classes.single;
+            final String superName = cls.supertype?.element.name ?? 'none';
             await step.writeAsString(
               step.inputId.changeExtension('.g.dart'),
               '// class=${cls.name} extends=$superName\n',
@@ -1799,14 +1842,14 @@ void main() {
         );
 
         for (var reqIdx = 0; reqIdx < 4; reqIdx++) {
-          final depIdx = reqIdx % 3;
+          final int depIdx = reqIdx % 3;
           final input = File(p.join(tmp.path, 'model_$reqIdx.dart'))
             ..writeAsStringSync(
               "import 'package:dep_$depIdx/dep_$depIdx.dart';\n"
               'class Model$reqIdx extends Base$depIdx {}\n',
             );
           final output = File(p.join(tmp.path, 'model_$reqIdx.g.dart'));
-          final resp = await loop.performRequest(
+          final WorkResponse resp = await loop.performRequest(
             WorkRequest(
               arguments: [
                 '--input',
@@ -1858,10 +1901,10 @@ void main() {
 
     void makeReadOnly(File file) {
       if (Platform.isWindows) {
-        final res = Process.runSync('attrib', ['+R', file.path]);
+        final ProcessResult res = Process.runSync('attrib', ['+R', file.path]);
         expect(res.exitCode, 0, reason: '${res.stderr}');
       } else {
-        final res = Process.runSync('chmod', ['0444', file.path]);
+        final ProcessResult res = Process.runSync('chmod', ['0444', file.path]);
         expect(res.exitCode, 0, reason: '${res.stderr}');
       }
     }
@@ -1877,7 +1920,7 @@ void main() {
             '# custom options\nlinter:\n  rules:\n    - camel_case_types\n';
 
         Future<Map<String, String>> runVariant({required bool readOnly}) async {
-          final sub = await Directory(
+          final Directory sub = await Directory(
             p.join(tmp.path, readOnly ? 'ro' : 'rw'),
           ).create();
           final input = File(p.join(sub.path, 'src.dart'))
@@ -1907,7 +1950,7 @@ void main() {
                 (exec: options.path, asset: 'analysis_options.yaml'),
               ],
             ),
-            (_) => _CapturingBuilder((step) async {
+            (_) => CapturingBuilder((step) async {
               observedPubspec = await step.readAsString(
                 AssetId('fixture', 'pubspec.yaml'),
               );
@@ -1935,8 +1978,8 @@ void main() {
           };
         }
 
-        final roResult = await runVariant(readOnly: true);
-        final rwResult = await runVariant(readOnly: false);
+        final Map<String, String> roResult = await runVariant(readOnly: true);
+        final Map<String, String> rwResult = await runVariant(readOnly: false);
 
         expect(roResult['pubspec'], pubspecContent);
         expect(roResult['options'], optionsContent);
@@ -1971,10 +2014,12 @@ void main() {
       final observed = <String, Map<String, String>>{};
 
       final loop = ShimWorkerLoop(
-        factoryOrFactories: (_) => _CapturingBuilder((step) async {
-          final pkg = step.inputId.package;
-          final pubspec = await step.readAsString(AssetId(pkg, 'pubspec.yaml'));
-          final options = await step.readAsString(
+        factoryOrFactories: (_) => CapturingBuilder((step) async {
+          final String pkg = step.inputId.package;
+          final String pubspec = await step.readAsString(
+            AssetId(pkg, 'pubspec.yaml'),
+          );
+          final String options = await step.readAsString(
             AssetId(pkg, 'analysis_options.yaml'),
           );
           observed[pkg] = {'pubspec': pubspec, 'options': options};
@@ -1982,7 +2027,7 @@ void main() {
         }),
       );
 
-      final resp1 = await loop.performRequest(
+      final WorkResponse resp1 = await loop.performRequest(
         WorkRequest(
           arguments: [
             '--input',
@@ -2014,7 +2059,7 @@ void main() {
       makeReadOnly(input2);
       final out2 = File(p.join(tmp.path, 'b.g.dart'));
 
-      final resp2 = await loop.performRequest(
+      final WorkResponse resp2 = await loop.performRequest(
         WorkRequest(
           arguments: [
             '--input',
@@ -2041,20 +2086,22 @@ void main() {
     test(
       'symlinked systemTemp, sandboxDir, and stagingRoot resolve to canonical paths so p.relative(libUri.path) has no ../ segments',
       () async {
-        final realTmp = await Directory(
+        final Directory realTmp = await Directory(
           p.join(tmp.path, 'real_private_var_folders'),
         ).create(recursive: true);
         final symlinkTmp = Link(p.join(tmp.path, 'symlink_var_folders'))
           ..createSync(realTmp.path);
-        final savedCwd = Directory.current;
+        final Directory savedCwd = Directory.current;
         addTearDown(() {
           Directory.current = savedCwd;
         });
 
         await IOOverrides.runZoned(() async {
           // 1. prepareSourceGenCwd under symlinked Directory.systemTemp
-          final prepBase = await Directory.systemTemp.createTemp('prep_');
-          final prepared = await prepareSourceGenCwd(
+          final Directory prepBase = await Directory.systemTemp.createTemp(
+            'prep_',
+          );
+          final Directory prepared = await prepareSourceGenCwd(
             baseDir: prepBase,
             packageName: 'pkg_prep',
           );
@@ -2074,25 +2121,31 @@ void main() {
           final recorded = <String, Map<String, Object?>>{};
           String? cachedRootPackageName;
           final loop = ShimWorkerLoop(
-            factoryOrFactories: (_) => _CapturingBuilder((step) async {
-              final lib = await step.resolver.libraryFor(step.inputId);
-              final libUri = lib.firstFragment.source.uri;
-              final cls = lib.classes.first;
-              final assetId = await step.resolver.assetIdForElement(cls);
+            factoryOrFactories: (_) => CapturingBuilder((step) async {
+              final LibraryElement lib = await step.resolver.libraryFor(
+                step.inputId,
+              );
+              final Uri libUri = lib.firstFragment.source.uri;
+              final ClassElement cls = lib.classes.first;
+              final AssetId assetId = await step.resolver.assetIdForElement(
+                cls,
+              );
               if (cachedRootPackageName == null) {
-                final pubspecText = File('pubspec.yaml').readAsStringSync();
-                final match = RegExp(
+                final String pubspecText = File(
+                  'pubspec.yaml',
+                ).readAsStringSync();
+                final RegExpMatch? match = RegExp(
                   r'^name:\s*"?([^"\n]*)"?',
                   multiLine: true,
                 ).firstMatch(pubspecText);
                 cachedRootPackageName = match?.group(1) ?? '';
               }
-              final relPath = p.relative(
+              final String relPath = p.relative(
                 libUri.scheme == 'file'
                     ? libUri.toFilePath(windows: Platform.isWindows)
                     : lib.firstFragment.source.fullName,
               );
-              final sourceGenAssetPath = libUri.scheme == 'file'
+              final String sourceGenAssetPath = libUri.scheme == 'file'
                   ? p.posix.joinAll(
                       p.split(p.join(cachedRootPackageName!, relPath)),
                     )
@@ -2108,7 +2161,7 @@ void main() {
           final testA = File(p.join(tmp.path, 'sym_a_test.dart'))
             ..writeAsStringSync('class SymMockA {}\n');
           final outA = File(p.join(tmp.path, 'sym_a_test.mocks.dart'));
-          final respA = await loop.performRequest(
+          final WorkResponse respA = await loop.performRequest(
             WorkRequest(
               arguments: [
                 '--input',
@@ -2131,7 +2184,7 @@ void main() {
           final testB = File(p.join(tmp.path, 'sym_b_test.dart'))
             ..writeAsStringSync('class SymMockB {}\n');
           final outB = File(p.join(tmp.path, 'sym_b_test.mocks.dart'));
-          final respB = await loop.performRequest(
+          final WorkResponse respB = await loop.performRequest(
             WorkRequest(
               sandboxDir: symlinkSandbox.path,
               arguments: [
@@ -2162,7 +2215,7 @@ void main() {
           });
 
           // 3. One-shot runShimWithArgs with a symlinked stagingRoot
-          final realOneShotDir = await Directory(
+          final Directory realOneShotDir = await Directory(
             p.join(realTmp.path, 'oneshot_real'),
           ).create(recursive: true);
           final symlinkOneShotDir = Link(p.join(tmp.path, 'oneshot_symlink'))
@@ -2176,9 +2229,11 @@ void main() {
               outputPath: outC.path,
               packageName: 'pkg_c',
             ),
-            (_) => _CapturingBuilder((step) async {
-              final lib = await step.resolver.libraryFor(step.inputId);
-              final libUri = lib.firstFragment.source.uri;
+            (_) => CapturingBuilder((step) async {
+              final LibraryElement lib = await step.resolver.libraryFor(
+                step.inputId,
+              );
+              final Uri libUri = lib.firstFragment.source.uri;
               oneShotRelPath = p.relative(
                 libUri.scheme == 'file'
                     ? libUri.toFilePath(windows: Platform.isWindows)
@@ -2233,15 +2288,18 @@ void main() {
               (exec: webMain.path, asset: 'web/main.dart'),
             ],
           ),
-          (_) => _CapturingBuilder((step) async {
-            final lib = await step.resolver.libraryFor(step.inputId);
+          (_) => CapturingBuilder((step) async {
+            final LibraryElement lib = await step.resolver.libraryFor(
+              step.inputId,
+            );
             inputLibUri = lib.uri;
             inputSourceUri = lib.firstFragment.source.uri;
-            final libs = await step.resolver.libraries.toList();
+            final List<LibraryElement> libs = await step.resolver.libraries
+                .toList();
             for (final l in libs) {
               libraryUris.add(l.uri.toString());
-              for (final cls in l.classes) {
-                final id = await step.resolver.assetIdForElement(cls);
+              for (final ClassElement cls in l.classes) {
+                final AssetId id = await step.resolver.assetIdForElement(cls);
                 elementAssets[cls.name!] = id.toString();
               }
             }
@@ -2250,15 +2308,15 @@ void main() {
             // `targetFilePath = inputSourceUri.path` to verify that generated
             // imports for classes in `bin/`, `bin/sub/`, and `lib/` never
             // fall back to `file:///<TMPDIR>/shim_...`.
-            final targetFilePath = inputSourceUri!.path;
+            final String targetFilePath = inputSourceUri!.path;
             String? resolveStackedImport(Element element) {
-              final elementUri =
+              final Uri? elementUri =
                   element.firstFragment.libraryFragment?.source.uri;
               if (elementUri == null) return null;
               for (final l in libs) {
                 if (l.exportNamespace.definedNames2.values.contains(element)) {
-                  final pkgUri = l.firstFragment.source.uri;
-                  final pkg = pkgUri.pathSegments.first;
+                  final Uri pkgUri = l.firstFragment.source.uri;
+                  final String pkg = pkgUri.pathSegments.first;
                   if (targetFilePath.startsWith(RegExp('^$pkg/'))) {
                     return p.posix
                         .relative(elementUri.path, from: targetFilePath)
@@ -2270,17 +2328,17 @@ void main() {
               return null;
             }
 
-            final appCls = lib.classes.single;
+            final ClassElement appCls = lib.classes.single;
             stackedResolvedImports['App'] = resolveStackedImport(appCls)!;
-            for (final field in appCls.fields) {
-              final fieldCls = field.type.element!;
+            for (final FieldElement field in appCls.fields) {
+              final Element fieldCls = field.type.element!;
               stackedResolvedImports[fieldCls.name!] = resolveStackedImport(
                 fieldCls,
               )!;
             }
 
             final buf = StringBuffer();
-            for (final imp in stackedResolvedImports.values) {
+            for (final String imp in stackedResolvedImports.values) {
               buf.writeln("import '$imp';");
             }
             await step.writeAsString(
@@ -2316,7 +2374,7 @@ void main() {
         });
         expect(stackedResolvedImports['App'], '.');
         expect(stackedResolvedImports['Helper'], 'sub/helper.dart');
-        final generated = out.readAsStringSync();
+        final String generated = out.readAsStringSync();
         expect(generated, isNot(contains('file:')));
         expect(generated, isNot(contains('shim_')));
         expect(generated, isNot(contains(tmp.path)));
@@ -2335,10 +2393,10 @@ void main() {
           r'C:\Users\runneradmin\AppData\Local\Temp\builder_shim_work_1\pkg_a\test\a_test.dart',
           windows: true,
         );
-        final relFromFilePath = winContext.relative(
+        final String relFromFilePath = winContext.relative(
           winLibUri.toFilePath(windows: true),
         );
-        final assetPath = p.posix.joinAll(
+        final String assetPath = p.posix.joinAll(
           winContext.split(winContext.join('pkg_a', relFromFilePath)),
         );
         expect(relFromFilePath, r'test\a_test.dart');
@@ -2397,7 +2455,7 @@ part 'e.dart';
       await stage('lib/f.dart', "import 'file:///etc/hosts';\n");
       await stage('lib/g.dart', "import '/etc/hostname';\n");
       await stage('lib/h.dart', "import '../../evil.dart?v=1';\n");
-      final violations = await findStagedShimViolations(
+      final List<String> violations = await findStagedShimViolations(
         staging,
         tool: 'builder_shim',
       );
@@ -2422,7 +2480,7 @@ part 'e.dart';
         0xff,
         ...utf8.encode("\nimport '../../evil.dart';\n"),
       ]);
-      final violations = await findStagedShimViolations(
+      final List<String> violations = await findStagedShimViolations(
         staging,
         tool: 'builder_shim',
       );
@@ -2447,7 +2505,7 @@ part 'e.dart';
         await backslash.writeAsBytes(
           utf8.encode("import '\\\\\\\\host\\\\evil.dart';\n"),
         );
-        final violations = await findStagedShimViolations(
+        final List<String> violations = await findStagedShimViolations(
           staging,
           tool: 'builder_shim',
         );
@@ -2520,7 +2578,7 @@ part 'e.dart';
       await stage('lib/unparsable.dart', 'var x = ${'!' * 100000}true;\n');
       await stage('lib/clean.dart', "import 'b.dart';\n");
       await stage('lib/b.dart', 'int y() => 1;\n');
-      final violations = await findStagedShimViolations(
+      final List<String> violations = await findStagedShimViolations(
         staging,
         tool: 'builder_shim',
       );
@@ -2544,7 +2602,7 @@ part 'e.dart';
           'lib/dyn_part.dart',
           "library l;\npart 'c\${name}.dart';\n",
         );
-        final violations = await findStagedShimViolations(
+        final List<String> violations = await findStagedShimViolations(
           staging,
           tool: 'builder_shim',
         );
@@ -2577,195 +2635,5 @@ class _DisposeTrackingCollection implements AnalysisContextCollection {
   Future<void> dispose() async {
     onDispose();
     await _inner.dispose();
-  }
-}
-
-/// A Builder declared to produce `.g.dart` outputs but that emits nothing.
-class _NoopBuilder implements Builder {
-  @override
-  Map<String, List<String>> get buildExtensions => const {
-    '.dart': ['.g.dart'],
-  };
-
-  @override
-  Future<void> build(BuildStep step) async {}
-}
-
-class _FixedOutputBuilder implements Builder {
-  _FixedOutputBuilder(this._contents);
-  final String _contents;
-
-  @override
-  Map<String, List<String>> get buildExtensions => const {
-    '.dart': ['.g.dart'],
-  };
-
-  @override
-  Future<void> build(BuildStep step) async {
-    final outId = step.inputId.changeExtension('.g.dart');
-    await step.writeAsString(outId, _contents);
-  }
-}
-
-/// Like `_FixedOutputBuilder` but parameterised by output extension so a
-/// multi-factory `runShim` list can fan out to distinct declared outputs.
-class _FixedExtensionBuilder implements Builder {
-  _FixedExtensionBuilder(this._ext, this._contents);
-  final String _ext;
-  final String _contents;
-
-  @override
-  Map<String, List<String>> get buildExtensions => {
-    '.dart': [_ext],
-  };
-
-  @override
-  Future<void> build(BuildStep step) async {
-    final outId = step.inputId.changeExtension(_ext);
-    await step.writeAsString(outId, _contents);
-  }
-}
-
-class _ThrowingBuilder implements Builder {
-  @override
-  Map<String, List<String>> get buildExtensions => const {
-    '.dart': ['.g.dart'],
-  };
-
-  @override
-  Future<void> build(BuildStep step) async {
-    throw StateError('intentional failure');
-  }
-}
-
-/// Throws an [Exception] (rather than the [Error] [_ThrowingBuilder]
-/// throws) so the shim's `on Exception` failure path is driven too.
-class _ThrowingExceptionBuilder implements Builder {
-  @override
-  Map<String, List<String>> get buildExtensions => const {
-    '.dart': ['.g.dart'],
-  };
-
-  @override
-  Future<void> build(BuildStep step) async {
-    throw const FormatException('intentional checked failure');
-  }
-}
-
-/// Throws a bare string — neither [Exception] nor [Error] — so the shim's
-/// fail-open escape path is driven: only real error types are converted to
-/// diagnostics, anything else propagates to the caller.
-class _ThrowingStringBuilder implements Builder {
-  @override
-  Map<String, List<String>> get buildExtensions => const {
-    '.dart': ['.g.dart'],
-  };
-
-  @override
-  Future<void> build(BuildStep step) async {
-    throw 'intentional bare-string failure';
-  }
-}
-
-/// Emits log records via `package:build`'s top-level `log`, which only
-/// resolves to a captured Logger when the Builder runs inside the
-/// `#buildLog` Zone value wired by the shim. Used to guard against the
-/// silent-fallback regression documented in
-/// `gotcha_build_log_zone_value.md`.
-class _LoggingBuilder implements Builder {
-  @override
-  Map<String, List<String>> get buildExtensions => const {
-    '.dart': ['.g.dart'],
-  };
-
-  @override
-  Future<void> build(BuildStep step) async {
-    log.warning('builder-emitted warning');
-    log.severe('builder-emitted severe');
-  }
-}
-
-/// Serialises its own `BuilderOptions.config` as JSON into the declared
-/// `.g.dart` output. Used to assert the shim correctly plumbs `--config`
-/// → `ShimArgs.config` → `BuilderOptions(config)`.
-class _ConfigEchoBuilder implements Builder {
-  _ConfigEchoBuilder(this._options);
-  final BuilderOptions _options;
-
-  @override
-  Map<String, List<String>> get buildExtensions => const {
-    '.dart': ['.g.dart'],
-  };
-
-  @override
-  Future<void> build(BuildStep step) async {
-    final outId = step.inputId.changeExtension('.g.dart');
-    await step.writeAsString(outId, jsonEncode(_options.config));
-  }
-}
-
-/// Declares a multi-dot output suffix. Used to verify the shim's output-
-/// routing logic matches `.foo.bar.baz` against the declared Bazel output
-/// without fracturing on intermediate dots.
-class _MultiDotExtensionBuilder implements Builder {
-  @override
-  Map<String, List<String>> get buildExtensions => const {
-    '.dart': ['.foo.bar.baz'],
-  };
-
-  @override
-  Future<void> build(BuildStep step) async {
-    final outId = step.inputId.changeExtension('.foo.bar.baz');
-    await step.writeAsString(outId, '// multi-dot payload\n');
-  }
-}
-
-/// Builder with a caller-supplied `buildExtensions` map and an optional
-/// write callback. Used to exercise the shim's validation of unsupported
-/// buildExtensions key shapes (empty string, `$lib$`/`$package$`).
-class _ExtensionMapBuilder implements Builder {
-  _ExtensionMapBuilder(this.buildExtensions, {this.write});
-
-  @override
-  final Map<String, List<String>> buildExtensions;
-  final Future<void> Function(BuildStep)? write;
-
-  @override
-  Future<void> build(BuildStep step) async {
-    await write?.call(step);
-  }
-}
-
-class _CapturingBuilder implements Builder {
-  _CapturingBuilder(this._fn);
-  final Future<void> Function(BuildStep) _fn;
-
-  @override
-  Map<String, List<String>> get buildExtensions => const {
-    '.dart': ['.g.dart'],
-  };
-
-  @override
-  Future<void> build(BuildStep step) => _fn(step);
-}
-
-/// Builder that emits one asset per entry in [_bodies]; keys are the
-/// output extensions (e.g. `.config.dart`), values are the bytes written.
-/// Used to exercise the shim's multi-output routing.
-class _MultiOutputBuilder implements Builder {
-  _MultiOutputBuilder(this._bodies);
-  final Map<String, String> _bodies;
-
-  @override
-  Map<String, List<String>> get buildExtensions => {
-    '.dart': _bodies.keys.toList(growable: false),
-  };
-
-  @override
-  Future<void> build(BuildStep step) async {
-    for (final entry in _bodies.entries) {
-      final outId = step.inputId.changeExtension(entry.key);
-      await step.writeAsString(outId, entry.value);
-    }
   }
 }

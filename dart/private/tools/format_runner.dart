@@ -36,13 +36,13 @@ import 'private_home.dart';
 const _argvBudget = 8000;
 
 Future<void> main(List<String> rawArgs) async {
-  final args = expandParamFiles(rawArgs);
+  final List<String> args = expandParamFiles(rawArgs);
   if (args.contains('--persistent_worker')) {
     await _runPersistentWorker();
     exit(0);
   }
-  final code = await runFormatRequest(args, outSink: stdout, errSink: stderr);
-  if (code != 0) exit(code);
+  final int rc = await runFormatRequest(args, outSink: stdout, errSink: stderr);
+  if (rc != 0) exit(rc);
 }
 
 Future<void> _runPersistentWorker() async {
@@ -52,7 +52,7 @@ Future<void> _runPersistentWorker() async {
     final output = StringBuffer();
     var code = 1;
     try {
-      final expanded = expandParamFiles(request.arguments);
+      final List<String> expanded = expandParamFiles(request.arguments);
       code = await runFormatRequest(expanded, outSink: output, errSink: output);
     } on Object catch (e, st) {
       // A worker must answer every request, so this stays broad; the error
@@ -100,14 +100,14 @@ final class FormatMode {
 }
 
 (int, int, int)? _parseSdkVersion(String version) {
-  final core = version.split('-').first.split('+').first.split('.');
-  if (core.length < 2) return null;
-  final major = int.tryParse(core[0]);
-  final minor = int.tryParse(core[1]);
+  final List<String> v = version.split('-').first.split('+').first.split('.');
+  if (v.length < 2) return null;
+  final int? major = int.tryParse(v[0]);
+  final int? minor = int.tryParse(v[1]);
   if (major == null || minor == null || major < 0 || minor < 0) return null;
   var patch = 0;
-  if (core.length >= 3) {
-    final parsedPatch = int.tryParse(core[2]);
+  if (v.length >= 3) {
+    final int? parsedPatch = int.tryParse(v[2]);
     if (parsedPatch == null || parsedPatch < 0) return null;
     patch = parsedPatch;
   }
@@ -115,10 +115,10 @@ final class FormatMode {
 }
 
 (int, int)? _parseMajorMinor(String version) {
-  final parts = version.split('.');
+  final List<String> parts = version.split('.');
   if (parts.length != 2) return null;
-  final major = int.tryParse(parts[0]);
-  final minor = int.tryParse(parts[1]);
+  final int? major = int.tryParse(parts[0]);
+  final int? minor = int.tryParse(parts[1]);
   if (major == null || minor == null || major < 0 || minor < 0) return null;
   return (major, minor);
 }
@@ -127,7 +127,7 @@ final class FormatMode {
 ///
 /// Mirrors `resolve_format_mode` in `dart/private/dart_analyze_aspect.bzl`.
 FormatMode resolveFormatMode(String sdkVersion, String languageVersion) {
-  final sdk = _parseSdkVersion(sdkVersion);
+  final (int, int, int)? sdk = _parseSdkVersion(sdkVersion);
   if (sdk == null) {
     return FormatMode(
       inProcess: false,
@@ -136,7 +136,7 @@ FormatMode resolveFormatMode(String sdkVersion, String languageVersion) {
       sdkLanguageVersion: null,
     );
   }
-  final (sdkMajor, sdkMinor, sdkPatch) = sdk;
+  final (int sdkMajor, int sdkMinor, int sdkPatch) = sdk;
   final sdkLv = Version(sdkMajor, sdkMinor, 0);
   final (int, int) lv;
   final String effectiveLv;
@@ -144,7 +144,7 @@ FormatMode resolveFormatMode(String sdkVersion, String languageVersion) {
     lv = (sdkMajor, sdkMinor);
     effectiveLv = '$sdkMajor.$sdkMinor';
   } else {
-    final parsed = _parseMajorMinor(languageVersion);
+    final (int, int)? parsed = _parseMajorMinor(languageVersion);
     if (parsed == null) {
       return FormatMode(
         inProcess: false,
@@ -163,17 +163,17 @@ FormatMode resolveFormatMode(String sdkVersion, String languageVersion) {
     formatterMinLanguageVersion.$2,
     0,
   );
-  final sdkMatches =
+  final bool sdkMatches =
       (sdkMajor, sdkMinor) == formatterSdkSeries &&
       sdkPatch >= formatterMinSdkPatch;
-  final lvValid2x =
+  final bool lvValid2x =
       lv.$1 == 2 &&
       lv.$2 >= formatterMinLanguageVersion.$2 &&
       lv.$2 <= formatterMax2xMinor;
-  final lvValid3x = lv.$1 == 3 && lv.$2 >= 0 && lv.$2 <= formatterSdkSeries.$2;
-  final lvSupported =
-      (lvValid2x || lvValid3x) && parsedLv >= minLv && parsedLv <= sdkLv;
-  final inProcess = sdkMatches && lvSupported;
+  final bool ok3x = lv.$1 == 3 && lv.$2 >= 0 && lv.$2 <= formatterSdkSeries.$2;
+  final bool lvSupported =
+      (lvValid2x || ok3x) && parsedLv >= minLv && parsedLv <= sdkLv;
+  final bool inProcess = sdkMatches && lvSupported;
   return FormatMode(
     inProcess: inProcess,
     languageVersion: effectiveLv,
@@ -204,17 +204,17 @@ final _langOverridePattern = RegExp(
 
 String? _probeForSdkOverride(String text, Version? sdkLanguageVersion) {
   if (sdkLanguageVersion == null) return null;
-  final match = _langOverridePattern.firstMatch(text);
+  final RegExpMatch? match = _langOverridePattern.firstMatch(text);
   if (match == null) return null;
-  final majorStr = match[2]!;
-  final minorStr = match[3]!;
-  final major = int.tryParse(majorStr);
-  final minor = int.tryParse(minorStr);
+  final String majorStr = match[2]!;
+  final String minorStr = match[3]!;
+  final int? major = int.tryParse(majorStr);
+  final int? minor = int.tryParse(minorStr);
   if (major == null || minor == null) return null;
   final overrideLv = Version(major, minor, 0);
   if (overrideLv <= sdkLanguageVersion) return null;
-  final highMajor = '9' * majorStr.length;
-  final highMinor = '9' * minorStr.length;
+  final String highMajor = '9' * majorStr.length;
+  final String highMinor = '9' * minorStr.length;
   return text.replaceRange(
     match.start,
     match.end,
@@ -227,28 +227,27 @@ Future<int> runFormatRequest(
   required StringSink outSink,
   required StringSink errSink,
 }) async {
-  final parsed = _parseFormatArgs(args, errSink: errSink);
+  final _FormatArgs? parsed = _parseFormatArgs(args, errSink: errSink);
   if (parsed == null) return 64;
-  final project = parsed.project;
-  final manifest = parsed.manifest;
-  final stamp = parsed.stamp;
-  final languageVersion = parsed.languageVersion;
+  final String project = parsed.project;
+  final String stamp = parsed.stamp;
+  final String languageVersion = parsed.languageVersion;
 
-  final allowedSrcPaths = pruneStagedSrcFiles(project);
+  final Set<String>? allowedSrcPaths = pruneStagedSrcFiles(project);
 
-  final files = _readFormatManifest(
+  final List<String>? files = _readFormatManifest(
     project: project,
-    manifest: manifest,
+    manifest: parsed.manifest,
     allowedSrcPaths: allowedSrcPaths,
     errSink: errSink,
   );
   if (files == null) return 1;
-  final projectRoot = p.normalize(p.absolute(project));
-  final srcRoot = p.normalize(p.join(projectRoot, 'src'));
+  final String projectRoot = p.normalize(p.absolute(project));
+  final String srcRoot = p.normalize(p.join(projectRoot, 'src'));
 
-  final resolvedSdkVersion = _resolveSdkVersion(parsed.sdkVersion, parsed.dart);
-  final mode = resolveFormatMode(resolvedSdkVersion, languageVersion);
-  final parsedVersion = mode.parsedLanguageVersion;
+  final String sdk = _resolveSdkVersion(parsed.sdkVersion, parsed.dart);
+  final FormatMode mode = resolveFormatMode(sdk, languageVersion);
+  final Version? parsedVersion = mode.parsedLanguageVersion;
   if (!mode.inProcess || parsedVersion == null) {
     if (parsed.dart case final dart?) {
       return _runSubprocessFallback((
@@ -263,7 +262,7 @@ Future<int> runFormatRequest(
     }
     errSink.writeln(
       'format_runner: unsupported --language-version "$languageVersion" '
-      'for SDK "$resolvedSdkVersion"',
+      'for SDK "$sdk"',
     );
     return 64;
   }
@@ -281,7 +280,7 @@ Future<int> runFormatRequest(
   );
 
   final stopwatch = Stopwatch()..start();
-  final outcome = await session.formatFiles(
+  final ({int changedCount, bool hadError}) outcome = await session.formatFiles(
     files,
     parsedVersion: parsedVersion,
     sdkLanguageVersion: mode.sdkLanguageVersion,
@@ -324,7 +323,7 @@ _FormatArgs? _parseFormatArgs(
   String? stamp;
   String? languageVersion;
   for (var i = 0; i < args.length; i++) {
-    final arg = args[i];
+    final String arg = args[i];
     if (arg.isEmpty) continue;
     switch (arg) {
       case '--dart':
@@ -373,7 +372,7 @@ List<String>? _readFormatManifest({
   required Set<String>? allowedSrcPaths,
   required StringSink errSink,
 }) {
-  final files = File(manifest)
+  final List<String> files = File(manifest)
       .readAsLinesSync()
       .where((l) => l.trim().isNotEmpty)
       .map((l) => _join(project, l.trim()))
@@ -382,11 +381,11 @@ List<String>? _readFormatManifest({
     errSink.writeln('format_runner: no files listed in manifest $manifest');
     return null;
   }
-  final projectRoot = p.normalize(p.absolute(project));
-  final srcRoot = p.normalize(p.join(projectRoot, 'src'));
+  final String projectRoot = p.normalize(p.absolute(project));
+  final String srcRoot = p.normalize(p.join(projectRoot, 'src'));
   if (allowedSrcPaths != null) {
     for (final file in files) {
-      final normFile = p.normalize(p.absolute(file));
+      final String normFile = p.normalize(p.absolute(file));
       if (p.isWithin(srcRoot, normFile) &&
           !allowedSrcPaths.contains(normFile)) {
         errSink.writeln(
@@ -437,7 +436,7 @@ class _FormatSession {
         hadError = true;
         continue;
       }
-      final opts = await findOptions(file);
+      final _FormatOptions opts = await findOptions(file);
       final formatter = DartFormatter(
         languageVersion: parsedVersion,
         pageWidth: opts.pageWidth ?? DartFormatter.defaultPageWidth,
@@ -445,13 +444,13 @@ class _FormatSession {
         experimentFlags: opts.experimentFlags,
       );
       try {
-        final text = file.readAsStringSync();
-        final probe = _probeForSdkOverride(text, sdkLanguageVersion);
+        final String text = file.readAsStringSync();
+        final String? probe = _probeForSdkOverride(text, sdkLanguageVersion);
         if (probe != null) {
           formatter.formatSource(SourceCode(probe, uri: file.path));
         }
         final source = SourceCode(text, uri: file.path);
-        final output = formatter.formatSource(source);
+        final SourceCode output = formatter.formatSource(source);
         final changed = source.text != output.text;
         if (changed) {
           outBuf.writeln('Changed ${file.path}');
@@ -483,22 +482,22 @@ $stack''',
   /// The nearest `package_config.json` at or above [file]'s directory,
   /// stopping at the staged project root.
   Future<PackageConfig?> findDirPackageConfig(File file) async {
-    final dir = file.parent.path;
+    final String dir = file.parent.path;
     if (directoryConfigs.containsKey(dir)) {
       return directoryConfigs[dir];
     }
     try {
-      var current = Directory(p.normalize(p.absolute(dir)));
+      var cur = Directory(p.normalize(p.absolute(dir)));
       while (true) {
-        final cfg = await findPackageConfig(current, recurse: false);
+        final PackageConfig? cfg = await findPackageConfig(cur, recurse: false);
         if (cfg != null) {
           return directoryConfigs[dir] = cfg;
         }
-        final normCurrent = p.normalize(current.path);
+        final String normCurrent = p.normalize(cur.path);
         if (normCurrent == projectRoot) break;
-        final parent = current.parent;
+        final Directory parent = cur.parent;
         if (p.normalize(parent.path) == normCurrent) break;
-        current = parent;
+        cur = parent;
       }
       return directoryConfigs[dir] = null;
     } on FileSystemException {
@@ -513,7 +512,7 @@ $stack''',
   }
 
   Future<String?> resolvePackageUri(File file, Uri packageUri) async {
-    final config = await findDirPackageConfig(file);
+    final PackageConfig? config = await findDirPackageConfig(file);
     if (config == null) return null;
     return config.resolve(packageUri)?.toFilePath();
   }
@@ -526,7 +525,7 @@ $stack''',
 
   /// The formatter options for [file]'s directory, read once and cached.
   Future<_FormatOptions> findOptions(File file) async {
-    final dir = file.parent.path;
+    final String dir = file.parent.path;
     if (directoryOptions[dir] case final cached?) return cached;
     _FormatOptions options = (
       pageWidth: null,
@@ -534,7 +533,7 @@ $stack''',
       experimentFlags: <String>[],
     );
     try {
-      final optionsFile = await findAnalysisOptions(
+      final AnalysisOptions optionsFile = await findAnalysisOptions(
         fileSystem,
         await fileSystem.makePath(file.path),
         reportFailedRead: reportFailedRead,
@@ -545,7 +544,8 @@ $stack''',
         trailingCommas: options.trailingCommas,
         experimentFlags: _experimentFlags(optionsFile['analyzer']),
       );
-      final formatterOptions = _formatterSettings(optionsFile['formatter']);
+      final ({int? pageWidth, TrailingCommas? trailingCommas})
+      formatterOptions = _formatterSettings(optionsFile['formatter']);
       options = (
         pageWidth: formatterOptions.pageWidth ?? options.pageWidth,
         trailingCommas:
@@ -638,7 +638,7 @@ typedef _FormatReport = ({
 
 /// Writes the run's summary and stamp file, returning its exit code.
 int _reportFormatResult(_FormatReport report) {
-  final time = report.elapsedSeconds;
+  final String time = report.elapsedSeconds;
   if (report.fileCount == 0) {
     report.outBuf.writeln('Formatted no files in $time seconds.');
   } else if (report.fileCount == 1) {
@@ -688,10 +688,10 @@ typedef _FallbackRequest = ({
 });
 
 int _runSubprocessFallback(_FallbackRequest request) {
-  final failed = withPrivateHome('rules_dart_format_home.', (env) {
+  final bool failed = withPrivateHome('rules_dart_format_home.', (env) {
     var chunkFailed = false;
-    for (final chunk in _chunks(request.files)) {
-      final result = Process.runSync(
+    for (final List<String> chunk in _chunks(request.files)) {
+      final ProcessResult result = Process.runSync(
         request.dart,
         [
           'format',
@@ -755,7 +755,7 @@ final class _BoundedFileSystem implements FileSystem {
   Future<FileSystemPath?> parentDirectory(
     covariant IOFileSystemPath path,
   ) async {
-    final norm = p.normalize(p.absolute(path.path));
+    final String norm = p.normalize(p.absolute(path.path));
     if (norm == srcRoot || norm == projectRoot) {
       return null;
     }
@@ -768,13 +768,13 @@ final class _BoundedFileSystem implements FileSystem {
 }
 
 String _unstage(String out, String project) {
-  final relative = project.replaceAll(r'\', '/');
-  final absolute = Directory(project).absolute.path.replaceAll(r'\', '/');
-  final normalized = p.normalize(p.absolute(project)).replaceAll(r'\', '/');
+  String fwd(String path) => path.replaceAll(r'\', '/');
+  final String absolute = fwd(Directory(project).absolute.path);
+  final String normalized = fwd(p.normalize(p.absolute(project)));
   return out
       .replaceAll('$normalized/src/', '')
       .replaceAll('$absolute/src/', '')
-      .replaceAll('$relative/src/', '');
+      .replaceAll('${fwd(project)}/src/', '');
 }
 
 bool _warned(String err) =>

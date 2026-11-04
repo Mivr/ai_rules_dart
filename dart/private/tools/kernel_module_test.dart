@@ -15,7 +15,11 @@ import 'comma_patch.dart' show patchSnapshotFile;
 import 'dill_outline.dart'
     show Tag, stripDillToOutline, supportedKernelFormatVersions;
 import 'dill_reader.dart'
-    show dillCanonicalRoots, dillLibraryReferences, dillSourceUris;
+    show
+        DillLibraryReference,
+        dillCanonicalRoots,
+        dillLibraryReferences,
+        dillSourceUris;
 import 'kernel_link.dart'
     show KernelLinkCache, decodeKernelLinkWorkRequestInputs, linkOne;
 import 'worker_test_encode.dart'
@@ -25,6 +29,8 @@ import 'kernel_module.dart'
         KernelModuleCache,
         ModuleCompiler,
         ModuleOutcome,
+        ScanRef,
+        ScanResult,
         compileModule,
         decodeKernelModuleWorkRequestInputs,
         decodeUriSegment,
@@ -42,6 +48,7 @@ import 'kernel_module.dart'
         sha256Of,
         stripSourceCodeFromDill,
         vmLibraries;
+import 'kernel_module_test_support.dart';
 
 const _prefix = 'org-dartlang-root:///';
 
@@ -77,7 +84,10 @@ class _ProcessModuleCompiler implements ModuleCompiler {
 
   @override
   Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
-    final res = await Process.run(dartaotruntime, [kernelWorker, ...args]);
+    final ProcessResult res = await Process.run(dartaotruntime, [
+      kernelWorker,
+      ...args,
+    ]);
     return ModuleOutcome(res.exitCode, '${res.stdout}${res.stderr}');
   }
 
@@ -96,7 +106,7 @@ class _DillWritingCompiler implements ModuleCompiler {
   @override
   Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
     calls.add(args);
-    final outIdx = args.indexOf('--output');
+    final int outIdx = args.indexOf('--output');
     await File(args[outIdx + 1]).writeAsBytes(dillBytes());
     return const ModuleOutcome(0, '');
   }
@@ -152,7 +162,7 @@ class _ReportingCompiler implements ModuleCompiler {
         ].join(),
       );
     }
-    final outIdx = args.indexOf('--output');
+    final int outIdx = args.indexOf('--output');
     if (exitCode == 0 && dillBytes != null) {
       await File(args[outIdx + 1]).writeAsBytes(dillBytes!());
     }
@@ -310,7 +320,7 @@ Future<void> _withCwd(Object dir, Future<void> Function() body) async {
 
 /// Writes the `.vm_excluded.txt` sidecar of a module, with `excluded` as its sources.
 String _sidecar(String name, Map<String, String> excluded) {
-  final lines = [
+  final List<String> lines = [
     for (final entry in excluded.entries) '${_uri(entry.key)}\t${entry.value}',
   ];
   _write('$name.vm_excluded.txt', lines.map((line) => '$line\n').join());
@@ -340,9 +350,9 @@ Future<_Result> _compile(
   // drive-letter spelling exercises Windows-style action paths on Linux.
   String? outputDir,
 }) async {
-  final output = outputDir ?? '${_root.path}/out/$name';
+  final String output = outputDir ?? '${_root.path}/out/$name';
   final excludedPath = '$output.vm_excluded.txt';
-  final prefix = scheme == null ? _prefix : '$scheme:///';
+  final String prefix = scheme == null ? _prefix : '$scheme:///';
   final args = <String>[
     for (final source in sources) ...['--source', '$prefix$source'],
     for (final source in sources) ...[
@@ -376,12 +386,12 @@ Future<_Result> _compile(
   ];
   final recorder = _Recorder();
   final log = StringBuffer();
-  final code = await compileModule(args, compiler ?? recorder, log, inputs);
+  final int code = await compileModule(args, compiler ?? recorder, log, inputs);
   final written = code == 0
       ? jsonDecode(File('$output/index.json').readAsStringSync())
             as Map<String, dynamic>
       : <String, dynamic>{'sccs': <dynamic>[]};
-  final calls = compiler is _DillWritingCompiler
+  final List<List<String>> calls = compiler is _DillWritingCompiler
       ? compiler.calls
       : recorder.calls;
   return _Result(
@@ -391,414 +401,6 @@ Future<_Result> _compile(
     written,
     log.toString(),
   );
-}
-
-Uint8List _buildMinimalFieldDill({
-  int formatVersion = Tag.BinaryFormatVersion,
-  int languageMajor = 3,
-  bool hasConstConstructor = true,
-}) {
-  final out = BytesBuilder();
-  void u30(int v) {
-    assert(v >= 0 && v < 0x80);
-    out.addByte(v);
-  }
-
-  void u32(int v) {
-    out.addByte((v >> 24) & 0xff);
-    out.addByte((v >> 16) & 0xff);
-    out.addByte((v >> 8) & 0xff);
-    out.addByte(v & 0xff);
-  }
-
-  // 18-byte header + problemsAsJson (UInt30(0))
-  u32(Tag.ComponentFile);
-  u32(formatVersion);
-  for (var i = 0; i < 10; i++) {
-    out.addByte(0);
-  }
-  u30(0);
-
-  final libStart = out.length;
-  out.addByte(0); // flags
-  u30(languageMajor); // major
-  u30(0); // minor
-  u30(1); // canonicalName
-  u30(1); // name
-  u30(0); // fileUri
-  u30(0); // problemsAsJson
-  u30(0); // annotations
-  u30(0); // depCount
-  u30(0); // expCount
-  u30(0); // partCount
-  u30(0); // tdCount
-  u30(1); // clsCount = 1
-
-  final clsStart = out.length;
-  out.addByte(Tag.Class);
-  u30(1); // canonicalName
-  u30(0); // fileUri
-  u30(0);
-  u30(0);
-  u30(0); // 3 offsets
-  u30(0); // flags (not a mixin)
-  u30(1); // name
-  u30(0); // annotations
-  u30(0); // typeParameters
-  out.addByte(Tag.Nothing); // supertype
-  out.addByte(Tag.Nothing); // mixedInType
-  u30(0); // implementedTypes
-
-  // 3 fields: (flags=1 final instance, val=42), (flags=5 static final, val=99), (flags=0 mutable, val=77)
-  u30(3);
-  for (final (flags, val) in [(1, 42), (5, 99), (0, 77)]) {
-    out.addByte(Tag.Field);
-    u30(1);
-    u30(1);
-    u30(0); // 3 canonRefs
-    u30(0); // uriRef
-    u30(0);
-    u30(0); // 2 offsets
-    u30(flags);
-    u30(1); // name ("f")
-    u30(0); // scopeSize
-    u30(0); // annotations
-    out.addByte(Tag.DynamicType);
-    out.addByte(Tag.Nothing); // option variable
-    out.addByte(Tag.Something); // option expression
-    out.addByte(Tag.PositiveIntLiteral);
-    u30(0); // fileOffset
-    u30(val);
-    out.addByte(Tag.Nothing); // option scope
-  }
-  if (hasConstConstructor) {
-    u30(1); // ctorCount = 1
-    out.addByte(Tag.Constructor);
-    u30(1); // canonicalName
-    u30(0); // fileUri
-    u30(0);
-    u30(0);
-    u30(0); // 3 offsets
-    out.addByte(1); // flags = 1 (isConst)
-    u30(1); // name ("f")
-    u30(0); // annotations
-    out.addByte(Tag.FunctionNode);
-    u30(0);
-    u30(0); // 2 offsets
-    out.addByte(0); // asyncMarker
-    out.addByte(0); // dartAsyncMarker
-    u30(0); // scopeSize
-    u30(0); // typeParameters
-    out.addByte(Tag.Nothing); // thisVariable
-    u30(0); // totalParameterCount
-    u30(0); // requiredParameterCount
-    u30(0); // posCount
-    u30(0); // namedCount
-    out.addByte(Tag.DynamicType); // returnType
-    out.addByte(Tag.Nothing); // futureValueType
-    out.addByte(0); // rftTag
-    out.addByte(Tag.Nothing); // body Option<Statement>
-    out.addByte(Tag.Nothing); // option scope
-    out.addByte(Tag.Nothing); // option captured contexts
-    u30(0); // initCount
-  } else {
-    u30(0); // ctorCount = 0
-  }
-  u30(0); // pCount = 0
-  final clsProcEnd = out.length;
-  u32(clsProcEnd);
-  u32(0); // procCount = 0
-  final clsEnd = out.length;
-
-  u30(0); // extCount
-  u30(0); // extTypeCount
-  u30(0); // fieldCount
-  u30(2); // pCount = 2
-  final procOffsets = <int>[];
-  for (final (flags, val) in [(9, 88), (1, 66)]) {
-    procOffsets.add(out.length);
-    out.addByte(Tag.Procedure);
-    u30(1); // canonicalName
-    u30(0); // fileUri
-    u30(0);
-    u30(0);
-    u30(0); // 3 offsets
-    out.addByte(0); // kind
-    out.addByte(0); // stubKind
-    u30(flags); // flags (9 = FlagStatic | FlagConst, 1 = FlagStatic)
-    u30(1); // name ("f")
-    u30(0); // annotations
-    u30(0); // stubTarget
-    out.addByte(Tag.Nothing); // signatureType
-    out.addByte(Tag.FunctionNode);
-    u30(0);
-    u30(0); // 2 offsets
-    out.addByte(0); // asyncMarker
-    out.addByte(0); // dartAsyncMarker
-    u30(0); // scopeSize
-    u30(0); // typeParameters
-    out.addByte(Tag.Nothing); // thisVariable
-    u30(0); // totalParameterCount
-    u30(0); // requiredParameterCount
-    u30(0); // posCount
-    u30(0); // namedCount
-    out.addByte(Tag.DynamicType); // returnType
-    out.addByte(Tag.Nothing); // futureValueType
-    out.addByte(0); // rftTag
-    out.addByte(Tag.Something); // body Option<Statement>
-    out.addByte(Tag.ReturnStatement);
-    u30(0); // fileOffset
-    out.addByte(Tag.Something); // expression
-    out.addByte(Tag.PositiveIntLiteral);
-    u30(0); // fileOffset
-    u30(val);
-    out.addByte(Tag.Nothing); // option scope
-    out.addByte(Tag.Nothing); // option captured contexts
-  }
-  final libProcEnd = out.length;
-  procOffsets.add(libProcEnd);
-  final sourceRefsOffset = out.length;
-  u30(0); // usedCount = 0
-  u32(sourceRefsOffset);
-  u32(clsStart);
-  u32(clsEnd);
-  u32(1); // classCount = 1
-  for (final off in procOffsets) {
-    u32(off);
-  }
-  u32(2); // procCount = 2
-  final libEnd = out.length;
-
-  // Source table
-  final sourceTableOffset = libEnd;
-  u32(1); // uriCount = 1
-  final uriEntry0 = out.length;
-  u30(0); // uriLen
-  u30(0); // srcLen
-  u30(0); // lineCount
-  u30(0); // impLen
-  u30(0); // covCount
-  u32(uriEntry0);
-
-  // Constant table
-  final constantTableOffset = out.length;
-  u30(0); // constCount = 0
-  final constantTableIndexOffset = out.length;
-  u32(0); // constCount = 0
-
-  // Link table
-  final linkTableOffset = out.length;
-  u30(1); // canonCount = 1
-  u30(0); // parent
-  u30(1); // string index 1
-
-  // Metadata
-  final metaOffset = out.length;
-  u32(0);
-
-  // String table: ["", "f"]
-  final stringTableOffset = out.length;
-  u30(2);
-  u30(0);
-  u30(1);
-  out.addByte(102); // "f"
-
-  // Component index
-  final componentIndexOffset = out.length;
-  u32(sourceTableOffset);
-  u32(constantTableOffset);
-  u32(constantTableIndexOffset);
-  u32(linkTableOffset);
-  u32(metaOffset);
-  u32(metaOffset);
-  u32(stringTableOffset);
-  u32(componentIndexOffset);
-  u32(0); // mainMethodReference
-  u32(libStart);
-  u32(libEnd);
-  u32(1); // libraryCount = 1
-  u32(out.length + 4);
-  return out.toBytes();
-}
-
-/// A structurally valid kernel component whose source table holds exactly [uris]
-/// (with empty source code, line starts, import URIs and coverage), for
-/// read-set verification tests. The bytes between the header and the source
-/// table are filler: the verifier reads only the source table and the trailer
-/// index.
-Uint8List _buildDillWithUris(
-  List<String> uris, {
-  int formatVersion = Tag.BinaryFormatVersion,
-}) {
-  final out = BytesBuilder();
-  void u30(int v) {
-    if (v < 0x80) {
-      out.addByte(v);
-    } else if (v < 0x4000) {
-      out.addByte(0x80 | (v >> 8));
-      out.addByte(v & 0xff);
-    } else {
-      out.addByte(0xc0 | ((v >> 24) & 0x3f));
-      out.addByte((v >> 16) & 0xff);
-      out.addByte((v >> 8) & 0xff);
-      out.addByte(v & 0xff);
-    }
-  }
-
-  void u32(int v) {
-    out.addByte((v >> 24) & 0xff);
-    out.addByte((v >> 16) & 0xff);
-    out.addByte((v >> 8) & 0xff);
-    out.addByte(v & 0xff);
-  }
-
-  void str(String s) {
-    final bytes = utf8.encode(s);
-    u30(bytes.length);
-    out.add(bytes);
-  }
-
-  u32(Tag.ComponentFile);
-  u32(formatVersion);
-  out.add(List.filled(64, 0));
-  final sourceTableOffset = out.length;
-  u32(uris.length);
-  for (final uri in uris) {
-    str(uri);
-    str('');
-    u30(0);
-    str('');
-    u30(0);
-  }
-  final constantTableOffset = out.length;
-  u30(0);
-  u32(sourceTableOffset);
-  u32(constantTableOffset);
-  for (var i = 0; i < 8; i++) {
-    u32(constantTableOffset);
-  }
-  u32(0); // libraryCount = 0
-  u32(out.length + 4);
-  return out.toBytes();
-}
-
-/// A structurally valid kernel component whose source table holds [sources]
-/// as (`fileUri`, `importUri`) pairs and whose library table holds one node
-/// per entry of [libraries]: a source-table index with a canonical-name root
-/// (null for a null reference). The string table holds the empty node name
-/// plus each distinct canonical name, and the link table one root per
-/// library — plus each of [extraRoots], which no node mentions, so the bytes
-/// exercise a smuggled canonical root the library walk alone would miss.
-Uint8List _buildDillWithLibraries({
-  required List<(String, String)> sources,
-  required List<(int, String?)> libraries,
-  int formatVersion = Tag.BinaryFormatVersion,
-  List<String> extraRoots = const [],
-}) {
-  final out = BytesBuilder();
-  void u30(int v) {
-    if (v < 0x80) {
-      out.addByte(v);
-    } else if (v < 0x4000) {
-      out.addByte(0x80 | (v >> 8));
-      out.addByte(v & 0xff);
-    } else {
-      out.addByte(0xc0 | ((v >> 24) & 0x3f));
-      out.addByte((v >> 16) & 0xff);
-      out.addByte((v >> 8) & 0xff);
-      out.addByte(v & 0xff);
-    }
-  }
-
-  void u32(int v) {
-    out.addByte((v >> 24) & 0xff);
-    out.addByte((v >> 16) & 0xff);
-    out.addByte((v >> 8) & 0xff);
-    out.addByte(v & 0xff);
-  }
-
-  void str(String s) {
-    final bytes = utf8.encode(s);
-    u30(bytes.length);
-    out.add(bytes);
-  }
-
-  final strings = <String>[''];
-  int stringIndexOf(String s) {
-    var index = strings.indexOf(s);
-    if (index < 0) {
-      index = strings.length;
-      strings.add(s);
-    }
-    return index;
-  }
-
-  u32(Tag.ComponentFile);
-  u32(formatVersion);
-  out.add(List.filled(64, 0));
-  final sourceTableOffset = out.length;
-  u32(sources.length);
-  for (final (fileUri, importUri) in sources) {
-    str(fileUri);
-    str('');
-    u30(0);
-    str(importUri);
-    u30(0);
-  }
-  final constantTableOffset = out.length;
-  u30(0);
-  final linkTableOffset = out.length;
-  u30(libraries.length + extraRoots.length);
-  for (final (_, canon) in libraries) {
-    u30(0); // Parent: the nameless root.
-    u30(canon == null ? 0 : stringIndexOf(canon));
-  }
-  for (final root in extraRoots) {
-    u30(0); // Parent: the nameless root no node references.
-    u30(stringIndexOf(root));
-  }
-  final stringTableOffset = out.length;
-  u30(strings.length);
-  var end = 0;
-  final ends = <int>[];
-  for (final s in strings) {
-    end += utf8.encode(s).length;
-    ends.add(end);
-  }
-  for (final e in ends) {
-    u30(e);
-  }
-  for (final s in strings) {
-    out.add(utf8.encode(s));
-  }
-  final libraryOffsets = <int>[];
-  for (var i = 0; i < libraries.length; i++) {
-    libraryOffsets.add(out.length);
-    final (source, canon) = libraries[i];
-    out.addByte(4); // Flags.
-    u30(3); // Major version.
-    u30(0); // Minor version.
-    // Canonical-name reference, biased by one; zero names no reference.
-    u30(canon == null ? 0 : i + 1);
-    u30(0); // Name string reference: the empty name.
-    u30(source);
-  }
-  libraryOffsets.add(out.length);
-  u32(sourceTableOffset);
-  u32(constantTableOffset);
-  u32(constantTableOffset);
-  u32(linkTableOffset);
-  u32(linkTableOffset);
-  u32(linkTableOffset);
-  u32(stringTableOffset);
-  u32(stringTableOffset);
-  u32(stringTableOffset);
-  for (final offset in libraryOffsets) {
-    u32(offset);
-  }
-  u32(libraries.length);
-  u32(out.length + 4);
-  return out.toBytes();
 }
 
 bool _containsSubsequence(Uint8List haystack, List<int> needle) {
@@ -854,14 +456,14 @@ Uint8List _requestFrameForTest(List<String> arguments, int requestId) {
   final message = BytesBuilder();
   for (final argument in arguments) {
     message.addByte(0x0a);
-    final bytes = utf8.encode(argument);
+    final Uint8List bytes = utf8.encode(argument);
     _writeVarintForTest(message, bytes.length);
     message.add(bytes);
   }
   message.addByte(0x18);
   _writeVarintForTest(message, requestId);
   final frame = BytesBuilder();
-  final payload = message.toBytes();
+  final Uint8List payload = message.toBytes();
   _writeVarintForTest(frame, payload.length);
   frame.add(payload);
   return frame.toBytes();
@@ -888,7 +490,7 @@ Future<(int, String, int)> _readResponseForTest(
     var result = 0;
     var shift = 0;
     while (true) {
-      final b = await byte();
+      final int b = await byte();
       result |= (b & 0x7f) << shift;
       if (b < 0x80) return result;
       shift += 7;
@@ -903,7 +505,7 @@ Future<(int, String, int)> _readResponseForTest(
     return Uint8List.fromList(out);
   }
 
-  final payload = await bytes(await varint());
+  final Uint8List payload = await bytes(await varint());
   var exitCode = 0;
   var output = '';
   var requestId = 0;
@@ -912,7 +514,7 @@ Future<(int, String, int)> _readResponseForTest(
     var r = 0;
     var s = 0;
     while (true) {
-      final b = payload[p++];
+      final int b = payload[p++];
       r |= (b & 0x7f) << s;
       if (b < 0x80) return r;
       s += 7;
@@ -924,7 +526,7 @@ Future<(int, String, int)> _readResponseForTest(
       case 0x08:
         exitCode = v();
       case 0x12:
-        final n = v();
+        final int n = v();
         output = utf8.decode(payload.sublist(p, p + n));
         p += n;
       case 0x18:
@@ -981,7 +583,10 @@ void main(List<String> args) {
   test('a library that imports only the VM compiles every source', () async {
     _write('pkg/lib/a.dart', "import 'dart:async';\nclass A {}\n");
     _write('pkg/lib/b.dart', "import 'a.dart';\nclass B {}\n");
-    final result = await _compile('m', ['pkg/lib/a.dart', 'pkg/lib/b.dart']);
+    final _Result result = await _compile('m', [
+      'pkg/lib/a.dart',
+      'pkg/lib/b.dart',
+    ]);
     expect(result.code, 0);
     expect(result.excluded, isEmpty);
     expect(result.defines, [
@@ -996,7 +601,7 @@ void main(List<String> args) {
       _write('pkg/lib/web.dart', "import 'dart:html';\nclass Web {}\n");
       _write('pkg/lib/uses_web.dart', "import 'web.dart';\n");
       _write('pkg/lib/plain.dart', "import 'dart:io';\nclass Plain {}\n");
-      final result = await _compile('m', [
+      final _Result result = await _compile('m', [
         'pkg/lib/web.dart',
         'pkg/lib/uses_web.dart',
         'pkg/lib/plain.dart',
@@ -1019,7 +624,7 @@ void main(List<String> args) {
     _write('pkg/lib/needs.dart', "import 'package:absent/absent.dart';\n");
     _write('pkg/lib/fine.dart', "import 'package:pkg/other.dart';\n");
     _write('pkg/lib/other.dart', 'class Other {}\n');
-    final result = await _compile('m', [
+    final _Result result = await _compile('m', [
       'pkg/lib/needs.dart',
       'pkg/lib/fine.dart',
       'pkg/lib/other.dart',
@@ -1044,7 +649,7 @@ void main(List<String> args) {
       _write('pkg/lib/role.dart', "part 'role.g.dart';\nenum Role { a }\n");
       _write('pkg/lib/user.dart', "import 'role.dart';\n");
       _write('pkg/lib/extra.dart', 'class Extra {}\n');
-      final result = await _compile('m', [
+      final _Result result = await _compile('m', [
         'pkg/lib/role.dart',
         'pkg/lib/user.dart',
         'pkg/lib/extra.dart',
@@ -1067,7 +672,7 @@ void main(List<String> args) {
     () async {
       _write('pkg/lib/role.dart', "part 'role.g.dart';\nenum Role { a }\n");
       _write('pkg/lib/role.g.dart', "part of 'role.dart';\nconst kRole = 1;\n");
-      final result = await _compile('m', [
+      final _Result result = await _compile('m', [
         'pkg/lib/role.dart',
         'pkg/lib/role.g.dart',
       ]);
@@ -1090,7 +695,7 @@ void main(List<String> args) {
     _write('pkg/lib/role.g.dart', "part of 'role.dart';\nconst kRole = 1;\n");
     _write('pkg/lib/by_name.g.dart', 'part of my.role;\nconst kByName = 2;\n');
     _write('pkg/lib/plain.dart', 'class Plain {}\n');
-    final result = await _compile('m', [
+    final _Result result = await _compile('m', [
       'pkg/lib/role.g.dart',
       'pkg/lib/by_name.g.dart',
       'pkg/lib/plain.dart',
@@ -1120,12 +725,12 @@ void main(List<String> args) {
 
     // Dependent owns the parts; parent is a declared `--input-source` and listed
     // in closureExcluded from the dependency target.
-    final depParent = _module('dep_parent', []);
-    final sidecarParent = _sidecar('dep_parent', {
+    final String depParent = _module('dep_parent', []);
+    final String sidecarParent = _sidecar('dep_parent', {
       'pkg/lib/parent.dart':
           'its part uri_part.dart is not an input of this module',
     });
-    final fromParts = await _compile(
+    final _Result fromParts = await _compile(
       'from_parts',
       ['pkg/lib/uri_part.dart', 'pkg/lib/named_part.dart'],
       inputSources: ['pkg/lib/parent.dart'],
@@ -1143,14 +748,14 @@ void main(List<String> args) {
     ]);
 
     // Reverse: dependent owns the parent; parts are declared `--input-source`s.
-    final depParts = _module('dep_parts', []);
-    final sidecarParts = _sidecar('dep_parts', {
+    final String depParts = _module('dep_parts', []);
+    final String sidecarParts = _sidecar('dep_parts', {
       'pkg/lib/uri_part.dart':
           'its library parent.dart is not an input of this module',
       'pkg/lib/named_part.dart':
           'its library my.parent is not an input of this module',
     });
-    final fromParent = await _compile(
+    final _Result fromParent = await _compile(
       'from_parent',
       ['pkg/lib/parent.dart'],
       inputSources: ['pkg/lib/uri_part.dart', 'pkg/lib/named_part.dart'],
@@ -1178,12 +783,12 @@ void main(List<String> args) {
       "part of '../parent.dart';\nconst a = 1;\n",
     );
 
-    final dep = _module('dep_sub_part', []);
-    final sidecar = _sidecar('dep_sub_part', {
+    final String dep = _module('dep_sub_part', []);
+    final String sidecar = _sidecar('dep_sub_part', {
       'pkg/lib/parent.dart':
           'its part sub/uri_part.dart is not an input of this module',
     });
-    final result = await _compile(
+    final _Result result = await _compile(
       'from_sub_part',
       ['pkg/lib/sub/uri_part.dart'],
       inputSources: ['pkg/lib/parent.dart'],
@@ -1499,7 +1104,7 @@ void main(List<String> args) {
 
   group('dill source URIs', () {
     test('reads every source table of single and concatenated components', () {
-      final one = _buildDillWithUris([
+      final Uint8List one = buildDillWithUris([
         'org-dartlang-root:///pkg/lib/a.dart',
         'org-dartlang-sdk:///sdk/lib/core/core.dart',
       ]);
@@ -1508,8 +1113,8 @@ void main(List<String> args) {
         'org-dartlang-sdk:///sdk/lib/core/core.dart',
       ]);
       final two = Uint8List.fromList([
-        ..._buildDillWithUris(['a']),
-        ..._buildDillWithUris(['b', 'c']),
+        ...buildDillWithUris(['a']),
+        ...buildDillWithUris(['b', 'c']),
       ]);
       expect(dillSourceUris(two), ['a', 'b', 'c']);
     });
@@ -1517,15 +1122,15 @@ void main(List<String> args) {
     test('fails closed on malformed bytes', () {
       expect(dillSourceUris(Uint8List(0)), isNull);
       expect(dillSourceUris(Uint8List.fromList([1, 2, 3])), isNull);
-      final good = _buildDillWithUris(['a']);
+      final Uint8List good = buildDillWithUris(['a']);
       final badMagic = Uint8List.fromList(good)..[0] = 0;
       expect(dillSourceUris(badMagic), isNull);
       // The source-table layout is stable across SDKs, so well-formed tables
       // parse at any format version (127 is Dart 3.11.0, 130 is 3.12.2):
       // gating on the version failed legitimate compiles.
-      for (final version in [127, 130, Tag.BinaryFormatVersion]) {
+      for (final int version in [127, 130, Tag.BinaryFormatVersion]) {
         expect(
-          dillSourceUris(_buildDillWithUris(['a'], formatVersion: version)),
+          dillSourceUris(buildDillWithUris(['a'], formatVersion: version)),
           ['a'],
           reason: 'format version $version',
         );
@@ -1541,7 +1146,7 @@ void main(List<String> args) {
     test('undecodable source bytes fail the table', () {
       // Byte 76 is the first entry's length, byte 77 its one-byte `a` URI:
       // 0xFF is never valid UTF-8, so the entry's bytes are malformed.
-      final badUtf8 = Uint8List.fromList(_buildDillWithUris(['a']));
+      final badUtf8 = Uint8List.fromList(buildDillWithUris(['a']));
       expect(badUtf8[76], 1);
       expect(badUtf8[77], 0x61);
       badUtf8[77] = 0xff;
@@ -1556,7 +1161,7 @@ void main(List<String> args) {
     );
     _write('pkg/lib/pie%63e.dart', 'part of a;\nint g() => 2;\n');
     _write('pkg/lib/piece.dart', 'part of a;\nint h() => 3;\n');
-    final result = await _compile('m_pct_shadow', [
+    final _Result result = await _compile('m_pct_shadow', [
       'pkg/lib/a.dart',
       'pkg/lib/pie%63e.dart',
     ]);
@@ -1578,7 +1183,7 @@ void main(List<String> args) {
         "library a;\npart 'pie%63e.dart';\nint f() => g();\n",
       );
       _write('pkg/lib/piece.dart', 'part of a;\nint g() => 2;\n');
-      final result = await _compile('m_pct_declared', [
+      final _Result result = await _compile('m_pct_declared', [
         'pkg/lib/a.dart',
         'pkg/lib/piece.dart',
       ]);
@@ -1596,7 +1201,7 @@ void main(List<String> args) {
   test('a percent-encoded import that decodes outside the closure excludes its importer', () async {
     _write('pkg/lib/a.dart', "import 'pie%63e.dart';\nint f() => 1;\n");
     _write('pkg/lib/piece.dart', 'int s() => 2;\n');
-    final result = await _compile('m_pct_import', ['pkg/lib/a.dart']);
+    final _Result result = await _compile('m_pct_import', ['pkg/lib/a.dart']);
     expect(result.code, 0);
     expect(result.excluded, {
       _uri('pkg/lib/a.dart'):
@@ -1612,7 +1217,7 @@ void main(List<String> args) {
         'pkg/lib/a.dart',
         "import 'package:pkg/../../x.dart';\nint f() => 1;\n",
       );
-      final result = await _compile('m_pkg_escape', ['pkg/lib/a.dart']);
+      final _Result result = await _compile('m_pkg_escape', ['pkg/lib/a.dart']);
       expect(result.code, 0);
       expect(result.excluded, {
         _uri(
@@ -1630,7 +1235,7 @@ void main(List<String> args) {
       "library a;\npart 'sub\\\\b.dart';\nint f() => g();\n",
     );
     _write('pkg/lib/sub/b.dart', 'part of a;\nint g() => 2;\n');
-    final result = await _compile('m_backslash', [
+    final _Result result = await _compile('m_backslash', [
       'pkg/lib/a.dart',
       'pkg/lib/sub/b.dart',
     ]);
@@ -1650,7 +1255,7 @@ void main(List<String> args) {
       );
       _write('pkg/lib/pie%63e.dart', 'part of a;\nint g() => 2;\n');
       _write('pkg/lib/piece.dart', 'part of a;\nint h() => 3;\n');
-      final entry = await _compile('entry_pct_shadow', [
+      final _Result entry = await _compile('entry_pct_shadow', [
         'pkg/lib/a.dart',
         'pkg/lib/pie%63e.dart',
       ], noDrop: true);
@@ -1669,12 +1274,12 @@ void main(List<String> args) {
   test('an unstaged compile that reads an undeclared file is redone isolated, and refused when the restage still reads outside the declared inputs', () async {
     _write('pkg/lib/a.dart', 'class A {}\n');
     final compiler = _DillWritingCompiler(
-      () => _buildDillWithUris([
+      () => buildDillWithUris([
         _uri('pkg/lib/a.dart'),
         _uri('pkg/lib/piece.dart'),
       ]),
     );
-    final result = await _compile(
+    final _Result result = await _compile(
       'm_fallback',
       ['pkg/lib/a.dart'],
       // Worker inputs keep the marker-URI spellings from forcing isolated
@@ -1691,7 +1296,10 @@ void main(List<String> args) {
     expect(_valuesAfter(result.calls[0], '--multi-root'), [
       kernelWorkerUri(_root.path),
     ]);
-    final isolatedRoots = _valuesAfter(result.calls[1], '--multi-root');
+    final List<String> isolatedRoots = _valuesAfter(
+      result.calls[1],
+      '--multi-root',
+    );
     expect(isolatedRoots.length, 1);
     expect(isolatedRoots.single, contains('.isolated_root'));
     expect(result.log, contains('which is not a declared input'));
@@ -1712,13 +1320,13 @@ void main(List<String> args) {
     var calls = 0;
     final compiler = _DillWritingCompiler(
       () => calls++ == 0
-          ? _buildDillWithUris([
+          ? buildDillWithUris([
               _uri('pkg/lib/a.dart'),
               _uri('pkg/lib/piece.dart'),
             ])
-          : _buildDillWithUris([_uri('pkg/lib/a.dart')]),
+          : buildDillWithUris([_uri('pkg/lib/a.dart')]),
     );
-    final result = await _compile(
+    final _Result result = await _compile(
       'm_fallback_clean',
       ['pkg/lib/a.dart'],
       inputs: [
@@ -1748,9 +1356,9 @@ void main(List<String> args) {
         ('m_authority_file_uri', 'file://host/undeclared.dart'),
       ]) {
         final compiler = _DillWritingCompiler(
-          () => _buildDillWithUris([_uri('pkg/lib/a.dart'), uri]),
+          () => buildDillWithUris([_uri('pkg/lib/a.dart'), uri]),
         );
-        final result = await _compile(
+        final _Result result = await _compile(
           name,
           ['pkg/lib/a.dart'],
           inputs: [
@@ -1775,9 +1383,9 @@ void main(List<String> args) {
     // bytes: the read-set check must walk it exactly to refuse the compile.
     final piece = 'pkg/lib/${'p' * 200}.dart';
     final compiler = _DillWritingCompiler(
-      () => _buildDillWithUris([_uri('pkg/lib/a.dart'), _uri(piece)]),
+      () => buildDillWithUris([_uri('pkg/lib/a.dart'), _uri(piece)]),
     );
-    final result = await _compile(
+    final _Result result = await _compile(
       'm_long_undeclared',
       ['pkg/lib/a.dart'],
       inputs: [
@@ -1799,9 +1407,9 @@ void main(List<String> args) {
     () async {
       _write('pkg/lib/a.dart', 'class A {}\n');
       final compiler = _DillWritingCompiler(
-        () => _buildDillWithUris([_uri('pkg/lib/a.dart')]),
+        () => buildDillWithUris([_uri('pkg/lib/a.dart')]),
       );
-      final result = await _compile(
+      final _Result result = await _compile(
         'm_no_fallback',
         ['pkg/lib/a.dart'],
         inputs: [
@@ -1821,9 +1429,9 @@ void main(List<String> args) {
   test('a compile that reads only declared files verifies at an older format version', () async {
     _write('pkg/lib/a.dart', 'class A {}\n');
     final compiler = _DillWritingCompiler(
-      () => _buildDillWithUris([_uri('pkg/lib/a.dart')], formatVersion: 127),
+      () => buildDillWithUris([_uri('pkg/lib/a.dart')], formatVersion: 127),
     );
-    final result = await _compile(
+    final _Result result = await _compile(
       'm_old_version',
       ['pkg/lib/a.dart'],
       inputs: [
@@ -1841,7 +1449,7 @@ void main(List<String> args) {
 
   group('library references', () {
     test('dillLibraryReferences reads each node with its source spellings and canonical name', () {
-      final dill = _buildDillWithLibraries(
+      final Uint8List dill = buildDillWithLibraries(
         sources: [
           (_uri('pkg/lib/a.dart'), 'package:pkg/a.dart'),
           (_uri('dep/lib/d.dart'), 'package:dep/d.dart'),
@@ -1853,7 +1461,7 @@ void main(List<String> args) {
           (2, 'dart:core'),
         ],
       );
-      final refs = dillLibraryReferences(dill);
+      final List<DillLibraryReference>? refs = dillLibraryReferences(dill);
       expect(refs, hasLength(3));
       expect(refs![0].fileUriIndex, 0);
       expect(refs[0].fileUri, _uri('pkg/lib/a.dart'));
@@ -1866,11 +1474,11 @@ void main(List<String> args) {
     });
 
     test('dillLibraryReferences degrades per-library failures to missing references', () {
-      final dill = _buildDillWithLibraries(
+      final Uint8List dill = buildDillWithLibraries(
         sources: [(_uri('pkg/lib/a.dart'), 'package:pkg/a.dart')],
         libraries: [(7, 'package:pkg/a.dart'), (0, null)],
       );
-      final refs = dillLibraryReferences(dill);
+      final List<DillLibraryReference>? refs = dillLibraryReferences(dill);
       expect(refs, hasLength(2));
       // A dangling source index carries no reference to check.
       expect(refs![0].fileUri, isNull);
@@ -1885,11 +1493,11 @@ void main(List<String> args) {
     test(
       'dillLibraryReferences is empty without nodes and null without tables',
       () {
-        expect(dillLibraryReferences(_buildDillWithUris(['a'])), isEmpty);
+        expect(dillLibraryReferences(buildDillWithUris(['a'])), isEmpty);
         expect(dillLibraryReferences(Uint8List(0)), isNull);
         // A library table whose string table points outside the file keeps no
         // verdict of its own: the caller falls back to the source table.
-        final dill = _buildDillWithLibraries(
+        final Uint8List dill = buildDillWithLibraries(
           sources: [(_uri('pkg/lib/a.dart'), 'package:pkg/a.dart')],
           libraries: [(0, 'package:pkg/a.dart')],
         );
@@ -1905,7 +1513,7 @@ void main(List<String> args) {
     test(
       'dillLibraryReferences degrades an undecodable canonical name to empty',
       () {
-        final dill = _buildDillWithLibraries(
+        final Uint8List dill = buildDillWithLibraries(
           sources: [(_uri('pkg/lib/a.dart'), 'package:pkg/a.dart')],
           libraries: [(0, 'package:pkg/a.dart')],
         );
@@ -1915,12 +1523,12 @@ void main(List<String> args) {
         // holds the count, one end per string, then the bytes: the strings are
         // the empty name and the canonical name, so the name's first byte is
         // three bytes in. 0xFF is never valid UTF-8.
-        final stringTable = bd.getUint32(patched.length - 13 * 4 + 24);
+        final int stringTable = bd.getUint32(patched.length - 13 * 4 + 24);
         expect(patched[stringTable], 2);
         expect(patched[stringTable + 1], 0);
         expect(patched[stringTable + 2], 'package:pkg/a.dart'.length);
         patched[stringTable + 3] = 0xff;
-        final refs = dillLibraryReferences(patched);
+        final List<DillLibraryReference>? refs = dillLibraryReferences(patched);
         expect(refs, hasLength(1));
         expect(refs![0].fileUri, _uri('pkg/lib/a.dart'));
         expect(refs[0].importUri, 'package:pkg/a.dart');
@@ -1934,12 +1542,12 @@ void main(List<String> args) {
       // spelling names a file the plan never saw — the guard's empty-segment
       // skipping would have resolved this differently than the front end.
       final compiler = _DillWritingCompiler(
-        () => _buildDillWithLibraries(
+        () => buildDillWithLibraries(
           sources: [(_uri('pkg/lib/a.dart'), _uri('pkg/lib/a.dart'))],
           libraries: [(0, 'package:pkg//lib/evil.dart')],
         ),
       );
-      final result = await _compile(
+      final _Result result = await _compile(
         'm_evil_import',
         ['pkg/lib/a.dart'],
         inputs: [
@@ -1961,12 +1569,12 @@ void main(List<String> args) {
       () async {
         _write('pkg/lib/a.dart', 'class A {}\n');
         final compiler = _DillWritingCompiler(
-          () => _buildDillWithLibraries(
+          () => buildDillWithLibraries(
             sources: [(_uri('pkg/lib/a.dart'), 'package:pkg/a.dart')],
             libraries: [(0, 'package:pkg//lib/canon_evil.dart')],
           ),
         );
-        final result = await _compile(
+        final _Result result = await _compile(
           'm_evil_canon',
           ['pkg/lib/a.dart'],
           inputs: [
@@ -1994,7 +1602,7 @@ void main(List<String> args) {
       // them is crafted, and the modular walk stays strict on every
       // attempt.
       final compiler = _DillWritingCompiler(
-        () => _buildDillWithLibraries(
+        () => buildDillWithLibraries(
           sources: [
             (_uri('pkg/lib/a.dart'), 'package:pkg/a.dart'),
             ('dummy', ''),
@@ -2002,7 +1610,7 @@ void main(List<String> args) {
           libraries: [(0, 'package:pkg/a.dart'), (1, 'vm:ffi:native-assets')],
         ),
       );
-      final result = await _compile(
+      final _Result result = await _compile(
         'm_native_assets',
         ['pkg/lib/a.dart'],
         inputs: [
@@ -2027,11 +1635,11 @@ void main(List<String> args) {
           "import 'package:dep/d.dart';\nconst x = d;\n",
         );
         _write('dep/lib/d.dart', 'const d = 1;\n');
-        final dep = _module('depmod', [
+        final String dep = _module('depmod', [
           _Scc('d.dill', ['dep/lib/d.dart'], []),
         ]);
         final compiler = _DillWritingCompiler(
-          () => _buildDillWithLibraries(
+          () => buildDillWithLibraries(
             sources: [
               (_uri('pkg/lib/a.dart'), 'package:pkg/a.dart'),
               (_uri('dep/lib/d.dart'), 'package:dep/d.dart'),
@@ -2039,7 +1647,7 @@ void main(List<String> args) {
             libraries: [(0, 'package:pkg/a.dart'), (1, 'package:dep/d.dart')],
           ),
         );
-        final result = await _compile(
+        final _Result result = await _compile(
           'm_defined_imports',
           ['pkg/lib/a.dart'],
           inputKmods: [dep],
@@ -2065,11 +1673,11 @@ void main(List<String> args) {
       // check tells the multi-root identity apart from the `package:` one.
       _write('pkg/lib/a.dart', "import 'package:dep/d.dart';\nconst x = d;\n");
       _write('dep/lib/d.dart', 'const d = 1;\n');
-      final dep = _module('depmod', [
+      final String dep = _module('depmod', [
         _Scc('d.dill', ['dep/lib/d.dart'], []),
       ]);
       final compiler = _DillWritingCompiler(
-        () => _buildDillWithLibraries(
+        () => buildDillWithLibraries(
           sources: [
             (_uri('pkg/lib/a.dart'), 'package:pkg/a.dart'),
             (_uri('dep/lib/d.dart'), _uri('dep/lib/d.dart')),
@@ -2077,7 +1685,7 @@ void main(List<String> args) {
           libraries: [(0, 'package:pkg/a.dart'), (1, _uri('dep/lib/d.dart'))],
         ),
       );
-      final result = await _compile(
+      final _Result result = await _compile(
         'm_multiroot_dep_ref',
         ['pkg/lib/a.dart'],
         inputKmods: [dep],
@@ -2096,7 +1704,7 @@ void main(List<String> args) {
     });
 
     test('dillCanonicalRoots reads every top-level root, including ones no node mentions', () {
-      final dill = _buildDillWithLibraries(
+      final Uint8List dill = buildDillWithLibraries(
         sources: [(_uri('pkg/lib/a.dart'), 'package:pkg/a.dart')],
         libraries: [(0, 'package:pkg/a.dart')],
         extraRoots: ['file:///host/evil.dart'],
@@ -2108,20 +1716,20 @@ void main(List<String> args) {
       // The smuggled root has no library node.
       expect(dillLibraryReferences(dill), hasLength(1));
       // No nodes means no roots, and no tables means no verdict.
-      expect(dillCanonicalRoots(_buildDillWithUris(['a'])), isEmpty);
+      expect(dillCanonicalRoots(buildDillWithUris(['a'])), isEmpty);
       expect(dillCanonicalRoots(Uint8List(0)), isNull);
     });
 
     test('an unstaged compile that smuggles a root no library node mentions fails closed', () async {
       _write('pkg/lib/a.dart', 'class A {}\n');
       final compiler = _DillWritingCompiler(
-        () => _buildDillWithLibraries(
+        () => buildDillWithLibraries(
           sources: [(_uri('pkg/lib/a.dart'), 'package:pkg/a.dart')],
           libraries: [(0, 'package:pkg/a.dart')],
           extraRoots: ['file:///host/evil.dart'],
         ),
       );
-      final result = await _compile(
+      final _Result result = await _compile(
         'm_evil_root',
         ['pkg/lib/a.dart'],
         inputs: [
@@ -2143,13 +1751,13 @@ void main(List<String> args) {
       () async {
         _write('pkg/lib/a.dart', 'class A {}\n');
         final compiler = _DillWritingCompiler(
-          () => _buildDillWithLibraries(
+          () => buildDillWithLibraries(
             sources: [(_uri('pkg/lib/a.dart'), 'package:pkg/a.dart')],
             libraries: [(0, 'package:pkg/a.dart')],
             extraRoots: ['package:pkg/a.dart', 'myapp.a'],
           ),
         );
-        final result = await _compile(
+        final _Result result = await _compile(
           'm_defined_roots',
           ['pkg/lib/a.dart'],
           inputs: [
@@ -2169,7 +1777,7 @@ void main(List<String> args) {
       'an unstaged compile with an unparsable library table is redone isolated',
       () async {
         _write('pkg/lib/a.dart', 'class A {}\n');
-        final clean = _buildDillWithLibraries(
+        final Uint8List clean = buildDillWithLibraries(
           sources: [(_uri('pkg/lib/a.dart'), 'package:pkg/a.dart')],
           libraries: [(0, 'package:pkg/a.dart')],
         );
@@ -2181,7 +1789,7 @@ void main(List<String> args) {
         expect(dillSourceUris(patched), [_uri('pkg/lib/a.dart')]);
         expect(dillLibraryReferences(patched), isNull);
         final compiler = _DillWritingCompiler(() => patched);
-        final result = await _compile(
+        final _Result result = await _compile(
           'm_unparsable_libraries',
           ['pkg/lib/a.dart'],
           inputs: [
@@ -2204,7 +1812,7 @@ void main(List<String> args) {
 
     test('an isolated restage with an unparsable library table keeps the source-table verdict', () async {
       _write('pkg/lib/a.dart', 'class A {}\n');
-      final clean = _buildDillWithLibraries(
+      final Uint8List clean = buildDillWithLibraries(
         sources: [(_uri('pkg/lib/a.dart'), 'package:pkg/a.dart')],
         libraries: [(0, 'package:pkg/a.dart')],
       );
@@ -2216,13 +1824,13 @@ void main(List<String> args) {
       var calls = 0;
       final compiler = _DillWritingCompiler(
         () => calls++ == 0
-            ? _buildDillWithUris([
+            ? buildDillWithUris([
                 _uri('pkg/lib/a.dart'),
                 _uri('pkg/lib/piece.dart'),
               ])
             : patched,
       );
-      final result = await _compile(
+      final _Result result = await _compile(
         'm_unparsable_isolated',
         ['pkg/lib/a.dart'],
         inputs: [
@@ -2243,9 +1851,9 @@ void main(List<String> args) {
     });
 
     test('the shared reader parses sources, libraries and roots', () {
-      final uris = [_uri('pkg/lib/a.dart'), 'dart:core'];
-      expect(dillSourceUris(_buildDillWithUris(uris)), uris);
-      final dill = _buildDillWithLibraries(
+      final List<String> uris = [_uri('pkg/lib/a.dart'), 'dart:core'];
+      expect(dillSourceUris(buildDillWithUris(uris)), uris);
+      final Uint8List dill = buildDillWithLibraries(
         sources: [
           (_uri('pkg/lib/a.dart'), 'package:pkg/a.dart'),
           (_uri('dep/lib/d.dart'), 'package:dep/d.dart'),
@@ -2253,7 +1861,7 @@ void main(List<String> args) {
         libraries: [(0, 'package:pkg/a.dart'), (1, 'package:dep/d.dart')],
         extraRoots: ['file:///host/evil.dart'],
       );
-      final refs = dillLibraryReferences(dill);
+      final List<DillLibraryReference>? refs = dillLibraryReferences(dill);
       expect(refs?.length, 2);
       expect(refs?[0].fileUriIndex, 0);
       expect(refs?[0].fileUri, _uri('pkg/lib/a.dart'));
@@ -2335,7 +1943,7 @@ void main(List<String> args) {
     });
 
     test('scanAllDirectiveUris collects every conditional alternative', () {
-      final refs = scanAllDirectiveUris(
+      final List<ScanRef> refs = scanAllDirectiveUris(
         "import 'a.dart' if (dart.library.html) 'file:///s.dart';\n"
         "export 'package:pkg/e.dart';\n"
         "part 'p.dart';\n",
@@ -2375,7 +1983,7 @@ void main(List<String> args) {
       for (var i = 0; i < spellings.length; i++) {
         _write('pkg/lib/f$i.dart', "import '${spellings[i]}';\nclass F$i {}\n");
       }
-      final result = await _compile('m_file_uri', [
+      final _Result result = await _compile('m_file_uri', [
         for (var i = 0; i < spellings.length; i++) 'pkg/lib/f$i.dart',
       ]);
       expect(result.code, 1);
@@ -2403,7 +2011,7 @@ void main(List<String> args) {
           "import 'dart:async' if (dart.library.io) 'file:///secret.dart';\n"
               'class D {}\n',
         );
-        final result = await _compile('m_file_kinds', [
+        final _Result result = await _compile('m_file_kinds', [
           'pkg/lib/e.dart',
           'pkg/lib/p.dart',
           'pkg/lib/c.dart',
@@ -2442,7 +2050,7 @@ void main(List<String> args) {
           'pkg/lib/a.dart',
           "import 'other-scheme:///missing.dart';\nclass A {}\n",
         );
-        final result = await _compile('m_scheme', ['pkg/lib/a.dart']);
+        final _Result result = await _compile('m_scheme', ['pkg/lib/a.dart']);
         expect(result.code, 1);
         expect(
           result.log,
@@ -2465,7 +2073,7 @@ void main(List<String> args) {
         "part 'org-dartlang-root:///part//piece.dart';\n",
       );
       _write('pkg/lib/e.dart', "import 'package:./pkg//x.dart';\n");
-      final result = await _compile('m_empty_segment', [
+      final _Result result = await _compile('m_empty_segment', [
         'pkg/lib/a.dart',
         'pkg/lib/c.dart',
         'pkg/lib/d.dart',
@@ -2513,7 +2121,7 @@ void main(List<String> args) {
         'pkg/bin/main.dart',
         "import 'package:pkg/a.dart';\nvoid main() => print(describe());\n",
       );
-      final result = await _compile(
+      final _Result result = await _compile(
         'm_empty_segment_entry',
         ['pkg/bin/main.dart'],
         inputSources: [_uri('pkg/lib/a.dart')],
@@ -2539,7 +2147,7 @@ void main(List<String> args) {
           'pkg/bin/main.dart',
           "import 'package:pkg/a.dart';\nvoid main() => print(describe());\n",
         );
-        final result = await _compile(
+        final _Result result = await _compile(
           'm_file_entry',
           ['pkg/bin/main.dart'],
           inputSources: [_uri('pkg/lib/a.dart')],
@@ -2565,7 +2173,7 @@ void main(List<String> args) {
       for (var i = 0; i < spellings.length; i++) {
         _write('pkg/lib/g$i.dart', "import '${spellings[i]}';\nclass G$i {}\n");
       }
-      final result = await _compile('m_slash_auth', [
+      final _Result result = await _compile('m_slash_auth', [
         for (var i = 0; i < spellings.length; i++) 'pkg/lib/g$i.dart',
       ]);
       expect(result.code, 1);
@@ -2601,7 +2209,7 @@ void main(List<String> args) {
         'pkg/lib/tp.dart',
         "part '''   \nsub/piece.dart''';\nclass TP {}\n",
       );
-      final result = await _compile('m_triple_quote', [
+      final _Result result = await _compile('m_triple_quote', [
         for (var i = 0; i < spellings.length; i++) 'pkg/lib/t$i.dart',
         'pkg/lib/te.dart',
         'pkg/lib/tp.dart',
@@ -2640,7 +2248,9 @@ void main(List<String> args) {
         final uri = '${bs * 4}host${bs * 2}evil.dart';
         final extracted = '${bs * 2}host${bs}evil.dart';
         _write('pkg/lib/h.dart', "import '$uri';\nclass H {}\n");
-        final result = await _compile('m_backslash_auth', ['pkg/lib/h.dart']);
+        final _Result result = await _compile('m_backslash_auth', [
+          'pkg/lib/h.dart',
+        ]);
         expect(result.code, 1);
         expect(
           result.log,
@@ -2662,7 +2272,7 @@ void main(List<String> args) {
           "import 'dart:async' if (dart.library.io) '//host/evil.dart';\n"
               'class C2 {}\n',
         );
-        final result = await _compile('m_slash_kinds', [
+        final _Result result = await _compile('m_slash_kinds', [
           'pkg/lib/e2.dart',
           'pkg/lib/p2.dart',
           'pkg/lib/c2.dart',
@@ -2689,10 +2299,10 @@ void main(List<String> args) {
         'pkg/lib/a.dart',
         "import 'org-dartlang-root:///dep/lib/d.dart';\nconst a = d;\n",
       );
-      final dep = _module('dep_module', [
+      final String dep = _module('dep_module', [
         _Scc('0.dill', ['dep/lib/d.dart'], []),
       ]);
-      final result = await _compile(
+      final _Result result = await _compile(
         'm_dep_multiroot',
         ['pkg/lib/a.dart'],
         inputKmods: [dep],
@@ -2724,10 +2334,10 @@ void main(List<String> args) {
         'pkg/lib/m.dart',
         "import 'org-dartlang-root:///dep/lib/d.dart';\nconst m = d;\n",
       );
-      final dep = _module('dep_module', [
+      final String dep = _module('dep_module', [
         _Scc('0.dill', ['dep/lib/d.dart'], []),
       ]);
-      final result = await _compile(
+      final _Result result = await _compile(
         'm_dep_kinds',
         ['pkg/lib/e.dart', 'pkg/lib/p.dart', 'pkg/lib/m.dart'],
         inputKmods: [dep],
@@ -2757,7 +2367,9 @@ void main(List<String> args) {
           'pkg/lib/a.dart',
           "import '../../dep/lib/helper.dart';\nconst a = h;\n",
         );
-        final result = await _compile('m_relative_clamped', ['pkg/lib/a.dart']);
+        final _Result result = await _compile('m_relative_clamped', [
+          'pkg/lib/a.dart',
+        ]);
         expect(result.code, 0, reason: result.log);
         expect(result.excluded, {
           _uri('pkg/lib/a.dart'):
@@ -2774,7 +2386,7 @@ void main(List<String> args) {
     test('a fragment import fails instead of resolving to its file', () async {
       _write('pkg/lib/b.dart', 'class B {}\n');
       _write('pkg/lib/f.dart', "import 'b.dart#frag';\nclass F {}\n");
-      final result = await _compile('m_frag', [
+      final _Result result = await _compile('m_frag', [
         'pkg/lib/f.dart',
         'pkg/lib/b.dart',
       ]);
@@ -2796,7 +2408,7 @@ void main(List<String> args) {
         'pkg/bin/main.dart',
         "import 'package:pkg/a.dart';\nvoid main() => print(describe());\n",
       );
-      final result = await _compile(
+      final _Result result = await _compile(
         'm_slash_auth_entry',
         ['pkg/bin/main.dart'],
         inputSources: [_uri('pkg/lib/a.dart')],
@@ -2821,7 +2433,7 @@ void main(List<String> args) {
           'pkg/bin/main.dart',
           "import 'package:pkg/a.dart';\nvoid main() => print(describe());\n",
         );
-        final result = await _compile(
+        final _Result result = await _compile(
           'm_frag_entry',
           ['pkg/bin/main.dart'],
           inputSources: [_uri('pkg/lib/a.dart'), _uri('pkg/lib/b.dart')],
@@ -2837,7 +2449,7 @@ void main(List<String> args) {
   });
 
   test('split part/part of modules produce byte-identical outputs sandboxed vs unsandboxed and rebuild when the parent edits', () async {
-    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final Directory sdkDir = File(Platform.resolvedExecutable).parent.parent;
     final exeSuffix = Platform.isWindows ? '.exe' : '';
     final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
     final kernelWorker =
@@ -3005,8 +2617,9 @@ void main(List<String> args) {
             .readAsBytesSync(),
       ),
     );
-    final partKmodV1 = File('${sandboxPart.path}/out/part.kmod/0.dill')
-        .readAsBytesSync();
+    final Uint8List partKmodV1 = File(
+      '${sandboxPart.path}/out/part.kmod/0.dill',
+    ).readAsBytesSync();
     expect(
       partKmodV1,
       equals(
@@ -3037,8 +2650,9 @@ void main(List<String> args) {
       inputKmods: ['out/parent.koutline'],
       closureExcluded: ['out/parent.vm_excluded.txt'],
     );
-    final partKmodV2 = File('${sandboxPart.path}/out/part_v2.kmod/0.dill')
-        .readAsBytesSync();
+    final Uint8List partKmodV2 = File(
+      '${sandboxPart.path}/out/part_v2.kmod/0.dill',
+    ).readAsBytesSync();
     expect(
       partKmodV2,
       isNot(equals(partKmodV1)),
@@ -3049,10 +2663,10 @@ void main(List<String> args) {
   test('a source a dependency module defines is not compiled again', () async {
     _write('pkg/lib/shared.dart', 'class Shared {}\n');
     _write('pkg/lib/top.dart', "import 'shared.dart';\n");
-    final dep = _module('dep_module', [
+    final String dep = _module('dep_module', [
       _Scc('0.dill', ['pkg/lib/shared.dart'], []),
     ]);
-    final result = await _compile(
+    final _Result result = await _compile(
       'm',
       ['pkg/lib/shared.dart', 'pkg/lib/top.dart'],
       inputKmods: [dep],
@@ -3069,11 +2683,11 @@ void main(List<String> args) {
 
   test('a dependency excludes a file the dependent lists, so the dependent compiles its own', () async {
     _write('pkg/lib/shared.dart', 'class Shared {}\n');
-    final dep = _module('dep_module', []);
-    final sidecar = _sidecar('dep_module', {
+    final String dep = _module('dep_module', []);
+    final String sidecar = _sidecar('dep_module', {
       'pkg/lib/shared.dart': 'imports dart:html, which is not a VM library',
     });
-    final result = await _compile(
+    final _Result result = await _compile(
       'm',
       ['pkg/lib/shared.dart'],
       inputKmods: [dep],
@@ -3093,11 +2707,11 @@ void main(List<String> args) {
   test('a file a dependency excludes, that a dependent only imports, excludes its importer', () async {
     _write('pkg/lib/shared.dart', 'class Shared {}\n');
     _write('pkg/lib/top.dart', "import 'shared.dart';\n");
-    final dep = _module('dep_module', []);
-    final sidecar = _sidecar('dep_module', {
+    final String dep = _module('dep_module', []);
+    final String sidecar = _sidecar('dep_module', {
       'pkg/lib/shared.dart': 'its reason',
     });
-    final result = await _compile(
+    final _Result result = await _compile(
       'm',
       ['pkg/lib/top.dart'],
       inputKmods: [dep],
@@ -3112,12 +2726,14 @@ void main(List<String> args) {
   test('an excluded file that another module of the closure defines is not excluded', () async {
     _write('pkg/lib/shared.dart', 'class Shared {}\n');
     _write('pkg/lib/top.dart', "import 'shared.dart';\n");
-    final excludes = _module('excludes', []);
-    final defines = _module('defines', [
+    final String excludes = _module('excludes', []);
+    final String defines = _module('defines', [
       _Scc('0.dill', ['pkg/lib/shared.dart'], []),
     ]);
-    final sidecar = _sidecar('excludes', {'pkg/lib/shared.dart': 'its reason'});
-    final result = await _compile(
+    final String sidecar = _sidecar('excludes', {
+      'pkg/lib/shared.dart': 'its reason',
+    });
+    final _Result result = await _compile(
       'm',
       ['pkg/lib/top.dart'],
       inputKmods: [excludes, defines],
@@ -3144,15 +2760,15 @@ void main(List<String> args) {
       'pkg/test/main_test.dart',
       "import 'package:pkg/web.dart';\nimport 'package:pkg/defined.dart';\n",
     );
-    final excludes = _module('excludes', []);
-    final defines = _module('defines', [
+    final String excludes = _module('excludes', []);
+    final String defines = _module('defines', [
       _Scc('0.dill', ['pkg/lib/defined.dart'], []),
     ]);
-    final sidecar = _sidecar('excludes', {
+    final String sidecar = _sidecar('excludes', {
       'pkg/lib/web.dart': 'dart:html is not a VM library',
       'pkg/lib/defined.dart': 'dart:html is not a VM library',
     });
-    final entry = await _compile(
+    final _Result entry = await _compile(
       'entry',
       ['pkg/test/main_test.dart'],
       inputSources: ['pkg/lib/web.dart'],
@@ -3191,12 +2807,12 @@ void main(List<String> args) {
     );
     _write('pkg/lib/transitive_secret.dart', 'class Secret {}\n');
     _write('pkg/test/main_test.dart', "import 'package:pkg/web.dart';\n");
-    final excludes = _module('excludes', []);
-    final sidecar = _sidecar('excludes', {
+    final String excludes = _module('excludes', []);
+    final String sidecar = _sidecar('excludes', {
       'pkg/lib/web.dart': 'dart:html is not a VM library',
       'pkg/lib/transitive_secret.dart': 'dart:html is not a VM library',
     });
-    final entry = await _compile(
+    final _Result entry = await _compile(
       'entry_undeclared',
       ['pkg/test/main_test.dart'],
       inputKmods: [excludes],
@@ -3225,10 +2841,10 @@ void main(List<String> args) {
       'pkg/test/main_test.dart',
       "import '../../dep/lib/d.dart';\nvoid main() => print(d);\n",
     );
-    final dep = _module('dep_module', [
+    final String dep = _module('dep_module', [
       _Scc('0.dill', ['dep/lib/d.dart'], []),
     ]);
-    final entry = await _compile(
+    final _Result entry = await _compile(
       'entry_dep_relative',
       ['pkg/test/main_test.dart'],
       inputKmods: [dep],
@@ -3249,14 +2865,14 @@ void main(List<String> args) {
   group('unused inputs list', () {
     test('a library lists an unused module directory but not a used or shadowing one', () async {
       _write('pkg/lib/a.dart', 'class A {}\n');
-      final unused = _module('unused', [
+      final String unused = _module('unused', [
         _Scc('u.dill', ['dep/lib/u.dart'], []),
       ]);
-      final shadow = _module('shadow', [
+      final String shadow = _module('shadow', [
         _Scc('s.dill', ['pkg/lib/a.dart'], []),
       ]);
       final unusedPath = '${_root.path}/out/m.unused';
-      final result = await _compile(
+      final _Result result = await _compile(
         'm_unused_tree',
         ['pkg/lib/a.dart'],
         inputKmods: [unused, shadow],
@@ -3270,14 +2886,14 @@ void main(List<String> args) {
       'a library never lists a module directory sharing its package',
       () async {
         _write('pkg/lib/a.dart', 'class A {}\n');
-        final samePkg = _module('samepkg', [
+        final String samePkg = _module('samepkg', [
           _Scc('o.dill', ['pkg/lib/other.dart'], []),
         ]);
-        final otherPkg = _module('otherpkg', [
+        final String otherPkg = _module('otherpkg', [
           _Scc('o.dill', ['dep/lib/o.dart'], []),
         ]);
         final unusedPath = '${_root.path}/out/m2.unused';
-        final result = await _compile(
+        final _Result result = await _compile(
           'm_unused_samepkg',
           ['pkg/lib/a.dart'],
           inputKmods: [samePkg, otherPkg],
@@ -3305,14 +2921,14 @@ void main(List<String> args) {
           'excluded': ['dep/lib/x.dart'],
         }),
       );
-      final clean = _module('clean', [
+      final String clean = _module('clean', [
         _Scc('c.dill', ['dep/lib/c.dart'], []),
       ]);
-      final sidecar = _sidecar('upstream', {
+      final String sidecar = _sidecar('upstream', {
         'dep/lib/x.dart': 'dart:html is not a VM library',
       });
       final unusedPath = '${_root.path}/out/m3.unused';
-      final result = await _compile(
+      final _Result result = await _compile(
         'm_unused_staged',
         ['pkg/lib/a.dart'],
         inputKmods: [excluded, clean],
@@ -3351,10 +2967,10 @@ void main(List<String> args) {
         'part of a_lib;\nint partValue() => 7;\n',
       );
       final b = '${_root.path}/b';
-      final sidecar = _sidecar('b', {
+      final String sidecar = _sidecar('b', {
         'dep/lib/part.dart': 'its library a_lib is not an input of this module',
       });
-      final clean = _module('clean', [
+      final String clean = _module('clean', [
         _Scc('c.dill', ['dep/lib/c.dart'], []),
       ]);
 
@@ -3363,7 +2979,7 @@ void main(List<String> args) {
       // the part read `dep/lib/part.dart`, so renaming a file into that
       // name recompiles `b` and must recompile this module too.
       final controlPath = '${_root.path}/out/m_adopt_control.unused';
-      final control = await _compile(
+      final _Result control = await _compile(
         'm_adopt_control',
         ['pkg/lib/lib.dart'],
         inputKmods: [b, clean],
@@ -3378,13 +2994,13 @@ void main(List<String> args) {
       // package keeps every other module of it, so nothing is listed.
       final compiler = _ReportingCompiler(
         reported: const {},
-        dillBytes: () => _buildDillWithUris([
+        dillBytes: () => buildDillWithUris([
           _uri('pkg/lib/lib.dart'),
           _uri('dep/lib/part.dart'),
         ]),
       );
       final unusedPath = '${_root.path}/out/m_adopt.unused';
-      final result = await _compile(
+      final _Result result = await _compile(
         'm_adopt',
         ['pkg/lib/lib.dart'],
         inputKmods: [b, clean],
@@ -3429,22 +3045,22 @@ void main(List<String> args) {
           'part of a_lib;\nint partValue() => 7;\n',
         );
         final c = '${_root.path}/c';
-        final sidecar = _sidecar('c', {
+        final String sidecar = _sidecar('c', {
           'dep/lib/part.dart':
               'its library a_lib is not an input of this module',
         });
-        final b = _module('b', [
+        final String b = _module('b', [
           _Scc('m.dill', ['dep/lib/mid.dart'], []),
         ]);
         final compiler = _ReportingCompiler(
           reported: const {},
-          dillBytes: () => _buildDillWithUris([
+          dillBytes: () => buildDillWithUris([
             _uri('pkg/lib/lib.dart'),
             _uri('dep/lib/part.dart'),
           ]),
         );
         final unusedPath = '${_root.path}/out/m_adopt_transitive.unused';
-        final result = await _compile(
+        final _Result result = await _compile(
           'm_adopt_transitive',
           ['pkg/lib/lib.dart'],
           inputKmods: [b, c],
@@ -3487,22 +3103,22 @@ void main(List<String> args) {
           "part of 'package:pkg/lib.dart';\nint partValue() => 7;\n",
         );
         final b = '${_root.path}/b';
-        final sidecar = _sidecar('b', {
+        final String sidecar = _sidecar('b', {
           'dep/lib/part.dart':
               'its library package:pkg/lib.dart is not an input of this module',
         });
-        final clean = _module('clean', [
+        final String clean = _module('clean', [
           _Scc('c.dill', ['dep/lib/c.dart'], []),
         ]);
         final compiler = _ReportingCompiler(
           reported: const {},
-          dillBytes: () => _buildDillWithUris([
+          dillBytes: () => buildDillWithUris([
             _uri('pkg/lib/lib.dart'),
             _uri('dep/lib/part.dart'),
           ]),
         );
         final unusedPath = '${_root.path}/out/m_adopt_uri.unused';
-        final result = await _compile(
+        final _Result result = await _compile(
           'm_adopt_uri',
           ['pkg/lib/lib.dart'],
           inputKmods: [b, clean],
@@ -3531,14 +3147,14 @@ void main(List<String> args) {
           "import 'package:dep/missing.dart';\nint f() => 1;\n",
         );
         _write('dep/lib/missing.dart', 'int missing() => 1;\n');
-        final missing = _module('missing', [
+        final String missing = _module('missing', [
           _Scc('m.dill', ['dep/lib/other.dart'], []),
         ]);
-        final clean = _module('clean', [
+        final String clean = _module('clean', [
           _Scc('c.dill', ['other/lib/c.dart'], []),
         ]);
         final unusedPath = '${_root.path}/out/m_missing_key.unused';
-        final result = await _compile(
+        final _Result result = await _compile(
           'm_missing_key',
           ['pkg/lib/a.dart'],
           inputKmods: [missing, clean],
@@ -3582,11 +3198,11 @@ void main(List<String> args) {
         'part of a_lib;\nint partValue() => 7;\n',
       );
       final b = '${_root.path}/b';
-      final clean = _module('clean', [
+      final String clean = _module('clean', [
         _Scc('c.dill', ['other/lib/c.dart'], []),
       ]);
       final unusedPath = '${_root.path}/out/m_mixed_provider.unused';
-      final result = await _compile(
+      final _Result result = await _compile(
         'm_mixed_provider',
         ['pkg/lib/lib.dart'],
         inputKmods: [b, clean],
@@ -3604,23 +3220,23 @@ void main(List<String> args) {
           "import 'package:dep/k.dart';\nconst x = kConst;\nclass A {}\n",
         );
         _write('dep/lib/k.dart', 'const kConst = 1;\n');
-        final used = _module('used', [
+        final String used = _module('used', [
           _Scc('k.dill', ['dep/lib/k.dart'], []),
         ]);
-        final clean = _module('clean', [
+        final String clean = _module('clean', [
           _Scc('c.dill', ['dep/lib/c.dart'], []),
         ]);
         // The worker reports no summary used, but the kernel embeds the
         // dependency source (a folded constant): the evidence keeps it.
         final compiler = _ReportingCompiler(
           reported: const {},
-          dillBytes: () => _buildDillWithUris([
+          dillBytes: () => buildDillWithUris([
             _uri('pkg/lib/a.dart'),
             _uri('dep/lib/k.dart'),
           ]),
         );
         final unusedPath = '${_root.path}/out/m_embedded.unused';
-        final result = await _compile(
+        final _Result result = await _compile(
           'm_embedded',
           ['pkg/lib/a.dart'],
           inputKmods: [used, clean],
@@ -3636,15 +3252,15 @@ void main(List<String> args) {
       'a kernel embedding only own sources still lists an unused module',
       () async {
         _write('pkg/lib/a.dart', 'class A {}\n');
-        final clean = _module('clean', [
+        final String clean = _module('clean', [
           _Scc('c.dill', ['dep/lib/c.dart'], []),
         ]);
         final compiler = _ReportingCompiler(
           reported: const {},
-          dillBytes: () => _buildDillWithUris([_uri('pkg/lib/a.dart')]),
+          dillBytes: () => buildDillWithUris([_uri('pkg/lib/a.dart')]),
         );
         final unusedPath = '${_root.path}/out/m_embedded_precise.unused';
-        final result = await _compile(
+        final _Result result = await _compile(
           'm_embedded_precise',
           ['pkg/lib/a.dart'],
           inputKmods: [clean],
@@ -3660,15 +3276,15 @@ void main(List<String> args) {
 
     test('a used-inputs report marks a passed summary used', () async {
       _write('pkg/lib/a.dart', "import 'package:dep/u.dart';\nclass A {}\n");
-      final used = _module('used', [
+      final String used = _module('used', [
         _Scc('u.dill', ['dep/lib/u.dart'], []),
       ]);
-      final clean = _module('clean', [
+      final String clean = _module('clean', [
         _Scc('c.dill', ['dep/lib/c.dart'], []),
       ]);
       final compiler = _ReportingCompiler(reported: {'$used/u.dill'});
       final unusedPath = '${_root.path}/out/m4.unused';
-      final result = await _compile(
+      final _Result result = await _compile(
         'm_unused_report',
         ['pkg/lib/a.dart'],
         inputKmods: [used, clean],
@@ -3691,14 +3307,14 @@ void main(List<String> args) {
       'a report naming a file the action never passed lists nothing',
       () async {
         _write('pkg/lib/a.dart', "import 'package:dep/u.dart';\nclass A {}\n");
-        final unused = _module('unused', [
+        final String unused = _module('unused', [
           _Scc('u.dill', ['dep/lib/u.dart'], []),
         ]);
         final compiler = _ReportingCompiler(
           reported: {'/never/passed/foreign.dill'},
         );
         final unusedPath = '${_root.path}/out/m5.unused';
-        final result = await _compile(
+        final _Result result = await _compile(
           'm_unused_tripwire',
           ['pkg/lib/a.dart'],
           inputKmods: [unused],
@@ -3718,12 +3334,12 @@ void main(List<String> args) {
       'a worker without used-inputs support compiles on, listing from the plan',
       () async {
         _write('pkg/lib/a.dart', 'class A {}\n');
-        final clean = _module('clean', [
+        final String clean = _module('clean', [
           _Scc('c.dill', ['dep/lib/c.dart'], []),
         ]);
         final compiler = _OldWorkerCompiler();
         final unusedPath = '${_root.path}/out/m6.unused';
-        final result = await _compile(
+        final _Result result = await _compile(
           'm_unused_oldworker',
           ['pkg/lib/a.dart'],
           inputKmods: [clean],
@@ -3745,7 +3361,7 @@ void main(List<String> args) {
       _write('pkg/lib/a.dart', 'class A {}\n');
       final compiler = _ReportingCompiler(exitCode: 1);
       final unusedPath = '${_root.path}/out/m7.unused';
-      final result = await _compile(
+      final _Result result = await _compile(
         'm_unused_failure',
         ['pkg/lib/a.dart'],
         compiler: compiler,
@@ -3761,15 +3377,15 @@ void main(List<String> args) {
       // `FileSystemException`, which is swallowed, and the passed summaries
       // count as used, exactly like a missing report.
       _write('pkg/lib/a.dart', "import 'package:dep/u.dart';\nclass A {}\n");
-      final used = _module('used', [
+      final String used = _module('used', [
         _Scc('u.dill', ['dep/lib/u.dart'], []),
       ]);
-      final clean = _module('clean', [
+      final String clean = _module('clean', [
         _Scc('c.dill', ['dep/lib/c.dart'], []),
       ]);
       final compiler = _ReportingCompiler(reported: null);
       final unusedPath = '${_root.path}/out/m_unused_vanished.unused';
-      final result = await _compile(
+      final _Result result = await _compile(
         'm_unused_vanished',
         ['pkg/lib/a.dart'],
         inputKmods: [used, clean],
@@ -3794,10 +3410,10 @@ void main(List<String> args) {
         // understands makes `Uri.parse` throw `FormatException`. Both must
         // read as no report, matching a worker that wrote none.
         _write('pkg/lib/a.dart', "import 'package:dep/u.dart';\nclass A {}\n");
-        final used = _module('used', [
+        final String used = _module('used', [
           _Scc('u.dill', ['dep/lib/u.dart'], []),
         ]);
-        final clean = _module('clean', [
+        final String clean = _module('clean', [
           _Scc('c.dill', ['dep/lib/c.dart'], []),
         ]);
         Future<List<String>> unusedLinesFor(
@@ -3805,7 +3421,7 @@ void main(List<String> args) {
           String tag,
         ) async {
           final unusedPath = '${_root.path}/out/$tag.unused';
-          final result = await _compile(
+          final _Result result = await _compile(
             tag,
             ['pkg/lib/a.dart'],
             inputKmods: [used, clean],
@@ -3816,7 +3432,7 @@ void main(List<String> args) {
           return File(unusedPath).readAsLinesSync();
         }
 
-        final missing = await unusedLinesFor(
+        final List<String> missing = await unusedLinesFor(
           _ReportingCompiler(reported: null),
           'm_unused_missing',
         );
@@ -3846,17 +3462,17 @@ void main(List<String> args) {
       );
       _write('dep/lib/x.dart', 'class X {}\n');
       _write('dep/lib/y.dart', 'class Y {}\n');
-      final dep = _module('dep', [
+      final String dep = _module('dep', [
         _Scc('x.dill', ['dep/lib/x.dart'], []),
       ]);
       final ownPath = '${_root.path}/pkg/lib/main.dart';
       final xPath = '${_root.path}/dep/lib/x.dart';
       final yPath = '${_root.path}/dep/lib/y.dart';
       final compiler = _ReportingCompiler(
-        dillBytes: () => _buildDillWithUris([_uri('pkg/lib/main.dart')]),
+        dillBytes: () => buildDillWithUris([_uri('pkg/lib/main.dart')]),
       );
       final unusedPath = '${_root.path}/out/entry.unused';
-      final entry = await _compile(
+      final _Result entry = await _compile(
         'entry_unused_sources',
         ['pkg/lib/main.dart'],
         inputSources: [ownPath, xPath, yPath],
@@ -3881,19 +3497,19 @@ void main(List<String> args) {
         // The provider defines nothing: the entry compiles the reached
         // excluded source from the workspace, visiting it, while the
         // unreached input source stays unvisited and is listed.
-        final dep = _module('dep', []);
-        final sidecar = _sidecar('dep', {
+        final String dep = _module('dep', []);
+        final String sidecar = _sidecar('dep', {
           'dep/lib/x.dart': 'dart:html is not a VM library',
         });
         final yPath = '${_root.path}/dep/lib/y.dart';
         final compiler = _ReportingCompiler(
-          dillBytes: () => _buildDillWithUris([
+          dillBytes: () => buildDillWithUris([
             _uri('pkg/lib/main.dart'),
             _uri('dep/lib/x.dart'),
           ]),
         );
         final unusedPath = '${_root.path}/out/entry_reached_excluded.unused';
-        final entry = await _compile(
+        final _Result entry = await _compile(
           'entry_reached_excluded',
           ['pkg/lib/main.dart'],
           inputSources: ['${_root.path}/dep/lib/x.dart', yPath],
@@ -3959,17 +3575,17 @@ void main(List<String> args) {
       );
       _write('dep/lib/x.dart', 'class X {}\n');
       _write('dep/lib/y.dart', 'class Y {}\n');
-      final dep = _module('dep', [
+      final String dep = _module('dep', [
         _Scc('x.dill', ['dep/lib/x.dart'], []),
       ]);
       final compiler = _ReportingCompiler(
-        dillBytes: () => _buildDillWithUris([
+        dillBytes: () => buildDillWithUris([
           _uri('pkg/lib/main.dart'),
           _uri('dep/lib/x.dart'),
         ]),
       );
       final unusedPath = '${_root.path}/out/entry2.unused';
-      final entry = await _compile(
+      final _Result entry = await _compile(
         'entry_unused_embedded',
         ['pkg/lib/main.dart'],
         inputSources: [
@@ -3993,17 +3609,17 @@ void main(List<String> args) {
       _write('pkg/lib/main.dart', 'part of mylib;\nclass A {}\n');
       _write('dep/lib/lib.dart', 'library mylib;\nclass L {}\n');
       _write('dep/lib/y.dart', 'class Y {}\n');
-      final dep = _module('dep', [
+      final String dep = _module('dep', [
         _Scc('lib.dill', ['dep/lib/lib.dart'], []),
       ]);
-      final other = _module('other', [
+      final String other = _module('other', [
         _Scc('o.dill', ['dep/lib/o.dart'], []),
       ]);
       final unusedPath = '${_root.path}/out/entry3.unused';
       final compiler = _ReportingCompiler(
-        dillBytes: () => _buildDillWithUris([_uri('pkg/lib/main.dart')]),
+        dillBytes: () => buildDillWithUris([_uri('pkg/lib/main.dart')]),
       );
-      final entry = await _compile(
+      final _Result entry = await _compile(
         'entry_unused_lookup',
         ['pkg/lib/main.dart'],
         inputSources: ['dep/lib/lib.dart', 'dep/lib/y.dart'],
@@ -4026,7 +3642,7 @@ void main(List<String> args) {
       'a report in absolute URIs matches summaries passed as relative paths',
       () async {
         _write('pkg/lib/a.dart', "import 'package:dep/u.dart';\nclass A {}\n");
-        final usedDir = _module('used', [
+        final String usedDir = _module('used', [
           _Scc('u.dill', ['dep/lib/u.dart'], []),
         ]);
         _module('clean', [
@@ -4038,7 +3654,7 @@ void main(List<String> args) {
         await _withCwd(_root, () async {
           final compiler = _ReportingCompiler(reported: {'$usedDir/u.dill'});
           final unusedPath = '${_root.path}/out/m8.unused';
-          final result = await _compile(
+          final _Result result = await _compile(
             'm_unused_spellings',
             ['pkg/lib/a.dart'],
             inputKmods: ['used', 'clean'],
@@ -4072,12 +3688,12 @@ void main(List<String> args) {
       await _withCwd(linkPath, () async {
         // Whichever spelling `getcwd` returns, the report uses the other
         // one, so the test fails without symlink resolution either way.
-        final logical = Directory.current.path == realRoot.path
+        final String logical = Directory.current.path == realRoot.path
             ? linkPath
             : realRoot.path;
         final compiler = _ReportingCompiler(reported: {'$logical/used/u.dill'});
         final unusedPath = '${_root.path}/out/m8sym.unused';
-        final result = await _compile(
+        final _Result result = await _compile(
           'm_unused_symlink',
           ['pkg/lib/a.dart'],
           inputKmods: ['used', 'clean'],
@@ -4100,7 +3716,7 @@ void main(List<String> args) {
       // Windows that join is invalid (a colon under the temp root, errno
       // 123), so use a real absolute drive-letter path under the temp root,
       // with forward slashes: still a drive-letter spelling end to end.
-      final rootForward = _root.path.replaceAll(r'\', '/');
+      final String rootForward = _root.path.replaceAll(r'\', '/');
       final usedDir = Platform.isWindows
           ? '$rootForward/w7mods/used'
           : 'D:/w7mods/used';
@@ -4143,7 +3759,7 @@ void main(List<String> args) {
         // The tmp must reach the real worker as a native path: the SDK
         // opens `--used-inputs` with File(), which rejects file:// URIs
         // (on Windows: errno 123).
-        final seen = [
+        final List<String> seen = [
           for (final call in compiler.calls)
             for (final arg in call)
               if (arg.startsWith('--used-inputs=')) arg,
@@ -4162,13 +3778,13 @@ void main(List<String> args) {
 
     _write('pkg/lib/web.dart', 'class Web {}\n');
     _write('pkg/test/main_test.dart', "import 'package:pkg/web.dart';\n");
-    final excludes = _module('excludes', []);
-    final sidecar = _sidecar('excludes', {
+    final String excludes = _module('excludes', []);
+    final String sidecar = _sidecar('excludes', {
       'pkg/lib/web.dart': 'dart:html is not a VM library',
     });
 
     // Declared on the command line via --input-source, but absent from WorkRequest.inputs.
-    final missingFromWorkerInputs = await _compile(
+    final _Result missingFromWorkerInputs = await _compile(
       'worker_missing',
       ['pkg/test/main_test.dart'],
       inputSources: ['pkg/lib/web.dart'],
@@ -4185,7 +3801,7 @@ void main(List<String> args) {
     );
 
     // Present in both --input-source and WorkRequest.inputs.
-    final declaredInWorkerInputs = await _compile(
+    final _Result declaredInWorkerInputs = await _compile(
       'worker_ok',
       ['pkg/test/main_test.dart'],
       inputSources: ['pkg/lib/web.dart'],
@@ -4213,7 +3829,7 @@ void main(List<String> args) {
     );
     _write('dep/lib/b.dart', 'int b() => 2;\n');
     final pkgOutline = '${_root.path}/out/pkg_m.koutline';
-    final pkgRes = await _compile('pkg_m', [
+    final _Result pkgRes = await _compile('pkg_m', [
       'pkg/lib/cyclic.dart',
     ], outputOutline: pkgOutline);
     expect(pkgRes.code, 0);
@@ -4226,7 +3842,7 @@ void main(List<String> args) {
       isTrue,
     );
 
-    final depMod = _module('dep_m', [
+    final String depMod = _module('dep_m', [
       _Scc('0.dill', ['dep/lib/b.dart'], []),
     ]);
 
@@ -4235,7 +3851,7 @@ void main(List<String> args) {
     File('${_root.path}/pkg/lib/cyclic.dart').deleteSync();
     _write('pkg/test/main_test.dart', "import 'package:pkg/cyclic.dart';\n");
 
-    final entry = await _compile(
+    final _Result entry = await _compile(
       'entry_from_staged',
       ['pkg/test/main_test.dart'],
       inputKmods: [pkgOutline, depMod],
@@ -4260,8 +3876,14 @@ void main(List<String> args) {
     () async {
       _write('pkg/lib/b.dart', "import 'a.dart';\n");
       _write('pkg/lib/a.dart', 'class A {}\n');
-      final first = await _compile('m1', ['pkg/lib/b.dart', 'pkg/lib/a.dart']);
-      final second = await _compile('m2', ['pkg/lib/a.dart', 'pkg/lib/b.dart']);
+      final _Result first = await _compile('m1', [
+        'pkg/lib/b.dart',
+        'pkg/lib/a.dart',
+      ]);
+      final _Result second = await _compile('m2', [
+        'pkg/lib/a.dart',
+        'pkg/lib/b.dart',
+      ]);
       expect(first.defines, second.defines);
       expect(first.index, second.index);
     },
@@ -4299,7 +3921,7 @@ void main(List<String> args) {
       'pkg/lib/bad_part.dart',
       "part 'other-scheme:///missing.dart';\nclass BadPart {}\n",
     );
-    final result = await _compile(
+    final _Result result = await _compile(
       'app_m',
       [
         'pkg/lib/a.dart',
@@ -4339,7 +3961,7 @@ void main(List<String> args) {
 
     // Without `--extra-library ui`, `widget.dart` is excluded and `entry.dart`
     // takes `stub.dart` (which imports `dart:html` and is also excluded).
-    final withoutUi = await _compile('no_ui', [
+    final _Result withoutUi = await _compile('no_ui', [
       'pkg/lib/widget.dart',
       'pkg/lib/entry.dart',
       'pkg/lib/stub.dart',
@@ -4350,7 +3972,7 @@ void main(List<String> args) {
 
     // With `--extra-library ui`, `widget.dart` compiles and `entry.dart`
     // resolves its conditional import to `real.dart`.
-    final withUi = await _compile(
+    final _Result withUi = await _compile(
       'with_ui',
       [
         'pkg/lib/widget.dart',
@@ -4369,7 +3991,7 @@ void main(List<String> args) {
     expect(withUi.excluded, {
       _uri('pkg/lib/stub.dart'): 'dart:html is not a VM library',
     });
-    for (final call in withUi.calls) {
+    for (final List<String> call in withUi.calls) {
       expect(call, isNot(contains('--extra-library')));
     }
   });
@@ -4392,7 +4014,7 @@ void main(List<String> args) {
         'pkg/lib/both.dart',
         "import 'dart:io';\nimport 'dart:ui';\nclass Both {}\n",
       );
-      final result = await _compile('flutter_m', [
+      final _Result result = await _compile('flutter_m', [
         'pkg/lib/both.dart',
       ], librariesPlatform: 'flutter');
       expect(result.code, 0);
@@ -4407,7 +4029,7 @@ void main(List<String> args) {
   test('--output-outline creates the outline directory and writes index.json without forwarding the flag', () async {
     _write('pkg/lib/a.dart', "import 'dart:async';\nclass A {}\n");
     final outlineDir = '${_root.path}/out/m.koutline';
-    final result = await _compile('m', [
+    final _Result result = await _compile('m', [
       'pkg/lib/a.dart',
     ], outputOutline: outlineDir);
     expect(result.code, 0);
@@ -4419,8 +4041,10 @@ void main(List<String> args) {
   });
 
   test('stripDillToOutline preserves final instance field initializers only when the class has a const constructor or is a mixin', () {
-    final rawWithConst = _buildMinimalFieldDill(hasConstConstructor: true);
-    final strippedWithConst = stripDillToOutline(rawWithConst);
+    final Uint8List rawWithConst = buildMinimalFieldDill(
+      hasConstConstructor: true,
+    );
+    final Uint8List strippedWithConst = stripDillToOutline(rawWithConst);
     expect(
       _containsSubsequence(strippedWithConst, [
         Tag.Something,
@@ -4462,8 +4086,10 @@ void main(List<String> args) {
       reason: 'non-const procedure body should be stripped',
     );
 
-    final rawWithoutConst = _buildMinimalFieldDill(hasConstConstructor: false);
-    final strippedWithoutConst = stripDillToOutline(rawWithoutConst);
+    final Uint8List rawWithoutConst = buildMinimalFieldDill(
+      hasConstConstructor: false,
+    );
+    final Uint8List strippedWithoutConst = stripDillToOutline(rawWithoutConst);
     expect(
       _containsSubsequence(strippedWithoutConst, [
         Tag.Something,
@@ -4479,15 +4105,15 @@ void main(List<String> args) {
   test(
     'stripDillToOutline ends the outline with a well-formed component index',
     () {
-      final stripped = stripDillToOutline(
-        _buildMinimalFieldDill(hasConstConstructor: true),
+      final Uint8List stripped = stripDillToOutline(
+        buildMinimalFieldDill(hasConstConstructor: true),
       );
       final words = ByteData.sublistView(stripped);
-      final fileSize = stripped.length;
-      final libraryCount = words.getUint32(fileSize - 8, Endian.big);
-      final numFixedFields = 9 + (libraryCount + 1) + 2;
-      var pos = fileSize - numFixedFields * 4;
-      final offsets = [
+      final int fileSize = stripped.length;
+      final int libraryCount = words.getUint32(fileSize - 8, Endian.big);
+      final int numFixedFields = 9 + (libraryCount + 1) + 2;
+      int pos = fileSize - numFixedFields * 4;
+      final List<int> offsets = [
         for (var i = 0; i < 7; i++, pos += 4) words.getUint32(pos, Endian.big),
       ];
       // Each table starts where the previous one ended, so the offsets grow
@@ -4502,7 +4128,7 @@ void main(List<String> args) {
   );
 
   test('scanDirectives and compileModule handle shebangs and generic annotations in directive prologues', () async {
-    final scanned = scanDirectives(
+    final ScanResult? scanned = scanDirectives(
       "#!/usr/bin/env dart\n"
       "@Tag<int>()\n"
       "@prefix.Meta<Map<String, List<int>>>.named('x')\n"
@@ -4527,7 +4153,7 @@ void main(List<String> args) {
       "@Tag<Map<String, List<int>>>.named()\nimport 'plain.dart';\nclass G {}\n",
     );
     _write('pkg/lib/plain.dart', "class Plain {}\n");
-    final result = await _compile('prologue_m', [
+    final _Result result = await _compile('prologue_m', [
       'pkg/lib/shebang_web.dart',
       'pkg/lib/generic_annot.dart',
       'pkg/lib/plain.dart',
@@ -4552,10 +4178,10 @@ void main(List<String> args) {
       'pkg/test/my_test.dart',
       "import '../lib/local_helper.dart';\nvoid main() { helper(); }\n",
     );
-    final depMod = _module('dep_mod', [
+    final String depMod = _module('dep_mod', [
       _Scc('0.dill', ['dep/lib/ext.dart'], []),
     ]);
-    final entry = await _compile(
+    final _Result entry = await _compile(
       'rel_entry',
       ['pkg/test/my_test.dart', 'pkg/lib/local_helper.dart'],
       inputKmods: [depMod],
@@ -4589,7 +4215,7 @@ void main(List<String> args) {
     final baseKeysFile = File('${_root.path}/base.keys');
     final outFile = File('${_root.path}/linked.dill');
 
-    final indexV1 = jsonEncode({
+    final String indexV1 = jsonEncode({
       'version': 1,
       'sccs': [
         {
@@ -4599,7 +4225,7 @@ void main(List<String> args) {
         },
       ],
     });
-    final indexV2 = jsonEncode({
+    final String indexV2 = jsonEncode({
       'version': 1,
       'sccs': [
         {
@@ -4685,20 +4311,20 @@ void main(List<String> args) {
       final digest2 = Uint8List.fromList([2, 2, 2, 2]);
 
       // Populate cache using './norm_mod/0.dill' while inputs key is 'norm_mod/0.dill'.
-      final bytes1 = cache.dillBytesOf('./norm_mod/0.dill', {
+      final Uint8List bytes1 = cache.dillBytesOf('./norm_mod/0.dill', {
         'norm_mod/0.dill': digest1,
       });
       expect(bytes1, [10, 20, 30]);
 
       // Overwrite on disk, but pass the SAME digest1 via normalized key: should hit cache.
       dillFile.writeAsBytesSync([40, 50, 60]);
-      final cachedHit = cache.dillBytesOf('./norm_mod/0.dill', {
+      final Uint8List cachedHit = cache.dillBytesOf('./norm_mod/0.dill', {
         'norm_mod/0.dill': digest1,
       });
       expect(cachedHit, [10, 20, 30]);
 
       // Pass a new digest2: should invalidate and read new bytes from disk.
-      final updated = cache.dillBytesOf('./norm_mod/0.dill', {
+      final Uint8List updated = cache.dillBytesOf('./norm_mod/0.dill', {
         'norm_mod/0.dill': digest2,
       });
       expect(updated, [40, 50, 60]);
@@ -4706,7 +4332,7 @@ void main(List<String> args) {
   });
 
   test('stripDillToOutline preserves member bodies and field initializers for legacy-class mixins compiled by kernel_worker', () async {
-    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final Directory sdkDir = File(Platform.resolvedExecutable).parent.parent;
     final exeSuffix = Platform.isWindows ? '.exe' : '';
     final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
     final kernelWorker =
@@ -4749,7 +4375,7 @@ void main(List<String> args) {
       List<String> inputSummaries = const [],
     }) async {
       final outPath = '${_root.path}/$outName';
-      final res = await Process.run(dartaotruntime, [
+      final ProcessResult res = await Process.run(dartaotruntime, [
         kernelWorker,
         ...kernelWorkerArgs([
           '--target',
@@ -4792,12 +4418,16 @@ void main(List<String> args) {
           '}\n'
           'class ChainedLegacy = Object with LegacyMixin;\n',
     );
-    final legacyDillV1 = await compileWithKernelWorker('legacy_v1.dill', [
-      'package:legacy/legacy.dart',
-    ]);
+    final Uint8List legacyDillV1 = await compileWithKernelWorker(
+      'legacy_v1.dill',
+      ['package:legacy/legacy.dart'],
+    );
 
     final err1 = StringBuffer();
-    final legacyOutlineV1 = stripDillToOutline(legacyDillV1, errSink: err1);
+    final Uint8List legacyOutlineV1 = stripDillToOutline(
+      legacyDillV1,
+      errSink: err1,
+    );
     expect(err1.toString(), isEmpty);
 
     // Member bodies and mutable/final field initializers must survive in the outline.
@@ -4826,10 +4456,11 @@ void main(List<String> args) {
           '}\n'
           'class ChainedLegacy = Object with LegacyMixin;\n',
     );
-    final legacyDillV2 = await compileWithKernelWorker('legacy_v2.dill', [
-      'package:legacy/legacy.dart',
-    ]);
-    final legacyOutlineV2 = stripDillToOutline(legacyDillV2);
+    final Uint8List legacyDillV2 = await compileWithKernelWorker(
+      'legacy_v2.dill',
+      ['package:legacy/legacy.dart'],
+    );
+    final Uint8List legacyOutlineV2 = stripDillToOutline(legacyDillV2);
     expect(
       legacyOutlineV2,
       isNot(equals(legacyOutlineV1)),
@@ -4850,10 +4481,10 @@ void main(List<String> args) {
           "  String mixinClassBody() => 'modern-mixin-class-kept-body';\n"
           '}\n',
     );
-    final modernDill = await compileWithKernelWorker('modern.dill', [
+    final Uint8List modernDill = await compileWithKernelWorker('modern.dill', [
       'package:modern/modern.dart',
     ]);
-    final modernOutline = stripDillToOutline(modernDill);
+    final Uint8List modernOutline = stripDillToOutline(modernDill);
     expect(
       _containsSubsequence(
         modernOutline,
@@ -4916,19 +4547,22 @@ void main(List<String> args) {
           "  print(s.describe('chained'));\n"
           '}\n',
     );
-    final appDill = await compileWithKernelWorker(
+    final Uint8List appDill = await compileWithKernelWorker(
       'app.dill',
       ['${_prefix}app/bin/main.dart'],
       inputSummaries: [outlinePath],
     );
-    final legacyKmodBytes = stripSourceCodeFromDill(legacyDillV1);
+    final Uint8List legacyKmodBytes = stripSourceCodeFromDill(legacyDillV1);
     final linkedPath = '${_root.path}/app_linked.dill';
     final linkedBytes = BytesBuilder(copy: false)
       ..add(legacyKmodBytes)
       ..add(appDill);
     File(linkedPath).writeAsBytesSync(linkedBytes.takeBytes());
 
-    final runRes = await Process.run(Platform.resolvedExecutable, [linkedPath]);
+    final ProcessResult runRes = await Process.run(
+      Platform.resolvedExecutable,
+      [linkedPath],
+    );
     expect(
       runRes.exitCode,
       0,
@@ -4946,7 +4580,7 @@ void main(List<String> args) {
     // including a dependency linked under `--exclude-non-sources`, which the
     // worker emits twice (once per URI it was given) — and surface any
     // spelling a smuggled reference would carry.
-    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final Directory sdkDir = File(Platform.resolvedExecutable).parent.parent;
     final exeSuffix = Platform.isWindows ? '.exe' : '';
     final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
     final kernelWorker =
@@ -4979,7 +4613,7 @@ void main(List<String> args) {
       bool excludeNonSources = true,
     }) async {
       final outPath = '${_root.path}/$outName';
-      final res = await Process.run(dartaotruntime, [
+      final ProcessResult res = await Process.run(dartaotruntime, [
         kernelWorker,
         ...kernelWorkerArgs([
           '--target',
@@ -5017,14 +4651,14 @@ void main(List<String> args) {
     await compile('libref_dep.dill', [
       '${_prefix}dep/lib/d.dart',
     ], excludeNonSources: false);
-    final appDill = await compile(
+    final Uint8List appDill = await compile(
       'libref_app.dill',
       [appSource],
       inputSummaries: ['${_root.path}/libref_dep.dill'],
     );
-    final refs = dillLibraryReferences(appDill);
+    final List<DillLibraryReference>? refs = dillLibraryReferences(appDill);
     expect(refs, isNotNull);
-    for (final ref in refs!) {
+    for (final DillLibraryReference ref in refs!) {
       expect(ref.fileUri, isNotNull, reason: 'no dangling file-URI index');
       expect(ref.importUri, isNotNull);
       expect(ref.canonicalName, isNotEmpty);
@@ -5049,7 +4683,7 @@ void main(List<String> args) {
       isTrue,
       reason: 'linked dependency present under its import URI',
     );
-    for (final ref in refs) {
+    for (final DillLibraryReference ref in refs) {
       expect(
         ref.importUri == appSource ||
             (ref.importUri?.startsWith('package:dep/') ?? false) ||
@@ -5064,7 +4698,7 @@ void main(List<String> args) {
     expect(smuggled.length, 'package:dep/d.dart'.length);
     final patched = Uint8List.fromList(appDill);
     bool replaced = false;
-    final needle = utf8.encode('package:dep/d.dart');
+    final Uint8List needle = utf8.encode('package:dep/d.dart');
     for (var i = 0; i + needle.length <= patched.length; i++) {
       var match = true;
       for (var j = 0; j < needle.length; j++) {
@@ -5079,7 +4713,9 @@ void main(List<String> args) {
       }
     }
     expect(replaced, isTrue);
-    final patchedRefs = dillLibraryReferences(patched);
+    final List<DillLibraryReference>? patchedRefs = dillLibraryReferences(
+      patched,
+    );
     expect(patchedRefs, isNotNull);
     expect(
       patchedRefs!.any((ref) => ref.importUri == smuggled),
@@ -5091,11 +4727,14 @@ void main(List<String> args) {
   test('stripDillToOutline and stripSourceCodeFromDill reject unknown format versions with a diagnostic and return unstripped bytes', () {
     expect(supportedKernelFormatVersions, {138});
     for (final badVersion in [0, 120, 137, 139, 999]) {
-      final dill = _buildMinimalFieldDill(formatVersion: badVersion);
+      final Uint8List dill = buildMinimalFieldDill(formatVersion: badVersion);
       final snapshot = Uint8List.fromList(dill);
 
       final outlineErr = StringBuffer();
-      final outlineResult = stripDillToOutline(dill, errSink: outlineErr);
+      final Uint8List outlineResult = stripDillToOutline(
+        dill,
+        errSink: outlineErr,
+      );
       expect(
         outlineResult,
         equals(snapshot),
@@ -5111,7 +4750,10 @@ void main(List<String> args) {
       );
 
       final srcErr = StringBuffer();
-      final srcResult = stripSourceCodeFromDill(dill, errSink: srcErr);
+      final Uint8List srcResult = stripSourceCodeFromDill(
+        dill,
+        errSink: srcErr,
+      );
       expect(
         srcResult,
         equals(snapshot),
@@ -5129,12 +4771,15 @@ void main(List<String> args) {
 
     // Multi-component dill where the second component has an unknown format version:
     // stripDillToOutline must fall back to the full unstripped input bytes.
-    final validPart = _buildMinimalFieldDill();
-    final invalidPart = _buildMinimalFieldDill(formatVersion: 999);
+    final Uint8List validPart = buildMinimalFieldDill();
+    final Uint8List invalidPart = buildMinimalFieldDill(formatVersion: 999);
     final combined = Uint8List.fromList([...validPart, ...invalidPart]);
     final combinedSnapshot = Uint8List.fromList(combined);
     final multiErr = StringBuffer();
-    final multiResult = stripDillToOutline(combined, errSink: multiErr);
+    final Uint8List multiResult = stripDillToOutline(
+      combined,
+      errSink: multiErr,
+    );
     expect(multiResult, equals(combinedSnapshot));
     expect(
       multiErr.toString(),
@@ -5143,7 +4788,7 @@ void main(List<String> args) {
   });
 
   test('compileModule preserves comma-containing defines across modular kernel_worker compiles', () async {
-    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final Directory sdkDir = File(Platform.resolvedExecutable).parent.parent;
     final exeSuffix = Platform.isWindows ? '.exe' : '';
     final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
     // The build's declared patch action, in test form: the SDK snapshot in,
@@ -5151,7 +4796,7 @@ void main(List<String> args) {
     // or written to a shared directory.
     final kernelWorker = '${_root.path}/patched/kernel_worker.snapshot';
     File(kernelWorker).parent.createSync(recursive: true);
-    final patchError = patchSnapshotFile(
+    final String? patchError = patchSnapshotFile(
       inputPath: '${sdkDir.path}/bin/snapshots/kernel_worker_aot.dart.snapshot',
       outputPath: kernelWorker,
       sdkVersion: Platform.version.split(' ').first,
@@ -5183,7 +4828,7 @@ void main(List<String> args) {
     final libOutline = '${_root.path}/out/lib_m.koutline';
     final libExcluded = '$libOut.vm_excluded.txt';
     final libLog = StringBuffer();
-    final libCode = await compileModule(
+    final int libCode = await compileModule(
       [
         '--target',
         'vm',
@@ -5218,7 +4863,7 @@ void main(List<String> args) {
     final entryOut = '${_root.path}/out/entry.kmod';
     final entryExcluded = '$entryOut.vm_excluded.txt';
     final entryLog = StringBuffer();
-    final entryCode = await compileModule(
+    final int entryCode = await compileModule(
       [
         '--target',
         'vm',
@@ -5264,7 +4909,10 @@ void main(List<String> args) {
       reason: linkErr.toString(),
     );
 
-    final runRes = await Process.run(Platform.resolvedExecutable, [linkedPath]);
+    final ProcessResult runRes = await Process.run(
+      Platform.resolvedExecutable,
+      [linkedPath],
+    );
     expect(runRes.exitCode, 0, reason: '${runRes.stdout}\n${runRes.stderr}');
     expect(
       (runRes.stdout as String).trim(),
@@ -5281,11 +4929,11 @@ void main(List<String> args) {
     Future<(int, String, int)> garbageResponse(String mode) async {
       _write('pkg/lib/garbage.dart', 'class Garbage {}\n');
       _write('fake_worker.dart', _fakeWorkerSource);
-      final dartBin = _sdkDartPaths.first;
-      final sdkDir = File(dartBin).parent.parent;
+      final String dartBin = _sdkDartPaths.first;
+      final Directory sdkDir = File(dartBin).parent.parent;
       final exeSuffix = Platform.isWindows ? '.exe' : '';
       final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
-      final tool = await Process.start(
+      final Process tool = await Process.start(
         dartaotruntime,
         [
           _toolSnapshotPath,
@@ -5298,7 +4946,7 @@ void main(List<String> args) {
         ],
         environment: {'FAKE_WORKER_FRAME': mode},
       );
-      final drained = tool.stderr.drain();
+      final Future<dynamic> drained = tool.stderr.drain();
       final out = '${_root.path}/out/garbage';
       tool.stdin.add(
         _requestFrameForTest([
@@ -5324,8 +4972,9 @@ void main(List<String> args) {
         ], 7),
       );
       await tool.stdin.flush();
-      final response = await _readResponseForTest(tool.stdout)
-          .timeout(const Duration(minutes: 2));
+      final (int, String, int) response = await _readResponseForTest(
+        tool.stdout,
+      ).timeout(const Duration(minutes: 2));
       await tool.stdin.close();
       expect(await tool.exitCode, 0);
       await drained;
@@ -5380,18 +5029,19 @@ void main(List<String> args) {
     //       --target vm --dart-sdk-summary ... <module args>
     // Direct `dart` runs lack the snapshot and skip these tests.
     String sdkVersionOf(String dartBin) {
-      final r = Process.runSync(dartBin, ['--version']);
+      final ProcessResult r = Process.runSync(dartBin, ['--version']);
       final out = '${r.stdout}${r.stderr}';
-      final m = RegExp(r'(\d+\.\d+\.\d+(?:-\S+)?)').firstMatch(out);
+      final RegExpMatch? m = RegExp(r'(\d+\.\d+\.\d+(?:-\S+)?)')
+          .firstMatch(out);
       if (m == null) throw StateError('cannot parse SDK version from: $out');
       return m.group(1)!;
     }
 
     Future<String> patchedSnapshot(String sdkBin) async {
-      final sdkDir = File(sdkBin).parent.parent;
+      final Directory sdkDir = File(sdkBin).parent.parent;
       final out = '${_root.path}/patched-sub/kernel_worker.snapshot';
       File(out).parent.createSync(recursive: true);
-      final patchError = patchSnapshotFile(
+      final String? patchError = patchSnapshotFile(
         inputPath:
             '${sdkDir.path}/bin/snapshots/kernel_worker_aot.dart.snapshot',
         outputPath: out,
@@ -5407,8 +5057,8 @@ void main(List<String> args) {
       required bool patchedMarker,
       Map<String, String>? environment,
     }) async {
-      final dartBin = _sdkDartPaths.first;
-      final sdkDir = File(dartBin).parent.parent;
+      final String dartBin = _sdkDartPaths.first;
+      final Directory sdkDir = File(dartBin).parent.parent;
       final exeSuffix = Platform.isWindows ? '.exe' : '';
       final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
       _write(
@@ -5591,7 +5241,7 @@ void main(List<String> args) {
   });
 
   test('whole-program and modular kernel compiles are byte-identical across clean builds and checkout paths', () async {
-    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final Directory sdkDir = File(Platform.resolvedExecutable).parent.parent;
     final exeSuffix = Platform.isWindows ? '.exe' : '';
     final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
     final genKernel =
@@ -5664,7 +5314,7 @@ void main(List<String> args) {
       final wholePath =
           '${dir.path}/bazel-out/k8-fastbuild/bin/probe_whole.dill';
       File(wholePath).parent.createSync(recursive: true);
-      final genRes = await Process.run(dartaotruntime, [
+      final ProcessResult genRes = await Process.run(dartaotruntime, [
         genKernel,
         '--platform',
         productPlatformDill,
@@ -5743,7 +5393,7 @@ void main(List<String> args) {
         final entryExcluded =
             'bazel-out/k8-fastbuild/bin/entry.vm_excluded.txt';
         final entryLog = StringBuffer();
-        final entryCode = await compileModule(
+        final int entryCode = await compileModule(
           [
             '--target',
             'vm',
@@ -5799,13 +5449,15 @@ void main(List<String> args) {
 
       final modularPath =
           '${dir.path}/bazel-out/k8-fastbuild/bin/probe_modular.dill';
-      final wholeRun = await Process.run(Platform.resolvedExecutable, [
-        wholePath,
-      ]);
+      final ProcessResult wholeRun = await Process.run(
+        Platform.resolvedExecutable,
+        [wholePath],
+      );
       expect(wholeRun.exitCode, 0, reason: '${wholeRun.stderr}');
-      final modularRun = await Process.run(Platform.resolvedExecutable, [
-        modularPath,
-      ]);
+      final ProcessResult modularRun = await Process.run(
+        Platform.resolvedExecutable,
+        [modularPath],
+      );
       expect(modularRun.exitCode, 0, reason: '${modularRun.stderr}');
 
       return (
@@ -5819,10 +5471,31 @@ void main(List<String> args) {
       );
     }
 
-    final buildA1 = await buildInCheckout('checkout_a');
+    final ({
+      Uint8List koutline,
+      Uint8List modularDill,
+      String modularOut,
+      Uint8List wholeDill,
+      String wholeOut,
+    })
+    buildA1 = await buildInCheckout('checkout_a');
     Directory('${_root.path}/checkout_a').deleteSync(recursive: true);
-    final buildA2 = await buildInCheckout('checkout_a');
-    final buildB = await buildInCheckout('deep/nested/path/checkout_b');
+    final ({
+      Uint8List koutline,
+      Uint8List modularDill,
+      String modularOut,
+      Uint8List wholeDill,
+      String wholeOut,
+    })
+    buildA2 = await buildInCheckout('checkout_a');
+    final ({
+      Uint8List koutline,
+      Uint8List modularDill,
+      String modularOut,
+      Uint8List wholeDill,
+      String wholeOut,
+    })
+    buildB = await buildInCheckout('deep/nested/path/checkout_b');
 
     expect(
       buildA1.wholeDill,
@@ -5880,17 +5553,19 @@ void main(List<String> args) {
 
   test('stripSourceCodeFromDill preserves 8-byte alignment of binaryOffsetForMetadataPayloads across all source size deltas', () {
     for (var srcLen = 1; srcLen <= 16; srcLen++) {
-      final dill = _buildMinimalDillWithSourceAndMetadata(srcLen: srcLen);
-      final stripped = stripSourceCodeFromDill(dill);
+      final Uint8List dill = buildMinimalDillWithSourceAndMetadata(
+        srcLen: srcLen,
+      );
+      final Uint8List stripped = stripSourceCodeFromDill(dill);
       expect(stripped.length % 8, 0, reason: 'srcLen=$srcLen');
       final bd = ByteData.sublistView(stripped);
       expect(bd.getUint32(stripped.length - 4), stripped.length);
-      final libCount = bd.getUint32(stripped.length - 8);
-      final idxCount = libCount + 12;
-      final rawIdxStart = stripped.length - idxCount * 4;
-      final offMetadataPayloads = bd.getUint32(rawIdxStart + 4 * 4);
-      final offMetadataMappings = bd.getUint32(rawIdxStart + 5 * 4);
-      final offStringTable = bd.getUint32(rawIdxStart + 6 * 4);
+      final int libCount = bd.getUint32(stripped.length - 8);
+      final int idxCount = libCount + 12;
+      final int rawIdxStart = stripped.length - idxCount * 4;
+      final int offMetadataPayloads = bd.getUint32(rawIdxStart + 4 * 4);
+      final int offMetadataMappings = bd.getUint32(rawIdxStart + 5 * 4);
+      final int offStringTable = bd.getUint32(rawIdxStart + 6 * 4);
       expect(
         offMetadataPayloads % 8,
         0,
@@ -5918,8 +5593,8 @@ void main(List<String> args) {
     // A URI over 127 bytes encodes its length in two UInt30 bytes: the
     // rewriter must walk it exactly, keeping the URI while emptying the body.
     final longUri = 'package:pkg/${'a' * 200}.dart';
-    final stripped = stripSourceCodeFromDill(
-      _buildDillWithUris([longUri, 'b.dart']),
+    final Uint8List stripped = stripSourceCodeFromDill(
+      buildDillWithUris([longUri, 'b.dart']),
     );
     expect(dillSourceUris(stripped), [longUri, 'b.dart']);
   });
@@ -5929,9 +5604,9 @@ void main(List<String> args) {
     final seenSdkVersions = <String>{};
     final exeSuffix = Platform.isWindows ? '.exe' : '';
 
-    for (final dartBin in _sdkDartPaths) {
-      final sdkDir = File(dartBin).parent.parent;
-      final sdkVersion = File('${sdkDir.path}/version')
+    for (final String dartBin in _sdkDartPaths) {
+      final Directory sdkDir = File(dartBin).parent.parent;
+      final String sdkVersion = File('${sdkDir.path}/version')
           .readAsStringSync()
           .trim();
       seenSdkVersions.add(sdkVersion);
@@ -5947,7 +5622,7 @@ void main(List<String> args) {
       final patchedWorker =
           '${_root.path}/patched-outline-$sdkVersion/kernel_worker.snapshot';
       File(patchedWorker).parent.createSync(recursive: true);
-      final outlinePatchError = patchSnapshotFile(
+      final String? outlinePatchError = patchSnapshotFile(
         inputPath: kernelWorker,
         outputPath: patchedWorker,
         sdkVersion: sdkVersion,
@@ -6078,7 +5753,7 @@ void main(List<String> args) {
         final kmod = '${_root.path}/out/${sdkVersion}_$tag.kmod';
         final koutline = '${_root.path}/out/${sdkVersion}_$tag.koutline';
         final log = StringBuffer();
-        final code = await compileModule(
+        final int code = await compileModule(
           [
             '--target',
             'vm',
@@ -6112,11 +5787,11 @@ void main(List<String> args) {
         );
       }
 
-      final (_, outlineV1) = await compilePkgModule('v1');
+      final (_, Uint8List outlineV1) = await compilePkgModule('v1');
 
       // Editing NonConstBox.secret (111 -> 999) must NOT change .koutline bytes!
       _write('pkg/lib/a.dart', libSource(nonConstInit: 999, constInit: 222));
-      final (_, outlineV2) = await compilePkgModule('v2');
+      final (_, Uint8List outlineV2) = await compilePkgModule('v2');
       expect(
         outlineV2,
         equals(outlineV1),
@@ -6126,7 +5801,7 @@ void main(List<String> args) {
 
       // Editing ConstBox.val (222 -> 333) MUST change .koutline bytes!
       _write('pkg/lib/a.dart', libSource(nonConstInit: 999, constInit: 333));
-      final (_, outlineV3) = await compilePkgModule('v3');
+      final (_, Uint8List outlineV3) = await compilePkgModule('v3');
       expect(
         outlineV3,
         isNot(equals(outlineV2)),
@@ -6259,8 +5934,8 @@ void main(List<String> args) {
         reason: wholeEntryLog.toString(),
       );
 
-      final modRun = await Process.run(dartBin, [modularLinked]);
-      final wholeRun = await Process.run(dartBin, [
+      final ProcessResult modRun = await Process.run(dartBin, [modularLinked]);
+      final ProcessResult wholeRun = await Process.run(dartBin, [
         '$wholeEntryKmod/entry.dill',
       ]);
       expect(modRun.exitCode, 0, reason: '${modRun.stdout}\n${modRun.stderr}');
@@ -6269,8 +5944,8 @@ void main(List<String> args) {
         0,
         reason: '${wholeRun.stdout}\n${wholeRun.stderr}',
       );
-      final modOut = (modRun.stdout as String).trim();
-      final wholeOut = (wholeRun.stdout as String).trim();
+      final String modOut = (modRun.stdout as String).trim();
+      final String wholeOut = (wholeRun.stdout as String).trim();
       expect(
         modOut,
         wholeOut,
@@ -6287,7 +5962,7 @@ void main(List<String> args) {
   test('KernelLinkCache enforces byte bounds across all maps, evicts globally by LRU, and unpins WorkRequest buffers', () {
     // Encode a WorkRequest protobuf payload inside a larger 64 KB buffer so
     // any sublistView slice would pin the 64 KB buffer unless copied.
-    final rawReq = encodeWorkRequestForTest(
+    final Uint8List rawReq = encodeWorkRequestForTest(
       arguments: ['out.dill', 'mod_a'],
       inputs: {
         'mod_a/0.dill': Uint8List.fromList([1, 2, 3, 4]),
@@ -6303,8 +5978,9 @@ void main(List<String> args) {
     );
     expect(viewSlice.buffer.lengthInBytes, 64 * 1024);
 
-    final decodedInputs = decodeKernelLinkWorkRequestInputs(viewSlice);
-    for (final digest in decodedInputs.values) {
+    final Map<String, Uint8List> decodedInputs =
+        decodeKernelLinkWorkRequestInputs(viewSlice);
+    for (final Uint8List digest in decodedInputs.values) {
       expect(
         digest.buffer.lengthInBytes,
         digest.lengthInBytes,
@@ -6324,7 +6000,7 @@ void main(List<String> args) {
 
     final mod1 = Directory('${_root.path}/m1')..createSync(recursive: true);
     final mod2 = Directory('${_root.path}/m2')..createSync(recursive: true);
-    final indexJson = jsonEncode({
+    final String indexJson = jsonEncode({
       'version': 1,
       'sccs': [
         {
@@ -6340,7 +6016,7 @@ void main(List<String> args) {
     // Oversized dill (> maxSingleDillBytes = 80) is returned but not cached.
     final bigDill = File('${mod1.path}/big.dill')
       ..writeAsBytesSync(List<int>.filled(100, 7));
-    final bigBytes = cache.dillBytesOf(bigDill.path, {
+    final Uint8List bigBytes = cache.dillBytesOf(bigDill.path, {
       bigDill.path: Uint8List.fromList([9, 9]),
     });
     expect(bigBytes.length, 100);
@@ -6460,11 +6136,11 @@ void main(List<String> args) {
     // the digest is already present in inputs (under normalized path).
     await _withCwd(_root, () async {
       summaryFile.deleteSync();
-      final resultInputs = await ensureSummaryDigests(
+      final List<Uint8List> resultInputs = await ensureSummaryDigests(
         ['--input-summary', './dep.koutline/0.dill'],
         [_encodeInputForTest('dep.koutline/0.dill', sentinelDigest)],
       );
-      final decoded = [
+      final List<({Uint8List digest, String path})> decoded = [
         for (final raw in resultInputs) _decodeInputForTest(raw),
       ];
       expect(
@@ -6476,8 +6152,10 @@ void main(List<String> args) {
       // When an input entry has an empty digest, ensureSummaryDigests hashes from disk
       // and replaces the empty-digest entry in-place rather than leaving a duplicate.
       summaryFile.writeAsBytesSync([10, 20, 30, 40]);
-      final expectedSha = sha256Of(Uint8List.fromList([10, 20, 30, 40]));
-      final replacedInputs = await ensureSummaryDigests(
+      final Uint8List expectedSha = sha256Of(
+        Uint8List.fromList([10, 20, 30, 40]),
+      );
+      final List<Uint8List> replacedInputs = await ensureSummaryDigests(
         ['--input-summary', 'dep.koutline/0.dill'],
         [_encodeInputForTest('dep.koutline/0.dill', Uint8List(0))],
       );
@@ -6591,7 +6269,7 @@ void main(List<String> args) {
       'dep_parent.koutline/sources',
       kernelWorkerUri(_root.path),
     ]);
-    final call0Inputs = {
+    final Map<String, Uint8List> call0Inputs = {
       for (final raw in inputRecorder.callInputs[0])
         _decodeInputForTest(raw).path: _decodeInputForTest(raw).digest,
     };
@@ -6606,14 +6284,14 @@ void main(List<String> args) {
       reason: 'skipped staging must not add isolated inputs',
     );
 
-    final call2Inputs = {
+    final Map<String, Uint8List> call2Inputs = {
       for (final raw in inputRecorder.callInputs[2])
         _decodeInputForTest(raw).path: _decodeInputForTest(raw).digest,
     };
-    final expectedOutline0Sha = sha256Of(
+    final Uint8List expectedOutline0Sha = sha256Of(
       File('$outlineDir/0.dill').readAsBytesSync(),
     );
-    final expectedOutline1Sha = sha256Of(
+    final Uint8List expectedOutline1Sha = sha256Of(
       File('$outlineDir/1.dill').readAsBytesSync(),
     );
     expect(
@@ -6630,7 +6308,7 @@ void main(List<String> args) {
 
   test('KernelModuleCache enforces byte bounds, detects same-(size, mtime) mutations when digests are absent, and unpins WorkRequest inputs', () async {
     // Verify decodeKernelModuleWorkRequestInputs unpins slices from a larger frame buffer.
-    final rawReq = encodeWorkRequestForTest(
+    final Uint8List rawReq = encodeWorkRequestForTest(
       arguments: ['--output', 'out'],
       inputs: {
         'dep.koutline/index.json': Uint8List.fromList([1, 2, 3, 4]),
@@ -6639,7 +6317,9 @@ void main(List<String> args) {
     final bigBuf = Uint8List(32 * 1024)
       ..setRange(64, 64 + rawReq.length, rawReq);
     final view = Uint8List.sublistView(bigBuf, 64, 64 + rawReq.length);
-    final decodedList = decodeKernelModuleWorkRequestInputs(view);
+    final List<Uint8List> decodedList = decodeKernelModuleWorkRequestInputs(
+      view,
+    );
     expect(decodedList, hasLength(1));
     expect(
       decodedList.single.buffer.lengthInBytes,
@@ -6655,7 +6335,7 @@ void main(List<String> args) {
     final indexFile = File('${depDir.path}/index.json');
     final fixedTime = DateTime.fromMillisecondsSinceEpoch(1700000000000);
 
-    final idxV1 = jsonEncode({
+    final String idxV1 = jsonEncode({
       'version': 1,
       'sccs': [
         {
@@ -6665,7 +6345,7 @@ void main(List<String> args) {
         },
       ],
     });
-    final idxV2 = jsonEncode({
+    final String idxV2 = jsonEncode({
       'version': 1,
       'sccs': [
         {
@@ -6685,7 +6365,7 @@ void main(List<String> args) {
     Future<List<String>> runWithCache() async {
       final rec = _Recorder();
       final log = StringBuffer();
-      final code = await compileModule(
+      final int code = await compileModule(
         [
           '--source',
           _uri('pkg/lib/consumer.dart'),
@@ -6735,7 +6415,7 @@ void main(List<String> args) {
 
   test('scanDirectives, vmLibraries, and compileModule handle interpolated annotations, CFE configurable import conditions, and undeclared sources identically across worker, local, and sandboxed strategies', () async {
     // 1. Unit checks for vmLibraries filtering of internal `_*` and unsupported libraries.
-    final libs = vmLibraries({
+    final Set<String> libs = vmLibraries({
       'vm': {
         'libraries': {
           'core': {'uri': 'core/core.dart'},
@@ -6782,7 +6462,7 @@ void main(List<String> args) {
         "part 'part\\u002edart';\n"
         '@deprecated\n'
         'part() => 1;\n';
-    final scanned = scanDirectives(complexPrologue, libs);
+    final ScanResult? scanned = scanDirectives(complexPrologue, libs);
     expect(scanned, isNotNull);
     expect(scanned!.libraryName, 'my.annotated.lib');
     expect(scanned.refs.map((r) => '${r.kind}:${r.uri}').toList(), [
@@ -6808,14 +6488,14 @@ void main(List<String> args) {
       '@deprecated\nlibrary() => 1;\n',
       '@deprecated\npart() => 1;\n',
     ]) {
-      final res = scanDirectives("import 'a.dart';\n$decl", libs);
+      final ScanResult? res = scanDirectives("import 'a.dart';\n$decl", libs);
       expect(res, isNotNull, reason: 'failed on:\n$decl');
       expect(res!.refs.map((r) => r.uri).toList(), ['a.dart']);
     }
 
     // 4. End-to-end verification with real kernel_worker across worker, local, and sandboxed
     // setups when an undeclared file exists on disk in the workspace.
-    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final Directory sdkDir = File(Platform.resolvedExecutable).parent.parent;
     final exeSuffix = Platform.isWindows ? '.exe' : '';
     final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
     final kernelWorker =
@@ -6862,7 +6542,7 @@ void main(List<String> args) {
           'String msg() => greeting;\n',
     );
 
-    final libRes = await _compile('annot_lib', [
+    final _Result libRes = await _compile('annot_lib', [
       'pkg/lib/annot_bad.dart',
       'pkg/lib/annot_bad_part.dart',
       'pkg/lib/cond_bad_default.dart',
@@ -6889,7 +6569,7 @@ void main(List<String> args) {
           "import 'package:pkg/undeclared_secret.dart';\n"
           'void main() {}\n',
     );
-    final badEntryLocal = await _compile('bad_entry_local', [
+    final _Result badEntryLocal = await _compile('bad_entry_local', [
       'pkg/bin/bad_entry.dart',
     ], noDrop: true);
     expect(badEntryLocal.code, 1);
@@ -6959,7 +6639,7 @@ void main(List<String> args) {
       final koutline = 'out/pkg.koutline';
       final excluded = 'out/pkg.vm_excluded.txt';
       final log = StringBuffer();
-      final workerInputs = useWorkerInputs
+      final List<Uint8List> workerInputs = useWorkerInputs
           ? [
               _encodeInputForTest(
                 'pkg/lib/declared_ok.dart',
@@ -7012,21 +6692,24 @@ void main(List<String> args) {
       );
     }
 
-    final workerOut = await buildCondStrategy(
-      'worker',
-      includeUndeclaredOnDisk: true,
-      useWorkerInputs: true,
-    );
-    final localOut = await buildCondStrategy(
-      'local',
-      includeUndeclaredOnDisk: true,
-      useWorkerInputs: false,
-    );
-    final sandboxedOut = await buildCondStrategy(
-      'sandboxed',
-      includeUndeclaredOnDisk: false,
-      useWorkerInputs: false,
-    );
+    final ({Uint8List kmodDill, Uint8List koutlineDill}) workerOut =
+        await buildCondStrategy(
+          'worker',
+          includeUndeclaredOnDisk: true,
+          useWorkerInputs: true,
+        );
+    final ({Uint8List kmodDill, Uint8List koutlineDill}) localOut =
+        await buildCondStrategy(
+          'local',
+          includeUndeclaredOnDisk: true,
+          useWorkerInputs: false,
+        );
+    final ({Uint8List kmodDill, Uint8List koutlineDill}) sandboxedOut =
+        await buildCondStrategy(
+          'sandboxed',
+          includeUndeclaredOnDisk: false,
+          useWorkerInputs: false,
+        );
     expect(workerOut.kmodDill, equals(sandboxedOut.kmodDill));
     expect(localOut.kmodDill, equals(sandboxedOut.kmodDill));
     expect(workerOut.koutlineDill, equals(sandboxedOut.koutlineDill));
@@ -7034,7 +6717,7 @@ void main(List<String> args) {
   });
 
   test('multi-root resolution and _Files.read never let stale bazel-out files shadow declared source files or untracked workspace files shadow declared generated files', () async {
-    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final Directory sdkDir = File(Platform.resolvedExecutable).parent.parent;
     final exeSuffix = Platform.isWindows ? '.exe' : '';
     final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
     final kernelWorker =
@@ -7101,7 +6784,7 @@ void main(List<String> args) {
 
       final wholePath = '${ws.path}/bazel-out/k8-fastbuild/bin/whole.dill';
       File(wholePath).parent.createSync(recursive: true);
-      final genRes = await Process.run(dartaotruntime, [
+      final ProcessResult genRes = await Process.run(dartaotruntime, [
         genKernel,
         '--platform',
         productPlatformDill,
@@ -7139,7 +6822,7 @@ void main(List<String> args) {
       final rootsArgs = reverseMultiRootOrder
           ? ['--multi-root', 'bazel-out/k8-fastbuild/bin', '--multi-root', '.']
           : ['--multi-root', '.', '--multi-root', 'bazel-out/k8-fastbuild/bin'];
-      final libInputs = passWorkerInputs
+      final List<Uint8List> libInputs = passWorkerInputs
           ? [
               _encodeInputForTest(
                 'pkg/lib/config.dart',
@@ -7147,7 +6830,7 @@ void main(List<String> args) {
               ),
             ]
           : const <Uint8List>[];
-      final entryInputs = passWorkerInputs
+      final List<Uint8List> entryInputs = passWorkerInputs
           ? [
               _encodeInputForTest('app/bin/main.dart', Uint8List.fromList([2])),
             ]
@@ -7155,7 +6838,7 @@ void main(List<String> args) {
 
       await _withCwd(ws, () async {
         final libLog = StringBuffer();
-        final libCode = await compileModule(
+        final int libCode = await compileModule(
           [
             '--target',
             'vm',
@@ -7195,7 +6878,7 @@ void main(List<String> args) {
         final entryExcluded =
             'bazel-out/k8-fastbuild/bin/entry.vm_excluded.txt';
         final entryLog = StringBuffer();
-        final entryCode = await compileModule(
+        final int entryCode = await compileModule(
           [
             '--target',
             'vm',
@@ -7247,9 +6930,10 @@ void main(List<String> args) {
       });
 
       final modularPath = '${ws.path}/bazel-out/k8-fastbuild/bin/modular.dill';
-      final runRes = await Process.run(Platform.resolvedExecutable, [
-        modularPath,
-      ]);
+      final ProcessResult runRes = await Process.run(
+        Platform.resolvedExecutable,
+        [modularPath],
+      );
       expect(runRes.exitCode, 0, reason: '${runRes.stderr}');
       return (
         wholeDill: File(wholePath).readAsBytesSync(),
@@ -7258,31 +6942,36 @@ void main(List<String> args) {
       );
     }
 
-    final cleanBuild = await runSourceVsStaleBuild(
+    final ({Uint8List modularDill, String output, Uint8List wholeDill})
+    cleanBuild = await runSourceVsStaleBuild(
       'clean',
       hasStaleBazelOutFile: false,
       reverseMultiRootOrder: false,
       passWorkerInputs: false,
     );
-    final incrementalLocal = await runSourceVsStaleBuild(
+    final ({Uint8List modularDill, String output, Uint8List wholeDill})
+    incrementalLocal = await runSourceVsStaleBuild(
       'incremental_local',
       hasStaleBazelOutFile: true,
       reverseMultiRootOrder: false,
       passWorkerInputs: false,
     );
-    final incrementalLocalReversedRoots = await runSourceVsStaleBuild(
+    final ({Uint8List modularDill, String output, Uint8List wholeDill})
+    incrementalLocalReversedRoots = await runSourceVsStaleBuild(
       'incremental_local_reversed_roots',
       hasStaleBazelOutFile: true,
       reverseMultiRootOrder: true,
       passWorkerInputs: false,
     );
-    final incrementalWorker = await runSourceVsStaleBuild(
+    final ({Uint8List modularDill, String output, Uint8List wholeDill})
+    incrementalWorker = await runSourceVsStaleBuild(
       'incremental_worker',
       hasStaleBazelOutFile: true,
       reverseMultiRootOrder: false,
       passWorkerInputs: true,
     );
-    final incrementalWorkerReversedRoots = await runSourceVsStaleBuild(
+    final ({Uint8List modularDill, String output, Uint8List wholeDill})
+    incrementalWorkerReversedRoots = await runSourceVsStaleBuild(
       'incremental_worker_reversed_roots',
       hasStaleBazelOutFile: true,
       reverseMultiRootOrder: true,
@@ -7361,7 +7050,7 @@ void main(List<String> args) {
           final exclOut =
               'bazel-out/k8-fastbuild/bin/gen_${reverseRoots ? "reversed_" : ""}${passInputs ? "worker" : "local"}.vm_excluded.txt';
           final genLog = StringBuffer();
-          final genCode = await compileModule(
+          final int genCode = await compileModule(
             [
               '--target',
               'vm',
@@ -7419,8 +7108,8 @@ void main(List<String> args) {
             File('$outDir/index.json').readAsStringSync(),
           ) as Map<String, dynamic>;
           expect((genIdx['sccs'] as List), hasLength(2));
-          final dill0 = File('$outDir/0.dill').readAsBytesSync();
-          final dill1 = File('$outDir/1.dill').readAsBytesSync();
+          final Uint8List dill0 = File('$outDir/0.dill').readAsBytesSync();
+          final Uint8List dill1 = File('$outDir/1.dill').readAsBytesSync();
           final combined = Uint8List.fromList([...dill0, ...dill1]);
           expect(
             _containsSubsequence(
@@ -7489,7 +7178,7 @@ void main(List<String> args) {
     expect(kernelWorkerUri('/tmp/ws/0.dill'), '/tmp/ws/0.dill');
     expect(kernelWorkerUri('package:pkg/a.dart'), 'package:pkg/a.dart');
 
-    final rewritten = kernelWorkerArgs([
+    final List<String> rewritten = kernelWorkerArgs([
       '--target',
       'vm',
       '--dart-sdk-summary',
@@ -7540,11 +7229,11 @@ void main(List<String> args) {
     // touching disk, and emits the file:/// path in WorkRequest.inputs so
     // kernel_worker's `inputDigests[toUri(input.path)]` lookup succeeds.
     final winSentinel = Uint8List.fromList([0xde, 0xad, 0xbe, 0xef]);
-    final winInputs = await ensureSummaryDigests(
+    final List<Uint8List> winInputs = await ensureSummaryDigests(
       ['--input-summary', kernelWorkerUri(winSummary)],
       [_encodeInputForTest(winSummary, winSentinel)],
     );
-    final decodedWinInputs = {
+    final Map<String, Uint8List> decodedWinInputs = {
       for (final raw in winInputs)
         _decodeInputForTest(raw).path: _decodeInputForTest(raw).digest,
     };
@@ -7558,7 +7247,7 @@ void main(List<String> args) {
     _write('pkg/lib/win_smoke.dart', 'int winSmoke() => 1;\n');
     final rec = _Recorder();
     final log = StringBuffer();
-    final code = await compileModule(
+    final int code = await compileModule(
       [
         '--target',
         'vm',
@@ -7664,14 +7353,14 @@ void main(List<String> args) {
     });
     // The front end must still see a single isolated root on every call.
     expect(recorder.calls, isNotEmpty);
-    for (final call in recorder.calls) {
+    for (final List<String> call in recorder.calls) {
       expect(_valuesAfter(call, '--multi-root'), [
         kernelWorkerUri('$outDir/.isolated_root'),
       ]);
     }
     // Staged inputs must reuse the WorkRequest.inputs digests, and the origin
     // inputs must be withheld as duplicates, across every compile call.
-    final callInputs = {
+    final Map<String, Uint8List> callInputs = {
       for (final call in recorder.callInputs)
         for (final raw in call)
           _decodeInputForTest(raw).path: _decodeInputForTest(raw).digest,
@@ -7708,11 +7397,11 @@ void main(List<String> args) {
         'file:///C:/Users/runneradmin/AppData/Local/Temp/winspell/dep.koutline/0.dill';
     final sentinel = Uint8List.fromList([0xaa, 0xbb, 0xcc, 0xdd]);
     for (final spelling in [backslash, forward, uri]) {
-      final inputs = await ensureSummaryDigests(
+      final List<Uint8List> inputs = await ensureSummaryDigests(
         ['--input-summary', uri],
         [_encodeInputForTest(spelling, sentinel)],
       );
-      final decoded = {
+      final Map<String, Uint8List> decoded = {
         for (final raw in inputs)
           _decodeInputForTest(raw).path: _decodeInputForTest(raw).digest,
       };
@@ -7744,12 +7433,12 @@ class _InputRecordingCompiler implements ModuleCompiler {
     onRun?.call(args);
     calls.add(args);
     callInputs.add([for (final i in inputs) Uint8List.fromList(i)]);
-    final outIdx = args.indexOf('--output');
+    final int outIdx = args.indexOf('--output');
     if (outIdx != -1 && outIdx + 1 < args.length) {
-      final outPath = args[outIdx + 1];
+      final String outPath = args[outIdx + 1];
       File(outPath)
         ..parent.createSync(recursive: true)
-        ..writeAsBytesSync(_buildMinimalFieldDill());
+        ..writeAsBytesSync(buildMinimalFieldDill());
     }
     return const ModuleOutcome(0, '');
   }
@@ -7767,7 +7456,7 @@ Uint8List _encodeInputForTest(String path, Uint8List digest) =>
     var result = 0;
     var shift = 0;
     while (true) {
-      final b = bytes[pos++];
+      final int b = bytes[pos++];
       result |= (b & 0x7f) << shift;
       if ((b & 0x80) == 0) return result;
       shift += 7;
@@ -7777,11 +7466,11 @@ Uint8List _encodeInputForTest(String path, Uint8List digest) =>
   var path = '';
   var digest = Uint8List(0);
   while (pos < bytes.length) {
-    final tag = readVarint();
-    final field = tag >> 3;
-    final wire = tag & 7;
+    final int tag = readVarint();
+    final int field = tag >> 3;
+    final int wire = tag & 7;
     if (wire == 2) {
-      final len = readVarint();
+      final int len = readVarint();
       final slice = Uint8List.sublistView(bytes, pos, pos + len);
       pos += len;
       if (field == 1) {
@@ -7796,113 +7485,6 @@ Uint8List _encodeInputForTest(String path, Uint8List digest) =>
   return (path: path, digest: digest);
 }
 
-Uint8List _buildMinimalDillWithSourceAndMetadata({required int srcLen}) {
-  final out = BytesBuilder();
-  void u30(int v) {
-    assert(v >= 0 && v < 0x80);
-    out.addByte(v);
-  }
-
-  void u32(int v) {
-    out.addByte((v >> 24) & 0xff);
-    out.addByte((v >> 16) & 0xff);
-    out.addByte((v >> 8) & 0xff);
-    out.addByte(v & 0xff);
-  }
-
-  u32(Tag.ComponentFile);
-  u32(Tag.BinaryFormatVersion);
-  for (var i = 0; i < 10; i++) {
-    out.addByte(0);
-  }
-  u30(0);
-
-  final libStart = out.length;
-  out.addByte(0); // flags
-  u30(3); // major
-  u30(0); // minor
-  u30(1); // canonicalName
-  u30(1); // name
-  u30(0); // fileUri
-  u30(0); // problemsAsJson
-  u30(0); // annotations
-  u30(0); // depCount
-  u30(0); // expCount
-  u30(0); // partCount
-  u30(0); // tdCount
-  u30(0); // clsCount
-  u30(0); // extCount
-  u30(0); // extTypeCount
-  u30(0); // fieldCount
-  u30(0); // pCount
-  final sourceRefsOffset = out.length;
-  u30(0); // usedCount
-  u32(sourceRefsOffset);
-  u32(libStart + 13); // clsOffsets[0]
-  u32(0); // classCount
-  u32(sourceRefsOffset); // procOffsets[0]
-  u32(0); // procCount
-  final libEnd = out.length;
-
-  final sourceTableOffset = libEnd;
-  u32(1); // numSources = 1
-  final uriEntry0 = out.length;
-  u30(5); // uriLen = 5 ("a.dart" prefix)
-  out.add([97, 46, 100, 97, 114]);
-  u30(srcLen);
-  out.add(List<int>.filled(srcLen, 0x61));
-  u30(2); // lineCount = 2
-  u30(0);
-  u30(1);
-  u30(5); // importUri len = 5
-  out.add([97, 46, 100, 97, 114]);
-  u30(0); // constantCoverageConstructors
-  u32(uriEntry0);
-
-  final constantTableOffset = out.length;
-  u30(0);
-  final constantTableIndexOffset = out.length;
-  u32(0);
-
-  final linkTableOffset = out.length;
-  u30(1); // canonCount = 1
-  u30(0);
-  u30(1);
-
-  final metaPad = (8 - (out.length % 8)) % 8;
-  if (metaPad > 0) out.add(Uint8List(metaPad));
-  final metadataPayloadsOffset = out.length;
-  out.add([0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe]);
-  final metadataMappingsOffset = out.length;
-  out.add([0x11, 0x22, 0x33, 0x44, 0x00, 0x00, 0x00, 0x01]);
-
-  final stringTableOffset = out.length;
-  u30(2);
-  u30(0);
-  u30(1);
-  out.addByte(102); // "f"
-
-  final componentIndexOffset = out.length;
-  const idxBytes = 13 * 4;
-  final pad = (8 - ((out.length + idxBytes) % 8)) % 8;
-  if (pad > 0) out.add(Uint8List(pad));
-
-  u32(sourceTableOffset);
-  u32(constantTableOffset);
-  u32(constantTableIndexOffset);
-  u32(linkTableOffset);
-  u32(metadataPayloadsOffset);
-  u32(metadataMappingsOffset);
-  u32(stringTableOffset);
-  u32(componentIndexOffset);
-  u32(0); // mainMethodReference
-  u32(libStart);
-  u32(libEnd);
-  u32(1); // libraryCount = 1
-  u32(out.length + 4);
-  return out.toBytes();
-}
-
 class _RealOneShotCompiler implements ModuleCompiler {
   _RealOneShotCompiler(this._dartaotruntime, this._kernelWorker);
 
@@ -7911,7 +7493,10 @@ class _RealOneShotCompiler implements ModuleCompiler {
 
   @override
   Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
-    final res = await Process.run(_dartaotruntime, [_kernelWorker, ...args]);
+    final ProcessResult res = await Process.run(_dartaotruntime, [
+      _kernelWorker,
+      ...args,
+    ]);
     return ModuleOutcome(res.exitCode, '${res.stdout}${res.stderr}');
   }
 
@@ -7928,7 +7513,7 @@ class _CwdOneShotCompiler implements ModuleCompiler {
 
   @override
   Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
-    final res = await Process.run(_dartaotruntime, [
+    final ProcessResult res = await Process.run(_dartaotruntime, [
       _kernelWorker,
       ...args,
     ], workingDirectory: _cwd);

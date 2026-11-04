@@ -549,10 +549,10 @@ void main(List<String> args) {
     });
 
     test('refuses every escape and allows the declared tree', () {
-      final violations = findStagedDirectiveViolations([
+      final List<String> violations = findStagedDirectiveViolations([
         staged.path,
       ], tool: 'guard-test');
-      final at = (String relative) =>
+      final String Function(String relative) at = (String relative) =>
           '${staged.path}/$relative'.replaceAll(r'\', '/');
       expect(violations, [
         "guard-test: ${at('lib/abs.dart')} import '/etc/hostname' "
@@ -641,10 +641,10 @@ void main(List<String> args) {
       });
 
       test('every triple-quote spelling is refused', () {
-        final violations = findStagedDirectiveViolations([
+        final List<String> violations = findStagedDirectiveViolations([
           tq.path,
         ], tool: 'guard-test');
-        final at = (String relative) =>
+        final String Function(String relative) at = (String relative) =>
             '${tq.path}/$relative'.replaceAll(r'\', '/');
         expect(violations, [
           "guard-test: ${at('lib/bs.dart')} import '\n/secret/s.dart' "
@@ -678,7 +678,7 @@ void main(List<String> args) {
         // An empty first line is dropped by the guard and the front end
         // alike, so this names the staged sibling, not the host.
         tqFile('lib/emptyfirst.dart', "import '''\nok.dart''';\n");
-        final violations = findStagedDirectiveViolations([
+        final List<String> violations = findStagedDirectiveViolations([
           tq.path,
         ], tool: 'guard-test');
         expect(violations.where((v) => v.contains('clean')), isEmpty);
@@ -689,13 +689,13 @@ void main(List<String> args) {
         // Dependency sources arrive through summaries, not the staged tree,
         // so the summary runner allows a relative target with no staged file
         // — but a URI spanning lines is refused however it spells its target.
-        final allowed = findStagedDirectiveViolations(
+        final List<String> allowed = findStagedDirectiveViolations(
           [tq.path],
           tool: 'guard-test',
           requireTargetsExist: false,
         );
         expect(allowed.where((v) => v.contains('missing.dart')), isEmpty);
-        final wsAt = '${tq.path}/lib/ws.dart'.replaceAll(r'\', '/');
+        final String wsAt = '${tq.path}/lib/ws.dart'.replaceAll(r'\', '/');
         expect(
           allowed,
           contains(
@@ -709,8 +709,9 @@ void main(List<String> args) {
 
   group('no staged-resolver copies', () {
     test('the wrapper imports the shared library instead of copying it', () {
-      final sources = _toolSources(args);
-      final text = File(sources['app_jit_snapshot.dart']!).readAsStringSync();
+      final Map<String, String> sources = _toolSources(args);
+      final String text = File(sources['app_jit_snapshot.dart']!)
+          .readAsStringSync();
       expect(text, contains("import '../../guard/lib/directive_guard.dart';"));
       expect(text, isNot(contains('staged-resolver-mirror')));
       expect(text, isNot(contains('Mirror of `directive_guard.dart`')));
@@ -740,7 +741,7 @@ void main(List<String> args) {
 
     test('findDisallowedDirectives refuses sources it cannot scan', () {
       for (var i = 0; i < bad.length; i++) {
-        final errors = findDisallowedDirectives({
+        final List<String> errors = findDisallowedDirectives({
           'bad$i.dart': bad[i],
         }, tool: 'guard-test');
         expect(errors, hasLength(1));
@@ -756,12 +757,14 @@ void main(List<String> args) {
       for (var i = 0; i < bad.length; i++) {
         File('${root.path}/bad$i.dart').writeAsStringSync(bad[i]);
       }
-      final violations = findStagedDirectiveViolations([
+      final List<String> violations = findStagedDirectiveViolations([
         root.path,
       ], tool: 'guard-test');
       expect(violations, hasLength(bad.length));
       for (var i = 0; i < bad.length; i++) {
-        final hit = violations.singleWhere((v) => v.contains('bad$i.dart'));
+        final String hit = violations.singleWhere(
+          (v) => v.contains('bad$i.dart'),
+        );
         expect(hit, contains('could not be checked'));
         expect(hit, contains('syntax error'));
       }
@@ -811,7 +814,7 @@ void main(List<String> args) {
         'void importer() {}\n': [],
         'import \'a.dart\';\nint get library => 0;\n': ['a.dart'],
       };
-      for (final entry in cases.entries) {
+      for (final MapEntry<String, List<String>> entry in cases.entries) {
         expect(
           scanAllDirectiveUris(entry.key).map((r) => r.uri).toList(),
           entry.value,
@@ -1319,7 +1322,7 @@ void main(List<String> args) {
     };
 
     test('the enumerated tools are exactly the tested sources', () {
-      final sources = _toolSources(args);
+      final Map<String, String> sources = _toolSources(args);
       expect(
         sources.keys,
         unorderedEquals([
@@ -1329,10 +1332,10 @@ void main(List<String> args) {
       );
     });
 
-    for (final entry in markers.entries) {
+    for (final MapEntry<String, String> entry in markers.entries) {
       test('${entry.key} enforces `${entry.value}`', () {
-        final sources = _toolSources(args);
-        final text = File(sources[entry.key]!).readAsStringSync();
+        final Map<String, String> sources = _toolSources(args);
+        final String text = File(sources[entry.key]!).readAsStringSync();
         expect(
           text.contains(entry.value),
           isTrue,

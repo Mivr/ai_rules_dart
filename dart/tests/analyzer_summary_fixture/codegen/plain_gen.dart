@@ -44,7 +44,7 @@ class _PlainWorker extends AsyncWorkerLoop {
   @override
   Future<WorkResponse> performRequest(WorkRequest request) async {
     final buf = StringBuffer();
-    final exit = _run(request.arguments, buf.writeln);
+    final int exit = _run(request.arguments, buf.writeln);
     return WorkResponse()
       ..exitCode = exit
       ..output = buf.toString();
@@ -56,7 +56,7 @@ int _run(List<String> args, void Function(String) diagnostic) {
   final outputs = <String>[];
   var i = 0;
   while (i < args.length) {
-    final flag = args[i];
+    final String flag = args[i];
     if (!_flags.contains(flag)) {
       diagnostic('plain_gen: unknown flag $flag');
       return 64;

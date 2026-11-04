@@ -7,14 +7,17 @@ void _verifyAotTarget({
   required String executable,
   required List<String> baseArgs,
 }) {
-  final pass = Process.runSync(executable, baseArgs);
+  final ProcessResult pass = Process.runSync(executable, baseArgs);
   if (pass.exitCode != 0) {
     throw StateError(
       '$name failed when assertions should pass (exit ${pass.exitCode}):\n'
       '${pass.stdout}\n${pass.stderr}',
     );
   }
-  final fail = Process.runSync(executable, [...baseArgs, '--fail']);
+  final ProcessResult fail = Process.runSync(executable, [
+    ...baseArgs,
+    '--fail',
+  ]);
   if (fail.exitCode == 0) {
     throw StateError(
       '$name exited 0 on failing assert; assertions were stripped',
@@ -31,7 +34,7 @@ void _verifyAotTarget({
 void main() {
   if (Platform.isWindows) return;
   final runfiles = Runfiles.create();
-  final sdkBin = File(Platform.resolvedExecutable).parent.path;
+  final String sdkBin = File(Platform.resolvedExecutable).parent.path;
   final dartaotruntime = '$sdkBin/dartaotruntime';
 
   for (final envKey in [
@@ -39,7 +42,7 @@ void main() {
     'EXE_RECORD_USE_ASSERTS_PATH',
     'EXE_RECORD_USE_DBG_PATH',
   ]) {
-    final exePath = runfiles.rlocation(Platform.environment[envKey]!);
+    final String exePath = runfiles.rlocation(Platform.environment[envKey]!);
     _verifyAotTarget(name: envKey, executable: exePath, baseArgs: const []);
   }
 
@@ -48,7 +51,7 @@ void main() {
     'AOT_RECORD_USE_ASSERTS_PATH',
     'AOT_RECORD_USE_DBG_PATH',
   ]) {
-    final aotPath = runfiles.rlocation(Platform.environment[envKey]!);
+    final String aotPath = runfiles.rlocation(Platform.environment[envKey]!);
     _verifyAotTarget(
       name: envKey,
       executable: dartaotruntime,

@@ -19,7 +19,7 @@ import 'package:test/test.dart';
 /// `package:test`, and the fixture's source. The last is this package's
 /// `BUILD.bazel` (see [_shardingTests]).
 void main(List<String> args) {
-  final launcher = Runfiles.create().rlocation(args[0]);
+  final String launcher = Runfiles.create().rlocation(args[0]);
   _seedTests(launcher, args);
   _shardingTests(args[6]);
 
@@ -42,9 +42,9 @@ void main(List<String> args) {
   // Bazel kills a test that hangs, so anything it printed is in test.log only
   // if the launcher passed it on as it came.
   test('passes output on while the test is still running', () async {
-    final process = await start(['stream']);
-    final out = _lines(process.stdout);
-    final err = _lines(process.stderr);
+    final Process process = await start(['stream']);
+    final StreamIterator<String> out = _lines(process.stdout);
+    final StreamIterator<String> err = _lines(process.stderr);
     // A paused pipe left open would keep this test's own VM alive.
     addTearDown(() => Future.wait([out.cancel(), err.cancel()]));
 
@@ -63,21 +63,23 @@ void main(List<String> args) {
   });
 
   test('exits with the test, not with a process the test leaked', () async {
-    final tmp = await Directory.systemTemp.createTemp('test_runner_test_');
+    final Directory tmp = await Directory.systemTemp.createTemp(
+      'test_runner_test_',
+    );
     final release = File('${tmp.path}/release');
-    final process = await start(['leak', release.path]);
+    final Process process = await start(['leak', release.path]);
     process.stderr.listen(stderr.add);
 
     // The lingering copy holds the launcher's stdout; it closes when that
     // copy is gone, which must happen before the directory goes away.
-    final stdoutClosed = process.stdout.drain<void>();
+    final Future<void> stdoutClosed = process.stdout.drain<void>();
     addTearDown(() async {
       release.writeAsStringSync('');
       await stdoutClosed;
       tmp.deleteSync(recursive: true);
     });
 
-    final exitCode = await process.exitCode.timeout(
+    final int exitCode = await process.exitCode.timeout(
       const Duration(seconds: 20),
       onTimeout: () => fail('the launcher outlived the test it ran'),
     );
@@ -87,7 +89,7 @@ void main(List<String> args) {
   // A plain `main` has no cases to select, so a filter must fail loudly
   // rather than run everything and report a filtered pass.
   test('a test without package:test refuses --test_filter', () async {
-    final process = await Process.start(
+    final Process process = await Process.start(
       launcher,
       ['stream'],
       environment: {
@@ -97,7 +99,7 @@ void main(List<String> args) {
         'TESTBRIDGE_TEST_ONLY': 'anything',
       },
     );
-    final err = await process.stderr.transform(utf8.decoder).join();
+    final String err = await process.stderr.transform(utf8.decoder).join();
     await process.stdout.drain<void>();
     expect(await process.exitCode, 1);
     expect(
@@ -107,7 +109,9 @@ void main(List<String> args) {
   });
 
   test('fails with a clear error when RULES_DART_BASE_DILL cannot be resolved or does not exist', () async {
-    final tmp = await Directory.systemTemp.createTemp('test_runner_base_dill_');
+    final Directory tmp = await Directory.systemTemp.createTemp(
+      'test_runner_base_dill_',
+    );
     addTearDown(() => tmp.deleteSync(recursive: true));
 
     const ws = '_main';
@@ -118,7 +122,7 @@ void main(List<String> args) {
         .writeAsBytesSync(const [1, 2, 3, 4]);
     File('${wsDir.path}/runner.dill').writeAsBytesSync(const [5, 6, 7, 8]);
 
-    final process = await Process.start(
+    final Process process = await Process.start(
       launcher,
       const [],
       environment: {
@@ -134,7 +138,7 @@ void main(List<String> args) {
         'RULES_DART_BASE_DILL': '$ws/pkg/missing.base.dill',
       },
     );
-    final err = await process.stderr.transform(utf8.decoder).join();
+    final String err = await process.stderr.transform(utf8.decoder).join();
     await process.stdout.drain<void>();
     expect(await process.exitCode, 1);
     expect(err, contains('dart_test: base dill not found'));
@@ -143,7 +147,7 @@ void main(List<String> args) {
   test(
     'a suite whose dill is not laid out for its path fails clearly',
     () async {
-      final process = await Process.start(
+      final Process process = await Process.start(
         launcher,
         const [],
         environment: {
@@ -154,7 +158,7 @@ void main(List<String> args) {
           'RULES_DART_TEST_PATH': 'pkg/my_test.dart',
         },
       );
-      final err = await process.stderr.transform(utf8.decoder).join();
+      final String err = await process.stderr.transform(utf8.decoder).join();
       await process.stdout.drain<void>();
       expect(await process.exitCode, 1);
       expect(err, contains('is not laid out for pkg/my_test.dart'));
@@ -164,22 +168,22 @@ void main(List<String> args) {
   test(
     'a plain test sees no RULES_DART_* variable but keeps caller variables',
     () async {
-      final process = await start(
+      final Process process = await start(
         ['env-probe'],
         extraEnv: {
           'RULES_DART_PROBE_LEAK': 'leaked',
           'PROBE_CALLER_VAR': 'caller-ok',
         },
       );
-      final out = await process.stdout.transform(utf8.decoder).join();
+      final String out = await process.stdout.transform(utf8.decoder).join();
       await process.stderr.drain<void>();
       expect(await process.exitCode, 0);
       final seen = <String, String>{};
-      for (final line in const LineSplitter().convert(out)) {
-        final at = line.indexOf('=');
+      for (final String line in const LineSplitter().convert(out)) {
+        final int at = line.indexOf('=');
         if (at > 0) seen[line.substring(0, at)] = line.substring(at + 1);
       }
-      final leaked = seen.keys
+      final List<String> leaked = seen.keys
           .where((key) => key.startsWith('RULES_DART_'))
           .toList();
       expect(leaked, isEmpty, reason: 'the launcher leaked $leaked');
@@ -188,10 +192,12 @@ void main(List<String> args) {
   );
 
   test('a test without package:test materializes workspace from manifest when not in place', () async {
-    final tmp = await Directory.systemTemp.createTemp('test_runner_manifest_');
+    final Directory tmp = await Directory.systemTemp.createTemp(
+      'test_runner_manifest_',
+    );
     addTearDown(() => tmp.deleteSync(recursive: true));
 
-    final fixtureDill = Runfiles.create().rlocation(args[1]);
+    final String fixtureDill = Runfiles.create().rlocation(args[1]);
     final emptyCwd = Directory('${tmp.path}/empty_cwd')..createSync();
     final runfilesDir = Directory('${tmp.path}/skeleton.runfiles')
       ..createSync();
@@ -203,7 +209,7 @@ void main(List<String> args) {
       '${args[1]} $fixtureDill\n',
     );
 
-    final process = await Process.start(
+    final Process process = await Process.start(
       launcher,
       ['read-cwd', 'pkg/data.txt'],
       workingDirectory: emptyCwd.path,
@@ -217,8 +223,8 @@ void main(List<String> args) {
         'RULES_DART_TEST_RUNNER': '',
       },
     );
-    final out = await process.stdout.transform(utf8.decoder).join();
-    final err = await process.stderr.transform(utf8.decoder).join();
+    final String out = await process.stdout.transform(utf8.decoder).join();
+    final String err = await process.stderr.transform(utf8.decoder).join();
     expect(await process.exitCode, 0, reason: err);
     expect(out.trim(), 'manifest-data');
   });

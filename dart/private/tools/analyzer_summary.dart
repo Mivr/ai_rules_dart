@@ -40,7 +40,8 @@ import 'package:analyzer/src/dart/analysis/driver.dart';
 // ignore: implementation_imports
 import 'package:analyzer/src/dart/analysis/driver_based_analysis_context.dart';
 // ignore: implementation_imports
-import 'package:analyzer/src/generated/source.dart' show UriResolver;
+import 'package:analyzer/src/generated/source.dart'
+    show SourceFactory, UriResolver;
 // ignore: implementation_imports
 import 'package:analyzer/src/summary/package_bundle_reader.dart'
     show InSummaryUriResolver;
@@ -102,7 +103,7 @@ void _ensureLintRulesRegistered() {
 }
 
 Future<void> main(List<String> rawArgs) async {
-  final args = expandParamFiles(
+  final List<String> args = expandParamFiles(
     rawArgs,
     skipEmptyLines: true,
     keepMissingArg: true,
@@ -111,7 +112,7 @@ Future<void> main(List<String> rawArgs) async {
     await _runPersistentWorker();
     exit(0);
   }
-  final code = await runSingleRequest(
+  final int code = await runSingleRequest(
     args,
     outSink: stdout,
     errSink: stderr,
@@ -125,10 +126,10 @@ Future<void> main(List<String> rawArgs) async {
 Future<void> _runPersistentWorker() async {
   _ensureLintRulesRegistered();
   final disableCache = Platform.environment['ANALYZER_SUMMARY_NO_CACHE'] == '1';
-  final envTotalMb = int.tryParse(
+  final int? envTotalMb = int.tryParse(
     Platform.environment['ANALYZER_SUMMARY_CACHE_MB'] ?? '',
   );
-  final envInstances = int.tryParse(
+  final int? envInstances = int.tryParse(
     Platform.environment['ANALYZER_SUMMARY_WORKER_INSTANCES'] ?? '',
   );
   final summaryCache = SummaryByteCache(
@@ -146,9 +147,9 @@ Future<void> _runPersistentWorker() async {
       continue;
     }
     final output = StringBuffer();
-    var exitCode = _failed;
+    int exitCode = _failed;
     try {
-      final expandedArgs = expandParamFiles(
+      final List<String> expandedArgs = expandParamFiles(
         request.arguments,
         skipEmptyLines: true,
         keepMissingArg: true,
@@ -247,9 +248,9 @@ Future<int> _sdk(
   AnalyzerArgs args, {
   required fs.ResourceProvider resourceProvider,
 }) async {
-  final sdkPath = p.normalize(p.absolute(args.single('sdk')));
-  final embedder = args.all('embedder-yaml');
-  final embedderYamlPath = embedder.isEmpty
+  final String sdkPath = p.normalize(p.absolute(args.single('sdk')));
+  final List<String> embedder = args.all('embedder-yaml');
+  final String? embedderYamlPath = embedder.isEmpty
       ? null
       : p.normalize(p.absolute(embedder.single));
   final boundedProvider = BoundedResourceProvider(
@@ -262,7 +263,7 @@ Future<int> _sdk(
     allowedFiles: {if (embedderYamlPath != null) embedderYamlPath},
     blockAnalysisOptions: true,
   );
-  final bytes = await buildSdkSummary(
+  final Uint8List bytes = await buildSdkSummary(
     resourceProvider: boundedProvider,
     sdkPath: sdkPath,
     embedderYamlPath: embedderYamlPath,
@@ -277,25 +278,25 @@ String inferSummarizeRoot(
   List<String> uris, {
   p.Context? pathContext,
 }) {
-  final ctx = pathContext ?? p.context;
-  var root = ctx.dirname(normSources.first);
-  final firstUri = Uri.tryParse(uris.first);
+  final p.Context ctx = pathContext ?? p.context;
+  String root = ctx.dirname(normSources.first);
+  final Uri? firstUri = Uri.tryParse(uris.first);
   if (firstUri != null &&
       firstUri.scheme == 'package' &&
       firstUri.pathSegments.length > 1) {
-    final relSegments = firstUri.pathSegments.length - 1;
-    var candidate = normSources.first;
+    final int relSegments = firstUri.pathSegments.length - 1;
+    String candidate = normSources.first;
     for (var i = 0; i < relSegments; i++) {
-      final parent = ctx.dirname(candidate);
+      final String parent = ctx.dirname(candidate);
       if (parent == candidate) break;
       candidate = parent;
     }
     root = candidate;
   }
   for (final src in normSources) {
-    final srcDir = ctx.dirname(src);
+    final String srcDir = ctx.dirname(src);
     while (!ctx.equals(root, srcDir) && !ctx.isWithin(root, srcDir)) {
-      final parent = ctx.dirname(root);
+      final String parent = ctx.dirname(root);
       if (parent == root) break;
       root = parent;
     }
@@ -318,10 +319,10 @@ String? _reanchorThroughSymlink(String rootDir, String targetPath) {
       p.join(rootDir, p.relative(targetPath, from: resolvedRoot)),
     );
   }
-  var cur = p.dirname(targetPath);
+  String cur = p.dirname(targetPath);
   while (true) {
     try {
-      final resolvedCur = p.normalize(
+      final String resolvedCur = p.normalize(
         Directory(cur).resolveSymbolicLinksSync(),
       );
       if (p.equals(resolvedCur, resolvedRoot)) {
@@ -330,7 +331,7 @@ String? _reanchorThroughSymlink(String rootDir, String targetPath) {
     } on FileSystemException {
       // Keep walking up until an existing ancestor is found or root is reached.
     }
-    final parent = p.dirname(cur);
+    final String parent = p.dirname(cur);
     if (parent == cur) break;
     cur = parent;
   }
@@ -348,24 +349,24 @@ Future<int> _summarize(
   required StringSink errSink,
   required fs.ResourceProvider resourceProvider,
 }) async {
-  final sources = args.all('source');
-  final uris = args.all('uri');
+  final List<String> sources = args.all('source');
+  final List<String> uris = args.all('uri');
   if (sources.isEmpty || sources.length != uris.length) {
     return _usageError(
       errSink,
       'summarize needs a --source for each --uri, and at least one of each',
     );
   }
-  final packagesPath = p.normalize(p.absolute(args.single('packages')));
-  final packagesDir = p.dirname(packagesPath);
+  final String packagesPath = p.normalize(p.absolute(args.single('packages')));
+  final String packagesDir = p.dirname(packagesPath);
 
-  final normSources = _normalizeSummarizeSources(sources, packagesDir);
-  final libraryUris = <String>[
+  final List<String> normSources = _normSources(sources, packagesDir);
+  final libUris = <String>[
     for (var i = 0; i < normSources.length; i++)
       if (!_isPart(normSources[i])) uris[i],
   ];
-  final sdkPath = p.normalize(p.absolute(args.single('sdk')));
-  final sdkSummaryPath = p.normalize(p.absolute(args.single('sdk-summary')));
+  final String sdkPath = p.normalize(p.absolute(args.single('sdk')));
+  final String sdkSummaryPath = _absNorm(args.single('sdk-summary'));
   final summaryPaths = <String>[
     for (final s in args.all('summary')) p.normalize(p.absolute(s)),
   ];
@@ -373,15 +374,15 @@ Future<int> _summarize(
     for (final s in args.all('dep-source'))
       _normalizeSummarizeSource(s, packagesDir),
   };
-  final sourceRoot = inferSummarizeRoot(
+  final String sourceRoot = inferSummarizeRoot(
     normSources,
     uris,
     pathContext: resourceProvider.pathContext,
   );
-  final normSourceSet = normSources.toSet();
+  final Set<String> normSourceSet = normSources.toSet();
   if (!_checkSummarizeSources(normSources, errSink)) return _failed;
-  final libRoot = p.normalize(p.join(sourceRoot, 'lib'));
-  final depsDir = p.normalize(p.join(sourceRoot, '_deps'));
+  final String libRoot = p.normalize(p.join(sourceRoot, 'lib'));
+  final String depsDir = p.normalize(p.join(sourceRoot, '_deps'));
   final depLibRoots = <String>{
     for (final s in normDepSources)
       if (p.isWithin(depsDir, s))
@@ -397,7 +398,7 @@ Future<int> _summarize(
     normDepSources: normDepSources,
   );
   if (!_checkSummarizeDirectives(sourceRoot, errSink)) return _failed;
-  final boundedProvider = _summarizeResourceProvider((
+  final BoundedResourceProvider boundedProvider = _summarizeResourceProvider((
     resourceProvider: resourceProvider,
     sourceRoot: sourceRoot,
     packagesDir: packagesDir,
@@ -419,20 +420,19 @@ Future<int> _summarize(
     librarySummaryPaths: summaryPaths,
   );
   _installFileAwareSummaryResolver(collection, boundedProvider.pathContext);
-  final bytes = await _buildPackageBundle(collection, libraryUris: libraryUris);
+  final Uint8List bytes = await _buildBundle(collection, libraryUris: libUris);
   File(args.single('out')).writeAsBytesSync(bytes);
   return 0;
 }
 
 /// The `--source` paths normalized under [packagesDir].
-List<String> _normalizeSummarizeSources(
-  List<String> sources,
-  String packagesDir,
-) => [for (final s in sources) _normalizeSummarizeSource(s, packagesDir)];
+List<String> _normSources(List<String> sources, String packagesDir) => [
+  for (final s in sources) _normalizeSummarizeSource(s, packagesDir),
+];
 
 /// One `--source` path normalized under [packagesDir].
 String _normalizeSummarizeSource(String raw, String packagesDir) {
-  final abs = p.normalize(p.absolute(raw));
+  final String abs = p.normalize(p.absolute(raw));
   if (p.equals(packagesDir, abs) || p.isWithin(packagesDir, abs)) {
     return abs;
   }
@@ -476,7 +476,7 @@ bool _checkSummarizeDirectives(String sourceRoot, StringSink errSink) {
   // sources arrive through summaries, not the staged tree, so a relative
   // target with no staged file resolves against a declared summary (or fails
   // in the analyzer with `uri_does_not_exist` — both closed).
-  final stagedViolations = findStagedDirectiveViolations(
+  final List<String> stagedViolations = findStagedDirectiveViolations(
     [sourceRoot],
     tool: 'analyzer_summary',
     requireTargetsExist: false,
@@ -528,12 +528,12 @@ BoundedResourceProvider _summarizeResourceProvider(_SummarizeRoots roots) =>
     );
 
 /// Builds the package bundle, releasing the collection afterwards.
-Future<Uint8List> _buildPackageBundle(
+Future<Uint8List> _buildBundle(
   AnalysisContextCollectionImpl collection, {
   required List<String> libraryUris,
 }) async {
   try {
-    final driver = collection.contexts.single.driver;
+    final AnalysisDriver driver = collection.contexts.single.driver;
     return await driver.buildPackageBundle(
       uriList: [for (final u in libraryUris) Uri.parse(u)],
     );
@@ -552,14 +552,14 @@ void _installFileAwareSummaryResolver(
   AnalysisContextCollectionImpl collection,
   p.Context pathContext,
 ) {
-  for (final context in collection.contexts) {
-    final sourceFactory = context.driver.sourceFactory;
+  for (final DriverBasedAnalysisContext context in collection.contexts) {
+    final SourceFactory sourceFactory = context.driver.sourceFactory;
     if (sourceFactory is SourceFactoryImpl) {
-      final packageUriResolver =
+      final UriResolver packageUriResolver =
           context.contextRoot.workspace.packageUriResolver;
-      final resolvers = sourceFactory.resolvers;
+      final List<UriResolver> resolvers = sourceFactory.resolvers;
       for (var i = 0; i < resolvers.length; i++) {
-        final resolver = resolvers[i];
+        final UriResolver resolver = resolvers[i];
         if (resolver is InSummaryUriResolver) {
           resolvers[i] = _FileAwareInSummaryUriResolver(
             resolver,
@@ -588,7 +588,7 @@ final class _FileAwareInSummaryUriResolver extends UriResolver {
 
   @override
   Source? resolveAbsolute(Uri uri) {
-    final direct = _inSummaryResolver.resolveAbsolute(uri);
+    final Source? direct = _inSummaryResolver.resolveAbsolute(uri);
     if (direct != null) {
       return direct;
     }
@@ -599,7 +599,7 @@ final class _FileAwareInSummaryUriResolver extends UriResolver {
       } on ArgumentError {
         return null;
       }
-      final packageUri = _packageUriResolver.pathToUri(filePath);
+      final Uri? packageUri = _packageUriResolver.pathToUri(filePath);
       if (packageUri != null) {
         return _inSummaryResolver.resolveAbsolute(packageUri);
       }
@@ -610,7 +610,7 @@ final class _FileAwareInSummaryUriResolver extends UriResolver {
 
 /// Whether the Dart file at [path] is a `part` of a library, rather than one.
 bool _isPart(String path) {
-  final unit = parseString(
+  final CompilationUnit unit = parseString(
     content: File(path).readAsStringSync(),
     path: path,
     throwIfDiagnostics: false,
@@ -625,14 +625,14 @@ String resolveProjectSource(
   String raw, {
   p.Context? pathContext,
 }) {
-  final ctx = pathContext ?? p.context;
-  final normProject = ctx.normalize(ctx.absolute(project));
-  final normAbs = ctx.normalize(ctx.absolute(raw));
+  final p.Context ctx = pathContext ?? p.context;
+  final String normProject = ctx.normalize(ctx.absolute(project));
+  final String normAbs = ctx.normalize(ctx.absolute(raw));
   if (ctx.equals(normProject, normAbs) || ctx.isWithin(normProject, normAbs)) {
     return normAbs;
   }
   if (!ctx.isAbsolute(raw)) {
-    final joined = ctx.normalize(ctx.join(normProject, raw));
+    final String joined = ctx.normalize(ctx.join(normProject, raw));
     if (pathContext != null ||
         FileSystemEntity.typeSync(joined, followLinks: false) !=
             FileSystemEntityType.notFound) {
@@ -640,7 +640,7 @@ String resolveProjectSource(
     }
   }
   if (pathContext == null) {
-    final reanchored = _reanchorThroughSymlink(normProject, normAbs);
+    final String? reanchored = _reanchorThroughSymlink(normProject, normAbs);
     if (reanchored != null) {
       return reanchored;
     }
@@ -656,20 +656,20 @@ Future<int> _analyze(
   required fs.ResourceProvider resourceProvider,
   Set<String>? requestInputPaths,
 }) async {
-  final prepared = _prepareAnalyzeProject(args, errSink: errSink);
+  final _Prepared? prepared = _prepareProject(args, errSink: errSink);
   if (prepared == null) return _failed;
-  final project = prepared.project;
-  final stamp = prepared.stamp;
-  final fatalInfos = prepared.fatalInfos;
-  final explicitSources = prepared.explicitSources;
-  final allowedSrcPaths = prepared.allowedSrcPaths;
-  final sdkPath = p.normalize(p.absolute(args.single('sdk')));
-  final sdkSummaryPath = p.normalize(p.absolute(args.single('sdk-summary')));
-  final packagesPath = p.normalize(p.join(project, _packageConfig));
+  final String project = prepared.project;
+  final String stamp = prepared.stamp;
+  final bool fatalInfos = prepared.fatalInfos;
+  final List<String> explicitSources = prepared.explicitSources;
+  final Set<String>? allowedSrcPaths = prepared.allowedSrcPaths;
+  final String sdkPath = p.normalize(p.absolute(args.single('sdk')));
+  final String sdkSummaryPath = _absNorm(args.single('sdk-summary'));
+  final String packagesPath = p.normalize(p.join(project, _packageConfig));
   final summaryPaths = <String>[
     for (final s in args.all('summary')) p.normalize(p.absolute(s)),
   ];
-  final srcRoot = p.normalize(p.join(project, 'src'));
+  final String srcRoot = p.normalize(p.join(project, 'src'));
   final boundedProvider = BoundedResourceProvider(
     resourceProvider,
     primaryRoot: project,
@@ -684,7 +684,7 @@ Future<int> _analyze(
     allowedUnderRestrictedRoot: allowedSrcPaths,
     blockAnalysisOptions: false,
   );
-  final collection = _openAnalyzeCollection(
+  final AnalysisContextCollectionImpl collection = _openAnalyzeCollection(
     boundedProvider: boundedProvider,
     project: project,
     sdkPath: sdkPath,
@@ -693,8 +693,8 @@ Future<int> _analyze(
     summaryPaths: summaryPaths,
   );
   try {
-    final context = collection.contexts.single;
-    final analyzed = _analyzedPaths(
+    final DriverBasedAnalysisContext context = collection.contexts.single;
+    final List<String> analyzed = _analyzedPaths(
       project,
       context,
       allowedSrcPaths: allowedSrcPaths,
@@ -709,7 +709,7 @@ Future<int> _analyze(
     ), errSink: errSink)) {
       return _failed;
     }
-    final findings = await _collectAnalyzeFindings(
+    final List<AnalysisFinding>? findings = await _collectAnalyzeFindings(
       project: project,
       context: context,
       analyzed: analyzed,
@@ -751,25 +751,30 @@ AnalysisContextCollectionImpl _openAnalyzeCollection({
   return collection;
 }
 
-/// The staged project an analyze request checks, after pruning and guarding.
-///
-/// Returns null after reporting staged sources that read off-host.
-({
+/// What an analyze request checks: the staged project and its settings.
+typedef _Prepared = ({
   String project,
   String stamp,
   bool fatalInfos,
   List<String> explicitSources,
   Set<String>? allowedSrcPaths,
   AnalysisBaseline? baseline,
-})?
-_prepareAnalyzeProject(AnalyzerArgs args, {required StringSink errSink}) {
-  final project = p.normalize(p.absolute(args.single('project')));
+});
+
+/// A path made absolute and normalized.
+String _absNorm(String path) => p.normalize(p.absolute(path));
+
+/// The staged project an analyze request checks, after pruning and guarding.
+///
+/// Returns null after reporting staged sources that read off-host.
+_Prepared? _prepareProject(AnalyzerArgs args, {required StringSink errSink}) {
+  final String project = p.normalize(p.absolute(args.single('project')));
   final explicitSources = <String>[
     for (final s in args.all('source')) resolveProjectSource(project, s),
   ];
-  final baseline = _readBaseline(args, errSink: errSink);
+  final _BaselineRead baseline = _readBaseline(args, errSink: errSink);
   if (baseline.failed) return null;
-  final allowedSrcPaths = pruneStagedSrcFiles(project);
+  final Set<String>? allowedSrcPaths = pruneStagedSrcFiles(project);
   // No staged source may read the host (see `_summarize`): the default
   // summary-mode analysis never ran the directive guard, so a climbing
   // relative import reached undeclared host files wherever the analyzer
@@ -778,7 +783,7 @@ _prepareAnalyzeProject(AnalyzerArgs args, {required StringSink errSink}) {
   // dependency sources arrive through summaries, so a relative target with
   // no staged file resolves against a declared summary (or fails with
   // `uri_does_not_exist` — both closed).
-  final stagedViolations = findStagedDirectiveViolations(
+  final List<String> stagedViolations = findStagedDirectiveViolations(
     projectStagedRoots(project),
     tool: 'analyzer_summary',
     requireTargetsExist: false,
@@ -799,12 +804,12 @@ _prepareAnalyzeProject(AnalyzerArgs args, {required StringSink errSink}) {
   );
 }
 
+/// A `--baseline` read: the parsed baseline and whether the read failed.
+typedef _BaselineRead = ({AnalysisBaseline? value, bool failed});
+
 /// Reads the optional `--baseline` file, reporting a missing or malformed one.
-({AnalysisBaseline? value, bool failed}) _readBaseline(
-  AnalyzerArgs args, {
-  required StringSink errSink,
-}) {
-  final path = args.optional('baseline');
+_BaselineRead _readBaseline(AnalyzerArgs args, {required StringSink errSink}) {
+  final String? path = args.optional('baseline');
   if (path == null) return (value: null, failed: false);
   final file = File(path);
   if (!file.existsSync()) {
@@ -837,8 +842,8 @@ bool _checkExpectedSources(
   _ExpectedSources sources, {
   required StringSink errSink,
 }) {
-  final allowedSrcPaths = sources.allowedSrcPaths;
-  final analyzedSet = sources.analyzed.toSet();
+  final Set<String>? allowedSrcPaths = sources.allowedSrcPaths;
+  final Set<String> analyzedSet = sources.analyzed.toSet();
   final expectedDartFiles = <String>{
     for (final s in sources.explicitSources)
       if (s.endsWith('.dart')) s,
@@ -846,7 +851,7 @@ bool _checkExpectedSources(
       for (final s in allowedSrcPaths)
         if (s.endsWith('.dart')) s,
   };
-  for (final expected in sources.explicitSources) {
+  for (final String expected in sources.explicitSources) {
     if (allowedSrcPaths != null &&
         p.isWithin(sources.srcRoot, expected) &&
         !allowedSrcPaths.contains(expected)) {
@@ -891,10 +896,10 @@ Future<List<AnalysisFinding>?> _collectAnalyzeFindings({
   required BoundedResourceProvider boundedProvider,
   required StringSink errSink,
 }) async {
-  final driver = context.driver;
+  final AnalysisDriver driver = context.driver;
   final findings = <AnalysisFinding>[];
   for (final path in analyzed) {
-    final options = context.getAnalysisOptionsForFile(
+    final AnalysisOptions options = context.getAnalysisOptionsForFile(
       boundedProvider.getFile(path),
     );
     if (p.basename(path) == _optionsBasename) {
@@ -903,14 +908,14 @@ Future<List<AnalysisFinding>?> _collectAnalyzeFindings({
       );
       continue;
     }
-    final result = await driver.getErrors(path);
+    final SomeErrorsResult result = await driver.getErrors(path);
     if (result is! ErrorsResult) {
       errSink.writeln(
         'analyzer_summary: cannot analyze $path (${result.runtimeType})',
       );
       return null;
     }
-    for (final d in result.diagnostics) {
+    for (final Diagnostic d in result.diagnostics) {
       findings.add(_finding(project, path, result.lineInfo, options, d));
     }
   }
@@ -928,11 +933,11 @@ int reportAnalyzeFindings({
   required StringSink outSink,
   AnalysisBaseline? baseline,
 }) {
-  final shown = [
+  final List<AnalysisFinding> shown = [
     for (final f in findings)
       if (f.level != null) f,
   ];
-  final report = _baselineReport(shown, baseline);
+  final BaselineReport? report = _baselineReport(shown, baseline);
   if (shown.isNotEmpty) _writeAnalyzeFindings(outSink, shown, report);
   if (_findingsFail(shown, fatalInfos, report)) {
     return _failed;
@@ -966,7 +971,7 @@ void _writeAnalyzeFindings(
 ) {
   outSink.writeln();
   for (final f in shown) {
-    final group = report?.groupFor(f.path, f.code);
+    final BaselineGroup? group = report?.groupFor(f.path, f.code);
     final marker = group != null && group.withinCeiling
         ? ' - ${baselinedMarker(group)}'
         : '';
@@ -977,7 +982,7 @@ void _writeAnalyzeFindings(
     shown.length == 1 ? '1 issue found.' : '${shown.length} issues found.',
   );
   if (report != null) {
-    for (final group in report.groups) {
+    for (final BaselineGroup group in report.groups) {
       if (!group.withinCeiling) outSink.writeln(baselineFailureLine(group));
     }
   }
@@ -1006,14 +1011,15 @@ List<String> _analyzedPaths(
   AnalysisContext context, {
   Set<String>? allowedSrcPaths,
 }) {
-  final srcDir = p.normalize(p.join(project, 'src'));
+  final String srcDir = p.normalize(p.join(project, 'src'));
   final paths = <String>[];
-  for (final entity in Directory(project).listSync(recursive: true)) {
+  final dir = Directory(project);
+  for (final FileSystemEntity entity in dir.listSync(recursive: true)) {
     // Follows links, so a staged file that is a symlink is still a file.
-    final path = p.normalize(entity.absolute.path);
+    final String path = p.normalize(entity.absolute.path);
     if (!FileSystemEntity.isFileSync(path)) continue;
     if (p.split(path).contains('.dart_tool')) continue;
-    final name = p.basename(path);
+    final String name = p.basename(path);
     if (!name.endsWith('.dart') && name != _optionsBasename) continue;
     if (p.isWithin(srcDir, path)) {
       if (allowedSrcPaths != null && !allowedSrcPaths.contains(path)) {
@@ -1036,12 +1042,12 @@ List<AnalysisFinding> _optionsFindings(
   AnalysisOptions options,
   fs.ResourceProvider resourceProvider,
 ) {
-  final result = AnalysisOptionsParseSession().parse(
+  final AnalysisOptionsParseResult result = AnalysisOptionsParseSession().parse(
     sourceFactory: driver.sourceFactory,
     contextRoot: resourceProvider.getFolder(project),
     file: resourceProvider.getFile(path),
   );
-  final lines =
+  final LineInfo lines =
       result.content?.lineInfo ??
       LineInfo.fromContent(File(path).readAsStringSync());
   return [
@@ -1063,8 +1069,8 @@ AnalysisFinding _finding(
   AnalysisOptions options,
   Diagnostic d,
 ) {
-  final processor = ErrorProcessor.getProcessor(options, d);
-  final level = processor == null
+  final ErrorProcessor? processor = ErrorProcessor.getProcessor(options, d);
+  final Severity? level = processor == null
       ? d.severity
       : switch (processor.severity) {
           DiagnosticSeverity.ERROR => Severity.error,
@@ -1072,8 +1078,8 @@ AnalysisFinding _finding(
           DiagnosticSeverity.INFO => Severity.info,
           _ => null,
         };
-  final location = lines.getLocation(d.offset);
-  final where = _display(project, path);
+  final CharacterLocation location = lines.getLocation(d.offset);
+  final String where = _display(project, path);
   final message = StringBuffer(
     _unstage(d.problemMessage.messageText(includeUrl: false), project),
   );
@@ -1100,7 +1106,7 @@ AnalysisFinding _finding(
 /// The workspace path of a staged file: its path under `src/`, where the
 /// workspace's own files sit at their workspace-relative paths.
 String _display(String project, String path) {
-  final relative = p.relative(path, from: project).replaceAll(r'\', '/');
+  final String relative = p.relative(path, from: project).replaceAll(r'\', '/');
   return relative.startsWith('src/') ? relative.substring(4) : relative;
 }
 
@@ -1108,7 +1114,7 @@ String _display(String project, String path) {
 /// from. Some messages quote an absolute path (an unresolvable `include:` names
 /// the options file that holds it), so both forms are rewritten.
 String _unstage(String text, String project) {
-  final absolute = p.absolute(project).replaceAll(r'\', '/');
+  final String absolute = p.absolute(project).replaceAll(r'\', '/');
   return text
       .replaceAll(r'\', '/')
       .replaceAll('$absolute/src/', '')
@@ -1179,15 +1185,15 @@ final class BoundedResourceProvider implements fs.ResourceProvider {
       return null;
     }
     final result = <String>{...restrictedRoots};
-    for (final raw in allowedUnderRestrictedRoot) {
-      var cur = _norm(ctx, raw);
+    for (final String raw in allowedUnderRestrictedRoot) {
+      String cur = _norm(ctx, raw);
       while (true) {
         result.add(cur);
         if (restrictedRoots.contains(cur) ||
             !restrictedRoots.any((r) => ctx.isWithin(r, cur))) {
           break;
         }
-        final parent = ctx.dirname(cur);
+        final String parent = ctx.dirname(cur);
         if (parent == cur) break;
         cur = parent;
       }
@@ -1227,8 +1233,8 @@ final class BoundedResourceProvider implements fs.ResourceProvider {
   };
 
   String _resolveToPrimaryRoot(String rawPath) {
-    final ctx = pathContext;
-    final norm = _norm(ctx, rawPath);
+    final p.Context ctx = pathContext;
+    final String norm = _norm(ctx, rawPath);
     if (ctx.style != p.context.style ||
         ctx.equals(primaryRoot, norm) ||
         ctx.isWithin(primaryRoot, norm)) {
@@ -1242,11 +1248,11 @@ final class BoundedResourceProvider implements fs.ResourceProvider {
       pathContext.isWithin(normPath, primaryRoot);
 
   bool isBlockedPath(String rawPath) {
-    final ctx = pathContext;
-    final normPath = _resolveToPrimaryRoot(rawPath);
+    final p.Context ctx = pathContext;
+    final String normPath = _resolveToPrimaryRoot(rawPath);
     if (_isUnderRestrictedRoot(normPath)) return true;
     if (allowedFiles.contains(normPath)) return false;
-    final base = ctx.basename(normPath);
+    final String base = ctx.basename(normPath);
     if (blockAnalysisOptions && _isBlockedOptionsBasename(base)) return true;
     if (ctx.equals(normPath, primaryRoot) ||
         ctx.isWithin(primaryRoot, normPath)) {
@@ -1257,7 +1263,7 @@ final class BoundedResourceProvider implements fs.ResourceProvider {
 
   /// Whether [normPath] sits under a restricted root without an allowance.
   bool _isUnderRestrictedRoot(String normPath) {
-    final ctx = pathContext;
+    final p.Context ctx = pathContext;
     return restrictedRoots.isNotEmpty &&
         allowedUnderRestrictedRoot != null &&
         restrictedRoots.any((r) => ctx.isWithin(r, normPath)) &&
@@ -1272,15 +1278,15 @@ final class BoundedResourceProvider implements fs.ResourceProvider {
 
   /// Whether a path outside the primary root probes the workspace.
   bool _isBlockedOutsidePrimary(String normPath, String base) {
-    final ctx = pathContext;
+    final p.Context ctx = pathContext;
     if (_alwaysBlockedWorkspaceBasenames.contains(base)) return true;
-    final parentDir = ctx.dirname(normPath);
+    final String parentDir = ctx.dirname(normPath);
     if (ctx.isWithin(parentDir, primaryRoot) ||
         boundaryRoots.contains(parentDir)) {
       return _isBlockedAncestorProbe(base, parentDir);
     }
     if (ctx.basename(parentDir) == '.dart_tool') {
-      final grandParent = ctx.dirname(parentDir);
+      final String grandParent = ctx.dirname(parentDir);
       return ctx.isWithin(grandParent, primaryRoot) ||
           boundaryRoots.contains(grandParent);
     }
@@ -1289,7 +1295,7 @@ final class BoundedResourceProvider implements fs.ResourceProvider {
 
   /// Whether [base] probes an ancestor directory for configuration.
   bool _isBlockedAncestorProbe(String base, String parentDir) {
-    final ctx = pathContext;
+    final p.Context ctx = pathContext;
     if (_ancestorProbeBasenames.contains(base)) return true;
     // Also block `<ancestor>/.dart_tool/package_config.json`.
     if (ctx.basename(parentDir) != '.dart_tool') return false;
@@ -1314,11 +1320,11 @@ final class BoundedResourceProvider implements fs.ResourceProvider {
 
   @override
   fs.Resource getResource(String path) {
-    final normPath = _resolveToPrimaryRoot(path);
+    final String normPath = _resolveToPrimaryRoot(path);
     if (isBlockedPath(normPath)) {
       return _BoundedFile(this, _delegate.getFile(normPath));
     }
-    final res = _delegate.getResource(normPath);
+    final fs.Resource res = _delegate.getResource(normPath);
     if (res is fs.Folder) {
       return _BoundedFolder(this, res);
     }
@@ -1386,7 +1392,7 @@ final class _BoundedFolder with BoundedFolderForwards implements fs.Folder {
 
   @override
   bool isOrContains(String oPath) {
-    final norm = _provider.pathContext.normalize(oPath);
+    final String norm = _provider.pathContext.normalize(oPath);
     return path == norm || _provider.pathContext.isWithin(path, norm);
   }
 }
@@ -1454,7 +1460,7 @@ final class _BoundedFile with BoundedFileForwards implements fs.File {
     if (_isBlocked) {
       throw fs.FileSystemException(path, 'File does not exist');
     }
-    final resolved = _delegate.resolveSymbolicLinksSync();
+    final fs.Resource resolved = _delegate.resolveSymbolicLinksSync();
     if (resolved is fs.File) return _BoundedFile(_provider, resolved);
     if (resolved is fs.Folder) return _BoundedFolder(_provider, resolved);
     return resolved;
@@ -1523,7 +1529,7 @@ final class SummaryByteCache {
 
   void beginRequest(Map<String, Uint8List> requestInputs) {
     _currentInputDigests.clear();
-    for (final entry in requestInputs.entries) {
+    for (final MapEntry<String, Uint8List> entry in requestInputs.entries) {
       if (entry.key.endsWith('.sum') && entry.value.isNotEmpty) {
         _currentInputDigests[p.normalize(p.absolute(entry.key))] = _unpin(
           entry.value,
@@ -1533,13 +1539,13 @@ final class SummaryByteCache {
   }
 
   Uint8List readBytes(fs.File delegate) {
-    final path = p.normalize(p.absolute(delegate.path));
-    final reqDigest = _currentInputDigests[path];
-    final hasReqDigest = reqDigest != null && reqDigest.isNotEmpty;
-    final existing = _entries.remove(path);
+    final String path = p.normalize(p.absolute(delegate.path));
+    final Uint8List? reqDigest = _currentInputDigests[path];
+    final bool hasReqDigest = reqDigest != null && reqDigest.isNotEmpty;
+    final _CachedSumEntry? existing = _entries.remove(path);
 
     if (existing != null) {
-      final hasExistingDigest =
+      final bool hasExistingDigest =
           existing.digest != null && existing.digest!.isNotEmpty;
       if (hasReqDigest && hasExistingDigest) {
         if (_bytesEqual(reqDigest, existing.digest!)) {
@@ -1551,12 +1557,12 @@ final class SummaryByteCache {
       _totalBytes -= existing.bytes.length;
     }
 
-    final bytes = _unpin(delegate.readAsBytesSync());
+    final Uint8List bytes = _unpin(delegate.readAsBytesSync());
     if (bytes.length <= maxCacheBytes) {
       while (_totalBytes + bytes.length > maxCacheBytes &&
           _entries.isNotEmpty) {
-        final oldestKey = _entries.keys.first;
-        final removed = _entries.remove(oldestKey)!;
+        final String oldestKey = _entries.keys.first;
+        final _CachedSumEntry removed = _entries.remove(oldestKey)!;
         _totalBytes -= removed.bytes.length;
       }
       _entries[path] = _CachedSumEntry(
@@ -1592,7 +1598,7 @@ final class SummaryCachingResourceProvider implements fs.ResourceProvider {
 
   @override
   fs.File getFile(String path) {
-    final file = _delegate.getFile(path);
+    final fs.File file = _delegate.getFile(path);
     if (path.endsWith('.sum')) {
       return _CachedSummaryFile(file, _cache);
     }

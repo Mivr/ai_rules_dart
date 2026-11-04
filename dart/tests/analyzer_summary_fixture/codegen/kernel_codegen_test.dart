@@ -5,7 +5,7 @@ import 'package:test/test.dart';
 
 void main(List<String> args) {
   final r = Runfiles.create();
-  final generatedPath = r.rlocation(args.single);
+  final String generatedPath = r.rlocation(args.single);
 
   test('kernel-compiled generator_bin produces expected output', () {
     expect(

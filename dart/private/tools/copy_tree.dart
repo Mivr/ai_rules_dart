@@ -40,6 +40,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'coverage_map_expand.dart' as coverage_map;
 
@@ -104,7 +105,7 @@ Request parseRequest(List<String> lines) {
     return lines[i++];
   }
 
-  final dst = next();
+  final String dst = next();
   final roots = <String>[];
   final replace = <String, String>{};
   final external = <String>[];
@@ -112,12 +113,12 @@ Request parseRequest(List<String> lines) {
   String? originMap;
   final files = <SourceFile>[];
   while (i < lines.length) {
-    final tag = next();
+    final String tag = next();
     switch (tag) {
       case '--root':
         roots.add(next());
       case '--replace':
-        final key = next();
+        final String key = next();
         replace[key] = next();
       case '--external':
         external.add(next());
@@ -152,7 +153,7 @@ Request parseRequest(List<String> lines) {
 /// Copies every file of [request] to its destination. Throws [CopyError] on a
 /// destination collision, before anything is copied.
 Future<void> copyTree(Request request) async {
-  final copies = planCopies(request);
+  final List<PlannedCopy> copies = planCopies(request);
   final String? originMap = request.originMap;
   if (originMap != null) {
     final Map<String, String> origins = {
@@ -163,8 +164,8 @@ Future<void> copyTree(Request request) async {
   var next = 0;
   Future<void> worker() async {
     while (next < copies.length) {
-      final copy = copies[next++];
-      final bytes = await File(copy.src).readAsBytes();
+      final PlannedCopy copy = copies[next++];
+      final Uint8List bytes = await File(copy.src).readAsBytes();
       await File(copy.dst).writeAsBytes(bytes);
     }
   }
@@ -194,10 +195,10 @@ List<PlannedCopy> planCopies(Request request) {
   final planned = <String, SourceFile>{};
   final copies = <PlannedCopy>[];
   final madeDirs = <String>{};
-  for (final file in request.files) {
-    final out = _outputPath(file, request, globs);
+  for (final SourceFile file in request.files) {
+    final String? out = _outputPath(file, request, globs);
     if (out == null) continue;
-    final dup = planned[out];
+    final SourceFile? dup = planned[out];
     if (dup != null) {
       if (dup.shortPath == file.shortPath &&
           File(dup.path).lengthSync() == File(file.path).lengthSync() &&
@@ -214,7 +215,7 @@ List<PlannedCopy> planCopies(Request request) {
   }
   final dstDir = Directory(request.dst);
   if (dstDir.existsSync()) {
-    for (final child in dstDir.listSync(followLinks: false)) {
+    for (final FileSystemEntity child in dstDir.listSync(followLinks: false)) {
       try {
         child.deleteSync(recursive: true);
       } on FileSystemException {
@@ -223,7 +224,7 @@ List<PlannedCopy> planCopies(Request request) {
     }
   }
   for (final copy in copies) {
-    final dir = _dir(copy.dst);
+    final String dir = _dir(copy.dst);
     if (madeDirs.add(dir)) {
       Directory(dir).createSync(recursive: true);
     }
@@ -235,8 +236,8 @@ List<PlannedCopy> planCopies(Request request) {
 /// files collide at one destination with equal sizes, so contents are read
 /// only for colliding inputs.
 bool _sameBytesSync(String a, String b) {
-  final first = File(a).readAsBytesSync();
-  final second = File(b).readAsBytesSync();
+  final Uint8List first = File(a).readAsBytesSync();
+  final Uint8List second = File(b).readAsBytesSync();
   if (first.length != second.length) return false;
   for (var i = 0; i < first.length; i++) {
     if (first[i] != second[i]) return false;
@@ -256,20 +257,23 @@ String? _outputPath(SourceFile file, Request request, _Globs globs) {
     return null;
   }
 
-  var out = file.workspacePath;
+  String out = file.workspacePath;
 
   // root_paths: the longest root that matches the file's directory is stripped.
-  final root = globs.longest(request.rootPaths, _dir(out));
+  final ({int index, String match}) root = globs.longest(
+    request.rootPaths,
+    _dir(out),
+  );
   if (root.match.isNotEmpty) {
     out = _trimLeadingSlash(out.substring(root.match.length));
   }
 
   // replace_prefixes: the longest matching key is replaced, keys in sorted
   // order so that a tie is settled the same way on every run.
-  final keys = request.replacePrefixes.keys.toList()..sort();
-  final replace = globs.longest(keys, out);
+  final List<String> keys = request.replacePrefixes.keys.toList()..sort();
+  final ({int index, String match}) replace = globs.longest(keys, out);
   if (replace.match.isNotEmpty) {
-    final value = request.replacePrefixes[keys[replace.index]]!;
+    final String value = request.replacePrefixes[keys[replace.index]]!;
     out = value + out.substring(replace.match.length);
   }
 
@@ -281,9 +285,9 @@ String? _outputPath(SourceFile file, Request request, _Globs globs) {
 /// Go's `path.Clean`.
 String _clean(String path) {
   if (path.isEmpty) return '.';
-  final rooted = path.startsWith('/');
+  final bool rooted = path.startsWith('/');
   final parts = <String>[];
-  for (final seg in path.split('/')) {
+  for (final String seg in path.split('/')) {
     if (seg.isEmpty || seg == '.') continue;
     if (seg == '..') {
       if (parts.isNotEmpty && parts.last != '..') {
@@ -295,20 +299,20 @@ String _clean(String path) {
       parts.add(seg);
     }
   }
-  final joined = parts.join('/');
+  final String joined = parts.join('/');
   if (rooted) return '/$joined';
   return joined.isEmpty ? '.' : joined;
 }
 
 /// Go's `path.Dir`.
 String _dir(String path) {
-  final slash = path.lastIndexOf('/');
+  final int slash = path.lastIndexOf('/');
   return _clean(path.substring(0, slash + 1));
 }
 
 /// Go's `path.Join` for two elements.
 String _join(String a, String b) {
-  final parts = [a, b].where((p) => p.isNotEmpty).toList();
+  final List<String> parts = [a, b].where((p) => p.isNotEmpty).toList();
   if (parts.isEmpty) return '';
   return _clean(parts.join('/'));
 }
@@ -334,7 +338,7 @@ class _Globs {
     var match = '';
     var index = 0;
     for (var i = 0; i < globs.length; i++) {
-      final m = _of(globs[i]).longestPrefix(text);
+      final String m = _of(globs[i]).longestPrefix(text);
       if (m.length > match.length) {
         match = m;
         index = i;
@@ -358,7 +362,7 @@ class _Glob {
       !RegExp(r'[*?\[\]{}\\]').hasMatch(pattern);
 
   bool matches(String text) {
-    final literal = _literal;
+    final String? literal = _literal;
     return literal != null ? text == literal : _regex!.hasMatch(text);
   }
 
@@ -366,12 +370,12 @@ class _Glob {
   /// character, or empty. Go's `longestGlobMatch` tries each prefix from the
   /// longest down, and so does this, so a pattern can match part of a segment.
   String longestPrefix(String text) {
-    final literal = _literal;
+    final String? literal = _literal;
     if (literal != null) {
       return literal.isNotEmpty && text.startsWith(literal) ? literal : '';
     }
-    for (var n = text.length; n >= 1; n--) {
-      final candidate = text.substring(0, n);
+    for (int n = text.length; n >= 1; n--) {
+      final String candidate = text.substring(0, n);
       if (_regex!.hasMatch(candidate)) return candidate;
     }
     return '';
@@ -385,11 +389,11 @@ class _Glob {
   /// Also supported: `[...]` classes (`!` or `^` negates), `{a,b}` alternatives,
   /// and `\` escapes.
   static String _translate(String pattern) {
-    final segments = pattern.split('/');
+    final List<String> segments = pattern.split('/');
     final out = StringBuffer();
     var skipSeparator = false;
     for (var k = 0; k < segments.length; k++) {
-      final seg = segments[k];
+      final String seg = segments[k];
       final last = k == segments.length - 1;
       if (seg == '**') {
         if (k == 0) {
@@ -413,14 +417,14 @@ class _Glob {
     final out = StringBuffer();
     var braces = 0;
     for (var i = 0; i < seg.length; i++) {
-      final c = seg[i];
+      final String c = seg[i];
       switch (c) {
         case '*':
           out.write('[^/]*');
         case '?':
           out.write('[^/]');
         case '[':
-          final parsed = _parseCharClass(seg, i);
+          final ({String body, int close}) parsed = _parseCharClass(seg, i);
           out.write(parsed.body);
           i = parsed.close;
         case '{':
@@ -457,18 +461,18 @@ class _Glob {
   /// A leading `!` or `^` negates the class. Characters special inside a
   /// class are backslash-escaped.
   static ({String body, int close}) _parseCharClass(String seg, int open) {
-    final close = seg.indexOf(']', open + 2);
+    final int close = seg.indexOf(']', open + 2);
     if (close < 0) {
       throw FormatException('bad glob "$seg": unclosed [');
     }
-    var body = seg.substring(open + 1, close);
+    String body = seg.substring(open + 1, close);
     var negate = false;
     if (body.startsWith('!') || body.startsWith('^')) {
       negate = true;
       body = body.substring(1);
     }
     final out = StringBuffer(negate ? '[^' : '[');
-    for (final ch in body.split('')) {
+    for (final String ch in body.split('')) {
       out.write(_classSpecial.contains(ch) ? '\\$ch' : ch);
     }
     out.write(']');

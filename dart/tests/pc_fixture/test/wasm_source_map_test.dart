@@ -4,14 +4,14 @@ import 'dart:io';
 import 'package:runfiles/runfiles.dart';
 
 void main(List<String> args) {
-  final mapPath = Runfiles.create().rlocation(args.single);
-  final raw = File(mapPath).readAsStringSync();
+  final String mapPath = Runfiles.create().rlocation(args.single);
+  final String raw = File(mapPath).readAsStringSync();
   if (raw.contains('file:')) {
     throw StateError('wasm source map contains file: URI:\n$raw');
   }
 
   final decoded = jsonDecode(raw) as Map<String, Object?>;
-  final sources = (decoded['sources'] as List).cast<String>();
+  final List<String> sources = (decoded['sources'] as List).cast<String>();
   if (sources.isEmpty) {
     throw StateError('expected non-empty sources in wasm source map');
   }

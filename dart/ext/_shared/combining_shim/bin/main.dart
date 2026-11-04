@@ -54,7 +54,7 @@ class _CombiningWorker extends AsyncWorkerLoop {
   @override
   Future<WorkResponse> performRequest(WorkRequest request) async {
     final buf = StringBuffer();
-    final sink = (String msg) => buf.writeln(msg);
+    final void Function(String msg) sink = (String msg) => buf.writeln(msg);
     int exit = 0;
     try {
       await runZoned(
@@ -79,7 +79,7 @@ Future<void> _runOnce(
   List<String> argv, [
   void Function(String)? diagnostic,
 ]) async {
-  final sink = diagnostic ?? stderr.writeln;
+  final Function sink = diagnostic ?? stderr.writeln;
   final parser = ArgParser()
     ..addFlag(
       'help',
@@ -125,12 +125,12 @@ Future<void> _runOnce(
     exitCode = 2;
     return;
   }
-  final parts = ((args['part'] as List).cast<String>())..sort();
+  final List<String> parts = ((args['part'] as List).cast<String>())..sort();
 
   // Shard reads run in parallel via async I/O; this keeps the worker's
   // stdin-reading loop responsive even for large generated `.g.part`
   // shards (drift with many tables can produce multi-hundred-KB shards).
-  final contents = await Future.wait([
+  final List<String> contents = await Future.wait([
     for (final part in parts) File(part).readAsString(),
   ]);
   await File(output).writeAsString(
@@ -144,11 +144,13 @@ List<String> _expandFlagFiles(List<String> args) {
   final out = <String>[];
   for (final a in args) {
     if (a.startsWith('@') && a.length > 1) {
-      for (final line in File(a.substring(1)).readAsStringSync().split('\n')) {
+      for (final String line in File(
+        a.substring(1),
+      ).readAsStringSync().split('\n')) {
         if (line.isNotEmpty) out.add(line);
       }
     } else if (a.startsWith('--flagfile=')) {
-      for (final line in File(
+      for (final String line in File(
         a.substring('--flagfile='.length),
       ).readAsStringSync().split('\n')) {
         if (line.isNotEmpty) out.add(line);
@@ -173,7 +175,7 @@ String combine({
     ..writeln("part of '$sourceBasename';");
 
   for (final raw in partContents) {
-    final stripped = raw.replaceFirst(_partOfRe, '').trim();
+    final String stripped = raw.replaceFirst(_partOfRe, '').trim();
     if (stripped.isEmpty) continue;
     buf
       ..writeln()

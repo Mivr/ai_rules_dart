@@ -42,6 +42,7 @@ exports_files(
 # resolves them beside the entry by relative import.
 exports_files(
     [
+        "app_jit_aot_args.dart",
         "jit_lock.dart",
         "jit_policy.dart",
     ],
@@ -71,6 +72,7 @@ exports_files(
 filegroup(
     name = "jit_tool_srcs",
     srcs = [
+        "app_jit_aot_args.dart",
         "app_jit_snapshot.dart",
         "dill_reader.dart",
         "jit_lock.dart",
@@ -558,6 +560,7 @@ dart_binary(
         "comma_patch.dart",
         "dill_outline.dart",
         "dill_reader.dart",
+        "kernel_module_strip.dart",
         "lib/worker_protocol.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
@@ -592,6 +595,7 @@ dart_test(
     name = "kernel_module_test",
     size = "medium",
     srcs = [
+        "app_jit_aot_args.dart",
         "app_jit_snapshot.dart",
         "comma_patch.dart",
         "dill_outline.dart",
@@ -600,6 +604,8 @@ dart_test(
         "jit_policy.dart",
         "kernel_link.dart",
         "kernel_module.dart",
+        "kernel_module_strip.dart",
+        "kernel_module_test_support.dart",
         "lib/worker_protocol.dart",
         "worker_test_encode.dart",
         "//dart/guard:lib/directive_guard.dart",
@@ -799,7 +805,9 @@ dart_test(
     name = "app_jit_snapshot_test",
     size = "medium",
     srcs = [
+        "app_jit_aot_args.dart",
         "app_jit_snapshot.dart",
+        "app_jit_snapshot_test_support.dart",
         "comma_patch.dart",
         "dill_reader.dart",
         "jit_lock.dart",
@@ -813,8 +821,10 @@ dart_test(
         "$(rlocationpath :jit_lock.dart)",
         "$(rlocationpath :jit_policy.dart)",
         "$(rlocationpath //dart/guard:lib/directive_guard.dart)",
+        "$(rlocationpath :app_jit_aot_args.dart)",
     ],
     data = [
+        ":app_jit_aot_args.dart",
         ":app_jit_snapshot.dart",
         ":comma_patch.dart",
         ":dill_reader.dart",

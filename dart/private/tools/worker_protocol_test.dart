@@ -136,7 +136,7 @@ void main() {
 
   group('worker codec', () {
     test('round-trips arguments, inputs, and the request id', () {
-      final payload = _encodeRequest(
+      final Uint8List payload = _encodeRequest(
         arguments: ['--a', 'b c'],
         inputs: {
           'in/a.dart': [1, 2, 3],
@@ -190,7 +190,9 @@ void main() {
         output: 'boom ✓',
         requestId: 9,
       );
-      final fields = _decodeFields(_deframe(response.write()));
+      final Map<int, List<List<int>>> fields = _decodeFields(
+        _deframe(response.write()),
+      );
       expect(fields[1]!.single, [1]);
       expect(utf8.decode(fields[2]!.single), 'boom ✓');
       expect(fields[3]!.single, [9]);
@@ -204,7 +206,7 @@ void main() {
 
   group('WorkerReader and WorkerWriter', () {
     test('round-trips varints across byte-width boundaries', () {
-      const values = [0, 1, 127, 128, 300, 1 << 28, (1 << 32) - 1];
+      const List<int> values = [0, 1, 127, 128, 300, 1 << 28, (1 << 32) - 1];
       final writer = WorkerWriter();
       for (final value in values) {
         writer.varint(value);
@@ -219,10 +221,10 @@ void main() {
 
   group('WorkerFrames', () {
     test('reassembles frames split across chunks and joined chunks', () async {
-      final first = _encodeRequest(arguments: ['a'], requestId: 1);
-      final second = _encodeRequest(arguments: ['b'], requestId: 2);
-      final joined = [..._frame(first), ..._frame(second)];
-      final chunks = [
+      final Uint8List first = _encodeRequest(arguments: ['a'], requestId: 1);
+      final Uint8List second = _encodeRequest(arguments: ['b'], requestId: 2);
+      final List<int> joined = [..._frame(first), ..._frame(second)];
+      final List<List<int>> chunks = [
         joined.sublist(0, 2),
         joined.sublist(2, first.length + 3),
         joined.sublist(first.length + 3),
@@ -262,7 +264,7 @@ void main() {
           .writeAsStringSync('keep.dart\n');
       final keep = File('${src.path}/keep.dart')..writeAsStringSync('');
       final drop = File('${src.path}/drop.dart')..writeAsStringSync('');
-      final allowed = pruneStagedSrcFiles(project.path);
+      final Set<String>? allowed = pruneStagedSrcFiles(project.path);
       expect(allowed, {p.normalize(keep.absolute.path)});
       expect(keep.existsSync(), isTrue);
       expect(drop.existsSync(), isFalse);
@@ -284,12 +286,12 @@ void main() {
 }
 
 String _hexOf(String input) {
-  final digest = sha256Of(Uint8List.fromList(utf8.encode(input)));
+  final Uint8List digest = sha256Of(Uint8List.fromList(utf8.encode(input)));
   return digest.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 }
 
 void _writeString(WorkerWriter writer, int field, String value) {
-  final bytes = utf8.encode(value);
+  final Uint8List bytes = utf8.encode(value);
   writer
     ..varint((field << 3) | 2)
     ..varint(bytes.length)
@@ -305,14 +307,14 @@ Uint8List _encodeRequest({
   for (final arg in arguments) {
     _writeString(body, 1, arg);
   }
-  for (final entry in inputs.entries) {
+  for (final MapEntry<String, List<int>> entry in inputs.entries) {
     final nested = WorkerWriter();
     _writeString(nested, 1, entry.key);
     nested
       ..varint((2 << 3) | 2)
       ..varint(entry.value.length)
       ..raw(entry.value);
-    final payload = nested.takeBytes();
+    final Uint8List payload = nested.takeBytes();
     body
       ..varint((2 << 3) | 2)
       ..varint(payload.length)
@@ -334,7 +336,7 @@ Uint8List _frame(Uint8List payload) {
 }
 
 Uint8List _deframe(Uint8List frame) {
-  final length = WorkerReader(frame).varint();
+  final int length = WorkerReader(frame).varint();
   // The payload is the frame's tail; the length prefix heads it.
   return Uint8List.fromList(
     Uint8List.sublistView(frame, frame.length - length),
@@ -345,8 +347,8 @@ Map<int, List<List<int>>> _decodeFields(Uint8List payload) {
   final fields = <int, List<List<int>>>{};
   final reader = WorkerReader(payload);
   while (!reader.isDone) {
-    final tag = reader.varint();
-    final field = tag >> 3;
+    final int tag = reader.varint();
+    final int field = tag >> 3;
     if ((tag & 7) == 0) {
       fields.putIfAbsent(field, () => <List<int>>[]).add([reader.varint()]);
     } else {

@@ -5,7 +5,7 @@ import '../bin/main.dart' show combine;
 void main() {
   group('combining_shim.combine', () {
     test('emits the standard header + `part of` with the source basename', () {
-      final out = combine(sourceBasename: 'user.dart', partContents: []);
+      final String out = combine(sourceBasename: 'user.dart', partContents: []);
       expect(out, contains('// GENERATED CODE - DO NOT MODIFY BY HAND'));
       // Header must match `source_gen|combining_builder` byte-for-byte so
       // a build_runner-produced `.g.dart` and a rules_dart-produced one
@@ -24,7 +24,10 @@ part of 'user.dart';
 
 User _\$UserFromJson(Map<String, dynamic> json) => User();
 ''';
-      final out = combine(sourceBasename: 'user.dart', partContents: [shard]);
+      final String out = combine(
+        sourceBasename: 'user.dart',
+        partContents: [shard],
+      );
       // Same preamble build_runner emits: GENERATED header, blank, `part of`,
       // blank, then per-shard content (which carries its own `// Generator:`
       // marker from the SharedPartBuilder).
@@ -41,7 +44,7 @@ User _\$UserFromJson(Map<String, dynamic> json) => User();
     });
 
     test('no trailing blank after the final shard (build_runner parity)', () {
-      final out = combine(
+      final String out = combine(
         sourceBasename: 'x.dart',
         partContents: ['class A {}\n'],
       );
@@ -51,7 +54,7 @@ User _\$UserFromJson(Map<String, dynamic> json) => User();
     });
 
     test('concatenates multiple shards in the order provided', () {
-      final out = combine(
+      final String out = combine(
         sourceBasename: 'user.dart',
         partContents: [
           '/// shard A\nclass A {}\n',
@@ -62,7 +65,7 @@ User _\$UserFromJson(Map<String, dynamic> json) => User();
     });
 
     test('strips leading `part of` directives from each shard', () {
-      final out = combine(
+      final String out = combine(
         sourceBasename: 'user.dart',
         partContents: ["part of 'user.dart';\n\nclass A {}\n"],
       );
@@ -74,7 +77,7 @@ User _\$UserFromJson(Map<String, dynamic> json) => User();
     });
 
     test('strips legacy identifier-form `part of` headers', () {
-      final out = combine(
+      final String out = combine(
         sourceBasename: 'user.dart',
         partContents: ['part of my_lib.models.user;\n\nclass A {}\n'],
       );
@@ -87,7 +90,10 @@ User _\$UserFromJson(Map<String, dynamic> json) => User();
 
     test('preserves mid-shard line-start `part of` text when no header', () {
       final shard = "const example = '''\npart of 'user.dart';\n''';\n";
-      final out = combine(sourceBasename: 'user.dart', partContents: [shard]);
+      final String out = combine(
+        sourceBasename: 'user.dart',
+        partContents: [shard],
+      );
       // The shard has no leading `part of` header; the line-start `part of`
       // text inside the string literal must be preserved verbatim.
       expect(out, contains(shard.trim()));
@@ -98,7 +104,10 @@ User _\$UserFromJson(Map<String, dynamic> json) => User();
       final shard =
           "part of 'user.dart';\n\n"
           "const example = '''\npart of 'user.dart';\n''';\n";
-      final out = combine(sourceBasename: 'user.dart', partContents: [shard]);
+      final String out = combine(
+        sourceBasename: 'user.dart',
+        partContents: [shard],
+      );
       // The real header is stripped; the mid-shard literal survives. One
       // `part of` from the combining header + one from the literal.
       expect('part of'.allMatches(out).length, 2);
@@ -106,7 +115,7 @@ User _\$UserFromJson(Map<String, dynamic> json) => User();
     });
 
     test('skips empty / whitespace-only shards', () {
-      final out = combine(
+      final String out = combine(
         sourceBasename: 'user.dart',
         partContents: ['', '   \n  \n', "part of 'user.dart';\n"],
       );
@@ -117,7 +126,7 @@ User _\$UserFromJson(Map<String, dynamic> json) => User();
     });
 
     test('preserves ordering as given (the rule layer pre-sorts)', () {
-      final out = combine(
+      final String out = combine(
         sourceBasename: 'x.dart',
         partContents: ['class Z {}\n', 'class A {}\n'],
       );

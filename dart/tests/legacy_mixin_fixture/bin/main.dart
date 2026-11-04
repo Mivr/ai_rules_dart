@@ -17,7 +17,7 @@ void main() {
   try {
     direct.failInLegacy();
   } catch (e, st) {
-    final frame = st
+    final String frame = st
         .toString()
         .split('\n')
         .firstWhere((l) => l.contains('failInLegacy'))

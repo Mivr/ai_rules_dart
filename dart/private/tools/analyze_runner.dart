@@ -16,9 +16,9 @@ import 'private_home.dart';
 export 'analyze_runner_machine.dart' show parseMachineDiagnostics, unstage;
 
 void main(List<String> args) {
-  final parsed = _parseAnalyzeArgs(args);
-  final project = parsed.project;
-  final allowed = pruneOrphanedStagedFiles(project);
+  final _AnalyzeArgs parsed = _parseAnalyzeArgs(args);
+  final String project = parsed.project;
+  final Set<String>? allowed = pruneOrphanedStagedFiles(project);
   _checkStagedSources(project, parsed.sources, allowed);
   if (!_hasAnalyzableDartFile(project, allowed)) {
     stderr.writeln('analyze_runner: no Dart files to analyze in $project');
@@ -30,7 +30,7 @@ void main(List<String> args) {
   // above its package, or a relative URI climbing out of the staged tree
   // would reach an undeclared file through the analyzer's working directory.
   // Refuse before analyzing, through the one shared staged-source check.
-  final violations = findStagedDirectiveViolations(
+  final List<String> violations = findStagedDirectiveViolations(
     projectStagedRoots(project),
     tool: 'analyze_runner',
   );
@@ -46,7 +46,7 @@ void main(List<String> args) {
     return;
   }
 
-  final result = _runDartAnalyze(parsed, project, machine: false);
+  final ProcessResult result = _runDartAnalyze(parsed, project, machine: false);
   // Bazel echoes any action output, so a clean run stays silent rather than
   // printing the analyzer's "No issues found!" on every build.
   stderr.write(unstage(result.stderr as String, project));
@@ -74,18 +74,21 @@ ProcessResult _runDartAnalyze(
 /// Runs `dart analyze --format=machine` and decides the verdict from the
 /// baseline ceilings instead of the analyzer's exit code.
 void _analyzeWithBaseline(_AnalyzeArgs parsed, String project) {
-  final baseline = _loadBaselineOrExit(parsed.baseline!);
-  final result = _runDartAnalyze(parsed, project, machine: true);
+  final AnalysisBaseline baseline = _loadBaselineOrExit(parsed.baseline!);
+  final ProcessResult result = _runDartAnalyze(parsed, project, machine: true);
   final stdoutText = result.stdout as String;
   stderr.write(unstage(result.stderr as String, project));
-  final diagnostics = parseMachineDiagnostics(stdoutText, project);
+  final List<BaselineDiagnostic>? diagnostics = parseMachineDiagnostics(
+    stdoutText,
+    project,
+  );
   if (diagnostics == null) exit(1);
   if (!_reconcileExitCode(parsed, project, result.exitCode, diagnostics)) {
     _writeBaselineReport(diagnostics, baseline);
     if (diagnostics.isEmpty) stdout.write(unstage(stdoutText, project));
     exit(1);
   }
-  final report = _writeBaselineReport(diagnostics, baseline);
+  final BaselineReport report = _writeBaselineReport(diagnostics, baseline);
   if (!report.passes) exit(1);
   File(parsed.stamp).writeAsStringSync('analyzed\n');
 }
@@ -121,7 +124,11 @@ bool _reconcileExitCode(
       maxDiagnosticRank(diagnostics, fatalInfos: parsed.fatalInfos)) {
     return true;
   }
-  final fallback = _runDartAnalyze(parsed, project, machine: false);
+  final ProcessResult fallback = _runDartAnalyze(
+    parsed,
+    project,
+    machine: false,
+  );
   final fallbackOut = fallback.stdout as String;
   diagnostics.addAll(parseContextDiagnostics(fallbackOut, project));
   if (exitCode <=
@@ -191,7 +198,7 @@ void _checkStagedSources(
   Set<String>? allowed,
 ) {
   for (final s in sources) {
-    final norm = _normRel(s);
+    final String norm = _normRel(s);
     if (allowed != null &&
         norm.startsWith('src/') &&
         !allowed.contains(norm.substring(4))) {
@@ -224,7 +231,7 @@ Set<String>? pruneOrphanedStagedFiles(String project) => pruneStagedSrcTree(
 
 bool _hasAnalyzableDartFile(String project, Set<String>? allowed) {
   if (allowed != null) {
-    for (final rel in allowed) {
+    for (final String rel in allowed) {
       if (rel.endsWith('.dart') &&
           FileSystemEntity.isFileSync('$project/src/$rel')) {
         return true;
@@ -234,7 +241,7 @@ bool _hasAnalyzableDartFile(String project, Set<String>? allowed) {
   }
   final srcDir = Directory('$project/src');
   final searchRoot = srcDir.existsSync() ? srcDir : Directory(project);
-  for (final entity in searchRoot.listSync(recursive: true)) {
+  for (final FileSystemEntity entity in searchRoot.listSync(recursive: true)) {
     if (entity.path.endsWith('.dart') &&
         FileSystemEntity.isFileSync(entity.path)) {
       return true;
@@ -244,7 +251,7 @@ bool _hasAnalyzableDartFile(String project, Set<String>? allowed) {
 }
 
 String _normRel(String raw) {
-  var rel = raw.replaceAll(r'\', '/');
+  String rel = raw.replaceAll(r'\', '/');
   while (rel.startsWith('./')) {
     rel = rel.substring(2);
   }

@@ -21,7 +21,7 @@ void main(List<String> args) {
       'sdk_launcher_data_test: pass \$(rlocationpath //dart) as the test argument.',
     );
   }
-  final launcher = Runfiles.create().rlocation(args[0]);
+  final String launcher = Runfiles.create().rlocation(args[0]);
 
   group('adjacentSdkConfigFile', () {
     test('falls back to the current executable for an empty name', () {
@@ -29,23 +29,23 @@ void main(List<String> args) {
     });
 
     test('names the sidecar beside a bare executable', () {
-      final tmp = Directory.systemTemp.createTempSync(
+      final Directory tmp = Directory.systemTemp.createTempSync(
         'sdk_launcher_data_test.',
       );
       addTearDown(() => tmp.deleteSync(recursive: true));
       File('${tmp.path}/dart.sdk_config.json').writeAsStringSync('{}');
-      final file = adjacentSdkConfigFile('${tmp.path}/dart');
+      final File? file = adjacentSdkConfigFile('${tmp.path}/dart');
       expect(file, isNotNull);
       expect(file!.existsSync(), isTrue);
     });
 
     test('strips a Windows .exe suffix', () {
-      final tmp = Directory.systemTemp.createTempSync(
+      final Directory tmp = Directory.systemTemp.createTempSync(
         'sdk_launcher_data_test.',
       );
       addTearDown(() => tmp.deleteSync(recursive: true));
       File('${tmp.path}/dart.sdk_config.json').writeAsStringSync('{}');
-      final file = adjacentSdkConfigFile('${tmp.path}/dart.exe');
+      final File? file = adjacentSdkConfigFile('${tmp.path}/dart.exe');
       expect(file, isNotNull);
       expect(file!.path, endsWith('dart.sdk_config.json'));
       expect(file.existsSync(), isTrue);
@@ -58,14 +58,14 @@ void main(List<String> args) {
     });
 
     test('reports the SDK version from the manifest alone', () async {
-      final env = _dataDepEnv()
+      final Map<String, String> env = _dataDepEnv()
         ..remove('RUNFILES_DIR')
         ..['RUNFILES_MANIFEST_FILE'] = _childManifest(launcher);
       await _expectVersion(launcher, env);
     });
 
     test('reports the SDK version from the runfiles directory alone', () async {
-      final dir = Platform.environment['RUNFILES_DIR'];
+      final String? dir = Platform.environment['RUNFILES_DIR'];
       if (dir == null ||
           dir.isEmpty ||
           !Directory(dir).existsSync() ||
@@ -90,19 +90,21 @@ void main(List<String> args) {
 /// still resolves the SDK through a manifest with `RUNFILES_DIR` unset (as
 /// on Windows under `--noenable_runfiles`).
 String _childManifest(String launcher) {
-  final fromEnv = Platform.environment['RUNFILES_MANIFEST_FILE'];
+  final String? fromEnv = Platform.environment['RUNFILES_MANIFEST_FILE'];
   if (fromEnv != null && fromEnv.isNotEmpty && File(fromEnv).existsSync()) {
     return fromEnv;
   }
-  final config = adjacentSdkConfigFile(launcher);
+  final File? config = adjacentSdkConfigFile(launcher);
   if (config == null || !config.existsSync()) {
     fail('sdk_launcher_data_test: no SDK config beside $launcher.');
   }
   final sdkKey =
       (jsonDecode(config.readAsStringSync()) as Map<String, dynamic>)['dart']
           as String;
-  final realDart = Runfiles.create().rlocation(sdkKey);
-  final dir = Directory.systemTemp.createTempSync('sdk_launcher_manifest.');
+  final String realDart = Runfiles.create().rlocation(sdkKey);
+  final Directory dir = Directory.systemTemp.createTempSync(
+    'sdk_launcher_manifest.',
+  );
   addTearDown(() => dir.deleteSync(recursive: true));
   final manifest = File('${dir.path}/MANIFEST');
   manifest.writeAsStringSync('$sdkKey $realDart\n');
@@ -138,7 +140,9 @@ bool _dirHoldsManifest(String dir) {
 
 /// Runs [launcher] with `--version` under [env] and expects the SDK line.
 Future<void> _expectVersion(String launcher, Map<String, String> env) async {
-  final result = await Process.run(launcher, ['--version'], environment: env);
+  final ProcessResult result = await Process.run(launcher, [
+    '--version',
+  ], environment: env);
   expect(
     result.exitCode,
     0,

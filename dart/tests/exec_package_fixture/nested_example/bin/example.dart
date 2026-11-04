@@ -1,6 +1,6 @@
 import 'package:exec_pkg/exec_pkg.dart';
 
 void main() {
-  final _ = greeting();
+  final String _ = greeting();
   print(_);
 }

@@ -32,9 +32,9 @@ import 'package:test/test.dart';
 void main(List<String> args) {
   group('download digest guard', () {
     test('the workspace root resolves and sources are discovered', () {
-      final root = _workspaceRoot(args);
-      final bzl = _dartBzlFiles(root);
-      final modules = _moduleFiles(root);
+      final String root = _workspaceRoot(args);
+      final List<File> bzl = _dartBzlFiles(root);
+      final List<File> modules = _moduleFiles(root);
       expect(
         bzl.length,
         greaterThan(10),
@@ -56,14 +56,14 @@ void main(List<String> args) {
     });
 
     test('the helpers are defined once, in dart/private/download.bzl', () {
-      final root = _workspaceRoot(args);
+      final String root = _workspaceRoot(args);
       final helper = File('$root/dart/private/download.bzl');
       expect(
         helper.existsSync(),
         isTrue,
         reason: 'dart/private/download.bzl must exist',
       );
-      final text = helper.readAsStringSync();
+      final String text = helper.readAsStringSync();
       for (final def in [
         'def pinned_download(',
         'def pinned_download_and_extract(',
@@ -77,14 +77,14 @@ void main(List<String> args) {
     });
 
     test('no context download outside dart/private/download.bzl', () {
-      final root = _workspaceRoot(args);
+      final String root = _workspaceRoot(args);
       final findings = <String>[];
       var users = 0;
-      for (final file in _dartBzlFiles(root)) {
-        final rel = _relative(root, file);
+      for (final File file in _dartBzlFiles(root)) {
+        final String rel = _relative(root, file);
         if (rel == 'dart/private/download.bzl') continue;
-        final lines = file.readAsLinesSync();
-        final code = _codeLines(lines);
+        final List<String> lines = file.readAsLinesSync();
+        final List<String> code = _codeLines(lines);
         if (code.any((l) => l.contains('pinned_download('))) users++;
         for (var i = 0; i < lines.length; i++) {
           if (_directDownload.hasMatch(code[i])) {
@@ -103,13 +103,13 @@ void main(List<String> args) {
     });
 
     test('no aliased or getattr download', () {
-      final root = _workspaceRoot(args);
+      final String root = _workspaceRoot(args);
       final findings = <String>[];
-      for (final file in _dartBzlFiles(root)) {
-        final rel = _relative(root, file);
+      for (final File file in _dartBzlFiles(root)) {
+        final String rel = _relative(root, file);
         if (rel == 'dart/private/download.bzl') continue;
-        final lines = file.readAsLinesSync();
-        final code = _codeLines(lines);
+        final List<String> lines = file.readAsLinesSync();
+        final List<String> code = _codeLines(lines);
         for (var i = 0; i < lines.length; i++) {
           if (_directDownload.hasMatch(code[i])) continue;
           if (_aliasDownload.hasMatch(code[i])) {
@@ -127,12 +127,15 @@ void main(List<String> args) {
     });
 
     test('every http rule carries a non-empty literal checksum', () {
-      final root = _workspaceRoot(args);
+      final String root = _workspaceRoot(args);
       var calls = 0;
       final findings = <String>[];
-      final files = [..._dartBzlFiles(root), ..._moduleFiles(root)];
+      final List<File> files = [..._dartBzlFiles(root), ..._moduleFiles(root)];
       for (final file in files) {
-        final scan = _scanHttp(_relative(root, file), file.readAsStringSync());
+        final _HttpScan scan = _scanHttp(
+          _relative(root, file),
+          file.readAsStringSync(),
+        );
         calls += scan.calls;
         findings.addAll(scan.findings);
       }
@@ -156,7 +159,7 @@ void main(List<String> args) {
           '        name = "x",\n'
           '        urls = ["https://example.invalid/x.tgz"],\n'
           '    )\n';
-      final scan = _scanHttp('probe.bzl', src);
+      final _HttpScan scan = _scanHttp('probe.bzl', src);
       expect(scan.calls, 1);
       expect(scan.findings, hasLength(1));
       expect(
@@ -177,7 +180,7 @@ void main(List<String> args) {
           '        sha256 = "86bea300d6701fb6c1fddc33b21235231d108b44a9793db9dcd48940fa46a6a6",\n'
           '        urls = ["https://example.invalid/x.tgz"],\n'
           '    )\n';
-      final scan = _scanHttp('probe.bzl', src);
+      final _HttpScan scan = _scanHttp('probe.bzl', src);
       expect(scan.calls, 1);
       expect(scan.findings, isEmpty);
     });
@@ -189,7 +192,7 @@ void main(List<String> args) {
           '_leaf = _mid\n'
           'def x():\n'
           '    _leaf(name = "x", urls = ["https://example.invalid/x.tgz"])\n';
-      final scan = _scanHttp('probe.bzl', src);
+      final _HttpScan scan = _scanHttp('probe.bzl', src);
       expect(scan.calls, 1);
       expect(scan.findings, hasLength(1));
       expect(
@@ -207,7 +210,7 @@ void main(List<String> args) {
           '    name = "x",\n'
           '    urls = ["https://example.invalid/x.tgz"],\n'
           ')\n';
-      final scan = _scanHttp('probe.bzl', src);
+      final _HttpScan scan = _scanHttp('probe.bzl', src);
       expect(scan.calls, 1);
       expect(scan.findings, [
         'probe.bzl:1: http_archive rule without sha256 or integrity',
@@ -219,7 +222,7 @@ void main(List<String> args) {
           'load("@bazel_tools//tools/build_defs/repo:http.bzl", _my_archive = "http_archive")\n'
           'def x():\n'
           '    _my_archive(name = "x", sha256 = PIN, urls = ["https://example.invalid/x.tgz"])\n';
-      final scan = _scanHttp('probe.bzl', src);
+      final _HttpScan scan = _scanHttp('probe.bzl', src);
       expect(scan.calls, 1);
       expect(scan.findings, hasLength(1));
       expect(
@@ -236,7 +239,7 @@ void main(List<String> args) {
           '    name = "x",\n'
           '    urls = ["https://example.invalid/x.tgz"],\n'
           ')\n';
-      final scan = _scanHttp('MODULE.bazel', src);
+      final _HttpScan scan = _scanHttp('MODULE.bazel', src);
       expect(scan.calls, 1);
       expect(scan.findings, [
         "MODULE.bazel:3: http_archive instantiation through 'my_fetch' "
@@ -252,7 +255,7 @@ void main(List<String> args) {
           '    integrity = "",\n'
           '    urls = ["https://example.invalid/x.bin"],\n'
           ')\n';
-      final scan = _scanHttp('MODULE.bazel', src);
+      final _HttpScan scan = _scanHttp('MODULE.bazel', src);
       expect(scan.calls, 1);
       expect(scan.findings, hasLength(1));
       expect(
@@ -272,7 +275,7 @@ void main(List<String> args) {
           '    sha256 = "86bea300d6701fb6c1fddc33b21235231d108b44a9793db9dcd48940fa46a6a6",\n'
           '    urls = ["https://example.invalid/x.tgz"],\n'
           ')\n';
-      final scan = _scanHttp('MODULE.bazel', src);
+      final _HttpScan scan = _scanHttp('MODULE.bazel', src);
       expect(scan.calls, 1);
       expect(scan.findings, isEmpty);
     });
@@ -284,7 +287,7 @@ void main(List<String> args) {
           '    name = "x",\n'
           '    remote = "https://example.invalid/x.git",\n'
           ')\n';
-      final scan = _scanHttp('MODULE.bazel', src);
+      final _HttpScan scan = _scanHttp('MODULE.bazel', src);
       expect(scan.calls, 0);
       expect(scan.findings, isEmpty);
     });
@@ -294,7 +297,7 @@ void main(List<String> args) {
           'load("//dart/pub:extensions.bzl", _plan = "plan_scope_sccs")\n'
           'def x():\n'
           '    return _plan()\n';
-      final scan = _scanHttp('probe.bzl', src);
+      final _HttpScan scan = _scanHttp('probe.bzl', src);
       expect(scan.calls, 0);
       expect(scan.findings, isEmpty);
     });
@@ -348,31 +351,31 @@ class _HttpScan {
 
 _HttpScan _scanHttp(String rel, String original) {
   final scan = _HttpScan();
-  final blanked = _blanked(original);
+  final String blanked = _blanked(original);
   final kinds = <String, String>{
     ..._httpLocalNames(blanked, original),
     ..._repoRuleProxies(blanked, original),
   };
-  for (final entry in kinds.entries) {
-    final local = entry.key;
-    final kind = entry.value;
+  for (final MapEntry<String, String> entry in kinds.entries) {
+    final String local = entry.key;
+    final String kind = entry.value;
     final what = local == 'http_$kind'
         ? 'http_$kind rule'
         : 'http_$kind instantiation through \'$local\'';
-    for (final match in RegExp(
+    for (final RegExpMatch match in RegExp(
       '\\b${RegExp.escape(local)}\\s*\\(',
     ).allMatches(blanked)) {
       scan.calls++;
-      final open = match.end - 1;
-      final close = _matchingParen(blanked, open);
-      final line =
+      final int open = match.end - 1;
+      final int close = _matchingParen(blanked, open);
+      final int line =
           '\n'.allMatches(blanked.substring(0, match.start)).length + 1;
       if (close == -1) {
         scan.findings.add('$rel:$line: $what never closes');
         continue;
       }
-      final extent = original.substring(match.start, close + 1);
-      final literal = _literalChecksum.firstMatch(extent);
+      final String extent = original.substring(match.start, close + 1);
+      final RegExpMatch? literal = _literalChecksum.firstMatch(extent);
       if (literal != null && literal.group(1)!.length > 2) continue;
       if (_checksumAttr.hasMatch(extent)) {
         scan.findings.add(
@@ -399,23 +402,23 @@ Map<String, String> _httpLocalNames(String blanked, String original) {
     'http_jar': 'jar',
   };
   final found = Map<String, String>.of(kinds);
-  for (final load in RegExp(r'\bload\s*\(').allMatches(blanked)) {
-    final close = _matchingParen(blanked, load.end - 1);
+  for (final RegExpMatch load in RegExp(r'\bload\s*\(').allMatches(blanked)) {
+    final int close = _matchingParen(blanked, load.end - 1);
     if (close == -1) continue;
-    final items = _loadItems
+    final List<RegExpMatch> items = _loadItems
         .allMatches(original.substring(load.start, close + 1))
         .toList();
-    for (final item in items.skip(1)) {
-      final value = _unquote(item.group(2)!);
-      final kind = kinds[value];
+    for (final RegExpMatch item in items.skip(1)) {
+      final String value = _unquote(item.group(2)!);
+      final String? kind = kinds[value];
       if (kind != null) found[item.group(1) ?? value] = kind;
     }
   }
   var changed = true;
   while (changed) {
     changed = false;
-    for (final m in _rebinding.allMatches(blanked)) {
-      final kind = found[m.group(2)];
+    for (final RegExpMatch m in _rebinding.allMatches(blanked)) {
+      final String? kind = found[m.group(2)];
       if (kind != null && !found.containsKey(m.group(1))) {
         found[m.group(1)!] = kind;
         changed = true;
@@ -435,12 +438,12 @@ Map<String, String> _repoRuleProxies(String blanked, String original) {
     'http_jar': 'jar',
   };
   final proxies = <String, String>{};
-  for (final m in RegExp(
+  for (final RegExpMatch m in RegExp(
     r'([A-Za-z_][A-Za-z0-9_]*)\s*=\s*use_repo_rule\s*\(',
   ).allMatches(blanked)) {
-    final close = _matchingParen(blanked, m.end - 1);
+    final int close = _matchingParen(blanked, m.end - 1);
     if (close == -1) continue;
-    final literals = RegExp('"[^"]*"|\'[^\']*\'')
+    final List<String> literals = RegExp('"[^"]*"|\'[^\']*\'')
         .allMatches(original.substring(m.start, close + 1))
         .map((lit) => _unquote(lit.group(0)!))
         .toList();
@@ -491,16 +494,16 @@ final _checksumAttr = RegExp(r'(?:sha256|integrity)\s*=');
 /// manifest) is tried first: it names a real source path on every platform.
 String _workspaceRoot(List<String> args) {
   if (args.isNotEmpty) {
-    final root = _anchorRoot(args.first);
+    final String? root = _anchorRoot(args.first);
     if (root != null) return root;
   }
-  final env = Platform.environment;
-  for (final start in [
+  final Map<String, String> env = Platform.environment;
+  for (final String? start in [
     env['BUILD_WORKSPACE_DIRECTORY'],
     env['BUILD_WORKING_DIRECTORY'],
     Directory.current.path,
   ]) {
-    final root = _sourceRootAbove(start);
+    final String? root = _sourceRootAbove(start);
     if (root != null) return root;
   }
   fail(
@@ -521,7 +524,7 @@ String _workspaceRoot(List<String> args) {
 /// fall back to the environment walk.
 String? _anchorRoot(String arg) {
   try {
-    final located = Runfiles.create().rlocation(arg);
+    final String located = Runfiles.create().rlocation(arg);
     // `rlocation` maps even undeclared paths; only a declared data file
     // counts as an anchor.
     if (!File(located).existsSync()) return null;
@@ -538,17 +541,17 @@ String? _anchorRoot(String arg) {
 /// qualifies itself, while resolving its linked `MODULE.bazel` still lands
 /// on the real tree.
 String? _sourceRootAbove(String? start) {
-  var dir = start == null ? null : Directory(start);
+  Directory? dir = start == null ? null : Directory(start);
   while (dir != null) {
     final module = File('${dir.path}/MODULE.bazel');
     if (module.existsSync()) {
-      final root = File(module.resolveSymbolicLinksSync()).parent.path;
+      final String root = File(module.resolveSymbolicLinksSync()).parent.path;
       if (FileSystemEntity.typeSync('$root/dart', followLinks: false) ==
           FileSystemEntityType.directory) {
         return root;
       }
     }
-    final parent = dir.parent;
+    final Directory parent = dir.parent;
     if (parent.path == dir.path) return null;
     dir = parent;
   }
@@ -588,7 +591,7 @@ void _walk(Directory dir, void Function(File) visit) {
   }
   entries.sort((a, b) => a.path.compareTo(b.path));
   for (final entry in entries) {
-    final name = entry.path.split(Platform.pathSeparator).last;
+    final String name = entry.path.split(Platform.pathSeparator).last;
     if (name.startsWith('.') || name.startsWith('bazel-')) continue;
     if (entry is File) {
       visit(entry);
@@ -604,8 +607,8 @@ void _walk(Directory dir, void Function(File) visit) {
 /// (backslashes on Windows), and Windows drive letters compare
 /// case-insensitively.
 String _relative(String root, File file) {
-  var base = root.replaceAll('\\', '/');
-  var rel = file.path.replaceAll('\\', '/');
+  String base = root.replaceAll('\\', '/');
+  String rel = file.path.replaceAll('\\', '/');
   if (base.length >= 2 &&
       base[1] == ':' &&
       rel.length >= 2 &&
@@ -631,7 +634,7 @@ String _blanked(String text) {
   var raw = false;
   var pendingRaw = false;
   while (i < text.length) {
-    final c = text[i];
+    final String c = text[i];
     if (quote == null) {
       if ((c == 'r' || c == 'R') &&
           i + 1 < text.length &&
@@ -642,7 +645,7 @@ String _blanked(String text) {
         continue;
       }
       if (c == "'" || c == '"') {
-        final triple =
+        final bool triple =
             i + 2 < text.length && text[i + 1] == c && text[i + 2] == c;
         quote = triple ? c * 3 : c;
         raw = pendingRaw;

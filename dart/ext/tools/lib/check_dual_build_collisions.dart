@@ -34,15 +34,18 @@ CollisionReport checkDualBuildCollisions(
     throw ArgumentError('Directory does not exist: ${root.path}');
   }
   final hits = <String>[];
-  final rootPath = root.absolute.path;
-  for (final entity in root.listSync(recursive: true, followLinks: false)) {
+  final String rootPath = root.absolute.path;
+  for (final FileSystemEntity entity in root.listSync(
+    recursive: true,
+    followLinks: false,
+  )) {
     if (entity is! File) continue;
     // Only match prune segments *inside* the scanned root. A scan of
     // `/home/user/build/my-proj` must not be skipped just because a
     // path component named `build` exists in the user's parent
     // directory chain.
-    final abs = entity.absolute.path;
-    final rel = abs.startsWith(rootPath + Platform.pathSeparator)
+    final String abs = entity.absolute.path;
+    final String rel = abs.startsWith(rootPath + Platform.pathSeparator)
         ? abs.substring(rootPath.length + 1)
         : abs;
     if (_isPruned(rel)) continue;
@@ -63,7 +66,7 @@ CollisionReport checkDualBuildCollisions(
 // `build/` directory inside the scanned root should be.
 bool _isPruned(String path) {
   const prunedSegments = {'.git', '.dart_tool', 'build'};
-  for (final segment in path.split(Platform.pathSeparator)) {
+  for (final String segment in path.split(Platform.pathSeparator)) {
     if (prunedSegments.contains(segment)) return true;
     if (segment.startsWith('bazel-')) return true;
   }
@@ -76,7 +79,7 @@ bool _isPruned(String path) {
 List<String> loadBaselineExtensions() {
   try {
     final r = Runfiles.create();
-    final path = r.rlocation(
+    final String path = r.rlocation(
       '_main/gazelle/dart/baseline_generated_extensions.txt',
     );
     return _parse(File(path).readAsStringSync());
@@ -100,17 +103,17 @@ Future<int> runCli(List<String> args) async {
     stderr.writeln('error: ${root.path} is not a directory');
     return 2;
   }
-  final extensions = loadBaselineExtensions();
-  final report = checkDualBuildCollisions(root, extensions);
+  final List<String> extensions = loadBaselineExtensions();
+  final CollisionReport report = checkDualBuildCollisions(root, extensions);
   if (report.isEmpty) {
     print('no generated-file collisions found under ${root.path}');
     return 0;
   }
-  final count = report.collisions.length;
+  final int count = report.collisions.length;
   print(
     'found $count source-tree generated file(s) that would collide with Bazel codegen outputs:',
   );
-  for (final p in report.collisions) {
+  for (final String p in report.collisions) {
     print(p);
   }
   print('');

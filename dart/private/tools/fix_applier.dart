@@ -13,24 +13,32 @@ const _usage =
 const _contextLines = 3;
 
 void main(List<String> args) {
-  final parsed = _parseApplierArgs(args);
-  final env = Platform.environment;
-  final resolved = _resolveApplierPaths(parsed, env);
-  final workspace = _requireWorkspace(env);
+  final _ApplierArgs parsed = _parseApplierArgs(args);
+  final Map<String, String> env = Platform.environment;
+  final _ApplierPaths resolved = _resolveApplierPaths(parsed, env);
+  final String workspace = _requireWorkspace(env);
 
   if (!Directory(resolved.fixes).existsSync()) {
     stderr.writeln('fix_applier: fixes directory not found: ${resolved.fixes}');
     exit(1);
   }
 
-  final manifest = _readManifest(resolved.manifest);
-  final fixed = _entries(manifest, 'fixed', resolved.manifest);
-  final dropped = _entries(manifest, 'dropped', resolved.manifest);
+  final Map<String, dynamic> manifest = _readManifest(resolved.manifest);
+  final List<Map<String, dynamic>> fixed = _entries(
+    manifest,
+    'fixed',
+    resolved.manifest,
+  );
+  final List<Map<String, dynamic>> dropped = _entries(
+    manifest,
+    'dropped',
+    resolved.manifest,
+  );
 
   // Resolve every source up front. A missing staged file means the action that
   // produced the manifest is broken; discovering that halfway through leaves
   // the tree half-fixed, which is far harder to reason about than not starting.
-  final pending = _collectPending(
+  final List<_Fix> pending = _collectPending(
     fixed,
     resolvedManifest: resolved.manifest,
     resolvedFixes: resolved.fixes,
@@ -75,16 +83,17 @@ _ApplierPaths _resolveApplierPaths(
   _ApplierArgs parsed,
   Map<String, String> env,
 ) {
-  final rawManifest = parsed.manifest ?? _nonEmpty(env['DART_FIX_MANIFEST']);
-  final rawFixes = parsed.fixes ?? _nonEmpty(env['DART_FIX_FIXES']);
+  final String? rawManifest =
+      parsed.manifest ?? _nonEmpty(env['DART_FIX_MANIFEST']);
+  final String? rawFixes = parsed.fixes ?? _nonEmpty(env['DART_FIX_FIXES']);
   if (rawManifest == null || rawFixes == null) {
     _usageError(
       '--manifest and --fixes are required (or DART_FIX_MANIFEST and '
       'DART_FIX_FIXES in the environment)',
     );
   }
-  var resolvedManifest = rawManifest;
-  var resolvedFixes = rawFixes;
+  String resolvedManifest = rawManifest;
+  String resolvedFixes = rawFixes;
   if (!File(resolvedManifest).existsSync() ||
       !Directory(resolvedFixes).existsSync()) {
     try {
@@ -111,7 +120,7 @@ _ApplierPaths _resolveApplierPaths(
 /// an unrelated tree. `--dry-run` needs it just as much: the diff is against
 /// the workspace copy.
 String _requireWorkspace(Map<String, String> env) {
-  final workspace = _nonEmpty(env['BUILD_WORKSPACE_DIRECTORY']);
+  final String? workspace = _nonEmpty(env['BUILD_WORKSPACE_DIRECTORY']);
   if (workspace == null) {
     stderr.writeln(
       'fix_applier: BUILD_WORKSPACE_DIRECTORY is not set. Apply fixes with '
@@ -133,7 +142,7 @@ List<_Fix> _collectPending(
 }) {
   final pending = <_Fix>[];
   for (final entry in fixed) {
-    final relative = _requireString(
+    final String relative = _requireString(
       entry,
       'workspace',
       'fixed',
@@ -188,11 +197,11 @@ void _writeFix(_Fix fix) {
 /// generator's inputs or the builder itself need the fix, not its output.
 void _reportDropped(List<Map<String, dynamic>> dropped) {
   for (final entry in dropped) {
-    final name =
+    final String name =
         _optionalString(entry, 'workspace') ??
         _optionalString(entry, 'staged') ??
         '<unnamed file>';
-    final reason =
+    final String reason =
         _optionalString(entry, 'reason') ?? 'not write-back eligible';
     stderr.writeln('fix_applier: warning: dropped $name ($reason)');
     stderr.writeln(
@@ -274,7 +283,7 @@ List<Map<String, dynamic>> _entries(
   String key,
   String manifestPath,
 ) {
-  final value = manifest[key];
+  final dynamic value = manifest[key];
   if (value == null) return const [];
   if (value is! List) {
     stderr.writeln('fix_applier: $manifestPath: "$key" must be a list');
@@ -302,7 +311,7 @@ String _requireString(
   String listName,
   String manifestPath,
 ) {
-  final value = _optionalString(entry, key);
+  final String? value = _optionalString(entry, key);
   if (value == null) {
     stderr.writeln(
       'fix_applier: $manifestPath: a "$listName" entry is missing a string '
@@ -314,7 +323,7 @@ String _requireString(
 }
 
 String? _optionalString(Map<String, dynamic> entry, String key) {
-  final value = entry[key];
+  final dynamic value = entry[key];
   return value is String && value.isNotEmpty ? value : null;
 }
 
@@ -337,15 +346,17 @@ String _join(String base, String relative) =>
 void _printDiff(_Fix fix) {
   // A fix can create a file that does not exist yet; an empty "before" renders
   // that as a pure addition rather than an error.
-  final before = fix.destination.existsSync()
+  final List<String> before = fix.destination.existsSync()
       ? _lines(fix.destination)
       : const <String>[];
-  final after = _lines(fix.staged);
+  final List<String> after = _lines(fix.staged);
 
   stdout.writeln('--- a/${fix.relative}');
   stdout.writeln('+++ b/${fix.relative}');
 
-  final shorter = before.length < after.length ? before.length : after.length;
+  final int shorter = before.length < after.length
+      ? before.length
+      : after.length;
   var prefix = 0;
   while (prefix < shorter && before[prefix] == after[prefix]) {
     prefix++;
@@ -358,16 +369,16 @@ void _printDiff(_Fix fix) {
     suffix++;
   }
 
-  final beforeEnd = before.length - suffix;
-  final afterEnd = after.length - suffix;
+  final int beforeEnd = before.length - suffix;
+  final int afterEnd = after.length - suffix;
   if (prefix == beforeEnd && prefix == afterEnd) {
     stdout.writeln('(no textual difference)');
     return;
   }
 
-  final leading = prefix < _contextLines ? prefix : _contextLines;
-  final trailing = suffix < _contextLines ? suffix : _contextLines;
-  final start = prefix - leading;
+  final int leading = prefix < _contextLines ? prefix : _contextLines;
+  final int trailing = suffix < _contextLines ? suffix : _contextLines;
+  final int start = prefix - leading;
   stdout.writeln(
     '@@ -${_range(start, beforeEnd + trailing - start)} '
     '+${_range(start, afterEnd + trailing - start)} @@',

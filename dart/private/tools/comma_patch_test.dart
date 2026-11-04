@@ -158,7 +158,7 @@ void main(List<String> args) {
         ),
         isNull,
       );
-      final error = patch.unpatchedCommaDefinesError(
+      final String? error = patch.unpatchedCommaDefinesError(
         ['-DFOO=a,b'],
         snapshotPatched: false,
         snapshotKind: 'gen_kernel',
@@ -173,7 +173,7 @@ void main(List<String> args) {
   group('patchSnapshotFile', () {
     test('reports an unreadable input without writing an output', () {
       final out = File('${tmp.path}/out.snapshot');
-      final error = patch.patchSnapshotFile(
+      final String? error = patch.patchSnapshotFile(
         inputPath: '${tmp.path}/missing.snapshot',
         outputPath: out.path,
         sdkVersion: '3.13.5',
@@ -188,7 +188,7 @@ void main(List<String> args) {
       final input = File('${tmp.path}/in.snapshot')
         ..writeAsBytesSync([for (var i = 0; i < 64; i++) i]);
       final out = File('${tmp.path}/out.snapshot');
-      final error = patch.patchSnapshotFile(
+      final String? error = patch.patchSnapshotFile(
         inputPath: input.path,
         outputPath: out.path,
         sdkVersion: '3.13.5',
@@ -213,7 +213,7 @@ void main(List<String> args) {
           final out = File(
             '${tmp.path}/sdk${sdkIndex}_${name.split('/').last}',
           );
-          final error = patch.patchSnapshotFile(
+          final String? error = patch.patchSnapshotFile(
             inputPath: input.path,
             outputPath: out.path,
             sdkVersion: 'test-sdk',
@@ -225,7 +225,7 @@ void main(List<String> args) {
           // The input snapshot is never modified in place.
           expect(out.readAsBytesSync(), isNot(equals(input.readAsBytesSync())));
           // The patch is one-shot: the output no longer matches.
-          final repatch = patch.patchSnapshotFile(
+          final String? repatch = patch.patchSnapshotFile(
             inputPath: out.path,
             outputPath: '${out.path}.again',
             sdkVersion: 'test-sdk',
@@ -252,10 +252,10 @@ void main(List<String> args) {
     });
 
     test('patches through the CLI and stays silent on success', () {
-      final sdkDir = sdkDirs.first;
+      final String sdkDir = sdkDirs.first;
       final input = File('$sdkDir/bin/snapshots/gen_kernel_aot.dart.snapshot');
       final out = File('${tmp.path}/cli.snapshot');
-      final exitCode = patch.runPatchCli([
+      final int exitCode = patch.runPatchCli([
         '--input=${input.path}',
         '--output=${out.path}',
         '--sdk-version=3.13.5',
@@ -268,7 +268,7 @@ void main(List<String> args) {
     test('exits 1 when no pattern matches', () {
       final input = File('${tmp.path}/in.snapshot')
         ..writeAsBytesSync([1, 2, 3]);
-      final exitCode = patch.runPatchCli([
+      final int exitCode = patch.runPatchCli([
         '--input=${input.path}',
         '--output=${tmp.path}/out.snapshot',
         '--sdk-version=3.13.5',
@@ -281,7 +281,7 @@ void main(List<String> args) {
       // Covers M-7's mechanism: the patch action executes `dartvm`
       // directly, so `dartvm` must run the tool even when no `dart`
       // launcher or SDK tree sits beside it.
-      final sdkDir = sdkDirs.first;
+      final String sdkDir = sdkDirs.first;
       final vmName = Platform.isWindows ? 'dartvm.exe' : 'dartvm';
       final vm = File('$sdkDir/bin/$vmName');
       if (!vm.existsSync()) {
@@ -289,9 +289,11 @@ void main(List<String> args) {
         return;
       }
       final iso = Directory('${tmp.path}/iso')..createSync();
-      final isoVm = vm.copySync('${iso.path}/$vmName').path;
+      final String isoVm = vm.copySync('${iso.path}/$vmName').path;
       // A loader may need DLLs the VM ships with; those are not the SDK.
-      for (final entity in Directory('$sdkDir/bin').listSync()) {
+      for (final FileSystemEntity entity in Directory(
+        '$sdkDir/bin',
+      ).listSync()) {
         if (entity is File && entity.path.endsWith('.dll')) {
           entity.copySync('${iso.path}/${entity.uri.pathSegments.last}');
         }
@@ -299,7 +301,7 @@ void main(List<String> args) {
       File(commaPatchSource).copySync('${iso.path}/comma_patch.dart');
       File('$sdkDir/bin/snapshots/gen_kernel_aot.dart.snapshot')
           .copySync('${iso.path}/in.snapshot');
-      final result = Process.runSync(isoVm, [
+      final ProcessResult result = Process.runSync(isoVm, [
         'comma_patch.dart',
         '--input=in.snapshot',
         '--output=out.snapshot',
@@ -318,7 +320,7 @@ void main(List<String> args) {
 
   group('no shared state', () {
     test('the implementation names no shared temp path', () {
-      final source = File(commaPatchSource).readAsStringSync();
+      final String source = File(commaPatchSource).readAsStringSync();
       for (final banned in [
         'systemTemp',
         'TMPDIR',

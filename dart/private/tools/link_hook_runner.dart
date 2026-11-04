@@ -19,12 +19,15 @@ import 'package:hooks/hooks.dart';
 import 'package:rules_dart_guard/directive_guard.dart';
 
 Future<void> main(List<String> arguments) async {
-  final parsed = _parseHookArgs(arguments);
+  final _HookArgs parsed = _parseHookArgs(arguments);
 
-  final scratch = Directory.systemTemp.createTempSync('dart_link_hook_');
+  final Directory scratch = Directory.systemTemp.createTempSync(
+    'dart_link_hook_',
+  );
   try {
-    final staged = _stageHook(parsed, scratch);
-    final output = await _runHook(parsed, staged, scratch);
+    final ({File hook, Directory packageRoot, File packages}) staged =
+        _stageHook(parsed, scratch);
+    final LinkOutput output = await _runHook(parsed, staged, scratch);
     _checkDeclaredAssets(parsed.packageName, parsed.declared, output);
     _emitDataAssets(parsed, output);
   } on _LinkFailure catch (failure) {
@@ -58,13 +61,13 @@ _HookArgs _parseHookArgs(List<String> arguments) {
     ..addOption('recorded-uses', mandatory: true)
     ..addOption('output', mandatory: true)
     ..addMultiOption('data-asset', splitCommas: false);
-  final args = parser.parse(arguments);
-  final packageName = args.option('package-name')!;
+  final ArgResults args = parser.parse(arguments);
+  final String packageName = args.option('package-name')!;
 
   // Declared data assets, by name within the package.
   final declared = <String, String>{};
-  for (final entry in args.multiOption('data-asset')) {
-    final at = entry.indexOf('=');
+  for (final String entry in args.multiOption('data-asset')) {
+    final int at = entry.indexOf('=');
     declared[entry.substring(0, at)] = entry.substring(at + 1);
   }
   return (
@@ -94,13 +97,14 @@ _HookArgs _parseHookArgs(List<String> arguments) {
   _HookArgs parsed,
   Directory scratch,
 ) {
-  final staged = stageWorkspace(
-    packages: File(parsed.packages),
-    packageRoot: Directory(parsed.packageRoot),
-    hook: File(parsed.hook),
-    scratch: scratch,
-  );
-  final stagedViolations = findStagedDirectiveViolations([
+  final ({File hook, Directory packageRoot, File packages}) staged =
+      stageWorkspace(
+        packages: File(parsed.packages),
+        packageRoot: Directory(parsed.packageRoot),
+        hook: File(parsed.hook),
+        scratch: scratch,
+      );
+  final List<String> stagedViolations = findStagedDirectiveViolations([
     staged.packageRoot.path,
   ], tool: 'link_hook_runner');
   if (stagedViolations.isNotEmpty) {
@@ -119,8 +123,8 @@ Future<LinkOutput> _runHook(
   ({File packages, Directory packageRoot, File hook}) staged,
   Directory scratch,
 ) async {
-  final packageName = parsed.packageName;
-  final input = _linkInput(
+  final String packageName = parsed.packageName;
+  final LinkInput input = _linkInput(
     packageName: packageName,
     packageRoot: staged.packageRoot,
     recordedUses: File(parsed.recordedUses).absolute,
@@ -131,7 +135,7 @@ Future<LinkOutput> _runHook(
 
   final homeDir = Directory('${scratch.path}/home')
     ..createSync(recursive: true);
-  final hook = await Process.run(
+  final ProcessResult hook = await Process.run(
     File(parsed.dart).absolute.path,
     [
       '--packages=${staged.packages.path}',
@@ -146,7 +150,7 @@ Future<LinkOutput> _runHook(
       'APPDATA': homeDir.path,
     },
   );
-  final hookLog = [
+  final String hookLog = [
     if ('${hook.stderr}'.trim().isNotEmpty) '${hook.stderr}'.trim(),
     if ('${hook.stdout}'.trim().isNotEmpty) '${hook.stdout}'.trim(),
   ].join('\n');
@@ -159,7 +163,7 @@ Future<LinkOutput> _runHook(
   }
   final outputJson =
       jsonDecode(outputFile.readAsStringSync()) as Map<String, Object?>;
-  final output = switch (LinkOutputMaybeFailure(outputJson)) {
+  final LinkOutput output = switch (LinkOutputMaybeFailure(outputJson)) {
     final LinkOutput success => success,
     final LinkOutputFailure failure => _fail(
       packageName,
@@ -177,7 +181,7 @@ Future<void> _validateLinkOutput(
   LinkInput input,
   LinkOutput output,
 ) async {
-  final errors = [
+  final List<String> errors = [
     ...await ProtocolBase.validateLinkOutput(input, output),
     ...await DataAssetsExtension().validateLinkOutput(input, output),
     for (final asset in output.assets.encodedAssets)
@@ -200,9 +204,15 @@ void _checkDeclaredAssets(
   Map<String, String> declared,
   LinkOutput output,
 ) {
-  final emitted = {for (final asset in output.assets.data) asset.name: asset};
-  final undeclared = emitted.keys.where((n) => !declared.containsKey(n));
-  final missing = declared.keys.where((n) => !emitted.containsKey(n));
+  final Map<String, DataAsset> emitted = {
+    for (final asset in output.assets.data) asset.name: asset,
+  };
+  final Iterable<String> undeclared = emitted.keys.where(
+    (n) => !declared.containsKey(n),
+  );
+  final Iterable<String> missing = declared.keys.where(
+    (n) => !emitted.containsKey(n),
+  );
   if (undeclared.isNotEmpty || missing.isNotEmpty) {
     String ids(Iterable<String> names) =>
         names.map((n) => '  package:$packageName/$n').join('\n');
@@ -220,9 +230,11 @@ void _checkDeclaredAssets(
 
 /// Copies the emitted data assets into place and records them.
 void _emitDataAssets(_HookArgs parsed, LinkOutput output) {
-  final packageName = parsed.packageName;
-  final emitted = {for (final asset in output.assets.data) asset.name: asset};
-  final declared = parsed.declared;
+  final String packageName = parsed.packageName;
+  final Map<String, DataAsset> emitted = {
+    for (final asset in output.assets.data) asset.name: asset,
+  };
+  final Map<String, String> declared = parsed.declared;
   for (final MapEntry(key: name, value: path) in declared.entries) {
     final dst = File(path);
     dst.parent.createSync(recursive: true);
@@ -231,7 +243,7 @@ void _emitDataAssets(_HookArgs parsed, LinkOutput output) {
   // The record kept of the hook's output names each asset by its declared
   // output rather than the scratch file it was copied from, and drops the
   // timestamp, so the same inputs always produce the same bytes.
-  final record = {
+  final Map<String, List<Map<String, Object?>>> record = {
     'assets': [
       for (final name in declared.keys)
         DataAsset(
@@ -253,7 +265,7 @@ void _emitDataAssets(_HookArgs parsed, LinkOutput output) {
   required File hook,
   required Directory scratch,
 }) {
-  final stageParent = packageRoot.parent;
+  final Directory stageParent = packageRoot.parent;
   final manifest = File('${stageParent.path}/.manifest');
   if (!manifest.existsSync()) {
     return (
@@ -262,21 +274,21 @@ void _emitDataAssets(_HookArgs parsed, LinkOutput output) {
       hook: hook.absolute,
     );
   }
-  final stageName = stageParent.uri.pathSegments
+  final String stageName = stageParent.uri.pathSegments
       .where((s) => s.isNotEmpty)
       .last;
-  final hookDirName = packageRoot.uri.pathSegments
+  final String hookDirName = packageRoot.uri.pathSegments
       .where((s) => s.isNotEmpty)
       .last;
   final stagedRoot = Directory('${scratch.path}/$stageName')
     ..createSync(recursive: true);
-  for (final line in manifest.readAsLinesSync()) {
+  for (final String line in manifest.readAsLinesSync()) {
     if (line.isEmpty) continue;
-    final parts = line.split('\t');
+    final List<String> parts = line.split('\t');
     if (parts.length != 3) continue;
-    final kind = parts[0];
-    final rel = parts[1];
-    final srcPath = parts[2];
+    final String kind = parts[0];
+    final String rel = parts[1];
+    final String srcPath = parts[2];
     if (kind == 'file') {
       final dst = File('${stagedRoot.path}/$rel');
       dst.parent.createSync(recursive: true);
@@ -305,10 +317,13 @@ void _emitDataAssets(_HookArgs parsed, LinkOutput output) {
 void _copyDirectory(Directory src, Directory dst) {
   if (!src.existsSync()) return;
   dst.createSync(recursive: true);
-  final prefix = src.uri.path;
-  for (final entity in src.listSync(recursive: true, followLinks: true)) {
+  final String prefix = src.uri.path;
+  for (final FileSystemEntity entity in src.listSync(
+    recursive: true,
+    followLinks: true,
+  )) {
     if (entity is! File) continue;
-    final rel = entity.uri.path.substring(prefix.length);
+    final String rel = entity.uri.path.substring(prefix.length);
     final out = File.fromUri(dst.uri.resolve(rel));
     out.parent.createSync(recursive: true);
     out.writeAsBytesSync(entity.readAsBytesSync());

@@ -30,7 +30,7 @@ final class AnalysisBaseline {
       );
     }
     final entries = <String, Map<String, int>>{};
-    for (final pathEntry in root.entries) {
+    for (final MapEntry<String, dynamic> pathEntry in root.entries) {
       entries[pathEntry.key] = _parsePathRules(
         prefix,
         pathEntry.key,
@@ -54,12 +54,12 @@ final class AnalysisBaseline {
   /// A path the baseline does not name contributes nothing, so changing an
   /// unrelated entry leaves this slice byte-identical.
   Map<String, Map<String, int>> sliceFor(Iterable<String> paths) {
-    final wanted = paths.toSet().toList()..sort();
+    final List<String> wanted = paths.toSet().toList()..sort();
     final slice = <String, Map<String, int>>{};
     for (final path in wanted) {
-      final codes = _entries[path];
+      final Map<String, int>? codes = _entries[path];
       if (codes == null) continue;
-      final sortedCodes = codes.keys.toList()..sort();
+      final List<String> sortedCodes = codes.keys.toList()..sort();
       slice[path] = {for (final code in sortedCodes) code: codes[code]!};
     }
     return slice;
@@ -76,13 +76,13 @@ Map<String, int> _parsePathRules(String prefix, String path, dynamic rules) {
     );
   }
   final codes = <String, int>{};
-  for (final ruleEntry in rules.entries) {
-    final rawCode = ruleEntry.key;
+  for (final MapEntry<String, dynamic> ruleEntry in rules.entries) {
+    final String rawCode = ruleEntry.key;
     final where = '$prefix: entry `$path` -> `$rawCode`';
     if (rawCode.isEmpty || rawCode.trim() != rawCode) {
       throw BaselineException('$where: diagnostic code must be non-empty');
     }
-    final code = rawCode.toLowerCase();
+    final String code = rawCode.toLowerCase();
     if (codes.containsKey(code)) {
       throw BaselineException(
         '$where: duplicate diagnostic code (codes compare '
@@ -177,11 +177,11 @@ final class BaselineReport {
         hasUnkeyed = true;
         continue;
       }
-      final key = _groupKey(diagnostic.path, diagnostic.code);
+      final String key = _groupKey(diagnostic.path, diagnostic.code);
       counts[key] = (counts[key] ?? 0) + 1;
       first.putIfAbsent(key, () => diagnostic);
     }
-    final keys = counts.keys.toList()..sort();
+    final List<String> keys = counts.keys.toList()..sort();
     final groups = <BaselineGroup>[
       for (final key in keys)
         BaselineGroup(

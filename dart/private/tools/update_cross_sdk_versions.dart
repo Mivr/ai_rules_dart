@@ -45,7 +45,7 @@ const _cdnReleaseBase =
 /// Returns the CDN filename of the cross `gen_snapshot` binary for
 /// [hostPlatform] targeting [targetPlatform].
 String crossGenSnapshotFilename(String hostPlatform, String targetPlatform) {
-  final host = hostPlatforms[hostPlatform];
+  final (String, String)? host = hostPlatforms[hostPlatform];
   if (host == null) {
     throw ArgumentError.value(
       hostPlatform,
@@ -53,7 +53,7 @@ String crossGenSnapshotFilename(String hostPlatform, String targetPlatform) {
       'Unsupported host platform',
     );
   }
-  final target = crossTargetPlatforms[targetPlatform];
+  final (String, String)? target = crossTargetPlatforms[targetPlatform];
   if (target == null) {
     throw ArgumentError.value(
       targetPlatform,
@@ -61,7 +61,7 @@ String crossGenSnapshotFilename(String hostPlatform, String targetPlatform) {
       'Unsupported cross target platform',
     );
   }
-  final allowedTargets = crossTargets[hostPlatform] ?? const [];
+  final List<String> allowedTargets = crossTargets[hostPlatform] ?? const [];
   if (!allowedTargets.contains(targetPlatform)) {
     throw ArgumentError(
       'Unsupported cross-compilation pair: $hostPlatform -> $targetPlatform',
@@ -74,7 +74,7 @@ String crossGenSnapshotFilename(String hostPlatform, String targetPlatform) {
 /// Returns the CDN filename of the cross `dartaotruntime` binary for
 /// [targetPlatform].
 String crossDartaotruntimeFilename(String targetPlatform) {
-  final target = crossTargetPlatforms[targetPlatform];
+  final (String, String)? target = crossTargetPlatforms[targetPlatform];
   if (target == null) {
     throw ArgumentError.value(
       targetPlatform,
@@ -91,20 +91,23 @@ String crossGenSnapshotUrl(
   String hostPlatform,
   String targetPlatform,
 ) {
-  final filename = crossGenSnapshotFilename(hostPlatform, targetPlatform);
+  final String filename = crossGenSnapshotFilename(
+    hostPlatform,
+    targetPlatform,
+  );
   return '$_cdnReleaseBase/$version/sdk/$filename';
 }
 
 /// Returns the CDN download URL for a target `dartaotruntime` binary.
 String crossDartaotruntimeUrl(String version, String targetPlatform) {
-  final filename = crossDartaotruntimeFilename(targetPlatform);
+  final String filename = crossDartaotruntimeFilename(targetPlatform);
   return '$_cdnReleaseBase/$version/sdk/$filename';
 }
 
 /// Extracts the ordered list of SDK version keys from `TOOL_VERSIONS` in
 /// `versions.bzl`.
 List<String> parseToolVersions(String versionsBzlContent) {
-  final toolVersionsBlock = _extractTopLevelDict(
+  final String toolVersionsBlock = _extractTopLevelDict(
     versionsBzlContent,
     'TOOL_VERSIONS',
   );
@@ -124,11 +127,11 @@ Map<String, Map<String, String>> parseExistingNestedPins(
   if (!versionsBzlContent.contains('$dictName = {')) {
     return {};
   }
-  final block = _extractTopLevelDict(versionsBzlContent, dictName);
+  final String block = _extractTopLevelDict(versionsBzlContent, dictName);
   final result = <String, Map<String, String>>{};
   String? currentVersion;
-  for (final rawLine in block.split('\n')) {
-    final versionMatch = RegExp(r'^\s{4}"([^"]+)":\s*\{\s*$')
+  for (final String rawLine in block.split('\n')) {
+    final RegExpMatch? versionMatch = RegExp(r'^\s{4}"([^"]+)":\s*\{\s*$')
         .firstMatch(rawLine);
     if (versionMatch != null) {
       currentVersion = versionMatch.group(1)!;
@@ -136,8 +139,9 @@ Map<String, Map<String, String>> parseExistingNestedPins(
       continue;
     }
     if (currentVersion != null) {
-      final entryMatch = RegExp(r'^\s{8}"([^"]+)":\s*"([0-9a-fA-F]{64})",\s*$')
-          .firstMatch(rawLine);
+      final RegExpMatch? entryMatch = RegExp(
+        r'^\s{8}"([^"]+)":\s*"([0-9a-fA-F]{64})",\s*$',
+      ).firstMatch(rawLine);
       if (entryMatch != null) {
         result[currentVersion]![entryMatch.group(1)!] = entryMatch
             .group(2)!
@@ -152,12 +156,12 @@ Map<String, Map<String, String>> parseExistingNestedPins(
 
 String _extractTopLevelDict(String content, String dictName) {
   final startMarker = '$dictName = {';
-  final start = content.indexOf(startMarker);
+  final int start = content.indexOf(startMarker);
   if (start < 0) {
     throw FormatException('Could not find `$dictName = {` in versions.bzl');
   }
   final endMarker = '\n}\n';
-  final end = content.indexOf(endMarker, start);
+  final int end = content.indexOf(endMarker, start);
   if (end < 0) {
     throw FormatException('Could not find closing `}` for $dictName');
   }
@@ -173,13 +177,13 @@ String renderVersionsBzl({
   required Map<String, Map<String, String>> genSnapshotVersions,
   required Map<String, Map<String, String>> dartaotruntimeVersions,
 }) {
-  final toolVersionsEnd = existingContent.indexOf('\n}\n');
+  final int toolVersionsEnd = existingContent.indexOf('\n}\n');
   if (toolVersionsEnd < 0) {
     throw const FormatException(
       'Could not find end of TOOL_VERSIONS in versions.bzl',
     );
   }
-  final prefix = existingContent.substring(0, toolVersionsEnd + 3);
+  final String prefix = existingContent.substring(0, toolVersionsEnd + 3);
   final buf = StringBuffer(prefix)
     ..writeln()
     ..writeln('# SHA256 checksums for cross-compilation gen_snapshot binaries,')
@@ -190,12 +194,12 @@ String renderVersionsBzl({
     ..writeln('CROSS_GEN_SNAPSHOT_VERSIONS = {');
 
   for (final version in versions) {
-    final pairs = genSnapshotVersions[version];
+    final Map<String, String>? pairs = genSnapshotVersions[version];
     if (pairs == null) {
       throw StateError('Missing gen_snapshot pins for version $version');
     }
     buf.writeln('    "$version": {');
-    final sortedKeys = pairs.keys.toList()..sort();
+    final List<String> sortedKeys = pairs.keys.toList()..sort();
     for (final key in sortedKeys) {
       buf.writeln('        "$key": "${pairs[key]!}",');
     }
@@ -214,12 +218,12 @@ String renderVersionsBzl({
     ..writeln('CROSS_DARTAOTRUNTIME_VERSIONS = {');
 
   for (final version in versions) {
-    final targets = dartaotruntimeVersions[version];
+    final Map<String, String>? targets = dartaotruntimeVersions[version];
     if (targets == null) {
       throw StateError('Missing dartaotruntime pins for version $version');
     }
     buf.writeln('    "$version": {');
-    final sortedKeys = targets.keys.toList()..sort();
+    final List<String> sortedKeys = targets.keys.toList()..sort();
     for (final key in sortedKeys) {
       buf.writeln('        "$key": "${targets[key]!}",');
     }
@@ -232,8 +236,8 @@ String renderVersionsBzl({
 Future<String> _fetchSha256(HttpClient client, Uri url) async {
   for (var attempt = 1; attempt <= 3; attempt++) {
     try {
-      final request = await client.getUrl(url);
-      final response = await request.close();
+      final HttpClientRequest request = await client.getUrl(url);
+      final HttpClientResponse response = await request.close();
       if (response.statusCode != HttpStatus.ok) {
         await response.drain<void>();
         throw HttpException(
@@ -241,7 +245,7 @@ Future<String> _fetchSha256(HttpClient client, Uri url) async {
           uri: url,
         );
       }
-      final digest = await sha256.bind(response).first;
+      final Digest digest = await sha256.bind(response).first;
       return digest.toString();
     } on Object {
       if (attempt == 3) rethrow;
@@ -252,8 +256,8 @@ Future<String> _fetchSha256(HttpClient client, Uri url) async {
 }
 
 Future<void> main(List<String> args) async {
-  final parsed = _parseVersionsArgs(args);
-  final versionsBzlPath = _resolveVersionsBzl(parsed.versionsBzlPath);
+  final _VersionsArgs parsed = _parseVersionsArgs(args);
+  final String versionsBzlPath = _resolveVersionsBzl(parsed.versionsBzlPath);
 
   final file = File(versionsBzlPath);
   if (!file.existsSync()) {
@@ -263,20 +267,24 @@ Future<void> main(List<String> args) async {
     exit(1);
   }
 
-  final existingContent = file.readAsStringSync();
-  final versions = parseToolVersions(existingContent);
-  final pins = _loadExistingPins(existingContent, force: parsed.force);
+  final String existingContent = file.readAsStringSync();
+  final List<String> versions = parseToolVersions(existingContent);
+  final ({
+    Map<String, Map<String, String>> dartaotruntime,
+    Map<String, Map<String, String>> genSnapshot,
+  })
+  pins = _loadExistingPins(existingContent, force: parsed.force);
 
   final client = HttpClient();
   try {
-    final tasks = _planFetchTasks(
+    final List<Future<void> Function()> tasks = _planFetchTasks(
       versions: versions,
       genSnapshotPins: pins.genSnapshot,
       dartaotruntimePins: pins.dartaotruntime,
       client: client,
     );
     await _runFetchTasks(tasks);
-    final rendered = renderVersionsBzl(
+    final String rendered = renderVersionsBzl(
       existingContent: existingContent,
       versions: versions,
       genSnapshotVersions: pins.genSnapshot,
@@ -315,7 +323,7 @@ _VersionsArgs _parseVersionsArgs(List<String> args) {
 /// The `versions.bzl` to update: the flag, or the workspace checkout's.
 String _resolveVersionsBzl(String? flagPath) {
   if (flagPath != null) return flagPath;
-  final workspace = Platform.environment['BUILD_WORKSPACE_DIRECTORY'];
+  final String? workspace = Platform.environment['BUILD_WORKSPACE_DIRECTORY'];
   if (workspace != null && workspace.isNotEmpty) {
     return '$workspace/dart/private/versions.bzl';
   }
@@ -356,8 +364,14 @@ List<Future<void> Function()> _planFetchTasks({
 }) {
   final tasks = <Future<void> Function()>[];
   for (final version in versions) {
-    final gsMap = genSnapshotPins.putIfAbsent(version, () => {});
-    final rtMap = dartaotruntimePins.putIfAbsent(version, () => {});
+    final Map<String, String> gsMap = genSnapshotPins.putIfAbsent(
+      version,
+      () => {},
+    );
+    final Map<String, String> rtMap = dartaotruntimePins.putIfAbsent(
+      version,
+      () => {},
+    );
     _planGenSnapshotFetches(version, gsMap, client, tasks);
     _planDartaotruntimeFetches(version, rtMap, client, tasks);
   }
@@ -371,14 +385,14 @@ void _planGenSnapshotFetches(
   HttpClient client,
   List<Future<void> Function()> tasks,
 ) {
-  for (final entry in crossTargets.entries) {
-    final host = entry.key;
-    for (final target in entry.value) {
+  for (final MapEntry<String, List<String>> entry in crossTargets.entries) {
+    final String host = entry.key;
+    for (final String target in entry.value) {
       final pairKey = '${host}_$target';
       if (gsMap[pairKey] == null || gsMap[pairKey]!.isEmpty) {
-        final url = Uri.parse(crossGenSnapshotUrl(version, host, target));
+        final Uri url = Uri.parse(crossGenSnapshotUrl(version, host, target));
         tasks.add(() async {
-          final digest = await _fetchSha256(client, url);
+          final String digest = await _fetchSha256(client, url);
           gsMap[pairKey] = digest;
           stdout.writeln('Pinned $version $pairKey -> $digest');
         });
@@ -394,11 +408,11 @@ void _planDartaotruntimeFetches(
   HttpClient client,
   List<Future<void> Function()> tasks,
 ) {
-  for (final target in crossTargetPlatforms.keys) {
+  for (final String target in crossTargetPlatforms.keys) {
     if (rtMap[target] == null || rtMap[target]!.isEmpty) {
-      final url = Uri.parse(crossDartaotruntimeUrl(version, target));
+      final Uri url = Uri.parse(crossDartaotruntimeUrl(version, target));
       tasks.add(() async {
-        final digest = await _fetchSha256(client, url);
+        final String digest = await _fetchSha256(client, url);
         rtMap[target] = digest;
         stdout.writeln('Pinned $version dartaotruntime $target -> $digest');
       });
@@ -412,7 +426,7 @@ Future<void> _runFetchTasks(List<Future<void> Function()> tasks) async {
   var nextIndex = 0;
   Future<void> worker() async {
     while (true) {
-      final idx = nextIndex++;
+      final int idx = nextIndex++;
       if (idx >= tasks.length) break;
       await tasks[idx]();
     }
