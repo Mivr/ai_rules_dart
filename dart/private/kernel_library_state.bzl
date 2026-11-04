@@ -112,6 +112,8 @@ def _package_record_flag(pkg):
     """
     return "%s|%s|%s" % (pkg.package_name, pkg.lib_root, getattr(pkg, "language_version", ""))
 
+_EXEC_TOOLS_TOOLCHAIN = Label("//dart:exec_tools_toolchain_type")
+
 def write_package_config_with_tool(ctx, dartaotruntime, output, packages, scheme):
     """Writes a module's package config through the config tool. Returns None.
 
@@ -151,6 +153,8 @@ def write_package_config_with_tool(ctx, dartaotruntime, output, packages, scheme
         outputs = [output],
         mnemonic = "DartPackageConfig",
         progress_message = "Writing package config %s" % output.short_path,
+        # The runtime comes from the exec tools toolchain when the rule resolves one.
+        toolchain = _EXEC_TOOLS_TOOLCHAIN if ctx.toolchains[_EXEC_TOOLS_TOOLCHAIN] != None else None,
     )
 
 def _direct_owned_records(deps):
