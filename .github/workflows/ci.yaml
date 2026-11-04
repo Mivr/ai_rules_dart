@@ -191,9 +191,6 @@ jobs:
               e2e/analysis
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Enable and verify Linux user namespaces
-        if: matrix.os == 'ubuntu-latest'
-        run: .github/scripts/enable_linux_sandbox.sh
       # An ubuntu-latest runner has about 14 GB free, and shard 1 restores the
       # caches and then runs three Bazel servers. Drop the preinstalled
       # toolchains this job never uses before Bazel starts. A path that is
@@ -202,6 +199,9 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         shell: bash
         run: .github/scripts/ci_free_disk.sh
+      - name: Enable and verify Linux user namespaces
+        if: matrix.os == 'ubuntu-latest'
+        run: .github/scripts/enable_linux_sandbox.sh
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           bazelisk-cache: true
