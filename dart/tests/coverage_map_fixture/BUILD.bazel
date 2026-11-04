@@ -1,0 +1,66 @@
+load("//dart:defs.bzl", "dart_library", "dart_source_set", "dart_test")
+
+# `dart_test` writes `<name>.coverage_map.json` for `bazel coverage`: the source
+# URIs the VM reports, each mapped to the exec path of its file. `coverage_map_test`
+# reads the map `dart_test` really generated for a test that reaches a generated
+# source, an external repository and a `dart_source_set` behind `srcs_dir`, and
+# feeds it to the launcher's LCOV step. `bazel coverage` over this package shows
+# the same files in a real report.
+
+genrule(
+    name = "generate",
+    outs = ["lib/generated.dart"],
+    cmd = "echo 'int generated() => 1;' > $@",
+)
+
+dart_library(
+    name = "generated_lib",
+    package_name = "coverage_map_fixture",
+    srcs = [
+        "lib/plain.dart",
+        ":generate",
+    ],
+)
+
+genrule(
+    name = "generate_in_set",
+    outs = ["lib/gen_in_set.dart"],
+    cmd = "echo 'int genInSet() => 3;' > $@",
+)
+
+dart_source_set(
+    name = "set",
+    srcs = [
+        "lib/in_set.dart",
+        ":generate_in_set",
+    ],
+)
+
+dart_library(
+    name = "set_lib",
+    package_name = "coverage_map_set",
+    srcs_dir = ":set",
+)
+
+# The launcher's LCOV step, beside the test that drives it.
+genrule(
+    name = "runner_copy",
+    srcs = ["//dart/private/tools:test_runner_coverage.dart"],
+    outs = ["test_runner_coverage.dart"],
+    cmd = "cp $< $@",
+)
+
+dart_test(
+    name = "coverage_map_test",
+    size = "small",
+    srcs = [":runner_copy"],
+    main = "coverage_map_test.dart",
+    deps = [
+        ":generated_lib",
+        ":set_lib",
+        "//dart/runfiles",
+        "@ext_pub_deps//:coverage",
+        "@ext_pub_deps//:path",
+        "@ext_pub_deps//:test",
+    ],
+)
