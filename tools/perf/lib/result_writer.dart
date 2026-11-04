@@ -242,6 +242,59 @@ final class RepeatResult {
   }
 }
 
+/// Flow names every repeat and every summary must carry.
+const List<String> expectedFlowKeys = [
+  'dart-app-clean',
+  'dart-app-body',
+  'dart-app-api',
+  'dart-test-leaf',
+];
+
+/// Whether [result] has all [expectedFlowKeys], each identical, measured and ok.
+bool isRepeatHealthy(RepeatResult result) {
+  for (final key in expectedFlowKeys) {
+    final flow = result.flows[key];
+    if (flow == null ||
+        !flow.identical ||
+        flow.solCpu == null ||
+        flow.bazelCpu == null ||
+        flow.reason != 'ok') {
+      return false;
+    }
+  }
+  return true;
+}
+
+/// Lists why a decoded `dart-sol.json` [summary] is not healthy (empty if ok).
+List<String> summaryFailures(Map<String, dynamic> summary) {
+  final failures = <String>[];
+  final meta = summary['meta'];
+  final repeats = meta is Map ? meta['repeats'] : null;
+  if (repeats is! int || repeats < 1) {
+    failures.add('meta.repeats must be an integer >= 1, got $repeats');
+  }
+  final flows = summary['flows'];
+  for (final key in expectedFlowKeys) {
+    final flow = flows is Map ? flows[key] : null;
+    if (flow is! Map) {
+      failures.add('flow $key is missing');
+      continue;
+    }
+    final reason = flow['reason'];
+    if (flow['identical'] != true || flow['sol'] == null || reason != 'ok') {
+      failures.add(
+        'flow $key failed: identical=${flow['identical']}, '
+        'sol=${flow['sol']}, reason=${reason == null ? 'null' : '"$reason"'}',
+      );
+    }
+  }
+  return failures;
+}
+
+/// Whether [summary] has no [summaryFailures].
+bool isSummaryHealthy(Map<String, dynamic> summary) =>
+    summaryFailures(summary).isEmpty;
+
 /// Metadata options for summary output.
 final class SummaryMeta {
   /// Creates summary metadata.
@@ -385,7 +438,10 @@ final class _FlowAccumulator {
     }
     if (f.bazelCpu != null) bazelVals.add(f.bazelCpu!);
 
-    if (f.identical && f.solCpu != null && f.bazelCpu != null) {
+    if (f.identical &&
+        f.reason == 'ok' &&
+        f.solCpu != null &&
+        f.bazelCpu != null) {
       solVals.add(f.solCpu!);
     } else {
       allIdentical = false;
@@ -488,15 +544,8 @@ String formatDartSolJson({
   required SummaryMeta meta,
   required RunnerInfo runner,
 }) {
-  const flowKeys = [
-    'dart-app-clean',
-    'dart-app-body',
-    'dart-app-api',
-    'dart-test-leaf',
-  ];
-
   final flowsMap = <String, dynamic>{};
-  for (final key in flowKeys) {
+  for (final key in expectedFlowKeys) {
     flowsMap[key] = _buildFlowEntry(key, repeats, meta.repeats);
   }
 

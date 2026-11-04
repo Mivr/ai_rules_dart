@@ -5,6 +5,8 @@ import 'dart:io';
 
 import 'package:runfiles/runfiles.dart';
 
+import 'workflow_steps.dart';
+
 void _check(bool condition, String message) {
   if (!condition) throw StateError('FAIL: $message');
 }
@@ -303,6 +305,7 @@ void verifyWorkflowYaml(String text) {
   _verifyCheckoutsAndSteps(text);
   _verifyArtifactUpload(text);
   _verifyShellSafety(text);
+  verifyWorkflowSteps(text);
 }
 
 void _expectStateError(void Function() action, String message) {
@@ -382,6 +385,74 @@ void _testWorkflowMutations(String validText) {
   );
 }
 
+void _testFailurePropagationMutations(String validText) {
+  void expectRejected(String from, String to, String message) {
+    _check(validText.contains(from), 'mutation anchor present: $from');
+    _expectStateError(
+      () => verifyWorkflowYaml(validText.replaceFirst(from, to)),
+      message,
+    );
+  }
+
+  expectRejected(
+    '|| failed=1',
+    '|| true',
+    'fails when "|| failed=1" is "|| true"',
+  );
+  expectRejected('|| failed=1', '', 'fails when "|| failed=1" is removed');
+  expectRejected(
+    r'exit "$failed"',
+    '',
+    r'fails when exit "$failed" is removed',
+  );
+  expectRejected(
+    r'exit "$failed"',
+    'exit 0',
+    r'fails when exit "$failed" is exit 0',
+  );
+  expectRejected('0*)', '9*)', 'fails when the REPEATS >= 1 check is weakened');
+  expectRejected(
+    r'exit "$summary_rc"',
+    '',
+    'fails when summarize exit propagation is removed',
+  );
+  expectRejected(
+    r'exit "$summary_rc"',
+    'exit 0',
+    'fails when summarize exits 0',
+  );
+  expectRejected(
+    r'|| summary_rc=$?',
+    '|| true',
+    'fails when summarize exit status is not captured',
+  );
+  expectRejected(
+    'timeout-minutes: 300',
+    'timeout-minutes: 300\n    continue-on-error: true',
+    'fails when continue-on-error is added to the job',
+  );
+  expectRejected(
+    'run: |\n          tooling_base',
+    'continue-on-error: true\n        run: |\n          tooling_base',
+    'fails when continue-on-error is added to a step',
+  );
+  expectRejected(
+    r'--rules-dart="$GITHUB_WORKSPACE/rules-head"',
+    r'--rules-dart="$GITHUB_WORKSPACE/tools-src"',
+    '--rules-dart pointing at tools-src is rejected',
+  );
+  expectRejected(
+    r'git -C "$GITHUB_WORKSPACE/rules-head" rev-parse HEAD',
+    r'git -C "$GITHUB_WORKSPACE/tools-src" rev-parse HEAD',
+    'rev-parse HEAD reading tools-src is rejected',
+  );
+  expectRejected(
+    r'if: ${{ !cancelled() }}',
+    r'if: ${{ success() }}',
+    'summarize must run on !cancelled()',
+  );
+}
+
 void main(List<String> args) {
   final root = _locateRepoRoot(args);
   final workflowFile = File('$root/.github/workflows/perf-linux.yaml');
@@ -392,5 +463,7 @@ void main(List<String> args) {
   final text = workflowFile.readAsStringSync();
   verifyWorkflowYaml(text);
   _testWorkflowMutations(text);
+  _testFailurePropagationMutations(text);
+  if (!Platform.isWindows) verifyStepScriptsExecute(text);
   stdout.writeln('All workflow tests passed.');
 }

@@ -83,6 +83,15 @@ dart_test(
 )
 
 dart_test(
+    name = "cli_exit_test",
+    size = "small",
+    main = "test/cli_exit_test.dart",
+    deps = [
+        ":perf",
+    ],
+)
+
+dart_test(
     name = "workflow_test",
     size = "small",
     args = [
@@ -93,6 +102,7 @@ dart_test(
     ],
     local = True,
     main = "test/workflow_test.dart",
+    srcs = ["test/workflow_steps.dart"],
     tags = [
         "external",
         "no-sandbox",
