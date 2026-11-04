@@ -75,7 +75,10 @@ dart_library(
     tags = ["no-dart-analyze"],
     # custom_id.dart is `@immutable` — it defines ==/hashCode, and the
     # analyzer only accepts that on a class it can prove immutable.
-    deps = ["@pub_deps//:meta"],
+    deps = [
+        "@pub_deps//:json_annotation",
+        "@pub_deps//:meta",
+    ],
 )
 
 json_serializable_library(

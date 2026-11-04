@@ -189,6 +189,7 @@ bzl_library(
         ":build_settings",
         ":common",
         ":dart_compile",
+        ":dart_import_check",
         ":dart_kernel",
         ":dart_test_runner",
         ":executable_package",
@@ -267,6 +268,18 @@ bzl_library(
     name = "dart_info_params",
     srcs = ["dart_info_params.bzl"],
     visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "dart_import_check",
+    srcs = ["dart_import_check.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":dart_kernel",
+        ":kernel_library_state",
+        "//dart:providers",
+    ],
 )
 
 bzl_library(
@@ -381,6 +394,7 @@ bzl_library(
         ":common",
         ":coverage_map",
         ":dart_compile",
+        ":dart_import_check",
         ":dart_kernel",
         ":dart_test_runner",
         ":executable_package",
@@ -399,6 +413,7 @@ bzl_library(
     deps = [
         ":common",
         ":dart_compile",
+        ":dart_import_check",
         ":dart_kernel",
         ":test_runner_info",
         "//dart:providers",

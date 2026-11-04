@@ -40,6 +40,7 @@ dart_test(
         "//dart/runfiles",
         "//dart/tests/legacy_mixin_fixture/legacy",
         "//dart/tests/legacy_mixin_fixture/mid",
+        "@ext_pub_deps//:crypto",
         "@ext_pub_deps//:test",
     ],
 )
@@ -63,6 +64,7 @@ dart_test(
         "//dart/runfiles",
         "//dart/tests/legacy_mixin_fixture/legacy",
         "//dart/tests/legacy_mixin_fixture/mid",
+        "@ext_pub_deps//:crypto",
         "@ext_pub_deps//:test",
     ],
 )

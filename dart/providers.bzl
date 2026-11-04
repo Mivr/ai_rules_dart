@@ -96,6 +96,21 @@ DartPackageInfo = provider(
     },
 )
 
+DartImportCheckInfo = provider(
+    doc = """The strict-layering check results of a target and every library below it.
+
+Provided by `dart_import_check_aspect` on each `DartInfo` target in an \
+executable's closure. Each library's check reads that library's own sources \
+and writes one empty stamp when they import only packages its own `deps` \
+provide (see the `dart_layering_check` feature); the stamps are what a \
+`_validation` output group builds, so building the executable runs every \
+check. A provider of its own rather than a field of `DartInfo`: the check is a \
+validation, and no compile action reads it.""",
+    fields = {
+        "stamps": "depset[File]: The import-check result files of this target and every library below it. Empty for a target in another repository, which is not checked, and for one built with the `dart_layering_check` feature disabled.",
+    },
+)
+
 DartAnalyzableInfo = provider(
     doc = """An executable target's analyzable closure: everything \
 the `dart_analyze` aspect and `dart_fix` need to stage a project around its \

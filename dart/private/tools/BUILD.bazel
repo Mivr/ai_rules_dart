@@ -658,7 +658,9 @@ dart_binary(
     compile_mode = "aot-snapshot",
     main = "import_check.dart",
     modular_kernel = False,
-    visibility = ["//visibility:public"],
+    # `dartaotruntime` runs the raw snapshot, so it must stay the executable.
+    snapshot_launcher = False,
+    visibility = ["//dart:__subpackages__"],
 )
 
 # The layering check's unit tests.

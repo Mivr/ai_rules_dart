@@ -226,7 +226,7 @@ def _script_action_packages_test_impl(ctx):
     matching = [
         a
         for a in actions
-        if a.argv and any([arg.endswith(".dart") for arg in a.argv[1:]])
+        if a.mnemonic != "DartImportCheck" and a.argv and any([arg.endswith(".dart") for arg in a.argv[1:]])
     ]
     asserts.true(
         env,
