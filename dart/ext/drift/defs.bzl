@@ -135,7 +135,14 @@ def _drift_dart_discover_targets(cfg, srcs, siblings_lib, drift_srcs, prep_targe
         dart_discover_targets.append(":" + dart_discover_target)
     return dart_discover_targets
 
-def _drift_dart_analyzer_targets(cfg, srcs, siblings_lib, drift_srcs, prep_targets, discover_targets, dart_discover_targets):
+def _drift_dart_analyzer_targets(
+        cfg,
+        srcs,
+        siblings_lib,
+        drift_srcs,
+        prep_targets,
+        discover_targets,
+        dart_discover_targets):
     """`DriftAnalyzer` per `.dart`; returns the analyzer target labels."""
     dart_analyzer_targets = []
     for src in srcs:
@@ -163,7 +170,13 @@ def _drift_dart_analyzer_targets(cfg, srcs, siblings_lib, drift_srcs, prep_targe
         dart_analyzer_targets.append(":" + dart_analyzer_target)
     return dart_analyzer_targets
 
-def _drift_analyzer_targets(cfg, drift_srcs, prep_targets, discover_targets, dart_discover_targets, dart_analyzer_targets):
+def _drift_analyzer_targets(
+        cfg,
+        drift_srcs,
+        prep_targets,
+        discover_targets,
+        dart_discover_targets,
+        dart_analyzer_targets):
     """`DriftAnalyzer` per `.drift`/`.moor`; returns the analyzer target labels."""
     analyzer_targets = []
     for drift_src in drift_srcs:
@@ -285,7 +298,14 @@ def drift_library(
     # available before either's analyzer runs, so we emit the `.dart`
     # discover in parallel with the `.drift` discover and feed BOTH into
     # every analyzer stage below.
-    dart_discover_targets = _drift_dart_discover_targets(cfg, srcs, siblings_lib, drift_srcs, prep_targets, discover_targets)
+    dart_discover_targets = _drift_dart_discover_targets(
+        cfg,
+        srcs,
+        siblings_lib,
+        drift_srcs,
+        prep_targets,
+        discover_targets,
+    )
 
     # DriftAnalyzer per `.dart` — emits `.dart.drift_module.json`. Must
     # run BEFORE the `.drift` analyzer because a `.drift` file that
@@ -296,14 +316,29 @@ def drift_library(
     # to locate elements by id — the visible symptom is
     # `DriftResolver._restoreOrResolve` throwing `"Bad state: No element"`
     # on `.drift` queries that reference Dart-defined tables.
-    dart_analyzer_targets = _drift_dart_analyzer_targets(cfg, srcs, siblings_lib, drift_srcs, prep_targets, discover_targets, dart_discover_targets)
+    dart_analyzer_targets = _drift_dart_analyzer_targets(
+        cfg,
+        srcs,
+        siblings_lib,
+        drift_srcs,
+        prep_targets,
+        discover_targets,
+        dart_discover_targets,
+    )
 
     # DriftAnalyzer per `.drift`/`.moor` — emits `.drift.drift_module.json`
     # (element cache) + `.drift.types.temp.dart` (type helpers). Cross-
     # references Dart-defined tables via the Dart-side analyzer output,
     # so its asset_deps must include both Dart discover AND Dart analyzer
     # outputs.
-    analyzer_targets = _drift_analyzer_targets(cfg, drift_srcs, prep_targets, discover_targets, dart_discover_targets, dart_analyzer_targets)
+    analyzer_targets = _drift_analyzer_targets(
+        cfg,
+        drift_srcs,
+        prep_targets,
+        discover_targets,
+        dart_discover_targets,
+        dart_analyzer_targets,
+    )
 
     drift_side_outputs = (
         drift_srcs + prep_targets + discover_targets + analyzer_targets +

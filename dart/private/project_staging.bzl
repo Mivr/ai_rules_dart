@@ -87,7 +87,14 @@ def _external_sub_path(lib_root):
     parts = lib_root.split("/")
     return "/".join(parts[2:])
 
-def staged_package_config_content(packages, ext_staged, proj_name, ext_roots = {}, config_dir = "", main_roots = {}, ext_under_proj = False):
+def staged_package_config_content(
+        packages,
+        ext_staged,
+        proj_name,
+        ext_roots = {},
+        config_dir = "",
+        main_roots = {},
+        ext_under_proj = False):
     """Builds package_config.json content for the staged-project layout.
 
     The config lives at `<proj_name>.proj/.dart_tool/package_config.json`:

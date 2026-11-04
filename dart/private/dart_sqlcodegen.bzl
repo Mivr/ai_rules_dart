@@ -150,7 +150,16 @@ def _dart_sqlcodegen_impl(ctx):
     outputs = _sqlcodegen_outputs(ctx, src)
 
     args = ctx.actions.args()
-    direct = _sqlcodegen_action_inputs(ctx, args, src, synth_pc, toolchain.dart_sdk_info.dart, lib_root, auto_staged, outputs)
+    direct = _sqlcodegen_action_inputs(
+        ctx,
+        args,
+        src,
+        synth_pc,
+        toolchain.dart_sdk_info.dart,
+        lib_root,
+        auto_staged,
+        outputs,
+    )
 
     generator_runfiles = ctx.attr.generator_bin[DefaultInfo].default_runfiles.files
     data_runfiles = [dep[DefaultInfo].default_runfiles.files for dep in ctx.attr.data]
