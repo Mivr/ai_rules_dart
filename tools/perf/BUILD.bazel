@@ -94,6 +94,7 @@ dart_test(
 dart_test(
     name = "workflow_test",
     size = "small",
+    srcs = ["test/workflow_steps.dart"],
     args = [
         "$(rlocationpath :test/workflow_test.dart)",
     ],
@@ -102,7 +103,6 @@ dart_test(
     ],
     local = True,
     main = "test/workflow_test.dart",
-    srcs = ["test/workflow_steps.dart"],
     tags = [
         "external",
         "no-sandbox",
