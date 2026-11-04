@@ -140,17 +140,12 @@ bool isEscapingPackageUri(String uri) {
   if (sep.index <= 0) return true;
   final text = rest.substring(sep.index + sep.length).replaceAll(r'\', '/');
   var depth = 0;
-  final raws = text.split('/');
   // An empty segment directly after the package name resolves absolutely in
   // the front end, outside the package, so it escapes however the rest
   // resolves.
-  if (raws.first.isEmpty) return true;
-  for (final raw in raws) {
+  if (text.startsWith('/')) return true;
+  for (final raw in text.split('/')) {
     // Any later empty segment is a real segment: it counts for a `..`.
-    if (raw.isEmpty) {
-      depth++;
-      continue;
-    }
     final seg = decodeUriSegment(raw);
     if (seg == '.') continue;
     if (seg == '..') {
@@ -253,12 +248,8 @@ String? _climbSegments(
   final stack = base.toList();
   final added = <String>[];
   for (final raw in raws) {
-    if (raw.isEmpty) {
-      added.add(raw);
-      continue;
-    }
     final seg = decodeUriSegment(raw);
-    if (seg.isEmpty || seg == '.') continue;
+    if (seg == '.') continue;
     if (seg == '..') {
       if (added.isNotEmpty) {
         added.removeLast();
@@ -415,18 +406,16 @@ bool isDisallowedDirectiveUri(
 /// refuse them).
 bool hasEmptyPathSegment(String uri) {
   var text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
-  var packaged = false;
+  final packaged = uri.startsWith('package:');
   if (text.startsWith(defaultMultiRootPrefix)) {
     text = text.substring(defaultMultiRootPrefix.length);
   } else if (text.startsWith('package:')) {
     final slash = text.indexOf('/', 'package:'.length);
     if (slash < 0) return false;
     text = text.substring(slash + 1);
-    packaged = true;
   } else {
     if (text.contains(':')) return false;
-    if (text.startsWith('//')) return false;
-    if (!text.startsWith('/')) return false;
+    if (!text.startsWith('/') || text.startsWith('//')) return false;
     text = text.substring(1);
   }
   final query = text.indexOf('?');
@@ -468,25 +457,32 @@ List<String> _packageDirOf(String fromKey, Map<String, String> packageDirs) {
 /// Applies the segments of a directive path onto [base] (see
 /// [_climbSegments]): `.` segments are dropped, each `..` pops while deeper
 /// than [floor], and a decoded `/` (`%2F`) names no file, since no file can be
-/// read through it. When [countEmpty] holds, an empty segment is a real
-/// segment that a later `..` pops (a schemeless relative or a `package:` path
+/// read through it. For a [_PathKind] other than `root`, an empty
+/// segment is a real segment that a later `..` pops (a schemeless relative or a `package:` path
 /// after its first segment); a trailing one names a directory, so the path
 /// fails. Otherwise any empty segment fails, since the front end resolves it
-/// absolutely. Above [floor], `..` either fails ([failAboveFloor], for
+/// absolutely. Above [floor], `..` either fails (a `package` kind, for
 /// `package:` URIs, where the front end reports leaving the package) or is
 /// dropped (relative and absolute URIs, which the front end clamps to the
 /// package directory or the multi-root).
-String? _resolveDirectivePath(
+String? _resolvePath(
   String path,
   List<String> base,
   int floor,
-  bool failAboveFloor, {
-  required bool countEmpty,
-}) {
+  _PathKind kind,
+) {
   final raws = path.split('/');
-  if (raws.last.isEmpty || (!countEmpty && raws.contains(''))) return null;
-  return _climbSegments(base, floor, raws, failAboveFloor);
+  if (raws.last.isEmpty) return null;
+  if (kind == _PathKind.root && raws.contains('')) return null;
+  return _climbSegments(base, floor, raws, kind == _PathKind.package);
 }
+
+/// How [_resolvePath] reads a path: `root` for the multi-root and
+/// `/`-absolute URIs (any empty segment fails, `..` above the floor is
+/// dropped), `package` for a `package:` path (empty segments count, `..` above
+/// the package fails), `relative` for a schemeless path (empty segments count,
+/// `..` above the floor is dropped).
+enum _PathKind { root, package, relative }
 
 /// The key a directive URI (`import`, `export`, `part`, `part of`) in the file
 /// named `fromKey` refers to: the key of the file the front end reads.
@@ -514,13 +510,7 @@ String? resolveDirectiveUri(
   final text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
   final absolute = _stripPrefix(text, multiRootPrefix);
   if (absolute != null) {
-    return _resolveDirectivePath(
-      absolute,
-      const [],
-      0,
-      false,
-      countEmpty: false,
-    );
+    return _resolvePath(absolute, const [], 0, _PathKind.root);
   }
   if (text.startsWith('package:')) {
     final rest = text.substring('package:'.length);
@@ -533,13 +523,7 @@ String? resolveDirectiveUri(
     final inner = rest.substring(slash + 1);
     // Directly after the package name an empty segment reads a host file.
     if (inner.startsWith('/')) return null;
-    return _resolveDirectivePath(
-      inner,
-      base,
-      base.length,
-      true,
-      countEmpty: true,
-    );
+    return _resolvePath(inner, base, base.length, _PathKind.package);
   }
   // A fragment names no file: the front end reports a URI with one instead of
   // reading through it. A query names no file either: the front end reads the
@@ -555,20 +539,14 @@ String? resolveDirectiveUri(
   if (path.startsWith('/')) {
     final base = _packageDirOf(fromKey, packageDirs);
     // The one leading `/` marks absoluteness; any further empty segment fails.
-    return _resolveDirectivePath(
-      path.substring(1),
-      base,
-      base.length,
-      false,
-      countEmpty: false,
-    );
+    return _resolvePath(path.substring(1), base, base.length, _PathKind.root);
   }
   final slash = fromKey.lastIndexOf('/');
   final base = slash < 0
       ? const <String>[]
       : fromKey.substring(0, slash).split('/');
   final floor = _packageDirOf(fromKey, packageDirs).length;
-  return _resolveDirectivePath(path, base, floor, false, countEmpty: true);
+  return _resolvePath(path, base, floor, _PathKind.relative);
 }
 
 /// One URI-bearing directive of a source's prologue.
