@@ -128,7 +128,7 @@ KERNEL_MODULE_ATTRS = {
         cfg = "exec",
     ),
     "_package_config": attr.label(
-        doc = "The tool that writes one module's `package_config.json` from its closure's records. See `package_config.dart`.",
+        doc = "The tool that writes a module's `package_config.json` from its records. See `package_config.dart`.",
         default = Label("//dart/private/tools:package_config"),
         executable = True,
         cfg = "exec",
@@ -1482,11 +1482,31 @@ def _lib_kernel_slow_state(ctx, library, options, deps, dep_kernels):
     records, raw, own_records = recs
     graph = _lib_kernel_graph(ctx, deps, dep_kernels, library.own_srcs, records)
     single = own_records[0].package_name if len(own_records) == 1 else ""
-    has_cycle = _lib_kernel_has_cycle(single, raw, graph.owned_list, graph.edges_list, graph.pkgs, options.non_standalone)
+    has_cycle = _lib_kernel_has_cycle(
+        single,
+        raw,
+        graph.owned_list,
+        graph.edges_list,
+        graph.pkgs,
+        options.non_standalone,
+    )
     if has_cycle and graph.need_graph:
-        cross, dep_cross = _lib_kernel_cyclic_srcs(deps, dep_kernels, library.own_srcs, single, raw, graph.owned_list, graph.edges_list, graph.pkgs)
+        cross, dep_cross = _lib_kernel_cyclic_srcs(
+            deps,
+            dep_kernels,
+            library.own_srcs,
+            single,
+            raw,
+            graph.owned_list,
+            graph.edges_list,
+            graph.pkgs,
+        )
     else:
-        cross, dep_cross = lib_kernel_plain_srcs(dep_kernels, library.own_srcs, has_cycle or graph.has_upstream_cross_pkg)
+        cross, dep_cross = lib_kernel_plain_srcs(
+            dep_kernels,
+            library.own_srcs,
+            has_cycle or graph.has_upstream_cross_pkg,
+        )
     return struct(
         graph = graph,
         cross_pkg_srcs = cross,
