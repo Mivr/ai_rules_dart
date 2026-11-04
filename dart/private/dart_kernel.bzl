@@ -588,20 +588,6 @@ def find_kernel_module_tools(dart_sdk_info):
         patched_kernel_worker = getattr(dart_sdk_info, "patched_kernel_worker", None),
     )
 
-def _resolved_exec_tools(ctx):
-    """The exec tools toolchain `ctx` resolved, or None.
-
-    None when the rule or aspect declares no `EXEC_TOOLS_TOOLCHAIN`, or
-    declares it optionally and none is registered.
-
-    Args:
-      ctx: A rule or aspect context.
-
-    Returns:
-      The resolved `ToolchainInfo`, or None.
-    """
-    return ctx.toolchains[EXEC_TOOLS_TOOLCHAIN] if EXEC_TOOLS_TOOLCHAIN in ctx.toolchains else None
-
 def kernel_tools_for(ctx):
     """The exec SDK's kernel tools for a rule, or None when modular compile cannot run.
 
@@ -830,7 +816,7 @@ def _kmod_run_action(ctx, executable, arguments, request, direct_inputs, action_
       action_tools: The action's direct tool files.
       runtime_files: The SDK runtime files depset, or None.
     """
-    tools = request.tools
+    exec_tc = ctx.toolchains[EXEC_TOOLS_TOOLCHAIN] if EXEC_TOOLS_TOOLCHAIN in ctx.toolchains else None
     ctx.actions.run(
         executable = executable,
         # The startup arguments name the SDK's compiler, so every module of one SDK
@@ -853,14 +839,14 @@ def _kmod_run_action(ctx, executable, arguments, request, direct_inputs, action_
         unused_inputs_list = request.unused_inputs_list,
         mnemonic = "DartKernel",
         progress_message = "Compiling Dart kernel module %s" % request.output.short_path,
-        env = writable_home_env(getattr(tools, "dart", None) or tools.dartaotruntime, request.output),
+        env = writable_home_env(getattr(request.tools, "dart", None) or request.tools.dartaotruntime, request.output),
         execution_requirements = {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
         },
         # `tools` come from the exec tools toolchain (`kernel_tools_for`). A rule
         # that resolves none hands over tools of its own, from no toolchain.
-        toolchain = EXEC_TOOLS_TOOLCHAIN if _resolved_exec_tools(ctx) != None else None,
+        toolchain = EXEC_TOOLS_TOOLCHAIN if exec_tc != None else None,
     )
 
 def kernel_module_action(ctx, tools, inputs, outputs, options, compile):
@@ -1040,11 +1026,9 @@ def kernel_link_action(
     if platform_dill != None:
         direct_inputs.append(platform_dill)
 
-    outputs = [output]
-    if write_keys != None:
-        outputs.append(write_keys)
+    outputs = [output] + ([write_keys] if write_keys != None else [])
 
-    exec_tc = _resolved_exec_tools(ctx)
+    exec_tc = ctx.toolchains[EXEC_TOOLS_TOOLCHAIN] if EXEC_TOOLS_TOOLCHAIN in ctx.toolchains else None
     exec_sdk = exec_tc.dart_sdk_info if exec_tc != None else None
     link_tools = [ctx.executable._kernel_link] + ([platform_dill] if platform_dill != None else [])
     if exec_sdk != None:
