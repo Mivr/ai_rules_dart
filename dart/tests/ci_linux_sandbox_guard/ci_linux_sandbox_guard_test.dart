@@ -13,11 +13,14 @@ void main(List<String> args) {
     final script = File('$root/$scriptPath');
     expect(script.existsSync(), isTrue, reason: 'missing $scriptPath');
     expect(verifyScript(script.readAsStringSync()), isEmpty);
-    expect(
-      script.statSync().mode & 0x49,
-      isNot(0),
-      reason: '$scriptPath must be executable',
-    );
+    if (!Platform.isWindows) {
+      // Windows filesystems carry no execute bits.
+      expect(
+        script.statSync().mode & 0x49,
+        isNot(0),
+        reason: '$scriptPath must be executable',
+      );
+    }
   });
   test('every Linux Bazel job, unchanged job and proof step is sound', () {
     final Map<String, String> files = {
