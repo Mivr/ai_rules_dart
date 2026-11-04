@@ -54,7 +54,14 @@ to a naive control proving the fixture is sensitive.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
-load("//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "git_version_error", "parse_git_version")
+load(
+    "//dart/pub:pinned_sources.bzl",
+    "git_materialize",
+    "git_transport_fetch",
+    "git_version_error",
+    "normalize_git_file_url",
+    "parse_git_version",
+)
 load(":small_suite.bzl", "small_unittest_suite")
 
 _SHA = "08a084d50090f0e6ca907fc627ae335c6ac4fd88"
@@ -380,13 +387,13 @@ def _transport_fetch_test_impl(ctx):
 
 def _transport_local_config_test_impl(ctx):
     env = unittest.begin(ctx)
-    for url in [
-        "file:///srv/repos/r.git",
-        "file:///C:/repos/r.git",
-        "/srv/repos/r.git",
-        "C:\\repos\\r.git",
-        "relative/bundle",
-        "../sibling/r.git",
+    for url, fetched in [
+        ("file:///srv/repos/r.git", "file:///srv/repos/r.git"),
+        ("file:///C:/repos/r.git", "file://C:/repos/r.git"),
+        ("/srv/repos/r.git", "/srv/repos/r.git"),
+        ("C:\\repos\\r.git", "C:\\repos\\r.git"),
+        ("relative/bundle", "relative/bundle"),
+        ("../sibling/r.git", "../sibling/r.git"),
     ]:
         record = []
         git_transport_fetch(
@@ -423,7 +430,7 @@ def _transport_local_config_test_impl(ctx):
         asserts.equals(env, None, fetch_env["GIT_CONFIG_VALUE_0"])
         asserts.equals(
             env,
-            ["git", "--no-replace-objects", "--git-dir=" + _BARE] + _transport_pins() + ["fetch", "--", url, _SHA],
+            ["git", "--no-replace-objects", "--git-dir=" + _BARE] + _transport_pins() + ["fetch", "--", fetched, _SHA],
             _executes(record)[2].args,
         )
     for url in [
@@ -533,10 +540,77 @@ def _transport_resolved_fetch_url_test_impl(ctx):
             want_ref = _SHA if len(fetch_results) == 1 else "+refs/*:refs/origin/*"
             asserts.equals(
                 env,
-                ["git", "--no-replace-objects", "--git-dir=" + _BARE] + _transport_pins() + ["fetch", "--", want_url, want_ref],
+                ["git", "--no-replace-objects", "--git-dir=" + _BARE] + _transport_pins() +
+                ["fetch", "--", want_url, want_ref],
                 fetch.args,
             )
             asserts.equals(env, want_env, fetch.environment)
+    return unittest.end(env)
+
+def _transport_windows_drive_url_test_impl(ctx):
+    env = unittest.begin(ctx)
+    drive = "file:///D:/a/_temp/origin"
+    want = "file://D:/a/_temp/origin"
+    for lock_url, resolved in [
+        (drive, drive),
+        ("https://example.com/r.git", drive),
+        ("file:///C:/repos/r.git", "file:///C:/repos/r.git"),
+    ]:
+        for fetch_results in [
+            [struct(return_code = 0, stdout = "", stderr = "")],
+            [
+                struct(return_code = 128, stdout = "", stderr = "couldn't find remote ref"),
+                struct(return_code = 0, stdout = "", stderr = ""),
+            ],
+        ]:
+            record = []
+            git_transport_fetch(
+                _fake_ctx(record, [_VERSION_RESULT, _resolve_result(resolved)] + fetch_results),
+                lock_url,
+                "_git_bare",
+                _SHA,
+                "test",
+            )
+            calls = _executes(record)
+            asserts.equals(
+                env,
+                ["git", "--no-replace-objects", "--git-dir=" + _BARE, "ls-remote", "--get-url", "--", lock_url],
+                calls[1].args,
+            )
+            want_url = normalize_git_file_url(resolved)
+            want_ref = _SHA if len(fetch_results) == 1 else "+refs/*:refs/origin/*"
+            asserts.equals(
+                env,
+                ["git", "--no-replace-objects", "--git-dir=" + _BARE] + _transport_pins() + ["fetch", "--", want_url, want_ref],
+                calls[-1].args,
+            )
+            asserts.equals(env, _transport_env(local = True), calls[-1].environment)
+    asserts.equals(env, want, normalize_git_file_url(drive))
+    return unittest.end(env)
+
+def _normalize_git_file_url_test_impl(ctx):
+    env = unittest.begin(ctx)
+    for url, want in [
+        ("file:///D:/a/_temp/origin", "file://D:/a/_temp/origin"),
+        ("file:///C:/repos/r.git", "file://C:/repos/r.git"),
+        ("file:///c:\\repos\\r.git", "file://c:/repos/r.git"),
+        ("file://D:/repos/r.git", "file://D:/repos/r.git"),
+        ("file://D:\\repos\\r.git", "file://D:/repos/r.git"),
+        ("file:///D:", "file://D:"),
+        ("file:///srv/repos/r.git", "file:///srv/repos/r.git"),
+        ("file:///d/repos/r.git", "file:///d/repos/r.git"),
+        ("file://server/share/r.git", "file://server/share/r.git"),
+        ("D:/repos/r.git", "D:/repos/r.git"),
+        ("C:\\repos\\r.git", "C:\\repos\\r.git"),
+        ("/srv/repos/r.git", "/srv/repos/r.git"),
+        ("relative/bundle", "relative/bundle"),
+        ("../sibling/r.git", "../sibling/r.git"),
+        ("https://example.com/r.git", "https://example.com/r.git"),
+        ("ssh://git@example.com/r.git", "ssh://git@example.com/r.git"),
+        ("git@example.com:r.git", "git@example.com:r.git"),
+        ("host.xz:path/to/r.git", "host.xz:path/to/r.git"),
+    ]:
+        asserts.equals(env, want, normalize_git_file_url(url))
     return unittest.end(env)
 
 def _version_accepted_test_impl(ctx):
@@ -1280,6 +1354,8 @@ _t17_test = unittest.make(_version_accepted_test_impl)
 _t18_test = unittest.make(_version_refused_test_impl)
 _t19_test = unittest.make(_version_unparsable_test_impl)
 _t20_test = unittest.make(_transport_resolved_fetch_url_test_impl)
+_t21_test = unittest.make(_transport_windows_drive_url_test_impl)
+_t22_test = unittest.make(_normalize_git_file_url_test_impl)
 
 def git_host_config_test_suite(name):
     small_unittest_suite(
@@ -1305,6 +1381,8 @@ def git_host_config_test_suite(name):
         _t18_test,
         _t19_test,
         _t20_test,
+        _t21_test,
+        _t22_test,
         *_clears_var_tests
     )
 
@@ -1709,10 +1787,21 @@ def _probe_make_origin(ctx, bundle, what):
         what + " origin",
     )
 
-def _probe_file_url(path):
+def _probe_raw_file_url(path):
+    """The RFC 8089 form of a local origin: three slashes before a drive letter."""
     if len(path) > 2 and path[1] == ":":
-        return "file:///" + path
+        return "file:///" + path.replace("\\", "/")
     return "file://" + path
+
+def _probe_file_url(path):
+    """The form raw git accepts on every host (see `normalize_git_file_url`)."""
+    return normalize_git_file_url(_probe_raw_file_url(path))
+
+def _probe_helper_origin_url(ctx, normalized):
+    """The origin URL the production helpers receive: raw RFC 8089 when `raw_file_url` is set."""
+    if ctx.attr.raw_file_url:
+        return _probe_raw_file_url(str(ctx.path("origin")))
+    return normalized
 
 def _hostile_probe_impl(ctx):
     what = "git_hostile_fetch_probe \"%s\"" % ctx.name
@@ -1722,6 +1811,7 @@ def _hostile_probe_impl(ctx):
     recorded = []
 
     url = ctx.attr.url
+    helper_url = url
     control_url = ctx.attr.control_url if ctx.attr.control_url != "" else url
     sha = ctx.attr.resolved_ref
     if ctx.attr.make_origin:
@@ -1730,6 +1820,7 @@ def _hostile_probe_impl(ctx):
         sha = _probe_make_origin(ctx, ctx.attr.bundle_path, what)
         url = _probe_file_url(str(ctx.path("origin")))
         control_url = url
+        helper_url = _probe_helper_origin_url(ctx, url)
     if url == "" or sha == "":
         fail("%s: needs url and resolved_ref (or make_origin)." % what)
     if ctx.attr.insteadof_to_origin:
@@ -1744,9 +1835,10 @@ def _hostile_probe_impl(ctx):
                 "target is the runtime origin.",
             )
         hostile["GIT_CONFIG_COUNT"] = "1"
-        hostile["GIT_CONFIG_KEY_0"] = "url." + url + ".insteadOf"
+        hostile["GIT_CONFIG_KEY_0"] = "url." + helper_url + ".insteadOf"
         hostile["GIT_CONFIG_VALUE_0"] = ctx.attr.url
         url = ctx.attr.url
+        helper_url = url
     hook_marker = _pack_hook_setup(ctx, hostile, what)
     shim = _probe_hostile_shim(ctx, hostile, recorded)
 
@@ -1755,7 +1847,7 @@ def _hostile_probe_impl(ctx):
     git_materialize(ctx, "_clean_bare", sha, clean_archive, sha, what + " control")
     clean_digest = _probe_archive_digest(ctx.execute, clean_archive, what + " control")
 
-    git_transport_fetch(shim, url, "_hostile_bare", sha, what + " hostile")
+    git_transport_fetch(shim, helper_url, "_hostile_bare", sha, what + " hostile")
     hostile_archive = ctx.path("_hostile.tar")
     git_materialize(shim, "_hostile_bare", sha, hostile_archive, sha, what + " hostile")
     hostile_bare = str(ctx.path("_hostile_bare"))
@@ -1845,6 +1937,11 @@ git_hostile_fetch_probe = repository_rule(
         ),
         "insteadof_to_origin": attr.bool(
             doc = "Fetch url (a remote lock URL) with a host insteadOf rewrite to the runtime origin delivered through the inline-config channel; needs make_origin.",
+            default = False,
+        ),
+        "raw_file_url": attr.bool(
+            doc = "Hand the helpers the raw RFC 8089 origin URL (three slashes before a drive " +
+                  "letter) instead of git's two-slash form; needs make_origin.",
             default = False,
         ),
         "pack_objects_hook": attr.bool(

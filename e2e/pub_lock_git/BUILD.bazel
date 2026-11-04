@@ -54,6 +54,8 @@ _HOSTILE_MARKERS = [
     "@hostile_unknown_vars//:marker.txt",
     "@hostile_fallback_quarantine//:marker.txt",
     "@hostile_insteadof//:marker.txt",
+    "@hostile_file_url_raw//:marker.txt",
+    "@hostile_file_url_insteadof//:marker.txt",
     "@hostile_fsck_config_file//:marker.txt",
     "@hostile_fsck_inline//:marker.txt",
     "@hostile_fsck_includeif//:marker.txt",
@@ -63,7 +65,7 @@ _HOSTILE_MARKERS = [
 
 sh_test(
     name = "hostile_env_test",
-    # Medium: the twelve markers each re-fetch, which once took 60.1 s and
+    # Medium: the fourteen markers each re-fetch, which once took 60.1 s and
     # timed out a small (60 s) test on a Windows runner.
     size = "medium",
     srcs = ["check_hostile_markers.sh"],
