@@ -1,0 +1,77 @@
+load("//dart:defs.bzl", "dart_binary")
+load(
+    "//dart/tests:layering_check_test.bzl",
+    "layering_action_test",
+    "layering_binary_test",
+    "layering_probe",
+    "layering_probe_test",
+)
+
+# `user/` depends on `mid/`, which depends on `leaf/`, and `user` imports
+# `package:leaf`: a transitive-only import the layering check rejects. `app`
+# and `probe` reach it, so building either is the failing case: both are
+# manual, and only analyzed here.
+dart_binary(
+    name = "app",
+    package_name = "app",
+    main = "bin/app.dart",
+    tags = ["manual"],
+    deps = ["//dart/tests/layering_check_fixture/user"],
+)
+
+layering_probe(
+    name = "probe",
+    tags = ["manual"],
+    deps = ["//dart/tests/layering_check_fixture/user"],
+)
+
+layering_action_test(
+    name = "leaf_action_test",
+    size = "small",
+    expect_absent = [
+        "leaf",
+        "mid",
+    ],
+    expect_srcs = ["dart/tests/layering_check_fixture/leaf/lib/leaf.dart"],
+    forbid_srcs = ["dart/tests/layering_check_fixture/mid/lib/mid.dart"],
+    target_under_test = "//dart/tests/layering_check_fixture/leaf",
+)
+
+layering_action_test(
+    name = "mid_action_test",
+    size = "small",
+    expect_direct = ["leaf"],
+    expect_srcs = ["dart/tests/layering_check_fixture/mid/lib/mid.dart"],
+    forbid_srcs = [
+        "dart/tests/layering_check_fixture/leaf/lib/leaf.dart",
+        "dart/tests/layering_check_fixture/user/lib/user.dart",
+    ],
+    target_under_test = "//dart/tests/layering_check_fixture/mid",
+)
+
+layering_action_test(
+    name = "user_action_test",
+    size = "small",
+    expect_absent = ["leaf"],
+    expect_direct = ["mid"],
+    expect_srcs = ["dart/tests/layering_check_fixture/user/lib/user.dart"],
+    forbid_srcs = [
+        "dart/tests/layering_check_fixture/leaf/lib/leaf.dart",
+        "dart/tests/layering_check_fixture/mid/lib/mid.dart",
+    ],
+    target_under_test = "//dart/tests/layering_check_fixture/user",
+)
+
+layering_probe_test(
+    name = "probe_test",
+    size = "small",
+    expect_stamps = 3,
+    target_under_test = ":probe",
+)
+
+layering_binary_test(
+    name = "app_test",
+    size = "small",
+    expect_stamps = 4,
+    target_under_test = ":app",
+)

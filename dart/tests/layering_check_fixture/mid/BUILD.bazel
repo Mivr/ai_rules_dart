@@ -1,0 +1,9 @@
+load("//dart:defs.bzl", "dart_library")
+
+dart_library(
+    name = "mid",
+    package_name = "mid",
+    srcs = ["lib/mid.dart"],
+    visibility = ["//dart/tests:__subpackages__"],
+    deps = ["//dart/tests/layering_check_fixture/leaf"],
+)
