@@ -71,8 +71,8 @@ jobs:
           ws="${RUNNER_TEMP}/pristine-ws"
           scratch_base="${RUNNER_TEMP}/scratch-outbase"
           cleanup_scratch() {
-            (cd "$ws" && bazel --max_idle_secs=60 --output_base="$scratch_base" shutdown) || true
-            chmod -R u+w "$scratch_base" 2>/dev/null || true
+            (cd "$ws" && bazel --max_idle_secs=60 --output_base="$scratch_base" shutdown) || echo "bazel shutdown failed" >&2
+            chmod -R u+w "$scratch_base" 2>/dev/null || echo "scratch cleanup chmod failed" >&2
             rm -rf "$scratch_base"
           }
           trap cleanup_scratch EXIT
@@ -90,14 +90,22 @@ jobs:
           ws="${RUNNER_TEMP}/pristine-ws"
           tooling_base="${RUNNER_TEMP}/tooling-outbase"
           results="${RUNNER_TEMP}/bench-results"
+          case "$REPEATS" in
+            '' | *[!0-9]* | 0*)
+              echo "repeats must be a positive integer >= 1, got '$REPEATS'" >&2
+              exit 1
+              ;;
+          esac
           mkdir -p "$results"
+          failed=0
           for i in $(seq 1 "$REPEATS"); do
             (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:runner -- \
               --workspace="$ws" \
               --repeat="$i" \
               --repeats="$REPEATS" \
-              --out="$results/repeat-$i.json") || true
+              --out="$results/repeat-$i.json") || failed=1
           done
+          exit "$failed"
       - name: Summarize speed-of-light results
         if: ${{ !cancelled() }}
         env:
@@ -108,26 +116,34 @@ jobs:
         run: |
           tooling_base="${RUNNER_TEMP}/tooling-outbase"
           results="${RUNNER_TEMP}/bench-results"
+          case "$REPEATS" in
+            '' | *[!0-9]* | 0*)
+              echo "repeats must be a positive integer >= 1, got '$REPEATS'" >&2
+              exit 1
+              ;;
+          esac
           mkdir -p "$results"
           if ! sha="$(git -C "$GITHUB_WORKSPACE/rules-head" rev-parse HEAD 2>/dev/null)"; then
             sha="$HEAD_REF"
           fi
+          summary_rc=0
           (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:summarize -- \
             --results-dir="$results" \
             --sha="$sha" \
             --target-loc="$TARGET_LOC" \
             --seed="$SEED" \
             --repeats="$REPEATS" \
-            --out="$GITHUB_WORKSPACE/dart-sol.json")
-          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            --out="$GITHUB_WORKSPACE/dart-sol.json") || summary_rc=$?
+          if [ -f "$GITHUB_WORKSPACE/dart-sol.json" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
             cat "$GITHUB_WORKSPACE/dart-sol.json" >> "$GITHUB_STEP_SUMMARY"
           fi
+          exit "$summary_rc"
       - name: Shut down tooling Bazel server
         if: ${{ always() }}
         run: |
           tooling_base="${RUNNER_TEMP}/tooling-outbase"
           if [ -d tools-src/tools ]; then
-            (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" shutdown) || true
+            (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" shutdown) || echo "bazel shutdown failed" >&2
           fi
       - name: Upload dart-sol artifact
         if: ${{ !cancelled() && inputs.head_ref != '' }}
