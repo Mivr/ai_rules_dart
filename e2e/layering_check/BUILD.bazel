@@ -1,0 +1,53 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary")
+
+alias(
+    name = "leaf",
+    actual = "//leaf",
+)
+
+alias(
+    name = "mid",
+    actual = "//mid",
+)
+
+# RED: `user.dart` imports `package:leaf`, which only `:mid` depends on.
+# Building this target fails with the layering check's refusal.
+dart_binary(
+    name = "user",
+    main = "user.dart",
+    deps = [":mid"],
+)
+
+# GREEN: the same file once `:leaf` is a direct dependency.
+dart_binary(
+    name = "user_ok",
+    main = "user.dart",
+    deps = [
+        ":leaf",
+        ":mid",
+    ],
+)
+
+# GREEN: a facade stands for everything it re-exports.
+dart_binary(
+    name = "facade_user",
+    main = "user.dart",
+    deps = ["//facade"],
+)
+
+# RED: `package:leaf` appears only in a conditional alternative.
+dart_binary(
+    name = "conditional",
+    main = "conditional.dart",
+    deps = [":mid"],
+)
+
+# GREEN: the conditional alternative's package is a direct dependency.
+dart_binary(
+    name = "conditional_ok",
+    main = "conditional.dart",
+    deps = [
+        ":leaf",
+        ":mid",
+    ],
+)

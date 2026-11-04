@@ -239,6 +239,31 @@ dart_test(
     ],
 )
 
+# Fail-closed guard for the strict-layering check: the aspect names the
+# `dart_layering_check` feature, `expected-failure` exercises the red workspace
+# and its opt-out, and no green sweep names that workspace. It reads the live
+# tree, so it runs unsandboxed and always re-runs.
+dart_test(
+    name = "layering_check_guard_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :layering_check_guard_test.dart)",
+    ],
+    data = [
+        "layering_check_guard_test.dart",
+    ],
+    local = True,
+    main = "layering_check_guard_test.dart",
+    tags = [
+        "external",
+        "no-sandbox",
+    ],
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
 exports_files(
     ["BUILD.bazel"],
     visibility = ["//dart/tests:__subpackages__"],

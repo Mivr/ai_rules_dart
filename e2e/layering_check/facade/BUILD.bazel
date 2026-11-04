@@ -1,0 +1,12 @@
+load("@rules_dart//dart:defs.bzl", "dart_library")
+
+# A source-less aggregate that re-exports its deps: whoever depends on it may
+# import everything it reaches.
+dart_library(
+    name = "facade",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//leaf",
+        "//mid",
+    ],
+)
