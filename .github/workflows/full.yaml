@@ -112,7 +112,10 @@ jobs:
           disk-cache: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached && matrix.cache || false }}
           external-cache: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached }}
           repository-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
-          cache-save: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached }}
+          # Only main saves: a branch restores main's keys, and the gate's ci/
+          # candidate saves duplicated them (7 GB on 2026-11-04), evicting main's
+          # under the 10 GB repository cache limit.
+          cache-save: ${{ github.ref == 'refs/heads/main' && github.event_name != 'schedule' && !inputs.uncached }}
           cache-version: "1"
           bazelrc: |
             common --announce_rc

@@ -88,5 +88,8 @@ jobs:
       # the same commit was green, so testing again buys no coverage and only
       # reintroduces cold-runner flakes.
       bazel_test_command: bazel build //...
+      # No setup-bazel caches: a tag ref's caches are never restored by any
+      # later run; they only evict main's under the 10 GB repository limit.
+      mount_bazel_caches: false
       prerelease: false
       tag_name: ${{ inputs.tag_name || github.ref_name }}
