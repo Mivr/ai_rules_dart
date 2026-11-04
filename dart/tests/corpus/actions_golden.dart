@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:runfiles/runfiles.dart';
 
+import 'golden_digest.dart';
+
 /// Where the checked-in golden lives, relative to the workspace root.
 const String goldenRelativePath = 'dart/tests/corpus/actions.golden.json';
 
@@ -67,10 +69,7 @@ final class GoldenRunner {
     if (parsedQuery.error != null) {
       return GoldenResult(2, error: parsedQuery.error!);
     }
-    final String? listError = _validateActionsList(
-      parsedQuery.value!['actions'],
-      text.source!,
-    );
+    final String? listError = validateAquery(parsedQuery.value!, text.source!);
     if (listError != null) {
       return GoldenResult(2, error: listError);
     }
@@ -221,6 +220,99 @@ String? _validateActionsList(Object? actions, String source) {
   }
   return null;
 }
+
+/// Checks that [query] holds every table the golden is built from and that
+/// every id the normaliser follows resolves; returns the message naming the
+/// table, or `null` when the jsonproto is whole.
+String? validateAquery(Map<String, Object?> query, String source) {
+  final String? actionsError = _validateActionsList(query['actions'], source);
+  if (actionsError != null) return actionsError;
+  final tables = <String, Set<int>>{};
+  for (final table in const [
+    'targets',
+    'artifacts',
+    'depSetOfFiles',
+    'pathFragments',
+  ]) {
+    final Object? rows = query[table];
+    if (rows is! List) {
+      return 'actions_golden: malformed jsonproto in $source: '
+          'table "$table" is missing.\n';
+    }
+    tables[table] = {
+      for (final Map<String, Object?> row in _objectList(rows))
+        if (_int(row['id']) != null) _int(row['id'])!,
+    };
+  }
+  return _danglingId(query, tables, source);
+}
+
+typedef _Reference = ({String table, Object? ids, String from});
+
+String? _danglingId(
+  Map<String, Object?> query,
+  Map<String, Set<int>> tables,
+  String source,
+) {
+  for (final _Reference ref in _references(query)) {
+    for (final int id in _ints(ref.ids)) {
+      if (!tables[ref.table]!.contains(id)) {
+        return 'actions_golden: malformed jsonproto in $source: '
+            '${ref.from} refers to $id, which is not in table "${ref.table}".\n';
+      }
+    }
+  }
+  return null;
+}
+
+Iterable<_Reference> _references(Map<String, Object?> query) sync* {
+  for (final Map<String, Object?> action in _objectList(query['actions'])) {
+    yield (table: 'targets', ids: [action['targetId']], from: 'an action');
+    yield (
+      table: 'artifacts',
+      ids: [action['primaryOutputId'], ...?_list(action['outputIds'])],
+      from: 'an action',
+    );
+    yield (
+      table: 'depSetOfFiles',
+      ids: action['inputDepSetIds'],
+      from: 'an action',
+    );
+  }
+  for (final Map<String, Object?> depSet in _objectList(
+    query['depSetOfFiles'],
+  )) {
+    yield (
+      table: 'artifacts',
+      ids: depSet['directArtifactIds'],
+      from: 'depset ${depSet['id']}',
+    );
+    yield (
+      table: 'depSetOfFiles',
+      ids: depSet['transitiveDepSetIds'],
+      from: 'depset ${depSet['id']}',
+    );
+  }
+  for (final Map<String, Object?> artifact in _objectList(query['artifacts'])) {
+    if (artifact['path'] is String) continue;
+    yield (
+      table: 'pathFragments',
+      ids: [artifact['pathFragmentId']],
+      from: 'artifact ${artifact['id']}',
+    );
+  }
+  for (final Map<String, Object?> fragment in _objectList(
+    query['pathFragments'],
+  )) {
+    yield (
+      table: 'pathFragments',
+      ids: [fragment['parentId']],
+      from: 'path fragment ${fragment['id']}',
+    );
+  }
+}
+
+List<Object?>? _list(Object? value) => value is List ? value : null;
 
 final class _ParsedArgs {
   const new({required this.check, this.queryPath, this.error});
@@ -468,18 +560,21 @@ final class _AqueryIndex {
   final Map<int?, Map<String, Object?>> _depSets = {};
 
   Map<String, Object?> action(Map<String, Object?> raw) {
-    final List<String> outputs = _paths(raw['outputIds']);
+    final mnemonic = '${raw['mnemonic'] ?? ''}';
     return {
       'target': _targets[_int(raw['targetId'])] ?? '',
       'aspect': _aspect(raw),
-      'mnemonic': '${raw['mnemonic'] ?? ''}',
+      'mnemonic': mnemonic,
       'primaryOutput': _artifacts[_int(raw['primaryOutputId'])] ?? '',
       'arguments': [
         for (final arg in _strings(raw['arguments'])) normalisePath(arg),
       ],
-      'inputs': _paths(raw['inputDepSetIds'], depSets: true),
-      'outputs': outputs,
-      'environmentVariables': _environment(raw['environmentVariables']),
+      'inputs': _inputs(raw['inputDepSetIds']),
+      'outputs': _outputs(raw['outputIds']),
+      'environmentVariables': _pairs(raw['environmentVariables']),
+      'executionInfo': _pairs(raw['executionInfo']),
+      if (mnemonic == 'FileWrite')
+        'fileContents': normalisePath('${raw['fileContents'] ?? ''}'),
     };
   }
 
@@ -507,26 +602,47 @@ final class _AqueryIndex {
     return '$parent/${fragment.label}';
   }
 
-  List<String> _paths(Object? ids, {bool depSets = false}) {
-    final values = <String>{};
-    for (final int id in _ints(ids)) {
-      if (!depSets) {
-        final String? path = _artifacts[id];
-        if (path != null) values.add(path);
-        continue;
-      }
-      final Map<String, Object?>? depSet = _depSets[id];
-      if (depSet == null) continue;
-      for (final int artifact in _ints(depSet['directArtifactIds'])) {
-        final String? path = _artifacts[artifact];
-        if (path != null) values.add(path);
-      }
-    }
-    final List<String> sorted = values.toList()..sort();
-    return sorted;
+  List<String> _outputs(Object? ids) {
+    final List<String> paths = [
+      for (final int id in _ints(ids))
+        if (_artifacts[id] != null) _artifacts[id]!,
+    ];
+    return paths..sort();
   }
 
-  List<Map<String, Object?>> _environment(Object? value) {
+  /// The inputs of an action, as the count and SHA-256 of its input closure.
+  ///
+  /// The closure is every artifact reachable from [ids] through
+  /// `directArtifactIds` and `transitiveDepSetIds`, to any depth, each artifact
+  /// once, normalised like every other path, sorted and joined by newlines.
+  /// Listing the paths would take the golden past 32 MB (the closures of the
+  /// corpus actions hold about 155,000 paths), so the golden keeps the count
+  /// and the digest instead: dropping or adding one input changes both.
+  Map<String, Object?> _inputs(Object? ids) {
+    final List<String> paths = [
+      for (final int artifact in _closure(ids)) _artifacts[artifact] ?? '',
+    ]..sort();
+    return {
+      'count': paths.length,
+      'sha256': sha256Hex(utf8.encode(paths.join('\n'))),
+    };
+  }
+
+  Set<int> _closure(Object? ids) {
+    final seen = <int>{};
+    final artifacts = <int>{};
+    final List<int> pending = _ints(ids).toList();
+    while (pending.isNotEmpty) {
+      final int id = pending.removeLast();
+      final Map<String, Object?>? depSet = _depSets[id];
+      if (!seen.add(id) || depSet == null) continue;
+      artifacts.addAll(_ints(depSet['directArtifactIds']));
+      pending.addAll(_ints(depSet['transitiveDepSetIds']));
+    }
+    return artifacts;
+  }
+
+  List<Map<String, Object?>> _pairs(Object? value) {
     final entries = <Map<String, Object?>>[
       for (final item in _objectList(value))
         {
@@ -534,7 +650,10 @@ final class _AqueryIndex {
           'value': normalisePath('${item['value'] ?? ''}'),
         },
     ];
-    entries.sort((a, b) => '${a['key']}'.compareTo('${b['key']}'));
+    entries.sort((a, b) {
+      final int byKey = '${a['key']}'.compareTo('${b['key']}');
+      return byKey != 0 ? byKey : '${a['value']}'.compareTo('${b['value']}');
+    });
     return entries;
   }
 }

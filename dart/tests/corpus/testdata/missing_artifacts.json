@@ -1,0 +1,76 @@
+{
+  "targets": [
+    {
+      "id": 1,
+      "label": "//pkg:lib"
+    }
+  ],
+  "pathFragments": [
+    {
+      "id": 1,
+      "label": "pkg"
+    },
+    {
+      "id": 2,
+      "label": "a.dart",
+      "parentId": 1
+    },
+    {
+      "id": 3,
+      "label": "b.dart",
+      "parentId": 1
+    },
+    {
+      "id": 4,
+      "label": "c.dart",
+      "parentId": 1
+    },
+    {
+      "id": 5,
+      "label": "out.o",
+      "parentId": 1
+    }
+  ],
+  "depSetOfFiles": [
+    {
+      "id": 1,
+      "directArtifactIds": [
+        1
+      ],
+      "transitiveDepSetIds": [
+        2
+      ]
+    },
+    {
+      "id": 2,
+      "directArtifactIds": [
+        2
+      ],
+      "transitiveDepSetIds": [
+        3
+      ]
+    },
+    {
+      "id": 3,
+      "directArtifactIds": [
+        3
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "targetId": 1,
+      "mnemonic": "DartCompile",
+      "arguments": [
+        "dart"
+      ],
+      "inputDepSetIds": [
+        1
+      ],
+      "outputIds": [
+        5
+      ],
+      "primaryOutputId": 5
+    }
+  ]
+}

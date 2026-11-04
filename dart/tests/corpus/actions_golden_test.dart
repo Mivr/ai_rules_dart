@@ -5,6 +5,7 @@ import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
 
 import 'actions_golden.dart';
+import 'golden_digest.dart';
 
 void main() {
   final Directory temp = Directory.systemTemp.createTempSync(
@@ -16,6 +17,8 @@ void main() {
   _registerPathNormaliseTests(harness);
   _registerActionOrderingTests(harness);
   _registerCheckTests(harness);
+  _registerGraphTests(harness);
+  _registerMalformedTests(harness);
   _registerIoAndRunfilesTests(harness);
 }
 
@@ -86,7 +89,7 @@ void _registerPathNormaliseTests(_TestHarness h) {
     expect(compile['target'], '//pkg:lib');
     expect(compile['primaryOutput'], '{bindir}/pkg/main.dart');
     expect(compile['arguments'], contains('{bindir}/pkg/main.dart'));
-    expect(compile['inputs'], contains('{bindir}/pkg/lib.dart'));
+    expect(compile['inputs'], {'count': 3, 'sha256': hasLength(64)});
     expect(compile['outputs'], ['{bindir}/pkg/main.dart']);
   });
 }
@@ -232,6 +235,87 @@ void _registerCheckTests(_TestHarness h) {
     ).run(['--check', '${h.temp.path}/missing.json']);
     expect(result.exitCode, 2);
     expect(result.error, contains('missing.json'));
+  });
+}
+
+void _registerGraphTests(_TestHarness h) {
+  test('sha256Hex matches the published vectors', () {
+    expect(
+      sha256Hex(utf8.encode('abc')),
+      'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+    );
+    expect(
+      sha256Hex(utf8.encode('a' * 100)),
+      '2816597888e4a0d3a36b82b83316ab32680eb8f00f8cd3b904d681246d285a0e',
+    );
+  });
+
+  test('inputs follow transitiveDepSetIds to any depth', () {
+    final Map<String, Object?> action = normaliseAquery(
+      _readJson(h.query('nested.json')),
+    ).single;
+    expect(action['inputs'], {
+      'count': 3,
+      'sha256':
+          'b6159dacdd2fe928827c4eeecaaed590d3f78fb388bafc011446ac842b7adda6',
+    });
+  });
+
+  test('--check rejects one changed nested input', () {
+    final GoldenResult result = h.check(
+      'nested_changed.json',
+      h.goldenOf('nested.json'),
+    );
+    expect(result.exitCode, 1);
+    expect(result.error, contains('is stale'));
+  });
+
+  test('--check rejects a changed executionInfo', () {
+    expect(h.goldenOf('exec_a.json'), contains('"supports-workers"'));
+    final GoldenResult result = h.check(
+      'exec_b.json',
+      h.goldenOf('exec_a.json'),
+    );
+    expect(result.exitCode, 1);
+    expect(result.error, contains('no-sandbox'));
+  });
+
+  test('--check rejects a changed FileWrite content', () {
+    expect(h.goldenOf('filewrite_a.json'), contains('{bindir}/pkg/tool'));
+    final GoldenResult result = h.check(
+      'filewrite_b.json',
+      h.goldenOf('filewrite_a.json'),
+    );
+    expect(result.exitCode, 1);
+    expect(result.error, contains('pkg/other'));
+  });
+}
+
+void _registerMalformedTests(_TestHarness h) {
+  for (final table in const [
+    'targets',
+    'artifacts',
+    'depSetOfFiles',
+    'pathFragments',
+  ]) {
+    test('fails naming the missing $table table', () {
+      final GoldenResult result = h.check(
+        'missing_$table.json',
+        h.goldenOf('base.json'),
+      );
+      expect(result.exitCode, 2);
+      expect(result.error, contains('"$table"'));
+    });
+  }
+
+  test('fails naming the table of a dangling id', () {
+    final GoldenResult result = h.check(
+      'dangling_depset.json',
+      h.goldenOf('base.json'),
+    );
+    expect(result.exitCode, 2);
+    expect(result.error, contains('"depSetOfFiles"'));
+    expect(result.error, contains('9'));
   });
 }
 

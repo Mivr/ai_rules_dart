@@ -50,18 +50,16 @@ load(
 )
 load("//dart/pub:defs.bzl", "parse_semver")
 
-# `parse_semver` and `sqlite3_code_asset` are functions, not rules: calling
-# them is how the corpus instantiates them. They declare no target.
-parse_semver("1.0.0")
-
-sqlite3_code_asset()
+# `parse_semver` and `sqlite3_code_asset` are functions, not rules: the corpus
+# instantiates them by using what they return, so `language_version` below and
+# `corpus_test`'s `code_assets` consume them.
 
 # --- the package facts, declared once ---------------------------------------
 
 dart_package_metadata(
     name = "pkg",
     package_name = "corpus",
-    language_version = "3.11",
+    language_version = "%d.%d" % parse_semver("3.11.0")[:2],
 )
 
 # --- library, binary, test, source set, member ------------------------------
@@ -92,6 +90,7 @@ dart_binary(
 dart_test(
     name = "corpus_test",
     size = "small",
+    code_assets = [sqlite3_code_asset()],
     main = "test/smoke_test.dart",
     deps = [
         ":corpus_lib",
@@ -373,6 +372,7 @@ stacked_bottomsheet_library(
 
 dart_binary(
     name = "actions_golden",
+    srcs = ["golden_digest.dart"],
     data = [":actions.golden.json"],
     main = "actions_golden.dart",
     deps = ["//dart/runfiles"],
@@ -399,7 +399,10 @@ dart_test(
 dart_test(
     name = "actions_golden_test",
     size = "small",
-    srcs = ["actions_golden.dart"],
+    srcs = [
+        "actions_golden.dart",
+        "golden_digest.dart",
+    ],
     data = glob(["testdata/*.json"]),
     main = "actions_golden_test.dart",
     deps = [
