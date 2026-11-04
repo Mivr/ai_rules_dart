@@ -77,8 +77,11 @@ bool _isSeedOption(String arg) =>
 
 /// Declares the `suite` mode's cases (see [main]).
 void _declareSuite(List<String> args) {
+  final seen = <int>{};
   for (var i = 0; i < _suiteCases; i++) {
-    test('case $i', () {});
+    test('case $i', () {
+      expect(seen.add(i), isTrue);
+    });
   }
   test('sees the launcher arguments without the seed', () {
     stdout.writeln('suite-args:${jsonEncode(args)}');
