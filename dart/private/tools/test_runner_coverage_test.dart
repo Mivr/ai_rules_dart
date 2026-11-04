@@ -188,7 +188,7 @@ void main() {
     test('spells an external repository either way', () {
       expect(
         parseManifest(['external/repo/x.dart', '../repo/y.dart', './z.dart']),
-        {'repo/x.dart', 'repo/y.dart', 'z.dart'},
+        {'external/repo/x.dart', 'external/repo/y.dart', 'z.dart'},
       );
     });
   });
@@ -206,10 +206,22 @@ void main() {
       expect(result.error, contains('exited without pausing'));
     });
 
-    test('a scoped collection that loaded nothing is an empty report', () {
+    test('a scoped collection that loaded nothing is non-zero', () {
       final LcovResult result = lcovFromCoverage(
         coverageJson: {'coverage': <Object>[]},
         uriMap: _uriMap,
+        scoped: true,
+      );
+      expect(result.exitCode, isNot(0));
+      expect(result.lcov, isEmpty);
+      expect(result.error, contains('pkg/lib/a.dart'));
+      expect(result.error, contains('pkg/lib/b.dart'));
+    });
+
+    test('a scoped collection with nothing mapped is empty with no map', () {
+      final LcovResult result = lcovFromCoverage(
+        coverageJson: {'coverage': <Object>[]},
+        uriMap: const {},
         scoped: true,
       );
       expect(result.exitCode, 0);
@@ -223,6 +235,138 @@ void main() {
       );
       expect(result.exitCode, isNot(0));
       expect(result.error, contains('no coverage'));
+    });
+  });
+
+  group('lcovFromCoverage exec paths', () {
+    const generated = 'bazel-out/k8-fastbuild/bin/pkg/lib/a.g.dart';
+    const external = 'external/repo+/lib/x.dart';
+    const map = {
+      'package:pkg/a.dart': 'pkg/lib/a.dart',
+      'package:pkg/a.g.dart': generated,
+      'package:repo/x.dart': external,
+    };
+
+    test('parseManifest keeps a generated and an external exec path', () {
+      expect(
+        parseManifest([
+          generated,
+          '../repo+/lib/x.dart',
+          r'.\pkg\lib\a.dart',
+          'external/repo+/lib/x.dart',
+        ]),
+        {generated, external, 'pkg/lib/a.dart'},
+      );
+    });
+
+    test('a generated source is kept and written under its exec path', () {
+      final LcovResult result = lcovFromCoverage(
+        coverageJson: _report(['package:pkg/a.g.dart']),
+        uriMap: map,
+        manifest: parseManifest([generated]),
+      );
+      expect(result.exitCode, 0);
+      expect(result.lcov, contains('SF:$generated\n'));
+    });
+
+    test('an external source is written under external/', () {
+      final LcovResult result = lcovFromCoverage(
+        coverageJson: _report(['package:repo/x.dart']),
+        uriMap: {'package:repo/x.dart': '../repo+/lib/x.dart'},
+        manifest: parseManifest(['../repo+/lib/x.dart']),
+      );
+      expect(result.exitCode, 0);
+      expect(result.lcov, contains('SF:$external\n'));
+      expect(result.lcov, isNot(contains('SF:../')));
+    });
+
+    test('a file: URI under any execroot resolves by exec path suffix', () {
+      final LcovResult result = lcovFromCoverage(
+        coverageJson: _report([
+          'file:///sandbox/execroot/_main/pkg/lib/a.dart',
+          'file:///sandbox/execroot/_main/$generated',
+          'file:///sandbox/execroot/_main/$external',
+        ]),
+        uriMap: map,
+      );
+      expect(result.exitCode, 0);
+      expect(result.lcov, contains('SF:pkg/lib/a.dart\n'));
+      expect(result.lcov, contains('SF:$generated\n'));
+      expect(result.lcov, contains('SF:$external\n'));
+      expect(result.lcov, isNot(contains('sandbox')));
+      expect(map.keys.any((k) => k.contains('sandbox')), isFalse);
+    });
+
+    test('the longest exec path wins and merges with the package: URI', () {
+      const both = {
+        'package:pkg/a.dart': 'pkg/lib/a.dart',
+        'package:other/a.dart': 'bazel-out/k8-fastbuild/bin/pkg/lib/a.dart',
+      };
+      final LcovResult result = lcovFromCoverage(
+        coverageJson: _report([
+          'file:///root/bazel-out/k8-fastbuild/bin/pkg/lib/a.dart',
+          'file:///root/pkg/lib/a.dart',
+          'package:pkg/a.dart',
+        ]),
+        uriMap: both,
+      );
+      expect('SF:pkg/lib/a.dart\n'.allMatches(result.lcov), hasLength(1));
+      expect(
+        result.lcov,
+        contains('SF:bazel-out/k8-fastbuild/bin/pkg/lib/a.dart\n'),
+      );
+      expect(result.lcov, contains('DA:3,2\n'));
+    });
+
+    test('a staged file resolves through its path key to its origin', () {
+      final LcovResult result = lcovFromCoverage(
+        coverageJson: _report(['file:///r/bazel-out/k8/bin/p/set/lib/s.dart']),
+        uriMap: const {
+          'bazel-out/k8/bin/p/set/lib/s.dart': 'p/lib/s.dart',
+          'package:p/s.dart': 'p/lib/s.dart',
+        },
+      );
+      expect(result.lcov, contains('SF:p/lib/s.dart\n'));
+    });
+
+    test('a manifest that lists Dart files none of which map is non-zero', () {
+      for (final scoped in [false, true]) {
+        final LcovResult result = lcovFromCoverage(
+          coverageJson: _report(['dart:core']),
+          uriMap: map,
+          manifest: parseManifest(['z/b.dart', 'a/b.dart', 'notes.txt']),
+          scoped: scoped,
+        );
+        expect(result.exitCode, 1);
+        expect(result.lcov, isEmpty);
+        expect(result.error, contains('a/b.dart, z/b.dart'));
+        expect(result.error, isNot(contains('notes.txt')));
+      }
+    });
+
+    test('a manifest with a sibling that maps still succeeds', () {
+      final LcovResult result = lcovFromCoverage(
+        coverageJson: _report(['package:pkg/a.dart']),
+        uriMap: map,
+        manifest: parseManifest(['pkg/lib/a.dart', 'pkg/lib/unused.dart']),
+      );
+      expect(result.exitCode, 0);
+    });
+
+    test('a manifest that lists no Dart file is an empty report', () {
+      for (final lines in [
+        <String>[],
+        ['notes.txt', 'data.json'],
+      ]) {
+        final LcovResult result = lcovFromCoverage(
+          coverageJson: _report(['package:pkg/a.dart']),
+          uriMap: map,
+          manifest: parseManifest(lines),
+        );
+        expect(result.exitCode, 0);
+        expect(result.lcov, isEmpty);
+        expect(result.error, isNull);
+      }
     });
   });
 

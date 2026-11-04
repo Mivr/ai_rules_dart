@@ -285,12 +285,19 @@ bzl_library(
 )
 
 bzl_library(
+    name = "coverage_map",
+    srcs = ["coverage_map.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
     name = "dart_library",
     srcs = ["dart_library.bzl"],
     visibility = ["//visibility:public"],
     deps = [
         ":build_settings",
         ":common",
+        ":coverage_map",
         ":dart_info",
         ":dart_info_params",
         ":dart_kernel",
@@ -372,6 +379,7 @@ bzl_library(
     deps = [
         ":build_settings",
         ":common",
+        ":coverage_map",
         ":dart_compile",
         ":dart_kernel",
         ":dart_test_runner",
@@ -497,6 +505,7 @@ bzl_library(
     srcs = ["source_set.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        ":coverage_map",
         ":dart_info",
     ],
 )

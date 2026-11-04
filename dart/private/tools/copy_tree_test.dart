@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -465,6 +466,31 @@ void main() {
         ),
       );
       expect(copied(), {'x.dart': 'x', 'abc/y.dart': 'y'});
+    });
+  });
+
+  group('origin map', () {
+    test(
+      'records each staged file against the input it was copied from',
+      () async {
+        final List<String> a = text('pkg/lib/a.dart', 'a');
+        final List<String> b = text('pkg/lib/b.dart', 'b');
+        final originMap = '${tmp.path}/origins.json';
+        await run([
+          ...params(roots: ['pkg'], files: [a, b]),
+          '--origin-map',
+          originMap,
+        ]);
+        expect(jsonDecode(File(originMap).readAsStringSync()), {
+          '$dst/lib/a.dart': a[0],
+          '$dst/lib/b.dart': b[0],
+        });
+      },
+    );
+
+    test('writes nothing unless asked', () async {
+      await run(params(roots: ['pkg'], files: [text('pkg/lib/a.dart', 'a')]));
+      expect(File('${tmp.path}/origins.json').existsSync(), isFalse);
     });
   });
 }

@@ -22,6 +22,7 @@ Copies remain where a consumer needs one real directory tree:
   repository calls them.
 """
 
+load("//dart/private:coverage_map.bzl", "forward_origins")
 load("//dart/private:dart_info.bzl", "derived_package_info")
 
 visibility(["//dart/..."])
@@ -50,7 +51,14 @@ def needs_source_assembly(srcs):
             return True
     return False
 
-def assemble_source_dir(ctx, name, srcs, root_paths = ["."], replace_prefixes = {}, include_external_repositories = []):
+def assemble_source_dir(
+        ctx,
+        name,
+        srcs,
+        root_paths = ["."],
+        replace_prefixes = {},
+        include_external_repositories = [],
+        origin_map = None):
     """Assembles `srcs` into one tree-artifact directory and returns it.
 
     Source and generated files are copied into a single declared directory at
@@ -70,6 +78,8 @@ def assemble_source_dir(ctx, name, srcs, root_paths = ["."], replace_prefixes = 
       include_external_repositories: Repository name patterns. Files from another
         repository are excluded unless their repository matches, and matching
         files are staged at their repo-relative paths.
+      origin_map: A File the caller declared, or `None`. When set, the action writes
+        it as a JSON object of each staged file's path to the exec path of its input.
 
     Returns:
       The assembled directory File (a tree artifact).
@@ -101,6 +111,9 @@ def assemble_source_dir(ctx, name, srcs, root_paths = ["."], replace_prefixes = 
         args.add(pattern)
     args.add("--workspace")
     args.add(ctx.label.workspace_name)
+    if origin_map != None:
+        args.add("--origin-map")
+        args.add(origin_map.path)
     args.add_all(srcs, map_each = _copy_record, expand_directories = True)
 
     copy_tc = ctx.toolchains[_COPY_TOOLCHAIN_TYPE]
@@ -108,7 +121,7 @@ def assemble_source_dir(ctx, name, srcs, root_paths = ["."], replace_prefixes = 
         executable = copy_tc.dart,
         arguments = [copy_tc.copy_tree.path, args],
         inputs = depset(direct = [copy_tc.copy_tree] + srcs, transitive = [copy_tc.runtime_files]),
-        outputs = [dst],
+        outputs = [dst] + ([origin_map] if origin_map != None else []),
         mnemonic = "DartCopyTree",
         progress_message = "Copying files to directory %{output}",
         toolchain = _COPY_TOOLCHAIN_TYPE,
@@ -345,12 +358,14 @@ def executable_inputs(packages, dep_srcs, main, own_srcs, own_package = None):
     return struct(packages = packages, srcs = srcs, main_input = main, main_arg = main.path, roots = roots)
 
 def _dart_source_set_impl(ctx):
+    origin_map = ctx.actions.declare_file(ctx.label.name + ".origins.json")
     dst = assemble_source_dir(
         ctx,
         name = ctx.label.name,
         srcs = ctx.files.srcs,
         root_paths = ctx.attr.root_paths,
         replace_prefixes = ctx.attr.replace_prefixes,
+        origin_map = origin_map,
     )
     return [
         DefaultInfo(
@@ -363,6 +378,9 @@ def _dart_source_set_impl(ctx):
             source_attributes = ["srcs"],
             extensions = ["dart"],
         ),
+        # Where each staged file came from, so a `dart_test` maps coverage of the
+        # staged copy back to the input `COVERAGE_MANIFEST` lists.
+        forward_origins([], [origin_map]),
     ]
 
 dart_source_set = rule(

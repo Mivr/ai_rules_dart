@@ -100,17 +100,23 @@ class CoverageConfig {
 /// the message to print when that code is not zero.
 typedef LcovResult = ({String lcov, int exitCode, String? error});
 
-/// Maps collected coverage to LCOV text with workspace-relative `SF:` paths.
+/// Maps collected coverage to LCOV text with exec-path `SF:` records.
 ///
 /// [coverageJson] is `package:coverage`'s `{"coverage": [...]}` collection.
-/// [uriMap] maps each source URI the VM reports to the workspace-relative path
-/// of its file; a source it does not name (the SDK, `package:test`) is not part
-/// of the report. A non-null [manifest] keeps only the files it lists. Every
-/// entry of [partial] names an isolate that did not report before the
-/// collection: any entry makes the result a failure with no LCOV, since a
-/// truncated report must never pass for a complete one. A collection with no
-/// entry at all is a failure too, unless it was [scoped] to the packages
-/// [packagesToCollect] names: then none of them may simply not have been loaded.
+/// [uriMap] maps each source URI the VM reports to the exec path of its file
+/// (`pkg/lib/a.dart`, `external/repo/lib/x.dart`,
+/// `bazel-out/<cfg>/bin/pkg/lib/a.g.dart`); a source it does not name (the SDK,
+/// `package:test`) is not part of the report. A `file:` URI the VM reports that
+/// the map does not name is resolved by the longest exec path it ends with, so
+/// the execroot it sits in need not be known. A non-null [manifest] keeps only
+/// the files it lists. Every entry of [partial] names an isolate that did not
+/// report before the collection: any entry makes the result a failure with no
+/// LCOV, since a truncated report must never pass for a complete one. A
+/// collection with no entry at all is a failure too, unless it was [scoped] to
+/// the packages [packagesToCollect] names. Last, a report that holds none of
+/// the files it was meant to (every `.dart` file of the manifest, or without a
+/// manifest every mapped file) is a failure naming them: an empty report is
+/// only right when nothing was to be instrumented.
 LcovResult lcovFromCoverage({
   required Map<String, dynamic> coverageJson,
   required Map<String, String> uriMap,
@@ -141,13 +147,15 @@ LcovResult lcovFromCoverage({
     ignoredLinesInFilesCache: {},
     resolver: _IdentityResolver(),
   );
+  final paths = _ExecPaths(uriMap);
   final byPath = <String, HitMap>{};
   for (final MapEntry<String, HitMap> entry in hits.entries) {
-    final String? path = uriMap[entry.key];
+    final String? path = paths.resolve(entry.key);
     if (path == null) continue;
-    if (manifest != null && !manifest.contains(_normalized(path))) continue;
+    if (manifest != null && !manifest.contains(path)) continue;
     byPath.merge({path: entry.value});
   }
+  if (byPath.isEmpty) return _emptyReport(paths.mapped, manifest);
   return (lcov: _formatLcov(byPath), exitCode: 0, error: null);
 }
 
@@ -201,6 +209,68 @@ void _writeLines(StringBuffer buffer, HitMap map) {
   }
 }
 
+/// The result when no reported file was in the report: a failure naming the
+/// `.dart` files the [manifest] lists (the mapped files without a manifest),
+/// unless there were none.
+LcovResult _emptyReport(Set<String> mapped, Set<String>? manifest) {
+  final List<String> expected = manifest == null
+      ? (mapped.toList()..sort())
+      : (manifest.where((path) => path.endsWith('.dart')).toList()..sort());
+  if (expected.isEmpty) return (lcov: '', exitCode: 0, error: null);
+  return (
+    lcov: '',
+    exitCode: 1,
+    error:
+        'no coverage for any instrumented Dart file; '
+        'unmatched: ${expected.join(', ')}',
+  );
+}
+
+/// The exec paths of a coverage map, and how a reported URI finds one.
+class _ExecPaths {
+  _ExecPaths(Map<String, String> uriMap)
+    : _byUri = {
+        for (final MapEntry<String, String> e in uriMap.entries)
+          e.key: execPath(e.value),
+      } {
+    final suffixes = <String, String>{
+      for (final MapEntry<String, String> e in _byUri.entries) e.value: e.value,
+      // A key that is no URI is a path the VM may report under another root: a
+      // staged copy of a file that is listed by the path it was copied from.
+      for (final MapEntry<String, String> e in _byUri.entries)
+        if (!e.key.contains(':')) execPath(e.key): e.value,
+    };
+    _suffixes = suffixes.keys.toList()
+      ..sort(
+        (a, b) => a.length != b.length ? b.length - a.length : a.compareTo(b),
+      );
+    _targets = suffixes;
+  }
+
+  final Map<String, String> _byUri;
+  late final List<String> _suffixes;
+  late final Map<String, String> _targets;
+
+  /// The exec paths the map names.
+  Set<String> get mapped => _byUri.values.toSet();
+
+  /// The exec path of [scriptUri]: the map's own entry, else, for a `file:`
+  /// URI, the entry whose exec path is the longest tail of its path.
+  String? resolve(String scriptUri) {
+    final String? direct = _byUri[scriptUri];
+    if (direct != null) return direct;
+    final Uri? uri = Uri.tryParse(scriptUri);
+    if (uri == null || uri.scheme != 'file') return null;
+    final filePath = '/${uri.pathSegments.join('/')}';
+    for (final String suffix in _suffixes) {
+      if (filePath == '/$suffix' || filePath.endsWith('/$suffix')) {
+        return _targets[suffix];
+      }
+    }
+    return null;
+  }
+}
+
 /// The packages worth collecting from the VM.
 ///
 /// Collecting function coverage asks the VM about every function of every
@@ -215,7 +285,7 @@ Set<String> packagesToCollect(
   final packages = <String>{};
   for (final MapEntry<String, String> entry in uriMap.entries) {
     if (!entry.key.startsWith('package:')) continue;
-    if (manifest != null && !manifest.contains(_normalized(entry.value))) {
+    if (manifest != null && !manifest.contains(execPath(entry.value))) {
       continue;
     }
     packages.add(entry.key.substring(8).split('/').first);
@@ -232,31 +302,31 @@ Set<String> packagesToCollect(
 bool needsEveryLibrary(Map<String, String> uriMap, Set<String>? manifest) {
   final packagedPaths = <String>{
     for (final MapEntry<String, String> entry in uriMap.entries)
-      if (entry.key.startsWith('package:')) _normalized(entry.value),
+      if (entry.key.startsWith('package:')) execPath(entry.value),
   };
   for (final MapEntry<String, String> entry in uriMap.entries) {
-    final String path = _normalized(entry.value);
+    final String path = execPath(entry.value);
     if (manifest != null && !manifest.contains(path)) continue;
     if (!packagedPaths.contains(path)) return true;
   }
   return false;
 }
 
-/// The paths a `COVERAGE_MANIFEST` lists, normalised for comparison.
+/// The paths a `COVERAGE_MANIFEST` lists, as exec paths.
 Set<String> parseManifest(Iterable<String> lines) => {
   for (final line in lines)
-    if (line.trim().isNotEmpty) _normalized(line),
+    if (line.trim().isNotEmpty) execPath(line),
 };
 
-/// A path as manifests and the coverage map both spell it: forward slashes, no
-/// `./`, and an external repository's `../repo` and `external/repo` alike.
-String _normalized(String path) {
+/// A path as an exec path: forward slashes, no leading `./`, and an external
+/// repository's `../repo` as the `external/repo` it sits at under the exec root.
+/// `external/repo/...` and `bazel-out/<cfg>/...` are kept as they are.
+String execPath(String path) {
   String out = path.trim().replaceAll(r'\', '/');
   while (out.startsWith('./')) {
     out = out.substring(2);
   }
-  if (out.startsWith('../')) return out.substring(3);
-  return out.startsWith('external/') ? out.substring(9) : out;
+  return out.startsWith('../') ? 'external/${out.substring(3)}' : out;
 }
 
 /// Reads the coverage map `dart_test` wrote: a JSON object of URI to path.
@@ -339,6 +409,17 @@ _Inputs _readInputs(CoverageConfig config) {
   );
 }
 
+/// The packages a collection is limited to; empty when it is not limited.
+///
+/// `collect` filters by package name. A source outside every package (the
+/// test's own entry file, say) is only reported when the collection is left
+/// unfiltered, and an empty set does that; the URI map and the manifest still
+/// decide what reaches the report.
+Set<String> _collectionScope(_Inputs inputs) =>
+    needsEveryLibrary(inputs.uriMap, inputs.manifest)
+    ? <String>{}
+    : packagesToCollect(inputs.uriMap, inputs.manifest);
+
 /// The collection of one VM run, started when the VM is.
 class CoverageSession {
   CoverageSession._(this._config, this._collected);
@@ -390,7 +471,7 @@ class CoverageSession {
       uriMap: inputs.uriMap,
       manifest: inputs.manifest,
       partial: collected.problems,
-      scoped: true,
+      scoped: _collectionScope(inputs).isNotEmpty,
     );
     final String? error = result.error;
     if (error != null) return _failed(vmCode, error);
@@ -437,13 +518,7 @@ Future<_Collected> _collectFrom(
 ) async {
   try {
     final _Inputs inputs = _readInputs(config);
-    // `collect` filters by package name. A source outside every package (the
-    // test's own entry file, say) is only reported when the collection is left
-    // unfiltered, and an empty set does that; the URI map and the manifest
-    // still decide what reaches the report.
-    final Set<String> scope = needsEveryLibrary(inputs.uriMap, inputs.manifest)
-        ? <String>{}
-        : packagesToCollect(inputs.uriMap, inputs.manifest);
+    final Set<String> scope = _collectionScope(inputs);
     final Uri uri = await _awaitServiceUri(
       File(config.serviceInfoPath),
       exited,

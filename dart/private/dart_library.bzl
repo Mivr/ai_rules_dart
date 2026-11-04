@@ -3,6 +3,7 @@
 load("//dart:providers.bzl", "DartCodeAssetInfo", "DartInfo", "DartPackageInfo")
 load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR")
 load("//dart/private:common.bzl", "PACKAGE_IDENTITY_ATTRS", "codegen_identity_error", "resolve_package_identity")
+load("//dart/private:coverage_map.bzl", "forward_origins")
 load("//dart/private:dart_info.bzl", "dart_info", "dart_info_multi", "package_lib_prefix")
 load("//dart/private:dart_info_params.bzl", "dart_package_identity")
 load(
@@ -338,15 +339,17 @@ def _multi_package_library_impl(ctx):
             ]),
         ),
         info,
-        _instrumented_files(ctx, ["srcs", "members"]),
+        _instrumented_files(ctx, ["srcs", "members"], ["deps", "data"]),
+        forward_origins(ctx.attr.members + ctx.attr.deps),
     ] + kernel_providers
 
-def _instrumented_files(ctx, source_attributes):
+def _instrumented_files(ctx, source_attributes, dependency_attributes):
     """The `bazel coverage` provider of a library: its Dart sources and its deps'.
 
     Args:
       ctx: The `dart_library` rule context.
       source_attributes: The attributes that hold this library's own sources.
+      dependency_attributes: The attributes whose targets' sources are instrumented too.
 
     Returns:
       An `InstrumentedFilesInfo`.
@@ -354,7 +357,7 @@ def _instrumented_files(ctx, source_attributes):
     return coverage_common.instrumented_files_info(
         ctx,
         source_attributes = source_attributes,
-        dependency_attributes = ["deps"],
+        dependency_attributes = dependency_attributes,
         extensions = ["dart"],
     )
 
@@ -493,7 +496,8 @@ def _dart_library_impl(ctx):
             ),
         ),
         info,
-        _instrumented_files(ctx, ["srcs"]),
+        _instrumented_files(ctx, ["srcs", "srcs_dir"], ["deps", "data", "srcs_dir"]),
+        forward_origins(([ctx.attr.srcs_dir] if ctx.attr.srcs_dir else []) + ctx.attr.deps),
     ] + _own_kernel_providers(ctx, info)
 
 dart_library = rule(
