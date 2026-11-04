@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:test/test.dart';
 
@@ -14,8 +15,8 @@ import 'pub_scan.dart' as scan;
 /// Starlark half (per-entry policy, diagnostics) is covered by
 /// `//dart/tests:pub_archive_scan_test`.
 List<int> _put(List<int> header, int offset, String text, int length) {
-  final raw = latin1.encode(text);
-  final n = raw.length < length ? raw.length : length;
+  final Uint8List raw = latin1.encode(text);
+  final int n = raw.length < length ? raw.length : length;
   header.setRange(offset, offset + n, raw);
   return header;
 }
@@ -51,7 +52,7 @@ List<int> _entry(
   List<int>? data,
   String prefix = '',
 }) {
-  final body = data ?? <int>[];
+  final List<int> body = data ?? <int>[];
   final out = <int>[
     ..._header(
       name,
@@ -72,9 +73,9 @@ List<int> _tar(List<List<int>> entries) => [
 
 String _paxRecord(String key, String value) {
   final kv = '$key=$value\n';
-  var len = kv.length + 2;
+  int len = kv.length + 2;
   for (;;) {
-    final next = kv.length + len.toString().length + 1;
+    final int next = kv.length + len.toString().length + 1;
     if (next == len) return '$len $kv';
     len = next;
   }
@@ -345,7 +346,7 @@ void main() {
       );
     });
     test('a pax global hostile target', () {
-      final records = _paxRecord('linkpath', '/etc/global');
+      final String records = _paxRecord('linkpath', '/etc/global');
       _expectRefusal(
         _gz(
           _tar([
@@ -407,7 +408,7 @@ void main() {
       );
     });
     test('a non-numeric size', () {
-      final h = _header('lib/a.dart', '0');
+      final List<int> h = _header('lib/a.dart', '0');
       _put(h, 124, 'zzzzzzzzzzz\x00', 12);
       _expectUnscannable([
         ...h,
@@ -456,10 +457,10 @@ void main() {
       ]);
     });
     test('a hostile entry split across gzip members is refused', () {
-      final tar = _tar([
+      final List<int> tar = _tar([
         _entry('lib/evil.dart', '1', linkname: '../outside.txt'),
       ]);
-      final cut = tar.length ~/ 2;
+      final int cut = tar.length ~/ 2;
       _expectRefusal(
         [..._gz(tar.sublist(0, cut)), ..._gz(tar.sublist(cut))],
         'hard-link',
@@ -486,7 +487,7 @@ void main() {
   group('the streaming walk matches the in-memory verdicts', () {
     for (final chunkSize in [1, 2, 3, 7, 511, 512, 513, 1024, 65536]) {
       test('chunk size $chunkSize', () async {
-        for (final archive in _battery()) {
+        for (final List<int> archive in _battery()) {
           expect(
             await _verdictChunked(archive, chunkSize),
             _verdict(archive),
@@ -775,7 +776,7 @@ void main() {
     });
     test('every battery verdict matches over real files', () async {
       var i = 0;
-      for (final archive in _battery()) {
+      for (final List<int> archive in _battery()) {
         expect(
           await _verdictFile(dir, 'a${i++}.tar.gz', archive),
           _verdict(archive),
@@ -789,7 +790,7 @@ void main() {
       });
     });
     test('a refusal after a large entry short-circuits', () async {
-      final archive = _gz(
+      final List<int> archive = _gz(
         _tar([
           _entry('lib/big.dart', '0', data: List<int>.filled(200000, 7)),
           _entry('lib/evil.dart', '1', linkname: 'lib/a.dart'),
@@ -807,8 +808,8 @@ void main() {
       // The batch entrypoint scans archives back to back in one process, so
       // a refusal, a short-circuit, or an inflate-failure fallback in one
       // archive must not change the next archive's verdict.
-      final clean = _gz(_tar([_entry('lib/ok.dart', '0')]));
-      final hostile = _gz(
+      final List<int> clean = _gz(_tar([_entry('lib/ok.dart', '0')]));
+      final List<int> hostile = _gz(
         _tar([_entry('lib/evil.dart', '1', linkname: 'lib/a.dart')]),
       );
       final cleanFile = File('${dir.path}/clean.tar.gz')

@@ -73,9 +73,11 @@ String jitFstatSymbol({required bool isMacOS, required bool isX64}) {
 /// at 0) with the inode (u64 at 8). Null on a 32-bit ABI (see
 /// [jitLinuxStatOffsets]).
 JitStat? jitDecodeLinuxStat(List<int> bytes, {required ffi.Abi abi}) {
-  final offsets = jitLinuxStatOffsets(abi: abi);
+  final ({int mode, int nlink, int uid})? offsets = jitLinuxStatOffsets(
+    abi: abi,
+  );
   if (offsets == null) return null;
-  final mode = _jitU32(bytes, offsets.mode);
+  final int mode = _jitU32(bytes, offsets.mode);
   return (
     kind: jitEntryKind(mode),
     uid: _jitU32(bytes, offsets.uid),
@@ -115,7 +117,7 @@ JitStat? jitDecodeLinuxStat(List<int> bytes, {required ffi.Abi abi}) {
 /// passing the first 64 bytes reads past the end (the device sits at 136),
 /// and the resulting out-of-range error must never read as a missing call.
 JitStat jitDecodeStatx(List<int> bytes) {
-  final mode = _jitU16(bytes, 28);
+  final int mode = _jitU16(bytes, 28);
   return (
     kind: jitEntryKind(mode),
     uid: _jitU32(bytes, 20),
@@ -135,7 +137,7 @@ JitStat jitDecodeStatx(List<int> bytes) {
 /// identity is the device number's halves (u64 at 0; read unsigned, compared
 /// as bits) with the inode (u64 at 8).
 JitStat jitDecodeMacStat(List<int> bytes) {
-  final mode = _jitU16(bytes, 4);
+  final int mode = _jitU16(bytes, 4);
   return (
     kind: jitEntryKind(mode),
     uid: _jitU32(bytes, 16),
@@ -171,7 +173,7 @@ int jitCloexecFlag({required bool isMacOS}) => isMacOS ? 0x1000000 : 0x80000;
 /// refuses with EPERM on a file the caller does not own, locking a second
 /// user out of the first user's lock again).
 JitOpenFlags jitOpenFlags({required bool isMacOS, required ffi.Abi abi}) {
-  final cloexec = jitCloexecFlag(isMacOS: isMacOS);
+  final int cloexec = jitCloexecFlag(isMacOS: isMacOS);
   if (isMacOS) {
     // O_RDWR|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC, plus O_CREAT|O_EXCL to create.
     return (
@@ -179,7 +181,7 @@ JitOpenFlags jitOpenFlags({required bool isMacOS, required ffi.Abi abi}) {
       create: 0x2 | 0x100 | 0x4 | 0x200 | 0x800 | cloexec,
     );
   }
-  final nofollow = _linuxNoFollow(abi);
+  final int nofollow = _linuxNoFollow(abi);
   // O_RDWR|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC, plus O_CREAT|O_EXCL to create.
   return (
     noCreate: 0x2 | nofollow | 0x800 | cloexec,
@@ -217,7 +219,7 @@ int _linuxNoFollow(ffi.Abi abi) {
 /// spawned training subprocess inherits the lookup descriptor. Throws as
 /// [jitOpenFlags] on a Linux ABI whose values are not pinned.
 int jitReadFlags({required bool isMacOS, required ffi.Abi abi}) {
-  final cloexec = jitCloexecFlag(isMacOS: isMacOS);
+  final int cloexec = jitCloexecFlag(isMacOS: isMacOS);
   if (isMacOS) return 0x0 | 0x100 | 0x4 | cloexec;
   return _linuxNoFollow(abi) | 0x800 | cloexec;
 }
@@ -264,7 +266,9 @@ bool jitIsTempSibling(String name, String lockName) {
   // fit the scheme, and slicing it would throw.
   if (name.length < head.length + 4) return false;
   if (!name.startsWith(head) || !name.endsWith('.tmp')) return false;
-  final middle = name.substring(head.length, name.length - 4).split('.');
+  final List<String> middle = name
+      .substring(head.length, name.length - 4)
+      .split('.');
   return middle.length == 4 &&
       middle.every((part) => part.isNotEmpty && _jitDecimalDigits(part));
 }
@@ -273,7 +277,7 @@ bool jitIsTempSibling(String name, String lockName) {
 /// parse would also accept a sign, which the temporary scheme never emits.
 bool _jitDecimalDigits(String part) {
   for (var i = 0; i < part.length; i++) {
-    final unit = part.codeUnitAt(i);
+    final int unit = part.codeUnitAt(i);
     if (unit < 0x30 || unit > 0x39) return false;
   }
   return true;

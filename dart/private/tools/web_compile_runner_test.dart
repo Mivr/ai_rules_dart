@@ -72,7 +72,7 @@ void main() {
     final outBuf = StringBuffer();
     final errBuf = StringBuffer();
 
-    var code = runWebCompileRequest(
+    int code = runWebCompileRequest(
       [
         '--dart=${Platform.resolvedExecutable}',
         '--project=app.proj',
@@ -225,7 +225,7 @@ void main() {
     final outJs = File('${tmp.path}/sidecar.js');
     final outBuf = StringBuffer();
     final errBuf = StringBuffer();
-    final code = runWebCompileRequest(
+    final int code = runWebCompileRequest(
       [
         '--dart=${Platform.resolvedExecutable}',
         '--project=sidecar.proj',
@@ -287,7 +287,7 @@ void main() {
     final outJs = File('${tmp.path}/stuck.js');
     final outBuf = StringBuffer();
     final errBuf = StringBuffer();
-    final code = runWebCompileRequest(
+    final int code = runWebCompileRequest(
       [
         '--dart=${Platform.resolvedExecutable}',
         '--project=stuck.proj',
@@ -369,7 +369,7 @@ void main() {
     final outWasm = File('${tmp.path}/wasm_app.wasm');
     final outBuf = StringBuffer();
     final errBuf = StringBuffer();
-    final code = runWebCompileRequest(
+    final int code = runWebCompileRequest(
       [
         '--dart=${Platform.resolvedExecutable}',
         '--project=wasm_app.proj',
@@ -411,7 +411,7 @@ void main() {
 
     final outBuf = StringBuffer();
     final errBuf = StringBuffer();
-    final code = runWebCompileRequest(
+    final int code = runWebCompileRequest(
       [
         '--dart=${Platform.resolvedExecutable}',
         '--project=file_app.proj',
@@ -458,7 +458,7 @@ void main() {
 
     final outBuf = StringBuffer();
     final errBuf = StringBuffer();
-    final code = runWebCompileRequest(
+    final int code = runWebCompileRequest(
       [
         '--dart=${Platform.resolvedExecutable}',
         '--project=tq_app.proj',
@@ -496,7 +496,7 @@ void main() {
     // JSON (`FormatException`) and a config path that cannot be read
     // (`FileSystemException`). Both read as no referenced packages, so the
     // extpkgs prune is skipped while `src/` orphans are still pruned.
-    for (final config in ['{oops', null]) {
+    for (final String? config in ['{oops', null]) {
       final tag = config == null ? 'unreadable' : 'malformed';
       final projDir = Directory('${tmp.path}/${tag}_app.proj');
       final extDir = Directory('${tmp.path}/${tag}_app.extpkgs');
@@ -521,7 +521,7 @@ void main() {
             .writeAsStringSync(config);
       }
 
-      final allowed = pruneOrphanedStagedFiles(projDir.path);
+      final Set<String>? allowed = pruneOrphanedStagedFiles(projDir.path);
       expect(allowed, contains('pkg/main.dart'));
       expect(
         File('${projDir.path}/src/pkg/orphan.dart').existsSync(),

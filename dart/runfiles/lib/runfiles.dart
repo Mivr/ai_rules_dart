@@ -80,7 +80,7 @@ class Runfiles {
   ///
   /// Throws [StateError] if no runfiles can be found.
   factory Runfiles.create({String sourceRepository = ''}) {
-    final env = Platform.environment;
+    final Map<String, String> env = Platform.environment;
     String? directory = _directoryFromEnv(env);
     Map<String, String>? manifest = _manifestFromEnv(env);
 
@@ -93,7 +93,7 @@ class Runfiles {
 
     // 3-6. Probe from executable path (or Platform.script for kernel binaries)
     if (directory == null && manifest == null) {
-      final bases = _probeBases();
+      final List<String> bases = _probeBases();
       directory ??= _directoryBesideBases(bases);
       manifest ??= _manifestBesideBases(bases);
     }
@@ -117,7 +117,7 @@ class Runfiles {
   /// held by its resolved path so [rlocation] keeps working after a symlink
   /// on the way to it, such as `bazel-bin`, is repointed.
   static String? _directoryFromEnv(Map<String, String> env) {
-    final runfilesDir = env['RUNFILES_DIR'];
+    final String? runfilesDir = env['RUNFILES_DIR'];
     if (runfilesDir != null &&
         runfilesDir.isNotEmpty &&
         Directory(runfilesDir).existsSync()) {
@@ -129,7 +129,7 @@ class Runfiles {
   /// Step 2: the `RUNFILES_MANIFEST_FILE` environment variable
   /// (manifest-only mode).
   static Map<String, String>? _manifestFromEnv(Map<String, String> env) {
-    final manifestFile = env['RUNFILES_MANIFEST_FILE'];
+    final String? manifestFile = env['RUNFILES_MANIFEST_FILE'];
     if (manifestFile != null &&
         manifestFile.isNotEmpty &&
         File(manifestFile).existsSync()) {
@@ -171,10 +171,10 @@ class Runfiles {
   /// `launcher = True`).
   static List<String> _probeBases() {
     final bases = <String>[Platform.executable];
-    final scriptUri = Platform.script;
+    final Uri scriptUri = Platform.script;
     if (scriptUri.isScheme('file')) {
       try {
-        final scriptPath = scriptUri.toFilePath();
+        final String scriptPath = scriptUri.toFilePath();
         if (scriptPath.isNotEmpty) {
           bases.add(scriptPath);
           if (scriptPath.endsWith('.dill')) {
@@ -254,24 +254,24 @@ class Runfiles {
   /// preserves backwards compatibility for already-canonical paths and
   /// for non-bzlmod (WORKSPACE) builds where _repo_mapping is absent.
   String rlocation(String path, {String? sourceRepo}) {
-    final source = sourceRepo ?? _defaultSourceRepo;
-    final translated = _applyRepoMapping(path, source);
+    final String source = sourceRepo ?? _defaultSourceRepo;
+    final String translated = _applyRepoMapping(path, source);
 
     // Manifest takes priority — it's the source of truth on Windows and
     // in manifest-only mode.
-    final manifest = _manifest;
+    final Map<String, String>? manifest = _manifest;
     if (manifest != null) {
-      final mapped = manifest[translated];
+      final String? mapped = manifest[translated];
       if (mapped != null) return mapped;
       // Tree artifacts (declared directories) appear in the manifest as a
       // single entry for the directory root (`<repo>/<pkg>/<dir> <real-dir>`).
       // Walk parent prefixes so files inside a tree artifact resolve too.
       for (
-        var slash = translated.lastIndexOf('/');
+        int slash = translated.lastIndexOf('/');
         slash > 0;
         slash = translated.lastIndexOf('/', slash - 1)
       ) {
-        final prefix = manifest[translated.substring(0, slash)];
+        final String? prefix = manifest[translated.substring(0, slash)];
         if (prefix != null) {
           return '$prefix${translated.substring(slash)}';
         }
@@ -285,10 +285,10 @@ class Runfiles {
 
   String _applyRepoMapping(String path, String sourceRepo) {
     if (_repoMapping.isEmpty) return path;
-    final slash = path.indexOf('/');
-    final apparent = slash < 0 ? path : path.substring(0, slash);
-    final rest = slash < 0 ? '' : path.substring(slash);
-    final canonical = _repoMapping[(sourceRepo, apparent)];
+    final int slash = path.indexOf('/');
+    final String apparent = slash < 0 ? path : path.substring(0, slash);
+    final String rest = slash < 0 ? '' : path.substring(slash);
+    final String? canonical = _repoMapping[(sourceRepo, apparent)];
     if (canonical == null) return path;
     return '$canonical$rest';
   }
@@ -298,8 +298,8 @@ class Runfiles {
   /// Each line is `<runfiles-path> <real-path>`, separated by a single space.
   static Map<String, String> _parseManifest(String path) {
     final result = <String, String>{};
-    for (final line in File(path).readAsLinesSync()) {
-      final idx = line.indexOf(' ');
+    for (final String line in File(path).readAsLinesSync()) {
+      final int idx = line.indexOf(' ');
       if (idx > 0) {
         result[line.substring(0, idx)] = line.substring(idx + 1);
       }
@@ -313,9 +313,9 @@ class Runfiles {
   /// module). Lines with a different column count are skipped.
   static Map<(String, String), String> parseRepoMapping(String content) {
     final out = <(String, String), String>{};
-    for (final line in const LineSplitter().convert(content)) {
+    for (final String line in const LineSplitter().convert(content)) {
       if (line.isEmpty) continue;
-      final parts = line.split(',');
+      final List<String> parts = line.split(',');
       if (parts.length != 3) continue;
       out[(parts[0], parts[1])] = parts[2];
     }
@@ -327,7 +327,7 @@ class Runfiles {
     Map<String, String>? manifest,
   }) {
     String? content;
-    final mapped = manifest?['_repo_mapping'];
+    final String? mapped = manifest?['_repo_mapping'];
     if (mapped != null && File(mapped).existsSync()) {
       content = File(mapped).readAsStringSync();
     } else if (directory != null) {

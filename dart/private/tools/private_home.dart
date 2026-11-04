@@ -49,7 +49,7 @@ T withPrivateHome<T>(
   String prefix,
   T Function(Map<String, String> env) action,
 ) {
-  final home = Directory.systemTemp.createTempSync(prefix);
+  final Directory home = Directory.systemTemp.createTempSync(prefix);
   try {
     return action(privateHomeEnv(home.path));
   } finally {
@@ -67,7 +67,7 @@ Future<T> withPrivateHomeAsync<T>(
   String prefix,
   Future<T> Function(Map<String, String> env) action,
 ) async {
-  final home = Directory.systemTemp.createTempSync(prefix);
+  final Directory home = Directory.systemTemp.createTempSync(prefix);
   try {
     return await action(privateHomeEnv(home.path));
   } finally {
@@ -131,8 +131,8 @@ int _globalOptionCount(List<String> args) {
 
 /// Whether [arg] names a program file the VM executes directly.
 bool _isProgramFile(String arg) {
-  final lower = arg.toLowerCase();
-  for (final suffix in _programSuffixes) {
+  final String lower = arg.toLowerCase();
+  for (final String suffix in _programSuffixes) {
     if (lower.endsWith(suffix)) return true;
   }
   return false;
@@ -165,14 +165,14 @@ bool _isVersionInvocation(Iterable<String> globals) {
 /// private home. A leading global `--suppress-analytics` is kept as the caller
 /// wrote it, never duplicated.
 DartCliPolicy dartCliPolicy(List<String> args) {
-  final globalCount = _globalOptionCount(args);
-  final globals = args.take(globalCount);
+  final int globalCount = _globalOptionCount(args);
+  final Iterable<String> globals = args.take(globalCount);
   if (globalCount == args.length) {
     return _isVersionInvocation(globals)
         ? DartCliPolicy.callerHome
         : DartCliPolicy.privateHome;
   }
-  final first = args[globalCount];
+  final String first = args[globalCount];
   if (_isProgramFile(first)) return DartCliPolicy.callerHome;
   if (first == 'help') return DartCliPolicy.privateHome;
   if (globals.contains('--suppress-analytics')) {
@@ -192,7 +192,7 @@ DartCliPolicy dartCliPolicy(List<String> args) {
 /// `--suppress-analytics` passes through unchanged, never duplicated; nothing
 /// else is ever reordered.
 List<String> suppressAnalyticsArgv(List<String> args) {
-  final globals = args.take(_globalOptionCount(args));
+  final Iterable<String> globals = args.take(_globalOptionCount(args));
   if (globals.contains('--suppress-analytics')) return args;
   return ['--suppress-analytics', ...args];
 }

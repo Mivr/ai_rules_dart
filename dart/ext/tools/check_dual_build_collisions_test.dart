@@ -18,7 +18,7 @@ void main() {
 
     test('clean tree yields no collisions', () {
       File(p.join(tmp.path, 'user.dart')).writeAsStringSync('class User {}');
-      final report = checkDualBuildCollisions(tmp, [
+      final CollisionReport report = checkDualBuildCollisions(tmp, [
         '.g.dart',
         '.freezed.dart',
       ]);
@@ -29,7 +29,7 @@ void main() {
     test('committed .g.dart is flagged', () {
       File(p.join(tmp.path, 'user.dart')).writeAsStringSync('class User {}');
       File(p.join(tmp.path, 'user.g.dart')).writeAsStringSync('// GENERATED');
-      final report = checkDualBuildCollisions(tmp, ['.g.dart']);
+      final CollisionReport report = checkDualBuildCollisions(tmp, ['.g.dart']);
       expect(report.collisions.length, 1);
       expect(report.collisions.single, endsWith('user.g.dart'));
     });
@@ -39,7 +39,7 @@ void main() {
       File(p.join(tmp.path, 'a.g.dart')).writeAsStringSync('');
       File(p.join(tmp.path, 'a.freezed.dart')).writeAsStringSync('');
       File(p.join(tmp.path, 'a.mocks.dart')).writeAsStringSync('');
-      final report = checkDualBuildCollisions(tmp, [
+      final CollisionReport report = checkDualBuildCollisions(tmp, [
         '.g.dart',
         '.freezed.dart',
         '.mocks.dart',
@@ -57,7 +57,7 @@ void main() {
       final build = Directory(p.join(tmp.path, 'build'))..createSync();
       File(p.join(build.path, 'leaked.g.dart')).writeAsStringSync('');
       File(p.join(tmp.path, 'real.g.dart')).writeAsStringSync('');
-      final report = checkDualBuildCollisions(tmp, ['.g.dart']);
+      final CollisionReport report = checkDualBuildCollisions(tmp, ['.g.dart']);
       expect(report.collisions.length, 1);
       expect(report.collisions.single, endsWith('real.g.dart'));
     });
@@ -74,7 +74,7 @@ void main() {
 
   group('loadBaselineExtensions', () {
     test('loads non-empty list from runfiles', () {
-      final list = loadBaselineExtensions();
+      final List<String> list = loadBaselineExtensions();
       expect(list, isNotEmpty);
       // Baseline invariants — these must stay filtered regardless.
       expect(list, contains('.g.dart'));
@@ -82,7 +82,7 @@ void main() {
     });
 
     test('every entry is a `.something.dart` suffix', () {
-      final list = loadBaselineExtensions();
+      final List<String> list = loadBaselineExtensions();
       for (final ext in list) {
         expect(ext.startsWith('.'), isTrue, reason: '$ext missing leading dot');
         expect(

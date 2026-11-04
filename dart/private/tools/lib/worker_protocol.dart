@@ -35,7 +35,7 @@ List<String> expandParamFiles(
         expanded.add(arg);
         continue;
       }
-      for (final line in file.readAsLinesSync()) {
+      for (final String line in file.readAsLinesSync()) {
         if (!skipEmptyLines || line.isNotEmpty) {
           expanded.add(line);
         }
@@ -51,15 +51,15 @@ List<String> expandParamFiles(
 /// Windows drive letter, a backslash, an empty segment, or a `.`/`..`
 /// segment.
 bool _isNormalizedRelative(String path) {
-  final len = path.length;
+  final int len = path.length;
   if (len == 0) return false;
   if (_isWindowsDrivePath(path)) return false;
   var segStart = 0;
   for (var i = 0; i <= len; i++) {
-    final c = i < len ? path.codeUnitAt(i) : 0x2f;
+    final int c = i < len ? path.codeUnitAt(i) : 0x2f;
     if (c == 0x5c) return false;
     if (c == 0x2f) {
-      final segLen = i - segStart;
+      final int segLen = i - segStart;
       if (segLen == 0) return false;
       if (segLen == 1 && path.codeUnitAt(segStart) == 0x2e) return false;
       if (segLen == 2 &&
@@ -87,15 +87,17 @@ bool _isWindowsDrivePath(String s) =>
 String normalizePath(String path) {
   if (_isNormalizedRelative(path)) return path;
   if (path.isEmpty) return '.';
-  final slashPath = path.contains(r'\') ? path.replaceAll(r'\', '/') : path;
+  final String slashPath = path.contains(r'\')
+      ? path.replaceAll(r'\', '/')
+      : path;
   String? drivePrefix;
   var rest = slashPath;
   if (_isWindowsDrivePath(slashPath)) {
     drivePrefix = '${slashPath.substring(0, 2)}/';
     rest = slashPath.substring(2);
   }
-  final isAbs = drivePrefix != null || rest.startsWith('/');
-  final parts = rest.split('/');
+  final bool isAbs = drivePrefix != null || rest.startsWith('/');
+  final List<String> parts = rest.split('/');
   final stack = <String>[];
   for (final part in parts) {
     if (part.isEmpty || part == '.') continue;
@@ -110,7 +112,7 @@ String normalizePath(String path) {
     }
   }
   if (stack.isEmpty) return drivePrefix ?? (isAbs ? '/' : '.');
-  final joined = stack.join('/');
+  final String joined = stack.join('/');
   if (drivePrefix != null) return '$drivePrefix$joined';
   return isAbs ? '/$joined' : joined;
 }
@@ -121,10 +123,10 @@ Uint8List sha256Of(Uint8List message) {
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, //
     0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
   ];
-  final paddedLength = ((message.length + 9 + 63) ~/ 64) * 64;
+  final int paddedLength = ((message.length + 9 + 63) ~/ 64) * 64;
   final padded = Uint8List(paddedLength)..setRange(0, message.length, message);
   padded[message.length] = 0x80;
-  final bits = message.length * 8;
+  final int bits = message.length * 8;
   final view = ByteData.sublistView(padded);
   view.setUint32(paddedLength - 8, bits ~/ 0x100000000);
   view.setUint32(paddedLength - 4, bits & 0xffffffff);
@@ -135,19 +137,21 @@ Uint8List sha256Of(Uint8List message) {
       w[i] = view.getUint32(block + i * 4);
     }
     for (var i = 16; i < 64; i++) {
-      final s0 = _rotr(w[i - 15], 7) ^ _rotr(w[i - 15], 18) ^ (w[i - 15] >> 3);
-      final s1 = _rotr(w[i - 2], 17) ^ _rotr(w[i - 2], 19) ^ (w[i - 2] >> 10);
+      final int s0 =
+          _rotr(w[i - 15], 7) ^ _rotr(w[i - 15], 18) ^ (w[i - 15] >> 3);
+      final int s1 =
+          _rotr(w[i - 2], 17) ^ _rotr(w[i - 2], 19) ^ (w[i - 2] >> 10);
       w[i] = (w[i - 16] + s0 + w[i - 7] + s1) & 0xffffffff;
     }
-    var a = h[0], b = h[1], c = h[2], d = h[3];
-    var e = h[4], f = h[5], g = h[6], hh = h[7];
+    int a = h[0], b = h[1], c = h[2], d = h[3];
+    int e = h[4], f = h[5], g = h[6], hh = h[7];
     for (var i = 0; i < 64; i++) {
-      final s1 = _rotr(e, 6) ^ _rotr(e, 11) ^ _rotr(e, 25);
-      final ch = (e & f) ^ ((~e) & g);
-      final t1 = (hh + s1 + ch + _sha256K[i] + w[i]) & 0xffffffff;
-      final s0 = _rotr(a, 2) ^ _rotr(a, 13) ^ _rotr(a, 22);
-      final maj = (a & b) ^ (a & c) ^ (b & c);
-      final t2 = (s0 + maj) & 0xffffffff;
+      final int s1 = _rotr(e, 6) ^ _rotr(e, 11) ^ _rotr(e, 25);
+      final int ch = (e & f) ^ ((~e) & g);
+      final int t1 = (hh + s1 + ch + _sha256K[i] + w[i]) & 0xffffffff;
+      final int s0 = _rotr(a, 2) ^ _rotr(a, 13) ^ _rotr(a, 22);
+      final int maj = (a & b) ^ (a & c) ^ (b & c);
+      final int t2 = (s0 + maj) & 0xffffffff;
       hh = g;
       g = f;
       f = e;
@@ -214,21 +218,21 @@ final class WorkerRequest {
     var cancel = false;
     final r = WorkerReader(bytes);
     while (!r.isDone) {
-      final tag = r.varint();
+      final int tag = r.varint();
       switch (tag >> 3) {
         case 1:
           arguments.add(r.string());
         case 2:
-          final nested = r.submessage();
+          final WorkerReader nested = r.submessage();
           var path = '';
           var digest = Uint8List(0);
           while (!nested.isDone) {
-            final inputTag = nested.varint();
+            final int inputTag = nested.varint();
             switch (inputTag >> 3) {
               case 1:
                 path = nested.string();
               case 2:
-                final raw = nested.bytes();
+                final Uint8List raw = nested.bytes();
                 digest = copyDigests ? Uint8List.fromList(raw) : raw;
               default:
                 nested.skip(inputTag & 7);
@@ -281,7 +285,7 @@ final class WorkerResponse {
         ..varint(exitCode);
     }
     if (output.isNotEmpty) {
-      final utf8Bytes = utf8.encode(output);
+      final Uint8List utf8Bytes = utf8.encode(output);
       body
         ..varint((2 << 3) | 2)
         ..varint(utf8Bytes.length)
@@ -292,7 +296,7 @@ final class WorkerResponse {
         ..varint((3 << 3) | 0)
         ..varint(requestId);
     }
-    final payload = body.takeBytes();
+    final Uint8List payload = body.takeBytes();
     final frame = WorkerWriter()
       ..varint(payload.length)
       ..raw(payload);
@@ -329,7 +333,7 @@ final class WorkerFrames extends Stream<Uint8List> {
           var pos = 0;
           while (true) {
             if (pos >= buf.length) return;
-            final b = buf[pos++];
+            final int b = buf[pos++];
             len |= (b & 0x7f) << shift;
             if ((b & 0x80) == 0) break;
             shift += 7;
@@ -338,7 +342,7 @@ final class WorkerFrames extends Stream<Uint8List> {
           final frame = Uint8List.fromList(
             Uint8List.sublistView(buf, pos, pos + len),
           );
-          final nextStart = pos + len;
+          final int nextStart = pos + len;
           buf = nextStart == buf.length
               ? Uint8List(0)
               : Uint8List.fromList(Uint8List.sublistView(buf, nextStart));
@@ -375,7 +379,7 @@ final class WorkerReader {
     var result = 0;
     var shift = 0;
     while (true) {
-      final b = _buf[_pos++];
+      final int b = _buf[_pos++];
       result |= (b & 0x7f) << shift;
       if ((b & 0x80) == 0) return result;
       shift += 7;
@@ -383,7 +387,7 @@ final class WorkerReader {
   }
 
   Uint8List bytes() {
-    final len = varint();
+    final int len = varint();
     final slice = Uint8List.sublistView(_buf, _pos, _pos + len);
     _pos += len;
     return slice;
@@ -400,7 +404,7 @@ final class WorkerReader {
       case 1:
         _pos += 8;
       case 2:
-        final length = varint();
+        final int length = varint();
         _pos += length;
       case 5:
         _pos += 4;

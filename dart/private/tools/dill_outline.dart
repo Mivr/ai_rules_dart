@@ -247,7 +247,7 @@ int _readUint32Be(Uint8List bytes, int offset) {
 /// falls back to returning [bytes] unstripped, never emitting a malformed
 /// `.dill`.
 Uint8List stripDillToOutline(Uint8List bytes, {StringSink? errSink}) {
-  final sink = errSink ?? stderr;
+  final StringSink sink = errSink ?? stderr;
   if (bytes.length < 18) {
     sink.writeln(
       'dill_outline: input too short for kernel header (${bytes.length} bytes); '
@@ -255,7 +255,7 @@ Uint8List stripDillToOutline(Uint8List bytes, {StringSink? errSink}) {
     );
     return bytes;
   }
-  final magic = _readUint32Be(bytes, 0);
+  final int magic = _readUint32Be(bytes, 0);
   if (magic != Tag.ComponentFile) {
     sink.writeln(
       'dill_outline: invalid kernel magic 0x${magic.toRadixString(16)} '
@@ -264,7 +264,7 @@ Uint8List stripDillToOutline(Uint8List bytes, {StringSink? errSink}) {
     );
     return bytes;
   }
-  final formatVersion = _readUint32Be(bytes, 4);
+  final int formatVersion = _readUint32Be(bytes, 4);
   if (!supportedKernelFormatVersions.contains(formatVersion)) {
     sink.writeln(
       'dill_outline: unsupported kernel format version $formatVersion '
@@ -273,8 +273,8 @@ Uint8List stripDillToOutline(Uint8List bytes, {StringSink? errSink}) {
     );
     return bytes;
   }
-  final len = bytes.length;
-  final lastCompSize = _readUint32Be(bytes, len - 4);
+  final int len = bytes.length;
+  final int lastCompSize = _readUint32Be(bytes, len - 4);
   if (lastCompSize == len) {
     return _DillOutlineStripper(bytes).strip();
   }
@@ -288,7 +288,7 @@ Uint8List stripDillToOutline(Uint8List bytes, {StringSink? errSink}) {
       );
       return bytes;
     }
-    final compSize = _readUint32Be(bytes, end - 4);
+    final int compSize = _readUint32Be(bytes, end - 4);
     if (compSize < 18 || compSize > end) {
       sink.writeln(
         'dill_outline: invalid sub-component size $compSize at end=$end; '
@@ -297,7 +297,7 @@ Uint8List stripDillToOutline(Uint8List bytes, {StringSink? errSink}) {
       return bytes;
     }
     final slice = Uint8List.sublistView(bytes, end - compSize, end);
-    final sliceMagic = _readUint32Be(slice, 0);
+    final int sliceMagic = _readUint32Be(slice, 0);
     if (sliceMagic != Tag.ComponentFile) {
       sink.writeln(
         'dill_outline: invalid sub-component kernel magic 0x${sliceMagic.toRadixString(16)}; '
@@ -305,7 +305,7 @@ Uint8List stripDillToOutline(Uint8List bytes, {StringSink? errSink}) {
       );
       return bytes;
     }
-    final sliceVersion = _readUint32Be(slice, 4);
+    final int sliceVersion = _readUint32Be(slice, 4);
     if (!supportedKernelFormatVersions.contains(sliceVersion)) {
       sink.writeln(
         'dill_outline: unsupported kernel format version $sliceVersion '
@@ -349,8 +349,8 @@ class _ByteWriter {
 
   void writeBytes(Uint8List data, [int start = 0, int? end]) {
     if (!enabled) return;
-    final actualEnd = end ?? data.length;
-    final count = actualEnd - start;
+    final int actualEnd = end ?? data.length;
+    final int count = actualEnd - start;
     if (count <= 0) return;
     if (_len + count > _buf.length) _grow(count);
     _buf.setRange(_len, _len + count, data, start);
@@ -395,6 +395,14 @@ typedef _ComponentIndexOffsets = ({
   int linkTableOffset,
   int metadataPayloadsOffset,
   int stringTableOffset,
+});
+
+/// The procedure and class offset tables of a library trailer.
+typedef _LibraryTrailer = ({
+  int procCount,
+  int classCount,
+  Int32List inProcOffsets,
+  Int32List inClassOffsets,
 });
 
 class _DillOutlineStripper {
@@ -447,24 +455,24 @@ class _DillOutlineStripper {
   int _readByte() => _in[_pos++];
 
   int _readUInt30() {
-    final byte = _in[_pos++];
+    final int byte = _in[_pos++];
     if ((byte & 0x80) == 0) {
       return byte;
     } else if ((byte & 0x40) == 0) {
       return ((byte & 0x3F) << 8) | _in[_pos++];
     } else {
-      final b1 = _in[_pos++];
-      final b2 = _in[_pos++];
-      final b3 = _in[_pos++];
+      final int b1 = _in[_pos++];
+      final int b2 = _in[_pos++];
+      final int b3 = _in[_pos++];
       return ((byte & 0x3F) << 24) | (b1 << 16) | (b2 << 8) | b3;
     }
   }
 
   int _readUInt32() {
-    final b0 = _in[_pos++];
-    final b1 = _in[_pos++];
-    final b2 = _in[_pos++];
-    final b3 = _in[_pos++];
+    final int b0 = _in[_pos++];
+    final int b1 = _in[_pos++];
+    final int b2 = _in[_pos++];
+    final int b3 = _in[_pos++];
     return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
   }
 
@@ -478,21 +486,21 @@ class _DillOutlineStripper {
   Uint8List strip() {
     _parseIndexAndInputTables();
 
-    final outLibraryOffsets = _writeLibraries();
-    final outSourceTableOffset = _writeSourceTable();
-    final (:tableOffset, :relativeOffsets) = _writeConstantTable();
-    final outConstantTableIndexOffset = _writeConstantTableIndex(
-      tableOffset,
-      relativeOffsets,
+    final List<int> outLibraryOffsets = _writeLibraries();
+    final int outSourceTableOffset = _writeSourceTable();
+    final (:int offset, :Int32List rel) = _writeConstantTable();
+    final int outConstantTableIndexOffset = _writeConstantTableIndex(
+      offset,
+      rel,
     );
-    final outLinkTableOffset = _writeLinkTable();
-    final outMetadataPayloadsOffset = _writeMetadata();
-    final outStringTableOffset = _writeStringTable();
+    final int outLinkTableOffset = _writeLinkTable();
+    final int outMetadataPayloadsOffset = _writeMetadata();
+    final int outStringTableOffset = _writeStringTable();
     _writeComponentIndex(
       offsets: (
         libraryOffsets: outLibraryOffsets,
         sourceTableOffset: outSourceTableOffset,
-        constantTableOffset: tableOffset,
+        constantTableOffset: offset,
         constantTableIndexOffset: outConstantTableIndexOffset,
         linkTableOffset: outLinkTableOffset,
         metadataPayloadsOffset: outMetadataPayloadsOffset,
@@ -511,7 +519,7 @@ class _DillOutlineStripper {
     final outLibraryOffsets = <int>[];
     for (int i = 0; i < _inLibraryCount; i++) {
       _pos = _inLibraryOffsets[i];
-      final endOffset = _inLibraryOffsets[i + 1];
+      final int endOffset = _inLibraryOffsets[i + 1];
       outLibraryOffsets.add(_out.length);
       _procLibrary(endOffset);
     }
@@ -520,14 +528,14 @@ class _DillOutlineStripper {
 
   /// The source table, returning its offset.
   int _writeSourceTable() {
-    final outSourceTableOffset = _out.length;
-    final uriCount = _outUris.length;
+    final int outSourceTableOffset = _out.length;
+    final int uriCount = _outUris.length;
     _out.writeUInt32(uriCount);
     final uriEntryOffsets = Int32List(uriCount);
     for (int i = 0; i < uriCount; i++) {
       uriEntryOffsets[i] = _out.length;
-      final oldUriIdx = _outUris[i];
-      final uriBytes = _inUriStrings[oldUriIdx];
+      final int oldUriIdx = _outUris[i];
+      final Uint8List uriBytes = _inUriStrings[oldUriIdx];
       _out.writeUInt30(uriBytes.length);
       _out.writeBytes(uriBytes);
       _out.writeUInt30(0); // empty source bytes
@@ -536,7 +544,7 @@ class _DillOutlineStripper {
       } else {
         _out.writeUInt30(0); // 0 lineStarts
       }
-      final importUriBytes = _inImportUriStrings[oldUriIdx];
+      final Uint8List importUriBytes = _inImportUriStrings[oldUriIdx];
       _out.writeUInt30(importUriBytes.length);
       _out.writeBytes(importUriBytes);
       _out.writeUInt30(0); // 0 constantCoverageConstructors
@@ -548,21 +556,18 @@ class _DillOutlineStripper {
   }
 
   /// The constant table, returning its offset and relative entry offsets.
-  ({int tableOffset, Int32List relativeOffsets}) _writeConstantTable() {
-    final outConstantTableOffset = _out.length;
-    final constCount = _outConsts.length;
+  ({int offset, Int32List rel}) _writeConstantTable() {
+    final int outConstantTableOffset = _out.length;
+    final int constCount = _outConsts.length;
     _out.writeUInt30(constCount);
     final constRelativeOffsets = Int32List(constCount);
     for (int i = 0; i < constCount; i++) {
       constRelativeOffsets[i] = _out.length - outConstantTableOffset;
-      final oldConstIdx = _outConsts[i];
+      final int oldConstIdx = _outConsts[i];
       _pos = _inConstantTableOffset + _inConstOffsets[oldConstIdx];
       _procConstantTableEntry();
     }
-    return (
-      tableOffset: outConstantTableOffset,
-      relativeOffsets: constRelativeOffsets,
-    );
+    return (offset: outConstantTableOffset, rel: constRelativeOffsets);
   }
 
   /// The constant table index entries and count, returning its offset.
@@ -570,7 +575,7 @@ class _DillOutlineStripper {
     int outConstantTableOffset,
     Int32List constRelativeOffsets,
   ) {
-    final outConstantTableIndexOffset = _out.length;
+    final int outConstantTableIndexOffset = _out.length;
     for (int i = 0; i < constRelativeOffsets.length; i++) {
       _out.writeUInt32(constRelativeOffsets[i]);
     }
@@ -580,12 +585,12 @@ class _DillOutlineStripper {
 
   /// The canonical-name link table, returning its offset.
   int _writeLinkTable() {
-    final outLinkTableOffset = _out.length;
-    final canonCount = _outCanonParent.length;
+    final int outLinkTableOffset = _out.length;
+    final int canonCount = _outCanonParent.length;
     _out.writeUInt30(canonCount);
     for (int i = 0; i < canonCount; i++) {
       _out.writeUInt30(_outCanonParent[i]);
-      final strIdx = _remapString(_outCanonOldString[i]);
+      final int strIdx = _remapString(_outCanonOldString[i]);
       _out.writeUInt30(strIdx);
     }
     return outLinkTableOffset;
@@ -593,33 +598,33 @@ class _DillOutlineStripper {
 
   /// The (empty) metadata tables, returning their shared offset.
   int _writeMetadata() {
-    final metaPadding = ((_out.length + 7) & -8) - _out.length;
+    final int metaPadding = ((_out.length + 7) & -8) - _out.length;
     for (int i = 0; i < metaPadding; i++) {
       _out.writeByte(0);
     }
-    final outMetadataPayloadsOffset = _out.length;
+    final int outMetadataPayloadsOffset = _out.length;
     _out.writeUInt32(0);
     return outMetadataPayloadsOffset;
   }
 
   /// The string table, returning its offset.
   int _writeStringTable() {
-    final outStringTableOffset = _out.length;
-    final strCount = _outStrings.length;
+    final int outStringTableOffset = _out.length;
+    final int strCount = _outStrings.length;
     _out.writeUInt30(strCount);
     int cumulativeBytes = 0;
     for (int i = 0; i < strCount; i++) {
-      final oldStrIdx = _outStrings[i];
+      final int oldStrIdx = _outStrings[i];
       if (oldStrIdx >= 0) {
         cumulativeBytes += _inStrEnd[oldStrIdx] - _inStrStart[oldStrIdx];
       }
       _out.writeUInt30(cumulativeBytes);
     }
     for (int i = 0; i < strCount; i++) {
-      final oldStrIdx = _outStrings[i];
+      final int oldStrIdx = _outStrings[i];
       if (oldStrIdx >= 0) {
-        final s = _inStrStart[oldStrIdx];
-        final e = _inStrEnd[oldStrIdx];
+        final int s = _inStrStart[oldStrIdx];
+        final int e = _inStrEnd[oldStrIdx];
         _out.writeBytes(_in, s, e);
       }
     }
@@ -628,10 +633,10 @@ class _DillOutlineStripper {
 
   /// The trailing component index naming every table.
   void _writeComponentIndex({required _ComponentIndexOffsets offsets}) {
-    final componentIndexOffset = _out.length;
-    final numFixedFields = 9 + (_inLibraryCount + 1) + 2;
-    final unalignedSize = componentIndexOffset + numFixedFields * 4;
-    final indexPadding = ((unalignedSize + 7) & -8) - unalignedSize;
+    final int componentIndexOffset = _out.length;
+    final int numFixedFields = 9 + (_inLibraryCount + 1) + 2;
+    final int unalignedSize = componentIndexOffset + numFixedFields * 4;
+    final int indexPadding = ((unalignedSize + 7) & -8) - unalignedSize;
     for (int i = 0; i < indexPadding; i++) {
       _out.writeByte(0);
     }
@@ -662,9 +667,9 @@ class _DillOutlineStripper {
 
   /// The trailing component index: table offsets and library offsets.
   void _parseInputComponentIndex() {
-    final fileSize = _in.length;
+    final int fileSize = _in.length;
     _inLibraryCount = _readUInt32At(fileSize - 8);
-    final numFixedFields = 9 + (_inLibraryCount + 1) + 2;
+    final int numFixedFields = 9 + (_inLibraryCount + 1) + 2;
     int idxPos = fileSize - numFixedFields * 4;
     _inSourceTableOffset = _readUInt32At(idxPos);
     idxPos += 4;
@@ -688,18 +693,18 @@ class _DillOutlineStripper {
   /// The input string table: entry bounds and the empty-string remap.
   void _parseInputStringTable() {
     _pos = _inStringTableOffset;
-    final strCount = _readUInt30();
+    final int strCount = _readUInt30();
     final endOffsets = Int32List(strCount);
     for (int i = 0; i < strCount; i++) {
       endOffsets[i] = _readUInt30();
     }
-    final strDataBase = _pos;
+    final int strDataBase = _pos;
     _inStrStart = Int32List(strCount);
     _inStrEnd = Int32List(strCount);
     int prevEnd = 0;
     int emptyStrOldIdx = -1;
     for (int i = 0; i < strCount; i++) {
-      final end = endOffsets[i];
+      final int end = endOffsets[i];
       _inStrStart[i] = strDataBase + prevEnd;
       _inStrEnd[i] = strDataBase + end;
       if (end == prevEnd && emptyStrOldIdx == -1) {
@@ -719,7 +724,7 @@ class _DillOutlineStripper {
   /// The input canonical-name link table.
   void _parseInputLinkTable() {
     _pos = _inLinkTableOffset;
-    final canonCount = _readUInt30();
+    final int canonCount = _readUInt30();
     _inCanonParent = Int32List(canonCount);
     _inCanonString = Int32List(canonCount);
     for (int i = 0; i < canonCount; i++) {
@@ -732,7 +737,7 @@ class _DillOutlineStripper {
   /// The input source table: URIs, line starts, and import URIs.
   void _parseInputSourceTable() {
     _pos = _inSourceTableOffset;
-    final uriCount = _readUInt32();
+    final int uriCount = _readUInt32();
     _inUriStrings = List<Uint8List>.filled(uriCount, Uint8List(0));
     _inLineStartsBytes = List<Uint8List>.filled(uriCount, Uint8List(0));
     _inImportUriStrings = List<Uint8List>.filled(uriCount, Uint8List(0));
@@ -745,21 +750,21 @@ class _DillOutlineStripper {
   /// One input source-table entry: URI, skipped sources, line starts,
   /// import URI, and skipped coverage constructors.
   void _parseInputSourceEntry(int i) {
-    final uriLen = _readUInt30();
+    final int uriLen = _readUInt30();
     _inUriStrings[i] = Uint8List.sublistView(_in, _pos, _pos + uriLen);
     _pos += uriLen;
-    final srcLen = _readUInt30();
+    final int srcLen = _readUInt30();
     _pos += srcLen;
-    final lsStart = _pos;
-    final lineCount = _readUInt30();
+    final int lsStart = _pos;
+    final int lineCount = _readUInt30();
     for (int j = 0; j < lineCount; j++) {
       _readUInt30();
     }
     _inLineStartsBytes[i] = Uint8List.sublistView(_in, lsStart, _pos);
-    final impLen = _readUInt30();
+    final int impLen = _readUInt30();
     _inImportUriStrings[i] = Uint8List.sublistView(_in, _pos, _pos + impLen);
     _pos += impLen;
-    final covCount = _readUInt30();
+    final int covCount = _readUInt30();
     for (int j = 0; j < covCount; j++) {
       _readUInt30();
     }
@@ -767,7 +772,7 @@ class _DillOutlineStripper {
 
   /// The input constant offset table.
   void _parseInputConstantTable() {
-    final constCount = _readUInt32At(_inLinkTableOffset - 4);
+    final int constCount = _readUInt32At(_inLinkTableOffset - 4);
     _inConstOffsets = Int32List(constCount);
     for (int i = 0; i < constCount; i++) {
       _inConstOffsets[i] = _readUInt32At(_inConstantTableIndexOffset + i * 4);
@@ -777,13 +782,13 @@ class _DillOutlineStripper {
 
   int _remapString(int oldStrIdx) {
     if (!_emitting) return 0;
-    final existing = _strRemap[oldStrIdx];
+    final int existing = _strRemap[oldStrIdx];
     if (existing != -1) return existing;
     if (_inStrEnd[oldStrIdx] == _inStrStart[oldStrIdx]) {
       _strRemap[oldStrIdx] = 0;
       return 0;
     }
-    final next = _outStrings.length;
+    final int next = _outStrings.length;
     _strRemap[oldStrIdx] = next;
     _outStrings.add(oldStrIdx);
     return next;
@@ -791,13 +796,13 @@ class _DillOutlineStripper {
 
   int _remapCanon(int oldBiased) {
     if (!_emitting || oldBiased == 0) return 0;
-    final oldIdx = oldBiased - 1;
-    final existing = _canonRemap[oldIdx];
+    final int oldIdx = oldBiased - 1;
+    final int existing = _canonRemap[oldIdx];
     if (existing != -1) return existing + 1;
-    final parentBiased = _inCanonParent[oldIdx];
-    final newParentBiased = parentBiased == 0 ? 0 : _remapCanon(parentBiased);
-    final newIdx = _outCanonParent.length;
-    _outCanonParent.add(newParentBiased);
+    final int parentBiased = _inCanonParent[oldIdx];
+    final int newParent = parentBiased == 0 ? 0 : _remapCanon(parentBiased);
+    final int newIdx = _outCanonParent.length;
+    _outCanonParent.add(newParent);
     _outCanonOldString.add(_inCanonString[oldIdx]);
     _canonRemap[oldIdx] = newIdx;
     return newIdx + 1;
@@ -826,11 +831,11 @@ class _DillOutlineStripper {
 
   int _remapConst(int oldConstIdx) {
     if (!_emitting && !_indexingConstants) return 0;
-    final existing = _constRemap[oldConstIdx];
+    final int existing = _constRemap[oldConstIdx];
     if (existing != -1) return existing;
-    final savedPos = _pos;
-    final prevEmit = _emitting;
-    final prevIdx = _indexingConstants;
+    final int savedPos = _pos;
+    final bool prevEmit = _emitting;
+    final bool prevIdx = _indexingConstants;
     _emitting = false;
     _indexingConstants = true;
     _pos = _inConstantTableOffset + _inConstOffsets[oldConstIdx];
@@ -838,7 +843,7 @@ class _DillOutlineStripper {
     _pos = savedPos;
     _emitting = prevEmit;
     _indexingConstants = prevIdx;
-    final newIdx = _outConsts.length;
+    final int newIdx = _outConsts.length;
     _constRemap[oldConstIdx] = newIdx;
     _outConsts.add(oldConstIdx);
     return newIdx;
@@ -857,41 +862,41 @@ class _DillOutlineStripper {
   }
 
   void _procOffset() {
-    final off = _readUInt30();
+    final int off = _readUInt30();
     _out.writeUInt30(_keepOffsets ? off : 0);
   }
 
   void _procName() {
-    final oldStrIdx = _readUInt30();
+    final int oldStrIdx = _readUInt30();
     _out.writeUInt30(_remapString(oldStrIdx));
-    final s = _inStrStart[oldStrIdx];
-    final e = _inStrEnd[oldStrIdx];
+    final int s = _inStrStart[oldStrIdx];
+    final int e = _inStrEnd[oldStrIdx];
     if (e > s && _in[s] == 95 /* '_' */ ) {
       _procCanonRef();
     }
   }
 
   void _procListOfStringsAsEmpty() {
-    final len = _readUInt30();
+    final int len = _readUInt30();
     for (int i = 0; i < len; i++) {
-      final byteLen = _readUInt30();
+      final int byteLen = _readUInt30();
       _pos += byteLen;
     }
     _out.writeUInt30(0);
   }
 
   void _procLibrary(int endOffset) {
-    final trailer = _readLibraryTrailer(endOffset);
+    final _LibraryTrailer trailer = _readLibraryTrailer(endOffset);
 
     for (int i = 0; i < _sourcesUsedInLibrary.length; i++) {
       _sourcesUsedInLibrary[i] = false;
     }
 
     _out.writeByte(_readByte()); // flags
-    final major = _readUInt30();
+    final int major = _readUInt30();
     _out.writeUInt30(major); // major
     _out.writeUInt30(_readUInt30()); // minor
-    final isLegacyLibrary = major < 3;
+    final bool isLegacyLibrary = major < 3;
     _procCanonRef(); // canonicalName
     _procStringRef(); // name
     _procUriRef(); // fileUri
@@ -901,14 +906,14 @@ class _DillOutlineStripper {
     _procLibraryDependencies();
     _procLibraryExportsAndParts();
     _procLibraryTypedefs();
-    final outClassOffsets = _procLibraryClasses(
+    final Int32List outClassOffsets = _procLibraryClasses(
       trailer.inClassOffsets,
       trailer.classCount,
       isLegacyLibrary: isLegacyLibrary,
     );
     _procLibraryExtensions();
     _procLibraryExtensionTypes();
-    final outProcOffsets = _procLibraryTopLevels(
+    final Int32List outProcOffsets = _procLibraryTopLevels(
       trailer.inProcOffsets,
       trailer.procCount,
     );
@@ -921,18 +926,12 @@ class _DillOutlineStripper {
   }
 
   /// The procedure and class offset tables in the library trailer.
-  ({
-    int procCount,
-    int classCount,
-    Int32List inProcOffsets,
-    Int32List inClassOffsets,
-  })
-  _readLibraryTrailer(int endOffset) {
-    final savedPos = _pos;
+  _LibraryTrailer _readLibraryTrailer(int endOffset) {
+    final int savedPos = _pos;
     _pos = endOffset - 4;
-    final procCount = _readUInt32();
+    final int procCount = _readUInt32();
     _pos = endOffset - (procCount + 3) * 4;
-    final classCount = _readUInt32();
+    final int classCount = _readUInt32();
     final inProcOffsets = Int32List(procCount + 1);
     for (int i = 0; i <= procCount; i++) {
       inProcOffsets[i] = _readUInt32();
@@ -953,7 +952,7 @@ class _DillOutlineStripper {
 
   /// The library's dependencies, with their combinators.
   void _procLibraryDependencies() {
-    final depCount = _readUInt30();
+    final int depCount = _readUInt30();
     _out.writeUInt30(depCount);
     for (int i = 0; i < depCount; i++) {
       _procOffset();
@@ -967,11 +966,11 @@ class _DillOutlineStripper {
 
   /// One dependency's show/hide combinators.
   void _procCombinators() {
-    final combCount = _readUInt30();
+    final int combCount = _readUInt30();
     _out.writeUInt30(combCount);
     for (int j = 0; j < combCount; j++) {
       _out.writeByte(_readByte());
-      final nameCount = _readUInt30();
+      final int nameCount = _readUInt30();
       _out.writeUInt30(nameCount);
       for (int k = 0; k < nameCount; k++) {
         _procStringRef();
@@ -981,13 +980,13 @@ class _DillOutlineStripper {
 
   /// The library's exports and parts.
   void _procLibraryExportsAndParts() {
-    final expCount = _readUInt30();
+    final int expCount = _readUInt30();
     _out.writeUInt30(expCount);
     for (int i = 0; i < expCount; i++) {
       _procCanonRef();
     }
 
-    final partCount = _readUInt30();
+    final int partCount = _readUInt30();
     _out.writeUInt30(partCount);
     for (int i = 0; i < partCount; i++) {
       _procExpressionList();
@@ -997,7 +996,7 @@ class _DillOutlineStripper {
 
   /// The library's typedef declarations.
   void _procLibraryTypedefs() {
-    final tdCount = _readUInt30();
+    final int tdCount = _readUInt30();
     _out.writeUInt30(tdCount);
     for (int i = 0; i < tdCount; i++) {
       _procCanonRef();
@@ -1016,7 +1015,7 @@ class _DillOutlineStripper {
     int classCount, {
     required bool isLegacyLibrary,
   }) {
-    final clsCount = _readUInt30();
+    final int clsCount = _readUInt30();
     assert(clsCount == classCount);
     _out.writeUInt30(clsCount);
     final outClassOffsets = Int32List(clsCount + 1);
@@ -1032,7 +1031,7 @@ class _DillOutlineStripper {
 
   /// The library's extension declarations.
   void _procLibraryExtensions() {
-    final extCount = _readUInt30();
+    final int extCount = _readUInt30();
     _out.writeUInt30(extCount);
     for (int i = 0; i < extCount; i++) {
       _out.writeByte(_readByte()); // Tag.Extension
@@ -1050,7 +1049,7 @@ class _DillOutlineStripper {
 
   /// One extension's member descriptors.
   void _procExtensionMembers() {
-    final descCount = _readUInt30();
+    final int descCount = _readUInt30();
     _out.writeUInt30(descCount);
     for (int j = 0; j < descCount; j++) {
       _procName();
@@ -1063,7 +1062,7 @@ class _DillOutlineStripper {
 
   /// The library's extension type declarations.
   void _procLibraryExtensionTypes() {
-    final extTypeCount = _readUInt30();
+    final int extTypeCount = _readUInt30();
     _out.writeUInt30(extTypeCount);
     for (int i = 0; i < extTypeCount; i++) {
       _out.writeByte(_readByte()); // Tag.ExtensionTypeDeclaration
@@ -1077,7 +1076,7 @@ class _DillOutlineStripper {
       _procDartType();
       _procStringRef();
       _procDartTypeList();
-      final etProcCount = _readUInt30();
+      final int etProcCount = _readUInt30();
       _out.writeUInt30(etProcCount);
       for (int j = 0; j < etProcCount; j++) {
         _procProcedure(-1, keepBody: false);
@@ -1088,13 +1087,13 @@ class _DillOutlineStripper {
 
   /// The library's top-level fields and procedures, returning procedure offsets.
   Int32List _procLibraryTopLevels(Int32List inProcOffsets, int procCount) {
-    final fieldCount = _readUInt30();
+    final int fieldCount = _readUInt30();
     _out.writeUInt30(fieldCount);
     for (int i = 0; i < fieldCount; i++) {
       _procField(isMixin: false, hasConstConstructor: false);
     }
 
-    final pCount = _readUInt30();
+    final int pCount = _readUInt30();
     assert(pCount == procCount);
     _out.writeUInt30(pCount);
     final outProcOffsets = Int32List(pCount + 1);
@@ -1115,7 +1114,7 @@ class _DillOutlineStripper {
     Int32List outProcOffsets,
     int pCount,
   ) {
-    final sourceRefsOffset = _out.length;
+    final int sourceRefsOffset = _out.length;
     int usedCount = 0;
     for (int i = 1; i < _sourcesUsedInLibrary.length; i++) {
       if (_sourcesUsedInLibrary[i]) usedCount++;
@@ -1140,17 +1139,18 @@ class _DillOutlineStripper {
   }
 
   void _procClass(int endOffset, {required bool isLegacyLibrary}) {
-    final savedPos = _pos;
-    final inProcOffsets = _readClassTrailer(endOffset);
-    final procCount = inProcOffsets.length - 1;
-    final peekFlags = _peekClassFlags(savedPos);
+    final int savedPos = _pos;
+    final Int32List inProcOffsets = _readClassTrailer(endOffset);
+    final int procCount = inProcOffsets.length - 1;
+    final int peekFlags = _peekClassFlags(savedPos);
 
     // Any class that can be used as a mixin must keep its member bodies,
     // field initializers, and source offsets: `mixin` (1 << 4),
     // `mixin class` (1 << 8), and every class in a library whose language
     // version is below 3.0.
-    final isMixin = isLegacyLibrary || (peekFlags & ((1 << 4) | (1 << 8))) != 0;
-    final prevKeepOffsets = _keepOffsets;
+    final bool isMixin =
+        isLegacyLibrary || (peekFlags & ((1 << 4) | (1 << 8))) != 0;
+    final bool prevKeepOffsets = _keepOffsets;
     _keepOffsets = isMixin;
 
     _out.writeByte(_readByte()); // Tag.Class
@@ -1159,7 +1159,7 @@ class _DillOutlineStripper {
     _procOffset();
     _procOffset();
     _procOffset();
-    final flags = _readUInt30();
+    final int flags = _readUInt30();
     _out.writeUInt30(flags);
     _procStringRef();
     _procExpressionList();
@@ -1168,9 +1168,9 @@ class _DillOutlineStripper {
     _procOptionDartType();
     _procDartTypeList();
 
-    final fieldCount = _readUInt30();
+    final int fieldCount = _readUInt30();
     _out.writeUInt30(fieldCount);
-    final hasConstConstructor = _peekConstConstructor(
+    final bool hasConstConstructor = _peekConstConstructor(
       fieldCount,
       isMixin: isMixin,
     );
@@ -1178,7 +1178,7 @@ class _DillOutlineStripper {
       _procField(isMixin: isMixin, hasConstConstructor: hasConstConstructor);
     }
 
-    final ctorCount = _readUInt30();
+    final int ctorCount = _readUInt30();
     _out.writeUInt30(ctorCount);
     for (int i = 0; i < ctorCount; i++) {
       _procConstructor();
@@ -1190,9 +1190,9 @@ class _DillOutlineStripper {
 
   /// The procedure offset table in the class trailer.
   Int32List _readClassTrailer(int endOffset) {
-    final savedPos = _pos;
+    final int savedPos = _pos;
     _pos = endOffset - 4;
-    final procCount = _readUInt32();
+    final int procCount = _readUInt32();
     _pos = endOffset - (procCount + 2) * 4;
     final inProcOffsets = Int32List(procCount + 1);
     for (int i = 0; i <= procCount; i++) {
@@ -1204,7 +1204,7 @@ class _DillOutlineStripper {
 
   /// The class flags, read without emitting.
   int _peekClassFlags(int savedPos) {
-    final prevEmit = _emitting;
+    final bool prevEmit = _emitting;
     _emitting = false;
     _readByte(); // Tag.Class
     _procCanonRef();
@@ -1212,7 +1212,7 @@ class _DillOutlineStripper {
     _procOffset();
     _procOffset();
     _procOffset();
-    final peekFlags = _readUInt30();
+    final int peekFlags = _readUInt30();
     _pos = savedPos;
     _emitting = prevEmit;
     return peekFlags;
@@ -1222,14 +1222,14 @@ class _DillOutlineStripper {
   /// peeked without emitting.
   bool _peekConstConstructor(int fieldCount, {required bool isMixin}) {
     if (isMixin || fieldCount == 0) return false;
-    final savedFieldPos = _pos;
-    final prev = _emitting;
+    final int savedFieldPos = _pos;
+    final bool prev = _emitting;
     _emitting = false;
     var hasConstConstructor = false;
     for (int i = 0; i < fieldCount; i++) {
       _procField(isMixin: false, hasConstConstructor: false);
     }
-    final peekCtorCount = _readUInt30();
+    final int peekCtorCount = _readUInt30();
     for (int i = 0; i < peekCtorCount; i++) {
       _readByte(); // Tag.Constructor
       _procCanonRef();
@@ -1237,7 +1237,7 @@ class _DillOutlineStripper {
       _procOffset();
       _procOffset();
       _procOffset();
-      final ctorFlags = _readByte();
+      final int ctorFlags = _readByte();
       if ((ctorFlags & 1) != 0) {
         hasConstConstructor = true;
         break;
@@ -1245,7 +1245,7 @@ class _DillOutlineStripper {
       _procName();
       _procExpressionList();
       _procFunctionNode(-1, keepBody: false);
-      final initCount = _readUInt30();
+      final int initCount = _readUInt30();
       for (int j = 0; j < initCount; j++) {
         _procInitializer();
       }
@@ -1261,7 +1261,7 @@ class _DillOutlineStripper {
     int procCount, {
     required bool isMixin,
   }) {
-    final pCount = _readUInt30();
+    final int pCount = _readUInt30();
     assert(pCount == procCount);
     _out.writeUInt30(pCount);
     final outProcOffsets = Int32List(pCount + 1);
@@ -1286,15 +1286,15 @@ class _DillOutlineStripper {
     _procUriRef();
     _procOffset();
     _procOffset();
-    final flags = _readUInt30();
+    final int flags = _readUInt30();
     _out.writeUInt30(flags);
     final isFinal = (flags & 1) != 0;
     final isConst = (flags & 2) != 0;
     final isStatic = (flags & 4) != 0;
-    final keepInit =
+    final bool keepInit =
         isConst || isMixin || (hasConstConstructor && isFinal && !isStatic);
     _procName();
-    final scopeSize = _readUInt30();
+    final int scopeSize = _readUInt30();
     _out.writeUInt30(keepInit ? scopeSize : 0);
     _procExpressionList();
     _procDartType();
@@ -1303,7 +1303,7 @@ class _DillOutlineStripper {
       _procOptionExpression();
       _procOptionScope(scopeSize);
     } else {
-      final prev = _emitting;
+      final bool prev = _emitting;
       _emitting = false;
       _procOptionExpression();
       _procOptionScope(scopeSize);
@@ -1320,13 +1320,13 @@ class _DillOutlineStripper {
     _procOffset();
     _procOffset();
     _procOffset();
-    final flags = _readByte();
+    final int flags = _readByte();
     _out.writeByte(flags);
     final isConst = (flags & 1) != 0;
     _procName();
     _procExpressionList();
     _procFunctionNode(-1, keepBody: false);
-    final initCount = _readUInt30();
+    final int initCount = _readUInt30();
     if (isConst) {
       _out.writeUInt30(initCount);
       for (int i = 0; i < initCount; i++) {
@@ -1334,7 +1334,7 @@ class _DillOutlineStripper {
       }
     } else {
       _out.writeUInt30(0);
-      final prev = _emitting;
+      final bool prev = _emitting;
       _emitting = false;
       for (int i = 0; i < initCount; i++) {
         _procInitializer();
@@ -1352,7 +1352,7 @@ class _DillOutlineStripper {
     _procOffset();
     _out.writeByte(_readByte()); // kind
     _out.writeByte(_readByte()); // stubKind
-    final flags = _readUInt30(); // flags
+    final int flags = _readUInt30(); // flags
     _out.writeUInt30(flags);
     final isConst = (flags & 8) != 0; // Procedure.FlagConst
     _procName();
@@ -1368,34 +1368,34 @@ class _DillOutlineStripper {
     _procOffset();
     _out.writeByte(_readByte());
     _out.writeByte(_readByte());
-    final scopeSize = _readUInt30();
+    final int scopeSize = _readUInt30();
     _out.writeUInt30(keepBody ? scopeSize : 0);
     _procTypeParameterList();
     _procOptionVariable(keepInit: true);
     _out.writeUInt30(_readUInt30());
     _out.writeUInt30(_readUInt30());
-    final posCount = _readUInt30();
+    final int posCount = _readUInt30();
     _out.writeUInt30(posCount);
     for (int i = 0; i < posCount; i++) {
       _procVariable(keepInit: true);
     }
-    final namedCount = _readUInt30();
+    final int namedCount = _readUInt30();
     _out.writeUInt30(namedCount);
     for (int i = 0; i < namedCount; i++) {
       _procVariable(keepInit: true);
     }
     _procDartType();
     _procOptionDartType();
-    final rftTag = _readByte();
+    final int rftTag = _readByte();
     _out.writeByte(rftTag);
     if (rftTag != 0) {
       _procCanonRef();
-      final taTag = _readByte();
+      final int taTag = _readByte();
       _out.writeByte(taTag);
       if (taTag != 0) {
         _procDartTypeList();
       }
-      final errTag = _readByte();
+      final int errTag = _readByte();
       _out.writeByte(errTag);
       if (errTag != 0) {
         _procStringRef();
@@ -1409,7 +1409,7 @@ class _DillOutlineStripper {
       if (outerEndOffset > 0 && _emitting) {
         _pos = outerEndOffset;
       } else {
-        final prev = _emitting;
+        final bool prev = _emitting;
         _emitting = false;
         _procOptionStatement();
         _procOptionScope(scopeSize);
@@ -1423,7 +1423,7 @@ class _DillOutlineStripper {
   }
 
   void _procOptionVariable({required bool keepInit}) {
-    final tag = _readByte();
+    final int tag = _readByte();
     _out.writeByte(tag);
     if (tag != 0) {
       _procVariable(keepInit: keepInit);
@@ -1431,7 +1431,7 @@ class _DillOutlineStripper {
   }
 
   void _procVariable({required bool keepInit}) {
-    final oldVarOffset = _pos;
+    final int oldVarOffset = _pos;
     if (_emitting) {
       _varOffsetMap[oldVarOffset] = _out.length;
     }
@@ -1445,7 +1445,7 @@ class _DillOutlineStripper {
     if (keepInit) {
       _procOptionExpression();
     } else {
-      final prev = _emitting;
+      final bool prev = _emitting;
       _emitting = false;
       _procOptionExpression();
       _emitting = prev;
@@ -1454,14 +1454,14 @@ class _DillOutlineStripper {
   }
 
   void _procOptionScope(int scopeSize) {
-    final tag = _readByte();
+    final int tag = _readByte();
     _out.writeByte(tag);
     if (tag != 0) {
-      final count = _readUInt30();
+      final int count = _readUInt30();
       _out.writeUInt30(count);
       for (int i = 0; i < count; i++) {
         _out.writeByte(_readByte());
-        final varCount = _readUInt30();
+        final int varCount = _readUInt30();
         _out.writeUInt30(varCount);
         for (int j = 0; j < varCount; j++) {
           _procVariableReference();
@@ -1471,10 +1471,10 @@ class _DillOutlineStripper {
   }
 
   void _procOptionCapturedContexts() {
-    final tag = _readByte();
+    final int tag = _readByte();
     _out.writeByte(tag);
     if (tag != 0) {
-      final count = _readUInt30();
+      final int count = _readUInt30();
       _out.writeUInt30(count);
       for (int i = 0; i < count; i++) {
         _out.writeUInt30(_readUInt30());
@@ -1483,14 +1483,14 @@ class _DillOutlineStripper {
   }
 
   void _procVariableReference() {
-    final oldVarOffset = _readUInt30();
-    final idx = _readUInt30();
+    final int oldVarOffset = _readUInt30();
+    final int idx = _readUInt30();
     _out.writeUInt30(_emitting ? (_varOffsetMap[oldVarOffset] ?? 0) : 0);
     _out.writeUInt30(idx);
   }
 
   void _procOptionVariableReference() {
-    final tag = _readByte();
+    final int tag = _readByte();
     _out.writeByte(tag);
     if (tag != 0) {
       _procVariableReference();
@@ -1498,7 +1498,7 @@ class _DillOutlineStripper {
   }
 
   void _procTypeParameterList() {
-    final count = _readUInt30();
+    final int count = _readUInt30();
     _out.writeUInt30(count);
     for (int i = 0; i < count; i++) {
       _out.writeByte(_readByte());
@@ -1511,7 +1511,7 @@ class _DillOutlineStripper {
   }
 
   void _procOptionDartType() {
-    final tag = _readByte();
+    final int tag = _readByte();
     _out.writeByte(tag);
     if (tag != 0) {
       _procDartType();
@@ -1519,7 +1519,7 @@ class _DillOutlineStripper {
   }
 
   void _procDartTypeList() {
-    final count = _readUInt30();
+    final int count = _readUInt30();
     _out.writeUInt30(count);
     for (int i = 0; i < count; i++) {
       _procDartType();
@@ -1527,7 +1527,7 @@ class _DillOutlineStripper {
   }
 
   void _procNamedTypeList() {
-    final count = _readUInt30();
+    final int count = _readUInt30();
     _out.writeUInt30(count);
     for (int i = 0; i < count; i++) {
       _procStringRef();
@@ -1537,7 +1537,7 @@ class _DillOutlineStripper {
   }
 
   void _procDartType() {
-    final tag = _readByte();
+    final int tag = _readByte();
     _out.writeByte(tag);
     switch (tag) {
       case Tag.TypedefType:
@@ -1594,7 +1594,7 @@ class _DillOutlineStripper {
   }
 
   void _procInitializer() {
-    final tag = _readByte();
+    final int tag = _readByte();
     _out.writeByte(tag);
     switch (tag) {
       case Tag.InvalidInitializer:
@@ -1630,7 +1630,7 @@ class _DillOutlineStripper {
     _out.writeUInt30(_readUInt30());
     _procDartTypeList();
     _procExpressionList();
-    final namedCount = _readUInt30();
+    final int namedCount = _readUInt30();
     _out.writeUInt30(namedCount);
     for (int i = 0; i < namedCount; i++) {
       _procStringRef();
@@ -1639,7 +1639,7 @@ class _DillOutlineStripper {
   }
 
   void _procOptionExpression() {
-    final tag = _readByte();
+    final int tag = _readByte();
     _out.writeByte(tag);
     if (tag != 0) {
       _procExpression();
@@ -1647,7 +1647,7 @@ class _DillOutlineStripper {
   }
 
   void _procExpressionList() {
-    final count = _readUInt30();
+    final int count = _readUInt30();
     _out.writeUInt30(count);
     for (int i = 0; i < count; i++) {
       _procExpression();
@@ -1732,13 +1732,13 @@ class _DillOutlineStripper {
         _procOffset();
         _procCanonRef();
         _procDartTypeList();
-        final fvCount = _readUInt30();
+        final int fvCount = _readUInt30();
         _out.writeUInt30(fvCount);
         for (int i = 0; i < fvCount; i++) {
           _procCanonRef();
           _procExpression();
         }
-        final assertCount = _readUInt30();
+        final int assertCount = _readUInt30();
         _out.writeUInt30(assertCount);
         for (int i = 0; i < assertCount; i++) {
           _procStatement();
@@ -1749,7 +1749,7 @@ class _DillOutlineStripper {
         _procOffset();
         _procDartType();
         _procDartType();
-        final entryCount = _readUInt30();
+        final int entryCount = _readUInt30();
         _out.writeUInt30(entryCount);
         for (int i = 0; i < entryCount; i++) {
           _procExpression();
@@ -1759,7 +1759,7 @@ class _DillOutlineStripper {
       case Tag.ConstRecordLiteral:
         _procOffset();
         _procExpressionList();
-        final namedCount = _readUInt30();
+        final int namedCount = _readUInt30();
         _out.writeUInt30(namedCount);
         for (int i = 0; i < namedCount; i++) {
           _procStringRef();
@@ -1819,7 +1819,7 @@ class _DillOutlineStripper {
         _procExpression();
       case Tag.BlockExpression:
         _procOffset();
-        final scopeSize = _readUInt30();
+        final int scopeSize = _readUInt30();
         _out.writeUInt30(scopeSize);
         _procStatementList();
         _procExpression();
@@ -1832,7 +1832,7 @@ class _DillOutlineStripper {
         _procOffset();
         _procExpression();
         _procOptionDartType();
-        final caseCount = _readUInt30();
+        final int caseCount = _readUInt30();
         _out.writeUInt30(caseCount);
         for (int i = 0; i < caseCount; i++) {
           _procOffset();
@@ -1856,11 +1856,11 @@ class _DillOutlineStripper {
     switch (tag) {
       case Tag.SpecializedVariableGet:
         _procOffset();
-        final oldVarOffset = _readUInt30();
+        final int oldVarOffset = _readUInt30();
         _out.writeUInt30(_emitting ? (_varOffsetMap[oldVarOffset] ?? 0) : 0);
       case Tag.SpecializedVariableSet:
         _procOffset();
-        final oldVarOffset = _readUInt30();
+        final int oldVarOffset = _readUInt30();
         _out.writeUInt30(_emitting ? (_varOffsetMap[oldVarOffset] ?? 0) : 0);
         _procExpression();
       case Tag.VariableGet:
@@ -2029,9 +2029,9 @@ class _DillOutlineStripper {
   }
 
   void _procExpression() {
-    final tagByte = _readByte();
+    final int tagByte = _readByte();
     _out.writeByte(tagByte);
-    final tag =
+    final int tag =
         (tagByte & Tag.SpecializedTagHighBits) == Tag.SpecializedTagHighBits
         ? (tagByte & Tag.SpecializedTagMask)
         : tagByte;
@@ -2053,13 +2053,13 @@ class _DillOutlineStripper {
   }
 
   void _procOptionPattern() {
-    final tag = _readByte();
+    final int tag = _readByte();
     _out.writeByte(tag);
     if (tag != 0) _procPattern();
   }
 
   void _procPatternList() {
-    final count = _readUInt30();
+    final int count = _readUInt30();
     _out.writeUInt30(count);
     for (int i = 0; i < count; i++) {
       _procPattern();
@@ -2067,7 +2067,7 @@ class _DillOutlineStripper {
   }
 
   void _procPattern() {
-    final tag = _readByte();
+    final int tag = _readByte();
     _out.writeByte(tag);
     if (_procStructuralPattern(tag)) return;
     switch (tag) {
@@ -2094,7 +2094,7 @@ class _DillOutlineStripper {
       case Tag.InvalidPattern:
         _procOffset();
         _procExpression();
-        final vCount = _readUInt30();
+        final int vCount = _readUInt30();
         _out.writeUInt30(vCount);
         for (int i = 0; i < vCount; i++) {
           _procVariable(keepInit: true);
@@ -2107,7 +2107,7 @@ class _DillOutlineStripper {
         _procOffset();
         _procPattern();
         _procPattern();
-        final jvCount = _readUInt30();
+        final int jvCount = _readUInt30();
         _out.writeUInt30(jvCount);
         for (int i = 0; i < jvCount; i++) {
           _procVariableReference();
@@ -2156,7 +2156,7 @@ class _DillOutlineStripper {
         _procOptionDartType();
         _out.writeUInt30(_readUInt30());
         _procOptionDartType();
-        final taTag = _readByte();
+        final int taTag = _readByte();
         _out.writeByte(taTag);
         if (taTag != 0) _procDartTypeList();
       case Tag.ObjectPattern:
@@ -2182,7 +2182,7 @@ class _DillOutlineStripper {
         _out.writeByte(_readByte());
         _procName();
         _procCanonRef();
-        final taTag = _readByte();
+        final int taTag = _readByte();
         _out.writeByte(taTag);
         if (taTag != 0) _procDartTypeList();
         _procOptionDartType();
@@ -2210,10 +2210,10 @@ class _DillOutlineStripper {
 
   /// A map pattern's entries.
   void _procMapPatternEntries() {
-    final eCount = _readUInt30();
+    final int eCount = _readUInt30();
     _out.writeUInt30(eCount);
     for (int i = 0; i < eCount; i++) {
-      final eTag = _readByte();
+      final int eTag = _readByte();
       _out.writeByte(eTag);
       if (eTag == Tag.MapPatternEntry) {
         _procOffset();
@@ -2227,13 +2227,13 @@ class _DillOutlineStripper {
   }
 
   void _procOptionStatement() {
-    final tag = _readByte();
+    final int tag = _readByte();
     _out.writeByte(tag);
     if (tag != 0) _procStatement();
   }
 
   void _procStatementList() {
-    final count = _readUInt30();
+    final int count = _readUInt30();
     _out.writeUInt30(count);
     for (int i = 0; i < count; i++) {
       _procStatement();
@@ -2241,7 +2241,7 @@ class _DillOutlineStripper {
   }
 
   void _procStatement() {
-    final tag = _readByte();
+    final int tag = _readByte();
     _out.writeByte(tag);
     if (_procLoopStatement(tag)) return;
     if (_procPatternStatement(tag)) return;
@@ -2251,7 +2251,7 @@ class _DillOutlineStripper {
       case Tag.Block:
         _procOffset();
         _procOffset();
-        final scopeSize = _readUInt30();
+        final int scopeSize = _readUInt30();
         _out.writeUInt30(scopeSize);
         _procStatementList();
         _procOptionScope(scopeSize);
@@ -2271,7 +2271,7 @@ class _DillOutlineStripper {
         _out.writeUInt30(_readUInt30());
       case Tag.WhileStatement:
         _procOffset();
-        final scopeSize = _readUInt30();
+        final int scopeSize = _readUInt30();
         _out.writeUInt30(scopeSize);
         _procExpression();
         _procStatement();
@@ -2326,11 +2326,11 @@ class _DillOutlineStripper {
         _procOffset();
         _procStatement();
         _out.writeByte(_readByte());
-        final catchCount = _readUInt30();
+        final int catchCount = _readUInt30();
         _out.writeUInt30(catchCount);
         for (int i = 0; i < catchCount; i++) {
           _procOffset();
-          final scopeSize = _readUInt30();
+          final int scopeSize = _readUInt30();
           _out.writeUInt30(scopeSize);
           _procDartType();
           _procOptionVariable(keepInit: true);
@@ -2342,7 +2342,7 @@ class _DillOutlineStripper {
       case Tag.ForInStatement:
         _procOffset();
         _procOffset();
-        final scopeSize = _readUInt30();
+        final int scopeSize = _readUInt30();
         _out.writeUInt30(scopeSize);
         _procVariable(keepInit: true);
         _procExpression();
@@ -2357,9 +2357,9 @@ class _DillOutlineStripper {
   /// A `for` statement and its variable declarations.
   void _procForStatement() {
     _procOffset();
-    final scopeSize = _readUInt30();
+    final int scopeSize = _readUInt30();
     _out.writeUInt30(scopeSize);
-    final varCount = _readUInt30();
+    final int varCount = _readUInt30();
     _out.writeUInt30(varCount);
     for (int i = 0; i < varCount; i++) {
       _procVariableDeclaration();
@@ -2376,11 +2376,11 @@ class _DillOutlineStripper {
     _out.writeByte(_readByte());
     _procExpression();
     _procOptionDartType();
-    final caseCount = _readUInt30();
+    final int caseCount = _readUInt30();
     _out.writeUInt30(caseCount);
     for (int i = 0; i < caseCount; i++) {
       _procOffset();
-      final exprCount = _readUInt30();
+      final int exprCount = _readUInt30();
       _out.writeUInt30(exprCount);
       for (int j = 0; j < exprCount; j++) {
         _procOffset();
@@ -2420,7 +2420,7 @@ class _DillOutlineStripper {
     _procOffset();
     _procExpression();
     _procOptionDartType();
-    final caseCount = _readUInt30();
+    final int caseCount = _readUInt30();
     _out.writeUInt30(caseCount);
     for (int i = 0; i < caseCount; i++) {
       _procPatternSwitchCase();
@@ -2429,12 +2429,12 @@ class _DillOutlineStripper {
 
   /// One pattern `switch` case: variables, guards, and the body.
   void _procPatternSwitchCase() {
-    final vCount = _readUInt30();
+    final int vCount = _readUInt30();
     _out.writeUInt30(vCount);
     for (int j = 0; j < vCount; j++) {
       _procVariable(keepInit: true);
     }
-    final gCount = _readUInt30();
+    final int gCount = _readUInt30();
     _out.writeUInt30(gCount);
     for (int j = 0; j < gCount; j++) {
       _procOffset();
@@ -2452,7 +2452,7 @@ class _DillOutlineStripper {
   }
 
   void _visitConstantChildrenForIndexing() {
-    final cTag = _readByte();
+    final int cTag = _readByte();
     switch (cTag) {
       case ConstantTag.NullConstant:
       case ConstantTag.BoolConstant:
@@ -2468,33 +2468,33 @@ class _DillOutlineStripper {
       case ConstantTag.UnevaluatedConstant:
         _procExpression();
       case ConstantTag.MapConstant:
-        final prev = _emitting;
+        final bool prev = _emitting;
         _emitting = false;
         _procDartType();
         _procDartType();
         _emitting = prev;
-        final count = _readUInt30();
+        final int count = _readUInt30();
         for (int i = 0; i < count; i++) {
           _remapConst(_readUInt30());
           _remapConst(_readUInt30());
         }
       case ConstantTag.ListConstant:
       case ConstantTag.SetConstant:
-        final prev = _emitting;
+        final bool prev = _emitting;
         _emitting = false;
         _procDartType();
         _emitting = prev;
-        final count = _readUInt30();
+        final int count = _readUInt30();
         for (int i = 0; i < count; i++) {
           _remapConst(_readUInt30());
         }
       case ConstantTag.InstanceConstant:
         _readUInt30();
-        final prev = _emitting;
+        final bool prev = _emitting;
         _emitting = false;
         _procDartTypeList();
         _emitting = prev;
-        final fvCount = _readUInt30();
+        final int fvCount = _readUInt30();
         for (int i = 0; i < fvCount; i++) {
           _readUInt30();
           _remapConst(_readUInt30());
@@ -2502,17 +2502,17 @@ class _DillOutlineStripper {
       case ConstantTag.InstantiationConstant:
         _remapConst(_readUInt30());
       case ConstantTag.TypedefTearOffConstant:
-        final prev = _emitting;
+        final bool prev = _emitting;
         _emitting = false;
         _procTypeParameterList();
         _emitting = prev;
         _remapConst(_readUInt30());
       case ConstantTag.RecordConstant:
-        final pCount = _readUInt30();
+        final int pCount = _readUInt30();
         for (int i = 0; i < pCount; i++) {
           _remapConst(_readUInt30());
         }
-        final nCount = _readUInt30();
+        final int nCount = _readUInt30();
         for (int i = 0; i < nCount; i++) {
           _readUInt30();
           _remapConst(_readUInt30());
@@ -2523,7 +2523,7 @@ class _DillOutlineStripper {
   }
 
   void _procConstantTableEntry() {
-    final cTag = _readByte();
+    final int cTag = _readByte();
     _out.writeByte(cTag);
     switch (cTag) {
       case ConstantTag.NullConstant:
@@ -2543,7 +2543,7 @@ class _DillOutlineStripper {
       case ConstantTag.MapConstant:
         _procDartType();
         _procDartType();
-        final count = _readUInt30();
+        final int count = _readUInt30();
         _out.writeUInt30(count);
         for (int i = 0; i < count; i++) {
           _out.writeUInt30(_remapConst(_readUInt30()));
@@ -2552,7 +2552,7 @@ class _DillOutlineStripper {
       case ConstantTag.ListConstant:
       case ConstantTag.SetConstant:
         _procDartType();
-        final count = _readUInt30();
+        final int count = _readUInt30();
         _out.writeUInt30(count);
         for (int i = 0; i < count; i++) {
           _out.writeUInt30(_remapConst(_readUInt30()));
@@ -2560,7 +2560,7 @@ class _DillOutlineStripper {
       case ConstantTag.InstanceConstant:
         _procCanonRef();
         _procDartTypeList();
-        final fvCount = _readUInt30();
+        final int fvCount = _readUInt30();
         _out.writeUInt30(fvCount);
         for (int i = 0; i < fvCount; i++) {
           _procCanonRef();
@@ -2582,12 +2582,12 @@ class _DillOutlineStripper {
       case ConstantTag.UnevaluatedConstant:
         _procExpression();
       case ConstantTag.RecordConstant:
-        final pCount = _readUInt30();
+        final int pCount = _readUInt30();
         _out.writeUInt30(pCount);
         for (int i = 0; i < pCount; i++) {
           _out.writeUInt30(_remapConst(_readUInt30()));
         }
-        final nCount = _readUInt30();
+        final int nCount = _readUInt30();
         _out.writeUInt30(nCount);
         for (int i = 0; i < nCount; i++) {
           _procStringRef();

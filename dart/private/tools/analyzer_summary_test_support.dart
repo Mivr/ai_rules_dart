@@ -121,7 +121,7 @@ void _defineBudgetAndEvictionTest(Directory Function() currentTmp) {
     );
     expect(customScaled.maxCacheBytes, 32 * 1024 * 1024);
 
-    final rawReq = encodeWorkRequestForTest(
+    final Uint8List rawReq = encodeWorkRequestForTest(
       arguments: ['summarize'],
       inputs: {
         'dep.sum': Uint8List.fromList([1, 2, 3, 4]),
@@ -132,10 +132,10 @@ void _defineBudgetAndEvictionTest(Directory Function() currentTmp) {
     final slice = Uint8List.sublistView(bigFrame, 100, 100 + rawReq.length);
     expect(slice.buffer.lengthInBytes, 64 * 1024);
 
-    final decodedInputs = decodeAnalyzerWorkRequestInputs(slice);
+    final Map<String, Uint8List> dec = decodeAnalyzerWorkRequestInputs(slice);
     expect(
-      decodedInputs['dep.sum']!.buffer.lengthInBytes,
-      decodedInputs['dep.sum']!.lengthInBytes,
+      dec['dep.sum']!.buffer.lengthInBytes,
+      dec['dep.sum']!.lengthInBytes,
       reason: 'decoded digest must not pin the 64 KB WorkRequest buffer',
     );
 
@@ -145,7 +145,7 @@ void _defineBudgetAndEvictionTest(Directory Function() currentTmp) {
       boundedCache,
     );
 
-    final tmpPath = currentTmp().path;
+    final String tmpPath = currentTmp().path;
     final s1 = File(p.join(tmpPath, 's1.sum'))
       ..writeAsBytesSync(List<int>.filled(40, 1));
     final s2 = File(p.join(tmpPath, 's2.sum'))
@@ -182,9 +182,10 @@ void _defineBudgetAndEvictionTest(Directory Function() currentTmp) {
 void defineDisposeTearDownTests() {
   group('disposeContextCollection tear-down failures', () {
     test('still releases a collection whose dispose throws', () async {
-      final beforeCount = disposedContextCollectionsCount;
+      final int beforeCount = disposedContextCollectionsCount;
       final released = <AnalysisContextCollection>[];
-      final prevHook = onContextCollectionDisposed;
+      final void Function(AnalysisContextCollection)? prevHook =
+          onContextCollectionDisposed;
       onContextCollectionDisposed = released.add;
       try {
         await disposeContextCollection(_ThrowingCollection());
@@ -208,7 +209,7 @@ void defineSummaryTripleQuotedImportGuardTest(Directory Function() currentTmp) {
     // would read an undeclared host file through the analyzer's working
     // directory. The staged check refuses it before any SDK or summary is
     // read, so this needs no summaries.
-    final tmpPath = currentTmp().path;
+    final String tmpPath = currentTmp().path;
     final stageAnalyze = Directory(p.join(tmpPath, 'tq.analyze'))
       ..createSync(recursive: true);
     final stagedMain =

@@ -29,7 +29,7 @@ Future<void> main(List<String> args) async {
     case ['stream']:
       stdout.writeln('stdout-ready');
       stderr.writeln('stderr-ready');
-      final line = await stdin
+      final String line = await stdin
           .transform(utf8.decoder)
           .transform(const LineSplitter())
           .first;
@@ -48,7 +48,8 @@ Future<void> main(List<String> args) async {
     case ['read-cwd', final relPath]:
       stdout.writeln(File(relPath).readAsStringSync().trim());
     case ['env-probe']:
-      for (final entry in Platform.environment.entries) {
+      for (final MapEntry<String, String> entry
+          in Platform.environment.entries) {
         stdout.writeln('${entry.key}=${entry.value}');
       }
     case ['args-probe', ...final rest]:

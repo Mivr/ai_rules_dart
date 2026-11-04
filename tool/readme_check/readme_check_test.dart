@@ -47,8 +47,8 @@ class _ArchiveOverride {
 void main(List<String> args) {
   group('readme install block', () {
     test('the install block resolves as written', () {
-      final readme = File(_locateReadme(args)).readAsStringSync();
-      final findings = checkReadme(readme);
+      final String readme = File(_locateReadme(args)).readAsStringSync();
+      final List<String> findings = checkReadme(readme);
       expect(findings, isEmpty, reason: '\n${findings.join('\n')}');
     });
   });
@@ -59,7 +59,7 @@ void main(List<String> args) {
     });
 
     test("the pre-fix block without an override fails", () {
-      final findings = checkReadme(_oldReadme);
+      final List<String> findings = checkReadme(_oldReadme);
       expect(findings, isNotEmpty);
       expect(
         findings.any((f) => f.contains('archive_override')),
@@ -74,13 +74,13 @@ void main(List<String> args) {
     });
 
     test('a wrong module or repo name fails', () {
-      final findings = checkInstallBlock(_wrongNamesBlock);
+      final List<String> findings = checkInstallBlock(_wrongNamesBlock);
       expect(findings.where((f) => f.contains('ai_rules_dart')), isNotEmpty);
       expect(findings.where((f) => f.contains('rules_dart')), isNotEmpty);
     });
 
     test('a version, tag and prefix mismatch fails', () {
-      final findings = checkInstallBlock(_mismatchBlock);
+      final List<String> findings = checkInstallBlock(_mismatchBlock);
       expect(findings.length, 2);
       expect(findings.join('\n'), contains('URL tag'));
       expect(findings.join('\n'), contains('strip_prefix'));
@@ -102,7 +102,7 @@ void main(List<String> args) {
 /// Every finding in [readme]'s install block and fences; empty when honest.
 List<String> checkReadme(String readme) {
   final findings = <String>[];
-  final block = _installBlock(readme);
+  final String block = _installBlock(readme);
   if (block.isEmpty) {
     findings.add('no ```starlark install block in README.md');
   } else {
@@ -117,7 +117,7 @@ List<String> checkReadme(String readme) {
 /// Every finding in one install [block]; empty when it resolves as written.
 List<String> checkInstallBlock(String block) {
   final findings = <String>[];
-  final dep = _parseDep(block);
+  final _BazelDep? dep = _parseDep(block);
   if (dep == null) {
     findings.add('no bazel_dep call in the install block');
   } else {
@@ -130,7 +130,7 @@ List<String> checkInstallBlock(String block) {
       );
     }
   }
-  final override = _parseOverride(block);
+  final _ArchiveOverride? override = _parseOverride(block);
   if (override == null) {
     findings.add('no archive_override call in the install block');
     return findings;
@@ -165,8 +165,8 @@ List<String> checkInstallBlock(String block) {
 /// Whether every code fence in [text] opens and closes with three backticks.
 bool fencesBalanced(String text) {
   var open = false;
-  for (final line in text.split('\n')) {
-    final run = _leadingBackticks(line);
+  for (final String line in text.split('\n')) {
+    final int run = _leadingBackticks(line);
     if (run < 3) continue;
     if (run > 3) return false;
     open = !open;
@@ -177,16 +177,16 @@ bool fencesBalanced(String text) {
 /// The first ```starlark block's body, or empty when there is none.
 String _installBlock(String readme) {
   const open = '```starlark';
-  final start = readme.indexOf(open);
+  final int start = readme.indexOf(open);
   if (start == -1) return '';
-  final end = readme.indexOf('```', start + open.length);
+  final int end = readme.indexOf('```', start + open.length);
   if (end == -1) return '';
   return readme.substring(start + open.length, end);
 }
 
 /// The parsed `bazel_dep` call, or null when the block has none.
 _BazelDep? _parseDep(String block) {
-  final args = _callArgs(block, 'bazel_dep');
+  final String? args = _callArgs(block, 'bazel_dep');
   if (args == null) return null;
   return _BazelDep(
     name: _stringArg(args, 'name'),
@@ -197,7 +197,7 @@ _BazelDep? _parseDep(String block) {
 
 /// The parsed `archive_override` call, or null when the block has none.
 _ArchiveOverride? _parseOverride(String block) {
-  final args = _callArgs(block, 'archive_override');
+  final String? args = _callArgs(block, 'archive_override');
   if (args == null) return null;
   return _ArchiveOverride(
     module: _stringArg(args, 'module_name'),
@@ -209,13 +209,14 @@ _ArchiveOverride? _parseOverride(String block) {
 
 /// The argument list of the first [name] call; calls here nest no parens.
 String? _callArgs(String block, String name) {
-  final match = RegExp('\\b$name\\(([^)]*)\\)').firstMatch(block);
+  final RegExpMatch? match = RegExp('\\b$name\\(([^)]*)\\)').firstMatch(block);
   return match?.group(1);
 }
 
 /// The value of the `"quoted"` [name] argument, or null when absent.
 String? _stringArg(String args, String name) {
-  final match = RegExp('\\b$name\\s*=\\s*"([^"]*)"').firstMatch(args);
+  final RegExpMatch? match = RegExp('\\b$name\\s*=\\s*"([^"]*)"')
+      .firstMatch(args);
   return match?.group(1);
 }
 
@@ -230,7 +231,7 @@ final _releaseTag = RegExp(r'releases/download/([^"/]+)/');
 
 /// The leading backtick run of one line, ignoring indentation.
 int _leadingBackticks(String line) {
-  final trimmed = line.trimLeft();
+  final String trimmed = line.trimLeft();
   var run = 0;
   while (run < trimmed.length && trimmed[run] == '`') {
     run++;
@@ -241,14 +242,14 @@ int _leadingBackticks(String line) {
 /// The README path: the runfiles data file under Bazel, else an ancestor.
 String _locateReadme(List<String> args) {
   if (args.isNotEmpty && _underBazel()) {
-    final located = Runfiles.create().rlocation(args.first);
+    final String located = Runfiles.create().rlocation(args.first);
     if (File(located).existsSync()) return located;
   }
-  var dir = Directory.current;
+  Directory dir = Directory.current;
   while (true) {
     final candidate = File('${dir.path}${Platform.pathSeparator}README.md');
     if (candidate.existsSync()) return candidate.path;
-    final parent = dir.parent;
+    final Directory parent = dir.parent;
     if (parent.path == dir.path) {
       fail(
         'cannot locate README.md: neither the runfiles data file nor any '
@@ -261,7 +262,7 @@ String _locateReadme(List<String> args) {
 
 /// Whether the test runs under Bazel, where runfiles resolve.
 bool _underBazel() {
-  final env = Platform.environment;
+  final Map<String, String> env = Platform.environment;
   return env.containsKey('TEST_SRCDIR') ||
       env.containsKey('RUNFILES_MANIFEST_FILE') ||
       env.containsKey('RUNFILES_DIR');

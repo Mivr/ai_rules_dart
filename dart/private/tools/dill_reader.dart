@@ -40,7 +40,7 @@ String? keyOfDillSourceUri(
 ) {
   // An empty source-table entry names no file, so there is no read to verify.
   if (uri.isEmpty) return null;
-  final stripped = stripMultiRootPrefix(uri, multiRootPrefix);
+  final String? stripped = stripMultiRootPrefix(uri, multiRootPrefix);
   if (stripped != null) {
     return stripped.contains('%')
         ? stripped.split('/').map(decodeUriSegment).join('/')
@@ -64,14 +64,14 @@ List<(int, int)>? _componentRanges(Uint8List data) {
   if (data.length < 48) return null;
   final bd = ByteData.sublistView(data);
   if (bd.getUint32(0) != dillComponentMagic) return null;
-  final lastSize = bd.getUint32(data.length - 4);
+  final int lastSize = bd.getUint32(data.length - 4);
   if (lastSize == data.length) return [(0, data.length)];
   final ranges = <(int, int)>[];
-  var end = data.length;
+  int end = data.length;
   while (end >= 48) {
-    final compSize = bd.getUint32(end - 4);
+    final int compSize = bd.getUint32(end - 4);
     if (compSize < 48 || compSize > end) return null;
-    final start = end - compSize;
+    final int start = end - compSize;
     if (bd.getUint32(start) != dillComponentMagic) return null;
     ranges.add((start, end));
     end = start;
@@ -95,14 +95,14 @@ class _TableCursor {
   /// The next UInt30, or null at the limit.
   int? readU30() {
     if (_pos >= _limit) return null;
-    final b0 = _part[_pos++];
+    final int b0 = _part[_pos++];
     if ((b0 & 0x80) == 0) return b0;
     if ((b0 & 0x40) == 0) {
       if (_pos >= _limit) return null;
       return ((b0 & 0x3f) << 8) | _part[_pos++];
     }
     if (_pos + 3 > _limit) return null;
-    final value =
+    final int value =
         ((b0 & 0x3f) << 24) |
         (_part[_pos] << 16) |
         (_part[_pos + 1] << 8) |
@@ -128,7 +128,7 @@ class _TableCursor {
 
   /// The next [n] bytes decoded as UTF-8, or null when they are malformed.
   String? readUtf8(int n) {
-    final start = _pos;
+    final int start = _pos;
     _pos += n;
     // Callers bounds-check with `hasBytes` first, so the slice is in range
     // and only malformed UTF-8 fails.
@@ -147,12 +147,12 @@ class _TableCursor {
   if (part.length < 12) return null;
   final bd = ByteData.sublistView(part);
   if (bd.getUint32(0) != dillComponentMagic) return null;
-  final libCount = bd.getUint32(part.length - 8);
-  final idxBytes = (libCount + 12) * 4;
+  final int libCount = bd.getUint32(part.length - 8);
+  final int idxBytes = (libCount + 12) * 4;
   if (idxBytes > part.length) return null;
-  final rawIdxStart = part.length - idxBytes;
-  final offSourceTable = bd.getUint32(rawIdxStart);
-  final offConstantTable = bd.getUint32(rawIdxStart + 4);
+  final int rawIdxStart = part.length - idxBytes;
+  final int offSourceTable = bd.getUint32(rawIdxStart);
+  final int offConstantTable = bd.getUint32(rawIdxStart + 4);
   if (offSourceTable + 4 > offConstantTable || offConstantTable > rawIdxStart) {
     return null;
   }
@@ -165,7 +165,7 @@ class _TableCursor {
 
 /// Skips one UInt30 count and the values it counts. False at the limit.
 bool _skipU30Run(_TableCursor cursor) {
-  final count = cursor.readU30();
+  final int? count = cursor.readU30();
   if (count == null) return false;
   for (var j = 0; j < count; j++) {
     if (cursor.readU30() == null) return false;
@@ -181,25 +181,25 @@ bool _readSourceEntry(
   List<String>? importUris,
 ) {
   // 1. uri: UInt30 byteLength + UTF-8 bytes.
-  final uriLen = cursor.readU30();
+  final int? uriLen = cursor.readU30();
   if (uriLen == null || uriLen < 0 || !cursor.hasBytes(uriLen)) {
     return false;
   }
-  final uri = cursor.readUtf8(uriLen);
+  final String? uri = cursor.readUtf8(uriLen);
   if (uri == null) return false;
   uris.add(uri);
   // 2. sourceCode: UInt30 byteLength + UTF-8 bytes.
-  final srcLen = cursor.readU30();
+  final int? srcLen = cursor.readU30();
   if (srcLen == null || !cursor.skipBytes(srcLen)) return false;
   // 3. lineStarts: UInt30 count + count * UInt30 delta.
   if (!_skipU30Run(cursor)) return false;
   // 4. importUri: UInt30 byteLength + UTF-8 bytes.
-  final impLen = cursor.readU30();
+  final int? impLen = cursor.readU30();
   if (impLen == null || impLen < 0 || !cursor.hasBytes(impLen)) {
     return false;
   }
   if (importUris != null) {
-    final importUri = cursor.readUtf8(impLen);
+    final String? importUri = cursor.readUtf8(impLen);
     if (importUri == null) return false;
     importUris.add(importUri);
   } else {
@@ -230,7 +230,9 @@ bool _collectComponentSourceUris(
   List<String> uris, [
   List<String>? importUris,
 ]) {
-  final header = _sourceTableHeader(part);
+  final ({int limit, int numSources, int pos})? header = _sourceTableHeader(
+    part,
+  );
   if (header == null) return false;
   final cursor = _TableCursor(part, header.limit, header.pos);
   for (var i = 0; i < header.numSources; i++) {
@@ -244,7 +246,7 @@ bool _collectComponentSourceUris(
 /// well-formed kernel file. Any format version parses: the source-table layout
 /// is stable across SDKs, and every offset is bounds-checked.
 List<String>? dillSourceUris(Uint8List data) {
-  final ranges = _componentRanges(data);
+  final List<(int, int)>? ranges = _componentRanges(data);
   if (ranges == null) return null;
   final uris = <String>[];
   for (final (start, end) in ranges) {
@@ -290,7 +292,7 @@ typedef DillLibraryReference = ({
 /// appended fields never disturb the parse. Every offset and length is
 /// bounds-checked against its table.
 List<DillLibraryReference>? dillLibraryReferences(Uint8List data) {
-  final ranges = _componentRanges(data);
+  final List<(int, int)>? ranges = _componentRanges(data);
   if (ranges == null) return null;
   final refs = <DillLibraryReference>[];
   for (final (start, end) in ranges) {
@@ -320,7 +322,7 @@ _NameTables? _componentNameTables(Uint8List part) {
   if (part.length < 12) return null;
   final bd = ByteData.sublistView(part);
   if (bd.getUint32(0) != dillComponentMagic) return null;
-  final libCount = bd.getUint32(part.length - 8);
+  final int libCount = bd.getUint32(part.length - 8);
   // No library nodes means no library references: the source-table verdict
   // stands alone, and the remaining tables (whose offsets test fixtures may
   // leave unset) are never touched.
@@ -333,12 +335,12 @@ _NameTables? _componentNameTables(Uint8List part) {
       canonStrings: <int>[],
     );
   }
-  final idxBytes = (libCount + 12) * 4;
+  final int idxBytes = (libCount + 12) * 4;
   if (idxBytes > part.length) return null;
-  final rawIdxStart = part.length - idxBytes;
-  final offSourceTable = bd.getUint32(rawIdxStart);
-  final offLinkTable = bd.getUint32(rawIdxStart + 12);
-  final offStringTable = bd.getUint32(rawIdxStart + 24);
+  final int rawIdxStart = part.length - idxBytes;
+  final int offSourceTable = bd.getUint32(rawIdxStart);
+  final int offLinkTable = bd.getUint32(rawIdxStart + 12);
+  final int offStringTable = bd.getUint32(rawIdxStart + 24);
   if (offSourceTable + 4 > part.length ||
       offLinkTable > rawIdxStart ||
       offStringTable > rawIdxStart ||
@@ -349,13 +351,21 @@ _NameTables? _componentNameTables(Uint8List part) {
   final importUris = <String>[];
   if (!_collectComponentSourceUris(part, fileUris, importUris)) return null;
 
-  final stringAt = _readComponentStrings(part, offStringTable, rawIdxStart);
+  final String? Function(int)? stringAt = _readComponentStrings(
+    part,
+    offStringTable,
+    rawIdxStart,
+  );
   if (stringAt == null) return null;
   // The canonical-name table: a count of (parent, name-string) pairs, with
   // the parent biased by one (zero names the nameless root).
-  final canon = _readCanonTable(part, offLinkTable, offStringTable);
+  final (List<int>, List<int>)? canon = _readCanonTable(
+    part,
+    offLinkTable,
+    offStringTable,
+  );
   if (canon == null) return null;
-  final (canonParents, canonStrings) = canon;
+  final (List<int> canonParents, List<int> canonStrings) = canon;
   return (
     fileUris: fileUris,
     importUris: importUris,
@@ -374,21 +384,21 @@ String? Function(int)? _readComponentStrings(
 ) {
   // The string table: a count, cumulative end offsets, then the bytes.
   final cursor = _TableCursor(part, rawIdxStart, offStringTable);
-  final strCount = cursor.readU30();
+  final int? strCount = cursor.readU30();
   if (strCount == null || strCount < 0) return null;
   final strEnds = <int>[];
   var prevEnd = 0;
   for (var i = 0; i < strCount; i++) {
-    final end = cursor.readU30();
+    final int? end = cursor.readU30();
     if (end == null || end < prevEnd) return null;
     strEnds.add(end);
     prevEnd = end;
   }
-  final strBase = cursor.position;
+  final int strBase = cursor.position;
   if (strEnds.isNotEmpty && strBase + strEnds.last > rawIdxStart) return null;
   String? stringAt(int index) {
     if (index < 0 || index >= strEnds.length) return null;
-    final start = index == 0 ? 0 : strEnds[index - 1];
+    final int start = index == 0 ? 0 : strEnds[index - 1];
     // The header enforces monotonic ends within the part, so the slice is in
     // range and only malformed UTF-8 fails. A corrupt ends table running past
     // the component bytes names no entry either.
@@ -414,13 +424,13 @@ String? Function(int)? _readComponentStrings(
   int offStringTable,
 ) {
   final cursor = _TableCursor(part, offStringTable, offLinkTable);
-  final canonCount = cursor.readU30();
+  final int? canonCount = cursor.readU30();
   if (canonCount == null || canonCount < 0) return null;
   final canonParents = <int>[];
   final canonStrings = <int>[];
   for (var i = 0; i < canonCount; i++) {
-    final parent = cursor.readU30();
-    final name = cursor.readU30();
+    final int? parent = cursor.readU30();
+    final int? name = cursor.readU30();
     if (parent == null || name == null) return null;
     canonParents.add(parent);
     canonStrings.add(name);
@@ -435,14 +445,19 @@ bool _collectComponentLibraries(
   Uint8List part,
   List<DillLibraryReference> refs,
 ) {
-  final tables = _componentNameTables(part);
+  final _NameTables? tables = _componentNameTables(part);
   if (tables == null) return false;
-  final nodeCount = _libraryNodeCount(part);
+  final int? nodeCount = _libraryNodeCount(part);
   if (nodeCount == null) return false;
   // No library nodes means no library references: the source-table verdict
   // stands alone, and the remaining tables are never touched.
   for (var i = 0; i < nodeCount; i++) {
-    final ref = _readLibraryNode(part, nodeCount, i, tables);
+    final DillLibraryReference? ref = _readLibraryNode(
+      part,
+      nodeCount,
+      i,
+      tables,
+    );
     if (ref == null) return false;
     refs.add(ref);
   }
@@ -454,9 +469,9 @@ bool _collectComponentLibraries(
 int? _libraryNodeCount(Uint8List part) {
   if (part.length < 12) return null;
   final bd = ByteData.sublistView(part);
-  final libCount = bd.getUint32(part.length - 8);
+  final int libCount = bd.getUint32(part.length - 8);
   if (libCount == 0) return 0;
-  final idxBytes = (libCount + 12) * 4;
+  final int idxBytes = (libCount + 12) * 4;
   if (idxBytes > part.length) return null;
   return libCount;
 }
@@ -465,11 +480,11 @@ int? _libraryNodeCount(Uint8List part) {
 /// string, or empty when the chain dangles. Only a present root the inputs do
 /// not define fails the check, so an unresolvable one degrades to empty.
 String _canonicalRoot(int biased, _NameTables tables) {
-  final canonParents = tables.canonParents;
-  final canonCount = canonParents.length;
-  var index = biased - 1;
+  final List<int> canonParents = tables.canonParents;
+  final int canonCount = canonParents.length;
+  int index = biased - 1;
   if (biased <= 0 || index >= canonCount) return '';
-  var guard = canonCount + 1;
+  int guard = canonCount + 1;
   while (canonParents[index] != 0) {
     if (guard-- <= 0) return '';
     index = canonParents[index] - 1;
@@ -492,9 +507,9 @@ DillLibraryReference? _readLibraryNode(
   _NameTables tables,
 ) {
   final bd = ByteData.sublistView(part);
-  final rawIdxStart = part.length - (libCount + 12) * 4;
-  final libStart = bd.getUint32(rawIdxStart + 36 + i * 4);
-  final libEnd = bd.getUint32(rawIdxStart + 36 + (i + 1) * 4);
+  final int rawIdxStart = part.length - (libCount + 12) * 4;
+  final int libStart = bd.getUint32(rawIdxStart + 36 + i * 4);
+  final int libEnd = bd.getUint32(rawIdxStart + 36 + (i + 1) * 4);
   if (libEnd < libStart || libStart > part.length || libEnd > part.length) {
     return null;
   }
@@ -505,14 +520,15 @@ DillLibraryReference? _readLibraryNode(
   if (!cursor.skipBytes(1)) return null; // Flags.
   if (cursor.readU30() == null) return null; // Major version.
   if (cursor.readU30() == null) return null; // Minor version.
-  final canon = cursor.readU30();
+  final int? canon = cursor.readU30();
   if (canon == null) return null;
   if (cursor.readU30() == null) return null; // Name string reference.
-  final fileUriIndex = cursor.readU30();
+  final int? fileUriIndex = cursor.readU30();
   if (fileUriIndex == null) return null;
-  final fileUris = tables.fileUris;
-  final importUris = tables.importUris;
-  final importUri = fileUriIndex >= 0 && fileUriIndex < importUris.length
+  final List<String> fileUris = tables.fileUris;
+  final List<String> importUris = tables.importUris;
+  final String? importUri =
+      fileUriIndex >= 0 && fileUriIndex < importUris.length
       ? importUris[fileUriIndex]
       : null;
   return (
@@ -533,11 +549,11 @@ DillLibraryReference? _readLibraryNode(
 /// Returns an empty list (never `null`) for a component file with no
 /// libraries, mirroring [dillLibraryReferences].
 List<String>? dillCanonicalRoots(Uint8List bytes) {
-  final ranges = _componentRanges(bytes);
+  final List<(int, int)>? ranges = _componentRanges(bytes);
   if (ranges == null) return null;
   final roots = <String>[];
   for (final (start, end) in ranges) {
-    final tables = _componentNameTables(
+    final _NameTables? tables = _componentNameTables(
       Uint8List.sublistView(bytes, start, end),
     );
     if (tables == null) return null;

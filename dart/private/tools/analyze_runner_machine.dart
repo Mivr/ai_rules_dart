@@ -345,7 +345,7 @@ String? _resolveExistingSrcAlias(String norm, List<String> srcRoots) {
 }
 
 _ResolvedFile _resolveRelativeFile(String raw, String project) {
-  var rel = raw.replaceAll(r'\', '/');
+  String rel = raw.replaceAll(r'\', '/');
   while (rel.startsWith('./')) {
     rel = rel.substring(2);
   }

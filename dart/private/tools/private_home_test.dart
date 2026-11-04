@@ -157,7 +157,7 @@ void _privateHomeTests() {
 
   test('removes the private home on success', () {
     late String home;
-    final code = withPrivateHome('rules_dart_home_test.', (env) {
+    final int code = withPrivateHome('rules_dart_home_test.', (env) {
       home = env['HOME']!;
       return 7;
     });
@@ -179,7 +179,7 @@ void _privateHomeTests() {
 
   test('removes the private home after an async success', () async {
     late String home;
-    final code = await withPrivateHomeAsync('rules_dart_home_test.', (
+    final int code = await withPrivateHomeAsync('rules_dart_home_test.', (
       env,
     ) async {
       home = env['HOME']!;
@@ -206,7 +206,8 @@ void _privateHomeTests() {
 /// Tests for the argv classification.
 void _policyTests() {
   test('classifies the shared table', () {
-    for (final row in _policyTable) {
+    for (final ({List<String> args, DartCliPolicy policy}) row
+        in _policyTable) {
       expect(dartCliPolicy(row.args), row.policy, reason: '${row.args}');
     }
   });
@@ -215,7 +216,7 @@ void _policyTests() {
 /// Tests for the command-form argv rewrite.
 void _suppressTests() {
   test('suppresses the shared table exactly once', () {
-    for (final row in _suppressTable) {
+    for (final ({List<String> args, List<String> want}) row in _suppressTable) {
       expect(suppressAnalyticsArgv(row.args), row.want, reason: '${row.args}');
     }
   });

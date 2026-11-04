@@ -7,6 +7,7 @@
 // shell) so the action is portable to Windows.
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:rules_dart_guard/directive_guard.dart';
 
@@ -23,11 +24,11 @@ const _droppedReason = 'not write-back eligible';
 const _packageConfigPath = '.dart_tool/package_config.json';
 
 void main(List<String> args) {
-  final parsed = _parseFixArgs(args);
+  final _FixArgs parsed = _parseFixArgs(args);
 
-  final writeBack = _stageFixProject(parsed);
+  final Map<String, String> writeBack = _stageFixProject(parsed);
 
-  final result = _runDartFix(parsed.dart, parsed.scratch);
+  final ProcessResult result = _runDartFix(parsed.dart, parsed.scratch);
 
   // Bazel echoes any action output, and this action runs whenever fixes are
   // asked for: its progress chatter is printed only when it fails. What it
@@ -105,15 +106,15 @@ _FixArgs _parseFixArgs(List<String> args) {
 /// scratch directory, and copies the tree with a repointed package config.
 /// Returns the rule's write-back map.
 Map<String, String> _stageFixProject(_FixArgs parsed) {
-  final writeBack = _readEligible(parsed.eligible);
-  final allowedSrcPaths = pruneOrphanedStagedFiles(parsed.project);
+  final Map<String, String> writeBack = _readEligible(parsed.eligible);
+  final Set<String>? allowedSrcPaths = pruneOrphanedStagedFiles(parsed.project);
 
   // No staged source may read the host: a `file:` URI (in any spelling), any
   // other non-`dart:`/`package:` directive URI, a `package:` URI climbing
   // above its package, or a relative URI climbing out of the staged tree
   // would reach an undeclared file through the fixer's working directory.
   // Refuse before fixing, through the one shared staged-source check.
-  final violations = findStagedDirectiveViolations(
+  final List<String> violations = findStagedDirectiveViolations(
     projectStagedRoots(parsed.project),
     tool: 'fix_runner',
   );
@@ -126,7 +127,9 @@ Map<String, String> _stageFixProject(_FixArgs parsed) {
 
   final scratchDir = Directory(parsed.scratch);
   if (scratchDir.existsSync()) {
-    for (final child in scratchDir.listSync(followLinks: false)) {
+    for (final FileSystemEntity child in scratchDir.listSync(
+      followLinks: false,
+    )) {
       child.deleteSync(recursive: true);
     }
   }
@@ -152,7 +155,9 @@ void _emitFixes(_FixArgs parsed, Map<String, String> writeBack) {
   // Declared outputs must exist even when nothing was fixed.
   final fixesDir = Directory(parsed.fixes);
   if (fixesDir.existsSync()) {
-    for (final child in fixesDir.listSync(followLinks: false)) {
+    for (final FileSystemEntity child in fixesDir.listSync(
+      followLinks: false,
+    )) {
       child.deleteSync(recursive: true);
     }
   }
@@ -167,7 +172,7 @@ void _emitFixes(_FixArgs parsed, Map<String, String> writeBack) {
     fixed.add({'staged': staged, 'workspace': workspace});
   });
 
-  final dropped = _scanDropped(
+  final List<Map<String, String>> dropped = _scanDropped(
     parsed.project,
     parsed.scratch,
     writeBack.keys.toSet(),
@@ -210,9 +215,9 @@ Map<String, String> _readEligible(String path) {
     exit(64);
   }
   final entries = <String, String>{};
-  for (final line in file.readAsLinesSync()) {
+  for (final String line in file.readAsLinesSync()) {
     if (line.trim().isEmpty) continue;
-    final fields = line.split('\t');
+    final List<String> fields = line.split('\t');
     if (fields.length != 2 || fields[0].isEmpty || fields[1].isEmpty) {
       stderr.writeln('fix_runner: malformed --eligible entry: $line');
       exit(64);
@@ -230,9 +235,11 @@ void _copyTree(
   Set<String>? allowedSrcPaths,
 }) {
   Directory(to).createSync(recursive: true);
-  for (final entity in Directory(from).listSync(followLinks: false)) {
-    final name = _relative(from, entity.path);
-    final relToProject = _relative(projectRoot, entity.path);
+  for (final FileSystemEntity entity in Directory(
+    from,
+  ).listSync(followLinks: false)) {
+    final String name = _relative(from, entity.path);
+    final String relToProject = _relative(projectRoot, entity.path);
     if (FileSystemEntity.isDirectorySync(entity.path)) {
       _copyTree(
         entity.path,
@@ -295,11 +302,11 @@ void repointPackageConfig(String project, String scratch) {
   var rewrote = false;
   for (final package in decoded['packages'] as List) {
     if (package is! Map) continue;
-    final root = package['rootUri'];
+    final dynamic root = package['rootUri'];
     if (root is! String) continue;
-    final parsed = _parseRootUri(root);
+    final Uri? parsed = _parseRootUri(root);
     if (parsed == null) continue;
-    final resolved = anchor.resolveUri(parsed);
+    final Uri resolved = anchor.resolveUri(parsed);
     // A URI that stays inside the project resolves against the copied tree at
     // the same relative path under scratch. Pointing it at the original instead
     // would split every package into two identities — the scratch file the
@@ -309,7 +316,7 @@ void repointPackageConfig(String project, String scratch) {
     final base = _isWithinDirUri(resolved, projectRootUri)
         ? anchor
         : scratchAnchor;
-    final rel = _relativeUri(base, resolved);
+    final String rel = _relativeUri(base, resolved);
     if (rel != root) {
       package['rootUri'] = rel;
       rewrote = true;
@@ -333,8 +340,10 @@ Uri? _parseRootUri(String root) {
   if (_isWindowsDriveSegment(root) || root.startsWith(r'\\')) {
     return Uri.file(root, windows: true);
   }
-  final normalized = root.contains(r'\') ? root.replaceAll(r'\', '/') : root;
-  final parsed = Uri.tryParse(normalized);
+  final String normalized = root.contains(r'\')
+      ? root.replaceAll(r'\', '/')
+      : root;
+  final Uri? parsed = Uri.tryParse(normalized);
   if (parsed == null || (parsed.hasScheme && !parsed.isScheme('file'))) {
     return null;
   }
@@ -353,11 +362,14 @@ bool _isWithinDirUri(Uri candidate, Uri dirUri) {
   final candidateStr = candidate.toString();
   final dirStr = dirUri.toString();
   if (candidateStr.startsWith(dirStr)) return true;
-  final candidateParts = candidate.path
+  final List<String> candidateParts = candidate.path
       .split('/')
       .where((s) => s.isNotEmpty)
       .toList();
-  final dirParts = dirUri.path.split('/').where((s) => s.isNotEmpty).toList();
+  final List<String> dirParts = dirUri.path
+      .split('/')
+      .where((s) => s.isNotEmpty)
+      .toList();
   if (candidateParts.length < dirParts.length) return false;
   for (var i = 0; i < dirParts.length; i++) {
     if (!_sameSegment(candidateParts[i], dirParts[i], isFirst: i == 0)) {
@@ -369,8 +381,14 @@ bool _isWithinDirUri(Uri candidate, Uri dirUri) {
 
 /// Returns a relative URI path from directory [fromDir] to [toUri].
 String _relativeUri(Uri fromDir, Uri toUri) {
-  final fromParts = fromDir.path.split('/').where((s) => s.isNotEmpty).toList();
-  final toParts = toUri.path.split('/').where((s) => s.isNotEmpty).toList();
+  final List<String> fromParts = fromDir.path
+      .split('/')
+      .where((s) => s.isNotEmpty)
+      .toList();
+  final List<String> toParts = toUri.path
+      .split('/')
+      .where((s) => s.isNotEmpty)
+      .toList();
   var common = 0;
   while (common < fromParts.length &&
       common < toParts.length &&
@@ -384,7 +402,7 @@ String _relativeUri(Uri fromDir, Uri toUri) {
       _isWindowsDriveSegment(toParts.first)) {
     return toUri.toString();
   }
-  final parts = [
+  final List<String> parts = [
     ...List.filled(fromParts.length - common, '..'),
     ...toParts.sublist(common),
   ];
@@ -403,10 +421,11 @@ List<Map<String, String>> _scanDropped(
   Set<String> eligible,
 ) {
   final dropped = <Map<String, String>>[];
-  final tree = Directory(scratch).listSync(recursive: true, followLinks: false);
+  final List<FileSystemEntity> tree = Directory(scratch)
+      .listSync(recursive: true, followLinks: false);
   for (final entity in tree) {
     if (entity is! File) continue;
-    final staged = _relative(scratch, entity.path);
+    final String staged = _relative(scratch, entity.path);
     if (staged == _packageConfigPath || eligible.contains(staged)) continue;
     if (_differs('$project/$staged', entity.path)) {
       dropped.add({'staged': staged, 'reason': _droppedReason});
@@ -418,7 +437,7 @@ List<Map<String, String>> _scanDropped(
 /// The part of [path] below [root], in the `/`-separated form the eligible
 /// list and the manifest use.
 String _relative(String root, String path) {
-  var rel = path.substring(root.length).replaceAll(r'\', '/');
+  String rel = path.substring(root.length).replaceAll(r'\', '/');
   while (rel.startsWith('/')) {
     rel = rel.substring(1);
   }
@@ -429,11 +448,11 @@ String _relative(String root, String path) {
 bool _differs(String original, String candidate) {
   final a = File(original);
   final b = File(candidate);
-  final aExists = a.existsSync();
+  final bool aExists = a.existsSync();
   if (aExists != b.existsSync()) return true;
   if (!aExists) return false;
-  final aBytes = a.readAsBytesSync();
-  final bBytes = b.readAsBytesSync();
+  final Uint8List aBytes = a.readAsBytesSync();
+  final Uint8List bBytes = b.readAsBytesSync();
   if (aBytes.length != bBytes.length) return true;
   for (var i = 0; i < aBytes.length; i++) {
     if (aBytes[i] != bBytes[i]) return true;

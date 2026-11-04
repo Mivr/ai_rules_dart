@@ -22,11 +22,11 @@ final class AnalyzerArgs {
     final values = <String, List<String>>{};
     final flags = <String>{};
     for (var i = 0; i < args.length; i++) {
-      final arg = args[i];
+      final String arg = args[i];
       if (!arg.startsWith('--')) {
         throw AnalyzerUsageException('unexpected argument `$arg`');
       }
-      final name = arg.substring(2);
+      final String name = arg.substring(2);
       if (name == 'fatal-infos') {
         flags.add(name);
         continue;
@@ -50,7 +50,7 @@ final class AnalyzerArgs {
 
   /// The single value of an optional repeatable argument, or null.
   String? optional(String name) {
-    final values = all(name);
+    final List<String> values = all(name);
     if (values.length > 1) {
       throw AnalyzerUsageException('`--$name` may be given at most once');
     }
@@ -59,7 +59,7 @@ final class AnalyzerArgs {
 
   /// The single required value of `--[name]`.
   String single(String name) {
-    final values = all(name);
+    final List<String> values = all(name);
     if (values.length != 1) {
       throw AnalyzerUsageException('`--$name` is required exactly once');
     }
@@ -98,11 +98,11 @@ final class AnalysisFinding implements Comparable<AnalysisFinding> {
 
   @override
   int compareTo(AnalysisFinding other) {
-    final byLevel = _rank(level).compareTo(_rank(other.level));
+    final int byLevel = _rank(level).compareTo(_rank(other.level));
     if (byLevel != 0) return byLevel;
-    final byPath = path.compareTo(other.path);
+    final int byPath = path.compareTo(other.path);
     if (byPath != 0) return byPath;
-    final byLine = line.compareTo(other.line);
+    final int byLine = line.compareTo(other.line);
     if (byLine != 0) return byLine;
     return column.compareTo(other.column);
   }

@@ -30,11 +30,11 @@ bool workspaceInPlace({String? testPath, String? manifest, String? workspace}) {
     return true;
   }
   final prefix = '$workspace/';
-  for (final line in File(manifest).readAsLinesSync()) {
-    final space = line.indexOf(' ');
+  for (final String line in File(manifest).readAsLinesSync()) {
+    final int space = line.indexOf(' ');
     if (space < 0 || !line.startsWith(prefix)) continue;
-    final relative = line.substring(prefix.length, space);
-    final real = line.substring(space + 1);
+    final String relative = line.substring(prefix.length, space);
+    final String real = line.substring(space + 1);
     if (Directory(real).existsSync()) {
       if (!Directory(relative).existsSync()) return false;
     } else if (File(real).existsSync()) {
@@ -58,11 +58,11 @@ void materializeWorkspace({
 }) {
   final prefix = '$workspace/';
   for (final line in manifest) {
-    final space = line.indexOf(' ');
+    final int space = line.indexOf(' ');
     if (space < 0 || !line.startsWith(prefix)) continue;
-    final relative = line.substring(prefix.length, space);
-    final real = line.substring(space + 1);
-    final destination = joinPaths(into, relative);
+    final String relative = line.substring(prefix.length, space);
+    final String real = line.substring(space + 1);
+    final String destination = joinPaths(into, relative);
     if (Directory(real).existsSync()) {
       copyDirectory(Directory(real), Directory(destination));
     } else if (File(real).existsSync()) {
@@ -79,9 +79,12 @@ void materializeWorkspace({
 /// Copies the directory tree at [from] onto [to], replacing files in place.
 void copyDirectory(Directory from, Directory to) {
   to.createSync(recursive: true);
-  for (final entity in from.listSync(recursive: true, followLinks: true)) {
-    final relative = entity.path.substring(from.path.length + 1);
-    final target = joinPaths(to.path, relative.replaceAll(r'\', '/'));
+  for (final FileSystemEntity entity in from.listSync(
+    recursive: true,
+    followLinks: true,
+  )) {
+    final String relative = entity.path.substring(from.path.length + 1);
+    final String target = joinPaths(to.path, relative.replaceAll(r'\', '/'));
     if (entity is Directory) {
       Directory(target).createSync(recursive: true);
     } else if (entity is File) {
@@ -97,7 +100,10 @@ void copyDirectory(Directory from, Directory to) {
 
 /// Joins a forward-slashed relative path onto [base], creating its parents.
 String joinPaths(String base, String relative) {
-  final path = [base, ...relative.split('/')].join(Platform.pathSeparator);
+  final String path = [
+    base,
+    ...relative.split('/'),
+  ].join(Platform.pathSeparator);
   File(path).parent.createSync(recursive: true);
   return path;
 }

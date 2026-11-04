@@ -61,10 +61,10 @@ TOOL_VERSIONS = {
     },
 }
 ''';
-      final versions = parseToolVersions(sample);
+      final List<String> versions = parseToolVersions(sample);
       expect(versions, ['3.13.5']);
 
-      final rendered = renderVersionsBzl(
+      final String rendered = renderVersionsBzl(
         existingContent: sample,
         versions: versions,
         genSnapshotVersions: {

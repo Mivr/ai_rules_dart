@@ -18,6 +18,7 @@ import 'package:test/test.dart';
 
 import '../../guard/lib/directive_guard.dart' as guard;
 import 'app_jit_snapshot.dart' as snapshot;
+import 'app_jit_snapshot_test_support.dart';
 import 'comma_patch.dart' as comma;
 import 'jit_lock.dart' as locks;
 import 'dill_reader.dart'
@@ -47,7 +48,9 @@ typedef _TestStatxDart = int Function(
 /// Sets the process umask to [mask], returning the previous mask.
 int _setUmask(int mask) {
   final lib = ffi.DynamicLibrary.process();
-  final umask = lib.lookupFunction<_UmaskNative, _UmaskDart>('umask');
+  final _UmaskDart umask = lib.lookupFunction<_UmaskNative, _UmaskDart>(
+    'umask',
+  );
   return umask(mask);
 }
 
@@ -87,7 +90,7 @@ void main(List<String> args) {
     if (!Platform.isWindows) {
       // Files and directories alike: a test may leave a read-only tree, and
       // deleting it needs owner access on every directory on the way down.
-      for (final entity in tmp.listSync(recursive: true)) {
+      for (final FileSystemEntity entity in tmp.listSync(recursive: true)) {
         if (entity is! Link) {
           snapshot.chmodFile(entity.path, 0x1ed);
         }
@@ -105,7 +108,7 @@ void main(List<String> args) {
   /// the test's `args`; a direct `dart test` run resolves them beside this
   /// test.
   String stageTool() {
-    const sources = [
+    const List<({String sibling, String staged})> sources = [
       (
         staged: 'dart/private/tools/app_jit_snapshot.dart',
         sibling: 'app_jit_snapshot.dart',
@@ -127,12 +130,16 @@ void main(List<String> args) {
         staged: 'dart/guard/lib/directive_guard.dart',
         sibling: '../../guard/lib/directive_guard.dart',
       ),
+      (
+        staged: 'dart/private/tools/app_jit_aot_args.dart',
+        sibling: 'app_jit_aot_args.dart',
+      ),
     ];
     final dir = Directory(
       '${tmp.path}/tool_${DateTime.now().microsecondsSinceEpoch}',
     )..createSync(recursive: true);
     for (var i = 0; i < sources.length; i++) {
-      final from = args.length > i
+      final String from = args.length > i
           ? Runfiles.create().rlocation(args[i])
           : File.fromUri(Platform.script.resolve(sources[i].sibling)).path;
       final to = File('${dir.path}/${sources[i].staged}')
@@ -146,8 +153,8 @@ void main(List<String> args) {
   /// when [from] is missing, so a silent no-op patch cannot pass), for tests
   /// that force an error path a live host cannot produce on demand.
   String stagePatchedTool(String from, String to) {
-    final staged = stageTool();
-    final source = File(staged).readAsStringSync();
+    final String staged = stageTool();
+    final String source = File(staged).readAsStringSync();
     expect(source, contains(from), reason: 'patch anchor present');
     File(staged).writeAsStringSync(source.replaceFirst(from, to));
     return staged;
@@ -158,13 +165,10 @@ void main(List<String> args) {
   String compileDill(String source, String name) {
     File('${tmp.path}/$name.dart').writeAsStringSync(source);
     final dill = File('${tmp.path}/$name.dill');
-    final compileRes = Process.runSync(Platform.resolvedExecutable, [
-      'compile',
-      'kernel',
-      '${tmp.path}/$name.dart',
-      '-o',
-      dill.path,
-    ]);
+    final ProcessResult compileRes = Process.runSync(
+      Platform.resolvedExecutable,
+      ['compile', 'kernel', '${tmp.path}/$name.dart', '-o', dill.path],
+    );
     expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
     return dill.path;
   }
@@ -181,11 +185,11 @@ void main(List<String> args) {
   /// publish temporaries (see `jitCreateAndPublishLock`), never the lock
   /// itself.
   List<String> lockTemps(String lockPath) {
-    final parent = File(lockPath).parent;
+    final Directory parent = File(lockPath).parent;
     if (!parent.existsSync()) return [];
-    final base = lockPath.split(Platform.pathSeparator).last;
+    final String base = lockPath.split(Platform.pathSeparator).last;
     final temps = <String>[];
-    for (final entity in parent.listSync()) {
+    for (final FileSystemEntity entity in parent.listSync()) {
       if (entity.path == lockPath) continue;
       if (entity.path.split(Platform.pathSeparator).last.startsWith('$base.')) {
         temps.add(entity.path);
@@ -220,12 +224,12 @@ void main(List<String> args) {
     String lockPath,
     String seconds,
   ) async {
-    final holder = await Process.start(Platform.resolvedExecutable, [
+    final Process holder = await Process.start(Platform.resolvedExecutable, [
       holderScript,
       lockPath,
       seconds,
     ]);
-    final held = await holder.stdout
+    final String held = await holder.stdout
         .transform(utf8.decoder)
         .transform(const LineSplitter())
         .first
@@ -236,7 +240,7 @@ void main(List<String> args) {
 
   /// The current user name, for pinning the owner naming in fail-closed errors.
   String currentUserName() {
-    final res = Process.runSync('id', ['-un']);
+    final ProcessResult res = Process.runSync('id', ['-un']);
     expect(res.exitCode, 0);
     return (res.stdout as String).trim();
   }
@@ -271,7 +275,7 @@ void main(List<String> args) {
   /// form, with the SDK snapshot in and the patched copy out.
   String patchSnapshot(String inputPath, String kind) {
     final out = File('${tmp.path}/patched_$kind.snapshot');
-    final error = comma.patchSnapshotFile(
+    final String? error = comma.patchSnapshotFile(
       inputPath: inputPath,
       outputPath: out.path,
       sdkVersion: Platform.version.split(' ').first,
@@ -301,156 +305,14 @@ void main(List<String> args) {
       'number_of_processors',
       'processor_architecture',
     };
-    for (final entry in Platform.environment.entries) {
+    for (final MapEntry<String, String> entry in Platform.environment.entries) {
       if (keep.contains(entry.key.toLowerCase())) env[entry.key] = entry.value;
     }
     return env;
   }
 
-  /// A structurally valid kernel component for read-set unit tests: [sources]
-  /// are (`fileUri`, `importUri`) source-table entries, [libraries] are
-  /// (source index, canonical root or null) library nodes, and [extraRoots]
-  /// are canonical roots no node mentions. It mirrors the builder in
-  /// `kernel_module_test.dart`, and the parser-agreement test there pins both
-  /// readers to identical verdicts on its bytes.
-  Uint8List verifyDill({
-    required List<(String, String)> sources,
-    required List<(int, String?)> libraries,
-    List<String> extraRoots = const [],
-  }) {
-    final out = BytesBuilder();
-    void u30(int v) {
-      if (v < 0x80) {
-        out.addByte(v);
-      } else if (v < 0x4000) {
-        out.addByte(0x80 | (v >> 8));
-        out.addByte(v & 0xff);
-      } else {
-        out.addByte(0xc0 | ((v >> 24) & 0x3f));
-        out.addByte((v >> 16) & 0xff);
-        out.addByte((v >> 8) & 0xff);
-        out.addByte(v & 0xff);
-      }
-    }
-
-    void u32(int v) {
-      out.addByte((v >> 24) & 0xff);
-      out.addByte((v >> 16) & 0xff);
-      out.addByte((v >> 8) & 0xff);
-      out.addByte(v & 0xff);
-    }
-
-    void str(String s) {
-      final bytes = utf8.encode(s);
-      u30(bytes.length);
-      out.add(bytes);
-    }
-
-    final strings = <String>[''];
-    int stringIndexOf(String s) {
-      var index = strings.indexOf(s);
-      if (index < 0) {
-        index = strings.length;
-        strings.add(s);
-      }
-      return index;
-    }
-
-    u32(0x90ABCDEF);
-    u32(138);
-    out.add(List.filled(64, 0));
-    final sourceTableOffset = out.length;
-    u32(sources.length);
-    for (final (fileUri, importUri) in sources) {
-      str(fileUri);
-      str('');
-      u30(0);
-      str(importUri);
-      u30(0);
-    }
-    final constantTableOffset = out.length;
-    u30(0);
-    final linkTableOffset = out.length;
-    u30(libraries.length + extraRoots.length);
-    for (final (_, canon) in libraries) {
-      u30(0); // Parent: the nameless root.
-      u30(canon == null ? 0 : stringIndexOf(canon));
-    }
-    for (final root in extraRoots) {
-      u30(0); // Parent: the nameless root no node references.
-      u30(stringIndexOf(root));
-    }
-    final stringTableOffset = out.length;
-    u30(strings.length);
-    var end = 0;
-    final ends = <int>[];
-    for (final s in strings) {
-      end += utf8.encode(s).length;
-      ends.add(end);
-    }
-    for (final e in ends) {
-      u30(e);
-    }
-    for (final s in strings) {
-      out.add(utf8.encode(s));
-    }
-    final libraryOffsets = <int>[];
-    for (var i = 0; i < libraries.length; i++) {
-      libraryOffsets.add(out.length);
-      final (source, canon) = libraries[i];
-      out.addByte(4); // Flags.
-      u30(3); // Major version.
-      u30(0); // Minor version.
-      // Canonical-name reference, biased by one; zero names no reference.
-      u30(canon == null ? 0 : i + 1);
-      u30(0); // Name string reference: the empty name.
-      u30(source);
-    }
-    libraryOffsets.add(out.length);
-    u32(sourceTableOffset);
-    u32(constantTableOffset);
-    u32(constantTableOffset);
-    u32(linkTableOffset);
-    u32(linkTableOffset);
-    u32(linkTableOffset);
-    u32(stringTableOffset);
-    u32(stringTableOffset);
-    u32(stringTableOffset);
-    for (final offset in libraryOffsets) {
-      u32(offset);
-    }
-    u32(libraries.length);
-    u32(out.length + 4);
-    return out.toBytes();
-  }
-
-  /// A copy of [clean] with the [occurrence]-th (zero-based) recording of
-  /// [uri]'s bytes replaced by invalid UTF-8: every length prefix still bounds
-  /// its entry, but decoding that recording fails.
-  Uint8List corruptRecordedUri(Uint8List clean, String uri, int occurrence) {
-    final patched = Uint8List.fromList(clean);
-    final needle = utf8.encode(uri);
-    var seen = 0;
-    for (var i = 0; i + needle.length <= patched.length; i++) {
-      var match = true;
-      for (var j = 0; j < needle.length; j++) {
-        if (patched[i + j] != needle[j]) {
-          match = false;
-          break;
-        }
-      }
-      if (!match) continue;
-      if (seen == occurrence) {
-        patched[i] = 0xff;
-        return patched;
-      }
-      seen++;
-    }
-    throw StateError('recorded URI $uri occurrence $occurrence not found');
-  }
-
   for (final mode in [0x124 /* 0444 */, 0x16d /* 0555 */]) {
-    final octal = mode.toRadixString(8).padLeft(4, '0');
+    final String octal = mode.toRadixString(8).padLeft(4, '0');
     test(
       'writeAppAotElfExe writes an executable output when runtime input has mode $octal',
       () {
@@ -484,7 +346,7 @@ void main(List<String> args) {
           expect(output.statSync().mode & 0x1ff, 0x1ed);
         }
 
-        final written = output.readAsBytesSync();
+        final Uint8List written = output.readAsBytesSync();
         const pageSize = 65536;
         final expectedOffset = pageSize;
         expect(written.length, expectedOffset + elfBytes.length + 16);
@@ -541,10 +403,10 @@ void main(List<String> args) {
   });
 
   test('--gen-kernel preserves comma-containing defines in compiled dill', () {
-    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final Directory sdkDir = File(Platform.resolvedExecutable).parent.parent;
     final exeSuffix = Platform.isWindows ? '.exe' : '';
     final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
-    final genKernel = patchSnapshot(
+    final String genKernel = patchSnapshot(
       '${sdkDir.path}/bin/snapshots/gen_kernel_aot.dart.snapshot',
       'gen_kernel',
     );
@@ -577,7 +439,9 @@ void main(List<String> args) {
     ]);
 
     expect(outDill.existsSync(), isTrue);
-    final runRes = Process.runSync(Platform.resolvedExecutable, [outDill.path]);
+    final ProcessResult runRes = Process.runSync(Platform.resolvedExecutable, [
+      outDill.path,
+    ]);
     expect(runRes.exitCode, 0, reason: '${runRes.stdout}\n${runRes.stderr}');
     expect((runRes.stdout as String).trim(), 'a,b');
   });
@@ -585,10 +449,10 @@ void main(List<String> args) {
   test(
     '--gen-kernel accepts the manifest-synthesized native-assets library',
     () {
-      final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+      final Directory sdkDir = File(Platform.resolvedExecutable).parent.parent;
       final exeSuffix = Platform.isWindows ? '.exe' : '';
       final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
-      final genKernel = patchSnapshot(
+      final String genKernel = patchSnapshot(
         '${sdkDir.path}/bin/snapshots/gen_kernel_aot.dart.snapshot',
         'gen_kernel',
       );
@@ -636,14 +500,14 @@ void main(List<String> args) {
       expect(outDill.existsSync(), isTrue);
       // The manifest was honored, not dropped: the output carries the front
       // end's synthetic entries, and the read-set check accepted them.
-      final outBytes = outDill.readAsBytesSync();
+      final Uint8List outBytes = outDill.readAsBytesSync();
       expect(dillSourceUris(outBytes), contains('dummy'));
       expect(dillCanonicalRoots(outBytes), contains('vm:ffi:native-assets'));
     },
   );
 
   test('--aot preserves --enable-asserts in exe and aot-snapshot modes with and without --recorded-uses', () {
-    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final Directory sdkDir = File(Platform.resolvedExecutable).parent.parent;
     final dartBin = '${sdkDir.path}/bin/dart';
     final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime';
     final genKernel =
@@ -674,7 +538,7 @@ void main(List<String> args) {
       );
     final inDill = File('${tmp.path}/assert_main.dill');
 
-    final gkRes = Process.runSync(dartaotruntime, [
+    final ProcessResult gkRes = Process.runSync(dartaotruntime, [
       genKernel,
       '--platform=$platformDill',
       '--packages=${pkgConfig.path}',
@@ -704,9 +568,11 @@ void main(List<String> args) {
       inDill.path,
     ]);
     expect(outExe.existsSync(), isTrue);
-    final exePass = Process.runSync(outExe.path, const []);
+    final ProcessResult exePass = Process.runSync(outExe.path, const []);
     expect(exePass.exitCode, 0, reason: '${exePass.stderr}');
-    final exeFail = Process.runSync(outExe.path, const ['--fail']);
+    final ProcessResult exeFail = Process.runSync(outExe.path, const [
+      '--fail',
+    ]);
     expect(exeFail.exitCode, isNot(0));
     expect(exeFail.stderr as String, contains('aot_assert_triggered'));
 
@@ -725,9 +591,15 @@ void main(List<String> args) {
     ]);
     expect(outExeRecorded.existsSync(), isTrue);
     expect(recordedUsesExe.existsSync(), isTrue);
-    final exeRecPass = Process.runSync(outExeRecorded.path, const []);
+    final ProcessResult exeRecPass = Process.runSync(
+      outExeRecorded.path,
+      const [],
+    );
     expect(exeRecPass.exitCode, 0, reason: '${exeRecPass.stderr}');
-    final exeRecFail = Process.runSync(outExeRecorded.path, const ['--fail']);
+    final ProcessResult exeRecFail = Process.runSync(
+      outExeRecorded.path,
+      const ['--fail'],
+    );
     expect(exeRecFail.exitCode, isNot(0));
     expect(exeRecFail.stderr as String, contains('aot_assert_triggered'));
 
@@ -746,9 +618,11 @@ void main(List<String> args) {
     ]);
     expect(outAotRecorded.existsSync(), isTrue);
     expect(recordedUsesAot.existsSync(), isTrue);
-    final aotRecPass = Process.runSync(dartaotruntime, [outAotRecorded.path]);
+    final ProcessResult aotRecPass = Process.runSync(dartaotruntime, [
+      outAotRecorded.path,
+    ]);
     expect(aotRecPass.exitCode, 0, reason: '${aotRecPass.stderr}');
-    final aotRecFail = Process.runSync(dartaotruntime, [
+    final ProcessResult aotRecFail = Process.runSync(dartaotruntime, [
       outAotRecorded.path,
       '--fail',
     ]);
@@ -757,11 +631,11 @@ void main(List<String> args) {
   }, skip: Platform.isWindows ? _windowsSkip : false);
 
   test('--gen-kernel preserves comma-containing defines during constant evaluation and isolates --filesystem-root to declared inputs', () {
-    final dartBin = Platform.resolvedExecutable;
-    final sdkDir = File(dartBin).parent.parent.path;
+    final String dartBin = Platform.resolvedExecutable;
+    final String sdkDir = File(dartBin).parent.parent.path;
     final exeSuffix = Platform.isWindows ? '.exe' : '';
     final dartaotruntime = '$sdkDir/bin/dartaotruntime$exeSuffix';
-    final genKernel = patchSnapshot(
+    final String genKernel = patchSnapshot(
       '$sdkDir/bin/snapshots/gen_kernel_aot.dart.snapshot',
       'gen_kernel',
     );
@@ -808,7 +682,7 @@ void main(List<String> args) {
         'pkg/lib/hand.dart\n',
       );
     final outDill = File('${ws.path}/bazel-out/k8-fastbuild/bin/out.dill');
-    final prevCwd = Directory.current;
+    final Directory prevCwd = Directory.current;
     Directory.current = ws;
     try {
       snapshot.main([
@@ -837,7 +711,7 @@ void main(List<String> args) {
       Directory.current = prevCwd;
     }
     expect(outDill.existsSync(), isTrue);
-    final runRes = Process.runSync(dartBin, [outDill.path]);
+    final ProcessResult runRes = Process.runSync(dartBin, [outDill.path]);
     expect(runRes.exitCode, 0, reason: '${runRes.stderr}');
     expect(
       (runRes.stdout as String).trim(),
@@ -845,78 +719,81 @@ void main(List<String> args) {
     );
   });
 
-  test('app-jit training takes no --packages and ignores ancestor .dart_tool', () {
-    final dartBin = Platform.resolvedExecutable;
-    final workDir = Directory('${tmp.path}/nested/work')
-      ..createSync(recursive: true);
-    final trainScript = File('${workDir.path}/train.dart')
-      ..writeAsStringSync('void main(List<String> args) {}\n');
-    // The training input is a compiled kernel, as in real builds: kernel
-    // training needs no package map, so no `--packages` value is passed.
-    final trainDill = File('${workDir.path}/train.dill');
-    final compileRes = Process.runSync(dartBin, [
-      'compile',
-      'kernel',
-      trainScript.path,
-      '-o',
-      trainDill.path,
-    ]);
-    expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
-    // Poison the ancestor directory with a malformed
-    // .dart_tool/package_config.json after compiling: with no `--packages`
-    // value the training must not walk up to it (a source compile would
-    // fail on the malformed file, which is why real trainings train
-    // kernels, never sources).
-    File('${tmp.path}/.dart_tool/package_config.json')
-      ..parent.createSync(recursive: true)
-      ..writeAsStringSync('{malformed package_config');
-    final outJit = File('${workDir.path}/out.jit');
-
-    // A planted fixed-path training VM from the old layout: the training
-    // must neither read nor execute it. The plant lives at a per-test path:
-    // this suite's tests (and the planner suite's) run concurrently, and a
-    // shared fixed plant would race between processes.
-    // The tag is the per-test tmp directory's basename: unique even when
-    // every shard process shares one pid (sandboxed) and one /tmp.
-    final plantTag = tmp.path.split(Platform.pathSeparator).last;
-    final plantedVm = File(
-      '${Directory.systemTemp.path}/rules_dart_vm-planted-appjit-test.$plantTag',
-    )..writeAsBytesSync([0x7f, 0x45, 0x4c, 0x46, 0x99]);
-    try {
-      snapshot.main([
-        '--dart=$dartBin',
-        '--snapshot=${outJit.path}',
-        '--copy=train.dill=${trainDill.path}',
-        '--',
-        'train.dill',
+  test(
+    'app-jit training takes no --packages and ignores ancestor .dart_tool',
+    () {
+      final String dartBin = Platform.resolvedExecutable;
+      final workDir = Directory('${tmp.path}/nested/work')
+        ..createSync(recursive: true);
+      final trainScript = File('${workDir.path}/train.dart')
+        ..writeAsStringSync('void main(List<String> args) {}\n');
+      // The training input is a compiled kernel, as in real builds: kernel
+      // training needs no package map, so no `--packages` value is passed.
+      final trainDill = File('${workDir.path}/train.dill');
+      final ProcessResult compileRes = Process.runSync(dartBin, [
+        'compile',
+        'kernel',
+        trainScript.path,
+        '-o',
+        trainDill.path,
       ]);
-      expect(outJit.existsSync(), isTrue);
-      // The training VM lives inside the training scratch directory, which
-      // is deleted afterwards: nothing undeclared stays beside the declared
-      // output, and the planted file is untouched.
-      expect(
-        Directory('${outJit.path}.vm').existsSync(),
-        isFalse,
-        reason: 'no training-VM directory may stay beside the output',
-      );
-      expect(
-        workDir
-            .listSync()
-            .where(
-              (e) => e.path
-                  .split(Platform.pathSeparator)
-                  .last
-                  .startsWith('rules_dart_snapshot.'),
-            )
-            .toList(),
-        isEmpty,
-        reason: 'no training scratch may stay beside the output',
-      );
-      expect(plantedVm.readAsBytesSync(), [0x7f, 0x45, 0x4c, 0x46, 0x99]);
-    } finally {
-      if (plantedVm.existsSync()) plantedVm.deleteSync();
-    }
-  });
+      expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
+      // Poison the ancestor directory with a malformed
+      // .dart_tool/package_config.json after compiling: with no `--packages`
+      // value the training must not walk up to it (a source compile would
+      // fail on the malformed file, which is why real trainings train
+      // kernels, never sources).
+      File('${tmp.path}/.dart_tool/package_config.json')
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync('{malformed package_config');
+      final outJit = File('${workDir.path}/out.jit');
+
+      // A planted fixed-path training VM from the old layout: the training
+      // must neither read nor execute it. The plant lives at a per-test path:
+      // this suite's tests (and the planner suite's) run concurrently, and a
+      // shared fixed plant would race between processes.
+      // The tag is the per-test tmp directory's basename: unique even when
+      // every shard process shares one pid (sandboxed) and one /tmp.
+      final String plantTag = tmp.path.split(Platform.pathSeparator).last;
+      final plantedVm = File(
+        '${Directory.systemTemp.path}/rules_dart_vm-planted-appjit-test.$plantTag',
+      )..writeAsBytesSync([0x7f, 0x45, 0x4c, 0x46, 0x99]);
+      try {
+        snapshot.main([
+          '--dart=$dartBin',
+          '--snapshot=${outJit.path}',
+          '--copy=train.dill=${trainDill.path}',
+          '--',
+          'train.dill',
+        ]);
+        expect(outJit.existsSync(), isTrue);
+        // The training VM lives inside the training scratch directory, which
+        // is deleted afterwards: nothing undeclared stays beside the declared
+        // output, and the planted file is untouched.
+        expect(
+          Directory('${outJit.path}.vm').existsSync(),
+          isFalse,
+          reason: 'no training-VM directory may stay beside the output',
+        );
+        expect(
+          workDir
+              .listSync()
+              .where(
+                (e) => e.path
+                    .split(Platform.pathSeparator)
+                    .last
+                    .startsWith('rules_dart_snapshot.'),
+              )
+              .toList(),
+          isEmpty,
+          reason: 'no training scratch may stay beside the output',
+        );
+        expect(plantedVm.readAsBytesSync(), [0x7f, 0x45, 0x4c, 0x46, 0x99]);
+      } finally {
+        if (plantedVm.existsSync()) plantedVm.deleteSync();
+      }
+    },
+  );
 
   test(
     'stageTrainingArgs absolutizes staged paths and passes the rest through',
@@ -1018,7 +895,7 @@ void main(List<String> args) {
       // but drive-relative on Windows, so derive it from the test's own
       // temporary directory, which is absolute on every OS.
       final absCache = '${tmp.path}/cache';
-      final staged = snapshot.absoluteHomeEnv({
+      final Map<String, String> staged = snapshot.absoluteHomeEnv({
         'HOME': '.',
         'TMPDIR': 'scratch-tmp',
         'DART_TEST_CONFIG': 'none/DartTest.yaml',
@@ -1044,7 +921,7 @@ void main(List<String> args) {
       'inputs train different bytes by design';
 
   test('app-jit training matches across working-directory layouts', () {
-    final dartBin = Platform.resolvedExecutable;
+    final String dartBin = Platform.resolvedExecutable;
     // A JIT-heavy program: hot loops that optimize, several small classes,
     // string-keyed maps, closures. Training this in varying directories
     // trains different bytes from the same inputs (systematically, not
@@ -1081,7 +958,7 @@ void main(List<String> args) {
     // `jit-snapshot` action trains `input.dill`): compiling once keeps the
     // input bytes fixed, so only the working directories vary.
     final trainDill = File('${tmp.path}/layout_train.dill');
-    final compileRes = Process.runSync(dartBin, [
+    final ProcessResult compileRes = Process.runSync(dartBin, [
       'compile',
       'kernel',
       trainScript.path,
@@ -1133,7 +1010,7 @@ void main(List<String> args) {
       expect(outJit.existsSync(), isTrue, reason: 'snapshot in $layout');
       // Nothing undeclared stays behind: neither the training VM copy nor
       // the training scratch directory.
-      final leftovers = root
+      final List<FileSystemEntity> leftovers = root
           .listSync()
           .where((e) => e.path != outJit.path)
           .toList();
@@ -1141,8 +1018,8 @@ void main(List<String> args) {
       return outJit.readAsBytesSync();
     }
 
-    final first = trainIn(layoutNames.first);
-    for (final layout in layoutNames.skip(1)) {
+    final List<int> first = trainIn(layoutNames.first);
+    for (final String layout in layoutNames.skip(1)) {
       expect(trainIn(layout), equals(first), reason: 'layout $layout');
     }
   }, skip: Platform.isWindows ? posixOnlyReason : false);
@@ -1152,22 +1029,19 @@ void main(List<String> args) {
     // tool without stranding its scratch directory. The tool exits on
     // failure, so it runs in a subprocess: an in-process exit would kill
     // this test runner.
-    final tool = stageTool();
+    final String tool = stageTool();
     final failScript = File('${tmp.path}/fail_train.dart')
       ..writeAsStringSync(
         'void main(List<String> args) {\n  throw "nope";\n}\n',
       );
     final failDill = File('${tmp.path}/fail_train.dill');
-    final compileRes = Process.runSync(Platform.resolvedExecutable, [
-      'compile',
-      'kernel',
-      failScript.path,
-      '-o',
-      failDill.path,
-    ]);
+    final ProcessResult compileRes = Process.runSync(
+      Platform.resolvedExecutable,
+      ['compile', 'kernel', failScript.path, '-o', failDill.path],
+    );
     expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
     final outJit = File('${tmp.path}/fail/app.jit');
-    final res = Process.runSync(
+    final ProcessResult res = Process.runSync(
       Platform.resolvedExecutable,
       [
         tool,
@@ -1202,13 +1076,13 @@ void main(List<String> args) {
       // so staging it throws) must still delete the training directory and
       // release the lock, and must report the cause rather than only a raw
       // stack trace. The tool exits on failure, so it runs in a subprocess.
-      final tool = stageTool();
-      final dill = compileDill(
+      final String tool = stageTool();
+      final String dill = compileDill(
         'void main(List<String> args) {\n  print(10000);\n}\n',
         'boom_train',
       );
       final outJit = File('${tmp.path}/boom_out/app.jit');
-      final res = Process.runSync(Platform.resolvedExecutable, [
+      final ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
         tool,
         '--dart=${tmp.path}/no-such-dart',
         '--snapshot=${outJit.path}',
@@ -1243,8 +1117,8 @@ void main(List<String> args) {
       // is removed without being read, and the training uses the constant path
       // with unchanged bytes: no host state leaks into the shared output under
       // the same action key.
-      final trainDir = snapshot.constantTrainDir;
-      final dill = compileDill(
+      final String trainDir = snapshot.constantTrainDir;
+      final String dill = compileDill(
         'void main(List<String> args) {\n  print(10000);\n}\n',
         'stale_train',
       );
@@ -1252,7 +1126,7 @@ void main(List<String> args) {
       List<int> train(String name) =>
           trainAtConstant(dill: dill, out: '${tmp.path}/$name/app.jit');
 
-      final first = train('stale_clear');
+      final List<int> first = train('stale_clear');
       expect(
         File(snapshot.constantTrainLock).existsSync(),
         isTrue,
@@ -1283,7 +1157,7 @@ void main(List<String> args) {
       ]);
 
       // A stale FIFO of our own is unlinked without blocking.
-      final mkfifo = Process.runSync('mkfifo', [trainDir]);
+      final ProcessResult mkfifo = Process.runSync('mkfifo', [trainDir]);
       expect(mkfifo.exitCode, 0, reason: '${mkfifo.stderr}');
       expect(train('stale_fifo'), equals(first));
       expect(
@@ -1317,7 +1191,7 @@ void main(List<String> args) {
     expect(File('${target.path}/sentinel').readAsStringSync(), 'untouched');
     // A FIFO.
     final fifo = '$base/fifo';
-    final mkfifo = Process.runSync('mkfifo', [fifo]);
+    final ProcessResult mkfifo = Process.runSync('mkfifo', [fifo]);
     expect(mkfifo.exitCode, 0, reason: '${mkfifo.stderr}');
     expect(snapshot.removeStaleEntry(fifo), isTrue);
     expect(
@@ -1336,7 +1210,7 @@ void main(List<String> args) {
     expect(Directory(dir.path).existsSync(), isFalse);
     expect(File('${outerTarget.path}/keep').readAsStringSync(), 'keep');
     // The hook is replaceable: a false return pins the fail-closed path.
-    final real = snapshot.removeStaleEntry;
+    final bool Function(String path) real = snapshot.removeStaleEntry;
     snapshot.removeStaleEntry = (_) => false;
     try {
       expect(snapshot.removeStaleEntry(file.path), isFalse);
@@ -1354,7 +1228,7 @@ void main(List<String> args) {
     final lock = File(snapshot.constantTrainLock);
     lock.writeAsStringSync('seed');
     snapshot.chmodFile(lock.path, 0x180); // 0600.
-    final dill = compileDill(
+    final String dill = compileDill(
       'void main(List<String> args) {\n  print(10000);\n}\n',
       'lockbits_train',
     );
@@ -1371,15 +1245,15 @@ void main(List<String> args) {
     // own. The tool runs in a subprocess (it exits on failure), with the
     // lock path pointed at the unwritable file through the environment: the
     // variables are the subprocess hook for the in-process overrides.
-    final tool = stageTool();
-    final dill = compileDill(
+    final String tool = stageTool();
+    final String dill = compileDill(
       'void main(List<String> args) {\n  print(10000);\n}\n',
       'lockblocked_train',
     );
     final lock = File('${tmp.path}/foreign.lock')
       ..writeAsStringSync('not ours to open');
     snapshot.chmodFile(lock.path, 0x124); // 0444.
-    final trainEnv = {
+    final Map<String, String> trainEnv = {
       'RULES_DART_JIT_TRAIN_DIR': snapshot.constantTrainDir,
       'RULES_DART_JIT_TRAIN_LOCK': lock.path,
     };
@@ -1393,7 +1267,7 @@ void main(List<String> args) {
       'input.dill',
     ];
     final outJit = '${tmp.path}/lockblocked_out/app.jit';
-    final denied = Process.runSync(
+    final ProcessResult denied = Process.runSync(
       Platform.resolvedExecutable,
       toolArgs(outJit),
       environment: trainEnv,
@@ -1405,7 +1279,7 @@ void main(List<String> args) {
     expect(err, contains('cannot be opened for writing'));
     expect(err, contains(lock.path));
     expect(err, contains('regular file'));
-    final id = Process.runSync('id', ['-u']);
+    final ProcessResult id = Process.runSync('id', ['-u']);
     expect(id.exitCode, 0);
     expect(err, contains('owned by uid ${(id.stdout as String).trim()}'));
     expect(err, contains('chmod 0666'));
@@ -1418,7 +1292,7 @@ void main(List<String> args) {
     );
 
     final allowedOut = '${tmp.path}/lockblocked_allowed/app.jit';
-    final allowed = Process.runSync(
+    final ProcessResult allowed = Process.runSync(
       Platform.resolvedExecutable,
       toolArgs(allowedOut, fallback: true),
       environment: trainEnv,
@@ -1433,15 +1307,15 @@ void main(List<String> args) {
     // Same locked-out setup as the test above: the tool runs in a subprocess
     // (it exits on failure), with the lock path pointed at an unopenable file
     // through the environment.
-    final tool = stageTool();
-    final dill = compileDill(
+    final String tool = stageTool();
+    final String dill = compileDill(
       'void main(List<String> args) {\n  print(10000);\n}\n',
       'cleannotice_train',
     );
     final lock = File('${tmp.path}/cleannotice.lock')
       ..writeAsStringSync('not ours to open');
     snapshot.chmodFile(lock.path, 0x124); // 0444.
-    final res = Process.runSync(
+    final ProcessResult res = Process.runSync(
       Platform.resolvedExecutable,
       [
         tool,
@@ -1475,13 +1349,13 @@ void main(List<String> args) {
     final lock = '${lockDir.path}/train.lock';
     snapshot.chmodFile(lockDir.path, 0x155); // 0555.
     try {
-      final tool = stageTool();
-      final dill = compileDill(
+      final String tool = stageTool();
+      final String dill = compileDill(
         'void main(List<String> args) {\n  print(10000);\n}\n',
         'pubfail_train',
       );
       final trainDir = '${tmp.path}/pubfail_jit';
-      final denied = Process.runSync(
+      final ProcessResult denied = Process.runSync(
         Platform.resolvedExecutable,
         [
           tool,
@@ -1518,9 +1392,9 @@ void main(List<String> args) {
     // it and the holder lookup reports "unknown". Linux passes either way,
     // so this pins the binding shape itself; the deadline test below is the
     // behavioral cover. Both bindings live in the staged `jit_lock.dart`.
-    final appStaged = stageTool();
+    final String appStaged = stageTool();
     final jitStaged = '${File(appStaged).parent.path}/jit_lock.dart';
-    final source =
+    final String source =
         File(appStaged).readAsStringSync() + File(jitStaged).readAsStringSync();
     expect(
       source,
@@ -1542,7 +1416,7 @@ void main(List<String> args) {
     // macOS the base wrote Linux's F_WRLCK 1 as Darwin's F_RDLCK, so both
     // acquisitions took shared read locks and both succeeded; on Linux 1 is
     // F_WRLCK and already conflicted.
-    final staged = stageTool();
+    final String staged = stageTool();
     final script = File('${File(staged).parent.path}/try_lock.dart')
       ..writeAsStringSync(
         "import 'dart:io';\n"
@@ -1559,7 +1433,7 @@ void main(List<String> args) {
         '}\n',
       );
     final lock = '${tmp.path}/keyed.lock';
-    final opened = locks.jitCreateAndPublishLock(lock);
+    final locks.JitLockOpen opened = locks.jitCreateAndPublishLock(lock);
     try {
       expect(opened.fd, greaterThanOrEqualTo(0), reason: 'first opens');
       expect(
@@ -1567,10 +1441,10 @@ void main(List<String> args) {
         isTrue,
         reason: 'first takes the lock',
       );
-      final contender = Process.runSync(Platform.resolvedExecutable, [
-        script.path,
-        lock,
-      ]);
+      final ProcessResult contender = Process.runSync(
+        Platform.resolvedExecutable,
+        [script.path, lock],
+      );
       expect(contender.exitCode, 0, reason: '${contender.stderr}');
       expect(
         (contender.stdout as String).trim(),
@@ -1580,7 +1454,7 @@ void main(List<String> args) {
     } finally {
       locks.jitUnlockAndClose(opened.fd);
     }
-    final after = Process.runSync(Platform.resolvedExecutable, [
+    final ProcessResult after = Process.runSync(Platform.resolvedExecutable, [
       script.path,
       lock,
     ]);
@@ -1598,10 +1472,10 @@ void main(List<String> args) {
     // 1 (the value the base wrote into Darwin's F_RDLCK), so this passes there
     // on the base; on macOS the base asked for a read conflict, saw no
     // holder and reported "unknown".
-    final holderScript = writeLockHolder(shared: true);
+    final String holderScript = writeLockHolder(shared: true);
     final lock = '${tmp.path}/reader.lock';
     File(lock).writeAsStringSync('');
-    final holder = await startLockHolder(holderScript, lock, '30');
+    final Process holder = await startLockHolder(holderScript, lock, '30');
     try {
       expect(
         locks.jitLockHolderPid(lock),
@@ -1619,12 +1493,12 @@ void main(List<String> args) {
     // forever: the run waits until its deadline, then fails closed naming
     // the lock, the holder's PID, the deadline and the remedies. The tool
     // runs in a subprocess (it exits on failure).
-    final holderScript = writeLockHolder();
+    final String holderScript = writeLockHolder();
     final lock = '${tmp.path}/held.lock';
-    final holder = await startLockHolder(holderScript, lock, '30');
+    final Process holder = await startLockHolder(holderScript, lock, '30');
     try {
-      final tool = stageTool();
-      final dill = compileDill(
+      final String tool = stageTool();
+      final String dill = compileDill(
         'void main(List<String> args) {\n  print(10000);\n}\n',
         'deadline_train',
       );
@@ -1635,15 +1509,19 @@ void main(List<String> args) {
       };
       final outJit = '${tmp.path}/held_out/app.jit';
       final stopwatch = Stopwatch()..start();
-      final denied = Process.runSync(Platform.resolvedExecutable, [
-        tool,
-        '--dart=${Platform.resolvedExecutable}',
-        '--snapshot=$outJit',
-        '--lock-timeout=2',
-        '--copy=input.dill=$dill',
-        '--',
-        'input.dill',
-      ], environment: trainEnv);
+      final ProcessResult denied = Process.runSync(
+        Platform.resolvedExecutable,
+        [
+          tool,
+          '--dart=${Platform.resolvedExecutable}',
+          '--snapshot=$outJit',
+          '--lock-timeout=2',
+          '--copy=input.dill=$dill',
+          '--',
+          'input.dill',
+        ],
+        environment: trainEnv,
+      );
       stopwatch.stop();
       expect(denied.exitCode, isNot(0), reason: 'held lock must fail');
       expect(File(outJit).existsSync(), isFalse);
@@ -1672,12 +1550,12 @@ void main(List<String> args) {
   test('held lock falls back where allowed', () async {
     // At the deadline the training counts as unavailable, so with the
     // fallback allowed the run trains in scratch and succeeds.
-    final holderScript = writeLockHolder();
+    final String holderScript = writeLockHolder();
     final lock = '${tmp.path}/held_fb.lock';
-    final holder = await startLockHolder(holderScript, lock, '30');
+    final Process holder = await startLockHolder(holderScript, lock, '30');
     try {
-      final tool = stageTool();
-      final dill = compileDill(
+      final String tool = stageTool();
+      final String dill = compileDill(
         'void main(List<String> args) {\n  print(10000);\n}\n',
         'deadline_fb_train',
       );
@@ -1686,16 +1564,20 @@ void main(List<String> args) {
         'RULES_DART_JIT_TRAIN_LOCK': lock,
       };
       final outJit = '${tmp.path}/held_fb_out/app.jit';
-      final allowed = Process.runSync(Platform.resolvedExecutable, [
-        tool,
-        '--dart=${Platform.resolvedExecutable}',
-        '--snapshot=$outJit',
-        '--lock-timeout=2',
-        '--fallback-allowed',
-        '--copy=input.dill=$dill',
-        '--',
-        'input.dill',
-      ], environment: trainEnv);
+      final ProcessResult allowed = Process.runSync(
+        Platform.resolvedExecutable,
+        [
+          tool,
+          '--dart=${Platform.resolvedExecutable}',
+          '--snapshot=$outJit',
+          '--lock-timeout=2',
+          '--fallback-allowed',
+          '--copy=input.dill=$dill',
+          '--',
+          'input.dill',
+        ],
+        environment: trainEnv,
+      );
       expect(allowed.exitCode, 0, reason: '${allowed.stderr}');
       expect(File(outJit).existsSync(), isTrue);
     } finally {
@@ -1707,15 +1589,15 @@ void main(List<String> args) {
   test('released lock trains before the deadline', () async {
     // A holder that releases mid-wait hands the lock over: the training
     // proceeds at the injected path with no fallback.
-    final holderScript = writeLockHolder();
-    final holder = await startLockHolder(
+    final String holderScript = writeLockHolder();
+    final Process holder = await startLockHolder(
       holderScript,
       snapshot.constantTrainLock,
       '1',
     );
     try {
       await Future<void>.delayed(const Duration(milliseconds: 300));
-      final dill = compileDill(
+      final String dill = compileDill(
         'void main(List<String> args) {\n  print(10000);\n}\n',
         'release_train',
       );
@@ -1749,13 +1631,13 @@ void main(List<String> args) {
     // A training that takes a free lock stays silent: notices go out only
     // past 10 s of waiting. The tool runs in a subprocess so its stderr can
     // be read back.
-    final tool = stageTool();
-    final dill = compileDill(
+    final String tool = stageTool();
+    final String dill = compileDill(
       'void main(List<String> args) {\n  print(10000);\n}\n',
       'quiet_train',
     );
     final outJit = '${tmp.path}/quiet_out/app.jit';
-    final res = Process.runSync(Platform.resolvedExecutable, [
+    final ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
       tool,
       '--dart=${Platform.resolvedExecutable}',
       '--snapshot=$outJit',
@@ -1773,8 +1655,8 @@ void main(List<String> args) {
     // The key routes the training without touching the filesystem: with no
     // injected paths set, the keyed directory and lock name the key, and two
     // keys name different paths, so their trainings run in parallel.
-    final realDir = snapshot.trainDirOverride;
-    final realLock = snapshot.trainLockOverride;
+    final String? realDir = snapshot.trainDirOverride;
+    final String? realLock = snapshot.trainLockOverride;
     snapshot.trainDirOverride = null;
     snapshot.trainLockOverride = null;
     try {
@@ -1800,8 +1682,8 @@ void main(List<String> args) {
   test('a holder on one path does not block another', () async {
     // Per-path contention: a holder on one training lock leaves a training
     // at another path to take its own lock straight away.
-    final holderScript = writeLockHolder();
-    final holder = await startLockHolder(
+    final String holderScript = writeLockHolder();
+    final Process holder = await startLockHolder(
       holderScript,
       '${tmp.path}/other.lock',
       '30',
@@ -1809,7 +1691,7 @@ void main(List<String> args) {
     try {
       snapshot.trainDirOverride = '${tmp.path}/other_jit';
       snapshot.trainLockOverride = '${tmp.path}/own.lock';
-      final dill = compileDill(
+      final String dill = compileDill(
         'void main(List<String> args) {\n  print(10000);\n}\n',
         'other_train',
       );
@@ -1837,12 +1719,12 @@ void main(List<String> args) {
       // outputs are read-only and copies keep modes): an owned directory is
       // made writable before it is listed, so our own stale trees clear and
       // the training uses the constant path with unchanged bytes.
-      final trainDir = snapshot.constantTrainDir;
-      final dill = compileDill(
+      final String trainDir = snapshot.constantTrainDir;
+      final String dill = compileDill(
         'void main(List<String> args) {\n  print(10000);\n}\n',
         'rotree_train',
       );
-      final first = trainAtConstant(
+      final List<int> first = trainAtConstant(
         dill: dill,
         out: '${tmp.path}/rotree_clear/app.jit',
       );
@@ -1867,8 +1749,8 @@ void main(List<String> args) {
     // unlinking the entry fails even for its owner. The tool runs in a
     // subprocess (it exits on failure), with the training paths pointed at
     // the blocker through the environment.
-    final tool = stageTool();
-    final dill = compileDill(
+    final String tool = stageTool();
+    final String dill = compileDill(
       'void main(List<String> args) {\n  print(10000);\n}\n',
       'blocked_train',
     );
@@ -1885,13 +1767,13 @@ void main(List<String> args) {
       '--',
       'input.dill',
     ];
-    final trainEnv = {
+    final Map<String, String> trainEnv = {
       'RULES_DART_JIT_TRAIN_DIR': blocker.path,
       'RULES_DART_JIT_TRAIN_LOCK': snapshot.constantTrainLock,
     };
     try {
       final outJit = '${tmp.path}/blocked_out/app.jit';
-      final denied = Process.runSync(
+      final ProcessResult denied = Process.runSync(
         Platform.resolvedExecutable,
         toolArgs(outJit),
         environment: trainEnv,
@@ -1905,7 +1787,7 @@ void main(List<String> args) {
       // The blocker is ours (same uid, unremovable only for its read-only
       // parent): the remedy asks us to remove the entry ourselves.
       expect(err, contains('Remove the entry, or pass'));
-      final id = Process.runSync('id', ['-u']);
+      final ProcessResult id = Process.runSync('id', ['-u']);
       expect(id.exitCode, 0);
       expect(err, contains('owned by uid ${(id.stdout as String).trim()}'));
       expect(err, contains('jit_snapshot_fallback=true'));
@@ -1917,7 +1799,7 @@ void main(List<String> args) {
       );
 
       final allowedOut = '${tmp.path}/blocked_allowed/app.jit';
-      final allowed = Process.runSync(
+      final ProcessResult allowed = Process.runSync(
         Platform.resolvedExecutable,
         toolArgs(allowedOut, fallback: true),
         environment: trainEnv,
@@ -1936,11 +1818,11 @@ void main(List<String> args) {
     // Same-uid stand-in (see the file header): a staged copy of the tool
     // whose owner check answers a uid nothing owns, over a blocker no removal
     // can take. The tool runs in a subprocess (it exits on failure).
-    final tool = stagePatchedTool(
+    final String tool = stagePatchedTool(
       'int Function() ownUid = jitOwnUid;',
       'int Function() ownUid = () => -1;',
     );
-    final dill = compileDill(
+    final String dill = compileDill(
       'void main(List<String> args) {\n  print(10000);\n}\n',
       'foreigndir_train',
     );
@@ -1948,7 +1830,7 @@ void main(List<String> args) {
     final blocker = File('${parent.path}/jit')
       ..writeAsStringSync('theirs to remove');
     snapshot.chmodFile(parent.path, 0x155); // 0555.
-    final trainEnv = {
+    final Map<String, String> trainEnv = {
       'RULES_DART_JIT_TRAIN_DIR': blocker.path,
       'RULES_DART_JIT_TRAIN_LOCK': snapshot.constantTrainLock,
     };
@@ -1963,7 +1845,7 @@ void main(List<String> args) {
     ];
     try {
       final outJit = '${tmp.path}/foreigndir_out/app.jit';
-      final denied = Process.runSync(
+      final ProcessResult denied = Process.runSync(
         Platform.resolvedExecutable,
         toolArgs(outJit),
         environment: trainEnv,
@@ -1985,7 +1867,7 @@ void main(List<String> args) {
       );
 
       final allowedOut = '${tmp.path}/foreigndir_allowed/app.jit';
-      final allowed = Process.runSync(
+      final ProcessResult allowed = Process.runSync(
         Platform.resolvedExecutable,
         toolArgs(allowedOut, fallback: true),
         environment: trainEnv,
@@ -2002,16 +1884,16 @@ void main(List<String> args) {
     // directory in the window, so the atomic mkdir claim sees EEXIST. Forced
     // through the mkdir hook in a staged copy of the tool; the in-process
     // hook resets in tearDown, and the failure names the blocker.
-    final tool = stagePatchedTool(
+    final String tool = stagePatchedTool(
       'int Function(String path, int mode) mkdirExclusive = _libcMkdir;',
       'int Function(String path, int mode) mkdirExclusive = (_, __) => -1;',
     );
-    final dill = compileDill(
+    final String dill = compileDill(
       'void main(List<String> args) {\n  print(10000);\n}\n',
       'unclaimable_train',
     );
     final trainDir = '${tmp.path}/unclaimable_jit';
-    final trainEnv = {
+    final Map<String, String> trainEnv = {
       'RULES_DART_JIT_TRAIN_DIR': trainDir,
       'RULES_DART_JIT_TRAIN_LOCK': snapshot.constantTrainLock,
     };
@@ -2025,7 +1907,7 @@ void main(List<String> args) {
       'input.dill',
     ];
     final outJit = '${tmp.path}/unclaimable_out/app.jit';
-    final denied = Process.runSync(
+    final ProcessResult denied = Process.runSync(
       Platform.resolvedExecutable,
       toolArgs(outJit),
       environment: trainEnv,
@@ -2035,7 +1917,7 @@ void main(List<String> args) {
     expect(denied.stderr as String, contains('cannot be claimed'));
 
     final allowedOut = '${tmp.path}/unclaimable_allowed/app.jit';
-    final allowed = Process.runSync(
+    final ProcessResult allowed = Process.runSync(
       Platform.resolvedExecutable,
       toolArgs(allowedOut, fallback: true),
       environment: trainEnv,
@@ -2049,23 +1931,26 @@ void main(List<String> args) {
     // a regular file already at the lock path trains (at the constant path,
     // under its flock) and keeps its bytes: no truncate-though-symlink, no
     // clobber.
-    final constant = snapshot.constantTrainDir;
-    final lock = snapshot.constantTrainLock;
+    final String constant = snapshot.constantTrainDir;
+    final String lock = snapshot.constantTrainLock;
     File(
       '${tmp.path}/lock_train.dart',
     ).writeAsStringSync('void main(List<String> args) {\n  print(10000);\n}\n');
     final trivialDill = File('${tmp.path}/lock_train.dill');
-    final compileRes = Process.runSync(Platform.resolvedExecutable, [
-      'compile',
-      'kernel',
-      '${tmp.path}/lock_train.dart',
-      '-o',
-      trivialDill.path,
-    ]);
+    final ProcessResult compileRes = Process.runSync(
+      Platform.resolvedExecutable,
+      [
+        'compile',
+        'kernel',
+        '${tmp.path}/lock_train.dart',
+        '-o',
+        trivialDill.path,
+      ],
+    );
     expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
     File(lock).writeAsStringSync('not-ours');
     snapshot.chmodFile(lock, 0x180); // 0600.
-    final modeBefore = File(lock).statSync().mode & 0x1ff;
+    final int modeBefore = File(lock).statSync().mode & 0x1ff;
     final outJit = File('${tmp.path}/lock_content/app.jit');
     snapshot.main([
       '--dart=${Platform.resolvedExecutable}',
@@ -2101,9 +1986,9 @@ void main(List<String> args) {
     // host opens it.
     final lock = File(snapshot.constantTrainLock);
     if (lock.existsSync()) lock.deleteSync();
-    final previous = _setUmask(0x3f); // 077.
+    final int previous = _setUmask(0x3f); // 077.
     try {
-      final dill = compileDill(
+      final String dill = compileDill(
         'void main(List<String> args) {\n  print(10000);\n}\n',
         'umask_train',
       );
@@ -2122,12 +2007,12 @@ void main(List<String> args) {
     // call returns, before any later step, so a failing hook cannot strand
     // the temporary.
     final lockPath = '${tmp.path}/atomic.lock';
-    final previous = _setUmask(0x3f); // 077.
+    final int previous = _setUmask(0x3f); // 077.
     try {
       String? seenTemp;
       var lockExistedBeforePublish = true;
       var tempModeBeforePublish = 0;
-      final opened = locks.jitCreateAndPublishLock(
+      final locks.JitLockOpen opened = locks.jitCreateAndPublishLock(
         lockPath,
         onTempReady: (temp, _) {
           seenTemp = temp;
@@ -2167,7 +2052,7 @@ void main(List<String> args) {
     // removed.
     final lockPath = '${tmp.path}/publock.lock';
     String? seenTemp;
-    final opened = locks.jitCreateAndPublishLock(
+    final locks.JitLockOpen opened = locks.jitCreateAndPublishLock(
       lockPath,
       onTempReady: (temp, _) {
         seenTemp = temp;
@@ -2198,7 +2083,7 @@ void main(List<String> args) {
     // replacing: the adopted descriptor already names the path, with no
     // second link left behind for a peer to trip over.
     final lockPath = '${tmp.path}/renamed.lock';
-    final opened = locks.jitCreateAndPublishLock(lockPath);
+    final locks.JitLockOpen opened = locks.jitCreateAndPublishLock(lockPath);
     try {
       expect(opened.fd, greaterThanOrEqualTo(0), reason: 'publish opens it');
       expect(
@@ -2223,7 +2108,7 @@ void main(List<String> args) {
     // removed.
     final lockPath = '${tmp.path}/publockdir.lock';
     Directory(lockPath).createSync();
-    final opened = locks.jitOpenLock(lockPath);
+    final locks.JitLockOpen opened = locks.jitOpenLock(lockPath);
     expect(opened.fd, -1, reason: 'directory refused');
     expect(opened.detail, contains('directory'));
     expect(opened.detail, contains(lockPath));
@@ -2240,7 +2125,7 @@ void main(List<String> args) {
     final lockPath = '${dir.path}/publish.lock';
     snapshot.chmodFile(dir.path, 0x155); // 0555.
     try {
-      final opened = locks.jitCreateAndPublishLock(lockPath);
+      final locks.JitLockOpen opened = locks.jitCreateAndPublishLock(lockPath);
       expect(opened.fd, -1, reason: 'publish fails closed');
       expect(
         opened.detail,
@@ -2262,7 +2147,7 @@ void main(List<String> args) {
     // ownership with an owner to remove it. Same-uid (see the file header).
     final dir = Directory('${tmp.path}/pubrolink')..createSync();
     final lockPath = '${dir.path}/publish.lock';
-    final opened = locks.jitCreateAndPublishLock(
+    final locks.JitLockOpen opened = locks.jitCreateAndPublishLock(
       lockPath,
       onTempReady: (temp, _) {
         expect(
@@ -2285,7 +2170,7 @@ void main(List<String> args) {
       // The tool cannot unlink its temporary while the directory is
       // read-only: restore the mode first, then clear it.
       snapshot.chmodFile(dir.path, 0x1c0); // 0700.
-      for (final temp in lockTemps(lockPath)) {
+      for (final String temp in lockTemps(lockPath)) {
         File(temp).deleteSync();
       }
     }
@@ -2297,7 +2182,7 @@ void main(List<String> args) {
     final lockPath = '${tmp.path}/leftover.lock';
     final leftover = File('$lockPath.4242.81818.tmp')
       ..writeAsStringSync('stale temporary');
-    final opened = locks.jitOpenLock(lockPath);
+    final locks.JitLockOpen opened = locks.jitOpenLock(lockPath);
     try {
       expect(opened.fd, greaterThanOrEqualTo(0), reason: 'lock opens');
       expect(
@@ -2324,15 +2209,15 @@ void main(List<String> args) {
     // lock path, the entry's type and its owner, with the removal remedy (never
     // the `chmod 0666` remedy, which applies only when a regular lock's own
     // mode denies us). Same-uid variants (see the file header).
-    final tool = stageTool();
-    final dill = compileDill(
+    final String tool = stageTool();
+    final String dill = compileDill(
       'void main(List<String> args) {\n  print(10000);\n}\n',
       'lockentry_train',
     );
     final victim = Directory('${tmp.path}/lockentry_victim')..createSync();
     File('${victim.path}/sentinel').writeAsStringSync('untouched');
-    final user = currentUserName();
-    final lockPath = snapshot.constantTrainLock;
+    final String user = currentUserName();
+    final String lockPath = snapshot.constantTrainLock;
     final cases = <String, ({void Function() plant, String kind})>{
       'symlink': (
         plant: () => Link(lockPath).createSync(victim.path),
@@ -2340,7 +2225,7 @@ void main(List<String> args) {
       ),
       'FIFO': (
         plant: () {
-          final mkfifo = Process.runSync('mkfifo', [lockPath]);
+          final ProcessResult mkfifo = Process.runSync('mkfifo', [lockPath]);
           expect(mkfifo.exitCode, 0, reason: '${mkfifo.stderr}');
         },
         kind: 'FIFO',
@@ -2351,7 +2236,7 @@ void main(List<String> args) {
       ),
       'hard link': (
         plant: () {
-          final ln = Process.runSync('ln', [
+          final ProcessResult ln = Process.runSync('ln', [
             '${victim.path}/sentinel',
             lockPath,
           ]);
@@ -2362,10 +2247,11 @@ void main(List<String> args) {
         kind: 'regular file',
       ),
     };
-    for (final entry in cases.entries) {
+    for (final MapEntry<String, ({String kind, void Function() plant})> entry
+        in cases.entries) {
       entry.value.plant();
       final outJit = '${tmp.path}/lockentry_${entry.key}_out/app.jit';
-      final res = Process.runSync(Platform.resolvedExecutable, [
+      final ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
         tool,
         '--dart=${Platform.resolvedExecutable}',
         '--snapshot=$outJit',
@@ -2398,17 +2284,20 @@ void main(List<String> args) {
     // path fails the action naming the entry's two hard links and their
     // removal, never "cannot be opened for writing" (which applies only when
     // the lock's own mode denies us). Same-uid (see the file header).
-    final tool = stageTool();
-    final dill = compileDill(
+    final String tool = stageTool();
+    final String dill = compileDill(
       'void main(List<String> args) {\n  print(10000);\n}\n',
       'plantedlink_train',
     );
     final victim = File('${tmp.path}/plantedlink_victim')
       ..writeAsStringSync('private');
-    final ln = Process.runSync('ln', [victim.path, snapshot.constantTrainLock]);
+    final ProcessResult ln = Process.runSync('ln', [
+      victim.path,
+      snapshot.constantTrainLock,
+    ]);
     expect(ln.exitCode, 0, reason: '${ln.stderr}');
     final outJit = '${tmp.path}/plantedlink_out/app.jit';
-    final res = Process.runSync(Platform.resolvedExecutable, [
+    final ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
       tool,
       '--dart=${Platform.resolvedExecutable}',
       '--snapshot=$outJit',
@@ -2467,14 +2356,14 @@ void main(List<String> args) {
       mode: 24,
       uid: 28,
     ), reason: 'x86_64 uses its own layout');
-    for (final abi in [ffi.Abi.linuxArm64, ffi.Abi.linuxRiscv64]) {
+    for (final ffi.Abi abi in [ffi.Abi.linuxArm64, ffi.Abi.linuxRiscv64]) {
       expect(locks.jitLinuxStatOffsets(abi: abi), (
         nlink: 20,
         mode: 16,
         uid: 24,
       ), reason: '$abi uses the asm-generic layout');
     }
-    for (final abi in [
+    for (final ffi.Abi abi in [
       ffi.Abi.linuxIA32,
       ffi.Abi.linuxArm,
       ffi.Abi.linuxRiscv32,
@@ -2498,14 +2387,14 @@ void main(List<String> args) {
       lstat: '__lxstat64',
       ver: 1,
     ), reason: 'x86_64 passes _STAT_VER_LINUX');
-    for (final abi in [ffi.Abi.linuxArm64, ffi.Abi.linuxRiscv64]) {
+    for (final ffi.Abi abi in [ffi.Abi.linuxArm64, ffi.Abi.linuxRiscv64]) {
       expect(locks.jitLinuxStat64Calls(abi: abi), (
         fstat: '__fxstat64',
         lstat: '__lxstat64',
         ver: 0,
       ), reason: '$abi passes the generic _STAT_VER');
     }
-    for (final abi in [
+    for (final ffi.Abi abi in [
       ffi.Abi.linuxIA32,
       ffi.Abi.linuxArm,
       ffi.Abi.linuxRiscv32,
@@ -2531,12 +2420,15 @@ void main(List<String> args) {
     x64[25] = 0x81; // st_mode high byte: 0100000 is a regular file.
     x64[28] = 0xe9; // st_uid low byte of 1001.
     x64[29] = 0x03;
-    final x64stat = locks.jitDecodeLinuxStat(x64, abi: ffi.Abi.linuxX64);
+    final locks.JitStat? x64stat = locks.jitDecodeLinuxStat(
+      x64,
+      abi: ffi.Abi.linuxX64,
+    );
     expect(x64stat?.kind, 'regular file');
     expect(x64stat?.mode, 0x81b6);
     expect(x64stat?.uid, 1001);
     expect(x64stat?.nlink, 7);
-    for (final entry in [
+    for (final ({ffi.Abi abi, int mode, int nlink, int uid}) entry in [
       (abi: ffi.Abi.linuxArm64, mode: 0x81b6, nlink: 5, uid: 1001),
       (abi: ffi.Abi.linuxRiscv64, mode: 0x81a4, nlink: 2, uid: 502),
     ]) {
@@ -2546,7 +2438,10 @@ void main(List<String> args) {
       bytes[20] = entry.nlink; // st_nlink.
       bytes[24] = entry.uid & 0xff; // st_uid.
       bytes[25] = (entry.uid >> 8) & 0xff;
-      final stat = locks.jitDecodeLinuxStat(bytes, abi: entry.abi);
+      final locks.JitStat? stat = locks.jitDecodeLinuxStat(
+        bytes,
+        abi: entry.abi,
+      );
       expect(stat?.kind, 'regular file', reason: '${entry.abi} kind');
       expect(stat?.mode, entry.mode, reason: '${entry.abi} mode');
       expect(stat?.uid, entry.uid, reason: '${entry.abi} uid');
@@ -2562,22 +2457,23 @@ void main(List<String> args) {
     // threw out of range, the guard read it as "old libc", and the fallback's
     // device halves read instead.
     final file = File('${tmp.path}/statx_route')..writeAsStringSync('x');
-    final info = locks.jitStatEntry(file.path);
+    final locks.JitStat? info = locks.jitStatEntry(file.path);
     expect(info, isNotNull, reason: 'entry stats');
     expect(info!.kind, 'regular file');
     final lib = ffi.DynamicLibrary.process();
-    final malloc = lib.lookupFunction<_TestMallocNative, _TestMallocDart>(
-      'malloc',
-    );
-    final free = lib.lookupFunction<_TestFreeNative, _TestFreeDart>('free');
-    final statx = lib.lookupFunction<_TestStatxNative, _TestStatxDart>('statx');
-    final pathBytes = utf8.encode(file.path);
-    final pathPtr = malloc(pathBytes.length + 1);
+    final _TestMallocDart malloc = lib
+        .lookupFunction<_TestMallocNative, _TestMallocDart>('malloc');
+    final _TestFreeDart free = lib
+        .lookupFunction<_TestFreeNative, _TestFreeDart>('free');
+    final _TestStatxDart statx = lib
+        .lookupFunction<_TestStatxNative, _TestStatxDart>('statx');
+    final Uint8List pathBytes = utf8.encode(file.path);
+    final ffi.Pointer<ffi.Uint8> pathPtr = malloc(pathBytes.length + 1);
     pathPtr.asTypedList(pathBytes.length + 1)
       ..setAll(0, pathBytes)
       ..[pathBytes.length] = 0;
     try {
-      final buf = malloc(256);
+      final ffi.Pointer<ffi.Uint8> buf = malloc(256);
       expect(buf == ffi.nullptr, isFalse, reason: 'statx buffer allocated');
       try {
         buf.asTypedList(256).fillRange(0, 256, 0);
@@ -2630,7 +2526,10 @@ void main(List<String> args) {
     const creat = 0x40;
     const excl = 0x80;
     void checkNoFollow(ffi.Abi abi, int nofollow) {
-      final flags = locks.jitOpenFlags(isMacOS: false, abi: abi);
+      final locks.JitOpenFlags flags = locks.jitOpenFlags(
+        isMacOS: false,
+        abi: abi,
+      );
       expect(
         flags.noCreate & nofollow,
         nofollow,
@@ -2657,7 +2556,7 @@ void main(List<String> args) {
         reason: '$abi no-create opens with neither O_CREAT nor O_NOATIME',
       );
       expect(flags.create & (creat | excl), creat | excl);
-      final read = locks.jitReadFlags(isMacOS: false, abi: abi);
+      final int read = locks.jitReadFlags(isMacOS: false, abi: abi);
       expect(
         read & nofollow,
         nofollow,
@@ -2671,7 +2570,7 @@ void main(List<String> args) {
       expect(read & (creat | noAtime), 0);
     }
 
-    for (final abi in [
+    for (final ffi.Abi abi in [
       ffi.Abi.linuxX64,
       ffi.Abi.linuxIA32,
       ffi.Abi.linuxRiscv32,
@@ -2679,12 +2578,15 @@ void main(List<String> args) {
     ]) {
       checkNoFollow(abi, 0x20000);
     }
-    for (final abi in [ffi.Abi.linuxArm, ffi.Abi.linuxArm64]) {
+    for (final ffi.Abi abi in [ffi.Abi.linuxArm, ffi.Abi.linuxArm64]) {
       checkNoFollow(abi, 0x8000);
     }
     // macOS values are unchanged and ABI-independent, with O_CLOEXEC set.
-    for (final abi in [ffi.Abi.macosX64, ffi.Abi.macosArm64]) {
-      final flags = locks.jitOpenFlags(isMacOS: true, abi: abi);
+    for (final ffi.Abi abi in [ffi.Abi.macosX64, ffi.Abi.macosArm64]) {
+      final locks.JitOpenFlags flags = locks.jitOpenFlags(
+        isMacOS: true,
+        abi: abi,
+      );
       expect(flags.noCreate, 0x2 | 0x100 | 0x4 | 0x1000000);
       expect(flags.create, 0x2 | 0x100 | 0x4 | 0x200 | 0x800 | 0x1000000);
       expect(
@@ -2718,7 +2620,7 @@ void main(List<String> args) {
     // bits wide, and 12 on the 32-bit ones, where they are 32 bits wide
     // (reading at 24 there would return padding as the PID). macOS reads it
     // at 16 on both architectures.
-    for (final abi in [
+    for (final ffi.Abi abi in [
       ffi.Abi.linuxX64,
       ffi.Abi.linuxArm64,
       ffi.Abi.linuxRiscv64,
@@ -2729,7 +2631,7 @@ void main(List<String> args) {
         reason: '$abi reads the PID at 24',
       );
     }
-    for (final abi in [
+    for (final ffi.Abi abi in [
       ffi.Abi.linuxIA32,
       ffi.Abi.linuxArm,
       ffi.Abi.linuxRiscv32,
@@ -2740,7 +2642,7 @@ void main(List<String> args) {
         reason: '$abi reads the PID at 12',
       );
     }
-    for (final abi in [ffi.Abi.macosX64, ffi.Abi.macosArm64]) {
+    for (final ffi.Abi abi in [ffi.Abi.macosX64, ffi.Abi.macosArm64]) {
       expect(
         locks.jitFlockPidOffset(isMacOS: true, abi: abi),
         16,
@@ -2763,7 +2665,7 @@ void main(List<String> args) {
       ..writeAsStringSync('follow me');
     final link = '${tmp.path}/nofollow.lock';
     Link(link).createSync(target.path);
-    final opened = locks.jitOpenLock(link);
+    final locks.JitLockOpen opened = locks.jitOpenLock(link);
     expect(opened.fd, -1, reason: 'symlink refused by the open call');
     expect(opened.detail, contains('symlink'));
     expect(opened.detail, contains(link));
@@ -2787,9 +2689,9 @@ void main(List<String> args) {
       ..writeAsStringSync('private');
     snapshot.chmodFile(victim.path, 0x180); // 0600.
     final link = '${tmp.path}/hardlink.lock';
-    final ln = Process.runSync('ln', [victim.path, link]);
+    final ProcessResult ln = Process.runSync('ln', [victim.path, link]);
     expect(ln.exitCode, 0, reason: '${ln.stderr}');
-    final opened = locks.jitOpenLock(link);
+    final locks.JitLockOpen opened = locks.jitOpenLock(link);
     expect(opened.fd, -1, reason: 'hard link refused by link count');
     expect(opened.detail, contains('regular file'));
     expect(opened.detail, contains(link));
@@ -2811,9 +2713,9 @@ void main(List<String> args) {
     final lockPath = '${tmp.path}/window.lock';
     File(lockPath).writeAsStringSync('publishing');
     final sibling = '$lockPath.$pid.81818.4242.7.tmp';
-    final ln = Process.runSync('ln', [lockPath, sibling]);
+    final ProcessResult ln = Process.runSync('ln', [lockPath, sibling]);
     expect(ln.exitCode, 0, reason: '${ln.stderr}');
-    final opened = locks.jitOpenLock(lockPath);
+    final locks.JitLockOpen opened = locks.jitOpenLock(lockPath);
     try {
       expect(opened.fd, greaterThanOrEqualTo(0), reason: 'window adopts');
       expect(
@@ -2834,9 +2736,9 @@ void main(List<String> args) {
     final victim = File('${tmp.path}/planted_victim')
       ..writeAsStringSync('private');
     final link = '${tmp.path}/planted.lock';
-    final ln = Process.runSync('ln', [victim.path, link]);
+    final ProcessResult ln = Process.runSync('ln', [victim.path, link]);
     expect(ln.exitCode, 0, reason: '${ln.stderr}');
-    final opened = locks.jitOpenLock(link);
+    final locks.JitLockOpen opened = locks.jitOpenLock(link);
     expect(opened.fd, -1, reason: 'planted link refused');
     expect(opened.detail, contains('regular file'));
     expect(opened.detail, contains(link));
@@ -2853,7 +2755,7 @@ void main(List<String> args) {
     // replacement arrives by rename, so both inodes live at once and the ids
     // cannot alias. Same-uid (see the file header).
     final lockPath = '${tmp.path}/match.lock';
-    final opened = locks.jitCreateAndPublishLock(lockPath);
+    final locks.JitLockOpen opened = locks.jitCreateAndPublishLock(lockPath);
     try {
       expect(opened.fd, greaterThanOrEqualTo(0), reason: 'lock opens');
       expect(
@@ -2886,11 +2788,11 @@ void main(List<String> args) {
     // lock is dropped and reopened, and giving up fails the action instead of
     // training in a directory another training owns (the tool exits on
     // failure, so it runs in a subprocess).
-    final tool = stagePatchedTool(
+    final String tool = stagePatchedTool(
       'if (jitFdMatchesPath(fd, constantTrainLock)) return fd;',
       'if (false) return fd;',
     );
-    final dill = compileDill(
+    final String dill = compileDill(
       'void main(List<String> args) {\n  print(10000);\n}\n',
       'rematch_train',
     );
@@ -2904,7 +2806,7 @@ void main(List<String> args) {
       'input.dill',
     ];
     final outJit = '${tmp.path}/rematch_out/app.jit';
-    final denied = Process.runSync(
+    final ProcessResult denied = Process.runSync(
       Platform.resolvedExecutable,
       toolArgs(outJit),
       environment: constantTrainEnv(),
@@ -2915,7 +2817,7 @@ void main(List<String> args) {
     expect(err, contains('cannot train in ${snapshot.constantTrainDir}'));
     expect(err, contains(snapshot.constantTrainLock));
     final allowedOut = '${tmp.path}/rematch_allowed/app.jit';
-    final allowed = Process.runSync(
+    final ProcessResult allowed = Process.runSync(
       Platform.resolvedExecutable,
       toolArgs(allowedOut, fallback: true),
       environment: constantTrainEnv(),
@@ -2932,8 +2834,8 @@ void main(List<String> args) {
     // cause fails closed with no warning. Either way the constant directory
     // is still deleted. The tool exits on failure, so it runs in a
     // subprocess.
-    final tool = stageTool();
-    final dill = compileDill(
+    final String tool = stageTool();
+    final String dill = compileDill(
       'void main(List<String> args) {\n  print(10000);\n}\n',
       'throw_train',
     );
@@ -2948,7 +2850,7 @@ void main(List<String> args) {
       'input.dill',
     ];
     final outJit = '${tmp.path}/throw_out/app.jit';
-    final denied = Process.runSync(
+    final ProcessResult denied = Process.runSync(
       Platform.resolvedExecutable,
       toolArgs(outJit),
       environment: constantTrainEnv(),
@@ -2962,7 +2864,7 @@ void main(List<String> args) {
     );
     expect(deniedErr, isNot(contains('may not be reproducible')));
     final allowedOut = '${tmp.path}/throw_allowed/app.jit';
-    final allowed = Process.runSync(
+    final ProcessResult allowed = Process.runSync(
       Platform.resolvedExecutable,
       toolArgs(allowedOut, fallback: true),
       environment: constantTrainEnv(),
@@ -2988,7 +2890,7 @@ void main(List<String> args) {
     // directory just before the real mkdir runs (the tool exits on failure,
     // so it runs in a subprocess: an in-process exit would kill this test
     // runner).
-    final tool = stagePatchedTool(
+    final String tool = stagePatchedTool(
       'int Function(String path, int mode) mkdirExclusive = _libcMkdir;',
       'int Function(String path, int mode) mkdirExclusive = (path, mode) {\n'
           '  final planted = Directory(path)..createSync();\n'
@@ -2996,12 +2898,12 @@ void main(List<String> args) {
           '  return _libcMkdir(path, mode);\n'
           '};',
     );
-    final dill = compileDill(
+    final String dill = compileDill(
       'void main(List<String> args) {\n  print(10000);\n}\n',
       'race_train',
     );
     final trainDir = '${tmp.path}/race_jit';
-    final trainEnv = {
+    final Map<String, String> trainEnv = {
       'RULES_DART_JIT_TRAIN_DIR': trainDir,
       'RULES_DART_JIT_TRAIN_LOCK': snapshot.constantTrainLock,
     };
@@ -3015,7 +2917,7 @@ void main(List<String> args) {
       'input.dill',
     ];
     final outJit = '${tmp.path}/race_claim/app.jit';
-    final denied = Process.runSync(
+    final ProcessResult denied = Process.runSync(
       Platform.resolvedExecutable,
       toolArgs(outJit),
       environment: trainEnv,
@@ -3040,7 +2942,7 @@ void main(List<String> args) {
     );
 
     final allowedOut = '${tmp.path}/race_allowed/app.jit';
-    final allowed = Process.runSync(
+    final ProcessResult allowed = Process.runSync(
       Platform.resolvedExecutable,
       toolArgs(allowedOut, fallback: true),
       environment: trainEnv,
@@ -3051,7 +2953,7 @@ void main(List<String> args) {
 
   test('buildChildEnvironment on Windows preserves SystemRoot and valid names while isolating home and cache directories', () {
     const privateHome = r'C:\b\tmp\private_home';
-    final env = snapshot.buildChildEnvironment(
+    final Map<String, String> env = snapshot.buildChildEnvironment(
       homeDir: privateHome,
       parentEnv: const {
         'SYSTEMROOT': r'D:\Windows',
@@ -3094,13 +2996,13 @@ void main(List<String> args) {
     expect(env['DART_TEST_CONFIG'], 'none/DartTest.yaml');
     expect(env.containsKey('HOST_SECRET'), isFalse);
 
-    for (final key in env.keys) {
+    for (final String key in env.keys) {
       expect(key, isNotEmpty);
       expect(key.contains('='), isFalse, reason: 'invalid key $key');
       expect(key.contains('\x00'), isFalse, reason: 'null byte in key $key');
     }
 
-    final fallbackEnv = snapshot.buildChildEnvironment(
+    final Map<String, String> fallbackEnv = snapshot.buildChildEnvironment(
       homeDir: privateHome,
       parentEnv: const {},
       isWindows: true,
@@ -3114,7 +3016,7 @@ void main(List<String> args) {
     expect(fallbackEnv['PUB_CACHE'], privateHome);
     expect(fallbackEnv['TEMP'], privateHome);
     expect(fallbackEnv['TMP'], privateHome);
-    for (final key in fallbackEnv.keys) {
+    for (final String key in fallbackEnv.keys) {
       expect(key, isNotEmpty);
       expect(key.contains('='), isFalse, reason: 'invalid key $key');
     }
@@ -3149,8 +3051,8 @@ void main(List<String> args) {
       );
       // End to end: the wrapper fails before running gen_kernel (which is never
       // reached, so no SDK snapshot is needed).
-      final toolPath = stageTool();
-      final res = Process.runSync(Platform.resolvedExecutable, [
+      final String toolPath = stageTool();
+      final ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
         toolPath,
         '--gen-kernel',
         'never-reached-runtime',
@@ -3194,8 +3096,8 @@ void main(List<String> args) {
       );
       // End to end: the wrapper fails before running gen_kernel (which is
       // never reached, so no SDK snapshot is needed).
-      final toolPath = stageTool();
-      final res = Process.runSync(Platform.resolvedExecutable, [
+      final String toolPath = stageTool();
+      final ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
         toolPath,
         '--gen-kernel',
         'never-reached-runtime',
@@ -3223,10 +3125,10 @@ void main(List<String> args) {
       );
     // End to end: the wrapper fails before running gen_kernel (which is never
     // reached, so no SDK snapshot is needed).
-    final toolPath = args.isNotEmpty
+    final String toolPath = args.isNotEmpty
         ? Runfiles.create().rlocation(args[0])
         : File.fromUri(Platform.script.resolve('app_jit_snapshot.dart')).path;
-    final res = Process.runSync(Platform.resolvedExecutable, [
+    final ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
       toolPath,
       '--gen-kernel',
       'never-reached-runtime',
@@ -3265,8 +3167,8 @@ void main(List<String> args) {
       final file = File('${ws.path}/bad$i.dart')..writeAsStringSync(sources[i]);
       paths.add(file.path);
     }
-    final toolPath = stageTool();
-    final res = Process.runSync(Platform.resolvedExecutable, [
+    final String toolPath = stageTool();
+    final ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
       toolPath,
       '--gen-kernel',
       'never-reached-runtime',
@@ -3295,8 +3197,8 @@ void main(List<String> args) {
           ..writeAsStringSync("import 'a.dart';\n$keyword() => 1;\n");
         paths.add(file.path);
       }
-      final toolPath = stageTool();
-      final res = Process.runSync(Platform.resolvedExecutable, [
+      final String toolPath = stageTool();
+      final ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
         toolPath,
         '--gen-kernel',
         'never-reached-runtime',
@@ -3335,10 +3237,10 @@ void main(List<String> args) {
       "import 'nosuch.dart';\n"
       'const missing = 1;\n',
     );
-    final toolPath = args.isNotEmpty
+    final String toolPath = args.isNotEmpty
         ? Runfiles.create().rlocation(args[0])
         : File.fromUri(Platform.script.resolve('app_jit_snapshot.dart')).path;
-    final res = Process.runSync(Platform.resolvedExecutable, [
+    final ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
       toolPath,
       '--gen-kernel',
       'never-reached-runtime',
@@ -3380,10 +3282,10 @@ void main(List<String> args) {
       // End to end: the wrapper fails before running gen_kernel (which is never
       // reached, so no SDK snapshot is needed): an empty segment directly after
       // the package name makes the front end read a host file.
-      final toolPath = args.isNotEmpty
+      final String toolPath = args.isNotEmpty
           ? Runfiles.create().rlocation(args[0])
           : File.fromUri(Platform.script.resolve('app_jit_snapshot.dart')).path;
-      final res = Process.runSync(Platform.resolvedExecutable, [
+      final ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
         toolPath,
         '--gen-kernel',
         'never-reached-runtime',
@@ -3473,7 +3375,7 @@ void main(List<String> args) {
   });
 
   test('--gen-kernel with comma define and pristine snapshot fails loudly', () {
-    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final Directory sdkDir = File(Platform.resolvedExecutable).parent.parent;
     final exeSuffix = Platform.isWindows ? '.exe' : '';
     final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
     final genKernel =
@@ -3492,8 +3394,8 @@ void main(List<String> args) {
 
     // The wrapper fails before running gen_kernel (which is never reached),
     // so the pristine snapshot is enough to prove the fail-closed check.
-    final toolPath = stageTool();
-    final res = Process.runSync(Platform.resolvedExecutable, [
+    final String toolPath = stageTool();
+    final ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
       toolPath,
       '--gen-kernel',
       dartaotruntime,
@@ -3521,9 +3423,9 @@ void main(List<String> args) {
   Set<String> genKernelLeftovers({
     void Function(Directory runTmp)? whileRunning,
   }) {
-    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final Directory sdkDir = File(Platform.resolvedExecutable).parent.parent;
     final exe = Platform.isWindows ? '.exe' : '';
-    final genKernel = patchSnapshot(
+    final String genKernel = patchSnapshot(
       '${sdkDir.path}/bin/snapshots/gen_kernel_aot.dart.snapshot',
       'gen_kernel',
     );
@@ -3534,7 +3436,7 @@ void main(List<String> args) {
       'gen_kernel_nocomma.snapshot': 'planted',
       'gen_kernel_nocomma.snapshot.version': 'planted',
     };
-    for (final entry in plants.entries) {
+    for (final MapEntry<String, String> entry in plants.entries) {
       File('${runTmp.path}/${entry.key}').writeAsStringSync(entry.value);
     }
     final vmBin = File('${runTmp.path}/rules_dart_vm-planted/bin_dart$exe')
@@ -3550,7 +3452,7 @@ void main(List<String> args) {
       );
     final outDill = File('${tmp.path}/plant_out.dill');
     whileRunning?.call(runTmp);
-    final res = Process.runSync(
+    final ProcessResult res = Process.runSync(
       Platform.resolvedExecutable,
       [
         stageTool(),
@@ -3576,7 +3478,7 @@ void main(List<String> args) {
     );
     expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
     expect(outDill.existsSync(), isTrue);
-    for (final entry in plants.entries) {
+    for (final MapEntry<String, String> entry in plants.entries) {
       expect(
         File('${runTmp.path}/${entry.key}').readAsStringSync(),
         entry.value,
@@ -3584,8 +3486,8 @@ void main(List<String> args) {
     }
     expect(vmBin.readAsStringSync(), 'planted');
     return {
-      for (final e in runTmp.listSync())
-        if (e.path.split(Platform.pathSeparator).last case final base
+      for (final FileSystemEntity e in runTmp.listSync())
+        if (e.path.split(Platform.pathSeparator).last case final String base
             when (base.contains('nocomma.snapshot') ||
                     base.startsWith('rules_dart_vm-')) &&
                 !plants.containsKey(base) &&
@@ -3614,7 +3516,7 @@ void main(List<String> args) {
   });
 
   test('--gen-kernel leftover check reports an entry left in its temp', () {
-    final leftovers = genKernelLeftovers(
+    final Set<String> leftovers = genKernelLeftovers(
       whileRunning: (runTmp) =>
           File('${runTmp.path}/gen_kernel_nocomma.snapshot.leak')
               .writeAsStringSync('x'),
@@ -3623,7 +3525,7 @@ void main(List<String> args) {
   });
 
   test('--aot leaves scratch TMPDIR empty', () {
-    final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+    final Directory sdkDir = File(Platform.resolvedExecutable).parent.parent;
     final dartBin = '${sdkDir.path}/bin/dart';
     final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime';
     final genKernel =
@@ -3635,7 +3537,7 @@ void main(List<String> args) {
     final mainDart = File('${tmp.path}/aot_main.dart')
       ..writeAsStringSync('void main() {}\n');
     final inDill = File('${tmp.path}/aot_main.dill');
-    final gkRes = Process.runSync(dartaotruntime, [
+    final ProcessResult gkRes = Process.runSync(dartaotruntime, [
       genKernel,
       '--platform=$platformDill',
       '--packages=${pkgConfig.path}',
@@ -3651,8 +3553,8 @@ void main(List<String> args) {
     final scratch = Directory('${tmp.path}/aot-scratch')..createSync();
     final home = Directory('${tmp.path}/aot-home')..createSync();
     final outExe = File('${tmp.path}/aot-scratch-out/tool');
-    final toolPath = stageTool();
-    final res = Process.runSync(Platform.resolvedExecutable, [
+    final String toolPath = stageTool();
+    final ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
       toolPath,
       '--aot',
       '--dart=$dartBin',
@@ -3685,8 +3587,8 @@ void main(List<String> args) {
       );
     // End to end: the wrapper fails before running gen_kernel (which is never
     // reached, so no SDK snapshot is needed).
-    final toolPath = stageTool();
-    final res = Process.runSync(Platform.resolvedExecutable, [
+    final String toolPath = stageTool();
+    final ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
       toolPath,
       '--gen-kernel',
       'never-reached-runtime',
@@ -3723,8 +3625,8 @@ void main(List<String> args) {
       ]);
       // End to end: the wrapper fails before running gen_kernel (which is
       // never reached, so no SDK snapshot is needed).
-      final toolPath = stageTool();
-      final res = Process.runSync(Platform.resolvedExecutable, [
+      final String toolPath = stageTool();
+      final ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
         toolPath,
         '--gen-kernel',
         'never-reached-runtime',
@@ -3780,7 +3682,7 @@ void main(List<String> args) {
     });
 
     test('an undeclared file read fails closed and names the file', () {
-      final errors = verify(
+      final List<String> errors = verify(
         'dirty.dill',
         verifyDill(
           sources: [
@@ -3795,7 +3697,7 @@ void main(List<String> args) {
     });
 
     test('an undefined import spelling fails closed', () {
-      final errors = verify(
+      final List<String> errors = verify(
         'evil_import.dill',
         verifyDill(
           sources: [('${prefix}app/main.dart', '${prefix}app/main.dart')],
@@ -3807,7 +3709,7 @@ void main(List<String> args) {
     });
 
     test('a smuggled canonical root fails closed', () {
-      final errors = verify(
+      final List<String> errors = verify(
         'evil_root.dill',
         verifyDill(
           sources: [('${prefix}app/main.dart', '${prefix}app/main.dart')],
@@ -3820,7 +3722,7 @@ void main(List<String> args) {
     });
 
     test('an unreadable library table fails closed', () {
-      final clean = verifyDill(
+      final Uint8List clean = verifyDill(
         sources: [('${prefix}app/main.dart', '${prefix}app/main.dart')],
         libraries: [(0, '${prefix}app/main.dart')],
       );
@@ -3833,14 +3735,14 @@ void main(List<String> args) {
       ByteData.sublistView(patched).setUint32(patched.length - 16, 0xffffffff);
       expect(dillSourceUris(patched), isNotNull);
       expect(dillLibraryReferences(patched), isNull);
-      final errors = verify('evil_libraries.dill', patched);
+      final List<String> errors = verify('evil_libraries.dill', patched);
       expect(errors, isNotEmpty);
       expect(errors.join('\n'), contains('cannot read the libraries'));
       expect(errors.join('\n'), contains('evil_libraries.dill'));
     });
 
     test('an unreadable canonical-name table fails closed', () {
-      final clean = verifyDill(
+      final Uint8List clean = verifyDill(
         sources: [('${prefix}app/main.dart', '${prefix}app/main.dart')],
         libraries: [(0, '${prefix}app/main.dart')],
       );
@@ -3852,7 +3754,7 @@ void main(List<String> args) {
           .setUint32(patched.length - 13 * 4 + 24, 0xffffffff);
       expect(dillSourceUris(patched), isNotNull);
       expect(dillCanonicalRoots(patched), isNull);
-      final errors = verify('evil_roots.dill', patched);
+      final List<String> errors = verify('evil_roots.dill', patched);
       expect(errors, isNotEmpty);
       expect(errors.join('\n'), contains('cannot read the canonical names'));
       expect(errors.join('\n'), contains('evil_roots.dill'));
@@ -3905,22 +3807,26 @@ void main(List<String> args) {
     });
 
     test('a malformed source-table URI fails closed', () {
-      final clean = verifyDill(
+      final Uint8List clean = verifyDill(
         sources: [('${prefix}app/main.dart', '${prefix}app/main.dart')],
         libraries: [(0, '${prefix}app/main.dart')],
       );
       // The first recording of the URI is the source entry's file URI:
       // corrupting it leaves every length prefix intact while the entry no
       // longer decodes.
-      final patched = corruptRecordedUri(clean, '${prefix}app/main.dart', 0);
+      final Uint8List patched = corruptRecordedUri(
+        clean,
+        '${prefix}app/main.dart',
+        0,
+      );
       expect(dillSourceUris(patched), isNull);
-      final errors = verify('evil_uri.dill', patched);
+      final List<String> errors = verify('evil_uri.dill', patched);
       expect(errors, isNotEmpty);
       expect(errors.join('\n'), contains('cannot read the sources'));
     });
 
     test('a malformed source-table import URI fails closed', () {
-      final clean = verifyDill(
+      final Uint8List clean = verifyDill(
         sources: [('${prefix}app/other.dart', '${prefix}app/main.dart')],
         libraries: [(0, '${prefix}app/main.dart')],
       );
@@ -3929,10 +3835,14 @@ void main(List<String> args) {
       // URI. The source-reader skips import bytes without decoding them, so
       // the source table still parses; the library-reader decodes them, so
       // the library table no longer parses.
-      final patched = corruptRecordedUri(clean, '${prefix}app/main.dart', 0);
+      final Uint8List patched = corruptRecordedUri(
+        clean,
+        '${prefix}app/main.dart',
+        0,
+      );
       expect(dillSourceUris(patched), isNotNull);
       expect(dillLibraryReferences(patched), isNull);
-      final errors = verify(
+      final List<String> errors = verify(
         'evil_import_uri.dill',
         patched,
         declaredKeys: const {'app/other.dart'},
@@ -3942,14 +3852,18 @@ void main(List<String> args) {
     });
 
     test('a malformed string-table entry degrades to an empty reference', () {
-      final clean = verifyDill(
+      final Uint8List clean = verifyDill(
         sources: [('${prefix}app/main.dart', '${prefix}app/main.dart')],
         libraries: [(0, '${prefix}app/main.dart')],
       );
       // The last recording of the URI is the string table's copy: corrupting
       // it leaves the source table readable while the canonical name no longer
       // decodes, degrading to the empty reference the check accepts.
-      final patched = corruptRecordedUri(clean, '${prefix}app/main.dart', 2);
+      final Uint8List patched = corruptRecordedUri(
+        clean,
+        '${prefix}app/main.dart',
+        2,
+      );
       expect(dillSourceUris(patched), isNotNull);
       expect(dillCanonicalRoots(patched), equals(['']));
       expect(verify('degraded.dill', patched), isEmpty);
@@ -3957,7 +3871,7 @@ void main(List<String> args) {
 
     test('an unparsable recorded file URI fails closed', () {
       const evil = 'file://[::1/host/evil.dart';
-      final errors = verify(
+      final List<String> errors = verify(
         'evil_file_uri.dill',
         verifyDill(sources: [(evil, evil)], libraries: const []),
       );
@@ -3990,7 +3904,7 @@ void main(List<String> args) {
     });
 
     test('synthetic native-assets entries are refused without a manifest', () {
-      final errors = verify(
+      final List<String> errors = verify(
         'native_assets_no_manifest.dill',
         nativeAssetsDill(),
       );
@@ -4002,7 +3916,7 @@ void main(List<String> args) {
     test('a near-miss native-assets shape is refused with a manifest', () {
       // A real file behind the asset-library name still fails: the node must
       // name the `dummy` placeholder, not a workspace file.
-      final errors = verify(
+      final List<String> errors = verify(
         'native_assets_miss.dill',
         verifyDill(
           sources: [
@@ -4022,7 +3936,7 @@ void main(List<String> args) {
     });
 
     test('a user file literally named dummy is refused with a manifest', () {
-      final errors = verify(
+      final List<String> errors = verify(
         'user_dummy.dill',
         verifyDill(
           sources: [
@@ -4038,7 +3952,7 @@ void main(List<String> args) {
     });
 
     test('a smuggled vm: root is refused without a manifest', () {
-      final errors = verify(
+      final List<String> errors = verify(
         'vm_root.dill',
         verifyDill(
           sources: [('${prefix}app/main.dart', '${prefix}app/main.dart')],
@@ -4089,7 +4003,7 @@ void main(List<String> args) {
     });
 
     test('a relative root above the exec root maps to nothing', () {
-      final prevCwd = Directory.current;
+      final Directory prevCwd = Directory.current;
       Directory.current = tmp;
       try {
         Directory('cfg').createSync();
@@ -4193,8 +4107,8 @@ void main(List<String> args) {
       snapshot.chmodFile(runtime.path, 0x1ed);
       final outDill = File('${ws.path}/out.dill');
 
-      final toolPath = stageTool();
-      final res = Process.runSync(Platform.resolvedExecutable, [
+      final String toolPath = stageTool();
+      final ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
         toolPath,
         '--gen-kernel',
         runtime.path,

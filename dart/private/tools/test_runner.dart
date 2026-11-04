@@ -48,9 +48,9 @@ import 'test_runner_workspace.dart' as staging;
 /// test.log, and the launcher exits with the VM even if the test leaked a
 /// process that holds those streams open.
 Future<void> main(List<String> args) async {
-  final env = Platform.environment;
-  final dartKey = env['RULES_DART_DART'];
-  final dillKey = env['RULES_DART_DILL'];
+  final Map<String, String> env = Platform.environment;
+  final String? dartKey = env['RULES_DART_DART'];
+  final String? dillKey = env['RULES_DART_DILL'];
 
   if (dartKey == null || dillKey == null) {
     stderr.writeln('Missing required environment variables.');
@@ -60,15 +60,15 @@ Future<void> main(List<String> args) async {
   }
 
   final r = Runfiles.create();
-  final dart = File(r.rlocation(dartKey)).absolute.path;
-  final dill = File(r.rlocation(dillKey)).absolute.path;
-  final manifest = _findManifestFile(env);
-  final workspace = _workspaceName(env, dillKey);
+  final String dart = File(r.rlocation(dartKey)).absolute.path;
+  final String dill = File(r.rlocation(dillKey)).absolute.path;
+  final String? manifest = _findManifestFile(env);
+  final String? workspace = _workspaceName(env, dillKey);
   final CoverageConfig? coverage = _coverageConfig(env, r);
 
   // Empty counts as unset, so a test that starts another `dart_test` binary
   // can keep its own runner settings from leaking into the child.
-  final runnerKey = env['RULES_DART_TEST_RUNNER'];
+  final String? runnerKey = env['RULES_DART_TEST_RUNNER'];
   if (runnerKey == null || runnerKey.isEmpty) {
     exit(
       await _runDirectly(
@@ -81,7 +81,7 @@ Future<void> main(List<String> args) async {
       ),
     );
   }
-  final baseDillKey = env['RULES_DART_BASE_DILL'];
+  final String? baseDillKey = env['RULES_DART_BASE_DILL'];
   String? baseDill;
   if (baseDillKey != null && baseDillKey.isNotEmpty) {
     try {
@@ -91,11 +91,12 @@ Future<void> main(List<String> args) async {
       exit(1);
     }
   }
-  final suiteVm = (
+  final ({String dart, String runner}) suiteVm = (
     dart: dart,
     runner: File(r.rlocation(runnerKey)).absolute.path,
   );
-  final suiteSource = (
+  final ({String? baseDill, String dill, String testPath, String testSource})
+  suiteSource = (
     dill: dill,
     baseDill: baseDill,
     testSource: File(r.rlocation(env['RULES_DART_TEST_MAIN']!)).absolute.path,
@@ -130,7 +131,7 @@ CoverageConfig? _coverageConfig(Map<String, String> env, Runfiles r) {
 /// The runner's default per-case timeout: Bazel's own for this test, which
 /// Bazel always sets; `none` only when run outside Bazel.
 String _suiteTimeout(Map<String, String> env) {
-  final seconds = int.tryParse(env['TEST_TIMEOUT'] ?? '');
+  final int? seconds = int.tryParse(env['TEST_TIMEOUT'] ?? '');
   return seconds == null ? 'none' : '${seconds}s';
 }
 
@@ -154,7 +155,7 @@ Future<int> _runDirectly(
   required String? workspace,
   required CoverageConfig? coverage,
 }) async {
-  final env = Platform.environment;
+  final Map<String, String> env = Platform.environment;
   // A plain `main` has no notion of test cases, so there is nothing to filter
   // or split. Running every case anyway would report a filtered or sharded run
   // that never happened.
@@ -172,7 +173,7 @@ Future<int> _runDirectly(
     );
     return 1;
   }
-  final inPlace = staging.workspaceInPlace(
+  final bool inPlace = staging.workspaceInPlace(
     manifest: manifest,
     workspace: workspace,
   );
@@ -190,11 +191,11 @@ Future<int> _runDirectly(
   // excluded, so no `RULES_DART_*` control variable reaches it (Dart would
   // otherwise merge the map over the parent); the resolved runfiles
   // locations still win over the inherited ones.
-  final childEnv = {
+  final Map<String, String> childEnv = {
     ...withoutRulesDartControls(env),
     ..._childRunfilesEnv(env, manifest),
   };
-  final vm = await Process.start(
+  final Process vm = await Process.start(
     dart,
     [
       ...?coverage?.vmFlags,
@@ -244,7 +245,7 @@ Future<int> _runUnderRunner({
   required List<String> args,
   required CoverageConfig? coverage,
 }) async {
-  final env = Platform.environment;
+  final Map<String, String> env = Platform.environment;
 
   if (!_isRunnableLayout(
     dill: source.dill,
@@ -253,31 +254,32 @@ Future<int> _runUnderRunner({
   )) {
     return 1;
   }
-  final tmp = Directory(env['TEST_TMPDIR'] ?? Directory.systemTemp.path)
-      .createTempSync('dart_test.');
-  final precompiled = _preparePrecompiled(
+  final Directory tmp = Directory(
+    env['TEST_TMPDIR'] ?? Directory.systemTemp.path,
+  ).createTempSync('dart_test.');
+  final _Precompiled pre = _preparePrecompiled(
     dill: source.dill,
     baseDill: source.baseDill,
     testPath: source.testPath,
     tmp: tmp,
   );
-  final inPlace = _stageSuiteWorkspace(
+  final bool inPlace = _stageSuiteWorkspace(
     testSource: source.testSource,
     testPath: source.testPath,
     manifest: workspace.manifest,
     workspace: workspace.workspace,
     tmp: tmp,
   );
-  final report = staging.joinPaths(tmp.path, 'results.json');
+  final String report = staging.joinPaths(tmp.path, 'results.json');
   final _LauncherArgs launcherArgs = _splitSeed(args);
 
-  final vmProcess = await Process.start(
+  final Process vmProcess = await Process.start(
     vm.dart,
     [
       ...?coverage?.vmFlags,
       ..._suiteCommand(
         runner: vm.runner,
-        precompiled: precompiled.precompiled,
+        precompiled: pre.precompiled,
         testPath: source.testPath,
         report: report,
         env: env,
@@ -309,10 +311,7 @@ Future<int> _runUnderRunner({
   final CoverageSession? session = coverage == null
       ? null
       : CoverageSession.attach(coverage, vmProcess);
-  final int suiteCode = await _waitForSuite(
-    vmProcess,
-    combined: precompiled.combined,
-  );
+  final int suiteCode = await _waitForSuite(vmProcess, combined: pre.combined);
   // The suite's code is mapped onto Bazel's first, so a coverage failure is
   // never hidden by the "no test ran" tolerance.
   final int code = _finishSuiteRun(
@@ -342,7 +341,7 @@ bool _isRunnableLayout({
   // or `--noenable_runfiles` has only a manifest) is the workspace's runfiles
   // laid out in a scratch directory from the manifest, to run in.
   final suffix = '/$testPath.vm_test.vm.app.dill';
-  final normalized = dill.replaceAll(r'\', '/');
+  final String normalized = dill.replaceAll(r'\', '/');
   if (!normalized.endsWith(suffix)) {
     stderr.writeln('dart_test: $dill is not laid out for $testPath');
     return false;
@@ -355,19 +354,22 @@ bool _isRunnableLayout({
 }
 
 /// The precompiled suite directory and the combined dill, when one is needed.
+typedef _Precompiled = ({String precompiled, File? combined});
+
+/// Prepares the precompiled suite directory (see [_Precompiled]).
 ///
 /// The layout is already checked by [_isRunnableLayout].
-({String precompiled, File? combined}) _preparePrecompiled({
+_Precompiled _preparePrecompiled({
   required String dill,
   required String? baseDill,
   required String testPath,
   required Directory tmp,
 }) {
   final suffix = '/$testPath.vm_test.vm.app.dill';
-  var precompiled = dill.substring(0, dill.length - suffix.length);
+  String precompiled = dill.substring(0, dill.length - suffix.length);
   File? combined;
   if (baseDill != null) {
-    final combinedPath = staging.joinPaths(
+    final String combinedPath = staging.joinPaths(
       tmp.path,
       'precompiled/$testPath.vm_test.vm.app.dill',
     );
@@ -394,7 +396,7 @@ bool _stageSuiteWorkspace({
   required String? workspace,
   required Directory tmp,
 }) {
-  final inPlace = staging.workspaceInPlace(
+  final bool inPlace = staging.workspaceInPlace(
     testPath: testPath,
     manifest: manifest,
     workspace: workspace,
@@ -474,10 +476,10 @@ List<String> _suiteCommand({
   required Map<String, String> env,
   required String? seed,
 }) {
-  final filter = env['TESTBRIDGE_TEST_ONLY'];
-  final totalShards = env['TEST_TOTAL_SHARDS'];
-  final shardIndex = env['TEST_SHARD_INDEX'];
-  final shardStatus = env['TEST_SHARD_STATUS_FILE'];
+  final String? filter = env['TESTBRIDGE_TEST_ONLY'];
+  final String? totalShards = env['TEST_TOTAL_SHARDS'];
+  final String? shardIndex = env['TEST_SHARD_INDEX'];
+  final String? shardStatus = env['TEST_SHARD_STATUS_FILE'];
 
   // Touched before the run, as Bazel asks: it is how a test runner says it
   // supports sharding at all.
@@ -529,13 +531,13 @@ int _finishSuiteRun({
   // A filter that selects nothing here, or a shard that drew no cases, is not
   // a failure: `bazel test //... --test_filter=x` has to pass every target the
   // filter does not touch.
-  final selecting =
+  final bool selecting =
       env['TESTBRIDGE_TEST_ONLY'] != null || env['TEST_TOTAL_SHARDS'] != null;
   if (code == _noTestsRan && selecting) {
     code = 0;
   }
 
-  final xmlOutput = env['XML_OUTPUT_FILE'];
+  final String? xmlOutput = env['XML_OUTPUT_FILE'];
   if (xmlOutput != null) {
     final reportFile = File(report);
     if (reportFile.existsSync()) {
@@ -548,11 +550,11 @@ int _finishSuiteRun({
 }
 
 String? _findManifestFile(Map<String, String> env) {
-  final fromEnv = env['RUNFILES_MANIFEST_FILE'];
+  final String? fromEnv = env['RUNFILES_MANIFEST_FILE'];
   if (fromEnv != null && fromEnv.isNotEmpty && File(fromEnv).existsSync()) {
     return fromEnv;
   }
-  final runfilesDir = env['RUNFILES_DIR'];
+  final String? runfilesDir = env['RUNFILES_DIR'];
   if (runfilesDir != null && runfilesDir.isNotEmpty) {
     for (final candidate in [
       '$runfilesDir/MANIFEST',
@@ -561,7 +563,7 @@ String? _findManifestFile(Map<String, String> env) {
       if (File(candidate).existsSync()) return candidate;
     }
   }
-  final exe = Platform.executable;
+  final String exe = Platform.executable;
   for (final candidate in [
     '$exe.runfiles_manifest',
     '$exe.exe.runfiles_manifest',
@@ -574,9 +576,9 @@ String? _findManifestFile(Map<String, String> env) {
 }
 
 String? _workspaceName(Map<String, String> env, String dillKey) {
-  final fromEnv = env['TEST_WORKSPACE'];
+  final String? fromEnv = env['TEST_WORKSPACE'];
   if (fromEnv != null && fromEnv.isNotEmpty) return fromEnv;
-  final slash = dillKey.indexOf('/');
+  final int slash = dillKey.indexOf('/');
   return slash > 0 ? dillKey.substring(0, slash) : null;
 }
 
@@ -585,13 +587,13 @@ Map<String, String> _childRunfilesEnv(
   String? manifest,
 ) {
   final out = <String, String>{};
-  final runfilesDir = env['RUNFILES_DIR'];
+  final String? runfilesDir = env['RUNFILES_DIR'];
   if (runfilesDir != null &&
       runfilesDir.isNotEmpty &&
       Directory(runfilesDir).existsSync()) {
     out['RUNFILES_DIR'] = Directory(runfilesDir).resolveSymbolicLinksSync();
   } else {
-    final exe = Platform.executable;
+    final String exe = Platform.executable;
     for (final candidate in ['$exe.runfiles', '$exe.exe.runfiles']) {
       if (Directory(candidate).existsSync()) {
         out['RUNFILES_DIR'] = Directory(candidate).resolveSymbolicLinksSync();
@@ -641,7 +643,7 @@ String junitXml(List<String> lines, {required String suiteName}) {
       continue;
     }
     if (decoded is! Map<String, dynamic>) continue;
-    final event = decoded;
+    final Map<String, dynamic> event = decoded;
     switch (event['type']) {
       case 'testStart':
         final test = event['test'] as Map<String, dynamic>;
@@ -658,7 +660,7 @@ String junitXml(List<String> lines, {required String suiteName}) {
         (byId[id] ??= _Case(id)).output.writeln(event['message']);
       case 'testDone':
         final id = event['testID'] as int;
-        final c = byId[id] ??= _Case(id);
+        final _Case c = byId[id] ??= _Case(id);
         c
           ..hidden = event['hidden'] as bool? ?? false
           ..skipped = event['skipped'] as bool? ?? false
@@ -668,15 +670,15 @@ String junitXml(List<String> lines, {required String suiteName}) {
     }
   }
 
-  final shown = [
+  final List<_Case> shown = [
     for (final c in cases)
       if (!c.hidden || c.result != 'success') c,
   ];
   String seconds(int ms) => (ms / 1000).toStringAsFixed(3);
-  final failures = shown.where((c) => c.result == 'failure').length;
-  final errors = shown.where((c) => c.result == 'error').length;
-  final skipped = shown.where((c) => c.skipped).length;
-  final total = shown.fold<int>(0, (sum, c) => sum + c.millis);
+  final int failures = shown.where((c) => c.result == 'failure').length;
+  final int errors = shown.where((c) => c.result == 'error').length;
+  final int skipped = shown.where((c) => c.skipped).length;
+  final int total = shown.fold<int>(0, (sum, c) => sum + c.millis);
 
   final out = StringBuffer()
     ..writeln('<?xml version="1.0" encoding="UTF-8"?>')
@@ -718,7 +720,7 @@ void _writeTestCaseElement(
     out.write('<skipped/>');
   } else if (c.result != 'success') {
     final tag = c.result == 'failure' ? 'failure' : 'error';
-    final message = c.errors.isEmpty ? c.result : c.errors.first;
+    final String message = c.errors.isEmpty ? c.result : c.errors.first;
     out.write(
       '<$tag message="${_attr(message.split('\n').first)}">'
       '${_text(c.errors.join('\n'))}</$tag>',

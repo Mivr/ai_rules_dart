@@ -122,6 +122,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import '../../guard/lib/directive_guard.dart';
+import 'app_jit_aot_args.dart';
 import 'comma_patch.dart';
 import 'dill_reader.dart';
 import 'jit_lock.dart';
@@ -163,7 +164,7 @@ _TrainingJob _parseTrainArgs(List<String> argv) {
   String? dartvm;
   String? snapshot;
   String? trainKey;
-  var lockTimeout = defaultLockTimeoutSecs;
+  int lockTimeout = defaultLockTimeoutSecs;
   var enableAsserts = false;
   var fallbackAllowed = false;
   final env = <String, String>{};
@@ -172,7 +173,7 @@ _TrainingJob _parseTrainArgs(List<String> argv) {
 
   var i = 0;
   for (; i < argv.length; i++) {
-    final arg = argv[i];
+    final String arg = argv[i];
     if (arg == '--') {
       i++;
       break;
@@ -190,10 +191,10 @@ _TrainingJob _parseTrainArgs(List<String> argv) {
       }
       continue;
     }
-    final eq = arg.indexOf('=');
+    final int eq = arg.indexOf('=');
     if (eq < 0) _usage('unknown argument $arg');
-    final name = arg.substring(0, eq);
-    final value = arg.substring(eq + 1);
+    final String name = arg.substring(0, eq);
+    final String value = arg.substring(eq + 1);
     switch (name) {
       case '--dart':
         dart = value;
@@ -212,13 +213,13 @@ _TrainingJob _parseTrainArgs(List<String> argv) {
         // Seconds to wait for the training lock (see [_openConstantLock]):
         // passed by both snapshot actions only when it differs from
         // [defaultLockTimeoutSecs], so the action key follows the deadline.
-        final secs = int.tryParse(value);
+        final int? secs = int.tryParse(value);
         if (secs == null || secs <= 0) {
           _usage('expected seconds above 0 in $arg');
         }
         lockTimeout = secs;
       case '--env':
-        final pair = _Pair.parse(value, arg);
+        final _Pair pair = _Pair.parse(value, arg);
         env[pair.key] = pair.value;
       case '--copy':
         copies.add(_Pair.parse(value, arg));
@@ -228,7 +229,7 @@ _TrainingJob _parseTrainArgs(List<String> argv) {
         _usage('unknown argument $arg');
     }
   }
-  final dartArgs = argv.sublist(i);
+  final List<String> dartArgs = argv.sublist(i);
   return (
     dart: dart,
     dartvm: dartvm,
@@ -248,18 +249,18 @@ _TrainingJob _parseTrainArgs(List<String> argv) {
 /// arguments are missing, when the training fails, or when it writes no
 /// snapshot (see [_trainInScratch]).
 void _trainFromArgs(_TrainingJob job) {
-  final dart = job.dart;
-  final dartvm = job.dartvm;
-  final snapshot = job.snapshot;
-  final dartArgs = job.dartArgs;
+  final String? dart = job.dart;
+  final String? dartvm = job.dartvm;
+  final String? snapshot = job.snapshot;
+  final List<String> dartArgs = job.dartArgs;
   if (dart == null || snapshot == null || dartArgs.isEmpty) {
     _usage('--dart, --snapshot and the dart arguments are required');
   }
   trainKeyOverride = job.trainKey;
   lockTimeoutSecs = job.lockTimeout;
 
-  final out = File(snapshot).absolute;
-  final exitCode = _trainInScratch(
+  final File out = File(snapshot).absolute;
+  final int exitCode = _trainInScratch(
     job: (
       dart: File(dart).absolute.path,
       dartvm: dartvm == null ? null : File(dartvm).absolute.path,
@@ -306,7 +307,7 @@ Never _usage(String problem) {
 /// [trainDirForKey]).
 bool _isTrainKey(String value) {
   if (value.length != 16) return false;
-  for (final c in value.codeUnits) {
+  for (final int c in value.codeUnits) {
     if ((c < 0x30 || c > 0x39) && (c < 0x61 || c > 0x66)) return false;
   }
   return true;
@@ -347,8 +348,8 @@ void _installCopy(String source, String target) {
 }
 
 bool _sameBytes(File a, File b) {
-  final x = a.readAsBytesSync();
-  final y = b.readAsBytesSync();
+  final Uint8List x = a.readAsBytesSync();
+  final Uint8List y = b.readAsBytesSync();
   if (x.length != y.length) return false;
   for (var i = 0; i < x.length; i++) {
     if (x[i] != y[i]) return false;
@@ -370,12 +371,12 @@ const _isolatedHomeEnvKeys = <String>{
 };
 
 String? _lookupEnvCaseInsensitive(Map<String, String> env, String name) {
-  final direct = env[name];
+  final String? direct = env[name];
   if (direct != null && direct.isNotEmpty && !direct.contains('\x00')) {
     return direct;
   }
-  final upper = name.toUpperCase();
-  for (final entry in env.entries) {
+  final String upper = name.toUpperCase();
+  for (final MapEntry<String, String> entry in env.entries) {
     if (entry.key.toUpperCase() == upper &&
         entry.value.isNotEmpty &&
         !entry.value.contains('\x00')) {
@@ -405,8 +406,8 @@ Map<String, String> buildChildEnvironment({
   bool? isWindows,
   bool includeParent = true,
 }) {
-  final source = parentEnv ?? Platform.environment;
-  final win = isWindows ?? Platform.isWindows;
+  final Map<String, String> source = parentEnv ?? Platform.environment;
+  final bool win = isWindows ?? Platform.isWindows;
   final env = _ChildEnvBuilder(win: win);
   if (win) {
     _applyWindowsChildEnv(env, source, homeDir, includeParent, overrides);
@@ -434,7 +435,7 @@ final class _ChildEnvBuilder {
   void set(String key, String value) {
     if (!isValidEntry(key, value)) return;
     if (win) {
-      final upper = key.toUpperCase();
+      final String upper = key.toUpperCase();
       result.removeWhere(
         (existingKey, _) => existingKey.toUpperCase() == upper,
       );
@@ -453,11 +454,11 @@ void _applyWindowsChildEnv(
   bool includeParent,
   Map<String, String> overrides,
 ) {
-  final systemRoot =
+  final String systemRoot =
       _lookupEnvCaseInsensitive(source, 'SystemRoot') ??
       _lookupEnvCaseInsensitive(source, 'WINDIR') ??
       r'C:\Windows';
-  final systemDrive =
+  final String systemDrive =
       _lookupEnvCaseInsensitive(source, 'SystemDrive') ??
       (systemRoot.length >= 2 && systemRoot[1] == ':'
           ? systemRoot.substring(0, 2)
@@ -474,7 +475,7 @@ void _applyWindowsChildEnv(
     'PATHEXT',
     _lookupEnvCaseInsensitive(source, 'PATHEXT') ?? '.COM;.EXE;.BAT;.CMD',
   );
-  final parentPath = _lookupEnvCaseInsensitive(source, 'PATH');
+  final String? parentPath = _lookupEnvCaseInsensitive(source, 'PATH');
   env.set(
     'PATH',
     (includeParent && parentPath != null)
@@ -485,7 +486,7 @@ void _applyWindowsChildEnv(
     'NUMBER_OF_PROCESSORS',
     'PROCESSOR_ARCHITECTURE',
   ]) {
-    final val = _lookupEnvCaseInsensitive(source, optionalKey);
+    final String? val = _lookupEnvCaseInsensitive(source, optionalKey);
     if (val != null) {
       env.set(optionalKey, val);
     }
@@ -502,7 +503,7 @@ void _applyWindowsChildEnv(
   ]) {
     env.set(homeKey, homeDir);
   }
-  for (final entry in overrides.entries) {
+  for (final MapEntry<String, String> entry in overrides.entries) {
     env.set(entry.key, entry.value);
   }
   if ((_lookupEnvCaseInsensitive(env.result, 'SystemRoot') ?? '').isEmpty) {
@@ -522,7 +523,7 @@ void _applyPosixChildEnv(
   Map<String, String> overrides,
 ) {
   if (includeParent) {
-    for (final entry in source.entries) {
+    for (final MapEntry<String, String> entry in source.entries) {
       if (_isolatedHomeEnvKeys.contains(entry.key.toUpperCase())) continue;
       env.set(entry.key, entry.value);
     }
@@ -543,7 +544,7 @@ void _applyPosixChildEnv(
     env.set('HOME', homeDir);
     env.set('TMPDIR', homeDir);
   }
-  for (final entry in overrides.entries) {
+  for (final MapEntry<String, String> entry in overrides.entries) {
     env.set(entry.key, entry.value);
   }
 }
@@ -556,7 +557,7 @@ class _Pair {
   final String value;
 
   static _Pair parse(String text, String arg) {
-    final eq = text.indexOf('=');
+    final int eq = text.indexOf('=');
     if (eq < 0) _usage('expected KEY=VALUE in $arg');
     return _Pair(text.substring(0, eq), text.substring(eq + 1));
   }
@@ -761,7 +762,7 @@ int? _openConstantLock() {
   _lockPublishFailed = false;
   _lockLinkRefused = false;
   for (var attempt = 0; attempt < _lockOpenAttempts; attempt++) {
-    final opened = jitOpenLock(constantTrainLock);
+    final JitLockOpen opened = jitOpenLock(constantTrainLock);
     if (opened.fd < 0) {
       _lockDetail = opened.detail;
       _lockChmodRemedy = opened.chmodRemedy;
@@ -770,7 +771,7 @@ int? _openConstantLock() {
       _lockLinkRefused = opened.linkRefused;
       return null;
     }
-    final fd = opened.fd;
+    final int fd = opened.fd;
     if (!_waitExclusive(fd)) {
       _lockWaitTimedOut = true;
       _lockHolderPidAtDeadline = jitLockHolderPid(constantTrainLock);
@@ -804,7 +805,7 @@ bool _waitExclusive(int fd) {
   var sleepMs = 50;
   var nextNotice = const Duration(seconds: 10);
   for (;;) {
-    final remaining = deadline - stopwatch.elapsed;
+    final Duration remaining = deadline - stopwatch.elapsed;
     if (remaining <= Duration.zero) return false;
     sleep(
       remaining < Duration(milliseconds: sleepMs)
@@ -814,7 +815,7 @@ bool _waitExclusive(int fd) {
     if (jitTryExclusiveLock(fd)) return true;
     sleepMs = sleepMs >= 500 ? 1000 : sleepMs * 2;
     if (stopwatch.elapsed >= nextNotice) {
-      final holder = jitLockHolderPid(constantTrainLock);
+      final int? holder = jitLockHolderPid(constantTrainLock);
       stderr.writeln(
         'app_jit_snapshot: waiting for $constantTrainLock'
         '${holder == null ? ' held by process unknown' : ' held by process $holder'}...',
@@ -899,12 +900,12 @@ int Function() ownUid = jitOwnUid;
 /// the OS refuses what is not ours to remove.
 void _deleteTreeNoFollow(String path) {
   if (!FileSystemEntity.isLinkSync(path)) {
-    final info = jitStatEntry(path);
+    final JitStat? info = jitStatEntry(path);
     if (info != null && info.kind == 'directory' && info.uid == jitOwnUid()) {
       chmodFile(path, 0x1c0);
     }
   }
-  for (final entity in Directory(
+  for (final FileSystemEntity entity in Directory(
     path,
   ).listSync(recursive: false, followLinks: false)) {
     if (entity is Link) {
@@ -960,7 +961,7 @@ void _deleteTreeNoFollow(String path) {
     _constantDirUnavailable = reason;
     // Only our own entry is ours to remove (see [_constantDirOwnEntry]):
     // another user's leftover under `/tmp`'s sticky bit is not.
-    final info = jitStatEntry(constantTrainDir);
+    final JitStat? info = jitStatEntry(constantTrainDir);
     _constantDirOwnEntry = info != null && info.uid == ownUid();
     jitUnlockAndClose(lock);
     return null;
@@ -1142,7 +1143,7 @@ void _discardConstant(({Directory dir, int lock}) constant) {
 /// closed with the cause while the scratch below is deleted. Returns the
 /// training run's exit code.
 int _trainInFallback({required _TrainingJob job, required File out}) {
-  final scratch = out.parent.createTempSync('rules_dart_snapshot.');
+  final Directory scratch = out.parent.createTempSync('rules_dart_snapshot.');
   final trainDir = Directory('${scratch.path}/t')..createSync();
   try {
     return _runTraining(trainDir: trainDir, job: job, out: out);
@@ -1183,8 +1184,8 @@ int _runTraining({
 }) {
   // [_trainFromArgs] exits unless `dart` is present, so the assertion below
   // never fires; the field stays nullable because parsing precedes validation.
-  final dart = job.dart!;
-  final dartArgs = job.dartArgs;
+  final String dart = job.dart!;
+  final List<String> dartArgs = job.dartArgs;
   // The training VM is a copy inside the training directory, and the copy
   // is deleted with it, leaving no undeclared output beside the snapshot.
   // At the constant path the copy reads the same on every build; in the
@@ -1193,7 +1194,7 @@ int _runTraining({
   final exeExt = dart.endsWith('.exe') ? '.exe' : '';
   final bin = Directory('${trainDir.path}/vm/bin')..createSync(recursive: true);
   _installCopy(dart, '${bin.path}/dart$exeExt');
-  final effectiveDartvm = job.dartvm ?? _adjacentDartvm(dart, exeExt);
+  final String? effectiveDartvm = job.dartvm ?? _adjacentDartvm(dart, exeExt);
   if (effectiveDartvm != null) {
     final vmExt = effectiveDartvm.endsWith('.exe') ? '.exe' : '';
     _installCopy(effectiveDartvm, '${bin.path}/dartvm$vmExt');
@@ -1205,10 +1206,10 @@ int _runTraining({
   // otherwise name the build's paths (see the header comment). A program
   // argument that merely equals a staged file stays relative: the runner
   // joins its test path onto the absolute `--precompiled` directory itself.
-  for (final c in job.copies) {
+  for (final _Pair c in job.copies) {
     _copyFile(c.value, '${trainDir.path}/${c.key}');
   }
-  for (final t in job.trees) {
+  for (final _Pair t in job.trees) {
     _copyTree(t.value, '${trainDir.path}/${t.key}');
   }
   // No `--packages` value is passed, and no package config is staged. The
@@ -1217,8 +1218,8 @@ int _runTraining({
   // a kernel file whose library URIs are already resolved, so loading
   // needs no package map; a runtime `package:` import would resolve by
   // walking up from the training directory, where no package config lives.
-  final stagedEnv = absoluteHomeEnv(job.env, trainDir);
-  final childEnv = buildChildEnvironment(
+  final Map<String, String> stagedEnv = absoluteHomeEnv(job.env, trainDir);
+  final Map<String, String> childEnv = buildChildEnvironment(
     homeDir: trainDir.path,
     parentEnv: Platform.environment,
     overrides: stagedEnv,
@@ -1242,7 +1243,7 @@ int _runTraining({
   // timeout, the same inputs gave different snapshots from one run to the
   // next; with none of them, ten runs gave one snapshot. Nothing here reads a
   // report, and the test's exit code is all the training needs.
-  final result = Process.runSync(
+  final ProcessResult result = Process.runSync(
     trainingDart,
     [
       '--deterministic',
@@ -1311,7 +1312,7 @@ Map<String, String> absoluteHomeEnv(
   Directory trainDir,
 ) {
   final staged = <String, String>{};
-  for (final entry in env.entries) {
+  for (final MapEntry<String, String> entry in env.entries) {
     if (_scratchEnvKeys.contains(entry.key.toUpperCase()) &&
         entry.value.isNotEmpty &&
         !File(entry.value).isAbsolute) {
@@ -1347,8 +1348,8 @@ List<String> stageTrainingArgs(
   required List<String> stagedTrees,
 }) {
   String slashes(String path) => path.replaceAll(r'\', '/');
-  final files = {for (final f in stagedFiles) slashes(f)};
-  final roots = [for (final t in stagedTrees) slashes(t)];
+  final Set<String> files = {for (final f in stagedFiles) slashes(f)};
+  final List<String> roots = [for (final t in stagedTrees) slashes(t)];
 
   bool underTree(String candidate) {
     for (final root in roots) {
@@ -1358,16 +1359,16 @@ List<String> stageTrainingArgs(
   }
 
   String stage(String arg, {required bool isScript}) {
-    final eq = arg.indexOf('=');
-    final value = eq < 0 ? arg : arg.substring(eq + 1);
+    final int eq = arg.indexOf('=');
+    final String value = eq < 0 ? arg : arg.substring(eq + 1);
     if (value.isEmpty || value.contains(':') || File(value).isAbsolute) {
       // A URI (`package:`, `dart:`, `file://`), a Windows absolute path
       // (`C:\...`, whose colon would otherwise read as relative), or any
       // absolute path: never a staged relative path.
       return arg;
     }
-    final candidate = slashes(value);
-    final staged = isScript
+    final String candidate = slashes(value);
+    final bool staged = isScript
         ? files.contains(candidate) || underTree(candidate)
         : underTree(candidate);
     if (!staged) return arg;
@@ -1384,11 +1385,11 @@ List<String> stageTrainingArgs(
 /// Copies every file under [from] to the same relative place under [to].
 void _copyTree(String from, String to) {
   final source = Directory(from);
-  final entities = source.listSync(recursive: true)
+  final List<FileSystemEntity> entities = source.listSync(recursive: true)
     ..sort((a, b) => a.path.compareTo(b.path));
   for (final entity in entities) {
     if (entity is File) {
-      final relative = entity.path.substring(source.path.length + 1);
+      final String relative = entity.path.substring(source.path.length + 1);
       _copyFile(entity.path, '$to/$relative');
     }
   }
@@ -1415,30 +1416,15 @@ void _copyFile(String from, String to) {
 // keeps the compile strictly hermetic inside the action sandbox, even when
 // inputs are staged read-only and no shell or coreutils exist.
 //
-// The `--aot` branch ([_runAot] below) parses with [_parseAotArgs], delegates
+// The `--aot` branch ([_runAot] below) parses with [parseAotArgs], delegates
 // non-ELF targets to `dart compile`, and otherwise drives `gen_snapshot`
 // directly.
-/// The parsed `--aot` arguments (see [_parseAotArgs]).
-final class _AotArgs {
-  String? dart;
-  String? mode;
-  String? recordedUses;
-  String? outputPath;
-  String? dillPath;
-  String? customGenSnapshot;
-  String? customDartaotruntime;
-  String? targetOs;
-  String? targetArch;
-  var enableAsserts = false;
-  final extraGenSnapshotOptions = <String>[];
-}
-
 /// One direct AOT compile: the parsed arguments plus the paths [_runAot]
 /// derives from them, threaded through the compile steps below instead of a
 /// long parameter list. The nullable targetOs is a genuinely optional
 /// derivation; every other field is present by construction.
 typedef _AotPlan = ({
-  _AotArgs args,
+  AotArgs args,
   String dart,
   String mode,
   String outputPath,
@@ -1449,125 +1435,6 @@ typedef _AotPlan = ({
   String genSnapshot,
   String? targetOs,
 });
-
-/// Parses the `--aot` arguments.
-_AotArgs _parseAotArgs(List<String> argv) {
-  final args = _AotArgs();
-  for (var i = 0; i < argv.length; i++) {
-    i = _applyAotArg(args, argv, i);
-  }
-  return args;
-}
-
-/// Applies the argument at [i], returning the index of the last argument it
-/// consumed (the same index, or one further when it takes a separate value).
-int _applyAotArg(_AotArgs args, List<String> argv, int i) {
-  final arg = argv[i];
-  final toolchainIndex = _applyAotToolchainOption(args, argv, i);
-  if (toolchainIndex != null) return toolchainIndex;
-  if (arg == '--enable-asserts') {
-    args.enableAsserts = true;
-    return i;
-  }
-  if (arg == '--verbosity=error') {
-    // Ignored: gen_snapshot is silent on success.
-    return i;
-  }
-  if (arg.startsWith('--extra-gen-snapshot-options=')) {
-    final opts = arg.substring('--extra-gen-snapshot-options='.length);
-    for (final opt in opts.split(',')) {
-      if (opt.isNotEmpty) args.extraGenSnapshotOptions.add(opt);
-    }
-    return i;
-  }
-  if (arg == '-o') {
-    args.outputPath = argv[++i];
-    return i;
-  }
-  if (arg.startsWith('-o=')) {
-    args.outputPath = arg.substring('-o='.length);
-    return i;
-  }
-  if (!arg.startsWith('-')) {
-    args.dillPath = arg;
-    return i;
-  }
-  stderr.writeln('app_jit_snapshot --aot: unknown argument $arg');
-  exit(64);
-}
-
-/// Applies a toolchain or target option at [i], returning the index of the
-/// last argument it consumed, or null when [arg] is no such option.
-int? _applyAotToolchainOption(_AotArgs args, List<String> argv, int i) {
-  final arg = argv[i];
-  if (arg.startsWith('--dart=')) {
-    args.dart = arg.substring('--dart='.length);
-    return i;
-  }
-  if (arg.startsWith('--mode=')) {
-    args.mode = arg.substring('--mode='.length);
-    return i;
-  }
-  if (arg.startsWith('--recorded-uses=')) {
-    args.recordedUses = arg.substring('--recorded-uses='.length);
-    return i;
-  }
-  if (arg.startsWith('--gen-snapshot=')) {
-    args.customGenSnapshot = arg.substring('--gen-snapshot='.length);
-    return i;
-  }
-  if (arg == '--gen-snapshot') {
-    args.customGenSnapshot = argv[++i];
-    return i;
-  }
-  if (arg.startsWith('--dartaotruntime=')) {
-    args.customDartaotruntime = arg.substring('--dartaotruntime='.length);
-    return i;
-  }
-  if (arg == '--dartaotruntime') {
-    args.customDartaotruntime = argv[++i];
-    return i;
-  }
-  if (arg.startsWith('--target-os=')) {
-    args.targetOs = arg.substring('--target-os='.length);
-    return i;
-  }
-  if (arg == '--target-os') {
-    args.targetOs = argv[++i];
-    return i;
-  }
-  if (arg.startsWith('--target-arch=')) {
-    args.targetArch = arg.substring('--target-arch='.length);
-    return i;
-  }
-  if (arg == '--target-arch') {
-    args.targetArch = argv[++i];
-    return i;
-  }
-  return null;
-}
-
-/// Exits unless a cross-compilation has the toolchain it needs: a custom
-/// `gen_snapshot`, and a custom `dartaotruntime` for executables.
-void _checkAotCrossRequirements(_AotArgs args, String mode, bool isCross) {
-  if (!isCross) return;
-  if (args.customGenSnapshot == null || args.customGenSnapshot!.isEmpty) {
-    stderr.writeln(
-      'app_jit_snapshot --aot: cross-compilation to '
-      '${args.targetOs}-${args.targetArch} requires --gen-snapshot',
-    );
-    exit(64);
-  }
-  if (mode == 'exe' &&
-      (args.customDartaotruntime == null ||
-          args.customDartaotruntime!.isEmpty)) {
-    stderr.writeln(
-      'app_jit_snapshot --aot: cross-compiling exe to '
-      '${args.targetOs}-${args.targetArch} requires --dartaotruntime',
-    );
-    exit(64);
-  }
-}
 
 /// Whether the compile delegates to `dart compile` with a fresh temporary
 /// HOME directory: on non-ELF targets (e.g. native macOS Mach-O executables or
@@ -1587,10 +1454,10 @@ bool _aotDelegatesToDartCompile({
 /// Compiles through `dart compile` instead of driving `gen_snapshot` directly
 /// (see [_aotDelegatesToDartCompile]), exiting when the compile fails.
 void _runAotViaDartCompile(_AotPlan plan) {
-  final dart = plan.dart;
-  final mode = plan.mode;
-  final outputPath = plan.outputPath;
-  final dillPath = plan.dillPath;
+  final String dart = plan.dart;
+  final String mode = plan.mode;
+  final String outputPath = plan.outputPath;
+  final String dillPath = plan.dillPath;
   final compileArgs = <String>[
     'compile',
     mode,
@@ -1604,9 +1471,12 @@ void _runAotViaDartCompile(_AotPlan plan) {
     outputPath,
     dillPath,
   ];
-  final scratchBase = File(outputPath).parent..createSync(recursive: true);
-  final tempHome = scratchBase.createTempSync('rules_dart_compile_home.');
-  final childEnv = buildChildEnvironment(
+  final Directory scratchBase = File(outputPath).parent
+    ..createSync(recursive: true);
+  final Directory tempHome = scratchBase.createTempSync(
+    'rules_dart_compile_home.',
+  );
+  final Map<String, String> childEnv = buildChildEnvironment(
     homeDir: tempHome.path,
     parentEnv: Platform.environment,
     isWindows: Platform.isWindows,
@@ -1645,17 +1515,17 @@ void _runAotViaDartCompile(_AotPlan plan) {
 }) {
   // [_aotActiveDill] calls only with `--recorded-uses` present, so the
   // assertion below never fires.
-  final recordedUses = plan.args.recordedUses!;
-  final sdkBin = plan.sdkBin;
-  final dillPath = plan.dillPath;
-  final targetOs = plan.targetOs;
+  final String recordedUses = plan.args.recordedUses!;
+  final String sdkBin = plan.sdkBin;
+  final String dillPath = plan.dillPath;
+  final String? targetOs = plan.targetOs;
   final productPlatform = '$sdkBin/../lib/_internal/vm_platform_product.dill';
   final strongPlatform = '$sdkBin/../lib/_internal/vm_platform_strong.dill';
   final platformDill = File(productPlatform).existsSync()
       ? productPlatform
       : strongPlatform;
   final recordedDill = '${tmpDir.path}/recorded.dill';
-  final gkRes = Process.runSync(
+  final ProcessResult gkRes = Process.runSync(
     plan.hostDartaotruntime,
     [
       '$sdkBin/snapshots/gen_kernel_aot.dart.snapshot',
@@ -1697,7 +1567,7 @@ int _runGenSnapshotElf({
   required String activeDill,
   required Map<String, String> homeEnv,
 }) {
-  final gsRes = Process.runSync(
+  final ProcessResult gsRes = Process.runSync(
     genSnapshot,
     [
       '--deterministic',
@@ -1719,15 +1589,15 @@ int _runGenSnapshotElf({
 }
 
 /// Compiles a pre-built kernel `.dill` to an AOT snapshot or executable (see
-/// the section comment above [_AotArgs]).
+/// the section comment above [AotArgs]).
 void _runAot(List<String> argv) {
-  final args = _parseAotArgs(argv);
-  final dart = args.dart;
-  final mode = args.mode;
-  final outputPath = args.outputPath;
-  final dillPath = args.dillPath;
-  final targetOs = args.targetOs;
-  final targetArch = args.targetArch;
+  final AotArgs args = parseAotArgs(argv);
+  final String? dart = args.dart;
+  final String? mode = args.mode;
+  final String? outputPath = args.outputPath;
+  final String? dillPath = args.dillPath;
+  final String? targetOs = args.targetOs;
+  final String? targetArch = args.targetArch;
 
   if (dart == null || mode == null || outputPath == null || dillPath == null) {
     stderr.writeln(
@@ -1736,19 +1606,20 @@ void _runAot(List<String> argv) {
     exit(64);
   }
 
-  final isCross =
+  final bool isCross =
       (targetOs != null && targetOs.isNotEmpty) ||
       (targetArch != null && targetArch.isNotEmpty);
-  _checkAotCrossRequirements(args, mode, isCross);
+  checkAotCrossRequirements(args, mode, isCross: isCross);
 
-  final sdkBin = File(dart).parent.path;
+  final String sdkBin = File(dart).parent.path;
   final hostExeExt = dart.endsWith('.exe') ? '.exe' : '';
   final hostDartaotruntime = '$sdkBin/dartaotruntime$hostExeExt';
-  final targetDartaotruntime = args.customDartaotruntime ?? hostDartaotruntime;
-  final genSnapshot =
+  final String targetDartaotruntime =
+      args.customDartaotruntime ?? hostDartaotruntime;
+  final String genSnapshot =
       args.customGenSnapshot ?? '$sdkBin/utils/gen_snapshot$hostExeExt';
 
-  final plan = (
+  final _AotPlan plan = (
     args: args,
     dart: dart,
     mode: mode,
@@ -1770,7 +1641,7 @@ void _runAot(List<String> argv) {
     return;
   }
 
-  final failureExitCode = _runAotDirect(plan);
+  final int failureExitCode = _runAotDirect(plan);
   if (failureExitCode != 0) {
     exit(failureExitCode);
   }
@@ -1779,18 +1650,23 @@ void _runAot(List<String> argv) {
 // Runs AOT compilation through gen_snapshot in a scratch directory.
 // Returns the process exit code: 0 on success.
 int _runAotDirect(_AotPlan plan) {
-  final scratch = _prepareAotScratch(plan.outputPath);
-  final tmpDir = scratch.tmpDir;
-  final homeEnv = scratch.homeEnv;
+  final ({Map<String, String> homeEnv, Directory tmpDir}) scratch =
+      _prepareAotScratch(plan.outputPath);
+  final Directory tmpDir = scratch.tmpDir;
+  final Map<String, String> homeEnv = scratch.homeEnv;
   var failureExitCode = 0;
   try {
-    final active = _aotActiveDill(plan: plan, tmpDir: tmpDir, homeEnv: homeEnv);
+    final ({String dill, int exitCode}) active = _aotActiveDill(
+      plan: plan,
+      tmpDir: tmpDir,
+      homeEnv: homeEnv,
+    );
     if (active.exitCode != 0) return active.exitCode;
 
-    final elfPath = plan.mode == 'aot-snapshot'
+    final String elfPath = plan.mode == 'aot-snapshot'
         ? plan.outputPath
         : '${tmpDir.path}/snapshot.elf';
-    final gsExitCode = _snapshotElfAndLink(
+    final int gsExitCode = _snapshotElfAndLink(
       plan: plan,
       elfPath: elfPath,
       activeDill: active.dill,
@@ -1816,10 +1692,11 @@ int _runAotDirect(_AotPlan plan) {
 ({Directory tmpDir, Map<String, String> homeEnv}) _prepareAotScratch(
   String outputPath,
 ) {
-  final scratchBase = File(outputPath).parent..createSync(recursive: true);
-  final tmpDir = scratchBase.createTempSync('rules_dart_aot.');
+  final Directory scratchBase = File(outputPath).parent
+    ..createSync(recursive: true);
+  final Directory tmpDir = scratchBase.createTempSync('rules_dart_aot.');
   final homeDir = Directory('${tmpDir.path}/home')..createSync(recursive: true);
-  final homeEnv = buildChildEnvironment(
+  final Map<String, String> homeEnv = buildChildEnvironment(
     homeDir: homeDir.path,
     parentEnv: Platform.environment,
     isWindows: Platform.isWindows,
@@ -1837,7 +1714,11 @@ int _runAotDirect(_AotPlan plan) {
   if (plan.args.recordedUses == null) {
     return (dill: plan.dillPath, exitCode: 0);
   }
-  final baked = _bakeRecordedDill(plan: plan, tmpDir: tmpDir, homeEnv: homeEnv);
+  final ({String dill, int exitCode}) baked = _bakeRecordedDill(
+    plan: plan,
+    tmpDir: tmpDir,
+    homeEnv: homeEnv,
+  );
   if (baked.exitCode != 0) {
     return (dill: plan.dillPath, exitCode: baked.exitCode);
   }
@@ -1852,7 +1733,7 @@ int _snapshotElfAndLink({
   required String activeDill,
   required Map<String, String> homeEnv,
 }) {
-  final gsExitCode = _runGenSnapshotElf(
+  final int gsExitCode = _runGenSnapshotElf(
     genSnapshot: plan.genSnapshot,
     elfPath: elfPath,
     enableAsserts: plan.args.enableAsserts,
@@ -1873,9 +1754,9 @@ int _snapshotElfAndLink({
 
 bool _isElfFile(File file) {
   if (!file.existsSync()) return false;
-  final raf = file.openSync();
+  final RandomAccessFile raf = file.openSync();
   try {
-    final magic = raf.readSync(4);
+    final Uint8List magic = raf.readSync(4);
     return magic.length == 4 &&
         magic[0] == 0x7f &&
         magic[1] == 0x45 &&
@@ -1905,12 +1786,12 @@ void writeAppAotElfExe({
   if (output.existsSync()) {
     output.deleteSync();
   }
-  final runtimeBytes = dartaotruntime.readAsBytesSync();
-  final runtimeLen = runtimeBytes.length;
-  final padLen = (pageSize - (runtimeLen % pageSize)) % pageSize;
-  final offset = runtimeLen + padLen;
+  final Uint8List runtimeBytes = dartaotruntime.readAsBytesSync();
+  final int runtimeLen = runtimeBytes.length;
+  final int padLen = (pageSize - (runtimeLen % pageSize)) % pageSize;
+  final int offset = runtimeLen + padLen;
 
-  final raf = output.openSync(mode: FileMode.writeOnly);
+  final RandomAccessFile raf = output.openSync(mode: FileMode.writeOnly);
   try {
     raf.writeFromSync(runtimeBytes);
     if (padLen > 0) {
@@ -1958,11 +1839,15 @@ int Function(String path, int mode) mkdirExclusive = _libcMkdir;
 int _libcMkdir(String path, int mode) {
   if (Platform.isWindows) return -1;
   final lib = ffi.DynamicLibrary.process();
-  final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
-  final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
-  final mkdir = lib.lookupFunction<_MkdirNative, _MkdirDart>('mkdir');
-  final bytes = utf8.encode(path);
-  final ptr = malloc(bytes.length + 1);
+  final _MallocDart malloc = lib.lookupFunction<_MallocNative, _MallocDart>(
+    'malloc',
+  );
+  final _FreeDart free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
+  final _MkdirDart mkdir = lib.lookupFunction<_MkdirNative, _MkdirDart>(
+    'mkdir',
+  );
+  final Uint8List bytes = utf8.encode(path);
+  final ffi.Pointer<ffi.Uint8> ptr = malloc(bytes.length + 1);
   if (ptr == ffi.nullptr) return -1;
   try {
     ptr.asTypedList(bytes.length + 1)
@@ -1978,11 +1863,15 @@ int _libcMkdir(String path, int mode) {
 void chmodFile(String path, int mode) {
   if (Platform.isWindows) return;
   final lib = ffi.DynamicLibrary.process();
-  final malloc = lib.lookupFunction<_MallocNative, _MallocDart>('malloc');
-  final free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
-  final chmod = lib.lookupFunction<_ChmodNative, _ChmodDart>('chmod');
-  final bytes = utf8.encode(path);
-  final ptr = malloc(bytes.length + 1);
+  final _MallocDart malloc = lib.lookupFunction<_MallocNative, _MallocDart>(
+    'malloc',
+  );
+  final _FreeDart free = lib.lookupFunction<_FreeNative, _FreeDart>('free');
+  final _ChmodDart chmod = lib.lookupFunction<_ChmodNative, _ChmodDart>(
+    'chmod',
+  );
+  final Uint8List bytes = utf8.encode(path);
+  final ffi.Pointer<ffi.Uint8> ptr = malloc(bytes.length + 1);
   if (ptr == ffi.nullptr) {
     throw FileSystemException('malloc failed for chmod', path);
   }
@@ -1990,7 +1879,7 @@ void chmodFile(String path, int mode) {
     ptr.asTypedList(bytes.length + 1)
       ..setAll(0, bytes)
       ..[bytes.length] = 0;
-    final rc = chmod(ptr, mode);
+    final int rc = chmod(ptr, mode);
     if (rc != 0) {
       throw FileSystemException('chmod failed (rc=$rc)', path);
     }
@@ -2000,16 +1889,18 @@ void chmodFile(String path, int mode) {
 }
 
 void _copyEntitySync(String srcPath, String dstPath) {
-  final type = FileSystemEntity.typeSync(srcPath);
+  final FileSystemEntityType type = FileSystemEntity.typeSync(srcPath);
   if (type == FileSystemEntityType.file) {
     final dst = File(dstPath);
     if (dst.existsSync()) return;
     dst.parent.createSync(recursive: true);
     dst.writeAsBytesSync(File(srcPath).readAsBytesSync());
   } else if (type == FileSystemEntityType.directory) {
-    for (final entity in Directory(srcPath).listSync(recursive: true)) {
+    for (final FileSystemEntity entity in Directory(
+      srcPath,
+    ).listSync(recursive: true)) {
       if (entity is File) {
-        final rel = entity.path
+        final String rel = entity.path
             .substring(srcPath.length)
             .replaceAll(r'\', '/')
             .replaceFirst(RegExp(r'^/+'), '');
@@ -2026,11 +1917,13 @@ void _copyEntitySync(String srcPath, String dstPath) {
 }
 
 String _stripFsRootPrefix(String path, List<String> fsRoots) {
-  final slashPath = path.replaceAll(r'\', '/');
+  final String slashPath = path.replaceAll(r'\', '/');
   var bestRootLen = -1;
   String? bestRel;
   for (final rawRoot in fsRoots) {
-    final root = rawRoot.replaceAll(r'\', '/').replaceFirst(RegExp(r'/+$'), '');
+    final String root = rawRoot
+        .replaceAll(r'\', '/')
+        .replaceFirst(RegExp(r'/+$'), '');
     if (root.isEmpty || root == '.') continue;
     final prefix = '$root/';
     if (slashPath.startsWith(prefix) && root.length > bestRootLen) {
@@ -2086,19 +1979,20 @@ List<String> _findDisallowedGenKernelDirectives(
     for (final path in contents.keys) _stableSourceKey(path, fsRoots),
   };
   final errors = <String>[];
-  final paths = contents.keys.toList()..sort();
+  final List<String> paths = contents.keys.toList()..sort();
   for (final path in paths) {
-    final content = contents[path];
+    final String? content = contents[path];
     if (content == null) continue;
-    final from = normalizeStagedPath(path);
-    final fromKey = _stableSourceKey(path, fsRoots);
-    final checked = scanAllDirectiveUrisChecked(content);
+    final String from = normalizeStagedPath(path);
+    final String fromKey = _stableSourceKey(path, fsRoots);
+    final ({List<ScanRef> refs, bool unparsable}) checked =
+        scanAllDirectiveUrisChecked(content);
     if (checked.unparsable) {
       errors.add(unparsableDirectiveDiagnostic('app_jit_snapshot', path));
       continue;
     }
-    for (final ref in checked.refs) {
-      final error = _disallowedDirectiveError(
+    for (final ScanRef ref in checked.refs) {
+      final String? error = _disallowedDirectiveError(
         ref,
         path: path,
         from: from,
@@ -2122,7 +2016,7 @@ String? _disallowedDirectiveError(
   required Set<String> declared,
   required Set<String> declaredKeys,
 }) {
-  final uri = ref.uri;
+  final String uri = ref.uri;
   // A URI spanning lines is refused however it spells its target: the
   // front end's multi-line first-line rule reads a different file than
   // the resolvers below see (see [hasLineBreak]).
@@ -2147,11 +2041,11 @@ String? _disallowedDirectiveError(
   if (isFileSchemeDirectiveUri(uri) || isDisallowedDirectiveUri(uri)) {
     return "app_jit_snapshot: $path ${ref.kind} '$uri' is not a declared input.";
   }
-  final target = resolveStagedRelativeTarget(uri, from);
+  final String? target = resolveStagedRelativeTarget(uri, from);
   // A null filesystem-path resolution is not acceptance: the key-space
   // lookup below gets its say, and a null there refuses the directive.
   if (target != null && declared.contains(target)) return null;
-  final keyTarget = _resolveKeyRelativeTarget(uri, fromKey);
+  final String? keyTarget = _resolveKeyRelativeTarget(uri, fromKey);
   if (keyTarget != null && declaredKeys.contains(keyTarget)) return null;
   return "app_jit_snapshot: $path ${ref.kind} '$uri' is not a declared input.";
 }
@@ -2169,8 +2063,8 @@ String? _disallowedDirectiveError(
 /// (tests), keep the [_stripFsRootPrefix] spelling, which stays consistent
 /// because every key in the comparison uses this same function.
 String _stableSourceKey(String path, List<String> fsRoots) {
-  var slash = path.replaceAll(r'\', '/');
-  final cwd = Directory.current.path
+  String slash = path.replaceAll(r'\', '/');
+  final String cwd = Directory.current.path
       .replaceAll(r'\', '/')
       .replaceFirst(RegExp(r'/+$'), '');
   if (slash == cwd) {
@@ -2181,7 +2075,7 @@ String _stableSourceKey(String path, List<String> fsRoots) {
   slash = slash.replaceFirst(RegExp(r'^(?:\./)+'), '');
   String? best;
   for (final rawRoot in fsRoots) {
-    final root = rawRoot
+    final String root = rawRoot
         .replaceAll(r'\', '/')
         .replaceFirst(RegExp(r'/+$'), '')
         .replaceFirst(RegExp(r'^(?:\./)+'), '');
@@ -2214,13 +2108,13 @@ String _stableSourceKey(String path, List<String> fsRoots) {
 /// importing file itself. Null never means "declared": the caller refuses it
 /// unless the filesystem-path check above already accepted it.
 String? _resolveKeyRelativeTarget(String uri, String fromKey) {
-  final text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
+  final String text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
   // A fragment names no file: the front end reports a URI with one instead of
   // reading through it. A query names no file either: the front end reads the
   // file the path part names, so the path part alone is resolved below.
   if (text.contains('#')) return null;
-  final query = text.indexOf('?');
-  final path = query < 0 ? text : text.substring(0, query);
+  final int query = text.indexOf('?');
+  final String path = query < 0 ? text : text.substring(0, query);
   if (path.contains(':')) return null;
   if (path.startsWith('/')) return null;
   // An empty reference names the importing file itself (RFC 3986).
@@ -2244,7 +2138,7 @@ void _stageEntitySync(
   }
   try {
     File(dstPath).parent.createSync(recursive: true);
-    final slashSrc = srcPath.replaceAll(r'\', '/');
+    final String slashSrc = srcPath.replaceAll(r'\', '/');
     final target = slashSrc.startsWith('/') || _isWindowsDrivePath(slashSrc)
         ? slashSrc
         : '${Directory.current.path.replaceAll(r'\', '/')}/$slashSrc';
@@ -2298,18 +2192,18 @@ Map<String, String> genKernelPackageKeyPrefixes({
     // Not JSON: the config defines no packages.
     return prefixes;
   }
-  final packages = config is Map ? config['packages'] : null;
+  final dynamic packages = config is Map ? config['packages'] : null;
   if (packages is! List) return prefixes;
-  final configDir = packagesPath.contains('/')
+  final String configDir = packagesPath.contains('/')
       ? packagesPath.substring(0, packagesPath.lastIndexOf('/'))
       : '.';
-  for (final entry in packages) {
+  for (final Object? entry in packages) {
     if (entry is! Map) continue;
-    final name = entry['name'];
-    final rootUri = entry['rootUri'];
+    final dynamic name = entry['name'];
+    final dynamic rootUri = entry['rootUri'];
     if (name is! String || name.isEmpty || rootUri is! String) continue;
-    final packageUri = entry['packageUri'];
-    final packagePath = packageUri is String
+    final dynamic packageUri = entry['packageUri'];
+    final String packagePath = packageUri is String
         ? packageUri
               .replaceFirst(RegExp(r'^/+'), '')
               .replaceFirst(RegExp(r'/+$'), '')
@@ -2328,7 +2222,7 @@ Map<String, String> genKernelPackageKeyPrefixes({
       );
       if (rootKey == null) continue;
     }
-    final prefix = packagePath.isEmpty
+    final String prefix = packagePath.isEmpty
         ? rootKey
         : rootKey.isEmpty
         ? packagePath
@@ -2365,7 +2259,7 @@ String? _packageEntryFsRootKey(
   }
   if (!rootUri.contains(':')) {
     // A path relative to the config file, per the package-config spec.
-    final resolved = _gkResolveRelative(configDir, rootUri);
+    final String resolved = _gkResolveRelative(configDir, rootUri);
     if (resolved == '..' || resolved.startsWith('../')) return null;
     return _gkKeyOfFsPath(resolved, fsRoots);
   }
@@ -2378,9 +2272,9 @@ String? _packageEntryFsRootKey(
 /// absolute [dir] stays absolute.
 String _gkResolveRelative(String dir, String rel) {
   final joined = dir == '.' || dir.isEmpty ? rel : '$dir/$rel';
-  final absolute = joined.startsWith('/');
+  final bool absolute = joined.startsWith('/');
   final parts = <String>[];
-  for (final part in joined.split('/')) {
+  for (final String part in joined.split('/')) {
     if (part.isEmpty || part == '.') continue;
     if (part == '..') {
       if (parts.isNotEmpty && parts.last != '..') {
@@ -2392,7 +2286,7 @@ String _gkResolveRelative(String dir, String rel) {
       parts.add(part);
     }
   }
-  final normalized = parts.join('/');
+  final String normalized = parts.join('/');
   return absolute ? '/$normalized' : normalized;
 }
 
@@ -2401,9 +2295,9 @@ String _gkResolveRelative(String dir, String rel) {
 /// longest `--filesystem-root` prefix in [fsRoots] stripped. The empty string
 /// when the path names no key (the working directory or a root itself).
 String _gkKeyOfFsPath(String path, List<String> fsRoots) {
-  final normPath = _normFsPath(path);
-  final cwd = _normFsPath(Directory.current.path);
-  final rel = normPath == cwd
+  final String normPath = _normFsPath(path);
+  final String cwd = _normFsPath(Directory.current.path);
+  final String rel = normPath == cwd
       ? ''
       : normPath.startsWith('$cwd/')
       ? normPath.substring(cwd.length + 1)
@@ -2442,14 +2336,14 @@ String _gkKeyOfFileUri(String uri, List<String> fsRoots) {
     // A `file:` URI with no path form: an unresolvable read, never declared.
     return '';
   }
-  final normPath = _normFsPath(path);
-  final cwd = _normFsPath(Directory.current.path);
-  final rel = normPath == cwd
+  final String normPath = _normFsPath(path);
+  final String cwd = _normFsPath(Directory.current.path);
+  final String rel = normPath == cwd
       ? ''
       : normPath.startsWith('$cwd/')
       ? normPath.substring(cwd.length + 1)
       : normPath;
-  final key = _normFsPath(_stripFsRootPrefix(rel, fsRoots));
+  final String key = _normFsPath(_stripFsRootPrefix(rel, fsRoots));
   return key.isEmpty ? '' : key;
 }
 
@@ -2458,12 +2352,12 @@ String _gkKeyOfFileUri(String uri, List<String> fsRoots) {
 /// package defines it.
 String? _gkKeyOfPackageUri(String uri, Map<String, String> packageKeyPrefixes) {
   if (!uri.startsWith('package:')) return null;
-  final rest = uri.substring('package:'.length);
-  final slash = rest.indexOf('/');
+  final String rest = uri.substring('package:'.length);
+  final int slash = rest.indexOf('/');
   if (slash <= 0) return null;
-  final prefix = packageKeyPrefixes[rest.substring(0, slash)];
+  final String? prefix = packageKeyPrefixes[rest.substring(0, slash)];
   if (prefix == null) return null;
-  final path = rest.substring(slash + 1);
+  final String path = rest.substring(slash + 1);
   if (path.isEmpty) return null;
   return prefix.isEmpty ? path : '$prefix/$path';
 }
@@ -2518,32 +2412,31 @@ List<String> verifyGenKernelReads({
   required Map<String, String> packageKeyPrefixes,
   required bool hasNativeAssetsManifest,
 }) {
-  final output = _readKernelOutput(outputPath);
+  final ({Uint8List? bytes, String? error}) output = _readKernelOutput(
+    outputPath,
+  );
   if (output.error != null) return <String>[output.error!];
-  final bytes = output.bytes;
+  final Uint8List? bytes = output.bytes;
   if (bytes == null) return <String>[];
-  final errors = <String>[];
-  final uris = dillSourceUris(bytes);
+  final List<String>? uris = dillSourceUris(bytes);
   if (uris == null) {
     return <String>[
       'app_jit_snapshot: cannot read the sources of $outputPath; '
           'refusing the compile.',
     ];
   }
-  errors.addAll(
-    _recordedSourceUriErrors(
-      uris: uris,
-      outputPath: outputPath,
-      hasNativeAssetsManifest: hasNativeAssetsManifest,
-      multiRootPrefix: multiRootPrefix,
-      fsRoots: fsRoots,
-      declaredKeys: declaredKeys,
-    ),
+  final List<String> errors = _recordedSourceUriErrors(
+    uris: uris,
+    outputPath: outputPath,
+    hasNativeAssetsManifest: hasNativeAssetsManifest,
+    multiRootPrefix: multiRootPrefix,
+    fsRoots: fsRoots,
+    declaredKeys: declaredKeys,
   );
   // The import URIs the packages define: every declared key under its
   // multi-root spelling and its `package:` spellings (one per package whose
   // root directory holds the key).
-  final depImportUris = _depImportUris(
+  final Set<String> depImportUris = _depImportUris(
     declaredKeys: declaredKeys,
     multiRootPrefix: multiRootPrefix,
     packageKeyPrefixes: packageKeyPrefixes,
@@ -2553,8 +2446,8 @@ List<String> verifyGenKernelReads({
   // unparsable source table: the compile produced bytes whose reads cannot be
   // verified. (An empty component is not unparsable: with no library nodes the
   // readers return no references, and the source-table verdict stands alone.)
-  final libraries = dillLibraryReferences(bytes);
-  final canonicalRoots = dillCanonicalRoots(bytes);
+  final List<DillLibraryReference>? libraries = dillLibraryReferences(bytes);
+  final List<String>? canonicalRoots = dillCanonicalRoots(bytes);
   if (libraries == null) {
     errors.add(
       'app_jit_snapshot: cannot read the libraries of $outputPath; '
@@ -2646,7 +2539,7 @@ final class _ReferenceChecker {
     }
     // A resolvable spelling of a declared file passes: the source table
     // already verified the file read, and this spelling names it.
-    var key = _gkKeyOfRecordedUri(reference, multiRootPrefix, fsRoots);
+    String? key = _gkKeyOfRecordedUri(reference, multiRootPrefix, fsRoots);
     if (key == null || key.isEmpty) {
       key = _gkKeyOfPackageUri(reference, packageKeyPrefixes);
     }
@@ -2669,7 +2562,10 @@ List<String> _libraryReferenceErrors({
     if (hasNativeAssetsManifest && _isSynthesizedNativeAssetsLibrary(library)) {
       continue;
     }
-    for (final reference in [library.importUri, library.canonicalName]) {
+    for (final String? reference in [
+      library.importUri,
+      library.canonicalName,
+    ]) {
       if (!checker.isDeclared(reference)) {
         errors.add(
           'app_jit_snapshot: $outputPath references $reference, which no '
@@ -2742,7 +2638,7 @@ List<String> _recordedSourceUriErrors({
     // which names no file; without a manifest the same spelling still fails
     // below, as does any other undeclared spelling.
     if (hasNativeAssetsManifest && uri == 'dummy') continue;
-    final key = _gkKeyOfRecordedUri(uri, multiRootPrefix, fsRoots);
+    final String? key = _gkKeyOfRecordedUri(uri, multiRootPrefix, fsRoots);
     if (key == null) continue;
     if (key.isEmpty || !declaredKeys.contains(key)) {
       errors.add(
@@ -2780,7 +2676,7 @@ _GenKernelArgs _parseGenKernelArgs(List<String> argv) {
 /// are recorded without consuming their value, and every other argument —
 /// including those — is forwarded to `gen_kernel`.
 int _applyGenKernelArg(_GenKernelArgs args, List<String> argv, int i) {
-  final arg = argv[i];
+  final String arg = argv[i];
   // Passed by Starlark when the snapshot at rawGenArgs[0] is the
   // content-keyed patched copy declared by the toolchain. Consumed here and
   // never forwarded to gen_kernel.
@@ -2824,7 +2720,7 @@ int _applyGenKernelArg(_GenKernelArgs args, List<String> argv, int i) {
 void _readInputSourcesFile(_GenKernelArgs args, String path) {
   final file = File(path);
   if (file.existsSync()) {
-    for (final line in file.readAsLinesSync()) {
+    for (final String line in file.readAsLinesSync()) {
       if (line.isNotEmpty) args.declaredInputSources.add(line);
     }
   }
@@ -2837,7 +2733,7 @@ void _rejectUnpatchedCommaDefines(
   List<String> rawGenArgs,
   bool snapshotPatched,
 ) {
-  final commaError = unpatchedCommaDefinesError(
+  final String? commaError = unpatchedCommaDefinesError(
     rawGenArgs,
     snapshotPatched: snapshotPatched,
     snapshotKind: 'gen_kernel',
@@ -2856,7 +2752,7 @@ void _rejectDisallowedDirectives(
   List<String> declaredInputSources,
   List<String> fsRoots,
 ) {
-  final disallowedDirectives = _findDisallowedGenKernelDirectives(
+  final List<String> disallowedDirectives = _findDisallowedGenKernelDirectives(
     declaredInputSources,
     fsRoots,
   );
@@ -2878,13 +2774,13 @@ void _runGenKernel(List<String> argv) {
     );
     exit(64);
   }
-  final dartaotruntime = argv.first;
-  final args = _parseGenKernelArgs(argv);
-  final rawGenArgs = args.rawGenArgs;
-  final declaredInputSources = args.declaredInputSources;
-  final fsRoots = args.fsRoots;
-  final snapshotPatched = args.snapshotPatched;
-  final outputPath = args.outputPath;
+  final String dartaotruntime = argv.first;
+  final _GenKernelArgs args = _parseGenKernelArgs(argv);
+  final List<String> rawGenArgs = args.rawGenArgs;
+  final List<String> declaredInputSources = args.declaredInputSources;
+  final List<String> fsRoots = args.fsRoots;
+  final bool snapshotPatched = args.snapshotPatched;
+  final String? outputPath = args.outputPath;
 
   // The gen_kernel snapshot must already be the toolchain's patched copy when
   // a define contains a comma: its Parser._setOption comma-splitting is only
@@ -2906,12 +2802,13 @@ void _runGenKernel(List<String> argv) {
   // Only stage an isolated filesystem root when an undeclared file would
   // otherwise shadow a declared input. In the common case (no shadows) the
   // declared roots are forwarded unchanged.
-  final staged = _stageIsolatedRoot(
-    declaredInputSources: declaredInputSources,
-    fsRoots: fsRoots,
-    outputPath: outputPath,
-    rawGenArgs: rawGenArgs,
-  );
+  final ({List<String> forwarded, Directory? isolatedRoot}) staged =
+      _stageIsolatedRoot(
+        declaredInputSources: declaredInputSources,
+        fsRoots: fsRoots,
+        outputPath: outputPath,
+        rawGenArgs: rawGenArgs,
+      );
   _runGenKernelProcess(
     dartaotruntime: dartaotruntime,
     forwarded: staged.forwarded,
@@ -2925,7 +2822,8 @@ void _runGenKernel(List<String> argv) {
   // verified against the declared inputs before the action succeeds (see
   // [verifyGenKernelReads]). A dirty read set deletes the output and fails:
   // the kernel must never carry an undeclared file.
-  final verify = _genKernelVerifyOptions(rawGenArgs);
+  final ({bool hasNativeAssetsManifest, String? packagesPath, String scheme})
+  verify = _genKernelVerifyOptions(rawGenArgs);
   _verifyGenKernelOutput(
     outputPath: outputPath,
     declaredInputSources: declaredInputSources,
@@ -2947,8 +2845,8 @@ bool _hasShadowRisk(List<String> declaredInputSources, List<String> fsRoots) {
       _normFsPath(root).replaceFirst(RegExp(r'/+$'), ''),
   ];
   for (final srcPath in declaredInputSources) {
-    final normSrc = _normFsPath(srcPath);
-    final normKey = _normFsPath(_stripFsRootPrefix(srcPath, fsRoots));
+    final String normSrc = _normFsPath(srcPath);
+    final String normKey = _normFsPath(_stripFsRootPrefix(srcPath, fsRoots));
     if (normKey.isEmpty) return true;
     for (final normRoot in normRoots) {
       final candidate = normRoot == '.' || normRoot.isEmpty
@@ -2976,18 +2874,18 @@ bool _hasShadowRisk(List<String> declaredInputSources, List<String> fsRoots) {
     forwarded.addAll(rawGenArgs);
     return (isolatedRoot: null, forwarded: forwarded);
   }
-  final baseDir = File(outputPath).parent;
+  final Directory baseDir = File(outputPath).parent;
   baseDir.createSync(recursive: true);
-  final isolatedRootDir = baseDir.createTempSync('.gen_kernel_root.');
+  final Directory isolatedRootDir = baseDir.createTempSync('.gen_kernel_root.');
   final seenKeys = <String>{};
   for (final srcPath in declaredInputSources) {
-    final key = _stripFsRootPrefix(srcPath, fsRoots);
+    final String key = _stripFsRootPrefix(srcPath, fsRoots);
     if (key.isEmpty || !seenKeys.add(key)) continue;
     _stageEntitySync(srcPath, '${isolatedRootDir.path}/$key');
   }
   var insertedRoot = false;
   for (var i = 0; i < rawGenArgs.length; i++) {
-    final arg = rawGenArgs[i];
+    final String arg = rawGenArgs[i];
     if (arg == '--filesystem-root' && i + 1 < rawGenArgs.length) {
       i++;
       if (!insertedRoot) {
@@ -3020,12 +2918,12 @@ void _runGenKernelProcess({
   required Directory? isolatedRootDir,
   required String outputPath,
 }) {
-  final genKernelScratchBase = File(outputPath).parent
+  final Directory genKernelScratchBase = File(outputPath).parent
     ..createSync(recursive: true);
-  final tempHome = genKernelScratchBase.createTempSync(
+  final Directory tempHome = genKernelScratchBase.createTempSync(
     'rules_dart_gen_kernel_home.',
   );
-  final childEnv = buildChildEnvironment(
+  final Map<String, String> childEnv = buildChildEnvironment(
     homeDir: tempHome.path,
     parentEnv: Platform.environment,
     isWindows: Platform.isWindows,
@@ -3069,11 +2967,11 @@ void _runGenKernelProcess({
 // filesystem scheme, the packages config, and the native-assets manifest flag.
 ({String scheme, String? packagesPath, bool hasNativeAssetsManifest})
 _genKernelVerifyOptions(List<String> rawGenArgs) {
-  var scheme = defaultMultiRootPrefix.replaceFirst(RegExp(r':///$'), '');
+  String scheme = defaultMultiRootPrefix.replaceFirst(RegExp(r':///$'), '');
   String? packagesPath;
   var hasNativeAssetsManifest = false;
   for (var i = 0; i < rawGenArgs.length; i++) {
-    final arg = rawGenArgs[i];
+    final String arg = rawGenArgs[i];
     if (arg == '--filesystem-scheme' && i + 1 < rawGenArgs.length) {
       scheme = rawGenArgs[i + 1];
     } else if (arg.startsWith('--filesystem-scheme=')) {
@@ -3106,7 +3004,7 @@ void _verifyGenKernelOutput({
   required bool hasNativeAssetsManifest,
   required String? packagesPath,
 }) {
-  final readErrors = verifyGenKernelReads(
+  final List<String> readErrors = verifyGenKernelReads(
     outputPath: outputPath,
     declaredKeys: {
       for (final path in declaredInputSources) _stableSourceKey(path, fsRoots),

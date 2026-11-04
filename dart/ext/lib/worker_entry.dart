@@ -124,7 +124,7 @@ List<String> expandFlagFiles(List<String> args) {
     if (a.startsWith('@') && a.length > 1) {
       _appendFlagFileLines(File(a.substring(1)).readAsStringSync(), out);
     } else if (a.startsWith('--flagfile=')) {
-      final path = a.substring('--flagfile='.length);
+      final String path = a.substring('--flagfile='.length);
       _appendFlagFileLines(File(path).readAsStringSync(), out);
     } else {
       out.add(a);
@@ -134,8 +134,10 @@ List<String> expandFlagFiles(List<String> args) {
 }
 
 void _appendFlagFileLines(String content, List<String> out) {
-  for (final raw in content.split('\n')) {
-    final line = raw.endsWith('\r') ? raw.substring(0, raw.length - 1) : raw;
+  for (final String raw in content.split('\n')) {
+    final String line = raw.endsWith('\r')
+        ? raw.substring(0, raw.length - 1)
+        : raw;
     if (line.isNotEmpty) out.add(line);
   }
 }

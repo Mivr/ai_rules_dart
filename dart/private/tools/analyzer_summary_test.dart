@@ -8,6 +8,7 @@ import 'package:analyzer/diagnostic/diagnostic.dart' show Severity;
 import 'package:analyzer/file_system/file_system.dart' as fs;
 import 'package:analyzer/file_system/memory_file_system.dart';
 import 'package:analyzer/file_system/physical_file_system.dart';
+import 'package:analyzer/source/source.dart';
 import 'package:analyzer/src/source/package_map_resolver.dart'
     show PackageMapUriResolver;
 import 'package:path/path.dart' as p;
@@ -89,7 +90,7 @@ void main() {
 
       // Walking upward from srcFile via `.parent` / `isRoot` must stop at `project`.
       final visitedFolders = <String>[];
-      var current = bounded.getFile(srcFile.path).parent;
+      fs.Folder current = bounded.getFile(srcFile.path).parent;
       while (true) {
         visitedFolders.add(p.normalize(p.absolute(current.path)));
         if (current.isRoot) break;
@@ -148,7 +149,7 @@ void main() {
       expect(summarizeBounded.getFile(unlistedFile.path).exists, isFalse);
       expect(recorder.checkedPaths, isEmpty);
       expect(summarizeBounded.getFile(srcFile.path).exists, isTrue);
-      final childrenPaths = [
+      final List<String> childrenPaths = [
         for (final c in summarizeBounded.getFolder(srcDir.path).getChildren())
           p.normalize(p.absolute(c.path)),
       ];
@@ -185,14 +186,14 @@ void main() {
       ];
 
       for (final c in cases) {
-        final projectDir = winCtx.normalize(winCtx.absolute(c.stageRel));
+        final String projectDir = winCtx.normalize(winCtx.absolute(c.stageRel));
         final srcArg = '${c.stageRel}/src/lib/${c.libSubpath}';
-        final resolvedSource = resolveProjectSource(
+        final String resolvedSource = resolveProjectSource(
           projectDir,
           srcArg,
           pathContext: winCtx,
         );
-        final resolvedRelSource = resolveProjectSource(
+        final String resolvedRelSource = resolveProjectSource(
           projectDir,
           'src/lib/${c.libSubpath}',
           pathContext: winCtx,
@@ -206,8 +207,8 @@ void main() {
 
         memory.newFile(resolvedSource, 'class C {}\n');
 
-        final libDir = winCtx.join(projectDir, 'src', 'lib');
-        final summarizeRoot = inferSummarizeRoot(
+        final String libDir = winCtx.join(projectDir, 'src', 'lib');
+        final String summarizeRoot = inferSummarizeRoot(
           [resolvedSource],
           ['package:${c.pkg}/${c.libSubpath}'],
           pathContext: winCtx,
@@ -224,13 +225,15 @@ void main() {
           blockAnalysisOptions: false,
         );
 
-        final libFolder = bounded.getFolder(libDir);
+        final fs.Folder libFolder = bounded.getFolder(libDir);
         // PackageMapUriResolver joins URI segments with '/' and passes the
         // slash-separated subpath (e.g. 'loud/loud.dart') to getFile().
-        final viaGetFile = libFolder.getFile(c.libSubpath);
-        final viaGetChild = libFolder.getChild(c.libSubpath);
-        final parentRel = c.libSubpath.split('/').first;
-        final viaGetFolder = libFolder.getFolder('$parentRel/nested_dir');
+        final fs.File viaGetFile = libFolder.getFile(c.libSubpath);
+        final fs.Resource viaGetChild = libFolder.getChild(c.libSubpath);
+        final String parentRel = c.libSubpath.split('/').first;
+        final fs.Folder viaGetFolder = libFolder.getFolder(
+          '$parentRel/nested_dir',
+        );
 
         expect(viaGetFile.path, resolvedSource);
         expect(viaGetFile.exists, isTrue);
@@ -238,8 +241,8 @@ void main() {
         expect(viaGetFolder.path, isNot(contains('/')));
 
         final resolver = PackageMapUriResolver(bounded, {c.pkg: libFolder});
-        final pkgUri = Uri.parse('package:${c.pkg}/${c.libSubpath}');
-        final resolvedUriSource = resolver.resolveAbsolute(pkgUri);
+        final Uri pkgUri = Uri.parse('package:${c.pkg}/${c.libSubpath}');
+        final Source? resolvedUriSource = resolver.resolveAbsolute(pkgUri);
         expect(resolvedUriSource, isNotNull);
         expect(
           resolvedUriSource!.fullName,
@@ -259,7 +262,7 @@ void main() {
 
   group('AnalysisContextCollectionImpl disposal and worker cache eviction', () {
     test('drives several summarize and analyze requests through the same worker cache instance, exercising eviction and context disposal', () async {
-      final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+      final Directory sdkDir = File(Platform.resolvedExecutable).parent.parent;
       final sdkSummary = File(p.join(tempDir.path, 'sdk.sum'));
       final outSink = StringBuffer();
       final errSink = StringBuffer();
@@ -275,10 +278,11 @@ void main() {
         reason: errSink.toString(),
       );
 
-      final sdkSumBytes = sdkSummary.lengthSync();
+      final int sdkSumBytes = sdkSummary.lengthSync();
       final disposedRoots = <List<String>>[];
-      final prevHook = onContextCollectionDisposed;
-      final beforeCount = disposedContextCollectionsCount;
+      final void Function(AnalysisContextCollection)? prevHook =
+          onContextCollectionDisposed;
+      final int beforeCount = disposedContextCollectionsCount;
       onContextCollectionDisposed = (collection) {
         disposedRoots.add([
           for (final ctx in collection.contexts) ctx.contextRoot.root.path,
@@ -345,11 +349,11 @@ void main() {
         // Size the shared worker cache so it fits sdk.sum plus at most ONE
         // package summary at a time, forcing LRU eviction as requests read
         // pkg_0.sum, pkg_1.sum, and pkg_2.sum.
-        final maxPkgSumBytes = [for (final f in sumFiles) f.lengthSync()]
+        final int maxPkgSumBytes = [for (final f in sumFiles) f.lengthSync()]
             .reduce((a, b) => a > b ? a : b);
-        final minPkgSumBytes = [for (final f in sumFiles) f.lengthSync()]
+        final int minPkgSumBytes = [for (final f in sumFiles) f.lengthSync()]
             .reduce((a, b) => a < b ? a : b);
-        final cacheBudget =
+        final int cacheBudget =
             sdkSumBytes + maxPkgSumBytes + (minPkgSumBytes ~/ 2);
         final workerCache = SummaryByteCache(maxCacheBytes: cacheBudget);
         final workerProvider = SummaryCachingResourceProvider(
@@ -458,7 +462,7 @@ void main() {
     });
 
     test('handles symlinked staging roots for nested lib/ sources and fails closed with result type on NotPathOfUriResult', () async {
-      final sdkDir = File(Platform.resolvedExecutable).parent.parent;
+      final Directory sdkDir = File(Platform.resolvedExecutable).parent.parent;
       final realBase = Directory(p.join(tempDir.path, 'real_execroot'))
         ..createSync(recursive: true);
       final symlinkBase = Link(p.join(tempDir.path, 'symlink_execroot'))
@@ -718,15 +722,20 @@ AnalysisFinding _summaryFinding(
   text: '${level.name.padLeft(7)} - $path:$line:3 - msg - $code',
 );
 
-({int code, String output, bool stamped}) _runSummaryVerdict(
+/// What one summary verdict run printed, returned and stamped.
+typedef _Verdict = ({int code, String output, bool stamped});
+
+_Verdict _runSummaryVerdict(
   List<AnalysisFinding> findings,
   AnalysisBaseline? baseline,
 ) {
-  final dir = Directory.systemTemp.createTempSync('summary_baseline_test_');
+  final Directory dir = Directory.systemTemp.createTempSync(
+    'summary_baseline_test_',
+  );
   try {
     final stamp = File('${dir.path}/stamp.txt');
     final out = StringBuffer();
-    final exitCode = reportAnalyzeFindings(
+    final int exitCode = reportAnalyzeFindings(
       stamp: stamp.path,
       findings: findings,
       fatalInfos: true,
@@ -771,7 +780,7 @@ final class RecordingResourceProvider implements fs.ResourceProvider {
   fs.Resource getResource(String path) => switch (_delegate.getResource(path)) {
     final fs.File f => _RecordingFile(this, f),
     final fs.Folder d => _RecordingFolder(this, d),
-    final other => other,
+    final fs.Resource other => other,
   };
 
   @override
@@ -859,9 +868,11 @@ void _defineSummaryBaselineVerdictTests() {
 
 void _defineSummaryCeilingTest() {
   test('passes a group at its ceiling and fails one above it', () {
-    final baseline = _parseSummaryBaseline('{"lib/a.dart":{"AVOID_PRINT":2}}');
+    final AnalysisBaseline baseline = _parseSummaryBaseline(
+      '{"lib/a.dart":{"AVOID_PRINT":2}}',
+    );
 
-    final atCeiling = _runSummaryVerdict([
+    final _Verdict atCeiling = _runSummaryVerdict([
       _summaryFinding('lib/a.dart', 'avoid_print', line: 1),
       _summaryFinding('lib/a.dart', 'avoid_print', line: 2),
     ], baseline);
@@ -869,7 +880,7 @@ void _defineSummaryCeilingTest() {
     expect(atCeiling.stamped, isTrue);
     expect(atCeiling.output, contains('baselined (2/2)'));
 
-    final above = _runSummaryVerdict([
+    final _Verdict above = _runSummaryVerdict([
       _summaryFinding('lib/a.dart', 'avoid_print', line: 1),
       _summaryFinding('lib/a.dart', 'avoid_print', line: 2),
       _summaryFinding('lib/a.dart', 'avoid_print', line: 3),
@@ -887,18 +898,18 @@ void _defineSummaryUnkeyedAndErrorTests() {
   test(
     'an unkeyed code fails and an entry for another file does not apply',
     () {
-      final baseline = _parseSummaryBaseline(
+      final AnalysisBaseline baseline = _parseSummaryBaseline(
         '{"lib/a.dart":{"avoid_print":1}}',
       );
 
-      final unkeyedCode = _runSummaryVerdict([
+      final _Verdict unkeyedCode = _runSummaryVerdict([
         _summaryFinding('lib/a.dart', 'unused_import'),
       ], baseline);
       expect(unkeyedCode.code, isNonZero);
       expect(unkeyedCode.stamped, isFalse);
       expect(unkeyedCode.output, contains('observed 1, ceiling 0'));
 
-      final otherFile = _runSummaryVerdict([
+      final _Verdict otherFile = _runSummaryVerdict([
         _summaryFinding('lib/b.dart', 'avoid_print'),
       ], baseline);
       expect(otherFile.code, isNonZero);
@@ -912,12 +923,12 @@ void _defineSummaryUnkeyedAndErrorTests() {
   );
 
   test('exempts a keyed error-level diagnostic but never an unkeyed one', () {
-    final baseline = _parseSummaryBaseline(
+    final AnalysisBaseline baseline = _parseSummaryBaseline(
       '{"lib/a.dart":{"undefined_identifier":1,"avoid_print":2},'
       '"pkg/analysis_options.yaml":{"parse_error":1}}',
     );
 
-    final keyedErrors = _runSummaryVerdict([
+    final _Verdict keyedErrors = _runSummaryVerdict([
       _summaryFinding(
         'lib/a.dart',
         'undefined_identifier',
@@ -933,7 +944,7 @@ void _defineSummaryUnkeyedAndErrorTests() {
     expect(keyedErrors.stamped, isTrue);
     expect(keyedErrors.output, contains('baselined (1/1)'));
 
-    final unkeyedError = _runSummaryVerdict([
+    final _Verdict unkeyedError = _runSummaryVerdict([
       _summaryFinding(
         'lib/a.dart',
         'uri_does_not_exist',
