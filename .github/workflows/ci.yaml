@@ -1640,7 +1640,7 @@ jobs:
           # nothing.
           disk-cache: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached && 'strict' || false }}
           repository-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
-          cache-save: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached }}
+          cache-save: ${{ github.ref == 'refs/heads/main' && github.event_name != 'schedule' && !inputs.uncached }}
           bazelrc: |
             common --announce_rc
             common --color=yes
@@ -1667,7 +1667,7 @@ jobs:
           # Cold on purpose: no disk cache built by another Bazel version.
           disk-cache: false
           repository-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
-          cache-save: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached }}
+          cache-save: ${{ github.ref == 'refs/heads/main' && github.event_name != 'schedule' && !inputs.uncached }}
           bazelrc: |
             common --announce_rc
             common --color=yes
@@ -1689,7 +1689,7 @@ jobs:
           bazelisk-cache: true
           disk-cache: false
           repository-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
-          cache-save: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached }}
+          cache-save: ${{ github.ref == 'refs/heads/main' && github.event_name != 'schedule' && !inputs.uncached }}
           bazelrc: |
             common --announce_rc
             common --color=yes
