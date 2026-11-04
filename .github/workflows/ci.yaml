@@ -467,6 +467,11 @@ jobs:
   # macOS coverage runs in the `full.yaml` pre-release workflow, which
   # releases require.
   mac-smoke:
+    # macOS is deferred to the nightly (owner decision 2026-11-04): pushes and
+    # PRs skip this job, and the nightly schedule and dispatched (release)
+    # runs keep it. The gate accepts it as skipped by its exact name
+    # (control ctl/config.py DEFERRED_JOBS); a red nightly becomes a queue item.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
