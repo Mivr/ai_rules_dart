@@ -1,0 +1,19 @@
+load("//dart:defs.bzl", "dart_test")
+
+# Pins the declarative skip in `//dart/private/tools:analyze_runner_test.dart`:
+# the source must not return early before its first assertion.
+dart_test(
+    name = "analyze_runner_early_return_test",
+    size = "small",
+    args = [
+        "$(rlocationpath //dart/private/tools:analyze_runner_test.dart)",
+    ],
+    data = [
+        "//dart/private/tools:analyze_runner_test.dart",
+    ],
+    main = "analyze_runner_early_return_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)

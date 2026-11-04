@@ -143,6 +143,11 @@ dart_binary(
     visibility = ["//dart:__subpackages__"],
 )
 
+exports_files(
+    ["analyze_runner_test.dart"],
+    visibility = ["//dart/tests/early_return_analyze_runner:__pkg__"],
+)
+
 # Drives the built `analyze_runner` as a subprocess (it exits rather than
 # returning) and refuses a triple-quoted import before `dart analyze` runs.
 dart_test(
