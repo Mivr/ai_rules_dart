@@ -19,6 +19,12 @@ load(
 )
 load("//dart/private:dart_compile.bzl", "dart_compile_action", "recorded_uses_kind")
 load(
+    "//dart/private:dart_import_check.bzl",
+    "dart_import_check_aspect",
+    "executable_import_check",
+    "import_check_for_binary",
+)
+load(
     "//dart/private:dart_kernel.bzl",
     "BINARY_MODULAR_KERNEL_ATTRS",
     "DartKernelInfo",
@@ -268,21 +274,24 @@ def _binary_compile_info(result):
         sdk_version = result.dart_sdk_info.version,
     )
 
-def _binary_output_groups(result):
-    """The documented `snapshot` and `debug_info` output groups.
+def _binary_output_groups(ctx, result):
+    """The documented `snapshot` and `debug_info` output groups, plus `_validation`.
 
     Args:
+      ctx: The rule context, for the import check.
       result: The struct describing the compiled binary.
 
     Returns:
       `OutputGroupInfo` exposing the raw compiled file and, when it exists,
       the split symbols file.
     """
+    validation = executable_import_check(ctx, result.own.record)
     if result.debug_info == None:
-        return OutputGroupInfo(snapshot = depset([result.output]))
+        return OutputGroupInfo(snapshot = depset([result.output]), _validation = validation)
     return OutputGroupInfo(
         snapshot = depset([result.output]),
         debug_info = depset([result.debug_info]),
+        _validation = validation,
     )
 
 def _binary_declared_files(result):
@@ -372,7 +381,7 @@ def _binary_snapshot_outputs(ctx, result):
             runfiles = runfiles,
         ),
         _binary_compile_info(result),
-        _binary_output_groups(result),
+        _binary_output_groups(ctx, result),
         # What makes the `dart_analyze` aspect and `dart_fix` reach this entrypoint
         # without making this target a legal `deps` entry. Staging goes by
         # `short_path`, which is the source file's own path.
@@ -435,7 +444,7 @@ def _binary_launcher_outputs(ctx, result):
             },
         ),
         _binary_compile_info(result),
-        _binary_output_groups(result),
+        _binary_output_groups(ctx, result),
         result.own.analyzable,
         _instrumented_files(ctx),
     ] + result.recorded_uses_info
@@ -476,7 +485,7 @@ def _binary_default_outputs(ctx, result):
             runfiles = runfiles,
         ),
         _binary_compile_info(result),
-        _binary_output_groups(result),
+        _binary_output_groups(ctx, result),
         # What makes the `dart_analyze` aspect and `dart_fix` reach this entrypoint
         # without making this target a legal `deps` entry. Staging goes by
         # `short_path`, which is the source file's own path.
@@ -635,7 +644,13 @@ dart_binary = rule(
         "deps": attr.label_list(
             doc = "`dart_library` targets this binary depends on.",
             providers = [DartInfo],
-            aspects = [dart_kernel_module_aspect],
+            aspects = [dart_kernel_module_aspect, dart_import_check_aspect],
+        ),
+        "_import_check": attr.label(
+            doc = "The tool that checks this binary's imports against its direct `deps` (see the `dart_layering_check` feature). `None` for the tool itself, which cannot name itself.",
+            default = import_check_for_binary,
+            executable = True,
+            cfg = "exec",
         ),
         "data": attr.label_list(
             doc = "Additional files needed at runtime. These are added to runfiles so they can be found via the runfiles tree when using `bazel run`.",

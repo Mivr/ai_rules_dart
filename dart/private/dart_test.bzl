@@ -28,6 +28,7 @@ load(
 )
 load("//dart/private:coverage_map.bzl", "COVERAGE_MAP_TOOLCHAINS", "write_coverage_map", "write_generated_list")
 load("//dart/private:dart_compile.bzl", "dart_compile_action")
+load("//dart/private:dart_import_check.bzl", "dart_import_check_aspect", "executable_import_check")
 load(
     "//dart/private:dart_kernel.bzl",
     "DartKernelInfo",
@@ -138,6 +139,7 @@ def _dart_test_impl(ctx):
             dependency_attributes = ["deps", "data"],
             extensions = ["dart"],
         ),
+        OutputGroupInfo(_validation = executable_import_check(ctx, own.record)),
     ]
 
 def _coverage_map(ctx, packages):
@@ -536,6 +538,21 @@ _test_code_assets_transition = transition(
     outputs = ["//dart/private:code_assets_enabled"],
 )
 
+def _test_deps(aspects):
+    """The `deps` attribute of a test rule, with the given aspects.
+
+    Args:
+      aspects: The aspects applied to the dependencies.
+
+    Returns:
+      The `attr.label_list`.
+    """
+    return attr.label_list(
+        doc = "`dart_library` targets this test depends on.",
+        providers = [DartInfo],
+        aspects = aspects,
+    )
+
 # The attributes that define a test's kernel, shared by `dart_test` and
 # `dart_test_kernel` so the two compile the same way.
 _TEST_KERNEL_ATTRS = dict({
@@ -548,11 +565,7 @@ _TEST_KERNEL_ATTRS = dict({
         doc = "Additional Dart source files that are part of this test's package but not reachable via `deps`.",
         allow_files = [".dart"],
     ),
-    "deps": attr.label_list(
-        doc = "`dart_library` targets this test depends on.",
-        providers = [DartInfo],
-        aspects = [dart_kernel_module_aspect],
-    ),
+    "deps": _test_deps([dart_kernel_module_aspect]),
     "defines": attr.string_list(
         doc = """Dart environment declarations (`key=value`). Each entry becomes a `-Dkey=value` \
 flag on the build-time compile, so `String.fromEnvironment` resolves to it. Set these here rather \
@@ -616,6 +629,13 @@ told where a runfile is (resolve it with `Runfiles.rlocation()`).""",
         ),
         env_inherit = attr.string_list(
             doc = "Names of environment variables passed through from the environment `bazel test` runs in.",
+        ),
+        deps = _test_deps([dart_kernel_module_aspect, dart_import_check_aspect]),
+        _import_check = attr.label(
+            doc = "The tool that checks this test's imports against its direct `deps` (see the `dart_layering_check` feature).",
+            default = Label("//dart/private/tools:import_check"),
+            executable = True,
+            cfg = "exec",
         ),
         _tool = attr.label(
             doc = "Executable that launches the test's kernel with the SDK's VM. Defaults to `//dart/private/tools:test_runner`.",

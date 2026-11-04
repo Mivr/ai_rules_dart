@@ -60,9 +60,10 @@ from a disk or remote cache.
 """
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
-load("//dart:providers.bzl", "DartCompileInfo", "DartInfo")
+load("//dart:providers.bzl", "DartCompileInfo", "DartImportCheckInfo", "DartInfo")
 load("//dart/private:common.bzl", "JIT_SNAPSHOT_LOCK_TIMEOUT_DEFAULT", "jit_train_key", "kernel_sdk_mismatch_error", "sdk_dartvm", "writable_home_env")
 load("//dart/private:dart_compile.bzl", "jit_tool_entry")
+load("//dart/private:dart_import_check.bzl", "dart_import_check_aspect")
 load("//dart/private:dart_kernel.bzl", "DartKernelInfo", "dart_kernel_module_aspect")
 load("//dart/private:test_runner_info.bzl", "DartTestRunnerInfo", "DartTestRunnerSnapshotInfo")
 
@@ -137,10 +138,12 @@ def _dart_test_package_impl(ctx):
     # in every `deps`. Without it, each test that depends on `package:test` would
     # find no module kernel for it and compile whole-program.
     forwarded = [library[DartKernelInfo]] if DartKernelInfo in library else []
+    checked = library[DartImportCheckInfo] if DartImportCheckInfo in library else None
     return [
         library[DefaultInfo],
         library[DartInfo],
         DartTestRunnerInfo(runner = runner, sdk_version = sdk_version),
+        OutputGroupInfo(_validation = checked.stamps if checked else depset()),
     ] + forwarded
 
 dart_test_package = rule(
@@ -150,7 +153,7 @@ dart_test_package = rule(
             doc = "The `package:test` `dart_library`.",
             mandatory = True,
             providers = [DartInfo],
-            aspects = [dart_kernel_module_aspect],
+            aspects = [dart_kernel_module_aspect, dart_import_check_aspect],
         ),
         "runner": attr.label(
             doc = "A kernel-mode `dart_binary` built from `library`.",

@@ -86,10 +86,10 @@ dart_test(
 )
 
 # The sources of a library that cannot compile on its own, as json_serializable's
-# `_advanced_sources` is: `id.dart` imports `package:path`, which this target does not
-# declare, and `role.dart` declares a part that only `:split` lists. The `:split`
-# wrapper lists the same files, declares the missing dependency and the part, and
-# is what the test reaches.
+# `_advanced_sources` is: `role.dart` declares a part that only `:split` lists.
+# The `:split` wrapper lists the same files and the part, and is what the test
+# reaches. `id.dart` imports `package:path`, which the layering check requires
+# this target to declare itself.
 dart_library(
     name = "_split_sources",
     package_name = "dart_test_pkg",
@@ -99,6 +99,7 @@ dart_library(
     ],
     language_version = "3.11",
     tags = ["no-dart-analyze"],
+    deps = ["@pub_deps//:path"],
 )
 
 dart_library(
