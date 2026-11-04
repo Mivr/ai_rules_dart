@@ -1,0 +1,21 @@
+load("//dart:defs.bzl", "dart_test")
+
+# Pins that the two persistent-worker cases declare a skip instead of
+# returning early (which `package:test` would report as passed).
+dart_test(
+    name = "runner_workers_early_return_test",
+    size = "small",
+    args = [
+        "$(rlocationpath //dart/private/tools:format_runner_test.dart)",
+        "$(rlocationpath //dart/private/tools:kernel_link_test.dart)",
+    ],
+    data = [
+        "//dart/private/tools:format_runner_test.dart",
+        "//dart/private/tools:kernel_link_test.dart",
+    ],
+    main = "runner_workers_early_return_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)

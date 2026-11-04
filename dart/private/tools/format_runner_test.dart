@@ -389,8 +389,8 @@ void main(List<String> args) {
 
   test(
     'persistent worker answers a failing request and logs to stderr',
+    skip: _toolDillPath.isEmpty ? 'format_runner worker not in runfiles' : null,
     () async {
-      if (_toolDillPath.isEmpty) return;
       final dartBin = _sdkDartPaths.first;
       final proc = await Process.start(dartBin, [
         _toolDillPath,

@@ -446,6 +446,11 @@ dart_binary(
 )
 
 # The `kernel_link` persistent worker's top-level error handler.
+exports_files(
+    ["kernel_link_test.dart"],
+    visibility = ["//dart/tests/early_return_runner_workers:__pkg__"],
+)
+
 dart_test(
     name = "kernel_link_test",
     size = "small",
@@ -723,6 +728,11 @@ dart_test(
         "//dart/guard:directive_guard",
         "@ext_pub_deps//:test",
     ],
+)
+
+exports_files(
+    ["format_runner_test.dart"],
+    visibility = ["//dart/tests/early_return_runner_workers:__pkg__"],
 )
 
 dart_test(

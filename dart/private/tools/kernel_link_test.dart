@@ -35,8 +35,8 @@ void main(List<String> args) {
 
   test(
     'persistent worker answers a failing request and logs to stderr',
+    skip: _toolDillPath.isEmpty ? 'kernel_link worker not in runfiles' : null,
     () async {
-      if (_toolDillPath.isEmpty) return;
       final proc = await Process.start(_dartBin, [
         _toolDillPath,
         '--persistent_worker',
