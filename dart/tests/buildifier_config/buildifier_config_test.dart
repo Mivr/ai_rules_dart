@@ -336,6 +336,52 @@ List<String> _versionProblems(String rev, String version) {
   ];
 }
 
+/// Returns the file a runfiles [manifest] maps [rlocationPath] to, or null.
+/// Each manifest line is `key target`, split at the first space, with any
+/// `\r` dropped (Windows targets look like `D:/a/_temp/...`). A leading `../`
+/// of [rlocationPath] is dropped, and a key matches when it equals or ends
+/// with the remaining path.
+String? _manifestTarget(String manifest, String rlocationPath) {
+  final String path = rlocationPath.replaceFirst(RegExp(r'^(\.\./)+'), '');
+  for (final String raw in const LineSplitter().convert(manifest)) {
+    final String line = raw.replaceAll('\r', '');
+    final int space = line.indexOf(' ');
+    if (space > 0 && line.substring(0, space).endsWith(path)) {
+      return line.substring(space + 1);
+    }
+  }
+  return null;
+}
+
+/// Returns the runfiles manifest the test runs with, from
+/// `RUNFILES_MANIFEST_FILE` or else `RUNFILES_DIR/MANIFEST`; null when
+/// neither names an existing file.
+String? _manifestText(Map<String, String> env) {
+  final String? file = env['RUNFILES_MANIFEST_FILE'];
+  final String? dir = env['RUNFILES_DIR'];
+  for (final String? candidate in [
+    file,
+    if (dir != null && dir.isNotEmpty) '$dir/MANIFEST',
+  ]) {
+    if (candidate != null &&
+        candidate.isNotEmpty &&
+        File(candidate).existsSync()) {
+      return File(candidate).readAsStringSync();
+    }
+  }
+  return null;
+}
+
+/// Returns the absolute path of the buildifier runfile [rlocationPath]: the
+/// manifest's own target when a manifest names it, [fallback] otherwise.
+String _buildifierPath(String rlocationPath, String fallback) {
+  final String? manifest = _manifestText(Platform.environment);
+  final String? target = manifest == null
+      ? null
+      : _manifestTarget(manifest, rlocationPath);
+  return target ?? fallback;
+}
+
 /// Runs `buildifier -config=example` and returns its `warningsList`.
 List<String> _exampleWarnings(String buildifier) {
   // Run the binary directly: `cmd.exe` mangles the forward-slash runfiles
@@ -360,6 +406,7 @@ void main(List<String> args) {
   _configTests();
   _hookTests();
   _moduleTests();
+  _manifestTests();
 
   // `args`, in order: `@buildifier_prebuilt//:buildifier`, then the root
   // `.buildifier.json`, `.pre-commit-config.yaml` and `MODULE.bazel`.
@@ -374,7 +421,9 @@ void main(List<String> args) {
 
     test(".buildifier.json is buildifier's full list less "
         '$_excludedWarning', () {
-      final List<String> example = _exampleWarnings(paths[0]);
+      final List<String> example = _exampleWarnings(
+        _buildifierPath(args[0], paths[0]),
+      );
       expect(example, contains(_excludedWarning));
       expect(_configProblems(jsonDecode(read(1)), example), isEmpty);
     });
@@ -535,6 +584,32 @@ bazel_dep(
       ]) {
         expect(_versionProblems(rev, version), isNotEmpty, reason: rev);
       }
+    });
+  });
+}
+
+/// Unit tests of [_manifestTarget] over fake runfiles manifests.
+void _manifestTests() {
+  const key =
+      'buildifier_prebuilt++_repo_rules+buildifier_windows_amd64/file/'
+      'buildifier.exe';
+  group('manifestTarget', () {
+    test('resolves a Windows-style absolute target', () {
+      const manifest =
+          '_main/other.txt D:/a/_temp/other.txt\r\n'
+          '$key D:/a/_temp/bazel/external/buildifier.exe\r\n';
+      expect(
+        _manifestTarget(manifest, '../$key'),
+        'D:/a/_temp/bazel/external/buildifier.exe',
+      );
+    });
+    test('matches a key that ends with the path and keeps spaces', () {
+      const manifest = 'x+$key /home/me/my dir/buildifier.exe\n';
+      expect(_manifestTarget(manifest, key), '/home/me/my dir/buildifier.exe');
+    });
+    test('returns null when no key matches', () {
+      expect(_manifestTarget('_main/a /tmp/a\n', key), isNull);
+      expect(_manifestTarget('', key), isNull);
     });
   });
 }
