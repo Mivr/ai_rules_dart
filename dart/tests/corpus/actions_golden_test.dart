@@ -261,6 +261,51 @@ void _registerGraphTests(_TestHarness h) {
     });
   });
 
+  group('SDK inputs', () {
+    const linuxSdk = [
+      'external/+dart+dart_linux-x64/bin/dart',
+      'external/+dart+dart_linux-x64/lib/_internal/linux_only.dill',
+    ];
+    const macosSdk = [
+      'external/+dart+dart_macos-arm64/bin/dart',
+      'external/+dart+dart_macos-arm64/bin/macos_only',
+      'external/+dart+dart_macos-arm64/lib/_internal/macos_only.dill',
+    ];
+    const firstParty = ['pkg/a.dart', 'bazel-out/k8-fastbuild/bin/pkg/b.out'];
+
+    test('classifies only paths under the normalised SDK repository', () {
+      expect(isSdkInput('external/{dart-sdk}/bin/dart'), isTrue);
+      expect(isSdkInput('external/{dart-sdk}'), isTrue);
+      expect(isSdkInput('external/{dart-sdk}x/bin/dart'), isFalse);
+      expect(isSdkInput('external/other/{dart-sdk}/bin'), isFalse);
+      expect(isSdkInput('pkg/a.dart'), isFalse);
+    });
+
+    test('a Linux-like and a macOS-like SDK file set give the same inputs', () {
+      expect(
+        _inputsOf([...firstParty, ...linuxSdk]),
+        _inputsOf([...firstParty, ...macosSdk]),
+      );
+      expect(_inputsOf([...firstParty, ...linuxSdk]), {
+        'count': 2,
+        'sha256': hasLength(64),
+      });
+    });
+
+    test('a first-party input change still changes the inputs', () {
+      final Object? base = _inputsOf([...firstParty, ...linuxSdk]);
+      expect(
+        _inputsOf([...firstParty, 'pkg/c.dart', ...linuxSdk]),
+        isNot(base),
+      );
+      expect(_inputsOf(['pkg/a.dart', ...linuxSdk]), isNot(base));
+      expect(
+        _inputsOf(['pkg/a.dart', 'pkg/renamed.out', ...linuxSdk]),
+        isNot(base),
+      );
+    });
+  });
+
   test('--check rejects one changed nested input', () {
     final GoldenResult result = h.check(
       'nested_changed.json',
@@ -394,4 +439,29 @@ Map<String, Object?> _readJson(String path) {
     fail('$path is not a JSON object');
   }
   return Map<String, Object?>.from(decoded);
+}
+
+/// The `inputs` record of one action whose direct inputs are [paths].
+Object? _inputsOf(List<String> paths) {
+  return normaliseAquery({
+    'targets': [
+      {'id': 1, 'label': '//pkg:lib'},
+    ],
+    'artifacts': [
+      for (var i = 0; i < paths.length; i++) {'id': i + 1, 'path': paths[i]},
+    ],
+    'depSetOfFiles': [
+      {
+        'id': 1,
+        'directArtifactIds': [for (var i = 0; i < paths.length; i++) i + 1],
+      },
+    ],
+    'actions': [
+      {
+        'targetId': 1,
+        'mnemonic': 'Act',
+        'inputDepSetIds': [1],
+      },
+    ],
+  }).single['inputs'];
 }

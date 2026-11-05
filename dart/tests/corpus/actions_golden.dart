@@ -434,6 +434,13 @@ String normalisePath(String value) {
   return out.replaceAll(RegExp(r'bazel-out/[^/\s"|,;:]+'), '{bazel-out}');
 }
 
+/// Whether [normalised] (a path after [normalisePath]) is a file of the
+/// toolchain's Dart SDK repository, whose file set differs between host
+/// platforms.
+bool isSdkInput(String normalised) =>
+    normalised == 'external/{dart-sdk}' ||
+    normalised.startsWith('external/{dart-sdk}/');
+
 /// Turns a jsonproto action graph into the stable actions the golden holds.
 ///
 /// Every action in the query is kept, in `(target, aspect, mnemonic,
@@ -618,9 +625,16 @@ final class _AqueryIndex {
   /// Listing the paths would take the golden past 32 MB (the closures of the
   /// corpus actions hold about 155,000 paths), so the golden keeps the count
   /// and the digest instead: dropping or adding one input changes both.
+  ///
+  /// The toolchain SDK's own files (`external/{dart-sdk}/...` after
+  /// normalisation) are left out of the count and the digest. The SDK archive's
+  /// file set differs between host platforms (Linux and macOS), and the golden
+  /// is generated on Linux but checked on macOS too. The action arguments
+  /// already name which SDK tool runs, so every first-party input stays covered.
   Map<String, Object?> _inputs(Object? ids) {
     final List<String> paths = [
-      for (final int artifact in _closure(ids)) _artifacts[artifact] ?? '',
+      for (final int artifact in _closure(ids))
+        if (!isSdkInput(_artifacts[artifact] ?? '')) _artifacts[artifact] ?? '',
     ]..sort();
     return {
       'count': paths.length,
