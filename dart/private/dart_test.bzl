@@ -569,7 +569,7 @@ must provide `DartCodeAssetInfo` (see the `dart_code_asset` rule).""",
     ),
     "code_assets_from_deps": attr.bool(
         default = True,
-        doc = """Whether to pick up native code assets propagated through `deps`.
+        doc = """Whether to pick up native code assets propagated through `deps`. Defaults to `True`.
 
 Leave this on for a test that runs the native packages it depends on. Turn it off for a pure-Dart \
 `dart_test` that imports packages for their Dart API (such as `package:drift` with a mock or \

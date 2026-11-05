@@ -39,7 +39,7 @@ _package = tag_class(
             default = [],
         ),
         "package_files": attr.string_list(
-            doc = PACKAGE_FILES_ATTR_DOC,
+            doc = "Applies to the package this tag declares. " + PACKAGE_FILES_ATTR_DOC,
             default = ["pubspec.yaml", "LICENSE*"],
         ),
     },

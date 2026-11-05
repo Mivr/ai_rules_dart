@@ -198,7 +198,7 @@ dart_code_asset = rule(
         ),
         "link_mode": attr.string(
             default = "dynamic_loading_bundle",
-            doc = """How the runtime loads this asset. One of `dynamic_loading_bundle` (a \
+            doc = """How the runtime loads this asset; defaults to `dynamic_loading_bundle`. One of `dynamic_loading_bundle` (a \
 library shipped alongside the app, built by `shared_library` or supplied by `prebuilt`), \
 `dynamic_loading_system` (a library already present on the target system, named by \
 `system_uri`), `dynamic_loading_executable`, or `dynamic_loading_process`. The reserved \

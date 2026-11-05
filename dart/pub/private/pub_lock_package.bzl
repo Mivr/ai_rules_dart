@@ -311,7 +311,7 @@ pub_lock_package = repository_rule(
             default = [],
         ),
         "package_files": attr.string_list(
-            doc = _PACKAGE_FILES_ATTR_DOC,
+            doc = "Applies to this hosted package. " + _PACKAGE_FILES_ATTR_DOC,
             default = ["pubspec.yaml", "LICENSE*"],
         ),
     },
@@ -425,7 +425,7 @@ pub_lock_git_package = repository_rule(
             default = [],
         ),
         "package_files": attr.string_list(
-            doc = _PACKAGE_FILES_ATTR_DOC,
+            doc = "Applies to this git-sourced package. " + _PACKAGE_FILES_ATTR_DOC,
             default = ["pubspec.yaml", "LICENSE*"],
         ),
     },

@@ -651,7 +651,7 @@ at runtime. Each entry must provide `DartCodeAssetInfo` (see the `dart_code_asse
         ),
         "code_assets_from_deps": attr.bool(
             default = True,
-            doc = """Whether to pick up native code assets propagated through `deps`.
+            doc = """Whether to pick up native code assets propagated through `deps`. Defaults to `True`.
 
 Leave this on for a program that runs the packages it depends on. Turn it off for a `dart_binary` \
 used purely as a *build tool* — a code generator, a linter — which imports pub packages for their \

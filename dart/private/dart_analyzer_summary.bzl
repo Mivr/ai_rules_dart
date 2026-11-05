@@ -280,7 +280,7 @@ def _own_record_for(own_records, short_path):
 
     Args:
       own_records: The target's own `DartPackageInfo` records, in order.
-      short_path: A `File.short_path`.
+      short_path: The `File.short_path` of the source to place in a package.
 
     Returns:
       The matching record, or None.
@@ -400,7 +400,7 @@ def _summary_key_by_path(own_records, srcs):
     return own_key_by_path
 
 def _summary_embedder_info(ctx, info, deps, files, sums, own):
-    """Builds the embedder SDK summary action for `sky_engine`; returns the provider.
+    """Builds the embedder SDK summary action for `sky_engine`.
 
     Args:
       ctx: The aspect context.
@@ -411,6 +411,10 @@ def _summary_embedder_info(ctx, info, deps, files, sums, own):
         embedder_yaml)`: the closure summary sets and the own embedder yaml.
       own: `struct(own_files, own_keys)`: the own-files depset and own package
         keys.
+
+    Returns:
+      A `DartAnalyzerSummaryInfo` with no summary of its own whose `embedder_sdk_summaries`
+      holds the new embedder SDK summary.
     """
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
     mismatch = kernel_sdk_mismatch_error(ctx.label, "_tool", ctx.attr._tool, dart_sdk_info.version)
@@ -611,7 +615,7 @@ def _summary_stage_uncovered(ctx, info, own_records, uncovered_pkgs, name, prefi
     return uncovered_inputs, uncovered_staged
 
 def _summary_run_action(ctx, info, own_records, action, closure):
-    """Writes the summary package config, runs `summarize`, and returns the provider.
+    """Writes the summary package config and runs `summarize`.
 
     Args:
       ctx: The aspect context.
@@ -623,6 +627,9 @@ def _summary_run_action(ctx, info, own_records, action, closure):
         conflicted_names, inherited_embedder_sdks, embedder_sdk_summary,
         packages, own_files)`: the closure-wide summary inputs, built once by
         `_dart_analyzer_summary_impl`.
+
+    Returns:
+      A `DartAnalyzerSummaryInfo` carrying the new summary and the closure's summaries.
     """
     ctx.actions.write(
         output = action.config,

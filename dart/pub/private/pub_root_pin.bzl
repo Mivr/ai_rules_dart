@@ -146,7 +146,15 @@ def git_path_conflict(name, entries):
     return None
 
 def git_version_error(name, entries):
-    """Returns the version-conflict error for git packages."""
+    """Builds the version-conflict error for a git package.
+
+    Args:
+      name: The package name that appears at conflicting versions.
+      entries: The lock entries that name the package; each carries `version`, `hub_name` and `lock_label`.
+
+    Returns:
+      The error text, listing each entry's version with the hub and lock file it came from.
+    """
     return (
         "Package \"%s\" has conflicting versions across lock files:\n" % name +
         "".join([
@@ -200,7 +208,16 @@ def best_entry(entries):
     return best
 
 def hosted_version_error(name, entries, best):
-    """Returns the version-conflict error for hosted packages."""
+    """Builds the version-conflict error for a hosted package.
+
+    Args:
+      name: The package name that appears at conflicting versions.
+      entries: The lock entries that name the package; each carries `version`, `hub_name` and `lock_label`.
+      best: The entry with the highest version; its `version` and `sha256` fill the suggested `pub.package` pin.
+
+    Returns:
+      The error text: the conflicting entries, then the steps that bring the lock files back in sync.
+    """
     return (
         "Package \"%s\" has conflicting versions across lock files:\n" % name +
         "".join([

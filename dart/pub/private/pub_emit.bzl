@@ -16,7 +16,15 @@ visibility(["//dart/..."])
 SPOKE_PREFIX = "dart_pub"
 
 def pub_emit_explicit(explicit, vanished_spokes):
-    """Creates the explicit `pub.package()` repositories."""
+    """Creates the explicit `pub.package()` repositories.
+
+    Each package's dependencies are rewritten to the merged repository when the lock
+    spoke they named has vanished into one.
+
+    Args:
+      explicit: The explicit packages by name; each carries `version`, `sha256`, `deps` and `package_files`.
+      vanished_spokes: The spoke labels that merged into a repository, mapped to that repository.
+    """
     for name, pkg in explicit.items():
         pub_package(
             name = name,

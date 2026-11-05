@@ -389,7 +389,7 @@ def package_of_source(short_path, packages):
 
     Args:
       short_path: The source file's `File.short_path`.
-      packages: `DartPackageInfo` records.
+      packages: The `DartPackageInfo` records to search; the one with the deepest matching `lib/` wins.
 
     Returns:
       The matching `package_name` string, or None.
@@ -1343,6 +1343,13 @@ def _lib_kernel_records(deps, dep_kernels, own_record, own_records):
 def _lib_kernel_graph(ctx, deps, dep_kernels, own_srcs, records):
     """Collects closures, ownership, and edges.
 
+    Args:
+      ctx: The rule context of the library being compiled.
+      deps: The library's direct dependency targets.
+      dep_kernels: The `DartKernelInfo` of each direct dependency.
+      own_srcs: The library's own `.dart` files.
+      records: The package records of the library, own and transitive.
+
     Returns:
       A struct with `dep_closure`, `dep_outline_closure`,
       `upstream_excluded`, `owned`, `edges`, `pkgs`, `owned_list`,
@@ -1645,12 +1652,12 @@ dart_kernel_module_aspect = aspect(
             providers = [BuildSettingInfo],
         ),
         "compile_mode": attr.string(
-            doc = "The originating executable's `compile_mode` (`kernel` for `dart_test`).",
+            doc = "The originating executable's `compile_mode` (`kernel` for `dart_test`). Defaults to `kernel`.",
             default = "kernel",
             values = ["exe", "aot-snapshot", "kernel", "jit-snapshot"],
         ),
         "modular_kernel": attr.bool(
-            doc = "Whether the originating executable compiles modularly against dependency `.kmod` outputs.",
+            doc = "Whether the originating executable compiles modularly against dependency `.kmod` outputs. Defaults to `True`.",
             default = True,
         ),
     },

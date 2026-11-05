@@ -284,6 +284,11 @@ def emit_dangling(lone, state, idx):
     The problem names the line where parsing breaks, as pub names the line
     after the lone line, quoting the lone line it could not place; that line
     still reads, so parsing continues past it.
+
+    Args:
+      lone: The lone property frame; its `text` is cleared once reported.
+      state: The parse state collecting problems.
+      idx: The 0-based index of the line where parsing breaks.
     """
     if lone["text"] != None:
         state.problems.append("unreadable line %d: %r" % (idx + 1, lone["text"]))
@@ -295,6 +300,11 @@ def drop_affix(affix, anchors, state):
     A dropped tag reads as a dropped pending tag does, naming the tag's own
     line, and a pending anchor binds the dropped value, as pub binds it to
     the empty node, so parsing continues past it.
+
+    Args:
+      affix: The root affix frame holding the dropped `tag`, its `tag_line` and any pending `anchor`.
+      anchors: The anchor names bound so far; a pending anchor binds the dropped value here.
+      state: The parse state collecting problems.
     """
     value = drop_tag_value(affix["tag"], affix["tag_line"], state)
     if affix["anchor"] != None:
@@ -385,7 +395,7 @@ def init_block_root(text, indent, anchors, stack, state, line):
     """Creates the root container or scalar. Returns (root, is_scalar).
 
     Args:
-      text: the line text.
+      text: The first content line of the document, after its indentation.
       indent: the column of the line.
       anchors: the anchor names bound so far.
       stack: the open container frames.
@@ -497,7 +507,7 @@ def map_line(lines, idx, indent, text, frame, anchors, state):
       lines: the document lines.
       idx: the 0-based index of the line being read.
       indent: the column of the line.
-      text: the line text.
+      text: The line text after its indentation.
       frame: the mapping frame.
       anchors: the anchor names bound so far.
       state: the parse state collecting problems.
@@ -673,7 +683,7 @@ def seq_line(lines, idx, indent, text, frame, anchors, stack, state):
       lines: the document lines.
       idx: the 0-based index of the line being read.
       indent: the column of the line.
-      text: the line text.
+      text: The line text after its indentation.
       frame: the sequence frame.
       anchors: the anchor names bound so far.
       stack: the open container frames.
