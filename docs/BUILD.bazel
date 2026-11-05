@@ -1,3 +1,5 @@
+load("//dart:defs.bzl", "dart_test")
+
 # Starlark documentation extraction targets for the rules_dart public API.
 
 _DOC_EXTRACTS = [
@@ -210,4 +212,29 @@ _ = (
             len(_DECLARED_EXTRACTS),
         ),
     )
+)
+
+# Fails on any missing or filler Starlark doc in the extracts above and in the
+# `.bzl` files they load. `//tool/doc_check` holds the checker; its sources
+# join the data here so the check reads the same files the extracts came from.
+dart_test(
+    name = "doc_check_test",
+    size = "small",
+    args = ["$(rlocationpaths :all_doc_extracts)"],
+    data = [
+        ":all_doc_extracts",
+        "//tool/doc_check:allowlist.txt",
+        "//tool/doc_check:shared_phrasings.txt",
+    ] + [
+        dep
+        for r in existing_rules().values()
+        if r["kind"] == "starlark_doc_extract"
+        for dep in r["deps"]
+    ],
+    main = "//tool/doc_check:test/doc_check_runner.dart",
+    deps = [
+        "//dart/runfiles",
+        "//tool/doc_check:doc_check_lib",
+        "@ext_pub_deps//:test",
+    ],
 )

@@ -1,0 +1,126 @@
+load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
+
+# Pure-Dart checker over the `ModuleInfo` protos `starlark_doc_extract` writes.
+# `//docs:doc_check_test` runs it over every public extract; the tests here
+# pin its rules, its fixtures, its allowlists and the vendored proto.
+
+exports_files(
+    [
+        "allowlist.txt",
+        "shared_phrasings.txt",
+        "stardoc_output.proto",
+        "test/doc_check_runner.dart",
+    ],
+    visibility = [
+        "//docs:__pkg__",
+        "//tool/doc_check:__subpackages__",
+    ],
+)
+
+dart_library(
+    name = "doc_check_lib",
+    package_name = "doc_check",
+    srcs = glob(["lib/*.dart"]),
+    visibility = [
+        "//docs:__pkg__",
+        "//tool/doc_check:__subpackages__",
+    ],
+    deps = ["//dart/runfiles"],
+)
+
+dart_binary(
+    name = "doc_check",
+    main = "bin/doc_check.dart",
+    visibility = [
+        "//docs:__pkg__",
+        "//tool/doc_check:__subpackages__",
+    ],
+    deps = [
+        ":doc_check_lib",
+        "//dart/runfiles",
+    ],
+)
+
+_TEST_SUPPORT = [
+    "test/support/fixture_defs.dart",
+    "test/support/proto_builder.dart",
+]
+
+# Writes the checked-in fixture protos: `bazel run //tool/doc_check:write_fixtures`.
+dart_binary(
+    name = "write_fixtures",
+    srcs = _TEST_SUPPORT,
+    main = "test/write_fixtures.dart",
+)
+
+dart_test(
+    name = "rules_test",
+    size = "small",
+    srcs = _TEST_SUPPORT,
+    main = "test/rules_test.dart",
+    deps = [
+        ":doc_check_lib",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "fixtures_test",
+    size = "small",
+    srcs = _TEST_SUPPORT,
+    data = glob(["test/fixtures/*.binaryproto"]),
+    main = "test/fixtures_test.dart",
+    deps = [
+        ":doc_check_lib",
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "emit_test",
+    size = "small",
+    srcs = _TEST_SUPPORT,
+    main = "test/emit_test.dart",
+    deps = [
+        ":doc_check_lib",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "policy_test",
+    size = "small",
+    data = [
+        ":allowlist.txt",
+        ":shared_phrasings.txt",
+    ],
+    main = "test/policy_test.dart",
+    deps = [
+        ":doc_check_lib",
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "source_test",
+    size = "small",
+    main = "test/source_test.dart",
+    deps = [
+        ":doc_check_lib",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "proto_pin_test",
+    size = "small",
+    srcs = ["test/support/sha256.dart"],
+    data = [":stardoc_output.proto"],
+    main = "test/proto_pin_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)

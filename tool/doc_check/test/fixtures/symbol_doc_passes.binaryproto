@@ -1,0 +1,11 @@
+*5Fixture module that exercises one documentation rule.2//fixture:defs.bzl
+;
+fixture_lib,Compiles the fixture sources into a library.J4
+fixture_macro#Declares the fixture macro targets."5
+fixture_aspect#Collects fixture sources from deps.B1
+fixture_repo_ruleFetches the fixture archive.:f
+fixture_ext Module extension of the fixture.5
+fixture_tag&Tag class that selects fixture inputs./
+FixtureInfo Facts about the fixture library.3
+
+fixture_fn%Does the fixture work without params.

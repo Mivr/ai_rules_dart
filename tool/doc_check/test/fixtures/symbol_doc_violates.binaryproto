@@ -1,0 +1,11 @@
+*5Fixture module that exercises one documentation rule.2//fixture:defs.bzl
+
+fixture_libJ
+fixture_macro"
+fixture_aspectB
+fixture_repo_rule:
+fixture_ext
+fixture_tag
+FixtureInfo
+
+fixture_fn

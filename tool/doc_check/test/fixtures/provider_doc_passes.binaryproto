@@ -1,0 +1,3 @@
+*5Fixture module that exercises one documentation rule.2//fixture:defs.bzlR
+FixtureInfoFacts about the fixture.)
+srcs!The sources the library compiled.

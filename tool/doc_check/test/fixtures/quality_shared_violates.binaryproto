@@ -1,0 +1,7 @@
+*5Fixture module that exercises one documentation rule.2//fixture:defs.bzl
+³
+fixture_lib,Compiles the fixture sources into a library.<
+a5Shared sentence repeated verbatim; defaults to empty.<
+b5Shared sentence repeated verbatim; defaults to empty.<
+c5Shared sentence repeated verbatim; defaults to empty.<
+d5Shared sentence repeated verbatim; defaults to empty.

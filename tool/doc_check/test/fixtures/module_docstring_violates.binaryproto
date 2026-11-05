@@ -1,0 +1,3 @@
+2//fixture:defs.bzl
+;
+fixture_lib,Compiles the fixture sources into a library.
