@@ -155,6 +155,48 @@ void _testCliPathAndEnvHelpers() {
         !cleaned.containsKey('TEST_TMPDIR'),
     'outer runfiles/test/rules_dart vars stripped',
   );
+  _testHostEnvironmentAllowlist();
+}
+
+void _testHostEnvironmentAllowlist() {
+  final cleaned = cleanProcessEnvironment(
+    baseEnvironment: const {
+      'PATH': '/usr/bin',
+      'HOME': '/home/u',
+      'TMPDIR': '/tmp',
+      'SystemRoot': r'C:\Windows',
+      'TEMP': r'C:\Temp',
+      'XML_OUTPUT_FILE': '/bad/xml',
+      'TESTBRIDGE_TEST_ONLY': 'x',
+      'TEST_SRCDIR': '/bad/src',
+      'TEST_TMPDIR': '/bad/tmp',
+      'BAZEL_TEST': '1',
+      'BAZELISK_SKIP_WRAPPER': '1',
+      'UNRELATED_HOST_VAR': 'secret',
+    },
+    overlay: const {'HOME': '/overlay/home', 'EXTRA': 'e'},
+  );
+  for (final key in const [
+    'XML_OUTPUT_FILE',
+    'TESTBRIDGE_TEST_ONLY',
+    'TEST_SRCDIR',
+    'TEST_TMPDIR',
+    'BAZEL_TEST',
+    'BAZELISK_SKIP_WRAPPER',
+    'UNRELATED_HOST_VAR',
+  ]) {
+    _check(!cleaned.containsKey(key), '$key excluded from child environment');
+  }
+  _check(cleaned['PATH'] == '/usr/bin', 'allowlisted PATH preserved');
+  _check(cleaned['TMPDIR'] == '/tmp', 'allowlisted TMPDIR preserved');
+  _check(cleaned['TEMP'] == r'C:\Temp', 'allowlisted TEMP preserved');
+  _check(
+    cleaned['SystemRoot'] == r'C:\Windows' &&
+        !cleaned.containsKey('SYSTEMROOT'),
+    'allowlist is case-insensitive and keeps the source key spelling',
+  );
+  _check(cleaned['HOME'] == '/overlay/home', 'overlay overrides HOME');
+  _check(cleaned['EXTRA'] == 'e', 'overlay adds new keys');
 }
 
 void _testRunnerOutputResolution() {

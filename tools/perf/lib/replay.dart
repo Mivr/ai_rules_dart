@@ -14,7 +14,6 @@ final class ReplayResult {
     required this.identical,
     required this.solCpuSeconds,
     required this.reason,
-    required this.replayedCount,
   });
 
   /// Whether the replayed outputs matched byte-for-byte.
@@ -25,9 +24,6 @@ final class ReplayResult {
 
   /// Status reason ("ok" or failure description).
   final String reason;
-
-  /// Number of replayed chain spawns.
-  final int replayedCount;
 }
 
 final class _ExecrootSnapshot {
@@ -103,14 +99,31 @@ bool areFilesByteIdentical(File a, File b) {
   if (!a.existsSync() || !b.existsSync()) return false;
   if (a.lengthSync() != b.lengthSync()) return false;
 
-  final bytesA = a.readAsBytesSync();
-  final bytesB = b.readAsBytesSync();
-  if (bytesA.length != bytesB.length) return false;
-
-  for (var i = 0; i < bytesA.length; i++) {
-    if (bytesA[i] != bytesB[i]) return false;
+  final rafA = a.openSync();
+  try {
+    final rafB = b.openSync();
+    try {
+      return _sameChunks(rafA, rafB);
+    } finally {
+      rafB.closeSync();
+    }
+  } finally {
+    rafA.closeSync();
   }
-  return true;
+}
+
+const int _compareChunkBytes = 64 * 1024;
+
+bool _sameChunks(RandomAccessFile a, RandomAccessFile b) {
+  while (true) {
+    final chunkA = a.readSync(_compareChunkBytes);
+    final chunkB = b.readSync(_compareChunkBytes);
+    if (chunkA.length != chunkB.length) return false;
+    if (chunkA.isEmpty) return true;
+    for (var i = 0; i < chunkA.length; i++) {
+      if (chunkA[i] != chunkB[i]) return false;
+    }
+  }
 }
 
 void _deleteEntityAtPath(String fullPath) {
@@ -433,7 +446,6 @@ ReplayResult _runReplayAndVerify({
         identical: false,
         solCpuSeconds: null,
         reason: failure,
-        replayedCount: orderedSpawns.length,
       );
     }
 
@@ -443,23 +455,16 @@ ReplayResult _runReplayAndVerify({
         identical: false,
         solCpuSeconds: null,
         reason: verifyErr,
-        replayedCount: orderedSpawns.length,
       );
     }
 
-    return ReplayResult(
-      identical: true,
-      solCpuSeconds: cpu,
-      reason: 'ok',
-      replayedCount: orderedSpawns.length,
-    );
+    return ReplayResult(identical: true, solCpuSeconds: cpu, reason: 'ok');
   } on FileSystemException catch (e) {
     stderr.writeln('Replay filesystem error: $e');
     return ReplayResult(
       identical: false,
       solCpuSeconds: null,
       reason: 'Replay filesystem error: $e',
-      replayedCount: orderedSpawns.length,
     );
   }
 }
@@ -477,7 +482,6 @@ ReplayResult replayChainAndVerify({
       identical: false,
       solCpuSeconds: null,
       reason: 'No chain spawns to replay',
-      replayedCount: 0,
     );
   }
 
@@ -485,10 +489,9 @@ ReplayResult replayChainAndVerify({
   final snapshotBefore = _snapshotExecroot(execroot);
   final backupDir = Directory.systemTemp.createTempSync('rd_perf_backup_');
 
-  final declaredOutputs = <String>{};
-  for (final spawn in orderedSpawns) {
-    declaredOutputs.addAll(spawn.declaredOutputs);
-  }
+  final declaredOutputs = {
+    for (final spawn in orderedSpawns) ...spawn.declaredOutputs,
+  };
 
   try {
     _backupAndMoveOutputsAside(
@@ -509,7 +512,6 @@ ReplayResult replayChainAndVerify({
       identical: false,
       solCpuSeconds: null,
       reason: 'Failed moving outputs aside: $e',
-      replayedCount: 0,
     );
   }
 

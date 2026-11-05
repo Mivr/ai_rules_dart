@@ -50,11 +50,31 @@ String _resolveCommitSha(String rawSha) {
 const String _usage =
     'Usage: summarize --results-dir=<dir> --sha=<sha> --out=<dart-sol.json>';
 
-/// Runs the `summarize` CLI and returns its exit code.
-///
-/// Refuses `--repeats` below 1 with exit code 1. Otherwise always writes the
-/// full `dart-sol.json` first, then returns 1 if [summaryFailures] is non-empty.
-int runSummarizeCli(List<String> args) {
+/// Validated `summarize` flags.
+final class _SummarizeArgs {
+  const _SummarizeArgs({
+    required this.resultsDir,
+    required this.sha,
+    required this.out,
+    required this.targetLoc,
+    required this.seed,
+    required this.repeats,
+    required this.lockfile,
+    required this.bazelFlags,
+  });
+
+  final String resultsDir;
+  final String sha;
+  final String out;
+  final int targetLoc;
+  final int seed;
+  final int repeats;
+  final String? lockfile;
+  final List<String> bazelFlags;
+}
+
+/// Parses [args], or returns `null` when a required flag is missing/invalid.
+_SummarizeArgs? _parseSummarizeArgs(List<String> args) {
   final flags = parseCliFlags(args);
   final rawResultsDir = lastFlagValue(flags, const [
     'results-dir',
@@ -77,12 +97,7 @@ int runSummarizeCli(List<String> args) {
   ], defaultValue: 500000);
   final seed = intFlagValue(flags, const ['seed'], defaultValue: 1);
   final repeats = intFlagValue(flags, const ['repeats'], defaultValue: 3);
-  final rawLockfile = lastFlagValue(flags, const ['lockfile']);
   final rawOut = lastFlagValue(flags, const ['out', 'output']);
-  final bazelFlags = (flags['bazel-flag'] ?? const <String>[])
-      .where((f) => f.isNotEmpty)
-      .toList();
-
   if (rawResultsDir == null ||
       rawResultsDir.isEmpty ||
       rawSha == null ||
@@ -92,42 +107,67 @@ int runSummarizeCli(List<String> args) {
       targetLoc == null ||
       seed == null ||
       repeats == null) {
-    stderr.writeln(_usage);
-    return 1;
+    return null;
   }
-  if (repeats < 1) {
-    stderr.writeln('--repeats must be an integer >= 1, got $repeats\n$_usage');
-    return 1;
-  }
-
-  final resultsDir = resolveCliPath(rawResultsDir);
-  final outPath = resolveCliPath(rawOut);
-  final sha = _resolveCommitSha(rawSha);
-
-  final repeatResults = loadRepeatResults(resultsDir, excludeFilePath: outPath);
-  final meta = SummaryMeta(
-    rulesDartSha: sha,
+  return _SummarizeArgs(
+    resultsDir: rawResultsDir,
+    sha: rawSha,
+    out: rawOut,
     targetLoc: targetLoc,
     seed: seed,
     repeats: repeats,
-    bazelFlags: bazelFlags,
-    lockfile: rawLockfile != null && rawLockfile.isNotEmpty
-        ? rawLockfile
-        : 'committed',
+    lockfile: lastFlagValue(flags, const ['lockfile']),
+    bazelFlags: (flags['bazel-flag'] ?? const <String>[])
+        .where((f) => f.isNotEmpty)
+        .toList(),
   );
-  final runner = RunnerInfo.detect();
+}
 
+/// Writes `dart-sol.json` for [a] and returns its content.
+String _writeSummary(_SummarizeArgs a, String outPath) {
+  final repeatResults = loadRepeatResults(
+    resolveCliPath(a.resultsDir),
+    excludeFilePath: outPath,
+  );
+  final lockfile = a.lockfile;
+  final meta = SummaryMeta(
+    rulesDartSha: _resolveCommitSha(a.sha),
+    targetLoc: a.targetLoc,
+    seed: a.seed,
+    repeats: a.repeats,
+    bazelFlags: a.bazelFlags,
+    lockfile: lockfile != null && lockfile.isNotEmpty ? lockfile : 'committed',
+  );
   final jsonOut = formatDartSolJson(
     repeats: repeatResults,
     meta: meta,
-    runner: runner,
+    runner: RunnerInfo.detect(),
   );
-
   final outFile = File(outPath);
   outFile.parent.createSync(recursive: true);
   outFile.writeAsStringSync(jsonOut);
   stdout.writeln('Summary written to $outPath');
+  return jsonOut;
+}
 
+/// Runs the `summarize` CLI and returns its exit code.
+///
+/// Refuses `--repeats` below 1 with exit code 1. Otherwise always writes the
+/// full `dart-sol.json` first, then returns 1 if [summaryFailures] is non-empty.
+int runSummarizeCli(List<String> args) {
+  final parsed = _parseSummarizeArgs(args);
+  if (parsed == null) {
+    stderr.writeln(_usage);
+    return 1;
+  }
+  if (parsed.repeats < 1) {
+    stderr.writeln(
+      '--repeats must be an integer >= 1, got ${parsed.repeats}\n$_usage',
+    );
+    return 1;
+  }
+
+  final jsonOut = _writeSummary(parsed, resolveCliPath(parsed.out));
   final failures = summaryFailures(jsonDecode(jsonOut) as Map<String, dynamic>);
   for (final failure in failures) {
     stderr.writeln('FAIL: $failure');

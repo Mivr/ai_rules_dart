@@ -19,43 +19,11 @@ final class _Timeval extends Struct {
   external int tvUsec;
 }
 
-/// Linux `struct rusage` (144 bytes on 64-bit Linux, padded for safety).
+/// Linux `struct rusage` (144 bytes on 64-bit Linux; only the leading
+/// timevals are read, from a 256-byte zeroed buffer).
 final class _Rusage extends Struct {
   external _Timeval ruUtime;
   external _Timeval ruStime;
-
-  @Int64()
-  external int r0;
-  @Int64()
-  external int r1;
-  @Int64()
-  external int r2;
-  @Int64()
-  external int r3;
-  @Int64()
-  external int r4;
-  @Int64()
-  external int r5;
-  @Int64()
-  external int r6;
-  @Int64()
-  external int r7;
-  @Int64()
-  external int r8;
-  @Int64()
-  external int r9;
-  @Int64()
-  external int r10;
-  @Int64()
-  external int r11;
-  @Int64()
-  external int r12;
-  @Int64()
-  external int r13;
-  @Int64()
-  external int r14;
-  @Int64()
-  external int r15;
 }
 
 typedef _GetrusageC = Int32 Function(Int32 who, Pointer<_Rusage> usage);
@@ -112,16 +80,12 @@ final class FakeChildCpuClock implements ChildCpuClock {
     : _values = values != null ? List.of(values) : <double>[];
 
   final List<double> _values;
-  double _current = 0.0;
-
-  /// Sets the next CPU value to return.
-  void setNext(double value) => _current = value;
 
   @override
   double getChildCpuSeconds() {
     if (_values.isNotEmpty) {
       return _values.removeAt(0);
     }
-    return _current;
+    return 0.0;
   }
 }

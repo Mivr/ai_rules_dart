@@ -499,6 +499,28 @@ FlowResult _measureFlowTestLeaf(RepeatContext ctx) {
   }
 }
 
+FlowResult _replayFailure(
+  _FlowReplaySpec spec,
+  String reason,
+  Map<String, int> workerSteps, {
+  String? orderingFailed,
+  Map<String, dynamic> steps = const {},
+}) => FlowResult(
+  method: spec.method,
+  bazelCpu: spec.bazelCpu,
+  solCpu: null,
+  identical: false,
+  reason: reason,
+  chain: buildChainObject(
+    identical: false,
+    solCpu: null,
+    reason: reason,
+    orderingFailed: orderingFailed,
+    steps: steps,
+  ),
+  workerSteps: workerSteps,
+);
+
 (List<SpawnRecord>?, Map<String, int>, FlowResult?) _resolveAndOrderSpawns(
   File logFile,
   _FlowReplaySpec spec,
@@ -507,19 +529,7 @@ FlowResult _measureFlowTestLeaf(RepeatContext ctx) {
     return (
       null,
       const {},
-      FlowResult(
-        method: spec.method,
-        bazelCpu: spec.bazelCpu,
-        solCpu: null,
-        identical: false,
-        reason: 'Execution log not generated',
-        chain: buildChainObject(
-          identical: false,
-          solCpu: null,
-          reason: 'Execution log not generated',
-        ),
-        workerSteps: const {},
-      ),
+      _replayFailure(spec, 'Execution log not generated', const {}),
     );
   }
 
@@ -528,18 +538,10 @@ FlowResult _measureFlowTestLeaf(RepeatContext ctx) {
     return (
       null,
       parsed.workerSteps,
-      FlowResult(
-        method: spec.method,
-        bazelCpu: spec.bazelCpu,
-        solCpu: null,
-        identical: false,
-        reason: 'No chain spawns extracted from log',
-        chain: buildChainObject(
-          identical: false,
-          solCpu: null,
-          reason: 'No chain spawns extracted from log',
-        ),
-        workerSteps: parsed.workerSteps,
+      _replayFailure(
+        spec,
+        'No chain spawns extracted from log',
+        parsed.workerSteps,
       ),
     );
   }
@@ -555,20 +557,12 @@ FlowResult _measureFlowTestLeaf(RepeatContext ctx) {
     return (
       null,
       parsed.workerSteps,
-      FlowResult(
-        method: spec.method,
-        bazelCpu: spec.bazelCpu,
-        solCpu: null,
-        identical: false,
-        reason: 'Spawn ordering failed: $e',
-        chain: buildChainObject(
-          identical: false,
-          solCpu: null,
-          reason: 'Spawn ordering failed: $e',
-          orderingFailed: e.toString(),
-          steps: chainStepsFromSpawns(parsed.chainSpawns),
-        ),
-        workerSteps: parsed.workerSteps,
+      _replayFailure(
+        spec,
+        'Spawn ordering failed: $e',
+        parsed.workerSteps,
+        orderingFailed: e.toString(),
+        steps: chainStepsFromSpawns(parsed.chainSpawns),
       ),
     );
   }
@@ -591,35 +585,19 @@ FlowResult _replayAndVerifyFlow(
         : ctx.queryTargetOutputs(spec.target);
   } on Object catch (e) {
     stderr.writeln('Failed preparing replay verification: $e');
-    return FlowResult(
-      method: spec.method,
-      bazelCpu: spec.bazelCpu,
-      solCpu: null,
-      identical: false,
-      reason: e.toString(),
-      chain: buildChainObject(
-        identical: false,
-        solCpu: null,
-        reason: e.toString(),
-        steps: chainStepsFromSpawns(ordered),
-      ),
-      workerSteps: workerSteps,
+    return _replayFailure(
+      spec,
+      e.toString(),
+      workerSteps,
+      steps: chainStepsFromSpawns(ordered),
     );
   }
   if (verifyPaths.isEmpty) {
-    return FlowResult(
-      method: spec.method,
-      bazelCpu: spec.bazelCpu,
-      solCpu: null,
-      identical: false,
-      reason: 'No declared outputs to verify for ${spec.target}',
-      chain: buildChainObject(
-        identical: false,
-        solCpu: null,
-        reason: 'No declared outputs to verify for ${spec.target}',
-        steps: chainStepsFromSpawns(ordered),
-      ),
-      workerSteps: workerSteps,
+    return _replayFailure(
+      spec,
+      'No declared outputs to verify for ${spec.target}',
+      workerSteps,
+      steps: chainStepsFromSpawns(ordered),
     );
   }
 

@@ -3,22 +3,33 @@ library;
 
 import 'dart:io';
 
-/// Bazel, runfiles and test harness variables stripped before spawning tools.
-const Set<String> _strippedEnvKeys = {
-  'BAZELISK_SKIP_WRAPPER',
-  'BUILD_EXECROOT',
-  'BUILD_ID',
-  'BUILD_WORKING_DIRECTORY',
-  'BUILD_WORKSPACE_DIRECTORY',
-  'GTEST_TMP_DIR',
-  'JAVA_RUNFILES',
-  'PYTHON_RUNFILES',
-  'RUNFILES_DIR',
-  'RUNFILES_MANIFEST_FILE',
-  'RUNFILES_MANIFEST_ONLY',
-  'RUN_UNDER_RUNFILES',
-  'TESTBRIDGE_TEST_ONLY',
-  'XML_OUTPUT_FILE',
+/// Host variables spawned tools may inherit, matched case-insensitively.
+const Set<String> _hostEnvAllowlist = {
+  'PATH',
+  'HOME',
+  'USER',
+  'LOGNAME',
+  'TMPDIR',
+  'LANG',
+  'LC_ALL',
+  'XDG_CACHE_HOME',
+  'XDG_CONFIG_HOME',
+  'BAZELISK_HOME',
+  'USE_BAZEL_VERSION',
+  'JAVA_HOME',
+  'SYSTEMROOT',
+  'SYSTEMDRIVE',
+  'WINDIR',
+  'COMSPEC',
+  'PATHEXT',
+  'TEMP',
+  'TMP',
+  'USERPROFILE',
+  'LOCALAPPDATA',
+  'APPDATA',
+  'HOMEDRIVE',
+  'HOMEPATH',
+  'PROGRAMDATA',
 };
 
 /// Parses `--key=value` and `--key value` flags from [args].
@@ -129,24 +140,65 @@ String resolveCliPath(
   return normalizeAbsolutePath('$base/$trimmed');
 }
 
-/// Builds a clean child environment stripped of outer Bazel/test/runfiles vars.
+/// Builds a minimal child environment: allowlisted host variables plus [overlay].
 Map<String, String> cleanProcessEnvironment({
   Map<String, String>? baseEnvironment,
   Map<String, String> overlay = const {},
 }) {
   final source = baseEnvironment ?? Platform.environment;
-  final env = <String, String>{};
-  for (final entry in source.entries) {
-    final key = entry.key;
-    if (_strippedEnvKeys.contains(key) ||
-        key.startsWith('RULES_DART_') ||
-        key.startsWith('TEST_')) {
-      continue;
-    }
-    env[key] = entry.value;
-  }
+  final env = <String, String>{
+    for (final entry in source.entries)
+      if (_hostEnvAllowlist.contains(entry.key.toUpperCase()))
+        entry.key: entry.value,
+  };
   env.addAll(overlay);
   return env;
+}
+
+/// Parsed `runner` output-related flags.
+final class _OutputFlags {
+  const _OutputFlags({
+    required this.hasExplicitRepeat,
+    required this.repeat,
+    required this.repeatsCount,
+    required this.resultsDir,
+    required this.out,
+  });
+
+  factory _OutputFlags.parse(Map<String, List<String>> flags) {
+    return _OutputFlags(
+      hasExplicitRepeat:
+          flags.containsKey('repeat') ||
+          flags.containsKey('repeat-index') ||
+          flags.containsKey('repeat_index'),
+      repeat: intFlagValue(flags, const [
+        'repeat',
+        'repeat-index',
+        'repeat_index',
+      ], defaultValue: 1),
+      repeatsCount: intFlagValue(flags, const ['repeats']),
+      resultsDir: lastFlagValue(flags, const ['results-dir', 'results_dir']),
+      out: lastFlagValue(flags, const ['out', 'output']),
+    );
+  }
+
+  final bool hasExplicitRepeat;
+  final int? repeat;
+  final int? repeatsCount;
+  final String? resultsDir;
+  final String? out;
+
+  bool get hasResultsDir => resultsDir != null && resultsDir!.isNotEmpty;
+  bool get hasOutFlag => out != null && out!.isNotEmpty;
+
+  bool get isInvalid {
+    final r = repeat;
+    final n = repeatsCount;
+    return r == null ||
+        r <= 0 ||
+        (n != null && n <= 0) ||
+        !(hasOutFlag || hasResultsDir);
+  }
 }
 
 /// Resolves `(repeatIndex, outputFilePath)` pairs from parsed `runner` [flags].
@@ -155,30 +207,8 @@ List<(int, String)> resolveRunnerOutputs(
   Map<String, String>? environment,
   String? currentDirectory,
 }) {
-  final hasExplicitRepeat =
-      flags.containsKey('repeat') ||
-      flags.containsKey('repeat-index') ||
-      flags.containsKey('repeat_index');
-  final repeat = intFlagValue(flags, const [
-    'repeat',
-    'repeat-index',
-    'repeat_index',
-  ], defaultValue: 1);
-  final repeatsCount = intFlagValue(flags, const ['repeats']);
-  final rawResultsDir = lastFlagValue(flags, const [
-    'results-dir',
-    'results_dir',
-  ]);
-  final rawOut = lastFlagValue(flags, const ['out', 'output']);
-  final hasOut =
-      (rawOut != null && rawOut.isNotEmpty) ||
-      (rawResultsDir != null && rawResultsDir.isNotEmpty);
-  if (repeat == null ||
-      repeat <= 0 ||
-      (repeatsCount != null && repeatsCount <= 0) ||
-      !hasOut) {
-    return const [];
-  }
+  final f = _OutputFlags.parse(flags);
+  if (f.isInvalid) return const [];
 
   String resolve(String p) => resolveCliPath(
     p,
@@ -186,28 +216,29 @@ List<(int, String)> resolveRunnerOutputs(
     currentDirectory: currentDirectory,
   );
 
+  final repeatsCount = f.repeatsCount;
+  final rawOut = f.out;
   final singleJsonOut =
       repeatsCount == 1 &&
-      (rawResultsDir == null || rawResultsDir.isEmpty) &&
+      !f.hasResultsDir &&
       rawOut != null &&
       rawOut.endsWith('.json') &&
       !Directory(resolve(rawOut)).existsSync();
-  if (!hasExplicitRepeat && repeatsCount != null && !singleJsonOut) {
-    final targetDir = (rawResultsDir != null && rawResultsDir.isNotEmpty)
-        ? rawResultsDir
-        : rawOut!;
-    final outDir = resolve(targetDir);
+  if (!f.hasExplicitRepeat && repeatsCount != null && !singleJsonOut) {
+    final outDir = resolve(f.hasResultsDir ? f.resultsDir! : rawOut!);
     return [
       for (var i = 1; i <= repeatsCount; i++) (i, '$outDir/repeat-$i.json'),
     ];
   }
 
-  final targetRepeat = (!hasExplicitRepeat && repeatsCount == 1) ? 1 : repeat;
-  if (rawOut == null || rawOut.isEmpty) {
-    final outDir = resolve(rawResultsDir!);
+  final targetRepeat = (!f.hasExplicitRepeat && repeatsCount == 1)
+      ? 1
+      : f.repeat!;
+  if (!f.hasOutFlag) {
+    final outDir = resolve(f.resultsDir!);
     return [(targetRepeat, '$outDir/repeat-$targetRepeat.json')];
   }
-  final resolvedOut = resolve(rawOut);
+  final resolvedOut = resolve(rawOut!);
   if (Directory(resolvedOut).existsSync()) {
     return [(targetRepeat, '$resolvedOut/repeat-$targetRepeat.json')];
   }

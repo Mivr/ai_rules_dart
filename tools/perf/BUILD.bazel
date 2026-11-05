@@ -93,7 +93,7 @@ dart_test(
 
 dart_test(
     name = "workflow_test",
-    size = "small",
+    size = "medium",
     srcs = ["test/workflow_steps.dart"],
     args = [
         "$(rlocationpath :test/workflow_test.dart)",
@@ -107,6 +107,32 @@ dart_test(
         "external",
         "no-sandbox",
     ],
+    deps = [
+        ":perf",
+        "@rules_dart//dart/runfiles",
+    ],
+)
+
+filegroup(
+    name = "production_sources",
+    srcs = glob([
+        "lib/**/*.dart",
+        "bin/**/*.dart",
+    ]),
+)
+
+dart_test(
+    name = "hygiene_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :BUILD.bazel)",
+        "$(rlocationpaths :production_sources)",
+    ],
+    data = [
+        "BUILD.bazel",
+        ":production_sources",
+    ],
+    main = "test/hygiene_test.dart",
     deps = [
         ":perf",
         "@rules_dart//dart/runfiles",

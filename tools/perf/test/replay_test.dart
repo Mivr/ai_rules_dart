@@ -344,7 +344,57 @@ void _testMissingExecutableRecordsFailureAndRestores() {
   }
 }
 
+void _testAreFilesByteIdentical() {
+  final tempDir = Directory.systemTemp.createTempSync('rd_perf_bytes_');
+  try {
+    File write(String name, List<int> bytes) =>
+        File('${tempDir.path}/$name')..writeAsBytesSync(bytes);
+    const size = 300 * 1024;
+    final big = List<int>.generate(size, (i) => (i * 31) % 251);
+    final lastDiffers = List<int>.of(big)..[size - 1] ^= 0xff;
+    final firstDiffers = List<int>.of(big)..[0] ^= 0xff;
+
+    _check(
+      areFilesByteIdentical(write('e1', const []), write('e2', const [])),
+      'empty files are identical',
+    );
+    _check(
+      areFilesByteIdentical(write('b1', big), write('b2', big)),
+      'multi-chunk identical files are identical',
+    );
+    _check(
+      !areFilesByteIdentical(write('b3', big), write('b4', lastDiffers)),
+      'multi-chunk files differing in the final byte differ',
+    );
+    _check(
+      !areFilesByteIdentical(write('b5', big), write('b6', firstDiffers)),
+      'files differing in the first byte differ',
+    );
+    _check(
+      !areFilesByteIdentical(
+        write('l1', big),
+        write('l2', big.sublist(0, size - 1)),
+      ),
+      'different-length files differ',
+    );
+    _check(
+      !areFilesByteIdentical(write('m1', big), File('${tempDir.path}/missing')),
+      'missing second file differs',
+    );
+    _check(
+      !areFilesByteIdentical(
+        File('${tempDir.path}/missing'),
+        File('${tempDir.path}/missing2'),
+      ),
+      'two missing files differ',
+    );
+  } finally {
+    _cleanupDir(tempDir);
+  }
+}
+
 void main() {
+  _testAreFilesByteIdentical();
   _testFileAndTreeReplayAndSideEffectSweep();
   _testMismatchRestoresOriginalOutputs();
   _testLeafTestRunnerPassAndFail();
