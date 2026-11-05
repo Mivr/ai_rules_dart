@@ -309,7 +309,7 @@ String _moduleAt(String dir, List<_Scc> sccs) {
 
 /// Runs [body] with [dir] as the working directory, then restores the old one.
 Future<void> _withCwd(Object dir, Future<void> Function() body) async {
-  final previous = Directory.current;
+  final Directory previous = Directory.current;
   Directory.current = dir;
   try {
     await body();
@@ -2471,7 +2471,7 @@ void main(List<String> args) {
     }) async {
       final log = StringBuffer();
       await _withCwd(ws, () async {
-        final code = await compileModule(
+        final int code = await compileModule(
           [
             for (final s in sources) ...['--source', '$_prefix$s'],
             for (final s in inputSources) ...['--input-source', s],
@@ -3747,7 +3747,7 @@ void main(List<String> args) {
       // Windows worker reports the passed `D:/...` summary.
       final compiler = _ReportingCompiler(reported: {'$usedDir/u.dill'});
       await _withCwd(_root, () async {
-        final result = await _compile(
+        final _Result result = await _compile(
           'm_unused_win',
           ['pkg/lib/a.dart'],
           inputKmods: [usedDir, cleanDir],
@@ -4984,7 +4984,9 @@ void main(List<String> args) {
     test(
       'undecodable bytes fail the request after one retry',
       () async {
-        final (code, output, requestId) = await garbageResponse('format');
+        final (int code, String output, int requestId) = await garbageResponse(
+          'format',
+        );
         expect(requestId, 7);
         expect(code, 1);
         expect(output, contains('not a WorkResponse'));
@@ -4996,7 +4998,9 @@ void main(List<String> args) {
     test(
       'a truncated frame fails the request after one retry',
       () async {
-        final (code, output, requestId) = await garbageResponse('range');
+        final (int code, String output, int requestId) = await garbageResponse(
+          'range',
+        );
         expect(requestId, 7);
         expect(code, 1);
         expect(output, contains('not a WorkResponse'));
@@ -5010,7 +5014,9 @@ void main(List<String> args) {
       () async {
         // The write to the dying child may fail or buffer; either way the
         // read reports the exit and the request runs again on a fresh child.
-        final (code, output, requestId) = await garbageResponse('exit');
+        final (int code, String output, int requestId) = await garbageResponse(
+          'exit',
+        );
         expect(requestId, 7);
         expect(code, 1);
         expect(output, contains('exited before responding'));
@@ -5101,8 +5107,8 @@ void main(List<String> args) {
     test(
       'pristine snapshot with comma define fails loudly',
       () async {
-        final sdkDir = File(_sdkDartPaths.first).parent.parent;
-        final res = await runOneShot(
+        final Directory sdkDir = File(_sdkDartPaths.first).parent.parent;
+        final ProcessResult res = await runOneShot(
           kernelWorker:
               '${sdkDir.path}/bin/snapshots/kernel_worker_aot.dart.snapshot',
           patchedMarker: false,
@@ -5116,7 +5122,7 @@ void main(List<String> args) {
     test(
       'patched snapshot without marker still fails',
       () async {
-        final res = await runOneShot(
+        final ProcessResult res = await runOneShot(
           kernelWorker: await patchedSnapshot(_sdkDartPaths.first),
           patchedMarker: false,
         );
@@ -5129,7 +5135,7 @@ void main(List<String> args) {
     test(
       'patched snapshot plus marker succeeds',
       () async {
-        final res = await runOneShot(
+        final ProcessResult res = await runOneShot(
           kernelWorker: await patchedSnapshot(_sdkDartPaths.first),
           patchedMarker: true,
         );
@@ -5145,14 +5151,14 @@ void main(List<String> args) {
     test(
       'ignores planted shared-temp files',
       () async {
-        final tmp = Directory.systemTemp;
+        final Directory tmp = Directory.systemTemp;
 
         /// Basenames in the shared temp dir that look like the old fixed-path
         /// cache: the `*nocomma.snapshot` files and `rules_dart_vm-*` dirs.
         Set<String> sharedCacheNames() {
           final names = <String>{};
-          for (final e in tmp.listSync()) {
-            final base = e.path.split(Platform.pathSeparator).last;
+          for (final FileSystemEntity e in tmp.listSync()) {
+            final String base = e.path.split(Platform.pathSeparator).last;
             if (base.contains('nocomma.snapshot') ||
                 base.startsWith('rules_dart_vm-')) {
               names.add(base);
@@ -5165,7 +5171,7 @@ void main(List<String> args) {
         // adds may appear below. Every plant carries a per-test tag: this
         // suite's tests (and the app-JIT snapshot suite's) run concurrently,
         // and shared fixed plant names would race between processes.
-        final before = sharedCacheNames();
+        final Set<String> before = sharedCacheNames();
         final tag = 'kmod-test.$pid';
         final plants = <String, String>{
           'kernel_worker_nocomma.snapshot.$tag': 'planted',
@@ -5174,7 +5180,7 @@ void main(List<String> args) {
           'gen_kernel_nocomma.snapshot.version.$tag': 'planted',
           'rules_dart_vm-planted-$tag': 'planted-dir',
         };
-        for (final entry in plants.entries) {
+        for (final MapEntry<String, String> entry in plants.entries) {
           final target = '${tmp.path}/${entry.key}';
           if (entry.value == 'planted-dir') {
             Directory(target).createSync(recursive: true);
@@ -5185,12 +5191,12 @@ void main(List<String> args) {
           }
         }
         try {
-          final res = await runOneShot(
+          final ProcessResult res = await runOneShot(
             kernelWorker: await patchedSnapshot(_sdkDartPaths.first),
             patchedMarker: true,
           );
           expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
-          for (final entry in plants.entries) {
+          for (final MapEntry<String, String> entry in plants.entries) {
             final target = '${tmp.path}/${entry.key}';
             if (entry.value == 'planted-dir') {
               expect(
@@ -5202,12 +5208,12 @@ void main(List<String> args) {
               expect(File(target).readAsStringSync(), 'planted');
             }
           }
-          final leftovers = sharedCacheNames().difference(before);
+          final Set<String> leftovers = sharedCacheNames().difference(before);
           // Only the plants this test wrote may have appeared.
           leftovers.removeAll(plants.keys);
           expect(leftovers, isEmpty, reason: '$leftovers');
         } finally {
-          for (final key in plants.keys) {
+          for (final String key in plants.keys) {
             final target = File('${tmp.path}/$key');
             if (target.existsSync()) target.deleteSync();
             final dir = Directory('${tmp.path}/$key');
@@ -5228,7 +5234,7 @@ void main(List<String> args) {
           ..['TMP'] = scratch.path
           ..['TEMP'] = scratch.path
           ..['HOME'] = home.path;
-        final res = await runOneShot(
+        final ProcessResult res = await runOneShot(
           kernelWorker: await patchedSnapshot(_sdkDartPaths.first),
           patchedMarker: true,
           environment: env,
@@ -5350,7 +5356,7 @@ void main(List<String> args) {
       final libExcluded = 'bazel-out/k8-fastbuild/bin/pkg.vm_excluded.txt';
       final libLog = StringBuffer();
       await _withCwd(dir, () async {
-        final libCode = await compileModule(
+        final int libCode = await compileModule(
           [
             '--target',
             'vm',
@@ -6204,7 +6210,7 @@ void main(List<String> args) {
     final log = StringBuffer();
 
     await _withCwd(_root, () async {
-      final code = await compileModule(
+      final int code = await compileModule(
         [
           '--source',
           _uri('pkg/lib/part_child.dart'),
@@ -6653,7 +6659,7 @@ void main(List<String> args) {
           : const <Uint8List>[];
 
       await _withCwd(ws, () async {
-        final code = await compileModule(
+        final int code = await compileModule(
           [
             '--target',
             'vm',
@@ -7320,7 +7326,7 @@ void main(List<String> args) {
     FileSystemException linkError() =>
         const FileSystemException('symlinks refused', 'isolated_root');
     await _withCwd(_root, () async {
-      final code = await compileModule(
+      final int code = await compileModule(
         [
           '--source',
           _uri('pkg/lib/fb_a.dart'),

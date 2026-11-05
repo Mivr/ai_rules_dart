@@ -48,7 +48,9 @@ void main() {
     });
 
     test('ignores a scratch directory that is already gone', () {
-      final Directory parent = Directory.systemTemp.createTempSync('kl_scratch_parent');
+      final Directory parent = Directory.systemTemp.createTempSync(
+        'kl_scratch_parent',
+      );
       addTearDown(() => parent.deleteSync(recursive: true));
       final tmp = Directory('${parent.path}/scratch')..createSync();
       final sibling = File('${parent.path}/sibling')..writeAsStringSync('keep');

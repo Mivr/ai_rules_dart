@@ -749,6 +749,7 @@ dart_test(
         "dill_outline.dart",
         "dill_reader.dart",
         "kernel_module.dart",
+        "kernel_module_strip.dart",
         "lib/worker_protocol.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
