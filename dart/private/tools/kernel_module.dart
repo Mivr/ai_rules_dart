@@ -4634,7 +4634,7 @@ class _UnusedInputs {
 
 /// The module directory in [inputKmods] whose staged sources hold [stagedRoot].
 String? _ownerStaging(List<String> inputKmods, String stagedRoot) {
-  for (final String dir in inputKmods) {
+  for (final dir in inputKmods) {
     if ('$dir/sources' == stagedRoot) return dir;
   }
   return null;
