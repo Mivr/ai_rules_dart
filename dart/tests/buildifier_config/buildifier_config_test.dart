@@ -372,14 +372,41 @@ String? _manifestText(Map<String, String> env) {
   return null;
 }
 
-/// Returns the absolute path of the buildifier runfile [rlocationPath]: the
-/// manifest's own target when a manifest names it, [fallback] otherwise.
-String _buildifierPath(String rlocationPath, String fallback) {
+/// Returns the runfiles path that `TOOL_SHORT_PATH` names in [wrapper], the
+/// text of the `buildifier` launcher script (`.bash` or `.bat`), without its
+/// leading `../`; null when the text sets none.
+String? _toolRunfile(String wrapper) {
+  final RegExpMatch? match = RegExp(r'TOOL_SHORT_PATH=[\x27"]?([^\x27"\r\n]+)')
+      .firstMatch(wrapper);
+  return match?.group(1)?.replaceFirst(RegExp(r'^(\.\./)+'), '');
+}
+
+/// Returns the absolute path of the real buildifier executable behind the
+/// resolved launcher runfile [launcher].
+///
+/// The launcher is a `.bat` on Windows, whose own manifest lookup and `cmd.exe`
+/// argument handling are not under this test's control, so the executable it
+/// names is resolved here: through the manifest when there is one, else under
+/// `RUNFILES_DIR`. [launcher] itself is returned when it names no existing executable.
+String _buildifierPath(String launcher) {
+  final file = File(launcher);
+  final String? tool = file.existsSync()
+      ? _toolRunfile(file.readAsStringSync())
+      : null;
+  if (tool == null) return launcher;
   final String? manifest = _manifestText(Platform.environment);
   final String? target = manifest == null
       ? null
-      : _manifestTarget(manifest, rlocationPath);
-  return target ?? fallback;
+      : _manifestTarget(manifest, tool);
+  final String? dir = Platform.environment['RUNFILES_DIR'];
+  for (final String? candidate in [
+    target,
+    if (dir != null && dir.isNotEmpty) '$dir/$tool',
+    '../$tool',
+  ]) {
+    if (candidate != null && File(candidate).existsSync()) return candidate;
+  }
+  return launcher;
 }
 
 /// Runs `buildifier -config=example` and returns its `warningsList`.
@@ -421,9 +448,7 @@ void main(List<String> args) {
 
     test(".buildifier.json is buildifier's full list less "
         '$_excludedWarning', () {
-      final List<String> example = _exampleWarnings(
-        _buildifierPath(args[0], paths[0]),
-      );
+      final List<String> example = _exampleWarnings(_buildifierPath(paths[0]));
       expect(example, contains(_excludedWarning));
       expect(_configProblems(jsonDecode(read(1)), example), isEmpty);
     });
@@ -593,6 +618,21 @@ void _manifestTests() {
   const key =
       'buildifier_prebuilt++_repo_rules+buildifier_windows_amd64/file/'
       'buildifier.exe';
+  group('toolRunfile', () {
+    test('reads the bash and bat launcher assignments', () {
+      expect(
+        _toolRunfile("TOOL_SHORT_PATH='../r+x/file/buildifier'\n"),
+        'r+x/file/buildifier',
+      );
+      expect(
+        _toolRunfile('set "TOOL_SHORT_PATH=../r+x/file/buildifier.exe"\r\n'),
+        'r+x/file/buildifier.exe',
+      );
+    });
+    test('returns null when the launcher names no tool', () {
+      expect(_toolRunfile('echo hi'), isNull);
+    });
+  });
   group('manifestTarget', () {
     test('resolves a Windows-style absolute target', () {
       const manifest =
