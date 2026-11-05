@@ -906,6 +906,88 @@ void main(List<String> args) {
     });
   });
 
+  group('dot segments collapsing into an empty first segment', () {
+    const refused = [
+      'package:demo/.//x.dart',
+      'package:demo/a/..//x.dart',
+      'package:demo/././/x.dart',
+      'package:demo/%2E//x.dart',
+      'package:demo/a/%2e%2e//x.dart',
+      'package:demo/a/%2E%2e//x.dart',
+    ];
+    const accepted = [
+      'package:demo/src//b.dart',
+      'package:demo/a//b//c.dart',
+      'package:demo/src//../b.dart',
+      'package:demo/./src/b.dart',
+      'package:demo/a/../src/b.dart',
+    ];
+    const dirs = {'demo': 'demo/lib'};
+
+    test('every spelling is an escape and has an empty segment', () {
+      for (final uri in refused) {
+        expect(isEscapingPackageUri(uri), isTrue, reason: uri);
+        expect(hasEmptyPathSegment(uri), isTrue, reason: uri);
+        expect(resolveDirectiveUri(uri, 'demo/lib/a.dart', dirs), isNull);
+      }
+    });
+
+    test('a backslash spells the same collapse', () {
+      expect(isEscapingPackageUri(r'package:demo/.\\x.dart'), isTrue);
+    });
+
+    test('a doubled slash deeper in the path stays accepted', () {
+      for (final uri in accepted) {
+        expect(isEscapingPackageUri(uri), isFalse, reason: uri);
+        expect(hasEmptyPathSegment(uri), isFalse, reason: uri);
+        expect(resolveDirectiveUri(uri, 'demo/lib/a.dart', dirs), isNotNull);
+      }
+    });
+
+    test('the refusals that stay refused', () {
+      for (final uri in [
+        'package:p//x.dart',
+        'package:p///x.dart',
+        'package:p/a/../../x.dart',
+        'package:p/.//../../x.dart',
+        'package:p/a%2Fb.dart',
+        'package:p/a%5Cb.dart',
+      ]) {
+        expect(isEscapingPackageUri(uri), isTrue, reason: uri);
+      }
+    });
+
+    test('the staged check refuses each in import, export, part, part of', () {
+      final root = Directory('${tmp.path}/dotempty/demo.proj')
+        ..createSync(recursive: true);
+      var n = 0;
+      for (final uri in refused) {
+        for (final kind in ['import', 'export', 'part', 'part of']) {
+          File('${root.path}/lib/f${n++}.dart')
+            ..createSync(recursive: true)
+            ..writeAsStringSync("$kind '$uri';\n");
+        }
+      }
+      for (final uri in accepted) {
+        File('${root.path}/lib/ok${n++}.dart')
+          ..createSync(recursive: true)
+          ..writeAsStringSync("import '$uri';\n");
+      }
+      final List<String> violations = findStagedDirectiveViolations([
+        root.path,
+      ], tool: 'guard-test');
+      expect(violations, hasLength(refused.length * 4));
+      for (final uri in refused) {
+        for (final kind in ['import', 'export', 'part', 'part of']) {
+          expect(
+            violations,
+            contains(contains("$kind '$uri' is not a declared input.")),
+          );
+        }
+      }
+    });
+  });
+
   group('every tool enforces the shared check', () {
     // Each Dart-reading tool and the marker proving it enforces the shared
     // staged-source check: the runners call it directly, the whole-program
