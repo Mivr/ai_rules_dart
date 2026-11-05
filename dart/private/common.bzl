@@ -59,7 +59,7 @@ def runfiles_path(f, workspace_name):
     """Convert a File to its runfiles-relative path.
 
     Args:
-        f: A File object.
+        f: The `File` whose runfiles path is wanted; its `short_path` decides the result.
         workspace_name: The workspace name (ctx.workspace_name).
 
     Returns:
@@ -112,7 +112,7 @@ def package_code_assets(pkg):
     only `package_name` and `lib_root`.
 
     Args:
-      pkg: A `DartPackageInfo`.
+      pkg: The `DartPackageInfo` whose declared code assets to read.
 
     Returns:
       Tuple of `DartCodeAssetInfo`; empty when the field is absent.
@@ -123,7 +123,7 @@ def package_link_hook(pkg):
     """A `DartPackageInfo`'s `hook/link.dart`, tolerating older producers.
 
     Args:
-      pkg: A `DartPackageInfo`.
+      pkg: The `DartPackageInfo` whose link hook to read.
 
     Returns:
       The hook File, or `None` when the package has none or the record
@@ -173,7 +173,7 @@ def own_package_record(info):
     target's, and with it a dependency's language version.
 
     Args:
-      info: A `DartInfo`.
+      info: The `DartInfo` whose own package record to find.
 
     Returns:
       The matching `DartPackageInfo`, or `None` when the target contributes no
@@ -200,7 +200,7 @@ def owned_package_records(info):
     contributes no package at all.
 
     Args:
-      info: A `DartInfo`.
+      info: The `DartInfo` whose owned package records to list.
 
     Returns:
       The owned `DartPackageInfo` records, in order.
@@ -863,7 +863,14 @@ STABLE_SCHEME = "org-dartlang-root"
 KERNEL_FILESYSTEM_SCHEME = STABLE_SCHEME
 
 def kernel_uri(path):
-    """The `KERNEL_FILESYSTEM_SCHEME` URI of an exec-root-relative path."""
+    """Builds the `KERNEL_FILESYSTEM_SCHEME` URI of an exec-root-relative path.
+
+    Args:
+      path: The path of the file relative to the execution root.
+
+    Returns:
+      The URI string `org-dartlang-root:///<path>`.
+    """
     return KERNEL_FILESYSTEM_SCHEME + ":///" + path
 
 def stable_path(path):
@@ -1074,6 +1081,10 @@ def _dev_entry_uri(pkg, files, ctx, out):
       out: `struct(source_roots, generated_roots, generated_source_paths,
         generated_source_uris)`: the accumulating staging outputs, mutated in
         place.
+
+    Returns:
+      The `rootUri` string for the package's entry, or `None` when the package
+      gets no entry.
     """
     if needs_source_assembly(files):
         _dev_record_file_roots(pkg, files, out)

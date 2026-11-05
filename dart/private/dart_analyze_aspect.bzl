@@ -542,7 +542,7 @@ def _format(ctx, name, staged, own_paths, language_version):
     return struct(stamp = stamp, mode = mode, sdk_inputs = sdk_inputs, env = env)
 
 def _analyze_summary_or_source(ctx, info, srcs, opts):
-    """Runs the summary-mode or source-mode analyze action. Returns (output, summary_mode, summary_staged).
+    """Runs the summary-mode or source-mode analyze action.
 
     Args:
       ctx: The aspect context.
@@ -552,6 +552,10 @@ def _analyze_summary_or_source(ctx, info, srcs, opts):
         `_dart_analyze_aspect_impl`.
       opts: `struct(sdk_inputs, sdk_version, config, is_leaf_own_only)`: the
         SDK inputs, toolchain version, analysis config, and leaf shape flag.
+
+    Returns:
+      The tuple `(output, summary_mode, summary_staged)`: a depset holding the analysis output,
+      whether summary mode ran, and the summary-mode staged project, or `None` in source mode.
     """
 
     # The SDK check is the analyzing toolchain's own: the same one the
@@ -600,7 +604,7 @@ def _analyze_summary_or_source(ctx, info, srcs, opts):
     )]), True, summary_staged
 
 def _analyze_format_checks(ctx, info, srcs, opts, summary_staged):
-    """Runs one format check per language version. Returns the `DartFormat` list.
+    """Runs one format check per language version.
 
     Args:
       ctx: The aspect context.
@@ -611,6 +615,9 @@ def _analyze_format_checks(ctx, info, srcs, opts, summary_staged):
       opts: `struct(sdk_version, config, is_leaf_own_only, ...)`: the toolchain
         version, analysis config, and leaf shape flag (extra fields ignored).
       summary_staged: The summary-mode staged project, or None.
+
+    Returns:
+      The list of format-check outputs, one per language version, sorted by version.
     """
     by_version = _format_language_versions(info, srcs.own_paths)
     if summary_staged != None and not srcs.generated:

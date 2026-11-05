@@ -11,7 +11,12 @@ load(":yaml_text.bzl", "bad_blank_index")
 visibility(["//dart/..."])
 
 def flow_scan_start():
-    """A fresh quote-aware scan state for one folded flow."""
+    """Creates a fresh quote-aware scan state for one folded flow.
+
+    Returns:
+      A dict of the scan flags `single`, `double`, `escaped`, `plain` and `have`, all false,
+      and the bracket `depth`, zero.
+    """
     return {"single": False, "double": False, "escaped": False, "plain": False, "have": False, "depth": 0}
 
 def _flow_scan_sep(scan):

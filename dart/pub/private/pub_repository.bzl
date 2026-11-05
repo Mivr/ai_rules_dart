@@ -103,7 +103,7 @@ pub_package = repository_rule(
             default = [],
         ),
         "package_files": attr.string_list(
-            doc = PACKAGE_FILES_ATTR_DOC,
+            doc = "Applies to the pub.dev package this repository downloads. " + PACKAGE_FILES_ATTR_DOC,
             default = ["pubspec.yaml", "LICENSE*"],
         ),
     },

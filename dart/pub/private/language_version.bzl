@@ -304,8 +304,8 @@ def _compare_identifier_part(part_a, part_b):
     ones, which compare lexically.
 
     Args:
-        part_a: First identifier.
-        part_b: Second identifier.
+        part_a: The first identifier to compare, such as `alpha` or `12`.
+        part_b: The second identifier to compare, such as `beta` or `3`.
 
     Returns:
         -1, 0 or 1.

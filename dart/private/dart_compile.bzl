@@ -182,7 +182,7 @@ def jit_tool_entry(jit_tool_files):
     resolve; the entry itself is picked by basename.
 
     Args:
-        jit_tool_files: The `_jit_tool` files.
+        jit_tool_files: Every source file of the `_jit_tool` bundle, in the order the attribute lists them.
 
     Returns:
         The `app_jit_snapshot.dart` entry File.

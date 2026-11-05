@@ -374,7 +374,7 @@ dart_source_set = rule(
             mandatory = True,
         ),
         "root_paths": attr.string_list(
-            doc = "Paths treated as roots in the output directory (stripped). `\".\"` is this target's Bazel package. Set additional roots to flatten files from other packages.",
+            doc = "Paths treated as roots in the output directory (stripped). `\".\"` is this target's Bazel package. Set additional roots to flatten files from other packages. Defaults to `[\".\"]`.",
             default = ["."],
         ),
         "replace_prefixes": attr.string_dict(

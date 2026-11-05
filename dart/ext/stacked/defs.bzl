@@ -22,7 +22,30 @@ def stacked_router_library(
         annotation_dep = _DEFAULT_RUNTIME_DEP,
         config = "",
         **kwargs):
-    """A dart_library augmented by stackedRouterGenerator (`.router.dart`)."""
+    """Declares a `dart_library` completed by `stackedRouterGenerator`.
+
+    Generates `<src>.router.dart` beside each source with one codegen action per source,
+    and wraps the sources and the generated files in a `dart_library`.
+
+    Args:
+      name: Name of the wrapping `dart_library` target; the per-source codegen targets
+        derive their names from it.
+      srcs: The `.dart` source files that carry `@StackedApp` routes. Each one gets its
+        own codegen action.
+      package_name: Dart package name, matching the consumer's `pubspec.yaml` `name:`.
+        Defaults to the last component of the Bazel package path.
+      language_version: Dart language version of the package in `<major>.<minor>` form.
+        Defaults to empty, which leaves the version unstated, as for a hand-written
+        `dart_library`.
+      deps: Additional `dart_library` targets the sources import. The annotation
+        dependency is added automatically. Defaults to none.
+      annotation_dep: Label of the runtime annotation library the sources import; it is
+        added to `deps`. Defaults to `@pub_deps//:stacked`.
+      config: Builder options as a JSON string handed to the generator. Defaults to
+        empty, which uses the builder's own defaults.
+      **kwargs: Further attributes forwarded to the wrapping `dart_library`, such as
+        `visibility` or `tags`.
+    """
     library_builder_library(
         name = name,
         srcs = srcs,
@@ -45,7 +68,30 @@ def stacked_locator_library(
         annotation_dep = _DEFAULT_RUNTIME_DEP,
         config = "",
         **kwargs):
-    """A dart_library augmented by stackedLocatorGenerator (`.locator.dart`)."""
+    """Declares a `dart_library` completed by `stackedLocatorGenerator`.
+
+    Generates `<src>.locator.dart` beside each source with one codegen action per
+    source, and wraps the sources and the generated files in a `dart_library`.
+
+    Args:
+      name: Name of the wrapping `dart_library` target; the per-source codegen targets
+        derive their names from it.
+      srcs: The `.dart` source files that carry `@StackedApp` dependencies. Each one
+        gets its own codegen action.
+      package_name: Dart package name, matching the consumer's `pubspec.yaml` `name:`.
+        Defaults to the last component of the Bazel package path.
+      language_version: Dart language version of the package in `<major>.<minor>` form.
+        Defaults to empty, which leaves the version unstated, as for a hand-written
+        `dart_library`.
+      deps: Additional `dart_library` targets the sources import. The annotation
+        dependency is added automatically. Defaults to none.
+      annotation_dep: Label of the runtime annotation library the sources import; it is
+        added to `deps`. Defaults to `@pub_deps//:stacked`.
+      config: Builder options as a JSON string handed to the generator. Defaults to
+        empty, which uses the builder's own defaults.
+      **kwargs: Further attributes forwarded to the wrapping `dart_library`, such as
+        `visibility` or `tags`.
+    """
     library_builder_library(
         name = name,
         srcs = srcs,
@@ -68,7 +114,30 @@ def stacked_form_library(
         annotation_dep = _DEFAULT_RUNTIME_DEP,
         config = "",
         **kwargs):
-    """A dart_library augmented by stackedFormGenerator (`.form.dart`)."""
+    """Declares a `dart_library` completed by `stackedFormGenerator`.
+
+    Generates `<src>.form.dart` beside each source with one codegen action per source,
+    and wraps the sources and the generated files in a `dart_library`.
+
+    Args:
+      name: Name of the wrapping `dart_library` target; the per-source codegen targets
+        derive their names from it.
+      srcs: The `.dart` source files that carry `@FormView` annotations. Each one gets
+        its own codegen action.
+      package_name: Dart package name, matching the consumer's `pubspec.yaml` `name:`.
+        Defaults to the last component of the Bazel package path.
+      language_version: Dart language version of the package in `<major>.<minor>` form.
+        Defaults to empty, which leaves the version unstated, as for a hand-written
+        `dart_library`.
+      deps: Additional `dart_library` targets the sources import. The annotation
+        dependency is added automatically. Defaults to none.
+      annotation_dep: Label of the runtime annotation library the sources import; it is
+        added to `deps`. Defaults to `@pub_deps//:stacked`.
+      config: Builder options as a JSON string handed to the generator. Defaults to
+        empty, which uses the builder's own defaults.
+      **kwargs: Further attributes forwarded to the wrapping `dart_library`, such as
+        `visibility` or `tags`.
+    """
     library_builder_library(
         name = name,
         srcs = srcs,
@@ -91,7 +160,30 @@ def stacked_logger_library(
         annotation_dep = _DEFAULT_RUNTIME_DEP,
         config = "",
         **kwargs):
-    """A dart_library augmented by stackedLoggerGenerator (`.logger.dart`)."""
+    """Declares a `dart_library` completed by `stackedLoggerGenerator`.
+
+    Generates `<src>.logger.dart` beside each source with one codegen action per source,
+    and wraps the sources and the generated files in a `dart_library`.
+
+    Args:
+      name: Name of the wrapping `dart_library` target; the per-source codegen targets
+        derive their names from it.
+      srcs: The `.dart` source files that carry `@StackedApp` loggers. Each one gets its
+        own codegen action.
+      package_name: Dart package name, matching the consumer's `pubspec.yaml` `name:`.
+        Defaults to the last component of the Bazel package path.
+      language_version: Dart language version of the package in `<major>.<minor>` form.
+        Defaults to empty, which leaves the version unstated, as for a hand-written
+        `dart_library`.
+      deps: Additional `dart_library` targets the sources import. The annotation
+        dependency is added automatically. Defaults to none.
+      annotation_dep: Label of the runtime annotation library the sources import; it is
+        added to `deps`. Defaults to `@pub_deps//:stacked`.
+      config: Builder options as a JSON string handed to the generator. Defaults to
+        empty, which uses the builder's own defaults.
+      **kwargs: Further attributes forwarded to the wrapping `dart_library`, such as
+        `visibility` or `tags`.
+    """
     library_builder_library(
         name = name,
         srcs = srcs,
@@ -114,7 +206,30 @@ def stacked_dialog_library(
         annotation_dep = _DEFAULT_RUNTIME_DEP,
         config = "",
         **kwargs):
-    """A dart_library augmented by stackedDialogGenerator (`.dialogs.dart`)."""
+    """Declares a `dart_library` completed by `stackedDialogGenerator`.
+
+    Generates `<src>.dialogs.dart` beside each source with one codegen action per
+    source, and wraps the sources and the generated files in a `dart_library`.
+
+    Args:
+      name: Name of the wrapping `dart_library` target; the per-source codegen targets
+        derive their names from it.
+      srcs: The `.dart` source files that carry `@StackedApp` dialogs. Each one gets its
+        own codegen action.
+      package_name: Dart package name, matching the consumer's `pubspec.yaml` `name:`.
+        Defaults to the last component of the Bazel package path.
+      language_version: Dart language version of the package in `<major>.<minor>` form.
+        Defaults to empty, which leaves the version unstated, as for a hand-written
+        `dart_library`.
+      deps: Additional `dart_library` targets the sources import. The annotation
+        dependency is added automatically. Defaults to none.
+      annotation_dep: Label of the runtime annotation library the sources import; it is
+        added to `deps`. Defaults to `@pub_deps//:stacked`.
+      config: Builder options as a JSON string handed to the generator. Defaults to
+        empty, which uses the builder's own defaults.
+      **kwargs: Further attributes forwarded to the wrapping `dart_library`, such as
+        `visibility` or `tags`.
+    """
     library_builder_library(
         name = name,
         srcs = srcs,
@@ -137,7 +252,30 @@ def stacked_bottomsheet_library(
         annotation_dep = _DEFAULT_RUNTIME_DEP,
         config = "",
         **kwargs):
-    """A dart_library augmented by stackedBottomsheetGenerator (`.bottomsheets.dart`)."""
+    """Declares a `dart_library` completed by `stackedBottomsheetGenerator`.
+
+    Generates `<src>.bottomsheets.dart` beside each source with one codegen action per
+    source, and wraps the sources and the generated files in a `dart_library`.
+
+    Args:
+      name: Name of the wrapping `dart_library` target; the per-source codegen targets
+        derive their names from it.
+      srcs: The `.dart` source files that carry `@StackedApp` bottom sheets. Each one
+        gets its own codegen action.
+      package_name: Dart package name, matching the consumer's `pubspec.yaml` `name:`.
+        Defaults to the last component of the Bazel package path.
+      language_version: Dart language version of the package in `<major>.<minor>` form.
+        Defaults to empty, which leaves the version unstated, as for a hand-written
+        `dart_library`.
+      deps: Additional `dart_library` targets the sources import. The annotation
+        dependency is added automatically. Defaults to none.
+      annotation_dep: Label of the runtime annotation library the sources import; it is
+        added to `deps`. Defaults to `@pub_deps//:stacked`.
+      config: Builder options as a JSON string handed to the generator. Defaults to
+        empty, which uses the builder's own defaults.
+      **kwargs: Further attributes forwarded to the wrapping `dart_library`, such as
+        `visibility` or `tags`.
+    """
     library_builder_library(
         name = name,
         srcs = srcs,

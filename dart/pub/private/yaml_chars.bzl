@@ -128,15 +128,31 @@ def _strip_bom_text(text):
     return ""
 
 def is_bom_only_line(raw):
-    """Returns whether `raw` carries no content past byte-order marks: only BOMs, whitespace and a `#` comment."""
+    """Reports whether `raw` carries no content past byte-order marks.
+
+    Only BOMs, whitespace and a `#` comment may follow.
+
+    Args:
+      raw: The raw line text.
+
+    Returns:
+      `True` when the line is empty or a comment once BOMs are stripped.
+    """
     rest = _strip_bom_text(raw)
     return rest == "" or rest.startswith("#")
 
 def is_marker_line(raw, marker):
-    """Returns whether `raw` is a document marker: the marker at column 0 with only whitespace after it.
+    """Reports whether `raw` is a document marker: the marker at column 0 with only whitespace after it.
 
     An indented marker is never a document marker: inside a `|` or `>`
     block scalar it is content, and elsewhere it is an ordinary line.
+
+    Args:
+      raw: The raw line text.
+      marker: The marker to look for, `---` or `...`.
+
+    Returns:
+      `True` when `raw` starts with `marker` and only whitespace follows it.
     """
     if not raw.startswith(marker):
         return False

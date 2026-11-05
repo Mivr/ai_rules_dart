@@ -16,11 +16,25 @@ visibility(["//dart/..."])
 _BAD_BLANKS = "\013\014\034\035\036\037"
 
 def indent_width(raw):
-    """Counts the leading spaces and tabs, each as one column, as yaml.bzl does."""
+    """Counts the leading spaces and tabs, each as one column, as yaml.bzl does.
+
+    Args:
+      raw: The line text, with its leading whitespace still attached.
+
+    Returns:
+      The number of leading space and tab characters of `raw`.
+    """
     return len(raw) - len(raw.lstrip(" \t"))
 
 def spaces_width(raw):
-    """Counts the leading spaces, stopping at a tab, which never indents."""
+    """Counts the leading spaces, stopping at a tab, which never indents.
+
+    Args:
+      raw: The line text, with its leading whitespace still attached.
+
+    Returns:
+      The number of leading space characters of `raw` before any tab or other character.
+    """
     return len(raw) - len(raw.lstrip(" "))
 
 def quote_track(ch, st):
@@ -359,6 +373,15 @@ def is_block_collection_key(text):
     return False
 
 def is_quoted(text):
+    """Reports whether `text` is wrapped in a matching pair of quotes.
+
+    Args:
+      text: The scalar text to test.
+
+    Returns:
+      `True` when `text` has at least two characters and starts and ends with the same
+      single or double quote.
+    """
     return len(text) >= 2 and ((text[0] == '"' and text[-1] == '"') or (text[0] == "'" and text[-1] == "'"))
 
 def is_unknown_directive(line):
@@ -407,18 +430,30 @@ def quoted_scalar_rest(s):
 # ---------------------------------------------------------------------------
 
 def is_dash(text):
-    """Returns whether `text` opens a block sequence entry.
+    """Reports whether `text` opens a block sequence entry.
 
     A dash opens an entry with a space or a tab after it, as pub reads
     `-\tx` as `x`.
+
+    Args:
+      text: The line text after its indentation.
+
+    Returns:
+      `True` when `text` is a lone dash or a dash followed by a space or a tab.
     """
     return text == "-" or text.startswith("- ") or text.startswith("-\t")
 
 def is_question_entry(text):
-    """Returns whether `text` is an explicit-key marker, as pub rejects it where a value starts.
+    """Reports whether `text` is an explicit-key marker, as pub rejects it where a value starts.
 
     A bare `?`, or `?` with a space or a tab after it, opens an explicit
     key; `?a` stays a plain scalar, as pub reads it.
+
+    Args:
+      text: The text where a value starts.
+
+    Returns:
+      `True` when `text` is a `?` marker.
     """
     return text == "?" or text.startswith("? ") or text.startswith("?\t")
 
@@ -427,11 +462,17 @@ def _is_dash_pair(text):
     return len(text) > 2 and text[0] == "-" and text[1] == ":" and text[2] in [" ", "\t"]
 
 def is_flow_value_entry(text):
-    """Returns whether `text` is a block entry where a flow value starts, as pub rejects it.
+    """Reports whether `text` is a block entry where a flow value starts, as pub rejects it.
 
     A `- ` entry, a `-: ` pair and a `?` marker all fail as a flow mapping
     value or pair value; `-:x` without a space stays a plain scalar, as pub
     reads it.
+
+    Args:
+      text: The text where the flow value starts.
+
+    Returns:
+      `True` when `text` is a dash entry, a dash pair or an explicit-key marker.
     """
     return is_dash(text) or _is_dash_pair(text) or is_question_entry(text)
 
@@ -457,20 +498,43 @@ def is_flow_seq_entry(token):
     return False
 
 def is_mapping_start(text):
-    """Returns whether `text` opens a block mapping entry."""
+    """Reports whether `text` opens a block mapping entry.
+
+    Args:
+      text: The line text after its indentation.
+
+    Returns:
+      `True` when `text` starts with a `? ` or `: ` marker or holds a top-level colon.
+    """
     return text.startswith("? ") or text.startswith(": ") or find_top_colon(text) >= 0
 
 def is_block_mapping_start(text):
-    """Returns whether `text` opens a block mapping entry in block context.
+    """Reports whether `text` opens a block mapping entry in block context.
 
     Brackets past the first character are content, as pub scans a block
     plain scalar, so `te[st: 1` opens one; a leading `[` or `{` still hides
     inner colons, as the line opens a flow node.
+
+    Args:
+      text: The line text after its indentation.
+
+    Returns:
+      `True` when `text` starts with a `? ` or `: ` marker or holds a block colon.
     """
     return text.startswith("? ") or text.startswith(": ") or find_block_colon(text) >= 0
 
 def is_compact_seq(pending, indent, text):
-    """Returns whether `text` is a compact entry of a pending mapping key."""
+    """Reports whether `text` is a compact entry of a pending mapping key.
+
+    Args:
+      pending: The pending key frame; its `parent` and `indent` decide the match.
+      indent: The column of the current line.
+      text: The line text after its indentation.
+
+    Returns:
+      `True` when the key's parent is a mapping, the line sits at the key's own
+      column, and `text` is a dash entry.
+    """
     return type(pending["parent"]) == "dict" and indent == pending["indent"] and is_dash(text)
 
 def is_explicit_key_text(text):

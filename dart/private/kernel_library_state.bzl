@@ -370,13 +370,17 @@ def _lib_kernel_graph_fast(ctx, deps, dep_kernels, own_srcs, has_upstream):
     )
 
 def lib_kernel_plain_srcs(dep_kernels, own_srcs, include_own):
-    """Returns (cross_pkg_srcs, dep_cross_pkg_srcs) when no cycle graph is needed.
+    """Computes the cross-package source sets when no cycle graph is needed.
 
     Args:
       dep_kernels: The `DartKernelInfo` of each direct dependency.
       own_srcs: The library's own `.dart` files.
       include_own: Whether the library's own sources join the cross-package set
         (a cycle that needs no graph, or cross-package sources upstream).
+
+    Returns:
+      A `(cross_pkg_srcs, dep_cross_pkg_srcs)` tuple of depsets; the second is `None` when
+      `include_own` is false.
     """
     if include_own:
         return (

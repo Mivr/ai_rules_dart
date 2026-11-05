@@ -64,7 +64,15 @@ def parse_semver(version):
     return nums + (_PRERELEASE_SENTINEL, tuple(pre_segments))
 
 def semver_gt(a, b):
-    """Returns True if semver string a is greater than semver string b."""
+    """Compares two semver strings.
+
+    Args:
+      a: The semver string on the left of the comparison.
+      b: The semver string on the right of the comparison.
+
+    Returns:
+      True if `a` is a higher version than `b`, with a prerelease ordering below its release.
+    """
     return parse_semver(a) > parse_semver(b)
 
 TOOL_VERSIONS = {

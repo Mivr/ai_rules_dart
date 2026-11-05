@@ -574,7 +574,7 @@ def undefined_tag_problem(word, line):
     its inner text.
 
     Args:
-      word: the tag word.
+      word: The tag word as written, such as `!!str`, `!local` or `!<verbatim>`.
       line: the 1-based line number naming failures.
 
     Returns:
@@ -675,7 +675,7 @@ def apply_key_tag(word, key, raw, state, line):
     the key untagged, so parsing continues past it.
 
     Args:
-      word: the tag word.
+      word: The tag word as written, such as `!!str`, `!local` or `!<verbatim>`.
       key: the parsed key.
       raw: the raw key text.
       state: the parse state collecting problems.
@@ -792,7 +792,7 @@ def resolve_handle(word, state, line):
     as pub reads them. A problem returns None.
 
     Args:
-      word: the tag word.
+      word: The tag word as written, such as `!!str`, `!local` or `!<verbatim>`.
       state: the parse state collecting problems.
       line: the 1-based line number naming failures.
 
@@ -834,7 +834,7 @@ def is_unknown_tag_handle(tag):
     tag, which reads below.
 
     Args:
-      tag: the tag word.
+      tag: The tag word as written, such as `!!str`, `!local` or `!<verbatim>`.
 
     Returns:
       Whether the tag is a named handle or a verbatim tag.
@@ -898,7 +898,7 @@ def apply_tag(tag, raw, value, state, line):
     the line where the value does not resolve, as pub rejects them.
 
     Args:
-      tag: the tag word.
+      tag: The tag word as written, such as `!!str`, `!local` or `!<verbatim>`.
       raw: the raw scalar text.
       value: the parsed value.
       state: the parse state collecting problems.
@@ -933,7 +933,7 @@ def tag_name(tag):
     """The short name of a tag written as `!!x`, `!x` or `!<tag:yaml.org,2002:x>`.
 
     Args:
-      tag: the tag word.
+      tag: The tag word as written, such as `!!str`, `!local` or `!<verbatim>`.
 
     Returns:
       The short tag name, or None.
@@ -948,11 +948,17 @@ def tag_name(tag):
     return None
 
 def flow_quoted_end(s):
-    """Returns the index of the quote closing the scalar at `s[0]`, or -1.
+    """Finds the quote that closes the flow scalar starting at `s[0]`.
 
     `s` starts with `'` or `"`. `''` inside single quotes is one escaped
     quote and a backslash escapes the next character in double quotes, as
-    pub reads them. Returns -1 when the quote never closes.
+    pub reads them.
+
+    Args:
+      s: The text starting at the opening quote.
+
+    Returns:
+      The index of the closing quote, or -1 when the quote never closes.
     """
     return quoted_end_at(s, s[0], 1)
 

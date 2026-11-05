@@ -381,12 +381,18 @@ def _parse_document(content, strict_lines, refuse_tail_directives = False):
     return parse_block(lines, state, not dropped_marker), state.problems
 
 def find_colon(text):
-    """Returns the index of the first top-level `: ` in `text`, or -1.
+    """Finds the first top-level `: ` in `text`.
 
     A colon inside quotes or brackets does not count, and a trailing colon
     does. A quote opens only where a scalar starts.
     Shared with the `//dart/pub:yaml_parser.bzl` lock checks so both read a
     `key: value` line the same way.
+
+    Args:
+      text: The line text after its indentation.
+
+    Returns:
+      The index of the first top-level `: `, or -1 when there is none.
     """
     return find_top_colon(text)
 
@@ -396,5 +402,11 @@ def strip_comment(text):
     A quote opens only where a scalar starts.
     Shared with the `//dart/pub:yaml_parser.bzl` lock checks so both skip
     the same comment text.
+
+    Args:
+      text: The line text, possibly ending in a comment.
+
+    Returns:
+      `text` without its trailing comment.
     """
     return strip_trailing_comment(text)

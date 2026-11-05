@@ -268,7 +268,7 @@ def _link_hook_stage_all(ctx, packages, hooks, by_pkg, name):
     return package_config, staged, staged_hooks
 
 def _link_hook_run_all(ctx, env, data):
-    """Runs one link-hook action per hooked package. Returns struct(assets, validation_outputs).
+    """Runs one link-hook action per hooked package.
 
     Args:
       ctx: The rule context.
@@ -276,6 +276,10 @@ def _link_hook_run_all(ctx, env, data):
         `dart_link_hook_actions`.
       data: `struct(hooks, staged_hooks, staged, declared, package_config,
         srcs, resources)` for the closure linked.
+
+    Returns:
+      `struct(assets, validation_outputs)`: the data assets the hooks produce and the link-output
+      files that validate the run.
     """
     asset_infos = []
     link_outputs = []
