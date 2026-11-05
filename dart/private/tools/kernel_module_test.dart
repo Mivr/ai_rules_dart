@@ -4076,9 +4076,7 @@ void main(List<String> args) {
       _moduleAt('${realRoot.path}/clean', [
         _Scc('c.dill', ['dep/lib/c.dart'], []),
       ]);
-      final previous = Directory.current;
-      Directory.current = linkPath;
-      try {
+      await _withCwd(linkPath, () async {
         // Whichever spelling `getcwd` returns, the report uses the other
         // one, so the test fails without symlink resolution either way.
         final logical = Directory.current.path == realRoot.path
@@ -4095,9 +4093,7 @@ void main(List<String> args) {
         );
         expect(result.code, 0, reason: result.log);
         expect(File(unusedPath).readAsLinesSync(), ['clean']);
-      } finally {
-        Directory.current = previous;
-      }
+      });
     });
 
     test('m_unused_win: a Windows drive-letter output keeps --used-inputs a '
@@ -5713,9 +5709,7 @@ void main(List<String> args) {
       final libKoutline = 'bazel-out/k8-fastbuild/bin/pkg.koutline';
       final libExcluded = 'bazel-out/k8-fastbuild/bin/pkg.vm_excluded.txt';
       final libLog = StringBuffer();
-      final prevCurrent = Directory.current;
-      Directory.current = dir;
-      try {
+      await _withCwd(dir, () async {
         final libCode = await compileModule(
           [
             '--target',
@@ -5811,9 +5805,7 @@ void main(List<String> args) {
           0,
           reason: linkErr.toString(),
         );
-      } finally {
-        Directory.current = prevCurrent;
-      }
+      });
 
       final modularPath =
           '${dir.path}/bazel-out/k8-fastbuild/bin/probe_modular.dill';
