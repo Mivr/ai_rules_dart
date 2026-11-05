@@ -19,7 +19,7 @@
 //   --external <glob>                      once per include_external_repositories pattern
 //   --workspace <name>                     the target's workspace; "" for the main repository
 //   --origin-map <file>                    optional; where to write a JSON object of each
-//                                          copied file's destination to its input path
+//                                          staged file's destination to its input path
 //   --file <path> <short_path> <workspace> <workspace_path>
 //                                          once per input file, in order
 //
@@ -90,7 +90,7 @@ class Request {
   final String targetWorkspace;
   final List<SourceFile> files;
 
-  /// Where to write each copied file's destination and input path, or `null`.
+  /// Where to write each staged file's destination and input path, or `null`.
   final String? originMap;
 }
 

@@ -245,7 +245,7 @@ class _ExecPaths {
     final suffixes = <String, String>{
       for (final MapEntry<String, String> e in _byUri.entries) e.value: e.value,
       // A key that is no URI is a path the VM may report under another root: a
-      // staged copy of a file that is listed by the path it was copied from.
+      // staged file that is listed by the path it was staged from.
       for (final MapEntry<String, String> e in _byUri.entries)
         if (!e.key.contains(':')) execPath(e.key): e.value,
     };

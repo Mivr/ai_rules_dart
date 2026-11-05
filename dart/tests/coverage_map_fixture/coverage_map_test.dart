@@ -66,7 +66,7 @@ void main() {
         map['package:coverage_map_set/gen_in_set.dart'];
     expect(generatedInput, matches(_binExecPath));
     expect(generatedInput, endsWith('/bin/$pkgDir/lib/gen_in_set.dart'));
-    // The staged copy's own path leads back to the input too.
+    // The staged file's own path leads back to the input too.
     final String staged = map.keys.firstWhere(
       (k) => k.endsWith('/bin/$pkgDir/set/lib/in_set.dart'),
     );

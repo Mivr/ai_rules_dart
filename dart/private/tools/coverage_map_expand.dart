@@ -14,7 +14,7 @@
 //
 // Every value of the finished map is an exec path, as `COVERAGE_MANIFEST`
 // lists it. A file a `dart_source_set` staged maps to the exec path
-// of the input it was copied from; any other file maps to its own.
+// of the input it was staged from; any other file maps to its own.
 
 import 'dart:convert';
 import 'dart:io';
@@ -116,7 +116,7 @@ CoverageMapRequest parseCoverageMapRequest(List<String> lines) {
 /// [origins] maps a staged file's path to the exec path of its input. Each file
 /// gets its `org-dartlang-root:` URI, its `package:` URI when it is under the
 /// `lib/` of the package its directory roots, and, when it was staged, its own
-/// path, so the `file:` URI the VM reports for the staged copy resolves too.
+/// path, so the `file:` URI the VM reports for the staged file resolves too.
 Map<String, String> expandDirectories({
   required List<SourceDir> dirs,
   required List<MemberFile> files,
