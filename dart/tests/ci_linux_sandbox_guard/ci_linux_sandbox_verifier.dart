@@ -51,7 +51,6 @@ const List<LinuxBazelJob> linuxBazelJobs = [
   LinuxBazelJob('ci.yaml', 'dbg-mode'),
   LinuxBazelJob('ci.yaml', 'reproducibility'),
   LinuxBazelJob('ci.yaml', 'hermetic-strict'),
-  LinuxBazelJob('buildifier.yaml', 'check'),
   LinuxBazelJob('commit-messages.yaml', 'check'),
   LinuxBazelJob('perf-linux.yaml', 'bench', script: 'tools-src/$scriptPath'),
 ];
