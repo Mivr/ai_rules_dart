@@ -46,6 +46,7 @@ class CoverageConfig {
     required this.output,
     required this.uriMapPath,
     required this.manifestPath,
+    required this.generatedPath,
     required this.serviceInfoPath,
   });
 
@@ -69,10 +70,14 @@ class CoverageConfig {
       );
     }
     final String? manifest = env['COVERAGE_MANIFEST'];
+    final String? generatedKey = env['RULES_DART_COVERAGE_GENERATED'];
     return CoverageConfig(
       output: output,
       uriMapPath: locate(mapKey),
       manifestPath: manifest == null || manifest.isEmpty ? null : manifest,
+      generatedPath: generatedKey == null || generatedKey.isEmpty
+          ? null
+          : locate(generatedKey),
       // Per process, so a stale file from an earlier run is never read.
       serviceInfoPath:
           '${env['TEST_TMPDIR'] ?? Directory.systemTemp.path}/'
@@ -83,6 +88,10 @@ class CoverageConfig {
   final String output;
   final String uriMapPath;
   final String? manifestPath;
+
+  /// The generated Dart files the instrumentation filter selected, one exec
+  /// path per line. `COVERAGE_MANIFEST` lists source files only, so these join it.
+  final String? generatedPath;
   final String serviceInfoPath;
 
   /// The VM flags that make the VM collectable: it serves on a free port,
@@ -405,7 +414,11 @@ _Inputs _readInputs(CoverageConfig config) {
     uriMap: readUriMap(config.uriMapPath),
     manifest: manifestPath == null
         ? null
-        : parseManifest(_readManifest(manifestPath)),
+        : parseManifest([
+            ..._readManifest(manifestPath),
+            if (config.generatedPath != null)
+              ..._readManifest(config.generatedPath!),
+          ]),
   );
 }
 

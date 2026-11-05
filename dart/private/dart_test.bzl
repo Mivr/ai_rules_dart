@@ -26,7 +26,7 @@ load(
     "runfiles_path",
     "target_dart_abi",
 )
-load("//dart/private:coverage_map.bzl", "COVERAGE_MAP_TOOLCHAINS", "write_coverage_map")
+load("//dart/private:coverage_map.bzl", "COVERAGE_MAP_TOOLCHAINS", "write_coverage_map", "write_generated_list")
 load("//dart/private:dart_compile.bzl", "dart_compile_action")
 load(
     "//dart/private:dart_kernel.bzl",
@@ -72,6 +72,8 @@ def _dart_test_impl(ctx):
     }
     coverage_map = _coverage_map(ctx, own.packages)
     env["RULES_DART_COVERAGE_MAP"] = runfiles_path(coverage_map, workspace_name)
+    generated_list = write_generated_list(ctx, ctx.files.srcs + [ctx.file.main], ctx.attr.deps)
+    env["RULES_DART_COVERAGE_GENERATED"] = runfiles_path(generated_list, workspace_name)
     runner_files = []
     if runner:
         # The runner reads the test file for its annotations (`@TestOn`,
@@ -108,7 +110,7 @@ def _dart_test_impl(ctx):
     # `dart compile`) declares `@rules_dart//dart` in `data`, which brings the
     # whole SDK.
     runfiles = ctx.runfiles(
-        files = [dill, coverage_map] + kernel.runtime_libs + runner_files + ctx.files.data,
+        files = [dill, coverage_map, generated_list] + kernel.runtime_libs + runner_files + ctx.files.data,
         transitive_files = depset(
             transitive = [
                 dart_sdk_info.runtime_files,
@@ -142,14 +144,14 @@ def _coverage_map(ctx, packages):
     """Writes the map from the source URIs the VM reports to exec paths.
 
     The launcher turns the VM's coverage into LCOV with it: every `SF:` is the
-    file's exec path, the spelling of Bazel's `COVERAGE_MANIFEST` (a generated
-    file's `bazel-out/<cfg>/bin/...`, an external file's `external/<repo>/...`).
+    file's exec path (a generated file's `bazel-out/<cfg>/bin/...`, an external
+    file's `external/<repo>/...`).
     A Dart source is reported by the VM under the URI the compile embeds:
     `package:<name>/<path under lib/>` for a file in a package's `lib/`, and the
     multi-root `org-dartlang-root:///<path>` URI for any file (a test's own, or
     one outside `lib/`). The VM's `file://` URI of a source is resolved by the
     launcher against the exec paths; no host path is written here. All are
-    written, from the same package list the compile resolves against, for the
+    written, from the packages the compile resolves against, for the
     test's own files and for every source its `deps` reach. A directory source
     is completed by an action (see `write_coverage_map`). A test with no Dart
     source to map gets `{}`.

@@ -12,8 +12,8 @@
 //   --dir <path> <short_path> <package>    a directory source and the package it roots
 //   --file <path> <short_path>             one Dart file inside some `--dir`
 //
-// Every value of the finished map is an exec path, the form Bazel uses in its
-// `COVERAGE_MANIFEST`. A file a `dart_source_set` staged maps to the exec path
+// Every value of the finished map is an exec path, as `COVERAGE_MANIFEST`
+// lists it. A file a `dart_source_set` staged maps to the exec path
 // of the input it was copied from; any other file maps to its own.
 
 import 'dart:convert';

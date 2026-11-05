@@ -380,7 +380,7 @@ def _dart_source_set_impl(ctx):
         ),
         # Where each staged file came from, so a `dart_test` maps coverage of the
         # staged copy back to the input `COVERAGE_MANIFEST` lists.
-        forward_origins([], [origin_map]),
+        forward_origins([], [origin_map], ctx.files.srcs if ctx.coverage_instrumented() else []),
     ]
 
 dart_source_set = rule(

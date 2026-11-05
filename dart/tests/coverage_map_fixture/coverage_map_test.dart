@@ -80,6 +80,26 @@ void main() {
     }
   });
 
+  test('the generated sources are named for the launcher', () {
+    final String workspace = Platform.environment['TEST_WORKSPACE'] ?? '_main';
+    final String path = Runfiles.create().rlocation(
+      '$workspace/$pkgDir/coverage_map_test.coverage_generated',
+    );
+    final List<String> listed = File(path).readAsLinesSync();
+    // `COVERAGE_MANIFEST` lists source files only, so under `bazel coverage` the
+    // generated ones the instrumentation filter selects come by this list.
+    expect(listed, isNot(contains('$pkgDir/lib/plain.dart')));
+    if (Platform.environment.containsKey('COVERAGE_OUTPUT_FILE')) {
+      expect(
+        listed,
+        containsAll([
+          map['package:coverage_map_fixture/generated.dart'],
+          map['package:coverage_map_set/gen_in_set.dart'],
+        ]),
+      );
+    }
+  });
+
   test('the launcher reports all three from the generated map', () {
     const root = 'file:///sandbox/execroot/_main';
     final List<String> exec = [
