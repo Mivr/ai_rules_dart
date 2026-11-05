@@ -243,6 +243,14 @@ jobs:
         run: |
           bazel aquery --output=jsonproto --include_file_write_contents //dart/tests/corpus:all > "$RUNNER_TEMP/dart_corpus_aquery.json"
           bazel run //dart/tests/corpus:actions_golden -- --check "$RUNNER_TEMP/dart_corpus_aquery.json"
+      - name: Upload corpus action graph on failure
+        if: failure() && matrix.shard == 1
+        uses: actions/upload-artifact@v7
+        with:
+          name: dart-corpus-aquery-macos-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dart_corpus_aquery.json
+          if-no-files-found: warn
+          retention-days: 7
       # Ship the per-folder logs even when the Test step fails or the job is
       # killed, so a dead shard still leaves its evidence for diagnosis.
       - name: Upload shard logs

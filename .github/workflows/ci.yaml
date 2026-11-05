@@ -435,6 +435,14 @@ jobs:
           } || status=$?
           bazel --max_idle_secs=60 shutdown || echo "::warning::bazel shutdown failed after Corpus action graph"
           exit "$status"
+      - name: Upload corpus action graph on failure
+        if: failure() && matrix.os == 'ubuntu-latest' && matrix.shard == 1
+        uses: actions/upload-artifact@v7
+        with:
+          name: dart-corpus-aquery-${{ matrix.os }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dart_corpus_aquery.json
+          if-no-files-found: warn
+          retention-days: 7
       - name: Memory report (after Corpus action graph)
         if: always() && matrix.os == 'ubuntu-latest' && matrix.shard == 1
         shell: bash

@@ -412,8 +412,22 @@ _ActionsResult _parseGolden(String text, String path) {
   return _ActionsResult(value);
 }
 
-/// Replaces configuration-specific output directories and host SDK repositories
-/// with stable placeholders.
+/// Replaces configuration-specific output directories, host SDK repositories
+/// and host-platform tokens with stable placeholders.
+///
+/// The golden is generated on Linux but checked on macOS as well, so a token
+/// that names the host platform must not reach it:
+///
+/// * `{target-os-arch}` for a Dart native-asset target key such as `linux_x64`
+///   or `macos_arm64` (the `native-assets` mapping the build writes);
+/// * `{solib-dir}` for the C++ shared-library directory name, `_solib_k8` on
+///   Linux and `_solib_darwin_arm64` on macOS;
+/// * `{shlib-ext}` for a shared-library file extension (`.so`, `.dylib`,
+///   `.dll`) at the end of a file name.
+///
+/// Each pattern is anchored on the token's whole shape and a boundary, so text
+/// that merely contains it (`linux_x64_extra`, `my_solib_dir`, `libx.sox`) is
+/// left alone, and every first-party value around the token stays recorded.
 String normalisePath(String value) {
   String out = value.replaceAll(
     RegExp(r'\+dart\+dart_[^/\s"|,;:]+'),
@@ -431,8 +445,30 @@ String normalisePath(String value) {
     RegExp(r'bazel-out/[^/\s"|,;:]+/testlogs(?=/|$|[\s"|,;:])'),
     '{testlogsdir}',
   );
-  return out.replaceAll(RegExp(r'bazel-out/[^/\s"|,;:]+'), '{bazel-out}');
+  out = out.replaceAll(RegExp(r'bazel-out/[^/\s"|,;:]+'), '{bazel-out}');
+  return _normaliseHostPlatform(out);
 }
+
+const String _nativeAssetOs = 'linux|macos|windows|android|ios';
+const String _nativeAssetArch = 'x64|arm64|arm|ia32|riscv64';
+
+final RegExp _nativeAssetTarget = RegExp(
+  '(?<![A-Za-z0-9_-])(?:$_nativeAssetOs)_(?:$_nativeAssetArch)'
+  '(?![A-Za-z0-9_-])',
+);
+
+final RegExp _solibDirectory = RegExp(
+  r'(?<![A-Za-z0-9_-])_solib_[A-Za-z0-9_-]+(?=/|$|[\s"|,;:])',
+);
+
+final RegExp _sharedLibraryExtension = RegExp(
+  r'(?<=[A-Za-z0-9_-])\.(?:so|dylib|dll)(?=$|[\s"|,;:])',
+);
+
+String _normaliseHostPlatform(String value) => value
+    .replaceAll(_nativeAssetTarget, '{target-os-arch}')
+    .replaceAll(_solibDirectory, '{solib-dir}')
+    .replaceAll(_sharedLibraryExtension, '{shlib-ext}');
 
 /// Whether [normalised] (a path after [normalisePath]) is a file of the
 /// toolchain's Dart SDK repository, whose file set differs between host

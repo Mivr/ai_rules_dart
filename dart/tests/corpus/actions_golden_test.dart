@@ -15,6 +15,7 @@ void main() {
   final harness = _TestHarness(temp);
 
   _registerPathNormaliseTests(harness);
+  _registerHostPlatformTests();
   _registerActionOrderingTests(harness);
   _registerCheckTests(harness);
   _registerGraphTests(harness);
@@ -92,6 +93,195 @@ void _registerPathNormaliseTests(_TestHarness h) {
     expect(compile['inputs'], {'count': 3, 'sha256': hasLength(64)});
     expect(compile['outputs'], ['{bindir}/pkg/main.dart']);
   });
+}
+
+void _registerHostPlatformTests() {
+  final String linuxCorpusAssets = _nativeAssets('linux_x64', {
+    'package:corpus/libcorpus.so': ['relative', 'libcorpus.so'],
+  });
+  final String macosCorpusAssets = _nativeAssets('macos_arm64', {
+    'package:corpus/libcorpus.so': ['relative', 'libcorpus.so'],
+  });
+  const up = '../../../../../../../..';
+  final String linuxSqliteAssets = _nativeAssets('linux_x64', {
+    'package:sqlite3/src/ffi/libsqlite3.g.dart': [
+      'relative',
+      '$up/_solib_k8/_Udart_Sext_Ssqlite3/libsqlite3.so',
+    ],
+  });
+  final String macosSqliteAssets = _nativeAssets('macos_arm64', {
+    'package:sqlite3/src/ffi/libsqlite3.g.dart': [
+      'relative',
+      '$up/_solib_darwin_arm64/_Udart_Sext_Ssqlite3/libsqlite3.dylib',
+    ],
+  });
+  const linuxBin = 'bazel-out/k8-fastbuild/bin';
+  const macosBin = 'bazel-out/darwin_arm64-fastbuild/bin';
+  const linuxRunfiles = [
+    'pkg/a.dart',
+    '$linuxBin/_solib_k8/_Udart_Sext_Ssqlite3/libsqlite3.so',
+    '$linuxBin/dart/tests/corpus/libcorpus.so',
+  ];
+  const macosRunfiles = [
+    'pkg/a.dart',
+    '$macosBin/_solib_darwin_arm64/_Udart_Sext_Ssqlite3/libsqlite3.dylib',
+    '$macosBin/dart/tests/corpus/libcorpus.dylib',
+  ];
+
+  group('host-platform tokens', () {
+    test('the corpus FileWrite of app_bin is the same on Linux and macOS', () {
+      expect(
+        _fileWriteRecord(macosCorpusAssets),
+        _fileWriteRecord(linuxCorpusAssets),
+      );
+      expect(
+        _fileWriteRecord(linuxCorpusAssets)['fileContents'],
+        contains('{target-os-arch}'),
+      );
+    });
+
+    test('the corpus_test FileWrite is the same on Linux and macOS', () {
+      expect(
+        _fileWriteRecord(macosSqliteAssets),
+        _fileWriteRecord(linuxSqliteAssets),
+      );
+      expect(
+        _fileWriteRecord(linuxSqliteAssets)['fileContents'],
+        contains('{solib-dir}/_Udart_Sext_Ssqlite3/libsqlite3{shlib-ext}'),
+      );
+    });
+
+    test('the runfiles input closure digest is the same on both hosts', () {
+      expect(_inputsOf(macosRunfiles), _inputsOf(linuxRunfiles));
+      expect(_inputsOf(linuxRunfiles), {'count': 3, 'sha256': hasLength(64)});
+    });
+
+    test('normalises arguments, outputs and environment values too', () {
+      final List<Map<String, Object?>> actions = normaliseAquery({
+        'targets': [
+          {'id': 1, 'label': '//pkg:lib'},
+        ],
+        'artifacts': [
+          {'id': 1, 'path': 'bazel-out/k8-fastbuild/bin/_solib_k8/libx.so'},
+        ],
+        'actions': [
+          {
+            'targetId': 1,
+            'mnemonic': 'Act',
+            'arguments': ['--lib=_solib_k8/libx.so', '--os=linux_x64'],
+            'outputIds': [1],
+            'primaryOutputId': 1,
+            'environmentVariables': [
+              {'key': 'LIB', 'value': '_solib_k8/libx.so'},
+            ],
+          },
+        ],
+      });
+      final Map<String, Object?> action = actions.single;
+      expect(action['primaryOutput'], '{bindir}/{solib-dir}/libx{shlib-ext}');
+      expect(action['outputs'], ['{bindir}/{solib-dir}/libx{shlib-ext}']);
+      expect(action['arguments'], [
+        '--lib={solib-dir}/libx{shlib-ext}',
+        '--os={target-os-arch}',
+      ]);
+      expect(action['environmentVariables'], [
+        {'key': 'LIB', 'value': '{solib-dir}/libx{shlib-ext}'},
+      ]);
+    });
+
+    test('covers every native-asset OS and architecture and extension', () {
+      for (final os in const ['linux', 'macos', 'windows', 'android', 'ios']) {
+        for (final arch in const ['x64', 'arm64', 'arm', 'ia32', 'riscv64']) {
+          expect(normalisePath('"${os}_$arch":'), '"{target-os-arch}":');
+        }
+      }
+      expect(normalisePath('_solib_k8/'), '{solib-dir}/');
+      expect(normalisePath('_solib_darwin_arm64/'), '{solib-dir}/');
+      expect(normalisePath('_solib_x64_windows'), '{solib-dir}');
+      expect(normalisePath('a/libx.so'), 'a/libx{shlib-ext}');
+      expect(normalisePath('a/libx.dylib'), 'a/libx{shlib-ext}');
+      expect(normalisePath('a/x.dll'), 'a/x{shlib-ext}');
+    });
+
+    test('a changed first-party value still changes the record', () {
+      final Map<String, Object?> base = _fileWriteRecord(linuxCorpusAssets);
+      expect(
+        _fileWriteRecord(
+          linuxCorpusAssets.replaceAll('package:corpus/', 'package:other/'),
+        ),
+        isNot(base),
+      );
+      expect(
+        _fileWriteRecord(
+          linuxCorpusAssets.replaceAll('"libcorpus.so"]', '"libother.so"]'),
+        ),
+        isNot(base),
+      );
+      expect(
+        _inputsOf([...linuxRunfiles, 'pkg/extra.so']),
+        isNot(_inputsOf(linuxRunfiles)),
+      );
+      expect(
+        _inputsOf([
+          'pkg/a.dart',
+          '$linuxBin/_solib_k8/_Udart_Sext_Ssqlite3/libsqlite4.so',
+          '$linuxBin/dart/tests/corpus/libcorpus.so',
+        ]),
+        isNot(_inputsOf(linuxRunfiles)),
+      );
+    });
+
+    test('text that only resembles a token is left alone', () {
+      for (final text in const [
+        'libx.sox',
+        'libx.so.1',
+        'libx.dylibs',
+        '.so',
+        'my_solib_dir',
+        'a_solib_k8',
+        'linux_x64_extra',
+        'xlinux_x64',
+        'linux_directory_watcher.dart',
+        'linux-x64',
+        'solib_k8',
+        'linux_x86',
+        'freebsd_x64',
+      ]) {
+        expect(normalisePath(text), text, reason: text);
+      }
+    });
+  });
+}
+
+/// The `native-assets` file the build writes, for one target key.
+String _nativeAssets(String target, Map<String, List<String>> assets) =>
+    jsonEncode({
+      'format-version': [1, 0, 0],
+      'native-assets': {target: assets},
+    });
+
+/// The record of one `FileWrite` action that writes [contents].
+Map<String, Object?> _fileWriteRecord(String contents) {
+  return normaliseAquery({
+    'targets': [
+      {'id': 1, 'label': '//pkg:app'},
+    ],
+    'artifacts': [
+      {
+        'id': 1,
+        'path': 'bazel-out/k8-fastbuild/bin/pkg/app.native_assets.yaml',
+      },
+    ],
+    'actions': [
+      {
+        'targetId': 1,
+        'mnemonic': 'FileWrite',
+        'fileContents': contents,
+        'outputIds': [1],
+        'primaryOutputId': 1,
+      },
+    ],
+  }).single;
 }
 
 void _registerActionOrderingTests(_TestHarness h) {
