@@ -591,15 +591,6 @@ dart_test(
     deps = ["@ext_pub_deps//:test"],
 )
 
-# Bare sources for `tools_size_guard_test`, which measures them.
-exports_files(
-    [
-        "analyze_runner_test_support.dart",
-        "kernel_module_test.dart",
-        "kernel_module_unused_inputs_sandbox_test.dart",
-    ],
-)
-
 # Keeps the oversized planner tests and tools within their size ceilings.
 dart_test(
     name = "tools_size_guard_test",
