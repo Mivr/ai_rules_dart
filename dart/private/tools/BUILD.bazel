@@ -805,7 +805,7 @@ dart_test(
 
 dart_test(
     name = "app_jit_snapshot_test",
-    size = "medium",
+    size = "large",
     srcs = [
         "app_jit_aot_args.dart",
         "app_jit_snapshot.dart",
@@ -893,7 +893,7 @@ dart_test(
 # cover its shape, and no macOS-built snapshot is ever executed off macOS.
 dart_test(
     name = "comma_patch_test",
-    size = "small",
+    size = "medium",
     srcs = ["comma_patch.dart"],
     args = [
         "$(rlocationpath :comma_patch.dart)",
