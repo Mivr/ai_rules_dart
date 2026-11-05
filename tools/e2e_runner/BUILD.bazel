@@ -1,0 +1,71 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
+
+# The checked-in pubspec.lock the tools module's `pub.from_lock` reads to
+# materialize `@pub_deps` (package:test and package:yaml).
+exports_files(
+    ["pubspec.lock"],
+    visibility = ["//visibility:public"],
+)
+
+# The runner's logic, split from `bin/e2e_runner.dart` so the unit tests can
+# exercise the spec parser, workspace staging and test-count logic directly.
+dart_library(
+    name = "e2e_runner_lib",
+    package_name = "e2e_runner",
+    srcs = glob(["lib/**/*.dart"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pub_deps//:yaml",
+    ],
+)
+
+# `cd tools && bazel run //e2e_runner:e2e_runner -- --workspace=../e2e/<name>`
+dart_binary(
+    name = "e2e_runner",
+    main = "bin/e2e_runner.dart",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":e2e_runner_lib",
+    ],
+)
+
+dart_test(
+    name = "spec_test",
+    size = "small",
+    main = "test/spec_test.dart",
+    deps = [
+        ":e2e_runner_lib",
+        "@pub_deps//:test",
+        "@pub_deps//:yaml",
+    ],
+)
+
+dart_test(
+    name = "workspace_test",
+    size = "small",
+    main = "test/workspace_test.dart",
+    deps = [
+        ":e2e_runner_lib",
+        "@pub_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "test_count_test",
+    size = "small",
+    main = "test/test_count_test.dart",
+    deps = [
+        ":e2e_runner_lib",
+        "@pub_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "runner_test",
+    size = "small",
+    main = "test/runner_test.dart",
+    deps = [
+        ":e2e_runner_lib",
+        "@pub_deps//:test",
+    ],
+)
