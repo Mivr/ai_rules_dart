@@ -636,6 +636,10 @@ dart_binary(
     compile_mode = "aot-snapshot",
     main = "package_config.dart",
     modular_kernel = False,
+    # Run by `dartaotruntime` on the raw snapshot as a build-time tool, so the
+    # snapshot must stay the executable rather than gaining a `bazel run`
+    # launcher.
+    snapshot_launcher = False,
     visibility = ["//visibility:public"],
 )
 
