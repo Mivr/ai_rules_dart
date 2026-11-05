@@ -4,6 +4,8 @@ load("//dart:providers.bzl", "CODE_ASSET_LINK_MODES", "DartCompileInfo", "DartIn
 load("//dart/private:dart_info.bzl", "derived_package_info", "package_lib_prefix")
 load("//dart/private:source_set.bzl", "needs_source_assembly", "package_for_index", "package_index")
 
+visibility(["//dart/..."])
+
 # Private attribute for detecting Windows at analysis time (for .exe extension).
 WINDOWS_CONSTRAINT_ATTR = {
     "_windows_constraint": attr.label(
@@ -1369,9 +1371,7 @@ def synth_package_config(ctx, library_deps):
     packages = collect_packages(library_deps)
     transitive_srcs = collect_transitive_srcs(library_deps)
     transitive_resources = collect_transitive_resources(library_deps)
-    package_config = ctx.actions.declare_file(
-        ctx.label.name + ".package_config.json",
-    )
+    package_config = ctx.actions.declare_file(ctx.label.name + ".package_config.json")
 
     pkg_index = package_index(packages)
     by_pkg = _synth_index_srcs(transitive_srcs, transitive_resources, pkg_index)

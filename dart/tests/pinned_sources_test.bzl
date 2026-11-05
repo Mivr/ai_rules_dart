@@ -12,6 +12,8 @@ load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("//dart/pub:pinned_sources.bzl", "pinned_source_error")
 load(":small_suite.bzl", "small_unittest_suite")
 
+visibility(["//dart/..."])
+
 _SHA = "08a084d50090f0e6ca907fc627ae335c6ac4fd88"
 _HOSTED_SHA = "ee67cb0715911d28db6bf4af1026078bd6f0128b07a5f66fb2ed94ef6783c09a"
 

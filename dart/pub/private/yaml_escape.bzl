@@ -5,6 +5,8 @@ surrogate decoding. A leaf module: it loads nothing. Loaded by the scalar
 module.
 """
 
+visibility(["//dart/..."])
+
 # Escapes allowed in double-quoted scalars, as yaml.bzl maps them: the
 # single-character escapes, backslash with a space or tab (which pub reads
 # as the space or tab), and the YAML line/paragraph escapes N, _, L and P.

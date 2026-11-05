@@ -9,6 +9,8 @@ load(
     "member_package_inputs",
 )
 
+visibility(["//dart/..."])
+
 def _stray_src_rejected_test_impl(ctx):
     # The helper is unit-tested below; this asserts `dart_library` actually
     # calls it. Without a case at the rule level, deleting the `fail()` would

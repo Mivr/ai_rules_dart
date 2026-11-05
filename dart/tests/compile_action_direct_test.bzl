@@ -23,6 +23,8 @@ load("//dart:defs.bzl", "dart_binary")
 load("//dart/private:dart_compile.bzl", "dart_compile_action")
 load(":truth_helpers.bzl", "WINDOWS_ATTR", "action_of", "exe_extension")
 
+visibility(["//dart/..."])
+
 _TOOLCHAIN = "//dart:toolchain_type"
 _MAIN = "//dart/private/tools:noop.dart"
 

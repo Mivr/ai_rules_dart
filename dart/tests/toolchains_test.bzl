@@ -23,6 +23,8 @@ load(
 )
 load(":small_suite.bzl", "small_unittest_suite")
 
+visibility(["//dart/..."])
+
 # Dart's `--target-arch` vocabulary (`dart compile exe --help`).
 _DART_ARCHES = ["arm", "arm64", "ia32", "riscv32", "riscv64", "x64"]
 

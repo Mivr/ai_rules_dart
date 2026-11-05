@@ -13,6 +13,8 @@ of the path check can be dropped unseen.
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("//dart/private:dart_analyzer_summary.bzl", "unbacked_embedder_in_closure")
 
+visibility(["//dart/..."])
+
 _SUMMARY = struct(path = "embedder_sdk.dill")
 
 def _pkg(package_name, lib_root = ""):

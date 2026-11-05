@@ -29,52 +29,57 @@ import 'package:test/test.dart';
 /// fails the phase-boundary tests: every argv list is spelled out at its
 /// call site precisely so the boundary is greppable.
 
-/// The test's Starlark sources by file name, from the `rlocationpath`
-/// arguments under Bazel or from the source tree for a direct `dart test`
-/// run.
+/// The test's Starlark sources, keyed by path relative to `//dart/pub` (for
+/// example `defs.bzl` or `private/pinned_sources.bzl`), from the
+/// `rlocationpath` arguments under Bazel or from the source tree for a direct
+/// `dart test` run. Keyed by path rather than file name because a public
+/// facade and the implementation behind it share a name.
 Map<String, String> _bzlSources(List<String> args) {
-  const names = [
-    'defs.bzl',
-    'extensions.bzl',
-    'pinned_sources.bzl',
-    'pub_lock_hub.bzl',
-    'pub_lock_package.bzl',
-    'pub_lock_scc.bzl',
-    'yaml_parser.bzl',
-    'build_content.bzl',
-    'language_version.bzl',
-    'pub_repository.bzl',
-    'pub_symlink.bzl',
-    'scc.bzl',
-    'version.bzl',
-    'yaml_subset.bzl',
-  ];
   if (args.isEmpty) {
     return {
-      for (final name in names)
-        name: File.fromUri(
-          Platform.script.resolve(
-            _topLevel.contains(name) ? name : 'private/$name',
-          ),
-        ).path,
+      for (final name in _expectedSources)
+        name: File.fromUri(Platform.script.resolve(name)).path,
     };
   }
   final runfiles = Runfiles.create();
   final sources = <String, String>{};
   for (final arg in args) {
-    sources[arg.split('/').last] = runfiles.rlocation(arg);
+    sources[arg.substring(arg.indexOf(_packageDir) + _packageDir.length)] =
+        runfiles.rlocation(arg);
   }
   return sources;
 }
 
-const _topLevel = {
+const _packageDir = 'dart/pub/';
+
+/// The implementation of the shared validation entry point and git helpers.
+const _pinnedSources = 'private/pinned_sources.bzl';
+
+/// The pure-implementation scanner runner. Its `ctx.execute(` runs the AOT
+/// header scanner, not `git`; the git-specific markers below still bar it.
+const _scannerRunner = 'private/pub_scan.bzl';
+
+const _expectedSources = {
   'defs.bzl',
   'extensions.bzl',
   'pinned_sources.bzl',
   'pub_lock_hub.bzl',
   'pub_lock_package.bzl',
   'pub_lock_scc.bzl',
+  'pub_scan.bzl',
   'yaml_parser.bzl',
+  'private/build_content.bzl',
+  'private/language_version.bzl',
+  'private/pinned_sources.bzl',
+  'private/pub_lock_hub.bzl',
+  'private/pub_lock_package.bzl',
+  'private/pub_repository.bzl',
+  'private/pub_scan.bzl',
+  'private/pub_symlink.bzl',
+  'private/scc.bzl',
+  'private/version.bzl',
+  'private/yaml_parser.bzl',
+  'private/yaml_subset.bzl',
 };
 
 /// Every fetch call site in `//dart/pub` and the marker proving it goes
@@ -138,14 +143,14 @@ void main(List<String> args) {
   group('every fetch goes through the shared validation', () {
     test('the enumerated sources are exactly the tested files', () {
       final sources = _bzlSources(args);
-      expect(sources.keys, unorderedEquals([..._topLevel, ..._private]));
+      expect(sources.keys, unorderedEquals(_expectedSources));
     });
 
     test('the single entry point is defined once, in pinned_sources.bzl', () {
       final sources = _bzlSources(args);
       for (final entry in sources.entries) {
         final text = File(entry.value).readAsStringSync();
-        if (entry.key == 'pinned_sources.bzl') {
+        if (entry.key == _pinnedSources) {
           expect(
             text.contains('def pinned_source_error('),
             isTrue,
@@ -214,7 +219,7 @@ void main(List<String> args) {
       final sources = _bzlSources(args);
       var gated = 0;
       for (final entry in sources.entries) {
-        if (entry.key == 'pinned_sources.bzl') continue;
+        if (entry.key == _pinnedSources) continue;
         final text = File(entry.value).readAsStringSync();
         if (!_runsGit(text)) continue;
         gated++;
@@ -249,7 +254,7 @@ void main(List<String> args) {
       ];
       expect(
         spelling,
-        equals(['pinned_sources.bzl']),
+        equals([_pinnedSources]),
         reason:
             'only pinned_sources.bzl may spell $_gitMarker; '
             'fetch through git_transport_fetch( and git_materialize( '
@@ -269,9 +274,14 @@ void main(List<String> args) {
             if (File(entry.value).readAsStringSync().contains(marker))
               entry.key,
         ];
+        // The scanner runner also executes, but never git: the `["git"`
+        // and phase-marker tests above and here still bar it from git.
         expect(
           spelling,
-          equals(['pinned_sources.bzl']),
+          unorderedEquals([
+            _pinnedSources,
+            if (marker == 'ctx.execute(') _scannerRunner,
+          ]),
           reason:
               'only pinned_sources.bzl may spell $marker; '
               'a git call outside git_transport_fetch( and git_materialize( '
@@ -286,7 +296,7 @@ void main(List<String> args) {
       // here: a host `refs/replace/*` ref must never change the archived
       // tree while verification still sees the pinned commit.
       final sources = _bzlSources(args);
-      final text = File(sources['pinned_sources.bzl']!).readAsStringSync();
+      final text = File(sources[_pinnedSources]!).readAsStringSync();
       final calls = text.split('ctx.execute(');
       expect(
         calls.length,
@@ -314,7 +324,7 @@ void main(List<String> args) {
         // here: a host `refs/replace/*` ref must never change the archived
         // tree while verification still sees the pinned commit.
         final sources = _bzlSources(args);
-        final text = File(sources['pinned_sources.bzl']!).readAsStringSync();
+        final text = File(sources[_pinnedSources]!).readAsStringSync();
         final calls = text.split('ctx.execute(');
         expect(
           calls.length,
@@ -338,7 +348,7 @@ void main(List<String> args) {
       final sources = _bzlSources(args);
       var gated = 0;
       for (final entry in sources.entries) {
-        if (entry.key == 'pinned_sources.bzl') continue;
+        if (entry.key == _pinnedSources) continue;
         final text = File(entry.value).readAsStringSync();
         if (!_gitHelpers.any(text.contains)) continue;
         gated++;
@@ -359,7 +369,7 @@ void main(List<String> args) {
 
     test('transport keeps working while hooks and fsmonitor stay off', () {
       final sources = _bzlSources(args);
-      final text = File(sources['pinned_sources.bzl']!).readAsStringSync();
+      final text = File(sources[_pinnedSources]!).readAsStringSync();
       // The transport phase inherits the host's transport configuration
       // (credentials, insteadOf, proxies) from its config files and the
       // allowlisted transport variables, while every code-executing and
@@ -415,7 +425,7 @@ void main(List<String> args) {
 
     test('the materialization helper neutralizes host git configuration', () {
       final sources = _bzlSources(args);
-      final text = File(sources['pinned_sources.bzl']!).readAsStringSync();
+      final text = File(sources[_pinnedSources]!).readAsStringSync();
       // The conversion knobs pinned on the `git archive` command line: `-c`
       // beats both config files and environment on every git version.
       for (final pin in [
@@ -465,7 +475,7 @@ void main(List<String> args) {
 
     test('no git step consults host templates', () {
       final sources = _bzlSources(args);
-      final text = File(sources['pinned_sources.bzl']!).readAsStringSync();
+      final text = File(sources[_pinnedSources]!).readAsStringSync();
       // No `init` runs and no `--template` flag is spelled anywhere, so a
       // hostile `init.templateDir` has nothing to act on; the template
       // directory variable is still scrubbed, and the hook pin and the
@@ -495,13 +505,3 @@ void main(List<String> args) {
     });
   });
 }
-
-const _private = {
-  'build_content.bzl',
-  'language_version.bzl',
-  'pub_repository.bzl',
-  'pub_symlink.bzl',
-  'scc.bzl',
-  'version.bzl',
-  'yaml_subset.bzl',
-};

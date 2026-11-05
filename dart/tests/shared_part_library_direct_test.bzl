@@ -12,6 +12,8 @@ load("@rules_testing//lib:analysis_test.bzl", "analysis_test")
 load("//dart/ext/_shared:defs.bzl", "shared_part_library")
 load(":ext_direct_helpers.bzl", "ANNOTATIONS", "LANGUAGE_VERSION", "PACKAGE", "expect_shared_part", "shared_part_targets", "source_of")
 
+visibility(["//dart/..."])
+
 def _shared_part_library_test(env, targets):
     """Asserts the providers and the codegen actions `shared_part_library` declares."""
     expect_shared_part(env, targets, "shared_part", ".direct.g.part", "*json_serializable/shim*")

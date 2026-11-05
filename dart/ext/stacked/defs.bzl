@@ -9,6 +9,8 @@ emits the corresponding macros per registered sub-builder.
 
 load("@rules_dart//dart/ext/_shared:defs.bzl", "library_builder_library")
 
+visibility("public")
+
 _DEFAULT_RUNTIME_DEP = "@pub_deps//:stacked"
 
 def stacked_router_library(

@@ -10,6 +10,8 @@ functions and every caller of each.
 
 load("//dart/private:common.bzl", "STABLE_SCHEME")
 
+visibility(["//dart/..."])
+
 def kernel_compile_settings(
         target = "vm",
         platform_dill = None,

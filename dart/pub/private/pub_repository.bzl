@@ -1,12 +1,14 @@
 """Repository rule for downloading a single pub.dev package."""
 
 load("//dart/private:download.bzl", "pinned_download")
-load("//dart/pub:pinned_sources.bzl", "pinned_source_error")
-load("//dart/pub:pub_scan.bzl", "run_pub_archive_scan")
-load("//dart/pub:yaml_parser.bzl", "parse_pubspec_sdk_constraint", "pubspec_sdk_constraint_error")
 load("//dart/pub/private:build_content.bzl", "PACKAGE_FILES_ATTR_DOC", "make_dart_library_build_content")
 load("//dart/pub/private:language_version.bzl", "derive_language_version")
+load("//dart/pub/private:pinned_sources.bzl", "pinned_source_error")
+load("//dart/pub/private:pub_scan.bzl", "run_pub_archive_scan")
 load("//dart/pub/private:pub_symlink.bzl", "check_package_symlinks")
+load("//dart/pub/private:yaml_parser.bzl", "parse_pubspec_sdk_constraint", "pubspec_sdk_constraint_error")
+
+visibility(["//dart/..."])
 
 def pub_package_sha256_error(package_name, version, sha256):
     """Validates `sha256` for a `pub_package` target.

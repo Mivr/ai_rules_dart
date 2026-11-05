@@ -1,5 +1,7 @@
 """Captures RunEnvironmentInfo and runfiles from a target."""
 
+visibility(["//dart/..."])
+
 def _cases_env_impl(ctx):
     """Writes target's RunEnvironmentInfo.environment to a JSON file and forwards runfiles."""
     out = ctx.actions.declare_file(ctx.label.name + ".json")

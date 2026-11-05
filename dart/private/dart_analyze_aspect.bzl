@@ -89,6 +89,8 @@ load("//dart/private:dart_analyzer_summary.bzl", "CONFLICT_PREFIX", "DartAnalyze
 load("//dart/private:format_mode.bzl", _resolve_format_mode = "resolve_format_mode")
 load("//dart/private:source_set.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS")
 
+visibility(["//dart/..."])
+
 # Analysis and formatting run on the build machine and produce nothing for the
 # target, so the SDK is chosen by the execution platform alone — the type the
 # codegen rules use, for the same reason. With the target-platform type, a
@@ -537,12 +539,7 @@ def _format(ctx, name, staged, own_paths, language_version):
         },
         toolchain = _TOOLCHAIN,
     )
-    return struct(
-        stamp = stamp,
-        mode = mode,
-        sdk_inputs = sdk_inputs,
-        env = env,
-    )
+    return struct(stamp = stamp, mode = mode, sdk_inputs = sdk_inputs, env = env)
 
 def _analyze_summary_or_source(ctx, info, srcs, opts):
     """Runs the summary-mode or source-mode analyze action. Returns (output, summary_mode, summary_staged).

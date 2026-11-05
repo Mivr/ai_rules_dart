@@ -34,6 +34,8 @@ the `defaultLanguageVersion` const in pub's source.
 
 load(":yaml_sdk_constraint.bzl", "normalize_sdk_blanks", "sdk_parse_version")
 
+visibility(["//dart/..."])
+
 DEFAULT_LANGUAGE_VERSION = "2.7"
 
 def derive_language_version(sdk_constraint):

@@ -2,11 +2,13 @@
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load("//dart:defs.bzl", "dart_binary", "dart_codegen", "dart_test")
-load("//dart:providers.bzl", "DartCompileInfo")
+load("//dart:providers.bzl", "DartCompileInfo", "DartTestRunnerSnapshotInfo")
 load("//dart/private:dart_binary.bzl", "binary_output_basename", "is_tool_bin_path")
 load("//dart/private:dart_compile.bzl", "compile_quiet_flags")
 load("//dart/private:dart_test.bzl", "dart_test_kernel")
-load("//dart/private:dart_test_runner.bzl", "DartTestRunnerSnapshotInfo", "dart_test_runner_snapshot")
+load("//dart/private:dart_test_runner.bzl", "dart_test_runner_snapshot")
+
+visibility(["//dart/..."])
 
 _RuleKindInfo = provider(
     doc = "Records `ctx.rule.kind` for `target_under_test`.",

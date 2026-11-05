@@ -18,6 +18,8 @@ sets no define of its own, so it has nothing to protect.
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 
+visibility(["//dart/..."])
+
 def dart_define_error(define, what):
     """Returns an error string if `define` is not a usable `-D` entry.
 

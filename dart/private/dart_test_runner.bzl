@@ -64,21 +64,9 @@ load("//dart:providers.bzl", "DartCompileInfo", "DartInfo")
 load("//dart/private:common.bzl", "JIT_SNAPSHOT_LOCK_TIMEOUT_DEFAULT", "jit_train_key", "kernel_sdk_mismatch_error", "sdk_dartvm", "writable_home_env")
 load("//dart/private:dart_compile.bzl", "jit_tool_entry")
 load("//dart/private:dart_kernel.bzl", "DartKernelInfo", "dart_kernel_module_aspect")
+load("//dart/private:test_runner_info.bzl", "DartTestRunnerInfo", "DartTestRunnerSnapshotInfo")
 
-DartTestRunnerInfo = provider(
-    doc = "The `package:test` runner built from a `package:test` library.",
-    fields = {
-        "runner": "File: the runner the launcher runs — its kernel (`.dill`), or the app-JIT snapshot of it where one was built.",
-        "sdk_version": "str: The Dart SDK version that compiled `runner` when it is a kernel, or empty.",
-    },
-)
-
-DartTestRunnerSnapshotInfo = provider(
-    doc = "The app-JIT snapshot of a `package:test` runner, or `None` where it cannot be built.",
-    fields = {
-        "snapshot": "File or None: the snapshot, written by the exec SDK's `dart`.",
-    },
-)
+visibility(["//dart/..."])
 
 DartTestKernelInfo = provider(
     doc = "A test compiled to the kernel that runs under a `package:test` runner.",

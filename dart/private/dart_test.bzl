@@ -41,11 +41,14 @@ load(
     "multi_root_uri",
     "package_of_source",
 )
-load("//dart/private:dart_test_runner.bzl", "DartTestKernelInfo", "DartTestRunnerInfo")
+load("//dart/private:dart_test_runner.bzl", "DartTestKernelInfo")
 load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "executable_package")
 load("//dart/private:kernel_params.bzl", "kernel_compile_settings")
 load("//dart/private:package_files.bzl", "collect_transitive_package_files")
 load("//dart/private:source_set.bzl", "executable_inputs")
+load("//dart/private:test_runner_info.bzl", "DartTestRunnerInfo")
+
+visibility(["//dart/..."])
 
 def _dart_test_impl(ctx):
     toolchain = ctx.toolchains["//dart:toolchain_type"]

@@ -12,6 +12,8 @@ load("@rules_testing//lib:analysis_test.bzl", "analysis_test")
 load("//dart/ext/_shared:defs.bzl", "library_builder_library")
 load(":ext_direct_helpers.bzl", "ANNOTATIONS", "LANGUAGE_VERSION", "PACKAGE", "expect_library_builder", "library_builder_targets", "source_of")
 
+visibility(["//dart/..."])
+
 def _library_builder_library_test(env, targets):
     """Asserts the providers and the codegen action `library_builder_library` declares."""
     suffixes = [".first.dart", ".second.dart"]

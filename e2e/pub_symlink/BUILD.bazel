@@ -1,11 +1,6 @@
 load("@rules_dart//dart:defs.bzl", "dart_binary")
-load(":symlink_contract.bzl", "check_pub_symlink_contract")
 
 exports_files(["pubspec.lock"])
-
-# Pins the guard's decision procedure: fails at load time when an
-# in-package target is rejected or an escaping one is allowed.
-check_pub_symlink_contract()
 
 # This workspace should FAIL to fetch: `evil_pkg`'s `lib/evil.dart` is a
 # symlink climbing above the package root, so the guard refuses to

@@ -8,6 +8,8 @@ regression here silently reintroduces O(N²) analysis-phase flattening.
 
 load("//dart/private:common.bzl", "collect_transitive_srcs")
 
+visibility(["//dart/..."])
+
 def _provider_shape_probe_impl(ctx):
     toolchain = ctx.toolchains["//dart:toolchain_type"]
     tool_files = toolchain.dart_sdk_info.tool_files

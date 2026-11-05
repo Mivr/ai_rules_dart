@@ -16,6 +16,8 @@ binary itself passes through.
 load("//dart/private:common.bzl", "WINDOWS_CONSTRAINT_ATTR", "noop_test_executable")
 load("//dart/private:dart_analyze_aspect.bzl", "NO_ANALYZE_TAG", "NO_FORMAT_TAG", "dart_analyze")
 
+visibility(["//dart/..."])
+
 _CHECKS = ["dart_analyze", "dart_format"]
 
 def _dart_analysis_test_impl(ctx):

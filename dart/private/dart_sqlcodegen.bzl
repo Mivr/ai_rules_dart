@@ -37,6 +37,8 @@ load(
     "writable_home_env",
 )
 
+visibility(["//dart/..."])
+
 def _sqlcodegen_outputs(ctx, src):
     """Declares sibling outputs by stripping the source's extension and appending each suffix."""
 

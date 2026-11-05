@@ -1,10 +1,10 @@
 """Unit tests for derive_language_version."""
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
-
-# buildifier: disable=bzl-visibility
 load("//dart/pub/private:language_version.bzl", "derive_language_version")
-load(":small_suite.bzl", "small_unittest_suite")
+load("//dart/tests:small_suite.bzl", "small_unittest_suite")
+
+visibility(["//dart/..."])
 
 # (constraint_string, expected_output, label)
 _CASES = [

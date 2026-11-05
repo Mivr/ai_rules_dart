@@ -14,6 +14,8 @@ load("//dart:defs.bzl", "dart_analysis_config", "dart_analysis_options", "dart_l
 load("//dart/private:dart_analyze_aspect.bzl", "DartAnalysisConfigInfo")
 load(":truth_helpers.bzl", "action_of", "expect_inputs", "package_names", "provider_of", "short_path_subject", "short_paths")
 
+visibility(["//dart/..."])
+
 _ATTRS = {
     "options_files": short_paths,
     "packages": package_names,

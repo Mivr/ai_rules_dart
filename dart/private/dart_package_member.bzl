@@ -45,6 +45,8 @@ load("//dart/private:dart_info.bzl", "dart_info")
 load("//dart/private:dart_info_params.bzl", "dart_package_identity")
 load("//dart/private:dart_library.bzl", "DartPackageMemberInfo", "check_files_under_lib_root", "check_no_dart_in_data", "check_no_duplicate_srcs", "derive_lib_root", "derive_package_name", "link_hook_error")
 
+visibility(["//dart/..."])
+
 def _dart_package_member_impl(ctx):
     identity = resolve_package_identity(ctx)
     package_name = derive_package_name(

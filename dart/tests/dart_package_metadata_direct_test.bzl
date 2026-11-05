@@ -11,6 +11,8 @@ load("//dart:defs.bzl", "dart_package_metadata")
 load("//dart:providers.bzl", "DartInfo", "DartPackageMetadataInfo")
 load(":truth_helpers.bzl", "provider_of")
 
+visibility(["//dart/..."])
+
 def _dart_package_metadata_test(env, target):
     """Asserts the `DartPackageMetadataInfo` `dart_package_metadata` publishes."""
     metadata = provider_of(

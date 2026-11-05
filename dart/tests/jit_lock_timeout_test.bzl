@@ -15,6 +15,8 @@ load("//dart:defs.bzl", "dart_binary")
 load("//dart/private:dart_test.bzl", "dart_test_kernel")
 load("//dart/private:dart_test_runner.bzl", "dart_test_runner_snapshot")
 
+visibility(["//dart/..."])
+
 _TIMEOUT_FLAG = str(Label("//dart:jit_snapshot_lock_timeout"))
 _TIMEOUT_ARG = "--lock-timeout="
 _TRAIN_KEY_ARG = "--train-key="

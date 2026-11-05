@@ -9,6 +9,8 @@ where one opens. Loaded by the fold, block and document modules and by the
 load(":yaml_scalar.bzl", "OPEN_ANCHOR", "alias_name_end", "apply_child_collection_tag", "apply_key_tag", "apply_tag", "drop_tag_value", "flow_quoted_end", "flow_value_entry_problem", "is_flow_key_entry", "parse_alias", "parse_nonflow", "record_prefix_problems", "strip_value_prefix")
 load(":yaml_text.bzl", "clone", "dict_key", "is_dash", "is_flow_seq_entry", "is_flow_value_entry", "is_question_entry", "quote_track", "quoted_scalar_rest", "split_key_value")
 
+visibility(["//dart/..."])
+
 _FLOW_SPACE = " \t\n\r"
 
 def _flow_close_step(stack, s, i, frame, anchors, state, line):

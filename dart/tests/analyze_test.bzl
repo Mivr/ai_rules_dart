@@ -20,6 +20,8 @@ load("//dart/private:common.bzl", "WINDOWS_CONSTRAINT_ATTR", "noop_test_executab
 load("//dart/private:dart_analyze_aspect.bzl", "DartAnalysisModeInfo", "DartFixOutputsInfo", "dart_analyze")
 load("//dart/private:format_mode.bzl", "resolve_format_mode")
 
+visibility(["//dart/..."])
+
 # The fixture's entrypoint and its dependency, by the suffix of their
 # `short_path`. Named here rather than passed in: these tests exist for one
 # fixture, and a path an assertion cannot find is the failure they report.

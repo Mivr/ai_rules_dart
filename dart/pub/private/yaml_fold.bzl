@@ -9,6 +9,8 @@ load(":yaml_flow.bzl", "parse_scalar")
 load(":yaml_flow_scan.bzl", "flow_fold_lines", "flow_scan_start", "flow_scan_text")
 load(":yaml_text.bzl", "bad_blank_index", "block_line_text", "find_block_colon", "flow_head_text", "indent_width", "is_block_mapping_start", "is_dash", "is_explicit_key_text", "is_question_entry", "is_quoted", "quoted_end_at", "quoted_scalar_rest", "record_unreadable")
 
+visibility(["//dart/..."])
+
 def _block_quote_single(core, i, st):
     """Steps an index inside single quotes. Returns the next index.
 

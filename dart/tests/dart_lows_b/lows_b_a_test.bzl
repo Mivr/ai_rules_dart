@@ -13,6 +13,8 @@ load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
 load("//dart/private:common.bzl", "sdk_dartvm")
 load("//dart/tests:small_suite.bzl", "small_unittest_suite")
 
+visibility(["//dart/..."])
+
 # --- `sdk_dartvm` over fake SDK records ---
 
 _NO_VM_FILES = [

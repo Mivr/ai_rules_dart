@@ -4,6 +4,8 @@ load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 load("//dart:defs.bzl", "dart_aggregate_codegen", "dart_codegen", "dart_library", "dart_sqlcodegen")
 load(":pkg_roots_digest_test.bzl", "pkg_roots_digest_suite")
 
+visibility(["//dart/..."])
+
 def _stage_segments(input_paths):
     """Returns the path components that name a `<name>.pkg_roots.<digest>` stage."""
     segments = []

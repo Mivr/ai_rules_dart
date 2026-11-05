@@ -6,10 +6,10 @@ to type-mismatch at runtime).
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
-
-# buildifier: disable=bzl-visibility
 load("//dart/pub/private:version.bzl", "parse_semver", "semver_gt")
-load(":small_suite.bzl", "small_unittest_suite")
+load("//dart/tests:small_suite.bzl", "small_unittest_suite")
+
+visibility(["//dart/..."])
 
 def _basic_ordering_test_impl(ctx):
     env = unittest.begin(ctx)

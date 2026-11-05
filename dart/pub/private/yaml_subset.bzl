@@ -288,6 +288,8 @@ load(":yaml_flow.bzl", "parse_flow")
 load(":yaml_flow_scan.bzl", "flow_fold_lines", "flow_fold_problem", "flow_scan_start")
 load(":yaml_text.bzl", "find_top_colon", "is_unknown_directive", "strip_trailing_comment")
 
+visibility(["//dart/..."])
+
 def parse_document(content):
     """Returns the value of the first YAML document in `content`.
 

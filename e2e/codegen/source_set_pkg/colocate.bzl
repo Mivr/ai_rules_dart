@@ -10,6 +10,8 @@ load(
     "colocate_packages",
 )
 
+visibility("private")
+
 def _colocated_sources_impl(ctx):
     packages = collect_packages(ctx.attr.deps)
     all_srcs = collect_transitive_srcs(ctx.attr.deps).to_list()

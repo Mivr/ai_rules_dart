@@ -17,6 +17,8 @@ load("//dart/private:dart_library.bzl", "DartPackageMemberInfo")
 load("//dart/pub:pub_lock_package.bzl", "make_dart_library_build_content")
 load("//dart/tests:small_suite.bzl", "small_unittest_suite")
 
+visibility(["//dart/..."])
+
 def _short_paths(files):
     """The sorted `short_path`s of a file list.
 

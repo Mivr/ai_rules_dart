@@ -19,6 +19,8 @@ load("//dart/private:common.bzl", "has_comma_define")
 load(":pruned_inputs.bzl", "pruned_inputs_settings")
 load(":small_suite.bzl", "small_unittest_suite")
 
+visibility(["//dart/..."])
+
 # --- has_comma_define ---
 
 def _comma_value_test_impl(ctx):

@@ -10,6 +10,8 @@ pattern.
 
 load("@rules_testing//lib:truth.bzl", "matching", "subjects")
 
+visibility(["//dart/..."])
+
 WINDOWS_ATTR = {
     "_windows": attr.label(
         doc = "Platform constraint probed to match `.exe` executable suffixes on Windows.",

@@ -102,9 +102,10 @@ cd e2e/web_app && bazel build //...
 
 ## Updating BUILD files
 
-Some targets are generated from sources.
-Currently this is just the `bzl_library` targets.
-Run `bazel run //:gazelle` to keep them up-to-date.
+The `bzl_library` targets in each `BUILD.bazel` are maintained by hand: when you
+add a `.bzl` file or a `load`, add or update its `bzl_library` target and `deps`
+in the same package. `//dart/tests/bzl_library_guard:bzl_library_guard_test`
+fails when a target is missing or its `deps` do not cover a load.
 
 ## Using this as a development dependency of other rules
 

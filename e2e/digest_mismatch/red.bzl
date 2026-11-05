@@ -11,8 +11,9 @@ fetch time, so no absolute path ever reaches the module extension or the
 lockfile (`file:///C:/...` on Windows, `file:///...` elsewhere).
 """
 
-# buildifier: disable=bzl-visibility
-load("@rules_dart//dart/private:download.bzl", "pinned_download")
+load("@rules_dart//dart:utils.bzl", "pinned_download")
+
+visibility("private")
 
 # The sha256 of `fixture.bin` (`sha256sum fixture.bin`).
 _GOOD_DIGEST = "86bea300d6701fb6c1fddc33b21235231d108b44a9793db9dcd48940fa46a6a6"

@@ -11,6 +11,8 @@ runner removes it before it exits.
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 load("//dart:defs.bzl", "dart_js_binary")
 
+visibility(["//dart/..."])
+
 def _web_actions(env):
     return [
         a

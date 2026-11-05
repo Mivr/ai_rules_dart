@@ -9,6 +9,8 @@ load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("//dart/private:dart_compile.bzl", "has_comma_define_flag", "split_compile_flags")
 load(":small_suite.bzl", "small_unittest_suite")
 
+visibility(["//dart/..."])
+
 def _split(flags):
     return split_compile_flags(flags)
 

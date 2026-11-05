@@ -20,6 +20,8 @@ load(
 load("//dart/private:dart_compile.bzl", "cross_target_error")
 load(":small_suite.bzl", "small_unittest_suite")
 
+visibility(["//dart/..."])
+
 # --- generate_package_config_content tests (prefix-based) ---
 
 def _empty_packages_test_impl(ctx):

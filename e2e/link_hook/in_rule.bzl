@@ -3,6 +3,8 @@
 load("@rules_dart//dart:providers.bzl", "DartInfo", "DartRecordedUsesInfo")
 load("@rules_dart//dart:utils.bzl", "dart_link_hook_actions", "link_hook_runner_attr")
 
+visibility("private")
+
 def _impl(ctx):
     result = dart_link_hook_actions(
         ctx,

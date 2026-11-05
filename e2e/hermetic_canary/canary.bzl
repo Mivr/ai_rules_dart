@@ -1,5 +1,7 @@
 """Hermeticity canary rule reading an undeclared host file."""
 
+visibility("private")
+
 def _hermetic_canary_impl(ctx):
     """Runs the canary tool writing the probed file size to the output.
 

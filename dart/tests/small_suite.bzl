@@ -12,6 +12,8 @@ which buries real diagnostics in CI logs.
 load("@bazel_skylib//lib:partial.bzl", "partial")
 load("@bazel_skylib//lib:unittest.bzl", "unittest")
 
+visibility(["//dart/..."])
+
 def small_unittest_suite(name, *test_rules):
     """Declares `unittest.suite(name, *test_rules)` with `size = "small"`.
 

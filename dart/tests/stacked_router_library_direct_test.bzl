@@ -9,6 +9,8 @@ load("@rules_testing//lib:analysis_test.bzl", "analysis_test")
 load("//dart/ext/stacked:defs.bzl", "stacked_router_library")
 load(":ext_direct_helpers.bzl", "ANNOTATIONS", "LANGUAGE_VERSION", "PACKAGE", "expect_library_builder", "library_builder_targets", "source_of")
 
+visibility(["//dart/..."])
+
 def _stacked_router_library_test(env, targets):
     """Asserts the providers and the codegen action `stacked_router_library` declares."""
     expect_library_builder(env, targets, "stacked_router", [".router.dart"], "*stacked/shim_router*")

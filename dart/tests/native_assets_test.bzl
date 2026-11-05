@@ -5,6 +5,8 @@ load("//dart:providers.bzl", "CODE_ASSET_LINK_MODES")
 load("//dart/private:common.bzl", "generate_native_assets_yaml", "native_assets_path_list")
 load(":small_suite.bzl", "small_unittest_suite")
 
+visibility(["//dart/..."])
+
 _L = "//pkg:target"
 
 def _bundle(path):

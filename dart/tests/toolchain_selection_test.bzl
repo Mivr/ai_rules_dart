@@ -1,10 +1,10 @@
 """Unit tests for the Dart toolchain version selection in the `dart` extension."""
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
-
-# buildifier: disable=bzl-visibility
 load("//dart/private:toolchain_selection.bzl", "select_toolchain_version", "toolchain_name_override_error")
 load(":small_suite.bzl", "small_unittest_suite")
+
+visibility(["//dart/..."])
 
 def _req(version, is_root = False):
     return struct(version = version, is_root = is_root)

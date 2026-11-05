@@ -8,5 +8,8 @@ bzl_library(
     name = "defs",
     srcs = ["defs.bzl"],
     visibility = ["//visibility:public"],
-    deps = ["//dart:defs"],
+    deps = [
+        "//dart/private:dart_codegen",
+        "//dart/private:dart_library",
+    ],
 )

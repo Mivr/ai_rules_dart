@@ -13,6 +13,8 @@ load("//dart:defs.bzl", "dart_analysis_options", "dart_library")
 load("//dart:providers.bzl", "DartAnalysisOptionsInfo", "DartInfo")
 load(":truth_helpers.bzl", "expect_default_outputs", "package_names", "provider_of", "short_path_subject")
 
+visibility(["//dart/..."])
+
 _OPTIONS = ":direct_options/analysis_options.yaml"
 _ATTRS = {
     "file": short_path_subject,

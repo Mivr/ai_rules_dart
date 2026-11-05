@@ -9,6 +9,8 @@ module directories, in dependency order.
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 load("//dart:providers.bzl", "DartKernelInfo")
 
+visibility(["//dart/..."])
+
 def _chain_modular_test_impl(ctx):
     env = analysistest.begin(ctx)
     target = analysistest.target_under_test(env)

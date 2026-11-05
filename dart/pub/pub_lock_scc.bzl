@@ -27,6 +27,8 @@ load("//dart/pub/private:language_version.bzl", _derive_language_version = "deri
 load("//dart/pub/private:pub_scc_verify.bzl", "scc_member_deps_error", "scc_members_connectivity_error", "scc_planned_deps_error")
 load("//dart/pub/private:pub_symlink.bzl", _check_package_symlinks = "check_package_symlinks")
 
+visibility("public")
+
 # Re-exported for rule sets outside //dart/pub that reuse the merged shape.
 # Loading the private bzl directly would trip buildifier's bzl-visibility
 # check, so this public file exposes it the same way `pub_lock_package.bzl`

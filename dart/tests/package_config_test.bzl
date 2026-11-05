@@ -9,6 +9,8 @@ package was silently dropped and its `package:` imports failed to resolve.
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 
+visibility(["//dart/..."])
+
 def _package_config_content(env):
     for action in analysistest.target_actions(env):
         for out in action.outputs.to_list():

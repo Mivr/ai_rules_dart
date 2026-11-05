@@ -71,6 +71,8 @@ load(
     _scc_repo_name = "scc_repo_name",
 )
 
+visibility("public")
+
 # Planner: the graph, its components, and the merged repository name.
 compute_sccs = _compute_sccs
 package_dep_graph = _package_dep_graph

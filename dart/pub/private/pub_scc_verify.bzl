@@ -22,6 +22,8 @@ context. The rules in `//dart/pub:pub_lock_package.bzl` and
 
 load("//dart/pub/private:scc.bzl", "compute_sccs")
 
+visibility(["//dart/..."])
+
 # How a lockfile with wrong cycle-planning facts recovers: dropping the
 # extension's facts and its recorded repositories re-evaluates the extension
 # from the packages' real pubspecs. The workspace lockfile alone is not

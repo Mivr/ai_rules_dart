@@ -40,6 +40,8 @@ load("//dart/private:dart_test.bzl", _dart_test = "dart_test")
 load("//dart/private:dart_web_application.bzl", _dart_js_binary = "dart_js_binary", _dart_wasm_binary = "dart_wasm_binary")
 load("//dart/private:source_set.bzl", _dart_source_set = "dart_source_set")
 
+visibility("public")
+
 dart_library = _dart_library
 dart_package_member = _dart_package_member
 dart_package_metadata = _dart_package_metadata

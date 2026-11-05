@@ -2,6 +2,8 @@
 
 load("@rules_dart//dart/ext/_shared:defs.bzl", "library_builder_library")
 
+visibility("public")
+
 def freezed_library(
         name,
         srcs,

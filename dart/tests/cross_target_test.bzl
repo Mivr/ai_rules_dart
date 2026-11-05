@@ -14,6 +14,8 @@ macOS, and `windows-x64_cross_*` on Windows.
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 
+visibility(["//dart/..."])
+
 _DART_COMPILE = "DartCompile"
 
 def _compile_action(env):

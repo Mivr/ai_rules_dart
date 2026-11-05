@@ -11,6 +11,8 @@ load("@rules_testing//lib:truth.bzl", "matching")
 load("//dart:defs.bzl", "dart_source_set")
 load(":truth_helpers.bzl", "action_of", "expect_default_outputs", "expect_inputs")
 
+visibility(["//dart/..."])
+
 def _dart_source_set_test(env, target):
     """Asserts the providers and the `DartCopyTree` action of `dart_source_set`."""
     expect_default_outputs(env, target, ["dart/tests/dart_source_set_direct_subject"])

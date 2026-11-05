@@ -7,6 +7,8 @@ load("//dart/private:dart_codegen.bzl", "compute_codegen_output_name")
 load("//dart/private:dart_info.bzl", "dart_info")
 load(":small_suite.bzl", "small_unittest_suite")
 
+visibility(["//dart/..."])
+
 def _g_dart_suffix_test_impl(ctx):
     env = unittest.begin(ctx)
     result = compute_codegen_output_name("user.dart", ".g.dart")

@@ -1,5 +1,7 @@
 """This module implements the Dart SDK toolchain rule."""
 
+visibility("public")
+
 DartSdkInfo = provider(
     doc = "Information about the Dart SDK provided by the toolchain.",
     fields = {

@@ -5,6 +5,8 @@ A leaf module: it loads nothing. Loaded by the text, scalar, fold, block
 and document modules.
 """
 
+visibility(["//dart/..."])
+
 # A leading UTF-8 byte-order mark (U+FEFF), written as octal escapes so the
 # source stays ASCII. Pub accepts it; without stripping, the first key would
 # carry it and a lock would read as missing `packages`.

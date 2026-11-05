@@ -1,6 +1,6 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("//dart:defs.bzl", "dart_binary", "dart_code_asset")
-load("//dart/tests:propagation_test.bzl", "asset_conflict_test", "diamond_probe", "manifest_contains_test", "ownership_violation_test", "version_conflict_test")
+load("//dart/pub/tests:propagation_test.bzl", "asset_conflict_test", "diamond_probe", "manifest_contains_test", "ownership_violation_test", "version_conflict_test")
 
 # The near side of the diamond. `:app` names no `code_assets` at all — it
 # depends on `prop_a`, which depends on `prop_b`, which owns the asset.
