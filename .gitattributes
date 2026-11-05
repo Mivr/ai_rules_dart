@@ -12,6 +12,14 @@ e2e/digest_mismatch/fixture.bin -text
 examples export-ignore
 e2e/digest_mismatch export-ignore
 
+# Dev-only analysis tests load `@rules_testing`, a dev dependency: keep them out
+# of release archives so `@rules_dart//...` loads for every consumer.
+/dart/tests/ export-ignore
+
+# Stamps the archive marker `//:analysis_config` reads to drop the options
+# packages that /dart/tests/ no longer provides.
+/BUILD.bazel export-subst
+
 # Occasionally there's a need to "stamp" the release version into a file
 # See https://blog.aspect.build/releasing-bazel-rulesets-rust for details if you need this.
 # dart/version.bzl export-subst
