@@ -30,9 +30,21 @@ exports_files(
     [
         ".buildifier.json",
         ".pre-commit-config.yaml",
-        "MODULE.bazel",
     ],
     visibility = ["//dart/tests/buildifier_config:__pkg__"],
+)
+
+# Also read by //dart/tests:dev_dep_archive_guard_test, which checks the
+# `rules_testing` dev dependency and the archive exclusion.
+exports_files(
+    [
+        ".gitattributes",
+        "MODULE.bazel",
+    ],
+    visibility = [
+        "//dart/tests:__pkg__",
+        "//dart/tests/buildifier_config:__pkg__",
+    ],
 )
 
 # Every `analysis_options.yaml` in this repository, for the `dart_analyze`
@@ -42,20 +54,31 @@ dart_analysis_options(
     src = "analysis_options.yaml",
 )
 
+# The fixture options packages live under //dart/tests, which release archives
+# omit (.gitattributes `export-ignore`); list them only where that package
+# exists. A package probe is impossible from here (`glob` and `subpackages`
+# do not see below `//dart`), so `git archive` stamps this file instead
+# (.gitattributes `export-subst`): the placeholder below is replaced by a
+# commit hash in an archive and stays literal in a worktree or full checkout.
+_ARCHIVE_STAMP = "$Format:%H$"
+
+_HAS_DART_TESTS = _ARCHIVE_STAMP.startswith("$Format")
+
+_TEST_FIXTURE_OPTIONS = [
+    "//dart/tests/analyze_aspect_fixture:options",
+    "//dart/tests/analyze_aspect_fixture/nested:loud_options",
+    "//dart/tests/analyze_aspect_fixture/vendored:options",
+    "//dart/tests/format_fixture:wide_options",
+    "//dart/tests/format_fixture/rel_include:options",
+    "//dart/tests/format_fixture/rel_include:sub_options",
+    "//dart/tests/format_run_fixture:options",
+    "//dart/tests/format_run_fixture:sub_options",
+    "//dart/tests/format_run_fixture:undeclared_options",
+    "//dart/tests/resource_consumer:options",
+]
+
 dart_analysis_config(
     name = "analysis_config",
     baseline = "analysis_baseline.json",
-    options = [
-        ":analysis_options",
-        "//dart/tests/analyze_aspect_fixture:options",
-        "//dart/tests/analyze_aspect_fixture/nested:loud_options",
-        "//dart/tests/analyze_aspect_fixture/vendored:options",
-        "//dart/tests/format_fixture:wide_options",
-        "//dart/tests/format_fixture/rel_include:options",
-        "//dart/tests/format_fixture/rel_include:sub_options",
-        "//dart/tests/format_run_fixture:options",
-        "//dart/tests/format_run_fixture:sub_options",
-        "//dart/tests/format_run_fixture:undeclared_options",
-        "//dart/tests/resource_consumer:options",
-    ],
+    options = [":analysis_options"] + (_TEST_FIXTURE_OPTIONS if _HAS_DART_TESTS else []),
 )

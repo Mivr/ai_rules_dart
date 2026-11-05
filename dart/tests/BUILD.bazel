@@ -264,6 +264,26 @@ dart_test(
     ],
 )
 
+# `rules_testing` is a dev dependency and `/dart/tests/` is `export-ignore`d
+# from release archives, so no published consumer resolves it.
+dart_test(
+    name = "dev_dep_archive_guard_test",
+    size = "small",
+    args = [
+        "$(rlocationpath //:MODULE.bazel)",
+        "$(rlocationpath //:.gitattributes)",
+    ],
+    data = [
+        "//:.gitattributes",
+        "//:MODULE.bazel",
+    ],
+    main = "dev_dep_archive_guard_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
 exports_files(
     ["BUILD.bazel"],
     visibility = ["//dart/tests:__subpackages__"],
