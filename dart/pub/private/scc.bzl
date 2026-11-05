@@ -12,6 +12,8 @@ names (see `//dart/pub:extensions.bzl`). This module holds
 that one pure function so it can be unit tested without downloading anything.
 """
 
+visibility(["//dart/..."])
+
 def _successor_map(names, dep_map, in_graph):
     """Successors filtered to in-graph edges and sorted, for determinism."""
     return {

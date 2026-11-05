@@ -16,8 +16,6 @@ load(
     _public_scanner_windows = "PUB_SCANNER_WINDOWS_LABEL",
     _scan_run = "run_pub_archive_scan",
 )
-
-# buildifier: disable=bzl-visibility
 load(
     "//dart/pub/private:pub_archive_scan.bzl",
     "archive_entry_error",
@@ -26,10 +24,10 @@ load(
     "classify_archive_entry",
     "scan_error",
 )
-
-# buildifier: disable=bzl-visibility
 load("//dart/pub/private:pub_symlink.bzl", _walk_check = "check_package_symlinks")
-load(":small_suite.bzl", "small_unittest_suite")
+load("//dart/tests:small_suite.bzl", "small_unittest_suite")
+
+visibility(["//dart/..."])
 
 _PATH_CASES = {
     "/abs.dart": True,
@@ -51,11 +49,8 @@ def _classify_test_impl(ctx):
     )
     hard = classify_archive_entry("lib/evil.dart", "1", "../outside.txt")
     asserts.equals(env, ("hard-link", "lib/evil.dart", "../outside.txt"), (hard.kind, hard.path, hard.target), "a hard-link refusal names kind, path and target")
-    asserts.true(
-        env,
-        classify_archive_entry("lib/evil.dart", "2", "/etc/passwd") != None,
-        "an absolute symlink is refused",
-    )
+    absolute = classify_archive_entry("lib/evil.dart", "2", "/etc/passwd")
+    asserts.equals(env, "symlink", absolute.kind if absolute else None, "an absolute symlink is refused as a symlink")
     link = classify_archive_entry("lib/evil.dart", "2", "../../outside.txt")
     asserts.equals(env, ("symlink", "lib/evil.dart", "../../outside.txt"), (link.kind, link.path, link.target), "a symlink refusal names kind, path and target")
     asserts.true(
@@ -77,6 +72,8 @@ def _classify_test_impl(ctx):
         want = _PATH_CASES[name]
         got = classify_archive_entry(name, "0", "")
         asserts.equals(env, want, got != None and got.kind == "path", "entry path %r escapes: %s" % (name, want))
+        if want:
+            asserts.equals(env, name, got.path, "the path refusal names the entry %r" % name)
     return unittest.end(env)
 
 def _escapes_test_impl(ctx):

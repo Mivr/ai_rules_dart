@@ -14,6 +14,8 @@ is built, and no test needs to run for a break to surface.
 
 load("@rules_dart//dart/ext:registry.bzl", "curated_code_assets", "curated_packages")
 
+visibility("private")
+
 def check_registry_contract():
     """Fails at load time if the supported resolver API has drifted."""
     packages = curated_packages()

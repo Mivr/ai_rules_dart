@@ -26,6 +26,8 @@ load("//dart/private:common.bzl", "WINDOWS_CONSTRAINT_ATTR", "runfiles_path")
 load("//dart/private:dart_analyze_aspect.bzl", "DartAnalysisConfigInfo", "stage_config_project")
 load("//dart/private:source_set.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS")
 
+visibility(["//dart/..."])
+
 def _dart_format_impl(ctx):
     toolchain = ctx.toolchains["//dart:toolchain_type"]
     dart_sdk_info = toolchain.dart_sdk_info

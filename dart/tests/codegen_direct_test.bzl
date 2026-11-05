@@ -13,6 +13,8 @@ load("//dart:defs.bzl", "dart_aggregate_codegen", "dart_codegen", "dart_sqlcodeg
 load("//dart:providers.bzl", "DartPackageMetadataInfo")
 load(":truth_helpers.bzl", "action_of", "expect_default_outputs", "expect_inputs", "provider_of")
 
+visibility(["//dart/..."])
+
 _MODEL = ":lib/direct_model.dart"
 _SCHEMA = ":lib/direct_schema.drift"
 _PACKAGE = "direct_fixture"

@@ -8,6 +8,8 @@ modules and by the ``yaml_subset.bzl`` entry point.
 
 load(":yaml_text.bzl", "bad_blank_index")
 
+visibility(["//dart/..."])
+
 def flow_scan_start():
     """A fresh quote-aware scan state for one folded flow."""
     return {"single": False, "double": False, "escaped": False, "plain": False, "have": False, "depth": 0}

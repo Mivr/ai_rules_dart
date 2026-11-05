@@ -18,8 +18,6 @@ scratch check's five decisions.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
-
-# buildifier: disable=bzl-visibility
 load("//dart/pub:extensions.bzl", "plan_scope_sccs", "touch_scanner_runtime_label")
 load(
     "//dart/pub:pub_scc.bzl",
@@ -39,6 +37,8 @@ load(
     "spoke_planned_deps_error",
 )
 load("//dart/tests:small_suite.bzl", "small_unittest_suite")
+
+visibility(["//dart/..."])
 
 _SHA = "fb0f1107cac15a5ea6ef0a6ef71a807b9e4267c713bb93e00e92d737cc8dbd8a"
 _OTHER_SHA = "307249ce4ff29d58a18e97f6345f539382eb9c9c29ecda628900f31de0443dd9"

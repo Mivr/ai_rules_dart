@@ -23,10 +23,10 @@ load(
     "parse_data_asset_ids",
     "recorded_uses_file_error",
 )
-
-# buildifier: disable=bzl-visibility
 load("//dart/pub/private:build_content.bzl", "classify_pub_hooks", "make_dart_library_build_content")
-load(":small_suite.bzl", "small_unittest_suite")
+load("//dart/tests:small_suite.bzl", "small_unittest_suite")
+
+visibility(["//dart/..."])
 
 # --- recorded_uses_kind ---
 

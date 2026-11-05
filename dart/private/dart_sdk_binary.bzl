@@ -15,6 +15,8 @@ exit code pass through untouched.
 
 load("//dart/private:common.bzl", "WINDOWS_CONSTRAINT_ATTR", "runfiles_path")
 
+visibility(["//dart/..."])
+
 def _dart_sdk_binary_impl(ctx):
     toolchain = ctx.toolchains["//dart:toolchain_type"]
     dart_sdk_info = toolchain.dart_sdk_info

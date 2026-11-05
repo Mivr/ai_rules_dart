@@ -60,6 +60,8 @@ load(
     "writable_home_env",
 )
 
+visibility(["//dart/..."])
+
 def _aggregate_validate(ctx, dart_sdk_info):
     """Fails on bad generator/outputs/srcs combinations; fails on SDK mismatch."""
     if ctx.file.generator_script and ctx.executable.generator_bin:

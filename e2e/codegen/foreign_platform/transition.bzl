@@ -6,6 +6,8 @@ while transitioning that dep onto a fixed target platform, so a `build_test` can
 assert the dep builds under a platform with no registered Dart toolchain.
 """
 
+visibility("private")
+
 def _platform_transition_impl(_settings, attr):
     return {"//command_line_option:platforms": [attr.platform]}
 

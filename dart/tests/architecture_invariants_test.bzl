@@ -14,6 +14,8 @@ load("@rules_testing//lib:analysis_test.bzl", "analysis_test")
 load("@rules_testing//lib:truth.bzl", "matching")
 load("//dart:providers.bzl", "DartAnalyzableInfo", "DartInfo")
 
+visibility(["//dart/..."])
+
 _FIXTURE = "//dart/tests/arch_invariants_fixture:"
 
 # Rule name, as the test reports it, mapped to its fixture subject.

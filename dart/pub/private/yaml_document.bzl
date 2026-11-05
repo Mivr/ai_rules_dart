@@ -9,6 +9,8 @@ load(":yaml_chars.bzl", "BOM", "is_bom_only_line", "is_clean_marker_line")
 load(":yaml_scalar.bzl", "strip_value_prefix")
 load(":yaml_text.bzl", "bad_blank_index", "block_line_text", "clone", "indent_width", "is_dash", "is_question_entry", "is_unknown_directive", "record_unreadable", "split_block_key_value", "strip_trailing_comment")
 
+visibility(["//dart/..."])
+
 def first_content(lines):
     """Returns the first line with block content as struct(index, text).
 

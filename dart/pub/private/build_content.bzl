@@ -6,6 +6,8 @@ through the one generator here, so a field added to the shape reaches both
 paths instead of only the one whose template was edited.
 """
 
+visibility(["//dart/..."])
+
 _LOAD = 'load("@rules_dart//dart:defs.bzl", "dart_library")\n'
 
 # The one text every `package_files` attribute uses. The hosted, git and
@@ -23,9 +25,9 @@ _TEST_LIBRARY = "test_library"
 
 _TEST_RUNNER_LOAD = """\
 load("@rules_dart//dart:defs.bzl", "dart_binary")
-load("@rules_dart//dart/private:dart_test.bzl", "dart_test_kernel")
 load(
-    "@rules_dart//dart/private:dart_test_runner.bzl",
+    "@rules_dart//dart:utils.bzl",
+    "dart_test_kernel",
     "dart_test_package",
     "dart_test_runner_main",
     "dart_test_runner_snapshot",
@@ -248,9 +250,9 @@ _MEMBER_LOAD = 'load("@rules_dart//dart:defs.bzl", "dart_package_member")\n'
 # library, which is what carries `package:test`'s sources now.
 _MEMBER_TEST_RUNNER_LOAD = """\
 load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_package_member")
-load("@rules_dart//dart/private:dart_test.bzl", "dart_test_kernel")
 load(
-    "@rules_dart//dart/private:dart_test_runner.bzl",
+    "@rules_dart//dart:utils.bzl",
+    "dart_test_kernel",
     "dart_test_package",
     "dart_test_runner_main",
     "dart_test_runner_snapshot",

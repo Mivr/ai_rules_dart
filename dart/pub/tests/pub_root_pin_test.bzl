@@ -2,10 +2,10 @@
 
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("//dart/pub:extensions.bzl", "resolve_pub_packages")
-
-# buildifier: disable=bzl-visibility
 load("//dart/pub/private:pub_root_pin.bzl", "select_all_explicit", "select_pub_package")
 load("//dart/tests:small_suite.bzl", "small_unittest_suite")
+
+visibility(["//dart/..."])
 
 _V191 = "75cca69d1490965be98c73ceaea117e8a04dd21217b37b292c9ddbec0d955bc5"
 _V190 = "087ce49c3f0dc39180befefc60fdb4acd8f8620e5682fe2476afd0b3688bb4af"

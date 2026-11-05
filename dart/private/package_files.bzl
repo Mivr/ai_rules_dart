@@ -14,6 +14,8 @@ itself: a producer built against an earlier rules_dart omits it, and
 
 load("//dart:providers.bzl", "DartInfo")
 
+visibility(["//dart/..."])
+
 def collect_transitive_package_files(deps):
     """Collect the runtime-only `data` files from DartInfo deps.
 

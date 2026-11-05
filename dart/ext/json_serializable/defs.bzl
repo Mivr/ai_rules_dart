@@ -2,6 +2,8 @@
 
 load("@rules_dart//dart/ext/_shared:defs.bzl", "shared_part_library")
 
+visibility("public")
+
 def json_serializable_library(
         name,
         srcs,

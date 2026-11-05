@@ -14,6 +14,8 @@ load(
     "writable_home_env",
 )
 
+visibility(["//dart/..."])
+
 # The `dart compile` modes that tree-shake, and so can record the uses of
 # `@RecordUse` definitions: what survives tree-shaking is the set of uses.
 RECORDING_COMPILE_MODES = ("exe", "aot-snapshot")

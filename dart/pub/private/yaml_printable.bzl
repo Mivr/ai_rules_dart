@@ -7,6 +7,8 @@ Loaded by the scalar, block and flow modules.
 
 load(":yaml_text.bzl", "is_dash", "is_question_entry")
 
+visibility(["//dart/..."])
+
 # Control characters package:yaml refuses in a plain scalar, written as
 # octal escapes so the source stays ASCII: the C0 controls except tab, LF
 # and CR, which structure lines, plus DEL. Tab, LF and CR stay content, as

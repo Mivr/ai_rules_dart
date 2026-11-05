@@ -16,6 +16,8 @@ load("//dart:providers.bzl", "DartInfo", "DartKernelInfo")
 load("//dart/private:common.bzl", "owned_package_records")
 load("//dart/private:dart_info.bzl", "package_lib_prefix")
 
+visibility(["//dart/..."])
+
 DartKernelCycleInfo = provider(
     doc = """Whether a library's closure carries cross-package sources.
 

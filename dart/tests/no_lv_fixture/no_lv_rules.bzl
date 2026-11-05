@@ -2,6 +2,8 @@
 
 load("//dart:providers.bzl", "DartInfo", "DartPackageInfo")
 
+visibility(["//dart/..."])
+
 def _no_lv_dart_library_impl(ctx):
     srcs = ctx.files.srcs
     pkg = DartPackageInfo(

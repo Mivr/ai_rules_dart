@@ -6,6 +6,8 @@ must fail with the checksum it got instead of handing it to the downloader.
 
 load("@rules_dart//dart/pub:pub_lock_package.bzl", "pub_lock_package")
 
+visibility("private")
+
 def _red_impl(_ctx):
     pub_lock_package(
         name = "bad_spoke",

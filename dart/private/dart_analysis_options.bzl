@@ -27,6 +27,8 @@ never reach the analyzed target's own provider.
 load("//dart:providers.bzl", "DartAnalysisOptionsInfo", "DartInfo")
 load("//dart/private:common.bzl", "collect_packages", "collect_transitive_resources", "collect_transitive_srcs")
 
+visibility(["//dart/..."])
+
 def _dart_analysis_options_impl(ctx):
     return [
         # A single file, so this target is still usable anywhere a plain

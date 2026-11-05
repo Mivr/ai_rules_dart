@@ -13,6 +13,8 @@ load("//dart:defs.bzl", "dart_code_asset", "dart_package_member")
 load("//dart:providers.bzl", "DartInfo", "DartPackageInfo")
 load(":truth_helpers.bzl", "asset_ids", "expect_default_outputs", "provider_of")
 
+visibility(["//dart/..."])
+
 _ATTRS = {
     "package_name": subjects.str,
     "lib_root": subjects.str,

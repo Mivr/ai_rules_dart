@@ -35,6 +35,8 @@ host tool beyond the SDK itself is consulted.
 
 load("//dart/pub/private:pub_scanner_sdk.bzl", _platform_key = "scanner_platform_key", _sdk_file = "scanner_sdk_file")
 
+visibility(["//dart/..."])
+
 def _fail_result(ctx, what, result):
     """Fails the fetch with the tail of a failed compile step's output."""
     output = (result.stderr if result.stderr else result.stdout).strip()

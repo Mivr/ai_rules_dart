@@ -17,6 +17,8 @@ unchanged. The helpers are the backstop behind them: even a call site that
 forgets every check cannot fetch unpinned bytes.
 """
 
+visibility(["//dart/..."])
+
 _HEX_LOWER = "0123456789abcdef"
 
 def _is_pinned_sha256(value):

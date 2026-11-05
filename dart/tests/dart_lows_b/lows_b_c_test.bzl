@@ -16,6 +16,8 @@ load("//dart:defs.bzl", "dart_binary")
 load("//dart:utils.bzl", "collect_transitive_srcs", "runfiles_path")
 load("//dart/tests:small_suite.bzl", "small_unittest_suite")
 
+visibility(["//dart/..."])
+
 def _utils_surface_test_impl(ctx):
     env = unittest.begin(ctx)
     asserts.equals(

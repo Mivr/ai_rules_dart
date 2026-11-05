@@ -4,12 +4,16 @@ Lists the pubspec parser sources whose bytes key the cycle-planning
 facts (see `parser_schema` in `:pub_scc_facts.bzl`). A bare `//` label
 resolves in this extension's own repository, whatever module name it is
 known by. The `parser files` guard test asserts this list matches
-`yaml_parser.bzl`'s load closure, so a new load there cannot be missed
+the public `yaml_parser.bzl` facade's load closure, which reaches the
+implementation in `private/yaml_parser.bzl`, so a new load there cannot be missed
 here. It lives here, not in `extensions.bzl`, so that file stays small.
 """
 
+visibility(["//dart/..."])
+
 PARSER_SOURCE_LABELS = [
     Label("//dart/pub:yaml_parser.bzl"),
+    Label("//dart/pub/private:yaml_parser.bzl"),
     Label("//dart/pub/private:yaml_chars.bzl"),
     Label("//dart/pub/private:yaml_subset.bzl"),
     Label("//dart/pub/private:yaml_text.bzl"),

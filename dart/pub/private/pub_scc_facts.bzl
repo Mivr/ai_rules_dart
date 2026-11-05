@@ -48,6 +48,8 @@ full `check_package_symlinks` walk.
 
 load("//dart/pub/private:pub_symlink.bzl", "pub_symlink_error", "realpath_escapes_root")
 
+visibility(["//dart/..."])
+
 # Fixed schema version carried in every fact key alongside the parser digest.
 # Keys from another schema are never looked up, so Bazel shallow-merging facts
 # dicts across extension versions cannot mix values: a key uniquely determines

@@ -12,6 +12,8 @@ load("//dart/private:common.bzl", "collect_packages", "collect_transitive_srcs",
 load("//dart/private:dart_info.bzl", "derived_package_info")
 load("//dart/private:source_set.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS", "colocate_packages", "executable_inputs", "needs_source_assembly", "package_for")
 
+visibility(["//dart/..."])
+
 def _fake_file(is_source):
     # needs_source_assembly only inspects File.is_source.
     return struct(is_source = is_source)

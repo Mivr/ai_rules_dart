@@ -35,6 +35,8 @@ load(
     "dart_info_no_package",
 )
 
+visibility(["//dart/..."])
+
 def _wrapper_library_impl(ctx):
     return [
         DefaultInfo(files = depset(ctx.files.srcs + ctx.files.resources)),

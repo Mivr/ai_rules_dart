@@ -35,6 +35,8 @@ load("//dart/private:kernel_params.bzl", "kernel_compile_settings")
 load("//dart/private:package_files.bzl", "collect_transitive_package_files")
 load("//dart/private:source_set.bzl", "executable_inputs")
 
+visibility(["//dart/..."])
+
 def _kernel_launcher_for_mode(compile_mode, launcher):
     if compile_mode == "kernel" and launcher:
         return Label("//dart/private/tools:kernel_launcher")

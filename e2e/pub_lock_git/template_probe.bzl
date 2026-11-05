@@ -27,6 +27,8 @@ The probe fetches the same pinned bundle (`//:fmtpkg.bundle`) three ways:
 load("@rules_dart//dart/pub:pinned_sources.bzl", "git_materialize", "git_transport_fetch", "pinned_source_error")
 load("@rules_dart//dart/pub:pub_lock_package.bzl", "make_dart_library_build_content")
 
+visibility("private")
+
 def _template_probe_impl(ctx):
     sha = ctx.attr.resolved_ref
     err = pinned_source_error(

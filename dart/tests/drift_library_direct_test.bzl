@@ -12,6 +12,8 @@ load("@rules_testing//lib:analysis_test.bzl", "analysis_test")
 load("//dart/ext/drift:defs.bzl", "drift_library")
 load(":ext_direct_helpers.bzl", "LANGUAGE_VERSION", "PACKAGE", "expect_generator", "expect_library", "generator_spec", "shared_part_targets", "source_of")
 
+visibility(["//dart/..."])
+
 # The drift shims resolve `package:drift`, so a stand-in annotation library will not do.
 _ANNOTATIONS = "@ext_pub_deps//:drift"
 _ANNOTATION_INPUT = "*dart_pub__drift/lib/drift.dart"

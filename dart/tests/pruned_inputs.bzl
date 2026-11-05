@@ -18,6 +18,8 @@ actions a test inspects are never the ones a build executed: their inputs are
 always the declared set, whether or not the same target already built.
 """
 
+visibility(["//dart/..."])
+
 _ISOLATION = str(Label("//dart/tests:pruned_inputs_isolation"))
 
 def pruned_inputs_settings(extra_settings = {}):

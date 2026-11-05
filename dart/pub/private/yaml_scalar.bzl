@@ -10,6 +10,8 @@ load(":yaml_escape.bzl", "HEX_DIGITS", "unescape_double")
 load(":yaml_printable.bzl", _check_scalar_unprintable = "check_scalar_unprintable", _record_prefix_problems = "record_prefix_problems", _strip_value_prefix = "strip_value_prefix")
 load(":yaml_text.bzl", "clone", "is_dash", "is_flow_value_entry", "is_quoted", "quoted_end_at")
 
+visibility(["//dart/..."])
+
 check_scalar_unprintable = _check_scalar_unprintable
 record_prefix_problems = _record_prefix_problems
 strip_value_prefix = _strip_value_prefix

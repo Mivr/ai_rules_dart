@@ -23,6 +23,8 @@ load(
     "CROSS_GEN_SNAPSHOT_VERSIONS",
 )
 
+visibility(["//dart/..."])
+
 # HOST platforms: those we download an SDK for and can run a build on. Each key
 # is both the download-URL slug and the `versions.bzl` checksum key:
 # https://storage.googleapis.com/dart-archive/channels/stable/release/{version}/sdk/dartsdk-{platform}-release.zip

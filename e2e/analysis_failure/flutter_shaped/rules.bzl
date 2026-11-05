@@ -8,6 +8,8 @@ aspect finds a library's own files.
 
 load("@rules_dart//dart:utils.bzl", "dart_analyzable_info_with_package", "dart_package_identity")
 
+visibility(["//bundle_shaped", "//flutter_shaped"])
+
 def _package_only_library_impl(ctx):
     return [
         DefaultInfo(files = depset(ctx.files.srcs)),

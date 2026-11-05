@@ -23,6 +23,8 @@ guessing at them.
 load("@rules_cc//cc/common:cc_shared_library_info.bzl", "CcSharedLibraryInfo")
 load("//dart:providers.bzl", "CODE_ASSET_LINK_MODES", "DartCodeAssetInfo")
 
+visibility(["//dart/..."])
+
 _CcToolchainCheckInfo = provider(
     doc = "Records the C/C++ toolchain resolved for a `dart_code_asset`'s `shared_library`.",
     fields = {

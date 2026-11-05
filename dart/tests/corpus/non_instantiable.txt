@@ -1,1 +1,2 @@
 DartCodeAssetInfo: provider describing a native library bound to a code-asset id; it carries fields and declares no target
+pub_package: repository rule instantiated only from a module extension, never from a BUILD file

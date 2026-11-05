@@ -31,15 +31,68 @@ bzl_library(
 )
 
 bzl_library(
+    name = "pinned_sources",
+    srcs = ["pinned_sources.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":yaml_parser",
+    ],
+)
+
+bzl_library(
+    name = "pub_lock_hub",
+    srcs = ["pub_lock_hub.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "pub_lock_package",
+    srcs = ["pub_lock_package.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":build_content",
+        ":language_version",
+        ":pinned_sources",
+        ":pub_scan",
+        ":pub_scc_verify",
+        ":pub_symlink",
+        ":yaml_parser",
+        "//dart/private:download",
+    ],
+)
+
+bzl_library(
+    name = "pub_scan",
+    srcs = ["pub_scan.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pub_archive_scan",
+        ":pub_scanner_sdk",
+        ":pub_symlink",
+    ],
+)
+
+bzl_library(
+    name = "yaml_parser",
+    srcs = ["yaml_parser.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":yaml_lock",
+        ":yaml_sdk_constraint",
+        ":yaml_subset",
+    ],
+)
+
+bzl_library(
     name = "pub_emit",
     srcs = ["pub_emit.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        ":pub_lock_hub",
+        ":pub_lock_package",
         ":pub_repository",
         ":scc",
-        "//dart/ext:registry",
-        "//dart/pub:pub_lock_hub",
-        "//dart/pub:pub_lock_package",
+        "//dart/private:curated_registry",
     ],
 )
 
@@ -50,11 +103,11 @@ bzl_library(
     deps = [
         ":build_content",
         ":language_version",
+        ":pinned_sources",
+        ":pub_scan",
         ":pub_symlink",
+        ":yaml_parser",
         "//dart/private:download",
-        "//dart/pub:pinned_sources",
-        "//dart/pub:pub_scan",
-        "//dart/pub:yaml_parser",
     ],
 )
 
@@ -71,7 +124,7 @@ bzl_library(
     deps = [
         ":pub_repository",
         ":version",
-        "//dart/pub:yaml_parser",
+        ":yaml_parser",
     ],
 )
 
@@ -98,7 +151,7 @@ bzl_library(
     srcs = ["pub_scc_entries.bzl"],
     visibility = ["//visibility:public"],
     deps = [
-        "//dart/ext:registry",
+        "//dart/private:curated_registry",
     ],
 )
 
@@ -136,6 +189,9 @@ bzl_library(
     name = "version",
     srcs = ["version.bzl"],
     visibility = ["//visibility:public"],
+    deps = [
+        "//dart/private:versions",
+    ],
 )
 
 bzl_library(
@@ -302,11 +358,16 @@ exports_files(
     [
         "build_content.bzl",
         "language_version.bzl",
+        "pinned_sources.bzl",
+        "pub_lock_hub.bzl",
+        "pub_lock_package.bzl",
         "pub_repository.bzl",
+        "pub_scan.bzl",
         "pub_scc_facts.bzl",
         "pub_symlink.bzl",
         "scc.bzl",
         "version.bzl",
+        "yaml_parser.bzl",
         "yaml_subset.bzl",
     ],
 )

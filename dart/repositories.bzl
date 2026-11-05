@@ -16,6 +16,8 @@ load(
 )
 load("//dart/private:versions.bzl", "TOOL_VERSIONS")
 
+visibility("public")
+
 declare_dart_sdk_toolchains = _declare_dart_sdk_toolchains
 
 ########

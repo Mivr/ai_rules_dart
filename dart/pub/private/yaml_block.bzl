@@ -14,6 +14,8 @@ load(":yaml_printable.bzl", "block_value_entry_problem", "has_explicit_key_affix
 load(":yaml_scalar.bzl", "OPEN_ANCHOR", "apply_bool_tag", "apply_child_collection_tag", "apply_tag", "drop_tag_value", "is_unknown_tag_handle", "resolve_alias", "resolve_handle", "split_value_text", "strip_value_prefix", "tag_name", "undefined_tag_problem")
 load(":yaml_text.bzl", "bad_blank_index", "block_line_text", "clone", "dict_key", "find_block_colon", "flow_head_text", "is_block_collection_key", "is_block_mapping_start", "is_compact_seq", "is_dash", "is_explicit_key_text", "is_mapping_start", "is_question_entry", "is_unknown_directive", "record_unreadable", "split_block_key_value")
 
+visibility(["//dart/..."])
+
 def close_block_containers(stack, indent, text, anchors):
     """Pops the containers that the line at `indent` is not nested into.
 

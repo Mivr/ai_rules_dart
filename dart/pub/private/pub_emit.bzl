@@ -5,11 +5,13 @@ resolves. The cycle planning stays in the extension; this module only turns
 its result into repository rules.
 """
 
-load("//dart/ext:registry.bzl", "curated_code_assets")
-load("//dart/pub:pub_lock_hub.bzl", "pub_lock_hub")
-load("//dart/pub:pub_lock_package.bzl", "pub_lock_git_package", "pub_lock_package", "pub_lock_package_sha256_error")
+load("//dart/private:curated_registry.bzl", "curated_code_assets")
+load("//dart/pub/private:pub_lock_hub.bzl", "pub_lock_hub")
+load("//dart/pub/private:pub_lock_package.bzl", "pub_lock_git_package", "pub_lock_package", "pub_lock_package_sha256_error")
 load("//dart/pub/private:pub_repository.bzl", "pub_package")
 load("//dart/pub/private:scc.bzl", "rewrite_vanished_spoke")
+
+visibility(["//dart/..."])
 
 SPOKE_PREFIX = "dart_pub"
 

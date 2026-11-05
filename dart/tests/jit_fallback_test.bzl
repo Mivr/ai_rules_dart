@@ -26,6 +26,8 @@ load("//dart/private:dart_compile.bzl", "dart_compile_action")
 load("//dart/private:dart_test.bzl", "dart_test_kernel")
 load("//dart/private:dart_test_runner.bzl", "DartTestKernelInfo", "dart_test_runner_snapshot", "dart_test_runner_snapshot_impl")
 
+visibility(["//dart/..."])
+
 _FLAG = str(Label("//dart:jit_snapshot_fallback"))
 _FALLBACK_ARG = "--fallback-allowed"
 _NO_CACHE = "no-cache"

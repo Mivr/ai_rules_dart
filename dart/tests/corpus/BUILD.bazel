@@ -48,11 +48,11 @@ load(
     "stacked_logger_library",
     "stacked_router_library",
 )
-load("//dart/pub:defs.bzl", "parse_semver")
+load("//dart/pub:defs.bzl", "parse_semver", "semver_gt")
 
-# `parse_semver` and `sqlite3_code_asset` are functions, not rules: the corpus
-# instantiates them by using what they return, so `language_version` below and
-# `corpus_test`'s `code_assets` consume them.
+# `parse_semver`, `semver_gt` and `sqlite3_code_asset` are functions, not rules:
+# the corpus instantiates them by using what they return, so `language_version`
+# below and `corpus_test`'s `size` and `code_assets` consume them.
 
 # --- the package facts, declared once ---------------------------------------
 
@@ -89,7 +89,7 @@ dart_binary(
 
 dart_test(
     name = "corpus_test",
-    size = "small",
+    size = "small" if semver_gt("1.0.0", "0.9.0") else "medium",
     code_assets = [sqlite3_code_asset()],
     main = "test/smoke_test.dart",
     deps = [

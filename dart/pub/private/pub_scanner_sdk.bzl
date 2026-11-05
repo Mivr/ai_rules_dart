@@ -15,6 +15,8 @@ the scan invocation, never bytes in a repository's output.
 
 load("//dart/private:toolchains_repo.bzl", "PLATFORMS")
 
+visibility(["//dart/..."])
+
 def scanner_platform_key(os):
     """Maps the fetch host to the host SDK repository's platform key.
 

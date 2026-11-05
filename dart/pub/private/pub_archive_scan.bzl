@@ -36,6 +36,8 @@ regular files all behave as before.
 
 load("//dart/pub/private:pub_symlink.bzl", "is_absolute_symlink_target", "symlink_escapes_package")
 
+visibility(["//dart/..."])
+
 def scan_error(package_name, detail):
     """Builds the fetch-failure diagnostic for an unscannable archive.
 

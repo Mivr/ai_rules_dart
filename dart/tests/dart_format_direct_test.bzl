@@ -21,6 +21,8 @@ load(
     "expect_inputs",
 )
 
+visibility(["//dart/..."])
+
 def _expect_config_file(env, target):
     """Asserts the runner configuration the output group and the environment name."""
     config = env.expect.that_target(target).output_group("dart_format_config")

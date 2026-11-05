@@ -13,6 +13,8 @@ those places. A `^` version is refused where `nextBreaking` would overflow
 the int64 range, as its increment throws there.
 """
 
+visibility(["//dart/..."])
+
 # Single-unit blanks pub skips: ASCII space, tab, newline, vertical tab, form
 # feed and carriage return, plus the lone units of U+0085 and U+00A0 (content
 # the YAML layer reads carries their two-byte UTF-8 forms below; a lone unit

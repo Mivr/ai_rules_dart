@@ -10,6 +10,8 @@ load("//dart:defs.bzl", "dart_code_asset")
 load("//dart:providers.bzl", "DartCodeAssetInfo")
 load("//dart/private:dart_code_asset.bzl", "check_registered_cc_toolchain")
 
+visibility(["//dart/..."])
+
 _ASSET_ID = "package:fixture/src/ffi/fixture.g.dart"
 _SHARED_LIB = "//dart/tests/cc_fixture:empty_shared"
 _PREBUILT = "//dart/tests/cc_fixture:prebuilt_fixture"

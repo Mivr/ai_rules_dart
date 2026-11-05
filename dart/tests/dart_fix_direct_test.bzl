@@ -12,6 +12,8 @@ load("@rules_testing//lib:truth.bzl", "matching")
 load("//dart:defs.bzl", "dart_fix", "dart_library")
 load(":truth_helpers.bzl", "WINDOWS_ATTR", "exe_extension", "expect_executable_symlink")
 
+visibility(["//dart/..."])
+
 def _dart_fix_test(env, target):
     """Asserts the providers and the executable symlink of `dart_fix`."""
     ext = exe_extension(env)

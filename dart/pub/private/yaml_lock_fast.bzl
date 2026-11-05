@@ -20,6 +20,8 @@ value or an error, and no input fails the evaluation.
 
 load("//dart/pub/private:yaml_chars.bzl", "BOM", "first_bad_utf8_line")
 
+visibility(["//dart/..."])
+
 # Characters a Dart package name may start with, and contain.
 _LOCK_NAME_FIRST = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
 _LOCK_NAME_CHARS = _LOCK_NAME_FIRST + "0123456789"
