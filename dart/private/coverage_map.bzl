@@ -2,7 +2,7 @@
 
 The launcher turns the VM's coverage into LCOV with the map: a JSON object of the
 source URIs the VM reports to the **exec path** of the file (`File.path`), which
-is the form `COVERAGE_MANIFEST` and the report's `SF:` records use.
+is what `COVERAGE_MANIFEST` lists and the report's `SF:` records name.
 
 A directory source (a `dart_library(srcs_dir = ...)` over a `dart_source_set`)
 holds files only the execution knows, so its entries come from an action. The
@@ -27,23 +27,69 @@ Private to rules_dart: `dart_source_set` returns it, `dart_library` forwards it 
 `srcs_dir`, `deps` and `members`, and `dart_test` reads it. Not part of any public provider.""",
     fields = {
         "maps": "depset of JSON files, each an object of a staged file's path to the exec path of its input.",
+        "generated": "depset of the generated Dart files that rules the instrumentation filter selects own.",
     },
 )
 
-def forward_origins(targets, direct = []):
-    """The `CoverageOriginInfo` a rule returns: `direct` maps plus those of `targets`.
+def forward_origins(targets, direct = [], generated = []):
+    """The `CoverageOriginInfo` a rule returns: its own maps and generated files plus those of `targets`.
 
     Args:
-      targets: Targets whose origin maps are forwarded; those without any are skipped.
+      targets: Targets whose origin maps and generated files are forwarded; those without any are skipped.
       direct: Origin map Files this rule writes itself.
+      generated: The rule's own source Files; see `instrumented_generated`.
 
     Returns:
       A `CoverageOriginInfo`.
     """
-    return CoverageOriginInfo(maps = depset(
-        direct = direct,
-        transitive = [t[CoverageOriginInfo].maps for t in targets if CoverageOriginInfo in t],
-    ))
+    return CoverageOriginInfo(
+        maps = depset(
+            direct = direct,
+            transitive = [t[CoverageOriginInfo].maps for t in targets if CoverageOriginInfo in t],
+        ),
+        generated = depset(
+            direct = instrumented_generated(generated),
+            transitive = [t[CoverageOriginInfo].generated for t in targets if CoverageOriginInfo in t],
+        ),
+    )
+
+def instrumented_generated(files):
+    """The generated Dart files among `files`.
+
+    Bazel's `COVERAGE_MANIFEST` lists source files only, so the launcher is told
+    these by name. A rule calls this for its own sources when the instrumentation
+    filter selects it (`ctx.coverage_instrumented()`), and passes nothing otherwise.
+
+    Args:
+      files: Files a rule owns.
+
+    Returns:
+      The generated, non-directory `.dart` Files among them.
+    """
+    return [f for f in files if f.extension == "dart" and not f.is_source and not f.is_directory]
+
+def write_generated_list(ctx, own_files, targets):
+    """Writes `<name>.coverage_generated`: the exec paths of generated Dart files to instrument.
+
+    Args:
+      ctx: The `dart_test` rule context.
+      own_files: The test's own source Files, listed only when the filter selects the test.
+      targets: The `deps` whose generated files are listed.
+
+    Returns:
+      The File, one exec path per line.
+    """
+    generated = forward_origins(targets, [], own_files if ctx.coverage_instrumented() else []).generated
+    out = ctx.actions.declare_file(ctx.label.name + ".coverage_generated")
+    args = ctx.actions.args()
+    args.set_param_file_format("multiline")
+    args.add_all(generated, map_each = _exec_path_line)
+    ctx.actions.write(output = out, content = args)
+    return out
+
+def _exec_path_line(f):
+    """The exec path of `f` with `/` separators."""
+    return f.path.replace("\\", "/")
 
 def _dart_member_record(f):
     """The `--file` record for one file of an expanded directory; none for a non-Dart file."""

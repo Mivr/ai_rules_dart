@@ -340,7 +340,11 @@ def _multi_package_library_impl(ctx):
         ),
         info,
         _instrumented_files(ctx, ["srcs", "members"], ["deps", "data"]),
-        forward_origins(ctx.attr.members + ctx.attr.deps),
+        forward_origins(
+            ctx.attr.members + ctx.attr.deps,
+            [],
+            ctx.files.srcs if ctx.coverage_instrumented() else [],
+        ),
     ] + kernel_providers
 
 def _instrumented_files(ctx, source_attributes, dependency_attributes):
@@ -497,7 +501,11 @@ def _dart_library_impl(ctx):
         ),
         info,
         _instrumented_files(ctx, ["srcs", "srcs_dir"], ["deps", "data", "srcs_dir"]),
-        forward_origins(([ctx.attr.srcs_dir] if ctx.attr.srcs_dir else []) + ctx.attr.deps),
+        forward_origins(
+            ([ctx.attr.srcs_dir] if ctx.attr.srcs_dir else []) + ctx.attr.deps,
+            [],
+            ctx.files.srcs if ctx.coverage_instrumented() else [],
+        ),
     ] + _own_kernel_providers(ctx, info)
 
 dart_library = rule(

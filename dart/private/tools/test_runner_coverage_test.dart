@@ -420,4 +420,23 @@ void main() {
       expect(needsEveryLibrary(mixed, parseManifest(['t/test.dart'])), isTrue);
     });
   });
+
+  group('CoverageConfig.fromEnvironment', () {
+    test('locates the list of generated sources the test names', () {
+      final CoverageConfig? config = CoverageConfig.fromEnvironment({
+        'COVERAGE_OUTPUT_FILE': '/out.dat',
+        'RULES_DART_COVERAGE_MAP': 'ws/t.coverage_map.json',
+        'RULES_DART_COVERAGE_GENERATED': 'ws/t.coverage_generated',
+      }, locate: (key) => '/runfiles/$key');
+      expect(config!.generatedPath, '/runfiles/ws/t.coverage_generated');
+    });
+
+    test('has no list of generated sources when the test names none', () {
+      final CoverageConfig? config = CoverageConfig.fromEnvironment({
+        'COVERAGE_OUTPUT_FILE': '/out.dat',
+        'RULES_DART_COVERAGE_MAP': 'ws/t.coverage_map.json',
+      }, locate: (key) => '/runfiles/$key');
+      expect(config!.generatedPath, isNull);
+    });
+  });
 }
