@@ -1,0 +1,72 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
+
+# The production code `bazel coverage` measures. `lib/coverage_fixture.dart`
+# holds a known exercised line, a known unexercised line, a branch with one
+# untaken arm and an uncalled function; the line numbers in `lcov_check`'s
+# `args` below name them.
+dart_library(
+    name = "coverage_fixture",
+    package_name = "coverage_fixture",
+    srcs = ["lib/coverage_fixture.dart"],
+)
+
+# Exercises only the positive path, so the untaken arm and the uncalled
+# function stay uncovered.
+dart_test(
+    name = "coverage_test",
+    size = "small",
+    main = "test/coverage_test.dart",
+    deps = [":coverage_fixture"],
+)
+
+# The checker's logic, shared by the binaries and the test below.
+dart_library(
+    name = "lcov_check_lib",
+    package_name = "coverage_e2e",
+    srcs = ["lib/lcov_check.dart"],
+)
+
+# The checker runs as its own step after `bazel coverage`, never inside it:
+# Bazel writes `bazel-out/_coverage/_coverage_report.dat` only after every test
+# of the invocation has finished, so no test in that invocation can read it.
+# `manual` keeps both binaries out of the `//...` coverage run. Each takes the
+# report path as its last argument:
+#   bazel run //:lcov_check -- <copy of the report>
+dart_binary(
+    name = "lcov_check",
+    args = [
+        "--file=lib/coverage_fixture.dart",
+        "--executed=14",
+        "--unexecuted=12",
+        "--uncalled=neverCalledFixtureFunction",
+    ],
+    main = "bin/lcov_check.dart",
+    tags = ["manual"],
+    deps = [":lcov_check_lib"],
+)
+
+# The same checker for the ruleset source file the root workspace's
+# `bazel coverage //dart/runfiles:...` run covers (see ci.yaml).
+dart_binary(
+    name = "lcov_check_ruleset",
+    args = [
+        "--file=dart/runfiles/lib/runfiles.dart",
+        "--executed=82",
+        "--unexecuted=96",
+        "--uncalled=Runfiles._probeBases",
+    ],
+    main = "bin/lcov_check.dart",
+    tags = ["manual"],
+    deps = [":lcov_check_lib"],
+)
+
+# Drives the checker over checked-in LCOV: a complete report passes, and an
+# empty one, one without `FNDA:0`, one without `BRDA:` and one with an absolute
+# `SF:` path each fail naming the assertion.
+dart_test(
+    name = "lcov_check_test",
+    size = "small",
+    data = glob(["testdata/*.info"]),
+    main = "test/lcov_check_test.dart",
+    deps = [":lcov_check_lib"],
+)
