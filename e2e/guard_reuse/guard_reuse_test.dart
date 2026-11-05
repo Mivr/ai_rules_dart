@@ -45,6 +45,12 @@ void main() {
     hasEmptyPathSegment('package:p//a.dart'),
     'doubled slashes after the package name count',
   );
+  _check(
+    isEscapingPackageUri('package:demo/.//x.dart') &&
+        hasEmptyPathSegment('package:demo/a/..//x.dart') &&
+        !isEscapingPackageUri('package:demo/src//b.dart'),
+    'dot segments collapsing to an empty first segment escape',
+  );
   _check(!hasEmptyPathSegment('a//b.dart'), 'relative doubled slashes do not');
   _check(!hasEmptyPathSegment('a/b.dart'), 'single slashes do not');
   _check(
@@ -89,6 +95,7 @@ void main() {
     stagedFile('lib/climb.dart', "import '../../evil.dart';\n");
     stagedFile('lib/scheme.dart', "import 'file:///etc/hosts';\n");
     stagedFile('lib/pkg.dart', "import 'package:demo/sub/../../evil.dart';\n");
+    stagedFile('lib/dotempty.dart', "import 'package:demo/.//evil.dart';\n");
     stagedFile('lib/empty.dart', "import 'a//b.dart';\n");
     stagedFile('lib/slashauth.dart', "import '//host/evil.dart';\n");
     stagedFile('lib/frag.dart', "import 'b.dart#frag';\n");
@@ -113,6 +120,8 @@ void main() {
           'is not a declared input.',
       "guard-reuse: ${at('lib/climb.dart')} import '../../evil.dart' "
           'is not a declared input.',
+      "guard-reuse: ${at('lib/dotempty.dart')} import "
+          "'package:demo/.//evil.dart' is not a declared input.",
       "guard-reuse: ${at('lib/empty.dart')} import 'a//b.dart' "
           'is not a declared input.',
       "guard-reuse: ${at('lib/frag.dart')} import 'b.dart#frag' "

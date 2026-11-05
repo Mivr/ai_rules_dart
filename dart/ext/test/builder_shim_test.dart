@@ -2496,6 +2496,31 @@ part 'e.dart';
       },
     );
 
+    test('refuses dot segments that collapse to an empty segment', () async {
+      await stage('lib/a.dart', "import 'package:p/.//evil.dart';\n");
+      await stage('lib/b.dart', "export 'package:p/a/..//evil.dart';\n");
+      await stage('lib/c.dart', "import 'package:p/src//ok.dart';\n");
+      final List<String> violations = await findStagedShimViolations(
+        staging,
+        tool: 'builder_shim',
+      );
+      expect(violations, hasLength(2));
+      expect(
+        violations,
+        contains(
+          contains("import 'package:p/.//evil.dart' is not a declared input."),
+        ),
+      );
+      expect(
+        violations,
+        contains(
+          contains(
+            "export 'package:p/a/..//evil.dart' is not a declared input.",
+          ),
+        ),
+      );
+    });
+
     test('refuses a source that does not parse, naming it', () async {
       // Nested prefix operators overflow the parser's stack, so the parse
       // throws instead of returning directives: nothing this file names can

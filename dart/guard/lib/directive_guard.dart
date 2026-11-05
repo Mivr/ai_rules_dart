@@ -106,6 +106,12 @@ String decodeUriSegment(String segment) {
 /// filesystem reads a host file instead, so the staged-source check refuses it
 /// before they run.
 ///
+/// Dot segments are removed first, the way Dart does before it resolves a URI
+/// (`.` skips, `..` pops the nearest earlier segment, an empty one included);
+/// then an empty segment directly after the package name escapes, whatever
+/// spelling led to it (`package:pkg/.//x.dart`, `package:pkg/a/..//x.dart`,
+/// `package:pkg/%2E//x.dart`).
+///
 /// An empty segment is a real segment (RFC 3986), and only its position
 /// matters. Directly after the package name the front end resolves the doubled
 /// slash as an absolute path: `package:pkg//x.dart` reads the host file
@@ -139,27 +145,30 @@ bool isEscapingPackageUri(String uri) {
   if (sep == null) return false;
   if (sep.index <= 0) return true;
   final text = rest.substring(sep.index + sep.length).replaceAll(r'\', '/');
-  var depth = 0;
-  // An empty segment directly after the package name resolves absolutely in
-  // the front end, outside the package, so it escapes however the rest
-  // resolves.
-  if (text.startsWith('/')) return true;
-  for (final raw in text.split('/')) {
-    // Any later empty segment is a real segment: it counts for a `..`.
+  return _collapsesToEmpty(text) != false;
+}
+
+/// Removes RFC 3986 dot segments from the `/`-separated package path [path],
+/// the way Dart does before it resolves a URI: `.` skips and `..` pops the
+/// nearest earlier segment, an empty one included, so `src//../b.dart` is
+/// `src`, `b.dart`. Each segment is decoded once. True when an empty segment
+/// then directly follows the package name and something follows it (the front
+/// end resolves that as an absolute path); null when the path escapes: a `..`
+/// above the package root, or a decoded `/` or `\`, which climbs without
+/// counting and which a filesystem resolver may honour; false otherwise.
+bool? _collapsesToEmpty(String path) {
+  final out = <String>[];
+  for (final raw in path.split('/')) {
     final seg = decodeUriSegment(raw);
     if (seg == '.') continue;
-    if (seg == '..') {
-      depth--;
-      if (depth < 0) return true;
-    } else if (seg.contains('/') || seg.contains(r'\')) {
-      // A decoded separator climbs without counting: a filesystem resolver
-      // may honour it, so it escapes however the front end spells it.
-      return true;
-    } else {
-      depth++;
+    if (seg == '..' && out.isNotEmpty) {
+      out.removeLast();
+      continue;
     }
+    if (seg == '..' || seg.contains('/') || seg.contains(r'\')) return null;
+    out.add(seg);
   }
-  return false;
+  return out.length > 1 && out.first.isEmpty;
 }
 
 /// The first separator between a `package:` URI's package name and its path:
@@ -389,7 +398,8 @@ bool isDisallowedDirectiveUri(
 /// the front end does not read the file the skipped spelling names. An empty
 /// segment is a real segment (RFC 3986); where it sits decides:
 ///
-/// * `package:` URI: directly after the package name it is refused
+/// * `package:` URI: dot segments are removed first, then an empty segment
+///   directly after the package name is refused
 ///   (`package:c//s/t.dart` and `package:c///s/t.dart` read the host files
 ///   `/s/t.dart` and `//s/t.dart`, not the package's). After the first path
 ///   segment it is not (`package:c/s//t.dart` reads `lib/s/t.dart`).
@@ -422,8 +432,8 @@ bool hasEmptyPathSegment(String uri) {
   final path = query < 0 ? text : text.substring(0, query);
   final hash = path.indexOf('#');
   final clean = hash < 0 ? path : path.substring(0, hash);
-  if (clean.startsWith('/')) return true;
-  return !packaged && clean.contains('//');
+  if (packaged) return _collapsesToEmpty(clean) == true;
+  return clean.startsWith('/') || clean.contains('//');
 }
 
 /// Whether [uri] spans lines: it holds a `\n` or `\r`.
@@ -522,7 +532,7 @@ String? resolveDirectiveUri(
     final base = dir.isEmpty ? const <String>[] : dir.split('/');
     final inner = rest.substring(slash + 1);
     // Directly after the package name an empty segment reads a host file.
-    if (inner.startsWith('/')) return null;
+    if (_collapsesToEmpty(inner) == true) return null;
     return _resolvePath(inner, base, base.length, _PathKind.package);
   }
   // A fragment names no file: the front end reports a URI with one instead of

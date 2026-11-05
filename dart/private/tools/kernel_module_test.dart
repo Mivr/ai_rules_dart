@@ -2678,10 +2678,10 @@ void main(List<String> args) {
       },
     );
 
-    test('an empty path segment fails the whole-program entry instead of compiling', () async {
+    test('dot segments collapsing into an empty segment fail the whole-program entry', () async {
       _write(
         'pkg/lib/a.dart',
-        "import 'package:pkg//secret.dart';\n"
+        "import 'package:pkg/.//x.dart';\n"
             'String describe() => secretValue;\n',
       );
       _write('pkg/lib/secret.dart', "const secretValue = 'x';\n");
@@ -2698,7 +2698,7 @@ void main(List<String> args) {
       expect(result.code, 1);
       expect(
         result.log,
-        contains("import 'package:pkg//secret.dart' is not a declared input"),
+        contains("import 'package:pkg/.//x.dart' is not a declared input"),
       );
     });
 
