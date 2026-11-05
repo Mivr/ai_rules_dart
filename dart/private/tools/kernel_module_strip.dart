@@ -149,32 +149,41 @@ _StripIndex? _parseStripIndex(Uint8List data) {
 /// The source-table rewriter and the link-table scanner read the same
 /// encoding over trusted offsets (both fail closed before reading), so one
 /// cursor serves both.
-final class _U30Reader {
-  new(this._data, int position) : _pos = position;
+///
+/// A closure record rather than a class, so no constructor names its type.
+typedef _U30Reader = ({
+  /// The current offset in the component's bytes.
+  int Function() position,
 
-  final Uint8List _data;
-  int _pos;
-
-  /// The current offset in [_data].
-  int get position => _pos;
-
-  /// Advances past [count] bytes.
-  void skip(int count) {
-    _pos += count;
-  }
+  /// Advances past the given number of bytes.
+  void Function(int count) skip,
 
   /// The next UInt30 value.
+  int Function() read,
+});
+
+/// A [_U30Reader] over [data] starting at [position].
+_U30Reader _u30ReaderAt(Uint8List data, int position) {
+  var pos = position;
   int read() {
-    final int b0 = _data[_pos++];
+    final int b0 = data[pos++];
     if ((b0 & 0x80) == 0) return b0;
     if ((b0 & 0x40) == 0) {
-      return ((b0 & 0x3f) << 8) | _data[_pos++];
+      return ((b0 & 0x3f) << 8) | data[pos++];
     }
-    final int b1 = _data[_pos++];
-    final int b2 = _data[_pos++];
-    final int b3 = _data[_pos++];
+    final int b1 = data[pos++];
+    final int b2 = data[pos++];
+    final int b3 = data[pos++];
     return ((b0 & 0x3f) << 24) | (b1 << 16) | (b2 << 8) | b3;
   }
+
+  return (
+    position: () => pos,
+    skip: (int count) {
+      pos += count;
+    },
+    read: read,
+  );
 }
 
 /// Rewrites the source table with every source body emptied, returning the new
@@ -185,7 +194,7 @@ final class _U30Reader {
   int offConstantTable,
   int numSources,
 ) {
-  final u30 = _U30Reader(data, offSourceTable + 4);
+  final _U30Reader u30 = _u30ReaderAt(data, offSourceTable + 4);
 
   final newSt = BytesBuilder(copy: false);
   final header4 = ByteData(4)..setUint32(0, numSources);
@@ -196,10 +205,10 @@ final class _U30Reader {
     newSourceOffsets[i] = offSourceTable + newSt.length;
 
     // 1. uri: UInt30 byteLength + UTF-8 bytes
-    final int uStart = u30.position;
+    final int uStart = u30.position();
     final int uLen = u30.read();
     u30.skip(uLen);
-    newSt.add(Uint8List.sublistView(data, uStart, u30.position));
+    newSt.add(Uint8List.sublistView(data, uStart, u30.position()));
 
     // 2. sourceCode: UInt30 byteLength + UTF-8 bytes -> replace with empty (0x00)
     final int sLen = u30.read();
@@ -207,7 +216,7 @@ final class _U30Reader {
     newSt.addByte(0);
 
     // 3. lineStarts: UInt30 count + count * UInt30 delta
-    final int lsStart = u30.position;
+    final int lsStart = u30.position();
     final int lineCount = u30.read();
     for (var j = 0; j < lineCount; j++) {
       u30.read();
@@ -220,7 +229,7 @@ final class _U30Reader {
     for (var j = 0; j < ccCount; j++) {
       u30.read();
     }
-    newSt.add(Uint8List.sublistView(data, lsStart, u30.position));
+    newSt.add(Uint8List.sublistView(data, lsStart, u30.position()));
   }
 
   final offsetsBuf = ByteData(numSources * 4);
@@ -237,15 +246,15 @@ final class _U30Reader {
 
 /// The end of the link table's canonical entries, clamped to the metadata.
 int _linkTableEnd(Uint8List data, int offLinkTable, int offMetadataPayloads) {
-  final u30 = _U30Reader(data, offLinkTable);
+  final _U30Reader u30 = _u30ReaderAt(data, offLinkTable);
 
   final int canonCount = u30.read();
   for (var i = 0; i < canonCount; i++) {
     u30.read();
     u30.read();
   }
-  return u30.position <= offMetadataPayloads
-      ? u30.position
+  return u30.position() <= offMetadataPayloads
+      ? u30.position()
       : offMetadataPayloads;
 }
 
