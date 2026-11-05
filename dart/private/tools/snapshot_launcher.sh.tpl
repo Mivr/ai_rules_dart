@@ -9,33 +9,37 @@ set -euo pipefail
 runner_rlocation='@RULES_DART_RUNNER@'
 snapshot_rlocation='@RULES_DART_SNAPSHOT@'
 
-# Resolves a runfiles-relative path through the runfiles directory, the
-# manifest (--noenable_runfiles), or the executable's own sibling tree.
+# Resolves a runfiles-relative key. The lookup order matches the Windows
+# template and kernel_launcher.dart: RUNFILES_MANIFEST_FILE, the manifests
+# next to this file, then RUNFILES_DIR and the runfiles trees next to it. A
+# manifest line is `<key> <absolute path>`; the path may contain spaces. On
+# failure every place that was looked at is printed.
 resolve_runfile() {
   local key="$1"
-  local candidate root
-  if [[ -n "${RUNFILES_DIR:-}" ]]; then
-    candidate="${RUNFILES_DIR}/${key}"
-    if [[ -e "$candidate" ]]; then
-      printf '%s\n' "$candidate"
-      return 0
-    fi
-  fi
-  if [[ -n "${RUNFILES_MANIFEST_FILE:-}" && -f "${RUNFILES_MANIFEST_FILE}" ]]; then
-    candidate="$(awk -v key="$key" '$1 == key { sub(/^[^ ]+ /, ""); print; exit }' "${RUNFILES_MANIFEST_FILE}")"
+  local candidate manifest root
+  local looked=()
+  for manifest in "${RUNFILES_MANIFEST_FILE:-}" "$0.runfiles_manifest" \
+    "$0.runfiles/MANIFEST" "$0.exe.runfiles_manifest"; do
+    [[ -n "$manifest" ]] || continue
+    looked+=("manifest ${manifest}")
+    [[ -f "$manifest" ]] || continue
+    candidate="$(awk -v key="$key" '$1 == key { sub(/^[^ ]+ /, ""); print; exit }' "$manifest")"
     if [[ -n "$candidate" ]]; then
       printf '%s\n' "$candidate"
       return 0
     fi
-  fi
-  for root in "$0.runfiles" "$0.exe.runfiles"; do
+  done
+  for root in "${RUNFILES_DIR:-}" "$0.runfiles" "$0.exe.runfiles"; do
+    [[ -n "$root" ]] || continue
     candidate="${root}/${key}"
+    looked+=("dir ${candidate}")
     if [[ -e "$candidate" ]]; then
       printf '%s\n' "$candidate"
       return 0
     fi
   done
-  printf 'snapshot_launcher: cannot find %s in runfiles\n' "$key" >&2
+  printf 'snapshot_launcher: cannot find %s in runfiles; looked in:\n' "$key" >&2
+  printf '  %s\n' "${looked[@]}" >&2
   return 1
 }
 

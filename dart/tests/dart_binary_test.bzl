@@ -162,8 +162,8 @@ def _snapshot_launcher_binary_test_impl(ctx):
     snapshot_names = [f.basename for f in target[OutputGroupInfo].snapshot.to_list()]
     asserts.true(
         env,
-        default_exe.basename.endswith(".sh"),
-        "DefaultInfo.executable is the .sh snapshot launcher, got %s" % default_exe.basename,
+        default_exe.basename.endswith(".sh") or default_exe.basename.endswith(".bat"),
+        "DefaultInfo.executable is the .sh or .bat snapshot launcher, got %s" % default_exe.basename,
     )
     asserts.true(
         env,
