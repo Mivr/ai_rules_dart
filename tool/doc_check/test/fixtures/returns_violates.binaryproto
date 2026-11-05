@@ -1,0 +1,4 @@
+*5Fixture module that exercises one documentation rule.2//fixture:defs.bzlZ
+
+fixture_fn/
+target!The target the function works on. (Computes the fixture value.

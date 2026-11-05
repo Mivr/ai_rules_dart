@@ -1,0 +1,6 @@
+*5Fixture module that exercises one documentation rule.2//fixture:defs.bzlÊ
+
+fixture_fn/
+target!The target the function works on. (7
+args+Extra positional arguments, passed through. (6
+kwargs(Extra keyword arguments, passed through. (Runs the fixture function.

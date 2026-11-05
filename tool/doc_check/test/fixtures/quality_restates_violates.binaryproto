@@ -1,0 +1,3 @@
+*5Fixture module that exercises one documentation rule.2//fixture:defs.bzl
+&
+dart_libraryThe Dart library rule.

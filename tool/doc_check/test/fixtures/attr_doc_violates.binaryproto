@@ -1,0 +1,9 @@
+*5Fixture module that exercises one documentation rule.2//fixture:defs.bzl
+Q
+fixture_lib,Compiles the fixture sources into a library.
+srcs
+
+name@
+F
+_hidden_rule,Compiles the fixture sources into a library.
+data
