@@ -521,14 +521,34 @@ jobs:
       # enumerate the whole published module. Dev-only tooling lives in nested
       # modules excluded via REPO.bazel `ignore_directories`, so no package under
       # @rules_dart//... may load a dev-only repository. `e2e/smoke` is that
-      # minimal consumer (local_path_override to the repo root). It runs here,
+      # minimal consumer, pointed at an extracted `git archive HEAD` (the published
+      # shape, without /dart/tests/) by --override_module. A planted package that
+      # loads @rules_testing must make the query fail. It runs here,
       # once per OS, instead of in its own job.
       - name: Consumer query
         if: matrix.shard == 1
-        working-directory: e2e/smoke
+        shell: bash
         run: |
-          echo "9.3.0" > .bazelversion
-          bazel query "@rules_dart//..."
+          archive_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/rd_archive.XXXXXX")"
+          archive_override="$archive_dir"
+          if command -v cygpath >/dev/null 2>&1; then
+            archive_dir="$(cygpath -u "$archive_dir")"
+            archive_override="$(cygpath -m "$archive_dir")"
+          fi
+          trap '(cd e2e/smoke 2>/dev/null && bazel shutdown) >/dev/null 2>&1 || true; rm -rf "$archive_dir"' EXIT
+          git archive HEAD | tar -x -C "$archive_dir"
+          echo "9.3.0" > e2e/smoke/.bazelversion
+          (cd e2e/smoke && bazel query --override_module=ai_rules_dart="$archive_override" "@rules_dart//...")
+          # Red path: a package loading a dev-only repository must fail the query.
+          mkdir -p "$archive_dir/dart/tests"
+          printf 'load("@rules_testing//lib:analysis_test.bzl", "analysis_test")\n' > "$archive_dir/dart/tests/BUILD.bazel"
+          rc=0
+          red="$(cd e2e/smoke && bazel query --override_module=ai_rules_dart="$archive_override" "@rules_dart//..." 2>&1)" || rc=$?
+          if [ "$rc" -eq 0 ] || ! printf '%s' "$red" | grep -q 'rules_testing'; then
+            echo "expected the query to fail on the missing @rules_testing repository, exit $rc"
+            printf '%s\n' "$red"
+            exit 1
+          fi
       - name: Disk report (end of job)
         if: always() && matrix.os == 'ubuntu-latest'
         shell: bash
@@ -601,10 +621,12 @@ jobs:
           echo "$out"
           echo "$out" | grep -q "Hello, World!"
       - name: Consumer query
-        working-directory: e2e/smoke
         run: |
-          echo "9.3.0" > .bazelversion
-          bazel query "@rules_dart//..."
+          archive_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/rd_archive.XXXXXX")"
+          trap '(cd e2e/smoke 2>/dev/null && bazel shutdown) >/dev/null 2>&1 || true; rm -rf "$archive_dir"' EXIT
+          git archive HEAD | tar -x -C "$archive_dir"
+          echo "9.3.0" > e2e/smoke/.bazelversion
+          (cd e2e/smoke && bazel query --override_module=ai_rules_dart="$archive_dir" "@rules_dart//...")
   # `dart format` and `dart analyze` find their configuration by walking up from
   # the file they are given, and that walk does not stop at the project root. It
   # used to escape: under a sandbox it found nothing (so a repo's configured

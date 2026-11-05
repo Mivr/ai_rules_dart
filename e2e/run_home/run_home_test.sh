@@ -34,7 +34,18 @@ if [[ -n "${BAZEL:-}" ]]; then
 else
   BAZEL_CMD=(bazel --max_idle_secs=60)
 fi
-run_bazel() { "${BAZEL_CMD[@]}" "$@"; }
+ARCHIVE_DIR=""
+# Query and run against the released shape (`git archive HEAD`), not the raw
+# worktree; `shutdown` takes no --override_module.
+run_bazel() {
+  if [[ "$1" != "shutdown" && -n "$ARCHIVE_DIR" ]]; then
+    local cmd="$1"
+    shift
+    "${BAZEL_CMD[@]}" "$cmd" --override_module=ai_rules_dart="$ARCHIVE_DIR" "$@"
+  else
+    "${BAZEL_CMD[@]}" "$@"
+  fi
+}
 
 RUN_HOME_SCRATCH="${RUN_HOME_SCRATCH:-$WORKSPACE/.scratch}"
 mkdir -p "$RUN_HOME_SCRATCH"
@@ -44,9 +55,14 @@ mkdir -p "$RUN_HOME_SCRATCH"
 SCRATCH="$(mktemp -d "$RUN_HOME_SCRATCH/run.XXXXXX")"
 cleanup() {
   (cd "$WORKSPACE" && run_bazel shutdown >/dev/null 2>&1) || true
-  rm -rf "$SCRATCH"
+  rm -rf "$SCRATCH" "$ARCHIVE_DIR"
 }
 trap cleanup EXIT
+# The archive must live outside this workspace: under the default scratch
+# (inside e2e/run_home) `//...` would load the archive's own `e2e/*` packages.
+ARCHIVE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/run_home_archive.XXXXXX")"
+REPO_ROOT="$(git -C "$WORKSPACE" rev-parse --show-toplevel)"
+git -C "$REPO_ROOT" archive HEAD | tar -x -C "$ARCHIVE_DIR"
 # PUB_CACHE lives in the scratch directory, outside the canaries below.
 export PUB_CACHE="$SCRATCH/pubcache"
 mkdir -p "$PUB_CACHE"
@@ -66,14 +82,13 @@ fail_entry() {
 }
 
 # --- 1. enumeration: the registry must match `bazel query` exactly ---
-mapfile -t repo_targets < <(
-  run_bazel query \
-    "visible(//..., kind(\"$KINDS\", @rules_dart//...))" 2>/dev/null | sort
-)
-mapfile -t ws_targets < <(
-  run_bazel query "kind(\"$KINDS\", //...)" 2>/dev/null \
-    | sort
-)
+# A failing query must fail the test with its stderr, so each result goes
+# through a variable rather than a process substitution that hides the status.
+repo_out="$(run_bazel query \
+  "visible(//..., kind(\"$KINDS\", @rules_dart//...))")"
+ws_out="$(run_bazel query "kind(\"$KINDS\", //...)")"
+mapfile -t repo_targets < <(printf '%s\n' "$repo_out" | sort)
+mapfile -t ws_targets < <(printf '%s\n' "$ws_out" | sort)
 declare -A queried
 for t in "${repo_targets[@]}" "${ws_targets[@]}"; do queried["$t"]=1; done
 declare -A registered
