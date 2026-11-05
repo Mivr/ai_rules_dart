@@ -68,6 +68,9 @@ jobs:
   # `expected-failure` and `format-hermeticity`, and e2e/dart_test also in
   # `dbg-mode` and `expected-failure`. e2e/run_home runs in `run-home`,
   # and e2e/repro_canary runs in `reproducibility`.
+  # e2e/coverage runs in `coverage`: its `bazel coverage` run and report check,
+  # its `bazel test //...`, and a root-workspace coverage run of //dart/runfiles
+  # that its `lcov_check_ruleset` checks. `full.yaml` repeats that job.
   # e2e/hermetic_canary is Linux-only and red by design, so it runs in
   # `expected-failure` only and never in a positive sweep; e2e/hello_world
   # and e2e/codegen also run in `hermetic-strict` under the H1 flag set.
@@ -655,6 +658,39 @@ jobs:
       - name: run_home canary sweep
         working-directory: e2e/run_home
         run: ./run_home_test.sh
+  # Coverage: `bazel coverage` of e2e/coverage's fixture and of the ruleset's own
+  # //dart/runfiles tests, each report checked for executed and unexecuted lines,
+  # `FNDA:0` records, `BRDA:` records and workspace-relative `SF:` paths.
+  # `bazel coverage` writes the combined report only after every test of the
+  # invocation has finished, so each report is copied (a later Bazel command may
+  # replace `bazel-out`) and checked by its own `bazel run` step afterwards. A
+  # failing coverage run, a failing check or a missing report fails the job:
+  # no step tolerates failure and no instrumentation filter is empty.
+  coverage:
+    runs-on: ubuntu-latest
+    # A cold e2e/coverage coverage run, then a cold root-workspace coverage run
+    # of //dart/runfiles; healthy runs finish well inside this.
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: e2e/coverage - coverage run, then the fixture report check
+        working-directory: e2e/coverage
+        run: |
+          bazel --max_idle_secs=60 coverage --combined_report=lcov --instrumentation_filter='^//' --instrument_test_targets=false //...
+          report="$(mktemp)"
+          cp bazel-out/_coverage/_coverage_report.dat "$report"
+          bazel --max_idle_secs=60 run //:lcov_check -- "$report"
+          bazel --max_idle_secs=60 test --test_output=errors //...
+      - name: Root workspace - coverage of the runfiles test
+        run: |
+          bazel --max_idle_secs=60 coverage --combined_report=lcov --instrumentation_filter='^//dart[/:]' --instrument_test_targets=false //dart/runfiles/...
+          cp bazel-out/_coverage/_coverage_report.dat "$RUNNER_TEMP/ruleset_coverage_report.dat"
+          bazel --max_idle_secs=60 shutdown
+      - name: e2e/coverage - ruleset report check
+        working-directory: e2e/coverage
+        run: bazel --max_idle_secs=60 run //:lcov_check_ruleset -- "$RUNNER_TEMP/ruleset_coverage_report.dat"
   # Workspaces that are expected to fail at module resolution.
   # Validates that rules_dart produces the correct error messages.
   expected-failure:
@@ -1784,6 +1820,7 @@ jobs:
       - mac-smoke
       - format-hermeticity
       - run-home
+      - coverage
       - expected-failure
       - dbg-mode
       - hermetic-strict
