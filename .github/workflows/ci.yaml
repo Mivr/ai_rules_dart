@@ -303,25 +303,32 @@ jobs:
           if [ "$RUNNER_OS" = "Linux" ]; then
             idle=(--max_idle_secs=60)
           fi
+          # A folder with an e2e.yaml runs through the e2e runner, built and
+          # started from tools/ with its own Bazel server (the runner stages a
+          # copy of the workspace and picks its own output base for it). Only
+          # a folder without a spec runs bazel itself.
+          bazel_home() {
+            if [ -f "$ws/$1/e2e.yaml" ]; then echo "$ws/tools"; else echo "$ws/$1"; fi
+          }
           run_one() {
             slug="$(printf '%s' "$1" | tr '/.' '_')"
-            # Same test command and flags as the old per-folder Test step, plus
-            # a per-folder --output_base so the folder gets its own Bazel
-            # server. The disk and repository caches stay shared, so warmth is
-            # unaffected.
             rc=0
             (
-              cd "$ws/$1" &&
-              case " $build_only_folders " in
-                *" $1 "*) bazel "${idle[@]}" --output_base="$outbasedir/$slug" build //... ;;
-                *) bazel "${idle[@]}" --output_base="$outbasedir/$slug" test --test_output=errors //... ;;
-              esac
+              cd "$(bazel_home "$1")" &&
+              if [ -f "$ws/$1/e2e.yaml" ]; then
+                bazel "${idle[@]}" --output_base="$outbasedir/$slug" run //e2e_runner:e2e_runner -- --workspace="../$1" --bazel=bazel
+              else
+                case " $build_only_folders " in
+                  *" $1 "*) bazel "${idle[@]}" --output_base="$outbasedir/$slug" build //... ;;
+                  *) bazel "${idle[@]}" --output_base="$outbasedir/$slug" test --test_output=errors //... ;;
+                esac
+              fi
             ) >"$logdir/$slug.log" 2>&1 || rc=1
             # Shut the folder's server down before reporting it finished. The
             # folder's status is the command's; a failed shutdown is logged
             # as a warning in the folder's log and does not change it.
             if [ "$RUNNER_OS" = "Linux" ]; then
-              if ! ( cd "$ws/$1" && bazel "${idle[@]}" --output_base="$outbasedir/$slug" shutdown ) >>"$logdir/$slug.log" 2>&1; then
+              if ! ( cd "$(bazel_home "$1")" && bazel "${idle[@]}" --output_base="$outbasedir/$slug" shutdown ) >>"$logdir/$slug.log" 2>&1; then
                 echo "::warning::bazel shutdown failed for $1" >>"$logdir/$slug.log"
               fi
             fi
@@ -335,7 +342,10 @@ jobs:
             while IFS= read -r folder; do
               [ -z "$folder" ] && continue
               slug="$(printf '%s' "$folder" | tr '/.' '_')"
-              ( cd "$ws/$folder" && bazel --output_base="$outbasedir/$slug" version ) >/dev/null 2>&1 || true
+              if ! ( cd "$(bazel_home "$folder")" && bazel --output_base="$outbasedir/$slug" version ) >/dev/null 2>&1; then
+                echo "::error::bazel failed to start for $folder"
+                exit 1
+              fi
             done <<< "$FOLDERS"
           fi
           running=0
@@ -394,6 +404,13 @@ jobs:
             [ "$(cat "$logdir/$slug.status")" = 0 ] || fail=1
           done <<< "$FOLDERS"
           exit "$fail"
+      # Every e2e/*/MODULE.bazel must be run by some job; a new workspace that
+      # no job names fails here.
+      - name: E2E workspace coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.shard == 1
+        working-directory: tools
+        shell: bash
+        run: bazel --max_idle_secs=60 run //check_e2e_coverage:check_e2e_coverage
       - name: Memory report (after Test)
         if: always() && matrix.os == 'ubuntu-latest'
         shell: bash

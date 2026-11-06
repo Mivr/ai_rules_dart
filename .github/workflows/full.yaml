@@ -198,18 +198,23 @@ jobs:
           done <<< "$FOLDERS"
           # Build-only workspaces: .github/workflows has no tests and e2e/dual_build's sole test is manual and requires-network.
           build_only_folders=".github/workflows e2e/dual_build"
+          # A folder with an e2e.yaml runs through the e2e runner, built and
+          # started from tools/ with its own Bazel server (the runner stages a
+          # copy of the workspace and picks its own output base for it). Only
+          # a folder without a spec runs bazel itself.
           run_one() {
             slug="$(printf '%s' "$1" | tr '/.' '_')"
-            # Same command and flags as the old per-folder Test step, plus
-            # a per-folder --output_base so the folder gets its own Bazel
-            # server. The disk and repository caches stay shared, so warmth
-            # is unaffected.
             if (
-              cd "$ws/$1" &&
-              case " $build_only_folders " in
-                *" $1 "*) bazel --output_base="$outbasedir/$slug" build //... ;;
-                *) bazel --output_base="$outbasedir/$slug" test --test_output=errors //... ;;
-              esac
+              if [ -f "$ws/$1/e2e.yaml" ]; then
+                cd "$ws/tools" &&
+                bazel --output_base="$outbasedir/$slug" run //e2e_runner:e2e_runner -- --workspace="../$1" --bazel=bazel
+              else
+                cd "$ws/$1" &&
+                case " $build_only_folders " in
+                  *" $1 "*) bazel --output_base="$outbasedir/$slug" build //... ;;
+                  *) bazel --output_base="$outbasedir/$slug" test --test_output=errors //... ;;
+                esac
+              fi
             ) >"$logdir/$slug.log" 2>&1; then
               echo 0 >"$logdir/$slug.status"
             else
