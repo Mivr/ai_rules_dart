@@ -66,8 +66,9 @@ dart_library(
 
 dart_test(
     name = "builder_shim_test",
-    size = "small",
+    size = "medium",
     main = "test/builder_shim_test.dart",
+    shard_count = 4,
     deps = [
         ":builder_shim",
         "@ext_pub_deps//:analyzer",
