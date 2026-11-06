@@ -64,9 +64,15 @@ load("//dart:providers.bzl", "DartCompileInfo", "DartInfo")
 load("//dart/private:common.bzl", "JIT_SNAPSHOT_LOCK_TIMEOUT_DEFAULT", "jit_train_key", "kernel_sdk_mismatch_error", "sdk_dartvm", "writable_home_env")
 load("//dart/private:dart_compile.bzl", "jit_tool_entry")
 load("//dart/private:dart_kernel.bzl", "DartKernelInfo", "dart_kernel_module_aspect")
-load("//dart/private:test_runner_info.bzl", "DartTestRunnerInfo", "DartTestRunnerSnapshotInfo")
+load("//dart/private:test_runner_info.bzl", _DartTestRunnerInfo = "DartTestRunnerInfo", _DartTestRunnerSnapshotInfo = "DartTestRunnerSnapshotInfo")
 
-visibility(["//dart/..."])
+# rules_flutter v0.28.1 to v0.28.5 load this file from a generated
+# `flutter_test_package.bzl`. The restriction returns once a rules_flutter
+# release carrying `1830f36e` is the documented minimum.
+visibility("public")
+
+DartTestRunnerInfo = _DartTestRunnerInfo
+DartTestRunnerSnapshotInfo = _DartTestRunnerSnapshotInfo
 
 DartTestKernelInfo = provider(
     doc = "A test compiled to the kernel that runs under a `package:test` runner.",

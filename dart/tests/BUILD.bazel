@@ -31,6 +31,7 @@ load(":dart_format_direct_test.bzl", "dart_format_direct_test_suite")
 load(":dart_package_member_direct_test.bzl", "dart_package_member_direct_test_suite")
 load(":dart_package_metadata_direct_test.bzl", "dart_package_metadata_direct_test_suite")
 load(":dart_source_set_direct_test.bzl", "dart_source_set_direct_test_suite")
+load(":dart_test_runner_visibility_test.bzl", "dart_test_runner_visibility_test")
 load(":dart_wasm_binary_direct_test.bzl", "dart_wasm_binary_direct_test_suite")
 load(":defines_test.bzl", "defines_test_suite")
 load(":drift_library_direct_test.bzl", "drift_library_direct_test_suite")
@@ -365,4 +366,10 @@ instrumented_files_test(
         "data_lib.dart",
     ],
     target_under_test = "//dart/tests/instrumented_files_fixture:test",
+)
+
+# `dart_test_runner.bzl` is public: rules_flutter v0.28.1 to v0.28.5 load it.
+dart_test_runner_visibility_test(
+    name = "dart_test_runner_visibility_test",
+    src = "//dart/private:dart_test_runner",
 )
