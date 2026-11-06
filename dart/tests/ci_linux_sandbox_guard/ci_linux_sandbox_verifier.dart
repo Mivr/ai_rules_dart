@@ -42,20 +42,8 @@ class UnchangedJob {
   final String job;
 }
 
-/// The ten Linux jobs that run Bazel.
-const List<LinuxBazelJob> linuxBazelJobs = [
-  LinuxBazelJob('ci.yaml', 'test', gated: true),
-  LinuxBazelJob('ci.yaml', 'format-hermeticity'),
-  LinuxBazelJob('ci.yaml', 'run-home'),
-  LinuxBazelJob('ci.yaml', 'expected-failure'),
-  LinuxBazelJob('ci.yaml', 'dbg-mode'),
-  LinuxBazelJob('ci.yaml', 'reproducibility'),
-  LinuxBazelJob('ci.yaml', 'hermetic-strict'),
-  LinuxBazelJob('commit-messages.yaml', 'check'),
-  LinuxBazelJob('perf-linux.yaml', 'bench', script: 'tools-src/$scriptPath'),
-];
-
-/// The jobs that stay untouched.
+/// The jobs that stay untouched. Every other ubuntu job that invokes bazel is
+/// a Linux Bazel job and must run the setup script.
 const List<UnchangedJob> unchangedJobs = [
   UnchangedJob('ci.yaml', 'mac-smoke'),
   UnchangedJob('ci.yaml', 'pre-commit'),
@@ -126,6 +114,71 @@ String? jobBlock(String text, String job) {
       .where((RegExpMatch m) => m.start > start.start)
       .firstOrNull;
   return text.substring(start.start, next?.start ?? text.length);
+}
+
+/// Returns the job keys of workflow [text], in file order.
+List<String> jobNames(String text) {
+  final int jobs = text.indexOf(RegExp(r'^jobs:\s*$', multiLine: true));
+  if (jobs < 0) return [];
+  return [
+    for (final RegExpMatch m in RegExp(
+      r'^  ([a-zA-Z0-9_-]+):\s*$',
+      multiLine: true,
+    ).allMatches(text.substring(jobs)))
+      m.group(1)!,
+  ];
+}
+
+final RegExp _bazelCall = RegExp(
+  '(^|[\\s"\'(;&|`\$])bazel(isk)?(\\s|\$)',
+  multiLine: true,
+);
+
+/// Whether [block] runs on an ubuntu runner and invokes `bazel` or `bazelisk`.
+/// Comments, `name:` and `uses:` lines do not count as invocations.
+bool _isLinuxBazel(String block) {
+  final RegExpMatch? runsOn = RegExp(
+    r'^    runs-on:(.*)$',
+    multiLine: true,
+  ).firstMatch(block);
+  if (runsOn == null) return false;
+  final String value = runsOn.group(1)!;
+  final bool ubuntu =
+      value.contains('ubuntu') ||
+      (value.contains('matrix') && block.contains('ubuntu'));
+  final String code = _withoutComments(block)
+      .split('\n')
+      .where((l) => !RegExp(r'^\s*(- )?(name|uses):').hasMatch(l))
+      .join('\n');
+  return ubuntu && _bazelCall.hasMatch(code);
+}
+
+/// Derives the Linux Bazel jobs from the workflow files in [files] (file name
+/// to text): every job on an ubuntu runner that invokes `bazel` or `bazelisk`
+/// and is not in [unchangedJobs].
+List<LinuxBazelJob> discoverLinuxBazelJobs(Map<String, String> files) {
+  final setup = RegExp(r'run:\s*(\S*enable_linux_sandbox\.sh)');
+  final List<LinuxBazelJob> out = [];
+  for (final String file in files.keys.toList()..sort()) {
+    final String text = files[file]!;
+    for (final String job in jobNames(text)) {
+      if (unchangedJobs.any((u) => u.file == file && u.job == job)) continue;
+      final String block = jobBlock(text, job)!;
+      if (!_isLinuxBazel(block)) continue;
+      out.add(
+        LinuxBazelJob(
+          file,
+          job,
+          script: setup.firstMatch(block)?.group(1) ?? scriptPath,
+          gated: !RegExp(
+            '^    runs-on:.*ubuntu',
+            multiLine: true,
+          ).hasMatch(block),
+        ),
+      );
+    }
+  }
+  return out;
 }
 
 /// Splits a job block into its steps.
@@ -271,7 +324,7 @@ List<String> verifyWindowsLegs(String? workflow) {
 /// Runs every workflow check; [files] maps workflow file names to text.
 List<String> verifyWorkflows(Map<String, String> files) {
   return [
-    for (final LinuxBazelJob j in linuxBazelJobs)
+    for (final LinuxBazelJob j in discoverLinuxBazelJobs(files))
       ...verifyJob(j, files[j.file]),
     for (final UnchangedJob j in unchangedJobs)
       ...verifyUnchanged(j, files[j.file]),

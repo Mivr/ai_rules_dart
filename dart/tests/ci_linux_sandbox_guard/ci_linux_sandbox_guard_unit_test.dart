@@ -31,6 +31,7 @@ const String _proofStep = r'''
 
 const String _reproJob = r'''
   reproducibility:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - name: Enable and verify Linux user namespaces
@@ -41,6 +42,19 @@ const String _reproJob = r'''
           bazel "--output_base=${RUNNER_TEMP}/repro_canary_b" build //:c
 ''';
 
+/// The Linux Bazel jobs of the synthetic layout.
+const List<LinuxBazelJob> _linuxJobs = [
+  LinuxBazelJob('ci.yaml', 'test', gated: true),
+  LinuxBazelJob('ci.yaml', 'format-hermeticity'),
+  LinuxBazelJob('ci.yaml', 'run-home'),
+  LinuxBazelJob('ci.yaml', 'expected-failure'),
+  LinuxBazelJob('ci.yaml', 'dbg-mode'),
+  LinuxBazelJob('ci.yaml', 'reproducibility'),
+  LinuxBazelJob('ci.yaml', 'hermetic-strict'),
+  LinuxBazelJob('buildifier.yaml', 'check'),
+  LinuxBazelJob('perf-linux.yaml', 'bench', script: 'tools-src/$scriptPath'),
+];
+
 String _stepFor(LinuxBazelJob j) {
   final gate = j.gated ? "        if: matrix.os == 'ubuntu-latest'\n" : '';
   return '      - uses: actions/checkout@v7\n'
@@ -49,12 +63,13 @@ String _stepFor(LinuxBazelJob j) {
       '      - run: bazel build //...\n';
 }
 
-String _job(String name, String body) => '  $name:\n    steps:\n$body';
+String _job(String name, String body) =>
+    '  $name:\n    runs-on: ubuntu-latest\n    steps:\n$body';
 
 /// A passing set of workflow files, with [override] replacing job bodies.
 Map<String, String> _workflows({Map<String, String> override = const {}}) {
   final Map<String, StringBuffer> files = {};
-  for (final LinuxBazelJob j in linuxBazelJobs) {
+  for (final LinuxBazelJob j in _linuxJobs) {
     final String body = override['${j.file}:${j.job}'] ?? _stepFor(j);
     final String text = j.job == 'reproducibility'
         ? (override['${j.file}:${j.job}'] ?? _reproJob)
@@ -118,10 +133,46 @@ void main() {
       final Map<String, String> w = _workflows(
         override: {'buildifier.yaml:check': '      - run: bazel build //...\n'},
       );
-      expect(verifyJob(linuxBazelJobs[7], w['buildifier.yaml']), isNotEmpty);
+      expect(verifyJob(_linuxJobs[7], w['buildifier.yaml']), isNotEmpty);
+    });
+    test('reports an ubuntu job that calls bazel without the script', () {
+      final Map<String, String> w = _workflows();
+      w['new.yaml'] =
+          'jobs:\n${_job('fresh', '      - run: bazel test //...\n')}';
+      final List<String> v = verifyWorkflows(w);
+      expect(v.join('\n'), contains('new.yaml:fresh: must run'));
+    });
+    test('does not require the script in an unchanged job', () {
+      final Map<String, String> w = _workflows(
+        override: {'ci.yaml:pre-commit': '      - run: bazel build //...\n'},
+      );
+      expect(
+        discoverLinuxBazelJobs(w).map((j) => j.job),
+        isNot(contains('pre-commit')),
+      );
+      expect(verifyWorkflows(w).join(), isNot(contains('pre-commit')));
+    });
+    test('accepts a new ubuntu job that runs the script', () {
+      final Map<String, String> w = _workflows();
+      w['new.yaml'] =
+          'jobs:\n${_job('fresh', _stepFor(const LinuxBazelJob('new.yaml', 'fresh')))}';
+      expect(discoverLinuxBazelJobs(w).map((j) => j.job), contains('fresh'));
+      expect(verifyWorkflows(w).join(), isNot(contains('fresh')));
+    });
+    test('ignores bazel in names, uses lines and non-ubuntu jobs', () {
+      final Map<String, String> w = _workflows();
+      w['new.yaml'] =
+          'jobs:\n'
+          '  a:\n    runs-on: ubuntu-latest\n    steps:\n'
+          '      - uses: bazel-contrib/setup-bazel@x\n'
+          '      - name: bazel build\n        run: true\n'
+          '  b:\n    runs-on: macos-latest\n    steps:\n'
+          '      - run: bazel build //...\n';
+      expect(discoverLinuxBazelJobs(w).map((j) => j.job), isNot(contains('a')));
+      expect(discoverLinuxBazelJobs(w).map((j) => j.job), isNot(contains('b')));
     });
     test('rejects Bazel running before the shared step', () {
-      final LinuxBazelJob j = linuxBazelJobs[2];
+      final LinuxBazelJob j = _linuxJobs[2];
       final body =
           '      - run: bazel build //...\n'
           '      - run: ${j.script}\n';
@@ -129,7 +180,7 @@ void main() {
       expect(verifyJob(j, wf).join(), contains('before'));
     });
     test('rejects an inline sysctl copy in a job', () {
-      final LinuxBazelJob j = linuxBazelJobs[4];
+      final LinuxBazelJob j = _linuxJobs[4];
       final String wf = _job(
         j.job,
         '${_stepFor(j)}      - run: sudo sysctl -w a=0\n',
@@ -154,7 +205,7 @@ void main() {
       expect(verifyWindowsLegs('os: windows-latest\n'), isNotEmpty);
     });
     test('rejects a working-directory on the setup step', () {
-      final LinuxBazelJob j = linuxBazelJobs[1];
+      final LinuxBazelJob j = _linuxJobs[1];
       final String wf = _job(
         j.job,
         '      - name: x\n        working-directory: e2e/a\n'
