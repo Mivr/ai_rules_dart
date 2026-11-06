@@ -113,6 +113,18 @@ String _writePackageConfig({
 }
 
 void main() {
+  // dart:io's exitCode is process-global: every case starts from a known 0
+  // whatever an earlier case in the shuffled order left behind, and the value
+  // that was there before the case is restored afterwards.
+  var savedExitCode = 0;
+  setUp(() {
+    savedExitCode = exitCode;
+    exitCode = 0;
+  });
+  tearDown(() {
+    exitCode = savedExitCode;
+  });
+
   group('stagedPath', () {
     test(
       'joins a POSIX asset under a native Windows dir, no mixed separators',
@@ -761,7 +773,6 @@ void main() {
       expect(exitCode, 2);
       expect(captured, isNotEmpty);
       expect(captured.join('\n'), contains('--input'));
-      exitCode = 0;
     });
 
     test('staging root bounds analysis-options discovery', () async {
@@ -855,7 +866,6 @@ void main() {
       final combined = captured.join('\n');
       expect(combined, contains('Builder failed for'));
       expect(combined, contains('intentional failure'));
-      exitCode = 0;
     });
 
     test('builder Exception routes message + stack trace to sink', () async {
@@ -887,7 +897,6 @@ void main() {
       final combined = captured.join('\n');
       expect(combined, contains('Builder failed for'));
       expect(combined, contains('intentional checked failure'));
-      exitCode = 0;
     });
 
     test('builder bare-string throw escapes runShim to the caller', () async {
@@ -1003,7 +1012,6 @@ void main() {
         expect(combined, contains('[SEVERE]'));
         expect(combined, contains('builder-emitted severe'));
         // exitCode may have been bumped by the SEVERE record; reset.
-        exitCode = 0;
       },
     );
   });
@@ -1641,116 +1649,83 @@ void main() {
       },
     );
 
+    /// Runs the shim over one input whose context's dispose runs [onDispose] (it throws),
+    /// then checks the failure is reported on the diagnostic sink with
+    /// [message] and that the already-written output survives.
+    Future<void> expectDisposeFailureReported(
+      void Function() onDispose,
+      String message,
+    ) async {
+      final input = File(p.join(tmp.path, 'a.dart'))
+        ..writeAsStringSync('class Foo {}');
+      final out = p.join(tmp.path, 'a.g.dart');
+      final captured = <String>[];
+
+      await runShim(
+        [
+          '--input',
+          input.path,
+          '--input-asset',
+          'lib/a.dart',
+          '--output',
+          out,
+          '--package',
+          'p',
+          '--root-language-version',
+          '3.11',
+        ],
+        (_) => _FixedOutputBuilder('// generated'),
+        writeDiagnostic: captured.add,
+        buildAnalysisContext:
+            ({
+              required List<String> includedPaths,
+              required String? sdkPath,
+              String? sdkSummaryPath,
+              required List<String> librarySummaryPaths,
+            }) async {
+              final inner = AnalysisContextCollection(
+                includedPaths: includedPaths,
+                sdkPath: sdkPath,
+              );
+              return _DisposeTrackingCollection(inner, onDispose: onDispose);
+            },
+      );
+
+      expect(exitCode, 0);
+      expect(
+        File(out).existsSync(),
+        isTrue,
+        reason: 'a dispose failure must not lose already-written outputs',
+      );
+      expect(
+        captured.join('\n'),
+        contains('AnalysisContextCollection.dispose failed'),
+      );
+      expect(captured.join('\n'), contains(message));
+    }
+
     test(
       'a failing AnalysisContextCollection.dispose is reported, not fatal',
-      () async {
-        final input = File(p.join(tmp.path, 'a.dart'))
-          ..writeAsStringSync('class Foo {}');
-        final out = p.join(tmp.path, 'a.g.dart');
-        final captured = <String>[];
-
-        await runShim(
-          [
-            '--input',
-            input.path,
-            '--input-asset',
-            'lib/a.dart',
-            '--output',
-            out,
-            '--package',
-            'p',
-            '--root-language-version',
-            '3.11',
-          ],
-          (_) => _FixedOutputBuilder('// generated'),
-          writeDiagnostic: captured.add,
-          buildAnalysisContext:
-              ({
-                required List<String> includedPaths,
-                required String? sdkPath,
-                String? sdkSummaryPath,
-                required List<String> librarySummaryPaths,
-              }) async {
-                final inner = AnalysisContextCollection(
-                  includedPaths: includedPaths,
-                  sdkPath: sdkPath,
-                );
-                return _DisposeTrackingCollection(
-                  inner,
-                  onDispose: () => throw FormatException('teardown boom'),
-                );
-              },
-        );
-
-        expect(exitCode, 0);
-        expect(
-          File(out).existsSync(),
-          isTrue,
-          reason: 'a dispose failure must not lose already-written outputs',
-        );
-        expect(
-          captured.join('\n'),
-          contains('AnalysisContextCollection.dispose failed'),
-        );
-        expect(captured.join('\n'), contains('teardown boom'));
-        exitCode = 0;
-      },
+      () => expectDisposeFailureReported(
+        () => throw FormatException('teardown boom'),
+        'teardown boom',
+      ),
     );
+
+    // Stands in for any earlier case that leaves the process-global exitCode
+    // non-zero under a shuffled order; the suite-level setUp/tearDown must
+    // contain it so the dispose case below cannot see it.
+    test('a case that leaves exitCode at 1 does not leak', () {
+      exitCode = 1;
+      expect(exitCode, 1);
+    });
 
     test(
       'an Error from AnalysisContextCollection.dispose is reported, not fatal',
-      () async {
-        final input = File(p.join(tmp.path, 'a.dart'))
-          ..writeAsStringSync('class Foo {}');
-        final out = p.join(tmp.path, 'a.g.dart');
-        final captured = <String>[];
-
-        await runShim(
-          [
-            '--input',
-            input.path,
-            '--input-asset',
-            'lib/a.dart',
-            '--output',
-            out,
-            '--package',
-            'p',
-            '--root-language-version',
-            '3.11',
-          ],
-          (_) => _FixedOutputBuilder('// generated'),
-          writeDiagnostic: captured.add,
-          buildAnalysisContext:
-              ({
-                required List<String> includedPaths,
-                required String? sdkPath,
-                String? sdkSummaryPath,
-                required List<String> librarySummaryPaths,
-              }) async {
-                final inner = AnalysisContextCollection(
-                  includedPaths: includedPaths,
-                  sdkPath: sdkPath,
-                );
-                return _DisposeTrackingCollection(
-                  inner,
-                  onDispose: () => throw StateError('driver teardown boom'),
-                );
-              },
-        );
-
-        expect(exitCode, 0);
-        expect(
-          File(out).existsSync(),
-          isTrue,
-          reason: 'a dispose failure must not lose already-written outputs',
-        );
-        expect(
-          captured.join('\n'),
-          contains('AnalysisContextCollection.dispose failed'),
-        );
-        expect(captured.join('\n'), contains('driver teardown boom'));
-        exitCode = 0;
-      },
+      () => expectDisposeFailureReported(
+        () => throw StateError('driver teardown boom'),
+        'driver teardown boom',
+      ),
     );
 
     test(

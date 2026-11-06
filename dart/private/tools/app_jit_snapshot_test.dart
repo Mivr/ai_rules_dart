@@ -845,78 +845,78 @@ void main(List<String> args) {
     );
   });
 
-  test(
-    'app-jit training takes no --packages and ignores ancestor .dart_tool',
-    () {
-      final dartBin = Platform.resolvedExecutable;
-      final workDir = Directory('${tmp.path}/nested/work')
-        ..createSync(recursive: true);
-      final trainScript = File('${workDir.path}/train.dart')
-        ..writeAsStringSync('void main(List<String> args) {}\n');
-      // The training input is a compiled kernel, as in real builds: kernel
-      // training needs no package map, so no `--packages` value is passed.
-      final trainDill = File('${workDir.path}/train.dill');
-      final compileRes = Process.runSync(dartBin, [
-        'compile',
-        'kernel',
-        trainScript.path,
-        '-o',
-        trainDill.path,
-      ]);
-      expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
-      // Poison the ancestor directory with a malformed
-      // .dart_tool/package_config.json after compiling: with no `--packages`
-      // value the training must not walk up to it (a source compile would
-      // fail on the malformed file, which is why real trainings train
-      // kernels, never sources).
-      File('${tmp.path}/.dart_tool/package_config.json')
-        ..parent.createSync(recursive: true)
-        ..writeAsStringSync('{malformed package_config');
-      final outJit = File('${workDir.path}/out.jit');
+  test('app-jit training takes no --packages and ignores ancestor .dart_tool', () {
+    final dartBin = Platform.resolvedExecutable;
+    final workDir = Directory('${tmp.path}/nested/work')
+      ..createSync(recursive: true);
+    final trainScript = File('${workDir.path}/train.dart')
+      ..writeAsStringSync('void main(List<String> args) {}\n');
+    // The training input is a compiled kernel, as in real builds: kernel
+    // training needs no package map, so no `--packages` value is passed.
+    final trainDill = File('${workDir.path}/train.dill');
+    final compileRes = Process.runSync(dartBin, [
+      'compile',
+      'kernel',
+      trainScript.path,
+      '-o',
+      trainDill.path,
+    ]);
+    expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
+    // Poison the ancestor directory with a malformed
+    // .dart_tool/package_config.json after compiling: with no `--packages`
+    // value the training must not walk up to it (a source compile would
+    // fail on the malformed file, which is why real trainings train
+    // kernels, never sources).
+    File('${tmp.path}/.dart_tool/package_config.json')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync('{malformed package_config');
+    final outJit = File('${workDir.path}/out.jit');
 
-      // A planted fixed-path training VM from the old layout: the training
-      // must neither read nor execute it. The plant lives at a per-test path:
-      // this suite's tests (and the planner suite's) run concurrently, and a
-      // shared fixed plant would race between processes.
-      final plantedVm = File(
-        '${Directory.systemTemp.path}/rules_dart_vm-planted-appjit-test.$pid',
-      )..writeAsBytesSync([0x7f, 0x45, 0x4c, 0x46, 0x99]);
-      try {
-        snapshot.main([
-          '--dart=$dartBin',
-          '--snapshot=${outJit.path}',
-          '--copy=train.dill=${trainDill.path}',
-          '--',
-          'train.dill',
-        ]);
-        expect(outJit.existsSync(), isTrue);
-        // The training VM lives inside the training scratch directory, which
-        // is deleted afterwards: nothing undeclared stays beside the declared
-        // output, and the planted file is untouched.
-        expect(
-          Directory('${outJit.path}.vm').existsSync(),
-          isFalse,
-          reason: 'no training-VM directory may stay beside the output',
-        );
-        expect(
-          workDir
-              .listSync()
-              .where(
-                (e) => e.path
-                    .split(Platform.pathSeparator)
-                    .last
-                    .startsWith('rules_dart_snapshot.'),
-              )
-              .toList(),
-          isEmpty,
-          reason: 'no training scratch may stay beside the output',
-        );
-        expect(plantedVm.readAsBytesSync(), [0x7f, 0x45, 0x4c, 0x46, 0x99]);
-      } finally {
-        if (plantedVm.existsSync()) plantedVm.deleteSync();
-      }
-    },
-  );
+    // A planted fixed-path training VM from the old layout: the training
+    // must neither read nor execute it. The plant lives at a per-test path:
+    // this suite's tests (and the planner suite's) run concurrently, and a
+    // shared fixed plant would race between processes.
+    // The tag is the per-test tmp directory's basename: unique even when
+    // every shard process shares one pid (sandboxed) and one /tmp.
+    final plantTag = tmp.path.split(Platform.pathSeparator).last;
+    final plantedVm = File(
+      '${Directory.systemTemp.path}/rules_dart_vm-planted-appjit-test.$plantTag',
+    )..writeAsBytesSync([0x7f, 0x45, 0x4c, 0x46, 0x99]);
+    try {
+      snapshot.main([
+        '--dart=$dartBin',
+        '--snapshot=${outJit.path}',
+        '--copy=train.dill=${trainDill.path}',
+        '--',
+        'train.dill',
+      ]);
+      expect(outJit.existsSync(), isTrue);
+      // The training VM lives inside the training scratch directory, which
+      // is deleted afterwards: nothing undeclared stays beside the declared
+      // output, and the planted file is untouched.
+      expect(
+        Directory('${outJit.path}.vm').existsSync(),
+        isFalse,
+        reason: 'no training-VM directory may stay beside the output',
+      );
+      expect(
+        workDir
+            .listSync()
+            .where(
+              (e) => e.path
+                  .split(Platform.pathSeparator)
+                  .last
+                  .startsWith('rules_dart_snapshot.'),
+            )
+            .toList(),
+        isEmpty,
+        reason: 'no training scratch may stay beside the output',
+      );
+      expect(plantedVm.readAsBytesSync(), [0x7f, 0x45, 0x4c, 0x46, 0x99]);
+    } finally {
+      if (plantedVm.existsSync()) plantedVm.deleteSync();
+    }
+  });
 
   test(
     'stageTrainingArgs absolutizes staged paths and passes the rest through',
@@ -3512,107 +3512,114 @@ void main(List<String> args) {
     expect(outDill.existsSync(), isFalse);
   });
 
-  test('--gen-kernel ignores planted shared-temp files', () {
+  /// Runs `--gen-kernel` with TMPDIR set to a directory only this run owns
+  /// (the planted cache files live there, never in the host's shared temp,
+  /// which concurrent test processes also write to), checks the tool left the
+  /// plants untouched, and returns the cache-looking entries left in that
+  /// directory besides the plants. [whileRunning] fires just before the tool
+  /// starts, with the run's private temp directory.
+  Set<String> genKernelLeftovers({
+    void Function(Directory runTmp)? whileRunning,
+  }) {
     final sdkDir = File(Platform.resolvedExecutable).parent.parent;
-    final exeSuffix = Platform.isWindows ? '.exe' : '';
-    final dartaotruntime = '${sdkDir.path}/bin/dartaotruntime$exeSuffix';
+    final exe = Platform.isWindows ? '.exe' : '';
     final genKernel = patchSnapshot(
       '${sdkDir.path}/bin/snapshots/gen_kernel_aot.dart.snapshot',
       'gen_kernel',
     );
-    final platformDill = '${sdkDir.path}/lib/_internal/vm_platform_strong.dill';
-
-    final sysTmp = Directory.systemTemp;
-
-    /// Basenames in the shared temp dir that look like the old fixed-path
-    /// cache: the `*nocomma.snapshot` files and `rules_dart_vm-*` dirs.
-    Set<String> sharedCacheNames() {
-      final names = <String>{};
-      for (final e in sysTmp.listSync()) {
-        final base = e.path.split(Platform.pathSeparator).last;
-        if (base.contains('nocomma.snapshot') ||
-            base.startsWith('rules_dart_vm-')) {
-          names.add(base);
-        }
-      }
-      return names;
-    }
-
-    // Whatever other builds left in shared temp stays: only files this run
-    // adds may appear below. Every plant carries a per-test tag: this
-    // suite's tests (and the planner suite's) run concurrently, and shared
-    // fixed plant names would race between processes.
-    final before = sharedCacheNames();
-    final tag = 'appjit-test.$pid';
+    final runTmp = Directory('${tmp.path}/gen_kernel_tmp')..createSync();
     final plants = <String, String>{
-      'kernel_worker_nocomma.snapshot.$tag': 'planted',
-      'kernel_worker_nocomma.snapshot.version.$tag': 'planted',
-      'gen_kernel_nocomma.snapshot.$tag': 'planted',
-      'gen_kernel_nocomma.snapshot.version.$tag': 'planted',
+      'kernel_worker_nocomma.snapshot': 'planted',
+      'kernel_worker_nocomma.snapshot.version': 'planted',
+      'gen_kernel_nocomma.snapshot': 'planted',
+      'gen_kernel_nocomma.snapshot.version': 'planted',
     };
     for (final entry in plants.entries) {
-      File('${sysTmp.path}/${entry.key}').writeAsStringSync(entry.value);
+      File('${runTmp.path}/${entry.key}').writeAsStringSync(entry.value);
     }
-    final plantedVmDir = Directory('${sysTmp.path}/rules_dart_vm-planted-$tag')
-      ..createSync(recursive: true);
-    File('${plantedVmDir.path}/bin_dart${Platform.isWindows ? '.exe' : ''}')
-        .writeAsStringSync('planted');
-    try {
-      final pkgConfig = File('${tmp.path}/plant_package_config.json')
-        ..writeAsStringSync('{"configVersion": 2, "packages": []}\n');
-      final mainDart = File('${tmp.path}/plant_main.dart')
-        ..writeAsStringSync(
-          'void main() {\n'
-          "  print(const String.fromEnvironment('COMMA_VAL', defaultValue: 'UNSET'));\n"
-          '}\n',
-        );
-      final outDill = File('${tmp.path}/plant_out.dill');
-
-      final toolPath = stageTool();
-      final res = Process.runSync(Platform.resolvedExecutable, [
-        toolPath,
+    final vmBin = File('${runTmp.path}/rules_dart_vm-planted/bin_dart$exe')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('planted');
+    final pkgConfig = File('${tmp.path}/plant_package_config.json')
+      ..writeAsStringSync('{"configVersion": 2, "packages": []}\n');
+    final mainDart = File('${tmp.path}/plant_main.dart')
+      ..writeAsStringSync(
+        'void main() {\n'
+        "  print(const String.fromEnvironment('COMMA_VAL', defaultValue: 'UNSET'));\n"
+        '}\n',
+      );
+    final outDill = File('${tmp.path}/plant_out.dill');
+    whileRunning?.call(runTmp);
+    final res = Process.runSync(
+      Platform.resolvedExecutable,
+      [
+        stageTool(),
         '--gen-kernel',
-        dartaotruntime,
+        '${sdkDir.path}/bin/dartaotruntime$exe',
         '--comma-patched-snapshot',
         '--input-source=${mainDart.path}',
         genKernel,
         '--platform',
-        platformDill,
+        '${sdkDir.path}/lib/_internal/vm_platform_strong.dill',
         '--packages',
         pkgConfig.path,
         '-DCOMMA_VAL=a,b',
         '-o',
         outDill.path,
         mainDart.path,
-      ]);
-      expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
-      expect(outDill.existsSync(), isTrue);
-
-      for (final entry in plants.entries) {
-        expect(
-          File('${sysTmp.path}/${entry.key}').readAsStringSync(),
-          'planted',
-        );
-      }
+      ],
+      environment: {
+        'TMPDIR': runTmp.path,
+        'TMP': runTmp.path,
+        'TEMP': runTmp.path,
+      },
+    );
+    expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
+    expect(outDill.existsSync(), isTrue);
+    for (final entry in plants.entries) {
       expect(
-        File('${plantedVmDir.path}/bin_dart${Platform.isWindows ? '.exe' : ''}')
-            .readAsStringSync(),
-        'planted',
+        File('${runTmp.path}/${entry.key}').readAsStringSync(),
+        entry.value,
       );
-      final leftovers = sharedCacheNames().difference(before);
-      // Only the plants this test wrote may have appeared.
-      leftovers.removeAll(plants.keys);
-      leftovers.remove('rules_dart_vm-planted-$tag');
-      expect(leftovers, isEmpty, reason: '$leftovers');
-    } finally {
-      for (final key in plants.keys) {
-        final f = File('${sysTmp.path}/$key');
-        if (f.existsSync()) f.deleteSync();
-      }
-      if (plantedVmDir.existsSync()) {
-        plantedVmDir.deleteSync(recursive: true);
-      }
     }
+    expect(vmBin.readAsStringSync(), 'planted');
+    return {
+      for (final e in runTmp.listSync())
+        if (e.path.split(Platform.pathSeparator).last case final base
+            when (base.contains('nocomma.snapshot') ||
+                    base.startsWith('rules_dart_vm-')) &&
+                !plants.containsKey(base) &&
+                base != 'rules_dart_vm-planted')
+          base,
+    };
+  }
+
+  test('--gen-kernel ignores planted shared-temp files', () {
+    expect(genKernelLeftovers(), isEmpty);
+  });
+
+  test('--gen-kernel check ignores entries other processes add to the host '
+      'shared temp', () {
+    final unrelated = Directory(
+      '${Directory.systemTemp.path}/rules_dart_vm-unrelated.${tmp.path.hashCode}',
+    );
+    try {
+      expect(
+        genKernelLeftovers(whileRunning: (_) => unrelated.createSync()),
+        isEmpty,
+      );
+    } finally {
+      if (unrelated.existsSync()) unrelated.deleteSync(recursive: true);
+    }
+  });
+
+  test('--gen-kernel leftover check reports an entry left in its temp', () {
+    final leftovers = genKernelLeftovers(
+      whileRunning: (runTmp) =>
+          File('${runTmp.path}/gen_kernel_nocomma.snapshot.leak')
+              .writeAsStringSync('x'),
+    );
+    expect(leftovers, {'gen_kernel_nocomma.snapshot.leak'});
   });
 
   test('--aot leaves scratch TMPDIR empty', () {

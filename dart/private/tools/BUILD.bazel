@@ -824,6 +824,7 @@ dart_test(
         "//dart/guard:lib/directive_guard.dart",
     ],
     main = "app_jit_snapshot_test.dart",
+    shard_count = 8,
     deps = [
         "//dart/runfiles",
         "@ext_pub_deps//:test",
