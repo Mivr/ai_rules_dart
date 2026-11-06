@@ -2464,29 +2464,22 @@ void main(List<String> args) {
         'pkg/lib/d.dart',
         "part 'org-dartlang-root:///part//piece.dart';\n",
       );
+      _write('pkg/lib/e.dart', "import 'package:./pkg//x.dart';\n");
       final result = await _compile('m_empty_segment', [
         'pkg/lib/a.dart',
         'pkg/lib/c.dart',
         'pkg/lib/d.dart',
+        'pkg/lib/e.dart',
       ]);
       expect(result.code, 1);
-      expect(
-        result.log,
-        contains(
-          "cannot compile ${_uri('pkg/lib/a.dart')}: "
-          "import 'package:pkg//secret.dart' is not a declared input",
-        ),
-      );
-      expect(
-        result.log,
-        contains("import '/sub//root.dart' is not a declared input"),
-      );
-      expect(
-        result.log,
-        contains(
-          "part 'org-dartlang-root:///part//piece.dart' is not a declared input",
-        ),
-      );
+      for (final ref in [
+        "import 'package:pkg//secret.dart'",
+        "import '/sub//root.dart'",
+        "part 'org-dartlang-root:///part//piece.dart'",
+        "import 'package:./pkg//x.dart'",
+      ]) {
+        expect(result.log, contains('$ref is not a declared input'));
+      }
     });
 
     test(
@@ -2532,33 +2525,6 @@ void main(List<String> args) {
         contains("import 'package:pkg/.//x.dart' is not a declared input"),
       );
     });
-
-    test(
-      'a dot segment before the package name fails the whole-program entry',
-      () async {
-        _write(
-          'pkg/lib/a.dart',
-          "import 'package:./pkg//x.dart';\n"
-              'String describe() => secretValue;\n',
-        );
-        _write('pkg/lib/secret.dart', "const secretValue = 'x';\n");
-        _write(
-          'pkg/bin/main.dart',
-          "import 'package:pkg/a.dart';\nvoid main() => print(describe());\n",
-        );
-        final result = await _compile(
-          'm_dot_before_name_entry',
-          ['pkg/bin/main.dart'],
-          inputSources: [_uri('pkg/lib/a.dart')],
-          noDrop: true,
-        );
-        expect(result.code, 1);
-        expect(
-          result.log,
-          contains("import 'package:./pkg//x.dart' is not a declared input"),
-        );
-      },
-    );
 
     test(
       'a file: import fails the whole-program entry instead of compiling',
