@@ -55,12 +55,15 @@ mkdir -p "$RUN_HOME_SCRATCH"
 SCRATCH="$(mktemp -d "$RUN_HOME_SCRATCH/run.XXXXXX")"
 cleanup() {
   (cd "$WORKSPACE" && run_bazel shutdown >/dev/null 2>&1) || true
-  rm -rf "$SCRATCH" "$ARCHIVE_DIR"
+  rm -rf "$SCRATCH"
 }
 trap cleanup EXIT
-# The archive must live outside this workspace: under the default scratch
-# (inside e2e/run_home) `//...` would load the archive's own `e2e/*` packages.
-ARCHIVE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/run_home_archive.XXXXXX")"
+# The archive lives in the scratch directory, never under /tmp or $TMPDIR:
+# Bazel's hermetic sandbox hides --override_module sources there from
+# sandboxed actions. `.bazelignore` (`.scratch`) keeps `//...` from loading
+# the archive's own `e2e/*` packages.
+ARCHIVE_DIR="$SCRATCH/archive"
+mkdir -p "$ARCHIVE_DIR"
 REPO_ROOT="$(git -C "$WORKSPACE" rev-parse --show-toplevel)"
 git -C "$REPO_ROOT" archive HEAD | tar -x -C "$ARCHIVE_DIR"
 # PUB_CACHE lives in the scratch directory, outside the canaries below.
