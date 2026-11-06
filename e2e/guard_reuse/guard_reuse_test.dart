@@ -96,6 +96,7 @@ void main() {
     stagedFile('lib/scheme.dart', "import 'file:///etc/hosts';\n");
     stagedFile('lib/pkg.dart', "import 'package:demo/sub/../../evil.dart';\n");
     stagedFile('lib/dotempty.dart', "import 'package:demo/.//evil.dart';\n");
+    stagedFile('lib/dotname.dart', "import 'package:./demo//x.dart';\n");
     stagedFile('lib/empty.dart', "import 'a//b.dart';\n");
     stagedFile('lib/slashauth.dart', "import '//host/evil.dart';\n");
     stagedFile('lib/frag.dart', "import 'b.dart#frag';\n");
@@ -122,6 +123,8 @@ void main() {
           'is not a declared input.',
       "guard-reuse: ${at('lib/dotempty.dart')} import "
           "'package:demo/.//evil.dart' is not a declared input.",
+      "guard-reuse: ${at('lib/dotname.dart')} import "
+          "'package:./demo//x.dart' is not a declared input.",
       "guard-reuse: ${at('lib/empty.dart')} import 'a//b.dart' "
           'is not a declared input.',
       "guard-reuse: ${at('lib/frag.dart')} import 'b.dart#frag' "

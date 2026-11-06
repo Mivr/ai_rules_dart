@@ -59,14 +59,6 @@ import 'dart:io';
 /// The multi-root scheme every compile resolves its inputs through.
 const defaultMultiRootPrefix = 'org-dartlang-root:///';
 
-/// The path after `multiRootPrefix`, or null for any other URI.
-String? _stripPrefix(String uri, String multiRootPrefix) {
-  if (uri.startsWith(multiRootPrefix)) {
-    return uri.substring(multiRootPrefix.length);
-  }
-  return null;
-}
-
 /// Decodes one raw URI path segment the way the front end does (RFC 3986): each
 /// valid `%XX` escape becomes its byte (bytes together decode as UTF-8, either
 /// hex case), while anything else — including a lone `%` — stays literal.
@@ -106,11 +98,14 @@ String decodeUriSegment(String segment) {
 /// filesystem reads a host file instead, so the staged-source check refuses it
 /// before they run.
 ///
-/// Dot segments are removed first, the way Dart does before it resolves a URI
-/// (`.` skips, `..` pops the nearest earlier segment, an empty one included);
-/// then an empty segment directly after the package name escapes, whatever
-/// spelling led to it (`package:pkg/.//x.dart`, `package:pkg/a/..//x.dart`,
-/// `package:pkg/%2E//x.dart`).
+/// Dot segments are removed first, from the whole path, the way Dart does
+/// before it resolves a URI (`.` skips, `..` pops the nearest earlier segment,
+/// an empty one included, and a dot segment before the package name drops:
+/// `package:./pkg/x.dart` is `package:pkg/x.dart`); then an empty segment
+/// directly after the package name escapes, whatever spelling led to it
+/// (`package:pkg/.//x.dart`, `package:pkg/a/..//x.dart`,
+/// `package:pkg/%2E//x.dart`, `package:./pkg//x.dart`,
+/// `package:%2e%2e/pkg//x.dart`).
 ///
 /// An empty segment is a real segment (RFC 3986), and only its position
 /// matters. Directly after the package name the front end resolves the doubled
@@ -131,13 +126,11 @@ String decodeUriSegment(String segment) {
 /// here).
 bool isEscapingPackageUri(String uri) {
   if (!uri.startsWith('package:')) return false;
-  var rest = uri.substring('package:'.length);
   // A query or fragment names no file: the front end reads the file the path
   // part names, so the path part alone is classified below.
-  final hash = rest.indexOf('#');
-  if (hash >= 0) rest = rest.substring(0, hash);
-  final query = rest.indexOf('?');
-  if (query >= 0) rest = rest.substring(0, query);
+  final rest = _stripLeadingDotSegments(
+    uri.substring('package:'.length).split(_queryOrFragment).first,
+  );
   // The package name ends at the first separator: `/` or `\` (the front end
   // reads `\` like `/` everywhere), or either one percent-encoded in either
   // hex case. An empty package name escapes: it names no package file.
@@ -146,6 +139,34 @@ bool isEscapingPackageUri(String uri) {
   if (sep.index <= 0) return true;
   final text = rest.substring(sep.index + sep.length).replaceAll(r'\', '/');
   return _collapsesToEmpty(text) != false;
+}
+
+/// Drops the dot segments (`.`, `..`, percent-encoded in either hex case) that
+/// lead [rest], the text after `package:`: Dart removes dot segments from the
+/// whole path, so they vanish before the package name (`./demo//x.dart` is
+/// `demo//x.dart`). A `/` or `\` ends each one.
+String _stripLeadingDotSegments(String rest) {
+  var out = rest;
+  for (var i = out.indexOf(_separator); i >= 0; i = out.indexOf(_separator)) {
+    final seg = decodeUriSegment(out.substring(0, i));
+    if (seg != '.' && seg != '..') break;
+    out = out.substring(i + 1);
+  }
+  return out;
+}
+
+final _separator = RegExp(r'[/\\]');
+final _queryOrFragment = RegExp('[?#]');
+
+/// Whether the schemeless reference [ref], made from a file whose directory
+/// below its package's `lib/` is [dirSegments], reads a host file: the front
+/// end resolves it against the file's `package:` URI, so after dot-segment
+/// removal an empty segment directly after the package name escapes
+/// (`..//x.dart` from `lib/src/c.dart` is `package:pkg//x.dart`).
+bool _relativeReachesHostFile(String ref, List<String> dirSegments) {
+  final text = ref.replaceAll(r'\', '/').split(_queryOrFragment).first;
+  if (text.startsWith('/') || text.contains(':')) return false;
+  return _collapsesToEmpty([...dirSegments, text].join('/')) == true;
 }
 
 /// Removes RFC 3986 dot segments from the `/`-separated package path [path],
@@ -192,16 +213,11 @@ bool _isAbsoluteStagedPath(String path) =>
     path.startsWith('/') ||
     path.startsWith(r'\') ||
     (path.length >= 3 &&
-        ((path.codeUnitAt(0) >= 0x41 && path.codeUnitAt(0) <= 0x5a) ||
-            (path.codeUnitAt(0) >= 0x61 && path.codeUnitAt(0) <= 0x7a)) &&
-        path.codeUnitAt(1) == 0x3a &&
+        _isWindowsDriveSegment(path.substring(0, 2)) &&
         (path.codeUnitAt(2) == 0x2f || path.codeUnitAt(2) == 0x5c));
 
 bool _isWindowsDriveSegment(String s) =>
-    s.length == 2 &&
-    ((s.codeUnitAt(0) >= 0x41 && s.codeUnitAt(0) <= 0x5a) ||
-        (s.codeUnitAt(0) >= 0x61 && s.codeUnitAt(0) <= 0x7a)) &&
-    s.codeUnitAt(1) == 0x3a;
+    s.length == 2 && RegExp('[A-Za-z]:').hasMatch(s);
 
 /// [path] as an absolute `/`-separated path: backslashes become separators,
 /// a relative path resolves against the current directory, and empty and `.`
@@ -227,9 +243,7 @@ String normalizeStagedPath(String path) {
       final floor = unc
           ? (parts.length <= 2 ? parts.length : 2)
           : (parts.isNotEmpty && _isWindowsDriveSegment(parts.first) ? 1 : 0);
-      if (parts.length > floor) {
-        parts.removeLast();
-      }
+      if (parts.length > floor) parts.removeLast();
       continue;
     }
     parts.add(part);
@@ -398,8 +412,8 @@ bool isDisallowedDirectiveUri(
 /// the front end does not read the file the skipped spelling names. An empty
 /// segment is a real segment (RFC 3986); where it sits decides:
 ///
-/// * `package:` URI: dot segments are removed first, then an empty segment
-///   directly after the package name is refused
+/// * `package:` URI: dot segments are removed from the whole path first, then
+///   an empty segment directly after the package name is refused
 ///   (`package:c//s/t.dart` and `package:c///s/t.dart` read the host files
 ///   `/s/t.dart` and `//s/t.dart`, not the package's). After the first path
 ///   segment it is not (`package:c/s//t.dart` reads `lib/s/t.dart`).
@@ -420,18 +434,16 @@ bool hasEmptyPathSegment(String uri) {
   if (text.startsWith(defaultMultiRootPrefix)) {
     text = text.substring(defaultMultiRootPrefix.length);
   } else if (text.startsWith('package:')) {
-    final slash = text.indexOf('/', 'package:'.length);
+    final rest = _stripLeadingDotSegments(text.substring('package:'.length));
+    final slash = rest.indexOf('/');
     if (slash < 0) return false;
-    text = text.substring(slash + 1);
+    text = rest.substring(slash + 1);
   } else {
     if (text.contains(':')) return false;
     if (!text.startsWith('/') || text.startsWith('//')) return false;
     text = text.substring(1);
   }
-  final query = text.indexOf('?');
-  final path = query < 0 ? text : text.substring(0, query);
-  final hash = path.indexOf('#');
-  final clean = hash < 0 ? path : path.substring(0, hash);
+  final clean = text.split(_queryOrFragment).first;
   if (packaged) return _collapsesToEmpty(clean) == true;
   return clean.startsWith('/') || clean.contains('//');
 }
@@ -518,12 +530,12 @@ String? resolveDirectiveUri(
   String multiRootPrefix = defaultMultiRootPrefix,
 }) {
   final text = uri.contains(r'\') ? uri.replaceAll(r'\', '/') : uri;
-  final absolute = _stripPrefix(text, multiRootPrefix);
-  if (absolute != null) {
+  if (text.startsWith(multiRootPrefix)) {
+    final absolute = text.substring(multiRootPrefix.length);
     return _resolvePath(absolute, const [], 0, _PathKind.root);
   }
   if (text.startsWith('package:')) {
-    final rest = text.substring('package:'.length);
+    final rest = _stripLeadingDotSegments(text.substring('package:'.length));
     if (rest.contains('?') || rest.contains('#')) return null;
     final slash = rest.indexOf('/');
     if (slash <= 0) return null;
@@ -556,6 +568,12 @@ String? resolveDirectiveUri(
       ? const <String>[]
       : fromKey.substring(0, slash).split('/');
   final floor = _packageDirOf(fromKey, packageDirs).length;
+  // The front end resolves it against the library's `package:` URI.
+  if (floor > 0 &&
+      base.length >= floor &&
+      _relativeReachesHostFile(path, base.sublist(floor))) {
+    return null;
+  }
   return _resolvePath(path, base, floor, _PathKind.relative);
 }
 
@@ -1462,35 +1480,27 @@ String? _stagedRefViolation(
   String multiRootPrefix,
   bool requireTargetsExist,
 ) {
-  final tool = target.tool;
-  final path = target.path;
-  final ref = target.ref;
-  final from = target.from;
+  final (:tool, :path, :ref, :from) = target;
   final uri = ref.uri;
+  final refused = "$tool: $path ${ref.kind} '$uri' is not a declared input.";
   // A URI spanning lines is refused however it spells its target: the
   // front end's multi-line first-line rule reads a different file than
   // the resolvers below see (see [hasLineBreak]).
-  if (hasLineBreak(uri)) {
-    return "$tool: $path ${ref.kind} '$uri' is not a declared input.";
-  }
+  if (hasLineBreak(uri)) return refused;
   // An empty segment right after a package name, or in an absolute URI, reads
   // a host file (see [hasEmptyPathSegment]): refuse it before resolving.
-  if (hasEmptyPathSegment(uri)) {
-    return "$tool: $path ${ref.kind} '$uri' is not a declared input.";
-  }
-  if (uri.startsWith(multiRootPrefix) || uri.startsWith('dart:')) {
-    return null;
-  }
+  if (hasEmptyPathSegment(uri)) return refused;
+  if (uri.startsWith(multiRootPrefix) || uri.startsWith('dart:')) return null;
   if (uri.startsWith('package:')) {
-    if (isEscapingPackageUri(uri)) {
-      return "$tool: $path ${ref.kind} '$uri' is not a declared input.";
-    }
-    return null;
+    return isEscapingPackageUri(uri) ? refused : null;
   }
   if (isFileSchemeDirectiveUri(uri) ||
       isDisallowedDirectiveUri(uri, multiRootPrefix: multiRootPrefix)) {
-    return "$tool: $path ${ref.kind} '$uri' is not a declared input.";
+    return refused;
   }
+  // A relative reference from a library under `lib/` is resolved by the front
+  // end against the library's `package:` URI (see [_relativeReachesHostFile]).
+  if (_libRelativeReachesHostFile(uri, from)) return refused;
   final resolved = resolveStagedRelativeTarget(uri, from);
   // A null resolution names no declared file (a `//` authority, a
   // fragment, or a decoded `/`): it is refused, never passed. A resolved
@@ -1498,10 +1508,17 @@ String? _stagedRefViolation(
   // [requireTargetsExist] above): the front end may read an absolute
   // host path the scanner sees as a relative staged path, so only a
   // staged file backs a declared input.
-  if (resolved == null ||
-      !declared(resolved) ||
-      (requireTargetsExist && !File(resolved).existsSync())) {
-    return "$tool: $path ${ref.kind} '$uri' is not a declared input.";
-  }
-  return null;
+  final missing = requireTargetsExist && !File(resolved ?? '').existsSync();
+  return resolved == null || !declared(resolved) || missing ? refused : null;
+}
+
+/// Whether the schemeless [uri] in the staged file [from] reads a host file
+/// once resolved against the `package:` URI of a library under a `lib/`
+/// directory on [from]'s path (see [_relativeReachesHostFile]).
+bool _libRelativeReachesHostFile(String uri, String from) {
+  final segs = from.split('/');
+  return [
+    for (var i = 0; i < segs.length - 1; i++)
+      if (segs[i] == 'lib') segs.sublist(i + 1, segs.length - 1),
+  ].any((dir) => _relativeReachesHostFile(uri, dir));
 }

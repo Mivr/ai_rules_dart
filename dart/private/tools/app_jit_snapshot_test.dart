@@ -3424,6 +3424,30 @@ void main(List<String> args) {
     },
   );
 
+  test('--gen-kernel refuses a dot segment before the package name', () {
+    final ws = Directory('${tmp.path}/dot_name_ws')
+      ..createSync(recursive: true);
+    final main = File('${ws.path}/main.dart')
+      ..writeAsStringSync(
+        "import 'package:./pkg//helper.dart';\n"
+        'void main() => print(helperValue);\n',
+      );
+    final String toolPath = args.isNotEmpty
+        ? Runfiles.create().rlocation(args[0])
+        : File.fromUri(Platform.script.resolve('app_jit_snapshot.dart')).path;
+    final ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
+      toolPath,
+      '--gen-kernel',
+      'never-reached-runtime',
+      '--input-source=${main.path}',
+    ]);
+    expect(res.exitCode, isNonZero);
+    expect(
+      res.stderr as String,
+      contains("import 'package:./pkg//helper.dart' is not a declared input"),
+    );
+  });
+
   test('--gen-kernel passes the guard for a relative doubled slash', () {
     final ws = Directory('${tmp.path}/empty_rel_ws')
       ..createSync(recursive: true);

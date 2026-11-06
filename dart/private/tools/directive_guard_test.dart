@@ -988,6 +988,134 @@ void main(List<String> args) {
     });
   });
 
+  group('dot segments before the package name and relative from lib/', () {
+    const refused = [
+      'package:./demo//x.dart',
+      'package:../demo//x.dart',
+      'package:%2E/demo//x.dart',
+      'package:%2e%2e/demo//x.dart',
+      'package:./demo///x.dart',
+    ];
+    const accepted = [
+      'package:demo/src//b.dart',
+      'package:demo/a//b//c.dart',
+      'package:demo/src//../b.dart',
+      'package:demo/./src/b.dart',
+      'package:demo/a/../src/b.dart',
+      'package:./demo/src/b.dart',
+    ];
+    const dirs = {'demo': 'demo/lib'};
+    const kinds = ['import', 'export', 'part', 'part of'];
+
+    test('every spelling is an escape and has an empty segment', () {
+      for (final uri in refused) {
+        expect(isEscapingPackageUri(uri), isTrue, reason: uri);
+        expect(hasEmptyPathSegment(uri), isTrue, reason: uri);
+        expect(resolveDirectiveUri(uri, 'demo/lib/a.dart', dirs), isNull);
+      }
+    });
+
+    test('the dot segment is dropped before the package is named', () {
+      expect(
+        resolveDirectiveUri('package:./demo/b.dart', 'demo/lib/a.dart', dirs),
+        'demo/lib/b.dart',
+      );
+      expect(
+        resolveDirectiveUri('package:./other/b.dart', 'demo/lib/a.dart', dirs),
+        isNull,
+      );
+      for (final uri in accepted) {
+        expect(isEscapingPackageUri(uri), isFalse, reason: uri);
+        expect(hasEmptyPathSegment(uri), isFalse, reason: uri);
+        expect(resolveDirectiveUri(uri, 'demo/lib/a.dart', dirs), isNotNull);
+      }
+    });
+
+    test('the refusals that stay refused', () {
+      for (final uri in [
+        'package:p//x.dart',
+        'package:p///x.dart',
+        'package:p/../../x.dart',
+        'package:./p/../../x.dart',
+        'package:p/a%2Fb.dart',
+        'package:p/a%5Cb.dart',
+      ]) {
+        expect(isEscapingPackageUri(uri), isTrue, reason: uri);
+      }
+    });
+
+    test('a relative reference from lib/ resolves against its package URI', () {
+      for (final MapEntry<String, List<String>> entry in {
+        'demo/lib/src/c.dart': ['..//abs/m.dart', '.././/abs/m.dart'],
+        'demo/lib/a.dart': ['.//abs/m.dart', './/abs/m.dart?q'],
+      }.entries) {
+        for (final String ref in entry.value) {
+          expect(
+            resolveDirectiveUri(ref, entry.key, dirs),
+            isNull,
+            reason: '$ref from ${entry.key}',
+          );
+        }
+      }
+      for (final ref in [
+        'b.dart',
+        '../b.dart',
+        'sub//b.dart',
+        './sub/b.dart',
+      ]) {
+        expect(
+          resolveDirectiveUri(ref, 'demo/lib/src/c.dart', dirs),
+          isNotNull,
+          reason: ref,
+        );
+      }
+    });
+
+    for (final decoy in [false, true]) {
+      test('the staged check refuses each shape (decoy: $decoy)', () {
+        final root = Directory('${tmp.path}/dotname$decoy/demo.proj')
+          ..createSync(recursive: true);
+        void write(String relative, String content) =>
+            File('${root.path}/$relative').writeAsStringSync(content);
+        Directory('${root.path}/lib/src').createSync(recursive: true);
+        if (decoy) {
+          Directory('${root.path}/lib/abs').createSync(recursive: true);
+          write('lib/abs/m.dart', 'library m;\n');
+        }
+        write('lib/src/c.dart', "import '..//abs/m.dart';\n");
+        write('lib/a.dart', "import './/abs/m.dart';\n");
+        write('lib/src/ok.dart', "import '../src//c.dart';\n");
+        var n = 0;
+        for (final uri in refused) {
+          for (final kind in kinds) {
+            write('lib/f${n++}.dart', "$kind '$uri';\n");
+          }
+        }
+        for (final uri in accepted) {
+          write('lib/ok${n++}.dart', "import '$uri';\n");
+        }
+        final List<String> violations = findStagedDirectiveViolations([
+          root.path,
+        ], tool: 'guard-test');
+        expect(violations, hasLength(refused.length * kinds.length + 2));
+        for (final shape in [
+          "import '..//abs/m.dart'",
+          "import './/abs/m.dart'",
+        ]) {
+          expect(violations, contains(contains('$shape is not a declared')));
+        }
+        for (final uri in refused) {
+          for (final kind in kinds) {
+            expect(
+              violations,
+              contains(contains("$kind '$uri' is not a declared input.")),
+            );
+          }
+        }
+      });
+    }
+  });
+
   group('every tool enforces the shared check', () {
     // Each Dart-reading tool and the marker proving it enforces the shared
     // staged-source check: the runners call it directly, the whole-program
