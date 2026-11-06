@@ -46,8 +46,9 @@ jobs:
   coverage:
     runs-on: ubuntu-latest
     # A cold e2e/coverage coverage run, then a cold root-workspace coverage run
-    # of //dart/runfiles; healthy runs finish well inside this.
-    timeout-minutes: 60
+    # of //dart/runfiles; healthy runs finish well inside this. The last_green
+    # step below has its own limit and adds the e2e workspaces.
+    timeout-minutes: 200
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Enable and verify Linux user namespaces
@@ -68,6 +69,62 @@ jobs:
       - name: e2e/coverage - ruleset report check
         working-directory: e2e/coverage
         run: bazel --max_idle_secs=60 run //:lcov_check_ruleset -- "$RUNNER_TEMP/ruleset_coverage_report.dat"
+      # The e2e workspaces under Bazel's last_green build, so an upstream
+      # regression shows up before the release. Like ci.yaml's `last_rc` it
+      # never blocks: a red workspace is a `::warning::` naming the folder,
+      # and neither this step nor the job fails because of it. The folders are
+      # the Linux `test` shards' of ci.yaml that have an `e2e.yaml`; each
+      # staged copy takes the version written to its `.bazelversion`.
+      - name: e2e workspaces on last_green (never blocking)
+        continue-on-error: true
+        timeout-minutes: 150
+        shell: bash
+        run: |
+          ws="$GITHUB_WORKSPACE"
+          logdir="${RUNNER_TEMP}/last-green-logs"
+          outbasedir="${RUNNER_TEMP}/bazel-servers"
+          rm -rf "$logdir"
+          mkdir -p "$logdir"
+          folders=""
+          while IFS= read -r folder; do
+            [ -f "$ws/$folder/e2e.yaml" ] && folders="$folders$folder"$'\n'
+          done < <(yq -o=json . .github/workflows/ci.yaml | jq -r '.jobs.test.strategy.matrix.include[] | select(.os == "ubuntu-latest") | .folders')
+          if [ -z "$folders" ]; then
+            echo "::warning::no folder with an e2e.yaml found for the last_green run"
+            exit 0
+          fi
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            echo "last_green" > "$ws/$folder/.bazelversion"
+          done <<< "$folders"
+          first="$(head -n 1 <<< "$folders")"
+          label="$(cd "$ws/$first" && bazel --max_idle_secs=60 version | grep '^Build label:')" || label="unknown"
+          (cd "$ws/$first" && bazel --max_idle_secs=60 shutdown) || true
+          echo "Workspaces run under last_green: $label"
+          run_one() {
+            slug="$(printf '%s' "$1" | tr '/.' '_')"
+            rc=0
+            (
+              cd "$ws/tools" &&
+              bazel --max_idle_secs=60 --output_base="$outbasedir/$slug" run //e2e_runner:e2e_runner -- --workspace="../$1" --bazel=bazel
+            ) >"$logdir/$slug.log" 2>&1 || rc=1
+            (cd "$ws/tools" && bazel --max_idle_secs=60 --output_base="$outbasedir/$slug" shutdown) >>"$logdir/$slug.log" 2>&1 ||
+              echo "::warning::bazel shutdown failed for $1" >>"$logdir/$slug.log"
+            echo "$rc" >"$logdir/$slug.status"
+            { echo "===== $1 (exit $rc) ====="; cat "$logdir/$slug.log"; }
+          }
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            while [ "$(jobs -rp | wc -l)" -ge 3 ]; do sleep 5; done
+            run_one "$folder" &
+          done <<< "$folders"
+          wait
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            slug="$(printf '%s' "$folder" | tr '/.' '_')"
+            [ "$(cat "$logdir/$slug.status" 2>/dev/null)" = 0 ] || echo "::warning::$folder is red on last_green ($label)"
+          done <<< "$folders"
+          exit 0
   # Same folders, commands and flags as the old per-folder macOS jobs from
   # ci.yaml, in 2 shards sharing one Bazel disk cache per shard on cached
   # (manual dispatch) runs. The repository and bazelisk caches keep their

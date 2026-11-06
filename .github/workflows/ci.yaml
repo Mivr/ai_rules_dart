@@ -533,6 +533,118 @@ jobs:
         if: always() && matrix.os == 'ubuntu-latest'
         shell: bash
         run: .github/scripts/ci_disk_report.sh "end of job"
+  # The e2e workspaces again, under the oldest Bazel the module supports
+  # (`bazel_compatibility` in MODULE.bazel). Each shard takes the folders of
+  # the matching Linux `test` shard from that job's matrix above, so no second
+  # folder list exists, and runs in parallel with it: the merge critical path
+  # is one shard of either job. Only folders with an `e2e.yaml` run: the
+  # others have no runner pass to repeat. The `test` job's pass (the
+  # `.bazelversion` version) is not repeated here. The runner's own build
+  # stays on the tools module's Bazel; the staged copy of each workspace takes
+  # the version pinned in its `.bazelversion`. The pinned version is printed
+  # once, from `bazel version`, and a client that reports another one fails
+  # the step.
+  e2e-floor:
+    name: e2e-floor (shard ${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      FLOOR_VERSION: "9.0.0"
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Free unused preinstalled toolchains
+        shell: bash
+        run: .github/scripts/ci_free_disk.sh
+      - name: Enable and verify Linux user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          bazelisk-cache: true
+          # Same cache policy as the `test` job; the disk cache has its own
+          # key per shard.
+          disk-cache: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached && format('floor-linux-{0}', matrix.shard) || false }}
+          external-cache: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached }}
+          repository-cache: ${{ github.event_name != 'schedule' && (github.ref_type == 'tag' || !inputs.uncached) }}
+          cache-save: ${{ github.ref == 'refs/heads/main' && github.event_name != 'schedule' && !inputs.uncached }}
+          cache-version: "3"
+          bazelrc: |
+            common --announce_rc
+            common --color=yes
+            common --enable_bzlmod=true
+            # Memory bounds for three concurrent folders, as in the `test` job.
+            startup --host_jvm_args=-Xmx2g
+            build --local_resources=cpu=1
+            build --local_resources=memory=HOST_RAM*.15
+            build --experimental_disk_cache_gc_max_size=4G
+            build --experimental_disk_cache_gc_max_age=7d
+            build --experimental_disk_cache_gc_idle_delay=5m
+      - name: Run the e2e workspaces under the floor version
+        env:
+          SHARD: ${{ matrix.shard }}
+          SHARD_TOTAL: ${{ strategy.job-total }}
+        shell: bash
+        run: |
+          ws="$GITHUB_WORKSPACE"
+          logdir="${RUNNER_TEMP}/floor-logs"
+          outbasedir="${RUNNER_TEMP}/bazel-servers"
+          rm -rf "$logdir"
+          mkdir -p "$logdir"
+          matrix="$(yq -o=json . .github/workflows/ci.yaml)"
+          # A new Linux `test` shard needs a matching entry in this job's matrix.
+          linux="$(jq '[.jobs.test.strategy.matrix.include[] | select(.os == "ubuntu-latest")] | length' <<< "$matrix")"
+          if [ "$linux" != "$SHARD_TOTAL" ]; then
+            echo "::error::the test job has $linux Linux shards but this job has $SHARD_TOTAL"
+            exit 1
+          fi
+          folders=""
+          while IFS= read -r folder; do
+            [ -f "$ws/$folder/e2e.yaml" ] && folders="$folders$folder"$'\n'
+          done < <(jq -r --argjson shard "$SHARD" '.jobs.test.strategy.matrix.include[] | select(.os == "ubuntu-latest" and .shard == $shard) | .folders' <<< "$matrix")
+          if [ -z "$folders" ]; then
+            echo "::error::shard $SHARD has no folder with an e2e.yaml"
+            exit 1
+          fi
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            echo "$FLOOR_VERSION" > "$ws/$folder/.bazelversion"
+          done <<< "$folders"
+          first="$(head -n 1 <<< "$folders")"
+          label="$(cd "$ws/$first" && bazel --max_idle_secs=60 version | grep '^Build label:')"
+          (cd "$ws/$first" && bazel --max_idle_secs=60 shutdown)
+          echo "Workspaces of shard $SHARD run under: $label"
+          if [ "$label" != "Build label: $FLOOR_VERSION" ]; then
+            echo "::error::expected Build label: $FLOOR_VERSION"
+            exit 1
+          fi
+          run_one() {
+            slug="$(printf '%s' "$1" | tr '/.' '_')"
+            rc=0
+            (
+              cd "$ws/tools" &&
+              bazel --max_idle_secs=60 --output_base="$outbasedir/$slug" run //e2e_runner:e2e_runner -- --workspace="../$1" --bazel=bazel
+            ) >"$logdir/$slug.log" 2>&1 || rc=1
+            (cd "$ws/tools" && bazel --max_idle_secs=60 --output_base="$outbasedir/$slug" shutdown) >>"$logdir/$slug.log" 2>&1 ||
+              echo "::warning::bazel shutdown failed for $1" >>"$logdir/$slug.log"
+            echo "$rc" >"$logdir/$slug.status"
+            { echo "===== $1 (exit $rc) ====="; cat "$logdir/$slug.log"; }
+          }
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            while [ "$(jobs -rp | wc -l)" -ge 3 ]; do sleep 5; done
+            run_one "$folder" &
+          done <<< "$folders"
+          wait
+          fail=0
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            slug="$(printf '%s' "$folder" | tr '/.' '_')"
+            [ "$(cat "$logdir/$slug.status")" = 0 ] || { echo "::error::$folder failed under $FLOOR_VERSION"; fail=1; }
+          done <<< "$folders"
+          exit "$fail"
   # Push CI's only macOS job: a fast smoke test that always runs cold (no
   # cache restore or save), so it executes real compile actions under the
   # darwin sandbox on every run instead of replaying the disk cache. The
@@ -1955,6 +2067,7 @@ jobs:
   conclusion:
     needs:
       - test
+      - e2e-floor
       - mac-smoke
       - format-hermeticity
       - run-home
