@@ -810,6 +810,29 @@ dart_test(
     ],
 )
 
+# Guards `WorkRequest.inputs` paths whose length needs a multi-byte varint, and
+# that `kernel_module_test.dart` frames its `Input` messages with that encoder.
+dart_test(
+    name = "kernel_module_input_varint_test",
+    size = "small",
+    srcs = [
+        "comma_patch.dart",
+        "dill_outline.dart",
+        "dill_reader.dart",
+        "kernel_module.dart",
+        "lib/worker_protocol.dart",
+        "worker_test_encode.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    args = ["$(rlocationpath :kernel_module_test.dart)"],
+    data = [":kernel_module_test.dart"],
+    main = "kernel_module_input_varint_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
 # The comma-splitting patch's unit tests: byte patterns, the fail-closed
 # helpers, the file and CLI entry points against every listed SDK, and the
 # no-shared-state regression guard. The listed SDKs go beyond the two the
