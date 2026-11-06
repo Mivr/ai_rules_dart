@@ -316,7 +316,7 @@ jobs:
             (
               cd "$(bazel_home "$1")" &&
               if [ -f "$ws/$1/e2e.yaml" ]; then
-                bazel "${idle[@]}" --output_base="$outbasedir/$slug" run //e2e_runner:e2e_runner -- --workspace="../$1" --bazel=bazel
+                MSYS2_ARG_CONV_EXCL="*" bazel "${idle[@]}" --output_base="$outbasedir/$slug" run //e2e_runner:e2e_runner -- --workspace="../$1" --bazel=bazel
               else
                 case " $build_only_folders " in
                   *" $1 "*) bazel "${idle[@]}" --output_base="$outbasedir/$slug" build //... ;;

@@ -207,7 +207,7 @@ jobs:
             if (
               if [ -f "$ws/$1/e2e.yaml" ]; then
                 cd "$ws/tools" &&
-                bazel --output_base="$outbasedir/$slug" run //e2e_runner:e2e_runner -- --workspace="../$1" --bazel=bazel
+                MSYS2_ARG_CONV_EXCL="*" bazel --output_base="$outbasedir/$slug" run //e2e_runner:e2e_runner -- --workspace="../$1" --bazel=bazel
               else
                 cd "$ws/$1" &&
                 case " $build_only_folders " in
