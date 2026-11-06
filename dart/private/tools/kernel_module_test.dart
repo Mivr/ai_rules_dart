@@ -4158,10 +4158,7 @@ void main(List<String> args) {
   });
 
   test('WorkRequest.inputs restricts which declared sources may be read and compiled', () async {
-    Uint8List encodeInput(String path) {
-      final pathBytes = utf8.encode(path);
-      return Uint8List.fromList([0x0a, pathBytes.length, ...pathBytes]);
-    }
+    Uint8List encodeInput(String p) => encodeInputForTest(p, Uint8List(0));
 
     _write('pkg/lib/web.dart', 'class Web {}\n');
     _write('pkg/test/main_test.dart', "import 'package:pkg/web.dart';\n");
