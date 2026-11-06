@@ -134,21 +134,29 @@ String? _hookRev(String preCommit) {
 }
 
 /// The entries of the top-level `repos` list of [preCommit].
-List<YamlMap> _repos(String preCommit) => [
-  if (loadYaml(preCommit) case YamlMap(nodes: {'repos': final YamlList repos}))
-    ...repos.whereType<YamlMap>(),
-];
+List<YamlMap> _repos(String preCommit) {
+  final Object? doc = loadYaml(preCommit);
+  return [
+    if (doc case YamlMap(nodes: {'repos': final YamlList repos}))
+      ...repos.whereType<YamlMap>(),
+  ];
+}
 
 /// The entries of [repos] whose `repo:` names [_hookRepo].
 List<YamlMap> _mirrors(List<YamlMap> repos) => [
   for (final YamlMap repo in repos)
-    if (repo['repo'] case final String url when _hookRepoUrl.hasMatch(url))
+    if (_field(repo, 'repo') case final String url
+        when _hookRepoUrl.hasMatch(url))
       repo,
 ];
 
+/// The value stored under [key] in [map], typed as [Object?].
+Object? _field(YamlMap map, String key) => map[key];
+
 /// The `hooks` of one `repos` entry.
 List<YamlMap> _hooks(YamlMap repo) => [
-  if (repo['hooks'] case final YamlList hooks) ...hooks.whereType<YamlMap>(),
+  if (_field(repo, 'hooks') case final YamlList hooks)
+    ...hooks.whereType<YamlMap>(),
 ];
 
 /// The entries of [hooks] whose `id` is [id].
@@ -159,7 +167,7 @@ List<YamlMap> _withId(List<YamlMap> hooks, String id) => [
 
 /// The `args` of [hook] as strings; empty when it sets none.
 List<String> _args(YamlMap hook) => [
-  if (hook['args'] case final YamlList args)
+  if (_field(hook, 'args') case final YamlList args)
     for (final Object? arg in args) '$arg',
 ];
 

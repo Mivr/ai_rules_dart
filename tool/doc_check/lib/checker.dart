@@ -34,7 +34,7 @@ class CheckInputs {
 /// The result of a check run: report lines for stderr and a verdict.
 class CheckReport {
   /// Creates a report.
-  const new(this.lines, this.failed);
+  const new(this.lines, {required this.failed});
 
   /// Report lines, one problem or warning per line.
   final List<String> lines;
@@ -63,7 +63,7 @@ CheckReport runCheck(CheckInputs inputs) {
   ];
   return CheckReport(
     lines,
-    filtered.errors.isNotEmpty || filtered.staleEntries.isNotEmpty,
+    failed: filtered.errors.isNotEmpty || filtered.staleEntries.isNotEmpty,
   );
 }
 
