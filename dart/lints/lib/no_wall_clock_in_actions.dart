@@ -71,16 +71,13 @@ class _Visitor extends SimpleAstVisitor<void> {
       return;
     }
     final ConstructorName constructor = node.constructorName;
-    final List<String> parts = constructor.type.toSource().split('.');
-    if (parts.length > 2) {
-      return;
-    }
+    final NamedType type = constructor.type;
     _checkTypeMember((
-      prefix: parts.length == 2 ? parts.first : null,
-      typeName: parts.length == 2 ? parts.last : parts.first,
+      prefix: type.importPrefix?.name.lexeme,
+      typeName: type.name.lexeme,
       member: constructor.name?.name,
       arguments: node.argumentList,
-      target: constructor.name ?? constructor.type,
+      target: constructor.name ?? type,
     ), node);
   }
 
@@ -91,17 +88,42 @@ class _Visitor extends SimpleAstVisitor<void> {
     }
     final Expression? receiver = node.target;
     if (receiver == null) {
+      if (!node.isCascaded && node.methodName.name == 'Random') {
+        _checkTypeMember((
+          prefix: null,
+          typeName: 'Random',
+          member: null,
+          arguments: node.argumentList,
+          target: node.methodName,
+        ), node);
+      }
       return;
     }
     final Expression unparenthesizedReceiver = unparenthesized(receiver);
+    final unit = node.root as CompilationUnit;
     if (unparenthesizedReceiver is SimpleIdentifier) {
-      _checkTypeMember((
-        prefix: null,
-        typeName: unparenthesizedReceiver.name,
-        member: node.methodName.name,
-        arguments: node.argumentList,
-        target: node.methodName,
-      ), node);
+      if (node.methodName.name == 'Random' &&
+          prefixImportsLibrary(
+            unit,
+            unparenthesizedReceiver.name,
+            'dart:math',
+          )) {
+        _checkTypeMember((
+          prefix: unparenthesizedReceiver.name,
+          typeName: 'Random',
+          member: null,
+          arguments: node.argumentList,
+          target: node.methodName,
+        ), node);
+      } else {
+        _checkTypeMember((
+          prefix: null,
+          typeName: unparenthesizedReceiver.name,
+          member: node.methodName.name,
+          arguments: node.argumentList,
+          target: node.methodName,
+        ), node);
+      }
     } else if (unparenthesizedReceiver is PrefixedIdentifier) {
       _checkTypeMember((
         prefix: unparenthesizedReceiver.prefix.name,
@@ -132,18 +154,23 @@ class _Visitor extends SimpleAstVisitor<void> {
     if (!_gate.shouldCheck(context)) {
       return;
     }
+    // `(Directory).systemTemp`, `Directory..systemTemp`, or
     // `io.Directory.systemTemp` through a `dart:io` import prefix.
-    final Expression? target = node.target;
-    if (node.propertyName.name == 'systemTemp' &&
-        target is PrefixedIdentifier &&
-        target.identifier.name == 'Directory') {
-      if (importUriForPrefix(
-            node.root as CompilationUnit,
-            target.prefix.name,
-          ) ==
-          'dart:io') {
-        rule.reportAtNode(node.propertyName);
-      }
+    final Expression rawTarget = node.realTarget;
+    if (node.propertyName.name != 'systemTemp') {
+      return;
+    }
+    final Expression target = unparenthesized(rawTarget);
+    if (target is SimpleIdentifier && target.name == 'Directory') {
+      rule.reportAtNode(node.propertyName);
+    } else if (target is PrefixedIdentifier &&
+        target.identifier.name == 'Directory' &&
+        prefixImportsLibrary(
+          node.root as CompilationUnit,
+          target.prefix.name,
+          'dart:io',
+        )) {
+      rule.reportAtNode(node.propertyName);
     }
   }
 
@@ -172,7 +199,7 @@ class _Visitor extends SimpleAstVisitor<void> {
 
   /// Reports unseeded `Random()` and `Random.secure()` constructions.
   void _checkRandom(_TypeMember member) {
-    if (member.member == null) {
+    if (member.member == null || member.member == 'new') {
       if (member.arguments.arguments.isEmpty) {
         rule.reportAtNode(member.target);
       }
@@ -185,7 +212,7 @@ class _Visitor extends SimpleAstVisitor<void> {
   /// unqualified references always do, prefixed ones only when [unit] imports
   /// [uri] under [prefix].
   bool _isDartLibrary(CompilationUnit unit, String? prefix, String uri) {
-    return prefix == null || importUriForPrefix(unit, prefix) == uri;
+    return prefix == null || prefixImportsLibrary(unit, prefix, uri);
   }
 }
 

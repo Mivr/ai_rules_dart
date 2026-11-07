@@ -92,7 +92,7 @@ class _Visitor extends SimpleAstVisitor<void> {
     }
     if (receiver is PrefixedIdentifier) {
       return receiver.identifier.name == 'Process' &&
-          importUriForPrefix(unit, receiver.prefix.name) == 'dart:io';
+          prefixImportsLibrary(unit, receiver.prefix.name, 'dart:io');
     }
     return false;
   }
@@ -105,9 +105,12 @@ class _Visitor extends SimpleAstVisitor<void> {
     for (final Argument argument in arguments.arguments) {
       if (argument is NamedArgument) {
         if (argument.name.lexeme == 'environment') {
-          hasEnvironment = argument.argumentExpression is! NullLiteral;
+          hasEnvironment =
+              unparenthesized(argument.argumentExpression) is! NullLiteral;
         } else if (argument.name.lexeme == 'includeParentEnvironment') {
-          final Expression pinned = argument.argumentExpression;
+          final Expression pinned = unparenthesized(
+            argument.argumentExpression,
+          );
           dropsParent = pinned is BooleanLiteral && !pinned.value;
         }
       }

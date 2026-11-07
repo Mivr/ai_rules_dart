@@ -9,6 +9,7 @@ import 'package:analyzer/analysis_rule/rule_context.dart';
 import 'package:analyzer/analysis_rule/rule_visitor_registry.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
+import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/error/error.dart';
 
 import 'package:rules_dart_project_lints/project_lint_scope.dart';
@@ -90,19 +91,25 @@ class _Visitor extends SimpleAstVisitor<void> {
     }
     final Expression? target = node.target;
     if (target == null) {
-      rule.reportAtNode(node.methodName);
+      final Element? element = node.methodName.element;
+      if (element == null || (element.library?.isDartCore ?? false)) {
+        rule.reportAtNode(node.methodName);
+      }
       return;
     }
     if (target is SimpleIdentifier &&
-        importUriForPrefix(node.root as CompilationUnit, target.name) ==
-            'dart:core') {
+        prefixImportsLibrary(
+          node.root as CompilationUnit,
+          target.name,
+          'dart:core',
+        )) {
       rule.reportAtNode(node.methodName);
     }
   }
 
   /// Reports text writes on `dart:io` `stdout`.
   void _checkStdoutWrite(MethodInvocation node) {
-    if (_isStdoutTarget(node.target, node.root as CompilationUnit)) {
+    if (_isStdoutTarget(node.realTarget, node.root as CompilationUnit)) {
       rule.reportAtNode(node.methodName);
     }
   }
@@ -115,17 +122,21 @@ class _Visitor extends SimpleAstVisitor<void> {
     }
     final Expression receiver = unparenthesized(target);
     if (receiver is SimpleIdentifier) {
-      return !receiver.isQualified && receiver.name == 'stdout';
+      if (receiver.isQualified || receiver.name != 'stdout') {
+        return false;
+      }
+      final Element? element = receiver.element;
+      return element == null || element.library?.uri.toString() == 'dart:io';
     }
     if (receiver is PrefixedIdentifier) {
       return receiver.identifier.name == 'stdout' &&
-          importUriForPrefix(unit, receiver.prefix.name) == 'dart:io';
+          prefixImportsLibrary(unit, receiver.prefix.name, 'dart:io');
     }
     if (receiver is PropertyAccess) {
       final Expression? inner = receiver.target;
       return receiver.propertyName.name == 'stdout' &&
           inner is SimpleIdentifier &&
-          importUriForPrefix(unit, inner.name) == 'dart:io';
+          prefixImportsLibrary(unit, inner.name, 'dart:io');
     }
     return false;
   }

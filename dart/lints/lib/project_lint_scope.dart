@@ -26,17 +26,23 @@ const Set<String> _nonProductionSegments = {
   'third_party',
 };
 
-/// Staged-project marker separating the staging root from workspace paths.
+/// Staged-project marker separating a `<name>.proj` staging root from
+/// workspace-relative paths under `src/`.
 ///
-/// `dart_analyze` stages each target under `<target>.dart_analyze.proj/src/`;
-/// the workspace-relative path of a staged unit starts after this marker.
-const String _stagedSrcMarker = '.dart_analyze.proj/src/';
+/// `dart_analyze` stages targets under `<target>.dart_analyze.proj/src/` or
+/// `<target>.dart_analyze.summary.proj/src/` (and `analyze_runner` strips
+/// options under `<target>.dart_analyze.proj.stripped/src/`); the
+/// workspace-relative path of a staged unit starts after this marker.
+final RegExp _stagedSrcMarker = RegExp(r'\.proj(?:\.stripped)?/src/');
+
+/// Matches a normalized Windows drive-letter root prefix such as `D:/`.
+final RegExp _windowsDrive = RegExp('^[A-Za-z]:/');
 
 /// Whether the Dart compilation unit at [unitPath] is production code that
 /// the project lint rules check.
 ///
-/// The workspace-relative path is derived from [unitPath] after
-/// `.dart_analyze.proj/src/` when staged by `dart_analyze`, otherwise
+/// The workspace-relative path is derived from [unitPath] after the staged
+/// `<name>.proj/src/` marker when staged by `dart_analyze`, otherwise
 /// relative to [packageRoot] (stripping a leading `src/` when present) so
 /// standalone and fixture tests still analyze `lib/...` paths normally while
 /// skipping `*_test.dart` and `test/...` paths. Units outside production
@@ -64,22 +70,42 @@ bool isProductionProjectLintPath(String unitPath, {String? packageRoot}) {
 /// marker when present, otherwise relative to [packageRoot].
 String _workspaceRelativePath(String unitPath, String? packageRoot) {
   final String normalized = unitPath.replaceAll(r'\', '/');
-  final int markerAt = normalized.indexOf(_stagedSrcMarker);
-  if (markerAt >= 0) {
-    return normalized.substring(markerAt + _stagedSrcMarker.length);
+  final RegExpMatch? stagedMatch = _stagedSrcMarker
+      .allMatches(normalized)
+      .lastOrNull;
+  if (stagedMatch != null) {
+    return normalized.substring(stagedMatch.end);
   }
   if (packageRoot != null && packageRoot.isNotEmpty) {
-    final String root = packageRoot.replaceAll(r'\', '/');
-    final prefix = root.endsWith('/') ? root : '$root/';
-    if (normalized.startsWith(prefix)) {
-      final String relative = normalized.substring(prefix.length);
-      if (relative.startsWith('src/')) {
-        return relative.substring('src/'.length);
-      }
-      return relative;
+    final String? stripped = _stripRootPrefix(normalized, packageRoot);
+    if (stripped != null) {
+      return stripped;
     }
   }
   return normalized;
+}
+
+/// Returns [normalizedPath] relative to [rawRoot] (stripping a leading `src/`
+/// when present), or `null` when [normalizedPath] does not sit under [rawRoot].
+String? _stripRootPrefix(String normalizedPath, String rawRoot) {
+  String root = rawRoot.replaceAll(r'\', '/');
+  while (root.length > 1 && root.endsWith('/')) {
+    root = root.substring(0, root.length - 1);
+  }
+  final prefix = root == '/' ? '/' : '$root/';
+  final bool matches =
+      normalizedPath.startsWith(prefix) ||
+      (_windowsDrive.hasMatch(prefix) &&
+          normalizedPath.length >= prefix.length &&
+          normalizedPath.substring(0, prefix.length).toLowerCase() ==
+              prefix.toLowerCase());
+  if (!matches) {
+    return null;
+  }
+  final String relative = normalizedPath.substring(prefix.length);
+  return relative.startsWith('src/')
+      ? relative.substring('src/'.length)
+      : relative;
 }
 
 /// Whether [unit] at [unitPath] is a persistent-worker unit whose `print` and
@@ -113,10 +139,16 @@ String _basename(String path) {
 /// Whether [unit] imports `worker_protocol.dart` under any URI spelling.
 bool _importsWorkerProtocol(CompilationUnit unit) {
   for (final Directive directive in unit.directives) {
-    if (directive is ImportDirective &&
-        (directive.uri.stringValue?.endsWith('worker_protocol.dart') ??
-            false)) {
-      return true;
+    if (directive is ImportDirective) {
+      if (directive.uri.stringValue?.endsWith('worker_protocol.dart') ??
+          false) {
+        return true;
+      }
+      for (final Configuration config in directive.configurations) {
+        if (config.uri.stringValue?.endsWith('worker_protocol.dart') ?? false) {
+          return true;
+        }
+      }
     }
   }
   return false;
@@ -156,18 +188,26 @@ class _PersistentMainScanner extends GeneralizingAstVisitor<void> {
   }
 }
 
-/// The URI imported under [prefix] in [unit], or `null` when [unit] imports
-/// nothing under that prefix.
-///
-/// Only the prefix mapping is reported; callers compare the URI against the
-/// `dart:` library they accept.
-String? importUriForPrefix(CompilationUnit unit, String prefix) {
+/// Whether [unit] imports [libraryUri] under [prefix] (directly or via a
+/// conditional import configuration).
+bool prefixImportsLibrary(
+  CompilationUnit unit,
+  String prefix,
+  String libraryUri,
+) {
   for (final Directive directive in unit.directives) {
     if (directive is ImportDirective && directive.prefix?.name == prefix) {
-      return directive.uri.stringValue;
+      if (directive.uri.stringValue == libraryUri) {
+        return true;
+      }
+      for (final Configuration config in directive.configurations) {
+        if (config.uri.stringValue == libraryUri) {
+          return true;
+        }
+      }
     }
   }
-  return null;
+  return false;
 }
 
 /// [expression] without any surrounding parentheses.
@@ -207,10 +247,19 @@ final class ProjectLintUnitGate {
     if (!identical(unit, _unit)) {
       _unit = unit;
       final String path = current.file.path;
-      _inScope = isProductionProjectLintPath(
-        path,
-        packageRoot: context.package?.root.path,
-      );
+      final String? rootPath =
+          context.package?.root.path ??
+          context
+              .definingUnit
+              .unit
+              .declaredFragment
+              ?.element
+              .session
+              .analysisContext
+              .contextRoot
+              .root
+              .path;
+      _inScope = isProductionProjectLintPath(path, packageRoot: rootPath);
       _isWorker = _inScope && workerOnly && isPersistentWorkerUnit(unit, path);
     }
     return _inScope && (!workerOnly || _isWorker);
