@@ -493,8 +493,9 @@ jobs:
         shell: powershell
         run: |
           [System.IO.File]::WriteAllText(".bazelversion", "9.3.0`n")
-          bazel --output_base="$env:RUNNER_TEMP/bazel-pwsh" build //...
-          bazel --output_base="$env:RUNNER_TEMP/bazel-pwsh" run //:app
+          bazel --output_base="$env:RUNNER_TEMP/bazel-pwsh" build "--repo_contents_cache=" //...
+          bazel --output_base="$env:RUNNER_TEMP/bazel-pwsh" run "--repo_contents_cache=" //:app
+          bazel --output_base="$env:RUNNER_TEMP/bazel-pwsh" shutdown
       # Same guard, other direction: shadow find/readlink/cp/rm/mv with
       # shims that fail loudly, fetch the mixed hosted+git workspace twice
       # (normal vs stubbed PATH, fresh output bases so both really fetch),
@@ -506,13 +507,24 @@ jobs:
         run: |
           ws="${GITHUB_WORKSPACE}"
           shims="$(mktemp -d)"
+          shutdown_pw() {
+            for ob in "$RUNNER_TEMP/bazel-pw-normal" "$RUNNER_TEMP/bazel-pw-stubbed"; do
+              if [ -d "$ob" ]; then
+                ( cd "$ws/e2e/pub_fetch_powershell" && bazel --max_idle_secs=60 --output_base="$ob" shutdown ) || echo "::warning::bazel shutdown failed for $ob"
+              fi
+            done
+            rm -rf "$shims"
+          }
+          trap shutdown_pw EXIT
           for tool in find readlink cp rm mv; do
             printf '#!/bin/sh\necho "blocked: %s must not be used" >&2\nexit 99\n' "$tool" > "$shims/$tool"
             chmod +x "$shims/$tool"
           done
           echo "9.3.0" > "$ws/e2e/pub_fetch_powershell/.bazelversion"
-          ( cd "$ws/e2e/pub_fetch_powershell" && bazel --output_base="$RUNNER_TEMP/bazel-pw-normal" build //... )
-          ( cd "$ws/e2e/pub_fetch_powershell" && bazel --output_base="$RUNNER_TEMP/bazel-pw-stubbed" build --repo_env=PATH="$shims:/usr/local/bin:/usr/bin:/bin" //... )
+          ( cd "$ws/e2e/pub_fetch_powershell" && bazel --max_idle_secs=60 --output_base="$RUNNER_TEMP/bazel-pw-normal" build --repo_contents_cache= //... )
+          ( cd "$ws/e2e/pub_fetch_powershell" && bazel --max_idle_secs=60 --output_base="$RUNNER_TEMP/bazel-pw-normal" shutdown )
+          ( cd "$ws/e2e/pub_fetch_powershell" && bazel --max_idle_secs=60 --output_base="$RUNNER_TEMP/bazel-pw-stubbed" build --repo_contents_cache= --repo_env=PATH="$shims:/usr/local/bin:/usr/bin:/bin" //... )
+          ( cd "$ws/e2e/pub_fetch_powershell" && bazel --max_idle_secs=60 --output_base="$RUNNER_TEMP/bazel-pw-stubbed" shutdown )
           for repo in "ai_rules_dart++pub+dart_pub__characters" "ai_rules_dart++pub+dart_pub__meta" "ai_rules_dart++pub+pub_deps"; do
             diff -r "$RUNNER_TEMP/bazel-pw-normal/external/$repo" "$RUNNER_TEMP/bazel-pw-stubbed/external/$repo"
           done
