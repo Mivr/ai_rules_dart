@@ -19,6 +19,7 @@ case "$*" in
     prev=""
     for a in "$@"; do
       if [ "$prev" = "--output_file" ]; then touch "$a"; fi
+      if [[ "$a" =~ ^--output_file=(.*)$ ]]; then touch "${BASH_REMATCH[1]}"; fi
       prev="$a"
     done
     ;;
@@ -46,7 +47,22 @@ set -o errexit -o nounset -o pipefail
 dir="$FAKE_TEST_DIR"
 echo "$*" >> "$dir/curl.calls"
 
-if [ ! -t 0 ]; then
+read_stdin=0
+prev=""
+for a in "$@"; do
+  if [ "$a" = "-K" ] || [ "$a" = "--config" ]; then
+    prev="$a"
+  elif [ "$prev" = "-K" ] || [ "$prev" = "--config" ]; then
+    if [ "$a" = "-" ]; then
+      read_stdin=1
+    fi
+    prev=""
+  elif [ "$a" = "-K-" ] || [ "$a" = "--config=-" ]; then
+    read_stdin=1
+  fi
+done
+
+if [ "$read_stdin" -eq 1 ]; then
   cat - >> "$dir/curl.stdin" || true
 fi
 
@@ -68,15 +84,55 @@ if [ -f "$dir/curl.fail.page$page" ]; then
   exit 22
 fi
 
-if [ -f "$dir/releases.page$page.json" ]; then
-  cat "$dir/releases.page$page.json"
-elif [ -f "$dir/releases.json" ]; then
-  cat "$dir/releases.json"
+out_file=""
+prev=""
+for a in "$@"; do
+  if [ "$prev" = "-o" ] || [ "$prev" = "--output" ]; then
+    out_file="$a"
+    prev=""
+  elif [ "$a" = "-o" ] || [ "$a" = "--output" ]; then
+    prev="$a"
+  elif [[ "$a" =~ ^--output=(.*)$ ]]; then
+    out_file="${BASH_REMATCH[1]}"
+  fi
+done
+
+if [ -n "$out_file" ]; then
+  if [ -f "$dir/releases.page$page.json" ]; then
+    cat "$dir/releases.page$page.json" > "$out_file"
+  elif [ -f "$dir/releases.json" ]; then
+    cat "$dir/releases.json" > "$out_file"
+  else
+    echo "[]" > "$out_file"
+  fi
 else
-  echo '[]'
+  if [ -f "$dir/releases.page$page.json" ]; then
+    cat "$dir/releases.page$page.json"
+  elif [ -f "$dir/releases.json" ]; then
+    cat "$dir/releases.json"
+  else
+    echo "[]"
+  fi
 fi
 FAKE
 chmod +x "$work/bin/curl"
+
+cat >"$work/bin/shasum" <<'FAKE'
+#!/usr/bin/env bash
+echo "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef  -"
+FAKE
+chmod +x "$work/bin/shasum"
+
+cat >"$work/bin/openssl" <<'FAKE'
+#!/usr/bin/env bash
+if [ "${1:-}" = "base64" ]; then
+  cat >/dev/null 2>&1 || true
+  echo "dummyintegrityhash=="
+else
+  echo "dummybinarydgst"
+fi
+FAKE
+chmod +x "$work/bin/openssl"
 
 start_case() {
   CASE="$1"
@@ -109,13 +165,13 @@ fail() {
 }
 
 run_prep() {
-  local tag="${1:-v0.26.1}"
+  local tag="${1-v0.26.1}"
   shift || true
   RC=0
   (
     cd "$D/repo"
     env PATH="$work/bin:$PATH" FAKE_TEST_DIR="$D" GITHUB_WORKSPACE="$D/repo" \
-      "$@" bash "$prep" "$tag" >"$D/out" 2>&1
+      "$@" bash "$prep" ${tag:+"$tag"} >"$D/out" 2>&1
   ) || RC=$?
 }
 
@@ -272,6 +328,34 @@ fi
 if ! grep -qF -- "$secret" "$D/curl.stdin"; then
   fail "token was not delivered to curl config via stdin"
 fi
+finish_case
+
+# Case 10: Releases on page unordered; newest semver is picked.
+start_case newest_semver_picked_when_unordered
+cat >"$D/releases.json" <<'JSON'
+[
+  {"tag_name": "v0.24.0", "draft": false},
+  {"tag_name": "v0.25.1", "draft": false},
+  {"tag_name": "v0.25.0", "draft": false}
+]
+JSON
+run_prep v0.26.1
+want_exit 0
+want_cliff_range "v0.25.1..v0.26.1"
+finish_case
+
+# Case 11: Missing tag argument exits non-zero with release_prep: message.
+start_case missing_tag_fails
+run_prep ""
+want_exit 1
+want_output "release_prep:"
+finish_case
+
+# Case 12: Invalid semver tag argument exits non-zero with release_prep: message.
+start_case invalid_tag_fails
+run_prep "not-a-tag"
+want_exit 1
+want_output "release_prep:"
 finish_case
 
 echo "release_prep_test: $PASS passed, $FAILS failed"
