@@ -4,7 +4,17 @@ set -o errexit -o nounset -o pipefail
 
 # Argument provided by reusable workflow caller, see
 # https://github.com/bazel-contrib/.github/blob/d197a6427c5435ac22e56e33340dff912bc9334e/.github/workflows/release_ruleset.yaml#L72
-TAG=$1
+TAG="${1:-}"
+if [[ -z "$TAG" ]]; then
+  echo "release_prep: tag argument is required" >&2
+  exit 1
+fi
+
+if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "release_prep: tag '$TAG' is not a valid semver tag (v<major>.<minor>.<patch>)" >&2
+  exit 1
+fi
+
 # The prefix is chosen to match what GitHub generates for source archives
 # This guarantees that users can easily switch from a released artifact to a source archive
 # with minimal differences in their code (e.g. strip_prefix remains the same)
@@ -25,6 +35,7 @@ INTEGRITY="sha256-$(openssl dgst -sha256 -binary "$ARCHIVE" | openssl base64 -A)
 docs="$(mktemp -d)"; targets="$(mktemp)"
 bazel --output_base="$docs" query --output=label --output_file="$targets" 'kind("starlark_doc_extract rule", //...)'
 bazel --output_base="$docs" build --target_pattern_file="$targets"
+GITHUB_WORKSPACE="${GITHUB_WORKSPACE:-$PWD}"
 tar --create --auto-compress \
     --directory "$(bazel --output_base="$docs" info bazel-bin)" \
     --file "$GITHUB_WORKSPACE/${ARCHIVE%.tar.gz}.docs.tar.gz" .
@@ -45,15 +56,9 @@ EOF
 
 # Release notes from the `Changelog:` trailers since the newest published release.
 # The reusable workflow checks out only the tagged commit, without other tags.
-git fetch --quiet --tags --unshallow origin 2>/dev/null || git fetch --quiet --tags origin
-
-if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "release_prep: tag '$TAG' is not a valid semver tag (v<major>.<minor>.<patch>)" >&2
-  exit 1
-fi
+git fetch --quiet --tags --unshallow origin 2>/dev/null || git fetch --quiet --tags origin 2>/dev/null || true
 
 REPO="${REPO:-Mivr/ai_rules_dart}"
-TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-${BAZELISK_GITHUB_TOKEN:-}}}"
 
 BASE_TAG=""
 PAGE=1
@@ -61,16 +66,18 @@ PREV_PAGE_BODY=""
 
 while [ -z "$BASE_TAG" ]; do
   API_URL="https://api.github.com/repos/${REPO}/releases?per_page=100&page=${PAGE}"
-  if [ -n "$TOKEN" ]; then
-    if ! PAGE_BODY=$(printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" | curl -fsSL --config - "$API_URL"); then
-      echo "release_prep: request to GitHub releases API failed for $API_URL" >&2
-      exit 1
-    fi
-  else
-    if ! PAGE_BODY=$(curl -fsSL "$API_URL"); then
-      echo "release_prep: request to GitHub releases API failed for $API_URL" >&2
-      exit 1
-    fi
+  if ! PAGE_BODY=$(python3 - <<'PY' | curl --fail --show-error --location -s -K - "$API_URL"
+import os
+for _var in ("GH_TOKEN", "GITHUB_TOKEN", "BAZELISK_GITHUB_TOKEN"):
+    _token = os.environ.get(_var)
+    if _token:
+        _token = _token.replace("\\", "\\\\").replace('"', '\\"')
+        print('header = "Authorization: Bearer ' + _token + '"')
+        break
+PY
+); then
+    echo "release_prep: request to GitHub releases API failed for $API_URL" >&2
+    exit 1
   fi
 
   # Stop if the response is identical to the previous page (e.g. unpaginated fake curl).
@@ -100,6 +107,7 @@ if not isinstance(releases, list):
 if len(releases) == 0:
     sys.exit(4)
 
+candidates = []
 for r in releases:
     if not isinstance(r, dict):
         continue
@@ -111,8 +119,13 @@ for r in releases:
         continue
     cand = tuple(map(int, cm.groups()))
     if cand < target:
-        print(cand_tag)
-        sys.exit(0)
+        candidates.append((cand, cand_tag))
+
+if candidates:
+    # Pick the newest published release older than the target
+    newest = max(candidates, key=lambda c: c[0])
+    print(newest[1])
+    sys.exit(0)
 
 sys.exit(2)
 ' "$TAG" <<<"$PAGE_BODY") || PARSER_RC=$?
