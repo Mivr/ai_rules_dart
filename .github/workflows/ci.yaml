@@ -692,7 +692,9 @@ jobs:
   # binary, whose output is asserted: unlike the old
   # `bazel test //... || [ $? -eq 4 ]`, this cannot pass while executing
   # 0 actions on a "no tests found" no-op. The consumer query keeps the
-  # Mivr/rules_dart#1 module-enumeration guard on macOS. Full per-folder
+  # Mivr/rules_dart#1 module-enumeration guard on macOS. The analyzer red path
+  # (`e2e/analysis_failure`) runs on both operating systems: Linux in
+  # `expected-failure` and macOS in this job (`mac-smoke`). Full per-folder
   # macOS coverage runs in the `full.yaml` pre-release workflow, which
   # releases require.
   mac-smoke:
@@ -750,6 +752,18 @@ jobs:
           out="$(bazel run //:hello 2>&1)"
           echo "$out"
           echo "$out" | grep -q "Hello, World!"
+      - name: analysis_failure — expect analyzer diagnostics to fail the build, at workspace paths
+        working-directory: e2e/analysis_failure
+        run: |
+          if bazel test //:bad_lib 2>/dev/null; then
+            echo "ERROR: build should have failed with analyzer diagnostics"
+            exit 1
+          fi
+          out=$(bazel test //:bad_lib 2>&1 || true)
+          echo "$out" | grep -q "unused_local_variable"
+          # Named as the user's file, not as the staged copy under `src/`.
+          echo "$out" | grep -q -- "- lib/bad.dart:4:7 -"
+          echo "OK: expected analyzer failure detected, at the workspace path"
       - name: Consumer query
         run: |
           archive_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/rd_archive.XXXXXX")"
@@ -861,7 +875,9 @@ jobs:
         working-directory: e2e/coverage
         run: bazel --max_idle_secs=60 run //:lcov_check_ruleset -- "$RUNNER_TEMP/ruleset_coverage_report.dat"
   # Workspaces that are expected to fail at module resolution.
-  # Validates that rules_dart produces the correct error messages.
+  # Validates that rules_dart produces the correct error messages. The analyzer
+  # red path (`e2e/analysis_failure`) runs on both operating systems: Linux in
+  # this job (`expected-failure`) and macOS in `mac-smoke`.
   expected-failure:
     runs-on: ubuntu-latest
     timeout-minutes: 30
