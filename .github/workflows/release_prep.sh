@@ -43,10 +43,105 @@ archive_override(
 \`\`\`
 EOF
 
-# Release notes from the `Changelog:` trailers since the previous version tag.
+# Release notes from the `Changelog:` trailers since the newest published release.
 # The reusable workflow checks out only the tagged commit, without other tags.
 git fetch --quiet --tags --unshallow origin 2>/dev/null || git fetch --quiet --tags origin
-PREV=$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' "$TAG^" 2>/dev/null) || PREV=""
+
+if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "release_prep: tag '$TAG' is not a valid semver tag (v<major>.<minor>.<patch>)" >&2
+  exit 1
+fi
+
+REPO="${REPO:-Mivr/ai_rules_dart}"
+TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-${BAZELISK_GITHUB_TOKEN:-}}}"
+
+BASE_TAG=""
+PAGE=1
+PREV_PAGE_BODY=""
+
+while [ -z "$BASE_TAG" ]; do
+  API_URL="https://api.github.com/repos/${REPO}/releases?per_page=100&page=${PAGE}"
+  if [ -n "$TOKEN" ]; then
+    if ! PAGE_BODY=$(printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" | curl -fsSL --config - "$API_URL"); then
+      echo "release_prep: request to GitHub releases API failed for $API_URL" >&2
+      exit 1
+    fi
+  else
+    if ! PAGE_BODY=$(curl -fsSL "$API_URL"); then
+      echo "release_prep: request to GitHub releases API failed for $API_URL" >&2
+      exit 1
+    fi
+  fi
+
+  # Stop if the response is identical to the previous page (e.g. unpaginated fake curl).
+  if [ "$PAGE" -gt 1 ] && [ "$PAGE_BODY" = "$PREV_PAGE_BODY" ]; then
+    break
+  fi
+  PREV_PAGE_BODY="$PAGE_BODY"
+
+  PARSER_RC=0
+  PARSER_OUTPUT=$(python3 -c '
+import json, re, sys
+
+tag = sys.argv[1]
+tm = re.match(r"^v(\d+)\.(\d+)\.(\d+)$", tag)
+if not tm:
+    sys.exit(3)
+target = tuple(map(int, tm.groups()))
+
+try:
+    releases = json.load(sys.stdin)
+except Exception:
+    sys.exit(3)
+
+if not isinstance(releases, list):
+    sys.exit(3)
+
+if len(releases) == 0:
+    sys.exit(4)
+
+for r in releases:
+    if not isinstance(r, dict):
+        continue
+    if r.get("draft") is True:
+        continue
+    cand_tag = r.get("tag_name") or ""
+    cm = re.match(r"^v(\d+)\.(\d+)\.(\d+)$", cand_tag)
+    if not cm:
+        continue
+    cand = tuple(map(int, cm.groups()))
+    if cand < target:
+        print(cand_tag)
+        sys.exit(0)
+
+sys.exit(2)
+' "$TAG" <<<"$PAGE_BODY") || PARSER_RC=$?
+
+  case "$PARSER_RC" in
+    0)
+      BASE_TAG="$PARSER_OUTPUT"
+      ;;
+    2)
+      PAGE=$((PAGE + 1))
+      if [ "$PAGE" -gt 50 ]; then
+        break
+      fi
+      ;;
+    4)
+      break
+      ;;
+    *)
+      echo "release_prep: could not parse GitHub releases response" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [ -z "$BASE_TAG" ]; then
+  echo "release_prep: no earlier published release found for $TAG" >&2
+  exit 1
+fi
+
 echo
 # git-cliff is provided by rules_multitool, which now lives in the tools/
 # module (tools/MODULE.bazel): the root module has no `@multitool` repo, so
@@ -54,4 +149,4 @@ echo
 # flags and tag range as before, so the notes are unchanged in content.
 ROOT="$PWD"
 (cd tools && bazel run @multitool//tools/git-cliff -- \
-    --workdir "$ROOT" --config "$ROOT/cliff.toml" --strip header "${PREV:+$PREV..}$TAG")
+    --workdir "$ROOT" --config "$ROOT/cliff.toml" --strip header "${BASE_TAG}..${TAG}")
