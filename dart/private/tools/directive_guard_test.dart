@@ -1116,6 +1116,188 @@ void main(List<String> args) {
     }
   });
 
+  group('relative from lib/ overshooting package root with empty segments', () {
+    const pkg = 'demo';
+    const dirs = {'demo': 'demo/lib'};
+    const kinds = ['import', 'export', 'part', 'part of'];
+
+    test('table of directive depths against package URI resolution', () {
+      final root = Directory('${tmp.path}/depths/demo.proj')
+        ..createSync(recursive: true);
+      final libDir = Directory('${root.path}/d0/d1/d2/d3/demo/lib')
+        ..createSync(recursive: true);
+      final srcDir = Directory('${libDir.path}/src')
+        ..createSync(recursive: true);
+
+      final cases = <({File file, String fromKey, String ref, String kind})>[];
+      var n = 0;
+      for (final (parentDir, dirKey, exact) in [
+        (libDir, '', '.'),
+        (srcDir, 'src/', '..'),
+      ]) {
+        for (var extra = 0; extra <= 3; extra++) {
+          final String prefix = extra == 0 ? exact : ('../' * extra) + exact;
+          final ref = '$prefix//x.dart';
+          for (final kind in ['import', 'part']) {
+            final file = File('${parentDir.path}/f${n++}.dart')
+              ..writeAsStringSync("$kind '$ref';\n");
+            final fromKey = 'demo/lib/$dirKey${file.path.split('/').last}';
+            final String decoy = resolveStagedRelativeTarget(ref, file.path)!;
+            File(decoy)
+              ..parent.createSync(recursive: true)
+              ..writeAsStringSync('library decoy;\n');
+            cases.add((file: file, fromKey: fromKey, ref: ref, kind: kind));
+          }
+        }
+      }
+
+      final List<String> violations = findStagedDirectiveViolations([
+        root.path,
+      ], tool: 'guard-test');
+
+      for (final c in cases) {
+        final String relPath = c.fromKey.substring('demo/lib/'.length);
+        final Uri uri = Uri.parse('package:$pkg/$relPath').resolve(c.ref);
+        final bool uriRefused =
+            uri.pathSegments.length > 1 && uri.pathSegments[1].isEmpty;
+        expect(uriRefused, isTrue);
+
+        expect(
+          violations,
+          contains(
+            contains(
+              "${c.file.path} ${c.kind} '${c.ref}' is not a declared input.",
+            ),
+          ),
+          reason: '${c.kind} ${c.ref} from ${c.fromKey}',
+        );
+        expect(
+          resolveDirectiveUri(c.ref, c.fromKey, dirs),
+          isNull,
+          reason: '${c.ref} from ${c.fromKey}',
+        );
+      }
+    });
+
+    test(
+      'the A spellings are refused for every directive kind with decoys',
+      () {
+        final root = Directory('${tmp.path}/aspellings/demo.proj')
+          ..createSync(recursive: true);
+        final libDir = Directory('${root.path}/d0/d1/d2/d3/demo/lib')
+          ..createSync(recursive: true);
+        final srcDir = Directory('${libDir.path}/src')
+          ..createSync(recursive: true);
+
+        final cases =
+            <({File file, String fromKey, String ref, String kind})>[];
+        var n = 0;
+        for (final (parentDir, dirKey, ref) in [
+          (libDir, '', '..//x.dart'),
+          (srcDir, 'src/', '../..//x.dart'),
+          (srcDir, 'src/', '../../..//x.dart'),
+          (srcDir, 'src/', '../../../..//x.dart'),
+        ]) {
+          for (final kind in kinds) {
+            final file = File('${parentDir.path}/a${n++}.dart');
+            final content = kind == 'part of'
+                ? "part of '$ref';\n"
+                : "$kind '$ref';\n";
+            file.writeAsStringSync(content);
+            final fromKey = 'demo/lib/$dirKey${file.path.split('/').last}';
+            final String decoy = resolveStagedRelativeTarget(ref, file.path)!;
+            File(decoy)
+              ..parent.createSync(recursive: true)
+              ..writeAsStringSync('library decoy;\n');
+            cases.add((file: file, fromKey: fromKey, ref: ref, kind: kind));
+          }
+        }
+
+        final List<String> violations = findStagedDirectiveViolations([
+          root.path,
+        ], tool: 'guard-test');
+
+        for (final c in cases) {
+          expect(
+            violations,
+            contains(
+              contains(
+                "${c.file.path} ${c.kind} '${c.ref}' is not a declared input.",
+              ),
+            ),
+            reason: '${c.kind} ${c.ref} from ${c.fromKey}',
+          );
+          expect(
+            resolveDirectiveUri(c.ref, c.fromKey, dirs),
+            isNull,
+            reason: '${c.ref} from ${c.fromKey}',
+          );
+        }
+      },
+    );
+
+    test('in-package relatives and existing refusals remain unchanged', () {
+      final root = Directory('${tmp.path}/accepted/demo.proj')
+        ..createSync(recursive: true);
+      final libDir = Directory('${root.path}/demo/lib')
+        ..createSync(recursive: true);
+      final srcDir = Directory('${libDir.path}/src')
+        ..createSync(recursive: true);
+
+      File('${libDir.path}/b.dart').writeAsStringSync('library b;\n');
+      File('${srcDir.path}/b.dart').writeAsStringSync('library b;\n');
+      File('${srcDir.path}/ok1.dart')
+          .writeAsStringSync("import '../b.dart';\n");
+      File('${libDir.path}/ok2.dart')
+          .writeAsStringSync("import 'src//../b.dart';\n");
+
+      final List<String> cleanViolations = findStagedDirectiveViolations([
+        root.path,
+      ], tool: 'guard-test');
+      expect(cleanViolations, isEmpty);
+
+      expect(
+        resolveDirectiveUri('../b.dart', 'demo/lib/src/ok1.dart', dirs),
+        'demo/lib/b.dart',
+      );
+      expect(
+        resolveDirectiveUri('src//../b.dart', 'demo/lib/ok2.dart', dirs),
+        'demo/lib/src/b.dart',
+      );
+
+      for (final ref in ['..%2F..%2Fx.dart']) {
+        expect(
+          resolveDirectiveUri(ref, 'demo/lib/src/c.dart', dirs),
+          isNull,
+          reason: ref,
+        );
+      }
+      for (final uri in [
+        'package:demo/../../x.dart',
+        'package:demo/sub/../../x.dart',
+        'package:demo/..%2F..%2Fx.dart',
+        'package:demo/..%5C..%5Cx.dart',
+        'package:demo/a%2Fb.dart',
+        'package:demo/a%5Cb.dart',
+      ]) {
+        expect(isEscapingPackageUri(uri), isTrue, reason: uri);
+      }
+
+      final evil = File('${srcDir.path}/evil.dart')
+        ..writeAsStringSync("import '..%2F..%2Fx.dart';\n");
+      final List<String> evilViolations = findStagedDirectiveViolations([
+        root.path,
+      ], tool: 'guard-test');
+      expect(
+        evilViolations,
+        contains(
+          contains("import '..%2F..%2Fx.dart' is not a declared input."),
+        ),
+      );
+      evil.deleteSync();
+    });
+  });
+
   group('every tool enforces the shared check', () {
     // Each Dart-reading tool and the marker proving it enforces the shared
     // staged-source check: the runners call it directly, the whole-program

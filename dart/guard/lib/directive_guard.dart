@@ -162,31 +162,44 @@ final _queryOrFragment = RegExp('[?#]');
 /// below its package's `lib/` is [dirSegments], reads a host file: the front
 /// end resolves it against the file's `package:` URI, so after dot-segment
 /// removal an empty segment directly after the package name escapes
-/// (`..//x.dart` from `lib/src/c.dart` is `package:pkg//x.dart`).
+/// (`..//x.dart` from `lib/src/c.dart` is `package:pkg//x.dart`). A `..`
+/// above the package name is dropped, then an empty segment directly after
+/// the package name escapes.
 bool _relativeReachesHostFile(String ref, List<String> dirSegments) {
   final text = ref.replaceAll(r'\', '/').split(_queryOrFragment).first;
   if (text.startsWith('/') || text.contains(':')) return false;
-  return _collapsesToEmpty([...dirSegments, text].join('/')) == true;
+  return _collapsesToEmpty(
+        [...dirSegments, text].join('/'),
+        dropSurplus: true,
+      ) ==
+      true;
 }
 
 /// Removes RFC 3986 dot segments from the `/`-separated package path [path],
 /// the way Dart does before it resolves a URI: `.` skips and `..` pops the
 /// nearest earlier segment, an empty one included, so `src//../b.dart` is
-/// `src`, `b.dart`. Each segment is decoded once. True when an empty segment
-/// then directly follows the package name and something follows it (the front
-/// end resolves that as an absolute path); null when the path escapes: a `..`
-/// above the package root, or a decoded `/` or `\`, which climbs without
-/// counting and which a filesystem resolver may honour; false otherwise.
-bool? _collapsesToEmpty(String path) {
+/// `src`, `b.dart`. Each segment is decoded once. When [dropSurplus] is true,
+/// a `..` above the package name is dropped, then an empty segment directly
+/// after the package name escapes. True when an empty segment then directly
+/// follows the package name and something follows it (the front end resolves
+/// that as an absolute path); null when the path escapes: a `..` above the
+/// package root (unless [dropSurplus]), or a decoded `/` or `\`, which climbs
+/// without counting and which a filesystem resolver may honour; false
+/// otherwise.
+bool? _collapsesToEmpty(String path, {bool dropSurplus = false}) {
   final out = <String>[];
   for (final raw in path.split('/')) {
     final seg = decodeUriSegment(raw);
     if (seg == '.') continue;
-    if (seg == '..' && out.isNotEmpty) {
-      out.removeLast();
+    if (seg == '..') {
+      if (out.isNotEmpty) {
+        out.removeLast();
+      } else if (!dropSurplus) {
+        return null;
+      }
       continue;
     }
-    if (seg == '..' || seg.contains('/') || seg.contains(r'\')) return null;
+    if (seg.contains('/') || seg.contains(r'\')) return null;
     out.add(seg);
   }
   return out.length > 1 && out.first.isEmpty;
@@ -355,17 +368,10 @@ String? resolveStagedRelativeTarget(String uri, String fromPath) {
 /// authority (`file://localhost/`), a bare path (`file:x.dart`), backslash
 /// separators, or a query or fragment suffix. The front end reads all of these
 /// off the host filesystem, outside every multi-root.
-bool isFileSchemeDirectiveUri(String uri) {
-  final colon = uri.indexOf(':');
-  if (colon != 4) return false;
-  const scheme = 'file';
-  for (var i = 0; i < 4; i++) {
-    var c = uri.codeUnitAt(i);
-    if (c >= 0x41 && c <= 0x5A) c += 0x20;
-    if (c != scheme.codeUnitAt(i)) return false;
-  }
-  return true;
-}
+bool isFileSchemeDirectiveUri(String uri) =>
+    uri.length >= 5 &&
+    uri.codeUnitAt(4) == 0x3a &&
+    uri.substring(0, 4).toLowerCase() == 'file';
 
 bool _isSchemeStart(int c) =>
     (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7a);
@@ -401,11 +407,8 @@ bool isDisallowedDirectiveUri(
   if (text.startsWith('//')) return true;
   final colon = uri.indexOf(':');
   if (colon <= 0) return false;
-  if (!_isSchemeStart(uri.codeUnitAt(0))) return false;
-  for (var i = 1; i < colon; i++) {
-    if (!_isSchemeChar(uri.codeUnitAt(i))) return false;
-  }
-  return true;
+  return _isSchemeStart(uri.codeUnitAt(0)) &&
+      uri.substring(1, colon).codeUnits.every(_isSchemeChar);
 }
 
 /// Whether [uri] has an empty path segment that the guard must refuse because
@@ -444,7 +447,7 @@ bool hasEmptyPathSegment(String uri) {
     text = text.substring(1);
   }
   final clean = text.split(_queryOrFragment).first;
-  if (packaged) return _collapsesToEmpty(clean) == true;
+  if (packaged) return _collapsesToEmpty(clean, dropSurplus: true) == true;
   return clean.startsWith('/') || clean.contains('//');
 }
 
@@ -544,7 +547,7 @@ String? resolveDirectiveUri(
     final base = dir.isEmpty ? const <String>[] : dir.split('/');
     final inner = rest.substring(slash + 1);
     // Directly after the package name an empty segment reads a host file.
-    if (_collapsesToEmpty(inner) == true) return null;
+    if (_collapsesToEmpty(inner, dropSurplus: true) == true) return null;
     return _resolvePath(inner, base, base.length, _PathKind.package);
   }
   // A fragment names no file: the front end reports a URI with one instead of
