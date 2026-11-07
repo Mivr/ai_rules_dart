@@ -1,0 +1,26 @@
+load("//dart:defs.bzl", "dart_test")
+
+# Pins the macOS smoke analyzer red-path step in `mac-smoke` of ci.yaml:
+# asserts that `mac-smoke` contains the `analysis_failure` step running
+# `bazel test //:bad_lib` in `e2e/analysis_failure`, with no continue-on-error,
+# and that `mac-smoke`'s `if:` still names only `schedule` and `workflow_dispatch`.
+dart_test(
+    name = "ci_mac_analyze_guard_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :ci_mac_analyze_guard_test.dart)",
+    ],
+    data = [
+        "ci_mac_analyze_guard_test.dart",
+    ],
+    local = True,
+    main = "ci_mac_analyze_guard_test.dart",
+    tags = [
+        "external",
+        "no-sandbox",
+    ],
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
