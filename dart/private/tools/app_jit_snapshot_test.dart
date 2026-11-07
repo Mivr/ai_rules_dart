@@ -719,81 +719,78 @@ void main(List<String> args) {
     );
   });
 
-  test(
-    'app-jit training takes no --packages and ignores ancestor .dart_tool',
-    () {
-      final String dartBin = Platform.resolvedExecutable;
-      final workDir = Directory('${tmp.path}/nested/work')
-        ..createSync(recursive: true);
-      final trainScript = File('${workDir.path}/train.dart')
-        ..writeAsStringSync('void main(List<String> args) {}\n');
-      // The training input is a compiled kernel, as in real builds: kernel
-      // training needs no package map, so no `--packages` value is passed.
-      final trainDill = File('${workDir.path}/train.dill');
-      final ProcessResult compileRes = Process.runSync(dartBin, [
-        'compile',
-        'kernel',
-        trainScript.path,
-        '-o',
-        trainDill.path,
-      ]);
-      expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
-      // Poison the ancestor directory with a malformed
-      // .dart_tool/package_config.json after compiling: with no `--packages`
-      // value the training must not walk up to it (a source compile would
-      // fail on the malformed file, which is why real trainings train
-      // kernels, never sources).
-      File('${tmp.path}/.dart_tool/package_config.json')
-        ..parent.createSync(recursive: true)
-        ..writeAsStringSync('{malformed package_config');
-      final outJit = File('${workDir.path}/out.jit');
+  test('app-jit training takes no --packages and ignores ancestor .dart_tool', () {
+    final String dartBin = Platform.resolvedExecutable;
+    final workDir = Directory('${tmp.path}/nested/work')
+      ..createSync(recursive: true);
+    final trainScript = File('${workDir.path}/train.dart')
+      ..writeAsStringSync('void main(List<String> args) {}\n');
+    // The training input is a compiled kernel, as in real builds: kernel
+    // training needs no package map, so no `--packages` value is passed.
+    final trainDill = File('${workDir.path}/train.dill');
+    final ProcessResult compileRes = Process.runSync(dartBin, [
+      'compile',
+      'kernel',
+      trainScript.path,
+      '-o',
+      trainDill.path,
+    ]);
+    expect(compileRes.exitCode, 0, reason: '${compileRes.stderr}');
+    // Poison the ancestor directory with a malformed
+    // .dart_tool/package_config.json after compiling: with no `--packages`
+    // value the training must not walk up to it (a source compile would
+    // fail on the malformed file, which is why real trainings train
+    // kernels, never sources).
+    File('${tmp.path}/.dart_tool/package_config.json')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync('{malformed package_config');
+    final outJit = File('${workDir.path}/out.jit');
 
-      // A planted fixed-path training VM from the old layout: the training
-      // must neither read nor execute it. The plant lives at a per-test path:
-      // this suite's tests (and the planner suite's) run concurrently, and a
-      // shared fixed plant would race between processes.
-      // The tag is the per-test tmp directory's basename: unique even when
-      // every shard process shares one pid (sandboxed) and one /tmp.
-      final String plantTag = tmp.path.split(Platform.pathSeparator).last;
-      final plantedVm = File(
-        '${Directory.systemTemp.path}/rules_dart_vm-planted-appjit-test.$plantTag',
-      )..writeAsBytesSync([0x7f, 0x45, 0x4c, 0x46, 0x99]);
-      try {
-        snapshot.main([
-          '--dart=$dartBin',
-          '--snapshot=${outJit.path}',
-          '--copy=train.dill=${trainDill.path}',
-          '--',
-          'train.dill',
-        ]);
-        expect(outJit.existsSync(), isTrue);
-        // The training VM lives inside the training scratch directory, which
-        // is deleted afterwards: nothing undeclared stays beside the declared
-        // output, and the planted file is untouched.
-        expect(
-          Directory('${outJit.path}.vm').existsSync(),
-          isFalse,
-          reason: 'no training-VM directory may stay beside the output',
-        );
-        expect(
-          workDir
-              .listSync()
-              .where(
-                (e) => e.path
-                    .split(Platform.pathSeparator)
-                    .last
-                    .startsWith('rules_dart_snapshot.'),
-              )
-              .toList(),
-          isEmpty,
-          reason: 'no training scratch may stay beside the output',
-        );
-        expect(plantedVm.readAsBytesSync(), [0x7f, 0x45, 0x4c, 0x46, 0x99]);
-      } finally {
-        if (plantedVm.existsSync()) plantedVm.deleteSync();
-      }
-    },
-  );
+    // A planted fixed-path training VM from the old layout: the training
+    // must neither read nor execute it. The plant lives at a per-test path:
+    // this suite's tests (and the planner suite's) run concurrently, and a
+    // shared fixed plant would race between processes.
+    // The tag is the per-test tmp directory's basename: unique even when
+    // every shard process shares one pid (sandboxed) and one /tmp.
+    final String plantTag = tmp.path.split(Platform.pathSeparator).last;
+    final plantedVm = File(
+      '${Directory.systemTemp.path}/rules_dart_vm-planted-appjit-test.$plantTag',
+    )..writeAsBytesSync([0x7f, 0x45, 0x4c, 0x46, 0x99]);
+    try {
+      snapshot.main([
+        '--dart=$dartBin',
+        '--snapshot=${outJit.path}',
+        '--copy=train.dill=${trainDill.path}',
+        '--',
+        'train.dill',
+      ]);
+      expect(outJit.existsSync(), isTrue);
+      // The training VM lives inside the training scratch directory, which
+      // is deleted afterwards: nothing undeclared stays beside the declared
+      // output, and the planted file is untouched.
+      expect(
+        Directory('${outJit.path}.vm').existsSync(),
+        isFalse,
+        reason: 'no training-VM directory may stay beside the output',
+      );
+      expect(
+        workDir
+            .listSync()
+            .where(
+              (e) => e.path
+                  .split(Platform.pathSeparator)
+                  .last
+                  .startsWith('rules_dart_snapshot.'),
+            )
+            .toList(),
+        isEmpty,
+        reason: 'no training scratch may stay beside the output',
+      );
+      expect(plantedVm.readAsBytesSync(), [0x7f, 0x45, 0x4c, 0x46, 0x99]);
+    } finally {
+      if (plantedVm.existsSync()) plantedVm.deleteSync();
+    }
+  });
 
   test(
     'stageTrainingArgs absolutizes staged paths and passes the rest through',
