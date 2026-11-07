@@ -63,9 +63,23 @@ dart_test(
 dart_test(
     name = "runner_test",
     size = "small",
+    args = [
+        "$(rlocationpath :test/runner_test.dart)",
+        "$(rlocationpath :e2e_runner)",
+    ],
+    data = [
+        "test/runner_test.dart",
+        ":e2e_runner",
+    ],
+    local = True,
     main = "test/runner_test.dart",
+    tags = [
+        "external",
+        "no-sandbox",
+    ],
     deps = [
         ":e2e_runner_lib",
         "@pub_deps//:test",
+        "@rules_dart//dart/runfiles",
     ],
 )

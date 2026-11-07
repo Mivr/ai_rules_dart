@@ -101,6 +101,17 @@ jobs:
           label="$(cd "$ws/$first" && bazel --max_idle_secs=60 version | grep '^Build label:')" || label="unknown"
           (cd "$ws/$first" && bazel --max_idle_secs=60 shutdown) || true
           echo "Workspaces run under last_green: $label"
+          case "$label" in
+            "Build label: "*) expected_label="${label%$'\r'}" ;;
+            *) expected_label="Build label: unknown" ;;
+          esac
+          while IFS= read -r folder; do
+            [ -z "$folder" ] && continue
+            spec_json="$(yq -o=json . "$ws/$folder/e2e.yaml")"
+            jq --arg lbl "$expected_label" \
+              '.commands = [{name: "bazel version", run: "bazel version", expect: {stdout_contains: $lbl, output_regex: ("^" + ($lbl | gsub("(?<c>[.\\[\\]*^$()+?{|\\\\])"; "\\\(.c)")) + "\\r?$")}}] + .commands' \
+              <<< "$spec_json" > "$ws/$folder/e2e.yaml"
+          done <<< "$folders"
           run_one() {
             slug="$(printf '%s' "$1" | tr '/.' '_')"
             rc=0

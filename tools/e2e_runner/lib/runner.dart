@@ -4,6 +4,7 @@ library;
 
 import 'dart:io';
 
+import 'package:e2e_runner/bazel_env.dart';
 import 'package:e2e_runner/spec.dart';
 import 'package:e2e_runner/test_count.dart';
 import 'package:e2e_runner/workspace.dart';
@@ -270,23 +271,37 @@ Directory _createScratchDir() {
   return Directory.systemTemp.createTempSync('e2e_');
 }
 
+final class _ExecContext {
+  const _ExecContext({
+    required this.stagedDir,
+    required this.outputBase,
+    required this.environment,
+  });
+
+  final String stagedDir;
+  final String outputBase;
+  final Map<String, String> environment;
+}
+
 /// Stages [config]'s workspace and runs its commands in order.
 ///
 /// Returns 0 on success or 1 on failure; `bazel shutdown` runs on the staged
 /// `--output_base` on every exit path.
 int runSpec(RunnerConfig config) {
   final scratch = _createScratchDir();
-  final stagedDir = normalizePath('${scratch.path}/ws');
-  final outputBase = normalizePath('${scratch.path}/ob');
+  final context = _ExecContext(
+    stagedDir: normalizePath('${scratch.path}/ws'),
+    outputBase: normalizePath('${scratch.path}/ob'),
+    environment: innerEnvironment(Platform.environment),
+  );
   try {
-    stageWorkspace(config.workspaceDir, stagedDir, config.repoRoot);
+    stageWorkspace(config.workspaceDir, context.stagedDir, config.repoRoot);
     final commands = config.spec.commands;
     for (var i = 0; i < commands.length; i++) {
       _runOne(
         commands[i],
         bepPath: normalizePath('${scratch.path}/bep_$i.json'),
-        stagedDir: stagedDir,
-        outputBase: outputBase,
+        context: context,
         config: config,
       );
     }
@@ -295,7 +310,7 @@ int runSpec(RunnerConfig config) {
     stderr.writeln(e.message);
     return 1;
   } finally {
-    _shutdown(config.client, outputBase, stagedDir);
+    _shutdown(config.client, context);
     _deleteScratch(scratch);
   }
 }
@@ -303,16 +318,15 @@ int runSpec(RunnerConfig config) {
 void _runOne(
   Command command, {
   required String bepPath,
-  required String stagedDir,
-  required String outputBase,
+  required _ExecContext context,
   required RunnerConfig config,
 }) {
-  applyWriteFiles(command, stagedDir);
-  applyReplaceInFiles(command, stagedDir, config.specPath);
+  applyWriteFiles(command, context.stagedDir);
+  applyReplaceInFiles(command, context.stagedDir, config.specPath);
   final argv = resolveArgv(
     command.argv,
     client: config.client,
-    outputBase: outputBase,
+    outputBase: context.outputBase,
     bepPath: bepPath,
   );
   final isTest = isBazelTestCommand(command.argv);
@@ -322,9 +336,8 @@ void _runOne(
       command.expect != null && command.expect!.testXmlContains.isNotEmpty;
   final outcome = _runProcess(
     argv,
-    stagedDir,
+    context,
     bepPath: isTest ? bepPath : null,
-    outputBase: outputBase,
     needTestLog: needTestLog,
     needTestXml: needTestXml,
   );
@@ -432,16 +445,18 @@ String collectTestLogs(
 
 RunOutcome _runProcess(
   List<String> argv,
-  String workingDir, {
+  _ExecContext context, {
   required String? bepPath,
-  required String outputBase,
   required bool needTestLog,
   required bool needTestXml,
 }) {
+  final executable = resolveExecutableInPath(argv.first, context.environment);
   final result = Process.runSync(
-    argv.first,
+    executable,
     argv.sublist(1),
-    workingDirectory: workingDir,
+    workingDirectory: context.stagedDir,
+    environment: context.environment,
+    includeParentEnvironment: false,
   );
   final bepText = bepPath != null && File(bepPath).existsSync()
       ? File(bepPath).readAsStringSync()
@@ -450,16 +465,16 @@ RunOutcome _runProcess(
       ? ''
       : collectTestLogs(
           bepText,
-          workingDir,
-          outputBase,
+          context.stagedDir,
+          context.outputBase,
           needFallback: needTestLog,
         );
   final executedTests = bepPath == null
       ? 0
       : countNonSkippedTests(
           bepText,
-          testLogsDir: outputBase,
-          workspaceDir: workingDir,
+          testLogsDir: context.outputBase,
+          workspaceDir: context.stagedDir,
         );
   return RunOutcome(
     exitCode: result.exitCode,
@@ -469,20 +484,26 @@ RunOutcome _runProcess(
     testXml: needTestXml
         ? readTestXmlFiles(
             bepText,
-            testLogsDir: outputBase,
-            workspaceDir: workingDir,
+            testLogsDir: context.outputBase,
+            workspaceDir: context.stagedDir,
           ).join('\n')
         : '',
     executedTests: executedTests,
   );
 }
 
-void _shutdown(String client, String outputBase, String stagedDir) {
+void _shutdown(String client, _ExecContext context) {
   try {
-    Process.runSync(client, [
-      '--output_base=$outputBase',
-      'shutdown',
-    ], workingDirectory: Directory(stagedDir).existsSync() ? stagedDir : null);
+    final executable = resolveExecutableInPath(client, context.environment);
+    Process.runSync(
+      executable,
+      ['--output_base=${context.outputBase}', 'shutdown'],
+      workingDirectory: Directory(context.stagedDir).existsSync()
+          ? context.stagedDir
+          : null,
+      environment: context.environment,
+      includeParentEnvironment: false,
+    );
   } on ProcessException catch (e) {
     stderr.writeln('bazel shutdown failed: ${e.message}');
   }

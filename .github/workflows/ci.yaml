@@ -628,9 +628,14 @@ jobs:
             echo "::error::shard $SHARD has no folder with an e2e.yaml"
             exit 1
           fi
+          expected_label="Build label: $FLOOR_VERSION"
           while IFS= read -r folder; do
             [ -z "$folder" ] && continue
             echo "$FLOOR_VERSION" > "$ws/$folder/.bazelversion"
+            spec_json="$(yq -o=json . "$ws/$folder/e2e.yaml")"
+            jq --arg lbl "$expected_label" \
+              '.commands = [{name: "bazel version", run: "bazel version", expect: {stdout_contains: $lbl, output_regex: ("^" + ($lbl | gsub("(?<c>[.\\[\\]*^$()+?{|\\\\])"; "\\\(.c)")) + "\\r?$")}}] + .commands' \
+              <<< "$spec_json" > "$ws/$folder/e2e.yaml"
           done <<< "$folders"
           first="$(head -n 1 <<< "$folders")"
           label="$(cd "$ws/$first" && bazel --max_idle_secs=60 version | grep '^Build label:')"
