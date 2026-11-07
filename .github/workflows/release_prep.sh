@@ -63,26 +63,24 @@ REPO="${REPO:-Mivr/ai_rules_dart}"
 BASE_TAG=""
 PAGE=1
 PREV_PAGE_BODY=""
+SAME_PAGE_COUNT=0
 
 while [ -z "$BASE_TAG" ]; do
   API_URL="https://api.github.com/repos/${REPO}/releases?per_page=100&page=${PAGE}"
-  if ! PAGE_BODY=$(python3 - <<'PY' | curl --fail --show-error --location -s -K - "$API_URL"
-import os
-for _var in ("GH_TOKEN", "GITHUB_TOKEN", "BAZELISK_GITHUB_TOKEN"):
-    _token = os.environ.get(_var)
-    if _token:
-        _token = _token.replace("\\", "\\\\").replace('"', '\\"')
-        print('header = "Authorization: Bearer ' + _token + '"')
-        break
-PY
-); then
+  if ! PAGE_BODY=$(curl --fail --show-error --location -s "$API_URL"); then
     echo "release_prep: request to GitHub releases API failed for $API_URL" >&2
     exit 1
   fi
 
-  # Stop if the response is identical to the previous page (e.g. unpaginated fake curl).
+  # Stop if an unpaginated test stub repeats the same page body indefinitely,
+  # while still allowing multi-page fixtures with repeated intermediate pages.
   if [ "$PAGE" -gt 1 ] && [ "$PAGE_BODY" = "$PREV_PAGE_BODY" ]; then
-    break
+    SAME_PAGE_COUNT=$((SAME_PAGE_COUNT + 1))
+    if [ "$SAME_PAGE_COUNT" -ge 5 ]; then
+      break
+    fi
+  else
+    SAME_PAGE_COUNT=0
   fi
   PREV_PAGE_BODY="$PAGE_BODY"
 
@@ -90,15 +88,15 @@ PY
   PARSER_OUTPUT=$(python3 -c '
 import json, re, sys
 
-tag = sys.argv[1]
-tm = re.match(r"^v(\d+)\.(\d+)\.(\d+)$", tag)
+semver = re.compile(r"v([0-9]+)\.([0-9]+)\.([0-9]+)")
+tm = semver.fullmatch(sys.argv[1])
 if not tm:
     sys.exit(3)
 target = tuple(map(int, tm.groups()))
 
 try:
     releases = json.load(sys.stdin)
-except Exception:
+except ValueError:
     sys.exit(3)
 
 if not isinstance(releases, list):
@@ -110,11 +108,14 @@ if len(releases) == 0:
 candidates = []
 for r in releases:
     if not isinstance(r, dict):
+        sys.exit(3)
+    draft = r.get("draft", False)
+    if draft is not False and draft is not None:
         continue
-    if r.get("draft") is True:
+    cand_tag = r.get("tag_name")
+    if not isinstance(cand_tag, str):
         continue
-    cand_tag = r.get("tag_name") or ""
-    cm = re.match(r"^v(\d+)\.(\d+)\.(\d+)$", cand_tag)
+    cm = semver.fullmatch(cand_tag)
     if not cm:
         continue
     cand = tuple(map(int, cm.groups()))
