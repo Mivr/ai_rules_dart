@@ -709,9 +709,8 @@ void main(List<String> args) {
 
   group('no staged-resolver copies', () {
     test('the wrapper imports the shared library instead of copying it', () {
-      final Map<String, String> sources = _toolSources(args);
-      final String text = File(sources['app_jit_snapshot.dart']!)
-          .readAsStringSync();
+      final Map<String, String> s = _toolSources(args);
+      final String text = File(s['app_jit_snapshot.dart']!).readAsStringSync();
       expect(text, contains("import '../../guard/lib/directive_guard.dart';"));
       expect(text, isNot(contains('staged-resolver-mirror')));
       expect(text, isNot(contains('Mirror of `directive_guard.dart`')));
@@ -1325,10 +1324,7 @@ void main(List<String> args) {
       final Map<String, String> sources = _toolSources(args);
       expect(
         sources.keys,
-        unorderedEquals([
-          ...markers.keys,
-          ...['directive_guard.dart'],
-        ]),
+        unorderedEquals([...markers.keys, 'directive_guard.dart']),
       );
     });
 
