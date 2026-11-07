@@ -939,9 +939,16 @@ dart_test(
         "staged_project_copy.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
+    args = ["$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)"],
+    data = [
+        "@dart_toolchains//sdk/3.13.5:analyze_files",
+        "@dart_toolchains//sdk/3.13.5:dart",
+        "@dart_toolchains//sdk/3.13.5:runtime_files",
+    ],
     main = "fix_runner_test.dart",
     deps = [
         "//dart/guard:directive_guard",
+        "//dart/runfiles",
         "@ext_pub_deps//:test",
     ],
 )

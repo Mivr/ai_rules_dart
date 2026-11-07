@@ -34,11 +34,22 @@ void main() {
     tmp.deleteSync(recursive: true);
   });
 
+  _defineSyntaxTests();
+  _defineStagingTests(() => tmp);
+}
+
+void _defineSyntaxTests() {
   group('projectOptionsContainLintKeys', () {
-    test('detects each project lint rule key', () {
+    test('detects each project lint rule key in map and list syntax', () {
       for (final String key in projectLintRuleKeys) {
         expect(
           projectOptionsContainLintKeys('linter:\n  rules:\n    $key: true\n'),
+          isTrue,
+        );
+        expect(
+          projectOptionsContainLintKeys(
+            'linter:\r\n  rules:\r\n    - $key\r\n',
+          ),
           isTrue,
         );
       }
@@ -55,17 +66,34 @@ void main() {
         projectOptionsContainLintKeys('# no_stdout_in_worker: true\n'),
         isFalse,
       );
+      expect(
+        projectOptionsContainLintKeys('# - no_stdout_in_worker\n'),
+        isFalse,
+      );
       expect(projectOptionsContainLintKeys(''), isFalse);
     });
   });
 
   group('stripProjectLintKeys', () {
-    test('removes enabled keys and preserves everything else', () {
+    test('removes map and list keys and keeps emptied errors valid', () {
       const options =
-          '# header\nlinter:\n  rules:\n    no_home_env_reads: true\n    avoid_print: true\n    process_requires_environment: false\n';
+          '# header\n'
+          'analyzer:\n'
+          '  errors:\n'
+          '    no_stdout_in_worker: ignore\n'
+          'linter:\n'
+          '  rules:\n'
+          '    - no_home_env_reads # custom\n'
+          '    - avoid_print\n'
+          '    process_requires_environment: false\n';
       expect(
         stripProjectLintKeys(options),
-        '# header\nlinter:\n  rules:\n    avoid_print: true\n',
+        '# header\n'
+        'analyzer:\n'
+        '  errors: {}\n'
+        'linter:\n'
+        '  rules:\n'
+        '    - avoid_print\n',
       );
     });
 
@@ -74,11 +102,13 @@ void main() {
       expect(stripProjectLintKeys(options), options);
     });
   });
+}
 
+void _defineStagingTests(Directory Function() currentTmp) {
   group('findStagedProjectLintOptions', () {
     test('finds symlinked options without mutating the target', () {
       final ({Directory project, File target}) staged = stageOptionsProject(
-        tmp,
+        currentTmp(),
       );
       final Set<String> found = findStagedProjectLintOptions(
         staged.project.path,
@@ -91,7 +121,8 @@ void main() {
     });
 
     test('returns empty when no keys are enabled', () {
-      final project = Directory('${tmp.path}/empty.proj')..createSync();
+      final project = Directory('${currentTmp().path}/empty.proj')
+        ..createSync();
       Directory('${project.path}/src').createSync(recursive: true);
       File('${project.path}/src/analysis_options.yaml')
           .writeAsStringSync('linter:\n  rules:\n    avoid_print: true\n');
@@ -102,9 +133,9 @@ void main() {
   group('stripStagedProjectLintOptions', () {
     test('strips scratch copies and leaves linked targets alone', () {
       final ({Directory project, File target}) staged = stageOptionsProject(
-        tmp,
+        currentTmp(),
       );
-      final scratch = Directory('${tmp.path}/scratch')
+      final scratch = Directory('${currentTmp().path}/scratch')
         ..createSync(recursive: true);
       copyStagedTree(
         staged.project.path,
@@ -131,11 +162,11 @@ void main() {
 
   group('copyStagedTree', () {
     test('copies contents and skips unlisted src entries', () {
-      final from = Directory('${tmp.path}/from')..createSync();
+      final from = Directory('${currentTmp().path}/from')..createSync();
       Directory('${from.path}/src/lib').createSync(recursive: true);
       File('${from.path}/src/lib/a.dart').writeAsStringSync('int a() => 1;\n');
       File('${from.path}/src/lib/b.dart').writeAsStringSync('int b() => 2;\n');
-      final to = '${tmp.path}/to';
+      final to = '${currentTmp().path}/to';
       copyStagedTree(
         from.path,
         to,

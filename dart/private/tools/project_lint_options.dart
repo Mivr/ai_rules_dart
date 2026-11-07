@@ -16,23 +16,73 @@ const List<String> projectLintRuleKeys = <String>[
   'process_requires_environment',
 ];
 
-/// Matches an `analysis_options.yaml` rule line enabling a project lint rule.
+final String _ruleKeyAlternation = projectLintRuleKeys.join('|');
+
+const String _ws = r'[ \t]';
+const String _eol = r'(?:#.*)?\r?$';
+
+/// Matches an `analysis_options.yaml` line referencing a project lint rule in
+/// either map (`rule: true`) or list (`- rule`) syntax.
 final RegExp _projectLintKeyLine = RegExp(
-  '^[ \\t]*(?:${projectLintRuleKeys.join('|')})[ \\t]*:',
+  '^$_ws*(?:(?:$_ruleKeyAlternation)$_ws*:|-$_ws+(?:$_ruleKeyAlternation)$_ws*$_eol)',
   multiLine: true,
 );
 
-/// Whether the `analysis_options.yaml` [content] enables any project lint
+/// Matches a bare `errors:` or `cannot-ignore:` section header whose children
+/// may all have been stripped.
+final RegExp _typedSectionHeader = RegExp(
+  r'^([ \t]*)(errors|cannot-ignore)[ \t]*:([ \t]*(?:#.*)?\r?)$',
+);
+
+/// Whether the `analysis_options.yaml` [content] references any project lint
 /// rule key.
 bool projectOptionsContainLintKeys(String content) =>
     _projectLintKeyLine.hasMatch(content);
 
 /// The `analysis_options.yaml` [content] with the project lint rule keys
-/// removed, preserving every other byte.
-String stripProjectLintKeys(String content) => content
-    .split('\n')
-    .where((line) => !_projectLintKeyLine.hasMatch(line))
-    .join('\n');
+/// removed, preserving every other line and keeping emptied `errors:` or
+/// `cannot-ignore:` sections syntactically valid.
+String stripProjectLintKeys(String content) {
+  if (!projectOptionsContainLintKeys(content)) {
+    return content;
+  }
+  final List<String> kept = [
+    for (final line in content.split('\n'))
+      if (!_projectLintKeyLine.hasMatch(line)) line,
+  ];
+  for (var i = 0; i < kept.length; i++) {
+    final RegExpMatch? header = _typedSectionHeader.firstMatch(kept[i]);
+    if (header == null) continue;
+    final String indent = header[1]!;
+    if (!_hasIndentedChild(kept, i + 1, indent.length)) {
+      final String section = header[2]!;
+      final emptyValue = section == 'errors' ? '{}' : '[]';
+      kept[i] = '$indent$section: $emptyValue${header[3]!}';
+    }
+  }
+  return kept.join('\n');
+}
+
+/// Whether [lines] starting at [start] has a non-comment child indented deeper
+/// than [parentIndent].
+bool _hasIndentedChild(List<String> lines, int start, int parentIndent) {
+  for (var j = start; j < lines.length; j++) {
+    final String trimmed = lines[j].trim();
+    if (trimmed.isEmpty || trimmed.startsWith('#')) continue;
+    return _indentWidth(lines[j]) > parentIndent;
+  }
+  return false;
+}
+
+/// Leading space/tab count of [line].
+int _indentWidth(String line) {
+  var count = 0;
+  while (count < line.length &&
+      (line.codeUnitAt(count) == 0x20 || line.codeUnitAt(count) == 0x09)) {
+    count++;
+  }
+  return count;
+}
 
 /// The root-relative paths of staged `analysis_options.yaml` files under
 /// [root] that enable project lint rule keys.

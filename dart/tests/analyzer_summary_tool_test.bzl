@@ -46,6 +46,26 @@ analyzer_summary_tool_alias_test = analysistest.make(
     config_settings = {SUMMARIES_FLAG: True},
 )
 
+def _override_tool_test_impl(ctx):
+    """Checks setting `//dart:analyzer_summary_tool` swaps the summary worker."""
+    env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
+    asserts.equals(
+        env,
+        Label("//dart/private/tools:noop"),
+        target.label,
+        "`//dart/private:analyzer_summary_tool` when overridden via flag",
+    )
+    return analysistest.end(env)
+
+analyzer_summary_tool_override_test = analysistest.make(
+    _override_tool_test_impl,
+    config_settings = {
+        SUMMARIES_FLAG: True,
+        str(Label("//dart:analyzer_summary_tool")): Label("//dart/private/tools:noop"),
+    },
+)
+
 def analyzer_summary_tool_test_suite(name):
     """Declares the `//dart:analyzer_summary_tool` flag tests.
 
@@ -59,6 +79,11 @@ def analyzer_summary_tool_test_suite(name):
     )
     analyzer_summary_tool_alias_test(
         name = name + "_alias",
+        size = "small",
+        target_under_test = "//dart/private:analyzer_summary_tool",
+    )
+    analyzer_summary_tool_override_test(
+        name = name + "_override",
         size = "small",
         target_under_test = "//dart/private:analyzer_summary_tool",
     )

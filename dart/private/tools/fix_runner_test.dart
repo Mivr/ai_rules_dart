@@ -1,13 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
 
 import '../../guard/lib/directive_guard.dart';
 import 'fix_runner.dart' as fix_runner;
 import 'staged_project_copy.dart' as staged;
 
-void main() {
+void main(List<String> args) {
   late Directory tmp;
 
   setUp(() {
@@ -201,9 +202,14 @@ void main() {
     ]);
   });
 
+  _definePruneFixTests(() => tmp);
+  _defineProjectLintFixTests(args, () => tmp);
+}
+
+void _definePruneFixTests(Directory Function() currentTmp) {
   group('pruneOrphanedStagedFiles', () {
     Directory stageSrc(String name) {
-      final project = Directory('${tmp.path}/$name.proj')
+      final project = Directory('${currentTmp().path}/$name.proj')
         ..createSync(recursive: true);
       Directory('${project.path}/src/pkg').createSync(recursive: true);
       return project;
@@ -268,7 +274,7 @@ void main() {
     test('prunes sibling extpkgs entries the manifest does not list', () {
       final Directory project = stageSrc('ext');
       writeSrcManifest(project, ['*']);
-      final ext = Directory('${tmp.path}/ext.extpkgs/foo')
+      final ext = Directory('${currentTmp().path}/ext.extpkgs/foo')
         ..createSync(recursive: true);
       File('${ext.path}/keep.dart').writeAsStringSync('const keep = 1;\n');
       File('${ext.path}/drop.dart').writeAsStringSync('const drop = 1;\n');
@@ -284,7 +290,7 @@ void main() {
     test('an extpkgs directory prefix keeps the whole listed tree', () {
       final Directory project = stageSrc('extdir');
       writeSrcManifest(project, ['*']);
-      final ext = Directory('${tmp.path}/extdir.extpkgs/tree')
+      final ext = Directory('${currentTmp().path}/extdir.extpkgs/tree')
         ..createSync(recursive: true);
       File('${ext.path}/nested.dart').writeAsStringSync('const n = 1;\n');
       File('${project.path}/.dart_tool/extpkgs_manifest.txt')
@@ -295,4 +301,75 @@ void main() {
       expect(File('${ext.path}/nested.dart').existsSync(), isTrue);
     });
   });
+}
+
+void _defineProjectLintFixTests(
+  List<String> args,
+  Directory Function() currentTmp,
+) {
+  test(
+    'fix_runner strips project lint keys without mutating symlinks or dropping options',
+    skip: args.isEmpty ? 'needs dart SDK runfiles path in args[0]' : null,
+    () {
+      final String dartBin = Runfiles.create().rlocation(args[0]);
+      final Directory base = currentTmp();
+      final project = Directory('${base.path}/fix_keyed.proj')
+        ..createSync(recursive: true);
+      Directory('${project.path}/src/lib').createSync(recursive: true);
+      Directory('${project.path}/.dart_tool').createSync(recursive: true);
+      File('${project.path}/pubspec.yaml')
+          .writeAsStringSync('name: demo\nenvironment:\n  sdk: "^3.0.0"\n');
+      File('${project.path}/.dart_tool/package_config.json').writeAsStringSync(
+        '{"configVersion": 2, "packages": '
+        '[{"name": "demo", "rootUri": "../src", "packageUri": "lib/", "languageVersion": "3.0"}]}',
+      );
+      File('${project.path}/src/lib/a.dart').writeAsStringSync(
+        'int calc() {\n  var value = 1;\n  return value;\n}\n',
+      );
+      final optionsTarget = File('${base.path}/real_fix_options.yaml')
+        ..writeAsStringSync(
+          'linter:\n'
+          '  rules:\n'
+          '    no_stdout_in_worker: true\n'
+          '    prefer_final_locals: true\n',
+        );
+      Link('${project.path}/src/analysis_options.yaml')
+          .createSync(optionsTarget.path);
+      final eligible = File('${base.path}/fix_keyed.eligible')
+        ..writeAsStringSync('src/lib/a.dart\tlib/a.dart\n');
+      final scratch = Directory('${base.path}/fix_keyed.scratch');
+      final fixes = Directory('${base.path}/fix_keyed.fixes');
+      final manifest = File('${base.path}/fix_keyed.manifest.json');
+
+      fix_runner.main([
+        '--dart',
+        dartBin,
+        '--project',
+        project.path,
+        '--scratch',
+        scratch.path,
+        '--fixes',
+        fixes.path,
+        '--manifest',
+        manifest.path,
+        '--eligible',
+        eligible.path,
+      ]);
+
+      expect(
+        optionsTarget.readAsStringSync(),
+        contains('no_stdout_in_worker: true'),
+      );
+      expect(
+        File('${fixes.path}/lib/a.dart').readAsStringSync(),
+        contains('final value = 1;'),
+      );
+      final decoded =
+          jsonDecode(manifest.readAsStringSync()) as Map<String, Object?>;
+      expect(decoded['dropped'], isEmpty);
+      expect(decoded['fixed'], [
+        {'staged': 'src/lib/a.dart', 'workspace': 'lib/a.dart'},
+      ]);
+    },
+  );
 }

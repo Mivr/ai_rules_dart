@@ -49,30 +49,37 @@ void main(List<String> args) {
   // symlinks), and map the diagnostics back from the copy's paths.
   final String? stripped = stageStrippedProjectCopy(project, allowed);
   final String effective = stripped ?? project;
+  var exitCode = 0;
   try {
-    if (parsed.baseline != null) {
-      _analyzeWithBaseline(parsed, effective);
-      return;
-    }
-
-    final ProcessResult result = _runDartAnalyze(
-      parsed,
-      effective,
-      machine: false,
-    );
-    // Bazel echoes any action output, so a clean run stays silent rather than
-    // printing the analyzer's "No issues found!" on every build.
-    stderr.write(unstage(result.stderr as String, effective));
-    if (result.exitCode != 0) {
-      stdout.write(unstage(result.stdout as String, effective));
-      exit(result.exitCode);
-    }
-    File(parsed.stamp).writeAsStringSync('analyzed\n');
+    exitCode = parsed.baseline != null
+        ? _analyzeWithBaseline(parsed, effective)
+        : _analyzeWithoutBaseline(parsed, effective);
   } finally {
     if (stripped != null) {
       _removeStagingCopy(stripped);
     }
   }
+  if (exitCode != 0) {
+    exit(exitCode);
+  }
+}
+
+/// Runs `dart analyze` without a baseline and returns its exit code.
+int _analyzeWithoutBaseline(_AnalyzeArgs parsed, String effective) {
+  final ProcessResult result = _runDartAnalyze(
+    parsed,
+    effective,
+    machine: false,
+  );
+  // Bazel echoes any action output, so a clean run stays silent rather than
+  // printing the analyzer's "No issues found!" on every build.
+  stderr.write(unstage(result.stderr as String, effective));
+  if (result.exitCode != 0) {
+    stdout.write(unstage(result.stdout as String, effective));
+    return result.exitCode;
+  }
+  File(parsed.stamp).writeAsStringSync('analyzed\n');
+  return 0;
 }
 
 /// Copies the staged project into a scratch directory with the project lint
@@ -88,13 +95,7 @@ String? stageStrippedProjectCopy(String project, Set<String>? allowed) {
       ? project.substring(0, project.length - 1)
       : project;
   final scratch = Directory('$normProject.stripped');
-  if (scratch.existsSync()) {
-    try {
-      scratch.deleteSync(recursive: true);
-    } on FileSystemException {
-      // Best-effort cleanup of previous scratch directory.
-    }
-  }
+  _removeStagingCopy(scratch.path);
   copyStagedTree(
     project,
     scratch.path,
@@ -138,8 +139,9 @@ ProcessResult _runDartAnalyze(
 
 /// Runs `dart analyze --format=machine` and decides the verdict from the
 /// baseline ceilings instead of the analyzer's exit code.
-void _analyzeWithBaseline(_AnalyzeArgs parsed, String project) {
-  final AnalysisBaseline baseline = _loadBaselineOrExit(parsed.baseline!);
+int _analyzeWithBaseline(_AnalyzeArgs parsed, String project) {
+  final AnalysisBaseline? baseline = _loadBaseline(parsed.baseline!);
+  if (baseline == null) return 1;
   final ProcessResult result = _runDartAnalyze(parsed, project, machine: true);
   final stdoutText = result.stdout as String;
   stderr.write(unstage(result.stderr as String, project));
@@ -147,22 +149,23 @@ void _analyzeWithBaseline(_AnalyzeArgs parsed, String project) {
     stdoutText,
     project,
   );
-  if (diagnostics == null) exit(1);
+  if (diagnostics == null) return 1;
   if (!_reconcileExitCode(parsed, project, result.exitCode, diagnostics)) {
     _writeBaselineReport(diagnostics, baseline);
     if (diagnostics.isEmpty) stdout.write(unstage(stdoutText, project));
-    exit(1);
+    return 1;
   }
   final BaselineReport report = _writeBaselineReport(diagnostics, baseline);
-  if (!report.passes) exit(1);
+  if (!report.passes) return 1;
   File(parsed.stamp).writeAsStringSync('analyzed\n');
+  return 0;
 }
 
-AnalysisBaseline _loadBaselineOrExit(String baselinePath) {
+AnalysisBaseline? _loadBaseline(String baselinePath) {
   final baselineFile = File(baselinePath);
   if (!baselineFile.existsSync()) {
     stderr.writeln('analyze_runner: missing baseline file $baselinePath');
-    exit(1);
+    return null;
   }
   try {
     return AnalysisBaseline.parse(
@@ -171,7 +174,7 @@ AnalysisBaseline _loadBaselineOrExit(String baselinePath) {
     );
   } on BaselineException catch (e) {
     stderr.writeln('analyze_runner: $e');
-    exit(1);
+    return null;
   }
 }
 
