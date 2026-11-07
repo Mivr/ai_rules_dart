@@ -1139,9 +1139,10 @@ void main(List<String> args) {
           final String prefix = extra == 0 ? exact : ('../' * extra) + exact;
           final ref = '$prefix//x.dart';
           for (final kind in ['import', 'part']) {
-            final file = File('${parentDir.path}/f${n++}.dart')
+            final name = 'f${n++}.dart';
+            final file = File('${parentDir.path}/$name')
               ..writeAsStringSync("$kind '$ref';\n");
-            final fromKey = 'demo/lib/$dirKey${file.path.split('/').last}';
+            final fromKey = 'demo/lib/$dirKey$name';
             final String decoy = resolveStagedRelativeTarget(ref, file.path)!;
             File(decoy)
               ..parent.createSync(recursive: true)
@@ -1162,12 +1163,11 @@ void main(List<String> args) {
             uri.pathSegments.length > 1 && uri.pathSegments[1].isEmpty;
         expect(uriRefused, isTrue);
 
+        final String filePath = c.file.path.replaceAll(r'\', '/');
         expect(
           violations,
           contains(
-            contains(
-              "${c.file.path} ${c.kind} '${c.ref}' is not a declared input.",
-            ),
+            contains("$filePath ${c.kind} '${c.ref}' is not a declared input."),
           ),
           reason: '${c.kind} ${c.ref} from ${c.fromKey}',
         );
@@ -1199,12 +1199,13 @@ void main(List<String> args) {
           (srcDir, 'src/', '../../../..//x.dart'),
         ]) {
           for (final kind in kinds) {
-            final file = File('${parentDir.path}/a${n++}.dart');
+            final name = 'a${n++}.dart';
+            final file = File('${parentDir.path}/$name');
             final content = kind == 'part of'
                 ? "part of '$ref';\n"
                 : "$kind '$ref';\n";
             file.writeAsStringSync(content);
-            final fromKey = 'demo/lib/$dirKey${file.path.split('/').last}';
+            final fromKey = 'demo/lib/$dirKey$name';
             final String decoy = resolveStagedRelativeTarget(ref, file.path)!;
             File(decoy)
               ..parent.createSync(recursive: true)
@@ -1218,11 +1219,12 @@ void main(List<String> args) {
         ], tool: 'guard-test');
 
         for (final c in cases) {
+          final String filePath = c.file.path.replaceAll(r'\', '/');
           expect(
             violations,
             contains(
               contains(
-                "${c.file.path} ${c.kind} '${c.ref}' is not a declared input.",
+                "$filePath ${c.kind} '${c.ref}' is not a declared input.",
               ),
             ),
             reason: '${c.kind} ${c.ref} from ${c.fromKey}',
