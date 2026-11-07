@@ -64,6 +64,9 @@ def pub_scanner_repo_impl(ctx):
       ctx: The scanner repository context; the attrs carry the source text
         and the SDK version, and the host SDK comes from this module's own
         repo mapping.
+
+    Returns:
+      Reproducible repository metadata for the repository contents cache.
     """
     ctx.file("pub_scan.dart", ctx.attr.scanner_src)
     exe_suffix = ".exe" if ctx.os.name.lower().startswith("windows") else ""
@@ -118,6 +121,7 @@ def pub_scanner_repo_impl(ctx):
         [
             str(ctx.path(_sdk_file(platform, "bin/utils/gen_snapshot" + exe_suffix))),
             "--snapshot_kind=app-aot-elf",
+            "--deterministic",
             "--elf=" + exe_path,
             dill_path,
         ],
@@ -132,3 +136,4 @@ def pub_scanner_repo_impl(ctx):
         "BUILD.bazel",
         "exports_files([\"%s\"])\n" % exe_name,
     )
+    return ctx.repo_metadata(reproducible = True)

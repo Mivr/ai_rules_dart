@@ -102,6 +102,7 @@ declare_dart_sdk_toolchains(
     )
 
     repository_ctx.file("BUILD.bazel", build_content)
+    return repository_ctx.repo_metadata(reproducible = True)
 
 dart_repositories = repository_rule(
     _dart_sdk_repo_impl,
@@ -161,6 +162,7 @@ exports_files(
         dartaotruntime = repr(artifacts.dartaotruntime_filename),
     )
     repository_ctx.file("BUILD.bazel", build_content)
+    return repository_ctx.repo_metadata(reproducible = True)
 
 dart_cross_repositories = repository_rule(
     _dart_cross_sdk_repo_impl,

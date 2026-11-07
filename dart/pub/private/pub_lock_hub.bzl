@@ -58,6 +58,7 @@ def _pub_lock_hub_impl(ctx):
         spoke_prefix,
         ctx.attr.scc_targets,
     ))
+    return ctx.repo_metadata(reproducible = True)
 
 pub_lock_hub = repository_rule(
     implementation = _pub_lock_hub_impl,

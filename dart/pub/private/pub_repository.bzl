@@ -82,6 +82,7 @@ def _pub_package_impl(ctx):
     )
 
     ctx.file("BUILD.bazel", build_content)
+    return ctx.repo_metadata(reproducible = True)
 
 pub_package = repository_rule(
     implementation = _pub_package_impl,

@@ -252,6 +252,7 @@ def _pub_lock_scc_package_impl(ctx):
         parsed_members.append(_parsed_scc_member(ctx, member, member["name"]))
     _verify_scc_plan(config.repo_name, parsed_members)
     _write_scc_build_files(ctx, parsed_members, config)
+    return ctx.repo_metadata(reproducible = True)
 
 pub_lock_scc_package = repository_rule(
     implementation = _pub_lock_scc_package_impl,

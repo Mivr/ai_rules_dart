@@ -1706,6 +1706,26 @@ jobs:
             exit 1
           fi
           echo "OK: e2e/repro_canary outputs differ across distinct output bases ($sha_a != $sha_b)"
+      - name: Verify repository contents cache reproducibility
+        working-directory: tools
+        run: |
+          trap 'bazel --max_idle_secs=60 shutdown' EXIT
+          bazel --max_idle_secs=60 run //repo_contents_cache:check -- .. \
+            dart_linux-x64 \
+            dart_linux-x64_cross_linux-arm64 \
+            dart_toolchains \
+            dart_pub_scanner \
+            ext_pub_deps \
+            ext_pub_deps__args
+          bazel --max_idle_secs=60 run //repo_contents_cache:check -- .. --scanner
+          bazel --max_idle_secs=60 run //repo_contents_cache:check -- ../e2e/pub_lock_scc \
+            pub_deps \
+            dart_pub__scc__dio__dio_web_adapter \
+            very_good_analysis
+          bazel --max_idle_secs=60 run //repo_contents_cache:check -- ../e2e/pub_lock_git \
+            fmtpkg \
+            pub_deps \
+            --probe probe
   hermetic-strict:
     runs-on: ubuntu-latest
     timeout-minutes: 60

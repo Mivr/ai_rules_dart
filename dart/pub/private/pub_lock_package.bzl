@@ -246,6 +246,7 @@ def _pub_lock_package_impl(ctx):
     _check_package_symlinks(ctx, ctx.attr.package_name)
 
     _pub_lock_write_build(ctx, "pub_lock_package")
+    return ctx.repo_metadata(reproducible = True)
 
 pub_lock_package = repository_rule(
     implementation = _pub_lock_package_impl,
@@ -362,6 +363,7 @@ def _pub_lock_git_package_impl(ctx):
     _check_package_symlinks(ctx, ctx.attr.package_name)
 
     _pub_lock_write_build(ctx, "pub_lock_git_package")
+    return ctx.repo_metadata(reproducible = True)
 
 pub_lock_git_package = repository_rule(
     implementation = _pub_lock_git_package_impl,
