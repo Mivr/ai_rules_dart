@@ -70,7 +70,7 @@ void main(List<String> args) {
   );
 
   _definePruneTests(() => tmp);
-  _defineStrippedCopyTests(() => tmp);
+  _defineStrippedCopyTests(args, () => tmp);
   _defineRunnerVerdictUnitTests();
   defineRunnerSubprocessBaselineTests(args, () => tmp);
 }
@@ -263,29 +263,40 @@ void _defineRunnerCeilingTests() {
 
 /// Stages a `<name>.proj` tree whose `src/analysis_options.yaml` is a symlink
 /// into a read-only file enabling a project lint rule.
-void _defineStrippedCopyTests(Directory Function() currentTmp) {
-  group('stageStrippedProjectCopy', () {
-    ({Directory project, File target}) stageKeyedProject(String name) {
-      final project = Directory('${currentTmp().path}/$name.proj')
-        ..createSync(recursive: true);
-      Directory('${project.path}/src/lib').createSync(recursive: true);
-      Directory('${project.path}/.dart_tool').createSync(recursive: true);
-      File('${project.path}/src/lib/a.dart')
-          .writeAsStringSync('int a() => 1;\n');
-      File('${project.path}/src/lib/b.dart')
-          .writeAsStringSync('int b() => 2;\n');
-      File('${project.path}/.dart_tool/src_manifest.txt')
-          .writeAsStringSync('lib/a.dart\nlib/b.dart\nanalysis_options.yaml\n');
-      final target = File('${currentTmp().path}/$name.options.yaml')
-        ..writeAsStringSync(
-          'linter:\n  rules:\n    no_stdout_in_worker: true\n    avoid_print: true\n',
-        );
-      Link('${project.path}/src/analysis_options.yaml').createSync(target.path);
-      return (project: project, target: target);
-    }
+({Directory project, File target}) _stageKeyedProject(
+  Directory base,
+  String name,
+) {
+  final project = Directory('${base.path}/$name.proj')
+    ..createSync(recursive: true);
+  Directory('${project.path}/src/lib').createSync(recursive: true);
+  Directory('${project.path}/.dart_tool').createSync(recursive: true);
+  File('${project.path}/pubspec.yaml')
+      .writeAsStringSync('name: demo\nenvironment:\n  sdk: "^3.0.0"\n');
+  File('${project.path}/.dart_tool/package_config.json').writeAsStringSync(
+    '{"configVersion": 2, "packages": '
+    '[{"name": "demo", "rootUri": "../src", "packageUri": "lib/", "languageVersion": "3.0"}]}',
+  );
+  File('${project.path}/src/lib/a.dart').writeAsStringSync('int a() => 1;\n');
+  File('${project.path}/src/lib/b.dart').writeAsStringSync('int b() => 2;\n');
+  File('${project.path}/.dart_tool/src_manifest.txt')
+      .writeAsStringSync('lib/a.dart\nlib/b.dart\nanalysis_options.yaml\n');
+  final target = File('${base.path}/$name.options.yaml')
+    ..writeAsStringSync(
+      'linter:\n  rules:\n    no_stdout_in_worker: true\n    avoid_print: true\n',
+    );
+  Link('${project.path}/src/analysis_options.yaml').createSync(target.path);
+  return (project: project, target: target);
+}
 
+void _defineStrippedCopyTests(
+  List<String> args,
+  Directory Function() currentTmp,
+) {
+  group('stageStrippedProjectCopy', () {
     test('copies and strips keyed options without touching the target', () {
-      final ({Directory project, File target}) keyed = stageKeyedProject(
+      final ({Directory project, File target}) keyed = _stageKeyedProject(
+        currentTmp(),
         'keyed',
       );
       final Set<String>? allowed = analyze_runner.pruneOrphanedStagedFiles(
@@ -325,4 +336,46 @@ void _defineStrippedCopyTests(Directory Function() currentTmp) {
       );
     });
   });
+
+  _defineStrippedSubprocessTest(args, currentTmp);
+}
+
+void _defineStrippedSubprocessTest(
+  List<String> args,
+  Directory Function() currentTmp,
+) {
+  test(
+    'analyze_runner subprocess strips project lint keys and cleans scratch',
+    skip: args.length < 2
+        ? 'needs analyze_runner and dart runfiles paths'
+        : null,
+    () {
+      final rf = Runfiles.create();
+      final String runner = rf.rlocation(args[0]);
+      final String dartBin = rf.rlocation(args[1]);
+      final ({Directory project, File target}) keyed = _stageKeyedProject(
+        currentTmp(),
+        'subproc_keyed',
+      );
+      final stamp = File('${currentTmp().path}/subproc_keyed.analyzed');
+      final ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
+        runner,
+        '--dart',
+        dartBin,
+        '--project',
+        keyed.project.path,
+        '--stamp',
+        stamp.path,
+        '--fatal-infos',
+      ]);
+      expect(res.exitCode, 0, reason: '${res.stdout}\n${res.stderr}');
+      expect(stamp.existsSync(), isTrue);
+      expect(res.stdout as String, isNot(contains('undefined_lint')));
+      expect(
+        keyed.target.readAsStringSync(),
+        contains('no_stdout_in_worker: true'),
+      );
+      expect(Directory('${keyed.project.path}.stripped').existsSync(), isFalse);
+    },
+  );
 }
