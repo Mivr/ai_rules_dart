@@ -113,6 +113,12 @@ repos:
         language: system
         files: ^\.github/workflows/release_gate(_test)?\.sh$
         pass_filenames: false
+      - id: release-prep-test
+        name: release prep tests
+        entry: bash .github/workflows/release_prep_test.sh
+        language: system
+        files: ^\.github/workflows/release_prep(_test)?\.sh$
+        pass_filenames: false
   # Enforce the commit message policy in AGENTS.md: a conventional-commit
   # subject and the `Changelog:` trailer rules
   - repo: local
