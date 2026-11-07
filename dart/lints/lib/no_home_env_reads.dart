@@ -99,19 +99,13 @@ class _Visitor extends SimpleAstVisitor<void> {
     if (member != 'fromEnvironment' && member != 'hasEnvironment') {
       return;
     }
-    final List<String> parts = constructor.type.toSource().split('.');
-    if (parts.length > 2) {
-      return;
-    }
-    final String? prefix = parts.length == 2 ? parts.first : null;
-    final String typeName = parts.length == 2 ? parts.last : parts.first;
+    final NamedType type = constructor.type;
+    final String? prefix = type.importPrefix?.name.lexeme;
+    final String typeName = type.name.lexeme;
     if (member == 'fromEnvironment' && typeName == 'String' ||
         member == 'hasEnvironment' && typeName == 'bool') {
       if (_isDartCore(constructor, prefix)) {
-        _checkPositionalString(
-          node.argumentList,
-          constructor.name ?? constructor.type,
-        );
+        _checkPositionalString(node.argumentList, constructor.name ?? type);
       }
     }
   }
@@ -166,8 +160,11 @@ class _Visitor extends SimpleAstVisitor<void> {
   /// under [prefix].
   bool _isDartCore(AstNode anchor, String? prefix) {
     return prefix == null ||
-        importUriForPrefix(anchor.root as CompilationUnit, prefix) ==
-            'dart:core';
+        prefixImportsLibrary(
+          anchor.root as CompilationUnit,
+          prefix,
+          'dart:core',
+        );
   }
 
   /// Reports [target] when the first positional argument of [arguments] folds

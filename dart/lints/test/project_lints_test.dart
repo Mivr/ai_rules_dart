@@ -13,14 +13,33 @@ import 'package:analyzer/src/lint/registry.dart';
 import 'package:rules_dart_project_lints/rules_dart_project_lints.dart';
 import 'package:test/test.dart';
 
-/// The executing SDK's root: `dart_test` runs on the toolchain SDK's `dart`,
-/// so the grandparent of the executable is the SDK.
-final String _sdkPath = File(Platform.resolvedExecutable).parent.parent.path;
+/// The executing SDK's root, normalized for `AnalysisContextCollection`.
+final String _sdkPath = _normAbs(
+  File(Platform.resolvedExecutable).parent.parent.path,
+);
 
-/// Fixture sources, keyed by path under the fixture root.
+/// Normalizes [rawPath] as an absolute host path.
+String _normAbs(String rawPath) => PhysicalResourceProvider.INSTANCE.pathContext
+    .normalize(PhysicalResourceProvider.INSTANCE.pathContext.absolute(rawPath));
+
+/// Joins POSIX-spelled [relative] segments onto [basePath] using host slashes.
+String _joinRel(String basePath, String relative) =>
+    PhysicalResourceProvider.INSTANCE.pathContext.normalize(
+      PhysicalResourceProvider.INSTANCE.pathContext.joinAll([
+        basePath,
+        ...relative.split('/'),
+      ]),
+    );
+
+/// Fixture sources, keyed by POSIX path under the fixture root.
 const Map<String, String> _fixtures = {
   // `no_stdout_in_worker`: a worker unit by basename.
-  'lib/tool_worker.dart': 'void run() {\n  print(1);\n}\n',
+  'lib/tool_worker.dart':
+      "import 'dart:io';\n"
+      'void run() {\n'
+      '  print(1);\n'
+      "  stdout..writeln('frame');\n"
+      '}\n',
   // Not a worker unit: the same `print` stays silent.
   'lib/tool.dart': 'void run() {\n  print(1);\n}\n',
   // A worker unit through a `worker_protocol.dart` import.
@@ -39,15 +58,18 @@ const Map<String, String> _fixtures = {
       '}\n',
   // A `main` without the flag is not a worker unit.
   'lib/plain_main.dart': 'void main() {\n  print(1);\n}\n',
-  // Binary frame writes, `stderr`, and interception stay allowed.
+  // Binary frame writes, `stderr`, local `stdout` sinks, and interception stay allowed.
   'lib/worker_allowed.dart':
       "import 'dart:async';\n"
       "import 'dart:io';\n"
-      'void run(List<int> frame) {\n'
-      '  stdout.add(frame);\n'
+      'void run(List<int> frame, StringSink stdout) {\n'
+      "  stdout.writeln('local sink');\n"
       "  stderr.writeln('oops');\n"
       '  runZonedGuarded(() {}, (Object e, StackTrace s) {},\n'
       '      zoneSpecification: ZoneSpecification(print: (self, parent, zone, line) {}));\n'
+      '}\n'
+      'void sendFrame(List<int> frame) {\n'
+      '  stdout.add(frame);\n'
       '}\n',
   // `process_requires_environment`.
   'lib/proc.dart':
@@ -85,10 +107,21 @@ const Map<String, String> _fixtures = {
       '  );\n'
       '}\n',
   // `no_wall_clock_in_actions`.
-  'lib/clock.dart': 'int stamp() {\n  DateTime.now();\n  return 0;\n}\n',
-  'lib/clock_seeded.dart': 'int pick() {\n  return Random(1).nextInt(10);\n}\n',
+  'lib/clock.dart':
+      "import 'dart:math' as math;\n"
+      'int stamp() {\n'
+      '  DateTime.now();\n'
+      '  math.Random();\n'
+      '  return 0;\n'
+      '}\n',
+  'lib/clock_unimported_random.dart':
+      'int pick() {\n  Random();\n  return 0;\n}\n',
+  'lib/clock_seeded.dart':
+      "import 'dart:math';\n"
+      'int pick() => Random(1).nextInt(10) + Random.new(2).nextInt(10);\n',
   'lib/clock_secure.dart':
-      'int pick() {\n  return Random.secure().nextInt(10);\n}\n',
+      "import 'dart:math';\n"
+      'int pick() => Random.secure().nextInt(10) + Random.new().nextInt(10);\n',
   'lib/clock_utc.dart': 'int stamp() => DateTime.utc(2020).year;\n',
   'lib/clock_temp.dart':
       "import 'dart:io';\n"
@@ -106,9 +139,11 @@ const Map<String, String> _fixtures = {
       'bool cached() =>\n'
       "    Platform.environment.containsKey('XDG_CONFIG_HOME');\n",
   'lib/env_from.dart':
-      "String home() => String.fromEnvironment('HOME', defaultValue: '');\n",
+      "String home() => const String.fromEnvironment('HOME');\n",
+  'lib/env_has.dart':
+      "bool hasHome() => const bool.hasEnvironment('USERPROFILE');\n",
   'lib/env_bool.dart':
-      "bool testing() => bool.hasEnvironment('TESTING') || false;\n",
+      "bool testing() => const bool.hasEnvironment('TESTING');\n",
   'lib/env_fold.dart':
       'String? look(Map<String, String?> env) {\n'
       "  final direct = env['HO' 'ME'];\n"
@@ -132,42 +167,48 @@ const String _fixtureOptions =
     '    no_wall_clock_in_actions: true\n'
     '    process_requires_environment: true\n';
 
-/// A minimal package config making the fixture root package `fixture`.
+/// A minimal package config making the fixture root (`..` from `.dart_tool`)
+/// package `fixture`.
 const String _fixturePackages =
     '{"configVersion": 2, "packages": '
-    '[{"name": "fixture", "rootUri": ".", "packageUri": "lib/"}]}';
+    '[{"name": "fixture", "rootUri": "..", "packageUri": "lib/"}]}';
 
-/// Writes one fixture source at [relative] path under [root].
-void _writeFixture(Directory root, String relative, String content) {
-  File('${root.path}/$relative')
+/// Writes one fixture source at [relative] path under [rootPath].
+void _writeFixture(String rootPath, String relative, String content) {
+  File(_joinRel(rootPath, relative))
     ..parent.createSync(recursive: true)
     ..writeAsStringSync(content);
 }
 
-/// Stages [_fixtures] under a fresh fixture root with options and packages.
-Directory _stageFixtures() {
-  final Directory root = Directory.systemTemp.createTempSync(
-    'project_lints_test_',
+/// Stages [_fixtures] inside a `bazel-out/...` directory under [tempRoot] so
+/// every host exercises the execroot path layout seen on CI.
+String _stageFixtures(Directory tempRoot) {
+  final String rootPath = _joinRel(
+    _normAbs(tempRoot.path),
+    'bazel-out/x64_windows-fastbuild/fixture',
   );
+  Directory(rootPath).createSync(recursive: true);
   for (final MapEntry<String, String> entry in _fixtures.entries) {
-    _writeFixture(root, entry.key, entry.value);
+    _writeFixture(rootPath, entry.key, entry.value);
   }
-  File('${root.path}/analysis_options.yaml').writeAsStringSync(_fixtureOptions);
-  Directory('${root.path}/.dart_tool').createSync(recursive: true);
-  File('${root.path}/.dart_tool/package_config.json')
-      .writeAsStringSync(_fixturePackages);
-  return root;
+  _writeFixture(rootPath, 'analysis_options.yaml', _fixtureOptions);
+  _writeFixture(rootPath, '.dart_tool/package_config.json', _fixturePackages);
+  return rootPath;
 }
 
+typedef _CodesLookup = Future<List<String>> Function(String relative);
+
 void main() {
-  late Directory root;
+  late Directory tempRoot;
+  late String rootPath;
   late AnalysisContextCollection collection;
 
   setUpAll(() {
     rulesDartProjectLints().forEach(Registry.ruleRegistry.registerLintRule);
-    root = _stageFixtures();
+    tempRoot = Directory.systemTemp.createTempSync('project_lints_test_');
+    rootPath = _stageFixtures(tempRoot);
     collection = AnalysisContextCollection(
-      includedPaths: [root.path],
+      includedPaths: [rootPath],
       resourceProvider: PhysicalResourceProvider.INSTANCE,
       sdkPath: _sdkPath,
     );
@@ -175,19 +216,21 @@ void main() {
 
   tearDownAll(() async {
     await collection.dispose();
-    root.deleteSync(recursive: true);
+    try {
+      tempRoot.deleteSync(recursive: true);
+    } on FileSystemException catch (e) {
+      stderr.writeln('project_lints_test: cleanup skipped: ${e.message}');
+    }
   });
 
-  /// The lint codes reported for the fixture at [relative] path.
   Future<List<String>> codes(String relative) async {
     final AnalysisSession session = collection
-        .contextFor(root.path)
+        .contextFor(rootPath)
         .currentSession;
-    final SomeErrorsResult result = await session.getErrors(
-      '${root.path}/$relative',
-    );
+    final String filePath = _joinRel(rootPath, relative);
+    final SomeErrorsResult result = await session.getErrors(filePath);
     if (result is! ErrorsResult) {
-      fail('cannot analyze $relative: ${result.runtimeType}');
+      fail('cannot analyze $relative ($filePath): ${result.runtimeType}');
     }
     return [
       for (final diagnostic in result.diagnostics)
@@ -195,8 +238,16 @@ void main() {
     ];
   }
 
+  _definePathScopeTests();
+  _defineNoStdoutTests(codes);
+  _defineProcessEnvTests(codes);
+  _defineWallClockTests(codes);
+  _defineHomeEnvTests(codes);
+}
+
+void _definePathScopeTests() {
   group('isProductionProjectLintPath', () {
-    test('accepts production lib paths', () {
+    test('accepts production lib and staged summary paths', () {
       expect(isProductionProjectLintPath('/repo/lib/a.dart'), isTrue);
       expect(
         isProductionProjectLintPath('/pkg/src/lib/a.dart', packageRoot: '/pkg'),
@@ -208,15 +259,41 @@ void main() {
         ),
         isTrue,
       );
+      expect(
+        isProductionProjectLintPath(
+          '/b/bazel-out/k8/foo.dart_analyze.summary.proj/src/bin/main.dart',
+        ),
+        isTrue,
+      );
+      expect(
+        isProductionProjectLintPath(
+          r'D:\a\bazel-out\x64\foo.dart_analyze.summary.proj\src\lib\a.dart',
+        ),
+        isTrue,
+      );
+      expect(
+        isProductionProjectLintPath(
+          r'D:\bazel-out\pkg\lib\a.dart',
+          packageRoot: 'd:/bazel-out/pkg',
+        ),
+        isTrue,
+      );
     });
 
-    test('skips test files and directories', () {
+    test('skips test files and directories including staged summary tests', () {
       expect(isProductionProjectLintPath('/repo/lib/a_test.dart'), isFalse);
       expect(isProductionProjectLintPath('/repo/test/a.dart'), isFalse);
       expect(isProductionProjectLintPath('/repo/tests/a.dart'), isFalse);
       expect(isProductionProjectLintPath('/repo/dart/tests/a.dart'), isFalse);
       expect(isProductionProjectLintPath('/repo/dev/testdata/a.dart'), isFalse);
       expect(isProductionProjectLintPath('/repo/testdata/a.dart'), isFalse);
+      expect(
+        isProductionProjectLintPath(
+          '/b/out/t.dart_analyze.summary.proj/src/dart/tests/fix/lib/a.dart',
+          packageRoot: '/b/out/t.dart_analyze.summary.proj/src/dart/tests/fix',
+        ),
+        isFalse,
+      );
     });
 
     test('skips generated, staged, and documentation paths', () {
@@ -231,14 +308,19 @@ void main() {
       expect(isProductionProjectLintPath('/repo/third_party/a.dart'), isFalse);
     });
   });
+}
 
+void _defineNoStdoutTests(_CodesLookup codes) {
   group('no_stdout_in_worker', () {
-    test('reports print in a worker unit', () async {
-      expect(
-        await codes('lib/tool_worker.dart'),
-        contains('no_stdout_in_worker'),
-      );
-    });
+    test(
+      'reports print and cascaded stdout text writes in a worker unit',
+      () async {
+        expect(
+          await codes('lib/tool_worker.dart'),
+          equals(['no_stdout_in_worker', 'no_stdout_in_worker']),
+        );
+      },
+    );
 
     test('ignores print outside worker units', () async {
       expect(
@@ -259,12 +341,15 @@ void main() {
       );
     });
 
-    test('allows binary writes, stderr, and interception', () async {
-      expect(
-        await codes('lib/worker_allowed.dart'),
-        isNot(contains('no_stdout_in_worker')),
-      );
-    });
+    test(
+      'allows binary writes, stderr, local sinks, and interception',
+      () async {
+        expect(
+          await codes('lib/worker_allowed.dart'),
+          isNot(contains('no_stdout_in_worker')),
+        );
+      },
+    );
 
     test('skips non-production worker paths', () async {
       expect(
@@ -277,7 +362,9 @@ void main() {
       );
     });
   });
+}
 
+void _defineProcessEnvTests(_CodesLookup codes) {
   group('process_requires_environment', () {
     test('reports unpinned spawns', () async {
       expect(
@@ -286,7 +373,7 @@ void main() {
       );
     });
 
-    test('allows pinned and partial environments', () async {
+    test('allows pinned and rejects partial or null environments', () async {
       expect(
         await codes('lib/proc_pinned.dart'),
         isNot(contains('process_requires_environment')),
@@ -301,16 +388,22 @@ void main() {
       );
     });
   });
+}
 
+void _defineWallClockTests(_CodesLookup codes) {
   group('no_wall_clock_in_actions', () {
-    test('reports clock reads', () async {
+    test('reports clock, unseeded random, and systemTemp reads', () async {
       expect(
         await codes('lib/clock.dart'),
+        equals(['no_wall_clock_in_actions', 'no_wall_clock_in_actions']),
+      );
+      expect(
+        await codes('lib/clock_unimported_random.dart'),
         contains('no_wall_clock_in_actions'),
       );
       expect(
         await codes('lib/clock_secure.dart'),
-        contains('no_wall_clock_in_actions'),
+        equals(['no_wall_clock_in_actions', 'no_wall_clock_in_actions']),
       );
       expect(
         await codes('lib/clock_temp.dart'),
@@ -329,16 +422,22 @@ void main() {
       );
     });
   });
+}
 
+void _defineHomeEnvTests(_CodesLookup codes) {
   group('no_home_env_reads', () {
-    test('reports home variable reads', () async {
+    test('reports home variable reads across all lookup forms', () async {
       expect(await codes('lib/env.dart'), contains('no_home_env_reads'));
       expect(
         await codes('lib/env_contains.dart'),
         contains('no_home_env_reads'),
       );
       expect(await codes('lib/env_from.dart'), contains('no_home_env_reads'));
-      expect(await codes('lib/env_fold.dart'), contains('no_home_env_reads'));
+      expect(await codes('lib/env_has.dart'), contains('no_home_env_reads'));
+      expect(
+        await codes('lib/env_fold.dart'),
+        equals(['no_home_env_reads', 'no_home_env_reads', 'no_home_env_reads']),
+      );
     });
 
     test('allows writes and unrelated names', () async {
