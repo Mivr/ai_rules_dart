@@ -372,6 +372,7 @@ def _toolchains_repo_impl(repository_ctx):
             "sdk/" + version + "/BUILD.bazel",
             _sdk_build_for_version(repository_ctx.attr.user_repository_name, version),
         )
+    return repository_ctx.repo_metadata(reproducible = True)
 
 toolchains_repo = repository_rule(
     _toolchains_repo_impl,

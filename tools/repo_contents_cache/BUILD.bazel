@@ -1,0 +1,31 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
+
+dart_library(
+    name = "repo_contents_cache",
+    package_name = "repo_contents_cache",
+    srcs = glob(["lib/**/*.dart"]),
+    deps = [
+        "//e2e_runner:e2e_runner_lib",
+        "@pub_deps//:crypto",
+        "@pub_deps//:path",
+    ],
+)
+
+dart_binary(
+    name = "check",
+    main = "bin/check.dart",
+    deps = [
+        ":repo_contents_cache",
+    ],
+)
+
+dart_test(
+    name = "checker_test",
+    size = "small",
+    main = "test/checker_test.dart",
+    deps = [
+        ":repo_contents_cache",
+        "@pub_deps//:path",
+        "@pub_deps//:test",
+    ],
+)
