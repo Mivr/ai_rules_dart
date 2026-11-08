@@ -108,6 +108,9 @@ own runner, built from that same package, so Bazel's test features work:
 
 - `bazel test --test_filter=<regex>` runs the cases whose names match.
 - `shard_count` splits a file's cases across shards.
+- `include_tags` and `exclude_tags` select or skip cases by `package:test` tag
+  (such as `@Tags(['smoke'])`): `include_tags = ["smoke"]` runs only matching
+  cases (`--tags`), and `exclude_tags = ["broken"]` skips them (`--exclude-tags`).
 - Each case appears in Bazel's test report (`test.xml`).
 - Bazel's `size`/`timeout` is the only time limit. `package:test`'s default
   30-second limit per case is switched off; a `timeout:` a test states on a
@@ -116,7 +119,7 @@ own runner, built from that same package, so Bazel's test features work:
 `package:test` must be a direct entry in `deps` (for example `@deps//:test`),
 not reached only through a helper library: the runner comes with that target.
 A test whose `main` does not use `package:test` runs directly, and fails if
-given a filter or shards, because it has no cases to select.
+given a filter, shards or tag selectors, because it has no cases to select.
 
 The runner starts from an app-JIT snapshot, trained on one run of it, so each
 test starts faster than from its kernel. The snapshot is skipped when the exec

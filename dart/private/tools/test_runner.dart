@@ -147,18 +147,12 @@ const _noTestsRan = 79;
 void deleteScratchQuietly(FileSystemEntity entity) =>
     staging.deleteScratchQuietly(entity);
 
-Future<int> _runDirectly(
-  String dart,
-  String dill,
-  List<String> args, {
-  required String? manifest,
-  required String? workspace,
-  required CoverageConfig? coverage,
-}) async {
-  final Map<String, String> env = Platform.environment;
-  // A plain `main` has no notion of test cases, so there is nothing to filter
-  // or split. Running every case anyway would report a filtered or sharded run
-  // that never happened.
+/// Checks whether environment variables requiring `package:test` were set on
+/// a test running directly with a plain `main()`.
+///
+/// Returns 1 with an error message on stderr if an unsupported feature was
+/// requested, or null if the test can proceed.
+int? _checkPlainMainRequirements(Map<String, String> env) {
   if (env.containsKey('TESTBRIDGE_TEST_ONLY')) {
     stderr.writeln(
       'dart_test: --test_filter needs a test written with package:test; this '
@@ -173,6 +167,39 @@ Future<int> _runDirectly(
     );
     return 1;
   }
+  final String? includeTags = env['RULES_DART_INCLUDE_TAGS'];
+  if (includeTags != null && includeTags.isNotEmpty) {
+    stderr.writeln(
+      'dart_test: include_tags needs a test written with package:test; this '
+      'one has a plain main() and cannot select cases.',
+    );
+    return 1;
+  }
+  final String? excludeTags = env['RULES_DART_EXCLUDE_TAGS'];
+  if (excludeTags != null && excludeTags.isNotEmpty) {
+    stderr.writeln(
+      'dart_test: exclude_tags needs a test written with package:test; this '
+      'one has a plain main() and cannot select cases.',
+    );
+    return 1;
+  }
+  return null;
+}
+
+Future<int> _runDirectly(
+  String dart,
+  String dill,
+  List<String> args, {
+  required String? manifest,
+  required String? workspace,
+  required CoverageConfig? coverage,
+}) async {
+  final Map<String, String> env = Platform.environment;
+  // A plain `main` has no notion of test cases, so there is nothing to filter,
+  // split or select by tag. Running every case anyway would report a filtered or
+  // sharded run that never happened.
+  final int? refusal = _checkPlainMainRequirements(env);
+  if (refusal != null) return refusal;
   final bool inPlace = staging.workspaceInPlace(
     manifest: manifest,
     workspace: workspace,
@@ -277,7 +304,7 @@ Future<int> _runUnderRunner({
     vm.dart,
     [
       ...?coverage?.vmFlags,
-      ..._suiteCommand(
+      ...suiteCommand(
         runner: vm.runner,
         precompiled: pre.precompiled,
         testPath: source.testPath,
@@ -468,7 +495,7 @@ List<String> _withoutSeedFlags(List<String> args) => [
 /// The runner command line for one suite run.
 ///
 /// A [seed] goes to the runner as its one `--test-randomize-ordering-seed`.
-List<String> _suiteCommand({
+List<String> suiteCommand({
   required String runner,
   required String precompiled,
   required String testPath,
@@ -480,6 +507,8 @@ List<String> _suiteCommand({
   final String? totalShards = env['TEST_TOTAL_SHARDS'];
   final String? shardIndex = env['TEST_SHARD_INDEX'];
   final String? shardStatus = env['TEST_SHARD_STATUS_FILE'];
+  final String? includeTags = env['RULES_DART_INCLUDE_TAGS'];
+  final String? excludeTags = env['RULES_DART_EXCLUDE_TAGS'];
 
   // Touched before the run, as Bazel asks: it is how a test runner says it
   // supports sharding at all.
@@ -497,6 +526,14 @@ List<String> _suiteCommand({
     '--timeout=${_suiteTimeout(env)}',
     '--file-reporter=json:$report',
     if (filter != null && filter.isNotEmpty) ...['--name', filter],
+    if (includeTags != null && includeTags.isNotEmpty) ...[
+      '--tags',
+      includeTags,
+    ],
+    if (excludeTags != null && excludeTags.isNotEmpty) ...[
+      '--exclude-tags',
+      excludeTags,
+    ],
     if (totalShards != null && shardIndex != null) ...[
       '--total-shards',
       totalShards,

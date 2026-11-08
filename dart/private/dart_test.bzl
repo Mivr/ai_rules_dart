@@ -52,7 +52,21 @@ load("//dart/private:test_runner_info.bzl", "DartTestRunnerInfo")
 
 visibility(["//dart/..."])
 
+def _check_tag_entries(target, attr_name, tags):
+    """Validates that tag selectors contain no empty entries or newlines.
+
+    Args:
+        target: The label of the target being checked.
+        attr_name: The name of the attribute (`include_tags` or `exclude_tags`).
+        tags: The list of tag selector strings.
+    """
+    for tag in tags:
+        if not tag or "\n" in tag or "\r" in tag:
+            fail("%s: `%s` entries cannot be empty or contain newlines" % (target, attr_name))
+
 def _dart_test_impl(ctx):
+    _check_tag_entries(ctx.label, "include_tags", ctx.attr.include_tags)
+    _check_tag_entries(ctx.label, "exclude_tags", ctx.attr.exclude_tags)
     toolchain = ctx.toolchains["//dart:toolchain_type"]
     dart_sdk_info = toolchain.dart_sdk_info
     workspace_name = ctx.workspace_name
@@ -88,6 +102,10 @@ def _dart_test_impl(ctx):
         runner_files = [runner, ctx.file.main] + (
             [kernel.base_dill] if kernel.base_dill != None else []
         )
+    if ctx.attr.include_tags:
+        env["RULES_DART_INCLUDE_TAGS"] = " && ".join(ctx.attr.include_tags)
+    if ctx.attr.exclude_tags:
+        env["RULES_DART_EXCLUDE_TAGS"] = " || ".join(ctx.attr.exclude_tags)
     for key, value in ctx.attr.env.items():
         if key.startswith("RULES_DART_"):
             fail("%s: `env` cannot set %s; rules_dart uses the RULES_DART_ prefix to drive the test" % (ctx.label, key))
@@ -616,6 +634,18 @@ told where a runfile is (resolve it with `Runfiles.rlocation()`).""",
         ),
         "env_inherit": attr.string_list(
             doc = "Names of environment variables passed through from the environment `bazel test` runs in.",
+        ),
+        "exclude_tags": attr.string_list(
+            doc = (
+                "Skip the cases matching any selector listed, passed as the " +
+                "runner's `--exclude-tags`. Defaults to empty."
+            ),
+        ),
+        "include_tags": attr.string_list(
+            doc = (
+                "Run only the cases whose tags match every selector listed, " +
+                "passed as the runner's `--tags`. Defaults to empty."
+            ),
         ),
         "_import_check": attr.label(
             doc = "The tool that checks this test's imports against its direct `deps` (see the `dart_layering_check` feature).",
