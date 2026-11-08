@@ -675,34 +675,37 @@ function bodies, and the target is checked against those summaries rather than
 against its dependencies' source. The check is faster, and a body edit in a
 library no longer re-checks the libraries above it.
 
-To analyze from source, as `dart analyze` runs, turn it off in `.bazelrc`:
+To analyze from staged transitive sources, turn summaries off in `.bazelrc`:
 
 ```
 # .bazelrc
 common --@rules_dart//dart:analyzer_summaries=false
 ```
 
-A target is checked from source whatever the flag says in these cases, since
-summaries cannot give it the same answer:
+In both modes, the pinned `analyzer_summary` worker is the sole analysis engine on
+supported Dart SDKs (>= 3.16). With the flag off, zero per-package summaries are
+built and `analyzer_summary` analyzes staged sources with zero `--summary` flags.
+Flutter targets resolve `dart:ui` via `sky_engine`'s embedder SDK summary in both
+modes.
 
-- Its closure holds a Flutter embedder: a package named `sky_engine`, or a
-  `lib/_embedder.yaml`. A summary cannot resolve `dart:ui`.
-- The toolchain's Dart SDK is newer than the pinned analyzer supports. The bound
-  is `ANALYZER_MAX_LANGUAGE_VERSION` in `dart/private/dart_analyzer_summary.bzl`.
-- A dependency has no summary, such as an opaque `srcs_dir` library.
+Stock SDK `dart analyze` via `analyze_runner` is used only as fallback in these
+cases:
+
+- The toolchain's Dart SDK is older than the summary floor (< 3.16).
+- Its closure holds an unbacked embedder (a `lib/_embedder.yaml` outside Flutter's
+  `sky_engine`).
+
+When a target cannot be analyzed from summaries (such as an opaque `srcs_dir`
+dependency or a package split across targets), it is analyzed over staged sources
+by `analyzer_summary` without summaries.
 
 `dart_codegen` passes the summaries only to generators built on rules_dart's
 builder shim. A generator of your own gets the command line it always had.
 
-The trade-off: the diagnostics come from rules_dart's pinned `package:analyzer`
-(14.5.0), not from the SDK's `dart analyze`, so they can differ from the IDE's.
-The lint rules are the SDK's own linter, vendored in `third_party/dart_linter`
-from the commit that published that analyzer. On the CI red paths the
-diagnostics matched `dart analyze` line for line. The vendored set lacks
-`migrate_design_widgets` relative to SDK 3.13.5. When the SDK moves ahead of the
-pinned analyzer, diagnostics can drift, and the re-vendored linter has to be
-updated with the pin. `dart fix` still runs on the SDK, and the format check is
-unchanged.
+The diagnostics come from rules_dart's pinned `package:analyzer` (14.5.0) and
+`rules_dart_project_lints` hosted in the `analyzer_summary` worker, with lint rules
+from `third_party/dart_linter`. `dart fix` still runs on the SDK, and the format check
+is unchanged.
 
 #### Checking targets `//...` does not reach
 

@@ -1,6 +1,7 @@
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("//dart:defs.bzl", "dart_test")
+load("//dart:toolchain.bzl", "dart_toolchain")
 load("//dart/pub/tests:language_version_test.bzl", "language_version_test_suite")
 load("//dart/pub/tests:link_hook_test.bzl", "link_hook_test_suite")
 load("//dart/pub/tests:propagation_test.bzl", "propagation_test_suite")
@@ -11,6 +12,7 @@ load("//dart/pub/tests:pubspec_guard_test.bzl", "pubspec_guard_test_suite")
 load("//dart/pub/tests:semver_test.bzl", "semver_test_suite")
 load("//dart/pub/tests:yaml_parser_test.bzl", "yaml_parser_test_suite")
 load("//dart/pub/tests:yaml_subset_test.bzl", "yaml_subset_test_suite")
+load(":analyze_mode_parity_test.bzl", "analyze_mode_parity_test_suite")
 load(":analyzer_summary_test.bzl", "analyzer_summary_test_suite")
 load(":analyzer_summary_tool_test.bzl", "analyzer_summary_tool_test_suite")
 load(":architecture_invariants_test.bzl", "architecture_invariants_test_suite")
@@ -146,6 +148,28 @@ snapshot_patch_test_suite(name = "snapshot_patch_test")
 analyzer_summary_test_suite(name = "analyzer_summary_version_test")
 
 analyzer_summary_tool_test_suite(name = "analyzer_summary_tool")
+
+dart_toolchain(
+    name = "synthetic_3_15_dart_toolchain",
+    dart = "//dart/tests/analyze_mode_parity_fixture/sdk:dart-sdk/bin/dart",
+    sdk_root = "//dart/tests/analyze_mode_parity_fixture/sdk:sdk_root",
+    tags = ["manual"],
+    version = "3.15.0",
+)
+
+toolchain(
+    name = "synthetic_3_15_exec_toolchain",
+    toolchain = ":synthetic_3_15_dart_toolchain",
+    toolchain_type = "//dart:exec_tools_toolchain_type",
+)
+
+toolchain(
+    name = "synthetic_3_15_target_toolchain",
+    toolchain = ":synthetic_3_15_dart_toolchain",
+    toolchain_type = "//dart:toolchain_type",
+)
+
+analyze_mode_parity_test_suite(name = "analyze_mode_parity_test")
 
 built_value_library_direct_test_suite(name = "built_value_library_direct")
 

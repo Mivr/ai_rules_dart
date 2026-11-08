@@ -12,17 +12,6 @@ analyzer_sdk_summary(
     visibility = ["//visibility:public"],
 )
 
-# The aspects' analyzer attributes point at these aliases, not at the tool and
-# the summary themselves. With the flag off, an attribute that named the tool
-# would still configure it, and so load `@ext_pub_deps`' analyzer closure into
-# every build. Each alias resolves to the real label only under the flag, and to
-# a file or binary the aspects never run otherwise. Both are `manual`, so a
-# wildcard build never builds the target an alias picks.
-config_setting(
-    name = "analyzer_summaries_on",
-    flag_values = {"//dart:analyzer_summaries": "true"},
-)
-
 config_setting(
     name = "allow_analysis_failures",
     values = {"allow_analysis_failures": "true"},
@@ -44,22 +33,22 @@ alias(
     visibility = ["//visibility:public"],
 )
 
+# The aspects' analyzer attributes point at these aliases, which route
+# unconditionally to `//dart:analyzer_summary_tool` and `:analyzer_sdk_summary`.
+# `analyzer_summary` is the sole analysis engine on supported SDKs (>= 3.16) for
+# both summary mode (`--//dart:analyzer_summaries=true`) and full-source mode
+# (`--//dart:analyzer_summaries=false`). Both targets are `manual`, so a wildcard
+# build never builds them unless an action requires them.
 alias(
     name = "analyzer_summary_tool",
-    actual = select({
-        ":analyzer_summaries_on": "//dart:analyzer_summary_tool",
-        "//conditions:default": "//dart/private/tools:noop",
-    }),
+    actual = "//dart:analyzer_summary_tool",
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 
 alias(
     name = "analyzer_sdk_summary_input",
-    actual = select({
-        ":analyzer_summaries_on": ":analyzer_sdk_summary",
-        "//conditions:default": "//dart/private/tools:noop.dart",
-    }),
+    actual = ":analyzer_sdk_summary",
     tags = ["manual"],
     visibility = ["//visibility:public"],
 )
@@ -176,7 +165,6 @@ bzl_library(
     deps = [
         ":common",
         ":dart_analyzer_summary",
-        "@bazel_skylib//rules:common_settings",
     ],
 )
 

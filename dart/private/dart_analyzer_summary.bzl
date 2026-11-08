@@ -20,11 +20,12 @@ that adds `dart:ui` and the embedder's other `dart:` libraries to the SDK
 summary, marks `sky_engine` covered, and propagates that embedder SDK summary to
 dependents in `embedder_sdk_summaries`.
 
-With the flag off the aspect declares no actions and provides empty values, so
-a build without the flag is as it was. The same holds where summary mode is
-unsafe: a toolchain SDK newer than the pinned analyzer supports
-(`analyzer_summaries_supported`), and a closure with an unbacked embedder
-(`unbacked_embedder_in_closure`).
+With `--//dart:analyzer_summaries=false`, the aspect builds zero per-package
+summaries, but still builds and propagates `sky_engine`'s embedder SDK summary
+(`embedder_sdk.sum`) across dependencies so Flutter targets can be analyzed via
+`analyzer_summary` in source mode. For SDKs older than the floor (< 3.16) or
+closures with an unbacked embedder, stock SDK `dart analyze` via `analyze_runner`
+serves as fallback.
 """
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
@@ -399,22 +400,17 @@ def _summary_key_by_path(own_records, srcs):
             own_key_by_path[f.short_path] = package_key(record)
     return own_key_by_path
 
-def _summary_embedder_info(ctx, info, deps, files, sums, own):
+def _build_embedder_sdk_summary(ctx, info, files, embedder_yaml):
     """Builds the embedder SDK summary action for `sky_engine`.
 
     Args:
       ctx: The aspect context.
       info: The target's `DartInfo`.
-      deps: The closure targets.
       files: The target's `DefaultInfo` files.
-      sums: `struct(dependencies, packaged, inherited_embedder_sdks,
-        embedder_yaml)`: the closure summary sets and the own embedder yaml.
-      own: `struct(own_files, own_keys)`: the own-files depset and own package
-        keys.
+      embedder_yaml: The own `_embedder.yaml` `File`.
 
     Returns:
-      A `DartAnalyzerSummaryInfo` with no summary of its own whose `embedder_sdk_summaries`
-      holds the new embedder SDK summary.
+      The declared embedder SDK summary `File`.
     """
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
     mismatch = kernel_sdk_mismatch_error(ctx.label, "_tool", ctx.attr._tool, dart_sdk_info.version)
@@ -424,7 +420,7 @@ def _summary_embedder_info(ctx, info, deps, files, sums, own):
     args = ctx.actions.args()
     args.add("sdk")
     args.add("--sdk", sdk_root_path(dart_sdk_info))
-    args.add("--embedder-yaml", sums.embedder_yaml)
+    args.add("--embedder-yaml", embedder_yaml)
     args.add("--out", embedder_sdk)
     ctx.actions.run(
         executable = dart_sdk_info.dart,
@@ -448,6 +444,26 @@ def _summary_embedder_info(ctx, info, deps, files, sums, own):
         env = writable_home_env(dart_sdk_info.dart, embedder_sdk),
         toolchain = _TOOLCHAIN,
     )
+    return embedder_sdk
+
+def _summary_embedder_info(ctx, info, deps, files, sums, own):
+    """Builds embedder info for `sky_engine` with summaries enabled.
+
+    Args:
+      ctx: The aspect context.
+      info: The target's `DartInfo`.
+      deps: The closure targets.
+      files: The target's `DefaultInfo` files.
+      sums: `struct(dependencies, packaged, inherited_embedder_sdks,
+        embedder_yaml)`: the closure summary sets and the own embedder yaml.
+      own: `struct(own_files, own_keys)`: the own-files depset and own package
+        keys.
+
+    Returns:
+      A `DartAnalyzerSummaryInfo` with no summary of its own whose `embedder_sdk_summaries`
+      holds the new embedder SDK summary.
+    """
+    embedder_sdk = _build_embedder_sdk_summary(ctx, info, files, sums.embedder_yaml)
     return DartAnalyzerSummaryInfo(
         summary = None,
         transitive_summaries = sums.dependencies,
@@ -455,6 +471,33 @@ def _summary_embedder_info(ctx, info, deps, files, sums, own):
         embedder_sdk_summaries = depset([embedder_sdk], transitive = [sums.inherited_embedder_sdks]),
         packages = depset(own.own_keys, transitive = _dep_summary_packages(deps)),
         own_files = own.own_files,
+    )
+
+def _summary_disabled_info(ctx, info, files, embedder_yaml, inherited_embedder_sdks):
+    """Builds summary info when analyzer summaries are disabled.
+
+    Zero per-package summaries are produced. Embedder SDK summaries (such as
+    for `sky_engine`) are still built and propagated across dependencies so
+    Flutter targets can be analyzed via `analyzer_summary` in source mode.
+
+    Args:
+      ctx: The aspect context.
+      info: The target's `DartInfo`.
+      files: The target's `DefaultInfo` files.
+      embedder_yaml: The own `_embedder.yaml` `File`, or None.
+      inherited_embedder_sdks: Transitive embedder SDK summaries from deps.
+
+    Returns:
+      A `DartAnalyzerSummaryInfo` with zero package summaries and propagated embedder SDK summaries.
+    """
+    own_embedder_sdk = [_build_embedder_sdk_summary(ctx, info, files, embedder_yaml)] if embedder_yaml != None else []
+    return DartAnalyzerSummaryInfo(
+        summary = None,
+        transitive_summaries = depset(),
+        packaged_summaries = depset(),
+        embedder_sdk_summaries = depset(own_embedder_sdk, transitive = [inherited_embedder_sdks]),
+        packages = depset(),
+        own_files = depset(),
     )
 
 def _summary_inherited_keys(deps):
@@ -806,8 +849,12 @@ def _dart_analyzer_summary_impl(target, ctx):
     dependencies, inherited_embedder_sdks, packaged = _summary_closure_sets(deps)
     info = target[DartInfo]
     sdk_version = ctx.toolchains[_TOOLCHAIN].dart_sdk_info.version
-    if not ctx.attr._enabled[BuildSettingInfo].value or not analyzer_summaries_supported(sdk_version):
+    if not analyzer_summaries_supported(sdk_version):
         return [_empty_summary_info()]
+    if not ctx.attr._enabled[BuildSettingInfo].value:
+        files = target[DefaultInfo].files.to_list()
+        embedder_yaml = _own_embedder_yaml(info, files)
+        return [_summary_disabled_info(ctx, info, files, embedder_yaml, inherited_embedder_sdks)]
 
     # A target's own package is covered only by a summary that covers it. A
     # target with sources of its own gets one below, or, for an opaque `srcs_dir`

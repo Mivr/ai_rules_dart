@@ -1,15 +1,15 @@
-"""Summary-mode analysis for targets without usable dependency summaries.
+"""Summary-mode and full-source fallback analysis via `analyzer_summary`.
 
-When `//dart:analyzer_summaries` is on and the analyzing SDK is supported but a
-target cannot be analyzed from dependency summaries — its package is split
-across targets, or a dependency has no summary — the target is still checked
-by `analyzer_summary`, run over its own staged sources with no summaries, so
-the hosted project rules (see `//dart/lints:rules_dart_project_lints`) check
-it without `.sum` conflicts. The mode stays source: `DartAnalysisModeInfo`
-reports no summary use, only the checker changes.
+On every supported Dart SDK (>= 3.16) whose closure holds no unbacked embedder,
+`analyzer_summary` is the sole analysis engine. When dependency summaries are
+unavailable — under `--//dart:analyzer_summaries=false`, when a package is
+split across targets, or when an opaque dependency lacks a summary — the target
+is checked by `analyzer_summary` over staged transitive sources with zero
+`--summary` flags, reporting source mode (`DartAnalysisModeInfo.summaries == False`).
+Stock SDK `dart analyze` via `analyze_runner` is used only as fallback for SDKs
+below 3.16 or closures with an unbacked `_embedder.yaml`.
 """
 
-load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart/private:common.bzl", "kernel_sdk_mismatch_error", "writable_home_env")
 load(
     "//dart/private:dart_analyzer_summary.bzl",
@@ -87,29 +87,25 @@ def analyze_summaries(ctx, name, staged, summaries, sdk_summary, sdk_inputs, own
     )
     return stamp
 
-def fallback_summary_ready(ctx, info, sdk_version, embedder_sdk_summary):
+def fallback_summary_ready(info, sdk_version, embedder_sdk_summary):
     """Whether a target without summaries is still checked by `analyzer_summary`.
 
-    True when summaries are enabled, the analyzing SDK is supported, and the
-    closure holds no unbacked embedder: split-package and opaque-dependency
-    targets then run `analyze_summaries` over their own staged sources with
-    empty summaries instead of stock `dart analyze`, so the hosted project
-    rules still check them. Without summaries every other staged file is
-    resolution-only, so the worker analyzes only the explicit sources, like
-    the `dart analyze` wrapper excludes do.
+    True when the analyzing SDK is supported and the closure holds no unbacked
+    embedder: every target then runs `analyze_summaries` (either with dependency
+    summaries when summaries are enabled and ready, or over staged transitive
+    sources with empty summaries in full-source mode or on split-package/opaque
+    targets) rather than stock `dart analyze`.
 
     Args:
-      ctx: The aspect context, carrying the `_summaries` build setting.
       info: The target's `DartInfo` closure.
       sdk_version: The analyzing toolchain's SDK version.
       embedder_sdk_summary: The single embedder SDK summary `File` from the
         closure's `DartAnalyzerSummaryInfo.embedder_sdk_summaries`, or None.
 
     Returns:
-      True when the target is checked by `analyzer_summary` without summaries.
+      True when the target is checked by `analyzer_summary`.
     """
     return (
-        ctx.attr._summaries[BuildSettingInfo].value and
         analyzer_summaries_supported(sdk_version) and
         not unbacked_embedder_in_closure(info, embedder_sdk_summary)
     )

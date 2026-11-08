@@ -61,14 +61,13 @@ asked for. `dart_fix` applies the aspect to its `target` and writes those
 products into the workspace, so a fix and the analysis it answers can never see
 different projects.
 
-With `//dart:analyzer_summaries` on (the default), the analysis action changes
-and nothing else does. It stages only the target's own files and checks them with
-`analyzer_summary analyze` against the summaries of its dependencies, which
-`dart_analyzer_summary` builds (see that file). A target keeps the staged closure
-and `dart analyze` when its flag is off, when the analyzing SDK is newer than the
-pinned analyzer supports, when its closure holds an unbacked embedder
-(`unbacked_embedder_in_closure`), or when a dependency lacks a summary.
-`DartAnalysisModeInfo` says which mode a target was checked in.
+With `//dart:analyzer_summaries` on (the default), `dart_analyze` checks targets
+against dependency summaries. With the flag off, it stages the full transitive
+closure and checks with `analyzer_summary` with zero summaries. A target falls
+back to stock SDK `dart analyze` via `analyze_runner` only when the analyzing SDK
+is below 3.16 or when its closure holds an unbacked embedder
+(`unbacked_embedder_in_closure`).
+`DartAnalysisModeInfo` says whether summary mode was used.
 The format check and the fix action are the same in both modes. In this mode
 the diagnostics come from the pinned `package:analyzer` with the SDK linter
 vendored in `//third_party/dart_linter`, so they can drift from `dart analyze`
@@ -522,7 +521,7 @@ def _analyze_summary_or_source(ctx, info, srcs, opts):
     baseline = slice_target_baseline(ctx, srcs.name, opts.config, srcs.own_paths)
     sdk_summary = _embedder_sdk_summary(ctx) or ctx.file._sdk_summary
     if not summary_mode:
-        if fallback_summary_ready(ctx, info, opts.sdk_version, _embedder_sdk_summary(ctx)):
+        if fallback_summary_ready(info, opts.sdk_version, _embedder_sdk_summary(ctx)):
             return depset([analyze_summaries(
                 ctx,
                 srcs.name,

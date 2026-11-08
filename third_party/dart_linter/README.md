@@ -20,9 +20,10 @@ Difference from `dart analyze` in SDK 3.13.5: this copy registers 270 rules
 The SDK ships its lint rules inside `dart analyze`, and the rules are not
 published: the SDK's `pkg/linter` says "DO NOT publish". The `linter` package on
 pub.dev is discontinued at 1.30.1, which targets analyzer 5. `package:analyzer`
-itself contains no lint rules. The `dart_analyze` aspect's analyzer-summary mode
-runs `package:analyzer` through `//dart/private/tools:analyzer_summary`, so it
-needs this copy to report the same lints `dart analyze` does for the SDK.
+itself contains no lint rules. The `dart_analyze` aspect runs `package:analyzer`
+through `//dart/private/tools:analyzer_summary` on supported SDKs (in both summary
+and full-source modes), so it needs this copy to report the same lints `dart analyze`
+does for the SDK.
 
 ## Keeping it in step
 

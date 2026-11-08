@@ -1,11 +1,10 @@
 """Tests for the public `//dart:analyzer_summary_tool` label flag.
 
-`dart_analyze` runs its summary worker through
-`//dart/private:analyzer_summary_tool`, which selects the public
-`//dart:analyzer_summary_tool` label flag while summaries are on (and the
-`noop` binary otherwise, so disabling summaries never configures the analyzer
-closure). Downstream rulesets swap in an extended worker by setting the flag.
-These tests pin the flag's default and the alias wiring.
+`dart_analyze` runs its analysis worker through
+`//dart/private:analyzer_summary_tool`, which aliases the public
+`//dart:analyzer_summary_tool` label flag. Downstream rulesets swap in an
+extended worker by setting the flag. These tests pin the flag's default
+and the alias wiring.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
@@ -46,6 +45,11 @@ analyzer_summary_tool_alias_test = analysistest.make(
     config_settings = {SUMMARIES_FLAG: True},
 )
 
+analyzer_summary_tool_alias_summaries_off_test = analysistest.make(
+    _alias_tool_test_impl,
+    config_settings = {SUMMARIES_FLAG: False},
+)
+
 def _override_tool_test_impl(ctx):
     """Checks setting `//dart:analyzer_summary_tool` swaps the summary worker."""
     env = analysistest.begin(ctx)
@@ -79,6 +83,11 @@ def analyzer_summary_tool_test_suite(name):
     )
     analyzer_summary_tool_alias_test(
         name = name + "_alias",
+        size = "small",
+        target_under_test = "//dart/private:analyzer_summary_tool",
+    )
+    analyzer_summary_tool_alias_summaries_off_test(
+        name = name + "_alias_summaries_off",
         size = "small",
         target_under_test = "//dart/private:analyzer_summary_tool",
     )

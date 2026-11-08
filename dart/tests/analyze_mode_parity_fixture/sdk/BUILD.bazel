@@ -1,0 +1,10 @@
+load("//dart:toolchain.bzl", "declare_dart_sdk_toolchains")
+
+exports_files(["dart-sdk/bin/dart"])
+
+declare_dart_sdk_toolchains(
+    dart = "dart-sdk/bin/dart",
+    prefix = "dart-sdk/",
+    sdk_root_name = "dart_sdk_files",
+    version = "3.15.0",
+)
