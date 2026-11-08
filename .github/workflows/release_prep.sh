@@ -56,7 +56,14 @@ EOF
 
 # Release notes from the `Changelog:` trailers since the newest published release.
 # The reusable workflow checks out only the tagged commit, without other tags.
-git fetch --quiet --tags --unshallow origin 2>/dev/null || git fetch --quiet --tags origin 2>/dev/null || true
+fetch_args=(--tags)
+if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+  fetch_args+=(--unshallow)
+fi
+if ! git fetch "${fetch_args[@]}" origin; then
+  echo "release_prep: git fetch --tags failed" >&2
+  exit 1
+fi
 
 REPO="${REPO:-Mivr/ai_rules_dart}"
 
