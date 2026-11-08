@@ -8,6 +8,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 prep="$here/release_prep.sh"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
+real_git="$(command -v git)"
 
 # Isolate git, temp files and ambient credentials from the host environment so
 # global hooks (core.hooksPath), GPG signing or caller tokens never affect runs.
@@ -145,6 +146,25 @@ else
 fi
 FAKE
 chmod +x "$work/bin/openssl"
+
+cat >"$work/bin/git" <<FAKE
+#!/usr/bin/env bash
+set -o errexit -o nounset -o pipefail
+dir="\${FAKE_TEST_DIR:-}"
+if [ -n "\$dir" ]; then
+  echo "\$*" >>"\$dir/git.calls"
+  if [ -f "\$dir/git.fetch.fail" ]; then
+    for arg in "\$@"; do
+      if [ "\$arg" = "fetch" ]; then
+        echo "fatal: fake git fetch failure" >&2
+        exit 128
+      fi
+    done
+  fi
+fi
+exec "$real_git" "\$@"
+FAKE
+chmod +x "$work/bin/git"
 
 init_repo() {
   local repo_dir="$1"
@@ -442,6 +462,36 @@ run_prep "not-a-tag"
 want_exit 1
 want_output "release_prep:"
 want_no_cliff
+finish_case
+
+# Case 15: Failed fetch exits non-zero, names the fetch, preserves git error, and never runs git-cliff.
+start_case fetch_fails_stops_prep
+touch "$D/git.fetch.fail"
+cat >"$D/releases.json" <<'JSON'
+[
+  {"tag_name": "v0.25.1", "draft": false}
+]
+JSON
+run_prep v0.26.1
+want_exit 1
+want_output "release_prep:"
+want_output "git fetch --tags"
+want_output "fatal: fake git fetch failure"
+want_no_cliff
+finish_case
+
+# Case 16: Complete repository fetches without --unshallow and proceeds.
+start_case complete_repo_no_unshallow
+cat >"$D/releases.json" <<'JSON'
+[
+  {"tag_name": "v0.25.1", "draft": false}
+]
+JSON
+run_prep v0.26.1
+want_exit 0
+want_cliff_range "v0.25.1..v0.26.1"
+[ -f "$D/git.calls" ] || fail "git was never called"
+grep -qF -- "--unshallow" "$D/git.calls" && fail "fetch unexpectedly passed --unshallow on complete repository"
 finish_case
 
 echo "release_prep_test: $PASS passed, $FAILS failed"
