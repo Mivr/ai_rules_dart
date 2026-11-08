@@ -538,24 +538,17 @@ _test_code_assets_transition = transition(
     outputs = ["//dart/private:code_assets_enabled"],
 )
 
-def _test_deps(aspects):
-    """The `deps` attribute of a test rule, with the given aspects.
-
-    Args:
-      aspects: The aspects applied to the dependencies.
-
-    Returns:
-      The `attr.label_list`.
-    """
-    return attr.label_list(
-        doc = "`dart_library` targets this test depends on.",
-        providers = [DartInfo],
-        aspects = aspects,
-    )
+_TEST_COMMON_ATTRS = (
+    WINDOWS_CONSTRAINT_ATTR |
+    DART_ABI_CONSTRAINT_ATTRS |
+    EXTRA_DART_DEFINES_ATTR |
+    MODULAR_KERNEL_ATTRS |
+    EXECUTABLE_PACKAGE_ATTRS
+)
 
 # The attributes that define a test's kernel, shared by `dart_test` and
 # `dart_test_kernel` so the two compile the same way.
-_TEST_KERNEL_ATTRS = dict({
+_SHARED_TEST_ATTRS = {
     "main": attr.label(
         doc = "The Dart test file to run. Must contain a top-level `main()` function.",
         mandatory = True,
@@ -565,7 +558,6 @@ _TEST_KERNEL_ATTRS = dict({
         doc = "Additional Dart source files that are part of this test's package but not reachable via `deps`.",
         allow_files = [".dart"],
     ),
-    "deps": _test_deps([dart_kernel_module_aspect]),
     "defines": attr.string_list(
         doc = """Dart environment declarations (`key=value`). Each entry becomes a `-Dkey=value` \
 flag on the build-time compile, so `String.fromEnvironment` resolves to it. Set these here rather \
@@ -602,48 +594,42 @@ custom executor) without loading their native libraries at runtime.""",
         doc = "Allowlist target permitting the Starlark function transition this rule applies. Defaults to `@bazel_tools//tools/allowlists/function_transition_allowlist`.",
         default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
     ),
-}, **dict(
-    WINDOWS_CONSTRAINT_ATTR,
-    **dict(
-        DART_ABI_CONSTRAINT_ATTRS,
-        **dict(
-            EXTRA_DART_DEFINES_ATTR,
-            **dict(MODULAR_KERNEL_ATTRS, **EXECUTABLE_PACKAGE_ATTRS)
-        )
-    )
-))
+} | _TEST_COMMON_ATTRS
 
 dart_test = rule(
     implementation = _dart_test_impl,
     cfg = _test_code_assets_transition,
-    attrs = dict(
-        _TEST_KERNEL_ATTRS,
-        data = attr.label_list(
+    attrs = _SHARED_TEST_ATTRS | {
+        "data": attr.label_list(
             doc = "Additional files needed at runtime. These are added to runfiles so they can be resolved via `Runfiles.rlocation()`.",
             allow_files = True,
         ),
-        env = attr.string_dict(
+        "deps": attr.label_list(
+            doc = "`dart_library` targets this test depends on.",
+            providers = [DartInfo],
+            aspects = [dart_kernel_module_aspect, dart_import_check_aspect],
+        ),
+        "env": attr.string_dict(
             doc = """Environment variables set when the test runs. Values expand \
 `$(rlocationpath ...)` and the other location functions for labels in `data`, so a test can be \
 told where a runfile is (resolve it with `Runfiles.rlocation()`).""",
         ),
-        env_inherit = attr.string_list(
+        "env_inherit": attr.string_list(
             doc = "Names of environment variables passed through from the environment `bazel test` runs in.",
         ),
-        deps = _test_deps([dart_kernel_module_aspect, dart_import_check_aspect]),
-        _import_check = attr.label(
+        "_import_check": attr.label(
             doc = "The tool that checks this test's imports against its direct `deps` (see the `dart_layering_check` feature).",
             default = Label("//dart/private/tools:import_check"),
             executable = True,
             cfg = "exec",
         ),
-        _tool = attr.label(
+        "_tool": attr.label(
             doc = "Executable that launches the test's kernel with the SDK's VM. Defaults to `//dart/private/tools:test_runner`.",
             default = "//dart/private/tools:test_runner",
             executable = True,
             cfg = "exec",
         ),
-    ),
+    },
     test = True,
     toolchains = ["//dart:toolchain_type"] + MODULAR_KERNEL_TOOLCHAINS + COVERAGE_MAP_TOOLCHAINS,
     doc = (
@@ -657,7 +643,13 @@ told where a runfile is (resolve it with `Runfiles.rlocation()`).""",
 dart_test_kernel = rule(
     implementation = _dart_test_kernel_impl,
     cfg = _test_code_assets_transition,
-    attrs = _TEST_KERNEL_ATTRS,
+    attrs = _SHARED_TEST_ATTRS | {
+        "deps": attr.label_list(
+            doc = "`dart_library` targets this test depends on.",
+            providers = [DartInfo],
+            aspects = [dart_kernel_module_aspect],
+        ),
+    },
     toolchains = ["//dart:toolchain_type"] + MODULAR_KERNEL_TOOLCHAINS,
     doc = (
         "Compiles a test to the kernel that `dart_test` runs under the " +
