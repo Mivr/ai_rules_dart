@@ -35,6 +35,7 @@ load(":dart_package_member_direct_test.bzl", "dart_package_member_direct_test_su
 load(":dart_package_metadata_direct_test.bzl", "dart_package_metadata_direct_test_suite")
 load(":dart_source_set_direct_test.bzl", "dart_source_set_direct_test_suite")
 load(":dart_test_runner_visibility_test.bzl", "dart_test_runner_visibility_test")
+load(":dart_test_tags_test.bzl", "dart_test_tags_test_suite")
 load(":dart_wasm_binary_direct_test.bzl", "dart_wasm_binary_direct_test_suite")
 load(":defines_test.bzl", "defines_test_suite")
 load(":drift_library_direct_test.bzl", "drift_library_direct_test_suite")
@@ -90,6 +91,8 @@ toolchain_selection_test_suite(name = "toolchain_selection_test")
 common_test_suite(name = "common_test")
 
 dart_binary_test_suite(name = "dart_binary_test")
+
+dart_test_tags_test_suite(name = "dart_test_tags_test")
 
 jit_fallback_test_suite(name = "jit_fallback_test")
 

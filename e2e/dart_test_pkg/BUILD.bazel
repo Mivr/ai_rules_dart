@@ -127,3 +127,21 @@ dart_test(
         "@pub_deps//:test",
     ],
 )
+
+dart_test(
+    name = "tags_exclude_test",
+    size = "small",
+    data = ["dart_test.yaml"],
+    exclude_tags = ["broken"],
+    main = "test/tags_test.dart",
+    deps = ["@pub_deps//:test"],
+)
+
+dart_test(
+    name = "tags_include_test",
+    size = "small",
+    data = ["dart_test.yaml"],
+    include_tags = ["smoke"],
+    main = "test/tags_test.dart",
+    deps = ["@pub_deps//:test"],
+)

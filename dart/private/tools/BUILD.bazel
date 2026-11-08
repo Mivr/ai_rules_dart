@@ -325,6 +325,12 @@ dart_binary(
 dart_test(
     name = "test_runner_test",
     size = "small",
+    srcs = [
+        "private_home.dart",
+        "test_runner.dart",
+        "test_runner_coverage.dart",
+        "test_runner_workspace.dart",
+    ],
     args = [
         "$(rlocationpath :test_runner)",
         "$(rlocationpath :test_runner_fixture)",
@@ -347,6 +353,7 @@ dart_test(
     main = "test_runner_test.dart",
     deps = [
         "//dart/runfiles",
+        "@ext_pub_deps//:coverage",
         "@ext_pub_deps//:test",
     ],
 )

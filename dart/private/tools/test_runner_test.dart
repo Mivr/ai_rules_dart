@@ -6,6 +6,8 @@ import 'dart:math';
 import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
 
+import 'test_runner.dart' show suiteCommand;
+
 /// Drives the `dart_test` launcher against `test_runner_fixture.dart`.
 ///
 /// Arguments are the runfiles paths of the launcher, the fixture's kernel,
@@ -22,6 +24,8 @@ void main(List<String> args) {
   final String launcher = Runfiles.create().rlocation(args[0]);
   _seedTests(launcher, args);
   _shardingTests(args[6]);
+  _plainSelectionTests(launcher, args);
+  _tagArgvTests();
 
   Future<Process> start(
     List<String> fixtureArgs, {
@@ -84,28 +88,6 @@ void main(List<String> args) {
       onTimeout: () => fail('the launcher outlived the test it ran'),
     );
     expect(exitCode, 0);
-  });
-
-  // A plain `main` has no cases to select, so a filter must fail loudly
-  // rather than run everything and report a filtered pass.
-  test('a test without package:test refuses --test_filter', () async {
-    final Process process = await Process.start(
-      launcher,
-      ['stream'],
-      environment: {
-        'RULES_DART_DART': args[2],
-        'RULES_DART_DILL': args[1],
-        'RULES_DART_TEST_RUNNER': '',
-        'TESTBRIDGE_TEST_ONLY': 'anything',
-      },
-    );
-    final String err = await process.stderr.transform(utf8.decoder).join();
-    await process.stdout.drain<void>();
-    expect(await process.exitCode, 1);
-    expect(
-      err,
-      contains('--test_filter needs a test written with package:test'),
-    );
   });
 
   test('fails with a clear error when RULES_DART_BASE_DILL cannot be resolved or does not exist', () async {
@@ -567,6 +549,157 @@ void _shardingTests(String build) {
           slower,
         ),
         isNotEmpty,
+      );
+    });
+  });
+}
+
+/// Tests that a plain-`main()` test without `package:test` refuses case
+/// selection options (`--test_filter`, `include_tags`, `exclude_tags`).
+void _plainSelectionTests(String launcher, List<String> args) {
+  Map<String, String> plainEnv(String key, String value) => {
+    'RULES_DART_DART': args[2],
+    'RULES_DART_DILL': args[1],
+    'RULES_DART_TEST_RUNNER': '',
+    key: value,
+  };
+
+  // A plain `main` has no cases to select, so a filter must fail loudly
+  // rather than run everything and report a filtered pass.
+  test('a test without package:test refuses --test_filter', () async {
+    final _Run run = await _launch(launcher, [
+      'stream',
+    ], plainEnv('TESTBRIDGE_TEST_ONLY', 'anything'));
+    expect(run.exitCode, 1);
+    expect(
+      run.stderr,
+      contains('--test_filter needs a test written with package:test'),
+    );
+  });
+
+  test('a test without package:test refuses include_tags', () async {
+    final _Run run = await _launch(launcher, [
+      'stream',
+    ], plainEnv('RULES_DART_INCLUDE_TAGS', 'smoke'));
+    expect(run.exitCode, 1);
+    expect(run.stdout, isEmpty);
+    expect(
+      run.stderr,
+      startsWith(
+        'dart_test: include_tags needs a test written with package:test',
+      ),
+    );
+  });
+
+  test('a test without package:test refuses exclude_tags', () async {
+    final _Run run = await _launch(launcher, [
+      'stream',
+    ], plainEnv('RULES_DART_EXCLUDE_TAGS', 'broken'));
+    expect(run.exitCode, 1);
+    expect(run.stdout, isEmpty);
+    expect(
+      run.stderr,
+      startsWith(
+        'dart_test: exclude_tags needs a test written with package:test',
+      ),
+    );
+  });
+}
+
+/// Tests for the argv that `suiteCommand` builds for tag options.
+void _tagArgvTests() {
+  group('suiteCommand tag arguments', () {
+    const defaultArgs = [
+      '--enable-asserts',
+      'runner.dill',
+      '--precompiled=/tmp/precompiled',
+      '--reporter=expanded',
+      '--timeout=none',
+      '--file-reporter=json:/tmp/report.json',
+      'test/my_test.dart',
+    ];
+
+    List<String> runSuiteCommand({Map<String, String> env = const {}}) =>
+        suiteCommand(
+          runner: 'runner.dill',
+          precompiled: '/tmp/precompiled',
+          testPath: 'test/my_test.dart',
+          report: '/tmp/report.json',
+          env: env,
+          seed: null,
+        );
+
+    test('passes --tags when RULES_DART_INCLUDE_TAGS is set and omits it when empty', () {
+      expect(runSuiteCommand(), defaultArgs);
+      expect(
+        runSuiteCommand(env: {'RULES_DART_INCLUDE_TAGS': ''}),
+        defaultArgs,
+      );
+      expect(
+        runSuiteCommand(env: {'RULES_DART_INCLUDE_TAGS': 'smoke && unit'}),
+        [
+          '--enable-asserts',
+          'runner.dill',
+          '--precompiled=/tmp/precompiled',
+          '--reporter=expanded',
+          '--timeout=none',
+          '--file-reporter=json:/tmp/report.json',
+          '--tags',
+          'smoke && unit',
+          'test/my_test.dart',
+        ],
+      );
+    });
+
+    test('passes --exclude-tags when RULES_DART_EXCLUDE_TAGS is set and omits it when empty', () {
+      expect(runSuiteCommand(), defaultArgs);
+      expect(
+        runSuiteCommand(env: {'RULES_DART_EXCLUDE_TAGS': ''}),
+        defaultArgs,
+      );
+      expect(
+        runSuiteCommand(env: {'RULES_DART_EXCLUDE_TAGS': 'broken || flaky'}),
+        [
+          '--enable-asserts',
+          'runner.dill',
+          '--precompiled=/tmp/precompiled',
+          '--reporter=expanded',
+          '--timeout=none',
+          '--file-reporter=json:/tmp/report.json',
+          '--exclude-tags',
+          'broken || flaky',
+          'test/my_test.dart',
+        ],
+      );
+    });
+
+    test('passes both --tags and --exclude-tags when both are set and neither when empty', () {
+      expect(
+        runSuiteCommand(
+          env: {'RULES_DART_INCLUDE_TAGS': '', 'RULES_DART_EXCLUDE_TAGS': ''},
+        ),
+        defaultArgs,
+      );
+      expect(
+        runSuiteCommand(
+          env: {
+            'RULES_DART_INCLUDE_TAGS': 'smoke && unit',
+            'RULES_DART_EXCLUDE_TAGS': 'broken || flaky',
+          },
+        ),
+        [
+          '--enable-asserts',
+          'runner.dill',
+          '--precompiled=/tmp/precompiled',
+          '--reporter=expanded',
+          '--timeout=none',
+          '--file-reporter=json:/tmp/report.json',
+          '--tags',
+          'smoke && unit',
+          '--exclude-tags',
+          'broken || flaky',
+          'test/my_test.dart',
+        ],
       );
     });
   });
