@@ -7,8 +7,9 @@ Covers the three manager-specified requirements for queue item 165:
 2. Direct inspection of `DartAnalyze` action under `--//dart:analyzer_summaries=false`
    confirming `analyzer_summary` tool execution, `--sdk-summary`, zero `--summary` flags,
    transitive `.dart` source staging, zero `DartSummarize` actions, and source mode.
-3. Verification of fallback to `analyze_runner` when the SDK is unsupported (< 3.16)
-   or when an unbacked embedder is in the closure (`yaml_only`).
+3. Verification of fallback to `analyze_runner` when the SDK is outside
+   the supported range (< 3.13 or > 3.14) or when an unbacked embedder
+   is in the closure (`yaml_only`).
 """
 
 load("@rules_testing//lib:analysis_test.bzl", "analysis_test")
@@ -66,8 +67,8 @@ def _source_mode_flutter_test_impl(env, target):
     env.expect.that_collection(input_names).contains("app.dart")
     env.expect.that_bool(target[DartAnalysisModeInfo].summaries).equals(False)
 
-def _unsupported_sdk_fallback_test_impl(env, target):
-    """Asserts that an unsupported SDK (< 3.16) falls back to stock SDK `analyze_runner`."""
+def _assert_stock_fallback(env, target):
+    """Asserts that analysis of `target` runs stock SDK `analyze_runner`."""
     action = env.expect.that_target(target).action_named("DartAnalyze")
     action.mnemonic().equals("DartAnalyze")
 
@@ -76,17 +77,18 @@ def _unsupported_sdk_fallback_test_impl(env, target):
     env.expect.that_collection([b for b in input_names if "analyzer_summary" in b]).has_size(0)
 
     env.expect.that_bool(target[DartAnalysisModeInfo].summaries).equals(False)
+
+def _unsupported_sdk_fallback_test_impl(env, target):
+    """Asserts fallback to stock `analyze_runner` above the 3.14 ceiling."""
+    _assert_stock_fallback(env, target)
+
+def _unsupported_sdk_floor_fallback_test_impl(env, target):
+    """Asserts fallback to stock `analyze_runner` below the 3.13 floor."""
+    _assert_stock_fallback(env, target)
 
 def _unbacked_embedder_fallback_test_impl(env, target):
     """Asserts that an unbacked `_embedder.yaml` falls back to stock SDK `analyze_runner`."""
-    action = env.expect.that_target(target).action_named("DartAnalyze")
-    action.mnemonic().equals("DartAnalyze")
-
-    input_names = [f.basename for f in action.actual.inputs.to_list()]
-    env.expect.that_int(len([b for b in input_names if "analyze_runner" in b])).is_greater_than(0)
-    env.expect.that_collection([b for b in input_names if "analyzer_summary" in b]).has_size(0)
-
-    env.expect.that_bool(target[DartAnalysisModeInfo].summaries).equals(False)
+    _assert_stock_fallback(env, target)
 
 def _negative_target_analyzed_test_impl(env, target):
     """Asserts that the negative fixture is not skipped and generates `DartAnalyze`."""
@@ -182,6 +184,20 @@ def analyze_mode_parity_test_suite(name):
     )
 
     analysis_test(
+        name = name + "_fallback_unsupported_sdk_floor",
+        attr_values = {"size": "small"},
+        config_settings = {
+            "//command_line_option:extra_toolchains": [
+                str(Label("//dart/tests:synthetic_3_12_exec_toolchain")),
+                str(Label("//dart/tests:synthetic_3_12_target_toolchain")),
+            ],
+        },
+        impl = _unsupported_sdk_floor_fallback_test_impl,
+        target = "//dart/tests/analyze_mode_parity_fixture/consumer:consumer",
+        testing_aspect = _TESTING_ASPECT,
+    )
+
+    analysis_test(
         name = name + "_fallback_unbacked_embedder_summaries_on",
         attr_values = {"size": "small"},
         config_settings = {SUMMARIES_FLAG: True},
@@ -209,6 +225,7 @@ def analyze_mode_parity_test_suite(name):
             ":" + name + "_source_mode_pure_dart",
             ":" + name + "_source_mode_flutter",
             ":" + name + "_fallback_unsupported_sdk",
+            ":" + name + "_fallback_unsupported_sdk_floor",
             ":" + name + "_fallback_unbacked_embedder_summaries_on",
             ":" + name + "_fallback_unbacked_embedder_summaries_off",
         ],

@@ -133,13 +133,15 @@ def _version_gate_test_impl(ctx):
     """Verifies `analyzer_summaries_supported` across SDK version strings."""
     env = unittest.begin(ctx)
     for version, expected in [
-        ("3.11.0", True),
-        ("3.12.2", True),
+        ("3.11.0", False),
+        ("3.12.2", False),
+        ("3.12.9", False),
         ("3.13.0", True),
         ("3.13.5", True),
         ("3.13.5-dev.1.0", True),
         ("3.14.0", True),
         ("3.14.0-1.0.dev", True),
+        ("3.14.2", True),
         ("3.15.0", False),
         ("3.15.0-1.0.dev", False),
         ("4.0.0", False),

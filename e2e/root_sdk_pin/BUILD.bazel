@@ -1,8 +1,25 @@
-load("@rules_dart//dart:defs.bzl", "dart_binary", "dart_test")
+load(
+    "@rules_dart//dart:defs.bzl",
+    "dart_analysis_test",
+    "dart_binary",
+    "dart_library",
+    "dart_test",
+)
 
 dart_binary(
     name = "app",
     main = "bin/main.dart",
+)
+
+dart_library(
+    name = "pinned_lib",
+    srcs = ["lib/pinned_lib.dart"],
+)
+
+dart_analysis_test(
+    name = "pinned_lib_analysis_test",
+    size = "small",
+    targets = [":pinned_lib"],
 )
 
 dart_test(
