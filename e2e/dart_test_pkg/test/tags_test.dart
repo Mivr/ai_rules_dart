@@ -8,4 +8,8 @@ void main() {
   test('broken case', () {
     fail('broken case should have been excluded');
   }, tags: ['broken']);
+
+  test('flaky ios case', () {
+    fail('flaky ios case should have been excluded');
+  }, tags: ['ios', 'flaky']);
 }

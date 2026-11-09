@@ -132,7 +132,10 @@ dart_test(
     name = "tags_exclude_test",
     size = "small",
     data = ["dart_test.yaml"],
-    exclude_tags = ["broken"],
+    exclude_tags = [
+        "ios ? slow : broken",
+        "flaky",
+    ],
     main = "test/tags_test.dart",
     deps = ["@pub_deps//:test"],
 )
