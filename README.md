@@ -109,8 +109,9 @@ own runner, built from that same package, so Bazel's test features work:
 - `bazel test --test_filter=<regex>` runs the cases whose names match.
 - `shard_count` splits a file's cases across shards.
 - `include_tags` and `exclude_tags` select or skip cases by `package:test` tag
-  (such as `@Tags(['smoke'])`): `include_tags = ["smoke"]` runs only matching
-  cases (`--tags`), and `exclude_tags = ["broken"]` skips them (`--exclude-tags`).
+  (such as `@Tags(['smoke'])`), where each entry is a complete selector
+  evaluated on its own: `include_tags = ["smoke"]` runs only matching cases
+  (`--tags`), and `exclude_tags = ["broken"]` skips them (`--exclude-tags`).
 - Each case appears in Bazel's test report (`test.xml`).
 - Bazel's `size`/`timeout` is the only time limit. `package:test`'s default
   30-second limit per case is switched off; a `timeout:` a test states on a
