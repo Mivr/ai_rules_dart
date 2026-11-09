@@ -3,7 +3,11 @@ import 'dart:io';
 import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
 
-const List<String> _targets = ['kernel_module_test', 'worker_hardening_test'];
+const List<String> _targets = [
+  'kernel_module_test',
+  'worker_hardening_test',
+  'analyzer_summary_test',
+];
 
 /// Returns the `dart_test` call block for [name], with `#` comments removed.
 String? _callBlock(String build, String name) {

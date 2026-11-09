@@ -797,7 +797,7 @@ dart_test(
 
 dart_test(
     name = "analyzer_summary_test",
-    size = "small",
+    size = "medium",
     srcs = [
         "analysis_baseline.dart",
         "analysis_model.dart",
