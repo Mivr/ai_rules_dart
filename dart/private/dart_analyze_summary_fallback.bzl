@@ -1,13 +1,16 @@
 """Summary-mode and full-source fallback analysis via `analyzer_summary`.
 
-On every supported Dart SDK (>= 3.16) whose closure holds no unbacked embedder,
-`analyzer_summary` is the sole analysis engine. When dependency summaries are
-unavailable — under `--//dart:analyzer_summaries=false`, when a package is
-split across targets, or when an opaque dependency lacks a summary — the target
-is checked by `analyzer_summary` over staged transitive sources with zero
-`--summary` flags, reporting source mode (`DartAnalysisModeInfo.summaries == False`).
-Stock SDK `dart analyze` via `analyze_runner` is used only as fallback for SDKs
-below 3.16 or closures with an unbacked `_embedder.yaml`.
+On every supported Dart SDK (3.13 to 3.14, bounded by
+`ANALYZER_MIN_LANGUAGE_VERSION` and `ANALYZER_MAX_LANGUAGE_VERSION` in
+`dart/private/dart_analyzer_summary.bzl`) whose closure holds no unbacked
+embedder, `analyzer_summary` is the sole analysis engine. When dependency
+summaries are unavailable — under `--//dart:analyzer_summaries=false`, when
+a package is split across targets, or when an opaque dependency lacks a
+summary — the target is checked by `analyzer_summary` over staged transitive
+sources with zero `--summary` flags, reporting source mode
+(`DartAnalysisModeInfo.summaries == False`). Stock SDK `dart analyze` via
+`analyze_runner` is used only as fallback for SDKs outside that range
+(< 3.13 or > 3.14) or closures with an unbacked `_embedder.yaml`.
 """
 
 load("//dart/private:common.bzl", "kernel_sdk_mismatch_error", "writable_home_env")

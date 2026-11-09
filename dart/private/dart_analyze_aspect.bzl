@@ -65,7 +65,9 @@ With `//dart:analyzer_summaries` on (the default), `dart_analyze` checks targets
 against dependency summaries. With the flag off, it stages the full transitive
 closure and checks with `analyzer_summary` with zero summaries. A target falls
 back to stock SDK `dart analyze` via `analyze_runner` only when the analyzing SDK
-is below 3.16 or when its closure holds an unbacked embedder
+is outside the supported range (`ANALYZER_MIN_LANGUAGE_VERSION` to
+`ANALYZER_MAX_LANGUAGE_VERSION` in `dart/private/dart_analyzer_summary.bzl`,
+3.13 to 3.14) or when its closure holds an unbacked embedder
 (`unbacked_embedder_in_closure`).
 `DartAnalysisModeInfo` says whether summary mode was used.
 The format check and the fix action are the same in both modes. In this mode

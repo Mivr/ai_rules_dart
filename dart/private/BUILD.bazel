@@ -35,10 +35,12 @@ alias(
 
 # The aspects' analyzer attributes point at these aliases, which route
 # unconditionally to `//dart:analyzer_summary_tool` and `:analyzer_sdk_summary`.
-# `analyzer_summary` is the sole analysis engine on supported SDKs (>= 3.16) for
-# both summary mode (`--//dart:analyzer_summaries=true`) and full-source mode
-# (`--//dart:analyzer_summaries=false`). Both targets are `manual`, so a wildcard
-# build never builds them unless an action requires them.
+# `analyzer_summary` is the sole analysis engine on supported SDKs (3.13 to 3.14,
+# bounded by `ANALYZER_MIN_LANGUAGE_VERSION` and `ANALYZER_MAX_LANGUAGE_VERSION`
+# in `dart_analyzer_summary.bzl`) for both summary mode
+# (`--//dart:analyzer_summaries=true`) and full-source mode
+# (`--//dart:analyzer_summaries=false`). Both targets are `manual`, so a
+# wildcard build never builds them unless an action requires them.
 alias(
     name = "analyzer_summary_tool",
     actual = "//dart:analyzer_summary_tool",

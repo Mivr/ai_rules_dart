@@ -156,8 +156,8 @@ def analyzer_summary_inputs(ctx, package_name):
     Summaries are passed only when all of these hold, and the command line is
     otherwise unchanged:
 
-      - the flag is on, and the exec SDK is no newer than the pinned analyzer
-        supports (`analyzer_summaries_supported`);
+      - the flag is on, and the exec SDK is in the supported analyzer range
+        (`analyzer_summaries_supported`);
       - the generator is built on the builder shim (`is_builder_shim_generator`),
         so it accepts the flags. A user's own generator never sees them;
       - no dependency's closure holds a Flutter embedder, whose `dart:ui` a

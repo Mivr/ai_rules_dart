@@ -686,15 +686,16 @@ common --@rules_dart//dart:analyzer_summaries=false
 ```
 
 In both modes, the pinned `analyzer_summary` worker is the sole analysis engine on
-supported Dart SDKs (>= 3.16). With the flag off, zero per-package summaries are
-built and `analyzer_summary` analyzes staged sources with zero `--summary` flags.
-Flutter targets resolve `dart:ui` via `sky_engine`'s embedder SDK summary in both
-modes.
+supported Dart SDKs (3.13 to 3.14, bounded by `ANALYZER_MIN_LANGUAGE_VERSION` and
+`ANALYZER_MAX_LANGUAGE_VERSION` in `dart/private/dart_analyzer_summary.bzl`). With
+the flag off, zero per-package summaries are built and `analyzer_summary` analyzes
+staged sources with zero `--summary` flags. Flutter targets resolve `dart:ui` via
+`sky_engine`'s embedder SDK summary in both modes.
 
 Stock SDK `dart analyze` via `analyze_runner` is used only as fallback in these
 cases:
 
-- The toolchain's Dart SDK is older than the summary floor (< 3.16).
+- The toolchain's Dart SDK is outside the supported range (< 3.13 or > 3.14).
 - Its closure holds an unbacked embedder (a `lib/_embedder.yaml` outside Flutter's
   `sky_engine`).
 

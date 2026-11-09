@@ -86,10 +86,13 @@ int_flag(
 #   common --@rules_dart//dart:analyzer_summaries=false
 #
 # In both modes, `analyzer_summary` is the sole analysis engine on every supported
-# SDK (>= 3.16). With the flag off, zero per-package summaries are built and
-# `analyzer_summary` analyzes staged sources with zero `--summary` flags. Stock SDK
-# `dart analyze` via `analyze_runner` is used only as fallback for SDKs older than
-# 3.16 or closures with an unbacked `_embedder.yaml` (outside Flutter's `sky_engine`).
+# SDK (3.13 to 3.14, bounded by `ANALYZER_MIN_LANGUAGE_VERSION` and
+# `ANALYZER_MAX_LANGUAGE_VERSION` in `dart/private/dart_analyzer_summary.bzl`).
+# With the flag off, zero per-package summaries are built and `analyzer_summary`
+# analyzes staged sources with zero `--summary` flags. Stock SDK `dart analyze`
+# via `analyze_runner` is used only as fallback for SDKs outside that range
+# (< 3.13 or > 3.14) or closures with an unbacked `_embedder.yaml` (outside
+# Flutter's `sky_engine`).
 # `dart_codegen` passes summaries only to generators built on the builder shim.
 #
 # The diagnostics come from rules_dart's pinned `package:analyzer`, 14.5.0, with
@@ -101,9 +104,11 @@ bool_flag(
     visibility = ["//visibility:public"],
 )
 
-# The worker `dart_analyze` runs on supported SDKs (>= 3.16) in both summary and
-# full-source modes. A `label_flag` (rather than a direct label) so downstream
-# rulesets can swap in an extended worker with the hosted project rules they need:
+# The worker `dart_analyze` runs on supported SDKs (3.13 to 3.14, bounded by
+# `ANALYZER_MIN_LANGUAGE_VERSION` and `ANALYZER_MAX_LANGUAGE_VERSION`) in both
+# summary and full-source modes. A `label_flag` (rather than a direct label)
+# so downstream rulesets can swap in an extended worker with the hosted
+# project rules they need:
 #   bazel test //... --@rules_dart//dart:analyzer_summary_tool=//my:worker
 label_flag(
     name = "analyzer_summary_tool",

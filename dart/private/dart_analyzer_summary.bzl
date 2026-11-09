@@ -23,9 +23,10 @@ dependents in `embedder_sdk_summaries`.
 With `--//dart:analyzer_summaries=false`, the aspect builds zero per-package
 summaries, but still builds and propagates `sky_engine`'s embedder SDK summary
 (`embedder_sdk.sum`) across dependencies so Flutter targets can be analyzed via
-`analyzer_summary` in source mode. For SDKs older than the floor (< 3.16) or
-closures with an unbacked embedder, stock SDK `dart analyze` via `analyze_runner`
-serves as fallback.
+`analyzer_summary` in source mode. For SDKs outside the supported range
+(`ANALYZER_MIN_LANGUAGE_VERSION` to `ANALYZER_MAX_LANGUAGE_VERSION`, 3.13 to
+3.14) or closures with an unbacked embedder, stock SDK `dart analyze` via
+`analyze_runner` serves as fallback.
 """
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
@@ -39,6 +40,20 @@ visibility(["//dart/..."])
 # Summaries are built on the build machine, with the exec tools SDK, the type
 # the codegen rules and `dart_analyze` use for the same reason.
 _TOOLCHAIN = "//dart:exec_tools_toolchain_type"
+
+# The oldest Dart language version that compiles the analysis worker, as
+# `<major>.<minor>`. Summary mode and worker-hosted full-source mode run
+# `//dart/private/tools:analyzer_summary`, so they are used only when the
+# analyzing toolchain's SDK is at least this version: an older SDK cannot
+# compile the tool.
+#
+# Where the value comes from: the `language_version` of
+# `//third_party/dart_linter:linter` and `//dart/lints:rules_dart_project_lints`
+# ("3.13"), which use language features (such as primary constructors) that
+# SDKs below 3.13 do not compile. If the vendored tool's language version
+# changes, update this constant to match. Raising the value turns summary mode
+# off for the SDKs below it.
+ANALYZER_MIN_LANGUAGE_VERSION = "3.13"
 
 # The newest Dart language version the pinned `package:analyzer` supports, as
 # `<major>.<minor>`. Summary mode analyzes with that analyzer, so it is used only
@@ -70,9 +85,10 @@ def _major_minor(version):
 def analyzer_summaries_supported(sdk_version):
     """Returns whether summary mode may analyze with an SDK of version `sdk_version`.
 
-    True when the SDK is no newer than `ANALYZER_MAX_LANGUAGE_VERSION`, compared
-    by `major.minor`. A version that cannot be read is refused, so the build
-    falls back to analysis from source.
+    True when the SDK's `major.minor` is between `ANALYZER_MIN_LANGUAGE_VERSION`
+    and `ANALYZER_MAX_LANGUAGE_VERSION` (inclusive). A version that cannot be
+    read is refused, so the build falls back to stock SDK `dart analyze` from
+    source.
 
     Args:
       sdk_version: The analyzing toolchain's `DartSdkInfo.version`.
@@ -83,7 +99,9 @@ def analyzer_summaries_supported(sdk_version):
     sdk = _major_minor(sdk_version)
     if sdk == None:
         return False
-    return sdk <= _major_minor(ANALYZER_MAX_LANGUAGE_VERSION)
+    min_sdk = _major_minor(ANALYZER_MIN_LANGUAGE_VERSION)
+    max_sdk = _major_minor(ANALYZER_MAX_LANGUAGE_VERSION)
+    return min_sdk <= sdk and sdk <= max_sdk
 
 # Prefixes a package key in `DartAnalyzerSummaryInfo.packages` when the package is
 # split across targets: its own summary is not built, and every dependent of the
