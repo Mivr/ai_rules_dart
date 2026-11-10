@@ -143,9 +143,9 @@ def _own_embedder_yaml(info, files):
       files: Candidate `File`s, typically the target's `DefaultInfo` files.
 
     Returns:
-      The `_embedder.yaml` `File` when `info` is `sky_engine` and carries one, or None.
+      The `_embedder.yaml` `File` when `info` is `sky_engine` with backed library sources and carries one, or None.
     """
-    if info.package_name != _EMBEDDER_PACKAGE:
+    if info.package_name != _EMBEDDER_PACKAGE or not _own_sources(info, files):
         return None
     expected = ((info.lib_root + "/lib/") if info.lib_root else "lib/") + _EMBEDDER_FILE
     for f in files + info.transitive_resources.to_list():
