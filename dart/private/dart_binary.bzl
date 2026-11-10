@@ -632,7 +632,10 @@ _binary_code_assets_transition = transition(
 # The attributes `dart_binary` shares with the other executable rules, merged into one dict.
 _SHARED_BINARY_ATTRS = dict(
     DART_ABI_CONSTRAINT_ATTRS,
-    **dict(COMPILE_WRAPPER_ATTRS, **dict(EXTRA_DART_DEFINES_ATTR, **dict(EXECUTABLE_PACKAGE_ATTRS, **BINARY_MODULAR_KERNEL_ATTRS)))
+    **dict(
+        COMPILE_WRAPPER_ATTRS,
+        **dict(EXTRA_DART_DEFINES_ATTR, **dict(EXECUTABLE_PACKAGE_ATTRS, **BINARY_MODULAR_KERNEL_ATTRS))
+    )
 )
 
 dart_binary = rule(
