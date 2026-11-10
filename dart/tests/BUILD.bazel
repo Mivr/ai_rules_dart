@@ -327,9 +327,11 @@ dart_test(
     args = [
         "$(rlocationpath //:MODULE.bazel)",
         "$(rlocationpath //:.gitattributes)",
+        "$(rlocationpath //:BUILD.bazel)",
     ],
     data = [
         "//:.gitattributes",
+        "//:BUILD.bazel",
         "//:MODULE.bazel",
     ],
     main = "dev_dep_archive_guard_test.dart",
