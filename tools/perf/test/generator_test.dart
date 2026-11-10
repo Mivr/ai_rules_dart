@@ -594,11 +594,21 @@ void _testConsumerPresetImport() {
         seed: 1,
       ),
     );
-    final rc = File('$out/.bazelrc').readAsStringSync();
+    final all = File('$out/.bazelrc').readAsLinesSync();
+    final lines = all
+        .where((l) => l.trim().isNotEmpty && !l.trim().startsWith('#'))
+        .toList();
     final expectedRules = rules.path.replaceAll(r'\', '/');
     _check(
-      rc == 'import $expectedRules/$consumerPresetPath\n',
-      'workspace .bazelrc imports only the shipped preset, got: $rc',
+      lines.length == 2 &&
+          lines[0] == 'import $expectedRules/$consumerPresetPath' &&
+          lines[1] == 'test --build_runfile_links',
+      'workspace .bazelrc is the preset import then the test line, got: $all',
+    );
+    final testIdx = all.indexOf('test --build_runfile_links');
+    _check(
+      testIdx > 0 && all[testIdx - 1].trim().startsWith('#'),
+      'a comment line precedes the test line, got: $all',
     );
   } finally {
     _deleteTemp(tempDir);
