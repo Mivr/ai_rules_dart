@@ -10,6 +10,15 @@ const floorScheme = 'org-dartlang-root';
 
 final _binDirPattern = RegExp(r'^(bazel-out/[^/]+/bin)/');
 
+String _stripExe(String path) =>
+    path.endsWith('.exe') ? path.substring(0, path.length - 4) : path;
+
+String _resolveConfigPath(String path, String configSuffix) {
+  final direct = '$path$configSuffix';
+  if (File(direct).existsSync()) return direct;
+  return '${_stripExe(path)}$configSuffix';
+}
+
 /// How the floor reaches the workspace the Bazel build compiled.
 ///
 /// The generated workspace has no `package_config.json` of its own: Bazel
@@ -57,7 +66,7 @@ final class FloorLayout {
     workspaceDir: workspaceDir,
     configSuffix: '.entry.kmod.package_config.json',
     entrypoint: (binRelative) => '$binRelative.vm_test.dart',
-    plainEntrypoint: '$testExecutable.vm_test.dart',
+    plainEntrypoint: '${_stripExe(testExecutable)}.vm_test.dart',
   );
 
   factory FloorLayout._derive({
@@ -69,7 +78,7 @@ final class FloorLayout {
   }) {
     final path = executable.replaceAll(r'\', '/');
     final marker = path.indexOf('/bazel-out/');
-    final config = '$path$configSuffix';
+    final config = _resolveConfigPath(path, configSuffix);
     if (marker == -1) {
       return FloorLayout._(
         workingDirectory: workspaceDir,
@@ -81,7 +90,7 @@ final class FloorLayout {
       );
     }
     final execroot = path.substring(0, marker);
-    final rel = path.substring(marker + 1);
+    final rel = _stripExe(path.substring(marker + 1));
     final bin = _binDirPattern.firstMatch(rel)?.group(1);
     if (bin == null) {
       throw StateError('Cannot locate the bin directory in $executable');
