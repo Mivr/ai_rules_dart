@@ -95,6 +95,7 @@ final class ScaleMeasurer {
     try {
       leafTarget = _lockfilePass(paths);
     } on Object catch (e) {
+      stderr.writeln('Scale lockfile pass error: $e');
       final failed = FlowMeasurement.failed('lockfile pass failed: $e');
       return {for (final flow in scaleFlows) flow: failed};
     }
