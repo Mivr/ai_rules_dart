@@ -12,6 +12,16 @@ String _requireToolFile(String path, String toolName) {
   return resolveCliPath(path);
 }
 
+String _resolveBinary(String normSdk, String relPath) {
+  final primaryExt = Platform.isWindows ? '.exe' : '';
+  final fallbackExt = Platform.isWindows ? '' : '.exe';
+  final primary = '$normSdk/$relPath$primaryExt';
+  if (File(primary).existsSync()) return primary;
+  final fallback = '$normSdk/$relPath$fallbackExt';
+  if (File(fallback).existsSync()) return fallback;
+  return primary;
+}
+
 /// Binaries provided by the Dart SDK.
 final class SdkBinaries {
   /// Creates an SDK binaries record.
@@ -96,12 +106,10 @@ final class SdkTools {
   /// Resolves all required SDK tools from [sdkDir], throwing if any is missing.
   static SdkTools fromSdkDir(String sdkDir) {
     final normSdk = resolveCliPath(sdkDir);
-    final isWin = Platform.isWindows;
-    final exeExt = isWin ? '.exe' : '';
 
-    final dartPath = '$normSdk/bin/dart$exeExt';
-    final aotPath = '$normSdk/bin/dartaotruntime$exeExt';
-    final gsPath = '$normSdk/bin/utils/gen_snapshot$exeExt';
+    final dartPath = _resolveBinary(normSdk, 'bin/dart');
+    final aotPath = _resolveBinary(normSdk, 'bin/dartaotruntime');
+    final gsPath = _resolveBinary(normSdk, 'bin/utils/gen_snapshot');
     final gkPath = '$normSdk/bin/snapshots/gen_kernel_aot.dart.snapshot';
 
     var fsPath = '$normSdk/bin/snapshots/frontend_server_aot.dart.snapshot';
@@ -137,45 +145,53 @@ final class SdkTools {
     );
   }
 
-  /// Discovers the resolved SDK root from [outputBase] and [execroot].
-  static SdkTools discover({
-    required String outputBase,
-    required String execroot,
-  }) {
+  static List<String> _listCandidateSdkDirs(
+    String outputBase,
+    String execroot,
+  ) {
     final candidateDirs = <String>[];
     for (final base in [outputBase, execroot]) {
       final ext = Directory('$base/external');
-      if (ext.existsSync()) {
-        try {
-          for (final entity in ext.listSync(followLinks: false)) {
-            candidateDirs.add(entity.path);
-          }
-        } on FileSystemException catch (e) {
-          stderr.writeln('External dir listing skipped ($base): $e');
+      if (!ext.existsSync()) continue;
+      try {
+        for (final entity in ext.listSync(followLinks: false)) {
+          candidateDirs.add(entity.path);
         }
+      } on FileSystemException catch (e) {
+        stderr.writeln('External dir listing skipped ($base): $e');
       }
     }
-
     candidateDirs.sort((a, b) {
       final aDart = a.toLowerCase().contains('dart') ? 0 : 1;
       final bDart = b.toLowerCase().contains('dart') ? 0 : 1;
       return aDart.compareTo(bDart);
     });
+    return candidateDirs;
+  }
 
-    final isWin = Platform.isWindows;
-    final exeExt = isWin ? '.exe' : '';
+  /// Discovers the resolved SDK root from [outputBase] and [execroot].
+  static SdkTools discover({
+    required String outputBase,
+    required String execroot,
+  }) {
+    final candidateDirs = _listCandidateSdkDirs(outputBase, execroot);
+    StateError? lastError;
     for (final dir in candidateDirs) {
-      final hasDart = File('$dir/bin/dart$exeExt').existsSync();
-      final hasAot = File('$dir/bin/dartaotruntime$exeExt').existsSync();
-      if (hasDart && hasAot) {
+      final normDir = resolveCliPath(dir);
+      final hasDart = File(_resolveBinary(normDir, 'bin/dart')).existsSync();
+      final hasAot = File(_resolveBinary(normDir, 'bin/dartaotruntime'))
+          .existsSync();
+      final hasSnapshots = Directory('$normDir/bin/snapshots').existsSync();
+      if (hasDart || hasAot || hasSnapshots) {
         try {
-          return SdkTools.fromSdkDir(dir);
+          return SdkTools.fromSdkDir(normDir);
         } on StateError catch (e) {
+          lastError = e;
           stderr.writeln('Candidate SDK dir $dir incomplete: $e');
         }
       }
     }
-
+    if (lastError != null) throw lastError;
     throw StateError(
       'Could not locate workspace Dart SDK in $outputBase/external or $execroot/external',
     );

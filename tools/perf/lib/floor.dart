@@ -66,23 +66,44 @@ final class DefaultFloorProcessRunner implements FloorProcessRunner {
   }
 }
 
-ProcessResult _runExecutableOrAot(
+(ProcessResult?, String?) _safeRunSync(
+  FloorProcessRunner runner,
+  String executable,
+  List<String> arguments, {
+  String? workingDirectory,
+  Map<String, String>? environment,
+}) {
+  try {
+    return (
+      runner.runSync(
+        executable,
+        arguments,
+        workingDirectory: workingDirectory,
+        environment: environment,
+      ),
+      null,
+    );
+  } on ProcessException catch (e) {
+    return (null, e.toString());
+  }
+}
+
+(ProcessResult?, String?) _runExecutableOrAot(
   FloorProcessRunner runner,
   SdkTools sdk,
   String binaryPath,
   String workingDirectory,
 ) {
-  try {
-    return runner.runSync(
-      binaryPath,
-      const [],
-      workingDirectory: workingDirectory,
-    );
-  } on ProcessException {
-    return runner.runSync(sdk.dartaotruntime, [
-      binaryPath,
-    ], workingDirectory: workingDirectory);
-  }
+  final (direct, _) = _safeRunSync(
+    runner,
+    binaryPath,
+    const [],
+    workingDirectory: workingDirectory,
+  );
+  if (direct != null) return (direct, null);
+  return _safeRunSync(runner, sdk.dartaotruntime, [
+    binaryPath,
+  ], workingDirectory: workingDirectory);
 }
 
 (double, String?) _executeFloorSteps(
@@ -93,7 +114,8 @@ ProcessResult _runExecutableOrAot(
   var totalCpu = 0.0;
   for (final step in steps) {
     final beforeCpu = clock.getChildCpuSeconds();
-    final res = runner.runSync(
+    final (res, startErr) = _safeRunSync(
+      runner,
       step.executable,
       step.arguments,
       workingDirectory: step.workingDirectory,
@@ -103,6 +125,9 @@ ProcessResult _runExecutableOrAot(
     final stepCpu = afterCpu - beforeCpu;
     if (stepCpu > 0) totalCpu += stepCpu;
 
+    if (startErr != null || res == null) {
+      return (totalCpu, 'Floor tool ${step.executable} failed: $startErr');
+    }
     if (res.exitCode != 0) {
       return (
         totalCpu,
@@ -116,20 +141,27 @@ ProcessResult _runExecutableOrAot(
 String? _verifyFloorRun({
   required FloorProcessRunner runner,
   required SdkTools sdk,
-  required ProcessResult floorRun,
+  required (ProcessResult?, String?) floorOutcome,
   required String floorLabel,
   required String bazelAppExecutable,
   required String workspaceDir,
 }) {
+  final (floorRun, floorErr) = floorOutcome;
+  if (floorErr != null || floorRun == null) {
+    return '$floorLabel output failed to start: $floorErr';
+  }
   if (floorRun.exitCode != 0) {
     return '$floorLabel output failed to run (exit ${floorRun.exitCode}): ${floorRun.stderr}';
   }
-  final bazelRun = _runExecutableOrAot(
+  final (bazelRun, bazelErr) = _runExecutableOrAot(
     runner,
     sdk,
     bazelAppExecutable,
     workspaceDir,
   );
+  if (bazelErr != null || bazelRun == null) {
+    return 'Bazel app failed to start: $bazelErr';
+  }
   if (bazelRun.exitCode != 0) {
     return 'Bazel app failed to run (exit ${bazelRun.exitCode}): ${bazelRun.stderr}';
   }
@@ -179,13 +211,13 @@ FloorResult runAotFloorFlow({
     );
   }
 
-  final floorRun = runner.runSync(sdk.dartaotruntime, [
+  final floorOutcome = _safeRunSync(runner, sdk.dartaotruntime, [
     outAot,
   ], workingDirectory: workspaceDir);
   final verifyErr = _verifyFloorRun(
     runner: runner,
     sdk: sdk,
-    floorRun: floorRun,
+    floorOutcome: floorOutcome,
     floorLabel: 'Floor AOT',
     bazelAppExecutable: bazelAppExecutable,
     workspaceDir: workspaceDir,
@@ -240,11 +272,15 @@ List<String> _driverFlags({
   required List<String> flags,
 }) {
   final (driverExe, driverArgs) = incrementalDriverCommand(flags);
-  final driverRes = runner.runSync(
+  final (driverRes, startErr) = _safeRunSync(
+    runner,
     driverExe,
     driverArgs,
     workingDirectory: layout.workingDirectory,
   );
+  if (startErr != null || driverRes == null) {
+    return (null, 'Incremental driver failed to start: $startErr');
+  }
 
   if (driverRes.exitCode != 0) {
     return (
@@ -324,13 +360,13 @@ FloorResult runIncrementalBodyFloorFlow({
   final finalDill = driverData['outputDill'] as String? ?? outDill;
   final cpuSeconds = (driverData['cpuSeconds'] as num?)?.toDouble() ?? 0.0;
 
-  final floorRun = runner.runSync(sdk.dart, [
+  final floorOutcome = _safeRunSync(runner, sdk.dart, [
     finalDill,
   ], workingDirectory: workspaceDir);
   final verifyErr = _verifyFloorRun(
     runner: runner,
     sdk: sdk,
-    floorRun: floorRun,
+    floorOutcome: floorOutcome,
     floorLabel: 'Floor incremental',
     bazelAppExecutable: bazelAppExecutable,
     workspaceDir: workspaceDir,
@@ -393,7 +429,36 @@ FloorResult runIncrementalBodyFloorFlow({
   );
   placed.parent.createSync(recursive: true);
   File(data['outputDill'] as String? ?? built).copySync(placed.path);
-  return (placed.path, null);
+  return (placed.path.replaceAll(r'\', '/'), null);
+}
+
+(String?, String?) _prepareTestDill({
+  required SdkTools sdk,
+  required String workspaceDir,
+  required String testDillPath,
+  required String floorOutputDir,
+  required FloorProcessRunner runner,
+}) {
+  if (splitPrecompiledDill(testDillPath) == null) return (testDillPath, null);
+  final (rebuilt, err) = _rebuildTestKernel(
+    sdk: sdk,
+    workspaceDir: workspaceDir,
+    bazelDill: testDillPath,
+    floorOutputDir: floorOutputDir,
+    runner: runner,
+  );
+  if (rebuilt == null) {
+    return (null, 'Floor test kernel rebuild failed: $err');
+  }
+  final (pubGet, pubErr) = _safeRunSync(runner, sdk.dart, const [
+    'pub',
+    'get',
+  ], workingDirectory: workspaceDir);
+  if (pubErr != null || pubGet == null || pubGet.exitCode != 0) {
+    final detail = pubErr ?? '${pubGet?.stderr}';
+    return (null, 'Floor test setup (dart pub get) failed: $detail');
+  }
+  return (rebuilt, null);
 }
 
 /// Runs the leaf test runner floor on a prebuilt test dill and verifies it passes.
@@ -405,40 +470,25 @@ FloorResult runTestLeafFloorFlow({
   String floorOutputDir = '',
   FloorProcessRunner runner = const DefaultFloorProcessRunner(),
 }) {
-  var dill = testDillPath;
-  if (splitPrecompiledDill(testDillPath) != null) {
-    final (rebuilt, err) = _rebuildTestKernel(
-      sdk: sdk,
-      workspaceDir: workspaceDir,
-      bazelDill: testDillPath,
-      floorOutputDir: floorOutputDir,
-      runner: runner,
-    );
-    if (rebuilt == null) {
-      return FloorResult(
-        cpuSeconds: null,
-        identical: false,
-        reason: 'Floor test kernel rebuild failed: $err',
-        floorKind: 'aot',
-      );
-    }
-    dill = rebuilt;
-  }
-  final step = buildTestRunnerStep(sdk: sdk, testDill: dill);
-  final pubGet = runner.runSync(sdk.dart, const [
-    'pub',
-    'get',
-  ], workingDirectory: workspaceDir);
-  if (pubGet.exitCode != 0) {
+  final (dill, prepErr) = _prepareTestDill(
+    sdk: sdk,
+    workspaceDir: workspaceDir,
+    testDillPath: testDillPath,
+    floorOutputDir: floorOutputDir,
+    runner: runner,
+  );
+  if (prepErr != null || dill == null) {
     return FloorResult(
       cpuSeconds: null,
       identical: false,
-      reason: 'Floor test setup (dart pub get) failed: ${pubGet.stderr}',
+      reason: prepErr ?? 'Floor test setup failed',
       floorKind: 'aot',
     );
   }
+  final step = buildTestRunnerStep(sdk: sdk, testDill: dill);
   final beforeCpu = clock.getChildCpuSeconds();
-  final testRun = runner.runSync(
+  final (testRun, testErr) = _safeRunSync(
+    runner,
     step.executable,
     step.arguments,
     workingDirectory: workspaceDir,
@@ -447,6 +497,14 @@ FloorResult runTestLeafFloorFlow({
   final afterCpu = clock.getChildCpuSeconds();
   final totalCpu = afterCpu - beforeCpu;
 
+  if (testErr != null || testRun == null) {
+    return FloorResult(
+      cpuSeconds: totalCpu > 0 ? totalCpu : 0.0,
+      identical: false,
+      reason: 'Floor leaf test failed to start: $testErr',
+      floorKind: 'aot',
+    );
+  }
   if (testRun.exitCode != 0) {
     return FloorResult(
       cpuSeconds: totalCpu > 0 ? totalCpu : 0.0,
