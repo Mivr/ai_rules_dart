@@ -72,12 +72,21 @@ void main() {
     );
   });
 
-  test('writeCoverageMap merges the static map, origins and members', () {
+  test('writeCoverageMap merges plain files, origins and members', () {
     final out = '${tmp.path}/out.json';
     writeCoverageMap([
       out,
-      '--static',
-      write('static.json', {'package:o/o.dart': 'o/lib/o.dart'}),
+      '--package',
+      'o',
+      'o/lib/',
+      'o',
+      '--package',
+      'pkg',
+      'p/set/lib/',
+      dir.shortPath,
+      '--file',
+      'o/lib/o.dart',
+      'o/lib/o.dart',
       '--origin-map',
       write('origins.json', {
         'bazel-out/k8/bin/p/set/lib/g.dart': 'bazel-out/k8/bin/p/lib/g.dart',
@@ -85,7 +94,6 @@ void main() {
       '--dir',
       dir.path,
       dir.shortPath,
-      dir.packageName,
       '--file',
       'bazel-out/k8/bin/p/set/lib/g.dart',
       'p/set/lib/g.dart',
@@ -94,5 +102,49 @@ void main() {
         jsonDecode(File(out).readAsStringSync()) as Map<String, dynamic>;
     expect(map['package:o/o.dart'], 'o/lib/o.dart');
     expect(map['package:pkg/g.dart'], 'bazel-out/k8/bin/p/lib/g.dart');
+  });
+
+  test('plainEntries maps a file under its deepest package lib', () {
+    final Map<String, String> entries = plainEntries(
+      packages: [
+        const PackageRoot(name: 'outer', libPrefix: 'a/lib/', libRoot: 'a'),
+        const PackageRoot(
+          name: 'inner',
+          libPrefix: 'a/lib/b/lib/',
+          libRoot: 'a/lib/b',
+        ),
+        const PackageRoot(name: 'root', libPrefix: 'lib/', libRoot: ''),
+      ],
+      files: [
+        const MemberFile(path: 'a/lib/x.dart', shortPath: 'a/lib/x.dart'),
+        const MemberFile(
+          path: 'a/lib/b/lib/y.dart',
+          shortPath: 'a/lib/b/lib/y.dart',
+        ),
+        const MemberFile(
+          path: 'external/r/lib/z.dart',
+          shortPath: '../r/lib/z.dart',
+        ),
+        const MemberFile(path: 'lib/t.dart', shortPath: 'lib/t.dart'),
+        const MemberFile(path: 'test/t.dart', shortPath: 'test/t.dart'),
+      ],
+    );
+    expect(entries.entries.map((e) => '${e.key} ${e.value}').toList(), [
+      'org-dartlang-root:///a/lib/x.dart a/lib/x.dart',
+      'package:outer/x.dart a/lib/x.dart',
+      'org-dartlang-root:///a/lib/b/lib/y.dart a/lib/b/lib/y.dart',
+      'package:inner/y.dart a/lib/b/lib/y.dart',
+      'org-dartlang-root:///external/r/lib/z.dart external/r/lib/z.dart',
+      'org-dartlang-root:///lib/t.dart lib/t.dart',
+      'package:root/t.dart lib/t.dart',
+      'org-dartlang-root:///test/t.dart test/t.dart',
+    ]);
+  });
+
+  test('a directory that roots no package is an error', () {
+    expect(
+      () => parseCoverageMapRequest(['out', '--dir', 'bin/d', 'd']),
+      throwsA(isA<CoverageMapError>()),
+    );
   });
 }

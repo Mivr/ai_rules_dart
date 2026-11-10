@@ -1,0 +1,11 @@
+load("//dart:defs.bzl", "dart_library")
+
+package(default_visibility = ["//dart/tests:__subpackages__"])
+
+dart_library(
+    name = "top",
+    package_name = "coverage_map_golden_top",
+    srcs = ["lib/top.dart"],
+    tags = ["manual"],
+    deps = ["//dart/tests/coverage_map_fixture/golden/leaf"],
+)

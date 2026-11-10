@@ -25,6 +25,7 @@ load(":compile_action_direct_test.bzl", "compile_action_direct_test_suite")
 load(":compile_flags_test.bzl", "compile_flags_test_suite")
 load(":compile_wrapper_test.bzl", "compile_wrapper_test_suite")
 load(":copy_with_library_direct_test.bzl", "copy_with_library_direct_test_suite")
+load(":coverage_map_analysis_test.bzl", "coverage_off_test", "coverage_on_test")
 load(":dart_analysis_config_direct_test.bzl", "dart_analysis_config_direct_test_suite")
 load(":dart_analysis_options_direct_test.bzl", "dart_analysis_options_direct_test_suite")
 load(":dart_analysis_test_direct_test.bzl", "dart_analysis_test_direct_test_suite")
@@ -397,6 +398,25 @@ dart_test(
         "//dart/runfiles",
         "@ext_pub_deps//:test",
     ],
+)
+
+# A `dart_test` writes its coverage map only under `bazel coverage`.
+coverage_off_test(
+    name = "coverage_map_off_test",
+    size = "small",
+    target_under_test = "//dart/tests/coverage_map_fixture/golden:subject",
+)
+
+coverage_on_test(
+    name = "coverage_map_on_test",
+    size = "small",
+    expected_inputs = [
+        "dart/tests/coverage_map_fixture/golden/leaf/lib/leaf.dart",
+        "dart/tests/coverage_map_fixture/golden/top/lib/top.dart",
+        "dart/tests/coverage_map_fixture/golden/subject.dart",
+    ],
+    expected_output = "subject.coverage_map.json",
+    target_under_test = "//dart/tests/coverage_map_fixture/golden:subject",
 )
 
 # `bazel coverage` support: each rule that owns Dart sources returns

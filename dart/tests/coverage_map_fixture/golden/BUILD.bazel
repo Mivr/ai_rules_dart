@@ -1,0 +1,34 @@
+load("//dart:defs.bzl", "dart_test")
+load("//dart/tests:coverage_map_analysis_test.bzl", "coverage_map_of")
+
+# A small closure, free of generated files, so the coverage map has one exact
+# content. `subject` is only analyzed under `//dart/tests:coverage_map_*_test`
+# and mapped by `map`; `golden_test` compares that map byte for byte.
+package(default_visibility = ["//dart/tests:__subpackages__"])
+
+dart_test(
+    name = "subject",
+    size = "small",
+    main = "subject.dart",
+    tags = ["manual"],
+    deps = ["//dart/tests/coverage_map_fixture/golden/top"],
+)
+
+# `subject` built with coverage on, reduced to its coverage map.
+coverage_map_of(
+    name = "map",
+    testonly = True,
+    test = ":subject",
+)
+
+dart_test(
+    name = "golden_test",
+    size = "small",
+    srcs = [],
+    data = [":map"],
+    main = "golden_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)

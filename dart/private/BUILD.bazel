@@ -305,6 +305,7 @@ bzl_library(
     name = "coverage_map",
     srcs = ["coverage_map.bzl"],
     visibility = ["//visibility:public"],
+    deps = [":dart_info"],
 )
 
 bzl_library(

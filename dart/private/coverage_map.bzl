@@ -4,15 +4,18 @@ The launcher turns the VM's coverage into LCOV with the map: a JSON object of th
 source URIs the VM reports to the **exec path** of the file (`File.path`), which
 is what `COVERAGE_MANIFEST` lists and the report's `SF:` records name.
 
-A directory source (a `dart_library(srcs_dir = ...)` over a `dart_source_set`)
-holds files only the execution knows, so its entries come from an action. The
+The map is written by an action, only under `bazel coverage`. A directory source
+(a `dart_library(srcs_dir = ...)` over a `dart_source_set`) holds files only the
+execution knows, so its entries come from that action too. The
 `dart_source_set` that assembled the directory records, for every staged file,
 the exec path of the input it was copied from (`CoverageOriginInfo`), and the map
 names that input, the file `COVERAGE_MANIFEST` lists.
 
-This module loads nothing from the rest of `dart/private`: `source_set.bzl`
-returns `CoverageOriginInfo`, so it must be loadable from there.
+This module loads only `dart_info.bzl` from the rest of `dart/private`:
+`source_set.bzl` returns `CoverageOriginInfo`, so it must be loadable from there.
 """
+
+load("//dart/private:dart_info.bzl", "package_lib_prefix")
 
 _COPY_TOOLCHAIN_TYPE = Label("//dart:copy_toolchain_type")
 
@@ -91,75 +94,61 @@ def _exec_path_line(f):
     """The exec path of `f` with `/` separators."""
     return f.path.replace("\\", "/")
 
-def _dart_member_record(f):
-    """The `--file` record for one file of an expanded directory; none for a non-Dart file."""
+def _file_record(f):
+    """The `--file` record for one Dart file (a directory source is expanded to its files); none otherwise."""
     if f.extension != "dart":
         return []
     return ["--file", f.path, f.short_path]
 
-def _package_rooted_at(ctx, directory, packages):
-    """The package whose `lib_root` is `directory`, or a failure naming the target."""
-    for pkg in packages:
-        if pkg.lib_root == directory.short_path:
-            return pkg.package_name
-    fail((
-        "%s: the directory source `%s` is the root of no Dart package, so its " +
-        "files cannot be mapped for `bazel coverage`. Pass it as a " +
-        "`dart_library(srcs_dir = ...)`."
-    ) % (ctx.label, directory.short_path))
+def _dir_record(f):
+    """The `--dir` record for a directory source; none for any other file."""
+    if not f.is_directory:
+        return []
+    return ["--dir", f.path, f.short_path]
 
-def _expand_directories(ctx, out, static, directories, packages):
-    """Runs the action that adds the files of `directories` to the static map."""
-    maps = forward_origins(ctx.attr.deps).maps
-    args = ctx.actions.args()
-    args.use_param_file("@%s", use_always = True)
-    args.set_param_file_format("multiline")
-    args.add("--coverage-map")
-    args.add(out.path)
-    args.add("--static")
-    args.add(static.path)
-    args.add_all(maps, before_each = "--origin-map")
-    for d in directories:
-        args.add("--dir")
-        args.add(d.path)
-        args.add(d.short_path)
-        args.add(_package_rooted_at(ctx, d, packages))
-    args.add_all(directories, map_each = _dart_member_record, expand_directories = True)
-    copy_tc = ctx.toolchains[_COPY_TOOLCHAIN_TYPE]
-    ctx.actions.run(
-        executable = copy_tc.dart,
-        arguments = [copy_tc.copy_tree.path, args],
-        inputs = depset(
-            direct = [copy_tc.copy_tree, static] + directories,
-            transitive = [copy_tc.runtime_files, maps],
-        ),
-        outputs = [out],
-        mnemonic = "DartCoverageMap",
-        progress_message = "Mapping coverage sources of %{label}",
-        toolchain = _COPY_TOOLCHAIN_TYPE,
-    )
+def _package_record(pkg):
+    """The `--package` record for one `DartPackageInfo`."""
+    return ["--package", pkg.package_name, package_lib_prefix(pkg.lib_root), pkg.lib_root]
 
-def write_coverage_map(ctx, entries, directories, packages):
-    """Writes `<name>.coverage_map.json`.
+def write_coverage_map(ctx, dep_srcs, own_files, packages):
+    """Writes `<name>.coverage_map.json` with an action.
 
-    Without a directory source, the map is `entries`, written at analysis time.
-    With one, an action completes `entries` with each directory's Dart files.
+    The sources reach the action as lazily expanded records of a params file, so
+    analysis never flattens the closure. The action maps each Dart file to its
+    `org-dartlang-root:` and `package:` URIs, and a directory source to its files.
 
     Args:
-      ctx: The `dart_test` rule context (with the copy toolchain when `directories` is set).
-      entries: Dict of the URI the VM reports to the exec path of the file, for the
-        sources known at analysis time.
-      directories: Directory Files (tree artifacts) among the test's sources.
+      ctx: The `dart_test` rule context, with the copy toolchain.
+      dep_srcs: Depset of the Files of the test's dependencies' transitive sources.
+      own_files: The test's own source Files.
       packages: The `DartPackageInfo` records the compile resolves against.
 
     Returns:
       The `<name>.coverage_map.json` File.
     """
     out = ctx.actions.declare_file(ctx.label.name + ".coverage_map.json")
-    if not directories:
-        ctx.actions.write(output = out, content = json.encode(entries))
-        return out
-    static = ctx.actions.declare_file(ctx.label.name + ".coverage_map.static.json")
-    ctx.actions.write(output = static, content = json.encode(entries))
-    _expand_directories(ctx, out, static, directories, packages)
+    maps = forward_origins(ctx.attr.deps).maps
+    args = ctx.actions.args()
+    args.use_param_file("@%s", use_always = True)
+    args.set_param_file_format("multiline")
+    args.add("--coverage-map")
+    args.add(out.path)
+    args.add_all(packages, map_each = _package_record)
+    args.add_all(maps, before_each = "--origin-map")
+    for srcs in [dep_srcs, own_files]:
+        args.add_all(srcs, map_each = _dir_record, expand_directories = False)
+        args.add_all(srcs, map_each = _file_record, expand_directories = True)
+    copy_tc = ctx.toolchains[_COPY_TOOLCHAIN_TYPE]
+    ctx.actions.run(
+        executable = copy_tc.dart,
+        arguments = [copy_tc.copy_tree.path, args],
+        inputs = depset(
+            direct = [copy_tc.copy_tree] + own_files,
+            transitive = [copy_tc.runtime_files, maps, dep_srcs],
+        ),
+        outputs = [out],
+        mnemonic = "DartCoverageMap",
+        progress_message = "Mapping coverage sources of %{label}",
+        toolchain = _COPY_TOOLCHAIN_TYPE,
+    )
     return out

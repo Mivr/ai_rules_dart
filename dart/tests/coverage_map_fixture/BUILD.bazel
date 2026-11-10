@@ -1,4 +1,5 @@
 load("//dart:defs.bzl", "dart_library", "dart_source_set", "dart_test")
+load("//dart/tests:coverage_map_analysis_test.bzl", "coverage_map_of")
 
 # `dart_test` writes `<name>.coverage_map.json` for `bazel coverage`: the source
 # URIs the VM reports, each mapped to the exec path of its file. `coverage_map_test`
@@ -50,10 +51,34 @@ genrule(
     cmd = "cp $< $@",
 )
 
+# The same test built with coverage on, whose map `coverage_map_test` reads: the
+# map of a test built without coverage does not exist.
+dart_test(
+    name = "coverage_map_subject",
+    srcs = [":runner_copy"],
+    main = "coverage_map_test.dart",
+    tags = ["manual"],
+    deps = [
+        ":generated_lib",
+        ":set_lib",
+        "//dart/runfiles",
+        "@ext_pub_deps//:coverage",
+        "@ext_pub_deps//:path",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+coverage_map_of(
+    name = "subject_map",
+    testonly = True,
+    test = ":coverage_map_subject",
+)
+
 dart_test(
     name = "coverage_map_test",
     size = "small",
     srcs = [":runner_copy"],
+    data = [":subject_map"],
     main = "coverage_map_test.dart",
     deps = [
         ":generated_lib",

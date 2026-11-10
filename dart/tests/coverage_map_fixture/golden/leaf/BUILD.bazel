@@ -1,0 +1,10 @@
+load("//dart:defs.bzl", "dart_library")
+
+package(default_visibility = ["//dart/tests:__subpackages__"])
+
+dart_library(
+    name = "leaf",
+    package_name = "coverage_map_golden_leaf",
+    srcs = ["lib/leaf.dart"],
+    tags = ["manual"],
+)

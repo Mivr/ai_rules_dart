@@ -11,12 +11,14 @@ import 'package:test/test.dart';
 
 import 'test_runner_coverage.dart';
 
-/// The `<name>.coverage_map.json` `dart_test` generated for this very test.
+/// The `<name>.coverage_map.json` `dart_test` generated for this very test's
+/// closure under `bazel coverage`. A test built without coverage has no map, so
+/// the `coverage_map_subject` twin is built with coverage on and its map is `data`.
 Map<String, String> generatedMap() {
   final String workspace = Platform.environment['TEST_WORKSPACE'] ?? '_main';
   final String path = Runfiles.create().rlocation(
     '$workspace/dart/tests/coverage_map_fixture/'
-    'coverage_map_test.coverage_map.json',
+    'coverage_map_subject.coverage_map.json',
   );
   final raw = jsonDecode(File(path).readAsStringSync()) as Map<String, dynamic>;
   return {for (final e in raw.entries) e.key: e.value as String};

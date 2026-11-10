@@ -37,11 +37,8 @@ load(
     "dart_kernel_module_aspect",
     "entry_source_uri",
     "entry_sources",
-    "library_source_uri",
     "modular_executable_kernel",
     "modular_executable_tools",
-    "multi_root_uri",
-    "package_of_source",
 )
 load("//dart/private:dart_test_runner.bzl", "DartTestKernelInfo")
 load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "executable_package")
@@ -85,8 +82,11 @@ def _dart_test_impl(ctx):
         "RULES_DART_DART": runfiles_path(dart_sdk_info.dart, workspace_name),
         "RULES_DART_DILL": runfiles_path(dill, workspace_name),
     }
-    coverage_map = _coverage_map(ctx, own.packages)
-    env["RULES_DART_COVERAGE_MAP"] = runfiles_path(coverage_map, workspace_name)
+    coverage_files = []
+    if ctx.configuration.coverage_enabled:
+        coverage_map = _coverage_map(ctx, own.packages)
+        coverage_files.append(coverage_map)
+        env["RULES_DART_COVERAGE_MAP"] = runfiles_path(coverage_map, workspace_name)
     generated_list = write_generated_list(ctx, ctx.files.srcs + [ctx.file.main], ctx.attr.deps)
     env["RULES_DART_COVERAGE_GENERATED"] = runfiles_path(generated_list, workspace_name)
     runner_files = []
@@ -129,7 +129,7 @@ def _dart_test_impl(ctx):
     # `dart compile`) declares `@rules_dart//dart` in `data`, which brings the
     # whole SDK.
     runfiles = ctx.runfiles(
-        files = [dill, coverage_map, generated_list] + kernel.runtime_libs + runner_files + ctx.files.data,
+        files = [dill, generated_list] + coverage_files + kernel.runtime_libs + runner_files + ctx.files.data,
         transitive_files = depset(
             transitive = [
                 dart_sdk_info.runtime_files,
@@ -163,6 +163,7 @@ def _dart_test_impl(ctx):
 def _coverage_map(ctx, packages):
     """Writes the map from the source URIs the VM reports to exec paths.
 
+    Only `bazel coverage` needs it, so a test built without coverage has none.
     The launcher turns the VM's coverage into LCOV with it: every `SF:` is the
     file's exec path (a generated file's `bazel-out/<cfg>/bin/...`, an external
     file's `external/<repo>/...`).
@@ -172,9 +173,9 @@ def _coverage_map(ctx, packages):
     one outside `lib/`). The VM's `file://` URI of a source is resolved by the
     launcher against the exec paths; no host path is written here. All are
     written, from the packages the compile resolves against, for the
-    test's own files and for every source its `deps` reach. A directory source
-    is completed by an action (see `write_coverage_map`). A test with no Dart
-    source to map gets `{}`.
+    test's own files and for every source its `deps` reach. The action reads the
+    sources from the depset, so the closure is never flattened in analysis. A test
+    with no Dart source to map gets `{}`.
 
     Args:
       ctx: The `dart_test` rule context.
@@ -183,24 +184,12 @@ def _coverage_map(ctx, packages):
     Returns:
       The `<name>.coverage_map.json` File.
     """
-    sources = collect_transitive_srcs(ctx.attr.deps).to_list() + [ctx.file.main] + ctx.files.srcs
-    by_name = {pkg.package_name: pkg for pkg in packages}
-    entries = {}
-    directories = []
-    for f in sources:
-        if f.is_directory:
-            directories.append(f)
-            continue
-        if f.extension != "dart":
-            continue
-        path = f.short_path
-        exec_path = f.path.replace("\\", "/")
-        entries[multi_root_uri(path)] = exec_path
-        owner_name = package_of_source(path, packages)
-        if owner_name != None:
-            owner = by_name[owner_name]
-            entries[library_source_uri(owner.package_name, owner.lib_root, path)] = exec_path
-    return write_coverage_map(ctx, entries, directories, packages)
+    return write_coverage_map(
+        ctx,
+        collect_transitive_srcs(ctx.attr.deps),
+        [ctx.file.main] + ctx.files.srcs,
+        packages,
+    )
 
 def _compile_test_kernel(ctx, own, bootstrap, use_base_dill = False):
     """Compiles a test's `main` to the kernel that a test runs from.
