@@ -264,16 +264,36 @@ List<String> _driverFlags({
   }
 }
 
+/// The edit and Bazel-built app the body floor recompiles and checks against.
+final class BodyFloorEdit {
+  /// Creates a body floor edit description.
+  const BodyFloorEdit({
+    required this.editedFile,
+    required this.bazelAppExecutable,
+    this.preEditFile = '',
+  });
+
+  /// Source file the body edit changed.
+  final String editedFile;
+
+  /// The Bazel-built app whose stdout the floor output must equal.
+  final String bazelAppExecutable;
+
+  /// Pre-edit copy of [editedFile], when the edit is applied by the driver.
+  final String preEditFile;
+}
+
 /// Runs the incremental JIT compiler floor for body edit and verifies output.
 FloorResult runIncrementalBodyFloorFlow({
   required SdkTools sdk,
   required String workspaceDir,
   required String floorOutputDir,
-  required String editedFile,
-  required String bazelAppExecutable,
-  String preEditFile = '',
+  required BodyFloorEdit edit,
   FloorProcessRunner runner = const DefaultFloorProcessRunner(),
 }) {
+  final editedFile = edit.editedFile;
+  final preEditFile = edit.preEditFile;
+  final bazelAppExecutable = edit.bazelAppExecutable;
   final outDill = '$floorOutputDir/app.dill';
   Directory(floorOutputDir).createSync(recursive: true);
 
@@ -580,9 +600,11 @@ FlowResult attachBodyFloor(
       sdk: sdk,
       workspaceDir: ctx.workspaceDir,
       floorOutputDir: ctx.outputDir,
-      editedFile: editedFile,
-      preEditFile: preEditFile,
-      bazelAppExecutable: bazelAppExecutable,
+      edit: BodyFloorEdit(
+        editedFile: editedFile,
+        preEditFile: preEditFile,
+        bazelAppExecutable: bazelAppExecutable,
+      ),
       runner: ctx.runner,
     );
     return _combineReplayAndFloor(replayFlow, floorRes);

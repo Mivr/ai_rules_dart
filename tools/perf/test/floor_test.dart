@@ -275,8 +275,10 @@ void _testOutputChecks() {
       sdk: sdk,
       workspaceDir: tempDir.path,
       floorOutputDir: '${tempDir.path}/out',
-      editedFile: '${tempDir.path}/f0.dart',
-      bazelAppExecutable: '${tempDir.path}/bazel_app',
+      edit: BodyFloorEdit(
+        editedFile: '${tempDir.path}/f0.dart',
+        bazelAppExecutable: '${tempDir.path}/bazel_app',
+      ),
       runner: bodyPassRunner,
     );
     _check(bodyPass.identical, 'Body floor is identical when stdout matches');
@@ -302,8 +304,10 @@ void _testOutputChecks() {
       sdk: sdk,
       workspaceDir: tempDir.path,
       floorOutputDir: '${tempDir.path}/out',
-      editedFile: '${tempDir.path}/f0.dart',
-      bazelAppExecutable: '${tempDir.path}/bazel_app',
+      edit: BodyFloorEdit(
+        editedFile: '${tempDir.path}/f0.dart',
+        bazelAppExecutable: '${tempDir.path}/bazel_app',
+      ),
       runner: bodyDiffRunner,
     );
     _check(!bodyDiff.identical, 'Body floor differs when stdout differs');
