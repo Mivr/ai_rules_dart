@@ -22,13 +22,18 @@ gathers the stamps into the `_validation` output group that makes building the
 executable run every check.
 """
 
-load("//dart:providers.bzl", "DartImportCheckInfo", "DartInfo")
-load("//dart/private:common.bzl", "owned_package_records")
+load("//dart:providers.bzl", "DartImportCheckInfo", "DartInfo", "DartKernelInfo")
 load("//dart/private:dart_kernel.bzl", "MODULAR_KERNEL_TOOLCHAINS", "kernel_tools_for")
-load("//dart/private:kernel_library_state.bzl", "library_module_inputs")
+load(
+    "//dart/private:kernel_library_state.bzl",
+    "LAYERING_FEATURE",
+    "direct_packages",
+    "library_module_inputs",
+    "own_packages",
+)
 
-# The Bazel feature that turns the check off.
-LAYERING_FEATURE = "dart_layering_check"
+_direct_packages = direct_packages
+_own_packages = own_packages
 
 IMPORT_CHECK_TOOL = Label("//dart/private/tools:import_check")
 
@@ -48,47 +53,6 @@ def import_check_for_binary(name, deps):
     if name == IMPORT_CHECK_TOOL.name and not deps:
         return None
     return IMPORT_CHECK_TOOL
-
-def _direct_packages(deps):
-    """The package names a target may import through its direct dependencies.
-
-    A dependency's own package names; a dependency with no sources of its own,
-    an aggregate facade re-exporting its deps, stands for every package it
-    reaches, as it does for the compile. (A source-less `dart_library` still
-    derives a package name from its label, so owning a record does not make
-    a dependency a package.)
-
-    Args:
-      deps: The direct dependency targets.
-
-    Returns:
-      A sorted list of package names.
-    """
-    names = {}
-    for dep in deps:
-        if DartInfo not in dep:
-            continue
-        owned = owned_package_records(dep[DartInfo])
-        has_sources = bool(dep[DefaultInfo].files.to_list())
-        records = owned if owned and has_sources else dep[DartInfo].transitive_packages.to_list()
-        for record in records:
-            names[record.package_name] = True
-    return sorted(names)
-
-def _own_packages(own_records, package_name):
-    """The package names a target's own sources may import: the packages it owns.
-
-    Args:
-      own_records: The target's own `DartPackageInfo` records.
-      package_name: The target's own package name, possibly empty.
-
-    Returns:
-      A sorted list of package names.
-    """
-    names = {record.package_name: True for record in own_records}
-    if package_name:
-        names[package_name] = True
-    return sorted(names)
 
 def _checked_sources(files):
     """The files and directories a check reads, from a target's own sources.
@@ -171,10 +135,15 @@ def _declare_check(ctx, tool, runtime, request):
     )
     return stamp
 
-def _library_stamp(ctx, inputs, deps):
+def _library_stamp(target, ctx, inputs, deps):
     """The check stamp of one library, or `None` when it runs no check.
 
+    Library layering checks run inside the module compile worker
+    (`kernel_module`), so a modular library registers no `DartImportCheck`
+    process of its own and uses its `.kmod` output as the validation stamp.
+
     Args:
+      target: The target the aspect is applied to.
       ctx: The aspect context.
       inputs: The `library_module_inputs` struct of the library.
       deps: The library's direct dependency targets.
@@ -189,6 +158,8 @@ def _library_stamp(ctx, inputs, deps):
     runtime = _check_runtime(ctx, tool) if srcs else None
     if runtime == None:
         return None
+    if DartKernelInfo in target and target[DartKernelInfo].kmod != None:
+        return target[DartKernelInfo].kmod
     return _declare_check(ctx, tool, runtime, struct(
         srcs = srcs,
         own_packages = _own_packages(inputs.own_records, inputs.package_name),
@@ -213,7 +184,7 @@ def _import_check_aspect_impl(target, ctx):
             return [library[DartImportCheckInfo]]
         return [DartImportCheckInfo(stamps = depset())]
     inputs = library_module_inputs(ctx.rule.attr, ctx.rule.files, target[DartInfo])
-    stamp = _library_stamp(ctx, inputs, inputs.rule_deps)
+    stamp = _library_stamp(target, ctx, inputs, inputs.rule_deps)
     return [DartImportCheckInfo(stamps = depset(
         direct = [stamp] if stamp else [],
         transitive = _reached_stamps(inputs.rule_deps),

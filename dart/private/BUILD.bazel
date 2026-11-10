@@ -291,7 +291,6 @@ bzl_library(
     srcs = ["dart_import_check.bzl"],
     visibility = ["//visibility:public"],
     deps = [
-        ":common",
         ":dart_kernel",
         ":kernel_library_state",
         "//dart:providers",

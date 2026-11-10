@@ -34,14 +34,22 @@ def _check_actions(env):
     target = analysistest.target_under_test(env)
     return [a for a in target[LayeringActionsInfo].actions if a.mnemonic == "DartImportCheck"]
 
+def _kernel_actions(env):
+    """The `DartKernel` actions registered on the target under test."""
+    target = analysistest.target_under_test(env)
+    return [a for a in target[LayeringActionsInfo].actions if a.mnemonic == "DartKernel"]
+
 def _action_test_impl(ctx):
-    """Checks the one check action's argv and inputs."""
+    """Checks the module compile action's argv and inputs."""
     env = analysistest.begin(ctx)
     actions = _check_actions(env)
-    asserts.equals(env, 1, len(actions), "one DartImportCheck action per checked library")
-    if len(actions) != 1:
+    asserts.equals(env, 0, len(actions), "libraries register no DartImportCheck actions of their own")
+    kernel_actions = _kernel_actions(env)
+    asserts.equals(env, 1, len(kernel_actions), "one DartKernel action per checked library")
+    if len(kernel_actions) != 1:
         return analysistest.end(env)
-    argv = actions[0].argv
+    action = kernel_actions[0]
+    argv = action.argv
     direct = _flag_values(argv, "--direct-package")
     own = _flag_values(argv, "--own-package")
     for name in ctx.attr.expect_direct:
@@ -49,13 +57,14 @@ def _action_test_impl(ctx):
     for name in ctx.attr.expect_absent:
         asserts.true(env, name not in direct, "argv does not name %s as a direct package: %s" % (name, argv))
     asserts.equals(env, 1, len(own), "argv names the target's own package once: %s" % argv)
-    inputs = [f.short_path for f in actions[0].inputs.to_list()]
+    asserts.true(env, "--check-imports" in argv, "module compile runs with --check-imports: %s" % argv)
+    inputs = [f.short_path for f in action.inputs.to_list()]
     for path in ctx.attr.expect_srcs:
         asserts.true(env, path in inputs, "%s is an input" % path)
     for path in ctx.attr.forbid_srcs:
         asserts.true(env, path not in inputs, "%s, a dependency's source, is not an input" % path)
-    tool = [p for p in inputs if p.endswith("import_check.aot")]
-    asserts.equals(env, 1, len(tool), "the check tool is an input: %s" % inputs)
+    tool = [p for p in inputs if "kernel_module" in p]
+    asserts.true(env, len(tool) > 0, "the module compile tool is an input: %s" % inputs)
     return analysistest.end(env)
 
 layering_action_test = analysistest.make(
@@ -73,6 +82,13 @@ def _optout_test_impl(ctx):
     """Checks that a target with the feature disabled runs no check."""
     env = analysistest.begin(ctx)
     asserts.equals(env, 0, len(_check_actions(env)), "a target with the feature disabled runs no check")
+    kernel_actions = _kernel_actions(env)
+    if len(kernel_actions) == 1:
+        asserts.true(
+            env,
+            "--check-imports" not in kernel_actions[0].argv,
+            "--check-imports is not passed when opted out: %s" % kernel_actions[0].argv,
+        )
     return analysistest.end(env)
 
 layering_optout_test = analysistest.make(
@@ -131,4 +147,21 @@ def _binary_test_impl(ctx):
 layering_binary_test = analysistest.make(
     _binary_test_impl,
     attrs = {"expect_stamps": attr.int(doc = "The expected number of `_validation` stamps.", mandatory = True)},
+)
+
+def _library_no_import_check_test_impl(ctx):
+    """Checks that a library with the check on registers no DartImportCheck action of its own."""
+    env = analysistest.begin(ctx)
+    actions = _check_actions(env)
+    asserts.equals(
+        env,
+        0,
+        len(actions),
+        "library with layering check on registers no DartImportCheck action of its own",
+    )
+    return analysistest.end(env)
+
+library_no_import_check_test = analysistest.make(
+    _library_no_import_check_test_impl,
+    extra_target_under_test_aspects = [dart_import_check_aspect, _actions_aspect],
 )

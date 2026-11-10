@@ -345,6 +345,38 @@ def _lib_kernel_graph_fast(ctx, deps, dep_kernels, own_srcs, has_upstream):
         has_upstream_cross_pkg = has_upstream,
     )
 
+def lib_kernel_graph(ctx, deps, dep_kernels, own_srcs, records, pkgs):
+    """Collects closures, ownership, and edges.
+
+    Args:
+      ctx: The rule context of the library being compiled.
+      deps: The library's direct dependency targets.
+      dep_kernels: The `DartKernelInfo` of each direct dependency.
+      own_srcs: The library's own `.dart` files.
+      records: The package records of the library, own and transitive.
+      pkgs: The first record per package name.
+
+    Returns:
+      A struct with `dep_closure`, `dep_outline_closure`,
+      `upstream_excluded`, `owned`, `edges`, `pkgs`, `owned_list`,
+      `edges_list`, `need_graph`, and `has_upstream_cross_pkg`.
+    """
+    closures = lib_kernel_closures(ctx, deps, dep_kernels, own_srcs)
+    has_upstream_cross_pkg = any([bool(k.cross_pkg_srcs.to_list()) for k in dep_kernels])
+    need_graph = len(pkgs) < len(records)
+    return struct(
+        dep_closure = closures.dep_closure,
+        dep_outline_closure = closures.dep_outline_closure,
+        upstream_excluded = closures.upstream_excluded,
+        owned = closures.owned,
+        edges = closures.edges,
+        pkgs = pkgs,
+        owned_list = closures.owned.to_list() if need_graph else [],
+        edges_list = closures.edges.to_list() if need_graph else [],
+        need_graph = need_graph,
+        has_upstream_cross_pkg = has_upstream_cross_pkg,
+    )
+
 def lib_kernel_plain_srcs(dep_kernels, own_srcs, include_own):
     """Computes the cross-package source sets when no cycle graph is needed.
 
@@ -513,3 +545,41 @@ def lib_kernel_facade(graph, bases, cross_pkg_srcs):
         base_kmods = bases.base_kmods,
         unseeded_base_kmods = bases.unseeded_base_kmods,
     )
+
+# The Bazel feature that turns strict layering off.
+LAYERING_FEATURE = "dart_layering_check"
+
+def direct_packages(deps):
+    """The package names a target may import through its direct dependencies.
+
+    Args:
+      deps: The direct dependency targets.
+
+    Returns:
+      A sorted list of package names.
+    """
+    names = {}
+    for dep in deps:
+        if DartInfo not in dep:
+            continue
+        owned = owned_package_records(dep[DartInfo])
+        has_sources = bool(dep[DefaultInfo].files.to_list())
+        records = owned if owned and has_sources else dep[DartInfo].transitive_packages.to_list()
+        for record in records:
+            names[record.package_name] = True
+    return sorted(names)
+
+def own_packages(own_records, package_name):
+    """The package names a target's own sources may import: the packages it owns.
+
+    Args:
+      own_records: The target's own `DartPackageInfo` records.
+      package_name: The target's own package name, possibly empty.
+
+    Returns:
+      A sorted list of package names.
+    """
+    names = {record.package_name: True for record in own_records}
+    if package_name:
+        names[package_name] = True
+    return sorted(names)
