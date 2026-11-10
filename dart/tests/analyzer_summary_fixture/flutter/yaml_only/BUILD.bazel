@@ -14,3 +14,27 @@ dart_library(
     tags = ["manual"],
     visibility = ["//dart/tests:__subpackages__"],
 )
+
+# A `sky_engine` package carrying `lib/_embedder.yaml` without backed library
+# `.dart` sources (`srcs` omitted), plus a consumer library above it. Because
+# the embedder has no backed library sources, `dart_analyzer_summary` must not
+# build an embedder SDK summary for it, and `dart_analyze` must fall back to
+# `analyze_runner` in both summary and full-source modes.
+dart_library(
+    name = "sky_engine_without_sources",
+    package_name = "sky_engine",
+    language_version = "3.11",
+    resources = ["lib/_embedder.yaml"],
+    tags = ["manual"],
+    visibility = ["//dart/tests:__subpackages__"],
+)
+
+dart_library(
+    name = "unbacked_sky_consumer",
+    package_name = "unbacked_sky_consumer",
+    srcs = ["lib/ui.dart"],
+    language_version = "3.11",
+    tags = ["manual"],
+    visibility = ["//dart/tests:__subpackages__"],
+    deps = [":sky_engine_without_sources"],
+)

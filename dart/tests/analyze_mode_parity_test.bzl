@@ -95,6 +95,88 @@ def _negative_target_analyzed_test_impl(env, target):
     action = env.expect.that_target(target).action_named("DartAnalyze")
     action.mnemonic().equals("DartAnalyze")
 
+def _declare_fallback_tests(name):
+    """Declares the Group 3 fallback tests for unsupported SDKs and unbacked embedders.
+
+    Args:
+      name: Prefix for declared test targets.
+
+    Returns:
+      The list of declared test target labels.
+    """
+    analysis_test(
+        name = name + "_fallback_unsupported_sdk",
+        attr_values = {"size": "small"},
+        config_settings = {
+            "//command_line_option:extra_toolchains": [
+                str(Label("//dart/tests:synthetic_3_15_exec_toolchain")),
+                str(Label("//dart/tests:synthetic_3_15_target_toolchain")),
+            ],
+        },
+        impl = _unsupported_sdk_fallback_test_impl,
+        target = "//dart/tests/analyze_mode_parity_fixture/consumer:consumer",
+        testing_aspect = _TESTING_ASPECT,
+    )
+
+    analysis_test(
+        name = name + "_fallback_unsupported_sdk_floor",
+        attr_values = {"size": "small"},
+        config_settings = {
+            "//command_line_option:extra_toolchains": [
+                str(Label("//dart/tests:synthetic_3_12_exec_toolchain")),
+                str(Label("//dart/tests:synthetic_3_12_target_toolchain")),
+            ],
+        },
+        impl = _unsupported_sdk_floor_fallback_test_impl,
+        target = "//dart/tests/analyze_mode_parity_fixture/consumer:consumer",
+        testing_aspect = _TESTING_ASPECT,
+    )
+
+    analysis_test(
+        name = name + "_fallback_unbacked_embedder_summaries_on",
+        attr_values = {"size": "small"},
+        config_settings = {SUMMARIES_FLAG: True},
+        impl = _unbacked_embedder_fallback_test_impl,
+        target = "//dart/tests/analyzer_summary_fixture/flutter/yaml_only:yaml_only",
+        testing_aspect = _TESTING_ASPECT,
+    )
+
+    analysis_test(
+        name = name + "_fallback_unbacked_embedder_summaries_off",
+        attr_values = {"size": "small"},
+        config_settings = {SUMMARIES_FLAG: False},
+        impl = _unbacked_embedder_fallback_test_impl,
+        target = "//dart/tests/analyzer_summary_fixture/flutter/yaml_only:yaml_only",
+        testing_aspect = _TESTING_ASPECT,
+    )
+
+    analysis_test(
+        name = name + "_fallback_unbacked_sky_engine_summaries_on",
+        attr_values = {"size": "small"},
+        config_settings = {SUMMARIES_FLAG: True},
+        impl = _unbacked_embedder_fallback_test_impl,
+        target = "//dart/tests/analyzer_summary_fixture/flutter/yaml_only:unbacked_sky_consumer",
+        testing_aspect = _TESTING_ASPECT,
+    )
+
+    analysis_test(
+        name = name + "_fallback_unbacked_sky_engine_summaries_off",
+        attr_values = {"size": "small"},
+        config_settings = {SUMMARIES_FLAG: False},
+        impl = _unbacked_embedder_fallback_test_impl,
+        target = "//dart/tests/analyzer_summary_fixture/flutter/yaml_only:unbacked_sky_consumer",
+        testing_aspect = _TESTING_ASPECT,
+    )
+
+    return [
+        ":" + name + "_fallback_unsupported_sdk",
+        ":" + name + "_fallback_unsupported_sdk_floor",
+        ":" + name + "_fallback_unbacked_embedder_summaries_on",
+        ":" + name + "_fallback_unbacked_embedder_summaries_off",
+        ":" + name + "_fallback_unbacked_sky_engine_summaries_on",
+        ":" + name + "_fallback_unbacked_sky_engine_summaries_off",
+    ]
+
 def analyze_mode_parity_test_suite(name):
     """Declares the test suite for analyzer summary and full-source mode parity.
 
@@ -168,52 +250,7 @@ def analyze_mode_parity_test_suite(name):
         testing_aspect = _TESTING_ASPECT,
     )
 
-    # Group 3: Starlark analysis test verifying fallback conditions to analyze_runner
-    analysis_test(
-        name = name + "_fallback_unsupported_sdk",
-        attr_values = {"size": "small"},
-        config_settings = {
-            "//command_line_option:extra_toolchains": [
-                str(Label("//dart/tests:synthetic_3_15_exec_toolchain")),
-                str(Label("//dart/tests:synthetic_3_15_target_toolchain")),
-            ],
-        },
-        impl = _unsupported_sdk_fallback_test_impl,
-        target = "//dart/tests/analyze_mode_parity_fixture/consumer:consumer",
-        testing_aspect = _TESTING_ASPECT,
-    )
-
-    analysis_test(
-        name = name + "_fallback_unsupported_sdk_floor",
-        attr_values = {"size": "small"},
-        config_settings = {
-            "//command_line_option:extra_toolchains": [
-                str(Label("//dart/tests:synthetic_3_12_exec_toolchain")),
-                str(Label("//dart/tests:synthetic_3_12_target_toolchain")),
-            ],
-        },
-        impl = _unsupported_sdk_floor_fallback_test_impl,
-        target = "//dart/tests/analyze_mode_parity_fixture/consumer:consumer",
-        testing_aspect = _TESTING_ASPECT,
-    )
-
-    analysis_test(
-        name = name + "_fallback_unbacked_embedder_summaries_on",
-        attr_values = {"size": "small"},
-        config_settings = {SUMMARIES_FLAG: True},
-        impl = _unbacked_embedder_fallback_test_impl,
-        target = "//dart/tests/analyzer_summary_fixture/flutter/yaml_only:yaml_only",
-        testing_aspect = _TESTING_ASPECT,
-    )
-
-    analysis_test(
-        name = name + "_fallback_unbacked_embedder_summaries_off",
-        attr_values = {"size": "small"},
-        config_settings = {SUMMARIES_FLAG: False},
-        impl = _unbacked_embedder_fallback_test_impl,
-        target = "//dart/tests/analyzer_summary_fixture/flutter/yaml_only:yaml_only",
-        testing_aspect = _TESTING_ASPECT,
-    )
+    fallback_tests = _declare_fallback_tests(name)
 
     native.test_suite(
         name = name,
@@ -224,9 +261,5 @@ def analyze_mode_parity_test_suite(name):
             ":" + name + "_negative_violation_test",
             ":" + name + "_source_mode_pure_dart",
             ":" + name + "_source_mode_flutter",
-            ":" + name + "_fallback_unsupported_sdk",
-            ":" + name + "_fallback_unsupported_sdk_floor",
-            ":" + name + "_fallback_unbacked_embedder_summaries_on",
-            ":" + name + "_fallback_unbacked_embedder_summaries_off",
-        ],
+        ] + fallback_tests,
     )
