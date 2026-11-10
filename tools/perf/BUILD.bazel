@@ -151,6 +151,15 @@ dart_test(
 )
 
 dart_test(
+    name = "floor_test",
+    size = "small",
+    main = "test/floor_test.dart",
+    deps = [
+        ":perf",
+    ],
+)
+
+dart_test(
     name = "workflow_test",
     size = "medium",
     srcs = [
