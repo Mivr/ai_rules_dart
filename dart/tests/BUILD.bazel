@@ -49,6 +49,7 @@ load(":jit_fallback_test.bzl", "jit_fallback_test_suite")
 load(":jit_lock_timeout_test.bzl", "jit_lock_timeout_test_suite")
 load(":json_serializable_library_direct_test.bzl", "json_serializable_library_direct_test_suite")
 load(":kernel_test.bzl", "kernel_test_suite")
+load(":layering_check_test.bzl", "library_no_import_check_test")
 load(":library_builder_library_direct_test.bzl", "library_builder_library_direct_test_suite")
 load(":library_test.bzl", "library_test_suite")
 load(":mockito_library_direct_test.bzl", "mockito_library_direct_test_suite")
@@ -317,6 +318,12 @@ dart_test(
         "//dart/runfiles",
         "@ext_pub_deps//:test",
     ],
+)
+
+library_no_import_check_test(
+    name = "library_no_import_check_test",
+    size = "small",
+    target_under_test = "//dart/tests/layering_check_fixture/leaf",
 )
 
 # `rules_testing` is a dev dependency and `/dart/tests/` is `export-ignore`d

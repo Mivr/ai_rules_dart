@@ -59,16 +59,19 @@ load("//dart/private:dart_info.bzl", "package_lib_prefix")
 load(
     "//dart/private:kernel_library_state.bzl",
     "DartKernelCycleInfo",
+    "LAYERING_FEATURE",
     "add_package_records",
+    "direct_packages",
     "lib_has_cross",
     "lib_kernel_base",
-    "lib_kernel_closures",
     "lib_kernel_facade",
     "lib_kernel_fast_state",
+    "lib_kernel_graph",
     "lib_kernel_needs_graph",
     "lib_kernel_plain_srcs",
     "lib_owns_compatible",
     "library_module_inputs",
+    "own_packages",
 )
 load(
     "//dart/private:kernel_params.bzl",
@@ -554,10 +557,7 @@ def find_kernel_module_tools(dart_sdk_info):
         sdk_root + "/bin/dartvm.exe",
     ]
     wanted = {
-        "dartaotruntime": [
-            sdk_root + "/bin/dartaotruntime",
-            sdk_root + "/bin/dartaotruntime.exe",
-        ],
+        "dartaotruntime": [sdk_root + "/bin/dartaotruntime", sdk_root + "/bin/dartaotruntime.exe"],
         "kernel_worker": [sdk_root + "/bin/snapshots/kernel_worker_aot.dart.snapshot"],
         "platform_dill": [sdk_root + "/lib/_internal/vm_platform_strong.dill"],
         "libraries_json": [sdk_root + "/lib/libraries.json"],
@@ -762,6 +762,12 @@ def _kmod_source_args(args, request):
         args.add_all(request.closure_excluded, before_each = "--closure-excluded")
     if request.extra_inputs:
         args.add_all(request.extra_inputs, before_each = "--input-source")
+    if getattr(request, "check_imports", False):
+        args.add("--check-imports")
+        if getattr(request, "target_label", None):
+            args.add("--target-label", request.target_label)
+        args.add_all(request.own_packages, before_each = "--own-package")
+        args.add_all(request.direct_packages, before_each = "--direct-package")
 
 def _kmod_select_executable(ctx, tools, direct_inputs, action_tools):
     """Selects the module action's executable. Returns (executable, arguments-prefix, dart_exe)."""
@@ -909,6 +915,10 @@ def kernel_module_action(ctx, tools, inputs, outputs, options, compile):
         closure_excluded = inputs.closure_excluded,
         extra_inputs = inputs.extra_inputs,
         exclude_non_sources = options.exclude_non_sources,
+        check_imports = options.check_imports,
+        target_label = options.target_label,
+        own_packages = options.own_packages,
+        direct_packages = options.direct_packages,
     )
 
     _kmod_common_args(ctx, args, request)
@@ -1341,45 +1351,6 @@ def _lib_kernel_records(deps, dep_kernels, own_record, own_records):
         return None
     return records, raw, own_records
 
-def _lib_kernel_graph(ctx, deps, dep_kernels, own_srcs, records):
-    """Collects closures, ownership, and edges.
-
-    Args:
-      ctx: The rule context of the library being compiled.
-      deps: The library's direct dependency targets.
-      dep_kernels: The `DartKernelInfo` of each direct dependency.
-      own_srcs: The library's own `.dart` files.
-      records: The package records of the library, own and transitive.
-
-    Returns:
-      A struct with `dep_closure`, `dep_outline_closure`,
-      `upstream_excluded`, `owned`, `edges`, `pkgs`, `owned_list`,
-      `edges_list`, `need_graph`, and `has_upstream_cross_pkg`.
-    """
-    closures = lib_kernel_closures(ctx, deps, dep_kernels, own_srcs)
-    dep_closure = closures.dep_closure
-    dep_outline_closure = closures.dep_outline_closure
-    upstream_excluded = closures.upstream_excluded
-    owned = closures.owned
-    edges = closures.edges
-    pkgs = first_per_package(records)
-    has_upstream_cross_pkg = any([bool(k.cross_pkg_srcs.to_list()) for k in dep_kernels])
-    need_graph = len(pkgs) < len(records)
-    owned_list = owned.to_list() if need_graph else []
-    edges_list = edges.to_list() if need_graph else []
-    return struct(
-        dep_closure = dep_closure,
-        dep_outline_closure = dep_outline_closure,
-        upstream_excluded = upstream_excluded,
-        owned = owned,
-        edges = edges,
-        pkgs = pkgs,
-        owned_list = owned_list,
-        edges_list = edges_list,
-        need_graph = need_graph,
-        has_upstream_cross_pkg = has_upstream_cross_pkg,
-    )
-
 def _lib_kernel_has_cycle(single_package_name, raw, owned_list, edges_list, pkgs, non_standalone):
     """Whether the library's packages form a cross-package cycle."""
 
@@ -1490,7 +1461,8 @@ def _lib_kernel_slow_state(ctx, library, options, deps, dep_kernels):
     if recs == None:
         return None
     records, raw, own_records = recs
-    graph = _lib_kernel_graph(ctx, deps, dep_kernels, library.own_srcs, records)
+    pkgs = first_per_package(records)
+    graph = lib_kernel_graph(ctx, deps, dep_kernels, library.own_srcs, records, pkgs)
     single = own_records[0].package_name if len(own_records) == 1 else ""
     has_cycle = _lib_kernel_has_cycle(
         single,
@@ -1588,6 +1560,10 @@ def library_kernel_info(ctx, library, compile, options):
             defines = defines,
             exclude_non_sources = True,
             droppable = True,
+            check_imports = LAYERING_FEATURE not in ctx.disabled_features and not ctx.label.workspace_name,
+            target_label = "//%s:%s" % (ctx.label.package, ctx.label.name),
+            own_packages = own_packages(own_records, library.package_name),
+            direct_packages = direct_packages(deps),
         ),
         compile,
     )

@@ -576,6 +576,8 @@ dart_binary(
         "comma_patch.dart",
         "dill_outline.dart",
         "dill_reader.dart",
+        "kernel_module_args.dart",
+        "kernel_module_import_check.dart",
         "kernel_module_strip.dart",
         "lib/worker_protocol.dart",
         "package_config.dart",
@@ -656,6 +658,8 @@ dart_test(
         "jit_policy.dart",
         "kernel_link.dart",
         "kernel_module.dart",
+        "kernel_module_args.dart",
+        "kernel_module_import_check.dart",
         "kernel_module_strip.dart",
         "kernel_module_test_support.dart",
         "lib/worker_protocol.dart",
@@ -680,6 +684,30 @@ dart_test(
     shard_count = 16,
     deps = [
         "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+# Tests for the strict-layering check inlined into kernel_module.
+dart_test(
+    name = "kernel_module_import_check_test",
+    size = "small",
+    srcs = [
+        "comma_patch.dart",
+        "dill_outline.dart",
+        "dill_reader.dart",
+        "dill_test_writer.dart",
+        "kernel_module.dart",
+        "kernel_module_args.dart",
+        "kernel_module_import_check.dart",
+        "kernel_module_strip.dart",
+        "kernel_module_test_support.dart",
+        "lib/worker_protocol.dart",
+        "package_config.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    main = "kernel_module_import_check_test.dart",
+    deps = [
         "@ext_pub_deps//:test",
     ],
 )
@@ -711,6 +739,7 @@ dart_binary(
 dart_binary(
     name = "import_check",
     srcs = [
+        "kernel_module_import_check.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
     code_assets_from_deps = False,
@@ -728,6 +757,7 @@ dart_test(
     size = "small",
     srcs = [
         "import_check.dart",
+        "kernel_module_import_check.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
     main = "import_check_test.dart",
@@ -801,6 +831,8 @@ dart_test(
         "dill_outline.dart",
         "dill_reader.dart",
         "kernel_module.dart",
+        "kernel_module_args.dart",
+        "kernel_module_import_check.dart",
         "kernel_module_strip.dart",
         "lib/worker_protocol.dart",
         "package_config.dart",
@@ -951,6 +983,8 @@ dart_test(
         "dill_outline.dart",
         "dill_reader.dart",
         "kernel_module.dart",
+        "kernel_module_args.dart",
+        "kernel_module_import_check.dart",
         "kernel_module_strip.dart",
         "lib/worker_protocol.dart",
         "package_config.dart",

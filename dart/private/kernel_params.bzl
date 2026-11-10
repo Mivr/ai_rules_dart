@@ -88,7 +88,14 @@ def kernel_module_inputs(
         closure_excluded = closure_excluded,
     )
 
-def kernel_module_options(defines, exclude_non_sources, droppable):
+def kernel_module_options(
+        defines,
+        exclude_non_sources,
+        droppable,
+        check_imports = False,
+        target_label = None,
+        own_packages = (),
+        direct_packages = ()):
     """How a module compile treats its sources.
 
     Args:
@@ -104,6 +111,12 @@ def kernel_module_options(defines, exclude_non_sources, droppable):
         sources that fail for the VM. A library's module may, and one that
         still fails fails the action. An entry module may not: dropping one of
         the test's own files would silently run a test without it.
+      check_imports: Whether to run strict-layering import checks during the
+        module compile.
+      target_label: The Bazel target label for diagnostics when checking
+        imports.
+      own_packages: Package names this target owns.
+      direct_packages: Package names this target's direct dependencies provide.
 
     Returns:
       A struct with those fields.
@@ -112,6 +125,10 @@ def kernel_module_options(defines, exclude_non_sources, droppable):
         defines = defines,
         exclude_non_sources = exclude_non_sources,
         droppable = droppable,
+        check_imports = check_imports,
+        target_label = target_label,
+        own_packages = own_packages,
+        direct_packages = direct_packages,
     )
 
 def kernel_module_outputs(output, koutline = None, unused_inputs = False):
