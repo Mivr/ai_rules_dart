@@ -534,6 +534,29 @@ the same name and the same `language_version`; a package in `deps` with the
 same name must be rooted in the same directory; and each of the executable's
 own files must sit in its directory and not inside another package's.
 
+### Recommended Bazel settings
+
+rules_dart ships `dart/consumer.bazelrc`, the settings only a bazelrc can set.
+Import it from your `.bazelrc` with one line (the path is where you keep the
+archive's file):
+
+```
+# .bazelrc
+import %workspace%/third_party/rules_dart/dart/consumer.bazelrc
+```
+
+Each setting, and what it saves:
+
+- `--reuse_sandbox_directories` saves the time to delete and recreate a sandbox
+  directory for every action.
+- `--nobuild_runfile_links` saves linking a runfiles tree for every binary and
+  test on each build; use `--build_runfile_links` to run a built binary outside
+  `bazel run`.
+- `--experimental_shrink_worker_pool` saves the memory idle persistent workers
+  (analyzer, kernel, codegen) hold.
+
+None of them relaxes a gate, the lockfile mode, sandboxing or a checksum.
+
 ### Static analysis and formatting
 
 `dart analyze` and the `dart format` check run as an aspect, `dart_analyze`,

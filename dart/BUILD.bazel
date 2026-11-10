@@ -5,6 +5,12 @@ load("//dart/private:copy_toolchain.bzl", "copy_toolchain")
 load("//dart/private:dart_sdk_binary.bzl", "dart_sdk_binary")
 load("//dart/private:resolved_toolchain.bzl", "resolved_toolchain")
 
+# The Bazel settings a consumer imports with one `import` line; see README.md.
+exports_files(
+    ["consumer.bazelrc"],
+    visibility = ["//visibility:public"],
+)
+
 exports_files(
     [
         "analyze.bzl",
