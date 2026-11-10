@@ -39,6 +39,7 @@ exports_files(
 exports_files(
     [
         ".gitattributes",
+        "BUILD.bazel",
         "MODULE.bazel",
     ],
     visibility = [
