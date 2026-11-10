@@ -122,6 +122,8 @@ def compile_action_direct_test_suite(name):
         name = name + "_aot_fixture",
         compile_mode = "aot-snapshot",
         main = _MAIN,
+        # The source path's front end is under test; a modular build links kernels instead.
+        modular_kernel = False,
         tags = ["manual"],
     )
     _recorded_uses_probe(

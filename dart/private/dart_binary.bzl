@@ -2,22 +2,18 @@
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartCodeAssetInfo", "DartCompileInfo", "DartInfo", "DartRecordedUsesInfo")
-load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR", "merge_dart_defines")
+load("//dart/private:binary_compile.bzl", "binary_compile")
+load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR")
 load(
     "//dart/private:common.bzl",
     "DART_ABI_CONSTRAINT_ATTRS",
     "check_unreplaced_hooks",
-    "code_asset_entries",
     "collect_transitive_code_assets",
     "collect_transitive_resources",
-    "collect_transitive_srcs",
-    "generate_native_assets_yaml",
-    "generate_stable_package_config",
     "resolve_code_assets",
     "runfiles_path",
-    "target_dart_abi",
 )
-load("//dart/private:dart_compile.bzl", "dart_compile_action", "recorded_uses_kind")
+load("//dart/private:dart_compile.bzl", "recorded_uses_kind")
 load(
     "//dart/private:dart_import_check.bzl",
     "dart_import_check_aspect",
@@ -26,23 +22,16 @@ load(
 load(
     "//dart/private:dart_kernel.bzl",
     "BINARY_MODULAR_KERNEL_ATTRS",
-    "DartKernelInfo",
     "EXEC_TOOLS_TOOLCHAIN",
     "MODULAR_KERNEL_TOOLCHAINS",
     "dart_kernel_module_aspect",
-    "entry_sources",
-    "modular_executable_kernel",
-    "modular_executable_tools",
 )
 load("//dart/private:dart_test_runner.bzl", "DartTestRunnerMainInfo")
 load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "executable_package")
-load("//dart/private:kernel_params.bzl", "kernel_compile_settings")
 load("//dart/private:package_files.bzl", "collect_transitive_package_files")
-load("//dart/private:source_set.bzl", "executable_inputs")
 load(
     "//dart/private/tools:compile_wrapper.bzl",
     "COMPILE_WRAPPER_ATTRS",
-    "compile_wrapper_inputs",
     "import_check_unless_wrapper",
 )
 
@@ -127,77 +116,6 @@ def _binary_recorded_uses(ctx, compile_mode):
             ctx.actions.write(output = recorded_uses, content = "{}")
         recorded_uses_info = [DartRecordedUsesInfo(file = recorded_uses, kind = kind)]
     return compile_recorded_uses, recorded_uses_info
-
-def _binary_source_compile(ctx, dart_sdk_info, own, packages, output, compile_mode, optional_outputs, resolved_assets):
-    """Compiles from source through `executable_inputs`. Returns (packages, code_asset_libs)."""
-
-    # Nothing is copied: a package split between the source tree and `bazel-out`
-    # compiles in place, through the multi-root file system (`executable_inputs`).
-    # The one flatten per rule: the package lookup inspects per-file paths.
-    inputs = executable_inputs(
-        packages,
-        collect_transitive_srcs(ctx.attr.deps).to_list(),
-        ctx.file.main,
-        ctx.files.srcs,
-        own.record,
-    )
-    packages = inputs.packages
-    main_input = inputs.main_input
-    main_arg = inputs.main_arg
-    all_srcs = inputs.srcs
-
-    # Root resolution must see the rule's own inputs too: a package whose
-    # metadata comes from a srcs-less façade library resolves only via the
-    # files this rule supplies itself.
-    package_config = ctx.actions.declare_file(ctx.label.name + ".package_config.json")
-    ctx.actions.write(
-        output = package_config,
-        content = generate_stable_package_config(packages, all_srcs, inputs.roots),
-    )
-
-    code_asset_libs = []
-    native_assets_yaml = None
-    if resolved_assets:
-        abi = target_dart_abi(ctx)
-        entries, code_asset_libs = code_asset_entries(
-            ctx.label,
-            resolved_assets,
-            output.dirname,
-        )
-        native_assets_yaml = ctx.actions.declare_file(ctx.label.name + ".native_assets.yaml")
-        ctx.actions.write(
-            output = native_assets_yaml,
-            content = generate_native_assets_yaml(abi, entries),
-        )
-
-    # Run dart compile
-    wrapper = compile_wrapper_inputs(ctx)
-    dart_compile_action(
-        ctx = ctx,
-        dart_sdk_info = dart_sdk_info,
-        cfg = struct(
-            main = main_input,
-            srcs = all_srcs,
-            package_config = package_config,
-            output = output,
-            compile_mode = compile_mode,
-            target_os = dart_sdk_info.target_os,
-            target_arch = dart_sdk_info.target_arch,
-            extra_flags = ctx.attr.dart_compile_flags,
-            defines = merge_dart_defines(ctx),
-            main_path = main_arg,
-            recorded_uses = optional_outputs.recorded_uses,
-            debug_info = optional_outputs.debug_info,
-            jit_tool = wrapper.jit_tool,
-            comma_patch = wrapper.comma_patch,
-            compile_wrapper = wrapper.compile_wrapper,
-            native_assets_yaml = native_assets_yaml,
-            embed_sources = DartTestRunnerMainInfo not in ctx.attr.main,
-            jit_snapshot_fallback = ctx.attr._jit_snapshot_fallback[BuildSettingInfo].value,
-        ),
-        toolchain_type = _binary_sdk_toolchain_type(ctx),
-    )
-    return packages, code_asset_libs
 
 def _runtime_package_files(ctx):
     """The dependency package files this binary may stage in its runfiles.
@@ -500,55 +418,6 @@ def _binary_default_outputs(ctx, result):
         _instrumented_files(ctx),
     ] + result.recorded_uses_info
 
-def _binary_compile(ctx, dart_sdk_info, own, own_files, output, compile_mode, optional_outputs, resolved_assets):
-    """Compiles a binary, modularly when eligible. Returns the code-asset libs.
-
-    Args:
-      ctx: The rule context.
-      dart_sdk_info: The `DartSdkInfo` of the toolchain.
-      own: The `executable_package` record for this rule's own inputs.
-      own_files: The rule's main and source Files.
-      output: The declared raw compile output.
-      compile_mode: The `dart compile` mode.
-      optional_outputs: The declared recorded-uses and debug-info outputs.
-      resolved_assets: The resolved code assets.
-
-    Returns:
-      The list of code-asset library Files.
-    """
-    kernel_tools = modular_executable_tools(
-        ctx,
-        own_files,
-        own.record,
-        kernel_mode = (compile_mode == "kernel" and ctx.attr.modular_kernel),
-        resolved_assets = resolved_assets,
-        own_defines = ctx.attr.defines,
-        compile_flags = ctx.attr.dart_compile_flags,
-        target_sdk = dart_sdk_info,
-    )
-    if kernel_tools != None:
-        modular_executable_kernel(
-            ctx,
-            kernel_tools,
-            entry_sources(own_files),
-            own.packages,
-            [dep[DartKernelInfo] for dep in ctx.attr.deps],
-            output,
-            kernel_compile_settings(),
-        )
-        return []
-    _packages, code_asset_libs = _binary_source_compile(
-        ctx,
-        dart_sdk_info,
-        own,
-        own.packages,
-        output,
-        compile_mode,
-        optional_outputs,
-        resolved_assets,
-    )
-    return code_asset_libs
-
 def _dart_binary_impl(ctx):
     # A `dart_binary` evaluated in the execution configuration (`cfg = "exec"`)
     # is a build-time tool — a codegen shim, analyzer/format runner, link-hook
@@ -596,16 +465,16 @@ def _dart_binary_impl(ctx):
         output = output,
         compile_mode = compile_mode,
         dart_sdk_info = dart_sdk_info,
-        code_asset_libs = _binary_compile(
-            ctx,
-            dart_sdk_info,
-            own,
-            own_files,
-            output,
-            compile_mode,
-            optional_outputs,
-            resolved_assets,
-        ),
+        code_asset_libs = binary_compile(ctx, struct(
+            dart_sdk_info = dart_sdk_info,
+            toolchain_type = _binary_sdk_toolchain_type(ctx),
+            own = own,
+            own_files = own_files,
+            output = output,
+            compile_mode = compile_mode,
+            optional_outputs = optional_outputs,
+            resolved_assets = resolved_assets,
+        )),
         recorded_uses_info = optional_outputs.recorded_uses_info,
         debug_info = optional_outputs.debug_info,
         own = own,
@@ -696,6 +565,8 @@ The `dart compile` mode. Determines the output format:
 - `aot-snapshot`: AOT-compiled snapshot. Requires `dartaotruntime` to execute. Smaller than `exe`.
 - `kernel`: Dart kernel binary (`.dill`). Requires `dart` to execute. Fastest compilation, useful for development. Compiles modularly by default (`modular_kernel = True` and `//dart:modular_kernel = True`) against dependency `.kmod`/`.koutline` modules when eligible, or whole-program via `gen_kernel` when `modular_kernel = False` or when target `defines`, `dart_compile_flags`, or `code_assets` are set.
 - `jit-snapshot`: JIT snapshot with trained profile data. Requires `dart` to execute. Fastest startup after warmup. The program is trained once, with no arguments, at the keyed absolute path for its output (`/tmp/rules_dart_jit-<key>`, where `<key>` is 16 lowercase hex characters of a deterministic digest of the output's root-relative path) used as its working directory and with no `--packages` value, so the snapshot is byte-identical across builds. The snapshot is reproducible only if that training run is deterministic: a program that reads the clock, random numbers, or files outside the build gives a different snapshot each build (see `app_jit_snapshot.dart`). The training runs from a copy of the SDK's `dart`, so the snapshot does not depend on where the SDK is installed or where the build runs. A training waits for the keyed lock up to `--@rules_dart//dart:jit_snapshot_lock_timeout` seconds (default 300), printing the holder's PID while it waits; when the keyed training path is blocked by an entry another user owns, or the lock stays held past the deadline, the action fails and names the entry rather than training elsewhere under the same action key; `--@rules_dart//dart:jit_snapshot_fallback=true` allows the non-reproducible private-scratch fallback instead. A fallback-trained snapshot stays cached under the same action key (in the local action cache and the output tree) until `bazel clean`, so a build after the host is fixed keeps the fallback bytes. With the flag on, both snapshot actions carry `no-cache`, so they are never uploaded to or served from a disk or remote cache.
+
+`exe` and `aot-snapshot` compile from the linked per-library kernel modules when the target is eligible for modular compilation (the `kernel` mode's rules): a body edit in one library recompiles that module only, then the whole-program steps (tree shaking, `gen_snapshot`) run over the linked kernel and no `.dart` source is an input of them. They keep the whole-program compile from sources, with the same errors as before, when the SDK cannot take a linked kernel: target `defines` or `dart_compile_flags` (the front end must see them, and a linked kernel already holds its constants), `code_assets` (the front end embeds the native-asset mapping), `modular_kernel = False` or `--@rules_dart//dart:modular_kernel=false`, a dependency closure that names one package at two roots, and the `dbg` compilation mode (the front end drops `assert`s while it builds a module, so `--enable-asserts` cannot be applied to a linked kernel). `jit-snapshot` always compiles from sources.
 """,
             default = "exe",
             values = ["exe", "aot-snapshot", "kernel", "jit-snapshot"],
