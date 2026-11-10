@@ -55,6 +55,20 @@ def kernel_compile_settings(
         extra_frontend_flags = extra_frontend_flags,
     )
 
+def kernel_link_options(use_base_dill = False, platform_dill = None):
+    """How `modular_executable_kernel()` links its output.
+
+    Args:
+      use_base_dill: When True, links the output as a delta against any shared
+        base dill the dependencies provide.
+      platform_dill: Optional platform `.dill` File the link prepends, so the
+        output is a whole program a front end can load with `--from-dill`.
+
+    Returns:
+      A struct with those fields.
+    """
+    return struct(use_base_dill = use_base_dill, platform_dill = platform_dill)
+
 def kernel_module_inputs(
         sources,
         packages,

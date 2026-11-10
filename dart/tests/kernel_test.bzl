@@ -41,6 +41,7 @@ load(
     "stable_path",
 )
 load("//dart/private:dart_test_runner.bzl", "dart_test_runner_main")
+load("//dart/private:kernel_params.bzl", "kernel_link_options")
 load(":pruned_inputs.bzl", "pruned_inputs_settings")
 load(":small_suite.bzl", "small_unittest_suite")
 
@@ -821,7 +822,7 @@ def _unseeded_base_kmods_fixture_impl(ctx):
         dep_kernels = [dep_a, dep_b],
         output = out_dill,
         compile = kernel_compile_settings(),
-        use_base_dill = True,
+        link = kernel_link_options(use_base_dill = True),
     )
     return [DefaultInfo(files = depset([out_dill]))]
 

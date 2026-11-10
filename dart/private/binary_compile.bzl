@@ -20,7 +20,7 @@ load(
     "modular_executable_tools",
 )
 load("//dart/private:dart_test_runner.bzl", "DartTestRunnerMainInfo")
-load("//dart/private:kernel_params.bzl", "kernel_compile_settings")
+load("//dart/private:kernel_params.bzl", "kernel_compile_settings", "kernel_link_options")
 load("//dart/private:source_set.bzl", "executable_inputs")
 load("//dart/private/tools:compile_wrapper.bzl", "compile_wrapper_inputs")
 
@@ -165,7 +165,7 @@ def _linked_compile(ctx, run, kernel_tools):
         [dep[DartKernelInfo] for dep in ctx.attr.deps],
         linked,
         kernel_compile_settings(),
-        platform_dill = find_sdk_kernel_tools(run.dart_sdk_info).product_platform_dill,
+        kernel_link_options(platform_dill = find_sdk_kernel_tools(run.dart_sdk_info).product_platform_dill),
     )
     dart_compile_action(
         ctx = ctx,
@@ -218,6 +218,7 @@ def binary_compile(ctx, run):
             [dep[DartKernelInfo] for dep in ctx.attr.deps],
             run.output,
             kernel_compile_settings(),
+            kernel_link_options(),
         )
     else:
         _linked_compile(ctx, run, kernel_tools)
