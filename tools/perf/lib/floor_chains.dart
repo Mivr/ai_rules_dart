@@ -215,12 +215,20 @@ final class AppAotChainSpec {
     required this.outputAot,
     this.packageConfig,
     this.workingDirectory,
+    this.filesystemScheme,
+    this.filesystemRoots = const [],
   });
 
   /// SDK tool paths.
   final SdkTools sdk;
 
-  /// Source entrypoint path.
+  /// Multi-root URI scheme the entrypoint and package config use, if any.
+  final String? filesystemScheme;
+
+  /// Roots of [filesystemScheme], relative to [workingDirectory].
+  final List<String> filesystemRoots;
+
+  /// Source entrypoint path or scheme URI.
   final String entrypoint;
 
   /// Destination path for kernel dill.
@@ -247,6 +255,11 @@ List<ToolchainStep> buildAppAotChain(AppAotChainSpec spec) {
       if (spec.packageConfig != null && spec.packageConfig!.isNotEmpty) ...[
         '--packages',
         spec.packageConfig!,
+      ],
+      if (spec.filesystemScheme != null) ...[
+        '--filesystem-scheme',
+        spec.filesystemScheme!,
+        for (final root in spec.filesystemRoots) ...['--filesystem-root', root],
       ],
       '--aot',
       '--tfa',
@@ -281,10 +294,18 @@ final class IncrementalCompilerSpec {
     required this.outputDill,
     this.packageConfig,
     this.workingDirectory,
+    this.filesystemScheme,
+    this.filesystemRoots = const [],
   });
 
   /// SDK tool paths.
   final SdkTools sdk;
+
+  /// Multi-root URI scheme the compiled sources use, if any.
+  final String? filesystemScheme;
+
+  /// Roots of [filesystemScheme], relative to [workingDirectory].
+  final List<String> filesystemRoots;
 
   /// Base output dill path.
   final String outputDill;
@@ -307,6 +328,10 @@ ToolchainStep buildIncrementalCompilerStep(IncrementalCompilerSpec spec) {
       '--platform=${spec.sdk.platformStrongDill}',
       if (spec.packageConfig != null && spec.packageConfig!.isNotEmpty)
         '--packages=${spec.packageConfig}',
+      if (spec.filesystemScheme != null) ...[
+        '--filesystem-scheme=${spec.filesystemScheme}',
+        for (final root in spec.filesystemRoots) '--filesystem-root=$root',
+      ],
       '--output-dill=${spec.outputDill}',
       '--target=vm',
     ],
@@ -314,15 +339,43 @@ ToolchainStep buildIncrementalCompilerStep(IncrementalCompilerSpec spec) {
   );
 }
 
-/// Builds the test runner step on a prebuilt kernel dill.
+/// The `--precompiled` directory and test path a prebuilt test kernel holds,
+/// or null when [dill] does not sit in that layout.
+///
+/// The rules declare the kernel at
+/// `<name>.precompiled/<testPath>.vm_test.vm.app.dill`, which is where the
+/// package:test runner looks for it.
+({String precompiled, String testPath})? splitPrecompiledDill(String dill) {
+  const suffix = '.vm_test.vm.app.dill';
+  final path = dill.replaceAll(r'\', '/');
+  final marker = path.indexOf('.precompiled/');
+  if (marker == -1 || !path.endsWith(suffix)) return null;
+  final dirEnd = marker + '.precompiled'.length;
+  return (
+    precompiled: path.substring(0, dirEnd),
+    testPath: path.substring(dirEnd + 1, path.length - suffix.length),
+  );
+}
+
+/// Builds the SDK test runner step (`dart test`) on a prebuilt test kernel.
+///
+/// A kernel outside the `.precompiled` layout is handed to the VM directly.
 ToolchainStep buildTestRunnerStep({
   required SdkTools sdk,
   required String testDill,
   String? workingDirectory,
 }) {
+  final parts = splitPrecompiledDill(testDill);
   return ToolchainStep(
     executable: sdk.dart,
-    arguments: [testDill],
+    arguments: parts == null
+        ? [testDill]
+        : [
+            'test',
+            '--precompiled=${parts.precompiled}',
+            '--reporter=expanded',
+            parts.testPath,
+          ],
     workingDirectory: workingDirectory,
   );
 }

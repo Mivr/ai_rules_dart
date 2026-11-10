@@ -3,8 +3,13 @@ library;
 
 import 'dart:io';
 
+import 'package:perf/incremental_driver.dart';
 import 'package:perf/runner_cli.dart';
 
-void main(List<String> args) {
+Future<void> main(List<String> args) async {
+  if (args.isNotEmpty && args.first == incrementalDriverFlag) {
+    await runIncrementalDriver(args.skip(1).toList());
+    return;
+  }
   exit(runRunnerCli(args));
 }

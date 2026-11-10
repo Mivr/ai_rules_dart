@@ -7,6 +7,7 @@ import 'dart:io';
 import 'cli_args.dart';
 import 'cpu.dart';
 import 'floor_chains.dart';
+import 'floor_layout.dart';
 import 'result_writer.dart';
 
 /// The result of executing a toolchain floor chain for one flow.
@@ -63,19 +64,6 @@ final class DefaultFloorProcessRunner implements FloorProcessRunner {
       includeParentEnvironment: false,
     );
   }
-}
-
-/// Resolves the absolute path to `incremental_driver.dart`.
-String resolveIncrementalDriverPath(String workspaceDir) {
-  final candidates = [
-    '$workspaceDir/tools/perf/lib/incremental_driver.dart',
-    '${Directory.current.path}/tools/perf/lib/incremental_driver.dart',
-    '${Directory.current.path}/lib/incremental_driver.dart',
-  ];
-  for (final candidate in candidates) {
-    if (File(candidate).existsSync()) return resolveCliPath(candidate);
-  }
-  return resolveCliPath('$workspaceDir/tools/perf/lib/incremental_driver.dart');
 }
 
 ProcessResult _runExecutableOrAot(
@@ -163,12 +151,19 @@ FloorResult runAotFloorFlow({
   final outAot = '$floorOutputDir/app.aot';
   Directory(floorOutputDir).createSync(recursive: true);
 
+  final layout = FloorLayout.fromApp(
+    appExecutable: bazelAppExecutable,
+    workspaceDir: workspaceDir,
+  );
   final spec = AppAotChainSpec(
     sdk: sdk,
-    entrypoint: '$workspaceDir/app/bin/main.dart',
+    entrypoint: layout.entrypoint,
     outputDill: '$floorOutputDir/app.dill',
     outputAot: outAot,
-    workingDirectory: workspaceDir,
+    packageConfig: layout.packageConfig,
+    workingDirectory: layout.workingDirectory,
+    filesystemScheme: layout.scheme,
+    filesystemRoots: layout.roots,
   );
   final (totalCpu, stepErr) = _executeFloorSteps(
     buildAppAotChain(spec),
@@ -184,11 +179,9 @@ FloorResult runAotFloorFlow({
     );
   }
 
-  final floorRun = runner.runSync(
-    sdk.dartaotruntime,
-    [outAot],
-    workingDirectory: workspaceDir,
-  );
+  final floorRun = runner.runSync(sdk.dartaotruntime, [
+    outAot,
+  ], workingDirectory: workspaceDir);
   final verifyErr = _verifyFloorRun(
     runner: runner,
     sdk: sdk,
@@ -214,26 +207,44 @@ FloorResult runAotFloorFlow({
   );
 }
 
-(Map<String, dynamic>?, String?) _runDriverProcess({
-  required FloorProcessRunner runner,
+List<String> _driverFlags({
   required SdkTools sdk,
-  required String workspaceDir,
-  required String entrypoint,
+  required FloorLayout layout,
   required String outDill,
   required String editedFile,
+  required String preEditFile,
+  String mode = 'body',
 }) {
-  final driverPath = resolveIncrementalDriverPath(workspaceDir);
-  final driverRes = runner.runSync(sdk.dart, [
-    driverPath,
+  return [
     '--sdk-root=${sdk.sdkRoot}',
     '--dartaotruntime=${sdk.dartaotruntime}',
     '--frontend-server=${sdk.frontendServerSnapshot}',
     '--platform=${sdk.platformStrongDill}',
-    '--entrypoint=$entrypoint',
+    '--entrypoint=${layout.entrypoint}',
+    if (layout.packageConfig != null) '--packages=${layout.packageConfig}',
+    if (layout.scheme != null) ...[
+      '--filesystem-scheme=${layout.scheme}',
+      '--filesystem-roots=${layout.roots.join(',')}',
+    ],
     '--output-dill=$outDill',
     '--edited-file=$editedFile',
-    '--mode=body',
-  ], workingDirectory: workspaceDir);
+    '--edited-uri=${layout.uriFor(editedFile)}',
+    if (preEditFile.isNotEmpty) '--pre-edit-file=$preEditFile',
+    '--mode=$mode',
+  ];
+}
+
+(Map<String, dynamic>?, String?) _runDriverProcess({
+  required FloorProcessRunner runner,
+  required FloorLayout layout,
+  required List<String> flags,
+}) {
+  final (driverExe, driverArgs) = incrementalDriverCommand(flags);
+  final driverRes = runner.runSync(
+    driverExe,
+    driverArgs,
+    workingDirectory: layout.workingDirectory,
+  );
 
   if (driverRes.exitCode != 0) {
     return (
@@ -260,18 +271,26 @@ FloorResult runIncrementalBodyFloorFlow({
   required String floorOutputDir,
   required String editedFile,
   required String bazelAppExecutable,
+  String preEditFile = '',
   FloorProcessRunner runner = const DefaultFloorProcessRunner(),
 }) {
   final outDill = '$floorOutputDir/app.dill';
   Directory(floorOutputDir).createSync(recursive: true);
 
+  final layout = FloorLayout.fromApp(
+    appExecutable: bazelAppExecutable,
+    workspaceDir: workspaceDir,
+  );
   final (driverData, driverErr) = _runDriverProcess(
     runner: runner,
-    sdk: sdk,
-    workspaceDir: workspaceDir,
-    entrypoint: '$workspaceDir/app/bin/main.dart',
-    outDill: outDill,
-    editedFile: editedFile,
+    layout: layout,
+    flags: _driverFlags(
+      sdk: sdk,
+      layout: layout,
+      outDill: outDill,
+      editedFile: editedFile,
+      preEditFile: preEditFile,
+    ),
   );
   if (driverErr != null || driverData == null) {
     return FloorResult(
@@ -285,11 +304,9 @@ FloorResult runIncrementalBodyFloorFlow({
   final finalDill = driverData['outputDill'] as String? ?? outDill;
   final cpuSeconds = (driverData['cpuSeconds'] as num?)?.toDouble() ?? 0.0;
 
-  final floorRun = runner.runSync(
-    sdk.dart,
-    [finalDill],
-    workingDirectory: workspaceDir,
-  );
+  final floorRun = runner.runSync(sdk.dart, [
+    finalDill,
+  ], workingDirectory: workspaceDir);
   final verifyErr = _verifyFloorRun(
     runner: runner,
     sdk: sdk,
@@ -315,20 +332,97 @@ FloorResult runIncrementalBodyFloorFlow({
   );
 }
 
+/// Rebuilds the leaf test's kernel with the incremental compiler.
+///
+/// The kernel Bazel leaves in `bazel-bin` is the test's entry module only;
+/// the floor compiles the test bootstrap whole, from the same sources and
+/// package config, and lays it out where the runner looks for it. Returns the
+/// path of that kernel, or the reason it could not be built.
+(String?, String?) _rebuildTestKernel({
+  required SdkTools sdk,
+  required String workspaceDir,
+  required String bazelDill,
+  required String floorOutputDir,
+  required FloorProcessRunner runner,
+}) {
+  final parts = splitPrecompiledDill(bazelDill)!;
+  final layout = FloorLayout.fromTest(
+    testExecutable: parts.precompiled.substring(
+      0,
+      parts.precompiled.length - '.precompiled'.length,
+    ),
+    workspaceDir: workspaceDir,
+  );
+  Directory(floorOutputDir).createSync(recursive: true);
+  final built = '$floorOutputDir/test.dill';
+  final (data, err) = _runDriverProcess(
+    runner: runner,
+    layout: layout,
+    flags: _driverFlags(
+      sdk: sdk,
+      layout: layout,
+      outDill: built,
+      editedFile: '',
+      preEditFile: '',
+      mode: 'compile-only',
+    ),
+  );
+  if (err != null || data == null) return (null, err);
+  final placed = File(
+    '$floorOutputDir/test.precompiled/${parts.testPath}.vm_test.vm.app.dill',
+  );
+  placed.parent.createSync(recursive: true);
+  File(data['outputDill'] as String? ?? built).copySync(placed.path);
+  return (placed.path, null);
+}
+
 /// Runs the leaf test runner floor on a prebuilt test dill and verifies it passes.
 FloorResult runTestLeafFloorFlow({
   required SdkTools sdk,
   required String workspaceDir,
   required String testDillPath,
   required ChildCpuClock clock,
+  String floorOutputDir = '',
   FloorProcessRunner runner = const DefaultFloorProcessRunner(),
 }) {
-  final step = buildTestRunnerStep(sdk: sdk, testDill: testDillPath);
+  var dill = testDillPath;
+  if (splitPrecompiledDill(testDillPath) != null) {
+    final (rebuilt, err) = _rebuildTestKernel(
+      sdk: sdk,
+      workspaceDir: workspaceDir,
+      bazelDill: testDillPath,
+      floorOutputDir: floorOutputDir,
+      runner: runner,
+    );
+    if (rebuilt == null) {
+      return FloorResult(
+        cpuSeconds: null,
+        identical: false,
+        reason: 'Floor test kernel rebuild failed: $err',
+        floorKind: 'aot',
+      );
+    }
+    dill = rebuilt;
+  }
+  final step = buildTestRunnerStep(sdk: sdk, testDill: dill);
+  final pubGet = runner.runSync(sdk.dart, const [
+    'pub',
+    'get',
+  ], workingDirectory: workspaceDir);
+  if (pubGet.exitCode != 0) {
+    return FloorResult(
+      cpuSeconds: null,
+      identical: false,
+      reason: 'Floor test setup (dart pub get) failed: ${pubGet.stderr}',
+      floorKind: 'aot',
+    );
+  }
   final beforeCpu = clock.getChildCpuSeconds();
   final testRun = runner.runSync(
     step.executable,
     step.arguments,
     workingDirectory: workspaceDir,
+    environment: step.environment,
   );
   final afterCpu = clock.getChildCpuSeconds();
   final totalCpu = afterCpu - beforeCpu;
@@ -399,11 +493,8 @@ FlowResult _combineReplayAndFloor(FlowResult replay, FloorResult floor) {
   );
 }
 
-FlowResult _combineReplayAndFloorError(
-  FlowResult replay,
-  String reason,
-  String kind,
-) {
+/// Marks only the floor fields of [replay] failed, leaving `sol` as it is.
+FlowResult attachFloorError(FlowResult replay, String reason, String kind) {
   return FlowResult.withFloor(
     method: replay.method,
     bazelCpu: replay.bazelCpu,
@@ -432,7 +523,7 @@ FlowResult _attachAotFloor(
 ) {
   final sdk = ctx.sdk;
   if (sdk == null) {
-    return _combineReplayAndFloorError(
+    return attachFloorError(
       replayFlow,
       'Could not locate workspace Dart SDK',
       'aot',
@@ -450,7 +541,7 @@ FlowResult _attachAotFloor(
     return _combineReplayAndFloor(replayFlow, floorRes);
   } on Object catch (e) {
     stderr.writeln('$flowLabel floor execution error: $e');
-    return _combineReplayAndFloorError(replayFlow, e.toString(), 'aot');
+    return attachFloorError(replayFlow, e.toString(), 'aot');
   }
 }
 
@@ -474,10 +565,11 @@ FlowResult attachBodyFloor(
   FlowResult replayFlow, {
   required String bazelAppExecutable,
   required String editedFile,
+  String preEditFile = '',
 }) {
   final sdk = ctx.sdk;
   if (sdk == null) {
-    return _combineReplayAndFloorError(
+    return attachFloorError(
       replayFlow,
       'Could not locate workspace Dart SDK',
       'jit',
@@ -489,13 +581,14 @@ FlowResult attachBodyFloor(
       workspaceDir: ctx.workspaceDir,
       floorOutputDir: ctx.outputDir,
       editedFile: editedFile,
+      preEditFile: preEditFile,
       bazelAppExecutable: bazelAppExecutable,
       runner: ctx.runner,
     );
     return _combineReplayAndFloor(replayFlow, floorRes);
   } on Object catch (e) {
     stderr.writeln('Body floor execution error: $e');
-    return _combineReplayAndFloorError(replayFlow, e.toString(), 'jit');
+    return attachFloorError(replayFlow, e.toString(), 'jit');
   }
 }
 
@@ -507,7 +600,7 @@ FlowResult attachTestLeafFloor(
 ) {
   final sdk = ctx.sdk;
   if (sdk == null) {
-    return _combineReplayAndFloorError(
+    return attachFloorError(
       replayFlow,
       'Could not locate workspace Dart SDK',
       'aot',
@@ -518,12 +611,13 @@ FlowResult attachTestLeafFloor(
       sdk: sdk,
       workspaceDir: ctx.workspaceDir,
       testDillPath: testDill,
+      floorOutputDir: ctx.outputDir,
       clock: ctx.clock,
       runner: ctx.runner,
     );
     return _combineReplayAndFloor(replayFlow, floorRes);
   } on Object catch (e) {
     stderr.writeln('Leaf test floor execution error: $e');
-    return _combineReplayAndFloorError(replayFlow, e.toString(), 'aot');
+    return attachFloorError(replayFlow, e.toString(), 'aot');
   }
 }

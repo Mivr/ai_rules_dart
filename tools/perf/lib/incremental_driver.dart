@@ -62,6 +62,31 @@ final class ProcessStat {
   int get totalTicks => utime + stime + cutime + cstime;
 }
 
+/// On-CPU seconds of every thread of [pid], at nanosecond resolution.
+///
+/// `/proc/<pid>/stat` counts in clock ticks, too coarse for a recompile of one
+/// method body; the scheduler's per-thread counters are not. Null when the
+/// counters are unreadable (not Linux, or the process is gone).
+double? _readSchedSeconds(int pid) {
+  final tasks = Directory('/proc/$pid/task');
+  if (!tasks.existsSync()) return null;
+  var nanos = 0;
+  try {
+    for (final task in tasks.listSync(followLinks: false)) {
+      final file = File('${task.path}/schedstat');
+      if (!file.existsSync()) continue;
+      nanos += int.parse(file.readAsStringSync().split(' ').first);
+    }
+  } on FileSystemException catch (e) {
+    stderr.writeln('Schedstat read error: $e');
+    return null;
+  } on FormatException catch (e) {
+    stderr.writeln('Schedstat parse error: $e');
+    return null;
+  }
+  return nanos / 1e9;
+}
+
 Map<String, String> _parseArgs(List<String> args) {
   final result = <String, String>{};
   for (final arg in args) {
@@ -124,6 +149,7 @@ final class _CompilerSession {
     recompileCompleter = Completer<String>();
     final boundary = 'boundary-${DateTime.now().millisecondsSinceEpoch}';
     final statBefore = _readProcStat(process.pid);
+    final schedBefore = _readSchedSeconds(process.pid);
     final stopwatch = Stopwatch()..start();
 
     process.stdin.writeln('recompile $entrypoint $boundary');
@@ -136,13 +162,34 @@ final class _CompilerSession {
     );
     stopwatch.stop();
     final statAfter = _readProcStat(process.pid);
+    final schedAfter = _readSchedSeconds(process.pid);
     process.stdin.writeln('accept');
 
+    if (schedBefore != null && schedAfter != null && schedAfter > schedBefore) {
+      return schedAfter - schedBefore;
+    }
     if (statBefore != null && statAfter != null) {
       final deltaTicks = statAfter.totalTicks - statBefore.totalTicks;
       return deltaTicks > 0 ? (deltaTicks / 100.0) : 0.001;
     }
     return stopwatch.elapsedMicroseconds / 1000000.0;
+  }
+
+  /// Resets the compiler and compiles everything again, untimed.
+  ///
+  /// A recompile writes only the libraries that changed, and that delta has
+  /// no entrypoint of its own. This returns the path of a full kernel of the
+  /// edited program, which the VM can run.
+  Future<String> compileFull(String entrypoint) async {
+    process.stdin.writeln('reset');
+    recompileCompleter = Completer<String>();
+    process.stdin.writeln('compile $entrypoint');
+    await recompileCompleter!.future.timeout(
+      const Duration(seconds: 120),
+      onTimeout: () => throw TimeoutException('Full compile timed out'),
+    );
+    process.stdin.writeln('accept');
+    return outputDill;
   }
 
   Future<void> close() async {
@@ -156,44 +203,98 @@ final class _CompilerSession {
   }
 }
 
-Future<void> _runSession({
-  required _CompilerSession session,
-  required String entrypoint,
-  required String editedFile,
-  required String outputDill,
-  required String mode,
-}) async {
+/// Command-line flag that makes the runner binary act as this driver.
+const incrementalDriverFlag = '--incremental_driver';
+
+/// Parsed command line of the incremental driver.
+final class _DriverOptions {
+  _DriverOptions(Map<String, String> flags)
+    : sdkRoot = flags['sdk-root'] ?? '',
+      dartaotruntime =
+          flags['dartaotruntime'] ??
+          '${flags['sdk-root'] ?? ''}/bin/dartaotruntime',
+      frontendServer = flags['frontend-server'] ?? '',
+      platform = flags['platform'] ?? '',
+      entrypoint = flags['entrypoint'] ?? '',
+      outputDill = flags['output-dill'] ?? '',
+      editedFile = flags['edited-file'] ?? '',
+      editedUri = flags['edited-uri'] ?? flags['edited-file'] ?? '',
+      preEditFile = flags['pre-edit-file'] ?? '',
+      packages = flags['packages'] ?? '',
+      scheme = flags['filesystem-scheme'] ?? '',
+      roots = (flags['filesystem-roots'] ?? '')
+          .split(',')
+          .where((r) => r.isNotEmpty)
+          .toList(),
+      mode = flags['mode'] ?? 'body';
+
+  final String sdkRoot;
+  final String dartaotruntime;
+  final String frontendServer;
+  final String platform;
+  final String entrypoint;
+  final String outputDill;
+  final String editedFile;
+  final String editedUri;
+  final String preEditFile;
+  final String packages;
+  final String scheme;
+  final List<String> roots;
+  final String mode;
+
+  bool get isComplete =>
+      sdkRoot.isNotEmpty &&
+      frontendServer.isNotEmpty &&
+      entrypoint.isNotEmpty &&
+      outputDill.isNotEmpty;
+
+  List<String> get serverArguments => [
+    frontendServer,
+    '--sdk-root=$sdkRoot',
+    '--incremental',
+    '--platform=$platform',
+    if (packages.isNotEmpty) '--packages=$packages',
+    if (scheme.isNotEmpty) '--filesystem-scheme=$scheme',
+    for (final root in roots) '--filesystem-root=$root',
+    '--output-dill=$outputDill',
+    '--target=vm',
+  ];
+}
+
+/// Runs the untimed first compile on the pre-edit source, then the timed
+/// recompile after the edit, and finally an untimed full-kernel recompile.
+Future<void> _runSession(_CompilerSession session, _DriverOptions o) async {
+  final editedPath = o.editedFile;
+  final editedText = editedPath.isEmpty
+      ? null
+      : File(editedPath).readAsStringSync();
   try {
-    await session.initialCompile(entrypoint);
-    if (mode == 'compile-only') {
-      await session.close();
-      stdout.writeln(
-        jsonEncode({
-          'status': 'ok',
-          'cpuSeconds': 0.0,
-          'outputDill': outputDill,
-        }),
-      );
-      return;
+    if (editedText != null && o.preEditFile.isNotEmpty) {
+      File(editedPath)
+          .writeAsStringSync(File(o.preEditFile).readAsStringSync());
     }
-
-    final cpuSeconds = await session.recompile(
-      entrypoint: entrypoint,
-      editedFile: editedFile,
-    );
+    await session.initialCompile(o.entrypoint);
+    if (editedText != null) File(editedPath).writeAsStringSync(editedText);
+    var cpuSeconds = 0.0;
+    if (o.mode != 'compile-only') {
+      cpuSeconds = await session.recompile(
+        entrypoint: o.entrypoint,
+        editedFile: o.editedUri,
+      );
+    }
+    final fullDill = o.mode == 'compile-only'
+        ? o.outputDill
+        : await session.compileFull(o.entrypoint);
     await session.close();
-
-    final incDill = '$outputDill.incremental.dill';
-    final finalDill = File(incDill).existsSync() ? incDill : outputDill;
-
     stdout.writeln(
       jsonEncode({
         'status': 'ok',
         'cpuSeconds': cpuSeconds,
-        'outputDill': finalDill,
+        'outputDill': fullDill,
       }),
     );
   } on Object catch (e) {
+    if (editedText != null) File(editedPath).writeAsStringSync(editedText);
     await session.close();
     stdout.writeln(
       jsonEncode({
@@ -206,23 +307,10 @@ Future<void> _runSession({
   }
 }
 
-Future<void> main(List<String> args) async {
-  final flags = _parseArgs(args);
-  final sdkRoot = flags['sdk-root'] ?? '';
-  final dartaotruntime =
-      flags['dartaotruntime'] ?? '$sdkRoot/bin/dartaotruntime';
-  final frontendServer = flags['frontend-server'] ?? '';
-  final platform = flags['platform'] ?? '';
-  final entrypoint = flags['entrypoint'] ?? '';
-  final outputDill = flags['output-dill'] ?? '';
-  final editedFile = flags['edited-file'] ?? '';
-  final packages = flags['packages'];
-  final mode = flags['mode'] ?? 'body';
-
-  if (sdkRoot.isEmpty ||
-      frontendServer.isEmpty ||
-      entrypoint.isEmpty ||
-      outputDill.isEmpty) {
+/// Entry point of the incremental driver, given its `--key=value` [args].
+Future<void> runIncrementalDriver(List<String> args) async {
+  final options = _DriverOptions(_parseArgs(args));
+  if (!options.isComplete) {
     stdout.writeln(
       jsonEncode({
         'status': 'error',
@@ -231,23 +319,9 @@ Future<void> main(List<String> args) async {
     );
     exit(1);
   }
-
-  final proc = await Process.start(dartaotruntime, [
-    frontendServer,
-    '--sdk-root=$sdkRoot',
-    '--incremental',
-    '--platform=$platform',
-    if (packages != null && packages.isNotEmpty) '--packages=$packages',
-    '--output-dill=$outputDill',
-    '--target=vm',
-  ]);
-
-  final session = _CompilerSession(proc, outputDill);
-  await _runSession(
-    session: session,
-    entrypoint: entrypoint,
-    editedFile: editedFile,
-    outputDill: outputDill,
-    mode: mode,
+  final proc = await Process.start(
+    options.dartaotruntime,
+    options.serverArguments,
   );
+  await _runSession(_CompilerSession(proc, options.outputDill), options);
 }

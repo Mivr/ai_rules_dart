@@ -157,7 +157,11 @@ final class RepeatContext {
     required this.repeatIndex,
     required this.instruments,
     this.floorEnabled = true,
+    this.pristineWorkspace = '',
   });
+
+  /// The unedited generated workspace this repeat's copy came from.
+  final String pristineWorkspace;
 
   /// Directories for this repeat.
   final RepeatDirs dirs;
@@ -259,18 +263,21 @@ final class RepeatContext {
   }
 
   /// Locates a prebuilt test dill file for [leafTarget].
+  ///
+  /// `dart_test` declares its kernel at
+  /// `<name>.precompiled/<testPath>.vm_test.vm.app.dill` beside the test
+  /// executable, where the package:test runner loads it from.
   String findTestDill(String leafTarget) {
     final root = getExecroot();
-    final outputs = queryTargetOutputs(leafTarget);
-    for (final out in outputs) {
-      if (out.endsWith('.dill')) {
-        final cand = '$root/$out';
-        if (File(cand).existsSync()) return cand;
+    for (final out in queryTargetOutputs(leafTarget)) {
+      final precompiled = Directory('$root/$out.precompiled');
+      if (!precompiled.existsSync()) continue;
+      for (final entity in precompiled.listSync(recursive: true)) {
+        if (entity is File && entity.path.endsWith('.vm_test.vm.app.dill')) {
+          return entity.path.replaceAll(r'\', '/');
+        }
       }
     }
-    final pkg = leafTarget.split(':').first.replaceFirst('//packages/', '');
-    final cand = '$root/bazel-bin/packages/$pkg/${pkg}_test.dill';
-    if (File(cand).existsSync()) return cand;
     throw StateError('Prebuilt test dill for $leafTarget not found');
   }
 }
@@ -337,6 +344,7 @@ RepeatResult executeRepeat({
     repeatIndex: repeatIndex,
     instruments: CpuInstruments(clock: clock, procReader: procReader),
     floorEnabled: floorEnabled,
+    pristineWorkspace: resolvedPristine,
   );
 
   final flows = <String, FlowResult>{};
@@ -384,32 +392,53 @@ FloorFlowContext _makeFloorContext(RepeatContext ctx, String flowSuffix) {
   );
 }
 
-FlowResult _attachCleanFloor(RepeatContext ctx, FlowResult replayFlow) {
+/// Runs [attach] for a flow when the floor is on; a lookup or floor failure
+/// marks only the floor fields of [replayFlow], never its `sol`.
+FlowResult _withFloor(
+  RepeatContext ctx,
+  FlowResult replayFlow,
+  String floorKind,
+  FlowResult Function() attach,
+) {
   if (!ctx.floorEnabled) return replayFlow;
-  final bazelApp = ctx.findExecutableOutput('//app:app');
-  return attachCleanFloor(
-    _makeFloorContext(ctx, 'clean'),
-    replayFlow,
-    bazelApp,
-  );
+  try {
+    return attach();
+  } on Object catch (e) {
+    stderr.writeln('Toolchain floor setup error: $e');
+    return attachFloorError(replayFlow, e.toString(), floorKind);
+  }
+}
+
+FlowResult _attachCleanFloor(RepeatContext ctx, FlowResult replayFlow) {
+  return _withFloor(ctx, replayFlow, 'aot', () {
+    final bazelApp = ctx.findExecutableOutput('//app:app');
+    return attachCleanFloor(
+      _makeFloorContext(ctx, 'clean'),
+      replayFlow,
+      bazelApp,
+    );
+  });
 }
 
 FlowResult _attachBodyFloor(RepeatContext ctx, FlowResult replayFlow) {
-  if (!ctx.floorEnabled) return replayFlow;
-  final bazelApp = ctx.findExecutableOutput('//app:app');
-  final editedFile = '${ctx.repeatWorkspace}/packages/pkg0/lib/src/f0.dart';
-  return attachBodyFloor(
-    _makeFloorContext(ctx, 'body'),
-    replayFlow,
-    bazelAppExecutable: bazelApp,
-    editedFile: editedFile,
-  );
+  return _withFloor(ctx, replayFlow, 'jit', () {
+    final bazelApp = ctx.findExecutableOutput('//app:app');
+    const edited = 'packages/pkg0/lib/src/f0.dart';
+    return attachBodyFloor(
+      _makeFloorContext(ctx, 'body'),
+      replayFlow,
+      bazelAppExecutable: bazelApp,
+      editedFile: '${ctx.repeatWorkspace}/$edited',
+      preEditFile: '${ctx.pristineWorkspace}/$edited',
+    );
+  });
 }
 
 FlowResult _attachApiFloor(RepeatContext ctx, FlowResult replayFlow) {
-  if (!ctx.floorEnabled) return replayFlow;
-  final bazelApp = ctx.findExecutableOutput('//app:app');
-  return attachApiFloor(_makeFloorContext(ctx, 'api'), replayFlow, bazelApp);
+  return _withFloor(ctx, replayFlow, 'aot', () {
+    final bazelApp = ctx.findExecutableOutput('//app:app');
+    return attachApiFloor(_makeFloorContext(ctx, 'api'), replayFlow, bazelApp);
+  });
 }
 
 FlowResult _attachTestLeafFloor(
@@ -417,13 +446,14 @@ FlowResult _attachTestLeafFloor(
   FlowResult replayFlow,
   String leafTarget,
 ) {
-  if (!ctx.floorEnabled) return replayFlow;
-  final testDill = ctx.findTestDill(leafTarget);
-  return attachTestLeafFloor(
-    _makeFloorContext(ctx, 'test'),
-    replayFlow,
-    testDill,
-  );
+  return _withFloor(ctx, replayFlow, 'aot', () {
+    final testDill = ctx.findTestDill(leafTarget);
+    return attachTestLeafFloor(
+      _makeFloorContext(ctx, 'test'),
+      replayFlow,
+      testDill,
+    );
+  });
 }
 
 FlowResult _measureFlowAppClean(RepeatContext ctx) {

@@ -595,7 +595,8 @@ final class _FlowAccumulator {
 
   void _recordReplay(FlowResult f) {
     if (f.bazelCpu != null) bazelVals.add(f.bazelCpu!);
-    final isOk = f.identical &&
+    final isOk =
+        f.identical &&
         f.reason == 'ok' &&
         f.solCpu != null &&
         f.bazelCpu != null;
@@ -613,7 +614,8 @@ final class _FlowAccumulator {
     if (!f.floorEnabled) return;
     floorEnabled = true;
     floorKind = f.floorKind;
-    final isOk = f.floorIdentical &&
+    final isOk =
+        f.floorIdentical &&
         f.floorReason == 'ok' &&
         f.toolchainFloorCpu != null;
     if (isOk) {
@@ -688,8 +690,9 @@ Map<String, dynamic> _buildFloorFields({
   final isIdentical =
       acc.allFloorIdentical && acc.floorVals.length == expectedRepeats;
   final median = isIdentical ? calculateMedian(acc.floorVals) : null;
-  final reason =
-      isIdentical ? 'ok' : (acc.floorFailure ?? countFailure ?? 'failed');
+  final reason = isIdentical
+      ? 'ok'
+      : (acc.floorFailure ?? countFailure ?? 'failed');
   final ratio = (bazelMedian != null && median != null && median > 0)
       ? _roundCpu(bazelMedian / median)
       : null;
