@@ -3,7 +3,7 @@
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartCodeAssetInfo", "DartCompileInfo", "DartInfo", "DartRecordedUsesInfo")
 load("//dart/private:binary_compile.bzl", "binary_compile")
-load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR")
+load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR", "REFUSED_DART_LIBRARIES_ATTR")
 load(
     "//dart/private:common.bzl",
     "DART_ABI_CONSTRAINT_ATTRS",
@@ -503,7 +503,7 @@ _SHARED_BINARY_ATTRS = dict(
     DART_ABI_CONSTRAINT_ATTRS,
     **dict(
         COMPILE_WRAPPER_ATTRS,
-        **dict(EXTRA_DART_DEFINES_ATTR, **dict(EXECUTABLE_PACKAGE_ATTRS, **BINARY_MODULAR_KERNEL_ATTRS))
+        **dict(EXTRA_DART_DEFINES_ATTR, **dict(REFUSED_DART_LIBRARIES_ATTR, **dict(EXECUTABLE_PACKAGE_ATTRS, **BINARY_MODULAR_KERNEL_ATTRS)))
     )
 )
 

@@ -22,6 +22,11 @@ const _leafViolation =
     "depends on. Add the target that provides package 'leaf' to "
     "//pkg:user's deps.";
 
+String _refusedLine(String verb, String noun) =>
+    "//pkg:user: lib/a.dart $verb 'dart:mirrors', which "
+    '//dart:refused_dart_libraries refuses. Remove the $noun, or '
+    'take the library out of that setting.';
+
 void main() {
   group('checkImports', () {
     test('a direct dep, the own package and dart: pass', () {
@@ -100,6 +105,56 @@ void main() {
     });
   });
 
+  group('checkRefusedLibraries', () {
+    List<String> refuse(Map<String, String> sources, Set<String> refused) =>
+        checkRefusedLibraries((
+          label: '//pkg:user',
+          allowedPackages: const {},
+          sources: sources,
+        ), refused);
+
+    const mirrors = {'dart:mirrors'};
+
+    test('a refused import names the label, file, URI and setting', () {
+      expect(refuse({'lib/a.dart': "import 'dart:mirrors';\n"}, mirrors), [
+        _refusedLine('imports', 'import'),
+      ]);
+    });
+
+    test('a refused export says exports', () {
+      expect(refuse({'lib/a.dart': "export 'dart:mirrors';\n"}, mirrors), [
+        _refusedLine('exports', 'export'),
+      ]);
+    });
+
+    test('a refused library that is repeated is printed once', () {
+      expect(
+        refuse({
+          'lib/a.dart': "import 'dart:mirrors';\nimport 'dart:mirrors';\n",
+        }, mirrors),
+        hasLength(1),
+      );
+    });
+
+    test('other dart: libraries and packages pass', () {
+      expect(
+        refuse({
+          'lib/a.dart':
+              "import 'dart:io';\nimport 'dart:math';\n"
+              "import 'package:mirrors/mirrors.dart';\n",
+        }, mirrors),
+        isEmpty,
+      );
+    });
+
+    test('an empty refused set reports nothing', () {
+      expect(
+        refuse({'lib/a.dart': "import 'dart:mirrors';\n"}, const {}),
+        isEmpty,
+      );
+    });
+  });
+
   group('run', () {
     late Directory dir;
     setUp(() => dir = Directory.systemTemp.createTempSync('import_check'));
@@ -144,6 +199,54 @@ void main() {
       ]);
       expect(code, 1);
       expect(File(out).existsSync(), isFalse);
+    });
+
+    test('a refused import fails the check and writes no stamp', () {
+      write('src/lib/bad.dart', "import 'dart:mirrors';\n");
+      final out = '${dir.path}/stamp';
+      final int code = run([
+        '--label',
+        '//pkg:user',
+        '--refused-library',
+        'dart:mirrors',
+        '--src',
+        '${dir.path}/src',
+        '--output',
+        out,
+      ]);
+      expect(code, 1);
+      expect(File(out).existsSync(), isFalse);
+    });
+
+    test('the same import passes when nothing is refused', () {
+      write('src/lib/ok.dart', "import 'dart:mirrors';\n");
+      final int code = run([
+        '--label',
+        '//pkg:user',
+        '--src',
+        '${dir.path}/src',
+        '--output',
+        '${dir.path}/stamp',
+      ]);
+      expect(code, 0);
+    });
+
+    for (final bad in ['mirrors', 'dart:', 'dart:Mirrors', 'package:a']) {
+      test('--refused-library "$bad" is a usage error', () {
+        final int code = run([
+          '--label',
+          '//pkg:user',
+          '--refused-library',
+          bad,
+          '--output',
+          '${dir.path}/stamp',
+        ]);
+        expect(code, 64);
+      });
+    }
+
+    test('--refused-library with no value is a usage error', () {
+      expect(run(['--label', '//pkg:user', '--refused-library']), 64);
     });
   });
 }
