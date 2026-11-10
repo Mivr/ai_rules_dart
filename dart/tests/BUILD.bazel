@@ -23,6 +23,7 @@ load(":codegen_test.bzl", "codegen_test_suite")
 load(":common_test.bzl", "common_test_suite")
 load(":compile_action_direct_test.bzl", "compile_action_direct_test_suite")
 load(":compile_flags_test.bzl", "compile_flags_test_suite")
+load(":compile_wrapper_test.bzl", "compile_wrapper_test_suite")
 load(":copy_with_library_direct_test.bzl", "copy_with_library_direct_test_suite")
 load(":dart_analysis_config_direct_test.bzl", "dart_analysis_config_direct_test_suite")
 load(":dart_analysis_options_direct_test.bzl", "dart_analysis_options_direct_test_suite")
@@ -209,6 +210,8 @@ dart_analysis_test_direct_test_suite(name = "dart_analysis_test_direct")
 dart_code_asset_direct_test_suite(name = "dart_code_asset_direct")
 
 compile_action_direct_test_suite(name = "compile_action_direct")
+
+compile_wrapper_test_suite(name = "compile_wrapper_test")
 
 unbacked_embedder_test_suite(name = "unbacked_embedder_test")
 
