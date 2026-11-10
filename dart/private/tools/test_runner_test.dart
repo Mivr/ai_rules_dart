@@ -606,101 +606,140 @@ void _plainSelectionTests(String launcher, List<String> args) {
   });
 }
 
+/// Runs `suiteCommand` with the given [env] and standard test parameters.
+List<String> _runSuiteCommand({Map<String, String> env = const {}}) =>
+    suiteCommand(
+      runner: 'runner.dill',
+      precompiled: '/tmp/precompiled',
+      testPath: 'test/my_test.dart',
+      report: '/tmp/report.json',
+      env: env,
+      seed: null,
+    );
+
+/// Expected `suiteCommand` argv, with optional [tagArgs] inserted before the test path.
+List<String> _expectedSuiteArgs({List<String> tagArgs = const []}) => [
+  '--enable-asserts',
+  'runner.dill',
+  '--precompiled=/tmp/precompiled',
+  '--reporter=expanded',
+  '--timeout=none',
+  '--file-reporter=json:/tmp/report.json',
+  ...tagArgs,
+  'test/my_test.dart',
+];
+
+/// Tests for single-word tag entries in `suiteCommand`.
+void _tagSingleWordArgvTests() {
+  test('passes single-word tag options and omits them when empty', () {
+    expect(_runSuiteCommand(), _expectedSuiteArgs());
+    expect(
+      _runSuiteCommand(env: {'RULES_DART_INCLUDE_TAGS': ''}),
+      _expectedSuiteArgs(),
+    );
+    expect(
+      _runSuiteCommand(env: {'RULES_DART_EXCLUDE_TAGS': ''}),
+      _expectedSuiteArgs(),
+    );
+    expect(
+      _runSuiteCommand(
+        env: {'RULES_DART_INCLUDE_TAGS': '', 'RULES_DART_EXCLUDE_TAGS': ''},
+      ),
+      _expectedSuiteArgs(),
+    );
+    expect(
+      _runSuiteCommand(env: {'RULES_DART_INCLUDE_TAGS': '(smoke)'}),
+      _expectedSuiteArgs(tagArgs: ['--tags', '(smoke)']),
+    );
+    expect(
+      _runSuiteCommand(env: {'RULES_DART_INCLUDE_TAGS': '(smoke) && (unit)'}),
+      _expectedSuiteArgs(tagArgs: ['--tags', '(smoke) && (unit)']),
+    );
+    expect(
+      _runSuiteCommand(env: {'RULES_DART_EXCLUDE_TAGS': '(broken)'}),
+      _expectedSuiteArgs(tagArgs: ['--exclude-tags', '(broken)']),
+    );
+    expect(
+      _runSuiteCommand(env: {'RULES_DART_EXCLUDE_TAGS': '(broken) || (flaky)'}),
+      _expectedSuiteArgs(tagArgs: ['--exclude-tags', '(broken) || (flaky)']),
+    );
+    expect(
+      _runSuiteCommand(
+        env: {
+          'RULES_DART_INCLUDE_TAGS': '(smoke) && (unit)',
+          'RULES_DART_EXCLUDE_TAGS': '(broken) || (flaky)',
+        },
+      ),
+      _expectedSuiteArgs(
+        tagArgs: [
+          '--tags',
+          '(smoke) && (unit)',
+          '--exclude-tags',
+          '(broken) || (flaky)',
+        ],
+      ),
+    );
+  });
+}
+
+/// Tests for compound tag selectors and selectors with ternary operators in `suiteCommand`.
+void _tagCompoundArgvTests() {
+  test(
+    'passes compound tag selectors with precedence-preserving parentheses',
+    () {
+      expect(
+        _runSuiteCommand(
+          env: {'RULES_DART_INCLUDE_TAGS': '(smoke || fast) && (linux)'},
+        ),
+        _expectedSuiteArgs(tagArgs: ['--tags', '(smoke || fast) && (linux)']),
+      );
+      expect(
+        _runSuiteCommand(
+          env: {'RULES_DART_EXCLUDE_TAGS': '(ios ? slow : broken) || (flaky)'},
+        ),
+        _expectedSuiteArgs(
+          tagArgs: ['--exclude-tags', '(ios ? slow : broken) || (flaky)'],
+        ),
+      );
+      expect(
+        _runSuiteCommand(
+          env: {
+            'RULES_DART_INCLUDE_TAGS': '(smoke || fast) && (linux)',
+            'RULES_DART_EXCLUDE_TAGS': '(ios ? slow : broken) || (flaky)',
+          },
+        ),
+        _expectedSuiteArgs(
+          tagArgs: [
+            '--tags',
+            '(smoke || fast) && (linux)',
+            '--exclude-tags',
+            '(ios ? slow : broken) || (flaky)',
+          ],
+        ),
+      );
+    },
+  );
+
+  test('passes single selector holding ternary operator', () {
+    expect(
+      _runSuiteCommand(
+        env: {'RULES_DART_INCLUDE_TAGS': '(ios ? slow : broken)'},
+      ),
+      _expectedSuiteArgs(tagArgs: ['--tags', '(ios ? slow : broken)']),
+    );
+    expect(
+      _runSuiteCommand(
+        env: {'RULES_DART_EXCLUDE_TAGS': '(ios ? slow : broken)'},
+      ),
+      _expectedSuiteArgs(tagArgs: ['--exclude-tags', '(ios ? slow : broken)']),
+    );
+  });
+}
+
 /// Tests for the argv that `suiteCommand` builds for tag options.
 void _tagArgvTests() {
   group('suiteCommand tag arguments', () {
-    const defaultArgs = [
-      '--enable-asserts',
-      'runner.dill',
-      '--precompiled=/tmp/precompiled',
-      '--reporter=expanded',
-      '--timeout=none',
-      '--file-reporter=json:/tmp/report.json',
-      'test/my_test.dart',
-    ];
-
-    List<String> runSuiteCommand({Map<String, String> env = const {}}) =>
-        suiteCommand(
-          runner: 'runner.dill',
-          precompiled: '/tmp/precompiled',
-          testPath: 'test/my_test.dart',
-          report: '/tmp/report.json',
-          env: env,
-          seed: null,
-        );
-
-    test('passes --tags when RULES_DART_INCLUDE_TAGS is set and omits it when empty', () {
-      expect(runSuiteCommand(), defaultArgs);
-      expect(
-        runSuiteCommand(env: {'RULES_DART_INCLUDE_TAGS': ''}),
-        defaultArgs,
-      );
-      expect(
-        runSuiteCommand(env: {'RULES_DART_INCLUDE_TAGS': 'smoke && unit'}),
-        [
-          '--enable-asserts',
-          'runner.dill',
-          '--precompiled=/tmp/precompiled',
-          '--reporter=expanded',
-          '--timeout=none',
-          '--file-reporter=json:/tmp/report.json',
-          '--tags',
-          'smoke && unit',
-          'test/my_test.dart',
-        ],
-      );
-    });
-
-    test('passes --exclude-tags when RULES_DART_EXCLUDE_TAGS is set and omits it when empty', () {
-      expect(runSuiteCommand(), defaultArgs);
-      expect(
-        runSuiteCommand(env: {'RULES_DART_EXCLUDE_TAGS': ''}),
-        defaultArgs,
-      );
-      expect(
-        runSuiteCommand(env: {'RULES_DART_EXCLUDE_TAGS': 'broken || flaky'}),
-        [
-          '--enable-asserts',
-          'runner.dill',
-          '--precompiled=/tmp/precompiled',
-          '--reporter=expanded',
-          '--timeout=none',
-          '--file-reporter=json:/tmp/report.json',
-          '--exclude-tags',
-          'broken || flaky',
-          'test/my_test.dart',
-        ],
-      );
-    });
-
-    test('passes both --tags and --exclude-tags when both are set and neither when empty', () {
-      expect(
-        runSuiteCommand(
-          env: {'RULES_DART_INCLUDE_TAGS': '', 'RULES_DART_EXCLUDE_TAGS': ''},
-        ),
-        defaultArgs,
-      );
-      expect(
-        runSuiteCommand(
-          env: {
-            'RULES_DART_INCLUDE_TAGS': 'smoke && unit',
-            'RULES_DART_EXCLUDE_TAGS': 'broken || flaky',
-          },
-        ),
-        [
-          '--enable-asserts',
-          'runner.dill',
-          '--precompiled=/tmp/precompiled',
-          '--reporter=expanded',
-          '--timeout=none',
-          '--file-reporter=json:/tmp/report.json',
-          '--tags',
-          'smoke && unit',
-          '--exclude-tags',
-          'broken || flaky',
-          'test/my_test.dart',
-        ],
-      );
-    });
+    _tagSingleWordArgvTests();
+    _tagCompoundArgvTests();
   });
 }

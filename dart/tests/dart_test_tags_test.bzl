@@ -120,31 +120,12 @@ _tag_failure_test = analysistest.make(
     doc = "Checks that invalid `dart_test` tag entries fail analysis naming the target and attribute.",
 )
 
-def dart_test_tags_test_suite(name):
-    """Suite of analysis tests for dart_test tag selection attributes.
+def _declare_refusal_tests():
+    """Declares analysis tests and fixtures for invalid tag selectors.
 
-    Args:
-        name: Target name for the test suite.
+    Returns:
+        List of test target labels to include in the suite.
     """
-    dart_test(
-        name = "default_tags_fixture",
-        main = "//dart/private/tools:noop.dart",
-        tags = ["manual"],
-    )
-    dart_test(
-        name = "valid_tags_fixture",
-        main = "//dart/private/tools:noop.dart",
-        include_tags = ["smoke", "fast"],
-        exclude_tags = ["broken", "flaky"],
-        tags = ["manual"],
-    )
-    dart_test(
-        name = "empty_tags_fixture",
-        main = "//dart/private/tools:noop.dart",
-        include_tags = [],
-        exclude_tags = [],
-        tags = ["manual"],
-    )
     dart_test(
         name = "empty_include_entry_fixture",
         main = "//dart/private/tools:noop.dart",
@@ -170,18 +151,6 @@ def dart_test_tags_test_suite(name):
         tags = ["manual"],
     )
 
-    _tag_env_test(
-        name = "dart_test_valid_tags_env_test",
-        target_under_test = ":valid_tags_fixture",
-        baseline_target = ":default_tags_fixture",
-        expected_include = "smoke && fast",
-        expected_exclude = "broken || flaky",
-    )
-    _tag_env_test(
-        name = "dart_test_empty_tags_env_test",
-        target_under_test = ":empty_tags_fixture",
-        baseline_target = ":default_tags_fixture",
-    )
     _tag_failure_test(
         name = "dart_test_empty_include_tag_refusal_test",
         target_under_test = ":empty_include_entry_fixture",
@@ -207,14 +176,73 @@ def dart_test_tags_test_suite(name):
         expected_attr = "exclude_tags",
     )
 
+    return [
+        ":dart_test_empty_include_tag_refusal_test",
+        ":dart_test_newline_include_tag_refusal_test",
+        ":dart_test_empty_exclude_tag_refusal_test",
+        ":dart_test_newline_exclude_tag_refusal_test",
+    ]
+
+def dart_test_tags_test_suite(name):
+    """Suite of analysis tests for dart_test tag selection attributes.
+
+    Args:
+        name: Target name for the test suite.
+    """
+    dart_test(
+        name = "default_tags_fixture",
+        main = "//dart/private/tools:noop.dart",
+        tags = ["manual"],
+    )
+    dart_test(
+        name = "valid_tags_fixture",
+        main = "//dart/private/tools:noop.dart",
+        include_tags = ["smoke", "fast"],
+        exclude_tags = ["broken", "flaky"],
+        tags = ["manual"],
+    )
+    dart_test(
+        name = "compound_tags_fixture",
+        main = "//dart/private/tools:noop.dart",
+        include_tags = ["smoke || fast", "linux"],
+        exclude_tags = ["ios ? slow : broken", "flaky"],
+        tags = ["manual"],
+    )
+    dart_test(
+        name = "empty_tags_fixture",
+        main = "//dart/private/tools:noop.dart",
+        include_tags = [],
+        exclude_tags = [],
+        tags = ["manual"],
+    )
+
+    _tag_env_test(
+        name = "dart_test_valid_tags_env_test",
+        target_under_test = ":valid_tags_fixture",
+        baseline_target = ":default_tags_fixture",
+        expected_include = "(smoke) && (fast)",
+        expected_exclude = "(broken) || (flaky)",
+    )
+    _tag_env_test(
+        name = "dart_test_compound_tags_env_test",
+        target_under_test = ":compound_tags_fixture",
+        baseline_target = ":default_tags_fixture",
+        expected_include = "(smoke || fast) && (linux)",
+        expected_exclude = "(ios ? slow : broken) || (flaky)",
+    )
+    _tag_env_test(
+        name = "dart_test_empty_tags_env_test",
+        target_under_test = ":empty_tags_fixture",
+        baseline_target = ":default_tags_fixture",
+    )
+
+    refusal_tests = _declare_refusal_tests()
+
     native.test_suite(
         name = name,
         tests = [
             ":dart_test_valid_tags_env_test",
+            ":dart_test_compound_tags_env_test",
             ":dart_test_empty_tags_env_test",
-            ":dart_test_empty_include_tag_refusal_test",
-            ":dart_test_newline_include_tag_refusal_test",
-            ":dart_test_empty_exclude_tag_refusal_test",
-            ":dart_test_newline_exclude_tag_refusal_test",
-        ],
+        ] + refusal_tests,
     )
