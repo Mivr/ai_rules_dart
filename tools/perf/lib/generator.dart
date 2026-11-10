@@ -299,11 +299,18 @@ void _copyPristineFiles(String outputPath, String resolvedRulesPath) {
 const consumerPresetPath = 'dart/consumer.bazelrc';
 
 /// Writes the workspace `.bazelrc`: one `import` of the shipped consumer
-/// preset and no other setting, so a measurement shows what a consumer gets.
+/// preset, then one `test --build_runfile_links` line. The preset sets
+/// `--nobuild_runfile_links`, but the bench's test replay re-runs the recorded
+/// test runner against a linked runfiles tree. The `test` line applies to
+/// `bazel test` only, so the app builds still measure what a consumer gets.
 void _writeConsumerBazelrc(String outputPath, String resolvedRulesPath) {
   final rules = resolvedRulesPath.replaceAll(r'\', '/');
-  File('$outputPath/.bazelrc')
-      .writeAsStringSync('import $rules/$consumerPresetPath\n');
+  File('$outputPath/.bazelrc').writeAsStringSync(
+    'import $rules/$consumerPresetPath\n'
+    '# The bench test replay re-runs the recorded test runner against a\n'
+    '# linked runfiles tree.\n'
+    'test --build_runfile_links\n',
+  );
 }
 
 void _writeRootBuild(String outputPath) {
