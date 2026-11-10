@@ -251,11 +251,17 @@ void writeCoverageMap(List<String> lines) {
     (_isInside(request.dirs, file) ? inDir : plain).add(file);
   }
   final entries = <String, String>{
-    ...plainEntries(packages: request.packages, files: plain),
+    ..._sortedByKey(plainEntries(packages: request.packages, files: plain)),
     ...expandDirectories(dirs: request.dirs, files: inDir, origins: origins),
   };
   File(request.out).writeAsStringSync(jsonEncode(entries));
 }
+
+/// [map] in key order, which is how the analysis-time `json.encode` wrote the
+/// entries of the sources outside directories; entries of directories follow.
+Map<String, String> _sortedByKey(Map<String, String> map) => Map.fromEntries(
+  map.entries.toList()..sort((a, b) => a.key.compareTo(b.key)),
+);
 
 bool _isInside(List<SourceDir> dirs, MemberFile file) =>
     dirs.any((dir) => file.path.startsWith('${dir.path}/'));

@@ -104,6 +104,42 @@ void main() {
     expect(map['package:pkg/g.dart'], 'bazel-out/k8/bin/p/lib/g.dart');
   });
 
+  test('writeCoverageMap sorts plain entries, then appends directory ones', () {
+    final out = '${tmp.path}/order.json';
+    writeCoverageMap([
+      out,
+      '--package',
+      'z',
+      'z/lib/',
+      'z',
+      '--package',
+      'pkg',
+      'p/set/lib/',
+      dir.shortPath,
+      '--dir',
+      dir.path,
+      dir.shortPath,
+      '--file',
+      'z/lib/b.dart',
+      'z/lib/b.dart',
+      '--file',
+      'a/a.dart',
+      'a/a.dart',
+      '--file',
+      'bazel-out/k8/bin/p/set/lib/c.dart',
+      'p/set/lib/c.dart',
+    ]);
+    expect(
+      File(out).readAsStringSync(),
+      '{"org-dartlang-root:///a/a.dart":"a/a.dart",'
+      '"org-dartlang-root:///z/lib/b.dart":"z/lib/b.dart",'
+      '"package:z/b.dart":"z/lib/b.dart",'
+      '"org-dartlang-root:///p/set/lib/c.dart":'
+      '"bazel-out/k8/bin/p/set/lib/c.dart",'
+      '"package:pkg/c.dart":"bazel-out/k8/bin/p/set/lib/c.dart"}',
+    );
+  });
+
   test('plainEntries maps a file under its deepest package lib', () {
     final Map<String, String> entries = plainEntries(
       packages: [
