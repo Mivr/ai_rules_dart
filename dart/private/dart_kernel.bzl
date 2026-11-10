@@ -1209,8 +1209,7 @@ def modular_executable_kernel(
         dep_kernels,
         output,
         compile,
-        use_base_dill = False,
-        platform_dill = None):
+        link):
     """Compiles an executable's entry module, then links it to `output`.
 
     The entry compiles from source whatever it reaches that no dependency module
@@ -1226,13 +1225,13 @@ def modular_executable_kernel(
       output: The linked kernel File the executable runs.
       compile: The struct from `kernel_compile_settings()`: the frontend
         target, platform, libraries, scheme, and extra flags.
-      use_base_dill: When True, links `output` as a delta against any shared
-        `base_dill`/`base_keys` provided in `dep_kernels` and returns `base_dill`.
-      platform_dill: Optional platform `.dill` File the link prepends to `output`,
-        so `output` is a whole program a front end can load with `--from-dill`.
+      link: The struct from `kernel_link_options()`: `use_base_dill` links
+        `output` as a delta against any shared `base_dill`/`base_keys` in
+        `dep_kernels` and returns `base_dill`; `platform_dill` is prepended to
+        `output`, so it is a whole program a front end can load with `--from-dill`.
 
     Returns:
-      The shared `base_dill` File if `use_base_dill` is True and a dependency
+      The shared `base_dill` File if `link.use_base_dill` is True and a dependency
       provides one, or None.
     """
     dep_closure, dep_outline_closure, cross_pkg_srcs = _exec_entry_inputs(ctx, dep_kernels, packages, sources)
@@ -1263,10 +1262,10 @@ def modular_executable_kernel(
     base_dill = None
     base_keys = None
     base_kmods = depset()
-    if use_base_dill:
+    if link.use_base_dill:
         base_dill, base_keys, base_kmods = exec_base_dill(dep_kernels)
     link_dep_closure = exec_link_closure(dep_closure, base_dill, base_keys, base_kmods)
-    kernel_link_action(ctx, link_dep_closure, entry, output, base_keys = base_keys, platform_dill = platform_dill)
+    kernel_link_action(ctx, link_dep_closure, entry, output, base_keys = base_keys, platform_dill = link.platform_dill)
     return base_dill
 
 _TEST_API_BASE_PACKAGES = {
