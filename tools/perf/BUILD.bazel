@@ -29,6 +29,15 @@ dart_binary(
 )
 
 dart_binary(
+    name = "scale",
+    main = "bin/scale.dart",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":perf",
+    ],
+)
+
+dart_binary(
     name = "summarize",
     main = "bin/summarize.dart",
     visibility = ["//visibility:public"],
@@ -41,6 +50,56 @@ dart_test(
     name = "generator_test",
     size = "small",
     main = "test/generator_test.dart",
+    deps = [
+        ":perf",
+    ],
+)
+
+dart_test(
+    name = "scale_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :scale_ceilings.json)",
+    ],
+    data = [
+        "scale_ceilings.json",
+    ],
+    main = "test/scale_test.dart",
+    deps = [
+        ":perf",
+        "@rules_dart//dart/runfiles",
+    ],
+)
+
+dart_test(
+    name = "scale_workflow_test",
+    size = "medium",
+    srcs = [
+        "test/repo_root.dart",
+        "test/workflow_steps.dart",
+    ],
+    args = [
+        "$(rlocationpath :test/scale_workflow_test.dart)",
+    ],
+    data = [
+        "test/scale_workflow_test.dart",
+    ],
+    local = True,
+    main = "test/scale_workflow_test.dart",
+    tags = [
+        "external",
+        "no-sandbox",
+    ],
+    deps = [
+        ":perf",
+        "@rules_dart//dart/runfiles",
+    ],
+)
+
+dart_test(
+    name = "generate_cli_test",
+    size = "small",
+    main = "test/generate_cli_test.dart",
     deps = [
         ":perf",
     ],
@@ -94,7 +153,10 @@ dart_test(
 dart_test(
     name = "workflow_test",
     size = "medium",
-    srcs = ["test/workflow_steps.dart"],
+    srcs = [
+        "test/repo_root.dart",
+        "test/workflow_steps.dart",
+    ],
     args = [
         "$(rlocationpath :test/workflow_test.dart)",
     ],
