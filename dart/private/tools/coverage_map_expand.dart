@@ -109,8 +109,8 @@ CoverageMapRequest parseCoverageMapRequest(List<String> lines) {
       case '--origin-map':
         originMaps.add(next());
       case '--dir':
-        final String path = next();
-        final String shortPath = next();
+        final String path = _slash(next());
+        final String shortPath = _slash(next());
         dirs.add(
           SourceDir(
             path: path,
@@ -119,7 +119,7 @@ CoverageMapRequest parseCoverageMapRequest(List<String> lines) {
           ),
         );
       case '--file':
-        files.add(MemberFile(path: next(), shortPath: next()));
+        files.add(MemberFile(path: _slash(next()), shortPath: _slash(next())));
       default:
         throw CoverageMapError('unknown record "$tag" in params file');
     }
@@ -160,11 +160,12 @@ Map<String, String> plainEntries({
   }
   final entries = <String, String>{};
   for (final file in files) {
-    final String execPath = file.path.replaceAll(r'\', '/');
-    entries['org-dartlang-root:///${_stable(file.shortPath)}'] = execPath;
-    final PackageRoot? owner = _deepestOwner(byPrefix, file.shortPath);
+    final String execPath = _slash(file.path);
+    final String shortPath = _slash(file.shortPath);
+    entries['org-dartlang-root:///${_stable(shortPath)}'] = execPath;
+    final PackageRoot? owner = _deepestOwner(byPrefix, shortPath);
     if (owner != null) {
-      final String rel = file.shortPath.substring(owner.libPrefix.length);
+      final String rel = shortPath.substring(owner.libPrefix.length);
       entries['package:${owner.name}/$rel'] = execPath;
     }
   }
@@ -192,33 +193,43 @@ Map<String, String> expandDirectories({
   required List<MemberFile> files,
   required Map<String, String> origins,
 }) {
+  final normOrigins = <String, String>{
+    for (final e in origins.entries) _slash(e.key): _slash(e.value),
+  };
   final entries = <String, String>{};
   for (final file in files) {
-    final SourceDir dir = _owner(dirs, file);
-    final String origin = origins[file.path] ?? file.path;
-    entries['org-dartlang-root:///${_stable(file.shortPath)}'] = origin;
-    final String rel = file.path.substring(dir.path.length + 1);
+    final String path = _slash(file.path);
+    final String shortPath = _slash(file.shortPath);
+    final SourceDir dir = _owner(dirs, path);
+    final String dirPath = _slash(dir.path);
+    final String origin = normOrigins[path] ?? path;
+    entries['org-dartlang-root:///${_stable(shortPath)}'] = origin;
+    final String rel = path.substring(dirPath.length + 1);
     if (rel.startsWith('lib/')) {
       entries['package:${dir.packageName}/${rel.substring(4)}'] = origin;
     }
-    if (origin != file.path) entries[file.path] = origin;
+    if (origin != path) entries[path] = origin;
   }
   return entries;
 }
+
+/// [path] with `/` separators.
+String _slash(String path) => path.replaceAll(r'\', '/');
 
 /// A short path with `../repo` turned into `external/repo`.
 String _stable(String shortPath) => shortPath.startsWith('../')
     ? 'external/${shortPath.substring(3)}'
     : shortPath;
 
-SourceDir _owner(List<SourceDir> dirs, MemberFile file) {
+SourceDir _owner(List<SourceDir> dirs, String filePath) {
   SourceDir? best;
   for (final dir in dirs) {
-    if (!file.path.startsWith('${dir.path}/')) continue;
-    if (best == null || dir.path.length > best.path.length) best = dir;
+    final String dirPath = _slash(dir.path);
+    if (!filePath.startsWith('$dirPath/')) continue;
+    if (best == null || dirPath.length > _slash(best.path).length) best = dir;
   }
   if (best == null) {
-    throw CoverageMapError('${file.path} is in none of the listed directories');
+    throw CoverageMapError('$filePath is in none of the listed directories');
   }
   return best;
 }
@@ -241,6 +252,13 @@ Map<String, String> _readStringMap(String path) {
 /// Runs a request: reads the maps it names and writes the finished one.
 void writeCoverageMap(List<String> lines) {
   final CoverageMapRequest request = parseCoverageMapRequest(lines);
+  if (request.dirs.isEmpty) {
+    final Map<String, String> entries = _sortedByKey(
+      plainEntries(packages: request.packages, files: request.files),
+    );
+    File(request.out).writeAsStringSync(jsonEncode(entries));
+    return;
+  }
   final origins = <String, String>{};
   for (final String path in request.originMaps) {
     origins.addAll(_readStringMap(path));

@@ -16,19 +16,26 @@ String write(String name, Object json) {
   return path;
 }
 
+const SourceDir _dir = SourceDir(
+  path: 'bazel-out/k8/bin/p/set',
+  shortPath: 'p/set',
+  packageName: 'pkg',
+);
+
 void main() {
   setUp(() => tmp = Directory.systemTemp.createTempSync('coverage_map_'));
   tearDown(() => tmp.deleteSync(recursive: true));
 
-  const dir = SourceDir(
-    path: 'bazel-out/k8/bin/p/set',
-    shortPath: 'p/set',
-    packageName: 'pkg',
-  );
+  _testExpandDirectories();
+  _testWriteCoverageMap();
+  _testPlainEntries();
+  _testPathNormalization();
+}
 
+void _testExpandDirectories() {
   test('maps a staged file to its origin under every URI', () {
     final Map<String, String> entries = expandDirectories(
-      dirs: [dir],
+      dirs: [_dir],
       files: [
         const MemberFile(
           path: 'bazel-out/k8/bin/p/set/lib/a.dart',
@@ -46,7 +53,7 @@ void main() {
 
   test('a file with no origin maps to its own exec path', () {
     final Map<String, String> entries = expandDirectories(
-      dirs: [dir],
+      dirs: [_dir],
       files: [
         const MemberFile(
           path: 'bazel-out/k8/bin/p/set/tool/t.dart',
@@ -64,14 +71,16 @@ void main() {
   test('a file in no listed directory is an error', () {
     expect(
       () => expandDirectories(
-        dirs: [dir],
+        dirs: [_dir],
         files: [const MemberFile(path: 'x/y.dart', shortPath: 'x/y.dart')],
         origins: {},
       ),
       throwsA(isA<CoverageMapError>()),
     );
   });
+}
 
+void _testWriteCoverageMap() {
   test('writeCoverageMap merges plain files, origins and members', () {
     final out = '${tmp.path}/out.json';
     writeCoverageMap([
@@ -83,7 +92,7 @@ void main() {
       '--package',
       'pkg',
       'p/set/lib/',
-      dir.shortPath,
+      _dir.shortPath,
       '--file',
       'o/lib/o.dart',
       'o/lib/o.dart',
@@ -92,8 +101,8 @@ void main() {
         'bazel-out/k8/bin/p/set/lib/g.dart': 'bazel-out/k8/bin/p/lib/g.dart',
       }),
       '--dir',
-      dir.path,
-      dir.shortPath,
+      _dir.path,
+      _dir.shortPath,
       '--file',
       'bazel-out/k8/bin/p/set/lib/g.dart',
       'p/set/lib/g.dart',
@@ -115,10 +124,10 @@ void main() {
       '--package',
       'pkg',
       'p/set/lib/',
-      dir.shortPath,
+      _dir.shortPath,
       '--dir',
-      dir.path,
-      dir.shortPath,
+      _dir.path,
+      _dir.shortPath,
       '--file',
       'z/lib/b.dart',
       'z/lib/b.dart',
@@ -139,7 +148,9 @@ void main() {
       '"package:pkg/c.dart":"bazel-out/k8/bin/p/set/lib/c.dart"}',
     );
   });
+}
 
+void _testPlainEntries() {
   test('plainEntries maps a file under its deepest package lib', () {
     final Map<String, String> entries = plainEntries(
       packages: [
@@ -183,4 +194,56 @@ void main() {
       throwsA(isA<CoverageMapError>()),
     );
   });
+
+  test(
+    'writeCoverageMap writes empty JSON object when no Dart sources exist',
+    () {
+      final out = '${tmp.path}/empty.json';
+      writeCoverageMap([out, '--package', 'pkg', 'p/lib/', 'p']);
+      expect(File(out).readAsStringSync(), '{}');
+    },
+  );
+}
+
+void _testPathNormalization() {
+  test(
+    'normalizes Windows backslash separators in plain and directory sources',
+    () {
+      final out = '${tmp.path}/win.json';
+      writeCoverageMap([
+        out,
+        '--package',
+        'o',
+        'o/lib/',
+        'o',
+        '--package',
+        'pkg',
+        'p/set/lib/',
+        'p/set',
+        '--origin-map',
+        write('win_origins.json', {
+          r'bazel-out\x64_windows-fastbuild\bin\p\set\lib\g.dart':
+              r'p\lib\g.dart',
+        }),
+        '--dir',
+        r'bazel-out\x64_windows-fastbuild\bin\p\set',
+        r'p\set',
+        '--file',
+        r'o\lib\o.dart',
+        r'o\lib\o.dart',
+        '--file',
+        r'bazel-out\x64_windows-fastbuild\bin\p\set\lib\g.dart',
+        r'p\set\lib\g.dart',
+      ]);
+      final map =
+          jsonDecode(File(out).readAsStringSync()) as Map<String, dynamic>;
+      expect(map, {
+        'org-dartlang-root:///o/lib/o.dart': 'o/lib/o.dart',
+        'package:o/o.dart': 'o/lib/o.dart',
+        'org-dartlang-root:///p/set/lib/g.dart': 'p/lib/g.dart',
+        'package:pkg/g.dart': 'p/lib/g.dart',
+        'bazel-out/x64_windows-fastbuild/bin/p/set/lib/g.dart': 'p/lib/g.dart',
+      });
+    },
+  );
 }
