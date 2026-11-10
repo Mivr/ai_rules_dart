@@ -39,7 +39,12 @@ load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "execu
 load("//dart/private:kernel_params.bzl", "kernel_compile_settings")
 load("//dart/private:package_files.bzl", "collect_transitive_package_files")
 load("//dart/private:source_set.bzl", "executable_inputs")
-load("//dart/private/tools:compile_wrapper.bzl", "COMPILE_WRAPPER_ATTRS", "compile_wrapper_inputs", "import_check_unless_wrapper")
+load(
+    "//dart/private/tools:compile_wrapper.bzl",
+    "COMPILE_WRAPPER_ATTRS",
+    "compile_wrapper_inputs",
+    "import_check_unless_wrapper",
+)
 
 visibility(["//dart/..."])
 
