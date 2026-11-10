@@ -223,7 +223,6 @@ dart_test(
         "//dart/private/tools:fix_runner",
         "//dart/private/tools:format_runner",
         "//dart/private/tools:web_compile_runner",
-        "@dart_toolchains//sdk/3.13.5:compile_files",
     ],
     main = "worker_hardening_test.dart",
     deps = [
