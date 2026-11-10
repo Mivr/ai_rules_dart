@@ -1,3 +1,4 @@
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("//dart:defs.bzl", "dart_binary", "dart_library", "dart_test")
 load("//dart/private:dart_test.bzl", "dart_test_kernel")
 load("//dart/private:dart_test_runner.bzl", "dart_test_runner_main")
@@ -587,6 +588,40 @@ dart_binary(
     # must stay the executable rather than gaining a `bazel run` launcher.
     snapshot_launcher = False,
     visibility = ["//visibility:public"],
+)
+
+# The compile wrapper (`app_jit_snapshot.dart`) as an AOT snapshot, run by
+# `dartaotruntime` in the `exe`, `aot-snapshot` and `gen_kernel` actions of
+# every `dart_binary` (see `compile_wrapper.bzl`). Built like `kernel_module`:
+# compiled once, never per app. It cannot be built through its own snapshot,
+# so `use_compile_wrapper = False` compiles it with the tool run from source,
+# as the `jit-snapshot` mode does. Its sources stay out of every app's inputs.
+dart_binary(
+    name = "compile_wrapper",
+    srcs = [
+        "app_jit_aot_args.dart",
+        "comma_patch.dart",
+        "dill_reader.dart",
+        "jit_lock.dart",
+        "jit_policy.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    code_assets_from_deps = False,
+    compile_mode = "aot-snapshot",
+    main = "app_jit_snapshot.dart",
+    modular_kernel = False,
+    # Run by `dartaotruntime` as a raw snapshot, like `kernel_module`.
+    snapshot_launcher = False,
+    use_compile_wrapper = False,
+    visibility = ["//dart:__subpackages__"],
+)
+
+# The launch of the compile wrapper, loaded by `dart_binary.bzl` and `dart_compile.bzl`.
+bzl_library(
+    name = "compile_wrapper_bzl",
+    srcs = ["compile_wrapper.bzl"],
+    visibility = ["//visibility:public"],
+    deps = ["//dart/private:dart_import_check"],
 )
 
 exports_files(

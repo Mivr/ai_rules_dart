@@ -161,3 +161,35 @@ void checkAotCrossRequirements(
     exit(64);
   }
 }
+
+/// Runs `gen_snapshot` over [activeDill] into [elfPath], returning its exit
+/// code (echoing a failed run's output, as the caller fails the action with
+/// that code).
+int runGenSnapshotElf({
+  required String genSnapshot,
+  required String elfPath,
+  required bool enableAsserts,
+  required List<String> extraGenSnapshotOptions,
+  required String activeDill,
+  required Map<String, String> homeEnv,
+}) {
+  final ProcessResult gsRes = Process.runSync(
+    genSnapshot,
+    [
+      '--deterministic',
+      '--snapshot_kind=app-aot-elf',
+      '--elf=$elfPath',
+      if (enableAsserts) '--enable_asserts',
+      ...extraGenSnapshotOptions,
+      activeDill,
+    ],
+    environment: homeEnv,
+    includeParentEnvironment: false,
+  );
+  if (gsRes.exitCode != 0) {
+    stdout.write(gsRes.stdout as String);
+    stderr.write(gsRes.stderr as String);
+    return gsRes.exitCode;
+  }
+  return 0;
+}

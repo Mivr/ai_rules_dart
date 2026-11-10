@@ -159,10 +159,13 @@ def _patch_action_dartvm_test_impl(ctx):
         "the wrapper's executable %s is a declared input: %s" % (runner, input_basenames),
     )
     if "dartvm" in input_basenames or "dartvm.exe" in input_basenames:
+        # The prebuilt AOT wrapper runs under `dartaotruntime`; run from
+        # source it runs under `dartvm`. Neither is the `dart` launcher.
+        direct = ("dartaotruntime", "dartaotruntime.exe") if action.argv[1].endswith(".aot") else ("dartvm", "dartvm.exe")
         asserts.true(
             env,
-            runner in ("dartvm", "dartvm.exe"),
-            "with dartvm declared, the wrapper runs it directly " +
+            runner in direct,
+            "with dartvm declared, the wrapper runs its runtime directly " +
             "instead of the dart launcher: %s" % action.argv,
         )
     return analysistest.end(env)

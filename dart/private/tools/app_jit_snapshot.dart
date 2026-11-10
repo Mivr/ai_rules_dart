@@ -1556,38 +1556,6 @@ void _runAotViaDartCompile(_AotPlan plan) {
   return (dill: recordedDill, exitCode: 0);
 }
 
-/// Runs `gen_snapshot` over [activeDill] into [elfPath], returning its exit
-/// code (echoing a failed run's output, as the caller fails the action with
-/// that code).
-int _runGenSnapshotElf({
-  required String genSnapshot,
-  required String elfPath,
-  required bool enableAsserts,
-  required List<String> extraGenSnapshotOptions,
-  required String activeDill,
-  required Map<String, String> homeEnv,
-}) {
-  final ProcessResult gsRes = Process.runSync(
-    genSnapshot,
-    [
-      '--deterministic',
-      '--snapshot_kind=app-aot-elf',
-      '--elf=$elfPath',
-      if (enableAsserts) '--enable_asserts',
-      ...extraGenSnapshotOptions,
-      activeDill,
-    ],
-    environment: homeEnv,
-    includeParentEnvironment: false,
-  );
-  if (gsRes.exitCode != 0) {
-    stdout.write(gsRes.stdout as String);
-    stderr.write(gsRes.stderr as String);
-    return gsRes.exitCode;
-  }
-  return 0;
-}
-
 /// Compiles a pre-built kernel `.dill` to an AOT snapshot or executable (see
 /// the section comment above [AotArgs]).
 void _runAot(List<String> argv) {
@@ -1733,7 +1701,7 @@ int _snapshotElfAndLink({
   required String activeDill,
   required Map<String, String> homeEnv,
 }) {
-  final int gsExitCode = _runGenSnapshotElf(
+  final int gsExitCode = runGenSnapshotElf(
     genSnapshot: plan.genSnapshot,
     elfPath: elfPath,
     enableAsserts: plan.args.enableAsserts,
@@ -1955,19 +1923,20 @@ String _normFsPath(String path) =>
 /// ([_resolveKeyRelativeTarget] over [_stableSourceKey]): the front end finds
 /// each key where it is, so a generated sibling in `bazel-out` staged beside a
 /// source-tree importer reads a declared input, not the host.
+///
+/// Each source is read exactly once, through [readSource], and the same
+/// contents serve both the declared-input sets and the directive scan.
 List<String> _findDisallowedGenKernelDirectives(
   List<String> sources,
-  List<String> fsRoots,
-) {
+  List<String> fsRoots, {
+  Uint8List Function(String path) readSource = _readFileBytes,
+}) {
   final contents = <String, String>{};
   for (final path in sources) {
     try {
       // Malformed sequences become U+FFFD, never a skipped file: gen_kernel
       // accepts the file, so the guard scans what it can.
-      contents[path] = utf8.decode(
-        File(path).readAsBytesSync(),
-        allowMalformed: true,
-      );
+      contents[path] = utf8.decode(readSource(path), allowMalformed: true);
     } on FileSystemException {
       // Missing or unreadable here; gen_kernel reports it.
     }
@@ -2005,6 +1974,21 @@ List<String> _findDisallowedGenKernelDirectives(
   }
   return errors;
 }
+
+/// The shape of the directive scan: the sources, the filesystem roots, and the
+/// reader the tests replace to count the reads.
+typedef DirectiveScan = List<String> Function(
+  List<String> sources,
+  List<String> fsRoots, {
+  Uint8List Function(String path) readSource,
+});
+
+/// The scan [_runGenKernel] runs, named so the tests can call it.
+const DirectiveScan scanGenKernelDirectives =
+    _findDisallowedGenKernelDirectives;
+
+// The bytes of the file at [path]: the default reader of the guards.
+Uint8List _readFileBytes(String path) => File(path).readAsBytesSync();
 
 // The refusal message for one directive reference naming an undeclared input,
 // or null when the reference is allowed.
@@ -2752,14 +2736,12 @@ void _rejectDisallowedDirectives(
   List<String> declaredInputSources,
   List<String> fsRoots,
 ) {
-  final List<String> disallowedDirectives = _findDisallowedGenKernelDirectives(
+  final List<String> disallowedDirectives = scanGenKernelDirectives(
     declaredInputSources,
     fsRoots,
   );
   if (disallowedDirectives.isNotEmpty) {
-    for (final error in disallowedDirectives) {
-      stderr.writeln(error);
-    }
+    disallowedDirectives.forEach(stderr.writeln);
     exit(1);
   }
 }

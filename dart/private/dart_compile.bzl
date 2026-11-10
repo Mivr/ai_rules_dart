@@ -13,6 +13,11 @@ load(
     "stable_entry_path",
     "writable_home_env",
 )
+load(
+    "//dart/private/tools:compile_wrapper.bzl",
+    "wrapper_launch",
+    _jit_tool_entry = "jit_tool_entry",
+)
 
 visibility(["//dart/..."])
 
@@ -174,23 +179,9 @@ def has_comma_define_flag(flags):
             return True
     return False
 
-def jit_tool_entry(jit_tool_files):
-    """The entry source of the JIT tool bundle.
-
-    The `_jit_tool` attribute carries every source the tool imports, and the
-    actions stage them all beside each other so the entry's relative imports
-    resolve; the entry itself is picked by basename.
-
-    Args:
-        jit_tool_files: Every source file of the `_jit_tool` bundle, in the order the attribute lists them.
-
-    Returns:
-        The `app_jit_snapshot.dart` entry File.
-    """
-    for f in jit_tool_files:
-        if f.basename == "app_jit_snapshot.dart":
-            return f
-    fail("dart_compile_action: the `_jit_tool` bundle names no `app_jit_snapshot.dart` entry")
+# The entry of the JIT tool bundle (see `compile_wrapper.bzl`), also loaded by
+# `dart_test_runner.bzl` from here.
+jit_tool_entry = _jit_tool_entry
 
 def _jit_snapshot_action(ctx, dart_sdk_info, st, main):
     """Trains the app-JIT snapshot of a kernel at its keyed absolute path.
@@ -368,9 +359,13 @@ def _kernel_front_args(ctx, dart_sdk_info, st, aot, enable_asserts, extra_flags,
 def _kernel_run_wrapper(ctx, dart_sdk_info, st, tools, args, outputs, gen_snapshot, comma_sources):
     """Runs `gen_kernel` through the isolated-filesystem wrapper."""
     dartvm = sdk_dartvm(dart_sdk_info)
-    wrapper_args = ctx.actions.args()
-    wrapper_args.add(st.package_config, format = "--packages=%s")
-    wrapper_args.add(jit_tool_entry(st.jit_tool))
+    launch = wrapper_launch(
+        ctx,
+        st,
+        dartvm if dartvm != None else dart_sdk_info.dart,
+        tools.dartaotruntime,
+    )
+    wrapper_args = launch.args
     wrapper_args.add("--gen-kernel")
     wrapper_args.add(tools.dartaotruntime)
     if comma_sources:
@@ -385,20 +380,14 @@ def _kernel_run_wrapper(ctx, dart_sdk_info, st, tools, args, outputs, gen_snapsh
     direct = [st.main, st.package_config] + st.srcs
     if st.native_assets_yaml != None:
         direct.append(st.native_assets_yaml)
-    direct.extend(st.jit_tool)
-    if st.comma_patch != None:
-        direct.append(st.comma_patch)
+    direct.extend(launch.inputs)
     if gen_snapshot != None:
         # The patched snapshot lives in `bazel-out`, outside the SDK file
         # sets, so it is declared explicitly. Builds without comma defines
         # never take it and never run the action that produces it.
         direct.append(gen_snapshot)
-    if dartvm != None:
-        direct.append(dartvm)
-    else:
-        direct.append(dart_sdk_info.dart)
     ctx.actions.run(
-        executable = dartvm if dartvm != None else dart_sdk_info.dart,
+        executable = launch.executable,
         arguments = [wrapper_args, input_srcs_args, args],
         inputs = depset(
             direct = direct,
@@ -651,13 +640,8 @@ def _compile_aot_wrapper(ctx, dart_sdk_info, st, compile_main, compile_main_path
     if st.compile_mode not in ("exe", "aot-snapshot", "jit-snapshot") or not st.jit_tool or compile_main_path != None:
         return False
     dart_bin = dart_sdk_info.dart
-    pkg_cfg = st.package_config
-    if pkg_cfg == None:
-        pkg_cfg = ctx.actions.declare_file(st.output.basename + ".aot_package_config.json")
-        ctx.actions.write(output = pkg_cfg, content = "{\"configVersion\": 2, \"packages\": []}\n")
-    args = ctx.actions.args()
-    args.add(pkg_cfg, format = "--packages=%s")
-    args.add(jit_tool_entry(st.jit_tool))
+    launch = wrapper_launch(ctx, st, dart_bin, find_sdk_kernel_tools(dart_sdk_info).dartaotruntime)
+    args = launch.args
     args.add("--aot")
     args.add(dart_bin, format = "--dart=%s")
     args.add(st.compile_mode, format = "--mode=%s")
@@ -673,15 +657,13 @@ def _compile_aot_wrapper(ctx, dart_sdk_info, st, compile_main, compile_main_path
     outputs = _compile_common_args(args, st)
     args.add("-o", st.output)
     args.add(compile_main)
-    direct_inputs = st.jit_tool + [pkg_cfg, compile_main] + compile_srcs
-    if st.comma_patch != None:
-        direct_inputs.append(st.comma_patch)
+    direct_inputs = launch.inputs + [compile_main] + compile_srcs
     if st.cross_gen_snapshot != None:
         direct_inputs.append(st.cross_gen_snapshot)
     if st.cross_dartaotruntime != None:
         direct_inputs.append(st.cross_dartaotruntime)
     ctx.actions.run(
-        executable = dart_bin,
+        executable = launch.executable,
         arguments = [args],
         inputs = depset(
             direct = direct_inputs,
@@ -770,6 +752,7 @@ def _compile_state(ctx, dart_sdk_info, cfg, front_end_flags, backend_flags, tool
         recorded_uses = cfg.recorded_uses,
         debug_info = getattr(cfg, "debug_info", None),
         jit_tool = cfg.jit_tool,
+        compile_wrapper = None if cfg.compile_mode == "jit-snapshot" else getattr(cfg, "compile_wrapper", None),
         comma_patch = cfg.comma_patch,
         native_assets_yaml = cfg.native_assets_yaml,
         embed_sources = cfg.embed_sources,
@@ -832,7 +815,12 @@ def dart_compile_action(ctx, dart_sdk_info, cfg, toolchain_type = None):
             source it imports. The `jit-snapshot` mode trains with the entry
             when given, so the snapshot is reproducible; without it, and on
             a Windows host, the mode uses `dart compile jit-snapshot`, so the
-            snapshot keeps the sandbox path. `comma_patch` is the
+            snapshot keeps the sandbox path. `compile_wrapper` is the
+            optional prebuilt AOT snapshot of that tool: every mode but
+            `jit-snapshot` then runs the wrapper as that snapshot under the
+            SDK's `dartaotruntime`, not from source (the sources then stay
+            out of the action inputs); absent, the tool runs from source as
+            before. `comma_patch` is the
             `comma_patch.dart` File the tool imports, staged beside it in
             every action that runs it from source; required whenever
             `jit_tool` is passed. `native_assets_yaml` is the optional

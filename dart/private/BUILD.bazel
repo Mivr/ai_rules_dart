@@ -199,6 +199,7 @@ bzl_library(
         ":package_files",
         ":source_set",
         "//dart:providers",
+        "//dart/private/tools:compile_wrapper_bzl",
         "@bazel_skylib//rules:common_settings",
     ],
 )
@@ -232,6 +233,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":common",
+        "//dart/private/tools:compile_wrapper_bzl",
         "@bazel_skylib//rules:common_settings",
     ],
 )

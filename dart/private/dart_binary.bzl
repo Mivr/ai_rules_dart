@@ -22,7 +22,6 @@ load(
     "//dart/private:dart_import_check.bzl",
     "dart_import_check_aspect",
     "executable_import_check",
-    "import_check_for_binary",
 )
 load(
     "//dart/private:dart_kernel.bzl",
@@ -40,6 +39,7 @@ load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "execu
 load("//dart/private:kernel_params.bzl", "kernel_compile_settings")
 load("//dart/private:package_files.bzl", "collect_transitive_package_files")
 load("//dart/private:source_set.bzl", "executable_inputs")
+load("//dart/private/tools:compile_wrapper.bzl", "COMPILE_WRAPPER_ATTRS", "compile_wrapper_inputs", "import_check_unless_wrapper")
 
 visibility(["//dart/..."])
 
@@ -166,6 +166,7 @@ def _binary_source_compile(ctx, dart_sdk_info, own, packages, output, compile_mo
         )
 
     # Run dart compile
+    wrapper = compile_wrapper_inputs(ctx)
     dart_compile_action(
         ctx = ctx,
         dart_sdk_info = dart_sdk_info,
@@ -182,8 +183,9 @@ def _binary_source_compile(ctx, dart_sdk_info, own, packages, output, compile_mo
             main_path = main_arg,
             recorded_uses = optional_outputs.recorded_uses,
             debug_info = optional_outputs.debug_info,
-            jit_tool = ctx.files._jit_tool,
-            comma_patch = ctx.file._comma_patch,
+            jit_tool = wrapper.jit_tool,
+            comma_patch = wrapper.comma_patch,
+            compile_wrapper = wrapper.compile_wrapper,
             native_assets_yaml = native_assets_yaml,
             embed_sources = DartTestRunnerMainInfo not in ctx.attr.main,
             jit_snapshot_fallback = ctx.attr._jit_snapshot_fallback[BuildSettingInfo].value,
@@ -625,7 +627,7 @@ _binary_code_assets_transition = transition(
 # The attributes `dart_binary` shares with the other executable rules, merged into one dict.
 _SHARED_BINARY_ATTRS = dict(
     DART_ABI_CONSTRAINT_ATTRS,
-    **dict(EXTRA_DART_DEFINES_ATTR, **dict(EXECUTABLE_PACKAGE_ATTRS, **BINARY_MODULAR_KERNEL_ATTRS))
+    **dict(COMPILE_WRAPPER_ATTRS, **dict(EXTRA_DART_DEFINES_ATTR, **dict(EXECUTABLE_PACKAGE_ATTRS, **BINARY_MODULAR_KERNEL_ATTRS)))
 )
 
 dart_binary = rule(
@@ -648,7 +650,7 @@ dart_binary = rule(
         ),
         "_import_check": attr.label(
             doc = "The tool that checks this binary's imports against its direct `deps` (see the `dart_layering_check` feature). `None` for the tool itself, which cannot name itself.",
-            default = import_check_for_binary,
+            default = import_check_unless_wrapper,
             executable = True,
             cfg = "exec",
         ),
@@ -701,16 +703,6 @@ Each flag goes to the stage that consumes it. A source entrypoint is first compi
 - `--enable-asserts`
 
 Every other flag goes to `dart compile`. In the `kernel` mode, setting `dart_compile_flags` opts out of modular kernel compilation and passes all flags to `gen_kernel`. For a pre-built kernel, all flags go to `dart compile`. The `jit-snapshot` mode takes no `dart compile` flags, so any other flag there is an error. A comma-containing `-D`/`--define` value takes the same comma-safe path as `defines`: the compile runs the toolchain's patched `gen_kernel` snapshot.""",
-        ),
-        "_jit_tool": attr.label(
-            doc = "Every source the JIT tool imports, staged beside its entry in the actions that run it from source.",
-            default = "//dart/private/tools:jit_tool_srcs",
-            allow_files = True,
-        ),
-        "_comma_patch": attr.label(
-            doc = "The `comma_patch.dart` source staged beside the JIT tool's entry so comma-containing `-D` values survive the front end. Defaults to `//dart/private/tools:comma_patch.dart`.",
-            default = "//dart/private/tools:comma_patch.dart",
-            allow_single_file = True,
         ),
         "_jit_snapshot_fallback": attr.label(
             doc = "Whether `--fallback-allowed` is passed when the keyed training path is unavailable.",

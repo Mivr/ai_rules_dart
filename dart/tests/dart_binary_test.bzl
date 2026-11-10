@@ -386,10 +386,18 @@ def dart_binary_test_suite(name):
         size = "small",
         target_under_test = ":jit_snapshot_fixture",
     )
+    dart_binary(
+        name = "kernel_wrapper_source_fixture",
+        compile_mode = "jit-snapshot",
+        main = "//dart/private/tools:noop.dart",
+        tags = ["manual"],
+    )
     _script_action_packages_test(
         name = "dart_kernel_wrapper_packages_test",
         size = "small",
-        target_under_test = "//dart/private/tools:noop",
+        # The wrapper's `gen_kernel` step runs from source in `jit-snapshot`
+        # mode only: `exe` and `aot-snapshot` run its AOT snapshot.
+        target_under_test = ":kernel_wrapper_source_fixture",
     )
     dart_test_kernel(
         name = "test_runner_training_fixture",
