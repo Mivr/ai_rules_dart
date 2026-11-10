@@ -200,6 +200,7 @@ bzl_library(
     srcs = ["dart_binary.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        ":binary_compile",
         ":build_settings",
         ":common",
         ":dart_compile",
@@ -207,9 +208,7 @@ bzl_library(
         ":dart_kernel",
         ":dart_test_runner",
         ":executable_package",
-        ":kernel_params",
         ":package_files",
-        ":source_set",
         "//dart:providers",
         "//dart/private/tools:compile_wrapper_bzl",
         "@bazel_skylib//rules:common_settings",
@@ -245,6 +244,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":common",
+        ":kernel_front_end",
         "//dart/private/tools:compile_wrapper_bzl",
         "@bazel_skylib//rules:common_settings",
     ],
@@ -306,10 +306,44 @@ bzl_library(
         ":build_settings",
         ":common",
         ":dart_info",
+        ":kernel_exec_link",
         ":kernel_library_state",
         ":kernel_params",
         "//dart:providers",
         "@bazel_skylib//rules:common_settings",
+    ],
+)
+
+bzl_library(
+    name = "binary_compile",
+    srcs = ["binary_compile.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":build_settings",
+        ":common",
+        ":dart_compile",
+        ":dart_kernel",
+        ":dart_test_runner",
+        ":kernel_params",
+        ":source_set",
+        "//dart/private/tools:compile_wrapper_bzl",
+        "@bazel_skylib//rules:common_settings",
+    ],
+)
+
+bzl_library(
+    name = "kernel_exec_link",
+    srcs = ["kernel_exec_link.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "kernel_front_end",
+    srcs = ["kernel_front_end.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        "//dart/private/tools:compile_wrapper_bzl",
     ],
 )
 

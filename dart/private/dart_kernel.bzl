@@ -57,6 +57,7 @@ load(
     "writable_home_env",
 )
 load("//dart/private:dart_info.bzl", "package_lib_prefix")
+load("//dart/private:kernel_exec_link.bzl", "exec_base_dill", "exec_link_closure")
 load(
     "//dart/private:kernel_library_state.bzl",
     "DartKernelCycleInfo",
@@ -99,19 +100,20 @@ EXEC_TOOLS_TOOLCHAIN = Label("//dart:exec_tools_toolchain_type")
 DartKernelInfo = _DartKernelInfo
 
 def _kernel_module_for_mode(compile_mode, modular_kernel):
-    if compile_mode == "kernel" and modular_kernel:
+    if compile_mode in ("kernel", "exe", "aot-snapshot") and modular_kernel:
         return Label("//dart/private/tools:kernel_module")
     return None
 
 def _kernel_link_for_mode(compile_mode, modular_kernel):
-    if compile_mode == "kernel" and modular_kernel:
+    if compile_mode in ("kernel", "exe", "aot-snapshot") and modular_kernel:
         return Label("//dart/private/tools:kernel_link")
     return None
 
 # The build setting and the module compiler. `dart_library` takes these (its
 # module), `dart_test` takes `MODULAR_KERNEL_ATTRS`, and `dart_binary` takes
-# `BINARY_MODULAR_KERNEL_ATTRS` (which resolves the tools only for `kernel` mode,
-# so an `exe` tool like `kernel_module` or `kernel_link` never depends on itself).
+# `BINARY_MODULAR_KERNEL_ATTRS` (which resolves the tools only for the modes that
+# link modules, `kernel`, `exe` and `aot-snapshot`, and only when `modular_kernel`
+# is on: the tools set it to `False`, so none depends on itself).
 #
 # `kernel_module` is a `dart_binary` with no pub dependencies, so it reaches no
 # `dart_library` and no cycle is possible.
@@ -140,17 +142,17 @@ MODULAR_KERNEL_ATTRS = dict(KERNEL_MODULE_ATTRS)
 BINARY_MODULAR_KERNEL_ATTRS = {
     "modular_kernel": attr.bool(
         default = True,
-        doc = "Whether `compile_mode = \"kernel\"` compiles modularly against dependency `.kmod` outputs when eligible. Enabled (`True`) by default (including for `package:test`'s `test_runner`); set `modular_kernel = False` or `--@rules_dart//dart:modular_kernel=false` for whole-program compilation.",
+        doc = "Whether `compile_mode = \"kernel\"` compiles modularly against dependency `.kmod` outputs when eligible, and whether `exe` and `aot-snapshot` take the linked modules, not sources, as the front end's input (see `compile_mode`). Enabled (`True`) by default (including for `package:test`'s `test_runner`); set `modular_kernel = False` or `--@rules_dart//dart:modular_kernel=false` for whole-program compilation.",
     ),
     "_modular_kernel": KERNEL_MODULE_ATTRS["_modular_kernel"],
     "_kernel_module": attr.label(
-        doc = "The tool that compiles one module with `kernel_worker`, when `compile_mode` is `kernel`.",
+        doc = "The tool that compiles one module with `kernel_worker`, when `compile_mode` is `kernel`, `exe` or `aot-snapshot`.",
         default = _kernel_module_for_mode,
         executable = True,
         cfg = "exec",
     ),
     "_kernel_link": attr.label(
-        doc = "The tool that links an executable's kernel from the kernels its entry reaches, when `compile_mode` is `kernel`.",
+        doc = "The tool that links an executable's kernel from the kernels its entry reaches, when `compile_mode` is `kernel`, `exe` or `aot-snapshot`.",
         default = _kernel_link_for_mode,
         executable = True,
         cfg = "exec",
@@ -1199,34 +1201,6 @@ def _exec_entry_inputs(ctx, dep_kernels, packages, sources):
     )
     return dep_closure, dep_outline_closure, cross_pkg_srcs
 
-def _exec_base_dill(dep_kernels):
-    """Finds the shared base dill among dependencies. Returns (base_dill, base_keys, base_kmods)."""
-    base_dill = None
-    base_keys = None
-    base_kmods = depset()
-    for k in dep_kernels:
-        kd = getattr(k, "base_dill", None)
-        kk = getattr(k, "base_keys", None)
-        if kd != None and kk != None:
-            if base_dill == None:
-                base_dill = kd
-                base_keys = kk
-                base_kmods = getattr(k, "base_kmods", depset())
-                break
-    return base_dill, base_keys, base_kmods
-
-def _exec_link_closure(dep_closure, base_dill, base_keys, base_kmods):
-    """Returns the dependency closure pruned of base-dill modules, when seeded."""
-    if base_dill == None or base_keys == None:
-        return dep_closure
-    pruned_paths = {f.path: True for f in base_kmods.to_list()}
-    if not pruned_paths:
-        return dep_closure
-    return depset(
-        [f for f in dep_closure.to_list() if f.path not in pruned_paths],
-        order = "postorder",
-    )
-
 def modular_executable_kernel(
         ctx,
         tools,
@@ -1235,7 +1209,8 @@ def modular_executable_kernel(
         dep_kernels,
         output,
         compile,
-        use_base_dill = False):
+        use_base_dill = False,
+        platform_dill = None):
     """Compiles an executable's entry module, then links it to `output`.
 
     The entry compiles from source whatever it reaches that no dependency module
@@ -1253,6 +1228,8 @@ def modular_executable_kernel(
         target, platform, libraries, scheme, and extra flags.
       use_base_dill: When True, links `output` as a delta against any shared
         `base_dill`/`base_keys` provided in `dep_kernels` and returns `base_dill`.
+      platform_dill: Optional platform `.dill` File the link prepends to `output`,
+        so `output` is a whole program a front end can load with `--from-dill`.
 
     Returns:
       The shared `base_dill` File if `use_base_dill` is True and a dependency
@@ -1287,9 +1264,9 @@ def modular_executable_kernel(
     base_keys = None
     base_kmods = depset()
     if use_base_dill:
-        base_dill, base_keys, base_kmods = _exec_base_dill(dep_kernels)
-    link_dep_closure = _exec_link_closure(dep_closure, base_dill, base_keys, base_kmods)
-    kernel_link_action(ctx, link_dep_closure, entry, output, base_keys = base_keys)
+        base_dill, base_keys, base_kmods = exec_base_dill(dep_kernels)
+    link_dep_closure = exec_link_closure(dep_closure, base_dill, base_keys, base_kmods)
+    kernel_link_action(ctx, link_dep_closure, entry, output, base_keys = base_keys, platform_dill = platform_dill)
     return base_dill
 
 _TEST_API_BASE_PACKAGES = {

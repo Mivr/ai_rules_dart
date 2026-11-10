@@ -73,6 +73,8 @@ def compile_wrapper_test_suite(name):
             name = fixture,
             compile_mode = mode,
             main = "//dart/private/tools:noop.dart",
+            # The wrapper runs the source path's front end; a modular build links kernels instead.
+            modular_kernel = False,
             tags = ["manual"],
         )
         test = "compile_wrapper_%s_test" % mode.replace("-", "_")
