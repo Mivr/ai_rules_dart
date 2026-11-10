@@ -234,18 +234,15 @@ void main(List<String> args) {
         );
 
         final linkedDill = '${tmp.path}/out/app.dill';
-        final ProcessResult linkRes = await Process.run(
-          Platform.resolvedExecutable,
-          [
-            kernelLinkBin,
-            linkedDill,
-            '${tmp.path}/out/entry.kmod',
-            '${tmp.path}/out/leaf.kmod',
-            '${tmp.path}/out/a_base.kmod',
-            '${tmp.path}/out/b.kmod',
-            '${tmp.path}/out/a_top.kmod',
-          ],
-        );
+        final ProcessResult linkRes = await Process.run(dartaotruntime, [
+          kernelLinkBin,
+          linkedDill,
+          '${tmp.path}/out/entry.kmod',
+          '${tmp.path}/out/leaf.kmod',
+          '${tmp.path}/out/a_base.kmod',
+          '${tmp.path}/out/b.kmod',
+          '${tmp.path}/out/a_top.kmod',
+        ]);
         expect(
           linkRes.exitCode,
           0,

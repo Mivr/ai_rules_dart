@@ -275,18 +275,15 @@ void main(List<String> args) {
         expect(rEntry.exitCode, 0, reason: '${rEntry.stderr}');
 
         final linkedDill = '${outDir.path}/app.dill';
-        final ProcessResult linkRes = await Process.run(
-          Platform.resolvedExecutable,
-          [
-            kernelLinkBin,
-            linkedDill,
-            '${outDir.path}/entry.kmod',
-            '${outDir.path}/parent_lib.kmod',
-            '${outDir.path}/part_lib.kmod',
-            '${outDir.path}/rev_part_lib.kmod',
-            '${outDir.path}/rev_parent_lib.kmod',
-          ],
-        );
+        final ProcessResult linkRes = await Process.run(dartaotruntime, [
+          kernelLinkBin,
+          linkedDill,
+          '${outDir.path}/entry.kmod',
+          '${outDir.path}/parent_lib.kmod',
+          '${outDir.path}/part_lib.kmod',
+          '${outDir.path}/rev_part_lib.kmod',
+          '${outDir.path}/rev_parent_lib.kmod',
+        ]);
         expect(
           linkRes.exitCode,
           0,
