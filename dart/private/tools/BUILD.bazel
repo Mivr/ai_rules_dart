@@ -237,6 +237,32 @@ dart_binary(
     ],
 )
 
+# The kernel form `analyzer_summary` had before it became an AOT snapshot, for
+# `aot_tools_parity_test`.
+dart_binary(
+    name = "analyzer_summary_reference",
+    srcs = [
+        "analysis_baseline.dart",
+        "analysis_model.dart",
+        "analyzer_summary_lints.dart",
+        "baseline_json.dart",
+    ],
+    code_assets_from_deps = False,
+    compile_mode = "kernel",
+    main = "analyzer_summary.dart",
+    modular_kernel = False,
+    visibility = ["//dart/tests:__pkg__"],
+    deps = [
+        ":worker_protocol",
+        ":worker_tool_fs",
+        "//dart/guard:directive_guard",
+        "//dart/lints:rules_dart_project_lints",
+        "//third_party/dart_linter:linter",
+        "@ext_pub_deps//:analyzer",
+        "@ext_pub_deps//:path",
+    ],
+)
+
 dart_binary(
     name = "fix_runner",
     srcs = [
@@ -535,6 +561,18 @@ dart_binary(
     # Run by `dartaotruntime` on the raw snapshot (see `aot_tool.bzl`).
     snapshot_launcher = False,
     visibility = ["//visibility:public"],
+)
+
+# The kernel form `kernel_link` had before it became an AOT snapshot. Only
+# `aot_tools_parity_test` uses it, to compare the two forms' output bytes.
+dart_binary(
+    name = "kernel_link_reference",
+    srcs = ["lib/worker_protocol.dart"],
+    code_assets_from_deps = False,
+    compile_mode = "kernel",
+    main = "kernel_link.dart",
+    modular_kernel = False,
+    visibility = ["//dart/tests:__pkg__"],
 )
 
 # The `kernel_link` persistent worker's top-level error handler.

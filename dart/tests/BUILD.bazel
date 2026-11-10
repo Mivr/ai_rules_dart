@@ -15,6 +15,7 @@ load("//dart/pub/tests:yaml_subset_test.bzl", "yaml_subset_test_suite")
 load(":analyze_mode_parity_test.bzl", "analyze_mode_parity_test_suite")
 load(":analyzer_summary_test.bzl", "analyzer_summary_test_suite")
 load(":analyzer_summary_tool_test.bzl", "analyzer_summary_tool_test_suite")
+load(":aot_tools_test.bzl", "aot_tools_test_suite")
 load(":architecture_invariants_test.bzl", "architecture_invariants_test_suite")
 load(":built_value_library_direct_test.bzl", "built_value_library_direct_test_suite")
 load(":code_asset_test.bzl", "code_asset_test_suite")
@@ -195,6 +196,8 @@ toolchain(
 )
 
 analyze_mode_parity_test_suite(name = "analyze_mode_parity_test")
+
+aot_tools_test_suite(name = "aot_tools_test")
 
 built_value_library_direct_test_suite(name = "built_value_library_direct")
 
@@ -490,4 +493,32 @@ instrumented_files_test(
 dart_test_runner_visibility_test(
     name = "dart_test_runner_visibility_test",
     src = "//dart/private:dart_test_runner",
+)
+
+dart_test(
+    name = "aot_tools_parity_test",
+    size = "medium",
+    args = [
+        "$(rlocationpath //dart/private/tools:analyzer_summary)",
+        "$(rlocationpath //dart/private/tools:analyzer_summary_reference)",
+        "$(rlocationpath //dart/private/tools:kernel_link)",
+        "$(rlocationpath //dart/private/tools:kernel_link_reference)",
+        "$(rlocationpath //dart/private:analyzer_sdk_summary)",
+        "$(rlocationpath //dart/private/tools:kernel_module)",
+    ],
+    data = [
+        "//dart/private:analyzer_sdk_summary",
+        "//dart/private/tools:analyzer_summary",
+        "//dart/private/tools:analyzer_summary_reference",
+        "//dart/private/tools:kernel_link",
+        "//dart/private/tools:kernel_link_reference",
+        "//dart/private/tools:kernel_module",
+        "@dart_toolchains//sdk/3.13.5:compile_files",
+    ],
+    main = "aot_tools_parity_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:path",
+        "@ext_pub_deps//:test",
+    ],
 )
