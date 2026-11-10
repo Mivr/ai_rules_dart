@@ -195,6 +195,12 @@ void _testRunnerExit() {
   }
   r = _runner(['--repeat=abc', '--out=OUT'], _repeat);
   _check(r.code == 1 && r.written.isEmpty, 'non-integer repeat is refused');
+  r = _runner(['--repeats=1', '--out=OUT', '--floor=on'], _repeat);
+  _check(r.code == 0 && r.written.length == 1, '--floor=on exits 0');
+  r = _runner(['--repeats=1', '--out=OUT', '--floor=off'], _repeat);
+  _check(r.code == 0 && r.written.length == 1, '--floor=off exits 0');
+  r = _runner(['--repeats=1', '--out=OUT', '--floor=maybe'], _repeat);
+  _check(r.code == 1 && r.written.isEmpty, '--floor=maybe is refused');
 }
 
 void main() {

@@ -379,8 +379,348 @@ void _testLoadRepeatResultsFilteringAndOrder() {
   }
 }
 
+RepeatResult _makePassingRepeatWithFloor({
+  required int index,
+  required double cleanBazel,
+  required double cleanSol,
+  required double cleanFloor,
+  required double bodySol,
+  required double bodyFloor,
+}) {
+  return RepeatResult(
+    repeatIndex: index,
+    flows: {
+      'dart-app-clean': FlowResult.withFloor(
+        method: 'batch',
+        bazelCpu: cleanBazel,
+        replay: FlowReplayData(
+          solCpu: cleanSol,
+          identical: true,
+          reason: 'ok',
+          chain: _mockChain(
+            stepCount: 12,
+            solCpu: cleanSol,
+            identical: true,
+            reason: 'ok',
+          ),
+          workerSteps: const {'DartKernel': 5},
+        ),
+        floor: FlowFloorData(
+          cpuSeconds: cleanFloor,
+          reason: 'ok',
+          floorKind: 'aot',
+          identical: true,
+          enabled: true,
+        ),
+      ),
+      'dart-app-body': FlowResult.withFloor(
+        method: 'warm-server',
+        bazelCpu: bodySol * 4,
+        replay: FlowReplayData(
+          solCpu: bodySol,
+          identical: true,
+          reason: 'ok',
+          chain: _mockChain(
+            stepCount: 2,
+            solCpu: bodySol,
+            identical: true,
+            reason: 'ok',
+          ),
+          workerSteps: const {'DartKernel': 1},
+        ),
+        floor: FlowFloorData(
+          cpuSeconds: bodyFloor,
+          reason: 'ok',
+          floorKind: 'jit',
+          identical: true,
+          enabled: true,
+        ),
+      ),
+      'dart-app-api': FlowResult.withFloor(
+        method: 'warm-server',
+        bazelCpu: 4.2,
+        replay: FlowReplayData(
+          solCpu: 1.05,
+          identical: true,
+          reason: 'ok',
+          chain: _mockChain(
+            stepCount: 6,
+            solCpu: 1.05,
+            identical: true,
+            reason: 'ok',
+          ),
+          workerSteps: const {'DartKernel': 2},
+        ),
+        floor: const FlowFloorData(
+          cpuSeconds: 0.90,
+          reason: 'ok',
+          floorKind: 'aot',
+          identical: true,
+          enabled: true,
+        ),
+      ),
+      'dart-test-leaf': FlowResult.withFloor(
+        method: 'warm-server',
+        bazelCpu: 3.1,
+        replay: FlowReplayData(
+          solCpu: 0.82,
+          identical: true,
+          reason: 'ok',
+          chain: _mockChain(
+            stepCount: 3,
+            solCpu: 0.82,
+            identical: true,
+            reason: 'ok',
+            mnemonic: 'TestRunner',
+          ),
+          workerSteps: const {'DartKernel': 1},
+        ),
+        floor: const FlowFloorData(
+          cpuSeconds: 0.70,
+          reason: 'ok',
+          floorKind: 'aot',
+          identical: true,
+          enabled: true,
+        ),
+      ),
+    },
+  );
+}
+
+void _testToolchainFloorInSummaryAndSortedSchema() {
+  final r1 = _makePassingRepeatWithFloor(
+    index: 1,
+    cleanBazel: 10.0,
+    cleanSol: 4.0,
+    cleanFloor: 3.0,
+    bodySol: 0.50,
+    bodyFloor: 0.20,
+  );
+  final r2 = _makePassingRepeatWithFloor(
+    index: 2,
+    cleanBazel: 12.0,
+    cleanSol: 4.2,
+    cleanFloor: 3.2,
+    bodySol: 0.55,
+    bodyFloor: 0.22,
+  );
+  final r3 = _makePassingRepeatWithFloor(
+    index: 3,
+    cleanBazel: 11.0,
+    cleanSol: 4.1,
+    cleanFloor: 3.1,
+    bodySol: 0.52,
+    bodyFloor: 0.21,
+  );
+
+  final jsonStr = formatDartSolJson(
+    repeats: [r1, r2, r3],
+    meta: _sampleMeta,
+    runner: _sampleRunner,
+  );
+
+  final decoded = jsonDecode(jsonStr) as Map<String, dynamic>;
+  final flows = decoded['flows'] as Map<String, dynamic>;
+
+  // Clean flow checks
+  final clean = flows['dart-app-clean'] as Map<String, dynamic>;
+  _check(clean['sol'] == 4.1, 'clean sol remains 4.1');
+  _check(
+    clean['toolchain_floor'] == 3.1,
+    'clean toolchain_floor is median 3.1',
+  );
+  _check(
+    clean['toolchain_floor_ratio'] != null,
+    'clean toolchain_floor_ratio is present',
+  );
+  _check(clean['floor_kind'] == 'aot', 'clean floor_kind is aot');
+  _check(clean['floor_reason'] == 'ok', 'clean floor_reason is ok');
+
+  final cleanSpread = clean['spread'] as Map<String, dynamic>;
+  _check(cleanSpread['sol'] != null, 'clean spread sol is present');
+  _check(
+    cleanSpread['toolchain_floor'] != null,
+    'clean spread toolchain_floor is present',
+  );
+  _check(
+    (cleanSpread['toolchain_floor'] as List)[0] == 3.0,
+    'floor spread min',
+  );
+  _check(
+    (cleanSpread['toolchain_floor'] as List)[1] == 3.2,
+    'floor spread max',
+  );
+
+  // Body flow checks (JIT floor)
+  final body = flows['dart-app-body'] as Map<String, dynamic>;
+  _check(body['floor_kind'] == 'jit', 'body floor_kind is jit');
+  _check(
+    body['toolchain_floor'] == 0.21,
+    'body toolchain_floor median is 0.21',
+  );
+
+  // Step summary table check
+  final table = formatStepSummaryTable(decoded);
+  _check(table.contains('Replay Ratio'), 'Table contains Replay Ratio');
+  _check(table.contains('Floor Ratio'), 'Table contains Floor Ratio');
+  _check(table.contains('dart-app-clean'), 'Table contains dart-app-clean');
+  _check(table.contains('dart-app-body'), 'Table contains dart-app-body');
+}
+
+void _testFailedFloorSetsReasonAndMakesSummaryUnhealthy() {
+  final badFloorRepeat = RepeatResult(
+    repeatIndex: 1,
+    flows: {
+      'dart-app-clean': FlowResult.withFloor(
+        method: 'batch',
+        bazelCpu: 10.0,
+        replay: FlowReplayData(
+          solCpu: 4.0,
+          identical: true,
+          reason: 'ok',
+          chain: _mockChain(
+            stepCount: 2,
+            solCpu: 4.0,
+            identical: true,
+            reason: 'ok',
+          ),
+        ),
+        floor: const FlowFloorData(
+          cpuSeconds: null,
+          reason: 'Floor AOT output differs from Bazel output',
+          floorKind: 'aot',
+          identical: false,
+          enabled: true,
+        ),
+      ),
+      'dart-app-body': FlowResult.withFloor(
+        method: 'warm-server',
+        bazelCpu: 2.0,
+        replay: FlowReplayData(
+          solCpu: 0.5,
+          identical: true,
+          reason: 'ok',
+          chain: _mockChain(
+            stepCount: 1,
+            solCpu: 0.5,
+            identical: true,
+            reason: 'ok',
+          ),
+        ),
+      ),
+      'dart-app-api': FlowResult.withFloor(
+        method: 'warm-server',
+        bazelCpu: 2.0,
+        replay: FlowReplayData(
+          solCpu: 0.5,
+          identical: true,
+          reason: 'ok',
+          chain: _mockChain(
+            stepCount: 1,
+            solCpu: 0.5,
+            identical: true,
+            reason: 'ok',
+          ),
+        ),
+      ),
+      'dart-test-leaf': FlowResult.withFloor(
+        method: 'warm-server',
+        bazelCpu: 2.0,
+        replay: FlowReplayData(
+          solCpu: 0.5,
+          identical: true,
+          reason: 'ok',
+          chain: _mockChain(
+            stepCount: 1,
+            solCpu: 0.5,
+            identical: true,
+            reason: 'ok',
+          ),
+        ),
+      ),
+    },
+  );
+
+  _check(
+    !isRepeatHealthy(badFloorRepeat),
+    'Repeat with failed floor is unhealthy',
+  );
+
+  final jsonStr = formatDartSolJson(
+    repeats: [badFloorRepeat],
+    meta: const SummaryMeta(
+      rulesDartSha: '0123456789abcdef0123456789abcdef01234567',
+      targetLoc: 500000,
+      seed: 1,
+      repeats: 1,
+    ),
+    runner: _sampleRunner,
+  );
+  final decoded = jsonDecode(jsonStr) as Map<String, dynamic>;
+  final flows = decoded['flows'] as Map<String, dynamic>;
+  final clean = flows['dart-app-clean'] as Map<String, dynamic>;
+
+  _check(clean['sol'] == 4.0, 'sol is unchanged on floor failure');
+  _check(
+    clean['toolchain_floor'] == null,
+    'toolchain_floor is null on floor failure',
+  );
+  _check(
+    clean['floor_reason'].contains('differs'),
+    'floor_reason carries the floor failure message',
+  );
+  _check(!isSummaryHealthy(decoded), 'Summary with failed floor is unhealthy');
+  final failures = summaryFailures(decoded);
+  _check(
+    failures.any((f) => f.contains('floor failed')),
+    'summaryFailures lists floor failure',
+  );
+}
+
+void _testFloorOffProducesBaseSchema() {
+  final r1 = _makePassingRepeat(
+    index: 1,
+    cleanBazel: 10.0,
+    cleanSol: 4.0,
+    bodySol: 0.50,
+  );
+  _check(
+    isRepeatHealthy(r1),
+    'Floor-disabled repeat is healthy when replay passes',
+  );
+
+  final jsonStr = formatDartSolJson(
+    repeats: [r1],
+    meta: const SummaryMeta(
+      rulesDartSha: '0123456789abcdef0123456789abcdef01234567',
+      targetLoc: 500000,
+      seed: 1,
+      repeats: 1,
+    ),
+    runner: _sampleRunner,
+  );
+  final decoded = jsonDecode(jsonStr) as Map<String, dynamic>;
+  final flows = decoded['flows'] as Map<String, dynamic>;
+  final clean = flows['dart-app-clean'] as Map<String, dynamic>;
+
+  _check(
+    !clean.containsKey('toolchain_floor'),
+    'Floor off omits toolchain_floor',
+  );
+  _check(!clean.containsKey('floor_kind'), 'Floor off omits floor_kind');
+  _check(!clean.containsKey('floor_reason'), 'Floor off omits floor_reason');
+  _check(
+    !(clean['spread'] as Map).containsKey('toolchain_floor'),
+    'Floor off omits toolchain_floor from spread',
+  );
+  _check(isSummaryHealthy(decoded), 'Floor-off summary is healthy');
+}
+
 void main() {
   _testAllPassSummaryAndSortedSchema();
+  _testToolchainFloorInSummaryAndSortedSchema();
+  _testFailedFloorSetsReasonAndMakesSummaryUnhealthy();
+  _testFloorOffProducesBaseSchema();
   _testFailureAndMissingRepeats();
   _testEmptyRepeatsSummary();
   _testLoadRepeatResultsFilteringAndOrder();
