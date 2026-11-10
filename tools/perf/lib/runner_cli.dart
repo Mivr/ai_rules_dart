@@ -16,7 +16,7 @@ typedef RepeatExecutor = RepeatResult Function({
 });
 
 const String _usage =
-    'Usage: runner --workspace=<ws> --repeat=<n> --out=<result.json>';
+    'Usage: runner --workspace=<ws> --repeat=<n> --out=<result.json> [--floor=<on|off>]';
 
 /// Returns an error message if a repeat count flag is present but not >= 1.
 String? _invalidCountFlag(Map<String, List<String>> flags) {
@@ -41,14 +41,25 @@ bool _runSingleRepeat({
   required int repeat,
   required String outPath,
   required String tempRoot,
+  bool floorEnabled = true,
 }) {
   RepeatResult result;
   try {
-    result = executor(
-      pristineWorkspace: workspace,
-      repeatIndex: repeat,
-      tempRoot: tempRoot,
-    );
+    try {
+      result = (executor as dynamic)(
+        pristineWorkspace: workspace,
+        repeatIndex: repeat,
+        tempRoot: tempRoot,
+        floorEnabled: floorEnabled,
+      ) as RepeatResult;
+    } on NoSuchMethodError catch (e) {
+      stderr.writeln('Executor without floorEnabled invoked: $e');
+      result = executor(
+        pristineWorkspace: workspace,
+        repeatIndex: repeat,
+        tempRoot: tempRoot,
+      );
+    }
   } catch (e, st) {
     // A crashed repeat is recorded as an unhealthy (flow-less) result so the
     // remaining repeats still run and the exit code reports the failure.
@@ -75,6 +86,12 @@ int runRunnerCli(List<String> args, {RepeatExecutor executor = executeRepeat}) {
     stderr.writeln('$invalid\n$_usage');
     return 1;
   }
+  final floorRaw = lastFlagValue(flags, const ['floor'])?.toLowerCase() ?? 'on';
+  if (floorRaw != 'on' && floorRaw != 'off') {
+    stderr.writeln('--floor must be "on" or "off", got "$floorRaw"\n$_usage');
+    return 1;
+  }
+  final floorEnabled = floorRaw == 'on';
   final rawWorkspace = lastFlagValue(flags, const ['workspace', 'ws']);
   final plannedOutputs = resolveRunnerOutputs(flags);
   if (rawWorkspace == null || rawWorkspace.isEmpty || plannedOutputs.isEmpty) {
@@ -93,6 +110,7 @@ int runRunnerCli(List<String> args, {RepeatExecutor executor = executeRepeat}) {
         repeat: repeatIndex,
         outPath: outPath,
         tempRoot: tempRoot,
+        floorEnabled: floorEnabled,
       );
       allHealthy = allHealthy && healthy;
     }

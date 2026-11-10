@@ -5,6 +5,8 @@ import 'dart:io';
 
 import 'cli_args.dart';
 import 'cpu.dart';
+import 'floor.dart';
+import 'floor_chains.dart';
 import 'proc.dart';
 import 'replay.dart';
 import 'result_writer.dart';
@@ -116,35 +118,73 @@ final class _FlowReplaySpec {
   final bool isTest;
 }
 
+/// Directory roots for a single repeat.
+final class RepeatDirs {
+  /// Creates a directory roots record.
+  const RepeatDirs({
+    required this.workspace,
+    required this.outputBase,
+    required this.logsDir,
+  });
+
+  /// Temporary workspace path.
+  final String workspace;
+
+  /// Output base path.
+  final String outputBase;
+
+  /// Logs directory path.
+  final String logsDir;
+}
+
+/// Instrumentation tools for measuring CPU.
+final class CpuInstruments {
+  /// Creates an instruments record.
+  const CpuInstruments({required this.clock, required this.procReader});
+
+  /// Child process CPU clock.
+  final ChildCpuClock clock;
+
+  /// Proc status reader.
+  final ProcReader procReader;
+}
+
 /// Context for running a single measured repeat.
 final class RepeatContext {
   /// Creates a repeat context.
   RepeatContext({
-    required this.repeatWorkspace,
-    required this.outputBase,
-    required this.logsDir,
+    required this.dirs,
     required this.repeatIndex,
-    required this.clock,
-    required this.procReader,
+    required this.instruments,
+    this.floorEnabled = true,
   });
 
-  /// Temporary workspace copy for this repeat.
-  final String repeatWorkspace;
-
-  /// Per-repeat Bazel output base.
-  final String outputBase;
-
-  /// Directory outside the workspace holding execution logs.
-  final String logsDir;
+  /// Directories for this repeat.
+  final RepeatDirs dirs;
 
   /// 1-based repeat index.
   final int repeatIndex;
 
+  /// CPU instrumentation tools.
+  final CpuInstruments instruments;
+
+  /// Whether toolchain floor measurement is enabled.
+  final bool floorEnabled;
+
+  /// Temporary workspace copy for this repeat.
+  String get repeatWorkspace => dirs.workspace;
+
+  /// Per-repeat Bazel output base.
+  String get outputBase => dirs.outputBase;
+
+  /// Directory outside the workspace holding execution logs.
+  String get logsDir => dirs.logsDir;
+
   /// CPU clock.
-  final ChildCpuClock clock;
+  ChildCpuClock get clock => instruments.clock;
 
   /// Proc reader.
-  final ProcReader procReader;
+  ProcReader get procReader => instruments.procReader;
 
   /// Retrieves the Bazel server PID for this output base.
   int getServerPid() {
@@ -206,6 +246,33 @@ final class RepeatContext {
         .where((s) => s.isNotEmpty)
         .toSet();
   }
+
+  /// Locates an existing executable binary from [target]'s declared outputs.
+  String findExecutableOutput(String target) {
+    final outputs = queryTargetOutputs(target);
+    final root = getExecroot();
+    for (final out in outputs) {
+      final cand = '$root/$out';
+      if (File(cand).existsSync()) return cand;
+    }
+    throw StateError('Executable output for $target not found in $outputs');
+  }
+
+  /// Locates a prebuilt test dill file for [leafTarget].
+  String findTestDill(String leafTarget) {
+    final root = getExecroot();
+    final outputs = queryTargetOutputs(leafTarget);
+    for (final out in outputs) {
+      if (out.endsWith('.dill')) {
+        final cand = '$root/$out';
+        if (File(cand).existsSync()) return cand;
+      }
+    }
+    final pkg = leafTarget.split(':').first.replaceFirst('//packages/', '');
+    final cand = '$root/bazel-bin/packages/$pkg/${pkg}_test.dill';
+    if (File(cand).existsSync()) return cand;
+    throw StateError('Prebuilt test dill for $leafTarget not found');
+  }
 }
 
 /// Recursively copies a directory tree.
@@ -244,6 +311,7 @@ RepeatResult executeRepeat({
   required String tempRoot,
   ChildCpuClock? clockOverride,
   ProcReader? procReaderOverride,
+  bool floorEnabled = true,
 }) {
   final clock = clockOverride ?? const LinuxChildCpuClock();
   final procReader = procReaderOverride ?? const LinuxProcReader();
@@ -261,12 +329,14 @@ RepeatResult executeRepeat({
   copyDirectorySync(Directory(resolvedPristine), repeatWsDir);
 
   final ctx = RepeatContext(
-    repeatWorkspace: repeatWsDir.path,
-    outputBase: outbaseDir.path,
-    logsDir: logsDir.path,
+    dirs: RepeatDirs(
+      workspace: repeatWsDir.path,
+      outputBase: outbaseDir.path,
+      logsDir: logsDir.path,
+    ),
     repeatIndex: repeatIndex,
-    clock: clock,
-    procReader: procReader,
+    instruments: CpuInstruments(clock: clock, procReader: procReader),
+    floorEnabled: floorEnabled,
   );
 
   final flows = <String, FlowResult>{};
@@ -293,6 +363,69 @@ RepeatResult executeRepeat({
   return RepeatResult(repeatIndex: repeatIndex, flows: flows);
 }
 
+SdkTools? _resolveWorkspaceSdk(RepeatContext ctx) {
+  try {
+    return SdkTools.discover(
+      outputBase: ctx.outputBase,
+      execroot: ctx.getExecroot(),
+    );
+  } on Object catch (e) {
+    stderr.writeln('Workspace SDK discovery error: $e');
+    return null;
+  }
+}
+
+FloorFlowContext _makeFloorContext(RepeatContext ctx, String flowSuffix) {
+  return FloorFlowContext(
+    sdk: _resolveWorkspaceSdk(ctx),
+    workspaceDir: ctx.repeatWorkspace,
+    outputDir: '${ctx.logsDir}/floor_${flowSuffix}_${ctx.repeatIndex}',
+    clock: ctx.clock,
+  );
+}
+
+FlowResult _attachCleanFloor(RepeatContext ctx, FlowResult replayFlow) {
+  if (!ctx.floorEnabled) return replayFlow;
+  final bazelApp = ctx.findExecutableOutput('//app:app');
+  return attachCleanFloor(
+    _makeFloorContext(ctx, 'clean'),
+    replayFlow,
+    bazelApp,
+  );
+}
+
+FlowResult _attachBodyFloor(RepeatContext ctx, FlowResult replayFlow) {
+  if (!ctx.floorEnabled) return replayFlow;
+  final bazelApp = ctx.findExecutableOutput('//app:app');
+  final editedFile = '${ctx.repeatWorkspace}/packages/pkg0/lib/src/f0.dart';
+  return attachBodyFloor(
+    _makeFloorContext(ctx, 'body'),
+    replayFlow,
+    bazelAppExecutable: bazelApp,
+    editedFile: editedFile,
+  );
+}
+
+FlowResult _attachApiFloor(RepeatContext ctx, FlowResult replayFlow) {
+  if (!ctx.floorEnabled) return replayFlow;
+  final bazelApp = ctx.findExecutableOutput('//app:app');
+  return attachApiFloor(_makeFloorContext(ctx, 'api'), replayFlow, bazelApp);
+}
+
+FlowResult _attachTestLeafFloor(
+  RepeatContext ctx,
+  FlowResult replayFlow,
+  String leafTarget,
+) {
+  if (!ctx.floorEnabled) return replayFlow;
+  final testDill = ctx.findTestDill(leafTarget);
+  return attachTestLeafFloor(
+    _makeFloorContext(ctx, 'test'),
+    replayFlow,
+    testDill,
+  );
+}
+
 FlowResult _measureFlowAppClean(RepeatContext ctx) {
   try {
     final logFile = File('${ctx.logsDir}/exec_clean_${ctx.repeatIndex}.json');
@@ -311,7 +444,7 @@ FlowResult _measureFlowAppClean(RepeatContext ctx) {
       return _failedFlow('batch', 'Clean build failed: ${res.stderr}');
     }
 
-    return _replayAndVerifyFlow(
+    final replayFlow = _replayAndVerifyFlow(
       ctx,
       logFile,
       _FlowReplaySpec(
@@ -321,6 +454,7 @@ FlowResult _measureFlowAppClean(RepeatContext ctx) {
         isTest: false,
       ),
     );
+    return _attachCleanFloor(ctx, replayFlow);
   } on Object catch (e) {
     stderr.writeln('Flow dart-app-clean error: $e');
     return _failedFlow('batch', e.toString());
@@ -386,7 +520,7 @@ FlowResult _measureFlowAppBody(RepeatContext ctx) {
       );
     }
 
-    return _replayAndVerifyFlow(
+    final replayFlow = _replayAndVerifyFlow(
       ctx,
       logFile,
       _FlowReplaySpec(
@@ -396,6 +530,7 @@ FlowResult _measureFlowAppBody(RepeatContext ctx) {
         isTest: false,
       ),
     );
+    return _attachBodyFloor(ctx, replayFlow);
   } on Object catch (e) {
     stderr.writeln('Flow dart-app-body error: $e');
     return _failedFlow('warm-server', e.toString());
@@ -419,7 +554,7 @@ FlowResult _measureFlowAppApi(RepeatContext ctx, {required bool needsWarmup}) {
       return _failedFlow('warm-server', 'API edit build failed: ${res.stderr}');
     }
 
-    return _replayAndVerifyFlow(
+    final replayFlow = _replayAndVerifyFlow(
       ctx,
       logFile,
       _FlowReplaySpec(
@@ -429,6 +564,7 @@ FlowResult _measureFlowAppApi(RepeatContext ctx, {required bool needsWarmup}) {
         isTest: false,
       ),
     );
+    return _attachApiFloor(ctx, replayFlow);
   } on Object catch (e) {
     stderr.writeln('Flow dart-app-api error: $e');
     return _failedFlow('warm-server', e.toString());
@@ -483,7 +619,7 @@ FlowResult _measureFlowTestLeaf(RepeatContext ctx) {
       return _failedFlow('warm-server', 'Leaf test failed: ${res.stderr}');
     }
 
-    return _replayAndVerifyFlow(
+    final replayFlow = _replayAndVerifyFlow(
       ctx,
       logFile,
       _FlowReplaySpec(
@@ -493,6 +629,7 @@ FlowResult _measureFlowTestLeaf(RepeatContext ctx) {
         isTest: true,
       ),
     );
+    return _attachTestLeafFloor(ctx, replayFlow, leafTarget);
   } on Object catch (e) {
     stderr.writeln('Flow dart-test-leaf error: $e');
     return _failedFlow('warm-server', e.toString());
