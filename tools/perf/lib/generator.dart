@@ -219,6 +219,7 @@ void generateWorkspace(GeneratorOptions options) {
   _writeModuleBazel(options.outputPath, identity, resolvedRulesPath);
   _copyPristineFiles(options.outputPath, resolvedRulesPath);
   _writeRootBuild(options.outputPath);
+  _writeConsumerBazelrc(options.outputPath, resolvedRulesPath);
   _generatePackagesAndApp(options, identity);
 }
 
@@ -292,6 +293,17 @@ void _copyPristineFiles(String outputPath, String resolvedRulesPath) {
   if (bazelver.existsSync()) {
     bazelver.copySync('$outputPath/.bazelversion');
   }
+}
+
+/// Path of the consumer preset a rules_dart checkout ships, relative to it.
+const consumerPresetPath = 'dart/consumer.bazelrc';
+
+/// Writes the workspace `.bazelrc`: one `import` of the shipped consumer
+/// preset and no other setting, so a measurement shows what a consumer gets.
+void _writeConsumerBazelrc(String outputPath, String resolvedRulesPath) {
+  final rules = resolvedRulesPath.replaceAll(r'\', '/');
+  File('$outputPath/.bazelrc')
+      .writeAsStringSync('import $rules/$consumerPresetPath\n');
 }
 
 void _writeRootBuild(String outputPath) {

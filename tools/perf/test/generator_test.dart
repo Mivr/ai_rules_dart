@@ -577,7 +577,36 @@ void _testFallbackLockFiles() {
   }
 }
 
+void _testConsumerPresetImport() {
+  final tempDir = Directory.systemTemp.createTempSync('bench_rc_');
+  try {
+    final rules = Directory('${tempDir.path}/rules')..createSync();
+    File('${rules.path}/MODULE.bazel')
+        .writeAsStringSync('module(name = "rules_dart", version = "1")\n');
+    final out = '${tempDir.path}/out';
+    generateWorkspace(
+      GeneratorOptions(
+        outputPath: out,
+        rulesDartPath: rules.path,
+        targetLoc: 200,
+        layers: 2,
+        fanout: 1,
+        seed: 1,
+      ),
+    );
+    final rc = File('$out/.bazelrc').readAsStringSync();
+    final expectedRules = rules.path.replaceAll(r'\', '/');
+    _check(
+      rc == 'import $expectedRules/$consumerPresetPath\n',
+      'workspace .bazelrc imports only the shipped preset, got: $rc',
+    );
+  } finally {
+    _deleteTemp(tempDir);
+  }
+}
+
 void main() {
+  _testConsumerPresetImport();
   _testModuleBazelParsing();
   _testCliPathAndEnvHelpers();
   _testRunnerOutputResolution();
