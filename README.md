@@ -693,6 +693,12 @@ the flag off, zero per-package summaries are built and `analyzer_summary` analyz
 staged sources with zero `--summary` flags. Flutter targets resolve `dart:ui` via
 `sky_engine`'s embedder SDK summary in both modes.
 
+Turning the flag off therefore no longer runs the SDK's own `dart analyze`: both
+modes report the diagnostics of the pinned analyzer and the vendored linter, so
+they agree with each other and can differ from stock `dart analyze`. For example,
+a lint rule that the SDK lacks (on SDK 3.13.5, `unnecessary_this_alias`) is
+accepted rather than reported as `undefined_lint`.
+
 Stock SDK `dart analyze` via `analyze_runner` is used only as fallback in these
 cases:
 

@@ -93,6 +93,11 @@ int_flag(
 # via `analyze_runner` is used only as fallback for SDKs outside that range
 # (< 3.13 or > 3.14) or closures with an unbacked `_embedder.yaml` (outside
 # Flutter's `sky_engine`).
+# Behaviour change: with the flag off, diagnostics now come from this pinned
+# analyzer and vendored linter, not the SDK's own `dart analyze`. They match the
+# flag-on diagnostics, and can differ from stock `dart analyze`: a lint that the
+# SDK lacks (such as `unnecessary_this_alias` on 3.13.5) is no longer reported
+# as `undefined_lint` when `analysis_options.yaml` enables it.
 # `dart_codegen` passes summaries only to generators built on the builder shim.
 #
 # The diagnostics come from rules_dart's pinned `package:analyzer`, 14.5.0, with
