@@ -103,9 +103,9 @@ def _dart_test_impl(ctx):
             [kernel.base_dill] if kernel.base_dill != None else []
         )
     if ctx.attr.include_tags:
-        env["RULES_DART_INCLUDE_TAGS"] = " && ".join(ctx.attr.include_tags)
+        env["RULES_DART_INCLUDE_TAGS"] = " && ".join(["(%s)" % t for t in ctx.attr.include_tags])
     if ctx.attr.exclude_tags:
-        env["RULES_DART_EXCLUDE_TAGS"] = " || ".join(ctx.attr.exclude_tags)
+        env["RULES_DART_EXCLUDE_TAGS"] = " || ".join(["(%s)" % t for t in ctx.attr.exclude_tags])
     for key, value in ctx.attr.env.items():
         if key.startswith("RULES_DART_"):
             fail("%s: `env` cannot set %s; rules_dart uses the RULES_DART_ prefix to drive the test" % (ctx.label, key))
@@ -637,14 +637,14 @@ told where a runfile is (resolve it with `Runfiles.rlocation()`).""",
         ),
         "exclude_tags": attr.string_list(
             doc = (
-                "Skip the cases matching any selector listed, passed as the " +
-                "runner's `--exclude-tags`. Defaults to empty."
+                "Skip the cases matching any selector listed, where each entry is a " +
+                "complete selector evaluated on its own, passed as the runner's `--exclude-tags`. Defaults to empty."
             ),
         ),
         "include_tags": attr.string_list(
             doc = (
-                "Run only the cases whose tags match every selector listed, " +
-                "passed as the runner's `--tags`. Defaults to empty."
+                "Run only the cases whose tags match every selector listed, where each " +
+                "entry is a complete selector evaluated on its own, passed as the runner's `--tags`. Defaults to empty."
             ),
         ),
         "_import_check": attr.label(
