@@ -13,7 +13,8 @@ sources with zero `--summary` flags, reporting source mode
 (< 3.13 or > 3.14) or closures with an unbacked `_embedder.yaml`.
 """
 
-load("//dart/private:common.bzl", "kernel_sdk_mismatch_error", "writable_home_env")
+load("//dart/private:aot_tool.bzl", "aot_tool_launch")
+load("//dart/private:common.bzl", "writable_home_env")
 load(
     "//dart/private:dart_analyzer_summary.bzl",
     "analyzer_summaries_supported",
@@ -49,9 +50,7 @@ def analyze_summaries(ctx, name, staged, summaries, sdk_summary, sdk_inputs, own
       The stamp the analyze action writes on success.
     """
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
-    mismatch = kernel_sdk_mismatch_error(ctx.label, "_summary_tool", ctx.attr._summary_tool, dart_sdk_info.version)
-    if mismatch != None:
-        fail(mismatch)
+    launch = aot_tool_launch(ctx, "_summary_tool", dart_sdk_info, dart_sdk_info.analyze_files)
     stamp = ctx.actions.declare_file(name + ".analyzed")
     args = ctx.actions.args()
     args.use_param_file("@%s", use_always = True)
@@ -67,15 +66,15 @@ def analyze_summaries(ctx, name, staged, summaries, sdk_summary, sdk_inputs, own
     args.add_all(own_paths, format_each = "src/%s", before_each = "--source")
     args.add_all(summaries, before_each = "--summary")
     ctx.actions.run(
-        executable = dart_sdk_info.dart,
-        arguments = [ctx.executable._summary_tool.path, args],
+        executable = launch.executable,
+        arguments = launch.prefix + [args],
         inputs = depset(
-            direct = [ctx.executable._summary_tool, sdk_summary] + staged.inputs +
+            direct = launch.inputs + [sdk_summary] + staged.inputs +
                      ([baseline] if baseline != None else []),
             transitive = [summaries, sdk_inputs],
         ),
         tools = depset(
-            direct = [ctx.executable._summary_tool, dart_sdk_info.dart],
+            direct = launch.inputs,
             transitive = [dart_sdk_info.runtime_files],
         ),
         outputs = [stamp],

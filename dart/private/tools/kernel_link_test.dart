@@ -19,10 +19,14 @@ void main(List<String> args) {
   final r = Runfiles.create();
   if (args.length >= 2) {
     _toolDillPath = r.rlocation(args[0]);
-    _dartBin = r.rlocation(args[1]);
+    // `kernel_link` is an AOT snapshot: `dartaotruntime`, next to `dart`, runs it.
+    final String dart = r.rlocation(args[1]);
+    _dartBin =
+        '${File(dart).parent.path}/dartaotruntime'
+        '${Platform.isWindows ? '.exe' : ''}';
   } else {
     _toolDillPath = '';
-    _dartBin = Platform.resolvedExecutable;
+    _dartBin = '';
   }
 
   setUp(() {

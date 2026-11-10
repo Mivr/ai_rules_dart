@@ -43,6 +43,7 @@ module.
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartCompileInfo", "DartInfo", _DartKernelInfo = "DartKernelInfo")
+load("//dart/private:aot_tool.bzl", "aot_tool_launch")
 load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR")
 load(
     "//dart/private:common.bzl",
@@ -1030,23 +1031,17 @@ def kernel_link_action(
 
     exec_tc = ctx.toolchains[EXEC_TOOLS_TOOLCHAIN] if EXEC_TOOLS_TOOLCHAIN in ctx.toolchains else None
     exec_sdk = exec_tc.dart_sdk_info if exec_tc != None else None
-    link_tools = [ctx.executable._kernel_link] + ([platform_dill] if platform_dill != None else [])
+    link_tools = [platform_dill] if platform_dill != None else []
     if exec_sdk != None:
-        mismatch = kernel_sdk_mismatch_error(
-            ctx.label,
-            "_kernel_link",
-            getattr(ctx.attr, "_kernel_link", None),
-            exec_sdk.version,
-        )
-        if mismatch != None:
-            fail(mismatch)
+        launch = aot_tool_launch(ctx, "_kernel_link", exec_sdk, exec_sdk.compile_files)
         direct_inputs.append(ctx.executable._kernel_link)
-        link_tools.append(exec_sdk.dart)
-        executable = exec_sdk.dart
-        arguments = [ctx.executable._kernel_link.path, args]
+        link_tools.extend(launch.inputs)
+        executable = launch.executable
+        arguments = launch.prefix + [args]
         transitive_inputs = [dep_kmods, exec_sdk.runtime_files]
         link_tool_depsets = [exec_sdk.runtime_files]
     else:
+        link_tools.append(ctx.executable._kernel_link)
         executable = ctx.executable._kernel_link
         arguments = [args]
         transitive_inputs = [dep_kmods]

@@ -10,6 +10,12 @@ void main(List<String> args) {
     final String analyzerSummaryPath = runfiles.rlocation(args[0]);
     final String sdkSummaryPath = runfiles.rlocation(args[1]);
     final String sdkRoot = p.dirname(p.dirname(Platform.resolvedExecutable));
+    // `analyzer_summary` is an AOT snapshot: `dart` refuses to run it.
+    final String aotRuntime = p.join(
+      sdkRoot,
+      'bin',
+      Platform.isWindows ? 'dartaotruntime.exe' : 'dartaotruntime',
+    );
 
     final Directory tmp = Directory.systemTemp.createTempSync(
       'lint_parity_neg_',
@@ -44,23 +50,20 @@ void main(List<String> args) {
 }''');
 
       // 1. Source mode (zero --summary flags)
-      final ProcessResult sourceResult = Process.runSync(
-        Platform.resolvedExecutable,
-        [
-          analyzerSummaryPath,
-          'analyze',
-          '--sdk',
-          sdkRoot,
-          '--project',
-          tmp.path,
-          '--sdk-summary',
-          sdkSummaryPath,
-          '--source',
-          'src/lib/negative.dart',
-          '--stamp',
-          p.join(tmp.path, 'source.stamp'),
-        ],
-      );
+      final ProcessResult sourceResult = Process.runSync(aotRuntime, [
+        analyzerSummaryPath,
+        'analyze',
+        '--sdk',
+        sdkRoot,
+        '--project',
+        tmp.path,
+        '--sdk-summary',
+        sdkSummaryPath,
+        '--source',
+        'src/lib/negative.dart',
+        '--stamp',
+        p.join(tmp.path, 'source.stamp'),
+      ]);
       expect(
         sourceResult.exitCode,
         isNot(0),
@@ -69,23 +72,20 @@ void main(List<String> args) {
       expect(sourceResult.stdout, contains('no_dynamic_casts'));
 
       // 2. Summary mode
-      final ProcessResult summaryResult = Process.runSync(
-        Platform.resolvedExecutable,
-        [
-          analyzerSummaryPath,
-          'analyze',
-          '--sdk',
-          sdkRoot,
-          '--project',
-          tmp.path,
-          '--sdk-summary',
-          sdkSummaryPath,
-          '--source',
-          'src/lib/negative.dart',
-          '--stamp',
-          p.join(tmp.path, 'summary.stamp'),
-        ],
-      );
+      final ProcessResult summaryResult = Process.runSync(aotRuntime, [
+        analyzerSummaryPath,
+        'analyze',
+        '--sdk',
+        sdkRoot,
+        '--project',
+        tmp.path,
+        '--sdk-summary',
+        sdkSummaryPath,
+        '--source',
+        'src/lib/negative.dart',
+        '--stamp',
+        p.join(tmp.path, 'summary.stamp'),
+      ]);
       expect(
         summaryResult.exitCode,
         isNot(0),

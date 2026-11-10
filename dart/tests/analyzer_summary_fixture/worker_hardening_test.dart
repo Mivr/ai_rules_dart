@@ -121,12 +121,15 @@ Stream<Uint8List> _frameStream(Stream<List<int>> source) {
 void main(List<String> args) {
   final r = Runfiles.create();
   final String formatRunnerDill = r.rlocation(args[0]);
-  final String analyzerSummaryDill = r.rlocation(args[1]);
+  final String analyzerSummaryAot = r.rlocation(args[1]);
   final String sdkSummaryPath = r.rlocation(args[2]);
   final String analyzeRunnerDill = r.rlocation(args[3]);
   final String fixRunnerDill = r.rlocation(args[4]);
   final String webCompileRunnerDill = r.rlocation(args[5]);
   final String sdkRoot = File(Platform.resolvedExecutable).parent.parent.path;
+  // `analyzer_summary` is an AOT snapshot: `dart` refuses to run it.
+  final aotRuntime =
+      '$sdkRoot/bin/dartaotruntime${Platform.isWindows ? '.exe' : ''}';
 
   late Directory tmp;
   setUp(() {
@@ -137,12 +140,13 @@ void main(List<String> args) {
   });
 
   test(
-    'analyzer_summary and format_runner are compiled in kernel (.dill) mode',
+    'analyzer_summary is an AOT snapshot and format_runner a kernel (.dill)',
     () {
       expect(formatRunnerDill, endsWith('.dill'));
-      expect(analyzerSummaryDill, endsWith('.dill'));
+      expect(analyzerSummaryAot, endsWith('.aot'));
+      expect(File(aotRuntime).existsSync(), isTrue);
       expect(File(formatRunnerDill).existsSync(), isTrue);
-      expect(File(analyzerSummaryDill).existsSync(), isTrue);
+      expect(File(analyzerSummaryAot).existsSync(), isTrue);
     },
   );
 
@@ -193,8 +197,8 @@ void main(List<String> args) {
       "import 'package:pkg_dep/dep.dart';\nint callBar() => bar();\n",
     );
 
-    final Process proc = await Process.start(Platform.resolvedExecutable, [
-      analyzerSummaryDill,
+    final Process proc = await Process.start(aotRuntime, [
+      analyzerSummaryAot,
       '--persistent_worker',
     ], workingDirectory: tmp.path);
     addTearDown(() async {
@@ -430,8 +434,8 @@ void main(List<String> args) {
 
     // Without a manifest, `analyzer_summary analyze` must NOT prune the symlink
     // and must analyze it (catching the type error).
-    ProcessResult res = Process.runSync(Platform.resolvedExecutable, [
-      analyzerSummaryDill,
+    ProcessResult res = Process.runSync(aotRuntime, [
+      analyzerSummaryAot,
       'analyze',
       '--sdk',
       sdkRoot,
@@ -451,8 +455,8 @@ void main(List<String> args) {
 
     // Fix the symlinked file; without a manifest, analysis succeeds and keeps the symlink.
     realSrc.writeAsStringSync('int ok = 42;\n');
-    res = Process.runSync(Platform.resolvedExecutable, [
-      analyzerSummaryDill,
+    res = Process.runSync(aotRuntime, [
+      analyzerSummaryAot,
       'analyze',
       '--sdk',
       sdkRoot,
@@ -471,8 +475,8 @@ void main(List<String> args) {
     expect(File('${tmp.path}/no_manifest_ok.stamp').existsSync(), isTrue);
 
     // An `--source` that is missing or not analyzed must fail the action.
-    res = Process.runSync(Platform.resolvedExecutable, [
-      analyzerSummaryDill,
+    res = Process.runSync(aotRuntime, [
+      analyzerSummaryAot,
       'analyze',
       '--sdk',
       sdkRoot,
@@ -491,8 +495,8 @@ void main(List<String> args) {
     // Write an empty `src_manifest.txt`: a zero-file analysis of a target must
     // fail (never write a green stamp) in both `analyzer_summary` and `analyze_runner`.
     File('${projDir.path}/.dart_tool/src_manifest.txt').writeAsStringSync('');
-    res = Process.runSync(Platform.resolvedExecutable, [
-      analyzerSummaryDill,
+    res = Process.runSync(aotRuntime, [
+      analyzerSummaryAot,
       'analyze',
       '--sdk',
       sdkRoot,
@@ -544,8 +548,8 @@ void main(List<String> args) {
       }),
     );
     final baseSum = '${tmp.path}/dep_base.sum';
-    final ProcessResult baseRes = Process.runSync(Platform.resolvedExecutable, [
-      analyzerSummaryDill,
+    final ProcessResult baseRes = Process.runSync(aotRuntime, [
+      analyzerSummaryAot,
       'summarize',
       '--sdk',
       sdkRoot,
@@ -603,28 +607,24 @@ void main(List<String> args) {
       }),
     );
 
-    final ProcessResult localRes = Process.runSync(
-      Platform.resolvedExecutable,
-      [
-        analyzerSummaryDill,
-        'summarize',
-        '--sdk',
-        sdkRoot,
-        '--packages',
-        'packages.json',
-        '--out',
-        'local.sum',
-        '--sdk-summary',
-        sdkSummaryPath,
-        '--summary',
-        baseSum,
-        '--source',
-        'pkg/lib/sub.dart',
-        '--uri',
-        'package:pkg/sub.dart',
-      ],
-      workingDirectory: localDir.path,
-    );
+    final ProcessResult localRes = Process.runSync(aotRuntime, [
+      analyzerSummaryAot,
+      'summarize',
+      '--sdk',
+      sdkRoot,
+      '--packages',
+      'packages.json',
+      '--out',
+      'local.sum',
+      '--sdk-summary',
+      sdkSummaryPath,
+      '--summary',
+      baseSum,
+      '--source',
+      'pkg/lib/sub.dart',
+      '--uri',
+      'package:pkg/sub.dart',
+    ], workingDirectory: localDir.path);
     expect(
       localRes.exitCode,
       0,
@@ -642,28 +642,24 @@ void main(List<String> args) {
       File('${localDir.path}/packages.json').readAsStringSync(),
     );
 
-    final ProcessResult sandboxRes = Process.runSync(
-      Platform.resolvedExecutable,
-      [
-        analyzerSummaryDill,
-        'summarize',
-        '--sdk',
-        sdkRoot,
-        '--packages',
-        'packages.json',
-        '--out',
-        'sandbox.sum',
-        '--sdk-summary',
-        sdkSummaryPath,
-        '--summary',
-        baseSum,
-        '--source',
-        'pkg/lib/sub.dart',
-        '--uri',
-        'package:pkg/sub.dart',
-      ],
-      workingDirectory: sandboxDir.path,
-    );
+    final ProcessResult sandboxRes = Process.runSync(aotRuntime, [
+      analyzerSummaryAot,
+      'summarize',
+      '--sdk',
+      sdkRoot,
+      '--packages',
+      'packages.json',
+      '--out',
+      'sandbox.sum',
+      '--sdk-summary',
+      sdkSummaryPath,
+      '--summary',
+      baseSum,
+      '--source',
+      'pkg/lib/sub.dart',
+      '--uri',
+      'package:pkg/sub.dart',
+    ], workingDirectory: sandboxDir.path);
     expect(
       sandboxRes.exitCode,
       0,
@@ -673,8 +669,8 @@ void main(List<String> args) {
     // 3. Persistent worker execution in the dirty local directory.
     File('${localDir.path}/pkg/lib/unlisted_ambient.dart')
         .writeAsStringSync('int ambientExtra = 99;\n');
-    final Process proc = await Process.start(Platform.resolvedExecutable, [
-      analyzerSummaryDill,
+    final Process proc = await Process.start(aotRuntime, [
+      analyzerSummaryAot,
       '--persistent_worker',
     ], workingDirectory: localDir.path);
     addTearDown(() async {
@@ -809,8 +805,8 @@ void main(List<String> args) {
 
     // 2. `analyzer_summary analyze` (summary-mode analysis under local strategy)
     plantStaleDeletedFile();
-    res = Process.runSync(Platform.resolvedExecutable, [
-      analyzerSummaryDill,
+    res = Process.runSync(aotRuntime, [
+      analyzerSummaryAot,
       'analyze',
       '--sdk',
       sdkRoot,
@@ -1011,8 +1007,8 @@ void main(List<String> args) {
     Link('${workerLProj.path}/src/P/lib/src/hidden.dart')
         .createSync(realHidden.path);
     final workerLStamp = File('${tmp.path}/worker_L.analyzed');
-    final Process proc = await Process.start(Platform.resolvedExecutable, [
-      analyzerSummaryDill,
+    final Process proc = await Process.start(aotRuntime, [
+      analyzerSummaryAot,
       '--persistent_worker',
     ], workingDirectory: realDir.path);
     addTearDown(() async {

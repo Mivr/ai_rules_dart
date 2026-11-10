@@ -31,7 +31,8 @@ summaries, but still builds and propagates `sky_engine`'s embedder SDK summary
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartInfo")
-load("//dart/private:common.bzl", "generate_package_config", "kernel_sdk_mismatch_error", "owned_package_records", "writable_home_env")
+load("//dart/private:aot_tool.bzl", "aot_tool_launch")
+load("//dart/private:common.bzl", "generate_package_config", "owned_package_records", "writable_home_env")
 load("//dart/private:project_staging.bzl", "mangle_package_dir")
 load("//dart/private:source_set.bzl", "package_for_index", "package_index")
 
@@ -224,23 +225,21 @@ def sdk_root_path(dart_sdk_info):
 
 def _analyzer_sdk_summary_impl(ctx):
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
-    mismatch = kernel_sdk_mismatch_error(ctx.label, "_tool", ctx.attr._tool, dart_sdk_info.version)
-    if mismatch != None:
-        fail(mismatch)
+    launch = aot_tool_launch(ctx, "_tool", dart_sdk_info, dart_sdk_info.analyze_files)
     summary = ctx.actions.declare_file(ctx.label.name + ".sum")
     args = ctx.actions.args()
     args.add("sdk")
     args.add("--sdk", sdk_root_path(dart_sdk_info))
     args.add("--out", summary)
     ctx.actions.run(
-        executable = dart_sdk_info.dart,
-        arguments = [ctx.executable._tool.path, args],
+        executable = launch.executable,
+        arguments = launch.prefix + [args],
         inputs = depset(
-            direct = [ctx.executable._tool, dart_sdk_info.dart],
+            direct = launch.inputs,
             transitive = [dart_sdk_info.analyze_files, dart_sdk_info.runtime_files],
         ),
         tools = depset(
-            direct = [ctx.executable._tool, dart_sdk_info.dart],
+            direct = launch.inputs,
             transitive = [dart_sdk_info.runtime_files],
         ),
         outputs = [summary],
@@ -431,9 +430,7 @@ def _build_embedder_sdk_summary(ctx, info, files, embedder_yaml):
       The declared embedder SDK summary `File`.
     """
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
-    mismatch = kernel_sdk_mismatch_error(ctx.label, "_tool", ctx.attr._tool, dart_sdk_info.version)
-    if mismatch != None:
-        fail(mismatch)
+    launch = aot_tool_launch(ctx, "_tool", dart_sdk_info, dart_sdk_info.analyze_files)
     embedder_sdk = ctx.actions.declare_file(ctx.label.name + ".embedder_sdk.sum")
     args = ctx.actions.args()
     args.add("sdk")
@@ -441,10 +438,10 @@ def _build_embedder_sdk_summary(ctx, info, files, embedder_yaml):
     args.add("--embedder-yaml", embedder_yaml)
     args.add("--out", embedder_sdk)
     ctx.actions.run(
-        executable = dart_sdk_info.dart,
-        arguments = [ctx.executable._tool.path, args],
+        executable = launch.executable,
+        arguments = launch.prefix + [args],
         inputs = depset(
-            direct = [ctx.executable._tool, dart_sdk_info.dart] + files,
+            direct = launch.inputs + files,
             transitive = [
                 dart_sdk_info.analyze_files,
                 dart_sdk_info.runtime_files,
@@ -453,7 +450,7 @@ def _build_embedder_sdk_summary(ctx, info, files, embedder_yaml):
             ],
         ),
         tools = depset(
-            direct = [ctx.executable._tool, dart_sdk_info.dart],
+            direct = launch.inputs,
             transitive = [dart_sdk_info.runtime_files],
         ),
         outputs = [embedder_sdk],
@@ -708,9 +705,7 @@ def _summary_run_action(ctx, info, own_records, action, closure):
         summary_inputs = depset([s for (pname, s) in packaged if pname not in closure.conflicted_names])
 
     dart_sdk_info = ctx.toolchains[_TOOLCHAIN].dart_sdk_info
-    mismatch = kernel_sdk_mismatch_error(ctx.label, "_tool", ctx.attr._tool, dart_sdk_info.version)
-    if mismatch != None:
-        fail(mismatch)
+    launch = aot_tool_launch(ctx, "_tool", dart_sdk_info, dart_sdk_info.analyze_files)
     sdk_summary = closure.embedder_sdk_summary or ctx.file._sdk_summary
     summary = ctx.actions.declare_file(action.name + ".sum")
     args = ctx.actions.args()
@@ -728,15 +723,15 @@ def _summary_run_action(ctx, info, own_records, action, closure):
         args.add_all(action.uncovered_staged, before_each = "--dep-source")
     args.add_all(summary_inputs, before_each = "--summary")
     ctx.actions.run(
-        executable = dart_sdk_info.dart,
-        arguments = [ctx.executable._tool.path, args],
+        executable = launch.executable,
+        arguments = launch.prefix + [args],
         inputs = depset(
-            direct = [ctx.executable._tool, dart_sdk_info.dart, action.config, sdk_summary] +
+            direct = launch.inputs + [action.config, sdk_summary] +
                      action.srcs + action.staged + action.uncovered_inputs,
             transitive = [dart_sdk_info.analyze_files, dart_sdk_info.runtime_files, summary_inputs],
         ),
         tools = depset(
-            direct = [ctx.executable._tool, dart_sdk_info.dart],
+            direct = launch.inputs,
             transitive = [dart_sdk_info.runtime_files],
         ),
         outputs = [summary],

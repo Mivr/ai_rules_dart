@@ -220,9 +220,11 @@ dart_binary(
         "baseline_json.dart",
     ],
     code_assets_from_deps = False,
-    compile_mode = "kernel",
+    compile_mode = "aot-snapshot",
     main = "analyzer_summary.dart",
     modular_kernel = False,
+    # Run by `dartaotruntime` on the raw snapshot (see `aot_tool.bzl`).
+    snapshot_launcher = False,
     visibility = ["//dart:__subpackages__"],
     deps = [
         ":worker_protocol",
@@ -527,9 +529,11 @@ dart_binary(
     name = "kernel_link",
     srcs = ["lib/worker_protocol.dart"],
     code_assets_from_deps = False,
-    compile_mode = "kernel",
+    compile_mode = "aot-snapshot",
     main = "kernel_link.dart",
     modular_kernel = False,
+    # Run by `dartaotruntime` on the raw snapshot (see `aot_tool.bzl`).
+    snapshot_launcher = False,
     visibility = ["//visibility:public"],
 )
 

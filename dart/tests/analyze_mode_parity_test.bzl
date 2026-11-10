@@ -140,6 +140,7 @@ def analyze_mode_parity_test_suite(name):
         data = [
             "//dart/private:analyzer_sdk_summary",
             "//dart/private/tools:analyzer_summary",
+            "@dart_toolchains//sdk/3.13.5:compile_files",
         ],
         main = "analyze_mode_parity_negative_test.dart",
         deps = [
