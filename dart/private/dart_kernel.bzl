@@ -59,6 +59,7 @@ load("//dart/private:dart_info.bzl", "package_lib_prefix")
 load(
     "//dart/private:kernel_library_state.bzl",
     "DartKernelCycleInfo",
+    "add_package_records",
     "lib_has_cross",
     "lib_kernel_base",
     "lib_kernel_closures",
@@ -68,7 +69,6 @@ load(
     "lib_kernel_plain_srcs",
     "lib_owns_compatible",
     "library_module_inputs",
-    "write_package_config_with_tool",
 )
 load(
     "//dart/private:kernel_params.bzl",
@@ -126,12 +126,6 @@ KERNEL_MODULE_ATTRS = {
     "_kernel_link": attr.label(
         doc = "The tool that links an executable's kernel from the kernels its entry reaches. See `kernel_link.dart`.",
         default = Label("//dart/private/tools:kernel_link"),
-        executable = True,
-        cfg = "exec",
-    ),
-    "_package_config": attr.label(
-        doc = "The tool that writes a module's `package_config.json` from its records. See `package_config.dart`.",
-        default = Label("//dart/private/tools:package_config"),
         executable = True,
         cfg = "exec",
     ),
@@ -645,18 +639,17 @@ def no_kernel_module():
         unseeded_base_kmods = depset(),
     )
 
-def _kmod_declare_outputs(ctx, tools, output, packages, scheme, unused_inputs):
+def _kmod_declare_outputs(ctx, output, packages, scheme, unused_inputs):
     """Declares and writes the module's package config. Returns (package_config, excluded, unused_inputs_list).
 
     `packages` is either the deduplicated record list (an executable's entry or
     a test fixture, written inline as before) or an `(own_records, transitive)`
-    pair (a library module, written by the config tool from action arguments,
-    so analysis never flattens the closure or formats the JSON in Starlark).
+    pair (a library module, whose worker writes the file from request
+    arguments, so analysis never flattens the closure or formats the JSON in
+    Starlark and no action of its own runs).
     """
     package_config = ctx.actions.declare_file(output.basename + ".package_config.json")
-    if type(packages) == "tuple":
-        write_package_config_with_tool(ctx, tools.dartaotruntime, package_config, packages, scheme)
-    else:
+    if type(packages) != "tuple":
         ctx.actions.write(output = package_config, content = kernel_package_config(packages, scheme = scheme))
     excluded = ctx.actions.declare_file(output.basename + ".vm_excluded.txt")
     if unused_inputs:
@@ -674,13 +667,15 @@ def _kmod_common_args(ctx, args, request):
     Args:
       ctx: The rule context, for `ctx.bin_dir`.
       args: The args object to add to.
-      request: A struct with `target`, `platform`, `package_config`, `libraries`,
-        `libraries_platform`, `extra_libraries`, `defines`, `extra_frontend_flags`,
+      request: A struct with `target`, `platform`, `package_config`, `package_records`,
+        `libraries`, `libraries_platform`, `extra_libraries`, `defines`, `extra_frontend_flags`,
         and `scheme`.
     """
     args.add("--target", request.target)
     args.add("--dart-sdk-summary", request.platform)
     args.add("--packages-file", request.package_config)
+    if request.package_records != None:
+        add_package_records(args, request.package_records)
     args.add("--libraries-json", request.libraries)
     if request.libraries_platform:
         args.add("--libraries-platform", request.libraries_platform)
@@ -809,8 +804,8 @@ def _kmod_run_action(ctx, executable, arguments, request, direct_inputs, action_
       executable: The executable to run.
       arguments: The startup arguments plus the params-file args.
       request: A struct with `tools`, `dep_kmods`, `extra_inputs`,
-        `closure_excluded`, `output`, `excluded`, `unused_inputs_list`, and
-        `koutline`.
+        `closure_excluded`, `output`, `excluded`, `unused_inputs_list`,
+        `koutline`, `package_config`, and `package_records`.
       direct_inputs: The action's direct input files.
       action_tools: The action's direct tool files.
       runtime_files: The SDK runtime files depset, or None.
@@ -834,7 +829,11 @@ def _kmod_run_action(ctx, executable, arguments, request, direct_inputs, action_
             direct = action_tools,
             transitive = [runtime_files] if runtime_files != None else [],
         ),
-        outputs = [request.output, request.excluded] + [f for f in [request.unused_inputs_list, request.koutline] if f],
+        outputs = [request.output, request.excluded] + [f for f in [
+            request.unused_inputs_list,
+            request.koutline,
+            request.package_config if request.package_records != None else None,
+        ] if f],
         unused_inputs_list = request.unused_inputs_list,
         mnemonic = "DartKernel",
         progress_message = "Compiling Dart kernel module %s" % request.output.short_path,
@@ -877,7 +876,6 @@ def kernel_module_action(ctx, tools, inputs, outputs, options, compile):
     libraries = settings.libraries_json if settings.libraries_json != None else tools.libraries_json
     package_config, excluded, unused_inputs_list = _kmod_declare_outputs(
         ctx,
-        tools,
         outputs.output,
         inputs.packages,
         settings.scheme,
@@ -894,6 +892,7 @@ def kernel_module_action(ctx, tools, inputs, outputs, options, compile):
         platform = platform,
         libraries = libraries,
         package_config = package_config,
+        package_records = inputs.packages if type(inputs.packages) == "tuple" else None,
         target = settings.target,
         libraries_platform = settings.libraries_platform,
         extra_libraries = settings.extra_libraries,
@@ -934,12 +933,14 @@ def _kmod_register(ctx, request, args, worker_snapshot, patched_marker):
     tools = request.tools
     runtime_files = getattr(tools, "runtime_files", None)
     direct_inputs = [
-        request.package_config,
         tools.dartaotruntime,
         worker_snapshot,
         request.libraries,
         request.platform,
     ] + [s.file for s in request.sources]
+    if request.package_records == None:
+        # An inline-written config is an input; a worker-written one is an output.
+        direct_inputs.append(request.package_config)
     action_tools = [
         tools.dartaotruntime,
         worker_snapshot,

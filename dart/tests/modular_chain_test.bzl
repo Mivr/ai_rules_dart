@@ -20,6 +20,32 @@ def _chain_modular_test_impl(ctx):
 
 _chain_modular_test = analysistest.make(_chain_modular_test_impl)
 
+def _chain_no_config_action_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    actions = analysistest.target_actions(env)
+    config_actions = [a for a in actions if a.mnemonic == "DartPackageConfig"]
+    asserts.equals(env, 0, len(config_actions), "no process per library writes the package config")
+    kernel_actions = [a for a in actions if a.mnemonic == "DartKernel"]
+    asserts.equals(env, 1, len(kernel_actions), "the library registers one module action")
+    argv = kernel_actions[0].argv
+    records = [argv[i + 1] for i in range(len(argv) - 1) if argv[i] == "--record"]
+    names = [r.split("|")[0] for r in records]
+    for want in ctx.attr.want_packages:
+        asserts.true(env, want in names, "the module worker request names package %s" % want)
+    asserts.true(env, "--packages-file" in argv, "the module worker request names the config it writes")
+    outputs = [f.basename for f in kernel_actions[0].outputs.to_list()]
+    asserts.true(
+        env,
+        [o for o in outputs if o.endswith(".package_config.json")] != [],
+        "the module action declares the package config as its output",
+    )
+    return analysistest.end(env)
+
+_chain_no_config_action_test = analysistest.make(
+    _chain_no_config_action_test_impl,
+    attrs = {"want_packages": attr.string_list()},
+)
+
 def _chain_link_test_impl(ctx):
     env = analysistest.begin(ctx)
     actions = analysistest.target_actions(env)
@@ -58,9 +84,23 @@ def modular_chain_test_suite(name):
         target_under_test = "//dart/tests/modular_chain_fixture/chain_app:chain_app",
         size = "small",
     )
+    for level, want in {
+        "leaf": ["chain_leaf"],
+        "mid": ["chain_mid", "chain_leaf"],
+        "top": ["chain_top", "chain_mid", "chain_leaf"],
+    }.items():
+        _chain_no_config_action_test(
+            name = name + "_" + level + "_no_config_action_test",
+            target_under_test = "//dart/tests/modular_chain_fixture/chain_%s:chain_%s" % (level, level),
+            want_packages = want,
+            size = "small",
+        )
     native.test_suite(
         name = name,
         tests = [
+            ":" + name + "_leaf_no_config_action_test",
+            ":" + name + "_mid_no_config_action_test",
+            ":" + name + "_top_no_config_action_test",
             ":" + name + "_leaf_test",
             ":" + name + "_mid_test",
             ":" + name + "_top_test",

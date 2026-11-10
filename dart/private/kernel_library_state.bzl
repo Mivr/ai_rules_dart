@@ -99,7 +99,7 @@ def library_module_inputs(rule_attr, rule_files, dart_info):
     )
 
 def _package_record_flag(pkg):
-    """The `--record` argument naming one package record for the config tool.
+    """The `--record` argument value naming one package record for the worker.
 
     `ctx.actions.args().add_all` applies this to each record of the transitive
     depset at execution time, so analysis never flattens the closure into a
@@ -114,50 +114,26 @@ def _package_record_flag(pkg):
     """
     return "%s|%s|%s" % (pkg.package_name, pkg.lib_root, getattr(pkg, "language_version", ""))
 
-_EXEC_TOOLS_TOOLCHAIN = Label("//dart:exec_tools_toolchain_type")
+def add_package_records(args, packages):
+    """Adds a module's package records to its worker request. Returns None.
 
-def write_package_config_with_tool(ctx, dartaotruntime, output, packages, scheme):
-    """Writes a module's package config through the config tool. Returns None.
-
-    The records reach the tool as action arguments over the transitive depset,
-    expanded at execution, so per-target analysis holds no list and formats no
-    JSON string no matter how large the closure grows. The bytes match
-    `kernel_package_config` for the same records. The tool is an AOT snapshot
-    run by `dartaotruntime`, like the module compiler.
+    The module worker writes the module's `package_config.json` from these
+    arguments before it compiles, so no action of its own does. The records
+    reach the request as `--record` arguments over the transitive
+    depset, expanded at execution, so per-target analysis holds no list and
+    formats no JSON string no matter how large the closure grows. The bytes
+    match `kernel_package_config` for the same records.
 
     Args:
-      ctx: The rule context, carrying the `_package_config` executable.
-      dartaotruntime: The SDK runtime executing the snapshot.
-      output: The `package_config.json` File to produce.
+      args: The worker request `Args` to add to.
       packages: A `(own_records, transitive)` pair: the library's own record
-        list first, then its transitive record depset. The tool keeps the
+        list first, then its transitive record depset. The worker keeps the
         first of each package name, so the own records win exactly as in
         `first_per_package` over the flattened closure.
-      scheme: The multi-root URI scheme (`STABLE_SCHEME` by default).
     """
-    tool = None
-    if hasattr(ctx.executable, "_package_config"):
-        tool = ctx.executable._package_config
-    if tool == None:
-        fail("kernel module %s needs the `_package_config` tool to write its package config." % ctx.label)
-    args = ctx.actions.args()
-    args.use_param_file("@%s", use_always = True)
-    args.set_param_file_format("multiline")
-    args.add("--scheme", scheme)
-    args.add("--output", output.path)
     own_records, transitive = packages
     args.add_all(own_records, map_each = _package_record_flag, before_each = "--record")
     args.add_all(transitive, map_each = _package_record_flag, before_each = "--record")
-    ctx.actions.run(
-        executable = dartaotruntime,
-        arguments = [tool.path, args],
-        inputs = depset(direct = [tool]),
-        outputs = [output],
-        mnemonic = "DartPackageConfig",
-        progress_message = "Writing package config %s" % output.short_path,
-        # The runtime comes from the exec tools toolchain when the rule resolves one.
-        toolchain = _EXEC_TOOLS_TOOLCHAIN if ctx.toolchains[_EXEC_TOOLS_TOOLCHAIN] != None else None,
-    )
 
 def _direct_owned_records(deps):
     """The own package records of each direct dependency, in order.
