@@ -200,3 +200,25 @@ dart_test(
         "@rules_dart//dart/runfiles",
     ],
 )
+
+dart_test(
+    name = "consumer_preset_guard_test",
+    size = "small",
+    srcs = ["test/repo_root.dart"],
+    args = [
+        "$(rlocationpath :test/consumer_preset_guard_test.dart)",
+    ],
+    data = [
+        "test/consumer_preset_guard_test.dart",
+    ],
+    local = True,
+    main = "test/consumer_preset_guard_test.dart",
+    tags = [
+        "external",
+        "no-sandbox",
+    ],
+    deps = [
+        "@pub_deps//:test",
+        "@rules_dart//dart/runfiles",
+    ],
+)
