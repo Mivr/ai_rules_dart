@@ -38,10 +38,11 @@ final class _Runner implements FloorProcessRunner {
 }
 
 SdkTools _fakeSdk(Directory dir) {
+  final exeExt = Platform.isWindows ? '.exe' : '';
   for (final rel in [
-    'bin/dart',
-    'bin/dartaotruntime',
-    'bin/utils/gen_snapshot',
+    'bin/dart$exeExt',
+    'bin/dartaotruntime$exeExt',
+    'bin/utils/gen_snapshot$exeExt',
     'bin/snapshots/gen_kernel_aot.dart.snapshot',
     'bin/snapshots/frontend_server_aot.dart.snapshot',
     'lib/_internal/vm_platform_product.dill',
@@ -139,14 +140,15 @@ void _testPrecompiledSplit() {
 }
 
 void _testTestKernelIsRebuilt(Directory tmp, SdkTools sdk) {
-  final exeDir = '${tmp.path}/c/execroot/_main/bazel-out/k8-fastbuild/bin';
+  final root = tmp.path.replaceAll(r'\', '/');
+  final exeDir = '$root/c/execroot/_main/bazel-out/k8-fastbuild/bin';
   final test = '$exeDir/packages/p/p_test';
   File('$test.entry.kmod.package_config.json')
     ..parent.createSync(recursive: true)
     ..writeAsStringSync('{}');
   final bazelDill =
       '$test.precompiled/packages/p/test/p_test.dart.vm_test.vm.app.dill';
-  final out = '${tmp.path}/c/out';
+  final out = '$root/c/out';
   final runner = _Runner((exe, args) {
     if (args.any((a) => a.contains('mode=compile-only'))) {
       final dill = args
@@ -166,7 +168,7 @@ void _testTestKernelIsRebuilt(Directory tmp, SdkTools sdk) {
   });
   final res = runTestLeafFloorFlow(
     sdk: sdk,
-    workspaceDir: '${tmp.path}/c/ws',
+    workspaceDir: '$root/c/ws',
     testDillPath: bazelDill,
     floorOutputDir: out,
     clock: const _Clock(),
