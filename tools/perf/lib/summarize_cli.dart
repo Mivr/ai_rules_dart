@@ -168,7 +168,9 @@ int runSummarizeCli(List<String> args) {
   }
 
   final jsonOut = _writeSummary(parsed, resolveCliPath(parsed.out));
-  final failures = summaryFailures(jsonDecode(jsonOut) as Map<String, dynamic>);
+  final decodedSummary = jsonDecode(jsonOut) as Map<String, dynamic>;
+  stdout.writeln(formatStepSummaryTable(decodedSummary));
+  final failures = summaryFailures(decodedSummary);
   for (final failure in failures) {
     stderr.writeln('FAIL: $failure');
   }

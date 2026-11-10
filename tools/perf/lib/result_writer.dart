@@ -7,6 +7,9 @@ import 'dart:math';
 
 import 'cli_args.dart';
 import 'spawn_log.dart';
+import 'summary_table.dart';
+
+export 'summary_table.dart';
 
 /// Host runner system information.
 final class RunnerInfo {
@@ -123,6 +126,69 @@ Map<String, dynamic> buildChainObject({
   };
 }
 
+/// Toolchain floor data for a flow result.
+final class FlowFloorData {
+  /// Creates a flow floor data record.
+  const FlowFloorData({
+    this.cpuSeconds,
+    this.reason = 'ok',
+    this.floorKind = 'aot',
+    this.identical = true,
+    this.enabled = true,
+  });
+
+  /// Timed floor CPU seconds.
+  final double? cpuSeconds;
+
+  /// Floor status reason ("ok" or failure description).
+  final String reason;
+
+  /// Floor kind ("aot" or "jit").
+  final String floorKind;
+
+  /// Whether the floor execution and verification succeeded.
+  final bool identical;
+
+  /// Whether the toolchain floor was enabled.
+  final bool enabled;
+
+  /// Disabled floor constant for backward compatibility.
+  static const disabled = FlowFloorData(
+    cpuSeconds: null,
+    reason: 'ok',
+    floorKind: 'aot',
+    identical: true,
+    enabled: false,
+  );
+}
+
+/// Replay data grouped for flow results.
+final class FlowReplayData {
+  /// Creates a replay data record.
+  const FlowReplayData({
+    required this.solCpu,
+    required this.identical,
+    required this.reason,
+    required this.chain,
+    this.workerSteps = const {},
+  });
+
+  /// Speed-of-light CPU seconds.
+  final double? solCpu;
+
+  /// Whether replayed outputs matched byte-for-byte.
+  final bool identical;
+
+  /// Status reason.
+  final String reason;
+
+  /// Replay chain map.
+  final Map<String, dynamic> chain;
+
+  /// Worker step counts.
+  final Map<String, int> workerSteps;
+}
+
 /// Result of a single flow in a single repeat.
 final class FlowResult {
   /// Creates a flow result record.
@@ -134,7 +200,19 @@ final class FlowResult {
     required this.reason,
     required this.chain,
     required this.workerSteps,
-  });
+  }) : floor = FlowFloorData.disabled;
+
+  /// Creates a flow result record including floor data.
+  FlowResult.withFloor({
+    required this.method,
+    required this.bazelCpu,
+    required FlowReplayData replay,
+    this.floor = FlowFloorData.disabled,
+  }) : solCpu = replay.solCpu,
+       identical = replay.identical,
+       reason = replay.reason,
+       chain = replay.chain,
+       workerSteps = replay.workerSteps;
 
   /// Measurement method: "batch" or "warm-server".
   final String method;
@@ -157,6 +235,24 @@ final class FlowResult {
   /// Persistent worker spawn counts by mnemonic.
   final Map<String, int> workerSteps;
 
+  /// Toolchain floor data.
+  final FlowFloorData floor;
+
+  /// Timed floor CPU seconds.
+  double? get toolchainFloorCpu => floor.cpuSeconds;
+
+  /// Floor failure reason, or "ok".
+  String get floorReason => floor.reason;
+
+  /// Floor kind ("aot" or "jit").
+  String get floorKind => floor.floorKind;
+
+  /// Whether the floor execution and check succeeded.
+  bool get floorIdentical => floor.identical;
+
+  /// Whether the floor was enabled.
+  bool get floorEnabled => floor.enabled;
+
   /// Serializes to JSON map.
   Map<String, dynamic> toJson() => {
     'method': method,
@@ -166,6 +262,13 @@ final class FlowResult {
     'reason': reason,
     'chain': chain,
     'workerSteps': workerSteps,
+    if (floor.enabled) ...{
+      'floor_enabled': floor.enabled,
+      'floor_identical': floor.identical,
+      'floor_kind': floor.floorKind,
+      'floor_reason': floor.reason,
+      'toolchain_floor': floor.cpuSeconds,
+    },
   };
 
   /// Deserializes from JSON map.
@@ -197,14 +300,41 @@ final class FlowResult {
         reason: reason,
       );
     }
-    return FlowResult(
+
+    final floorEnabled = json['floor_enabled'] ?? json['floorEnabled'];
+    final toolchainFloor =
+        (json['toolchain_floor'] ?? json['toolchainFloorCpu']) as num?;
+    final floorReason =
+        (json['floor_reason'] ?? json['floorReason']) as String?;
+    final floorKind = (json['floor_kind'] ?? json['floorKind']) as String?;
+    final floorIdentical =
+        (json['floor_identical'] ?? json['floorIdentical']) as bool?;
+
+    final FlowFloorData floorData;
+    if (floorEnabled == true || toolchainFloor != null || floorReason != null) {
+      floorData = FlowFloorData(
+        cpuSeconds: toolchainFloor?.toDouble(),
+        reason: floorReason ?? 'ok',
+        floorKind: floorKind ?? 'aot',
+        identical:
+            floorIdentical ?? (floorReason == null || floorReason == 'ok'),
+        enabled: floorEnabled as bool? ?? true,
+      );
+    } else {
+      floorData = FlowFloorData.disabled;
+    }
+
+    return FlowResult.withFloor(
       method: json['method'] as String? ?? 'warm-server',
       bazelCpu: bazelNum?.toDouble(),
-      solCpu: solNum?.toDouble(),
-      identical: isIdentical,
-      reason: reason,
-      chain: chain,
-      workerSteps: workerSteps,
+      replay: FlowReplayData(
+        solCpu: solNum?.toDouble(),
+        identical: isIdentical,
+        reason: reason,
+        chain: chain,
+        workerSteps: workerSteps,
+      ),
+      floor: floorData,
     );
   }
 }
@@ -250,19 +380,58 @@ const List<String> expectedFlowKeys = [
   'dart-test-leaf',
 ];
 
-/// Whether [result] has all [expectedFlowKeys], each identical, measured and ok.
-bool isRepeatHealthy(RepeatResult result) {
-  for (final key in expectedFlowKeys) {
-    final flow = result.flows[key];
-    if (flow == null ||
-        !flow.identical ||
-        flow.solCpu == null ||
-        flow.bazelCpu == null ||
-        flow.reason != 'ok') {
+bool _isFlowHealthy(FlowResult flow) {
+  if (!flow.identical ||
+      flow.solCpu == null ||
+      flow.bazelCpu == null ||
+      flow.reason != 'ok') {
+    return false;
+  }
+  if (flow.floorEnabled) {
+    if (!flow.floorIdentical ||
+        flow.toolchainFloorCpu == null ||
+        flow.floorReason != 'ok') {
       return false;
     }
   }
   return true;
+}
+
+/// Whether [result] has all [expectedFlowKeys], each identical, measured and ok.
+bool isRepeatHealthy(RepeatResult result) {
+  for (final key in expectedFlowKeys) {
+    final flow = result.flows[key];
+    if (flow == null || !_isFlowHealthy(flow)) return false;
+  }
+  return true;
+}
+
+void _checkFlowSummaryFailure(
+  String key,
+  Map<dynamic, dynamic>? flow,
+  List<String> failures,
+) {
+  if (flow == null) {
+    failures.add('flow $key is missing');
+    return;
+  }
+  final reason = flow['reason'];
+  if (flow['identical'] != true || flow['sol'] == null || reason != 'ok') {
+    failures.add(
+      'flow $key failed: identical=${flow['identical']}, '
+      'sol=${flow['sol']}, reason=${reason == null ? 'null' : '"$reason"'}',
+    );
+  }
+  if (flow.containsKey('floor_reason')) {
+    final floorReason = flow['floor_reason'];
+    final toolchainFloor = flow['toolchain_floor'];
+    if (floorReason != 'ok' || toolchainFloor == null) {
+      failures.add(
+        'flow $key floor failed: toolchain_floor=$toolchainFloor, '
+        'floor_reason=${floorReason == null ? 'null' : '"$floorReason"'}',
+      );
+    }
+  }
 }
 
 /// Lists why a decoded `dart-sol.json` [summary] is not healthy (empty if ok).
@@ -276,17 +445,7 @@ List<String> summaryFailures(Map<String, dynamic> summary) {
   final flows = summary['flows'];
   for (final key in expectedFlowKeys) {
     final flow = flows is Map ? flows[key] : null;
-    if (flow is! Map) {
-      failures.add('flow $key is missing');
-      continue;
-    }
-    final reason = flow['reason'];
-    if (flow['identical'] != true || flow['sol'] == null || reason != 'ok') {
-      failures.add(
-        'flow $key failed: identical=${flow['identical']}, '
-        'sol=${flow['sol']}, reason=${reason == null ? 'null' : '"$reason"'}',
-      );
-    }
+    _checkFlowSummaryFailure(key, flow is Map ? flow : null, failures);
   }
   return failures;
 }
@@ -407,48 +566,83 @@ String _resolveFailureReason(String? flowFailure, String? countFailure) {
 final class _FlowAccumulator {
   final List<double> bazelVals = [];
   final List<double> solVals = [];
+  final List<double> floorVals = [];
   bool allIdentical = true;
+  bool allFloorIdentical = true;
+  bool floorEnabled = false;
   String? flowFailure;
+  String? floorFailure;
+  String? floorKind;
   Map<String, dynamic>? chainMap;
   final Map<String, int> workerSteps = {};
+
+  void _recordChain(Map<String, dynamic> chain, bool identical) {
+    if (chain.isEmpty) return;
+    final steps = chain['steps'];
+    final hasSteps = steps is Map && steps.isNotEmpty;
+    if (chainMap == null) {
+      chainMap = chain;
+      return;
+    }
+    if (!hasSteps) return;
+    final existingSteps = chainMap!['steps'];
+    if (existingSteps is! Map || existingSteps.isEmpty) {
+      chainMap = chain;
+    } else if (identical && chainMap!['status'] != 'ok') {
+      chainMap = chain;
+    }
+  }
+
+  void _recordReplay(FlowResult f) {
+    if (f.bazelCpu != null) bazelVals.add(f.bazelCpu!);
+    final isOk = f.identical &&
+        f.reason == 'ok' &&
+        f.solCpu != null &&
+        f.bazelCpu != null;
+    if (isOk) {
+      solVals.add(f.solCpu!);
+      return;
+    }
+    allIdentical = false;
+    if (flowFailure == null && f.reason.isNotEmpty && f.reason != 'ok') {
+      flowFailure = f.reason;
+    }
+  }
+
+  void _recordFloor(FlowResult f) {
+    if (!f.floorEnabled) return;
+    floorEnabled = true;
+    floorKind = f.floorKind;
+    final isOk = f.floorIdentical &&
+        f.floorReason == 'ok' &&
+        f.toolchainFloorCpu != null;
+    if (isOk) {
+      floorVals.add(f.toolchainFloorCpu!);
+      return;
+    }
+    allFloorIdentical = false;
+    if (floorFailure == null &&
+        f.floorReason.isNotEmpty &&
+        f.floorReason != 'ok') {
+      floorFailure = f.floorReason;
+    }
+  }
 
   void recordRepeat(FlowResult? f, int repeatIndex, String key) {
     if (f == null) {
       allIdentical = false;
+      allFloorIdentical = false;
       flowFailure ??= 'flow $key missing in repeat $repeatIndex';
+      floorFailure ??= 'flow $key missing in repeat $repeatIndex';
       return;
     }
 
-    if (f.chain.isNotEmpty) {
-      final steps = f.chain['steps'];
-      final hasSteps = steps is Map && steps.isNotEmpty;
-      if (chainMap == null) {
-        chainMap = f.chain;
-      } else if (hasSteps) {
-        final existingSteps = chainMap!['steps'];
-        if (existingSteps is! Map || existingSteps.isEmpty) {
-          chainMap = f.chain;
-        } else if (f.identical && chainMap!['status'] != 'ok') {
-          chainMap = f.chain;
-        }
-      }
-    }
+    _recordChain(f.chain, f.identical);
     for (final entry in f.workerSteps.entries) {
       workerSteps[entry.key] = max(workerSteps[entry.key] ?? 0, entry.value);
     }
-    if (f.bazelCpu != null) bazelVals.add(f.bazelCpu!);
-
-    if (f.identical &&
-        f.reason == 'ok' &&
-        f.solCpu != null &&
-        f.bazelCpu != null) {
-      solVals.add(f.solCpu!);
-    } else {
-      allIdentical = false;
-      if (flowFailure == null && f.reason.isNotEmpty && f.reason != 'ok') {
-        flowFailure = f.reason;
-      }
-    }
+    _recordReplay(f);
+    _recordFloor(f);
   }
 }
 
@@ -478,23 +672,72 @@ Map<String, dynamic> _resolveFlowChain(
   );
 }
 
+List<double>? _calculateSpread(List<double> vals, {bool valid = true}) {
+  if (!valid || vals.isEmpty) return null;
+  return [_roundCpu(vals.reduce(min)), _roundCpu(vals.reduce(max))];
+}
+
+Map<String, dynamic> _buildFloorFields({
+  required String key,
+  required _FlowAccumulator acc,
+  required double? bazelMedian,
+  required int expectedRepeats,
+  required String? countFailure,
+}) {
+  if (!acc.floorEnabled) return const {};
+  final isIdentical =
+      acc.allFloorIdentical && acc.floorVals.length == expectedRepeats;
+  final median = isIdentical ? calculateMedian(acc.floorVals) : null;
+  final reason =
+      isIdentical ? 'ok' : (acc.floorFailure ?? countFailure ?? 'failed');
+  final ratio = (bazelMedian != null && median != null && median > 0)
+      ? _roundCpu(bazelMedian / median)
+      : null;
+  return {
+    'floor_kind': acc.floorKind ?? (key == 'dart-app-body' ? 'jit' : 'aot'),
+    'floor_ratio': ratio,
+    'floor_reason': reason,
+    'toolchain_floor': median != null ? _roundCpu(median) : null,
+    'toolchain_floor_ratio': ratio,
+  };
+}
+
+Map<String, dynamic> _buildSpreadMap({
+  required _FlowAccumulator acc,
+  required bool isIdentical,
+  required int expectedRepeats,
+}) {
+  final isFloorIdentical =
+      acc.allFloorIdentical && acc.floorVals.length == expectedRepeats;
+  return {
+    'bazel': _calculateSpread(acc.bazelVals),
+    'n': acc.bazelVals.length,
+    'sol': _calculateSpread(acc.solVals, valid: isIdentical),
+    if (acc.floorEnabled)
+      'toolchain_floor': _calculateSpread(
+        acc.floorVals,
+        valid: isFloorIdentical,
+      ),
+  };
+}
+
 Map<String, dynamic> _buildFlowEntry(
   String key,
   List<RepeatResult> repeats,
   int expectedRepeats,
 ) {
-  final method = key == 'dart-app-clean' ? 'batch' : 'warm-server';
   final acc = _FlowAccumulator();
-  if (expectedRepeats <= 0 || repeats.length != expectedRepeats) {
+  final countMismatch =
+      expectedRepeats <= 0 || repeats.length != expectedRepeats;
+  if (countMismatch) {
     acc.allIdentical = false;
+    acc.allFloorIdentical = false;
   }
-
   for (final r in repeats) {
     acc.recordRepeat(r.flows[key], r.repeatIndex, key);
   }
 
-  final countFailure =
-      (expectedRepeats <= 0 || repeats.length != expectedRepeats)
+  final countFailure = countMismatch
       ? 'missing repeats: expected $expectedRepeats, got ${repeats.length}'
       : null;
   final isIdentical = acc.allIdentical && acc.solVals.length == expectedRepeats;
@@ -504,19 +747,6 @@ Map<String, dynamic> _buildFlowEntry(
       ? 'ok'
       : _resolveFailureReason(acc.flowFailure, countFailure);
 
-  final spreadBazel = acc.bazelVals.isEmpty
-      ? null
-      : [
-          _roundCpu(acc.bazelVals.reduce(min)),
-          _roundCpu(acc.bazelVals.reduce(max)),
-        ];
-  final spreadSol = (!isIdentical || acc.solVals.isEmpty)
-      ? null
-      : [
-          _roundCpu(acc.solVals.reduce(min)),
-          _roundCpu(acc.solVals.reduce(max)),
-        ];
-
   return {
     'bazel': bazelMedian != null ? _roundCpu(bazelMedian) : null,
     'chain': _resolveFlowChain(
@@ -525,15 +755,22 @@ Map<String, dynamic> _buildFlowEntry(
       solMedian: solMedian,
       reason: reason,
     ),
+    ..._buildFloorFields(
+      key: key,
+      acc: acc,
+      bazelMedian: bazelMedian,
+      expectedRepeats: expectedRepeats,
+      countFailure: countFailure,
+    ),
     'identical': isIdentical,
-    'method': method,
+    'method': key == 'dart-app-clean' ? 'batch' : 'warm-server',
     'reason': reason,
     'sol': solMedian != null ? _roundCpu(solMedian) : null,
-    'spread': {
-      'bazel': spreadBazel,
-      'n': acc.bazelVals.length,
-      'sol': spreadSol,
-    },
+    'spread': _buildSpreadMap(
+      acc: acc,
+      isIdentical: isIdentical,
+      expectedRepeats: expectedRepeats,
+    ),
     'worker_steps': Map<String, int>.of(acc.workerSteps),
   };
 }
