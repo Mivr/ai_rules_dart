@@ -99,6 +99,7 @@ import 'kernel_module_strip.dart';
 // Shared through `srcs`, like the guard import above: this binary takes no
 // `dart_library` dependency on purpose (see the `kernel_module` target).
 import 'lib/worker_protocol.dart';
+import 'package_config.dart';
 
 export '../../guard/lib/directive_guard.dart'
     show
@@ -429,9 +430,11 @@ int? _parseModuleArgs(
   _ModuleOptions options,
   StringBuffer log,
 ) {
+  final List<String>? args = materializePackageConfig(rawArgs, log);
+  if (args == null) return 64;
   var i = 0;
-  while (i < rawArgs.length) {
-    i = _parseModuleArg(rawArgs, i, options, log);
+  while (i < args.length) {
+    i = _parseModuleArg(args, i, options, log);
     if (i < 0) return 64;
   }
   if (options.excludedPath == null ||
@@ -533,24 +536,17 @@ _decodeWorkerInputs(List<Uint8List> inputs) {
     final ({Uint8List digest, String path}) decoded = _decodeInputView(raw);
     final String rawPath = decoded.path;
     if (rawPath.isEmpty) continue;
-    if (_isNormalizedRelative(rawPath)) {
-      paths.add(rawPath);
-      if (decoded.digest.isNotEmpty) {
-        digests[rawPath] = decoded.digest;
-      }
-    } else {
-      paths.add(rawPath);
-      final String norm = _normalize(rawPath);
-      if (norm.isNotEmpty) paths.add(norm);
-      if (decoded.digest.isNotEmpty) {
-        digests[rawPath] = decoded.digest;
-        final String normFile = normalizePath(rawPath);
-        digests.putIfAbsent(normFile, () => decoded.digest);
-        if (norm.isNotEmpty) {
-          digests.putIfAbsent(norm, () => decoded.digest);
-          digests.putIfAbsent('./$norm', () => decoded.digest);
-        }
-      }
+    paths.add(rawPath);
+    final Uint8List digest = decoded.digest;
+    if (digest.isNotEmpty) digests[rawPath] = digest;
+    if (_isNormalizedRelative(rawPath)) continue;
+    final String norm = _normalize(rawPath);
+    if (norm.isNotEmpty) paths.add(norm);
+    if (digest.isEmpty) continue;
+    digests.putIfAbsent(normalizePath(rawPath), () => digest);
+    if (norm.isNotEmpty) {
+      digests.putIfAbsent(norm, () => digest);
+      digests.putIfAbsent('./$norm', () => digest);
     }
   }
   return (workerInputPaths: paths, inputDigests: digests);

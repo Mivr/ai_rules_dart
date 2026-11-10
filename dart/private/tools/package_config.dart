@@ -1,12 +1,13 @@
 // Generates a `package_config.json` for one kernel module from its closure's
-// package records, as `kernel_module_action` in `dart/private/dart_kernel.bzl`
-// invokes it.
+// package records, either through this binary or, as `kernel_module` does for
+// every library module, through `materializePackageConfig` on a worker request.
 //
 // A chain of N `dart_library` targets used to format N package records into a
-// JSON string in Starlark once per target, so analysis did O(N^2) Starlark work
-// and string building. The rule now passes the transitive records as action
-// arguments (`args.add_all` with `map_each`, expanded at execution) and this
-// tool writes the file, so analysis holds only a depset reference.
+// JSON string in Starlark once per target, then to run one process per target
+// to write it. The rule now passes the transitive records as `--record`
+// arguments of the module request (`args.add_all` with `map_each`, expanded at
+// execution) and the module worker writes the file it compiles against, so
+// analysis holds only a depset reference and no extra action runs.
 //
 // The bytes match `generate_stable_package_config` in `dart/private/common.bzl`
 // called with every package kept (as `kernel_package_config` calls it): one
@@ -22,14 +23,16 @@
 
 import 'dart:io';
 
-/// The scheme argument: the multi-root URI scheme the roots resolve under.
-const _schemeFlag = '--scheme';
-
-/// The output argument: the `package_config.json` file to write.
-const _outputFlag = '--output';
-
-/// The record argument, once per package record in closure order.
+/// The record argument, once per package record in closure order. A worker
+/// request names its records with it too; `kernel_module` writes the file its
+/// `--packages-file` names from them.
 const _recordFlag = '--record';
+
+/// The worker request's package config path.
+const _packagesFlag = '--packages-file';
+
+/// The worker request's multi-root URI scheme.
+const _schemeFlag = '--multi-root-scheme';
 
 /// Splits a `--record` argument into its fields.
 List<String> splitRecord(String raw) {
@@ -86,6 +89,40 @@ String buildPackageConfig(List<PackageRecord> records, String scheme) {
       '${entries.join(',\n')}\n  ]\n}\n';
 }
 
+/// Removes the `--record` arguments from [args] and, when there were
+/// any, writes the `--packages-file` they describe, under the
+/// `--multi-root-scheme` the same request names.
+///
+/// Returns the remaining arguments, or null with a message in [log] when
+/// records came without either flag. A request without records is returned
+/// untouched and no file is written.
+List<String>? materializePackageConfig(List<String> args, StringBuffer log) {
+  final rest = <String>[];
+  final records = <PackageRecord>[];
+  for (var i = 0; i < args.length; i++) {
+    if (args[i] == _recordFlag && i + 1 < args.length) {
+      records.add(parsePackageRecord(args[++i]));
+    } else {
+      rest.add(args[i]);
+    }
+  }
+  if (records.isEmpty) return args;
+  final int file = rest.indexOf(_packagesFlag);
+  final int scheme = rest.indexOf(_schemeFlag);
+  if (file < 0 ||
+      scheme < 0 ||
+      file + 1 >= rest.length ||
+      scheme + 1 >= rest.length) {
+    log.writeln(
+      'kernel_module: $_recordFlag needs $_packagesFlag and $_schemeFlag.',
+    );
+    return null;
+  }
+  File(rest[file + 1])
+      .writeAsStringSync(buildPackageConfig(records, rest[scheme + 1]));
+  return rest;
+}
+
 /// Expands `@file` arguments, one record per line, as Bazel writes them.
 List<String> expandParamFiles(List<String> args) {
   final expanded = <String>[];
@@ -102,31 +139,19 @@ List<String> expandParamFiles(List<String> args) {
   return expanded;
 }
 
+/// Writes the config a request of `--record`, `--packages-file` and
+/// `--multi-root-scheme` arguments describes, as `kernel_module` does.
 void main(List<String> argv) {
-  var scheme = '';
-  var output = '';
-  final records = <PackageRecord>[];
   final List<String> args = expandParamFiles(argv);
-  for (var i = 0; i < args.length; i++) {
-    final String arg = args[i];
-    if (arg == _schemeFlag && i + 1 < args.length) {
-      scheme = args[++i];
-    } else if (arg == _outputFlag && i + 1 < args.length) {
-      output = args[++i];
-    } else if (arg == _recordFlag && i + 1 < args.length) {
-      records.add(parsePackageRecord(args[++i]));
-    } else {
-      stderr.writeln('package_config: unexpected argument $arg.');
-      exitCode = 64;
-      return;
-    }
-  }
-  if (scheme.isEmpty || output.isEmpty) {
-    stderr.writeln(
-      'package_config: $_schemeFlag and $_outputFlag are required.',
+  final log = StringBuffer();
+  final List<String>? rest = materializePackageConfig(args, log);
+  if (rest == null || identical(rest, args)) {
+    stderr.write(
+      log.isEmpty
+          ? 'package_config: pass $_recordFlag, $_packagesFlag and '
+                '$_schemeFlag.\n'
+          : log,
     );
     exitCode = 64;
-    return;
   }
-  File(output).writeAsStringSync(buildPackageConfig(records, scheme));
 }
