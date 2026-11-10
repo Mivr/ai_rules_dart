@@ -7,6 +7,9 @@ import breaks. This check reads each target's `import` and `export`
 directives and fails the build when one names a package no direct dependency
 provides.
 
+The `//dart:refused_dart_libraries` setting makes the same check refuse named
+`dart:` libraries, such as `dart:mirrors`; it is empty by default.
+
 It is on by default. The Bazel feature `dart_layering_check` turns it off per
 target (`package(features = ["-dart_layering_check"])`) or per build
 (`--features=-dart_layering_check`). The check is a validation: one small
@@ -23,6 +26,7 @@ executable run every check.
 """
 
 load("//dart:providers.bzl", "DartImportCheckInfo", "DartInfo", "DartKernelInfo")
+load("//dart/private:build_settings.bzl", "REFUSED_DART_LIBRARIES_ATTR", "refused_library_args")
 load("//dart/private:dart_kernel.bzl", "MODULAR_KERNEL_TOOLCHAINS", "kernel_tools_for")
 load(
     "//dart/private:kernel_library_state.bzl",
@@ -108,7 +112,8 @@ def _declare_check(ctx, tool, runtime, request):
       tool: The check tool's executable `File`.
       runtime: The `dartaotruntime` `File` that runs the tool.
       request: A struct of `srcs` (Files), `own_packages` and `direct_packages`
-        (name lists).
+        (name lists). The `//dart:refused_dart_libraries` entries are passed
+        as `--refused-library` when there are any.
 
     Returns:
       The declared stamp `File`.
@@ -121,6 +126,7 @@ def _declare_check(ctx, tool, runtime, request):
     args.add("--label", label)
     args.add_all(request.own_packages, before_each = "--own-package")
     args.add_all(request.direct_packages, before_each = "--direct-package")
+    args.add_all(refused_library_args(ctx), before_each = "--refused-library")
     args.add_all(request.srcs, before_each = "--src")
     args.add("--output", stamp)
     ctx.actions.run(
@@ -200,7 +206,7 @@ dart_import_check_aspect = aspect(
             executable = True,
             cfg = "exec",
         ),
-    },
+    } | REFUSED_DART_LIBRARIES_ATTR,
     toolchains = MODULAR_KERNEL_TOOLCHAINS,
     doc = """Checks that each library in an executable's closure imports only packages its `deps` provide.
 
@@ -219,8 +225,9 @@ def executable_import_check(ctx, own_record):
     mode.
 
     Args:
-      ctx: The executable rule's context, carrying `_import_check`, `main`,
-        `srcs` and `deps`, and the exec tools toolchain.
+      ctx: The executable rule's context, carrying `_import_check`,
+        `_refused_dart_libraries`, `main`, `srcs` and `deps`, and the exec
+        tools toolchain.
       own_record: The executable's own `DartPackageInfo` (`executable_package`'s
         `record`), or `None` when it states no package.
 

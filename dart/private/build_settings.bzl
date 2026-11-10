@@ -89,3 +89,46 @@ def merge_dart_defines(ctx):
     """
     validate_dart_defines(ctx.attr.defines, "the `defines` attribute of %s" % ctx.label)
     return list(ctx.attr.defines) + ctx.attr._extra_dart_defines[BuildSettingInfo].value
+
+def _is_refusable_library(entry):
+    """Whether `entry` is `dart:<name>` with `<name>` made of `[a-z_]+`."""
+    if not entry.startswith("dart:"):
+        return False
+    name = entry[len("dart:"):]
+    return len(name) > 0 and not [c for c in name.elems() if c != "_" and not ("a" <= c and c <= "z")]
+
+def _refused_dart_libraries_flag_impl(ctx):
+    """Fails on an entry that is not `dart:<name>`; otherwise exposes the list."""
+    for entry in ctx.build_setting_value:
+        if not _is_refusable_library(entry):
+            fail(("Bad entry %r in --%s. Entries are `dart:<name>` with `<name>` " +
+                  "made of lowercase letters and underscores, such as `dart:mirrors`.") %
+                 (entry, ctx.label))
+    return BuildSettingInfo(value = ctx.build_setting_value)
+
+refused_dart_libraries_flag = rule(
+    implementation = _refused_dart_libraries_flag_impl,
+    # `repeatable` for the same reason as `dart_defines_flag`: one whole entry
+    # per occurrence, never split on commas.
+    build_setting = config.string_list(flag = True, repeatable = True),
+    doc = "A repeatable list of `dart:` libraries (`dart:<name>`) that the " +
+          "import check refuses in `import` and `export` directives.",
+)
+
+REFUSED_DART_LIBRARIES_ATTR = {
+    "_refused_dart_libraries": attr.label(
+        doc = "The //dart:refused_dart_libraries build setting, passed to the import check.",
+        default = Label("//dart:refused_dart_libraries"),
+    ),
+}
+
+def refused_library_args(ctx):
+    """The `dart:` libraries the import check refuses.
+
+    Args:
+      ctx: Rule or aspect context carrying `_refused_dart_libraries`.
+
+    Returns:
+      The list of `dart:<name>` entries, empty by default.
+    """
+    return ctx.attr._refused_dart_libraries[BuildSettingInfo].value

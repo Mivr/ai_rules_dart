@@ -9,7 +9,7 @@ runfiles (Windows) are a non-issue.
 """
 
 load("//dart:providers.bzl", "DartCodeAssetInfo", "DartInfo")
-load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR", "merge_dart_defines")
+load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR", "REFUSED_DART_LIBRARIES_ATTR", "merge_dart_defines")
 load(
     "//dart/private:common.bzl",
     "DART_ABI_CONSTRAINT_ATTRS",
@@ -549,6 +549,7 @@ _TEST_COMMON_ATTRS = (
     WINDOWS_CONSTRAINT_ATTR |
     DART_ABI_CONSTRAINT_ATTRS |
     EXTRA_DART_DEFINES_ATTR |
+    REFUSED_DART_LIBRARIES_ATTR |
     MODULAR_KERNEL_ATTRS |
     EXECUTABLE_PACKAGE_ATTRS
 )

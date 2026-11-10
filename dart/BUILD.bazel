@@ -1,6 +1,6 @@
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "int_flag")
-load("//dart/private:build_settings.bzl", "dart_defines_flag")
+load("//dart/private:build_settings.bzl", "dart_defines_flag", "refused_dart_libraries_flag")
 load("//dart/private:copy_toolchain.bzl", "copy_toolchain")
 load("//dart/private:dart_sdk_binary.bzl", "dart_sdk_binary")
 load("//dart/private:resolved_toolchain.bzl", "resolved_toolchain")
@@ -29,6 +29,16 @@ exports_files(
 #   bazel build //app --@rules_dart//dart:extra_dart_defines=FOO=bar
 dart_defines_flag(
     name = "extra_dart_defines",
+    build_setting_default = [],
+    visibility = ["//visibility:public"],
+)
+
+# `dart:` libraries the strict-layering import check refuses in `import` and
+# `export` directives, such as `dart:mirrors`. Repeatable, one `dart:<name>` per
+# occurrence; empty by default, which refuses nothing:
+#   bazel build //app --@rules_dart//dart:refused_dart_libraries=dart:mirrors
+refused_dart_libraries_flag(
+    name = "refused_dart_libraries",
     build_setting_default = [],
     visibility = ["//visibility:public"],
 )

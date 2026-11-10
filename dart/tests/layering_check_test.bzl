@@ -165,3 +165,52 @@ library_no_import_check_test = analysistest.make(
     _library_no_import_check_test_impl,
     extra_target_under_test_aspects = [dart_import_check_aspect, _actions_aspect],
 )
+
+def _refused_test_impl(ctx):
+    """Checks that every `DartImportCheck` action carries the refused libraries, and only then."""
+    env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
+    checks = [a for a in analysistest.target_actions(env) if a.mnemonic == "DartImportCheck"]
+    if LayeringActionsInfo in target:
+        checks += _check_actions(env)
+    asserts.true(env, len(checks) > 0, "the target runs a DartImportCheck action")
+    for action in checks:
+        asserts.equals(
+            env,
+            ctx.attr.expect_refused,
+            _flag_values(action.argv, "--refused-library"),
+            "refused libraries in argv: %s" % action.argv,
+        )
+    return analysistest.end(env)
+
+_REFUSED_ATTRS = {"expect_refused": attr.string_list(doc = "The `--refused-library` values argv must carry, in order.")}
+
+# Without the modular kernel a library registers its own `DartImportCheck`
+# action instead of checking inside the module compile.
+_NO_MODULES = {str(Label("//dart:modular_kernel")): False}
+
+layering_refused_test = analysistest.make(
+    _refused_test_impl,
+    attrs = _REFUSED_ATTRS,
+    extra_target_under_test_aspects = [dart_import_check_aspect, _actions_aspect],
+    config_settings = _NO_MODULES,
+)
+
+layering_refused_set_test = analysistest.make(
+    _refused_test_impl,
+    attrs = _REFUSED_ATTRS,
+    extra_target_under_test_aspects = [dart_import_check_aspect, _actions_aspect],
+    config_settings = _NO_MODULES | {str(Label("//dart:refused_dart_libraries")): ["dart:mirrors"]},
+)
+
+def _refused_bad_impl(ctx):
+    """Checks that a malformed entry fails analysis, naming the setting and the entry."""
+    env = analysistest.begin(ctx)
+    asserts.expect_failure(env, 'Bad entry "dart:Mirrors" in --')
+    return analysistest.end(env)
+
+layering_refused_bad_test = analysistest.make(
+    _refused_bad_impl,
+    expect_failure = True,
+    config_settings = {str(Label("//dart:refused_dart_libraries")): ["dart:Mirrors"]},
+)
