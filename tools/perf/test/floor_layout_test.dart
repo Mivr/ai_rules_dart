@@ -123,6 +123,103 @@ void _testLayoutAndAotArguments(Directory tmp, SdkTools sdk) {
   _check(args.last == layout.entrypoint, 'The entrypoint comes last');
 }
 
+String _fakeWorkspace(Directory root) {
+  for (final name in ['pkg1', 'pkg0']) {
+    File('${root.path}/ws/packages/$name/lib/$name.dart')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync('');
+  }
+  return '${root.path}/ws';
+}
+
+void _testConfigWithoutAppFile(Directory tmp) {
+  final ws = _fakeWorkspace(Directory('${tmp.path}/d')..createSync());
+  final exe = _fakeExecroot(
+    Directory('${tmp.path}/e')..createSync(),
+    withConfig: false,
+  );
+  final layout = FloorLayout.fromApp(appExecutable: exe, workspaceDir: ws);
+  final config = layout.packageConfig;
+  _check(config != null && File(config).existsSync(), 'A config is built');
+  final text = File(config!).readAsStringSync();
+  final packages = (jsonDecode(text) as Map)['packages'] as List;
+  _check(
+    packages.map((p) => '${p['name']}=${p['rootUri']}').join(',') ==
+        'pkg0=$floorScheme:///packages/pkg0,'
+            'pkg1=$floorScheme:///packages/pkg1',
+    'The workspace packages are listed under the scheme',
+  );
+  _check(layout.scheme == floorScheme, 'The scheme is kept');
+  _check(layout.roots.length == 2, 'The roots are kept');
+
+  final entry = _fakeExecroot(
+    Directory('${tmp.path}/f')..createSync(),
+    withConfig: false,
+  );
+  File('$entry.entry.kmod.package_config.json').writeAsStringSync('{}');
+  _check(
+    FloorLayout.fromApp(appExecutable: entry, workspaceDir: ws).packageConfig ==
+        '$entry.entry.kmod.package_config.json',
+    'The entry module config of the rules is used',
+  );
+  final own = _fakeExecroot(
+    Directory('${tmp.path}/g')..createSync(),
+    withConfig: true,
+  );
+  _check(
+    FloorLayout.fromApp(appExecutable: own, workspaceDir: ws).packageConfig ==
+        '$own.package_config.json',
+    'An existing app config is used as is',
+  );
+}
+
+void _testMissingConfigError(Directory tmp) {
+  final exe = _fakeExecroot(
+    Directory('${tmp.path}/h')..createSync(),
+    withConfig: false,
+  );
+  String? message;
+  try {
+    FloorLayout.fromApp(
+      appExecutable: exe,
+      workspaceDir: '${tmp.path}/h/empty',
+    );
+  } on StateError catch (e) {
+    message = e.message;
+  }
+  _check(
+    message != null &&
+        message.contains('app.package_config.json') &&
+        message.contains('66dc601d') &&
+        message.contains('Linked-kernel'),
+    'The error names the input and the rules change',
+  );
+}
+
+void _testFloorRunsWithoutAppConfig(Directory tmp, SdkTools sdk) {
+  final ws = _fakeWorkspace(Directory('${tmp.path}/i')..createSync());
+  final exe = _fakeExecroot(
+    Directory('${tmp.path}/j')..createSync(),
+    withConfig: false,
+  );
+  final runner = _Runner((_, _) => ProcessResult(1, 0, 'Result: 1\n', ''));
+  final res = runAotFloorFlow(
+    sdk: sdk,
+    workspaceDir: ws,
+    floorOutputDir: '${tmp.path}/i/out',
+    bazelAppExecutable: exe,
+    clock: const _Clock(),
+    runner: runner,
+  );
+  _check(res.identical && res.reason == 'ok', 'The floor runs: ${res.reason}');
+  final gen = runner.calls.first;
+  final at = gen.indexOf('--packages');
+  _check(
+    at >= 0 && File(gen[at + 1]).existsSync(),
+    'The compiler gets an existing package config',
+  );
+}
+
 void _testPrecompiledSplit() {
   final parts = splitPrecompiledDill(
     '/b/bin/packages/p/p_test.precompiled/packages/p/test/p_test.dart'
@@ -212,6 +309,9 @@ void main() {
   try {
     final sdk = _fakeSdk(Directory('${tmp.path}/sdk')..createSync());
     _testLayoutAndAotArguments(tmp, sdk);
+    _testConfigWithoutAppFile(tmp);
+    _testMissingConfigError(tmp);
+    _testFloorRunsWithoutAppConfig(tmp, sdk);
     _testPrecompiledSplit();
     _testTestKernelIsRebuilt(tmp, sdk);
     _testFloorErrorKeepsSol();
