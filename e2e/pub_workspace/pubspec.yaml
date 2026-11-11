@@ -1,0 +1,7 @@
+name: pub_workspace_root
+publish_to: none
+environment:
+  sdk: ^3.11.0
+workspace:
+  - a
+  - b

@@ -239,7 +239,7 @@
   "moduleExtensions": {
     "//dart/pub:extensions.bzl%pub": {
       "general": {
-        "bzlTransitiveDigest": "gcjoFlMBUHH2GeKNn8GE6Jj3I3zxJGyDagGRKjlgFbk=",
+        "bzlTransitiveDigest": "+0LCzdQB0iL33/lKX9QFlcQ764lAZP4TyWnLQuaRgJk=",
         "usagesDigest": "cKio2jMvxLkO40BuRK9HRaNaw0GxLh5CP9VktlNJaGU=",
         "recordedInputs": [
           "REPO_MAPPING:,dart_pub_scanner +dart+dart_pub_scanner",

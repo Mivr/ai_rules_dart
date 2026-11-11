@@ -13,6 +13,7 @@ load("//dart/pub/private:pub_resolution_warnings.bzl", _warn_skipped_sources = "
 load("//dart/pub/private:pub_root_pin.bzl", "best_entry", "decl_lock_sha_conflict", "git_path_conflict", "git_ref_conflict", "git_version_error", "hosted_sha_conflict", "hosted_version_error", "select_all_explicit")
 load("//dart/pub/private:pub_scanner_sdk.bzl", "scanner_runtime_label")
 load("//dart/pub/private:pub_scc_entries.bzl", _scc_member_entries = "scc_member_entries")
+load("//dart/pub/private:pub_workspace.bzl", "check_workspaces")
 
 visibility("public")
 
@@ -20,7 +21,7 @@ visibility("public")
 scc_member_entries = _scc_member_entries
 
 _package = tag_class(
-    doc = "Declares one pub.dev package to download and materialize as a spoke repository, pinned by version and archive hash with its pub dependencies. A `package` tag from the root module wins over `package` tags for the same package from dependencies: a dependency's different version is dropped with a NOTE naming both versions. A root lock's git entry pins like a hosted one, and a root pin never hides a same-version sha256 conflict.",
+    doc = "Declares one pub.dev package to download and materialize as a spoke repository, pinned by version and archive hash with its pub dependencies. A `package` tag from the root module wins over `package` tags for the same package from dependencies: a dependency's different version is dropped with a NOTE naming both versions. A root lock's git entry pins like a hosted one, and a root pin never hides a same-version sha256 conflict. With `workspace_members`, the lock is a pub workspace root's lock and its members are checked (see docs/pub.md, Workspaces).",
     attrs = {
         "name": attr.string(
             doc = "The pub.dev package name (also used as the repository name).",
@@ -87,6 +88,11 @@ _from_lock = tag_class(
                   "lock. Use for standalone tools that need a different version of a " +
                   "package than the rest of the build. Defaults to False.",
             default = False,
+        ),
+        "workspace_members": attr.label_list(
+            doc = "Labels of a pub workspace's member `pubspec.yaml` files; checked at fetch time (docs/pub.md, Workspaces). Empty checks nothing.",
+            allow_files = True,
+            default = [],
         ),
         "package_files": attr.string_list(
             doc = "Applies to every package this lock materializes, including merged cycle " +
@@ -584,7 +590,7 @@ def _resolve_error_sha(error):
     )
 
 def _resolve_error_conflict(error):
-    """The error struct for conflicting `pub.package()` declarations."""
+    """The error struct for conflicting `pub.package()` declarations and lock-collection or hosted-resolution failures."""
     return struct(
         error = error,
         explicit = {},
@@ -603,20 +609,6 @@ def _resolve_error_hub(error):
         error = error,
         explicit = {},
         resolved = {},
-        hub_packages = {},
-        isolated_packages = {},
-        aliases = {},
-        notes = [],
-        warnings = [],
-    )
-
-def _resolve_error_lock(error):
-    """The error struct for lock-collection and hosted-resolution failures."""
-    return struct(
-        error = error,
-        explicit = {},
-        resolved = {},
-        resolved_git = {},
         hub_packages = {},
         isolated_packages = {},
         aliases = {},
@@ -692,11 +684,11 @@ def resolve_pub_packages(package_tags, lock_tags):
                 return _resolve_error_hub(err)
             if err_shape == "git":
                 return _resolve_error_git(err)
-            return _resolve_error_lock(err)
+            return _resolve_error_conflict(err)
 
     resolved, err = _resolve_hosted(state, explicit)
     if err:
-        return _resolve_error_lock(err)
+        return _resolve_error_conflict(err)
 
     resolved_git, err = _resolve_git_versions(state)
     if err:
@@ -760,9 +752,11 @@ def _pub_collect_tags(ctx):
                 on_version_conflict = lock_tag.on_version_conflict,
                 isolated = lock_tag.isolated,
                 package_files = lock_tag.package_files,
+                workspace_members = lock_tag.workspace_members,
                 is_root = mod.is_root,
                 module = module_name,
             ))
+    check_workspaces(ctx, package_tags, lock_tags)
     return package_tags, lock_tags, ignore_hooks, root_repos
 
 def _pub_scope_deps(ctx, scope_dir, scope_names, explicit_package_names, explicit_deps, hosted, git_pkgs, recorded):

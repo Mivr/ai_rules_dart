@@ -62,6 +62,8 @@ jobs:
   # e2e/sdk_unknown_version, e2e/pub_symlink
   # (plus its nested red-by-design `cycle` workspace),
   # e2e/hermetic_canary.
+  # e2e/pub_workspace runs in `test` (Linux shard 2); its spec's
+  # expected-failure command runs only under the e2e runner, not in that job.
   # e2e/pub_scanner_intruder is green but needs its scanner built explicitly,
   # so it runs in a step there too.
   # e2e/pub_fetch_powershell runs in the shard-3-only steps below;
@@ -112,6 +114,7 @@ jobs:
               .github/workflows
               e2e/pub_lock_scc
               e2e/pub_lock
+              e2e/pub_workspace
               e2e/dart_test_pkg
               e2e/hello_world
               e2e/dual_build

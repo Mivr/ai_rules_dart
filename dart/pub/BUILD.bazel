@@ -29,6 +29,7 @@ bzl_library(
         "//dart/pub/private:pub_root_pin",
         "//dart/pub/private:pub_scanner_sdk",
         "//dart/pub/private:pub_scc_entries",
+        "//dart/pub/private:pub_workspace",
     ],
 )
 
