@@ -6,12 +6,11 @@ load(
     "//dart/private:common.bzl",
     "code_asset_entries",
     "collect_transitive_srcs",
-    "find_sdk_kernel_tools",
     "generate_native_assets_yaml",
     "generate_stable_package_config",
     "target_dart_abi",
 )
-load("//dart/private:dart_compile.bzl", "dart_compile_action", "get_compilation_mode_flags")
+load("//dart/private:dart_compile.bzl", "dart_compile_action")
 load(
     "//dart/private:dart_kernel.bzl",
     "DartKernelInfo",
@@ -29,11 +28,11 @@ visibility(["//dart/..."])
 def _modular_kernel_mode(ctx, compile_mode):
     """Whether `compile_mode` may take the modular path, before the eligibility facts.
 
-    `kernel` links the modules. `exe` and `aot-snapshot` link them too, with
-    the platform, and run the AOT whole-program steps over that kernel, unless
-    the build sets `--enable-asserts` (the `dbg` compilation mode): the front
-    end drops `assert`s while it builds a module, so the modules hold none for
-    the whole-program step to keep. `jit-snapshot` trains from the kernel of
+    Only `kernel` links per-library modules, which are compiled against the JIT
+    platform. `exe` and `aot-snapshot` compile from sources: at SDK 3.13.5 a
+    module compile has no AOT target, so conditional imports and
+    `dart.library.*` constants inside a module keep the JIT answers and the
+    `dart:mirrors` diagnostic is lost. `jit-snapshot` trains from the kernel of
     its source compile and stays on sources.
 
     Args:
@@ -43,13 +42,7 @@ def _modular_kernel_mode(ctx, compile_mode):
     Returns:
       True when the modular path may apply.
     """
-    if not ctx.attr.modular_kernel:
-        return False
-    if compile_mode == "kernel":
-        return True
-    if compile_mode not in ("exe", "aot-snapshot"):
-        return False
-    return "--enable-asserts" not in get_compilation_mode_flags(ctx, compile_mode)
+    return ctx.attr.modular_kernel and compile_mode == "kernel"
 
 def _compile_cfg(ctx, run, inputs):
     """The `dart_compile_action` config for one binary.
@@ -141,47 +134,6 @@ def _source_compile(ctx, run):
     )
     return code_asset_libs
 
-def _linked_compile(ctx, run, kernel_tools):
-    """Links the modules with the platform, then runs the AOT steps over that kernel.
-
-    The front end's input is the linked kernel, so a body edit in one library
-    recompiles that module and the whole-program steps run again without
-    parsing a source. Nothing but the `.kmod` directories, the platform and the
-    SDK is an input of those steps. The flags of the `dart compile` step are
-    those of the source compile; `defines` are not among them, since every
-    module took the `//dart:extra_dart_defines` values when it compiled.
-
-    Args:
-      ctx: The rule context.
-      run: The `struct` `binary_compile` takes.
-      kernel_tools: The struct from `find_kernel_module_tools`.
-    """
-    linked = ctx.actions.declare_file(ctx.label.name + ".linked.dill")
-    modular_executable_kernel(
-        ctx,
-        kernel_tools,
-        entry_sources(run.own_files),
-        run.own.packages,
-        [dep[DartKernelInfo] for dep in ctx.attr.deps],
-        linked,
-        kernel_compile_settings(),
-        kernel_link_options(platform_dill = find_sdk_kernel_tools(run.dart_sdk_info).product_platform_dill),
-    )
-    dart_compile_action(
-        ctx = ctx,
-        dart_sdk_info = run.dart_sdk_info,
-        cfg = _compile_cfg(ctx, run, struct(
-            main = linked,
-            srcs = [],
-            package_config = None,
-            main_path = None,
-            defines = [],
-            native_assets_yaml = None,
-            linked_kernel = linked,
-        )),
-        toolchain_type = run.toolchain_type,
-    )
-
 def binary_compile(ctx, run):
     """Compiles a binary, modularly when eligible. Returns the code-asset libs.
 
@@ -209,17 +161,14 @@ def binary_compile(ctx, run):
     )
     if kernel_tools == None:
         return _source_compile(ctx, run)
-    if run.compile_mode == "kernel":
-        modular_executable_kernel(
-            ctx,
-            kernel_tools,
-            entry_sources(run.own_files),
-            run.own.packages,
-            [dep[DartKernelInfo] for dep in ctx.attr.deps],
-            run.output,
-            kernel_compile_settings(),
-            kernel_link_options(),
-        )
-    else:
-        _linked_compile(ctx, run, kernel_tools)
+    modular_executable_kernel(
+        ctx,
+        kernel_tools,
+        entry_sources(run.own_files),
+        run.own.packages,
+        [dep[DartKernelInfo] for dep in ctx.attr.deps],
+        run.output,
+        kernel_compile_settings(),
+        kernel_link_options(),
+    )
     return []

@@ -59,7 +59,6 @@ load(
 )
 load(":library_builder_library_direct_test.bzl", "library_builder_library_direct_test_suite")
 load(":library_test.bzl", "library_test_suite")
-load(":linked_compile_test.bzl", "linked_compile_test_suite")
 load(":mockito_library_direct_test.bzl", "mockito_library_direct_test_suite")
 load(":modular_chain_test.bzl", "modular_chain_test_suite")
 load(":native_assets_test.bzl", "native_assets_test_suite")
@@ -145,7 +144,6 @@ source_set_test_suite(name = "source_set_test")
 
 kernel_test_suite(name = "kernel_test")
 
-linked_compile_test_suite(name = "linked_compile_test")
 
 modular_chain_test_suite(name = "modular_chain_test")
 

@@ -27,7 +27,11 @@ on where it was built.
 True`): each library's `.kmod`/`.koutline` is built once and only the
   reachable modules are linked. They fall back to a single `gen_kernel`
   action when `modular_kernel = False` or when target-specific flags, defines
-  or code assets apply.
+  or code assets apply. Modules are compiled against the JIT platform, so
+  `exe` and `aot-snapshot` never use them: they take the source path whatever
+  `modular_kernel` says. At SDK 3.13.5 a module compile has no AOT target, so
+  conditional imports and `dart.library.*` constants would keep the JIT
+  answers. Revisit at the next SDK pin.
 - The other VM modes compile in two actions: the front end (`gen_kernel`)
   produces a kernel, and `dart compile` turns it into the requested output.
   The front end reads sources through a file system rooted at
