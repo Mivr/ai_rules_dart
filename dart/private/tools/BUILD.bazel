@@ -118,6 +118,31 @@ dart_library(
     ],
 )
 
+# The multiplex loop `kernel_module` serves with: concurrent requests keep their
+# own ids, and a cancelled request is answered as cancelled.
+dart_test(
+    name = "worker_serve_test",
+    size = "small",
+    srcs = [
+        "lib/worker_protocol.dart",
+        "lib/worker_serve.dart",
+    ],
+    args = [
+        "$(rlocationpath :kernel_module)",
+        "$(rlocationpath @dart_toolchains//sdk/3.13.5:dart)",
+    ],
+    data = [
+        ":kernel_module",
+        "@dart_toolchains//sdk/3.13.5:compile_files",
+        "@dart_toolchains//sdk/3.13.5:dart",
+    ],
+    main = "worker_serve_test.dart",
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
+
 # Unit tests for the shared worker-protocol library: pin the behaviour every
 # build-action runner inherits, so a regression here blocks a behaviour
 # change in any tool.
@@ -622,6 +647,7 @@ dart_binary(
         "kernel_module_import_check.dart",
         "kernel_module_strip.dart",
         "lib/worker_protocol.dart",
+        "lib/worker_serve.dart",
         "package_config.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
@@ -705,6 +731,7 @@ dart_test(
         "kernel_module_strip.dart",
         "kernel_module_test_support.dart",
         "lib/worker_protocol.dart",
+        "lib/worker_serve.dart",
         "package_config.dart",
         "worker_test_encode.dart",
         "//dart/guard:lib/directive_guard.dart",
@@ -745,6 +772,7 @@ dart_test(
         "kernel_module_strip.dart",
         "kernel_module_test_support.dart",
         "lib/worker_protocol.dart",
+        "lib/worker_serve.dart",
         "package_config.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
@@ -877,6 +905,7 @@ dart_test(
         "kernel_module_import_check.dart",
         "kernel_module_strip.dart",
         "lib/worker_protocol.dart",
+        "lib/worker_serve.dart",
         "package_config.dart",
         "//dart/guard:lib/directive_guard.dart",
     ],
@@ -1029,6 +1058,7 @@ dart_test(
         "kernel_module_import_check.dart",
         "kernel_module_strip.dart",
         "lib/worker_protocol.dart",
+        "lib/worker_serve.dart",
         "package_config.dart",
         "worker_test_encode.dart",
         "//dart/guard:lib/directive_guard.dart",
