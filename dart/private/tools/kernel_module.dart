@@ -1081,7 +1081,7 @@ class _ModuleBuild {
       await _writeUnusedInputsList(
         options.unusedInputsPath!,
         _UnusedInputs(
-          reports: reporter.records,
+          reporter: reporter,
           inputKmods: options.inputKmods,
           graph: graph,
           inherited: inherited,
@@ -1399,7 +1399,7 @@ class _ModuleBuild {
       await _writeUnusedInputsList(
         options.unusedInputsPath!,
         _UnusedInputs(
-          reports: reporter.records,
+          reporter: reporter,
           inputKmods: options.inputKmods,
           graph: graph,
           inherited: inherited,
@@ -4138,7 +4138,11 @@ class _UsedInputsReporter implements ModuleCompiler {
   final ModuleCompiler _inner;
   final String _outputDir;
   final records = <_UsedReport>[];
+  final _canonMemo = <String, String>{};
   var _invocations = 0;
+
+  String canon(String pathOrUri) =>
+      _canonMemo.putIfAbsent(pathOrUri, () => _canonicalActionPath(pathOrUri));
 
   /// False once a worker rejects `--used-inputs`, so later invocations of this
   /// action skip it. An older SDK pays one rejected invocation per action.
@@ -4152,16 +4156,14 @@ class _UsedInputsReporter implements ModuleCompiler {
     final passed = <String>{};
     for (var i = 0; i + 1 < args.length; i++) {
       if (args[i] == '--input-summary') {
-        passed.add(_canonicalActionPath(args[i + 1]));
+        passed.add(canon(args[i + 1]));
       }
     }
     if (!_supportsUsedInputs) {
       records.add(_UsedReport(passed, null));
       return _inner.run(args, inputs);
     }
-    final String tmp = _canonicalActionPath(
-      '$_outputDir/.used-inputs-${_invocations++}.tmp',
-    );
+    final String tmp = canon('$_outputDir/.used-inputs-${_invocations++}.tmp');
     ModuleOutcome outcome;
     Set<String>? reported;
     try {
@@ -4180,7 +4182,7 @@ class _UsedInputsReporter implements ModuleCompiler {
         _supportsUsedInputs = false;
         outcome = await _inner.run(args, inputs);
       } else {
-        reported = _readUsedInputs(tmp);
+        reported = _readUsedInputs(tmp, canon);
       }
     } finally {
       try {
@@ -4298,14 +4300,14 @@ String _resolveActionPathSymlinks(String normalized) {
 
 /// The canonicalized lines of the `--used-inputs` file the worker wrote, or
 /// null when it wrote none.
-Set<String>? _readUsedInputs(String path) {
+Set<String>? _readUsedInputs(String path, String Function(String) canon) {
   final file = File(path);
   if (!file.existsSync()) return null;
   try {
     final used = <String>{};
     for (final String line in file.readAsLinesSync()) {
       final String trimmed = line.trim();
-      if (trimmed.isNotEmpty) used.add(_canonicalActionPath(trimmed));
+      if (trimmed.isNotEmpty) used.add(canon(trimmed));
     }
     return used;
   } on FileSystemException {
@@ -4387,7 +4389,7 @@ Future<void> _writeUnusedInputsList(
 /// Computes the unused input lines [_writeUnusedInputsList] writes.
 class _UnusedInputs {
   _UnusedInputs({
-    required this.reports,
+    required this.reporter,
     required this.inputKmods,
     required this.graph,
     required this.inherited,
@@ -4407,7 +4409,7 @@ class _UnusedInputs {
     required this.multiRootPrefix,
   });
 
-  final List<_UsedReport> reports;
+  final _UsedInputsReporter reporter;
   final List<String> inputKmods;
   final Map<String, _Node> graph;
   final Map<String, String> inherited;
@@ -4437,13 +4439,14 @@ class _UnusedInputs {
   final _keepTrees = <String>{};
 
   late final _outputRoots = <String>{
-    _canonicalActionPath(output),
-    if (outputOutline != null) _canonicalActionPath(outputOutline!),
+    reporter.canon(output),
+    if (outputOutline != null) reporter.canon(outputOutline!),
   };
-  late final _keysOfDill = _indexKeysOfDill(graph);
-  late final _kmodRoots = <String, Set<String>>{
-    for (final String dir in inputKmods) dir: _kmodRootsOf(dir, graph),
-  };
+  late final KmodRootIndex _kmods = buildKmodRootIndex(
+    dirs: inputKmods,
+    graphEntries: graph.entries.map((e) => (key: e.key, dill: e.value.dill)),
+    canonicalize: reporter.canon,
+  );
   late final _ownPackages = {for (final key in ownKeys) _packageOfKey(key)};
 
   // A plan decision that removes a source from the compile still read the
@@ -4472,7 +4475,7 @@ class _UnusedInputs {
   /// Folds every used report into [_used], failing closed when a reported
   /// file is neither a passed summary nor the action's own output.
   bool _collectUsedReports() {
-    for (final _UsedReport report in reports) {
+    for (final _UsedReport report in reporter.records) {
       final Set<String>? reported = report.reported;
       if (reported == null) {
         _used.addAll(report.passed);
@@ -4488,17 +4491,14 @@ class _UnusedInputs {
     return true;
   }
 
-  bool _inKmod(String path, String dir) =>
-      _kmodRoots[dir]!.any((root) => path == root || path.startsWith('$root/'));
-
   /// Marks the summaries the invocations used as referenced, with their trees.
   void _markUsedTrees() {
     for (final String path in _used) {
-      final Set<String>? keys = _keysOfDill[path];
+      final Set<String>? keys = _kmods.keysOfDill[path];
       if (keys == null) continue;
       _referenced.addAll(keys);
-      for (final String dir in inputKmods) {
-        if (_inKmod(path, dir)) _usedTrees.add(dir);
+      for (final int idx in _kmods.ownerIndicesOf(path)) {
+        _usedTrees.add(inputKmods[idx]);
       }
     }
   }
@@ -4550,13 +4550,8 @@ class _UnusedInputs {
   }
 
   /// The module directory whose summary defines [key], if any.
-  String? _ownerDefining(String key) {
-    final String dill = _canonicalActionPath(graph[key]!.dill);
-    for (final String dir in inputKmods) {
-      if (_inKmod(dill, dir)) return dir;
-    }
-    return null;
-  }
+  String? _ownerDefining(String key) =>
+      _kmods.firstOwnerOf(_kmods.canon(graph[key]!.dill));
 
   /// The input module directories no check keeps.
   List<String> _listUnusedModules() {
@@ -4575,17 +4570,14 @@ class _UnusedInputs {
     var definesReferenced = false;
     var sharesOwnPackage = false;
     var sharesConsultedPackage = false;
-    for (final MapEntry<String, Set<String>> entry in _keysOfDill.entries) {
-      if (!_inKmod(entry.key, dir)) continue;
-      for (final String key in entry.value) {
-        defines = true;
-        if (_referenced.contains(key)) definesReferenced = true;
-        if (_ownPackages.contains(_packageOfKey(key))) {
-          sharesOwnPackage = true;
-        }
-        if (_consultedPackages.contains(_packageOfKey(key))) {
-          sharesConsultedPackage = true;
-        }
+    for (final String key in _kmods.definedKeysOf(dir)) {
+      defines = true;
+      if (_referenced.contains(key)) definesReferenced = true;
+      if (_ownPackages.contains(_packageOfKey(key))) {
+        sharesOwnPackage = true;
+      }
+      if (_consultedPackages.contains(_packageOfKey(key))) {
+        sharesConsultedPackage = true;
       }
     }
     // A module directory that defines nothing has no summary to use, but its
@@ -4643,31 +4635,6 @@ bool _isEntryVisited(Set<String> entryKeys, String path, List<String> roots) {
     if (entryKeys.contains(spelling)) return true;
   }
   return false;
-}
-
-/// Indexes closure keys by the canonical path of the summary defining them.
-Map<String, Set<String>> _indexKeysOfDill(Map<String, _Node> graph) {
-  final keysOfDill = <String, Set<String>>{};
-  for (final MapEntry<String, _Node> entry in graph.entries) {
-    keysOfDill
-        .putIfAbsent(_canonicalActionPath(entry.value.dill), () => <String>{})
-        .add(entry.key);
-  }
-  return keysOfDill;
-}
-
-/// Canonical directory and summary paths belonging to the module at [dir],
-/// including leaf-symlinked `.koutline` / `.kmod` entries in Bazel sandboxes.
-Set<String> _kmodRootsOf(String dir, Map<String, _Node> graph) {
-  final String index = _canonicalActionPath('$dir/$_indexName');
-  const suffix = '/$_indexName';
-  return <String>{
-    _canonicalActionPath(dir),
-    if (index.endsWith(suffix))
-      index.substring(0, index.length - suffix.length),
-    for (final _Node node in graph.values)
-      if (node.dill.startsWith('$dir/')) _canonicalActionPath(node.dill),
-  };
 }
 
 /// One `kernel_worker` process per compile.

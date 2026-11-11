@@ -11,6 +11,7 @@
 // the `worker_protocol` target below, and `analyzer_summary` and
 // `format_runner` depend on it alongside the `worker_tool_fs` target.
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -329,33 +330,14 @@ final class WorkerFrames extends Stream<Uint8List> {
     bool? cancelOnError,
   }) {
     final controller = StreamController<Uint8List>();
-    var buf = Uint8List(0);
+    final frames = _FrameBuffer();
     late final StreamSubscription<List<int>> sub;
     sub = _source.listen(
       (chunk) {
-        final merged = Uint8List(buf.length + chunk.length);
-        merged.setRange(0, buf.length, buf);
-        merged.setRange(buf.length, merged.length, chunk);
-        buf = merged;
+        frames.add(chunk);
         while (true) {
-          var len = 0;
-          var shift = 0;
-          var pos = 0;
-          while (true) {
-            if (pos >= buf.length) return;
-            final int b = buf[pos++];
-            len |= (b & 0x7f) << shift;
-            if ((b & 0x80) == 0) break;
-            shift += 7;
-          }
-          if (buf.length < pos + len) return;
-          final frame = Uint8List.fromList(
-            Uint8List.sublistView(buf, pos, pos + len),
-          );
-          final int nextStart = pos + len;
-          buf = nextStart == buf.length
-              ? Uint8List(0)
-              : Uint8List.fromList(Uint8List.sublistView(buf, nextStart));
+          final Uint8List? frame = frames.nextFrame();
+          if (frame == null) return;
           controller.add(frame);
         }
       },
@@ -373,6 +355,87 @@ final class WorkerFrames extends Stream<Uint8List> {
       onDone: onDone,
       cancelOnError: cancelOnError,
     );
+  }
+}
+
+/// Chunk queue reassembling varint-length-prefixed frames in linear time
+/// without copying unread bytes on each incoming chunk.
+final class _FrameBuffer {
+  final _chunks = Queue<Uint8List>();
+  int _headOffset = 0;
+  int _buffered = 0;
+
+  void add(List<int> chunk) {
+    if (chunk.isEmpty) return;
+    final Uint8List bytes = chunk is Uint8List
+        ? chunk
+        : Uint8List.fromList(chunk);
+    _chunks.addLast(bytes);
+    _buffered += bytes.length;
+  }
+
+  Uint8List? nextFrame() {
+    final ({int headerLen, int payloadLen})? header = _peekHeader();
+    if (header == null) return null;
+    if (_buffered < header.headerLen + header.payloadLen) return null;
+    _skip(header.headerLen);
+    return _take(header.payloadLen);
+  }
+
+  ({int headerLen, int payloadLen})? _peekHeader() {
+    var len = 0;
+    var shift = 0;
+    var seen = 0;
+    int offset = _headOffset;
+    for (final Uint8List chunk in _chunks) {
+      for (var i = offset; i < chunk.length; i++) {
+        final int b = chunk[i];
+        seen++;
+        len |= (b & 0x7f) << shift;
+        if ((b & 0x80) == 0) return (headerLen: seen, payloadLen: len);
+        shift += 7;
+      }
+      offset = 0;
+    }
+    return null;
+  }
+
+  void _skip(int count) {
+    var rem = count;
+    _buffered -= count;
+    while (rem > 0) {
+      final Uint8List head = _chunks.first;
+      final int avail = head.length - _headOffset;
+      if (rem < avail) {
+        _headOffset += rem;
+        return;
+      }
+      rem -= avail;
+      _chunks.removeFirst();
+      _headOffset = 0;
+    }
+  }
+
+  Uint8List _take(int length) {
+    if (length == 0) return Uint8List(0);
+    final out = Uint8List(length);
+    var written = 0;
+    _buffered -= length;
+    while (written < length) {
+      final Uint8List head = _chunks.first;
+      final int avail = head.length - _headOffset;
+      final int need = length - written;
+      final n = avail < need ? avail : need;
+      out.setRange(written, written + n, head, _headOffset);
+      written += n;
+      if (n == avail) {
+        _chunks.removeFirst();
+        _headOffset = 0;
+      } else {
+        _headOffset += n;
+      }
+    }
+    return out;
   }
 }
 
