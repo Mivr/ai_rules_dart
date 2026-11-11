@@ -13518,6 +13518,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/actions_golden.entry.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 7, "sha256": "fa9774b4612f5bf820d91679f646feb94cb321ada984aef92622e6888ab5182f" },
