@@ -79,7 +79,7 @@ Future<void> serveWorker({
   required int maxConcurrent,
 }) async {
   final jobs = <int, _Job>{};
-  final running = <Future<void>>[];
+  final running = <Future<void>>{};
   final _Slots slots = _createSlots(maxConcurrent);
   var writes = Future<void>.value();
   Future<void> answer(_Job job, WorkerResponse response) async {
@@ -132,9 +132,11 @@ Future<void> serveWorker({
     }
     final _Job job = _createJob(header.requestId);
     jobs[job.requestId] = job;
-    running.add(serve(job, frame));
+    final Future<void> task = serve(job, frame);
+    running.add(task);
+    unawaited(task.whenComplete(() => running.remove(task)));
   }
-  await Future.wait(running);
+  await Future.wait(running.toList());
 }
 
 Future<WorkResult> _guarded(

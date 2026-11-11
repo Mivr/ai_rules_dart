@@ -219,20 +219,7 @@ void main() {
     });
   });
 
-  group('WorkerFrames', () {
-    test('reassembles frames split across chunks and joined chunks', () async {
-      final Uint8List first = _encodeRequest(arguments: ['a'], requestId: 1);
-      final Uint8List second = _encodeRequest(arguments: ['b'], requestId: 2);
-      final List<int> joined = [..._frame(first), ..._frame(second)];
-      final List<List<int>> chunks = [
-        joined.sublist(0, 2),
-        joined.sublist(2, first.length + 3),
-        joined.sublist(first.length + 3),
-      ];
-      final frames = WorkerFrames(Stream.fromIterable(chunks));
-      expect(await frames.toList(), [first, second]);
-    });
-  });
+  group('WorkerFrames', _workerFramesTests);
 
   group('staged-source pruning', () {
     test('pruneUnlistedUnder keeps listed files and leaves dirs', () {
@@ -283,6 +270,52 @@ void main() {
       expect(drop.existsSync(), isFalse);
     });
   });
+}
+
+void _workerFramesTests() {
+  test('reassembles frames split across chunks and joined chunks', () async {
+    final Uint8List first = _encodeRequest(arguments: ['a'], requestId: 1);
+    final Uint8List second = _encodeRequest(arguments: ['b'], requestId: 2);
+    final List<int> joined = [..._frame(first), ..._frame(second)];
+    final List<List<int>> chunks = [
+      joined.sublist(0, 2),
+      joined.sublist(2, first.length + 3),
+      joined.sublist(first.length + 3),
+    ];
+    final frames = WorkerFrames(Stream.fromIterable(chunks));
+    expect(await frames.toList(), [first, second]);
+  });
+
+  test(
+    'handles empty frames, split multi-byte varints, and large payloads',
+    () async {
+      final large = Uint8List.fromList(
+        List<int>.generate(100000, (int i) => i & 0xff),
+      );
+      final Uint8List framedLarge = _frame(large);
+      final chunks = <List<int>>[
+        const <int>[],
+        const <int>[0],
+        [framedLarge[0]],
+        [framedLarge[1]],
+        [framedLarge[2]],
+      ];
+      for (var off = 3; off < framedLarge.length; off += 4096) {
+        final int end = off + 4096 < framedLarge.length
+            ? off + 4096
+            : framedLarge.length;
+        chunks.add(framedLarge.sublist(off, end));
+      }
+      chunks.add(const <int>[0]);
+      final List<Uint8List> out = await WorkerFrames(
+        Stream.fromIterable(chunks),
+      ).toList();
+      expect(out, hasLength(3));
+      expect(out[0], isEmpty);
+      expect(out[1], large);
+      expect(out[2], isEmpty);
+    },
+  );
 }
 
 String _hexOf(String input) {
