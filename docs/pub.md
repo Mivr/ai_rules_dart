@@ -154,3 +154,38 @@ becomes a silently empty hub:
   but different `path` values fail, naming the package, both paths, and
   both locks' hub name and lock label, in either lock order. Locks that
   agree on URL, ref and path still deduplicate silently.
+
+# Workspaces
+
+A Dart pub workspace is a root `pubspec.yaml` with a `workspace:` list of
+member directories and one root `pubspec.lock`. Each member's `pubspec.yaml`
+says `resolution: workspace` and has no lock of its own. Give the root lock to
+`pub.from_lock` and list the members' pubspec files in `workspace_members`:
+
+```starlark
+pub.from_lock(
+    name = "pub_deps",
+    lock = "//:pubspec.lock",
+    workspace_members = ["//a:pubspec.yaml", "//b:pubspec.yaml"],
+)
+```
+
+With `workspace_members` empty (the default) nothing is checked and the lock
+is read as before. When it is set, the extension checks at fetch time that:
+
+- the `pubspec.yaml` next to the lock has a `workspace:` list, and each
+  member's directory (relative to the root) is in it; a member's label must
+  resolve inside the root's directory;
+- each member's `pubspec.yaml` says `resolution: workspace`;
+- no member's `name:` is a package in the lock or declared with
+  `pub.package()`: a member name never resolves to a hosted or git package.
+
+A violation fails the extension with `pub.from_lock "<hub>": member <label>:
+<reason>`. The reason is one of: missing `resolution: workspace`,
+`resolution:` set to another value, directory not listed in the root's
+`workspace:`, no `workspace:` in the root pubspec, label outside the root's
+directory, or the name clash. The message names only the failing member.
+
+Members are ordinary Bazel packages. A member depends on a sibling member
+through a `dart_library` label (`//a`), not through the lock, and on locked
+packages through the hub (`@pub_deps//:path`). See `e2e/pub_workspace`.

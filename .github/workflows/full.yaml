@@ -176,6 +176,7 @@ jobs:
               e2e/pub_lock_scc
               e2e/codegen
               e2e/pub_lock
+              e2e/pub_workspace
               e2e/hello_world
               e2e/smoke
               e2e/dart_test

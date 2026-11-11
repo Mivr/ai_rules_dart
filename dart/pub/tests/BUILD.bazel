@@ -1,3 +1,5 @@
+load(":pub_workspace_test.bzl", "pub_workspace_test_suite")
+
 # Sources of the Starlark unit-test suites that load `//dart/pub/private:*`.
 # They live inside `//dart/pub` so buildifier's `bzl-visibility` lint allows
 # the private loads without suppressions; the suites are instantiated, under
@@ -13,6 +15,7 @@ exports_files(
         "pub_scc_facts_test.bzl",
         "pub_scc_test.bzl",
         "pub_symlink_test.bzl",
+        "pub_workspace_test.bzl",
         "pubspec_guard_test.bzl",
         "semver_test.bzl",
         "yaml_parser_test.bzl",
@@ -20,3 +23,5 @@ exports_files(
     ],
     visibility = ["//dart:__subpackages__"],
 )
+
+pub_workspace_test_suite(name = "pub_workspace_test")

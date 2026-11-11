@@ -118,6 +118,15 @@ bzl_library(
 )
 
 bzl_library(
+    name = "pub_workspace",
+    srcs = ["pub_workspace.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/pub:yaml_parser",
+    ],
+)
+
+bzl_library(
     name = "pub_root_pin",
     srcs = ["pub_root_pin.bzl"],
     visibility = ["//visibility:public"],
