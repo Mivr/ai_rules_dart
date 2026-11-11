@@ -41,28 +41,85 @@ String refusedLine(String label, String path, String kind, String uri) =>
     "$label: $path ${kind}s '$uri', which //dart:refused_dart_libraries "
     'refuses. Remove the $kind, or take the library out of that setting.';
 
-/// The lines for `import` and `export` directives in [request] whose URI is
-/// exactly one of [refused], in path then source order, each once. A source
-/// that does not scan is left to `checkImports`, which reports it.
-List<String> checkRefusedLibraries(
+final RegExp _scheme = RegExp('^([A-Za-z][A-Za-z0-9+.-]*):');
+
+final RegExp _badEscape = RegExp('%(?![0-9A-Fa-f]{2})');
+
+/// [uri] as the front end reads it: the scheme lower-cased and `%XX` escapes
+/// decoded once, or null when it does not decode cleanly.
+String? normaliseDirectiveUri(String uri) {
+  final Match? m = _scheme.firstMatch(uri);
+  final String lowered = m == null
+      ? uri
+      : m.group(1)!.toLowerCase() + uri.substring(m.group(1)!.length);
+  if (_badEscape.hasMatch(lowered)) return null;
+  try {
+    return Uri.decodeFull(lowered);
+  } on FormatException {
+    return null;
+  }
+}
+
+/// The violation line for [path] whose directive [uri] does not decode.
+String undecodableLine(String label, String path, String uri) =>
+    "$label: $path names '$uri', which is not a valid URI: a '%' escape does "
+    'not decode to UTF-8. Fix the escape.';
+
+/// The line for one directive [ref] of [path], or null when it is fine. The
+/// URI is judged as the front end reads it, for the refused set and for the
+/// layering check alike; the line shows it as written.
+String? _directiveLine(
   ImportCheckRequest request,
   Set<String> refused,
+  String path,
+  ScanRef ref,
 ) {
+  final String? uri = normaliseDirectiveUri(ref.uri);
+  if (uri == null) return undecodableLine(request.label, path, ref.uri);
+  if (refused.contains(uri)) {
+    return refusedLine(request.label, path, ref.kind, ref.uri);
+  }
+  final String? name = packageOfUri(uri);
+  if (name == null || request.allowedPackages.contains(name)) return null;
+  return violationLine(request.label, path, ref.uri, name);
+}
+
+/// The lines for `import` and `export` directives in [request] whose URI, as
+/// the front end reads it (scheme lower-cased, escapes decoded once), is one
+/// of [refused] or a package outside the allowed set, in path then source
+/// order, each once. Undecodable URIs are refused. A source that does not scan
+/// is reported as unparsable.
+List<String> checkDirectives(ImportCheckRequest request, Set<String> refused) {
   final lines = <String>[];
-  if (refused.isEmpty) return lines;
-  final List<String> paths = request.sources.keys.toList()..sort();
-  for (final path in paths) {
-    final ({List<ScanRef> refs, bool unparsable}) checked =
-        scanAllDirectiveUrisChecked(request.sources[path]!);
-    if (checked.unparsable) continue;
-    for (final ScanRef ref in checked.refs) {
-      if (ref.kind != 'import' && ref.kind != 'export') continue;
-      if (!refused.contains(ref.uri)) continue;
-      final String line = refusedLine(request.label, path, ref.kind, ref.uri);
-      if (!lines.contains(line)) lines.add(line);
+  for (final MapEntry<String, String> source in _sortedSources(request)) {
+    final List<ScanRef>? refs = _directiveRefs(source.value);
+    if (refs == null) {
+      lines.add(unparsableDirectiveDiagnostic(_tool, source.key));
+      continue;
     }
+    lines.addAll(
+      refs
+          .map((ref) => _directiveLine(request, refused, source.key, ref))
+          .nonNulls
+          .where((line) => !lines.contains(line))
+          .toSet(),
+    );
   }
   return lines;
+}
+
+Iterable<MapEntry<String, String>> _sortedSources(ImportCheckRequest request) =>
+    request.sources.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
+
+/// The `import` and `export` directives of [text], or null if it does not scan.
+List<ScanRef>? _directiveRefs(String text) {
+  final ({List<ScanRef> refs, bool unparsable}) checked =
+      scanAllDirectiveUrisChecked(text);
+  if (checked.unparsable) return null;
+  return [
+    for (final ScanRef ref in checked.refs)
+      if (ref.kind == 'import' || ref.kind == 'export') ref,
+  ];
 }
 
 /// The Dart files [src] names: itself, or every `.dart` file under it.
@@ -154,10 +211,7 @@ int run(List<String> argv) {
     return 64;
   }
   final ImportCheckRequest request = _request(args);
-  final List<String> lines = [
-    ...checkImports(request),
-    ...checkRefusedLibraries(request, args.refused),
-  ];
+  final List<String> lines = checkDirectives(request, args.refused);
   if (lines.isNotEmpty) {
     stderr.writeln(lines.join('\n'));
     return 1;
