@@ -16,6 +16,9 @@ e2e/digest_mismatch export-ignore
 # of release archives so `@rules_dart//...` loads for every consumer.
 /dart/tests/ export-ignore
 
+# Dev-only fixture package for the exported import check's test.
+/dev/ export-ignore
+
 # Stamps the archive marker `//:analysis_config` reads to drop the options
 # packages that /dart/tests/ no longer provides.
 /BUILD.bazel export-subst

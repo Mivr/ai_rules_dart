@@ -580,3 +580,10 @@ layering_refused_bad_test(
     size = "small",
     target_under_test = ":refused_subject",
 )
+
+# A rule defined outside `//dart` (`//dev/import_check_export`) runs the exported
+# import check; see the target for what it builds.
+test_suite(
+    name = "import_check_export_test",
+    tests = ["//dart/tests/import_check_export:import_check_export_test"],
+)
