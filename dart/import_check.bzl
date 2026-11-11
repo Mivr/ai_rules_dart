@@ -42,6 +42,7 @@ load("//dart/private:dart_kernel.bzl", _MODULAR_KERNEL_TOOLCHAINS = "MODULAR_KER
 
 visibility("public")
 
+# The attributes `executable_import_check` reads beyond `main`, `srcs` and `deps`.
 EXECUTABLE_IMPORT_CHECK_ATTRS = {
     "_import_check": attr.label(
         doc = "The tool that checks the executable's imports against its direct `deps`.",
@@ -50,10 +51,9 @@ EXECUTABLE_IMPORT_CHECK_ATTRS = {
         cfg = "exec",
     ),
 } | _REFUSED_DART_LIBRARIES_ATTR
-"""The attributes `executable_import_check` reads beyond `main`, `srcs` and `deps`."""
 
+# The toolchains the rule declares so the check can find the SDK runtime (optional).
 EXECUTABLE_IMPORT_CHECK_TOOLCHAINS = _MODULAR_KERNEL_TOOLCHAINS
-"""The toolchains the rule declares so the check can find the SDK runtime (optional)."""
 
 dart_import_check_aspect = _dart_import_check_aspect
 

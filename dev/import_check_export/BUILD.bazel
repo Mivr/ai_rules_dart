@@ -16,4 +16,3 @@ outside_exe(
     tags = ["manual"],
     deps = ["//import_check_export/dep"],
 )
-
