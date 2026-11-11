@@ -132,6 +132,9 @@ String _fakeWorkspace(Directory root) {
   return '${root.path}/ws';
 }
 
+/// [path] with forward slashes: the layout normalizes the separators.
+String? _slashes(String? path) => path?.replaceAll(r'\', '/');
+
 void _testConfigWithoutAppFile(Directory tmp) {
   final ws = _fakeWorkspace(Directory('${tmp.path}/d')..createSync());
   final exe = _fakeExecroot(
@@ -158,8 +161,13 @@ void _testConfigWithoutAppFile(Directory tmp) {
   );
   File('$entry.entry.kmod.package_config.json').writeAsStringSync('{}');
   _check(
-    FloorLayout.fromApp(appExecutable: entry, workspaceDir: ws).packageConfig ==
-        '$entry.entry.kmod.package_config.json',
+    _slashes(
+          FloorLayout.fromApp(
+            appExecutable: entry,
+            workspaceDir: ws,
+          ).packageConfig,
+        ) ==
+        _slashes('$entry.entry.kmod.package_config.json'),
     'The entry module config of the rules is used',
   );
   final own = _fakeExecroot(
@@ -167,8 +175,13 @@ void _testConfigWithoutAppFile(Directory tmp) {
     withConfig: true,
   );
   _check(
-    FloorLayout.fromApp(appExecutable: own, workspaceDir: ws).packageConfig ==
-        '$own.package_config.json',
+    _slashes(
+          FloorLayout.fromApp(
+            appExecutable: own,
+            workspaceDir: ws,
+          ).packageConfig,
+        ) ==
+        _slashes('$own.package_config.json'),
     'An existing app config is used as is',
   );
 }
