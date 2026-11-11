@@ -6,14 +6,16 @@ load(":exe_source_path_test.bzl", "exe_source_path_test_suite")
 # platform, so `exe` and `aot-snapshot` take the source path whatever
 # `modular_kernel` says.
 
-
 [
     dart_binary(
         name = "exe_" + case,
+        srcs = [
+            "impl.dart",
+            "stub.dart",
+        ],
         compile_mode = "exe",
         main = "main.dart",
         modular_kernel = modular,
-        srcs = ["stub.dart", "impl.dart"],
         tags = ["manual"],
     )
     for case, modular in {
@@ -31,9 +33,9 @@ dart_test(
         "$(rlocationpath mirrors_main.dart)",
     ],
     data = [
+        "mirrors_main.dart",
         ":exe_modular",
         ":exe_source",
-        "mirrors_main.dart",
         "@dart_toolchains//sdk/3.13.5:compile_files",
     ],
     main = "conditional_import_test.dart",

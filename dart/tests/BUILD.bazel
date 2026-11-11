@@ -144,7 +144,6 @@ source_set_test_suite(name = "source_set_test")
 
 kernel_test_suite(name = "kernel_test")
 
-
 modular_chain_test_suite(name = "modular_chain_test")
 
 language_version_test_suite(name = "language_version_test")
