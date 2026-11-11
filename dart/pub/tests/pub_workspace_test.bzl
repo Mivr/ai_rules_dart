@@ -1,8 +1,8 @@
 """Unit tests for the pub workspace member checks in `pub_workspace.bzl`."""
 
+load("@bazel_skylib//lib:partial.bzl", "partial")
 load("@bazel_skylib//lib:unittest.bzl", "asserts", "unittest")
 load("//dart/pub/private:pub_workspace.bzl", "pub_workspace_error")
-load("//dart/tests:small_suite.bzl", "small_unittest_suite")
 
 visibility(["//dart/..."])
 
@@ -127,4 +127,5 @@ def pub_workspace_test_suite(name):
     Args:
       name: Name of the generated test suite.
     """
-    small_unittest_suite(name, _t0_test, _t1_test, _t2_test, _t3_test, _t4_test, _t5_test, _t6_test, _t7_test, _t8_test, _t9_test, _t10_test)
+    tests = [_t0_test, _t1_test, _t2_test, _t3_test, _t4_test, _t5_test, _t6_test, _t7_test, _t8_test, _t9_test, _t10_test]
+    unittest.suite(name, *[partial.make(t, size = "small") for t in tests])
