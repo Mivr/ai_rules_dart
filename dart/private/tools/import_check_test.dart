@@ -10,11 +10,14 @@ import 'import_check.dart';
 List<String> check(
   Map<String, String> sources, {
   Set<String> allowed = const {'own', 'mid'},
-}) => checkImports((
-  label: '//pkg:user',
-  allowedPackages: allowed,
-  sources: sources,
-));
+}) {
+  final ImportCheckRequest request = (
+    label: '//pkg:user',
+    allowedPackages: allowed,
+    sources: sources,
+  );
+  return checkDirectives(request, const {});
+}
 
 const _leafViolation =
     "//pkg:user: lib/a.dart imports 'package:leaf/leaf.dart', but package "
@@ -46,6 +49,30 @@ void main() {
       expect(check({'lib/a.dart': "import 'package:leaf/leaf.dart';\n"}), [
         _leafViolation,
       ]);
+    });
+
+    test('PACKAGE: and escaped package names are judged like package:', () {
+      for (final uri in [
+        'PACKAGE:leaf/leaf.dart',
+        'Package:le%61f/leaf.dart',
+      ]) {
+        expect(check({'lib/a.dart': "import '$uri';\n"}), [
+          _leafViolation.replaceFirst('package:leaf/leaf.dart', uri),
+        ]);
+      }
+      expect(check({'lib/a.dart': "import 'PACKAGE:mid/x.dart';\n"}), isEmpty);
+      for (final uri in ['package:m%69d/x.dart', 'Package:%6did/x.dart']) {
+        expect(check({'lib/a.dart': "export '$uri';\n"}), isEmpty, reason: uri);
+      }
+    });
+
+    test('an undecodable URI fails the layering check too', () {
+      expect(
+        check({'lib/a.dart': "import 'package:le%/x.dart';\n"}),
+        contains(
+          undecodableLine('//pkg:user', 'lib/a.dart', 'package:le%/x.dart'),
+        ),
+      );
     });
 
     test('a facade dep allows what the facade reaches', () {
@@ -105,11 +132,11 @@ void main() {
     });
   });
 
-  group('checkRefusedLibraries', () {
+  group('checkDirectives', () {
     List<String> refuse(Map<String, String> sources, Set<String> refused) =>
-        checkRefusedLibraries((
+        checkDirectives((
           label: '//pkg:user',
-          allowedPackages: const {},
+          allowedPackages: const {'mirrors'},
           sources: sources,
         ), refused);
 
@@ -145,6 +172,45 @@ void main() {
         }, mirrors),
         isEmpty,
       );
+    });
+
+    for (final spelling in [
+      'Dart:mirrors',
+      'DART:mirrors',
+      'dart:%6Dirrors',
+      'dart:mirror%73',
+      'Dart:%6d%69rrors',
+    ]) {
+      for (final verb in ['import', 'export']) {
+        test('$verb of $spelling is refused, printed as written', () {
+          expect(refuse({'lib/a.dart': "$verb '$spelling';\n"}, mirrors), [
+            _refusedLine(
+              '${verb}s',
+              verb,
+            ).replaceFirst('dart:mirrors', spelling),
+          ]);
+        });
+      }
+    }
+
+    test('quoting forms and other libraries behave as before', () {
+      expect(
+        refuse({
+          'lib/a.dart':
+              "import r'dart:mirrors';\nimport 'dart:io' show File;\n"
+              "import 'dart:math' if (dart.library.io) 'dart:convert';\n"
+              "import 'dart:\\x6dirrors' as m;\n",
+        }, mirrors),
+        hasLength(1),
+      );
+    });
+
+    test('an undecodable URI is refused with its target, file and URI', () {
+      for (final bad in ['dart:mirror%', 'a%ff.dart', 'dart:%zz']) {
+        expect(refuse({'lib/a.dart': "import '$bad';\n"}, mirrors), [
+          undecodableLine('//pkg:user', 'lib/a.dart', bad),
+        ]);
+      }
     });
 
     test('an empty refused set reports nothing', () {
