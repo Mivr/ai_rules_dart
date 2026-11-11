@@ -98,6 +98,7 @@ RUN_HOME_ENTRIES=(
   '@rules_dart//dart/private/tools:link_hook_runner|--help|caller-home|nonzero'
   '@rules_dart//dart/private/tools:web_compile_runner||caller-home|nonzero'
   '@rules_dart//dart/private:analyzer_summary_tool||caller-home|nonzero'
+  '@rules_dart//dart:import_check||caller-home|nonzero'
   '@rules_dart//dart:kernel_link||caller-home|nonzero'
   '@rules_dart//dart:kernel_module||caller-home|nonzero'
   # --- public but not runnable: `bazel run` must refuse each one ---

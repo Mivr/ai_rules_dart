@@ -16,6 +16,7 @@ exports_files(
         "analyze.bzl",
         "defs.bzl",
         "extensions.bzl",
+        "import_check.bzl",
         "providers.bzl",
         "repositories.bzl",
         "toolchain.bzl",
@@ -252,6 +253,17 @@ bzl_library(
 )
 
 bzl_library(
+    name = "import_check_bzl",
+    srcs = ["import_check.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dart/private:build_settings",
+        "//dart/private:dart_import_check",
+        "//dart/private:dart_kernel",
+    ],
+)
+
+bzl_library(
     name = "providers",
     srcs = ["providers.bzl"],
     visibility = ["//visibility:public"],
@@ -287,6 +299,14 @@ bzl_library(
 alias(
     name = "kernel_module",
     actual = "//dart/private/tools:kernel_module",
+    visibility = ["//visibility:public"],
+)
+
+# The strict-layering check tool, for rules outside rules_dart that call
+# `executable_import_check` (see `import_check.bzl`).
+alias(
+    name = "import_check",
+    actual = "//dart/private/tools:import_check",
     visibility = ["//visibility:public"],
 )
 
