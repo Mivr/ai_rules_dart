@@ -1,0 +1,26 @@
+load("//dart:defs.bzl", "dart_test")
+
+# Builds `//dev/import_check_export`, a rule defined outside `//dart` in the
+# nested `dev` module, with a nested Bazel: a clean executable passes the
+# exported import check, and one importing a package its `deps` lack fails with
+# the check's line. It reads the live tree and starts Bazel, so it runs
+# unsandboxed.
+dart_test(
+    name = "import_check_export_test",
+    size = "large",
+    args = ["$(rlocationpath :import_check_export_test.dart)"],
+    data = ["import_check_export_test.dart"],
+    local = True,
+    main = "import_check_export_test.dart",
+    tags = [
+        "exclusive",
+        "external",
+        "no-sandbox",
+    ],
+    visibility = ["//dart/tests:__pkg__"],
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:path",
+        "@ext_pub_deps//:test",
+    ],
+)

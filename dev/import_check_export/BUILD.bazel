@@ -1,0 +1,19 @@
+load(":defs.bzl", "outside_exe")
+
+package(default_visibility = ["//visibility:private"])
+
+# Built by `//dart/tests:import_check_export_test`. Imports only `package:dep`, which its `deps` provide: the check passes.
+outside_exe(
+    name = "clean",
+    main = "clean/lib/main.dart",
+    deps = ["//import_check_export/dep"],
+)
+
+# Imports `package:hidden`, which its `deps` do not provide: building it fails.
+outside_exe(
+    name = "bad",
+    main = "bad/lib/main.dart",
+    tags = ["manual"],
+    deps = ["//import_check_export/dep"],
+)
+
