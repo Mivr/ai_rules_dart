@@ -101,6 +101,7 @@ import 'kernel_module_strip.dart';
 // Shared through `srcs`, like the guard import above: this binary takes no
 // `dart_library` dependency on purpose (see the `kernel_module` target).
 import 'lib/worker_protocol.dart';
+import 'lib/worker_serve.dart';
 import 'package_config.dart';
 
 export '../../guard/lib/directive_guard.dart'
@@ -226,50 +227,82 @@ Future<void> main(List<String> argv) async {
   exit(code);
 }
 
-/// Serves Bazel `WorkRequest`s until stdin closes.
+/// Serves Bazel `WorkRequest`s until stdin closes, several at once when Bazel
+/// multiplexes: up to the CPU count of [_Persistent] `kernel_worker` children
+/// sharing one [KernelModuleCache] inside this process. A request that waits
+/// for the process to be free is answered as soon as a child is.
 Future<void> _serve(
   String dartaotruntime,
   String kernelWorker,
   Duration? requestTimeout,
   bool snapshotPatched,
 ) async {
-  final requests = _Frames(stdin);
   final cache = KernelModuleCache();
-  final compiler = _Persistent(
-    dartaotruntime,
-    kernelWorker,
-    snapshotPatched: snapshotPatched,
-    requestTimeout: requestTimeout,
-  );
-  try {
-    while (true) {
-      final Uint8List? frame = await requests.next();
-      if (frame == null) break;
-      // Every request is answered, even one that fails to decode or compile:
-      // a worker that closes stdout without a `WorkResponse` fails the action
-      // with no diagnostics at all.
-      final log = StringBuffer();
-      var code = 1;
-      var requestId = 0;
-      try {
-        final request = _WorkRequest.decode(frame);
-        requestId = request.requestId;
-        code = await compileModule(
-          request.arguments,
-          compiler,
-          log,
-          request.inputs,
-          cache: cache,
-        );
-      } catch (error, stack) {
-        log.writeln('kernel_module: $error\n$stack');
-      }
-      stdout.add(_frame(_encodeResponse(code, log.toString(), requestId)));
-      await stdout.flush();
-    }
-  } finally {
-    await compiler.close();
+  final idle = <_Persistent>[];
+  final all = <_Persistent>[];
+  _Persistent acquireCompiler() {
+    if (idle.isNotEmpty) return idle.removeLast();
+    final compiler = _Persistent(
+      dartaotruntime,
+      kernelWorker,
+      snapshotPatched: snapshotPatched,
+      requestTimeout: requestTimeout,
+    );
+    all.add(compiler);
+    return compiler;
   }
+
+  try {
+    await serveWorker(
+      input: stdin,
+      output: stdout,
+      maxConcurrent: Platform.numberOfProcessors,
+      handle: (Uint8List frame, Future<void> cancelled) =>
+          _serveRequest(frame, cancelled, cache, acquireCompiler(), idle.add),
+    );
+  } finally {
+    await Future.wait(all.map((_Persistent c) => c.close()));
+  }
+}
+
+/// Runs one [frame] on [compiler] against the shared [cache], reaping the
+/// child at once if [cancelled] fires and returning [compiler] to [release]
+/// when it finishes uncancelled.
+Future<WorkResult> _serveRequest(
+  Uint8List frame,
+  Future<void> cancelled,
+  KernelModuleCache cache,
+  _Persistent compiler,
+  void Function(_Persistent) release,
+) async {
+  var isCancelled = false;
+  compiler.isCancelled = () => isCancelled;
+  final StreamSubscription<void> sub = cancelled.asStream().listen((_) {
+    isCancelled = true;
+    unawaited(compiler.close());
+  });
+  final log = StringBuffer();
+  var code = 1;
+  try {
+    final request = _WorkRequest.decode(frame);
+    code = await compileModule(
+      request.arguments,
+      compiler,
+      log,
+      request.inputs,
+      cache: cache,
+    );
+  } catch (error, stack) {
+    log.writeln('kernel_module: $error\n$stack');
+    stderr.write(log);
+  } finally {
+    await sub.cancel();
+    if (!isCancelled) {
+      compiler.isCancelled = null;
+      release(compiler);
+    }
+  }
+  return (exitCode: code, output: log.toString());
 }
 
 /// Compiles one module, or the entry module when `--no-drop` is set.
@@ -1727,6 +1760,21 @@ class KernelModuleCache {
     }
   }
 
+  /// Stores [entry] under [key]. Requests run concurrently, so another may have
+  /// stored the key while this one read the file: its bytes leave the total.
+  void _store<T>(
+    Map<String, _ModuleCacheEntry<T>> store,
+    void Function(int delta) addBytes,
+    String key,
+    _ModuleCacheEntry<T> entry,
+  ) {
+    final _ModuleCacheEntry<T>? displaced = store.remove(key);
+    if (displaced != null) addBytes(-displaced.byteSize);
+    _evictForBudget(entry.byteSize);
+    store[key] = entry;
+    addBytes(entry.byteSize);
+  }
+
   Future<_ModuleCacheEntry<T>> _cachedEntryOf<T>(
     Map<String, _ModuleCacheEntry<T>> store,
     void Function(int delta) addBytes,
@@ -1758,10 +1806,8 @@ class KernelModuleCache {
         cached.contentSha256 != null &&
         _sameBytes(contentSha256!, cached.contentSha256!)) {
       if (entryBytes <= maxCacheBytes) {
-        _evictForBudget(entryBytes);
         cached.tick = ++_clock;
-        store[key] = cached;
-        addBytes(entryBytes);
+        _store(store, addBytes, key, cached);
       }
       return cached;
     }
@@ -1773,11 +1819,7 @@ class KernelModuleCache {
       byteSize: entryBytes,
       tick: ++_clock,
     );
-    if (entryBytes <= maxCacheBytes) {
-      _evictForBudget(entryBytes);
-      store[key] = entry;
-      addBytes(entryBytes);
-    }
+    if (entryBytes <= maxCacheBytes) _store(store, addBytes, key, entry);
     return entry;
   }
 
@@ -4699,6 +4741,10 @@ class _Persistent implements ModuleCompiler {
   final Duration _requestTimeout;
   Process? _child;
   _Frames? _responses;
+  Future<void>? _reaping;
+
+  /// Whether the outer `WorkRequest` was cancelled while this compiler ran.
+  bool Function()? isCancelled;
 
   /// The `request_id` of every request. Bazel sends a worker that is not multiplexed
   /// request 0, and `kernel_worker` answers with the id it was sent.
@@ -4709,6 +4755,9 @@ class _Persistent implements ModuleCompiler {
 
   @override
   Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
+    if (isCancelled != null && isCancelled!()) {
+      return const ModuleOutcome(1, '');
+    }
     // Digested before the child is written to, so a file that cannot be read fails the
     // request with its reason, not as a child that died.
     final List<String> workerArgs = kernelWorkerArgs(args);
@@ -4721,7 +4770,9 @@ class _Persistent implements ModuleCompiler {
     if (error != null) return ModuleOutcome(1, '$error\n');
     final List<Uint8List> withDigests = await _withDigests(workerArgs, inputs);
     final _Attempt first = await _attempt(workerArgs, withDigests);
-    if (!first.lost) return first.outcome;
+    if (!first.lost || (isCancelled != null && isCancelled!())) {
+      return first.outcome;
+    }
     final _Attempt second = await _attempt(workerArgs, withDigests);
     if (second.lost) {
       return ModuleOutcome(
@@ -4823,13 +4874,15 @@ class _Persistent implements ModuleCompiler {
   /// Kills the child and waits for it to exit. The kill is SIGKILL: a stopped child
   /// does not act on SIGTERM until it is continued, so waiting after SIGTERM could wait
   /// forever.
-  Future<void> _reap() async {
+  Future<void> _reap() {
     final Process? child = _child;
     _child = null;
-    if (child == null) return;
+    if (child == null) return _reaping ?? Future<void>.value();
     child.kill(ProcessSignal.sigkill);
     unawaited(child.stdin.close().catchError((Object _) {}));
-    await child.exitCode;
+    final Future<void> done = child.exitCode.then((_) {});
+    _reaping = done;
+    return done;
   }
 
   @override
@@ -5065,99 +5118,26 @@ void _placeDigest(
 
 /// Reads varint-length-prefixed frames from a byte stream.
 class _Frames {
-  _Frames(Stream<List<int>> source) : _iterator = StreamIterator(source);
+  _Frames(Stream<List<int>> source)
+    : _iterator = StreamIterator(WorkerFrames(source));
 
-  final StreamIterator<List<int>> _iterator;
-  Uint8List _chunk = _emptyBytes;
-  int _offset = 0;
-
-  Future<bool> _fill() async {
-    while (true) {
-      if (!await _iterator.moveNext()) return false;
-      final List<int> current = _iterator.current;
-      if (current.isEmpty) continue;
-      _chunk = current is Uint8List ? current : Uint8List.fromList(current);
-      _offset = 0;
-      return true;
-    }
-  }
-
-  Future<int?> _varint() async {
-    var result = 0;
-    var shift = 0;
-    while (true) {
-      if (_offset >= _chunk.length && !await _fill()) return null;
-      final int byte = _chunk[_offset++];
-      result |= (byte & 0x7f) << shift;
-      if (byte < 0x80) return result;
-      shift += 7;
-    }
-  }
+  final StreamIterator<Uint8List> _iterator;
 
   /// The next frame's bytes, or null at end of stream.
-  Future<Uint8List?> next() async {
-    final int? length = await _varint();
-    if (length == null) return null;
-    final out = Uint8List(length);
-    var written = 0;
-    while (written < length) {
-      if (_offset >= _chunk.length && !await _fill()) return null;
-      final int available = _chunk.length - _offset;
-      final int need = length - written;
-      final count = available < need ? available : need;
-      out.setRange(written, written + count, _chunk, _offset);
-      _offset += count;
-      written += count;
-    }
-    if (_offset >= _chunk.length) {
-      _chunk = _emptyBytes;
-      _offset = 0;
-    }
-    return out;
-  }
+  Future<Uint8List?> next() async =>
+      await _iterator.moveNext() ? _iterator.current : null;
 }
 
 /// Reads one protobuf message.
 class _Reader {
-  _Reader(this._bytes);
+  _Reader(Uint8List bytes) : _reader = WorkerReader(bytes);
 
-  final Uint8List _bytes;
-  int _pos = 0;
+  final WorkerReader _reader;
 
-  bool get done => _pos >= _bytes.length;
-
-  int varint() {
-    var result = 0;
-    var shift = 0;
-    while (true) {
-      final int byte = _bytes[_pos++];
-      result |= (byte & 0x7f) << shift;
-      if (byte < 0x80) return result;
-      shift += 7;
-    }
-  }
-
-  Uint8List bytes() {
-    final int length = varint();
-    final out = Uint8List.sublistView(_bytes, _pos, _pos + length);
-    _pos += length;
-    return out;
-  }
-
-  void skip(int wireType) {
-    switch (wireType) {
-      case 0:
-        varint();
-      case 1:
-        _pos += 8;
-      case 2:
-        bytes();
-      case 5:
-        _pos += 4;
-      default:
-        throw FormatException('Unsupported protobuf wire type $wireType.');
-    }
-  }
+  bool get done => _reader.isDone;
+  int varint() => _reader.varint();
+  Uint8List bytes() => _reader.bytes();
+  void skip(int wireType) => _reader.skip(wireType);
 }
 
 /// Writes one protobuf message. Zero values are omitted, as proto3 does.
@@ -5285,14 +5265,6 @@ class _WorkResponse {
   final int exitCode;
   final String output;
   final int requestId;
-}
-
-Uint8List _encodeResponse(int exitCode, String output, int requestId) {
-  final writer = _Writer()
-    ..varintField(1, exitCode)
-    ..stringField(2, output)
-    ..varintField(3, requestId);
-  return writer.toBytes();
 }
 
 /// The declared-input key the `.dill` source-table URI [uri] names, or null when

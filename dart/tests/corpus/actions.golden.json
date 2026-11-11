@@ -2761,6 +2761,7 @@
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/_drift_siblings.kmod.unused_inputs" },
         { "key": "no-dart-analyze", "value": "" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 3, "sha256": "9031029698b7703eb31a4c5fd1253bcae650aaceb9dc01a9b51d5fc70a46491e" },
@@ -13635,6 +13636,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/actions_golden_test.entry.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 107, "sha256": "1f617f1248859b53033b6cd62e75b3ad0576efe439684da09f33946c16d101ad" },
@@ -15453,6 +15455,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/builder_library.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 12, "sha256": "f8b4d49f26c458a621984729fbf31c4484d8b6c833269ada7946ea9a02ea7f43" },
@@ -15638,6 +15641,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/built_value.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 14, "sha256": "61e38e0fa6519688a02db562990f785c0bde5b9de192c4e06aaa2abb37552fc2" },
@@ -15872,6 +15876,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/copy_with.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 8, "sha256": "32383806e452ca544a90b896036084da3468e0fe7f4787f3910c5812bb6c7ea8" },
@@ -16016,6 +16021,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/corpus_lib.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 32, "sha256": "152bd72a08104c83742b7c704f7cc8ef5a69471c9811119eea5abbcfb7758fa9" },
@@ -16031,6 +16037,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/corpus_lib.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 32, "sha256": "152bd72a08104c83742b7c704f7cc8ef5a69471c9811119eea5abbcfb7758fa9" },
@@ -17906,6 +17913,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/drift.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 58, "sha256": "648d2d8748387c19b1452b43d7df58302198d11abea7f83bf2cc1880b27814c2" },
@@ -18870,6 +18878,7 @@
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/exports_test.entry.kmod.unused_inputs" },
         { "key": "no-sandbox", "value": "" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 105, "sha256": "5f50307a755c0c1f2012b1736874818029f67a1ce4203a3e0fcf0c5d35e72b4e" },
@@ -20463,6 +20472,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/freezed.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 12, "sha256": "c951356c5d71fc7272ed41c651f54daf6a59b1bbcaa51e15a9602aed564bdc6c" },
@@ -20650,6 +20660,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/gen_shim.entry.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 58, "sha256": "03c56d43e2090b624f4a8f86664cdbd522c059f6e034bafc282206db0a092b3f" },
@@ -20665,6 +20676,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/gen_shim.entry.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 58, "sha256": "03c56d43e2090b624f4a8f86664cdbd522c059f6e034bafc282206db0a092b3f" },
@@ -21768,6 +21780,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/go_router.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 62, "sha256": "133c298d854e649ac280cf76747e95c6d0f28c27af71a1e3ef953fa4cb6a82df" },
@@ -22928,6 +22941,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/json_serializable.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 8, "sha256": "2553b9b88da0eb1f31bf491098eb44bf2ef3c3bb297dbb7194e0a22174888065" },
@@ -23233,6 +23247,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/merged.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 3, "sha256": "3b251632346409d75637f209463b872aed1f79b21782dc0b447b9882a3189fa9" },
@@ -23346,6 +23361,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/mockito.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 70, "sha256": "226100289ad65c7e31202a13ae4daeadc31154adb47ddf8cd5a06a56da1ae05c" },
@@ -24740,6 +24756,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/shared_part.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 8, "sha256": "cf8f2e4047369af75994db0141b9e07e50d3bbf72358bcb0268243d37717fe88" },
@@ -24926,6 +24943,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/stacked_bottomsheet.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 84, "sha256": "3322ec5d363ce8ab5772009a5abd4fca6261946062c271965887846578ac76ae" },
@@ -26423,6 +26441,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/stacked_dialog.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 84, "sha256": "6458f5c10ecd9c654f1de4e706771026d0483e35c153484f6620232dcef29fdf" },
@@ -27920,6 +27939,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/stacked_form.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 84, "sha256": "4691f10cd0c2a971aee2101fbac0a176b556885cdfee521d7b6a2e71a878f666" },
@@ -29417,6 +29437,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/stacked_locator.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 84, "sha256": "6f2fb26e37a80e263e30847a17e5f598ab7890a746cd1b567990db0216043da0" },
@@ -30914,6 +30935,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/stacked_logger.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 84, "sha256": "e83238c19ad0b210d0586427c572ce61ae14cd51b56b8e9f2bcb81ad857ec57c" },
@@ -32411,6 +32433,7 @@
       "executionInfo": [
         { "key": "internal-inline-outputs", "value": "{bindir}/dart/tests/corpus/stacked_router.kmod.unused_inputs" },
         { "key": "requires-worker-protocol", "value": "proto" },
+        { "key": "supports-multiplex-workers", "value": "1" },
         { "key": "supports-workers", "value": "1" }
       ],
       "inputs": { "count": 84, "sha256": "2a329040b150458318ed163bc417beabfdee1a2a4ae6e205c5119d38ba03e794" },

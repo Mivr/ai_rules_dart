@@ -264,17 +264,22 @@ final class WorkerRequest {
 }
 
 /// One Bazel persistent-worker response: the exit code, the combined output,
-/// and the id of the request it answers.
+/// and the id of the request it answers. [wasCancelled] answers a request
+/// Bazel cancelled (`WorkResponse.was_cancelled`, field 4).
 final class WorkerResponse {
   const WorkerResponse({
     required this.exitCode,
     required this.output,
     required this.requestId,
+    this.wasCancelled = false,
   });
 
   final int exitCode;
   final String output;
   final int requestId;
+
+  /// Whether this answers a request Bazel cancelled.
+  final bool wasCancelled;
 
   /// Encodes the response as a length-prefixed `WorkResponse` protobuf frame.
   Uint8List write() {
@@ -295,6 +300,11 @@ final class WorkerResponse {
       body
         ..varint((3 << 3) | 0)
         ..varint(requestId);
+    }
+    if (wasCancelled) {
+      body
+        ..varint((4 << 3) | 0)
+        ..varint(1);
     }
     final Uint8List payload = body.takeBytes();
     final frame = WorkerWriter()

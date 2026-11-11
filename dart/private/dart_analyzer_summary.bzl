@@ -738,6 +738,9 @@ def _summary_run_action(ctx, info, own_records, action, closure):
         mnemonic = "DartAnalyzerSummary",
         progress_message = "Summarizing Dart library %{label}",
         env = writable_home_env(dart_sdk_info.dart, summary),
+        # Singleplex: the analyzer worker serves one request at a time, keeps process-wide
+        # state (registered lint rules, context-collection counters) and splits its summary
+        # cache budget across the singleplex pool, so it cannot answer concurrent requests.
         execution_requirements = {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",

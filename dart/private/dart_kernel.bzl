@@ -834,10 +834,7 @@ def _kmod_run_action(ctx, executable, arguments, request, direct_inputs, action_
                 if d
             ],
         ),
-        tools = depset(
-            direct = action_tools,
-            transitive = [runtime_files] if runtime_files != None else [],
-        ),
+        tools = depset(action_tools, transitive = [runtime_files] if runtime_files != None else []),
         outputs = [request.output, request.excluded] + [f for f in [
             request.unused_inputs_list,
             request.koutline,
@@ -847,7 +844,12 @@ def _kmod_run_action(ctx, executable, arguments, request, direct_inputs, action_
         mnemonic = "DartKernel",
         progress_message = "Compiling Dart kernel module %s" % request.output.short_path,
         env = writable_home_env(getattr(request.tools, "dart", None) or request.tools.dartaotruntime, request.output),
+        # Multiplex: one `kernel_module` process serves concurrent requests, sharing the loaded
+        # outline cache inside the process across a pool of `kernel_worker` children. Singleplex
+        # still works when Bazel does not multiplex (`--noworker_multiplex`). The link and
+        # analyzer-summary actions stay singleplex; see `kernel_link_action`.
         execution_requirements = {
+            "supports-multiplex-workers": "1",
             "supports-workers": "1",
             "requires-worker-protocol": "proto",
         },
@@ -1068,6 +1070,8 @@ def kernel_link_action(
         mnemonic = "DartKernelLink",
         progress_message = "Linking Dart kernel %s" % ctx.label,
         env = writable_home_env(exec_sdk.dart if exec_sdk != None else executable, output),
+        # Singleplex on purpose: `kernel_link` serves one request at a time and keeps its
+        # manifest and `.dill` caches unsynchronized, so it cannot answer concurrent requests.
         execution_requirements = {
             "supports-workers": "1",
             "requires-worker-protocol": "proto",

@@ -1149,7 +1149,7 @@ def _worker_execution_requirements_test_impl(ctx):
     }
     asserts.equals(
         env,
-        expected_reqs,
+        dict(expected_reqs, **{"supports-multiplex-workers": "1"}),
         runs[0]["execution_requirements"],
         "DartKernel sets worker execution_requirements even for manual target in flutter/tests",
     )
