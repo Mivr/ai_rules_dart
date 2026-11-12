@@ -7,6 +7,7 @@ import 'package:runfiles/runfiles.dart';
 import 'package:test/test.dart';
 
 import 'test_runner.dart' show suiteCommand;
+import 'test_runner_packages.dart';
 
 /// Drives the `dart_test` launcher against `test_runner_fixture.dart`.
 ///
@@ -26,6 +27,7 @@ void main(List<String> args) {
   _shardingTests(args[6]);
   _plainSelectionTests(launcher, args);
   _tagArgvTests();
+  _packageConfigTests();
 
   Future<Process> start(
     List<String> fixtureArgs, {
@@ -741,5 +743,105 @@ void _tagArgvTests() {
   group('suiteCommand tag arguments', () {
     _tagSingleWordArgvTests();
     _tagCompoundArgvTests();
+  });
+}
+
+/// The runtime package config: which packages are mapped and what is written.
+void _packageConfigTests() {
+  group('runtime package config', () {
+    late Directory tree;
+    setUp(() => tree = Directory.systemTemp.createTempSync('pkg_cfg_'));
+    tearDown(() => tree.deleteSync(recursive: true));
+
+    File stage(String runfilesPath) => File('${tree.path}/$runfilesPath')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('x');
+    Map<String, String> dirs(
+      List<PackageRoot> roots, {
+      List<String>? manifest,
+    }) => stagedLibDirs(
+      roots,
+      workspace: '_main',
+      runfiles: (directory: tree.path, manifest: manifest ?? const []),
+    );
+
+    test('reads name and root from each line and skips malformed ones', () {
+      expect(parsePackageRoots(['a\tpkg/a', 'no tab', '\tnoname', 'b\t']), [
+        (name: 'a', root: 'pkg/a'),
+        (name: 'b', root: ''),
+      ]);
+    });
+
+    test('maps a package to the runfiles lib directory of its root', () {
+      expect(
+        libRunfilesPath((name: 'a', root: 'pkg/a'), '_main'),
+        '_main/pkg/a/lib',
+      );
+      expect(
+        libRunfilesPath((name: 'a', root: '../dep+/x'), '_main'),
+        'dep+/x/lib',
+      );
+      expect(libRunfilesPath((name: 'a', root: ''), '_main'), '_main/lib');
+    });
+
+    test('lists only packages with files staged under lib/', () {
+      stage('_main/pkg/a/lib/data/x.txt');
+      Directory('${tree.path}/_main/pkg/b').createSync(recursive: true);
+      stage('dep+/x/lib/y.txt');
+      final Map<String, String> found = dirs([
+        (name: 'a', root: 'pkg/a'),
+        (name: 'b', root: 'pkg/b'),
+        (name: 'c', root: '../dep+/x'),
+        (name: 'd', root: 'pkg/missing'),
+      ]);
+      expect(found, {
+        'a': '${tree.path}/_main/pkg/a/lib',
+        'c': '${tree.path}/dep+/x/lib',
+      });
+    });
+
+    test('keeps the first listing of a package name', () {
+      stage('_main/one/lib/x.txt');
+      stage('_main/two/lib/x.txt');
+      expect(dirs([(name: 'a', root: 'one'), (name: 'a', root: 'two')]), {
+        'a': '${tree.path}/_main/one/lib',
+      });
+    });
+
+    test('finds a staged lib directory from the manifest alone', () {
+      final real = File('${tree.path}/real/lib/data/x.txt')
+        ..createSync(recursive: true);
+      final Map<String, String> found = stagedLibDirs(
+        [(name: 'a', root: 'pkg/a'), (name: 'b', root: 'pkg/b')],
+        workspace: '_main',
+        runfiles: (
+          directory: null,
+          manifest: ['_main/pkg/a/lib/data/x.txt ${real.path}'],
+        ),
+      );
+      expect(found, {'a': '${tree.path}/real/lib'});
+    });
+
+    test('writes file URIs in name order and nothing for no package', () {
+      final config = jsonDecode(
+        packageConfigJson({'z': '/p/z/lib', 'a': '/p/a/lib'}),
+      ) as Map<String, dynamic>;
+      expect(config['configVersion'], 2);
+      expect(config['packages'], [
+        {'name': 'a', 'rootUri': 'file:///p/a/', 'packageUri': 'lib/'},
+        {'name': 'z', 'rootUri': 'file:///p/z/', 'packageUri': 'lib/'},
+      ]);
+      final empty =
+          jsonDecode(packageConfigJson(const {})) as Map<String, dynamic>;
+      expect(empty['packages'], isEmpty);
+    });
+
+    test('writes the file whole, in a directory made for it', () {
+      final target = File('${tree.path}/pre/.dart_tool/package_config.json');
+      writePackageConfig(target, '{"a":1}');
+      writePackageConfig(target, '{"a":2}');
+      expect(target.readAsStringSync(), '{"a":2}');
+      expect(File('${target.path}.partial').existsSync(), isFalse);
+    });
   });
 }

@@ -6,6 +6,7 @@ import 'package:runfiles/runfiles.dart';
 
 import 'private_home.dart';
 import 'test_runner_coverage.dart';
+import 'test_runner_packages.dart';
 import 'test_runner_workspace.dart' as staging;
 
 /// Runs a `dart_test`'s pre-compiled kernel with asserts enabled.
@@ -18,8 +19,12 @@ import 'test_runner_workspace.dart' as staging;
 /// the launcher itself writes nothing under HOME either.
 ///
 /// `dart_test` compiles the test at build time, so this launcher only resolves
-/// files from runfiles and starts the VM — there is no package_config or source
-/// co-location to do at runtime.
+/// files from runfiles and starts the VM — there is no source co-location to do
+/// at runtime. It does write a runtime package config (see
+/// `test_runner_packages.dart`), so `Isolate.resolvePackageUri` finds the files
+/// staged in a package's `lib/`: the VM gets it as `--packages`, and under
+/// `package:test` it is the `.dart_tool/package_config.json` of the precompiled
+/// directory, which is where the runner takes the suite isolate's config from.
 ///
 /// A test that depends on `package:test` runs under that package's own runner,
 /// which this launcher adapts to Bazel's test protocol: `--test_filter` becomes
@@ -204,10 +209,12 @@ Future<int> _runDirectly(
     manifest: manifest,
     workspace: workspace,
   );
-  Directory? scratch;
+  // The scratch directory holds the runtime package config and, where the
+  // runfiles are not usable in place, the workspace laid out from the manifest.
+  final Directory scratch = Directory(
+    env['TEST_TMPDIR'] ?? Directory.systemTemp.path,
+  ).createTempSync('dart_test.');
   if (!inPlace) {
-    scratch = Directory(env['TEST_TMPDIR'] ?? Directory.systemTemp.path)
-        .createTempSync('dart_test.');
     staging.materializeWorkspace(
       manifest: File(manifest!).readAsLinesSync(),
       workspace: workspace!,
@@ -222,15 +229,20 @@ Future<int> _runDirectly(
     ...withoutRulesDartControls(env),
     ..._childRunfilesEnv(env, manifest),
   };
+  final packageConfig = File(
+    '${scratch.path}/.package_config/package_config.json',
+  );
+  writePackageConfig(packageConfig, _packageConfigText(manifest, workspace));
   final Process vm = await Process.start(
     dart,
     [
       ...?coverage?.vmFlags,
+      '--packages=${packageConfig.path}',
       '--enable-asserts',
       dill,
       ..._withoutSeedFlags(args),
     ],
-    workingDirectory: scratch?.path,
+    workingDirectory: inPlace ? null : scratch.path,
     environment: childEnv.isEmpty ? null : childEnv,
     includeParentEnvironment: false,
     mode: ProcessStartMode.inheritStdio,
@@ -242,10 +254,20 @@ Future<int> _runDirectly(
     final int code = await vm.exitCode;
     return session == null ? code : await session.finish(code);
   } finally {
-    if (scratch != null && !env.containsKey('TEST_TMPDIR')) {
-      deleteScratchQuietly(scratch);
-    }
+    if (!env.containsKey('TEST_TMPDIR')) deleteScratchQuietly(scratch);
   }
+}
+
+/// The runtime package config text: the packages of the roots list that have
+/// files staged in runfiles, found through the runfiles this launcher resolved.
+String _packageConfigText(String? manifest, String? workspace) {
+  final Map<String, String> env = Platform.environment;
+  return runtimePackageConfig(
+    env: {...env, ..._childRunfilesEnv(env, manifest)},
+    runfiles: Runfiles.create(),
+    manifest: manifest,
+    workspace: workspace,
+  );
 }
 
 /// The executables for one suite run: the Dart VM and the `package:test`
@@ -284,11 +306,10 @@ Future<int> _runUnderRunner({
   final Directory tmp = Directory(
     env['TEST_TMPDIR'] ?? Directory.systemTemp.path,
   ).createTempSync('dart_test.');
-  final _Precompiled pre = _preparePrecompiled(
-    dill: source.dill,
-    baseDill: source.baseDill,
-    testPath: source.testPath,
+  final _Precompiled pre = _precompiledWithPackageConfig(
+    source: source,
     tmp: tmp,
+    json: _packageConfigText(workspace.manifest, workspace.workspace),
   );
   final bool inPlace = _stageSuiteWorkspace(
     testSource: source.testSource,
@@ -391,11 +412,12 @@ _Precompiled _preparePrecompiled({
   required String? baseDill,
   required String testPath,
   required Directory tmp,
+  bool copy = false,
 }) {
   final suffix = '/$testPath.vm_test.vm.app.dill';
   String precompiled = dill.substring(0, dill.length - suffix.length);
   File? combined;
-  if (baseDill != null) {
+  if (baseDill != null || copy) {
     final String combinedPath = staging.joinPaths(
       tmp.path,
       'precompiled/$testPath.vm_test.vm.app.dill',
@@ -406,11 +428,47 @@ _Precompiled _preparePrecompiled({
     );
     combined = File(combinedPath);
     final builder = BytesBuilder(copy: false)
-      ..add(File(dill).readAsBytesSync())
-      ..add(File(baseDill).readAsBytesSync());
+      ..add(File(dill).readAsBytesSync());
+    if (baseDill != null) builder.add(File(baseDill).readAsBytesSync());
     combined.writeAsBytesSync(builder.takeBytes(), flush: true);
   }
   return (precompiled: precompiled, combined: combined);
+}
+
+/// The precompiled suite directory with the runtime package config in it.
+///
+/// The runner gives the suite isolate the config found at
+/// `<precompiled>/.dart_tool/package_config.json`, so that is where [json] goes.
+/// A directory in runfiles is written in place, which leaves the dill where its
+/// code-asset paths expect it; where that cannot be written, the suite runs
+/// from a copy of the dill in [tmp] instead (its code assets are then not
+/// found, which the message says).
+_Precompiled _precompiledWithPackageConfig({
+  required _SuiteSource source,
+  required Directory tmp,
+  required String json,
+}) {
+  _Precompiled prepare({required bool copy}) => _preparePrecompiled(
+    dill: source.dill,
+    baseDill: source.baseDill,
+    testPath: source.testPath,
+    tmp: tmp,
+    copy: copy,
+  );
+  _Precompiled pre = prepare(copy: false);
+  File target(_Precompiled p) =>
+      File('${p.precompiled}/.dart_tool/package_config.json');
+  try {
+    writePackageConfig(target(pre), json);
+  } on FileSystemException catch (e) {
+    stderr.writeln(
+      'dart_test: cannot write the package config in ${pre.precompiled} ($e); '
+      'running the suite from a copy of its kernel',
+    );
+    pre = prepare(copy: true);
+    writePackageConfig(target(pre), json);
+  }
+  return pre;
 }
 
 /// Lays out the workspace's runfiles in [tmp] unless they are usable in place.

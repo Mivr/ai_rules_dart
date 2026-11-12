@@ -453,6 +453,7 @@ bzl_library(
         ":kernel_params",
         ":package_files",
         ":source_set",
+        ":test_package_roots",
         ":test_runner_info",
         "//dart:providers",
     ],
@@ -540,6 +541,12 @@ bzl_library(
         ":common",
         "//dart:providers",
     ],
+)
+
+bzl_library(
+    name = "test_package_roots",
+    srcs = ["test_package_roots.bzl"],
+    visibility = ["//visibility:public"],
 )
 
 bzl_library(

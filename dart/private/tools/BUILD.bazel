@@ -318,6 +318,7 @@ dart_binary(
     srcs = [
         "private_home.dart",
         "test_runner_coverage.dart",
+        "test_runner_packages.dart",
         "test_runner_workspace.dart",
     ],
     code_assets_from_deps = False,
@@ -383,6 +384,7 @@ dart_test(
         "private_home.dart",
         "test_runner.dart",
         "test_runner_coverage.dart",
+        "test_runner_packages.dart",
         "test_runner_workspace.dart",
     ],
     args = [
@@ -419,6 +421,7 @@ dart_test(
         "private_home.dart",
         "test_runner.dart",
         "test_runner_coverage.dart",
+        "test_runner_packages.dart",
         "test_runner_workspace.dart",
     ],
     main = "test_runner_cleanup_test.dart",

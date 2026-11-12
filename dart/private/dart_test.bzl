@@ -3,9 +3,10 @@
 Unified with `dart_binary`: the test's `main` is compiled to a self-contained
 kernel (`.dill`) **at build time**, so package resolution and `part`/`import`
 resolution happen in the execroot — exactly where `dart_binary` already proves
-they work — and the test launcher merely runs the dill. No sources, no
-`package_config`, and no package layout are needed at runtime, so manifest-mode
-runfiles (Windows) are a non-issue.
+they work — and the test launcher merely runs the dill. No sources and no
+package layout are needed at runtime, so manifest-mode runfiles (Windows) are a
+non-issue. The launcher does write a runtime package config for
+`Isolate.resolvePackageUri`, from the list of packages the rule stages for it.
 """
 
 load("//dart:providers.bzl", "DartCodeAssetInfo", "DartInfo")
@@ -45,6 +46,7 @@ load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "execu
 load("//dart/private:kernel_params.bzl", "kernel_compile_settings", "kernel_link_options")
 load("//dart/private:package_files.bzl", "collect_transitive_package_files")
 load("//dart/private:source_set.bzl", "executable_inputs")
+load("//dart/private:test_package_roots.bzl", "write_package_roots")
 load("//dart/private:test_runner_info.bzl", "DartTestRunnerInfo")
 
 visibility(["//dart/..."])
@@ -82,6 +84,10 @@ def _dart_test_impl(ctx):
         "RULES_DART_DART": runfiles_path(dart_sdk_info.dart, workspace_name),
         "RULES_DART_DILL": runfiles_path(dill, workspace_name),
     }
+
+    # The launcher turns this list into the package config the test runs with.
+    package_roots = write_package_roots(ctx, own.packages)
+    env["RULES_DART_PACKAGE_ROOTS"] = runfiles_path(package_roots, workspace_name)
     coverage_files = []
     if ctx.configuration.coverage_enabled:
         coverage_map = _coverage_map(ctx, own.packages)
@@ -129,7 +135,7 @@ def _dart_test_impl(ctx):
     # `dart compile`) declares `@rules_dart//dart` in `data`, which brings the
     # whole SDK.
     runfiles = ctx.runfiles(
-        files = [dill, generated_list] + coverage_files + kernel.runtime_libs + runner_files + ctx.files.data,
+        files = [dill, generated_list, package_roots] + coverage_files + kernel.runtime_libs + runner_files + ctx.files.data,
         transitive_files = depset(
             transitive = [
                 dart_sdk_info.runtime_files,
@@ -656,7 +662,12 @@ told where a runfile is (resolve it with `Runfiles.rlocation()`).""",
         "Compiles a Dart test to a kernel at build time and runs it with " +
         "asserts enabled. A test with `package:test` in `deps` runs under " +
         "that package's runner, so `--test_filter`, `shard_count` and " +
-        "per-case results work and Bazel's `timeout` is the only time limit."
+        "per-case results work and Bazel's `timeout` is the only time limit. " +
+        "Every test runs with a runtime package config (`Platform.packageConfig` is set), " +
+        "so `Isolate.resolvePackageUri` resolves `package:<name>/<path>` to the file " +
+        "staged in runfiles for each package whose `lib/` has staged files (a " +
+        "dependency's `resources` and `data`); a package with none still resolves to " +
+        "`null`. `Runfiles.rlocation()` keeps working."
     ),
 )
 

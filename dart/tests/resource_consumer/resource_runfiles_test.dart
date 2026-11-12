@@ -3,10 +3,11 @@
 //
 // This is the run-time half of what `resources` promises. Under pub a package
 // directory exists whole on disk, so a package can read a file it shipped; a
-// compiled Dart program cannot recover that on its own, because
-// `Isolate.resolvePackageUri` returns null with no package_config above the
-// binary. Runfiles are the only mechanism that survives compilation, so the
-// files have to be staged into them explicitly — and this asserts they are.
+// compiled Dart program has no package directory of its own. A `dart_test`
+// launcher writes a runtime package config over the staged files, so
+// `Isolate.resolvePackageUri` finds them too (see `package_uri_test`), but
+// `rlocation` is the way that also works in a `dart_binary`, so the files have
+// to be staged into runfiles explicitly — and this asserts they are.
 import 'dart:io';
 
 import 'package:runfiles/runfiles.dart';
