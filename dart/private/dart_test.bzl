@@ -135,7 +135,10 @@ def _dart_test_impl(ctx):
     # `dart compile`) declares `@rules_dart//dart` in `data`, which brings the
     # whole SDK.
     runfiles = ctx.runfiles(
-        files = [dill, generated_list, package_roots] + coverage_files + kernel.runtime_libs + runner_files + ctx.files.data,
+        files = (
+            [dill, generated_list, package_roots] + coverage_files + kernel.runtime_libs +
+            runner_files + ctx.files.data
+        ),
         transitive_files = depset(
             transitive = [
                 dart_sdk_info.runtime_files,
