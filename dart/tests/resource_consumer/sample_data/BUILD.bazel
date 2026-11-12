@@ -1,0 +1,9 @@
+load("//dart:defs.bzl", "dart_library")
+
+# A package with a non-Dart file in `lib/`: the runtime package config maps it.
+dart_library(
+    name = "sample_data",
+    srcs = ["lib/sample.dart"],
+    resources = ["lib/data/sample.txt"],
+    visibility = ["//dart/tests/resource_consumer:__pkg__"],
+)

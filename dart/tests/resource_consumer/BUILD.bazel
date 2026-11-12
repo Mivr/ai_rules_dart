@@ -46,3 +46,29 @@ dart_test(
         "//dart/runfiles",
     ],
 )
+
+# `Isolate.resolvePackageUri` in a `dart_test`: the launcher gives the test a
+# runtime package config that maps each package with files staged in its `lib/`.
+# One test runs under `package:test`'s runner, one is a plain `main()`.
+dart_test(
+    name = "package_uri_test",
+    size = "small",
+    srcs = ["package_uri_probe.dart"],
+    main = "package_uri_test.dart",
+    deps = [
+        "//dart/tests/resource_consumer/bare_package",
+        "//dart/tests/resource_consumer/sample_data",
+        "@ext_pub_deps//:test",
+    ],
+)
+
+dart_test(
+    name = "package_uri_plain_test",
+    size = "small",
+    srcs = ["package_uri_probe.dart"],
+    main = "package_uri_plain_test.dart",
+    deps = [
+        "//dart/tests/resource_consumer/bare_package",
+        "//dart/tests/resource_consumer/sample_data",
+    ],
+)

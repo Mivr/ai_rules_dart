@@ -1,0 +1,8 @@
+load("//dart:defs.bzl", "dart_library")
+
+# A package with only Dart sources: nothing is staged, so it is not mapped.
+dart_library(
+    name = "bare_package",
+    srcs = ["lib/bare.dart"],
+    visibility = ["//dart/tests/resource_consumer:__pkg__"],
+)
