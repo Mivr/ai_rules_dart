@@ -7,9 +7,10 @@ import 'dart:isolate';
 import 'package:bare_package/bare.dart';
 import 'package:sample_data/sample.dart';
 
-/// Throws a [StateError] naming the first thing that is not as the runtime
-/// package config promises.
-Future<void> probePackageUris() async {
+/// Returns where `package:sample_data/data/sample.txt` resolves, or throws a
+/// [StateError] naming the first thing that is not as the runtime package
+/// config promises.
+Future<Uri> probePackageUris() async {
   final data = Uri.parse('package:$sampleData/data/sample.txt');
   final Uri? async = await Isolate.resolvePackageUri(data);
   final Uri? sync = Isolate.resolvePackageUriSync(data);
@@ -50,6 +51,7 @@ Future<void> probePackageUris() async {
   if (_fromConfig(json, configUri, bare, 'bare.dart') != null) {
     throw StateError('$config maps $bare');
   }
+  return async!;
 }
 
 Uri? _fromConfig(
