@@ -46,13 +46,17 @@ call :from_dir %1 %2 "%SIBLING%"
 if defined %~2 exit /b 0
 exit /b 1
 
-rem %1 key, %2 result variable, %3 manifest file (may be empty).
+rem %1 key, %2 result variable, %3 manifest file (may be empty). Bazel hands
+rem RUNFILES_MANIFEST_FILE over with forward slashes, which findstr reads as a
+rem switch, so the path is rewritten with backslashes first.
 :from_manifest
 if defined %~2 exit /b 0
 if "%~3"=="" exit /b 0
-set "LOOKED=%LOOKED% [manifest %~3]"
-if not exist "%~3" exit /b 0
-for /f "usebackq tokens=1,* delims= " %%A in (`findstr /b /c:"%~1 " "%~3"`) do if /i "%%A"=="%~1" set "%~2=%%B"
+set "MANIFEST=%~3"
+set "MANIFEST=%MANIFEST:/=\%"
+set "LOOKED=%LOOKED% [manifest %MANIFEST%]"
+if not exist "%MANIFEST%" exit /b 0
+for /f "usebackq tokens=1,* delims= " %%A in (`findstr /b /c:"%~1 " "%MANIFEST%"`) do if /i "%%A"=="%~1" set "%~2=%%B"
 exit /b 0
 
 rem %1 key, %2 result variable, %3 runfiles directory (may be empty).
