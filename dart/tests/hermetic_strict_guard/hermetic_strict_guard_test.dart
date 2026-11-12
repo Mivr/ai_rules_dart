@@ -231,6 +231,7 @@ void _checkStrictFlags(String block) {
     2,
     'strict Phase 1 builds',
   );
+  _checkWorkerSandboxingPairing(block);
   _expectNotContains(block, '|| true', 'the strict job tolerates nothing');
   _expectNotContains(block, 'exit 4', 'the strict job tolerates no exit 4');
   _expectNotContains(
@@ -244,6 +245,33 @@ void _checkStrictFlags(String block) {
     16,
     'the strict job mounts only the four minimal pairs in four phases',
   );
+}
+
+/// Joins backslash-continued lines so each Bazel invocation is one string.
+List<String> _invocations(String block) =>
+    block.replaceAll(RegExp(r'\\\s*\n'), ' ').split('\n');
+
+/// Checks every `--worker_sandboxing` invocation also passes
+/// `--noworker_multiplex`, and that there are at least four of them.
+///
+/// Multiplex workers ignore `--worker_sandboxing`, so without the second
+/// flag `DartKernel` would escape the sandbox this job claims to test.
+void _checkWorkerSandboxingPairing(String block) {
+  final List<String> sandboxed = _invocations(block)
+      .where((line) => line.contains('--worker_sandboxing'))
+      .toList();
+  expect(
+    sandboxed.length,
+    greaterThanOrEqualTo(4),
+    reason: 'hermetic-strict needs at least 4 --worker_sandboxing invocations',
+  );
+  for (final line in sandboxed) {
+    _expectContains(
+      line,
+      '--noworker_multiplex',
+      'every --worker_sandboxing invocation needs --noworker_multiplex',
+    );
+  }
 }
 
 /// Checks both workspaces, the codegen query and the Phase 2 test runs.
@@ -306,6 +334,7 @@ void _checkStrictBep(String block) {
 /// Every flag the strict phases must keep passing to Bazel.
 const List<String> _strictFlags = [
   '--worker_sandboxing',
+  '--noworker_multiplex',
   '--experimental_worker_sandbox_hardening',
   '--experimental_worker_strict_flagfiles',
   '--experimental_use_hermetic_linux_sandbox',
@@ -440,6 +469,28 @@ void _checkSlicing() {
           '      - name: second\n        run: two\n';
       expect(_stepBlock(doc, 'first'), contains('one'));
       expect(_stepBlock(doc, 'first'), isNot(contains('two')));
+    });
+
+    test('worker sandboxing without --noworker_multiplex is rejected', () {
+      const bad =
+          '          bazel build //... \\\n'
+          '            --worker_sandboxing \\\n'
+          '            --nosandbox_default_allow_network\n';
+      expect(
+        () => _checkWorkerSandboxingPairing(bad * 4),
+        throwsA(isA<TestFailure>()),
+      );
+      expect(
+        () => _checkWorkerSandboxingPairing(
+          bad.replaceAll(
+                '--worker_sandboxing',
+                '--worker_sandboxing --noworker_multiplex',
+              ) *
+              3,
+        ),
+        throwsA(isA<TestFailure>()),
+        reason: 'fewer than four invocations is rejected',
+      );
     });
 
     test('missing job or step raises', () {

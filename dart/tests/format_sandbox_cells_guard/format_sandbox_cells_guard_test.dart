@@ -8,7 +8,10 @@ typedef _MatrixCell = ({String flags, String name});
 const List<_MatrixCell> _expectedCells = [
   (name: 'forest runfiles, unsandboxed worker', flags: ''),
   (name: 'forest runfiles, standalone', flags: '--spawn_strategy=standalone'),
-  (name: 'forest runfiles, worker-sandboxed', flags: '--worker_sandboxing'),
+  (
+    name: 'forest runfiles, worker-sandboxed',
+    flags: '--worker_sandboxing --noworker_multiplex',
+  ),
   (
     name: 'forest runfiles, analyze sandboxed',
     flags: '--strategy=DartAnalyze=sandboxed',
@@ -20,7 +23,7 @@ const List<_MatrixCell> _expectedCells = [
   ),
   (
     name: 'manifest runfiles, worker-sandboxed',
-    flags: '--noenable_runfiles --worker_sandboxing',
+    flags: '--noenable_runfiles --worker_sandboxing --noworker_multiplex',
   ),
   (
     name: 'manifest runfiles, analyze sandboxed',
@@ -66,6 +69,11 @@ void main(List<String> args) {
     test(
       'rejects base matrix, extra cell keys, and commented or foreign flags',
       _verifyMatrixRejections,
+    );
+
+    test(
+      'rejects a worker-sandboxed cell without --noworker_multiplex',
+      _verifyWorkerSandboxedRejections,
     );
 
     test(
@@ -133,6 +141,8 @@ void _verifySandboxModes(String jobBlock) {
     );
   }
 
+  _verifyWorkerSandboxedCells(cells);
+
   final List<_MatrixCell> sandboxed = cells
       .where((cell) => cell.name.endsWith('sandboxed'))
       .toList();
@@ -142,6 +152,27 @@ void _verifySandboxModes(String jobBlock) {
       cell.flags.contains('--spawn_strategy=standalone'),
       isFalse,
       reason: '${cell.name} must not add --spawn_strategy=standalone',
+    );
+  }
+}
+
+/// Worker-sandboxed cells must run singleplex: multiplex workers ignore
+/// `--worker_sandboxing`, so `DartKernel` would escape the sandbox.
+void _verifyWorkerSandboxedCells(List<_MatrixCell> cells) {
+  final List<_MatrixCell> workerSandboxed = cells
+      .where((cell) => cell.name.endsWith('worker-sandboxed'))
+      .toList();
+  expect(workerSandboxed, hasLength(2));
+  for (final cell in workerSandboxed) {
+    expect(
+      cell.flags.contains('--worker_sandboxing'),
+      isTrue,
+      reason: '${cell.name} must specify --worker_sandboxing',
+    );
+    expect(
+      cell.flags.split(' ').contains('--noworker_multiplex'),
+      isTrue,
+      reason: '${cell.name} must specify --noworker_multiplex',
     );
   }
 }
@@ -370,6 +401,25 @@ jobs:
       - uses: actions/checkout@v7
 ''';
   expect(() => _parseMatrixCells(extraKeyBlock), throwsA(isA<TestFailure>()));
+}
+
+void _verifyWorkerSandboxedRejections() {
+  const missing = '''
+  format-hermeticity:
+    strategy:
+      matrix:
+        include:
+          - name: forest runfiles, worker-sandboxed
+            flags: "--worker_sandboxing"
+          - name: manifest runfiles, worker-sandboxed
+            flags: "--noenable_runfiles --worker_sandboxing --noworker_multiplex"
+    steps:
+      - uses: actions/checkout@v7
+''';
+  expect(
+    () => _verifyWorkerSandboxedCells(_parseMatrixCells(missing)),
+    throwsA(isA<TestFailure>()),
+  );
 }
 
 void _verifyStepRejections() {
