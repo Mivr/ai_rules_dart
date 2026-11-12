@@ -791,9 +791,10 @@ jobs:
   # includes and language versions must agree across all eight cells too.
   #
   # The job has eight cells: the empty-flags and `--noenable_runfiles` cells run
-  # an unsandboxed persistent worker; `--worker_sandboxing --noworker_multiplex`
-  # runs singleplex persistent workers sandboxed (multiplex workers ignore
-  # `--worker_sandboxing`); `--strategy=DartAnalyze=sandboxed` runs
+  # an unsandboxed persistent worker; `--worker_sandboxing` cells also get
+  # `--noworker_multiplex` from the step, so they run singleplex workers
+  # sandboxed (multiplex workers ignore `--worker_sandboxing`, and the flag
+  # stays out of the matrix so the job names do not change); `--strategy=DartAnalyze=sandboxed` runs
   # the analyzer as a one-shot sandboxed action.
   format-hermeticity:
     runs-on: ubuntu-latest
@@ -807,7 +808,7 @@ jobs:
           - name: forest runfiles, standalone
             flags: "--spawn_strategy=standalone"
           - name: forest runfiles, worker-sandboxed
-            flags: "--worker_sandboxing --noworker_multiplex"
+            flags: "--worker_sandboxing"
           - name: forest runfiles, analyze sandboxed
             flags: "--strategy=DartAnalyze=sandboxed"
           - name: manifest runfiles, unsandboxed worker
@@ -815,7 +816,7 @@ jobs:
           - name: manifest runfiles, standalone
             flags: "--noenable_runfiles --spawn_strategy=standalone"
           - name: manifest runfiles, worker-sandboxed
-            flags: "--noenable_runfiles --worker_sandboxing --noworker_multiplex"
+            flags: "--noenable_runfiles --worker_sandboxing"
           - name: manifest runfiles, analyze sandboxed
             flags: "--noenable_runfiles --strategy=DartAnalyze=sandboxed"
     steps:
@@ -824,10 +825,10 @@ jobs:
         run: .github/scripts/enable_linux_sandbox.sh
       - name: analysis — ${{ matrix.name }}
         working-directory: e2e/analysis
-        run: bazel test ${{ matrix.flags }} --test_output=errors //...
+        run: bazel test ${{ matrix.flags }} ${{ contains(matrix.flags, '--worker_sandboxing') && '--noworker_multiplex' || '' }} --test_output=errors //...
       - name: analysis_failure canary — ${{ matrix.name }}
         working-directory: e2e/analysis_failure
-        run: bazel build ${{ matrix.flags }} --aspects=@rules_dart//dart:analyze.bzl%dart_analyze --output_groups=+dart_analyze,+dart_format //:clean_lib
+        run: bazel build ${{ matrix.flags }} ${{ contains(matrix.flags, '--worker_sandboxing') && '--noworker_multiplex' || '' }} --aspects=@rules_dart//dart:analyze.bzl%dart_analyze --output_groups=+dart_analyze,+dart_format //:clean_lib
   # Every runnable entry point (`bazel run` on every public target, plus one
   # instance of every public rule whose target it accepts) keeps its HOME
   # policy: `e2e/run_home/run_home_test.sh` checks the registry against

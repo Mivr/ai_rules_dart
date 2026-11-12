@@ -8,10 +8,7 @@ typedef _MatrixCell = ({String flags, String name});
 const List<_MatrixCell> _expectedCells = [
   (name: 'forest runfiles, unsandboxed worker', flags: ''),
   (name: 'forest runfiles, standalone', flags: '--spawn_strategy=standalone'),
-  (
-    name: 'forest runfiles, worker-sandboxed',
-    flags: '--worker_sandboxing --noworker_multiplex',
-  ),
+  (name: 'forest runfiles, worker-sandboxed', flags: '--worker_sandboxing'),
   (
     name: 'forest runfiles, analyze sandboxed',
     flags: '--strategy=DartAnalyze=sandboxed',
@@ -23,7 +20,7 @@ const List<_MatrixCell> _expectedCells = [
   ),
   (
     name: 'manifest runfiles, worker-sandboxed',
-    flags: '--noenable_runfiles --worker_sandboxing --noworker_multiplex',
+    flags: '--noenable_runfiles --worker_sandboxing',
   ),
   (
     name: 'manifest runfiles, analyze sandboxed',
@@ -72,7 +69,7 @@ void main(List<String> args) {
     );
 
     test(
-      'rejects a worker-sandboxed cell without --noworker_multiplex',
+      'rejects a step that drops --noworker_multiplex for worker-sandboxed cells',
       _verifyWorkerSandboxedRejections,
     );
 
@@ -169,10 +166,22 @@ void _verifyWorkerSandboxedCells(List<_MatrixCell> cells) {
       isTrue,
       reason: '${cell.name} must specify --worker_sandboxing',
     );
+  }
+}
+
+/// Both steps must add `--noworker_multiplex` whenever the cell flags carry
+/// `--worker_sandboxing`. The flag stays out of the matrix so job names hold.
+const String _multiplexExpr =
+    r"${{ contains(matrix.flags, '--worker_sandboxing') && '--noworker_multiplex' || '' }}";
+
+void _verifyStepsDisableMultiplex(Map<String, String> workspaceSteps) {
+  for (final MapEntry<String, String> step in workspaceSteps.entries) {
     expect(
-      cell.flags.split(' ').contains('--noworker_multiplex'),
+      step.value.contains(_multiplexExpr),
       isTrue,
-      reason: '${cell.name} must specify --noworker_multiplex',
+      reason:
+          '${step.key} step must pass --noworker_multiplex with '
+          '--worker_sandboxing via $_multiplexExpr',
     );
   }
 }
@@ -318,6 +327,7 @@ void _verifyExecutionSteps(String block) {
       contains('//:clean_lib'),
     ),
   );
+  _verifyStepsDisableMultiplex(workspaceSteps);
 }
 
 Map<String, String> _collectWorkspaceSteps(String cleanedBlock) {
@@ -412,12 +422,18 @@ void _verifyWorkerSandboxedRejections() {
           - name: forest runfiles, worker-sandboxed
             flags: "--worker_sandboxing"
           - name: manifest runfiles, worker-sandboxed
-            flags: "--noenable_runfiles --worker_sandboxing --noworker_multiplex"
+            flags: "--noenable_runfiles --worker_sandboxing"
     steps:
       - uses: actions/checkout@v7
 ''';
   expect(
     () => _verifyWorkerSandboxedCells(_parseMatrixCells(missing)),
+    returnsNormally,
+  );
+  expect(
+    () => _verifyStepsDisableMultiplex({
+      'e2e/analysis': r'run: bazel test ${{ matrix.flags }} //...',
+    }),
     throwsA(isA<TestFailure>()),
   );
 }
