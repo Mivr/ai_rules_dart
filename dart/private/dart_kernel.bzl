@@ -44,7 +44,7 @@ module.
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart:providers.bzl", "DartCompileInfo", "DartInfo", _DartKernelInfo = "DartKernelInfo")
 load("//dart/private:aot_tool.bzl", "aot_tool_launch")
-load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR")
+load("//dart/private:build_settings.bzl", "EXTRA_DART_DEFINES_ATTR", _global_dart_defines = "global_dart_defines")
 load(
     "//dart/private:common.bzl",
     "STABLE_SCHEME",
@@ -84,7 +84,6 @@ load(
     "kernel_module_outputs",
     "library_kernel_options",
     "library_kernel_sources",
-    "library_vm_product",
     "modular_kernel_conditions",
     "modular_kernel_mode",
 )
@@ -1095,18 +1094,7 @@ def entry_sources(files, scheme = STABLE_SCHEME):
     """
     return [struct(uri = entry_source_uri(f.short_path, scheme = scheme), file = f) for f in files]
 
-def global_dart_defines(ctx):
-    """The `//dart:extra_dart_defines` flag's values, shared by every module of a build.
-
-    Args:
-      ctx: A rule context carrying `_extra_dart_defines` (`EXTRA_DART_DEFINES_ATTR`).
-
-    Returns:
-      The list of `KEY` or `KEY=VALUE` strings.
-    """
-    if not hasattr(ctx.attr, "_extra_dart_defines"):
-        return []
-    return ctx.attr._extra_dart_defines[BuildSettingInfo].value
+global_dart_defines = _global_dart_defines
 
 def modular_executable_tools(
         ctx,
@@ -1588,7 +1576,7 @@ def _dart_kernel_module_aspect_impl(target, ctx):
             own_record = inputs.own_record,
             own_records = inputs.own_records,
         ),
-        kernel_compile_settings(product = library_vm_product(ctx)),
+        kernel_compile_settings(product = ctx.attr._vm_product[BuildSettingInfo].value),
         library_kernel_options(
             opaque = inputs.opaque,
             rule_deps = inputs.rule_deps,

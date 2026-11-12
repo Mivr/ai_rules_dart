@@ -132,3 +132,16 @@ def refused_library_args(ctx):
       The list of `dart:<name>` entries, empty by default.
     """
     return ctx.attr._refused_dart_libraries[BuildSettingInfo].value
+
+def global_dart_defines(ctx):
+    """The `//dart:extra_dart_defines` flag's values, shared by every module of a build.
+
+    Args:
+      ctx: A rule context carrying `_extra_dart_defines` (`EXTRA_DART_DEFINES_ATTR`).
+
+    Returns:
+      The list of `KEY` or `KEY=VALUE` strings.
+    """
+    if not hasattr(ctx.attr, "_extra_dart_defines"):
+        return []
+    return ctx.attr._extra_dart_defines[BuildSettingInfo].value
