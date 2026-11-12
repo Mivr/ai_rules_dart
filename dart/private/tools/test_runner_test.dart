@@ -841,7 +841,7 @@ void _packageConfigTests() {
       writePackageConfig(target, '{"a":1}');
       writePackageConfig(target, '{"a":2}');
       expect(target.readAsStringSync(), '{"a":2}');
-      expect(File('${target.path}.partial').existsSync(), isFalse);
+      expect(target.parent.listSync().map((e) => e.path), [target.path]);
     });
   });
 }

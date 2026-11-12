@@ -2,4 +2,9 @@
 /// tests.
 library;
 
+import 'package:extra_data/extra.dart';
+
 const String sampleData = 'sample_data';
+
+/// The package reached through this one.
+const String reached = extraData;

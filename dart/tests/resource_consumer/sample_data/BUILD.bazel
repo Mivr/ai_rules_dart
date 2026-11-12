@@ -6,4 +6,5 @@ dart_library(
     srcs = ["lib/sample.dart"],
     resources = ["lib/data/sample.txt"],
     visibility = ["//dart/tests/resource_consumer:__pkg__"],
+    deps = ["//dart/tests/resource_consumer/extra_data"],
 )
