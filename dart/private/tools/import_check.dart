@@ -41,30 +41,6 @@ String refusedLine(String label, String path, String kind, String uri) =>
     "$label: $path ${kind}s '$uri', which //dart:refused_dart_libraries "
     'refuses. Remove the $kind, or take the library out of that setting.';
 
-final RegExp _scheme = RegExp('^([A-Za-z][A-Za-z0-9+.-]*):');
-
-final RegExp _badEscape = RegExp('%(?![0-9A-Fa-f]{2})');
-
-/// [uri] as the front end reads it: the scheme lower-cased and `%XX` escapes
-/// decoded once, or null when it does not decode cleanly.
-String? normaliseDirectiveUri(String uri) {
-  final Match? m = _scheme.firstMatch(uri);
-  final String lowered = m == null
-      ? uri
-      : m.group(1)!.toLowerCase() + uri.substring(m.group(1)!.length);
-  if (_badEscape.hasMatch(lowered)) return null;
-  try {
-    return Uri.decodeFull(lowered);
-  } on FormatException {
-    return null;
-  }
-}
-
-/// The violation line for [path] whose directive [uri] does not decode.
-String undecodableLine(String label, String path, String uri) =>
-    "$label: $path names '$uri', which is not a valid URI: a '%' escape does "
-    'not decode to UTF-8. Fix the escape.';
-
 /// The line for one directive [ref] of [path], or null when it is fine. The
 /// URI is judged as the front end reads it, for the refused set and for the
 /// layering check alike; the line shows it as written.

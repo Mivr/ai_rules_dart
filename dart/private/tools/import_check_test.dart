@@ -51,6 +51,26 @@ void main() {
       ]);
     });
 
+    test('dot segments are removed before the layering check', () {
+      for (final uri in [
+        'package:leaf/./leaf.dart',
+        'package:./leaf/leaf.dart',
+        'Package:../le%61f/leaf.dart',
+        'package:mid/../leaf/leaf.dart',
+      ]) {
+        expect(check({'lib/a.dart': "import '$uri';\n"}), [
+          _leafViolation.replaceFirst('package:leaf/leaf.dart', uri),
+        ], reason: uri);
+      }
+      for (final uri in [
+        'package:mid/./x.dart',
+        'package:./mid/x.dart',
+        'package:own/a/../x.dart',
+      ]) {
+        expect(check({'lib/a.dart': "import '$uri';\n"}), isEmpty, reason: uri);
+      }
+    });
+
     test('PACKAGE: and escaped package names are judged like package:', () {
       for (final uri in [
         'PACKAGE:leaf/leaf.dart',
@@ -180,6 +200,10 @@ void main() {
       'dart:%6Dirrors',
       'dart:mirror%73',
       'Dart:%6d%69rrors',
+      'dart:./mirrors',
+      'dart:../mirrors',
+      'Dart:./%6dirrors',
+      'dart:x/../mirrors',
     ]) {
       for (final verb in ['import', 'export']) {
         test('$verb of $spelling is refused, printed as written', () {

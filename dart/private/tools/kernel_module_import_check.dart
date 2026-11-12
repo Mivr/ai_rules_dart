@@ -15,7 +15,53 @@ typedef ImportCheckRequest = ({
   Map<String, String> sources,
 });
 
-/// The package a `package:` URI names, or null for any other URI.
+final RegExp _scheme = RegExp('^([A-Za-z][A-Za-z0-9+.-]*):');
+
+final RegExp _badEscape = RegExp('%(?![0-9A-Fa-f]{2})');
+
+/// [path] with its `.` and `..` segments removed, as the front end resolves a
+/// directive URI: `./io` and `x/../io` both name `io`; a `..` with nothing
+/// before it is dropped.
+String _withoutDotSegments(String path) {
+  final kept = <String>[];
+  for (final String segment in path.split('/')) {
+    if (segment == '.') continue;
+    if (segment == '..') {
+      if (kept.isNotEmpty) kept.removeLast();
+      continue;
+    }
+    kept.add(segment);
+  }
+  return kept.join('/');
+}
+
+/// [uri] as the front end reads it: the scheme lower-cased, `%XX` escapes
+/// decoded once, then dot segments removed, or null when it does not decode
+/// cleanly.
+String? normaliseDirectiveUri(String uri) {
+  final Match? m = _scheme.firstMatch(uri);
+  final String lowered = m == null
+      ? uri
+      : m.group(1)!.toLowerCase() + uri.substring(m.group(1)!.length);
+  if (_badEscape.hasMatch(lowered)) return null;
+  try {
+    final String decoded = Uri.decodeFull(lowered);
+    final Match? s = _scheme.firstMatch(decoded);
+    if (s == null) return decoded;
+    final String head = decoded.substring(0, s.group(0)!.length);
+    return head + _withoutDotSegments(decoded.substring(head.length));
+  } on FormatException {
+    return null;
+  }
+}
+
+/// The violation line for [path] whose directive [uri] does not decode.
+String undecodableLine(String label, String path, String uri) =>
+    "$label: $path names '$uri', which is not a valid URI: a '%' escape does "
+    'not decode to UTF-8. Fix the escape.';
+
+/// The package a `package:` URI names, or null for any other URI. [uri] is
+/// judged as [normaliseDirectiveUri] returns it.
 String? packageOfUri(String uri) {
   const prefix = 'package:';
   if (!uri.startsWith(prefix)) return null;
@@ -44,9 +90,15 @@ List<String> checkImports(ImportCheckRequest request) {
     }
     for (final ScanRef ref in checked.refs) {
       if (ref.kind != 'import' && ref.kind != 'export') continue;
-      final String? name = packageOfUri(ref.uri);
-      if (name == null || request.allowedPackages.contains(name)) continue;
-      final String line = violationLine(request.label, path, ref.uri, name);
+      final String? uri = normaliseDirectiveUri(ref.uri);
+      final String? name = uri == null ? null : packageOfUri(uri);
+      if (uri != null &&
+          (name == null || request.allowedPackages.contains(name))) {
+        continue;
+      }
+      final String line = uri == null
+          ? undecodableLine(request.label, path, ref.uri)
+          : violationLine(request.label, path, ref.uri, name!);
       if (!lines.contains(line)) lines.add(line);
     }
   }

@@ -46,6 +46,26 @@ void main() {
       ]);
     });
 
+    test('dot segments are removed before the package is named', () {
+      List<String> lint(String uri) => checkImports((
+        label: '//pkg/user:user',
+        allowedPackages: {'user', 'mid'},
+        sources: {'a.dart': "import '$uri';\n"},
+      ));
+      for (final uri in [
+        'package:leaf/./leaf.dart',
+        'package:./leaf/leaf.dart',
+        'Package:../le%61f/leaf.dart',
+      ]) {
+        expect(lint(uri), [
+          violationLine('//pkg/user:user', 'a.dart', uri, 'leaf'),
+        ], reason: uri);
+      }
+      for (final uri in ['package:mid/./x.dart', 'Package:./m%69d/x.dart']) {
+        expect(lint(uri), isEmpty, reason: uri);
+      }
+    });
+
     test('direct dependencies, own package and dart: imports pass', () {
       final List<String> lines = checkImports((
         label: '//pkg/user:user',
