@@ -670,7 +670,7 @@ told where a runfile is (resolve it with `Runfiles.rlocation()`).""",
         "so `Isolate.resolvePackageUri` resolves `package:<name>/<path>` to the file " +
         "staged in runfiles for each package whose `lib/` has staged files (a " +
         "dependency's `resources` and `data`); a package with none still resolves to " +
-        "`null`. `Runfiles.rlocation()` keeps working."
+        "`null`. `Runfiles.rlocation()` stays supported for reaching runfiles directly."
     ),
 )
 
