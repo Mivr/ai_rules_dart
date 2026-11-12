@@ -230,7 +230,7 @@
     "@@ai_rules_dart+//dart/pub:extensions.bzl%pub": {
       "general": {
         "bzlTransitiveDigest": "+0LCzdQB0iL33/lKX9QFlcQ764lAZP4TyWnLQuaRgJk=",
-        "usagesDigest": "hxWTwaJAOoQWIytw/qzURFd8mOJmv/IIKCy1EClz1R4=",
+        "usagesDigest": "QWba5rga1Lo7c76zRoZzS8b8ve/+kOtqSD/s41QihDg=",
         "recordedInputs": [
           "REPO_MAPPING:ai_rules_dart+,dart_pub_scanner ai_rules_dart++dart+dart_pub_scanner",
           "FILE:@@//pubspec.lock a7b9595053a1f8835573513b638a08e3052b5a3fc4bbfc6e1b7065f8a5d96919",
@@ -273,97 +273,9 @@
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
-                "_fe_analyzer_shared",
-                "analyzer",
-                "analyzer_buffer",
-                "args",
-                "async",
-                "bazel_worker",
-                "boolean_selector",
-                "build",
-                "build_config",
-                "built_collection",
-                "built_value",
-                "built_value_generator",
-                "charcode",
-                "checked_yaml",
-                "cli_config",
-                "cli_util",
-                "clock",
-                "code_assets",
-                "code_builder",
                 "collection",
-                "convert",
-                "copy_with_extension",
-                "copy_with_extension_gen",
-                "coverage",
-                "crypto",
-                "dart_style",
-                "data_assets",
-                "drift",
-                "drift_dev",
-                "ffi",
                 "file",
-                "fixnum",
-                "freezed",
-                "freezed_annotation",
-                "frontend_server_client",
-                "get_it",
-                "glob",
-                "go_router_builder",
-                "hooks",
-                "http_multi_server",
-                "http_parser",
-                "io",
-                "json_annotation",
-                "json_serializable",
-                "logger",
-                "logging",
-                "matcher",
-                "meta",
-                "mime",
-                "mockito",
-                "native_toolchain_c",
-                "node_preamble",
-                "package_config",
-                "platform",
-                "pool",
-                "process",
-                "protobuf",
-                "pub_semver",
-                "pubspec_parse",
-                "recase",
-                "record_use",
-                "shelf",
-                "shelf_packages_handler",
-                "shelf_static",
-                "shelf_web_socket",
-                "source_gen",
-                "source_helper",
-                "source_map_stack_trace",
-                "source_maps",
-                "source_span",
-                "sqlite3",
-                "sqlparser",
-                "stack_trace",
-                "stacked_generator",
-                "stacked_shared",
-                "stream_channel",
-                "stream_transform",
-                "string_scanner",
-                "term_glyph",
-                "test",
-                "test_api",
-                "test_core",
-                "typed_data",
-                "vm_service",
-                "watcher",
-                "web",
-                "web_socket",
-                "web_socket_channel",
-                "webkit_inspection_protocol",
-                "yaml",
-                "yaml_edit"
+                "meta"
               ],
               "explicit_packages": [
                 "path",
@@ -389,97 +301,9 @@
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
-                "_fe_analyzer_shared",
-                "analyzer",
-                "analyzer_buffer",
-                "args",
-                "async",
-                "bazel_worker",
-                "boolean_selector",
-                "build",
-                "build_config",
-                "built_collection",
-                "built_value",
-                "built_value_generator",
-                "charcode",
-                "checked_yaml",
-                "cli_config",
-                "cli_util",
-                "clock",
-                "code_assets",
-                "code_builder",
                 "collection",
-                "convert",
-                "copy_with_extension",
-                "copy_with_extension_gen",
-                "coverage",
-                "crypto",
-                "dart_style",
-                "data_assets",
-                "drift",
-                "drift_dev",
-                "ffi",
                 "file",
-                "fixnum",
-                "freezed",
-                "freezed_annotation",
-                "frontend_server_client",
-                "get_it",
-                "glob",
-                "go_router_builder",
-                "hooks",
-                "http_multi_server",
-                "http_parser",
-                "io",
-                "json_annotation",
-                "json_serializable",
-                "logger",
-                "logging",
-                "matcher",
-                "meta",
-                "mime",
-                "mockito",
-                "native_toolchain_c",
-                "node_preamble",
-                "package_config",
-                "platform",
-                "pool",
-                "process",
-                "protobuf",
-                "pub_semver",
-                "pubspec_parse",
-                "recase",
-                "record_use",
-                "shelf",
-                "shelf_packages_handler",
-                "shelf_static",
-                "shelf_web_socket",
-                "source_gen",
-                "source_helper",
-                "source_map_stack_trace",
-                "source_maps",
-                "source_span",
-                "sqlite3",
-                "sqlparser",
-                "stack_trace",
-                "stacked_generator",
-                "stacked_shared",
-                "stream_channel",
-                "stream_transform",
-                "string_scanner",
-                "term_glyph",
-                "test",
-                "test_api",
-                "test_core",
-                "typed_data",
-                "vm_service",
-                "watcher",
-                "web",
-                "web_socket",
-                "web_socket_channel",
-                "webkit_inspection_protocol",
-                "yaml",
-                "yaml_edit"
+                "meta"
               ],
               "explicit_packages": [
                 "path",
@@ -508,97 +332,9 @@
               "base_url": "https://pub.dev",
               "hub_name": "dart_pub",
               "lock_packages": [
-                "_fe_analyzer_shared",
-                "analyzer",
-                "analyzer_buffer",
-                "args",
-                "async",
-                "bazel_worker",
-                "boolean_selector",
-                "build",
-                "build_config",
-                "built_collection",
-                "built_value",
-                "built_value_generator",
-                "charcode",
-                "checked_yaml",
-                "cli_config",
-                "cli_util",
-                "clock",
-                "code_assets",
-                "code_builder",
                 "collection",
-                "convert",
-                "copy_with_extension",
-                "copy_with_extension_gen",
-                "coverage",
-                "crypto",
-                "dart_style",
-                "data_assets",
-                "drift",
-                "drift_dev",
-                "ffi",
                 "file",
-                "fixnum",
-                "freezed",
-                "freezed_annotation",
-                "frontend_server_client",
-                "get_it",
-                "glob",
-                "go_router_builder",
-                "hooks",
-                "http_multi_server",
-                "http_parser",
-                "io",
-                "json_annotation",
-                "json_serializable",
-                "logger",
-                "logging",
-                "matcher",
-                "meta",
-                "mime",
-                "mockito",
-                "native_toolchain_c",
-                "node_preamble",
-                "package_config",
-                "platform",
-                "pool",
-                "process",
-                "protobuf",
-                "pub_semver",
-                "pubspec_parse",
-                "recase",
-                "record_use",
-                "shelf",
-                "shelf_packages_handler",
-                "shelf_static",
-                "shelf_web_socket",
-                "source_gen",
-                "source_helper",
-                "source_map_stack_trace",
-                "source_maps",
-                "source_span",
-                "sqlite3",
-                "sqlparser",
-                "stack_trace",
-                "stacked_generator",
-                "stacked_shared",
-                "stream_channel",
-                "stream_transform",
-                "string_scanner",
-                "term_glyph",
-                "test",
-                "test_api",
-                "test_core",
-                "typed_data",
-                "vm_service",
-                "watcher",
-                "web",
-                "web_socket",
-                "web_socket_channel",
-                "webkit_inspection_protocol",
-                "yaml",
-                "yaml_edit"
+                "meta"
               ],
               "explicit_packages": [
                 "path",
@@ -615,14 +351,14 @@
               ]
             }
           },
-          "dart_pub___fe_analyzer_shared": {
+          "ext_pub_deps___fe_analyzer_shared": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "_fe_analyzer_shared",
               "version": "109.0.0",
               "sha256": "48e48f73a431eb269eec66d243a63a07ed90ef9417a74047a3b98d52338626ad",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -677,6 +413,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -717,7 +454,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -733,14 +469,14 @@
               ]
             }
           },
-          "dart_pub__analyzer": {
+          "ext_pub_deps__analyzer": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "analyzer",
               "version": "14.5.0",
               "sha256": "6d377901d198536b648172974d9d4f277910502cad92193466869cac0ff34990",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -795,6 +531,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -835,7 +572,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -862,14 +598,14 @@
               ]
             }
           },
-          "dart_pub__analyzer_buffer": {
+          "ext_pub_deps__analyzer_buffer": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "analyzer_buffer",
               "version": "0.3.4",
               "sha256": "f890a2e708e38fbf4238ad2f9fd3d506538acdddb0cd8eb2c3e8c7bd17784b57",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -924,6 +660,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -964,7 +701,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -984,14 +720,14 @@
               ]
             }
           },
-          "dart_pub__args": {
+          "ext_pub_deps__args": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "args",
               "version": "2.7.0",
               "sha256": "d0481093c50b1da8910eb0bb301626d4d8eb7284aa739614d2b394ee09e3ea04",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -1046,6 +782,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -1086,7 +823,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -1100,14 +836,14 @@
               ]
             }
           },
-          "dart_pub__async": {
+          "ext_pub_deps__async": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "async",
               "version": "2.13.1",
               "sha256": "e2eb0491ba5ddb6177742d2da23904574082139b07c1e33b8503b9f46f3e1a37",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -1162,6 +898,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -1202,7 +939,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -1219,14 +955,14 @@
               ]
             }
           },
-          "dart_pub__bazel_worker": {
+          "ext_pub_deps__bazel_worker": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "bazel_worker",
               "version": "1.1.5",
               "sha256": "87cae9150fcf9942b8057e5f51c4848a3efde1289e97411e1c8f01e350120999",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -1281,6 +1017,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -1321,7 +1058,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -1338,14 +1074,14 @@
               ]
             }
           },
-          "dart_pub__boolean_selector": {
+          "ext_pub_deps__boolean_selector": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "boolean_selector",
               "version": "2.1.2",
               "sha256": "8aab1771e1243a5063b8b0ff68042d67334e3feab9e95b9490f9a6ebf73b42ea",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -1400,6 +1136,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -1440,7 +1177,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -1457,14 +1193,14 @@
               ]
             }
           },
-          "dart_pub__build": {
+          "ext_pub_deps__build": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "build",
               "version": "4.0.11",
               "sha256": "8a5c5761af8e31748bba3c82f68925ace40f3225c3eea25be9beb57eca7cd7a8",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -1519,6 +1255,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -1559,7 +1296,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -1580,14 +1316,14 @@
               ]
             }
           },
-          "dart_pub__build_config": {
+          "ext_pub_deps__build_config": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "build_config",
               "version": "1.4.0",
               "sha256": "4703a785fbc3c266c5c7518589d0863f6a05078ee33f7ca5aa4b87a56f1cedd2",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -1642,6 +1378,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -1682,7 +1419,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -1701,14 +1437,14 @@
               ]
             }
           },
-          "dart_pub__built_collection": {
+          "ext_pub_deps__built_collection": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "built_collection",
               "version": "5.1.2",
               "sha256": "44922ecebd8e3d0cef743dadd3b54df4e87e2a4c52a29465a1872aa9e192caa8",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -1763,6 +1499,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -1803,7 +1540,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -1817,14 +1553,14 @@
               ]
             }
           },
-          "dart_pub__built_value": {
+          "ext_pub_deps__built_value": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "built_value",
               "version": "8.13.0",
               "sha256": "f87ea98192116f7093cb214551ce1929caae0681fdba282b3d8b4462adee7bb7",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -1879,6 +1615,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -1919,7 +1656,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -1938,14 +1674,14 @@
               ]
             }
           },
-          "dart_pub__built_value_generator": {
+          "ext_pub_deps__built_value_generator": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "built_value_generator",
               "version": "8.13.0",
               "sha256": "68af3b1a6829c760f1c039c4302be60f35a65af5f93a9cfed5d65f681eca3757",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -2000,6 +1736,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -2040,7 +1777,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -2062,14 +1798,14 @@
               ]
             }
           },
-          "dart_pub__charcode": {
+          "ext_pub_deps__charcode": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "charcode",
               "version": "1.4.0",
               "sha256": "fb0f1107cac15a5ea6ef0a6ef71a807b9e4267c713bb93e00e92d737cc8dbd8a",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -2124,6 +1860,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -2164,7 +1901,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -2178,14 +1914,14 @@
               ]
             }
           },
-          "dart_pub__checked_yaml": {
+          "ext_pub_deps__checked_yaml": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "checked_yaml",
               "version": "2.0.4",
               "sha256": "959525d3162f249993882720d52b7e0c833978df229be20702b33d48d91de70f",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -2240,6 +1976,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -2280,7 +2017,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -2298,14 +2034,14 @@
               ]
             }
           },
-          "dart_pub__cli_config": {
+          "ext_pub_deps__cli_config": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "cli_config",
               "version": "0.2.0",
               "sha256": "ac20a183a07002b700f0c25e61b7ee46b23c309d76ab7b7640a028f18e4d99ec",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -2360,6 +2096,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -2400,7 +2137,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -2417,14 +2153,14 @@
               ]
             }
           },
-          "dart_pub__cli_util": {
+          "ext_pub_deps__cli_util": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "cli_util",
               "version": "0.6.0",
               "sha256": "89b8801ba49f8b593fbf2d3e59efd0f566c46cd4ba6837ae2610c72b52a0f899",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -2479,6 +2215,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -2519,7 +2256,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -2537,14 +2273,14 @@
               ]
             }
           },
-          "dart_pub__clock": {
+          "ext_pub_deps__clock": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "clock",
               "version": "1.1.3",
               "sha256": "e51d50bca3217c9a9fa2b41a30e4a38971133f5f9ec7a3d57bae095007f1d28e",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -2599,6 +2335,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -2639,7 +2376,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -2653,14 +2389,14 @@
               ]
             }
           },
-          "dart_pub__code_assets": {
+          "ext_pub_deps__code_assets": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "code_assets",
               "version": "2.1.0",
               "sha256": "828110d598123b5ea96c00c9f3c72105bf79f8ee36c20a39b26209ade421ec57",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -2715,6 +2451,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -2755,7 +2492,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -2773,14 +2509,14 @@
               ]
             }
           },
-          "dart_pub__code_builder": {
+          "ext_pub_deps__code_builder": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "code_builder",
               "version": "4.13.0",
               "sha256": "811709c1badd02fc054039a13f66e0db1961865f9a314175f68c3eaeebec786f",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -2835,6 +2571,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -2875,7 +2612,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -2895,14 +2631,14 @@
               ]
             }
           },
-          "dart_pub__convert": {
+          "ext_pub_deps__collection": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
-              "package_name": "convert",
-              "version": "3.1.2",
-              "sha256": "b30acd5944035672bc15c6b7a8b47d773e41e2f17de064350988c5d02adb1c68",
+              "package_name": "collection",
+              "version": "1.19.1",
+              "sha256": "2f5709ae4d3d59dd8f7cd309b4e023046b57d8a6c82130785d2b0e5868084e76",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -2957,6 +2693,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -2997,7 +2734,122 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
+                "very_good_analysis"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "scc_targets": {},
+              "planned_deps": [],
+              "plan_covers_package": true,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "ext_pub_deps__convert": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "convert",
+              "version": "3.1.2",
+              "sha256": "b30acd5944035672bc15c6b7a8b47d773e41e2f17de064350988c5d02adb1c68",
+              "base_url": "https://pub.dev",
+              "hub_name": "ext_pub_deps",
+              "lock_packages": [
+                "_fe_analyzer_shared",
+                "analyzer",
+                "analyzer_buffer",
+                "args",
+                "async",
+                "bazel_worker",
+                "boolean_selector",
+                "build",
+                "build_config",
+                "built_collection",
+                "built_value",
+                "built_value_generator",
+                "charcode",
+                "checked_yaml",
+                "cli_config",
+                "cli_util",
+                "clock",
+                "code_assets",
+                "code_builder",
+                "collection",
+                "convert",
+                "copy_with_extension",
+                "copy_with_extension_gen",
+                "coverage",
+                "crypto",
+                "dart_style",
+                "data_assets",
+                "drift",
+                "drift_dev",
+                "ffi",
+                "file",
+                "fixnum",
+                "freezed",
+                "freezed_annotation",
+                "frontend_server_client",
+                "get_it",
+                "glob",
+                "go_router_builder",
+                "hooks",
+                "http_multi_server",
+                "http_parser",
+                "io",
+                "json_annotation",
+                "json_serializable",
+                "logger",
+                "logging",
+                "matcher",
+                "meta",
+                "mime",
+                "mockito",
+                "native_toolchain_c",
+                "node_preamble",
+                "package_config",
                 "path",
+                "platform",
+                "pool",
+                "process",
+                "protobuf",
+                "pub_semver",
+                "pubspec_parse",
+                "recase",
+                "record_use",
+                "shelf",
+                "shelf_packages_handler",
+                "shelf_static",
+                "shelf_web_socket",
+                "source_gen",
+                "source_helper",
+                "source_map_stack_trace",
+                "source_maps",
+                "source_span",
+                "sqlite3",
+                "sqlparser",
+                "stack_trace",
+                "stacked_generator",
+                "stacked_shared",
+                "stream_channel",
+                "stream_transform",
+                "string_scanner",
+                "term_glyph",
+                "test",
+                "test_api",
+                "test_core",
+                "typed_data",
+                "vm_service",
+                "watcher",
+                "web",
+                "web_socket",
+                "web_socket_channel",
+                "webkit_inspection_protocol",
+                "yaml",
+                "yaml_edit"
+              ],
+              "explicit_packages": [
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -3013,14 +2865,14 @@
               ]
             }
           },
-          "dart_pub__copy_with_extension": {
+          "ext_pub_deps__copy_with_extension": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "copy_with_extension",
               "version": "18.0.0",
               "sha256": "9a832fe40e5a5fcbe58e094d2c857ac6b185f34ec200241051daebe48b1b0403",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -3075,6 +2927,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -3115,7 +2968,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -3131,14 +2983,14 @@
               ]
             }
           },
-          "dart_pub__copy_with_extension_gen": {
+          "ext_pub_deps__copy_with_extension_gen": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "copy_with_extension_gen",
               "version": "18.0.0",
               "sha256": "4475dfeaa67d41760e7f8b690cbbbbc0d71efb34797997478ae869c0933a5fe1",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -3193,6 +3045,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -3233,7 +3086,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -3253,14 +3105,14 @@
               ]
             }
           },
-          "dart_pub__coverage": {
+          "ext_pub_deps__coverage": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "coverage",
               "version": "1.16.0",
               "sha256": "ff89e37c19355194e279d26dafe8e4bece46c9ea63a30be4dc68214f5bc290d3",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -3315,6 +3167,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -3355,7 +3208,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -3382,14 +3234,14 @@
               ]
             }
           },
-          "dart_pub__crypto": {
+          "ext_pub_deps__crypto": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "crypto",
               "version": "3.0.7",
               "sha256": "c8ea0233063ba03258fbcf2ca4d6dadfefe14f02fab57702265467a19f27fadf",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -3444,6 +3296,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -3484,7 +3337,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -3500,14 +3352,14 @@
               ]
             }
           },
-          "dart_pub__dart_style": {
+          "ext_pub_deps__dart_style": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "dart_style",
               "version": "3.1.14",
               "sha256": "a0e4f65339b31eb6a9e6a12e14b4682a48d46fbc54a82f4a702396fbdbac63a7",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -3562,6 +3414,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -3602,7 +3455,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -3625,14 +3477,14 @@
               ]
             }
           },
-          "dart_pub__data_assets": {
+          "ext_pub_deps__data_assets": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "data_assets",
               "version": "0.20.0",
               "sha256": "8bfdbf25ec8a0f4b5a3c993042c4ab9996ba354f0b03d40f4e360f3730d71cae",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -3687,6 +3539,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -3727,7 +3580,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -3743,14 +3595,14 @@
               ]
             }
           },
-          "dart_pub__drift": {
+          "ext_pub_deps__drift": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "drift",
               "version": "2.35.2",
               "sha256": "ef9598e1785c18db37209e8554fc79aff94632209d384ec98984b9e3184af0f7",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -3805,6 +3657,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -3845,7 +3698,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -3869,14 +3721,14 @@
               ]
             }
           },
-          "dart_pub__drift_dev": {
+          "ext_pub_deps__drift_dev": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "drift_dev",
               "version": "2.35.1",
               "sha256": "e0d16aaa21f3408cbe2dd4bfc56c36cea43e53a537e6613b91380c0924b3bd30",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -3931,6 +3783,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -3971,7 +3824,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -4011,14 +3863,14 @@
               ]
             }
           },
-          "dart_pub__ffi": {
+          "ext_pub_deps__ffi": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "ffi",
               "version": "2.2.0",
               "sha256": "6d7fd89431262d8f3125e81b50d3847a091d846eafcd4fdb88dd06f36d705a45",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -4073,6 +3925,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -4113,7 +3966,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -4127,14 +3979,133 @@
               ]
             }
           },
-          "dart_pub__fixnum": {
+          "ext_pub_deps__file": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "file",
+              "version": "7.0.1",
+              "sha256": "a3b4f84adafef897088c160faf7dfffb7696046cb13ae90b508c2cbc95d3b8d4",
+              "base_url": "https://pub.dev",
+              "hub_name": "ext_pub_deps",
+              "lock_packages": [
+                "_fe_analyzer_shared",
+                "analyzer",
+                "analyzer_buffer",
+                "args",
+                "async",
+                "bazel_worker",
+                "boolean_selector",
+                "build",
+                "build_config",
+                "built_collection",
+                "built_value",
+                "built_value_generator",
+                "charcode",
+                "checked_yaml",
+                "cli_config",
+                "cli_util",
+                "clock",
+                "code_assets",
+                "code_builder",
+                "collection",
+                "convert",
+                "copy_with_extension",
+                "copy_with_extension_gen",
+                "coverage",
+                "crypto",
+                "dart_style",
+                "data_assets",
+                "drift",
+                "drift_dev",
+                "ffi",
+                "file",
+                "fixnum",
+                "freezed",
+                "freezed_annotation",
+                "frontend_server_client",
+                "get_it",
+                "glob",
+                "go_router_builder",
+                "hooks",
+                "http_multi_server",
+                "http_parser",
+                "io",
+                "json_annotation",
+                "json_serializable",
+                "logger",
+                "logging",
+                "matcher",
+                "meta",
+                "mime",
+                "mockito",
+                "native_toolchain_c",
+                "node_preamble",
+                "package_config",
+                "path",
+                "platform",
+                "pool",
+                "process",
+                "protobuf",
+                "pub_semver",
+                "pubspec_parse",
+                "recase",
+                "record_use",
+                "shelf",
+                "shelf_packages_handler",
+                "shelf_static",
+                "shelf_web_socket",
+                "source_gen",
+                "source_helper",
+                "source_map_stack_trace",
+                "source_maps",
+                "source_span",
+                "sqlite3",
+                "sqlparser",
+                "stack_trace",
+                "stacked_generator",
+                "stacked_shared",
+                "stream_channel",
+                "stream_transform",
+                "string_scanner",
+                "term_glyph",
+                "test",
+                "test_api",
+                "test_core",
+                "typed_data",
+                "vm_service",
+                "watcher",
+                "web",
+                "web_socket",
+                "web_socket_channel",
+                "webkit_inspection_protocol",
+                "yaml",
+                "yaml_edit"
+              ],
+              "explicit_packages": [
+                "very_good_analysis"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "scc_targets": {},
+              "planned_deps": [
+                "meta",
+                "path"
+              ],
+              "plan_covers_package": true,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "ext_pub_deps__fixnum": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "fixnum",
               "version": "1.1.1",
               "sha256": "b6dc7065e46c974bc7c5f143080a6764ec7a4be6da1285ececdc37be96de53be",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -4189,6 +4160,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -4229,7 +4201,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -4243,14 +4214,14 @@
               ]
             }
           },
-          "dart_pub__freezed": {
+          "ext_pub_deps__freezed": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "freezed",
               "version": "4.0.2",
               "sha256": "3af98c92d7d4dd182ea1393193e69a840fcbaee1f66f1158bd20504e5f3f6f4f",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -4305,6 +4276,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -4345,7 +4317,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -4371,14 +4342,14 @@
               ]
             }
           },
-          "dart_pub__freezed_annotation": {
+          "ext_pub_deps__freezed_annotation": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "freezed_annotation",
               "version": "3.1.0",
               "sha256": "7294967ff0a6d98638e7acb774aac3af2550777accd8149c90af5b014e6d44d8",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -4433,6 +4404,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -4473,7 +4445,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -4491,14 +4462,14 @@
               ]
             }
           },
-          "dart_pub__frontend_server_client": {
+          "ext_pub_deps__frontend_server_client": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "frontend_server_client",
               "version": "4.1.0",
               "sha256": "404dbf9bce29beafbe9dcb19219447b6f7d49900cd42b8d3b7af102b24508e25",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -4553,6 +4524,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -4593,7 +4565,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -4611,14 +4582,14 @@
               ]
             }
           },
-          "dart_pub__get_it": {
+          "ext_pub_deps__get_it": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "get_it",
               "version": "8.3.0",
               "sha256": "ae78de7c3f2304b8d81f2bb6e320833e5e81de942188542328f074978cc0efa9",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -4673,6 +4644,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -4713,7 +4685,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -4731,14 +4702,14 @@
               ]
             }
           },
-          "dart_pub__glob": {
+          "ext_pub_deps__glob": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "glob",
               "version": "2.2.0",
               "sha256": "218aeb56050c714f62a3182775320dfa04602b55074873e24e31bbd39bda96fb",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -4793,6 +4764,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -4833,7 +4805,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -4853,14 +4824,14 @@
               ]
             }
           },
-          "dart_pub__go_router_builder": {
+          "ext_pub_deps__go_router_builder": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "go_router_builder",
               "version": "4.5.0",
               "sha256": "fbadb18697941b5efaa90c6295e81335e59b97bde83d675b4251e91eac1d4882",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -4915,6 +4886,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -4955,7 +4927,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -4979,14 +4950,14 @@
               ]
             }
           },
-          "dart_pub__hooks": {
+          "ext_pub_deps__hooks": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "hooks",
               "version": "2.2.0",
               "sha256": "eaac480a35ec0814146c2c48d96aaa829e0e44a7662c88ae84c9edf4bc35651f",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -5041,6 +5012,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -5081,7 +5053,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -5102,14 +5073,14 @@
               ]
             }
           },
-          "dart_pub__http_multi_server": {
+          "ext_pub_deps__http_multi_server": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "http_multi_server",
               "version": "3.2.2",
               "sha256": "aa6199f908078bb1c5efb8d8638d4ae191aac11b311132c3ef48ce352fb52ef8",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -5164,6 +5135,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -5204,7 +5176,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -5220,14 +5191,14 @@
               ]
             }
           },
-          "dart_pub__http_parser": {
+          "ext_pub_deps__http_parser": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "http_parser",
               "version": "4.1.2",
               "sha256": "178d74305e7866013777bab2c3d8726205dc5a4dd935297175b19a23a2e66571",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -5282,6 +5253,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -5322,7 +5294,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -5341,14 +5312,14 @@
               ]
             }
           },
-          "dart_pub__io": {
+          "ext_pub_deps__io": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "io",
               "version": "1.1.0",
               "sha256": "2635216ca6a737e60de577ffa1a48a0bec76ca8a62917cfc1bb88c14c570646f",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -5403,6 +5374,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -5443,7 +5415,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -5461,14 +5432,14 @@
               ]
             }
           },
-          "dart_pub__json_annotation": {
+          "ext_pub_deps__json_annotation": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "json_annotation",
               "version": "4.12.0",
               "sha256": "2a743920d81b7910627f68ee2c9ac1fc0bfee32b9fc3403587d7c6791ca12f80",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -5523,6 +5494,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -5563,7 +5535,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -5579,14 +5550,14 @@
               ]
             }
           },
-          "dart_pub__json_serializable": {
+          "ext_pub_deps__json_serializable": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "json_serializable",
               "version": "6.14.1",
               "sha256": "e45aefa0324f08c683caafbb94b72837aa6193c61822799c916e45f4a263113d",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -5641,6 +5612,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -5681,7 +5653,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -5708,14 +5679,14 @@
               ]
             }
           },
-          "dart_pub__logger": {
+          "ext_pub_deps__logger": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "logger",
               "version": "2.8.0",
               "sha256": "2a0dc097e7b01d942475bdd552356db2d0f768b05540bd4b2b53f1840f2239a7",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -5770,6 +5741,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -5810,7 +5782,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -5827,14 +5798,14 @@
               ]
             }
           },
-          "dart_pub__logging": {
+          "ext_pub_deps__logging": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "logging",
               "version": "1.3.0",
               "sha256": "c8245ada5f1717ed44271ed1c26b8ce85ca3228fd2ffdb75468ab01979309d61",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -5889,6 +5860,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -5929,7 +5901,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -5943,14 +5914,14 @@
               ]
             }
           },
-          "dart_pub__matcher": {
+          "ext_pub_deps__matcher": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "matcher",
               "version": "0.12.20",
               "sha256": "31bd099b47c10cd1aeb55146a2d46ce0277630ecef3f7dae54ad7873f36696cd",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -6005,6 +5976,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -6045,7 +6017,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -6065,14 +6036,14 @@
               ]
             }
           },
-          "dart_pub__mime": {
+          "ext_pub_deps__meta": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
-              "package_name": "mime",
-              "version": "2.1.0",
-              "sha256": "bd47de35f07e27267e69c8c8b22edf9473bfee170a60d60fcc93730c5144b7f6",
+              "package_name": "meta",
+              "version": "1.19.0",
+              "sha256": "307249ce4ff29d58a18e97f6345f539382eb9c9c29ecda628900f31de0443dd9",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -6127,6 +6098,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -6167,7 +6139,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -6181,14 +6152,14 @@
               ]
             }
           },
-          "dart_pub__mockito": {
+          "ext_pub_deps__mime": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
-              "package_name": "mockito",
-              "version": "5.8.1",
-              "sha256": "6c1970612452260366064d4df80fdb3eece1ec5e52610ae34a0e51f2f3d8e64f",
+              "package_name": "mime",
+              "version": "2.1.0",
+              "sha256": "bd47de35f07e27267e69c8c8b22edf9473bfee170a60d60fcc93730c5144b7f6",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -6243,6 +6214,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -6283,7 +6255,122 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
+                "very_good_analysis"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "scc_targets": {},
+              "planned_deps": [],
+              "plan_covers_package": true,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "ext_pub_deps__mockito": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "mockito",
+              "version": "5.8.1",
+              "sha256": "6c1970612452260366064d4df80fdb3eece1ec5e52610ae34a0e51f2f3d8e64f",
+              "base_url": "https://pub.dev",
+              "hub_name": "ext_pub_deps",
+              "lock_packages": [
+                "_fe_analyzer_shared",
+                "analyzer",
+                "analyzer_buffer",
+                "args",
+                "async",
+                "bazel_worker",
+                "boolean_selector",
+                "build",
+                "build_config",
+                "built_collection",
+                "built_value",
+                "built_value_generator",
+                "charcode",
+                "checked_yaml",
+                "cli_config",
+                "cli_util",
+                "clock",
+                "code_assets",
+                "code_builder",
+                "collection",
+                "convert",
+                "copy_with_extension",
+                "copy_with_extension_gen",
+                "coverage",
+                "crypto",
+                "dart_style",
+                "data_assets",
+                "drift",
+                "drift_dev",
+                "ffi",
+                "file",
+                "fixnum",
+                "freezed",
+                "freezed_annotation",
+                "frontend_server_client",
+                "get_it",
+                "glob",
+                "go_router_builder",
+                "hooks",
+                "http_multi_server",
+                "http_parser",
+                "io",
+                "json_annotation",
+                "json_serializable",
+                "logger",
+                "logging",
+                "matcher",
+                "meta",
+                "mime",
+                "mockito",
+                "native_toolchain_c",
+                "node_preamble",
+                "package_config",
                 "path",
+                "platform",
+                "pool",
+                "process",
+                "protobuf",
+                "pub_semver",
+                "pubspec_parse",
+                "recase",
+                "record_use",
+                "shelf",
+                "shelf_packages_handler",
+                "shelf_static",
+                "shelf_web_socket",
+                "source_gen",
+                "source_helper",
+                "source_map_stack_trace",
+                "source_maps",
+                "source_span",
+                "sqlite3",
+                "sqlparser",
+                "stack_trace",
+                "stacked_generator",
+                "stacked_shared",
+                "stream_channel",
+                "stream_transform",
+                "string_scanner",
+                "term_glyph",
+                "test",
+                "test_api",
+                "test_core",
+                "typed_data",
+                "vm_service",
+                "watcher",
+                "web",
+                "web_socket",
+                "web_socket_channel",
+                "webkit_inspection_protocol",
+                "yaml",
+                "yaml_edit"
+              ],
+              "explicit_packages": [
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -6308,14 +6395,14 @@
               ]
             }
           },
-          "dart_pub__native_toolchain_c": {
+          "ext_pub_deps__native_toolchain_c": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "native_toolchain_c",
               "version": "0.19.5",
               "sha256": "90eaad8059ebc2004a63810a4696ea9acdb02473e47ed3b6b3bafb100ac77e31",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -6370,6 +6457,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -6410,7 +6498,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -6433,14 +6520,14 @@
               ]
             }
           },
-          "dart_pub__node_preamble": {
+          "ext_pub_deps__node_preamble": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "node_preamble",
               "version": "2.0.2",
               "sha256": "6e7eac89047ab8a8d26cf16127b5ed26de65209847630400f9aefd7cd5c730db",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -6495,6 +6582,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -6535,7 +6623,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -6549,14 +6636,14 @@
               ]
             }
           },
-          "dart_pub__package_config": {
+          "ext_pub_deps__package_config": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "package_config",
               "version": "3.0.0",
               "sha256": "ffcf4cf3d6c0b74ac43708d9f56625506e8a68aa935abe9d267a7330f320eb5d",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -6611,6 +6698,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -6651,7 +6739,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -6667,14 +6754,130 @@
               ]
             }
           },
-          "dart_pub__platform": {
+          "ext_pub_deps__path": {
+            "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
+            "attributes": {
+              "package_name": "path",
+              "version": "1.9.1",
+              "sha256": "75cca69d1490965be98c73ceaea117e8a04dd21217b37b292c9ddbec0d955bc5",
+              "base_url": "https://pub.dev",
+              "hub_name": "ext_pub_deps",
+              "lock_packages": [
+                "_fe_analyzer_shared",
+                "analyzer",
+                "analyzer_buffer",
+                "args",
+                "async",
+                "bazel_worker",
+                "boolean_selector",
+                "build",
+                "build_config",
+                "built_collection",
+                "built_value",
+                "built_value_generator",
+                "charcode",
+                "checked_yaml",
+                "cli_config",
+                "cli_util",
+                "clock",
+                "code_assets",
+                "code_builder",
+                "collection",
+                "convert",
+                "copy_with_extension",
+                "copy_with_extension_gen",
+                "coverage",
+                "crypto",
+                "dart_style",
+                "data_assets",
+                "drift",
+                "drift_dev",
+                "ffi",
+                "file",
+                "fixnum",
+                "freezed",
+                "freezed_annotation",
+                "frontend_server_client",
+                "get_it",
+                "glob",
+                "go_router_builder",
+                "hooks",
+                "http_multi_server",
+                "http_parser",
+                "io",
+                "json_annotation",
+                "json_serializable",
+                "logger",
+                "logging",
+                "matcher",
+                "meta",
+                "mime",
+                "mockito",
+                "native_toolchain_c",
+                "node_preamble",
+                "package_config",
+                "path",
+                "platform",
+                "pool",
+                "process",
+                "protobuf",
+                "pub_semver",
+                "pubspec_parse",
+                "recase",
+                "record_use",
+                "shelf",
+                "shelf_packages_handler",
+                "shelf_static",
+                "shelf_web_socket",
+                "source_gen",
+                "source_helper",
+                "source_map_stack_trace",
+                "source_maps",
+                "source_span",
+                "sqlite3",
+                "sqlparser",
+                "stack_trace",
+                "stacked_generator",
+                "stacked_shared",
+                "stream_channel",
+                "stream_transform",
+                "string_scanner",
+                "term_glyph",
+                "test",
+                "test_api",
+                "test_core",
+                "typed_data",
+                "vm_service",
+                "watcher",
+                "web",
+                "web_socket",
+                "web_socket_channel",
+                "webkit_inspection_protocol",
+                "yaml",
+                "yaml_edit"
+              ],
+              "explicit_packages": [
+                "very_good_analysis"
+              ],
+              "code_assets": [],
+              "ignore_hook": false,
+              "scc_targets": {},
+              "planned_deps": [],
+              "plan_covers_package": true,
+              "package_files": [
+                "pubspec.yaml",
+                "LICENSE*"
+              ]
+            }
+          },
+          "ext_pub_deps__platform": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "platform",
               "version": "3.2.0",
               "sha256": "a36d119c13416516a7b5913fbe8af8531e11633d784c550b2125f76c758524ec",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -6729,6 +6932,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -6769,7 +6973,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -6785,14 +6988,14 @@
               ]
             }
           },
-          "dart_pub__pool": {
+          "ext_pub_deps__pool": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "pool",
               "version": "1.5.3",
               "sha256": "4177f68c237ea2128d1bee66ac17b2ce05ba3dbaafcbdd54c5d40a39d0b6b11c",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -6847,6 +7050,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -6887,7 +7091,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -6904,14 +7107,14 @@
               ]
             }
           },
-          "dart_pub__process": {
+          "ext_pub_deps__process": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "process",
               "version": "5.0.6",
               "sha256": "4242ba3508d37e01808bdf71ad1d5bb93a8d671bf2e7450e6b1b353fb0808891",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -6966,6 +7169,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -7006,7 +7210,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -7024,14 +7227,14 @@
               ]
             }
           },
-          "dart_pub__protobuf": {
+          "ext_pub_deps__protobuf": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "protobuf",
               "version": "6.1.0",
               "sha256": "13b6717366aa7ec3792dd62c19c7d33a785708224365f2db23c5ca01f1c1a0f2",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -7086,6 +7289,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -7126,7 +7330,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -7144,14 +7347,14 @@
               ]
             }
           },
-          "dart_pub__pub_semver": {
+          "ext_pub_deps__pub_semver": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "pub_semver",
               "version": "2.2.1",
               "sha256": "261236774e8b1d69cfc6b9eabbc96c40f25e7a2d6b171f3385d4f65d5734fb24",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -7206,6 +7409,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -7246,7 +7450,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -7262,14 +7465,14 @@
               ]
             }
           },
-          "dart_pub__pubspec_parse": {
+          "ext_pub_deps__pubspec_parse": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "pubspec_parse",
               "version": "1.6.0",
               "sha256": "c38b81cbf34450b67e0265d73433569d12e34782e30ed769c9cc99c9d5f2e796",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -7324,6 +7527,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -7364,7 +7568,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -7384,14 +7587,14 @@
               ]
             }
           },
-          "dart_pub__recase": {
+          "ext_pub_deps__recase": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "recase",
               "version": "4.1.0",
               "sha256": "e4eb4ec2dcdee52dcf99cb4ceabaffc631d7424ee55e56f280bc039737f89213",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -7446,6 +7649,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -7486,7 +7690,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -7500,14 +7703,14 @@
               ]
             }
           },
-          "dart_pub__record_use": {
+          "ext_pub_deps__record_use": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "record_use",
               "version": "1.1.1",
               "sha256": "1cb8564af8d43b464294411db9217f5ec04891c6f22ee2c32d73ae05e88a6bd2",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -7562,6 +7765,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -7602,7 +7806,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -7620,14 +7823,14 @@
               ]
             }
           },
-          "dart_pub__shelf": {
+          "ext_pub_deps__shelf": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "shelf",
               "version": "1.4.2",
               "sha256": "e7dd780a7ffb623c57850b33f43309312fc863fb6aa3d276a754bb299839ef12",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -7682,6 +7885,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -7722,7 +7926,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -7743,14 +7946,14 @@
               ]
             }
           },
-          "dart_pub__shelf_packages_handler": {
+          "ext_pub_deps__shelf_packages_handler": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "shelf_packages_handler",
               "version": "3.0.2",
               "sha256": "89f967eca29607c933ba9571d838be31d67f53f6e4ee15147d5dc2934fee1b1e",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -7805,6 +8008,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -7845,7 +8049,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -7863,14 +8066,14 @@
               ]
             }
           },
-          "dart_pub__shelf_static": {
+          "ext_pub_deps__shelf_static": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "shelf_static",
               "version": "1.1.3",
               "sha256": "c87c3875f91262785dade62d135760c2c69cb217ac759485334c5857ad89f6e3",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -7925,6 +8128,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -7965,7 +8169,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -7985,14 +8188,14 @@
               ]
             }
           },
-          "dart_pub__shelf_web_socket": {
+          "ext_pub_deps__shelf_web_socket": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "shelf_web_socket",
               "version": "3.0.0",
               "sha256": "3632775c8e90d6c9712f883e633716432a27758216dfb61bd86a8321c0580925",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -8047,6 +8250,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -8087,7 +8291,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -8105,14 +8308,14 @@
               ]
             }
           },
-          "dart_pub__source_gen": {
+          "ext_pub_deps__source_gen": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "source_gen",
               "version": "4.3.1",
               "sha256": "833ea7d15b5be79949d3d6c077da0267a0bd93c16897b36a771395a91e63086e",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -8167,6 +8370,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -8207,7 +8411,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -8231,14 +8434,14 @@
               ]
             }
           },
-          "dart_pub__source_helper": {
+          "ext_pub_deps__source_helper": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "source_helper",
               "version": "1.3.13",
               "sha256": "5e6f216fdf6376c9f3852381ae037499797a3385377d388b011dac98d303c67c",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -8293,6 +8496,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -8333,7 +8537,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -8350,14 +8553,14 @@
               ]
             }
           },
-          "dart_pub__source_map_stack_trace": {
+          "ext_pub_deps__source_map_stack_trace": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "source_map_stack_trace",
               "version": "2.1.2",
               "sha256": "c0713a43e323c3302c2abe2a1cc89aa057a387101ebd280371d6a6c9fa68516b",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -8412,6 +8615,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -8452,7 +8656,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -8470,14 +8673,14 @@
               ]
             }
           },
-          "dart_pub__source_maps": {
+          "ext_pub_deps__source_maps": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "source_maps",
               "version": "0.10.14",
               "sha256": "14c2945847669b44089bb1222f66873d7ff7103c58911917f2a63c5a62327898",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -8532,6 +8735,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -8572,7 +8776,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -8588,14 +8791,14 @@
               ]
             }
           },
-          "dart_pub__source_span": {
+          "ext_pub_deps__source_span": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "source_span",
               "version": "1.10.2",
               "sha256": "56a02f1f4cd1a2d96303c0144c93bd6d909eea6bee6bf5a0e0b685edbd4c47ab",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -8650,6 +8853,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -8690,7 +8894,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -8708,14 +8911,14 @@
               ]
             }
           },
-          "dart_pub__sqlite3": {
+          "ext_pub_deps__sqlite3": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "sqlite3",
               "version": "3.7.1",
               "sha256": "144132790ec1947fad9f3ddceffd0af2ab80a1f0d1e81a4d094ee6707ec3df0b",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -8770,6 +8973,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -8810,7 +9014,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [
@@ -8837,14 +9040,14 @@
               ]
             }
           },
-          "dart_pub__sqlparser": {
+          "ext_pub_deps__sqlparser": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "sqlparser",
               "version": "0.45.0",
               "sha256": "772bb2f6f5bce0631a60f26b57d6e8882e1105c22345b05c163ee6ee5d7ba32d",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -8899,6 +9102,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -8939,7 +9143,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -8958,14 +9161,14 @@
               ]
             }
           },
-          "dart_pub__stack_trace": {
+          "ext_pub_deps__stack_trace": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "stack_trace",
               "version": "1.12.2",
               "sha256": "277654b3034d17ac6f9f1cb5595db011b1d5d41e8806866db28e0abaa101c490",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -9020,6 +9223,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -9060,7 +9264,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -9076,14 +9279,14 @@
               ]
             }
           },
-          "dart_pub__stacked_generator": {
+          "ext_pub_deps__stacked_generator": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "stacked_generator",
               "version": "2.0.4",
               "sha256": "6e267e40c85111dca881538ef0404be3c6bcdc51dd206f2a3361d9f62f90a706",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -9138,6 +9341,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -9178,7 +9382,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -9206,14 +9409,14 @@
               ]
             }
           },
-          "dart_pub__stacked_shared": {
+          "ext_pub_deps__stacked_shared": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "stacked_shared",
               "version": "1.4.2",
               "sha256": "3d69b34d87422b78a7e5123681d3f4bcdd79757170454933f68795c54812d003",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -9268,6 +9471,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -9308,7 +9512,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -9324,14 +9527,14 @@
               ]
             }
           },
-          "dart_pub__stream_channel": {
+          "ext_pub_deps__stream_channel": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "stream_channel",
               "version": "2.1.4",
               "sha256": "969e04c80b8bcdf826f8f16579c7b14d780458bd97f56d107d3950fdbeef059d",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -9386,6 +9589,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -9426,7 +9630,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -9442,14 +9645,14 @@
               ]
             }
           },
-          "dart_pub__stream_transform": {
+          "ext_pub_deps__stream_transform": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "stream_transform",
               "version": "2.1.2",
               "sha256": "a00e5f18bffc764f923e7dec1038527f7fe7a1791361a7117f0358193f13d53a",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -9504,6 +9707,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -9544,7 +9748,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -9558,14 +9761,14 @@
               ]
             }
           },
-          "dart_pub__string_scanner": {
+          "ext_pub_deps__string_scanner": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "string_scanner",
               "version": "1.4.1",
               "sha256": "921cd31725b72fe181906c6a94d987c78e3b98c2e205b397ea399d4054872b43",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -9620,6 +9823,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -9660,7 +9864,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -9676,14 +9879,14 @@
               ]
             }
           },
-          "dart_pub__term_glyph": {
+          "ext_pub_deps__term_glyph": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "term_glyph",
               "version": "1.2.2",
               "sha256": "7f554798625ea768a7518313e58f83891c7f5024f88e46e7182a4558850a4b8e",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -9738,6 +9941,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -9778,7 +9982,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -9792,14 +9995,14 @@
               ]
             }
           },
-          "dart_pub__test": {
+          "ext_pub_deps__test": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "test",
               "version": "1.33.0",
               "sha256": "44b2fccf4407bcdb5e105c064c5d6b5e2a640c87761f8b03cdce8cf532d98cfa",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -9854,6 +10057,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -9894,7 +10098,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -9934,14 +10137,14 @@
               ]
             }
           },
-          "dart_pub__test_api": {
+          "ext_pub_deps__test_api": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "test_api",
               "version": "0.7.15",
               "sha256": "47481c58bb92d0b1d218f0510ff5647e768f8e1256d07077a151fb520923b51d",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -9996,6 +10199,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -10036,7 +10240,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -10060,14 +10263,14 @@
               ]
             }
           },
-          "dart_pub__test_core": {
+          "ext_pub_deps__test_core": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "test_core",
               "version": "0.6.21",
               "sha256": "9dec4c178bd61493e1cd2060ffe701fcb61c43da2493e99590fb1b0cc82eb4af",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -10122,6 +10325,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -10162,7 +10366,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -10198,14 +10401,14 @@
               ]
             }
           },
-          "dart_pub__typed_data": {
+          "ext_pub_deps__typed_data": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "typed_data",
               "version": "1.4.0",
               "sha256": "f9049c039ebfeb4cf7a7104a675823cd72dba8297f264b6637062516699fa006",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -10260,6 +10463,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -10300,7 +10504,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -10316,14 +10519,14 @@
               ]
             }
           },
-          "dart_pub__vm_service": {
+          "ext_pub_deps__vm_service": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "vm_service",
               "version": "15.4.0",
               "sha256": "89b11d62e1040ee681af3b4f1c97a803ecbf010c6e8b9c5896ee5b08c3bf7b78",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -10378,6 +10581,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -10418,7 +10622,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -10432,14 +10635,14 @@
               ]
             }
           },
-          "dart_pub__watcher": {
+          "ext_pub_deps__watcher": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "watcher",
               "version": "1.2.1",
               "sha256": "1398c9f081a753f9226febe8900fce8f7d0a67163334e1c94a2438339d79d635",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -10494,6 +10697,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -10534,7 +10738,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -10551,14 +10754,14 @@
               ]
             }
           },
-          "dart_pub__web": {
+          "ext_pub_deps__web": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "web",
               "version": "1.1.1",
               "sha256": "868d88a33d8a87b18ffc05f9f030ba328ffefba92d6c127917a2ba740f9cfe4a",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -10613,6 +10816,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -10653,7 +10857,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -10667,14 +10870,14 @@
               ]
             }
           },
-          "dart_pub__web_socket": {
+          "ext_pub_deps__web_socket": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "web_socket",
               "version": "1.0.1",
               "sha256": "34d64019aa8e36bf9842ac014bb5d2f5586ca73df5e4d9bf5c936975cae6982c",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -10729,6 +10932,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -10769,7 +10973,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -10785,14 +10988,14 @@
               ]
             }
           },
-          "dart_pub__web_socket_channel": {
+          "ext_pub_deps__web_socket_channel": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "web_socket_channel",
               "version": "3.0.3",
               "sha256": "d645757fb0f4773d602444000a8131ff5d48c9e47adfe9772652dd1a4f2d45c8",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -10847,6 +11050,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -10887,7 +11091,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -10907,14 +11110,14 @@
               ]
             }
           },
-          "dart_pub__webkit_inspection_protocol": {
+          "ext_pub_deps__webkit_inspection_protocol": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "webkit_inspection_protocol",
               "version": "1.2.1",
               "sha256": "87d3f2333bb240704cd3f1c6b5b7acd8a10e7f0bc28c28dcf14e782014f4a572",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -10969,6 +11172,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -11009,7 +11213,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -11025,14 +11228,14 @@
               ]
             }
           },
-          "dart_pub__yaml": {
+          "ext_pub_deps__yaml": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "yaml",
               "version": "3.1.4",
               "sha256": "f67cdd8e07d3c6329146aaef1ba043542b3134c12489f553ca9a7435d1068aea",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -11087,6 +11290,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -11127,7 +11331,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -11145,14 +11348,14 @@
               ]
             }
           },
-          "dart_pub__yaml_edit": {
+          "ext_pub_deps__yaml_edit": {
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_package.bzl%pub_lock_package",
             "attributes": {
               "package_name": "yaml_edit",
               "version": "2.2.4",
               "sha256": "07c9e63ba42519745182b88ca12264a7ba2484d8239958778dfe4d44fe760488",
               "base_url": "https://pub.dev",
-              "hub_name": "dart_pub",
+              "hub_name": "ext_pub_deps",
               "lock_packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -11207,6 +11410,7 @@
                 "native_toolchain_c",
                 "node_preamble",
                 "package_config",
+                "path",
                 "platform",
                 "pool",
                 "process",
@@ -11247,7 +11451,6 @@
                 "yaml_edit"
               ],
               "explicit_packages": [
-                "path",
                 "very_good_analysis"
               ],
               "code_assets": [],
@@ -11287,7 +11490,7 @@
             "repoRuleId": "@@ai_rules_dart+//dart/pub/private:pub_lock_hub.bzl%pub_lock_hub",
             "attributes": {
               "hub_name": "ext_pub_deps",
-              "spoke_prefix": "dart_pub",
+              "spoke_prefix": "ext_pub_deps",
               "packages": [
                 "_fe_analyzer_shared",
                 "analyzer",
@@ -11382,9 +11585,7 @@
                 "yaml",
                 "yaml_edit"
               ],
-              "explicit_packages": [
-                "path"
-              ],
+              "explicit_packages": [],
               "scc_targets": {}
             }
           }
@@ -11989,6 +12190,7 @@
       "pub.scc.v2.af2853485ad99a880004d13d/hosted/package_config/3.0.0/ffcf4cf3d6c0b74ac43708d9f56625506e8a68aa935abe9d267a7330f320eb5d": [
         "meta"
       ],
+      "pub.scc.v2.af2853485ad99a880004d13d/hosted/path/1.9.1/75cca69d1490965be98c73ceaea117e8a04dd21217b37b292c9ddbec0d955bc5": [],
       "pub.scc.v2.af2853485ad99a880004d13d/hosted/platform/3.2.0/a36d119c13416516a7b5913fbe8af8531e11633d784c550b2125f76c758524ec": [
         "meta"
       ],

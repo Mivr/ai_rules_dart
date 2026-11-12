@@ -4,6 +4,7 @@ exports_files([
     "lock_a.lock",
     "lock_b.lock",
     "lock_newer.lock",
+    "lock_older.lock",
 ])
 
 # lock_b has path 1.9.0 with on_version_conflict = "upgrade", so it
@@ -18,11 +19,20 @@ dart_binary(
 )
 
 # lock_newer has get_it 9.3.0, newer than rules_dart's own tool lock, so this
-# builds only if rules_dart's lock yields to the root module's.
+# builds only if rules_dart's isolated tool hub stays out of the resolution.
 dart_binary(
     name = "newer_than_rules_dart",
     main = "newer_than_rules_dart.dart",
     deps = ["@deps_newer//:get_it"],
+)
+
+# lock_older has args 2.6.0, older than rules_dart's own tool lock (2.7.0), and
+# keeps the default `on_version_conflict`: it builds only if that lock's hub is
+# isolated.
+dart_binary(
+    name = "older_than_rules_dart",
+    main = "older_than_rules_dart.dart",
+    deps = ["@deps_older//:args"],
 )
 
 # The ruleset is a dep of the options file, not of `app`: a lint ruleset is not
@@ -45,5 +55,6 @@ dart_analysis_test(
     targets = [
         ":app",
         ":newer_than_rules_dart",
+        ":older_than_rules_dart",
     ],
 )

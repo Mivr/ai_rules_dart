@@ -16,7 +16,7 @@ visibility(["//dart/..."])
 
 # The drift shims resolve `package:drift`, so a stand-in annotation library will not do.
 _ANNOTATIONS = "@ext_pub_deps//:drift"
-_ANNOTATION_INPUT = "*dart_pub__drift/lib/drift.dart"
+_ANNOTATION_INPUT = "*ext_pub_deps__drift/lib/drift.dart"
 _SCHEMA = "lib/ext/drift_schema.drift"
 _SOURCE = "lib/ext/drift.dart"
 

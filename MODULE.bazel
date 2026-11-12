@@ -120,9 +120,9 @@ register_toolchains("//dart:copy_toolchain")
 pub = use_extension("//dart/pub:extensions.bzl", "pub")
 pub.from_lock(
     name = "ext_pub_deps",
+    # Isolated so a consumer's lock never meets this one: it stays out of the
+    # global version resolution and cannot conflict with a consumer's pins.
+    isolated = True,
     lock = "//dart/ext:pubspec.lock",
-    # A consumer's lock may be newer than ours for a package both name; ours
-    # yields rather than failing their build.
-    on_version_conflict = "upgrade",
 )
 use_repo(pub, "ext_pub_deps")
