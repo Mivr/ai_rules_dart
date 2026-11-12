@@ -104,11 +104,13 @@ Map<String, String> _packageEntry(String name, String libDir) {
 /// Writes [json] to [target], creating its directory.
 ///
 /// The file appears whole or not at all: it is written beside the target and
-/// renamed onto it. Throws [FileSystemException] when the directory cannot be
+/// renamed onto it, so launchers writing the same config at once never leave a
+/// half-written one. Throws [FileSystemException] when the directory cannot be
 /// written.
 void writePackageConfig(File target, String json) {
   target.parent.createSync(recursive: true);
-  final partial = File('${target.path}.partial');
+  // Named for this process: shards of one test share a runfiles tree.
+  final partial = File('${target.path}.$pid.partial');
   partial.writeAsStringSync(json, flush: true);
   partial.renameSync(target.path);
 }

@@ -23,6 +23,14 @@ Future<Uri> probePackageUris() async {
   }
   if (async != sync) throw StateError('async $async differs from sync $sync');
 
+  // A package reached through another one is mapped too.
+  final extra = Uri.parse('package:$reached/extra.txt');
+  final Uri? extraUri = await Isolate.resolvePackageUri(extra);
+  if (extraUri == null ||
+      File.fromUri(extraUri).readAsStringSync().trim() != 'extra') {
+    throw StateError('$extra resolved to $extraUri');
+  }
+
   // A package with no staged file is not in the config.
   final bareUri = Uri.parse('package:$bare/bare.dart');
   for (final Uri? uri in [

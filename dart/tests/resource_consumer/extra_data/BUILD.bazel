@@ -1,0 +1,9 @@
+load("//dart:defs.bzl", "dart_library")
+
+# Reached only through `sample_data`: a transitive package is mapped too.
+dart_library(
+    name = "extra_data",
+    srcs = ["lib/extra.dart"],
+    resources = ["lib/extra.txt"],
+    visibility = ["//dart/tests/resource_consumer:__subpackages__"],
+)

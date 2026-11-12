@@ -72,3 +72,10 @@ dart_test(
         "//dart/tests/resource_consumer/sample_data",
     ],
 )
+
+# No `deps` and no `package:test`: the config exists and maps no package.
+dart_test(
+    name = "package_uri_none_test",
+    size = "small",
+    main = "package_uri_none_test.dart",
+)
