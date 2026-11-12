@@ -383,7 +383,7 @@ def _compile_kernel_mode(ctx, dart_sdk_info, st):
         aot = False,
         enable_asserts = False,
         extra_flags = st.front_end_flags + st.backend_flags,
-        product = True,
+        product = st.vm_product,
         output = st.output,
     )
 
@@ -548,6 +548,7 @@ def _compile_state(ctx, dart_sdk_info, cfg, front_end_flags, backend_flags, tool
         compile_wrapper = None if cfg.compile_mode == "jit-snapshot" else getattr(cfg, "compile_wrapper", None),
         comma_patch = cfg.comma_patch,
         native_assets_yaml = cfg.native_assets_yaml,
+        vm_product = getattr(cfg, "vm_product", True),
         linked_kernel = getattr(cfg, "linked_kernel", None),
         embed_sources = cfg.embed_sources,
         jit_snapshot_fallback = cfg.jit_snapshot_fallback,

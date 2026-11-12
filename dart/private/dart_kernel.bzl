@@ -77,12 +77,14 @@ load(
 )
 load(
     "//dart/private:kernel_params.bzl",
+    "VM_PRODUCT_ATTR",
     "kernel_compile_settings",
     "kernel_module_inputs",
     "kernel_module_options",
     "kernel_module_outputs",
     "library_kernel_options",
     "library_kernel_sources",
+    "library_vm_product",
     "modular_kernel_conditions",
     "modular_kernel_mode",
 )
@@ -135,7 +137,7 @@ KERNEL_MODULE_ATTRS = {
         executable = True,
         cfg = "exec",
     ),
-}
+} | VM_PRODUCT_ATTR
 
 MODULAR_KERNEL_ATTRS = dict(KERNEL_MODULE_ATTRS)
 
@@ -688,7 +690,7 @@ def _kmod_common_args(ctx, args, request):
     args.add("--multi-root-scheme", request.scheme)
     if request.target == "vm":
         args.add_all([
-            "-Ddart.vm.product=true",
+            "-Ddart.vm.product=" + ("true" if request.product else "false"),
             "-Ddart.vm.asan=false",
             "-Ddart.vm.msan=false",
             "-Ddart.vm.tsan=false",
@@ -905,6 +907,7 @@ def kernel_module_action(ctx, tools, inputs, outputs, options, compile):
         package_config = package_config,
         package_records = inputs.packages if type(inputs.packages) == "tuple" else None,
         target = settings.target,
+        product = settings.product,
         libraries_platform = settings.libraries_platform,
         extra_libraries = settings.extra_libraries,
         defines = options.defines,
@@ -1585,7 +1588,7 @@ def _dart_kernel_module_aspect_impl(target, ctx):
             own_record = inputs.own_record,
             own_records = inputs.own_records,
         ),
-        kernel_compile_settings(),
+        kernel_compile_settings(product = library_vm_product(ctx)),
         library_kernel_options(
             opaque = inputs.opaque,
             rule_deps = inputs.rule_deps,

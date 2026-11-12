@@ -298,6 +298,8 @@ def _compile_test_kernel(ctx, own, bootstrap, use_base_dill = False):
             jit_tool = ctx.files._jit_tool,
             comma_patch = ctx.file._comma_patch,
             native_assets_yaml = native_assets_yaml,
+            # `dart test` runs on the non-product VM with `dart.vm.product` false.
+            vm_product = False,
             embed_sources = True,
             jit_snapshot_fallback = False,
         ),
@@ -386,7 +388,7 @@ def _compile_modular_test_kernel(ctx, own, bootstrap, tools, use_base_dill = Fal
         own.packages,
         [dep[DartKernelInfo] for dep in ctx.attr.deps],
         dill,
-        kernel_compile_settings(),
+        kernel_compile_settings(product = False),
         kernel_link_options(use_base_dill = use_base_dill),
     )
     return struct(dill = dill, base_dill = base_dill, runtime_libs = [])
@@ -537,12 +539,13 @@ def _write_bootstrap(ctx, main_path):
 def _test_code_assets_transition_impl(_settings, attr):
     return {
         "//dart/private:code_assets_enabled": getattr(attr, "code_assets_from_deps", True),
+        "//dart/private:vm_product": False,
     }
 
 _test_code_assets_transition = transition(
     implementation = _test_code_assets_transition_impl,
     inputs = [],
-    outputs = ["//dart/private:code_assets_enabled"],
+    outputs = ["//dart/private:code_assets_enabled", "//dart/private:vm_product"],
 )
 
 _TEST_COMMON_ATTRS = (

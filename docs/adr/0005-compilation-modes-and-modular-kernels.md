@@ -52,6 +52,8 @@ org-dartlang-root`), so no output names the sandbox or output base.
 - A front-end define or flag must reach the front-end action, not the
   `dart compile` step that consumes its kernel.
 - The front end passes what `dart compile` would: the product or JIT platform
-  dill and the matching `dart.vm.product`.
+  dill and the matching `dart.vm.product` (`true` for `kernel`, `exe` and
+  `aot-snapshot`; `false` for `jit-snapshot` and for `dart_test`, which runs on
+  the non-product VM as `dart test` does).
 - Builds must stay reproducible across sandboxes and output bases; a change
   that lets a path leak into compiled output breaks that requirement.

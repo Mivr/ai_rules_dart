@@ -23,6 +23,7 @@ load(
     "kernel_compile_settings",
     "library_kernel_options",
     "library_kernel_sources",
+    "library_vm_product",
 )
 
 visibility(["//dart/..."])
@@ -217,7 +218,7 @@ def _own_kernel_providers(ctx, info):
             own_record = module_inputs.own_record,
             own_records = module_inputs.own_records,
         ),
-        kernel_compile_settings(),
+        kernel_compile_settings(product = library_vm_product(ctx)),
         library_kernel_options(
             opaque = module_inputs.opaque,
             rule_deps = module_inputs.rule_deps,

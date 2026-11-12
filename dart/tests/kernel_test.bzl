@@ -8,7 +8,7 @@ use them are exercised by the rules' own test targets.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts", "unittest")
-load("//dart:defs.bzl", "dart_binary")
+load("//dart:defs.bzl", "dart_binary", "dart_test")
 load("//dart:providers.bzl", "DartKernelInfo")
 load(
     "//dart:utils.bzl",
@@ -1300,6 +1300,83 @@ def _library_unused_inputs_test_impl(ctx):
 
 _library_unused_inputs_test = analysistest.make(_library_unused_inputs_test_impl)
 
+def _assert_vm_product(env, action, expected, what):
+    """Asserts `action` passes `-Ddart.vm.product=<expected>` and not its opposite."""
+    want = "-Ddart.vm.product=" + ("true" if expected else "false")
+    other = "-Ddart.vm.product=" + ("false" if expected else "true")
+    asserts.true(env, want in action.argv, what + " passes " + want)
+    asserts.false(env, other in action.argv, what + " does not pass " + other)
+
+def _platform_arg(action):
+    """Returns the `--platform` values of a whole-program `DartKernel` action."""
+    argv = action.argv
+    return [argv[i + 1] for i in range(len(argv) - 1) if argv[i] == "--platform"]
+
+def _test_modular_product_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    actions = analysistest.target_actions(env)
+    kernel_actions = [a for a in actions if a.mnemonic == "DartKernel"]
+    asserts.equals(env, 1, len(kernel_actions), "modular dart_test registers one DartKernel entry action")
+    _assert_vm_product(env, kernel_actions[0], False, "dart_test modular entry action")
+    return analysistest.end(env)
+
+_test_modular_product_test = analysistest.make(
+    _test_modular_product_test_impl,
+    config_settings = pruned_inputs_settings(),
+)
+
+def _test_whole_program_product_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    actions = analysistest.target_actions(env)
+    kernel_actions = [a for a in actions if a.mnemonic == "DartKernel"]
+    asserts.equals(env, 1, len(kernel_actions), "whole-program dart_test registers one DartKernel action")
+    _assert_vm_product(env, kernel_actions[0], False, "dart_test whole-program action")
+    platforms = _platform_arg(kernel_actions[0])
+    asserts.equals(env, 1, len(platforms), "dart_test whole-program action passes one --platform")
+    asserts.false(env, "product" in platforms[0], "dart_test whole-program action uses the non-product platform dill")
+    return analysistest.end(env)
+
+_test_whole_program_product_test = analysistest.make(
+    _test_whole_program_product_test_impl,
+    config_settings = pruned_inputs_settings({str(Label("//dart:modular_kernel")): False}),
+)
+
+def _binary_whole_program_product_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    actions = analysistest.target_actions(env)
+    kernel_actions = [a for a in actions if a.mnemonic == "DartKernel"]
+    asserts.equals(env, 1, len(kernel_actions), "whole-program kernel binary registers one DartKernel action")
+    _assert_vm_product(env, kernel_actions[0], True, "kernel binary whole-program action")
+    platforms = _platform_arg(kernel_actions[0])
+    asserts.true(env, len(platforms) == 1 and "product" in platforms[0], "kernel binary whole-program action uses the product platform dill")
+    return analysistest.end(env)
+
+_binary_whole_program_product_test = analysistest.make(_binary_whole_program_product_test_impl)
+
+def _library_product_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    actions = analysistest.target_actions(env)
+    kernel_actions = [a for a in actions if a.mnemonic == "DartKernel"]
+    asserts.equals(env, 1, len(kernel_actions), "dart_library registers one DartKernel module action")
+    _assert_vm_product(env, kernel_actions[0], ctx.attr.expect_product, "dart_library module action")
+    return analysistest.end(env)
+
+_library_product_attrs = {"expect_product": attr.bool()}
+
+# The module of a library in a `dart_test` closure: `dart_test` sets the flag.
+_library_in_test_product_test = analysistest.make(
+    _library_product_test_impl,
+    attrs = _library_product_attrs,
+    config_settings = pruned_inputs_settings({str(Label("//dart/private:vm_product")): False}),
+)
+
+# The module of a library in a kernel binary closure: the flag's default.
+_library_in_binary_product_test = analysistest.make(
+    _library_product_test_impl,
+    attrs = _library_product_attrs,
+    config_settings = pruned_inputs_settings(),
+)
+
 _root_path_test = unittest.make(_root_path_test_impl)
 _multi_root_uri_test = unittest.make(_multi_root_uri_test_impl)
 _multi_root_uri_custom_scheme_test = unittest.make(_multi_root_uri_custom_scheme_test_impl)
@@ -1396,6 +1473,39 @@ def kernel_test_suite(name):
         target_under_test = ":" + name + "_generated_runner_binary",
         size = "small",
     )
+    dart_test(
+        name = name + "_dart_test_fixture",
+        main = ":" + name + "_binary_main",
+        deps = ["//dart/tests/shape_fixture:shape_fixture_lib"],
+        tags = ["manual"],
+    )
+    _test_modular_product_test(
+        name = name + "_test_modular_product_test",
+        target_under_test = ":" + name + "_dart_test_fixture",
+        size = "small",
+    )
+    _test_whole_program_product_test(
+        name = name + "_test_whole_program_product_test",
+        target_under_test = ":" + name + "_dart_test_fixture",
+        size = "small",
+    )
+    _binary_whole_program_product_test(
+        name = name + "_binary_whole_program_product_test",
+        target_under_test = ":" + name + "_non_modular_binary_fixture",
+        size = "small",
+    )
+    _library_in_test_product_test(
+        name = name + "_library_in_test_product_test",
+        target_under_test = "//dart/tests/shape_fixture:shape_fixture_lib",
+        expect_product = False,
+        size = "small",
+    )
+    _library_in_binary_product_test(
+        name = name + "_library_in_binary_product_test",
+        target_under_test = "//dart/tests/shape_fixture:shape_fixture_lib",
+        expect_product = True,
+        size = "small",
+    )
     dart_binary(
         name = "kernel_module",
         compile_mode = "kernel",
@@ -1476,6 +1586,11 @@ def kernel_test_suite(name):
             ":" + name + "_modular_binary_test",
             ":" + name + "_non_modular_binary_test",
             ":" + name + "_comma_defines_modular_binary_test",
+            ":" + name + "_library_in_binary_product_test",
+            ":" + name + "_library_in_test_product_test",
+            ":" + name + "_binary_whole_program_product_test",
+            ":" + name + "_test_whole_program_product_test",
+            ":" + name + "_test_modular_product_test",
             ":" + name + "_user_test_runner_embeds_sources_test",
             ":" + name + "_generated_test_runner_omits_sources_test",
             ":" + name + "_user_kernel_module_modular_test",

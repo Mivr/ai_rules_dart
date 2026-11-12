@@ -8,9 +8,29 @@ setting added here is a field on one constructor, not a parameter on three
 functions and every caller of each.
 """
 
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart/private:common.bzl", "STABLE_SCHEME")
 
 visibility(["//dart/..."])
+
+VM_PRODUCT_ATTR = {
+    "_vm_product": attr.label(
+        doc = "The `//dart/private:vm_product` build setting: the `dart.vm.product` value library modules compile with. `dart_test` transitions it to `False`.",
+        default = Label("//dart/private:vm_product"),
+        providers = [BuildSettingInfo],
+    ),
+}
+
+def library_vm_product(ctx):
+    """The `dart.vm.product` value a library module compiles with.
+
+    Args:
+      ctx: A rule or aspect context carrying `VM_PRODUCT_ATTR`.
+
+    Returns:
+      `True` unless a `dart_test` configuration set the flag to `False`.
+    """
+    return ctx.attr._vm_product[BuildSettingInfo].value
 
 def kernel_compile_settings(
         target = "vm",
@@ -19,7 +39,8 @@ def kernel_compile_settings(
         libraries_platform = None,
         extra_libraries = [],
         scheme = STABLE_SCHEME,
-        extra_frontend_flags = []):
+        extra_frontend_flags = [],
+        product = True):
     """The frontend settings every kernel compile of a build shares.
 
     The same struct reaches `kernel_module_action()`,
@@ -41,11 +62,14 @@ def kernel_compile_settings(
         absent from `libraries.json`.
       scheme: The multi-root URI scheme (`STABLE_SCHEME` by default).
       extra_frontend_flags: Extra flags forwarded to `kernel_worker`.
+      product: The value of `-Ddart.vm.product` for a `vm` target: `True`
+        for kernel binaries, `False` for tests (as under `dart test`).
 
     Returns:
       A struct with those fields.
     """
     return struct(
+        product = product,
         target = target,
         platform_dill = platform_dill,
         libraries_json = libraries_json,

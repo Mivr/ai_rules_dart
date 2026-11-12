@@ -68,6 +68,16 @@ bool_setting(
     visibility = ["//visibility:public"],
 )
 
+# The `dart.vm.product` value library modules compile with. `dart_test` transitions
+# it to `False`, as `dart test` runs on the non-product VM; kernel binaries keep
+# `True`. A library shared by both compiles once per value.
+bool_setting(
+    name = "vm_product",
+    build_setting_default = True,
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
 config_setting(
     name = "code_assets_on",
     flag_values = {":code_assets_enabled": "true"},
@@ -529,6 +539,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":common",
+        "@bazel_skylib//rules:common_settings",
     ],
 )
 

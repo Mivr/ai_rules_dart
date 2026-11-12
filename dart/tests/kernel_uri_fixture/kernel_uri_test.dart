@@ -90,8 +90,8 @@ void main() {
   }
 
   // The test itself goes through the same front end.
-  if (!const bool.fromEnvironment('dart.vm.product')) {
-    throw StateError('dart_test must compile with `dart.vm.product` true');
+  if (const bool.fromEnvironment('dart.vm.product')) {
+    throw StateError('dart_test must compile with `dart.vm.product` false');
   }
   if (Platform.script.scheme != 'file' ||
       !Platform.script.path.endsWith('.dill')) {
