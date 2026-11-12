@@ -746,6 +746,10 @@ void _tagArgvTests() {
   });
 }
 
+/// The `file:` URI of the directory [below] [tree], as the writer spells it.
+String _dirUri(Directory tree, String below) =>
+    Uri.directory('${tree.path}/$below').toString();
+
 /// The runtime package config: which packages are mapped and what is written.
 void _packageConfigTests() {
   group('runtime package config', () {
@@ -824,12 +828,15 @@ void _packageConfigTests() {
 
     test('writes file URIs in name order and nothing for no package', () {
       final config = jsonDecode(
-        packageConfigJson({'z': '/p/z/lib', 'a': '/p/a/lib'}),
+        packageConfigJson({
+          'z': '${tree.path}/p/z/lib',
+          'a': '${tree.path}/p/a/lib',
+        }),
       ) as Map<String, dynamic>;
       expect(config['configVersion'], 2);
       expect(config['packages'], [
-        {'name': 'a', 'rootUri': 'file:///p/a/', 'packageUri': 'lib/'},
-        {'name': 'z', 'rootUri': 'file:///p/z/', 'packageUri': 'lib/'},
+        {'name': 'a', 'rootUri': _dirUri(tree, 'p/a'), 'packageUri': 'lib/'},
+        {'name': 'z', 'rootUri': _dirUri(tree, 'p/z'), 'packageUri': 'lib/'},
       ]);
       final empty =
           jsonDecode(packageConfigJson(const {})) as Map<String, dynamic>;
@@ -841,7 +848,8 @@ void _packageConfigTests() {
       writePackageConfig(target, '{"a":1}');
       writePackageConfig(target, '{"a":2}');
       expect(target.readAsStringSync(), '{"a":2}');
-      expect(target.parent.listSync().map((e) => e.path), [target.path]);
+      // Compare as URIs: the listing spells separators the platform's way.
+      expect(target.parent.listSync().map((e) => e.uri), [target.uri]);
     });
   });
 }
