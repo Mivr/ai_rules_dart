@@ -1768,6 +1768,46 @@ jobs:
             --experimental_strict_repo_env \
             --repo_env=PATH="$SHIM_DIR:/usr/bin:/bin" \
             --build_event_json_file="$RUNNER_TEMP/bep_hello_build.json"
+      # A worker Bazel runs non-sandboxed despite the worker sandbox flag escapes
+      # the sandbox this job claims to test. A fresh output base and an empty
+      # disk cache make every worker get created, and --worker_verbose prints
+      # one `Created new [non-]sandboxed ...` line for each.
+      - name: Worker sandbox proof — every worker runs sandboxed
+        working-directory: e2e/hello_world
+        run: |
+          SHIM_DIR="${RUNNER_TEMP}/hermetic_shims"
+          base="${RUNNER_TEMP}/worker_sandbox_proof"
+          out="${RUNNER_TEMP}/worker_sandbox_proof.log"
+          trap 'bazel "--output_base=$base" shutdown' EXIT
+          bazel "--output_base=$base" build //... \
+            --disk_cache= \
+            --worker_verbose \
+            --worker_sandboxing \
+            --noworker_multiplex \
+            --experimental_worker_sandbox_hardening \
+            --experimental_worker_strict_flagfiles \
+            --experimental_use_hermetic_linux_sandbox \
+            --sandbox_add_mount_pair=/lib64 \
+            --sandbox_add_mount_pair=/lib/x86_64-linux-gnu \
+            --sandbox_add_mount_pair=/usr/lib/x86_64-linux-gnu \
+            --sandbox_add_mount_pair=/etc/ld.so.cache \
+            --nosandbox_default_allow_network \
+            --sandbox_fake_username \
+            --sandbox_fake_hostname \
+            --experimental_strict_repo_env \
+            --repo_env=PATH="$SHIM_DIR:/usr/bin:/bin" > "$out" 2>&1 || {
+            cat "$out"
+            echo "ERROR: the worker sandbox proof build failed"
+            exit 1
+          }
+          if grep -n 'non-sandboxed' "$out"; then
+            echo "ERROR: the lines above show workers running non-sandboxed"
+            exit 1
+          fi
+          if ! grep -q 'Created new sandboxed' "$out"; then
+            echo "ERROR: no sandboxed worker was created; the build was empty or cached"
+            exit 1
+          fi
       - name: Phase 1 codegen — build resolved targets under the strict H1 flags
         working-directory: e2e/codegen
         run: |
