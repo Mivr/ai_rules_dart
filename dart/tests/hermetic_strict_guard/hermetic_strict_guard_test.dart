@@ -20,7 +20,7 @@ void main(List<String> args) {
   _checkConclusion(workflow);
   _checkSelfTest(workflow);
   _checkSweep(root, workflow);
-  _checkSlicing();
+  _checkSlicing(workflow);
 }
 
 /// Checks the red-by-design canary workspace layout.
@@ -146,6 +146,7 @@ void _checkStrictJob(String workflow) {
       _checkStrictFlags(block);
       _checkStrictWorkspaces(block);
       _checkStrictPhases(block);
+      _checkWorkerProof(block);
       _checkStrictBep(block);
     });
   });
@@ -242,8 +243,8 @@ void _checkStrictFlags(String block) {
   _expectExactly(
     block,
     '--sandbox_add_mount_pair=',
-    16,
-    'the strict job mounts only the four minimal pairs in four phases',
+    20,
+    'the strict job mounts only the four minimal pairs in five builds',
   );
 }
 
@@ -321,6 +322,35 @@ void _checkStrictPhases(String block) {
     codegenTest,
     '--experimental_use_hermetic_linux_sandbox',
     'codegen Phase 2 omits the hermetic sandbox flag',
+  );
+}
+
+/// Checks the worker sandbox proof step: a verbose build that fails on any
+/// `non-sandboxed` worker line and on output without a sandboxed worker, run
+/// before the first Phase 2 step.
+void _checkWorkerProof(String block) {
+  final String step = _stepBlock(block, 'Worker sandbox proof');
+  _expectContains(step, '--worker_verbose', 'the proof prints worker lines');
+  _expectContains(
+    step,
+    "grep -n 'non-sandboxed'",
+    'the proof fails on a non-sandboxed worker line',
+  );
+  _expectContains(
+    step,
+    "grep -q 'Created new sandboxed'",
+    'the proof fails when no sandboxed worker was created',
+  );
+  _expectContains(step, '--disk_cache=', 'the proof builds uncached');
+  _expectContains(step, '--output_base=', 'the proof uses a fresh output base');
+  _expectContains(step, 'trap ', 'the proof shuts its server down on EXIT');
+  final int proof = block.indexOf(step);
+  final int phase2 = block.indexOf('- name: Phase 2');
+  expect(phase2, greaterThan(0), reason: 'hermetic-strict has Phase 2 steps');
+  expect(
+    proof,
+    lessThan(phase2),
+    reason: 'the worker sandbox proof must come before the first Phase 2 step',
   );
 }
 
@@ -455,7 +485,7 @@ void _checkSweep(String root, String workflow) {
 }
 
 /// Checks the job and step slicers used above.
-void _checkSlicing() {
+void _checkSlicing(String workflow) {
   group('checker self-checks', () {
     test('job slicing stops at the next job', () {
       const doc = '  alpha:\n    x: 1\n  beta:\n    y: 2\n';
@@ -490,6 +520,34 @@ void _checkSlicing() {
         ),
         throwsA(isA<TestFailure>()),
         reason: 'fewer than four invocations is rejected',
+      );
+    });
+
+    test('worker proof without its conditions is rejected', () {
+      final String good = _stepBlock(
+        _jobBlock(workflow, 'hermetic-strict'),
+        'Worker sandbox proof',
+      );
+      const head = '      - name: Phase 1 hello_world\n        run: x\n';
+      const tail = '      - name: Phase 2 hello_world\n        run: y\n';
+      expect(() => _checkWorkerProof('$head$good\n$tail'), returnsNormally);
+      for (final needle in [
+        '--worker_verbose',
+        'non-sandboxed',
+        'Created new sandboxed',
+      ]) {
+        expect(
+          () => _checkWorkerProof(
+            '$head${good.replaceAll(needle, 'removed')}\n$tail',
+          ),
+          throwsA(isA<TestFailure>()),
+          reason: 'a proof without $needle is rejected',
+        );
+      }
+      expect(
+        () => _checkWorkerProof('$tail$good'),
+        throwsA(isA<TestFailure>()),
+        reason: 'a proof after Phase 2 is rejected',
       );
     });
 
