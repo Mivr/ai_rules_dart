@@ -30,13 +30,10 @@ dart_test(
     args = [
         "$(rlocationpath :exe_modular)",
         "$(rlocationpath :exe_source)",
-        "$(rlocationpath mirrors_main.dart)",
     ],
     data = [
-        "mirrors_main.dart",
         ":exe_modular",
         ":exe_source",
-        "@dart_toolchains//sdk/3.13.5:compile_files",
     ],
     main = "conditional_import_test.dart",
     deps = [

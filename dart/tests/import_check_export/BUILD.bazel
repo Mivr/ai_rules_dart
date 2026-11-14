@@ -3,7 +3,8 @@ load("//dart:defs.bzl", "dart_test")
 # Builds `//dev/import_check_export`, a rule defined outside `//dart` in the
 # nested `dev` module, with a nested Bazel: a clean executable passes the
 # exported import check, and one importing a package its `deps` lack fails with
-# the check's line. It reads the live tree and starts Bazel, so it runs
+# the check's line. It also builds `//dev/exe_mirrors`, a `dart_binary` in `exe`
+# mode that imports `dart:mirrors`, and expects the front end's refusal. It reads the live tree and starts Bazel, so it runs
 # unsandboxed.
 dart_test(
     name = "import_check_export_test",

@@ -33,55 +33,64 @@ const Set<String> _outerTestVars = {
 
 final RegExp _msysDrive = RegExp(r'^/([A-Za-z])(/.*)?$');
 
-/// Builds `dev/import_check_export` as a consumer would.
+/// Builds the nested `dev` fixtures as a consumer would.
 ///
 /// `dev/` is a nested module that depends on rules_dart as an external
 /// repository, so its rule (`defs.bzl`) loads `@rules_dart//dart:import_check.bzl`
 /// and defaults `_import_check` to `//dart:import_check` from outside
 /// `//dart`. A clean executable must build; one that imports a package its
-/// `deps` do not provide must fail with the check's usual line. The nested
-/// Bazel uses its own short output base, so it never waits on the outer server.
+/// `deps` do not provide must fail with the check's usual line. The second
+/// fixture, `dev/exe_mirrors`, is a `dart_binary(compile_mode = "exe")` that
+/// imports `dart:mirrors`: its build must fail with the front end's line. The
+/// nested Bazel uses its own short output base, so it never waits on the outer
+/// server.
 void main(List<String> args) {
   final String root = _workspaceRoot(args.first);
+  late final Directory scratch;
+  late final _BazelConfig bazel;
+  var serverStarted = false;
 
+  ProcessResult build(List<String> targets) {
+    serverStarted = true;
+    return _build(bazel, targets);
+  }
+
+  setUpAll(() {
+    final String parent = _scratchParent(
+      Platform.environment,
+      isWindows: Platform.isWindows,
+      systemTempPath: Directory.systemTemp.path,
+      dirExists: (path) => Directory(path).existsSync(),
+    );
+    scratch = Directory(parent).createTempSync('rd_ice_');
+    Directory(p.join(scratch.path, 'tmp')).createSync(recursive: true);
+    bazel = _prepareBazel(
+      root: root,
+      scratchPath: scratch.path,
+      hostEnv: Platform.environment,
+      fs: _realHostFs(isWindows: Platform.isWindows),
+      isWindows: Platform.isWindows,
+    );
+  });
+
+  tearDownAll(() {
+    _cleanup(bazel, scratch, serverStarted: serverStarted);
+  });
+
+  _registerImportCheckTests(build);
+  _registerExeMirrorsTest(build);
+  _registerLauncherConfigTests();
+}
+
+void _registerImportCheckTests(ProcessResult Function(List<String>) build) {
   group('exported import check', () {
-    late final Directory scratch;
-    late final _BazelConfig bazel;
-    var serverStarted = false;
-
-    setUpAll(() {
-      final String parent = _scratchParent(
-        Platform.environment,
-        isWindows: Platform.isWindows,
-        systemTempPath: Directory.systemTemp.path,
-        dirExists: (path) => Directory(path).existsSync(),
-      );
-      scratch = Directory(parent).createTempSync('rd_ice_');
-      Directory(p.join(scratch.path, 'tmp')).createSync(recursive: true);
-      bazel = _prepareBazel(
-        root: root,
-        scratchPath: scratch.path,
-        hostEnv: Platform.environment,
-        fs: _realHostFs(isWindows: Platform.isWindows),
-        isWindows: Platform.isWindows,
-      );
-    });
-
-    tearDownAll(() {
-      _cleanup(bazel, scratch, serverStarted: serverStarted);
-    });
-
     test('a clean executable passes the check', () {
-      serverStarted = true;
-      final ProcessResult result = _build(bazel, [
-        '//import_check_export:clean',
-      ]);
+      final ProcessResult result = build(['//import_check_export:clean']);
       expect(result.exitCode, 0, reason: '${result.stdout}${result.stderr}');
     });
 
     test('an executable importing a package its deps lack fails the check', () {
-      serverStarted = true;
-      final ProcessResult result = _build(bazel, ['//import_check_export:bad']);
+      final ProcessResult result = build(['//import_check_export:bad']);
       final output = '${result.stdout}${result.stderr}';
       expect(result.exitCode, isNot(0), reason: output);
       expect(
@@ -97,10 +106,7 @@ void main(List<String> args) {
     // `deps` attribute in `dev/import_check_export/defs.bzl`: the executable's
     // own `main` is clean, so only the aspect reports the dependency's source.
     test('a dependency importing a package its deps lack fails the check', () {
-      serverStarted = true;
-      final ProcessResult result = _build(bazel, [
-        '//import_check_export:bad_dep',
-      ]);
+      final ProcessResult result = build(['//import_check_export:bad_dep']);
       final output = '${result.stdout}${result.stderr}';
       expect(result.exitCode, isNot(0), reason: output);
       expect(
@@ -114,8 +120,28 @@ void main(List<String> args) {
       expect(output, contains("Add the target that provides package 'hidden'"));
     });
   });
+}
 
-  _registerLauncherConfigTests();
+void _registerExeMirrorsTest(ProcessResult Function(List<String>) build) {
+  group('exe compile path', () {
+    // Fails when the rule's `exe` path links per-library modules: they compile
+    // against the JIT platform, where `dart:mirrors` exists, so the build
+    // succeeds. The default whole-program AOT path refuses the import.
+    test('dart:mirrors is refused by the front end with a line', () {
+      final ProcessResult result = build(['//exe_mirrors:mirrors_exe']);
+      final output = '${result.stdout}${result.stderr}';
+      expect(result.exitCode, isNot(0), reason: output);
+      expect(
+        output,
+        matches(
+          RegExp(
+            r"mirrors_main\.dart:\d+:\d+: Error: Dart library 'dart:mirrors' "
+            'is not available on this platform',
+          ),
+        ),
+      );
+    });
+  });
 }
 
 /// Runs `bazel build` for [targets] in the nested `dev` module.
