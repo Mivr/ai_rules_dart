@@ -7,3 +7,9 @@ dart_library(
     srcs = ["lib/dep_bad.dart"],
     visibility = ["//import_check_export:__pkg__"],
 )
+
+# The entrypoint of `//import_check_export:bad_dep`, which is clean itself: it imports only `package:dep_bad`.
+exports_files(
+    ["bin/main.dart"],
+    visibility = ["//import_check_export:__pkg__"],
+)

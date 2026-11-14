@@ -21,7 +21,7 @@ outside_exe(
 # dependency's `deps` do not provide: building it fails only through `dart_import_check_aspect` on `deps`.
 outside_exe(
     name = "bad_dep",
-    main = "bad_dep/lib/main.dart",
+    main = "//import_check_export/dep_bad:bin/main.dart",
     tags = ["manual"],
     deps = ["//import_check_export/dep_bad"],
 )
