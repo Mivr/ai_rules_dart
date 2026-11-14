@@ -30,6 +30,7 @@ dart_test(
         "SystemDrive",
         "SystemRoot",
         "USERPROFILE",
+        "USE_BAZEL_VERSION",
     ],
     local = True,
     main = "import_check_export_test.dart",
