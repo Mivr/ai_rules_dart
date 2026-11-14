@@ -217,6 +217,18 @@ void main() {
       }
       expect(reader.isDone, isTrue);
     });
+
+    test('a read past the end raises a FormatException', () {
+      expect(
+        () => WorkerReader(Uint8List.fromList([0x80])).varint(),
+        throwsFormatException,
+      );
+      expect(
+        () => WorkerReader(Uint8List.fromList([0x05, 0x01])).bytes(),
+        throwsFormatException,
+      );
+      expect(() => WorkerReader(Uint8List(0)).skip(1), throwsFormatException);
+    });
   });
 
   group('WorkerFrames', _workerFramesTests);

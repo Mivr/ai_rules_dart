@@ -452,6 +452,11 @@ final class WorkerReader {
     var result = 0;
     var shift = 0;
     while (true) {
+      if (_pos >= _buf.length) {
+        throw FormatException(
+          'truncated varint at byte $_pos of ${_buf.length}',
+        );
+      }
       final int b = _buf[_pos++];
       result |= (b & 0x7f) << shift;
       if ((b & 0x80) == 0) return result;
@@ -461,6 +466,7 @@ final class WorkerReader {
 
   Uint8List bytes() {
     final int len = varint();
+    _checkAvailable(len);
     final slice = Uint8List.sublistView(_buf, _pos, _pos + len);
     _pos += len;
     return slice;
@@ -475,14 +481,26 @@ final class WorkerReader {
       case 0:
         varint();
       case 1:
+        _checkAvailable(8);
         _pos += 8;
       case 2:
         final int length = varint();
+        _checkAvailable(length);
         _pos += length;
       case 5:
+        _checkAvailable(4);
         _pos += 4;
       default:
         throw FormatException('unsupported wire type: $wireType');
+    }
+  }
+
+  void _checkAvailable(int count) {
+    if (count < 0 || count > _buf.length - _pos) {
+      throw FormatException(
+        'field of $count bytes runs past the end at byte $_pos of '
+        '${_buf.length}',
+      );
     }
   }
 }

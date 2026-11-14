@@ -63,6 +63,13 @@ Uint8List _request(
       .takeBytes();
 }
 
+/// [payload] behind a length prefix, whatever bytes it holds.
+Uint8List _framedPayload(List<int> payload) =>
+    (WorkerWriter()
+          ..varint(payload.length)
+          ..raw(payload))
+        .takeBytes();
+
 /// One decoded `WorkResponse`.
 typedef _Answer = ({
   int requestId,
@@ -334,6 +341,7 @@ void main(List<String> args) {
 
   _registerMultiplexInMemoryTests();
   _registerCancelInMemoryTests();
+  _registerBadFrameInMemoryTests();
   _registerInterleavedSubprocessTest();
   _registerCancelSubprocessTest();
 }
@@ -376,6 +384,68 @@ void _registerMultiplexInMemoryTests() {
     final _Answer ok = answers.singleWhere((a) => a.requestId == 0);
     expect(ok.exitCode, 0);
     expect(ok.cancelled, isFalse);
+  });
+}
+
+void _registerBadFrameInMemoryTests() {
+  test('a truncated varint is answered, a running request kept', () async {
+    final release = Completer<void>();
+    final _Rig rig = _createRig((Uint8List frame, Future<void> _) async {
+      await release.future;
+      return (exitCode: 0, output: 'out-${_argumentOf(frame)}');
+    });
+    rig.send(_request(11, ['slow']));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    rig.send(_framedPayload([0x18, 0x07, 0x18, 0x80]));
+    await rig.waitForAnswers(1);
+    release.complete();
+    final List<_Answer> answers = await rig.finish();
+    expect(answers, hasLength(2));
+    final _Answer bad = answers.first;
+    expect(bad.requestId, 7, reason: 'the id read before the failure');
+    expect(bad.exitCode, 1);
+    expect(bad.output, contains('malformed WorkRequest'));
+    expect(bad.output, contains('4 bytes'));
+    expect(bad.output, contains('truncated varint'));
+    final _Answer good = answers.last;
+    expect(good.requestId, 11);
+    expect(good.exitCode, 0);
+    expect(good.output, 'out-slow');
+  });
+
+  test('a payload cut off at its first varint answers request id 0', () async {
+    final _Rig rig = _createRig((Uint8List frame, Future<void> _) async {
+      return (exitCode: 0, output: '');
+    });
+    rig.send(_framedPayload([0x18, 0x80]));
+    final List<_Answer> answers = await rig.finish();
+    expect(answers.single.requestId, 0);
+    expect(answers.single.exitCode, 1);
+    expect(answers.single.output, contains('2 bytes'));
+  });
+
+  test('an unsupported wire type is answered with exit code 1', () async {
+    final _Rig rig = _createRig((Uint8List frame, Future<void> _) async {
+      return (exitCode: 0, output: '');
+    });
+    rig.send(_framedPayload([0x18, 0x09, 0x0b]));
+    final List<_Answer> answers = await rig.finish();
+    expect(answers.single.requestId, 9);
+    expect(answers.single.exitCode, 1);
+    expect(answers.single.output, contains('malformed WorkRequest'));
+    expect(answers.single.output, contains('unsupported wire type'));
+  });
+
+  test('a valid request after a bad frame is served and serve ends', () async {
+    final _Rig rig = _createRig((Uint8List frame, Future<void> _) async {
+      return (exitCode: 0, output: 'out-${_argumentOf(frame)}');
+    }, maxConcurrent: 1);
+    rig.send(_framedPayload([0x18, 0x80]));
+    rig.send(_request(5, ['after']));
+    final List<_Answer> answers = await rig.finish();
+    expect(answers.map((a) => a.requestId), unorderedEquals([0, 5]));
+    expect(answers.singleWhere((a) => a.requestId == 5).output, 'out-after');
+    expect(answers.singleWhere((a) => a.requestId == 0).exitCode, 1);
   });
 }
 
