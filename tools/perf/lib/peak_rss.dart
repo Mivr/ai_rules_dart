@@ -249,16 +249,41 @@ final class PeakRssRun {
   }
 }
 
+/// Why [reader] cannot report resident sets on this host, or null when it can.
+///
+/// The Linux reader needs `/proc`; any other host has none, so the peak is
+/// absent there (never 0). Other readers are taken at their word.
+String? peakRssUnavailableReason(ProcReader reader) {
+  if (reader is LinuxProcReader && !Platform.isLinux) {
+    return 'peak RSS needs /proc, which ${Platform.operatingSystem} lacks';
+  }
+  return null;
+}
+
+bool _reportedUnavailable = false;
+
+void _reportUnavailableOnce(String reason) {
+  if (_reportedUnavailable) return;
+  _reportedUnavailable = true;
+  stderr.writeln('peak_rss_mb not recorded: $reason');
+}
+
 /// Runs [body] while sampling the tree under [rootPid]; returns its value and
-/// the peak summed resident set in MiB.
+/// the peak summed resident set in MiB, or null (with the reason on stderr)
+/// when the host cannot report it.
 ///
 /// A body that throws still stops the sampler; its error is rethrown.
-({T value, double peakMb}) measurePeakRss<T>(
+({T value, double? peakMb}) measurePeakRss<T>(
   T Function() body, {
   required ProcReader reader,
   required int rootPid,
   bool includeRoot = true,
 }) {
+  final unavailable = peakRssUnavailableReason(reader);
+  if (unavailable != null) {
+    _reportUnavailableOnce(unavailable);
+    return (value: body(), peakMb: null);
+  }
   final run = PeakRssRun.start(
     reader: reader,
     rootPid: rootPid,

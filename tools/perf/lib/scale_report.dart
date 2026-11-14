@@ -193,8 +193,8 @@ ScaleOutcome buildScaleReport({
         final heap = m.serverHeap;
         if (heap != null) {
           (heaps.putIfAbsent('$size', () => <String, Object?>{})
-                  as Map<String, Object?>)[flow] =
-              heap.toJson();
+              as Map<String, Object?>)[flow] = heap
+              .toJson();
         }
         if (!m.reproducible) {
           problems.add('$flow at $size libraries: outputs not reproducible');

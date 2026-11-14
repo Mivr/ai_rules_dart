@@ -502,7 +502,7 @@ FlowResult _measureFlowAppClean(RepeatContext ctx) {
 }
 
 /// Result of a measured warm command: its output, CPU seconds and peak RSS.
-typedef _WarmRun = ({ProcessResult result, double cpu, double peakMb});
+typedef _WarmRun = ({ProcessResult result, double cpu, double? peakMb});
 
 _WarmRun _runMeasuredWarmCommand(RepeatContext ctx, List<String> bazelArgs) {
   final serverPid = ctx.getServerPid();

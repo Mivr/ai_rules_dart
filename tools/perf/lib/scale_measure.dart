@@ -19,16 +19,15 @@ typedef _Timed = ({
   ProcessResult result,
   double cpu,
   double wall,
-  double peakMb,
+  double? peakMb,
 });
 
 /// Runs `bazel` with [args] in [workspace] on [outputBase].
-typedef BazelRunner =
-    ProcessResult Function(
-      String workspace,
-      String outputBase,
-      List<String> args,
-    );
+typedef BazelRunner = ProcessResult Function(
+  String workspace,
+  String outputBase,
+  List<String> args,
+);
 
 ProcessResult _runBazel(String ws, String base, List<String> args) {
   return Process.runSync(
