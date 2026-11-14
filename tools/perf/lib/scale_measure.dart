@@ -9,10 +9,30 @@ import 'cpu.dart';
 import 'proc.dart';
 import 'runner.dart';
 import 'scale_report.dart';
+import 'server_evidence.dart';
+import 'server_heap.dart';
 import 'spawn_log.dart';
 
 /// CPU seconds, wall seconds and result of one measured Bazel command.
 typedef _Timed = ({ProcessResult result, double cpu, double wall});
+
+/// Runs `bazel` with [args] in [workspace] on [outputBase].
+typedef BazelRunner =
+    ProcessResult Function(
+      String workspace,
+      String outputBase,
+      List<String> args,
+    );
+
+ProcessResult _runBazel(String ws, String base, List<String> args) {
+  return Process.runSync(
+    'bazel',
+    ['--max_idle_secs=600', '--output_base=$base', ...args],
+    workingDirectory: ws,
+    environment: cleanProcessEnvironment(),
+    includeParentEnvironment: false,
+  );
+}
 
 /// Where one size's Bazel work happens.
 final class ScalePaths {
@@ -46,6 +66,8 @@ final class ScaleMeasurer {
     required this.profileDir,
     this.clock = const LinuxChildCpuClock(),
     this.procReader = const LinuxProcReader(),
+    this.bazelRunner = _runBazel,
+    this.evidenceSources = const EvidenceSources(),
   });
 
   /// Directory holding one generated `ws-<n>` workspace per size.
@@ -62,6 +84,12 @@ final class ScaleMeasurer {
 
   /// Proc reader for the Bazel server tree.
   final ProcReader procReader;
+
+  /// Runs Bazel; tests pass a fake.
+  final BazelRunner bazelRunner;
+
+  /// Host files read as evidence when the server fails or vanishes.
+  final EvidenceSources evidenceSources;
 
   /// Measures every flow at [libraries]; a flow that throws is recorded failed.
   SizeMeasurements call(int libraries) {
@@ -108,7 +136,7 @@ final class ScaleMeasurer {
     };
     for (final entry in steps.entries) {
       try {
-        results[entry.key] = entry.value();
+        results[entry.key] = _withHeap(paths, entry.value());
       } on Object catch (e) {
         stderr.writeln('Scale flow ${entry.key} error: $e');
         results[entry.key] = FlowMeasurement.failed('$e');
@@ -117,14 +145,20 @@ final class ScaleMeasurer {
     return results;
   }
 
-  ProcessResult _bazel(String ws, String base, List<String> args) {
-    return Process.runSync(
-      'bazel',
-      ['--max_idle_secs=600', '--output_base=$base', ...args],
-      workingDirectory: ws,
-      environment: cleanProcessEnvironment(),
-      includeParentEnvironment: false,
-    );
+  ProcessResult _bazel(String ws, String base, List<String> args) =>
+      bazelRunner(ws, base, args);
+
+  /// Records the server heap after a flow that succeeded.
+  FlowMeasurement _withHeap(ScalePaths p, FlowMeasurement m) {
+    if (m.error != null) return m;
+    try {
+      final res = _bazelOk(p, ['info', ...serverHeapInfoKeys]);
+      return m.withServerHeap(parseServerHeap(res.stdout as String));
+    } on StateError catch (e) {
+      return m.withServerHeap(ServerHeap.unavailable('${e.message}'));
+    } on FormatException catch (e) {
+      return m.withServerHeap(ServerHeap.unavailable(e.message));
+    }
   }
 
   ProcessResult _bazelOk(ScalePaths p, List<String> args) {
@@ -172,12 +206,14 @@ final class ScaleMeasurer {
 
   _Timed _timed(ScalePaths p, List<String> args) {
     final pid = _serverPid(p);
+    final oomBefore = readOomKill(evidenceSources, pid);
     final before = takeServerTreeSnapshot(procReader, pid);
     final clientBefore = clock.getChildCpuSeconds();
     final watch = Stopwatch()..start();
     final result = _bazel(p.workspace, p.outputBase, args);
     watch.stop();
     final clientDelta = clock.getChildCpuSeconds() - clientBefore;
+    _failOnBadOutcome(p, args, result, before, oomBefore);
     final server = computeWarmServerCpuDelta(
       before: before,
       after: takeServerTreeSnapshot(procReader, pid),
@@ -190,10 +226,46 @@ final class ScaleMeasurer {
     );
   }
 
-  FlowMeasurement _fromLog(_Timed t, File log, {bool reproducible = true}) {
-    if (t.result.exitCode != 0) {
-      return FlowMeasurement.failed('${t.result.stderr}');
+  /// Throws the flow's failure when the command failed or the server is lost.
+  ///
+  /// A non-zero exit is reported first, with the server evidence appended when
+  /// the server is also gone; a zero exit with a lost server reports that.
+  void _failOnBadOutcome(
+    ScalePaths p,
+    List<String> args,
+    ProcessResult result,
+    ServerTreeSnapshot before,
+    OomReading oomBefore,
+  ) {
+    final lost = _serverLoss(before);
+    final evidence = lost == null
+        ? ''
+        : '$lost\n${describeServerLoss(outputBase: p.outputBase, pid: before.serverPid, oomBefore: oomBefore, sources: evidenceSources)}';
+    if (result.exitCode != 0) {
+      final failure = describeCommandFailure(
+        args: args,
+        exitCode: result.exitCode,
+        stderrText: '${result.stderr}',
+      );
+      throw StateError(evidence.isEmpty ? failure : '$failure\n$evidence');
     }
+    if (lost != null) throw StateError(evidence);
+  }
+
+  /// Why the server of [before] is gone or was replaced, or null when alive.
+  String? _serverLoss(ServerTreeSnapshot before) {
+    final now = procReader.readAllProcesses()[before.serverPid];
+    if (now == null) {
+      return 'Bazel server PID ${before.serverPid} is missing from /proc';
+    }
+    if (now.starttime != before.serverStarttime) {
+      return 'Server starttime changed for PID ${before.serverPid}: '
+          '${before.serverStarttime} -> ${now.starttime}';
+    }
+    return null;
+  }
+
+  FlowMeasurement _fromLog(_Timed t, File log, {bool reproducible = true}) {
     final spawns = parseExecutionLog(log.readAsStringSync()).allSpawns;
     return FlowMeasurement(
       cpuSeconds: t.cpu,
@@ -226,7 +298,6 @@ final class ScaleMeasurer {
   FlowMeasurement _clean(ScalePaths p) {
     final log = File('${p.logsDir}/exec_clean.json');
     final timed = _timed(p, _buildArgs('//app:app', log));
-    if (timed.result.exitCode != 0) return _fromLog(timed, log);
     final same = _sameOutputsOnSecondBase(p);
     return _fromLog(timed, log, reproducible: same);
   }
@@ -302,9 +373,6 @@ final class ScaleMeasurer {
       '//app:app',
       '--starlark_cpu_profile=${p.profileFile}',
     ]);
-    if (timed.result.exitCode != 0) {
-      return FlowMeasurement.failed('${timed.result.stderr}');
-    }
     final aquery = _bazelOk(p, ['aquery', '--output=jsonproto', '//app:app']);
     final actions =
         (jsonDecode(aquery.stdout as String) as Map<String, dynamic>)['actions']
