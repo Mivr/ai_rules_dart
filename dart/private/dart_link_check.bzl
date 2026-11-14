@@ -150,7 +150,7 @@ def _dart_source(f):
     """The path of a Dart source file or source directory, else nothing.
 
     Args:
-      f: A `File`.
+      f: A `File` from the closure's sources: a Dart file or a source directory.
 
     Returns:
       The path, or `None` for a file that is not Dart source.
