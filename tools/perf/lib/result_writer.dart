@@ -189,6 +189,51 @@ final class FlowReplayData {
   final Map<String, int> workerSteps;
 }
 
+/// Wall-clock and `link_modules` measurements of one flow's measured command.
+final class FlowExtras {
+  /// Creates an extras record; every field is absent unless measured.
+  const FlowExtras({
+    this.wallSeconds,
+    this.linkCheckWallSeconds,
+    this.linked,
+    this.appStdout,
+  });
+
+  /// No measurement.
+  static const none = FlowExtras();
+
+  /// Wall seconds of the measured Bazel command.
+  final double? wallSeconds;
+
+  /// Wall seconds of the command's `DartLinkCheck` spawns, from the execution
+  /// log; only set for an arm that opted in to `link_modules`.
+  final double? linkCheckWallSeconds;
+
+  /// Whether the execution log has a `DartKernelLink` spawn; set with
+  /// [linkCheckWallSeconds].
+  final bool? linked;
+
+  /// Stdout of the built `app` binary; only the clean flow records it.
+  final String? appStdout;
+
+  /// JSON entries for the keys that are set.
+  Map<String, dynamic> toJson() => {
+    if (wallSeconds != null) 'wall_seconds': wallSeconds,
+    if (linkCheckWallSeconds != null)
+      'link_check_wall_seconds': linkCheckWallSeconds,
+    if (linked != null) 'linked': linked,
+    if (appStdout != null) 'app_stdout': appStdout,
+  };
+
+  /// Reads the keys [toJson] writes; a missing key stays absent.
+  static FlowExtras fromJson(Map<String, dynamic> json) => FlowExtras(
+    wallSeconds: (json['wall_seconds'] as num?)?.toDouble(),
+    linkCheckWallSeconds: (json['link_check_wall_seconds'] as num?)?.toDouble(),
+    linked: json['linked'] as bool?,
+    appStdout: json['app_stdout'] as String?,
+  );
+}
+
 /// Result of a single flow in a single repeat.
 final class FlowResult {
   /// Creates a flow result record.
@@ -201,7 +246,8 @@ final class FlowResult {
     required this.chain,
     required this.workerSteps,
     this.peakRssMb,
-  }) : floor = FlowFloorData.disabled;
+  }) : floor = FlowFloorData.disabled,
+       extras = FlowExtras.none;
 
   /// Creates a flow result record including floor data.
   FlowResult.withFloor({
@@ -210,6 +256,7 @@ final class FlowResult {
     required FlowReplayData replay,
     this.floor = FlowFloorData.disabled,
     this.peakRssMb,
+    this.extras = FlowExtras.none,
   }) : solCpu = replay.solCpu,
        identical = replay.identical,
        reason = replay.reason,
@@ -244,20 +291,28 @@ final class FlowResult {
   /// tree, or null when the flow failed or was not sampled.
   final double? peakRssMb;
 
+  /// Wall-clock and `link_modules` measurements of the measured command.
+  final FlowExtras extras;
+
   /// A copy of this result carrying [peak] as [peakRssMb].
-  FlowResult withPeakRssMb(double? peak) => FlowResult.withFloor(
-    method: method,
-    bazelCpu: bazelCpu,
-    replay: FlowReplayData(
-      solCpu: solCpu,
-      identical: identical,
-      reason: reason,
-      chain: chain,
-      workerSteps: workerSteps,
-    ),
-    floor: floor,
-    peakRssMb: peak,
-  );
+  FlowResult withPeakRssMb(double? peak) => withMeasure(peak, extras);
+
+  /// A copy of this result carrying [peak] as [peakRssMb] and [measured].
+  FlowResult withMeasure(double? peak, FlowExtras measured) =>
+      FlowResult.withFloor(
+        method: method,
+        bazelCpu: bazelCpu,
+        replay: FlowReplayData(
+          solCpu: solCpu,
+          identical: identical,
+          reason: reason,
+          chain: chain,
+          workerSteps: workerSteps,
+        ),
+        floor: floor,
+        peakRssMb: peak,
+        extras: measured,
+      );
 
   /// Timed floor CPU seconds.
   double? get toolchainFloorCpu => floor.cpuSeconds;
@@ -284,6 +339,7 @@ final class FlowResult {
     'chain': chain,
     'workerSteps': workerSteps,
     if (peakRssMb != null) 'peak_rss_mb': peakRssMb,
+    ...extras.toJson(),
     if (floor.enabled) ...{
       'floor_enabled': floor.enabled,
       'floor_identical': floor.identical,
@@ -358,6 +414,7 @@ final class FlowResult {
       ),
       floor: floorData,
       peakRssMb: (json['peak_rss_mb'] as num?)?.toDouble(),
+      extras: FlowExtras.fromJson(json),
     );
   }
 }
@@ -443,6 +500,13 @@ void _checkFlowSummaryFailure(
     failures.add(
       'flow $key failed: identical=${flow['identical']}, '
       'sol=${flow['sol']}, reason=${reason == null ? 'null' : '"$reason"'}',
+    );
+  }
+  if (flow.containsKey('link_check_wall_seconds') &&
+      key != 'dart-test-leaf' &&
+      flow['linked'] != true) {
+    failures.add(
+      'flow $key opted in to link_modules but its log has no DartKernelLink',
     );
   }
   if (flow.containsKey('floor_reason')) {
@@ -591,6 +655,10 @@ final class _FlowAccumulator {
   final List<double> solVals = [];
   final List<double> floorVals = [];
   final List<double> peakRssVals = [];
+  final List<double> wallVals = [];
+  final List<double> linkCheckVals = [];
+  bool? allLinked;
+  String? appStdout;
   bool allIdentical = true;
   bool allFloorIdentical = true;
   bool floorEnabled = false;
@@ -654,6 +722,15 @@ final class _FlowAccumulator {
     }
   }
 
+  void _recordExtras(FlowExtras e) {
+    if (e.wallSeconds != null) wallVals.add(e.wallSeconds!);
+    if (e.linkCheckWallSeconds != null) {
+      linkCheckVals.add(e.linkCheckWallSeconds!);
+    }
+    if (e.linked != null) allLinked = (allLinked ?? true) && e.linked!;
+    appStdout ??= e.appStdout;
+  }
+
   void recordRepeat(FlowResult? f, int repeatIndex, String key) {
     if (f == null) {
       allIdentical = false;
@@ -670,6 +747,7 @@ final class _FlowAccumulator {
     _recordReplay(f);
     _recordFloor(f);
     if (f.peakRssMb != null) peakRssVals.add(f.peakRssMb!);
+    _recordExtras(f.extras);
   }
 }
 
@@ -703,6 +781,18 @@ Map<String, dynamic> _peakRssField(_FlowAccumulator acc) {
   final median = calculateMedian(acc.peakRssVals);
   if (median == null) return const {};
   return {'peak_rss_mb': double.parse(median.toStringAsFixed(3))};
+}
+
+/// Median wall seconds, the `DartLinkCheck` median and the app stdout of a flow.
+Map<String, dynamic> _extraFields(_FlowAccumulator acc) {
+  final wall = calculateMedian(acc.wallVals);
+  final linkCheck = calculateMedian(acc.linkCheckVals);
+  return {
+    if (linkCheck != null) 'link_check_wall_seconds': _roundCpu(linkCheck),
+    if (acc.allLinked != null) 'linked': acc.allLinked,
+    if (acc.appStdout != null) 'app_stdout': acc.appStdout,
+    if (wall != null) 'wall_seconds': _roundCpu(wall),
+  };
 }
 
 List<double>? _calculateSpread(List<double> vals, {bool valid = true}) {
@@ -799,6 +889,7 @@ Map<String, dynamic> _buildFlowEntry(
     'identical': isIdentical,
     'method': key == 'dart-app-clean' ? 'batch' : 'warm-server',
     ..._peakRssField(acc),
+    ..._extraFields(acc),
     'reason': reason,
     'sol': solMedian != null ? _roundCpu(solMedian) : null,
     'spread': _buildSpreadMap(
