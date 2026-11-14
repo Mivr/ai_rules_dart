@@ -38,12 +38,13 @@ void _verifyInputs(String text) {
     multiLine: true,
   ).allMatches(inputsBlock).map((m) => m.group(1)!).toSet();
   _check(
-    inputNames.length == 4 &&
+    inputNames.length == 5 &&
         inputNames.contains('head_ref') &&
         inputNames.contains('target_loc') &&
         inputNames.contains('repeats') &&
-        inputNames.contains('seed'),
-    'inputs must contain exactly head_ref, target_loc, repeats, seed',
+        inputNames.contains('seed') &&
+        inputNames.contains('link_modules'),
+    'inputs must be head_ref, target_loc, repeats, seed, link_modules',
   );
 
   _check(
@@ -56,7 +57,14 @@ void _verifyInputs(String text) {
   );
   _check(
     RegExp(r'type:\s*string').allMatches(inputsBlock).length == 4,
-    'all 4 inputs use type: string',
+    'the 4 value inputs use type: string',
+  );
+  _check(
+    RegExp(
+      r'link_modules:[\s\S]*?default:\s*"off"\s*\n\s*type:\s*choice'
+      r'\s*\n\s*options:\s*\n\s*-\s*"off"\s*\n\s*-\s*"on"\s*\n\s*-\s*ab\b',
+    ).hasMatch(inputsBlock),
+    'link_modules is a choice of off (default), on and ab',
   );
   _check(
     RegExp(r'target_loc:[\s\S]*?default:\s*"500000"').hasMatch(inputsBlock),
@@ -182,11 +190,12 @@ void _verifyCheckoutsAndSteps(String text) {
 }
 
 void _verifyArtifactUpload(String text) {
-  _check(text.contains('name: dart-sol'), 'uploads artifact dart-sol');
-  _check(
-    RegExp(r'path:\s*dart-sol\.json\b').hasMatch(text),
-    'uploads path dart-sol.json',
-  );
+  for (final name in ['dart-sol', 'dart-sol-off', 'dart-sol-on']) {
+    _check(
+      RegExp('name: $name\\n\\s+path: $name\\.json\\n').hasMatch(text),
+      'uploads artifact $name from $name.json',
+    );
+  }
   final retentionMatch = RegExp(r'retention-days:\s*(\d+)').firstMatch(text);
   _check(retentionMatch != null, 'retention-days declared');
   _check(
@@ -194,8 +203,9 @@ void _verifyArtifactUpload(String text) {
     'retention-days must be exactly 3, got ${retentionMatch.group(1)}',
   );
   _check(
-    RegExp(r'retention-days:\s*3\b').allMatches(text).length == 1,
-    'retention-days is 3',
+    RegExp(r'retention-days:\s*3\b').allMatches(text).length == 3 &&
+        RegExp(r'retention-days:').allMatches(text).length == 3,
+    'every artifact keeps retention-days 3',
   );
   _check(
     text.contains('!cancelled()') && text.contains("inputs.head_ref != ''"),
@@ -402,6 +412,9 @@ void main(List<String> args) {
   verifyWorkflowYaml(text);
   _testWorkflowMutations(text);
   _testFailurePropagationMutations(text);
-  if (!Platform.isWindows) verifyStepScriptsExecute(text);
+  if (!Platform.isWindows) {
+    verifyStepScriptsExecute(text);
+    verifyArmScriptsExecute(text);
+  }
   stdout.writeln('All workflow tests passed.');
 }

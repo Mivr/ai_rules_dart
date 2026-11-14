@@ -21,6 +21,15 @@ on:
         required: false
         default: "1"
         type: string
+      link_modules:
+        description: "dart_binary link_modules arm: off, on, or ab (paired off/on)"
+        required: false
+        default: "off"
+        type: choice
+        options:
+          - "off"
+          - "on"
+          - ab
 permissions:
   contents: read
 jobs:
@@ -28,6 +37,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
+      - name: Resolve link_modules arms
+        env:
+          LINK_MODULES: ${{ inputs.link_modules }}
+        run: |
+          case "$LINK_MODULES" in
+            off) arms="off" ;;
+            on) arms="on" ;;
+            ab) arms="off on" ;;
+            *)
+              echo "link_modules must be off, on or ab, got '$LINK_MODULES'" >&2
+              exit 1
+              ;;
+          esac
+          echo "ARMS=$arms" >> "$GITHUB_ENV"
       - name: Checkout bench tooling
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -58,52 +81,65 @@ jobs:
           TARGET_LOC: ${{ inputs.target_loc }}
           SEED: ${{ inputs.seed }}
         run: |
-          ws="${RUNNER_TEMP}/pristine-ws"
           tooling_base="${RUNNER_TEMP}/tooling-outbase"
-          mkdir -p "$ws"
-          (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:generate -- \
-            --target-loc="$TARGET_LOC" \
-            --seed="$SEED" \
-            --rules-dart="$GITHUB_WORKSPACE/rules-head" \
-            --out="$ws")
+          for arm in $ARMS; do
+            ws="${RUNNER_TEMP}/pristine-ws-$arm"
+            mkdir -p "$ws"
+            (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:generate -- \
+              --target-loc="$TARGET_LOC" \
+              --seed="$SEED" \
+              --link-modules="$arm" \
+              --rules-dart="$GITHUB_WORKSPACE/rules-head" \
+              --out="$ws")
+          done
       - name: Commit lockfile via unmeasured analysis-only pass
         run: |
-          ws="${RUNNER_TEMP}/pristine-ws"
-          scratch_base="${RUNNER_TEMP}/scratch-outbase"
           cleanup_scratch() {
             (cd "$ws" && bazel --max_idle_secs=60 --output_base="$scratch_base" shutdown) || echo "bazel shutdown failed" >&2
             chmod -R u+w "$scratch_base" 2>/dev/null || echo "scratch cleanup chmod failed" >&2
             rm -rf "$scratch_base"
           }
           trap cleanup_scratch EXIT
-          leaf_tests=$(cd "$ws" && bazel --max_idle_secs=60 --output_base="$scratch_base" query 'kind(dart_test, //...)')
-          test -n "$leaf_tests"
-          # shellcheck disable=SC2086
-          (cd "$ws" && bazel --max_idle_secs=60 --output_base="$scratch_base" build --nobuild --lockfile_mode=update //app:app $leaf_tests)
-          cleanup_scratch
+          for arm in $ARMS; do
+            ws="${RUNNER_TEMP}/pristine-ws-$arm"
+            scratch_base="${RUNNER_TEMP}/scratch-outbase-$arm"
+            leaf_tests=$(cd "$ws" && bazel --max_idle_secs=60 --output_base="$scratch_base" query 'kind(dart_test, //...)')
+            test -n "$leaf_tests"
+            # shellcheck disable=SC2086
+            (cd "$ws" && bazel --max_idle_secs=60 --output_base="$scratch_base" build --nobuild --lockfile_mode=update //app:app $leaf_tests)
+            cleanup_scratch
+            test -f "$ws/MODULE.bazel.lock"
+          done
           trap - EXIT
-          test -f "$ws/MODULE.bazel.lock"
       - name: Run speed-of-light runner repeats
         env:
           REPEATS: ${{ inputs.repeats }}
         run: |
-          ws="${RUNNER_TEMP}/pristine-ws"
           tooling_base="${RUNNER_TEMP}/tooling-outbase"
-          results="${RUNNER_TEMP}/bench-results"
           case "$REPEATS" in
             '' | *[!0-9]* | 0*)
               echo "repeats must be a positive integer >= 1, got '$REPEATS'" >&2
               exit 1
               ;;
           esac
-          mkdir -p "$results"
           failed=0
+          read -ra arms <<< "$ARMS"
           for i in $(seq 1 "$REPEATS"); do
-            (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:runner -- \
-              --workspace="$ws" \
-              --repeat="$i" \
-              --repeats="$REPEATS" \
-              --out="$results/repeat-$i.json") || failed=1
+            # Odd repeats run the arms in order, even repeats in reverse, so
+            # neither arm always runs first on the runner.
+            order=("${arms[@]}")
+            if [ $((i % 2)) -eq 0 ]; then
+              order=()
+              for ((k = ${#arms[@]} - 1; k >= 0; k--)); do order+=("${arms[k]}"); done
+            fi
+            for arm in "${order[@]}"; do
+              mkdir -p "${RUNNER_TEMP}/bench-results-$arm"
+              (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:runner -- \
+                --workspace="${RUNNER_TEMP}/pristine-ws-$arm" \
+                --repeat="$i" \
+                --repeats="$REPEATS" \
+                --out="${RUNNER_TEMP}/bench-results-$arm/repeat-$i.json") || failed=1
+            done
           done
           exit "$failed"
       - name: Summarize speed-of-light results
@@ -115,17 +151,27 @@ jobs:
           REPEATS: ${{ inputs.repeats }}
         run: |
           tooling_base="${RUNNER_TEMP}/tooling-outbase"
-          results="${RUNNER_TEMP}/bench-results"
           case "$REPEATS" in
             '' | *[!0-9]* | 0*)
               echo "repeats must be a positive integer >= 1, got '$REPEATS'" >&2
               exit 1
               ;;
           esac
-          mkdir -p "$results"
           if ! sha="$(git -C "$GITHUB_WORKSPACE/rules-head" rev-parse HEAD 2>/dev/null)"; then
             sha="$HEAD_REF"
           fi
+          # One arm keeps dart-sol.json; an A/B run writes one file per arm and
+          # a paired report.
+          ab_args=()
+          if [ "$ARMS" = "off on" ]; then
+            results="${RUNNER_TEMP}/bench-results-off"
+            out="$GITHUB_WORKSPACE/dart-sol-off.json"
+            ab_args=(--on-results-dir="${RUNNER_TEMP}/bench-results-on" --on-out="$GITHUB_WORKSPACE/dart-sol-on.json" --ab-report="$GITHUB_WORKSPACE/dart-sol-ab.md")
+          else
+            results="${RUNNER_TEMP}/bench-results-$ARMS"
+            out="$GITHUB_WORKSPACE/dart-sol.json"
+          fi
+          mkdir -p "$results"
           summary_rc=0
           (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" run //perf:summarize -- \
             --results-dir="$results" \
@@ -133,10 +179,13 @@ jobs:
             --target-loc="$TARGET_LOC" \
             --seed="$SEED" \
             --repeats="$REPEATS" \
-            --out="$GITHUB_WORKSPACE/dart-sol.json") || summary_rc=$?
-          if [ -f "$GITHUB_WORKSPACE/dart-sol.json" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-            cat "$GITHUB_WORKSPACE/dart-sol.json" >> "$GITHUB_STEP_SUMMARY"
-          fi
+            --out="$out" \
+            "${ab_args[@]}") || summary_rc=$?
+          for f in dart-sol-ab.md dart-sol.json dart-sol-off.json dart-sol-on.json; do
+            if [ -f "$GITHUB_WORKSPACE/$f" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+              cat "$GITHUB_WORKSPACE/$f" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
           exit "$summary_rc"
       - name: Shut down tooling Bazel server
         if: ${{ always() }}
@@ -146,9 +195,23 @@ jobs:
             (cd tools-src/tools && bazel --max_idle_secs=60 --output_base="$tooling_base" shutdown) || echo "bazel shutdown failed" >&2
           fi
       - name: Upload dart-sol artifact
-        if: ${{ !cancelled() && inputs.head_ref != '' }}
+        if: ${{ !cancelled() && inputs.head_ref != '' && inputs.link_modules != 'ab' }}
         uses: actions/upload-artifact@v7
         with:
           name: dart-sol
           path: dart-sol.json
+          retention-days: 3
+      - name: Upload dart-sol-off artifact
+        if: ${{ !cancelled() && inputs.head_ref != '' && inputs.link_modules == 'ab' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: dart-sol-off
+          path: dart-sol-off.json
+          retention-days: 3
+      - name: Upload dart-sol-on artifact
+        if: ${{ !cancelled() && inputs.head_ref != '' && inputs.link_modules == 'ab' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: dart-sol-on
+          path: dart-sol-on.json
           retention-days: 3
