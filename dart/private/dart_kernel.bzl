@@ -829,11 +829,7 @@ def _kmod_run_action(ctx, executable, arguments, request, direct_inputs, action_
         arguments = arguments,
         inputs = depset(
             direct = direct_inputs,
-            transitive = [request.dep_kmods] + [
-                d
-                for d in [request.extra_inputs, request.closure_excluded]
-                if d
-            ],
+            transitive = [request.dep_kmods] + [d for d in [request.extra_inputs, request.closure_excluded] if d],
         ),
         tools = depset(action_tools, transitive = [runtime_files] if runtime_files != None else []),
         outputs = [request.output, request.excluded] + [f for f in [
@@ -849,9 +845,13 @@ def _kmod_run_action(ctx, executable, arguments, request, direct_inputs, action_
         # outline cache inside the process across a pool of `kernel_worker` children. Singleplex
         # still works when Bazel does not multiplex (`--noworker_multiplex`). The link and
         # analyzer-summary actions stay singleplex; see `kernel_link_action`.
+        # `supports-worker-cancellation`: `serveWorker` answers a cancel request and reaps the child
+        # compiler. Bazel sends that request only with `--experimental_worker_cancellation` and a
+        # sandboxed worker (dynamic execution, `--worker_sandboxing` or multiplex sandboxing).
         execution_requirements = {
             "supports-multiplex-workers": "1",
             "supports-workers": "1",
+            "supports-worker-cancellation": "1",
             "requires-worker-protocol": "proto",
         },
         # `tools` come from the exec tools toolchain (`kernel_tools_for`). A rule
