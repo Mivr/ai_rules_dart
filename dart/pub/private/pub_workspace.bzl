@@ -86,21 +86,21 @@ def _listed(patterns, path):
     """Returns whether any pattern matches the member path."""
     return any([_path_matches(pattern, path) for pattern in patterns])
 
-def _workspace_patterns(root_data, datas, root_dir):
+def _workspace_patterns(root_data, parsed, root_dir):
     """Returns (patterns, error): the root's entries plus those of listed members, recursively."""
     patterns, error = _entry_patterns(root_data, [], "the root pubspec.yaml")
     if error:
         return None, error
     done = {}
-    for _ in range(len(datas) + 1):
+    for _ in range(len(parsed) + 1):
         grew = False
-        for label in sorted(datas):
+        for label in sorted(parsed):
             member_dir = _member_dir(label, root_dir)
             if label in done or member_dir == None or not _listed(patterns, _segments(member_dir)):
                 continue
             done[label] = True
             grew = True
-            more, error = _entry_patterns(datas[label], _segments(member_dir), label)
+            more, error = _entry_patterns(parsed[label], _segments(member_dir), label)
             if error:
                 return None, error
             patterns += more
@@ -170,14 +170,14 @@ def pub_workspace_error(
     if not members:
         return None
     root = _with_overrides(root_text, root_overrides, "root pubspec.yaml")
-    datas = {label: _with_overrides(members[label], member_overrides.get(label), label) for label in members}
+    parsed = {label: _with_overrides(members[label], member_overrides.get(label), label) for label in members}
     patterns = None
     if root.get("workspace") != None:
-        patterns, error = _workspace_patterns(root, datas, root_package)
+        patterns, error = _workspace_patterns(root, parsed, root_package)
         if error:
             return error
     for label in sorted(members):
-        data = datas[label]
+        data = parsed[label]
         error = (_layout_error(label, patterns, root_package) or
                  _resolution_error(label, data) or
                  _name_error(label, data, locked_names, declared_names))
