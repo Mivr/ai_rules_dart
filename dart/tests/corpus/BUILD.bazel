@@ -94,7 +94,10 @@ dart_binary(
         compile_mode = mode,
         link_modules = True,
         main = "bin/main.dart",
-        deps = [":corpus_lib"],
+        deps = [
+            ":corpus_lib",
+            ":source_set_lib",
+        ],
     )
     for mode in [
         "exe",
