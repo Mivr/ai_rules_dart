@@ -141,6 +141,12 @@ void _writeResult(_SamplerJob job, String content) {
   tmp.renameSync(job.resultFile);
 }
 
+/// Reports a sampler failure on stderr and to the waiting [PeakRssRun.stop].
+void _reportFailure(_SamplerJob job, Object error) {
+  stderr.writeln('peak RSS sampler failed: $error');
+  _writeResult(job, 'error $error');
+}
+
 /// Isolate entry: samples until the stop file appears, then writes the peak.
 void _sampleUntilStopped(_SamplerJob job) {
   final watch = Stopwatch()..start();
@@ -158,8 +164,12 @@ void _sampleUntilStopped(_SamplerJob job) {
     }
     sampler.stop();
     _writeResult(job, 'ok ${sampler.peakBytes}');
-  } on Object catch (e) {
-    _writeResult(job, 'error $e');
+  } on FileSystemException catch (e) {
+    _reportFailure(job, e);
+  } on ArgumentError catch (e) {
+    _reportFailure(job, e);
+  } on StateError catch (e) {
+    _reportFailure(job, e);
   }
 }
 
