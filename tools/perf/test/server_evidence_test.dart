@@ -72,9 +72,8 @@ final class _Fixture {
     Directory('${dir.path}/ws-32').createSync();
     File('${dir.path}/ws-32/BUILD').writeAsStringSync('x');
     cgroup.writeAsStringSync('populated 1\noom_kill 1\n');
-    File(
-      '${dir.path}/meminfo',
-    ).writeAsStringSync('MemTotal: 8000 kB\nMemAvailable: 123456 kB\n');
+    File('${dir.path}/meminfo')
+        .writeAsStringSync('MemTotal: 8000 kB\nMemAvailable: 123456 kB\n');
   }
 
   final Directory dir;
@@ -92,9 +91,8 @@ final class _Fixture {
     File('$outputBase/server/jvm.out').writeAsStringSync(_numbered('jvm', 60));
     if (javaLog) {
       File('$outputBase/java.log.host.user.1').writeAsStringSync('old\n');
-      File(
-        '$outputBase/java.log.host.user.2',
-      ).writeAsStringSync(_numbered('jlog', 60));
+      File('$outputBase/java.log.host.user.2')
+          .writeAsStringSync(_numbered('jlog', 60));
     }
   }
 

@@ -143,7 +143,12 @@ void _testSamplingCadenceAndFinalSample() {
 }
 
 /// The sampler runs while the calling isolate blocks inside a synchronous call.
+/// Needs a real `/proc`, so it runs on Linux only.
 void _testSamplesWhileBlocked() {
+  if (!Platform.isLinux) {
+    stdout.writeln('skip _testSamplesWhileBlocked: needs /proc (Linux only)');
+    return;
+  }
   final result = measurePeakRss(
     () => Process.runSync('sh', ['-c', 'sleep 0.6']).exitCode,
     reader: const LinuxProcReader(),
@@ -151,7 +156,29 @@ void _testSamplesWhileBlocked() {
     includeRoot: false,
   );
   _check(result.value == 0, 'body result is returned');
-  _check(result.peakMb > 0, 'the blocked call was sampled: ${result.peakMb}');
+  final peak = result.peakMb;
+  _check(peak != null && peak > 0, 'the blocked call was sampled: $peak');
+}
+
+/// Without `/proc` the peak is absent, never 0; the body still runs.
+void _testAbsentWithoutProc() {
+  final reason = peakRssUnavailableReason(const LinuxProcReader());
+  _check(
+    (reason == null) == Platform.isLinux,
+    'unavailable reason matches the host: $reason',
+  );
+  _check(
+    peakRssUnavailableReason(FakeProcReader(const {})) == null,
+    'a fake table is always readable',
+  );
+  if (Platform.isLinux) return;
+  final result = measurePeakRss(
+    () => 7,
+    reader: const LinuxProcReader(),
+    rootPid: pid,
+  );
+  _check(result.value == 7, 'body runs without /proc');
+  _check(result.peakMb == null, 'peak is null, not 0, without /proc');
 }
 
 void main() {
@@ -160,5 +187,6 @@ void main() {
   _testIntervalLimit();
   _testSamplingCadenceAndFinalSample();
   _testSamplesWhileBlocked();
+  _testAbsentWithoutProc();
   stdout.writeln('All peak_rss tests passed.');
 }
