@@ -8,9 +8,9 @@ String formatStepSummaryTable(Map<String, dynamic> summary) {
   final flows = summary['flows'] as Map<String, dynamic>? ?? const {};
   final buffer = StringBuffer();
   buffer.writeln(
-    '| Flow | Bazel (s) | Replay Sol (s) | Replay Ratio | Toolchain Floor (s) | Floor Ratio | Status |',
+    '| Flow | Bazel (s) | Replay Sol (s) | Replay Ratio | Toolchain Floor (s) | Floor Ratio | Peak RSS (MiB) | Status |',
   );
-  buffer.writeln('| :--- | :--- | :--- | :--- | :--- | :--- | :--- |');
+  buffer.writeln('| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |');
 
   for (final key in expectedFlowKeys) {
     final flow = flows[key] as Map<String, dynamic>?;
@@ -29,12 +29,14 @@ String formatStepSummaryTable(Map<String, dynamic> summary) {
     final bazelStr = bazel != null ? bazel.toStringAsFixed(6) : '-';
     final solStr = sol != null ? sol.toStringAsFixed(6) : '-';
     final floorStr = floor != null ? floor.toStringAsFixed(6) : '-';
+    final peak = flow['peak_rss_mb'] as num?;
+    final peakStr = peak != null ? peak.toStringAsFixed(1) : '-';
     final okStatus =
         flow['reason'] == 'ok' &&
         (flow['floor_reason'] == null || flow['floor_reason'] == 'ok');
     final status = okStatus ? 'ok' : 'fail';
     buffer.writeln(
-      '| $key | $bazelStr | $solStr | $replayRatio | $floorStr | $floorRatio | $status |',
+      '| $key | $bazelStr | $solStr | $replayRatio | $floorStr | $floorRatio | $peakStr | $status |',
     );
   }
 
