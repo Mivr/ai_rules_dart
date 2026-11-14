@@ -31,5 +31,12 @@ link_check_refusal_test(
         "Unset link_modules",
     ],
     main = "//dart/private/tools:noop.dart",
+    # The rule writes a `.sh` test executable, which Windows cannot launch; the
+    # analysis tests above still run there. Same convention as
+    # `dart_test_runner_visibility_test`.
+    target_compatible_with = select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [":mirrors_dep"],
 )
