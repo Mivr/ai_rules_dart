@@ -7,6 +7,17 @@ import 'cli_args.dart';
 import 'generator.dart';
 import 'library_shape.dart';
 
+/// Reads `--link-modules[=on|off|true|false]`; null when the value is invalid.
+bool? _linkModulesFlag(Map<String, List<String>> flags) {
+  final raw = lastFlagValue(flags, const ['link-modules', 'link_modules']);
+  if (raw == null) return false;
+  return switch (raw.toLowerCase()) {
+    '' || 'on' || 'true' => true,
+    'off' || 'false' => false,
+    _ => null,
+  };
+}
+
 /// Runs the `generate` CLI and returns its exit code.
 int runGenerateCli(List<String> args) {
   final flags = parseCliFlags(args);
@@ -16,6 +27,7 @@ int runGenerateCli(List<String> args) {
     'loc',
   ], defaultValue: 500000);
   final seed = intFlagValue(flags, const ['seed'], defaultValue: 1);
+  final linkModules = _linkModulesFlag(flags);
   final resolution = resolveShapeFlags(flags);
   final shape = resolution.shape;
   final rawRulesDart = lastFlagValue(flags, const [
@@ -38,12 +50,13 @@ int runGenerateCli(List<String> args) {
       targetLoc == null ||
       targetLoc <= 0 ||
       seed == null ||
+      linkModules == null ||
       shape == null) {
     final error = resolution.error;
     if (error != null) stderr.writeln(error);
     stderr.writeln(
       'Usage: generate --target-loc=<positive-int> --seed=<int> '
-      '--rules-dart=<path> --out=<path> [--libraries=<n>]',
+      '--rules-dart=<path> --out=<path> [--libraries=<n>] [--link-modules]',
     );
     return 1;
   }
@@ -62,6 +75,7 @@ int runGenerateCli(List<String> args) {
     outputPath: out,
     layers: shape.layers,
     fanout: shape.fanout,
+    linkModules: linkModules,
   );
 
   generateWorkspace(options);

@@ -105,6 +105,47 @@ void _testUnchangedWithoutLibraries(Directory root, Directory rules) {
   _check(_packageCount(plain) == 32, 'default shape is 32 libraries');
 }
 
+void _testLinkModulesFlag(Directory root, Directory rules) {
+  final plain = '${root.path}/lm_plain';
+  final on = '${root.path}/lm_on';
+  final off = '${root.path}/lm_off';
+  _check(_generate(rules, plain, []) == 0, 'default generate exits 0');
+  _check(
+    _generate(rules, on, ['--link-modules']) == 0,
+    '--link-modules exits 0',
+  );
+  _check(
+    _generate(rules, off, ['--link-modules=off']) == 0,
+    '--link-modules=off exits 0',
+  );
+  final base = _snapshot(plain);
+  _check(
+    _snapshot(off).toString() == base.toString(),
+    '--link-modules=off matches the default output',
+  );
+  _check(
+    !base['app/BUILD.bazel']!.contains('link_modules'),
+    'the default app has no link_modules',
+  );
+  final enabled = _snapshot(on);
+  _check(
+    enabled['app/BUILD.bazel']!.contains('    link_modules = True,\n'),
+    '--link-modules writes link_modules = True',
+  );
+  enabled.remove('app/BUILD.bazel');
+  base.remove('app/BUILD.bazel');
+  _check(
+    enabled.toString() == base.toString(),
+    '--link-modules changes nothing but app/BUILD.bazel',
+  );
+  final bad = '${root.path}/lm_bad';
+  _check(
+    _generate(rules, bad, ['--link-modules=maybe']) == 1,
+    '--link-modules=maybe exits 1',
+  );
+  _check(!Directory(bad).existsSync(), 'an invalid flag writes nothing');
+}
+
 void main() {
   _testShapes();
   final root = Directory.systemTemp.createTempSync('rd_gen_cli_');
@@ -113,6 +154,7 @@ void main() {
     _testLibrariesFlag(root, rules);
     _testConflictsAndInvalid(root, rules);
     _testUnchangedWithoutLibraries(root, rules);
+    _testLinkModulesFlag(root, rules);
   } finally {
     root.deleteSync(recursive: true);
   }

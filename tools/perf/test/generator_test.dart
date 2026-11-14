@@ -615,7 +615,84 @@ void _testConsumerPresetImport() {
   }
 }
 
+Map<String, String> _treeContents(String root) {
+  final prefix = root.length + 1;
+  return {
+    for (final f in Directory(root).listSync(recursive: true))
+      if (f is File) f.path.substring(prefix): f.readAsStringSync(),
+  };
+}
+
+void _testLinkModulesOption() {
+  final tempDir = Directory.systemTemp.createTempSync('rd_link_modules_');
+  try {
+    final rules = Directory('${tempDir.path}/rules')..createSync();
+    File('${rules.path}/MODULE.bazel')
+        .writeAsStringSync('module(name = "rules_dart", version = "1")\n');
+    String generate(String name, {bool? linkModules}) {
+      final out = '${tempDir.path}/$name';
+      generateWorkspace(
+        linkModules == null
+            ? GeneratorOptions(
+                targetLoc: 600,
+                seed: 4,
+                rulesDartPath: rules.path,
+                outputPath: out,
+              )
+            : GeneratorOptions(
+                targetLoc: 600,
+                seed: 4,
+                rulesDartPath: rules.path,
+                outputPath: out,
+                linkModules: linkModules,
+              ),
+      );
+      return out;
+    }
+
+    final plain = _treeContents(generate('plain'));
+    final off = _treeContents(generate('off', linkModules: false));
+    final on = _treeContents(generate('on', linkModules: true));
+    _check(
+      off.toString() == plain.toString(),
+      'linkModules: false writes the default workspace byte for byte',
+    );
+    final appBuild = plain['app/BUILD.bazel']!;
+    _check(
+      !appBuild.contains('link_modules') &&
+          appBuild.contains(
+            'name = "app",\n    main = "bin/main.dart",\n    deps = [\n',
+          ),
+      'the default //app:app has no link_modules attribute',
+    );
+    _check(
+      on.keys.toSet().difference(plain.keys.toSet()).isEmpty &&
+          plain.keys.toSet().difference(on.keys.toSet()).isEmpty,
+      'linkModules adds and removes no file',
+    );
+    final differing = [
+      for (final key in plain.keys)
+        if (plain[key] != on[key]) key,
+    ];
+    _check(
+      differing.length == 1 && differing.single == 'app/BUILD.bazel',
+      'only app/BUILD.bazel differs when linkModules is on, got $differing',
+    );
+    _check(
+      on['app/BUILD.bazel'] ==
+          appBuild.replaceFirst(
+            'main = "bin/main.dart",\n',
+            'main = "bin/main.dart",\n    link_modules = True,\n',
+          ),
+      'the on //app:app only gains link_modules = True',
+    );
+  } finally {
+    _deleteTemp(tempDir);
+  }
+}
+
 void main() {
+  _testLinkModulesOption();
   _testConsumerPresetImport();
   _testModuleBazelParsing();
   _testCliPathAndEnvHelpers();
