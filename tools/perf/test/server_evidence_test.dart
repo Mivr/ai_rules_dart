@@ -41,6 +41,9 @@ final class _ScriptedReader implements ProcReader {
   int get clockTicksPerSecond => 100;
 
   @override
+  int get pageSizeBytes => 4096;
+
+  @override
   Map<int, ProcStat> readAllProcesses() =>
       tables[_reads < tables.length ? _reads++ : tables.length - 1];
 }
