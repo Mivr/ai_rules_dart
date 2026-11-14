@@ -200,6 +200,7 @@ final class FlowResult {
     required this.reason,
     required this.chain,
     required this.workerSteps,
+    this.peakRssMb,
   }) : floor = FlowFloorData.disabled;
 
   /// Creates a flow result record including floor data.
@@ -208,6 +209,7 @@ final class FlowResult {
     required this.bazelCpu,
     required FlowReplayData replay,
     this.floor = FlowFloorData.disabled,
+    this.peakRssMb,
   }) : solCpu = replay.solCpu,
        identical = replay.identical,
        reason = replay.reason,
@@ -238,6 +240,25 @@ final class FlowResult {
   /// Toolchain floor data.
   final FlowFloorData floor;
 
+  /// Peak summed resident set (MiB) of the measured Bazel command's process
+  /// tree, or null when the flow failed or was not sampled.
+  final double? peakRssMb;
+
+  /// A copy of this result carrying [peak] as [peakRssMb].
+  FlowResult withPeakRssMb(double? peak) => FlowResult.withFloor(
+    method: method,
+    bazelCpu: bazelCpu,
+    replay: FlowReplayData(
+      solCpu: solCpu,
+      identical: identical,
+      reason: reason,
+      chain: chain,
+      workerSteps: workerSteps,
+    ),
+    floor: floor,
+    peakRssMb: peak,
+  );
+
   /// Timed floor CPU seconds.
   double? get toolchainFloorCpu => floor.cpuSeconds;
 
@@ -262,6 +283,7 @@ final class FlowResult {
     'reason': reason,
     'chain': chain,
     'workerSteps': workerSteps,
+    if (peakRssMb != null) 'peak_rss_mb': peakRssMb,
     if (floor.enabled) ...{
       'floor_enabled': floor.enabled,
       'floor_identical': floor.identical,
@@ -335,6 +357,7 @@ final class FlowResult {
         workerSteps: workerSteps,
       ),
       floor: floorData,
+      peakRssMb: (json['peak_rss_mb'] as num?)?.toDouble(),
     );
   }
 }
@@ -567,6 +590,7 @@ final class _FlowAccumulator {
   final List<double> bazelVals = [];
   final List<double> solVals = [];
   final List<double> floorVals = [];
+  final List<double> peakRssVals = [];
   bool allIdentical = true;
   bool allFloorIdentical = true;
   bool floorEnabled = false;
@@ -645,6 +669,7 @@ final class _FlowAccumulator {
     }
     _recordReplay(f);
     _recordFloor(f);
+    if (f.peakRssMb != null) peakRssVals.add(f.peakRssMb!);
   }
 }
 
@@ -672,6 +697,12 @@ Map<String, dynamic> _resolveFlowChain(
     solCpu: solMedian != null ? _roundCpu(solMedian) : null,
     reason: reason,
   );
+}
+
+Map<String, dynamic> _peakRssField(_FlowAccumulator acc) {
+  final median = calculateMedian(acc.peakRssVals);
+  if (median == null) return const {};
+  return {'peak_rss_mb': double.parse(median.toStringAsFixed(3))};
 }
 
 List<double>? _calculateSpread(List<double> vals, {bool valid = true}) {
@@ -767,6 +798,7 @@ Map<String, dynamic> _buildFlowEntry(
     ),
     'identical': isIdentical,
     'method': key == 'dart-app-clean' ? 'batch' : 'warm-server',
+    ..._peakRssField(acc),
     'reason': reason,
     'sol': solMedian != null ? _roundCpu(solMedian) : null,
     'spread': _buildSpreadMap(

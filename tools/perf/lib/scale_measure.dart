@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'cli_args.dart';
 import 'cpu.dart';
+import 'peak_rss.dart';
 import 'proc.dart';
 import 'runner.dart';
 import 'scale_report.dart';
@@ -14,7 +15,12 @@ import 'server_heap.dart';
 import 'spawn_log.dart';
 
 /// CPU seconds, wall seconds and result of one measured Bazel command.
-typedef _Timed = ({ProcessResult result, double cpu, double wall});
+typedef _Timed = ({
+  ProcessResult result,
+  double cpu,
+  double wall,
+  double peakMb,
+});
 
 /// Runs `bazel` with [args] in [workspace] on [outputBase].
 typedef BazelRunner =
@@ -210,7 +216,11 @@ final class ScaleMeasurer {
     final before = takeServerTreeSnapshot(procReader, pid);
     final clientBefore = clock.getChildCpuSeconds();
     final watch = Stopwatch()..start();
-    final result = _bazel(p.workspace, p.outputBase, args);
+    final (value: result, :peakMb) = measurePeakRss(
+      () => _bazel(p.workspace, p.outputBase, args),
+      reader: procReader,
+      rootPid: pid,
+    );
     watch.stop();
     final clientDelta = clock.getChildCpuSeconds() - clientBefore;
     _failOnBadOutcome(p, args, result, before, oomBefore);
@@ -223,6 +233,7 @@ final class ScaleMeasurer {
       result: result,
       cpu: (clientDelta > 0 ? clientDelta : 0.0) + server,
       wall: watch.elapsedMicroseconds / 1e6,
+      peakMb: peakMb,
     );
   }
 
@@ -270,6 +281,7 @@ final class ScaleMeasurer {
     return FlowMeasurement(
       cpuSeconds: t.cpu,
       wallSeconds: t.wall,
+      peakRssMb: t.peakMb,
       actionCount: spawns.length,
       maxCommandLineBytes: _largest(spawns.map((s) => s.commandArgs)),
       reproducible: reproducible,
@@ -381,6 +393,7 @@ final class ScaleMeasurer {
     return FlowMeasurement(
       cpuSeconds: timed.cpu,
       wallSeconds: timed.wall,
+      peakRssMb: timed.peakMb,
       actionCount: actions.length,
       maxCommandLineBytes: _largest([
         for (final a in actions.cast<Map<String, dynamic>>())

@@ -17,9 +17,13 @@ const List<String> scaleFlows = [
 const List<String> scaleMetrics = [
   'cpu_seconds',
   'wall_seconds',
+  'peak_rss_mb',
   'action_count',
   'max_command_line_bytes',
 ];
+
+/// Metrics reported with a growth exponent but held to no ceiling.
+const Set<String> reportOnlyScaleMetrics = {'peak_rss_mb'};
 
 /// What Bazel's own counters said about one flow at one size.
 final class FlowMeasurement {
@@ -31,6 +35,7 @@ final class FlowMeasurement {
     required this.maxCommandLineBytes,
     this.reproducible = true,
     this.serverHeap,
+    this.peakRssMb,
   }) : error = null;
 
   /// Creates a measurement of a flow that failed with [error].
@@ -40,7 +45,8 @@ final class FlowMeasurement {
       actionCount = 0,
       maxCommandLineBytes = 0,
       reproducible = true,
-      serverHeap = null;
+      serverHeap = null,
+      peakRssMb = null;
 
   /// Client plus server CPU seconds.
   final double cpuSeconds;
@@ -53,6 +59,10 @@ final class FlowMeasurement {
 
   /// Bytes of the largest action command line.
   final int maxCommandLineBytes;
+
+  /// Peak summed resident set (MiB) of the measured Bazel server tree, or
+  /// null when it was not measured or the flow failed.
+  final double? peakRssMb;
 
   /// Whether the flow's outputs matched on a repeated run.
   final bool reproducible;
@@ -71,13 +81,15 @@ final class FlowMeasurement {
     maxCommandLineBytes: maxCommandLineBytes,
     reproducible: reproducible,
     serverHeap: heap,
+    peakRssMb: peakRssMb,
   );
 
-  /// The value of [metric].
-  double metric(String metric) => switch (metric) {
+  /// The value of [metric], or null when it was not measured.
+  double? metric(String metric) => switch (metric) {
     'cpu_seconds' => cpuSeconds,
     'wall_seconds' => wallSeconds,
     'action_count' => actionCount.toDouble(),
+    'peak_rss_mb' => peakRssMb,
     'max_command_line_bytes' => maxCommandLineBytes.toDouble(),
     _ => throw ArgumentError.value(metric, 'metric', 'unknown metric'),
   };
@@ -105,7 +117,8 @@ final class ScaleOutcome {
   try {
     return (
       fitGrowthExponent([
-        for (final e in byLibraries.entries) (e.key, e.value.metric(metric)),
+        for (final e in byLibraries.entries)
+          if (e.value.metric(metric) case final value?) (e.key, value),
       ]),
       null,
     );
@@ -113,6 +126,9 @@ final class ScaleOutcome {
     return (null, '${e.message}');
   }
 }
+
+double? _perLibrary(double? value, int libraries) =>
+    value == null ? null : value / libraries;
 
 Map<String, Object?> _flowReport(
   String flow,
@@ -129,10 +145,11 @@ Map<String, Object?> _flowReport(
     };
     perLibrary[metric] = {
       for (final e in byLibraries.entries)
-        '${e.key}': e.value.metric(metric) / e.key,
+        '${e.key}': _perLibrary(e.value.metric(metric), e.key),
     };
     final (exponent, reason) = _fit(byLibraries, metric);
     exponents[metric] = exponent;
+    if (reportOnlyScaleMetrics.contains(metric)) continue;
     if (exponent == null) {
       problems.add('$flow $metric: growth exponent undefined: $reason');
     } else if (ceiling != null && exponent > ceiling) {
