@@ -22,25 +22,68 @@ typedef WorkHandler = Future<WorkResult> Function(
   Future<void> cancelled,
 );
 
-/// The `request_id` and `cancel` fields of a raw `WorkRequest` payload. The
-/// other fields are skipped, so a request with thousands of inputs is not
-/// decoded twice.
-({int requestId, bool cancel}) peekWorkRequest(Uint8List frame) {
+/// What [peekWorkRequest] read before it stopped: `error` is the decode
+/// failure, if any, and the other fields keep what was read until then.
+typedef _Header = ({int requestId, bool cancel, FormatException? error});
+
+_Header _peekHeader(Uint8List frame) {
   final reader = WorkerReader(frame);
   var requestId = 0;
   var cancel = false;
-  while (!reader.isDone) {
-    final int tag = reader.varint();
-    switch (tag >> 3) {
-      case 3:
-        requestId = reader.varint();
-      case 4:
-        cancel = reader.varint() != 0;
-      default:
-        reader.skip(tag & 7);
+  try {
+    while (!reader.isDone) {
+      final int tag = reader.varint();
+      switch (tag >> 3) {
+        case 3:
+          requestId = reader.varint();
+        case 4:
+          cancel = reader.varint() != 0;
+        default:
+          reader.skip(tag & 7);
+      }
     }
+  } on FormatException catch (error) {
+    return (requestId: requestId, cancel: cancel, error: error);
   }
-  return (requestId: requestId, cancel: cancel);
+  return (requestId: requestId, cancel: cancel, error: null);
+}
+
+/// The `request_id` and `cancel` fields of a raw `WorkRequest` payload. The
+/// other fields are skipped, so a request with thousands of inputs is not
+/// decoded twice. Throws a [FormatException] when the payload does not decode.
+({int requestId, bool cancel}) peekWorkRequest(Uint8List frame) {
+  final _Header header = _peekHeader(frame);
+  final FormatException? error = header.error;
+  if (error != null) throw error;
+  return (requestId: header.requestId, cancel: header.cancel);
+}
+
+/// The answer to a frame that is not a `WorkRequest`; the text also goes to
+/// stderr.
+WorkerResponse _malformedResponse(Uint8List frame, _Header header) {
+  final report =
+      'worker: malformed WorkRequest frame of ${frame.length} bytes: '
+      '${header.error}\n';
+  stderr.write(report);
+  return WorkerResponse(
+    exitCode: 1,
+    output: report,
+    requestId: header.requestId,
+  );
+}
+
+/// Writes responses one at a time: an `IOSink` rejects an add while a flush is
+/// pending.
+Future<void> Function(WorkerResponse) _serialWriter(IOSink output) {
+  var writes = Future<void>.value();
+  return (WorkerResponse response) {
+    final Future<void> turn = writes.then((_) async {
+      output.add(response.write());
+      await output.flush();
+    });
+    writes = turn;
+    return turn;
+  };
 }
 
 /// One request being served: its cancel signal and whether it was answered.
@@ -81,17 +124,11 @@ Future<void> serveWorker({
   final jobs = <int, _Job>{};
   final running = <Future<void>>{};
   final _Slots slots = _createSlots(maxConcurrent);
-  var writes = Future<void>.value();
+  final Future<void> Function(WorkerResponse) send = _serialWriter(output);
   Future<void> answer(_Job job, WorkerResponse response) async {
     if (!job.markAnswered()) return;
     jobs.remove(job.requestId);
-    // One write at a time: an `IOSink` rejects an add while a flush is pending.
-    final Future<void> turn = writes.then((_) async {
-      output.add(response.write());
-      await output.flush();
-    });
-    writes = turn;
-    await turn;
+    await send(response);
   }
 
   Future<void> serve(_Job job, Uint8List frame) async {
@@ -123,8 +160,18 @@ Future<void> serveWorker({
     }
   }
 
+  void track(Future<void> task) {
+    running.add(task);
+    unawaited(task.whenComplete(() => running.remove(task)));
+  }
+
   await for (final Uint8List frame in WorkerFrames(input)) {
-    final ({int requestId, bool cancel}) header = peekWorkRequest(frame);
+    final _Header header = _peekHeader(frame);
+    if (header.error != null) {
+      // Not a job: its id may belong to a request in flight.
+      track(send(_malformedResponse(frame, header)));
+      continue;
+    }
     if (header.cancel) {
       final _Job? job = jobs[header.requestId];
       if (job != null && !job.cancelled.isCompleted) job.cancelled.complete();
@@ -132,9 +179,7 @@ Future<void> serveWorker({
     }
     final _Job job = _createJob(header.requestId);
     jobs[job.requestId] = job;
-    final Future<void> task = serve(job, frame);
-    running.add(task);
-    unawaited(task.whenComplete(() => running.remove(task)));
+    track(serve(job, frame));
   }
   await Future.wait(running.toList());
 }
