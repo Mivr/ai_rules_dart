@@ -126,11 +126,11 @@ void _verifySummarizeStep(String text) {
   );
   check(
     RegExp(
-      r'-f "\$GITHUB_WORKSPACE/dart-sol\.json" \]'
-      r'[^\n]*GITHUB_STEP_SUMMARY[\s\S]*?cat "\$GITHUB_WORKSPACE/dart-sol\.json"'
-      r' >> "\$GITHUB_STEP_SUMMARY"',
+      r'for f in dart-sol-ab\.md dart-sol\.json dart-sol-off\.json dart-sol-on\.json; do'
+      r'[\s\S]*?-f "\$GITHUB_WORKSPACE/\$f" \][^\n]*GITHUB_STEP_SUMMARY'
+      r'[\s\S]*?cat "\$GITHUB_WORKSPACE/\$f" >> "\$GITHUB_STEP_SUMMARY"',
     ).hasMatch(script),
-    'summarize appends dart-sol.json to the step summary when it exists',
+    'summarize appends every summary file it wrote to the step summary',
   );
   check(
     script.trimRight().split('\n').last.trim() == r'exit "$summary_rc"',
@@ -146,13 +146,17 @@ void _verifyTailSteps(String text) {
     ).block.contains(r'if: ${{ always() }}'),
     'shutdown step runs on always()',
   );
-  check(
-    requireStep(
-      text,
-      'Upload dart-sol artifact',
-    ).block.contains(r"if: ${{ !cancelled() && inputs.head_ref != '' }}"),
-    'upload step runs on !cancelled() && head_ref set',
-  );
+  const guard = r"!cancelled() && inputs.head_ref != '' && inputs.link_modules";
+  for (final (name, op) in [
+    ('Upload dart-sol artifact', '!='),
+    ('Upload dart-sol-off artifact', '=='),
+    ('Upload dart-sol-on artifact', '=='),
+  ]) {
+    check(
+      requireStep(text, name).block.contains("if: \${{ $guard $op 'ab' }}"),
+      '$name runs on !cancelled(), head_ref set and link_modules $op ab',
+    );
+  }
 }
 
 /// Verifies per-step failure-propagation invariants of [text].
@@ -168,7 +172,12 @@ void verifyWorkflowSteps(String text) {
 }
 
 /// Result of running a step script under bash.
-typedef ShellOutcome = ({int exitCode, String log, String summary});
+typedef ShellOutcome = ({
+  int exitCode,
+  String log,
+  String summary,
+  String githubEnv,
+});
 
 const String _stubBazel = r'''#!/bin/bash
 echo "$*" >> "$STUB_LOG"
@@ -181,7 +190,11 @@ case "$*" in
     ;;
   *//perf:summarize*)
     for a in "$@"; do
-      case "$a" in --out=*) echo '{"flows":{}}' > "${a#--out=}" ;; esac
+      case "$a" in
+        --out=*) echo '{"flows":{}}' > "${a#--out=}" ;;
+        --on-out=*) echo '{"flows":{"on":1}}' > "${a#--on-out=}" ;;
+        --ab-report=*) echo 'paired table' > "${a#--ab-report=}" ;;
+      esac
     done
     exit "${STUB_SUMMARY_RC:-0}"
     ;;
@@ -199,6 +212,7 @@ ShellOutcome runStepScript(String script, {required Map<String, String> env}) {
     final logFile = File('${root.path}/stub.log')..writeAsStringSync('');
     final summaryFile = File('${root.path}/step_summary.md')
       ..writeAsStringSync('');
+    final envFile = File('${root.path}/github_env')..writeAsStringSync('');
     final res = Process.runSync(
       'bash',
       ['-eo', 'pipefail', '-c', script],
@@ -208,7 +222,9 @@ ShellOutcome runStepScript(String script, {required Map<String, String> env}) {
         'RUNNER_TEMP': '${root.path}/tmp',
         'GITHUB_WORKSPACE': root.path,
         'GITHUB_STEP_SUMMARY': summaryFile.path,
+        'GITHUB_ENV': envFile.path,
         'STUB_LOG': logFile.path,
+        'ARMS': 'off',
         'HEAD_REF': 'main',
         'TARGET_LOC': '1000',
         'SEED': '1',
@@ -219,6 +235,7 @@ ShellOutcome runStepScript(String script, {required Map<String, String> env}) {
       exitCode: res.exitCode,
       log: logFile.readAsStringSync(),
       summary: summaryFile.readAsStringSync(),
+      githubEnv: envFile.readAsStringSync(),
     );
   } finally {
     root.deleteSync(recursive: true);
@@ -269,4 +286,93 @@ void verifyStepScriptsExecute(String text) {
   );
   final green = runStepScript(summarize, env: {'REPEATS': '2'});
   check(green.exitCode == 0, 'successful //perf:summarize exits 0');
+}
+
+/// The `repeat:arm` of every `//perf:runner` call in [log], in call order.
+List<String> runnerCalls(String log) => [
+  for (final line in log.split('\n'))
+    if (line.contains('//perf:runner'))
+      '${RegExp(r'--repeat=(\d+)').firstMatch(line)!.group(1)}:'
+          '${RegExp(r'pristine-ws-(\w+)').firstMatch(line)!.group(1)}',
+];
+
+void _verifyResolveArms(String text) {
+  final resolve = requireStep(text, 'Resolve link_modules arms').script;
+  for (final (mode, arms) in [('off', 'off'), ('on', 'on'), ('ab', 'off on')]) {
+    final out = runStepScript(resolve, env: {'LINK_MODULES': mode});
+    check(out.exitCode == 0, 'link_modules=$mode resolves');
+    check(out.githubEnv.trim() == 'ARMS=$arms', 'link_modules=$mode -> $arms');
+  }
+  for (final bad in ['', 'both', 'OFF', 'ab on']) {
+    final out = runStepScript(resolve, env: {'LINK_MODULES': bad});
+    check(out.exitCode != 0, 'link_modules="$bad" is refused');
+    check(out.githubEnv.isEmpty, 'link_modules="$bad" sets no arms');
+  }
+}
+
+void _verifyGenerateArms(String text) {
+  final generate = requireStep(text, 'Generate pristine monorepo').script;
+  final ab = runStepScript(generate, env: {'ARMS': 'off on'});
+  final calls = ab.log.split('\n').where((l) => l.contains('//perf:generate'));
+  check(calls.length == 2, 'ab generates two workspaces, got $calls');
+  check(
+    calls.first.contains('--link-modules=off') &&
+        calls.last.contains('--link-modules=on'),
+    'ab generates the off and on arms',
+  );
+  check(
+    calls.every(
+      (l) => l.contains('--seed=1') && l.contains('--target-loc=1000'),
+    ),
+    'both arms share the seed and size',
+  );
+  final single = runStepScript(generate, env: {'ARMS': 'on'});
+  check(
+    single.log.split('\n').where((l) => l.contains('//perf:generate')).length ==
+        1,
+    'a single arm generates one workspace',
+  );
+}
+
+void _verifyArmOrder(String text) {
+  final repeats = requireStep(text, repeatsStepName).script;
+  final ab = runStepScript(repeats, env: {'ARMS': 'off on', 'REPEATS': '3'});
+  check(ab.exitCode == 0, 'an ab run of the repeats exits 0');
+  check(
+    runnerCalls(ab.log).join(' ') == '1:off 1:on 2:on 2:off 3:off 3:on',
+    'ab alternates the arm order per repeat, got ${runnerCalls(ab.log)}',
+  );
+  final on = runStepScript(repeats, env: {'ARMS': 'on', 'REPEATS': '2'});
+  check(runnerCalls(on.log).join(' ') == '1:on 2:on', 'one arm runs in place');
+  final failing = runStepScript(
+    repeats,
+    env: {'ARMS': 'off on', 'REPEATS': '2', 'STUB_FAIL_REPEAT': '1'},
+  );
+  check(failing.exitCode != 0, 'a failed arm run fails the ab step');
+  check(runnerCalls(failing.log).length == 4, 'the other runs still happen');
+}
+
+void _verifySummarizeArms(String text) {
+  final summarize = requireStep(text, summarizeStepName).script;
+  final ab = runStepScript(summarize, env: {'ARMS': 'off on', 'REPEATS': '2'});
+  check(ab.exitCode == 0, 'an ab summarize exits 0');
+  for (final flag in ['--on-results-dir=', '--on-out=', '--ab-report=']) {
+    check(ab.log.contains(flag), 'ab summarize passes $flag');
+  }
+  check(
+    ab.log.contains('dart-sol-off.json') && ab.log.contains('dart-sol-on.json'),
+    'ab summarize writes one JSON per arm',
+  );
+  check(ab.summary.contains('paired table'), 'the paired report is shown');
+  final one = runStepScript(summarize, env: {'ARMS': 'on', 'REPEATS': '2'});
+  check(!one.log.contains('--on-'), 'a single arm summarizes alone');
+  check(one.log.contains('/dart-sol.json'), 'a single arm keeps dart-sol.json');
+}
+
+/// Executes the arm resolution, generation, ordering and summary scripts.
+void verifyArmScriptsExecute(String text) {
+  _verifyResolveArms(text);
+  _verifyGenerateArms(text);
+  _verifyArmOrder(text);
+  _verifySummarizeArms(text);
 }
