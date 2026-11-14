@@ -87,6 +87,21 @@ dart_binary(
     ],
 )
 
+# The opted-in linked path (`link_modules`) for each mode that takes it.
+[
+    dart_binary(
+        name = "linked_bin_" + mode.replace("-", "_"),
+        compile_mode = mode,
+        link_modules = True,
+        main = "bin/main.dart",
+        deps = [":corpus_lib"],
+    )
+    for mode in [
+        "exe",
+        "aot-snapshot",
+    ]
+]
+
 dart_test(
     name = "corpus_test",
     size = "small" if semver_gt("1.0.0", "0.9.0") else "medium",
