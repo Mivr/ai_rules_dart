@@ -824,6 +824,41 @@ dart_binary(
     visibility = ["//dart:__subpackages__"],
 )
 
+# The `link_modules` check (see `link_check.dart`): refuses `dart:mirrors` and
+# `dart.library.mirrors` in the closure of an opted-in `exe` or `aot-snapshot`
+# binary. Built like `import_check`: it reads `expandSource` from that tool
+# through `srcs`, and never opts in itself, so it does not depend on itself.
+dart_binary(
+    name = "link_check",
+    srcs = [
+        "import_check.dart",
+        "kernel_module_import_check.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    code_assets_from_deps = False,
+    compile_mode = "aot-snapshot",
+    main = "link_check.dart",
+    modular_kernel = False,
+    # `dartaotruntime` runs the raw snapshot, so it must stay the executable.
+    snapshot_launcher = False,
+    visibility = ["//dart:__subpackages__"],
+)
+
+dart_test(
+    name = "link_check_test",
+    size = "small",
+    srcs = [
+        "import_check.dart",
+        "kernel_module_import_check.dart",
+        "link_check.dart",
+        "//dart/guard:lib/directive_guard.dart",
+    ],
+    main = "link_check_test.dart",
+    deps = [
+        "@ext_pub_deps//:test",
+    ],
+)
+
 # The layering check's unit tests.
 dart_test(
     name = "import_check_test",

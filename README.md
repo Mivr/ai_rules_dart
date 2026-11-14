@@ -158,6 +158,26 @@ Modular kernel compilation is on by default (`//dart:modular_kernel` defaults to
 on an individual `dart_binary` to opt out and restore whole-program kernel
 compiles.
 
+`exe` and `aot-snapshot` binaries compile from sources by default, whatever
+`modular_kernel` says: modules compile against the JIT platform, and at SDK
+3.13.5 a module compile has no AOT target. Probed at that SDK, only
+`dart.library.mirrors` differs (true on the JIT VM, false in AOT); `io`, `html`,
+`js_interop`, `ffi`, `isolate`, `developer` and the other `dart.library.*` keys
+agree, and `dart.vm.product` differs only for a module compiled with it false,
+which only `dart_test` does. `dart_binary(link_modules = True)` opts an
+individual `exe` or `aot-snapshot` target into the linked per-library kernel
+path (modules, one link, then the whole-program steps over the linked kernel
+with no `.dart` source as an input), so a body edit recompiles one module. It
+applies to a target eligible for modular compilation, with `dart.vm.product`
+true and not the `dbg` compilation mode; any other target takes the source path
+silently. An opted-in target also runs one validation action over every `.dart`
+file of its dependency closure, other repositories' packages included. The build
+fails with one `<path>:<line>: <what>` line per `import` or `export` of
+`dart:mirrors`, per `dart.library.mirrors` key of an `if (...)` configuration and
+per `bool.fromEnvironment` call naming it; comments are skipped and a name built
+at run time is out of reach. Unset `link_modules` to compile such a closure from
+sources. The default stays the source path; revisit at the next SDK pin.
+
 A `dart_test` or kernel-mode `dart_binary` falls back to a whole-program compile
 on its own when `modular_kernel = False`, when its own `defines` or
 `dart_compile_flags` attribute is set, or when its closure embeds native code

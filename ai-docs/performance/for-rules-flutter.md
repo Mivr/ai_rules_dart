@@ -99,6 +99,24 @@ normal for any rule-set bump, but it bit this repository once.
 - Workers: `DartKernel` actions run in a persistent worker by default (peak
   ~400 MB RSS each).
 
+### `dart_binary(link_modules = True)` (item 380)
+
+- `exe` and `aot-snapshot` compile from sources by default (item 313); the
+  attribute `link_modules` (default `False`) sends one target through the linked
+  per-library kernel path again (`dart/private/binary_compile.bzl`). It is a
+  `dart_binary` attribute and an attribute of `dart_kernel_module_aspect`, so a
+  rule set that wraps `dart_binary`'s deps with that aspect sees the modules only
+  for an opted-in binary.
+- Facts probed at SDK 3.13.5: of every `dart.library.*` key, only
+  `dart.library.mirrors` differs between the JIT VM and AOT; `dart.vm.product`
+  differs only for modules compiled with it false (`dart_test`'s transition).
+  A module compile has no AOT target at that SDK. Revisit at the next SDK pin.
+- Opting in adds a `DartLinkCheck` action (tool `dart/private/tools/link_check.dart`)
+  in `_validation` over the closure's `.dart` files; it refuses `dart:mirrors`
+  imports and exports, `dart.library.mirrors` configuration keys and
+  `bool.fromEnvironment('dart.library.mirrors')`, one `path:line: what` line each.
+  A name built at run time is out of reach.
+
 ### `DartSdkInfo.analyze_files` (analysis, fix and codegen)
 
 The SDK files `dart analyze`, `dart fix` and the analyzer-summary tool open:

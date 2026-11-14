@@ -1,0 +1,35 @@
+load("//dart:defs.bzl", "dart_library")
+load(":link_modules_test.bzl", "link_check_refusal_test", "link_modules_test_suite")
+
+# Tests of `dart_binary(link_modules = True)`: the linked compile path of `exe`
+# and `aot-snapshot`, the default source path, and the validation that refuses
+# a closure asking `dart.library.mirrors`.
+
+# A dependency package whose conditional import names `dart.library.mirrors`.
+dart_library(
+    name = "mirrors_dep",
+    package_name = "mirrors_dep",
+    srcs = [
+        "lib/mirrors_dep.dart",
+        "lib/reflective.dart",
+        "lib/stub.dart",
+    ],
+    tags = ["manual"],
+)
+
+link_modules_test_suite(name = "link_modules_analysis_test")
+
+# The validation action's command, run on the opted-in closure of `:mirrors_dep`:
+# the build of that binary fails with one `<path>:<line>:` line per hit, the
+# target and the way out.
+link_check_refusal_test(
+    name = "link_check_refusal_test",
+    size = "small",
+    deps = [":mirrors_dep"],
+    main = "//dart/private/tools:noop.dart",
+    expect = [
+        "lib/mirrors_dep.dart:3: dart.library.mirrors is a configuration key",
+        "link_modules = True refuses",
+        "Unset link_modules",
+    ],
+)
