@@ -11,6 +11,7 @@ typedef _BazelConfig = ({
   String workingDirectory,
   List<String> startupArgs,
   Map<String, String> environment,
+  String lockfileMode,
 });
 
 /// Host filesystem callbacks used to resolve the outer Bazel binary and rc.
@@ -80,6 +81,7 @@ void main(List<String> args) {
   _registerImportCheckTests(build);
   _registerExeMirrorsTest(build);
   _registerLauncherConfigTests();
+  _registerLockfileModeTests();
 }
 
 void _registerImportCheckTests(ProcessResult Function(List<String>) build) {
@@ -146,15 +148,17 @@ void _registerExeMirrorsTest(ProcessResult Function(List<String>) build) {
 
 /// Runs `bazel build` for [targets] in the nested `dev` module.
 ///
-/// `--lockfile_mode=error` builds the exported API against the committed
-/// `dev/MODULE.bazel.lock`, as a consumer builds it; a stale lock fails here
-/// and the error names `MODULE.bazel.lock`. After a module extension change,
-/// refresh it: `cd dev && export USE_BAZEL_VERSION="$(cat ../.bazelversion)"
-/// && bazel build --nobuild --lockfile_mode=update //...`.
+/// Under the pinned Bazel, `--lockfile_mode=error` builds the exported API
+/// against the committed `dev/MODULE.bazel.lock`, as a consumer builds it; a
+/// stale lock fails here and the error names `MODULE.bazel.lock`. A non-pinned
+/// Bazel version uses `off`: the lock format and the implicit modules differ
+/// per Bazel version, as `.bazelrc` notes. After a module extension change,
+/// refresh the lock: `cd dev && export USE_BAZEL_VERSION="$(cat
+/// ../.bazelversion)" && bazel build --nobuild --lockfile_mode=update //...`.
 ProcessResult _build(_BazelConfig config, List<String> targets) =>
     _spawnBazel(config, [
       'build',
-      '--lockfile_mode=error',
+      '--lockfile_mode=${config.lockfileMode}',
       '--experimental_convenience_symlinks=ignore',
       ...targets,
     ]);
@@ -245,7 +249,25 @@ _BazelConfig _prepareBazel({
       ],
     ],
     environment: env,
+    lockfileMode: _lockfileMode(hostEnv, versionText, isWindows: isWindows),
   );
+}
+
+/// The lockfile mode of the nested build: `error` when the inherited
+/// `USE_BAZEL_VERSION` is unset, empty or the pinned version in
+/// [bazelVersionText], `off` for any other value.
+String _lockfileMode(
+  Map<String, String> hostEnv,
+  String? bazelVersionText, {
+  required bool isWindows,
+}) {
+  final String? requested = _envValue(
+    hostEnv,
+    'USE_BAZEL_VERSION',
+    isWindows: isWindows,
+  )?.trim();
+  if (requested == null || requested.isEmpty) return 'error';
+  return requested == bazelVersionText?.trim() ? 'error' : 'off';
 }
 
 Map<String, String> _childEnvironment(
@@ -599,4 +621,53 @@ void _expectPathWrapperAndShellFallback() {
   );
   expect(shellFallback.executable, 'bazel');
   expect(shellFallback.runInShell, isTrue);
+}
+
+void _registerLockfileModeTests() {
+  group('nested lockfile mode', () {
+    String mode(Map<String, String> env, [String text = '9.3.0\n']) =>
+        _lockfileMode(env, text, isWindows: false);
+
+    test('unset USE_BAZEL_VERSION gives error', () {
+      expect(mode(const <String, String>{}), 'error');
+    });
+
+    test('empty USE_BAZEL_VERSION gives error', () {
+      expect(mode(const {'USE_BAZEL_VERSION': ''}), 'error');
+    });
+
+    test('the pinned version gives error, with or without a newline', () {
+      expect(mode(const {'USE_BAZEL_VERSION': '9.3.0'}), 'error');
+      expect(mode(const {'USE_BAZEL_VERSION': '9.3.0'}, '9.3.0'), 'error');
+      expect(mode(const {'USE_BAZEL_VERSION': '9.3.0\n'}), 'error');
+    });
+
+    test('last_rc and rolling give off', () {
+      expect(mode(const {'USE_BAZEL_VERSION': 'last_rc'}), 'off');
+      expect(mode(const {'USE_BAZEL_VERSION': 'rolling'}), 'off');
+    });
+
+    test('a different release gives off', () {
+      expect(mode(const {'USE_BAZEL_VERSION': '9.4.0'}), 'off');
+    });
+
+    test('the prepared config carries the mode of the host environment', () {
+      _BazelConfig prepare(Map<String, String> env) => _prepareBazel(
+        root: '/ws',
+        scratchPath: '/tmp/s',
+        hostEnv: env,
+        fs: (
+          fileExists: (_) => false,
+          executableExists: (_) => false,
+          readText: (_) => '9.3.0\n',
+        ),
+        isWindows: false,
+      );
+      expect(
+        prepare(const {'USE_BAZEL_VERSION': 'last_rc'}).lockfileMode,
+        'off',
+      );
+      expect(prepare(const <String, String>{}).lockfileMode, 'error');
+    });
+  });
 }
