@@ -160,6 +160,15 @@ dart_test(
 )
 
 dart_test(
+    name = "ab_summary_test",
+    size = "small",
+    main = "test/ab_summary_test.dart",
+    deps = [
+        ":perf",
+    ],
+)
+
+dart_test(
     name = "cli_exit_test",
     size = "small",
     main = "test/cli_exit_test.dart",

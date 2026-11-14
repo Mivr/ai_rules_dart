@@ -231,7 +231,32 @@ void _testLeafTestVerifySetSelection() {
   );
 }
 
+void _testLinkLogStats() {
+  String spawn(String mnemonic, String? total) =>
+      '{"commandArgs":["x"],"mnemonic":"$mnemonic","runner":"worker",'
+      '${total == null ? '' : '"metrics":{"totalTime":"$total"},'}'
+      '"exitCode":0}';
+  final off = readLinkLogStats('${spawn('DartKernel', '4.0s')}\n');
+  _check(!off.linked && off.checkWallSeconds == 0, 'no link spawns, no cost');
+  final on = readLinkLogStats(
+    [
+      spawn('DartKernel', '1.0s'),
+      spawn('DartKernelLink', '2.0s'),
+      spawn('DartLinkCheck', '0.25s'),
+      '{"commandArgs":["y"],"mnemonic":"DartLinkCheck","metrics":'
+          '{"totalTime":{"seconds":1,"nanos":500000000}}}',
+    ].join('\n'),
+  );
+  _check(on.linked, 'a DartKernelLink spawn sets linked');
+  _check(on.checkWallSeconds == 1.75, 'DartLinkCheck metrics are summed');
+  _expectStateError(
+    () => readLinkLogStats(spawn('DartLinkCheck', null)),
+    'a DartLinkCheck spawn without metrics is an error',
+  );
+}
+
 void main() {
+  _testLinkLogStats();
   _testConcatenatedJsonParsingAndWorkers();
   _testExecConfigAndWindowsPathFiltering();
   _testOrderingTreeArtifactsAndBlockedRefusal();

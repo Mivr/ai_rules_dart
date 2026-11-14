@@ -784,7 +784,54 @@ void _testPeakRssInSummaryAndTable() {
   );
 }
 
+RepeatResult _measured(int i, double wall, {String? out, double? check}) {
+  final base = _makePassingRepeat(
+    index: i,
+    cleanBazel: 10,
+    cleanSol: 2,
+    bodySol: 1,
+  );
+  FlowExtras extras(String key) => FlowExtras(
+    wallSeconds: wall,
+    linkCheckWallSeconds: check,
+    linked: check == null ? null : key != 'dart-test-leaf',
+    appStdout: key == 'dart-app-clean' ? out : null,
+  );
+  return RepeatResult(
+    repeatIndex: i,
+    flows: {
+      for (final e in base.flows.entries)
+        e.key: e.value.withMeasure(100, extras(e.key)),
+    },
+  );
+}
+
+void _testWallLinkCheckAndStdout() {
+  final on = [
+    for (final (i, w) in [(1, 5.0), (2, 9.0), (3, 7.0)])
+      _measured(i, w, out: 'Result: 3\n', check: 0.4 + i / 10),
+  ];
+  final summary = jsonDecode(
+    formatDartSolJson(repeats: on, meta: _sampleMeta, runner: _sampleRunner),
+  ) as Map<String, dynamic>;
+  final clean = (summary['flows'] as Map)['dart-app-clean'] as Map;
+  _check(clean['wall_seconds'] == 7.0 && clean['bazel'] == 10.0, 'medians');
+  _check(
+    clean['link_check_wall_seconds'] == 0.6 &&
+        clean['linked'] == true &&
+        clean['app_stdout'] == 'Result: 3\n',
+    'median link check, linked and stdout are carried',
+  );
+  final off = [_measured(1, 6, out: 'Result: 3\n')];
+  final bad = [_measured(1, 4, out: 'x', check: 1)];
+  _check(
+    abFailures(off, bad).any((f) => f.contains('stdout differs')),
+    'an A/B pair whose app stdout differs is rejected',
+  );
+}
+
 void main() {
+  _testWallLinkCheckAndStdout();
   _testPeakRssInSummaryAndTable();
   _testAllPassSummaryAndSortedSchema();
   _testToolchainFloorInSummaryAndSortedSchema();

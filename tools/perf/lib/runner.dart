@@ -77,6 +77,64 @@ ProcessResult _runBazel(String workingDirectory, List<String> args) {
   );
 }
 
+/// Runs [args] under Bazel and returns the result with its wall seconds.
+({ProcessResult result, double wall}) _timedBazel(
+  String workingDirectory,
+  List<String> args,
+) {
+  final watch = Stopwatch()..start();
+  final result = _runBazel(workingDirectory, args);
+  watch.stop();
+  return (result: result, wall: watch.elapsedMicroseconds / 1e6);
+}
+
+/// Whether the generated workspace's `//app:app` opts in to `link_modules`.
+bool _workspaceLinksModules(String workspace) {
+  final build = File('$workspace/app/BUILD.bazel');
+  if (!build.existsSync()) {
+    throw StateError('app/BUILD.bazel not found in $workspace');
+  }
+  return RegExp(
+    r'^\s*link_modules\s*=\s*True\s*,',
+    multiLine: true,
+  ).hasMatch(build.readAsStringSync());
+}
+
+/// The wall, link-check and app-stdout measurements of one flow's command.
+FlowExtras _flowExtras(
+  RepeatContext ctx,
+  File logFile,
+  double wall, {
+  String? appStdout,
+}) {
+  if (!ctx.linkModules) {
+    return FlowExtras(wallSeconds: wall, appStdout: appStdout);
+  }
+  final stats = readLinkLogStats(logFile.readAsStringSync());
+  return FlowExtras(
+    wallSeconds: wall,
+    linkCheckWallSeconds: stats.checkWallSeconds,
+    linked: stats.linked,
+    appStdout: appStdout,
+  );
+}
+
+/// Runs the built `//app:app` and returns its stdout.
+String _runBuiltApp(RepeatContext ctx) {
+  final exe = ctx.findExecutableOutput('//app:app');
+  final res = Process.runSync(
+    exe,
+    const [],
+    workingDirectory: ctx.repeatWorkspace,
+    environment: cleanProcessEnvironment(),
+    includeParentEnvironment: false,
+  );
+  if (res.exitCode != 0) {
+    throw StateError('//app:app exited ${res.exitCode}: ${res.stderr}');
+  }
+  return res.stdout as String;
+}
+
 String _entityBasename(String path) {
   final norm = path.replaceAll(r'\', '/');
   final stripped = norm.endsWith('/') && norm.length > 1
@@ -178,6 +236,9 @@ final class RepeatContext {
 
   /// Temporary workspace copy for this repeat.
   String get repeatWorkspace => dirs.workspace;
+
+  /// Whether this repeat's workspace opts in to `link_modules`.
+  bool get linkModules => _workspaceLinksModules(repeatWorkspace);
 
   /// Per-repeat Bazel output base.
   String get outputBase => dirs.outputBase;
@@ -462,8 +523,8 @@ FlowResult _measureFlowAppClean(RepeatContext ctx) {
     final logFile = File('${ctx.logsDir}/exec_clean_${ctx.repeatIndex}.json');
     final beforeCpu = ctx.clock.getChildCpuSeconds();
     // The batch client is a child of this process; sample it and its tree.
-    final (value: res, :peakMb) = measurePeakRss(
-      () => _runBazel(ctx.repeatWorkspace, [
+    final (value: timed, :peakMb) = measurePeakRss(
+      () => _timedBazel(ctx.repeatWorkspace, [
         '--batch',
         '--output_base=${ctx.outputBase}',
         'build',
@@ -475,6 +536,7 @@ FlowResult _measureFlowAppClean(RepeatContext ctx) {
       rootPid: pid,
       includeRoot: false,
     );
+    final res = timed.result;
     final afterCpu = ctx.clock.getChildCpuSeconds();
 
     if (res.exitCode != 0) {
@@ -491,10 +553,16 @@ FlowResult _measureFlowAppClean(RepeatContext ctx) {
         isTest: false,
       ),
     );
+    final extras = _flowExtras(
+      ctx,
+      logFile,
+      timed.wall,
+      appStdout: _runBuiltApp(ctx),
+    );
     return _attachCleanFloor(
       ctx,
       replayFlow,
-    ).withPeakRssMb(replayFlow.identical ? peakMb : null);
+    ).withMeasure(replayFlow.identical ? peakMb : null, extras);
   } on Object catch (e) {
     stderr.writeln('Flow dart-app-clean error: $e');
     return _failedFlow('batch', e.toString());
@@ -502,15 +570,20 @@ FlowResult _measureFlowAppClean(RepeatContext ctx) {
 }
 
 /// Result of a measured warm command: its output, CPU seconds and peak RSS.
-typedef _WarmRun = ({ProcessResult result, double cpu, double? peakMb});
+typedef _WarmRun = ({
+  ProcessResult result,
+  double cpu,
+  double? peakMb,
+  double wall,
+});
 
 _WarmRun _runMeasuredWarmCommand(RepeatContext ctx, List<String> bazelArgs) {
   final serverPid = ctx.getServerPid();
   final snapBefore = takeServerTreeSnapshot(ctx.procReader, serverPid);
   final clientBefore = ctx.clock.getChildCpuSeconds();
 
-  final (value: res, :peakMb) = measurePeakRss(
-    () => _runBazel(ctx.repeatWorkspace, [
+  final (value: timed, :peakMb) = measurePeakRss(
+    () => _timedBazel(ctx.repeatWorkspace, [
       '--output_base=${ctx.outputBase}',
       ...bazelArgs,
     ]),
@@ -527,7 +600,12 @@ _WarmRun _runMeasuredWarmCommand(RepeatContext ctx, List<String> bazelArgs) {
   );
   final clientDelta = clientAfter - clientBefore;
   final totalCpu = (clientDelta > 0 ? clientDelta : 0.0) + serverCpu;
-  return (result: res, cpu: totalCpu, peakMb: peakMb);
+  return (
+    result: timed.result,
+    cpu: totalCpu,
+    peakMb: peakMb,
+    wall: timed.wall,
+  );
 }
 
 void _warmBuildApp(RepeatContext ctx) {
@@ -550,7 +628,12 @@ FlowResult _measureFlowAppBody(RepeatContext ctx) {
     applyLayer0BodyEdit(ctx.repeatWorkspace);
 
     final logFile = File('${ctx.logsDir}/exec_body_${ctx.repeatIndex}.json');
-    final (result: res, cpu: bazelCpu, :peakMb) = _runMeasuredWarmCommand(ctx, [
+    final (
+      result: res,
+      cpu: bazelCpu,
+      :peakMb,
+      :wall,
+    ) = _runMeasuredWarmCommand(ctx, [
       'build',
       '//app:app',
       '--execution_log_json_file=${logFile.path}',
@@ -574,10 +657,10 @@ FlowResult _measureFlowAppBody(RepeatContext ctx) {
         isTest: false,
       ),
     );
-    return _attachBodyFloor(
-      ctx,
-      replayFlow,
-    ).withPeakRssMb(replayFlow.identical ? peakMb : null);
+    return _attachBodyFloor(ctx, replayFlow).withMeasure(
+      replayFlow.identical ? peakMb : null,
+      _flowExtras(ctx, logFile, wall),
+    );
   } on Object catch (e) {
     stderr.writeln('Flow dart-app-body error: $e');
     return _failedFlow('warm-server', e.toString());
@@ -590,7 +673,12 @@ FlowResult _measureFlowAppApi(RepeatContext ctx, {required bool needsWarmup}) {
     applyLayer0ApiEdit(ctx.repeatWorkspace);
 
     final logFile = File('${ctx.logsDir}/exec_api_${ctx.repeatIndex}.json');
-    final (result: res, cpu: bazelCpu, :peakMb) = _runMeasuredWarmCommand(ctx, [
+    final (
+      result: res,
+      cpu: bazelCpu,
+      :peakMb,
+      :wall,
+    ) = _runMeasuredWarmCommand(ctx, [
       'build',
       '//app:app',
       '--execution_log_json_file=${logFile.path}',
@@ -611,10 +699,10 @@ FlowResult _measureFlowAppApi(RepeatContext ctx, {required bool needsWarmup}) {
         isTest: false,
       ),
     );
-    return _attachApiFloor(
-      ctx,
-      replayFlow,
-    ).withPeakRssMb(replayFlow.identical ? peakMb : null);
+    return _attachApiFloor(ctx, replayFlow).withMeasure(
+      replayFlow.identical ? peakMb : null,
+      _flowExtras(ctx, logFile, wall),
+    );
   } on Object catch (e) {
     stderr.writeln('Flow dart-app-api error: $e');
     return _failedFlow('warm-server', e.toString());
@@ -658,7 +746,12 @@ FlowResult _measureFlowTestLeaf(RepeatContext ctx) {
     applyLeafBodyEdit(ctx.repeatWorkspace, pkgName);
 
     final logFile = File('${ctx.logsDir}/exec_test_${ctx.repeatIndex}.json');
-    final (result: res, cpu: bazelCpu, :peakMb) = _runMeasuredWarmCommand(ctx, [
+    final (
+      result: res,
+      cpu: bazelCpu,
+      :peakMb,
+      :wall,
+    ) = _runMeasuredWarmCommand(ctx, [
       'test',
       leafTarget,
       '--execution_log_json_file=${logFile.path}',
@@ -679,11 +772,10 @@ FlowResult _measureFlowTestLeaf(RepeatContext ctx) {
         isTest: true,
       ),
     );
-    return _attachTestLeafFloor(
-      ctx,
-      replayFlow,
-      leafTarget,
-    ).withPeakRssMb(replayFlow.identical ? peakMb : null);
+    return _attachTestLeafFloor(ctx, replayFlow, leafTarget).withMeasure(
+      replayFlow.identical ? peakMb : null,
+      _flowExtras(ctx, logFile, wall),
+    );
   } on Object catch (e) {
     stderr.writeln('Flow dart-test-leaf error: $e');
     return _failedFlow('warm-server', e.toString());

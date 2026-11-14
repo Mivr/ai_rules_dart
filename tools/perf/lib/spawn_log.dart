@@ -419,3 +419,54 @@ Set<String> selectLeafTestVerifyPaths(List<SpawnRecord> chainSpawns) {
   }
   return verifyPaths;
 }
+
+/// What an execution log records about the `link_modules` path.
+final class LinkLogStats {
+  /// Creates the stats of one execution log.
+  const LinkLogStats({required this.linked, required this.checkWallSeconds});
+
+  /// Whether the log has a `DartKernelLink` spawn.
+  final bool linked;
+
+  /// Summed wall seconds of the log's `DartLinkCheck` spawns (0 when none ran).
+  final double checkWallSeconds;
+}
+
+/// Seconds in a protobuf JSON duration: `"1.5s"` or `{seconds, nanos}`.
+double _durationSeconds(Object? raw) {
+  if (raw is String && raw.endsWith('s')) {
+    final value = double.tryParse(raw.substring(0, raw.length - 1));
+    if (value != null) return value;
+  } else if (raw is Map) {
+    final seconds = raw['seconds'];
+    final nanos = raw['nanos'];
+    final whole = seconds is num ? seconds : num.tryParse('$seconds') ?? 0;
+    final frac = nanos is num ? nanos : num.tryParse('$nanos') ?? 0;
+    return whole + frac / 1e9;
+  }
+  throw FormatException('unreadable spawn duration: $raw');
+}
+
+/// Reads the `DartKernelLink` presence and the `DartLinkCheck` wall time from
+/// the per-spawn metrics of the execution log [text].
+///
+/// A `DartLinkCheck` spawn without `metrics.totalTime` is an error: the cost
+/// is only trusted when the log records it.
+LinkLogStats readLinkLogStats(String text) {
+  var linked = false;
+  var checkSeconds = 0.0;
+  for (final jsonStr in extractConcatenatedJsonObjects(text)) {
+    final decoded = jsonDecode(jsonStr);
+    if (decoded is! Map<String, dynamic>) continue;
+    final mnemonic = decoded['mnemonic'];
+    if (mnemonic == 'DartKernelLink') linked = true;
+    if (mnemonic != 'DartLinkCheck') continue;
+    final metrics = decoded['metrics'];
+    final total = metrics is Map ? metrics['totalTime'] : null;
+    if (total == null) {
+      throw StateError('DartLinkCheck spawn has no metrics.totalTime');
+    }
+    checkSeconds += _durationSeconds(total);
+  }
+  return LinkLogStats(linked: linked, checkWallSeconds: checkSeconds);
+}
