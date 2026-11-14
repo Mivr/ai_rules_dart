@@ -211,7 +211,8 @@ def _binary_output_groups(ctx, result):
       `OutputGroupInfo` exposing the raw compiled file and, when it exists,
       the split symbols file.
     """
-    validation = depset(transitive = [executable_import_check(ctx, result.own.record), link_modules_check(ctx)])
+    checks = [executable_import_check(ctx, result.own.record), link_modules_check(ctx)]
+    validation = depset(transitive = checks)
     if result.debug_info == None:
         return OutputGroupInfo(snapshot = depset([result.output]), _validation = validation)
     return OutputGroupInfo(
@@ -506,7 +507,10 @@ _SHARED_BINARY_ATTRS = dict(
         COMPILE_WRAPPER_ATTRS,
         **dict(
             EXTRA_DART_DEFINES_ATTR,
-            **dict(REFUSED_DART_LIBRARIES_ATTR, **dict(EXECUTABLE_PACKAGE_ATTRS, **dict(LINK_MODULES_ATTRS, **BINARY_MODULAR_KERNEL_ATTRS)))
+            **dict(
+                REFUSED_DART_LIBRARIES_ATTR,
+                **dict(EXECUTABLE_PACKAGE_ATTRS, **dict(LINK_MODULES_ATTRS, **BINARY_MODULAR_KERNEL_ATTRS))
+            )
         )
     )
 )

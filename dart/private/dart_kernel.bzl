@@ -1552,29 +1552,15 @@ def library_kernel_info(ctx, library, compile, options):
         unseeded_base_kmods = bases.unseeded_base_kmods,
     )
 
-def _compiles_modules(ctx):
-    """Whether the originating executable links per-library modules at all.
-
-    Args:
-      ctx: The aspect context.
-
-    Returns:
-      True for `kernel` mode, and for `exe` and `aot-snapshot` that set `link_modules`.
-    """
-    mode = ctx.attr.compile_mode
-    return mode == "kernel" or (ctx.attr.link_modules and mode in ("exe", "aot-snapshot"))
-
 def _dart_kernel_module_aspect_impl(target, ctx):
     if DartKernelInfo in target:
         return []
-    if DartInfo not in target or not _compiles_modules(ctx) or not ctx.attr.modular_kernel:
+    linked = ctx.attr.compile_mode == "kernel" or (ctx.attr.link_modules and ctx.attr.compile_mode in ("exe", "aot-snapshot"))
+    if DartInfo not in target or not linked or not ctx.attr.modular_kernel:
         return [no_kernel_module()]
     library = getattr(ctx.rule.attr, "library", None)
     if library != None and DartKernelInfo in library:
-        forwarded = [library[DartKernelInfo]]
-        if DartKernelCycleInfo in library:
-            forwarded.append(library[DartKernelCycleInfo])
-        return forwarded
+        return [library[provider] for provider in (DartKernelInfo, DartKernelCycleInfo) if provider in library]
 
     inputs = library_module_inputs(ctx.rule.attr, ctx.rule.files, target[DartInfo])
     single = inputs.package_name if len(inputs.own_records) == 1 else ""
@@ -1615,10 +1601,7 @@ dart_kernel_module_aspect = aspect(
             doc = "Whether the originating executable compiles modularly against dependency `.kmod` outputs. Defaults to `True`.",
             default = True,
         ),
-        "link_modules": attr.bool(
-            doc = "The originating `dart_binary`'s `link_modules`: whether `exe` and `aot-snapshot` link modules. Defaults to `True` only because Bazel refuses a `False` default for a parameter the rule lacks; it matters only with a `compile_mode` of `exe` or `aot-snapshot`, which only `dart_binary` has, and it declares its own value.",
-            default = True,
-        ),
+        "link_modules": attr.bool(default = True, doc = "The `dart_binary`'s `link_modules`; `True` only because Bazel refuses a `False` default for a parameter the rule lacks."),
     },
     toolchains = MODULAR_KERNEL_TOOLCHAINS,
     doc = "Compiles each `dart_library` in a modular executable's or test's closure to a `.kmod` directory.",
