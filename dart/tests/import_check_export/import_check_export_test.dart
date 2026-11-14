@@ -145,10 +145,16 @@ void _registerExeMirrorsTest(ProcessResult Function(List<String>) build) {
 }
 
 /// Runs `bazel build` for [targets] in the nested `dev` module.
+///
+/// `--lockfile_mode=error` builds the exported API against the committed
+/// `dev/MODULE.bazel.lock`, as a consumer builds it; a stale lock fails here
+/// and the error names `MODULE.bazel.lock`. After a module extension change,
+/// refresh it: `cd dev && export USE_BAZEL_VERSION="$(cat ../.bazelversion)"
+/// && bazel build --nobuild --lockfile_mode=update //...`.
 ProcessResult _build(_BazelConfig config, List<String> targets) =>
     _spawnBazel(config, [
       'build',
-      '--lockfile_mode=off',
+      '--lockfile_mode=error',
       '--experimental_convenience_symlinks=ignore',
       ...targets,
     ]);
