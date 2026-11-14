@@ -19,7 +19,6 @@ load(
     "dart_import_check_aspect",
     "executable_import_check",
 )
-load("//dart/private:dart_link_check.bzl", "LINK_MODULES_ATTRS", "link_modules_check")
 load(
     "//dart/private:dart_kernel.bzl",
     "BINARY_MODULAR_KERNEL_ATTRS",
@@ -27,6 +26,7 @@ load(
     "MODULAR_KERNEL_TOOLCHAINS",
     "dart_kernel_module_aspect",
 )
+load("//dart/private:dart_link_check.bzl", "LINK_MODULES_ATTRS", "link_modules_check")
 load("//dart/private:dart_test_runner.bzl", "DartTestRunnerMainInfo")
 load("//dart/private:executable_package.bzl", "EXECUTABLE_PACKAGE_ATTRS", "executable_package")
 load("//dart/private:package_files.bzl", "collect_transitive_package_files")
