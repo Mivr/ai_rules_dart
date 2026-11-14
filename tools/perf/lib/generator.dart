@@ -156,6 +156,7 @@ final class GeneratorOptions {
     required this.outputPath,
     this.layers = 8,
     this.fanout = 4,
+    this.linkModules = false,
   });
 
   /// Target total `.dart` line count.
@@ -175,6 +176,9 @@ final class GeneratorOptions {
 
   /// Number of packages per layer (default 4).
   final int fanout;
+
+  /// Whether `//app:app` opts in to `link_modules` (default off).
+  final bool linkModules;
 }
 
 void _validateOptions(GeneratorOptions options) {
@@ -463,7 +467,7 @@ load("@${identity.repoName}//dart:defs.bzl", "dart_binary")
 dart_binary(
     name = "app",
     main = "bin/main.dart",
-    deps = [
+${options.linkModules ? '    link_modules = True,\n' : ''}    deps = [
 $depLabels
     ],
 )
