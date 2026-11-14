@@ -160,8 +160,8 @@ final class FloorLayout {
     if (packageConfig == null) {
       throw StateError(
         'Missing package config for $executable: '
-        '${_resolveConfigPath(path, config.suffixes.first)}. Linked-kernel '
-        'executables (rules change 66dc601d) no longer write it, and '
+        '${_resolveConfigPath(path, config.suffixes.first)}. The executable is '
+        'expected to write its <name>.package_config.json, and '
         '$workspaceDir/packages has no package to build one from',
       );
     }

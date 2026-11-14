@@ -203,9 +203,11 @@ void _testMissingConfigError(Directory tmp) {
   _check(
     message != null &&
         message.contains('app.package_config.json') &&
-        message.contains('66dc601d') &&
-        message.contains('Linked-kernel'),
-    'The error names the input and the rules change',
+        message.contains('package_config.json') &&
+        message.contains('expected to write') &&
+        !message.contains('no longer write') &&
+        !message.contains('Linked-kernel'),
+    'The error names the missing input and says the executable writes it',
   );
 }
 

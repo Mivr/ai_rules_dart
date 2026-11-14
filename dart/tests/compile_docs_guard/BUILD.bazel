@@ -1,0 +1,25 @@
+load("//dart:defs.bzl", "dart_test")
+
+# Pins the compile docs: no text says exe or aot-snapshot take linked modules and
+# `import_check.bzl` has a doc extract. Unsandboxed over the live tree, like
+# `//dart/tests:download_digest_guard_test`.
+dart_test(
+    name = "compile_docs_guard_test",
+    size = "small",
+    args = [
+        "$(rlocationpath :compile_docs_guard_test.dart)",
+    ],
+    data = [
+        "compile_docs_guard_test.dart",
+    ],
+    local = True,
+    main = "compile_docs_guard_test.dart",
+    tags = [
+        "external",
+        "no-sandbox",
+    ],
+    deps = [
+        "//dart/runfiles",
+        "@ext_pub_deps//:test",
+    ],
+)
