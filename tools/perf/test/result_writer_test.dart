@@ -716,7 +716,76 @@ void _testFloorOffProducesBaseSchema() {
   _check(isSummaryHealthy(decoded), 'Floor-off summary is healthy');
 }
 
+RepeatResult _withPeaks(RepeatResult base, Map<String, double?> peaks) =>
+    RepeatResult(
+      repeatIndex: base.repeatIndex,
+      flows: {
+        for (final e in base.flows.entries)
+          e.key: e.value.withPeakRssMb(peaks[e.key]),
+      },
+    );
+
+void _testPeakRssInSummaryAndTable() {
+  RepeatResult repeat(int i, double peak) => _withPeaks(
+    _makePassingRepeat(index: i, cleanBazel: 10, cleanSol: 2, bodySol: 1),
+    {
+      'dart-app-clean': peak,
+      'dart-app-body': peak * 2,
+      'dart-app-api': null,
+      'dart-test-leaf': peak * 3,
+    },
+  );
+  final repeats = [repeat(1, 100), repeat(2, 300), repeat(3, 200)];
+  final summary = jsonDecode(
+    formatDartSolJson(
+      repeats: repeats,
+      meta: _sampleMeta,
+      runner: _sampleRunner,
+    ),
+  ) as Map<String, dynamic>;
+  final flows = summary['flows'] as Map<String, dynamic>;
+  Map<String, dynamic> flow(String k) => flows[k] as Map<String, dynamic>;
+  _check(flow('dart-app-clean')['peak_rss_mb'] == 200.0, 'median peak, clean');
+  _check(flow('dart-app-body')['peak_rss_mb'] == 400.0, 'median peak, body');
+  _check(
+    !flow('dart-app-api').containsKey('peak_rss_mb'),
+    'a flow without a measurement carries no value',
+  );
+  _check(flow('dart-app-clean')['bazel'] == 10.0, 'cpu keys are unchanged');
+  final table = formatStepSummaryTable(summary).split('\n');
+  _check(table[0].contains('| Peak RSS (MiB) |'), 'table has a RSS column');
+  _check(
+    table.firstWhere((l) => l.startsWith('| dart-app-clean')).contains('200.0'),
+    'table shows the clean peak',
+  );
+  _check(
+    table
+        .firstWhere((l) => l.startsWith('| dart-app-api'))
+        .contains('| - | ok |'),
+    'table shows - for a missing peak',
+  );
+  final raw = repeats.first.toJson();
+  final back = RepeatResult.fromJson(
+    jsonDecode(jsonEncode(raw)) as Map<String, dynamic>,
+  );
+  _check(back.flows['dart-app-clean']!.peakRssMb == 100, 'peak round-trips');
+  final old = jsonDecode(jsonEncode(raw)) as Map<String, dynamic>;
+  for (final f in (old['flows'] as Map<String, dynamic>).values) {
+    (f as Map<String, dynamic>).remove('peak_rss_mb');
+  }
+  final older = RepeatResult.fromJson(old);
+  _check(
+    older.flows.values.every((f) => f.peakRssMb == null),
+    'older JSON without the key parses',
+  );
+  _check(
+    !older.flows['dart-app-clean']!.toJson().containsKey('peak_rss_mb'),
+    'no key is written without a value',
+  );
+}
+
 void main() {
+  _testPeakRssInSummaryAndTable();
   _testAllPassSummaryAndSortedSchema();
   _testToolchainFloorInSummaryAndSortedSchema();
   _testFailedFloorSetsReasonAndMakesSummaryUnhealthy();
