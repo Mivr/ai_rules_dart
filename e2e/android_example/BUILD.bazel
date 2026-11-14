@@ -21,6 +21,7 @@ load("@rules_flutter//flutter:web.bzl", "flutter_web_bundle")
 load("@rules_java//java:java_import.bzl", "java_import")
 load("@rules_kotlin//kotlin:android.bzl", "kt_android_library")
 load(":aab_test.bzl", "aab_build_bundle_test")
+load(":apk_variants.bzl", "debug_apk", "profile_apk")
 
 exports_files(["pubspec.lock"])
 
@@ -474,5 +475,122 @@ dart_test(
         "EXPECTED_PACKAGE": "com.example.flutterapp",
     },
     main = "test/verify_android_aab_test.dart",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+# =============================================================================
+# Profile build and widget-creation tracking
+# =============================================================================
+
+# The same app as `:app`, but with no `permissions`: its INTERNET grant comes
+# only from the variant manifest, android/app/src/profile/AndroidManifest.xml,
+# which a profile APK folds in and a release APK does not.
+flutter_android_app(
+    name = "app_nopermissions",
+    package_name = "com.example.flutterapp",
+    application = ":app_flutter",
+)
+
+# `:app_nopermissions` in Flutter profile mode: `-c opt`, the profile flag and arm64,
+# set by the rule's transition so a plain `bazel test` builds it.
+profile_apk(
+    name = "app_profile",
+    apk = ":app_nopermissions",
+)
+
+# Reads libflutter.so, libapp.so and the compiled manifest of the profile APK
+# against the release APK and the pinned profile and release engines.
+dart_test(
+    name = "verify_android_profile_apk_test",
+    size = "medium",
+    srcs = [
+        "test/android_artifact_reader.dart",
+        "test/apk_reader.dart",
+        "test/verify_android_permissions_test.dart",
+    ],
+    data = [
+        ":app_nopermissions",
+        ":app_profile",
+        "@flutter_android_engine_arm64//:stripped",
+        "@flutter_android_engine_arm64_profile//:stripped",
+    ],
+    env = {
+        "PROFILE_APK": "$(rootpath :app_profile)",
+        "PROFILE_ENGINE_JAR": "$(rootpath @flutter_android_engine_arm64_profile//:stripped)",
+        "RELEASE_APK": "$(rootpath :app_nopermissions)",
+        "RELEASE_ENGINE_JAR": "$(rootpath @flutter_android_engine_arm64//:stripped)",
+    },
+    main = "test/verify_android_profile_apk_test.dart",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+# Two applications over the same sources and deps that differ only in
+# `track_widget_creation`, each built into a debug APK.
+flutter_application(
+    name = "app_tracked_flutter",
+    package_name = "android_example",
+    srcs = glob(["lib/**/*.dart"]),
+    main = "lib/main.dart",
+    native_deps = [":add"],
+    track_widget_creation = True,
+    deps = [
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+flutter_application(
+    name = "app_untracked_flutter",
+    package_name = "android_example",
+    srcs = glob(["lib/**/*.dart"]),
+    main = "lib/main.dart",
+    native_deps = [":add"],
+    track_widget_creation = False,
+    deps = [
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+flutter_android_app(
+    name = "app_tracked_src",
+    package_name = "com.example.flutterapp",
+    application = ":app_tracked_flutter",
+)
+
+flutter_android_app(
+    name = "app_untracked_src",
+    package_name = "com.example.flutterapp",
+    application = ":app_untracked_flutter",
+)
+
+debug_apk(
+    name = "app_tracked",
+    apk = ":app_tracked_src",
+)
+
+debug_apk(
+    name = "app_untracked",
+    apk = ":app_untracked_src",
+)
+
+# Reads assets/flutter_assets/kernel_blob.bin of both debug APKs: the
+# transformer's creation-location parameter is in the tracked one only.
+dart_test(
+    name = "verify_android_widget_tracking_test",
+    size = "medium",
+    srcs = [
+        "test/android_artifact_reader.dart",
+        "test/apk_reader.dart",
+    ],
+    data = [
+        ":app_tracked",
+        ":app_untracked",
+    ],
+    env = {
+        "TRACKED_APK": "$(rootpath :app_tracked)",
+        "UNTRACKED_APK": "$(rootpath :app_untracked)",
+    },
+    main = "test/verify_android_widget_tracking_test.dart",
     target_compatible_with = ["@platforms//os:linux"],
 )
