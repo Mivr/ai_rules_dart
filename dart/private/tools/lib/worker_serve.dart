@@ -22,8 +22,10 @@ typedef WorkHandler = Future<WorkResult> Function(
   Future<void> cancelled,
 );
 
-/// What [peekWorkRequest] read before it stopped: `error` is the decode
-/// failure, if any, and the other fields keep what was read until then.
+/// The `request_id` and `cancel` fields of a raw `WorkRequest` payload, read
+/// without decoding the other fields (a request with thousands of inputs is
+/// not decoded twice). `error` is the decode failure, if any; the other fields
+/// keep what was read until then.
 typedef _Header = ({int requestId, bool cancel, FormatException? error});
 
 _Header _peekHeader(Uint8List frame) {
@@ -46,16 +48,6 @@ _Header _peekHeader(Uint8List frame) {
     return (requestId: requestId, cancel: cancel, error: error);
   }
   return (requestId: requestId, cancel: cancel, error: null);
-}
-
-/// The `request_id` and `cancel` fields of a raw `WorkRequest` payload. The
-/// other fields are skipped, so a request with thousands of inputs is not
-/// decoded twice. Throws a [FormatException] when the payload does not decode.
-({int requestId, bool cancel}) peekWorkRequest(Uint8List frame) {
-  final _Header header = _peekHeader(frame);
-  final FormatException? error = header.error;
-  if (error != null) throw error;
-  return (requestId: header.requestId, cancel: header.cancel);
 }
 
 /// The answer to a frame that is not a `WorkRequest`; the text also goes to
