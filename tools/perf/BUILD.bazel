@@ -106,6 +106,15 @@ dart_test(
 )
 
 dart_test(
+    name = "server_evidence_test",
+    size = "small",
+    main = "test/server_evidence_test.dart",
+    deps = [
+        ":perf",
+    ],
+)
+
+dart_test(
     name = "proc_test",
     size = "small",
     main = "test/proc_test.dart",
