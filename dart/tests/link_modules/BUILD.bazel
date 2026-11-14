@@ -25,11 +25,11 @@ link_modules_test_suite(name = "link_modules_analysis_test")
 link_check_refusal_test(
     name = "link_check_refusal_test",
     size = "small",
-    deps = [":mirrors_dep"],
-    main = "//dart/private/tools:noop.dart",
     expect = [
         "lib/mirrors_dep.dart:3: dart.library.mirrors is a configuration key",
         "link_modules = True refuses",
         "Unset link_modules",
     ],
+    main = "//dart/private/tools:noop.dart",
+    deps = [":mirrors_dep"],
 )
