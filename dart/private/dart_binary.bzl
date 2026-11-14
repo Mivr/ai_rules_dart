@@ -19,6 +19,7 @@ load(
     "dart_import_check_aspect",
     "executable_import_check",
 )
+load("//dart/private:dart_link_check.bzl", "LINK_MODULES_ATTRS", "link_modules_check")
 load(
     "//dart/private:dart_kernel.bzl",
     "BINARY_MODULAR_KERNEL_ATTRS",
@@ -210,7 +211,7 @@ def _binary_output_groups(ctx, result):
       `OutputGroupInfo` exposing the raw compiled file and, when it exists,
       the split symbols file.
     """
-    validation = executable_import_check(ctx, result.own.record)
+    validation = depset(transitive = [executable_import_check(ctx, result.own.record), link_modules_check(ctx)])
     if result.debug_info == None:
         return OutputGroupInfo(snapshot = depset([result.output]), _validation = validation)
     return OutputGroupInfo(
@@ -505,7 +506,7 @@ _SHARED_BINARY_ATTRS = dict(
         COMPILE_WRAPPER_ATTRS,
         **dict(
             EXTRA_DART_DEFINES_ATTR,
-            **dict(REFUSED_DART_LIBRARIES_ATTR, **dict(EXECUTABLE_PACKAGE_ATTRS, **BINARY_MODULAR_KERNEL_ATTRS))
+            **dict(REFUSED_DART_LIBRARIES_ATTR, **dict(EXECUTABLE_PACKAGE_ATTRS, **dict(LINK_MODULES_ATTRS, **BINARY_MODULAR_KERNEL_ATTRS)))
         )
     )
 )
@@ -569,7 +570,7 @@ The `dart compile` mode. Determines the output format:
 - `kernel`: Dart kernel binary (`.dill`). Requires `dart` to execute. Fastest compilation, useful for development. Compiles modularly by default (`modular_kernel = True` and `//dart:modular_kernel = True`) against dependency `.kmod`/`.koutline` modules when eligible, or whole-program via `gen_kernel` when `modular_kernel = False` or when target `defines`, `dart_compile_flags`, or `code_assets` are set.
 - `jit-snapshot`: JIT snapshot with trained profile data. Requires `dart` to execute. Fastest startup after warmup. The program is trained once, with no arguments, at the keyed absolute path for its output (`/tmp/rules_dart_jit-<key>`, where `<key>` is 16 lowercase hex characters of a deterministic digest of the output's root-relative path) used as its working directory and with no `--packages` value, so the snapshot is byte-identical across builds. The snapshot is reproducible only if that training run is deterministic: a program that reads the clock, random numbers, or files outside the build gives a different snapshot each build (see `app_jit_snapshot.dart`). The training runs from a copy of the SDK's `dart`, so the snapshot does not depend on where the SDK is installed or where the build runs. A training waits for the keyed lock up to `--@rules_dart//dart:jit_snapshot_lock_timeout` seconds (default 300), printing the holder's PID while it waits; when the keyed training path is blocked by an entry another user owns, or the lock stays held past the deadline, the action fails and names the entry rather than training elsewhere under the same action key; `--@rules_dart//dart:jit_snapshot_fallback=true` allows the non-reproducible private-scratch fallback instead. A fallback-trained snapshot stays cached under the same action key (in the local action cache and the output tree) until `bazel clean`, so a build after the host is fixed keeps the fallback bytes. With the flag on, both snapshot actions carry `no-cache`, so they are never uploaded to or served from a disk or remote cache.
 
-`exe` and `aot-snapshot` always compile whole-program from sources: the front end, then `dart compile`, whatever `modular_kernel` says. Per-library modules are compiled against the JIT platform and would keep the JIT answers to `dart.library.*`, so only the `kernel` mode (and `dart_test`) links modules; a body edit in one library then recompiles that module only. `jit-snapshot` always compiles from sources.
+`exe` and `aot-snapshot` compile from sources by default: the whole-program front end reads every transitive `.dart` file, then `dart compile` runs, whatever `modular_kernel` says. Per-library modules are compiled against the JIT platform, so the default keeps the AOT answers to `dart.library.*`. With `link_modules = True` (an opt-in) they take the per-library kernel modules joined into one kernel instead, when the target is eligible for modular compilation (the `kernel` mode's rules, plus `dart.vm.product` true and not the `dbg` compilation mode): a body edit in one library recompiles that module only, then the whole-program steps (tree shaking, `gen_snapshot`) run over the joined kernel and no `.dart` source is an input of them. An ineligible target takes the source path silently. Opting in also runs a validation that refuses a closure using `dart:mirrors` or `dart.library.mirrors` (see `link_modules`). `jit-snapshot` always compiles from sources.
 """,
             default = "exe",
             values = ["exe", "aot-snapshot", "kernel", "jit-snapshot"],

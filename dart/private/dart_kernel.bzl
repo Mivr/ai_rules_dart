@@ -143,7 +143,7 @@ MODULAR_KERNEL_ATTRS = dict(KERNEL_MODULE_ATTRS)
 BINARY_MODULAR_KERNEL_ATTRS = {
     "modular_kernel": attr.bool(
         default = True,
-        doc = "Whether `compile_mode = \"kernel\"` compiles modularly against dependency `.kmod` outputs when eligible (`exe` and `aot-snapshot` always compile from sources, see `compile_mode`). Enabled (`True`) by default (including for `package:test`'s `test_runner`); set `modular_kernel = False` or `--@rules_dart//dart:modular_kernel=false` for whole-program compilation.",
+        doc = "Whether `compile_mode = \"kernel\"` compiles modularly against dependency `.kmod` outputs when eligible (`exe` and `aot-snapshot` compile from sources unless `link_modules = True` opts them in, see `compile_mode`). Enabled (`True`) by default (including for `package:test`'s `test_runner`); set `modular_kernel = False` or `--@rules_dart//dart:modular_kernel=false` for whole-program compilation.",
     ),
     "_modular_kernel": KERNEL_MODULE_ATTRS["_modular_kernel"],
     "_kernel_module": attr.label(
@@ -1552,10 +1552,22 @@ def library_kernel_info(ctx, library, compile, options):
         unseeded_base_kmods = bases.unseeded_base_kmods,
     )
 
+def _compiles_modules(ctx):
+    """Whether the originating executable links per-library modules at all.
+
+    Args:
+      ctx: The aspect context.
+
+    Returns:
+      True for `kernel` mode, and for `exe` and `aot-snapshot` that set `link_modules`.
+    """
+    mode = ctx.attr.compile_mode
+    return mode == "kernel" or (ctx.attr.link_modules and mode in ("exe", "aot-snapshot"))
+
 def _dart_kernel_module_aspect_impl(target, ctx):
     if DartKernelInfo in target:
         return []
-    if DartInfo not in target or ctx.attr.compile_mode != "kernel" or not ctx.attr.modular_kernel:
+    if DartInfo not in target or not _compiles_modules(ctx) or not ctx.attr.modular_kernel:
         return [no_kernel_module()]
     library = getattr(ctx.rule.attr, "library", None)
     if library != None and DartKernelInfo in library:
@@ -1601,6 +1613,10 @@ dart_kernel_module_aspect = aspect(
         ),
         "modular_kernel": attr.bool(
             doc = "Whether the originating executable compiles modularly against dependency `.kmod` outputs. Defaults to `True`.",
+            default = True,
+        ),
+        "link_modules": attr.bool(
+            doc = "The originating `dart_binary`'s `link_modules`: whether `exe` and `aot-snapshot` link modules. Defaults to `True` only because Bazel refuses a `False` default for a parameter the rule lacks; it matters only with a `compile_mode` of `exe` or `aot-snapshot`, which only `dart_binary` has, and it declares its own value.",
             default = True,
         ),
     },

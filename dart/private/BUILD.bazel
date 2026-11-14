@@ -216,6 +216,7 @@ bzl_library(
         ":dart_compile",
         ":dart_import_check",
         ":dart_kernel",
+        ":dart_link_check",
         ":dart_test_runner",
         ":executable_package",
         ":package_files",
@@ -305,6 +306,17 @@ bzl_library(
         ":dart_kernel",
         ":kernel_library_state",
         "//dart:providers",
+    ],
+)
+
+bzl_library(
+    name = "dart_link_check",
+    srcs = ["dart_link_check.bzl"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":common",
+        ":dart_kernel",
+        "@bazel_skylib//rules:common_settings",
     ],
 )
 
