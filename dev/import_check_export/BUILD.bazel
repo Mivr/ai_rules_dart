@@ -16,3 +16,12 @@ outside_exe(
     tags = ["manual"],
     deps = ["//import_check_export/dep"],
 )
+
+# Its own `main` is clean, but its dependency `//import_check_export/dep_bad` imports `package:hidden`, which that
+# dependency's `deps` do not provide: building it fails only through `dart_import_check_aspect` on `deps`.
+outside_exe(
+    name = "bad_dep",
+    main = "bad_dep/lib/main.dart",
+    tags = ["manual"],
+    deps = ["//import_check_export/dep_bad"],
+)

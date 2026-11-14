@@ -1,0 +1,9 @@
+load("@rules_dart//dart:defs.bzl", "dart_library")
+
+# Its own source imports `package:hidden`, which its `deps` do not provide.
+dart_library(
+    name = "dep_bad",
+    package_name = "dep_bad",
+    srcs = ["lib/dep_bad.dart"],
+    visibility = ["//import_check_export:__pkg__"],
+)

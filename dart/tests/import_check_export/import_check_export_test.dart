@@ -92,6 +92,27 @@ void main(List<String> args) {
       );
       expect(output, contains("Add the target that provides package 'hidden'"));
     });
+
+    // Fails when `aspects = [dart_import_check_aspect]` is removed from the
+    // `deps` attribute in `dev/import_check_export/defs.bzl`: the executable's
+    // own `main` is clean, so only the aspect reports the dependency's source.
+    test('a dependency importing a package its deps lack fails the check', () {
+      serverStarted = true;
+      final ProcessResult result = _build(bazel, [
+        '//import_check_export:bad_dep',
+      ]);
+      final output = '${result.stdout}${result.stderr}';
+      expect(result.exitCode, isNot(0), reason: output);
+      expect(
+        output,
+        matches(
+          RegExp(
+            r"dep_bad[^\n]*imports 'package:hidden/hidden\.dart', but package 'hidden' is not a direct dependency",
+          ),
+        ),
+      );
+      expect(output, contains("Add the target that provides package 'hidden'"));
+    });
   });
 
   _registerLauncherConfigTests();
