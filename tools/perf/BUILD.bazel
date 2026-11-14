@@ -124,6 +124,15 @@ dart_test(
 )
 
 dart_test(
+    name = "peak_rss_test",
+    size = "small",
+    main = "test/peak_rss_test.dart",
+    deps = [
+        ":perf",
+    ],
+)
+
+dart_test(
     name = "spawn_log_test",
     size = "small",
     main = "test/spawn_log_test.dart",

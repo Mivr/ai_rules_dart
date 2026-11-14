@@ -65,6 +65,7 @@ FlowMeasurement _grown(int libraries, double exponent) {
   return FlowMeasurement(
     cpuSeconds: v,
     wallSeconds: v,
+    peakRssMb: v * 10,
     actionCount: v.ceil(),
     maxCommandLineBytes: v.ceil(),
   );
@@ -115,6 +116,16 @@ void _testReportContent() {
     );
     final cpu = (entry['metrics']! as Map)['cpu_seconds'] as Map;
     _check(cpu['1000'] == _grown(1000, 1).cpuSeconds, 'cpu value recorded');
+    final rss = (entry['metrics']! as Map)['peak_rss_mb'] as Map;
+    _check(
+      rss['1000'] == _grown(1000, 1).peakRssMb,
+      'peak_rss_mb recorded per scale point beside cpu and wall',
+    );
+    _check(
+      scaleMetrics.indexOf('peak_rss_mb') ==
+          scaleMetrics.indexOf('wall_seconds') + 1,
+      'peak_rss_mb follows wall_seconds',
+    );
     final per = (entry['cost_per_library']! as Map)['cpu_seconds'] as Map;
     _check(
       (per['1000'] as double) == _grown(1000, 1).cpuSeconds / 1000,
@@ -148,6 +159,35 @@ void _testReportContent() {
   } finally {
     dir.deleteSync(recursive: true);
   }
+}
+
+ScaleOutcome _reportWithRss(double? Function(int) peak) => buildScaleReport(
+  bySize: {
+    for (final n in _sizes)
+      n: {
+        for (final flow in scaleFlows)
+          flow: FlowMeasurement(
+            cpuSeconds: n.toDouble(),
+            wallSeconds: n.toDouble(),
+            peakRssMb: peak(n),
+            actionCount: n,
+            maxCommandLineBytes: n,
+          ),
+      },
+  },
+  ceilings: _ceilings(),
+  seed: 7,
+);
+
+void _testPeakRssIsReportOnly() {
+  final unmeasured = _reportWithRss((n) => null);
+  _check(unmeasured.problems.isEmpty, 'unmeasured: ${unmeasured.problems}');
+  final steep = _reportWithRss((n) => n * n.toDouble());
+  _check(steep.problems.isEmpty, 'rss is report-only: ${steep.problems}');
+  final entry =
+      (steep.report['flows']! as Map)['dart-app-clean'] as Map<String, Object?>;
+  final exponent = (entry['growth_exponent']! as Map)['peak_rss_mb'];
+  _check(exponent is double && exponent > 1.9, 'rss exponent reported');
 }
 
 void _testCliExitCodes() {
@@ -220,6 +260,7 @@ void _testCheckedInCeilings(String rlocationPath) {
 void main(List<String> args) {
   _testFit();
   _testReportContent();
+  _testPeakRssIsReportOnly();
   _testCliExitCodes();
   _testBadUsage();
   _testCheckedInCeilings(args.first);

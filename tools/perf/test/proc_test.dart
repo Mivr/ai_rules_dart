@@ -34,6 +34,7 @@ void _testParseProcStat() {
   _check(stat.cstime == 50, 'cstime == 50');
   _check(stat.starttime == 98765, 'starttime == 98765');
   _check(stat.totalTicks == 900, 'totalTicks == 900');
+  _check(stat.rssPages == 1000, 'rssPages == 1000 (field 24)');
 
   _check(parseProcStat('invalid text') == null, 'invalid text returns null');
   _check(
@@ -198,8 +199,22 @@ void _testFailClosedCases() {
   );
 }
 
+void _testReaderPageSize() {
+  _check(FakeProcReader(const {}).pageSizeBytes == 4096, 'fake page size');
+  _check(
+    FakeProcReader(const {}, pageSizeBytes: 16384).pageSizeBytes == 16384,
+    'fake page size is injectable',
+  );
+  _check(
+    const LinuxProcReader(pageSizeBytes: 65536).pageSizeBytes == 65536,
+    'linux page size is injectable',
+  );
+  _check(const LinuxProcReader().pageSizeBytes > 0, 'detected page size');
+}
+
 void main() {
   _testParseProcStat();
+  _testReaderPageSize();
   _testVanishedDescendantDelta();
   _testFailClosedCases();
   stdout.writeln('All proc tests passed.');
