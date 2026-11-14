@@ -173,9 +173,24 @@ pub.from_lock(
 With `workspace_members` empty (the default) nothing is checked and the lock
 is read as before. When it is set, the extension checks at fetch time that:
 
-- the `pubspec.yaml` next to the lock has a `workspace:` list, and each
-  member's directory (relative to the root) is in it; a member's label must
-  resolve inside the root's directory;
+- the root pubspec is the `pubspec.yaml` in the lock file's own directory (the
+  label's package joined with the directory part of its name, so a lock
+  `//:app/pubspec.lock` has the root `app/pubspec.yaml`), and that directory is
+  what member directories are relative to. It has a `workspace:` list, and each
+  member's directory is listed. A member label's directory is its package
+  joined with the directory part of its name, and must lie inside the root's
+  directory;
+- a `workspace:` entry matches a member directory after `.` and empty segments
+  are dropped (`pkgs/./a`, `./pkgs/b/`). `*` and `?` match within one segment
+  and a `**` segment matches any number of segments (`pkgs/*`, `pkgs/**`,
+  `pkgs/?`). An entry with `[` or `{` fails the check with a message naming
+  the entry and saying the form is not supported: the check cannot judge it;
+- a member whose own pubspec has a `workspace:` list contributes its entries,
+  relative to its directory, to the listed set, recursively, so a member listed
+  only that way passes;
+- a `pubspec_overrides.yaml` next to a pubspec (the root's or a member's) is
+  read when it exists, and its top-level keys replace those of that pubspec
+  before any check, `workspace:` and `resolution:` included;
 - each member's `pubspec.yaml` says `resolution: workspace`;
 - no member's `name:` is a package in the lock or declared with
   `pub.package()`: a member name never resolves to a hosted or git package.
@@ -184,7 +199,9 @@ A violation fails the extension with `pub.from_lock "<hub>": member <label>:
 <reason>`. The reason is one of: missing `resolution: workspace`,
 `resolution:` set to another value, directory not listed in the root's
 `workspace:`, no `workspace:` in the root pubspec, label outside the root's
-directory, or the name clash. The message names only the failing member.
+directory, or the name clash. The message names only the failing member. An
+unsupported `[` / `{` entry fails without a member prefix: the message names
+the entry and the pubspec that lists it.
 
 Members are ordinary Bazel packages. A member depends on a sibling member
 through a `dart_library` label (`//a`), not through the lock, and on locked
