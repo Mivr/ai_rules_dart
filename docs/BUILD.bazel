@@ -6,6 +6,7 @@ _DOC_EXTRACTS = [
     ":dart_analyze.doc_extract",
     ":dart_defs.doc_extract",
     ":dart_extensions.doc_extract",
+    ":dart_import_check.doc_extract",
     ":dart_providers.doc_extract",
     ":dart_repositories.doc_extract",
     ":dart_toolchain.doc_extract",
@@ -54,6 +55,12 @@ starlark_doc_extract(
     name = "dart_extensions.doc_extract",
     src = "//dart:extensions.bzl",
     deps = ["//dart:extensions"],
+)
+
+starlark_doc_extract(
+    name = "dart_import_check.doc_extract",
+    src = "//dart:import_check.bzl",
+    deps = ["//dart:import_check_bzl"],
 )
 
 starlark_doc_extract(
@@ -207,8 +214,8 @@ _DECLARED_EXTRACTS = [
 ]
 
 _ = (
-    None if len(_DECLARED_EXTRACTS) == 27 and sorted(_DECLARED_EXTRACTS) == sorted(_DOC_EXTRACTS) else fail(
-        "expected 27 starlark_doc_extract targets matching _DOC_EXTRACTS, found {}".format(
+    None if len(_DECLARED_EXTRACTS) == 28 and sorted(_DECLARED_EXTRACTS) == sorted(_DOC_EXTRACTS) else fail(
+        "expected 28 starlark_doc_extract targets matching _DOC_EXTRACTS, found {}".format(
             len(_DECLARED_EXTRACTS),
         ),
     )

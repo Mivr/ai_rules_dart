@@ -143,11 +143,11 @@ MODULAR_KERNEL_ATTRS = dict(KERNEL_MODULE_ATTRS)
 BINARY_MODULAR_KERNEL_ATTRS = {
     "modular_kernel": attr.bool(
         default = True,
-        doc = "Whether `compile_mode = \"kernel\"` compiles modularly against dependency `.kmod` outputs when eligible, and whether `exe` and `aot-snapshot` take the linked modules, not sources, as the front end's input (see `compile_mode`). Enabled (`True`) by default (including for `package:test`'s `test_runner`); set `modular_kernel = False` or `--@rules_dart//dart:modular_kernel=false` for whole-program compilation.",
+        doc = "Whether `compile_mode = \"kernel\"` compiles modularly against dependency `.kmod` outputs when eligible (`exe` and `aot-snapshot` always compile from sources, see `compile_mode`). Enabled (`True`) by default (including for `package:test`'s `test_runner`); set `modular_kernel = False` or `--@rules_dart//dart:modular_kernel=false` for whole-program compilation.",
     ),
     "_modular_kernel": KERNEL_MODULE_ATTRS["_modular_kernel"],
     "_kernel_module": attr.label(
-        doc = "The tool that compiles one module with `kernel_worker`, when `compile_mode` is `kernel`, `exe` or `aot-snapshot`.",
+        doc = "The tool that compiles one module with `kernel_worker`, when `compile_mode` is `kernel` (or in `dart_test`).",
         default = _kernel_module_for_mode,
         executable = True,
         cfg = "exec",

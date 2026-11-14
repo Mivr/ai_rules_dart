@@ -1,4 +1,4 @@
-"""Compiles a `dart_binary`: from linked per-library kernels where the SDK allows, else from source."""
+"""Compiles a `dart_binary` whole-program from its sources (front end, then `dart compile`)."""
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("//dart/private:build_settings.bzl", "merge_dart_defines")
@@ -50,8 +50,7 @@ def _compile_cfg(ctx, run, inputs):
     Args:
       ctx: The rule context.
       run: The `struct` `binary_compile` takes.
-      inputs: A struct with what differs between the source and the linked
-        compile: `main`, `srcs`, `package_config`, `main_path`, `defines`,
+      inputs: A struct with what the source compile reads: `main`, `srcs`, `package_config`, `main_path`, `defines`,
         `native_assets_yaml` and `linked_kernel`.
 
     Returns:
