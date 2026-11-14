@@ -27,7 +27,8 @@ _FLOW_PREFIX = {
     "web_release": "web-release",
     "web_debug": "web-debug",
 }
-_FLOW_SUFFIX = {"clean": "clean", "app_edit": "app", "core_edit": "body"}
+_FLOW_SUFFIX = {"clean": "clean", "app_edit": "app", "core_edit": "body",
+                "api_edit": "api"}
 _PLATFORM_CONFIGS = (
     ("ios", ("device_release", "sim_debug")),
     ("android", ("android_release", "android_debug")),

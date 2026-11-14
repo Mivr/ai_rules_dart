@@ -2,7 +2,7 @@
 """Speed-of-light (SOL) cost for the Flutter perf bench.
 
 For each bench configuration (iOS, Android and Web; release and debug) and
-each scenario (``clean``, ``app_edit``, ``core_edit``) this tool measures
+each scenario (``clean``, ``app_edit``, ``core_edit``, ``api_edit``) this tool measures
 two numbers in the same unit, whole-tree user+sys CPU seconds:
 
 - the Bazel cost: for ``clean``, the whole ``bazel --batch build``
@@ -111,6 +111,16 @@ import warm_server  # noqa: E402
 from floor_flow import floor_fields  # noqa: E402
 from floor_summary import run_exit  # noqa: E402
 from peak_rss import run_peak  # noqa: E402
+# command_prefix and startup_options are re-exported: sol_test uses them.
+from sol_argv import (  # noqa: E402,F401
+    build_argv,
+    command_prefix,
+    cquery_argv,
+    info_argv,
+    out_base_of,
+    startup_options,
+)
+from sol_warmup import run_warm_ups  # noqa: E402
 from sol_errors import error_record  # noqa: E402,F401
 from sol_errors import write_error_records  # noqa: E402
 from sol_summary import print_flow_lines  # noqa: E402
@@ -141,59 +151,6 @@ from sol_summary import (  # noqa: E402
 
 _EDITS = dict(SCENARIOS)
 _CHAIN_REPORT = "chain.json"
-
-def startup_options(out_base):
-    """Bazel startup options shared by every command on one output base."""
-    return ["--output_base=" + out_base]
-
-
-def command_prefix(batch):
-    """``bazel`` argv head: batch commands pass ``--batch``, warm ones do
-    not, so they run on the config's server with identical startup options.
-    """
-    return ["bazel", "--batch"] if batch else ["bazel"]
-
-
-def info_argv(out_base, key, batch):
-    """Full ``bazel info`` argv in either mode."""
-    return command_prefix(batch) + startup_options(out_base) + [
-        "info", key]
-
-
-def cquery_argv(out_base, target, build_flags, batch):
-    """Full ``bazel cquery`` argv in either mode.
-
-    Lists ``target.files`` (DefaultInfo.files) only: ``--output=files``
-    would add the ``.bazelrc`` ``test`` aspect output groups, whose
-    outputs ``bazel build`` never builds.
-    """
-    expr = '"\\n".join([f.path for f in target.files.to_list()])'
-    return (command_prefix(batch) + startup_options(out_base)
-            + ["cquery", "--output=starlark", "--starlark:expr=" + expr,
-               target] + list(build_flags))
-
-
-def build_argv(out_base, config, log_path, profile_path, batch):
-    """Full ``bazel build`` argv: the warm form drops ``--batch`` only.
-
-    The same target, build flags, execution log, trace profile and
-    param-file materialization either way; ``profile_path`` None (the
-    unmeasured warm-up build) omits ``--profile``.
-    """
-    spec = CONFIGS[config]
-    argv = (command_prefix(batch) + startup_options(out_base) + ["build"]
-            + list(spec["build_flags"])
-            + [spec["target"],
-               "--execution_log_json_file=" + log_path,
-               "--materialize_param_files"])
-    if profile_path is not None:
-        argv.append("--profile=" + profile_path)
-    return argv
-
-
-def out_base_of(args, config):
-    """Per-config output base: no shared server between configs."""
-    return os.path.join(args.out_base, config)
 
 
 def select_sol_spawns(spawns):
@@ -801,47 +758,6 @@ def server_pid_of(capture_server, work, out_base):
     return pid
 
 
-def check_warmup_actions(log_path, target):
-    """Fails the config when the warm-up build executed any action.
-
-    The warm-up replays the clean build after its chain and replay
-    restored every output: zero executed spawns proves the restore left
-    the action cache undisturbed. Any spawn means the outputs were
-    perturbed and the edit numbers would measure rebuild work the
-    developer never pays.
-    """
-    try:
-        n_spawns = len(load_spawns(log_path))
-    except OSError as exc:
-        raise RuntimeError(
-            "warm-up build of %s left no execution log %s (%s)"
-            % (target, log_path, exc))
-    if n_spawns != 0:
-        raise RuntimeError(
-            "warm-up build of %s executed %d action(s): "
-            "the clean outputs were perturbed" % (target, n_spawns))
-    return n_spawns
-
-
-def warm_up_server_build(args, config):
-    """Unmeasured server-mode build proving the clean restore is exact.
-
-    Runs the same target and flags through the config's server (never
-    `--batch`) with an execution log that must list zero executed
-    spawns; anything else fails the config with that reason.
-    """
-    spec = CONFIGS[config]
-    log_path = os.path.join(args.work,
-                            "execlog-sol-warmup-%s.json" % config)
-    argv = build_argv(out_base_of(args, config), config, log_path, None,
-                      False)
-    proc = args.run(argv, cwd=args.work)
-    if proc.returncode != 0:
-        raise RuntimeError("warm-up bazel build %s failed (exit %s)"
-                           % (spec["target"], proc.returncode))
-    return check_warmup_actions(log_path, spec["target"])
-
-
 def run_chain(log_path, execroot, report_path, timeout, runner=None):
     """Runs an execution log's SOL chain in order; writes its report."""
     spawns = load_spawns(log_path)
@@ -1219,10 +1135,11 @@ def prove_chain_outputs(args, built, chainable, before, backup_dir):
 
 
 def run_sol_scenario(args, config, scenario, batch,
-                       server_pid=None):
+                       server_pid=None, warm_up=None):
     """Builds one scenario, runs its SOL chain, proves the outputs.
 
-    The mode has no default: callers pass the flow's mode explicitly."""
+    The mode has no default: callers pass the flow's mode explicitly.
+    An edit flow's warm-up record is stored on its record as `warm_up`."""
     built = measure_scenario_build(args, config, scenario, batch,
                                    server_pid)
     before = read_verify_snapshot(built.plan)
@@ -1264,6 +1181,8 @@ def run_sol_scenario(args, config, scenario, batch,
               "profile": profile}
     if not batch:
         record["bazel_parts"] = built.bazel_cost["parts"]
+    if warm_up is not None:
+        record["warm_up"] = warm_up
     record.update(floor_fields(args, config, scenario, built, built.swap))
     with open(os.path.join(built.record_dir, _RECORD), "w", encoding="utf-8",
               newline="\n") as fh:
@@ -1277,8 +1196,9 @@ def run_sol_rep(args, rep, configs):
     The clean flow stays a `bazel --batch` build. After its chain and
     replay have restored Bazel's outputs, a server starts on the same
     output base (same startup options minus `--batch`); one unmeasured
-    warm-up build must execute zero actions, and each edit flow then
-    builds against that server. While the server is up every Bazel
+    warm-up build must execute zero actions, an unmeasured app edit and
+    build then warm the workers (its record rides on every edit flow as
+    `warm_up`), and each edit flow builds against that server. While the server is up every Bazel
     command on the output base goes through it, never `--batch`, and the
     server shuts down after the config's last flow and on every error
     path: no server outlives its config. An unexpected error in one
@@ -1301,13 +1221,13 @@ def run_sol_rep(args, rep, configs):
             server_pid = server_pid_of(args.capture_server, args.work,
                                        out_base)
             server_started = True
-            warm_up_server_build(args, config)
+            warm_up = run_warm_ups(args, config)
             for scenario, _ in SCENARIOS:
                 if scenario == "clean":
                     continue
                 flows[scenario] = run_sol_scenario(
                     args, config, scenario, batch=False,
-                    server_pid=server_pid)
+                    server_pid=server_pid, warm_up=warm_up)
         except Exception as exc:
             had_errors = True
             remaining = [scenario for scenario, _ in SCENARIOS

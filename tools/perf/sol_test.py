@@ -1458,10 +1458,12 @@ class SummarizeSolTest(unittest.TestCase):
             "android-release-clean", "android-release-app",
             "android-release-body", "android-debug-clean",
             "android-debug-app", "android-debug-body",
+            "android-release-api", "android-debug-api",
         }
         web_flows = {
             "web-release-clean", "web-release-app", "web-release-body",
             "web-debug-clean", "web-debug-app", "web-debug-body",
+            "web-release-api", "web-debug-api",
         }
         for config, prefix in [("android_release", "android-release"),
                                ("android_debug", "android-debug"),
@@ -1469,7 +1471,8 @@ class SummarizeSolTest(unittest.TestCase):
                                ("web_debug", "web-debug")]:
             for scenario, suffix in [("clean", "clean"),
                                      ("app_edit", "app"),
-                                     ("core_edit", "body")]:
+                                     ("core_edit", "body"),
+                                     ("api_edit", "api")]:
                 self.write_records(config, scenario, [sol_record(
                     "%s-%s" % (prefix, suffix), 1.0, 0.9, True)])
         summary = summarize_sol(
@@ -1499,6 +1502,7 @@ class SummarizeSolTest(unittest.TestCase):
         expected = {
             "ios-release-clean", "ios-release-app", "ios-release-body",
             "ios-debug-clean", "ios-debug-app", "ios-debug-body",
+            "ios-release-api", "ios-debug-api",
         }
         self.assertEqual(set(summary["flows"]), expected)
         self.assertEqual(set(summary), {"rules_flutter", "unit",
@@ -2171,7 +2175,8 @@ class SolEndToEndTest(unittest.TestCase):
             summary = json.load(fh)
         self.assertEqual(summary["unit"], "cpu_seconds")
         self.assertEqual(summary["rules_flutter"], "a" * 40)
-        expected = ["ios-debug-app", "ios-debug-body", "ios-debug-clean",
+        expected = ["ios-debug-api", "ios-debug-app", "ios-debug-body",
+                    "ios-debug-clean", "ios-release-api",
                     "ios-release-app", "ios-release-body",
                     "ios-release-clean"]
         self.assertEqual(sorted(summary["flows"]), expected)
@@ -2219,7 +2224,8 @@ class SolEndToEndTest(unittest.TestCase):
         for kind in ("release", "debug"):
             for flow, method in (("clean", "batch"),
                                  ("app", "warm-server"),
-                                 ("body", "warm-server")):
+                                 ("body", "warm-server"),
+                                 ("api", "warm-server")):
                 name = "web-%s-%s" % (kind, flow)
                 entry = summary["flows"][name]
                 self.assertTrue(entry["identical"], name)
@@ -2286,10 +2292,18 @@ class SolEndToEndTest(unittest.TestCase):
             self.assertEqual(sol.main(self.summarize_argv(out)), 0)
         for scenario, method in (("clean", "batch"),
                                  ("app_edit", "warm-server"),
-                                 ("core_edit", "warm-server")):
+                                 ("core_edit", "warm-server"),
+                                 ("api_edit", "warm-server")):
             record = self.read_record("device_release", scenario)
             self.assertEqual(record["method"], method, scenario)
             self.assertTrue(record["identical"], scenario)
+            if scenario == "clean":
+                self.assertNotIn("warm_up", record)
+            else:
+                warm = record["warm_up"]
+                self.assertEqual(warm["edit"], "apply-app-edit", scenario)
+                self.assertGreaterEqual(warm["executed_actions"], 1)
+                self.assertGreaterEqual(warm["worker_spawns"], 0)
             if method == "warm-server":
                 parts = record["bazel_parts"]
                 self.assertEqual(sorted(parts),
@@ -2313,7 +2327,8 @@ class SolEndToEndTest(unittest.TestCase):
             summary["flows"]["ios-release-clean"]["method"], "batch")
         self.assertNotIn(
             "bazel_parts", summary["flows"]["ios-release-clean"])
-        for flow in ("ios-release-app", "ios-release-body"):
+        for flow in ("ios-release-app", "ios-release-body",
+                     "ios-release-api"):
             entry = summary["flows"][flow]
             self.assertEqual(entry["method"], "warm-server", flow)
             self.assertEqual(sorted(entry["bazel_parts"]),
@@ -2371,7 +2386,7 @@ class SolEndToEndTest(unittest.TestCase):
         clean = self.read_record("device_release", "clean")
         self.assertTrue(clean["identical"])
         self.assertEqual(clean["method"], "batch")
-        for scenario in ("app_edit", "core_edit"):
+        for scenario in ("app_edit", "core_edit", "api_edit"):
             record = self.read_record("device_release", scenario)
             self.assertFalse(record["identical"], scenario)
             self.assertIsNone(record["sol"], scenario)
@@ -2383,7 +2398,8 @@ class SolEndToEndTest(unittest.TestCase):
             summary = json.load(fh)
         self.assertTrue(
             summary["flows"]["ios-release-clean"]["identical"])
-        for flow in ("ios-release-app", "ios-release-body"):
+        for flow in ("ios-release-app", "ios-release-body",
+                     "ios-release-api"):
             entry = summary["flows"][flow]
             self.assertFalse(entry["identical"], flow)
             self.assertIsNone(entry["sol"], flow)

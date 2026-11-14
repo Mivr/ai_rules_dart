@@ -379,6 +379,30 @@ class GenerationTest(unittest.TestCase):
         self.assertIn(edited_pkg, layer0)
         self.assertEqual(fan_in[edited_pkg], best)
 
+    def test_api_edit_target_is_imported_by_two_other_packages(self):
+        for seed in (1, 7, 11):
+            out, stats = self.generate("fan%d" % seed, seed=seed)
+            with open(os.path.join(out, "bench-edit-manifest.json"),
+                      encoding="utf-8") as fh:
+                rel = json.load(fh)["api_edit"]
+            edited = int(rel.split("/")[1].replace("pkg", ""))
+            importers = set()
+            for pkg in range(stats["packages"]):
+                if pkg == edited:
+                    continue
+                entry = os.path.join(out, "packages", "pkg%d" % pkg, "lib",
+                                     "pkg%d.dart" % pkg)
+                with open(entry, encoding="utf-8") as fh:
+                    if "package:pkg%d/pkg%d.dart" % (
+                            edited, edited) in fh.read():
+                        importers.add(pkg)
+            self.assertGreaterEqual(len(importers), 2, seed)
+            with open(os.path.join(out, rel), encoding="utf-8") as fh:
+                original = fh.read()
+            apply_api_edit(out)
+            with open(os.path.join(out, rel), encoding="utf-8") as fh:
+                self.assertNotEqual(fh.read(), original)
+
     def test_scaffolding_layout(self):
         out, _ = self.generate("a")
         for rel in ["MODULE.bazel", "BUILD.bazel", ".bazelrc",

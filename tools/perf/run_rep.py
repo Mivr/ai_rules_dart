@@ -57,6 +57,7 @@ SCENARIOS = [
     ("clean", None),
     ("app_edit", "apply-app-edit"),
     ("core_edit", "apply-body-edit"),
+    ("api_edit", "apply-api-edit"),
 ]
 
 CONFIGS = {
@@ -245,7 +246,7 @@ def shutdown(run, work, out_base):
 
 def run_config(tools_dir, work, out_base, results_ref_dir, rep, config,
                options=None):
-    """Runs one configuration: three builds, chmod, three replay passes.
+    """Runs one configuration: one build per scenario, chmod, one replay pass per scenario.
 
     The options carry the replay timeouts and budgets, the minimum
     clean-action guard and the run/chmod hooks, with the same defaults

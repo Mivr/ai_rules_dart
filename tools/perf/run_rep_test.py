@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import run_rep
 from run_rep import (CONFIG_ORDER, CONFIGS, DEFAULT_MIN_CLEAN_ACTIONS,
+                     SCENARIOS,
                      RunOptions, make_writable_tree, real_run, run_rep)
 
 
@@ -189,13 +190,13 @@ class OrderingTest(unittest.TestCase):
     def test_builds_before_replays_and_shutdown_last(self):
         fake, records = self.drive()
         kinds = fake.kinds()
-        # Every config x three scenarios.
-        self.assertEqual(kinds.count("build"), 3 * len(CONFIGS))
-        self.assertEqual(kinds.count("replay"), 3 * len(CONFIGS))
+        # Every config x four scenarios.
+        self.assertEqual(kinds.count("build"), 4 * len(CONFIGS))
+        self.assertEqual(kinds.count("replay"), 4 * len(CONFIGS))
         self.assertEqual(sorted(records), sorted(CONFIGS))
         for config, record in records.items():
             self.assertEqual(sorted(record["logs"]),
-                             ["app_edit", "clean", "core_edit"])
+                             ["api_edit", "app_edit", "clean", "core_edit"])
         # Per config, no build follows the first replay.
         per_config = []
         current = []
@@ -238,7 +239,7 @@ class OrderingTest(unittest.TestCase):
         fake, _ = self.drive()
         builds = [argv for argv in fake.calls
                   if argv[0] == "bazel" and "build" in argv]
-        self.assertEqual(len(builds), 3 * len(CONFIGS))
+        self.assertEqual(len(builds), 4 * len(CONFIGS))
         for argv in builds:
             matched = any(
                 spec["target"] in argv
@@ -250,18 +251,28 @@ class OrderingTest(unittest.TestCase):
     def test_results_layout_has_config(self):
         self.drive()
         for config in CONFIGS:
-            for scenario in ["clean", "app_edit", "core_edit"]:
+            for scenario in ["clean", "app_edit", "core_edit", "api_edit"]:
                 for name in ["execlog.json", "replay.json"]:
                     path = os.path.join(self.dest, config, scenario,
                                         "rep2", name)
                     self.assertTrue(os.path.isfile(path), path)
+
+    def test_api_edit_runs_last_after_core_edit(self):
+        fake, _ = self.drive(configs=["sim_debug"])
+        edits = [argv[2] for argv in fake.calls
+                 if len(argv) > 2 and argv[2].startswith("apply-")]
+        self.assertEqual(
+            edits, ["apply-app-edit", "apply-body-edit", "apply-api-edit"])
+        self.assertEqual(
+            [scenario for scenario, _ in SCENARIOS],
+            ["clean", "app_edit", "core_edit", "api_edit"])
 
     def test_config_subset(self):
         fake, records = self.drive(configs=["sim_debug"])
         self.assertEqual(sorted(records), ["sim_debug"])
         builds = [argv for argv in fake.calls
                   if argv[0] == "bazel" and "build" in argv]
-        self.assertEqual(len(builds), 3)
+        self.assertEqual(len(builds), 4)
         self.assertTrue(all("//app:app_ios" in argv for argv in builds))
 
     def test_replay_flags_forwarded(self):
@@ -274,7 +285,7 @@ class OrderingTest(unittest.TestCase):
                     reset=lambda pristine, work: None))
         replays = [c for c in fake.calls
                    if len(c) > 1 and "replay.py" in c[1]]
-        self.assertEqual(len(replays), 3)
+        self.assertEqual(len(replays), 4)
         for argv in replays:
             self.assertIn("11.0", argv[argv.index("--timeout") + 1])
             self.assertIn("22.0", argv[argv.index("--budget-seconds") + 1])
@@ -421,7 +432,7 @@ class RunOptionsTest(unittest.TestCase):
         self.assertEqual(sorted(record), ["device_release"])
         replays = [c for c in fake.calls
                    if len(c) > 1 and "replay.py" in c[1]]
-        self.assertEqual(len(replays), 3)
+        self.assertEqual(len(replays), 4)
         for argv in replays:
             self.assertIn("11.0", argv[argv.index("--timeout") + 1])
             self.assertIn("22.0", argv[argv.index("--budget-seconds") + 1])

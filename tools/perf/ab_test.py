@@ -391,6 +391,33 @@ class SummarizeAbTest(unittest.TestCase):
         self.assertNotIn("arm_order", summary["meta"])
         self.assertEqual(summary["unit"], "cpu_seconds")
 
+    def test_api_flow_in_both_arms_with_a_paired_ratio(self):
+        for arm, cpu in (("control", 100.0), ("treatment", 50.0)):
+            for scenario, flow in (("app_edit", "ios-release-app"),
+                                   ("api_edit", "ios-release-api")):
+                record = self.full_record(flow, cpu, cpu / 2)
+                record["scenario"] = scenario
+                self.write(arm, "device_release", scenario, 1, record)
+        meta = {"sha": "b" * 40, "repeats": 1, "target_loc": 100,
+                "seed": 7, "ab": "flags", "bazel_flags": ["--jobs=8"],
+                "lockfile": "none", "order": arm_order(1)}
+        summary = summarize_ab(os.path.join(self.tmp, "control"),
+                               os.path.join(self.tmp, "treatment"), meta)
+        for arm, cpu in (("control", 100.0), ("treatment", 50.0)):
+            flows = list(summary["arms"][arm])
+            self.assertEqual(flows.index("ios-release-api"),
+                             flows.index("ios-release-body") + 1)
+            self.assertEqual(summary["arms"][arm]["ios-release-api"]["bazel"],
+                             cpu)
+            self.assertEqual(summary["arms"][arm]["ios-release-app"]["bazel"],
+                             cpu)
+        self.assertEqual(list(summary["arms"]["control"]),
+                         list(summary["arms"]["treatment"]))
+        for flow in ("ios-release-api", "ios-release-app"):
+            self.assertEqual(summary["ratio"][flow]["n"], 1, flow)
+            self.assertAlmostEqual(summary["ratio"][flow]["median"], 0.5)
+        self.assertEqual(summary["ratio"]["ios-release-body"]["n"], 0)
+
     def test_missing_flow_records_say_so(self):
         meta = {"sha": "b" * 40, "repeats": 1, "target_loc": 100,
                 "seed": 7, "ab": "lockfile", "bazel_flags": [],
@@ -628,12 +655,12 @@ class PlatformAbEndToEndTest(AbEndToEndTest):
             "ab", "bazel_flags", "lockfile", "order", "repeats", "seed",
             "target_loc"])
         flows = {"web-%s-%s" % (cfg, name) for cfg in ("release", "debug")
-                 for name in ("clean", "app", "body")}
+                 for name in ("clean", "app", "body", "api")}
         self.assertEqual(set(summary["ratio"]), flows)
         for arm in ("control", "treatment"):
             self.assertEqual(set(summary["arms"][arm]), flows)
         for flow in ("web-release-clean", "web-release-app",
-                     "web-release-body"):
+                     "web-release-body", "web-release-api"):
             self.assertTrue(summary["arms"]["control"][flow]["identical"])
             self.assertEqual(summary["ratio"][flow]["n"], 2, flow)
         self.assertEqual(self.live_server_pids(), [])
@@ -659,7 +686,8 @@ class PlatformSummaryTest(unittest.TestCase):
         self.assertEqual(set(summarize_arm_flows(self.tmp, "android")), {
             "android-release-clean", "android-release-app",
             "android-release-body", "android-debug-clean",
-            "android-debug-app", "android-debug-body"})
+            "android-debug-app", "android-debug-body",
+            "android-release-api", "android-debug-api"})
         self.assertEqual(summarize_arm_flows(self.tmp),
                          summarize_arm_flows(self.tmp, "ios"))
 
@@ -688,7 +716,7 @@ class PlatformSummaryTest(unittest.TestCase):
         with open(out, encoding="utf-8") as fh:
             summary = json.load(fh)
         self.assertEqual(summary["meta"]["bazel_flags"], ["--jobs=8"])
-        self.assertEqual(len(summary["ratio"]), 6)
+        self.assertEqual(len(summary["ratio"]), 8)
         self.assertEqual(summary["ratio"]["android-release-clean"]["n"], 1)
         self.assertEqual(summary["ratio"]["android-debug-clean"]["n"], 0)
         self.assertNotIn("ios-release-clean", summary["arms"]["control"])
@@ -818,6 +846,7 @@ class IosScopeTest(unittest.TestCase):
         self.assertEqual(set(flows), {
             "ios-release-clean", "ios-release-app", "ios-release-body",
             "ios-debug-clean", "ios-debug-app", "ios-debug-body",
+            "ios-release-api", "ios-debug-api",
         })
 
     def test_lock_builds_only_the_ios_configs(self):
