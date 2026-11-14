@@ -1,6 +1,9 @@
 // Kernel byte builders for `kernel_module_test`: synthetic `.dill` components
 // the planner and the source-stripping tests read.
 
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'dill_outline.dart';
@@ -250,4 +253,174 @@ void _writeOneSourceTable(DillWriter w, int srcLen) {
   w.bytes([97, 46, 100, 97, 114]);
   w.u30(0); // constantCoverageConstructors
   w.u32(uriEntry0);
+}
+
+/// A fake persistent `kernel_worker` (a Dart source run by the SDK `dart`): it
+/// answers every request with exit code 1 and the output `boom` when
+/// `FAKE_WORKER_FAIL=1`, and otherwise copies the file `FAKE_WORKER_DILL`
+/// names to the request's `--output` and succeeds.
+const fakeKernelWorkerSource = r"""
+import 'dart:convert';
+import 'dart:io';
+
+/// The varint at [pos] of [bytes] and the position after it, or null when
+/// the bytes end inside it.
+(int, int)? varintAt(List<int> bytes, int pos) {
+  var value = 0;
+  var shift = 0;
+  while (pos < bytes.length) {
+    final int b = bytes[pos++];
+    value |= (b & 0x7f) << shift;
+    shift += 7;
+    if (b < 0x80) return (value, pos);
+  }
+  return null;
+}
+
+/// The `arguments` (field 1) of a `WorkRequest` payload.
+List<String> argumentsOf(List<int> payload) {
+  final args = <String>[];
+  var pos = 0;
+  while (pos < payload.length) {
+    final (int tag, int afterTag) = varintAt(payload, pos)!;
+    pos = afterTag;
+    if (tag & 7 == 2) {
+      final (int len, int start) = varintAt(payload, pos)!;
+      if (tag >> 3 == 1) {
+        args.add(utf8.decode(payload.sublist(start, start + len)));
+      }
+      pos = start + len;
+    } else {
+      pos = varintAt(payload, pos)!.$2;
+    }
+  }
+  return args;
+}
+
+Future<void> main() async {
+  final fail = Platform.environment['FAKE_WORKER_FAIL'] == '1';
+  final buf = <int>[];
+  await for (final List<int> chunk in stdin) {
+    buf.addAll(chunk);
+    while (true) {
+      final (int, int)? head = varintAt(buf, 0);
+      if (head == null || buf.length < head.$2 + head.$1) break;
+      final List<String> args = argumentsOf(
+        buf.sublist(head.$2, head.$2 + head.$1),
+      );
+      buf.removeRange(0, head.$2 + head.$1);
+      final List<int> reply;
+      if (fail) {
+        reply = [0x08, 1, 0x12, 4, ...utf8.encode('boom')];
+      } else {
+        final String out = args[args.indexOf('--output') + 1];
+        File(out).parent.createSync(recursive: true);
+        File(Platform.environment['FAKE_WORKER_DILL']!).copySync(out);
+        reply = const [];
+      }
+      stdout.add([reply.length, ...reply]);
+      await stdout.flush();
+    }
+  }
+}
+""";
+
+/// The tool's `kernel_module` AOT snapshot running as a persistent worker over
+/// the fake `kernel_worker`, driven one framed request at a time.
+class FakeWorkerTool {
+  late final Process _process;
+  late final StreamIterator<List<int>> _stdout;
+  final _buffer = <int>[];
+  final _stderr = StringBuffer();
+  Future<void>? _stderrDone;
+
+  /// The tool's process id, the `worker_pid` of its log lines.
+  int get pid => _process.pid;
+
+  /// Starts [snapshot] with `--persistent_worker`, the fake worker source at
+  /// [fakeWorker] run by [dart], and [extraFlags] as startup flags.
+  static Future<FakeWorkerTool> start({
+    required String snapshot,
+    required String dart,
+    required String fakeWorker,
+    required Map<String, String> environment,
+    List<String> extraFlags = const [],
+  }) async {
+    final Process process = await Process.start(
+      '${File(dart).parent.path}/dartaotruntime'
+      '${Platform.isWindows ? '.exe' : ''}',
+      [
+        snapshot,
+        '--persistent_worker',
+        '--kernel-worker',
+        fakeWorker,
+        '--dartaotruntime',
+        dart,
+        ...extraFlags,
+      ],
+      environment: environment,
+      includeParentEnvironment: false,
+    );
+    final tool = FakeWorkerTool()
+      .._process = process
+      .._stdout = StreamIterator<List<int>>(process.stdout);
+    tool._stderrDone = process.stderr
+        .transform(const SystemEncoding().decoder)
+        .forEach(tool._stderr.write);
+    return tool;
+  }
+
+  /// Sends one request with [arguments] and returns the `WorkResponse` bytes.
+  Future<Uint8List> request(List<String> arguments) async {
+    final payload = <int>[];
+    for (final argument in arguments) {
+      final List<int> bytes = utf8.encode(argument);
+      payload.addAll([0x0a, ..._varint(bytes.length), ...bytes]);
+    }
+    _process.stdin.add([..._varint(payload.length), ...payload]);
+    await _process.stdin.flush();
+    while (true) {
+      var length = 0;
+      var shift = 0;
+      var pos = 0;
+      while (pos < _buffer.length) {
+        final int b = _buffer[pos++];
+        length |= (b & 0x7f) << shift;
+        shift += 7;
+        if (b < 0x80) break;
+      }
+      if (pos > 0 &&
+          pos <= _buffer.length &&
+          _buffer[pos - 1] < 0x80 &&
+          _buffer.length >= pos + length) {
+        final response = Uint8List.fromList(_buffer.sublist(pos, pos + length));
+        _buffer.removeRange(0, pos + length);
+        return response;
+      }
+      if (!await _stdout.moveNext()) {
+        throw StateError('worker stdout ended before a response');
+      }
+      _buffer.addAll(_stdout.current);
+    }
+  }
+
+  /// The protobuf varint of the non-negative [value].
+  static List<int> _varint(int value) {
+    final out = <int>[];
+    var rest = value;
+    while (rest >= 0x80) {
+      out.add((rest & 0x7f) | 0x80);
+      rest >>= 7;
+    }
+    return [...out, rest];
+  }
+
+  /// Closes the tool's stdin, waits for it to exit, and returns its stderr.
+  Future<String> finish() async {
+    await _process.stdin.close();
+    final int code = await _process.exitCode;
+    await _stderrDone;
+    if (code != 0) throw StateError('kernel_module exited with $code');
+    return _stderr.toString();
+  }
 }

@@ -5026,6 +5026,176 @@ void main(List<String> args) {
     );
   });
 
+  group('phase timing log (AOT subprocess)', () {
+    // The real `kernel_module` snapshot in worker mode over a fake
+    // `kernel_worker` that copies a minimal kernel to each `--output`.
+    late String logPath;
+
+    setUp(() {
+      logPath = '${_root.path}/timing.jsonl';
+      _write('fake_worker.dart', fakeKernelWorkerSource);
+      File('${_root.path}/fake.dill').writeAsBytesSync(buildMinimalFieldDill());
+      _write('pkg/lib/a.dart', 'class A {}\n');
+    });
+
+    Future<FakeWorkerTool> startTool({
+      List<String> flags = const [],
+      bool fail = false,
+    }) => FakeWorkerTool.start(
+      snapshot: _toolSnapshotPath,
+      dart: _sdkDartPaths.first,
+      fakeWorker: '${_root.path}/fake_worker.dart',
+      environment: {
+        'FAKE_WORKER_DILL': '${_root.path}/fake.dill',
+        if (fail) 'FAKE_WORKER_FAIL': '1',
+      },
+      extraFlags: flags,
+    );
+
+    List<String> moduleArgs(String name) => [
+      '--target',
+      'vm',
+      '--packages-file',
+      '${_root.path}/package_config.json',
+      '--libraries-json',
+      '${_root.path}/libraries.json',
+      '--multi-root',
+      _root.path,
+      '--multi-root-scheme',
+      'org-dartlang-root',
+      '--source',
+      'package:pkg/a.dart',
+      '--output',
+      '${_root.path}/out/$name',
+      '--output-outline',
+      '${_root.path}/out/$name.koutline',
+      '--excluded-output',
+      '${_root.path}/out/$name.vm_excluded.txt',
+      '--unused-inputs-list',
+      '${_root.path}/out/$name.unused.txt',
+    ];
+
+    List<Map<String, dynamic>> logLines() => [
+      for (final line in File(logPath).readAsLinesSync())
+        jsonDecode(line) as Map<String, dynamic>,
+    ];
+
+    final String? skip = _toolSnapshotPath.isEmpty
+        ? 'no kernel_module AOT snapshot'
+        : null;
+
+    test('a request writes one line with every field', () async {
+      final FakeWorkerTool tool = await startTool(
+        flags: ['--phase-timing-log=$logPath'],
+      );
+      await tool.request(moduleArgs('m'));
+      expect(await tool.finish(), isEmpty);
+      final Map<String, dynamic> line = logLines().single;
+      expect(line['output'], '${_root.path}/out/m');
+      expect(line['worker_pid'], tool.pid);
+      expect(line['request'], 0);
+      expect(line['child_pid'], isA<int>());
+      expect(line['child_served_before'], 0);
+      expect(line['exit_code'], 0);
+      expect(line['compile_round_trips'], 1);
+      for (final phase in ['prepare', 'plan', 'compile', 'outline', 'write']) {
+        expect(line['${phase}_us'], isA<int>(), reason: phase);
+      }
+      expect(line['total_us'], greaterThan(0));
+      expect(line['compile_trips_us'], hasLength(1));
+      expect(line['compile_trips_same_summaries'], [false]);
+      expect(line['child_phases'], isNull);
+      expect(line['cache'], isA<List<dynamic>>());
+    }, skip: skip);
+
+    test('two requests count 0 and 1 on one child', () async {
+      final FakeWorkerTool tool = await startTool(
+        flags: ['--phase-timing-log=$logPath'],
+      );
+      await tool.request(moduleArgs('m'));
+      await tool.request(moduleArgs('m'));
+      await tool.finish();
+      final List<Map<String, dynamic>> lines = logLines();
+      expect(lines.map((line) => line['request']), [0, 1]);
+      expect(lines.map((line) => line['child_served_before']), [0, 1]);
+      expect(lines[0]['child_pid'], lines[1]['child_pid']);
+    }, skip: skip);
+
+    test('a failing compile still writes its line', () async {
+      final FakeWorkerTool tool = await startTool(
+        flags: ['--phase-timing-log=$logPath'],
+        fail: true,
+      );
+      await tool.request(moduleArgs('m'));
+      await tool.finish();
+      final Map<String, dynamic> line = logLines().single;
+      expect(line['exit_code'], 1);
+      expect(line['child_pid'], isA<int>());
+    }, skip: skip);
+
+    test('without the flag no file is created', () async {
+      final FakeWorkerTool tool = await startTool();
+      await tool.request(moduleArgs('m'));
+      expect(await tool.finish(), isEmpty);
+      expect(File(logPath).existsSync(), isFalse);
+    }, skip: skip);
+
+    test(
+      'outputs and response are byte-identical with and without it',
+      () async {
+        Future<(Uint8List, Map<String, List<int>>)> run(
+          List<String> flags,
+        ) async {
+          final FakeWorkerTool tool = await startTool(flags: flags);
+          final Uint8List response = await tool.request(moduleArgs('m'));
+          await tool.finish();
+          final out = Directory('${_root.path}/out');
+          final files = <String, List<int>>{
+            for (final entity in out.listSync(recursive: true))
+              if (entity is File)
+                entity.path.substring(out.path.length): entity
+                    .readAsBytesSync(),
+          };
+          out.deleteSync(recursive: true);
+          return (response, files);
+        }
+
+        final (Uint8List offResponse, Map<String, List<int>> off) = await run(
+          [],
+        );
+        final (Uint8List onResponse, Map<String, List<int>> on) = await run([
+          '--phase-timing-log=$logPath',
+        ]);
+        expect(off, isNotEmpty);
+        expect(on.keys, off.keys);
+        for (final String name in off.keys) {
+          expect(on[name], off[name], reason: name);
+        }
+        expect(onResponse, offResponse);
+      },
+      skip: skip,
+    );
+
+    test(
+      'an unwritable log is reported once and the request succeeds',
+      () async {
+        final bad = '${_root.path}/no_such_dir/timing.jsonl';
+        final FakeWorkerTool tool = await startTool(
+          flags: ['--phase-timing-log=$bad'],
+        );
+        final Uint8List first = await tool.request(moduleArgs('m'));
+        final Uint8List second = await tool.request(moduleArgs('m'));
+        final String errors = await tool.finish();
+        expect(first, isEmpty);
+        expect(second, isEmpty);
+        expect(File('${_root.path}/out/m/index.json').existsSync(), isTrue);
+        expect(errors, contains(bad));
+        expect('cannot write'.allMatches(errors), hasLength(1));
+      },
+      skip: skip,
+    );
+  });
+
   group('patched snapshot startup selection (AOT subprocess)', () {
     // Drives the real `kernel_module` AOT snapshot under test through its
     // startup flags, exactly as `kernel_module_action` in dart_kernel.bzl

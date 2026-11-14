@@ -80,6 +80,29 @@
 // the flag it runs one compile. Either way it prints nothing on success, and on a
 // failure it prints the full diagnostics.
 //
+// `--phase-timing-log=<path>` is an opt-in startup flag, passed as
+// `--worker_extra_flag=DartKernel=--phase-timing-log=<path>`, so it never enters an
+// action's argv, inputs or env. With it, each request (persistent or one-shot) appends
+// one JSON line to `<path>`:
+//
+//  * `output` (the module's output path), `worker_pid`, `request` (this process's
+//    request counter), `child_pid` and `child_served_before` (the `kernel_worker`
+//    child's requests answered before this one, counting each round trip of a module
+//    as one, so 0 is a fresh child), and `exit_code`.
+//  * `prepare_us` (arguments, input digests, index and library maps), `plan_us`
+//    (import planning), `compile_us` (the child round trips, retries included),
+//    `outline_us` (the outline and source strips), `write_us` (index, sidecar and
+//    unused-inputs files, and the stripped kernels) and `total_us`: wall times in
+//    microseconds.
+//  * `compile_round_trips` counts the child round trips; `compile_trips_us` lists
+//    each one's time, and `compile_trips_same_summaries` says for each whether it
+//    named the same `--input-summary` files as the child's previous round trip.
+//  * `cache`: one hit or miss per cache entry the request read.
+//
+// The pinned `kernel_worker` reports no phases of its own, so there is no
+// `child_phases`. Without the flag nothing is opened, written or printed. A log write
+// that fails is reported once on stderr and the request still completes.
+//
 // The worker protocol is spoken directly, as a length-prefixed `WorkRequest` and
 // `WorkResponse`, rather than through `package:bazel_worker`. That package is a
 // `dart_library`, and every `dart_library` carries this tool as an attribute, so
@@ -151,11 +174,6 @@ const _unusedInputsListFlag = '--unused-inputs-list';
 /// The file in each module directory that lists its kernels.
 const _indexName = 'index.json';
 const _noDropFlag = '--no-drop';
-const _packagesFlag = '--packages-file';
-const _multiRootFlag = '--multi-root';
-const _multiRootSchemeFlag = '--multi-root-scheme';
-
-const _defaultMultiRootPrefix = 'org-dartlang-root:///';
 
 /// `<path>:<line>:<col>: Error: <message>`, one per located diagnostic.
 final _errorLine = RegExp(r'^(.+?):(\d+):(\d+): Error: (.*)$', multiLine: true);
@@ -178,6 +196,8 @@ Future<void> main(List<String> argv) async {
       persistent = true;
     } else if (arg == _commaPatchedFlag) {
       snapshotPatched = true;
+    } else if (arg.startsWith(phaseTimingFlag)) {
+      phaseTimingLog = arg.substring(phaseTimingFlag.length);
     } else if (arg.startsWith(_requestTimeoutFlag)) {
       final int? seconds = int.tryParse(
         arg.substring(_requestTimeoutFlag.length),
@@ -212,13 +232,15 @@ Future<void> main(List<String> argv) async {
     await stdout.flush();
     exit(0);
   }
-  final List<String> args = await _expandParamFiles(rest);
+  final List<String> args = await expandOneShotParamFiles(rest);
   final log = StringBuffer();
-  final int code = await compileModule(
-    args,
-    _OneShot(dartaotruntime, kernelWorker, snapshotPatched: snapshotPatched),
-    log,
-    const [],
+  final oneShot = _OneShot(
+    dartaotruntime,
+    kernelWorker,
+    snapshotPatched: snapshotPatched,
+  );
+  final int code = await compileTimed(
+    () => compileModule(args, oneShot, log, const []),
   );
   if (code != 0) {
     stderr.write(log);
@@ -285,12 +307,14 @@ Future<WorkResult> _serveRequest(
   var code = 1;
   try {
     final request = _WorkRequest.decode(frame);
-    code = await compileModule(
-      request.arguments,
-      compiler,
-      log,
-      request.inputs,
-      cache: cache,
+    code = await compileTimed(
+      () => compileModule(
+        request.arguments,
+        compiler,
+        log,
+        request.inputs,
+        cache: cache,
+      ),
     );
   } catch (error, stack) {
     log.writeln('kernel_module: $error\n$stack');
@@ -325,58 +349,40 @@ Future<int> compileModule(
   // mode takes. Production callers leave it null to create real symlinks.
   void Function(String linkPath, String target)? createLink,
 }) async {
-  final options = _ModuleOptions();
-  final int? usage = _parseModuleArgs(rawArgs, options, log);
+  final options = ModuleOptions();
+  final int? usage = timedSync(
+    'prepare',
+    () => _parseModuleArgs(rawArgs, options, log),
+  );
   if (usage != null) return usage;
+  phaseTimer?.output = options.output;
   final ({Map<String, Uint8List>? inputDigests, Set<String>? workerInputPaths})
-  decoded = _decodeWorkerInputs(inputs);
-  final _ModuleBuild? build = await _ModuleBuild.load(
-    options,
-    compiler,
-    log,
-    (
-      inputs: inputs,
-      workerInputPaths: decoded.workerInputPaths,
-      inputDigests: decoded.inputDigests,
+  decoded = timedSync('prepare', () => _decodeWorkerInputs(inputs));
+  final _ModuleBuild? build = await timed(
+    'prepare',
+    () => _ModuleBuild.load(
+      options,
+      compiler,
+      log,
+      (
+        inputs: inputs,
+        workerInputPaths: decoded.workerInputPaths,
+        inputDigests: decoded.inputDigests,
+      ),
+      cache: cache,
+      createLink: createLink,
     ),
-    cache: cache,
-    createLink: createLink,
   );
   if (build == null) return 1;
   if (options.noDrop) return build.runEntry();
   return build.runLibrary();
 }
 
-/// The command-line options of one `compileModule` run.
-class _ModuleOptions {
-  final base = <String>[];
-  final sources = <String>[];
-  final inputSources = <String>[];
-  final ownSourceFiles = <String>[];
-  final multiRoots = <String>[];
-  final closureExcluded = <String>[];
-  final inputKmods = <String>[];
-  final extraLibraries = <String>[];
-  String? excludedPath;
-  String? unusedInputsPath;
-  String? output;
-  String? outputOutline;
-  String? packagesFile;
-  String? librariesJson;
-  var librariesPlatform = 'vm';
-  var multiRootPrefix = _defaultMultiRootPrefix;
-  var noDrop = false;
-  bool checkImports = false;
-  String? targetLabel;
-  final Set<String> ownPackages = <String>{};
-  final Set<String> directPackages = <String>{};
-}
-
 /// Parses [rawArgs] into [options], returning the exit code on fatal usage
 /// errors, or null to continue.
 int? _parseModuleArgs(
   List<String> rawArgs,
-  _ModuleOptions options,
+  ModuleOptions options,
   StringBuffer log,
 ) {
   final List<String>? args = materializePackageConfig(rawArgs, log);
@@ -392,36 +398,11 @@ int? _parseModuleArgs(
       options.librariesJson == null) {
     log.writeln(
       'kernel_module: $_excludedOutputFlag, $_librariesJsonFlag, --output and '
-      '$_packagesFlag are required.',
+      '$packagesFlag are required.',
     );
     return 64;
   }
   return null;
-}
-
-/// Parses an import-check flag at [i] into [options], returning the next index,
-/// or null if [rawArgs] at [i] is not an import-check flag.
-int? _parseImportCheckArg(List<String> rawArgs, int i, _ModuleOptions options) {
-  final String arg = rawArgs[i];
-  if (arg == '--check-imports') {
-    options.checkImports = true;
-    return i + 1;
-  }
-  if (i + 1 >= rawArgs.length) return null;
-  final String next = rawArgs[i + 1];
-  switch (arg) {
-    case '--target-label':
-      options.targetLabel = next;
-      return i + 2;
-    case '--own-package':
-      options.ownPackages.add(next);
-      return i + 2;
-    case '--direct-package':
-      options.directPackages.add(next);
-      return i + 2;
-    default:
-      return null;
-  }
 }
 
 /// Parses the argument at [i], returning the next index, or -1 when
@@ -429,10 +410,10 @@ int? _parseImportCheckArg(List<String> rawArgs, int i, _ModuleOptions options) {
 int _parseModuleArg(
   List<String> rawArgs,
   int i,
-  _ModuleOptions options,
+  ModuleOptions options,
   StringBuffer log,
 ) {
-  final int? checkIndex = _parseImportCheckArg(rawArgs, i, options);
+  final int? checkIndex = parseImportCheckArg(rawArgs, i, options);
   if (checkIndex != null) return checkIndex;
 
   final String arg = rawArgs[i];
@@ -476,29 +457,9 @@ int _parseModuleArg(
       ..add(arg)
       ..add(rawArgs[++i]);
   } else {
-    _parseBaseArg(rawArgs, i, options);
+    parseBaseArg(rawArgs, i, options);
   }
   return i + 1;
-}
-
-/// Parses a compiler pass-through argument at [i] into [options].
-void _parseBaseArg(List<String> rawArgs, int i, _ModuleOptions options) {
-  final String arg = rawArgs[i];
-  if (arg == _packagesFlag) {
-    options.packagesFile = rawArgs[i + 1];
-  } else if (arg.startsWith('$_packagesFlag=')) {
-    options.packagesFile = arg.substring(_packagesFlag.length + 1);
-  } else if (arg == _multiRootFlag) {
-    options.multiRoots.add(rawArgs[i + 1]);
-  } else if (arg.startsWith('$_multiRootFlag=')) {
-    options.multiRoots.add(arg.substring(_multiRootFlag.length + 1));
-  } else if (arg == _multiRootSchemeFlag) {
-    options.multiRootPrefix = '${rawArgs[i + 1]}:///';
-  } else if (arg.startsWith('$_multiRootSchemeFlag=')) {
-    options.multiRootPrefix =
-        '${arg.substring(_multiRootSchemeFlag.length + 1)}:///';
-  }
-  options.base.add(arg);
 }
 
 /// The worker input paths and their digests, or nulls when [inputs] is empty.
@@ -614,7 +575,7 @@ Future<void> _cleanIsolated(_IsolatedRoot? isolated) async {
 
 /// The VM libraries for the module's platform and extra libraries.
 Future<Set<String>> _loadVmLibraries(
-  _ModuleOptions options,
+  ModuleOptions options,
   KernelModuleCache? cache,
   _WorkerInputs worker,
 ) async {
@@ -712,7 +673,7 @@ final class _LoadedModule {
     required this.createLink,
   });
 
-  final _ModuleOptions options;
+  final ModuleOptions options;
   final ModuleCompiler compiler;
   final StringBuffer log;
   final _WorkerInputs worker;
@@ -748,7 +709,7 @@ class _ModuleBuild {
     required this.createLink,
   });
 
-  final _ModuleOptions options;
+  final ModuleOptions options;
   final ModuleCompiler compiler;
   final StringBuffer log;
   final List<Uint8List> inputs;
@@ -775,7 +736,7 @@ class _ModuleBuild {
   /// Loads the packages, closure, VM libraries, indexes and file view,
   /// returning null when a module index cannot be read.
   static Future<_ModuleBuild?> load(
-    _ModuleOptions options,
+    ModuleOptions options,
     ModuleCompiler compiler,
     StringBuffer log,
     _WorkerInputs worker, {
@@ -835,7 +796,7 @@ class _ModuleBuild {
 
   /// Assembles the file view, outputs and plan inputs from the loaded parts.
   static Future<_ModuleBuild> _assemble(_LoadedModule loaded) async {
-    final _ModuleOptions options = loaded.options;
+    final ModuleOptions options = loaded.options;
     final _DeclaredInputs declared = loaded.declared;
     final _WorkerInputs worker = loaded.worker;
     final files = _Files(
@@ -985,7 +946,7 @@ class _ModuleBuild {
         log.write(result.outcome.output);
         return 1;
       }
-      await _finishEntry(entry);
+      await timed('write', () => _finishEntry(entry));
     } finally {
       await _cleanIsolated(isolated);
     }
@@ -1040,7 +1001,7 @@ class _ModuleBuild {
         // Staged-source roots come first so the pinned dependency copies
         // win over any workspace shadow, exactly as the probe validates.
         if (staged == null)
-          for (final root in extraMultiRoots) ...[_multiRootFlag, root],
+          for (final root in extraMultiRoots) ...[multiRootFlag, root],
         ...entryBase,
         for (final d in neededDills(entry.imports, graph)) ...[
           '--input-summary',
@@ -1070,7 +1031,10 @@ class _ModuleBuild {
       final fullFile = File('$output/$_entryDillName');
       if (await fullFile.exists()) {
         final Uint8List rawBytes = await fullFile.readAsBytes();
-        final Uint8List outlineBytes = stripDillToOutline(rawBytes);
+        final Uint8List outlineBytes = timedSync(
+          'outline',
+          () => stripDillToOutline(rawBytes),
+        );
         await File('${options.outputOutline}/$_entryDillName')
             .writeAsBytes(outlineBytes);
       }
@@ -1112,7 +1076,7 @@ class _ModuleBuild {
 
   /// Plans, compiles and links the module's own sources component by component.
   Future<int> runLibrary() async {
-    final _PlannedLibrary planned = await _planLibrary();
+    final _PlannedLibrary planned = await timed('plan', _planLibrary);
     final int? plannedExit = planned.exit;
     if (plannedExit != null) return plannedExit;
     final Map<String, String> keys = planned.keys;
@@ -1171,7 +1135,7 @@ class _ModuleBuild {
     } finally {
       await _cleanIsolated(isolated);
     }
-    await _finishLibrary(sccs, keys, plan, remaining);
+    await timed('write', () => _finishLibrary(sccs, keys, plan, remaining));
     return 0;
   }
 
@@ -1294,7 +1258,7 @@ class _ModuleBuild {
     if (outcome.exitCode != 0) {
       return (stop: false, failure: outcome, isolated: result.isolated);
     }
-    await _recordSccNode(scc, local, dillPath);
+    await timed('write', () => _recordSccNode(scc, local, dillPath));
     return (stop: false, failure: null, isolated: result.isolated);
   }
 
@@ -1336,7 +1300,7 @@ class _ModuleBuild {
         // Staged-source roots come first so the pinned dependency copies
         // win over any workspace shadow, exactly as the probe validates.
         if (staged == null)
-          for (final root in extraMultiRoots) ...[_multiRootFlag, root],
+          for (final root in extraMultiRoots) ...[multiRootFlag, root],
         ...sccBase,
         for (final node in summaryNodes) ...['--input-summary', node.dill],
         for (final uri in scc.uris) ...['--source', uri],
@@ -1361,13 +1325,23 @@ class _ModuleBuild {
     if (await dillFile.exists()) {
       final Uint8List rawBytes = await dillFile.readAsBytes();
       if (options.outputOutline != null) {
-        final Uint8List outlineBytes = stripDillToOutline(rawBytes);
+        final Uint8List outlineBytes = timedSync(
+          'outline',
+          () => stripDillToOutline(rawBytes),
+        );
         nodeDill = '${options.outputOutline}/${scc.dill}';
         await File(nodeDill).writeAsBytes(outlineBytes);
         nodeDillBytes = outlineBytes;
-        await dillFile.writeAsBytes(stripSourceCodeFromDill(rawBytes));
+        final Uint8List kmodBytes = timedSync(
+          'outline',
+          () => stripSourceCodeFromDill(rawBytes),
+        );
+        await dillFile.writeAsBytes(kmodBytes);
       } else {
-        final Uint8List strippedBytes = stripSourceCodeFromDill(rawBytes);
+        final Uint8List strippedBytes = timedSync(
+          'outline',
+          () => stripSourceCodeFromDill(rawBytes),
+        );
         await dillFile.writeAsBytes(strippedBytes);
         nodeDillBytes = strippedBytes;
       }
@@ -1792,10 +1766,12 @@ class KernelModuleCache {
           _sameBytes(digest, cached.inputDigest!)) {
         cached.tick = ++_clock;
         store[key] = cached;
+        phaseTimer?.noteCache(path, hit: true);
         return cached;
       }
       addBytes(-cached.byteSize);
     }
+    phaseTimer?.noteCache(path, hit: false);
 
     final Uint8List bytes = await File(path).readAsBytes();
     final int entryBytes = bytes.length;
@@ -3567,18 +3543,18 @@ List<String> _baseWithSingleMultiRoot(List<String> base, String singleRoot) {
   var inserted = false;
   for (var i = 0; i < base.length; i++) {
     final String arg = base[i];
-    if (arg == _multiRootFlag && i + 1 < base.length) {
+    if (arg == multiRootFlag && i + 1 < base.length) {
       i++;
       if (!inserted) {
         inserted = true;
         out
-          ..add(_multiRootFlag)
+          ..add(multiRootFlag)
           ..add(singleRoot);
       }
-    } else if (arg.startsWith('$_multiRootFlag=')) {
+    } else if (arg.startsWith('$multiRootFlag=')) {
       if (!inserted) {
         inserted = true;
-        out.add('$_multiRootFlag=$singleRoot');
+        out.add('$multiRootFlag=$singleRoot');
       }
     } else {
       out.add(arg);
@@ -3586,7 +3562,7 @@ List<String> _baseWithSingleMultiRoot(List<String> base, String singleRoot) {
   }
   if (!inserted) {
     out
-      ..add(_multiRootFlag)
+      ..add(multiRootFlag)
       ..add(singleRoot);
   }
   return out;
@@ -3694,13 +3670,13 @@ List<String> _baseWithOrderedMultiRoots(
   var rootIdx = 0;
   for (var i = 0; i < base.length; i++) {
     final String arg = base[i];
-    if (arg == _multiRootFlag && i + 1 < base.length) {
+    if (arg == multiRootFlag && i + 1 < base.length) {
       out
-        ..add(_multiRootFlag)
+        ..add(multiRootFlag)
         ..add(orderedRoots[rootIdx++]);
       i++;
-    } else if (arg.startsWith('$_multiRootFlag=')) {
-      out.add('$_multiRootFlag=${orderedRoots[rootIdx++]}');
+    } else if (arg.startsWith('$multiRootFlag=')) {
+      out.add('$multiRootFlag=${orderedRoots[rootIdx++]}');
     } else {
       out.add(arg);
     }
@@ -4079,20 +4055,6 @@ class _PackageRoot {
   final String packageUri;
 }
 
-/// Expands `@params` arguments in one-shot mode, one argument per line.
-Future<List<String>> _expandParamFiles(List<String> args) async {
-  final out = <String>[];
-  for (final arg in args) {
-    if (arg.startsWith('@') && File(arg.substring(1)).existsSync()) {
-      final List<String> lines = await File(arg.substring(1)).readAsLines();
-      out.addAll(lines);
-    } else {
-      out.add(arg);
-    }
-  }
-  return out;
-}
-
 /// The result of one `kernel_worker` run.
 class ModuleOutcome {
   const ModuleOutcome(this.exitCode, this.output);
@@ -4152,7 +4114,14 @@ class _UsedInputsReporter implements ModuleCompiler {
   static final _unknownOption = RegExp('Could not find an option');
 
   @override
-  Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
+  Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) =>
+      timed('compile', () => _runReported(args, inputs));
+
+  /// One invocation with its `--used-inputs` report recorded.
+  Future<ModuleOutcome> _runReported(
+    List<String> args,
+    List<Uint8List> inputs,
+  ) async {
     final passed = <String>{};
     for (var i = 0; i + 1 < args.length; i++) {
       if (args[i] == '--input-summary') {
@@ -4720,6 +4689,24 @@ class _Persistent implements ModuleCompiler {
   /// The child's stderr, kept for the failure message of a child that dies.
   final _stderr = StringBuffer();
 
+  /// How many requests the running child has answered.
+  var _served = 0;
+
+  /// The `--input-summary` arguments of the child's previous request.
+  String? _lastSummaries;
+
+  /// Whether [args] name the same `--input-summary` files as the child's
+  /// previous request, which the child's incremental compiler may reuse.
+  bool _sameSummaries(List<String> args) {
+    final String key = [
+      for (var i = 0; i + 1 < args.length; i++)
+        if (args[i] == '--input-summary') args[i + 1],
+    ].join('\n');
+    final same = key == _lastSummaries;
+    _lastSummaries = key;
+    return same;
+  }
+
   @override
   Future<ModuleOutcome> run(List<String> args, List<Uint8List> inputs) async {
     if (isCancelled != null && isCancelled!()) {
@@ -4755,6 +4742,7 @@ class _Persistent implements ModuleCompiler {
   /// Sends one request to the running child, or to a new one, and reads its answer.
   Future<_Attempt> _attempt(List<String> args, List<Uint8List> inputs) async {
     final Process child = await _start();
+    phaseTimer?.noteChild(child.pid, _served, _sameSummaries(args));
     try {
       child.stdin.add(_frame(_encodeRequest(args, inputs, _requestId)));
       await child.stdin.flush();
@@ -4775,6 +4763,7 @@ class _Persistent implements ModuleCompiler {
         );
       }
       final response = _WorkResponse.decode(frame);
+      _served++;
       if (response.requestId != _requestId) {
         throw FormatException(
           'it answered request ${response.requestId}, not request $_requestId',
@@ -4832,6 +4821,8 @@ class _Persistent implements ModuleCompiler {
       _persistentFlag,
     ]);
     _stderr.clear();
+    _served = 0;
+    _lastSummaries = null;
     child.stderr.transform(utf8.decoder).listen(_stderr.write);
     _child = child;
     _responses = _Frames(child.stdout);
