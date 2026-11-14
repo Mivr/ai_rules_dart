@@ -2,6 +2,7 @@
 library;
 
 import 'growth_fit.dart';
+import 'server_heap.dart';
 
 /// Flows measured at every size, in report order.
 const List<String> scaleFlows = [
@@ -29,6 +30,7 @@ final class FlowMeasurement {
     required this.actionCount,
     required this.maxCommandLineBytes,
     this.reproducible = true,
+    this.serverHeap,
   }) : error = null;
 
   /// Creates a measurement of a flow that failed with [error].
@@ -37,7 +39,8 @@ final class FlowMeasurement {
       wallSeconds = 0,
       actionCount = 0,
       maxCommandLineBytes = 0,
-      reproducible = true;
+      reproducible = true,
+      serverHeap = null;
 
   /// Client plus server CPU seconds.
   final double cpuSeconds;
@@ -56,6 +59,19 @@ final class FlowMeasurement {
 
   /// Why the flow failed, or null.
   final String? error;
+
+  /// The server's heap after the flow, or null when not read.
+  final ServerHeap? serverHeap;
+
+  /// This measurement with the server heap read after the flow.
+  FlowMeasurement withServerHeap(ServerHeap heap) => FlowMeasurement(
+    cpuSeconds: cpuSeconds,
+    wallSeconds: wallSeconds,
+    actionCount: actionCount,
+    maxCommandLineBytes: maxCommandLineBytes,
+    reproducible: reproducible,
+    serverHeap: heap,
+  );
 
   /// The value of [metric].
   double metric(String metric) => switch (metric) {
@@ -145,6 +161,7 @@ ScaleOutcome buildScaleReport({
 }) {
   final problems = <String>[];
   final flows = <String, Object?>{};
+  final heaps = <String, Object?>{};
   final sizes = bySize.keys.toList()..sort();
   for (final flow in scaleFlows) {
     final good = <int, FlowMeasurement>{};
@@ -156,6 +173,12 @@ ScaleOutcome buildScaleReport({
         problems.add('$flow at $size libraries failed: ${m.error}');
       } else {
         good[size] = m;
+        final heap = m.serverHeap;
+        if (heap != null) {
+          (heaps.putIfAbsent('$size', () => <String, Object?>{})
+                  as Map<String, Object?>)[flow] =
+              heap.toJson();
+        }
         if (!m.reproducible) {
           problems.add('$flow at $size libraries: outputs not reproducible');
         }
@@ -172,5 +195,6 @@ ScaleOutcome buildScaleReport({
     'sizes': sizes,
     'flows': flows,
     'problems': problems,
+    'server_heap': heaps,
   }, problems);
 }
