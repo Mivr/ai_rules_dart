@@ -368,6 +368,25 @@ seconds:
   run the chain from the warm-server build's execution log, exactly as
   clean flows run it from the `--batch` build's log.
 
+The clean flow's replay is the slowest step (a debug app compiles one
+kernel module per library, so a clean `sim_debug` build replays hundreds
+of spawns, 46 to 54 minutes). `sol.py run --clean-replay` therefore
+defaults to `first`: a config's clean flow replays (chain and host tools)
+in one repeat only, the first one in the results directory that finished
+its replay (a repeat that failed or hit the deadline before it leaves
+nothing, so the next repeat replays). Later repeats still build the clean
+flow and measure its Bazel cost, peak memory and toolchain floor; their
+records carry `sol_replayed: false`, `sol: null` and a `reason` naming
+the repeat that replayed. Edit flows always replay. `--clean-replay
+every` replays the clean flow in every repeat. The summary takes `sol`,
+`identical`, `spread.sol` and the profile's `sol_cpu_s`, `host_tools` and
+`residual` only from replayed records (the residual uses the Bazel median
+of those repeats), and `sol_reps` per flow says how many repeats that is:
+the clean flow's SOL, identity verdict and host-tool profile are from one
+repeat (`sol_reps: 1`), an edit flow's from every repeat (`sol_reps: 3`
+at `repeats=3`). `bazel`, `wall_s`, `peak_rss_mb` and `toolchain_floor`
+stay medians over every repeat.
+
 The clean flow is a cold measurement: one `bazel --batch build` with no
 server, so its cost includes Bazel startup and full analysis. Edit flows
 are warm measurements: after the clean chain and host-tools replay have

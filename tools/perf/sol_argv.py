@@ -89,3 +89,12 @@ def build_argv(out_base, config, log_path, profile_path, batch):
 def out_base_of(args, config):
     """Per-config output base: no shared server between configs."""
     return os.path.join(args.out_base, config)
+
+
+def add_clean_replay_arg(run):
+    """Adds `--clean-replay` to the `run` sub-command (default `first`)."""
+    run.add_argument("--clean-replay", choices=("first", "every"),
+                     default="first",
+                     help="first: replay a config's clean flow in one "
+                     "repeat only (later repeats still build and "
+                     "measure it); every: replay it in every repeat")

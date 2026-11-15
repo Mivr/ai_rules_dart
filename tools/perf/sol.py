@@ -62,6 +62,13 @@ the record says so and substitutes the chain CPU instead. The gzipped
 trace profiles and execution logs behind each record are uploaded as
 the ``ios-profile`` artifact (no build outputs).
 
+A config's clean flow replays (chain and host tools) in one repeat per
+run by default (``run --clean-replay first``; ``every`` replays it in
+every repeat): its SOL, identity verdict and host-tool profile are from
+that one repeat, and each summary flow's ``sol_reps`` says how many
+repeats its SOL number is the median of. Later repeats still build and
+measure the clean flow; edit flows always replay.
+
 Subcommands: ``run`` measures repeats, ``chain`` runs one chain (an
 unmeasured child process), ``summarize`` writes medians into
 ``<platform>-sol.json`` (``ios``, ``android`` or ``web``).
@@ -79,8 +86,6 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from bench_flags import parse_bazel_flags  # noqa: E402
-from bench_flags import validate_bazel_flags  # noqa: E402
 from bench_flags import worker_steps as count_worker_steps  # noqa: E402
 from execlog import load_spawns  # noqa: E402
 from replay import (  # noqa: E402
@@ -109,10 +114,10 @@ from run_rep import (  # noqa: E402
 from traceprofile import parse_jvm_profile  # noqa: E402
 import warm_server  # noqa: E402
 from floor_flow import floor_fields  # noqa: E402
-from floor_summary import run_exit  # noqa: E402
 from peak_rss import run_peak  # noqa: E402
 # command_prefix and startup_options are re-exported: sol_test uses them.
 from sol_argv import (  # noqa: E402,F401
+    add_clean_replay_arg,
     build_argv,
     command_prefix,
     cquery_argv,
@@ -127,30 +132,29 @@ from sol_errors import error_record  # noqa: E402,F401
 from sol_errors import record_unfinished  # noqa: E402
 from sol_errors import write_error_records  # noqa: E402,F401
 import deadline as dl  # noqa: E402
-from sol_summary import add_summarize_parser, print_flow_lines  # noqa: E402
+from sol_summary import add_summarize_parser, main_summarize  # noqa: E402
+# summarize_sol: re-exported for the tests and ab.py, which call sol.summarize_sol
+from sol_summary import summarize_sol  # noqa: E402,F401
 from floor_flow import snapshot_sources  # noqa: E402
 from sol_summary import (  # noqa: E402
     BATCH_METHOD,
     WARM_METHOD,
     _CONFIG_PLATFORM,
     _RECORD,
+    clean_replay_ran_in,
     collect_runner_info,
-    configs_for_platform,
     flow_id,
     load_sol_records,
     pick_unit,
-    present_platforms,
     rep_sort_key,
+    skipped_replay,
     summarize_bazel_parts,
     summarize_configs,
     summarize_flow,
     summarize_host_tools,
     summarize_jvm,
     summarize_profile,
-    summarize_sol,
     summarize_worker_steps,
-    write_platform_summaries,
-    write_summary,
 )
 
 _EDITS = dict(SCENARIOS)
@@ -1136,16 +1140,13 @@ def prove_chain_outputs(args, built, chainable, before, backup_dir):
     return (chain, after, exit_code, report)
 
 
-def run_sol_scenario(args, config, scenario, batch,
-                       server_pid=None, warm_up=None):
-    """Builds one scenario, runs its SOL chain, proves the outputs.
+def replay_scenario(args, built, spawns, before, scenario):
+    """Runs the SOL chain and the host-tool replay; returns the outcome.
 
-    The mode has no default: callers pass the flow's mode explicitly.
-    An edit flow's warm-up record is stored on its record as `warm_up`."""
-    built = measure_scenario_build(args, config, scenario, batch,
-                                   server_pid)
-    before = read_verify_snapshot(built.plan)
-    spawns = load_spawns(built.log_path)
+    The outcome is the record fields the replay decides: `sol`,
+    `identical`, `reason`, `n_sol_actions`, `chain` and `host`, plus
+    `after`, the verify snapshot after the chain.
+    """
     chainable, _ = select_sol_spawns(spawns)
     chain, after, exit_code, report = prove_chain_outputs(
         args, built, chainable, before,
@@ -1164,23 +1165,57 @@ def run_sol_scenario(args, config, scenario, batch,
     host = replay_host_spawns(
         spawns, built.execroot, args.timeout,
         os.path.join(args.work, "sol-host-backup-" + scenario))
+    return {"sol_replayed": True, "sol": sol, "identical": identical,
+            "reason": flow_reason(chain, exit_code),
+            "n_sol_actions": (report or {}).get("n_replayed", 0),
+            "chain": chain, "host": host, "after": after,
+            "worker_steps": count_worker_steps(chainable)}
+
+
+def run_sol_scenario(args, config, scenario, batch,
+                       server_pid=None, warm_up=None):
+    """Builds one scenario, runs its SOL chain, proves the outputs.
+
+    The mode has no default: callers pass the flow's mode explicitly.
+    An edit flow's warm-up record is stored on its record as `warm_up`.
+    Under `--clean-replay first` a clean flow whose config already
+    replayed in an earlier repeat only builds and measures."""
+    built = measure_scenario_build(args, config, scenario, batch,
+                                   server_pid)
+    before = read_verify_snapshot(built.plan)
+    spawns = load_spawns(built.log_path)
+    first = clean_replay_ran_in(args, config, scenario)
+    if first is None:
+        out = replay_scenario(args, built, spawns, before, scenario)
+    else:
+        out = skipped_replay(first)
+        out["after"] = {}
+        out["worker_steps"] = count_worker_steps(
+            select_sol_spawns(spawns)[0])
     bazel_cpu = cpu_seconds(built.bazel_cost)
-    profile = build_profile(bazel_cpu, read_jvm_cpu(built.profile_path),
-                            host, sol, chain)
+    jvm = read_jvm_cpu(built.profile_path)
+    if out["chain"] is None:
+        profile = {"jvm": jvm, "sol_cpu_s": None, "sol_source": "none",
+                   "residual": None}
+    else:
+        profile = build_profile(bazel_cpu, jvm, out["host"], out["sol"],
+                                out["chain"])
     record = {"flow": flow_id(config, scenario), "config": config,
               "scenario": scenario,
               "method": BATCH_METHOD if batch else WARM_METHOD,
               "bazel": {"cpu_s": bazel_cpu,
                         "real_s": built.bazel_cost["real_s"],
                         "peak_rss_mb": built.bazel_cost.get("peak_rss_mb")},
-              "sol": sol,
-              "identical": identical,
-              "reason": flow_reason(chain, exit_code),
-              "n_sol_actions": (report or {}).get("n_replayed", 0),
-              "worker_steps": count_worker_steps(chainable),
-              "verify": {"before": before, "after": after},
-              "chain": chain,
+              "sol": out["sol"],
+              "sol_replayed": out["sol_replayed"],
+              "identical": out["identical"],
+              "reason": out["reason"],
+              "n_sol_actions": out["n_sol_actions"],
+              "worker_steps": out["worker_steps"],
+              "verify": {"before": before, "after": out["after"]},
               "profile": profile}
+    if out["chain"] is not None:
+        record["chain"] = out["chain"]
     if not batch:
         record["bazel_parts"] = built.bazel_cost["parts"]
     if warm_up is not None:
@@ -1272,37 +1307,6 @@ def main_chain(cmd):
     return 1 if report.get("failed") else 0
 
 
-def main_summarize(cmd):
-    if cmd.lockfile not in ("none", "committed"):
-        raise ValueError("invalid lockfile %r: expected none/committed"
-                         % (cmd.lockfile,))
-    meta = {"sha": cmd.sha, "repeats": cmd.repeats,
-            "target_loc": cmd.target_loc, "seed": cmd.seed,
-            "bazel_flags": validate_bazel_flags(
-                parse_bazel_flags(cmd.bazel_flags)),
-            "lockfile": cmd.lockfile}
-    platforms = present_platforms(cmd.results)
-    configs = [config for platform in platforms
-               for config in configs_for_platform(platform)]
-    summary = summarize_sol(cmd.results, meta, configs)
-    summaries = write_platform_summaries(cmd.results, meta, configs)
-    out_dir = os.path.dirname(os.path.abspath(cmd.out))
-    for platform, platform_summary in summaries.items():
-        write_summary(os.path.join(out_dir, platform + "-sol.json"),
-                      platform_summary)
-    out_name = os.path.basename(cmd.out)
-    primary = None
-    for platform, platform_summary in summaries.items():
-        if out_name == platform + "-sol.json":
-            primary = platform_summary
-            break
-    if primary is None:
-        primary = summaries.get("ios", summary)
-    write_summary(cmd.out, primary)
-    print_flow_lines(summary)
-    return run_exit(summaries, cmd.strict_attribution)
-
-
 def build_parser():
     parser = argparse.ArgumentParser(
         description="Measure Flutter speed-of-light costs (see module "
@@ -1329,6 +1333,7 @@ def build_parser():
                      help="accepted for compatibility; ignored: measurement "
                      "is whole-tree rusage on every host")
     dl.add_deadline_arg(run)
+    add_clean_replay_arg(run)
     run.add_argument("--floor", choices=("on", "off"), default="on",
                      help="also measure the toolchain floor of the mobile "
                      "edit flows (off: the output is the base's)")

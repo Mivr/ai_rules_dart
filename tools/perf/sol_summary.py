@@ -12,7 +12,10 @@ import subprocess
 
 from run_rep import CONFIG_ORDER
 from run_rep import SCENARIOS
+from bench_flags import parse_bazel_flags
+from bench_flags import validate_bazel_flags
 from floor_summary import has_floor
+from floor_summary import run_exit
 from floor_summary import summarize_floor
 from attribution import ATTRIBUTED_FLOWS
 from attribution import attribute_flow
@@ -85,6 +88,45 @@ def rep_dirs(results_dir, config, scenario):
             if os.path.isfile(os.path.join(scenario_dir, rep, _RECORD))]
 
 
+def record_replayed(record):
+    """True when the record's SOL replay ran; older records count as run."""
+    return record.get("sol_replayed", True)
+
+
+def clean_replay_ran_in(args, config, scenario):
+    """Repeat number whose clean flow already replayed, or None.
+
+    None means this run must replay: the policy is `every`, the flow is
+    an edit flow, or no other repeat in the results directory holds a
+    clean record that replayed. A record an error or the deadline wrote
+    (chain status `error`) never replayed. Callers without a
+    `clean_replay` attribute (the A/B driver) replay every repeat.
+    """
+    if (scenario != "clean"
+            or getattr(args, "clean_replay", "every") != "first"):
+        return None
+    for rep_dir in rep_dirs(args.results, config, scenario):
+        name = os.path.basename(rep_dir)
+        if not name.startswith("rep") or not name[3:].isdigit():
+            continue
+        if int(name[3:]) == args.rep:
+            continue
+        with open(os.path.join(rep_dir, _RECORD), encoding="utf-8") as fh:
+            record = json.load(fh)
+        status = (record.get("chain") or {}).get("status")
+        if record_replayed(record) and status != "error":
+            return int(name[3:])
+    return None
+
+
+def skipped_replay(first_rep):
+    """Replay outcome fields of a clean flow whose replay was skipped."""
+    return {"sol_replayed": False, "sol": None, "identical": None,
+            "reason": "clean replay skipped: replayed in rep%d "
+                      "(--clean-replay first)" % first_rep,
+            "n_sol_actions": 0, "chain": None, "host": None}
+
+
 def pick_unit(collected):
     """One unit for the artifact: always cpu_seconds.
 
@@ -146,23 +188,26 @@ def summarize_host_tools(rep_hosts):
             "failed": failed}
 
 
-def summarize_profile(records, bazel_median, sol_median, identical):
+def summarize_profile(records, bazel_median, sol_median, identical,
+                      jvm_records=None):
     """Per-flow profile: jvm/host medians, gap SOL, raw residual.
 
     The gap SOL is the flow SOL number; a flow without one uses the
     chain's measured CPU in its place (sol_source says which). residual
     is the raw bazel - jvm - sol - host_tools value, never clamped, so
     the parts always sum to the Bazel number; None while any part is
-    missing.
+    missing. `records` are the replayed repeats; the jvm medians come from
+    `jvm_records` (every repeat) when given.
     """
     jvms = []
     hosts = []
     chain_cpus = []
-    for record in records:
-        profile = record.get("profile") or {}
-        jvm = profile.get("jvm") or {}
+    for record in jvm_records or records:
+        jvm = (record.get("profile") or {}).get("jvm") or {}
         jvms.append({"total": jvm.get("total"),
                      "phases": jvm.get("phases") or {}})
+    for record in records:
+        profile = record.get("profile") or {}
         host = profile.get("host_tools") or {}
         hosts.append({"total": host.get("total"),
                       "by_mnemonic": host.get("by_mnemonic") or {},
@@ -236,9 +281,16 @@ def summarize_wall_rss(records):
 
 
 def summarize_flow(records, unit):
-    """Median costs over repeats; no SOL number unless all repeats match."""
+    """Median costs over repeats; no SOL number unless all repeats match.
+
+    `sol`, `identical`, `reason`, `spread.sol` and the profile's SOL, host
+    tool and residual numbers come from the repeats that replayed
+    (`sol_reps` of them); every other number is over all repeats.
+    """
     del unit
-    identical = all(record["identical"] for record in records)
+    replayed = [record for record in records if record_replayed(record)]
+    basis = replayed or records
+    identical = all(record["identical"] for record in basis)
     methods = {record.get("method") for record in records}
     if len(methods) == 1 and None not in methods:
         method = records[0]["method"]
@@ -248,24 +300,29 @@ def summarize_flow(records, unit):
         method = WARM_METHOD
     bazel = summarize_values([record["bazel"]["cpu_s"] for record in records
                               if record["bazel"]["cpu_s"] is not None])
-    sol_vals = [record["sol"]["cpu_s"] for record in records
+    bazel_replayed = summarize_values(
+        [record["bazel"]["cpu_s"] for record in basis
+         if record["bazel"]["cpu_s"] is not None])
+    sol_vals = [record["sol"]["cpu_s"] for record in basis
                 if record["sol"] is not None
                 and record["sol"].get("cpu_s") is not None]
     sol = summarize_values(sol_vals) if identical else summarize_values([])
     reasons = []
-    for record in records:
+    for record in basis:
         if record.get("reason") not in reasons:
             reasons.append(record.get("reason"))
     flow = {"method": method,
             "bazel": bazel["median"],
             "sol": sol["median"] if identical else None,
+            "sol_reps": len(replayed),
             "identical": identical,
             "reason": "ok" if identical else "; ".join(reasons),
-            "chain": records[0].get("chain"),
+            "chain": basis[0].get("chain"),
             "worker_steps": summarize_worker_steps(records),
-            "profile": summarize_profile(records, bazel["median"],
-                                         sol["median"] if identical else None,
-                                         identical),
+            "profile": summarize_profile(
+                basis, bazel_replayed["median"],
+                sol["median"] if identical else None, identical,
+                jvm_records=records),
             "spread": {"n": len(records),
                        "bazel": [bazel["min"], bazel["max"]],
                        "sol": [sol["min"], sol["max"]] if identical else None}}
@@ -440,3 +497,34 @@ def add_summarize_parser(sub):
                            "is false (default off)")
     summ.add_argument("--out", required=True,
                       help="platform sol json path")
+
+
+def main_summarize(cmd):
+    if cmd.lockfile not in ("none", "committed"):
+        raise ValueError("invalid lockfile %r: expected none/committed"
+                         % (cmd.lockfile,))
+    meta = {"sha": cmd.sha, "repeats": cmd.repeats,
+            "target_loc": cmd.target_loc, "seed": cmd.seed,
+            "bazel_flags": validate_bazel_flags(
+                parse_bazel_flags(cmd.bazel_flags)),
+            "lockfile": cmd.lockfile}
+    platforms = present_platforms(cmd.results)
+    configs = [config for platform in platforms
+               for config in configs_for_platform(platform)]
+    summary = summarize_sol(cmd.results, meta, configs)
+    summaries = write_platform_summaries(cmd.results, meta, configs)
+    out_dir = os.path.dirname(os.path.abspath(cmd.out))
+    for platform, platform_summary in summaries.items():
+        write_summary(os.path.join(out_dir, platform + "-sol.json"),
+                      platform_summary)
+    out_name = os.path.basename(cmd.out)
+    primary = None
+    for platform, platform_summary in summaries.items():
+        if out_name == platform + "-sol.json":
+            primary = platform_summary
+            break
+    if primary is None:
+        primary = summaries.get("ios", summary)
+    write_summary(cmd.out, primary)
+    print_flow_lines(summary)
+    return run_exit(summaries, cmd.strict_attribution)
