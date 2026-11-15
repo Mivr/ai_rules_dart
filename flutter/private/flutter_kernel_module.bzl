@@ -91,7 +91,7 @@ DEBUG_MODULAR_APP_ATTR = {
 # The application's `track_widget_creation` value, as an aspect parameter: with True every module of the closure
 # compiles with `--track-widget-creation`. Only the application's aspect takes it; the `flutter_test` aspect does not.
 TRACK_WIDGET_CREATION_FLAG = "--track-widget-creation"
-_TRACK_ATTR = {"track_widget_creation": attr.bool(default = False)}
+_TRACK_ATTR = {"track_widget_creation": attr.bool(doc = "Whether the app tracks widget creation.", default = False)}
 
 # Build setting read and cleared by `_modular_deps_transition`.
 _MODULAR_DEPS_DEFINES_SETTING = str(Label("//flutter:extra_dart_defines"))
