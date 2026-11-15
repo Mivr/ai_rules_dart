@@ -62,6 +62,17 @@ def small_opts(**kwargs):
     return Options(**params)
 
 
+def read_text(root, rel):
+    with open(os.path.join(root, rel), encoding="utf-8") as fh:
+        return fh.read()
+
+
+def write_text(root, rel, text):
+    with open(os.path.join(root, rel), "w", encoding="utf-8",
+              newline="\n") as fh:
+        fh.write(text)
+
+
 def tree_hash(root):
     digest = hashlib.sha256()
     for dirpath, dirnames, filenames in os.walk(root):
@@ -242,20 +253,15 @@ class ReachabilityTest(unittest.TestCase):
             os.makedirs(rules_dir)
             ws = os.path.join(tmp, "ws")
             generate_flutter_monorepo(ws, rules_dir, [], small_opts())
-            with open(os.path.join(ws, "bench-edit-manifest.json"),
-                      encoding="utf-8") as fh:
-                rel = json.load(fh)["body_edit"]
+            rel = json.loads(
+                read_text(ws, "bench-edit-manifest.json"))["body_edit"]
             pkg = int(rel.split("/")[1].replace("pkg", ""))
-            with open(os.path.join(ws, "packages/pkg%d/lib/pkg%d.dart"
-                                    % (pkg, pkg)),
-                      encoding="utf-8") as fh:
-                entry = fh.read()
+            entry = read_text(ws, "packages/pkg%d/lib/pkg%d.dart" % (pkg, pkg))
             # The edited file is f0: its value function is called from the
             # package entry, and the package is reachable from main.
             self.assertIn("value%dx0()" % pkg, entry)
-            with open(os.path.join(ws, "bench-workspace-stats.json"),
-                      encoding="utf-8") as fh:
-                n_packages = json.load(fh)["packages"]
+            n_packages = json.loads(
+                read_text(ws, "bench-workspace-stats.json"))["packages"]
             opts = small_opts()
             plan = gen_monorepo.MonorepoPlan(opts, n_packages)
             seen = set(plan.top_layer())
@@ -358,13 +364,9 @@ class GenerationTest(unittest.TestCase):
         self.assertGreater(stats["packages"], 0)
         self.assertGreater(stats["files"], 0)
         self.assertGreater(stats["targets"], 0)
-        with open(os.path.join(out, "bench-workspace-stats.json"),
-                  encoding="utf-8") as fh:
-            on_disk = json.load(fh)
+        on_disk = json.loads(read_text(out, "bench-workspace-stats.json"))
         self.assertEqual(on_disk, stats)
-        with open(os.path.join(out, "bench-edit-manifest.json"),
-                  encoding="utf-8") as fh:
-            manifest = json.load(fh)
+        manifest = json.loads(read_text(out, "bench-edit-manifest.json"))
         for key in ["body_edit", "api_edit", "app_main"]:
             self.assertIn(key, manifest)
             full = os.path.join(out, manifest[key])
@@ -382,26 +384,21 @@ class GenerationTest(unittest.TestCase):
     def test_api_edit_target_is_imported_by_two_other_packages(self):
         for seed in (1, 7, 11):
             out, stats = self.generate("fan%d" % seed, seed=seed)
-            with open(os.path.join(out, "bench-edit-manifest.json"),
-                      encoding="utf-8") as fh:
-                rel = json.load(fh)["api_edit"]
+            rel = json.loads(
+                read_text(out, "bench-edit-manifest.json"))["api_edit"]
             edited = int(rel.split("/")[1].replace("pkg", ""))
             importers = set()
             for pkg in range(stats["packages"]):
                 if pkg == edited:
                     continue
-                entry = os.path.join(out, "packages", "pkg%d" % pkg, "lib",
-                                     "pkg%d.dart" % pkg)
-                with open(entry, encoding="utf-8") as fh:
-                    if "package:pkg%d/pkg%d.dart" % (
-                            edited, edited) in fh.read():
-                        importers.add(pkg)
+                entry = read_text(out, "packages/pkg%d/lib/pkg%d.dart"
+                                  % (pkg, pkg))
+                if "package:pkg%d/pkg%d.dart" % (edited, edited) in entry:
+                    importers.add(pkg)
             self.assertGreaterEqual(len(importers), 2, seed)
-            with open(os.path.join(out, rel), encoding="utf-8") as fh:
-                original = fh.read()
+            original = read_text(out, rel)
             apply_api_edit(out)
-            with open(os.path.join(out, rel), encoding="utf-8") as fh:
-                self.assertNotEqual(fh.read(), original)
+            self.assertNotEqual(read_text(out, rel), original)
 
     def test_scaffolding_layout(self):
         out, _ = self.generate("a")
@@ -410,9 +407,7 @@ class GenerationTest(unittest.TestCase):
                     "analysis_options.yaml", "app/BUILD.bazel",
                     "app/lib/main.dart"]:
             self.assertTrue(os.path.isfile(os.path.join(out, rel)), rel)
-        with open(os.path.join(out, "app/BUILD.bazel"),
-                  encoding="utf-8") as fh:
-            app_build = fh.read()
+        app_build = read_text(out, "app/BUILD.bazel")
         for target in ["flutter_application", "flutter_ios_app",
                        "flutter_ios_framework_gen",
                        "flutter_ios_simulator_build_test",
@@ -422,11 +417,34 @@ class GenerationTest(unittest.TestCase):
         self.assertIn("name = \"app_android\"", app_build)
         self.assertIn("name = \"app_web\"", app_build)
 
+    def app_build(self, name, track):
+        opts = small_opts()
+        opts.track_widget_creation = track
+        out = os.path.join(self.tmp, name)
+        generate_flutter_monorepo(out, self.rules_dir, [], opts)
+        return (out, read_text(out, "app/BUILD.bazel"))
+
+    def test_track_widget_creation_off_by_default(self):
+        out, text = self.app_build("off", False)
+        self.assertNotIn("track_widget_creation", text)
+        self.assertEqual(tree_hash(out), tree_hash(self.generate("a")[0]))
+
+    def test_track_widget_creation_switch_writes_attribute(self):
+        _, text = self.app_build("on", True)
+        app = text.split("flutter_application(")[1].split(")\n")[0]
+        self.assertEqual(app.count("track_widget_creation = True,"), 1)
+        self.assertEqual(text.count("track_widget_creation"), 1)
+
+    def test_track_widget_creation_cli_flag(self):
+        base = ["generate", "--rules-flutter", "r", "--out", "o"]
+        parse = gen_monorepo.build_parser().parse_args
+        self.assertFalse(parse(base).track_widget_creation)
+        on = parse(base + ["--track-widget-creation"])
+        self.assertTrue(on.track_widget_creation)
+
     def test_android_and_web_scaffolding_registered(self):
         out, _ = self.generate("platforms")
-        with open(os.path.join(out, "MODULE.bazel"),
-                  encoding="utf-8") as fh:
-            module = fh.read()
+        module = read_text(out, "MODULE.bazel")
         self.assertIn("android_sdk_repository_extension.configure(", module)
         self.assertIn("api_level = 35", module)
         self.assertIn("use_repo(android_sdk_repository_extension, "
@@ -447,8 +465,7 @@ class GenerationTest(unittest.TestCase):
 
     def test_generated_workspace_has_default_lockfile_mode(self):
         out, _ = self.generate("nolock")
-        with open(os.path.join(out, ".bazelrc"), encoding="utf-8") as fh:
-            self.assertNotIn("--lockfile_mode", fh.read())
+        self.assertNotIn("--lockfile_mode", read_text(out, ".bazelrc"))
         self.assertFalse(
             os.path.exists(os.path.join(out, "MODULE.bazel.lock")))
 
@@ -550,9 +567,7 @@ class ModuleTextTest(unittest.TestCase):
                      + self.GIT_PIN % ("ai_rules_dart", "TREE123"))
         if comment is not None:
             tree_text = comment + tree_text
-        with open(os.path.join(rules, "MODULE.bazel"), "w",
-                  encoding="utf-8", newline="\n") as fh:
-            fh.write(tree_text)
+        write_text(rules, "MODULE.bazel", tree_text)
         self.write_full_fixture(
             rules, "ai_rules_flutter", "ai_rules_dart",
             self.GIT_PIN % ("ai_rules_dart", "TREE123"),
@@ -726,13 +741,9 @@ class ModuleTextTest(unittest.TestCase):
         rules = os.path.join(self.tmp, subdir)
         hello = os.path.join(rules, "e2e", "hello_world")
         os.makedirs(hello)
-        with open(os.path.join(hello, "MODULE.bazel"), "w",
-                  encoding="utf-8", newline="\n") as fh:
-            fh.write(module_text)
+        write_text(hello, "MODULE.bazel", module_text)
         if bazelrc is not None:
-            with open(os.path.join(hello, ".bazelrc"), "w",
-                      encoding="utf-8", newline="\n") as fh:
-                fh.write(bazelrc)
+            write_text(hello, ".bazelrc", bazelrc)
         return rules
 
     DEV_MODULE = (
@@ -1144,12 +1155,8 @@ class PathDepStripTest(unittest.TestCase):
                          "    module_name = \"rules_flutter\",\n"
                          "    path = \"../..\",\n"
                          ")\n")
-            with open(os.path.join(hello, "pubspec.yaml"), "w",
-                      encoding="utf-8", newline="\n") as fh:
-                fh.write(PUBSPEC_YAML_WITH_PATHS)
-            with open(os.path.join(hello, "pubspec.lock"), "w",
-                      encoding="utf-8", newline="\n") as fh:
-                fh.write(LOCK_WITH_PATHS)
+            write_text(hello, "pubspec.yaml", PUBSPEC_YAML_WITH_PATHS)
+            write_text(hello, "pubspec.lock", LOCK_WITH_PATHS)
             out = os.path.join(tmp, "ws")
             generate_flutter_monorepo(out, rules, [], small_opts())
             with open(os.path.join(out, "pubspec.yaml"),

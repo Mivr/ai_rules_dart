@@ -70,6 +70,7 @@ from gen_files import write_plain
 from gen_plugins import add_plugins
 from gen_scale_args import resolve_scale_args
 from gen_platform_apps import (
+    render_app_main,
     write_android_scaffolding,
     write_app_build,
 )
@@ -598,49 +599,6 @@ def render_test_file(package):
     ) + "\n"
 
 
-def render_app_main(top_layer):
-    """Application entrypoint wiring every top-layer feature package.
-
-    Builds every top-layer package's widget and calls every top-layer
-    package's entry point with a probe main reads from a runtime source
-    (`int.tryParse` on a non-numeric literal is always null here, so the
-    probe is zero at run time) the compiler cannot fold, keeping the
-    guarded cross-package calls reachable for AOT tree-shaking. The summed
-    entry results flow into a displayed string, so edited functions below
-    the top layer have a reachable use.
-    """
-    out = ["import 'package:flutter/material.dart';"]
-    dep_imports = sorted(
-        "import 'package:pkg%d/pkg%d.dart';" % (a, a) for a in top_layer
-    )
-    out.extend(dep_imports)
-    out.append("")
-    out.append("/// Bench application wiring the top-layer feature packages.")
-    out.append("void main() {")
-    out.append("  final int probe = int.tryParse('probe') ?? 0;")
-    out.append("  var reach = 0;")
-    for a in top_layer:
-        out.append("  reach += entry%d(3, probe);" % a)
-    out.append("  runApp(")
-    out.append("    MaterialApp(")
-    out.append("      home: Scaffold(")
-    out.append("        body: Center(")
-    out.append("          child: Column(")
-    out.append("            mainAxisSize: MainAxisSize.min,")
-    out.append("            children: [")
-    for a in top_layer:
-        out.append("              W%dx0(value: value%dx0())," % (a, a))
-    out.append("              Text('reach: $reach'),")
-    out.append("            ],")
-    out.append("          ),")
-    out.append("        ),")
-    out.append("      ),")
-    out.append("    ),")
-    out.append("  );")
-    out.append("}")
-    return "\n".join(out) + "\n"
-
-
 # --------------------------------------------------------------------------
 # Plan, tuning, rendering to disk.
 
@@ -648,6 +606,8 @@ def render_app_main(top_layer):
 class Options:
     # Exact package count (`--packages`); None derives it from target_loc.
     packages = None
+    # `--track-widget-creation`: the generated application tracks widgets.
+    track_widget_creation = False
 
     def __init__(
         self,
@@ -681,6 +641,7 @@ class Options:
 class MonorepoPlan:
     def __init__(self, opts, n_packages):
         self.dag = build_dag(n_packages, opts.layers, opts.fanout, opts.seed)
+        self.track_widget_creation = opts.track_widget_creation
         self.has_test = pick_test_packages(
             n_packages, opts.test_ratio, opts.seed
         )
@@ -1535,7 +1496,8 @@ def _write_package_builds(out_dir, plan):
 def write_scaffolding(out_dir, rules_flutter_dir, overrides, plan, tally):
     _write_root_files(_ScaffoldFiles(out_dir, rules_flutter_dir, overrides))
     tally["targets"] += _write_package_builds(out_dir, plan)
-    tally["targets"] += write_app_build(out_dir, plan.top_layer())
+    tally["targets"] += write_app_build(
+        out_dir, plan.top_layer(), plan.track_widget_creation)
 
 
 def generate_flutter_monorepo(out_dir, rules_flutter_dir, overrides, opts):
@@ -1627,6 +1589,8 @@ def build_parser():
     gen.add_argument("--seed", type=int, default=1)
     gen.add_argument("--test-ratio", type=float, default=DEFAULT_TEST_RATIO)
     gen.add_argument("--edit-layer", type=int, default=DEFAULT_EDIT_LAYER)
+    gen.add_argument("--track-widget-creation", action="store_true",
+                     help="set track_widget_creation on the application")
     gen.add_argument("--rules-flutter", required=True)
     gen.add_argument("--out", required=True)
     gen.add_argument("--override", action="append", default=[],
@@ -1662,6 +1626,7 @@ def main(argv=None):
             edit_layer=args.edit_layer,
         )
         opts.packages = packages
+        opts.track_widget_creation = args.track_widget_creation
         stats = generate_flutter_monorepo(
             args.out, args.rules_flutter, overrides, opts)
         if plugins:

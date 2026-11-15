@@ -2,6 +2,8 @@
 
 from gen_files import write_plain
 
+TRACK_LINE = "    track_widget_creation = True,\n"
+
 
 def _app_ios_build_text():
     """iOS targets: Tier-1 app, explicit App.framework and sim test."""
@@ -65,7 +67,7 @@ def _app_web_build_text(app_deps):
     )
 
 
-def write_app_build(out_dir, top_layer):
+def write_app_build(out_dir, top_layer, track_widget_creation=False):
     """app/BUILD.bazel: VM application, analyzer library, iOS, Android, Web.
 
     flutter_ios_app tags every internal target "manual" itself, so iOS stays
@@ -77,6 +79,7 @@ def write_app_build(out_dir, top_layer):
     device_release config builds a stable public label instead of the
     macro's private __app_ios_app_framework), the simulator build test, the
     Android APK and the Web deployment directory over the same application.
+    `track_widget_creation` writes the attribute on that application.
     """
     app_deps = "".join("        \"//packages/pkg%d\",\n" % a for a in top_layer)
     build = (
@@ -89,7 +92,8 @@ def write_app_build(out_dir, top_layer):
         "    name = \"app\",\n"
         "    package_name = \"app\",\n"
         "    main = \"lib/main.dart\",\n"
-        "    deps = [\n"
+        + (TRACK_LINE if track_widget_creation else "")
+        + "    deps = [\n"
         "%s" % app_deps
         + "        \"@deps//:flutter\",\n"
         "    ],\n"
@@ -174,3 +178,46 @@ def write_android_scaffolding(out_dir):
         "<layer-list xmlns:android=\"http://schemas.android.com/apk/res/android\">\n"
         "    <item android:drawable=\"@android:color/white\"/>\n"
         "</layer-list>\n")
+
+
+def render_app_main(top_layer):
+    """Application entrypoint wiring every top-layer feature package.
+
+    Builds every top-layer package's widget and calls every top-layer
+    package's entry point with a probe main reads from a runtime source
+    (`int.tryParse` on a non-numeric literal is always null here, so the
+    probe is zero at run time) the compiler cannot fold, keeping the
+    guarded cross-package calls reachable for AOT tree-shaking. The summed
+    entry results flow into a displayed string, so edited functions below
+    the top layer have a reachable use.
+    """
+    out = ["import 'package:flutter/material.dart';"]
+    dep_imports = sorted(
+        "import 'package:pkg%d/pkg%d.dart';" % (a, a) for a in top_layer
+    )
+    out.extend(dep_imports)
+    out.append("")
+    out.append("/// Bench application wiring the top-layer feature packages.")
+    out.append("void main() {")
+    out.append("  final int probe = int.tryParse('probe') ?? 0;")
+    out.append("  var reach = 0;")
+    for a in top_layer:
+        out.append("  reach += entry%d(3, probe);" % a)
+    out.append("  runApp(")
+    out.append("    MaterialApp(")
+    out.append("      home: Scaffold(")
+    out.append("        body: Center(")
+    out.append("          child: Column(")
+    out.append("            mainAxisSize: MainAxisSize.min,")
+    out.append("            children: [")
+    for a in top_layer:
+        out.append("              W%dx0(value: value%dx0())," % (a, a))
+    out.append("              Text('reach: $reach'),")
+    out.append("            ],")
+    out.append("          ),")
+    out.append("        ),")
+    out.append("      ),")
+    out.append("    ),")
+    out.append("  );")
+    out.append("}")
+    return "\n".join(out) + "\n"
