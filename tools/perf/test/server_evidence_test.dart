@@ -20,6 +20,9 @@ void _contains(String text, String part, String message) {
 
 const _pid = 4242;
 
+/// Written to the older java.log only; no path or message can contain it.
+const _staleMarker = 'stale-java-log-marker';
+
 ProcStat _server(int starttime) => ProcStat(
   pid: _pid,
   ppid: 1,
@@ -68,7 +71,8 @@ String _numbered(String prefix, int count) =>
 
 /// Fixture files for the host evidence, plus the output base logs.
 final class _Fixture {
-  _Fixture() : dir = Directory.systemTemp.createTempSync('rd_evidence_') {
+  _Fixture()
+    : dir = Directory.systemTemp.createTempSync('rd_folders_evidence_') {
     Directory('${dir.path}/ws-32').createSync();
     File('${dir.path}/ws-32/BUILD').writeAsStringSync('x');
     cgroup.writeAsStringSync('populated 1\noom_kill 1\n');
@@ -90,7 +94,9 @@ final class _Fixture {
     Directory('$outputBase/server').createSync(recursive: true);
     File('$outputBase/server/jvm.out').writeAsStringSync(_numbered('jvm', 60));
     if (javaLog) {
-      File('$outputBase/java.log.host.user.1').writeAsStringSync('old\n');
+      File(
+        '$outputBase/java.log.host.user.1',
+      ).writeAsStringSync('$_staleMarker\n');
       File('$outputBase/java.log.host.user.2')
           .writeAsStringSync(_numbered('jlog', 60));
     }
@@ -124,9 +130,10 @@ void _testCommandFailureFirst() {
     final alive = {_pid: _server(7)};
     final error = f.cleanError(
       reader: _ScriptedReader([alive]),
-      runner: _fakeBazel(
-        (_) => _result(1, err: '${_numbered('err', 50)}\nboom: no space'),
-      ),
+      runner: _fakeBazel((base) {
+        f.writeLogs(base);
+        return _result(1, err: '${_numbered('err', 50)}\nboom: no space');
+      }),
     );
     _contains(error, 'exited with code 1', 'exit code');
     _contains(error, 'build //app:app', 'command named');
@@ -134,7 +141,8 @@ void _testCommandFailureFirst() {
     _contains(error, 'err12', 'stderr keeps 40 lines');
     _check(!error.contains('err11\n'), 'stderr tail drops older lines');
     _check(!error.contains('missing from /proc'), 'no PID error: $error');
-    _check(!error.contains('jvm.out'), 'live server needs no server logs');
+    _check(!error.contains('jvm60'), 'live server needs no jvm.out tail');
+    _check(!error.contains('jlog60'), 'live server needs no java.log tail');
   } finally {
     f.delete();
   }
@@ -161,7 +169,7 @@ void _testVanishedServerEvidence() {
     _contains(error, 'jvm21', 'jvm.out keeps 40 lines');
     _check(!error.contains('jvm20\n'), 'jvm.out tail drops older lines');
     _contains(error, 'jlog60', 'newest java.log tail');
-    _check(!error.contains('old'), 'older java.log ignored: $error');
+    _check(!error.contains(_staleMarker), 'older java.log ignored: $error');
   } finally {
     f.delete();
   }
