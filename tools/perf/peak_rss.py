@@ -19,6 +19,7 @@ import threading
 import time
 
 import warm_server
+from deadline import communicate_until
 
 INTERVAL_S = 0.5
 _MIB = 1024 * 1024
@@ -143,18 +144,30 @@ class PeakSampler:
         return self.peak_bytes / _MIB
 
 
-def run_peak(argv, cwd, root_pid=None, read=None, children=None):
+def run_peak(argv, cwd, root_pid=None, read=None, children=None,
+             deadline=None):
     """Runs argv as ``subprocess.run`` would (stdin and stdout discarded,
     stderr piped); returns ``(returncode, peak_rss_mb)`` of the tree under
-    root_pid (default: the spawned process)."""
+    root_pid (default: the spawned process).
+
+    With a deadline the command leads its own process group and is killed
+    with it when the deadline passes (``DeadlineExceeded``); one already
+    passed starts nothing.
+    """
+    if deadline is not None:
+        deadline.check("starting %s" % list(argv)[:3])
     proc = subprocess.Popen(
         list(argv), cwd=cwd, stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
+        start_new_session=deadline is not None)
     sampler = PeakSampler(proc.pid if root_pid is None else root_pid,
                           read=read, children=children)
     sampler.start()
     try:
-        proc.communicate()
+        if deadline is None:
+            proc.communicate()
+        else:
+            communicate_until(proc, deadline)
     finally:
         peak = sampler.stop()
     return proc.returncode, peak

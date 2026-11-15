@@ -75,6 +75,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
+      - name: Record bench deadline
+        # First step: job start plus 270 minutes, 30 minutes before the job
+        # timeout. The measuring steps pass it as --deadline-epoch so they
+        # stop themselves and summarize and upload still run.
+        run: echo "BENCH_DEADLINE=$(( $(date +%s) + 270 * 60 ))" >> "$GITHUB_ENV"
       - name: Check out bench tooling (this branch)
         uses: actions/checkout@v7
         with:
@@ -184,6 +189,7 @@ jobs:
             --workspace "$RUNNER_TEMP/ws-treatment-pristine"
       - name: Measure speed-of-light
         if: inputs.ab == 'off'
+        timeout-minutes: 280
         # Both configurations of the selected platform, one repeat at a
         # time: sol.py run resets the workspace from pristine before each
         # config, builds the three scenarios, replays their execution logs
@@ -203,6 +209,7 @@ jobs:
               --out-base "$RUNNER_TEMP/sol-out-$rep" \
               --results "$GITHUB_WORKSPACE/sol-results" \
               --rep "$rep" \
+              --deadline-epoch "$BENCH_DEADLINE" \
               "$@"
           }
           failed=0
@@ -221,6 +228,7 @@ jobs:
         # in its own work directory and output base. A failing arm makes
         # the step exit non-zero; summarize and upload still run.
         if: inputs.ab == 'flags'
+        timeout-minutes: 280
         env:
           PLATFORM: ${{ inputs.platform }}
           REPEATS: ${{ inputs.repeats }}
@@ -238,6 +246,7 @@ jobs:
             --out-base-root-treatment "$RUNNER_TEMP/ab-out-treatment" \
             --results "$GITHUB_WORKSPACE/ab-results" \
             --repeats "$REPEATS" \
+            --deadline-epoch "$BENCH_DEADLINE" \
             || failed=1
           exit "$failed"
       - name: Summarize speed-of-light

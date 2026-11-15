@@ -122,8 +122,10 @@ from sol_argv import (  # noqa: E402,F401
 )
 from sol_warmup import run_warm_ups  # noqa: E402
 from sol_errors import error_record  # noqa: E402,F401
-from sol_errors import write_error_records  # noqa: E402
-from sol_summary import print_flow_lines  # noqa: E402
+from sol_errors import record_unfinished  # noqa: E402
+from sol_errors import write_error_records  # noqa: E402,F401
+import deadline as dl  # noqa: E402
+from sol_summary import add_summarize_parser, print_flow_lines  # noqa: E402
 from floor_flow import snapshot_sources  # noqa: E402
 from sol_summary import (  # noqa: E402
     BATCH_METHOD,
@@ -668,7 +670,8 @@ def sweep_chain_side_effects(bazel_out, declared_outputs, before):
     return {"n": len(removed), "paths": removed[:10]}
 
 
-def measure_process_tree(argv, cwd, _rss_read=None, _children=None):
+def measure_process_tree(argv, cwd, _rss_read=None, _children=None,
+                         deadline=None):
     """Whole-tree user+sys CPU seconds of argv (wait4 rusage deltas).
 
     The same method on macOS and Linux, with no time binary:
@@ -680,7 +683,8 @@ def measure_process_tree(argv, cwd, _rss_read=None, _children=None):
     import resource
     start = time.monotonic()
     before = resource.getrusage(resource.RUSAGE_CHILDREN)
-    returncode, peak = run_peak(argv, cwd, None, _rss_read, _children)
+    returncode, peak = run_peak(argv, cwd, None, _rss_read, _children,
+                                deadline)
     after = resource.getrusage(resource.RUSAGE_CHILDREN)
     return {"instructions": None, "real_s": time.monotonic() - start,
             "user_s": after.ru_utime - before.ru_utime,
@@ -1055,6 +1059,7 @@ def measure_scenario_build(args, config, scenario, batch,
     """
     spec = CONFIGS[config]
     edit = _EDITS[scenario]
+    dl.check(args, "building %s" % flow_id(config, scenario))
     swap = snapshot_sources(args, config, scenario)
     if edit is not None:
         apply_edit(args.run, args.tools, args.work, edit)
@@ -1210,6 +1215,10 @@ def run_sol_rep(args, rep, configs):
     records = {}
     had_errors = False
     for config in configs:
+        if dl.passed(args):
+            records[config] = record_unfinished(args, config, {})
+            had_errors = True
+            continue
         reset_work(args.pristine, args.work)
         out_base = out_base_of(args, config)
         shutil.rmtree(out_base, ignore_errors=True)
@@ -1230,11 +1239,7 @@ def run_sol_rep(args, rep, configs):
                     server_pid=server_pid, warm_up=warm_up)
         except Exception as exc:
             had_errors = True
-            remaining = [scenario for scenario, _ in SCENARIOS
-                         if scenario not in flows]
-            flows.update(write_error_records(
-                args, config, remaining,
-                "config %s failed: %s" % (config, exc)))
+            record_unfinished(args, config, flows, exc)
             print("config=%s failed: %s" % (config, exc))
         finally:
             if server_started:
@@ -1251,10 +1256,7 @@ def main_run(cmd):
     cmd.run = real_run
     cmd.capture = capture_bazel_output
     cmd.capture_server = capture_bazel_output
-    cmd.measure = lambda argv, cwd: measure_with_time(
-        argv, cwd, cmd.time_bin)
-    cmd.measure_warm = (lambda argv, cwd, server_pid:
-                        warm_server.measure(argv, cwd, server_pid))
+    dl.install_measures(cmd, measure_process_tree, warm_server.measure)
     configs = list(cmd.config) if cmd.config else list(CONFIG_ORDER)
     unknown = [c for c in configs if c not in CONFIGS]
     if unknown:
@@ -1329,6 +1331,7 @@ def build_parser():
     run.add_argument("--time-bin", default=TIME_BIN,
                      help="accepted for compatibility; ignored: measurement "
                      "is whole-tree rusage on every host")
+    dl.add_deadline_arg(run)
     run.add_argument("--floor", choices=("on", "off"), default="on",
                      help="also measure the toolchain floor of the mobile "
                      "edit flows (off: the output is the base's)")
@@ -1338,24 +1341,7 @@ def build_parser():
                        help="build execroot to replay in")
     chain.add_argument("--report", required=True, help="chain report path")
     chain.add_argument("--timeout", type=float, default=1800.0)
-    summ = sub.add_parser("summarize",
-                          help="write <platform>-sol.json medians")
-    summ.add_argument("--results", required=True)
-    summ.add_argument("--sha", required=True,
-                      help="full rules_flutter commit sha being measured")
-    summ.add_argument("--repeats", type=int, required=True)
-    summ.add_argument("--target-loc", type=int, required=True)
-    summ.add_argument("--seed", type=int, required=True)
-    summ.add_argument("--bazel-flags", default="",
-                      help="raw whitespace-separated extra Bazel flags "
-                      "for this run (recorded in meta)")
-    summ.add_argument("--lockfile", default="none",
-                      help="none or committed (recorded in meta)")
-    summ.add_argument("--strict-attribution", action="store_true",
-                      help="exit non-zero when a flow's attribution.ok "
-                           "is false (default off)")
-    summ.add_argument("--out", required=True,
-                      help="platform sol json path")
+    add_summarize_parser(sub)
     return parser
 
 

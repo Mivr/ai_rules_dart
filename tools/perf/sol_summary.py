@@ -17,6 +17,7 @@ from floor_summary import summarize_floor
 from attribution import ATTRIBUTED_FLOWS
 from attribution import attribute_flow
 from summarize import summarize_values
+from deadline import is_timeout_record
 import warm_server
 
 _FLOW_PREFIX = {
@@ -343,12 +344,22 @@ def summarize_configs(results_dir, meta, configs):
             else:
                 flows[flow] = {"error": "missing repeats"}
     flags = meta.get("bazel_flags", [])
-    return {"rules_flutter": meta["sha"], "unit": unit,
-            "runner": collect_runner_info(), "flows": flows,
-            "meta": {"repeats": meta["repeats"],
-                     "target_loc": meta["target_loc"], "seed": meta["seed"],
-                     "bazel_flags": list(flags),
-                     "lockfile": meta.get("lockfile", "none")}}
+    summary = {"rules_flutter": meta["sha"], "unit": unit,
+               "runner": collect_runner_info(), "flows": flows,
+               "meta": {"repeats": meta["repeats"],
+                        "target_loc": meta["target_loc"],
+                        "seed": meta["seed"],
+                        "bazel_flags": list(flags),
+                        "lockfile": meta.get("lockfile", "none")}}
+    if any_timeout(collected.values()):
+        summary["meta"]["timed_out"] = True
+    return summary
+
+
+def any_timeout(record_lists):
+    """True when any record of any list was stopped by the deadline."""
+    return any(is_timeout_record(record)
+               for records in record_lists for record in records)
 
 
 def write_summary(path, summary):
@@ -405,3 +416,25 @@ def print_flow_lines(summary):
                   flow, summary["unit"], entry["bazel"], entry["sol"],
                   entry.get("wall_s"), entry.get("peak_rss_mb"),
                   entry["identical"], entry.get("reason")))
+
+
+def add_summarize_parser(sub):
+    """Adds the `summarize` sub-command and its arguments."""
+    summ = sub.add_parser("summarize",
+                          help="write <platform>-sol.json medians")
+    summ.add_argument("--results", required=True)
+    summ.add_argument("--sha", required=True,
+                      help="full rules_flutter commit sha being measured")
+    summ.add_argument("--repeats", type=int, required=True)
+    summ.add_argument("--target-loc", type=int, required=True)
+    summ.add_argument("--seed", type=int, required=True)
+    summ.add_argument("--bazel-flags", default="",
+                      help="raw whitespace-separated extra Bazel flags "
+                      "for this run (recorded in meta)")
+    summ.add_argument("--lockfile", default="none",
+                      help="none or committed (recorded in meta)")
+    summ.add_argument("--strict-attribution", action="store_true",
+                      help="exit non-zero when a flow's attribution.ok "
+                           "is false (default off)")
+    summ.add_argument("--out", required=True,
+                      help="platform sol json path")

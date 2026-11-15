@@ -53,6 +53,7 @@ from summarize import summarize_values  # noqa: E402
 import sol  # noqa: E402
 import sol_summary  # noqa: E402
 import warm_server  # noqa: E402
+import deadline  # noqa: E402
 
 AB_CHOICES = ("off", "flags", "lockfile")
 LOCKFILE_CHOICES = ("none", "committed")
@@ -311,6 +312,14 @@ def summarize_arm_flows(results_arm, platform=DEFAULT_PLATFORM):
     return flows
 
 
+def arm_records(results_dirs, platform):
+    """Per-flow record lists of every arm (for the timeout marker)."""
+    return [sol.load_sol_records(results, config, scenario)
+            for results in results_dirs
+            for config in platform_configs(platform)
+            for scenario, _ in SCENARIOS]
+
+
 def summarize_ab(results_control, results_treatment, meta):
     """<platform>-ab.json dict: per-arm medians plus paired ratios."""
     platform = meta.get("platform", DEFAULT_PLATFORM)
@@ -330,6 +339,9 @@ def summarize_ab(results_control, results_treatment, meta):
                "bazel_flags": list(meta.get("bazel_flags", [])),
                "lockfile": meta.get("lockfile", "none"),
                "order": order}
+    if sol_summary.any_timeout(arm_records(
+            (results_control, results_treatment), platform)):
+        ab_meta["timed_out"] = True
     return {"rules_flutter": meta["sha"], "unit": "cpu_seconds",
             "runner": sol.collect_runner_info(),
             "meta": ab_meta,
@@ -345,7 +357,8 @@ def child_args(args, pristine, work, out_base, results):
         timeout=args.timeout, min_clean_actions=args.min_clean_actions,
         run=args.run, capture=args.capture,
         capture_server=args.capture_server, measure=args.measure,
-        measure_warm=args.measure_warm)
+        measure_warm=args.measure_warm,
+        deadline=deadline.of(args))
 
 
 def arm_paths(args, arm, rep):
@@ -414,10 +427,8 @@ def main_run(cmd):
     cmd.run = real_run
     cmd.capture = sol.capture_bazel_output
     cmd.capture_server = sol.capture_bazel_output
-    cmd.measure = lambda argv, cwd: sol.measure_with_time(
-        argv, cwd, cmd.time_bin)
-    cmd.measure_warm = (lambda argv, cwd, server_pid:
-                        warm_server.measure(argv, cwd, server_pid))
+    deadline.install_measures(cmd, sol.measure_process_tree,
+                              warm_server.measure)
     configs = (list(cmd.config) if cmd.config
                else list(platform_configs(cmd.platform)))
     unknown = [c for c in configs if c not in CONFIGS]
@@ -501,6 +512,7 @@ def build_parser():
     run.add_argument("--min-clean-actions", type=int,
                      default=DEFAULT_MIN_CLEAN_ACTIONS)
     run.add_argument("--time-bin", default=sol.TIME_BIN)
+    deadline.add_deadline_arg(run)
     summ = sub.add_parser("summarize",
                           help="write <platform>-ab.json medians")
     summ.add_argument("--platform", choices=PLATFORM_CHOICES,

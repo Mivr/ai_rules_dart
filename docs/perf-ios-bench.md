@@ -608,6 +608,22 @@ retention 3 days; no caches; never upload build outputs; never touch
 `ci.yaml` or `full.yaml`. The generator and measurement scripts are the
 tooling in `tools/perf/` (Python 3 stdlib only).
 
+## Deadline (sol and ab runs)
+
+The iOS and Linux bench jobs stop measuring 30 minutes before the job
+timeout, so the summary and the artifact uploads still run. The first step
+records `BENCH_DEADLINE` (job start plus 270 minutes) in `$GITHUB_ENV`;
+every `sol.py run` and `ab.py run` call passes `--deadline-epoch
+"$BENCH_DEADLINE"`, and each measuring step has `timeout-minutes: 280`.
+Once the deadline has passed no flow or config starts; a measured Bazel
+command still running is killed with its process group and the config's
+server is shut down. Every flow not finished is recorded with reason
+`timeout` and no numbers, and the run exits non-zero. The summaries mark
+those flows (`reason` contains `timeout`, null numbers, A/B ratios list
+the repeat as `unpaired`) and set `meta.timed_out` to `true`; without a
+timeout the key is absent. Without `--deadline-epoch` nothing changes, and
+`mode=compare` has no deadline.
+
 ## Calibrating the replay set
 
 `tools/perf/replay.py` replays a mnemonic allowlist

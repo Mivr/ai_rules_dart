@@ -334,7 +334,7 @@ def summarize_deltas(server_pid, returncode, real_s, client_user_s,
 
 
 def measure(argv, cwd, server_pid, _read=None, _children=None,
-            _rss_read=None):
+            _rss_read=None, deadline=None):
     """Runs argv (which must go through the server) and returns its
     whole-tree CPU.
 
@@ -342,14 +342,15 @@ def measure(argv, cwd, server_pid, _read=None, _children=None,
     client process's own whole-tree CPU (wait4 deltas, as for batch
     builds). Raises ``WarmServerError`` when the server is missing,
     restarts mid-command, or any sample fails: the caller records the
-    error instead of a number.
+    error instead of a number. A ``deadline`` kills the command with its
+    process group when it passes (``DeadlineExceeded``).
     """
     import resource
     before = snapshot(server_pid, _read, _children)
     start = time.monotonic()
     rusage_before = resource.getrusage(resource.RUSAGE_CHILDREN)
     returncode, peak_rss_mb = peak_rss.run_peak(
-        argv, cwd, server_pid, _rss_read, _children)
+        argv, cwd, server_pid, _rss_read, _children, deadline)
     rusage_after = resource.getrusage(resource.RUSAGE_CHILDREN)
     after = snapshot(server_pid, _read, _children)
     if after.server_times().start != before.server_times().start:

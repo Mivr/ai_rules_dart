@@ -10,7 +10,9 @@ import os
 from sol_summary import BATCH_METHOD
 from sol_summary import WARM_METHOD
 from sol_summary import _RECORD
+from run_rep import SCENARIOS
 from sol_summary import flow_id
+from deadline import TIMEOUT_REASON, DeadlineExceeded
 
 
 def error_record(config, scenario, reason):
@@ -52,3 +54,19 @@ def write_error_records(args, config, scenarios, reason):
             fh.write(json.dumps(record, indent=2, sort_keys=True) + "\n")
         records[scenario] = record
     return records
+
+
+def record_unfinished(args, config, flows, exc=None):
+    """Records the config's flows not in `flows` and returns all flows.
+
+    A deadline stop (or none given: the deadline had already passed)
+    records the reason `timeout`; any other error names what failed.
+    """
+    if exc is None or isinstance(exc, DeadlineExceeded):
+        reason = TIMEOUT_REASON
+    else:
+        reason = "config %s failed: %s" % (config, exc)
+    remaining = [scenario for scenario, _ in SCENARIOS
+                 if scenario not in flows]
+    flows.update(write_error_records(args, config, remaining, reason))
+    return flows

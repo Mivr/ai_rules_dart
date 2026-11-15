@@ -85,6 +85,12 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 300
     steps:
+      - name: Record bench deadline
+        # First step: job start plus 270 minutes, 30 minutes before the job
+        # timeout. The measuring steps pass it as --deadline-epoch so they
+        # stop themselves and summarize and upload still run.
+        if: inputs.mode == 'sol'
+        run: echo "BENCH_DEADLINE=$(( $(date +%s) + 270 * 60 ))" >> "$GITHUB_ENV"
       - name: Check out bench tooling (this branch)
         uses: actions/checkout@v7
         with:
@@ -277,6 +283,7 @@ jobs:
           retention-days: 3
       - name: Measure speed-of-light (head only)
         if: inputs.mode == 'sol'
+        timeout-minutes: 280
         env:
           AB: ${{ inputs.ab }}
           REPEATS: ${{ inputs.repeats }}
@@ -324,6 +331,7 @@ jobs:
                 --out-base "$RUNNER_TEMP/sol-out-$rep" \
                 --results "$GITHUB_WORKSPACE/sol-results" \
                 --rep "$rep" \
+                --deadline-epoch "$BENCH_DEADLINE" \
                 --config device_release --config sim_debug \
                 || failed=1
             done
@@ -337,6 +345,7 @@ jobs:
               --out-base-root-treatment "$RUNNER_TEMP/ab-out-treatment" \
               --results "$GITHUB_WORKSPACE/ab-results" \
               --repeats "$REPEATS" \
+              --deadline-epoch "$BENCH_DEADLINE" \
               --config device_release --config sim_debug \
               || failed=1
           fi
