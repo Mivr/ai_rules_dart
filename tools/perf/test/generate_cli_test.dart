@@ -31,11 +31,15 @@ int _packageCount(String out) =>
 
 /// Maps every file under [root] to its content, keyed by relative path.
 Map<String, String> _snapshot(String root) {
-  final prefix = root.length + 1;
-  return {
-    for (final f in Directory(root).listSync(recursive: true))
-      if (f is File) f.path.substring(prefix): f.readAsStringSync(),
-  };
+  final prefix = root.replaceAll(r'\', '/').length + 1;
+  final files = <String, String>{};
+  for (final f in Directory(root).listSync(recursive: true)) {
+    if (f is File) {
+      files[f.path.replaceAll(r'\', '/').substring(prefix)] =
+          f.readAsStringSync();
+    }
+  }
+  return files;
 }
 
 void _testShapes() {

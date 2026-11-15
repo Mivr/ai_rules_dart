@@ -616,11 +616,15 @@ void _testConsumerPresetImport() {
 }
 
 Map<String, String> _treeContents(String root) {
-  final prefix = root.length + 1;
-  return {
-    for (final f in Directory(root).listSync(recursive: true))
-      if (f is File) f.path.substring(prefix): f.readAsStringSync(),
-  };
+  final prefix = root.replaceAll(r'\', '/').length + 1;
+  final files = <String, String>{};
+  for (final f in Directory(root).listSync(recursive: true)) {
+    if (f is File) {
+      files[f.path.replaceAll(r'\', '/').substring(prefix)] =
+          f.readAsStringSync();
+    }
+  }
+  return files;
 }
 
 void _testLinkModulesOption() {
