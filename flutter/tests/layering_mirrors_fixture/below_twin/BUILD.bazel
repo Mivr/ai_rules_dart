@@ -1,0 +1,9 @@
+load("@rules_dart//dart:defs.bzl", "dart_library")
+
+dart_library(
+    name = "below_twin",
+    package_name = "mirrors_twin",
+    srcs = ["lib/mirrors_twin.dart"],
+    tags = ["manual"],
+    visibility = ["//flutter/tests:__subpackages__"],
+)

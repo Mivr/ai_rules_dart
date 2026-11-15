@@ -15,21 +15,145 @@ integration test resolves its entry from `main` or a single `srcs` file, and
 `executable_import_check` reads `ctx.file.main`, so `layering_check_entry`
 runs it over a stand-in context that names the resolved entry.
 
+A Flutter program also refuses `dart:mirrors`, and any library the user sets in
+`@rules_dart//dart:refused_dart_libraries`, in its own sources and in every library below it. The
+program keeps one configuration, so no library compiles twice: `LAYERING_CHECK_ASPECT` adds one
+small source check per library, and `layering_check()` adds the refused set to the program's own.
+
 The check is on by default; the `dart_layering_check` feature turns it off per
 package or per build, exactly as in rules_dart.
 """
 
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load(
     "@rules_dart//dart:import_check.bzl",
     "EXECUTABLE_IMPORT_CHECK_TOOLCHAINS",
     "dart_import_check_aspect",
     "executable_import_check",
 )
-load("@rules_dart//dart:utils.bzl", "dart_package_identity", "derive_lib_root")
+load("@rules_dart//dart:providers.bzl", "DartInfo")
+load(
+    "@rules_dart//dart:utils.bzl",
+    "dart_package_identity",
+    "derive_lib_root",
+    "kernel_tools_for",
+    "owned_package_records",
+)
 
 visibility(["//flutter/..."])
 
-LAYERING_CHECK_ASPECT = dart_import_check_aspect
+# Flutter has no `dart:mirrors`: a Flutter program, and every library below it, may not import it.
+_FLUTTER_REFUSED = ["dart:mirrors"]
+_EXEC_TOOLS = Label("@rules_dart//dart:exec_tools_toolchain_type")
+
+FlutterRefusedInfo = provider(
+    doc = "The stamps of the `dart:` library refusals of a target and every library below it.",
+    fields = {
+        "refused": "list[str]: The `dart:` libraries this target's own check refuses; empty when it runs none.",
+        "stamps": "depset[File]: One stamp per checked library.",
+    },
+)
+
+def _refused(setting):
+    """The libraries a Flutter program refuses: Flutter's own and the user's setting.
+
+    Args:
+        setting: The list in `@rules_dart//dart:refused_dart_libraries`.
+
+    Returns:
+        The sorted union.
+    """
+    return sorted({lib: True for lib in _FLUTTER_REFUSED + list(setting)}.keys())
+
+def _own_srcs(ctx):
+    """The library's own Dart files and directories, `members` included."""
+    files = list(ctx.rule.files.srcs) if hasattr(ctx.rule.files, "srcs") else []
+    for member in getattr(ctx.rule.attr, "members", []):
+        files.extend(member[DefaultInfo].files.to_list())
+    return [f for f in files if f.extension == "dart" or f.is_directory]
+
+def _direct_packages(deps):
+    """The package names a library may import through its direct `deps`."""
+    names = {}
+    for dep in deps:
+        if DartInfo not in dep:
+            continue
+        owned = owned_package_records(dep[DartInfo])
+        records = owned if owned and dep[DefaultInfo].files.to_list() else dep[DartInfo].transitive_packages.to_list()
+        for record in records:
+            names[record.package_name] = True
+    return sorted(names)
+
+def _refusal_stamp(ctx, srcs, deps, dart_info, refused):
+    """Declares the check of one library's `import`s and `export`s against the refused set.
+
+    The package arguments match rules_dart's own check, so only `dart:` refusals can fail.
+    """
+    tools = kernel_tools_for(ctx)
+    tool = ctx.executable._import_check
+    stamp = ctx.actions.declare_file(ctx.label.name + ".flutter_import_check")
+    own = {r.package_name: True for r in owned_package_records(dart_info)}
+    if dart_info.package_name:
+        own[dart_info.package_name] = True
+    args = ctx.actions.args()
+    args.use_param_file("@%s")
+    args.set_param_file_format("multiline")
+    args.add("--label", "//%s:%s" % (ctx.label.package, ctx.label.name))
+    args.add_all(sorted(own), before_each = "--own-package")
+    args.add_all(_direct_packages(deps), before_each = "--direct-package")
+    args.add_all(refused, before_each = "--refused-library")
+    args.add_all(srcs, before_each = "--src")
+    args.add("--output", stamp)
+    ctx.actions.run(
+        executable = tools.dartaotruntime,
+        arguments = [tool.path, args],
+        inputs = depset(direct = srcs + [tool]),
+        outputs = [stamp],
+        mnemonic = "DartImportCheck",
+        progress_message = "Checking Dart library imports of %s" % ctx.label,
+        use_default_shell_env = False,
+        toolchain = _EXEC_TOOLS,
+    )
+    return stamp
+
+def _refusal_aspect_impl(target, ctx):
+    """Refuses Flutter's `dart:` libraries in one library and gathers those below it."""
+    if DartInfo not in target:
+        return []
+    deps = getattr(ctx.rule.attr, "deps", [])
+    library = getattr(ctx.rule.attr, "library", None)
+    below = deps + ([library] if library != None and type(library) != "list" else [])
+    srcs = _own_srcs(ctx)
+    off = ctx.label.workspace_name or "dart_layering_check" in ctx.disabled_features
+    refused = _refused(ctx.attr._refused_dart_libraries[BuildSettingInfo].value)
+    checked = srcs and not off and kernel_tools_for(ctx)
+    stamps = [_refusal_stamp(ctx, srcs, deps, target[DartInfo], refused)] if checked else []
+    return [FlutterRefusedInfo(refused = refused if stamps else [], stamps = depset(
+        stamps,
+        transitive = [d[FlutterRefusedInfo].stamps for d in below if FlutterRefusedInfo in d],
+    ))]
+
+_refusal_aspect = aspect(
+    implementation = _refusal_aspect_impl,
+    attr_aspects = ["deps", "library"],
+    attrs = {
+        "_import_check": attr.label(
+            default = Label("@rules_dart//dart:import_check"),
+            executable = True,
+            cfg = "exec",
+            doc = "The import checker, run on each library's own sources.",
+        ),
+        "_refused_dart_libraries": attr.label(
+            default = Label("@rules_dart//dart:refused_dart_libraries"),
+            doc = "The Dart libraries the user refuses beside Flutter's own.",
+        ),
+    },
+    requires = [dart_import_check_aspect],
+    toolchains = EXECUTABLE_IMPORT_CHECK_TOOLCHAINS,
+    doc = "Refuses `dart:mirrors` in every library below a Flutter program, in the program's configuration.",
+)
+
+LAYERING_CHECK_ASPECT = _refusal_aspect
 
 # These mirror rules_dart's `EXECUTABLE_IMPORT_CHECK_ATTRS`, because
 # `executable_import_check` reads both by name. They are spelled out here so
@@ -59,6 +183,38 @@ def layering_toolchains(taken):
         `LAYERING_CHECK_TOOLCHAINS` without those in `taken`.
     """
     return [t for t in LAYERING_CHECK_TOOLCHAINS if t not in taken]
+
+def _checked(ctx, check):
+    """Runs rules_dart's check over `check.entry` and `check.srcs`, with Flutter's refused libraries.
+
+    The stand-in context carries the refused set as the build setting's own provider, so the
+    program keeps one configuration and no library compiles twice. The libraries below the
+    program are refused by `LAYERING_CHECK_ASPECT`, whose stamps join the result. A program that turns
+    the `dart_layering_check` feature off gets nothing: the aspect cannot see the program's features, so
+    the program leaves out the stamps below it.
+
+    Args:
+        ctx: The rule context, as for `layering_check`.
+        check: A struct with `entry`, `srcs` and `package`, as for `layering_check_entry`.
+
+    Returns:
+        A depset of check stamps, for the `_validation` output group.
+    """
+    if "dart_layering_check" in ctx.disabled_features:
+        return depset()
+    refused = _refused(ctx.attr._refused_dart_libraries[BuildSettingInfo].value)
+    stand_in = struct(
+        actions = ctx.actions,
+        attr = struct(deps = ctx.attr.deps, _refused_dart_libraries = {BuildSettingInfo: struct(value = refused)}),
+        disabled_features = ctx.disabled_features,
+        executable = ctx.executable,
+        file = struct(main = check.entry),
+        files = struct(srcs = check.srcs),
+        label = ctx.label,
+        toolchains = ctx.toolchains,
+    )
+    below = [d[FlutterRefusedInfo].stamps for d in ctx.attr.deps if FlutterRefusedInfo in d]
+    return depset(transitive = [executable_import_check(stand_in, check.package)] + below)
 
 def layering_check_for(ctx):
     """Checks a rule whose own package is `package_name` under its label.
@@ -102,7 +258,11 @@ def layering_check(ctx, package):
     Returns:
         A depset of check stamps, for the `_validation` output group.
     """
-    return executable_import_check(ctx, package if package.package_name else None)
+    return _checked(ctx, struct(
+        entry = ctx.file.main,
+        srcs = ctx.files.srcs,
+        package = package if package.package_name else None,
+    ))
 
 def layering_check_entry(ctx, check):
     """Checks a rule whose entry is resolved, not declared as `main`.
@@ -125,17 +285,7 @@ def layering_check_entry(ctx, check):
     """
     if check.entry == None:
         return depset()
-    stand_in = struct(
-        actions = ctx.actions,
-        attr = struct(deps = ctx.attr.deps, _refused_dart_libraries = ctx.attr._refused_dart_libraries),
-        disabled_features = ctx.disabled_features,
-        executable = ctx.executable,
-        file = struct(main = check.entry),
-        files = struct(srcs = check.srcs),
-        label = ctx.label,
-        toolchains = ctx.toolchains,
-    )
-    return executable_import_check(stand_in, check.package)
+    return _checked(ctx, check)
 
 def layering_check_integration(ctx, sources):
     """Checks an integration test's entry, `srcs` and `app_srcs` against its `deps`.

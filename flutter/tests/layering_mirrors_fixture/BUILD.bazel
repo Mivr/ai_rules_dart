@@ -1,0 +1,173 @@
+load("@rules_dart//dart:defs.bzl", "dart_binary")
+load("//flutter:defs.bzl", "flutter_application", "flutter_test")
+load("//flutter/private:common.bzl", "HOST_COMPATIBLE")
+load("//flutter/private:flutter_web_application.bzl", "flutter_web_bundle")
+load(
+    "//flutter/tests:layering_test.bzl",
+    "layering_below_test",
+    "layering_below_user_test",
+    "layering_integration_targets",
+    "layering_refusal_test",
+    "layering_refusal_user_test",
+    "layering_validation_empty_test",
+)
+
+# Flutter has no `dart:mirrors`, so a Flutter program refuses it. Each target is
+# `manual` and built by name: `bazel build --output_groups=_validation` fails on
+# `:direct_test` (its own import) and `:via_library_test` (a library below it
+# exports the library) with the refusal line, and passes on `:twin_test`, whose
+# library imports `dart:ui`. `:fake_test_api` stands in for `package:test_api`.
+flutter_test(
+    name = "direct_test",
+    package_name = "mirrors_fixture",
+    main = "test/direct_test.dart",
+    tags = ["manual"],
+    target_compatible_with = HOST_COMPATIBLE,
+    deps = ["//flutter/tests/flutter_test_analyze_fixture/fake_test_api"],
+)
+
+flutter_test(
+    name = "via_library_test",
+    package_name = "mirrors_fixture",
+    main = "test/via_library_test.dart",
+    tags = ["manual"],
+    target_compatible_with = HOST_COMPATIBLE,
+    deps = [
+        "//flutter/tests/flutter_test_analyze_fixture/fake_test_api",
+        "//flutter/tests/layering_mirrors_fixture/below_export",
+    ],
+)
+
+# The program's own opt-out: `dart_layering_check` off, so a library below it that exports
+# `dart:mirrors` adds no check. `bazel build --output_groups=_validation` passes on it.
+flutter_test(
+    name = "optout_test",
+    package_name = "mirrors_fixture",
+    features = ["-dart_layering_check"],
+    main = "test/via_library_test.dart",
+    tags = ["manual"],
+    target_compatible_with = HOST_COMPATIBLE,
+    deps = [
+        "//flutter/tests/flutter_test_analyze_fixture/fake_test_api",
+        "//flutter/tests/layering_mirrors_fixture/below_export",
+    ],
+)
+
+layering_validation_empty_test(
+    name = "optout_validation_test",
+    size = "small",
+    target_under_test = ":optout_test",
+)
+
+flutter_test(
+    name = "twin_test",
+    package_name = "mirrors_fixture",
+    main = "test/twin_test.dart",
+    tags = ["manual"],
+    target_compatible_with = HOST_COMPATIBLE,
+    deps = [
+        "//flutter/tests/flutter_test_analyze_fixture/fake_test_api",
+        "//flutter/tests/layering_mirrors_fixture/below_twin",
+    ],
+)
+
+# Analysis: each Flutter program refuses `dart:mirrors` beside a user entry, the library below it
+# does too, and a `dart_binary` keeps rules_dart's empty default.
+flutter_application(
+    name = "app_it",
+    package_name = "mirrors_fixture",
+    main = "lib/twin_main.dart",
+    tags = ["manual"],
+    deps = ["//flutter/tests/layering_mirrors_fixture/below_twin"],
+)
+
+flutter_web_bundle(
+    name = "web_bundle_it",
+    package_name = "mirrors_fixture",
+    main = "lib/twin_main.dart",
+    tags = ["manual"],
+    deps = ["//flutter/tests/layering_mirrors_fixture/below_twin"],
+)
+
+dart_binary(
+    name = "bin_it",
+    package_name = "mirrors_fixture",
+    main = "test/twin_test.dart",
+    tags = ["manual"],
+    deps = ["//flutter/tests/layering_mirrors_fixture/below_twin"],
+)
+
+layering_integration_targets(
+    name = "integration_it",
+    app = "lib/twin_main.dart",
+    entry = "test/twin_test.dart",
+    package = "mirrors_fixture",
+    deps = [
+        "//flutter/tests/layering_integ_fixture/flutter_test_dep",
+        "//flutter/tests/layering_mirrors_fixture/below_twin",
+    ],
+)
+
+_BELOW = ["below_twin.flutter_import_check"]
+
+_PROGRAMS = {
+    "app": ":app_it",
+    "drive": ":drive_it",
+    "linux": ":linux_it",
+    "test": ":twin_test",
+    "web": ":web_it",
+    "web_bundle": ":web_bundle_it",
+}
+
+[
+    layering_refusal_test(
+        name = "%s_refuses_test" % kind,
+        size = "small",
+        expect_below = _BELOW,
+        expect_refused = ["dart:mirrors"],
+        stamp = target[1:] + ".import_check",
+        target_under_test = target,
+    )
+    for kind, target in _PROGRAMS.items()
+]
+
+[
+    layering_refusal_user_test(
+        name = "%s_refuses_user_test" % kind,
+        size = "small",
+        expect_refused = [
+            "dart:io",
+            "dart:mirrors",
+        ],
+        stamp = target[1:] + ".import_check",
+        target_under_test = target,
+    )
+    for kind, target in _PROGRAMS.items()
+]
+
+layering_refusal_test(
+    name = "bin_default_test",
+    size = "small",
+    expect_refused = [],
+    stamp = "bin_it.import_check",
+    target_under_test = ":bin_it",
+)
+
+layering_below_test(
+    name = "below_refuses_test",
+    size = "small",
+    expect_refused = ["dart:mirrors"],
+    stamp = "below_twin.flutter_import_check",
+    target_under_test = "//flutter/tests/layering_mirrors_fixture/below_twin",
+)
+
+layering_below_user_test(
+    name = "below_refuses_user_test",
+    size = "small",
+    expect_refused = [
+        "dart:io",
+        "dart:mirrors",
+    ],
+    stamp = "below_twin.flutter_import_check",
+    target_under_test = "//flutter/tests/layering_mirrors_fixture/below_twin",
+)

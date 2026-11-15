@@ -95,6 +95,8 @@ way, with no package of its own; an executable driver adds nothing.
 The check is on by default and the feature `dart_layering_check` turns it off
 per package or per build, as in rules_dart. No attribute is added.
 
+`dart:mirrors` is refused in every Flutter program and in every library below it, every other `dart:` library passes, and a library named in `--@rules_dart//dart:refused_dart_libraries` is refused in addition to it.
+
 Checked rules: `flutter_test`, `flutter_application` (under the android, ios,
 linux, macos and windows macros) and `flutter_web_bundle` (under
 `flutter_web_app`), the web, Linux, Android and iOS `flutter_integration_test`

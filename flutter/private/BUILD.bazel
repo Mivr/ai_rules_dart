@@ -1559,7 +1559,9 @@ bzl_library(
     srcs = ["layering_check.bzl"],
     visibility = ["//visibility:public"],
     deps = [
+        "@bazel_skylib//rules:common_settings",
         "@rules_dart//dart:import_check_bzl",
+        "@rules_dart//dart:providers",
         "@rules_dart//dart:utils",
     ],
 )

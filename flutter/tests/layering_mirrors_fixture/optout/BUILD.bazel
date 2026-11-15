@@ -1,0 +1,19 @@
+load("@rules_dart//dart:defs.bzl", "dart_library")
+load("//flutter/tests:layering_test.bzl", "layering_below_test")
+
+# The per-package opt-out: a library that imports `dart:mirrors` registers no check.
+package(features = ["-dart_layering_check"])
+
+dart_library(
+    name = "off",
+    package_name = "mirrors_off",
+    srcs = ["lib/off.dart"],
+    tags = ["manual"],
+)
+
+layering_below_test(
+    name = "off_test",
+    size = "small",
+    expect_refused = [],
+    target_under_test = ":off",
+)
