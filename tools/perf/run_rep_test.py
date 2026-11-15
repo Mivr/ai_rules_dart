@@ -108,10 +108,14 @@ class ConfigTableTest(unittest.TestCase):
         self.assertEqual(
             list(CONFIG_ORDER),
             ["device_release", "sim_debug", "android_release",
-             "android_debug", "web_release", "web_debug"])
+             "android_debug", "android_payload", "web_release",
+             "web_debug"])
         expected = {
             "android_release": ("//app:app_android", ["-c", "opt"]),
             "android_debug": ("//app:app_android", ["-c", "dbg"]),
+            "android_payload": ("//app:app_android",
+                                ["-c", "dbg",
+                                 "--output_groups=payload_apk"]),
             "web_release": ("//app:app_web", ["-c", "opt"]),
             "web_debug": ("//app:app_web", ["-c", "dbg"]),
         }

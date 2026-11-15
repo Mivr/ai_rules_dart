@@ -27,14 +27,42 @@ def info_argv(out_base, key, batch):
         "info", key]
 
 
+def output_group_of(build_flags):
+    """The one group named by an ``--output_groups=<group>`` flag, or None.
+
+    A flag with several groups or ``+`` additions is not a single-group
+    build, so it is not a group listing either.
+    """
+    for flag in build_flags:
+        value = flag.partition("--output_groups=")[2]
+        if value and "," not in value and not value.startswith("+"):
+            return value
+    return None
+
+
+def listing_expr(build_flags):
+    """Starlark expression listing what ``bazel build`` writes.
+
+    The DefaultInfo files, unless the flags select one output group: then
+    only that group's declared files, as the build produces nothing else.
+    """
+    group = output_group_of(build_flags)
+    if group is None:
+        files = "target.files"
+    else:
+        files = 'providers(target)["OutputGroupInfo"].' + group
+    return '"\\n".join([f.path for f in %s.to_list()])' % files
+
+
 def cquery_argv(out_base, target, build_flags, batch):
     """Full ``bazel cquery`` argv in either mode.
 
-    Lists ``target.files`` (DefaultInfo.files) only: ``--output=files``
+    Lists ``target.files`` (DefaultInfo.files) only, or the one output
+    group the build flags select (see ``listing_expr``): ``--output=files``
     would add the ``.bazelrc`` ``test`` aspect output groups, whose
     outputs ``bazel build`` never builds.
     """
-    expr = '"\\n".join([f.path for f in target.files.to_list()])'
+    expr = listing_expr(build_flags)
     return (command_prefix(batch) + startup_options(out_base)
             + ["cquery", "--output=starlark", "--starlark:expr=" + expr,
                target] + list(build_flags))

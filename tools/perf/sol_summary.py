@@ -25,6 +25,7 @@ _FLOW_PREFIX = {
     "sim_debug": "ios-debug",
     "android_release": "android-release",
     "android_debug": "android-debug",
+    "android_payload": "android-payload",
     "web_release": "web-release",
     "web_debug": "web-debug",
 }
@@ -32,7 +33,8 @@ _FLOW_SUFFIX = {"clean": "clean", "app_edit": "app", "core_edit": "body",
                 "api_edit": "api"}
 _PLATFORM_CONFIGS = (
     ("ios", ("device_release", "sim_debug")),
-    ("android", ("android_release", "android_debug")),
+    ("android", ("android_release", "android_debug",
+                 "android_payload")),
     ("web", ("web_release", "web_debug")),
 )
 _CONFIG_PLATFORM = {

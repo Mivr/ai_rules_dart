@@ -216,7 +216,7 @@ jobs:
           for rep in $(seq 1 "$REPEATS"); do
             rm -rf "$RUNNER_TEMP/sol-out-$rep" "$RUNNER_TEMP/sol-run-$rep"
             case "$PLATFORM" in
-              android) run_sol --config android_release --config android_debug || failed=1 ;;
+              android) run_sol --config android_release --config android_debug --config android_payload || failed=1 ;;
               web) run_sol --config web_release --config web_debug || failed=1 ;;
               *) echo "unknown platform: $PLATFORM"; exit 1 ;;
             esac

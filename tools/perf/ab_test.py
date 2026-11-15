@@ -676,7 +676,8 @@ class PlatformSummaryTest(unittest.TestCase):
     def test_platform_configs_come_from_sol_summary(self):
         self.assertEqual(ab.platform_configs("ios"), list(IOS_CONFIGS))
         self.assertEqual(ab.platform_configs("android"),
-                         ["android_release", "android_debug"])
+                         ["android_release", "android_debug",
+                          "android_payload"])
         self.assertEqual(ab.platform_configs("web"),
                          ["web_release", "web_debug"])
         with self.assertRaises(ValueError):
@@ -687,7 +688,9 @@ class PlatformSummaryTest(unittest.TestCase):
             "android-release-clean", "android-release-app",
             "android-release-body", "android-debug-clean",
             "android-debug-app", "android-debug-body",
-            "android-release-api", "android-debug-api"})
+            "android-release-api", "android-debug-api",
+            "android-payload-clean", "android-payload-app",
+            "android-payload-body", "android-payload-api"})
         self.assertEqual(summarize_arm_flows(self.tmp),
                          summarize_arm_flows(self.tmp, "ios"))
 
@@ -705,6 +708,8 @@ class PlatformSummaryTest(unittest.TestCase):
         for arm in ("control", "treatment"):
             self.write(arm, "android_release", "clean",
                        "android-release-clean", 10.0)
+            self.write(arm, "android_payload", "clean",
+                       "android-payload-clean", 8.0)
         out = os.path.join(self.tmp, "android-ab.json")
         code = ab.main(["summarize", "--platform", "android",
                         "--results", self.tmp, "--sha", "b" * 40,
@@ -716,7 +721,11 @@ class PlatformSummaryTest(unittest.TestCase):
         with open(out, encoding="utf-8") as fh:
             summary = json.load(fh)
         self.assertEqual(summary["meta"]["bazel_flags"], ["--jobs=8"])
-        self.assertEqual(len(summary["ratio"]), 8)
+        self.assertEqual(len(summary["ratio"]), 12)
+        self.assertEqual(summary["ratio"]["android-payload-clean"]["n"], 1)
+        self.assertIn("android-payload-clean", summary["arms"]["control"])
+        self.assertIn("android-payload-clean",
+                      summary["arms"]["treatment"])
         self.assertEqual(summary["ratio"]["android-release-clean"]["n"], 1)
         self.assertEqual(summary["ratio"]["android-debug-clean"]["n"], 0)
         self.assertNotIn("ios-release-clean", summary["arms"]["control"])
@@ -739,7 +748,8 @@ class PlatformSummaryTest(unittest.TestCase):
         for extra, expected in (
                 ([], ["device_release", "sim_debug"]),
                 (["--platform", "android"],
-                 ["android_release", "android_debug"]),
+                 ["android_release", "android_debug",
+                  "android_payload"]),
                 (["--platform", "web"], ["web_release", "web_debug"])):
             seen.clear()
             with mock.patch.object(sol, "run_sol_rep", fake_rep):
@@ -852,7 +862,7 @@ class IosScopeTest(unittest.TestCase):
     def test_lock_builds_only_the_ios_configs(self):
         # CONFIG_ORDER carries the Android and Web SOL benches; the A/B
         # lock build and ios-ab.json stay on the two iOS configurations.
-        self.assertEqual(len(CONFIG_ORDER), 6)
+        self.assertEqual(len(CONFIG_ORDER), 7)
         self.assertEqual(list(IOS_CONFIGS), ["device_release", "sim_debug"])
         targets = {lock_build_argv("/lock", config)[-2]
                    for config in IOS_CONFIGS}

@@ -120,6 +120,7 @@ class FlowIdTest(unittest.TestCase):
         expected = {
             "android_release": "android-release",
             "android_debug": "android-debug",
+            "android_payload": "android-payload",
             "web_release": "web-release",
             "web_debug": "web-debug",
         }
@@ -1161,6 +1162,62 @@ class InheritingCapture(FakeCapture):
         return super().__call__(argv, cwd)
 
 
+class PayloadConfigTest(unittest.TestCase):
+    """android_payload builds and verifies the payload_apk group only."""
+
+    TARGET = "//app:app_android"
+
+    def plan(self, names):
+        tmp = tempfile.mkdtemp(prefix="sol-payload-")
+        self.addCleanup(shutil.rmtree, tmp, True)
+        root = os.path.join(tmp, "execroot")
+        os.makedirs(root)
+        for name in names:
+            with open(os.path.join(root, name), "wb") as fh:
+                fh.write(b"x")
+        return plan_verify_snapshot(FakeCapture(root, names), tmp, tmp,
+                                    root, "android_payload", True)
+
+    def test_build_argv_carries_the_output_group_flag(self):
+        argv = sol.build_argv("/ob", "android_payload", "/log", None, True)
+        self.assertEqual(argv[argv.index("build") + 1:][:3],
+                         ["-c", "dbg", "--output_groups=payload_apk"])
+        self.assertEqual(argv[argv.index("build") + 4], self.TARGET)
+
+    def test_cquery_lists_the_group_not_default_files(self):
+        flags = ["-c", "dbg", "--output_groups=payload_apk"]
+        argv = sol.cquery_argv("/ob", self.TARGET, flags, True)
+        expr = [a for a in argv if a.startswith("--starlark:expr=")][0]
+        self.assertIn('OutputGroupInfo"].payload_apk', expr)
+        self.assertNotIn("target.files", expr)
+        self.assertEqual(argv[-3:], flags)
+        for other in (["-c", "dbg"], ["-c", "opt"]):
+            expr = [a for a in sol.cquery_argv("/ob", self.TARGET, other,
+                                               True)
+                    if a.startswith("--starlark:expr=")][0]
+            self.assertIn("target.files", expr)
+
+    def test_payload_split_is_the_verify_set(self):
+        plan = self.plan(["app_android_payload.apk"])
+        self.assertEqual(plan[0], "archives")
+        self.assertEqual([os.path.basename(p) for p in plan[1]],
+                         ["app_android_payload.apk"])
+
+    def test_anything_but_the_payload_split_fails(self):
+        cases = {
+            "full apk": ["app_android.apk"],
+            "base split": ["app_android_base.apk"],
+            "payload with full apk": ["app_android_payload.apk",
+                                      "app_android.apk"],
+            "no apk": ["app.dill"],
+            "empty": [],
+        }
+        for label, names in cases.items():
+            with self.subTest(label), self.assertRaisesRegex(
+                    RuntimeError, "android_payload.*//app:app_android"):
+                self.plan(names)
+
+
 class CqueryArgvTest(unittest.TestCase):
     def test_argv_shape_in_both_modes(self):
         flags = ["-c", "opt"]
@@ -1459,6 +1516,8 @@ class SummarizeSolTest(unittest.TestCase):
             "android-release-body", "android-debug-clean",
             "android-debug-app", "android-debug-body",
             "android-release-api", "android-debug-api",
+            "android-payload-clean", "android-payload-app",
+            "android-payload-body", "android-payload-api",
         }
         web_flows = {
             "web-release-clean", "web-release-app", "web-release-body",
@@ -1467,6 +1526,7 @@ class SummarizeSolTest(unittest.TestCase):
         }
         for config, prefix in [("android_release", "android-release"),
                                ("android_debug", "android-debug"),
+                               ("android_payload", "android-payload"),
                                ("web_release", "web-release"),
                                ("web_debug", "web-debug")]:
             for scenario, suffix in [("clean", "clean"),
@@ -1487,6 +1547,7 @@ class SummarizeSolTest(unittest.TestCase):
             web = json.load(fh)
         self.assertEqual(set(android["flows"]), android_flows)
         self.assertEqual(set(web["flows"]), web_flows)
+        self.assertEqual(sol._CONFIG_PLATFORM["android_payload"], "android")
         self.assertEqual(android["unit"], "cpu_seconds")
         self.assertEqual(android["rules_flutter"], "1" * 40)
 

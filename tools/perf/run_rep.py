@@ -28,6 +28,8 @@ Configurations (fixed table ``CONFIGS``):
   provisioning profile.
 - ``android_release`` / ``android_debug``: the generated Android app
   (``//app:app_android``) built with ``-c opt`` or ``-c dbg``.
+- ``android_payload``: the same target built with ``-c dbg`` and only the
+  ``payload_apk`` output group, the developer's per-edit build.
 - ``web_release`` / ``web_debug``: the generated Web app
   (``//app:app_web``) built with ``-c opt`` or ``-c dbg``.
 
@@ -77,6 +79,10 @@ CONFIGS = {
         "target": "//app:app_android",
         "build_flags": ["-c", "dbg"],
     },
+    "android_payload": {
+        "target": "//app:app_android",
+        "build_flags": ["-c", "dbg", "--output_groups=payload_apk"],
+    },
     "web_release": {
         "target": "//app:app_web",
         "build_flags": ["-c", "opt"],
@@ -91,6 +97,7 @@ CONFIG_ORDER = [
     "sim_debug",
     "android_release",
     "android_debug",
+    "android_payload",
     "web_release",
     "web_debug",
 ]

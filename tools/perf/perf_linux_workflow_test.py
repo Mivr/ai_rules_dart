@@ -38,7 +38,7 @@ _EXPECTED_INPUTS = {
            "default": '"off"', "options": ["\"off\"", "flags"]},
 }
 _CONFIGS = {
-    "android": ("android_release", "android_debug"),
+    "android": ("android_release", "android_debug", "android_payload"),
     "web": ("web_release", "web_debug"),
 }
 _STEP_SCRIPT_INPUTS = {
@@ -474,10 +474,10 @@ class PerfLinuxWorkflowTest(unittest.TestCase):
                                 step.get("run", ""))]
         self.assertEqual(len(measure), 1)
         script = measure[0]
-        for platform, (release, debug) in _CONFIGS.items():
+        for platform, configs in _CONFIGS.items():
             with self.subTest(platform=platform):
-                pair = "--config %s --config %s" % (release, debug)
-                self.assertIn(pair, script)
+                chain = " ".join("--config " + c for c in configs)
+                self.assertIn(chain, script)
 
     def test_generates_head_and_summarizes_to_platform_file(self):
         all_steps = steps(self.lines)

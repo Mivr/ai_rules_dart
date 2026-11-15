@@ -120,6 +120,8 @@ from sol_argv import (  # noqa: E402,F401
     out_base_of,
     startup_options,
 )
+from sol_payload import (  # noqa: E402
+    EmptyListing, android_archives, listed_outputs)
 from sol_warmup import run_warm_ups  # noqa: E402
 from sol_errors import error_record  # noqa: E402,F401
 from sol_errors import record_unfinished  # noqa: E402
@@ -326,7 +328,7 @@ def query_target_files(capture, work, out_base, target, build_flags,
     files = [check_under_base(os.path.join(execroot, line), out_base,
                               "cquery " + target) for line in listed]
     if not files:
-        raise RuntimeError("bazel cquery %s listed no files" % target)
+        raise EmptyListing("bazel cquery %s listed no files" % target)
     return files
 
 
@@ -350,12 +352,6 @@ def sim_bundle_roots(target_files):
 def sim_bundle_archives(target_files):
     """Declared .ipa bundle archives among a target's listed outputs."""
     return sorted(path for path in target_files if path.endswith(".ipa"))
-
-
-def android_bundle_archives(target_files):
-    """Declared Android .apk or .aab archives among a target's outputs."""
-    return sorted(path for path in target_files
-                  if path.endswith(".apk") or path.endswith(".aab"))
 
 
 def web_bundle_roots(target_files):
@@ -465,8 +461,9 @@ def plan_verify_snapshot(capture, work, out_base, execroot, config,
     read_verify_snapshot reads it right now.
     """
     spec = CONFIGS[config]
-    listed = query_target_files(capture, work, out_base, spec["target"],
-                                spec["build_flags"], batch)
+    listed = listed_outputs(config, spec["target"], lambda: (
+        query_target_files(capture, work, out_base, spec["target"],
+                           spec["build_flags"], batch)))
     platform = _CONFIG_PLATFORM[config]
     if platform == "ios" and config == "device_release":
         found = device_verify_files(listed)
@@ -474,7 +471,7 @@ def plan_verify_snapshot(capture, work, out_base, execroot, config,
             raise RuntimeError("sol found no verify files for %s" % config)
         return ("files", found)
     if platform == "android":
-        archives = android_bundle_archives(listed)
+        archives = android_archives(config, listed, spec["target"])
         if not archives:
             raise RuntimeError(
                 "sol found no bundle for %s (declared Android APK/AAB)"
