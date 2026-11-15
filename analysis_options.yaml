@@ -112,6 +112,7 @@ linter:
     no_default_cases: true
     no_duplicate_case_values: true
     no_dynamic_casts: true
+    no_home_env_reads: true
     no_leading_underscores_for_library_prefixes: true
     no_leading_underscores_for_local_identifiers: true
     no_literal_bool_comparisons: true
@@ -119,6 +120,8 @@ linter:
     no_raw_types: true
     no_runtimetype_tostring: true
     no_self_assignments: true
+    no_stdout_in_worker: true
+    no_wall_clock_in_actions: true
     no_wildcard_variable_uses: true
     non_constant_identifier_names: true
     noop_primitive_operations: true
@@ -170,6 +173,7 @@ linter:
     prefer_spread_collections: true
     prefer_typing_uninitialized_variables: true
     prefer_void_to_null: true
+    process_requires_environment: true
     provide_deprecation_message: true
     public_member_api_docs: true
     recursive_getters: true

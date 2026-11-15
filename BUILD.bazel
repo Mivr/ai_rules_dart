@@ -22,7 +22,10 @@ alias(
 )
 
 exports_files(
-    ["analysis_baseline.json"],
+    [
+        "analysis_baseline.json",
+        "analysis_options.yaml",
+    ],
     visibility = [
         "//flutter/tests:__subpackages__",
         "//lint:__pkg__",
