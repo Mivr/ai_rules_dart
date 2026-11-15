@@ -1,0 +1,40 @@
+{
+  "traceEvents": [
+    {
+      "cat": "build phase marker",
+      "name": "Initialize command",
+      "ph": "i",
+      "ts": 0,
+      "pid": 1,
+      "tid": 1
+    },
+    {
+      "cat": "build phase marker",
+      "name": "Complete build",
+      "ph": "i",
+      "ts": 10000000,
+      "pid": 1,
+      "tid": 1
+    },
+    {
+      "cat": "action processing",
+      "name": "Compiling Dart kernel module app/app.kmod",
+      "ph": "X",
+      "ts": 0,
+      "dur": 2000000,
+      "pid": 1,
+      "tid": 1,
+      "args": { "mnemonic": "DartKernel" }
+    },
+    {
+      "cat": "action processing",
+      "name": "Linking Dart kernel @@//app:app",
+      "ph": "X",
+      "ts": 2000000,
+      "dur": 500000,
+      "pid": 1,
+      "tid": 1,
+      "args": { "mnemonic": "DartKernelLink" }
+    }
+  ]
+}
