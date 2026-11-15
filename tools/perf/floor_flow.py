@@ -17,6 +17,9 @@ from floor import FLOOR_CONFIGS  # noqa: E402
 from floor import FloorError  # noqa: E402
 from floor import FloorSpec  # noqa: E402
 from floor import APP_SCHEME  # noqa: E402
+from floor import FloorUnavailableError  # noqa: E402
+from floor import dev_filesystem_roots  # noqa: E402
+from floor import find_debug_package_config  # noqa: E402
 from floor import find_package_config  # noqa: E402
 from floor_run import run_floor  # noqa: E402
 from floor_sources import SourceSwap  # noqa: E402
@@ -96,14 +99,23 @@ def build_spec(config, built, work, scratch, name="app"):
     """The FloorSpec for a flow from its build's declared outputs.
 
     ``name`` is the app target whose ``<name>.package_config.json`` the
-    rules wrote; the compile mounts the work tree (sources) and the exec
-    root (generated files, external repositories) under the app scheme.
+    rules wrote (a debug app may only have its dev loop's
+    ``<name>.dev_package_config.json``); the compile mounts the work tree
+    (sources) and the exec root (generated files, external repositories)
+    under the app scheme.
     """
     platform, mode = _PLATFORM[config]
-    packages = find_package_config([built.bazel_out], name)
+    execroot = os.path.abspath(built.execroot)
+    if mode == "debug":
+        packages, dev_config = find_debug_package_config(
+            [built.bazel_out], name)
+    else:
+        packages, dev_config = find_package_config(
+            [built.bazel_out], name), None
+    dev_roots = dev_filesystem_roots(dev_config, execroot) if dev_config else []
     work = os.path.abspath(work)
     entry = "%s:///app/lib/main.dart" % APP_SCHEME
-    roots = (work, os.path.abspath(built.execroot))
+    roots = tuple(dict.fromkeys(dev_roots + [work, execroot]))
     return FloorSpec(platform, mode, copy_package(built.plan, scratch),
                      entry, packages, scratch, roots)
 
@@ -127,6 +139,9 @@ def floor_fields(args, config, scenario, built, swap, runner=run_floor):
         return {"toolchain_floor": floor,
                 "floor_identical": result.identical,
                 "floor_reason": result.reason}
+    except FloorUnavailableError as exc:
+        return {"toolchain_floor": None, "floor_identical": False,
+                "floor_reason": str(exc)}
     except (FloorError, OSError, ValueError) as exc:
         return {"toolchain_floor": None, "floor_identical": False,
                 "floor_reason": "floor: %s" % exc}

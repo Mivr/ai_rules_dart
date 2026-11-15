@@ -2,7 +2,9 @@
 """Unit tests for the toolchain floor (fake tools, runners and servers)."""
 
 import argparse
+import contextlib
 import io
+import json
 import os
 import pathlib
 import plistlib
@@ -777,7 +779,66 @@ class FlowTest(unittest.TestCase):
                 floor_flow.build_spec("android_debug", self.built(tmp),
                                       tmp, tmp)
             self.assertIn("app.package_config.json", str(ctx.exception))
+            self.assertIn("app.dev_package_config.json", str(ctx.exception))
             self.assertIn(tmp, str(ctx.exception))
+
+    def dev_build(self, tmp, roots=("", "bazel-out/k8-fastbuild/bin")):
+        touch(os.path.join(tmp, "bin", "app", "app.dev_package_config.json"),
+              b"{}")
+        touch(os.path.join(tmp, "bin", "app", "app_dev_config.json"),
+              json.dumps({"filesystemRoots": list(roots)}).encode())
+        apk = os.path.join(tmp, "x.apk")
+        make_apk(apk)
+        return argparse.Namespace(bazel_out=tmp, execroot=tmp,
+                                  plan=("archives", [apk], tmp))
+
+    def test_build_spec_debug_uses_dev_package_config(self):
+        tmp = tempfile.mkdtemp()
+        built = self.dev_build(tmp)
+        spec = floor_flow.build_spec("android_debug", built, "/work", tmp)
+        self.assertEqual(os.path.join(
+            tmp, "bin", "app", "app.dev_package_config.json"), spec.packages)
+        self.assertEqual((tmp, os.path.join(
+            tmp, "bazel-out/k8-fastbuild/bin"), "/work"), spec.roots)
+
+    def test_build_spec_whole_program_wins_and_release_ignores_dev(self):
+        tmp = tempfile.mkdtemp()
+        built = self.dev_build(tmp)
+        with self.assertRaises(floor.MissingToolError):
+            floor_flow.build_spec("android_release", built, tmp, tmp)
+        pc = os.path.join(tmp, "bin", "app", "app.package_config.json")
+        touch(pc, b"{}")
+        spec = floor_flow.build_spec("android_debug", built, "/work", tmp)
+        self.assertEqual(pc, spec.packages)
+        self.assertEqual(("/work", tmp), spec.roots)
+
+    def test_floor_fields_unavailable_names_both_files(self):
+        args = self.args()
+        tmp = tempfile.mkdtemp()
+        fields = floor_flow.floor_fields(
+            args, "android_debug", "core_edit", self.built(tmp),
+            floor_sources.SourceSwap({}))
+        self.assertIsNone(fields["toolchain_floor"])
+        self.assertFalse(fields["floor_identical"])
+        reason = fields["floor_reason"]
+        self.assertTrue(reason.startswith("floor unavailable:"), reason)
+        self.assertIn("app.package_config.json", reason)
+        self.assertIn("app.dev_package_config.json", reason)
+        self.assertIn(tmp, reason)
+
+    def test_dev_package_config_without_usable_dev_config_is_named(self):
+        tmp = tempfile.mkdtemp()
+        touch(os.path.join(tmp, "app", "app.dev_package_config.json"), b"{}")
+        args = self.args()
+        for body in (None, b"{not json", b"{}", b'{"filesystemRoots": 3}'):
+            if body is not None:
+                touch(os.path.join(tmp, "app", "app_dev_config.json"), body)
+            fields = floor_flow.floor_fields(
+                args, "android_debug", "core_edit", self.built(tmp),
+                floor_sources.SourceSwap({}))
+            reason = fields["floor_reason"]
+            self.assertTrue(reason.startswith("floor: "), reason)
+            self.assertIn("app_dev_config.json", reason)
 
 
 class FrontendArgvTest(unittest.TestCase):
@@ -817,6 +878,20 @@ class FloorExitTest(unittest.TestCase):
         self.assertEqual(1, code)
         self.assertIn("flow=bad", out.getvalue())
         self.assertNotIn("flow=good", out.getvalue())
+
+    def test_unavailable_floor_is_not_a_failure(self):
+        flows = self.summaries(
+            gone={"floor_identical": False,
+                  "floor_reason": "floor unavailable: no files"})
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(0, floor_summary.floor_failure_exit(flows))
+            flows["ios"]["flows"]["bad"] = {
+                "floor_identical": False, "floor_reason": "floor: nope"}
+            self.assertEqual(1, floor_summary.floor_failure_exit(flows))
+        self.assertIn("flow=gone floor unavailable: no files", out.getvalue())
+        self.assertIn("flow=bad floor failed: floor: nope", out.getvalue())
+        self.assertNotIn("flow=gone floor failed", out.getvalue())
 
     def test_run_exit_keeps_attribution_exit(self):
         flows = self.summaries(a={"floor_identical": True})

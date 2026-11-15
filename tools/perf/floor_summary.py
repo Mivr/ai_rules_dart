@@ -12,6 +12,9 @@ from attribution import strict_attribution_exit
 from summarize import summarize_values
 
 
+UNAVAILABLE = "floor unavailable:"
+
+
 def has_floor(records):
     """True when any repeat carries floor fields."""
     return any("floor_identical" in record for record in records)
@@ -42,13 +45,22 @@ def summarize_floor(records, bazel_median):
 def floor_failure_exit(summaries):
     """Exit code 1 when a flow that has a floor failed it (named on stdout).
 
-    A flow without ``floor_identical`` requested no floor and is ignored.
+    A flow without ``floor_identical`` requested no floor and is ignored. A
+    flow whose reason starts ``floor unavailable:`` had no floor to run (it
+    is named, but is not a failure).
     """
     failed = []
+    unavailable = []
     for summary in summaries.values():
         for flow, entry in sorted(summary["flows"].items()):
             if "floor_identical" in entry and not entry["floor_identical"]:
-                failed.append((flow, entry.get("floor_reason")))
+                reason = str(entry.get("floor_reason"))
+                if reason.startswith(UNAVAILABLE):
+                    unavailable.append((flow, reason[len(UNAVAILABLE):]))
+                else:
+                    failed.append((flow, reason))
+    for flow, reason in unavailable:
+        print("flow=%s floor unavailable: %s" % (flow, reason.strip()))
     for flow, reason in failed:
         print("flow=%s floor failed: %s" % (flow, reason))
     return 1 if failed else 0

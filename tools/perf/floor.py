@@ -26,6 +26,7 @@ builds the chain (pure data); ``floor_run.py`` executes it and
 """
 
 import dataclasses
+import json
 import os
 import sys
 
@@ -41,6 +42,10 @@ class FloorError(RuntimeError):
 
 class MissingToolError(FloorError):
     """A tool the chain needs is not under any resolved root."""
+
+
+class FloorUnavailableError(MissingToolError):
+    """The build wrote no package config a debug floor can compile."""
 
 
 @dataclasses.dataclass(frozen=True)
@@ -194,6 +199,61 @@ def find_package_config(roots, name):
         raise MissingToolError("floor package config %r not found under %s"
                                % (wanted[1:], ", ".join(roots) or "(no roots)"))
     return sorted(found)[0]
+
+
+def _find_named(roots, filename):
+    """Sorted paths of files named exactly ``filename`` under the roots."""
+    wanted = os.sep + filename
+    return sorted(path for root in roots for path in _walk_files(root)
+                  if path.endswith(wanted))
+
+
+def find_debug_package_config(roots, name):
+    """(package config, dev config or None) of a debug app's floor.
+
+    The whole-program ``<name>.package_config.json`` wins. A modular
+    debug app does not write it, so the ``<name>.dev_package_config.json``
+    of the dev loop is used with its ``<name>_dev_config.json`` (the
+    filesystem roots). Raises FloorUnavailableError naming both package
+    config files and the roots searched when neither exists, and
+    MissingToolError naming the dev config when only the dev package
+    config does.
+    """
+    whole = _find_named(roots, name + ".package_config.json")
+    if whole:
+        return whole[0], None
+    dev = _find_named(roots, name + ".dev_package_config.json")
+    searched = ", ".join(roots) or "(no roots)"
+    if not dev:
+        raise FloorUnavailableError(
+            "floor unavailable: neither %r nor %r found under %s"
+            % (name + ".package_config.json",
+               name + ".dev_package_config.json", searched))
+    config = _find_named(roots, name + "_dev_config.json")
+    if not config:
+        raise MissingToolError("floor dev config %r not found under %s"
+                               % (name + "_dev_config.json", searched))
+    return dev[0], config[0]
+
+
+def dev_filesystem_roots(dev_config, execroot):
+    """Absolute ``filesystemRoots`` of a ``<name>_dev_config.json``.
+
+    The entries are exec-root-relative (``""`` is the exec root itself).
+    Raises FloorError naming the file when it cannot be read, is not a
+    JSON object or lacks a ``filesystemRoots`` list of strings.
+    """
+    try:
+        with open(dev_config, encoding="utf-8") as handle:
+            roots = json.load(handle).get("filesystemRoots")
+    except (OSError, ValueError, AttributeError) as exc:
+        raise FloorError("floor dev config %r unreadable: %s"
+                         % (dev_config, exc)) from exc
+    if (not isinstance(roots, list)
+            or not all(isinstance(one, str) for one in roots)):
+        raise FloorError("floor dev config %r has no filesystemRoots list"
+                         % dev_config)
+    return [os.path.normpath(os.path.join(execroot, one)) for one in roots]
 
 
 def _tool_names(spec):
