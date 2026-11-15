@@ -9,6 +9,7 @@ load(
     "flutter_linux_registrant_gen",
     "flutter_linux_runner_lib_gen",
 )
+load(":debug_kernel.bzl", "debug_kernel")
 
 exports_files(["pubspec.lock"])
 
@@ -17,6 +18,21 @@ flutter_application(
     package_name = "linux_example",
     main = "lib/main.dart",
     deps = [
+        "@deps//:flutter",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+# The app again, over a pure-Dart plugin with `dartPluginClass`, so its debug
+# kernel carries a generated plugin registrant. Not a bundle: only
+# `:app_debug_kernel` reads it.
+flutter_application(
+    name = "app_flutter_registrant",
+    package_name = "linux_example",
+    main = "lib/main.dart",
+    tags = ["manual"],
+    deps = [
+        "//dart_registration_plugin",
         "@deps//:flutter",
         "@rules_flutter//flutter:material_icons",
     ],
@@ -108,6 +124,27 @@ dart_test(
     size = "small",
     data = [":app_bazel_runner"],
     main = "test/verify_window_title_test.dart",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+# The modular debug kernel of the registrant app, built under `-c dbg`.
+debug_kernel(
+    name = "app_debug_kernel",
+    app = ":app_flutter_registrant",
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+# Kernel consistency: the linked modular debug kernel holds no two disagreeing
+# Source entries for one URI, and the pinned SDK `dart` VM loads it past
+# `kernel_loader`. #421 shipped a kernel that failed both on a Linux build no
+# test ever loaded into a VM.
+dart_test(
+    name = "kernel_consistency_test",
+    size = "medium",
+    data = [":app_debug_kernel"],
+    env = {"APP_DILL": "$(rlocationpath :app_debug_kernel)"},
+    main = "test/kernel_consistency_test.dart",
     target_compatible_with = ["@platforms//os:linux"],
 )
 

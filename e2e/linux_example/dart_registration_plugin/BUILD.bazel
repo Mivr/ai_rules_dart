@@ -1,0 +1,14 @@
+load("@rules_flutter//flutter:defs.bzl", "flutter_plugin")
+
+# A pure-Dart Linux plugin: no native code, only the `dartPluginClass` metadata
+# the generated Dart registrant reads. It gives `:app_flutter_registrant` a
+# generated plugin registrant, which the modular debug kernel must link
+# together with the SDK `flutter` module's registrant twin.
+flutter_plugin(
+    name = "dart_registration_plugin",
+    package_name = "dart_registration_plugin",
+    srcs = ["lib/dart_registration_plugin.dart"],
+    dart_plugin_class = "DartRegistrationPlugin",
+    platforms = ["linux"],
+    visibility = ["//visibility:public"],
+)

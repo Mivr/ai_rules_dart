@@ -433,11 +433,12 @@ bzl_library(
     ],
 )
 
-# Set to true and a debug `flutter_application` compiles per-package kernel modules and links them. Off by default
-# (#421): the linked kernel does not load in the iOS simulator VM. Private on purpose.
+# A debug `flutter_application` compiles per-package kernel modules and links them (the default). #421 turned it off
+# because rules_dart's module strip left two disagreeing `org-dartlang-sdk:` Source entries that the VM refused; #422
+# fixed the strip and the default is back. Set to false for the whole-program compile. Private on purpose.
 bool_flag(
     name = "debug_modular_app",
-    build_setting_default = False,
+    build_setting_default = True,
     visibility = ["//visibility:public"],
 )
 

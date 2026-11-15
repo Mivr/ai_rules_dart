@@ -41,13 +41,14 @@ the stock one-shot action, byte-identical to a build without the worker, so
 release, CI and remote-cache builds keep hitting their caches.
 
 A plain debug `flutter_application` (no define, define file, flavor, native
-asset, recorded use or widget-creation tracking) compiles whole program by
-default and takes the warm worker. Since #421 the modular path is off by
-default: the linked kernel of a modular debug app fails to load on the iOS
-simulator (`Invalid kernel binary: Contains at least two source entries that do
-not agree`). Opt in with `--@rules_flutter//flutter/private:debug_modular_app=true`,
-and the app then compiles per-package kernel modules and links them, so it
-registers no `FlutterKernelCompile` and the worker is not involved. Every other
+asset, recorded use or widget-creation tracking) compiles per-package kernel
+modules and links them by default, so it registers no `FlutterKernelCompile`
+and the worker is not involved. #421 had turned this default off because the
+linked kernel failed to load in the VM (`Invalid kernel binary: Contains at
+least two source entries that do not agree`); rules_dart fixed its module strip
+in #422 and the default is back. Opt out with
+`--@rules_flutter//flutter/private:debug_modular_app=false`: the app then
+compiles whole program and takes the warm worker. Every other
 application, and every `flutter_test` or web build, is unchanged.
 
 To restore the stock action in a debug build:
