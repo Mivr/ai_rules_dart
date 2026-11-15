@@ -31,13 +31,20 @@ Every other compile is whole-program, among them any define (attribute or
 global), AOT, profile, web, a closure with no twin, and `flutter_application`
 that is not a plain debug build (see below).
 
-A debug application takes the modular path by default. The private flag
-`//flutter/private:debug_modular_app` (default on, outside the documented
-surface) turns it off: `--@rules_flutter//flutter/private:debug_modular_app=false`
-restores the whole-program compile, including the warm frontend_server worker
-route (`//flutter:incremental_kernel`). The owner chose edit-time speed over
-clean-build cost on 2026-11-14: in the iOS A/B an app-file edit ran at 0.39x and
-a body edit at 0.94x of the whole-program wall time, a clean build at 1.81x. A
+A debug application compiles whole-program by default, as before the modular
+path existed. The private flag `//flutter/private:debug_modular_app` (default
+off, outside the documented surface) turns the modular path on:
+`--@rules_flutter//flutter/private:debug_modular_app=true`. The default is off
+since #421: the linked kernel of a modular debug app fails to load on the iOS
+simulator (`Invalid kernel binary: Contains at least two source entries that do
+not agree`, `org-dartlang-sdk:///flutter/third_party/dart/sdk/lib/core/map.dart`),
+because the module strip empties the text of the SDK source entries while the
+link keeps the platform dill's copies. The real fix is in rules_dart; the
+default returns once it lands. With the flag on, the warm frontend_server
+worker route (`//flutter:incremental_kernel`) is not used. The owner had chosen
+edit-time speed over clean-build cost on 2026-11-14: in the iOS A/B an app-file
+edit ran at 0.39x and a body edit at 0.94x of the whole-program wall time, a
+clean build at 1.81x. With the flag on, a
 debug non-AOT `flutter_application` with no define of any kind
 (attribute, global, define file, flavor), no native asset, no recorded use and
 no widget-creation tracking links per-package modules like the debug

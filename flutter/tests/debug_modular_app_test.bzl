@@ -1,13 +1,15 @@
-"""Analysis tests: a debug `flutter_application` links per-package modules unless the private flag is off.
+"""Analysis tests: a debug `flutter_application` compiles whole-program unless the private flag is on.
 
-- default flag, a plain debug app: `DartKernel` modules, one `DartKernelLink`, no `FlutterKernelCompile`;
+- default flag (off, #421), a debug app that is plain, tracks widget creation or sits over the registrant twin
+  closure: one `FlutterKernelCompile`, no `DartKernel` module, no `DartKernelLink`;
+- flag on, a plain debug app: `DartKernel` modules, one `DartKernelLink`, no `FlutterKernelCompile`;
 - each selector (define, global define, define file, flavor, native asset) keeps the whole-program compile, and so
   do tracking beside a define, tracking in a release build and any frontend flag other than tracking;
 - `track_widget_creation` stays modular: every module of its closure (the SDK `flutter` module and its registrant
   twin, the entry) compiles with `--track-widget-creation`, and a plain app's modules carry none;
-- flag off, and a release build: one `FlutterKernelCompile`, no link;
+- flag off explicitly, and a release build: one `FlutterKernelCompile`, no link;
 - a tracking app, a plain app and a `flutter_test` over one library in one debug configuration analyse without
-  conflicting actions, with the flag at its default and off.
+  conflicting actions, with the flag at its default, on and off.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
@@ -88,10 +90,10 @@ def _whole_program_impl(ctx):
     asserts.equals(env, [], _mnemonics(env, "DartKernel"), "no DartKernel")
     return analysistest.end(env)
 
-_tracking_modular_test = analysistest.make(_tracking_modular_impl, config_settings = _DBG)
-_plain_untracked_test = analysistest.make(_plain_untracked_impl, config_settings = _DBG)
-_modular_test = analysistest.make(_modular_impl, config_settings = _DBG)
-_modular_on_test = analysistest.make(_modular_impl, config_settings = _DBG_ON)
+_tracking_modular_test = analysistest.make(_tracking_modular_impl, config_settings = _DBG_ON)
+_plain_untracked_test = analysistest.make(_plain_untracked_impl, config_settings = _DBG_ON)
+_modular_test = analysistest.make(_modular_impl, config_settings = _DBG_ON)
+_default_test = analysistest.make(_whole_program_impl, config_settings = _DBG)
 _selector_test = analysistest.make(_whole_program_impl, config_settings = _DBG_ON)
 _global_define_test = analysistest.make(_whole_program_impl, config_settings = _DBG_ON_GLOBAL_DEFINE)
 _global_define_tracking_test = analysistest.make(_whole_program_impl, config_settings = _DBG_ON_GLOBAL_DEFINE)
@@ -105,6 +107,7 @@ def _shared_lib_test_impl(ctx):
     return analysistest.end(env)
 
 _shared_lib_default_test = analysistest.make(_shared_lib_test_impl, config_settings = _DBG)
+_shared_lib_on_test = analysistest.make(_shared_lib_test_impl, config_settings = _DBG_ON)
 _shared_lib_off_test = analysistest.make(_shared_lib_test_impl, config_settings = _DBG_OFF)
 
 def _tracking_shared_cases(name):
@@ -128,7 +131,7 @@ def _tracking_shared_cases(name):
     return tests
 
 def _shared_lib_cases(name):
-    """Declares an app and a `flutter_test` over one library, each analysed in both flag states.
+    """Declares an app and a `flutter_test` over one library, each analysed in the default, on and off flag states.
 
     Args:
         name: The test_suite name.
@@ -145,7 +148,11 @@ def _shared_lib_cases(name):
         tags = ["manual"],
     )
     tests = []
-    for flag, make in {"default": _shared_lib_default_test, "off": _shared_lib_off_test}.items():
+    for flag, make in {
+        "default": _shared_lib_default_test,
+        "on": _shared_lib_on_test,
+        "off": _shared_lib_off_test,
+    }.items():
         for kind in ["app", "flutter_test"]:
             test = "%s_shared_lib_%s_%s" % (name, kind, flag)
             make(name = test, target_under_test = ":_shared_lib_" + kind)
@@ -171,12 +178,16 @@ def debug_modular_app_test_suite(name):
             "deps": ["//flutter/tests/modular_app_native_fixture:plugin"],
         },
         "widget_tracking": {"track_widget_creation": True},
+        # The closure holds the registrant twin of the SDK `flutter` module (`_DEPS`), so the generated registrant is in play.
+        "registrant": {},
         "native_asset": {"deps": ["//flutter/tests/modular_app_native_fixture:plugin"]},
     }
     for variant, extra in variants.items():
         flutter_application(name = "_modular_app_" + variant, **(_APP | {"deps": _DEPS} | extra))
     _modular_test(name = name + "_modular", target_under_test = ":_modular_app_plain")
-    _modular_on_test(name = name + "_modular_explicit_on", target_under_test = ":_modular_app_plain")
+    _default_test(name = name + "_default_plain", target_under_test = ":_modular_app_plain")
+    _default_test(name = name + "_default_tracking", target_under_test = ":_modular_app_widget_tracking")
+    _default_test(name = name + "_default_registrant", target_under_test = ":_modular_app_registrant")
     _flag_off_test(name = name + "_flag_off", target_under_test = ":_modular_app_plain")
     _release_test(name = name + "_release", target_under_test = ":_modular_app_plain")
     _global_define_test(name = name + "_global_define", target_under_test = ":_modular_app_plain")
@@ -194,7 +205,9 @@ def debug_modular_app_test_suite(name):
         name + "_global_define_tracking",
     ] + [
         name + "_modular",
-        name + "_modular_explicit_on",
+        name + "_default_plain",
+        name + "_default_tracking",
+        name + "_default_registrant",
         name + "_flag_off",
         name + "_release",
         name + "_global_define",

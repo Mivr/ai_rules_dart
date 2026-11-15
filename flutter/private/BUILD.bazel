@@ -433,11 +433,11 @@ bzl_library(
     ],
 )
 
-# A debug `flutter_application` compiles per-package kernel modules and links them. Set to false to restore the
-# whole-program compile through the warm frontend_server worker. Private on purpose.
+# Set to true and a debug `flutter_application` compiles per-package kernel modules and links them. Off by default
+# (#421): the linked kernel does not load in the iOS simulator VM. Private on purpose.
 bool_flag(
     name = "debug_modular_app",
-    build_setting_default = True,
+    build_setting_default = False,
     visibility = ["//visibility:public"],
 )
 
