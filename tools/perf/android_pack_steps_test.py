@@ -184,6 +184,41 @@ class OptionalFieldsTest(unittest.TestCase):
         self.assertIn("/x/apksigner", str(ctx.exception))
 
 
+class ProgressMessageTest(unittest.TestCase):
+    MESSAGES = (
+        "Injecting Flutter payload into base APK @@//app:o",
+        "Zipaligning APK with Flutter payload @@//app:o",
+        "Signing APK with Flutter payload @@//app:o")
+
+    def trace(self, tmp, with_mnemonic):
+        events = []
+        for message, mnemonic, dur in zip(
+                self.MESSAGES,
+                ("FlutterApkOverlay", "AndroidZipAlign", "ApkSignerTool"),
+                (1000000, 300000, 900000)):
+            args = {"mnemonic": mnemonic} if with_mnemonic else {}
+            events.append({"cat": "action processing", "name": message,
+                           "ph": "X", "ts": 0, "dur": dur, "args": args})
+        path = os.path.join(tmp, "t.json")
+        with open(path, "w") as fh:
+            json.dump({"traceEvents": events}, fh)
+        return path
+
+    def test_message_only_matches_each_step(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            flow = aps.build_report([self.trace(tmp, False)])["flows"][0]
+        full = flow["groups"]["full"]
+        self.assertAlmostEqual(full["overlay"]["median_s"], 1.0)
+        self.assertAlmostEqual(full["zipalign"]["median_s"], 0.3)
+        self.assertAlmostEqual(full["sign"]["median_s"], 0.9)
+
+    def test_both_fields_do_not_double_count(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            both = aps.build_report([self.trace(tmp, True)])["flows"][0]
+            only = aps.build_report([self.trace(tmp, False)])["flows"][0]
+        self.assertEqual(both["groups"], only["groups"])
+
+
 class ErrorTest(unittest.TestCase):
     def run_main(self, args):
         err = io.StringIO()

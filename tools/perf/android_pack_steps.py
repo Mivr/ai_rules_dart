@@ -17,8 +17,9 @@ reports, per flow:
   under 10% of the flow is ``close_with_numbers``, else ``later_item``.
 
 ``--apk-dir`` adds output APK byte sizes, ``--signer`` the cold-JVM floor
-(median of five ``<signer> --version`` runs). An unreadable trace, or one
-with none of the three steps, is an error naming the trace (exit 2).
+(median of five ``<signer> --version`` runs). A step is matched by its
+mnemonic or, failing that, by its progress message (the event name). An
+unreadable trace, or one with none of the three steps, is an error naming the trace (exit 2).
 
 Usage: android_pack_steps.py [--format json|markdown|both] [--apk-dir DIR]
        [--signer PATH] [FLOW=]TRACE...   (traces of one FLOW are its reps)
@@ -41,6 +42,9 @@ ACTION_CAT = "action processing"
 STEPS = (("overlay", "FlutterApkOverlay"),
          ("zipalign", "AndroidZipAlign"),
          ("sign", "ApkSignerTool"))
+MESSAGES = (("overlay", "Injecting Flutter payload into base APK"),
+            ("zipalign", "Zipaligning APK with Flutter payload"),
+            ("sign", "Signing APK with Flutter payload"))
 REFERENCE = (("kernel_compile", "DartKernel"),
              ("kernel_link", "DartKernelLink"))
 GROUPS = ("full", "base", "payload")
@@ -93,6 +97,10 @@ def step_key(event):
     for name, wanted in REFERENCE:
         if mnemonic == wanted:
             return name, "full"
+    message = str(event.get("name", ""))
+    for name, prefix in MESSAGES:
+        if message.startswith(prefix):
+            return name, event_group(event)
     return None
 
 
@@ -136,7 +144,7 @@ def measure_trace(path):
     if not any(name in dict(STEPS) for name, _ in walls):
         raise PackStepsError(
             "trace %s has no FlutterApkOverlay, AndroidZipAlign or "
-            "ApkSignerTool action" % path)
+            "ApkSignerTool action (by mnemonic or progress message)" % path)
     wall, source = trace_wall(events)
     return {"steps": walls, "wall": wall, "wall_source": source}
 
