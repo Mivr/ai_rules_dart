@@ -89,6 +89,28 @@ file, and the copies read the collapsed file. Two entries giving one file
 two bundle keys (`a/b.png` beside `a//b.png`) fail the same way, naming the
 empty-segment entry: `pkg_assets` carries one key per file.
 
+### Resolution-aware asset variants
+
+An asset in a resolution directory is a variant of the file one level up:
+`assets/2.5x/a.png` is the `dpr: 2.5` variant of `assets/a.png` in
+`AssetManifest`, so `AssetImage` can select it for a 2.5x screen. The rule is
+flutter_tools' (3.47.7: `_assetVariantDirectoryRegExp` at `asset.dart:111`,
+the manifest's ratio read at `asset.dart:935-947`), and it holds for app-own
+assets and for pub package assets alike, whether the key is `assets/...` or
+`packages/pkg_assets/...`.
+
+- The ratio comes from the file's immediate parent directory only.
+  `assets/2x/sub/a.png` keeps its own key: its parent is `sub`, which is not a
+  variant directory, so `2x` does not fold it into `assets/sub/a.png`.
+- Any directory name that ends in `<number>x` is a variant: `<digits>x` or
+  `<digits>.<digits*>x`, and the number is the ratio. `2x`, `2.0x`, `1.5x`,
+  `2.5x`, `0.75x`, `1.0x` and `2.x` all work; `sub`, `x` and `2xx` do not.
+- Empty-segment keys (`a//2.0x/b.png`) keep the behaviour described under
+  entry spellings above.
+
+One module (`flutter/private/asset_variant.bzl`) holds the rule for the
+manifest grouping and for the pub asset walk, so the two never disagree.
+
 ## Walk bounds
 
 Every pub spoke directory walk shares one bound, `PUB_WALK_BOUND`

@@ -265,6 +265,8 @@ Each key and listed dependency must name a package in the lock: a key that does 
 
 Dropping an edge is safe only when the dependency is reached through a conditional import for a platform this build does not target: the Dart code that needs it is not compiled, so the missing edge removes only the Bazel repository cycle. If the build does target that platform, the break removes a library the code needs and the build fails.
 
+Assets in `<number>x` directories (`2x`, `2.5x`, `0.75x`) are resolution variants of the file one level up, app-own or from a pub package; see [Resolution-aware asset variants](docs/pub-assets.md#resolution-aware-asset-variants).
+
 ### Platform- and flavor-conditional assets
 
 A pub package's `flutter.assets` entries may carry `platforms` and `flavors` lists, and the bundle keeps exactly what `flutter_tools` keeps (verified against Flutter 3.47.7: `asset.dart` `matchesFlavor` at line 1532 runs before `matchesPlatform` at line 1544 in `ManifestAssetBundle`, lines 1119–1128; `TargetPlatform.osName` in `build_info.dart`, line 701). Flavor is checked first: a flavor-restricted entry bundles only when a flavor is selected by `flutter_application.flavor`, and rules_flutter drops flavor-restricted entries when no flavor is selected — on every platform, `tester` included. Then platform: an empty list or the `tester` platform keeps the asset, anything else must name the target platform. So an Android build bundles `android`-listed entries but not `web`-listed ones, while a widget test bundles every platform's entries (but still no flavor-restricted ones).

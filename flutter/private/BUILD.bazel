@@ -126,6 +126,12 @@ bzl_library(
 )
 
 bzl_library(
+    name = "asset_variant",
+    srcs = ["asset_variant.bzl"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
     name = "build_settings",
     srcs = ["build_settings.bzl"],
     visibility = ["//visibility:public"],
@@ -476,6 +482,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":asset_uri",
+        ":asset_variant",
     ],
 )
 
@@ -1256,6 +1263,7 @@ bzl_library(
     visibility = ["//visibility:public"],
     deps = [
         ":asset_uri",
+        ":asset_variant",
         ":flutter_pub_walk",
     ],
 )

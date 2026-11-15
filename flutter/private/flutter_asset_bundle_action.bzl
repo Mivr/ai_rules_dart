@@ -7,23 +7,17 @@ load cycle.
 """
 
 load("//flutter/private:asset_uri.bzl", "decode_asset_key")
+load("//flutter/private:asset_variant.bzl", "parent_dir_dpr", "variant_dir_dpr")
 
 visibility(["//flutter/..."])
 
-# Regex-like DPR directory patterns we detect in Starlark.
-# A directory named like "2x", "1.5x", "3.0x" indicates a resolution variant.
-_DPR_SUFFIXES = {
-    "1.5x": 1.5,
-    "2x": 2.0,
-    "2.0x": 2.0,
-    "3x": 3.0,
-    "3.0x": 3.0,
-    "4x": 4.0,
-    "4.0x": 4.0,
-}
-
 def detect_dpr(path):
-    """Detect device-pixel-ratio from a resolution variant directory name.
+    """Detect device-pixel-ratio from the file's immediate parent directory.
+
+    Mirrors flutter_tools 3.47.7 (`asset.dart:935-947`, `:1626`): only the
+    file's own parent directory counts, and any `<number>x` name is a
+    variant (see `variant_dir_dpr`). `assets/2x/sub/a.png` therefore stays
+    its own asset: its parent `sub` is not a variant.
 
     Args:
         path: Asset path string (e.g. "assets/2.0x/icon.png").
@@ -33,11 +27,12 @@ def detect_dpr(path):
         "assets/icon.png").  dpr is a float or None if not a variant.
     """
     parts = path.split("/")
-    for i, part in enumerate(parts):
-        if part in _DPR_SUFFIXES:
-            base = "/".join(parts[:i] + parts[i + 1:])
-            return base, _DPR_SUFFIXES[part]
-    return path, None
+    if len(parts) < 2:
+        return path, None
+    dpr = variant_dir_dpr(parts[len(parts) - 2])
+    if dpr == None:
+        return path, None
+    return "/".join(parts[:len(parts) - 2] + parts[len(parts) - 1:]), dpr
 
 def _collapse_empty_segments(key):
     """Drop the empty segments of one encoded bundle key.
@@ -55,26 +50,6 @@ def _collapse_empty_segments(key):
         The key with every empty `/`-separated piece removed.
     """
     return "/".join([part for part in key.split("/") if part != ""])
-
-def _parent_segment_dpr(key):
-    """The dpr of one bundle key's own parent directory, if it names one.
-
-    Mirrors the manifest dpr (flutter_tools 3.47.7 `asset.dart:940-956`,
-    `_createAssetManifestBinary`): each variant carries the dpr parsed from
-    its own parent directory, so the raw spelling of an empty-segment
-    entry carries the dpr of the directory it names (`a//2.0x/b.png` is
-    dpr 2.0).
-
-    Args:
-        key: The encoded bundle key.
-
-    Returns:
-        The float dpr, or None when the parent is not a variant directory.
-    """
-    parts = key.split("/")
-    if len(parts) < 2:
-        return None
-    return _DPR_SUFFIXES.get(parts[len(parts) - 2])
 
 def _raw_manifest_variants(raw_key, assets):
     """The manifest variants of one raw (`//`-keeping) bundle key.
@@ -95,11 +70,11 @@ def _raw_manifest_variants(raw_key, assets):
     """
     collapsed = _collapse_empty_segments(raw_key)
     raw_variant = {"asset": decode_asset_key(raw_key)}
-    raw_dpr = _parent_segment_dpr(raw_key)
+    raw_dpr = parent_dir_dpr(raw_key)
     if raw_dpr != None:
         raw_variant["dpr"] = raw_dpr
     collapsed_variant = {"asset": decode_asset_key(collapsed)}
-    collapsed_dpr = _parent_segment_dpr(collapsed)
+    collapsed_dpr = parent_dir_dpr(collapsed)
     if collapsed_dpr != None:
         collapsed_variant["dpr"] = collapsed_dpr
     variants = [raw_variant, collapsed_variant]
@@ -110,7 +85,7 @@ def _raw_manifest_variants(raw_key, assets):
         if base != collapsed:
             continue
         variant = {"asset": decode_asset_key(path)}
-        variant_dpr = _parent_segment_dpr(path)
+        variant_dpr = parent_dir_dpr(path)
         if variant_dpr != None:
             variant["dpr"] = variant_dpr
         variants.append(variant)
