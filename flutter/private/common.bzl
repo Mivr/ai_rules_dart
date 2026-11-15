@@ -514,16 +514,17 @@ def _debug_registrant_modular(agent, reg, twins):
 
 def _use_modular_kernel(plan, agent, reg, flags, twins):
     # Whole-program (FlutterKernelCompile) is kept for: any define (attribute or global), define
-    # file, recorded use, frontend flag or native asset (the per-package modules are
-    # built without them), AOT, profile, web, and a closure with no registrant twin of the SDK
-    # `flutter` module (the SDK constant would not resolve to the registrant).
+    # file, recorded use or native asset (the per-package modules are built without them), AOT,
+    # profile, web, any frontend flag other than `--track-widget-creation` (the application's aspect
+    # compiles every module with that one, and its registrant twin records that), and a closure with no
+    # registrant twin of the SDK `flutter` module (the SDK constant would not resolve to the registrant).
     return (
         not plan.aot and plan.mode != "profile" and
         plan.frontend_server_target == "flutter" and
         _debug_registrant_modular(agent, reg, twins) and
         not plan.native_assets and not plan.recorded_uses and
-        not flags.extra_frontend and not flags.all_defines and
-        not flags.define_flagfiles
+        flags.extra_frontend == (["--track-widget-creation"] if twins and twins[0].tracked else []) and
+        not flags.all_defines and not flags.define_flagfiles
     )
 
 def _modular_tools_or_none(ctx, flutter_sdk_info, packages, native_assets):
@@ -594,7 +595,7 @@ def _run_kernel_compile(ctx, flutter_sdk_info, st, agent, reg, flags, plan):
                 st.packages,
                 plan.kernel_dill,
                 plan.platform_dill,
-                struct(files = files, twins = twins) if files else None,
+                struct(files = files, twins = twins, flags = flags.extra_frontend) if files else None,
             )
 
             # An application still publishes its package config; a kernel target has none to give.

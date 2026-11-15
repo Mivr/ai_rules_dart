@@ -88,6 +88,11 @@ DEBUG_MODULAR_APP_ATTR = {
     ),
 }
 
+# The application's `track_widget_creation` value, as an aspect parameter: with True every module of the closure
+# compiles with `--track-widget-creation`. Only the application's aspect takes it; the `flutter_test` aspect does not.
+TRACK_WIDGET_CREATION_FLAG = "--track-widget-creation"
+_TRACK_ATTR = {"track_widget_creation": attr.bool(default = False)}
+
 # Build setting read and cleared by `_modular_deps_transition`.
 _MODULAR_DEPS_DEFINES_SETTING = str(Label("//flutter:extra_dart_defines"))
 
@@ -567,6 +572,32 @@ def _header_only_module_info(product_modular, dep_product_kernels, closures, bas
         ),
     ]
 
+def _flutter_module_options(defines, platform_dill, droppable, frontend_flags):
+    """The `flutter_kernel_module_action` options of a Flutter-target module compile.
+
+    Args:
+        defines: The `-D` defines of the compile.
+        platform_dill: The platform `.dill` the module compiles against.
+        droppable: Whether the module is a dependency module the link may drop.
+        frontend_flags: Extra frontend flags (`--track-widget-creation` for a tracking application).
+
+    Returns:
+        The `options` struct for `flutter_kernel_module_action`.
+    """
+    return struct(
+        defines = defines,
+        exclude_non_sources = True,
+        droppable = droppable,
+        target = "flutter",
+        platform_dill = platform_dill,
+        libraries_json = None,
+        libraries_platform = None,
+        extra_libraries = ["ui", "nativewrappers"],
+        scheme = APP_SCHEME,
+        extra_frontend_flags = frontend_flags,
+        unused_inputs = True,
+    )
+
 def _compile_main_kmod(ctx, tools, flutter_sdk_info, spec, twin = False):
     """Compile the target's own sources into the debug `.flutter.kmod` directory.
 
@@ -577,7 +608,7 @@ def _compile_main_kmod(ctx, tools, flutter_sdk_info, spec, twin = False):
         spec: struct with the target's module inputs: `target_name`,
             `package_name`, `lib_root`, `own_srcs` (the target's own source
             Files), `records` (the package records), `dep_outline_closure`
-            and `upstream_excluded`.
+            `upstream_excluded` and `frontend_flags`.
         twin: Whether to compile the registrant twin: same inputs, distinct outputs, one more define.
     """
     stem = spec.target_name + (".flutter_registrant" if twin else ".flutter")
@@ -601,18 +632,11 @@ def _compile_main_kmod(ctx, tools, flutter_sdk_info, spec, twin = False):
             extra_inputs = None,
             closure_excluded = spec.upstream_excluded,
         ),
-        options = struct(
-            defines = worker_defines,
-            exclude_non_sources = True,
-            droppable = True,
-            target = "flutter",
-            platform_dill = flutter_sdk_info.platform_kernel_dill,
-            libraries_json = None,
-            libraries_platform = None,
-            extra_libraries = ["ui", "nativewrappers"],
-            scheme = APP_SCHEME,
-            extra_frontend_flags = [],
-            unused_inputs = True,
+        options = _flutter_module_options(
+            worker_defines,
+            flutter_sdk_info.platform_kernel_dill,
+            True,
+            spec.frontend_flags,
         ),
     )
     return kmod, koutline, sources, deduped_packages, worker_defines, excluded
@@ -669,22 +693,11 @@ def _compile_product_kmod(ctx, tools, flutter_sdk_info, spec):
             extra_inputs = None,
             closure_excluded = product_upstream_excluded,
         ),
-        options = struct(
-            defines = spec.worker_defines + [
-                "dart.vm.product=true",
-                "FLUTTER_WEB_USE_SKIA=false",
-                "FLUTTER_WEB_USE_SKWASM=true",
-            ],
-            exclude_non_sources = True,
-            droppable = True,
-            target = "flutter",
-            platform_dill = flutter_sdk_info.platform_kernel_dill_product,
-            libraries_json = None,
-            libraries_platform = None,
-            extra_libraries = ["ui", "nativewrappers"],
-            scheme = APP_SCHEME,
-            extra_frontend_flags = [],
-            unused_inputs = True,
+        options = _flutter_module_options(
+            spec.worker_defines + ["dart.vm.product=true", "FLUTTER_WEB_USE_SKIA=false", "FLUTTER_WEB_USE_SKWASM=true"],
+            flutter_sdk_info.platform_kernel_dill_product,
+            True,
+            [],
         ),
     )
     return DartKernelInfo(
@@ -757,7 +770,7 @@ def _compile_target_kernels(ctx, tools, flutter_sdk_info, target_name, package_n
         job: struct with the target's module inputs: `own_srcs`, `records`,
             `dep_product_kernels`, `dep_closure`, `dep_outline_closure`,
             `upstream_excluded`, `cross_pkg_srcs`, `owned`, `edges`,
-            `base_dill`, `base_keys`, `base_kmods`, `product_modular` and `twins`.
+            `base_dill`, `base_keys`, `base_kmods`, `product_modular`, `twins` and `frontend_flags`.
     """
     spec = struct(
         target_name = target_name,
@@ -767,6 +780,7 @@ def _compile_target_kernels(ctx, tools, flutter_sdk_info, target_name, package_n
         records = job.records,
         dep_outline_closure = job.dep_outline_closure,
         upstream_excluded = job.upstream_excluded,
+        frontend_flags = job.frontend_flags,
     )
     kmod, koutline, sources, deduped_packages, worker_defines, excluded = _compile_main_kmod(
         ctx = ctx,
@@ -777,7 +791,13 @@ def _compile_target_kernels(ctx, tools, flutter_sdk_info, target_name, package_n
     twin = None
     if package_name == "flutter":
         twin_kmod, twin_koutline, _, _, _, twin_excluded = _compile_main_kmod(ctx, tools, flutter_sdk_info, spec, True)
-        twin = struct(plain = kmod, kmod = twin_kmod, koutline = twin_koutline, excluded = twin_excluded)
+        twin = struct(
+            plain = kmod,
+            kmod = twin_kmod,
+            koutline = twin_koutline,
+            excluded = twin_excluded,
+            tracked = bool(job.frontend_flags),
+        )
     base_dill, base_keys, base_kmods = _link_flutter_test_base(
         ctx,
         target_name,
@@ -850,6 +870,7 @@ def _flutter_kernel_module_aspect_impl(target, ctx):
     # Its outputs carry an `.app_debug` stem so they never collide with the `flutter_test` aspect's outputs for a
     # library both reach in one configuration.
     flag = getattr(ctx.attr, "_debug_modular_app", None)
+    tracked = getattr(ctx.attr, "track_widget_creation", False)
     off = flag != None and not (flag[BuildSettingInfo].value and ctx.var["COMPILATION_MODE"] == "dbg")
     if DartInfo not in target or off:
         return _no_flutter_kernel_module()
@@ -901,7 +922,7 @@ def _flutter_kernel_module_aspect_impl(target, ctx):
         ctx = ctx,
         tools = tools,
         flutter_sdk_info = flutter_sdk_info,
-        target_name = target.label.name + (".app_debug" if flag != None else ""),
+        target_name = target.label.name + (".app_debug" if flag != None else "") + (".tracked" if tracked else ""),
         package_name = package_name,
         job = struct(
             lib_root = lib_root,
@@ -919,6 +940,7 @@ def _flutter_kernel_module_aspect_impl(target, ctx):
             base_kmods = base_kmods,
             product_modular = dep.product_modular,
             twins = dep.twins,
+            frontend_flags = [TRACK_WIDGET_CREATION_FLAG] if tracked else [],
         ),
     )
 
@@ -949,7 +971,7 @@ def _module_aspect(extra_attrs):
     )
 
 flutter_kernel_module_aspect = _module_aspect({})
-flutter_app_kernel_module_aspect = _module_aspect(DEBUG_MODULAR_APP_ATTR)
+flutter_app_kernel_module_aspect = _module_aspect(DEBUG_MODULAR_APP_ATTR | _TRACK_ATTR)
 
 def _compile_flutter_entry_module(
         ctx,
@@ -958,13 +980,15 @@ def _compile_flutter_entry_module(
         packages,
         dep_kernels,
         entry_name,
-        platform_dill):
+        platform_dill,
+        frontend_flags = []):
     """Compiles one Flutter entry module against dependency outlines.
 
     Shared by the built-in test/app compiles below and the public custom-kernel
     functions: the entry module sees only the dependency outlines (never their
     sources), so a body-only edit to a library recompiles that library's module
-    plus the entry/link actions — never the whole program.
+    plus the entry/link actions — never the whole program. `frontend_flags` are the entry's extra
+    frontend flags (`--track-widget-creation` for a tracking application).
     """
     dep_outline_closure = depset(
         order = "postorder",
@@ -988,19 +1012,7 @@ def _compile_flutter_entry_module(
                 transitive = [k.closure_excluded for k in dep_kernels],
             ),
         ),
-        options = struct(
-            defines = kernel_worker_defines(ctx),
-            exclude_non_sources = True,
-            droppable = False,
-            target = "flutter",
-            platform_dill = platform_dill,
-            libraries_json = None,
-            libraries_platform = None,
-            extra_libraries = ["ui", "nativewrappers"],
-            scheme = APP_SCHEME,
-            extra_frontend_flags = [],
-            unused_inputs = True,
-        ),
+        options = _flutter_module_options(kernel_worker_defines(ctx), platform_dill, False, frontend_flags),
     )
     return entry
 
@@ -1174,9 +1186,10 @@ def compile_flutter_modular_app_kernel(
       packages: The synthesized `DartPackageInfo` list for the app.
       output: The linked `.dill` File to produce (with `platform_dill` prepended).
       platform_dill: The platform `.dill` File to compile and link against.
-      debug: None, or `struct(files, twins)`: the staged agent, native agent and registrant
-        Files compiled into the entry module under their constant URIs, and the closure's
-        registrant twins, which the link uses in place of the plain SDK `flutter` module.
+      debug: None, or `struct(files, twins, flags)`: the staged agent, native agent and registrant
+        Files compiled into the entry module under their constant URIs, the closure's
+        registrant twins, which the link uses in place of the plain SDK `flutter` module, and the
+        entry's extra frontend flags (`--track-widget-creation`, as the closure's modules carry).
     """
     own = [ctx.file.main] + [f for f in ctx.files.srcs if f != ctx.file.main]
     sources = [struct(uri = app_main_location(ctx.attr.package_name, lib_root, f).uri, file = f) for f in own]
@@ -1196,6 +1209,7 @@ def compile_flutter_modular_app_kernel(
         dep_kernels,
         ctx.label.name + ".flutter_entry.kmod",
         platform_dill,
+        debug.flags if debug else [],
     )
     dep_closure = swap_flutter_registrant_twin(
         depset(order = "postorder", transitive = [k.transitive_kmods for k in dep_kernels]),
