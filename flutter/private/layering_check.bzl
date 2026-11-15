@@ -9,7 +9,11 @@ Flutter rule picks that check up, so every checked rule shares one wiring:
   * `LAYERING_CHECK_TOOLCHAINS` into its `toolchains`,
   * `layering_check()` returns what its `_validation` output group carries.
 
-Checked rules: `flutter_test`, `flutter_application`, `flutter_web_bundle`.
+Checked rules: `flutter_test`, `flutter_application`, `flutter_web_bundle`, the
+web, Linux, Android and iOS integration tests and `flutter_drive_test`. An
+integration test resolves its entry from `main` or a single `srcs` file, and
+`executable_import_check` reads `ctx.file.main`, so `layering_check_entry`
+runs it over a stand-in context that names the resolved entry.
 
 The check is on by default; the `dart_layering_check` feature turns it off per
 package or per build, exactly as in rules_dart.
@@ -99,3 +103,77 @@ def layering_check(ctx, package):
         A depset of check stamps, for the `_validation` output group.
     """
     return executable_import_check(ctx, package if package.package_name else None)
+
+def layering_check_entry(ctx, check):
+    """Checks a rule whose entry is resolved, not declared as `main`.
+
+    `executable_import_check` reads `ctx.file.main` and `ctx.files.srcs`. An
+    integration test's `main` is optional and a drive test has `driver`, so the
+    check runs over a stand-in context that forwards the rule's own and names
+    those two.
+
+    Args:
+        ctx: The rule context; it declares the helper's attrs and toolchains
+            and has `deps`.
+        check: A struct with `entry` (the entry `File`, or `None` for an
+            executable driver, which adds nothing to check), `srcs` (the other
+            source `File`s) and `package` (from `dart_package_identity`, or
+            `None` when the rule states no own package).
+
+    Returns:
+        A depset of check stamps, for the `_validation` output group.
+    """
+    if check.entry == None:
+        return depset()
+    stand_in = struct(
+        actions = ctx.actions,
+        attr = struct(deps = ctx.attr.deps, _refused_dart_libraries = ctx.attr._refused_dart_libraries),
+        disabled_features = ctx.disabled_features,
+        executable = ctx.executable,
+        file = struct(main = check.entry),
+        files = struct(srcs = check.srcs),
+        label = ctx.label,
+        toolchains = ctx.toolchains,
+    )
+    return executable_import_check(stand_in, check.package)
+
+def layering_check_integration(ctx, sources):
+    """Checks an integration test's entry, `srcs` and `app_srcs` against its `deps`.
+
+    The test's own package is `package_name`, or the target name.
+
+    Args:
+        ctx: The rule context; it declares the helper's attrs and toolchains,
+            `package_name` and `language_version`, and has `deps`.
+        sources: A struct with `main_file`, `extra_srcs`, `package_name` and
+            `lib_root`, as the platform rules resolve them.
+
+    Returns:
+        A depset of check stamps, for the `_validation` output group.
+    """
+    return layering_check_entry(ctx, struct(
+        entry = sources.main_file,
+        srcs = sources.extra_srcs,
+        package = dart_package_identity(
+            package_name = sources.package_name,
+            lib_root = sources.lib_root,
+            language_version = ctx.attr.language_version,
+        ),
+    ))
+
+def layering_check_drive(ctx, driver):
+    """Checks a `.dart` host driver and its `srcs` against the rule's `deps`.
+
+    The driver states no Dart package of its own, so only the packages `deps`
+    provide count. A driver that is an executable target adds nothing: its own
+    rule checks it.
+
+    Args:
+        ctx: The rule context; it declares the helper's attrs and toolchains
+            and has `deps` and `srcs`.
+        driver: The `.dart` driver `File`, or `None` for an executable driver.
+
+    Returns:
+        A depset of check stamps, for the `_validation` output group.
+    """
+    return layering_check_entry(ctx, struct(entry = driver, srcs = ctx.files.srcs, package = None))

@@ -62,10 +62,7 @@ load(
     "build_config_js",
     "wasm_build",
 )
-load(
-    "//flutter/private:flutter_kernel_module.bzl",
-    "flutter_kernel_module_aspect",
-)
+load("//flutter/private:flutter_kernel_module.bzl", "flutter_kernel_module_aspect")
 load(
     "//flutter/private:flutter_web_compile.bzl",
     "flutter_dart2js_action",
@@ -76,6 +73,7 @@ load(
     "web_compile_tool_inputs",
     "web_sdk_files_for_dart2js",
 )
+load("//flutter/private:layering_check.bzl", "LAYERING_CHECK_ASPECT")
 load(
     "//flutter/private:plugin_registrant.bzl",
     "generate_dart_plugin_registrant",
@@ -569,7 +567,7 @@ _INTEGRATION_TEST_ATTRS = dict(COMMON_INTEGRATION_TEST_ATTRS)
 _INTEGRATION_TEST_ATTRS["deps"] = attr.label_list(
     doc = FLUTTER_DEPS_DOC,
     providers = [DartInfo],
-    aspects = [flutter_web_shader_aspect, flutter_kernel_module_aspect],
+    aspects = [flutter_web_shader_aspect, flutter_kernel_module_aspect, LAYERING_CHECK_ASPECT],
 )
 _INTEGRATION_TEST_ATTRS["compiler"] = attr.string(
     doc = "Web compiler: 'dart2js' (default) or 'dart2wasm'.",

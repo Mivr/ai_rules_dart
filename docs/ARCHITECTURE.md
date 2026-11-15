@@ -86,18 +86,24 @@ attribute dict, the toolchain list and `layering_check()`, which runs the check
 for a rule context and its own package record and returns the stamps for the
 `_validation` output group. Building the target runs the checks of its own
 sources and of every first-party library below it. The generated bootstrap is
-not checked.
+not checked. An integration test resolves its entry from `main` or a single
+`srcs` file, while rules_dart's executable check reads `ctx.file.main`, so
+`layering_check_entry()` runs it over a stand-in context that names the
+resolved entry. `flutter_drive_test` with a `.dart` driver is checked the same
+way, with no package of its own; an executable driver adds nothing.
 
 The check is on by default and the feature `dart_layering_check` turns it off
 per package or per build, as in rules_dart. No attribute is added.
 
 Checked rules: `flutter_test`, `flutter_application` (under the android, ios,
 linux, macos and windows macros) and `flutter_web_bundle` (under
-`flutter_web_app`). Each returns the check beside its other `_validation`
-entries (an application keeps its link-hook verdicts). The one unchecked target
-is the `flutter_application` that the iOS `flutter_integration_test` builds for
+`flutter_web_app`), the web, Linux, Android and iOS `flutter_integration_test`
+(its entry, `srcs` and `app_srcs` against the direct `deps`, with `package_name`
+counting as provided) and `flutter_drive_test`. Each returns the check beside its other `_validation`
+entries (an application keeps its link-hook verdicts). Every Flutter program
+rule is checked but one target, the `flutter_application` that the iOS `flutter_integration_test` builds for
 its generated bootstrap, which imports packages by design: it is built with the
-feature off. A rule that joins the list adopts the helper and is added here.
+feature off. The Android helper app is not checked either. A rule that joins the list adopts the helper and is added here.
 
 ## 2. Provider contracts
 

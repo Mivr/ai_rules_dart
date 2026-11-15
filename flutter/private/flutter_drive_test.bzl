@@ -21,6 +21,7 @@ load(
     "stable_entry_path",
 )
 load("//flutter:providers.bzl", "resolve_exec_dart_vm")
+load("//flutter/private:layering_check.bzl", "LAYERING_CHECK_ASPECT", "LAYERING_CHECK_ATTRS", "layering_check_drive")
 
 visibility(["//flutter/..."])
 
@@ -49,10 +50,8 @@ def _drive_apk(ctx):
         if f.path.endswith(".apk") and not f.path.endswith("_unsigned.apk")
     ]
     if not apks:
-        fail("%s: attribute `app` (%s) produces no signed .apk; pass a `flutter_android_app` target." % (
-            ctx.label,
-            ctx.attr.app.label,
-        ))
+        message = "%s: attribute `app` (%s) produces no signed .apk; pass a `flutter_android_app` target."
+        fail(message % (ctx.label, ctx.attr.app.label))
     return apks[0]
 
 def _drive_ipa(ctx):
@@ -229,6 +228,7 @@ def _resolve_driver(ctx, workspace_name):
             transitive = [compiled.runtime_files, collect_transitive_resources(ctx.attr.deps)],
             runfiles = [],
             providers = compiled.analyzable,
+            validation = layering_check_drive(ctx, driver_src),
         )
     if exe != None and not exe.is_source:
         if ctx.attr.deps or ctx.files.srcs:
@@ -244,6 +244,7 @@ def _resolve_driver(ctx, workspace_name):
             transitive = [],
             runfiles = [ctx.attr.driver[DefaultInfo].default_runfiles],
             providers = [],
+            validation = depset(),
         )
     fail(
         "%s: attribute `driver` (%s) must be a single `.dart` script or an executable target." % (
@@ -283,11 +284,7 @@ def _flutter_drive_test_impl(ctx):
     device = _drive_device(ctx, workspace_name)
     resolved = _resolve_driver(ctx, workspace_name)
     executable = ctx.actions.declare_file(ctx.label.name)
-    ctx.actions.symlink(
-        output = executable,
-        target_file = ctx.executable._tool,
-        is_executable = True,
-    )
+    ctx.actions.symlink(output = executable, target_file = ctx.executable._tool, is_executable = True)
     base_env = dict(device.env)
     base_env.update(resolved.env)
     runfiles = ctx.runfiles(
@@ -303,6 +300,7 @@ def _flutter_drive_test_impl(ctx):
         DefaultInfo(executable = executable, runfiles = runfiles),
         testing.TestEnvironment(_merged_test_env(ctx, base_env)),
         testing.ExecutionInfo(_DRIVE_TEST_EXECUTION_REQUIREMENTS),
+        OutputGroupInfo(_validation = resolved.validation),
     ] + resolved.providers
 
 def _default_android_emulator(ios):
@@ -355,6 +353,7 @@ _flutter_drive_test = rule(
         ),
         "deps": attr.label_list(
             providers = [DartInfo],
+            aspects = [LAYERING_CHECK_ASPECT],
             doc = "Dart library dependencies (from the pinned pub lock) when `driver` is a `.dart` script.",
         ),
         "driver": attr.label(
@@ -396,7 +395,7 @@ _flutter_drive_test = rule(
             default = _default_android_runtime,
             doc = "All files of the pinned headless Android runtime (`None` on iOS); defaults to `:all_files`.",
         ),
-    },
+    } | LAYERING_CHECK_ATTRS,
     toolchains = [_EXEC_TOOLS_TOOLCHAIN],
     test = True,
     doc = "Runs a host Dart driver against a debug app on the Android emulator or the iOS simulator.",

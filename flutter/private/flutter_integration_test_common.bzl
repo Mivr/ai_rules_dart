@@ -80,6 +80,7 @@ load(
     "collect_bundled_code_asset_files",
     "write_native_assets_manifest",
 )
+load("//flutter/private:layering_check.bzl", "LAYERING_CHECK_ATTRS", "layering_check_integration")
 load(
     "//flutter/private:plugin_registrant.bzl",
     "generate_dart_plugin_registrant",
@@ -310,13 +311,11 @@ def integration_test_providers(ctx, sources, run):
         sources.extra_srcs,
     )
     return [
-        DefaultInfo(
-            executable = run.executable,
-            runfiles = runfiles,
-        ),
+        DefaultInfo(executable = run.executable, runfiles = runfiles),
         testing.TestEnvironment(run.env),
         instrumented_files_info,
         analyzable_info,
+        OutputGroupInfo(_validation = layering_check_integration(ctx, sources)),
     ]
 
 def _integration_test_platform_dill(flutter_sdk_info, aot, mode):
@@ -582,6 +581,7 @@ COMMON_INTEGRATION_TEST_ATTRS["exclude_tags"] = attr.string_list(
 )
 COMMON_INTEGRATION_TEST_ATTRS.update(PLATFORM_CONSTRAINT_ATTRS)
 COMMON_INTEGRATION_TEST_ATTRS.update(MODULAR_KERNEL_ATTRS)
+COMMON_INTEGRATION_TEST_ATTRS.update(LAYERING_CHECK_ATTRS)
 COMMON_INTEGRATION_TEST_ATTRS["_tool"] = attr.label(
     doc = "The `flutter_integration_test_runner` executable the test target runs.",
     default = Label("//flutter/private/tools:flutter_integration_test_runner"),

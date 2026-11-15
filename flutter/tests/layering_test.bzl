@@ -1,5 +1,10 @@
 """Analysis tests for the strict-layering check on the Flutter program rules.
 
+The integration-test rules (web, Linux, Android, iOS) and `flutter_drive_test`
+are covered by `layering_integration_fixtures` below, which the packages
+`layering_integ_fixture/` and its `optout/` call. Their entry comes from a
+single `srcs` file with `main` unset.
+
 The fixture in `layering_fixture/` has `:bad_test` import `package:leaf`, which
 only its dep `mid` depends on; `layering_app_fixture/` does the same for
 `flutter_application` and `flutter_web_bundle`. The tests pin what the check's
@@ -10,6 +15,12 @@ twin the passing one: an action's exit status is not visible from analysis.
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_android//providers:providers.bzl", "ApkInfo")
+load("//flutter:android.bzl", "flutter_drive_test")
+load("//flutter:defs.bzl", "flutter_integration_test")
+load("//flutter/private:flutter_integration_test_android.bzl", "android_integration_test_rule")
+load("//flutter/private:flutter_integration_test_ios.bzl", "flutter_ios_integration_test")
 
 visibility(["//flutter/tests/..."])
 
@@ -40,7 +51,8 @@ def _on_test_impl(ctx):
         asserts.true(env, name in direct, "%s is a direct package: %s" % (name, argv))
     for name in ctx.attr.expect_absent:
         asserts.true(env, name not in direct, "%s is not a direct package: %s" % (name, argv))
-    asserts.equals(env, [ctx.attr.own_package], _flag_values(argv, "--own-package"))
+    own = [ctx.attr.own_package] if ctx.attr.own_package else []
+    asserts.equals(env, own, _flag_values(argv, "--own-package"))
     srcs = _flag_values(argv, "--src")
     for path in ctx.attr.expect_srcs:
         asserts.true(env, path in srcs, "%s is checked: %s" % (path, srcs))
@@ -57,7 +69,10 @@ layering_on_test = analysistest.make(
         "expect_absent": attr.string_list(doc = "Package names argv must not list as direct."),
         "expect_direct": attr.string_list(doc = "Package names argv must list as direct."),
         "expect_srcs": attr.string_list(doc = "Short paths of the sources the check must read."),
-        "own_package": attr.string(default = "layering_fixture", doc = "The package the check must treat as the target's own."),
+        "own_package": attr.string(
+            default = "layering_fixture",
+            doc = "The package the check must treat as the target's own; empty when it has none.",
+        ),
     },
 )
 
@@ -75,3 +90,103 @@ def _off_test_impl(ctx):
     return analysistest.end(env)
 
 layering_off_test = analysistest.make(_off_test_impl)
+
+def _apk_app_impl(ctx):
+    """Stands in for `flutter_android_app`: the signed APK, with `ApkInfo`."""
+    apk = ctx.file.apk
+    return [
+        DefaultInfo(files = depset([apk])),
+        ApkInfo(
+            signed_apk = apk,
+            unsigned_apk = apk,
+            deploy_jar = None,
+            coverage_metadata = None,
+            signing_keys = [],
+            signing_lineage = None,
+            signing_min_v3_rotation_api_version = None,
+            keystore = None,
+        ),
+    ]
+
+_apk_app = rule(
+    implementation = _apk_app_impl,
+    attrs = {"apk": attr.label(allow_single_file = True, doc = "The stub signed APK.")},
+    doc = "A target with a signed `.apk` and `ApkInfo`, standing in for `flutter_android_app`.",
+)
+
+_PACKAGE = "layering_integ_fixture"
+_ENTRY = "test/entry.dart"
+_APP = "lib/app.dart"
+
+def layering_integration_fixtures(name, deps, optout = False):
+    """Declares each integration-test rule and `flutter_drive_test` over the fixture sources.
+
+    Every target is `manual` (analyzed here, built by name with
+    `--output_groups=_validation` for the failing case) and has an analysis
+    test: the check stamp and the check's inputs, or none with the feature off.
+
+    Args:
+        name: The name of the `test_suite` over the analysis tests.
+        deps: The direct `deps` of every target.
+        optout: Whether the package turned the feature off, so no check is expected.
+    """
+    write_file(name = "stub_apk", out = "stub.apk", content = ["stub"], tags = ["manual"])
+    _apk_app(name = "stub_app", apk = ":stub_apk", tags = ["manual"])
+    write_file(name = "stub_ipa", out = "stub.ipa", content = ["stub"], tags = ["manual"])
+    common = {"deps": deps, "tags": ["manual"]}
+    sources = {"srcs": [_ENTRY], "app_srcs": [_APP]}
+    flutter_integration_test(name = "web_it", package_name = _PACKAGE, **(common | sources))
+    flutter_integration_test(
+        name = "linux_it",
+        package_name = _PACKAGE,
+        platform = "linux",
+        target_compatible_with = ["@platforms//os:linux"],
+        **(common | sources)
+    )
+    android_integration_test_rule(
+        name = "android_it",
+        apk = ":stub_apk",
+        android_package = "com.example.layering",
+        package_name = _PACKAGE,
+        platform = "android",
+        **(common | sources)
+    )
+    flutter_ios_integration_test(
+        name = "ios_it",
+        app = ":stub_ipa",
+        ios_bundle_id = "com.example.layering",
+        package_name = _PACKAGE,
+        **(common | sources)
+    )
+    flutter_drive_test(
+        name = "drive_it",
+        app = ":stub_app",
+        driver = _ENTRY,
+        package_name = "com.example.layering",
+        srcs = [_APP],
+        **common
+    )
+    kinds = ("web", "linux", "android", "ios", "drive")
+    for kind in kinds:
+        _declare_integration_test(kind, optout)
+    native.test_suite(name = name, tests = [":%s_%s_test" % (kind, "off" if optout else "on") for kind in kinds])
+
+def _declare_integration_test(kind, optout):
+    """Declares the analysis test of one fixture target.
+
+    Args:
+        kind: The target prefix: `web`, `linux`, `android`, `ios` or `drive`.
+        optout: Whether the check must be absent.
+    """
+    if optout:
+        layering_off_test(name = kind + "_off_test", size = "small", target_under_test = ":%s_it" % kind)
+        return
+    layering_on_test(
+        name = kind + "_on_test",
+        size = "small",
+        expect_absent = ["leaf"],
+        expect_direct = ["mid"],
+        expect_srcs = ["flutter/tests/layering_integ_fixture/" + f for f in (_ENTRY, _APP)],
+        own_package = "" if kind == "drive" else _PACKAGE,
+        target_under_test = ":%s_it" % kind,
+    )

@@ -64,6 +64,7 @@ load(
     "linux_runner_defines",
     "linux_runner_inputs",
 )
+load("//flutter/private:layering_check.bzl", "LAYERING_CHECK_ASPECT")
 load(
     "//flutter/private:native_sources.bzl",
     "native_sources_aspect",
@@ -310,7 +311,7 @@ _LINUX_INTEGRATION_TEST_ATTRS = dict(COMMON_INTEGRATION_TEST_ATTRS)
 _LINUX_INTEGRATION_TEST_ATTRS["deps"] = attr.label_list(
     doc = FLUTTER_DEPS_DOC,
     providers = [DartInfo],
-    aspects = [flutter_app_shader_aspect, flutter_kernel_module_aspect],
+    aspects = [flutter_app_shader_aspect, flutter_kernel_module_aspect, LAYERING_CHECK_ASPECT],
 )
 _LINUX_INTEGRATION_TEST_ATTRS["native_deps"] = attr.label_list(
     doc = "Native shared library targets (cc_library) for dart:ffi bundled into lib/.",

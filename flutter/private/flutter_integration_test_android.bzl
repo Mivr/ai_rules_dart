@@ -103,6 +103,7 @@ load(
     "MODULAR_KERNEL_ATTRS",
     "flutter_kernel_module_aspect",
 )
+load("//flutter/private:layering_check.bzl", "LAYERING_CHECK_ASPECT", "LAYERING_CHECK_ATTRS", "LAYERING_CHECK_TOOLCHAINS")
 load(
     "//flutter/private:native_sources.bzl",
     "native_sources_aspect",
@@ -365,6 +366,7 @@ _ANDROID_INTEGRATION_TEST_ATTRS = {
     "deps": attr.label_list(
         doc = FLUTTER_DEPS_DOC,
         providers = [DartInfo],
+        aspects = [LAYERING_CHECK_ASPECT],
     ),
     "platform": COMMON_INTEGRATION_TEST_ATTRS["platform"],
     "data": COMMON_INTEGRATION_TEST_ATTRS["data"],
@@ -390,6 +392,7 @@ _ANDROID_INTEGRATION_TEST_ATTRS = {
     ),
 }
 _ANDROID_INTEGRATION_TEST_ATTRS.update(PLATFORM_CONSTRAINT_ATTRS)
+_ANDROID_INTEGRATION_TEST_ATTRS.update(LAYERING_CHECK_ATTRS)
 
 _flutter_android_integration_app = rule(
     implementation = _flutter_android_integration_app_impl,
@@ -420,6 +423,7 @@ _flutter_android_integration_test = rule(
     implementation = _flutter_android_integration_test_impl,
     attrs = _ANDROID_INTEGRATION_TEST_ATTRS,
     test = True,
+    toolchains = LAYERING_CHECK_TOOLCHAINS,
     doc = "Runs a compiled Flutter Android integration test APK inside a hermetic, pinned headless Android emulator.",
 )
 
@@ -587,3 +591,5 @@ def declare_android_integration_test(name, package_name, deps, android_package, 
         platform = "android",
         **test_kwargs
     )
+
+android_integration_test_rule = _flutter_android_integration_test

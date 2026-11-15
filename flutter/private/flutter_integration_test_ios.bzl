@@ -39,6 +39,7 @@ load(
 )
 load("//flutter/private:ios_app.bzl", "flutter_ios_app")
 load("//flutter/private:ios_sim_debug.bzl", "ios_sim_debug_app")
+load("//flutter/private:layering_check.bzl", "LAYERING_CHECK_ASPECT", "LAYERING_CHECK_ATTRS", "LAYERING_CHECK_TOOLCHAINS", "layering_check_integration")
 
 visibility(["//flutter/..."])
 
@@ -318,6 +319,7 @@ _IOS_INTEGRATION_TEST_ATTRS = {
     "deps": attr.label_list(
         doc = FLUTTER_DEPS_DOC,
         providers = [DartInfo],
+        aspects = [LAYERING_CHECK_ASPECT],
     ),
     "platform": attr.string(
         doc = "Target platform to run the integration test on (always `'ios'` here).",
@@ -354,6 +356,7 @@ _IOS_INTEGRATION_TEST_ATTRS = {
     ),
 }
 _IOS_INTEGRATION_TEST_ATTRS.update(PLATFORM_CONSTRAINT_ATTRS)
+_IOS_INTEGRATION_TEST_ATTRS.update(LAYERING_CHECK_ATTRS)
 
 def _flutter_ios_integration_test_impl(ctx):
     if ctx.attr.platform != "ios":
@@ -435,12 +438,19 @@ def _flutter_ios_integration_test_impl(ctx):
         env_info,
         instrumented_files_info,
         analyzable_info,
+        OutputGroupInfo(_validation = layering_check_integration(ctx, struct(
+            extra_srcs = extra_srcs,
+            lib_root = lib_root,
+            main_file = main_file,
+            package_name = package_name,
+        ))),
     ]
 
 flutter_ios_integration_test = rule(
     implementation = _flutter_ios_integration_test_impl,
     attrs = _IOS_INTEGRATION_TEST_ATTRS,
     test = True,
+    toolchains = LAYERING_CHECK_TOOLCHAINS,
     doc = "Installs a simulator-debug Flutter iOS app on a booted simulator and runs its in-app integration test.",
 )
 
