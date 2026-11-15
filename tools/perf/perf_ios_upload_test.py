@@ -92,5 +92,46 @@ class PerfIosUploadTest(unittest.TestCase):
         self.assertNotIn("${{", report["run"])
 
 
+class PerfIosDeadlineTest(unittest.TestCase):
+    """The bench stops itself before the job timeout; reports still run."""
+
+    def test_first_step_records_the_deadline_for_sol_mode(self):
+        first = load()[0]
+        self.assertEqual(first["name"], "Record bench deadline")
+        self.assertEqual(first["if"], "inputs.mode == 'sol'")
+        self.assertIn("BENCH_DEADLINE=", first["run"])
+        self.assertIn("270 * 60", first["run"])
+        self.assertIn('>> "$GITHUB_ENV"', first["run"])
+
+    def test_every_run_call_passes_the_deadline_and_compare_does_not(self):
+        measure = by_name(load(), "Measure speed-of-light (head only)")
+        script = measure["run"]
+        calls = script.count('sol.py" run') + script.count('ab.py" run')
+        self.assertEqual(calls, 2)
+        self.assertEqual(
+            script.count('--deadline-epoch "$BENCH_DEADLINE"'), calls)
+        compare = by_name(load(), "Build, edit, replay")["run"]
+        self.assertNotIn("deadline", compare)
+
+    def test_step_timeout_is_below_the_job_timeout(self):
+        measure = by_name(load(), "Measure speed-of-light (head only)")
+        self.assertEqual(measure["timeout-minutes"], "280")
+        here = os.path.dirname(os.path.abspath(__file__))
+        path = os.path.join(here, "..", "..", ".github", "workflows",
+                            "perf-ios.yaml")
+        with open(path, encoding="utf-8") as fh:
+            self.assertIn("    timeout-minutes: 300\n", fh.read())
+
+    def test_reports_and_uploads_run_after_a_failed_measuring_step(self):
+        all_steps = load()
+        for name in ("Summarize speed-of-light", "Upload ios-sol",
+                     "Upload ios-ab", "Upload ios-profile",
+                     "Retry upload ios-sol", "Retry upload ios-ab",
+                     "Retry upload ios-profile", "Report failed uploads"):
+            step = by_name(all_steps, name)
+            self.assertIn("!cancelled()", step["if"], name)
+            self.assertNotIn("timeout-minutes", step, name)
+
+
 if __name__ == "__main__":
     unittest.main()

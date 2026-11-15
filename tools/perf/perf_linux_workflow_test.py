@@ -306,6 +306,36 @@ class PerfLinuxWorkflowTest(unittest.TestCase):
                 else:
                     self.assertNotIn("options", fields)
 
+    def test_deadline_step_first_and_every_run_call_passes_it(self):
+        all_steps = steps(self.lines)
+        self.assertEqual(all_steps[0]["name"], "Record bench deadline")
+        record = all_steps[0]["run"]
+        self.assertIn("BENCH_DEADLINE=", record)
+        self.assertIn("270 * 60", record)
+        self.assertIn('>> "$GITHUB_ENV"', record)
+        for name in ("Measure speed-of-light", "Measure A/B"):
+            with self.subTest(step=name):
+                script = self.step(name)["run"]
+                self.assertIn('--deadline-epoch "$BENCH_DEADLINE"', script)
+                calls = script.count("sol.py\" run") + script.count(
+                    "ab.py\" run")
+                self.assertEqual(
+                    script.count('--deadline-epoch "$BENCH_DEADLINE"'),
+                    calls)
+
+    def test_measuring_steps_time_out_before_the_job_and_reports_run(self):
+        job = [int(e[3].strip()) for e in self.mapping_entries()
+               if e[2] == "timeout-minutes"
+               and e[1] == 4]
+        self.assertEqual(job, [300])
+        for name in ("Measure speed-of-light", "Measure A/B"):
+            self.assertEqual(self.step(name)["timeout-minutes"], "280", name)
+        for name in ("Summarize speed-of-light", "Summarize A/B",
+                     "Upload platform sol", "Upload platform ab",
+                     "Upload platform profile"):
+            self.assertIn("!cancelled()", self.step(name)["if"], name)
+            self.assertNotIn("timeout-minutes", self.step(name), name)
+
     def test_runner_timeout_and_no_cache(self):
         runs_on = [entry[3].strip() for entry in self.mapping_entries()
                    if entry[2] == "runs-on"]

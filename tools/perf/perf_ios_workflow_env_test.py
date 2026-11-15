@@ -151,5 +151,12 @@ class PerfIosWorkflowEnvTest(unittest.TestCase):
         self.assertEqual(violations, [], "\n".join(violations))
 
 
+    def test_deadline_is_computed_in_the_first_step_without_inputs(self):
+        first = load_steps()[0]
+        self.assertEqual(first["name"], "Record bench deadline")
+        self.assertIn("BENCH_DEADLINE=", first["run"])
+        self.assertNotIn("inputs.", first["run"])
+
+
 if __name__ == "__main__":
     unittest.main()
