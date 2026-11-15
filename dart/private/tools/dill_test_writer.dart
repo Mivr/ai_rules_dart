@@ -147,6 +147,22 @@ int writeSourceTable(DillWriter w, List<(String, String)> sources) {
   return offset;
 }
 
+/// Writes a source table holding [sources] as (`fileUri`, `sourceCode`) pairs
+/// with one line start, an empty import URI and no coverage, returning its
+/// offset.
+int writeTextSourceTable(DillWriter w, List<(String, String)> sources) {
+  final int offset = w.length;
+  w.u32(sources.length);
+  for (final (fileUri, text) in sources) {
+    w.str(fileUri);
+    w.str(text);
+    w.u30s([1, 0]);
+    w.str('');
+    w.u30(0);
+  }
+  return offset;
+}
+
 /// A structurally valid kernel component whose source table holds [sources]
 /// as (`fileUri`, `importUri`) pairs and whose library table holds one node
 /// per entry of [libraries]: a source-table index with a canonical-name root

@@ -179,6 +179,76 @@ Uint8List buildDillWithUris(
 }
 
 /// A structurally valid kernel component whose source table holds [sources]
+/// as (`fileUri`, `sourceCode`) pairs, with the text written out.
+Uint8List buildDillWithSourceText(List<(String, String)> sources) {
+  final w = DillWriter();
+  w.u32(dillComponentMagic);
+  w.u32(Tag.BinaryFormatVersion);
+  w.bytes(List<int>.filled(64, 0));
+  final int sourceTableOffset = writeTextSourceTable(w, sources);
+  final int constantTableOffset = w.length;
+  w.u30(0);
+  w.u32(sourceTableOffset);
+  w.u32(constantTableOffset);
+  for (var i = 0; i < 8; i++) {
+    w.u32(constantTableOffset);
+  }
+  w.u32(0); // libraryCount = 0
+  w.u32(w.length + 4);
+  return w.toBytes();
+}
+
+/// The (`uri`, `sourceCode`) entries of each component of [dill], last
+/// component first, for components [buildDillWithSourceText] wrote (no
+/// library nodes, so the source table offset is the 12th word from the end).
+List<List<(String, String)>> readSourceTexts(Uint8List dill) {
+  final bd = ByteData.sublistView(dill);
+  final tables = <List<(String, String)>>[];
+  int end = dill.length;
+  while (end > 0) {
+    final int start = end - bd.getUint32(end - 4);
+    tables.add(_readTextEntries(dill, start + bd.getUint32(end - 48)));
+    end = start;
+  }
+  return tables;
+}
+
+List<(String, String)> _readTextEntries(Uint8List d, int offset) {
+  int pos = offset + 4;
+  int u30() {
+    final int b0 = d[pos++];
+    if ((b0 & 0x80) == 0) return b0;
+    if ((b0 & 0x40) == 0) return ((b0 & 0x3f) << 8) | d[pos++];
+    final int b1 = d[pos++];
+    final int b2 = d[pos++];
+    final int b3 = d[pos++];
+    return ((b0 & 0x3f) << 24) | (b1 << 16) | (b2 << 8) | b3;
+  }
+
+  String str() {
+    final int n = u30();
+    final String s = utf8.decode(d.sublist(pos, pos + n));
+    pos += n;
+    return s;
+  }
+
+  final int count = ByteData.sublistView(d).getUint32(offset);
+  final entries = <(String, String)>[];
+  for (var i = 0; i < count; i++) {
+    final String uri = str();
+    entries.add((uri, str()));
+    for (int j = u30(); j > 0; j--) {
+      u30();
+    }
+    str();
+    for (int j = u30(); j > 0; j--) {
+      u30();
+    }
+  }
+  return entries;
+}
+
+/// A structurally valid kernel component whose source table holds [sources]
 /// as (`fileUri`, `importUri`) pairs and whose library table holds one node
 /// per entry of [libraries]; see [buildLibraryTableDill].
 Uint8List buildDillWithLibraries({

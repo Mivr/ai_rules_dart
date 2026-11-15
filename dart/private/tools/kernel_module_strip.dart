@@ -186,7 +186,20 @@ _U30Reader _u30ReaderAt(Uint8List data, int position) {
   );
 }
 
-/// Rewrites the source table with every source body emptied, returning the new
+final Uint8List _sdkUriPrefix = Uint8List.fromList(
+  'org-dartlang-sdk:'.codeUnits,
+);
+
+/// Whether the [length] URI bytes at [start] begin with `org-dartlang-sdk:`.
+bool _isSdkUri(Uint8List data, int start, int length) {
+  if (length < _sdkUriPrefix.length) return false;
+  for (var i = 0; i < _sdkUriPrefix.length; i++) {
+    if (data[start + i] != _sdkUriPrefix[i]) return false;
+  }
+  return true;
+}
+
+/// Rewrites the source table with every non-SDK source body emptied, returning the new
 /// table and the length of the table it replaces.
 ({Uint8List bytes, int replacedLength}) _rebuildSourceTable(
   Uint8List data,
@@ -207,13 +220,21 @@ _U30Reader _u30ReaderAt(Uint8List data, int position) {
     // 1. uri: UInt30 byteLength + UTF-8 bytes
     final int uStart = u30.position();
     final int uLen = u30.read();
+    final int uBody = u30.position();
     u30.skip(uLen);
     newSt.add(Uint8List.sublistView(data, uStart, u30.position()));
 
-    // 2. sourceCode: UInt30 byteLength + UTF-8 bytes -> replace with empty (0x00)
+    // 2. sourceCode: UInt30 byteLength + UTF-8 bytes -> replace with empty
+    // (0x00), except for SDK sources, whose text the platform dill also
+    // carries: the linked kernel must not hold two entries that disagree.
+    final int sStart = u30.position();
     final int sLen = u30.read();
     u30.skip(sLen);
-    newSt.addByte(0);
+    if (_isSdkUri(data, uBody, uLen)) {
+      newSt.add(Uint8List.sublistView(data, sStart, u30.position()));
+    } else {
+      newSt.addByte(0);
+    }
 
     // 3. lineStarts: UInt30 count + count * UInt30 delta
     final int lsStart = u30.position();

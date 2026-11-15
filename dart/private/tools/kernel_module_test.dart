@@ -5765,6 +5765,63 @@ void main(List<String> args) {
     }
   });
 
+  test('stripSourceCodeFromDill keeps SDK source text so a linked kernel has no disagreeing entries', () {
+    const sdkUri = 'org-dartlang-sdk:///sdk/lib/core/map.dart';
+    const sdkText = 'abstract interface class Map<K, V> {}\n';
+    const ownUri = 'org-dartlang-root:///app/lib/a.dart';
+    final Uint8List module = stripSourceCodeFromDill(
+      buildDillWithSourceText([(sdkUri, sdkText), (ownUri, 'void a() {}\n')]),
+    );
+    expect(readSourceTexts(module).single, [(sdkUri, sdkText), (ownUri, '')]);
+
+    final dir = Directory('${_root.path}/strip_sdk_link')
+      ..createSync(recursive: true);
+    final platform = File('${dir.path}/platform.dill')
+      ..writeAsBytesSync(buildDillWithSourceText([(sdkUri, sdkText)]));
+    Directory('${dir.path}/mod').createSync();
+    File('${dir.path}/mod/0.dill').writeAsBytesSync(module);
+    File('${dir.path}/mod/index.json').writeAsStringSync(
+      jsonEncode({
+        'version': 1,
+        'sccs': [
+          {'dill': '0.dill', 'defines': <String>[], 'imports': <String>[]},
+        ],
+      }),
+    );
+    final linkErr = StringBuffer();
+    expect(
+      linkOne(
+        [
+          '${dir.path}/linked.dill',
+          '--platform',
+          platform.path,
+          '${dir.path}/mod',
+        ],
+        cache: KernelLinkCache(),
+        errSink: linkErr,
+      ),
+      0,
+      reason: linkErr.toString(),
+    );
+
+    final Uint8List linked = File('${dir.path}/linked.dill').readAsBytesSync();
+    final srcByUri = <String, Set<String>>{};
+    for (final List<(String, String)> table in readSourceTexts(linked)) {
+      for (final (String uri, String text) in table) {
+        srcByUri.putIfAbsent(uri, () => {}).add(text);
+      }
+    }
+    for (final MapEntry<String, Set<String>> entry in srcByUri.entries) {
+      expect(
+        entry.value,
+        hasLength(1),
+        reason: '${entry.key} disagrees on src',
+      );
+    }
+    expect(srcByUri[sdkUri], {sdkText});
+    expect(srcByUri[ownUri], {''});
+  });
+
   test('stripSourceCodeFromDill walks multi-byte UInt30 lengths', () {
     // A URI over 127 bytes encodes its length in two UInt30 bytes: the
     // rewriter must walk it exactly, keeping the URI while emptying the body.
