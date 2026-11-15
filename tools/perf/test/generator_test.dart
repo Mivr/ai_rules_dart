@@ -620,8 +620,8 @@ Map<String, String> _treeContents(String root) {
   final files = <String, String>{};
   for (final f in Directory(root).listSync(recursive: true)) {
     if (f is File) {
-      files[f.path.replaceAll(r'\', '/').substring(prefix)] =
-          f.readAsStringSync();
+      files[f.path.replaceAll(r'\', '/').substring(prefix)] = f
+          .readAsStringSync();
     }
   }
   return files;

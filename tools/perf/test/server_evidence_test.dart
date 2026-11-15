@@ -94,9 +94,8 @@ final class _Fixture {
     Directory('$outputBase/server').createSync(recursive: true);
     File('$outputBase/server/jvm.out').writeAsStringSync(_numbered('jvm', 60));
     if (javaLog) {
-      File(
-        '$outputBase/java.log.host.user.1',
-      ).writeAsStringSync('$_staleMarker\n');
+      File('$outputBase/java.log.host.user.1')
+          .writeAsStringSync('$_staleMarker\n');
       File('$outputBase/java.log.host.user.2')
           .writeAsStringSync(_numbered('jlog', 60));
     }

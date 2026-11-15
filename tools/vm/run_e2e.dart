@@ -172,21 +172,13 @@ const _expectedFailureChecks = [
   ),
   // The entrypoint half: a `dart_binary`'s `main` reaches the analyzer through
   // `DartAnalyzableInfo`, and a diagnostic in it must fail the build too.
-  _ExpectedFailure(
-    'e2e/analysis_failure',
-    '//:bad_bin',
-    'unused_import',
-  ),
+  _ExpectedFailure('e2e/analysis_failure', '//:bad_bin', 'unused_import'),
   _ExpectedFailure(
     'e2e/analysis_failure',
     '//flutter_shaped',
     'unused_element',
   ),
-  _ExpectedFailure(
-    'e2e/analysis_failure',
-    '//nested',
-    'avoid_print',
-  ),
+  _ExpectedFailure('e2e/analysis_failure', '//nested', 'avoid_print'),
   _ExpectedFailure(
     'e2e/analysis_failure',
     '//unresolved_ruleset:clean_lib',
