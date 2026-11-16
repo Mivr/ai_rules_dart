@@ -41,7 +41,12 @@ const Map<String, List<String>> untouchedJobs = <String, List<String>>{
     'dart-tool-tests',
     'conclusion',
   ],
-  'full.yaml': <String>['e2e-macos', 'dev-tool-ios', 'conclusion'],
+  'full.yaml': <String>[
+    'dedupe',
+    'e2e-macos',
+    'dev-tool-ios',
+    'conclusion',
+  ],
   'perf-ios.yaml': <String>['bench'],
   'publish.yaml': <String>['publish'],
   'release.yaml': <String>['gate-tag-matrix', 'release'],

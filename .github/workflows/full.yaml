@@ -72,8 +72,37 @@ env:
     - e2e/*/MODULE.bazel
     - flutter/private/versions.bzl
 jobs:
+  # The nightly run skips both macOS jobs on a commit a main push run already
+  # passed: the macOS slots are the scarce ones, and that run proved the same
+  # SHA on the same matrix. Linux still runs nightly, and any other event
+  # (push, dispatch, tag) always runs macOS.
+  dedupe:
+    name: macOS already proven on this commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      skip-macos: ${{ steps.check.outputs.skip }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          skip=false
+          if [ "$EVENT" = schedule ]; then
+            n=$(gh run list --repo "$REPO" --workflow full.yaml --commit "$SHA" --event push --status success --limit 20 \
+              --json headBranch --jq '[.[] | select(.headBranch == "main")] | length' || echo 0)
+            if [ "$n" -gt 0 ]; then skip=true; fi
+          fi
+          echo "skip=$skip" | tee -a "$GITHUB_OUTPUT"
   e2e-macos:
     name: E2E full (${{ matrix.workspace }}, macos-latest)
+    needs: dedupe
+    if: needs.dedupe.outputs.skip-macos != 'true'
     runs-on: macos-latest
     # Cold nightly and `uncached` runs rebuild every workspace from scratch; fork
     # policy caps every job at 300 minutes on the free runners, and a cold
@@ -83,8 +112,9 @@ jobs:
       fail-fast: false
       # The 5 macOS slots are shared with rules_dart. A main push run proves the
       # commit auto-release.yaml releases, so it takes 3 (dev-tool-ios takes a
-      # fourth); a release dispatch on a tag takes 4. Other runs take 2.
-      max-parallel: ${{ github.ref_type == 'tag' && 4 || (github.event_name == 'push' && 3 || 2) }}
+      # fourth); a release dispatch on a tag takes 4, the nightly 2, and any
+      # other dispatch (a branch under test) 1.
+      max-parallel: ${{ github.ref_type == 'tag' && 4 || (github.event_name == 'push' && 3 || (github.event_name == 'schedule' && 2 || 1)) }}
       matrix:
         include:
           # shard names the push-CI disk keys of the same content; only the
@@ -97,8 +127,10 @@ jobs:
           # Dropped from macOS (one line each: why the Linux run is enough):
           # - dual_hub: pure Dart pub-hub resolution, no Apple target;
           #   ci.yaml's e2e-linux-small runs its spec.
-          # - Android targets on every leg: Linux builds and tests them
-          #   (ci.yaml's Android and app jobs, e2e-linux-nightly here).
+          # - Android targets on every leg but hello_world's: Linux builds and
+          #   tests them (ci.yaml's Android and app jobs, e2e-linux-nightly
+          #   here). hello_world keeps one Android build and test on the Mac
+          #   host, which uses the darwin NDK, build-tools and JDK.
           # - hello_world's, codegen's, min_versions' and pub_scc's portable
           #   targets (kernel, AOT, web, flutter_test, dart_test): ci.yaml's
           #   e2e-linux-app, e2e-linux-integration and e2e-linux-pub-scc test
@@ -219,8 +251,9 @@ jobs:
       # the machine.
       # integration_ios runs `bazel test //...` inside its e2e_runner spec below.
       #
-      # No macOS leg builds Android: Linux CI builds and tests every Android
-      # target, and a Mac host proves nothing more about them. A target
+      # The legs leave Android out: Linux CI builds and tests every Android
+      # target. Only hello_world adds them back, in the step after this one,
+      # for the darwin host tools an Android build on a Mac uses. A target
       # excluded here only stops being a top-level request; anything an
       # included target needs still builds. `--keep_going` lets a query answer
       # when some package fails to load (exit 3); fewer exclusions only means
@@ -261,6 +294,27 @@ jobs:
             echo "Skipping ${#excludes[@]} Android targets on this macOS leg (Linux CI builds them)"
             bazel test --test_output=errors -- //... "${excludes[@]}"
           fi
+      # An Android build on a Mac host runs the darwin NDK, build-tools (aapt2,
+      # d8, zipalign) and JDK, which no Linux job exercises. hello_world's
+      # Android targets (the same query the legs exclude) build and test here.
+      - name: Android on a macOS host (e2e/hello_world)
+        if: matrix.workspace == 'hello_world'
+        working-directory: e2e/hello_world
+        run: |
+          query='rdeps(//..., kind(".*android.*|aar_import", //...)) except attr(tags, "\bmanual\b", //...)'
+          status=0
+          bazel query --keep_going --output=label "$query" >"$RUNNER_TEMP/android_targets" || status=$?
+          if [[ $status -ne 0 && $status -ne 3 ]]; then
+            echo "::error::bazel query for the Android targets failed (exit $status)"
+            exit "$status"
+          fi
+          if [[ ! -s "$RUNNER_TEMP/android_targets" ]]; then
+            echo "::error::no Android targets in e2e/hello_world"
+            exit 1
+          fi
+          echo "Building and testing the Android targets on the macOS host:"
+          cat "$RUNNER_TEMP/android_targets"
+          bazel test --test_output=errors --skip_incompatible_explicit_targets --target_pattern_file="$RUNNER_TEMP/android_targets"
       # The macOS half of POD-2: build each plugin expected.json records as
       # "ok" as the spoke's generated device library, one at a time. The step
       # fails when image_picker_ios does not build: build_expected.json gates
@@ -531,6 +585,8 @@ jobs:
   #   from its own path) with no wrapper, so its exit status is the job's.
   dev-tool-ios:
     name: Dev tool iOS (macos-latest)
+    needs: dedupe
+    if: needs.dedupe.outputs.skip-macos != 'true'
     runs-on: macos-latest
     # Cold nightly and `uncached` runs fetch the Flutter SDK and build the dev tool
     # plus the iOS apps from scratch; fork policy caps every job at 300
@@ -600,7 +656,7 @@ jobs:
         run: bazel test //:app_test --modify_execution_info=TestRunner=-no-sandbox --strategy=TestRunner=linux-sandbox --nocache_test_results --test_output=all
   conclusion:
     name: Conclusion
-    needs: [e2e-macos, e2e-linux-nightly, dev-tool-ios]
+    needs: [dedupe, e2e-macos, e2e-linux-nightly, dev-tool-ios]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10

@@ -190,4 +190,50 @@ void main() {
     final List<String> steps = _steps(_job(full, 'e2e-linux-nightly'));
     expect(steps[1], contains('uses: ./.github/actions/free-disk\n'));
   });
+
+  // Not about disk, but the same reader: the macOS slots are the scarce
+  // ones, so full.yaml spends them only where a passing run has not.
+  group('full.yaml macOS slots', () {
+    late final String full;
+    setUpAll(() {
+      full = File('$root/.github/workflows/full.yaml').readAsStringSync();
+    });
+    for (final name in ['e2e-macos', 'dev-tool-ios']) {
+      test('$name skips only when dedupe says so', () {
+        final String job = _job(full, name);
+        expect(job, contains('    needs: dedupe\n'));
+        expect(
+          job,
+          contains("    if: needs.dedupe.outputs.skip-macos != 'true'\n"),
+        );
+      });
+    }
+    test('only a nightly skips, and only after a main push run passed', () {
+      final String job = _job(full, 'dedupe');
+      expect(job, contains(r'if [ "$EVENT" = schedule ]'));
+      expect(job, contains('--event push --status success'));
+      expect(job, contains('select(.headBranch == "main")'));
+    });
+    test('conclusion fails when dedupe fails', () {
+      expect(
+        _job(full, 'conclusion'),
+        contains('needs: [dedupe, e2e-macos, e2e-linux-nightly, dev-tool-ios]'),
+      );
+    });
+    test('a branch dispatch takes one slot', () {
+      expect(
+        _job(full, 'e2e-macos'),
+        contains("(github.event_name == 'schedule' && 2 || 1)"),
+      );
+    });
+    test('hello_world builds and tests its Android targets on the Mac', () {
+      final String step = _steps(_job(full, 'e2e-macos')).firstWhere(
+        (s) => s.startsWith('name: Android on a macOS host'),
+        orElse: () => fail('no Android on a macOS host step'),
+      );
+      expect(step, contains("if: matrix.workspace == 'hello_world'"));
+      expect(step, contains('working-directory: e2e/hello_world'));
+      expect(step, contains('bazel test '));
+    });
+  });
 }
