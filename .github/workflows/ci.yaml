@@ -2037,8 +2037,11 @@ jobs:
   # (`--config=strict`, defined in tools/strict.bazelrc). Non-blocking for
   # the burn-in that ends 2026-11-14: `continue-on-error` keeps a red run from
   # failing the workflow, and the job is not in `conclusion.needs`. After the
-  # burn-in it is promoted to blocking.
+  # burn-in it is promoted to blocking. Until then it runs in the nightly and
+  # on dispatches (release tags) only: on every push and pull request it held
+  # a runner for 7 to 8 min that nothing waited on.
   strict:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     continue-on-error: true
@@ -2065,8 +2068,11 @@ jobs:
   # change between releases, so the lockfile is off. Never blocking:
   # `continue-on-error` keeps a red run from failing the workflow, and the job
   # is not in `conclusion.needs`, so an upstream Bazel release-candidate
-  # regression never blocks a merge or a release.
+  # regression never blocks a merge or a release. It runs in the nightly and
+  # on dispatches (release tags) only: on every push and pull request it held
+  # a runner for 11 to 17 min that nothing waited on.
   last_rc:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     continue-on-error: true
