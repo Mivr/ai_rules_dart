@@ -125,6 +125,30 @@ void _checkCache() {
     );
     expect(_job, contains('~86 GB free'));
   });
+  test('the disk cache is saved per run on main, then pruned', () {
+    // setup-bazel never re-saved an existing disk-cache key, so shards went
+    // stale; the job restores and saves the disk cache itself instead.
+    expect(_job, contains('disk-cache: false\n'));
+    expect(_job, contains(r'-${{ github.run_id }}-${{ github.run_attempt }}'));
+    final int test = _jobSteps.indexWhere((s) => s.startsWith('name: Test\n'));
+    final int restore = _jobSteps.indexWhere(
+      (s) => s.startsWith('name: Restore disk cache\n'),
+    );
+    final int save = _jobSteps.indexWhere(
+      (s) => s.startsWith('name: Save disk cache\n'),
+    );
+    final int prune = _jobSteps.indexWhere(
+      (s) => s.startsWith('name: Prune older disk cache entries\n'),
+    );
+    expect(restore, inInclusiveRange(0, test - 1));
+    expect(save, greaterThan(test));
+    expect(prune, save + 1);
+    expect(_jobSteps[save], contains(r'key: ${{ env.DISK_CACHE_SAVE_KEY }}'));
+    for (final i in [save, prune]) {
+      expect(_jobSteps[i], contains("if: github.ref == 'refs/heads/main'"));
+      expect(_jobSteps[i], isNot(contains('always()')));
+    }
+  });
   test('cache keys are unchanged', () {
     expect(_job, contains('cache-version: "3"'));
   });

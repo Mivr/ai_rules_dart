@@ -85,6 +85,10 @@ jobs:
   test:
     name: test (${{ matrix.os }}, shard ${{ matrix.shard }})
     runs-on: ${{ matrix.os }}
+    # actions: write lets the prune step delete superseded cache entries.
+    permissions:
+      actions: write
+      contents: read
     # A hung folder fails fast instead of burning the runner for hours.
     # Healthy shards finish well inside this; cold nightly and `uncached` runs
     # need the headroom. GitHub caps jobs at 6 h.
@@ -213,15 +217,16 @@ jobs:
           # executes instead of replaying the disk cache. The
           # content-addressed repository cache and the bazelisk cache still
           # restore (every fetch is sha256-pinned).
-          disk-cache: ${{ github.event_name != 'schedule' && !inputs.uncached && matrix.cache || false }}
+          # The disk cache is restored and saved by the steps below instead.
+          disk-cache: false
           external-cache: ${{ github.event_name != 'schedule' && !inputs.uncached }}
           repository-cache: ${{ github.event_name != 'schedule' && (github.ref_type == 'tag' || !inputs.uncached) }}
           # Only main saves: a branch restores main's keys, and the gate's ci/
           # candidate saves duplicated them (7 GB on 2026-11-04), evicting main's
           # under the 10 GB repository cache limit.
           cache-save: ${{ github.ref == 'refs/heads/main' && github.event_name != 'schedule' && !inputs.uncached }}
-          # Rotates every cache key below (disk, repository, external,
-          # bazelisk). setup-bazel skips the post-job save for any cache whose
+          # Rotates setup-bazel's cache keys (repository, external,
+          # bazelisk; the disk cache has its own steps). setup-bazel skips the post-job save for any cache whose
           # key restored with an exact hit, so a key saved by a failed or
           # partial run stays stale forever and every later run misses against
           # it. Bump this after a sharding change or a poisoned key; the next
@@ -257,6 +262,46 @@ jobs:
             build --experimental_disk_cache_gc_max_size=4G
             build --experimental_disk_cache_gc_max_age=7d
             build --experimental_disk_cache_gc_idle_delay=5m
+      # The Bazel disk cache, one per shard (`matrix.cache`). setup-bazel's own
+      # disk cache never re-saved a key that already existed, and its key only
+      # changed with MODULE and BUILD files, so a shard's cache went stale as
+      # sources changed: on 2026-11-16 about 700 actions per Linux shard missed
+      # it (the sb-ws remote cache had been hiding that). Each run now restores
+      # the newest entry under the shard's prefix, and a main push saves a new
+      # entry under its own run's key at the end of the job, then prunes the
+      # shard's older entries, so the cache follows main. The legacy
+      # setup-bazel entries (same path, so same cache version) are the last
+      # fallback until the first main push saves. Schedule and `uncached`
+      # runs neither restore nor save.
+      - name: Set disk cache key
+        if: github.event_name != 'schedule' && !inputs.uncached
+        shell: bash
+        run: |
+          key="rd-disk-${{ runner.os }}-${{ matrix.cache }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock') }}"
+          echo "DISK_CACHE_KEY=$key" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=$key-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+      - name: Restore disk cache
+        if: github.event_name != 'schedule' && !inputs.uncached
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ matrix.os == 'windows-latest' && 'D:/_bazel-disk' || '/home/runner/.cache/bazel-disk' }}
+          key: ${{ env.DISK_CACHE_KEY }}
+          restore-keys: |
+            rd-disk-${{ runner.os }}-${{ matrix.cache }}-
+            setup-bazel-3-${{ matrix.os == 'windows-latest' && 'win32' || 'linux' }}-x64-disk-${{ matrix.cache }}-
+      - name: Point Bazel at the disk cache
+        if: github.event_name != 'schedule' && !inputs.uncached && matrix.os == 'ubuntu-latest'
+        run: |
+          mkdir -p /home/runner/.cache/bazel-disk
+          echo "build --disk_cache=/home/runner/.cache/bazel-disk" >> ~/.bazelrc
+      # PowerShell, so ~/.bazelrc is the same file setup-bazel wrote (Git
+      # Bash's home can differ).
+      - name: Point Bazel at the disk cache (Windows)
+        if: github.event_name != 'schedule' && !inputs.uncached && matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "D:/_bazel-disk" | Out-Null
+          Add-Content ~/.bazelrc "build --disk_cache=D:/_bazel-disk"
       - name: Disk report (after cache restore)
         if: matrix.os == 'ubuntu-latest'
         shell: bash
@@ -602,6 +647,37 @@ jobs:
   # the version pinned in its `.bazelversion`. The pinned version is printed
   # once, from `bazel version`, and a client that reports another one fails
   # the step.
+      # Success-gated (no `always()`): a failed run must not replace the last
+      # good entry with a half-populated one.
+      - name: Save disk cache
+        if: github.ref == 'refs/heads/main' && github.event_name != 'schedule' && !inputs.uncached
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ matrix.os == 'windows-latest' && 'D:/_bazel-disk' || '/home/runner/.cache/bazel-disk' }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Once this run's entry exists, drop the shard's entries created before
+      # it on this ref (a newer entry from a concurrent run is kept), and the
+      # shard's legacy setup-bazel entries.
+      - name: Prune older disk cache entries
+        if: github.ref == 'refs/heads/main' && github.event_name != 'schedule' && !inputs.uncached
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+          LEGACY: setup-bazel-3-${{ matrix.os == 'windows-latest' && 'win32' || 'linux' }}-x64-disk-${{ matrix.cache }}-
+        run: |
+          # Pruning is housekeeping: no failure here may fail the job.
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at' || true)
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id' || true)
+          ids="$ids $(gh api "repos/$REPO/actions/caches?per_page=100&key=$LEGACY" --jq '.actions_caches[] | select(.ref == env.REF) | .id' || true)"
+          for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
   e2e-floor:
     name: e2e-floor (shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
