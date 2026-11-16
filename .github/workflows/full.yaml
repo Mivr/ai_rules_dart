@@ -5,10 +5,16 @@
 # longer runs — every workspace's full `bazel test //...` on macOS — plus the
 # Android example (too heavy for push CI) on Linux, plus the dev tool's own
 # iOS simulator e2e cases (`dev-tool-ios`) on a booted simulator on macOS.
-# Linux and Windows coverage otherwise lives in push CI. Triggered by release
-# nightly, or manually. A release reuses a passing nightly run of this workflow
-# on the tagged commit, or dispatches it on the tag (with caches) before
-# publishing (see the gate job in release.yaml).
+# Linux and Windows coverage otherwise lives in push CI. Its macOS legs also
+# cover everything ci.yaml's deferred macOS jobs run (hello_world's and
+# min_versions' Apple targets, plugin_example's mixed plugin, pub_scc, the
+# smoke spec and codegen's --update-goldens check), so a push CI run plus a
+# Full run on the same commit prove as much as a dispatch of both.
+# Triggered on every push to main (one run at a time, newest commit wins:
+# see `concurrency`), nightly, or manually. A release reuses a passing main
+# push or nightly run of this workflow on the tagged commit, or dispatches it
+# on the tag (with caches) before publishing (see the gate job in
+# release.yaml); auto-release.yaml releases each main commit both pass on.
 #
 # WHAT IS CACHED: nightly schedule runs restore no disk cache (only the plugin
 # job re-saves its own key, on pushes and schedules). Release dispatches on a tag
@@ -27,6 +33,8 @@ permissions:
   contents: read
 name: Full
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       uncached:
@@ -43,11 +51,15 @@ on:
     # Nightly at 06:00 UTC.
     - cron: "0 6 * * *"
 concurrency:
-  # Runs on main never share a group: each gets its own run-id suffix, so the
-  # nightly run, a manual dispatch and a tag dispatch never cancel or queue behind
-  # each other. Full never cancels a run in progress: every Full run may be
+  # Pushes to main share one group with no cancel-in-progress: the running
+  # Full finishes, at most one newer push waits, and a later push replaces the
+  # waiting one, so main is proven continuously without a backlog. Every other
+  # run on main gets its own run-id suffix, so the nightly run, a manual
+  # dispatch and a tag dispatch never cancel or queue behind each other or
+  # the pushes. Full never cancels a run in progress: every Full run may be
   # gating a release or a merge.
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}${{ github.ref == 'refs/heads/main' && format('::{0}', github.run_id) || '' }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'push' && 'main-push' || format('{0}{1}', github.head_ref || github.ref, github.ref == 'refs/heads/main' && format('::{0}', github.run_id) || '') }}
+  cancel-in-progress: false
 env:
   BAZEL_REPOSITORY_CACHE_KEY_FILES: |
     - MODULE.bazel
@@ -64,11 +76,11 @@ jobs:
     timeout-minutes: 300
     strategy:
       fail-fast: false
-      # At most 2 of the 5 macOS slots shared with rules_dart, so a push run's
-      # macOS jobs (2) and rules_dart's (1) still get slots while this runs.
-      # A release dispatch on a tag takes 4: its Full gates the release, and at 2 the 11
-      # legs (~180 job-minutes cold) need about 90 minutes of wall clock.
-      max-parallel: ${{ github.ref_type == 'tag' && 4 || 2 }}
+      # The 5 macOS slots are shared with rules_dart. A main push run proves the
+      # commit auto-release.yaml releases, so it takes 3 (dev-tool-ios takes a
+      # fourth); a release dispatch on a tag takes 4. Other runs take 2. At 2
+      # the legs (~180 job-minutes cold) need about 90 minutes of wall clock.
+      max-parallel: ${{ github.ref_type == 'tag' && 4 || (github.event_name == 'push' && 3 || 2) }}
       matrix:
         include:
           # shard names the push-CI disk keys of the same content; only the
@@ -136,6 +148,11 @@ jobs:
           - workspace: smoke
             shard: macos-b
             cache-save: false
+          # pub_scc's iOS simulator bundle and plugin registrant check, which
+          # ci.yaml's deferred e2e-macos-apple job also runs.
+          - workspace: pub_scc
+            shard: none
+            cache-save: false
     env:
       DISK_CACHE_DIR: ~/.cache/bazel-disk
     steps:
@@ -179,10 +196,12 @@ jobs:
       # `--keep_going` lets the query answer when some package fails to load
       # (exit 3); fewer exclusions only means more is built.
       - name: bazel test //... (e2e/${{ matrix.workspace }})
-        if: matrix.workspace != 'integration_ios'
+        if: matrix.workspace != 'integration_ios' && matrix.workspace != 'smoke'
         working-directory: e2e/${{ matrix.workspace }}
         env:
-          SKIP_ANDROID: ${{ github.event_name != 'schedule' && github.ref_type != 'tag' && !inputs.uncached }}
+          # Only a branch dispatch skips Android: main pushes, like the nightly
+          # and tag runs, are release proof and build everything.
+          SKIP_ANDROID: ${{ github.event_name == 'workflow_dispatch' && github.ref_type != 'tag' && !inputs.uncached }}
         run: |
           excludes=()
           if [[ "$SKIP_ANDROID" == true ]]; then
@@ -235,6 +254,18 @@ jobs:
       - name: Run e2e/drive_ios
         if: matrix.workspace == 'drive_ios'
         run: bazel run //tools/e2e_runner -- --workspace=e2e/drive_ios --bazel=bazel
+      # The smoke spec, as ci.yaml's deferred e2e-macos-toolchain job runs it:
+      # `bazel test //...` plus its red paths (the undeclared-import compile
+      # must fail on the guard refusal).
+      - name: Run e2e/smoke
+        if: matrix.workspace == 'smoke'
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/smoke --bazel=bazel
+      # `bazel run <flutter_test> -- --update-goldens` on a scratch copy of
+      # e2e/codegen, as ci.yaml's deferred e2e-macos-apple job runs it.
+      - name: Check --update-goldens rewrites a stale golden (e2e/codegen)
+        if: matrix.workspace == 'codegen'
+        working-directory: e2e/codegen
+        run: bazel run //:update_goldens_check -- --bazel=bazel
       - name: Report cache sizes
         if: always()
         run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
