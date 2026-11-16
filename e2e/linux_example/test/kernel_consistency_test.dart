@@ -8,7 +8,11 @@
 ///    ignored. #421 shipped a kernel where the module strip had emptied the
 ///    text of `org-dartlang-sdk:` entries while the link kept the platform
 ///    dill's copies.
-/// 2. The pinned SDK `dart` VM (the one running this test) loads it past
+/// 2. It defines `package:flutter/src/dart_plugin_registrant.dart`. The engine
+///    reads the registrant's URI from that library before `main()`; nothing
+///    imports it, and a kernel without it runs the app with no plugin
+///    registration and no debug agent, silently.
+/// 3. The pinned SDK `dart` VM (the one running this test) loads it past
 ///    `kernel_loader`. It may stop later, on `dart:ui` natives only a Flutter
 ///    engine provides; that is a pass.
 ///
@@ -20,6 +24,9 @@ import 'dart:io';
 import 'dart:typed_data';
 
 const _magic = 0x90ABCDEF;
+
+/// The library the engine reads `dartPluginRegistrantLibrary` from.
+const _registrantLookup = 'package:flutter/src/dart_plugin_registrant.dart';
 
 /// One source-table entry: its URI, text bytes and line-start count.
 typedef _Entry = ({String uri, Uint8List text, List<int> lineStarts});
@@ -103,6 +110,49 @@ List<Uint8List> _components(Uint8List data) {
   return parts.reversed.toList();
 }
 
+/// The import URIs of the libraries the one component in [part] defines.
+///
+/// Reads the component index (`pkg/kernel/binary.md`): its offsets of the
+/// source table, constant table, constant table index, canonical names,
+/// metadata payloads, metadata mappings, string table and the index itself,
+/// the main method, then one offset per library. Each library's canonical
+/// name is read through the canonical-name and string tables.
+List<String> _libraryUris(Uint8List part) {
+  final bd = ByteData.sublistView(part);
+  final libraries = bd.getUint32(part.length - 8);
+  final index = part.length - (libraries + 12) * 4;
+  final canonicalNamesAt = bd.getUint32(index + 12);
+  final stringsAt = bd.getUint32(index + 24);
+
+  final strings = _Reader(part, stringsAt, part.length);
+  final ends = <int>[for (var i = strings.u30(); i > 0; i--) strings.u30()];
+  final textAt = strings.pos;
+  String string(int i) => utf8.decode(
+    Uint8List.sublistView(
+      part,
+      textAt + (i == 0 ? 0 : ends[i - 1]),
+      textAt + ends[i],
+    ),
+  );
+
+  final names = _Reader(part, canonicalNamesAt, part.length);
+  final nameRefs = <int>[
+    for (var i = names.u30(); i > 0; i--) (names..u30()).u30(),
+  ];
+
+  final out = <String>[];
+  for (var i = 0; i < libraries; i++) {
+    final library = _Reader(part, bd.getUint32(index + 36 + i * 4), part.length)
+      ..pos +=
+          1 // flags
+      ..u30() // languageVersionMajor
+      ..u30(); // languageVersionMinor
+    final canonicalName = library.u30() - 1;
+    out.add(string(nameRefs[canonicalName]));
+  }
+  return out;
+}
+
 bool _sameBytes(List<int> a, List<int> b) =>
     a.length == b.length &&
     Iterable<int>.generate(a.length).every((i) => a[i] == b[i]);
@@ -140,9 +190,27 @@ Future<void> main() async {
   final dill = _runfile('APP_DILL');
   var failed = false;
 
-  final bad = disagreeingUris(File(dill).readAsBytesSync());
+  final bytes = File(dill).readAsBytesSync();
+  final bad = disagreeingUris(bytes);
   for (final uri in bad) {
     stderr.writeln('FAIL: two source entries disagree for URI $uri');
+    failed = true;
+  }
+
+  final defined = {
+    for (final part in _components(bytes)) ..._libraryUris(part),
+  };
+  if (!defined.contains('package:flutter/widgets.dart')) {
+    stderr.writeln(
+      'FAIL: read no package:flutter/widgets.dart among ${defined.length} '
+      'libraries; the library index was misread',
+    );
+    failed = true;
+  } else if (!defined.contains(_registrantLookup)) {
+    stderr.writeln(
+      'FAIL: the kernel does not define $_registrantLookup, so the engine '
+      'never finds the plugin registrant',
+    );
     failed = true;
   }
 
