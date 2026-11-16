@@ -155,7 +155,6 @@ jobs:
   test-macos:
     name: test-macos (shard ${{ matrix.shard }})
     runs-on: macos-latest
-    environment: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached && 'sbws-cache-write' || '' }}
     # Cold nightly and `uncached` runs need the headroom. GitHub caps jobs at
     # 6 h.
     timeout-minutes: 120
@@ -242,16 +241,6 @@ jobs:
             startup --host_jvm_args=-Xmx2g
             build --local_resources=cpu=1
             build --local_resources=memory=HOST_RAM*.15
-      # Remote build cache on the sb-ws cluster (cache only). Off on the nightly
-      # schedule and on `uncached` dispatches, which stay cold. Only pushes to
-      # main (the sbws-cache-write environment) upload results.
-      - uses: ./.github/actions/sbws-cache
-        with:
-          enabled: ${{ github.event_name != 'schedule' && !inputs.uncached }}
-          read-id: ${{ secrets.SBWS_CACHE_READ_ID }}
-          read-secret: ${{ secrets.SBWS_CACHE_READ_SECRET }}
-          write-id: ${{ secrets.SBWS_CACHE_WRITE_ID }}
-          write-secret: ${{ secrets.SBWS_CACHE_WRITE_SECRET }}
       - name: Test
         env:
           FOLDERS: ${{ matrix.folders }}
@@ -402,7 +391,6 @@ jobs:
   flake-sweep-nightly:
     if: github.event_name == 'schedule' || github.ref_type == 'tag'
     runs-on: ubuntu-latest
-    environment: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached && 'sbws-cache-write' || '' }}
     # A cold build of the root workspace plus ten runs of every test, with
     # headroom for a slow night. GitHub caps jobs at 6 h.
     timeout-minutes: 240
@@ -422,16 +410,6 @@ jobs:
             common --announce_rc
             common --color=yes
             common --enable_bzlmod=true
-      # Remote build cache on the sb-ws cluster (cache only). Off on the nightly
-      # schedule and on `uncached` dispatches, which stay cold. Only pushes to
-      # main (the sbws-cache-write environment) upload results.
-      - uses: ./.github/actions/sbws-cache
-        with:
-          enabled: ${{ github.event_name != 'schedule' && !inputs.uncached }}
-          read-id: ${{ secrets.SBWS_CACHE_READ_ID }}
-          read-secret: ${{ secrets.SBWS_CACHE_READ_SECRET }}
-          write-id: ${{ secrets.SBWS_CACHE_WRITE_ID }}
-          write-secret: ${{ secrets.SBWS_CACHE_WRITE_SECRET }}
       - name: Sweep every test ten times
         shell: bash
         run: |
