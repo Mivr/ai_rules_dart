@@ -699,9 +699,9 @@ packages and over plugins. The plugin axis counts the app as one unit
 (size = plugins + 1) when a 0-plugin point is present. It exits 1, after
 writing `scale.json`, when an exponent exceeds its ceiling in
 `tools/perf/scale_ceilings.json`, a flow failed or a flow has no ceiling.
-The nightly `perf-scale-linux.yaml` (Android) and `perf-scale-ios.yaml`
-workflows measure 200 and 2,000 packages and 0 and 30 plugins, then run
-the report.
+The `perf-scale-linux.yaml` (Android, nightly and on demand) and
+`perf-scale-ios.yaml` (iOS, on demand only: dispatch it by hand) workflows
+measure 200 and 2,000 packages and 0 and 30 plugins, then run the report.
 
 ## CPU attribution (clean and cold flows)
 

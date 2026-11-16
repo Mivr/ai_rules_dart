@@ -1,5 +1,5 @@
 # Mivr/ai_rules_flutter workflow.
-# Nightly iOS scale bench (free macOS runners, no caches).
+# Manual-only iOS scale bench (free macOS runners, no caches).
 #
 # Measures how the iOS build cost grows with the generated monorepo's
 # size: two sizes on the package axis (200 and 2,000 Dart packages, no native
@@ -12,17 +12,15 @@
 # its ceiling in tools/perf/scale_ceilings.json, a flow failed, or a flow has
 # no ceiling.
 #
-# Cost: schedule (nightly) and workflow_dispatch only, never push or pull
-# request; macos-15, no caches, small result artifacts (retention 3 days),
-# build outputs never uploaded.
+# Cost: workflow_dispatch only (never automatic: the account's few concurrent
+# macOS runners belong to Full, which gates releases); macos-15, no caches,
+# small result artifacts (retention 3 days), build outputs never uploaded.
 name: iOS scale bench
 "on":
-  schedule:
-    - cron: "47 4 * * *"
   workflow_dispatch:
     inputs:
       head_ref:
-        description: "rules_flutter ref to measure (default: the scheduled commit)"
+        description: "rules_flutter ref to measure (default: the dispatched commit)"
         default: ""
         type: string
       seed:

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Text checks for the nightly scale-bench workflows.
+"""Text checks for the scale-bench workflows.
 
-`perf-scale-linux.yaml` (Android flows) and `perf-scale-ios.yaml` (iOS
-flows) run on a schedule and by hand, never on push or pull request. They
-read as text here; nothing runs and nothing touches the network.
+`perf-scale-linux.yaml` (Android flows) runs on a schedule and by hand;
+`perf-scale-ios.yaml` (iOS flows) runs by hand only, so it never takes one
+of the account's few macOS runners from Full. Neither runs on push or pull
+request. They read as text here; nothing runs and nothing touches the
+network.
 """
 
 import os
@@ -26,6 +28,8 @@ _FLOWS = {"perf-scale-linux.yaml": "--config android_release "
                                    "--config android_debug",
           "perf-scale-ios.yaml": "--config device_release "
                                  "--config sim_debug"}
+_RUNS_ON_MACOS = {"perf-scale-linux.yaml": False,
+                  "perf-scale-ios.yaml": True}
 _INPUT_INJECTION = re.compile(
     r"(?:\$\{\{\s*(?:github\.event\.)?inputs\.|\bgithub\.event\.inputs\.)"
     r"([A-Za-z0-9_]+)"
@@ -79,13 +83,19 @@ class ScaleWorkflowTest(unittest.TestCase):
         return [(name, workflow_text(name), workflow_text(name).splitlines())
                 for name in WORKFLOWS]
 
-    def test_triggers_are_schedule_and_dispatch_only(self):
-        for _, text, lines in self.each():
+    def test_triggers_are_dispatch_and_linux_schedule_only(self):
+        for name, text, lines in self.each():
             on_entry = [e for e in top_level(lines) if e[2] == "on"][0]
             triggers = [e[2] for e in
                         direct_keys(lines, on_entry[0], on_entry[1])]
-            self.assertEqual(triggers, ["schedule", "workflow_dispatch"])
-            self.assertIn("cron:", text)
+            if _RUNS_ON_MACOS[name]:
+                # macOS benches run on demand only.
+                self.assertEqual(triggers, ["workflow_dispatch"], name)
+                self.assertNotIn("cron:", text, name)
+            else:
+                self.assertEqual(triggers, ["schedule", "workflow_dispatch"],
+                                 name)
+                self.assertIn("cron:", text, name)
             for banned in ("push", "pull_request", "workflow_run"):
                 self.assertNotRegex(text, r"(?m)^\s*%s\s*:" % banned)
 
