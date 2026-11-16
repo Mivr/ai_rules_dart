@@ -270,7 +270,6 @@ jobs:
       DISK_CACHE_SHARD: linux-unit
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/free-disk
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
@@ -525,7 +524,6 @@ jobs:
       DISK_CACHE_SHARD: linux-app
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/free-disk
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
@@ -630,7 +628,6 @@ jobs:
       DISK_CACHE_SHARD: linux-small
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/free-disk
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
@@ -769,7 +766,6 @@ jobs:
       DISK_CACHE_SHARD: linux-integration
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/free-disk
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
@@ -878,7 +874,6 @@ jobs:
       DISK_CACHE_SHARD: linux-examples
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/free-disk
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
@@ -949,7 +944,6 @@ jobs:
       DISK_CACHE_SHARD: linux-pub-scc
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/free-disk
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
@@ -1154,7 +1148,6 @@ jobs:
       DISK_CACHE_SHARD: linux-web
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/free-disk
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key

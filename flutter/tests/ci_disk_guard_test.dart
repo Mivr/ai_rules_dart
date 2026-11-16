@@ -1,8 +1,11 @@
 /// Static guard for the hosted-Linux disk headroom in `ci.yaml` and `full.yaml`.
 ///
-/// Hosted ubuntu-latest runners have little free disk. The e2e jobs free the
-/// toolchains they never use, and log `df -h /` before the first workspace and
-/// after each one, so a shortfall shows in the log before it fails a job.
+/// Hosted ubuntu-latest runners now start with about 86 GB free on a 145 GB
+/// disk (2026-11-16), far more than a cached push job uses, so the push jobs
+/// spend no time freeing disk: removing the preinstalled toolchains cost 40 to
+/// 120 s per job. They still log `df -h /` before the first workspace and after
+/// each one, so a shortfall shows in the log before it fails a job. The cold
+/// nightly in `full.yaml` keeps the cleanup as headroom for uncached builds.
 library;
 
 import 'dart:io';
@@ -32,8 +35,8 @@ const Map<String, List<String>> _e2eJobs = {
 };
 
 /// Hosted-Linux jobs that run Bazel against workspaces without a `Run e2e/`
-/// step: they free disk but need no per-workspace report.
-const List<String> _freeOnlyJobs = ['unit-tests', 'web-smoke'];
+/// step: they need no per-workspace report.
+const List<String> _otherLinuxJobs = ['unit-tests', 'web-smoke'];
 
 /// Finds the rules_flutter repository root directory.
 String _locateRepoRoot() {
@@ -142,10 +145,10 @@ void main() {
 
   group('ci.yaml e2e jobs', () {
     _e2eJobs.forEach((String name, List<String> workspaces) {
-      test('$name frees disk right after checkout', () {
+      test('$name spends no time freeing disk', () {
         final List<String> steps = _steps(_job(ci, name));
         expect(steps.first, contains('actions/checkout'));
-        expect(steps[1], contains('uses: ./.github/actions/free-disk\n'));
+        expect(_job(ci, name), isNot(contains('actions/free-disk')));
       });
       test('$name reports disk before and after every workspace', () {
         final List<String> steps = _steps(_job(ci, name));
@@ -171,12 +174,14 @@ void main() {
         expect(_job(ci, name), startsWith('    name: E2E Linux'));
       });
     });
-    for (final String name in _freeOnlyJobs) {
-      test('$name frees disk right after checkout', () {
-        final List<String> steps = _steps(_job(ci, name));
-        expect(steps[1], contains('uses: ./.github/actions/free-disk\n'));
+    for (final String name in _otherLinuxJobs) {
+      test('$name spends no time freeing disk', () {
+        expect(_job(ci, name), isNot(contains('actions/free-disk')));
       });
     }
+    test('no ci.yaml job frees disk', () {
+      expect(ci, isNot(contains('actions/free-disk')));
+    });
   });
 
   test('full.yaml nightly Linux job frees disk right after checkout', () {
