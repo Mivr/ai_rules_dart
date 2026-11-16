@@ -275,14 +275,25 @@ final class ScaleMeasurer {
     return null;
   }
 
+  /// Reads the spawn count and largest command line from [log], then deletes
+  /// it: at 5000 libraries one log runs to more than a gigabyte.
   FlowMeasurement _fromLog(_Timed t, File log, {bool reproducible = true}) {
-    final spawns = parseExecutionLog(log.readAsStringSync()).allSpawns;
+    var actions = 0;
+    var largest = 0;
+    for (final object in readExecutionLogObjects(log)) {
+      final spawn = parseSpawnMap(object);
+      if (spawn == null) continue;
+      actions++;
+      final bytes = _largest([spawn.commandArgs]);
+      if (bytes > largest) largest = bytes;
+    }
+    log.deleteSync();
     return FlowMeasurement(
       cpuSeconds: t.cpu,
       wallSeconds: t.wall,
       peakRssMb: t.peakMb,
-      actionCount: spawns.length,
-      maxCommandLineBytes: _largest(spawns.map((s) => s.commandArgs)),
+      actionCount: actions,
+      maxCommandLineBytes: largest,
       reproducible: reproducible,
     );
   }
@@ -302,7 +313,16 @@ final class ScaleMeasurer {
   List<String> _buildArgs(String target, File log) => [
     'build',
     target,
+    ..._logArgs(log),
+  ];
+
+  /// Execution log flags. The log is not sorted: Bazel sorts it by loading
+  /// every spawn, inputs included, into its heap at the end of the build,
+  /// which runs out of heap at 5000 libraries. Only the count and command
+  /// lines are read here, so the order does not matter.
+  List<String> _logArgs(File log) => [
     '--execution_log_json_file=${log.path}',
+    '--noexecution_log_sort',
     '--materialize_param_files',
   ];
 
@@ -366,12 +386,7 @@ final class ScaleMeasurer {
       target.split(':').first.replaceFirst('//packages/', ''),
     );
     final log = File('${p.logsDir}/exec_test.json');
-    final timed = _timed(p, [
-      'test',
-      target,
-      '--execution_log_json_file=${log.path}',
-      '--materialize_param_files',
-    ]);
+    final timed = _timed(p, ['test', target, ..._logArgs(log)]);
     return _fromLog(timed, log);
   }
 

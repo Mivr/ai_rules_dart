@@ -3,6 +3,7 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 /// Normalizes a workspace-relative path to forward slashes.
 String _normalizePath(String path) {
@@ -117,6 +118,73 @@ Iterable<String> extractConcatenatedJsonObjects(String text) sync* {
         startIndex = -1;
       }
     }
+  }
+}
+
+/// Decodes the top-level JSON objects of the execution log [file] one at a
+/// time, reading [chunkBytes] at a time.
+///
+/// Only the object being read is held in memory, so a log of several
+/// gigabytes (thousands of spawns that each list every input) can be read.
+/// An object that is not valid JSON is reported on stderr and skipped, as
+/// [parseExecutionLog] does.
+Iterable<Map<String, dynamic>> readExecutionLogObjects(
+  File file, {
+  int chunkBytes = 1 << 20,
+}) sync* {
+  const quote = 0x22, backslash = 0x5C, open = 0x7B, close = 0x7D;
+  final raf = file.openSync();
+  try {
+    final buffer = Uint8List(chunkBytes);
+    final object = BytesBuilder();
+    var depth = 0;
+    var inString = false;
+    var escaped = false;
+    while (true) {
+      final read = raf.readIntoSync(buffer);
+      if (read == 0) break;
+      var start = depth > 0 ? 0 : -1;
+      for (var i = 0; i < read; i++) {
+        final byte = buffer[i];
+        if (inString) {
+          if (escaped) {
+            escaped = false;
+          } else if (byte == backslash) {
+            escaped = true;
+          } else if (byte == quote) {
+            inString = false;
+          }
+          continue;
+        }
+        if (byte == quote) {
+          inString = true;
+        } else if (byte == open) {
+          if (depth == 0) start = i;
+          depth++;
+        } else if (byte == close && depth > 0) {
+          depth--;
+          if (depth == 0) {
+            object.add(Uint8List.sublistView(buffer, start, i + 1));
+            final decoded = _decodeLogObject(object.takeBytes());
+            if (decoded != null) yield decoded;
+            start = -1;
+          }
+        }
+      }
+      if (depth > 0) object.add(Uint8List.sublistView(buffer, start, read));
+    }
+  } finally {
+    raf.closeSync();
+  }
+}
+
+Map<String, dynamic>? _decodeLogObject(Uint8List bytes) {
+  try {
+    final decoded = jsonDecode(utf8.decode(bytes));
+    return decoded is Map<String, dynamic> ? decoded : null;
+  } on FormatException catch (e) {
+    stderr.writeln('Malformed JSON object in execution log: $e');
+    return null;
   }
 }
 
