@@ -334,15 +334,21 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
       # Since a8952a6c builds profile, release and two debug APKs of the example,
-      # the hosted runner has been shut down mid-build on every run, with no
-      # build error first. Each configuration keeps its own idle persistent
-      # workers (desugar, dexing, resource and kernel JVMs) resident, so bound
-      # each kind to one instance; the sampler below logs memory as it goes.
-      - name: Bound persistent workers
-        run: echo "build --worker_max_instances=1" >> ~/.bazelrc
+      # the build peaks above the hosted runner's 16 GB (run 43855273745: 7.5 GB
+      # in use before the build, 15 GB used when the runner was shut down mid
+      # dexing), even with one persistent worker per kind. Swap on the runner's
+      # temporary disk lets the peak spill instead of losing the runner; the
+      # sampler below logs memory and swap once a minute.
+      - name: Add swap on the temporary disk
+        run: |
+          sudo fallocate -l 16G /mnt/bazel.swap
+          sudo chmod 600 /mnt/bazel.swap
+          sudo mkswap /mnt/bazel.swap
+          sudo swapon /mnt/bazel.swap
+          free -m
       - name: bazel test //... (shard workspaces)
         run: |
-          (while sleep 60; do free -m | awk 'NR==2 {print "memory: " $3 " of " $2 " MB used"}'; done) &
+          (while sleep 60; do free -m | awk 'NR==2 {m = $3 " of " $2} NR==3 {print "memory: " m " MB used, swap " $3 " of " $2 " MB"}'; done) &
           trap "kill $!" EXIT
           failed=""
           for ws in $WORKSPACES; do
