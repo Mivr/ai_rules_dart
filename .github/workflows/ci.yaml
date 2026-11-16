@@ -27,8 +27,9 @@
 # slots shared with rules_dart), so macOS runs only two fast smoke jobs and
 # Linux carries every workspace whose targets can build there (Apple-only
 # targets skip themselves through Bazel's own `target_compatible_with`; no
-# new tag filters). The complete macOS coverage runs in full.yaml instead
-# (nightly, on release tags, or on demand), which releases wait for.
+# new tag filters). The macOS coverage runs in full.yaml instead (every push
+# to main, nightly, on release tags, or on demand), which releases wait for;
+# the two macOS jobs below run on dispatches only.
 #   e2e-macos-apple:     hello_world's Apple bundles (macOS + iOS simulator),
 #     min_versions' iOS/macOS legs against the Apple version floor, plus
 #     pub_scc's iOS simulator bundle and plugin registrant check
@@ -127,11 +128,12 @@ jobs:
   # Apple SDKs and the Apple bundle rules (packaging, simulator runtime).
   e2e-macos-apple:
     name: macOS Apple bundles (hello_world macOS + iOS)
-    # macOS is deferred to the nightly (owner decision 2026-11-04): pushes and
-    # PRs skip this job, and the nightly schedule and dispatched (release)
-    # runs keep it. The gate accepts it as skipped by its exact name
-    # (control ctl/config.py DEFERRED_JOBS); a red nightly becomes a queue item.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # macOS is deferred (owner decision 2026-11-04): pushes and PRs skip this
+    # job, and so does the nightly, since Full (every push to main and
+    # nightly) runs the same targets on its macOS legs; only dispatched
+    # (release) runs keep it. The gate accepts it as skipped by its exact name
+    # (control ctl/config.py DEFERRED_JOBS).
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     timeout-minutes: 60
     env:
@@ -221,11 +223,12 @@ jobs:
   # load, on the OS whose toolchain is the most fragile.
   e2e-macos-toolchain:
     name: macOS toolchain resolution (smoke)
-    # macOS is deferred to the nightly (owner decision 2026-11-04): pushes and
-    # PRs skip this job, and the nightly schedule and dispatched (release)
-    # runs keep it. The gate accepts it as skipped by its exact name
-    # (control ctl/config.py DEFERRED_JOBS); a red nightly becomes a queue item.
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # macOS is deferred (owner decision 2026-11-04): pushes and PRs skip this
+    # job, and so does the nightly, since Full (every push to main and
+    # nightly) runs the same targets on its macOS legs; only dispatched
+    # (release) runs keep it. The gate accepts it as skipped by its exact name
+    # (control ctl/config.py DEFERRED_JOBS).
+    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     timeout-minutes: 60
     env:

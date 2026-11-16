@@ -1,15 +1,20 @@
 # Mivr/ai_rules_flutter workflow (moved from the frozen Mivr/rules_flutter fork on 2026-10-28).
 # Full-matrix workflow for rules_flutter ("pre-release").
 #
-# WHAT RUNS WHERE: the complete macOS e2e coverage that push CI (ci.yaml) no
-# longer runs — every workspace's full `bazel test //...` on macOS — plus the
-# Android example (too heavy for push CI) on Linux, plus the dev tool's own
-# iOS simulator e2e cases (`dev-tool-ios`) on a booted simulator on macOS.
-# Linux and Windows coverage otherwise lives in push CI. Its macOS legs also
+# WHAT RUNS WHERE: the macOS e2e coverage that push CI (ci.yaml) does not
+# run — what only a Mac proves (Apple toolchains and SDKs, macOS and iOS
+# bundles, the iOS simulator, Xcode, CocoaPods and SwiftPM, the Apple linker,
+# darwin toolchain resolution) — plus the Android example (too heavy for push
+# CI) on Linux, plus the dev tool's own iOS simulator e2e cases
+# (`dev-tool-ios`) on a booted simulator on macOS. Linux and Windows coverage
+# otherwise lives in push CI, which also proves every Android and portable
+# target, so the macOS legs never build Android and some run only their
+# macOS-gated tests (see the matrix). Its macOS legs plus push CI's Linux jobs
 # cover everything ci.yaml's deferred macOS jobs run (hello_world's and
-# min_versions' Apple targets, plugin_example's mixed plugin, pub_scc, the
-# smoke spec and codegen's --update-goldens check), so a push CI run plus a
-# Full run on the same commit prove as much as a dispatch of both.
+# min_versions' Apple targets, plugin_example's mixed plugin, pub_scc's iOS
+# targets and the smoke spec here; codegen's --update-goldens check and
+# pub_scc's portable targets in e2e-linux-app and e2e-linux-pub-scc), so a push
+# CI run plus a Full run on the same commit prove as much as a dispatch of both.
 # Triggered on every push to main (one run at a time, newest commit wins:
 # see `concurrency`), nightly, or manually. A release reuses a passing main
 # push or nightly run of this workflow on the tagged commit, or dispatches it
@@ -78,51 +83,78 @@ jobs:
       fail-fast: false
       # The 5 macOS slots are shared with rules_dart. A main push run proves the
       # commit auto-release.yaml releases, so it takes 3 (dev-tool-ios takes a
-      # fourth); a release dispatch on a tag takes 4. Other runs take 2. At 2
-      # the legs (~180 job-minutes cold) need about 90 minutes of wall clock.
+      # fourth); a release dispatch on a tag takes 4. Other runs take 2.
       max-parallel: ${{ github.ref_type == 'tag' && 4 || (github.event_name == 'push' && 3 || 2) }}
       matrix:
         include:
           # shard names the push-CI disk keys of the same content; only the
-          # plugin job saves (its own key).
-          # Longest leg first (median minutes on 2026-11-01..04: 43, 39, 25, 21,
-          # 18, 11, 10, 5, 3, 1.5, 1), so the long legs never start last.
-          - workspace: hello_world
-            shard: macos-a
-            cache-save: false
+          # plugin job saves (its own key). `scope: apple` runs only the
+          # workspace's macOS-gated tests (`target_compatible_with` naming
+          # @platforms//os:macos): its other targets are portable, and push
+          # CI's Linux jobs test them. Every other leg tests //... minus the
+          # Android targets.
+          #
+          # Dropped from macOS (one line each: why the Linux run is enough):
+          # - dual_hub: pure Dart pub-hub resolution, no Apple target;
+          #   ci.yaml's e2e-linux-small runs its spec.
+          # - Android targets on every leg: Linux builds and tests them
+          #   (ci.yaml's Android and app jobs, e2e-linux-nightly here).
+          # - hello_world's, codegen's, min_versions' and pub_scc's portable
+          #   targets (kernel, AOT, web, flutter_test, dart_test): ci.yaml's
+          #   e2e-linux-app, e2e-linux-integration and e2e-linux-pub-scc test
+          #   them; codegen's --update-goldens check runs in e2e-linux-app.
+          #
+          # Longest leg first (cold minutes on 2026-11-13 before scoping: 52,
+          # 45, 35, 24, 21, 20, 15, 13, 11, 11, 8, 4), so the long legs never
+          # start last.
           - workspace: plugin_example
             shard: macos-plugin
             cache-save: true
+            scope: all
+          # Apple scope: the macOS app, xtool bundle and stage-clean tests and
+          # the iOS simulator and device bundle tests.
+          - workspace: hello_world
+            shard: macos-a
+            cache-save: false
+            scope: apple
           # The iOS simulator integration-test lane: `bazel test //...` runs
           # the green suite on the simulator plus the portable Dart-side
           # build test; the red twin and test.xml steps below run by name.
           - workspace: integration_ios
+            scope: all
             shard: none
             cache-save: false
           # The iOS simulator `flutter_drive_test` lane: a passing and a
           # failing host driver over one simulator app, run by name below.
           - workspace: drive_ios
+            scope: all
             shard: none
             cache-save: false
           - workspace: ffi_example
+            scope: all
             shard: none
             cache-save: false
           # The iOS proof lane: every target here needs macOS
           # (`target_compatible_with = ["@platforms//os:macos"]`), so this
           # workspace runs nowhere else.
           - workspace: ios_example
+            scope: all
             shard: none
             cache-save: false
           - workspace: ffi_plugin_example
+            scope: all
             shard: none
             cache-save: false
+          # Apple scope: the macOS app built from the generated runner.
           - workspace: codegen
+            scope: apple
             shard: none
             cache-save: false
           # The add-to-app xcframework lane: one plain application plus a
           # first-party plugin, and a macOS-only test over the produced
           # App, Flutter, registrant and plugin xcframeworks.
           - workspace: ios_framework
+            scope: all
             shard: none
             cache-save: false
           # The real-plugin fetch matrix (POD-2). The Linux fetch half runs
@@ -132,25 +164,24 @@ jobs:
           # POD-1 builds its image_picker_ios_objc target); the other
           # expected-ok plugins are printed and recorded without gating yet.
           - workspace: ios_plugin_matrix
+            scope: all
             shard: none
             cache-save: false
-          # The version-floor fixture on macOS: both Apple legs, the Dart app
-          # and the resolved-graph assertion against every declared dependency
-          # floor. The Android leg is Linux-only, so //... reports it
-          # incompatible here; the Linux job builds it (the runner's
-          # unzip/python3 satisfy the AAR extractors).
+          # The version-floor fixture on macOS: both Apple legs (Apple scope).
+          # The Dart app, the resolved-graph assertion and the Linux-only
+          # Android leg run in ci.yaml's e2e-linux-integration.
           - workspace: min_versions
-            shard: none
-            cache-save: false
-          - workspace: dual_hub
+            scope: apple
             shard: none
             cache-save: false
           - workspace: smoke
+            scope: all
             shard: macos-b
             cache-save: false
-          # pub_scc's iOS simulator bundle and plugin registrant check, which
-          # ci.yaml's deferred e2e-macos-apple job also runs.
+          # pub_scc's iOS simulator bundle and plugin registrant check (Apple
+          # scope); its Android APK and Dart test run in e2e-linux-pub-scc.
           - workspace: pub_scc
+            scope: apple
             shard: none
             cache-save: false
     env:
@@ -188,36 +219,48 @@ jobs:
       # the machine.
       # integration_ios runs `bazel test //...` inside its e2e_runner spec below.
       #
-      # Gate-candidate and main-watch dispatches skip the Android targets on
-      # macOS (owner decision 2026-11-04): Linux CI builds and tests Android,
-      # and the nightly, uncached dispatches and release tags still build
-      # Android on a Mac host. A target excluded here only stops being a
-      # top-level request; anything an included target needs still builds.
-      # `--keep_going` lets the query answer when some package fails to load
-      # (exit 3); fewer exclusions only means more is built.
-      - name: bazel test //... (e2e/${{ matrix.workspace }})
+      # No macOS leg builds Android: Linux CI builds and tests every Android
+      # target, and a Mac host proves nothing more about them. A target
+      # excluded here only stops being a top-level request; anything an
+      # included target needs still builds. `--keep_going` lets a query answer
+      # when some package fails to load (exit 3); fewer exclusions only means
+      # more is built. An `apple` scope leg tests only the macOS-gated tests,
+      # and fails when the query finds none.
+      - name: bazel test (e2e/${{ matrix.workspace }}, ${{ matrix.scope }})
         if: matrix.workspace != 'integration_ios' && matrix.workspace != 'smoke'
         working-directory: e2e/${{ matrix.workspace }}
         env:
-          # Only a branch dispatch skips Android: main pushes, like the nightly
-          # and tag runs, are release proof and build everything.
-          SKIP_ANDROID: ${{ github.event_name == 'workflow_dispatch' && github.ref_type != 'tag' && !inputs.uncached }}
+          SCOPE: ${{ matrix.scope }}
+          WORKSPACE: ${{ matrix.workspace }}
         run: |
-          excludes=()
-          if [[ "$SKIP_ANDROID" == true ]]; then
+          # Manual targets stay out (as `//...` leaves them out); an explicit
+          # target that is incompatible on macOS is skipped, not an error.
+          if [[ "$SCOPE" == apple ]]; then
+            query='tests(attr(target_compatible_with, "os:macos", //...)) except attr(tags, "\bmanual\b", //...)'
+          else
             android='kind(".*android.*|aar_import", //...)'
-            status=0
-            bazel query --keep_going --output=label \
-              "rdeps(//..., $android) + (deps($android) intersect //...)" \
-              >"$RUNNER_TEMP/android_targets" || status=$?
-            if [[ $status -ne 0 && $status -ne 3 ]]; then
-              echo "::error::bazel query for the Android targets failed (exit $status)"
-              exit "$status"
-            fi
-            while IFS= read -r target; do excludes+=("-$target"); done <"$RUNNER_TEMP/android_targets"
-            echo "Skipping ${#excludes[@]} Android targets on this macOS leg (nightly, uncached and release runs build them)"
+            query="rdeps(//..., $android) + (deps($android) intersect //...)"
           fi
-          bazel test --test_output=errors -- //... "${excludes[@]}"
+          status=0
+          bazel query --keep_going --output=label "$query" >"$RUNNER_TEMP/targets" || status=$?
+          if [[ $status -ne 0 && $status -ne 3 ]]; then
+            echo "::error::bazel query for the $SCOPE leg's targets failed (exit $status)"
+            exit "$status"
+          fi
+          if [[ "$SCOPE" == apple ]]; then
+            if [[ ! -s "$RUNNER_TEMP/targets" ]]; then
+              echo "::error::no macOS-gated tests in e2e/$WORKSPACE"
+              exit 1
+            fi
+            echo "Testing the macOS-gated tests:"
+            cat "$RUNNER_TEMP/targets"
+            bazel test --test_output=errors --skip_incompatible_explicit_targets --target_pattern_file="$RUNNER_TEMP/targets"
+          else
+            excludes=()
+            while IFS= read -r target; do excludes+=("-$target"); done <"$RUNNER_TEMP/targets"
+            echo "Skipping ${#excludes[@]} Android targets on this macOS leg (Linux CI builds them)"
+            bazel test --test_output=errors -- //... "${excludes[@]}"
+          fi
       # The macOS half of POD-2: build each plugin expected.json records as
       # "ok" as the spoke's generated device library, one at a time. The step
       # fails when image_picker_ios does not build: build_expected.json gates
@@ -260,12 +303,6 @@ jobs:
       - name: Run e2e/smoke
         if: matrix.workspace == 'smoke'
         run: bazel run //tools/e2e_runner -- --workspace=e2e/smoke --bazel=bazel
-      # `bazel run <flutter_test> -- --update-goldens` on a scratch copy of
-      # e2e/codegen, as ci.yaml's deferred e2e-macos-apple job runs it.
-      - name: Check --update-goldens rewrites a stale golden (e2e/codegen)
-        if: matrix.workspace == 'codegen'
-        working-directory: e2e/codegen
-        run: bazel run //:update_goldens_check -- --bazel=bazel
       - name: Report cache sizes
         if: always()
         run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true

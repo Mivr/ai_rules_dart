@@ -4,8 +4,9 @@
 #   a. a successful run on that sha that is a nightly (`schedule`), a push to
 #      main (push CI, and Full, which runs on every push to main), or a
 #      `workflow_dispatch` on the tag. It is reused as it is: the commit is
-#      the same, and a push run on main covers what a dispatch would (ci.yaml's
-#      deferred macOS jobs are a subset of full.yaml's macOS legs);
+#      the same, and a push run on main covers what a dispatch would (what
+#      ci.yaml's deferred macOS jobs run, full.yaml's macOS legs plus ci.yaml's
+#      Linux jobs run too);
 #   b. otherwise, while a nightly or main-push run on that sha is still in
 #      progress, the gate waits for it instead of starting a second one;
 #   c. otherwise the newest `workflow_dispatch` run on the tag and sha. When
