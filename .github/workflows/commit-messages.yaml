@@ -1,7 +1,7 @@
 # Checks every commit pushed to main against the commit policy in AGENTS.md:
-# a conventional-commit subject, which tag.yaml derives the next version from,
-# and a `Changelog:` trailer on user-visible commits. Changes land on main
-# directly, so this runs on push rather than on pull requests.
+# a conventional-commit subject and a `Changelog:` trailer on user-visible
+# commits. Changes land on main directly, so this runs on push rather than on
+# pull requests.
 name: Commit messages
 on:
   push:
