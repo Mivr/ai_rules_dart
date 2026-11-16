@@ -26,10 +26,10 @@ const Map<String, List<String>> _e2eJobs = {
   'e2e-linux-integration': [
     'integration_web',
     'integration_linux',
-    'integration_android',
     'min_versions',
     'android_no_go_sdk',
   ],
+  'e2e-linux-android': ['integration_android', 'aar_host'],
   'e2e-linux-examples': ['linux_example', 'cross_compile_example'],
   'e2e-linux-pub-scc': ['pub_scc'],
 };

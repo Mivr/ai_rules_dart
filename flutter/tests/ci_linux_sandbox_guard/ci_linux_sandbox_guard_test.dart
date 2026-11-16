@@ -26,9 +26,9 @@ void main() {
   test('the shared script sets up and proves user namespaces', () {
     expect(verifyScript(script.readAsStringSync()), isEmpty);
   });
-  test('all 13 Linux Bazel jobs run the script before Bazel', () {
+  test('all 14 Linux Bazel jobs run the script before Bazel', () {
     final int count = linuxBazelJobs.values.fold(0, (a, j) => a + j.length);
-    expect(count, 13);
+    expect(count, 14);
     expect(verifyLinuxJobs(workflows), isEmpty);
     expect(verifyNoInlineSetup(workflows), isEmpty);
   });

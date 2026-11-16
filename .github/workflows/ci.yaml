@@ -46,15 +46,17 @@
 #   e2e-linux-examples:  linux_example, cross_compile_example
 #   e2e-linux-pub-scc:   pub_scc (2-cycle Android APK + 3-cycle Dart test)
 #   e2e-linux-integration: integration_web, integration_linux,
-#     federated_plugins, integration_android (with KVM for the emulator), min_versions (Dart app,
-#     kernel and dart_test targets plus the Android leg against every declared
-#     dependency floor; the Apple legs skip themselves via
-#     target_compatible_with), android_no_go_sdk (Android leg with no go_sdk
-#     block, proving rules_flutter's pinned Go SDK is the default)
-#   e2e-coverage:        //tools/check_e2e_coverage (every e2e module in a
-#     workflow or with a recorded reason)
+#     federated_plugins, min_versions (Dart app, kernel and dart_test targets
+#     plus the Android leg against every declared dependency floor; the Apple
+#     legs skip themselves via target_compatible_with), android_no_go_sdk
+#     (Android leg with no go_sdk block, proving rules_flutter's pinned Go SDK
+#     is the default), and the run_home hermeticity gate
+#   e2e-linux-android:   integration_android and aar_host, the workspaces that
+#     boot the Android emulator (with KVM)
 #   web-smoke:           web_example through the installed binary
-#   repo-contents-cache: //tools/repo_contents_cache (repos marked
+#   repo-checks:         `bazel mod tidy` leaves the lockfile unchanged,
+#     //tools/check_e2e_coverage (every e2e module in a workflow or with a
+#     recorded reason) and //tools/repo_contents_cache (repos marked
 #     reproducible are shared through the repo contents cache)
 #   e2e-windows:         hello_world (Windows)
 # android_example runs in full.yaml (nightly) only: its APK + Kotlin actions
@@ -320,17 +322,6 @@ jobs:
       # see, so the cached run above can replay a stale PASS. Rerun them uncached.
       - name: bazel test //... tree readers (uncached)
         run: bazel test //... --test_tag_filters=tree-reader --nocache_test_results --test_output=errors
-      - name: bazel test //... 5x flake sweep (root unit tests, pull requests)
-        if: github.event_name == 'pull_request'
-        timeout-minutes: 75
-        run: |
-          set -o pipefail
-          log="$RUNNER_TEMP/flake_sweep.log"
-          bazel test //... --flaky_test_attempts=1 --runs_per_test=5 --runs_per_test_detects_flakes --nocache_test_results --test_tag_filters=-manual --test_output=errors 2>&1 | tee "$log"
-          if grep -E '(^|[[:space:]])FLAKY([,[:space:]]|$)' "$log"; then
-            echo "::error::a test was FLAKY across 5 runs"
-            exit 1
-          fi
       # The updater drops rules_dart's analyzer/format aspects, so the golden
       # is the same whether this check or the Dart corpus tests run first.
       - name: Corpus action graph matches the checked-in golden
@@ -515,6 +506,51 @@ jobs:
         with:
           path: ${{ env.DISK_CACHE_DIR }}
           key: ${{ env.DISK_CACHE_KEY }}
+  # Pull requests only: every root test five times, uncached, failing on any
+  # FLAKY. It ran inside unit-tests until 2026-11-16, where it added 7+ min to
+  # that job's critical path; as its own job it runs beside unit-tests. It
+  # restores the unit-tests disk cache shard (read only) so the builds replay
+  # and only the test runs execute.
+  flake-sweep:
+    name: Flake sweep (root unit tests, pull requests)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      DISK_CACHE_DIR: ~/.cache/bazel-disk
+      DISK_CACHE_SHARD: linux-unit
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable Linux sandbox user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: Set disk cache key
+        run: echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: false
+      - name: Restore disk cache
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_KEY }}
+          restore-keys: ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-
+      - name: Point Bazel at the disk cache
+        run: |
+          dir="${{ env.DISK_CACHE_DIR }}"
+          case "$dir" in "~"*) dir="$HOME${dir#\~}";; esac
+          mkdir -p "$dir"
+          echo "build --disk_cache=$dir" >> ~/.bazelrc
+      - name: bazel test //... 5x flake sweep (root unit tests)
+        run: |
+          set -o pipefail
+          log="$RUNNER_TEMP/flake_sweep.log"
+          bazel test //... --flaky_test_attempts=1 --runs_per_test=5 --runs_per_test_detects_flakes --nocache_test_results --test_tag_filters=-manual --test_output=errors 2>&1 | tee "$log"
+          if grep -E '(^|[[:space:]])FLAKY([,[:space:]]|$)' "$log"; then
+            echo "::error::a test was FLAKY across 5 runs"
+            exit 1
+          fi
   e2e-linux-app:
     name: E2E Linux app (hello_world, codegen)
     runs-on: ubuntu-latest
@@ -758,7 +794,7 @@ jobs:
           path: ${{ env.DISK_CACHE_DIR }}
           key: ${{ env.DISK_CACHE_KEY }}
   e2e-linux-integration:
-    name: E2E Linux integration (web, linux, android)
+    name: E2E Linux integration (web, linux, min_versions, android_no_go_sdk)
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
@@ -788,11 +824,6 @@ jobs:
           case "$dir" in "~"*) dir="$HOME${dir#\~}";; esac
           mkdir -p "$dir"
           echo "build --disk_cache=$dir" >> ~/.bazelrc
-      - name: Enable KVM
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
       - name: Disk report (before first workspace)
         if: always()
         uses: ./.github/actions/disk-report
@@ -814,15 +845,6 @@ jobs:
           label: after e2e/integration_linux
       - name: Run e2e/federated_plugins
         run: bazel run //tools/e2e_runner -- --workspace=e2e/federated_plugins --bazel=bazel
-      - name: Run e2e/integration_android
-        run: bazel run //tools/e2e_runner -- --workspace=e2e/integration_android --bazel=bazel
-      - name: Disk report (after e2e/integration_android)
-        if: always()
-        uses: ./.github/actions/disk-report
-        with:
-          label: after e2e/integration_android
-      - name: Run e2e/aar_host
-        run: bazel run //tools/e2e_runner -- --workspace=e2e/aar_host --bazel=bazel
       - name: Run e2e/min_versions
         run: bazel run //tools/e2e_runner -- --workspace=e2e/min_versions --bazel=bazel
       - name: Disk report (after e2e/min_versions)
@@ -840,6 +862,88 @@ jobs:
       - name: run_home hermeticity gate (RT37-flutter:02)
         working-directory: e2e/run_home
         run: ./run_home_test.sh
+      - name: Report cache sizes
+        if: always()
+        run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
+      - name: Delete stale disk cache key
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
+          REPO: ${{ github.repository }}
+        run: |
+          ids=$(gh api "repos/$REPO/actions/caches?per_page=100" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_KEY and .ref == env.REF) | .id' || true)
+          for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_KEY }}
+  # The two workspaces that boot the Android emulator (with KVM). They ran in
+  # e2e-linux-integration until 2026-11-16, which made that job the longest in
+  # CI at 12-16 min warm; split, each half is about 6 min.
+  e2e-linux-android:
+    name: E2E Linux Android emulator (integration_android, aar_host)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      DISK_CACHE_DIR: ~/.cache/bazel-disk
+      DISK_CACHE_SHARD: linux-android
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable Linux sandbox user namespaces
+        run: .github/scripts/enable_linux_sandbox.sh
+      - name: Set disk cache key
+        run: echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
+        with:
+          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
+          cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
+      - name: Restore disk cache
+        if: github.event_name != 'schedule' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_KEY }}
+          # Falls back to the integration shard's key, which held these
+          # workspaces before they moved here, until main saves this shard.
+          restore-keys: |
+            ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-
+            ff-disk-${{ runner.os }}-linux-integration-
+      - name: Point Bazel at the disk cache
+        run: |
+          dir="${{ env.DISK_CACHE_DIR }}"
+          case "$dir" in "~"*) dir="$HOME${dir#\~}";; esac
+          mkdir -p "$dir"
+          echo "build --disk_cache=$dir" >> ~/.bazelrc
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Disk report (before first workspace)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: before first workspace
+      - name: Run e2e/integration_android
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/integration_android --bazel=bazel
+      - name: Disk report (after e2e/integration_android)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: after e2e/integration_android
+      - name: Run e2e/aar_host
+        run: bazel run //tools/e2e_runner -- --workspace=e2e/aar_host --bazel=bazel
+      - name: Disk report (after e2e/aar_host)
+        if: always()
+        uses: ./.github/actions/disk-report
+        with:
+          label: after e2e/aar_host
       - name: Report cache sizes
         if: always()
         run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
@@ -1218,28 +1322,6 @@ jobs:
         with:
           path: ${{ env.DISK_CACHE_DIR }}
           key: ${{ env.DISK_CACHE_KEY }}
-  # Fails when an e2e module's MODULE.bazel is in no workflow without a
-  # one-line reason recorded in tools/check_e2e_coverage: removing a
-  # workspace from every shard without saying why turns this red.
-  e2e-coverage:
-    name: E2E coverage check
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-      - name: Enable Linux sandbox user namespaces
-        run: .github/scripts/enable_linux_sandbox.sh
-      # Repository cache only (shared per OS, no disk-cache shard): this job
-      # builds one tiny Dart tool, so it restores what ci.yaml saves and
-      # never writes, like commit-messages.yaml.
-      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
-        with:
-          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
-          cache-save: false
-      - name: Check every e2e module is covered or reasoned
-        run: bazel run //tools/check_e2e_coverage
-      - name: Check rules_android_maven pins in Android workspaces
-        run: bazel run //tools/check_maven_pins
   reproducibility:
     name: Reproducibility canary
     runs-on: ubuntu-latest
@@ -1282,14 +1364,27 @@ jobs:
             echo "e2e/repro_canary: canary outputs are equal across distinct output bases ($sum_a)" >&2
             exit 1
           fi
-  # Fails when `bazel mod tidy` would rewrite the root module files, so a
-  # stale MODULE.bazel.lock fails the run. Repository cache only (shared per
-  # OS, no disk-cache shard): this job never writes a cache, like
-  # e2e-coverage.
-  mod-tidy:
-    name: Module lockfile is tidy
+  # Repository checks that each take seconds to a minute of Bazel, run in one
+  # job so they share one runner, one setup and one Bazel server. Repository
+  # cache only (shared per OS, no disk-cache shard): this job restores what
+  # ci.yaml saves and never writes a cache, like commit-messages.yaml. The
+  # lockfile steps run first, on the clean checkout; every later step runs
+  # even when an earlier one failed, so one red check does not hide another.
+  # - Module lockfile is tidy: fails when `bazel mod tidy` would rewrite the
+  #   root module files, so a stale MODULE.bazel.lock fails the run.
+  # - E2E coverage: fails when an e2e module's MODULE.bazel is in no workflow
+  #   without a one-line reason recorded in tools/check_e2e_coverage, so
+  #   removing a workspace from every shard without saying why turns this red.
+  # - Repo contents cache: fails when a repository that returns
+  #   `repo_metadata(reproducible = True)` is extracted into every output base
+  #   instead of shared through the repo contents cache, or holds an absolute
+  #   or repo-escaping symlink. Each run of //tools/repo_contents_cache fetches
+  #   into two fresh output bases that share the repository cache and one
+  #   temporary repo contents cache.
+  repo-checks:
+    name: Repo checks (lockfile tidy, e2e coverage, repo contents cache)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - name: Enable Linux sandbox user namespaces
@@ -1306,24 +1401,14 @@ jobs:
         run: bazel build --nobuild --lockfile_mode=error //...
       - name: git diff --exit-code MODULE.bazel MODULE.bazel.lock
         run: git diff --exit-code MODULE.bazel MODULE.bazel.lock
-  # Fails when a repository that returns `repo_metadata(reproducible = True)`
-  # is extracted into every output base instead of shared through the repo
-  # contents cache, or holds an absolute or repo-escaping symlink. Each run of
-  # //tools/repo_contents_cache fetches into two fresh output bases that share
-  # the repository cache and one temporary repo contents cache.
-  repo-contents-cache:
-    name: Repos share one repo contents cache entry
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v7
-      - name: Enable Linux sandbox user namespaces
-        run: .github/scripts/enable_linux_sandbox.sh
-      - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
-        with:
-          repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
-          cache-save: false
+      - name: Check every e2e module is covered or reasoned
+        if: ${{ !cancelled() }}
+        run: bazel run //tools/check_e2e_coverage
+      - name: Check rules_android_maven pins in Android workspaces
+        if: ${{ !cancelled() }}
+        run: bazel run //tools/check_maven_pins
       - name: Host SDK, web SDK, sky_engine, dev_root, fonts, gen_l10n, a dev_tool_deps spoke, sysroot, Chrome and Linux runtime
+        if: ${{ !cancelled() }}
         run: >
           bazel run //tools/repo_contents_cache --
           @@+flutter+flutter_linux-x64
@@ -1338,11 +1423,13 @@ jobs:
           @flutter_chrome_headless_shell
           @flutter_linux_headless_runtime
       - name: A Flutter SDK spoke
+        if: ${{ !cancelled() }}
         run: >
           bazel run //tools/repo_contents_cache --
           --workspace=e2e/web_example
           @@ai_rules_flutter++flutter+deps__flutter
       - name: Negative case, local_path repos stay real directories
+        if: ${{ !cancelled() }}
         run: >
           bazel run //tools/repo_contents_cache --
           --workspace=e2e/smoke
@@ -1355,9 +1442,12 @@ jobs:
   # it ships. An upstream release-candidate regression must never block a merge
   # or a tag-push release, so the job is deliberately absent from
   # `conclusion.needs` and carries `continue-on-error`. The lockfile is off
-  # because no committed lock can match an unreleased Bazel.
+  # because no committed lock can match an unreleased Bazel. It runs in the
+  # nightly and on dispatches (release tags) only: on every push and pull
+  # request it held a runner for 7 to 17 min that nothing waited on.
   last_rc:
     name: Bazel last_rc (early warning)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     continue-on-error: true
@@ -1375,9 +1465,12 @@ jobs:
   # tests under `--config=strict` (tools/strict.bazelrc). Non-blocking, so the
   # job carries `continue-on-error` and is absent from `conclusion.needs`. It
   # becomes blocking when the burn-in ends on 2026-11-14; it is added to
-  # `conclusion.needs` then.
+  # `conclusion.needs` then. Until then it runs in the nightly and on
+  # dispatches (release tags) only: on every push and pull request it held a
+  # runner for 7 to 22 min that nothing waited on.
   strict:
     name: Bazel strict flags (burn-in)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     continue-on-error: true
@@ -1386,12 +1479,12 @@ jobs:
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
-          cache-save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached }}
+          cache-save: false
       - name: bazel test --config=strict //... --test_output=errors
         run: bazel test --config=strict //... --test_output=errors
   conclusion:
     name: Conclusion
-    needs: [e2e-macos-apple, e2e-macos-toolchain, unit-tests, e2e-linux-app, e2e-linux-small, e2e-linux-examples, e2e-linux-pub-scc, e2e-linux-integration, e2e-windows, e2e-coverage, dart-tool-tests, pre-commit, web-smoke, reproducibility, mod-tidy, repo-contents-cache]
+    needs: [e2e-macos-apple, e2e-macos-toolchain, unit-tests, flake-sweep, e2e-linux-app, e2e-linux-small, e2e-linux-examples, e2e-linux-pub-scc, e2e-linux-integration, e2e-linux-android, e2e-windows, repo-checks, dart-tool-tests, pre-commit, web-smoke, reproducibility]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
