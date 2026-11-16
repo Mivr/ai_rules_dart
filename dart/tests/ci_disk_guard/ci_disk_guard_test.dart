@@ -8,7 +8,8 @@ late final String _job;
 late final List<String> _jobSteps;
 late final String _reportScript;
 
-/// Locks the shard-1 disk fix in the `test` job of `.github/workflows/ci.yaml`.
+/// Locks the disk measurement and bounded disk cache in the `test` job of
+/// `.github/workflows/ci.yaml`, and that no step spends time freeing disk.
 void main(List<String> args) {
   setUpAll(() {
     _root = _repoRoot(args);
@@ -89,27 +90,16 @@ void _checkMeasurement() {
 }
 
 void _checkCleanup() {
-  test('cleanup runs on ubuntu right after checkout', () {
+  test('no step spends time freeing disk', () {
+    // A hosted ubuntu-latest runner starts with ~86 GB free (2026-11-16);
+    // removing the preinstalled toolchains cost 70 to 108 s per job.
     expect(_jobSteps.first, contains('actions/checkout'));
-    final String step = _jobSteps[1];
-    expect(step, contains('ci_free_disk.sh'));
-    expect(step, contains("if: matrix.os == 'ubuntu-latest'\n"));
-  });
-  test('cleanup script names the four paths and fails on removal error', () {
-    final String script = File('$_root/.github/scripts/ci_free_disk.sh')
-        .readAsStringSync();
-    for (final p in const [
-      '/usr/share/dotnet',
-      '/usr/local/lib/android',
-      '/opt/ghc',
-      '/opt/hostedtoolcache/CodeQL',
-    ]) {
-      expect(script, contains(p));
-    }
-    expect(script, contains('df -h /'));
-    expect(script, contains('skip: '));
-    expect(script, contains('cannot remove'));
-    expect(script, contains(r'exit "$status"'));
+    expect(_job, isNot(contains('ci_free_disk')));
+    expect(_job, isNot(contains('Free unused preinstalled toolchains')));
+    expect(
+      File('$_root/.github/scripts/ci_free_disk.sh').existsSync(),
+      isFalse,
+    );
   });
 }
 
@@ -133,7 +123,7 @@ void _checkCache() {
         ),
       ),
     );
-    expect(_job, contains('14 GB'));
+    expect(_job, contains('~86 GB free'));
   });
   test('cache keys are unchanged', () {
     expect(_job, contains('cache-version: "3"'));
