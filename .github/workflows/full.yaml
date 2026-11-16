@@ -1,10 +1,10 @@
 # Mivr/ai_rules_dart workflow (moved from the frozen Mivr/rules_dart fork on 2026-10-28).
 name: Full matrix
-# Pre-release coverage: the complete per-folder macOS matrix that push CI
-# (ci.yaml) no longer runs. Linux and Windows keep full coverage on every
-# push, so they are not repeated here. A release passes on a main push or
-# nightly run of this workflow on the tagged commit, or on a dispatch of it on
-# the tag (see release.yaml); auto-release.yaml releases each main commit that
+# Pre-release coverage: the macOS work push CI (ci.yaml) does not run, cut to
+# what Linux and Windows do not already prove (see `test-macos`). Linux and
+# Windows keep full coverage on every push, so they are not repeated here.
+# A release passes on a main push or nightly run of this workflow on the
+# tagged commit, or on a dispatch of it on the tag (see release.yaml); auto-release.yaml releases each main commit that
 # both this and ci.yaml pass on.
 # Triggers: every push to main (one run at a time, newest commit wins: see
 # `concurrency`), the nightly schedule and manual dispatch (the release gate
@@ -17,9 +17,9 @@ name: Full matrix
 # `uncached: true` to a manual dispatch for a cold run. A tag run (release dispatch)
 # runs every job, matrix entry and step below, with caches: no job skips work on
 # a tag run that the nightly `schedule` run does. It has no 7-minute target. Its
-# macOS shards run two at a time (`max-parallel: 2`): push CI runs no macOS job
-# any more (mac-smoke is deferred to the nightly and dispatches), and one at a
-# time made the shards wait on each other (53 + 37 min on the v0.28.3 tag).
+# macOS work is one job, so it holds one of the 5 macOS slots the account
+# shares with ai_rules_flutter (two shards of every folder took 53 + 37 min on
+# the v0.28.3 tag).
 # One job is not macOS: `flake-sweep-nightly` runs every test in the root
 # workspace ten times on Linux, the cases in random order, to catch a test
 # that fails only now and then or only in some order. It is not push coverage
@@ -145,15 +145,49 @@ jobs:
             [ "$(cat "$logdir/$slug.status" 2>/dev/null)" = 0 ] || echo "::warning::$folder is red on last_green ($label)"
           done <<< "$folders"
           exit 0
-  # Same folders, commands and flags as the old per-folder macOS jobs from
-  # ci.yaml, in 2 shards sharing one Bazel disk cache per shard on cached
-  # (manual dispatch) runs. The repository and bazelisk caches keep their
-  # shared keys.
+  # macOS runs only what Linux and Windows CI (ci.yaml's `test` shards, which
+  # test every folder below and every folder dropped here on Linux) do not
+  # already prove: darwin toolchain and Dart SDK resolution, native executables
+  # and AOT snapshots, native assets and FFI linked with the Apple toolchain,
+  # cross-compilation from a darwin host, and darwin paths under the darwin
+  # sandbox. One job, so it takes one of the 5 macOS slots it shares with
+  # ai_rules_flutter.
+  # `folders` run whole (`bazel test //...`, through the e2e runner when the
+  # folder has an e2e.yaml). `darwin_folders` run only their darwin-relevant
+  # tests: a `bazel query` for the tests that depend on C/C++ code, a code
+  # asset, a link hook or a cross-compile `platform`, plus the packages named
+  # after the folder on its line (host tools whose tests read and write darwin
+  # paths). Their other tests are portable and Linux tests them.
+  # Dropped from macOS (one line each: why the Linux run is enough; ci.yaml's
+  # `test` job runs each on Linux and Windows):
+  # - .github/workflows: build-only, workflow text checks, no host code.
+  # - dev: gazelle golden testdata for the dev tool, pure Dart and Go text.
+  # - tools: repo tooling (e2e runner, changelog), built here only to run specs.
+  # - e2e/analysis: `dart analyze` diagnostics, host-independent.
+  # - e2e/analyze_composition: analysis aspect composition, host-independent.
+  # - e2e/codegen: source generation, kernel only, no native code.
+  # - e2e/dart_test: package:test runner on the Dart VM, same as Linux.
+  # - e2e/dart_test_pkg: test package layout, pure Dart.
+  # - e2e/dual_build: build-only (its one test is manual).
+  # - e2e/fix: `dart fix` manifests, text in and text out.
+  # - e2e/guard_reuse: pub guard reuse, Starlark and lockfile logic.
+  # - e2e/isolated_hub: pub hub isolation, resolution logic only.
+  # - e2e/library_deps: library dependency graph, pure Dart.
+  # - e2e/pub_deps: pub resolution, sha256-pinned archives, host-independent.
+  # - e2e/pub_lock: lockfile parsing, host-independent.
+  # - e2e/pub_lock_cross_module: lockfile merging across modules, logic only.
+  # - e2e/pub_lock_dedup: lockfile dedup, logic only.
+  # - e2e/pub_lock_git: git-pinned lock entries, fetch logic only.
+  # - e2e/pub_lock_scc: lockfile cycles, logic only.
+  # - e2e/pub_lock_upgrade: version-conflict upgrade, logic only.
+  # - e2e/pub_workspace: pub workspace resolution, logic only.
+  # - e2e/smoke: consumer smoke incl. web; e2e/hello_world is the macOS smoke.
+  # - e2e/web_app: web (dart2js/wasm) output, host-independent.
   # Each folder runs under its own Bazel server (`--output_base` under
-  # RUNNER_TEMP): the folders of a shard otherwise share the output base
-  # setup-bazel pins, so concurrent folders wait on its lock, kill each
-  # other's servers and flake with exit 1. The disk and repository caches
-  # stay shared, so cache warmth is unaffected.
+  # RUNNER_TEMP): the folders otherwise share the output base setup-bazel
+  # pins, so concurrent folders wait on its lock, kill each other's servers
+  # and flake with exit 1. The disk and repository caches stay shared, so
+  # cache warmth is unaffected.
   # Red-by-design workspaces (ci.yaml's `expected-failure` job) and the
   # pub-fetch Powershell/PATH steps are push-CI-only and not repeated here:
   # on a release tag, ci.yaml itself runs every job, so the release gate still
@@ -169,48 +203,36 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      max-parallel: 2
       matrix:
         include:
           - shard: 1
             parallelism: 3
             cache: full-macos-1
+            # Longest first, so the long folders never start last.
+            # - e2e/link_hook: native assets through link hooks, Apple linker.
+            # - e2e/gazelle: Go gazelle binary linked by apple_support's cc.
+            # - e2e/cross_compile: exe and AOT for four Linux targets from a
+            #   darwin host.
+            # - e2e/hello_world: the plain macOS host smoke: darwin toolchain
+            #   resolution, every compile mode built and run, split debug info.
+            # - e2e/sdk_coupling: the darwin exec-tools toolchains registered
+            #   by name beside a different target SDK.
+            # - e2e/root_sdk_pin: a pinned older SDK's darwin archive.
             folders: |
-              .
-              e2e/pub_lock_upgrade
-              dev
-              e2e/web_app
-              .github/workflows
-              e2e/fix
-              e2e/pub_lock_scc
-              e2e/codegen
-              e2e/pub_lock
-              e2e/pub_workspace
-              e2e/hello_world
-              e2e/smoke
-              e2e/dart_test
-              e2e/dual_build
-              e2e/analysis
-          - shard: 2
-            parallelism: 3
-            cache: full-macos-2
-            folders: |
-              e2e/ext_exemplar
-              e2e/gazelle
               e2e/link_hook
-              tools
-              e2e/analyze_composition
+              e2e/gazelle
               e2e/cross_compile
-              e2e/pub_deps
-              e2e/pub_lock_git
-              e2e/pub_lock_cross_module
-              e2e/pub_lock_dedup
-              e2e/library_deps
-              e2e/dart_test_pkg
-              e2e/isolated_hub
-              e2e/guard_reuse
-              e2e/root_sdk_pin
+              e2e/hello_world
               e2e/sdk_coupling
+              e2e/root_sdk_pin
+            # - .: cc fixtures, the webcrypto and sqlite3 code assets, link
+            #   modules and cross fixtures, plus the action tools' and
+            #   runfiles' own tests (darwin paths and sandbox).
+            # - e2e/ext_exemplar: sqlite3/drift and webcrypto over FFI and its
+            #   own dylib; its codegen tests are portable.
+            darwin_folders: |
+              . //dart/private/tools/... //dart/runfiles/...
+              e2e/ext_exemplar
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
@@ -253,6 +275,7 @@ jobs:
       - name: Test
         env:
           FOLDERS: ${{ matrix.folders }}
+          DARWIN_FOLDERS: ${{ matrix.darwin_folders }}
           PARALLELISM: ${{ matrix.parallelism }}
         shell: bash
         run: |
@@ -263,35 +286,57 @@ jobs:
           rm -rf "$logdir"
           mkdir -p "$logdir"
           # One Bazel server per folder (see run_one below): without this the
-          # folders of a shard share the output base setup-bazel pins, so
-          # each folder waits on "Another command holds the output base
-          # lock" and kills the previous folder's server. The disk and
-          # repository caches stay shared, so cache warmth is unaffected.
+          # folders share the output base setup-bazel pins, so each folder
+          # waits on "Another command holds the output base lock" and kills
+          # the previous folder's server. The disk and repository caches stay
+          # shared, so cache warmth is unaffected.
           outbasedir="${RUNNER_TEMP}/bazel-servers"
-          # Pin the Bazel version in every folder of this shard, as the old
-          # per-folder Configure step did.
-          while IFS= read -r folder; do
+          # Every entry: the darwin folders (longest) first, then the rest.
+          # A darwin entry is `<folder> [extra patterns]`; a plain one is
+          # `<folder>`.
+          entries="$(printf '%s\n' "$DARWIN_FOLDERS" | sed '/^[[:space:]]*$/d; s/^/darwin /')"$'\n'"$(printf '%s\n' "$FOLDERS" | sed '/^[[:space:]]*$/d; s/^/all /')"
+          # Pin the Bazel version in every folder, as the old per-folder
+          # Configure step did.
+          while read -r scope folder extra; do
             [ -z "$folder" ] && continue
             echo "9.3.0" > "$ws/$folder/.bazelversion"
-          done <<< "$FOLDERS"
-          # Build-only workspaces: .github/workflows has no tests and e2e/dual_build's sole test is manual and requires-network.
-          build_only_folders=".github/workflows e2e/dual_build"
-          # A folder with an e2e.yaml runs through the e2e runner, built and
-          # started from tools/ with its own Bazel server (the runner stages a
-          # copy of the workspace and picks its own output base for it). Only
-          # a folder without a spec runs bazel itself.
+          done <<< "$entries"
+          # The darwin-relevant tests of a workspace: every test that depends
+          # on C/C++ code, a code asset, a link hook or a cross-compile
+          # `platform`, plus every test under the extra patterns. Manual
+          # targets stay out, as `//...` leaves them out.
+          darwin_query() {
+            q='tests(rdeps(//..., kind("^cc_|dart_code_asset|dart_link_hook|^platform ", deps(//...))))'
+            for p in $1; do
+              q="$q + tests($p)"
+            done
+            echo "($q) except attr(tags, \"\\bmanual\\b\", //...)"
+          }
+          # A plain folder with an e2e.yaml runs through the e2e runner,
+          # built and started from tools/ with its own Bazel server (the runner
+          # stages a copy of the workspace and picks its own output base for
+          # it); one without a spec runs `bazel test //...` itself. A darwin
+          # folder tests only what darwin_query finds, and fails when the
+          # query fails or finds nothing.
           run_one() {
-            slug="$(printf '%s' "$1" | tr '/.' '_')"
+            scope="$1"
+            folder="$2"
+            extra="$3"
+            slug="$(printf '%s' "$folder" | tr '/.' '_')"
             if (
-              if [ -f "$ws/$1/e2e.yaml" ]; then
+              if [ "$scope" = darwin ]; then
+                cd "$ws/$folder" &&
+                bazel --output_base="$outbasedir/$slug" query --output=label "$(darwin_query "$extra")" >"$logdir/$slug.targets" &&
+                echo "darwin-scoped tests ($(wc -l <"$logdir/$slug.targets" | tr -d ' ')):" &&
+                cat "$logdir/$slug.targets" &&
+                [ -s "$logdir/$slug.targets" ] &&
+                bazel --output_base="$outbasedir/$slug" test --test_output=errors --target_pattern_file="$logdir/$slug.targets"
+              elif [ -f "$ws/$folder/e2e.yaml" ]; then
                 cd "$ws/tools" &&
-                MSYS2_ARG_CONV_EXCL="*" bazel --output_base="$outbasedir/$slug" run //e2e_runner:e2e_runner -- --workspace="../$1" --bazel=bazel
+                bazel --output_base="$outbasedir/$slug" run //e2e_runner:e2e_runner -- --workspace="../$folder" --bazel=bazel
               else
-                cd "$ws/$1" &&
-                case " $build_only_folders " in
-                  *" $1 "*) bazel --output_base="$outbasedir/$slug" build //... ;;
-                  *) bazel --output_base="$outbasedir/$slug" test --test_output=errors //... ;;
-                esac
+                cd "$ws/$folder" &&
+                bazel --output_base="$outbasedir/$slug" test --test_output=errors //...
               fi
             ) >"$logdir/$slug.log" 2>&1; then
               echo 0 >"$logdir/$slug.status"
@@ -304,7 +349,7 @@ jobs:
           printed=""
           # Print the log of every finished folder not printed yet.
           print_done() {
-            while IFS= read -r folder; do
+            while read -r scope folder extra; do
               [ -z "$folder" ] && continue
               slug="$(printf '%s' "$folder" | tr '/.' '_')"
               case " $printed " in
@@ -315,7 +360,7 @@ jobs:
                 cat "$logdir/$slug.log"
                 printed="$printed $slug "
               fi
-            done <<< "$FOLDERS"
+            done <<< "$entries"
           }
           # Block until at least one more folder finishes, then stream the
           # newly finished logs. Polling (not `wait -n`) so this also runs
@@ -337,25 +382,25 @@ jobs:
               sleep 10
             done
           }
-          while IFS= read -r folder; do
+          while read -r scope folder extra; do
             [ -z "$folder" ] && continue
-            run_one "$folder" &
+            run_one "$scope" "$folder" "$extra" &
             running=$((running + 1))
             if [ "$running" -ge "$PARALLELISM" ]; then
               wait_one
               running=$((running - 1))
             fi
-          done <<< "$FOLDERS"
+          done <<< "$entries"
           wait
           print_done
           fail=0
-          while IFS= read -r folder; do
+          while read -r scope folder extra; do
             [ -z "$folder" ] && continue
             slug="$(printf '%s' "$folder" | tr '/.' '_')"
             [ "$(cat "$logdir/$slug.status")" = 0 ] || fail=1
-          done <<< "$FOLDERS"
+          done <<< "$entries"
           exit "$fail"
-      # Same corpus action-graph check as ci.yaml, on the macOS matrix.
+      # Same corpus action-graph check as ci.yaml, on macOS.
       - name: Corpus action graph
         if: matrix.shard == 1
         shell: bash

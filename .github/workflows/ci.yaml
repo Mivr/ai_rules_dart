@@ -36,9 +36,9 @@ jobs:
   # behind the account's 5 shared macOS slots. Linux and Windows now run as 6
   # shard jobs sharing one Bazel disk cache per shard: one cache restore and
   # one Bazelisk install per job instead of one per folder. Push CI runs a
-  # single macOS smoke job (`mac-smoke`); the full per-folder macOS coverage
-  # runs in the `full.yaml` pre-release workflow. Every folder still runs
-  # `bazel test //...` with the same flags on every OS it ran on before (or
+  # single macOS smoke job (`mac-smoke`); the macOS coverage that Linux and
+  # Windows do not already prove runs in the `full.yaml` pre-release workflow.
+  # Every folder runs `bazel test //...` on Linux (or
   # `bazel build //...` for explicit build-only folders with no non-manual
   # test targets). Folders in a shard run a few at a
   # time (`parallelism` waves); each folder's full log is streamed under a
@@ -54,8 +54,8 @@ jobs:
   # external and bazelisk caches keep their shared keys.
   # Coverage map: every directory under e2e/ with a MODULE.bazel is built and
   # tested by some job in this workflow. Green workspaces run
-  # `bazel test //...` in the `test` shards above (and in `full.yaml` on
-  # macOS, each folder under its own Bazel server there too): every e2e/
+  # `bazel test //...` in the `test` shards above (and the darwin-relevant
+  # ones in `full.yaml` on macOS, each under its own Bazel server): every e2e/
   # folder a shard lists. Red-by-design workspaces run in
   # `expected-failure` below: e2e/pub_lock_conflict, e2e/pub_lock_unpinned,
   # e2e/pub_package_unpinned, e2e/pub_spoke_blank_sha,
@@ -792,9 +792,9 @@ jobs:
   # 0 actions on a "no tests found" no-op. The consumer query keeps the
   # Mivr/rules_dart#1 module-enumeration guard on macOS. The analyzer red path
   # (`e2e/analysis_failure`) runs on both operating systems: Linux in
-  # `expected-failure` and macOS in this job (`mac-smoke`). Full per-folder
-  # macOS coverage runs in the `full.yaml` pre-release workflow, which
-  # releases require.
+  # `expected-failure` and macOS in this job (`mac-smoke`). The rest of the
+  # darwin-relevant macOS coverage runs in the `full.yaml` pre-release
+  # workflow, which releases require.
   mac-smoke:
     # macOS is deferred to the nightly (owner decision 2026-11-04): pushes and
     # PRs skip this job, and the nightly schedule and dispatched (release)

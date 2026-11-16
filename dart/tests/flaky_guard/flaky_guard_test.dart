@@ -42,7 +42,7 @@ void main(List<String> args) {
     );
 
     test(
-      'all eight e2e workspaces are in CI matrices and declare sized test targets',
+      'all eight e2e workspaces are in the ci.yaml matrix and declare sized test targets',
       () => _checkE2eMatrixWorkspaces(_workspaceRoot(args)),
     );
   });
@@ -122,35 +122,37 @@ void _checkShardBuildOnlyFolders(String root) {
     r'^\s*build_only_folders="([^"]*)"\s*$',
     multiLine: true,
   );
-  for (final rel in [
-    '.github/workflows/ci.yaml',
-    '.github/workflows/full.yaml',
-  ]) {
-    final String content = File('$root/$rel').readAsStringSync();
-    final Iterable<RegExpMatch> matches = listPattern.allMatches(content);
-    expect(
-      matches,
-      hasLength(1),
-      reason: '$rel must declare build_only_folders exactly once',
-    );
-    final Set<String> folders = matches.single
-        .group(1)!
-        .split(RegExp(r'\s+'))
-        .where((String s) => s.isNotEmpty)
-        .toSet();
-    expect(
-      folders,
-      equals(_allowedBuildOnlyFolders),
-      reason:
-          '$rel build_only_folders must name only $_allowedBuildOnlyFolders',
-    );
-  }
+  final String ci = File('$root/.github/workflows/ci.yaml').readAsStringSync();
+  final Iterable<RegExpMatch> matches = listPattern.allMatches(ci);
+  expect(
+    matches,
+    hasLength(1),
+    reason: 'ci.yaml must declare build_only_folders exactly once',
+  );
+  final Set<String> folders = matches.single
+      .group(1)!
+      .split(RegExp(r'\s+'))
+      .where((String s) => s.isNotEmpty)
+      .toSet();
+  expect(
+    folders,
+    equals(_allowedBuildOnlyFolders),
+    reason:
+        'ci.yaml build_only_folders must name only $_allowedBuildOnlyFolders',
+  );
+  // full.yaml's macOS job runs no zero-test folder, so it may not build any
+  // folder instead of testing it.
+  final String full = File('$root/.github/workflows/full.yaml')
+      .readAsStringSync();
+  expect(
+    listPattern.allMatches(full),
+    isEmpty,
+    reason: 'full.yaml must not declare build_only_folders',
+  );
 }
 
 void _checkE2eMatrixWorkspaces(String root) {
   final String ciYaml = File('$root/.github/workflows/ci.yaml')
-      .readAsStringSync();
-  final String fullYaml = File('$root/.github/workflows/full.yaml')
       .readAsStringSync();
 
   for (final String dir in _e2eWorkspaces) {
@@ -158,11 +160,6 @@ void _checkE2eMatrixWorkspaces(String root) {
       ciYaml,
       contains('e2e/$dir'),
       reason: 'ci.yaml matrix must include e2e/$dir',
-    );
-    expect(
-      fullYaml,
-      contains('e2e/$dir'),
-      reason: 'full.yaml matrix must include e2e/$dir',
     );
 
     final e2eDir = Directory('$root/e2e/$dir');
