@@ -562,8 +562,48 @@ class AbEndToEndTest(unittest.TestCase):
                 "--min-clean-actions", "1",
                 "--time-bin", os.path.join(self.tmp, "absent")]
 
+    def measured_summary(self, factor, name):
+        """Runs both arms with fixed injected costs; returns the summary.
+
+        The treatment arm costs `factor` times the control's per command;
+        the real command still runs, only its numbers are replaced.
+        """
+        def fixed(real):
+            def wrapper(argv, cwd, *args, **kwargs):
+                cost = dict(real(argv, cwd, *args, **kwargs))
+                k = factor if any(
+                    a.startswith("--output_base=" + self.out_treatment)
+                    for a in argv) else 1
+                cost.update(user_s=0.25 * k, sys_s=0.125 * k,
+                            real_s=0.5 * k)
+                return cost
+            return wrapper
+        out = os.path.join(self.tmp, name)
+        with mock.patch.dict(os.environ, self.env), \
+                mock.patch.object(sol, "measure_process_tree",
+                                  fixed(sol.measure_process_tree)), \
+                mock.patch.object(ab.warm_server, "measure",
+                                  fixed(ab.warm_server.measure)):
+            self.assertEqual(ab.main(self.run_argv()), 0)
+            self.assertEqual(ab.main(
+                ["summarize", "--results", self.results,
+                 "--sha", "b" * 40, "--repeats", "2",
+                 "--target-loc", "100", "--seed", "7", "--ab", "flags",
+                 "--bazel-flags=--jobs=8", "--lockfile", "none",
+                 "--out", out]), 0)
+        with open(out, encoding="utf-8") as fh:
+            return json.load(fh)
+
+    def test_treatment_cost_factor_is_the_ratio(self):
+        summary = self.measured_summary(2, "factor-ab.json")
+        measured = {f: r for f, r in summary["ratio"].items() if r["n"]}
+        self.assertGreaterEqual(len(measured), 3)
+        for flow, ratio in measured.items():
+            self.assertEqual(ratio["n"], 2, flow)
+            self.assertEqual(ratio["median"], 2.0, flow)
+            self.assertEqual(ratio["wall"]["median"], 2.0, flow)
+
     def test_both_arms_identical_alternating_isolated(self):
-        import stat
         # A stale read-only tree where rep 1 will measure: the repeat
         # must start empty, not reuse it.
         stale = os.path.join(self.work_control, "rep1", "stale-dir")
@@ -573,17 +613,7 @@ class AbEndToEndTest(unittest.TestCase):
             fh.write("stale")
         os.chmod(leaf, stat.S_IRUSR)
         os.chmod(stale, stat.S_IRUSR | stat.S_IXUSR)
-        out = os.path.join(self.tmp, "ios-ab.json")
-        with mock.patch.dict(os.environ, self.env):
-            self.assertEqual(ab.main(self.run_argv()), 0)
-            self.assertEqual(ab.main(
-                ["summarize", "--results", self.results,
-                 "--sha", "b" * 40, "--repeats", "2",
-                 "--target-loc", "100", "--seed", "7", "--ab", "flags",
-                 "--bazel-flags=--jobs=8", "--lockfile", "none",
-                 "--out", out]), 0)
-        with open(out, encoding="utf-8") as fh:
-            summary = json.load(fh)
+        summary = self.measured_summary(1, "ios-ab.json")
         self.assertEqual(summary["meta"]["order"], arm_order(2))
         for flow in ("ios-release-clean", "ios-release-app",
                      "ios-release-body"):
@@ -595,9 +625,9 @@ class AbEndToEndTest(unittest.TestCase):
             self.assertGreater(treatment["bazel"], 0.0, flow)
             ratio = summary["ratio"][flow]
             self.assertEqual(ratio["n"], 2, flow)
-            # Same work on the same runner: paired ratios hover near 1.
-            self.assertAlmostEqual(ratio["median"], 1.0, delta=0.5,
-                                   msg=flow)
+            # Equal injected costs: the paired ratios are exactly 1.
+            self.assertEqual(ratio["median"], 1.0, flow)
+            self.assertEqual(ratio["wall"]["median"], 1.0, flow)
             self.assertEqual(ratio["unpaired"], [], flow)
         # Per-arm output bases and servers: nothing shared, none left.
         self.assertNotEqual(self.out_control, self.out_treatment)
@@ -630,6 +660,7 @@ class PlatformAbEndToEndTest(AbEndToEndTest):
     """--platform web through the stand-in Bazel; default stays iOS."""
 
     test_both_arms_identical_alternating_isolated = None
+    test_treatment_cost_factor_is_the_ratio = None
 
     def run_argv(self):
         argv = super().run_argv()

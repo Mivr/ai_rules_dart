@@ -753,13 +753,12 @@ class MeasureTest(unittest.TestCase):
         child = ("import subprocess, sys\n"
                  "subprocess.run([sys.executable, '-c',\n"
                  " 'import time\\n'\n"
-                 " 's=time.perf_counter()\\n'\n"
-                 " 'while time.perf_counter()-s<0.5:\\n'\n"
+                 " 'while time.process_time()<0.3:\\n'\n"
                  " ' pass'])")
         cost = measure_process_tree(
             [sys.executable, "-c", child], self.tmp)
         self.assertEqual(cost["returncode"], 0)
-        self.assertGreater(cost["user_s"] + cost["sys_s"], 0.1)
+        self.assertGreaterEqual(cost["user_s"] + cost["sys_s"], 0.29)
 
 
 class ChainTest(unittest.TestCase):
