@@ -185,6 +185,7 @@ void main() {
         );
       },
       timeout: const Timeout(Duration(minutes: 15)),
+      skip: !Platform.isMacOS ? 'macOS only' : null,
     );
   });
 }
