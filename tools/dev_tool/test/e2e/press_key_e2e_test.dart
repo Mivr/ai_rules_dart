@@ -25,6 +25,18 @@ import 'dev_tool_e2e_harness.dart';
 /// The fixture's submitted-text marker, `Color(0xFFFF00FF)`.
 bool _isMarker(int r, int g, int b) => r > 240 && g < 20 && b > 240;
 
+/// The keys that delete the two characters after the caret, as a real
+/// keyboard on this host does it in a browser.
+///
+/// On a Mac that is Control+K, which deletes to the end of the line only
+/// through the Cocoa `deleteToEndOfParagraph` command the browser route
+/// attaches. Chrome elsewhere binds nothing to Control+K in a text field, and
+/// `app.pressKey` presses keys as that host's keyboard would, so off a Mac the
+/// same edit is two presses of Delete.
+final List<String> _deleteTwoAfterCaret = Platform.isMacOS
+    ? const ['Control+K']
+    : const ['Delete', 'Delete'];
+
 void main() {
   /// Press [key] and return the reply, failing on a refusal.
   Future<Map<String, dynamic>> press(
@@ -225,7 +237,7 @@ void main() {
 
   group('app.pressKey in Chrome (browser route)', () {
     test(
-      'on the DDC dev loop: types, deletes, Control+K, Enter submits',
+      'on the DDC dev loop: types, deletes, deletes to the end, Enter submits',
       () async {
         final DevToolProcess dt = await startDevTool(
           workspace: e2eWorkspace('web_example'),
@@ -278,22 +290,25 @@ void main() {
         await press(dt, appId, 'Backspace', route: 'browser');
         await press(dt, appId, 'ArrowLeft', route: 'browser');
         await press(dt, appId, 'ArrowLeft', route: 'browser');
-        final Map<String, dynamic> kill = await press(
-          dt,
-          appId,
-          'Control+K',
-          route: 'browser',
-        );
-        if (Platform.isMacOS) {
-          // Without the Cocoa command a Mac browser deletes nothing.
-          final dynamic keyDown = (kill['sent'] as List).firstWhere(
-            (e) => (e as Map)['code'] == 'KeyK' && e['type'] != 'keyUp',
+        for (final String key in _deleteTwoAfterCaret) {
+          final Map<String, dynamic> kill = await press(
+            dt,
+            appId,
+            key,
+            route: 'browser',
           );
-          expect((keyDown as Map)['commands'], ['deleteToEndOfParagraph']);
+          if (key == 'Control+K') {
+            // Without the Cocoa command a Mac browser deletes nothing.
+            final dynamic keyDown = (kill['sent'] as List).firstWhere(
+              (e) => (e as Map)['code'] == 'KeyK' && e['type'] != 'keyUp',
+            );
+            expect((keyDown as Map)['commands'], ['deleteToEndOfParagraph']);
+          }
         }
-        // "abcde", Backspace -> "abcd", two lefts -> after "ab", Control+K
-        // -> "ab". A missed Backspace gives "abc"; a caret that did not move,
-        // or a Control+K that did nothing, gives "abcd".
+        // "abcde", Backspace -> "abcd", two lefts -> after "ab", deleting the
+        // two after the caret -> "ab". A missed Backspace gives "abc"; a
+        // caret that did not move, or a delete that did nothing, gives
+        // "abcd".
         expect(await textOf(dt, appId, 'keys_field'), 'ab');
 
         await press(dt, appId, 'Enter', route: 'browser');
@@ -351,7 +366,7 @@ void main() {
         }
         expect(probe?['focus'], endsWith('input'), reason: '$probe');
 
-        for (final key in const [
+        for (final String key in [
           'a',
           'b',
           'c',
@@ -360,7 +375,7 @@ void main() {
           'Backspace',
           'ArrowLeft',
           'ArrowLeft',
-          'Control+K',
+          ..._deleteTwoAfterCaret,
           'Enter',
         ]) {
           final Map<String, dynamic> result = await press(
@@ -374,8 +389,8 @@ void main() {
         }
 
         // One marker square per submitted character: "ab" is two. A missed
-        // Backspace submits "abc" (three); a Control+K or caret move that
-        // did nothing submits "abcd" (four); no submit shows none.
+        // Backspace submits "abc" (three); a delete or caret move that did
+        // nothing submits "abcd" (four); no submit shows none.
         var squares = 0;
         final DateTime deadline = DateTime.now().add(
           const Duration(seconds: 20),
