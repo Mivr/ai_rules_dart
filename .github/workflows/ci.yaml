@@ -636,17 +636,6 @@ jobs:
         if: always() && matrix.os == 'ubuntu-latest'
         shell: bash
         run: .github/scripts/ci_disk_report.sh "end of job"
-  # The e2e workspaces again, under the oldest Bazel the module supports
-  # (`bazel_compatibility` in MODULE.bazel). Each shard takes the folders of
-  # the matching Linux `test` shard from that job's matrix above, so no second
-  # folder list exists, and runs in parallel with it: the merge critical path
-  # is one shard of either job. Only folders with an `e2e.yaml` run: the
-  # others have no runner pass to repeat. The `test` job's pass (the
-  # `.bazelversion` version) is not repeated here. The runner's own build
-  # stays on the tools module's Bazel; the staged copy of each workspace takes
-  # the version pinned in its `.bazelversion`. The pinned version is printed
-  # once, from `bazel version`, and a client that reports another one fails
-  # the step.
       # Success-gated (no `always()`): a failed run must not replace the last
       # good entry with a half-populated one.
       - name: Save disk cache
@@ -678,6 +667,17 @@ jobs:
           ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id' || true)
           ids="$ids $(gh api "repos/$REPO/actions/caches?per_page=100&key=$LEGACY" --jq '.actions_caches[] | select(.ref == env.REF) | .id' || true)"
           for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
+  # The e2e workspaces again, under the oldest Bazel the module supports
+  # (`bazel_compatibility` in MODULE.bazel). Each shard takes the folders of
+  # the matching Linux `test` shard from that job's matrix above, so no second
+  # folder list exists, and runs in parallel with it: the merge critical path
+  # is one shard of either job. Only folders with an `e2e.yaml` run: the
+  # others have no runner pass to repeat. The `test` job's pass (the
+  # `.bazelversion` version) is not repeated here. The runner's own build
+  # stays on the tools module's Bazel; the staged copy of each workspace takes
+  # the version pinned in its `.bazelversion`. The pinned version is printed
+  # once, from `bazel version`, and a client that reports another one fails
+  # the step.
   e2e-floor:
     name: e2e-floor (shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
