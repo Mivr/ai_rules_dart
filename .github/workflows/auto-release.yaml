@@ -31,9 +31,7 @@ jobs:
   decide:
     name: Decide whether to release
     if: >-
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'main' &&
-      (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'schedule')
+      github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'schedule')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

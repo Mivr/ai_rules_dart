@@ -341,7 +341,7 @@ jobs:
             for p in $1; do
               q="$q + tests($p)"
             done
-            echo "($q) except attr(tags, \"\\bmanual\\b\", //...)"
+            printf '%s\n' "($q) except attr(tags, \"\\bmanual\\b\", //...)"
           }
           # A plain folder with an e2e.yaml runs through the e2e runner,
           # built and started from tools/ with its own Bazel server (the runner
