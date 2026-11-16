@@ -26,6 +26,7 @@ void main(List<String> args) {
   });
   group('shutdown', _checkShutdown);
   group('bounded servers', _checkBounds);
+  group('runner server', _checkRunnerServer);
   group('evidence', _checkEvidence);
   group('unchanged', _checkUnchanged);
 }
@@ -122,6 +123,37 @@ void _checkBounds() {
     expect(_job, contains('startup --host_jvm_args=-Xmx2g\n'));
     expect(_job, contains('build --local_resources=cpu=1\n'));
     expect(_job, contains('build --local_resources=memory=HOST_RAM*.15\n'));
+  });
+}
+
+void _checkRunnerServer() {
+  test('spec folders share one e2e runner server, built before the waves', () {
+    final String step = _step('Test');
+    expect(step, contains(r'runner_base="$outbasedir/_e2e_runner"'));
+    final int build = step.indexOf(
+      r'bazel --output_base="$runner_base" build //e2e_runner:e2e_runner',
+    );
+    final int run = step.indexOf(
+      r'bazel --output_base="$runner_base" run //e2e_runner:e2e_runner',
+    );
+    final int waves = step.indexOf(r'run_one "$folder" &');
+    expect(build, greaterThan(0), reason: 'runner built once up front');
+    expect(run, greaterThan(0), reason: 'spec folders run on runner_base');
+    expect(build, lessThan(waves), reason: 'built before the first wave');
+    expect(
+      step,
+      isNot(contains(r'--output_base="$outbasedir/$slug" run //e2e_runner')),
+      reason: 'no tools server per spec folder',
+    );
+  });
+  test('the runner server is shut down after the last folder', () {
+    final String step = _step('Test');
+    final int wait = step.indexOf('\n          wait\n');
+    final int shutdown = step.indexOf(
+      r'bazel --output_base="$runner_base" shutdown',
+    );
+    expect(wait, greaterThan(0));
+    expect(shutdown, greaterThan(wait));
   });
 }
 

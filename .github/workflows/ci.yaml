@@ -47,7 +47,9 @@ jobs:
   # still leaves its evidence and the executed-test counts stay auditable.
   # Each folder runs under its own Bazel server (`--output_base`): the folders
   # of a shard otherwise share the output base setup-bazel pins, so concurrent
-  # folders kill each other's servers and flake with exit 1.
+  # folders kill each other's servers and flake with exit 1. Folders with an
+  # e2e.yaml launch the e2e runner from one shared tools server, built once
+  # per shard; each runner then stages its workspace under its own base.
   # The per-shard `cache` name keys the shared disk cache; the repository,
   # external and bazelisk caches keep their shared keys.
   # Coverage map: every directory under e2e/ with a MODULE.bazel is built and
@@ -299,10 +301,17 @@ jobs:
           if [ "$RUNNER_OS" = "Linux" ]; then
             idle=(--max_idle_secs=60)
           fi
-          # A folder with an e2e.yaml runs through the e2e runner, built and
-          # started from tools/ with its own Bazel server (the runner stages a
-          # copy of the workspace and picks its own output base for it). Only
-          # a folder without a spec runs bazel itself.
+          # A folder with an e2e.yaml runs through the e2e runner, started
+          # from tools/ (the runner stages a copy of the workspace and picks
+          # its own output base for it). Only a folder without a spec runs
+          # bazel itself. Every runner launch shares one tools server,
+          # runner_base, built once below before the waves: a fresh tools
+          # server per folder cost 9 to 41 s each to start and analyze the
+          # same binary. `bazel run` hands the binary to its client and frees
+          # the server before the runner starts, so concurrent folders only
+          # wait for each other's cached build. That server has no idle limit
+          # and is shut down once every folder has finished.
+          runner_base="$outbasedir/_e2e_runner"
           bazel_home() {
             if [ -f "$ws/$1/e2e.yaml" ]; then echo "$ws/tools"; else echo "$ws/$1"; fi
           }
@@ -312,7 +321,7 @@ jobs:
             (
               cd "$(bazel_home "$1")" &&
               if [ -f "$ws/$1/e2e.yaml" ]; then
-                MSYS2_ARG_CONV_EXCL="*" bazel "${idle[@]}" --output_base="$outbasedir/$slug" run //e2e_runner:e2e_runner -- --workspace="../$1" --bazel=bazel
+                MSYS2_ARG_CONV_EXCL="*" bazel --output_base="$runner_base" run //e2e_runner:e2e_runner -- --workspace="../$1" --bazel=bazel
               else
                 case " $build_only_folders " in
                   *" $1 "*) bazel "${idle[@]}" --output_base="$outbasedir/$slug" build //... ;;
@@ -322,21 +331,37 @@ jobs:
             ) >"$logdir/$slug.log" 2>&1 || rc=1
             # Shut the folder's server down before reporting it finished. The
             # folder's status is the command's; a failed shutdown is logged
-            # as a warning in the folder's log and does not change it.
-            if [ "$RUNNER_OS" = "Linux" ]; then
+            # as a warning in the folder's log and does not change it. A spec
+            # folder has no server of its own: runner_base is shared.
+            if [ "$RUNNER_OS" = "Linux" ] && [ ! -f "$ws/$1/e2e.yaml" ]; then
               if ! ( cd "$(bazel_home "$1")" && bazel "${idle[@]}" --output_base="$outbasedir/$slug" shutdown ) >>"$logdir/$slug.log" 2>&1; then
                 echo "::warning::bazel shutdown failed for $1" >>"$logdir/$slug.log"
               fi
             fi
             echo "$rc" >"$logdir/$slug.status"
           }
+          # Build the e2e runner once, serially, before any folder starts, on
+          # the shared runner_base server (see bazel_home above).
+          has_spec=0
+          while IFS= read -r folder; do
+            [ -n "$folder" ] && [ -f "$ws/$folder/e2e.yaml" ] && has_spec=1
+          done <<< "$FOLDERS"
+          if [ "$has_spec" = 1 ]; then
+            if ! ( cd "$ws/tools" && MSYS2_ARG_CONV_EXCL="*" bazel --output_base="$runner_base" build //e2e_runner:e2e_runner ) >"$logdir/_e2e_runner.log" 2>&1; then
+              cat "$logdir/_e2e_runner.log"
+              echo "::error::building the e2e runner failed"
+              exit 1
+            fi
+          fi
           # Windows runners fail when the first Bazel servers start at once:
           # they race creating the shared base directory (error 183). Each
           # folder has its own server directory now, but still start them
           # serially here; the waves below then attach to running servers.
+          # Spec folders use runner_base, already started above.
           if [ "$RUNNER_OS" = "Windows" ]; then
             while IFS= read -r folder; do
               [ -z "$folder" ] && continue
+              [ -f "$ws/$folder/e2e.yaml" ] && continue
               slug="$(printf '%s' "$folder" | tr '/.' '_')"
               if ! ( cd "$(bazel_home "$folder")" && bazel --output_base="$outbasedir/$slug" version ) >/dev/null 2>&1; then
                 echo "::error::bazel failed to start for $folder"
@@ -393,6 +418,11 @@ jobs:
           done <<< "$FOLDERS"
           wait
           print_done
+          if [ "$has_spec" = 1 ]; then
+            if ! ( cd "$ws/tools" && bazel --output_base="$runner_base" shutdown ) >>"$logdir/_e2e_runner.log" 2>&1; then
+              echo "::warning::bazel shutdown failed for the e2e runner server"
+            fi
+          fi
           fail=0
           while IFS= read -r folder; do
             [ -z "$folder" ] && continue
