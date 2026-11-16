@@ -27,6 +27,7 @@ const Map<String, List<String>> linuxBazelJobs = <String, List<String>>{
   ],
   'full.yaml': <String>['e2e-linux-nightly'],
   'commit-messages.yaml': <String>['check'],
+  'auto-release.yaml': <String>['decide'],
   'perf-linux.yaml': <String>['bench'],
 };
 
@@ -45,6 +46,7 @@ const Map<String, List<String>> untouchedJobs = <String, List<String>>{
   'publish.yaml': <String>['publish'],
   'release.yaml': <String>['gate-tag-matrix', 'release'],
   'tag.yaml': <String>['tag', 'release'],
+  'auto-release.yaml': <String>['release'],
 };
 
 /// Workflow file contents keyed by file name.

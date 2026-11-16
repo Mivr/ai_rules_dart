@@ -13,6 +13,27 @@ the rules_dart version you pin (see Phase 5, "served").
 Run it with the user in the loop. Stop at any gate that is ambiguous or red; do not
 power through failures, and never file a failure as flaky without evidence.
 
+## Continuous delivery (the default path)
+
+Releases cut themselves. `.github/workflows/auto-release.yaml` runs after every CI
+or Full run on `main`. When both have a passing push (or nightly) run on the same
+commit, no existing `v*.*.*` tag contains it, and a commit since the latest published
+release carries a `Changelog:` entry other than `skip`, it picks the version and calls
+"Tag a Release" (`tag.yaml`) with that commit:
+
+- the version bumps the newest tag: a `feat` or breaking (`!`) commit bumps the minor
+  while the major is 0 (the major from 1.0 on), anything else the patch
+  (`tools/changelog/next_version.dart`, unit-tested);
+- Full runs on every push to `main`, one at a time, newest commit wins, so a commit
+  Full skipped ships with the next one it passes;
+- the release gate finds both proofs already on the commit, so the release takes the
+  build/attest/publish jobs only (about 10 minutes), not a new CI and Full run.
+
+So the normal job is: land commits with correct `Changelog:` trailers and keep `main`
+green. Use the phases below only to choose a version by hand (a different bump, or
+re-releasing), to release a commit the automation skipped, or to drive what comes
+after the GitHub Release.
+
 ## Guardrails
 
 - **Signed where a key is at hand.** Commits are signed with the automation key from
@@ -28,7 +49,9 @@ power through failures, and never file a failure as flaky without evidence.
 - **Trunk-based.** Commit straight to `main`; no PRs on rules_flutter. The BCR PR is the
   publish mechanism.
 - **No `Co-Authored-By` trailers.**
-- **The version number is the user's call.** Propose, then wait for an explicit yes.
+- **The version number is the user's call when you cut a release by hand.** Propose,
+  then wait for an explicit yes. Automatic releases take it from the commit types
+  (see Continuous delivery), which the user chose on 2026-11-16.
 - Read workspace lists from the files at run time (`.github/workflows/ci.yaml`,
   `docs/TESTING.md` § 3), not from memory.
 
@@ -147,10 +170,11 @@ bug to fix before tagging.
 3. **Watch `Release`** (`release.yaml`: build, attest, release, then `publish` into
    `publish.yaml`):
    `gh run list --repo aran/rules_flutter --workflow Release --limit 1`, then `gh run watch`.
-   Its gate (`.github/workflows/release_gate.sh`) reuses a green nightly `ci.yaml` and
-   `full.yaml` run on the tagged commit, and otherwise dispatches runs of them on the tag
-   (with caches) and waits (up to about an hour for Full). Tag a commit the nightly passed for a fast
-   release.
+   Its gate (`.github/workflows/release_gate.sh`) reuses a green push, nightly or tag
+   dispatch run of `ci.yaml` and of `full.yaml` on the tagged commit, waits for a push
+   or nightly run still in progress on it, and otherwise dispatches runs of them on the
+   tag (with caches) and waits (up to several hours for Full). Tag a commit both
+   already passed on `main` for a fast release.
 4. **A `publish` job failing on `Invalid username or token` is an expired PAT.** Only
    the push to the BCR fork failed, so do not re-tag. Replace `BCR_PUBLISH_TOKEN` with a
    classic PAT with `repo` and `workflow` scopes and no expiry. It is one token shared
