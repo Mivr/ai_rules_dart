@@ -149,7 +149,7 @@ bug to fix before tagging.
    `gh run list --repo aran/rules_flutter --workflow Release --limit 1`, then `gh run watch`.
    Its gate (`.github/workflows/release_gate.sh`) reuses a green nightly `ci.yaml` and
    `full.yaml` run on the tagged commit, and otherwise dispatches runs of them on the tag
-   (with caches, the sb-ws remote cache included) and waits (up to about an hour for Full). Tag a commit the nightly passed for a fast
+   (with caches) and waits (up to about an hour for Full). Tag a commit the nightly passed for a fast
    release.
 4. **A `publish` job failing on `Invalid username or token` is an expired PAT.** Only
    the push to the BCR fork failed, so do not re-tag. Replace `BCR_PUBLISH_TOKEN` with a
