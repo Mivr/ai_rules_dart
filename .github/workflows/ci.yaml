@@ -71,11 +71,12 @@
 # job; downloads are content-addressed), plus one Bazel disk cache per OS per
 # shard managed below with actions/cache. setup-bazel's own disk cache never
 # re-saves an unchanged key, so a run that rebuilds actions would lose them;
-# instead each shard restores its key (falling back to the newest older key)
-# and, on pushes only, deletes the key it restored and saves it back with the
-# fresh content. Pull requests and dispatches only restore. Each shard is the
-# only writer of its key; the repository key stays shared per OS with
-# setup-bazel's first-finisher-wins save. Scheduled (nightly) and
+# instead each shard restores the newest entry under its prefix and, on main
+# pushes only, saves a new entry under its own run's key, then prunes the
+# shard's older entries. A restore never meets a deleted key mid-save, even
+# with several main runs in flight. Pull requests and dispatches only
+# restore. Each shard is the only writer of its prefix; the repository key
+# stays shared per OS with setup-bazel's first-finisher-wins save. Scheduled (nightly) and
 # `uncached` dispatches restore nothing and save nothing; the content-addressed
 # repository cache (and the bazelisk cache) still restore, since every fetch
 # through them is sha256-pinned and they never replay test results. Tag runs
@@ -139,7 +140,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Set disk cache key
-        run: echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
@@ -184,7 +187,19 @@ jobs:
       - name: Report cache sizes
         if: always()
         run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
-      - name: Delete stale disk cache key
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
         continue-on-error: true
         env:
@@ -192,15 +207,15 @@ jobs:
           REF: ${{ github.ref }}
           REPO: ${{ github.repository }}
         run: |
-          ids=$(gh api "repos/$REPO/actions/caches?per_page=100" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_KEY and .ref == env.REF) | .id' || true)
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
           for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
-      - name: Save disk cache
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
-        continue-on-error: true
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.DISK_CACHE_DIR }}
-          key: ${{ env.DISK_CACHE_KEY }}
   # The cheapest job in CI (a dozen actions): verifies that every Flutter
   # toolchain alias resolves, guarding the shared rule code all workspaces
   # load, on the OS whose toolchain is the most fragile.
@@ -219,7 +234,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Set disk cache key
-        run: echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
@@ -246,7 +263,19 @@ jobs:
       - name: Report cache sizes
         if: always()
         run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
-      - name: Delete stale disk cache key
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
         continue-on-error: true
         env:
@@ -254,15 +283,15 @@ jobs:
           REF: ${{ github.ref }}
           REPO: ${{ github.repository }}
         run: |
-          ids=$(gh api "repos/$REPO/actions/caches?per_page=100" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_KEY and .ref == env.REF) | .id' || true)
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
           for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
-      - name: Save disk cache
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
-        continue-on-error: true
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.DISK_CACHE_DIR }}
-          key: ${{ env.DISK_CACHE_KEY }}
   unit-tests:
     name: Unit tests
     runs-on: ubuntu-latest
@@ -275,7 +304,9 @@ jobs:
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
-        run: echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
@@ -489,7 +520,19 @@ jobs:
       - name: Report cache sizes
         if: always()
         run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
-      - name: Delete stale disk cache key
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
         continue-on-error: true
         env:
@@ -497,15 +540,15 @@ jobs:
           REF: ${{ github.ref }}
           REPO: ${{ github.repository }}
         run: |
-          ids=$(gh api "repos/$REPO/actions/caches?per_page=100" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_KEY and .ref == env.REF) | .id' || true)
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
           for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
-      - name: Save disk cache
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
-        continue-on-error: true
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.DISK_CACHE_DIR }}
-          key: ${{ env.DISK_CACHE_KEY }}
   # Pull requests only: every root test five times, uncached, failing on any
   # FLAKY. It ran inside unit-tests until 2026-11-16, where it added 7+ min to
   # that job's critical path; as its own job it runs beside unit-tests. It
@@ -524,7 +567,9 @@ jobs:
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
-        run: echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
@@ -563,7 +608,9 @@ jobs:
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
-        run: echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
@@ -638,7 +685,19 @@ jobs:
       - name: Report cache sizes
         if: always()
         run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
-      - name: Delete stale disk cache key
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
         continue-on-error: true
         env:
@@ -646,15 +705,15 @@ jobs:
           REF: ${{ github.ref }}
           REPO: ${{ github.repository }}
         run: |
-          ids=$(gh api "repos/$REPO/actions/caches?per_page=100" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_KEY and .ref == env.REF) | .id' || true)
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
           for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
-      - name: Save disk cache
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
-        continue-on-error: true
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.DISK_CACHE_DIR }}
-          key: ${{ env.DISK_CACHE_KEY }}
   e2e-linux-small:
     name: E2E Linux small (smoke, dual_hub, ffi_example, ffi_plugin_example, web_example)
     runs-on: ubuntu-latest
@@ -667,7 +726,9 @@ jobs:
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
-        run: echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
@@ -776,7 +837,19 @@ jobs:
       - name: Report cache sizes
         if: always()
         run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
-      - name: Delete stale disk cache key
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
         continue-on-error: true
         env:
@@ -784,15 +857,15 @@ jobs:
           REF: ${{ github.ref }}
           REPO: ${{ github.repository }}
         run: |
-          ids=$(gh api "repos/$REPO/actions/caches?per_page=100" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_KEY and .ref == env.REF) | .id' || true)
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
           for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
-      - name: Save disk cache
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
-        continue-on-error: true
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.DISK_CACHE_DIR }}
-          key: ${{ env.DISK_CACHE_KEY }}
   e2e-linux-integration:
     name: E2E Linux integration (web, linux, min_versions, android_no_go_sdk)
     runs-on: ubuntu-latest
@@ -805,7 +878,9 @@ jobs:
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
-        run: echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
@@ -865,7 +940,19 @@ jobs:
       - name: Report cache sizes
         if: always()
         run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
-      - name: Delete stale disk cache key
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
         continue-on-error: true
         env:
@@ -873,15 +960,15 @@ jobs:
           REF: ${{ github.ref }}
           REPO: ${{ github.repository }}
         run: |
-          ids=$(gh api "repos/$REPO/actions/caches?per_page=100" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_KEY and .ref == env.REF) | .id' || true)
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
           for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
-      - name: Save disk cache
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
-        continue-on-error: true
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.DISK_CACHE_DIR }}
-          key: ${{ env.DISK_CACHE_KEY }}
   # The two workspaces that boot the Android emulator (with KVM). They ran in
   # e2e-linux-integration until 2026-11-16, which made that job the longest in
   # CI at 12-16 min warm; split, each half is about 6 min.
@@ -897,7 +984,9 @@ jobs:
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
-        run: echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
@@ -947,7 +1036,19 @@ jobs:
       - name: Report cache sizes
         if: always()
         run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
-      - name: Delete stale disk cache key
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
         continue-on-error: true
         env:
@@ -955,15 +1056,15 @@ jobs:
           REF: ${{ github.ref }}
           REPO: ${{ github.repository }}
         run: |
-          ids=$(gh api "repos/$REPO/actions/caches?per_page=100" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_KEY and .ref == env.REF) | .id' || true)
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
           for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
-      - name: Save disk cache
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
-        continue-on-error: true
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.DISK_CACHE_DIR }}
-          key: ${{ env.DISK_CACHE_KEY }}
   # The desktop examples whose targets all build on Linux: linux_example's
   # three Linux bundle approaches (plus its bundle-structure checks) and
   # cross_compile_example's LLVM-built Linux bundle. android_example also
@@ -981,7 +1082,9 @@ jobs:
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
-        run: echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
@@ -1022,7 +1125,19 @@ jobs:
       - name: Report cache sizes
         if: always()
         run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
-      - name: Delete stale disk cache key
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
         continue-on-error: true
         env:
@@ -1030,15 +1145,15 @@ jobs:
           REF: ${{ github.ref }}
           REPO: ${{ github.repository }}
         run: |
-          ids=$(gh api "repos/$REPO/actions/caches?per_page=100" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_KEY and .ref == env.REF) | .id' || true)
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
           for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
-      - name: Save disk cache
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
-        continue-on-error: true
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.DISK_CACHE_DIR }}
-          key: ${{ env.DISK_CACHE_KEY }}
   e2e-linux-pub-scc:
     name: E2E Linux pub_scc
     runs-on: ubuntu-latest
@@ -1051,7 +1166,9 @@ jobs:
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
-        run: echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
@@ -1085,7 +1202,19 @@ jobs:
       - name: Report cache sizes
         if: always()
         run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
-      - name: Delete stale disk cache key
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
         continue-on-error: true
         env:
@@ -1093,15 +1222,15 @@ jobs:
           REF: ${{ github.ref }}
           REPO: ${{ github.repository }}
         run: |
-          ids=$(gh api "repos/$REPO/actions/caches?per_page=100" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_KEY and .ref == env.REF) | .id' || true)
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
           for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
-      - name: Save disk cache
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
-        continue-on-error: true
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.DISK_CACHE_DIR }}
-          key: ${{ env.DISK_CACHE_KEY }}
   e2e-windows:
     name: E2E (hello_world, windows-latest)
     runs-on: windows-latest
@@ -1113,7 +1242,9 @@ jobs:
       - uses: actions/checkout@v7
       - name: Set disk cache key
         shell: bash
-        run: echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       # See the note above for the shared repository cache. The output base
       # setup-bazel sets (D:/_bazel) takes precedence over the Windows step's
       # --output_user_root and is as short.
@@ -1175,7 +1306,19 @@ jobs:
         if: always()
         shell: bash
         run: du -sh D:/_bazel-disk D:/_bazel-repo C:/_bazel-disk C:/_bazel-repo 2>/dev/null || true
-      - name: Delete stale disk cache key
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
         continue-on-error: true
         shell: bash
@@ -1184,15 +1327,15 @@ jobs:
           REF: ${{ github.ref }}
           REPO: ${{ github.repository }}
         run: |
-          ids=$(gh api "repos/$REPO/actions/caches?per_page=100" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_KEY and .ref == env.REF) | .id' || true)
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
           for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
-      - name: Save disk cache
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
-        continue-on-error: true
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.DISK_CACHE_DIR }}
-          key: ${{ env.DISK_CACHE_KEY }}
   # The hooks in .pre-commit-config.yaml, over every file. Nothing else runs
   # them for a commit made without `prek install`.
   pre-commit:
@@ -1255,7 +1398,9 @@ jobs:
       - name: Enable Linux sandbox user namespaces
         run: .github/scripts/enable_linux_sandbox.sh
       - name: Set disk cache key
-        run: echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+        run: |
+          echo "DISK_CACHE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}" >> "$GITHUB_ENV"
+          echo "DISK_CACHE_SAVE_KEY=ff-disk-${{ runner.os }}-${{ env.DISK_CACHE_SHARD }}-${{ hashFiles('MODULE.bazel', 'MODULE.bazel.lock', 'e2e/*/MODULE.bazel', 'flutter/private/versions.bzl') }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
       - uses: bazel-contrib/setup-bazel@c5acdfb288317d0b5c0bbd7a396a3dc868bb0f86 # 0.19.0
         with:
           repository-cache: ${{ env.BAZEL_REPOSITORY_CACHE_KEY_FILES }}
@@ -1305,7 +1450,19 @@ jobs:
       - name: Report cache sizes
         if: always()
         run: du -sh ~/.cache/bazel-disk ~/.cache/bazel-repo 2>/dev/null || true
-      - name: Delete stale disk cache key
+      - name: Save disk cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DISK_CACHE_DIR }}
+          key: ${{ env.DISK_CACHE_SAVE_KEY }}
+      # Each save gets its own key (run id and attempt), so a restore always
+      # finds a complete entry: deleting the key before re-saving it left a
+      # window in which concurrent runs restored nothing and built cold. Once
+      # this run's entry exists, drop this shard's entries created before it on
+      # this ref; a newer entry from a concurrent run is kept.
+      - name: Prune older disk cache entries
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
         continue-on-error: true
         env:
@@ -1313,15 +1470,15 @@ jobs:
           REF: ${{ github.ref }}
           REPO: ${{ github.repository }}
         run: |
-          ids=$(gh api "repos/$REPO/actions/caches?per_page=100" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_KEY and .ref == env.REF) | .id' || true)
+          prefix="${DISK_CACHE_KEY%-*}-"
+          list="repos/$REPO/actions/caches?per_page=100&key=$prefix"
+          created=$(gh api "$list" --jq '.actions_caches[] | select(.key == env.DISK_CACHE_SAVE_KEY and .ref == env.REF) | .created_at')
+          if [ -z "$created" ]; then
+            echo "::warning::$DISK_CACHE_SAVE_KEY was not saved; keeping the older entries"
+            exit 0
+          fi
+          ids=$(CREATED="$created" gh api "$list" --jq '.actions_caches[] | select(.key != env.DISK_CACHE_SAVE_KEY and .ref == env.REF and .created_at < env.CREATED) | .id')
           for id in $ids; do gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true; done
-      - name: Save disk cache
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.uncached
-        continue-on-error: true
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.DISK_CACHE_DIR }}
-          key: ${{ env.DISK_CACHE_KEY }}
   reproducibility:
     name: Reproducibility canary
     runs-on: ubuntu-latest
