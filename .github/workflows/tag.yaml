@@ -1,40 +1,57 @@
 # Mivr/ai_rules_dart workflow (moved from the frozen Mivr/rules_dart fork on 2026-10-28).
-# Tag a new release using https://github.com/marketplace/actions/conventional-commits-versioner-action
+# Cut a release from the GitHub UI: Actions > "Tag a Release" > Run workflow on
+# `main`, with the version to release. The run tags the commit it was
+# dispatched on and calls release.yaml, whose gate requires CI and Full to pass
+# on that commit before anything is published.
 #
-# This is easier than having to run manual `git` operations on a local clone.
-# It also runs on a schedule so we don't leave commits unreleased indefinitely
-# (avoiding users having to ping "hey could someone cut a release").
+# The version is typed in rather than derived from commit messages: a `!`
+# commit in a 0.x release is a minor bump here, and the version is the
+# releaser's call.
 name: Tag a Release
 on:
-  # Allow devs to tag manually through the GitHub UI.
-  # For example after landing a fix that customers are waiting for.
   workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, as vMAJOR.MINOR.PATCH (e.g. v0.30.0)
+        required: true
+        type: string
 jobs:
   tag:
     permissions:
       contents: write # allow create tag
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     outputs:
-      new-tag: ${{ steps.ccv.outputs.new-tag }}
-      new-tag-version: ${{ steps.ccv.outputs.new-tag-version }}
-      new-tag-version-type: ${{ steps.ccv.outputs.new-tag-version-type }}
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
         with:
-          # Need enough history to find the prior release tag
+          # Every tag, to refuse a version that exists or is not newer.
           fetch-depth: 0
-      - name: Bump tag if necessary
-        id: ccv
-        uses: smlx/ccv@7318e2f25a52dcd550e75384b84983973251a1f8 # v0.10.0
+      - name: Tag the dispatched commit
+        id: tag
+        env:
+          VERSION: ${{ inputs.version }}
+        # The tag is pushed with GITHUB_TOKEN, so it does not start release.yaml's
+        # tag-push trigger a second time; the release job below calls it.
+        run: |
+          [[ "$GITHUB_REF" == refs/heads/main ]] || { echo "::error::Run this on main, not $GITHUB_REF"; exit 1; }
+          [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Version must look like v1.2.3, got '$VERSION'"; exit 1; }
+          latest=$(git tag --list 'v*.*.*' --sort=-v:refname | head -n 1)
+          if [[ -n "$latest" && "$(printf '%s\n%s\n' "$latest" "$VERSION" | sort -V | tail -n 1)" != "$VERSION" ]] || [[ "$VERSION" == "$latest" ]] || git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "::error::$VERSION exists or is not newer than $latest"; exit 1
+          fi
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            tag -a "$VERSION" -m "rules_dart $VERSION" "$GITHUB_SHA"
+          git push origin "refs/tags/$VERSION"
+          echo "tag=$VERSION" >> "$GITHUB_OUTPUT"
   release:
     needs: tag
-    # No timeout-minutes here: GitHub rejects it on jobs that call a reusable
-    # workflow.
+    # A reusable-workflow call: `uses:` jobs take no timeout-minutes (only
+    # the called workflow's own jobs can carry one).
     uses: ./.github/workflows/release.yaml
     with:
-      tag_name: ${{ needs.tag.outputs.new-tag-version }}
-    if: needs.tag.outputs.new-tag == 'true' && needs.tag.outputs.new-tag-version-type != 'major'
+      tag_name: ${{ needs.tag.outputs.tag }}
     permissions:
       contents: write
       id-token: write

@@ -36,10 +36,11 @@ upstream `bazelbuild/bazel-central-registry`. A pushed `vX.Y.Z` tag triggers a r
 
 ## Hard guardrails (apply throughout)
 
-- **Signing**: every commit and every tag we push by hand MUST be signed. Never bypass
-  signing. Tags are signed annotated tags (`git tag -s`); a lightweight tag cannot carry a
-  signature. Tags cut by the daily `tag.yaml` workflow are exempt: `smlx/ccv` creates and
-  pushes them as `github-actions`, which holds no signing key.
+- **Signing**: every commit, and every tag we push by hand, is signed where the key is at
+  hand; never pass `--no-gpg-sign`. Hand-pushed tags are signed annotated tags
+  (`git tag -s`). Tags cut by the `tag.yaml` workflow (Phase 5, step 2) are unsigned by
+  design, so an agent can release without a signing key: `github-actions`, which pushes
+  them, holds none.
 - **Pushing is separate from signing**: an SSH `git push` authenticates through the
   1Password SSH agent, which can stop answering mid-session (`communication with agent
 failed`). The objects are already signed, so push over HTTPS with the `gh` login instead (the same
@@ -190,7 +191,11 @@ be green against local WIP rules_dart before pushing.
    the GitHub release body, and `pub-publish` copies that body into
    `dart/runfiles/CHANGELOG.md`. A missing or badly worded entry is fixed by a new commit
    carrying the trailer, never by rewriting pushed history.
-2. `git fetch origin`, then tag the released commit with a signed annotated tag:
+2. Tag the released commit. Either dispatch "Tag a Release" on `main` with the version,
+   which tags the dispatched commit (annotated, unsigned) and calls `release.yaml`
+   (`gh workflow run tag.yaml --repo Mivr/ai_rules_dart --ref main -f version=$TARGET`,
+   or the GitHub MCP `actions_run_trigger`); it refuses a version that exists or is not
+   newer than the latest tag. Or, with the signing key at hand, `git fetch origin`, then:
    ```sh
    git tag -s -m "rules_dart $TARGET" $TARGET origin/main
    git push origin $TARGET

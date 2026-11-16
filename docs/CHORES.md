@@ -465,7 +465,7 @@ buildifier and commitizen revs silently drifted as a result.
 **Dependencies** (all `uses:` references across workflows):
 
 - Actions: `actions/checkout`, `amannn/action-semantic-pull-request`,
-  `dart-lang/setup-dart`, `smlx/ccv`, `j178/prek-action`
+  `dart-lang/setup-dart`, `j178/prek-action`
 - Reusable workflows: `bazel-contrib/.github` (CI + release),
   `bazel-contrib/publish-to-bcr`
 
