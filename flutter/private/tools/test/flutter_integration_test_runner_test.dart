@@ -284,10 +284,26 @@ void main() {
     });
 
     test('answers 500 when the bundle entry cannot be read', () async {
-      final secret = File('${tmpDir.path}/secret.txt')
-        ..writeAsStringSync('secret');
-      Process.runSync('chmod', ['000', secret.path]);
+      // A Unix domain socket passes `File.existsSync` (Dart counts anything
+      // but a directory or link as a file), yet `open()` on it fails for
+      // every uid. A `chmod 000` file would not do: root reads it anyway.
+      // The socket lives under a short /tmp directory because socket paths
+      // are capped near 104 bytes and the test temp dir can be longer; the
+      // bundle entry is a symlink to it.
+      final Directory socketDir = Directory('/tmp').createTempSync('wb_');
+      final RawServerSocket socket = await RawServerSocket.bind(
+        InternetAddress(
+          '${socketDir.path}/s',
+          type: InternetAddressType.unix,
+        ),
+        0,
+      );
+      Link('${tmpDir.path}/secret.txt').createSync('${socketDir.path}/s');
       final client = HttpClient();
+      addTearDown(() async {
+        await socket.close();
+        socketDir.deleteSync(recursive: true);
+      });
       try {
         final HttpClientRequest req = await client.getUrl(
           Uri.parse('http://127.0.0.1:${server.port}/secret.txt'),
