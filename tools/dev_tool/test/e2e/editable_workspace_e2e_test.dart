@@ -78,12 +78,11 @@ void main() {
 
         // Break it in a way only a compiler can miss: if the build still passes,
         // it compiled something other than this file.
-        ws
-            .file('lib/main.dart')
-            .writeAsStringSync(
-              '${ws.file('lib/main.dart').readAsStringSync()}\n'
-              'int COPY_ONLY_MARKER = "not an int";\n',
-            );
+        const badValue = '"not an int"';
+        final copyMain =
+            '${ws.file('lib/main.dart').readAsStringSync()}\n'
+            'int COPY_ONLY_MARKER = $badValue;\n';
+        ws.file('lib/main.dart').writeAsStringSync(copyMain);
 
         final ProcessResult broken = await build(ws, ':app_js');
         expect(
@@ -91,9 +90,18 @@ void main() {
           isNot(0),
           reason: 'the copy\'s build must read the copy\'s sources',
         );
+        // dart2js reads app sources through an `org-dartlang-app` multi-root,
+        // and for those it reports a position as `<uri>@<offset>+<length>`
+        // with no source excerpt, so the marker's name never reaches the
+        // output. The offset is proof enough: it points into the line only
+        // the copy has, past the end of the source's file.
         expect(
           '${broken.stdout}${broken.stderr}',
-          contains('COPY_ONLY_MARKER'),
+          anyOf(
+            contains('lib/main.dart@${copyMain.indexOf(badValue)}+'),
+            contains('COPY_ONLY_MARKER'),
+          ),
+          reason: 'the error must be the one this test planted in the copy',
         );
 
         // The payoff: no teardown restored anything, and the shared workspace

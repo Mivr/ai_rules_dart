@@ -126,6 +126,7 @@ void main() {
         launchTimeout: const Duration(seconds: 120),
       )),
       timeout: const Timeout(Duration(minutes: 5)),
+      skip: !Platform.isMacOS ? 'macOS only' : null,
     );
 
     // The switch reaches an iOS app as trailing argv after the bundle id, a

@@ -135,6 +135,7 @@ void main() {
         );
       },
       timeout: const Timeout(Duration(minutes: 25)),
+      skip: !Platform.isMacOS ? 'macOS only' : null,
     );
 
     test(

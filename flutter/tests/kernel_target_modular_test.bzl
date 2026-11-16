@@ -17,6 +17,7 @@ _ENTRY_FILES = [
     "/_flutter_debug_agent/agent_extensions.dart",
     "/_flutter_debug_agent/native_agent_extensions.dart",
     "/_flutter_debug_agent/plugin_registrant.dart",
+    "/_flutter_debug_agent/registrant_lookup.dart",
 ]
 
 def _by_mnemonic(env, mnemonic):

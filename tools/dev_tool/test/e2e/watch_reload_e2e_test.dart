@@ -103,6 +103,7 @@ void main() {
         );
       },
       timeout: const Timeout(Duration(minutes: 5)),
+      skip: !Platform.isMacOS ? 'macOS only' : null,
     );
 
     // The edit above is made the moment the run is up, and that window is the
@@ -172,6 +173,7 @@ void main() {
         );
       },
       timeout: const Timeout(Duration(minutes: 6)),
+      skip: !Platform.isMacOS ? 'macOS only' : null,
     );
   });
 }

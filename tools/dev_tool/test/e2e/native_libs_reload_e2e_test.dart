@@ -225,7 +225,7 @@ void main() {
       // same edit was not delivered either.
       await _expectRendered(dt, appId, 'RELOADED:name');
     }, timeout: const Timeout(Duration(minutes: 15)));
-  });
+  }, skip: !Platform.isMacOS ? 'macOS only' : null);
 
   group('native module rebuilt under a web hot reload', () {
     test('delivered when the contract holds, withheld when it moves', () async {
